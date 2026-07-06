@@ -1,0 +1,130 @@
+import { describe, expect, it } from 'vitest';
+import { buy, dividend, hasWarning, run, sell } from './helpers';
+
+describe('R-02 hodnotový test 100 000 Kč', () => {
+  it('R-02a: cliff — do 100k včetně vše osvobozeno, nad 100k padá osvobození celé', () => {
+    const scenario = (price: string) => [
+      buy({ quantity: '100', pricePerShare: '900', tradeDate: '2024-02-01', settlementDate: '2024-02-01' }),
+      sell({ quantity: '100', pricePerShare: price, tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+    ];
+
+    const under = run(scenario('999.99')); // tržba 99 999
+    expect(under.securities.exemptUnder100k).toBe(true);
+    expect(under.securities.base10Czk.toString()).toBe('0');
+
+    const exactly = run(scenario('1000')); // tržba přesně 100 000 → stále osvobozeno
+    expect(exactly.securities.exemptUnder100k).toBe(true);
+    expect(exactly.limits.limit100k.exceeded).toBe(false);
+
+    const over = run(scenario('1000.01')); // tržba 100 001 → celé zdanitelné
+    expect(over.securities.exemptUnder100k).toBe(false);
+    expect(over.securities.base10Czk.toString()).toBe('10001');
+    expect(over.limits.limit100k.exceeded).toBe(true);
+  });
+
+  it('R-02c: přepínač — počítají se do úhrnu i prodeje osvobozené časovým testem?', () => {
+    const txs = [
+      // A: drženo 6 let → osvobozeno testem, tržba 80 000
+      buy({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '700', tradeDate: '2019-01-10', settlementDate: '2019-01-10' }),
+      sell({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '800', tradeDate: '2025-05-05', settlementDate: '2025-05-05' }),
+      // B: drženo 1 rok, tržba 30 000
+      buy({ isin: 'CZ0000000002', quantity: '100', pricePerShare: '250', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      sell({ isin: 'CZ0000000002', quantity: '100', pricePerShare: '300', tradeDate: '2025-07-01', settlementDate: '2025-07-01' }),
+    ];
+
+    // striktní výklad (default): úhrn 110k > 100k → B zdanitelné
+    const strict = run(txs);
+    expect(strict.securities.pool100kCzk.toString()).toBe('110000');
+    expect(strict.securities.exemptUnder100k).toBe(false);
+    expect(strict.securities.base10Czk.toString()).toBe('5000');
+    expect(strict.limits.flatTax50k.status.usedCzk.toString()).toBe('30000');
+
+    // mírnější výklad: do úhrnu jen testem NEosvobozené (30k ≤ 100k) → vše osvobozeno
+    const lenient = run(txs, { options: { limit100kIncludesTimeTestExempt: false } });
+    expect(lenient.securities.pool100kCzk.toString()).toBe('30000');
+    expect(lenient.securities.exemptUnder100k).toBe(true);
+    expect(lenient.securities.base10Czk.toString()).toBe('0');
+    expect(lenient.limits.flatTax50k.status.usedCzk.toString()).toBe('0');
+  });
+});
+
+describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
+  it('R-08d GOLDEN: prodej za 120k se ziskem 5k prolomí limit — počítá se tržba, ne zisk', () => {
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1150', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '1200', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+
+    expect(result.securities.base10Czk.toString()).toBe('5000'); // zisk pouhých 5 000 Kč…
+    expect(result.limits.flatTax50k.applicable).toBe(true);
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('120000'); // …ale limit čerpá tržba
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+    expect(result.limits.flatTax50k.status.zone).toBe('EXCEEDED');
+    expect(hasWarning(result, 'FLAT_TAX_BROKEN')).toBe(true);
+    // orientační daň: základ 5 000 × 15 %
+    expect(result.tax.general.taxCzk.toString()).toBe('750');
+  });
+
+  it('R-08c: prodej do 100k je osvobozený a limit 50k nečerpá', () => {
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '800', tradeDate: '2024-02-01', settlementDate: '2024-02-01' }),
+      sell({ quantity: '100', pricePerShare: '900', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+    ]);
+    expect(result.securities.exemptUnder100k).toBe(true);
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('0');
+    expect(result.limits.flatTax50k.status.zone).toBe('OK');
+  });
+
+  it('R-08d: zahraniční dividendy se počítají brutto; české (srážkové) ne', () => {
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '2000', withholdingTax: '300' }),
+      dividend({ sourceCountry: 'CZ', gross: '5000' }),
+    ]);
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('2000');
+    expect(result.dividends.czechGrossCzk.toString()).toBe('5000');
+    expect(result.dividends.base8Czk.toString()).toBe('2000');
+  });
+
+  it('R-08f: pásma hlídače (60 % / 85 % / prolomeno) a ruční ostatní příjmy', () => {
+    const zones = (gross: string, other?: string) =>
+      run([dividend({ gross })], { profile: other ? { otherTaxableIncome8to10Czk: other } : {} })
+        .limits.flatTax50k.status.zone;
+
+    expect(zones('25000')).toBe('OK'); // 50 %
+    expect(zones('31000')).toBe('WARNING'); // 62 %
+    expect(zones('43000')).toBe('CRITICAL'); // 86 %
+    expect(zones('50000')).toBe('CRITICAL'); // přesně 100 % — ještě neprolomen
+    expect(zones('8000', '45000')).toBe('EXCEEDED'); // 8k dividendy + 45k nájem = 53k
+  });
+});
+
+describe('R-09 povinnost přiznání a oznámení § 38v', () => {
+  it('R-09b: zaměstnanec s vedlejšími příjmy nad 20k musí podat přiznání', () => {
+    const result = run([dividend({ gross: '25000' })], { profile: { regime: 'ZAMESTNANEC' } });
+    expect(result.limits.employee20k.applicable).toBe(true);
+    expect(result.limits.employee20k.status.exceeded).toBe(true);
+    expect(result.limits.flatTax50k.applicable).toBe(false);
+  });
+
+  it('R-09d: jednotlivý osvobozený příjem nad 5M → oznámení § 38v', () => {
+    const result = run([
+      buy({ quantity: '1000', pricePerShare: '1000', tradeDate: '2019-02-01', settlementDate: '2019-02-01' }),
+      sell({ quantity: '1000', pricePerShare: '6000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+    expect(result.securities.base10Czk.toString()).toBe('0'); // osvobozeno testem
+    expect(result.limits.reporting38v).toHaveLength(1);
+    expect(result.limits.reporting38v[0]!.exemptProceedsCzk.toString()).toBe('6000000');
+    expect(hasWarning(result, 'REPORTING_38V')).toBe(true);
+    expect(result.limits.cap40M?.exceeded).toBe(false);
+  });
+
+  it('R-03: překročení stropu 40M (rok 2025) hlásí ERROR — krácení je post-MVP hook', () => {
+    const result = run([
+      buy({ quantity: '1000', pricePerShare: '30000', tradeDate: '2019-03-01', settlementDate: '2019-03-01' }),
+      sell({ quantity: '1000', pricePerShare: '45000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ]);
+    expect(result.limits.cap40M?.applicable).toBe(true);
+    expect(result.limits.cap40M?.exceeded).toBe(true);
+    expect(hasWarning(result, 'CAP_40M_EXCEEDED')).toBe(true);
+  });
+});
