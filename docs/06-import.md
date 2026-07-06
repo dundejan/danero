@@ -25,12 +25,18 @@ Mapování `Action` → kanonický typ:
 |---|---|---|
 | `…buy` / `…sell` | BUY / SELL | množství, cena, měna instrumentu; poplatky ze sloupců Currency conversion fee, Stamp duty, French transaction tax, Finra/SEC fee… sečtené v jedné měně |
 | `Dividend…` | DIVIDEND | brutto = kusy × dividenda/kus v měně instrumentu + Withholding tax; starší řádky bez kusů → brutto ≈ čistá částka s varováním |
-| `…interest…` | INTEREST | Total + měna |
+| `…interest…` | INTEREST | Total + měna (vč. `Lending interest` — úrok z půjčování akcií) |
 | `Deposit` / `Withdrawal` | DEPOSIT / WITHDRAWAL | evidence, engine je ignoruje |
+| `Stock split close` + `Stock split open` | CORPORATE_ACTION SPLIT | párové řádky (stejný ISIN a den); poměr = nové kusy / staré kusy → zachování data nabytí (R-04a). Nespárovaný řádek → error |
+| `Spin off` | BUY s cenou 0 | příjem nových kusů dceřiného ISIN; nabývací cena 0 a nová lhůta testu (R-04f, konzervativně) + varování |
+| `Card debit` / `Card credit` / `Spending cashback` | přeskočeno | platby kartou T212 — mimo daňový výpočet CP |
 | `Currency conversion` | přeskočeno | pro výpočet není potřeba |
 | jiné | error řádek | nahlásit, doplníme podporu |
 
-⚠️ **Export neobsahuje korporátní akce** (splity, změny ISIN) — řeší rekonciliace níže.
+✅ **Oprava původní rešerše (ověřeno na reálných datech 7/2026): T212 export korporátní
+akce OBSAHUJE** — splity jako pár close/open řádků, spin-offy jako příjem kusů s cenou 0.
+Změny ISIN/fúze zatím nepozorovány — pro ně (a jako pojistka) slouží rekonciliace níže.
+Měny: pozor na **GBX** (pence, LSE) — engine normalizuje na GBP/100.
 
 ## Trading212 API (`Trading212Client`)
 

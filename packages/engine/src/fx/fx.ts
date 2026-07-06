@@ -18,6 +18,8 @@ export class FxConverter {
 
   toCzk(amount: Money, currency: string, date: IsoDate): Money {
     if (currency === 'CZK') return amount;
+    // GBX = pence sterling (kotace londýnských akcií, 1/100 GBP) — kurz existuje jen pro GBP
+    if (currency === 'GBX') return this.toCzk(amount.div(100), 'GBP', date);
     const rate =
       this.method === 'UNIFIED' ? this.unifiedRate(currency, date) : this.dailyRate(currency, date);
     return amount.mul(rate);

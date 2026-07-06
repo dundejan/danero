@@ -59,4 +59,10 @@ describe('R-06 měnové přepočty', () => {
     const converter = new FxConverter(CFG_2025, 'UNIFIED', new WarningCollector());
     expect(converter.toCzk(d('123.45'), 'CZK', '2025-06-01').toString()).toBe('123.45');
   });
+
+  it('GBX (pence) se normalizuje na GBP/100', () => {
+    const converter = new FxConverter(CFG_2025, 'UNIFIED', new WarningCollector());
+    // 1000 pencí = 10 GBP × fixture kurz 30 = 300 CZK
+    expect(converter.toCzk(d('1000'), 'GBX', '2025-06-01').toString()).toBe('300');
+  });
 });

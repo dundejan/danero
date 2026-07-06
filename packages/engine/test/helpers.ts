@@ -18,7 +18,7 @@ export const CFG_2025: TaxYearConfig = {
     2022: { USD: '23', EUR: '25' },
     2023: { USD: '22', EUR: '24' },
     2024: { USD: '23', EUR: '25' },
-    2025: { USD: '20', EUR: '25' },
+    2025: { USD: '20', EUR: '25', GBP: '30' },
   },
   limits: {
     securitiesProceedsExemption: '100000',

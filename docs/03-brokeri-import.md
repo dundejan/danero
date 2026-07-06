@@ -31,7 +31,10 @@ Zásady:
 - Kategorie: Orders, Dividends, Transactions, Interest — sada sloupců se mění dle výběru.
 - Známé sloupce: `Action`, `Time` (UTC), `ISIN`, `Ticker`, `Name`, `No. of shares`, `Price / share`, `Currency (Price / share)`, `Exchange rate`, `Result`, `Total`, `Withholding tax`.
 - Limity: max 1 kalendářní rok na export → dedupe nutná; UTF-8; časy UTC.
-- ⚠️ **Corporate actions v exportu zcela chybí** — viz rekonciliace níže.
+- ✅ **Oprava (ověřeno na reálném exportu 7/2026):** korporátní akce v exportu JSOU —
+  splity jako pár řádků `Stock split close`/`Stock split open`, spin-off jako řádek
+  `Spin off` (příjem kusů s cenou 0). Změny ISIN/fúze nepozorovány → rekonciliace
+  přes API zůstává jako pojistka. Původní rešerše (i praxe Taxomatu) tvrdila opak.
 - Referenční parsery: `pkpio/trading212-csv` (Python), converter v Export-To-Ghostfolio (TS).
 
 **API** ([docs.trading212.com/api](https://docs.trading212.com/api)):

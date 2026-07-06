@@ -80,6 +80,50 @@ describe('Trading212 CSV parser', () => {
     expect(repeated.duplicates).toBe(6);
   });
 
+  it('Stock split close/open pár → CORPORATE_ACTION SPLIT se zachováním data nabytí', () => {
+    const csv = [
+      HEADER,
+      'Stock split close,2025-07-30 06:42:25,US05606L1008,BYDDY,BYD,0.9760924,93.66,USD,,,,83.09,EUR,,,,EOF-C1,,',
+      'Stock split open,2025-07-30 06:42:25,US05606L1008,BYDDY,BYD,5.8565544,15.61,USD,,,,83.09,EUR,,,,EOF-O1,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const action = result.transactions[0]!;
+    if (action.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
+    expect(action.subtype).toBe('SPLIT');
+    expect(action.isin).toBe('US05606L1008');
+    expect(action.ratio?.from.toString()).toBe('0.9760924');
+    expect(action.ratio?.to.toString()).toBe('5.8565544');
+
+    // nespárovaný open → error
+    const orphan = parseTrading212Csv(
+      `${HEADER}\nStock split open,2025-07-30 06:42:25,US05606L1008,BYDDY,BYD,5.85,15.61,USD,,,,,,,,,EOF-O2,,`,
+    );
+    expect(orphan.errors).toHaveLength(1);
+    expect(orphan.errors[0]!.message).toContain('bez párového close');
+  });
+
+  it('Spin off → BUY s cenou 0 (R-04f) + varování; karta a cashback se přeskočí', () => {
+    const csv = [
+      HEADER,
+      'Spin off,2026-07-02 12:41:57,US60744M1062,MBGL,Mobility Global,1.49221104,0E-10,USD,,,,0.00,EUR,,,,EOF-S1,,',
+      'Card debit,2026-01-05 10:00:00,,,,,,,,,,-250.00,CZK,,,,,,',
+      'Card credit,2026-01-06 10:00:00,,,,,,,,,,100.00,CZK,,,,,,',
+      'Spending cashback,2026-01-05 10:00:01,,,,,,,,,,1.25,CZK,,,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(3);
+    expect(result.transactions).toHaveLength(1);
+    const spinoff = result.transactions[0]!;
+    if (spinoff.type !== 'BUY') throw new Error('unreachable');
+    expect(spinoff.isin).toBe('US60744M1062');
+    expect(spinoff.quantity.toString()).toBe('1.49221104');
+    expect(spinoff.pricePerShare.toString()).toBe('0');
+    expect(result.warnings.some((w) => w.message.includes('Spin-off'))).toBe(true);
+  });
+
   it('identické řádky bez ID: varování + dedupe je sloučí', () => {
     const duplicated = [
       HEADER,

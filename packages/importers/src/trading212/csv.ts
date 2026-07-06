@@ -24,12 +24,23 @@ type RowKind =
   | { kind: 'DIVIDEND' }
   | { kind: 'INTEREST' }
   | { kind: 'DEPOSIT' | 'WITHDRAWAL' }
+  | { kind: 'SPLIT_CLOSE' | 'SPLIT_OPEN' }
+  | { kind: 'SPINOFF' }
   | { kind: 'SKIP'; reason: string }
   | { kind: 'UNKNOWN' };
 
 /** Klasifikace řádku podle sloupce Action (hodnoty typu "Market buy", "Dividend (Ordinary)"…). */
 function classifyAction(action: string): RowKind {
   const normalized = action.toLowerCase();
+  // korporátní akce dřív než obecné buy/sell — T212 je reportuje párem close/open řádků
+  if (normalized.includes('stock split close')) return { kind: 'SPLIT_CLOSE' };
+  if (normalized.includes('stock split open')) return { kind: 'SPLIT_OPEN' };
+  if (normalized.includes('spin off') || normalized.includes('spin-off'))
+    return { kind: 'SPINOFF' };
+  if (normalized.includes('card debit') || normalized.includes('card credit'))
+    return { kind: 'SKIP', reason: 'platba kartou — pohyb peněz mimo daňový výpočet CP' };
+  if (normalized.includes('spending cashback'))
+    return { kind: 'SKIP', reason: 'cashback za platby kartou — mimo daňový výpočet CP' };
   if (normalized.includes('buy')) return { kind: 'BUY' };
   if (normalized.includes('sell')) return { kind: 'SELL' };
   if (normalized.startsWith('dividend')) return { kind: 'DIVIDEND' };
@@ -41,6 +52,14 @@ function classifyAction(action: string): RowKind {
   if (normalized.includes('result adjustment'))
     return { kind: 'SKIP', reason: 'Result adjustment — interní korekce T212' };
   return { kind: 'UNKNOWN' };
+}
+
+interface SplitLeg {
+  isin: string;
+  date: string;
+  quantity: string;
+  line: number;
+  id: string;
 }
 
 /**
@@ -63,6 +82,8 @@ export function parseTrading212Csv(text: string): ImportResult {
   }
 
   const seenIds = new Set<string>();
+  const splitCloses: SplitLeg[] = [];
+  const splitOpens: SplitLeg[] = [];
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
@@ -213,6 +234,49 @@ export function parseTrading212Csv(text: string): ImportResult {
           );
           return;
         }
+        case 'SPLIT_CLOSE':
+        case 'SPLIT_OPEN': {
+          const isin = map.get(row, 'ISIN');
+          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          if (!isin || !shares) {
+            result.errors.push({ line, message: `${action}: chybí ISIN nebo počet kusů.` });
+            return;
+          }
+          const leg: SplitLeg = { isin, date, quantity: shares, line, id: rowId() };
+          (classified.kind === 'SPLIT_CLOSE' ? splitCloses : splitOpens).push(leg);
+          return;
+        }
+        case 'SPINOFF': {
+          // T212 reportuje spin-off jako příjem nových kusů dceřiného ISIN s cenou 0
+          // → BUY za 0 přesně odpovídá R-04f (nová lhůta testu, nabývací cena 0).
+          const isin = map.get(row, 'ISIN');
+          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          const currency = map.get(row, 'Currency (Price / share)') || 'USD';
+          if (!isin || !shares) {
+            result.errors.push({ line, message: 'Spin off: chybí ISIN nebo počet kusů.' });
+            return;
+          }
+          result.transactions.push(
+            TransactionSchema.parse({
+              type: 'BUY',
+              id: rowId(),
+              isin,
+              ticker: map.get(row, 'Ticker') || undefined,
+              name: map.get(row, 'Name') || undefined,
+              quantity: shares,
+              pricePerShare: cleanNumber(map.get(row, 'Price / share')) || '0',
+              currency,
+              tradeDate: date,
+              settlementDate: date,
+              note: 'Spin-off (T212)',
+            }),
+          );
+          result.warnings.push({
+            line,
+            message: `Spin-off ${isin}: nové kusy s nabývací cenou 0 a novou lhůtou časového testu (R-04f, konzervativně); mateřská pozice beze změny.`,
+          });
+          return;
+        }
         case 'SKIP': {
           result.skipped.push({ line, message: `${action}: ${classified.reason}` });
           return;
@@ -234,6 +298,38 @@ export function parseTrading212Csv(text: string): ImportResult {
       });
     }
   });
+
+  // Párování Stock split close/open (stejný ISIN a den) → CORPORATE_ACTION SPLIT.
+  // Poměr = nové kusy / staré kusy celé pozice — ledger jím proporcionálně
+  // transformuje všechny loty bez resetu data nabytí (R-04a).
+  for (const open of splitOpens) {
+    const closeIndex = splitCloses.findIndex((c) => c.isin === open.isin && c.date === open.date);
+    if (closeIndex === -1) {
+      result.errors.push({
+        line: open.line,
+        message: `Stock split open (${open.isin}) bez párového close řádku — split nelze sestavit.`,
+      });
+      continue;
+    }
+    const close = splitCloses.splice(closeIndex, 1)[0]!;
+    result.transactions.push(
+      TransactionSchema.parse({
+        type: 'CORPORATE_ACTION',
+        id: open.id,
+        subtype: 'SPLIT',
+        isin: open.isin,
+        date: open.date,
+        ratio: { from: close.quantity, to: open.quantity },
+        note: 'Stock split (T212 close/open pár)',
+      }),
+    );
+  }
+  for (const close of splitCloses) {
+    result.errors.push({
+      line: close.line,
+      message: `Stock split close (${close.isin}) bez párového open řádku — split nelze sestavit.`,
+    });
+  }
 
   return result;
 }
