@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokeny — docs/07-design.md („růžový formulář") */
+:root {
+  --pozadi: #f6f5f1;
+  --plocha: #ffffff;
+  --inkoust: #171930;
+  --inkoust-tlumeny: #5a5d78;
+  --ruzova: #d6336c;
+  --zelena: #2e8b62;
+  --jantar: #c7861b;
+  --oranz: #c25a25;
+  --cervena: #b3362f;
+  --linka: #e4e2da;
+}
+
+.dark {
+  --pozadi: #15172b;
+  --plocha: #1c1e36;
+  --inkoust: #edece6;
+  --inkoust-tlumeny: #9a9db8;
+  --ruzova: #f06e9b;
+  --zelena: #5cbd8f;
+  --jantar: #e3a93c;
+  --oranz: #e07c42;
+  --cervena: #e05d52;
+  --linka: #2b2e4a;
+}
+
+@theme inline {
+  --color-pozadi: var(--pozadi);
+  --color-plocha: var(--plocha);
+  --color-inkoust: var(--inkoust);
+  --color-inkoust-tlumeny: var(--inkoust-tlumeny);
+  --color-ruzova: var(--ruzova);
+  --color-zelena: var(--zelena);
+  --color-jantar: var(--jantar);
+  --color-oranz: var(--oranz);
+  --color-cervena: var(--cervena);
+  --color-linka: var(--linka);
+
+  --font-display: var(--font-bricolage), system-ui, sans-serif;
+  --font-sans: var(--font-hanken), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+@layer base {
+  body {
+    background: var(--pozadi);
+    color: var(--inkoust);
+    font-family: var(--font-hanken), system-ui, sans-serif;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ruzova);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
