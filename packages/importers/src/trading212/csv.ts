@@ -1,0 +1,269 @@
+import { Decimal, TransactionSchema, type Transaction } from '@danero/shared';
+import { cleanNumber, HeaderMap, parseCsv } from '../csv';
+import { dedupeKey, fnv1a64 } from '../dedupe';
+import { emptyResult, type ImportResult } from '../types';
+
+export const TRADING212_BROKER = 'trading212';
+
+/**
+ * Poplatkové sloupce T212 exportu (sada se liší podle účtu a období).
+ * Každý má párový sloupec `Currency (<název>)`.
+ */
+const FEE_COLUMNS = [
+  'Currency conversion fee',
+  'Stamp duty',
+  'Stamp duty reserve tax',
+  'French transaction tax',
+  'Transaction fee',
+  'Finra fee',
+  'SEC fee',
+] as const;
+
+type RowKind =
+  | { kind: 'BUY' | 'SELL' }
+  | { kind: 'DIVIDEND' }
+  | { kind: 'INTEREST' }
+  | { kind: 'DEPOSIT' | 'WITHDRAWAL' }
+  | { kind: 'SKIP'; reason: string }
+  | { kind: 'UNKNOWN' };
+
+/** Klasifikace řádku podle sloupce Action (hodnoty typu "Market buy", "Dividend (Ordinary)"…). */
+function classifyAction(action: string): RowKind {
+  const normalized = action.toLowerCase();
+  if (normalized.includes('buy')) return { kind: 'BUY' };
+  if (normalized.includes('sell')) return { kind: 'SELL' };
+  if (normalized.startsWith('dividend')) return { kind: 'DIVIDEND' };
+  if (normalized.includes('interest')) return { kind: 'INTEREST' };
+  if (normalized === 'deposit') return { kind: 'DEPOSIT' };
+  if (normalized === 'withdrawal') return { kind: 'WITHDRAWAL' };
+  if (normalized.includes('currency conversion'))
+    return { kind: 'SKIP', reason: 'FX konverze — pro daňový výpočet není potřeba' };
+  if (normalized.includes('result adjustment'))
+    return { kind: 'SKIP', reason: 'Result adjustment — interní korekce T212' };
+  return { kind: 'UNKNOWN' };
+}
+
+/**
+ * Parser CSV exportu Trading212 (History → Export, kategorie Orders/Dividends/
+ * Transactions/Interest). Mapuje výhradně podle NÁZVŮ sloupců — T212 mění jejich
+ * sadu i pořadí podle zvolených kategorií. Datum vypořádání export neobsahuje,
+ * engine ho dopočítá (T+1 US od 28. 5. 2024, jinak T+2).
+ */
+export function parseTrading212Csv(text: string): ImportResult {
+  const result = emptyResult(TRADING212_BROKER);
+  const { headers, rows } = parseCsv(text);
+  const map = new HeaderMap(headers);
+
+  if (!map.has('Action') || !map.has('Time')) {
+    result.errors.push({
+      line: 1,
+      message: `Soubor nevypadá jako Trading212 export — chybí sloupce "Action"/"Time". Nalezené sloupce: ${headers.join(', ')}`,
+    });
+    return result;
+  }
+
+  const seenIds = new Set<string>();
+
+  rows.forEach((row, rowIndex) => {
+    const line = rowIndex + 2; // 1 = hlavička
+    const action = map.get(row, 'Action');
+    const time = map.get(row, 'Time');
+    const date = time.slice(0, 10);
+
+    if (action === '' && row.every((cell) => cell.trim() === '')) return;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      result.errors.push({ line, message: `Neplatný čas "${time}" (očekáván formát YYYY-MM-DD HH:mm:ss)`, raw: action });
+      return;
+    }
+
+    const classified = classifyAction(action);
+    const rowId = (): string => {
+      const explicit = map.get(row, 'ID');
+      const id =
+        explicit !== ''
+          ? `t212-${explicit}`
+          : `t212-${fnv1a64([action, time, map.get(row, 'ISIN'), map.get(row, 'No. of shares'), map.get(row, 'Price / share'), map.get(row, 'Total')].join('|'))}`;
+      if (seenIds.has(id)) {
+        result.warnings.push({
+          line,
+          message: `Řádek je identický s jiným řádkem bez ID (${action} ${time}) — deduplikace je může sloučit v jednu transakci. Ověř, zda nejde o dvě skutečné transakce.`,
+        });
+      }
+      seenIds.add(id);
+      return id;
+    };
+
+    try {
+      switch (classified.kind) {
+        case 'BUY':
+        case 'SELL': {
+          const isin = map.get(row, 'ISIN');
+          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          const price = cleanNumber(map.get(row, 'Price / share'));
+          const currency = map.get(row, 'Currency (Price / share)');
+          if (!isin || !shares || !price || !currency) {
+            result.errors.push({
+              line,
+              message: `${action}: chybí ISIN, počet kusů, cena nebo měna — řádek nelze zpracovat.`,
+              raw: row.join(','),
+            });
+            return;
+          }
+          const fee = collectFees(map, row, result, line);
+          result.transactions.push(
+            TransactionSchema.parse({
+              type: classified.kind,
+              id: rowId(),
+              isin,
+              ticker: map.get(row, 'Ticker') || undefined,
+              name: map.get(row, 'Name') || undefined,
+              quantity: shares,
+              pricePerShare: price,
+              currency,
+              fee,
+              tradeDate: date,
+              note: map.get(row, 'Notes') || undefined,
+            }),
+          );
+          return;
+        }
+        case 'DIVIDEND': {
+          const isin = map.get(row, 'ISIN') || undefined;
+          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          const price = cleanNumber(map.get(row, 'Price / share'));
+          const instrumentCurrency = map.get(row, 'Currency (Price / share)');
+          const withholding = cleanNumber(map.get(row, 'Withholding tax')) || '0';
+          const withholdingCurrency = map.get(row, 'Currency (Withholding tax)');
+
+          let gross: string;
+          let currency: string;
+          if (shares && price && instrumentCurrency) {
+            // brutto v měně instrumentu = kusy × dividenda/kus (srážka bývá v téže měně)
+            gross = new Decimal(shares).mul(price).toString();
+            currency = instrumentCurrency;
+            if (withholdingCurrency && withholdingCurrency !== instrumentCurrency) {
+              result.warnings.push({
+                line,
+                message: `Dividenda: srážková daň v jiné měně (${withholdingCurrency}) než brutto (${instrumentCurrency}) — zkontroluj ručně.`,
+              });
+            }
+          } else {
+            // starší formát bez kusů/ceny: k dispozici jen čistá částka Total
+            gross = cleanNumber(map.get(row, 'Total'));
+            currency = map.get(row, 'Currency (Total)');
+            if (!gross || !currency) {
+              result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.' });
+              return;
+            }
+            result.warnings.push({
+              line,
+              message:
+                'Dividenda: brutto odhadnuto z čisté připsané částky (export neobsahuje kusy × dividenda/kus) — základ § 8 může být podhodnocen o srážkovou daň.',
+            });
+          }
+          result.transactions.push(
+            TransactionSchema.parse({
+              type: 'DIVIDEND',
+              id: rowId(),
+              isin,
+              ticker: map.get(row, 'Ticker') || undefined,
+              gross,
+              currency,
+              withholdingTax: withholding,
+              date,
+            }),
+          );
+          return;
+        }
+        case 'INTEREST': {
+          const amount = cleanNumber(map.get(row, 'Total'));
+          const currency = map.get(row, 'Currency (Total)');
+          if (!amount || !currency) {
+            result.errors.push({ line, message: `${action}: chybí částka/měna úroku.` });
+            return;
+          }
+          result.transactions.push(
+            TransactionSchema.parse({
+              type: 'INTEREST',
+              id: rowId(),
+              amount: amount.replace(/^-/, ''),
+              currency,
+              date,
+            }),
+          );
+          return;
+        }
+        case 'DEPOSIT':
+        case 'WITHDRAWAL': {
+          const amount = cleanNumber(map.get(row, 'Total'));
+          const currency = map.get(row, 'Currency (Total)');
+          if (!amount || !currency) {
+            result.errors.push({ line, message: `${action}: chybí částka/měna.` });
+            return;
+          }
+          result.transactions.push(
+            TransactionSchema.parse({
+              type: classified.kind,
+              id: rowId(),
+              amount: amount.replace(/^-/, ''),
+              currency,
+              date,
+            }),
+          );
+          return;
+        }
+        case 'SKIP': {
+          result.skipped.push({ line, message: `${action}: ${classified.reason}` });
+          return;
+        }
+        case 'UNKNOWN': {
+          result.errors.push({
+            line,
+            message: `Neznámý typ transakce "${action}" — nahlaš nám ho, doplníme podporu.`,
+            raw: row.join(','),
+          });
+          return;
+        }
+      }
+    } catch (err) {
+      result.errors.push({
+        line,
+        message: `Řádek se nepodařilo zpracovat: ${err instanceof Error ? err.message : String(err)}`,
+        raw: row.join(','),
+      });
+    }
+  });
+
+  return result;
+}
+
+/** Sečte poplatkové sloupce řádku; při míchání měn vezme první měnu a zbytek nahlásí. */
+function collectFees(
+  map: HeaderMap,
+  row: string[],
+  result: ImportResult,
+  line: number,
+): { amount: string; currency: string } | undefined {
+  let total: Decimal | undefined;
+  let currency: string | undefined;
+  for (const column of FEE_COLUMNS) {
+    const raw = cleanNumber(map.get(row, column));
+    if (!raw) continue;
+    const feeCurrency = map.get(row, `Currency (${column})`) || undefined;
+    if (currency !== undefined && feeCurrency !== undefined && feeCurrency !== currency) {
+      result.warnings.push({
+        line,
+        message: `Poplatek "${column}" je v jiné měně (${feeCurrency}) než ostatní poplatky (${currency}) — nebyl započten, doplň ručně.`,
+      });
+      continue;
+    }
+    currency = currency ?? feeCurrency;
+    total = (total ?? new Decimal(0)).plus(raw.replace(/^-/, ''));
+  }
+  if (!total || total.lte(0)) return undefined;
+  return { amount: total.toString(), currency: currency ?? 'CZK' };
+}
+
+/** Deduplikační klíče pro výsledek importu (viz dedupe.ts). */
+export const trading212DedupeKey = (tx: Transaction): string => dedupeKey(TRADING212_BROKER, tx);

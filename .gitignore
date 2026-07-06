@@ -7,3 +7,6 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+
+# reálné exporty pro lokální ověření importu (nikdy necommitovat)
+packages/importers/test/fixtures/real/

@@ -8,9 +8,14 @@ Konkurence pro [Taxomat](https://taxomat.cz) — za zlomek ceny.
 
 ## Status
 
-✅ **F0 + F1 hotové** — monorepo (pnpm + Turborepo, TS strict, CI) a daňový engine
-(`packages/engine`) implementující pravidla R-01 až R-09 z docs/02, pokrytý 45 golden
-a property testy (`pnpm test`). Další na řadě: **F2 — import Trading212** (docs/05).
+✅ **F0 + F1 + F2 hotové** — monorepo (pnpm + Turborepo, TS strict, CI), daňový engine
+(`packages/engine`, pravidla R-01 až R-09 z docs/02) a importní vrstva
+(`packages/importers`: Trading212 CSV + API klient, rekonciliace pozic, univerzální
+šablona — docs/06). Celkem 70 testů. Další na řadě: **F3 — webová aplikace** (docs/05).
+
+**Ověření na reálných datech:** vlož T212 exporty (CSV za každý rok) do
+`packages/importers/test/fixtures/real/` a spusť
+`pnpm --filter @danero/importers test` — viz docs/06-import.md.
 
 ```
 pnpm install && pnpm build && pnpm test && pnpm lint
