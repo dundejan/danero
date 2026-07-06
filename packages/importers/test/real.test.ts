@@ -7,8 +7,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TaxpayerProfileSchema, type Transaction } from '@danero/shared';
-import { analyzeTaxYear, TAX_YEAR_2025, type TaxYearConfig } from '@danero/engine';
+import { TaxpayerProfileSchema, yearOf, type Transaction } from '@danero/shared';
+import {
+  analyzeTaxYear,
+  TAX_YEAR_2025,
+  TAX_YEAR_2026_DRAFT,
+  type TaxYearConfig,
+} from '@danero/engine';
 import { dedupeTransactions, parseTrading212Csv, TRADING212_BROKER } from '../src';
 
 const realDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'real');
@@ -19,19 +24,27 @@ const files = existsSync(realDir)
   : [];
 
 /**
- * ⚠️ ORIENTAČNÍ historické jednotné kurzy pro lokální běh (doplnit přesné z pokynů
- * řady D, viz docs/02 runbook). Rok 2025 je přesně dle pokynu GFŘ D-75.
+ * ⚠️ ORIENTAČNÍ jednotné kurzy pro lokální běh (doplnit přesné z pokynů řady D,
+ * viz docs/02 runbook). Rok 2025 je přesně dle pokynu GFŘ D-75; kurz za 2026
+ * vyjde až v lednu 2027 — pro celoroční hlídání je placeholder v pořádku.
  */
-const REAL_CFG: TaxYearConfig = {
-  ...TAX_YEAR_2025,
-  unifiedRatesByYear: {
-    2020: { USD: '23.14', EUR: '26.50' },
-    2021: { USD: '21.72', EUR: '25.65' },
-    2022: { USD: '23.41', EUR: '24.54' },
-    2023: { USD: '22.14', EUR: '23.97' },
-    2024: { USD: '23.30', EUR: '25.15' },
-    ...TAX_YEAR_2025.unifiedRatesByYear,
-  },
+const UNIFIED_RATES: Record<number, Record<string, string>> = {
+  2020: { USD: '23.14', EUR: '26.50' },
+  2021: { USD: '21.72', EUR: '25.65' },
+  2022: { USD: '23.41', EUR: '24.54' },
+  2023: { USD: '22.14', EUR: '23.97' },
+  2024: { USD: '23.30', EUR: '25.15' },
+  ...TAX_YEAR_2025.unifiedRatesByYear,
+  2026: { USD: '20.80', EUR: '24.40' }, // placeholder do vydání pokynu za 2026
+};
+
+const txDate = (tx: Transaction): string =>
+  tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
+
+/** Konfigurace pro rok s nejnovější transakcí (typicky běžný rok — hlídač limitů). */
+const configForYear = (year: number): TaxYearConfig => {
+  const base = year >= 2026 ? TAX_YEAR_2026_DRAFT : TAX_YEAR_2025;
+  return { ...base, year, unifiedRatesByYear: UNIFIED_RATES };
 };
 
 describe.skipIf(files.length === 0)('reálné exporty (fixtures/real)', () => {
@@ -52,14 +65,15 @@ describe.skipIf(files.length === 0)('reálné exporty (fixtures/real)', () => {
     const { fresh, duplicates } = dedupeTransactions(TRADING212_BROKER, all);
     console.info(`[real] ${fresh.length} unikátních transakcí (${duplicates} duplicit napříč soubory)`);
 
+    const targetYear = Math.max(...fresh.map((tx) => yearOf(txDate(tx))));
     const result = analyzeTaxYear({
       transactions: fresh,
       profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
-      config: REAL_CFG,
+      config: configForYear(targetYear),
     });
 
     console.info(
-      `[real] 2025: tržby CP ${result.securities.totalGrossProceedsCzk.toFixed(2)} Kč, ` +
+      `[real] ${targetYear}: tržby CP ${result.securities.totalGrossProceedsCzk.toFixed(2)} Kč, ` +
         `základ §10 ${result.securities.base10Czk.toFixed(2)} Kč, ` +
         `§8 ${result.dividends.base8Czk.toFixed(2)} Kč, ` +
         `limit 50k: ${result.limits.flatTax50k.status.usedCzk.toFixed(2)} Kč (${result.limits.flatTax50k.status.zone})`,
