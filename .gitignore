@@ -12,3 +12,5 @@ coverage/
 
 # reálné exporty pro lokální ověření importu (nikdy necommitovat)
 packages/importers/test/fixtures/real/
+
+.data/

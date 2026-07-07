@@ -1,9 +1,24 @@
+import Link from 'next/link';
+
 export default function LandingPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-10 px-6 py-16">
-      <header className="flex items-center gap-2">
-        <span className="inline-block h-3 w-3 rounded-full bg-ruzova" aria-hidden />
-        <span className="font-display text-lg font-bold tracking-tight">Danero</span>
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="inline-block h-3 w-3 rounded-full bg-ruzova" aria-hidden />
+          <span className="font-display text-lg font-bold tracking-tight">Danero</span>
+        </div>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link href="/prihlaseni" className="font-medium text-inkoust-tlumeny hover:text-inkoust">
+            Přihlásit se
+          </Link>
+          <Link
+            href="/registrace"
+            className="rounded-md bg-ruzova px-4 py-2 font-semibold text-white hover:opacity-90"
+          >
+            Vyzkoušet
+          </Link>
+        </nav>
       </header>
 
       <section className="space-y-6">
