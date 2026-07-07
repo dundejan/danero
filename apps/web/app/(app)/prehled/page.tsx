@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { desc, eq } from 'drizzle-orm';
+import { notifications } from '@/db/schema';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
@@ -39,6 +41,13 @@ export default async function OverviewPage({
       </div>
     );
   }
+
+  const recentNotifications = await db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, user.id))
+    .orderBy(desc(notifications.createdAt))
+    .limit(5);
 
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = new Date().getFullYear();
@@ -154,6 +163,21 @@ export default async function OverviewPage({
       )}
 
       <PositionsTable positions={positions} labels={labels} />
+
+      {recentNotifications.length > 0 && (
+        <Card className="space-y-2">
+          <CardTitle>Poslední notifikace</CardTitle>
+          {recentNotifications.map((notification) => (
+            <div key={notification.dedupeKey} className="text-sm">
+              <span className="font-medium">{notification.title}</span>{' '}
+              <span className="text-xs text-inkoust-tlumeny">
+                · {notification.createdAt.toLocaleDateString('cs-CZ')}
+              </span>
+              <p className="text-inkoust-tlumeny">{notification.body}</p>
+            </div>
+          ))}
+        </Card>
+      )}
     </div>
   );
 }

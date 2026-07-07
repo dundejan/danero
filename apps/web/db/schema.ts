@@ -128,6 +128,23 @@ export const importBatches = pgTable('import_batches', {
 });
 
 /**
+ * Notifikace hlídače (osvobození pozic, pásma limitů). PK (userId, dedupeKey)
+ * zaručuje, že každá událost vznikne jen jednou; e-mail se posílá dávkově
+ * (digest) a značí emailedAt.
+ */
+export const notifications = pgTable('notifications', {
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  dedupeKey: text('dedupe_key').notNull(),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  emailedAt: timestamp('emailed_at'),
+}, (t) => [primaryKey({ columns: [t.userId, t.dedupeKey] })]);
+
+/**
  * Kanonické transakce — zdroj pravdy pro engine. Payload je serializovaný
  * kanonický model (Decimal → string), engine ho rehydratuje přes Zod.
  * PK (userId, dedupeKey) = idempotentní import z definice.

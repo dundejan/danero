@@ -22,6 +22,13 @@
       "when": 1783433209510,
       "tag": "0002_condemned_victor_mancha",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783453112855,
+      "tag": "0003_chemical_adam_warlock",
+      "breakpoints": true
     }
   ]
 }
