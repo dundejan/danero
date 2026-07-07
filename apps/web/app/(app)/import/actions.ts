@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db';
+import { importBatches } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
 import { requireUser } from '@/lib/session';
 
@@ -25,4 +27,17 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   revalidatePath('/prehled');
   revalidatePath('/import');
   redirect('/import');
+}
+
+/** Smaže záznam o importu z historie — transakce zůstávají (jen úklid logu). */
+export async function deleteBatchAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const batchId = String(formData.get('batchId') ?? '');
+  if (batchId) {
+    const db = await getDb();
+    await db
+      .delete(importBatches)
+      .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, user.id)));
+  }
+  revalidatePath('/import');
 }

@@ -48,6 +48,17 @@ export default async function OverviewPage({
   const { result, positions, labels } = analyzeForUser(txs, profile, year, today);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
+  // stejný typ upozornění (např. nadsmluvní srážka u desítek dividend) = jedna řádka s počtem
+  const groupedWarnings = [
+    ...importantWarnings
+      .reduce((groups, warning) => {
+        const existing = groups.get(warning.code);
+        if (existing) existing.count += 1;
+        else groups.set(warning.code, { count: 1, sample: warning });
+        return groups;
+      }, new Map<string, { count: number; sample: (typeof importantWarnings)[number] }>())
+      .values(),
+  ];
 
   return (
     <div className="space-y-6">
@@ -124,22 +135,21 @@ export default async function OverviewPage({
 
       <HorizonStrip positions={positions} labels={labels} today={today} />
 
-      {importantWarnings.length > 0 && (
+      {groupedWarnings.length > 0 && (
         <Card className="space-y-2">
           <CardTitle>Upozornění ({importantWarnings.length})</CardTitle>
-          {importantWarnings.slice(0, 8).map((warning, i) => (
+          {groupedWarnings.map(({ count, sample }) => (
             <p
-              key={`${warning.code}-${i}`}
-              className={warning.level === 'ERROR' ? 'text-sm text-cervena' : 'text-sm text-jantar'}
+              key={sample.code}
+              className={sample.level === 'ERROR' ? 'text-sm text-cervena' : 'text-sm text-jantar'}
             >
-              {warning.message}
+              {count > 1 && <span className="font-mono text-xs">{count}× </span>}
+              {sample.message}
+              {count > 1 && (
+                <span className="text-xs text-inkoust-tlumeny"> (všechny případy v reportu)</span>
+              )}
             </p>
           ))}
-          {importantWarnings.length > 8 && (
-            <p className="text-xs text-inkoust-tlumeny">
-              … a dalších {importantWarnings.length - 8}. Kompletní seznam bude v reportu.
-            </p>
-          )}
         </Card>
       )}
 

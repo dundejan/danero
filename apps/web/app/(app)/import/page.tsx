@@ -7,7 +7,7 @@ import { brokerAccounts, importBatches } from '@/db/schema';
 import type { StoredReconciliation } from '@/lib/t212-sync';
 import { requireUser } from '@/lib/session';
 import { syncTrading212Action } from '../nastaveni/actions';
-import { uploadImportAction } from './actions';
+import { deleteBatchAction, uploadImportAction } from './actions';
 
 interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
@@ -114,6 +114,11 @@ export default async function ImportPage({
                         Nespárované tickery: {reconciliation.unmatchedTickers.join(', ')}
                       </p>
                     )}
+                    <p className="text-xs text-inkoust-tlumeny">
+                      Malé rozdíly bývají dnešní obchody (např. AutoInvest), které Trading212
+                      do exportu propíše se zpožděním — další synchronizace je srovná sama.
+                      Trvalý rozdíl znamená chybějící historii nebo korporátní akci.
+                    </p>
                   </>
                 )}
               </div>
@@ -163,8 +168,18 @@ export default async function ImportPage({
             <Card key={batch.id} className="space-y-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="font-mono text-sm">{batch.filename}</span>
-                <span className="text-xs text-inkoust-tlumeny">
+                <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
                   {batch.createdAt.toLocaleString('cs-CZ')} · {batch.broker}
+                  <form action={deleteBatchAction}>
+                    <input type="hidden" name="batchId" value={batch.id} />
+                    <button
+                      type="submit"
+                      className="font-medium text-inkoust-tlumeny hover:text-cervena"
+                      title="Smaže jen záznam o importu — transakce zůstávají"
+                    >
+                      smazat záznam
+                    </button>
+                  </form>
                 </span>
               </div>
               <p className="font-mono text-xs text-inkoust-tlumeny">
