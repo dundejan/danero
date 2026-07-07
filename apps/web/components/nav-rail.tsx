@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 
 const ITEMS = [
   { href: '/prehled', label: 'Přehled' },
+  { href: '/simulator', label: 'Simulátor' },
+  { href: '/report', label: 'Report' },
   { href: '/import', label: 'Import' },
   { href: '/nastaveni', label: 'Nastavení' },
 ];

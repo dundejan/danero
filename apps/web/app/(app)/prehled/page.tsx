@@ -4,12 +4,17 @@ import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
+import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
 import { czk } from '@/lib/format';
-import { analyzeForUser, getProfile, loadTransactions } from '@/lib/portfolio';
+import { analyzeForUser, availableYears, getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rok?: string }>;
+}) {
   const user = await requireUser();
   const db = await getDb();
 
@@ -36,19 +41,25 @@ export default async function OverviewPage() {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const year = new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
+  const years = availableYears(txs, currentYear);
+  const { rok } = await searchParams;
+  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const { result, positions, labels } = analyzeForUser(txs, profile, year, today);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
+      <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-3xl font-bold">Přehled {year}</h1>
-        <p className="font-mono text-xs text-inkoust-tlumeny">
-          {txs.length} transakcí · metoda {result.options.matchingMethod} ·{' '}
-          {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz' : 'denní kurzy ČNB'}
-        </p>
+        <div className="flex flex-wrap items-baseline gap-4">
+          <YearSwitcher years={years} active={year} hrefBase="/prehled" />
+          <p className="font-mono text-xs text-inkoust-tlumeny">
+            {txs.length} transakcí · {result.options.matchingMethod} ·{' '}
+            {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz' : 'denní kurzy ČNB'}
+          </p>
+        </div>
       </header>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

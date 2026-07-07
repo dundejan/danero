@@ -8,6 +8,7 @@ import {
 import {
   analyzeTaxYear,
   positionsAt,
+  type EngineInput,
   type EngineOptions,
   type Position,
   type TaxYearResult,
@@ -67,6 +68,25 @@ export function instrumentLabels(txs: Transaction[]): Map<string, string> {
   return labels;
 }
 
+/** Roky, ve kterých má uživatel transakce (sestupně), vždy včetně aktuálního. */
+export function availableYears(txs: Transaction[], currentYear: number): number[] {
+  const years = new Set<number>([currentYear]);
+  for (const tx of txs) {
+    const date = tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
+    years.add(Number(date.slice(0, 4)));
+  }
+  return [...years].sort((a, b) => b - a);
+}
+
+export function engineInputForUser(
+  txs: Transaction[],
+  profileRow: ProfileRow,
+  year: number,
+): EngineInput {
+  const { profile, options } = profileToEngine(profileRow);
+  return { transactions: txs, profile, options, config: configForYear(year) };
+}
+
 export interface YearAnalysis {
   result: TaxYearResult;
   positions: Position[];
@@ -80,13 +100,7 @@ export function analyzeForUser(
   year: number,
   atDate: string,
 ): YearAnalysis {
-  const { profile, options } = profileToEngine(profileRow);
-  const result = analyzeTaxYear({
-    transactions: txs,
-    profile,
-    config: configForYear(year),
-    options,
-  });
+  const result = analyzeTaxYear(engineInputForUser(txs, profileRow, year));
   return {
     result,
     positions: positionsAt(result.ledger, atDate),
