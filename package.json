@@ -9,6 +9,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:e2e": "pnpm --filter @danero/web test:e2e",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write ."

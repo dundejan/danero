@@ -1,17 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
-import { syncTrading212 } from '@/lib/t212-sync';
+import { requireCronAuth } from '@/lib/cron-auth';
+import { enqueueSyncJob, processPendingJobs } from '@/lib/jobs';
 
 /**
- * Denní synchronizace všech napojených T212 účtů (Vercel Cron / externí plánovač).
- * Chráněno CRON_SECRET — bez něj endpoint odmítá vše.
+ * Denní synchronizace všech napojených T212 účtů (Vercel Cron / externí plánovač):
+ * pro každý účet zařadí background job a fronta se hned zpracuje. Průběh je tak
+ * vidět v UI stejně jako u ručního syncu a odpověď nese výsledek per job —
+ * selhání syncu musí být z monitoringu cronu poznat. Chráněno CRON_SECRET.
  */
 export async function GET(request: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+  const unauthorized = requireCronAuth(request);
+  if (unauthorized) return unauthorized;
 
   const db = await getDb();
   const accounts = await db
@@ -19,24 +20,10 @@ export async function GET(request: Request): Promise<Response> {
     .from(brokerAccounts)
     .where(eq(brokerAccounts.broker, 'trading212'));
 
-  const results: Array<{ accountId: string; ok: boolean; added?: number; error?: string }> = [];
   for (const account of accounts) {
-    try {
-      const outcome = await syncTrading212(db, account);
-      results.push({ accountId: account.id, ok: true, added: outcome.added });
-    } catch (error) {
-      // lastSyncedAt při chybě nenastavovat — plná historie by se už nikdy nedotáhla
-      await db
-        .update(brokerAccounts)
-        .set({ lastSyncStatus: 'error' })
-        .where(eq(brokerAccounts.id, account.id));
-      results.push({
-        accountId: account.id,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    await enqueueSyncJob(db, account.userId, account.id);
   }
+  const { recovered, results } = await processPendingJobs(db);
 
-  return Response.json({ accounts: accounts.length, results });
+  return Response.json({ accounts: accounts.length, recovered, results });
 }

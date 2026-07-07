@@ -2,12 +2,13 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { brokerAccounts, taxpayerProfiles } from '@/db/schema';
 import { encryptSecret } from '@/lib/crypto';
-import { syncTrading212 } from '@/lib/t212-sync';
+import { enqueueSyncJob, processJob } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
@@ -84,7 +85,11 @@ export async function disconnectTrading212Action(): Promise<void> {
   redirect('/nastaveni');
 }
 
-/** Ruční synchronizace — generování exportu na straně T212 může trvat i minuty. */
+/**
+ * Ruční synchronizace: zapíše background job a hned se vrátí — samotný běh
+ * (klidně deset minut) startuje after() po odeslání odpovědi, průběh polluje
+ * /import. Chyby běhu končí v jobs.error (viz lib/jobs.ts).
+ */
 export async function syncTrading212Action(): Promise<void> {
   const user = await requireUser();
   const db = await getDb();
@@ -95,31 +100,11 @@ export async function syncTrading212Action(): Promise<void> {
   const account = accounts[0];
   if (!account) redirect('/nastaveni?chyba=zadny-ucet');
 
-  try {
-    await syncTrading212(db, account);
-  } catch (error) {
-    // Chybu uložíme, aby ji import stránka ukázala. POZOR: lastSyncedAt se při
-    // chybě NEnastavuje — jinak by další pokus přeskočil plnou historii (mode
-    // se odvozuje z lastSyncedAt) a stáhl jen běžný rok.
-    const message = error instanceof Error ? error.message : String(error);
-    await db
-      .update(brokerAccounts)
-      .set({
-        lastSyncStatus: 'error',
-        lastReconciliation: {
-          ok: false,
-          matchedCount: 0,
-          unmatchedTickers: [],
-          issues: [],
-          error: message.includes('403')
-            ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu v nastavení.`
-            : message,
-        },
-      })
-      .where(eq(brokerAccounts.id, account.id));
+  const job = await enqueueSyncJob(db, user.id, account.id);
+  if (job.status === 'pending') {
+    after(() => processJob(db, job.id));
   }
 
-  revalidatePath('/prehled');
   revalidatePath('/import');
   redirect('/import');
 }

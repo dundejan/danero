@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -8,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 /* ── Better Auth core schéma (email+heslo; 2FA přijde v F4) ─────────────── */
@@ -143,6 +145,45 @@ export const notifications = pgTable('notifications', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   emailedAt: timestamp('emailed_at'),
 }, (t) => [primaryKey({ columns: [t.userId, t.dedupeKey] })]);
+
+/**
+ * Background joby pro dlouhé operace (T212 sync). Životní cyklus: server action
+ * job zapíše (pending) a hned vrátí odpověď; zpracování startuje `after()` po
+ * odeslání odpovědi a záchrannou sítí je cron tick /api/cron/jobs (viz lib/jobs.ts).
+ */
+export const jobs = pgTable(
+  'jobs',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(), // 't212-sync'
+    /** Granularita deduplikace (u syncu accountId) — viz unikátní index níže. */
+    dedupeKey: text('dedupe_key').notNull(),
+    status: text('status').notNull().default('pending'), // pending | running | success | error
+    /** Vstup jobu (např. { accountId }). */
+    payload: jsonb('payload'),
+    /** Průběžný stav pro UI (u syncu stav per rok — SyncProgress). */
+    progress: jsonb('progress'),
+    result: jsonb('result'),
+    error: text('error'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    startedAt: timestamp('started_at'),
+    /** Poslední známka života — podle ní cron pozná job zabitý restartem procesu. */
+    heartbeatAt: timestamp('heartbeat_at'),
+    finishedAt: timestamp('finished_at'),
+  },
+  (t) => [
+    index('jobs_user_created_idx').on(t.userId, t.createdAt),
+    index('jobs_status_idx').on(t.status),
+    // Nejvýš jeden aktivní job na (uživatel, typ, dedupeKey) — enqueue je díky
+    // tomu odolný proti souběhu (klik uživatele vs. cron tick na dvou procesech).
+    uniqueIndex('jobs_active_unique_idx')
+      .on(t.userId, t.type, t.dedupeKey)
+      .where(sql`status in ('pending', 'running')`),
+  ],
+);
 
 /**
  * Kanonické transakce — zdroj pravdy pro engine. Payload je serializovaný

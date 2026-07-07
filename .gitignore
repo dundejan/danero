@@ -14,3 +14,9 @@ coverage/
 packages/importers/test/fixtures/real/
 
 .data/
+
+# Playwright artefakty
+apps/web/test-results/
+apps/web/playwright-report/
+
+*.tsbuildinfo

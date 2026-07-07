@@ -6,11 +6,16 @@ import {
   type RowIssue,
 } from '@danero/importers';
 import { buildLedger, positionsAt, resolveOptions, WarningCollector } from '@danero/engine';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { decryptSecret } from '@/lib/crypto';
-import { detectAndParse, importParsed, type ImportSummary } from '@/lib/import-service';
+import {
+  detectAndParse,
+  importParsed,
+  loadDedupeKeys,
+  type ImportSummary,
+} from '@/lib/import-service';
 import { loadTransactions } from '@/lib/portfolio';
 
 export type BrokerAccountRow = typeof brokerAccounts.$inferSelect;
@@ -30,6 +35,8 @@ export interface StoredReconciliation {
   error?: string;
 }
 
+export type SyncStatus = 'ok' | 'mismatch' | 'errors';
+
 export interface SyncOutcome {
   batches: ImportSummary[];
   yearsCovered: number[];
@@ -37,6 +44,48 @@ export interface SyncOutcome {
   duplicates: number;
   errors: RowIssue[];
   reconciliation: StoredReconciliation;
+  status: SyncStatus;
+}
+
+/** Rekonciliace „nedoběhla" — jediný tvar pro všechna chybová místa. */
+export function emptyReconciliation(error: string): StoredReconciliation {
+  return { ok: false, matchedCount: 0, unmatchedTickers: [], issues: [], error };
+}
+
+/**
+ * Propíše chybu syncu k broker účtu (ukazuje ji /import). U 403 doplní nápovědu
+ * k oprávněním T212 klíče. POZOR: lastSyncedAt se při chybě NIKDY nenastavuje —
+ * jinak by další pokus přeskočil plnou historii (mode se odvozuje z lastSyncedAt).
+ */
+export async function markAccountSyncError(
+  db: Db,
+  accountId: string,
+  userId: string,
+  message: string,
+): Promise<void> {
+  const explained = message.includes('403')
+    ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu v nastavení.`
+    : message;
+  await db
+    .update(brokerAccounts)
+    .set({ lastSyncStatus: 'error', lastReconciliation: emptyReconciliation(explained) })
+    .where(and(eq(brokerAccounts.id, accountId), eq(brokerAccounts.userId, userId)));
+}
+
+/** Stav jednoho roku v průběhu syncu — pro progress UI. */
+export interface SyncYearProgress {
+  year: number;
+  status: 'running' | 'done' | 'empty';
+  added?: number;
+  duplicates?: number;
+  errors?: number;
+}
+
+/** Průběžný stav syncu (serializovatelný do jobs.progress). */
+export interface SyncProgress {
+  phase: 'connecting' | 'exporting' | 'reconciling';
+  mode: 'full' | 'incremental';
+  years: SyncYearProgress[];
 }
 
 export interface SyncOptions {
@@ -45,6 +94,8 @@ export interface SyncOptions {
   pollIntervalMs?: number;
   /** Default: 'full' při první synchronizaci účtu, jinak 'incremental'. */
   mode?: 'full' | 'incremental';
+  /** Průběžné hlášení stavu (job runner ho zapisuje do DB pro UI). */
+  onProgress?: (progress: SyncProgress) => void | Promise<void>;
 }
 
 /** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
@@ -77,11 +128,36 @@ function parseCredentials(encrypted: string): StoredCredentials {
  * (HTTP Basic), nebo samotným tajným klíčem v Authorization. Ověříme si to sami
  * levným getCash(): zkusíme Basic, na 401 spadneme na samotný secret.
  */
+/**
+ * Testovací háky pro E2E (mock server, rychlý poll). Mimo produkci ZÁMĚRNĚ —
+ * omylem nastavená T212_API_BASE_URL v produkci by tiše přesměrovala provoz
+ * včetně API klíčů v hlavičkách na cizí host.
+ */
+const isProduction = () => process.env.NODE_ENV === 'production';
+
+function testBaseUrl(): string | undefined {
+  if (isProduction()) return undefined;
+  return process.env.T212_API_BASE_URL || undefined;
+}
+
+function defaultPollIntervalMs(): number {
+  if (!isProduction()) {
+    const fromEnv = Number(process.env.T212_POLL_INTERVAL_MS);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  }
+  // GET /history/exports snese ~1 dotaz/min — pomalejší poll je nutnost, ne opatrnost
+  return 65_000;
+}
+
 async function resolveClient(
   credentials: StoredCredentials,
   fetchImpl?: typeof fetch,
 ): Promise<Trading212Client> {
-  const clientOptions = fetchImpl ? { fetchImpl } : {};
+  const baseUrl = testBaseUrl();
+  const clientOptions = {
+    ...(fetchImpl ? { fetchImpl } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+  };
   const candidates: Trading212Client[] = [];
   if (credentials.keyId) {
     candidates.push(
@@ -122,10 +198,6 @@ export async function syncTrading212(
   account: BrokerAccountRow,
   options: SyncOptions = {},
 ): Promise<SyncOutcome> {
-  const client = await resolveClient(
-    parseCredentials(account.credentialsEncrypted),
-    options.fetchImpl,
-  );
   const now = options.now ?? new Date();
   const currentYear = now.getUTCFullYear();
   // Plná historie: dokud neproběhl žádný ÚSPĚŠNÝ sync. Po chybě se vždy zkouší
@@ -133,14 +205,29 @@ export async function syncTrading212(
   const mode =
     options.mode ??
     (account.lastSyncedAt && account.lastSyncStatus !== 'error' ? 'incremental' : 'full');
-  // GET /history/exports snese ~1 dotaz/min — pomalejší poll je nutnost, ne opatrnost
-  const pollIntervalMs = options.pollIntervalMs ?? 65_000;
+
+  const yearProgress: SyncYearProgress[] = [];
+  const report = async (phase: SyncProgress['phase']) => {
+    await options.onProgress?.({ phase, mode, years: yearProgress });
+  };
+
+  await report('connecting');
+  const client = await resolveClient(
+    parseCredentials(account.credentialsEncrypted),
+    options.fetchImpl,
+  );
+  const pollIntervalMs = options.pollIntervalMs ?? defaultPollIntervalMs();
 
   const batches: ImportSummary[] = [];
   const yearsCovered: number[] = [];
+  // dedupe klíče jednou za sync, ne per rok — importParsed do množiny doplňuje
+  const dedupeKeys = await loadDedupeKeys(db, account.userId);
   let emptyStreak = 0;
 
   for (let year = currentYear; year >= T212_MIN_YEAR; year -= 1) {
+    const current: SyncYearProgress = { year, status: 'running' };
+    yearProgress.push(current);
+    await report('exporting');
     const csv = await client.fetchHistoryCsv(
       {
         timeFrom: `${year}-01-01T00:00:00Z`,
@@ -167,8 +254,21 @@ export async function syncTrading212(
       parsed.skipped.length > 0 ||
       parsed.warnings.length > 0;
     if (hasContent) {
-      batches.push(await importParsed(db, account.userId, `t212-api-${year}.csv`, parsed));
+      const batch = await importParsed(
+        db,
+        account.userId,
+        `t212-api-${year}.csv`,
+        parsed,
+        dedupeKeys,
+      );
+      batches.push(batch);
+      current.added = batch.added;
+      current.duplicates = batch.duplicates;
+      if (batch.errors.length > 0) current.errors = batch.errors.length;
     }
+    // „empty" jen když v roce opravdu nic nebylo — rok plný chybových řádků
+    // musí v průběhu ukázat počty, ne „žádné transakce"
+    current.status = hasContent ? 'done' : 'empty';
 
     // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil
     // chyby — nesmí nám resetovat počítadlo a prohnat smyčku až do 2016).
@@ -181,6 +281,7 @@ export async function syncTrading212(
     }
   }
 
+  await report('reconciling');
   let reconciliation: StoredReconciliation;
   try {
     const [positions, instruments] = await Promise.all([
@@ -211,24 +312,18 @@ export async function syncTrading212(
       })),
     };
   } catch (error) {
-    reconciliation = {
-      ok: false,
-      matchedCount: 0,
-      unmatchedTickers: [],
-      issues: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
+    reconciliation = emptyReconciliation(error instanceof Error ? error.message : String(error));
   }
 
   const added = batches.reduce((sum, batch) => sum + batch.added, 0);
   const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
   const errors = batches.flatMap((batch) => batch.errors);
 
-  const status = errors.length > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
+  const status: SyncStatus = errors.length > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
   await db
     .update(brokerAccounts)
     .set({ lastSyncedAt: now, lastSyncStatus: status, lastReconciliation: reconciliation })
     .where(eq(brokerAccounts.id, account.id));
 
-  return { batches, yearsCovered, added, duplicates, errors, reconciliation };
+  return { batches, yearsCovered, added, duplicates, errors, reconciliation, status };
 }

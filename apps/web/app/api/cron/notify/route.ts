@@ -1,4 +1,5 @@
 import { getDb } from '@/db';
+import { requireCronAuth } from '@/lib/cron-auth';
 import {
   listNotificationTargets,
   processUserNotifications,
@@ -7,10 +8,8 @@ import {
 
 /** Denní notifikace (po ranním syncu) — chráněno CRON_SECRET. */
 export async function GET(request: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+  const unauthorized = requireCronAuth(request);
+  if (unauthorized) return unauthorized;
 
   const db = await getDb();
   const send = resolveEmailSender();

@@ -52,22 +52,29 @@ export async function importCsvText(
   return importParsed(db, userId, filename, detectAndParse(text));
 }
 
-/** Uložení už naparsovaného výsledku (sdílí ruční upload i API sync). */
+/** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */
+export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ key: transactions.dedupeKey })
+    .from(transactions)
+    .where(eq(transactions.userId, userId));
+  return new Set(rows.map((row) => row.key));
+}
+
+/**
+ * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
+ * `existingKeys` (volitelné) ušetří opakovaný select při dávkových importech —
+ * funkce do předané množiny DOPLŇUJE klíče nově uložených transakcí.
+ */
 export async function importParsed(
   db: Db,
   userId: string,
   filename: string,
   parsed: ImportResult,
+  existingKeys?: Set<string>,
 ): Promise<ImportSummary> {
-  const existing = await db
-    .select({ key: transactions.dedupeKey })
-    .from(transactions)
-    .where(eq(transactions.userId, userId));
-  const { fresh, duplicates } = dedupeTransactions(
-    parsed.broker,
-    parsed.transactions,
-    existing.map((row) => row.key),
-  );
+  const keys = existingKeys ?? (await loadDedupeKeys(db, userId));
+  const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
 
   const batchId = crypto.randomUUID();
   await db.insert(importBatches).values({
@@ -85,17 +92,21 @@ export async function importParsed(
 
   for (const part of chunk(fresh, 500)) {
     await db.insert(transactions).values(
-      part.map((tx) => ({
-        userId,
-        dedupeKey: dedupeKey(parsed.broker, tx),
-        batchId,
-        broker: parsed.broker,
-        type: tx.type,
-        txDate: txDate(tx),
-        isin: 'isin' in tx ? (tx.isin ?? null) : null,
-        // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
-        payload: JSON.parse(JSON.stringify(tx)) as unknown,
-      })),
+      part.map((tx) => {
+        const key = dedupeKey(parsed.broker, tx);
+        existingKeys?.add(key);
+        return {
+          userId,
+          dedupeKey: key,
+          batchId,
+          broker: parsed.broker,
+          type: tx.type,
+          txDate: txDate(tx),
+          isin: 'isin' in tx ? (tx.isin ?? null) : null,
+          // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
+          payload: JSON.parse(JSON.stringify(tx)) as unknown,
+        };
+      }),
     );
   }
 

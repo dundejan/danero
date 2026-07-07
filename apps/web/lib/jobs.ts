@@ -1,0 +1,331 @@
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import type { Db } from '@/db';
+import { brokerAccounts, jobs } from '@/db/schema';
+import type { SyncJobView } from '@/components/sync-job-progress';
+import {
+  markAccountSyncError,
+  syncTrading212,
+  type SyncOptions,
+  type SyncProgress,
+  type SyncStatus,
+} from '@/lib/t212-sync';
+
+/**
+ * Background joby (docs/09, G1). Zvolený model zpracování:
+ *
+ * 1. Server action job zapíše (`pending`) a hned vrátí odpověď — UI nečeká.
+ * 2. Zpracování startuje `after()` z next/server po odeslání odpovědi (funguje
+ *    lokálně v `next dev/start` i na Vercelu, kde `after()` prodlužuje život funkce).
+ * 3. Záchranné sítě pro joby zabité restartem procesu: cron tick /api/cron/jobs
+ *    (globálně) a samoléčba při čtení v latestSyncJob/enqueueSyncJob (per uživatel —
+ *    zaseknutý job nikdy trvale neblokuje UI, ani když cron neběží, např. v dev).
+ *
+ * Souběh řeší DB: převzetí jobu je atomický UPDATE podmíněný `status = 'pending'`
+ * a unikátní index jobs_active_unique_idx pouští nejvýš jeden aktivní job na
+ * (uživatel, typ, dedupeKey) — klik uživatele a cron tick se nikdy neporvou.
+ */
+
+export type JobRow = typeof jobs.$inferSelect;
+
+export const JOB_TYPE_T212_SYNC = 't212-sync';
+
+interface SyncJobPayload {
+  accountId: string;
+}
+
+export interface SyncJobResult {
+  added: number;
+  duplicates: number;
+  errorCount: number;
+  yearsCovered: number[];
+  syncStatus: SyncStatus;
+}
+
+/** Volby běhu pro testy (mock fetch, rychlý poll, deterministický čas). */
+export type JobRunOptions = Pick<SyncOptions, 'fetchImpl' | 'pollIntervalMs' | 'now'>;
+
+/**
+ * Job bez známky života déle než 15 minut = mrtvý proces. Sync zapisuje heartbeat
+ * s každou změnou průběhu; nejdelší tichý úsek je čekání na export jednoho roku
+ * (max 10 min), 15 minut je tedy bezpečná rezerva.
+ */
+const STALE_AFTER_MS = 15 * 60_000;
+
+const STALE_MESSAGE =
+  'Zpracování bylo přerušeno (nejspíš restart serveru). Spusť synchronizaci znovu — nic se nezdvojí.';
+
+const ACTIVE_STATUSES = ['pending', 'running'] as const;
+
+const isActive = (job: JobRow): boolean =>
+  job.status === 'pending' || job.status === 'running';
+
+const isStale = (job: JobRow, now: Date): boolean => {
+  const lastAlive = job.heartbeatAt ?? job.startedAt ?? job.createdAt;
+  return lastAlive.getTime() <= now.getTime() - STALE_AFTER_MS;
+};
+
+const jobPayload = (job: JobRow): Partial<SyncJobPayload> =>
+  (job.payload ?? {}) as Partial<SyncJobPayload>;
+
+/** Registr handlerů — nový typ jobu (G2: IBKR sync) sem jen přidá záznam. */
+const JOB_HANDLERS: Record<
+  string,
+  (db: Db, job: JobRow, options: JobRunOptions) => Promise<unknown>
+> = {
+  [JOB_TYPE_T212_SYNC]: runSyncJob,
+};
+
+/**
+ * Zařadí sync job pro účet; existující aktivní job vrátí (žádné dvojité
+ * synchronizace), zaseknutý nejdřív dorovná na error. Volající spouští zpracování
+ * jen pro `pending` job — atomický claim zaručí, že poběží právě jednou.
+ */
+export async function enqueueSyncJob(db: Db, userId: string, accountId: string): Promise<JobRow> {
+  const now = new Date();
+  const active = await findActiveJob(db, userId, accountId);
+  if (active) {
+    if (!isStale(active, now)) return active;
+    await recoverJob(db, active, now);
+  }
+
+  try {
+    const inserted = await db
+      .insert(jobs)
+      .values({
+        id: crypto.randomUUID(),
+        userId,
+        type: JOB_TYPE_T212_SYNC,
+        dedupeKey: accountId,
+        payload: { accountId } satisfies SyncJobPayload,
+      })
+      .returning();
+    return inserted[0]!;
+  } catch (error) {
+    // 23505 = unique_violation na jobs_active_unique_idx: souběžný enqueue vyhrál
+    if (!isUniqueViolation(error)) throw error;
+    const winner = await findActiveJob(db, userId, accountId);
+    if (winner) return winner;
+    throw error;
+  }
+}
+
+/** Drizzle chyby balí (DrizzleQueryError) — pg kód bývá v `cause`, ne na chybě samotné. */
+function isUniqueViolation(error: unknown): boolean {
+  for (let e = error; e instanceof Error; e = e.cause as Error) {
+    if ((e as { code?: string }).code === '23505') return true;
+    if (!(e.cause instanceof Error)) break;
+  }
+  return false;
+}
+
+async function findActiveJob(db: Db, userId: string, accountId: string): Promise<JobRow | null> {
+  const rows = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.userId, userId),
+        eq(jobs.type, JOB_TYPE_T212_SYNC),
+        eq(jobs.dedupeKey, accountId),
+        inArray(jobs.status, [...ACTIVE_STATUSES]),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** Atomické převzetí jobu: pending → running. Vrátí null, když ho vzal někdo jiný. */
+async function claimJob(db: Db, jobId: string, now: Date): Promise<JobRow | null> {
+  const claimed = await db
+    .update(jobs)
+    .set({ status: 'running', startedAt: now, heartbeatAt: now })
+    .where(and(eq(jobs.id, jobId), eq(jobs.status, 'pending')))
+    .returning();
+  return claimed[0] ?? null;
+}
+
+/**
+ * Zpracuje jeden job (claim + běh + zápis výsledku) a vrátí jeho konečný stav
+ * (null = job nebyl pending). Nikdy nevyhazuje — chyby končí ve sloupci `error`,
+ * protože běží na pozadí a nemá je kdo chytit. Finální zápis je podmíněný
+ * `status = 'running'`: job mezitím dorovnaný recovery nesmí pomalý proces přepsat.
+ */
+export async function processJob(
+  db: Db,
+  jobId: string,
+  options: JobRunOptions = {},
+): Promise<JobRow | null> {
+  const job = await claimJob(db, jobId, options.now ?? new Date());
+  if (!job) return null;
+
+  let outcome: { status: 'success'; result: unknown } | { status: 'error'; error: string };
+  try {
+    const handler = JOB_HANDLERS[job.type];
+    if (!handler) throw new Error(`Neznámý typ jobu: ${job.type}`);
+    outcome = { status: 'success', result: await handler(db, job, options) };
+  } catch (error) {
+    outcome = { status: 'error', error: error instanceof Error ? error.message : String(error) };
+  }
+
+  const finished = await db
+    .update(jobs)
+    .set({
+      status: outcome.status,
+      result: outcome.status === 'success' ? outcome.result : undefined,
+      error: outcome.status === 'error' ? outcome.error : undefined,
+      finishedAt: new Date(),
+    })
+    .where(and(eq(jobs.id, jobId), eq(jobs.status, 'running')))
+    .returning();
+  return finished[0] ?? null;
+}
+
+/** Běh sync jobu — průběh se zapisuje do jobs.progress, ať ho UI může pollovat. */
+async function runSyncJob(db: Db, job: JobRow, options: JobRunOptions): Promise<SyncJobResult> {
+  const { accountId } = jobPayload(job);
+  const accounts = accountId
+    ? await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+    : [];
+  const account = accounts[0];
+  if (!account || account.userId !== job.userId) throw new Error('Broker účet už neexistuje.');
+
+  const onProgress = async (progress: SyncProgress) => {
+    // podmínka na running: job dorovnaný recovery už průběh aktualizovat nesmí
+    await db
+      .update(jobs)
+      .set({ progress, heartbeatAt: new Date() })
+      .where(and(eq(jobs.id, job.id), eq(jobs.status, 'running')));
+  };
+
+  try {
+    const outcome = await syncTrading212(db, account, { ...options, onProgress });
+    return {
+      added: outcome.added,
+      duplicates: outcome.duplicates,
+      errorCount: outcome.errors.length,
+      yearsCovered: outcome.yearsCovered,
+      syncStatus: outcome.status,
+    };
+  } catch (error) {
+    await markAccountSyncError(
+      db,
+      account.id,
+      job.userId,
+      error instanceof Error ? error.message : String(error),
+    );
+    throw error;
+  }
+}
+
+/** Dorovná jeden zaseknutý job na error (podmíněně — jen pokud je pořád aktivní). */
+async function recoverJob(db: Db, job: JobRow, now: Date): Promise<void> {
+  const updated = await db
+    .update(jobs)
+    .set({ status: 'error', error: STALE_MESSAGE, finishedAt: now })
+    .where(and(eq(jobs.id, job.id), inArray(jobs.status, [...ACTIVE_STATUSES])))
+    .returning({ id: jobs.id });
+  if (!updated[0]) return;
+
+  const { accountId } = jobPayload(job);
+  if (job.type === JOB_TYPE_T212_SYNC && accountId) {
+    await markAccountSyncError(db, accountId, job.userId, STALE_MESSAGE);
+  }
+}
+
+/**
+ * Globální dorovnání running jobů bez známky života (cron). Pending joby se tu
+ * záměrně nechávají: v cron frontě mohou legitimně čekat dlouho (sekvenční
+ * zpracování účtů) — osiřelé pending joby řeší per-user samoléčba v latestSyncJob.
+ */
+export async function recoverStaleJobs(db: Db, now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
+  const recovered = await db
+    .update(jobs)
+    .set({ status: 'error', error: STALE_MESSAGE, finishedAt: now })
+    .where(
+      and(
+        eq(jobs.status, 'running'),
+        sql`coalesce(${jobs.heartbeatAt}, ${jobs.startedAt}, ${jobs.createdAt}) <= ${cutoff}`,
+      ),
+    )
+    .returning();
+
+  for (const job of recovered) {
+    const { accountId } = jobPayload(job);
+    if (job.type === JOB_TYPE_T212_SYNC && accountId) {
+      await markAccountSyncError(db, accountId, job.userId, STALE_MESSAGE);
+    }
+  }
+  return recovered.length;
+}
+
+export interface ProcessedJobSummary {
+  jobId: string;
+  type: string;
+  status: string;
+  error: string | null;
+}
+
+/**
+ * Cron tick: dorovná zaseknuté joby a sekvenčně zpracuje čekající (T212 limity
+ * i PGlite jediné připojení — paralelismus tu nedává smysl). Vrací výsledek
+ * per job, ať je selhání vidět v monitoringu cronu.
+ */
+export async function processPendingJobs(
+  db: Db,
+  options: JobRunOptions = {},
+): Promise<{ recovered: number; results: ProcessedJobSummary[] }> {
+  const recovered = await recoverStaleJobs(db, options.now ?? new Date());
+  const pending = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(eq(jobs.status, 'pending'))
+    .orderBy(asc(jobs.createdAt));
+
+  const results: ProcessedJobSummary[] = [];
+  for (const row of pending) {
+    const finished = await processJob(db, row.id, options);
+    if (finished) {
+      results.push({
+        jobId: finished.id,
+        type: finished.type,
+        status: finished.status,
+        error: finished.error,
+      });
+    }
+  }
+  return { recovered, results };
+}
+
+/**
+ * Poslední sync job uživatele — pro /import (initial render i polling endpoint).
+ * Samoléčba na čtení: zaseknutý job (pending i running) se rovnou dorovná na
+ * error, aby nikdy trvale neblokoval sync tlačítko v UI.
+ */
+export async function latestSyncJob(db: Db, userId: string): Promise<JobRow | null> {
+  const rows = await db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.userId, userId), eq(jobs.type, JOB_TYPE_T212_SYNC)))
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  const job = rows[0];
+  if (!job) return null;
+
+  const now = new Date();
+  if (isActive(job) && isStale(job, now)) {
+    await recoverJob(db, job, now);
+    const refreshed = await db.select().from(jobs).where(eq(jobs.id, job.id));
+    return refreshed[0] ?? null;
+  }
+  return job;
+}
+
+/** Tvar jobu pro klienta — jediné mapování pro RSC props i /api/jobs/latest. */
+export function toSyncJobView(job: JobRow): SyncJobView {
+  return {
+    status: job.status,
+    progress: (job.progress ?? null) as SyncProgress | null,
+  };
+}

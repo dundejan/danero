@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { and, desc, eq } from 'drizzle-orm';
+import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { getDb } from '@/db';
 import { brokerAccounts, importBatches } from '@/db/schema';
+import { latestSyncJob, toSyncJobView } from '@/lib/jobs';
 import type { StoredReconciliation } from '@/lib/t212-sync';
 import { requireUser } from '@/lib/session';
 import { syncTrading212Action } from '../nastaveni/actions';
@@ -22,18 +24,26 @@ export default async function ImportPage({
   const user = await requireUser();
   const db = await getDb();
   const { chyba } = await searchParams;
-  const batches = await db
-    .select()
-    .from(importBatches)
-    .where(eq(importBatches.userId, user.id))
-    .orderBy(desc(importBatches.createdAt))
-    .limit(20);
-  const t212Accounts = await db
-    .select()
-    .from(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  const [batches, t212Accounts, job] = await Promise.all([
+    db
+      .select()
+      .from(importBatches)
+      .where(eq(importBatches.userId, user.id))
+      .orderBy(desc(importBatches.createdAt))
+      .limit(20),
+    db
+      .select()
+      .from(brokerAccounts)
+      .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212'))),
+    latestSyncJob(db, user.id),
+  ]);
   const t212 = t212Accounts[0];
   const reconciliation = (t212?.lastReconciliation ?? null) as StoredReconciliation | null;
+
+  // Aktivní sync job → místo tlačítka a rekonciliace ukazujeme živý průběh;
+  // po dokončení klient stránku obnoví a serverová část ukáže výsledek.
+  const activeJob: SyncJobView | null =
+    job && (job.status === 'pending' || job.status === 'running') ? toSyncJobView(job) : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -63,18 +73,20 @@ export default async function ImportPage({
 
       <Card className="space-y-3">
         <CardTitle>Trading212 — automatická synchronizace</CardTitle>
-        {t212 ? (
+        {t212 && activeJob ? (
+          <SyncJobProgress initialJob={activeJob} />
+        ) : t212 ? (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-inkoust-tlumeny">
                 {t212.lastSyncedAt
                   ? `Naposledy ${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus}). Stahuje se běžný rok; kompletní historie proběhla při prvním spuštění.`
-                  : 'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading212 může trvat i deset minut.'}{' '}
+                  : 'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading212 může trvat i deset minut. Poběží na pozadí, průběh uvidíš tady.'}{' '}
                 Trading212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení" —
                 to jsme my, klidně je ignoruj.
               </p>
               <form action={syncTrading212Action}>
-                <SubmitButton variant="secondary" pendingLabel="Synchronizuji… (i minuty)">
+                <SubmitButton variant="secondary" pendingLabel="Spouštím…">
                   {t212.lastSyncedAt ? 'Synchronizovat teď' : 'Stáhnout kompletní historii'}
                 </SubmitButton>
               </form>
