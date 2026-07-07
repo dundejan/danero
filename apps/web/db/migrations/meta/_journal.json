@@ -15,6 +15,13 @@
       "when": 1783426950494,
       "tag": "0001_simple_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783433209510,
+      "tag": "0002_condemned_victor_mancha",
+      "breakpoints": true
     }
   ]
 }

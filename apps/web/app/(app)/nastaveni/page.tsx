@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { TwoFactorSection } from '@/components/two-factor-section';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
@@ -138,6 +139,11 @@ export default async function SettingsPage({
 
         <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
       </form>
+
+      <Card className="space-y-4" id="2fa">
+        <CardTitle>Dvoufaktorové ověření (2FA)</CardTitle>
+        <TwoFactorSection enabled={user.twoFactorEnabled} />
+      </Card>
 
       <Card className="space-y-4" id="trading212">
         <CardTitle>Trading212 — automatická synchronizace</CardTitle>

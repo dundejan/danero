@@ -10,12 +10,32 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [totpStep, setTotpStep] = useState(false);
+
+  const finish = () => {
+    router.push('/prehled');
+    router.refresh();
+  };
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
+
+    if (totpStep) {
+      const result = await authClient.twoFactor.verifyTotp({
+        code: String(form.get('kod') ?? ''),
+      });
+      setPending(false);
+      if (result.error) {
+        setError('Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.');
+        return;
+      }
+      finish();
+      return;
+    }
+
     const email = String(form.get('email') ?? '');
     const password = String(form.get('heslo') ?? '');
 
@@ -37,8 +57,35 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
       );
       return;
     }
-    router.push('/prehled');
-    router.refresh();
+    if (result.data && 'twoFactorRedirect' in result.data && result.data.twoFactorRedirect) {
+      setTotpStep(true);
+      return;
+    }
+    finish();
+  }
+
+  if (totpStep) {
+    return (
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="kod">Kód z autentikátoru</Label>
+          <Input
+            id="kod"
+            name="kod"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="\d{6}"
+            required
+            autoFocus
+            className="font-mono tracking-widest"
+          />
+        </div>
+        {error && <p className="text-sm text-cervena">{error}</p>}
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending ? 'Ověřuji…' : 'Ověřit kód'}
+        </Button>
+      </form>
+    );
   }
 
   return (

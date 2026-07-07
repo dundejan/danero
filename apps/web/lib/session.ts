@@ -6,6 +6,7 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  twoFactorEnabled: boolean;
 }
 
 /** Ochrana aplikačních stránek — bez session přesměruje na přihlášení. */
@@ -15,5 +16,10 @@ export async function requireUser(): Promise<SessionUser> {
   const auth = await getAuth();
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) redirect('/prihlaseni');
-  return { id: session.user.id, email: session.user.email, name: session.user.name };
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    twoFactorEnabled: Boolean(session.user.twoFactorEnabled),
+  };
 }

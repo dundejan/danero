@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { twoFactor } from 'better-auth/plugins';
 import { getDb, type Db } from '@/db';
 import * as schema from '@/db/schema';
 
@@ -34,12 +35,14 @@ function buildAuth(db: Db) {
         session: schema.session,
         account: schema.account,
         verification: schema.verification,
+        twoFactor: schema.twoFactor,
       },
     }),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 10,
     },
+    plugins: [twoFactor({ issuer: 'Danero' })],
     secret: resolveSecret(),
     baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
   });
