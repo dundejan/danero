@@ -83,7 +83,11 @@ export function computeDividends(
       warnings.add(
         'WITHHOLDING_ABOVE_TREATY',
         'WARNING',
-        `Dividenda ${tx.id} (${country}): sražená daň převyšuje smluvní sazbu — nad rámec smlouvy nelze v ČR započíst (přeplatek vymáhej u zahraničního správce daně; u US podej W-8BEN).`,
+        `Dividenda ${tx.id} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá. ${
+          country === 'US'
+            ? 'U amerických akcií tomu příště předejdeš formulářem W-8BEN — u většiny brokerů stačí potvrdit v nastavení účtu (sníží srážku z 30 % na 15 %).'
+            : 'Přeplatek lze zkusit vymáhat po zahraničním správci daně.'
+        }`,
         { txId: tx.id, country },
       );
     }

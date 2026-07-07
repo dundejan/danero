@@ -13,7 +13,6 @@ import { requireUser } from '@/lib/session';
 const ProfileFormSchema = z.object({
   regime: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
   hasBusinessAssets: z.literal('on').optional(),
-  w8benFiled: z.literal('on').optional(),
   otherIncomeCzk: z
     .string()
     .transform((v) => v.replace(',', '.').trim() || '0')
@@ -32,7 +31,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   const values = {
     regime: parsed.data.regime,
     hasBusinessAssets: parsed.data.hasBusinessAssets === 'on',
-    w8benFiled: parsed.data.w8benFiled === 'on',
     otherIncomeCzk: parsed.data.otherIncomeCzk,
     matchingMethod: parsed.data.matchingMethod,
     fxMethod: parsed.data.fxMethod,

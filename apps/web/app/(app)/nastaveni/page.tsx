@@ -68,15 +68,6 @@ export default async function SettingsPage({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              name="w8benFiled"
-              defaultChecked={profile?.w8benFiled ?? true}
-              className="h-4 w-4 accent-[var(--ruzova)]"
-            />
-            Mám u brokera podaný W-8BEN (US dividendy se sráží 15 %)
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
               name="hasBusinessAssets"
               defaultChecked={profile?.hasBusinessAssets ?? false}
               className="h-4 w-4 accent-[var(--ruzova)]"
@@ -109,15 +100,19 @@ export default async function SettingsPage({
               </Select>
             </div>
             <div>
-              <Label htmlFor="limit100kStrict">Úhrn pro limit 100k (R-02c)</Label>
+              <Label htmlFor="limit100kStrict">Co se počítá do limitu 100k</Label>
               <Select
                 id="limit100kStrict"
                 name="limit100kStrict"
                 defaultValue={(profile?.limit100kStrict ?? true) ? 'strict' : 'lenient'}
               >
-                <option value="strict">Striktní — počítají se i prodeje po časovém testu</option>
-                <option value="lenient">Mírnější — jen prodeje bez časového testu</option>
+                <option value="strict">Bezpečný výklad — všechny prodeje (doporučeno)</option>
+                <option value="lenient">Mírnější výklad — jen prodeje bez časového testu (sporné)</option>
               </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Zákon jednoznačný není; finanční správa se kloní k přísnějšímu čtení.
+                Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.
+              </p>
             </div>
             <div>
               <Label htmlFor="timeTestBasis">Báze časového testu (R-01a)</Label>

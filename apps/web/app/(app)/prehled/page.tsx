@@ -65,8 +65,8 @@ export default async function OverviewPage({
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {result.limits.flatTax50k.applicable && (
           <LimitGauge
-            label="Paušální daň — 50 000 Kč"
-            hint="Zdanitelné příjmy § 8–10: neosvobozené tržby z prodejů + zahraniční dividendy brutto. Při překročení podáváš přiznání a přehledy."
+            label="Limit paušální daně — 50 000 Kč"
+            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
             status={result.limits.flatTax50k.status}
           />
         )}
@@ -78,8 +78,8 @@ export default async function OverviewPage({
           />
         )}
         <LimitGauge
-          label="Prodeje CP — 100 000 Kč"
-          hint="Úhrn hrubých tržeb z prodeje cenných papírů. Do limitu jsou VŠECHNY prodeje osvobozené; nad limit se daní ty bez časového testu."
+          label="Osvobození prodejů — 100 000 Kč"
+          hint="Platí pro každého (§ 4): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
           status={result.limits.limit100k}
         />
         <Card className="space-y-1">
@@ -98,6 +98,29 @@ export default async function OverviewPage({
           <p className="text-xs text-inkoust-tlumeny">{result.tax.note}</p>
         </Card>
       </section>
+
+      {result.options.limit100kIncludesTimeTestExempt &&
+        !result.securities.exemptUnder100k &&
+        result.securities.totalGrossProceedsCzk
+          .sub(result.securities.timeTestExemptProceedsCzk)
+          .lte(result.limits.limit100k.limitCzk) && (
+          <Card className="space-y-1">
+            <CardTitle>Mohlo by tě zajímat</CardTitle>
+            <p className="text-sm">
+              Počítáme bezpečným výkladem: do limitu 100k vstupují i prodeje osvobozené
+              časovým testem. Podle mírnějšího (sporného) výkladu by tvůj úhrn byl jen{' '}
+              <span className="font-mono">
+                {czk(
+                  result.securities.totalGrossProceedsCzk.sub(
+                    result.securities.timeTestExemptProceedsCzk,
+                  ),
+                )}
+              </span>{' '}
+              a všechny letošní prodeje by byly osvobozené. Výklad si můžeš přepnout
+              v nastavení — rozhodnutí (a riziko) je na tobě.
+            </p>
+          </Card>
+        )}
 
       <HorizonStrip positions={positions} labels={labels} today={today} />
 
