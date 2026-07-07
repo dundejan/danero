@@ -96,10 +96,24 @@ export async function syncTrading212Action(): Promise<void> {
 
   try {
     await syncTrading212(db, account);
-  } catch {
+  } catch (error) {
+    // chybu uložíme, aby ji import stránka ukázala (typicky 403 = chybějící permission klíče)
+    const message = error instanceof Error ? error.message : String(error);
     await db
       .update(brokerAccounts)
-      .set({ lastSyncedAt: new Date(), lastSyncStatus: 'error' })
+      .set({
+        lastSyncedAt: new Date(),
+        lastSyncStatus: 'error',
+        lastReconciliation: {
+          ok: false,
+          matchedCount: 0,
+          unmatchedTickers: [],
+          issues: [],
+          error: message.includes('403')
+            ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu v nastavení.`
+            : message,
+        },
+      })
       .where(eq(brokerAccounts.id, account.id));
   }
 

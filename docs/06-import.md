@@ -40,7 +40,19 @@ Měny: pozor na **GBX** (pence, LSE) — engine normalizuje na GBP/100.
 
 ## Trading212 API (`Trading212Client` + `syncTrading212`)
 
-Read-only klíč: Settings → API (Beta). Klient: `getCash()` (ověření klíče),
+**Vytvoření klíče (Settings → API (Beta) → Generate key):**
+
+| Pole | Hodnota | Proč |
+|---|---|---|
+| Name | libovolné (např. „Danero") | jen popisek |
+| IP restrictions | Neomezené | server Danera nemá stálou IP |
+| ✅ Account data | ano | `getCash()` — ověření klíče |
+| ✅ History + History-dividends/orders/transactions | ano | `POST/GET /history/exports` — stažení historie |
+| ✅ Metadata | ano | `getInstruments()` — mapování ticker→ISIN |
+| ✅ Portfolio | ano | `getPositions()` — rekonciliace |
+| ❌ Orders (execute i read), Pies (read i write) | NE | Danero nesmí mít právo obchodovat ani nic měnit |
+
+Klient: `getCash()` (ověření klíče),
 `getPositions()` + `getInstruments()` (rekonciliace, ticker→ISIN),
 `requestExport()`/`fetchHistoryCsv()` (vygenerování CSV historie → stejný parser).
 Autentizace: klíč v hlavičce `Authorization`; s `apiSecret` HTTP Basic — ověřit na účtu.

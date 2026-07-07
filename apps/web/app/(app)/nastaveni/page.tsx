@@ -162,10 +162,40 @@ export default async function SettingsPage({
           </>
         ) : (
           <>
-            <p className="text-sm text-inkoust-tlumeny">
-              V Trading212 otevři Settings → API (Beta) a vygeneruj klíč jen s právy pro
-              čtení. Danero pak samo stahuje novou historii a hlídá, že pozice sedí.
-            </p>
+            <div className="space-y-2 text-sm text-inkoust-tlumeny">
+              <p>
+                V Trading212 otevři <strong>Settings → API (Beta) → Generate key</strong> a
+                nastav:
+              </p>
+              <ul className="space-y-1">
+                <li>
+                  <strong className="text-inkoust">Name:</strong> třeba „Danero" (jen popisek pro
+                  tebe)
+                </li>
+                <li>
+                  <strong className="text-inkoust">IP restrictions:</strong> Neomezené — Danero
+                  volá API ze svého serveru a adresy se mění
+                </li>
+                <li>
+                  <strong className="text-inkoust">Permissions — zaškrtni jen tyto (vše jen
+                  čtení):</strong>{' '}
+                  <span className="font-mono text-xs">
+                    Account data · History (+ dividends, orders, transactions) · Metadata ·
+                    Portfolio
+                  </span>
+                </li>
+                <li className="text-cervena">
+                  <strong>Nezaškrtávej:</strong>{' '}
+                  <span className="font-mono text-xs">Orders (execute i read) · Pies</span> —
+                  Danero nikdy nepotřebuje právo obchodovat ani cokoli měnit na tvém účtu.
+                </li>
+              </ul>
+              <p>
+                K čemu která práva jsou: History = stažení historie obchodů, dividend a úroků;
+                Portfolio + Metadata = kontrola, že vypočtené pozice sedí s brokerem; Account
+                data = ověření, že klíč funguje.
+              </p>
+            </div>
             {chyba === 'api-klic' && (
               <p className="text-sm text-cervena">Vlož platný API klíč (aspoň 10 znaků).</p>
             )}
