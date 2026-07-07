@@ -13,7 +13,8 @@
     "lint": "eslint src test"
   },
   "dependencies": {
-    "@danero/shared": "workspace:*"
+    "@danero/shared": "workspace:*",
+    "fast-xml-parser": "^5.9.3"
   },
   "devDependencies": {
     "@danero/engine": "workspace:*",
