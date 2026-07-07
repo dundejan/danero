@@ -128,7 +128,11 @@ export async function syncTrading212(
   );
   const now = options.now ?? new Date();
   const currentYear = now.getUTCFullYear();
-  const mode = options.mode ?? (account.lastSyncedAt ? 'incremental' : 'full');
+  // Plná historie: dokud neproběhl žádný ÚSPĚŠNÝ sync. Po chybě se vždy zkouší
+  // znovu celá (dedupe zaručí, že se nic nezdvojí — jen se dotáhne, co chybělo).
+  const mode =
+    options.mode ??
+    (account.lastSyncedAt && account.lastSyncStatus !== 'error' ? 'incremental' : 'full');
   // GET /history/exports snese ~1 dotaz/min — pomalejší poll je nutnost, ne opatrnost
   const pollIntervalMs = options.pollIntervalMs ?? 65_000;
 
