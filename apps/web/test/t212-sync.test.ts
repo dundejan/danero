@@ -75,7 +75,8 @@ function makeMockFetch(options: { rejectBasicAuth?: boolean } = {}) {
     const download = /downloads\.t212\.test\/(\d+)\.csv/.exec(url);
     if (download) {
       const year = reportYears.get(Number(download[1]))!;
-      return new Response(CSV_BY_YEAR[year] ?? CSV_HEADER, { status: 200 });
+      // prázdné roky vrací T212 jako ÚPLNĚ prázdný soubor (ověřeno na reálném API)
+      return new Response(CSV_BY_YEAR[year] ?? '', { status: 200 });
     }
     if (url.endsWith('/equity/portfolio')) {
       return json([

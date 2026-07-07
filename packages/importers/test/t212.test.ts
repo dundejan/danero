@@ -52,6 +52,16 @@ describe('Trading212 CSV parser', () => {
     expect(buy.fee).toBeUndefined();
   });
 
+  it('úplně prázdný soubor = prázdné období (roky před založením účtu), ne chyba', () => {
+    const empty = parseTrading212Csv('');
+    expect(empty.errors).toEqual([]);
+    expect(empty.transactions).toEqual([]);
+
+    const whitespace = parseTrading212Csv('\n\n');
+    expect(whitespace.errors).toEqual([]);
+    expect(whitespace.transactions).toEqual([]);
+  });
+
   it('neznámá Action → error řádek; soubor bez T212 hlaviček → error', () => {
     const unknown = parseTrading212Csv(`${HEADER}\nLending fee,2024-01-01 00:00:00,,,,,,,,,,1.00,CZK,,,,,,`);
     expect(unknown.errors).toHaveLength(1);

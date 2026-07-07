@@ -161,15 +161,24 @@ export async function syncTrading212(
     const parsed = detectAndParse(csv);
     yearsCovered.push(year);
 
-    if (parsed.transactions.length === 0 && parsed.errors.length === 0) {
-      // prázdný rok: účet zřejmě ještě neexistoval — po dvou v řadě končíme
+    const hasContent =
+      parsed.transactions.length > 0 ||
+      parsed.errors.length > 0 ||
+      parsed.skipped.length > 0 ||
+      parsed.warnings.length > 0;
+    if (hasContent) {
+      batches.push(await importParsed(db, account.userId, `t212-api-${year}.csv`, parsed));
+    }
+
+    // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil
+    // chyby — nesmí nám resetovat počítadlo a prohnat smyčku až do 2016).
+    if (parsed.transactions.length === 0) {
       emptyStreak += 1;
       if (mode === 'incremental' || emptyStreak >= 2) break;
-      continue;
+    } else {
+      emptyStreak = 0;
+      if (mode === 'incremental') break;
     }
-    emptyStreak = 0;
-    batches.push(await importParsed(db, account.userId, `t212-api-${year}.csv`, parsed));
-    if (mode === 'incremental') break;
   }
 
   let reconciliation: StoredReconciliation;

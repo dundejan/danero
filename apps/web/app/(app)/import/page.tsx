@@ -69,7 +69,9 @@ export default async function ImportPage({
               <p className="text-sm text-inkoust-tlumeny">
                 {t212.lastSyncedAt
                   ? `Naposledy ${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus}). Stahuje se běžný rok; kompletní historie proběhla při prvním spuštění.`
-                  : 'První synchronizace projde všechny roky od založení účtu — může trvat i pár minut, generování exportů dělá Trading212.'}
+                  : 'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading212 může trvat i deset minut.'}{' '}
+                Trading212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení" —
+                to jsme my, klidně je ignoruj.
               </p>
               <form action={syncTrading212Action}>
                 <SubmitButton variant="secondary" pendingLabel="Synchronizuji… (i minuty)">

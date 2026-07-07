@@ -73,6 +73,10 @@ export function parseTrading212Csv(text: string): ImportResult {
   const { headers, rows } = parseCsv(text);
   const map = new HeaderMap(headers);
 
+  // Úplně prázdný soubor = prázdné období (T212 ho vrací pro roky před založením
+  // účtu) — to není chyba formátu, ale nula transakcí.
+  if (text.trim() === '') return result;
+
   if (!map.has('Action') || !map.has('Time')) {
     result.errors.push({
       line: 1,
