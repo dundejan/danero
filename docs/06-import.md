@@ -52,6 +52,11 @@ Měny: pozor na **GBX** (pence, LSE) — engine normalizuje na GBP/100.
 | ✅ Portfolio | ano | `getPositions()` — rekonciliace |
 | ❌ Orders (execute i read), Pies (read i write) | NE | Danero nesmí mít právo obchodovat ani nic měnit |
 
+Po vygenerování T212 zobrazí **dvě hodnoty: „ID klíče API" a „Tajný klíč"** (tajný
+klíč jen jednou!) — do Danera se vkládají obě. Kterou variantou se API autentizuje
+(HTTP Basic z páru vs. samotný tajný klíč) si `syncTrading212` ověří samo levným
+`getCash()` — Basic, na 401 fallback na samotný secret.
+
 Klient: `getCash()` (ověření klíče),
 `getPositions()` + `getInstruments()` (rekonciliace, ticker→ISIN),
 `requestExport()`/`fetchHistoryCsv()` (vygenerování CSV historie → stejný parser).

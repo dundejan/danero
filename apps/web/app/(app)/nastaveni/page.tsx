@@ -197,12 +197,23 @@ export default async function SettingsPage({
               </p>
             </div>
             {chyba === 'api-klic' && (
-              <p className="text-sm text-cervena">Vlož platný API klíč (aspoň 10 znaků).</p>
+              <p className="text-sm text-cervena">Vlož platný tajný klíč (aspoň 10 znaků).</p>
             )}
-            <form action={saveTrading212KeyAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <Label htmlFor="apiKey">API klíč (read-only)</Label>
-                <Input id="apiKey" name="apiKey" type="password" required autoComplete="off" />
+            <p className="text-sm text-inkoust-tlumeny">
+              Po vygenerování ti Trading212 ukáže <strong>dvě hodnoty</strong> — zkopíruj
+              sem obě. Pozor: <strong>Tajný klíč se zobrazuje jen jednou</strong>; kdyby
+              zmizel, prostě vygeneruj nový.
+            </p>
+            <form action={saveTrading212KeyAction} className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="keyId">ID klíče API</Label>
+                  <Input id="keyId" name="keyId" autoComplete="off" spellCheck={false} />
+                </div>
+                <div>
+                  <Label htmlFor="secret">Tajný klíč</Label>
+                  <Input id="secret" name="secret" type="password" required autoComplete="off" />
+                </div>
               </div>
               <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
             </form>

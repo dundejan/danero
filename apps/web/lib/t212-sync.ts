@@ -1,6 +1,7 @@
 import {
   mapPositionsToIsin,
   reconcilePositions,
+  Trading212ApiError,
   Trading212Client,
   type RowIssue,
 } from '@danero/importers';
@@ -49,6 +50,66 @@ export interface SyncOptions {
 /** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
 const T212_MIN_YEAR = 2016;
 
+/** Uložené přihlašovací údaje: nový formát JSON {keyId, secret}, starší = samotný klíč. */
+interface StoredCredentials {
+  keyId?: string;
+  secret: string;
+}
+
+function parseCredentials(encrypted: string): StoredCredentials {
+  const plain = decryptSecret(encrypted);
+  try {
+    const parsed = JSON.parse(plain) as { keyId?: unknown; secret?: unknown };
+    if (typeof parsed?.secret === 'string') {
+      return {
+        keyId: typeof parsed.keyId === 'string' && parsed.keyId !== '' ? parsed.keyId : undefined,
+        secret: parsed.secret,
+      };
+    }
+  } catch {
+    // starší formát: plaintext je přímo klíč
+  }
+  return { secret: plain };
+}
+
+/**
+ * T212 dokumentace je nejednoznačná v tom, zda se autentizuje párem ID+secret
+ * (HTTP Basic), nebo samotným tajným klíčem v Authorization. Ověříme si to sami
+ * levným getCash(): zkusíme Basic, na 401 spadneme na samotný secret.
+ */
+async function resolveClient(
+  credentials: StoredCredentials,
+  fetchImpl?: typeof fetch,
+): Promise<Trading212Client> {
+  const clientOptions = fetchImpl ? { fetchImpl } : {};
+  const candidates: Trading212Client[] = [];
+  if (credentials.keyId) {
+    candidates.push(
+      new Trading212Client({
+        apiKey: credentials.keyId,
+        apiSecret: credentials.secret,
+        ...clientOptions,
+      }),
+    );
+  }
+  candidates.push(new Trading212Client({ apiKey: credentials.secret, ...clientOptions }));
+
+  let lastError: unknown;
+  for (const client of candidates) {
+    try {
+      await client.getCash();
+      return client;
+    } catch (error) {
+      lastError = error;
+      // jen 401 znamená „špatná varianta autentizace" — jiné chyby (403 práva,
+      // síť…) rovnou probublají, ať je uživatel vidí
+      if (error instanceof Trading212ApiError && error.status === 401) continue;
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Synchronizace T212 (docs/03): stačí API klíč. První běh projde SMYČKOU všechny
  * roky od založení účtu (dokud dva po sobě jdoucí roky nejsou prázdné), další běhy
@@ -61,10 +122,10 @@ export async function syncTrading212(
   account: BrokerAccountRow,
   options: SyncOptions = {},
 ): Promise<SyncOutcome> {
-  const client = new Trading212Client({
-    apiKey: decryptSecret(account.credentialsEncrypted),
-    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-  });
+  const client = await resolveClient(
+    parseCredentials(account.credentialsEncrypted),
+    options.fetchImpl,
+  );
   const now = options.now ?? new Date();
   const currentYear = now.getUTCFullYear();
   const mode = options.mode ?? (account.lastSyncedAt ? 'incremental' : 'full');

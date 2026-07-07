@@ -50,11 +50,12 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   redirect('/prehled');
 }
 
-/** Uloží T212 API klíč (šifrovaně) — jeden T212 účet na uživatele. */
+/** Uloží T212 API přístup (ID klíče + tajný klíč, šifrovaně) — jeden účet na uživatele. */
 export async function saveTrading212KeyAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const apiKey = String(formData.get('apiKey') ?? '').trim();
-  if (apiKey.length < 10) redirect('/nastaveni?chyba=api-klic');
+  const keyId = String(formData.get('keyId') ?? '').trim();
+  const secret = String(formData.get('secret') ?? '').trim();
+  if (secret.length < 10) redirect('/nastaveni?chyba=api-klic');
 
   const db = await getDb();
   await db
@@ -64,7 +65,7 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
     id: crypto.randomUUID(),
     userId: user.id,
     broker: 'trading212',
-    credentialsEncrypted: encryptSecret(apiKey),
+    credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
   });
 
   revalidatePath('/nastaveni');

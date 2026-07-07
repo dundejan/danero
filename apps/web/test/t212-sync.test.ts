@@ -35,16 +35,26 @@ const CSV_BY_YEAR: Record<number, string> = {
 };
 
 /** Mock T212 API: exporty per rok (rok čteme z těla requestu), pozice pro rekonciliaci. */
-function makeMockFetch() {
+function makeMockFetch(options: { rejectBasicAuth?: boolean } = {}) {
   const reportYears = new Map<number, number>();
   let lastReportId = 100;
   const requestedYears: number[] = [];
+  const authorizations: string[] = [];
 
   const fetchImpl: typeof fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
+    const authorization = new Headers(init?.headers).get('authorization') ?? '';
+    authorizations.push(authorization);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
+    if (url.endsWith('/equity/account/cash')) {
+      // simulace API, které pár ID+secret přes Basic odmítá (nejednoznačná dokumentace)
+      if (options.rejectBasicAuth && authorization.startsWith('Basic ')) {
+        return new Response('{"message":"unauthorized"}', { status: 401 });
+      }
+      return json({ free: 100, total: 100, invested: 0 });
+    }
     if (url.endsWith('/history/exports') && method === 'POST') {
       const body = JSON.parse(String(init?.body)) as { timeFrom: string };
       const year = Number(body.timeFrom.slice(0, 4));
@@ -80,8 +90,10 @@ function makeMockFetch() {
     throw new Error(`Mock nezná URL: ${method} ${url}`);
   }) as typeof fetch;
 
-  return { fetchImpl, requestedYears };
+  return { fetchImpl, requestedYears, authorizations };
 }
+
+const CREDENTIALS = JSON.stringify({ keyId: 'key-id-123', secret: 'mock-secret-456789' });
 
 describe('syncTrading212 (mock API, in-memory PGlite)', () => {
   it(
@@ -94,7 +106,7 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
         id: 'acc1',
         userId: 'u1',
         broker: 'trading212',
-        credentialsEncrypted: encryptSecret('mock-api-key'),
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
       });
       const account = (await db.select().from(brokerAccounts))[0]!;
 
@@ -134,6 +146,35 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
       expect(second.requestedYears).toEqual([2026]);
       expect(again.added).toBe(0);
       expect(again.duplicates).toBe(1);
+      // pár ID+secret → HTTP Basic prošlo napoprvé
+      expect(second.authorizations[0]).toMatch(/^Basic /);
+    },
+  );
+
+  it(
+    'když API odmítne Basic (401), spadne se na samotný tajný klíč',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u2', name: 'Test', email: 'fallback@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc2',
+        userId: 'u2',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch({ rejectBasicAuth: true });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(outcome.added).toBe(2);
+      // po 401 na Basic pokračují všechna volání se samotným tajným klíčem
+      const lastAuth = mock.authorizations[mock.authorizations.length - 1];
+      expect(lastAuth).toBe('mock-secret-456789');
     },
   );
 });
