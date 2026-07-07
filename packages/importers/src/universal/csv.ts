@@ -22,6 +22,9 @@ export function parseUniversalCsv(text: string): ImportResult {
   const normalizedHeaders = headers.map((h) => h.toLowerCase());
   const map = new HeaderMap(normalizedHeaders);
 
+  // prázdný soubor = prázdné období, ne chyba formátu (konzistentně s T212 parserem)
+  if (text.trim() === '') return result;
+
   for (const required of REQUIRED_HEADERS) {
     if (!map.has(required)) {
       result.errors.push({
