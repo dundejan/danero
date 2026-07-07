@@ -49,8 +49,16 @@ export async function importCsvText(
   filename: string,
   text: string,
 ): Promise<ImportSummary> {
-  const parsed = detectAndParse(text);
+  return importParsed(db, userId, filename, detectAndParse(text));
+}
 
+/** Uložení už naparsovaného výsledku (sdílí ruční upload i API sync). */
+export async function importParsed(
+  db: Db,
+  userId: string,
+  filename: string,
+  parsed: ImportResult,
+): Promise<ImportSummary> {
   const existing = await db
     .select({ key: transactions.dedupeKey })
     .from(transactions)

@@ -2,13 +2,14 @@ import {
   mapPositionsToIsin,
   reconcilePositions,
   Trading212Client,
+  type RowIssue,
 } from '@danero/importers';
 import { buildLedger, positionsAt, resolveOptions, WarningCollector } from '@danero/engine';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { decryptSecret } from '@/lib/crypto';
-import { importCsvText, type ImportSummary } from '@/lib/import-service';
+import { detectAndParse, importParsed, type ImportSummary } from '@/lib/import-service';
 import { loadTransactions } from '@/lib/portfolio';
 
 export type BrokerAccountRow = typeof brokerAccounts.$inferSelect;
@@ -29,7 +30,11 @@ export interface StoredReconciliation {
 }
 
 export interface SyncOutcome {
-  summary: ImportSummary;
+  batches: ImportSummary[];
+  yearsCovered: number[];
+  added: number;
+  duplicates: number;
+  errors: RowIssue[];
   reconciliation: StoredReconciliation;
 }
 
@@ -37,13 +42,19 @@ export interface SyncOptions {
   fetchImpl?: typeof fetch;
   now?: Date;
   pollIntervalMs?: number;
+  /** Default: 'full' při první synchronizaci účtu, jinak 'incremental'. */
+  mode?: 'full' | 'incremental';
 }
 
+/** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
+const T212_MIN_YEAR = 2016;
+
 /**
- * Synchronizace T212 (docs/03): API vygeneruje CSV export běžného roku → stejný
- * parser a dedupe jako ruční upload (idempotentní) → rekonciliace pozic proti API
- * (detekce chybějících korporátních akcí). Kompletní historii starších let nahrává
- * uživatel jednorázově při onboardingu.
+ * Synchronizace T212 (docs/03): stačí API klíč. První běh projde SMYČKOU všechny
+ * roky od založení účtu (dokud dva po sobě jdoucí roky nejsou prázdné), další běhy
+ * stahují jen běžný rok. Každý rok = serverem vygenerovaný CSV export → stejný
+ * parser a dedupe jako ruční upload (idempotentní). Ruční CSV je záložní varianta.
+ * Po importu rekonciliace pozic proti API (detekce chybějících korporátních akcí).
  */
 export async function syncTrading212(
   db: Db,
@@ -55,28 +66,44 @@ export async function syncTrading212(
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
   });
   const now = options.now ?? new Date();
-  const year = now.getUTCFullYear();
+  const currentYear = now.getUTCFullYear();
+  const mode = options.mode ?? (account.lastSyncedAt ? 'incremental' : 'full');
+  const pollIntervalMs = options.pollIntervalMs ?? 30_000;
 
-  const csv = await client.fetchHistoryCsv(
-    {
-      timeFrom: `${year}-01-01T00:00:00Z`,
-      timeTo: `${now.toISOString().slice(0, 19)}Z`,
-      dataIncluded: {
-        includeOrders: true,
-        includeDividends: true,
-        includeTransactions: true,
-        includeInterest: true,
+  const batches: ImportSummary[] = [];
+  const yearsCovered: number[] = [];
+  let emptyStreak = 0;
+
+  for (let year = currentYear; year >= T212_MIN_YEAR; year -= 1) {
+    const csv = await client.fetchHistoryCsv(
+      {
+        timeFrom: `${year}-01-01T00:00:00Z`,
+        timeTo:
+          year === currentYear
+            ? `${now.toISOString().slice(0, 19)}Z`
+            : `${year}-12-31T23:59:59Z`,
+        dataIncluded: {
+          includeOrders: true,
+          includeDividends: true,
+          includeTransactions: true,
+          includeInterest: true,
+        },
       },
-    },
-    options.pollIntervalMs ?? 30_000,
-  );
+      pollIntervalMs,
+    );
+    const parsed = detectAndParse(csv);
+    yearsCovered.push(year);
 
-  const summary = await importCsvText(
-    db,
-    account.userId,
-    `t212-api-sync-${now.toISOString().slice(0, 10)}.csv`,
-    csv,
-  );
+    if (parsed.transactions.length === 0 && parsed.errors.length === 0) {
+      // prázdný rok: účet zřejmě ještě neexistoval — po dvou v řadě končíme
+      emptyStreak += 1;
+      if (mode === 'incremental' || emptyStreak >= 2) break;
+      continue;
+    }
+    emptyStreak = 0;
+    batches.push(await importParsed(db, account.userId, `t212-api-${year}.csv`, parsed));
+    if (mode === 'incremental') break;
+  }
 
   let reconciliation: StoredReconciliation;
   try {
@@ -117,11 +144,15 @@ export async function syncTrading212(
     };
   }
 
-  const status = summary.errors.length > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
+  const added = batches.reduce((sum, batch) => sum + batch.added, 0);
+  const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
+  const errors = batches.flatMap((batch) => batch.errors);
+
+  const status = errors.length > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
   await db
     .update(brokerAccounts)
     .set({ lastSyncedAt: now, lastSyncStatus: status, lastReconciliation: reconciliation })
     .where(eq(brokerAccounts.id, account.id));
 
-  return { summary, reconciliation };
+  return { batches, yearsCovered, added, duplicates, errors, reconciliation };
 }

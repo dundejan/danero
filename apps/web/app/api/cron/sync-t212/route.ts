@@ -23,7 +23,7 @@ export async function GET(request: Request): Promise<Response> {
   for (const account of accounts) {
     try {
       const outcome = await syncTrading212(db, account);
-      results.push({ accountId: account.id, ok: true, added: outcome.summary.added });
+      results.push({ accountId: account.id, ok: true, added: outcome.added });
     } catch (error) {
       await db
         .update(brokerAccounts)

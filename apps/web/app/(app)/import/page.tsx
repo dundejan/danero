@@ -38,18 +38,18 @@ export default async function ImportPage({
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
-        <h1 className="font-display text-3xl font-bold">Import výpisů</h1>
+        <h1 className="font-display text-3xl font-bold">Import dat</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Nahraj CSV exporty z Trading212 (History → Export, všechny kategorie, po jednom
-          roce) — potřeba je kompletní historie od prvního nákupu. Opakované nahrání nic
-          nezdvojí. Jiného brokera? Použij{' '}
+          Stačí připojit Trading212 API klíč — Danero si stáhne kompletní historii samo
+          a pak ji denně aktualizuje. Ruční nahrání CSV je záložní varianta (a cesta pro
+          jiné brokery přes{' '}
           <a
             className="font-medium text-ruzova"
             href="https://github.com/dundejan/danero/blob/main/docs/06-import.md"
           >
             univerzální šablonu
           </a>
-          .
+          ).
         </p>
       </header>
 
@@ -61,20 +61,6 @@ export default async function ImportPage({
         </p>
       )}
 
-      <Card>
-        <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <input
-            type="file"
-            name="soubory"
-            accept=".csv,text/csv"
-            multiple
-            required
-            className="flex-1 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-pozadi file:px-4 file:py-2 file:text-sm file:font-semibold file:text-inkoust"
-          />
-          <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
-        </form>
-      </Card>
-
       <Card className="space-y-3">
         <CardTitle>Trading212 — automatická synchronizace</CardTitle>
         {t212 ? (
@@ -82,13 +68,12 @@ export default async function ImportPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-inkoust-tlumeny">
                 {t212.lastSyncedAt
-                  ? `Naposledy ${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus}).`
-                  : 'Zatím neproběhla.'}{' '}
-                Stahuje se běžný rok — starší roky nahraj jednou ručně výše.
+                  ? `Naposledy ${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus}). Stahuje se běžný rok; kompletní historie proběhla při prvním spuštění.`
+                  : 'První synchronizace projde všechny roky od založení účtu — může trvat i pár minut, generování exportů dělá Trading212.'}
               </p>
               <form action={syncTrading212Action}>
                 <SubmitButton variant="secondary" pendingLabel="Synchronizuji… (i minuty)">
-                  Synchronizovat teď
+                  {t212.lastSyncedAt ? 'Synchronizovat teď' : 'Stáhnout kompletní historii'}
                 </SubmitButton>
               </form>
             </div>
@@ -130,9 +115,29 @@ export default async function ImportPage({
             <Link href="/nastaveni#trading212" className="font-medium text-ruzova">
               nastavení
             </Link>{' '}
-            — Danero pak bude novou historii stahovat samo a hlídat, že pozice sedí.
+            — Danero si pak stáhne kompletní historii od založení účtu, denně ji
+            aktualizuje a hlídá, že pozice sedí.
           </p>
         )}
+      </Card>
+
+      <Card className="space-y-3">
+        <CardTitle>Ruční nahrání CSV (záložní varianta)</CardTitle>
+        <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <input
+            type="file"
+            name="soubory"
+            accept=".csv,text/csv"
+            multiple
+            required
+            className="flex-1 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-pozadi file:px-4 file:py-2 file:text-sm file:font-semibold file:text-inkoust"
+          />
+          <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
+        </form>
+        <p className="text-xs text-inkoust-tlumeny">
+          T212: History → Export, všechny kategorie, po jednom roce. Opakované nahrání
+          nic nezdvojí — deduplikace je součástí importu.
+        </p>
       </Card>
 
       <section className="space-y-3">

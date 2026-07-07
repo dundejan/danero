@@ -38,13 +38,19 @@ akce OBSAHUJE** — splity jako pár close/open řádků, spin-offy jako příje
 Změny ISIN/fúze zatím nepozorovány — pro ně (a jako pojistka) slouží rekonciliace níže.
 Měny: pozor na **GBX** (pence, LSE) — engine normalizuje na GBP/100.
 
-## Trading212 API (`Trading212Client`)
+## Trading212 API (`Trading212Client` + `syncTrading212`)
 
 Read-only klíč: Settings → API (Beta). Klient: `getCash()` (ověření klíče),
 `getPositions()` + `getInstruments()` (rekonciliace, ticker→ISIN),
 `requestExport()`/`fetchHistoryCsv()` (vygenerování CSV historie → stejný parser).
 Autentizace: klíč v hlavičce `Authorization`; s `apiSecret` HTTP Basic — ověřit na účtu.
 429 se opakuje dle Retry-After (3 pokusy).
+
+**Synchronizace v aplikaci (`apps/web/lib/t212-sync.ts`): stačí API klíč.** První
+běh projde smyčkou všechny roky od běžného zpět (konec po dvou po sobě prázdných
+letech — účet ještě neexistoval; prázdné roky nezakládají dávky), další běhy stahují
+jen běžný rok. Deduplikace dělá opakované běhy idempotentní. **Ruční CSV upload je
+záložní varianta.**
 
 ## Rekonciliace (`reconcilePositions`)
 

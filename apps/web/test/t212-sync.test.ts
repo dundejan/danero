@@ -19,75 +19,121 @@ describe('šifrování API klíčů (AES-256-GCM)', () => {
   });
 });
 
-const SYNC_CSV = [
-  'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
-  'Market buy,2026-02-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,,,,,,,,,EOFSYNC1',
-].join('\n');
+const CSV_HEADER =
+  'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID';
 
-/** Mock T212 API: export → download → pozice/instrumenty pro rekonciliaci. */
-const mockT212Fetch: typeof fetch = (async (input: string | URL | Request) => {
-  const url = String(input);
-  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-  if (url.endsWith('/history/exports') && url.includes('live.trading212.com')) {
-    // POST i GET sdílí path — rozlišíme pořadím: první volání je POST (request), další GET (list)
-    exportCalls += 1;
-    if (exportCalls === 1) return json({ reportId: 42 });
-    return json([
-      { reportId: 42, status: 'Finished', downloadLink: 'https://downloads.t212.test/42.csv' },
-    ]);
-  }
-  if (url === 'https://downloads.t212.test/42.csv') return new Response(SYNC_CSV, { status: 200 });
-  if (url.endsWith('/equity/portfolio')) {
-    return json([
-      { ticker: 'AAPL_US_EQ', quantity: 100, averagePrice: 185.5, currentPrice: 210, ppl: 0 },
-    ]);
-  }
-  if (url.endsWith('/equity/metadata/instruments')) {
-    return json([{ ticker: 'AAPL_US_EQ', isin: 'US0378331005', currencyCode: 'USD', name: 'Apple' }]);
-  }
-  throw new Error(`Mock nezná URL: ${url}`);
-}) as typeof fetch;
-let exportCalls = 0;
+/** Data per rok: 2026 prodej, 2024 nákup (a 2025 prázdný — mezera se přeskočí). */
+const CSV_BY_YEAR: Record<number, string> = {
+  2026: [
+    CSV_HEADER,
+    'Market sell,2026-03-05 15:01:10,US0378331005,AAPL,Apple Inc,50,210.00,USD,,,,,,,,,EOFSYNC2',
+  ].join('\n'),
+  2024: [
+    CSV_HEADER,
+    'Market buy,2024-06-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,,,,,,,,,EOFSYNC1',
+  ].join('\n'),
+};
+
+/** Mock T212 API: exporty per rok (rok čteme z těla requestu), pozice pro rekonciliaci. */
+function makeMockFetch() {
+  const reportYears = new Map<number, number>();
+  let lastReportId = 100;
+  const requestedYears: number[] = [];
+
+  const fetchImpl: typeof fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+    if (url.endsWith('/history/exports') && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { timeFrom: string };
+      const year = Number(body.timeFrom.slice(0, 4));
+      requestedYears.push(year);
+      lastReportId += 1;
+      reportYears.set(lastReportId, year);
+      return json({ reportId: lastReportId });
+    }
+    if (url.endsWith('/history/exports')) {
+      return json([
+        {
+          reportId: lastReportId,
+          status: 'Finished',
+          downloadLink: `https://downloads.t212.test/${lastReportId}.csv`,
+        },
+      ]);
+    }
+    const download = /downloads\.t212\.test\/(\d+)\.csv/.exec(url);
+    if (download) {
+      const year = reportYears.get(Number(download[1]))!;
+      return new Response(CSV_BY_YEAR[year] ?? CSV_HEADER, { status: 200 });
+    }
+    if (url.endsWith('/equity/portfolio')) {
+      return json([
+        { ticker: 'AAPL_US_EQ', quantity: 50, averagePrice: 185.5, currentPrice: 210, ppl: 0 },
+      ]);
+    }
+    if (url.endsWith('/equity/metadata/instruments')) {
+      return json([
+        { ticker: 'AAPL_US_EQ', isin: 'US0378331005', currencyCode: 'USD', name: 'Apple' },
+      ]);
+    }
+    throw new Error(`Mock nezná URL: ${method} ${url}`);
+  }) as typeof fetch;
+
+  return { fetchImpl, requestedYears };
+}
 
 describe('syncTrading212 (mock API, in-memory PGlite)', () => {
-  it('export → import → rekonciliace → stav na účtu', { timeout: 30_000 }, async () => {
-    exportCalls = 0;
-    const db = await createPgliteDb();
-    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'sync@danero.cz' });
-    await db.insert(brokerAccounts).values({
-      id: 'acc1',
-      userId: 'u1',
-      broker: 'trading212',
-      credentialsEncrypted: encryptSecret('mock-api-key'),
-    });
-    const account = (await db.select().from(brokerAccounts))[0]!;
+  it(
+    'první sync projde roky od založení účtu, další už jen běžný rok',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u1', name: 'Test', email: 'sync@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc1',
+        userId: 'u1',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret('mock-api-key'),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
 
-    const outcome = await syncTrading212(db, account, {
-      fetchImpl: mockT212Fetch,
-      now: new Date('2026-07-07T12:00:00Z'),
-      pollIntervalMs: 5,
-    });
+      // PLNÝ sync: 2026 (data) → 2025 (prázdný, mezera) → 2024 (data) → 2023+2022 prázdné → stop
+      const first = makeMockFetch();
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: first.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
 
-    expect(outcome.summary.added).toBe(1);
-    expect(outcome.summary.errors).toEqual([]);
-    expect(outcome.reconciliation.ok).toBe(true); // 100 ks AAPL sedí s API pozicí
-    expect(outcome.reconciliation.matchedCount).toBe(1);
+      expect(first.requestedYears).toEqual([2026, 2025, 2024, 2023, 2022]);
+      expect(outcome.yearsCovered).toEqual([2026, 2025, 2024, 2023, 2022]);
+      expect(outcome.batches).toHaveLength(2); // prázdné roky nezakládají dávky
+      expect(outcome.added).toBe(2);
+      expect(outcome.errors).toEqual([]);
+      // nákup 100 (2024) − prodej 50 (2026) = 50 ks — sedí s API pozicí
+      expect(outcome.reconciliation.ok).toBe(true);
+      expect(outcome.reconciliation.matchedCount).toBe(1);
 
-    const txs = await loadTransactions(db, 'u1');
-    expect(txs).toHaveLength(1);
+      const txs = await loadTransactions(db, 'u1');
+      expect(txs).toHaveLength(2);
 
-    const updated = (await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc1')))[0]!;
-    expect(updated.lastSyncStatus).toBe('ok');
-    expect(updated.lastSyncedAt).not.toBeNull();
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc1'))
+      )[0]!;
+      expect(updated.lastSyncStatus).toBe('ok');
+      expect(updated.lastSyncedAt).not.toBeNull();
 
-    // opakovaný sync je idempotentní (dedupe)
-    exportCalls = 0;
-    const again = await syncTrading212(db, account, {
-      fetchImpl: mockT212Fetch,
-      now: new Date('2026-07-07T13:00:00Z'),
-      pollIntervalMs: 5,
-    });
-    expect(again.summary.added).toBe(0);
-    expect(again.summary.duplicates).toBe(1);
-  });
+      // INKREMENTÁLNÍ sync (lastSyncedAt nastaven): jen běžný rok, dedupe
+      const second = makeMockFetch();
+      const again = await syncTrading212(db, updated, {
+        fetchImpl: second.fetchImpl,
+        now: new Date('2026-07-08T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(second.requestedYears).toEqual([2026]);
+      expect(again.added).toBe(0);
+      expect(again.duplicates).toBe(1);
+    },
+  );
 });
