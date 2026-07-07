@@ -89,7 +89,7 @@ export class Trading212Client {
 
   private async request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
     let lastStatus = 0;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: init?.method ?? 'GET',
         headers: {
@@ -101,9 +101,12 @@ export class Trading212Client {
       });
       lastStatus = response.status;
       if (response.status === 429) {
-        // rate limit — čekej dle Retry-After, jinak 2 s
+        // Rate limit — endpointy exportů mají limity v řádu 1 požadavek/minutu.
+        // Čekej dle Retry-After (strop 120 s), bez hlavičky 30 s.
         const retryAfter = Number(response.headers.get('retry-after'));
-        await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 2) * 1000);
+        const waitSeconds =
+          Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 120) : 30;
+        await sleep(waitSeconds * 1000);
         continue;
       }
       if (!response.ok) {

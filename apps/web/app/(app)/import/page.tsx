@@ -83,15 +83,23 @@ export default async function ImportPage({
                   <p className="text-sm font-medium text-zelena">
                     Pozice sedí s Trading212 ({reconciliation.matchedCount} instrumentů).
                   </p>
+                ) : reconciliation.error ? (
+                  <>
+                    <p className="text-sm font-medium text-cervena">
+                      Synchronizace selhala: {reconciliation.error}
+                    </p>
+                    <p className="text-sm text-inkoust-tlumeny">
+                      Klidně ji spusť znovu — co už se stáhlo, zůstává, a nic se nezdvojí.
+                      Trading212 omezuje počet požadavků, první stažení historie proto
+                      může trvat i deset minut.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <p className="text-sm font-medium text-jantar">
                       Pozice nesedí s Trading212 — pravděpodobně chybí historie nebo
                       korporátní akce:
                     </p>
-                    {reconciliation.error && (
-                      <p className="text-sm text-cervena">{reconciliation.error}</p>
-                    )}
                     {reconciliation.issues.map((issue) => (
                       <p key={issue.isin} className="font-mono text-xs text-inkoust-tlumeny">
                         {issue.isin}: vypočteno {issue.expected}, broker {issue.actual}

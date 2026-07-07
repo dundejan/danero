@@ -98,12 +98,13 @@ export async function syncTrading212Action(): Promise<void> {
   try {
     await syncTrading212(db, account);
   } catch (error) {
-    // chybu uložíme, aby ji import stránka ukázala (typicky 403 = chybějící permission klíče)
+    // Chybu uložíme, aby ji import stránka ukázala. POZOR: lastSyncedAt se při
+    // chybě NEnastavuje — jinak by další pokus přeskočil plnou historii (mode
+    // se odvozuje z lastSyncedAt) a stáhl jen běžný rok.
     const message = error instanceof Error ? error.message : String(error);
     await db
       .update(brokerAccounts)
       .set({
-        lastSyncedAt: new Date(),
         lastSyncStatus: 'error',
         lastReconciliation: {
           ok: false,

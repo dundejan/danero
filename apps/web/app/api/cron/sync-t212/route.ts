@@ -25,9 +25,10 @@ export async function GET(request: Request): Promise<Response> {
       const outcome = await syncTrading212(db, account);
       results.push({ accountId: account.id, ok: true, added: outcome.added });
     } catch (error) {
+      // lastSyncedAt při chybě nenastavovat — plná historie by se už nikdy nedotáhla
       await db
         .update(brokerAccounts)
-        .set({ lastSyncedAt: new Date(), lastSyncStatus: 'error' })
+        .set({ lastSyncStatus: 'error' })
         .where(eq(brokerAccounts.id, account.id));
       results.push({
         accountId: account.id,

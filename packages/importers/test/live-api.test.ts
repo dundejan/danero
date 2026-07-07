@@ -67,7 +67,7 @@ describe.skipIf(!apiKey)('živé Trading212 API (T212_API_KEY)', () => {
             includeInterest: true,
           },
         },
-        30_000, // poll po 30 s — endpoint exportů má přísný rate limit
+        65_000, // GET /history/exports snese ~1 dotaz/min
         600_000,
       );
       const imported = parseTrading212Csv(csv);

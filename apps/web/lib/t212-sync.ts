@@ -129,7 +129,8 @@ export async function syncTrading212(
   const now = options.now ?? new Date();
   const currentYear = now.getUTCFullYear();
   const mode = options.mode ?? (account.lastSyncedAt ? 'incremental' : 'full');
-  const pollIntervalMs = options.pollIntervalMs ?? 30_000;
+  // GET /history/exports snese ~1 dotaz/min — pomalejší poll je nutnost, ne opatrnost
+  const pollIntervalMs = options.pollIntervalMs ?? 65_000;
 
   const batches: ImportSummary[] = [];
   const yearsCovered: number[] = [];
@@ -151,6 +152,7 @@ export async function syncTrading212(
         },
       },
       pollIntervalMs,
+      600_000,
     );
     const parsed = detectAndParse(csv);
     yearsCovered.push(year);
