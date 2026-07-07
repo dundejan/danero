@@ -1,9 +1,12 @@
-import { desc, eq } from 'drizzle-orm';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { and, desc, eq } from 'drizzle-orm';
 import { Card, CardTitle } from '@/components/ui/card';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { getDb } from '@/db';
-import { importBatches } from '@/db/schema';
+import { brokerAccounts, importBatches } from '@/db/schema';
+import type { StoredReconciliation } from '@/lib/t212-sync';
 import { requireUser } from '@/lib/session';
+import { syncTrading212Action } from '../nastaveni/actions';
 import { uploadImportAction } from './actions';
 
 interface BatchIssues {
@@ -25,6 +28,12 @@ export default async function ImportPage({
     .where(eq(importBatches.userId, user.id))
     .orderBy(desc(importBatches.createdAt))
     .limit(20);
+  const t212Accounts = await db
+    .select()
+    .from(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  const t212 = t212Accounts[0];
+  const reconciliation = (t212?.lastReconciliation ?? null) as StoredReconciliation | null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -62,8 +71,68 @@ export default async function ImportPage({
             required
             className="flex-1 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-pozadi file:px-4 file:py-2 file:text-sm file:font-semibold file:text-inkoust"
           />
-          <Button type="submit">Nahrát výpisy</Button>
+          <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
         </form>
+      </Card>
+
+      <Card className="space-y-3">
+        <CardTitle>Trading212 — automatická synchronizace</CardTitle>
+        {t212 ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-inkoust-tlumeny">
+                {t212.lastSyncedAt
+                  ? `Naposledy ${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus}).`
+                  : 'Zatím neproběhla.'}{' '}
+                Stahuje se běžný rok — starší roky nahraj jednou ručně výše.
+              </p>
+              <form action={syncTrading212Action}>
+                <SubmitButton variant="secondary" pendingLabel="Synchronizuji… (i minuty)">
+                  Synchronizovat teď
+                </SubmitButton>
+              </form>
+            </div>
+            {reconciliation && (
+              <div className="space-y-1 border-t border-linka pt-3">
+                {reconciliation.ok ? (
+                  <p className="text-sm font-medium text-zelena">
+                    Pozice sedí s Trading212 ({reconciliation.matchedCount} instrumentů).
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-jantar">
+                      Pozice nesedí s Trading212 — pravděpodobně chybí historie nebo
+                      korporátní akce:
+                    </p>
+                    {reconciliation.error && (
+                      <p className="text-sm text-cervena">{reconciliation.error}</p>
+                    )}
+                    {reconciliation.issues.map((issue) => (
+                      <p key={issue.isin} className="font-mono text-xs text-inkoust-tlumeny">
+                        {issue.isin}: vypočteno {issue.expected}, broker {issue.actual}
+                        {issue.suggestedSplitRatio &&
+                          ` → vypadá to na split ${issue.suggestedSplitRatio.from}:${issue.suggestedSplitRatio.to}`}
+                      </p>
+                    ))}
+                    {reconciliation.unmatchedTickers.length > 0 && (
+                      <p className="font-mono text-xs text-inkoust-tlumeny">
+                        Nespárované tickery: {reconciliation.unmatchedTickers.join(', ')}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-inkoust-tlumeny">
+            Připoj read-only API klíč v{' '}
+            <Link href="/nastaveni#trading212" className="font-medium text-ruzova">
+              nastavení
+            </Link>{' '}
+            — Danero pak bude novou historii stahovat samo a hlídat, že pozice sedí.
+          </p>
+        )}
       </Card>
 
       <section className="space-y-3">

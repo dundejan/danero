@@ -1,10 +1,12 @@
-import { Button } from '@/components/ui/button';
+import { and, eq } from 'drizzle-orm';
 import { Card, CardTitle } from '@/components/ui/card';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
+import { brokerAccounts } from '@/db/schema';
 import { getProfile } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
-import { saveProfileAction } from './actions';
+import { disconnectTrading212Action, saveProfileAction, saveTrading212KeyAction } from './actions';
 
 export default async function SettingsPage({
   searchParams,
@@ -14,6 +16,11 @@ export default async function SettingsPage({
   const user = await requireUser();
   const db = await getDb();
   const profile = await getProfile(db, user.id);
+  const t212Accounts = await db
+    .select()
+    .from(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  const t212 = t212Accounts[0];
   const { chyba } = await searchParams;
 
   return (
@@ -129,8 +136,48 @@ export default async function SettingsPage({
           </p>
         </Card>
 
-        <Button type="submit">Uložit profil</Button>
+        <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
       </form>
+
+      <Card className="space-y-4" id="trading212">
+        <CardTitle>Trading212 — automatická synchronizace</CardTitle>
+        {t212 ? (
+          <>
+            <p className="text-sm">
+              <span className="font-semibold text-zelena">Připojeno.</span>{' '}
+              <span className="text-inkoust-tlumeny">
+                Poslední synchronizace:{' '}
+                {t212.lastSyncedAt
+                  ? `${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus})`
+                  : 'zatím žádná — spusť ji na stránce Import'}
+                . Klíč je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
+              </span>
+            </p>
+            <form action={disconnectTrading212Action}>
+              <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
+                Odpojit Trading212
+              </SubmitButton>
+            </form>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-inkoust-tlumeny">
+              V Trading212 otevři Settings → API (Beta) a vygeneruj klíč jen s právy pro
+              čtení. Danero pak samo stahuje novou historii a hlídá, že pozice sedí.
+            </p>
+            {chyba === 'api-klic' && (
+              <p className="text-sm text-cervena">Vlož platný API klíč (aspoň 10 znaků).</p>
+            )}
+            <form action={saveTrading212KeyAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <Label htmlFor="apiKey">API klíč (read-only)</Label>
+                <Input id="apiKey" name="apiKey" type="password" required autoComplete="off" />
+              </div>
+              <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
+            </form>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

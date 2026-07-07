@@ -81,6 +81,22 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+/** Napojený broker účet — API klíč šifrovaný AES-256-GCM (lib/crypto.ts), nikdy plaintext. */
+export const brokerAccounts = pgTable('broker_accounts', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  broker: text('broker').notNull(), // 'trading212'
+  label: text('label').notNull().default('Trading212'),
+  credentialsEncrypted: text('credentials_encrypted').notNull(),
+  lastSyncedAt: timestamp('last_synced_at'),
+  lastSyncStatus: text('last_sync_status'),
+  /** Výsledek poslední rekonciliace pozic (serializovaný ReconciliationReport). */
+  lastReconciliation: jsonb('last_reconciliation'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const importBatches = pgTable('import_batches', {
   id: text('id').primaryKey(),
   userId: text('user_id')

@@ -32,8 +32,8 @@ export function LimitGauge({
     <Card className="flex gap-4">
       <div className="relative h-36 w-8 shrink-0 overflow-hidden rounded-md border border-linka bg-pozadi">
         <div
-          className={cn('absolute inset-x-0 bottom-0 transition-[height]', ZONE_COLOR[status.zone])}
-          style={{ height: `${fill * 100}%` }}
+          className={cn('absolute inset-x-0 bottom-0 origin-bottom', ZONE_COLOR[status.zone])}
+          style={{ height: `${fill * 100}%`, animation: 'gauge-grow 700ms ease-out' }}
         />
         {[0.6, 0.85].map((tick) => (
           <div

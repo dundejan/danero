@@ -86,7 +86,7 @@ export function HorizonStrip({
         >
           dnes
         </text>
-        {items.map((dot) => (
+        {items.map((dot, index) => (
           <circle
             key={`${dot.isin}-${dot.exemptFrom}`}
             cx={x(dot.exemptFrom)}
@@ -94,6 +94,10 @@ export function HorizonStrip({
             r={radius(dot.quantity)}
             fill={dot.isExempt ? 'var(--zelena)' : 'var(--inkoust-tlumeny)'}
             opacity={0.85}
+            style={{
+              animation: 'dot-in 500ms ease-out both',
+              animationDelay: `${Math.min(index, 40) * 25}ms`,
+            }}
           >
             <title>
               {`${dot.label}: ${dot.quantity.toFixed(2)} ks — bez daně od ${czDate(dot.exemptFrom)}`}

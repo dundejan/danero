@@ -2,9 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
-import { taxpayerProfiles } from '@/db/schema';
+import { brokerAccounts, taxpayerProfiles } from '@/db/schema';
+import { encryptSecret } from '@/lib/crypto';
+import { syncTrading212 } from '@/lib/t212-sync';
 import { requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
@@ -47,4 +50,62 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   revalidatePath('/prehled');
   revalidatePath('/nastaveni');
   redirect('/prehled');
+}
+
+/** Uloží T212 API klíč (šifrovaně) — jeden T212 účet na uživatele. */
+export async function saveTrading212KeyAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const apiKey = String(formData.get('apiKey') ?? '').trim();
+  if (apiKey.length < 10) redirect('/nastaveni?chyba=api-klic');
+
+  const db = await getDb();
+  await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  await db.insert(brokerAccounts).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    broker: 'trading212',
+    credentialsEncrypted: encryptSecret(apiKey),
+  });
+
+  revalidatePath('/nastaveni');
+  revalidatePath('/import');
+  redirect('/import');
+}
+
+export async function disconnectTrading212Action(): Promise<void> {
+  const user = await requireUser();
+  const db = await getDb();
+  await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  revalidatePath('/nastaveni');
+  revalidatePath('/import');
+  redirect('/nastaveni');
+}
+
+/** Ruční synchronizace — generování exportu na straně T212 může trvat i minuty. */
+export async function syncTrading212Action(): Promise<void> {
+  const user = await requireUser();
+  const db = await getDb();
+  const accounts = await db
+    .select()
+    .from(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  const account = accounts[0];
+  if (!account) redirect('/nastaveni?chyba=zadny-ucet');
+
+  try {
+    await syncTrading212(db, account);
+  } catch {
+    await db
+      .update(brokerAccounts)
+      .set({ lastSyncedAt: new Date(), lastSyncStatus: 'error' })
+      .where(eq(brokerAccounts.id, account.id));
+  }
+
+  revalidatePath('/prehled');
+  revalidatePath('/import');
+  redirect('/import');
 }

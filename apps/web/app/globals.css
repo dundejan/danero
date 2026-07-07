@@ -49,6 +49,20 @@
   --radius-lg: 14px;
 }
 
+/* Orchestrovaný moment při načtení dashboardu (docs/07): odměrky se naplní,
+   tečky horizontu naskočí. prefers-reduced-motion vše vypíná (viz níže). */
+@keyframes gauge-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes dot-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @layer base {
   body {
     background: var(--pozadi);

@@ -1,4 +1,4 @@
-import { NavRail } from '@/components/nav-rail';
+import { NavRail, NavTabBar } from '@/components/nav-rail';
 import { requireUser } from '@/lib/session';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -6,7 +6,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-dvh">
       <NavRail userEmail={user.email} />
-      <main className="min-w-0 flex-1 px-6 py-8 lg:px-10">{children}</main>
+      <main className="min-w-0 flex-1 px-4 pb-24 pt-8 md:px-6 md:pb-8 lg:px-10">{children}</main>
+      <NavTabBar />
     </div>
   );
 }
