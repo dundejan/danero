@@ -54,6 +54,18 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     expect(result.limits.cap40M?.exceeded).toBe(false);
   });
 
+  it('strop platí i při mírnějším výkladu limitu 100k (pool ≤ 100k nevypíná R-03)', () => {
+    // 60M časově osvobozené + žádné neosvobozené tržby → lenient pool = 0 ≤ 100k
+    const result = run(txs, { options: { limit100kIncludesTimeTestExempt: false } });
+    expect(result.securities.exemptUnder100k).toBe(true);
+    // dodanění části nad strop proběhne i tak
+    expect(result.securities.taxableIncomeCzk.toDecimalPlaces(2).toString()).toBe('20000000');
+    expect(result.securities.base10Czk.toDecimalPlaces(2).toString()).toBe('10000000');
+    const disposal = result.securities.disposals[0]!;
+    expect(disposal.taxableProceedsCzk.toDecimalPlaces(2).toString()).toBe('20000000');
+    expect(hasWarning(result, 'CAP_40M_REDUCED')).toBe(true);
+  });
+
   it('od 2026 strop pro CP neplatí (cap null) — žádné krácení ani nad 40M', () => {
     const config2026 = {
       ...CFG_2025,

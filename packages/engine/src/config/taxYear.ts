@@ -48,6 +48,26 @@ export const TAX_YEAR_2025: TaxYearConfig = {
   progressiveThreshold: '1676052',
 };
 
+/**
+ * Rok 2024 (a použitelné i pro starší roky se změnou progressiveThreshold):
+ * strop 40M NEPLATÍ (zaveden až pro příjmy přijaté v roce 2025, zák. 349/2023 Sb.),
+ * hranice 23 % = 36× průměrné mzdy 43 967 Kč = 1 582 812 Kč (NV č. 286/2023 Sb.).
+ */
+export const TAX_YEAR_2024: TaxYearConfig = {
+  year: 2024,
+  unifiedRatesByYear: UNIFIED_RATES_VERIFIED,
+  limits: {
+    securitiesProceedsExemption: '100000',
+    cryptoProceedsExemption: '100000',
+    flatTaxOtherIncome: '50000',
+    employeeSideIncome: '20000',
+    generalFiling: '50000',
+    exemptIncomeReporting: '5000000',
+    timeTestExemptionCap: null,
+  },
+  progressiveThreshold: '1582812',
+};
+
 export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
   year: 2026,
   // Jednotný kurz za 2026 vyjde pokynem řady D začátkem roku 2027.

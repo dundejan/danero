@@ -380,11 +380,13 @@ export default async function ReportPage({
             </li>
             <li>
               <strong>Paušální režim:</strong> zaplacené zálohy z paušálního režimu patří na
-              ř. 86. Termín podání: 1. 4. {year + 1} papírově / 2. 5. {year + 1} elektronicky.
+              ř. 86. Termín podání: 1. 4. {year + 1} papírově / elektronicky 4 měsíce od
+              konce roku (2. 5., připadne-li na víkend, tak nejbližší pracovní den).
             </li>
             <li className="text-inkoust-tlumeny">
-              Čísla řádků odpovídají tiskopisu 25 5405 vzor č. 30 (období {year}) a struktuře
-              DPFDP7 — všechno výše předvyplní export XML o kousek výš.
+              Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období
+              2024–2025; papírový tiskopis 25 5405) — všechno výše předvyplní export XML
+              o kousek výš.
             </li>
           </ul>
         ) : (

@@ -109,9 +109,11 @@ export async function loadDailyRates(
 ): Promise<EngineInput['dailyRates']> {
   const { ensureCnbYears, loadCnbRateProvider } = await import('@/lib/cnb');
   const years = availableYears(txs, currentYear);
-  const fromYear = Math.min(...years);
+  // rok−1 kvůli transakcím z 1.–2. ledna: fallback bere poslední vyhlášený
+  // kurz PŘEDCHOZÍHO roku (Silvestr)
+  const fromYear = Math.min(...years) - 1;
   try {
-    await ensureCnbYears(db, years);
+    await ensureCnbYears(db, [fromYear, ...years]);
   } catch {
     // offline/backfill selhal — zkusíme, co už v DB je; report stav přizná
   }

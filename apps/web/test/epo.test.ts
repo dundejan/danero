@@ -203,8 +203,9 @@ describe('generateDpfdp7: varianta SEPARATE_16A (§ 16a, Příloha 4)', () => {
     expect(vetaD.da_slezap).toBe('14220'); // 15 % z 94 800 (jen § 10)
     expect(vetaD.da_slevy35ba).toBe('0');
     expect(vetaD.kc_dan_celk).toBe('30'); // ř. 75 = ř. 74 + ř. 74a
-    // ř. 91: EPO počítá bez mezikroku „záporné = 0" — zbytek slevy na poplatníka
-    // (30 840 − 14 220) pokryje i daň § 16a, proto 0 (ověřeno testovací podatelnou)
+    // ř. 91: dle aritmetiky oficiální kontroly EPO (zbytek slevy na poplatníka
+    // v jejím přepočtu umořuje i § 16a — empiricky vynuceno testovací podatelnou,
+    // viz komentář v lib/epo.ts)
     expect(vetaD.kc_zbyvpred).toBe('0');
     expect(dp.VetaW).toBeUndefined();
     expect(dp.VetaL).toBeUndefined();

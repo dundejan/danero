@@ -201,6 +201,12 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ř. 91 „zbývá doplatit": EPO řetězec ř. 71 → 75 → 77 přepočítává BEZ mezikroku
   // „záporné = 0" (ověřeno testovací podatelnou) — nevyčerpaný zbytek slevy na
   // poplatníka tak sníží i daň ze samostatného základu § 16a; nula až na konci.
+  // ř. 91: oficiální kontrola EPO počítá vzorec ř.91 = ř.77 − zálohy, přičemž
+  // ve SVÉM přepočtu nechává ř.71 jít do záporu — nevyčerpaný zbytek slevy na
+  // poplatníka tak v pojetí EPO umořuje i daň § 16a. Právně diskutabilní
+  // (§ 35ba se váže k dani dle § 16), ale závazná je aritmetika podatelny:
+  // varianta r91 = r77 byla podatelnou ZAMÍTNUTA (ověřeno testovacím režimem),
+  // tato varianta prochází bez věcných chyb.
   const r91 = Decimal.max(ZERO, r60.sub(SLEVA_POPLATNIK).plus(r74a ?? ZERO));
 
   // ---------- sestavení XML (pořadí vět dle XSD sekvence) ----------

@@ -11,7 +11,23 @@ const CNB_SAMPLE = [
   '05.01.2026|25,080|22,430|15,280',
 ].join('\n');
 
+const CNB_LIST_CHANGE = [
+  'Datum|1 EUR|100 RUB|1 USD',
+  '02.01.2022|24,860|1,203|21,970',
+  'Datum|1 EUR|1 USD',
+  '02.03.2022|25,225|22,700',
+].join('\n');
+
 describe('denní kurzy ČNB (R-06b)', () => {
+  it('změna kurzovního lístku uprostřed roku přemapuje sloupce (rok 2022, RUB)', () => {
+    const rows = parseCnbYearText(CNB_LIST_CHANGE);
+    const usdBefore = rows.find((r) => r.currency === 'USD' && r.day === '2022-01-02')!;
+    const usdAfter = rows.find((r) => r.currency === 'USD' && r.day === '2022-03-02')!;
+    expect(usdBefore.rate).toBe('21.97');
+    expect(usdAfter.rate).toBe('22.7'); // NE hodnota ze sloupce po RUB
+    expect(rows.some((r) => r.currency === 'RUB' && r.day === '2022-03-02')).toBe(false);
+  });
+
   it('parsuje roční export a normalizuje kotace za 100 jednotek', () => {
     const rows = parseCnbYearText(CNB_SAMPLE);
     expect(rows).toHaveLength(6);

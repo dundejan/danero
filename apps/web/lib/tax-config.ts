@@ -1,5 +1,6 @@
 import {
   LAST_VERIFIED_RATE_YEAR,
+  TAX_YEAR_2024,
   TAX_YEAR_2025,
   TAX_YEAR_2026_DRAFT,
   UNIFIED_RATES_VERIFIED,
@@ -26,6 +27,10 @@ export const isRateVerified = (year: number): boolean => year <= LAST_VERIFIED_R
 
 /** Konfigurace zdaňovacího období pro engine (limity dle roku, kurzy viz výše). */
 export function configForYear(year: number): TaxYearConfig {
-  const base = year >= 2026 ? TAX_YEAR_2026_DRAFT : TAX_YEAR_2025;
-  return { ...base, year, unifiedRatesByYear: UNIFIED_RATES };
+  // 2024 a starší: bez stropu 40M (platí až pro 2025) a s hranicí 23 % roku
+  // 2024; pro roky < 2024 hranici neznáme → null (engine poctivě varuje)
+  const base =
+    year >= 2026 ? TAX_YEAR_2026_DRAFT : year === 2025 ? TAX_YEAR_2025 : TAX_YEAR_2024;
+  const progressiveThreshold = year < 2024 ? null : base.progressiveThreshold;
+  return { ...base, year, progressiveThreshold, unifiedRatesByYear: UNIFIED_RATES };
 }

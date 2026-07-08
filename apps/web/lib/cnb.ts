@@ -20,15 +20,27 @@ export function parseCnbYearText(
 ): Array<{ day: string; currency: string; rate: string }> {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
-  const header = lines[0]!.split('|');
-  // sloupce: „množství KÓD" (např. „1 EUR", „100 JPY")
-  const columns = header.slice(1).map((cell) => {
-    const [amount, code] = cell.trim().split(/\s+/);
-    return { amount: d(amount ?? '1'), code: (code ?? '').toUpperCase() };
-  });
+
+  // ČNB při změně kurzovního lístku uprostřed roku vloží NOVOU hlavičku
+  // (ověřeno na roce 2022 — vypadl RUB) — mapování sloupců se musí přepočítat,
+  // jinak se všechny měny za změnou posunou.
+  const parseHeader = (line: string) =>
+    line
+      .split('|')
+      .slice(1)
+      .map((cell) => {
+        const [amount, code] = cell.trim().split(/\s+/);
+        return { amount: d(amount ?? '1'), code: (code ?? '').toUpperCase() };
+      });
+
+  let columns = parseHeader(lines[0]!);
 
   const rows: Array<{ day: string; currency: string; rate: string }> = [];
   for (const line of lines.slice(1)) {
+    if (line.startsWith('Datum|')) {
+      columns = parseHeader(line);
+      continue;
+    }
     const cells = line.split('|');
     const dateCz = cells[0]?.trim();
     if (!dateCz || !/^\d{2}\.\d{2}\.\d{4}$/.test(dateCz)) continue;
@@ -87,7 +99,20 @@ export async function ensureCnbYears(
     // plný rok má ~250 pracovních dní × ~30 měn; < 1000 řádků = evidentně chybí
     const count = Number(existing[0]?.n ?? 0);
     const isCurrentYear = year === new Date().getUTCFullYear();
-    if (count >= 1000 && !isCurrentYear) continue;
+    if (!isCurrentYear && count >= 1000) continue;
+    if (isCurrentYear && count > 0) {
+      // běžný rok drží čerstvý denní cron — stahovat znovu jen když data
+      // očividně zaostávají (např. cron neběží), ne při každém renderu
+      const newest = await db
+        .select({ day: sql<string>`max(${fxRates.day})` })
+        .from(fxRates)
+        .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
+      const maxDay = newest[0]?.day;
+      if (maxDay) {
+        const ageDays = (Date.now() - Date.parse(`${maxDay}T00:00:00Z`)) / 86_400_000;
+        if (ageDays < 5) continue;
+      }
+    }
     await fetchCnbYear(db, year, fetchImpl);
   }
 }

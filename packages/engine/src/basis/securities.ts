@@ -91,8 +91,9 @@ export function computeSecurities(
   // a výdaje k dodaněné části se uplatní týmž poměrem (docs/02 R-03).
   const capRaw = config.limits.timeTestExemptionCap;
   const cap = capRaw ? d(capRaw) : null;
-  const capApplies =
-    cap !== null && !exemptUnder100k && timeTestExemptProceeds.gt(cap);
+  // strop se váže na příjmy osvobozené ČASOVÝM testem (§ 4/1 q, u) — platí
+  // nezávisle na tom, zda menší část tržeb prošla i hodnotovým testem 100k
+  const capApplies = cap !== null && timeTestExemptProceeds.gt(cap);
   const exemptRatio = capApplies ? cap.div(timeTestExemptProceeds) : d(1);
   if (capApplies) {
     warnings.add(
@@ -130,7 +131,7 @@ export function computeSecurities(
         expenseCzk = fullExpenseCzk;
         taxableIncome = taxableIncome.plus(proceedsCzk);
         expenses = expenses.plus(expenseCzk);
-      } else if (capApplies && alloc.timeTestExempt && !exemptUnder100k) {
+      } else if (capApplies && alloc.timeTestExempt) {
         // R-03: dodanění části časově osvobozené alokace nad strop —
         // příjem i výdaj poměrem (1 − exemptRatio)
         const taxableShare = d(1).minus(exemptRatio);
@@ -148,15 +149,17 @@ export function computeSecurities(
         interpretive: alloc.interpretive,
       });
     }
-    // R-03: krácení mění osvobozenou/zdanitelnou část prodeje
+    // R-03: krácení mění osvobozenou/zdanitelnou část prodeje; dodaněná část
+    // časově osvobozených kusů je zdanitelná i v roce s exemptUnder100k
+    const taxedFromCap = exemptCzk.mul(d(1).minus(exemptRatio));
     const exemptAfterCap = exemptCzk.mul(exemptRatio);
     reports.push({
       sellTxId: disposal.sellTxId,
       isin: disposal.isin,
       saleDate: disposal.saleDate,
       grossProceedsCzk: grossCzk,
-      exemptProceedsCzk: exemptUnder100k ? grossCzk : exemptAfterCap,
-      taxableProceedsCzk: exemptUnder100k ? ZERO : grossCzk.sub(exemptAfterCap),
+      exemptProceedsCzk: exemptUnder100k ? grossCzk.sub(taxedFromCap) : exemptAfterCap,
+      taxableProceedsCzk: exemptUnder100k ? taxedFromCap : grossCzk.sub(exemptAfterCap),
       limit100kContributionCzk: options.limit100kIncludesTimeTestExempt ? grossCzk : taxableCzk,
       realizedResultCzk: realizedResult,
       allocations: allocationReports,
