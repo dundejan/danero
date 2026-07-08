@@ -122,11 +122,18 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
   const base8 = round0(result.dividends.base8Czk);
 
-  // ---------- Příloha 2 (§ 10 — prodej CP), jen když je co přiznat ----------
-  const prij10 = round0(result.securities.taxableIncomeCzk); // ř. 207
-  // ř. 208: výdaje max. do výše příjmů (R-05d — ztrátu § 10 uplatnit nelze)
-  const vyd10 = Decimal.min(round0(result.securities.expensesCzk), prij10);
-  const zd10 = prij10.sub(vyd10); // ř. 209
+  // ---------- Příloha 2 (§ 10) — dva druhy: CP (kód D) a krypto (kód C) ----------
+  // Druhy se posuzují samostatně (R-10c, pokyn D-59 k § 10/4): výdaje každého
+  // druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
+  const prijCp = round0(result.securities.taxableIncomeCzk);
+  const vydCp = Decimal.min(round0(result.securities.expensesCzk), prijCp);
+  const zdCp = prijCp.sub(vydCp);
+  const prijKrypto = round0(result.crypto.taxableIncomeCzk);
+  const vydKrypto = Decimal.min(round0(result.crypto.expensesCzk), prijKrypto);
+  const zdKrypto = prijKrypto.sub(vydKrypto);
+  const prij10 = prijCp.plus(prijKrypto); // ř. 207
+  const vyd10 = vydCp.plus(vydKrypto); // ř. 208
+  const zd10 = zdCp.plus(zdKrypto); // ř. 209
   const hasPriloha2 = prij10.gt(0);
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
@@ -294,16 +301,30 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
         uhrn_rozdil10: kc(zd10),
       }),
     );
-    lines.push(
-      veta('VetaJ', {
-        kod_dr_prij10: 'D',
-        druh_prij10: 'Prodej cenných papírů',
-        prijmy10: kc(prij10),
-        vydaje10: kc(vyd10),
-        rozdil10: kc(zd10),
-        kod10: 'Z', // příjem ze zdrojů v zahraničí (zahraniční broker)
-      }),
-    );
+    if (prijCp.gt(0)) {
+      lines.push(
+        veta('VetaJ', {
+          kod_dr_prij10: 'D',
+          druh_prij10: 'Prodej cenných papírů',
+          prijmy10: kc(prijCp),
+          vydaje10: kc(vydCp),
+          rozdil10: kc(zdCp),
+          kod10: 'Z', // příjem ze zdrojů v zahraničí (zahraniční broker)
+        }),
+      );
+    }
+    if (prijKrypto.gt(0)) {
+      lines.push(
+        veta('VetaJ', {
+          kod_dr_prij10: 'C', // prodej movitých věcí — kryptoaktiva (R-10c)
+          druh_prij10: 'Prodej kryptoaktiv (movitá věc)',
+          prijmy10: kc(prijKrypto),
+          vydaje10: kc(vydKrypto),
+          rozdil10: kc(zdKrypto),
+          kod10: 'Z',
+        }),
+      );
+    }
   }
 
   if (hasPriloha3) {

@@ -91,3 +91,49 @@ describe('smoke: kompletní rok napříč moduly', () => {
     expect(result.tax.general.taxCzk.toString()).toBe('825');
   });
 });
+
+describe('simulace prodeje kryptoaktiva (R-10a)', () => {
+  it('krypto prodej čerpá krypto pool, CP pool zůstává nedotčený', () => {
+    const input = {
+      transactions: [
+        buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '500000', tradeDate: '2025-03-01', settlementDate: '2025-03-01' }),
+      ],
+      profile: profile(),
+      config: CFG_2025,
+    };
+    const simulation = simulateSale(input, {
+      isin: 'BTC',
+      quantity: '1',
+      pricePerShare: '800000',
+      currency: 'CZK',
+      date: '2025-08-01',
+      assetClass: 'CRYPTO',
+    });
+
+    expect(simulation.deltas.cryptoLimit100kUsedCzk.toString()).toBe('800000');
+    expect(simulation.deltas.limit100kUsedCzk.toString()).toBe('0');
+    expect(simulation.simulated.cryptoExemptUnder100k).toBe(false);
+    // 800k > 100k → celé zdanitelné, čerpá i limit 50k
+    expect(simulation.simulatedDisposal?.taxableProceedsCzk.toString()).toBe('800000');
+    expect(simulation.deltas.flatTax50kUsedCzk.toString()).toBe('800000');
+  });
+
+  it('i bez assetClass v požadavku rozhodne označení instrumentu v historii', () => {
+    const input = {
+      transactions: [
+        buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '500000', tradeDate: '2025-03-01', settlementDate: '2025-03-01' }),
+      ],
+      profile: profile(),
+      config: CFG_2025,
+    };
+    const simulation = simulateSale(input, {
+      isin: 'BTC',
+      quantity: '1',
+      pricePerShare: '800000',
+      currency: 'CZK',
+      date: '2025-08-01',
+    });
+    expect(simulation.deltas.cryptoLimit100kUsedCzk.toString()).toBe('800000');
+    expect(simulation.deltas.limit100kUsedCzk.toString()).toBe('0');
+  });
+});

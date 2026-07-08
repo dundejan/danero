@@ -48,6 +48,7 @@ function allocateCredit(tax: Money, base: Money, dividends: DividendsResult): Mo
  */
 export function estimateTax(
   securities: SecuritiesResult,
+  crypto: SecuritiesResult,
   dividends: DividendsResult,
   config: TaxYearConfig,
   warnings: WarningCollector,
@@ -61,13 +62,18 @@ export function estimateTax(
     );
   }
 
+  // R-05d/R-10c: dílčí základ § 10 = max(0, CP) + max(0, krypto) — druhy se
+  // NEkompenzují, každý base10Czk už je nezáporný per druh
+  const base10 = securities.base10Czk.plus(crypto.base10Czk);
+
   // Varianta A: vše v obecném základu
-  const baseA = securities.base10Czk.plus(dividends.base8Czk);
+  const baseA = base10.plus(dividends.base8Czk);
   const taxA = progressiveTax(baseA, threshold);
   const creditA = allocateCredit(taxA, baseA, dividends);
 
-  // Varianta B: § 16a — zahraniční kapitálové příjmy v samostatném základu 15 %
-  const baseB = securities.base10Czk;
+  // Varianta B: § 16a — jen zahraniční dividendy/úroky (§ 8) v samostatném
+  // základu 15 %; kryptoaktiv se § 16a netýká (R-10)
+  const baseB = base10;
   const separateBase = dividends.base8Czk;
   const taxB = progressiveTax(baseB, threshold);
   const separateTax = roundBaseDownTo100(separateBase).mul(RATE_BASE);

@@ -54,6 +54,12 @@ export default async function ReportPage({
   const activeTax =
     result.tax.recommended === 'GENERAL' ? result.tax.general : result.tax.separate16a;
 
+  // rozpis prodejů: CP + krypto v jedné tabulce (druh u řádku), řazeno dle data
+  const allDisposals = [
+    ...result.securities.disposals.map((disposal) => ({ disposal, isCrypto: false })),
+    ...result.crypto.disposals.map((disposal) => ({ disposal, isCrypto: true })),
+  ].sort((a, b) => a.disposal.saleDate.localeCompare(b.disposal.saleDate));
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
@@ -81,12 +87,20 @@ export default async function ReportPage({
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
-          <CardTitle>Dílčí základ § 10 (prodeje CP)</CardTitle>
-          <p className="font-mono text-xl font-semibold">{czk(result.securities.base10Czk)}</p>
+          <CardTitle>Dílčí základ § 10 (prodeje CP{result.crypto.disposals.length > 0 && ' + krypto'})</CardTitle>
+          <p className="font-mono text-xl font-semibold">
+            {czk(result.securities.base10Czk.plus(result.crypto.base10Czk))}
+          </p>
           <p className="text-xs text-inkoust-tlumeny">
-            Tržby {czk(result.securities.totalGrossProceedsCzk)} · výdaje{' '}
-            {czk(result.securities.expensesCzk)}
-            {result.securities.exemptUnder100k && ' · vše osvobozeno (úhrn do 100k)'}
+            CP: tržby {czk(result.securities.totalGrossProceedsCzk)}, základ{' '}
+            {czk(result.securities.base10Czk)}
+            {result.securities.exemptUnder100k && ' (vše osvobozeno, úhrn do 100k)'}
+            {result.crypto.disposals.length > 0 && (
+              <>
+                {' '}· krypto: tržby {czk(result.crypto.totalGrossProceedsCzk)}, základ{' '}
+                {czk(result.crypto.base10Czk)} — druhy se nekompenzují (R-10c)
+              </>
+            )}
           </p>
         </Card>
         <Card className="space-y-1">
@@ -174,9 +188,9 @@ export default async function ReportPage({
         </p>
       </Card>
 
-      {result.securities.disposals.length > 0 && (
+      {allDisposals.length > 0 && (
         <Card className="space-y-3">
-          <CardTitle>Prodeje v roce {year} ({result.securities.disposals.length})</CardTitle>
+          <CardTitle>Prodeje v roce {year} ({allDisposals.length})</CardTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -189,10 +203,15 @@ export default async function ReportPage({
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {result.securities.disposals.map((disposal) => (
+                {allDisposals.map(({ disposal, isCrypto }) => (
                   <tr key={disposal.sellTxId} className="border-b border-linka/60">
                     <td className="py-2 pr-4">
                       <span className="font-sans">{labels.get(disposal.isin) ?? disposal.isin}</span>
+                      {isCrypto && (
+                        <span className="ml-2 rounded bg-linka/60 px-1.5 py-0.5 font-sans text-xs text-inkoust-tlumeny">
+                          krypto
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 pr-4 text-right">{czDate(disposal.saleDate)}</td>
                     <td className="py-2 pr-4 text-right">{czk(disposal.grossProceedsCzk)}</td>
@@ -344,12 +363,25 @@ export default async function ReportPage({
         {EPO_SUPPORTED_YEARS.includes(year) ? (
           <ul className="space-y-2 text-sm">
             <li>
-              <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, tabulka druh{' '}
+              <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, řádek tabulky s druhem{' '}
               <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
-              <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span> (ř.
-              207), výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>{' '}
-              (ř. 208), rozdíl (ř. 209) → <strong>ř. 40</strong> přiznání. U zahraničních
-              brokerů zaškrtni kód „Z".
+              <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span>,
+              výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>. U
+              zahraničních brokerů zaškrtni kód „Z".
+            </li>
+            {result.crypto.disposals.length > 0 && (
+              <li>
+                <strong>Prodeje a směny krypta (§ 10):</strong> samostatný řádek téže tabulky
+                s druhem <span className="font-mono">C — prodej movitých věcí</span> (kryptoaktiva
+                se daní jako movitá věc): příjmy{' '}
+                <span className="font-mono">{czk(result.crypto.taxableIncomeCzk)}</span>, výdaje{' '}
+                <span className="font-mono">{czk(result.crypto.expensesCzk)}</span>. S řádkem CP
+                se nekompenzují — ztráta z jednoho druhu nesnižuje zisk druhého.
+              </li>
+            )}
+            <li>
+              <strong>Součty Přílohy č. 2:</strong> ř. 207 a 208 = součet příjmů a výdajů za
+              všechny druhy, rozdíl (ř. 209) → <strong>ř. 40</strong> přiznání.
             </li>
             <li>
               <strong>Dividendy a úroky ze zahraničí (§ 8):</strong>{' '}

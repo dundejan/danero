@@ -39,10 +39,12 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - Platí pro úhrn příjmů osvobozených dle q), u), zk) přijatých **v roce 2025** (zaveden zák. č. 349/2023 Sb.). **Od 1. 1. 2026 zrušen pro CP a podíly** (zák. č. 360/2025 Sb.); **pro krypto (zk) trvá**.
 - Krácení poměrné: osvobozená část = příjem × (40M / úhrn); výdaje se krátí stejným poměrem. Rozhodný je moment přijetí peněz.
 - Step-up: u CP nabytých do 31. 12. 2024 lze jako výdaj uplatnit tržní hodnotu k 31. 12. 2024. (Engine: volitelný `costBasisOverride` na lotu.)
-- **Implementováno (G5)**: engine krátí poměrně v `computeSecurities`
-  (exemptRatio = strop / úhrn; dodaněná část příjmů i výdajů poměrem
-  1 − exemptRatio; varování CAP_40M_REDUCED s konkrétními čísly). Golden testy
-  test/cap40m.test.ts. Step-up (tržní hodnota k 31. 12. 2024 jako výdaj
+- **Implementováno (G5, zobecněno v G6)**: exemptRatio = strop / kombinovaný úhrn
+  časově osvobozených příjmů **všech druhů pod stropem** (2025: CP + krypto, R-10d;
+  od 2026 jen krypto, R-10e) počítá `engine.ts` a předává oběma výpočtům; dodaněná
+  část příjmů i výdajů poměrem 1 − exemptRatio; varování CAP_40M_REDUCED s konkrétními
+  čísly. Golden testy test/cap40m.test.ts + test/crypto.test.ts.
+  Step-up (tržní hodnota k 31. 12. 2024 jako výdaj
   u dřívějších nabytí) zatím neimplementován — u dotčených uživatelů může
   výrazně snížit dodanění, doporučit konzultaci s poradcem.
 
@@ -108,10 +110,64 @@ Dvě oddělené roviny:
 - **R-09c** Paušální OSVČ: viz R-08.
 - **R-09d § 38v**: oznámení osvobozeného příjmu > **5 mil. Kč** (jednotlivý příjem = „v jednom čase z jednoho titulu od jednoho subjektu", D-59) — týká se i prodejů osvobozených časovým testem; pokuty 0,1–15 % (§ 38w). Danero: detekce jednotlivých prodejů > 5M a upozornění.
 
-## R-10 Kryptoaktiva (od 15. 2. 2025, zák. č. 32/2025 Sb.) — post-MVP modul
+## R-10 Kryptoaktiva (zák. č. 32/2025 Sb., účinnost 15. 2. 2025) — implementováno (G6)
 
-- Vlastní limit 100k (zj; neplatí pro stablecoiny/elektronické peněžní tokeny) + vlastní 3letý test (zk) se stropem 40M (trvá i po 2026). Doba držby před účinností se započítává; prodeje do 14. 2. 2025 postaru.
-- Krypto-krypto směna = zdanitelný úplatný převod. Krypto je v § 10 **jiný druh** než CP → bez vzájemné kompenzace ⚠️.
+Vymezení: kryptoaktivum dle nařízení MiCA (EU) 2023/1114 — digitální zachycení hodnoty
+nebo práva převoditelné a ukládatelné pomocí DLT; osvobození zj)/zk) se vztahuje jen
+na kryptoaktiva odpovídající regulatornímu rámci MiCA (KOOV **625/30.04.25**, závěr
+2.1.1, **souhlas GFŘ**). Pro FO nepodnikatele je prodej kryptoaktiva příjem z prodeje
+**nehmotné movité věci** — § 10/1 b) bod 3 (GFŘ Informace č. j. **18809/22**; D-59
+k § 10/1 písm. b: „za jinou věc se považuje také nehmotná věc"). Pozor: GFŘ připravuje
+komplexní metodický materiál ke kryptoaktivům (společná pracovní skupina — závěrečná
+poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
+
+- **R-10a Hodnotový limit 100k (§ 4/1 zj)**: osvobozen úhrn **hrubých příjmů (tržeb)**
+  z úplatného převodu kryptoaktiv ≤ 100 000 Kč/ZO. **Samostatný limit vedle limitu CP**
+  (R-02d) — oba se čerpají nezávisle. Cliff jako R-02a (překročení = osvobození padá
+  celé). Neplatí pro krypto v obchodním majetku (a 3 roky po ukončení činnosti).
+  ⚠️ Zákon vylučuje **elektronické peněžní tokeny** (EMT — stablecoiny typu USDT/USDC);
+  z dat brokera nedetekovatelné → engine osvobození aplikuje a přidá varování
+  `CRYPTO_EMT_ASSUMPTION` (viz R-10g).
+- **R-10b Časový test 3 roky (§ 4/1 zk) a účinnost novely**: příjem osvobozen,
+  přesáhne-li doba mezi nabytím a převodem 3 roky. Doba držby **před účinností se
+  započítává** (KOOV 625, závěr 2.2.1.2) — nákup 2020, prodej 3/2025 = osvobozen.
+  Novela nemá přechodná ustanovení a je účinná od **15. 2. 2025**: osvobození (zj i zk)
+  se vztahuje **jen na příjmy realizované od 15. 2. 2025**; příjmy 1. 1.–14. 2. 2025
+  jsou plně zdanitelné dle § 10 (s výdaji) a **do limitu 100k se nepočítají**
+  (KOOV 625, závěr 2.2.1.5 + příklady, souhlas GFŘ). Pro ZO **≤ 2024 krypto žádné
+  osvobození nemá** (GFŘ 18809/22) — config `cryptoRules.exemptionsAvailable: false`.
+  Dědictví od příbuzného v řadě přímé/manžela dobu zůstavitele započítává; sloučení/
+  splynutí kryptoaktiv a výměna kryptoaktiva jeho vydavatelem test nepřerušují (text zk).
+- **R-10c Jiný druh příjmu § 10**: krypto = § 10/1 b) bod 3 „převod jiné věci" —
+  **jiný jednotlivý druh** než prodej CP (D-59 k § 10/4 bod 1 a 2: každý druh se
+  posuzuje samostatně). Zisky a ztráty se kompenzují **jen uvnitř druhu**, nikdy
+  s CP; záporný úhrn druhu se neuplatní (ani nepřenáší). Dílčí základ § 10 =
+  max(0, CP) + max(0, krypto). Krypto-krypto směna = **úplatný převod** oceněný
+  obvyklou cenou (GFŘ 18809/22: směna se zdaňuje na obou stranách) — importér ji
+  rozkládá na SELL+BUY v obvyklé ceně, engine formát nevidí.
+- **R-10d Strop 40M v ZO 2025 — společný**: úhrn příjmů osvobozených dle q) + u) +
+  zk) sdílí **jeden** strop 40 mil. Kč (§ 4/3); poměrné krácení jako R-03 (osvobozeno
+  zůstává příjem × strop/úhrn, výdaje týmž poměrem). Do úhrnu vstupují jen krypto
+  příjmy osvobozené od účinnosti (KOOV 625, závěr 2.2.1.6.1); limit se za rok 2025
+  **nekrátí** na dny/měsíce (závěr 2.2.1.6.2). **Bez step-upu pro krypto**: § 10/9
+  (tržní hodnota k 31. 12. 2024 jako výdaj) nebyl novelou na krypto rozšířen
+  (závěr 2.2.1.4) — jen standardní výdaje.
+- **R-10e Strop od 2026 jen pro krypto**: zák. č. 360/2025 Sb. strop 40M pro CP
+  a podíly od 1. 1. 2026 zrušil; **pro krypto (zk) trvá**. Config: `timeTestCap.appliesTo`
+  (2025: `['SECURITIES','CRYPTO']`; 2026+: `['CRYPTO']`).
+- **R-10f Limity 50k/20k a § 38v**: **neosvobozené** krypto tržby (**hrubé**, ne zisk)
+  se počítají do limitu 50k pro daň rovnou paušální dani (§ 7a, R-08d), do limitu
+  20k zaměstnance (R-09b) i obecného 50k (R-09a) — včetně tržeb 1. 1.–14. 2. 2025
+  (R-10b). Jednotlivý **osvobozený** krypto příjem > 5 mil. Kč podléhá oznámení
+  dle § 38v (R-09d).
+- **R-10g Sporné body (⚠️, bezpečné defaulty)**:
+  - ⚠️ **EMT a časový test**: zj) EMT výslovně vylučuje, **zk) nikoli** — výklad
+    nejednotný. Default: časový test osvobozuje i EMT; při každé aplikaci krypto
+    osvobození (zj i zk) engine přidá jedno varování `CRYPTO_EMT_ASSUMPTION`
+    („předpokládáme, že nejde o elektronické peněžní tokeny — případně je vyřaď/označ
+    ručně"). EMT nelze z dat brokera spolehlivě detekovat.
+  - ⚠️ **Párování částečných prodejů**: metoda není předepsána (jako R-05c) — default
+    FIFO, konzistence per rok, stejné strategie jako CP.
 
 ## R-11 ETF a fondy
 
@@ -146,6 +202,8 @@ Každý leden: nový jednotný kurz (pokyn GFŘ D-xx z Finančního zpravodaje),
 - [Pokyn GFŘ D-59](https://financnisprava.gov.cz/assets/cs/prilohy/d-sprava-dani-a-poplatku/Pokyn_GFR-D-59.pdf) (okamžik nabytí, druh příjmu, § 38v)
 - [Pokyn GFŘ D-75 — jednotný kurz 2025](https://financnisprava.gov.cz/cs/dane/legislativa-a-metodika/pokyny-d/cleneni-podle-dani/dane-z-prijmu/2026/pokyn-gfr-d-75)
 - [FS — FAQ paušální daň](https://financnisprava.gov.cz/cs/dane/dane/dan-z-prijmu/pausalni-dan/dotazy-a-odpovedi/dotazy-a-odpovedi-k-pausalni-dani) (ot. 61: 50k limit)
-- Novely: 349/2023 Sb. (40M + step-up), 32/2025 Sb. (krypto), 360/2025 Sb. (zrušení 40M pro CP od 2026)
+- Novely: 349/2023 Sb. (40M + step-up), 32/2025 Sb. (krypto — § 4/1 zj, zk; účinnost 15. 2. 2025), 360/2025 Sb. (zrušení 40M pro CP od 2026; pro krypto trvá)
+- KOOV **625/30.04.25** (Nesrovnal, Nešleha) — osvobození příjmů z úplatného převodu kryptoaktiv, **souhlas GFŘ** se všemi závěry (MiCA vymezení; časové dopady účinnosti; limit 100k jen od 15. 2. 2025; 40M bez krácení; bez step-upu)
+- [GFŘ Informace č. j. 18809/22/7100-40050-205680](https://financnisprava.gov.cz/cs/dane/dane/dan-z-prijmu/informace-stanoviska-a-sdeleni/informace-k-danovemu-posouzeni-transakci-s-kryptomenami) — daňové posouzení transakcí s kryptoměnami (nehmotná movitá věc, § 10; směna krypto-krypto zdanitelná)
 - NSS 7 Afs 229/2022 (přerušení testu při výměně akcií se změnou jmenovité hodnoty)
 - Odborné: danovky.cz (KPMG), dReport (Deloitte), rozbiteprasatko.cz/zdaneni-investic, danesestandou.cz

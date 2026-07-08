@@ -27,8 +27,11 @@ export const isRateVerified = (year: number): boolean => year <= LAST_VERIFIED_R
 
 /** Konfigurace zdaňovacího období pro engine (limity dle roku, kurzy viz výše). */
 export function configForYear(year: number): TaxYearConfig {
-  // 2024 a starší: bez stropu 40M (platí až pro 2025) a s hranicí 23 % roku
-  // 2024; pro roky < 2024 hranici neznáme → null (engine poctivě varuje)
+  // 2024 a starší: bez stropu 40M (platí až pro 2025), krypto bez osvobození
+  // (cryptoRules.exemptionsAvailable: false — R-10b) a s hranicí 23 % roku 2024;
+  // pro roky < 2024 hranici neznáme → null (engine poctivě varuje).
+  // 2025: strop 40M společný pro CP + krypto, krypto osvobození od 15. 2. 2025;
+  // 2026+: strop jen pro krypto (R-10e) — vše nese TaxYearConfig daného roku.
   const base =
     year >= 2026 ? TAX_YEAR_2026_DRAFT : year === 2025 ? TAX_YEAR_2025 : TAX_YEAR_2024;
   const progressiveThreshold = year < 2024 ? null : base.progressiveThreshold;

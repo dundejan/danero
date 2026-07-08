@@ -1,5 +1,5 @@
 import { d, sum, ZERO, type Money, type TaxpayerProfile } from '@danero/shared';
-import type { TaxYearConfig } from '../config/taxYear';
+import type { AssetScope, TaxYearConfig } from '../config/taxYear';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
 import { WarningCollector } from '../warnings';
@@ -31,6 +31,8 @@ export const limitStatus = (used: Money, limit: Money): LimitStatus => {
 export interface FlatTax50kComponents {
   /** Hrubé tržby z neosvobozených prodejů CP — počítá se tržba, ne zisk (R-08d)! */
   nonExemptSecuritiesProceedsCzk: Money;
+  /** R-10f: hrubé tržby z neosvobozených prodejů kryptoaktiv (vč. prodejů před 15. 2. 2025). */
+  nonExemptCryptoProceedsCzk: Money;
   foreignDividendsGrossCzk: Money;
   taxableInterestCzk: Money;
   otherManualCzk: Money;
@@ -39,11 +41,15 @@ export interface FlatTax50kComponents {
 export interface Flagged38v {
   sellTxId: string;
   isin: string;
+  /** Druh příjmu — § 38v se týká CP i kryptoaktiv (R-09d/R-10f). */
+  assetScope: AssetScope;
   exemptProceedsCzk: Money;
 }
 
 export interface LimitsResult {
   limit100k: LimitStatus & { includesTimeTestExempt: boolean };
+  /** R-10a: samostatný limit 100k pro kryptoaktiva (§ 4/1 zj) — čerpá se nezávisle na CP. */
+  cryptoLimit100k: LimitStatus;
   flatTax50k: { applicable: boolean; status: LimitStatus; components: FlatTax50kComponents };
   employee20k: { applicable: boolean; status: LimitStatus };
   generalFiling50k: { applicable: boolean; status: LimitStatus };
@@ -51,6 +57,9 @@ export interface LimitsResult {
   cap40M: {
     applicable: boolean;
     capCzk: Money;
+    /** Druhy příjmů pod stropem (R-10d/R-10e): 2025 CP + krypto, od 2026 jen krypto. */
+    appliesTo: AssetScope[];
+    /** Kombinovaný úhrn časově osvobozených příjmů druhů pod stropem (před krácením). */
     exemptProceedsCzk: Money;
     exceeded: boolean;
   } | null;
@@ -58,6 +67,7 @@ export interface LimitsResult {
 
 export function computeLimits(
   securities: SecuritiesResult,
+  crypto: SecuritiesResult,
   dividends: DividendsResult,
   profile: TaxpayerProfile,
   config: TaxYearConfig,
@@ -69,19 +79,31 @@ export function computeLimits(
     ...limitStatus(securities.pool100kCzk, d(config.limits.securitiesProceedsExemption)),
     includesTimeTestExempt,
   };
+  // R-10a: vlastní pool kryptoaktiv (prodeje před 15. 2. 2025 do něj nevstupují — R-10b)
+  const cryptoLimit100k = limitStatus(
+    crypto.pool100kCzk,
+    d(config.limits.cryptoProceedsExemption),
+  );
 
   // R-08c/d: do 50k vstupují jen NEosvobozené příjmy — hrubé tržby, zahraniční
   // dividendy brutto, zdanitelné úroky a ruční ostatní příjmy § 8–10.
   const nonExemptProceeds = securities.exemptUnder100k
     ? ZERO
     : sum(securities.disposals.map((disposal) => disposal.taxableProceedsCzk));
+  // R-10f: u krypta per prodej — prodeje bez nároku na osvobození (R-10b) jsou
+  // zdanitelné a čerpají limit i v roce, kdy pool 100k nepřeteče
+  const nonExemptCryptoProceeds = sum(
+    crypto.disposals.map((disposal) => disposal.taxableProceedsCzk),
+  );
   const components: FlatTax50kComponents = {
     nonExemptSecuritiesProceedsCzk: nonExemptProceeds,
+    nonExemptCryptoProceedsCzk: nonExemptCryptoProceeds,
     foreignDividendsGrossCzk: dividends.foreignGrossCzk,
     taxableInterestCzk: dividends.taxableInterestCzk,
     otherManualCzk: profile.otherTaxableIncome8to10Czk,
   };
   const sideIncome = nonExemptProceeds
+    .plus(nonExemptCryptoProceeds)
     .plus(dividends.foreignGrossCzk)
     .plus(dividends.taxableInterestCzk)
     .plus(profile.otherTaxableIncome8to10Czk);
@@ -99,38 +121,48 @@ export function computeLimits(
   const employeeStatus = limitStatus(sideIncome, d(config.limits.employeeSideIncome));
   const generalStatus = limitStatus(sideIncome, d(config.limits.generalFiling));
 
-  // R-09d: oznámení jednotlivého osvobozeného příjmu > 5M (§ 38v)
+  // R-09d/R-10f: oznámení jednotlivého osvobozeného příjmu > 5M (§ 38v) — CP i krypto
   const reportingThreshold = d(config.limits.exemptIncomeReporting);
-  const reporting38v: Flagged38v[] = securities.disposals
-    .filter((disposal) => disposal.exemptProceedsCzk.gt(reportingThreshold))
-    .map((disposal) => ({
-      sellTxId: disposal.sellTxId,
-      isin: disposal.isin,
-      exemptProceedsCzk: disposal.exemptProceedsCzk,
-    }));
+  const flag38v = (result: SecuritiesResult, assetScope: AssetScope): Flagged38v[] =>
+    result.disposals
+      .filter((disposal) => disposal.exemptProceedsCzk.gt(reportingThreshold))
+      .map((disposal) => ({
+        sellTxId: disposal.sellTxId,
+        isin: disposal.isin,
+        assetScope,
+        exemptProceedsCzk: disposal.exemptProceedsCzk,
+      }));
+  const reporting38v = [...flag38v(securities, 'SECURITIES'), ...flag38v(crypto, 'CRYPTO')];
   if (reporting38v.length > 0) {
     warnings.add(
       'REPORTING_38V',
       'WARNING',
-      `${reporting38v.length} osvobozený příjem/příjmy z prodeje CP přesahují 5 mil. Kč — povinnost oznámit správci daně (§ 38v) ve lhůtě pro přiznání; pokuty dle § 38w až 15 %.`,
+      `${reporting38v.length} osvobozený příjem/příjmy z prodeje CP či kryptoaktiv přesahují 5 mil. Kč — povinnost oznámit správci daně (§ 38v) ve lhůtě pro přiznání; pokuty dle § 38w až 15 %.`,
       { count: reporting38v.length },
     );
   }
 
-  // R-03: strop 40M — poměrné krácení počítá computeSecurities (vč. varování
-  // CAP_40M_REDUCED s čísly); tady jen strukturovaný stav pro UI.
-  const cap = config.limits.timeTestExemptionCap;
+  // R-03/R-10d: poměrné krácení počítá engine.ts (sdílený strop přes druhy, vč.
+  // varování CAP_40M_REDUCED s čísly); tady jen strukturovaný stav pro UI.
+  const cap = config.limits.timeTestCap;
+  const exemptByScope: Record<AssetScope, Money> = {
+    SECURITIES: securities.timeTestExemptProceedsCzk,
+    CRYPTO: crypto.timeTestExemptProceedsCzk,
+  };
+  const combinedExempt = cap ? sum(cap.appliesTo.map((scope) => exemptByScope[scope])) : ZERO;
   const cap40M = cap
     ? {
         applicable: true,
-        capCzk: d(cap),
-        exemptProceedsCzk: securities.timeTestExemptProceedsCzk,
-        exceeded: securities.timeTestExemptProceedsCzk.gt(d(cap)),
+        capCzk: d(cap.amountCzk),
+        appliesTo: cap.appliesTo,
+        exemptProceedsCzk: combinedExempt,
+        exceeded: combinedExempt.gt(d(cap.amountCzk)),
       }
     : null;
 
   return {
     limit100k,
+    cryptoLimit100k,
     flatTax50k: {
       applicable: profile.regime === 'PAUSAL',
       status: flatStatus,

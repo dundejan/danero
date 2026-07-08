@@ -92,6 +92,9 @@ async function buildSamples() {
     { type: 'DIVIDEND', id: 'd1', isin: 'US0378331005', gross: '1000', withholdingTax: '150', currency: 'USD', date: '2025-05-10' },
     { type: 'DIVIDEND', id: 'd2', isin: 'DE0007164600', gross: '100', withholdingTax: '30', currency: 'EUR', date: '2025-06-01' },
     { type: 'INTEREST', id: 'i1', amount: '10', currency: 'USD', sourceCountry: 'US', date: '2025-07-01' },
+    // krypto nad 100k → zdanitelné, v P2 musí vzniknout druhý řádek VetaJ (kod C)
+    { type: 'BUY', id: 'cb1', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
+    { type: 'SELL', id: 'cs1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
   ]);
   const result = analyzeTaxYear({
     transactions,

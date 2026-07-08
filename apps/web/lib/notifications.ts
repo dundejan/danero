@@ -92,6 +92,14 @@ export function computeNotificationCandidates(args: {
       consequence:
         'Nad limit se daní prodeje bez splněného časového testu — zvaž, zda další prodeje letos počkají.',
     },
+    {
+      key: 'krypto100k',
+      applicable: true,
+      status: result.limits.cryptoLimit100k,
+      label: 'limit 100 000 Kč pro osvobození krypta',
+      consequence:
+        'Nad limit se daní prodeje a směny kryptoaktiv bez splněného časového testu — zvaž, zda další prodeje letos počkají.',
+    },
   ];
 
   for (const event of limitEvents) {

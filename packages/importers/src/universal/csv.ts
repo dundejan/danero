@@ -33,15 +33,17 @@ const CA_SUBTYPES = new Set(['SPLIT', 'ISIN_CHANGE', 'MERGER', 'SPINOFF', 'DELIS
 
 /** Stažitelná předvyplněná šablona (hlavička + ukázkové řádky k přepsání). */
 export const UNIVERSAL_TEMPLATE_CSV = [
-  'type,date,settlement_date,isin,ticker,name,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
-  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
-  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,5,210.00,USD,1.00,USD,,,,,,,,,,,',
-  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
-  'INTEREST,2026-06-01,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
-  'FEE,2026-06-01,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
-  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
-  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
-  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
+  'type,date,settlement_date,isin,ticker,name,asset_class,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
+  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
+  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
+  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,0.5,60000,EUR,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
+  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,0.2,75000,EUR,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
+  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
+  'INTEREST,2026-06-01,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
+  'FEE,2026-06-01,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
+  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
+  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
+  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
 ].join('\n');
 
 export function parseUniversalCsv(text: string): ImportResult {
@@ -91,6 +93,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               isin: map.get(row, 'isin'),
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
+              assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
               quantity: cleanNumber(map.get(row, 'quantity')),
               pricePerShare: cleanNumber(map.get(row, 'price')),
               currency: map.get(row, 'currency'),

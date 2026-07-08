@@ -18,8 +18,9 @@ const CFG: TaxYearConfig = {
     employeeSideIncome: '20000',
     generalFiling: '50000',
     exemptIncomeReporting: '5000000',
-    timeTestExemptionCap: '40000000',
+    timeTestCap: { amountCzk: '40000000', appliesTo: ['SECURITIES', 'CRYPTO'] },
   },
+  cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
   progressiveThreshold: '1676052',
 };
 

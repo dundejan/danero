@@ -24,7 +24,7 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.goto('/prehled');
   await expect(page.getByRole('heading', { name: /Přehled \d{4}/ })).toBeVisible();
   await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
-  await expect(page.getByText('Osvobození prodejů — 100 000 Kč')).toBeVisible();
+  await expect(page.getByText('Osvobození prodejů CP — 100 000 Kč')).toBeVisible();
 
   // ── simulátor: prodej 10 ks zbývajících AAPL ────────────────────────────
   await page.goto('/simulator');

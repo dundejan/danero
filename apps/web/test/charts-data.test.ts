@@ -114,6 +114,22 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     expect(last.value).toBeCloseTo(series!.usedCzk, 6);
   });
 
+  it('flatTax50kSeries: zdanitelné krypto tržby čerpají řadu (konzistence s odměrkou)', () => {
+    const cryptoTxs = parseTransactions([
+      { type: 'BUY', id: 'cb', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '100000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 'cs', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '150000', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const withCrypto = analyzeTaxYear(engineInputForUser([...TXS, ...cryptoTxs], PROFILE, 2026));
+    // 150k > krypto limit 100k → tržba je zdanitelná a MUSÍ být v grafu i odměrce
+    expect(
+      withCrypto.limits.flatTax50k.components.nonExemptCryptoProceedsCzk.toNumber(),
+    ).toBe(150000);
+    const series = flatTax50kSeries(withCrypto)!;
+    const last = series.points[series.points.length - 1]!;
+    expect(last.value).toBeCloseTo(series.usedCzk, 6);
+    expect(series.usedCzk).toBeGreaterThanOrEqual(150000);
+  });
+
   it('dividendsByMonth: součet měsíců = celkové brutto, květen nese US dividendu', () => {
     const data = dividendsByMonth(result);
     expect(data.countries).toEqual(['US']);

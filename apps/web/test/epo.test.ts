@@ -256,3 +256,39 @@ describe('generateDpfdp7: osobní údaje a chyby', () => {
     expect(xml).toBe(expected.xml);
   });
 });
+
+describe('generateDpfdp7: kryptoaktiva v Příloze 2 (R-10c)', () => {
+  // ke standardní fixtuře přidán BTC: nákup 1 × 50 000 EUR (2025 → 24.66 Kč/EUR
+  // = výdaj 1 233 000 Kč), prodej 1 × 60 000 EUR = 1 479 600 Kč (nad 100k →
+  // zdanitelné). Krypto zisk 246 600 Kč, CP zisk 94 800 Kč.
+  const cryptoTxs = parseTransactions([
+    { type: 'BUY', id: 'cb1', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
+    { type: 'SELL', id: 'cs1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
+  ]);
+  const mixedResult = analyzeTaxYear(
+    engineInputForUser([...TXS, ...cryptoTxs], PROFILE, 2025),
+  );
+  const { dp } = (() => {
+    const { xml } = generateDpfdp7({ year: 2025, result: mixedResult, personal: {}, varianta: 'GENERAL' });
+    return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
+  })();
+
+  it('ř. 207–209 sčítají CP + krypto, druhy se nekompenzují', () => {
+    const vetaV = dp.VetaV as Attrs;
+    expect(vetaV.kc_prij10).toBe('1807200'); // 327 600 + 1 479 600
+    expect(vetaV.kc_vyd10).toBe('1465800'); // 232 800 + 1 233 000
+    expect(vetaV.kc_zd10p).toBe('341400'); // 94 800 + 246 600
+    expect((dp.VetaO as Attrs).kc_zd10).toBe('341400'); // ř. 40 = ř. 209
+  });
+
+  it('VetaJ má dva řádky: D (cenné papíry) a C (kryptoaktiva = movitá věc)', () => {
+    const vetaJ = toArray(dp.VetaJ);
+    expect(vetaJ.map((row) => row.kod_dr_prij10)).toEqual(['D', 'C']);
+    const [cp, krypto] = vetaJ as [Attrs, Attrs];
+    expect(cp.rozdil10).toBe('94800');
+    expect(krypto.prijmy10).toBe('1479600');
+    expect(krypto.vydaje10).toBe('1233000');
+    expect(krypto.rozdil10).toBe('246600');
+    expect(krypto.kod10).toBe('Z');
+  });
+});

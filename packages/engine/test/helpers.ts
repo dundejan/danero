@@ -27,8 +27,11 @@ export const CFG_2025: TaxYearConfig = {
     employeeSideIncome: '20000',
     generalFiling: '50000',
     exemptIncomeReporting: '5000000',
-    timeTestExemptionCap: '40000000',
+    // R-10d: v ZO 2025 společný strop 40M pro CP i krypto
+    timeTestCap: { amountCzk: '40000000', appliesTo: ['SECURITIES', 'CRYPTO'] },
   },
+  // R-10b: krypto osvobození v ZO 2025 jen pro příjmy od 15. 2. 2025
+  cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
   progressiveThreshold: '1676052',
 };
 

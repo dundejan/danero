@@ -70,7 +70,7 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     const config2026 = {
       ...CFG_2025,
       year: 2026,
-      limits: { ...CFG_2025.limits, timeTestExemptionCap: null },
+      limits: { ...CFG_2025.limits, timeTestCap: null },
     };
     const txs2026 = [
       buy({

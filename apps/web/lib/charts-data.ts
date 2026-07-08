@@ -60,7 +60,7 @@ export function limit100kSeries(result: TaxYearResult): LimitSeries {
 export function flatTax50kSeries(result: TaxYearResult): LimitSeries | null {
   if (!result.limits.flatTax50k.applicable) return null;
   const contributions: Array<{ date: string; amountCzk: Money }> = [
-    ...result.securities.disposals.map((disposal) => ({
+    ...[...result.securities.disposals, ...result.crypto.disposals].map((disposal) => ({
       date: disposal.saleDate,
       amountCzk: disposal.taxableProceedsCzk,
     })),

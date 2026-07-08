@@ -81,3 +81,43 @@ describe('notifikace (in-memory PGlite)', () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+describe('krypto limit 100k v hlídači (R-10a)', () => {
+  it('překročení krypto limitu vytvoří LIMIT_EXCEEDED s vlastním dedupe klíčem', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'cb', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '100000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 'cs', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '150000', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, {
+        userId: 'u1',
+        regime: 'PAUSAL',
+        hasBusinessAssets: false,
+        w8benFiled: true,
+        otherIncomeCzk: '0',
+        matchingMethod: 'FIFO',
+        fxMethod: 'UNIFIED',
+        limit100kStrict: true,
+        timeTestBasis: 'settlement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }, 2026),
+    );
+    const candidates = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+    });
+    const crypto = candidates.find((c) => c.dedupeKey === 'limit|krypto100k|EXCEEDED|2026');
+    expect(crypto).toBeDefined();
+    expect(crypto!.title).toContain('krypta');
+    // CP limit zůstal nedotčený — krypto tržby ho nesmí prolomit
+    expect(candidates.some((c) => c.dedupeKey === 'limit|100k|EXCEEDED|2026')).toBe(false);
+  });
+});

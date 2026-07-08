@@ -67,6 +67,7 @@ export default async function SimulatorPage({
         pricePerShare: priceRaw,
         currency: selected.currency,
         date: today,
+        assetClass: selected.assetClass,
       });
     }
   }
@@ -152,12 +153,24 @@ export default async function SimulatorPage({
               after={czk(simulation.simulated.flatTax50kUsedCzk)}
               bad={simulation.simulated.flatTax50kExceeded}
             />
-            <DeltaCard
-              label="Prodeje CP (100k)"
-              before={czk(simulation.baseline.limit100kUsedCzk)}
-              after={czk(simulation.simulated.limit100kUsedCzk)}
-              bad={!simulation.simulated.exemptUnder100k && simulation.baseline.exemptUnder100k}
-            />
+            {selected.assetClass === 'CRYPTO' ? (
+              <DeltaCard
+                label="Prodeje krypta (100k)"
+                before={czk(simulation.baseline.cryptoLimit100kUsedCzk)}
+                after={czk(simulation.simulated.cryptoLimit100kUsedCzk)}
+                bad={
+                  !simulation.simulated.cryptoExemptUnder100k &&
+                  simulation.baseline.cryptoExemptUnder100k
+                }
+              />
+            ) : (
+              <DeltaCard
+                label="Prodeje CP (100k)"
+                before={czk(simulation.baseline.limit100kUsedCzk)}
+                after={czk(simulation.simulated.limit100kUsedCzk)}
+                bad={!simulation.simulated.exemptUnder100k && simulation.baseline.exemptUnder100k}
+              />
+            )}
             <DeltaCard
               label="Orientační daň"
               before={czk(simulation.baseline.taxCzk)}

@@ -99,7 +99,7 @@ export default async function OverviewPage({
         {result.limits.flatTax50k.applicable && (
           <LimitGauge
             label="Limit paušální daně — 50 000 Kč"
-            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
+            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů CP i kryptoaktiv, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
             status={result.limits.flatTax50k.status}
           />
         )}
@@ -111,10 +111,18 @@ export default async function OverviewPage({
           />
         )}
         <LimitGauge
-          label="Osvobození prodejů — 100 000 Kč"
+          label="Osvobození prodejů CP — 100 000 Kč"
           hint="Platí pro každého (§ 4): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
           status={result.limits.limit100k}
         />
+        {(result.crypto.disposals.length > 0 ||
+          positions.some((p) => p.assetClass === 'CRYPTO' && p.totalRemaining.gt(0))) && (
+          <LimitGauge
+            label="Osvobození krypta — 100 000 Kč"
+            hint="Samostatný limit pro kryptoaktiva (§ 4/1 zj — R-10a), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
+            status={result.limits.cryptoLimit100k}
+          />
+        )}
         <Card className="space-y-1">
           <CardTitle>Orientační daň z investic</CardTitle>
           <p className="font-mono text-lg font-medium">
@@ -125,7 +133,8 @@ export default async function OverviewPage({
             )}
           </p>
           <p className="text-xs text-inkoust-tlumeny">
-            Základ § 10: {czk(result.securities.base10Czk)} · § 8: {czk(result.dividends.base8Czk)}
+            Základ § 10: {czk(result.securities.base10Czk.plus(result.crypto.base10Czk))} · § 8:{' '}
+            {czk(result.dividends.base8Czk)}
             {result.tax.recommended === 'SEPARATE_16A' && ' · doporučen § 16a'}
           </p>
           <p className="text-xs text-inkoust-tlumeny">{result.tax.note}</p>
