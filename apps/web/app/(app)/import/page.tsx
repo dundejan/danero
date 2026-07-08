@@ -143,20 +143,28 @@ export default async function ImportPage({
   const user = await requireUser();
   const db = await getDb();
   const { chyba, ulozeno } = await searchParams;
-  const [batches, accounts, aliases] = await Promise.all([
+  const [batches, unmappedSource, accounts, aliases] = await Promise.all([
     db
       .select()
       .from(importBatches)
       .where(eq(importBatches.userId, user.id))
       .orderBy(desc(importBatches.createdAt))
       .limit(20),
+    // pro číselník se díváme hlouběji než historie (20) — výzva nesmí zmizet
+    // jen proto, že uživatel mezitím importoval další soubory
+    db
+      .select({ issues: importBatches.issues })
+      .from(importBatches)
+      .where(eq(importBatches.userId, user.id))
+      .orderBy(desc(importBatches.createdAt))
+      .limit(200),
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
     loadAliases(db, user.id),
   ]);
 
-  // nenamapované symboly z posledních importů (bez těch, které už uživatel doplnil)
+  // nenamapované symboly z importů (bez těch, které už uživatel doplnil)
   const unmappedMap = new Map<string, UnmappedSymbol>();
-  for (const batch of batches) {
+  for (const batch of unmappedSource) {
     for (const item of ((batch.issues as BatchIssues).unmapped ?? [])) {
       const known =
         item.broker === 'xtb' ? aliases.xtb[item.symbol] : aliases.fio[item.symbol];
@@ -209,9 +217,10 @@ export default async function ImportPage({
         <Card className="space-y-3 border-jantar">
           <CardTitle>Doplň chybějící údaje instrumentů</CardTitle>
           <p className="text-sm text-inkoust-tlumeny">
-            Poslední import obsahuje symboly, ke kterým broker neexportuje ISIN
+            Importy obsahují symboly, ke kterým broker neexportuje ISIN
             {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
-            na výpisu brokera nebo vyhledáním „[symbol] ISIN". Po uložení nahraj soubor znovu.
+            na výpisu brokera nebo vyhledáním „[symbol] ISIN". Po uložení nahraj soubor znovu —
+            obchody těchto symbolů se bez doplnění neimportují.
           </p>
           <form action={saveAliasesAction} className="space-y-2">
             <input type="hidden" name="count" value={unmappedSymbols.length} />

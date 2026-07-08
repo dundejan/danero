@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { Decimal, d, TransactionSchema } from '@danero/shared';
-import { cleanNumber } from '../csv';
+import { cleanNumber, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -8,7 +8,8 @@ export const XTB_BROKER = 'xtb';
 
 /**
  * XTB export neobsahuje měnu instrumentu ani ISIN (docs/03) — dodává je mapování
- * symbolů. Symbol bez mapování se neimportuje a skončí v `unmappedSymbols`.
+ * symbolů. BUY/SELL bez mapování se neimportuje a symbol skončí v `unmappedSymbols`;
+ * dividendy mapování nepotřebují (jsou v měně účtu, ISIN je u nich optional).
  */
 export interface XtbInstrumentMap {
   [symbol: string]: { isin: string; currency: string };
@@ -127,13 +128,11 @@ function detectAccountCurrency(preambleRows: SheetRow[]): string | null {
   return null;
 }
 
-/** „02.01.2025 14:30:15" (DD.MM.YYYY) i ISO → 'YYYY-MM-DD'. */
+/** „02.01.2025 14:30:15" (DD.MM.YYYY) i ISO → 'YYYY-MM-DD'; neexistující den → null. */
 function toIsoDate(value: string): string | null {
   const czech = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(value);
-  if (czech) return `${czech[3]}-${czech[2]}-${czech[1]}`;
-  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(value);
-  if (iso) return iso[1]!;
-  return null;
+  const iso = czech ? `${czech[3]}-${czech[2]}-${czech[1]}` : /^(\d{4}-\d{2}-\d{2})/.exec(value)?.[1];
+  return iso !== undefined && isValidIsoDate(iso) ? iso : null;
 }
 
 /** Klasifikace operace podle Type (EN/CZ synonyma, case-insensitive, bez diakritiky). */
@@ -281,7 +280,10 @@ export async function parseXtbXlsx(
   };
 
   const unmapped = new Set<string>();
-  /** ISIN+měna z mapování; bez nich transakci neemitujeme — JEDEN error per symbol. */
+  /**
+   * ISIN+měna z mapování pro BUY/SELL; bez nich obchod neemitujeme — JEDEN error
+   * per symbol. Dividendy mapování nepotřebují (měna účtu, ISIN optional).
+   */
   const requireInstrument = (
     symbol: string,
     line: number,
@@ -306,7 +308,8 @@ export async function parseXtbXlsx(
     date: string;
     id: string;
     gross: Decimal;
-    instrument: { isin: string; currency: string } | null;
+    /** ISIN z mapování, pokud existuje — u dividend je optional, měnu určuje účet. */
+    isin?: string;
   }
   interface PendingWithholding {
     line: number;
@@ -400,13 +403,15 @@ export async function parseXtbXlsx(
       }
       case 'DIVIDEND': {
         if (symbol === '') {
-          result.errors.push({ line, message: 'Dividenda bez symbolu — nelze doplnit ISIN a měnu.', raw });
+          result.errors.push({ line, message: 'Dividenda bez symbolu — nelze ji spárovat se srážkovou daní.', raw });
           break;
         }
         if (!amount || amount.lte(0)) {
           result.errors.push({ line, message: `Dividenda ${symbol}: chybí kladná částka.`, raw });
           break;
         }
+        // Amount dividendy je už přepočtený do měny ÚČTU → mapování symbolů
+        // nepotřebujeme; ISIN doplníme, jen pokud ho mapa zná (je optional)
         pendingDividends.push({
           line,
           raw,
@@ -414,7 +419,7 @@ export async function parseXtbXlsx(
           date,
           id: rowId,
           gross: amount,
-          instrument: requireInstrument(symbol, line),
+          isin: instrumentMap[symbol]?.isin,
         });
         break;
       }
@@ -507,25 +512,25 @@ export async function parseXtbXlsx(
     }
   }
 
-  // párování srážek k dividendám (1:1 symbol+den, v pořadí řádků); dividenda bez
-  // mapování srážku spotřebuje také — celý příběh už pokrývá error „doplň ISIN a měnu"
+  // párování srážek k dividendám (1:1 symbol+den, v pořadí řádků); dividenda
+  // i srážka jsou v měně ÚČTU — XTB je připisuje po přepočtu
   for (const dividend of pendingDividends) {
     const queue = pendingWithholdings.get(withholdingKey(dividend.symbol, dividend.date));
     const withholding = queue?.shift();
-    if (!dividend.instrument) continue;
+    const currency = accountCurrency(dividend.line);
     push(dividend.line, dividend.raw, {
       type: 'DIVIDEND',
       id: dividend.id,
-      isin: dividend.instrument.isin,
+      isin: dividend.isin,
       ticker: dividend.symbol,
       gross: dividend.gross.toString(),
-      currency: dividend.instrument.currency,
+      currency,
       withholdingTax: withholding ? withholding.amount.toString() : '0',
       date: dividend.date,
     });
     result.warnings.push({
       line: dividend.line,
-      message: `Dividenda ${dividend.symbol}: XTB ji připisuje po přepočtu na měnu účtu a původní hrubou částku neexportuje — částku přebíráme, jak je, v měně instrumentu (${dividend.instrument.currency}).`,
+      message: `Dividenda ${dividend.symbol}: XTB dividendy připisuje přepočtené do měny účtu (${currency}) — brutto v původní měně export neobsahuje.`,
     });
   }
   for (const queue of pendingWithholdings.values()) {

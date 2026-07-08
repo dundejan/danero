@@ -1,5 +1,5 @@
 import { Decimal, d, TransactionSchema, ZERO } from '@danero/shared';
-import { HeaderMap } from '../csv';
+import { HeaderMap, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import type { ImportResult } from '../types';
 
@@ -104,14 +104,15 @@ function cleanFioNumber(value: string): string {
   return value.replace(/\s/g, '').replace(',', '.');
 }
 
-/** Fio datum `dd.MM.yyyy`, případně s časem `dd.MM.yyyy HH:mm[:ss]` → ISO. */
+/** Fio datum `dd.MM.yyyy`, s časem `dd.MM.yyyy HH:mm[:ss]` → ISO; neexistující den → null. */
 function toIsoDate(value: string): string | null {
   const match = /^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(
     value.trim(),
   );
   if (!match) return null;
   const [, day, month, year] = match;
-  return `${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`;
+  const iso = `${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`;
+  return isValidIsoDate(iso) ? iso : null;
 }
 
 /** Země zdroje dividendy z Text FIO — jen jistoty (USA); jinak se doplní z ISIN. */
@@ -322,7 +323,10 @@ export function parseFioCsv(
 
     const quantity = cleanFioNumber(map.get(row, 'Počet'));
     const price = cleanFioNumber(map.get(row, 'Cena'));
-    const rowId = (): string => contentId([smer.toLowerCase(), date, symbol, quantity, price, mena]);
+    // ID nese i vyřešenou částku — hotovostní operace téhož dne s různými
+    // částkami nesmí sdílet základ hashe (ID by pak záviselo na pořadí v souboru)
+    const rowId = (amount?: Decimal): string =>
+      contentId([smer.toLowerCase(), date, symbol, quantity, price, mena, amount?.toString()]);
     const kind = classifyRow(smer, note);
 
     switch (kind) {
@@ -372,7 +376,7 @@ export function parseFioCsv(
         }
         dividends.push({
           line,
-          id: rowId(),
+          id: rowId(resolved.amount),
           symbol,
           isin: symbolMap[symbol]?.isin,
           date,
@@ -406,7 +410,7 @@ export function parseFioCsv(
         }
         push(line, raw, {
           type: kind,
-          id: rowId(),
+          id: rowId(resolved.amount),
           amount: resolved.amount.abs().toString(),
           currency: resolved.currency,
           date,
@@ -427,7 +431,7 @@ export function parseFioCsv(
           kind === 'TRANSFER' ? (resolved.amount.gte(0) ? 'DEPOSIT' : 'WITHDRAWAL') : kind;
         push(line, raw, {
           type,
-          id: rowId(),
+          id: rowId(resolved.amount),
           amount: resolved.amount.abs().toString(),
           currency: resolved.currency,
           date,
@@ -441,7 +445,7 @@ export function parseFioCsv(
         if (resolved && resolved.amount.lt(0)) {
           push(line, raw, {
             type: 'FEE',
-            id: rowId(),
+            id: rowId(resolved.amount),
             amount: resolved.amount.abs().toString(),
             currency: resolved.currency,
             date,
@@ -468,14 +472,21 @@ export function parseFioCsv(
   });
 
   // Dividenda a srážková daň = samostatné řádky téhož symbolu a data → páruj 1:1
+  const ambiguityWarned = new Set<string>();
   for (const tax of taxes) {
-    const target = dividends.find(
-      (div) =>
-        div.withholding === undefined &&
-        div.symbol === tax.symbol &&
-        div.date === tax.date &&
-        div.currency === tax.currency,
+    const candidates = dividends.filter(
+      (div) => div.symbol === tax.symbol && div.date === tax.date && div.currency === tax.currency,
     );
+    // 2+ dividend téhož symbolu a dne: srážky přiřazujeme podle pořadí v souboru,
+    // což nemusí odpovídat skutečnosti → upozorni (jednou per symbol+den)
+    if (candidates.length > 1 && !ambiguityWarned.has(`${tax.symbol}|${tax.date}`)) {
+      ambiguityWarned.add(`${tax.symbol}|${tax.date}`);
+      result.warnings.push({
+        line: tax.line,
+        message: `Více dividend ${tax.symbol || 'bez symbolu'} téhož dne (${tax.date}) — přiřazení srážkových daní podle pořadí v souboru, zkontroluj správnost.`,
+      });
+    }
+    const target = candidates.find((div) => div.withholding === undefined);
     if (!target) {
       result.warnings.push({
         line: tax.line,

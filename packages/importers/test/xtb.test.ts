@@ -54,7 +54,7 @@ describe('XTB XLSX parser', () => {
     expect(sell.tradeDate).toBe('2025-03-10');
   });
 
-  it('dividenda: gross z Amount, srážka spárovaná přes symbol+den, měna z mapy + warning', async () => {
+  it('dividenda: gross z Amount v měně ÚČTU, srážka spárovaná přes symbol+den, ISIN z mapy + warning', async () => {
     const buffer = await buildXtbXlsx({ preamble: XTB_PREAMBLE_EN, rows: XTB_ROWS_EN });
     const result = await parseXtbXlsx(buffer, XTB_INSTRUMENT_MAP);
 
@@ -63,10 +63,13 @@ describe('XTB XLSX parser', () => {
     expect(dividend.isin).toBe('US0378331005');
     expect(dividend.gross.toString()).toBe('1.19');
     expect(dividend.withholdingTax.toString()).toBe('0.18');
-    expect(dividend.currency).toBe('USD');
+    // Amount je připsaný po přepočtu do měny účtu — NE měna instrumentu (USD)
+    expect(dividend.currency).toBe('EUR');
     expect(dividend.date).toBe('2025-04-15');
     expect(
-      result.warnings.some((w) => w.message.includes('po přepočtu na měnu účtu')),
+      result.warnings.some((w) =>
+        w.message.includes('připisuje přepočtené do měny účtu'),
+      ),
     ).toBe(true);
   });
 
@@ -138,6 +141,7 @@ describe('XTB XLSX parser', () => {
     if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
     expect(dividend.gross.toString()).toBe('3.2');
     expect(dividend.withholdingTax.toString()).toBe('0.48');
+    expect(dividend.currency).toBe('CZK'); // měna účtu z CZ preambule, ne měna instrumentu
 
     // peněžní operace v měně účtu z CZ preambule („Měna účtu CZK")
     const interest = result.transactions.find((t) => t.type === 'INTEREST');
@@ -149,7 +153,7 @@ describe('XTB XLSX parser', () => {
     expect(deposit.currency).toBe('CZK');
   });
 
-  it('symbol bez mapování → jeden error per symbol, unmappedSymbols, žádná transakce', async () => {
+  it('symbol bez mapování → error jen pro BUY/SELL; dividenda se emituje bez ISIN v měně účtu', async () => {
     const buffer = await buildXtbXlsx({
       rows: [
         [1, 'Stocks/ETF purchase', '02.01.2025 10:00:00', 'OPEN BUY 2 @ 250.00', 'TSLA.US', -500],
@@ -160,14 +164,34 @@ describe('XTB XLSX parser', () => {
     });
     const result = await parseXtbXlsx(buffer); // bez mapy
 
-    expect(result.transactions).toEqual([]);
+    // obchody bez mapování se neemitují, dividenda ano (ISIN je u ní optional)
+    expect(result.transactions).toHaveLength(1);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBeUndefined();
+    expect(dividend.ticker).toBe('TSLA.US');
+    expect(dividend.gross.toString()).toBe('1');
+    expect(dividend.withholdingTax.toString()).toBe('0.15');
+    expect(dividend.currency).toBe('EUR'); // default měny účtu (report bez preambule)
+
     expect(result.unmappedSymbols).toEqual(['TSLA.US']);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.message).toBe(
       'Symbol TSLA.US: doplň ISIN a měnu instrumentu (XTB je neexportuje).',
     );
-    // srážku spotřebovala nemapovaná dividenda — žádný matoucí warning navíc
+    // srážku spotřebovala dividenda — žádný matoucí warning navíc
     expect(result.warnings.some((w) => w.message.includes('bez párové dividendy'))).toBe(false);
+  });
+
+  it('nesmyslné kalendářní datum (31.13.2025) → error, řádek se nezpracuje', async () => {
+    const buffer = await buildXtbXlsx({
+      rows: [[1, 'Deposit', '31.13.2025 10:00:00', 'Bank transfer', null, 1000]],
+    });
+    const result = await parseXtbXlsx(buffer);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neplatný čas');
   });
 
   it('neznámý typ operace → error s výzvou „nahlaš nám ho"', async () => {

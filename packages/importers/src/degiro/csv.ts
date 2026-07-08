@@ -1,4 +1,5 @@
 import { d, TransactionSchema } from '@danero/shared';
+import { isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -9,8 +10,10 @@ export const DEGIRO_BROKER = 'degiro';
  * a Account.csv (peněžní pohyby vč. korporátních akcí jako textových párových
  * řádků). Formát je lokalizovaný: hlavičky i popisy CZ/EN/NL, oddělovač
  * středník NEBO čárka (detekce z hlavičky), čísla s desetinnou čárkou i tečkou,
- * datum dd-MM-yyyy. Měna částky je v SAMOSTATNÉM bezejmenném sloupci hned za
- * částkou → řeší se pozičně vůči nalezenému sloupci.
+ * datum dd-MM-yyyy. Částka a měna tvoří DVOJICI pojmenovaný + bezejmenný
+ * sloupec: Transactions.csv má číslo v pojmenovaném (Kurz) a měnu za ním,
+ * reálné Account.csv naopak MĚNU v pojmenovaném (Změna) a částku za ním —
+ * Account parser proto rozhoduje podle obsahu a podporuje obě pořadí.
  */
 
 /* ── CSV s parametrickým oddělovačem (vzor src/csv.ts parseCsv, RFC 4180) ── */
@@ -132,11 +135,12 @@ function parseDegiroNumber(value: string): string | null {
   return /^-?\d+(\.\d+)?$/.test(v) ? v : null;
 }
 
-/** Degiro datum dd-MM-yyyy → ISO YYYY-MM-DD. */
+/** Degiro datum dd-MM-yyyy → ISO YYYY-MM-DD; neexistující kalendářní den → null. */
 function toIsoDate(value: string): string | null {
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value.trim());
   if (!match) return null;
-  return `${match[3]}-${match[2]}-${match[1]}`;
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  return isValidIsoDate(iso) ? iso : null;
 }
 
 /* ── Hlavičky (CZ/EN/NL synonyma) ────────────────────────────────────────── */
@@ -150,7 +154,6 @@ const TOTAL_HEADERS = ['celkem', 'total', 'totaal'];
 const ORDER_ID_HEADERS = ['id objednávky', 'order id', 'ordernummer'];
 const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving'];
 const CHANGE_HEADERS = ['změna', 'change', 'mutatie'];
-const BALANCE_HEADERS = ['saldo', 'balance'];
 
 /** Poplatkový sloupec má dlouhý lokalizovaný název → fuzzy shoda. */
 const isFeeHeader = (lower: string): boolean =>
@@ -183,6 +186,32 @@ const cell = (row: string[], index: number): string =>
 
 const isCurrency = (value: string): boolean => /^[A-Z]{3}$/.test(value);
 
+type AmountCurrencyPair =
+  | { kind: 'ok'; amount: string; currency: string }
+  | { kind: 'empty' }
+  | { kind: 'invalid' };
+
+/**
+ * Částka + měna z dvojice buněk: pojmenovaný sloupec (Změna/Change/Mutatie)
+ * a bezejmenný hned za ním. Reálné Account.csv exporty mají v pojmenovaném
+ * sloupci MĚNU a v bezejmenném ČÁSTKU, jiné varianty pořadí opačné — rozhoduje
+ * obsah (třípísmenný kód = měna, parsovatelné číslo = částka), obě pořadí OK.
+ */
+function readAmountCurrencyPair(row: string[], namedIndex: number): AmountCurrencyPair {
+  const first = cell(row, namedIndex);
+  const second = cell(row, namedIndex + 1);
+  if (first === '' && second === '') return { kind: 'empty' };
+  for (const [currency, amountRaw] of [
+    [first, second],
+    [second, first],
+  ] as const) {
+    if (!isCurrency(currency)) continue;
+    const amount = parseDegiroNumber(amountRaw);
+    if (amount !== null) return { kind: 'ok', amount, currency };
+  }
+  return { kind: 'invalid' };
+}
+
 /**
  * Stabilní id: `degiro-<OrderID>`; bez ID (Account.csv, prázdné Order ID)
  * obsahový hash fnv1a64 — NIKDY pořadí řádku v souboru. Opakování stejného
@@ -201,25 +230,27 @@ function idFactory(): (base: string) => string {
 
 /* ── Autodetekce ─────────────────────────────────────────────────────────── */
 
-/** Detekce Degiro CSV podle hlaviček — rozliší Transactions.csv a Account.csv. */
+/**
+ * Detekce Degiro CSV podle hlaviček — rozliší Transactions.csv a Account.csv.
+ * Vyžaduje degiro-specifickou kombinaci sloupců (datum + čas + produkt + …):
+ * samotné date+isin+quantity+price by chytalo i naši univerzální šablonu.
+ */
 export function isDegiroCsv(text: string): 'transactions' | 'account' | null {
   if (text.trim() === '') return null;
   const newline = text.indexOf('\n');
   const firstLine = newline === -1 ? text : text.slice(0, newline);
   const { headers } = parseDelimited(firstLine, detectDelimiter(text));
-  if (findColumn(headers, DATE_HEADERS) < 0) return null;
   if (
-    findColumn(headers, DESCRIPTION_HEADERS) >= 0 &&
-    findColumn(headers, CHANGE_HEADERS) >= 0 &&
-    findColumn(headers, BALANCE_HEADERS) >= 0
+    findColumn(headers, DATE_HEADERS) < 0 ||
+    findColumn(headers, TIME_HEADERS) < 0 ||
+    findColumn(headers, PRODUCT_HEADERS) < 0
   ) {
+    return null;
+  }
+  if (findColumn(headers, DESCRIPTION_HEADERS) >= 0 && findColumn(headers, CHANGE_HEADERS) >= 0) {
     return 'account';
   }
-  if (
-    findColumn(headers, ['isin']) >= 0 &&
-    findColumn(headers, QUANTITY_HEADERS) >= 0 &&
-    findColumn(headers, PRICE_HEADERS) >= 0
-  ) {
+  if (findColumn(headers, ['isin']) >= 0 && findColumn(headers, QUANTITY_HEADERS) >= 0) {
     return 'transactions';
   }
   return null;
@@ -556,15 +587,16 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
-    // prázdná Změna = informativní řádek bez peněžního pohybu → bez záznamu
-    const changeRaw = parseDegiroNumber(cell(row, col.change));
-    if (changeRaw === null) return;
-    const change = d(changeRaw);
-
     if (classified.kind === 'SKIP') {
       result.skipped.push({ line, message: `„${description}": ${classified.reason}` });
       return;
     }
+
+    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
+    const pair = readAmountCurrencyPair(row, col.change);
+    // prázdná dvojice = informativní řádek bez peněžního pohybu → bez záznamu
+    if (pair.kind === 'empty') return;
+
     if (classified.kind === 'UNKNOWN') {
       result.errors.push({
         line,
@@ -573,17 +605,18 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       });
       return;
     }
-
-    // měna částky = bezejmenný sloupec hned za sloupcem Změna (pozičně!)
-    const currency = cell(row, col.change + 1);
-    if (!isCurrency(currency)) {
+    if (pair.kind === 'invalid') {
       result.errors.push({
         line,
-        message: `U částky chybí měna (bezejmenný sloupec za změnou) — nalezeno „${currency}".`,
+        message: `Částku pohybu se nepodařilo přečíst — ve sloupci Změna a vedle něj je „${cell(row, col.change)}" / „${cell(row, col.change + 1)}", očekáváme číslo a třípísmenný kód měny.`,
         raw: row.join(';'),
       });
       return;
     }
+
+    const changeRaw = pair.amount;
+    const currency = pair.currency;
+    const change = d(changeRaw);
 
     // Account.csv nemá ID řádku → stabilní obsahový hash
     const id = nextId(
@@ -723,6 +756,18 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
 
     const outs = legs.filter((leg) => leg.direction === 'out');
     const ins = legs.filter((leg) => leg.direction === 'in');
+
+    // 2+ odpisů nebo 2+ připisů v týž den: párování podle pořadí by mohlo
+    // spojit špatné dvojice → radši error než tichá chyba v držení
+    if (outs.length > 1 || ins.length > 1) {
+      result.errors.push({
+        line: legs[0]!.line,
+        message: `${label} ${legs[0]!.date}: ve výpisu je ${outs.length}× odpis a ${ins.length}× připis v týž den — dvojice nejde spolehlivě přiřadit automaticky, akce doplň ručně přes univerzální šablonu.`,
+        raw: legs.map((leg) => leg.description).join(' | '),
+      });
+      continue;
+    }
+
     const pairCount = Math.min(outs.length, ins.length);
 
     for (let i = 0; i < pairCount; i += 1) {

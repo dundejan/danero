@@ -37,19 +37,27 @@ const CURRENCY_RE = /^[A-Z]{3}$/;
  * Uloží doplněné ISIN/měny k symbolům (XTB, Fio) do číselníku uživatele.
  * Po uložení stačí soubor nahrát znovu — deduplikace nic nezdvojí.
  */
+/** Brokeři, pro které číselník dává smysl (XTB chce i měnu instrumentu). */
+const ALIAS_BROKERS = new Set(['xtb', 'fio']);
+const MAX_ALIAS_ROWS = 200;
+
 export async function saveAliasesAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const count = Number(formData.get('count') ?? 0);
+  // tvrdý strop a celočíselnost — count je z formuláře (DoS přes Infinity/1e9)
+  const rawCount = Number(formData.get('count') ?? 0);
+  const count = Number.isInteger(rawCount) ? Math.min(Math.max(rawCount, 0), MAX_ALIAS_ROWS) : 0;
   const rows: AliasInput[] = [];
   for (let i = 0; i < count; i += 1) {
     const broker = String(formData.get(`broker-${i}`) ?? '');
     const symbol = String(formData.get(`symbol-${i}`) ?? '');
     const isin = String(formData.get(`isin-${i}`) ?? '').trim().toUpperCase();
     const currency = String(formData.get(`currency-${i}`) ?? '').trim().toUpperCase();
-    if (!broker || !symbol) continue;
+    if (!ALIAS_BROKERS.has(broker) || !symbol) continue;
     if (isin === '' && currency === '') continue; // nevyplněný řádek přeskoč
     if (!ISIN_RE.test(isin)) redirect('/import?chyba=isin');
     if (currency !== '' && !CURRENCY_RE.test(currency)) redirect('/import?chyba=mena');
+    // XTB bez měny by se v číselníku ignoroval — vynutit i na serveru
+    if (broker === 'xtb' && currency === '') redirect('/import?chyba=mena');
     rows.push({ broker, symbol, isin, ...(currency ? { currency } : {}) });
   }
   if (rows.length > 0) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions } from '../src';
+import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import {
   DEGIRO_BROKER,
   isDegiroCsv,
@@ -198,8 +198,8 @@ describe('Degiro Account.csv', () => {
   it('fúze bez počtů kusů v popisech → MERGER bez poměru + warning', () => {
     const csv = [
       DEGIRO_ACCOUNT_HEADER_CZ,
-      '10-02-2024;12:00;10-02-2024;OLD;US1111111117;Fúze: Odpis akcií OLD;;;;0,00;EUR;',
-      '10-02-2024;12:00;10-02-2024;NEW;US2222222226;Fúze: Připis akcií NEW;;;;0,00;EUR;',
+      '10-02-2024;12:00;10-02-2024;OLD;US1111111117;Fúze: Odpis akcií OLD;;;;EUR;0,00;',
+      '10-02-2024;12:00;10-02-2024;NEW;US2222222226;Fúze: Připis akcií NEW;;;;EUR;0,00;',
     ].join('\n');
     const result = parseDegiroAccountCsv(csv);
     expect(result.errors).toEqual([]);
@@ -214,7 +214,7 @@ describe('Degiro Account.csv', () => {
   it('nespárovaná změna ISIN → error s výzvou doplnit ručně, žádná transakce', () => {
     const csv = [
       DEGIRO_ACCOUNT_HEADER_CZ,
-      '20-05-2024;12:00;20-05-2024;VANGUARD;IE00B3RBWM25;Změna ISIN: Odpis 3 ks;;;;0,00;EUR;',
+      '20-05-2024;12:00;20-05-2024;VANGUARD;IE00B3RBWM25;Změna ISIN: Odpis 3 ks;;;;EUR;0,00;',
     ].join('\n');
     const result = parseDegiroAccountCsv(csv);
     expect(result.transactions).toEqual([]);
@@ -223,10 +223,68 @@ describe('Degiro Account.csv', () => {
     expect(result.errors[0]!.message).toContain('ručně');
   });
 
+  it('zpětná kompatibilita: částka v pojmenovaném sloupci Změna a měna za ní (opačné pořadí)', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '02-01-2024;10:00;02-01-2024;;;Vklad;;10000,00;CZK;10000,00;CZK;',
+      '15-03-2024;09:12;15-03-2024;APPLE INC;US0378331005;Dividenda;;24,00;USD;24,00;USD;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(2);
+    const deposit = result.transactions.find((t) => t.type === 'DEPOSIT')!;
+    if (deposit.type !== 'DEPOSIT') throw new Error('unreachable');
+    expect(deposit.amount.toString()).toBe('10000');
+    expect(deposit.currency).toBe('CZK');
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND')!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.gross.toString()).toBe('24');
+    expect(dividend.currency).toBe('USD');
+  });
+
+  it('neprázdná, ale nečitelná dvojice částka/měna → error s citací hodnot', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '02-01-2024;10:00;02-01-2024;;;Vklad;;N/A;EUR;10000,00;CZK;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('N/A');
+    expect(result.errors[0]!.message).toContain('nepodařilo přečíst');
+  });
+
+  it('nesmyslné kalendářní datum (31-13-2025) → error, řádek se nezpracuje', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '31-13-2025;10:00;31-13-2025;;;Vklad;;CZK;10000,00;CZK;10000,00;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neplatné datum');
+  });
+
+  it('2+ odpisů nebo připisů v týž den → žádné párování pořadím, error s výzvou doplnit ručně', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '10-02-2024;12:00;10-02-2024;OLD A;US1111111117;Fúze: Odpis 10 ks OLD A;;;;EUR;0,00;',
+      '10-02-2024;12:00;10-02-2024;OLD B;US3333333334;Fúze: Odpis 4 ks OLD B;;;;EUR;0,00;',
+      '10-02-2024;12:00;10-02-2024;NEW A;US2222222226;Fúze: Připis 5 ks NEW A;;;;EUR;0,00;',
+      '10-02-2024;12:00;10-02-2024;NEW B;US4444444442;Fúze: Připis 2 ks NEW B;;;;EUR;0,00;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('2× odpis');
+    expect(result.errors[0]!.message).toContain('2× připis');
+    expect(result.errors[0]!.message).toContain('univerzální šablonu');
+  });
+
   it('nespárovaná daň z dividendy → warning, nezaúčtuje se', () => {
     const csv = [
       DEGIRO_ACCOUNT_HEADER_CZ,
-      '15-03-2024;09:12;15-03-2024;APPLE INC;US0378331005;Daň z dividendy;;-3,60;USD;20,40;USD;',
+      '15-03-2024;09:12;15-03-2024;APPLE INC;US0378331005;Daň z dividendy;;USD;-3,60;USD;20,40;',
     ].join('\n');
     const result = parseDegiroAccountCsv(csv);
     expect(result.transactions).toEqual([]);
@@ -237,7 +295,7 @@ describe('Degiro Account.csv', () => {
   it('neznámý popis → error s citací popisu a výzvou nahlásit', () => {
     const csv = [
       DEGIRO_ACCOUNT_HEADER_CZ,
-      '05-05-2024;10:00;05-05-2024;;;Převod bonusových jednotek;;1,00;EUR;1,00;EUR;',
+      '05-05-2024;10:00;05-05-2024;;;Převod bonusových jednotek;;EUR;1,00;EUR;1,00;',
     ].join('\n');
     const result = parseDegiroAccountCsv(csv);
     expect(result.transactions).toEqual([]);
@@ -276,9 +334,13 @@ describe('isDegiroCsv (autodetekce)', () => {
   it('cizí soubory a prázdný vstup → null', () => {
     expect(isDegiroCsv('')).toBeNull();
     expect(isDegiroCsv('foo;bar\n1;2')).toBeNull();
-    // T212 export nemá sloupec Datum/Date → nesmí se chytit
+    // T212 export nemá sloupce Datum/Date ani Produkt → nesmí se chytit
     const t212 =
       'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Total\nMarket buy,2024-01-10 14:30:02,US0378331005,AAPL,Apple,10,185.50,USD,1855.00';
     expect(isDegiroCsv(t212)).toBeNull();
+  });
+
+  it('univerzální šablona (type,date,…,isin,quantity,price) → null, ne „transactions"', () => {
+    expect(isDegiroCsv(UNIVERSAL_TEMPLATE_CSV)).toBeNull();
   });
 });

@@ -105,8 +105,10 @@ export async function importFile(
   }
 
   // Fio: hlavička „Datum obchodu" je čitelná i při špatném dekódování (ASCII),
-  // samotný obsah se ale musí dekódovat jako windows-1250
-  if (utf8.includes('Datum obchodu')) {
+  // samotný obsah se ale musí dekódovat jako windows-1250. Kontroluje se JEN
+  // první řádek — poznámka v jiném souboru nesmí import přesměrovat na Fio.
+  const firstLine = utf8.slice(0, utf8.indexOf('\n') === -1 ? undefined : utf8.indexOf('\n'));
+  if (firstLine.includes('Datum obchodu')) {
     const aliases = await loadAliases(db, userId);
     const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.fio });
     return importParsed(db, userId, filename, outcome, undefined, {

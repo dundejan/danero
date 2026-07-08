@@ -156,6 +156,15 @@ describe('Fio e-Broker CSV parser', () => {
     expect(badDate.errors[0]!.message).toContain('Neplatné datum');
   });
 
+  it('nesmyslné kalendářní datum (31.13.2025) → error, řádek se nezpracuje', () => {
+    const result = parseFioCsv(
+      [FIO_HEADER, '31.13.2025;Vloženo;;;;CZK;100,00;;;;;;Vklad'].join('\n'),
+    );
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neplatné datum');
+  });
+
   it('varianta exportu bez měnových sloupců: mapování dle hlaviček, chybějící poplatek → warning', () => {
     const reduced = [
       'Datum obchodu;Směr;Symbol;Cena;Počet;Měna;Objem v CZK;Poplatky v CZK;Text FIO',
@@ -196,6 +205,47 @@ describe('Fio e-Broker CSV parser', () => {
     const repeated = dedupeTransactions(FIO_BROKER, [...first, ...second]);
     expect(repeated.fresh).toHaveLength(8);
     expect(repeated.duplicates).toBe(8);
+  });
+
+  it('hotovostní operace téhož dne s různými částkami mají různý základ id (ne suffix dle pořadí)', () => {
+    const csv = [
+      FIO_HEADER,
+      '30.06.2025;Úrok;;;;CZK;12,34;;;;;;Úrok z hotovosti',
+      '30.06.2025;Úrok;;;;CZK;56,78;;;;;;Úrok z hotovosti',
+    ].join('\n');
+    const result = parseFioCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(2);
+    const [a, b] = result.transactions;
+    // částka je součástí obsahového hashe → id nezávisí na pořadí řádků v souboru
+    expect(a!.id).not.toBe(b!.id);
+    expect(b!.id).not.toBe(`${a!.id}-2`);
+  });
+
+  it('více dividend téhož symbolu a dne → párování podle pořadí + warning „zkontroluj"', () => {
+    const csv = [
+      FIO_HEADER,
+      '10.05.2026;;AAPL;;;USD;;;25,00;;;;Dividenda AAPL, USA',
+      '10.05.2026;;AAPL;;;USD;;;10,00;;;;Dividenda AAPL, USA',
+      '10.05.2026;;AAPL;;;USD;;;-3,75;;;;Daň z dividendy AAPL, USA',
+      '10.05.2026;;AAPL;;;USD;;;-1,50;;;;Daň z dividendy AAPL, USA',
+    ].join('\n');
+    const result = parseFioCsv(csv, { symbolMap: FIO_SYMBOL_MAP });
+    expect(result.errors).toEqual([]);
+
+    const dividends = result.transactions.filter((t) => t.type === 'DIVIDEND');
+    expect(dividends).toHaveLength(2);
+    const [first, second] = dividends;
+    if (first?.type !== 'DIVIDEND' || second?.type !== 'DIVIDEND') throw new Error('unreachable');
+    // srážky přiřazené podle pořadí v souboru: 25→3,75 a 10→1,50
+    expect(first.gross.toString()).toBe('25');
+    expect(first.withholdingTax.toString()).toBe('3.75');
+    expect(second.gross.toString()).toBe('10');
+    expect(second.withholdingTax.toString()).toBe('1.5');
+
+    const ambiguity = result.warnings.filter((w) => w.message.includes('Více dividend'));
+    expect(ambiguity).toHaveLength(1); // jednou per symbol+den, ne per srážka
+    expect(ambiguity[0]!.message).toContain('podle pořadí v souboru');
   });
 
   it('identické legitimní řádky dostanou pořadový suffix — zůstávají dvě transakce', () => {
