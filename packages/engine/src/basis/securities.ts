@@ -85,6 +85,23 @@ export function computeSecurities(
     : sum(prepared.map((p) => p.taxableCzk));
   const exemptUnder100k = pool.lte(limit);
 
+  // R-03: strop úhrnu příjmů osvobozených časovým testem (2025: 40 mil. Kč;
+  // pro CP od 2026 zrušen → cap null). Při překročení se osvobození krátí
+  // POMĚRNĚ: osvobozeno zůstává příjem × (strop / úhrn), zbytek se dodaňuje
+  // a výdaje k dodaněné části se uplatní týmž poměrem (docs/02 R-03).
+  const capRaw = config.limits.timeTestExemptionCap;
+  const cap = capRaw ? d(capRaw) : null;
+  const capApplies =
+    cap !== null && !exemptUnder100k && timeTestExemptProceeds.gt(cap);
+  const exemptRatio = capApplies ? cap.div(timeTestExemptProceeds) : d(1);
+  if (capApplies) {
+    warnings.add(
+      'CAP_40M_REDUCED',
+      'WARNING',
+      `Úhrn příjmů osvobozených časovým testem ${timeTestExemptProceeds.toFixed(2)} Kč přesáhl strop ${cap.toFixed(0)} Kč (§ 4 odst. 3, R-03). Osvobození je kráceno poměrně: osvobozeno zůstává ${exemptRatio.mul(100).toFixed(2)} % těchto příjmů, zbytek vstupuje do dílčího základu § 10 s poměrnou částí výdajů. Rozhodný je moment přijetí peněz — zkontroluj vypořádání přes přelom roku.`,
+    );
+  }
+
   // 2. průchod: výdaje a základ jen u zdanitelných alokací
   let taxableIncome = ZERO;
   let expenses = ZERO;
@@ -113,6 +130,13 @@ export function computeSecurities(
         expenseCzk = fullExpenseCzk;
         taxableIncome = taxableIncome.plus(proceedsCzk);
         expenses = expenses.plus(expenseCzk);
+      } else if (capApplies && alloc.timeTestExempt && !exemptUnder100k) {
+        // R-03: dodanění části časově osvobozené alokace nad strop —
+        // příjem i výdaj poměrem (1 − exemptRatio)
+        const taxableShare = d(1).minus(exemptRatio);
+        expenseCzk = fullExpenseCzk.mul(taxableShare);
+        taxableIncome = taxableIncome.plus(proceedsCzk.mul(taxableShare));
+        expenses = expenses.plus(expenseCzk);
       }
       allocationReports.push({
         lotId: alloc.lotId,
@@ -124,13 +148,15 @@ export function computeSecurities(
         interpretive: alloc.interpretive,
       });
     }
+    // R-03: krácení mění osvobozenou/zdanitelnou část prodeje
+    const exemptAfterCap = exemptCzk.mul(exemptRatio);
     reports.push({
       sellTxId: disposal.sellTxId,
       isin: disposal.isin,
       saleDate: disposal.saleDate,
       grossProceedsCzk: grossCzk,
-      exemptProceedsCzk: exemptUnder100k ? grossCzk : exemptCzk,
-      taxableProceedsCzk: exemptUnder100k ? ZERO : taxableCzk,
+      exemptProceedsCzk: exemptUnder100k ? grossCzk : exemptAfterCap,
+      taxableProceedsCzk: exemptUnder100k ? ZERO : grossCzk.sub(exemptAfterCap),
       limit100kContributionCzk: options.limit100kIncludesTimeTestExempt ? grossCzk : taxableCzk,
       realizedResultCzk: realizedResult,
       allocations: allocationReports,

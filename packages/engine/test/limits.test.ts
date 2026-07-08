@@ -118,13 +118,13 @@ describe('R-09 povinnost přiznání a oznámení § 38v', () => {
     expect(result.limits.cap40M?.exceeded).toBe(false);
   });
 
-  it('R-03: překročení stropu 40M (rok 2025) hlásí ERROR — krácení je post-MVP hook', () => {
+  it('R-03: překročení stropu 40M (rok 2025) → poměrné krácení s varováním', () => {
     const result = run([
       buy({ quantity: '1000', pricePerShare: '30000', tradeDate: '2019-03-01', settlementDate: '2019-03-01' }),
       sell({ quantity: '1000', pricePerShare: '45000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
     ]);
     expect(result.limits.cap40M?.applicable).toBe(true);
     expect(result.limits.cap40M?.exceeded).toBe(true);
-    expect(hasWarning(result, 'CAP_40M_EXCEEDED')).toBe(true);
+    expect(hasWarning(result, 'CAP_40M_REDUCED')).toBe(true);
   });
 });

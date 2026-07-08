@@ -9,6 +9,7 @@ import {
   engineInputForUser,
   getProfile,
   instrumentLabels,
+  loadDailyRates,
   loadTransactions,
 } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
@@ -39,7 +40,9 @@ export default async function ReportPage({
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
-  const input = engineInputForUser(txs, profile, year);
+  // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
+  const dailyRates = await loadDailyRates(db, txs, currentYear);
+  const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = analyzeTaxYear(input);
   const { variants, recommended } = compareVariants(input);
   const labels = instrumentLabels(txs);
@@ -137,8 +140,20 @@ export default async function ReportPage({
             </tbody>
           </table>
         </div>
+        {dailyRates ? (
+          <p className="text-xs text-inkoust-tlumeny">
+            Denní kurzy ČNB jsou načtené z oficiálního zdroje — tabulka srovnává jednotný
+            kurz GFŘ i denní kurzy s reálnými čísly; doporučená kombinace je zvýrazněná.
+          </p>
+        ) : (
+          <p className="text-xs text-jantar">
+            Denní kurzy ČNB se zatím nepodařilo načíst — srovnání zahrnuje jen jednotný
+            kurz. Zkus stránku otevřít později.
+          </p>
+        )}
         <p className="text-xs text-inkoust-tlumeny">
-          Metodu změníš v nastavení — zvolená metoda se musí držet konzistentně a průkazně.
+          Metodu změníš v nastavení — zvolená metoda se musí držet konzistentně a průkazně
+          za celý rok (kombinovat v jednom roce nelze).
         </p>
       </Card>
 

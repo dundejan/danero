@@ -3,7 +3,12 @@ import { notFound, redirect } from 'next/navigation';
 import { Card, CardTitle } from '@/components/ui/card';
 import { getDb } from '@/db';
 import { czk, czDate, money, qty } from '@/lib/format';
-import { analyzeForUser, getProfile, loadTransactions } from '@/lib/portfolio';
+import {
+  analyzeForUser,
+  dailyRatesForProfile,
+  getProfile,
+  loadTransactions,
+} from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { requireUser } from '@/lib/session';
@@ -57,7 +62,8 @@ export default async function PositionDetailPage({
   const txs = await loadTransactions(db, user.id);
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = Number(today.slice(0, 4));
-  const { positions, labels } = analyzeForUser(txs, profile, currentYear, today);
+  const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
+  const { positions, labels } = analyzeForUser(txs, profile, currentYear, today, dailyRates);
   const position = positions.find((p) => p.isin === isin);
 
   const prices = await loadInstrumentPrices(db, user.id);

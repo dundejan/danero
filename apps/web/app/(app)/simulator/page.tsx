@@ -6,7 +6,13 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { czk, qty } from '@/lib/format';
-import { engineInputForUser, getProfile, instrumentLabels, loadTransactions } from '@/lib/portfolio';
+import {
+  dailyRatesForProfile,
+  engineInputForUser,
+  getProfile,
+  instrumentLabels,
+  loadTransactions,
+} from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
@@ -31,7 +37,8 @@ export default async function SimulatorPage({
 
   const today = new Date().toISOString().slice(0, 10);
   const year = new Date().getFullYear();
-  const input = engineInputForUser(txs, profile, year);
+  const dailyRates = await dailyRatesForProfile(db, txs, profile, year);
+  const input = engineInputForUser(txs, profile, year, dailyRates);
   const baseline = analyzeTaxYear(input);
   const positions = positionsAt(baseline.ledger, today).filter((p) =>
     p.totalRemaining.gt(0),

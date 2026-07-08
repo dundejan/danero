@@ -17,6 +17,7 @@ import {
 import { czk, money, qty } from '@/lib/format';
 import {
   analyzeForUser,
+  dailyRatesForProfile,
   availableYears,
   engineInputForUser,
   getProfile,
@@ -61,13 +62,17 @@ export default async function PortfolioPage({
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
-  const { result, positions, labels } = analyzeForUser(txs, profile, year, today);
+  const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
+  const { result, positions, labels } = analyzeForUser(txs, profile, year, today, dailyRates);
   const prices = await loadInstrumentPrices(db, user.id);
   const valuation = valuePositions(positions, labels, prices, currentYear);
 
   // realizované P/L: engine per rok (čistá funkce nad týmiž transakcemi)
   const resultsByYear = new Map<number, TaxYearResult>(
-    years.map((y) => [y, y === year ? result : analyzeTaxYear(engineInputForUser(txs, profile, y))]),
+    years.map((y) => [
+      y,
+      y === year ? result : analyzeTaxYear(engineInputForUser(txs, profile, y, dailyRates)),
+    ]),
   );
   const realized = realizedGainsByYear(resultsByYear);
   const dividends = dividendsByMonth(result);

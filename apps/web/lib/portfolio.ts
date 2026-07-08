@@ -91,9 +91,32 @@ export function engineInputForUser(
   txs: Transaction[],
   profileRow: ProfileRow,
   year: number,
+  dailyRates?: EngineInput['dailyRates'],
 ): EngineInput {
   const { profile, options } = profileToEngine(profileRow);
-  return { transactions: txs, profile, options, config: configForYear(year) };
+  return { transactions: txs, profile, options, config: configForYear(year), dailyRates };
+}
+
+/**
+ * Denní kurzy ČNB pro výpočet (R-06b): načte provider z DB a při prvním
+ * použití doplní chybějící roky z oficiálního ČNB API (jednorázový backfill,
+ * ~1 request na rok). Vrací undefined, když kurzy nejsou potřeba ani po ruce.
+ */
+export async function loadDailyRates(
+  db: Db,
+  txs: Transaction[],
+  currentYear: number,
+): Promise<EngineInput['dailyRates']> {
+  const { ensureCnbYears, loadCnbRateProvider } = await import('@/lib/cnb');
+  const years = availableYears(txs, currentYear);
+  const fromYear = Math.min(...years);
+  try {
+    await ensureCnbYears(db, years);
+  } catch {
+    // offline/backfill selhal — zkusíme, co už v DB je; report stav přizná
+  }
+  const provider = await loadCnbRateProvider(db, fromYear, currentYear);
+  return provider.isEmpty ? undefined : provider;
 }
 
 export interface YearAnalysis {
@@ -108,12 +131,27 @@ export function analyzeForUser(
   profileRow: ProfileRow,
   year: number,
   atDate: string,
+  dailyRates?: EngineInput['dailyRates'],
 ): YearAnalysis {
-  const result = analyzeTaxYear(engineInputForUser(txs, profileRow, year));
+  const result = analyzeTaxYear(engineInputForUser(txs, profileRow, year, dailyRates));
   return {
     result,
     positions: positionsAt(result.ledger, atDate),
     labels: instrumentLabels(txs),
     transactionCount: txs.length,
   };
+}
+
+/**
+ * Denní kurzy jen když je uživatel ZVOLIL (fxMethod CNB_DAILY) — jinak by
+ * každé načtení stránky platilo backfill. Report si je bere vždy (srovnání).
+ */
+export async function dailyRatesForProfile(
+  db: Db,
+  txs: Transaction[],
+  profileRow: ProfileRow,
+  currentYear: number,
+): Promise<EngineInput['dailyRates']> {
+  if (profileRow.fxMethod !== 'CNB_DAILY') return undefined;
+  return loadDailyRates(db, txs, currentYear);
 }

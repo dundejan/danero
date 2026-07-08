@@ -186,6 +186,23 @@ export const jobs = pgTable(
 );
 
 /**
+ * Denní kurzy ČNB (R-06b) — SDÍLENÁ referenční data trhu, ne uživatelská
+ * (výjimka z tenancy pravidla; plní je cron/backfill z oficiálního ČNB API).
+ * Kurz je CZK za 1 jednotku měny (normalizováno z kotací za 100/1000).
+ */
+export const fxRates = pgTable(
+  'fx_rates',
+  {
+    /** Den vyhlášení (ISO). ČNB vyhlašuje jen pracovní dny. */
+    day: text('day').notNull(),
+    currency: text('currency').notNull(),
+    rate: numeric('rate', { precision: 18, scale: 6 }).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.currency] })],
+);
+
+/**
  * Uživatelský číselník instrumentů pro brokery, kteří neexportují ISIN/měnu
  * (XTB, Fio): symbol → ISIN (+ měna instrumentu). Plní se formulářem při
  * importu a při dalších importech se použije automaticky.

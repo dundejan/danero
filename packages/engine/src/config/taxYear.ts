@@ -1,3 +1,4 @@
+import { UNIFIED_RATES_VERIFIED } from './unifiedRates';
 /**
  * Legislativa je verzovaná per zdaňovací období (docs/02, sekce Roční údržba).
  * Každý leden: nový jednotný kurz (pokyn řady D), hranice 23% sazby, kontrola novel ZDP.
@@ -32,12 +33,9 @@ export interface TaxYearConfig {
 
 export const TAX_YEAR_2025: TaxYearConfig = {
   year: 2025,
-  unifiedRatesByYear: {
-    // Pokyn GFŘ D-75 (Finanční zpravodaj 2/2026). Starší roky doplnit z příslušných
-    // pokynů řady D (za 2024 pokyn GFŘ D-66) — bez nich engine u cizoměnových nákupů
-    // z dřívějších let spadne na denní kurz ČNB s upozorněním.
-    2025: { USD: '21.84', EUR: '24.66' },
-  },
+  // ověřené kurzy z pokynů GFŘ D-49…D-75 (viz unifiedRates.ts s citacemi);
+  // aplikace může přepsat/doplnit orientační kurzy pro běžný rok
+  unifiedRatesByYear: UNIFIED_RATES_VERIFIED,
   limits: {
     securitiesProceedsExemption: '100000',
     cryptoProceedsExemption: '100000',

@@ -117,7 +117,8 @@ export function computeLimits(
     );
   }
 
-  // R-03: strop 40M — zatím jen detekce (hook), poměrné krácení post-MVP
+  // R-03: strop 40M — poměrné krácení počítá computeSecurities (vč. varování
+  // CAP_40M_REDUCED s čísly); tady jen strukturovaný stav pro UI.
   const cap = config.limits.timeTestExemptionCap;
   const cap40M = cap
     ? {
@@ -127,13 +128,6 @@ export function computeLimits(
         exceeded: securities.timeTestExemptProceedsCzk.gt(d(cap)),
       }
     : null;
-  if (cap40M?.exceeded) {
-    warnings.add(
-      'CAP_40M_EXCEEDED',
-      'ERROR',
-      `Úhrn příjmů osvobozených časovým testem přesáhl strop ${cap} Kč (§ 4 odst. 3, rok ${config.year}). Poměrné krácení osvobození engine zatím nepočítá (R-03) — výsledek je bez krácení, konzultuj daňového poradce.`,
-    );
-  }
 
   return {
     limit100k,

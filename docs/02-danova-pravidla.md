@@ -39,7 +39,12 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - Platí pro úhrn příjmů osvobozených dle q), u), zk) přijatých **v roce 2025** (zaveden zák. č. 349/2023 Sb.). **Od 1. 1. 2026 zrušen pro CP a podíly** (zák. č. 360/2025 Sb.); **pro krypto (zk) trvá**.
 - Krácení poměrné: osvobozená část = příjem × (40M / úhrn); výdaje se krátí stejným poměrem. Rozhodný je moment přijetí peněz.
 - Step-up: u CP nabytých do 31. 12. 2024 lze jako výdaj uplatnit tržní hodnotu k 31. 12. 2024. (Engine: volitelný `costBasisOverride` na lotu.)
-- Priorita implementace nízká (dopad až od 40M příjmů/rok) — engine musí mít hook, plná implementace post-MVP.
+- **Implementováno (G5)**: engine krátí poměrně v `computeSecurities`
+  (exemptRatio = strop / úhrn; dodaněná část příjmů i výdajů poměrem
+  1 − exemptRatio; varování CAP_40M_REDUCED s konkrétními čísly). Golden testy
+  test/cap40m.test.ts. Step-up (tržní hodnota k 31. 12. 2024 jako výdaj
+  u dřívějších nabytí) zatím neimplementován — u dotčených uživatelů může
+  výrazně snížit dodanění, doporučit konzultaci s poradcem.
 
 ## R-04 Korporátní akce a časový test
 
@@ -65,7 +70,15 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 ## R-06 Měnové přepočty (§ 38 odst. 1)
 
 Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze kombinovat):
-- **R-06a Jednotný kurz** GFŘ — publikován pokynem D v lednu za předchozí rok (za 2024 = D-66; za 2025 = D-75: EUR 24,66, USD 21,84). Statická tabulka v enginu + runbook na roční aktualizaci.
+- **R-06a Jednotný kurz** GFŘ — publikován pokynem D v lednu za předchozí rok.
+  Ověřená tabulka 2020–2025 je v `packages/engine/src/config/unifiedRates.ts`
+  (11 měn, JPY normalizováno z kotace za 100) s citacemi: 2020 = GFŘ-D-49,
+  2021 = GFŘ-D-54, 2022 = GFŘ-D-60, 2023 = GFŘ-D-63, 2024 = GFŘ-D-66 (ruší
+  chybný D-65), 2025 = GFŘ-D-75 (EUR 24,66 / USD 21,84). Kompletní kurzovní
+  lístky: docs/podklady/jednotne-kurzy-gfr.md + PDF pokynů na
+  financnisprava.gov.cz. Kurz běžného roku je jen ORIENTAČNÍ
+  (apps/web/lib/tax-config.ts, `isRateVerified`) a UI ho tak musí označovat;
+  runbook: každý leden doplnit nový pokyn a posunout LAST_VERIFIED_RATE_YEAR.
 - **R-06b Denní kurzy ČNB** (dle zákona o účetnictví; příp. pevný kurz).
 - Engine počítá **obě varianty** a reportuje rozdíl (recenze Taxomatu: rozdíl až desítky tisíc Kč).
 
