@@ -60,6 +60,36 @@
   --radius-lg: 14px;
 }
 
+/* Tisk podkladů k přiznání (/report): bílé pozadí, inkoust, bez navigace
+   a interaktivních prvků. Prohlížeč „uložit jako PDF" = náš PDF report. */
+@media print {
+  :root,
+  .dark {
+    --pozadi: #ffffff;
+    --plocha: #ffffff;
+    --inkoust: #000000;
+    --inkoust-tlumeny: #444444;
+    --linka: #bbbbbb;
+  }
+  aside,
+  nav,
+  button,
+  form,
+  .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: #ffffff;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
 /* Orchestrovaný moment při načtení dashboardu (docs/07): odměrky se naplní,
    tečky horizontu naskočí. prefers-reduced-motion vše vypíná (viz níže). */
 @keyframes gauge-grow {

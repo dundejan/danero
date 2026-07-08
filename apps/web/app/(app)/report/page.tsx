@@ -1,8 +1,12 @@
 import { redirect } from 'next/navigation';
 import { analyzeTaxYear, compareVariants } from '@danero/engine';
+import { Button } from '@/components/ui/button';
+import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
+import { Input, Label } from '@/components/ui/field';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate, czk } from '@/lib/format';
 import {
   availableYears,
@@ -59,8 +63,21 @@ export default async function ReportPage({
             Podklady pro přiznání — orientační, s aktuální konfigurací profilu.
           </p>
         </div>
-        <YearSwitcher years={years} active={year} hrefBase="/report" />
+        <div className="flex items-center gap-3">
+          <YearSwitcher years={years} active={year} hrefBase="/report" />
+          <PrintButton />
+        </div>
       </header>
+
+      {/* jen v tisku: identifikace podkladů (průkaznost výpočtu) */}
+      <p className="hidden text-xs text-inkoust-tlumeny print:block">
+        Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(new Date().toISOString().slice(0, 10))}{' '}
+        aplikací Danero · {txs.length} transakcí · párování {result.options.matchingMethod} ·{' '}
+        {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
+        výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'} ·
+        časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
+        Kurzy: pokyny GFŘ D-49…D-75 (2020–2025), viz dokumentace metodiky.
+      </p>
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
@@ -242,22 +259,149 @@ export default async function ReportPage({
         </Card>
       )}
 
+      <Card className="space-y-3">
+        <CardTitle>Export pro mojedane.cz</CardTitle>
+        {EPO_SUPPORTED_YEARS.includes(year) ? (
+          <>
+            <p className="text-sm text-inkoust-tlumeny">
+              Stáhneš XML písemnosti DPFDP7 s investičními čísly z tohoto reportu a na
+              mojedane.cz ho v přiznání nahraješ přes <strong>„Načtení souboru"</strong>.
+              Osobní údaje můžeš vyplnit rovnou tady, nebo až v EPO — nic z nich
+              neukládáme, jen protečou do staženého souboru.
+            </p>
+            <form method="post" action="/api/epo" className="space-y-3">
+              <input type="hidden" name="rok" value={year} />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <Label htmlFor="epo-jmeno">Jméno</Label>
+                  <Input id="epo-jmeno" name="jmeno" autoComplete="given-name" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-prijmeni">Příjmení</Label>
+                  <Input id="epo-prijmeni" name="prijmeni" autoComplete="family-name" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-rodneCislo">Rodné číslo</Label>
+                  <Input id="epo-rodneCislo" name="rodneCislo" placeholder="bez lomítka" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-dic">DIČ</Label>
+                  <Input id="epo-dic" name="dic" placeholder="jen číslo, bez „CZ“" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-obec">Obec</Label>
+                  <Input id="epo-obec" name="obec" autoComplete="address-level2" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-ulice">Ulice</Label>
+                  <Input id="epo-ulice" name="ulice" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-cisloPopisne">Číslo popisné</Label>
+                  <Input id="epo-cisloPopisne" name="cisloPopisne" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-psc">PSČ</Label>
+                  <Input id="epo-psc" name="psc" autoComplete="postal-code" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-ufoCil">Kód finančního úřadu</Label>
+                  <Input id="epo-ufoCil" name="ufoCil" placeholder="např. 451 (Praha)" />
+                </div>
+              </div>
+              <p className="text-xs text-inkoust-tlumeny">
+                Kód svého finančního úřadu najdeš v{' '}
+                <a
+                  href="https://mojedane.gov.cz/pmd/dokumentace/ciselniky/ukazka/ufo"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-inkoust"
+                >
+                  číselníku územních finančních orgánů
+                </a>
+                . Všechna pole jsou volitelná — co nevyplníš, doplníš po načtení v EPO.
+              </p>
+              <Button type="submit">Stáhnout XML pro EPO</Button>
+            </form>
+            <p className="text-xs text-inkoust-tlumeny">
+              XML obsahuje jen investiční příjmy (§ 8 a § 10
+              {result.tax.recommended === 'SEPARATE_16A' ? ', Příloha č. 4' : ''}) z tohoto
+              reportu. Máš-li i jiné příjmy (zaměstnání, podnikání, nájem), doplň je v EPO —
+              výpočet daně se tam přepočítá. Ber to jako podklad, ne hotové přiznání.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-inkoust-tlumeny">
+            Pro rok {year} oficiální struktura XML přiznání zatím neexistuje — finanční
+            správa ji zveřejňuje až začátkem následujícího roku. Export tu bude, jakmile
+            vyjde; zatím poslouží čísla níže.
+          </p>
+        )}
+      </Card>
+
       <Card className="space-y-2">
-        <CardTitle>Kam s tím v přiznání</CardTitle>
-        <p className="text-sm text-inkoust-tlumeny">
-          Dílčí základ § 10 patří do <strong>Přílohy č. 2</strong> přiznání (ostatní příjmy —
-          úplatný převod cenných papírů). Zahraniční dividendy a úroky jdou do § 8; zápočet
-          zahraniční srážkové daně přes <strong>Přílohu č. 3</strong> (po jednotlivých
-          státech), varianta samostatného základu § 16a přes <strong>Přílohu č. 4</strong>.
-          Osvobozené příjmy se do přiznání neuvádějí. XML export pro mojedane.cz připravujeme.
-        </p>
+        <CardTitle>Průvodce: co kam zapsat v přiznání</CardTitle>
+        {EPO_SUPPORTED_YEARS.includes(year) ? (
+          <ul className="space-y-2 text-sm">
+            <li>
+              <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, tabulka druh{' '}
+              <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
+              <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span> (ř.
+              207), výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>{' '}
+              (ř. 208), rozdíl (ř. 209) → <strong>ř. 40</strong> přiznání. U zahraničních
+              brokerů zaškrtni kód „Z".
+            </li>
+            <li>
+              <strong>Dividendy a úroky ze zahraničí (§ 8):</strong>{' '}
+              {result.tax.recommended === 'SEPARATE_16A' ? (
+                <>
+                  výhodnější je samostatný základ (§ 16a): Příloha č. 4, ř. 401a{' '}
+                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
+                  ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
+                  <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný).
+                </>
+              ) : (
+                <>
+                  brutto <span className="font-mono">{czk(result.dividends.base8Czk)}</span> →{' '}
+                  <strong>ř. 38</strong> přiznání; zápočet sražené daně po státech přes
+                  Přílohu č. 3 (ř. 321–330; uznatelný zápočet{' '}
+                  <span className="font-mono">{czk(result.dividends.creditableWithholdingCzk)}</span>
+                  ) → ř. 58 + povinný Seznam dle § 38f odst. 10.
+                </>
+              )}
+            </li>
+            <li>
+              <strong>Sleva na poplatníka:</strong> ř. 64 přesně{' '}
+              <span className="font-mono">30 840 Kč</span>. Osvobozené příjmy (časový test,
+              úhrn do 100k) se do přiznání <strong>neuvádějí</strong>
+              {result.limits.reporting38v.length > 0 &&
+                ' — ale jednotlivé osvobozené příjmy nad 5 mil. Kč máš povinnost oznámit (§ 38v)'}
+              .
+            </li>
+            <li>
+              <strong>Paušální režim:</strong> zaplacené zálohy z paušálního režimu patří na
+              ř. 86. Termín podání: 1. 4. {year + 1} papírově / 2. 5. {year + 1} elektronicky.
+            </li>
+            <li className="text-inkoust-tlumeny">
+              Čísla řádků odpovídají tiskopisu 25 5405 vzor č. 30 (období {year}) a struktuře
+              DPFDP7 — všechno výše předvyplní export XML o kousek výš.
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-inkoust-tlumeny">
+            Dílčí základ § 10 patří do Přílohy č. 2 (druh D — prodej cenných papírů) na ř. 40,
+            zahraniční dividendy do § 8 (ř. 38, zápočet přes Přílohu č. 3), varianta § 16a přes
+            Přílohu č. 4. Přesná čísla řádků pro období {year} ověříme, až finanční správa
+            zveřejní strukturu — čísla výše platí pro tiskopis 2024/2025.
+          </p>
+        )}
         <p className="text-xs text-inkoust-tlumeny">
           Konfigurace výpočtu: párování {result.options.matchingMethod} ·{' '}
           {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
-          ⚠️ Historické jednotné kurzy jsou zatím orientační — před podáním přiznání je
-          doplníme z pokynů řady D. Danero je výpočetní nástroj, nikoli daňové poradenství.
+          Jednotné kurzy 2020–2025 jsou ověřené z pokynů GFŘ řady D; kurz běžného roku je
+          orientační do vydání pokynu. Danero je výpočetní nástroj, nikoli daňové poradenství.
         </p>
       </Card>
     </div>
