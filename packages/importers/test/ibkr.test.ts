@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions, IBKR_BROKER, parseIbkrFlexXml } from '../src';
+import { dedupeKey, dedupeTransactions, IBKR_BROKER, parseIbkrFlexXml } from '../src';
 import { IBKR_FIXTURE } from './fixtures/ibkr';
+
+/** Minimální validní Flex obálka pro cílené testy jednotlivých sekcí. */
+const wrapStatement = (inner: string): string => `<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="danero" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U1234567" fromDate="20240101" toDate="20261231">
+      ${inner}
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>`;
 
 describe('IBKR Flex XML parser', () => {
   const result = parseIbkrFlexXml(IBKR_FIXTURE);
@@ -143,17 +153,99 @@ describe('IBKR Flex XML parser', () => {
     ]);
   });
 
-  it('deduplikace: opakovaný import téhož XML nic nepřidá', () => {
+  it('deduplikace: opakovaný import téhož XML nepřidá nic nového', () => {
     const again = parseIbkrFlexXml(IBKR_FIXTURE);
-    const keys = result.transactions.map((t) => t.id);
-    const outcome = dedupeTransactions(
-      IBKR_BROKER,
-      again.transactions,
-      result.transactions.map((_, i) => `${IBKR_BROKER}|${i}`),
-    );
-    // dedupe jde přes obsahový hash — ověř aspoň, že id jsou stabilní
-    expect(again.transactions.map((t) => t.id)).toEqual(keys);
-    expect(outcome.fresh.length + outcome.duplicates).toBe(again.transactions.length);
+    const existingKeys = result.transactions.map((tx) => dedupeKey(IBKR_BROKER, tx));
+    const outcome = dedupeTransactions(IBKR_BROKER, again.transactions, existingKeys);
+    expect(outcome.fresh).toHaveLength(0);
+    expect(outcome.duplicates).toBe(result.transactions.length);
+  });
+
+  it('id bez transactionID jsou stabilní vůči obsahu, ne pořadí v souboru', () => {
+    const deposit = wrapStatement(`<CashTransactions>
+      <CashTransaction type="Deposits/Withdrawals" description="CASH RECEIPT" currency="CZK" amount="100000" dateTime="20240605" levelOfDetail="DETAIL" />
+    </CashTransactions>`);
+    // tentýž vklad, ale v souboru s dalšími záznamy PŘED ním (posun pořadí)
+    const depositShifted = wrapStatement(`<CashTransactions>
+      <CashTransaction type="Broker Interest Received" description="INT" currency="USD" amount="1" dateTime="20240101" levelOfDetail="DETAIL" />
+      <CashTransaction type="Deposits/Withdrawals" description="CASH RECEIPT" currency="CZK" amount="100000" dateTime="20240605" levelOfDetail="DETAIL" />
+    </CashTransactions>`);
+    const a = parseIbkrFlexXml(deposit).transactions.find((t) => t.type === 'DEPOSIT');
+    const b = parseIbkrFlexXml(depositShifted).transactions.find((t) => t.type === 'DEPOSIT');
+    expect(a!.id).toBe(b!.id);
+  });
+
+  it('storno (Ca.) odstraní i původní exekuci; bez dohledatelného originálu je z něj error', () => {
+    const cancelled = wrapStatement(`<Trades>
+      <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2001" tradeDate="20260401" buySell="BUY" quantity="10" tradePrice="200" levelOfDetail="EXECUTION" />
+      <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2002" origTradeID="2001" tradeDate="20260402" buySell="BUY (Ca.)" quantity="-10" tradePrice="200" levelOfDetail="EXECUTION" />
+      <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2003" tradeDate="20260402" buySell="BUY" quantity="10" tradePrice="201" levelOfDetail="EXECUTION" />
+    </Trades>`);
+    const parsed = parseIbkrFlexXml(cancelled);
+    expect(parsed.errors).toEqual([]);
+    // zůstane jen opravný obchod 2003
+    expect(parsed.transactions.map((t) => t.id)).toEqual(['ibkr-2003']);
+    expect(parsed.warnings.some((w) => w.message.includes('Stornovaný obchod'))).toBe(true);
+
+    const orphanCancel = wrapStatement(`<Trades>
+      <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2002" origTradeID="1999" tradeDate="20260402" buySell="BUY (Ca.)" quantity="-10" tradePrice="200" levelOfDetail="EXECUTION" />
+    </Trades>`);
+    const orphan = parseIbkrFlexXml(orphanCancel);
+    expect(orphan.errors.some((e) => e.message.includes('Storno'))).toBe(true);
+  });
+
+  it('více dividend v den: srážka pro-rata z celku; korekce → netto', () => {
+    const proRata = wrapStatement(`<CashTransactions>
+      <CashTransaction type="Dividends" symbol="AAPL" isin="US0378331005" currency="USD" amount="100" dateTime="20260510" transactionID="8101" levelOfDetail="DETAIL" />
+      <CashTransaction type="Dividends" symbol="AAPL" isin="US0378331005" currency="USD" amount="100" dateTime="20260510" transactionID="8102" levelOfDetail="DETAIL" />
+      <CashTransaction type="Dividends" symbol="AAPL" isin="US0378331005" currency="USD" amount="100" dateTime="20260510" transactionID="8103" levelOfDetail="DETAIL" />
+      <CashTransaction type="Withholding Tax" symbol="AAPL" isin="US0378331005" currency="USD" amount="-30" dateTime="20260510" levelOfDetail="DETAIL" />
+    </CashTransactions>`);
+    const parsed = parseIbkrFlexXml(proRata);
+    const dividends = parsed.transactions.filter((t) => t.type === 'DIVIDEND');
+    expect(dividends).toHaveLength(3);
+    for (const dividend of dividends) {
+      if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+      expect(dividend.withholdingTax.toString()).toBe('10');
+    }
+
+    const corrected = wrapStatement(`<CashTransactions>
+      <CashTransaction type="Dividends" symbol="AAPL" isin="US0378331005" currency="USD" amount="25" dateTime="20260510" transactionID="8201" levelOfDetail="DETAIL" />
+      <CashTransaction type="Dividends" symbol="AAPL" isin="US0378331005" currency="USD" amount="-10" dateTime="20260510" transactionID="8202" levelOfDetail="DETAIL" />
+      <CashTransaction type="Withholding Tax" symbol="AAPL" isin="US0378331005" currency="USD" amount="-2.25" dateTime="20260510" levelOfDetail="DETAIL" />
+    </CashTransactions>`);
+    const netted = parseIbkrFlexXml(corrected);
+    const net = netted.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!net || net.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(net.gross.toString()).toBe('15');
+    expect(net.withholdingTax.toString()).toBe('2.25');
+    expect(netted.warnings.some((w) => w.message.includes('korekční'))).toBe(true);
+  });
+
+  it('dluhopis: cena ze skutečného plnění (Proceeds), bez něj viditelný error', () => {
+    const bond = wrapStatement(`<Trades>
+      <Trade assetCategory="BOND" symbol="T 4.25 05/15/35" isin="US91282CJZ59" currency="USD" tradeID="3001" tradeDate="20260210" buySell="BUY" quantity="2000" tradePrice="99.472" proceeds="-1989.44" levelOfDetail="EXECUTION" />
+      <Trade assetCategory="BOND" symbol="T 4.25 05/15/35" isin="US91282CJZ59" currency="USD" tradeID="3002" tradeDate="20260211" buySell="BUY" quantity="1000" tradePrice="99.5" levelOfDetail="EXECUTION" />
+    </Trades>`);
+    const parsed = parseIbkrFlexXml(bond);
+    const buy = parsed.transactions.find((t) => t.type === 'BUY');
+    if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.pricePerShare.toString()).toBe('0.99472');
+    expect(buy.assetClass).toBe('BOND');
+    expect(parsed.errors.some((e) => e.message.includes('Proceeds'))).toBe(true);
+  });
+
+  it('sekce jen se souhrny → srozumitelný error o konfiguraci Flex Query', () => {
+    const summariesOnly = wrapStatement(`<Trades>
+      <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeDate="20260401" buySell="BUY" quantity="10" tradePrice="200" levelOfDetail="ORDER" />
+    </Trades>
+    <CashTransactions>
+      <CashTransaction type="Dividends" symbol="AAPL" currency="USD" amount="25" dateTime="20260510" levelOfDetail="SUMMARY" />
+    </CashTransactions>`);
+    const parsed = parseIbkrFlexXml(summariesOnly);
+    expect(parsed.transactions).toHaveLength(0);
+    expect(parsed.errors.some((e) => e.message.includes('Executions'))).toBe(true);
+    expect(parsed.errors.some((e) => e.message.includes('CashTransactions'))).toBe(true);
   });
 
   it('ne-XML vstup a XML bez FlexQueryResponse → srozumitelný error', () => {

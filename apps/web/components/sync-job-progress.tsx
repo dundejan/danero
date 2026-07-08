@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SyncProgress } from '@/lib/t212-sync';
+import type { SyncProgress } from '@/lib/broker-sync';
 
 /** Serializovaný stav jobu pro klienta (RSC → props i /api/jobs/latest). */
 export interface SyncJobView {
@@ -19,10 +19,17 @@ const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
 };
 
 /**
- * Živý průběh sync jobu: polluje /api/jobs/latest, ukazuje stav po letech
- * a po dokončení obnoví stránku (výsledek pak ukazuje serverová část /import).
+ * Živý průběh sync jobu jednoho broker účtu: polluje /api/jobs/latest, ukazuje
+ * stav po letech a po dokončení obnoví stránku (výsledek pak ukazuje serverová
+ * část /import).
  */
-export function SyncJobProgress({ initialJob }: { initialJob: SyncJobView }) {
+export function SyncJobProgress({
+  initialJob,
+  accountId,
+}: {
+  initialJob: SyncJobView;
+  accountId: string;
+}) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
 
@@ -36,7 +43,7 @@ export function SyncJobProgress({ initialJob }: { initialJob: SyncJobView }) {
     }
     const timer = setInterval(async () => {
       try {
-        const res = await fetch('/api/jobs/latest');
+        const res = await fetch(`/api/jobs/latest?account=${encodeURIComponent(accountId)}`);
         if (!res.ok) return;
         const data = (await res.json()) as { job: SyncJobView | null };
         if (data.job) setJob(data.job);
@@ -45,7 +52,7 @@ export function SyncJobProgress({ initialJob }: { initialJob: SyncJobView }) {
       }
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [active, router]);
+  }, [active, router, accountId]);
 
   const progress = job.progress;
   const phaseLabel =
@@ -67,7 +74,7 @@ export function SyncJobProgress({ initialJob }: { initialJob: SyncJobView }) {
           Trading212 může trvat i deset minut. Klidně odejdi, poběží dál.
         </p>
       )}
-      {progress && progress.years.length > 0 && (
+      {progress?.years && progress.years.length > 0 && (
         <ul className="space-y-1 border-t border-linka pt-2">
           {progress.years.map((year) => (
             <li key={year.year} className="flex items-baseline gap-3 font-mono text-xs">

@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import { brokerAccounts, taxpayerProfiles } from '@/db/schema';
 import { encryptSecret } from '@/lib/crypto';
-import { enqueueSyncJob, processJob } from '@/lib/jobs';
+import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
@@ -74,33 +74,63 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
   redirect('/import');
 }
 
-export async function disconnectTrading212Action(): Promise<void> {
+/** Uloží IBKR Flex přístup (token + query ID, šifrovaně) — jeden IBKR účet na uživatele. */
+export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
   const user = await requireUser();
+  const token = String(formData.get('token') ?? '').trim();
+  const queryId = String(formData.get('queryId') ?? '').trim();
+  if (token.length < 10 || !/^\d+$/.test(queryId)) redirect('/nastaveni?chyba=ibkr');
+
   const db = await getDb();
   await db
     .delete(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'ibkr')));
+  await db.insert(brokerAccounts).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    broker: 'ibkr',
+    label: 'Interactive Brokers',
+    credentialsEncrypted: encryptSecret(JSON.stringify({ token, queryId })),
+  });
+
+  revalidatePath('/nastaveni');
+  revalidatePath('/import');
+  redirect('/import');
+}
+
+/** Odpojí jeden broker účet (multi-broker: každá karta má vlastní tlačítko). */
+export async function disconnectBrokerAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const accountId = String(formData.get('accountId') ?? '');
+  const db = await getDb();
+  const deleted = await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)))
+    .returning({ id: brokerAccounts.id });
+  // tiché „nic se nesmazalo" nesmí vypadat jako úspěch (stale formulář apod.)
+  if (deleted.length === 0) redirect('/nastaveni?chyba=zadny-ucet');
   revalidatePath('/nastaveni');
   revalidatePath('/import');
   redirect('/nastaveni');
 }
 
 /**
- * Ruční synchronizace: zapíše background job a hned se vrátí — samotný běh
- * (klidně deset minut) startuje after() po odeslání odpovědi, průběh polluje
- * /import. Chyby běhu končí v jobs.error (viz lib/jobs.ts).
+ * Ruční synchronizace broker účtu: zapíše background job a hned se vrátí —
+ * samotný běh (klidně deset minut) startuje after() po odeslání odpovědi,
+ * průběh polluje /import. Chyby běhu končí v jobs.error (viz lib/jobs.ts).
  */
-export async function syncTrading212Action(): Promise<void> {
+export async function syncBrokerAction(formData: FormData): Promise<void> {
   const user = await requireUser();
+  const accountId = String(formData.get('accountId') ?? '');
   const db = await getDb();
   const accounts = await db
     .select()
     .from(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)));
   const account = accounts[0];
   if (!account) redirect('/nastaveni?chyba=zadny-ucet');
 
-  const job = await enqueueSyncJob(db, user.id, account.id);
+  const job = await enqueueSyncJob(db, user.id, account.id, jobTypeForBroker(account.broker));
   if (job.status === 'pending') {
     after(() => processJob(db, job.id));
   }

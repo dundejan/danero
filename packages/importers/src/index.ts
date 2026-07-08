@@ -6,3 +6,4 @@ export * from './trading212/api';
 export * from './trading212/reconcile';
 export * from './universal/csv';
 export * from './ibkr/xml';
+export * from './ibkr/api';

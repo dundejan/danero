@@ -2,6 +2,7 @@ import {
   dedupeKey,
   dedupeTransactions,
   parseCsv,
+  parseIbkrFlexXml,
   parseTrading212Csv,
   parseUniversalCsv,
   type ImportResult,
@@ -23,8 +24,9 @@ export interface ImportSummary {
   warnings: RowIssue[];
 }
 
-/** Autodetekce formátu podle hlaviček — T212 export vs. univerzální šablona. */
+/** Autodetekce formátu: IBKR Flex XML vs. T212 CSV vs. univerzální šablona. */
 export function detectAndParse(text: string): ImportResult {
+  if (text.trimStart().startsWith('<')) return parseIbkrFlexXml(text);
   const { headers } = parseCsv(text);
   const isT212 = headers.includes('Action') && headers.includes('Time');
   return isT212 ? parseTrading212Csv(text) : parseUniversalCsv(text);

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import {
   parseTransactions,
   TaxpayerProfileSchema,
@@ -48,11 +48,20 @@ export function profileToEngine(row: ProfileRow): {
   };
 }
 
-export async function loadTransactions(db: Db, userId: string): Promise<Transaction[]> {
+/** `broker` zúží na transakce jednoho brokera — rekonciliace pozic je per broker. */
+export async function loadTransactions(
+  db: Db,
+  userId: string,
+  broker?: string,
+): Promise<Transaction[]> {
   const rows = await db
     .select({ payload: transactions.payload })
     .from(transactions)
-    .where(eq(transactions.userId, userId))
+    .where(
+      broker
+        ? and(eq(transactions.userId, userId), eq(transactions.broker, broker))
+        : eq(transactions.userId, userId),
+    )
     .orderBy(asc(transactions.txDate));
   return parseTransactions(rows.map((r) => r.payload));
 }

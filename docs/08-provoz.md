@@ -17,8 +17,11 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 3. **Env proměnné** (všechny povinné — aplikace bez nich spadne při startu, viz
    `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
    (produkční URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`.
-4. **Cron**: `apps/web/vercel.json` definuje denní sync T212 v 5:00 UTC
-   (`/api/cron/sync-t212`); Vercel posílá `Authorization: Bearer $CRON_SECRET` sám.
+4. **Cron**: `apps/web/vercel.json` definuje denní sync všech brokerů v 5:00 UTC
+   (`/api/cron/sync-brokers`), notifikace v 5:30 (`/api/cron/notify`) a hodinovou
+   záchrannou síť background jobů (`/api/cron/jobs`); Vercel posílá
+   `Authorization: Bearer $CRON_SECRET` sám. Pozor: hodinový cron vyžaduje placený
+   plán (Hobby umí jen denní) a dlouhý první sync viz poznámka v docs/DENIK.md.
 
 ## Roční runbook (leden)
 

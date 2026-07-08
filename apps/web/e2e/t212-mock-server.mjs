@@ -1,9 +1,10 @@
 /**
- * Mock Trading212 API pro E2E testy (Playwright ho startuje jako webServer).
- * Chování kopíruje reálné API: export se objednává POSTem, stav se polluje,
- * prázdný rok vrací úplně prázdný soubor. Data: test/t212-data.mjs.
+ * Mock broker API pro E2E testy (Playwright ho startuje jako webServer):
+ * Trading212 (export se objednává POSTem a polluje) i IBKR Flex Web Service
+ * (SendRequest → GetStatement). Data: test/t212-data.mjs a test/ibkr-data.mjs.
  */
 import { createServer } from 'node:http';
+import { FLEX_SEND_OK, IBKR_FLEX_XML } from '../test/ibkr-data.mjs';
 import { CASH, csvByYear, INSTRUMENTS, PORTFOLIO } from '../test/t212-data.mjs';
 
 const PORT = Number(process.env.PORT ?? 3211);
@@ -23,6 +24,18 @@ const server = createServer(async (req, res) => {
 
   if (path === '/health') return json(res, { ok: true });
 
+  // ── IBKR Flex Web Service ────────────────────────────────────────────────
+  if (path === '/flex/SendRequest') {
+    res.writeHead(200, { 'content-type': 'text/xml' });
+    return res.end(FLEX_SEND_OK(`http://localhost:${PORT}/flex/GetStatement`));
+  }
+  if (path === '/flex/GetStatement') {
+    // E2E vrací výpis hned — poll cestu (1019) pokrývají unit testy
+    res.writeHead(200, { 'content-type': 'text/xml' });
+    return res.end(IBKR_FLEX_XML);
+  }
+
+  // ── Trading212 ───────────────────────────────────────────────────────────
   if (path === '/api/v0/equity/account/cash') {
     return json(res, CASH);
   }

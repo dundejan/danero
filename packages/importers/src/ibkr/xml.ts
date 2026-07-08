@@ -78,9 +78,21 @@ function isExecutionRow(attrs: Attrs): boolean {
 /**
  * Stabilní fallback id z obsahu záznamu — NIKDY z pořadí v souboru (pořadové
  * číslo se mezi překrývajícími se exporty posune a rozbije deduplikaci).
+ * Legitimně identické záznamy (dva stejné převody v týž den) dostanou pořadový
+ * suffix -2, -3… — v rámci obsahu stejné množiny záznamů zůstává stabilní.
+ * Parser je synchronní, module-level počítadlo s resetem na začátku parse je bezpečné.
  */
+const idOccurrences = new Map<string, number>();
+
+function resetContentIds(): void {
+  idOccurrences.clear();
+}
+
 function contentId(prefix: string, parts: Array<string | undefined>): string {
-  return `ibkr-${prefix}-${fnv1a64(parts.map((p) => p ?? '').join('|'))}`;
+  const base = `ibkr-${prefix}-${fnv1a64(parts.map((p) => p ?? '').join('|'))}`;
+  const seen = (idOccurrences.get(base) ?? 0) + 1;
+  idOccurrences.set(base, seen);
+  return seen === 1 ? base : `${base}-${seen}`;
 }
 
 export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
@@ -94,6 +106,7 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
     accountIds: [],
   };
 
+  resetContentIds();
   let root: Record<string, unknown>;
   try {
     root = parser.parse(text) as Record<string, unknown>;
@@ -814,6 +827,13 @@ function processCorporateActions(
       raw: JSON.stringify(first.attrs),
     });
   }
+
+  if (processed === 0 && filteredLevels > 0) {
+    result.errors.push({
+      line: 1,
+      message: `Sekce CorporateActions obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail", jinak se korporátní akce nenaimportují.`,
+    });
+  }
 }
 
 /* ── Transfers ───────────────────────────────────────────────────────────── */
@@ -826,9 +846,16 @@ function processTransfers(
   push: PushFn,
 ): void {
   const rows = asArray((statement.Transfers as Record<string, unknown> | undefined)?.Transfer);
+  let filteredLevels = 0;
+  let processed = 0;
+
   for (const row of rows) {
     const line = nextLine();
-    if (!isDetailRow(row)) continue;
+    if (!isDetailRow(row)) {
+      filteredLevels += 1;
+      continue;
+    }
+    processed += 1;
 
     const assetCategory = (row.assetCategory ?? 'STK').toUpperCase();
     if (assetCategory === 'CASH') {
@@ -840,7 +867,9 @@ function processTransfers(
       }
       push(line, row, {
         type: amount.gt(0) ? 'DEPOSIT' : 'WITHDRAWAL',
-        id: row.transactionID ? `ibkr-${row.transactionID}` : `ibkr-tr-${date}-${line}`,
+        id: row.transactionID
+          ? `ibkr-${row.transactionID}`
+          : contentId('tr', ['CASH', date, amount.toString(), row.currency]),
         account: accountId || undefined,
         amount: amount.abs().toString(),
         currency: row.currency,
@@ -864,7 +893,9 @@ function processTransfers(
     }
 
     const isIncoming = direction ? direction === 'IN' : quantity.gt(0);
-    const id = row.transactionID ? `ibkr-${row.transactionID}` : `ibkr-tr-${date}-${isin}`;
+    const id = row.transactionID
+      ? `ibkr-${row.transactionID}`
+      : contentId('tr', [direction || (isIncoming ? 'IN' : 'OUT'), date, isin, quantity.toString()]);
     if (isIncoming) {
       result.warnings.push({
         line,
@@ -890,6 +921,13 @@ function processTransfers(
         note: row.description || undefined,
       });
     }
+  }
+
+  if (processed === 0 && filteredLevels > 0) {
+    result.errors.push({
+      line: 1,
+      message: `Sekce Transfers obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail", jinak se převody nenaimportují.`,
+    });
   }
 }
 

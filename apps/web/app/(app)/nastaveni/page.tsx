@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { TwoFactorSection } from '@/components/two-factor-section';
+import { syncStatusLabel } from '@/lib/broker-sync';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
@@ -7,7 +8,12 @@ import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { getProfile } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
-import { disconnectTrading212Action, saveProfileAction, saveTrading212KeyAction } from './actions';
+import {
+  disconnectBrokerAction,
+  saveIbkrKeyAction,
+  saveProfileAction,
+  saveTrading212KeyAction,
+} from './actions';
 
 export default async function SettingsPage({
   searchParams,
@@ -17,11 +23,12 @@ export default async function SettingsPage({
   const user = await requireUser();
   const db = await getDb();
   const profile = await getProfile(db, user.id);
-  const t212Accounts = await db
+  const accounts = await db
     .select()
     .from(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
-  const t212 = t212Accounts[0];
+    .where(eq(brokerAccounts.userId, user.id));
+  const t212 = accounts.find((account) => account.broker === 'trading212');
+  const ibkr = accounts.find((account) => account.broker === 'ibkr');
   const { chyba } = await searchParams;
 
   return (
@@ -149,12 +156,13 @@ export default async function SettingsPage({
               <span className="text-inkoust-tlumeny">
                 Poslední synchronizace:{' '}
                 {t212.lastSyncedAt
-                  ? `${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${t212.lastSyncStatus})`
+                  ? `${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${syncStatusLabel(t212.lastSyncStatus)})`
                   : 'zatím žádná — spusť ji na stránce Import'}
                 . Klíč je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
               </span>
             </p>
-            <form action={disconnectTrading212Action}>
+            <form action={disconnectBrokerAction}>
+              <input type="hidden" name="accountId" value={t212.id} />
               <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
                 Odpojit Trading212
               </SubmitButton>
@@ -213,6 +221,97 @@ export default async function SettingsPage({
                 <div>
                   <Label htmlFor="secret">Tajný klíč</Label>
                   <Input id="secret" name="secret" type="password" required autoComplete="off" />
+                </div>
+              </div>
+              <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
+            </form>
+          </>
+        )}
+      </Card>
+
+      <Card className="space-y-4" id="ibkr">
+        <CardTitle>Interactive Brokers — automatická synchronizace</CardTitle>
+        {ibkr ? (
+          <>
+            <p className="text-sm">
+              <span className="font-semibold text-zelena">Připojeno.</span>{' '}
+              <span className="text-inkoust-tlumeny">
+                Poslední synchronizace:{' '}
+                {ibkr.lastSyncedAt
+                  ? `${ibkr.lastSyncedAt.toLocaleString('cs-CZ')} (${syncStatusLabel(ibkr.lastSyncStatus)})`
+                  : 'zatím žádná — spusť ji na stránce Import'}
+                . Token je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
+              </span>
+            </p>
+            <form action={disconnectBrokerAction}>
+              <input type="hidden" name="accountId" value={ibkr.id} />
+              <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
+                Odpojit Interactive Brokers
+              </SubmitButton>
+            </form>
+          </>
+        ) : (
+          <>
+            <div className="space-y-2 text-sm text-inkoust-tlumeny">
+              <p>
+                Potřebuješ dvě věci: <strong>Flex Query</strong> (říká, co se stahuje) a{' '}
+                <strong>token</strong> (přístup jen ke čtení výpisů). V IBKR Client Portal:
+              </p>
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>
+                  <strong className="text-inkoust">Performance &amp; Reports → Flex Queries →
+                  „+" u Activity Flex Query.</strong>{' '}
+                  Pojmenuj ji třeba „Danero".
+                </li>
+                <li>
+                  Zapni sekce a úrovně přesně takto:{' '}
+                  <span className="font-mono text-xs">
+                    Trades = Executions · Cash Transactions = Detail · Corporate Actions =
+                    Detail · Transfers = Detail · Open Positions = Summary
+                  </span>{' '}
+                  a v každé sekci zvol <strong className="text-inkoust">Select All</strong>{' '}
+                  sloupce (musí obsahovat ISIN).
+                </li>
+                <li>
+                  V Delivery Configuration nastav{' '}
+                  <strong className="text-inkoust">Format XML</strong> a{' '}
+                  <strong className="text-inkoust">Period „Last 365 Calendar Days"</strong>.
+                  Ulož a poznamenej si <strong className="text-inkoust">Query ID</strong>{' '}
+                  (číslo u názvu query).
+                </li>
+                <li>
+                  <strong className="text-inkoust">Settings → Account Settings → Flex Web
+                  Service</strong>{' '}
+                  → aktivuj a zkopíruj <strong className="text-inkoust">token</strong>.
+                </li>
+              </ol>
+              <p>
+                Máš u IBKR historii starší než rok? Vytvoř si tutéž query ještě jednou
+                s obdobím po letech (Custom Date Range), stáhni XML ručně a nahraj je na
+                stránce Import — jednorázově, dál už vše řeší synchronizace.
+              </p>
+            </div>
+            {chyba === 'ibkr' && (
+              <p className="text-sm text-cervena">
+                Vlož platný token (aspoň 10 znaků) a číselné Query ID.
+              </p>
+            )}
+            <form action={saveIbkrKeyAction} className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="token">Token Flex Web Service</Label>
+                  <Input id="token" name="token" type="password" required autoComplete="off" />
+                </div>
+                <div>
+                  <Label htmlFor="queryId">Query ID</Label>
+                  <Input
+                    id="queryId"
+                    name="queryId"
+                    required
+                    inputMode="numeric"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
                 </div>
               </div>
               <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>

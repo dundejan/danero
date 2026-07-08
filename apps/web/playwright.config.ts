@@ -42,7 +42,9 @@ export default defineConfig({
         BETTER_AUTH_URL: `http://localhost:${APP_PORT}`,
         PGLITE_DATA_DIR: mkdtempSync(join(tmpdir(), 'danero-e2e-')),
         T212_API_BASE_URL: `http://localhost:${MOCK_PORT}/api/v0`,
-        T212_POLL_INTERVAL_MS: '250',
+        // dost pomalu, aby UI polling (3 s) stihl zachytit průběh po letech
+        T212_POLL_INTERVAL_MS: '1500',
+        IBKR_FLEX_BASE_URL: `http://localhost:${MOCK_PORT}/flex`,
       },
       reuseExistingServer: false,
       timeout: 120_000,

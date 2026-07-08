@@ -14,7 +14,7 @@ test('T212 sync jako job: připojení klíče → průběh po letech → výsled
   await page.goto('/nastaveni');
   await page.getByLabel('ID klíče API').fill('e2e-key-id');
   await page.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
-  await page.getByRole('button', { name: 'Připojit' }).click();
+  await page.locator('#trading212').getByRole('button', { name: 'Připojit' }).click();
   await page.waitForURL('**/import');
 
   // ── spuštění plné synchronizace — akce se vrátí hned, job běží na pozadí ─

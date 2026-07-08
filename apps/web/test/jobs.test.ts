@@ -10,7 +10,7 @@ import {
   processPendingJobs,
   recoverStaleJobs,
 } from '@/lib/jobs';
-import type { SyncProgress } from '@/lib/t212-sync';
+import type { SyncProgress } from '@/lib/broker-sync';
 import { makeMockFetch, MOCK_CREDENTIALS } from './t212-mock';
 
 async function setupAccount(db: Db, userId = 'u1') {
@@ -35,9 +35,9 @@ describe('background joby (in-memory PGlite)', () => {
       const db = await createPgliteDb();
       const accountId = await setupAccount(db);
 
-      const first = await enqueueSyncJob(db, 'u1', accountId);
+      const first = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
       expect(first.status).toBe('pending');
-      const second = await enqueueSyncJob(db, 'u1', accountId);
+      const second = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
       expect(second.id).toBe(first.id);
       expect(await db.select().from(jobs)).toHaveLength(1);
 
@@ -48,7 +48,7 @@ describe('background joby (in-memory PGlite)', () => {
         broker: 'trading212',
         credentialsEncrypted: encryptSecret(MOCK_CREDENTIALS),
       });
-      const other = await enqueueSyncJob(db, 'u1', 'acc-u1-novy');
+      const other = await enqueueSyncJob(db, 'u1', 'acc-u1-novy', 't212-sync');
       expect(other.id).not.toBe(first.id);
       expect(other.status).toBe('pending');
     },
@@ -60,7 +60,7 @@ describe('background joby (in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       const accountId = await setupAccount(db);
-      await enqueueSyncJob(db, 'u1', accountId);
+      await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
 
       const race = db.insert(jobs).values({
         id: 'zavodnik',
@@ -83,7 +83,7 @@ describe('background joby (in-memory PGlite)', () => {
       expect(codes).toContain('23505');
 
       // a enqueue race přežije: vrátí vítězný job místo výjimky
-      const survived = await enqueueSyncJob(db, 'u1', accountId);
+      const survived = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
       expect(survived.status).toBe('pending');
     },
   );
@@ -94,7 +94,7 @@ describe('background joby (in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       const accountId = await setupAccount(db);
-      const job = await enqueueSyncJob(db, 'u1', accountId);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
 
       const mock = makeMockFetch();
       const finished = await processJob(db, job.id, {
@@ -120,14 +120,14 @@ describe('background joby (in-memory PGlite)', () => {
       // průběh: všechny roky uzavřené, s počty u neprázdných
       const progress = finished?.progress as SyncProgress;
       expect(progress.mode).toBe('full');
-      expect(progress.years.map((y) => [y.year, y.status])).toEqual([
+      expect(progress.years!.map((y) => [y.year, y.status])).toEqual([
         [2026, 'done'],
         [2025, 'empty'],
         [2024, 'done'],
         [2023, 'empty'],
         [2022, 'empty'],
       ]);
-      expect(progress.years[0]!.added).toBe(1);
+      expect(progress.years![0]!.added).toBe(1);
 
       const account = (
         await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
@@ -153,7 +153,7 @@ describe('background joby (in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       const accountId = await setupAccount(db);
-      const job = await enqueueSyncJob(db, 'u1', accountId);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
 
       const mock = makeMockFetch({ failExports: true });
       const finished = await processJob(db, job.id, {
@@ -182,7 +182,7 @@ describe('background joby (in-memory PGlite)', () => {
     await db.insert(jobs).values({
       id: 'cizi-typ',
       userId: 'u1',
-      type: 'ibkr-sync',
+      type: 'xtb-sync',
       dedupeKey: 'acc-x',
       payload: {},
     });
@@ -237,7 +237,7 @@ describe('background joby (in-memory PGlite)', () => {
       expect(account.lastSyncStatus).toBe('error');
 
       // po dorovnání jde zařadit nový job (starý už není aktivní)
-      const next = await enqueueSyncJob(db, 'u1', accountId);
+      const next = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
       expect(next.id).not.toBe('stale-1');
       expect(next.status).toBe('pending');
     },
@@ -266,7 +266,7 @@ describe('background joby (in-memory PGlite)', () => {
       expect(seen?.error).toContain('přerušeno');
 
       // čerstvý pending se dorovnat nesmí
-      const freshJob = await enqueueSyncJob(db, 'u1', accountId);
+      const freshJob = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
       const stillPending = await latestSyncJob(db, 'u1');
       expect(stillPending?.id).toBe(freshJob.id);
       expect(stillPending?.status).toBe('pending');
@@ -279,7 +279,7 @@ describe('background joby (in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       const accountId = await setupAccount(db);
-      const job = await enqueueSyncJob(db, 'u1', accountId);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
 
       const mock = makeMockFetch();
       const summary = await processPendingJobs(db, {

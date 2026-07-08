@@ -1,14 +1,21 @@
 import {
   mapPositionsToIsin,
-  reconcilePositions,
   Trading212ApiError,
   Trading212Client,
   type RowIssue,
 } from '@danero/importers';
-import { buildLedger, positionsAt, resolveOptions, WarningCollector } from '@danero/engine';
-import { and, eq } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { brokerAccounts } from '@/db/schema';
+import {
+  emptyReconciliation,
+  finishBrokerSync,
+  reconcileBrokerPositions,
+  testEnvBaseUrl,
+  type BrokerAccountRow,
+  type StoredReconciliation,
+  type SyncProgress,
+  type SyncStatus,
+  type SyncYearProgress,
+} from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
 import {
   detectAndParse,
@@ -16,26 +23,6 @@ import {
   loadDedupeKeys,
   type ImportSummary,
 } from '@/lib/import-service';
-import { loadTransactions } from '@/lib/portfolio';
-
-export type BrokerAccountRow = typeof brokerAccounts.$inferSelect;
-
-/** Serializovaná rekonciliace pro JSONB (Decimal → string). */
-export interface StoredReconciliation {
-  ok: boolean;
-  matchedCount: number;
-  unmatchedTickers: string[];
-  issues: Array<{
-    kind: string;
-    isin: string;
-    expected: string;
-    actual: string;
-    suggestedSplitRatio?: { from: string; to: string };
-  }>;
-  error?: string;
-}
-
-export type SyncStatus = 'ok' | 'mismatch' | 'errors';
 
 export interface SyncOutcome {
   batches: ImportSummary[];
@@ -47,45 +34,11 @@ export interface SyncOutcome {
   status: SyncStatus;
 }
 
-/** Rekonciliace „nedoběhla" — jediný tvar pro všechna chybová místa. */
-export function emptyReconciliation(error: string): StoredReconciliation {
-  return { ok: false, matchedCount: 0, unmatchedTickers: [], issues: [], error };
-}
-
-/**
- * Propíše chybu syncu k broker účtu (ukazuje ji /import). U 403 doplní nápovědu
- * k oprávněním T212 klíče. POZOR: lastSyncedAt se při chybě NIKDY nenastavuje —
- * jinak by další pokus přeskočil plnou historii (mode se odvozuje z lastSyncedAt).
- */
-export async function markAccountSyncError(
-  db: Db,
-  accountId: string,
-  userId: string,
-  message: string,
-): Promise<void> {
-  const explained = message.includes('403')
+/** U 403 doplní nápovědu k oprávněním T212 klíče (jinak vrací zprávu beze změny). */
+export function explainT212SyncError(message: string): string {
+  return message.includes('403')
     ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu v nastavení.`
     : message;
-  await db
-    .update(brokerAccounts)
-    .set({ lastSyncStatus: 'error', lastReconciliation: emptyReconciliation(explained) })
-    .where(and(eq(brokerAccounts.id, accountId), eq(brokerAccounts.userId, userId)));
-}
-
-/** Stav jednoho roku v průběhu syncu — pro progress UI. */
-export interface SyncYearProgress {
-  year: number;
-  status: 'running' | 'done' | 'empty';
-  added?: number;
-  duplicates?: number;
-  errors?: number;
-}
-
-/** Průběžný stav syncu (serializovatelný do jobs.progress). */
-export interface SyncProgress {
-  phase: 'connecting' | 'exporting' | 'reconciling';
-  mode: 'full' | 'incremental';
-  years: SyncYearProgress[];
 }
 
 export interface SyncOptions {
@@ -128,20 +81,8 @@ function parseCredentials(encrypted: string): StoredCredentials {
  * (HTTP Basic), nebo samotným tajným klíčem v Authorization. Ověříme si to sami
  * levným getCash(): zkusíme Basic, na 401 spadneme na samotný secret.
  */
-/**
- * Testovací háky pro E2E (mock server, rychlý poll). Mimo produkci ZÁMĚRNĚ —
- * omylem nastavená T212_API_BASE_URL v produkci by tiše přesměrovala provoz
- * včetně API klíčů v hlavičkách na cizí host.
- */
-const isProduction = () => process.env.NODE_ENV === 'production';
-
-function testBaseUrl(): string | undefined {
-  if (isProduction()) return undefined;
-  return process.env.T212_API_BASE_URL || undefined;
-}
-
 function defaultPollIntervalMs(): number {
-  if (!isProduction()) {
+  if (process.env.NODE_ENV !== 'production') {
     const fromEnv = Number(process.env.T212_POLL_INTERVAL_MS);
     if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
   }
@@ -153,7 +94,7 @@ async function resolveClient(
   credentials: StoredCredentials,
   fetchImpl?: typeof fetch,
 ): Promise<Trading212Client> {
-  const baseUrl = testBaseUrl();
+  const baseUrl = testEnvBaseUrl('T212_API_BASE_URL');
   const clientOptions = {
     ...(fetchImpl ? { fetchImpl } : {}),
     ...(baseUrl ? { baseUrl } : {}),
@@ -228,7 +169,7 @@ export async function syncTrading212(
     const current: SyncYearProgress = { year, status: 'running' };
     yearProgress.push(current);
     await report('exporting');
-    const csv = await client.fetchHistoryCsv(
+    const rawExport = await client.fetchHistoryCsv(
       {
         timeFrom: `${year}-01-01T00:00:00Z`,
         timeTo:
@@ -245,7 +186,14 @@ export async function syncTrading212(
       pollIntervalMs,
       600_000,
     );
-    const parsed = detectAndParse(csv);
+    // Ochrana před ne-CSV odpovědí (např. XML chyba expirovaného odkazu) —
+    // autodetekce by ji jinak poslala do IBKR parseru a smetí by dostalo cizí broker
+    if (rawExport.trimStart().startsWith('<')) {
+      throw new Error(
+        `Trading212 vrátil pro rok ${year} neočekávanou odpověď místo CSV exportu — zkus synchronizaci za chvíli znovu.`,
+      );
+    }
+    const parsed = detectAndParse(rawExport);
     yearsCovered.push(year);
 
     const hasContent =
@@ -289,28 +237,14 @@ export async function syncTrading212(
       client.getInstruments(),
     ]);
     const mapped = mapPositionsToIsin(positions, instruments);
-    const txs = await loadTransactions(db, account.userId);
-    const ledger = buildLedger(txs, resolveOptions(), new WarningCollector());
-    const computed = positionsAt(ledger, now.toISOString().slice(0, 10)).map((position) => ({
-      isin: position.isin,
-      quantity: position.totalRemaining,
-    }));
-    const report = reconcilePositions(
-      computed,
+    reconciliation = await reconcileBrokerPositions(
+      db,
+      account.userId,
+      account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, quantity: p.quantity })),
+      now.toISOString().slice(0, 10),
+      mapped.unmatchedTickers,
     );
-    reconciliation = {
-      ok: report.ok && mapped.unmatchedTickers.length === 0,
-      matchedCount: report.matchedIsins.length,
-      unmatchedTickers: mapped.unmatchedTickers,
-      issues: report.issues.map((issue) => ({
-        kind: issue.kind,
-        isin: issue.isin,
-        expected: issue.expectedQuantity.toString(),
-        actual: issue.brokerQuantity.toString(),
-        ...(issue.suggestedSplitRatio ? { suggestedSplitRatio: issue.suggestedSplitRatio } : {}),
-      })),
-    };
   } catch (error) {
     reconciliation = emptyReconciliation(error instanceof Error ? error.message : String(error));
   }
@@ -319,11 +253,7 @@ export async function syncTrading212(
   const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
   const errors = batches.flatMap((batch) => batch.errors);
 
-  const status: SyncStatus = errors.length > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
-  await db
-    .update(brokerAccounts)
-    .set({ lastSyncedAt: now, lastSyncStatus: status, lastReconciliation: reconciliation })
-    .where(eq(brokerAccounts.id, account.id));
+  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now);
 
   return { batches, yearsCovered, added, duplicates, errors, reconciliation, status };
 }
