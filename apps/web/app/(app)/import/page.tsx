@@ -10,14 +10,17 @@ import {
   type BrokerAccountRow,
   type StoredReconciliation,
 } from '@/lib/broker-sync';
+import { loadAliases } from '@/lib/instrument-aliases';
+import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 import { syncBrokerAction } from '../nastaveni/actions';
-import { deleteBatchAction, uploadImportAction } from './actions';
+import { deleteBatchAction, saveAliasesAction, uploadImportAction } from './actions';
 
 interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
   warnings?: Array<{ line: number; message: string }>;
+  unmapped?: UnmappedSymbol[];
 }
 
 interface BrokerCopy {
@@ -135,12 +138,12 @@ function BrokerSyncCard({
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string }>;
+  searchParams: Promise<{ chyba?: string; ulozeno?: string }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const { chyba } = await searchParams;
-  const [batches, accounts] = await Promise.all([
+  const { chyba, ulozeno } = await searchParams;
+  const [batches, accounts, aliases] = await Promise.all([
     db
       .select()
       .from(importBatches)
@@ -148,7 +151,19 @@ export default async function ImportPage({
       .orderBy(desc(importBatches.createdAt))
       .limit(20),
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
+    loadAliases(db, user.id),
   ]);
+
+  // nenamapované symboly z posledních importů (bez těch, které už uživatel doplnil)
+  const unmappedMap = new Map<string, UnmappedSymbol>();
+  for (const batch of batches) {
+    for (const item of ((batch.issues as BatchIssues).unmapped ?? [])) {
+      const known =
+        item.broker === 'xtb' ? aliases.xtb[item.symbol] : aliases.fio[item.symbol];
+      if (!known) unmappedMap.set(`${item.broker}|${item.symbol}`, item);
+    }
+  }
+  const unmappedSymbols = [...unmappedMap.values()];
 
   // aktivní job per účet → místo tlačítka a rekonciliace živý průběh
   // (jeden dotaz; cestou se samoléčí zaseknuté joby vč. odpojených účtů)
@@ -176,8 +191,62 @@ export default async function ImportPage({
         <p className="rounded-md border border-cervena px-4 py-3 text-sm text-cervena">
           {chyba === 'velikost'
             ? 'Soubor je větší než 20 MB — rozděl export na kratší období.'
-            : 'Vyber aspoň jeden CSV nebo XML soubor.'}
+            : chyba === 'isin'
+              ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
+              : chyba === 'mena'
+                ? 'Měna má tvar 3 písmena (např. USD) — zkontroluj vyplněné hodnoty.'
+                : 'Vyber aspoň jeden CSV, XML nebo XLSX soubor.'}
         </p>
+      )}
+      {ulozeno === 'ciselnik' && (
+        <p className="rounded-md border border-zelena px-4 py-3 text-sm text-zelena">
+          Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují
+          (a nic se nezdvojí).
+        </p>
+      )}
+
+      {unmappedSymbols.length > 0 && (
+        <Card className="space-y-3 border-jantar">
+          <CardTitle>Doplň chybějící údaje instrumentů</CardTitle>
+          <p className="text-sm text-inkoust-tlumeny">
+            Poslední import obsahuje symboly, ke kterým broker neexportuje ISIN
+            {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
+            na výpisu brokera nebo vyhledáním „[symbol] ISIN". Po uložení nahraj soubor znovu.
+          </p>
+          <form action={saveAliasesAction} className="space-y-2">
+            <input type="hidden" name="count" value={unmappedSymbols.length} />
+            {unmappedSymbols.map((item, index) => (
+              <div
+                key={`${item.broker}|${item.symbol}`}
+                className="flex flex-wrap items-center gap-3"
+              >
+                <input type="hidden" name={`broker-${index}`} value={item.broker} />
+                <input type="hidden" name={`symbol-${index}`} value={item.symbol} />
+                <span className="w-32 font-mono text-sm">
+                  {item.symbol}
+                  <span className="block text-xs text-inkoust-tlumeny">{item.broker}</span>
+                </span>
+                <input
+                  name={`isin-${index}`}
+                  placeholder="ISIN (US0378331005)"
+                  required
+                  pattern="[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]"
+                  className="w-48 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
+                />
+                {item.needsCurrency && (
+                  <input
+                    name={`currency-${index}`}
+                    placeholder="Měna (USD)"
+                    required
+                    pattern="[A-Za-z]{3}"
+                    className="w-28 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
+                  />
+                )}
+              </div>
+            ))}
+            <SubmitButton pendingLabel="Ukládám…">Uložit číselník</SubmitButton>
+          </form>
+        </Card>
       )}
 
       {accounts.length === 0 && (
@@ -210,18 +279,55 @@ export default async function ImportPage({
           <input
             type="file"
             name="soubory"
-            accept=".csv,text/csv,.xml,text/xml"
+            accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             multiple
             required
             className="flex-1 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-pozadi file:px-4 file:py-2 file:text-sm file:font-semibold file:text-inkoust"
           />
           <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
         </form>
-        <p className="text-xs text-inkoust-tlumeny">
-          T212: History → Export (CSV, všechny kategorie, po jednom roce). IBKR: Flex Query
-          XML — pro starší historii vytvoř query s obdobím po letech. Opakované nahrání nic
-          nezdvojí — deduplikace je součástí importu.
-        </p>
+        <details className="text-xs text-inkoust-tlumeny">
+          <summary className="cursor-pointer font-medium text-inkoust">
+            Jak získat výpis od brokera (návody)
+          </summary>
+          <ul className="mt-2 space-y-2">
+            <li>
+              <strong className="text-inkoust">Trading212:</strong> History → Export → CSV,
+              zaškrtni všechny kategorie, po jednom roce. (Nebo připoj API — karta výš.)
+            </li>
+            <li>
+              <strong className="text-inkoust">Interactive Brokers:</strong> Flex Query XML
+              (návod v nastavení) — pro historii starší než rok vytvoř query s obdobím po
+              letech a stáhni XML ručně.
+            </li>
+            <li>
+              <strong className="text-inkoust">Degiro:</strong> Aktivita → Transakce → Export
+              (CSV) a Aktivita → Výpis účtu → Export (CSV) — nahraj OBA soubory (obchody jsou
+              v Transactions, dividendy a poplatky v Account).
+            </li>
+            <li>
+              <strong className="text-inkoust">XTB:</strong> xStation → Historie účtu → Full
+              report (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu
+              tě požádáme o doplnění (zapamatujeme si je).
+            </li>
+            <li>
+              <strong className="text-inkoust">Fio e-Broker:</strong> Obchody → Export do CSV
+              (po jednom roce). Fio neexportuje ISIN — doplníš ho při importu.
+            </li>
+            <li>
+              <strong className="text-inkoust">Jiný broker:</strong>{' '}
+              <a href="/api/sablona" className="font-medium text-ruzova" download>
+                stáhni univerzální šablonu
+              </a>{' '}
+              s ukázkovými řádky (umí i korporátní akce a převody se zachováním nabytí)
+              a vyplň ji z výpisu.
+            </li>
+          </ul>
+          <p className="mt-2">
+            Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje
+            i napříč soubory.
+          </p>
+        </details>
       </Card>
 
       <section className="space-y-3">

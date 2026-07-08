@@ -30,7 +30,8 @@ export default defineConfig({
       command: 'node e2e/t212-mock-server.mjs',
       url: `http://localhost:${MOCK_PORT}/health`,
       env: { PORT: String(MOCK_PORT) },
-      reuseExistingServer: false,
+      // PW_REUSE: lokální ladění proti ručně spuštěnému serveru (vidět logy)
+      reuseExistingServer: Boolean(process.env.PW_REUSE),
       timeout: 15_000,
     },
     {
@@ -46,7 +47,7 @@ export default defineConfig({
         T212_POLL_INTERVAL_MS: '1500',
         IBKR_FLEX_BASE_URL: `http://localhost:${MOCK_PORT}/flex`,
       },
-      reuseExistingServer: false,
+      reuseExistingServer: Boolean(process.env.PW_REUSE),
       timeout: 120_000,
     },
   ],

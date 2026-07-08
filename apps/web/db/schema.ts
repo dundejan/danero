@@ -186,6 +186,26 @@ export const jobs = pgTable(
 );
 
 /**
+ * Uživatelský číselník instrumentů pro brokery, kteří neexportují ISIN/měnu
+ * (XTB, Fio): symbol → ISIN (+ měna instrumentu). Plní se formulářem při
+ * importu a při dalších importech se použije automaticky.
+ */
+export const instrumentAliases = pgTable(
+  'instrument_aliases',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    broker: text('broker').notNull(),
+    symbol: text('symbol').notNull(),
+    isin: text('isin').notNull(),
+    currency: text('currency'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.broker, t.symbol] })],
+);
+
+/**
  * Poslední známé ceny instrumentů z broker API (T212 portfolio, IBKR OpenPositions).
  * Zapisují se při každém syncu; CSV-only uživatelé řádky nemají → UI poctivě
  * ukazuje „bez cen". Ceny jsou v měně instrumentu, orientační (ne kotace burzy).

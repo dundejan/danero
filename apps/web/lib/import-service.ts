@@ -1,10 +1,16 @@
 import {
   dedupeKey,
   dedupeTransactions,
+  decodeFioCsv,
+  isDegiroCsv,
   parseCsv,
+  parseDegiroAccountCsv,
+  parseDegiroTransactionsCsv,
+  parseFioCsv,
   parseIbkrFlexXml,
   parseTrading212Csv,
   parseUniversalCsv,
+  parseXtbXlsx,
   type ImportResult,
   type RowIssue,
 } from '@danero/importers';
@@ -12,6 +18,14 @@ import type { Transaction } from '@danero/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
+import { loadAliases } from '@/lib/instrument-aliases';
+
+/** Symbol, kterému chybí ISIN/měna (XTB, Fio) — UI nabídne doplnění číselníku. */
+export interface UnmappedSymbol {
+  broker: string;
+  symbol: string;
+  needsCurrency: boolean;
+}
 
 export interface ImportSummary {
   batchId: string;
@@ -22,6 +36,7 @@ export interface ImportSummary {
   errors: RowIssue[];
   skipped: RowIssue[];
   warnings: RowIssue[];
+  unmapped: UnmappedSymbol[];
 }
 
 /** Autodetekce formátu: IBKR Flex XML vs. T212 CSV vs. univerzální šablona. */
@@ -54,6 +69,58 @@ export async function importCsvText(
   return importParsed(db, userId, filename, detectAndParse(text));
 }
 
+/**
+ * Import nahraného souboru s autodetekcí formátu (G4): XLSX → XTB, Degiro
+ * podle hlaviček (Transactions/Account), Fio podle CZ hlaviček (windows-1250!),
+ * jinak stávající textová cesta (IBKR XML / T212 CSV / univerzální šablona).
+ * XTB a Fio dostávají uživatelský číselník instrumentů; nenamapované symboly
+ * se vrací v `unmapped`, ať UI nabídne doplnění.
+ */
+export async function importFile(
+  db: Db,
+  userId: string,
+  filename: string,
+  data: ArrayBuffer,
+): Promise<ImportSummary> {
+  if (/\.xlsx$/i.test(filename)) {
+    const aliases = await loadAliases(db, userId);
+    const outcome = await parseXtbXlsx(data, aliases.xtb);
+    return importParsed(db, userId, filename, outcome, undefined, {
+      unmapped: outcome.unmappedSymbols.map((symbol) => ({
+        broker: 'xtb',
+        symbol,
+        needsCurrency: true,
+      })),
+    });
+  }
+
+  const utf8 = new TextDecoder().decode(data);
+
+  const degiroKind = isDegiroCsv(utf8);
+  if (degiroKind === 'transactions') {
+    return importParsed(db, userId, filename, parseDegiroTransactionsCsv(utf8));
+  }
+  if (degiroKind === 'account') {
+    return importParsed(db, userId, filename, parseDegiroAccountCsv(utf8));
+  }
+
+  // Fio: hlavička „Datum obchodu" je čitelná i při špatném dekódování (ASCII),
+  // samotný obsah se ale musí dekódovat jako windows-1250
+  if (utf8.includes('Datum obchodu')) {
+    const aliases = await loadAliases(db, userId);
+    const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.fio });
+    return importParsed(db, userId, filename, outcome, undefined, {
+      unmapped: outcome.unmappedSymbols.map((symbol) => ({
+        broker: 'fio',
+        symbol,
+        needsCurrency: false,
+      })),
+    });
+  }
+
+  return importParsed(db, userId, filename, detectAndParse(utf8));
+}
+
 /** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */
 export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string>> {
   const rows = await db
@@ -74,9 +141,11 @@ export async function importParsed(
   filename: string,
   parsed: ImportResult,
   existingKeys?: Set<string>,
+  extras: { unmapped?: UnmappedSymbol[] } = {},
 ): Promise<ImportSummary> {
   const keys = existingKeys ?? (await loadDedupeKeys(db, userId));
   const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
+  const unmapped = extras.unmapped ?? [];
 
   const batchId = crypto.randomUUID();
   await db.insert(importBatches).values({
@@ -89,7 +158,12 @@ export async function importParsed(
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
     warningCount: parsed.warnings.length,
-    issues: { errors: parsed.errors, skipped: parsed.skipped, warnings: parsed.warnings },
+    issues: {
+      errors: parsed.errors,
+      skipped: parsed.skipped,
+      warnings: parsed.warnings,
+      ...(unmapped.length > 0 ? { unmapped } : {}),
+    },
   });
 
   for (const part of chunk(fresh, 500)) {
@@ -121,5 +195,6 @@ export async function importParsed(
     errors: parsed.errors,
     skipped: parsed.skipped,
     warnings: parsed.warnings,
+    unmapped,
   };
 }

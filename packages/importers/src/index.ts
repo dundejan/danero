@@ -7,3 +7,6 @@ export * from './trading212/reconcile';
 export * from './universal/csv';
 export * from './ibkr/xml';
 export * from './ibkr/api';
+export * from './xtb/xlsx';
+export * from './degiro/csv';
+export * from './fio/csv';
