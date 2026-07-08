@@ -17,10 +17,13 @@ export const IBKR_BROKER = 'ibkr';
  * přeskočení), vědomě nepodporované = skipped, výkladové nejasnosti = warning.
  */
 
-/** Pozice z FlexStatement OpenPositions — vstup rekonciliace. */
+/** Pozice z FlexStatement OpenPositions — vstup rekonciliace (+ cena pro portfolio). */
 export interface IbkrOpenPosition {
   isin: string;
   quantity: string;
+  /** Ocenění z výpisu (markPrice), v měně instrumentu — je-li ve Flex Query zapnuté. */
+  markPrice?: string;
+  currency?: string;
 }
 
 export interface IbkrParseOutcome extends ImportResult {
@@ -946,6 +949,11 @@ function collectOpenPositions(
     if (level === 'LOT') continue;
     const isin = row.isin?.trim();
     if (!isin || !row.position) continue;
-    result.openPositions.push({ isin, quantity: cleanNumber(row.position) });
+    result.openPositions.push({
+      isin,
+      quantity: cleanNumber(row.position),
+      ...(row.markPrice ? { markPrice: cleanNumber(row.markPrice) } : {}),
+      ...(row.currency ? { currency: row.currency } : {}),
+    });
   }
 }

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 
 const ITEMS = [
   { href: '/prehled', label: 'Přehled' },
+  { href: '/portfolio', label: 'Portfolio' },
   { href: '/simulator', label: 'Simulátor' },
   { href: '/report', label: 'Report' },
   { href: '/import', label: 'Import' },
@@ -75,7 +76,7 @@ export function NavTabBar() {
   return (
     <nav
       aria-label="Hlavní navigace"
-      className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-linka bg-plocha md:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-linka bg-plocha md:hidden"
     >
       {ITEMS.map((item) => {
         const active = pathname.startsWith(item.href);

@@ -23,6 +23,14 @@ export interface DisposalReport {
   grossProceedsCzk: Money;
   exemptProceedsCzk: Money;
   taxableProceedsCzk: Money;
+  /** Příspěvek prodeje do limitu 100k dle přepínače R-02c (pro UI čerpání). */
+  limit100kContributionCzk: Money;
+  /**
+   * Skutečný obchodní výsledek prodeje (tržby − plné náklady VŠECH alokací,
+   * kurzy dle R-06) — informativní metrika pro grafy; do daně nevstupuje
+   * (daňový výdaj u osvobozených alokací je 0, viz expenseCzk alokací).
+   */
+  realizedResultCzk: Money;
   allocations: AllocationReport[];
 }
 
@@ -84,22 +92,25 @@ export function computeSecurities(
 
   for (const { disposal, grossCzk, allocations, exemptCzk, taxableCzk } of prepared) {
     const allocationReports: AllocationReport[] = [];
+    let realizedResult = ZERO;
     for (const { alloc, proceedsCzk } of allocations) {
       const isTaxable = !exemptUnder100k && !alloc.timeTestExempt;
+      // Nabývací cena + poměrná část nákupního poplatku kurzem dne/roku vynaložení (R-06a),
+      // + poměrná část prodejního poplatku kurzem dne/roku prodeje. Počítá se pro
+      // všechny alokace (kvůli realizedResultCzk); DAŇOVÝM výdajem je jen u zdanitelných.
+      const costCcy = alloc.quantity.mul(alloc.costPerShare);
+      const sellFeeShare = disposal.quantity.gt(0)
+        ? disposal.sellFee.mul(alloc.quantity).div(disposal.quantity)
+        : ZERO;
+      const fullExpenseCzk = fx
+        .toCzk(costCcy, alloc.lotCurrency, alloc.expenseDate)
+        .plus(fx.toCzk(alloc.buyFeeShare, alloc.buyFeeCurrency, alloc.expenseDate))
+        .plus(fx.toCzk(sellFeeShare, disposal.sellFeeCurrency, disposal.saleDate));
+      realizedResult = realizedResult.plus(proceedsCzk).minus(fullExpenseCzk);
+
       let expenseCzk = ZERO;
       if (isTaxable) {
-        // Nabývací cena + poměrná část nákupního poplatku kurzem dne/roku vynaložení (R-06a),
-        // + poměrná část prodejního poplatku kurzem dne/roku prodeje.
-        const costCcy = alloc.quantity.mul(alloc.costPerShare);
-        expenseCzk = fx
-          .toCzk(costCcy, alloc.lotCurrency, alloc.expenseDate)
-          .plus(fx.toCzk(alloc.buyFeeShare, alloc.buyFeeCurrency, alloc.expenseDate));
-        const sellFeeShare = disposal.quantity.gt(0)
-          ? disposal.sellFee.mul(alloc.quantity).div(disposal.quantity)
-          : ZERO;
-        expenseCzk = expenseCzk.plus(
-          fx.toCzk(sellFeeShare, disposal.sellFeeCurrency, disposal.saleDate),
-        );
+        expenseCzk = fullExpenseCzk;
         taxableIncome = taxableIncome.plus(proceedsCzk);
         expenses = expenses.plus(expenseCzk);
       }
@@ -120,6 +131,8 @@ export function computeSecurities(
       grossProceedsCzk: grossCzk,
       exemptProceedsCzk: exemptUnder100k ? grossCzk : exemptCzk,
       taxableProceedsCzk: exemptUnder100k ? ZERO : taxableCzk,
+      limit100kContributionCzk: options.limit100kIncludesTimeTestExempt ? grossCzk : taxableCzk,
+      realizedResultCzk: realizedResult,
       allocations: allocationReports,
     });
   }

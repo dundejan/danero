@@ -183,6 +183,9 @@ export interface IsinPosition {
   isin: string;
   quantity: number;
   ticker: string;
+  /** Aktuální cena za kus v měně instrumentu (z /equity/portfolio). */
+  currentPrice?: number;
+  currency?: string;
 }
 
 /** Namapuje pozice (interní tickery T212) na ISIN přes číselník instrumentů. */
@@ -196,7 +199,13 @@ export function mapPositionsToIsin(
   for (const position of positions) {
     const instrument = byTicker.get(position.ticker);
     if (instrument) {
-      mapped.push({ isin: instrument.isin, quantity: position.quantity, ticker: position.ticker });
+      mapped.push({
+        isin: instrument.isin,
+        quantity: position.quantity,
+        ticker: position.ticker,
+        currentPrice: position.currentPrice,
+        currency: instrument.currencyCode,
+      });
     } else {
       unmatched.push(position.ticker);
     }

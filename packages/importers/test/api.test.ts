@@ -104,7 +104,15 @@ describe('mapPositionsToIsin', () => {
       { ticker: 'AAPL_US_EQ', isin: 'US0378331005', currencyCode: 'USD', name: 'Apple' },
     ];
     const { positions: mapped, unmatchedTickers } = mapPositionsToIsin(positions, instruments);
-    expect(mapped).toEqual([{ isin: 'US0378331005', quantity: 10, ticker: 'AAPL_US_EQ' }]);
+    expect(mapped).toEqual([
+      {
+        isin: 'US0378331005',
+        quantity: 10,
+        ticker: 'AAPL_US_EQ',
+        currentPrice: 1,
+        currency: 'USD',
+      },
+    ]);
     expect(unmatchedTickers).toEqual(['NEZNAMY_EQ']);
   });
 });

@@ -186,6 +186,28 @@ export const jobs = pgTable(
 );
 
 /**
+ * Poslední známé ceny instrumentů z broker API (T212 portfolio, IBKR OpenPositions).
+ * Zapisují se při každém syncu; CSV-only uživatelé řádky nemají → UI poctivě
+ * ukazuje „bez cen". Ceny jsou v měně instrumentu, orientační (ne kotace burzy).
+ */
+export const instrumentPrices = pgTable(
+  'instrument_prices',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    isin: text('isin').notNull(),
+    /** Cena za kus v měně instrumentu (Decimal jako string). */
+    price: text('price').notNull(),
+    currency: text('currency').notNull(),
+    /** Odkud cena přišla ('trading212' | 'ibkr'). */
+    source: text('source').notNull(),
+    asOf: timestamp('as_of').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.isin] })],
+);
+
+/**
  * Kanonické transakce — zdroj pravdy pro engine. Payload je serializovaný
  * kanonický model (Decimal → string), engine ho rehydratuje přes Zod.
  * PK (userId, dedupeKey) = idempotentní import z definice.

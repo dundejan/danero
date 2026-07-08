@@ -1,127 +1,141 @@
-import type { Position } from '@danero/engine';
-import { diffDays } from '@danero/shared';
-import { czDate } from '@/lib/format';
-import { Card, CardTitle } from '@/components/ui/card';
+'use client';
 
-interface Dot {
-  isin: string;
-  label: string;
-  exemptFrom: string;
-  quantity: number;
-  isExempt: boolean;
-}
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import type { HorizonDot } from '@/lib/charts-data';
 
 /**
- * Signatura Danera (docs/07): časový pás, po kterém loty putují k růžové linii
- * dneška. Nalevo (zelené) už jsou osvobozené, napravo čekají. Seskupeno po
- * (ISIN, měsíc osvobození), velikost tečky ~ √množství.
+ * Horizont osvobození v2 (docs/07 signatura, G3): časový pás s tečkami lotů
+ * na datu osvobození. Velikost tečky = hodnota (známe-li ceny), jinak kusy;
+ * klik vede na detail pozice; přepínač období místo nekonečně dlouhé osy.
  */
-export function HorizonStrip({
-  positions,
-  labels,
-  today,
-}: {
-  positions: Position[];
-  labels: Map<string, string>;
-  today: string;
-}) {
-  const dots = new Map<string, Dot>();
-  for (const position of positions) {
-    for (const lot of position.lots) {
-      const month = lot.exemptFrom.slice(0, 7);
-      const key = `${position.isin}|${month}`;
-      const existing = dots.get(key);
-      if (existing) {
-        existing.quantity += lot.remaining.toNumber();
-        if (lot.exemptFrom < existing.exemptFrom) existing.exemptFrom = lot.exemptFrom;
-        existing.isExempt = existing.isExempt || lot.isExempt;
-      } else {
-        dots.set(key, {
-          isin: position.isin,
-          label: labels.get(position.isin) ?? position.isin,
-          exemptFrom: lot.exemptFrom,
-          quantity: lot.remaining.toNumber(),
-          isExempt: lot.isExempt,
-        });
-      }
-    }
-  }
-  const items = [...dots.values()];
-  if (items.length === 0) return null;
 
-  const dates = items.map((d) => d.exemptFrom).concat(today);
-  const min = dates.reduce((a, b) => (a < b ? a : b));
-  const max = dates.reduce((a, b) => (a > b ? a : b));
-  const span = Math.max(60, diffDays(min, max));
-  const pad = span * 0.06;
-  const x = (date: string): number =>
-    40 + ((diffDays(min, date) + pad) / (span + 2 * pad)) * 920;
-  const maxQty = Math.max(...items.map((d) => d.quantity));
-  const radius = (quantity: number): number => 3 + Math.sqrt(quantity / maxQty) * 6;
+const RANGES = [
+  { key: '1r', label: '1 rok', years: 1 },
+  { key: '3r', label: '3 roky', years: 3 },
+  { key: 'vse', label: 'vše', years: null },
+] as const;
 
-  const todayX = x(today);
+type RangeKey = (typeof RANGES)[number]['key'];
+
+const monthLabel = (month: string): string => {
+  const [y, m] = month.split('-');
+  return `${Number(m)}/${y}`;
+};
+
+const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
+
+export function HorizonStrip({ dots, today }: { dots: HorizonDot[]; today: string }) {
+  const [range, setRange] = useState<RangeKey>('3r');
+
+  const view = useMemo(() => {
+    if (dots.length === 0) return null;
+    const preset = RANGES.find((r) => r.key === range)!;
+    const todayDay = dayNumber(today);
+    // aritmeticky (ne skládáním data) — „29. 2. + rok" by byl Invalid Date
+    const horizonEnd = preset.years
+      ? todayDay + preset.years * 365.25
+      : Math.max(...dots.map((dot) => dayNumber(`${dot.exemptFrom}-01`)), todayDay);
+
+    const visible = dots.filter((dot) => dayNumber(`${dot.exemptFrom}-01`) <= horizonEnd);
+    const hidden = dots.length - visible.length;
+    const minDay = Math.min(todayDay, ...visible.map((dot) => dayNumber(`${dot.exemptFrom}-01`)));
+    const span = Math.max(60, horizonEnd - minDay);
+    const pad = span * 0.06;
+    const x = (day: number) => 40 + ((day - (minDay - pad)) / (span + 2 * pad)) * 920;
+    const maxWeight = Math.max(...visible.map((dot) => dot.weight), 1);
+
+    return { visible, hidden, todayX: x(todayDay), x, maxWeight };
+  }, [dots, today, range]);
+
+  if (!view) return null;
+  const basis = dots[0]?.weightBasis === 'value' ? 'hodnotě' : 'počtu kusů';
 
   return (
-    <Card className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <CardTitle>Horizont osvobození</CardTitle>
-        <p className="text-xs text-inkoust-tlumeny">
-          <span className="mr-3 inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-zelena" /> osvobozené
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-inkoust-tlumeny" /> čekající
-          </span>
-        </p>
+    <section className="rounded-lg border border-linka bg-plocha p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+          Horizont osvobození
+        </h2>
+        <div className="flex items-center gap-1" role="group" aria-label="Období horizontu">
+          {RANGES.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              onClick={() => setRange(preset.key)}
+              aria-pressed={range === preset.key}
+              className={`rounded-md px-2 py-0.5 font-mono text-xs ${
+                range === preset.key
+                  ? 'bg-ruzova font-semibold text-white'
+                  : 'text-inkoust-tlumeny hover:text-inkoust'
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <svg viewBox="0 0 1000 110" className="h-28 w-full" role="img" aria-label="Časová osa osvobození pozic">
-        <line x1="40" y1="60" x2="960" y2="60" stroke="var(--linka)" strokeWidth="1" />
-        <line x1={todayX} y1="14" x2={todayX} y2="96" stroke="var(--ruzova)" strokeWidth="2" />
+      <p className="mt-1 text-xs text-inkoust-tlumeny">
+        Každá tečka = kusy jedné pozice a měsíce, kdy jim doběhne 3letý test. Velikost podle{' '}
+        {basis}; kliknutím otevřeš detail pozice.
+        {view.hidden > 0 && ` Mimo zobrazené období: ${view.hidden} teček.`}
+      </p>
+
+      {/* bez role="img" — tečky jsou odkazy a musí zůstat v accessibility tree */}
+      <svg viewBox="0 0 1000 110" className="mt-3 w-full" aria-label="Horizont osvobození">
+        <line x1="40" y1="70" x2="960" y2="70" stroke="var(--linka)" strokeWidth="2" />
+        <line
+          x1={view.todayX}
+          y1="18"
+          x2={view.todayX}
+          y2="92"
+          stroke="var(--ruzova)"
+          strokeWidth="2"
+        />
         <text
-          x={todayX}
-          y="10"
-          textAnchor="middle"
+          x={view.todayX + 6}
+          y="28"
+          fontSize="12"
           fill="var(--ruzova)"
-          style={{ font: '600 11px var(--font-plex-mono), monospace' }}
+          fontFamily="var(--font-plex-mono)"
         >
           dnes
         </text>
-        {items.map((dot, index) => (
-          <circle
-            key={`${dot.isin}-${dot.exemptFrom}`}
-            cx={x(dot.exemptFrom)}
-            cy={60}
-            r={radius(dot.quantity)}
-            fill={dot.isExempt ? 'var(--zelena)' : 'var(--inkoust-tlumeny)'}
-            opacity={0.85}
-            style={{
-              animation: 'dot-in 500ms ease-out both',
-              animationDelay: `${Math.min(index, 40) * 25}ms`,
-            }}
-          >
-            <title>
-              {`${dot.label}: ${dot.quantity.toFixed(2)} ks — bez daně od ${czDate(dot.exemptFrom)}`}
-            </title>
-          </circle>
-        ))}
-        <text
-          x="960"
-          y="96"
-          textAnchor="end"
-          fill="var(--inkoust-tlumeny)"
-          style={{ font: '10px var(--font-plex-mono), monospace' }}
-        >
-          {czDate(max)}
-        </text>
-        <text
-          x="40"
-          y="96"
-          fill="var(--inkoust-tlumeny)"
-          style={{ font: '10px var(--font-plex-mono), monospace' }}
-        >
-          {czDate(min)}
-        </text>
+        {view.visible.map((dot, index) => {
+          const cx = view.x(dayNumber(`${dot.exemptFrom}-01`));
+          const r = 3 + Math.sqrt(dot.weight / view.maxWeight) * 7;
+          return (
+            <Link key={`${dot.isin}|${dot.exemptFrom}`} href={`/portfolio/${dot.isin}`}>
+              <circle
+                cx={cx}
+                cy="70"
+                r={r}
+                fill={dot.isExempt ? 'var(--zelena)' : 'var(--inkoust-tlumeny)'}
+                fillOpacity="0.85"
+                stroke="var(--plocha)"
+                strokeWidth="1.5"
+                className="cursor-pointer hover:fill-[var(--ruzova)]"
+                style={{ animation: `dot-in 0.3s ease-out ${Math.min(index, 40) * 25}ms both` }}
+              >
+                <title>
+                  {`${dot.label}: ${dot.quantity.toLocaleString('cs-CZ')} ks — ${
+                    dot.isExempt ? 'už bez daně' : `bez daně od ${monthLabel(dot.exemptFrom)}`
+                  }`}
+                </title>
+              </circle>
+            </Link>
+          );
+        })}
       </svg>
-    </Card>
+
+      <div className="flex gap-4 text-xs text-inkoust-tlumeny">
+        <span className="flex items-center gap-1">
+          <span className="inline-block size-2 rounded-full bg-zelena" /> osvobozené
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block size-2 rounded-full bg-inkoust-tlumeny" /> čekající
+        </span>
+      </div>
+    </section>
   );
 }

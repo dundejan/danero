@@ -14,6 +14,13 @@
   --oranz: #c25a25;
   --cervena: #b3362f;
   --linka: #e4e2da;
+  /* Kategorické barvy grafů (G3) — pevné pořadí, validováno dataviz skriptem
+     (CVD ΔE, lightness band, kontrast) proti ploše karet. Semaforové barvy
+     limitů se v grafech NEpoužívají pro série — jen pro stav/polaritu. */
+  --graf-1: #d6336c;
+  --graf-2: #3b5bdb;
+  --graf-3: #0ca678;
+  --graf-4: #7048e8;
 }
 
 .dark {
@@ -27,6 +34,10 @@
   --oranz: #e07c42;
   --cervena: #e05d52;
   --linka: #2b2e4a;
+  --graf-1: #e0567f;
+  --graf-2: #5c7cfa;
+  --graf-3: #0ca678;
+  --graf-4: #845ef7;
 }
 
 @theme inline {

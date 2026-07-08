@@ -12,11 +12,21 @@ import { WarningCollector } from '../warnings';
 
 export interface DividendItem {
   txId: string;
+  /** Datum přijetí — pro časové řady v UI (grafy čerpání limitů, měsíce). */
+  date: string;
+  isin?: string;
   country: string;
   isCzech: boolean;
   grossCzk: Money;
   withholdingCzk: Money;
   creditableCzk: Money;
+}
+
+/** Zdanitelný úrok jako položka — pro časové řady v UI. */
+export interface InterestItem {
+  txId: string;
+  date: string;
+  amountCzk: Money;
 }
 
 export interface DividendsResult {
@@ -33,6 +43,7 @@ export interface DividendsResult {
   /** Dílčí základ § 8: zahraniční dividendy brutto + zdanitelné úroky. */
   base8Czk: Money;
   items: DividendItem[];
+  interestItems: InterestItem[];
 }
 
 const countryFromIsin = (isin?: string): string | undefined => {
@@ -71,7 +82,16 @@ export function computeDividends(
 
     if (isCzech) {
       czechGross = czechGross.plus(grossCzk);
-      items.push({ txId: tx.id, country, isCzech, grossCzk, withholdingCzk, creditableCzk: ZERO });
+      items.push({
+        txId: tx.id,
+        date: tx.date,
+        isin: tx.isin,
+        country,
+        isCzech,
+        grossCzk,
+        withholdingCzk,
+        creditableCzk: ZERO,
+      });
       continue;
     }
 
@@ -100,10 +120,20 @@ export function computeDividends(
       grossCzk: agg.grossCzk.plus(grossCzk),
       creditableCzk: agg.creditableCzk.plus(creditableCzk),
     };
-    items.push({ txId: tx.id, country, isCzech, grossCzk, withholdingCzk, creditableCzk });
+    items.push({
+      txId: tx.id,
+      date: tx.date,
+      isin: tx.isin,
+      country,
+      isCzech,
+      grossCzk,
+      withholdingCzk,
+      creditableCzk,
+    });
   }
 
   let taxableInterest = ZERO;
+  const interestItems: InterestItem[] = [];
   for (const tx of interests) {
     if (tx.sourceCountry === 'CZ') {
       warnings.add(
@@ -114,7 +144,9 @@ export function computeDividends(
       );
       continue;
     }
-    taxableInterest = taxableInterest.plus(fx.toCzk(tx.amount, tx.currency, tx.date));
+    const amountCzk = fx.toCzk(tx.amount, tx.currency, tx.date);
+    taxableInterest = taxableInterest.plus(amountCzk);
+    interestItems.push({ txId: tx.id, date: tx.date, amountCzk });
   }
 
   return {
@@ -126,5 +158,6 @@ export function computeDividends(
     taxableInterestCzk: taxableInterest,
     base8Czk: foreignGross.plus(taxableInterest),
     items,
+    interestItems,
   };
 }

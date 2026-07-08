@@ -23,6 +23,7 @@ import {
   loadDedupeKeys,
   type ImportSummary,
 } from '@/lib/import-service';
+import { upsertInstrumentPrices } from '@/lib/prices';
 
 export interface SyncOutcome {
   batches: ImportSummary[];
@@ -237,6 +238,13 @@ export async function syncTrading212(
       client.getInstruments(),
     ]);
     const mapped = mapPositionsToIsin(positions, instruments);
+    await upsertInstrumentPrices(
+      db,
+      account.userId,
+      account.broker,
+      mapped.positions.map((p) => ({ isin: p.isin, price: p.currentPrice ?? 0, currency: p.currency })),
+      now,
+    );
     reconciliation = await reconcileBrokerPositions(
       db,
       account.userId,

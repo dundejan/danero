@@ -12,6 +12,7 @@ import {
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
 import { importParsed, type ImportSummary } from '@/lib/import-service';
+import { upsertInstrumentPrices } from '@/lib/prices';
 
 /**
  * Synchronizace IBKR přes Flex Web Service (docs/09 G2): jedna query pokrývá
@@ -88,6 +89,15 @@ export async function syncIbkr(
   const batch = hasContent ? await importParsed(db, account.userId, filename, parsed) : null;
 
   await report('reconciling');
+  await upsertInstrumentPrices(
+    db,
+    account.userId,
+    account.broker,
+    parsed.openPositions
+      .filter((p) => p.markPrice)
+      .map((p) => ({ isin: p.isin, price: p.markPrice!, currency: p.currency })),
+    now,
+  );
   let reconciliation: StoredReconciliation;
   if (parsed.openPositions.length > 0) {
     try {

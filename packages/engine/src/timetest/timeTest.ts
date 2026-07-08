@@ -38,6 +38,8 @@ export interface PositionLot {
   isExempt: boolean;
   /** Dní zbývajících do osvobození (0 = už osvobozeno). */
   daysToExempt: number;
+  /** Nabývací cena za kus v měně instrumentu — pro zobrazení nerealizovaného P/L. */
+  costPerShare: Money;
   interpretive: boolean;
 }
 
@@ -80,6 +82,7 @@ export function positionsAt(ledger: Ledger, atDate: IsoDate): Position[] {
             exemptFrom,
             isExempt: atDate >= exemptFrom,
             daysToExempt: Math.max(0, diffDays(atDate, exemptFrom)),
+            costPerShare: lot.costPerShare,
             interpretive: lot.interpretive,
           };
         })

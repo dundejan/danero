@@ -2,12 +2,15 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { desc, eq } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
+import { LimitDrawdownChart } from '@/components/charts';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
+import { flatTax50kSeries, horizonDots, limit100kSeries } from '@/lib/charts-data';
+import { loadInstrumentPrices } from '@/lib/prices';
 import { czk } from '@/lib/format';
 import { analyzeForUser, availableYears, getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
@@ -55,6 +58,9 @@ export default async function OverviewPage({
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const { result, positions, labels } = analyzeForUser(txs, profile, year, today);
+  const limit100kChart = limit100kSeries(result);
+  const flatTax50kChart = flatTax50kSeries(result);
+  const prices = await loadInstrumentPrices(db, user.id);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
   // stejný typ upozornění (např. nadsmluvní srážka u desítek dividend) = jedna řádka s počtem
@@ -119,6 +125,29 @@ export default async function OverviewPage({
         </Card>
       </section>
 
+      {(limit100kChart.points.length > 1 || (flatTax50kChart?.points.length ?? 0) > 1) && (
+        <section className="grid gap-4 lg:grid-cols-2">
+          {limit100kChart.points.length > 1 && (
+            <Card>
+              <CardTitle>Čerpání limitu 100k v průběhu roku</CardTitle>
+              <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+                Kumulativní tržby z prodejů CP; přerušované čáry = pásma 60/85/100 %.
+              </p>
+              <LimitDrawdownChart series={limit100kChart} name="Tržby z prodejů" />
+            </Card>
+          )}
+          {flatTax50kChart && flatTax50kChart.points.length > 1 && (
+            <Card>
+              <CardTitle>Čerpání limitu 50k v průběhu roku</CardTitle>
+              <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+                Zdanitelné příjmy mimo živnost (neosvobozené prodeje, zahraniční dividendy, úroky).
+              </p>
+              <LimitDrawdownChart series={flatTax50kChart} name="Zdanitelné příjmy" />
+            </Card>
+          )}
+        </section>
+      )}
+
       {result.options.limit100kIncludesTimeTestExempt &&
         !result.securities.exemptUnder100k &&
         result.securities.totalGrossProceedsCzk
@@ -142,7 +171,7 @@ export default async function OverviewPage({
           </Card>
         )}
 
-      <HorizonStrip positions={positions} labels={labels} today={today} />
+      <HorizonStrip dots={horizonDots(positions, labels, prices, currentYear)} today={today} />
 
       {groupedWarnings.length > 0 && (
         <Card className="space-y-2">
