@@ -93,14 +93,15 @@ export async function markAccountSyncError(
 export async function reconcileBrokerPositions(
   db: Db,
   userId: string,
+  portfolioId: string,
   broker: string,
   brokerPositions: Array<{ isin: string; quantity: string | number }>,
   atDate: string,
   unmatchedTickers: string[] = [],
 ): Promise<StoredReconciliation> {
   const [own, manual] = await Promise.all([
-    loadTransactions(db, userId, broker),
-    loadTransactions(db, userId, 'universal'),
+    loadTransactions(db, userId, portfolioId, broker),
+    loadTransactions(db, userId, portfolioId, 'universal'),
   ]);
   const txs = [...own, ...manual].sort((a, b) => {
     const dateOf = (tx: (typeof own)[number]) =>
@@ -152,6 +153,8 @@ export async function finishBrokerSync(
     .update(brokerAccounts)
     .set({ lastSyncedAt: now, lastSyncStatus: status, lastReconciliation: reconciliation })
     .where(and(eq(brokerAccounts.id, account.id), eq(brokerAccounts.userId, account.userId)));
+  const { logAudit } = await import('@/lib/audit');
+  await logAudit(db, account.userId, 'SYNC', `${account.broker} (${account.label})`);
   return status;
 }
 

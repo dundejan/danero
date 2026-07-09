@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
 import { LimitDrawdownChart } from '@/components/charts';
 import { HorizonStrip } from '@/components/horizon-strip';
@@ -19,6 +19,7 @@ import {
   getProfile,
   loadTransactions,
 } from '@/lib/portfolio';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 
 export default async function OverviewPage({
@@ -28,11 +29,12 @@ export default async function OverviewPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
+  const portfolio = await activePortfolio(db, user.id);
 
-  const profile = await getProfile(db, user.id);
+  const profile = await getProfile(db, user.id, portfolio.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id);
+  const txs = await loadTransactions(db, user.id, portfolio.id);
   if (txs.length === 0) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
@@ -54,7 +56,7 @@ export default async function OverviewPage({
   const recentNotifications = await db
     .select()
     .from(notifications)
-    .where(eq(notifications.userId, user.id))
+    .where(and(eq(notifications.userId, user.id), eq(notifications.portfolioId, portfolio.id)))
     .orderBy(desc(notifications.createdAt))
     .limit(5);
 
@@ -67,7 +69,7 @@ export default async function OverviewPage({
   const { result, positions, labels } = analyzeForUser(txs, profile, year, today, dailyRates);
   const limit100kChart = limit100kSeries(result);
   const flatTax50kChart = flatTax50kSeries(result);
-  const prices = await loadInstrumentPrices(db, user.id);
+  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
   // stejný typ upozornění (např. nadsmluvní srážka u desítek dividend) = jedna řádka s počtem

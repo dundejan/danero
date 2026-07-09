@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb } from '@/db';
-import { brokerAccounts, user } from '@/db/schema';
+import { portfolios, brokerAccounts, user } from '@/db/schema';
 import { decryptSecret, encryptSecret } from '@/lib/crypto';
 import { loadTransactions } from '@/lib/portfolio';
 import { syncTrading212 } from '@/lib/t212-sync';
@@ -27,9 +27,11 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       await db.insert(user).values({ id: 'u1', name: 'Test', email: 'sync@danero.cz' });
+      await db.insert(portfolios).values({ id: 'pf-' + 'u1', userId: 'u1', name: 'Moje portfolio' });
       await db.insert(brokerAccounts).values({
         id: 'acc1',
         userId: 'u1',
+        portfolioId: 'pf-u1',
         broker: 'trading212',
         credentialsEncrypted: encryptSecret(CREDENTIALS),
       });
@@ -52,7 +54,7 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
       expect(outcome.reconciliation.ok).toBe(true);
       expect(outcome.reconciliation.matchedCount).toBe(1);
 
-      const txs = await loadTransactions(db, 'u1');
+      const txs = await loadTransactions(db, 'u1', 'pf-u1');
       expect(txs).toHaveLength(2);
 
       const updated = (
@@ -82,9 +84,11 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
     async () => {
       const db = await createPgliteDb();
       await db.insert(user).values({ id: 'u2', name: 'Test', email: 'fallback@danero.cz' });
+      await db.insert(portfolios).values({ id: 'pf-' + 'u2', userId: 'u2', name: 'Moje portfolio' });
       await db.insert(brokerAccounts).values({
         id: 'acc2',
         userId: 'u2',
+        portfolioId: 'pf-u2',
         broker: 'trading212',
         credentialsEncrypted: encryptSecret(CREDENTIALS),
       });

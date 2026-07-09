@@ -7,6 +7,7 @@ import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 
 const PROFILE: ProfileRow = {
   userId: 'u1',
+  portfolioId: 'pf-u1',
   regime: 'PAUSAL',
   hasBusinessAssets: false,
   w8benFiled: true,

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { d, type Money } from '@danero/shared';
 import type { Db } from '@/db';
 import { instrumentPrices } from '@/db/schema';
@@ -34,6 +34,7 @@ function normalize(price: Money, currency: string): { price: Money; currency: st
 export async function upsertInstrumentPrices(
   db: Db,
   userId: string,
+  portfolioId: string,
   source: string,
   prices: PriceInput[],
   asOf: Date,
@@ -48,6 +49,7 @@ export async function upsertInstrumentPrices(
       .insert(instrumentPrices)
       .values({
         userId,
+        portfolioId,
         isin: item.isin,
         price: price.toString(),
         currency,
@@ -55,7 +57,7 @@ export async function upsertInstrumentPrices(
         asOf,
       })
       .onConflictDoUpdate({
-        target: [instrumentPrices.userId, instrumentPrices.isin],
+        target: [instrumentPrices.portfolioId, instrumentPrices.isin],
         set: { price: price.toString(), currency, source, asOf },
       });
     written += 1;
@@ -66,11 +68,14 @@ export async function upsertInstrumentPrices(
 export async function loadInstrumentPrices(
   db: Db,
   userId: string,
+  portfolioId: string,
 ): Promise<Map<string, InstrumentPrice>> {
   const rows = await db
     .select()
     .from(instrumentPrices)
-    .where(eq(instrumentPrices.userId, userId));
+    .where(
+      and(eq(instrumentPrices.userId, userId), eq(instrumentPrices.portfolioId, portfolioId)),
+    );
   return new Map(
     rows.map((row) => [
       row.isin,

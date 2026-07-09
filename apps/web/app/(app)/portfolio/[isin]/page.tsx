@@ -11,6 +11,7 @@ import {
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import { loadInstrumentPrices } from '@/lib/prices';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 
 /** Popis transakce pro historii pozice (jen typy, které se ISIN týkají). */
@@ -56,17 +57,18 @@ export default async function PositionDetailPage({
 
   const user = await requireUser();
   const db = await getDb();
-  const profile = await getProfile(db, user.id);
+  const portfolio = await activePortfolio(db, user.id);
+  const profile = await getProfile(db, user.id, portfolio.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id);
+  const txs = await loadTransactions(db, user.id, portfolio.id);
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = Number(today.slice(0, 4));
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const { positions, labels } = analyzeForUser(txs, profile, currentYear, today, dailyRates);
   const position = positions.find((p) => p.isin === isin);
 
-  const prices = await loadInstrumentPrices(db, user.id);
+  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
   const valuation = position
     ? valuePositions([position], labels, prices, currentYear).rows[0]!
     : null;

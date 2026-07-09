@@ -163,7 +163,7 @@ export async function syncTrading212(
   const batches: ImportSummary[] = [];
   const yearsCovered: number[] = [];
   // dedupe klíče jednou za sync, ne per rok — importParsed do množiny doplňuje
-  const dedupeKeys = await loadDedupeKeys(db, account.userId);
+  const dedupeKeys = await loadDedupeKeys(db, account.userId, account.portfolioId);
   let emptyStreak = 0;
 
   for (let year = currentYear; year >= T212_MIN_YEAR; year -= 1) {
@@ -206,6 +206,7 @@ export async function syncTrading212(
       const batch = await importParsed(
         db,
         account.userId,
+        account.portfolioId,
         `t212-api-${year}.csv`,
         parsed,
         dedupeKeys,
@@ -241,6 +242,7 @@ export async function syncTrading212(
     await upsertInstrumentPrices(
       db,
       account.userId,
+      account.portfolioId,
       account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, price: p.currentPrice ?? 0, currency: p.currency })),
       now,
@@ -248,6 +250,7 @@ export async function syncTrading212(
     reconciliation = await reconcileBrokerPositions(
       db,
       account.userId,
+      account.portfolioId,
       account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, quantity: p.quantity })),
       now.toISOString().slice(0, 10),

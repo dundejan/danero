@@ -81,8 +81,11 @@ export const verification = pgTable('verification', {
 
 /** Daňový profil = konfigurace enginu per uživatel (docs/02, tabulka přepínačů). */
 export const taxpayerProfiles = pgTable('taxpayer_profiles', {
-  userId: text('user_id')
+  portfolioId: text('portfolio_id')
     .primaryKey()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   regime: text('regime').notNull(), // PAUSAL | ZAMESTNANEC | OSVC | JINE
   hasBusinessAssets: boolean('has_business_assets').notNull().default(false),
@@ -98,12 +101,61 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+/**
+ * Audit události účtu (G8b): přihlášení, importy, změny profilu a klíčů.
+ * Jen zobrazení uživateli (transparentnost) — žádná citlivá data v detailu.
+ */
+export const auditLog = pgTable('audit_log', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  detail: text('detail'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/**
+ * Notifikační preference (G8d) — per uživatel: e-mail zap/vyp a typy událostí.
+ * Chybějící řádek = všechno zapnuté (bez onboarding kroku navíc).
+ */
+export const notificationPrefs = pgTable('notification_prefs', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  emailEnabled: boolean('email_enabled').notNull().default(true),
+  timeTestEvents: boolean('time_test_events').notNull().default(true),
+  limitEvents: boolean('limit_events').notNull().default(true),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * Portfolio (G8c): vrstva mezi uživatelem a daty — jeden účet může vést
+ * oddělená portfolia (manžel/ka, děti). Každý výpočet je izolovaný per
+ * portfolio; tenancy zůstává dvojitá (userId VŽDY v dotazu + portfolioId).
+ */
+export const portfolios = pgTable('portfolios', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 /** Napojený broker účet — API klíč šifrovaný AES-256-GCM (lib/crypto.ts), nikdy plaintext. */
 export const brokerAccounts = pgTable('broker_accounts', {
   id: text('id').primaryKey(),
   userId: text('user_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
   broker: text('broker').notNull(), // 'trading212'
   label: text('label').notNull().default('Trading212'),
   credentialsEncrypted: text('credentials_encrypted').notNull(),
@@ -119,6 +171,9 @@ export const importBatches = pgTable('import_batches', {
   userId: text('user_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
   broker: text('broker').notNull(),
   filename: text('filename').notNull(),
   added: integer('added').notNull(),
@@ -140,13 +195,16 @@ export const notifications = pgTable('notifications', {
   userId: text('user_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
   dedupeKey: text('dedupe_key').notNull(),
   type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   emailedAt: timestamp('emailed_at'),
-}, (t) => [primaryKey({ columns: [t.userId, t.dedupeKey] })]);
+}, (t) => [primaryKey({ columns: [t.portfolioId, t.dedupeKey] })]);
 
 /**
  * Background joby pro dlouhé operace (T212 sync). Životní cyklus: server action
@@ -215,13 +273,16 @@ export const instrumentAliases = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
     broker: text('broker').notNull(),
     symbol: text('symbol').notNull(),
     isin: text('isin').notNull(),
     currency: text('currency'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.broker, t.symbol] })],
+  (t) => [primaryKey({ columns: [t.portfolioId, t.broker, t.symbol] })],
 );
 
 /**
@@ -235,6 +296,9 @@ export const instrumentPrices = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
     isin: text('isin').notNull(),
     /** Cena za kus v měně instrumentu (Decimal jako string). */
     price: text('price').notNull(),
@@ -243,7 +307,7 @@ export const instrumentPrices = pgTable(
     source: text('source').notNull(),
     asOf: timestamp('as_of').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.isin] })],
+  (t) => [primaryKey({ columns: [t.portfolioId, t.isin] })],
 );
 
 /**
@@ -257,6 +321,9 @@ export const transactions = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+  portfolioId: text('portfolio_id')
+    .notNull()
+    .references(() => portfolios.id, { onDelete: 'cascade' }),
     dedupeKey: text('dedupe_key').notNull(),
     batchId: text('batch_id').notNull(),
     broker: text('broker').notNull(),
@@ -267,7 +334,8 @@ export const transactions = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [
-    primaryKey({ columns: [t.userId, t.dedupeKey] }),
+    primaryKey({ columns: [t.portfolioId, t.dedupeKey] }),
     index('transactions_user_date_idx').on(t.userId, t.txDate),
+    index('transactions_portfolio_date_idx').on(t.portfolioId, t.txDate),
   ],
 );

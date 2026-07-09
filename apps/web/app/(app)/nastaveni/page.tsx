@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { syncStatusLabel } from '@/lib/broker-sync';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -7,10 +7,23 @@ import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { getProfile } from '@/lib/portfolio';
+import { activePortfolio, listPortfolios } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
+import { getAuth } from '@/lib/auth';
+import { headers } from 'next/headers';
+import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
+import { getNotificationPrefs } from '@/lib/notifications';
 import {
+  changeEmailAction,
+  createPortfolioAction,
+  deletePortfolioAction,
+  renamePortfolioAction,
+  changePasswordAction,
+  deleteAccountAction,
   disconnectBrokerAction,
+  revokeOtherSessionsAction,
   saveIbkrKeyAction,
+  saveNotificationPrefsAction,
   saveProfileAction,
   saveTrading212KeyAction,
 } from './actions';
@@ -18,18 +31,45 @@ import {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string }>;
+  searchParams: Promise<{ chyba?: string; ok?: string }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const profile = await getProfile(db, user.id);
+  const portfolio = await activePortfolio(db, user.id);
+  const allPortfolios = await listPortfolios(db, user.id);
+  const profile = await getProfile(db, user.id, portfolio.id);
   const accounts = await db
     .select()
     .from(brokerAccounts)
-    .where(eq(brokerAccounts.userId, user.id));
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.portfolioId, portfolio.id)));
   const t212 = accounts.find((account) => account.broker === 'trading212');
   const ibkr = accounts.find((account) => account.broker === 'ibkr');
-  const { chyba } = await searchParams;
+  const { chyba, ok } = await searchParams;
+  const requestHeaders = await headers();
+  const auth = await getAuth();
+  const sessions = await auth.api.listSessions({ headers: requestHeaders });
+  const currentSession = await auth.api.getSession({ headers: requestHeaders });
+  const auditEvents = await recentAuditEvents(db, user.id);
+  const prefs = await getNotificationPrefs(db, user.id);
+  const OK_LABELS: Record<string, string> = {
+    heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
+    email: 'E-mail změněn.',
+    odhlaseno: 'Ostatní zařízení byla odhlášena.',
+    portfolio: 'Portfolio vytvořeno a přepnuto — nastav mu daňový profil níže.',
+    'portfolio-smazano': 'Portfolio smazáno včetně všech jeho dat.',
+    notifikace: 'Notifikační preference uloženy.',
+  };
+  const CHYBA_LABELS: Record<string, string> = {
+    heslo: 'Nové heslo musí mít aspoň 10 znaků.',
+    'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
+    email: 'Zadej platný e-mail.',
+    'email-obsazeny': 'E-mail se nepodařilo změnit (nejspíš už ho používá jiný účet).',
+    smazani: 'Pro smazání účtu napiš do potvrzení přesně SMAZAT.',
+    'smazani-heslo': 'Heslo nesedí — účet se nesmazal.',
+    'portfolio-nazev': 'Zadej název portfolia (1–60 znaků).',
+    'portfolio-limit': 'Maximum je 10 portfolií na účet.',
+    'portfolio-posledni': 'Poslední portfolio smazat nejde.',
+  };
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -40,16 +80,25 @@ export default async function SettingsPage({
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Profil určuje, které limity Danero hlídá a jak počítá. Vše jde kdykoli změnit —
           výpočty se přepočítají od nuly.
+          {allPortfolios.length > 1 && (
+            <> Nastavuješ portfolio <strong className="text-inkoust">{portfolio.name}</strong>.</>
+          )}
         </p>
       </header>
 
       {chyba && (
         <p className="rounded-md border border-cervena px-4 py-3 text-sm text-cervena">
-          Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.
+          {CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
+        </p>
+      )}
+      {ok && OK_LABELS[ok] && (
+        <p className="rounded-md border border-zelena px-4 py-3 text-sm text-zelena">
+          {OK_LABELS[ok]}
         </p>
       )}
 
       <form action={saveProfileAction} className="space-y-6">
+        <input type="hidden" name="portfolioId" value={portfolio.id} />
         <Card className="space-y-4">
           <CardTitle>Kdo jsi vůči dani</CardTitle>
           <div>
@@ -165,6 +214,200 @@ export default async function SettingsPage({
         <TwoFactorSection enabled={user.twoFactorEnabled} />
       </Card>
 
+      <Card className="space-y-4" id="portfolia">
+        <CardTitle>Portfolia</CardTitle>
+        <p className="text-sm text-inkoust-tlumeny">
+          Oddělená portfolia pro další osoby (manžel/ka, děti) — každé má vlastní
+          transakce, daňový profil, brokery i limity. Aktivní portfolio přepíná
+          lišta nahoře.
+        </p>
+        <ul className="space-y-2">
+          {allPortfolios.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2">
+              <form action={renamePortfolioAction} className="flex items-center gap-2">
+                <input type="hidden" name="portfolioId" value={p.id} />
+                <Input
+                  name="nazev"
+                  defaultValue={p.name}
+                  className="w-48"
+                  aria-label={`Název portfolia ${p.name}`}
+                />
+                <SubmitButton size="sm" variant="secondary" pendingLabel="Ukládám…">
+                  Přejmenovat
+                </SubmitButton>
+              </form>
+              {p.id === portfolio.id && (
+                <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
+                  aktivní
+                </span>
+              )}
+              {allPortfolios.length > 1 && (
+                <form action={deletePortfolioAction} className="flex items-center gap-2">
+                  <input type="hidden" name="portfolioId" value={p.id} />
+                  <Input
+                    name="potvrzeni"
+                    placeholder="SMAZAT"
+                    className="w-28"
+                    aria-label={`Potvrzení smazání portfolia ${p.name}`}
+                  />
+                  <SubmitButton size="sm" variant="danger" pendingLabel="Mažu…">
+                    Smazat
+                  </SubmitButton>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+        <form action={createPortfolioAction} className="flex items-end gap-2 border-t border-linka pt-4">
+          <div>
+            <Label htmlFor="novePortfolio">Nové portfolio</Label>
+            <Input id="novePortfolio" name="nazev" placeholder="např. Manželka" required maxLength={60} />
+          </div>
+          <SubmitButton size="sm" pendingLabel="Vytvářím…">Vytvořit</SubmitButton>
+        </form>
+      </Card>
+
+      <Card className="space-y-5" id="ucet">
+        <CardTitle>Účet</CardTitle>
+        <p className="text-sm text-inkoust-tlumeny">
+          Přihlášen jako <span className="font-medium text-inkoust">{user.email}</span>
+        </p>
+
+        <form action={changePasswordAction} className="space-y-3">
+          <p className="text-sm font-semibold">Změna hesla</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="currentPassword">Současné heslo</Label>
+              <Input id="currentPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+            </div>
+            <div>
+              <Label htmlFor="newPassword">Nové heslo (min. 10 znaků)</Label>
+              <Input id="newPassword" name="newPassword" type="password" required minLength={10} autoComplete="new-password" />
+            </div>
+          </div>
+          <SubmitButton size="sm" pendingLabel="Měním…">Změnit heslo</SubmitButton>
+        </form>
+
+        <form action={changeEmailAction} className="space-y-3 border-t border-linka pt-4">
+          <p className="text-sm font-semibold">Změna e-mailu</p>
+          <div>
+            <Label htmlFor="newEmail">Nový e-mail</Label>
+            <Input id="newEmail" name="newEmail" type="email" required autoComplete="email" />
+          </div>
+          <SubmitButton size="sm" pendingLabel="Měním…">Změnit e-mail</SubmitButton>
+        </form>
+
+        <div className="space-y-2 border-t border-linka pt-4">
+          <p className="text-sm font-semibold">Export dat</p>
+          <p className="text-sm text-inkoust-tlumeny">
+            Stáhni si kompletní JSON se všemi transakcemi, profilem a nastavením
+            (broker API klíče se z bezpečnostních důvodů neexportují).
+          </p>
+          <a
+            href="/api/export"
+            download
+            className="inline-block rounded-md border border-linka px-3 py-1.5 text-sm font-medium hover:border-ruzova hover:text-ruzova"
+          >
+            Stáhnout export (JSON)
+          </a>
+        </div>
+
+        <form action={deleteAccountAction} className="space-y-3 border-t border-linka pt-4">
+          <p className="text-sm font-semibold text-cervena">Smazání účtu</p>
+          <p className="text-sm text-inkoust-tlumeny">
+            Nevratně smaže účet i všechna data — transakce, profil, šifrované broker
+            klíče, notifikace i historii importů. Nejdřív si případně stáhni export.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="deletePassword">Heslo</Label>
+              <Input id="deletePassword" name="password" type="password" required autoComplete="current-password" />
+            </div>
+            <div>
+              <Label htmlFor="potvrzeni">Napiš SMAZAT</Label>
+              <Input id="potvrzeni" name="potvrzeni" required placeholder="SMAZAT" autoComplete="off" />
+            </div>
+          </div>
+          <SubmitButton variant="danger" size="sm" pendingLabel="Mažu…">
+            Nevratně smazat účet
+          </SubmitButton>
+        </form>
+      </Card>
+
+      <Card className="space-y-4" id="notifikace">
+        <CardTitle>Notifikace</CardTitle>
+        <form action={saveNotificationPrefsAction} className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="emailEnabled" defaultChecked={prefs.emailEnabled} />
+            Posílat upozornění e-mailem (denní souhrn)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="timeTestEvents" defaultChecked={prefs.timeTestEvents} />
+            Časové testy — blížící se a dosažená osvobození pozic
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="limitEvents" defaultChecked={prefs.limitEvents} />
+            Limity — vstup do kritického pásma a překročení (50k, 100k…)
+          </label>
+          <p className="text-xs text-inkoust-tlumeny">
+            Vypnuté typy se nezakládají ani v aplikaci a při vypnutém e-mailu se nahromaděná
+            upozornění NEposílají zpětně. Každý e-mail má odhlašovací odkaz.
+          </p>
+          <SubmitButton size="sm" pendingLabel="Ukládám…">Uložit notifikace</SubmitButton>
+        </form>
+      </Card>
+
+      <Card className="space-y-4" id="aktivita">
+        <CardTitle>Přihlášená zařízení a aktivita</CardTitle>
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">
+            Aktivní přihlášení ({sessions.length})
+          </p>
+          <ul className="space-y-1 text-sm text-inkoust-tlumeny">
+            {sessions.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-baseline gap-2">
+                <span className="font-mono text-xs">
+                  {s.createdAt.toLocaleString('cs-CZ')}
+                </span>
+                <span className="truncate">{s.userAgent ?? 'neznámé zařízení'}</span>
+                {currentSession?.session.id === s.id && (
+                  <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
+                    toto zařízení
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {sessions.length > 1 && (
+            <form action={revokeOtherSessionsAction}>
+              <SubmitButton variant="danger" size="sm" pendingLabel="Odhlašuji…">
+                Odhlásit všechna ostatní zařízení
+              </SubmitButton>
+            </form>
+          )}
+        </div>
+        <div className="space-y-2 border-t border-linka pt-4">
+          <p className="text-sm font-semibold">Poslední aktivita</p>
+          {auditEvents.length === 0 ? (
+            <p className="text-sm text-inkoust-tlumeny">Zatím žádné události.</p>
+          ) : (
+            <ul className="space-y-1 text-sm text-inkoust-tlumeny">
+              {auditEvents.map((event) => (
+                <li key={event.id} className="flex flex-wrap items-baseline gap-2">
+                  <span className="font-mono text-xs">
+                    {event.createdAt.toLocaleString('cs-CZ')}
+                  </span>
+                  <span className="font-medium text-inkoust">
+                    {AUDIT_LABELS[event.type as AuditType] ?? event.type}
+                  </span>
+                  {event.detail && <span>{event.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+
       <Card className="space-y-4" id="trading212">
         <CardTitle>Trading212 — automatická synchronizace</CardTitle>
         {t212 ? (
@@ -231,6 +474,7 @@ export default async function SettingsPage({
               zmizel, prostě vygeneruj nový.
             </p>
             <form action={saveTrading212KeyAction} className="space-y-3">
+              <input type="hidden" name="portfolioId" value={portfolio.id} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="keyId">ID klíče API</Label>
@@ -315,6 +559,7 @@ export default async function SettingsPage({
               </p>
             )}
             <form action={saveIbkrKeyAction} className="space-y-3">
+              <input type="hidden" name="portfolioId" value={portfolio.id} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="token">Token Flex Web Service</Label>

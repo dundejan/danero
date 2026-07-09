@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -13,6 +13,7 @@ import {
 import { loadAliases } from '@/lib/instrument-aliases';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { syncBrokerAction } from '../nastaveni/actions';
 import { deleteBatchAction, saveAliasesAction, uploadImportAction } from './actions';
@@ -142,12 +143,13 @@ export default async function ImportPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
+  const portfolio = await activePortfolio(db, user.id);
   const { chyba, ulozeno } = await searchParams;
   const [batches, unmappedSource, accounts, aliases] = await Promise.all([
     db
       .select()
       .from(importBatches)
-      .where(eq(importBatches.userId, user.id))
+      .where(and(eq(importBatches.userId, user.id), eq(importBatches.portfolioId, portfolio.id)))
       .orderBy(desc(importBatches.createdAt))
       .limit(20),
     // pro číselník se díváme hlouběji než historie (20) — výzva nesmí zmizet
@@ -155,11 +157,11 @@ export default async function ImportPage({
     db
       .select({ issues: importBatches.issues })
       .from(importBatches)
-      .where(eq(importBatches.userId, user.id))
+      .where(and(eq(importBatches.userId, user.id), eq(importBatches.portfolioId, portfolio.id)))
       .orderBy(desc(importBatches.createdAt))
       .limit(200),
-    db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
-    loadAliases(db, user.id),
+    db.select().from(brokerAccounts).where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.portfolioId, portfolio.id))),
+    loadAliases(db, user.id, portfolio.id),
   ]);
 
   // nenamapované symboly z importů (bez těch, které už uživatel doplnil)

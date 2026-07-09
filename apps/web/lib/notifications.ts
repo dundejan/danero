@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { LimitStatus, Position, TaxYearResult } from '@danero/engine';
 import { diffDays } from '@danero/shared';
 import type { Db } from '@/db';
-import { notifications, taxpayerProfiles, user } from '@/db/schema';
+import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
 import { czDate, czk, qty } from '@/lib/format';
 import { analyzeForUser, getProfile, loadTransactions } from '@/lib/portfolio';
 
@@ -129,6 +129,7 @@ export function computeNotificationCandidates(args: {
 export async function syncNotifications(
   db: Db,
   userId: string,
+  portfolioId: string,
   candidates: NotificationCandidate[],
 ): Promise<number> {
   if (candidates.length === 0) return 0;
@@ -138,6 +139,7 @@ export async function syncNotifications(
     .where(
       and(
         eq(notifications.userId, userId),
+        eq(notifications.portfolioId, portfolioId),
         inArray(
           notifications.dedupeKey,
           candidates.map((c) => c.dedupeKey),
@@ -147,9 +149,40 @@ export async function syncNotifications(
   const existingKeys = new Set(existing.map((row) => row.key));
   const fresh = candidates.filter((c) => !existingKeys.has(c.dedupeKey));
   if (fresh.length > 0) {
-    await db.insert(notifications).values(fresh.map((c) => ({ userId, ...c })));
+    await db.insert(notifications).values(fresh.map((c) => ({ userId, portfolioId, ...c })));
   }
   return fresh.length;
+}
+
+/** Preference uživatele; chybějící řádek = vše zapnuté (G8d). */
+export async function getNotificationPrefs(db: Db, userId: string) {
+  const [row] = await db
+    .select()
+    .from(notificationPrefs)
+    .where(eq(notificationPrefs.userId, userId));
+  return row ?? { userId, emailEnabled: true, timeTestEvents: true, limitEvents: true };
+}
+
+/**
+ * Podepsaný odhlašovací token (HMAC přes BETTER_AUTH_SECRET) — odkaz v e-mailu
+ * funguje bez přihlášení, ale nejde zfalšovat pro cizí účet.
+ */
+export async function unsubscribeToken(userId: string): Promise<string> {
+  const { createHmac } = await import('node:crypto');
+  const { resolveSecret } = await import('@/lib/auth');
+  const sig = createHmac('sha256', resolveSecret()).update(`unsub|${userId}`).digest('hex');
+  return `${Buffer.from(userId).toString('base64url')}.${sig}`;
+}
+
+export async function verifyUnsubscribeToken(token: string): Promise<string | null> {
+  const [encoded, sig] = token.split('.');
+  if (!encoded || !sig) return null;
+  const userId = Buffer.from(encoded, 'base64url').toString('utf8');
+  const { createHmac, timingSafeEqual } = await import('node:crypto');
+  const { resolveSecret } = await import('@/lib/auth');
+  const expected = createHmac('sha256', resolveSecret()).update(`unsub|${userId}`).digest('hex');
+  if (sig.length !== expected.length) return null;
+  return timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? userId : null;
 }
 
 export interface EmailMessage {
@@ -190,36 +223,64 @@ export async function processUserNotifications(
   target: { id: string; email: string },
   options: { send: EmailSender; today?: string },
 ): Promise<{ created: number; emailed: number }> {
-  const profile = await getProfile(db, target.id);
-  if (!profile) return { created: 0, emailed: 0 };
-  const txs = await loadTransactions(db, target.id);
-  if (txs.length === 0) return { created: 0, emailed: 0 };
-
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   const year = Number(today.slice(0, 4));
-  const analysis = analyzeForUser(txs, profile, year, today);
-  const candidates = computeNotificationCandidates({
-    result: analysis.result,
-    positions: analysis.positions,
-    labels: analysis.labels,
-    today,
-  });
-  const created = await syncNotifications(db, target.id, candidates);
+  const prefs = await getNotificationPrefs(db, target.id);
 
-  const unEmailed = await db
+  // G8c: hlídač běží per PORTFOLIO (oddělené osoby = oddělené limity);
+  // u více portfolií nese událost prefix se jménem, digest zůstává jeden
+  const { listPortfolios } = await import('@/lib/portfolio-context');
+  const portfolioList = await listPortfolios(db, target.id);
+  let created = 0;
+  for (const portfolio of portfolioList) {
+    const profile = await getProfile(db, target.id, portfolio.id);
+    if (!profile) continue;
+    const txs = await loadTransactions(db, target.id, portfolio.id);
+    if (txs.length === 0) continue;
+
+    const analysis = analyzeForUser(txs, profile, year, today);
+    let candidates = computeNotificationCandidates({
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today,
+    });
+    // G8d: vypnuté typy se ani nezaloží (uživatel je nechce vidět)
+    candidates = candidates.filter((c) =>
+      c.type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents,
+    );
+    if (portfolioList.length > 1) {
+      candidates = candidates.map((c) => ({ ...c, title: `[${portfolio.name}] ${c.title}` }));
+    }
+    created += await syncNotifications(db, target.id, portfolio.id, candidates);
+  }
+
+  const pending = await db
     .select()
     .from(notifications)
     .where(and(eq(notifications.userId, target.id), isNull(notifications.emailedAt)));
+  // preference platí i pro frontu: vypnuté typy (a vypnutý e-mail) se
+  // NEhromadí na později — po zapnutí nesmí přijít měsíce staré události
+  const unEmailed = prefs.emailEnabled
+    ? pending.filter((n) =>
+        n.type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents,
+      )
+    : [];
   if (unEmailed.length > 0) {
     const lines = unEmailed.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
+    const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+    const odhlasit = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
     await options.send({
       to: target.email,
       subject:
         unEmailed.length === 1
           ? `Danero: ${unEmailed[0]!.title}`
           : `Danero: ${unEmailed.length} nových upozornění`,
-      text: `${lines}\n\n—\nDetail najdeš na svém přehledu. Danero je výpočetní nástroj, nikoli daňové poradenství.`,
+      text: `${lines}\n\n—\nDetail najdeš na svém přehledu. Danero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
     });
+  }
+  if (pending.length > 0) {
+    // označit VŠE čekající (odeslané i potlačené preferencemi) — idempotence
     await db
       .update(notifications)
       .set({ emailedAt: new Date() })
@@ -231,8 +292,9 @@ export async function processUserNotifications(
 
 /** Všichni uživatelé pro cron (mají e-mail; profil se ověřuje uvnitř). */
 export async function listNotificationTargets(db: Db): Promise<Array<{ id: string; email: string }>> {
+  // G8c: profil je per portfolio — bez groupBy by se uživatel vrátil N× 
   return db
-    .select({ id: user.id, email: user.email })
+    .selectDistinct({ id: user.id, email: user.email })
     .from(user)
     .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id));
 }

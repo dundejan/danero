@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
-import { brokerAccounts, user } from '@/db/schema';
+import { portfolios, brokerAccounts, user } from '@/db/schema';
 import { encryptSecret } from '@/lib/crypto';
 import { enqueueSyncJob, processJob } from '@/lib/jobs';
 import { loadTransactions } from '@/lib/portfolio';
@@ -9,9 +9,11 @@ import { IBKR_MOCK_CREDENTIALS, makeIbkrMockFetch } from './ibkr-mock';
 
 async function setupIbkrAccount(db: Db) {
   await db.insert(user).values({ id: 'u1', name: 'Test', email: 'ibkr@danero.cz' });
+      await db.insert(portfolios).values({ id: 'pf-' + 'u1', userId: 'u1', name: 'Moje portfolio' });
   await db.insert(brokerAccounts).values({
     id: 'acc-ibkr',
     userId: 'u1',
+    portfolioId: 'pf-u1',
     broker: 'ibkr',
     label: 'Interactive Brokers',
     credentialsEncrypted: encryptSecret(IBKR_MOCK_CREDENTIALS),
@@ -42,7 +44,7 @@ describe('IBKR sync job (mock Flex, in-memory PGlite)', () => {
       expect(result.added).toBe(3); // buy + sell + dividenda
       expect(result.syncStatus).toBe('ok');
 
-      const txs = await loadTransactions(db, 'u1', 'ibkr');
+      const txs = await loadTransactions(db, 'u1', 'pf-u1', 'ibkr');
       expect(txs).toHaveLength(3);
       const dividend = txs.find((tx) => tx.type === 'DIVIDEND');
       if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');

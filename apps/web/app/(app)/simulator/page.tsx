@@ -13,6 +13,7 @@ import {
   instrumentLabels,
   loadTransactions,
 } from '@/lib/portfolio';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
@@ -29,10 +30,11 @@ export default async function SimulatorPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const profile = await getProfile(db, user.id);
+  const portfolio = await activePortfolio(db, user.id);
+  const profile = await getProfile(db, user.id, portfolio.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id);
+  const txs = await loadTransactions(db, user.id, portfolio.id);
   if (txs.length === 0) redirect('/prehled');
 
   const today = new Date().toISOString().slice(0, 10);

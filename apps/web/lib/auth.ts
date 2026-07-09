@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { nextCookies } from 'better-auth/next-js';
 import { twoFactor } from 'better-auth/plugins';
 import { getDb, type Db } from '@/db';
 import * as schema from '@/db/schema';
@@ -12,7 +13,7 @@ import * as schema from '@/db/schema';
  * dev si jednorázově vygeneruje náhodný secret do gitignorované .data/ —
  * unikátní per stroj, přežívá restarty (session se neinvalidují).
  */
-function resolveSecret(): string {
+export function resolveSecret(): string {
   const fromEnv = process.env.BETTER_AUTH_SECRET;
   if (fromEnv) return fromEnv;
   if (process.env.NODE_ENV === 'production') {
@@ -42,7 +43,28 @@ function buildAuth(db: Db) {
       enabled: true,
       minPasswordLength: 10,
     },
-    plugins: [twoFactor({ issuer: 'Danero' })],
+    user: {
+      // GDPR práva z /soukromi: hard delete (FK kaskády smažou i transakce
+      // a šifrované broker klíče) a změna e-mailu — obojí jen s heslem/session
+      deleteUser: { enabled: true },
+      // e-mailová verifikace zatím není (Resend klíč čeká na Jana) — bez
+      // updateEmailWithoutVerification by /change-email vždy spadl
+      changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          // audit přihlášení (G8b) — nesmí shodit login, logAudit chyby polyká
+          after: async (session) => {
+            const { logAudit } = await import('@/lib/audit');
+            await logAudit(db, session.userId, 'LOGIN');
+          },
+        },
+      },
+    },
+    // nextCookies MUSÍ být poslední: propisuje Set-Cookie ze server actions
+    // (bez něj by změna hesla s rotací session uživatele odhlásila)
+    plugins: [twoFactor({ issuer: 'Danero' }), nextCookies()],
     secret: resolveSecret(),
     baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
   });

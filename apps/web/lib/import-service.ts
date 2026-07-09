@@ -15,7 +15,7 @@ import {
   type RowIssue,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { loadAliases } from '@/lib/instrument-aliases';
@@ -63,10 +63,11 @@ const chunk = <T>(items: T[], size: number): T[][] => {
 export async function importCsvText(
   db: Db,
   userId: string,
+  portfolioId: string,
   filename: string,
   text: string,
 ): Promise<ImportSummary> {
-  return importParsed(db, userId, filename, detectAndParse(text));
+  return importParsed(db, userId, portfolioId, filename, detectAndParse(text));
 }
 
 /**
@@ -79,13 +80,14 @@ export async function importCsvText(
 export async function importFile(
   db: Db,
   userId: string,
+  portfolioId: string,
   filename: string,
   data: ArrayBuffer,
 ): Promise<ImportSummary> {
   if (/\.xlsx$/i.test(filename)) {
-    const aliases = await loadAliases(db, userId);
+    const aliases = await loadAliases(db, userId, portfolioId);
     const outcome = await parseXtbXlsx(data, aliases.xtb);
-    return importParsed(db, userId, filename, outcome, undefined, {
+    return importParsed(db, userId, portfolioId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'xtb',
         symbol,
@@ -98,10 +100,10 @@ export async function importFile(
 
   const degiroKind = isDegiroCsv(utf8);
   if (degiroKind === 'transactions') {
-    return importParsed(db, userId, filename, parseDegiroTransactionsCsv(utf8));
+    return importParsed(db, userId, portfolioId, filename, parseDegiroTransactionsCsv(utf8));
   }
   if (degiroKind === 'account') {
-    return importParsed(db, userId, filename, parseDegiroAccountCsv(utf8));
+    return importParsed(db, userId, portfolioId, filename, parseDegiroAccountCsv(utf8));
   }
 
   // Fio: hlavička „Datum obchodu" je čitelná i při špatném dekódování (ASCII),
@@ -109,9 +111,9 @@ export async function importFile(
   // první řádek — poznámka v jiném souboru nesmí import přesměrovat na Fio.
   const firstLine = utf8.slice(0, utf8.indexOf('\n') === -1 ? undefined : utf8.indexOf('\n'));
   if (firstLine.includes('Datum obchodu')) {
-    const aliases = await loadAliases(db, userId);
+    const aliases = await loadAliases(db, userId, portfolioId);
     const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.fio });
-    return importParsed(db, userId, filename, outcome, undefined, {
+    return importParsed(db, userId, portfolioId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'fio',
         symbol,
@@ -120,15 +122,19 @@ export async function importFile(
     });
   }
 
-  return importParsed(db, userId, filename, detectAndParse(utf8));
+  return importParsed(db, userId, portfolioId, filename, detectAndParse(utf8));
 }
 
 /** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */
-export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string>> {
+export async function loadDedupeKeys(
+  db: Db,
+  userId: string,
+  portfolioId: string,
+): Promise<Set<string>> {
   const rows = await db
     .select({ key: transactions.dedupeKey })
     .from(transactions)
-    .where(eq(transactions.userId, userId));
+    .where(and(eq(transactions.userId, userId), eq(transactions.portfolioId, portfolioId)));
   return new Set(rows.map((row) => row.key));
 }
 
@@ -140,19 +146,24 @@ export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string
 export async function importParsed(
   db: Db,
   userId: string,
+  portfolioId: string,
   filename: string,
   parsed: ImportResult,
   existingKeys?: Set<string>,
   extras: { unmapped?: UnmappedSymbol[] } = {},
 ): Promise<ImportSummary> {
-  const keys = existingKeys ?? (await loadDedupeKeys(db, userId));
+  const keys = existingKeys ?? (await loadDedupeKeys(db, userId, portfolioId));
   const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
   const unmapped = extras.unmapped ?? [];
+
+  const { logAudit } = await import('@/lib/audit');
+  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${fresh.length} nových`);
 
   const batchId = crypto.randomUUID();
   await db.insert(importBatches).values({
     id: batchId,
     userId,
+    portfolioId,
     broker: parsed.broker,
     filename,
     added: fresh.length,
@@ -175,6 +186,7 @@ export async function importParsed(
         existingKeys?.add(key);
         return {
           userId,
+          portfolioId,
           dedupeKey: key,
           batchId,
           broker: parsed.broker,

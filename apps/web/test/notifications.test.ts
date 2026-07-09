@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb } from '@/db';
-import { taxpayerProfiles, user } from '@/db/schema';
+import { portfolios, taxpayerProfiles, user } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
 import { processUserNotifications, type EmailMessage } from '@/lib/notifications';
 
@@ -21,8 +21,9 @@ describe('notifikace (in-memory PGlite)', () => {
   it('vypočte události, uloží jednou a pošle jeden digest', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'u1', name: 'Test', email: 'notify@danero.cz' });
-    await db.insert(taxpayerProfiles).values({ userId: 'u1', regime: 'PAUSAL' });
-    await importCsvText(db, 'u1', 'fixtura.csv', CSV);
+    await db.insert(portfolios).values({ id: 'pf-u1', userId: 'u1', name: 'Moje portfolio' });
+    await db.insert(taxpayerProfiles).values({ userId: 'u1', portfolioId: 'pf-u1', regime: 'PAUSAL' });
+    await importCsvText(db, 'u1', 'pf-u1', 'fixtura.csv', CSV);
 
     const sent: EmailMessage[] = [];
     const send = async (message: EmailMessage) => {
@@ -96,6 +97,7 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
     const result = analyzeTaxYear(
       engineInputForUser(txs, {
         userId: 'u1',
+        portfolioId: 'pf-u1',
         regime: 'PAUSAL',
         hasBusinessAssets: false,
         w8benFiled: true,
@@ -120,5 +122,67 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
     expect(crypto!.title).toContain('krypta');
     // CP limit zůstal nedotčený — krypto tržby ho nesmí prolomit
     expect(candidates.some((c) => c.dedupeKey === 'limit|100k|EXCEEDED|2026')).toBe(false);
+  });
+});
+
+describe('notifikační preference + odhlášení (G8d)', () => {
+  it('vypnutý e-mail: události vzniknou, ale nic se neodešle; vypnuté typy se nezaloží', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const { notificationPrefs } = await import('@/db/schema');
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u3', name: 'Pref', email: 'pref@danero.cz' });
+    await db.insert(portfolios).values({ id: 'pf-u3', userId: 'u3', name: 'Moje portfolio' });
+    await db.insert(taxpayerProfiles).values({ userId: 'u3', portfolioId: 'pf-u3', regime: 'PAUSAL' });
+    await importCsvText(db, 'u3', 'pf-u3', 'fixtura.csv', CSV);
+    // vypnout e-mail i časové testy — zbydou jen limitové události
+    await db.insert(notificationPrefs).values({
+      userId: 'u3',
+      emailEnabled: false,
+      timeTestEvents: false,
+      limitEvents: true,
+    });
+
+    const sent: EmailMessage[] = [];
+    const outcome = await processUserNotifications(db, { id: 'u3', email: 'pref@danero.cz' }, {
+      send: async (m) => {
+        sent.push(m);
+      },
+      today: '2026-07-20',
+    });
+    expect(outcome.created).toBeGreaterThanOrEqual(2); // limity 50k + 100k
+    expect(outcome.emailed).toBe(0);
+    expect(sent).toHaveLength(0);
+
+    const { notifications: notifTable } = await import('@/db/schema');
+    const { eq: eqOp } = await import('drizzle-orm');
+    const rows = await db.select().from(notifTable).where(eqOp(notifTable.userId, 'u3'));
+    expect(rows.every((r) => r.type.startsWith('LIMIT'))).toBe(true);
+  });
+
+  it('odhlašovací token: podepsaný projde, zfalšovaný ne', async () => {
+    const { unsubscribeToken, verifyUnsubscribeToken } = await import('@/lib/notifications');
+    const token = await unsubscribeToken('u-abc');
+    expect(await verifyUnsubscribeToken(token)).toBe('u-abc');
+    expect(await verifyUnsubscribeToken(token.replace(/.$/, '0'))).toBeNull();
+    expect(await verifyUnsubscribeToken('nesmysl')).toBeNull();
+  });
+
+  it('e-mail obsahuje odhlašovací odkaz', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u4', name: 'Link', email: 'link@danero.cz' });
+    await db.insert(portfolios).values({ id: 'pf-u4', userId: 'u4', name: 'Moje portfolio' });
+    await db.insert(taxpayerProfiles).values({ userId: 'u4', portfolioId: 'pf-u4', regime: 'PAUSAL' });
+    await importCsvText(db, 'u4', 'pf-u4', 'fixtura.csv', CSV);
+
+    const sent: EmailMessage[] = [];
+    await processUserNotifications(db, { id: 'u4', email: 'link@danero.cz' }, {
+      send: async (m) => {
+        sent.push(m);
+      },
+      today: '2026-07-20',
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain('/api/odhlasit?token=');
   });
 });

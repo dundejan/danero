@@ -26,6 +26,7 @@ import {
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import { loadInstrumentPrices } from '@/lib/prices';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { analyzeTaxYear, type TaxYearResult } from '@danero/engine';
 import { redirect } from 'next/navigation';
@@ -37,10 +38,11 @@ export default async function PortfolioPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const profile = await getProfile(db, user.id);
+  const portfolio = await activePortfolio(db, user.id);
+  const profile = await getProfile(db, user.id, portfolio.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id);
+  const txs = await loadTransactions(db, user.id, portfolio.id);
   if (txs.length === 0) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
@@ -64,7 +66,7 @@ export default async function PortfolioPage({
 
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const { result, positions, labels } = analyzeForUser(txs, profile, year, today, dailyRates);
-  const prices = await loadInstrumentPrices(db, user.id);
+  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
   const valuation = valuePositions(positions, labels, prices, currentYear);
 
   // realizované P/L: engine per rok (čistá funkce nad týmiž transakcemi)

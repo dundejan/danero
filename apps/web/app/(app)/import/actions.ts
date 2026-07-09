@@ -7,6 +7,7 @@ import { getDb } from '@/db';
 import { importBatches } from '@/db/schema';
 import { importFile } from '@/lib/import-service';
 import { saveAliases, type AliasInput } from '@/lib/instrument-aliases';
+import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -21,8 +22,9 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   if (files.some((f) => f.size > MAX_FILE_BYTES)) redirect('/import?chyba=velikost');
 
   const db = await getDb();
+  const portfolio = await activePortfolio(db, user.id);
   for (const file of files) {
-    await importFile(db, user.id, file.name, await file.arrayBuffer());
+    await importFile(db, user.id, portfolio.id, file.name, await file.arrayBuffer());
   }
 
   revalidatePath('/prehled');
@@ -62,7 +64,8 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   }
   if (rows.length > 0) {
     const db = await getDb();
-    await saveAliases(db, user.id, rows);
+    const portfolio = await activePortfolio(db, user.id);
+    await saveAliases(db, user.id, portfolio.id, rows);
   }
   revalidatePath('/import');
   redirect('/import?ulozeno=ciselnik');
