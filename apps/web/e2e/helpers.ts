@@ -13,7 +13,8 @@ export async function registerWithProfile(
   await page.getByLabel('E-mail').fill(email);
   await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
   await page.getByRole('button', { name: 'Vytvořit účet' }).click();
-  await page.waitForURL('**/prehled');
+  // registrace vede do onboarding průvodce (G9a)
+  await page.waitForURL('**/vitejte');
 
   await page.goto('/nastaveni');
   await page.getByRole('button', { name: 'Uložit profil' }).click();

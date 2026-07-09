@@ -44,10 +44,10 @@ export default async function OverviewPage({
           i podklady k přiznání.
         </p>
         <Link
-          href="/import"
+          href="/vitejte"
           className="rounded-md bg-ruzova px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
-          Nahrát výpisy
+          Otevřít průvodce
         </Link>
       </div>
     );

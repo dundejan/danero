@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { Toast } from '@/components/toast';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { syncStatusLabel } from '@/lib/broker-sync';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -87,15 +88,12 @@ export default async function SettingsPage({
       </header>
 
       {chyba && (
-        <p className="rounded-md border border-cervena px-4 py-3 text-sm text-cervena">
-          {CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
-        </p>
+        <Toast
+          kind="chyba"
+          text={CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
+        />
       )}
-      {ok && OK_LABELS[ok] && (
-        <p className="rounded-md border border-zelena px-4 py-3 text-sm text-zelena">
-          {OK_LABELS[ok]}
-        </p>
-      )}
+      {ok && OK_LABELS[ok] && <Toast kind="ok" text={OK_LABELS[ok]} />}
 
       <form action={saveProfileAction} className="space-y-6">
         <input type="hidden" name="portfolioId" value={portfolio.id} />

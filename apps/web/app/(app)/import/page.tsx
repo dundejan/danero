@@ -16,6 +16,7 @@ import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
 import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { syncBrokerAction } from '../nastaveni/actions';
+import { Toast } from '@/components/toast';
 import { deleteBatchAction, saveAliasesAction, uploadImportAction } from './actions';
 
 interface BatchIssues {
@@ -198,21 +199,24 @@ export default async function ImportPage({
       </header>
 
       {chyba && (
-        <p className="rounded-md border border-cervena px-4 py-3 text-sm text-cervena">
-          {chyba === 'velikost'
-            ? 'Soubor je větší než 20 MB — rozděl export na kratší období.'
-            : chyba === 'isin'
-              ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
-              : chyba === 'mena'
-                ? 'Měna má tvar 3 písmena (např. USD) — zkontroluj vyplněné hodnoty.'
-                : 'Vyber aspoň jeden CSV, XML nebo XLSX soubor.'}
-        </p>
+        <Toast
+          kind="chyba"
+          text={
+            chyba === 'velikost'
+              ? 'Soubor je větší než 20 MB — rozděl export na kratší období.'
+              : chyba === 'isin'
+                ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
+                : chyba === 'mena'
+                  ? 'Měna má tvar 3 písmena (např. USD) — zkontroluj vyplněné hodnoty.'
+                  : 'Vyber aspoň jeden CSV, XML nebo XLSX soubor.'
+          }
+        />
       )}
       {ulozeno === 'ciselnik' && (
-        <p className="rounded-md border border-zelena px-4 py-3 text-sm text-zelena">
-          Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují
-          (a nic se nezdvojí).
-        </p>
+        <Toast
+          kind="ok"
+          text="Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují (a nic se nezdvojí)."
+        />
       )}
 
       {unmappedSymbols.length > 0 && (
@@ -290,6 +294,7 @@ export default async function ImportPage({
           <input
             type="file"
             name="soubory"
+            aria-label="Soubory s výpisy (CSV, XML nebo XLSX)"
             accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             multiple
             required

@@ -186,3 +186,22 @@ describe('notifikační preference + odhlášení (G8d)', () => {
     expect(sent[0]!.text).toContain('/api/odhlasit?token=');
   });
 });
+
+describe('kalendářní připomínky (G9c)', () => {
+  it('leden = roční shrnutí, březen/duben = termíny; jen při loňské aktivitě', async () => {
+    const { calendarCandidates } = await import('@/lib/notifications');
+    const leden = calendarCandidates({ today: '2027-01-05', hadActivityLastYear: true });
+    expect(leden.map((c) => c.type)).toEqual(['YEAR_SUMMARY']);
+    expect(leden[0]!.title).toContain('2026');
+
+    const brezen = calendarCandidates({ today: '2027-03-20', hadActivityLastYear: true });
+    expect(brezen.map((c) => c.type)).toEqual(['DEADLINE']);
+    expect(brezen[0]!.title).toContain('1. dubna');
+
+    const duben = calendarCandidates({ today: '2027-04-20', hadActivityLastYear: true });
+    expect(duben[0]!.title).toContain('2. května');
+
+    expect(calendarCandidates({ today: '2027-07-15', hadActivityLastYear: true })).toEqual([]);
+    expect(calendarCandidates({ today: '2027-01-05', hadActivityLastYear: false })).toEqual([]);
+  });
+});

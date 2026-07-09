@@ -81,6 +81,12 @@ export default function LandingPage() {
           >
             Vyzkoušet zdarma
           </Link>
+          <Link
+            href="/demo"
+            className="rounded-md border border-linka px-5 py-2.5 font-semibold hover:border-ruzova hover:text-ruzova"
+          >
+            Osahat si demo
+          </Link>
           <span className="text-sm text-inkoust-tlumeny">Beta — stačí e-mail, bez karty.</span>
         </div>
       </section>

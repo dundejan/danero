@@ -154,6 +154,45 @@ export async function syncNotifications(
   return fresh.length;
 }
 
+/**
+ * Kalendářní události (G9c): lednové roční shrnutí a připomínky termínů
+ * přiznání (1. 4. papírově, 2. 5. elektronicky). Per portfolio = per osoba.
+ */
+export function calendarCandidates(args: {
+  today: string;
+  /** Měl předchozí rok nějaké transakce? (jinak shrnutí nedává smysl) */
+  hadActivityLastYear: boolean;
+}): NotificationCandidate[] {
+  const { today, hadActivityLastYear } = args;
+  const year = Number(today.slice(0, 4));
+  const out: NotificationCandidate[] = [];
+  if (hadActivityLastYear && today >= `${year}-01-01` && today <= `${year}-01-31`) {
+    out.push({
+      dedupeKey: `rocni|${year - 1}`,
+      type: 'YEAR_SUMMARY',
+      title: `Podklady za rok ${year - 1} jsou připravené`,
+      body: `Daňový report za ${year - 1} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do 1. 4., elektronické do 2. 5.`,
+    });
+  }
+  if (hadActivityLastYear && today >= `${year}-03-15` && today <= `${year}-04-01`) {
+    out.push({
+      dedupeKey: `termin|papir|${year}`,
+      type: 'DEADLINE',
+      title: 'Blíží se termín přiznání: 1. dubna',
+      body: `Papírové přiznání za rok ${year - 1} se podává do 1. 4. Podáváš-li elektronicky (mojedane.cz), máš čas do 2. 5. — XML export najdeš v reportu.`,
+    });
+  }
+  if (hadActivityLastYear && today >= `${year}-04-15` && today <= `${year}-05-02`) {
+    out.push({
+      dedupeKey: `termin|elektronicky|${year}`,
+      type: 'DEADLINE',
+      title: 'Blíží se termín elektronického přiznání: 2. května',
+      body: `Elektronické přiznání za rok ${year - 1} se podává do 2. 5. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
+    });
+  }
+  return out;
+}
+
 /** Preference uživatele; chybějící řádek = vše zapnuté (G8d). */
 export async function getNotificationPrefs(db: Db, userId: string) {
   const [row] = await db
@@ -239,15 +278,30 @@ export async function processUserNotifications(
     if (txs.length === 0) continue;
 
     const analysis = analyzeForUser(txs, profile, year, today);
-    let candidates = computeNotificationCandidates({
-      result: analysis.result,
-      positions: analysis.positions,
-      labels: analysis.labels,
-      today,
-    });
+    const lastYearPrefix = `${year - 1}-`;
+    let candidates = [
+      ...computeNotificationCandidates({
+        result: analysis.result,
+        positions: analysis.positions,
+        labels: analysis.labels,
+        today,
+      }),
+      ...calendarCandidates({
+        today,
+        hadActivityLastYear: txs.some((tx) =>
+          ('tradeDate' in tx ? tx.tradeDate : tx.date).startsWith(lastYearPrefix),
+        ),
+      }),
+    ];
     // G8d: vypnuté typy se ani nezaloží (uživatel je nechce vidět)
+    // kalendářní připomínky (termíny přiznání, roční shrnutí) nejsou „limity" —
+    // preference je nevypínají (jádro služby); vypnutý e-mail je stále ztiší
     candidates = candidates.filter((c) =>
-      c.type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents,
+      c.type === 'YEAR_SUMMARY' || c.type === 'DEADLINE'
+        ? true
+        : c.type.startsWith('TIME_TEST')
+          ? prefs.timeTestEvents
+          : prefs.limitEvents,
     );
     if (portfolioList.length > 1) {
       candidates = candidates.map((c) => ({ ...c, title: `[${portfolio.name}] ${c.title}` }));
@@ -263,7 +317,11 @@ export async function processUserNotifications(
   // NEhromadí na později — po zapnutí nesmí přijít měsíce staré události
   const unEmailed = prefs.emailEnabled
     ? pending.filter((n) =>
-        n.type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents,
+        n.type === 'YEAR_SUMMARY' || n.type === 'DEADLINE'
+          ? true
+          : n.type.startsWith('TIME_TEST')
+            ? prefs.timeTestEvents
+            : prefs.limitEvents,
       )
     : [];
   if (unEmailed.length > 0) {

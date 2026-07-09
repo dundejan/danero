@@ -13,7 +13,8 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const [totpStep, setTotpStep] = useState(false);
 
   const finish = () => {
-    router.push('/prehled');
+    // po registraci vede cesta přes onboarding průvodce (G9a)
+    router.push(mode === 'registrace' ? '/vitejte' : '/prehled');
     router.refresh();
   };
 
