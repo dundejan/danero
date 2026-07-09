@@ -292,7 +292,9 @@ export default async function SettingsPage({
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="newEmail">Nový e-mail</Label>
-              <Input id="newEmail" name="newEmail" type="email" required autoComplete="email" />
+              {/* autoComplete NESMÍ být „email" — password manager sem cpal
+                  starou adresu; „off" + rozbití páru s heslem níže */}
+              <Input id="newEmail" name="newEmail" type="email" required autoComplete="off" />
             </div>
             <div>
               <Label htmlFor="emailPassword">Heslo (potvrzení)</Label>
@@ -301,7 +303,7 @@ export default async function SettingsPage({
                 name="currentPassword"
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
               />
             </div>
           </div>
@@ -493,7 +495,7 @@ export default async function SettingsPage({
                 </div>
                 <div>
                   <Label htmlFor="secret">Tajný klíč</Label>
-                  <Input id="secret" name="secret" type="password" required autoComplete="off" />
+                  <Input id="secret" name="secret" type="password" required autoComplete="new-password" />
                 </div>
               </div>
               <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
@@ -574,7 +576,7 @@ export default async function SettingsPage({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="token">Token Flex Web Service</Label>
-                  <Input id="token" name="token" type="password" required autoComplete="off" />
+                  <Input id="token" name="token" type="password" required autoComplete="new-password" />
                 </div>
                 <div>
                   <Label htmlFor="queryId">Query ID</Label>

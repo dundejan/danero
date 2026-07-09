@@ -7,6 +7,7 @@ import { czk, czDate, money, qty } from '@/lib/format';
 import {
   dailyRatesForProfile,
   getProfile,
+  instrumentNames,
   loadTransactions,
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
@@ -70,7 +71,7 @@ export default async function PositionDetailPage({
 
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
   const valuation = position
-    ? valuePositions([position], labels, prices, currentYear).rows[0]!
+    ? valuePositions([position], labels, instrumentNames(txs), prices, currentYear).rows[0]!
     : null;
 
   const history = txs
@@ -81,6 +82,7 @@ export default async function PositionDetailPage({
 
   if (!position && history.length === 0) notFound();
   const label = labels.get(isin) ?? isin;
+  const fullName = instrumentNames(txs).get(isin);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -92,7 +94,12 @@ export default async function PositionDetailPage({
             </Link>{' '}
             / {isin}
           </p>
-          <h1 className="font-display text-3xl font-bold">{label}</h1>
+          <h1 className="font-display text-3xl font-bold">
+            {label}
+            {fullName && fullName !== label && (
+              <span className="ml-3 text-lg font-normal text-inkoust-tlumeny">{fullName}</span>
+            )}
+          </h1>
         </div>
         {position && (
           <Link

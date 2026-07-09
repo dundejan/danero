@@ -181,7 +181,7 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
       ],
     ]);
     const labels = new Map([['US0378331005', 'AAPL']]);
-    const valuation = valuePositions(positions, labels, prices, 2026);
+    const valuation = valuePositions(positions, labels, new Map(), prices, 2026);
 
     expect(valuation.pricedCount).toBe(1);
     expect(valuation.unpricedCount).toBe(1);

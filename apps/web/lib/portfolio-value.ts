@@ -10,6 +10,8 @@ import { UNIFIED_RATES } from '@/lib/tax-config';
  */
 
 export interface ValuedPosition {
+  /** Celý název společnosti/fondu (je-li v datech) — ticker sám o sobě neříká nic. */
+  name?: string;
   isin: string;
   label: string;
   quantity: Money;
@@ -50,6 +52,7 @@ const rateToCzk = (currency: string, year: number): Money | null => {
 export function valuePositions(
   positions: Position[],
   labels: Map<string, string>,
+  names: Map<string, string>,
   prices: Map<string, InstrumentPrice>,
   fxYear: number,
 ): PortfolioValuation {
@@ -67,6 +70,7 @@ export function valuePositions(
     const row: ValuedPosition = {
       isin: position.isin,
       label: labels.get(position.isin) ?? position.isin,
+      name: names.get(position.isin),
       quantity: position.totalRemaining,
       exemptQuantity,
     };

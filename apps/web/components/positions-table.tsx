@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 interface Row {
   isin: string;
   label: string;
+  name?: string;
   total: number;
   exemptQty: number;
   nearestExemptFrom: string | null;
@@ -15,9 +16,11 @@ interface Row {
 export function PositionsTable({
   positions,
   labels,
+  names,
 }: {
   positions: Position[];
   labels: Map<string, string>;
+  names: Map<string, string>;
 }) {
   const rows: Row[] = positions
     .map((position) => {
@@ -28,6 +31,7 @@ export function PositionsTable({
       return {
         isin: position.isin,
         label: labels.get(position.isin) ?? position.isin,
+        name: names.get(position.isin),
         total: position.totalRemaining.toNumber(),
         exemptQty: position.lots
           .filter((lot) => lot.isExempt)
@@ -57,7 +61,10 @@ export function PositionsTable({
               <tr key={row.isin} className="border-b border-linka/60">
                 <td className="py-2 pr-4">
                   <span className="font-sans font-medium">{row.label}</span>{' '}
-                  <span className="text-xs text-inkoust-tlumeny">{row.isin}</span>
+                  <span className="text-xs text-inkoust-tlumeny">
+                    {row.name ? `${row.name} · ` : ''}
+                    {row.isin}
+                  </span>
                 </td>
                 <td className="py-2 pr-4 text-right">{qty(row.total)}</td>
                 <td

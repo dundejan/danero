@@ -71,6 +71,17 @@ export async function loadTransactions(
   return parseTransactions(rows.map((r) => r.payload));
 }
 
+/** Mapa ISIN → celý název společnosti/fondu z transakcí (doplněk k tickeru). */
+export function instrumentNames(txs: Transaction[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const tx of txs) {
+    if (tx.type !== 'BUY' && tx.type !== 'SELL' && tx.type !== 'TRANSFER_IN') continue;
+    if (names.has(tx.isin) || !tx.name) continue;
+    names.set(tx.isin, tx.name);
+  }
+  return names;
+}
+
 /** Mapa ISIN → ticker/název z transakcí (pro čitelné popisky pozic). */
 export function instrumentLabels(txs: Transaction[]): Map<string, string> {
   const labels = new Map<string, string>();

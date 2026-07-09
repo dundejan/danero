@@ -17,6 +17,7 @@ import {
   availableYears,
   dailyRatesForProfile,
   getProfile,
+  instrumentNames,
   loadTransactions,
 } from '@/lib/portfolio';
 import { activePortfolio } from '@/lib/portfolio-context';
@@ -214,7 +215,7 @@ export default async function OverviewPage({
         </Card>
       )}
 
-      <PositionsTable positions={positions} labels={labels} />
+      <PositionsTable positions={positions} labels={labels} names={instrumentNames(txs)} />
 
       {recentNotifications.length > 0 && (
         <Card className="space-y-2">

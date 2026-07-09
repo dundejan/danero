@@ -11,6 +11,7 @@ import {
   engineInputForUser,
   getProfile,
   instrumentLabels,
+  instrumentNames,
   loadTransactions,
 } from '@/lib/portfolio';
 import { activePortfolio } from '@/lib/portfolio-context';
@@ -46,6 +47,7 @@ export default async function SimulatorPage({
     p.totalRemaining.gt(0),
   );
   const labels = instrumentLabels(txs);
+  const names = instrumentNames(txs);
 
   const params = await searchParams;
   const selected = positions.find((p) => p.isin === params.isin);
@@ -93,7 +95,9 @@ export default async function SimulatorPage({
               </option>
               {positions.map((position) => (
                 <option key={position.isin} value={position.isin}>
-                  {labels.get(position.isin) ?? position.isin} · {qty(position.totalRemaining)} ks
+                  {labels.get(position.isin) ?? position.isin}
+                  {names.get(position.isin) ? ` — ${names.get(position.isin)}` : ''} ·{' '}
+                  {qty(position.totalRemaining)} ks
                 </option>
               ))}
             </Select>

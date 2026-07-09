@@ -22,6 +22,7 @@ import {
   engineInputForUser,
   getProfile,
   instrumentLabels,
+  instrumentNames,
   loadTransactions,
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
@@ -67,7 +68,8 @@ export default async function PortfolioPage({
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const { result, positions, labels } = analyzeForUserCached(user.id, portfolio.id, txs, profile, year, today, dailyRates);
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
-  const valuation = valuePositions(positions, labels, prices, currentYear);
+  const names = instrumentNames(txs);
+  const valuation = valuePositions(positions, labels, names, prices, currentYear);
 
   // realizované P/L: engine per rok (čistá funkce nad týmiž transakcemi)
   const resultsByYear = new Map<number, TaxYearResult>(
@@ -173,7 +175,10 @@ export default async function PortfolioPage({
                     >
                       {row.label}
                     </Link>
-                    <span className="block text-xs text-inkoust-tlumeny">{row.isin}</span>
+                    <span className="block text-xs text-inkoust-tlumeny">
+                      {row.name ? `${row.name} · ` : ''}
+                      {row.isin}
+                    </span>
                   </td>
                   <td className="py-2 pr-4 text-right">{qty(row.quantity)}</td>
                   <td className="py-2 pr-4 text-right">
