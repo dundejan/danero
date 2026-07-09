@@ -38,7 +38,7 @@ export default async function SimulatorPage({
   if (txs.length === 0) redirect('/prehled');
 
   const today = new Date().toISOString().slice(0, 10);
-  const year = new Date().getFullYear();
+  const year = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const dailyRates = await dailyRatesForProfile(db, txs, profile, year);
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const baseline = analyzeTaxYear(input);

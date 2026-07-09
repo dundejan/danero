@@ -47,3 +47,22 @@ export async function activePortfolio(db: Db, userId: string): Promise<Portfolio
   }
   return ensureDefaultPortfolio(db, userId);
 }
+
+/**
+ * Portfolio z formuláře s validací vlastnictví — cookie se mezi otevřením
+ * formuláře a submitem mohla přepnout (jiný tab), formulář je zdroj pravdy.
+ * Bez pole ve formuláři spadne na aktivní portfolio.
+ */
+export async function portfolioFromForm(
+  db: Db,
+  userId: string,
+  formData: FormData,
+): Promise<PortfolioRow> {
+  const requested = String(formData.get('portfolioId') ?? '');
+  if (requested) {
+    const owned = await listPortfolios(db, userId);
+    const match = owned.find((p) => p.id === requested);
+    if (match) return match;
+  }
+  return activePortfolio(db, userId);
+}

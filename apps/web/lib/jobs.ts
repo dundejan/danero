@@ -70,9 +70,14 @@ const ACTIVE_STATUSES = ['pending', 'running'] as const;
 const isActive = (job: JobRow): boolean =>
   job.status === 'pending' || job.status === 'running';
 
+const STALE_PENDING_AFTER_MS = 24 * 60 * 60_000;
+
 const isStale = (job: JobRow, now: Date): boolean => {
   const lastAlive = job.heartbeatAt ?? job.startedAt ?? job.createdAt;
-  return lastAlive.getTime() <= now.getTime() - STALE_AFTER_MS;
+  // pending ve frontě denního cronu čeká legitimně i desítky minut (T212
+  // limit 1 req/min, účty sekvenčně) — mrtvý je až po dni; running po 15 min
+  const threshold = job.status === 'pending' ? STALE_PENDING_AFTER_MS : STALE_AFTER_MS;
+  return lastAlive.getTime() <= now.getTime() - threshold;
 };
 
 const jobPayload = (job: JobRow): Partial<SyncJobPayload> =>
@@ -232,6 +237,15 @@ async function withSyncAccount<T>(
   if (!account || account.userId !== job.userId) throw new Error('Broker účet už neexistuje.');
 
   const onProgress = async (progress: SyncProgress) => {
+    // odpojení účtu uprostřed běhu musí sync zastavit — jinak by „odpojený"
+    // broker ještě minuty zapisoval transakce do portfolia
+    const stillThere = await db
+      .select({ id: brokerAccounts.id })
+      .from(brokerAccounts)
+      .where(eq(brokerAccounts.id, account.id));
+    if (stillThere.length === 0) {
+      throw new Error('Broker účet byl během synchronizace odpojen — sync přerušen.');
+    }
     // podmínka na running: job dorovnaný recovery už průběh aktualizovat nesmí
     await db
       .update(jobs)

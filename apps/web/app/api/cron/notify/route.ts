@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { requireCronAuth } from '@/lib/cron-auth';
+import { withCron } from '@/lib/cron-auth';
 import {
   listNotificationTargets,
   processUserNotifications,
@@ -7,11 +7,7 @@ import {
 } from '@/lib/notifications';
 
 /** Denní notifikace (po ranním syncu) — chráněno CRON_SECRET. */
-export async function GET(request: Request): Promise<Response> {
-  const unauthorized = requireCronAuth(request);
-  if (unauthorized) return unauthorized;
-  const { logEvent } = await import('@/lib/log');
-  logEvent('info', 'cron.notify.run');
+export const GET = withCron('notify', async (_request: Request): Promise<Response> => {
 
 
   const db = await getDb();
@@ -33,4 +29,4 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   return Response.json({ users: targets.length, results });
-}
+});

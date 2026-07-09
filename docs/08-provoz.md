@@ -71,3 +71,12 @@ klíč drž v password manageru odděleně od záloh (jinak záloha = plaintext 
 - Strukturované logy: jeden JSON řádek na událost (`lib/log.ts`) — joby
   (`job.started`/`job.finished` s trváním), cron běhy, health selhání.
   Ve Vercelu filtruj podle `event`.
+
+## Limity Vercel funkcí (první plný sync)
+
+Plná T212 historie trvá minuty až ~10 min (rate limit exportů ~1/min). Cron routy
+`/api/cron/sync-brokers` a `/api/cron/jobs` mají `maxDuration = 800` — to vyžaduje
+**Vercel Pro** (hobby plán má strop 300 s). Na hobby plánu první plný sync
+pravděpodobně spadne uprostřed; záchranný hodinový cron ho dorovná na chybu
+a další pokus jede znovu — pro produkci proto počítej s Pro plánem, nebo první
+historickou synchronizaci proveď ručním nahráním CSV/XML exportů (idempotentní).

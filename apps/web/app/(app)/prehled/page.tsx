@@ -61,7 +61,7 @@ export default async function OverviewPage({
     .limit(5);
 
   const today = new Date().toISOString().slice(0, 10);
-  const currentYear = new Date().getFullYear();
+  const currentYear = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const years = availableYears(txs, currentYear);
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;

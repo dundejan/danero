@@ -75,9 +75,10 @@ export async function loadTransactions(
 export function instrumentLabels(txs: Transaction[]): Map<string, string> {
   const labels = new Map<string, string>();
   for (const tx of txs) {
-    if (tx.type !== 'BUY' && tx.type !== 'SELL') continue;
+    if (tx.type !== 'BUY' && tx.type !== 'SELL' && tx.type !== 'TRANSFER_IN') continue;
     if (labels.has(tx.isin)) continue;
-    labels.set(tx.isin, tx.ticker ?? tx.name ?? tx.isin);
+    const label = tx.ticker ?? tx.name;
+    if (label) labels.set(tx.isin, label);
   }
   return labels;
 }

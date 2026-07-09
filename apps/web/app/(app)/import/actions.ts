@@ -7,7 +7,7 @@ import { getDb } from '@/db';
 import { importBatches } from '@/db/schema';
 import { importFile } from '@/lib/import-service';
 import { saveAliases, type AliasInput } from '@/lib/instrument-aliases';
-import { activePortfolio } from '@/lib/portfolio-context';
+import { portfolioFromForm } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -26,7 +26,7 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   if (!(await checkRateLimit(db, `upload:${user.id}`, { max: 30, windowMs: 10 * 60_000 }))) {
     redirect('/import?chyba=limit');
   }
-  const portfolio = await activePortfolio(db, user.id);
+  const portfolio = await portfolioFromForm(db, user.id, formData);
   for (const file of files) {
     await importFile(db, user.id, portfolio.id, file.name, await file.arrayBuffer());
   }
@@ -68,7 +68,7 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   }
   if (rows.length > 0) {
     const db = await getDb();
-    const portfolio = await activePortfolio(db, user.id);
+    const portfolio = await portfolioFromForm(db, user.id, formData);
     await saveAliases(db, user.id, portfolio.id, rows);
   }
   revalidatePath('/import');

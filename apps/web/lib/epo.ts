@@ -125,18 +125,19 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
   // Druhy se posuzují samostatně (R-10c/R-12l, pokyn D-59 k § 10/4): výdaje
   // každého druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
-  const prijCp = round0(result.securities.taxableIncomeCzk);
-  const vydCp = Decimal.min(round0(result.securities.expensesCzk), prijCp);
-  const zdCp = prijCp.sub(vydCp);
-  const prijKrypto = round0(result.crypto.taxableIncomeCzk);
-  const vydKrypto = Decimal.min(round0(result.crypto.expensesCzk), prijKrypto);
-  const zdKrypto = prijKrypto.sub(vydKrypto);
-  const prijDeriv = round0(result.derivatives.taxableIncomeCzk);
-  const vydDeriv = Decimal.min(round0(result.derivatives.expensesCzk), prijDeriv);
-  const zdDeriv = prijDeriv.sub(vydDeriv);
-  const prij10 = prijCp.plus(prijKrypto).plus(prijDeriv); // ř. 207
-  const vyd10 = vydCp.plus(vydKrypto).plus(vydDeriv); // ř. 208
-  const zd10 = zdCp.plus(zdKrypto).plus(zdDeriv); // ř. 209
+  // pořadí řádků VetaJ v XML = pořadí tady (D → C → F)
+  const druhy10 = [
+    { kod: 'D', popis: 'Prodej cenných papírů', zdroj: result.securities },
+    { kod: 'C', popis: 'Prodej kryptoaktiv (movitá věc)', zdroj: result.crypto }, // R-10c
+    { kod: 'F', popis: 'Deriváty (opce, futures, CFD)', zdroj: result.derivatives }, // R-12n
+  ].map(({ kod, popis, zdroj }) => {
+    const prij = round0(zdroj.taxableIncomeCzk);
+    const vyd = Decimal.min(round0(zdroj.expensesCzk), prij);
+    return { kod, popis, prij, vyd, zd: prij.sub(vyd) };
+  });
+  const prij10 = druhy10.reduce((sum, d) => sum.plus(d.prij), ZERO); // ř. 207
+  const vyd10 = druhy10.reduce((sum, d) => sum.plus(d.vyd), ZERO); // ř. 208
+  const zd10 = druhy10.reduce((sum, d) => sum.plus(d.zd), ZERO); // ř. 209
   const hasPriloha2 = prij10.gt(0);
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
@@ -304,39 +305,16 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
         uhrn_rozdil10: kc(zd10),
       }),
     );
-    if (prijCp.gt(0)) {
+    for (const druh of druhy10) {
+      if (druh.prij.lte(0)) continue;
       lines.push(
         veta('VetaJ', {
-          kod_dr_prij10: 'D',
-          druh_prij10: 'Prodej cenných papírů',
-          prijmy10: kc(prijCp),
-          vydaje10: kc(vydCp),
-          rozdil10: kc(zdCp),
+          kod_dr_prij10: druh.kod,
+          druh_prij10: druh.popis,
+          prijmy10: kc(druh.prij),
+          vydaje10: kc(druh.vyd),
+          rozdil10: kc(druh.zd),
           kod10: 'Z', // příjem ze zdrojů v zahraničí (zahraniční broker)
-        }),
-      );
-    }
-    if (prijKrypto.gt(0)) {
-      lines.push(
-        veta('VetaJ', {
-          kod_dr_prij10: 'C', // prodej movitých věcí — kryptoaktiva (R-10c)
-          druh_prij10: 'Prodej kryptoaktiv (movitá věc)',
-          prijmy10: kc(prijKrypto),
-          vydaje10: kc(vydKrypto),
-          rozdil10: kc(zdKrypto),
-          kod10: 'Z',
-        }),
-      );
-    }
-    if (prijDeriv.gt(0)) {
-      lines.push(
-        veta('VetaJ', {
-          kod_dr_prij10: 'F', // jiné ostatní příjmy — deriváty (R-12n)
-          druh_prij10: 'Deriváty (opce, futures, CFD)',
-          prijmy10: kc(prijDeriv),
-          vydaje10: kc(vydDeriv),
-          rozdil10: kc(zdDeriv),
-          kod10: 'Z',
         }),
       );
     }

@@ -160,14 +160,45 @@ export async function importParsed(
   await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${fresh.length} nových`);
 
   const batchId = crypto.randomUUID();
+
+  // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
+  // celou dávku na PK violation — duplicitní řádky se tiše přeskočí a reálný
+  // počet vložených jde z returning (in-memory dedupe je jen optimalizace)
+  let actuallyAdded = 0;
+  for (const part of chunk(fresh, 500)) {
+    const inserted = await db
+      .insert(transactions)
+      .values(
+        part.map((tx) => {
+          const key = dedupeKey(parsed.broker, tx);
+          existingKeys?.add(key);
+          return {
+            userId,
+            portfolioId,
+            dedupeKey: key,
+            batchId,
+            broker: parsed.broker,
+            type: tx.type,
+            txDate: txDate(tx),
+            isin: 'isin' in tx ? (tx.isin ?? null) : null,
+            // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
+            payload: JSON.parse(JSON.stringify(tx)) as unknown,
+          };
+        }),
+      )
+      .onConflictDoNothing()
+      .returning({ dedupeKey: transactions.dedupeKey });
+    actuallyAdded += inserted.length;
+  }
+
   await db.insert(importBatches).values({
     id: batchId,
     userId,
     portfolioId,
     broker: parsed.broker,
     filename,
-    added: fresh.length,
-    duplicates,
+    added: actuallyAdded,
+    duplicates: duplicates + (fresh.length - actuallyAdded),
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
     warningCount: parsed.warnings.length,
@@ -179,33 +210,12 @@ export async function importParsed(
     },
   });
 
-  for (const part of chunk(fresh, 500)) {
-    await db.insert(transactions).values(
-      part.map((tx) => {
-        const key = dedupeKey(parsed.broker, tx);
-        existingKeys?.add(key);
-        return {
-          userId,
-          portfolioId,
-          dedupeKey: key,
-          batchId,
-          broker: parsed.broker,
-          type: tx.type,
-          txDate: txDate(tx),
-          isin: 'isin' in tx ? (tx.isin ?? null) : null,
-          // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
-          payload: JSON.parse(JSON.stringify(tx)) as unknown,
-        };
-      }),
-    );
-  }
-
   return {
     batchId,
     broker: parsed.broker,
     filename,
-    added: fresh.length,
-    duplicates,
+    added: actuallyAdded,
+    duplicates: duplicates + (fresh.length - actuallyAdded),
     errors: parsed.errors,
     skipped: parsed.skipped,
     warnings: parsed.warnings,

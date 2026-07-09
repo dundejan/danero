@@ -23,3 +23,14 @@ export async function requireUser(): Promise<SessionUser> {
     twoFactorEnabled: Boolean(session.user.twoFactorEnabled),
   };
 }
+
+/**
+ * Better Auth API + hlavičky requestu pro server actions. headers() PŘED
+ * getAuth() — při prerenderu vyhodí dynamic bail-out dřív, než se sáhne na DB
+ * (stejný invariant jako requireUser výše).
+ */
+export async function authApi() {
+  const requestHeaders = await headers();
+  const auth = await getAuth();
+  return { api: auth.api, requestHeaders };
+}

@@ -8,10 +8,12 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { brokerAccounts, taxpayerProfiles } from '@/db/schema';
+import { logAudit } from '@/lib/audit';
+import { logEvent } from '@/lib/log';
 import { encryptSecret } from '@/lib/crypto';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
-import { activePortfolio } from '@/lib/portfolio-context';
-import { requireUser } from '@/lib/session';
+import { portfolioFromForm } from '@/lib/portfolio-context';
+import { authApi, requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
   regime: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
@@ -28,20 +30,6 @@ const ProfileFormSchema = z.object({
 });
 
 
-/** Portfolio z formuláře s validací vlastnictví — cookie se mezi otevřením
- * formuláře a submitm mohla přepnout (jiný tab), formulář je zdroj pravdy. */
-async function portfolioFromForm(
-  db: Awaited<ReturnType<typeof getDb>>,
-  userId: string,
-  formData: FormData,
-): Promise<{ id: string }> {
-  const requested = String(formData.get('portfolioId') ?? '');
-  const { listPortfolios } = await import('@/lib/portfolio-context');
-  const owned = await listPortfolios(db, userId);
-  const match = owned.find((p) => p.id === requested);
-  if (match) return match;
-  return activePortfolio(db, userId);
-}
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -66,8 +54,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     .insert(taxpayerProfiles)
     .values({ userId: user.id, portfolioId: portfolio.id, ...values })
     .onConflictDoUpdate({ target: taxpayerProfiles.portfolioId, set: values });
-
-  const { logAudit } = await import('@/lib/audit');
   await logAudit(db, user.id, 'PROFILE_CHANGE');
 
   revalidatePath('/prehled');
@@ -101,7 +87,7 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
     credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
   });
 
-  await (await import('@/lib/audit')).logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading212');
+  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading212');
   revalidatePath('/nastaveni');
   revalidatePath('/import');
   redirect('/import');
@@ -134,7 +120,7 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
     credentialsEncrypted: encryptSecret(JSON.stringify({ token, queryId })),
   });
 
-  await (await import('@/lib/audit')).logAudit(db, user.id, 'BROKER_CONNECTED', 'Interactive Brokers');
+  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Interactive Brokers');
   revalidatePath('/nastaveni');
   revalidatePath('/import');
   redirect('/import');
@@ -151,7 +137,7 @@ export async function disconnectBrokerAction(formData: FormData): Promise<void> 
     .returning({ id: brokerAccounts.id });
   // tiché „nic se nesmazalo" nesmí vypadat jako úspěch (stale formulář apod.)
   if (deleted.length === 0) redirect('/nastaveni?chyba=zadny-ucet');
-  await (await import('@/lib/audit')).logAudit(db, user.id, 'BROKER_DISCONNECTED');
+  await logAudit(db, user.id, 'BROKER_DISCONNECTED');
   revalidatePath('/nastaveni');
   revalidatePath('/import');
   redirect('/nastaveni');
@@ -194,23 +180,22 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
   const parsed = ChangePasswordSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=heslo');
 
-  const { getAuth } = await import('@/lib/auth');
-  const { headers } = await import('next/headers');
-  const auth = await getAuth();
+  const { api, requestHeaders } = await authApi();
   try {
-    await auth.api.changePassword({
-      headers: await headers(),
+    await api.changePassword({
+      headers: requestHeaders,
       body: {
         currentPassword: parsed.data.currentPassword,
         newPassword: parsed.data.newPassword,
         revokeOtherSessions: true, // po změně hesla odhlásit ostatní zařízení
       },
     });
-  } catch {
+  } catch (error) {
+    // infrastrukturní chyba nesmí být němá — jinak „špatné heslo" maskuje výpadek
+    logEvent('error', 'account.change_password_failed', { error: error instanceof Error ? error.message : String(error) });
     redirect('/nastaveni?chyba=heslo-spatne');
   }
   // audit PŘES id z úvodní session — po rotaci session by requireUser selhal
-  const { logAudit } = await import('@/lib/audit');
   await logAudit(await getDb(), user.id, 'PASSWORD_CHANGE');
   redirect('/nastaveni?ok=heslo');
 }
@@ -241,18 +226,16 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     if (!valid) redirect('/nastaveni?chyba=email-heslo');
   }
 
-  const { getAuth } = await import('@/lib/auth');
-  const { headers } = await import('next/headers');
-  const auth = await getAuth();
+  const { api, requestHeaders } = await authApi();
   try {
-    await auth.api.changeEmail({
-      headers: await headers(),
+    await api.changeEmail({
+      headers: requestHeaders,
       body: { newEmail: parsed.data.newEmail },
     });
-  } catch {
+  } catch (error) {
+    logEvent('error', 'account.change_email_failed', { error: error instanceof Error ? error.message : String(error) });
     redirect('/nastaveni?chyba=email-obsazeny');
   }
-  const { logAudit } = await import('@/lib/audit');
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
   revalidatePath('/nastaveni');
   redirect('/nastaveni?ok=email');
@@ -268,17 +251,16 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   const parsed = DeleteAccountSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=smazani');
 
-  const { getAuth } = await import('@/lib/auth');
-  const { headers } = await import('next/headers');
-  const auth = await getAuth();
+  const { api, requestHeaders } = await authApi();
   try {
     // hard delete: Better Auth smaže user/session/account, FK kaskády zbytek
     // (profil, transakce, šifrované broker klíče, notifikace, joby, ceny)
-    await auth.api.deleteUser({
-      headers: await headers(),
+    await api.deleteUser({
+      headers: requestHeaders,
       body: { password: parsed.data.password },
     });
-  } catch {
+  } catch (error) {
+    logEvent('error', 'account.delete_failed', { error: error instanceof Error ? error.message : String(error) });
     redirect('/nastaveni?chyba=smazani-heslo');
   }
   redirect('/?smazano=1');
@@ -287,11 +269,8 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
 
 export async function revokeOtherSessionsAction(): Promise<void> {
   const user = await requireUser();
-  const { getAuth } = await import('@/lib/auth');
-  const { headers } = await import('next/headers');
-  const auth = await getAuth();
-  await auth.api.revokeOtherSessions({ headers: await headers() });
-  const { logAudit } = await import('@/lib/audit');
+  const { api, requestHeaders } = await authApi();
+  await api.revokeOtherSessions({ headers: requestHeaders });
   await logAudit(await getDb(), user.id, 'SESSIONS_REVOKED');
   revalidatePath('/nastaveni');
   redirect('/nastaveni?ok=odhlaseno');

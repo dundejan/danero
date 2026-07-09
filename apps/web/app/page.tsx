@@ -15,12 +15,12 @@ const FEATURES = [
   },
   {
     title: 'Podklady k přiznání',
-    body: 'Dílčí základy § 8 a § 10, porovnání metod párování (FIFO/LIFO/…), zápočet zahraniční srážky po státech a návod, co kam v přiznání patří.',
+    body: 'Dílčí základy § 8 a § 10 — akcie, krypto i opce zvlášť, porovnání metod párování, zápočet zahraniční srážky po státech a XML přímo pro mojedane.cz.',
   },
 ];
 
 const STEPS = [
-  { step: '1', title: 'Připoj Trading212', body: 'Vlož read-only API klíč. Žádná hesla, žádné právo obchodovat.' },
+  { step: '1', title: 'Připoj brokera', body: 'Trading212 či IBKR přes read-only klíč; XTB, Degiro a Fio výpisem. Žádná hesla, žádné právo obchodovat.' },
   { step: '2', title: 'Danero stáhne historii', body: 'Celou, od založení účtu, automaticky — včetně splitů a spin-offů. A pak ji denně aktualizuje.' },
   { step: '3', title: 'Investuj v klidu', body: 'Limity, časové testy i daňový dopad prodejů máš pod dohledem. Ozveme se, jen když se něco děje.' },
 ];

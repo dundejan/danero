@@ -13,3 +13,24 @@ export function requireCronAuth(request: Request): Response | null {
   }
   return null;
 }
+
+import { logEvent } from '@/lib/log';
+
+/**
+ * Rám cron routy: auth check (401 loguje jako warn) + strukturovaný log běhu.
+ * Nová cron routa nemůže zapomenout na CRON_SECRET — invariant žije tady.
+ */
+export function withCron(
+  name: string,
+  handler: (request: Request) => Promise<Response>,
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    const unauthorized = requireCronAuth(request);
+    if (unauthorized) {
+      logEvent('warn', `cron.${name}.unauthorized`);
+      return unauthorized;
+    }
+    logEvent('info', `cron.${name}.run`);
+    return handler(request);
+  };
+}

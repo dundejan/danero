@@ -151,12 +151,14 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     expect(bars[0]!.valueCzk).toBeGreaterThan(0);
   });
 
-  it('feesByYear: poplatky z obchodů i FEE transakcí po letech', () => {
+  it('feesByYear: poplatky po letech, roky bez poplatků nulou (osa nepřeskakuje čas)', () => {
     const fees = feesByYear(TXS);
     expect(fees.skippedCurrencies).toEqual([]);
     const years = fees.bars.map((bar) => bar.year);
-    expect(years).toEqual([2022, 2026]);
-    expect(fees.bars.every((bar) => bar.valueCzk > 0)).toBe(true);
+    expect(years).toEqual([2022, 2023, 2024, 2025, 2026]);
+    expect(fees.bars[0]!.valueCzk).toBeGreaterThan(0); // 2022
+    expect(fees.bars[1]!.valueCzk).toBe(0); // 2023 — mezera vyplněná nulou
+    expect(fees.bars[4]!.valueCzk).toBeGreaterThan(0); // 2026
   });
 
   it('exemptionOutlook: bez cen jde podle kusů a dojde ke 100 %', () => {

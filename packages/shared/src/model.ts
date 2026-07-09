@@ -149,6 +149,8 @@ export const TransferInTxSchema = z.object({
   type: z.literal('TRANSFER_IN'),
   ...base,
   isin: z.string().min(1),
+  ticker: z.string().optional(),
+  name: z.string().optional(),
   assetClass: AssetClassSchema.default('STOCK'),
   quantity: PositiveMoney,
   date: IsoDateSchema,

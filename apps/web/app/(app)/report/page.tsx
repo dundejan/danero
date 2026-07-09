@@ -41,7 +41,7 @@ export default async function ReportPage({
   const txs = await loadTransactions(db, user.id, portfolio.id);
   if (txs.length === 0) redirect('/prehled');
 
-  const currentYear = new Date().getFullYear();
+  const currentYear = Number(new Date().toISOString().slice(0, 4)); // UTC, konzistentně s today
   const years = availableYears(txs, currentYear);
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
@@ -144,6 +144,7 @@ export default async function ReportPage({
             <thead>
               <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
                 <th className="py-2 pr-4 font-medium">Metoda</th>
+                <th className="py-2 pr-4 font-medium">Kurzy</th>
                 <th className="py-2 pr-4 text-right font-medium">Základ § 10</th>
                 <th className="py-2 pr-4 text-right font-medium">Daň</th>
                 <th className="py-2 pr-4 text-right font-medium">Limit 50k</th>
@@ -160,6 +161,9 @@ export default async function ReportPage({
                   <tr key={`${variant.matchingMethod}-${variant.fxMethod}`} className="border-b border-linka/60">
                     <td className="py-2 pr-4 font-sans font-medium">
                       {METHOD_LABEL[variant.matchingMethod]}
+                    </td>
+                    <td className="py-2 pr-4 font-sans text-inkoust-tlumeny">
+                      {variant.fxMethod === 'UNIFIED' ? 'jednotný' : 'denní ČNB'}
                     </td>
                     <td className="py-2 pr-4 text-right">{czk(variant.base10Czk)}</td>
                     <td className="py-2 pr-4 text-right">{czk(variant.taxCzk)}</td>
@@ -491,7 +495,10 @@ export default async function ReportPage({
           </ul>
         ) : (
           <p className="text-sm text-inkoust-tlumeny">
-            Dílčí základ § 10 patří do Přílohy č. 2 (druh D — prodej cenných papírů) na ř. 40,
+            Dílčí základ § 10 patří do Přílohy č. 2 — každý druh na vlastní řádek tabulky
+            (D — cenné papíry{result.crypto.disposals.length > 0 && ', C — kryptoaktiva'}
+            {result.derivatives.items.length > 0 && ', F — deriváty'}; druhy se nekompenzují)
+            — a součet rozdílů na ř. 40,
             zahraniční dividendy do § 8 (ř. 38, zápočet přes Přílohu č. 3), varianta § 16a přes
             Přílohu č. 4. Přesná čísla řádků pro období {year} ověříme, až finanční správa
             zveřejní strukturu — čísla výše platí pro tiskopis 2024/2025.

@@ -235,6 +235,13 @@ export type EmailSender = (message: EmailMessage) => Promise<void>;
 export function resolveEmailSender(): EmailSender {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
+    // produkce bez klíče nesmí digest tiše „odeslat" do console a označit
+    // notifikace za doručené — selhání nechá frontu čekat na doplnění klíče
+    if (process.env.NODE_ENV === 'production') {
+      return async () => {
+        throw new Error('RESEND_API_KEY není nastaven — e-mail se neodeslal, notifikace čekají.');
+      };
+    }
     return async (message) => {
       console.info(`[email:dev] to=${message.to} | ${message.subject}\n${message.text}`);
     };

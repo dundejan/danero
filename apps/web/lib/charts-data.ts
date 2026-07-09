@@ -180,12 +180,15 @@ export function feesByYear(txs: Transaction[]): { bars: YearBar[]; skippedCurren
       add(tx.tradeDate, tx.fee.amount, tx.fee.currency);
     }
   }
-  return {
-    bars: [...byYear.entries()]
-      .map(([year, value]) => ({ year, valueCzk: num(value) }))
-      .sort((a, b) => a.year - b.year),
-    skippedCurrencies: [...skipped],
-  };
+  // roky bez poplatků vyplnit nulou — kategorie osy nesmí tiše přeskakovat čas
+  const years = [...byYear.keys()];
+  const bars: YearBar[] = [];
+  if (years.length > 0) {
+    for (let year = Math.min(...years); year <= Math.max(...years); year += 1) {
+      bars.push({ year, valueCzk: num(byYear.get(year) ?? ZERO) });
+    }
+  }
+  return { bars, skippedCurrencies: [...skipped] };
 }
 
 export interface HorizonDot {

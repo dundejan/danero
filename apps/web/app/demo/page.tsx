@@ -46,7 +46,7 @@ const buildDemoTxs = (Y: number) =>
   ]);
 
 export default function DemoPage() {
-  const demoYear = Math.min(new Date().getFullYear(), LAST_RATE_YEAR);
+  const demoYear = Math.min(Number(new Date().toISOString().slice(0, 4)), LAST_RATE_YEAR);
   const today = `${demoYear}-${new Date().toISOString().slice(5, 10)}`;
   const demoTxs = buildDemoTxs(demoYear);
   const result = analyzeTaxYear({
@@ -145,13 +145,8 @@ export default function DemoPage() {
         )}
       </section>
 
-      <Card>
-        <CardTitle>Horizont osvobození</CardTitle>
-        <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-          Kdy které pozici doběhne tříletý časový test — od té chvíle je prodej bez daně.
-        </p>
-        <HorizonStrip dots={dots} today={today} />
-      </Card>
+      {/* HorizonStrip si nese vlastní kartu i titulek — bez obalu (zdvojení) */}
+      <HorizonStrip dots={dots} today={today} />
 
       <div className="flex flex-wrap items-center justify-center gap-4 rounded-lg border border-linka bg-plocha px-4 py-6">
         <p className="text-sm text-inkoust-tlumeny">

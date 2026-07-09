@@ -1,6 +1,6 @@
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
-import { requireCronAuth } from '@/lib/cron-auth';
+import { withCron } from '@/lib/cron-auth';
 import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs';
 
 /**
@@ -9,11 +9,11 @@ import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs
  * Průběh je tak vidět v UI stejně jako u ručního syncu a odpověď nese výsledek
  * per job — selhání syncu musí být z monitoringu cronu poznat. Chráněno CRON_SECRET.
  */
-export async function GET(request: Request): Promise<Response> {
-  const unauthorized = requireCronAuth(request);
-  if (unauthorized) return unauthorized;
-  const { logEvent } = await import('@/lib/log');
-  logEvent('info', 'cron.sync-brokers.run');
+// Vercel: plný sync trvá minuty (T212 ~1 req/min) — default limit by ho zabil
+// uprostřed; 800 s vyžaduje Pro plán (hobby max 300 s — viz docs/08)
+export const maxDuration = 800;
+
+export const GET = withCron('sync-brokers', async (_request: Request): Promise<Response> => {
 
 
   const db = await getDb();
@@ -34,4 +34,4 @@ export async function GET(request: Request): Promise<Response> {
   const { recovered, results } = await processPendingJobs(db);
 
   return Response.json({ accounts: accounts.length, recovered, results, skipped });
-}
+});

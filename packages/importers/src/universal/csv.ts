@@ -195,6 +195,8 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin'),
+              ticker: map.get(row, 'ticker') || undefined,
+              name: map.get(row, 'name') || undefined,
               assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
               quantity: cleanNumber(map.get(row, 'quantity')),
               date,

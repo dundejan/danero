@@ -231,6 +231,7 @@ export default async function ImportPage({
             obchody těchto symbolů se bez doplnění neimportují.
           </p>
           <form action={saveAliasesAction} className="space-y-2">
+            <input type="hidden" name="portfolioId" value={portfolio.id} />
             <input type="hidden" name="count" value={unmappedSymbols.length} />
             {unmappedSymbols.map((item, index) => (
               <div
@@ -293,6 +294,7 @@ export default async function ImportPage({
       <Card className="space-y-3">
         <CardTitle>Ruční nahrání výpisů (záložní varianta)</CardTitle>
         <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <input type="hidden" name="portfolioId" value={portfolio.id} />
           <input
             type="file"
             name="soubory"

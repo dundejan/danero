@@ -42,7 +42,7 @@ export async function POST(request: Request): Promise<Response> {
   if (txs.length === 0) return chyba('Zatím nemáš žádné transakce — nejdřív importuj data.');
 
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
-  const dailyRates = await loadDailyRates(db, txs, new Date().getFullYear());
+  const dailyRates = await loadDailyRates(db, txs, Number(new Date().toISOString().slice(0, 4)));
   const result = analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates));
 
   const personal: EpoPersonalData = {
