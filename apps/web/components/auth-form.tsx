@@ -107,8 +107,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           id="heslo"
           name="heslo"
           type="password"
-          required
-          minLength={10}
+          // validace délky patří jen k registraci — při loginu uživatel zadává
+          // heslo, které zná; hlídat mu jeho tvar nedává smysl (chybné heslo
+          // stejně odmítne server jednotnou hláškou)
+          {...(mode === 'registrace' ? { required: true, minLength: 10 } : {})}
           autoComplete={mode === 'registrace' ? 'new-password' : 'current-password'}
         />
       </div>
