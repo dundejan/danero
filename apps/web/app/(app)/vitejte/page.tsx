@@ -78,7 +78,7 @@ export default async function WelcomePage() {
           </p>
           <Link
             href="/nastaveni"
-            className="inline-block rounded-md bg-ruzova px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            className="inline-block rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
             Vyplnit daňový profil
           </Link>

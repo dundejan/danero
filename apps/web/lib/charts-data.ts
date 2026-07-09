@@ -1,5 +1,6 @@
 import { d, ZERO, type Money, type Transaction } from '@danero/shared';
 import type { Position, TaxYearResult } from '@danero/engine';
+import type { PortfolioValuation } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
 import { UNIFIED_RATES } from '@/lib/tax-config';
 
@@ -189,6 +190,41 @@ export function feesByYear(txs: Transaction[]): { bars: YearBar[]; skippedCurren
     }
   }
   return { bars, skippedCurrencies: [...skipped] };
+}
+
+export interface AllocationSlice {
+  label: string;
+  valueCzk: number;
+  /** Sloučený zbytek mimo top 4 — v grafu dostává tlumenou barvu. */
+  isOther: boolean;
+}
+
+export interface PortfolioAllocation {
+  slices: AllocationSlice[];
+  totalCzk: number;
+}
+
+/** Alokace portfolia pro donut: top 4 oceněné pozice + „Ostatní" (H4). */
+export function portfolioAllocation(valuation: PortfolioValuation): PortfolioAllocation | null {
+  // rows jsou už seřazené podle hodnoty sestupně; bereme jen oceněné
+  const priced = valuation.rows.filter((row) => row.valueCzk?.gt(0));
+  if (priced.length === 0 || valuation.totalCzk.lte(0)) return null;
+
+  const top = priced.slice(0, 4);
+  const rest = priced.slice(4);
+  const slices: AllocationSlice[] = top.map((row) => ({
+    label: row.label,
+    valueCzk: num(row.valueCzk!),
+    isOther: false,
+  }));
+  if (rest.length > 0) {
+    slices.push({
+      label: OTHER,
+      valueCzk: num(rest.reduce((sum, row) => sum.plus(row.valueCzk!), ZERO)),
+      isOther: true,
+    });
+  }
+  return { slices, totalCzk: num(valuation.totalCzk) };
 }
 
 export interface HorizonDot {

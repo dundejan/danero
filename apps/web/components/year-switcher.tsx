@@ -20,7 +20,7 @@ export function YearSwitcher({
           className={cn(
             'rounded-md px-3 py-1 font-mono text-sm',
             year === active
-              ? 'bg-ruzova font-semibold text-white'
+              ? 'bg-ruzova-syta font-semibold text-white'
               : 'text-inkoust-tlumeny hover:text-inkoust',
           )}
         >

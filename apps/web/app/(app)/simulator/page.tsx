@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { positionsAt, simulateSale, analyzeTaxYear } from '@danero/engine';
+import type { DisposalReport } from '@danero/engine';
+import { ZERO, type Money } from '@danero/shared';
+import { LimitBar, zoneForRatio } from '@/components/limit-gauge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
@@ -45,9 +48,7 @@ export default async function SimulatorPage({
   const dailyRates = await dailyRatesForProfile(db, txs, profile, year);
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const baseline = analyzeTaxYear(input);
-  const positions = positionsAt(baseline.ledger, today).filter((p) =>
-    p.totalRemaining.gt(0),
-  );
+  const positions = positionsAt(baseline.ledger, today).filter((p) => p.totalRemaining.gt(0));
   const labels = instrumentLabels(txs);
   const names = instrumentNames(txs);
 
@@ -125,6 +126,36 @@ export default async function SimulatorPage({
         {formError && <p className="mt-3 text-sm text-cervena">{formError}</p>}
       </Card>
 
+      {/* H4: před prvním výpočtem místo prázdné plochy ukázka výsledku */}
+      {!simulation && (
+        <Card className="space-y-3">
+          <CardTitle>Co dostaneš</CardTitle>
+          <p className="text-sm text-inkoust-tlumeny">
+            Vyber pozici a zadej cenu — Danero ještě před obchodem spočítá verdikt, rozpad tržby a
+            dopad na limity i orientační daň. Třeba takhle:
+          </p>
+          <div aria-hidden className="select-none space-y-4 pt-1">
+            <p className="text-lg font-semibold text-inkoust-tlumeny/60">
+              „Prodej je celý osvobozený — limity ani daň nečerpá.“
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {['Paušální daň (50 000 Kč)', 'Prodeje CP (100 000 Kč)', 'Orientační daň'].map(
+                (label) => (
+                  <div key={label} className="rounded-lg border border-dashed border-linka p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny/70">
+                      {label}
+                    </p>
+                    <div className="mt-3 h-5 w-24 rounded bg-linka/60" />
+                    <div className="mt-2 h-3 w-16 rounded bg-linka/40" />
+                    <div className="mt-3 h-1.5 w-full rounded-full bg-linka/40" />
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
       {simulation && selected && (
         <>
           <Card className="space-y-2">
@@ -133,14 +164,13 @@ export default async function SimulatorPage({
               <p className="text-lg font-semibold text-zelena">
                 Prodej je celý osvobozený — limity ani daň nečerpá.
               </p>
-            ) : simulation.simulated.flatTax50kExceeded && !simulation.baseline.flatTax50kExceeded ? (
+            ) : simulation.simulated.flatTax50kExceeded &&
+              !simulation.baseline.flatTax50kExceeded ? (
               <p className="text-lg font-semibold text-cervena">
                 Tento prodej prolomí limit 50 000 Kč pro paušální daň.
               </p>
             ) : (
-              <p className="text-lg font-semibold">
-                Prodej je zdanitelný — dopad níže.
-              </p>
+              <p className="text-lg font-semibold">Prodej je zdanitelný — dopad níže.</p>
             )}
             <p className="text-sm text-inkoust-tlumeny">
               Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
@@ -156,35 +186,48 @@ export default async function SimulatorPage({
             </p>
           </Card>
 
+          {simulation.simulatedDisposal && (
+            <Card className="space-y-3">
+              <CardTitle>Rozpad prodeje</CardTitle>
+              <SaleWaterfall
+                disposal={simulation.simulatedDisposal}
+                taxDeltaCzk={simulation.deltas.taxCzk}
+              />
+            </Card>
+          )}
+
           <section className="grid gap-4 sm:grid-cols-3">
             <DeltaCard
               label="Paušální daň (50 000 Kč)"
-              before={czk(simulation.baseline.flatTax50kUsedCzk)}
-              after={czk(simulation.simulated.flatTax50kUsedCzk)}
+              beforeCzk={simulation.baseline.flatTax50kUsedCzk}
+              afterCzk={simulation.simulated.flatTax50kUsedCzk}
               bad={simulation.simulated.flatTax50kExceeded}
+              limitCzk={baseline.limits.flatTax50k.status.limitCzk}
             />
             {selected.assetClass === 'CRYPTO' ? (
               <DeltaCard
                 label="Prodeje krypta (100 000 Kč)"
-                before={czk(simulation.baseline.cryptoLimit100kUsedCzk)}
-                after={czk(simulation.simulated.cryptoLimit100kUsedCzk)}
+                beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
+                afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
                 bad={
                   !simulation.simulated.cryptoExemptUnder100k &&
                   simulation.baseline.cryptoExemptUnder100k
                 }
+                limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
               />
             ) : (
               <DeltaCard
                 label="Prodeje CP (100 000 Kč)"
-                before={czk(simulation.baseline.limit100kUsedCzk)}
-                after={czk(simulation.simulated.limit100kUsedCzk)}
+                beforeCzk={simulation.baseline.limit100kUsedCzk}
+                afterCzk={simulation.simulated.limit100kUsedCzk}
                 bad={!simulation.simulated.exemptUnder100k && simulation.baseline.exemptUnder100k}
+                limitCzk={baseline.limits.limit100k.limitCzk}
               />
             )}
             <DeltaCard
               label="Orientační daň"
-              before={czk(simulation.baseline.taxCzk)}
-              after={czk(simulation.simulated.taxCzk)}
+              beforeCzk={simulation.baseline.taxCzk}
+              afterCzk={simulation.simulated.taxCzk}
               bad={simulation.deltas.taxCzk.gt(0)}
             />
           </section>
@@ -202,24 +245,154 @@ export default async function SimulatorPage({
   );
 }
 
+/**
+ * Delta karta (H4): po-hodnota + badge se semaforem podle SMĚRU změny
+ * (zhoršení červeně, zlepšení zeleně, beze změny neutrálně) a před/po
+ * progress bary limitu (znovupoužitý LimitBar).
+ */
 function DeltaCard({
   label,
-  before,
-  after,
+  beforeCzk,
+  afterCzk,
   bad,
+  limitCzk,
 }: {
   label: string;
-  before: string;
-  after: string;
+  beforeCzk: Money;
+  afterCzk: Money;
   bad: boolean;
+  /** Je-li zadán limit, vykreslí se před/po progress bary čerpání. */
+  limitCzk?: Money;
 }) {
+  const delta = afterCzk.minus(beforeCzk);
+  const badge = delta.gt(0)
+    ? { text: `↑ +${czk(delta)}`, tone: 'bg-cervena/10 text-cervena' }
+    : delta.lt(0)
+      ? { text: `↓ ${czk(delta)}`, tone: 'bg-zelena/10 text-zelena' }
+      : { text: '→ beze změny', tone: 'bg-linka/50 text-inkoust-tlumeny' };
+  const bars =
+    limitCzk?.gt(0) &&
+    ([
+      ['před', beforeCzk.div(limitCzk).toNumber()],
+      ['po', afterCzk.div(limitCzk).toNumber()],
+    ] as const);
+
   return (
-    <Card className="space-y-1">
+    <Card className="space-y-2">
       <CardTitle>{label}</CardTitle>
-      <p className="font-mono text-sm text-inkoust-tlumeny">{before}</p>
-      <p className={cn('font-mono text-lg font-semibold', bad ? 'text-cervena' : 'text-zelena')}>
-        → {after}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className={cn('font-mono text-lg font-semibold', bad && 'text-cervena')}>
+          {czk(afterCzk)}
+        </p>
+        <span
+          className={cn('rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold', badge.tone)}
+        >
+          {badge.text}
+        </span>
+      </div>
+      <p className="text-xs text-inkoust-tlumeny">
+        před prodejem: <span className="font-mono">{czk(beforeCzk)}</span>
       </p>
+      {bars && (
+        <div className="space-y-1.5 pt-1">
+          {bars.map(([name, ratio]) => (
+            <div key={name} className="flex items-center gap-2">
+              <span className="w-8 shrink-0 font-mono text-[10px] text-inkoust-tlumeny">
+                {name}
+              </span>
+              <LimitBar
+                ratio={ratio}
+                zone={zoneForRatio(ratio)}
+                animate={false}
+                className="h-1.5"
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
+  );
+}
+
+/**
+ * Vodorovný waterfall rozpadu prodeje (H4): Tržba → (osvobozeno) → Výdaj →
+ * Základ → Daň. Čisté divy nad společnou škálou 0–tržba; výdaj „visí"
+ * mezi základem a zdanitelnou částí, jak se odečítá.
+ */
+function SaleWaterfall({
+  disposal,
+  taxDeltaCzk,
+}: {
+  disposal: DisposalReport;
+  taxDeltaCzk: Money;
+}) {
+  const gross = disposal.grossProceedsCzk.toNumber();
+  if (gross <= 0) return null;
+  const exempt = disposal.exemptProceedsCzk.toNumber();
+  const taxable = disposal.taxableProceedsCzk.toNumber();
+  const expense = disposal.allocations
+    .reduce((sum, allocation) => sum.plus(allocation.expenseCzk), ZERO)
+    .toNumber();
+  const base = Math.max(0, taxable - expense);
+  const tax = Math.max(0, taxDeltaCzk.toNumber());
+  const isLoss = taxable - expense < 0;
+
+  const rows: Array<{ label: string; from: number; to: number; color: string; value: number }> = [
+    { label: 'Tržba', from: 0, to: gross, color: 'var(--graf-1)', value: gross },
+    ...(exempt > 0
+      ? [
+          {
+            label: 'Osvobozeno',
+            from: gross - exempt,
+            to: gross,
+            color: 'var(--zelena)',
+            value: exempt,
+          },
+        ]
+      : []),
+    {
+      label: 'Výdaj',
+      from: base,
+      to: Math.min(base + expense, Math.max(taxable, base)),
+      color: 'var(--inkoust-tlumeny)',
+      value: expense,
+    },
+    { label: 'Základ', from: 0, to: base, color: 'var(--graf-2)', value: base },
+    // strop na tržbu: delta daně zahrnuje celoroční dopad (může ovlivnit
+    // i zdanění ostatních letošních prodejů) a mohla by přetéct škálu —
+    // bar se zastaví na 100 %, přesnou hodnotu nese číslo vpravo
+    { label: 'Daň', from: 0, to: Math.min(tax, gross), color: 'var(--cervena)', value: tax },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-x-3 sm:grid-cols-[5.5rem_1fr_8rem]"
+        >
+          <span className="text-xs text-inkoust-tlumeny">{row.label}</span>
+          <div className="relative h-4 overflow-hidden rounded bg-linka/30">
+            {row.value > 0 && (
+              <div
+                className="absolute inset-y-0 rounded-sm"
+                style={{
+                  left: `${(row.from / gross) * 100}%`,
+                  width: `${Math.max(((row.to - row.from) / gross) * 100, 0.8)}%`,
+                  background: row.color,
+                }}
+              />
+            )}
+          </div>
+          <span className="text-right font-mono text-xs text-inkoust">{czk(row.value)}</span>
+        </div>
+      ))}
+      <p className="pt-1 text-xs text-inkoust-tlumeny">
+        Výdaj = nabývací cena zdanitelné části (kurzem roku nákupu). Daň = změna orientační daně
+        proti stavu bez prodeje — zahrnuje celoroční dopad, může tedy převýšit i tržbu tohoto
+        prodeje (třeba když prolomí limit a zdaní ostatní letošní prodeje).
+        {isLoss && ' Prodej je ve ztrátě — základ z něj je nulový.'}
+      </p>
+    </div>
   );
 }

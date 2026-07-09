@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
 const ITEMS = [
@@ -56,6 +57,7 @@ export function NavRail({ userEmail }: { userEmail: string }) {
       </nav>
 
       <div className="space-y-2 border-t border-linka pt-4">
+        <ThemeToggle />
         <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
           {userEmail}
         </p>
@@ -85,7 +87,8 @@ export function NavTabBar() {
             key={item.href}
             href={item.href}
             className={cn(
-              'py-3 text-center text-xs font-medium',
+              // 390 px / 6 položek ≈ 65 px — menší písmo + truncate, ať nic nepřetéká
+              'min-w-0 truncate px-0.5 py-3 text-center text-[11px] font-medium tracking-tight',
               active ? 'font-semibold text-ruzova' : 'text-inkoust-tlumeny',
             )}
           >

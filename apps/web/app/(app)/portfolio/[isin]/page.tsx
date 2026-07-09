@@ -140,7 +140,7 @@ export default async function PositionDetailPage({
         {position && (
           <Link
             href={`/simulator?isin=${encodeURIComponent(isin)}`}
-            className="rounded-md bg-ruzova px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
             Simulovat prodej
           </Link>

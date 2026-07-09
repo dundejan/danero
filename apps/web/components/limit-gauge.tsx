@@ -10,6 +10,13 @@ const ZONE_COLOR: Record<LimitStatus['zone'], string> = {
   EXCEEDED: 'bg-cervena',
 };
 
+const ZONE_TEXT: Record<LimitStatus['zone'], string> = {
+  OK: 'text-zelena',
+  WARNING: 'text-jantar',
+  CRITICAL: 'text-oranz',
+  EXCEEDED: 'text-cervena',
+};
+
 const ZONE_LABEL: Record<LimitStatus['zone'], string> = {
   OK: 'v pořádku',
   WARNING: 'zvýšené čerpání',
@@ -17,7 +24,65 @@ const ZONE_LABEL: Record<LimitStatus['zone'], string> = {
   EXCEEDED: 'přes limit',
 };
 
-/** „Odměrka“ — svislý sloupec s ryskami 60/85/100 % (docs/07-design.md). */
+/** Pásmo z poměru čerpání — stejné prahy jako engine (60/85/100 %). */
+export const zoneForRatio = (ratio: number): LimitStatus['zone'] =>
+  ratio > 1 ? 'EXCEEDED' : ratio >= 0.85 ? 'CRITICAL' : ratio >= 0.6 ? 'WARNING' : 'OK';
+
+/**
+ * Vodorovný bar čerpání limitu (H4): dráha 0–100 % limitu, výplň barvou pásma,
+ * svislá ryska na 100 %. Při přetečení se škála protáhne na 130 % — výplň se
+ * zastaví na rysce a dál pokračuje šrafovaně červeně (poctivé „kolik přes").
+ */
+export function LimitBar({
+  ratio,
+  zone,
+  animate = true,
+  className,
+}: {
+  ratio: number;
+  zone: LimitStatus['zone'];
+  animate?: boolean;
+  className?: string;
+}) {
+  const exceeded = zone === 'EXCEEDED';
+  const scale = exceeded ? 1.3 : 1;
+  const markPct = (1 / scale) * 100;
+  const fillPct = (Math.min(ratio, 1) / scale) * 100;
+  const overPct = exceeded ? ((Math.min(ratio, 1.3) - 1) / scale) * 100 : 0;
+
+  return (
+    <div
+      className={cn('relative h-2.5 w-full overflow-hidden rounded-full bg-linka/40', className)}
+    >
+      <div
+        className={cn('absolute inset-y-0 left-0 origin-left rounded-l-full', ZONE_COLOR[zone])}
+        style={{
+          width: `${fillPct}%`,
+          animation: animate ? 'gauge-grow 700ms ease-out' : undefined,
+        }}
+      />
+      {exceeded && overPct > 0 && (
+        <div
+          aria-hidden
+          className="absolute inset-y-0"
+          style={{
+            left: `${markPct}%`,
+            width: `${overPct}%`,
+            background:
+              'repeating-linear-gradient(135deg, var(--cervena) 0 4px, transparent 4px 8px)',
+          }}
+        />
+      )}
+      <div
+        aria-hidden
+        className="absolute inset-y-0 w-0.5 bg-inkoust/60"
+        style={{ left: `calc(${markPct}% - 1px)` }}
+      />
+    </div>
+  );
+}
+
+/** KPI karta limitu: hodnota/limit + procento se štítkem zóny nad barem. */
 export function LimitGauge({
   label,
   hint,
@@ -27,42 +92,18 @@ export function LimitGauge({
   hint: string;
   status: LimitStatus;
 }) {
-  const fill = Math.min(1, status.ratio);
   return (
-    <Card className="flex gap-4">
-      <div className="relative h-36 w-8 shrink-0 overflow-hidden rounded-md border border-linka bg-pozadi">
-        <div
-          className={cn('absolute inset-x-0 bottom-0 origin-bottom', ZONE_COLOR[status.zone])}
-          style={{ height: `${fill * 100}%`, animation: 'gauge-grow 700ms ease-out' }}
-        />
-        {[0.6, 0.85].map((tick) => (
-          <div
-            key={tick}
-            className="absolute inset-x-0 border-t border-dashed border-inkoust-tlumeny/40"
-            style={{ bottom: `${tick * 100}%` }}
-          />
-        ))}
-        <div className="absolute inset-x-0 top-0 border-t-2 border-inkoust/60" />
-      </div>
-      <div className="min-w-0 space-y-1">
-        <CardTitle>{label}</CardTitle>
-        <p className="font-mono text-lg font-medium">
-          {czk(status.usedCzk)}
-          <span className="text-sm text-inkoust-tlumeny"> / {czk(status.limitCzk)}</span>
-        </p>
-        <p
-          className={cn(
-            'text-sm font-semibold',
-            status.zone === 'OK' && 'text-zelena',
-            status.zone === 'WARNING' && 'text-jantar',
-            status.zone === 'CRITICAL' && 'text-oranz',
-            status.zone === 'EXCEEDED' && 'text-cervena',
-          )}
-        >
-          {Math.round(status.ratio * 100)} % · {ZONE_LABEL[status.zone]}
-        </p>
-        <p className="text-xs text-inkoust-tlumeny">{hint}</p>
-      </div>
+    <Card className="space-y-1.5">
+      <CardTitle>{label}</CardTitle>
+      <p className="font-mono text-lg font-medium">
+        {czk(status.usedCzk)}
+        <span className="text-sm text-inkoust-tlumeny"> / {czk(status.limitCzk)}</span>
+      </p>
+      <p className={cn('text-sm font-semibold', ZONE_TEXT[status.zone])}>
+        {Math.round(status.ratio * 100)} % · {ZONE_LABEL[status.zone]}
+      </p>
+      <LimitBar ratio={status.ratio} zone={status.zone} />
+      <p className="pt-1 text-xs text-inkoust-tlumeny">{hint}</p>
     </Card>
   );
 }

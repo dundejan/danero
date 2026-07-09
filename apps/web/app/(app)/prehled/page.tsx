@@ -7,10 +7,16 @@ import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
+import { ViewSwitch } from '@/components/view-switch';
 import { WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
-import { flatTax50kSeries, horizonDots, limit100kSeries } from '@/lib/charts-data';
+import {
+  exemptionOutlook,
+  flatTax50kSeries,
+  horizonDots,
+  limit100kSeries,
+} from '@/lib/charts-data';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { czk, METHOD_LABEL, plural } from '@/lib/format';
 import { analyzeForUserCached } from '@/lib/engine-cache';
@@ -44,12 +50,12 @@ export default async function OverviewPage({
       <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
         <h1 className="font-display text-3xl font-bold">Zatím žádná data</h1>
         <p className="text-inkoust-tlumeny">
-          Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity
-          i podklady k přiznání.
+          Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity i podklady
+          k přiznání.
         </p>
         <Link
           href="/vitejte"
-          className="rounded-md bg-ruzova px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           Otevřít průvodce
         </Link>
@@ -70,7 +76,15 @@ export default async function OverviewPage({
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const { result, positions, labels } = analyzeForUserCached(user.id, portfolio.id, txs, profile, year, today, dailyRates);
+  const { result, positions, labels } = analyzeForUserCached(
+    user.id,
+    portfolio.id,
+    txs,
+    profile,
+    year,
+    today,
+    dailyRates,
+  );
   const limit100kChart = limit100kSeries(result);
   const flatTax50kChart = flatTax50kSeries(result);
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
@@ -158,7 +172,8 @@ export default async function OverviewPage({
             <Card>
               <CardTitle>Čerpání limitu 50 000 Kč v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje, zahraniční dividendy, úroky.
+                Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje,
+                zahraniční dividendy, úroky.
               </p>
               <LimitDrawdownChart series={flatTax50kChart} name="Zdanitelné příjmy" />
             </Card>
@@ -174,8 +189,8 @@ export default async function OverviewPage({
           <Card className="space-y-1">
             <CardTitle>Mohlo by tě zajímat</CardTitle>
             <p className="text-sm">
-              Počítáme bezpečným výkladem: do limitu 100k vstupují i prodeje osvobozené
-              časovým testem. Podle mírnějšího (sporného) výkladu by tvůj úhrn byl jen{' '}
+              Počítáme bezpečným výkladem: do limitu 100k vstupují i prodeje osvobozené časovým
+              testem. Podle mírnějšího (sporného) výkladu by tvůj úhrn byl jen{' '}
               <span className="font-mono">
                 {czk(
                   result.securities.totalGrossProceedsCzk.sub(
@@ -183,13 +198,58 @@ export default async function OverviewPage({
                   ),
                 )}
               </span>{' '}
-              a všechny letošní prodeje by byly osvobozené. Výklad si můžeš přepnout
-              v Nastavení — rozhodnutí (a riziko) je na tobě.
+              a všechny letošní prodeje by byly osvobozené. Výklad si můžeš přepnout v Nastavení —
+              rozhodnutí (a riziko) je na tobě.
             </p>
           </Card>
         )}
 
-      <HorizonStrip dots={horizonDots(positions, labels, prices, currentYear)} today={today} />
+      {/* H4: graf a tabulka jsou dvě zobrazení téže informace — jednotný nadpis,
+          přepínač pohledu; default graf (bez JS se vykreslí ten). Bez otevřených
+          pozic by přepínač stál nad prázdnem — místo něj poctivý prázdný stav. */}
+      <Card>
+        {positions.length > 0 ? (
+          <ViewSwitch
+            title="Horizont osvobození"
+            ariaLabel="Zobrazení horizontu osvobození"
+            defaultKey="graf"
+            views={[
+              {
+                key: 'graf',
+                label: 'Graf',
+                content: (
+                  <HorizonStrip
+                    dots={horizonDots(positions, labels, prices, currentYear)}
+                    today={today}
+                    outlook={exemptionOutlook(positions, prices, today, currentYear)}
+                    embedded
+                  />
+                ),
+              },
+              {
+                key: 'tabulka',
+                label: 'Tabulka',
+                content: (
+                  <PositionsTable
+                    positions={positions}
+                    labels={labels}
+                    names={instrumentNames(txs)}
+                    embedded
+                  />
+                ),
+              },
+            ]}
+          />
+        ) : (
+          <>
+            <CardTitle>Horizont osvobození</CardTitle>
+            <p className="mt-2 text-sm text-inkoust-tlumeny">
+              Žádné otevřené pozice — jakmile nějakou koupíš, uvidíš tady, kdy se
+              osvobodí od daně (3letý časový test).
+            </p>
+          </>
+        )}
+      </Card>
 
       {importantWarnings.length > 0 && (
         <Card className="space-y-2">
@@ -197,8 +257,6 @@ export default async function OverviewPage({
           <WarningsList warnings={importantWarnings} labels={labels} />
         </Card>
       )}
-
-      <PositionsTable positions={positions} labels={labels} names={instrumentNames(txs)} />
 
       {recentNotifications.length > 0 && (
         <Card className="space-y-2">

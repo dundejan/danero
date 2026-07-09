@@ -44,10 +44,20 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   await expect(page.getByRole('heading', { name: 'Portfolio' })).toBeVisible();
   await expect(page.getByText('Bez cen — ceny bereme jen z připojených brokerů')).toBeVisible();
   await expect(page.getByText('Bez daně už dnes')).toBeVisible();
-  await expect(page.getByText('Osvobozování portfolia v čase')).toBeVisible();
+  // H4: grafy žijí v tabu „Grafy" (default je tabulka pozic).
+  // Retry-klik: tlačítko je v server-HTML dřív, než React připojí handler —
+  // jediný klik by na pomalém CI mohl dopadnout do nehydratovaného DOMu.
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Grafy' }).click();
+    await expect(page.getByText('Osvobozování portfolia v čase')).toBeVisible({ timeout: 1500 });
+  }).toPass();
   await page.screenshot({ path: 'test-results/screenshots/portfolio-desktop.png', fullPage: true });
 
   // ── detail pozice: loty, časové testy, odkaz do simulátoru ──────────────
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Pozice', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'AAPL' }).first()).toBeVisible({ timeout: 1500 });
+  }).toPass();
   await page.getByRole('link', { name: 'AAPL' }).first().click();
   await page.waitForURL('**/portfolio/US0378331005');
   await expect(page.getByText('Loty a časové testy')).toBeVisible();

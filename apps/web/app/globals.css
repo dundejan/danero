@@ -21,6 +21,11 @@
   --graf-2: #3b5bdb;
   --graf-3: #0ca678;
   --graf-4: #7048e8;
+  /* Syté výplně pro CTA/danger s bílým textem — v dark módu NEsmí zesvětlat
+     (světlé odstíny --ruzova/--cervena tam slouží textu, bílá by na nich
+     neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
+  --ruzova-syta: #d6336c;
+  --cervena-syta: #b3362f;
 }
 
 .dark {
@@ -32,12 +37,15 @@
   --zelena: #5cbd8f;
   --jantar: #e3a93c;
   --oranz: #e07c42;
-  --cervena: #e05d52;
+  /* světlejší než světlý token — záporné hodnoty na --plocha 5,5:1 (WCAG AA) */
+  --cervena: #e8746a;
   --linka: #2b2e4a;
   --graf-1: #e0567f;
   --graf-2: #5c7cfa;
   --graf-3: #0ca678;
   --graf-4: #845ef7;
+  --ruzova-syta: #d6336c;
+  --cervena-syta: #b3362f;
 }
 
 @theme inline {
@@ -51,6 +59,12 @@
   --color-oranz: var(--oranz);
   --color-cervena: var(--cervena);
   --color-linka: var(--linka);
+  --color-ruzova-syta: var(--ruzova-syta);
+  --color-cervena-syta: var(--cervena-syta);
+  --color-graf-1: var(--graf-1);
+  --color-graf-2: var(--graf-2);
+  --color-graf-3: var(--graf-3);
+  --color-graf-4: var(--graf-4);
 
   --font-display: var(--font-bricolage), system-ui, sans-serif;
   --font-sans: var(--font-hanken), system-ui, sans-serif;
@@ -102,9 +116,10 @@
 
 /* Orchestrovaný moment při načtení dashboardu (docs/07): odměrky se naplní,
    tečky horizontu naskočí. prefers-reduced-motion vše vypíná (viz níže). */
+/* vodorovný progress bar limitů — výplň naroste zleva (šířka, ne výška) */
 @keyframes gauge-grow {
   from {
-    transform: scaleY(0);
+    transform: scaleX(0);
   }
 }
 
@@ -131,6 +146,9 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* i delay — stagger teček horizontu (index × 25 ms) by jinak nechal
+         prvky až sekundu neviditelné (fill-mode both drží opacity 0) */
+      animation-delay: 0ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }

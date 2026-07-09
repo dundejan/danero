@@ -6,10 +6,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: 'bg-ruzova text-white hover:opacity-90',
+        // syté výplně: v dark módu drží plnou barvu (světlé --ruzova/--cervena
+        // jsou tam pro text — bílá by na nich neměla kontrast)
+        primary: 'bg-ruzova-syta text-white hover:opacity-90',
         secondary: 'border border-linka bg-plocha text-inkoust hover:border-inkoust-tlumeny',
         ghost: 'text-inkoust-tlumeny hover:text-inkoust',
-        danger: 'bg-cervena text-white hover:opacity-90',
+        danger: 'bg-cervena-syta text-white hover:opacity-90',
       },
       size: {
         md: 'h-10 px-4',

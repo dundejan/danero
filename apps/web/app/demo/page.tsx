@@ -5,7 +5,12 @@ import { LimitDrawdownChart } from '@/components/charts';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { Card, CardTitle } from '@/components/ui/card';
-import { flatTax50kSeries, horizonDots, limit100kSeries } from '@/lib/charts-data';
+import {
+  exemptionOutlook,
+  flatTax50kSeries,
+  horizonDots,
+  limit100kSeries,
+} from '@/lib/charts-data';
 import { czk } from '@/lib/format';
 import { configForYear, UNIFIED_RATES } from '@/lib/tax-config';
 import { instrumentLabels } from '@/lib/portfolio';
@@ -73,7 +78,7 @@ export default function DemoPage() {
         </p>
         <Link
           href="/registrace"
-          className="rounded-md bg-ruzova px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           Chci to pro svoje portfolio
         </Link>
@@ -148,7 +153,11 @@ export default function DemoPage() {
       </section>
 
       {/* HorizonStrip si nese vlastní kartu i titulek — bez obalu (zdvojení) */}
-      <HorizonStrip dots={dots} today={today} />
+      <HorizonStrip
+        dots={dots}
+        today={today}
+        outlook={exemptionOutlook(positions, new Map(), today, demoYear)}
+      />
 
       <div className="flex flex-wrap items-center justify-center gap-4 rounded-lg border border-linka bg-plocha px-4 py-6">
         <p className="text-sm text-inkoust-tlumeny">
@@ -157,7 +166,7 @@ export default function DemoPage() {
         </p>
         <Link
           href="/registrace"
-          className="rounded-md bg-ruzova px-5 py-2.5 font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-5 py-2.5 font-semibold text-white hover:opacity-90"
         >
           Vyzkoušet zdarma
         </Link>

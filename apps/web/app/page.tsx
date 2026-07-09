@@ -58,7 +58,7 @@ export default function LandingPage() {
           </Link>
           <Link
             href="/registrace"
-            className="rounded-md bg-ruzova px-4 py-2 font-semibold text-white hover:opacity-90"
+            className="rounded-md bg-ruzova-syta px-4 py-2 font-semibold text-white hover:opacity-90"
           >
             Vyzkoušet zdarma
           </Link>
@@ -77,7 +77,7 @@ export default function LandingPage() {
         <div className="flex flex-wrap items-center gap-4">
           <Link
             href="/registrace"
-            className="rounded-md bg-ruzova px-5 py-2.5 font-semibold text-white hover:opacity-90"
+            className="rounded-md bg-ruzova-syta px-5 py-2.5 font-semibold text-white hover:opacity-90"
           >
             Vyzkoušet zdarma
           </Link>

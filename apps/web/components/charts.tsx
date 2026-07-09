@@ -7,6 +7,8 @@ import {
   Legend,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -17,6 +19,7 @@ import type {
   DividendsByMonth,
   ExemptionOutlook,
   LimitSeries,
+  PortfolioAllocation,
   YearBar,
 } from '@/lib/charts-data';
 import { MONTH_LABELS } from '@/lib/format';
@@ -41,10 +44,15 @@ const czkAxis = (value: number): string => {
   return `${sign}${Math.round(abs)}`;
 };
 
-const monthLabel = (isoMonth: string): string => MONTH_LABELS[Number(isoMonth.slice(5, 7)) - 1] ?? isoMonth;
+const monthLabel = (isoMonth: string): string =>
+  MONTH_LABELS[Number(isoMonth.slice(5, 7)) - 1] ?? isoMonth;
 
 const dateLabel = (iso: string): string =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  new Date(`${iso}T00:00:00`).toLocaleDateString('cs-CZ', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  });
 
 /** ISO datum → ms (UTC) pro časovou osu — kategorická osa by zkreslila rozestupy. */
 const toMs = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
@@ -58,7 +66,31 @@ const axisProps = {
   tickLine: false as const,
 };
 
-function TooltipBox({ title, rows }: { title: string; rows: Array<{ color?: string; name: string; value: string }> }) {
+/**
+ * Ticky na kulatých hodnotách (H4): krok 1/2/5×10^n, 4–5 ticků,
+ * domain [0, niceMax]. Záporné minimum (ztrátové roky) protáhne osu
+ * dolů stejným krokem — nula zůstává tickem.
+ */
+function niceTicks(max: number, min = 0): { domain: [number, number]; ticks: number[] } {
+  const lo = Math.min(min, 0);
+  const hi = Math.max(max, 1);
+  const rawStep = (hi - lo) / 4;
+  const pow = 10 ** Math.floor(Math.log10(rawStep));
+  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= rawStep)!;
+  const niceMax = Math.ceil(hi / step) * step;
+  const niceMin = lo < 0 ? Math.floor(lo / step) * step : 0;
+  const ticks: number[] = [];
+  for (let v = niceMin; v <= niceMax + step / 2; v += step) ticks.push(v);
+  return { domain: [niceMin, niceMax], ticks };
+}
+
+function TooltipBox({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ color?: string; name: string; value: string }>;
+}) {
   return (
     <div className="rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm">
       <p className="mb-1 font-semibold text-inkoust">{title}</p>
@@ -84,7 +116,8 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
     ...series.points,
     { date: `${year}-12-31`, value: series.points[series.points.length - 1]?.value ?? 0 },
   ].map((point) => ({ ...point, t: toMs(point.date) }));
-  const max = Math.max(series.limitCzk * 1.08, series.usedCzk * 1.05);
+  // kulaté ticky; 1,05× nad limitem/maximem, ať referenční čára nelepí na strop
+  const yScale = niceTicks(Math.max(series.limitCzk, series.usedCzk) * 1.05);
   const monthTicks = Array.from({ length: 12 }, (_, m) => Date.UTC(year, m, 1));
 
   return (
@@ -100,12 +133,23 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
           tickFormatter={(ms: number) => MONTH_LABELS[new Date(ms).getUTCMonth()]!}
           minTickGap={20}
         />
-        <YAxis {...axisProps} tickFormatter={czkAxis} width={52} domain={[0, max]} />
+        <YAxis
+          {...axisProps}
+          tickFormatter={czkAxis}
+          width={52}
+          domain={yScale.domain}
+          ticks={yScale.ticks}
+        />
         <ReferenceLine
           y={series.limitCzk}
           stroke="var(--cervena)"
           strokeDasharray="4 4"
-          label={{ value: 'limit', fill: 'var(--cervena)', fontSize: 10, position: 'insideTopRight' }}
+          label={{
+            value: 'limit',
+            fill: 'var(--cervena)',
+            fontSize: 10,
+            position: 'insideTopRight',
+          }}
         />
         <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--oranz)" strokeDasharray="2 4" />
         <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--jantar)" strokeDasharray="2 4" />
@@ -136,12 +180,25 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
 /* ── Dividendy po měsících a státech (stacked bar) ──────────────────────── */
 
 export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
+  // maximum měsíčního SOUČTU (sloupce jsou stackované)
+  const yScale = niceTicks(
+    Math.max(
+      ...data.rows.map((row) => data.countries.reduce((sum, c) => sum + Number(row[c] ?? 0), 0)),
+      0,
+    ),
+  );
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data.rows} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="month" tickFormatter={monthLabel} />
-        <YAxis {...axisProps} tickFormatter={czkAxis} width={52} />
+        <YAxis
+          {...axisProps}
+          tickFormatter={czkAxis}
+          width={52}
+          domain={yScale.domain}
+          ticks={yScale.ticks}
+        />
         <Tooltip
           cursor={{ fill: 'var(--pozadi)' }}
           content={({ active, payload, label }) =>
@@ -189,12 +246,22 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
     ...bar,
     fill: bar.valueCzk >= 0 ? 'var(--zelena)' : 'var(--cervena)',
   }));
+  const yScale = niceTicks(
+    Math.max(...bars.map((bar) => bar.valueCzk), 0),
+    Math.min(...bars.map((bar) => bar.valueCzk), 0),
+  );
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
-        <YAxis {...axisProps} tickFormatter={czkAxis} width={56} />
+        <YAxis
+          {...axisProps}
+          tickFormatter={czkAxis}
+          width={56}
+          domain={yScale.domain}
+          ticks={yScale.ticks}
+        />
         <ReferenceLine y={0} stroke="var(--inkoust-tlumeny)" />
         <Tooltip
           cursor={{ fill: 'var(--pozadi)' }}
@@ -222,19 +289,32 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
 /* ── Poplatky po letech ─────────────────────────────────────────────────── */
 
 export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
+  const yScale = niceTicks(Math.max(...bars.map((bar) => bar.valueCzk), 0));
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={bars} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
-        <YAxis {...axisProps} tickFormatter={czkAxis} width={52} />
+        <YAxis
+          {...axisProps}
+          tickFormatter={czkAxis}
+          width={52}
+          domain={yScale.domain}
+          ticks={yScale.ticks}
+        />
         <Tooltip
           cursor={{ fill: 'var(--pozadi)' }}
           content={({ active, payload, label }) =>
             active && payload?.[0] ? (
               <TooltipBox
                 title={String(label)}
-                rows={[{ name: 'Poplatky', value: czkCompact(Number(payload[0].value)), color: SERIES[0] }]}
+                rows={[
+                  {
+                    name: 'Poplatky',
+                    value: czkCompact(Number(payload[0].value)),
+                    color: SERIES[0],
+                  },
+                ]}
               />
             ) : null
           }
@@ -268,7 +348,12 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
           tickFormatter={(ms: number) => msLabel(ms)}
           minTickGap={48}
         />
-        <YAxis {...axisProps} domain={[0, 100]} tickFormatter={(v: number) => `${v} %`} width={44} />
+        <YAxis
+          {...axisProps}
+          domain={[0, 100]}
+          tickFormatter={(v: number) => `${v} %`}
+          width={44}
+        />
         <Tooltip
           content={({ active, payload }) =>
             active && payload?.[0] ? (
@@ -296,5 +381,77 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         />
       </LineChart>
     </ResponsiveContainer>
+  );
+}
+
+/* ── Alokace portfolia (donut) ──────────────────────────────────────────── */
+
+export function AllocationDonut({ allocation }: { allocation: PortfolioAllocation }) {
+  // top 4 = kategorické sloty --graf-1..4, „Ostatní" = tlumený inkoust
+  const data = allocation.slices.map((slice, index) => ({
+    ...slice,
+    fill: slice.isOther ? 'var(--inkoust-tlumeny)' : SERIES[index % SERIES.length],
+  }));
+  const pct = (value: number): string =>
+    `${((value / allocation.totalCzk) * 100).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
+
+  return (
+    <div>
+      <div className="relative">
+        <ResponsiveContainer width="100%" height={200}>
+          <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+            <Pie
+              data={data}
+              dataKey="valueCzk"
+              nameKey="label"
+              innerRadius="62%"
+              outerRadius="92%"
+              paddingAngle={1}
+              stroke="var(--plocha)"
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+            <Tooltip
+              content={({ active, payload }) =>
+                active && payload?.[0] ? (
+                  <TooltipBox
+                    title={String(payload[0].name)}
+                    rows={[
+                      {
+                        name: 'Hodnota',
+                        value: czkCompact(Number(payload[0].value)),
+                        color: String((payload[0].payload as { fill: string }).fill),
+                      },
+                      { name: 'Podíl', value: pct(Number(payload[0].value)) },
+                    ]}
+                  />
+                ) : null
+              }
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        {/* uprostřed donutu celková hodnota — text nenese barvu série */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] uppercase tracking-wide text-inkoust-tlumeny">celkem</span>
+          <span className="font-mono text-sm font-semibold text-inkoust">
+            {czkCompact(allocation.totalCzk)}
+          </span>
+        </div>
+      </div>
+      <ul className="mt-3 space-y-1 text-xs">
+        {data.map((slice) => (
+          <li key={slice.label} className="flex items-center gap-2">
+            <span
+              className="inline-block size-2 shrink-0 rounded-full"
+              style={{ background: slice.fill }}
+            />
+            <span className="truncate text-inkoust">{slice.label}</span>
+            <span className="ml-auto pl-2 font-mono text-inkoust-tlumeny">
+              {pct(slice.valueCzk)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
