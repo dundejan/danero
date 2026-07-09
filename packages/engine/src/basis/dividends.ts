@@ -35,8 +35,13 @@ export interface DividendsResult {
   /** Zahraniční dividendy brutto (R-07b) — vstupují i do limitu 50k (R-08d). */
   foreignGrossCzk: Money;
   foreignWithholdingCzk: Money;
-  /** Zápočet po stropu smlouvou (R-07c); finální strop českou daní řeší estimateTax. */
+  /**
+   * Zápočet po stropu smlouvou (R-07c) = součet per-country hodnot zaokrouhlených
+   * na celé Kč (tabulka po státech vždy sedí na součet); finální strop českou
+   * daní řeší estimateTax.
+   */
   creditableWithholdingCzk: Money;
+  /** creditableCzk per země je zaokrouhlené na celé Kč (R-07c). */
   creditableByCountry: Record<string, { grossCzk: Money; creditableCzk: Money }>;
   /** Zahraniční úroky (§ 8) — zdanitelné, vstupují do limitu 50k. */
   taxableInterestCzk: Money;
@@ -62,9 +67,10 @@ export function computeDividends(
   let czechGross = ZERO;
   let foreignGross = ZERO;
   let foreignWithholding = ZERO;
-  let creditable = ZERO;
   const byCountry: Record<string, { grossCzk: Money; creditableCzk: Money }> = {};
   const items: DividendItem[] = [];
+  /** Země s už vydaným varováním o neověřené smluvní sazbě — varujeme jednou per země. */
+  const unverifiedTreatyWarned = new Set<string>();
 
   for (const tx of dividends) {
     const country = tx.sourceCountry ?? countryFromIsin(tx.isin) ?? 'XX';
@@ -97,13 +103,32 @@ export function computeDividends(
 
     // R-07c: prostý zápočet — strop sazbou dle smlouvy o zamezení dvojího zdanění.
     // Sraženo-li více (např. US 30 % bez W-8BEN), rozdíl v ČR propadá.
+    const capVerified = country in options.treatyWithholdingCap;
     const cap = d(options.treatyWithholdingCap[country] ?? options.defaultTreatyCap);
+    // Známá země mimo tabulku ověřených smluv → počítáme s defaultem a poctivě
+    // varujeme (jednou per země) — skutečná smluvní sazba může být nižší.
+    // Bez skutečné srážky riziko nadhodnoceného zápočtu nehrozí (creditable = 0),
+    // varování by byl falešný poplach (typicky GB s 0% srážkou z dividend).
+    if (
+      !capVerified &&
+      country !== 'XX' &&
+      withholdingCzk.gt(0) &&
+      !unverifiedTreatyWarned.has(country)
+    ) {
+      unverifiedTreatyWarned.add(country);
+      warnings.add(
+        'TREATY_RATE_UNVERIFIED',
+        'WARNING',
+        `Dividendy ${country}: smlouvu o zamezení dvojího zdanění s tímto státem nemám ověřenou — zápočet počítám s obvyklými ${d(options.defaultTreatyCap).mul(100).toString()} %. Skutečná smluvní sazba může být nižší (riziko nadhodnoceného zápočtu).`,
+        { country },
+      );
+    }
     const creditableCzk = Decimal.min(withholdingCzk, grossCzk.mul(cap));
     if (withholdingCzk.gt(grossCzk.mul(cap))) {
       warnings.add(
         'WITHHOLDING_ABOVE_TREATY',
         'WARNING',
-        `Dividenda ${tx.id} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá. ${
+        `Dividenda ${tx.id} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá (někdy ho lze žádat zpět přímo v zemi zdroje). ${
           country === 'US'
             ? 'U amerických akcií tomu příště předejdeš formulářem W-8BEN — u většiny brokerů stačí potvrdit v nastavení účtu (sníží srážku z 30 % na 15 %).'
             : 'Přeplatek lze zkusit vymáhat po zahraničním správci daně.'
@@ -114,7 +139,6 @@ export function computeDividends(
 
     foreignGross = foreignGross.plus(grossCzk);
     foreignWithholding = foreignWithholding.plus(withholdingCzk);
-    creditable = creditable.plus(creditableCzk);
     const agg = byCountry[country] ?? { grossCzk: ZERO, creditableCzk: ZERO };
     byCountry[country] = {
       grossCzk: agg.grossCzk.plus(grossCzk),
@@ -130,6 +154,16 @@ export function computeDividends(
       withholdingCzk,
       creditableCzk,
     });
+  }
+
+  // R-07c: zápočet po státech zaokrouhlujeme na celé Kč a souhrn počítáme jako
+  // SOUČET zaokrouhlených hodnot — tabulka po státech tak vždy sedí na součet
+  // (jinak by např. 75,45 + 75,45 dalo řádky 75 + 75, ale souhrn 151).
+  let creditable = ZERO;
+  for (const [country, agg] of Object.entries(byCountry)) {
+    const roundedCreditable = agg.creditableCzk.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    byCountry[country] = { grossCzk: agg.grossCzk, creditableCzk: roundedCreditable };
+    creditable = creditable.plus(roundedCreditable);
   }
 
   let taxableInterest = ZERO;

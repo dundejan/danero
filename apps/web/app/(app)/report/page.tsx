@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { analyzeTaxYear, compareVariants } from '@danero/engine';
+import { ZERO } from '@danero/shared';
+import { analyzeTaxYear, compareVariants, UNIFIED_RATE_SOURCES } from '@danero/engine';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -8,6 +9,7 @@ import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate, czk } from '@/lib/format';
+import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
 import {
   availableYears,
   engineInputForUser,
@@ -61,6 +63,11 @@ export default async function ReportPage({
     ...result.securities.disposals.map((disposal) => ({ disposal, isCrypto: false })),
     ...result.crypto.disposals.map((disposal) => ({ disposal, isCrypto: true })),
   ].sort((a, b) => a.disposal.saleDate.localeCompare(b.disposal.saleDate));
+
+  // roky jednotných kurzů pro kartu „Použité kurzy" (výdaj = kurz roku nákupu)
+  const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
+    .filter((y) => UNIFIED_RATES[y] !== undefined);
+  const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
 
   return (
     <div className="space-y-6">
@@ -129,6 +136,18 @@ export default async function ReportPage({
           <CardTitle>Orientační daň z investic</CardTitle>
           <p className="font-mono text-xl font-semibold">{czk(activeTax.taxCzk)}</p>
           <p className="text-xs text-inkoust-tlumeny">
+            {/* uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
+                zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout titulek) */}
+            Daň před zápočtem {czk(activeTax.taxBeforeCreditCzk)} − uplatněný zápočet{' '}
+            {czk(
+              activeTax.taxBeforeCreditCzk
+                .toDecimalPlaces(0)
+                .sub(activeTax.taxCzk.toDecimalPlaces(0)),
+            )}
+            . Prostý zápočet (§ 38f) je stropovaný podílem zahraničních příjmů na
+            základu — může být nižší než započitatelná srážka z tabulky států.
+          </p>
+          <p className="text-xs text-inkoust-tlumeny">
             {result.tax.recommended === 'SEPARATE_16A'
               ? 'Výhodnější je samostatný základ § 16a (Příloha č. 4).'
               : 'Výhodnější je obecný základ (15/23 %).'}{' '}
@@ -178,7 +197,7 @@ export default async function ReportPage({
                     <td className="py-2 font-sans text-xs">
                       {isRecommended && (
                         <span className="rounded bg-ruzova/10 px-2 py-0.5 font-semibold text-ruzova">
-                          doporučeno
+                          nejvýhodnější
                         </span>
                       )}{' '}
                       {isActive && <span className="text-inkoust-tlumeny">aktivní</span>}
@@ -192,7 +211,7 @@ export default async function ReportPage({
         {dailyRates ? (
           <p className="text-xs text-inkoust-tlumeny">
             Denní kurzy ČNB jsou načtené z oficiálního zdroje — tabulka srovnává jednotný
-            kurz GFŘ i denní kurzy s reálnými čísly; doporučená kombinace je zvýrazněná.
+            kurz GFŘ i denní kurzy s reálnými čísly; nejvýhodnější kombinace je zvýrazněná.
           </p>
         ) : (
           <p className="text-xs text-jantar">
@@ -201,8 +220,9 @@ export default async function ReportPage({
           </p>
         )}
         <p className="text-xs text-inkoust-tlumeny">
-          Metodu změníš v nastavení — zvolená metoda se musí držet konzistentně a průkazně
-          za celý rok (kombinovat v jednom roce nelze).
+          Metodu změníš v nastavení. FIFO je bezpečný standard; jinou metodu párování lze
+          obhájit jen průkaznou identifikací konkrétních prodávaných kusů — a zvolená
+          metoda se drží konzistentně celý rok (kombinovat nelze).
         </p>
       </Card>
 
@@ -216,29 +236,64 @@ export default async function ReportPage({
                   <th className="py-2 pr-4 font-medium">Instrument</th>
                   <th className="py-2 pr-4 text-right font-medium">Datum</th>
                   <th className="py-2 pr-4 text-right font-medium">Tržba</th>
+                  <th className="py-2 pr-4 text-right font-medium">Výdaje</th>
                   <th className="py-2 pr-4 text-right font-medium">Osvobozeno</th>
                   <th className="py-2 text-right font-medium">Zdanitelné</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {allDisposals.map(({ disposal, isCrypto }) => (
-                  <tr key={disposal.sellTxId} className="border-b border-linka/60">
-                    <td className="py-2 pr-4">
-                      <span className="font-sans">{labels.get(disposal.isin) ?? disposal.isin}</span>
-                      {isCrypto && (
-                        <span className="ml-2 rounded bg-linka/60 px-1.5 py-0.5 font-sans text-xs text-inkoust-tlumeny">
-                          krypto
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4 text-right">{czDate(disposal.saleDate)}</td>
-                    <td className="py-2 pr-4 text-right">{czk(disposal.grossProceedsCzk)}</td>
-                    <td className="py-2 pr-4 text-right text-zelena">
-                      {czk(disposal.exemptProceedsCzk)}
-                    </td>
-                    <td className="py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
-                  </tr>
-                ))}
+                {allDisposals.map(({ disposal, isCrypto }) => {
+                  // osvobození úhrnem do 100k platí pro celý druh — výdaje se pak
+                  // daňově neuplatňují (R-05b), ale nabývací cena nulová nebyla
+                  const under100k = isCrypto
+                    ? result.crypto.exemptUnder100k
+                    : result.securities.exemptUnder100k;
+                  const expensesCzk = disposal.allocations.reduce(
+                    (acc, alloc) => acc.plus(alloc.expenseCzk),
+                    ZERO,
+                  );
+                  return (
+                    <tr key={disposal.sellTxId} className="border-b border-linka/60">
+                      <td className="py-2 pr-4">
+                        {/* nativní <details> — server component bez JS; rozpad = auditní stopa párování */}
+                        <details>
+                          <summary className="cursor-pointer">
+                            <span className="font-sans">{labels.get(disposal.isin) ?? disposal.isin}</span>
+                            {isCrypto && (
+                              <span className="ml-2 rounded bg-linka/60 px-1.5 py-0.5 font-sans text-xs text-inkoust-tlumeny">
+                                krypto
+                              </span>
+                            )}
+                          </summary>
+                          <ul className="mt-1 space-y-0.5 font-sans text-xs text-inkoust-tlumeny">
+                            {disposal.allocations.map((alloc) => (
+                              <li key={alloc.lotId}>
+                                {alloc.quantity.toString()} ks · nabyto {czDate(alloc.acquisitionDate)} ·{' '}
+                                {alloc.timeTestExempt
+                                  ? 'osvobozeno 3letým testem (výdaj se neuplatňuje)'
+                                  : under100k
+                                    ? 'osvobozeno úhrnem do 100 000 Kč (výdaj se neuplatňuje)'
+                                    : `výdaj ${czk(alloc.expenseCzk)}`}
+                              </li>
+                            ))}
+                            <li className="text-[11px]">Výdaj je přepočten kurzem roku nákupu.</li>
+                          </ul>
+                        </details>
+                      </td>
+                      <td className="py-2 pr-4 text-right">{czDate(disposal.saleDate)}</td>
+                      <td className="py-2 pr-4 text-right">{czk(disposal.grossProceedsCzk)}</td>
+                      <td className="py-2 pr-4 text-right">
+                        {expensesCzk.isZero() && disposal.exemptProceedsCzk.gt(0)
+                          ? '—'
+                          : czk(expensesCzk)}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-zelena">
+                        {czk(disposal.exemptProceedsCzk)}
+                      </td>
+                      <td className="py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -412,6 +467,11 @@ export default async function ReportPage({
               výpočet daně se tam přepočítá. Ber to jako podklad, ne hotové přiznání.
             </p>
           </>
+        ) : year < epoMinYear ? (
+          <p className="text-sm text-inkoust-tlumeny">
+            Roky před {epoMinYear} v XML nepodporujeme — použij čísla níže a vyplň
+            formulář ručně.
+          </p>
         ) : (
           <p className="text-sm text-inkoust-tlumeny">
             Pro rok {year} oficiální struktura XML přiznání zatím neexistuje — finanční
@@ -462,7 +522,9 @@ export default async function ReportPage({
                   výhodnější je samostatný základ (§ 16a): Příloha č. 4, ř. 401a{' '}
                   <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
                   ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
-                  <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný).
+                  <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). V samostatném
+                  základu ale nelze uplatnit slevy na dani ani nezdanitelné části —
+                  porovnání je orientační, před slevami.
                 </>
               ) : (
                 <>
@@ -513,6 +575,48 @@ export default async function ReportPage({
           orientační do vydání pokynu. Danero je výpočetní nástroj, nikoli daňové poradenství.
         </p>
       </Card>
+
+      {rateYears.length > 0 && (
+        <Card className="space-y-3">
+          <CardTitle>Použité kurzy (jednotný kurz GFŘ, CZK za jednotku)</CardTitle>
+          <p className="text-sm text-inkoust-tlumeny">
+            Výdaj (nákup) se přepočítává jednotným kurzem roku nákupu, tržba (prodej)
+            kurzem roku prodeje. Tabulka ukazuje hlavní měny; další měny (CHF, PLN,
+            JPY…) používáme z týchž pokynů. Nákupy před rokem 2020 se přepočítávají
+            denními kurzy ČNB.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                  <th className="py-2 pr-4 font-medium">Rok</th>
+                  <th className="py-2 pr-4 text-right font-medium">USD</th>
+                  <th className="py-2 pr-4 text-right font-medium">EUR</th>
+                  <th className="py-2 pr-4 text-right font-medium">GBP</th>
+                  <th className="py-2 font-medium">Zdroj</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {rateYears.map((rateYear) => (
+                  <tr key={rateYear} className="border-b border-linka/60">
+                    <td className="py-2 pr-4">{rateYear}</td>
+                    {(['USD', 'EUR', 'GBP'] as const).map((ccy) => (
+                      <td key={ccy} className="py-2 pr-4 text-right">
+                        {(UNIFIED_RATES[rateYear]?.[ccy] ?? '—').replace('.', ',')}
+                      </td>
+                    ))}
+                    <td className="py-2 font-sans text-xs text-inkoust-tlumeny">
+                      {isRateVerified(rateYear) && UNIFIED_RATE_SOURCES[rateYear]
+                        ? `pokyn ${UNIFIED_RATE_SOURCES[rateYear]}`
+                        : 'orientační (do vydání pokynu)'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

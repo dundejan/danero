@@ -142,8 +142,7 @@ export default function LandingPage() {
           <p className="mt-2 text-sm text-inkoust-tlumeny">
             Po spuštění zůstane hlídač limitů a časových testů pro jednoho brokera zdarma;
             plná verze (daňové podklady, notifikace, více účtů) bude stát{' '}
-            <strong className="text-inkoust">990 Kč ročně</strong> — zhruba pětina ceny
-            srovnatelných služeb.
+            <strong className="text-inkoust">990 Kč ročně</strong>.
           </p>
         </div>
       </section>

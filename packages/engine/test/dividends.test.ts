@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dividend, hasWarning, interest, run, CFG_2025 } from './helpers';
+import { buy, dividend, hasWarning, interest, run, sell, CFG_2025 } from './helpers';
 
 describe('R-07 dividendy a úroky (§ 8)', () => {
   it('R-07b/c: zahraniční dividenda brutto, zápočet stropovaný smlouvou (15 %)', () => {
@@ -16,6 +16,38 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.dividends.foreignWithholdingCzk.toString()).toBe('6000');
     expect(result.dividends.creditableWithholdingCzk.toString()).toBe('3000');
     expect(hasWarning(result, 'WITHHOLDING_ABOVE_TREATY')).toBe(true);
+  });
+
+  it('R-07c: NL má smluvní strop 10 % — při srážce 15 % lze započíst jen 10 % brutto', () => {
+    // 1000 USD brutto, sraženo 150 USD (15 %); NL smlouva (138/1974 Sb.) dovoluje jen 10 %
+    const result = run([
+      dividend({ sourceCountry: 'NL', gross: '1000', currency: 'USD', withholdingTax: '150' }),
+    ]);
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('3000');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('2000'); // 10 % z 20 000
+    expect(hasWarning(result, 'WITHHOLDING_ABOVE_TREATY')).toBe(true);
+    expect(hasWarning(result, 'TREATY_RATE_UNVERIFIED')).toBe(false); // NL je v tabulce ověřených
+  });
+
+  it('R-07c: země mimo tabulku ověřených smluv → default 15 % + TREATY_RATE_UNVERIFIED jednou per země', () => {
+    const result = run([
+      dividend({ sourceCountry: 'PL', gross: '1000', withholdingTax: '190' }),
+      dividend({ sourceCountry: 'PL', gross: '1000', withholdingTax: '190' }),
+    ]);
+    // default strop 15 %: z každé dividendy jde započíst max. 150 Kč
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('300');
+    expect(result.warnings.filter((w) => w.code === 'TREATY_RATE_UNVERIFIED')).toHaveLength(1);
+  });
+
+  it('R-07c: zápočet po státech v celých Kč — souhrn je součtem zaokrouhlených hodnot', () => {
+    // 15 % z 503 = 75,45 → per stát 75; souhrn 150 (ne 151 ze zaokrouhleného součtu 150,90)
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '503', withholdingTax: '75.45' }),
+      dividend({ sourceCountry: 'DE', gross: '503', withholdingTax: '75.45' }),
+    ]);
+    const perCountry = Object.values(result.dividends.creditableByCountry);
+    expect(perCountry.map((c) => c.creditableCzk.toString())).toEqual(['75', '75']);
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('150');
   });
 
   it('R-07a: česká dividenda je srážková a do § 8 nevstupuje', () => {
@@ -55,5 +87,34 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     const flat = run([dividend({ gross: '1000', currency: 'USD', withholdingTax: '150' })]);
     expect(flat.tax.general.taxCzk.toString()).toBe(flat.tax.separate16a.taxCzk.toString());
     expect(flat.tax.recommended).toBe('GENERAL');
+  });
+
+  it('R-07d: bez známé hranice progrese se § 16a nedoporučuje (rozdíl je jen zaokrouhlovací šum)', () => {
+    const config = { ...CFG_2025, progressiveThreshold: null };
+    const result = run(
+      [
+        // base10 = 110 050 − 100 000 = 10 050; base8 = 10 050 → oddělené zaokrouhlení
+        // základů na stovky dolů dělá § 16a o pár Kč „levnější" (3 000 vs. 3 015)
+        buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+        sell({ quantity: '100', pricePerShare: '1100.5', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+        dividend({ gross: '10050', withholdingTax: '0' }),
+      ],
+      { config },
+    );
+    expect(result.tax.separate16a.taxCzk.lt(result.tax.general.taxCzk)).toBe(true);
+    // …ale bez hranice 23 % je to šum a § 16a znamená ztrátu slev → GENERAL
+    expect(result.tax.recommended).toBe('GENERAL');
+  });
+
+  it('R-07d: pod známou hranicí progrese se § 16a nedoporučuje ani při šumově nižší dani', () => {
+    // CFG_2025 má reálnou hranici (základ 20 100 je hluboko pod ní) — obě
+    // varianty počítají 15 % a rozdíl dělá jen oddělené zaokrouhlení na sta dolů
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '1100.5', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      dividend({ gross: '10050', withholdingTax: '0' }),
+    ]);
+    expect(result.tax.separate16a.taxCzk.lt(result.tax.general.taxCzk)).toBe(true);
+    expect(result.tax.recommended).toBe('GENERAL');
   });
 });

@@ -112,8 +112,13 @@ const danPodle16 = (zdZaokrouhleny: Money, threshold: Money): Money =>
 export function generateDpfdp7(input: EpoInput): { xml: string } {
   const { year, result, personal } = input;
   if (!EPO_SUPPORTED_YEARS.includes(year)) {
+    // dva různé důvody: rok NAD podporované (struktura teprve vyjde) × rok POD
+    // nejstarší podporovaný (starší struktury záměrně nepodporujeme)
+    const minYear = Math.min(...EPO_SUPPORTED_YEARS);
     throw new Error(
-      `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
+      year < minYear
+        ? `Roky před ${minYear} v XML nepodporujeme — použij čísla z reportu a vyplň formulář ručně.`
+        : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
     );
   }
   const varianta = input.varianta ?? result.tax.recommended;
@@ -196,8 +201,11 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     const r412 = round0(zapocetStaty.reduce((acc, s) => acc.plus(s.creditable), ZERO));
     // ř. 413: přesně vzorec EPO — ř. 412, max. 15 % z ř. 411
     const r413 = round2(Decimal.min(r412, r411.mul('0.15')));
-    // ř. 414 → ř. 74a je v celých Kč; daň zaokrouhlujeme nahoru (princip ř. 60)
-    const r414 = ceil0(r410.sub(r413));
+    // ř. 414 → ř. 74a je v celých Kč; daň zaokrouhlujeme nahoru (princip ř. 60).
+    // Clamp na nulu (vzor ř. 330): r410 je 15 % ze základu zaokrouhleného na sta
+    // DOLŮ, r413 z NEzaokrouhleného úhrnu — při plné smluvní srážce může r413
+    // převýšit r410 a bez clampu by vznikla záporná daň ze samostatného základu.
+    const r414 = Decimal.max(ZERO, ceil0(r410.sub(r413)));
     p4 = { r401a, r406, r409, r410, r411, r412, r413, r414 };
   }
 

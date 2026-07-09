@@ -99,7 +99,15 @@ export function estimateTax(
   return {
     general,
     separate16a,
-    recommended: separate16a.taxCzk.lt(general.taxCzk) ? 'SEPARATE_16A' : 'GENERAL',
-    note: 'Orientační výpočet pouze z investičních příjmů — skutečná progrese (23 %) závisí na celkovém základu daně včetně § 7.',
+    // § 16a doporučujeme jen když obecný základ skutečně překračuje ZNÁMOU
+    // hranici progrese — jinak obě varianty počítají 15 % a rozdíl je jen
+    // zaokrouhlovací šum (sta dolů se zaokrouhlují u variant odděleně, max
+    // ~15 Kč); § 16a navíc znamená ztrátu slev na dani a nezdanitelných
+    // částí — nedoporučovat kvůli šumu.
+    recommended:
+      threshold !== null && baseA.gt(threshold) && separate16a.taxCzk.lt(general.taxCzk)
+        ? 'SEPARATE_16A'
+        : 'GENERAL',
+    note: 'Orientační výpočet pouze z investičních příjmů — skutečná progrese (23 %) závisí na celkovém základu daně včetně § 7. Ve variantě § 16a nelze uplatnit slevy na dani ani nezdanitelné části základu.',
   };
 }

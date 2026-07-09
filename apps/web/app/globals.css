@@ -88,6 +88,16 @@
     color: inherit;
     text-decoration: none;
   }
+  /* auditní stopa (rozpad prodejů na loty) musí být v tištěném podkladu vidět
+     i bez rozkliknutí — ::details-content umí otevřít <details> jen pro tisk
+     (Chromium 131+; starší prohlížeče vytisknou zavřené, nic se nerozbije) */
+  details::details-content {
+    content-visibility: visible;
+    display: block;
+  }
+  details > summary {
+    list-style: none;
+  }
 }
 
 /* Orchestrovaný moment při načtení dashboardu (docs/07): odměrky se naplní,

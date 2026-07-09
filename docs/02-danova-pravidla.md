@@ -88,8 +88,21 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
 
 - **R-07a České dividendy**: srážková daň 15 % u zdroje, konečná — do přiznání se neuvádějí, do žádných limitů nevstupují.
 - **R-07b Zahraniční dividendy**: dílčí základ § 8 **brutto** (před zahraniční srážkou), bez výdajů, přepočet dle R-06.
-- **R-07c Zápočet dle § 38f**: metoda prostého zápočtu po jednotlivých státech (Příloha 3 DAP); max. sazba dle smlouvy (USA 15 %) a max. do výše české daně z tohoto příjmu. Bez W-8BEN (sraženo 30 %) lze započíst jen 15 %. Nezapočtená daň u nepodnikatele fakticky propadá ⚠️.
-- **R-07d § 16a**: volitelně samostatný základ daně 15 % pro zahraniční dividendy/úroky (ochrana před 23% progresí; Příloha 4). Engine spočítá obě varianty a doporučí výhodnější.
+- **R-07c Zápočet dle § 38f**: metoda prostého zápočtu po jednotlivých státech (Příloha 3 DAP); max. sazba dle smlouvy a max. do výše české daně z tohoto příjmu. Bez W-8BEN (sraženo 30 %) lze započíst jen 15 %. Nezapočtená daň u nepodnikatele fakticky propadá ⚠️ (někdy ji lze žádat zpět přímo v zemi zdroje).
+
+  Ověřené smluvní stropy srážkové daně z dividend (portfolio FO, čl. 10 SZDZ):
+
+  | Stát | Strop | Zdroj (SZDZ) |
+  |------|-------|--------------|
+  | US | 15 % | 32/1994 Sb. |
+  | DE | 15 % | 18/1984 Sb. |
+  | NL | **10 %** | 138/1974 Sb. |
+  | JP | 15 % | 46/1979 Sb. |
+  | IE | 15 % | 163/1996 Sb. |
+  | ostatní | default 15 % | neověřeno — engine přidá varování `TREATY_RATE_UNVERIFIED` (jednou per země); skutečná smluvní sazba může být nižší → riziko nadhodnoceného zápočtu |
+
+  Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč; souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
+- **R-07d § 16a**: volitelně samostatný základ daně 15 % pro zahraniční dividendy/úroky (ochrana před 23% progresí; Příloha 4). Engine spočítá obě varianty a doporučí výhodnější — ale **jen když obecný základ skutečně překračuje známou hranici progrese**. Bez známé hranice (`progressiveThreshold = null`) i pod hranicí se § 16a **nedoporučuje**: obě varianty pak počítají 15 % a rozdíl je jen zaokrouhlovací šum (základy se u variant zaokrouhlují na sta dolů odděleně, max ~15 Kč), zatímco § 16a znamená ztrátu slev na dani a nezdanitelných částí základu.
 - **R-07e** Prokazování: výpisy brokera FS v praxi akceptuje, není nárokové — dokumentační upozornění.
 
 ## R-08 Paušální daň (§ 2a, § 7a) — klíčová funkce Danero
@@ -233,8 +246,13 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   bez kombinace v roce; výdaj z dřívějšího roku kurzem roku vynaložení. Jistota
   vysoká (přepočet výdajů: střední, praxe).
 - **R-12n Vykazování**: Příloha 2, kód druhu **F — jiné ostatní příjmy**
-  (číselník A–F dle tiskopisu 5405-P2 vzor 20; „z" při zdroji v zahraničí);
-  samostatný řádek vedle D (CP) a C (krypto). Jistota vysoká.
+  (tiskopis 25 5405/P2 **vzor č. 21** za rok 2025, číselník **A–H**:
+  A – příležitostná činnost, B – prodej nemovitostí, C – prodej movitých věcí,
+  D – prodej cenných papírů, E – příjmy z převodu podle § 10 odst. 1 písm. c),
+  F – jiné ostatní příjmy, G – bezúplatné příjmy, H – příjmy z loterie a tomboly;
+  „z" při zdroji v zahraničí); samostatný řádek vedle D (CP) a C (krypto —
+  dovozeno z § 10/1 b) bodu 3, oficiální přiřazení písmene pro krypto publikováno
+  není; F pro deriváty = ustálená praxe). Jistota vysoká.
 - **R-12o Zálohy, srážky, § 38v**: § 10 se pro poslední známou daňovou
   povinnost vylučuje (§ 38a/1) → deriváty nezakládají zálohy; žádná srážková
   daň; § 38v se netýká (nejsou osvobozené). Jistota vysoká.

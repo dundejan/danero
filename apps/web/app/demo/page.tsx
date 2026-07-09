@@ -87,7 +87,7 @@ export default function DemoPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <LimitGauge
           label="Limit paušální daně — 50 000 Kč"
-          hint="Úhrn zdanitelných příjmů mimo živnost. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
+          hint="Úhrn zdanitelných příjmů mimo samostatnou činnost (podnikání). Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
           status={result.limits.flatTax50k.status}
         />
         <LimitGauge
@@ -138,7 +138,7 @@ export default function DemoPage() {
           <Card>
             <CardTitle>Čerpání limitu 50k v průběhu roku</CardTitle>
             <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Zdanitelné příjmy mimo živnost (neosvobozené prodeje, dividendy, úroky, deriváty).
+              Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje, dividendy, úroky, deriváty.
             </p>
             <LimitDrawdownChart series={flatTax50kChart} name="Zdanitelné příjmy" />
           </Card>

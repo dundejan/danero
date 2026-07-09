@@ -41,5 +41,15 @@ export const UNIFIED_RATES_VERIFIED: Record<number, Record<string, string>> = {
   },
 };
 
+/** Rok → pokyn GFŘ, kterým je jednotný kurz vyhlášen (zdroj pro UI a report). */
+export const UNIFIED_RATE_SOURCES: Record<number, string> = {
+  2020: 'GFŘ D-49',
+  2021: 'GFŘ D-54',
+  2022: 'GFŘ D-60',
+  2023: 'GFŘ D-63',
+  2024: 'GFŘ D-66',
+  2025: 'GFŘ D-75',
+};
+
 /** Poslední rok, za který existuje vydaný pokyn GFŘ (ověřený kurz). */
 export const LAST_VERIFIED_RATE_YEAR = 2025;

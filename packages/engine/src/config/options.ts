@@ -32,7 +32,9 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   timeTestDateBasis: 'settlement',
   limit100kIncludesTimeTestExempt: true,
   spinoffCostBasisAllocation: 'zero',
-  treatyWithholdingCap: { US: '0.15' },
+  // R-07c: ověřené smluvní stropy (portfolio FO, čl. 10): US 32/1994 Sb.,
+  // DE 18/1984 Sb., NL 138/1974 Sb. (10 %!), JP 46/1979 Sb., IE 163/1996 Sb.
+  treatyWithholdingCap: { US: '0.15', DE: '0.15', NL: '0.10', JP: '0.15', IE: '0.15' },
   defaultTreatyCap: '0.15',
   derivativesExpensesPerDruh: false,
 };

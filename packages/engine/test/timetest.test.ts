@@ -50,6 +50,15 @@ describe('R-01 časový test 3 roky', () => {
     expect(result.securities.base10Czk.toString()).toBe('10000');
   });
 
+  it('auditovatelnost: alokace prodeje nese datum nabytí lotu (acquisitionDate)', () => {
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2022-06-01', settlementDate: '2022-06-03' }),
+      sell({ quantity: '100', pricePerShare: '1100', tradeDate: '2025-07-01', settlementDate: '2025-07-01' }),
+    ]);
+    const alloc = result.securities.disposals[0]!.allocations[0]!;
+    expect(alloc.acquisitionDate).toBe('2022-06-03'); // settlement báze (R-01a)
+  });
+
   it('hlídač: otevřená pozice zná datum osvobození a odpočet dní', () => {
     const result = run([
       buy({ quantity: '50', pricePerShare: '2000', tradeDate: '2024-03-01', settlementDate: '2024-03-01' }),

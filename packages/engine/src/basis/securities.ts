@@ -7,6 +7,8 @@ import { WarningCollector } from '../warnings';
 export interface AllocationReport {
   lotId: string;
   quantity: Money;
+  /** Datum nabytí lotu (R-01a) — auditovatelnost párování a kurzu roku nákupu. */
+  acquisitionDate: IsoDate;
   timeTestExempt: boolean;
   exemptFrom: IsoDate;
   proceedsCzk: Money;
@@ -208,6 +210,7 @@ export function computeSecurities(
       allocationReports.push({
         lotId: alloc.lotId,
         quantity: alloc.quantity,
+        acquisitionDate: alloc.acquisitionDate,
         timeTestExempt: allocExempt,
         exemptFrom: alloc.exemptFrom,
         proceedsCzk,

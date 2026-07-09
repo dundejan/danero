@@ -102,7 +102,7 @@ export default async function OverviewPage({
         {result.limits.flatTax50k.applicable && (
           <LimitGauge
             label="Limit paušální daně — 50 000 Kč"
-            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů CP i kryptoaktiv, plnění z derivátů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
+            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo samostatnou činnost (podnikání) — neosvobozené tržby z prodejů CP i kryptoaktiv, plnění z derivátů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
             status={result.limits.flatTax50k.status}
           />
         )}
@@ -115,7 +115,7 @@ export default async function OverviewPage({
         )}
         <LimitGauge
           label="Osvobození prodejů CP — 100 000 Kč"
-          hint="Platí pro každého (§ 4): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
+          hint="Platí pro každého (§ 4 odst. 1 písm. t): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
           status={result.limits.limit100k}
         />
         {(result.crypto.disposals.length > 0 ||
@@ -164,7 +164,7 @@ export default async function OverviewPage({
             <Card>
               <CardTitle>Čerpání limitu 50k v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                Zdanitelné příjmy mimo živnost (neosvobozené prodeje, zahraniční dividendy, úroky).
+                Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje, zahraniční dividendy, úroky.
               </p>
               <LimitDrawdownChart series={flatTax50kChart} name="Zdanitelné příjmy" />
             </Card>
