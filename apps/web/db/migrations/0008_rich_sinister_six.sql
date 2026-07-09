@@ -1,0 +1,1 @@
+ALTER TABLE "taxpayer_profiles" ADD COLUMN "derivatives_expenses_per_druh" boolean DEFAULT false NOT NULL;

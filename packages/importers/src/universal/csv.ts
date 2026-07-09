@@ -38,6 +38,8 @@ export const UNIVERSAL_TEMPLATE_CSV = [
   'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
   'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,0.5,60000,EUR,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
   'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,0.2,75000,EUR,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
+  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,1,1250,USD,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
+  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,1,1800,USD,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
   'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
   'INTEREST,2026-06-01,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
   'FEE,2026-06-01,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
@@ -193,6 +195,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin'),
+              assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
               quantity: cleanNumber(map.get(row, 'quantity')),
               date,
               ...(acquisitionDate

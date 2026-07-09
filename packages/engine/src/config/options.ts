@@ -19,6 +19,11 @@ export interface EngineOptions {
   /** R-07c: smluvní strop zápočtu srážkové daně per země (desetinný zlomek). */
   treatyWithholdingCap: Record<string, string>;
   defaultTreatyCap: string;
+  /**
+   * R-12i: prémie opce expirované bezcenně jako výdaj druhu deriváty
+   * (výklad „per druh", § 10/4 + D-59). Default false = restriktivní výklad.
+   */
+  derivativesExpensesPerDruh: boolean;
 }
 
 export const DEFAULT_OPTIONS: EngineOptions = {
@@ -29,6 +34,7 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   spinoffCostBasisAllocation: 'zero',
   treatyWithholdingCap: { US: '0.15' },
   defaultTreatyCap: '0.15',
+  derivativesExpensesPerDruh: false,
 };
 
 export const resolveOptions = (partial?: Partial<EngineOptions>): EngineOptions => ({

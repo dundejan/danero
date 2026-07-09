@@ -178,6 +178,81 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
 
 ---
 
+## R-12 Deriváty: opce, futures, CFD (§ 10) — implementováno (G7)
+
+K derivátům FO–nepodnikatele neexistuje KOOV ani judikatura NSS; D-59 je u § 10
+výslovně nejmenuje. Oblast stojí na obecném textu § 10 a ustálené poradenské
+praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
+
+- **R-12a Kvalifikace**: příjmy z derivátů (opce, futures, CFD, forwardy) jsou
+  ostatní příjem **§ 10** (nikdy § 8, nikdy režim CP). Písmeno odst. 1 sporné
+  (b) bod 3 „jiná věc" — D-59 K § 10/1 b): *„za jinou věc se považuje také
+  nehmotná věc, např. … měnový pár"* — vs. zbytkové r)); na výši daně nemá vliv.
+  Jistota vysoká.
+- **R-12b Jeden druh**: všechny derivátové obchody = jeden „jednotlivý druh
+  příjmu" (§ 10/4, D-59 K § 10/4 body 1–2) — zisky a ztráty uzavřených obchodů
+  se v rámci roku kompenzují, výdaje druhu max. do výše příjmů druhu, úhrnná
+  ztráta druhu zaniká (nepřenáší se). Jistota vysoká.
+- **R-12c Žádné osvobození**: časový test (§ 4/1 u) a 100k (§ 4/1 t) platí jen
+  pro CP, zj)/zk) jen pro krypto, strop 40M jen pro osvobozené příjmy → na
+  deriváty nedopadá nic. Jistota vysoká. Sporné: osvobození druhu do 50k
+  (§ 10/3 a) by dopadlo jen při kvalifikaci pod r) — **default neaplikovat**.
+- **R-12d Sekuritizované instrumenty**: warrant/certifikát vydaný jako CP se
+  daní v režimu CP (druh D vč. testů) — rozhoduje právní forma. Jistota střední.
+  Import: při nejistotě default derivát (bez osvobození = bezpečné).
+- **R-12e Příjem = realizovaná kladná plnění**: daní se hotovostně okamžik
+  realizace (uzavření/vypořádání); nerealizované přecenění se nedaní; „příjem"
+  druhu = úhrn hrubých kladných plnění (sloupec 2 P2), ne netto zisk. Jistota
+  střední (oficiální definice neexistuje).
+- **R-12f CFD**: příjem = kladný rozdíl při uzavření pozice; záporný rozdíl
+  a poplatky = výdaj druhu. Nominál pozice není příjem. Jistota střední.
+- **R-12g Futures**: denní vypořádání (variation margin) by hotovostně bylo
+  příjmem dnem připsání; rozšířená praxe daní až uzavření pozice. Broker
+  exporty denní vypořádání per pozice nedávají → **implementace počítá
+  realizaci při uzavření** a pozici drženou přes konec roku označí varováním
+  (sporný okamžik příjmu). Jistota nízká.
+- **R-12h Opce — prodej long**: příjem = prodejní cena, výdaj = zaplacená
+  prémie + poplatky (kurz roku zaplacení, R-12m). Jistota vysoká.
+- **R-12i Opce — bezcenná expirace long**: **sporné**. Restriktivně (Taxomat,
+  Hedger) prémie není výdaj (nedosáhla příjmu); per druh (XTB, Taxero, opora
+  § 10/4 + D-59 K § 10/4 b. 2) je výdajem druhu v roce expirace. **Default:
+  neuplatnit**; přepínač `derivativesExpensesPerDruh` uplatní a aplikace
+  vyčíslí rozdíl + riziko. Nikdy nelze přenést do dalšího roku.
+- **R-12j Opce — short prémie**: přijatá prémie = příjem druhu v roce PŘIJETÍ
+  (hotovostní princip § 5); zpětný odkup = výdaj druhu v roce zaplacení (přes
+  přelom roku nemusí mít proti čemu jít — varování). Jistota střední.
+- **R-12k Exercise/assignment**: uplatněná long call → prémie vstupuje do
+  nabývací ceny podkladu (daní se v režimu CP); long put → prémie do výdajů
+  proti příjmu z prodeje podkladu; short opce po assignmentu → prémie zůstává
+  derivátovým příjmem roku přijetí, cena podkladu se neupravuje. Shodná praxe
+  3 zdrojů, bez oficiálního pramene. Jistota střední.
+- **R-12l Zákaz kompenzace mezi druhy**: ztráty/výdaje derivátů nelze proti CP,
+  kryptu ani jiným druhům (a naopak); do ř. 209 P2 jen kladné rozdíly druhů.
+  Jistota vysoká.
+- **R-12m Kurzy**: jako u CP — jednotný kurz (§ 38/7) nebo denní ČNB (§ 38/1 b),
+  bez kombinace v roce; výdaj z dřívějšího roku kurzem roku vynaložení. Jistota
+  vysoká (přepočet výdajů: střední, praxe).
+- **R-12n Vykazování**: Příloha 2, kód druhu **F — jiné ostatní příjmy**
+  (číselník A–F dle tiskopisu 5405-P2 vzor 20; „z" při zdroji v zahraničí);
+  samostatný řádek vedle D (CP) a C (krypto). Jistota vysoká.
+- **R-12o Zálohy, srážky, § 38v**: § 10 se pro poslední známou daňovou
+  povinnost vylučuje (§ 38a/1) → deriváty nezakládají zálohy; žádná srážková
+  daň; § 38v se netýká (nejsou osvobozené). Jistota vysoká.
+- **R-12p Úroky u brokera**: úrok z hotovosti/marže = § 8 (hrubý, bez výdajů),
+  ne derivátový příjem — už pokryto R-07. Placené úroky z marže/CFD financing
+  default neuplatňovat (nízká opora). Jistota vysoká/nízká.
+- **R-12q Limit 50k paušální daně**: do limitu se počítá úhrn HRUBÝCH příjmů
+  § 8 + § 9 + § 10 („celková výše těchto příjmů", § 7a/1 b) 4) — u derivátů
+  úhrn kladných přijatých plnění (R-12e–g, vč. přijatých prémií), ne zisk.
+  Jistota vysoká (u přesného vymezení plnění nízká → širší pojetí = bezpečné).
+
+Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
+tiskopis 5405-P2 vzor 20 (číselník A–F); XTB „Informace o zdaňování příjmů
+z obchodování s deriváty" (2022); Taxomat, Hedger, Taxero, danesestandou.cz,
+NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 derivátům.
+
+---
+
 ## Konfigurační přepínače (sporné výklady)
 
 | Klíč | Default | Pravidlo |
@@ -189,6 +264,7 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
 | `matchingMethod` | `FIFO` | R-05c |
 | `fxMethod` | počítat obě, uživatel volí | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
+| `derivativesExpensesPerDruh` | `false` (restriktivní) | R-12i |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 

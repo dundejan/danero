@@ -8,6 +8,7 @@ import {
   type TaxpayerProfile,
   type Transaction,
 } from '@danero/shared';
+import { computeDerivatives, type DerivativesResult } from './basis/derivatives';
 import { computeDividends, type DividendsResult } from './basis/dividends';
 import {
   computeSecurities,
@@ -40,6 +41,8 @@ export interface TaxYearResult {
   securities: SecuritiesResult;
   /** R-10: kryptoaktiva — jiný druh příjmu § 10 s vlastními limity (zj/zk), bez kompenzace s CP. */
   crypto: SecuritiesResult;
+  /** R-12: deriváty — třetí druh § 10 bez jakéhokoli osvobození, bez kompenzace s CP/kryptem. */
+  derivatives: DerivativesResult;
   dividends: DividendsResult;
   limits: LimitsResult;
   tax: TaxEstimate;
@@ -91,30 +94,78 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
   const config = input.config;
   const year = config.year;
 
-  const ledger = buildLedger(input.transactions, options, warnings);
-  classifyTimeTest(ledger.disposals, input.profile);
+  // R-10/R-12: druh příjmu je vlastnost INSTRUMENTU, ne řádku — stačí jediná
+  // transakce označená CRYPTO/DERIVATIVE a celý ISIN se počítá daným druhem.
+  // Jinak by prodej s nevyplněným asset_class tiše sklouzl pod CP limit a test.
+  const isinsOf = (assetClass: string) =>
+    new Set(
+      input.transactions.flatMap((tx) =>
+        'assetClass' in tx && tx.assetClass === assetClass ? [tx.isin] : [],
+      ),
+    );
+  const cryptoIsins = isinsOf('CRYPTO');
+  const derivativeIsins = isinsOf('DERIVATIVE');
 
-  // R-10: druh příjmu je vlastnost INSTRUMENTU, ne řádku — stačí jediná transakce
-  // označená CRYPTO a celý ISIN se počítá jako kryptoaktivum. Jinak by prodej
-  // s nevyplněným asset_class tiše sklouzl pod CP limit a CP časový test.
-  const cryptoIsins = new Set(
-    input.transactions.flatMap((tx) =>
-      'assetClass' in tx && tx.assetClass === 'CRYPTO' ? [tx.isin] : [],
-    ),
+  // R-12: deriváty nejsou inventář CP — VŠECHNY transakce derivátového
+  // instrumentu (obchody i převody) jdou mimo CP/krypto ledger do vlastního
+  // výpočtu (short pozice, hotovostní prémie, MARGIN vypořádání)
+  const isDerivativeIsin = (tx: Transaction): boolean =>
+    'isin' in tx && typeof tx.isin === 'string' && derivativeIsins.has(tx.isin);
+  const derivativeTxs = input.transactions.filter(
+    (
+      tx,
+    ): tx is Extract<Transaction, { type: 'BUY' | 'SELL' | 'TRANSFER_IN' | 'TRANSFER_OUT' }> =>
+      (tx.type === 'BUY' || tx.type === 'SELL' || tx.type === 'TRANSFER_IN' || tx.type === 'TRANSFER_OUT') &&
+      derivativeIsins.has(tx.isin),
   );
-  const isCryptoDisposal = (disposal: (typeof ledger.disposals)[number]) =>
-    cryptoIsins.has(disposal.isin);
-  for (const disposal of ledger.disposals) {
-    if (disposal.assetClass !== 'CRYPTO' && cryptoIsins.has(disposal.isin)) {
+  const ledgerTransactions = input.transactions.filter((tx) => {
+    if (!isDerivativeIsin(tx)) return true;
+    if (tx.type === 'CORPORATE_ACTION') {
+      warnings.add(
+        'DERIVATIVE_ACTION_UNSUPPORTED',
+        'WARNING',
+        `Korporátní akce ${tx.id} na derivátovém instrumentu ${'isin' in tx ? tx.isin : ''} — u derivátů ji neumíme zpracovat, transakce je vynechána. Uprav historii ručně (např. uzavření a nové otevření pozice).`,
+        { txId: tx.id },
+      );
+    }
+    return false;
+  });
+
+  // R-10/R-12: smíšené označení instrumentu (část transakcí bez asset_class)
+  // normalizujeme na úroveň instrumentu — ale nahlas, ne tiše
+  for (const [label, isins] of [
+    ['kryptoaktivum', cryptoIsins],
+    ['derivát', derivativeIsins],
+  ] as const) {
+    const mixed = input.transactions.find(
+      (tx) =>
+        (tx.type === 'BUY' || tx.type === 'SELL') &&
+        isins.has(tx.isin) &&
+        tx.assetClass !== (label === 'kryptoaktivum' ? 'CRYPTO' : 'DERIVATIVE'),
+    );
+    if (mixed && 'isin' in mixed) {
       warnings.add(
         'ASSET_CLASS_NORMALIZED',
         'INFO',
-        `Instrument ${disposal.isin} má u části transakcí vyplněný druh kryptoaktivum a u části ne — počítáme celý instrument jako kryptoaktivum (vlastní limit 100k, pravidla R-10). Sjednoť sloupec asset_class v importu.`,
-        { isin: disposal.isin },
+        `Instrument ${mixed.isin} má u části transakcí vyplněný druh ${label} a u části ne — počítáme celý instrument jako ${label}. Sjednoť sloupec asset_class v importu.`,
+        { isin: mixed.isin },
       );
-      break;
     }
   }
+  const conflicting = [...derivativeIsins].filter((isin) => cryptoIsins.has(isin));
+  if (conflicting.length > 0) {
+    warnings.add(
+      'ASSET_CLASS_CONFLICT',
+      'ERROR',
+      `Instrument ${conflicting[0]!} je v importu označen zároveň jako kryptoaktivum i derivát — počítáme ho jako derivát (bez osvobození = bezpečnější). Oprav asset_class v importu.`,
+      { isins: conflicting },
+    );
+  }
+
+  const ledger = buildLedger(ledgerTransactions, options, warnings);
+  classifyTimeTest(ledger.disposals, input.profile);
+  const isCryptoDisposal = (disposal: (typeof ledger.disposals)[number]) =>
+    cryptoIsins.has(disposal.isin);
 
   const yearDisposals = ledger.disposals.filter((disposal) => disposal.incomeYear === year);
   const securitiesPrepared = prepareDisposals(
@@ -182,17 +233,19 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     (tx): tx is InterestTransaction => tx.type === 'INTEREST' && yearOf(tx.date) === year,
   );
   const dividends = computeDividends(dividendTxs, interestTxs, fx, options, warnings);
+  const derivatives = computeDerivatives(derivativeTxs, year, fx, options, warnings);
 
   const limits = computeLimits(
     securities,
     crypto,
+    derivatives,
     dividends,
     input.profile,
     config,
     warnings,
     options.limit100kIncludesTimeTestExempt,
   );
-  const tax = estimateTax(securities, crypto, dividends, config, warnings);
+  const tax = estimateTax(securities, crypto, derivatives, dividends, config, warnings);
   const positions = positionsAt(ledger, `${year}-12-31`);
 
   return {
@@ -200,6 +253,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     options,
     securities,
     crypto,
+    derivatives,
     dividends,
     limits,
     tax,

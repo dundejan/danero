@@ -99,7 +99,7 @@ export default async function OverviewPage({
         {result.limits.flatTax50k.applicable && (
           <LimitGauge
             label="Limit paušální daně — 50 000 Kč"
-            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů CP i kryptoaktiv, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
+            hint="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo živnost — neosvobozené tržby z prodejů CP i kryptoaktiv, plnění z derivátů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
             status={result.limits.flatTax50k.status}
           />
         )}
@@ -133,8 +133,13 @@ export default async function OverviewPage({
             )}
           </p>
           <p className="text-xs text-inkoust-tlumeny">
-            Základ § 10: {czk(result.securities.base10Czk.plus(result.crypto.base10Czk))} · § 8:{' '}
-            {czk(result.dividends.base8Czk)}
+            Základ § 10:{' '}
+            {czk(
+              result.securities.base10Czk
+                .plus(result.crypto.base10Czk)
+                .plus(result.derivatives.base10Czk),
+            )}{' '}
+            · § 8: {czk(result.dividends.base8Czk)}
             {result.tax.recommended === 'SEPARATE_16A' && ' · doporučen § 16a'}
           </p>
           <p className="text-xs text-inkoust-tlumeny">{result.tax.note}</p>

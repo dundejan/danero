@@ -57,6 +57,13 @@
       "when": 1783519005255,
       "tag": "0007_smiling_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783594401483,
+      "tag": "0008_rich_sinister_six",
+      "breakpoints": true
     }
   ]
 }

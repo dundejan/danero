@@ -29,8 +29,10 @@ export interface TaxSnapshot {
 
 const snapshot = (result: TaxYearResult): TaxSnapshot => ({
   taxCzk: recommendedTax(result),
-  // R-10c: dílčí základ § 10 = CP + krypto (každý druh už max(0, ·))
-  base10Czk: result.securities.base10Czk.plus(result.crypto.base10Czk),
+  // R-10c/R-12l: dílčí základ § 10 = CP + krypto + deriváty (každý druh už max(0, ·))
+  base10Czk: result.securities.base10Czk
+    .plus(result.crypto.base10Czk)
+    .plus(result.derivatives.base10Czk),
   base8Czk: result.dividends.base8Czk,
   limit100kUsedCzk: result.securities.pool100kCzk,
   exemptUnder100k: result.securities.exemptUnder100k,
@@ -143,7 +145,9 @@ export function compareVariants(
         matchingMethod,
         fxMethod,
         taxCzk: recommendedTax(result),
-        base10Czk: result.securities.base10Czk.plus(result.crypto.base10Czk),
+        base10Czk: result.securities.base10Czk
+          .plus(result.crypto.base10Czk)
+          .plus(result.derivatives.base10Czk),
         base8Czk: result.dividends.base8Czk,
         exemptUnder100k: result.securities.exemptUnder100k,
         flatTax50kUsedCzk: result.limits.flatTax50k.status.usedCzk,

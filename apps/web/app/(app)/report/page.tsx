@@ -87,9 +87,13 @@ export default async function ReportPage({
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
-          <CardTitle>Dílčí základ § 10 (prodeje CP{result.crypto.disposals.length > 0 && ' + krypto'})</CardTitle>
+          <CardTitle>Dílčí základ § 10 (součet druhů)</CardTitle>
           <p className="font-mono text-xl font-semibold">
-            {czk(result.securities.base10Czk.plus(result.crypto.base10Czk))}
+            {czk(
+              result.securities.base10Czk
+                .plus(result.crypto.base10Czk)
+                .plus(result.derivatives.base10Czk),
+            )}
           </p>
           <p className="text-xs text-inkoust-tlumeny">
             CP: tržby {czk(result.securities.totalGrossProceedsCzk)}, základ{' '}
@@ -98,9 +102,17 @@ export default async function ReportPage({
             {result.crypto.disposals.length > 0 && (
               <>
                 {' '}· krypto: tržby {czk(result.crypto.totalGrossProceedsCzk)}, základ{' '}
-                {czk(result.crypto.base10Czk)} — druhy se nekompenzují (R-10c)
+                {czk(result.crypto.base10Czk)}
               </>
             )}
+            {result.derivatives.items.length > 0 && (
+              <>
+                {' '}· deriváty: plnění {czk(result.derivatives.taxableIncomeCzk)}, základ{' '}
+                {czk(result.derivatives.base10Czk)}
+              </>
+            )}
+            {(result.crypto.disposals.length > 0 || result.derivatives.items.length > 0) &&
+              ' — druhy se nekompenzují (R-10c/R-12l)'}
           </p>
         </Card>
         <Card className="space-y-1">
@@ -224,6 +236,51 @@ export default async function ReportPage({
               </tbody>
             </table>
           </div>
+        </Card>
+      )}
+
+      {result.derivatives.items.length > 0 && (
+        <Card className="space-y-3">
+          <CardTitle>Derivátové obchody v roce {year} ({result.derivatives.items.length})</CardTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                  <th className="py-2 pr-4 font-medium">Instrument</th>
+                  <th className="py-2 pr-4 text-right font-medium">Datum</th>
+                  <th className="py-2 pr-4 font-medium">Událost</th>
+                  <th className="py-2 pr-4 text-right font-medium">Příjem</th>
+                  <th className="py-2 text-right font-medium">Výdaj</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {result.derivatives.items.map((item) => (
+                  <tr key={`${item.txId}-${item.kind}`} className="border-b border-linka/60">
+                    <td className="py-2 pr-4">
+                      <span className="font-sans">{labels.get(item.isin) ?? item.isin}</span>
+                    </td>
+                    <td className="py-2 pr-4 text-right">{czDate(item.date)}</td>
+                    <td className="py-2 pr-4 font-sans text-xs text-inkoust-tlumeny">
+                      {item.kind === 'LONG_CLOSE'
+                        ? 'uzavření nakoupené pozice'
+                        : item.kind === 'SHORT_OPEN'
+                          ? 'výpis (prémie = příjem přijetí)'
+                          : 'zpětný odkup výpisu'}
+                    </td>
+                    <td className="py-2 pr-4 text-right">{czk(item.incomeCzk)}</td>
+                    <td className="py-2 text-right">{czk(item.expenseCzk)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {result.derivatives.deniedExpensesCzk.gt(0) && (
+            <p className="text-xs text-jantar">
+              Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
+              podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
+              druh" by základ daně snížil; přepínač najdeš v nastavení.
+            </p>
+          )}
         </Card>
       )}
 
@@ -377,6 +434,15 @@ export default async function ReportPage({
                 <span className="font-mono">{czk(result.crypto.taxableIncomeCzk)}</span>, výdaje{' '}
                 <span className="font-mono">{czk(result.crypto.expensesCzk)}</span>. S řádkem CP
                 se nekompenzují — ztráta z jednoho druhu nesnižuje zisk druhého.
+              </li>
+            )}
+            {result.derivatives.items.length > 0 && (
+              <li>
+                <strong>Deriváty — opce, futures, CFD (§ 10):</strong> samostatný řádek téže
+                tabulky s druhem <span className="font-mono">F — jiné ostatní příjmy</span>:
+                příjmy <span className="font-mono">{czk(result.derivatives.taxableIncomeCzk)}</span>,
+                výdaje <span className="font-mono">{czk(result.derivatives.expensesCzk)}</span>.
+                Deriváty nemají žádné osvobození a s ostatními druhy se nekompenzují.
               </li>
             )}
             <li>

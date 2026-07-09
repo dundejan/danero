@@ -1,5 +1,6 @@
 import { d, sum, ZERO, type Money, type TaxpayerProfile } from '@danero/shared';
 import type { AssetScope, TaxYearConfig } from '../config/taxYear';
+import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
 import { WarningCollector } from '../warnings';
@@ -33,6 +34,8 @@ export interface FlatTax50kComponents {
   nonExemptSecuritiesProceedsCzk: Money;
   /** R-10f: hrubé tržby z neosvobozených prodejů kryptoaktiv (vč. prodejů před 15. 2. 2025). */
   nonExemptCryptoProceedsCzk: Money;
+  /** R-12q: úhrn hrubých kladných plnění z derivátů (deriváty osvobození nemají). */
+  derivativesIncomeCzk: Money;
   foreignDividendsGrossCzk: Money;
   taxableInterestCzk: Money;
   otherManualCzk: Money;
@@ -68,6 +71,7 @@ export interface LimitsResult {
 export function computeLimits(
   securities: SecuritiesResult,
   crypto: SecuritiesResult,
+  derivatives: DerivativesResult,
   dividends: DividendsResult,
   profile: TaxpayerProfile,
   config: TaxYearConfig,
@@ -98,12 +102,14 @@ export function computeLimits(
   const components: FlatTax50kComponents = {
     nonExemptSecuritiesProceedsCzk: nonExemptProceeds,
     nonExemptCryptoProceedsCzk: nonExemptCryptoProceeds,
+    derivativesIncomeCzk: derivatives.taxableIncomeCzk,
     foreignDividendsGrossCzk: dividends.foreignGrossCzk,
     taxableInterestCzk: dividends.taxableInterestCzk,
     otherManualCzk: profile.otherTaxableIncome8to10Czk,
   };
   const sideIncome = nonExemptProceeds
     .plus(nonExemptCryptoProceeds)
+    .plus(derivatives.taxableIncomeCzk)
     .plus(dividends.foreignGrossCzk)
     .plus(dividends.taxableInterestCzk)
     .plus(profile.otherTaxableIncome8to10Czk);

@@ -6,6 +6,7 @@ export * from './fx/fx';
 export * from './ledger/ledger';
 export * from './timetest/timeTest';
 export * from './basis/securities';
+export * from './basis/derivatives';
 export * from './basis/dividends';
 export * from './limits/limits';
 export * from './tax/estimate';

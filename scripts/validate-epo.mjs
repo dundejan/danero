@@ -95,6 +95,9 @@ async function buildSamples() {
     // krypto nad 100k → zdanitelné, v P2 musí vzniknout druhý řádek VetaJ (kod C)
     { type: 'BUY', id: 'cb1', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
     { type: 'SELL', id: 'cs1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
+    // deriváty → v P2 musí vzniknout třetí řádek VetaJ (kod F, R-12n)
+    { type: 'BUY', id: 'db1', isin: 'OPT:AAPL-C200', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '1000', currency: 'USD', tradeDate: '2025-02-03' },
+    { type: 'SELL', id: 'ds1', isin: 'OPT:AAPL-C200', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '1500', currency: 'USD', tradeDate: '2025-06-10' },
   ]);
   const result = analyzeTaxYear({
     transactions,

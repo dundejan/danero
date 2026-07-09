@@ -103,6 +103,7 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
         matchingMethod: 'FIFO',
         fxMethod: 'UNIFIED',
         limit100kStrict: true,
+  derivativesExpensesPerDruh: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),

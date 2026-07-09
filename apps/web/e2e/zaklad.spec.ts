@@ -37,7 +37,7 @@ test('registrace → profil → import → přehled → simulátor → report', 
   // ── report ──────────────────────────────────────────────────────────────
   await page.goto('/report');
   await expect(page.getByRole('heading', { name: /Daňový report \d{4}/ })).toBeVisible();
-  await expect(page.getByText('Dílčí základ § 10 (prodeje CP)')).toBeVisible();
+  await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
   // G5: průvodce, tisk a EPO export (rok 2026 → poctivá hláška o struktuře)
   await expect(page.getByText('Průvodce: co kam zapsat v přiznání')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Vytisknout / uložit PDF' })).toBeVisible();

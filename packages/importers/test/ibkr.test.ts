@@ -40,9 +40,41 @@ describe('IBKR Flex XML parser', () => {
     expect(sell.quantity.toString()).toBe('40');
     expect(sell.fee?.amount.toString()).toBe('1.25');
 
-    // forex (CASH) a opce (OPT) = vědomé přeskočení, ne chyba
+    // forex (CASH) = vědomé přeskočení, ne chyba
     expect(result.skipped.some((s) => s.message.includes('Měnová konverze'))).toBe(true);
-    expect(result.skipped.some((s) => s.message.includes('Derivát'))).toBe(true);
+  });
+
+  it('opce: assetClass DERIVATIVE, cena × multiplikátor, expirace jako prodej za 0 (R-12)', () => {
+    const optBuy = result.transactions.find((t) => t.id === 'ibkr-1004');
+    if (!optBuy || optBuy.type !== 'BUY') throw new Error('unreachable');
+    expect(optBuy.assetClass).toBe('DERIVATIVE');
+    expect(optBuy.isin).toBe('AAPL  260619C00200000'); // symbol = klíč instrumentu
+    expect(optBuy.quantity.toString()).toBe('1');
+    expect(optBuy.pricePerShare.toString()).toBe('1250'); // 12.5 × multiplikátor 100
+    expect(optBuy.fee?.amount.toString()).toBe('0.65');
+
+    const optClose = result.transactions.find((t) => t.id === 'ibkr-1005');
+    if (!optClose || optClose.type !== 'SELL') throw new Error('unreachable');
+    expect(optClose.assetClass).toBe('DERIVATIVE');
+    expect(optClose.pricePerShare.toString()).toBe('1800');
+
+    // výpis (short open) — prodej bez držené pozice
+    const shortOpen = result.transactions.find((t) => t.id === 'ibkr-1006');
+    if (!shortOpen || shortOpen.type !== 'SELL') throw new Error('unreachable');
+    expect(shortOpen.pricePerShare.toString()).toBe('500');
+
+    // expirace: notes="Ep" → SELL za 0 s vysvětlující poznámkou
+    const expiry = result.transactions.find((t) => t.id === 'ibkr-1008');
+    if (!expiry || expiry.type !== 'SELL') throw new Error('unreachable');
+    expect(expiry.pricePerShare.toString()).toBe('0');
+    expect(expiry.note).toContain('Expirace');
+
+    // CFD: vypořádání rozdílem (R-12f) — nominál nesmí být příjem
+    const cfd = result.transactions.find((t) => t.id === 'ibkr-1009');
+    if (!cfd || cfd.type !== 'BUY') throw new Error('unreachable');
+    expect(cfd.assetClass).toBe('DERIVATIVE');
+    expect(cfd.settlementStyle).toBe('MARGIN');
+    expect(cfd.pricePerShare.toString()).toBe('200'); // bez multiplikátoru (chybí = 1)
   });
 
   it('dividenda se spáruje se samostatným řádkem srážkové daně', () => {

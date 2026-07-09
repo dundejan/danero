@@ -211,14 +211,13 @@ function processTrades(
       });
       continue;
     }
-    if (assetCategory === 'OPT' || assetCategory === 'FOP' || assetCategory === 'FUT' || assetCategory === 'CFD' || assetCategory === 'WAR') {
-      // deriváty přijdou v G7 (R-12) — vědomě přeskočit, ať se nedostanou do § 10 CP
-      result.skipped.push({
-        line,
-        message: `Derivát ${trade.symbol ?? ''} (${assetCategory}) zatím nepodporujeme — deriváty chystáme, obchody se pak doimportují.`,
-      });
-      continue;
-    }
+    // R-12: opce/futures/CFD/warranty = samostatný druh § 10 (assetClass DERIVATIVE)
+    const isDerivative =
+      assetCategory === 'OPT' ||
+      assetCategory === 'FOP' ||
+      assetCategory === 'FUT' ||
+      assetCategory === 'CFD' ||
+      assetCategory === 'WAR';
 
     const buySell = String(trade.buySell ?? '').toUpperCase();
     if (buySell.includes('(CA.)')) {
@@ -239,6 +238,68 @@ function processTrades(
     const tradeDate = toIsoDate(trade.tradeDate);
     const quantity = trade.quantity ? d(cleanNumber(trade.quantity)) : null;
     const price = trade.tradePrice ?? '';
+
+    if (isDerivative) {
+      // klíč instrumentu = symbol (deriváty ISIN nemají), cash tok = cena × multiplikátor
+      const symbol = (trade.symbol ?? '').trim();
+      const key = symbol || (trade.conid ? `IBKR:${trade.conid}` : '');
+      if (!key || !tradeDate || !quantity || price === '') {
+        result.errors.push({
+          line,
+          message: `Derivátu ${trade.symbol ?? trade.description ?? ''} chybí symbol, datum, množství nebo cena.`,
+          raw: JSON.stringify(trade),
+        });
+        continue;
+      }
+      const multiplierRaw = trade.multiplier ? d(cleanNumber(trade.multiplier)) : ZERO;
+      const multiplier = multiplierRaw.gt(0) ? multiplierRaw : d(1);
+      const commission = trade.ibCommission ? d(cleanNumber(trade.ibCommission)).abs() : ZERO;
+      const id = trade.tradeID || trade.transactionID;
+      const notes = String(trade.notes ?? '');
+      const noteCodes = new Set(notes.split(';').map((code) => code.trim()));
+
+      if (noteCodes.has('A') || noteCodes.has('Ex')) {
+        // R-12k: uplatnění/assignment — prémie by u long měla vstoupit do ceny
+        // podkladu; počítáme konzervativně (výdaj nepropadá do podkladu automaticky)
+        result.warnings.push({
+          line,
+          message: `Opce ${symbol}: ${noteCodes.has('A') ? 'assignment' : 'uplatnění (exercise)'} — zaplacená prémie nakoupené opce by správně vstoupila do nabývací ceny podkladu (R-12k). Danero ji konzervativně neuplatňuje automaticky; podklad případně uprav univerzální šablonou.`,
+        });
+      }
+      if (assetCategory === 'WAR') {
+        result.warnings.push({
+          line,
+          message: `Warrant ${symbol} počítáme jako derivát bez osvobození (bezpečný default, R-12d). Je-li vydaný jako cenný papír (má ISIN), zadej ho univerzální šablonou jako CP.`,
+        });
+      }
+
+      push(line, trade, {
+        type: buySell,
+        id: id
+          ? `ibkr-${id}`
+          : contentId('trade', [buySell, tradeDate, key, quantity.toString(), String(price)]),
+        account: accountId || undefined,
+        isin: key,
+        ticker: symbol || undefined,
+        name: trade.description || undefined,
+        assetClass: 'DERIVATIVE',
+        // R-12f/g: futures a CFD se vypořádávají rozdílem (nominál není příjem)
+        ...(assetCategory === 'FUT' || assetCategory === 'FOP' || assetCategory === 'CFD'
+          ? { settlementStyle: 'MARGIN' }
+          : {}),
+        quantity: quantity.abs().toString(),
+        pricePerShare: d(cleanNumber(String(price))).mul(multiplier).toString(),
+        currency: trade.currency,
+        ...(commission.gt(0)
+          ? { fee: { amount: commission.toString(), currency: trade.ibCommissionCurrency || trade.currency } }
+          : {}),
+        tradeDate,
+        ...(toIsoDate(trade.settleDateTarget) ? { settlementDate: toIsoDate(trade.settleDateTarget) } : {}),
+        ...(noteCodes.has('Ep') ? { note: 'Expirace opce (uzavření za 0)' } : {}),
+      });
+      continue;
+    }
+
     if (!isin) {
       result.errors.push({
         line,

@@ -3,11 +3,11 @@ import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universa
 import { registerWithProfile } from './helpers';
 
 /**
- * Akceptace G6: smíšené portfolio (CP + krypto) počítá oba limity 100k
- * ODDĚLENĚ a dashboard ukazuje obě sady odměrek. Data = stažitelná univerzální
- * šablona (obsahuje AAPL prodej i BTC prodej v 2026).
+ * Akceptace G6+G7: smíšené portfolio (CP + krypto + deriváty) počítá druhy
+ * ODDĚLENĚ — dashboard ukazuje obě odměrky 100k a report rozpad všech druhů.
+ * Data = stažitelná univerzální šablona (AAPL, BTC i opce v 2026).
  */
-test('krypto: oddělené limity CP × krypto na dashboardu a v reportu', async ({ page }) => {
+test('krypto + deriváty: oddělené druhy § 10 na dashboardu a v reportu', async ({ page }) => {
   await registerWithProfile(page, { name: 'E2E Krypto', email: 'krypto@danero.cz' });
 
   await page.goto('/import');
@@ -24,8 +24,13 @@ test('krypto: oddělené limity CP × krypto na dashboardu a v reportu', async (
   await expect(page.getByText('Osvobození prodejů CP — 100 000 Kč')).toBeVisible();
   await expect(page.getByText('Osvobození krypta — 100 000 Kč')).toBeVisible();
 
-  // ── report: § 10 s rozpadem CP + krypto (druhy se nekompenzují) ─────────
+  // ── report: § 10 s rozpadem CP + krypto + deriváty (druhy se nekompenzují) ──
   await page.goto('/report');
-  await expect(page.getByText('Dílčí základ § 10 (prodeje CP + krypto)')).toBeVisible();
-  await expect(page.getByText(/druhy se nekompenzují \(R-10c\)/)).toBeVisible();
+  await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
+  await expect(page.getByText(/druhy se nekompenzují \(R-10c\/R-12l\)/)).toBeVisible();
+
+  // ── deriváty (R-12): tabulka obchodů a řádek F v průvodci ────────────────
+  await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();
+  await expect(page.getByText('uzavření nakoupené pozice')).toBeVisible();
+  await expect(page.getByText(/deriváty: plnění/)).toBeVisible();
 });

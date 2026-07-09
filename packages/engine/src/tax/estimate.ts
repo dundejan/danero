@@ -1,5 +1,6 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
 import type { TaxYearConfig } from '../config/taxYear';
+import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
 import { WarningCollector } from '../warnings';
@@ -49,6 +50,7 @@ function allocateCredit(tax: Money, base: Money, dividends: DividendsResult): Mo
 export function estimateTax(
   securities: SecuritiesResult,
   crypto: SecuritiesResult,
+  derivatives: DerivativesResult,
   dividends: DividendsResult,
   config: TaxYearConfig,
   warnings: WarningCollector,
@@ -62,9 +64,9 @@ export function estimateTax(
     );
   }
 
-  // R-05d/R-10c: dílčí základ § 10 = max(0, CP) + max(0, krypto) — druhy se
-  // NEkompenzují, každý base10Czk už je nezáporný per druh
-  const base10 = securities.base10Czk.plus(crypto.base10Czk);
+  // R-05d/R-10c/R-12l: dílčí základ § 10 = max(0, CP) + max(0, krypto) +
+  // max(0, deriváty) — druhy se NEkompenzují, každý base10Czk už je nezáporný
+  const base10 = securities.base10Czk.plus(crypto.base10Czk).plus(derivatives.base10Czk);
 
   // Varianta A: vše v obecném základu
   const baseA = base10.plus(dividends.base8Czk);

@@ -22,6 +22,7 @@ const PROFILE: ProfileRow = {
   matchingMethod: 'FIFO',
   fxMethod: 'UNIFIED',
   limit100kStrict: true,
+  derivativesExpensesPerDruh: false,
   timeTestBasis: 'settlement',
   createdAt: new Date(),
   updatedAt: new Date(),

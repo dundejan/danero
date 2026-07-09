@@ -122,18 +122,21 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
   const base8 = round0(result.dividends.base8Czk);
 
-  // ---------- Příloha 2 (§ 10) — dva druhy: CP (kód D) a krypto (kód C) ----------
-  // Druhy se posuzují samostatně (R-10c, pokyn D-59 k § 10/4): výdaje každého
-  // druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
+  // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
+  // Druhy se posuzují samostatně (R-10c/R-12l, pokyn D-59 k § 10/4): výdaje
+  // každého druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
   const prijCp = round0(result.securities.taxableIncomeCzk);
   const vydCp = Decimal.min(round0(result.securities.expensesCzk), prijCp);
   const zdCp = prijCp.sub(vydCp);
   const prijKrypto = round0(result.crypto.taxableIncomeCzk);
   const vydKrypto = Decimal.min(round0(result.crypto.expensesCzk), prijKrypto);
   const zdKrypto = prijKrypto.sub(vydKrypto);
-  const prij10 = prijCp.plus(prijKrypto); // ř. 207
-  const vyd10 = vydCp.plus(vydKrypto); // ř. 208
-  const zd10 = zdCp.plus(zdKrypto); // ř. 209
+  const prijDeriv = round0(result.derivatives.taxableIncomeCzk);
+  const vydDeriv = Decimal.min(round0(result.derivatives.expensesCzk), prijDeriv);
+  const zdDeriv = prijDeriv.sub(vydDeriv);
+  const prij10 = prijCp.plus(prijKrypto).plus(prijDeriv); // ř. 207
+  const vyd10 = vydCp.plus(vydKrypto).plus(vydDeriv); // ř. 208
+  const zd10 = zdCp.plus(zdKrypto).plus(zdDeriv); // ř. 209
   const hasPriloha2 = prij10.gt(0);
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
@@ -321,6 +324,18 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
           prijmy10: kc(prijKrypto),
           vydaje10: kc(vydKrypto),
           rozdil10: kc(zdKrypto),
+          kod10: 'Z',
+        }),
+      );
+    }
+    if (prijDeriv.gt(0)) {
+      lines.push(
+        veta('VetaJ', {
+          kod_dr_prij10: 'F', // jiné ostatní příjmy — deriváty (R-12n)
+          druh_prij10: 'Deriváty (opce, futures, CFD)',
+          prijmy10: kc(prijDeriv),
+          vydaje10: kc(vydDeriv),
+          rozdil10: kc(zdDeriv),
           kod10: 'Z',
         }),
       );

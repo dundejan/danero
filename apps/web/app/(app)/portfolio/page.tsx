@@ -14,7 +14,7 @@ import {
   feesByYear,
   realizedGainsByYear,
 } from '@/lib/charts-data';
-import { czk, money, qty } from '@/lib/format';
+import { czDate, czk, money, qty } from '@/lib/format';
 import {
   analyzeForUser,
   dailyRatesForProfile,
@@ -213,6 +213,42 @@ export default async function PortfolioPage({
           <p className="text-sm text-inkoust-tlumeny">Žádné otevřené pozice.</p>
         )}
       </Card>
+
+      {result.derivatives.openPositions.length > 0 && (
+        <Card className="space-y-2">
+          <CardTitle>Otevřené derivátové pozice</CardTitle>
+          <p className="text-xs text-inkoust-tlumeny">
+            Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy,
+            bez ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                  <th className="py-2 pr-4">Instrument</th>
+                  <th className="py-2 pr-4 text-right">Kontraktů</th>
+                  <th className="py-2 text-right">Otevřeno</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {result.derivatives.openPositions.map((position) => (
+                  <tr key={position.isin} className="border-t border-linka">
+                    <td className="py-2 pr-4 font-sans font-medium">
+                      {labels.get(position.isin) ?? position.isin}
+                    </td>
+                    <td
+                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar' : ''}`}
+                    >
+                      {qty(position.quantity)}
+                    </td>
+                    <td className="py-2 text-right">{czDate(position.openedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-2">
         {outlook && outlook.points.length > 1 && (

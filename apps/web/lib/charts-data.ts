@@ -64,6 +64,8 @@ export function flatTax50kSeries(result: TaxYearResult): LimitSeries | null {
       date: disposal.saleDate,
       amountCzk: disposal.taxableProceedsCzk,
     })),
+    // R-12q: deriváty čerpají limit hrubými kladnými plněními
+    ...result.derivatives.items.map((item) => ({ date: item.date, amountCzk: item.incomeCzk })),
     ...result.dividends.items
       .filter((item) => !item.isCzech)
       .map((item) => ({ date: item.date, amountCzk: item.grossCzk })),

@@ -132,6 +132,24 @@ export default async function SettingsPage({
                 <option value="trade">Datum obchodu</option>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="derivativesExpensesPerDruh">
+                Prémie bezcenně expirovaných opcí (R-12i)
+              </Label>
+              <Select
+                id="derivativesExpensesPerDruh"
+                name="derivativesExpensesPerDruh"
+                defaultValue={(profile?.derivativesExpensesPerDruh ?? false) ? 'perDruh' : 'restrictive'}
+              >
+                <option value="restrictive">Opatrný výklad — neuplatnit jako výdaj (doporučeno)</option>
+                <option value="perDruh">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
+              </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Když koupená opce vyprší bezcenná, oficiální výklad chybí. Mírnější čtení
+                (výdaje se posuzují za celý druh příjmů) prémii uplatní proti ostatním
+                derivátovým ziskům roku — sníží daň, ale neseš riziko doměrku.
+              </p>
+            </div>
           </div>
           <p className="text-xs text-inkoust-tlumeny">
             Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se

@@ -19,7 +19,7 @@ const NonNegativeMoney = MoneySchema.refine((v) => v.gte(0), 'Hodnota nesmí bý
 const Currency = z.string().regex(/^[A-Z]{3}$/, 'Měna musí být třípísmenný ISO kód');
 const Country = z.string().regex(/^[A-Z]{2}$/, 'Země musí být dvoupísmenný ISO kód');
 
-export const AssetClassSchema = z.enum(['STOCK', 'ETF', 'BOND', 'CRYPTO', 'OTHER']);
+export const AssetClassSchema = z.enum(['STOCK', 'ETF', 'BOND', 'CRYPTO', 'DERIVATIVE', 'OTHER']);
 export type AssetClass = z.infer<typeof AssetClassSchema>;
 
 export const FeeSchema = z.object({
@@ -46,6 +46,12 @@ const tradeFields = {
   tradeDate: IsoDateSchema,
   /** Datum vypořádání; pokud chybí, engine dopočte (T+1 US od 28. 5. 2024, jinak T+2). */
   settlementDate: IsoDateSchema.optional(),
+  /**
+   * R-12f/g: způsob vypořádání derivátu. PREMIUM (opce) = cena je skutečný
+   * cash tok; MARGIN (futures, CFD) = cash tok je až ROZDÍL cen při uzavření
+   * (nominál pozice není příjem). U nederivátů se ignoruje.
+   */
+  settlementStyle: z.enum(['PREMIUM', 'MARGIN']).optional(),
 };
 
 export const BuyTxSchema = z.object({ type: z.literal('BUY'), ...tradeFields });

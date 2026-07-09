@@ -92,6 +92,8 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   fxMethod: text('fx_method').notNull().default('UNIFIED'),
   limit100kStrict: boolean('limit_100k_strict').notNull().default(true),
   timeTestBasis: text('time_test_basis').notNull().default('settlement'),
+  // R-12i: prémie bezcenně expirovaných opcí jako výdaj druhu (default = restriktivní NE)
+  derivativesExpensesPerDruh: boolean('derivatives_expenses_per_druh').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

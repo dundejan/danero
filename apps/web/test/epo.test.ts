@@ -14,6 +14,7 @@ const PROFILE: ProfileRow = {
   matchingMethod: 'FIFO',
   fxMethod: 'UNIFIED',
   limit100kStrict: true,
+  derivativesExpensesPerDruh: false,
   timeTestBasis: 'settlement',
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -290,5 +291,35 @@ describe('generateDpfdp7: kryptoaktiva v Příloze 2 (R-10c)', () => {
     expect(krypto.vydaje10).toBe('1233000');
     expect(krypto.rozdil10).toBe('246600');
     expect(krypto.kod10).toBe('Z');
+  });
+});
+
+describe('generateDpfdp7: deriváty v Příloze 2 (R-12n)', () => {
+  // opce: nákup 1 kontrakt à 10 000 Kč (2025-02), prodej à 15 000 Kč (2025-06)
+  // → druh F: příjmy 15 000, výdaje 10 000, rozdíl 5 000
+  const derivTxs = parseTransactions([
+    { type: 'BUY', id: 'db1', isin: 'OPT:TEST-C100', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '10000', currency: 'CZK', tradeDate: '2025-02-03' },
+    { type: 'SELL', id: 'ds1', isin: 'OPT:TEST-C100', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '15000', currency: 'CZK', tradeDate: '2025-06-10' },
+  ]);
+  const derivResult = analyzeTaxYear(engineInputForUser([...TXS, ...derivTxs], PROFILE, 2025));
+  const { dp } = (() => {
+    const { xml } = generateDpfdp7({ year: 2025, result: derivResult, personal: {}, varianta: 'GENERAL' });
+    return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
+  })();
+
+  it('druhý řádek VetaJ má kód F a druhy se sčítají do ř. 207–209', () => {
+    const vetaJ = toArray(dp.VetaJ);
+    expect(vetaJ.map((row) => row.kod_dr_prij10)).toEqual(['D', 'F']);
+    const deriv = vetaJ[1]!;
+    expect(deriv.prijmy10).toBe('15000');
+    expect(deriv.vydaje10).toBe('10000');
+    expect(deriv.rozdil10).toBe('5000');
+    expect(deriv.kod10).toBe('Z');
+
+    const vetaV = dp.VetaV as Attrs;
+    expect(vetaV.kc_prij10).toBe('342600'); // 327 600 (CP) + 15 000
+    expect(vetaV.kc_vyd10).toBe('242800'); // 232 800 + 10 000
+    expect(vetaV.kc_zd10p).toBe('99800'); // 94 800 + 5 000
+    expect((dp.VetaO as Attrs).kc_zd10).toBe('99800');
   });
 });
