@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -105,16 +106,44 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
  * Audit události účtu (G8b): přihlášení, importy, změny profilu a klíčů.
  * Jen zobrazení uživateli (transparentnost) — žádná citlivá data v detailu.
  */
-export const auditLog = pgTable('audit_log', {
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(),
+    detail: text('detail'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('audit_log_user_created_idx').on(t.userId, t.createdAt)],
+);
+
+/**
+ * Better Auth rate limiting (G10a) — DB storage kvůli serverless produkci
+ * (in-memory čítač na Vercelu nepřežije request). Pole dle better-auth
+ * dist/api/rate-limiter (key, count, lastRequest v ms).
+ */
+export const rateLimit = pgTable('rate_limit', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  detail: text('detail'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  key: text('key').notNull(),
+  count: integer('count').notNull(),
+  lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+});
+
+/**
+ * Aplikační rate limity (G10a) — upload/EPO/export per uživatel. Okno se
+ * resetuje atomicky v upsertu (lib/rate-limit.ts), žádný cron úklid netřeba.
+ */
+export const appRateLimits = pgTable('app_rate_limits', {
+  key: text('key').primaryKey(),
+  count: integer('count').notNull(),
+  resetAt: timestamp('reset_at').notNull(),
 });
 
 /**
@@ -184,7 +213,7 @@ export const importBatches = pgTable('import_batches', {
   /** { errors, skipped, warnings } — RowIssue[] pro zobrazení uživateli */
   issues: jsonb('issues').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+}, (t) => [index('import_batches_portfolio_created_idx').on(t.portfolioId, t.createdAt)]);
 
 /**
  * Notifikace hlídače (osvobození pozic, pásma limitů). PK (userId, dedupeKey)

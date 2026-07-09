@@ -22,6 +22,10 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   if (files.some((f) => f.size > MAX_FILE_BYTES)) redirect('/import?chyba=velikost');
 
   const db = await getDb();
+  const { checkRateLimit } = await import('@/lib/rate-limit');
+  if (!(await checkRateLimit(db, `upload:${user.id}`, { max: 30, windowMs: 10 * 60_000 }))) {
+    redirect('/import?chyba=limit');
+  }
   const portfolio = await activePortfolio(db, user.id);
   for (const file of files) {
     await importFile(db, user.id, portfolio.id, file.name, await file.arrayBuffer());

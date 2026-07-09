@@ -6,6 +6,9 @@ import { fetchCnbYear } from '@/lib/cnb';
 export async function GET(request: Request): Promise<Response> {
   const unauthorized = requireCronAuth(request);
   if (unauthorized) return unauthorized;
+  const { logEvent } = await import('@/lib/log');
+  logEvent('info', 'cron.fx.run');
+
 
   const db = await getDb();
   const year = new Date().getUTCFullYear();

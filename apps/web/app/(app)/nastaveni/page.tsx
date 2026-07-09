@@ -65,6 +65,7 @@ export default async function SettingsPage({
     'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
     email: 'Zadej platný e-mail.',
     'email-obsazeny': 'E-mail se nepodařilo změnit (nejspíš už ho používá jiný účet).',
+    'email-heslo': 'Heslo nesedí — e-mail se nezměnil.',
     smazani: 'Pro smazání účtu napiš do potvrzení přesně SMAZAT.',
     'smazani-heslo': 'Heslo nesedí — účet se nesmazal.',
     'portfolio-nazev': 'Zadej název portfolia (1–60 znaků).',
@@ -288,9 +289,21 @@ export default async function SettingsPage({
 
         <form action={changeEmailAction} className="space-y-3 border-t border-linka pt-4">
           <p className="text-sm font-semibold">Změna e-mailu</p>
-          <div>
-            <Label htmlFor="newEmail">Nový e-mail</Label>
-            <Input id="newEmail" name="newEmail" type="email" required autoComplete="email" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="newEmail">Nový e-mail</Label>
+              <Input id="newEmail" name="newEmail" type="email" required autoComplete="email" />
+            </div>
+            <div>
+              <Label htmlFor="emailPassword">Heslo (potvrzení)</Label>
+              <Input
+                id="emailPassword"
+                name="currentPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+              />
+            </div>
           </div>
           <SubmitButton size="sm" pendingLabel="Měním…">Změnit e-mail</SubmitButton>
         </form>

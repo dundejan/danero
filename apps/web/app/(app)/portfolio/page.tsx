@@ -15,8 +15,8 @@ import {
   realizedGainsByYear,
 } from '@/lib/charts-data';
 import { czDate, czk, money, qty } from '@/lib/format';
+import { analyzeForUserCached } from '@/lib/engine-cache';
 import {
-  analyzeForUser,
   dailyRatesForProfile,
   availableYears,
   engineInputForUser,
@@ -65,7 +65,7 @@ export default async function PortfolioPage({
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const { result, positions, labels } = analyzeForUser(txs, profile, year, today, dailyRates);
+  const { result, positions, labels } = analyzeForUserCached(user.id, portfolio.id, txs, profile, year, today, dailyRates);
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
   const valuation = valuePositions(positions, labels, prices, currentYear);
 

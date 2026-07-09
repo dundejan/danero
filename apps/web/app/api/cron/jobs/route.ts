@@ -9,6 +9,9 @@ import { processPendingJobs } from '@/lib/jobs';
 export async function GET(request: Request): Promise<Response> {
   const unauthorized = requireCronAuth(request);
   if (unauthorized) return unauthorized;
+  const { logEvent } = await import('@/lib/log');
+  logEvent('info', 'cron.jobs.run');
+
 
   const db = await getDb();
   const { recovered, results } = await processPendingJobs(db);

@@ -37,3 +37,37 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
 - Neon: point-in-time restore je součástí; otestovat obnovu.
 - Sentry (`SENTRY_DSN`) — zatím nezapojeno.
 - E-mail notifikace (Resend, `RESEND_API_KEY`) — zatím nezapojeno.
+
+## Zálohy a obnova (runbook, G10c)
+
+**Zdroj pravdy jsou transakce** — každý výpočet jde reprodukovat od nuly
+(docs/04). Ztráta odvozených dat (notifikace, ceny) je nepříjemnost, ne katastrofa.
+
+### Produkce (Neon)
+
+- **PITR**: Neon drží point-in-time recovery (dle plánu 7–30 dní). Obnova:
+  Neon Console → Branches → „Restore from history" → nový branch k času T →
+  přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
+- **Týdenní logický dump navíc** (nezávislý na Neonu):
+  `pg_dump "$DATABASE_URL" -Fc -f danero-$(date +%F).dump` — uchovávat 8 týdnů
+  mimo Neon (S3/Backblaze). Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+- **Ověření obnovy**: po restore spustit `/api/health`, přihlásit se, na
+  /prehled zkontrolovat počty transakcí; případné mezery řeší re-sync brokerů
+  (idempotentní dedupe) nebo opakovaný import výpisů.
+
+### Lokální vývoj (PGlite)
+
+Data žijí v `apps/web/.data/` — záloha = kopie adresáře (při zastaveném dev
+serveru, PGlite drží zámek). Reset = smazat `.data/`.
+
+### Co se NEzálohuje a proč
+
+Šifrované broker klíče v dumpu jsou bez `DANERO_ENCRYPTION_KEY` bezcenné —
+klíč drž v password manageru odděleně od záloh (jinak záloha = plaintext klíče).
+
+## Monitoring
+
+- `/api/health` — DB ping + latence (200/503); zapoj do uptime monitoringu.
+- Strukturované logy: jeden JSON řádek na událost (`lib/log.ts`) — joby
+  (`job.started`/`job.finished` s trváním), cron běhy, health selhání.
+  Ve Vercelu filtruj podle `event`.

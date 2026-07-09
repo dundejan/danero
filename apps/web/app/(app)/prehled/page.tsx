@@ -12,8 +12,8 @@ import { getDb } from '@/db';
 import { flatTax50kSeries, horizonDots, limit100kSeries } from '@/lib/charts-data';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { czk } from '@/lib/format';
+import { analyzeForUserCached } from '@/lib/engine-cache';
 import {
-  analyzeForUser,
   availableYears,
   dailyRatesForProfile,
   getProfile,
@@ -66,7 +66,7 @@ export default async function OverviewPage({
   const { rok } = await searchParams;
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const { result, positions, labels } = analyzeForUser(txs, profile, year, today, dailyRates);
+  const { result, positions, labels } = analyzeForUserCached(user.id, portfolio.id, txs, profile, year, today, dailyRates);
   const limit100kChart = limit100kSeries(result);
   const flatTax50kChart = flatTax50kSeries(result);
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);

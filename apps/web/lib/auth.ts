@@ -27,6 +27,20 @@ export function resolveSecret(): string {
   return secret;
 }
 
+/**
+ * Bez BETTER_AUTH_URL by tichý localhost default vypnul Secure flag session
+ * cookie (Better Auth ho odvozuje z https:// v baseURL) — produkce musí
+ * spadnout při startu, ne vydávat nezabezpečené cookies.
+ */
+function resolveBaseUrl(): string {
+  const fromEnv = process.env.BETTER_AUTH_URL;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('BETTER_AUTH_URL musí být v produkci nastavena (https URL aplikace).');
+  }
+  return 'http://localhost:3000';
+}
+
 function buildAuth(db: Db) {
   return betterAuth({
     database: drizzleAdapter(db, {
@@ -37,6 +51,7 @@ function buildAuth(db: Db) {
         account: schema.account,
         verification: schema.verification,
         twoFactor: schema.twoFactor,
+        rateLimit: schema.rateLimit,
       },
     }),
     emailAndPassword: {
@@ -50,6 +65,22 @@ function buildAuth(db: Db) {
       // e-mailová verifikace zatím není (Resend klíč čeká na Jana) — bez
       // updateEmailWithoutVerification by /change-email vždy spadl
       changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+    },
+    // G10a: rate limiting auth endpointů — jen v produkci (E2E registruje
+    // opakovaně z jedné IP), DB storage kvůli serverless
+    rateLimit: {
+      enabled: process.env.NODE_ENV === 'production',
+      storage: 'database',
+      modelName: 'rateLimit',
+      window: 60,
+      max: 30,
+      customRules: {
+        '/sign-in/email': { window: 60, max: 5 },
+        '/sign-up/email': { window: 60, max: 5 },
+        '/two-factor/verify-totp': { window: 60, max: 5 },
+        '/change-password': { window: 300, max: 5 },
+        '/delete-user': { window: 300, max: 3 },
+      },
     },
     databaseHooks: {
       session: {
@@ -66,7 +97,7 @@ function buildAuth(db: Db) {
     // (bez něj by změna hesla s rotací session uživatele odhlásila)
     plugins: [twoFactor({ issuer: 'Danero' }), nextCookies()],
     secret: resolveSecret(),
-    baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
+    baseURL: resolveBaseUrl(),
   });
 }
 

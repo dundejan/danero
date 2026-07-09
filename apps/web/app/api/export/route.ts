@@ -24,6 +24,10 @@ export async function GET(request: Request): Promise<Response> {
   if (!session) return new Response('Nepřihlášen', { status: 401 });
   const userId = session.user.id;
   const db = await getDb();
+  const { checkRateLimit } = await import('@/lib/rate-limit');
+  if (!(await checkRateLimit(db, `export:${userId}`, { max: 5, windowMs: 60_000 }))) {
+    return new Response('Příliš mnoho exportů za sebou — počkej minutu.', { status: 429 });
+  }
 
   const portfolioRows = await db
     .select()

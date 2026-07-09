@@ -1,0 +1,27 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommitsDisabled"],
+  "timezone": "Europe/Prague",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "deps:",
+  "packageRules": [
+    {
+      "description": "Bezpečnostní záplaty hned, bez čekání na pondělí",
+      "matchDepTypes": ["dependencies"],
+      "vulnerabilityAlerts": { "enabled": true },
+      "prPriority": 10
+    },
+    {
+      "description": "Dev tooling hromadně v jednom PR",
+      "matchDepTypes": ["devDependencies"],
+      "groupName": "dev tooling"
+    },
+    {
+      "description": "Major verze frameworků ručně (Next, Better Auth, Drizzle)",
+      "matchPackageNames": ["next", "react", "react-dom", "better-auth", "drizzle-orm", "drizzle-kit"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

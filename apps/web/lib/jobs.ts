@@ -181,6 +181,10 @@ export async function processJob(
   const job = await claimJob(db, jobId, options.now ?? new Date());
   if (!job) return null;
 
+  const { logEvent } = await import('@/lib/log');
+  const startedAt = performance.now();
+  logEvent('info', 'job.started', { jobId: job.id, type: job.type });
+
   let outcome: { status: 'success'; result: unknown } | { status: 'error'; error: string };
   try {
     const handler = JOB_HANDLERS[job.type];
@@ -189,6 +193,13 @@ export async function processJob(
   } catch (error) {
     outcome = { status: 'error', error: error instanceof Error ? error.message : String(error) };
   }
+  logEvent(outcome.status === 'error' ? 'error' : 'info', 'job.finished', {
+    jobId: job.id,
+    type: job.type,
+    status: outcome.status,
+    durationMs: Math.round(performance.now() - startedAt),
+    ...(outcome.status === 'error' ? { error: outcome.error } : {}),
+  });
 
   const finished = await db
     .update(jobs)

@@ -12,6 +12,9 @@ import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs
 export async function GET(request: Request): Promise<Response> {
   const unauthorized = requireCronAuth(request);
   if (unauthorized) return unauthorized;
+  const { logEvent } = await import('@/lib/log');
+  logEvent('info', 'cron.sync-brokers.run');
+
 
   const db = await getDb();
   const accounts = await db.select().from(brokerAccounts);

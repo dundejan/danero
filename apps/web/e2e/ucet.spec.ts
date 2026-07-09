@@ -48,6 +48,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   // ── změna e-mailu (proti mrtvé konfiguraci — dřív padala vždy) ──────────
   await page.goto('/nastaveni');
   await page.getByLabel('Nový e-mail').fill('ucet-novy@danero.cz');
+  await page.getByLabel('Heslo (potvrzení)').fill(NOVE_HESLO);
   await page.getByRole('button', { name: 'Změnit e-mail' }).click();
   await expect(page.getByText('E-mail změněn.')).toBeVisible();
   await expect(page.getByText('ucet-novy@danero.cz').first()).toBeVisible();

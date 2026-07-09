@@ -215,12 +215,31 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
   redirect('/nastaveni?ok=heslo');
 }
 
-const ChangeEmailSchema = z.object({ newEmail: z.string().email() });
+const ChangeEmailSchema = z.object({
+  newEmail: z.string().email(),
+  currentPassword: z.string().min(1),
+});
 
 export async function changeEmailAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangeEmailSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=email');
+
+  // re-autentizace heslem: bez verifikačních e-mailů (Resend čeká na klíč) by
+  // unesená session mohla tiše přepsat identitu účtu — heslo to blokuje
+  {
+    const db = await getDb();
+    const { account } = await import('@/db/schema');
+    const [credential] = await db
+      .select({ hash: account.password })
+      .from(account)
+      .where(and(eq(account.userId, user.id), eq(account.providerId, 'credential')));
+    const { verifyPassword } = await import('better-auth/crypto');
+    const valid =
+      credential?.hash &&
+      (await verifyPassword({ hash: credential.hash, password: parsed.data.currentPassword }));
+    if (!valid) redirect('/nastaveni?chyba=email-heslo');
+  }
 
   const { getAuth } = await import('@/lib/auth');
   const { headers } = await import('next/headers');

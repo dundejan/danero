@@ -30,6 +30,10 @@ export async function POST(request: Request): Promise<Response> {
     variantaRaw === 'GENERAL' || variantaRaw === 'SEPARATE_16A' ? variantaRaw : undefined;
 
   const db = await getDb();
+  const { checkRateLimit } = await import('@/lib/rate-limit');
+  if (!(await checkRateLimit(db, `epo:${session.user.id}`, { max: 10, windowMs: 60_000 }))) {
+    return chyba('Příliš mnoho exportů za sebou — počkej minutu.');
+  }
   const { activePortfolio } = await import('@/lib/portfolio-context');
   const portfolio = await activePortfolio(db, session.user.id);
   const profile = await getProfile(db, session.user.id, portfolio.id);

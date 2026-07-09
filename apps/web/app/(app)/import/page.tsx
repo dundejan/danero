@@ -208,6 +208,8 @@ export default async function ImportPage({
                 ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
                 : chyba === 'mena'
                   ? 'Měna má tvar 3 písmena (např. USD) — zkontroluj vyplněné hodnoty.'
+                  : chyba === 'limit'
+                  ? 'Příliš mnoho nahrání za sebou — počkej chvíli a zkus to znovu.'
                   : 'Vyber aspoň jeden CSV, XML nebo XLSX soubor.'
           }
         />
