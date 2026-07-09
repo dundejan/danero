@@ -19,6 +19,7 @@ import type {
   LimitSeries,
   YearBar,
 } from '@/lib/charts-data';
+import { MONTH_LABELS } from '@/lib/format';
 
 /**
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
@@ -39,8 +40,6 @@ const czkAxis = (value: number): string => {
   if (abs >= 1_000) return `${sign}${Math.round(abs / 1_000)} tis.`;
   return `${sign}${Math.round(abs)}`;
 };
-
-const MONTH_LABELS = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
 
 const monthLabel = (isoMonth: string): string => MONTH_LABELS[Number(isoMonth.slice(5, 7)) - 1] ?? isoMonth;
 

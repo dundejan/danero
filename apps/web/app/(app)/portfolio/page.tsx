@@ -14,7 +14,7 @@ import {
   feesByYear,
   realizedGainsByYear,
 } from '@/lib/charts-data';
-import { czDate, czk, money, qty } from '@/lib/format';
+import { czDate, czk, money, plural, qty } from '@/lib/format';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import {
   dailyRatesForProfile,
@@ -31,6 +31,8 @@ import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { analyzeTaxYear, type TaxYearResult } from '@danero/engine';
 import { redirect } from 'next/navigation';
+
+export const metadata = { title: 'Portfolio — Danero' };
 
 export default async function PortfolioPage({
   searchParams,
@@ -107,7 +109,7 @@ export default async function PortfolioPage({
                 {valuation.oldestPriceAt &&
                   `, ceny k ${valuation.oldestPriceAt.toLocaleDateString('cs-CZ')}`}
                 {valuation.unpricedCount > 0 &&
-                  ` · ${valuation.unpricedCount} pozic bez ceny či kurzu (nejsou započtené)`}
+                  ` · ${valuation.unpricedCount} ${plural(valuation.unpricedCount, 'pozice', 'pozice', 'pozic')} bez ceny či kurzu (nezapočteno)`}
                 . Ceny se obnovují při synchronizaci.
               </p>
             </>
@@ -144,8 +146,9 @@ export default async function PortfolioPage({
         <CardTitle>Pozice</CardTitle>
         {valuation.unpricedCount > 0 && valuation.pricedCount > 0 && (
           <p className="text-xs text-jantar">
-            U {valuation.unpricedCount} pozic chybí cena od brokera nebo kurz měny — hodnota
-            a zisk/ztráta u nich nejsou.
+            U {valuation.unpricedCount}{' '}
+            {plural(valuation.unpricedCount, 'pozice', 'pozic', 'pozic')} chybí cena od
+            brokera nebo kurz měny — hodnota a zisk/ztráta tam nejsou.
           </p>
         )}
         <div className="overflow-x-auto">
@@ -154,11 +157,11 @@ export default async function PortfolioPage({
               <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
                 <th className="py-2 pr-4">Instrument</th>
                 <th className="py-2 pr-4 text-right">Kusů</th>
-                <th className="py-2 pr-4 text-right">Cena</th>
-                <th className="py-2 pr-4 text-right">Hodnota (CZK)</th>
+                <th className="py-2 pr-4 text-right">Cena/ks</th>
+                <th className="py-2 pr-4 text-right">Hodnota (Kč)</th>
                 <th
                   className="py-2 pr-4 text-right"
-                  title="Rozdíl aktuální hodnoty a nabývací ceny — zisk/ztráta, kdyby ses prodal teď (před daní)"
+                  title="Rozdíl aktuální hodnoty a nabývací ceny — zisk/ztráta, kdybys prodal teď (před zdaněním)"
                 >
                   Nerealizovaný zisk/ztráta
                 </th>
@@ -272,7 +275,7 @@ export default async function PortfolioPage({
           <Card>
             <CardTitle>Dividendy {year} po měsících a státech</CardTitle>
             <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Brutto v CZK; státy podle zdroje srážkové daně.
+              Brutto v Kč; podle státu, kde byla dividenda zdaněna u zdroje (srážková daň).
             </p>
             <DividendsByMonthChart data={dividends} />
           </Card>

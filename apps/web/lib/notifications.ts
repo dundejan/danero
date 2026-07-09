@@ -235,7 +235,7 @@ export type EmailSender = (message: EmailMessage) => Promise<void>;
 export function resolveEmailSender(): EmailSender {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    // produkce bez klíče nesmí digest tiše „odeslat" do console a označit
+    // produkce bez klíče nesmí digest tiše „odeslat“ do console a označit
     // notifikace za doručené — selhání nechá frontu čekat na doplnění klíče
     if (process.env.NODE_ENV === 'production') {
       return async () => {
@@ -301,7 +301,7 @@ export async function processUserNotifications(
       }),
     ];
     // G8d: vypnuté typy se ani nezaloží (uživatel je nechce vidět)
-    // kalendářní připomínky (termíny přiznání, roční shrnutí) nejsou „limity" —
+    // kalendářní připomínky (termíny přiznání, roční shrnutí) nejsou „limity“ —
     // preference je nevypínají (jádro služby); vypnutý e-mail je stále ztiší
     candidates = candidates.filter((c) =>
       c.type === 'YEAR_SUMMARY' || c.type === 'DEADLINE'
@@ -341,7 +341,7 @@ export async function processUserNotifications(
         unEmailed.length === 1
           ? `Danero: ${unEmailed[0]!.title}`
           : `Danero: ${unEmailed.length} nových upozornění`,
-      text: `${lines}\n\n—\nDetail najdeš na svém přehledu. Danero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
+      text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
     });
   }
   if (pending.length > 0) {

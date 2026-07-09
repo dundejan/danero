@@ -14,6 +14,7 @@ import { getAuth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
+import { humanizeUserAgent } from '@/lib/ua';
 import {
   changeEmailAction,
   createPortfolioAction,
@@ -28,6 +29,8 @@ import {
   saveProfileAction,
   saveTrading212KeyAction,
 } from './actions';
+
+export const metadata = { title: 'Nastavení — Danero' };
 
 export default async function SettingsPage({
   searchParams,
@@ -58,7 +61,7 @@ export default async function SettingsPage({
     odhlaseno: 'Ostatní zařízení byla odhlášena.',
     portfolio: 'Portfolio vytvořeno a přepnuto — nastav mu daňový profil níže.',
     'portfolio-smazano': 'Portfolio smazáno včetně všech jeho dat.',
-    notifikace: 'Notifikační preference uloženy.',
+    notifikace: 'Nastavení upozornění uloženo.',
   };
   const CHYBA_LABELS: Record<string, string> = {
     heslo: 'Nové heslo musí mít aspoň 10 znaků.',
@@ -71,7 +74,12 @@ export default async function SettingsPage({
     'portfolio-nazev': 'Zadej název portfolia (1–60 znaků).',
     'portfolio-limit': 'Maximum je 10 portfolií na účet.',
     'portfolio-posledni': 'Poslední portfolio smazat nejde.',
+    'portfolio-smazani': 'Pro smazání portfolia napiš do potvrzení přesně SMAZAT.',
+    'zadny-ucet': 'Tenhle účet u brokera už neexistuje — obnov stránku.',
   };
+  // api-klic a ibkr mají specifickou inline hlášku přímo v kartě — generický
+  // toast by byl podruhé a obecněji
+  const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr';
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -88,7 +96,7 @@ export default async function SettingsPage({
         </p>
       </header>
 
-      {chyba && (
+      {chyba && !inlineOnly && (
         <Toast
           kind="chyba"
           text={CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
@@ -135,7 +143,9 @@ export default async function SettingsPage({
           <CardTitle>Metody výpočtu</CardTitle>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="matchingMethod">Párování prodejů (R-05c)</Label>
+              <Label htmlFor="matchingMethod" title="Pravidlo R-05c v metodice Danero">
+                Párování prodejů
+              </Label>
               <Select
                 id="matchingMethod"
                 name="matchingMethod"
@@ -148,7 +158,9 @@ export default async function SettingsPage({
               </Select>
             </div>
             <div>
-              <Label htmlFor="fxMethod">Měnové kurzy (R-06)</Label>
+              <Label htmlFor="fxMethod" title="Pravidlo R-06 v metodice Danero">
+                Měnové kurzy
+              </Label>
               <Select id="fxMethod" name="fxMethod" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
                 <option value="UNIFIED">Jednotný kurz GFŘ</option>
                 <option value="CNB_DAILY">Denní kurzy ČNB</option>
@@ -170,7 +182,9 @@ export default async function SettingsPage({
               </p>
             </div>
             <div>
-              <Label htmlFor="timeTestBasis">Báze časového testu (R-01a)</Label>
+              <Label htmlFor="timeTestBasis" title="Pravidlo R-01a v metodice Danero">
+                Báze časového testu
+              </Label>
               <Select
                 id="timeTestBasis"
                 name="timeTestBasis"
@@ -179,10 +193,13 @@ export default async function SettingsPage({
                 <option value="settlement">Datum vypořádání (dle pokynu D-59)</option>
                 <option value="trade">Datum obchodu</option>
               </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Od kterého data se počítají 3 roky držení.
+              </p>
             </div>
             <div>
-              <Label htmlFor="derivativesExpensesPerDruh">
-                Prémie bezcenně expirovaných opcí (R-12i)
+              <Label htmlFor="derivativesExpensesPerDruh" title="Pravidlo R-12i v metodice Danero">
+                Prémie bezcenně expirovaných opcí
               </Label>
               <Select
                 id="derivativesExpensesPerDruh"
@@ -269,7 +286,7 @@ export default async function SettingsPage({
       <Card className="space-y-5" id="ucet">
         <CardTitle>Účet</CardTitle>
         <p className="text-sm text-inkoust-tlumeny">
-          Přihlášen jako <span className="font-medium text-inkoust">{user.email}</span>
+          Přihlášený účet: <span className="font-medium text-inkoust">{user.email}</span>
         </p>
 
         <form action={changePasswordAction} className="space-y-3">
@@ -292,8 +309,8 @@ export default async function SettingsPage({
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="newEmail">Nový e-mail</Label>
-              {/* autoComplete NESMÍ být „email" — password manager sem cpal
-                  starou adresu; „off" + rozbití páru s heslem níže */}
+              {/* autoComplete NESMÍ být „email“ — password manager sem cpal
+                  starou adresu; „off“ + rozbití páru s heslem níže */}
               <Input id="newEmail" name="newEmail" type="email" required autoComplete="off" />
             </div>
             <div>
@@ -329,7 +346,7 @@ export default async function SettingsPage({
           <p className="text-sm font-semibold text-cervena">Smazání účtu</p>
           <p className="text-sm text-inkoust-tlumeny">
             Nevratně smaže účet i všechna data — transakce, profil, šifrované broker
-            klíče, notifikace i historii importů. Nejdřív si případně stáhni export.
+            klíče, upozornění i historii importů. Nejdřív si případně stáhni export.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -348,7 +365,7 @@ export default async function SettingsPage({
       </Card>
 
       <Card className="space-y-4" id="notifikace">
-        <CardTitle>Notifikace</CardTitle>
+        <CardTitle>E-mailová upozornění</CardTitle>
         <form action={saveNotificationPrefsAction} className="space-y-3">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="emailEnabled" defaultChecked={prefs.emailEnabled} />
@@ -366,7 +383,7 @@ export default async function SettingsPage({
             Vypnuté typy se nezakládají ani v aplikaci a při vypnutém e-mailu se nahromaděná
             upozornění NEposílají zpětně. Každý e-mail má odhlašovací odkaz.
           </p>
-          <SubmitButton size="sm" pendingLabel="Ukládám…">Uložit notifikace</SubmitButton>
+          <SubmitButton size="sm" pendingLabel="Ukládám…">Uložit upozornění</SubmitButton>
         </form>
       </Card>
 
@@ -382,7 +399,9 @@ export default async function SettingsPage({
                 <span className="font-mono text-xs">
                   {s.createdAt.toLocaleString('cs-CZ')}
                 </span>
-                <span className="truncate">{s.userAgent ?? 'neznámé zařízení'}</span>
+                <span className="truncate" title={s.userAgent ?? undefined}>
+                  {humanizeUserAgent(s.userAgent)}
+                </span>
                 {currentSession?.session.id === s.id && (
                   <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
                     toto zařízení
@@ -451,7 +470,7 @@ export default async function SettingsPage({
               </p>
               <ul className="space-y-1">
                 <li>
-                  <strong className="text-inkoust">Name:</strong> třeba „Danero" (jen popisek pro
+                  <strong className="text-inkoust">Name:</strong> třeba „Danero“ (jen popisek pro
                   tebe)
                 </li>
                 <li>
@@ -535,8 +554,8 @@ export default async function SettingsPage({
               <ol className="list-decimal space-y-1 pl-5">
                 <li>
                   <strong className="text-inkoust">Performance &amp; Reports → Flex Queries →
-                  „+" u Activity Flex Query.</strong>{' '}
-                  Pojmenuj ji třeba „Danero".
+                  „+“ u Activity Flex Query.</strong>{' '}
+                  Pojmenuj ji třeba „Danero“.
                 </li>
                 <li>
                   Zapni sekce a úrovně přesně takto:{' '}
@@ -550,7 +569,7 @@ export default async function SettingsPage({
                 <li>
                   V Delivery Configuration nastav{' '}
                   <strong className="text-inkoust">Format XML</strong> a{' '}
-                  <strong className="text-inkoust">Period „Last 365 Calendar Days"</strong>.
+                  <strong className="text-inkoust">Period „Last 365 Calendar Days“</strong>.
                   Ulož a poznamenej si <strong className="text-inkoust">Query ID</strong>{' '}
                   (číslo u názvu query).
                 </li>

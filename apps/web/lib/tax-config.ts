@@ -13,7 +13,7 @@ import {
  * Běžný rok je ⚠️ ORIENTAČNÍ odhad pro celoroční hlídání — pokyn za něj GFŘ
  * vydá až v lednu následujícího roku (runbook: doplnit kurzy do enginu,
  * posunout LAST_VERIFIED_RATE_YEAR a přidat pokyn do UNIFIED_RATE_SOURCES —
- * jinak karta „Použité kurzy" nemá u roku zdroj). UI musí orientační kurz
+ * jinak karta „Použité kurzy“ nemá u roku zdroj). UI musí orientační kurz
  * viditelně označit.
  */
 export const UNIFIED_RATES: Record<number, Record<string, string>> = {

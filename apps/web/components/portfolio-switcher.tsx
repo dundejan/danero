@@ -19,8 +19,12 @@ export function PortfolioSwitcher({
   return (
     <form action={switchPortfolioAction} className="mb-6 flex items-center gap-2">
       <input type="hidden" name="zpet" value={pathname} />
-      <label htmlFor="portfolio-switch" className="text-xs font-medium text-inkoust-tlumeny">
-        Portfolio
+      <label
+        htmlFor="portfolio-switch"
+        className="text-xs font-medium text-inkoust-tlumeny"
+        title="Oddělená portfolia (např. manžel/ka) — každé má vlastní daně"
+      >
+        Spravuji:
       </label>
       <select
         id="portfolio-switch"

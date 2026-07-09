@@ -61,7 +61,7 @@ export interface SyncProgress {
   years?: SyncYearProgress[];
 }
 
-/** Rekonciliace „nedoběhla" — jediný tvar pro všechna chybová místa. */
+/** Rekonciliace „nedoběhla“ — jediný tvar pro všechna chybová místa. */
 export function emptyReconciliation(error: string): StoredReconciliation {
   return { ok: false, matchedCount: 0, unmatchedTickers: [], issues: [], error };
 }

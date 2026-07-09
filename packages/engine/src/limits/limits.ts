@@ -3,6 +3,7 @@ import type { AssetScope, TaxYearConfig } from '../config/taxYear';
 import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
+import { czkText } from '../format';
 import { WarningCollector } from '../warnings';
 
 export type LimitZone = 'OK' | 'WARNING' | 'CRITICAL' | 'EXCEEDED';
@@ -119,7 +120,7 @@ export function computeLimits(
     warnings.add(
       'FLAT_TAX_BROKEN',
       'WARNING',
-      `Prolomen limit ${config.limits.flatTaxOtherIncome} Kč pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${sideIncome.toFixed(2)} Kč. Vzniká povinnost podat přiznání a přehledy ČSSZ/ZP (R-08e); v paušálním režimu zůstáváš (R-08a).`,
+      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání a přehledy ČSSZ/ZP (R-08e); v paušálním režimu zůstáváš (R-08a).`,
       { usedCzk: sideIncome.toFixed(2) },
     );
   }
@@ -140,10 +141,18 @@ export function computeLimits(
       }));
   const reporting38v = [...flag38v(securities, 'SECURITIES'), ...flag38v(crypto, 'CRYPTO')];
   if (reporting38v.length > 0) {
+    // lidský tvar podle počtu (1 / 2–4 / 5+) — deterministicky, bez Intl
+    const n = reporting38v.length;
+    const subject =
+      n === 1
+        ? 'Osvobozený příjem z prodeje CP či kryptoaktiv přesahuje'
+        : n <= 4
+          ? `${n} osvobozené příjmy z prodeje CP či kryptoaktiv přesahují`
+          : `${n} osvobozených příjmů z prodeje CP či kryptoaktiv přesahuje`;
     warnings.add(
       'REPORTING_38V',
       'WARNING',
-      `${reporting38v.length} osvobozený příjem/příjmy z prodeje CP či kryptoaktiv přesahují 5 mil. Kč — povinnost oznámit správci daně (§ 38v) ve lhůtě pro přiznání; pokuty dle § 38w až 15 %.`,
+      `${subject} 5 mil. Kč — povinnost oznámit správci daně (§ 38v) ve lhůtě pro přiznání; pokuty dle § 38w až 15 %.`,
       { count: reporting38v.length },
     );
   }

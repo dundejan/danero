@@ -135,7 +135,7 @@ export async function disconnectBrokerAction(formData: FormData): Promise<void> 
     .delete(brokerAccounts)
     .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)))
     .returning({ id: brokerAccounts.id });
-  // tiché „nic se nesmazalo" nesmí vypadat jako úspěch (stale formulář apod.)
+  // tiché „nic se nesmazalo“ nesmí vypadat jako úspěch (stale formulář apod.)
   if (deleted.length === 0) redirect('/nastaveni?chyba=zadny-ucet');
   await logAudit(db, user.id, 'BROKER_DISCONNECTED');
   revalidatePath('/nastaveni');
@@ -191,7 +191,7 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
       },
     });
   } catch (error) {
-    // infrastrukturní chyba nesmí být němá — jinak „špatné heslo" maskuje výpadek
+    // infrastrukturní chyba nesmí být němá — jinak „špatné heslo“ maskuje výpadek
     logEvent('error', 'account.change_password_failed', { error: error instanceof Error ? error.message : String(error) });
     redirect('/nastaveni?chyba=heslo-spatne');
   }
@@ -335,7 +335,7 @@ export async function deletePortfolioAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const portfolioId = String(formData.get('portfolioId') ?? '');
   if (String(formData.get('potvrzeni') ?? '') !== 'SMAZAT') {
-    redirect('/nastaveni?chyba=smazani');
+    redirect('/nastaveni?chyba=portfolio-smazani');
   }
   const db = await getDb();
   const { listPortfolios, PORTFOLIO_COOKIE } = await import('@/lib/portfolio-context');

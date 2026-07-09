@@ -106,7 +106,7 @@ export async function importFile(
     return importParsed(db, userId, portfolioId, filename, parseDegiroAccountCsv(utf8));
   }
 
-  // Fio: hlavička „Datum obchodu" je čitelná i při špatném dekódování (ASCII),
+  // Fio: hlavička „Datum obchodu“ je čitelná i při špatném dekódování (ASCII),
   // samotný obsah se ale musí dekódovat jako windows-1250. Kontroluje se JEN
   // první řádek — poznámka v jiném souboru nesmí import přesměrovat na Fio.
   const firstLine = utf8.slice(0, utf8.indexOf('\n') === -1 ? undefined : utf8.indexOf('\n'));

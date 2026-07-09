@@ -8,6 +8,8 @@ import { activePortfolio } from '@/lib/portfolio-context';
 import { getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 
+export const metadata = { title: 'Vítej — Danero' };
+
 /**
  * Onboarding po registraci (G9a) — žádný wizard state: kroky se odvozují
  * z dat (profil? broker/transakce?), takže průvodce jde kdykoli opustit
@@ -44,7 +46,7 @@ export default async function WelcomePage() {
       <header>
         <h1 className="font-display text-3xl font-bold">Vítej v Daneru 👋</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Dva kroky a hlídáme ti daně. Kdykoli můžeš odejít a vrátit se — průvodce si
+          Zbývají dva kroky a hlídáme ti daně. Kdykoli můžeš odejít a vrátit se — průvodce si
           pamatuje, kde jsi.
         </p>
       </header>
@@ -95,7 +97,7 @@ export default async function WelcomePage() {
             >
               <span className="block font-semibold">Trading212 / IBKR API</span>
               <span className="text-inkoust-tlumeny">
-                Připoj read-only klíč — synchronizace pak běží sama každý den.
+                Připoj klíč jen pro čtení — synchronizace pak běží sama každý den.
               </span>
             </Link>
             <Link
@@ -104,7 +106,7 @@ export default async function WelcomePage() {
             >
               <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX)</span>
               <span className="text-inkoust-tlumeny">
-                T212, IBKR, XTB, Degiro, Fio nebo univerzální šablona.
+                Trading212, IBKR, XTB, Degiro, Fio nebo univerzální šablona.
               </span>
             </Link>
           </div>

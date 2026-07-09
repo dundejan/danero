@@ -15,6 +15,7 @@ import {
   type TransferInTransaction,
 } from '@danero/shared';
 import type { EngineOptions, MatchingMethod } from '../config/options';
+import { czDateText, qtyText } from '../format';
 import { EngineError, WarningCollector } from '../warnings';
 
 export interface Lot {
@@ -153,7 +154,7 @@ export function buildLedger(
       warnings.add(
         'TRANSFER_WITHOUT_ACQUISITION',
         'ERROR',
-        `Převod ${tx.id} (${tx.isin}) bez údajů o původním nabytí — nabývací cena 0 a časový test běží až od převodu. Doplň datum a cenu původního nákupu.`,
+        `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} bez údajů o původním nabytí — nabývací cena 0 a časový test běží až od převodu. Doplň datum a cenu původního nákupu.`,
         { txId: tx.id, isin: tx.isin },
       );
     }
@@ -211,7 +212,7 @@ export function buildLedger(
       warnings.add(
         'NEGATIVE_POSITION',
         'ERROR',
-        `Prodej ${tx.id} (${tx.isin}): prodáno o ${toFill.toString()} ks více, než je evidováno. Historie je nejspíš neúplná — chybějící kusy oceněny 0 Kč a bez nároku na časový test. Nahraj kompletní historii od prvního nákupu.`,
+        `Prodej ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.tradeDate)}: prodáno o ${qtyText(toFill)} ks více, než je evidováno. Historie je nejspíš neúplná — chybějící kusy oceněny 0 Kč a bez nároku na časový test. Nahraj kompletní historii od prvního nákupu.`,
         { txId: tx.id, isin: tx.isin, missing: toFill.toString() },
       );
       syntheticCounter += 1;
@@ -281,7 +282,7 @@ export function buildLedger(
       warnings.add(
         'TRANSFER_OUT_EXCEEDS_POSITION',
         'ERROR',
-        `Odchozí převod ${tx.id} (${tx.isin}) převyšuje evidovanou pozici o ${toFill.toString()} ks.`,
+        `Odchozí převod ${tx.isin} z ${czDateText(tx.date)} převyšuje evidovanou pozici o ${qtyText(toFill)} ks.`,
         { txId: tx.id, isin: tx.isin },
       );
     }
@@ -335,7 +336,7 @@ export function buildLedger(
           warnings.add(
             'MERGER_INTERPRETIVE',
             'WARNING',
-            `Fúze ${tx.id} (${tx.isin}→${newIsin}): předpokládám zachování časového testu (R-04b). Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty (NSS 7 Afs 229/2022 — R-04c).`,
+            `Fúze ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): předpokládám zachování časového testu (R-04b). Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty (NSS 7 Afs 229/2022 — R-04c).`,
             { txId: tx.id },
           );
         }
@@ -360,7 +361,7 @@ export function buildLedger(
           warnings.add(
             'SPINOFF_NO_POSITION',
             'WARNING',
-            `Spin-off ${tx.id}: žádná otevřená pozice ${tx.isin} k datu ${tx.date}.`,
+            `Spin-off ${tx.isin} z ${czDateText(tx.date)}: žádná otevřená pozice k tomuto datu.`,
             { txId: tx.id },
           );
           break;
@@ -400,7 +401,7 @@ export function buildLedger(
         warnings.add(
           'SPINOFF_COST_BASIS',
           'INFO',
-          `Spin-off ${tx.id}: nabývací cena nových kusů dle volby "${options.spinoffCostBasisAllocation}" (R-04f — zákon alokaci výslovně neřeší).`,
+          `Spin-off ${tx.isin} z ${czDateText(tx.date)}: nabývací cena nových kusů dle volby "${options.spinoffCostBasisAllocation}" (R-04f — zákon alokaci výslovně neřeší).`,
           { txId: tx.id },
         );
         break;
@@ -409,7 +410,7 @@ export function buildLedger(
         warnings.add(
           'DELISTING_MANUAL',
           'WARNING',
-          `Delisting ${tx.isin} (${tx.id}) vyžaduje ruční posouzení — engine pozici nemění.`,
+          `Delisting ${tx.isin} (${czDateText(tx.date)}) vyžaduje ruční posouzení — engine pozici nemění.`,
           { txId: tx.id },
         );
         break;

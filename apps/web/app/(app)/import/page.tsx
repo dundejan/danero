@@ -17,7 +17,11 @@ import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { syncBrokerAction } from '../nastaveni/actions';
 import { Toast } from '@/components/toast';
+import { FileField } from '@/components/ui/file-field';
+import { plural } from '@/lib/format';
 import { deleteBatchAction, saveAliasesAction, uploadImportAction } from './actions';
+
+export const metadata = { title: 'Import dat — Danero' };
 
 interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
@@ -46,7 +50,7 @@ const BROKER_COPY: Record<string, BrokerCopy> = {
       'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading212 může trvat i deset minut. Poběží na pozadí, průběh uvidíš tady.',
     regular: 'Stahuje se běžný rok; kompletní historie proběhla při prvním spuštění.',
     buttonFirst: 'Stáhnout kompletní historii',
-    note: 'Trading212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení" — to jsme my, klidně je ignoruj.',
+    note: 'Trading212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení“ — to jsme my, klidně je ignoruj.',
   },
   ibkr: {
     firstSync:
@@ -70,7 +74,7 @@ function BrokerSyncCard({
     <Card className="space-y-3">
       <CardTitle>{account.label} — automatická synchronizace</CardTitle>
       {activeJob ? (
-        <SyncJobProgress initialJob={activeJob} accountId={account.id} />
+        <SyncJobProgress initialJob={activeJob} accountId={account.id} broker={account.label} />
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -91,7 +95,8 @@ function BrokerSyncCard({
             <div className="space-y-1 border-t border-linka pt-3">
               {reconciliation.ok ? (
                 <p className="text-sm font-medium text-zelena">
-                  Pozice sedí s {account.label} ({reconciliation.matchedCount} instrumentů).
+                  Pozice sedí s {account.label} ({reconciliation.matchedCount}{' '}
+                  {plural(reconciliation.matchedCount, 'instrument', 'instrumenty', 'instrumentů')}).
                 </p>
               ) : reconciliation.error ? (
                 <>
@@ -185,7 +190,7 @@ export default async function ImportPage({
       <header>
         <h1 className="font-display text-3xl font-bold">Import dat</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Stačí připojit broker účet — Danero si stáhne historii samo a pak ji denně
+          Stačí připojit brokera — Danero si stáhne historii samo a pak ji denně
           aktualizuje. Ruční nahrání souborů je záložní varianta (a cesta pro jiné brokery
           přes{' '}
           <a
@@ -227,7 +232,7 @@ export default async function ImportPage({
           <p className="text-sm text-inkoust-tlumeny">
             Importy obsahují symboly, ke kterým broker neexportuje ISIN
             {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
-            na výpisu brokera nebo vyhledáním „[symbol] ISIN". Po uložení nahraj soubor znovu —
+            na výpisu brokera nebo vyhledáním „[symbol] ISIN“. Po uložení nahraj soubor znovu —
             obchody těchto symbolů se bez doplnění neimportují.
           </p>
           <form action={saveAliasesAction} className="space-y-2">
@@ -271,9 +276,9 @@ export default async function ImportPage({
         <Card className="space-y-3">
           <CardTitle>Automatická synchronizace</CardTitle>
           <p className="text-sm text-inkoust-tlumeny">
-            Připoj read-only přístup v{' '}
+            Připoj přístup jen pro čtení v{' '}
             <Link href="/nastaveni#trading212" className="font-medium text-ruzova">
-              nastavení
+              Nastavení
             </Link>{' '}
             (Trading212 API klíč nebo IBKR Flex token) — Danero si pak stáhne historii,
             denně ji aktualizuje a hlídá, že pozice sedí.
@@ -295,14 +300,12 @@ export default async function ImportPage({
         <CardTitle>Ruční nahrání výpisů (záložní varianta)</CardTitle>
         <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <input type="hidden" name="portfolioId" value={portfolio.id} />
-          <input
-            type="file"
+          <FileField
             name="soubory"
-            aria-label="Soubory s výpisy (CSV, XML nebo XLSX)"
+            ariaLabel="Soubory s výpisy (CSV, XML nebo XLSX)"
             accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             multiple
             required
-            className="flex-1 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-pozadi file:px-4 file:py-2 file:text-sm file:font-semibold file:text-inkoust"
           />
           <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
         </form>
@@ -359,6 +362,17 @@ export default async function ImportPage({
         )}
         {batches.map((batch) => {
           const issues = batch.issues as BatchIssues;
+          // prázdný export (T212 vrací pro roky před založením účtu prázdný
+          // soubor) není chyba uživatele — nezobrazovat červeně jako chyby.
+          // POZOR: poznává se VÝHRADNĚ nulovými počty (parser od fixu vrací
+          // pro prázdný soubor 0 chyb) — sniffování chybových hlášek by
+          // maskovalo skutečné chyby formátu (0 přidaných + chyba parsování).
+          const isEmptyPeriod =
+            batch.added === 0 &&
+            batch.duplicates === 0 &&
+            batch.skippedCount === 0 &&
+            batch.errorCount === 0 &&
+            batch.warningCount === 0;
           return (
             <Card key={batch.id} className="space-y-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -372,28 +386,37 @@ export default async function ImportPage({
                       className="font-medium text-inkoust-tlumeny hover:text-cervena"
                       title="Smaže jen záznam o importu — transakce zůstávají"
                     >
-                      smazat záznam
+                      Smazat záznam
                     </button>
                   </form>
                 </span>
               </div>
-              <p className="font-mono text-xs text-inkoust-tlumeny">
-                {batch.added} nových · {batch.duplicates} duplicit ·{' '}
-                <span className={batch.errorCount > 0 ? 'text-cervena' : undefined}>
-                  {batch.errorCount} chyb
-                </span>{' '}
-                · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
-              </p>
-              {(issues.errors ?? []).slice(0, 10).map((issue) => (
-                <p key={`e-${issue.line}`} className="text-xs text-cervena">
-                  Řádek {issue.line}: {issue.message}
+              {isEmptyPeriod ? (
+                <p className="font-mono text-xs text-inkoust-tlumeny">
+                  prázdné období (žádné obchody)
                 </p>
-              ))}
-              {(issues.warnings ?? []).slice(0, 5).map((issue) => (
-                <p key={`w-${issue.line}`} className="text-xs text-jantar">
-                  Řádek {issue.line}: {issue.message}
-                </p>
-              ))}
+              ) : (
+                <>
+                  <p className="font-mono text-xs text-inkoust-tlumeny">
+                    {batch.added} {plural(batch.added, 'nová', 'nové', 'nových')} ·{' '}
+                    {batch.duplicates} {plural(batch.duplicates, 'duplicita', 'duplicity', 'duplicit')} ·{' '}
+                    <span className={batch.errorCount > 0 ? 'text-cervena' : undefined}>
+                      {batch.errorCount} {plural(batch.errorCount, 'chyba', 'chyby', 'chyb')}
+                    </span>{' '}
+                    · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
+                  </p>
+                  {(issues.errors ?? []).slice(0, 10).map((issue) => (
+                    <p key={`e-${issue.line}`} className="text-xs text-cervena">
+                      Řádek {issue.line}: {issue.message}
+                    </p>
+                  ))}
+                  {(issues.warnings ?? []).slice(0, 5).map((issue) => (
+                    <p key={`w-${issue.line}`} className="text-xs text-jantar">
+                      Řádek {issue.line}: {issue.message}
+                    </p>
+                  ))}
+                </>
+              )}
             </Card>
           );
         })}

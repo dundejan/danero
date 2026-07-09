@@ -18,7 +18,7 @@ export async function GET(request: Request): Promise<Response> {
 <title>Odhlášení upozornění — Danero</title>
 <body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem">
 <h1 style="font-size:1.25rem">Odhlásit e-mailová upozornění?</h1>
-<p>Upozornění v aplikaci ti zůstanou; e-maily jde kdykoli zapnout zpět v Nastavení → Notifikace.</p>
+<p>Upozornění v aplikaci ti zůstanou; e-maily jde kdykoli zapnout zpět v Nastavení → E-mailová upozornění.</p>
 <form method="post">
   <button type="submit" style="padding:.5rem 1rem;cursor:pointer">Ano, vypnout e-maily</button>
 </form>
@@ -41,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
     });
 
   return new Response(
-    'E-mailová upozornění jsou vypnutá. Znovu je zapneš v Nastavení → Notifikace. Upozornění v aplikaci ti zůstávají.',
+    'E-mailová upozornění jsou vypnutá. Znovu je zapneš v Nastavení → E-mailová upozornění. Upozornění v aplikaci ti zůstávají.',
     { headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
   );
 }

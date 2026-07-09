@@ -30,7 +30,7 @@ test('IBKR: připojení Flex → sync jako job → rekonciliace → ruční XML 
     timeout: 60_000,
   });
   await expect(page.getByText(/ibkr-flex-.*\.xml/)).toBeVisible();
-  await expect(page.getByText('3 nových · 0 duplicit')).toBeVisible();
+  await expect(page.getByText('3 nové · 0 duplicit')).toBeVisible();
 
   // ── ruční nahrání téhož XML: vše duplicitní ─────────────────────────────
   await page.locator('input[name="soubory"]').setInputFiles({
@@ -40,7 +40,7 @@ test('IBKR: připojení Flex → sync jako job → rekonciliace → ruční XML 
   });
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
   await expect(page.getByText('ibkr-rucni.xml')).toBeVisible();
-  await expect(page.getByText('0 nových · 3 duplicit')).toBeVisible();
+  await expect(page.getByText('0 nových · 3 duplicity')).toBeVisible();
 
   // dashboard po syncu ukazuje data (dividenda + prodej 2026)
   await page.goto('/prehled');

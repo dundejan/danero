@@ -19,7 +19,7 @@ const chyba = (message: string, status = 400): Response =>
 export async function POST(request: Request): Promise<Response> {
   const auth = await getAuth();
   const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) return new Response('Unauthorized', { status: 401 });
+  if (!session) return new Response('Nepřihlášen', { status: 401 });
 
   const form = await request.formData();
   const year = Number(field(form, 'rok'));

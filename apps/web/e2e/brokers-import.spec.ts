@@ -18,7 +18,7 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   // deterministický upload: čeká, až se import propíše do historie (nový batch),
   // jinak další setInputFiles závodí s překreslením stránky po redirectu
   const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
-    const batchButtons = page.getByRole('button', { name: 'smazat záznam' });
+    const batchButtons = page.getByRole('button', { name: 'Smazat záznam' });
     const before = await batchButtons.count();
     await page.locator('input[name="soubory"]').setInputFiles(file);
     await page.getByRole('button', { name: 'Nahrát výpisy' }).click();

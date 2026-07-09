@@ -7,6 +7,7 @@ import {
   type Money,
 } from '@danero/shared';
 import type { EngineOptions } from '../config/options';
+import { czDateText, pctText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import { WarningCollector } from '../warnings';
 
@@ -57,6 +58,14 @@ const countryFromIsin = (isin?: string): string | undefined => {
   return /^[A-Z]{2}$/.test(prefix) ? prefix : undefined;
 };
 
+/** Lidské označení dividendy do textu varování — ticker/ISIN a datum, ne technické ID. */
+const dividendLabel = (tx: DividendTransaction): string => {
+  const instrument = tx.ticker ?? tx.isin;
+  return instrument
+    ? `Dividenda ${instrument} z ${czDateText(tx.date)}`
+    : `Dividenda z ${czDateText(tx.date)}`;
+};
+
 export function computeDividends(
   dividends: DividendTransaction[],
   interests: InterestTransaction[],
@@ -78,7 +87,7 @@ export function computeDividends(
       warnings.add(
         'DIVIDEND_UNKNOWN_COUNTRY',
         'WARNING',
-        `Dividenda ${tx.id}: nelze určit zemi zdroje (chybí sourceCountry i ISIN) — použit výchozí smluvní strop zápočtu ${options.defaultTreatyCap}.`,
+        `${dividendLabel(tx)}: nelze určit zemi zdroje (chybí sourceCountry i ISIN) — použit výchozí smluvní strop zápočtu ${pctText(d(options.defaultTreatyCap))}.`,
         { txId: tx.id },
       );
     }
@@ -119,21 +128,27 @@ export function computeDividends(
       warnings.add(
         'TREATY_RATE_UNVERIFIED',
         'WARNING',
-        `Dividendy ${country}: smlouvu o zamezení dvojího zdanění s tímto státem nemám ověřenou — zápočet počítám s obvyklými ${d(options.defaultTreatyCap).mul(100).toString()} %. Skutečná smluvní sazba může být nižší (riziko nadhodnoceného zápočtu).`,
+        `Dividendy ${country}: smlouvu o zamezení dvojího zdanění s tímto státem nemám ověřenou — zápočet počítám s obvyklými ${pctText(d(options.defaultTreatyCap))}. Skutečná smluvní sazba může být nižší (riziko nadhodnoceného zápočtu).`,
         { country },
       );
     }
     const creditableCzk = Decimal.min(withholdingCzk, grossCzk.mul(cap));
     if (withholdingCzk.gt(grossCzk.mul(cap))) {
+      // overCzk = částka sražená NAD smluvní strop — web z contextů skládá souhrn
       warnings.add(
         'WITHHOLDING_ABOVE_TREATY',
         'WARNING',
-        `Dividenda ${tx.id} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá (někdy ho lze žádat zpět přímo v zemi zdroje). ${
+        `${dividendLabel(tx)} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá (někdy ho lze žádat zpět přímo v zemi zdroje). ${
           country === 'US'
             ? 'U amerických akcií tomu příště předejdeš formulářem W-8BEN — u většiny brokerů stačí potvrdit v nastavení účtu (sníží srážku z 30 % na 15 %).'
             : 'Přeplatek lze zkusit vymáhat po zahraničním správci daně.'
         }`,
-        { txId: tx.id, country },
+        {
+          txId: tx.id,
+          isin: tx.isin,
+          country,
+          overCzk: withholdingCzk.sub(grossCzk.mul(cap)).toFixed(2),
+        },
       );
     }
 
@@ -173,7 +188,7 @@ export function computeDividends(
       warnings.add(
         'CZ_INTEREST_WITHHELD',
         'INFO',
-        `Úrok ${tx.id} ze zdroje v ČR — předpoklad srážkové daně u zdroje, do základu § 8 nevstupuje.`,
+        `Úrok z ${czDateText(tx.date)} ze zdroje v ČR — předpoklad srážkové daně u zdroje, do základu § 8 nevstupuje.`,
         { txId: tx.id },
       );
       continue;

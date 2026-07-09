@@ -53,7 +53,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     if (result.error) {
       setError(
         mode === 'registrace'
-          ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo aspoň o 10 znacích.'
+          ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo o délce aspoň 10 znaků.'
           : 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.',
       );
       return;
@@ -116,7 +116,13 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
       </div>
       {error && <p className="text-sm text-cervena">{error}</p>}
       <Button type="submit" disabled={pending} className="w-full">
-        {pending ? 'Pracuji…' : mode === 'registrace' ? 'Vytvořit účet' : 'Přihlásit se'}
+        {pending
+          ? mode === 'registrace'
+            ? 'Vytvářím účet…'
+            : 'Přihlašuji…'
+          : mode === 'registrace'
+            ? 'Vytvořit účet'
+            : 'Přihlásit se'}
       </Button>
     </form>
   );

@@ -11,7 +11,7 @@ const FEATURES = [
   },
   {
     title: 'Simulátor prodeje',
-    body: '„Co když teď prodám?" Danero spočítá dopad na limity i daň ještě před obchodem. Žádná překvapení zpětně — rozhoduješ se s čísly na stole.',
+    body: '„Co když teď prodám?“ Danero spočítá dopad na limity i daň ještě před obchodem. Žádná překvapení zpětně — rozhoduješ se s čísly na stole.',
   },
   {
     title: 'Podklady k přiznání',
@@ -20,7 +20,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { step: '1', title: 'Připoj brokera', body: 'Trading212 či IBKR přes read-only klíč; XTB, Degiro a Fio výpisem. Žádná hesla, žádné právo obchodovat.' },
+  { step: '1', title: 'Připoj brokera', body: 'Trading212 či IBKR přes klíč jen pro čtení; XTB, Degiro a Fio výpisem. Žádná hesla, žádné právo obchodovat.' },
   { step: '2', title: 'Danero stáhne historii', body: 'Celou, od založení účtu, automaticky — včetně splitů a spin-offů. A pak ji denně aktualizuje.' },
   { step: '3', title: 'Investuj v klidu', body: 'Limity, časové testy i daňový dopad prodejů máš pod dohledem. Ozveme se, jen když se něco děje.' },
 ];
@@ -36,7 +36,7 @@ const FAQ = [
   },
   {
     q: 'Co když nejsem na Trading212?',
-    a: 'Historii nahraješ přes univerzální CSV šablonu. Další brokeři (Interactive Brokers, XTB, Degiro, Fio) jsou na roadmapě.',
+    a: 'Trading212 a IBKR přes API klíč jen pro čtení; XTB, Degiro a Fio výpisem. Cokoli dalšího přes univerzální CSV šablonu.',
   },
   {
     q: 'Nahrazuje Danero daňového poradce?',
@@ -141,7 +141,7 @@ export default function LandingPage() {
           </p>
           <p className="mt-2 text-sm text-inkoust-tlumeny">
             Po spuštění zůstane hlídač limitů a časových testů pro jednoho brokera zdarma;
-            plná verze (daňové podklady, notifikace, více účtů) bude stát{' '}
+            plná verze (daňové podklady, upozornění, více účtů) bude stát{' '}
             <strong className="text-inkoust">990 Kč ročně</strong>.
           </p>
         </div>

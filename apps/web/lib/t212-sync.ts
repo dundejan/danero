@@ -119,7 +119,7 @@ async function resolveClient(
       return client;
     } catch (error) {
       lastError = error;
-      // jen 401 znamená „špatná varianta autentizace" — jiné chyby (403 práva,
+      // jen 401 znamená „špatná varianta autentizace“ — jiné chyby (403 práva,
       // síť…) rovnou probublají, ať je uživatel vidí
       if (error instanceof Trading212ApiError && error.status === 401) continue;
       throw error;
@@ -216,8 +216,8 @@ export async function syncTrading212(
       current.duplicates = batch.duplicates;
       if (batch.errors.length > 0) current.errors = batch.errors.length;
     }
-    // „empty" jen když v roce opravdu nic nebylo — rok plný chybových řádků
-    // musí v průběhu ukázat počty, ne „žádné transakce"
+    // „empty“ jen když v roce opravdu nic nebylo — rok plný chybových řádků
+    // musí v průběhu ukázat počty, ne „žádné transakce“
     current.status = hasContent ? 'done' : 'empty';
 
     // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil

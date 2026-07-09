@@ -12,12 +12,12 @@ const ZONE_COLOR: Record<LimitStatus['zone'], string> = {
 
 const ZONE_LABEL: Record<LimitStatus['zone'], string> = {
   OK: 'v pořádku',
-  WARNING: 'zpozorni',
+  WARNING: 'zvýšené čerpání',
   CRITICAL: 'těsně pod limitem',
   EXCEEDED: 'přes limit',
 };
 
-/** „Odměrka" — svislý sloupec s ryskami 60/85/100 % (docs/07-design.md). */
+/** „Odměrka“ — svislý sloupec s ryskami 60/85/100 % (docs/07-design.md). */
 export function LimitGauge({
   label,
   hint,

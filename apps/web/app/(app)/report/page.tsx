@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/field';
+import { WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
-import { czDate, czk } from '@/lib/format';
+import { czDate, czk, METHOD_LABEL, plural } from '@/lib/format';
 import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
 import {
   availableYears,
@@ -22,12 +23,7 @@ import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
-const METHOD_LABEL: Record<string, string> = {
-  FIFO: 'FIFO',
-  LIFO: 'LIFO',
-  MAX_PROFIT: 'Max. zisk',
-  MAX_LOSS: 'Max. ztráta',
-};
+export const metadata = { title: 'Daňový report — Danero' };
 
 export default async function ReportPage({
   searchParams,
@@ -64,7 +60,7 @@ export default async function ReportPage({
     ...result.crypto.disposals.map((disposal) => ({ disposal, isCrypto: true })),
   ].sort((a, b) => a.disposal.saleDate.localeCompare(b.disposal.saleDate));
 
-  // roky jednotných kurzů pro kartu „Použité kurzy" (výdaj = kurz roku nákupu)
+  // roky jednotných kurzů pro kartu „Použité kurzy“ (výdaj = kurz roku nákupu)
   const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
     .filter((y) => UNIFIED_RATES[y] !== undefined);
   const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
@@ -87,7 +83,8 @@ export default async function ReportPage({
       {/* jen v tisku: identifikace podkladů (průkaznost výpočtu) */}
       <p className="hidden text-xs text-inkoust-tlumeny print:block">
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(new Date().toISOString().slice(0, 10))}{' '}
-        aplikací Danero · {txs.length} transakcí · párování {result.options.matchingMethod} ·{' '}
+        aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
+        párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
         {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
@@ -220,7 +217,7 @@ export default async function ReportPage({
           </p>
         )}
         <p className="text-xs text-inkoust-tlumeny">
-          Metodu změníš v nastavení. FIFO je bezpečný standard; jinou metodu párování lze
+          Metodu změníš v Nastavení. FIFO je bezpečný standard; jinou metodu párování lze
           obhájit jen průkaznou identifikací konkrétních prodávaných kusů — a zvolená
           metoda se drží konzistentně celý rok (kombinovat nelze).
         </p>
@@ -339,7 +336,7 @@ export default async function ReportPage({
             <p className="text-xs text-jantar">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
               podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
-              druh" by základ daně snížil; přepínač najdeš v nastavení.
+              druh" by základ daně snížil; přepínač najdeš v Nastavení.
             </p>
           )}
         </Card>
@@ -379,20 +376,8 @@ export default async function ReportPage({
 
       {result.warnings.length > 0 && (
         <Card className="space-y-2">
-          <CardTitle>Upozornění a výkladové poznámky ({result.warnings.length})</CardTitle>
-          {result.warnings.map((warning, i) => (
-            <p
-              key={`${warning.code}-${i}`}
-              className={cn(
-                'text-sm',
-                warning.level === 'ERROR' && 'text-cervena',
-                warning.level === 'WARNING' && 'text-jantar',
-                warning.level === 'INFO' && 'text-inkoust-tlumeny',
-              )}
-            >
-              <span className="font-mono text-xs">[{warning.code}]</span> {warning.message}
-            </p>
-          ))}
+          <CardTitle>Kontroly výpočtu ({result.warnings.length})</CardTitle>
+          <WarningsList warnings={result.warnings} labels={labels} />
         </Card>
       )}
 
@@ -402,7 +387,7 @@ export default async function ReportPage({
           <>
             <p className="text-sm text-inkoust-tlumeny">
               Stáhneš XML písemnosti DPFDP7 s investičními čísly z tohoto reportu a na
-              mojedane.cz ho v přiznání nahraješ přes <strong>„Načtení souboru"</strong>.
+              mojedane.cz ho v přiznání nahraješ přes <strong>„Načtení souboru“</strong>.
               Osobní údaje můžeš vyplnit rovnou tady, nebo až v EPO — nic z nich
               neukládáme, jen protečou do staženého souboru.
             </p>
@@ -490,7 +475,7 @@ export default async function ReportPage({
               <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
               <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span>,
               výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>. U
-              zahraničních brokerů zaškrtni kód „Z".
+              zahraničních brokerů zaškrtni kód „Z“.
             </li>
             {result.crypto.disposals.length > 0 && (
               <li>
@@ -567,7 +552,8 @@ export default async function ReportPage({
           </p>
         )}
         <p className="text-xs text-inkoust-tlumeny">
-          Konfigurace výpočtu: párování {result.options.matchingMethod} ·{' '}
+          Konfigurace výpočtu: párování{' '}
+          {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
           {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
@@ -578,7 +564,7 @@ export default async function ReportPage({
 
       {rateYears.length > 0 && (
         <Card className="space-y-3">
-          <CardTitle>Použité kurzy (jednotný kurz GFŘ, CZK za jednotku)</CardTitle>
+          <CardTitle>Použité kurzy (jednotný kurz GFŘ, Kč za jednotku)</CardTitle>
           <p className="text-sm text-inkoust-tlumeny">
             Výdaj (nákup) se přepočítává jednotným kurzem roku nákupu, tržba (prodej)
             kurzem roku prodeje. Tabulka ukazuje hlavní měny; další měny (CHF, PLN,

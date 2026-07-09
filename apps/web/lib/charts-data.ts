@@ -74,7 +74,7 @@ export function flatTax50kSeries(result: TaxYearResult): LimitSeries | null {
       amountCzk: item.amountCzk,
     })),
   ];
-  // ruční „ostatní příjmy" z profilu čerpají limit od začátku roku
+  // ruční „ostatní příjmy“ z profilu čerpají limit od začátku roku
   const initial = result.limits.flatTax50k.components.otherManualCzk;
   return {
     points: toRunningSeries(result.year, contributions, initial),
@@ -91,7 +91,7 @@ export interface MonthRow {
 
 export interface DividendsByMonth {
   rows: MonthRow[];
-  /** Pořadí zemí = pořadí barevných slotů (top podle objemu, zbytek „Ostatní"). */
+  /** Pořadí zemí = pořadí barevných slotů (top podle objemu, zbytek „Ostatní“). */
   countries: string[];
   totalCzk: number;
 }

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { HorizonDot } from '@/lib/charts-data';
+import { MONTH_LABELS, plural } from '@/lib/format';
 
 /**
  * Horizont osvobození v2 (docs/07 signatura, G3): časový pás s tečkami lotů
@@ -20,7 +21,7 @@ type RangeKey = (typeof RANGES)[number]['key'];
 
 const monthLabel = (month: string): string => {
   const [y, m] = month.split('-');
-  return `${Number(m)}/${y}`;
+  return `${MONTH_LABELS[Number(m) - 1] ?? m} ${y}`;
 };
 
 const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
@@ -32,7 +33,7 @@ export function HorizonStrip({ dots, today }: { dots: HorizonDot[]; today: strin
     if (dots.length === 0) return null;
     const preset = RANGES.find((r) => r.key === range)!;
     const todayDay = dayNumber(today);
-    // aritmeticky (ne skládáním data) — „29. 2. + rok" by byl Invalid Date
+    // aritmeticky (ne skládáním data) — „29. 2. + rok“ by byl Invalid Date
     const horizonEnd = preset.years
       ? todayDay + preset.years * 365.25
       : Math.max(...dots.map((dot) => dayNumber(`${dot.exemptFrom}-01`)), todayDay);
@@ -78,7 +79,8 @@ export function HorizonStrip({ dots, today }: { dots: HorizonDot[]; today: strin
       <p className="mt-1 text-xs text-inkoust-tlumeny">
         Každá tečka = kusy jedné pozice a měsíce, kdy jim doběhne 3letý test. Velikost podle{' '}
         {basis}; kliknutím otevřeš detail pozice.
-        {view.hidden > 0 && ` Mimo zobrazené období: ${view.hidden} teček.`}
+        {view.hidden > 0 &&
+          ` Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`}
       </p>
 
       {/* bez role="img" — tečky jsou odkazy a musí zůstat v accessibility tree */}

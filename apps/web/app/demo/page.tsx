@@ -12,6 +12,8 @@ import { instrumentLabels } from '@/lib/portfolio';
 
 export const dynamic = 'force-dynamic';
 
+export const metadata = { title: 'Demo — Danero' };
+
 /**
  * Demo režim (G9a): plnohodnotný přehled nad UKÁZKOVÝMI daty, bez registrace
  * a bez databáze — engine je čistá funkce, všechno se počítá při requestu.
@@ -127,7 +129,7 @@ export default function DemoPage() {
       <section className="grid gap-4 lg:grid-cols-2">
         {limit100kChart.points.length > 1 && (
           <Card>
-            <CardTitle>Čerpání limitu 100k v průběhu roku</CardTitle>
+            <CardTitle>Čerpání limitu 100 000 Kč v průběhu roku</CardTitle>
             <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
               Kumulativní tržby z prodejů CP; přerušované čáry = pásma 60/85/100 %.
             </p>
@@ -136,7 +138,7 @@ export default function DemoPage() {
         )}
         {flatTax50kChart && flatTax50kChart.points.length > 1 && (
           <Card>
-            <CardTitle>Čerpání limitu 50k v průběhu roku</CardTitle>
+            <CardTitle>Čerpání limitu 50 000 Kč v průběhu roku</CardTitle>
             <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
               Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje, dividendy, úroky, deriváty.
             </p>

@@ -18,7 +18,7 @@ test('registrace → profil → import → přehled → simulátor → report', 
     .setInputFiles(join(__dirname, 'fixtures', 't212-vzorek.csv'));
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
   await expect(page.getByText('t212-vzorek.csv').first()).toBeVisible();
-  await expect(page.getByText('2 nových · 0 duplicit')).toBeVisible();
+  await expect(page.getByText('2 nové · 0 duplicit')).toBeVisible();
 
   // ── dashboard: limity z reálných dat ────────────────────────────────────
   await page.goto('/prehled');

@@ -1,5 +1,6 @@
 import { d, sum, ZERO, type IsoDate, type Money } from '@danero/shared';
 import type { EngineOptions } from '../config/options';
+import { czkText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import type { Disposal, DisposalAllocation } from '../ledger/ledger';
 import { WarningCollector } from '../warnings';
@@ -242,7 +243,7 @@ export function computeSecurities(
     warnings.add(
       'LOSS_NOT_DEDUCTIBLE',
       'INFO',
-      `Prodeje ${params.label} skončily celkovou ztrátou ${raw.toFixed(2)} Kč — k zápornému rozdílu se nepřihlíží (§ 10 odst. 4, ${params.lossRuleId}), dílčí základ je 0. Ztrátu nelze přenést ani započíst jinde.`,
+      `Prodeje ${params.label} skončily celkovou ztrátou ${czkText(raw.abs())} — k zápornému rozdílu se nepřihlíží (§ 10 odst. 4, ${params.lossRuleId}), dílčí základ je 0. Ztrátu nelze přenést ani započíst jinde.`,
     );
   }
 

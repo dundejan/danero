@@ -1,5 +1,6 @@
 import { Decimal, sum, ZERO, type IsoDate, type Money, type Transaction } from '@danero/shared';
 import type { EngineOptions } from '../config/options';
+import { czDateText, czkText, qtyText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import { WarningCollector } from '../warnings';
 
@@ -156,7 +157,7 @@ export function computeDerivatives(
         warnings.add(
           'TRANSFER_WITHOUT_ACQUISITION',
           'ERROR',
-          `Převod ${tx.id} (${tx.isin}) bez údajů o původním otevření — otevírací cena 0. Doplň acquisition_date/price/currency z výpisu původního brokera.`,
+          `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} bez údajů o původním otevření — otevírací cena 0. Doplň acquisition_date/price/currency z výpisu původního brokera.`,
           { txId: tx.id, isin: tx.isin },
         );
       }
@@ -176,7 +177,7 @@ export function computeDerivatives(
         warnings.add(
           'TRANSFER_OUT_EXCEEDS_POSITION',
           'ERROR',
-          `Odchozí převod ${tx.id} (${tx.isin}) převyšuje evidovanou derivátovou pozici o ${tx.quantity.sub(matched).toString()} kontraktů.`,
+          `Odchozí převod ${tx.isin} z ${czDateText(tx.date)} převyšuje evidovanou derivátovou pozici o ${qtyText(tx.quantity.sub(matched))} kontraktů.`,
           { txId: tx.id, isin: tx.isin },
         );
       }
@@ -345,15 +346,23 @@ export function computeDerivatives(
     warnings.add(
       'DERIVATIVE_EXPIRED_PREMIUM',
       'INFO',
-      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${denied.toFixed(2)} Kč počítáme podle restriktivního výkladu jako neuznatelný výdaj (R-12i). Výklad „výdaje per druh" (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku — přepínač v nastavení; rozdíl základu daně až ${denied.toFixed(2)} Kč. Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu (R-12k) — neuplatňuj ji pak dvakrát.`,
+      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj (R-12i). Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku — přepínač v nastavení; rozdíl základu daně až ${czkText(denied)}. Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu (R-12k) — neuplatňuj ji pak dvakrát.`,
       { deniedCzk: denied.toFixed(2) },
     );
   }
   if (openPositions.length > 0) {
+    // lidský tvar podle počtu (1 / 2–4 / 5+) — deterministicky, bez Intl
+    const n = openPositions.length;
+    const subject =
+      n === 1
+        ? `1 derivátová pozice je k 31. 12. ${year} stále otevřená`
+        : n <= 4
+          ? `${n} derivátové pozice jsou k 31. 12. ${year} stále otevřené`
+          : `${n} derivátových pozic je k 31. 12. ${year} stále otevřených`;
     warnings.add(
       'DERIVATIVE_OPEN_OVER_YEAR_END',
       'INFO',
-      `${openPositions.length} derivátová pozice/pozic je k 31. 12. ${year} otevřená — u futures s denním vypořádáním a vypsaných opcí je okamžik zdanitelného příjmu přes přelom roku sporný (R-12g/R-12j). Danero počítá realizaci při uzavření pozice; prémie výpisů daní rokem přijetí.`,
+      `${subject} — u futures s denním vypořádáním a vypsaných opcí je okamžik zdanitelného příjmu přes přelom roku sporný (R-12g/R-12j). Danero počítá realizaci při uzavření pozice; prémie výpisů daní rokem přijetí.`,
       { count: openPositions.length },
     );
   }

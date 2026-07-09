@@ -2,7 +2,7 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Design tokeny — docs/07-design.md („růžový formulář") */
+/* Design tokeny — docs/07-design.md („růžový formulář“) */
 :root {
   --pozadi: #f6f5f1;
   --plocha: #ffffff;
@@ -61,7 +61,7 @@
 }
 
 /* Tisk podkladů k přiznání (/report): bílé pozadí, inkoust, bez navigace
-   a interaktivních prvků. Prohlížeč „uložit jako PDF" = náš PDF report. */
+   a interaktivních prvků. Prohlížeč „uložit jako PDF“ = náš PDF report. */
 @media print {
   :root,
   .dark {

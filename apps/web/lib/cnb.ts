@@ -14,7 +14,7 @@ import { fxRates } from '@/db/schema';
 const CNB_YEAR_URL = (year: number) =>
   `https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/rok.txt?rok=${year}`;
 
-/** Parsuje roční export ČNB: 1. řádek hlavička „Datum|1 AUD|100 JPY|…", pak dny. */
+/** Parsuje roční export ČNB: 1. řádek hlavička „Datum|1 AUD|100 JPY|…“, pak dny. */
 export function parseCnbYearText(
   text: string,
 ): Array<{ day: string; currency: string; rate: string }> {

@@ -16,11 +16,11 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
     .locator('input[name="soubory"]')
     .setInputFiles(join(__dirname, 'fixtures', 't212-vzorek.csv'));
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(page.getByText('2 nových · 0 duplicit')).toBeVisible();
+  await expect(page.getByText('2 nové · 0 duplicit')).toBeVisible();
 
   // ── dashboard: graf čerpání limitu + horizont v2 ────────────────────────
   await page.goto('/prehled');
-  await expect(page.getByText('Čerpání limitu 100k v průběhu roku')).toBeVisible();
+  await expect(page.getByText('Čerpání limitu 100 000 Kč v průběhu roku')).toBeVisible();
   await expect(page.getByText('Horizont osvobození')).toBeVisible();
   await page.getByRole('button', { name: 'vše' }).click();
   await page.screenshot({ path: 'test-results/screenshots/prehled-desktop-light.png', fullPage: true });

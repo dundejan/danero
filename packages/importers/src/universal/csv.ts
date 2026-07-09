@@ -61,7 +61,7 @@ export function parseUniversalCsv(text: string): ImportResult {
     if (!map.has(required)) {
       result.errors.push({
         line: 1,
-        message: `Chybí povinný sloupec "${required}". Očekávaná šablona: viz docs/06-import.md.`,
+        message: `Chybí povinný sloupec "${required}". Zkontroluj, že jde o export z podporovaného brokera, nebo použij univerzální šablonu.`,
       });
       return result;
     }

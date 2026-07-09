@@ -37,7 +37,7 @@ export interface PortfolioValuation {
   pricedCount: number;
   /** Pozice mimo součet (bez ceny od brokera, nebo bez jednotného kurzu měny). */
   unpricedCount: number;
-  /** Nejstarší datum ceny mezi oceněnými — poctivé „ceny k". */
+  /** Nejstarší datum ceny mezi oceněnými — poctivé „ceny k“. */
   oldestPriceAt: Date | null;
   /** Rok, jehož jednotným kurzem se přepočítává. */
   fxYear: number;
@@ -84,7 +84,7 @@ export function valuePositions(
       if (rate) {
         row.valueCzk = row.value.mul(rate);
         totalCzk = totalCzk.plus(row.valueCzk);
-        // do součtu (a „ceny k") se počítá jen skutečně oceněná pozice
+        // do součtu (a „ceny k“) se počítá jen skutečně oceněná pozice
         pricedCount += 1;
         if (!oldestPriceAt || priceInfo.asOf < oldestPriceAt) oldestPriceAt = priceInfo.asOf;
       }

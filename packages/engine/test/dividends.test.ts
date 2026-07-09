@@ -15,7 +15,20 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     const result = run([dividend({ gross: '1000', currency: 'USD', withholdingTax: '300' })]);
     expect(result.dividends.foreignWithholdingCzk.toString()).toBe('6000');
     expect(result.dividends.creditableWithholdingCzk.toString()).toBe('3000');
-    expect(hasWarning(result, 'WITHHOLDING_ABOVE_TREATY')).toBe(true);
+    const warning = result.warnings.find((w) => w.code === 'WITHHOLDING_ABOVE_TREATY');
+    // text lidsky (datum místo technického ID) + strukturovaný context pro agregaci v UI
+    expect(warning?.message).toContain('Dividenda z 1. 4. 2025 (US)');
+    expect(warning?.message).not.toContain('div-');
+    expect(warning?.context).toMatchObject({ country: 'US', overCzk: '3000.00' });
+  });
+
+  it('WITHHOLDING_ABOVE_TREATY: s tickerem se v textu ukáže ticker', () => {
+    const result = run([
+      dividend({ ticker: 'AAPL', isin: 'US0378331005', gross: '1000', currency: 'USD', withholdingTax: '300' }),
+    ]);
+    const warning = result.warnings.find((w) => w.code === 'WITHHOLDING_ABOVE_TREATY');
+    expect(warning?.message).toContain('Dividenda AAPL z');
+    expect(warning?.context).toMatchObject({ isin: 'US0378331005', country: 'US' });
   });
 
   it('R-07c: NL má smluvní strop 10 % — při srážce 15 % lze započíst jen 10 % brutto', () => {

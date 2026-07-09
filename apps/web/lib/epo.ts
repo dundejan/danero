@@ -91,7 +91,7 @@ const clean = (value?: string): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
-/** DIČ jen číselná část — případný prefix „CZ" a mezery pryč. */
+/** DIČ jen číselná část — případný prefix „CZ“ a mezery pryč. */
 const cleanDic = (value?: string): string | undefined =>
   clean(clean(value)?.replace(/^cz/i, '').replace(/\s+/g, ''));
 
@@ -217,8 +217,8 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const r74a = p4?.r414;
   const r75 = r74.plus(r74a ?? ZERO); // daň celkem
   const r77 = r75; // bez daňového bonusu
-  // ř. 91 „zbývá doplatit": EPO řetězec ř. 71 → 75 → 77 přepočítává BEZ mezikroku
-  // „záporné = 0" (ověřeno testovací podatelnou) — nevyčerpaný zbytek slevy na
+  // ř. 91 „zbývá doplatit“: EPO řetězec ř. 71 → 75 → 77 přepočítává BEZ mezikroku
+  // „záporné = 0“ (ověřeno testovací podatelnou) — nevyčerpaný zbytek slevy na
   // poplatníka tak sníží i daň ze samostatného základu § 16a; nula až na konci.
   // ř. 91: oficiální kontrola EPO počítá vzorec ř.91 = ř.77 − zálohy, přičemž
   // ve SVÉM přepočtu nechává ř.71 jít do záporu — nevyčerpaný zbytek slevy na
@@ -287,7 +287,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   );
   lines.push(veta('VetaS', { kc_zdsniz: kc(r55), kc_zdzaokr: kc(r56), da_dan16: kc2(r57) }));
 
-  // VetaB: přehled příloh (P2 jako „A", P3 + seznam a P4 jako počty dle XSD)
+  // VetaB: přehled příloh (P2 jako „A“, P3 + seznam a P4 jako počty dle XSD)
   const prilohCelkem =
     (hasPriloha2 ? 1 : 0) + (hasPriloha3 ? p3.length + 1 : 0) + (has16a ? 1 : 0);
   if (prilohCelkem > 0) {

@@ -125,7 +125,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
             />
           </div>
           <Button type="submit" disabled={pending}>
-            {pending ? 'Ověřuji…' : 'Aktivovat 2FA'}
+            {pending ? 'Ověřuji…' : 'Dokončit zapnutí'}
           </Button>
         </form>
         {error && <p className="text-sm text-cervena">{error}</p>}

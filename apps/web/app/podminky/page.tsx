@@ -24,7 +24,7 @@ export default function TermsPage() {
 
         <h2 className="font-display text-lg font-semibold">2. Beta provoz</h2>
         <p>
-          Služba běží v beta režimu a je poskytována „tak, jak je", bezplatně a bez záruky
+          Služba běží v beta režimu a je poskytována „tak, jak je“, bezplatně a bez záruky
           dostupnosti či úplnosti výpočtů. Sporné výklady daňových předpisů aplikace
           viditelně označuje a volba výkladu je na tobě.
         </p>

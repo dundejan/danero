@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SyncProgress } from '@/lib/broker-sync';
+import { plural } from '@/lib/format';
 
 /** Serializovaný stav jobu pro klienta (RSC → props i /api/jobs/latest). */
 export interface SyncJobView {
@@ -12,23 +13,32 @@ export interface SyncJobView {
 
 const POLL_MS = 3_000;
 
-const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
-  connecting: 'Připojuji se k Trading212…',
-  exporting: 'Stahuji transakce…',
-  reconciling: 'Porovnávám pozice s Trading212…',
+/** Popisek fáze s názvem brokera (bez něj obecný pád „brokerovi/brokerem“). */
+const phaseText = (phase: SyncProgress['phase'], broker?: string): string => {
+  switch (phase) {
+    case 'connecting':
+      return `Připojuji se k ${broker ?? 'brokerovi'}…`;
+    case 'exporting':
+      return 'Stahuji transakce…';
+    case 'reconciling':
+      return `Porovnávám pozice s ${broker ?? 'brokerem'}…`;
+  }
 };
 
 /**
- * Živý průběh sync jobu jednoho broker účtu: polluje /api/jobs/latest, ukazuje
- * stav po letech a po dokončení obnoví stránku (výsledek pak ukazuje serverová
- * část /import).
+ * Živý průběh sync jobu jednoho účtu u brokera: polluje /api/jobs/latest,
+ * ukazuje stav po letech a po dokončení obnoví stránku (výsledek pak ukazuje
+ * serverová část /import).
  */
 export function SyncJobProgress({
   initialJob,
   accountId,
+  broker,
 }: {
   initialJob: SyncJobView;
   accountId: string;
+  /** Název brokera pro texty fází (např. „Trading212“). */
+  broker?: string;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
@@ -59,7 +69,7 @@ export function SyncJobProgress({
     job.status === 'pending'
       ? 'Synchronizace čeká ve frontě…'
       : progress
-        ? PHASE_LABELS[progress.phase]
+        ? phaseText(progress.phase, broker)
         : 'Synchronizace běží…';
 
   return (
@@ -85,8 +95,13 @@ export function SyncJobProgress({
                 <span className="text-inkoust-tlumeny">žádné transakce</span>
               ) : (
                 <span className="text-zelena">
-                  {year.added ?? 0} nových · {year.duplicates ?? 0} duplicit
-                  {year.errors ? <span className="text-cervena"> · {year.errors} chyb</span> : null}
+                  {year.added ?? 0} {plural(year.added ?? 0, 'nová', 'nové', 'nových')} ·{' '}
+                  {year.duplicates ?? 0} {plural(year.duplicates ?? 0, 'duplicita', 'duplicity', 'duplicit')}
+                  {year.errors ? (
+                    <span className="text-cervena">
+                      {' '}· {year.errors} {plural(year.errors, 'chyba', 'chyby', 'chyb')}
+                    </span>
+                  ) : null}
                 </span>
               )}
             </li>

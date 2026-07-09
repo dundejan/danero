@@ -1,4 +1,5 @@
 export * from './warnings';
+export * from './format';
 export * from './config/options';
 export * from './config/taxYear';
 export * from './config/unifiedRates';

@@ -21,9 +21,32 @@ const amountFormat = new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 2,
 });
 
-/** Částka v cizí měně česky: „1 234,56 USD" (+ volitelné znaménko u P/L). */
+/** Částka v cizí měně česky: „1 234,56 USD“ (+ volitelné znaménko u P/L). */
 export const money = (value: Money | number, currency: string, signed = false): string => {
   const n = typeof value === 'number' ? value : value.toNumber();
   const sign = signed && n > 0 ? '+' : '';
   return `${sign}${amountFormat.format(n)} ${currency}`;
+};
+
+/** Lidské popisky metod párování prodejů (R-05c) — jednotné pro celé UI. */
+export const METHOD_LABEL: Record<string, string> = {
+  FIFO: 'FIFO',
+  LIFO: 'LIFO',
+  MAX_PROFIT: 'Max. zisk',
+  MAX_LOSS: 'Max. ztráta',
+};
+
+/** České zkratky měsíců (osy grafů, horizont osvobození). */
+export const MONTH_LABELS = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
+
+const czPluralRules = new Intl.PluralRules('cs');
+
+/**
+ * Správný český tvar slova k číslu: plural(n, 'transakce', 'transakce', 'transakcí').
+ * Vrací jen tvar slova (číslo vypíše volající); „few“ platí pro 2–4, „many“
+ * pro 0, 5+ i necelá čísla.
+ */
+export const plural = (n: number, one: string, few: string, many: string): string => {
+  const rule = czPluralRules.select(n);
+  return rule === 'one' ? one : rule === 'few' ? few : many;
 };

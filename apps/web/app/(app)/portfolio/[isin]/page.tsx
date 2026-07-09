@@ -14,6 +14,41 @@ import { valuePositions } from '@/lib/portfolio-value';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
+import { headers } from 'next/headers';
+import { and, eq } from 'drizzle-orm';
+import { getAuth } from '@/lib/auth';
+import { transactions } from '@/db/schema';
+
+/** Titulek s labelem instrumentu (ticker/název z transakcí), fallback ISIN. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ isin: string }>;
+}): Promise<{ title: string }> {
+  const { isin: rawIsin } = await params;
+  const isin = decodeURIComponent(rawIsin).toUpperCase();
+  try {
+    const requestHeaders = await headers();
+    const auth = await getAuth();
+    const session = await auth.api.getSession({ headers: requestHeaders });
+    if (session) {
+      const db = await getDb();
+      const rows = await db
+        .select({ payload: transactions.payload })
+        .from(transactions)
+        .where(and(eq(transactions.userId, session.user.id), eq(transactions.isin, isin)))
+        .limit(20);
+      for (const row of rows) {
+        const payload = row.payload as { ticker?: string; name?: string };
+        const label = payload.ticker ?? payload.name;
+        if (label) return { title: `${label} — Danero` };
+      }
+    }
+  } catch {
+    // titulek nikdy nesmí shodit stránku — fallback na ISIN níže
+  }
+  return { title: `${isin} — Danero` };
+}
 
 /** Popis transakce pro historii pozice (jen typy, které se ISIN týkají). */
 function describeTx(tx: {
@@ -24,17 +59,17 @@ function describeTx(tx: {
     case 'BUY':
       return {
         date: String(tx.tradeDate),
-        text: `Nákup ${qty(tx.quantity as never)} ks @ ${String(tx.pricePerShare)} ${String(tx.currency)}`,
+        text: `Nákup ${qty(tx.quantity as never)} ks @ ${money(tx.pricePerShare as never, String(tx.currency))}`,
       };
     case 'SELL':
       return {
         date: String(tx.tradeDate),
-        text: `Prodej ${qty(tx.quantity as never)} ks @ ${String(tx.pricePerShare)} ${String(tx.currency)}`,
+        text: `Prodej ${qty(tx.quantity as never)} ks @ ${money(tx.pricePerShare as never, String(tx.currency))}`,
       };
     case 'DIVIDEND':
       return {
         date: String(tx.date),
-        text: `Dividenda ${String(tx.gross)} ${String(tx.currency)} (srážka ${String(tx.withholdingTax)})`,
+        text: `Dividenda ${money(tx.gross as never, String(tx.currency))} (srážka ${money(tx.withholdingTax as never, String(tx.currency))})`,
       };
     case 'CORPORATE_ACTION':
       return { date: String(tx.date), text: `Korporátní akce (${String(tx.subtype)})` };
@@ -92,7 +127,7 @@ export default async function PositionDetailPage({
             <Link href="/portfolio" className="hover:text-ruzova">
               Portfolio
             </Link>{' '}
-            / {isin}
+            / {label}
           </p>
           <h1 className="font-display text-3xl font-bold">
             {label}
@@ -100,6 +135,7 @@ export default async function PositionDetailPage({
               <span className="ml-3 text-lg font-normal text-inkoust-tlumeny">{fullName}</span>
             )}
           </h1>
+          <p className="mt-1 font-mono text-xs text-inkoust-tlumeny">{isin}</p>
         </div>
         {position && (
           <Link

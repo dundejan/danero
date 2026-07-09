@@ -18,7 +18,7 @@ export default function AppError({
     <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
       <h1 className="font-display text-3xl font-bold">Něco se pokazilo</h1>
       <p className="text-inkoust-tlumeny">
-        Stránku se nepodařilo načíst. Tvá data jsou v pořádku — výpočty se vždy provádějí
+        Stránku se nepodařilo načíst. Tvoje data jsou v pořádku — výpočty se vždy provádějí
         znovu z uložených transakcí. Zkus to prosím ještě jednou.
       </p>
       {error.digest && (

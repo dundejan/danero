@@ -234,17 +234,17 @@ async function withSyncAccount<T>(
     ? await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
     : [];
   const account = accounts[0];
-  if (!account || account.userId !== job.userId) throw new Error('Broker účet už neexistuje.');
+  if (!account || account.userId !== job.userId) throw new Error('Účet u brokera už neexistuje.');
 
   const onProgress = async (progress: SyncProgress) => {
-    // odpojení účtu uprostřed běhu musí sync zastavit — jinak by „odpojený"
+    // odpojení účtu uprostřed běhu musí sync zastavit — jinak by „odpojený“
     // broker ještě minuty zapisoval transakce do portfolia
     const stillThere = await db
       .select({ id: brokerAccounts.id })
       .from(brokerAccounts)
       .where(eq(brokerAccounts.id, account.id));
     if (stillThere.length === 0) {
-      throw new Error('Broker účet byl během synchronizace odpojen — sync přerušen.');
+      throw new Error('Účet u brokera byl během synchronizace odpojen — sync přerušen.');
     }
     // podmínka na running: job dorovnaný recovery už průběh aktualizovat nesmí
     await db

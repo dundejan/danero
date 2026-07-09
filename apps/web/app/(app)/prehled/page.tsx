@@ -7,11 +7,12 @@ import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
+import { WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
 import { flatTax50kSeries, horizonDots, limit100kSeries } from '@/lib/charts-data';
 import { loadInstrumentPrices } from '@/lib/prices';
-import { czk } from '@/lib/format';
+import { czk, METHOD_LABEL, plural } from '@/lib/format';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import {
   availableYears,
@@ -22,6 +23,8 @@ import {
 } from '@/lib/portfolio';
 import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
+
+export const metadata = { title: 'Přehled — Danero' };
 
 export default async function OverviewPage({
   searchParams,
@@ -41,7 +44,7 @@ export default async function OverviewPage({
       <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
         <h1 className="font-display text-3xl font-bold">Zatím žádná data</h1>
         <p className="text-inkoust-tlumeny">
-          Nahraj export z Trading212 a Danero pohlídá zbytek — časové testy, limity
+          Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity
           i podklady k přiznání.
         </p>
         <Link
@@ -73,17 +76,6 @@ export default async function OverviewPage({
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
-  // stejný typ upozornění (např. nadsmluvní srážka u desítek dividend) = jedna řádka s počtem
-  const groupedWarnings = [
-    ...importantWarnings
-      .reduce((groups, warning) => {
-        const existing = groups.get(warning.code);
-        if (existing) existing.count += 1;
-        else groups.set(warning.code, { count: 1, sample: warning });
-        return groups;
-      }, new Map<string, { count: number; sample: (typeof importantWarnings)[number] }>())
-      .values(),
-  ];
 
   return (
     <div className="space-y-6">
@@ -92,7 +84,8 @@ export default async function OverviewPage({
         <div className="flex flex-wrap items-baseline gap-4">
           <YearSwitcher years={years} active={year} hrefBase="/prehled" />
           <p className="font-mono text-xs text-inkoust-tlumeny">
-            {txs.length} transakcí · {result.options.matchingMethod} ·{' '}
+            {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·{' '}
+            {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
             {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz' : 'denní kurzy ČNB'}
           </p>
         </div>
@@ -136,14 +129,15 @@ export default async function OverviewPage({
             )}
           </p>
           <p className="text-xs text-inkoust-tlumeny">
-            Základ § 10:{' '}
+            Základ § 10 (prodeje):{' '}
             {czk(
               result.securities.base10Czk
                 .plus(result.crypto.base10Czk)
                 .plus(result.derivatives.base10Czk),
             )}{' '}
-            · § 8: {czk(result.dividends.base8Czk)}
-            {result.tax.recommended === 'SEPARATE_16A' && ' · doporučen § 16a'}
+            · § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
+            {result.tax.recommended === 'SEPARATE_16A' &&
+              ' · doporučen § 16a (samostatný základ pro zahraniční dividendy)'}
           </p>
           <p className="text-xs text-inkoust-tlumeny">{result.tax.note}</p>
         </Card>
@@ -153,7 +147,7 @@ export default async function OverviewPage({
         <section className="grid gap-4 lg:grid-cols-2">
           {limit100kChart.points.length > 1 && (
             <Card>
-              <CardTitle>Čerpání limitu 100k v průběhu roku</CardTitle>
+              <CardTitle>Čerpání limitu 100 000 Kč v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
                 Kumulativní tržby z prodejů CP; přerušované čáry = pásma 60/85/100 %.
               </p>
@@ -162,7 +156,7 @@ export default async function OverviewPage({
           )}
           {flatTax50kChart && flatTax50kChart.points.length > 1 && (
             <Card>
-              <CardTitle>Čerpání limitu 50k v průběhu roku</CardTitle>
+              <CardTitle>Čerpání limitu 50 000 Kč v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
                 Zdanitelné příjmy mimo samostatnou činnost (podnikání) — neosvobozené prodeje, zahraniční dividendy, úroky.
               </p>
@@ -190,28 +184,17 @@ export default async function OverviewPage({
                 )}
               </span>{' '}
               a všechny letošní prodeje by byly osvobozené. Výklad si můžeš přepnout
-              v nastavení — rozhodnutí (a riziko) je na tobě.
+              v Nastavení — rozhodnutí (a riziko) je na tobě.
             </p>
           </Card>
         )}
 
       <HorizonStrip dots={horizonDots(positions, labels, prices, currentYear)} today={today} />
 
-      {groupedWarnings.length > 0 && (
+      {importantWarnings.length > 0 && (
         <Card className="space-y-2">
-          <CardTitle>Upozornění ({importantWarnings.length})</CardTitle>
-          {groupedWarnings.map(({ count, sample }) => (
-            <p
-              key={sample.code}
-              className={sample.level === 'ERROR' ? 'text-sm text-cervena' : 'text-sm text-jantar'}
-            >
-              {count > 1 && <span className="font-mono text-xs">{count}× </span>}
-              {sample.message}
-              {count > 1 && (
-                <span className="text-xs text-inkoust-tlumeny"> (všechny případy v reportu)</span>
-              )}
-            </p>
-          ))}
+          <CardTitle>Kontroly výpočtu ({importantWarnings.length})</CardTitle>
+          <WarningsList warnings={importantWarnings} labels={labels} />
         </Card>
       )}
 
@@ -219,7 +202,7 @@ export default async function OverviewPage({
 
       {recentNotifications.length > 0 && (
         <Card className="space-y-2">
-          <CardTitle>Poslední notifikace</CardTitle>
+          <CardTitle>Poslední upozornění</CardTitle>
           {recentNotifications.map((notification) => (
             <div key={notification.dedupeKey} className="text-sm">
               <span className="font-medium">{notification.title}</span>{' '}

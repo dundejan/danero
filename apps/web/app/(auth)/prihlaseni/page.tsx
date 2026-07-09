@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { AuthForm } from '@/components/auth-form';
 
+export const metadata = { title: 'Přihlášení — Danero' };
+
 export default function SignInPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">

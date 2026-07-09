@@ -1,6 +1,7 @@
 import { addDays, d, yearOf, type IsoDate, type Money } from '@danero/shared';
 import type { FxMethod } from '../config/options';
 import type { TaxYearConfig } from '../config/taxYear';
+import { czDateText } from '../format';
 import { EngineError, WarningCollector } from '../warnings';
 
 export interface DailyRateProvider {
@@ -35,7 +36,7 @@ export class FxConverter {
       this.warnings.add(
         'FX_UNIFIED_RATE_MISSING',
         'WARNING',
-        `Jednotný kurz pro ${currency}/${year} není v konfiguraci — použit denní kurz ČNB k ${date}. Metody kurzů se nesmí v jednom roce kombinovat (§ 38 odst. 1), doplň tabulku kurzů.`,
+        `Jednotný kurz pro ${currency}/${year} není v konfiguraci — použit denní kurz ČNB k ${czDateText(date)}. Metody kurzů se nesmí v jednom roce kombinovat (§ 38 odst. 1), doplň tabulku kurzů.`,
         { currency, year },
       );
       return fallback;
@@ -55,7 +56,7 @@ export class FxConverter {
       this.warnings.add(
         'FX_DAILY_RATE_MISSING',
         'WARNING',
-        `Denní kurz ${currency} k ${date} není k dispozici — použit jednotný kurz. Metody kurzů se nesmí v jednom roce kombinovat (§ 38 odst. 1), doplň denní kurzy.`,
+        `Denní kurz ${currency} k ${czDateText(date)} není k dispozici — použit jednotný kurz. Metody kurzů se nesmí v jednom roce kombinovat (§ 38 odst. 1), doplň denní kurzy.`,
         { currency, date },
       );
       return d(unified);

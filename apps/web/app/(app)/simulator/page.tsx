@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
-import { czk, qty } from '@/lib/format';
+import { czk, METHOD_LABEL, qty } from '@/lib/format';
 import {
   dailyRatesForProfile,
   engineInputForUser,
@@ -17,6 +17,8 @@ import {
 import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
+
+export const metadata = { title: 'Simulátor prodeje — Danero' };
 
 interface SimParams {
   isin?: string;
@@ -107,14 +109,15 @@ export default async function SimulatorPage({
             <Input id="kusy" name="kusy" inputMode="decimal" defaultValue={params.kusy ?? ''} />
           </div>
           <div>
-            <Label htmlFor="cena">Cena / kus</Label>
+            <Label htmlFor="cena">Cena/ks</Label>
             <Input
               id="cena"
               name="cena"
               inputMode="decimal"
               required
               defaultValue={params.cena ?? ''}
-              placeholder="v měně instrumentu"
+              placeholder="cena za kus"
+              title="Cena za kus v měně instrumentu"
             />
           </div>
           <Button type="submit">Spočítat dopad</Button>
@@ -148,20 +151,21 @@ export default async function SimulatorPage({
               <span className="font-mono text-cervena">
                 {czk(simulation.simulatedDisposal?.taxableProceedsCzk ?? 0)}
               </span>
-              . Párování metodou {baseline.options.matchingMethod}.
+              . Párování metodou{' '}
+              {METHOD_LABEL[baseline.options.matchingMethod] ?? baseline.options.matchingMethod}.
             </p>
           </Card>
 
           <section className="grid gap-4 sm:grid-cols-3">
             <DeltaCard
-              label="Paušální daň (50k)"
+              label="Paušální daň (50 000 Kč)"
               before={czk(simulation.baseline.flatTax50kUsedCzk)}
               after={czk(simulation.simulated.flatTax50kUsedCzk)}
               bad={simulation.simulated.flatTax50kExceeded}
             />
             {selected.assetClass === 'CRYPTO' ? (
               <DeltaCard
-                label="Prodeje krypta (100k)"
+                label="Prodeje krypta (100 000 Kč)"
                 before={czk(simulation.baseline.cryptoLimit100kUsedCzk)}
                 after={czk(simulation.simulated.cryptoLimit100kUsedCzk)}
                 bad={
@@ -171,7 +175,7 @@ export default async function SimulatorPage({
               />
             ) : (
               <DeltaCard
-                label="Prodeje CP (100k)"
+                label="Prodeje CP (100 000 Kč)"
                 before={czk(simulation.baseline.limit100kUsedCzk)}
                 after={czk(simulation.simulated.limit100kUsedCzk)}
                 bad={!simulation.simulated.exemptUnder100k && simulation.baseline.exemptUnder100k}

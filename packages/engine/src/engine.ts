@@ -18,6 +18,7 @@ import {
 } from './basis/securities';
 import { resolveOptions, type EngineOptions } from './config/options';
 import type { AssetScope, TaxYearConfig } from './config/taxYear';
+import { czDateText, czkText, pctText } from './format';
 import { FxConverter, type DailyRateProvider } from './fx/fx';
 import { buildLedger, type Ledger } from './ledger/ledger';
 import { computeLimits, type LimitsResult } from './limits/limits';
@@ -77,7 +78,7 @@ function resolveSharedCapRatios(
   warnings.add(
     'CAP_40M_REDUCED',
     'WARNING',
-    `Úhrn příjmů osvobozených časovým testem (${scopeLabel}) ${combined.toFixed(2)} Kč přesáhl strop ${capCzk.toFixed(0)} Kč (§ 4 odst. 3, R-03/R-10d). Osvobození je kráceno poměrně: osvobozeno zůstává ${ratio.mul(100).toFixed(2)} % těchto příjmů, zbytek vstupuje do dílčího základu § 10 s poměrnou částí výdajů. Rozhodný je moment přijetí peněz — zkontroluj vypořádání přes přelom roku.`,
+    `Úhrn příjmů osvobozených časovým testem (${scopeLabel}) ${czkText(combined)} přesáhl strop ${czkText(capCzk)} (§ 4 odst. 3, R-03/R-10d). Osvobození je kráceno poměrně: osvobozeno zůstává ${pctText(ratio, 2)} těchto příjmů, zbytek vstupuje do dílčího základu § 10 s poměrnou částí výdajů. Rozhodný je moment přijetí peněz — zkontroluj vypořádání přes přelom roku.`,
   );
   for (const scope of cap.appliesTo) ratios[scope] = ratio;
   return ratios;
@@ -124,7 +125,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       warnings.add(
         'DERIVATIVE_ACTION_UNSUPPORTED',
         'WARNING',
-        `Korporátní akce ${tx.id} na derivátovém instrumentu ${'isin' in tx ? tx.isin : ''} — u derivátů ji neumíme zpracovat, transakce je vynechána. Uprav historii ručně (např. uzavření a nové otevření pozice).`,
+        `Korporátní akce na derivátovém instrumentu ${tx.isin} z ${czDateText(tx.date)} — u derivátů ji neumíme zpracovat, transakce je vynechána. Uprav historii ručně (např. uzavření a nové otevření pozice).`,
         { txId: tx.id },
       );
     }
@@ -221,7 +222,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     warnings.add(
       'CRYPTO_EMT_ASSUMPTION',
       'WARNING',
-      `Osvobozené příjmy z kryptoaktiv ${cryptoExemptCzk.toFixed(2)} Kč: předpokládáme, že nejde o elektronické peněžní tokeny (např. USDT/USDC) — ty mají hodnotové osvobození 100 000 Kč (§ 4/1 zj) vyloučené (R-10a/R-10g). Pokud jsi prodával stablecoiny, vyřaď je nebo označ ručně.`,
+      `Osvobozené příjmy z kryptoaktiv ${czkText(cryptoExemptCzk)}: předpokládáme, že nejde o elektronické peněžní tokeny (např. USDT/USDC) — ty mají hodnotové osvobození 100 000 Kč (§ 4/1 zj) vyloučené (R-10a/R-10g). Pokud jsi prodával stablecoiny, vyřaď je nebo označ ručně.`,
       { exemptCzk: cryptoExemptCzk.toFixed(2) },
     );
   }

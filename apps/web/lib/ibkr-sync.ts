@@ -117,7 +117,7 @@ export async function syncIbkr(
     }
   } else {
     // bez OpenPositions nemáme s čím srovnávat — sync ale PROBĚHL, takže
-    // warning (jantarově), ne error (červené „synchronizace selhala")
+    // warning (jantarově), ne error (červené „synchronizace selhala“)
     reconciliation = {
       ok: false,
       matchedCount: 0,
