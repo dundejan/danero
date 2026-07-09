@@ -147,8 +147,9 @@ export const appRateLimits = pgTable('app_rate_limits', {
 });
 
 /**
- * Notifikační preference (G8d) — per uživatel: e-mail zap/vyp a typy událostí.
- * Chybějící řádek = všechno zapnuté (bez onboarding kroku navíc).
+ * Notifikační preference (G8d, H3) — per uživatel. Přepínače řídí JEN e-maily
+ * (v aplikaci se upozornění zobrazují vždy); `emailEnabled` je jediný master
+ * vypínač. Chybějící řádek = všechno zapnuté, denní souhrn (bez onboardingu).
  */
 export const notificationPrefs = pgTable('notification_prefs', {
   userId: text('user_id')
@@ -157,6 +158,14 @@ export const notificationPrefs = pgTable('notification_prefs', {
   emailEnabled: boolean('email_enabled').notNull().default(true),
   timeTestEvents: boolean('time_test_events').notNull().default(true),
   limitEvents: boolean('limit_events').notNull().default(true),
+  /** E-maily kalendářních připomínek (termíny přiznání, roční shrnutí). */
+  calendarEmails: boolean('calendar_emails').notNull().default(true),
+  /** 'DAILY' | 'WEEKLY' — jak často chodí digest. */
+  emailFrequency: text('email_frequency').notNull().default('DAILY'),
+  /** Kdy naposledy odešel digest — WEEKLY podle něj čeká na týdenní okno. */
+  // withTimezone: bez zóny by postgres.js četl hodnotu v lokální zóně serveru
+  // (latentní posun týdenního okna mimo UTC) — timestamptz je round-trip čistý
+  lastDigestAt: timestamp('last_digest_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 

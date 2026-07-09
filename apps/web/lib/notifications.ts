@@ -193,13 +193,23 @@ export function calendarCandidates(args: {
   return out;
 }
 
-/** Preference uživatele; chybějící řádek = vše zapnuté (G8d). */
+/** Preference uživatele; chybějící řádek = vše zapnuté, denní souhrn (G8d, H3). */
 export async function getNotificationPrefs(db: Db, userId: string) {
   const [row] = await db
     .select()
     .from(notificationPrefs)
     .where(eq(notificationPrefs.userId, userId));
-  return row ?? { userId, emailEnabled: true, timeTestEvents: true, limitEvents: true };
+  return (
+    row ?? {
+      userId,
+      emailEnabled: true,
+      timeTestEvents: true,
+      limitEvents: true,
+      calendarEmails: true,
+      emailFrequency: 'DAILY',
+      lastDigestAt: null,
+    }
+  );
 }
 
 /**
@@ -261,8 +271,9 @@ export function resolveEmailSender(): EmailSender {
 }
 
 /**
- * Denní běh pro jednoho uživatele: přepočet → nové události → jeden digest
- * e-mail se vším neodeslaným. Idempotentní (druhý běh v den nic neposílá).
+ * Denní běh pro jednoho uživatele: přepočet → nové události (do DB VŽDY,
+ * přehled v aplikaci je úplný) → jeden digest e-mail podle preferencí
+ * (typy + frekvence DAILY/WEEKLY). Idempotentní (druhý běh v den nic neposílá).
  */
 export async function processUserNotifications(
   db: Db,
@@ -300,59 +311,95 @@ export async function processUserNotifications(
         ),
       }),
     ];
-    // G8d: vypnuté typy se ani nezaloží (uživatel je nechce vidět)
-    // kalendářní připomínky (termíny přiznání, roční shrnutí) nejsou „limity“ —
-    // preference je nevypínají (jádro služby); vypnutý e-mail je stále ztiší
-    candidates = candidates.filter((c) =>
-      c.type === 'YEAR_SUMMARY' || c.type === 'DEADLINE'
-        ? true
-        : c.type.startsWith('TIME_TEST')
-          ? prefs.timeTestEvents
-          : prefs.limitEvents,
-    );
+    // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
+    // preference filtrují až e-mailovou frontu níže
     if (portfolioList.length > 1) {
       candidates = candidates.map((c) => ({ ...c, title: `[${portfolio.name}] ${c.title}` }));
     }
     created += await syncNotifications(db, target.id, portfolio.id, candidates);
   }
 
+  // E-mailová fronta (H3) — čekající notifikace se dělí do tří tříd:
+  // 1. odeslané v digestu → emailedAt (idempotence, druhý běh nic neposílá),
+  // 2. potlačené preferencí (master vypnutý nebo vypnutý typ) → TAKY emailedAt
+  //    (nesmí se hromadit — po zapnutí nesmí přijít měsíce staré události),
+  // 3. čekající na týdenní okno (WEEKLY, digest byl nedávno) → NEoznačovat,
+  //    pošlou se v příštím týdenním souhrnu.
   const pending = await db
     .select()
     .from(notifications)
     .where(and(eq(notifications.userId, target.id), isNull(notifications.emailedAt)));
-  // preference platí i pro frontu: vypnuté typy (a vypnutý e-mail) se
-  // NEhromadí na později — po zapnutí nesmí přijít měsíce staré události
-  const unEmailed = prefs.emailEnabled
-    ? pending.filter((n) =>
-        n.type === 'YEAR_SUMMARY' || n.type === 'DEADLINE'
-          ? true
-          : n.type.startsWith('TIME_TEST')
-            ? prefs.timeTestEvents
-            : prefs.limitEvents,
-      )
-    : [];
-  if (unEmailed.length > 0) {
-    const lines = unEmailed.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
+  const emailAllowed = (type: string): boolean => {
+    if (!prefs.emailEnabled) return false;
+    if (type === 'YEAR_SUMMARY' || type === 'DEADLINE') return prefs.calendarEmails;
+    return type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents;
+  };
+  const suppressed = pending.filter((n) => !emailAllowed(n.type));
+  const queue = pending.filter((n) => emailAllowed(n.type));
+
+  // Okno digestu: WEEKLY nejdřív po 6,5 dnech od minulého, DAILY nejdřív po
+  // půl dni — druhý běh cronu týž den (ruční re-trigger) tak nepošle druhý
+  // e-mail. Tolerance (0,5 dne) kryje posun času běhu — přesný násobek dne
+  // by běh o pár minut dřív odsunul o celý den.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const todayDate = new Date(`${today}T00:00:00Z`);
+  const sinceLastMs =
+    prefs.lastDigestAt === null
+      ? Number.POSITIVE_INFINITY
+      : todayDate.getTime() - prefs.lastDigestAt.getTime();
+  const windowOpen = sinceLastMs >= (prefs.emailFrequency === 'WEEKLY' ? 6.5 : 0.5) * DAY_MS;
+
+  let emailed = 0;
+  if (queue.length > 0 && windowOpen) {
+    const lines = queue.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
     const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
     const odhlasit = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
     await options.send({
       to: target.email,
       subject:
-        unEmailed.length === 1
-          ? `Danero: ${unEmailed[0]!.title}`
-          : `Danero: ${unEmailed.length} nových upozornění`,
+        queue.length === 1
+          ? `Danero: ${queue[0]!.title}`
+          : prefs.emailFrequency === 'WEEKLY'
+            ? 'Danero: souhrn upozornění za týden'
+            : `Danero: ${queue.length} nových upozornění`,
       text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
     });
-  }
-  if (pending.length > 0) {
-    // označit VŠE čekající (odeslané i potlačené preferencemi) — idempotence
+    emailed = queue.length;
+    // odeslané označit a posunout týdenní okno (lastDigestAt i u DAILY —
+    // po přepnutí na WEEKLY se hned neodešle další souhrn)
     await db
       .update(notifications)
       .set({ emailedAt: new Date() })
-      .where(and(eq(notifications.userId, target.id), isNull(notifications.emailedAt)));
+      .where(
+        and(
+          eq(notifications.userId, target.id),
+          isNull(notifications.emailedAt),
+          inArray(notifications.dedupeKey, queue.map((n) => n.dedupeKey)),
+        ),
+      );
+    await db
+      .insert(notificationPrefs)
+      .values({ userId: target.id, lastDigestAt: todayDate })
+      .onConflictDoUpdate({
+        target: notificationPrefs.userId,
+        set: { lastDigestAt: todayDate },
+      });
+  }
+  if (suppressed.length > 0) {
+    // potlačené preferencí označit vždy (třída 2) — bez ohledu na týdenní okno
+    await db
+      .update(notifications)
+      .set({ emailedAt: new Date() })
+      .where(
+        and(
+          eq(notifications.userId, target.id),
+          isNull(notifications.emailedAt),
+          inArray(notifications.dedupeKey, suppressed.map((n) => n.dedupeKey)),
+        ),
+      );
   }
 
-  return { created, emailed: unEmailed.length };
+  return { created, emailed };
 }
 
 /** Všichni uživatelé pro cron (mají e-mail; profil se ověřuje uvnitř). */

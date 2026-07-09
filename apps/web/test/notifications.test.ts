@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { createPgliteDb } from '@/db';
-import { portfolios, taxpayerProfiles, user } from '@/db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
+import { createPgliteDb, type Db } from '@/db';
+import { notificationPrefs, notifications, portfolios, taxpayerProfiles, user } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
-import { processUserNotifications, type EmailMessage } from '@/lib/notifications';
+import {
+  getNotificationPrefs,
+  processUserNotifications,
+  type EmailMessage,
+} from '@/lib/notifications';
+
+/** Založí uživatele s portfoliem, profilem (paušál) a fixturou CSV. */
+async function seedUser(db: Db, id: string, email: string): Promise<void> {
+  await db.insert(user).values({ id, name: 'Test', email });
+  await db.insert(portfolios).values({ id: `pf-${id}`, userId: id, name: 'Moje portfolio' });
+  await db.insert(taxpayerProfiles).values({ userId: id, portfolioId: `pf-${id}`, regime: 'PAUSAL' });
+  await importCsvText(db, id, `pf-${id}`, 'fixtura.csv', CSV);
+}
 
 /**
  * Scénář (dnes 2026-07-20, paušál):
@@ -125,16 +138,11 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
   });
 });
 
-describe('notifikační preference + odhlášení (G8d)', () => {
-  it('vypnutý e-mail: události vzniknou, ale nic se neodešle; vypnuté typy se nezaloží', { timeout: 30_000 }, async () => {
-    const { createPgliteDb } = await import('@/db');
-    const { notificationPrefs } = await import('@/db/schema');
+describe('notifikační preference + odhlášení (G8d, H3)', () => {
+  it('vypnutý e-mail (master): události vzniknou všechny, nic se neodešle a fronta se označí', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
-    await db.insert(user).values({ id: 'u3', name: 'Pref', email: 'pref@danero.cz' });
-    await db.insert(portfolios).values({ id: 'pf-u3', userId: 'u3', name: 'Moje portfolio' });
-    await db.insert(taxpayerProfiles).values({ userId: 'u3', portfolioId: 'pf-u3', regime: 'PAUSAL' });
-    await importCsvText(db, 'u3', 'pf-u3', 'fixtura.csv', CSV);
-    // vypnout e-mail i časové testy — zbydou jen limitové události
+    await seedUser(db, 'u3', 'pref@danero.cz');
+    // master vypnutý — události se přesto zakládají (přehled v aplikaci je úplný)
     await db.insert(notificationPrefs).values({
       userId: 'u3',
       emailEnabled: false,
@@ -149,21 +157,25 @@ describe('notifikační preference + odhlášení (G8d)', () => {
       },
       today: '2026-07-20',
     });
-    expect(outcome.created).toBeGreaterThanOrEqual(2); // limity 50k + 100k
+    expect(outcome.created).toBeGreaterThanOrEqual(3); // TT30 + limity 50k a 100k
     expect(outcome.emailed).toBe(0);
     expect(sent).toHaveLength(0);
 
-    const { notifications: notifTable } = await import('@/db/schema');
-    const { eq: eqOp } = await import('drizzle-orm');
-    const rows = await db.select().from(notifTable).where(eqOp(notifTable.userId, 'u3'));
-    expect(rows.every((r) => r.type.startsWith('LIMIT'))).toBe(true);
+    const rows = await db.select().from(notifications).where(eq(notifications.userId, 'u3'));
+    // H3: i vypnuté typy se do DB založí…
+    expect(rows.some((r) => r.type.startsWith('TIME_TEST'))).toBe(true);
+    // …a celá fronta se označí emailedAt (po zapnutí nesmí přijít staré události)
+    expect(rows.every((r) => r.emailedAt !== null)).toBe(true);
   });
 
   it('odhlašovací token: podepsaný projde, zfalšovaný ne', async () => {
     const { unsubscribeToken, verifyUnsubscribeToken } = await import('@/lib/notifications');
     const token = await unsubscribeToken('u-abc');
     expect(await verifyUnsubscribeToken(token)).toBe('u-abc');
-    expect(await verifyUnsubscribeToken(token.replace(/.$/, '0'))).toBeNull();
+    // padělek: poslední znak VŽDY přepnout na jiný — replace(/.$/, '0') byl
+    // flaky (1/16 podpisů nulou končí a „padělek" byl identický s originálem)
+    const forged = token.replace(/.$/, (ch) => (ch === '0' ? '1' : '0'));
+    expect(await verifyUnsubscribeToken(forged)).toBeNull();
     expect(await verifyUnsubscribeToken('nesmysl')).toBeNull();
   });
 
@@ -184,6 +196,151 @@ describe('notifikační preference + odhlášení (G8d)', () => {
     });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain('/api/odhlasit?token=');
+  });
+});
+
+describe('nastavitelné e-maily (H3)', () => {
+  it('vypnutý typ: událost se založí, ale nemailuje a rovnou dostane emailedAt', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u5', 'typ@danero.cz');
+    await db.insert(notificationPrefs).values({ userId: 'u5', timeTestEvents: false });
+
+    const sent: EmailMessage[] = [];
+    const outcome = await processUserNotifications(db, { id: 'u5', email: 'typ@danero.cz' }, {
+      send: async (m) => {
+        sent.push(m);
+      },
+      today: '2026-07-20',
+    });
+    expect(outcome.created).toBeGreaterThanOrEqual(3); // TT30 + limity 50k a 100k
+    expect(outcome.emailed).toBe(2); // jen limity
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain('50 000');
+    expect(sent[0]!.text).not.toContain('splní tříletý časový test');
+
+    const rows = await db.select().from(notifications).where(eq(notifications.userId, 'u5'));
+    const timeTests = rows.filter((r) => r.type.startsWith('TIME_TEST'));
+    expect(timeTests.length).toBeGreaterThanOrEqual(1);
+    // potlačené preferencí typu → emailedAt, aby se po zapnutí nevylily zpětně
+    expect(timeTests.every((r) => r.emailedAt !== null)).toBe(true);
+  });
+
+  it('calendarEmails=false: DEADLINE se založí, ale nemailuje', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u6', 'kalendar@danero.cz');
+    await db.insert(notificationPrefs).values({ userId: 'u6', calendarEmails: false });
+
+    const sent: EmailMessage[] = [];
+    // 20. 3. = okno připomínky papírového přiznání (aktivita v 2025 ve fixtuře je)
+    const outcome = await processUserNotifications(db, { id: 'u6', email: 'kalendar@danero.cz' }, {
+      send: async (m) => {
+        sent.push(m);
+      },
+      today: '2026-03-20',
+    });
+    expect(outcome.created).toBeGreaterThanOrEqual(3); // DEADLINE + limity 50k a 100k
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).not.toContain('1. dubna');
+
+    const rows = await db.select().from(notifications).where(eq(notifications.userId, 'u6'));
+    const deadline = rows.filter((r) => r.type === 'DEADLINE');
+    expect(deadline).toHaveLength(1);
+    expect(deadline[0]!.emailedAt).not.toBeNull();
+  });
+
+  it('WEEKLY: první běh odešle, mezitím fronta čeká, po 7 dnech odejde souhrn', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u7', 'tyden@danero.cz');
+    await db.insert(notificationPrefs).values({ userId: 'u7', emailFrequency: 'WEEKLY' });
+
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u7', email: 'tyden@danero.cz' };
+
+    // 1. běh: lastDigestAt je null → odešle hned a nastaví lastDigestAt
+    const first = await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(first.emailed).toBeGreaterThanOrEqual(3);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.subject).toBe('Danero: souhrn upozornění za týden');
+    const [afterFirst] = await db
+      .select()
+      .from(notificationPrefs)
+      .where(eq(notificationPrefs.userId, 'u7'));
+    expect(afterFirst!.lastDigestAt).not.toBeNull();
+
+    // nové události další den — týdenní okno je zavřené: nic se neposílá
+    // a fronta zůstává s emailedAt NULL (odejde v příštím souhrnu)
+    await db.insert(notifications).values([
+      { userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|a', type: 'LIMIT_CRITICAL', title: 'Událost A', body: 'čeká na týdenní souhrn' },
+      { userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|b', type: 'TIME_TEST_30', title: 'Událost B', body: 'čeká na týdenní souhrn' },
+    ]);
+    const second = await processUserNotifications(db, target, { send, today: '2026-07-21' });
+    expect(second.emailed).toBe(0);
+    expect(sent).toHaveLength(1);
+    const waiting = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u7'), isNull(notifications.emailedAt)));
+    expect(waiting.map((n) => n.dedupeKey).sort()).toEqual(['test|a', 'test|b']);
+
+    // po 7 dnech: okno otevřené → vše nahromaděné odejde jedním digestem
+    const third = await processUserNotifications(db, target, { send, today: '2026-07-27' });
+    expect(third.emailed).toBe(2);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.subject).toBe('Danero: souhrn upozornění za týden');
+    expect(sent[1]!.text).toContain('Událost A');
+    expect(sent[1]!.text).toContain('Událost B');
+    // lastDigestAt se posunul na 27. 7. — den nato okno zase zavřené
+    // (kdyby zůstal 20. 7., rozdíl 8 dní by digest poslal)
+    await db.insert(notifications).values({
+      userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|c', type: 'LIMIT_CRITICAL', title: 'Událost C', body: 'čeká na týdenní souhrn',
+    });
+    const fourth = await processUserNotifications(db, target, { send, today: '2026-07-28' });
+    expect(fourth.emailed).toBe(0);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('DAILY: druhý běh cronu týž den nepošle druhý e-mail ani s novými událostmi', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u8', 'denne@danero.cz');
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u8', email: 'denne@danero.cz' };
+
+    const first = await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(first.emailed).toBeGreaterThan(0);
+    expect(sent).toHaveLength(1);
+
+    // ruční re-trigger cronu: mezitím přibyla nová událost — čeká do zítřka
+    await db.insert(notifications).values({
+      userId: 'u8', portfolioId: 'pf-u8', dedupeKey: 'test|retrigger', type: 'LIMIT_CRITICAL', title: 'Nová událost', body: 'nesmí odejít dnes podruhé',
+    });
+    const retrigger = await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(retrigger.emailed).toBe(0);
+    expect(sent).toHaveLength(1);
+
+    // další den okno zase otevřené — nahromaděné odejde
+    const nextDay = await processUserNotifications(db, target, { send, today: '2026-07-21' });
+    expect(nextDay.emailed).toBeGreaterThan(0);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.text).toContain('Nová událost');
+  });
+
+  it('chybějící řádek preferencí = vše zapnuté a denní souhrn', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    const prefs = await getNotificationPrefs(db, 'nikdo');
+    expect(prefs).toMatchObject({
+      emailEnabled: true,
+      timeTestEvents: true,
+      limitEvents: true,
+      calendarEmails: true,
+      emailFrequency: 'DAILY',
+      lastDigestAt: null,
+    });
   });
 });
 

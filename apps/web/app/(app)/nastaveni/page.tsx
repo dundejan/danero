@@ -5,6 +5,7 @@ import { syncStatusLabel } from '@/lib/broker-sync';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
+import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { getProfile } from '@/lib/portfolio';
@@ -366,22 +367,55 @@ export default async function SettingsPage({
 
       <Card className="space-y-4" id="notifikace">
         <CardTitle>E-mailová upozornění</CardTitle>
-        <form action={saveNotificationPrefsAction} className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="emailEnabled" defaultChecked={prefs.emailEnabled} />
-            Posílat upozornění e-mailem (denní souhrn)
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="timeTestEvents" defaultChecked={prefs.timeTestEvents} />
-            Časové testy — blížící se a dosažená osvobození pozic
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="limitEvents" defaultChecked={prefs.limitEvents} />
-            Limity — vstup do kritického pásma a překročení (50k, 100k…)
-          </label>
+        <form action={saveNotificationPrefsAction} className="space-y-4">
+          <Switch name="emailEnabled" defaultChecked={prefs.emailEnabled} label="Posílat e-maily" />
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold">Frekvence</legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="emailFrequency"
+                value="DAILY"
+                defaultChecked={prefs.emailFrequency !== 'WEEKLY'}
+                className="accent-[var(--ruzova)]"
+              />
+              denní souhrn
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="emailFrequency"
+                value="WEEKLY"
+                defaultChecked={prefs.emailFrequency === 'WEEKLY'}
+                className="accent-[var(--ruzova)]"
+              />
+              týdenní souhrn
+            </label>
+          </fieldset>
+
+          <fieldset className="space-y-3">
+            <legend className="mb-2 text-sm font-semibold">Typy upozornění</legend>
+            <Switch
+              name="timeTestEvents"
+              defaultChecked={prefs.timeTestEvents}
+              label="Časové testy (blížící se osvobození pozic)"
+            />
+            <Switch
+              name="limitEvents"
+              defaultChecked={prefs.limitEvents}
+              label="Limity (blížící se nebo prolomené limity)"
+            />
+            <Switch
+              name="calendarEmails"
+              defaultChecked={prefs.calendarEmails}
+              label="Daňový kalendář (termíny přiznání, roční shrnutí)"
+            />
+          </fieldset>
+
           <p className="text-xs text-inkoust-tlumeny">
-            Vypnuté typy se nezakládají ani v aplikaci a při vypnutém e-mailu se nahromaděná
-            upozornění NEposílají zpětně. Každý e-mail má odhlašovací odkaz.
+            Upozornění v aplikaci se zobrazují vždy — tady vypínáš jen e-maily. Vypnuté typy
+            se po zapnutí nehromadí zpětně. Každý e-mail má odhlašovací odkaz.
           </p>
           <SubmitButton size="sm" pendingLabel="Ukládám…">Uložit upozornění</SubmitButton>
         </form>

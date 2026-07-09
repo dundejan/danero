@@ -1,0 +1,1 @@
+ALTER TABLE "notification_prefs" ALTER COLUMN "last_digest_at" SET DATA TYPE timestamp with time zone;

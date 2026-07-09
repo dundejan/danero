@@ -354,7 +354,7 @@ export async function deletePortfolioAction(formData: FormData): Promise<void> {
   redirect('/nastaveni?ok=portfolio-smazano');
 }
 
-/* ── G8d: notifikační preference ─────────────────────────────────────────── */
+/* ── G8d + H3: notifikační preference ────────────────────────────────────── */
 
 export async function saveNotificationPrefsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -364,6 +364,9 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
     emailEnabled: formData.get('emailEnabled') === 'on',
     timeTestEvents: formData.get('timeTestEvents') === 'on',
     limitEvents: formData.get('limitEvents') === 'on',
+    calendarEmails: formData.get('calendarEmails') === 'on',
+    // radio validujeme na whitelist — cokoli jiného spadne na bezpečný default
+    emailFrequency: formData.get('emailFrequency') === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
     updatedAt: new Date(),
   };
   await db
