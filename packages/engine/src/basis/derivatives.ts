@@ -346,7 +346,7 @@ export function computeDerivatives(
     warnings.add(
       'DERIVATIVE_EXPIRED_PREMIUM',
       'INFO',
-      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj (R-12i). Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku — přepínač v nastavení; rozdíl základu daně až ${czkText(denied)}. Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu (R-12k) — neuplatňuj ji pak dvakrát.`,
+      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj. Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku — přepínač v nastavení; rozdíl základu daně až ${czkText(denied)}. Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu — neuplatňuj ji pak dvakrát.`,
       { deniedCzk: denied.toFixed(2) },
     );
   }
@@ -362,7 +362,7 @@ export function computeDerivatives(
     warnings.add(
       'DERIVATIVE_OPEN_OVER_YEAR_END',
       'INFO',
-      `${subject} — u futures s denním vypořádáním a vypsaných opcí je okamžik zdanitelného příjmu přes přelom roku sporný (R-12g/R-12j). Danero počítá realizaci při uzavření pozice; prémie výpisů daní rokem přijetí.`,
+      `${subject} — u futures s denním vypořádáním a vypsaných opcí je okamžik zdanitelného příjmu přes přelom roku sporný. Danero počítá realizaci při uzavření pozice; prémie výpisů daní rokem přijetí.`,
       { count: openPositions.length },
     );
   }

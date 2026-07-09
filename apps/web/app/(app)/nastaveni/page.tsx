@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { d } from '@danero/shared';
 import { Toast } from '@/components/toast';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { syncStatusLabel } from '@/lib/broker-sync';
@@ -56,6 +57,27 @@ export default async function SettingsPage({
   const currentSession = await auth.api.getSession({ headers: requestHeaders });
   const auditEvents = await recentAuditEvents(db, user.id);
   const prefs = await getNotificationPrefs(db, user.id);
+
+  // E4: seznam přihlášení seskupený podle zařízení (prohlížeč · OS) — dvacet
+  // identických řádků „Chrome · Linux" nic neříká; jeden řádek s počtem ano
+  interface DeviceGroup {
+    label: string;
+    count: number;
+    lastAt: Date;
+    isCurrent: boolean;
+  }
+  const deviceGroups = [...sessions
+    .reduce((map, s) => {
+      const label = humanizeUserAgent(s.userAgent);
+      const group = map.get(label) ?? { label, count: 0, lastAt: s.createdAt, isCurrent: false };
+      group.count += 1;
+      if (s.createdAt > group.lastAt) group.lastAt = s.createdAt;
+      if (currentSession?.session.id === s.id) group.isCurrent = true;
+      return map.set(label, group);
+    }, new Map<string, DeviceGroup>())
+    .values()].sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+  const API_CLIENT_HINT =
+    'Přístup z příkazové řádky (např. skript). Pokud ho nepoznáváš, odhlas ostatní zařízení.';
   const OK_LABELS: Record<string, string> = {
     heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
     email: 'E-mail změněn.',
@@ -126,7 +148,8 @@ export default async function SettingsPage({
               id="otherIncomeCzk"
               name="otherIncomeCzk"
               inputMode="decimal"
-              defaultValue={profile?.otherIncomeCzk ?? '0'}
+              // DB numeric vrací „0.00" — do pole patří lidské „0" (uložení/parsování beze změny)
+              defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -428,15 +451,25 @@ export default async function SettingsPage({
             Aktivní přihlášení ({sessions.length})
           </p>
           <ul className="space-y-1 text-sm text-inkoust-tlumeny">
-            {sessions.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-baseline gap-2">
-                <span className="font-mono text-xs">
-                  {s.createdAt.toLocaleString('cs-CZ')}
+            {deviceGroups.map((group) => (
+              <li key={group.label} className="flex flex-wrap items-baseline gap-2">
+                <span
+                  className="font-medium text-inkoust"
+                  title={group.label === 'API klient (curl)' ? API_CLIENT_HINT : undefined}
+                >
+                  {group.label}
                 </span>
-                <span className="truncate" title={s.userAgent ?? undefined}>
-                  {humanizeUserAgent(s.userAgent)}
+                <span>
+                  — {group.count} přihlášení, naposledy{' '}
+                  {group.lastAt.toLocaleString('cs-CZ', {
+                    day: 'numeric',
+                    month: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </span>
-                {currentSession?.session.id === s.id && (
+                {group.isCurrent && (
                   <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
                     toto zařízení
                   </span>

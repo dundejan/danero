@@ -154,7 +154,7 @@ export default async function ReportPage({
       </section>
 
       <Card className="space-y-3">
-        <CardTitle>Porovnání variant párování (R-05c)</CardTitle>
+        <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -235,7 +235,7 @@ export default async function ReportPage({
                   <th className="py-2 pr-4 text-right font-medium">Tržba</th>
                   <th className="py-2 pr-4 text-right font-medium">Výdaje</th>
                   <th className="py-2 pr-4 text-right font-medium">Osvobozeno</th>
-                  <th className="py-2 text-right font-medium">Zdanitelné</th>
+                  <th className="py-2 text-right font-medium">Zdanitelná tržba</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -278,16 +278,16 @@ export default async function ReportPage({
                         </details>
                       </td>
                       <td className="py-2 pr-4 text-right">{czDate(disposal.saleDate)}</td>
-                      <td className="py-2 pr-4 text-right">{czk(disposal.grossProceedsCzk)}</td>
-                      <td className="py-2 pr-4 text-right">
+                      <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(disposal.grossProceedsCzk)}</td>
+                      <td className="whitespace-nowrap py-2 pr-4 text-right">
                         {expensesCzk.isZero() && disposal.exemptProceedsCzk.gt(0)
                           ? '—'
                           : czk(expensesCzk)}
                       </td>
-                      <td className="py-2 pr-4 text-right text-zelena">
+                      <td className="whitespace-nowrap py-2 pr-4 text-right text-zelena">
                         {czk(disposal.exemptProceedsCzk)}
                       </td>
-                      <td className="py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
+                      <td className="whitespace-nowrap py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
                     </tr>
                   );
                 })}
@@ -325,8 +325,8 @@ export default async function ReportPage({
                           ? 'výpis (prémie = příjem přijetí)'
                           : 'zpětný odkup výpisu'}
                     </td>
-                    <td className="py-2 pr-4 text-right">{czk(item.incomeCzk)}</td>
-                    <td className="py-2 text-right">{czk(item.expenseCzk)}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(item.incomeCzk)}</td>
+                    <td className="whitespace-nowrap py-2 text-right">{czk(item.expenseCzk)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -351,6 +351,7 @@ export default async function ReportPage({
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
                   <th className="py-2 pr-4 font-medium">Stát</th>
                   <th className="py-2 pr-4 text-right font-medium">Brutto</th>
+                  <th className="py-2 pr-4 text-right font-medium">Sraženo</th>
                   <th className="py-2 text-right font-medium">Započitatelná srážka</th>
                 </tr>
               </thead>
@@ -358,8 +359,9 @@ export default async function ReportPage({
                 {Object.entries(result.dividends.creditableByCountry).map(([country, data]) => (
                   <tr key={country} className="border-b border-linka/60">
                     <td className="py-2 pr-4 font-sans font-medium">{country}</td>
-                    <td className="py-2 pr-4 text-right">{czk(data.grossCzk)}</td>
-                    <td className="py-2 text-right">{czk(data.creditableCzk)}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.grossCzk)}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.withholdingCzk)}</td>
+                    <td className="whitespace-nowrap py-2 text-right">{czk(data.creditableCzk)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -377,7 +379,13 @@ export default async function ReportPage({
       {result.warnings.length > 0 && (
         <Card className="space-y-2">
           <CardTitle>Kontroly výpočtu ({result.warnings.length})</CardTitle>
-          <WarningsList warnings={result.warnings} labels={labels} />
+          <WarningsList
+            warnings={result.warnings}
+            labels={labels}
+            forfeitedWithholdingCzk={result.dividends.foreignWithholdingCzk.sub(
+              result.dividends.creditableWithholdingCzk,
+            )}
+          />
         </Card>
       )}
 

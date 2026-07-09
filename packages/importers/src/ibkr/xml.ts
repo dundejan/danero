@@ -263,7 +263,7 @@ function processTrades(
         // podkladu; počítáme konzervativně (výdaj nepropadá do podkladu automaticky)
         result.warnings.push({
           line,
-          message: `Opce ${symbol}: ${noteCodes.has('A') ? 'assignment' : 'uplatnění (exercise)'} — zaplacená prémie nakoupené opce by správně vstoupila do nabývací ceny podkladu (R-12k). Danero ji konzervativně neuplatňuje automaticky; podklad případně uprav univerzální šablonou.`,
+          message: `Opce ${symbol}: ${noteCodes.has('A') ? 'assignment' : 'uplatnění (exercise)'} — zaplacená prémie nakoupené opce by správně vstoupila do nabývací ceny podkladu. Danero ji konzervativně neuplatňuje automaticky; podklad případně uprav univerzální šablonou.`,
         });
       }
       if (assetCategory === 'WAR') {
@@ -963,7 +963,7 @@ function processTransfers(
     if (isIncoming) {
       result.warnings.push({
         line,
-        message: `Příchozí převod ${row.symbol ?? isin}: IBKR nezná původní datum a cenu nabytí — doplň je v univerzální šabloně (TRANSFER_IN s acquisition), jinak počítáme cenu 0 a časový test od převodu (R-04i).`,
+        message: `Příchozí převod ${row.symbol ?? isin}: IBKR nezná původní datum a cenu nabytí — doplň je v univerzální šabloně (TRANSFER_IN s acquisition), jinak počítáme cenu 0 a časový test od převodu.`,
       });
       push(line, row, {
         type: 'TRANSFER_IN',

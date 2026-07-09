@@ -90,6 +90,28 @@ export default async function OverviewPage({
   const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
+  const forfeitedWithholdingCzk = result.dividends.foreignWithholdingCzk.sub(
+    result.dividends.creditableWithholdingCzk,
+  );
+
+  // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — dle
+  // režimu (PAUSAL → 50k § 7a, ZAMESTNANEC → 20k, JINE → obecných 50k);
+  // OSVČ mimo paušál podává přiznání tak jako tak, verdikt-box tam nedává smysl.
+  const filingLimit = result.limits.flatTax50k.applicable
+    ? { status: result.limits.flatTax50k.status, label: 'limit 50 000 Kč pro paušální daň' }
+    : result.limits.employee20k.applicable
+      ? { status: result.limits.employee20k.status, label: 'limit 20 000 Kč vedlejších příjmů' }
+      : result.limits.generalFiling50k.applicable
+        ? { status: result.limits.generalFiling50k.status, label: 'limit 50 000 Kč pro podání přiznání' }
+        : null;
+  // „nejblíž prolomení" = nejvyšší čerpání ze sledovaných limitů
+  const watchedLimits = [
+    ...(filingLimit ? [filingLimit] : []),
+    { status: result.limits.limit100k, label: 'limit 100 000 Kč pro osvobození prodejů CP' },
+  ];
+  const nearestLimit = watchedLimits.reduce((a, b) => (b.status.ratio > a.status.ratio ? b : a));
+  const estimatedTaxCzk =
+    result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
 
   return (
     <div className="space-y-6">
@@ -104,6 +126,41 @@ export default async function OverviewPage({
           </p>
         </div>
       </header>
+
+      {filingLimit && (
+        <Card className="border-l-4 border-l-ruzova">
+          {filingLimit.status.exceeded ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="font-display text-xl font-bold">
+                  Za rok {year} podáš daňové přiznání
+                </p>
+                <p className="text-sm text-inkoust-tlumeny">
+                  Orientační daň z investic:{' '}
+                  <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> · papírově
+                  do 1. 4. {year + 1}, elektronicky do 2. 5. {year + 1}
+                </p>
+              </div>
+              <Link
+                href="/report"
+                className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              >
+                Připravit podklady
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-display text-xl font-bold">
+                Zatím ti povinnost podat přiznání nevzniká
+              </p>
+              <p className="text-sm text-inkoust-tlumeny">
+                Limity hlídáme denně. Nejblíž je {nearestLimit.label} — čerpáno{' '}
+                {Math.round(nearestLimit.status.ratio * 100)} %.
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {result.limits.flatTax50k.applicable && (
@@ -254,7 +311,11 @@ export default async function OverviewPage({
       {importantWarnings.length > 0 && (
         <Card className="space-y-2">
           <CardTitle>Kontroly výpočtu ({importantWarnings.length})</CardTitle>
-          <WarningsList warnings={importantWarnings} labels={labels} />
+          <WarningsList
+            warnings={importantWarnings}
+            labels={labels}
+            forfeitedWithholdingCzk={forfeitedWithholdingCzk}
+          />
         </Card>
       )}
 

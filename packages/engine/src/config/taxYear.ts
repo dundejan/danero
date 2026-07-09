@@ -112,6 +112,6 @@ export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
     timeTestCap: { amountCzk: '40000000', appliesTo: ['CRYPTO'] },
   },
   cryptoRules: { exemptionsAvailable: true, effectiveFrom: null },
-  // Doplnit z nařízení vlády o průměrné mzdě pro 2026; do té doby engine varuje.
-  progressiveThreshold: null,
+  // 36 × 48 967 Kč (průměrná mzda dle NV č. 365/2025 Sb.)
+  progressiveThreshold: '1762812',
 };

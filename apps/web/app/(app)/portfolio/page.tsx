@@ -101,6 +101,10 @@ export default async function PortfolioPage({
   const allocation = portfolioAllocation(valuation);
   const exemptShareToday = outlook?.points[0]?.exemptShare ?? null;
 
+  // E2: sloupec „Bez daně" jen když má co říct — informaci o nule nese KPI
+  // „Bez daně už dnes"
+  const anyExempt = valuation.rows.some((row) => row.exemptQuantity.gt(0));
+
   // nejbližší konec časového testu per pozice — pro mobilní karty
   const nearestExemption = new Map<string, string | null>(
     positions.map((position) => {
@@ -249,7 +253,7 @@ export default async function PortfolioPage({
                           >
                             Nerealizovaný zisk/ztráta
                           </th>
-                          <th className="py-2 text-right">Bez daně</th>
+                          {anyExempt && <th className="py-2 text-right">Bez daně</th>}
                         </tr>
                       </thead>
                       <tbody className="font-mono">
@@ -268,14 +272,14 @@ export default async function PortfolioPage({
                               </span>
                             </td>
                             <td className="py-2 pr-4 text-right">{qty(row.quantity)}</td>
-                            <td className="py-2 pr-4 text-right">
+                            <td className="whitespace-nowrap py-2 pr-4 text-right">
                               {row.price ? money(row.price, row.currency!) : '—'}
                             </td>
-                            <td className="py-2 pr-4 text-right">
+                            <td className="whitespace-nowrap py-2 pr-4 text-right">
                               {row.valueCzk ? czk(row.valueCzk) : '—'}
                             </td>
                             <td
-                              className={`py-2 pr-4 text-right ${
+                              className={`whitespace-nowrap py-2 pr-4 text-right ${
                                 row.unrealized
                                   ? row.unrealized.gte(0)
                                     ? 'text-zelena'
@@ -291,13 +295,15 @@ export default async function PortfolioPage({
                                   }`
                                 : '—'}
                             </td>
-                            <td className="py-2 text-right">
-                              {row.exemptQuantity.gt(0) ? (
-                                <span className="text-zelena">{qty(row.exemptQuantity)} ks</span>
-                              ) : (
-                                '—'
-                              )}
-                            </td>
+                            {anyExempt && (
+                              <td className="py-2 text-right">
+                                {row.exemptQuantity.gt(0) ? (
+                                  <span className="text-zelena">{qty(row.exemptQuantity)} ks</span>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>

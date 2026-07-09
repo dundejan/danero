@@ -15,7 +15,7 @@ const FEATURES = [
   },
   {
     title: 'Podklady k přiznání',
-    body: 'Dílčí základy § 8 a § 10 — akcie, krypto i opce zvlášť, porovnání metod párování, zápočet zahraniční srážky po státech a XML přímo pro mojedane.cz.',
+    body: 'Dílčí základy § 8 a § 10 — akcie, krypto i opce zvlášť, porovnání metod párování, zápočet zahraniční srážky po státech a XML pro mojedane.cz (za uzavřený rok).',
   },
 ];
 

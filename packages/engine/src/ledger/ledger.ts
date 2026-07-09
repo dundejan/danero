@@ -336,7 +336,7 @@ export function buildLedger(
           warnings.add(
             'MERGER_INTERPRETIVE',
             'WARNING',
-            `Fúze ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): předpokládám zachování časového testu (R-04b). Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty (NSS 7 Afs 229/2022 — R-04c).`,
+            `Fúze ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): předpokládám zachování časového testu. Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty (NSS 7 Afs 229/2022).`,
             { txId: tx.id },
           );
         }
@@ -401,7 +401,7 @@ export function buildLedger(
         warnings.add(
           'SPINOFF_COST_BASIS',
           'INFO',
-          `Spin-off ${tx.isin} z ${czDateText(tx.date)}: nabývací cena nových kusů dle volby "${options.spinoffCostBasisAllocation}" (R-04f — zákon alokaci výslovně neřeší).`,
+          `Spin-off ${tx.isin} z ${czDateText(tx.date)}: nabývací cena nových kusů dle volby "${options.spinoffCostBasisAllocation}" — zákon alokaci výslovně neřeší.`,
           { txId: tx.id },
         );
         break;

@@ -86,6 +86,10 @@ export function PositionsTable({
     })
     .sort((a, b) => ((a.nearestExemptFrom ?? '0') < (b.nearestExemptFrom ?? '0') ? -1 : 1));
 
+  // E2: sloupec „Z toho bez daně" jen když má co říct — samé nuly nese
+  // už KPI „Bez daně už dnes" (0 %)
+  const anyExempt = rows.some((row) => row.exemptQty > 0);
+
   const content = (
     <>
       {/* mobil: karty místo tabulky (H4) */}
@@ -114,7 +118,7 @@ export function PositionsTable({
             <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
               <th className="py-2 pr-4 font-medium">Instrument</th>
               <th className="py-2 pr-4 text-right font-medium">Kusů</th>
-              <th className="py-2 pr-4 text-right font-medium">Z toho bez daně</th>
+              {anyExempt && <th className="py-2 pr-4 text-right font-medium">Z toho bez daně</th>}
               <th className="py-2 pr-4 text-right font-medium">Nejbližší osvobození</th>
               <th className="py-2 text-right font-medium">Zbývá dní</th>
             </tr>
@@ -130,14 +134,16 @@ export function PositionsTable({
                   </span>
                 </td>
                 <td className="py-2 pr-4 text-right">{qty(row.total)}</td>
-                <td
-                  className={cn(
-                    'py-2 pr-4 text-right',
-                    row.exemptQty > 0 ? 'font-semibold text-zelena' : 'text-inkoust-tlumeny',
-                  )}
-                >
-                  {qty(row.exemptQty)}
-                </td>
+                {anyExempt && (
+                  <td
+                    className={cn(
+                      'py-2 pr-4 text-right',
+                      row.exemptQty > 0 ? 'font-semibold text-zelena' : 'text-inkoust-tlumeny',
+                    )}
+                  >
+                    {qty(row.exemptQty)}
+                  </td>
+                )}
                 <td className="py-2 pr-4 text-right">
                   {row.nearestExemptFrom ? (
                     czDate(row.nearestExemptFrom)

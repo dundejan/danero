@@ -200,7 +200,7 @@ export default async function PositionDetailPage({
 
       {position && (
         <Card className="space-y-2">
-          <CardTitle>Loty a časové testy</CardTitle>
+          <CardTitle>Nákupy (loty) a časové testy</CardTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -217,7 +217,7 @@ export default async function PositionDetailPage({
                   <tr key={lot.lotId} className="border-t border-linka">
                     <td className="py-2 pr-4">{czDate(lot.acquisitionDate)}</td>
                     <td className="py-2 pr-4 text-right">{qty(lot.remaining)}</td>
-                    <td className="py-2 pr-4 text-right">
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">
                       {money(lot.costPerShare, position.currency)}
                     </td>
                     <td className="py-2 pr-4">

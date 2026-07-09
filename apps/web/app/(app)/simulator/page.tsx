@@ -5,7 +5,7 @@ import type { DisposalReport } from '@danero/engine';
 import { ZERO, type Money } from '@danero/shared';
 import { LimitBar, zoneForRatio } from '@/components/limit-gauge';
 import { Button } from '@/components/ui/button';
-import { Card, CardTitle } from '@/components/ui/card';
+import { Card, CardTitle, keepCurrencyCase } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { czk, METHOD_LABEL, qty } from '@/lib/format';
@@ -111,15 +111,23 @@ export default async function SimulatorPage({
           </div>
           <div>
             <Label htmlFor="cena">Cena/ks</Label>
-            <Input
-              id="cena"
-              name="cena"
-              inputMode="decimal"
-              required
-              defaultValue={params.cena ?? ''}
-              placeholder="cena za kus"
-              title="Cena za kus v měně instrumentu"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="cena"
+                name="cena"
+                inputMode="decimal"
+                required
+                defaultValue={params.cena ?? ''}
+                placeholder="cena za kus"
+                title="Cena za kus v měně instrumentu"
+              />
+              {/* měnu instrumentu známe z pozice — uživatel nemusí hádat */}
+              {selected && (
+                <span className="shrink-0 font-mono text-sm text-inkoust-tlumeny">
+                  {selected.currency}
+                </span>
+              )}
+            </div>
           </div>
           <Button type="submit">Spočítat dopad</Button>
         </form>
@@ -143,7 +151,7 @@ export default async function SimulatorPage({
                 (label) => (
                   <div key={label} className="rounded-lg border border-dashed border-linka p-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny/70">
-                      {label}
+                      {keepCurrencyCase(label)}
                     </p>
                     <div className="mt-3 h-5 w-24 rounded bg-linka/60" />
                     <div className="mt-2 h-3 w-16 rounded bg-linka/40" />
@@ -201,18 +209,16 @@ export default async function SimulatorPage({
               label="Paušální daň (50 000 Kč)"
               beforeCzk={simulation.baseline.flatTax50kUsedCzk}
               afterCzk={simulation.simulated.flatTax50kUsedCzk}
-              bad={simulation.simulated.flatTax50kExceeded}
+              exceeded={simulation.simulated.flatTax50kExceeded}
               limitCzk={baseline.limits.flatTax50k.status.limitCzk}
             />
+            {/* exceeded = STAV po prodeji přes limit — konzistentně s kartou 50k */}
             {selected.assetClass === 'CRYPTO' ? (
               <DeltaCard
                 label="Prodeje krypta (100 000 Kč)"
                 beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
                 afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
-                bad={
-                  !simulation.simulated.cryptoExemptUnder100k &&
-                  simulation.baseline.cryptoExemptUnder100k
-                }
+                exceeded={!simulation.simulated.cryptoExemptUnder100k}
                 limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
               />
             ) : (
@@ -220,7 +226,7 @@ export default async function SimulatorPage({
                 label="Prodeje CP (100 000 Kč)"
                 beforeCzk={simulation.baseline.limit100kUsedCzk}
                 afterCzk={simulation.simulated.limit100kUsedCzk}
-                bad={!simulation.simulated.exemptUnder100k && simulation.baseline.exemptUnder100k}
+                exceeded={!simulation.simulated.exemptUnder100k}
                 limitCzk={baseline.limits.limit100k.limitCzk}
               />
             )}
@@ -228,7 +234,6 @@ export default async function SimulatorPage({
               label="Orientační daň"
               beforeCzk={simulation.baseline.taxCzk}
               afterCzk={simulation.simulated.taxCzk}
-              bad={simulation.deltas.taxCzk.gt(0)}
             />
           </section>
 
@@ -247,20 +252,23 @@ export default async function SimulatorPage({
 
 /**
  * Delta karta (H4): po-hodnota + badge se semaforem podle SMĚRU změny
- * (zhoršení červeně, zlepšení zeleně, beze změny neutrálně) a před/po
- * progress bary limitu (znovupoužitý LimitBar).
+ * (zhoršení červeně, zlepšení zeleně, beze změny neutrálně) vždy POD číslem —
+ * tři karty mají stejný layout. Červené číslo jen u prolomeného limitu;
+ * částka daně zůstává neutrálním inkoustem. Před/po progress bary limitu
+ * doplňuje textové čerpání „X % → Y %" (při přetečení obou se bary neliší).
  */
 function DeltaCard({
   label,
   beforeCzk,
   afterCzk,
-  bad,
+  exceeded = false,
   limitCzk,
 }: {
   label: string;
   beforeCzk: Money;
   afterCzk: Money;
-  bad: boolean;
+  /** Prolomený limit — jediný stav, který barví částku červeně. */
+  exceeded?: boolean;
   /** Je-li zadán limit, vykreslí se před/po progress bary čerpání. */
   limitCzk?: Money;
 }) {
@@ -276,16 +284,20 @@ function DeltaCard({
       ['před', beforeCzk.div(limitCzk).toNumber()],
       ['po', afterCzk.div(limitCzk).toNumber()],
     ] as const);
+  const pct = (ratio: number): string => `${Math.round(ratio * 100)} %`;
 
   return (
     <Card className="space-y-2">
       <CardTitle>{label}</CardTitle>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className={cn('font-mono text-lg font-semibold', bad && 'text-cervena')}>
+      <div>
+        <p className={cn('font-mono text-lg font-semibold', exceeded && 'text-cervena')}>
           {czk(afterCzk)}
         </p>
         <span
-          className={cn('rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold', badge.tone)}
+          className={cn(
+            'mt-1 inline-block rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold',
+            badge.tone,
+          )}
         >
           {badge.text}
         </span>
@@ -308,6 +320,9 @@ function DeltaCard({
               />
             </div>
           ))}
+          <p className="font-mono text-[10px] text-inkoust-tlumeny">
+            čerpání {pct(bars[0][1])} → {pct(bars[1][1])}
+          </p>
         </div>
       )}
     </Card>

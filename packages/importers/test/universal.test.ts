@@ -75,7 +75,7 @@ describe('univerzální CSV šablona', () => {
 
     // R-04i: převod bez nabytí projde, ale s varováním
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toContain('R-04i');
+    expect(result.warnings[0]!.message).toContain('časový test od data převodu');
   });
 
   it('v2: validace — SPLIT bez ratio a ISIN_CHANGE bez new_isin jsou chyby', () => {

@@ -111,69 +111,76 @@ function TooltipBox({
 
 export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name: string }) {
   const year = Number(series.points[0]?.date.slice(0, 4));
+  const lastValue = series.points[series.points.length - 1]?.value ?? 0;
   // řadu dovedeme do konce roku, ať čára nekončí v půlce plátna
   const points = [
     ...series.points,
-    { date: `${year}-12-31`, value: series.points[series.points.length - 1]?.value ?? 0 },
+    { date: `${year}-12-31`, value: lastValue },
   ].map((point) => ({ ...point, t: toMs(point.date) }));
   // kulaté ticky; 1,05× nad limitem/maximem, ať referenční čára nelepí na strop
   const yScale = niceTicks(Math.max(series.limitCzk, series.usedCzk) * 1.05);
   const monthTicks = Array.from({ length: 12 }, (_, m) => Date.UTC(year, m, 1));
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <LineChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
-        <XAxis
-          {...axisProps}
-          type="number"
-          dataKey="t"
-          domain={[Date.UTC(year, 0, 1), Date.UTC(year, 11, 31)]}
-          ticks={monthTicks}
-          tickFormatter={(ms: number) => MONTH_LABELS[new Date(ms).getUTCMonth()]!}
-          minTickGap={20}
-        />
-        <YAxis
-          {...axisProps}
-          tickFormatter={czkAxis}
-          width={52}
-          domain={yScale.domain}
-          ticks={yScale.ticks}
-        />
-        <ReferenceLine
-          y={series.limitCzk}
-          stroke="var(--cervena)"
-          strokeDasharray="4 4"
-          label={{
-            value: 'limit',
-            fill: 'var(--cervena)',
-            fontSize: 10,
-            position: 'insideTopRight',
-          }}
-        />
-        <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--oranz)" strokeDasharray="2 4" />
-        <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--jantar)" strokeDasharray="2 4" />
-        <Tooltip
-          content={({ active, payload }) =>
-            active && payload?.[0] ? (
-              <TooltipBox
-                title={dateLabel(String(payload[0].payload.date))}
-                rows={[{ name, value: czkCompact(Number(payload[0].value)), color: SERIES[0] }]}
-              />
-            ) : null
-          }
-        />
-        <Line
-          type="stepAfter"
-          dataKey="value"
-          stroke={SERIES[0]}
-          strokeWidth={2}
-          dot={false}
-          activeDot={{ r: 4 }}
-          isAnimationActive={false}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+    <div>
+      {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit" */}
+      <p className="mb-1 text-right font-mono text-xs text-inkoust-tlumeny">
+        k 31. 12.: <span className="text-inkoust">{czkCompact(lastValue)}</span>
+      </p>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+          <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+          <XAxis
+            {...axisProps}
+            type="number"
+            dataKey="t"
+            domain={[Date.UTC(year, 0, 1), Date.UTC(year, 11, 31)]}
+            ticks={monthTicks}
+            tickFormatter={(ms: number) => MONTH_LABELS[new Date(ms).getUTCMonth()]!}
+            minTickGap={20}
+          />
+          <YAxis
+            {...axisProps}
+            tickFormatter={czkAxis}
+            width={52}
+            domain={yScale.domain}
+            ticks={yScale.ticks}
+          />
+          <ReferenceLine
+            y={series.limitCzk}
+            stroke="var(--cervena)"
+            strokeDasharray="4 4"
+            label={{
+              value: 'limit',
+              fill: 'var(--cervena)',
+              fontSize: 10,
+              position: 'insideTopRight',
+            }}
+          />
+          <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--oranz)" strokeDasharray="2 4" />
+          <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--jantar)" strokeDasharray="2 4" />
+          <Tooltip
+            content={({ active, payload }) =>
+              active && payload?.[0] ? (
+                <TooltipBox
+                  title={dateLabel(String(payload[0].payload.date))}
+                  rows={[{ name, value: czkCompact(Number(payload[0].value)), color: SERIES[0] }]}
+                />
+              ) : null
+            }
+          />
+          <Line
+            type="stepAfter"
+            dataKey="value"
+            stroke={SERIES[0]}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 

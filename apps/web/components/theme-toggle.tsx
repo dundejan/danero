@@ -5,9 +5,9 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const MODES = [
-  { key: 'system', icon: '○', label: 'Vzhled podle systému' },
-  { key: 'light', icon: '☀', label: 'Světlý vzhled' },
-  { key: 'dark', icon: '☾', label: 'Tmavý vzhled' },
+  { key: 'system', icon: '○', label: 'Podle systému' },
+  { key: 'light', icon: '☀', label: 'Světlý' },
+  { key: 'dark', icon: '☾', label: 'Tmavý' },
 ] as const;
 
 /**

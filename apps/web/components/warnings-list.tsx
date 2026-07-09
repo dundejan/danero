@@ -1,4 +1,4 @@
-import { ZERO } from '@danero/shared';
+import { ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
 import { czk } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -41,9 +41,20 @@ const LEVEL_CLASS: Record<EngineWarning['level'], string> = {
   INFO: 'text-inkoust-tlumeny',
 };
 
+/** Badge závažnosti u skupiny — barvy jen z tokenů (semafor). */
+const LEVEL_BADGE: Record<EngineWarning['level'], { text: string; tone: string }> = {
+  ERROR: { text: 'Chyba', tone: 'bg-cervena text-white' },
+  WARNING: { text: 'Upozornění', tone: 'bg-jantar/15 text-jantar' },
+  INFO: { text: 'Info', tone: 'bg-linka/50 text-inkoust-tlumeny' },
+};
+
 const SEVERITY: Record<EngineWarning['level'], number> = { ERROR: 2, WARNING: 1, INFO: 0 };
 
-/** Export kvůli unit testům — čistá funkce bez JSX. */
+/**
+ * Export kvůli unit testům — čistá funkce bez JSX. Skupiny se řadí podle
+ * závažnosti (ERROR → WARNING → INFO), uvnitř úrovně podle počtu výskytů
+ * sestupně; při shodě rozhoduje pořadí prvního výskytu (stabilní sort).
+ */
 export function groupByCode(warnings: EngineWarning[]): WarningGroup[] {
   const groups = new Map<string, WarningGroup>();
   for (const warning of warnings) {
@@ -55,7 +66,9 @@ export function groupByCode(warnings: EngineWarning[]): WarningGroup[] {
     group.items.push(warning);
     if (SEVERITY[warning.level] > SEVERITY[group.level]) group.level = warning.level;
   }
-  return [...groups.values()];
+  return [...groups.values()].sort(
+    (a, b) => SEVERITY[b.level] - SEVERITY[a.level] || b.items.length - a.items.length,
+  );
 }
 
 /** Nadpis skupiny: lidský název kódu, jinak první věta prvního výskytu. */
@@ -87,13 +100,24 @@ function GroupDetails({ group }: { group: WarningGroup }) {
   );
 }
 
-/** Agregovaný souhrn nadsmluvních srážek: součet propadlé daně + dotčené tituly. */
-export function withholdingSummary(group: WarningGroup, labels: Map<string, string>): string {
+/**
+ * Agregovaný souhrn nadsmluvních srážek: propadlá daň + dotčené tituly.
+ * `forfeitedCzk` (sraženo − započitatelné za celý rok) má přednost před součtem
+ * contextů — číslo pak sedí na kartu § 8 (zahrnuje i drobné rozdíly ze
+ * zaokrouhlování zápočtu dolů).
+ */
+export function withholdingSummary(
+  group: WarningGroup,
+  labels: Map<string, string>,
+  forfeitedCzk?: Money,
+): string {
   const contexts = group.items.map((warning) => warning.context ?? {});
-  const overCzk = contexts.reduce(
-    (acc, ctx) => (typeof ctx.overCzk === 'string' ? acc.plus(ctx.overCzk) : acc),
-    ZERO,
-  );
+  const overCzk =
+    forfeitedCzk ??
+    contexts.reduce(
+      (acc, ctx) => (typeof ctx.overCzk === 'string' ? acc.plus(ctx.overCzk) : acc),
+      ZERO,
+    );
   const titles = [
     ...new Set(
       contexts.flatMap((ctx) =>
@@ -114,12 +138,30 @@ export function withholdingSummary(group: WarningGroup, labels: Map<string, stri
     .join(' ');
 }
 
+/** Badge závažnosti („Chyba" / „Upozornění" / „Info"). */
+function LevelBadge({ level }: { level: EngineWarning['level'] }) {
+  const badge = LEVEL_BADGE[level];
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold leading-4',
+        badge.tone,
+      )}
+    >
+      {badge.text}
+    </span>
+  );
+}
+
 export function WarningsList({
   warnings,
   labels,
+  forfeitedWithholdingCzk,
 }: {
   warnings: EngineWarning[];
   labels: Map<string, string>;
+  /** Propadlá srážka za rok (sraženo − započitatelné) — sjednocuje souhrn s kartou § 8. */
+  forfeitedWithholdingCzk?: Money;
 }) {
   return (
     <>
@@ -127,18 +169,29 @@ export function WarningsList({
         const color = LEVEL_CLASS[group.level];
         if (group.items.length === 1) {
           return (
-            <p key={group.code} title={group.code} className={cn('text-sm', color)}>
-              {group.items[0]!.message}
+            <p
+              key={group.code}
+              title={group.code}
+              className={cn('flex items-start gap-2 text-sm', color)}
+            >
+              <LevelBadge level={group.level} />
+              <span>{group.items[0]!.message}</span>
             </p>
           );
         }
         return (
           <div key={group.code} className={color}>
-            <p className="text-sm font-medium" title={group.code}>
-              {groupTitle(group)} <span className="font-mono text-xs">({group.items.length}×)</span>
+            <p className="flex items-start gap-2 text-sm font-medium" title={group.code}>
+              <LevelBadge level={group.level} />
+              <span>
+                {groupTitle(group)}{' '}
+                <span className="font-mono text-xs">({group.items.length}×)</span>
+              </span>
             </p>
             {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
-              <p className="text-sm">{withholdingSummary(group, labels)}</p>
+              <p className="text-sm">
+                {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
+              </p>
             )}
             <GroupDetails group={group} />
           </div>

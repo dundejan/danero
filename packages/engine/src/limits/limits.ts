@@ -120,7 +120,7 @@ export function computeLimits(
     warnings.add(
       'FLAT_TAX_BROKEN',
       'WARNING',
-      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání a přehledy ČSSZ/ZP (R-08e); v paušálním režimu zůstáváš (R-08a).`,
+      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání a přehledy ČSSZ/ZP; v paušálním režimu zůstáváš.`,
       { usedCzk: sideIncome.toFixed(2) },
     );
   }

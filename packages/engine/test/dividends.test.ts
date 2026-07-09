@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TAX_YEAR_2026_DRAFT } from '../src';
 import { buy, dividend, hasWarning, interest, run, sell, CFG_2025 } from './helpers';
 
 describe('R-07 dividendy a úroky (§ 8)', () => {
@@ -52,7 +53,7 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.warnings.filter((w) => w.code === 'TREATY_RATE_UNVERIFIED')).toHaveLength(1);
   });
 
-  it('R-07c: zápočet po státech v celých Kč — souhrn je součtem zaokrouhlených hodnot', () => {
+  it('R-07c: zápočet po státech v celých Kč dolů — souhrn je součtem zaokrouhlených hodnot', () => {
     // 15 % z 503 = 75,45 → per stát 75; souhrn 150 (ne 151 ze zaokrouhleného součtu 150,90)
     const result = run([
       dividend({ sourceCountry: 'US', gross: '503', withholdingTax: '75.45' }),
@@ -61,6 +62,23 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     const perCountry = Object.values(result.dividends.creditableByCountry);
     expect(perCountry.map((c) => c.creditableCzk.toString())).toEqual(['75', '75']);
     expect(result.dividends.creditableWithholdingCzk.toString()).toBe('150');
+  });
+
+  it('R-07c: zaokrouhlení zápočtu vždy DOLŮ (NL 10 % z 26 = 2,6 → 2, ne 3)', () => {
+    const result = run([dividend({ sourceCountry: 'NL', gross: '26', withholdingTax: '2.6' })]);
+    expect(result.dividends.creditableByCountry['NL']?.creditableCzk.toString()).toBe('2');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('2');
+  });
+
+  it('creditableByCountry nese i úhrn sražené daně per země', () => {
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '1000', withholdingTax: '300' }),
+      dividend({ sourceCountry: 'US', gross: '500', withholdingTax: '75' }),
+    ]);
+    const us = result.dividends.creditableByCountry['US'];
+    expect(us?.grossCzk.toString()).toBe('1500');
+    expect(us?.withholdingCzk.toString()).toBe('375');
+    expect(us?.creditableCzk.toString()).toBe('225'); // strop 15 % z 1 500
   });
 
   it('R-07a: česká dividenda je srážková a do § 8 nevstupuje', () => {
@@ -117,6 +135,18 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.tax.separate16a.taxCzk.lt(result.tax.general.taxCzk)).toBe(true);
     // …ale bez hranice 23 % je to šum a § 16a znamená ztrátu slev → GENERAL
     expect(result.tax.recommended).toBe('GENERAL');
+  });
+
+  it('rok 2026 má hranici progrese v konfiguraci — bez varování, 23 % se počítá', () => {
+    // 36 × 48 967 Kč (NV č. 365/2025 Sb.) = 1 762 812 Kč
+    const config = { ...TAX_YEAR_2026_DRAFT, unifiedRatesByYear: CFG_2025.unifiedRatesByYear };
+    const result = run(
+      [dividend({ gross: '2000000', withholdingTax: '0', date: '2026-04-01' })],
+      { config },
+    );
+    expect(hasWarning(result, 'PROGRESSIVE_THRESHOLD_UNKNOWN')).toBe(false);
+    // 1 762 812 × 15 % + (2 000 000 − 1 762 812) × 23 % = 264 421,80 + 54 553,24
+    expect(result.tax.general.taxCzk.toString()).toBe('318975.04');
   });
 
   it('R-07d: pod známou hranicí progrese se § 16a nedoporučuje ani při šumově nižší dani', () => {

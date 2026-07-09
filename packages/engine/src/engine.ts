@@ -222,7 +222,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     warnings.add(
       'CRYPTO_EMT_ASSUMPTION',
       'WARNING',
-      `Osvobozené příjmy z kryptoaktiv ${czkText(cryptoExemptCzk)}: předpokládáme, že nejde o elektronické peněžní tokeny (např. USDT/USDC) — ty mají hodnotové osvobození 100 000 Kč (§ 4/1 zj) vyloučené (R-10a/R-10g). Pokud jsi prodával stablecoiny, vyřaď je nebo označ ručně.`,
+      `Osvobozené příjmy z kryptoaktiv ${czkText(cryptoExemptCzk)}: předpokládáme, že nejde o elektronické peněžní tokeny (např. USDT/USDC) — ty mají hodnotové osvobození 100 000 Kč (§ 4/1 zj) vyloučené. Pokud jsi prodával stablecoiny, vyřaď je nebo označ ručně.`,
       { exemptCzk: cryptoExemptCzk.toFixed(2) },
     );
   }

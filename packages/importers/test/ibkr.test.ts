@@ -171,7 +171,7 @@ describe('IBKR Flex XML parser', () => {
     expect(transferIn.isin).toBe('US5949181045');
     expect(transferIn.quantity.toString()).toBe('10');
     expect(transferIn.acquisition).toBeUndefined();
-    expect(result.warnings.some((w) => w.message.includes('R-04i'))).toBe(true);
+    expect(result.warnings.some((w) => w.message.includes('časový test od převodu'))).toBe(true);
 
     const transferOut = result.transactions.find((t) => t.type === 'TRANSFER_OUT');
     if (!transferOut || transferOut.type !== 'TRANSFER_OUT') throw new Error('unreachable');

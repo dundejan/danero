@@ -42,8 +42,14 @@ export interface DividendsResult {
    * daní řeší estimateTax.
    */
   creditableWithholdingCzk: Money;
-  /** creditableCzk per země je zaokrouhlené na celé Kč (R-07c). */
-  creditableByCountry: Record<string, { grossCzk: Money; creditableCzk: Money }>;
+  /**
+   * Agregát po státech: brutto, sražená daň a zápočet (creditableCzk je
+   * zaokrouhlený na celé Kč dolů — R-07c).
+   */
+  creditableByCountry: Record<
+    string,
+    { grossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
+  >;
   /** Zahraniční úroky (§ 8) — zdanitelné, vstupují do limitu 50k. */
   taxableInterestCzk: Money;
   /** Dílčí základ § 8: zahraniční dividendy brutto + zdanitelné úroky. */
@@ -76,7 +82,10 @@ export function computeDividends(
   let czechGross = ZERO;
   let foreignGross = ZERO;
   let foreignWithholding = ZERO;
-  const byCountry: Record<string, { grossCzk: Money; creditableCzk: Money }> = {};
+  const byCountry: Record<
+    string,
+    { grossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
+  > = {};
   const items: DividendItem[] = [];
   /** Země s už vydaným varováním o neověřené smluvní sazbě — varujeme jednou per země. */
   const unverifiedTreatyWarned = new Set<string>();
@@ -154,9 +163,10 @@ export function computeDividends(
 
     foreignGross = foreignGross.plus(grossCzk);
     foreignWithholding = foreignWithholding.plus(withholdingCzk);
-    const agg = byCountry[country] ?? { grossCzk: ZERO, creditableCzk: ZERO };
+    const agg = byCountry[country] ?? { grossCzk: ZERO, withholdingCzk: ZERO, creditableCzk: ZERO };
     byCountry[country] = {
       grossCzk: agg.grossCzk.plus(grossCzk),
+      withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
       creditableCzk: agg.creditableCzk.plus(creditableCzk),
     };
     items.push({
@@ -171,13 +181,13 @@ export function computeDividends(
     });
   }
 
-  // R-07c: zápočet po státech zaokrouhlujeme na celé Kč a souhrn počítáme jako
-  // SOUČET zaokrouhlených hodnot — tabulka po státech tak vždy sedí na součet
-  // (jinak by např. 75,45 + 75,45 dalo řádky 75 + 75, ale souhrn 151).
+  // R-07c: zápočet po státech zaokrouhlujeme na celé Kč DOLŮ (nárokovanou
+  // částku nikdy nenadhodnocujeme — konzervativně) a souhrn počítáme jako
+  // SOUČET zaokrouhlených hodnot — tabulka po státech tak vždy sedí na součet.
   let creditable = ZERO;
   for (const [country, agg] of Object.entries(byCountry)) {
-    const roundedCreditable = agg.creditableCzk.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
-    byCountry[country] = { grossCzk: agg.grossCzk, creditableCzk: roundedCreditable };
+    const roundedCreditable = agg.creditableCzk.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
+    byCountry[country] = { ...agg, creditableCzk: roundedCreditable };
     creditable = creditable.plus(roundedCreditable);
   }
 

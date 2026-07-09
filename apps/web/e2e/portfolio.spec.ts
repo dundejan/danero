@@ -60,7 +60,7 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   }).toPass();
   await page.getByRole('link', { name: 'AAPL' }).first().click();
   await page.waitForURL('**/portfolio/US0378331005');
-  await expect(page.getByText('Loty a časové testy')).toBeVisible();
+  await expect(page.getByText('Nákupy (loty) a časové testy')).toBeVisible();
   await expect(page.getByText('Historie (2)')).toBeVisible();
   await page.getByRole('link', { name: 'Simulovat prodej' }).click();
   await page.waitForURL('**/simulator?isin=US0378331005');

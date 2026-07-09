@@ -101,7 +101,7 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   | IE | 15 % | 163/1996 Sb. |
   | ostatní | default 15 % | neověřeno — engine přidá varování `TREATY_RATE_UNVERIFIED` (jednou per země); skutečná smluvní sazba může být nižší → riziko nadhodnoceného zápočtu |
 
-  Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč; souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
+  Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč **dolů** (nárokovanou částku konzervativně nenadhodnocujeme); souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
 - **R-07d § 16a**: volitelně samostatný základ daně 15 % pro zahraniční dividendy/úroky (ochrana před 23% progresí; Příloha 4). Engine spočítá obě varianty a doporučí výhodnější — ale **jen když obecný základ skutečně překračuje známou hranici progrese**. Bez známé hranice (`progressiveThreshold = null`) i pod hranicí se § 16a **nedoporučuje**: obě varianty pak počítají 15 % a rozdíl je jen zaokrouhlovací šum (základy se u variant zaokrouhlují na sta dolů odděleně, max ~15 Kč), zatímco § 16a znamená ztrátu slev na dani a nezdanitelných částí základu.
 - **R-07e** Prokazování: výpisy brokera FS v praxi akceptuje, není nárokové — dokumentační upozornění.
 

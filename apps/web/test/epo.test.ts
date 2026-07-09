@@ -149,14 +149,15 @@ describe('generateDpfdp7: varianta GENERAL', () => {
     expect(us.da_uznzap).toBe('3274.79'); // min(323, 325)
 
     const de = vetaL[0]!;
-    // ř. 323 už po smluvním stropu 15 % z 2 466 Kč (R-07c) — sraženo bylo 739.80
-    expect(de.da_zahr).toBe('370');
-    expect(de.da_uznzap).toBe('370'); // min(323, 325 = 370.43)
+    // ř. 323 už po smluvním stropu 15 % z 2 466 Kč (R-07c) — sraženo bylo 739.80;
+    // 369,90 se zaokrouhluje na celé Kč DOLŮ (konzervativně)
+    expect(de.da_zahr).toBe('369');
+    expect(de.da_uznzap).toBe('369'); // min(323, 325 = 370.43)
 
     // úhrny a přenos na ř. 58
-    expect(vetaW.uhrn_uzndan).toBe('3644.79');
-    expect(vetaW.da_zazahr).toBe('14250.21');
-    expect(vetaD.da_slezap).toBe('14250.21');
+    expect(vetaW.uhrn_uzndan).toBe('3643.79');
+    expect(vetaW.da_zazahr).toBe('14251.21');
+    expect(vetaD.da_slezap).toBe('14251.21');
 
     const vetad = toArray(dp.Vetad);
     expect(vetad.map((row) => row.k_stat_zdroj)).toEqual(['DE', 'US']);
@@ -168,7 +169,7 @@ describe('generateDpfdp7: varianta GENERAL', () => {
   });
 
   it('ř. 60 celé Kč nahoru, sleva na poplatníka přesně 30 840', () => {
-    expect(vetaD.da_celod13).toBe('14251'); // ceil(14250.21)
+    expect(vetaD.da_celod13).toBe('14252'); // ceil(14251.21)
     expect(vetaD.kc_op15_1a).toBe('30840');
     expect(vetaD.uhrn_slevy35ba).toBe('30840');
     expect(vetaD.da_slevy35ba).toBe('0'); // max(0, 14251 − 30840)
@@ -195,9 +196,9 @@ describe('generateDpfdp7: varianta SEPARATE_16A (§ 16a, Příloha 4)', () => {
 
   it('zápočet v Příloze 4: max 15 % ř. 411 a smluvní strop', () => {
     expect(vetaZ.kc_uh415).toBe('24306'); // ř. 411: US 21840 + DE 2466
-    expect(vetaZ.kc_zahr415).toBe('3646'); // ř. 412: srážka po stropech smluv (3276 + 369.90)
-    expect(vetaZ.kc_uznzap415).toBe('3645.9'); // ř. 413 = min(ř. 412, 15 % × ř. 411)
-    expect(vetaZ.da_samzakl4).toBe('30'); // ř. 414 = ceil(3675 − 3645.90)
+    expect(vetaZ.kc_zahr415).toBe('3645'); // ř. 412: srážka po stropech smluv (3276 + 369 dolů)
+    expect(vetaZ.kc_uznzap415).toBe('3645'); // ř. 413 = min(ř. 412, 15 % × ř. 411 = 3645.90)
+    expect(vetaZ.da_samzakl4).toBe('30'); // ř. 414 = ceil(3675 − 3645)
   });
 
   it('ř. 74a a daň celkem; Příloha 3 se nevyplňuje', () => {

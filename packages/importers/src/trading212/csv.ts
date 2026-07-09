@@ -277,7 +277,7 @@ export function parseTrading212Csv(text: string): ImportResult {
           );
           result.warnings.push({
             line,
-            message: `Spin-off ${isin}: nové kusy s nabývací cenou 0 a novou lhůtou časového testu (R-04f, konzervativně); mateřská pozice beze změny.`,
+            message: `Spin-off ${isin}: nové kusy s nabývací cenou 0 a novou lhůtou časového testu (konzervativní postup); mateřská pozice beze změny.`,
           });
           return;
         }

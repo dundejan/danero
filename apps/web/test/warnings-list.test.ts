@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { d } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
 import { groupByCode, withholdingSummary } from '@/components/warnings-list';
 
@@ -10,7 +11,7 @@ const w = (over: Partial<EngineWarning>): EngineWarning => ({
 });
 
 describe('seskupení kontrol výpočtu podle kódu', () => {
-  it('zachová pořadí prvního výskytu a přebírá nejvyšší závažnost', () => {
+  it('přebírá nejvyšší závažnost skupiny', () => {
     const groups = groupByCode([
       w({ code: 'A', level: 'WARNING' }),
       w({ code: 'B', level: 'INFO' }),
@@ -19,6 +20,17 @@ describe('seskupení kontrol výpočtu podle kódu', () => {
     expect(groups.map((g) => g.code)).toEqual(['A', 'B']);
     expect(groups[0]!.items).toHaveLength(2);
     expect(groups[0]!.level).toBe('ERROR');
+  });
+
+  it('řadí ERROR → WARNING → INFO, uvnitř úrovně podle počtu výskytů sestupně', () => {
+    const groups = groupByCode([
+      w({ code: 'I', level: 'INFO' }),
+      w({ code: 'W1', level: 'WARNING' }),
+      w({ code: 'W2', level: 'WARNING' }),
+      w({ code: 'W2', level: 'WARNING' }),
+      w({ code: 'E', level: 'ERROR' }),
+    ]);
+    expect(groups.map((g) => g.code)).toEqual(['E', 'W2', 'W1', 'I']);
   });
 });
 
@@ -50,5 +62,17 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
     const text = withholdingSummary(group, labels);
     expect(text).not.toContain('W-8BEN');
     expect(text).not.toContain('Dotčené tituly');
+  });
+
+  it('předaná propadlá srážka za rok má přednost před součtem contextů', () => {
+    const group = groupByCode([
+      w({ context: { country: 'US', overCzk: '100.00' } }),
+      w({ context: { country: 'US', overCzk: '50.00' } }),
+    ])[0]!;
+    // 276 − 150 z karty § 8 (vč. rozdílů ze zaokrouhlení zápočtu dolů);
+    // Intl vkládá nezlomitelné mezery — normalizujeme na obyčejné
+    const text = withholdingSummary(group, labels, d('126')).replace(/ /g, ' ');
+    expect(text).toContain('126 Kč');
+    expect(text).not.toContain('150 Kč');
   });
 });

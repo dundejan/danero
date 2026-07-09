@@ -187,7 +187,7 @@ export function parseUniversalCsv(text: string): ImportResult {
             result.warnings.push({
               line,
               message:
-                'TRANSFER_IN bez acquisition_date: počítáme nabývací cenu 0 a časový test od data převodu (R-04i). Doplň acquisition_date/price/currency z výpisu původního brokera, ať je výpočet přesný.',
+                'TRANSFER_IN bez acquisition_date: počítáme nabývací cenu 0 a časový test od data převodu. Doplň acquisition_date/price/currency z výpisu původního brokera, ať je výpočet přesný.',
             });
           }
           result.transactions.push(
