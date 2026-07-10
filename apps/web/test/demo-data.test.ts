@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { d } from '@danero/shared';
+import { compareVariants } from '@danero/engine';
 import { demoDataset, demoToday } from '@/lib/demo-data';
-import { analyzeForUser, availableYears, instrumentNames } from '@/lib/portfolio';
+import { analysisFingerprint } from '@/lib/engine-cache';
+import { feesByYear } from '@/lib/charts-data';
+import { analyzeForUser, availableYears, engineInputForUser, instrumentNames } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import { computeNotificationCandidates } from '@/lib/notifications';
+import { UNIFIED_RATES } from '@/lib/tax-config';
 
 /**
- * Engine-validita demo datasetu: prohlídka musí věčně ukazovat týž příběh —
+ * Engine-validita demo datasetu v2: prohlídka musí věčně ukazovat týž příběh —
  * limit 100k v CRITICAL, prolomený limit 50k, krypto v zeleném, blížící se
- * osvobození a dividendy z několika států. Kontroluje se ve třech okamžicích
- * roku (začátek, střed, konec), protože datumy jsou relativní k „dnešku".
+ * osvobození, dividendy z několika států, 50+ otevřených pozic a aktivita
+ * (prodeje, dividendy, poplatky) v KAŽDÉM roce Y−5…Y. Kontroluje se ve třech
+ * okamžicích roku (začátek, střed, konec), protože datumy jsou relativní
+ * k „dnešku".
  */
 const TODAYS = [
   demoToday(new Date('2026-01-02T10:00:00Z')),
@@ -17,7 +24,7 @@ const TODAYS = [
 ];
 
 describe.each(TODAYS)('demo dataset k %s', (today) => {
-  const { txs, profile, prices } = demoDataset(today);
+  const { txs, profile, prices, dailyRates } = demoDataset(today);
   const year = Number(today.slice(0, 4));
   const analysis = analyzeForUser(txs, profile, year, today);
   const { result, positions, labels } = analysis;
@@ -93,29 +100,95 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
     expect(countries).toEqual(expect.arrayContaining(['US', 'DE', 'NL', 'JP']));
   });
 
-  it('portfolio má ceny pro všechny pozice a hodnotu ~1,2 mil. Kč', () => {
+  it('portfolio: 50+ oceněných pozic v hodnotě 1,5–2,5 mil. Kč', () => {
+    const open = positions.filter((p) => p.totalRemaining.gt(0));
+    expect(open.length).toBeGreaterThanOrEqual(50);
+
     const valuation = valuePositions(positions, labels, instrumentNames(txs), prices, year);
     expect(valuation.unpricedCount).toBe(0);
-    expect(valuation.totalCzk.toNumber()).toBeGreaterThan(900_000);
-    expect(valuation.totalCzk.toNumber()).toBeLessThan(1_500_000);
+    expect(valuation.totalCzk.toNumber()).toBeGreaterThan(1_500_000);
+    expect(valuation.totalCzk.toNumber()).toBeLessThan(2_500_000);
     // nerealizovaný P/L kladný i záporný
     expect(valuation.rows.some((row) => row.unrealized?.gt(0))).toBe(true);
     expect(valuation.rows.some((row) => row.unrealized?.lt(0))).toBe(true);
   });
 
-  it('pestrost: 18–22 instrumentů, frakční kusy, roky Y−5 až Y, poplatky', () => {
+  it('pestrost: 50+ instrumentů, frakční kusy, rozumný počet transakcí, poplatky', () => {
     const isins = new Set(txs.filter((tx) => 'isin' in tx && tx.isin).map((tx) => (tx as { isin: string }).isin));
-    expect(isins.size).toBeGreaterThanOrEqual(18);
-    expect(isins.size).toBeLessThanOrEqual(22);
+    expect(isins.size).toBeGreaterThanOrEqual(52); // 51 pozic + uzavřená opce
 
     const fractional = positions.some((p) => !p.totalRemaining.isInteger());
     expect(fractional).toBe(true);
 
-    const years = availableYears(txs, year);
-    expect(years.length).toBeGreaterThanOrEqual(6); // Y−5 … Y
+    // dataset se počítá per request — počet transakcí musí zůstat rozumný
+    expect(txs.length).toBeGreaterThanOrEqual(200);
+    expect(txs.length).toBeLessThanOrEqual(350);
 
     const withFee = txs.filter((tx) => (tx.type === 'BUY' || tx.type === 'SELL') && tx.fee);
     expect(withFee.length).toBeGreaterThan(10);
+  });
+
+  it('aktivita v každém roce Y−5 … Y: prodeje, dividendy i poplatky', () => {
+    const years = availableYears(txs, year);
+    expect(years.length).toBeGreaterThanOrEqual(6); // Y−5 … Y
+
+    for (let offset = -5; offset <= 0; offset += 1) {
+      const y = year + offset;
+      const inYear = (date: string) => date.startsWith(`${y}-`);
+      expect(
+        txs.some((tx) => tx.type === 'SELL' && inYear(tx.tradeDate)),
+        `prodej v roce ${y}`,
+      ).toBe(true);
+      expect(
+        txs.some((tx) => tx.type === 'DIVIDEND' && inYear(tx.date)),
+        `dividenda v roce ${y}`,
+      ).toBe(true);
+    }
+
+    // poplatky žijí každý rok (graf poplatků nemá díry)
+    const fees = feesByYear(txs);
+    expect(fees.skippedCurrencies).toEqual([]);
+    expect(fees.bars.map((bar) => bar.year)).toEqual(
+      Array.from({ length: 6 }, (_, i) => year - 5 + i),
+    );
+    for (const bar of fees.bars) expect(bar.valueCzk, `poplatky ${bar.year}`).toBeGreaterThan(0);
+  });
+
+  it('přehled za historické roky ukazuje smysluplná čísla (tržby i dividendy)', () => {
+    for (let offset = -5; offset <= -1; offset += 1) {
+      const y = year + offset;
+      const past = analyzeForUser(txs, profile, y, `${y}-12-31`);
+      expect(past.result.securities.disposals.length, `prodeje CP ${y}`).toBeGreaterThan(0);
+      expect(
+        past.result.securities.totalGrossProceedsCzk.toNumber(),
+        `tržby CP ${y}`,
+      ).toBeGreaterThan(10_000);
+      expect(past.result.dividends.items.length, `dividendy ${y}`).toBeGreaterThan(0);
+      expect(past.result.dividends.base8Czk.toNumber(), `základ § 8 ${y}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('denní kurzy: syntetické, ±2 % od jednotného kurzu, varianty reportu 8×', () => {
+    // kurz existuje pro datum transakce a drží se v pásmu ±2 % jednotného kurzu
+    const buy = txs.find((tx) => tx.type === 'BUY' && tx.currency === 'USD')!;
+    const date = buy.type === 'BUY' ? buy.tradeDate : '';
+    const rate = dailyRates!.getRate('USD', date);
+    expect(rate).toBeDefined();
+    const unified = d(UNIFIED_RATES[Number(date.slice(0, 4))]!.USD!);
+    expect(rate!.div(unified).sub(1).abs().toNumber()).toBeLessThanOrEqual(0.02);
+
+    // srovnání variant: 4 metody párování × 2 metody kurzů = 8 řádků
+    const { variants } = compareVariants(engineInputForUser(txs, profile, year, dailyRates));
+    expect(variants).toHaveLength(8);
+    expect(variants.filter((v) => v.fxMethod === 'CNB_DAILY')).toHaveLength(4);
+    expect(variants.filter((v) => v.fxMethod === 'UNIFIED')).toHaveLength(4);
+  });
+
+  it('otisk pro engine cache je pro stejný „dnešek" stabilní', () => {
+    const again = demoDataset(today);
+    expect(
+      analysisFingerprint('demo', txs, profile, year, today, false),
+    ).toBe(analysisFingerprint('demo', again.txs, again.profile, year, today, false));
   });
 
   it('hlídač nad demo daty vyrobí upozornění (limity + časové testy)', () => {

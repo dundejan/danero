@@ -59,6 +59,9 @@ test('demo portfolio: hodnota, tabulka s hledáním, donut, deriváty → detail
   await expect(page.getByText(/mil\.|\d{3}\s?\d{3}\s?Kč/).first()).toBeVisible();
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
 
+  // 50+ pozic se stránkováním po 10
+  await expect(page.getByText(/1–10 z 5\d pozic/)).toBeVisible();
+
   // tabulka pozic + hledání (najde Apple, schová VWCE)
   await expect(page.getByRole('link', { name: 'VWCE' })).toBeVisible();
   await page.getByRole('searchbox', { name: /Hledat pozici/ }).fill('apple');
@@ -118,6 +121,12 @@ test('demo report: čísla k přiznání + teaser místo EPO exportu', async ({ 
 
   await expect(page.getByRole('heading', { name: /Daňový report \d{4}/ })).toBeVisible();
   await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
+
+  // varianty párování × kurz: 4 metody × 2 kurzy = 8 řádků (demo má
+  // syntetické denní kurzy, tabulka je kompletní jako v reálném reportu)
+  await expect(page.getByText('Porovnání variant párování')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'denní ČNB' })).toHaveCount(4);
+  await expect(page.getByRole('cell', { name: 'jednotný', exact: true })).toHaveCount(4);
   await expect(page.getByText('Dílčí základ § 8 (dividendy, úroky)')).toBeVisible();
   await expect(page.getByText(/Prodeje v roce \d{4}/)).toBeVisible();
   await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();

@@ -231,18 +231,19 @@ export interface HorizonDotItem {
   isin: string;
   label: string;
   quantity: number;
-  /** Příspěvek pozice k váze měsíce (CZK, nebo kusy — dle weightBasis tečky). */
+  /** Příspěvek pozice k váze tečky (CZK, nebo kusy — dle weightBasis tečky). */
   weight: number;
 }
 
 export interface HorizonDot {
-  /** Měsíc osvobození 'YYYY-MM' — jedna tečka = jeden měsíc. */
+  /** Datum osvobození: 'YYYY-MM-DD' (denní tečka z horizonDots), po klientském
+   *  slučování groupHorizonDots případně 'YYYY-MM' (měsíční tečka). */
   exemptFrom: string;
   /** Váha pro velikost tečky: součet hodnot v CZK (známe-li ceny všech pozic), jinak kusů. */
   weight: number;
   weightBasis: 'value' | 'quantity';
   isExempt: boolean;
-  /** Rozpad měsíce po pozicích, seřazený podle váhy sestupně (pro tooltip). */
+  /** Rozpad tečky po pozicích, seřazený podle váhy sestupně (pro tooltip). */
   items: HorizonDotItem[];
 }
 
@@ -272,9 +273,10 @@ function weightBasisFor(
 }
 
 /**
- * Tečky horizontu osvobození (v3): jedna tečka = MĚSÍC (a stav osvobození),
- * velikost dle celkové váhy měsíce; rozpad po pozicích nese tooltip. Per-pozice
- * tečky se dřív ve stejném měsíci překrývaly a hover ukázal jen vrchní.
+ * Tečky horizontu osvobození (v4): jedna tečka = DEN, kdy dalším kusům doběhne
+ * 3letý test (přesné datum osvobození) — isExempt je tak vůči „dnešku" vždy
+ * jednoznačné. Hrubší (měsíční) zobrazení skládá až klient přes
+ * groupHorizonDots podle zvoleného rozsahu.
  */
 export function horizonDots(
   positions: Position[],
@@ -285,10 +287,9 @@ export function horizonDots(
   const basis = weightBasisFor(positions, prices, fxYear);
 
   // agregace Decimalem, na number až na konci (peníze nikdy floatem)
-  const months = new Map<
+  const days = new Map<
     string,
     {
-      exemptFrom: string;
       isExempt: boolean;
       weight: Money;
       byIsin: Map<string, { quantity: Money; weight: Money }>;
@@ -297,15 +298,13 @@ export function horizonDots(
   for (const position of positions) {
     const priceCzk = pricePerShareCzk(position.isin, prices, fxYear);
     for (const lot of position.lots) {
-      const month = lot.exemptFrom.slice(0, 7);
-      // osvobozené a čekající loty zvlášť — na hraně „dneška" uvnitř měsíce
-      // nesmí zelená tečka slibovat osvobození kusům, které ho ještě nemají
-      const key = `${month}|${lot.isExempt ? 'e' : 'p'}`;
+      // klíč = přesný den osvobození → loty téhož dne sdílí i stav isExempt
+      const key = lot.exemptFrom;
       const weight = basis === 'value' && priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
-      let group = months.get(key);
+      let group = days.get(key);
       if (!group) {
-        group = { exemptFrom: month, isExempt: lot.isExempt, weight: ZERO, byIsin: new Map() };
-        months.set(key, group);
+        group = { isExempt: lot.isExempt, weight: ZERO, byIsin: new Map() };
+        days.set(key, group);
       }
       group.weight = group.weight.plus(weight);
       const item = group.byIsin.get(position.isin);
@@ -317,9 +316,9 @@ export function horizonDots(
       }
     }
   }
-  return [...months.values()]
-    .map((group) => ({
-      exemptFrom: group.exemptFrom,
+  return [...days.entries()]
+    .map(([exemptFrom, group]) => ({
+      exemptFrom,
       weight: num(group.weight),
       weightBasis: basis,
       isExempt: group.isExempt,
@@ -333,6 +332,61 @@ export function horizonDots(
         })),
     }))
     .sort((a, b) => a.exemptFrom.localeCompare(b.exemptFrom));
+}
+
+/**
+ * Klientské slučování denních teček podle zvolené granularity zobrazení:
+ * 'day' vrací tečky beze změny, 'month' slučuje po měsících — KROMĚ měsíce,
+ * do kterého spadá „dnešek": ten zůstává po dnech, aby tečky před čárou
+ * „dnes" byly zeleně osvobozené a za ní čekající (měsíční tečka by jinak
+ * ležela za čárou a přitom nesla i už osvobozené kusy).
+ *
+ * Váhy jsou tu už čísla pro vykreslení (Decimal skončil v horizonDots) —
+ * jde čistě o vizuální agregaci, žádný daňový výpočet.
+ */
+export function groupHorizonDots(
+  dots: HorizonDot[],
+  granularity: 'day' | 'month',
+  today: string,
+): HorizonDot[] {
+  if (granularity === 'day') return dots;
+  const currentMonth = today.slice(0, 7);
+
+  const out: HorizonDot[] = [];
+  const byMonth = new Map<string, HorizonDot>();
+  for (const dot of dots) {
+    const month = dot.exemptFrom.slice(0, 7);
+    if (month === currentMonth) {
+      out.push(dot); // měsíc dneška zůstává po dnech
+      continue;
+    }
+    const merged = byMonth.get(month);
+    if (!merged) {
+      const copy: HorizonDot = {
+        ...dot,
+        exemptFrom: month,
+        items: dot.items.map((item) => ({ ...item })),
+      };
+      byMonth.set(month, copy);
+      out.push(copy);
+      continue;
+    }
+    merged.weight += dot.weight;
+    // mimo měsíc dneška je stav uniformní (celý měsíc před/po „dnes") —
+    // AND je jen pojistka, aby sloučená tečka nikdy neslibovala osvobození
+    merged.isExempt = merged.isExempt && dot.isExempt;
+    for (const item of dot.items) {
+      const existing = merged.items.find((i) => i.isin === item.isin);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.weight += item.weight;
+      } else {
+        merged.items.push({ ...item });
+      }
+    }
+  }
+  for (const dot of byMonth.values()) dot.items.sort((a, b) => b.weight - a.weight);
+  return out.sort((a, b) => a.exemptFrom.localeCompare(b.exemptFrom));
 }
 
 export interface OutlookPoint {

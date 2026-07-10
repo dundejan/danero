@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -50,9 +51,8 @@ function Rail({
   const pathname = usePathname();
   return (
     <aside className="hidden w-48 shrink-0 flex-col border-r border-linka bg-plocha px-4 py-6 md:flex">
-      <Link href={homeHref} className="mb-8 flex items-center gap-2">
-        <span className="inline-block h-2.5 w-2.5 rounded-full bg-ruzova" aria-hidden />
-        <span className="font-display text-lg font-bold tracking-tight">Danero</span>
+      <Link href={homeHref} className="mb-8">
+        <Logo className="text-lg" />
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1">

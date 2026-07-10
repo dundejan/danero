@@ -202,8 +202,9 @@ export function ReportView({
         </div>
         {demo ? (
           <p className="text-xs text-inkoust-tlumeny">
-            V demu srovnáváme jen jednotný kurz GFŘ — s vlastním účtem přibude i varianta
-            s denními kurzy ČNB; nejvýhodnější kombinace je zvýrazněná.
+            Denní kurzy jsou v demu ukázkové (odvozené z jednotného kurzu roku) — s vlastním
+            účtem počítáme se skutečnými denními kurzy ČNB; nejvýhodnější kombinace je
+            zvýrazněná.
           </p>
         ) : dailyRates ? (
           <p className="text-xs text-inkoust-tlumeny">

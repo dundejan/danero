@@ -45,8 +45,15 @@ export default function TermsPage() {
           výstupech.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">5. Kontakt</h2>
-        <p>Připomínky a chyby hlas prosím na e-mail v patičce aplikace.</p>
+        <h2 className="font-display text-lg font-semibold">5. Provozovatel a kontakt</h2>
+        <p>
+          Danero je osobní projekt — provozuje ho Jan Dunder. Připomínky a chyby posílej
+          na{' '}
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+            dunder.jan@gmail.com
+          </a>
+          .
+        </p>
       </section>
 
       <p className="text-sm">

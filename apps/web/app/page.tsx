@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
+import { Logo } from '@/components/logo';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
@@ -207,10 +208,7 @@ export default function LandingPage() {
   return (
     <div className="mx-auto max-w-6xl px-6">
       <header className="flex items-center justify-between py-5">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-3 w-3 rounded-full bg-ruzova" aria-hidden />
-          <span className="font-display text-lg font-bold tracking-tight">Danero</span>
-        </div>
+        <Logo className="text-lg" />
         <nav className="flex items-center gap-2 text-sm sm:gap-5" aria-label="Hlavní navigace">
           <Link
             href="/prihlaseni"
@@ -418,7 +416,7 @@ export default function LandingPage() {
                 src="/marketing/metody-light.png"
                 alt="Porovnání variant párování v Daneru: FIFO, LIFO, max. zisk a max. ztráta s daní vedle sebe"
                 width={1168}
-                height={327}
+                height={475}
                 sizes="(min-width: 1024px) 544px, 100vw"
                 className="w-full dark:hidden"
               />
@@ -426,7 +424,7 @@ export default function LandingPage() {
                 src="/marketing/metody-dark.png"
                 alt=""
                 width={1168}
-                height={327}
+                height={475}
                 sizes="(min-width: 1024px) 544px, 100vw"
                 className="hidden w-full dark:block"
               />
@@ -528,6 +526,33 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* ── kdo za tím stojí: osobní projekt, žádná anonymní firma ───────── */}
+        <section aria-labelledby="autor-nadpis" className="mt-24 max-w-3xl lg:mt-32">
+          <Eyebrow>O projektu</Eyebrow>
+          <h2
+            id="autor-nadpis"
+            className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          >
+            Kdo za tím stojí
+          </h2>
+          <p className="mt-4 leading-relaxed text-inkoust-tlumeny">
+            Jmenuju se Jan Dunder — vývojář z Prahy, který sám investuje přes Trading212.
+            Jako OSVČ v paušálním režimu jsem si potřeboval pohlídat limit 50 000 Kč
+            a tříleté časové testy, a nic to za mě nehlídalo. Tak vzniklo Danero. Jsem
+            zároveň jeho první uživatel: aplikaci ladím na vlastních datech, takže když
+            něco nesedí, bolí to nejdřív mě. Víc o mně najdeš na{' '}
+            <a
+              href="https://jandunder.dev"
+              className="font-medium text-ruzova hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              jandunder.dev
+            </a>
+            .
+          </p>
+        </section>
+
         {/* ── závěrečné CTA ─────────────────────────────────────────────────── */}
         <section aria-labelledby="zaver-nadpis" className="mt-24 lg:mt-32">
           <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
@@ -538,8 +563,8 @@ export default function LandingPage() {
               Prohlédni si Danero zevnitř — hned teď
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
-              Demo běží nad vzorovým portfoliem za 1,16 milionu Kč: odměrky, horizont,
-              simulátor i report. Bez registrace, nic se neukládá.
+              Demo běží nad vzorovým portfoliem s 50+ pozicemi za zhruba 2 miliony Kč:
+              odměrky, horizont, simulátor i report. Bez registrace, nic se neukládá.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <Link href="/demo/prehled" className={CTA_PRIMARY}>
@@ -553,21 +578,76 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="mt-20 space-y-3 border-t border-linka py-10 text-sm text-inkoust-tlumeny">
-        <p>
-          Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
-          č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
-        </p>
-        <p>
-          <Link href="/podminky" className="font-medium hover:text-inkoust">
-            Podmínky užití
-          </Link>{' '}
-          ·{' '}
-          <Link href="/soukromi" className="font-medium hover:text-inkoust">
-            Ochrana soukromí
-          </Link>
-        </p>
-        {/* TODO(Jan): provozovatel — jméno/IČO/kontakt */}
+      <footer className="mt-20 border-t border-linka py-10 text-sm text-inkoust-tlumeny">
+        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-md space-y-3">
+            <Logo className="text-base text-inkoust" />
+            <p>
+              Danero je osobní projekt{' '}
+              <a
+                href="https://jandunder.dev"
+                className="font-medium hover:text-inkoust"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Jana Dundera
+              </a>{' '}
+              — vývojáře, který si přes něj hlídá vlastní daně z investic.
+            </p>
+          </div>
+          <ul className="flex flex-wrap gap-x-5 gap-y-2 md:justify-end">
+            <li>
+              <a
+                href="https://jandunder.dev"
+                className="font-medium hover:text-inkoust"
+                target="_blank"
+                rel="noreferrer"
+              >
+                jandunder.dev
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://github.com/dundejan"
+                className="font-medium hover:text-inkoust"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://www.linkedin.com/in/jan-dunder"
+                className="font-medium hover:text-inkoust"
+                target="_blank"
+                rel="noreferrer"
+              >
+                LinkedIn
+              </a>
+            </li>
+            <li>
+              <a href="mailto:dunder.jan@gmail.com" className="font-medium hover:text-inkoust">
+                dunder.jan@gmail.com
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div className="mt-8 space-y-3 border-t border-linka pt-6">
+          <p>
+            Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
+            č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
+          </p>
+          <p>
+            <Link href="/podminky" className="font-medium hover:text-inkoust">
+              Podmínky užití
+            </Link>{' '}
+            ·{' '}
+            <Link href="/soukromi" className="font-medium hover:text-inkoust">
+              Ochrana soukromí
+            </Link>
+          </p>
+        </div>
       </footer>
     </div>
   );

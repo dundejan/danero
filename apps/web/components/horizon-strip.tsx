@@ -1,16 +1,17 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import type { ExemptionOutlook, HorizonDot } from '@/lib/charts-data';
-import { MONTH_LABELS, plural, qty } from '@/lib/format';
+import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
+import { czDate, MONTH_LABELS, plural, qty } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * Horizont osvobození v3 (docs/07 signatura, G3, vizuál H4): časový pás,
- * jedna tečka = měsíc, kdy doběhne 3letý test dalším kusům. Velikost tečky =
- * celková hodnota měsíce (známe-li ceny), jinak kusy; hover/focus ukazuje
- * rozpad po pozicích. Pod osou běží decentní kumulativní plocha „kolik % už
- * bude bez daně".
+ * Horizont osvobození v4 (docs/07 signatura, G3, vizuál H4): časový pás,
+ * tečka = den (pohled „1 rok"), nebo měsíc (delší pohledy — aktuální měsíc
+ * ale zůstává po dnech, ať žádná tečka neleží za čárou „dnes" s neosvobozenými
+ * kusy). Velikost tečky = celková hodnota (známe-li ceny), jinak kusy;
+ * hover/focus ukazuje rozpad po pozicích. Pod osou běží decentní kumulativní
+ * plocha „kolik % už bude bez daně".
  */
 
 const RANGES = [
@@ -36,6 +37,14 @@ const monthLabel = (month: string): string => {
   const [y, m] = month.split('-');
   return `${MONTH_LABELS[Number(m) - 1] ?? m} ${y}`;
 };
+
+/** Měsíční tečka nese 'YYYY-MM' (po slučování), denní plné 'YYYY-MM-DD'. */
+const isMonthDot = (dot: HorizonDot): boolean => dot.exemptFrom.length === 7;
+const dotIso = (dot: HorizonDot): string =>
+  isMonthDot(dot) ? `${dot.exemptFrom}-01` : dot.exemptFrom;
+/** Popisek tečky: měsíc („čvc 2026"), nebo konkrétní den („23. 7. 2026"). */
+const dotLabel = (dot: HorizonDot): string =>
+  isMonthDot(dot) ? monthLabel(dot.exemptFrom) : czDate(dot.exemptFrom);
 
 const czkCompact = (value: number): string =>
   new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value) + ' Kč';
@@ -76,15 +85,17 @@ export function HorizonStrip({
   const view = useMemo(() => {
     if (dots.length === 0) return null;
     const preset = RANGES.find((r) => r.key === range)!;
+    // „1 rok" po dnech; delší pohledy po měsících (aktuální měsíc po dnech)
+    const grouped = groupHorizonDots(dots, preset.years === 1 ? 'day' : 'month', today);
     const todayDay = dayNumber(today);
     // aritmeticky (ne skládáním data) — „29. 2. + rok“ by byl Invalid Date
     const horizonEnd = preset.years
       ? todayDay + preset.years * 365.25
-      : Math.max(...dots.map((dot) => dayNumber(`${dot.exemptFrom}-01`)), todayDay);
+      : Math.max(...grouped.map((dot) => dayNumber(dotIso(dot))), todayDay);
 
-    const visible = dots.filter((dot) => dayNumber(`${dot.exemptFrom}-01`) <= horizonEnd);
-    const hidden = dots.length - visible.length;
-    const minDay = Math.min(todayDay, ...visible.map((dot) => dayNumber(`${dot.exemptFrom}-01`)));
+    const visible = grouped.filter((dot) => dayNumber(dotIso(dot)) <= horizonEnd);
+    const hidden = grouped.length - visible.length;
+    const minDay = Math.min(todayDay, ...visible.map((dot) => dayNumber(dotIso(dot))));
     const span = Math.max(60, horizonEnd - minDay);
     const pad = span * 0.06;
     const endDay = horizonEnd + pad;
@@ -94,7 +105,7 @@ export function HorizonStrip({
 
     // ── popisky měsíců/roků na ose ────────────────────────────────────────
     // začínáme měsícem nejstaršího viditelného data (příp. dneška)
-    const firstIso = [today, ...visible.map((dot) => `${dot.exemptFrom}-01`)].sort()[0]!;
+    const firstIso = [today, ...visible.map(dotIso)].sort()[0]!;
     let tickYear = Number(firstIso.slice(0, 4));
     let tickMonth = Number(firstIso.slice(5, 7)); // 1–12
     const months: Array<{ day: number; month: number; year: number }> = [];
@@ -149,8 +160,10 @@ export function HorizonStrip({
 
   const description = (
     <p className="max-w-[62ch] text-xs text-inkoust-tlumeny">
-      Každá tečka = měsíc, kdy doběhne 3letý test dalším kusům; velikost podle {basis}. Najetím
-      zobrazíš rozpad.
+      {range === '1r'
+        ? 'Každá tečka = den, kdy doběhne 3letý test dalším kusům'
+        : 'Každá tečka = měsíc (aktuální měsíc po dnech), kdy doběhne 3letý test dalším kusům'}
+      ; velikost podle {basis}. Najetím zobrazíš rozpad.
       {view.hidden > 0 &&
         ` Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`}
     </p>
@@ -291,19 +304,22 @@ export function HorizonStrip({
                 </g>
               )}
 
-              {/* tečky měsíců — víc pozic v jedné tečce, proto žádný odkaz na detail;
+              {/* tečky dnů/měsíců — víc pozic v jedné tečce, proto žádný odkaz na detail;
                 tooltip (hover i focus) nese rozpad po pozicích */}
               {view.visible.map((dot, index) => {
-                const cx = view.x(dayNumber(`${dot.exemptFrom}-01`));
-                const r = 5 + Math.sqrt(dot.weight / view.maxWeight) * 8;
-                const label = `${monthLabel(dot.exemptFrom)} — celkem ${totalText(dot)}, ${
+                const cx = view.x(dayNumber(dotIso(dot)));
+                // denní tečky menší — v ročním pohledu jich je vedle sebe víc
+                const r = isMonthDot(dot)
+                  ? 5 + Math.sqrt(dot.weight / view.maxWeight) * 8
+                  : 3.5 + Math.sqrt(dot.weight / view.maxWeight) * 6.5;
+                const label = `${dotLabel(dot)} — celkem ${totalText(dot)}, ${
                   dot.items.length
                 } ${plural(dot.items.length, 'pozice', 'pozice', 'pozic')}${
                   dot.isExempt ? ', už bez daně' : ''
                 }`;
                 return (
                   <circle
-                    key={`${dot.exemptFrom}|${dot.isExempt ? 'e' : 'p'}`}
+                    key={dot.exemptFrom}
                     cx={cx}
                     cy={AXIS_Y}
                     r={r}
@@ -339,7 +355,7 @@ export function HorizonStrip({
             style={{ left: `clamp(115px, ${tip.x}px, calc(100% - 115px))`, top: `${tip.y}px` }}
           >
             <p className="font-semibold text-inkoust">
-              {monthLabel(tip.dot.exemptFrom)} — celkem {totalText(tip.dot)}
+              {dotLabel(tip.dot)} — celkem {totalText(tip.dot)}
             </p>
             {tip.dot.items.slice(0, TIP_MAX_ITEMS).map((item) => (
               <p key={item.isin} className="flex items-center gap-2 font-mono text-inkoust-tlumeny">

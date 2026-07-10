@@ -6,6 +6,7 @@ import {
   exemptionOutlook,
   feesByYear,
   flatTax50kSeries,
+  groupHorizonDots,
   horizonDots,
   limit100kSeries,
   portfolioAllocation,
@@ -191,9 +192,9 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     expect(outlook!.points[0]!.exemptShare).toBeGreaterThan(0);
   });
 
-  it('horizonDots: jedna tečka = měsíc, rozpad po pozicích řazený vahou sestupně', () => {
-    // dvě pozice se stejným měsícem osvobození → dřív dvě překrývající se
-    // tečky, teď jedna s rozpadem v items
+  it('horizonDots: jedna tečka = DEN osvobození; slučování po měsících dělá až klient', () => {
+    // dvě pozice se stejným MĚSÍCEM osvobození, ale jiným dnem → dvě denní
+    // tečky; groupHorizonDots je pro delší pohledy sloučí do jedné měsíční
     const txs = parseTransactions([
       {
         type: 'BUY',
@@ -226,17 +227,27 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     ]);
     const dots = horizonDots(positions, labels, new Map(), 2026);
 
-    expect(dots).toHaveLength(1);
-    const dot = dots[0]!;
+    // po dnech: přesná data osvobození (den po „vypořádání + 3 roky", R-01)
+    expect(dots.map((dot) => dot.exemptFrom)).toEqual(['2028-03-08', '2028-03-23']);
+    expect(dots.map((dot) => dot.isExempt)).toEqual([false, false]);
+    expect(dots.map((dot) => dot.weight)).toEqual([10, 30]);
+
+    // klientské sloučení po měsících: jedna tečka s rozpadem řazeným vahou
+    const monthly = groupHorizonDots(dots, 'month', '2026-09-01');
+    expect(monthly).toHaveLength(1);
+    const dot = monthly[0]!;
     expect(dot.exemptFrom).toBe('2028-03');
     expect(dot.isExempt).toBe(false);
     expect(dot.weightBasis).toBe('quantity');
     expect(dot.weight).toBe(40); // součet vah měsíce (kusy)
     expect(dot.items.map((item) => item.label)).toEqual(['BBB', 'AAA']); // podle váhy sestupně
     expect(dot.items.map((item) => item.quantity)).toEqual([30, 10]);
+
+    // granularita 'day' vrací tečky beze změny
+    expect(groupHorizonDots(dots, 'day', '2026-09-01')).toEqual(dots);
   });
 
-  it('horizonDots: osvobozené a čekající loty se neslučují do jedné tečky', () => {
+  it('horizonDots: osvobozené a čekající loty mají vlastní tečky (dle dne)', () => {
     const positions = positionsAt(result.ledger, '2026-09-01');
     const labels = new Map([
       ['US0378331005', 'AAPL'],
@@ -245,9 +256,63 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const dots = horizonDots(positions, labels, new Map(), 2026);
     // AAPL (nákup 2022) už osvobozený, IWDA (nákup 2025) čeká na 2028
     expect(dots.map((dot) => dot.isExempt)).toEqual([true, false]);
+    expect(dots[0]!.exemptFrom).toBe('2025-06-13'); // den po „vypořádání 2022-06-12 + 3 roky"
     expect(dots[0]!.items[0]!.label).toBe('AAPL');
-    expect(dots[1]!.exemptFrom).toBe('2028-02');
+    expect(dots[1]!.exemptFrom).toBe('2028-02-04');
     expect(dots[1]!.items[0]!.label).toBe('IWDA');
+
+    // měsíční sloučení stavy nemíchá — každý měsíc je uniformně před/po „dnes"
+    const monthly = groupHorizonDots(dots, 'month', '2026-09-01');
+    expect(monthly.map((dot) => [dot.exemptFrom, dot.isExempt])).toEqual([
+      ['2025-06', true],
+      ['2028-02', false],
+    ]);
+  });
+
+  it('groupHorizonDots: aktuální měsíc zůstává po dnech, ostatní se slučují', () => {
+    const item = (isin: string, quantity: number, weight: number) => ({
+      isin,
+      label: isin,
+      quantity,
+      weight,
+    });
+    const dot = (
+      exemptFrom: string,
+      isExempt: boolean,
+      items: ReturnType<typeof item>[],
+    ) => ({
+      exemptFrom,
+      weight: items.reduce((sum, i) => sum + i.weight, 0),
+      weightBasis: 'quantity' as const,
+      isExempt,
+      items,
+    });
+    const today = '2026-07-10';
+    const dots = [
+      dot('2026-06-05', true, [item('AAA', 5, 5)]),
+      dot('2026-06-18', true, [item('AAA', 3, 3), item('BBB', 1, 1)]),
+      // měsíc dneška: osvobozená tečka PŘED dneškem, čekající ZA ním
+      dot('2026-07-04', true, [item('CCC', 2, 2)]),
+      dot('2026-07-20', false, [item('DDD', 4, 4)]),
+      dot('2028-03-07', false, [item('EEE', 10, 10)]),
+      dot('2028-03-22', false, [item('EEE', 20, 20), item('FFF', 1, 1)]),
+    ];
+
+    const monthly = groupHorizonDots(dots, 'month', today);
+    expect(monthly.map((d) => [d.exemptFrom, d.isExempt, d.weight])).toEqual([
+      ['2026-06', true, 9], // sloučený minulý měsíc (celý osvobozený)
+      ['2026-07-04', true, 2], // aktuální měsíc po dnech — před „dnes" zelená…
+      ['2026-07-20', false, 4], // …za „dnes" čekající
+      ['2028-03', false, 31], // sloučený budoucí měsíc
+    ]);
+    // rozpad sloučené tečky: kusy téhož ISINu se sečtou, řadí se vahou sestupně
+    const march = monthly[3]!;
+    expect(march.items).toEqual([item('EEE', 30, 30), item('FFF', 1, 1)]);
+    const june = monthly[0]!;
+    expect(june.items).toEqual([item('AAA', 8, 8), item('BBB', 1, 1)]);
+
+    // vstup se nemodifikuje (čistá funkce)
+    expect(dots[0]!.items).toEqual([item('AAA', 5, 5)]);
   });
 
   it('portfolioAllocation: všechny oceněné pozice sestupně, podíly dají 100 %', () => {

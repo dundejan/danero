@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 2 20 20">
+  <!-- Favicon Danero: stejné „d" jako components/logo.tsx (tečka za linií dneška).
+       Barvy natvrdo — favicon nevidí CSS tokeny; tmavé rozhraní prohlížeče
+       řeší prefers-color-scheme (hodnoty = dark tokeny z globals.css). -->
+  <style>
+    .dot { fill: #d6336c }
+    .stem { fill: #171930 }
+    @media (prefers-color-scheme: dark) {
+      .dot { fill: #f06e9b }
+      .stem { fill: #edece6 }
+    }
+  </style>
+  <circle class="dot" cx="10.6" cy="15.4" r="5.6" />
+  <rect class="stem" x="15.8" y="3" width="3.2" height="18" rx="1.6" />
+</svg>

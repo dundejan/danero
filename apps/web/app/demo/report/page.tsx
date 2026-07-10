@@ -12,7 +12,8 @@ export default async function DemoReportPage({
   searchParams: Promise<{ rok?: string }>;
 }) {
   const today = demoToday();
-  const { txs, profile } = demoDataset(today);
+  // syntetické denní kurzy → srovnání variant je kompletní jako v reálném reportu
+  const { txs, profile, dailyRates } = demoDataset(today);
 
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
@@ -20,6 +21,14 @@ export default async function DemoReportPage({
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
   return (
-    <ReportView txs={txs} profile={profile} year={year} years={years} basePath="/demo" demo />
+    <ReportView
+      txs={txs}
+      profile={profile}
+      year={year}
+      years={years}
+      dailyRates={dailyRates}
+      basePath="/demo"
+      demo
+    />
   );
 }

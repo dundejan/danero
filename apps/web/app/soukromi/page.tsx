@@ -12,6 +12,15 @@ export default function PrivacyPage() {
       <h1 className="font-display text-3xl font-bold">Ochrana soukromí</h1>
 
       <section className="space-y-3 text-sm leading-relaxed">
+        <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
+        <p>
+          Danero je osobní projekt Jana Dundera — on je i správcem tvých údajů. Kontakt:{' '}
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+            dunder.jan@gmail.com
+          </a>
+          .
+        </p>
+
         <h2 className="font-display text-lg font-semibold">Co o tobě víme</h2>
         <p>
           Jen to nejnutnější: <strong>e-mail a heslo</strong> (heslo jako Argon2 otisk),
@@ -39,7 +48,11 @@ export default function PrivacyPage() {
         <p>
           Kdykoli můžeš požádat o export svých dat nebo smazat účet — smazání odstraní
           všechna tvoje data včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
-          na e-mail v patičce aplikace.
+          na{' '}
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+            dunder.jan@gmail.com
+          </a>
+          .
         </p>
       </section>
 
