@@ -7,7 +7,7 @@ import {
   FeesByYearChart,
   RealizedByYearChart,
 } from '@/components/charts';
-import { PositionCard } from '@/components/position-card';
+import { PositionsExplorer, type ExplorerRow } from '@/components/positions-explorer';
 import { ViewSwitch } from '@/components/view-switch';
 import { YearSwitcher } from '@/components/year-switcher';
 import { getDb } from '@/db';
@@ -129,8 +129,41 @@ export default async function PortfolioPage({
     ? Math.ceil((Date.parse(nextExemption.exemptFrom) - Date.parse(today)) / 86_400_000)
     : null;
 
+  // řádky pro interaktivní tabulku — server předpočítá texty i čísla pro
+  // řazení, přes hranici klienta nejde žádný Decimal
+  const explorerRows: ExplorerRow[] = valuation.rows.map((row) => {
+    const nearest = nearestExemption.get(row.isin) ?? null;
+    const pctText =
+      row.unrealizedPct !== undefined
+        ? `${row.unrealizedPct >= 0 ? '+' : ''}${row.unrealizedPct.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`
+        : undefined;
+    return {
+      isin: row.isin,
+      label: row.label,
+      name: row.name,
+      qtyText: qty(row.quantity),
+      priceText: row.price ? money(row.price, row.currency!) : undefined,
+      valueText: row.valueCzk ? czk(row.valueCzk) : undefined,
+      plText: row.unrealized
+        ? `${money(row.unrealized, row.currency!, true)}${pctText ? ` (${pctText})` : ''}`
+        : undefined,
+      plPct: row.unrealizedPct,
+      plPositive: row.unrealized ? row.unrealized.gte(0) : undefined,
+      exemptText: nearest ? `bez daně od ${czDate(nearest)}` : 'vše bez daně',
+      exemptDone: !nearest,
+      exemptQtyText: row.exemptQuantity.gt(0) ? `${qty(row.exemptQuantity)} ks` : undefined,
+      sort: {
+        label: row.label,
+        qty: row.quantity.toNumber(),
+        value: row.valueCzk ? row.valueCzk.toNumber() : null,
+        pl: row.unrealizedPct ?? null,
+        exempt: row.exemptQuantity.toNumber(),
+      },
+    };
+  });
+
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold">Portfolio</h1>
@@ -235,106 +268,9 @@ export default async function PortfolioPage({
                       brokera nebo kurz měny — hodnota a zisk/ztráta tam nejsou.
                     </p>
                   )}
-                  {/* mobil: karty místo tabulky (H4) */}
-                  <div className="space-y-2 md:hidden">
-                    {valuation.rows.map((row) => {
-                      const nearest = nearestExemption.get(row.isin) ?? null;
-                      return (
-                        <PositionCard
-                          key={row.isin}
-                          isin={row.isin}
-                          label={row.label}
-                          name={row.name}
-                          primaryText={row.valueCzk ? czk(row.valueCzk) : `${qty(row.quantity)} ks`}
-                          secondaryText={row.valueCzk ? `${qty(row.quantity)} ks` : undefined}
-                          pl={
-                            row.unrealized
-                              ? {
-                                  text:
-                                    row.unrealizedPct !== undefined
-                                      ? `${row.unrealizedPct >= 0 ? '+' : ''}${row.unrealizedPct.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`
-                                      : money(row.unrealized, row.currency!, true),
-                                  positive: row.unrealized.gte(0),
-                                }
-                              : null
-                          }
-                          exemptText={nearest ? `bez daně od ${czDate(nearest)}` : 'vše bez daně'}
-                          exemptDone={!nearest}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                          <th className="py-2 pr-4">Instrument</th>
-                          <th className="py-2 pr-4 text-right">Kusů</th>
-                          <th className="py-2 pr-4 text-right">Cena/ks</th>
-                          <th className="py-2 pr-4 text-right">Hodnota (Kč)</th>
-                          <th
-                            className="py-2 pr-4 text-right"
-                            title="Rozdíl aktuální hodnoty a nabývací ceny — zisk/ztráta, kdybys prodal teď (před zdaněním)"
-                          >
-                            Nerealizovaný zisk/ztráta
-                          </th>
-                          {anyExempt && <th className="py-2 text-right">Bez daně</th>}
-                        </tr>
-                      </thead>
-                      <tbody className="font-mono">
-                        {valuation.rows.map((row) => (
-                          <tr key={row.isin} className="border-t border-linka">
-                            <td className="py-2 pr-4">
-                              <Link
-                                href={`/portfolio/${row.isin}`}
-                                className="font-medium text-inkoust hover:text-ruzova"
-                              >
-                                {row.label}
-                              </Link>
-                              <span className="block text-xs text-inkoust-tlumeny">
-                                {row.name ? `${row.name} · ` : ''}
-                                {row.isin}
-                              </span>
-                            </td>
-                            <td className="py-2 pr-4 text-right">{qty(row.quantity)}</td>
-                            <td className="whitespace-nowrap py-2 pr-4 text-right">
-                              {row.price ? money(row.price, row.currency!) : '—'}
-                            </td>
-                            <td className="whitespace-nowrap py-2 pr-4 text-right">
-                              {row.valueCzk ? czk(row.valueCzk) : '—'}
-                            </td>
-                            <td
-                              className={`whitespace-nowrap py-2 pr-4 text-right ${
-                                row.unrealized
-                                  ? row.unrealized.gte(0)
-                                    ? 'text-zelena'
-                                    : 'text-cervena'
-                                  : ''
-                              }`}
-                            >
-                              {row.unrealized
-                                ? `${money(row.unrealized, row.currency!, true)}${
-                                    row.unrealizedPct !== undefined
-                                      ? ` (${row.unrealizedPct >= 0 ? '+' : ''}${row.unrealizedPct.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %)`
-                                      : ''
-                                  }`
-                                : '—'}
-                            </td>
-                            {anyExempt && (
-                              <td className="py-2 text-right">
-                                {row.exemptQuantity.gt(0) ? (
-                                  <span className="text-zelena">{qty(row.exemptQuantity)} ks</span>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {valuation.rows.length === 0 && (
+                  {explorerRows.length > 0 ? (
+                    <PositionsExplorer rows={explorerRows} showExempt={anyExempt} />
+                  ) : (
                     <p className="text-sm text-inkoust-tlumeny">Žádné otevřené pozice.</p>
                   )}
                 </div>

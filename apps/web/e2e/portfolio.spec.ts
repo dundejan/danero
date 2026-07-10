@@ -68,10 +68,25 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   await page.screenshot({ path: 'test-results/screenshots/portfolio-desktop.png', fullPage: true });
 
   // ── detail pozice: loty, časové testy, odkaz do simulátoru ──────────────
+  // tabulka pozic je interaktivní (hledání/řazení/stránkování) — s výchozím
+  // řazením podle hodnoty nemusí být pozice na první stránce, proto ji najdeme
+  // vyhledáváním (a tím se rovnou testuje filtr)
   await expect(async () => {
     await page.getByRole('button', { name: 'Tabulka' }).click();
-    await expect(page.getByRole('link', { name: 'AAPL' }).first()).toBeVisible({ timeout: 1500 });
+    await expect(page.getByPlaceholder('Hledat pozici…')).toBeVisible({ timeout: 1500 });
   }).toPass();
+  // hledání je bez diakritiky a case-insensitive — „aapl“ najde AAPL
+  await page.getByPlaceholder('Hledat pozici…').fill('aapl');
+  await expect(page.getByRole('link', { name: 'AAPL' }).first()).toBeVisible();
+  // řadicí hlavičky: výchozí je Hodnota sestupně (aria-sort)
+  await expect(page.getByRole('columnheader', { name: /Hodnota/ })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  );
+  // hledání nesmyslu ukáže poctivý prázdný stav, smazání dotazu ho vrátí
+  await page.getByPlaceholder('Hledat pozici…').fill('neexistujici-pozice');
+  await expect(page.getByText('Nic nenalezeno pro „neexistujici-pozice“.')).toBeVisible();
+  await page.getByPlaceholder('Hledat pozici…').fill('AAPL');
   await page.getByRole('link', { name: 'AAPL' }).first().click();
   await page.waitForURL('**/portfolio/US0378331005');
   await expect(page.getByText('Nákupy (loty) a časové testy')).toBeVisible();

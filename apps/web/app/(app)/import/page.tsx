@@ -186,7 +186,7 @@ export default async function ImportPage({
   const activeJobs = await activeSyncJobsByAccount(db, user.id);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <header>
         <h1 className="font-display text-3xl font-bold">Import dat</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
@@ -272,86 +272,90 @@ export default async function ImportPage({
         </Card>
       )}
 
-      {accounts.length === 0 && (
-        <Card className="space-y-3">
-          <CardTitle>Automatická synchronizace</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
-            Připoj přístup jen pro čtení v{' '}
-            <Link href="/nastaveni#trading212" className="font-medium text-ruzova">
-              Nastavení
-            </Link>{' '}
-            (Trading212 API klíč nebo IBKR Flex token) — Danero si pak stáhne historii,
-            denně ji aktualizuje a hlídá, že pozice sedí.
-          </p>
-        </Card>
-      )}
-      {accounts.map((account) => {
-        const job = activeJobs.get(account.id);
-        return (
-          <BrokerSyncCard
-            key={account.id}
-            account={account}
-            activeJob={job ? toSyncJobView(job) : null}
-          />
-        );
-      })}
+      {/* horní karty vedle sebe na širokém displeji — sync (per účet) a ruční
+          nahrání; historie importů pod nimi na plnou šířku */}
+      <section className="grid items-start gap-4 lg:grid-cols-2">
+        {accounts.length === 0 && (
+          <Card className="space-y-3">
+            <CardTitle>Automatická synchronizace</CardTitle>
+            <p className="text-sm text-inkoust-tlumeny">
+              Připoj přístup jen pro čtení v{' '}
+              <Link href="/nastaveni#trading212" className="font-medium text-ruzova">
+                Nastavení
+              </Link>{' '}
+              (Trading212 API klíč nebo IBKR Flex token) — Danero si pak stáhne historii,
+              denně ji aktualizuje a hlídá, že pozice sedí.
+            </p>
+          </Card>
+        )}
+        {accounts.map((account) => {
+          const job = activeJobs.get(account.id);
+          return (
+            <BrokerSyncCard
+              key={account.id}
+              account={account}
+              activeJob={job ? toSyncJobView(job) : null}
+            />
+          );
+        })}
 
-      <Card className="space-y-3">
-        <CardTitle>Ruční nahrání výpisů (záložní varianta)</CardTitle>
-        <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <input type="hidden" name="portfolioId" value={portfolio.id} />
-          <FileField
-            name="soubory"
-            ariaLabel="Soubory s výpisy (CSV, XML nebo XLSX)"
-            accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            multiple
-            required
-          />
-          <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
-        </form>
-        <details className="text-xs text-inkoust-tlumeny">
-          <summary className="cursor-pointer font-medium text-inkoust">
-            Jak získat výpis od brokera (návody)
-          </summary>
-          <ul className="mt-2 space-y-2">
-            <li>
-              <strong className="text-inkoust">Trading212:</strong> History → Export → CSV,
-              zaškrtni všechny kategorie, po jednom roce. (Nebo připoj API — karta výš.)
-            </li>
-            <li>
-              <strong className="text-inkoust">Interactive Brokers:</strong> Flex Query XML
-              (návod v nastavení) — pro historii starší než rok vytvoř query s obdobím po
-              letech a stáhni XML ručně.
-            </li>
-            <li>
-              <strong className="text-inkoust">Degiro:</strong> Aktivita → Transakce → Export
-              (CSV) a Aktivita → Výpis účtu → Export (CSV) — nahraj OBA soubory (obchody jsou
-              v Transactions, dividendy a poplatky v Account).
-            </li>
-            <li>
-              <strong className="text-inkoust">XTB:</strong> xStation → Historie účtu → Full
-              report (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu
-              tě požádáme o doplnění (zapamatujeme si je).
-            </li>
-            <li>
-              <strong className="text-inkoust">Fio e-Broker:</strong> Obchody → Export do CSV
-              (po jednom roce). Fio neexportuje ISIN — doplníš ho při importu.
-            </li>
-            <li>
-              <strong className="text-inkoust">Jiný broker:</strong>{' '}
-              <a href="/api/sablona" className="font-medium text-ruzova" download>
-                stáhni univerzální šablonu
-              </a>{' '}
-              s ukázkovými řádky (umí i korporátní akce a převody se zachováním nabytí)
-              a vyplň ji z výpisu.
-            </li>
-          </ul>
-          <p className="mt-2">
-            Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje
-            i napříč soubory.
-          </p>
-        </details>
-      </Card>
+        <Card className="space-y-3">
+          <CardTitle>Ruční nahrání výpisů (záložní varianta)</CardTitle>
+          <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <input type="hidden" name="portfolioId" value={portfolio.id} />
+            <FileField
+              name="soubory"
+              ariaLabel="Soubory s výpisy (CSV, XML nebo XLSX)"
+              accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              multiple
+              required
+            />
+            <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
+          </form>
+          <details className="text-xs text-inkoust-tlumeny">
+            <summary className="cursor-pointer font-medium text-inkoust">
+              Jak získat výpis od brokera (návody)
+            </summary>
+            <ul className="mt-2 space-y-2">
+              <li>
+                <strong className="text-inkoust">Trading212:</strong> History → Export → CSV,
+                zaškrtni všechny kategorie, po jednom roce. (Nebo připoj API — karta výš.)
+              </li>
+              <li>
+                <strong className="text-inkoust">Interactive Brokers:</strong> Flex Query XML
+                (návod v nastavení) — pro historii starší než rok vytvoř query s obdobím po
+                letech a stáhni XML ručně.
+              </li>
+              <li>
+                <strong className="text-inkoust">Degiro:</strong> Aktivita → Transakce → Export
+                (CSV) a Aktivita → Výpis účtu → Export (CSV) — nahraj OBA soubory (obchody jsou
+                v Transactions, dividendy a poplatky v Account).
+              </li>
+              <li>
+                <strong className="text-inkoust">XTB:</strong> xStation → Historie účtu → Full
+                report (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu
+                tě požádáme o doplnění (zapamatujeme si je).
+              </li>
+              <li>
+                <strong className="text-inkoust">Fio e-Broker:</strong> Obchody → Export do CSV
+                (po jednom roce). Fio neexportuje ISIN — doplníš ho při importu.
+              </li>
+              <li>
+                <strong className="text-inkoust">Jiný broker:</strong>{' '}
+                <a href="/api/sablona" className="font-medium text-ruzova" download>
+                  stáhni univerzální šablonu
+                </a>{' '}
+                s ukázkovými řádky (umí i korporátní akce a převody se zachováním nabytí)
+                a vyplň ji z výpisu.
+              </li>
+            </ul>
+            <p className="mt-2">
+              Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje
+              i napříč soubory.
+            </p>
+          </details>
+        </Card>
+      </section>
 
       <section className="space-y-3">
         <CardTitle>Historie importů</CardTitle>
