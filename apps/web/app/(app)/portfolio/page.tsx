@@ -31,8 +31,8 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
+
 import { loadInstrumentPrices } from '@/lib/prices';
-import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { analyzeTaxYear, type TaxYearResult } from '@danero/engine';
 import { redirect } from 'next/navigation';
@@ -46,11 +46,10 @@ export default async function PortfolioPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
-  const profile = await getProfile(db, user.id, portfolio.id);
+  const profile = await getProfile(db, user.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id, portfolio.id);
+  const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
@@ -75,14 +74,13 @@ export default async function PortfolioPage({
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const { result, positions, labels } = analyzeForUserCached(
     user.id,
-    portfolio.id,
     txs,
     profile,
     year,
     today,
     dailyRates,
   );
-  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
+  const prices = await loadInstrumentPrices(db, user.id);
   const names = instrumentNames(txs);
   const valuation = valuePositions(positions, labels, names, prices, currentYear);
 
@@ -192,7 +190,7 @@ export default async function PortfolioPage({
           ) : (
             <p className="mt-2 text-sm text-inkoust-tlumeny">
               Bez cen — ceny bereme jen z připojených brokerů (
-              <Link href="/nastaveni" className="font-medium text-ruzova">
+              <Link href="/import" className="font-medium text-ruzova">
                 připoj API
               </Link>
               ), žádný externí zdroj.
@@ -284,9 +282,9 @@ export default async function PortfolioPage({
               ) : (
                 // poctivý prázdný stav — bez cen od brokera koláč nesestavíme
                 <p className="text-sm text-inkoust-tlumeny">
-                  Bez cen od brokera graf nesestavíme — připoj API v{' '}
-                  <Link href="/nastaveni" className="font-medium text-ruzova">
-                    Nastavení
+                  Bez cen od brokera graf nesestavíme — připoj API na stránce{' '}
+                  <Link href="/import" className="font-medium text-ruzova">
+                    Zdroje dat
                   </Link>
                   .
                 </p>

@@ -1,16 +1,13 @@
-import { and, eq } from 'drizzle-orm';
 import { d } from '@danero/shared';
 import { Toast } from '@/components/toast';
 import { TwoFactorSection } from '@/components/two-factor-section';
-import { syncStatusLabel } from '@/lib/broker-sync';
 import { Card, CardTitle } from '@/components/ui/card';
+import { AutoSubmit } from '@/components/ui/auto-submit';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
-import { brokerAccounts } from '@/db/schema';
 import { getProfile } from '@/lib/portfolio';
-import { activePortfolio, listPortfolios } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { getAuth } from '@/lib/auth';
 import { headers } from 'next/headers';
@@ -19,17 +16,11 @@ import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
 import {
   changeEmailAction,
-  createPortfolioAction,
-  deletePortfolioAction,
-  renamePortfolioAction,
   changePasswordAction,
   deleteAccountAction,
-  disconnectBrokerAction,
   revokeOtherSessionsAction,
-  saveIbkrKeyAction,
   saveNotificationPrefsAction,
   saveProfileAction,
-  saveTrading212KeyAction,
 } from './actions';
 
 export const metadata = { title: 'Nastavení — Danero' };
@@ -41,15 +32,7 @@ export default async function SettingsPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
-  const allPortfolios = await listPortfolios(db, user.id);
-  const profile = await getProfile(db, user.id, portfolio.id);
-  const accounts = await db
-    .select()
-    .from(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.portfolioId, portfolio.id)));
-  const t212 = accounts.find((account) => account.broker === 'trading212');
-  const ibkr = accounts.find((account) => account.broker === 'ibkr');
+  const profile = await getProfile(db, user.id);
   const { chyba, ok } = await searchParams;
   const requestHeaders = await headers();
   const auth = await getAuth();
@@ -82,9 +65,8 @@ export default async function SettingsPage({
     heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
     email: 'E-mail změněn.',
     odhlaseno: 'Ostatní zařízení byla odhlášena.',
-    portfolio: 'Portfolio vytvořeno a přepnuto — nastav mu daňový profil níže.',
-    'portfolio-smazano': 'Portfolio smazáno včetně všech jeho dat.',
-    notifikace: 'Nastavení upozornění uloženo.',
+    profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
+    notifikace: 'Uloženo. E-maily se řídí novým nastavením.',
   };
   const CHYBA_LABELS: Record<string, string> = {
     heslo: 'Nové heslo musí mít aspoň 10 znaků.',
@@ -94,15 +76,7 @@ export default async function SettingsPage({
     'email-heslo': 'Heslo nesedí — e-mail se nezměnil.',
     smazani: 'Pro smazání účtu napiš do potvrzení přesně SMAZAT.',
     'smazani-heslo': 'Heslo nesedí — účet se nesmazal.',
-    'portfolio-nazev': 'Zadej název portfolia (1–60 znaků).',
-    'portfolio-limit': 'Maximum je 10 portfolií na účet.',
-    'portfolio-posledni': 'Poslední portfolio smazat nejde.',
-    'portfolio-smazani': 'Pro smazání portfolia napiš do potvrzení přesně SMAZAT.',
-    'zadny-ucet': 'Tenhle účet u brokera už neexistuje — obnov stránku.',
   };
-  // api-klic a ibkr mají specifickou inline hlášku přímo v kartě — generický
-  // toast by byl podruhé a obecněji
-  const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr';
 
   return (
     <div className="space-y-8">
@@ -113,26 +87,29 @@ export default async function SettingsPage({
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Profil určuje, které limity Danero hlídá a jak počítá. Vše jde kdykoli změnit —
           výpočty se přepočítají od nuly.
-          {allPortfolios.length > 1 && (
-            <> Nastavuješ portfolio <strong className="text-inkoust">{portfolio.name}</strong>.</>
-          )}
+          {profile && ' Změny se ukládají automaticky.'}
         </p>
       </header>
 
-      {chyba && !inlineOnly && (
+      {/* plovoucí toast: po auto-save s kotvou (#dan, #notifikace) musí být
+          potvrzení vidět bez ohledu na pozici scrollu */}
+      {chyba && (
         <Toast
+          // klíč per render: po dalším uložení se toast musí remountnout,
+          // jinak by visible=false z minula potvrzení skrylo
+          key={crypto.randomUUID()}
           kind="chyba"
+          floating
           text={CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
         />
       )}
-      {ok && OK_LABELS[ok] && <Toast kind="ok" text={OK_LABELS[ok]} />}
+      {ok && OK_LABELS[ok] && <Toast key={crypto.randomUUID()} kind="ok" floating text={OK_LABELS[ok]} />}
 
-      {/* dva sloupce na širokém displeji: vlevo daňový profil a portfolia,
+      {/* dva sloupce na širokém displeji: vlevo daňový profil,
           vpravo účet a zabezpečení — na mobilu jeden logický sloupec */}
       <div className="grid items-start gap-8 xl:grid-cols-2">
         <div className="space-y-8">
-          <form action={saveProfileAction} className="space-y-6">
-            <input type="hidden" name="portfolioId" value={portfolio.id} />
+          <form action={saveProfileAction} className="space-y-6" id="dan">
             <Card className="space-y-4">
               <CardTitle>Kdo jsi vůči dani</CardTitle>
               <div>
@@ -250,61 +227,12 @@ export default async function SettingsPage({
               </p>
             </Card>
 
-            <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
+            {/* auto-save: každá změna se uloží sama; bez profilu je potřeba
+                první uložení potvrdit tlačítkem (auto-save by nováčka po první
+                změně přesměroval na /prehled uprostřed vyplňování) */}
+            {profile && <AutoSubmit />}
+            {!profile && <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>}
           </form>
-
-          <Card className="space-y-4" id="portfolia">
-            <CardTitle>Portfolia</CardTitle>
-            <p className="text-sm text-inkoust-tlumeny">
-              Oddělená portfolia pro další osoby (manžel/ka, děti) — každé má vlastní
-              transakce, daňový profil, brokery i limity. Aktivní portfolio přepíná
-              lišta nahoře.
-            </p>
-            <ul className="space-y-2">
-              {allPortfolios.map((p) => (
-                <li key={p.id} className="flex flex-wrap items-center gap-2">
-                  <form action={renamePortfolioAction} className="flex items-center gap-2">
-                    <input type="hidden" name="portfolioId" value={p.id} />
-                    <Input
-                      name="nazev"
-                      defaultValue={p.name}
-                      className="w-48"
-                      aria-label={`Název portfolia ${p.name}`}
-                    />
-                    <SubmitButton size="sm" variant="secondary" pendingLabel="Ukládám…">
-                      Přejmenovat
-                    </SubmitButton>
-                  </form>
-                  {p.id === portfolio.id && (
-                    <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
-                      aktivní
-                    </span>
-                  )}
-                  {allPortfolios.length > 1 && (
-                    <form action={deletePortfolioAction} className="flex items-center gap-2">
-                      <input type="hidden" name="portfolioId" value={p.id} />
-                      <Input
-                        name="potvrzeni"
-                        placeholder="SMAZAT"
-                        className="w-28"
-                        aria-label={`Potvrzení smazání portfolia ${p.name}`}
-                      />
-                      <SubmitButton size="sm" variant="danger" pendingLabel="Mažu…">
-                        Smazat
-                      </SubmitButton>
-                    </form>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <form action={createPortfolioAction} className="flex items-end gap-2 border-t border-linka pt-4">
-              <div>
-                <Label htmlFor="novePortfolio">Nové portfolio</Label>
-                <Input id="novePortfolio" name="nazev" placeholder="např. Manželka" required maxLength={60} />
-              </div>
-              <SubmitButton size="sm" pendingLabel="Vytvářím…">Vytvořit</SubmitButton>
-            </form>
-          </Card>
         </div>
 
         {/* pravý sloupec: účet a zabezpečení */}
@@ -445,9 +373,10 @@ export default async function SettingsPage({
 
               <p className="text-xs text-inkoust-tlumeny">
                 Upozornění v aplikaci se zobrazují vždy — tady vypínáš jen e-maily. Vypnuté typy
-                se po zapnutí nehromadí zpětně. Každý e-mail má odhlašovací odkaz.
+                se po zapnutí nehromadí zpětně. Každý e-mail má odhlašovací odkaz. Změny se
+                ukládají automaticky.
               </p>
-              <SubmitButton size="sm" pendingLabel="Ukládám…">Uložit upozornění</SubmitButton>
+              <AutoSubmit />
             </form>
           </Card>
 
@@ -514,184 +443,6 @@ export default async function SettingsPage({
             </div>
           </Card>
         </div>
-      </div>
-
-      {/* broker karty vedle sebe — kotvy #trading212 a #ibkr zůstávají */}
-      <div className="grid items-start gap-8 xl:grid-cols-2">
-        <Card className="space-y-4" id="trading212">
-          <CardTitle>Trading212 — automatická synchronizace</CardTitle>
-          {t212 ? (
-            <>
-              <p className="text-sm">
-                <span className="font-semibold text-zelena">Připojeno.</span>{' '}
-                <span className="text-inkoust-tlumeny">
-                  Poslední synchronizace:{' '}
-                  {t212.lastSyncedAt
-                    ? `${t212.lastSyncedAt.toLocaleString('cs-CZ')} (${syncStatusLabel(t212.lastSyncStatus)})`
-                    : 'zatím žádná — spusť ji na stránce Import'}
-                  . Klíč je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
-                </span>
-              </p>
-              <form action={disconnectBrokerAction}>
-                <input type="hidden" name="accountId" value={t212.id} />
-                <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
-                  Odpojit Trading212
-                </SubmitButton>
-              </form>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2 text-sm text-inkoust-tlumeny">
-                <p>
-                  V Trading212 otevři <strong>Settings → API (Beta) → Generate key</strong> a
-                  nastav:
-                </p>
-                <ul className="space-y-1">
-                  <li>
-                    <strong className="text-inkoust">Name:</strong> třeba „Danero“ (jen popisek pro
-                    tebe)
-                  </li>
-                  <li>
-                    <strong className="text-inkoust">IP restrictions:</strong> Neomezené — Danero
-                    volá API ze svého serveru a adresy se mění
-                  </li>
-                  <li>
-                    <strong className="text-inkoust">Permissions — zaškrtni jen tyto (vše jen
-                    čtení):</strong>{' '}
-                    <span className="font-mono text-xs">
-                      Account data · History (+ dividends, orders, transactions) · Metadata ·
-                      Portfolio
-                    </span>
-                  </li>
-                  <li className="text-cervena">
-                    <strong>Nezaškrtávej:</strong>{' '}
-                    <span className="font-mono text-xs">Orders (execute i read) · Pies</span> —
-                    Danero nikdy nepotřebuje právo obchodovat ani cokoli měnit na tvém účtu.
-                  </li>
-                </ul>
-                <p>
-                  K čemu která práva jsou: History = stažení historie obchodů, dividend a úroků;
-                  Portfolio + Metadata = kontrola, že vypočtené pozice sedí s brokerem; Account
-                  data = ověření, že klíč funguje.
-                </p>
-              </div>
-              {chyba === 'api-klic' && (
-                <p className="text-sm text-cervena">Vlož platný tajný klíč (aspoň 10 znaků).</p>
-              )}
-              <p className="text-sm text-inkoust-tlumeny">
-                Po vygenerování ti Trading212 ukáže <strong>dvě hodnoty</strong> — zkopíruj
-                sem obě. Pozor: <strong>Tajný klíč se zobrazuje jen jednou</strong>; kdyby
-                zmizel, prostě vygeneruj nový.
-              </p>
-              <form action={saveTrading212KeyAction} className="space-y-3">
-                <input type="hidden" name="portfolioId" value={portfolio.id} />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="keyId">ID klíče API</Label>
-                    <Input id="keyId" name="keyId" autoComplete="off" spellCheck={false} />
-                  </div>
-                  <div>
-                    <Label htmlFor="secret">Tajný klíč</Label>
-                    <Input id="secret" name="secret" type="password" required autoComplete="new-password" />
-                  </div>
-                </div>
-                <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
-              </form>
-            </>
-          )}
-        </Card>
-
-        <Card className="space-y-4" id="ibkr">
-          <CardTitle>Interactive Brokers — automatická synchronizace</CardTitle>
-          {ibkr ? (
-            <>
-              <p className="text-sm">
-                <span className="font-semibold text-zelena">Připojeno.</span>{' '}
-                <span className="text-inkoust-tlumeny">
-                  Poslední synchronizace:{' '}
-                  {ibkr.lastSyncedAt
-                    ? `${ibkr.lastSyncedAt.toLocaleString('cs-CZ')} (${syncStatusLabel(ibkr.lastSyncStatus)})`
-                    : 'zatím žádná — spusť ji na stránce Import'}
-                  . Token je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
-                </span>
-              </p>
-              <form action={disconnectBrokerAction}>
-                <input type="hidden" name="accountId" value={ibkr.id} />
-                <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
-                  Odpojit Interactive Brokers
-                </SubmitButton>
-              </form>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2 text-sm text-inkoust-tlumeny">
-                <p>
-                  Potřebuješ dvě věci: <strong>Flex Query</strong> (říká, co se stahuje) a{' '}
-                  <strong>token</strong> (přístup jen ke čtení výpisů). V IBKR Client Portal:
-                </p>
-                <ol className="list-decimal space-y-1 pl-5">
-                  <li>
-                    <strong className="text-inkoust">Performance &amp; Reports → Flex Queries →
-                    „+“ u Activity Flex Query.</strong>{' '}
-                    Pojmenuj ji třeba „Danero“.
-                  </li>
-                  <li>
-                    Zapni sekce a úrovně přesně takto:{' '}
-                    <span className="font-mono text-xs">
-                      Trades = Executions · Cash Transactions = Detail · Corporate Actions =
-                      Detail · Transfers = Detail · Open Positions = Summary
-                    </span>{' '}
-                    a v každé sekci zvol <strong className="text-inkoust">Select All</strong>{' '}
-                    sloupce (musí obsahovat ISIN).
-                  </li>
-                  <li>
-                    V Delivery Configuration nastav{' '}
-                    <strong className="text-inkoust">Format XML</strong> a{' '}
-                    <strong className="text-inkoust">Period „Last 365 Calendar Days“</strong>.
-                    Ulož a poznamenej si <strong className="text-inkoust">Query ID</strong>{' '}
-                    (číslo u názvu query).
-                  </li>
-                  <li>
-                    <strong className="text-inkoust">Settings → Account Settings → Flex Web
-                    Service</strong>{' '}
-                    → aktivuj a zkopíruj <strong className="text-inkoust">token</strong>.
-                  </li>
-                </ol>
-                <p>
-                  Máš u IBKR historii starší než rok? Vytvoř si tutéž query ještě jednou
-                  s obdobím po letech (Custom Date Range), stáhni XML ručně a nahraj je na
-                  stránce Import — jednorázově, dál už vše řeší synchronizace.
-                </p>
-              </div>
-              {chyba === 'ibkr' && (
-                <p className="text-sm text-cervena">
-                  Vlož platný token (aspoň 10 znaků) a číselné Query ID.
-                </p>
-              )}
-              <form action={saveIbkrKeyAction} className="space-y-3">
-                <input type="hidden" name="portfolioId" value={portfolio.id} />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="token">Token Flex Web Service</Label>
-                    <Input id="token" name="token" type="password" required autoComplete="new-password" />
-                  </div>
-                  <div>
-                    <Label htmlFor="queryId">Query ID</Label>
-                    <Input
-                      id="queryId"
-                      name="queryId"
-                      required
-                      inputMode="numeric"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </div>
-                </div>
-                <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
-              </form>
-            </>
-          )}
-        </Card>
       </div>
     </div>
   );

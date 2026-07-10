@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { XtbInstrumentMap } from '@danero/importers';
 import type { Db } from '@/db';
 import { instrumentAliases } from '@/db/schema';
@@ -13,11 +13,11 @@ export interface AliasMaps {
   fio: Record<string, { isin: string }>;
 }
 
-export async function loadAliases(db: Db, userId: string, portfolioId: string): Promise<AliasMaps> {
+export async function loadAliases(db: Db, userId: string): Promise<AliasMaps> {
   const rows = await db
     .select()
     .from(instrumentAliases)
-    .where(and(eq(instrumentAliases.userId, userId), eq(instrumentAliases.portfolioId, portfolioId)));
+    .where(eq(instrumentAliases.userId, userId));
   const maps: AliasMaps = { xtb: {}, fio: {} };
   for (const row of rows) {
     if (row.broker === 'xtb' && row.currency) {
@@ -37,20 +37,19 @@ export interface AliasInput {
   currency?: string;
 }
 
-export async function saveAliases(db: Db, userId: string, portfolioId: string, rows: AliasInput[]): Promise<void> {
+export async function saveAliases(db: Db, userId: string, rows: AliasInput[]): Promise<void> {
   for (const row of rows) {
     await db
       .insert(instrumentAliases)
       .values({
         userId,
-        portfolioId,
         broker: row.broker,
         symbol: row.symbol,
         isin: row.isin,
         currency: row.currency ?? null,
       })
       .onConflictDoUpdate({
-        target: [instrumentAliases.portfolioId, instrumentAliases.broker, instrumentAliases.symbol],
+        target: [instrumentAliases.userId, instrumentAliases.broker, instrumentAliases.symbol],
         set: { isin: row.isin, currency: row.currency ?? null },
       });
   }

@@ -42,4 +42,21 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByText('Průvodce: co kam zapsat v přiznání')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Vytisknout / uložit PDF' })).toBeVisible();
   await expect(page.getByText('Export pro mojedane.cz')).toBeVisible();
+
+  // ── auto-save nastavení: změny se ukládají bez tlačítek Uložit ──────────
+  await page.goto('/nastaveni');
+  // s existujícím profilem žádná tlačítka Uložit u profilu/metod/upozornění
+  await expect(page.getByRole('button', { name: 'Uložit profil' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Uložit upozornění' })).toHaveCount(0);
+  // změna selectu metody → uloží se hned, potvrzení toastem
+  await page.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(page.getByText('Uloženo. Výpočty se přepočítají podle nového profilu.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+
+  // přepnutí switche upozornění → taky auto-save
+  await page.getByText('Posílat e-maily').click();
+  await expect(page.getByText('Uloženo. E-maily se řídí novým nastavením.')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('input[name="emailEnabled"]')).not.toBeChecked();
 });

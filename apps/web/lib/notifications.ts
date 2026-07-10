@@ -129,7 +129,6 @@ export function computeNotificationCandidates(args: {
 export async function syncNotifications(
   db: Db,
   userId: string,
-  portfolioId: string,
   candidates: NotificationCandidate[],
 ): Promise<number> {
   if (candidates.length === 0) return 0;
@@ -139,7 +138,6 @@ export async function syncNotifications(
     .where(
       and(
         eq(notifications.userId, userId),
-        eq(notifications.portfolioId, portfolioId),
         inArray(
           notifications.dedupeKey,
           candidates.map((c) => c.dedupeKey),
@@ -149,14 +147,14 @@ export async function syncNotifications(
   const existingKeys = new Set(existing.map((row) => row.key));
   const fresh = candidates.filter((c) => !existingKeys.has(c.dedupeKey));
   if (fresh.length > 0) {
-    await db.insert(notifications).values(fresh.map((c) => ({ userId, portfolioId, ...c })));
+    await db.insert(notifications).values(fresh.map((c) => ({ userId, ...c })));
   }
   return fresh.length;
 }
 
 /**
  * Kalendářní události (G9c): lednové roční shrnutí a připomínky termínů
- * přiznání (1. 4. papírově, 2. 5. elektronicky). Per portfolio = per osoba.
+ * přiznání (1. 4. papírově, 2. 5. elektronicky).
  */
 export function calendarCandidates(args: {
   today: string;
@@ -284,39 +282,31 @@ export async function processUserNotifications(
   const year = Number(today.slice(0, 4));
   const prefs = await getNotificationPrefs(db, target.id);
 
-  // G8c: hlídač běží per PORTFOLIO (oddělené osoby = oddělené limity);
-  // u více portfolií nese událost prefix se jménem, digest zůstává jeden
-  const { listPortfolios } = await import('@/lib/portfolio-context');
-  const portfolioList = await listPortfolios(db, target.id);
   let created = 0;
-  for (const portfolio of portfolioList) {
-    const profile = await getProfile(db, target.id, portfolio.id);
-    if (!profile) continue;
-    const txs = await loadTransactions(db, target.id, portfolio.id);
-    if (txs.length === 0) continue;
-
-    const analysis = analyzeForUser(txs, profile, year, today);
-    const lastYearPrefix = `${year - 1}-`;
-    let candidates = [
-      ...computeNotificationCandidates({
-        result: analysis.result,
-        positions: analysis.positions,
-        labels: analysis.labels,
-        today,
-      }),
-      ...calendarCandidates({
-        today,
-        hadActivityLastYear: txs.some((tx) =>
-          ('tradeDate' in tx ? tx.tradeDate : tx.date).startsWith(lastYearPrefix),
-        ),
-      }),
-    ];
-    // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
-    // preference filtrují až e-mailovou frontu níže
-    if (portfolioList.length > 1) {
-      candidates = candidates.map((c) => ({ ...c, title: `[${portfolio.name}] ${c.title}` }));
+  const profile = await getProfile(db, target.id);
+  if (profile) {
+    const txs = await loadTransactions(db, target.id);
+    if (txs.length > 0) {
+      const analysis = analyzeForUser(txs, profile, year, today);
+      const lastYearPrefix = `${year - 1}-`;
+      // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
+      // preference filtrují až e-mailovou frontu níže
+      const candidates = [
+        ...computeNotificationCandidates({
+          result: analysis.result,
+          positions: analysis.positions,
+          labels: analysis.labels,
+          today,
+        }),
+        ...calendarCandidates({
+          today,
+          hadActivityLastYear: txs.some((tx) =>
+            ('tradeDate' in tx ? tx.tradeDate : tx.date).startsWith(lastYearPrefix),
+          ),
+        }),
+      ];
+      created = await syncNotifications(db, target.id, candidates);
     }
-    created += await syncNotifications(db, target.id, portfolio.id, candidates);
   }
 
   // E-mailová fronta (H3) — čekající notifikace se dělí do tří tříd:
@@ -404,9 +394,8 @@ export async function processUserNotifications(
 
 /** Všichni uživatelé pro cron (mají e-mail; profil se ověřuje uvnitř). */
 export async function listNotificationTargets(db: Db): Promise<Array<{ id: string; email: string }>> {
-  // G8c: profil je per portfolio — bez groupBy by se uživatel vrátil N× 
   return db
-    .selectDistinct({ id: user.id, email: user.email })
+    .select({ id: user.id, email: user.email })
     .from(user)
     .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id));
 }

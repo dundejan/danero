@@ -3,7 +3,6 @@ import { getAuth } from '@/lib/auth';
 import { getDb } from '@/db';
 import {
   brokerAccounts,
-  portfolios,
   importBatches,
   instrumentAliases,
   notifications,
@@ -29,10 +28,6 @@ export async function GET(request: Request): Promise<Response> {
     return new Response('Příliš mnoho exportů za sebou — počkej minutu.', { status: 429 });
   }
 
-  const portfolioRows = await db
-    .select()
-    .from(portfolios)
-    .where(eq(portfolios.userId, userId));
   const profiles = await db
     .select()
     .from(taxpayerProfiles)
@@ -41,7 +36,6 @@ export async function GET(request: Request): Promise<Response> {
   const accounts = await db
     .select({
       id: brokerAccounts.id,
-      portfolioId: brokerAccounts.portfolioId,
       broker: brokerAccounts.broker,
       label: brokerAccounts.label,
       lastSyncedAt: brokerAccounts.lastSyncedAt,
@@ -71,11 +65,9 @@ export async function GET(request: Request): Promise<Response> {
     exportedAt: new Date().toISOString(),
     format: 'danero-export-v1',
     user: { email: session.user.email, name: session.user.name },
-    // GDPR export pokrývá VŠECHNA portfolia účtu
-    portfolios: portfolioRows,
     profiles,
     // kanonický model (docs/04) — payload je zdroj pravdy každé transakce
-    transactions: txRows.map((row) => ({ portfolioId: row.portfolioId, ...(row.payload as object) })),
+    transactions: txRows.map((row) => row.payload as object),
     brokerAccounts: accounts, // šifrované API klíče se záměrně NEexportují
     instrumentAliases: aliases,
     notifications: notif,

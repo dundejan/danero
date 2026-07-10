@@ -38,7 +38,7 @@ export interface SyncOutcome {
 /** U 403 doplní nápovědu k oprávněním T212 klíče (jinak vrací zprávu beze změny). */
 export function explainT212SyncError(message: string): string {
   return message.includes('403')
-    ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu v nastavení.`
+    ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu na stránce Zdroje dat.`
     : message;
 }
 
@@ -163,7 +163,7 @@ export async function syncTrading212(
   const batches: ImportSummary[] = [];
   const yearsCovered: number[] = [];
   // dedupe klíče jednou za sync, ne per rok — importParsed do množiny doplňuje
-  const dedupeKeys = await loadDedupeKeys(db, account.userId, account.portfolioId);
+  const dedupeKeys = await loadDedupeKeys(db, account.userId);
   let emptyStreak = 0;
 
   for (let year = currentYear; year >= T212_MIN_YEAR; year -= 1) {
@@ -206,7 +206,6 @@ export async function syncTrading212(
       const batch = await importParsed(
         db,
         account.userId,
-        account.portfolioId,
         `t212-api-${year}.csv`,
         parsed,
         dedupeKeys,
@@ -242,7 +241,6 @@ export async function syncTrading212(
     await upsertInstrumentPrices(
       db,
       account.userId,
-      account.portfolioId,
       account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, price: p.currentPrice ?? 0, currency: p.currency })),
       now,
@@ -250,7 +248,6 @@ export async function syncTrading212(
     reconciliation = await reconcileBrokerPositions(
       db,
       account.userId,
-      account.portfolioId,
       account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, quantity: p.quantity })),
       now.toISOString().slice(0, 10),

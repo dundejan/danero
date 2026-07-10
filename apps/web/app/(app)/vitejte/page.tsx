@@ -1,10 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Card, CardTitle } from '@/components/ui/card';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
-import { activePortfolio } from '@/lib/portfolio-context';
 import { getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 
@@ -18,16 +17,13 @@ export const metadata = { title: 'Vítej — Danero' };
 export default async function WelcomePage() {
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
-  const profile = await getProfile(db, user.id, portfolio.id);
-  const txs = profile ? await loadTransactions(db, user.id, portfolio.id) : [];
+  const profile = await getProfile(db, user.id);
+  const txs = profile ? await loadTransactions(db, user.id) : [];
   const accounts = profile
     ? await db
         .select({ id: brokerAccounts.id })
         .from(brokerAccounts)
-        .where(
-          and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.portfolioId, portfolio.id)),
-        )
+        .where(eq(brokerAccounts.userId, user.id))
     : [];
 
   const hasProfile = profile !== null;
@@ -92,7 +88,7 @@ export default async function WelcomePage() {
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Link
-              href="/nastaveni#trading212"
+              href="/import#trading212"
               className="rounded-md border border-linka p-3 text-sm hover:border-ruzova"
             >
               <span className="block font-semibold">Trading212 / IBKR API</span>
@@ -114,7 +110,7 @@ export default async function WelcomePage() {
             <p className="text-sm text-zelena">
               Broker připojen — první synchronizace běží na stránce{' '}
               <Link href="/import" className="font-medium underline">
-                Import
+                Zdroje dat
               </Link>
               , průběh uvidíš tam.
             </p>

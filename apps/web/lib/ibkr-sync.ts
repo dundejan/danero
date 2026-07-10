@@ -86,13 +86,12 @@ export async function syncIbkr(
     parsed.skipped.length > 0 ||
     parsed.warnings.length > 0;
   const filename = `ibkr-flex-${now.toISOString().slice(0, 10)}.xml`;
-  const batch = hasContent ? await importParsed(db, account.userId, account.portfolioId, filename, parsed) : null;
+  const batch = hasContent ? await importParsed(db, account.userId, filename, parsed) : null;
 
   await report('reconciling');
   await upsertInstrumentPrices(
     db,
     account.userId,
-    account.portfolioId,
     account.broker,
     parsed.openPositions
       .filter((p) => p.markPrice)
@@ -105,7 +104,6 @@ export async function syncIbkr(
       reconciliation = await reconcileBrokerPositions(
         db,
         account.userId,
-        account.portfolioId,
         account.broker,
         parsed.openPositions,
         now.toISOString().slice(0, 10),

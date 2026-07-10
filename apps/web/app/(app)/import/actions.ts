@@ -2,12 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { importBatches } from '@/db/schema';
+import { brokerAccounts, importBatches } from '@/db/schema';
+import { logAudit } from '@/lib/audit';
+import { encryptSecret } from '@/lib/crypto';
 import { importFile } from '@/lib/import-service';
 import { saveAliases, type AliasInput } from '@/lib/instrument-aliases';
-import { portfolioFromForm } from '@/lib/portfolio-context';
+import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -26,9 +29,8 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   if (!(await checkRateLimit(db, `upload:${user.id}`, { max: 30, windowMs: 10 * 60_000 }))) {
     redirect('/import?chyba=limit');
   }
-  const portfolio = await portfolioFromForm(db, user.id, formData);
   for (const file of files) {
-    await importFile(db, user.id, portfolio.id, file.name, await file.arrayBuffer());
+    await importFile(db, user.id, file.name, await file.arrayBuffer());
   }
 
   revalidatePath('/prehled');
@@ -68,8 +70,7 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   }
   if (rows.length > 0) {
     const db = await getDb();
-    const portfolio = await portfolioFromForm(db, user.id, formData);
-    await saveAliases(db, user.id, portfolio.id, rows);
+    await saveAliases(db, user.id, rows);
   }
   revalidatePath('/import');
   redirect('/import?ulozeno=ciselnik');
@@ -86,4 +87,94 @@ export async function deleteBatchAction(formData: FormData): Promise<void> {
       .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, user.id)));
   }
   revalidatePath('/import');
+}
+
+/* ── Napojení na brokery (Zdroje dat) ────────────────────────────────────── */
+
+/** Uloží T212 API přístup (ID klíče + tajný klíč, šifrovaně) — jeden účet na uživatele. */
+export async function saveTrading212KeyAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const keyId = String(formData.get('keyId') ?? '').trim();
+  const secret = String(formData.get('secret') ?? '').trim();
+  if (secret.length < 10) redirect('/import?chyba=api-klic');
+
+  const db = await getDb();
+  await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+  await db.insert(brokerAccounts).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    broker: 'trading212',
+    credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
+  });
+
+  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading212');
+  revalidatePath('/import');
+  redirect('/import');
+}
+
+/** Uloží IBKR Flex přístup (token + query ID, šifrovaně) — jeden IBKR účet na uživatele. */
+export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const token = String(formData.get('token') ?? '').trim();
+  const queryId = String(formData.get('queryId') ?? '').trim();
+  if (token.length < 10 || !/^\d+$/.test(queryId)) redirect('/import?chyba=ibkr');
+
+  const db = await getDb();
+  await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'ibkr')));
+  await db.insert(brokerAccounts).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    broker: 'ibkr',
+    label: 'Interactive Brokers',
+    credentialsEncrypted: encryptSecret(JSON.stringify({ token, queryId })),
+  });
+
+  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Interactive Brokers');
+  revalidatePath('/import');
+  redirect('/import');
+}
+
+/** Odpojí jeden broker účet (multi-broker: každá karta má vlastní tlačítko). */
+export async function disconnectBrokerAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const accountId = String(formData.get('accountId') ?? '');
+  const db = await getDb();
+  const deleted = await db
+    .delete(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)))
+    .returning({ id: brokerAccounts.id });
+  // tiché „nic se nesmazalo“ nesmí vypadat jako úspěch (stale formulář apod.)
+  if (deleted.length === 0) redirect('/import?chyba=zadny-ucet');
+  await logAudit(db, user.id, 'BROKER_DISCONNECTED');
+  revalidatePath('/import');
+  redirect('/import');
+}
+
+/**
+ * Ruční synchronizace broker účtu: zapíše background job a hned se vrátí —
+ * samotný běh (klidně deset minut) startuje after() po odeslání odpovědi,
+ * průběh polluje /import. Chyby běhu končí v jobs.error (viz lib/jobs.ts).
+ */
+export async function syncBrokerAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const accountId = String(formData.get('accountId') ?? '');
+  const db = await getDb();
+  const accounts = await db
+    .select()
+    .from(brokerAccounts)
+    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)));
+  const account = accounts[0];
+  if (!account) redirect('/import?chyba=zadny-ucet');
+
+  const job = await enqueueSyncJob(db, user.id, account.id, jobTypeForBroker(account.broker));
+  if (job.status === 'pending') {
+    after(() => processJob(db, job.id));
+  }
+
+  revalidatePath('/import');
+  redirect('/import');
 }

@@ -11,8 +11,8 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
+
 import { loadInstrumentPrices } from '@/lib/prices';
-import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { headers } from 'next/headers';
 import { and, eq } from 'drizzle-orm';
@@ -93,18 +93,17 @@ export default async function PositionDetailPage({
 
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
-  const profile = await getProfile(db, user.id, portfolio.id);
+  const profile = await getProfile(db, user.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id, portfolio.id);
+  const txs = await loadTransactions(db, user.id);
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = Number(today.slice(0, 4));
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const { positions, labels } = analyzeForUserCached(user.id, portfolio.id, txs, profile, currentYear, today, dailyRates);
+  const { positions, labels } = analyzeForUserCached(user.id, txs, profile, currentYear, today, dailyRates);
   const position = positions.find((p) => p.isin === isin);
 
-  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
+  const prices = await loadInstrumentPrices(db, user.id);
   const valuation = position
     ? valuePositions([position], labels, instrumentNames(txs), prices, currentYear).rows[0]!
     : null;

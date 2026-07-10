@@ -17,7 +17,6 @@ import { d } from '@danero/shared';
 
 const PROFILE: ProfileRow = {
   userId: 'u1',
-  portfolioId: 'pf-u1',
   regime: 'PAUSAL',
   hasBusinessAssets: false,
   w8benFiled: true,

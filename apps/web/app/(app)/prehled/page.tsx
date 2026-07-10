@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
 import { LimitDrawdownChart } from '@/components/charts';
 import { HorizonStrip } from '@/components/horizon-strip';
@@ -27,7 +27,6 @@ import {
   instrumentNames,
   loadTransactions,
 } from '@/lib/portfolio';
-import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 
 export const metadata = { title: 'Přehled — Danero' };
@@ -39,12 +38,11 @@ export default async function OverviewPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
 
-  const profile = await getProfile(db, user.id, portfolio.id);
+  const profile = await getProfile(db, user.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id, portfolio.id);
+  const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
@@ -66,7 +64,7 @@ export default async function OverviewPage({
   const recentNotifications = await db
     .select()
     .from(notifications)
-    .where(and(eq(notifications.userId, user.id), eq(notifications.portfolioId, portfolio.id)))
+    .where(eq(notifications.userId, user.id))
     .orderBy(desc(notifications.createdAt))
     .limit(5);
 
@@ -78,7 +76,6 @@ export default async function OverviewPage({
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const { result, positions, labels } = analyzeForUserCached(
     user.id,
-    portfolio.id,
     txs,
     profile,
     year,
@@ -87,7 +84,7 @@ export default async function OverviewPage({
   );
   const limit100kChart = limit100kSeries(result);
   const flatTax50kChart = flatTax50kSeries(result);
-  const prices = await loadInstrumentPrices(db, user.id, portfolio.id);
+  const prices = await loadInstrumentPrices(db, user.id);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
   const forfeitedWithholdingCzk = result.dividends.foreignWithholdingCzk.sub(

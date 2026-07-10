@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
-import { portfolios, brokerAccounts, importBatches, jobs, user } from '@/db/schema';
+import { brokerAccounts, importBatches, jobs, user } from '@/db/schema';
 import { encryptSecret } from '@/lib/crypto';
 import {
   enqueueSyncJob,
@@ -15,11 +15,9 @@ import { makeMockFetch, MOCK_CREDENTIALS } from './t212-mock';
 
 async function setupAccount(db: Db, userId = 'u1') {
   await db.insert(user).values({ id: userId, name: 'Test', email: `${userId}@danero.cz` });
-  await db.insert(portfolios).values({ id: `pf-${userId}`, userId, name: 'Moje portfolio' });
   await db.insert(brokerAccounts).values({
     id: `acc-${userId}`,
     userId,
-    portfolioId: `pf-${userId}`,
     broker: 'trading212',
     credentialsEncrypted: encryptSecret(MOCK_CREDENTIALS),
   });
@@ -47,7 +45,6 @@ describe('background joby (in-memory PGlite)', () => {
       await db.insert(brokerAccounts).values({
         id: 'acc-u1-novy',
         userId: 'u1',
-        portfolioId: 'pf-u1',
         broker: 'trading212',
         credentialsEncrypted: encryptSecret(MOCK_CREDENTIALS),
       });
@@ -182,7 +179,6 @@ describe('background joby (in-memory PGlite)', () => {
   it('processJob: neznámý typ jobu skončí chybou, ne T212 cestou', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'u1', name: 'Test', email: 'u1@danero.cz' });
-      await db.insert(portfolios).values({ id: 'pf-' + 'u1', userId: 'u1', name: 'Moje portfolio' });
     await db.insert(jobs).values({
       id: 'cizi-typ',
       userId: 'u1',
@@ -215,7 +211,6 @@ describe('background joby (in-memory PGlite)', () => {
       });
       // čerstvý running (jiného uživatele) se dorovnat nesmí
       await db.insert(user).values({ id: 'u2', name: 'Test 2', email: 'u2@danero.cz' });
-      await db.insert(portfolios).values({ id: 'pf-' + 'u2', userId: 'u2', name: 'Moje portfolio' });
       await db.insert(jobs).values({
         id: 'fresh-1',
         userId: 'u2',

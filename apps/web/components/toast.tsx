@@ -7,7 +7,16 @@ import { useEffect, useState } from 'react';
  * po 6 s se sám schová (chybové zůstávají). Server actions dál fungují bez JS —
  * toast je jen progressive enhancement nad stávajícími bannery.
  */
-export function Toast({ kind, text }: { kind: 'ok' | 'chyba'; text: string }) {
+export function Toast({
+  kind,
+  text,
+  floating = false,
+}: {
+  kind: 'ok' | 'chyba';
+  text: string;
+  /** Plovoucí varianta (pravý dolní roh) — vidět i po skoku na kotvu sekce. */
+  floating?: boolean;
+}) {
   const [visible, setVisible] = useState(true);
   useEffect(() => {
     // hláška patří k právě provedené akci — z URL ji smaž, ať ji reload
@@ -29,7 +38,7 @@ export function Toast({ kind, text }: { kind: 'ok' | 'chyba'; text: string }) {
       role={kind === 'chyba' ? 'alert' : 'status'}
       className={`rounded-md border px-4 py-3 text-sm ${
         kind === 'ok' ? 'border-zelena text-zelena' : 'border-cervena text-cervena'
-      }`}
+      }${floating ? ' fixed bottom-4 right-4 z-50 max-w-sm bg-plocha shadow-lg' : ''}`}
     >
       {text}
       <button

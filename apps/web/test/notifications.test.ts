@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
 import { createPgliteDb, type Db } from '@/db';
-import { notificationPrefs, notifications, portfolios, taxpayerProfiles, user } from '@/db/schema';
+import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
 import {
   getNotificationPrefs,
@@ -9,12 +9,11 @@ import {
   type EmailMessage,
 } from '@/lib/notifications';
 
-/** Založí uživatele s portfoliem, profilem (paušál) a fixturou CSV. */
+/** Založí uživatele s profilem (paušál) a fixturou CSV. */
 async function seedUser(db: Db, id: string, email: string): Promise<void> {
   await db.insert(user).values({ id, name: 'Test', email });
-  await db.insert(portfolios).values({ id: `pf-${id}`, userId: id, name: 'Moje portfolio' });
-  await db.insert(taxpayerProfiles).values({ userId: id, portfolioId: `pf-${id}`, regime: 'PAUSAL' });
-  await importCsvText(db, id, `pf-${id}`, 'fixtura.csv', CSV);
+  await db.insert(taxpayerProfiles).values({ userId: id, regime: 'PAUSAL' });
+  await importCsvText(db, id, 'fixtura.csv', CSV);
 }
 
 /**
@@ -34,9 +33,8 @@ describe('notifikace (in-memory PGlite)', () => {
   it('vypočte události, uloží jednou a pošle jeden digest', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'u1', name: 'Test', email: 'notify@danero.cz' });
-    await db.insert(portfolios).values({ id: 'pf-u1', userId: 'u1', name: 'Moje portfolio' });
-    await db.insert(taxpayerProfiles).values({ userId: 'u1', portfolioId: 'pf-u1', regime: 'PAUSAL' });
-    await importCsvText(db, 'u1', 'pf-u1', 'fixtura.csv', CSV);
+    await db.insert(taxpayerProfiles).values({ userId: 'u1', regime: 'PAUSAL' });
+    await importCsvText(db, 'u1', 'fixtura.csv', CSV);
 
     const sent: EmailMessage[] = [];
     const send = async (message: EmailMessage) => {
@@ -110,7 +108,6 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
     const result = analyzeTaxYear(
       engineInputForUser(txs, {
         userId: 'u1',
-        portfolioId: 'pf-u1',
         regime: 'PAUSAL',
         hasBusinessAssets: false,
         w8benFiled: true,
@@ -183,9 +180,8 @@ describe('notifikační preference + odhlášení (G8d, H3)', () => {
     const { createPgliteDb } = await import('@/db');
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'u4', name: 'Link', email: 'link@danero.cz' });
-    await db.insert(portfolios).values({ id: 'pf-u4', userId: 'u4', name: 'Moje portfolio' });
-    await db.insert(taxpayerProfiles).values({ userId: 'u4', portfolioId: 'pf-u4', regime: 'PAUSAL' });
-    await importCsvText(db, 'u4', 'pf-u4', 'fixtura.csv', CSV);
+    await db.insert(taxpayerProfiles).values({ userId: 'u4', regime: 'PAUSAL' });
+    await importCsvText(db, 'u4', 'fixtura.csv', CSV);
 
     const sent: EmailMessage[] = [];
     await processUserNotifications(db, { id: 'u4', email: 'link@danero.cz' }, {
@@ -273,8 +269,8 @@ describe('nastavitelné e-maily (H3)', () => {
     // nové události další den — týdenní okno je zavřené: nic se neposílá
     // a fronta zůstává s emailedAt NULL (odejde v příštím souhrnu)
     await db.insert(notifications).values([
-      { userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|a', type: 'LIMIT_CRITICAL', title: 'Událost A', body: 'čeká na týdenní souhrn' },
-      { userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|b', type: 'TIME_TEST_30', title: 'Událost B', body: 'čeká na týdenní souhrn' },
+      { userId: 'u7', dedupeKey: 'test|a', type: 'LIMIT_CRITICAL', title: 'Událost A', body: 'čeká na týdenní souhrn' },
+      { userId: 'u7', dedupeKey: 'test|b', type: 'TIME_TEST_30', title: 'Událost B', body: 'čeká na týdenní souhrn' },
     ]);
     const second = await processUserNotifications(db, target, { send, today: '2026-07-21' });
     expect(second.emailed).toBe(0);
@@ -295,7 +291,7 @@ describe('nastavitelné e-maily (H3)', () => {
     // lastDigestAt se posunul na 27. 7. — den nato okno zase zavřené
     // (kdyby zůstal 20. 7., rozdíl 8 dní by digest poslal)
     await db.insert(notifications).values({
-      userId: 'u7', portfolioId: 'pf-u7', dedupeKey: 'test|c', type: 'LIMIT_CRITICAL', title: 'Událost C', body: 'čeká na týdenní souhrn',
+      userId: 'u7', dedupeKey: 'test|c', type: 'LIMIT_CRITICAL', title: 'Událost C', body: 'čeká na týdenní souhrn',
     });
     const fourth = await processUserNotifications(db, target, { send, today: '2026-07-28' });
     expect(fourth.emailed).toBe(0);
@@ -317,7 +313,7 @@ describe('nastavitelné e-maily (H3)', () => {
 
     // ruční re-trigger cronu: mezitím přibyla nová událost — čeká do zítřka
     await db.insert(notifications).values({
-      userId: 'u8', portfolioId: 'pf-u8', dedupeKey: 'test|retrigger', type: 'LIMIT_CRITICAL', title: 'Nová událost', body: 'nesmí odejít dnes podruhé',
+      userId: 'u8', dedupeKey: 'test|retrigger', type: 'LIMIT_CRITICAL', title: 'Nová událost', body: 'nesmí odejít dnes podruhé',
     });
     const retrigger = await processUserNotifications(db, target, { send, today: '2026-07-20' });
     expect(retrigger.emailed).toBe(0);

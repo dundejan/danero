@@ -12,17 +12,14 @@ test('IBKR: připojení Flex → sync jako job → rekonciliace → ruční XML 
 }) => {
   await registerWithProfile(page, { name: 'E2E IBKR', email: 'ibkr@danero.cz' });
 
-  // ── připojení IBKR (mock přijme cokoli) ─────────────────────────────────
-  await page.goto('/nastaveni');
+  // ── připojení IBKR na stránce Zdroje dat (mock přijme cokoli) ───────────
+  await page.goto('/import');
   await page.getByLabel('Token Flex Web Service').fill('e2e-flex-token-1234');
   await page.getByLabel('Query ID').fill('654321');
   await page.locator('#ibkr').getByRole('button', { name: 'Připojit' }).click();
-  await page.waitForURL('**/import');
 
   // ── sync jako background job ────────────────────────────────────────────
-  await expect(
-    page.getByRole('heading', { name: 'Interactive Brokers — automatická synchronizace' }),
-  ).toBeVisible();
+  await expect(page.locator('#ibkr').getByText('Připojeno.')).toBeVisible();
   await page.getByRole('button', { name: 'Synchronizovat', exact: true }).click();
 
   // dokončení: rekonciliace proti OpenPositions sedí, batch je v historii

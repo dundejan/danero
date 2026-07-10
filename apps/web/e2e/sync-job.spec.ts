@@ -10,12 +10,11 @@ import { registerWithProfile } from './helpers';
 test('T212 sync jako job: připojení klíče → průběh po letech → výsledek', async ({ page }) => {
   await registerWithProfile(page, { name: 'E2E Sync', email: 'sync@danero.cz' });
 
-  // ── připojení T212 klíče (mock přijme cokoli) ───────────────────────────
-  await page.goto('/nastaveni');
+  // ── připojení T212 klíče na stránce Zdroje dat (mock přijme cokoli) ─────
+  await page.goto('/import');
   await page.getByLabel('ID klíče API').fill('e2e-key-id');
   await page.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
   await page.locator('#trading212').getByRole('button', { name: 'Připojit' }).click();
-  await page.waitForURL('**/import');
 
   // ── spuštění plné synchronizace — akce se vrátí hned, job běží na pozadí ─
   await page.getByRole('button', { name: 'Stáhnout kompletní historii' }).click();

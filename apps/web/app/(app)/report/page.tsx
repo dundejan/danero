@@ -19,7 +19,6 @@ import {
   loadDailyRates,
   loadTransactions,
 } from '@/lib/portfolio';
-import { activePortfolio } from '@/lib/portfolio-context';
 import { requireUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
@@ -32,11 +31,10 @@ export default async function ReportPage({
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const portfolio = await activePortfolio(db, user.id);
-  const profile = await getProfile(db, user.id, portfolio.id);
+  const profile = await getProfile(db, user.id);
   if (!profile) redirect('/nastaveni');
 
-  const txs = await loadTransactions(db, user.id, portfolio.id);
+  const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) redirect('/prehled');
 
   const currentYear = Number(new Date().toISOString().slice(0, 4)); // UTC, konzistentně s today

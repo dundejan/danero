@@ -34,11 +34,9 @@ export async function POST(request: Request): Promise<Response> {
   if (!(await checkRateLimit(db, `epo:${session.user.id}`, { max: 10, windowMs: 60_000 }))) {
     return chyba('Příliš mnoho exportů za sebou — počkej minutu.');
   }
-  const { activePortfolio } = await import('@/lib/portfolio-context');
-  const portfolio = await activePortfolio(db, session.user.id);
-  const profile = await getProfile(db, session.user.id, portfolio.id);
+  const profile = await getProfile(db, session.user.id);
   if (!profile) return chyba('Nejdřív vyplň daňový profil v Nastavení.');
-  const txs = await loadTransactions(db, session.user.id, portfolio.id);
+  const txs = await loadTransactions(db, session.user.id);
   if (txs.length === 0) return chyba('Zatím nemáš žádné transakce — nejdřív importuj data.');
 
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)

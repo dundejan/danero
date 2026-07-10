@@ -19,17 +19,11 @@ import { configForYear } from './tax-config';
 
 export type ProfileRow = typeof taxpayerProfiles.$inferSelect;
 
-export async function getProfile(
-  db: Db,
-  userId: string,
-  portfolioId: string,
-): Promise<ProfileRow | null> {
+export async function getProfile(db: Db, userId: string): Promise<ProfileRow | null> {
   const rows = await db
     .select()
     .from(taxpayerProfiles)
-    .where(
-      and(eq(taxpayerProfiles.userId, userId), eq(taxpayerProfiles.portfolioId, portfolioId)),
-    );
+    .where(eq(taxpayerProfiles.userId, userId));
   return rows[0] ?? null;
 }
 
@@ -59,10 +53,9 @@ export function profileToEngine(row: ProfileRow): {
 export async function loadTransactions(
   db: Db,
   userId: string,
-  portfolioId: string,
   broker?: string,
 ): Promise<Transaction[]> {
-  const scope = and(eq(transactions.userId, userId), eq(transactions.portfolioId, portfolioId));
+  const scope = eq(transactions.userId, userId);
   const rows = await db
     .select({ payload: transactions.payload })
     .from(transactions)

@@ -93,15 +93,14 @@ export async function markAccountSyncError(
 export async function reconcileBrokerPositions(
   db: Db,
   userId: string,
-  portfolioId: string,
   broker: string,
   brokerPositions: Array<{ isin: string; quantity: string | number }>,
   atDate: string,
   unmatchedTickers: string[] = [],
 ): Promise<StoredReconciliation> {
   const [own, manual] = await Promise.all([
-    loadTransactions(db, userId, portfolioId, broker),
-    loadTransactions(db, userId, portfolioId, 'universal'),
+    loadTransactions(db, userId, broker),
+    loadTransactions(db, userId, 'universal'),
   ]);
   const txs = [...own, ...manual].sort((a, b) => {
     const dateOf = (tx: (typeof own)[number]) =>

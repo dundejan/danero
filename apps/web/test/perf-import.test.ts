@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb } from '@/db';
-import { portfolios, taxpayerProfiles, user } from '@/db/schema';
+import { taxpayerProfiles, user } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
 import { analyzeForUser, getProfile, loadTransactions } from '@/lib/portfolio';
 
@@ -28,22 +28,19 @@ describe('výkon: import 50k řádků a přepočet (G10b)', () => {
   it('import < 30 s, engine nad 50k transakcemi < 10 s', { timeout: 120_000 }, async () => {
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'perf', name: 'Perf', email: 'perf@danero.cz' });
-    await db.insert(portfolios).values({ id: 'pf-perf', userId: 'perf', name: 'Moje portfolio' });
-    await db
-      .insert(taxpayerProfiles)
-      .values({ userId: 'perf', portfolioId: 'pf-perf', regime: 'PAUSAL' });
+    await db.insert(taxpayerProfiles).values({ userId: 'perf', regime: 'PAUSAL' });
 
     const csv = bigCsv(50_000);
     const startImport = performance.now();
-    const summary = await importCsvText(db, 'perf', 'pf-perf', 'velky.csv', csv);
+    const summary = await importCsvText(db, 'perf', 'velky.csv', csv);
     const importMs = performance.now() - startImport;
     console.info(`[perf] import 50k řádků: ${Math.round(importMs)} ms`);
     expect(summary.added).toBe(50_000);
     expect(importMs).toBeLessThan(30_000);
 
-    const txs = await loadTransactions(db, 'perf', 'pf-perf');
+    const txs = await loadTransactions(db, 'perf');
     expect(txs).toHaveLength(50_000);
-    const profile = (await getProfile(db, 'perf', 'pf-perf'))!;
+    const profile = (await getProfile(db, 'perf'))!;
 
     const startEngine = performance.now();
     const analysis = analyzeForUser(txs, profile, 2025, '2025-12-31');

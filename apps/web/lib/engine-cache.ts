@@ -16,7 +16,6 @@ const cache = new Map<string, YearAnalysis>();
 
 export function analysisFingerprint(
   userId: string,
-  portfolioId: string,
   txs: Transaction[],
   profileRow: ProfileRow,
   year: number,
@@ -27,7 +26,6 @@ export function analysisFingerprint(
   const txHash = fnv1a64(txs.map((tx) => tx.id).join('|'));
   return [
     userId,
-    portfolioId,
     year,
     atDate,
     txs.length,
@@ -39,7 +37,6 @@ export function analysisFingerprint(
 
 export function analyzeForUserCached(
   userId: string,
-  portfolioId: string,
   txs: Transaction[],
   profileRow: ProfileRow,
   year: number,
@@ -52,15 +49,7 @@ export function analyzeForUserCached(
   if (dailyRates !== undefined) {
     return analyzeForUser(txs, profileRow, year, atDate, dailyRates);
   }
-  const key = analysisFingerprint(
-    userId,
-    portfolioId,
-    txs,
-    profileRow,
-    year,
-    atDate,
-    false,
-  );
+  const key = analysisFingerprint(userId, txs, profileRow, year, atDate, false);
   const hit = cache.get(key);
   if (hit) return hit;
   const value = analyzeForUser(txs, profileRow, year, atDate, dailyRates);

@@ -11,7 +11,7 @@ const ITEMS = [
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/simulator', label: 'Simulátor' },
   { href: '/report', label: 'Report' },
-  { href: '/import', label: 'Import' },
+  { href: '/import', label: 'Zdroje dat' },
   { href: '/nastaveni', label: 'Nastavení' },
 ];
 
