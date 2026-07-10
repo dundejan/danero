@@ -22,7 +22,7 @@ test('design audit: screenshoty všech stránek', async ({ page }) => {
   // veřejné stránky
   for (const [path, name] of [
     ['/', 'landing'],
-    ['/demo', 'demo'],
+    ['/demo/prehled', 'demo'],
     ['/prihlaseni', 'prihlaseni'],
     ['/registrace', 'registrace'],
   ] as const) {
@@ -57,7 +57,7 @@ test('design audit: screenshoty všech stránek', async ({ page }) => {
   }
   // desktop dark
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  for (const [path, name] of [...APP_PAGES, ['/demo', 'demo'] as const]) {
+  for (const [path, name] of [...APP_PAGES, ['/demo/prehled', 'demo'] as const]) {
     await page.goto(path);
     await shoot(page, `${name}-dark`);
   }

@@ -10,6 +10,15 @@ import { registerWithProfile } from './helpers';
  */
 const PAGES = ['/prehled', '/portfolio', '/report', '/simulator', '/import', '/nastaveni'];
 
+/** Demo prohlídka je veřejná vstupní brána — musí splňovat totéž. */
+const DEMO_PAGES = [
+  '/demo/prehled',
+  '/demo/portfolio',
+  '/demo/portfolio/IE00BK5BQT80',
+  '/demo/simulator',
+  '/demo/report',
+];
+
 async function expectNoHorizontalOverflow(page: Page, path: string) {
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -33,7 +42,7 @@ test('mobil + dark: žádné vodorovné přetečení; axe bez kritických nález
   await page.setViewportSize({ width: 390, height: 844 });
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    for (const path of [...PAGES, '/demo']) {
+    for (const path of [...PAGES, ...DEMO_PAGES]) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       await expectNoHorizontalOverflow(page, `${path} (${scheme})`);
@@ -43,7 +52,7 @@ test('mobil + dark: žádné vodorovné přetečení; axe bez kritických nález
   // ── axe-core na desktopu: kritické nálezy = 0 ────────────────────────────
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ colorScheme: 'light' });
-  for (const path of [...PAGES, '/demo']) {
+  for (const path of [...PAGES, ...DEMO_PAGES]) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     const results = await new AxeBuilder({ page }).analyze();

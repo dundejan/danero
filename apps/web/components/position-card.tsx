@@ -15,10 +15,13 @@ export function PositionCard({
   pl,
   exemptText,
   exemptDone,
+  basePath = '',
 }: {
   isin: string;
   label: string;
   name?: string;
+  /** Prefix odkazu na detail pozice ('' pro aplikaci, '/demo' pro demo). */
+  basePath?: string;
   /** Hlavní hodnota vpravo nahoře — hodnota v Kč, nebo počet kusů. */
   primaryText: string;
   /** Doplněk pod hlavní hodnotou (např. počet kusů, když primární je Kč). */
@@ -31,7 +34,7 @@ export function PositionCard({
 }) {
   return (
     <Link
-      href={`/portfolio/${isin}`}
+      href={`${basePath}/portfolio/${isin}`}
       className="block rounded-md border border-linka p-3 hover:border-inkoust-tlumeny"
     >
       <div className="flex items-baseline justify-between gap-3">

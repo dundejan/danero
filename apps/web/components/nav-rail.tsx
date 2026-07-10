@@ -6,13 +6,26 @@ import { authClient } from '@/lib/auth-client';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
-const ITEMS = [
+interface NavItem {
+  href: string;
+  label: string;
+}
+
+const ITEMS: NavItem[] = [
   { href: '/prehled', label: 'Přehled' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/simulator', label: 'Simulátor' },
   { href: '/report', label: 'Report' },
   { href: '/import', label: 'Zdroje dat' },
   { href: '/nastaveni', label: 'Nastavení' },
+];
+
+/** Demo prohlídka: stejné stránky bez Zdrojů dat a Nastavení (nemají smysl bez účtu). */
+const DEMO_ITEMS: NavItem[] = [
+  { href: '/demo/prehled', label: 'Přehled' },
+  { href: '/demo/portfolio', label: 'Portfolio' },
+  { href: '/demo/simulator', label: 'Simulátor' },
+  { href: '/demo/report', label: 'Report' },
 ];
 
 function useSignOut() {
@@ -24,20 +37,26 @@ function useSignOut() {
   };
 }
 
-/** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07). */
-export function NavRail({ userEmail }: { userEmail: string }) {
+/** Sdílený levý rail (desktop): logo, položky, patička dle režimu. */
+function Rail({
+  items,
+  homeHref,
+  footer,
+}: {
+  items: NavItem[];
+  homeHref: string;
+  footer: React.ReactNode;
+}) {
   const pathname = usePathname();
-  const signOut = useSignOut();
-
   return (
     <aside className="hidden w-48 shrink-0 flex-col border-r border-linka bg-plocha px-4 py-6 md:flex">
-      <Link href="/prehled" className="mb-8 flex items-center gap-2">
+      <Link href={homeHref} className="mb-8 flex items-center gap-2">
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-ruzova" aria-hidden />
         <span className="font-display text-lg font-bold tracking-tight">Danero</span>
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
             <Link
@@ -56,31 +75,23 @@ export function NavRail({ userEmail }: { userEmail: string }) {
         })}
       </nav>
 
-      <div className="space-y-2 border-t border-linka pt-4">
-        <ThemeToggle />
-        <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
-          {userEmail}
-        </p>
-        <button
-          type="button"
-          className="text-xs font-medium text-inkoust-tlumeny hover:text-cervena"
-          onClick={signOut}
-        >
-          Odhlásit se
-        </button>
-      </div>
+      <div className="space-y-2 border-t border-linka pt-4">{footer}</div>
     </aside>
   );
 }
 
-export function NavTabBar() {
+/** Sdílený spodní tab bar (mobil <md). */
+function TabBar({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
   return (
     <nav
       aria-label="Hlavní navigace"
-      className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-linka bg-plocha md:hidden"
+      className={cn(
+        'fixed inset-x-0 bottom-0 z-20 grid border-t border-linka bg-plocha md:hidden',
+        items.length === 6 ? 'grid-cols-6' : 'grid-cols-4',
+      )}
     >
-      {ITEMS.map((item) => {
+      {items.map((item) => {
         const active = pathname.startsWith(item.href);
         return (
           <Link
@@ -98,4 +109,59 @@ export function NavTabBar() {
       })}
     </nav>
   );
+}
+
+/** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07). */
+export function NavRail({ userEmail }: { userEmail: string }) {
+  const signOut = useSignOut();
+  return (
+    <Rail
+      items={ITEMS}
+      homeHref="/prehled"
+      footer={
+        <>
+          <ThemeToggle />
+          <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
+            {userEmail}
+          </p>
+          <button
+            type="button"
+            className="text-xs font-medium text-inkoust-tlumeny hover:text-cervena"
+            onClick={signOut}
+          >
+            Odhlásit se
+          </button>
+        </>
+      }
+    />
+  );
+}
+
+export function NavTabBar() {
+  return <TabBar items={ITEMS} />;
+}
+
+/** Demo rail: místo účtu CTA na registraci — nic víc demo nepotřebuje. */
+export function DemoNavRail() {
+  return (
+    <Rail
+      items={DEMO_ITEMS}
+      homeHref="/demo/prehled"
+      footer={
+        <>
+          <ThemeToggle />
+          <Link
+            href="/registrace"
+            className="block rounded-md bg-ruzova-syta px-3 py-2 text-center text-xs font-semibold text-white hover:opacity-90"
+          >
+            Založit účet zdarma
+          </Link>
+        </>
+      }
+    />
+  );
+}
+
+export function DemoNavTabBar() {
+  return <TabBar items={DEMO_ITEMS} />;
 }

@@ -108,9 +108,12 @@ function SortableTh({
 export function PositionsExplorer({
   rows,
   showExempt,
+  basePath = '',
 }: {
   rows: ExplorerRow[];
   showExempt: boolean;
+  /** Prefix odkazů na detail pozice ('' pro aplikaci, '/demo' pro demo). */
+  basePath?: string;
 }) {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('value');
@@ -191,6 +194,7 @@ export function PositionsExplorer({
               <PositionCard
                 key={row.isin}
                 isin={row.isin}
+                basePath={basePath}
                 label={row.label}
                 name={row.name}
                 primaryText={row.valueText ?? `${row.qtyText} ks`}
@@ -273,7 +277,7 @@ export function PositionsExplorer({
                   <tr key={row.isin} className="border-t border-linka">
                     <td className="py-2 pr-4">
                       <Link
-                        href={`/portfolio/${row.isin}`}
+                        href={`${basePath}/portfolio/${row.isin}`}
                         className="font-medium text-inkoust hover:text-ruzova"
                       >
                         {row.label}
