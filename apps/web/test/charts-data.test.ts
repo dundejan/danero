@@ -6,7 +6,9 @@ import {
   exemptionOutlook,
   feesByYear,
   flatTax50kSeries,
+  horizonDots,
   limit100kSeries,
+  portfolioAllocation,
 } from '@/lib/charts-data';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
@@ -118,14 +120,32 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
 
   it('flatTax50kSeries: zdanitelné krypto tržby čerpají řadu (konzistence s odměrkou)', () => {
     const cryptoTxs = parseTransactions([
-      { type: 'BUY', id: 'cb', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '100000', currency: 'CZK', tradeDate: '2026-01-10' },
-      { type: 'SELL', id: 'cs', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '150000', currency: 'CZK', tradeDate: '2026-04-01' },
+      {
+        type: 'BUY',
+        id: 'cb',
+        isin: 'BTC',
+        assetClass: 'CRYPTO',
+        quantity: '1',
+        pricePerShare: '100000',
+        currency: 'CZK',
+        tradeDate: '2026-01-10',
+      },
+      {
+        type: 'SELL',
+        id: 'cs',
+        isin: 'BTC',
+        assetClass: 'CRYPTO',
+        quantity: '1',
+        pricePerShare: '150000',
+        currency: 'CZK',
+        tradeDate: '2026-04-01',
+      },
     ]);
     const withCrypto = analyzeTaxYear(engineInputForUser([...TXS, ...cryptoTxs], PROFILE, 2026));
     // 150k > krypto limit 100k → tržba je zdanitelná a MUSÍ být v grafu i odměrce
-    expect(
-      withCrypto.limits.flatTax50k.components.nonExemptCryptoProceedsCzk.toNumber(),
-    ).toBe(150000);
+    expect(withCrypto.limits.flatTax50k.components.nonExemptCryptoProceedsCzk.toNumber()).toBe(
+      150000,
+    );
     const series = flatTax50kSeries(withCrypto)!;
     const last = series.points[series.points.length - 1]!;
     expect(last.value).toBeCloseTo(series.usedCzk, 6);
@@ -170,6 +190,96 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     expect(last.exemptShare).toBe(100);
     // AAPL kusy z 2022 už jsou osvobozené → startovní podíl > 0
     expect(outlook!.points[0]!.exemptShare).toBeGreaterThan(0);
+  });
+
+  it('horizonDots: jedna tečka = měsíc, rozpad po pozicích řazený vahou sestupně', () => {
+    // dvě pozice se stejným měsícem osvobození → dřív dvě překrývající se
+    // tečky, teď jedna s rozpadem v items
+    const txs = parseTransactions([
+      {
+        type: 'BUY',
+        id: 'h1',
+        isin: 'US0000000001',
+        ticker: 'AAA',
+        quantity: '10',
+        pricePerShare: '10',
+        currency: 'USD',
+        tradeDate: '2025-03-05',
+        settlementDate: '2025-03-07',
+      },
+      {
+        type: 'BUY',
+        id: 'h2',
+        isin: 'US0000000002',
+        ticker: 'BBB',
+        quantity: '30',
+        pricePerShare: '10',
+        currency: 'USD',
+        tradeDate: '2025-03-20',
+        settlementDate: '2025-03-22',
+      },
+    ]);
+    const res = analyzeTaxYear(engineInputForUser(txs, PROFILE, 2026));
+    const positions = positionsAt(res.ledger, '2026-09-01');
+    const labels = new Map([
+      ['US0000000001', 'AAA'],
+      ['US0000000002', 'BBB'],
+    ]);
+    const dots = horizonDots(positions, labels, new Map(), 2026);
+
+    expect(dots).toHaveLength(1);
+    const dot = dots[0]!;
+    expect(dot.exemptFrom).toBe('2028-03');
+    expect(dot.isExempt).toBe(false);
+    expect(dot.weightBasis).toBe('quantity');
+    expect(dot.weight).toBe(40); // součet vah měsíce (kusy)
+    expect(dot.items.map((item) => item.label)).toEqual(['BBB', 'AAA']); // podle váhy sestupně
+    expect(dot.items.map((item) => item.quantity)).toEqual([30, 10]);
+  });
+
+  it('horizonDots: osvobozené a čekající loty se neslučují do jedné tečky', () => {
+    const positions = positionsAt(result.ledger, '2026-09-01');
+    const labels = new Map([
+      ['US0378331005', 'AAPL'],
+      ['IE00B4L5Y983', 'IWDA'],
+    ]);
+    const dots = horizonDots(positions, labels, new Map(), 2026);
+    // AAPL (nákup 2022) už osvobozený, IWDA (nákup 2025) čeká na 2028
+    expect(dots.map((dot) => dot.isExempt)).toEqual([true, false]);
+    expect(dots[0]!.items[0]!.label).toBe('AAPL');
+    expect(dots[1]!.exemptFrom).toBe('2028-02');
+    expect(dots[1]!.items[0]!.label).toBe('IWDA');
+  });
+
+  it('portfolioAllocation: všechny oceněné pozice sestupně, podíly dají 100 %', () => {
+    const positions = positionsAt(result.ledger, '2026-09-01');
+    const prices = new Map<string, InstrumentPrice>([
+      [
+        'US0378331005',
+        { price: d('220'), currency: 'USD', source: 'trading212', asOf: new Date() },
+      ],
+      [
+        'IE00B4L5Y983',
+        { price: d('100'), currency: 'USD', source: 'trading212', asOf: new Date() },
+      ],
+    ]);
+    const labels = new Map([
+      ['US0378331005', 'AAPL'],
+      ['IE00B4L5Y983', 'IWDA'],
+    ]);
+    const valuation = valuePositions(positions, labels, new Map(), prices, 2026);
+    const allocation = portfolioAllocation(valuation)!;
+
+    expect(allocation.slices.map((slice) => slice.label)).toEqual(['AAPL', 'IWDA']);
+    // 50 × 220 = 11000 USD vs. 50 × 100 = 5000 USD (kurz se v podílu krátí)
+    expect(allocation.slices[0]!.share).toBeCloseTo(68.75, 2);
+    expect(allocation.slices[1]!.share).toBeCloseTo(31.25, 2);
+    expect(allocation.totalCzk).toBeCloseTo((11000 + 5000) * 20.8, 0);
+
+    // bez cen poctivě null — graf má prázdný stav
+    expect(
+      portfolioAllocation(valuePositions(positions, labels, new Map(), new Map(), 2026)),
+    ).toBeNull();
   });
 
   it('valuePositions: hodnota, CZK přepočet a nerealizovaný P/L', () => {

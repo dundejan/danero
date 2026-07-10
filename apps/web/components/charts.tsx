@@ -113,10 +113,10 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
   const year = Number(series.points[0]?.date.slice(0, 4));
   const lastValue = series.points[series.points.length - 1]?.value ?? 0;
   // řadu dovedeme do konce roku, ať čára nekončí v půlce plátna
-  const points = [
-    ...series.points,
-    { date: `${year}-12-31`, value: lastValue },
-  ].map((point) => ({ ...point, t: toMs(point.date) }));
+  const points = [...series.points, { date: `${year}-12-31`, value: lastValue }].map((point) => ({
+    ...point,
+    t: toMs(point.date),
+  }));
   // kulaté ticky; 1,05× nad limitem/maximem, ať referenční čára nelepí na strop
   const yScale = niceTicks(Math.max(series.limitCzk, series.usedCzk) * 1.05);
   const monthTicks = Array.from({ length: 12 }, (_, m) => Date.UTC(year, m, 1));
@@ -391,45 +391,106 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
   );
 }
 
-/* ── Alokace portfolia (donut) ──────────────────────────────────────────── */
+/* ── Alokace portfolia (velký koláč všech pozic) ────────────────────────── */
 
-export function AllocationDonut({ allocation }: { allocation: PortfolioAllocation }) {
-  // top 4 = kategorické sloty --graf-1..4, „Ostatní" = tlumený inkoust
+const RADIAN = Math.PI / 180;
+
+/** Rozšířená paleta pro koláč (--graf-5..8 zatím jen tady, série grafů dál 1–4). */
+const PIE_SERIES = [...SERIES, 'var(--graf-5)', 'var(--graf-6)', 'var(--graf-7)', 'var(--graf-8)'];
+
+/** Přímý popisek výseče: ticker těsně za vnějším okrajem, jen pro podíl ≥ 3 %
+    — inkoust na ploše karty drží kontrast v obou režimech. */
+function pieSliceLabel(props: {
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  outerRadius?: number;
+  payload?: { label: string; share: number };
+}) {
+  const { cx, cy, midAngle, outerRadius, payload } = props;
+  if (
+    cx === undefined ||
+    cy === undefined ||
+    midAngle === undefined ||
+    outerRadius === undefined ||
+    !payload ||
+    payload.share < 3
+  ) {
+    return null;
+  }
+  const r = outerRadius + 10;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  return (
+    <text
+      x={x}
+      y={cy + r * Math.sin(-midAngle * RADIAN)}
+      textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central"
+      fill="var(--inkoust)"
+      fontSize={11}
+      fontFamily="var(--font-mono)"
+    >
+      {payload.label}
+    </text>
+  );
+}
+
+export function AllocationPie({ allocation }: { allocation: PortfolioAllocation }) {
+  // Kategorické střídání --graf-1..8 podle pořadí (index mod 8) — barva jen
+  // odděluje sousední výseče, identitu nese přímý popisek a tooltip. Paleta
+  // validována dataviz skriptem vč. wrap-around páru 8↔1.
+  const count = allocation.slices.length;
+  const fillFor = (index: number): string => {
+    // wrap-around: při n mod 8 == 1 by poslední výseč měla barvu první —
+    // dostane místo ní graf-3 (odlišná i od předchozí graf-8)
+    if (count > PIE_SERIES.length && index === count - 1 && count % PIE_SERIES.length === 1) {
+      return PIE_SERIES[2]!;
+    }
+    return PIE_SERIES[index % PIE_SERIES.length]!;
+  };
   const data = allocation.slices.map((slice, index) => ({
     ...slice,
-    fill: slice.isOther ? 'var(--inkoust-tlumeny)' : SERIES[index % SERIES.length],
+    fill: fillFor(index),
   }));
-  const pct = (value: number): string =>
-    `${((value / allocation.totalCzk) * 100).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
+  const pct = (share: number): string =>
+    `${share.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
 
   return (
     <div>
       <div className="relative">
-        <ResponsiveContainer width="100%" height={200}>
-          <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <PieChart margin={{ top: 16, right: 16, bottom: 16, left: 16 }}>
             <Pie
               data={data}
               dataKey="valueCzk"
               nameKey="label"
-              innerRadius="62%"
-              outerRadius="92%"
-              paddingAngle={1}
+              innerRadius="55%"
+              outerRadius="85%"
+              paddingAngle={0.5}
               stroke="var(--plocha)"
               strokeWidth={2}
               isAnimationActive={false}
+              label={pieSliceLabel}
+              labelLine={false}
             />
             <Tooltip
               content={({ active, payload }) =>
                 active && payload?.[0] ? (
                   <TooltipBox
-                    title={String(payload[0].name)}
+                    title={(() => {
+                      const slice = payload[0].payload as { label: string; name?: string };
+                      return slice.name ? `${slice.label} — ${slice.name}` : slice.label;
+                    })()}
                     rows={[
                       {
                         name: 'Hodnota',
                         value: czkCompact(Number(payload[0].value)),
                         color: String((payload[0].payload as { fill: string }).fill),
                       },
-                      { name: 'Podíl', value: pct(Number(payload[0].value)) },
+                      {
+                        name: 'Podíl',
+                        value: pct((payload[0].payload as { share: number }).share),
+                      },
                     ]}
                   />
                 ) : null
@@ -437,7 +498,7 @@ export function AllocationDonut({ allocation }: { allocation: PortfolioAllocatio
             />
           </PieChart>
         </ResponsiveContainer>
-        {/* uprostřed donutu celková hodnota — text nenese barvu série */}
+        {/* uprostřed koláče celková hodnota — text nenese barvu série */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
           <span className="text-[10px] uppercase tracking-wide text-inkoust-tlumeny">celkem</span>
           <span className="font-mono text-sm font-semibold text-inkoust">
@@ -445,20 +506,10 @@ export function AllocationDonut({ allocation }: { allocation: PortfolioAllocatio
           </span>
         </div>
       </div>
-      <ul className="mt-3 space-y-1 text-xs">
-        {data.map((slice) => (
-          <li key={slice.label} className="flex items-center gap-2">
-            <span
-              className="inline-block size-2 shrink-0 rounded-full"
-              style={{ background: slice.fill }}
-            />
-            <span className="truncate text-inkoust">{slice.label}</span>
-            <span className="ml-auto pl-2 font-mono text-inkoust-tlumeny">
-              {pct(slice.valueCzk)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <p className="mt-2 text-xs text-inkoust-tlumeny">
+        Barvy jen odlišují sousední výseče — pořadí je podle hodnoty. Pozice bez ceny od brokera v
+        grafu nejsou.
+      </p>
     </div>
   );
 }

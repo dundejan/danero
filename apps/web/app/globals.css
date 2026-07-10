@@ -21,6 +21,13 @@
   --graf-2: #3b5bdb;
   --graf-3: #0ca678;
   --graf-4: #7048e8;
+  /* Rozšíření palety 5–8 (koláč alokace, kde jsou 4 sloty málo) — validováno
+     dataviz skriptem vč. wrap-around páru 8↔1; hodnoty se semaforem nekolidují
+     (žádná jantarová/oranžová/červená). */
+  --graf-5: #1098ad;
+  --graf-6: #ae3ec9;
+  --graf-7: #5c940d;
+  --graf-8: #1c7ed6;
   /* Syté výplně pro CTA/danger s bílým textem — v dark módu NEsmí zesvětlat
      (světlé odstíny --ruzova/--cervena tam slouží textu, bílá by na nich
      neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
@@ -44,6 +51,10 @@
   --graf-2: #5c7cfa;
   --graf-3: #0ca678;
   --graf-4: #845ef7;
+  --graf-5: #1098ad;
+  --graf-6: #be4bdb;
+  --graf-7: #66a80f;
+  --graf-8: #339af0;
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
 }
@@ -65,6 +76,10 @@
   --color-graf-2: var(--graf-2);
   --color-graf-3: var(--graf-3);
   --color-graf-4: var(--graf-4);
+  --color-graf-5: var(--graf-5);
+  --color-graf-6: var(--graf-6);
+  --color-graf-7: var(--graf-7);
+  --color-graf-8: var(--graf-8);
 
   --font-display: var(--font-bricolage), system-ui, sans-serif;
   --font-sans: var(--font-hanken), system-ui, sans-serif;

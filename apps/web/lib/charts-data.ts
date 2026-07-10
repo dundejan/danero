@@ -166,7 +166,11 @@ export function feesByYear(txs: Transaction[]): { bars: YearBar[]; skippedCurren
   const add = (date: string, amount: Money, currency: string) => {
     const year = Number(date.slice(0, 4));
     const rate =
-      currency === 'CZK' ? d(1) : UNIFIED_RATES[year]?.[currency] ? d(UNIFIED_RATES[year]![currency]!) : null;
+      currency === 'CZK'
+        ? d(1)
+        : UNIFIED_RATES[year]?.[currency]
+          ? d(UNIFIED_RATES[year]![currency]!)
+          : null;
     if (!rate) {
       // kurz chybí pro konkrétní ROK (např. historie před 2020) — vykázat přesně
       skipped.add(`${currency} ${year}`);
@@ -193,10 +197,12 @@ export function feesByYear(txs: Transaction[]): { bars: YearBar[]; skippedCurren
 }
 
 export interface AllocationSlice {
+  isin: string;
   label: string;
+  name?: string;
   valueCzk: number;
-  /** Sloučený zbytek mimo top 4 — v grafu dostává tlumenou barvu. */
-  isOther: boolean;
+  /** Podíl na oceněné hodnotě portfolia v % (0–100). */
+  share: number;
 }
 
 export interface PortfolioAllocation {
@@ -204,39 +210,40 @@ export interface PortfolioAllocation {
   totalCzk: number;
 }
 
-/** Alokace portfolia pro donut: top 4 oceněné pozice + „Ostatní" (H4). */
+/** Alokace portfolia pro koláč: VŠECHNY oceněné pozice, sestupně podle hodnoty. */
 export function portfolioAllocation(valuation: PortfolioValuation): PortfolioAllocation | null {
   // rows jsou už seřazené podle hodnoty sestupně; bereme jen oceněné
   const priced = valuation.rows.filter((row) => row.valueCzk?.gt(0));
   if (priced.length === 0 || valuation.totalCzk.lte(0)) return null;
 
-  const top = priced.slice(0, 4);
-  const rest = priced.slice(4);
-  const slices: AllocationSlice[] = top.map((row) => ({
+  // Decimal až do konce, num() jen na finálním výstupu pro recharts
+  const slices: AllocationSlice[] = priced.map((row) => ({
+    isin: row.isin,
     label: row.label,
+    name: row.name,
     valueCzk: num(row.valueCzk!),
-    isOther: false,
+    share: num(row.valueCzk!.div(valuation.totalCzk).mul(100)),
   }));
-  if (rest.length > 0) {
-    slices.push({
-      label: OTHER,
-      valueCzk: num(rest.reduce((sum, row) => sum.plus(row.valueCzk!), ZERO)),
-      isOther: true,
-    });
-  }
   return { slices, totalCzk: num(valuation.totalCzk) };
 }
 
-export interface HorizonDot {
+export interface HorizonDotItem {
   isin: string;
   label: string;
-  /** Měsíc osvobození 'YYYY-MM' (seskupení lotů). */
-  exemptFrom: string;
   quantity: number;
-  /** Váha pro velikost tečky: hodnota v CZK, když známe ceny všech pozic, jinak kusy. */
+  /** Příspěvek pozice k váze měsíce (CZK, nebo kusy — dle weightBasis tečky). */
+  weight: number;
+}
+
+export interface HorizonDot {
+  /** Měsíc osvobození 'YYYY-MM' — jedna tečka = jeden měsíc. */
+  exemptFrom: string;
+  /** Váha pro velikost tečky: součet hodnot v CZK (známe-li ceny všech pozic), jinak kusů. */
   weight: number;
   weightBasis: 'value' | 'quantity';
   isExempt: boolean;
+  /** Rozpad měsíce po pozicích, seřazený podle váhy sestupně (pro tooltip). */
+  items: HorizonDotItem[];
 }
 
 /** Cena za kus v CZK (jednotný kurz roku); null = cena nebo kurz chybí. */
@@ -264,7 +271,11 @@ function weightBasisFor(
   return allPriced ? 'value' : 'quantity';
 }
 
-/** Tečky horizontu osvobození (v2): velikost dle hodnoty, klik vede na detail. */
+/**
+ * Tečky horizontu osvobození (v3): jedna tečka = MĚSÍC (a stav osvobození),
+ * velikost dle celkové váhy měsíce; rozpad po pozicích nese tooltip. Per-pozice
+ * tečky se dřív ve stejném měsíci překrývaly a hover ukázal jen vrchní.
+ */
 export function horizonDots(
   positions: Position[],
   labels: Map<string, string>,
@@ -274,42 +285,52 @@ export function horizonDots(
   const basis = weightBasisFor(positions, prices, fxYear);
 
   // agregace Decimalem, na number až na konci (peníze nikdy floatem)
-  const groups = new Map<
+  const months = new Map<
     string,
-    { isin: string; exemptFrom: string; quantity: Money; weight: Money; isExempt: boolean }
+    {
+      exemptFrom: string;
+      isExempt: boolean;
+      weight: Money;
+      byIsin: Map<string, { quantity: Money; weight: Money }>;
+    }
   >();
   for (const position of positions) {
     const priceCzk = pricePerShareCzk(position.isin, prices, fxYear);
     for (const lot of position.lots) {
       const month = lot.exemptFrom.slice(0, 7);
-      const key = `${position.isin}|${month}`;
-      const weight =
-        basis === 'value' && priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
-      const existing = groups.get(key);
-      if (existing) {
-        existing.quantity = existing.quantity.plus(lot.remaining);
-        existing.weight = existing.weight.plus(weight);
-        existing.isExempt = existing.isExempt || lot.isExempt;
+      // osvobozené a čekající loty zvlášť — na hraně „dneška" uvnitř měsíce
+      // nesmí zelená tečka slibovat osvobození kusům, které ho ještě nemají
+      const key = `${month}|${lot.isExempt ? 'e' : 'p'}`;
+      const weight = basis === 'value' && priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
+      let group = months.get(key);
+      if (!group) {
+        group = { exemptFrom: month, isExempt: lot.isExempt, weight: ZERO, byIsin: new Map() };
+        months.set(key, group);
+      }
+      group.weight = group.weight.plus(weight);
+      const item = group.byIsin.get(position.isin);
+      if (item) {
+        item.quantity = item.quantity.plus(lot.remaining);
+        item.weight = item.weight.plus(weight);
       } else {
-        groups.set(key, {
-          isin: position.isin,
-          exemptFrom: month,
-          quantity: lot.remaining,
-          weight,
-          isExempt: lot.isExempt,
-        });
+        group.byIsin.set(position.isin, { quantity: lot.remaining, weight });
       }
     }
   }
-  return [...groups.values()]
+  return [...months.values()]
     .map((group) => ({
-      isin: group.isin,
-      label: labels.get(group.isin) ?? group.isin,
       exemptFrom: group.exemptFrom,
-      quantity: num(group.quantity),
       weight: num(group.weight),
       weightBasis: basis,
       isExempt: group.isExempt,
+      items: [...group.byIsin.entries()]
+        .sort((a, b) => b[1].weight.comparedTo(a[1].weight))
+        .map(([isin, item]) => ({
+          isin,
+          label: labels.get(isin) ?? isin,
+          quantity: num(item.quantity),
+          weight: num(item.weight),
+        })),
     }))
     .sort((a, b) => a.exemptFrom.localeCompare(b.exemptFrom));
 }
@@ -337,9 +358,7 @@ export function exemptionOutlook(
   today: string,
   fxYear: number,
 ): ExemptionOutlook | null {
-  const lots = positions.flatMap((position) =>
-    position.lots.map((lot) => ({ position, lot })),
-  );
+  const lots = positions.flatMap((position) => position.lots.map((lot) => ({ position, lot })));
   if (lots.length === 0) return null;
 
   const basis = weightBasisFor(positions, prices, fxYear);

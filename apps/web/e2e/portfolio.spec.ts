@@ -23,11 +23,17 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   await expect(page.getByText('Čerpání limitu 100 000 Kč v průběhu roku')).toBeVisible();
   await expect(page.getByText('Horizont osvobození')).toBeVisible();
   await page.getByRole('button', { name: 'vše' }).click();
-  await page.screenshot({ path: 'test-results/screenshots/prehled-desktop-light.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/screenshots/prehled-desktop-light.png',
+    fullPage: true,
+  });
 
   // dark mode (next-themes: system) — emulace prefers-color-scheme
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.screenshot({ path: 'test-results/screenshots/prehled-desktop-dark.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/screenshots/prehled-desktop-dark.png',
+    fullPage: true,
+  });
   await page.emulateMedia({ colorScheme: 'light' });
 
   // mobil: obsah se vejde bez horizontálního scrollu stránky
@@ -39,23 +45,31 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   expect(overflow).toBeLessThanOrEqual(1);
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  // ── /portfolio: čestný stav bez cen + tabulka pozic ─────────────────────
+  // ── /portfolio: čestný stav bez cen, 4 KPI karty, grafy vidět rovnou ────
   await page.goto('/portfolio');
   await expect(page.getByRole('heading', { name: 'Portfolio' })).toBeVisible();
   await expect(page.getByText('Bez cen — ceny bereme jen z připojených brokerů')).toBeVisible();
   await expect(page.getByText('Bez daně už dnes')).toBeVisible();
-  // H4: grafy žijí v tabu „Grafy" (default je tabulka pozic).
+  await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
+  // grafy už nejsou schované v tabu — jsou vidět bez kliku
+  await expect(page.getByText('Osvobozování portfolia v čase')).toBeVisible();
+  await expect(page.getByText('Realizovaný zisk/ztráta po letech')).toBeVisible();
+
+  // Alokace (koláč) žije v sekci Pozice pod přepínačem Tabulka | Graf —
+  // bez cen od brokera ukáže poctivý prázdný stav.
   // Retry-klik: tlačítko je v server-HTML dřív, než React připojí handler —
   // jediný klik by na pomalém CI mohl dopadnout do nehydratovaného DOMu.
   await expect(async () => {
-    await page.getByRole('button', { name: 'Grafy' }).click();
-    await expect(page.getByText('Osvobozování portfolia v čase')).toBeVisible({ timeout: 1500 });
+    await page.getByRole('button', { name: 'Graf', exact: true }).click();
+    await expect(page.getByText('Bez cen od brokera graf nesestavíme')).toBeVisible({
+      timeout: 1500,
+    });
   }).toPass();
   await page.screenshot({ path: 'test-results/screenshots/portfolio-desktop.png', fullPage: true });
 
   // ── detail pozice: loty, časové testy, odkaz do simulátoru ──────────────
   await expect(async () => {
-    await page.getByRole('button', { name: 'Pozice', exact: true }).click();
+    await page.getByRole('button', { name: 'Tabulka' }).click();
     await expect(page.getByRole('link', { name: 'AAPL' }).first()).toBeVisible({ timeout: 1500 });
   }).toPass();
   await page.getByRole('link', { name: 'AAPL' }).first().click();

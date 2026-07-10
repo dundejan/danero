@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Card, CardTitle } from '@/components/ui/card';
 import {
-  AllocationDonut,
+  AllocationPie,
   DividendsByMonthChart,
   ExemptionOutlookChart,
   FeesByYearChart,
@@ -118,6 +118,17 @@ export default async function PortfolioPage({
     }),
   );
 
+  // KPI „Nejbližší osvobození": minimum přes všechny pozice s nesplněným testem
+  let nextExemption: { isin: string; exemptFrom: string } | null = null;
+  for (const [isin, exemptFrom] of nearestExemption) {
+    if (exemptFrom && (!nextExemption || exemptFrom < nextExemption.exemptFrom)) {
+      nextExemption = { isin, exemptFrom };
+    }
+  }
+  const daysToNextExemption = nextExemption
+    ? Math.ceil((Date.parse(nextExemption.exemptFrom) - Date.parse(today)) / 86_400_000)
+    : null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -130,12 +141,7 @@ export default async function PortfolioPage({
         <YearSwitcher years={years} active={year} hrefBase="/portfolio" />
       </header>
 
-      <section
-        className={cn(
-          'grid gap-4',
-          allocation ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3',
-        )}
-      >
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardTitle>Hodnota portfolia</CardTitle>
           {valuation.pricedCount > 0 ? (
@@ -183,26 +189,45 @@ export default async function PortfolioPage({
             Brutto před srážkou, přepočet kurzem pro přiznání.
           </p>
         </Card>
-        {allocation && (
-          <Card>
-            <CardTitle>Alokace portfolia</CardTitle>
-            <AllocationDonut allocation={allocation} />
-          </Card>
-        )}
+        <Card>
+          <CardTitle>Nejbližší osvobození</CardTitle>
+          {nextExemption && daysToNextExemption !== null ? (
+            <>
+              <p className="mt-2 font-display text-3xl font-bold">
+                {czDate(nextExemption.exemptFrom)}
+              </p>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                {labels.get(nextExemption.isin) ?? nextExemption.isin} — za {daysToNextExemption}{' '}
+                {plural(daysToNextExemption, 'den', 'dny', 'dní')} doběhne 3letý test, prodej pak
+                bude bez daně.
+              </p>
+            </>
+          ) : positions.length > 0 ? (
+            <>
+              <p className="mt-2 font-display text-3xl font-bold text-zelena">vše bez daně</p>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Všechny držené kusy už mají splněný časový test.
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 font-display text-3xl font-bold">—</p>
+          )}
+        </Card>
       </section>
 
-      {/* H4: taby „Pozice | Grafy" — grafy už nejsou tisíce pixelů pod tabulkou */}
-      <ViewSwitch
-        ariaLabel="Pohled na portfolio"
-        defaultKey="pozice"
-        views={[
-          {
-            key: 'pozice',
-            label: 'Pozice',
-            content: (
-              <div className="space-y-8">
-                <Card className="space-y-2">
-                  <CardTitle>Pozice</CardTitle>
+      {/* Pozice: tabulka a koláč alokace jsou dvě zobrazení téže informace —
+          jednotný nadpis a přepínač pohledu (default tabulka) */}
+      <Card>
+        <ViewSwitch
+          title="Pozice"
+          ariaLabel="Pohled na pozice"
+          defaultKey="tabulka"
+          views={[
+            {
+              key: 'tabulka',
+              label: 'Tabulka',
+              content: (
+                <div className="space-y-2">
                   {valuation.unpricedCount > 0 && valuation.pricedCount > 0 && (
                     <p className="text-xs text-jantar">
                       U {valuation.unpricedCount}{' '}
@@ -312,97 +337,108 @@ export default async function PortfolioPage({
                   {valuation.rows.length === 0 && (
                     <p className="text-sm text-inkoust-tlumeny">Žádné otevřené pozice.</p>
                   )}
-                </Card>
+                </div>
+              ),
+            },
+            {
+              key: 'graf',
+              label: 'Graf',
+              content: allocation ? (
+                <AllocationPie allocation={allocation} />
+              ) : (
+                // poctivý prázdný stav — bez cen od brokera koláč nesestavíme
+                <p className="text-sm text-inkoust-tlumeny">
+                  Bez cen od brokera graf nesestavíme — připoj API v{' '}
+                  <Link href="/nastaveni" className="font-medium text-ruzova">
+                    Nastavení
+                  </Link>
+                  .
+                </p>
+              ),
+            },
+          ]}
+        />
+      </Card>
 
-                {result.derivatives.openPositions.length > 0 && (
-                  <Card className="space-y-2">
-                    <CardTitle>Otevřené derivátové pozice</CardTitle>
-                    <p className="text-xs text-inkoust-tlumeny">
-                      Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní
-                      vždy, bez ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short)
-                      pozice.
-                    </p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                            <th className="py-2 pr-4">Instrument</th>
-                            <th className="py-2 pr-4 text-right">Kontraktů</th>
-                            <th className="py-2 text-right">Otevřeno</th>
-                          </tr>
-                        </thead>
-                        <tbody className="font-mono">
-                          {result.derivatives.openPositions.map((position) => (
-                            <tr key={position.isin} className="border-t border-linka">
-                              <td className="py-2 pr-4 font-sans font-medium">
-                                {labels.get(position.isin) ?? position.isin}
-                              </td>
-                              <td
-                                className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar' : ''}`}
-                              >
-                                {qty(position.quantity)}
-                              </td>
-                              <td className="py-2 text-right">{czDate(position.openedAt)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
-                )}
-              </div>
-            ),
-          },
-          {
-            key: 'grafy',
-            label: 'Grafy',
-            content: (
-              <section className="grid gap-4 lg:grid-cols-2">
-                {outlook && outlook.points.length > 1 && (
-                  <Card>
-                    <CardTitle>Osvobozování portfolia v čase</CardTitle>
-                    <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                      Výhled: kolik % portfolia ({outlook.basis === 'value' ? 'hodnoty' : 'kusů'})
-                      půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.
-                    </p>
-                    <ExemptionOutlookChart outlook={outlook} />
-                  </Card>
-                )}
-                {dividends.totalCzk > 0 && (
-                  <Card>
-                    <CardTitle>Dividendy {year} po měsících a státech</CardTitle>
-                    <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                      Brutto v Kč; podle státu, kde byla dividenda zdaněna u zdroje (srážková daň).
-                    </p>
-                    <DividendsByMonthChart data={dividends} />
-                  </Card>
-                )}
-                {realized.some((bar) => bar.valueCzk !== 0) && (
-                  <Card>
-                    <CardTitle>Realizovaný zisk/ztráta po letech</CardTitle>
-                    <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                      Skutečný výsledek prodejů (tržby − náklady vč. poplatků) — bez ohledu na to,
-                      jestli byly daňově osvobozené.
-                    </p>
-                    <RealizedByYearChart bars={realized} />
-                  </Card>
-                )}
-                {fees.bars.length > 0 && (
-                  <Card>
-                    <CardTitle>Poplatky brokerům po letech</CardTitle>
-                    <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-                      Obchodní i účetní poplatky, orientační přepočet jednotnými kurzy.
-                      {fees.skippedCurrencies.length > 0 &&
-                        ` Bez kurzu: ${fees.skippedCurrencies.join(', ')} (nezapočteno).`}
-                    </p>
-                    <FeesByYearChart bars={fees.bars} />
-                  </Card>
-                )}
-              </section>
-            ),
-          },
-        ]}
-      />
+      {result.derivatives.openPositions.length > 0 && (
+        <Card className="space-y-2">
+          <CardTitle>Otevřené derivátové pozice</CardTitle>
+          <p className="text-xs text-inkoust-tlumeny">
+            Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy, bez
+            ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                  <th className="py-2 pr-4">Instrument</th>
+                  <th className="py-2 pr-4 text-right">Kontraktů</th>
+                  <th className="py-2 text-right">Otevřeno</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {result.derivatives.openPositions.map((position) => (
+                  <tr key={position.isin} className="border-t border-linka">
+                    <td className="py-2 pr-4 font-sans font-medium">
+                      {labels.get(position.isin) ?? position.isin}
+                    </td>
+                    <td
+                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar' : ''}`}
+                    >
+                      {qty(position.quantity)}
+                    </td>
+                    <td className="py-2 text-right">{czDate(position.openedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* grafy jsou vidět vždy — žádné schovávání do tabu */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        {outlook && outlook.points.length > 1 && (
+          <Card>
+            <CardTitle>Osvobozování portfolia v čase</CardTitle>
+            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+              Výhled: kolik % portfolia ({outlook.basis === 'value' ? 'hodnoty' : 'kusů'}) půjde
+              prodat bez daně, když nic nepřikoupíš ani neprodáš.
+            </p>
+            <ExemptionOutlookChart outlook={outlook} />
+          </Card>
+        )}
+        {dividends.totalCzk > 0 && (
+          <Card>
+            <CardTitle>Dividendy {year} po měsících a státech</CardTitle>
+            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+              Brutto v Kč; podle státu, kde byla dividenda zdaněna u zdroje (srážková daň).
+            </p>
+            <DividendsByMonthChart data={dividends} />
+          </Card>
+        )}
+        {realized.some((bar) => bar.valueCzk !== 0) && (
+          <Card>
+            <CardTitle>Realizovaný zisk/ztráta po letech</CardTitle>
+            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+              Skutečný výsledek prodejů (tržby − náklady vč. poplatků) — bez ohledu na to, jestli
+              byly daňově osvobozené.
+            </p>
+            <RealizedByYearChart bars={realized} />
+          </Card>
+        )}
+        {fees.bars.length > 0 && (
+          <Card>
+            <CardTitle>Poplatky brokerům po letech</CardTitle>
+            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+              Obchodní i účetní poplatky, orientační přepočet jednotnými kurzy.
+              {fees.skippedCurrencies.length > 0 &&
+                ` Bez kurzu: ${fees.skippedCurrencies.join(', ')} (nezapočteno).`}
+            </p>
+            <FeesByYearChart bars={fees.bars} />
+          </Card>
+        )}
+      </section>
 
       <p className="text-xs text-inkoust-tlumeny">
         Popisky instrumentů: {labelsAll.size} známých. Hodnoty jsou orientační a neslouží jako

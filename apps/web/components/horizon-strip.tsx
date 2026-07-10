@@ -1,16 +1,16 @@
 'use client';
 
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ExemptionOutlook, HorizonDot } from '@/lib/charts-data';
 import { MONTH_LABELS, plural, qty } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * Horizont osvobození v2 (docs/07 signatura, G3, vizuál H4): časový pás
- * s tečkami lotů na datu osvobození. Velikost tečky = hodnota (známe-li ceny),
- * jinak kusy; klik vede na detail pozice; hover ukazuje detailní tooltip.
- * Pod osou běží decentní kumulativní plocha „kolik % už bude bez daně".
+ * Horizont osvobození v3 (docs/07 signatura, G3, vizuál H4): časový pás,
+ * jedna tečka = měsíc, kdy doběhne 3letý test dalším kusům. Velikost tečky =
+ * celková hodnota měsíce (známe-li ceny), jinak kusy; hover/focus ukazuje
+ * rozpad po pozicích. Pod osou běží decentní kumulativní plocha „kolik % už
+ * bude bez daně".
  */
 
 const RANGES = [
@@ -40,9 +40,17 @@ const monthLabel = (month: string): string => {
 const czkCompact = (value: number): string =>
   new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value) + ' Kč';
 
+/** Celková váha tečky jako text: CZK, nebo počet kusů (weight = součet kusů). */
+const totalText = (dot: HorizonDot): string =>
+  dot.weightBasis === 'value' ? czkCompact(dot.weight) : `${qty(dot.weight)} ks`;
+
+/** Max řádků rozpadu v tooltipu — víc pozic shrne „+ dalších N". */
+const TIP_MAX_ITEMS = 8;
+
 const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
 
 interface Tip {
+  /** Pozice v pixelech vůči vnějšímu wrapperu (mimo overflow kontejner). */
   x: number;
   y: number;
   dot: HorizonDot;
@@ -63,6 +71,7 @@ export function HorizonStrip({
 }) {
   const [range, setRange] = useState<RangeKey>('3r');
   const [tip, setTip] = useState<Tip | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const view = useMemo(() => {
     if (dots.length === 0) return null;
@@ -136,12 +145,12 @@ export function HorizonStrip({
   }, [dots, today, range, outlook]);
 
   if (!view) return null;
-  const basis = dots[0]?.weightBasis === 'value' ? 'hodnotě' : 'počtu kusů';
+  const basis = dots[0]?.weightBasis === 'value' ? 'celkové hodnoty' : 'celkového počtu kusů';
 
   const description = (
     <p className="max-w-[62ch] text-xs text-inkoust-tlumeny">
-      Každá tečka = kusy jedné pozice a měsíce, kdy jim doběhne 3letý test. Velikost podle {basis};
-      kliknutím otevřeš detail pozice.
+      Každá tečka = měsíc, kdy doběhne 3letý test dalším kusům; velikost podle {basis}. Najetím
+      zobrazíš rozpad.
       {view.hidden > 0 &&
         ` Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`}
     </p>
@@ -167,12 +176,18 @@ export function HorizonStrip({
     </div>
   );
 
-  const tipFor = (dot: HorizonDot, cx: number, r: number): Tip => ({
-    // tooltip ukotvíme nad tečku; u krajů ho držíme uvnitř plátna
-    x: Math.min(880, Math.max(120, cx)),
-    y: AXIS_Y - r - 4,
-    dot,
-  });
+  // tooltip kotvíme v pixelech z geometrie tečky (bounding rect) vůči vnějšímu
+  // wrapperu — žije mimo overflow-x kontejner, který by ho svisle ořízl
+  const showTip = (dot: HorizonDot) => (event: { currentTarget: SVGCircleElement }) => {
+    const wrapRect = wrapRef.current?.getBoundingClientRect();
+    if (!wrapRect) return;
+    const dotRect = event.currentTarget.getBoundingClientRect();
+    setTip({
+      x: dotRect.left + dotRect.width / 2 - wrapRect.left,
+      y: dotRect.top - wrapRect.top - 6,
+      dot,
+    });
+  };
 
   // legenda jen pro stavy, které v datech opravdu jsou (žádné „osvobozené"
   // bez jediné zelené tečky)
@@ -183,154 +198,167 @@ export function HorizonStrip({
     <>
       {/* mobil: pás scrolluje uvnitř vlastního wrapperu — tečky a popisky
           zůstanou čitelné a stránka nepřetéká */}
-      <div className="overflow-x-auto">
-        <div className="relative min-w-[640px] md:min-w-0">
-          {/* bez role="img" — tečky jsou odkazy a musí zůstat v accessibility tree */}
-          <svg viewBox="0 0 1000 170" className="mt-3 w-full" aria-label="Horizont osvobození">
-            {/* osa + popisky měsíců/roků */}
-            <line
-              x1={X_MIN}
-              y1={AXIS_Y}
-              x2={X_MAX}
-              y2={AXIS_Y}
-              stroke="var(--linka)"
-              strokeWidth="2"
-            />
-            {view.ticks.map((tick) => (
-              <g key={tick.x}>
-                <line
-                  x1={tick.x}
-                  y1={TICK_TOP}
-                  x2={tick.x}
-                  y2={TICK_BOTTOM}
-                  stroke="var(--linka)"
-                  strokeWidth="1"
-                />
-                <text
-                  x={tick.x}
-                  y={TICK_LABEL_Y}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fill="var(--inkoust-tlumeny)"
-                  fontFamily="var(--font-plex-mono)"
-                  fontWeight={tick.isYear ? 600 : 400}
-                >
-                  {tick.label}
-                </text>
-              </g>
-            ))}
+      <div ref={wrapRef} className="relative">
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px] md:min-w-0">
+            {/* bez role="img" na svg — fokusovatelné tečky musí zůstat v accessibility tree */}
+            <svg viewBox="0 0 1000 170" className="mt-3 w-full" aria-label="Horizont osvobození">
+              {/* osa + popisky měsíců/roků */}
+              <line
+                x1={X_MIN}
+                y1={AXIS_Y}
+                x2={X_MAX}
+                y2={AXIS_Y}
+                stroke="var(--linka)"
+                strokeWidth="2"
+              />
+              {view.ticks.map((tick) => (
+                <g key={tick.x}>
+                  <line
+                    x1={tick.x}
+                    y1={TICK_TOP}
+                    x2={tick.x}
+                    y2={TICK_BOTTOM}
+                    stroke="var(--linka)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={tick.x}
+                    y={TICK_LABEL_Y}
+                    textAnchor="middle"
+                    fontSize="11"
+                    fill="var(--inkoust-tlumeny)"
+                    fontFamily="var(--font-plex-mono)"
+                    fontWeight={tick.isYear ? 600 : 400}
+                  >
+                    {tick.label}
+                  </text>
+                </g>
+              ))}
 
-            {/* dnešek napříč oběma vrstvami */}
-            <line
-              x1={view.todayX}
-              y1="12"
-              x2={view.todayX}
-              y2={OUTLOOK_BASE}
-              stroke="var(--ruzova)"
-              strokeWidth="1.5"
-            />
-            <text
-              x={view.todayX + 6}
-              y="22"
-              fontSize="12"
-              fill="var(--ruzova)"
-              fontFamily="var(--font-plex-mono)"
-            >
-              dnes
-            </text>
+              {/* dnešek napříč oběma vrstvami */}
+              <line
+                x1={view.todayX}
+                y1="12"
+                x2={view.todayX}
+                y2={OUTLOOK_BASE}
+                stroke="var(--ruzova)"
+                strokeWidth="1.5"
+              />
+              <text
+                x={view.todayX + 6}
+                y="22"
+                fontSize="12"
+                fill="var(--ruzova)"
+                fontFamily="var(--font-plex-mono)"
+              >
+                dnes
+              </text>
 
-            {/* mini vrstva: kumulativně „kolik % už bude bez daně" */}
-            {view.outlookPath && (
-              <g>
-                <line
-                  x1={X_MIN}
-                  y1={OUTLOOK_BASE}
-                  x2={X_MAX}
-                  y2={OUTLOOK_BASE}
-                  stroke="var(--linka)"
-                  strokeWidth="1"
-                />
-                <path d={view.outlookPath.area} fill="var(--graf-1)" fillOpacity="0.12" />
-                <path
-                  d={view.outlookPath.line}
-                  fill="none"
-                  stroke="var(--graf-1)"
-                  strokeWidth="1.5"
-                  strokeOpacity="0.8"
-                />
-                <text
-                  x={X_MAX - 4}
-                  y={
-                    OUTLOOK_BASE -
-                    (view.outlookPath.endShare / 100) * (OUTLOOK_BASE - OUTLOOK_TOP) -
-                    5
-                  }
-                  textAnchor="end"
-                  fontSize="10"
-                  fill="var(--inkoust-tlumeny)"
-                  fontFamily="var(--font-plex-mono)"
-                >
-                  {view.outlookPath.endShare.toLocaleString('cs-CZ')} %
-                </text>
-              </g>
-            )}
+              {/* mini vrstva: kumulativně „kolik % už bude bez daně" */}
+              {view.outlookPath && (
+                <g>
+                  <line
+                    x1={X_MIN}
+                    y1={OUTLOOK_BASE}
+                    x2={X_MAX}
+                    y2={OUTLOOK_BASE}
+                    stroke="var(--linka)"
+                    strokeWidth="1"
+                  />
+                  <path d={view.outlookPath.area} fill="var(--graf-1)" fillOpacity="0.12" />
+                  <path
+                    d={view.outlookPath.line}
+                    fill="none"
+                    stroke="var(--graf-1)"
+                    strokeWidth="1.5"
+                    strokeOpacity="0.8"
+                  />
+                  <text
+                    x={X_MAX - 4}
+                    y={
+                      OUTLOOK_BASE -
+                      (view.outlookPath.endShare / 100) * (OUTLOOK_BASE - OUTLOOK_TOP) -
+                      5
+                    }
+                    textAnchor="end"
+                    fontSize="10"
+                    fill="var(--inkoust-tlumeny)"
+                    fontFamily="var(--font-plex-mono)"
+                  >
+                    {view.outlookPath.endShare.toLocaleString('cs-CZ')} %
+                  </text>
+                </g>
+              )}
 
-            {/* tečky lotů */}
-            {view.visible.map((dot, index) => {
-              const cx = view.x(dayNumber(`${dot.exemptFrom}-01`));
-              const r = 5 + Math.sqrt(dot.weight / view.maxWeight) * 8;
-              const label = `${dot.label}: ${qty(dot.quantity)} ks — ${
-                dot.isExempt ? 'už bez daně' : `bez daně od ${monthLabel(dot.exemptFrom)}`
-              }`;
-              return (
-                <Link
-                  key={`${dot.isin}|${dot.exemptFrom}`}
-                  href={`/portfolio/${dot.isin}`}
-                  aria-label={label}
-                  onFocus={() => setTip(tipFor(dot, cx, r))}
-                  onBlur={() => setTip(null)}
-                >
+              {/* tečky měsíců — víc pozic v jedné tečce, proto žádný odkaz na detail;
+                tooltip (hover i focus) nese rozpad po pozicích */}
+              {view.visible.map((dot, index) => {
+                const cx = view.x(dayNumber(`${dot.exemptFrom}-01`));
+                const r = 5 + Math.sqrt(dot.weight / view.maxWeight) * 8;
+                const label = `${monthLabel(dot.exemptFrom)} — celkem ${totalText(dot)}, ${
+                  dot.items.length
+                } ${plural(dot.items.length, 'pozice', 'pozice', 'pozic')}${
+                  dot.isExempt ? ', už bez daně' : ''
+                }`;
+                return (
                   <circle
+                    key={`${dot.exemptFrom}|${dot.isExempt ? 'e' : 'p'}`}
                     cx={cx}
                     cy={AXIS_Y}
                     r={r}
                     fillOpacity="0.9"
                     stroke="var(--plocha)"
                     strokeWidth="1.5"
+                    tabIndex={0}
+                    role="img"
+                    aria-label={label}
                     className={cn(
                       // dark:hover explicitně — samotný hover: by v dark prohrál s dark:fill
-                      'cursor-pointer hover:fill-ruzova dark:hover:fill-ruzova',
+                      'hover:fill-ruzova focus:outline-none focus-visible:fill-ruzova dark:hover:fill-ruzova',
                       // v dark módu čekající tečky světlejší, ať nesplývají s plochou
                       dot.isExempt ? 'fill-zelena' : 'fill-inkoust-tlumeny dark:fill-inkoust',
                     )}
                     style={{ animation: `dot-in 0.3s ease-out ${Math.min(index, 40) * 25}ms both` }}
-                    onMouseEnter={() => setTip(tipFor(dot, cx, r))}
+                    onMouseEnter={showTip(dot)}
                     onMouseLeave={() => setTip(null)}
+                    onFocus={showTip(dot)}
+                    onBlur={() => setTip(null)}
                   />
-                </Link>
-              );
-            })}
-          </svg>
-
-          {/* hover tooltip (H4) — pozice v procentech plátna, drží poměr stran */}
-          {tip && (
-            <div
-              className="pointer-events-none absolute z-10 max-w-[190px] -translate-x-1/2 -translate-y-full rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm"
-              // CSS clamp v pixelech — procentní clamp ve viewBox jednotkách na úzkém
-              // displeji nestačil (tooltip ~180 px přetékal přes okraj kontejneru)
-              style={{ left: `clamp(95px, ${tip.x / 10}%, calc(100% - 95px))`, top: `${(tip.y / 170) * 100}%` }}
-            >
-              <p className="font-semibold text-inkoust">{tip.dot.label}</p>
-              <p className="font-mono text-inkoust-tlumeny">
-                {qty(tip.dot.quantity)} ks
-                {tip.dot.weightBasis === 'value' && ` · ${czkCompact(tip.dot.weight)}`}
-              </p>
-              <p className={tip.dot.isExempt ? 'font-semibold text-zelena' : 'text-inkoust-tlumeny'}>
-                {tip.dot.isExempt ? 'už bez daně' : `bez daně od ${monthLabel(tip.dot.exemptFrom)}`}
-              </p>
-            </div>
-          )}
+                );
+              })}
+            </svg>
+          </div>
         </div>
+
+        {/* hover/focus tooltip — mimo overflow-x kontejner (ten by ho svisle
+            ořízl); u krajů ho pixelový clamp drží uvnitř wrapperu */}
+        {tip && (
+          <div
+            className="pointer-events-none absolute z-10 max-w-[230px] -translate-x-1/2 -translate-y-full rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm"
+            style={{ left: `clamp(115px, ${tip.x}px, calc(100% - 115px))`, top: `${tip.y}px` }}
+          >
+            <p className="font-semibold text-inkoust">
+              {monthLabel(tip.dot.exemptFrom)} — celkem {totalText(tip.dot)}
+            </p>
+            {tip.dot.items.slice(0, TIP_MAX_ITEMS).map((item) => (
+              <p key={item.isin} className="flex items-center gap-2 font-mono text-inkoust-tlumeny">
+                <span className="truncate">{item.label}</span>
+                <span className="ml-auto whitespace-nowrap pl-2 text-inkoust">
+                  {tip.dot.weightBasis === 'value'
+                    ? czkCompact(item.weight)
+                    : `${qty(item.quantity)} ks`}
+                </span>
+              </p>
+            ))}
+            {tip.dot.items.length > TIP_MAX_ITEMS && (
+              <p className="text-inkoust-tlumeny">
+                + {plural(tip.dot.items.length - TIP_MAX_ITEMS, 'další', 'další', 'dalších')}{' '}
+                {tip.dot.items.length - TIP_MAX_ITEMS}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-4 text-xs text-inkoust-tlumeny">
