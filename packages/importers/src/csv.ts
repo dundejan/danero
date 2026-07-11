@@ -7,7 +7,7 @@ export interface CsvTable {
   rows: string[][];
 }
 
-export function parseCsv(text: string): CsvTable {
+export function parseCsv(text: string, delimiter: ',' | ';' | '\t' = ','): CsvTable {
   const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   const rows: string[][] = [];
   let row: string[] = [];
@@ -47,7 +47,7 @@ export function parseCsv(text: string): CsvTable {
       i += 1;
       continue;
     }
-    if (ch === ',') {
+    if (ch === delimiter) {
       pushField();
       i += 1;
       continue;
@@ -94,11 +94,80 @@ export class HeaderMap {
   }
 }
 
+/**
+ * Fiat měny pro klasifikaci krypto↔fiat vs. krypto↔krypto (sdílené krypto
+ * parsery — Kraken, Anycoin…). Měna mimo seznam se bere jako krypto, takže
+ * chybějící fiat kód znamená ZAHOZENÝ obchod s warningem — seznam drž široký.
+ */
+export const FIAT_CURRENCIES = new Set([
+  'CZK', 'EUR', 'USD', 'GBP', 'CHF', 'PLN', 'HUF',
+  'JPY', 'CAD', 'AUD', 'NOK', 'SEK', 'DKK', 'RON', 'BGN', 'TRY', 'NZD', 'SGD', 'HKD',
+]);
+
+/** Dekódování windows-1250 — kódování českých exportů (Fio, Coinmate, banky). */
+export const decodeCp1250 = (data: ArrayBuffer | Uint8Array): string =>
+  new TextDecoder('windows-1250').decode(data);
+
+/** Odstraní diakritiku (porovnávání CZ/DE hlaviček nezávisle na kódování). */
+export const stripDiacritics = (value: string): string =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/** Kanonický tvar hlavičky pro synonyma: trim, lowercase, bez diakritiky. */
+export const normalizeHeader = (value: string): string =>
+  stripDiacritics(value.trim().toLowerCase());
+
 /** Očistí číselný zápis (mezery, tisícové čárky à la "1,234.56"). */
 export function cleanNumber(value: string): string {
   const trimmed = value.replace(/\s/g, '');
   if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed)) return trimmed.replace(/,/g, '');
   return trimmed;
+}
+
+/**
+ * Evropský číselný zápis → kanonický: „1 234,56" i „1.234,56" → „1234.56".
+ * Použij tam, kde formát PROKAZATELNĚ píše desetinnou čárku — na US zápis
+ * s tisícovými čárkami patří cleanNumber.
+ */
+export function cleanNumberEu(value: string): string {
+  let trimmed = value.replace(/[\s\u00a0\u202f]/g, '');
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(trimmed)) trimmed = trimmed.replace(/\./g, '');
+  return trimmed.replace(',', '.');
+}
+
+/**
+ * Datum evropských výpisů → ISO YYYY-MM-DD: „31.12.2025", „31. 12. 2025",
+ * „31/12/2025" i ISO — případný čas za datem se zahodí. POZOR: lomítkový tvar
+ * čte den/měsíc/rok (EU) — na US formáty (mm/dd/yyyy, Schwab) nepatří.
+ * Neexistující dny vrací null — řádek se odmítne s chybou, ne tichým posunem.
+ */
+export function parseEuroDate(value: string): string | null {
+  const trimmed = value.trim();
+  let iso: string | null = null;
+  const eu = trimmed.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})(?![\d.])/);
+  const slash = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?!\d)/);
+  const m = eu ?? slash;
+  if (m) {
+    iso = `${m[3]}-${m[2]!.padStart(2, '0')}-${m[1]!.padStart(2, '0')}`;
+  } else {
+    const isoM = trimmed.match(/^(\d{4}-\d{2}-\d{2})(?!\d)/);
+    if (isoM) iso = isoM[1]!;
+  }
+  return iso !== null && isValidIsoDate(iso) ? iso : null;
+}
+
+/**
+ * US datum MM/DD/YYYY → ISO (měsíc/den! — NIKDY nepoužívat parseEuroDate,
+ * ta čte lomítkový tvar jako den/měsíc). Tvar „07/15/2024 as of 07/12/2024"
+ * (Schwab) znamená „zaúčtováno později, efektivně platí druhý den" — bere se
+ * DRUHÉ datum (skutečný obchodní den). Neexistující kalendářní den → null.
+ */
+export function parseUsDate(value: string): string | null {
+  const trimmed = value.trim();
+  const asOf = /as of\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/i.exec(trimmed);
+  const match = asOf ?? /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?!\d)/.exec(trimmed);
+  if (!match) return null;
+  const iso = `${match[3]}-${match[1]!.padStart(2, '0')}-${match[2]!.padStart(2, '0')}`;
+  return isValidIsoDate(iso) ? iso : null;
 }
 
 /**

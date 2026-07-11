@@ -4,13 +4,14 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label } from '@/components/ui/field';
 import { getDb } from '@/db';
+import { PlatformCatalog } from '@/components/platform-catalog';
 import { brokerAccounts, importBatches } from '@/db/schema';
 import {
   syncStatusLabel,
   type BrokerAccountRow,
   type StoredReconciliation,
 } from '@/lib/broker-sync';
-import { loadAliases } from '@/lib/instrument-aliases';
+import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
@@ -194,7 +195,11 @@ export default async function ImportPage({
   for (const batch of unmappedSource) {
     for (const item of ((batch.issues as BatchIssues).unmapped ?? [])) {
       const known =
-        item.broker === 'xtb' ? aliases.xtb[item.symbol] : aliases.fio[item.symbol];
+        item.broker === 'xtb'
+          ? aliases.xtb[item.symbol]
+          : isIsinOnlyBroker(item.broker)
+            ? aliases.isinOnly[item.broker][item.symbol]
+            : undefined;
       if (!known) unmappedMap.set(`${item.broker}|${item.symbol}`, item);
     }
   }
@@ -212,16 +217,9 @@ export default async function ImportPage({
       <header>
         <h1 className="font-display text-3xl font-bold">Zdroje dat</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Stačí připojit brokera — Danero si stáhne historii samo a pak ji denně
-          aktualizuje. Ruční nahrání souborů je záložní varianta (a cesta pro jiné brokery
-          přes{' '}
-          <a
-            className="font-medium text-ruzova"
-            href="https://github.com/dundejan/danero/blob/main/docs/06-import.md"
-          >
-            univerzální šablonu
-          </a>
-          ).
+          Trading212, Interactive Brokers a Lynx se připojí živě přes API — Danero si
+          stáhne historii samo a denně ji aktualizuje. Z ostatních platforem nahraješ
+          výpis; formát poznáme sami a u každé ti ukážeme, kde přesně ho stáhnout.
         </p>
       </header>
 
@@ -390,7 +388,9 @@ export default async function ImportPage({
               <>
                 <p className="text-sm text-inkoust-tlumeny">
                   Potřebuješ dvě věci: <strong>Flex Query</strong> (říká, co se stahuje) a{' '}
-                  <strong>token</strong> (přístup jen ke čtení výpisů).
+                  <strong>token</strong> (přístup jen ke čtení výpisů). Máš účet u{' '}
+                  <strong>Lynx</strong>? Běží na infrastruktuře IBKR — postup i napojení
+                  jsou úplně stejné.
                 </p>
                 <details className="text-sm text-inkoust-tlumeny">
                   <summary className="cursor-pointer font-medium text-inkoust">
@@ -466,59 +466,25 @@ export default async function ImportPage({
 
       <section className="space-y-3">
         <Card className="space-y-3">
-          <CardTitle>Ruční nahrání výpisů (záložní varianta)</CardTitle>
+          <CardTitle>Nahrání výpisů</CardTitle>
+          <p className="text-sm text-inkoust-tlumeny">
+            Nahraj výpis z kterékoli podporované platformy — formát poznáme automaticky.
+            Opakované nahrání nic nezdvojí, deduplikace funguje i napříč soubory.
+          </p>
           <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <FileField
               name="soubory"
-              ariaLabel="Soubory s výpisy (CSV, XML nebo XLSX)"
-              accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ariaLabel="Soubory s výpisy (CSV, XML, XLSX nebo HTML)"
+              accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.htm,.html,text/html"
               multiple
               required
             />
             <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
           </form>
-          <details className="text-xs text-inkoust-tlumeny">
-            <summary className="cursor-pointer font-medium text-inkoust">
-              Jak získat výpis od brokera (návody)
-            </summary>
-            <ul className="mt-2 space-y-2">
-              <li>
-                <strong className="text-inkoust">Trading212:</strong> History → Export → CSV,
-                zaškrtni všechny kategorie, po jednom roce. (Nebo připoj API — karta výš.)
-              </li>
-              <li>
-                <strong className="text-inkoust">Interactive Brokers:</strong> Flex Query XML
-                (návod u karty Interactive Brokers výš) — pro historii starší než rok vytvoř
-                query s obdobím po letech a stáhni XML ručně.
-              </li>
-              <li>
-                <strong className="text-inkoust">Degiro:</strong> Aktivita → Transakce → Export
-                (CSV) a Aktivita → Výpis účtu → Export (CSV) — nahraj OBA soubory (obchody jsou
-                v Transactions, dividendy a poplatky v Account).
-              </li>
-              <li>
-                <strong className="text-inkoust">XTB:</strong> xStation → Historie účtu → Full
-                report (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu
-                tě požádáme o doplnění (zapamatujeme si je).
-              </li>
-              <li>
-                <strong className="text-inkoust">Fio e-Broker:</strong> Obchody → Export do CSV
-                (po jednom roce). Fio neexportuje ISIN — doplníš ho při importu.
-              </li>
-              <li>
-                <strong className="text-inkoust">Jiný broker:</strong>{' '}
-                <a href="/api/sablona" className="font-medium text-ruzova" download>
-                  stáhni univerzální šablonu
-                </a>{' '}
-                s ukázkovými řádky (umí i korporátní akce a převody se zachováním nabytí)
-                a vyplň ji z výpisu.
-              </li>
-            </ul>
-            <p className="mt-2">
-              Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje
-              i napříč soubory.
-            </p>
-          </details>
+        </Card>
+        <Card className="space-y-4">
+          <CardTitle>Podporované platformy — kde stáhnout výpis</CardTitle>
+          <PlatformCatalog />
         </Card>
       </section>
 

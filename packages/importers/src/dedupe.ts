@@ -91,3 +91,18 @@ export function dedupeTransactions(
   }
   return { fresh, duplicates };
 }
+
+/**
+ * Stabilní id s pořadovým suffixem pro kolidující základy: identické legitimní
+ * řádky (partial fills, opakované obchody v jedné sekundě) dostanou -2, -3…
+ * V rámci stejné množiny záznamů je výsledek stabilní mezi parse-běhy, takže
+ * dedupe napříč překrývajícími se exporty funguje. Sdílené parsery brokerů.
+ */
+export function uniqueIdFactory(): (base: string) => string {
+  const seen = new Map<string, number>();
+  return (base: string): string => {
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    return count === 1 ? base : `${base}-${count}`;
+  };
+}

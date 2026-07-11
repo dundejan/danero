@@ -9,7 +9,7 @@ import { brokerAccounts, importBatches } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
 import { importFile } from '@/lib/import-service';
-import { saveAliases, type AliasInput } from '@/lib/instrument-aliases';
+import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 
@@ -46,7 +46,8 @@ const CURRENCY_RE = /^[A-Z]{3}$/;
  * Po uložení stačí soubor nahrát znovu — deduplikace nic nezdvojí.
  */
 /** Brokeři, pro které číselník dává smysl (XTB chce i měnu instrumentu). */
-const ALIAS_BROKERS = new Set(['xtb', 'fio']);
+// XTB (ISIN+měna) + brokeři s ISIN-only mapou (lib/instrument-aliases)
+const ALIAS_BROKERS = new Set(['xtb', ...ISIN_ONLY_BROKERS]);
 const MAX_ALIAS_ROWS = 200;
 
 export async function saveAliasesAction(formData: FormData): Promise<void> {

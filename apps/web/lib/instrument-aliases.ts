@@ -1,30 +1,47 @@
 import { eq } from 'drizzle-orm';
-import type { XtbInstrumentMap } from '@danero/importers';
+import type { IsinInstrumentMap, XtbInstrumentMap } from '@danero/importers';
 import type { Db } from '@/db';
 import { instrumentAliases } from '@/db/schema';
 
 /**
- * Číselník instrumentů pro brokery bez ISIN/měny v exportu (XTB, Fio).
- * Plní ho uživatel formulářem při importu; další importy ho použijí samy.
+ * Číselník instrumentů pro brokery, jejichž export neuvádí ISIN (a u XTB ani
+ * měnu instrumentu). Plní ho uživatel formulářem při importu; další importy
+ * ho použijí samy.
  */
+
+/** Brokeři s mapou symbol → ISIN (měnu mají ve výpisu, resp. vždy USD). */
+export const ISIN_ONLY_BROKERS = ['fio', 'etoro', 'revolut', 'schwab', 'tastytrade'] as const;
+export type IsinOnlyBroker = (typeof ISIN_ONLY_BROKERS)[number];
+
+export type IsinMap = IsinInstrumentMap;
 
 export interface AliasMaps {
   xtb: XtbInstrumentMap;
-  fio: Record<string, { isin: string }>;
+  isinOnly: Record<IsinOnlyBroker, IsinMap>;
 }
+
+export const isIsinOnlyBroker = (broker: string): broker is IsinOnlyBroker =>
+  (ISIN_ONLY_BROKERS as readonly string[]).includes(broker);
 
 export async function loadAliases(db: Db, userId: string): Promise<AliasMaps> {
   const rows = await db
     .select()
     .from(instrumentAliases)
     .where(eq(instrumentAliases.userId, userId));
-  const maps: AliasMaps = { xtb: {}, fio: {} };
+  // prázdné mapy odvozené ze seznamu — ruční literál by se při přidání
+  // brokera rozjel a spadl až v produkci na undefined[symbol]
+  const maps: AliasMaps = {
+    xtb: {},
+    isinOnly: Object.fromEntries(ISIN_ONLY_BROKERS.map((broker) => [broker, {}])) as Record<
+      IsinOnlyBroker,
+      IsinMap
+    >,
+  };
   for (const row of rows) {
     if (row.broker === 'xtb' && row.currency) {
       maps.xtb[row.symbol] = { isin: row.isin, currency: row.currency };
-    }
-    if (row.broker === 'fio') {
-      maps.fio[row.symbol] = { isin: row.isin };
+    } else if (isIsinOnlyBroker(row.broker)) {
+      maps.isinOnly[row.broker][row.symbol] = { isin: row.isin };
     }
   }
   return maps;

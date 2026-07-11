@@ -1,6 +1,6 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { isValidIsoDate } from '../csv';
-import { fnv1a64 } from '../dedupe';
+import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const DEGIRO_BROKER = 'degiro';
@@ -212,21 +212,6 @@ function readAmountCurrencyPair(row: string[], namedIndex: number): AmountCurren
   return { kind: 'invalid' };
 }
 
-/**
- * Stabilní id: `degiro-<OrderID>`; bez ID (Account.csv, prázdné Order ID)
- * obsahový hash fnv1a64 — NIKDY pořadí řádku v souboru. Opakování stejného
- * základu (partial fills sdílející Order ID, identické legitimní záznamy)
- * rozliší pořadový suffix -2, -3… (vzor contentId v src/ibkr/xml.ts) —
- * v rámci stejné množiny záznamů zůstává stabilní mezi překrývajícími se exporty.
- */
-function idFactory(): (base: string) => string {
-  const seen = new Map<string, number>();
-  return (base: string): string => {
-    const count = (seen.get(base) ?? 0) + 1;
-    seen.set(base, count);
-    return count === 1 ? base : `${base}-${count}`;
-  };
-}
 
 /* ── Autodetekce ─────────────────────────────────────────────────────────── */
 
@@ -292,7 +277,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     return result;
   }
 
-  const nextId = idFactory();
+  const nextId = uniqueIdFactory();
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
@@ -511,7 +496,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     return result;
   }
 
-  const nextId = idFactory();
+  const nextId = uniqueIdFactory();
 
   interface PendingDividend {
     line: number;

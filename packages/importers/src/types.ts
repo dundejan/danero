@@ -24,3 +24,9 @@ export const emptyResult = (broker: string): ImportResult => ({
   skipped: [],
   warnings: [],
 });
+
+/**
+ * Mapa symbol → ISIN pro brokery, jejichž export ISIN neuvádí — plní ji
+ * uživatel číselníkem při importu (vzor XTB; měnu tito brokeři ve výpisu mají).
+ */
+export type IsinInstrumentMap = Record<string, { isin: string }>;

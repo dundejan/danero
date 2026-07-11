@@ -100,9 +100,10 @@ export default async function WelcomePage() {
               href="/import"
               className="rounded-md border border-linka p-3 text-sm hover:border-ruzova"
             >
-              <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX)</span>
+              <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX/HTML)</span>
               <span className="text-inkoust-tlumeny">
-                Trading212, IBKR, XTB, Degiro, Fio nebo univerzální šablona.
+                Přes 25 platforem — XTB, Degiro, eToro, Schwab, Portu, Coinbase i další;
+                zbytek přes univerzální šablonu.
               </span>
             </Link>
           </div>

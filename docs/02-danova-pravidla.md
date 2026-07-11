@@ -263,6 +263,16 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   § 8 + § 9 + § 10 („celková výše těchto příjmů", § 7a/1 b) 4) — u derivátů
   úhrn kladných přijatých plnění (R-12e–g, vč. přijatých prémií), ne zisk.
   Jistota vysoká (u přesného vymezení plnění nízká → širší pojetí = bezpečné).
+- **R-12r Import platforem bez hodnot podkladu (MT4/MT5 aj.)**: reporty
+  MetaTraderu (a obdobných CFD platforem) neposkytují prodejní/nákupní hodnoty
+  podkladu, jen realizovaný výsledek uzavřeného obchodu v měně účtu (Profit +
+  swap + komise + taxes). Plnění druhu se přebírá **per uzavřený obchod**:
+  kladný čistý výsledek = příjem druhu, záporný = výdaj druhu (v mezích R-12b),
+  přepočet z měny účtu kurzem dle R-12m. Otevřené pozice se neimportují (nemají
+  daňový dopad, R-12e). Shodná praxe: Taxomat („zpracováváme jako CFD obchody";
+  přiznává, že příjmy/výdaje z hodnot podkladu z dat získat nelze). Do limitu
+  50k (R-12q) vstupuje úhrn kladných čistých výsledků — užší než teoretická
+  hrubá plnění, ale jediné z dat zjistitelné. Jistota střední.
 
 Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
 tiskopis 5405-P2 vzor 20 (číselník A–F); XTB „Informace o zdaňování příjmů

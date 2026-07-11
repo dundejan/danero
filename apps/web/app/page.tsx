@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { KalkulackaPriznani } from '@/components/kalkulacka-priznani';
+import { PlatformGrid } from '@/components/platform-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
 import { Logo } from '@/components/logo';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
@@ -113,6 +114,68 @@ function BrowserFrame({ url, children }: { url: string; children: React.ReactNod
   );
 }
 
+/** Tabulka variant párování jako živé HTML (screenshot byl při 544 px nečitelný).
+    Hodnoty odpovídají demo reportu za rok 2025 — tam se metody skutečně liší. */
+const VARIANT_ROWS: {
+  method: string;
+  fx: string;
+  base: string;
+  tax: string;
+  badge?: 'aktivní' | 'nejvýhodnější';
+}[] = [
+  { method: 'FIFO', fx: 'jednotný', base: '23 051', tax: '4 379', badge: 'aktivní' },
+  { method: 'FIFO', fx: 'denní ČNB', base: '23 857', tax: '4 504', badge: 'aktivní' },
+  { method: 'LIFO', fx: 'jednotný', base: '0', tax: '921', badge: 'nejvýhodnější' },
+  { method: 'LIFO', fx: 'denní ČNB', base: '0', tax: '924' },
+  { method: 'Max. zisk', fx: 'jednotný', base: '23 051', tax: '4 379' },
+  { method: 'Max. zisk', fx: 'denní ČNB', base: '23 857', tax: '4 504' },
+  { method: 'Max. ztráta', fx: 'jednotný', base: '0', tax: '921' },
+  { method: 'Max. ztráta', fx: 'denní ČNB', base: '0', tax: '924' },
+];
+
+function VariantTableMock() {
+  return (
+    <div className="p-4 sm:p-5">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+        Porovnání variant párování
+      </p>
+      <table className="mt-2 w-full text-[13px]">
+        <thead>
+          <tr className="border-b border-linka text-left text-[11px] uppercase tracking-wide text-inkoust-tlumeny">
+            <th className="py-1.5 pr-3 font-medium">Metoda</th>
+            <th className="py-1.5 pr-3 font-medium">Kurzy</th>
+            <th className="py-1.5 pr-3 text-right font-medium">Základ § 10</th>
+            <th className="py-1.5 pr-3 text-right font-medium">Daň</th>
+            <th className="py-1.5 font-medium" aria-hidden />
+          </tr>
+        </thead>
+        <tbody>
+          {VARIANT_ROWS.map((row, i) => (
+            <tr key={i} className="border-b border-linka/60 last:border-0">
+              <td className="py-1.5 pr-3 font-medium">{row.method}</td>
+              <td className="py-1.5 pr-3 text-inkoust-tlumeny">{row.fx}</td>
+              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">{row.base} Kč</td>
+              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">{row.tax} Kč</td>
+              <td className="py-1.5 text-right">
+                {row.badge === 'nejvýhodnější' && (
+                  <span className="whitespace-nowrap rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
+                    nejvýhodnější
+                  </span>
+                )}
+                {row.badge === 'aktivní' && (
+                  <span className="rounded-full bg-pozadi px-2 py-0.5 font-mono text-[11px] text-inkoust-tlumeny">
+                    aktivní
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const CTA_PRIMARY =
   'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:opacity-90';
 // sekundární CTA: border z inkoustu (linka měla na ploše kontrast jen 1,07:1
@@ -133,7 +196,7 @@ const TRUST = [
 const STEPS = [
   {
     title: 'Připoj svého brokera',
-    body: 'Trading212 živě přes API klíč jen pro čtení, Interactive Brokers živě přes Flex API — žádná hesla, žádné právo obchodovat. Nebo nahraj výpis z XTB, Degiro či Fio, ostatní přes univerzální šablonu.',
+    body: 'Trading212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: čteme jich přes 25, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase.',
   },
   {
     title: 'Danero hlídá celý rok',
@@ -145,17 +208,8 @@ const STEPS = [
   },
 ] as const;
 
-const BROKERS = [
-  { name: 'Trading212', how: 'živé API napojení', live: true },
-  { name: 'Interactive Brokers', how: 'živě přes Flex API', live: true },
-  { name: 'XTB', how: 'výpisem' },
-  { name: 'Degiro', how: 'výpisem' },
-  { name: 'Fio e-Broker', how: 'výpisem' },
-  { name: 'ostatní', how: 'univerzální CSV šablona' },
-] as const;
-
 const PRICING_INCLUDED: { key: string; text: React.ReactNode }[] = [
-  { key: 'zive', text: 'Živé napojení na Trading212 a denní přepočet' },
+  { key: 'zive', text: 'Živé napojení na Trading212, IBKR i Lynx a denní přepočet' },
   {
     key: 'limity',
     text: (
@@ -167,7 +221,7 @@ const PRICING_INCLUDED: { key: string; text: React.ReactNode }[] = [
   },
   { key: 'horizont', text: 'Horizont osvobození a simulátor prodeje' },
   { key: 'podklady', text: 'Podklady k přiznání včetně XML pro podatelnu' },
-  { key: 'brokeri', text: 'Všichni podporovaní brokeři i univerzální šablona' },
+  { key: 'brokeri', text: 'Přes 25 podporovaných platforem i univerzální šablona' },
   { key: '2fa', text: 'Dvoufaktorové přihlášení, klíče šifrované AES-256-GCM' },
 ];
 
@@ -182,7 +236,7 @@ const FAQ = [
   },
   {
     q: 'Co když nejsem na Trading212?',
-    a: 'Interactive Brokers připojíš stejně živě — přes Flex API. XTB, Degiro a Fio načteš výpisem, cokoli dalšího přes univerzální CSV šablonu.',
+    a: 'Interactive Brokers i Lynx připojíš stejně živě — přes Flex API. Výpisy čteme z více než 25 platforem (XTB, Degiro, eToro, Charles Schwab, Saxo, Portu, Coinbase, Kraken…) a cokoli dalšího vezme univerzální CSV šablona.',
   },
   {
     q: 'Co když změním brokera nebo jich mám víc?',
@@ -272,10 +326,10 @@ export default function LandingPage() {
             <span className="block text-ruzova">Celý rok, ne{' '}jen v{' '}březnu.</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-inkoust-tlumeny">
-            Danero se napojí na Trading212 nebo Interactive Brokers živě přes API a denně
-            přepočítává limity i tříleté časové testy — ozve se dřív, než něco prolomíš.
-            V březnu z něj stáhneš podklady k přiznání včetně XML. Jedeš jinde? Stačí
-            nahrát výpis — XTB, Degiro, Fio i další.
+            Danero se napojí na Trading212, Interactive Brokers či Lynx živě přes API
+            a denně přepočítává limity i tříleté časové testy — ozve se dřív, než něco
+            prolomíš. V březnu z něj stáhneš podklady k přiznání včetně XML. Výpisy čteme
+            od XTB a Degiro přes eToro, Schwab a Portu až po Coinbase — přes 25 platforem.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link href="/demo/prehled" className={CTA_PRIMARY}>
@@ -469,27 +523,20 @@ export default function LandingPage() {
                 — třeba Nizozemsko má 10 %, ne 15. Excel tohle nehlídá.
               </p>
             </div>
-            {/* screenshot tabulky je na mobilu nečitelný (4px text) — pod sm ho
-                nahrazuje textové shrnutí se stejnými čísly jako na snímku */}
+            {/* místo screenshotu (text byl při 544px nečitelný ~5px) živá HTML
+                tabulka — ostrá v každé velikosti, nativní dark mode; čísla jsou
+                skutečné z demo reportu za rok 2025, kde se metody párování liší */}
             <div className="hidden sm:block">
               <BrowserFrame url="danero.cz/report">
-                <Image
-                  src="/marketing/metody-light.png"
-                  alt="Porovnání variant párování v Daneru: FIFO, LIFO, max. zisk a max. ztráta s daní vedle sebe"
-                  width={1168}
-                  height={475}
-                  sizes="(min-width: 1024px) 544px, 100vw"
-                  className="w-full dark:hidden"
-                />
-                <Image
-                  src="/marketing/metody-dark.png"
-                  alt=""
-                  width={1168}
-                  height={475}
-                  sizes="(min-width: 1024px) 544px, 100vw"
-                  className="hidden w-full dark:block"
-                />
+                <VariantTableMock />
               </BrowserFrame>
+              <p className="mt-3 text-xs text-inkoust-tlumeny">
+                Skutečná čísla z{' '}
+                <Link href="/demo/report?rok=2025" className="underline hover:text-ruzova">
+                  demo reportu
+                </Link>{' '}
+                — celou tabulku (4 metody × 2 kurzy) si projdeš v demu.
+              </p>
             </div>
             <div className="rounded-lg border border-linka bg-plocha p-5 sm:hidden">
               <p className="font-mono text-[11px] font-semibold uppercase tracking-wide text-inkoust-tlumeny">
@@ -502,9 +549,9 @@ export default function LandingPage() {
                     <span className="font-normal text-inkoust-tlumeny">· jednotný kurz</span>
                   </span>
                   <span className="text-right tabular-nums">
-                    {'daň 2\u00A0166\u00A0Kč'}{' '}
-                    <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
-                      nejvýhodnější
+                    {'daň 4\u00A0379\u00A0Kč'}{' '}
+                    <span className="rounded-full bg-pozadi px-2 py-0.5 font-mono text-[11px] text-inkoust-tlumeny">
+                      aktivní
                     </span>
                   </span>
                 </li>
@@ -512,18 +559,24 @@ export default function LandingPage() {
                   <span className="font-semibold">
                     FIFO <span className="font-normal text-inkoust-tlumeny">· denní ČNB</span>
                   </span>
-                  <span className="tabular-nums">{'daň 2\u00A0203\u00A0Kč'}</span>
+                  <span className="tabular-nums">{'daň 4\u00A0504\u00A0Kč'}</span>
                 </li>
                 <li className="flex items-baseline justify-between gap-3 py-2.5">
                   <span className="font-semibold">
                     LIFO{' '}
                     <span className="font-normal text-inkoust-tlumeny">· jednotný kurz</span>
                   </span>
-                  <span className="tabular-nums">{'daň 2\u00A0166\u00A0Kč'}</span>
+                  <span className="text-right tabular-nums">
+                    {'daň 921\u00A0Kč'}{' '}
+                    <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
+                      nejvýhodnější
+                    </span>
+                  </span>
                 </li>
               </ul>
               <p className="mt-3 text-xs text-inkoust-tlumeny">
-                Ukázka z demo reportu — celou tabulku (4 metody × 2 kurzy) si projdeš v demu.
+                Skutečná čísla z demo reportu za rok 2025 — celou tabulku (4 metody × 2 kurzy) si
+                projdeš v demu.
               </p>
             </div>
           </div>
@@ -551,32 +604,26 @@ export default function LandingPage() {
           </ol>
         </section>
 
-        {/* ── brokeři: hloubka místo šířky, poctivě po způsobu napojení ────── */}
+        {/* ── platformy: plná šířka nabídky (parita s konkurencí) ──────────── */}
         <section aria-labelledby="brokeri-nadpis" className="mt-24 lg:mt-32">
-          <Eyebrow>Brokeři</Eyebrow>
+          <Eyebrow>Brokeři a platformy</Eyebrow>
           <h2
             id="brokeri-nadpis"
             className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
           >
             Odkud umíme načíst obchody
           </h2>
-          <ul className="mt-8 flex flex-wrap gap-3">
-            {BROKERS.map((broker) => (
-              <li
-                key={broker.name}
-                className="flex items-center gap-2 rounded-full border border-linka bg-plocha px-4 py-2 text-sm"
-              >
-                <span className="font-semibold">{broker.name}</span>
-                {'live' in broker && broker.live ? (
-                  <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
-                    {broker.how}
-                  </span>
-                ) : (
-                  <span className="text-inkoust-tlumeny">{broker.how}</span>
-                )}
-              </li>
-            ))}
-          </ul>
+          <p className="mt-4 max-w-2xl text-inkoust-tlumeny">
+            Trading 212, Interactive Brokers a Lynx živě přes API — ostatní z výpisu,
+            který u nás nahraješ na dvě kliknutí. U každé platformy ti ukážeme, kde
+            přesně výpis stáhnout.
+          </p>
+          <div className="mt-8">
+            <PlatformGrid />
+          </div>
+          <p className="mt-4 text-sm text-inkoust-tlumeny">
+            …a kterýkoli další broker přes univerzální šablonu s ukázkovými řádky.
+          </p>
         </section>
 
         {/* ── ceník: jedna cena, žádné tarify — na levé ose jako FAQ ───────── */}

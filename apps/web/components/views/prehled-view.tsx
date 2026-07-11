@@ -79,6 +79,28 @@ export function PrehledView({
   const estimatedTaxCzk =
     result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
 
+  // Rozpad základu § 10 po druzích — souhrnné „(prodeje)" mátlo: daň může být
+  // jen z derivátů (bez osvobození, R-12c), zatímco prodeje CP/krypto jsou pod limity
+  const base10Total = result.securities.base10Czk
+    .plus(result.crypto.base10Czk)
+    .plus(result.derivatives.base10Czk);
+  const base10Parts = [
+    { label: 'prodeje CP', value: result.securities.base10Czk },
+    { label: 'krypto', value: result.crypto.base10Czk },
+    { label: 'deriváty', value: result.derivatives.base10Czk },
+  ].filter((part) => part.value.gt(0));
+  // prodeje proběhly, ale jsou celé osvobozené → řekni to, jinak čtenář hledá
+  // chybu; rozhoduje taxableIncome (base10 = 0 může vzniknout i kompenzací
+  // zisků a ztrát — to NENÍ osvobození)
+  const exemptNotes = [
+    result.securities.taxableIncomeCzk.lte(0) && result.limits.limit100k.usedCzk.gt(0)
+      ? 'prodeje CP letos plně osvobozeny'
+      : null,
+    result.crypto.taxableIncomeCzk.lte(0) && result.limits.cryptoLimit100k.usedCzk.gt(0)
+      ? 'krypto plně osvobozeno'
+      : null,
+  ].filter((note): note is string => note !== null);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
@@ -171,13 +193,12 @@ export function PrehledView({
             </div>
             <div className="grid gap-x-6 gap-y-2 text-xs text-inkoust-tlumeny sm:grid-cols-2">
               <p>
-                Základ § 10 (prodeje):{' '}
-                {czk(
-                  result.securities.base10Czk
-                    .plus(result.crypto.base10Czk)
-                    .plus(result.derivatives.base10Czk),
-                )}{' '}
-                · § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
+                Základ § 10: {czk(base10Total)}
+                {base10Parts.length > 0 && (
+                  <> ({base10Parts.map((p) => `${p.label} ${czk(p.value)}`).join(' · ')})</>
+                )}
+                {exemptNotes.length > 0 && <> — {exemptNotes.join(', ')}</>}
+                {' '}· § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
                 {result.tax.recommended === 'SEPARATE_16A' &&
                   ' · doporučen § 16a (samostatný základ pro zahraniční dividendy)'}
               </p>

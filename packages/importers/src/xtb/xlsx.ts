@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { Decimal, d, TransactionSchema } from '@danero/shared';
-import { cleanNumber, isValidIsoDate } from '../csv';
+import { cleanNumber, isValidIsoDate, normalizeHeader, stripDiacritics } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -55,10 +55,6 @@ interface SheetRow {
   cells: string[];
 }
 
-const stripDiacritics = (value: string): string =>
-  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-const normalizeHeader = (value: string): string => stripDiacritics(value).trim().toLowerCase();
 
 /** Buňka jako string — čísla přes String(value), datumy ISO, formule/richtext přes cell.text. */
 function cellText(cell: ExcelJS.Cell): string {
@@ -87,6 +83,11 @@ function findCashSheet(workbook: ExcelJS.Workbook): ExcelJS.Worksheet | undefine
   return workbook.worksheets.find((sheet) =>
     CASH_SHEET_NAMES.includes(stripDiacritics(sheet.name).replace(/\s+/g, ' ').trim().toUpperCase()),
   );
+}
+
+/** Autodetekce: XTB report se pozná podle listu peněžních operací (EN/CZ). */
+export function sniffXtbXlsx(workbook: ExcelJS.Workbook): boolean {
+  return findCashSheet(workbook) !== undefined;
 }
 
 /**

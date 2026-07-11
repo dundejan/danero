@@ -1,16 +1,50 @@
 import {
   dedupeKey,
   dedupeTransactions,
+  decodeCp1250,
   decodeFioCsv,
+  emptyResult,
   isDegiroCsv,
+  loadXlsxWorkbook,
+  parseAnycoinCsv,
+  parseCoinbaseCsv,
+  parseCoinmateCsv,
   parseCsv,
   parseDegiroAccountCsv,
   parseDegiroTransactionsCsv,
+  parseEtoroXlsx,
   parseFioCsv,
   parseIbkrFlexXml,
+  parseKrakenCsv,
+  parseMt4Html,
+  parseMt5Html,
+  parseMt5Xlsx,
+  parsePortuCsv,
+  parseRevolutCryptoCsv,
+  parseRevolutInvestCsv,
+  parseSaxoXlsx,
+  parseSchwabCsv,
+  parseSwissquoteCsv,
+  parseTastytradeCsv,
   parseTrading212Csv,
   parseUniversalCsv,
   parseXtbXlsx,
+  sniffAnycoinCsv,
+  sniffCoinbaseCsv,
+  sniffCoinmateCsv,
+  sniffEtoroXlsx,
+  sniffKrakenCsv,
+  sniffMt4Html,
+  sniffMt5Html,
+  sniffMt5Xlsx,
+  sniffPortuCsv,
+  sniffRevolutCryptoCsv,
+  sniffRevolutInvestCsv,
+  sniffSaxoXlsx,
+  sniffSchwabCsv,
+  sniffSwissquoteCsv,
+  sniffTastytradeCsv,
+  sniffXtbXlsx,
   type ImportResult,
   type RowIssue,
 } from '@danero/importers';
@@ -18,7 +52,7 @@ import type { Transaction } from '@danero/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
-import { loadAliases } from '@/lib/instrument-aliases';
+import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
 
 /** Symbol, kterému chybí ISIN/měna (XTB, Fio) — UI nabídne doplnění číselníku. */
 export interface UnmappedSymbol {
@@ -39,12 +73,79 @@ export interface ImportSummary {
   unmapped: UnmappedSymbol[];
 }
 
-/** Autodetekce formátu: IBKR Flex XML vs. T212 CSV vs. univerzální šablona. */
+/** Výsledek parsování + případné nenamapované symboly (brokeři bez ISIN). */
+interface ParsedFile {
+  outcome: ImportResult;
+  unmapped: UnmappedSymbol[];
+}
+
+const noUnmapped = (outcome: ImportResult): ParsedFile => ({ outcome, unmapped: [] });
+
+const withUnmapped = (
+  broker: string,
+  outcome: ImportResult & { unmappedSymbols: string[] },
+): ParsedFile => ({
+  outcome,
+  unmapped: outcome.unmappedSymbols.map((symbol) => ({ broker, symbol, needsCurrency: false })),
+});
+
+/**
+ * Autodetekce TEXTOVÝCH formátů (CSV/XML/HTML) — řetěz snifferů v ZÁVAZNÉM
+ * pořadí od specifických k obecným (univerzální šablona je poslední záchrana);
+ * pořadí hlídá routingový test v test/import-detect.test.ts. XLSX řeší
+ * `importFile` (jedno načtení workbooku pro všechny sniffy).
+ */
+function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
+  // HTML reporty MetaTraderu dřív než obecný XML test — taky začínají „<"
+  if (sniffMt4Html(text)) return noUnmapped(parseMt4Html(text));
+  if (sniffMt5Html(text)) return noUnmapped(parseMt5Html(text));
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('<')) {
+    // HTML, které není MT report, nesmí spadnout do XML parseru — matoucí
+    // chyba by se v historii připsala brokeru ibkr
+    if (/^<(!doctype\s+html|html|head|body|table|meta|title)/i.test(trimmed)) {
+      const unknown = emptyResult('neznámý formát');
+      unknown.errors.push({
+        line: 1,
+        message:
+          'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report") a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
+      });
+      return noUnmapped(unknown);
+    }
+    return noUnmapped(parseIbkrFlexXml(text));
+  }
+
+  // hlavička se čte jen z prvního řádku — full parse 20MB CSV by tu byl zbytečný
+  const newline = text.indexOf('\n');
+  const { headers } = parseCsv(newline === -1 ? text : text.slice(0, newline));
+  if (headers.includes('Action') && headers.includes('Time')) {
+    return noUnmapped(parseTrading212Csv(text));
+  }
+  const degiroKind = isDegiroCsv(text);
+  if (degiroKind === 'transactions') return noUnmapped(parseDegiroTransactionsCsv(text));
+  if (degiroKind === 'account') return noUnmapped(parseDegiroAccountCsv(text));
+  if (sniffPortuCsv(text)) return noUnmapped(parsePortuCsv(text));
+  if (sniffCoinmateCsv(text)) return noUnmapped(parseCoinmateCsv(text));
+  if (sniffSwissquoteCsv(text)) return noUnmapped(parseSwissquoteCsv(text));
+  if (sniffKrakenCsv(text)) return noUnmapped(parseKrakenCsv(text));
+  if (sniffCoinbaseCsv(text)) return noUnmapped(parseCoinbaseCsv(text));
+  if (sniffAnycoinCsv(text)) return noUnmapped(parseAnycoinCsv(text));
+  if (sniffRevolutInvestCsv(text)) {
+    return withUnmapped('revolut', parseRevolutInvestCsv(text, aliases?.isinOnly.revolut));
+  }
+  if (sniffRevolutCryptoCsv(text)) return noUnmapped(parseRevolutCryptoCsv(text));
+  if (sniffSchwabCsv(text)) {
+    return withUnmapped('schwab', parseSchwabCsv(text, aliases?.isinOnly.schwab));
+  }
+  if (sniffTastytradeCsv(text)) {
+    return withUnmapped('tastytrade', parseTastytradeCsv(text, aliases?.isinOnly.tastytrade));
+  }
+  return noUnmapped(parseUniversalCsv(text));
+}
+
+/** Zpětně kompatibilní vstup pro T212 sync (text bez číselníku aliasů). */
 export function detectAndParse(text: string): ImportResult {
-  if (text.trimStart().startsWith('<')) return parseIbkrFlexXml(text);
-  const { headers } = parseCsv(text);
-  const isT212 = headers.includes('Action') && headers.includes('Time');
-  return isT212 ? parseTrading212Csv(text) : parseUniversalCsv(text);
+  return detectAndParseText(text).outcome;
 }
 
 const txDate = (tx: Transaction): string =>
@@ -70,11 +171,11 @@ export async function importCsvText(
 }
 
 /**
- * Import nahraného souboru s autodetekcí formátu (G4): XLSX → XTB, Degiro
- * podle hlaviček (Transactions/Account), Fio podle CZ hlaviček (windows-1250!),
- * jinak stávající textová cesta (IBKR XML / T212 CSV / univerzální šablona).
- * XTB a Fio dostávají uživatelský číselník instrumentů; nenamapované symboly
- * se vrací v `unmapped`, ať UI nabídne doplnění.
+ * Import nahraného souboru s autodetekcí formátu: XLSX podle obsahu listů
+ * (XTB / eToro / Saxo / MT5 — jedno načtení workbooku pro všechny sniffy),
+ * Fio podle CZ hlavičky (windows-1250!), jinak textová cesta
+ * (`detectAndParseText`). Brokeři bez ISIN v exportu dostávají uživatelský
+ * číselník; nenamapované symboly se vrací v `unmapped`, ať UI nabídne doplnění.
  */
 export async function importFile(
   db: Db,
@@ -83,26 +184,41 @@ export async function importFile(
   data: ArrayBuffer,
 ): Promise<ImportSummary> {
   if (/\.xlsx$/i.test(filename)) {
-    const aliases = await loadAliases(db, userId);
-    const outcome = await parseXtbXlsx(data, aliases.xtb);
-    return importParsed(db, userId, filename, outcome, undefined, {
-      unmapped: outcome.unmappedSymbols.map((symbol) => ({
-        broker: 'xtb',
-        symbol,
-        needsCurrency: true,
-      })),
+    const workbook = await loadXlsxWorkbook(data);
+    if (sniffXtbXlsx(workbook)) {
+      const aliases = await loadAliases(db, userId);
+      const outcome = await parseXtbXlsx(data, aliases.xtb);
+      return importParsed(db, userId, filename, outcome, undefined, {
+        unmapped: outcome.unmappedSymbols.map((symbol) => ({
+          broker: 'xtb',
+          symbol,
+          needsCurrency: true,
+        })),
+      });
+    }
+    if (sniffEtoroXlsx(workbook)) {
+      const aliases = await loadAliases(db, userId);
+      const parsed = withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro));
+      return importParsed(db, userId, filename, parsed.outcome, undefined, {
+        unmapped: parsed.unmapped,
+      });
+    }
+    if (sniffSaxoXlsx(workbook)) {
+      return importParsed(db, userId, filename, await parseSaxoXlsx(data));
+    }
+    if (sniffMt5Xlsx(workbook)) {
+      return importParsed(db, userId, filename, await parseMt5Xlsx(data));
+    }
+    const unknown = emptyResult('neznámý formát');
+    unknown.errors.push({
+      line: 1,
+      message:
+        'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
     });
+    return importParsed(db, userId, filename, unknown);
   }
 
   const utf8 = new TextDecoder().decode(data);
-
-  const degiroKind = isDegiroCsv(utf8);
-  if (degiroKind === 'transactions') {
-    return importParsed(db, userId, filename, parseDegiroTransactionsCsv(utf8));
-  }
-  if (degiroKind === 'account') {
-    return importParsed(db, userId, filename, parseDegiroAccountCsv(utf8));
-  }
 
   // Fio: hlavička „Datum obchodu“ je čitelná i při špatném dekódování (ASCII),
   // samotný obsah se ale musí dekódovat jako windows-1250. Kontroluje se JEN
@@ -110,7 +226,7 @@ export async function importFile(
   const firstLine = utf8.slice(0, utf8.indexOf('\n') === -1 ? undefined : utf8.indexOf('\n'));
   if (firstLine.includes('Datum obchodu')) {
     const aliases = await loadAliases(db, userId);
-    const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.fio });
+    const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.isinOnly.fio });
     return importParsed(db, userId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'fio',
@@ -120,7 +236,16 @@ export async function importFile(
     });
   }
 
-  return importParsed(db, userId, filename, detectAndParse(utf8));
+  // rozbitá diakritika V HLAVIČCE = soubor není UTF-8 → české/německé exporty
+  // bývají windows-1250 (Coinmate, Swissquote DE aj.). Kontroluje se JEN první
+  // řádek: legitimní UTF-8 soubor s ojedinělým U+FFFD hlouběji v datech se
+  // nesmí celý předekódovat (rozsypaly by se správné české názvy).
+  const text = firstLine.includes('�') ? decodeCp1250(data) : utf8;
+  const aliases = await loadAliases(db, userId);
+  const parsed = detectAndParseText(text, aliases);
+  return importParsed(db, userId, filename, parsed.outcome, undefined, {
+    unmapped: parsed.unmapped,
+  });
 }
 
 /** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */

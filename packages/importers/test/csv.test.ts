@@ -32,3 +32,38 @@ describe('RFC 4180 CSV parser', () => {
     expect(isValidIsoDate('2025-1-31')).toBe(false);
   });
 });
+
+describe('pomocníci pro evropské formáty (sdílené parserovými moduly)', () => {
+  it('parseCsv s volitelným oddělovačem (středník, tabulátor)', async () => {
+    const { parseCsv } = await import('../src/csv');
+    expect(parseCsv('a;b;c\n1;"x;y";3', ';').rows).toEqual([['1', 'x;y', '3']]);
+    expect(parseCsv('a\tb\n1\t2', '\t').rows).toEqual([['1', '2']]);
+  });
+
+  it('cleanNumberEu: desetinná čárka, mezery i německé tisícové tečky', async () => {
+    const { cleanNumberEu } = await import('../src/csv');
+    expect(cleanNumberEu('1 234,56')).toBe('1234.56');
+    expect(cleanNumberEu('1.234,56')).toBe('1234.56');
+    expect(cleanNumberEu('-0,5')).toBe('-0.5');
+    expect(cleanNumberEu('1234')).toBe('1234');
+    expect(cleanNumberEu('1 234,5')).toBe('1234.5');
+  });
+
+  it('parseEuroDate: tečkové, lomítkové i ISO tvary, čas se zahodí, nesmysly null', async () => {
+    const { parseEuroDate } = await import('../src/csv');
+    expect(parseEuroDate('31.12.2025')).toBe('2025-12-31');
+    expect(parseEuroDate('31. 12. 2025')).toBe('2025-12-31');
+    expect(parseEuroDate('1.2.2025 14:35')).toBe('2025-02-01');
+    expect(parseEuroDate('31/12/2025')).toBe('2025-12-31');
+    expect(parseEuroDate('2025-12-31T10:00:00Z')).toBe('2025-12-31');
+    expect(parseEuroDate('2025-12-31 10:00')).toBe('2025-12-31');
+    expect(parseEuroDate('32.1.2025')).toBeNull();
+    expect(parseEuroDate('2025-13-01')).toBeNull();
+    expect(parseEuroDate('nesmysl')).toBeNull();
+  });
+
+  it('normalizeHeader: trim, lowercase, bez diakritiky', async () => {
+    const { normalizeHeader } = await import('../src/csv');
+    expect(normalizeHeader('  Čas Otevření ')).toBe('cas otevreni');
+  });
+});

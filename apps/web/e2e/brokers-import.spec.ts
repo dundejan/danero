@@ -2,7 +2,12 @@ import { expect, test } from '@playwright/test';
 import {
   DEGIRO_TRANSACTIONS_CZ,
 } from '../../../packages/importers/test/fixtures/degiro';
+import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
+import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kraken';
+import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
+import { REVOLUT_INVEST_CSV } from '../../../packages/importers/test/fixtures/revolut';
+import { SWISSQUOTE_EN } from '../../../packages/importers/test/fixtures/swissquote';
 import { buildXtbXlsx, XTB_ROWS_EN } from '../../../packages/importers/test/fixtures/xtb';
 import { registerWithProfile } from './helpers';
 
@@ -82,4 +87,65 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   const response = await page.request.get('/api/sablona');
   expect(response.ok()).toBe(true);
   expect(await response.text()).toContain('CORPORATE_ACTION');
+});
+
+/**
+ * Autodetekce nové vlny brokerů end-to-end: každý formát projde uploadem,
+ * pozná se správný broker a transakce se propíší do historie importů.
+ */
+test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Brokeři 2', email: 'brokeri2@danero.cz' });
+  await page.goto('/import');
+
+  const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
+    const batchButtons = page.getByRole('button', { name: 'Smazat záznam' });
+    const before = await batchButtons.count();
+    await page.locator('input[name="soubory"]').setInputFiles(file);
+    await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
+    await expect(batchButtons).toHaveCount(before + 1, { timeout: 20_000 });
+  };
+
+  // Revolut invest (ISIN se doplňuje číselníkem — objeví se formulář)
+  await upload({
+    name: 'revolut-invest.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(REVOLUT_INVEST_CSV, 'utf8'),
+  });
+  await expect(page.getByText('revolut-invest.csv')).toBeVisible();
+  await expect(page.getByText('Doplň chybějící údaje instrumentů')).toBeVisible();
+
+  // Coinmate (CZ hlavičky, středník) — krypto s ISIN=symbol, číselník netřeba
+  await upload({
+    name: 'coinmate-vypis.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(COINMATE_CZ, 'utf8'),
+  });
+  await expect(page.getByText('coinmate-vypis.csv')).toBeVisible();
+  await expect(page.getByText(/coinmate/).first()).toBeVisible();
+
+  // Kraken ledgers (páry přes refid)
+  await upload({
+    name: 'ledgers.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(KRAKEN_LEDGERS_NEW, 'utf8'),
+  });
+  await expect(page.getByText(/kraken/).first()).toBeVisible();
+
+  // MT4 HTML statement (deriváty dle R-12r)
+  await upload({
+    name: 'statement.htm',
+    mimeType: 'text/html',
+    buffer: Buffer.from(MT4_HTML, 'utf8'),
+  });
+  await expect(page.getByText(/mt4/).first()).toBeVisible();
+
+  // Swissquote (středníkové CSV, EN 13 sloupců)
+  await upload({
+    name: 'transactions-from-01012022-to-31122022.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(SWISSQUOTE_EN, 'utf8'),
+  });
+  await expect(page.getByText(/swissquote/).first()).toBeVisible();
 });
