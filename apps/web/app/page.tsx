@@ -747,10 +747,10 @@ export default function LandingPage() {
             </div>
             <figure className="mx-auto w-56 max-w-full lg:mx-0 lg:mt-14 lg:w-full">
               <Image
-                src="/jan-portret.jpg"
+                src="/jan-foto.jpg"
                 alt="Jan Dunder — autor Danera"
                 width={800}
-                height={800}
+                height={840}
                 sizes="(min-width: 1024px) 320px, 224px"
                 className="rotate-1 rounded-lg border border-linka shadow-lg shadow-inkoust/10"
               />
