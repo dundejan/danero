@@ -98,21 +98,9 @@ export function MarketingFooter() {
         <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
           <div className="max-w-md space-y-3">
             <Logo className="text-base text-inkoust" />
-            <p className="font-display font-semibold text-inkoust">
-              Celý rok, ne jen v březnu.
-            </p>
             <p>
               Danero hlídá českým investorům daně z investic — limity, časové testy
-              i podklady k přiznání. Staví ho{' '}
-              <a
-                href="https://jandunder.dev"
-                className="font-medium hover:text-inkoust"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Jan Dunder
-              </a>
-              , který ho sám denně používá.
+              i podklady k přiznání.
             </p>
           </div>
           <div className="flex gap-16">
