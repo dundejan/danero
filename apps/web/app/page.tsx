@@ -693,15 +693,17 @@ export default function LandingPage() {
         </section>
 
         {/* ── kdo za tím stojí: osobní projekt, žádná anonymní firma ───────── */}
-        <section aria-labelledby="autor-nadpis" className="mt-24 max-w-3xl lg:mt-32">
-          <Eyebrow>O projektu</Eyebrow>
-          <h2
-            id="autor-nadpis"
-            className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
-          >
-            Kdo za tím stojí
-          </h2>
-          <div className="mt-4 space-y-4 leading-relaxed text-inkoust-tlumeny">
+        <section aria-labelledby="autor-nadpis" className="mt-24 lg:mt-32">
+          <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <div className="max-w-3xl">
+              <Eyebrow>O projektu</Eyebrow>
+              <h2
+                id="autor-nadpis"
+                className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+              >
+                Kdo za tím stojí
+              </h2>
+              <div className="mt-4 space-y-4 leading-relaxed text-inkoust-tlumeny">
             <p>
               Jmenuju se Jan Dunder, jsem vývojář z Prahy — a Danero jsem původně napsal
               pro sebe.
@@ -741,6 +743,18 @@ export default function LandingPage() {
               </a>
               .
             </p>
+              </div>
+            </div>
+            <figure className="mx-auto w-56 max-w-full lg:mx-0 lg:mt-14 lg:w-full">
+              <Image
+                src="/jan.jpg"
+                alt="Jan Dunder — autor Danera"
+                width={800}
+                height={1000}
+                sizes="(min-width: 1024px) 320px, 224px"
+                className="rotate-1 rounded-lg border border-linka shadow-lg shadow-inkoust/10"
+              />
+            </figure>
           </div>
         </section>
 

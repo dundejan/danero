@@ -23,7 +23,8 @@ export default function PrivacyPage() {
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
         <p>
-          Danero je osobní projekt Jana Dundera — on je i správcem tvých údajů. Kontakt:{' '}
+          Danero je osobní projekt Jana Dundera (IČO 19642661, Žitomírská 640/3, Vršovice,
+          101 00 Praha 10) — on je i správcem tvých údajů. Kontakt:{' '}
           <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
             dunder.jan@gmail.com
           </a>

@@ -25,12 +25,37 @@ export interface PlatformInfo {
   guide: string;
   /** Kotva karty napojení na stránce Zdroje dat (jen method 'api'). */
   connectAnchor?: string;
+  /** Oficiální logo v /public/loga (nominativní užití); bez něj monogram. */
+  logo?: { src: string; kind: 'icon' | 'wordmark' };
 }
 
 export const PLATFORMS: PlatformInfo[] = [
-  // ── brokeři ────────────────────────────────────────────────────────────────
+  // ── brokeři a platformy (řazeno dle počtu českých uživatelů — docs/11) ──
+  {
+    id: 'portu',
+    logo: { src: '/loga/portu.png', kind: 'icon' },
+    name: 'Portu',
+    group: 'brokeri',
+    method: 'file',
+    formats: 'CSV',
+    color: '#00B67A',
+    guide:
+      'Peníze → Peněženka a transakce → filtry „Všechny Portu investice" + „Všechny transakce" → Stáhnout jako CSV.',
+  },
+  {
+    id: 'xtb',
+    logo: { src: '/loga/xtb.svg', kind: 'wordmark' },
+    name: 'XTB',
+    group: 'brokeri',
+    method: 'file',
+    formats: 'XLSX',
+    color: '#E3001B',
+    guide:
+      'xStation → Historie účtu → export „Full report" (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
+  },
   {
     id: 'trading212',
+    logo: { src: '/loga/trading212.png', kind: 'icon' },
     name: 'Trading 212',
     group: 'brokeri',
     method: 'api',
@@ -41,39 +66,19 @@ export const PLATFORMS: PlatformInfo[] = [
     connectAnchor: '#trading212',
   },
   {
-    id: 'ibkr',
-    name: 'Interactive Brokers',
+    id: 'patria',
+    logo: { src: '/loga/patria.png', kind: 'wordmark' },
+    name: 'Patria Finance',
     group: 'brokeri',
-    method: 'api',
-    formats: 'Flex API · XML',
-    color: '#D81222',
-    guide:
-      'Živě přes Flex Web Service (token + Query ID v Client Portalu), nebo stáhni Flex Query XML.',
-    connectAnchor: '#ibkr',
-  },
-  {
-    id: 'lynx',
-    name: 'Lynx',
-    group: 'brokeri',
-    method: 'api',
-    formats: 'Flex API · XML',
-    color: '#0FA396',
-    guide:
-      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Performance & Reports → Flex Queries.',
-    connectAnchor: '#ibkr',
-  },
-  {
-    id: 'xtb',
-    name: 'XTB',
-    group: 'brokeri',
-    method: 'file',
+    method: 'template',
     formats: 'XLSX',
-    color: '#E3001B',
+    color: '#003366',
     guide:
-      'xStation → Historie účtu → export „Full report" (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
+      'Transakce → Obchodní pokyny → ⋮ → Export → Excel; dividendy zvlášť ze záložky Cash flow. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'degiro',
+    logo: { src: '/loga/degiro.svg', kind: 'wordmark' },
     name: 'Degiro',
     group: 'brokeri',
     method: 'file',
@@ -84,6 +89,7 @@ export const PLATFORMS: PlatformInfo[] = [
   },
   {
     id: 'etoro',
+    logo: { src: '/loga/etoro.svg', kind: 'wordmark' },
     name: 'eToro',
     group: 'brokeri',
     method: 'file',
@@ -92,46 +98,20 @@ export const PLATFORMS: PlatformInfo[] = [
     guide: 'Portfolio → History (ikona hodin) → ozubené kolo → Account Statement → Excel.',
   },
   {
-    id: 'schwab',
-    name: 'Charles Schwab',
+    id: 'ibkr',
+    logo: { src: '/loga/ibkr.svg', kind: 'wordmark' },
+    name: 'Interactive Brokers',
     group: 'brokeri',
-    method: 'file',
-    formats: 'CSV',
-    color: '#009DDC',
+    method: 'api',
+    formats: 'Flex API · XML',
+    color: '#D81222',
     guide:
-      'Accounts → History → Export (CSV). Web dává max. 4 roky a 1 500 řádků na export — delší historii stáhni po částech.',
-  },
-  {
-    id: 'tastytrade',
-    name: 'Tastytrade',
-    group: 'brokeri',
-    method: 'file',
-    formats: 'CSV',
-    color: '#E31837',
-    guide:
-      'History → Transactions → CSV (vpravo nahoře). Export umí max. rok — stáhni po letech, duplicity odfiltrujeme.',
-  },
-  {
-    id: 'saxo',
-    name: 'Saxo Bank',
-    group: 'brokeri',
-    method: 'file',
-    formats: 'XLSX',
-    color: '#14283C',
-    guide:
-      'SaxoTraderGO → profil → Transaction overview → Export → Excel. Před exportem si přepni jazyk platformy na angličtinu.',
-  },
-  {
-    id: 'swissquote',
-    name: 'Swissquote',
-    group: 'brokeri',
-    method: 'file',
-    formats: 'CSV',
-    color: '#E2001A',
-    guide: 'Trading → Transactions → filtr období → Export CSV.',
+      'Živě přes Flex Web Service (token + Query ID v Client Portalu), nebo stáhni Flex Query XML.',
+    connectAnchor: '#ibkr',
   },
   {
     id: 'mt4',
+    logo: { src: '/loga/mt4.png', kind: 'wordmark' },
     name: 'MetaTrader 4',
     group: 'brokeri',
     method: 'file',
@@ -144,6 +124,7 @@ export const PLATFORMS: PlatformInfo[] = [
   },
   {
     id: 'mt5',
+    logo: { src: '/loga/mt5.png', kind: 'wordmark' },
     name: 'MetaTrader 5',
     group: 'brokeri',
     method: 'file',
@@ -154,7 +135,52 @@ export const PLATFORMS: PlatformInfo[] = [
       'Toolbox (Ctrl+T) → History → pravý klik → Report → „Open XML (MS Office Excel)" nebo HTML.',
   },
   {
+    id: 'lynx',
+    logo: { src: '/loga/lynx.svg', kind: 'wordmark' },
+    name: 'Lynx',
+    group: 'brokeri',
+    method: 'api',
+    formats: 'Flex API · XML',
+    color: '#0FA396',
+    guide:
+      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Performance & Reports → Flex Queries.',
+    connectAnchor: '#ibkr',
+  },
+  {
+    id: 'saxo',
+    logo: { src: '/loga/saxo.svg', kind: 'wordmark' },
+    name: 'Saxo Bank',
+    group: 'brokeri',
+    method: 'file',
+    formats: 'XLSX',
+    color: '#14283C',
+    guide:
+      'SaxoTraderGO → profil → Transaction overview → Export → Excel. Před exportem si přepni jazyk platformy na angličtinu.',
+  },
+  {
+    id: 'swissquote',
+    logo: { src: '/loga/swissquote.svg', kind: 'wordmark' },
+    name: 'Swissquote',
+    group: 'brokeri',
+    method: 'file',
+    formats: 'CSV',
+    color: '#E2001A',
+    guide: 'Trading → Transactions → filtr období → Export CSV.',
+  },
+  {
+    id: 'tastytrade',
+    logo: { src: '/loga/tastytrade.png', kind: 'wordmark' },
+    name: 'Tastytrade',
+    group: 'brokeri',
+    method: 'file',
+    formats: 'CSV',
+    color: '#E31837',
+    guide:
+      'History → Transactions → CSV (vpravo nahoře). Export umí max. rok — stáhni po letech, duplicity odfiltrujeme.',
+  },
+  {
     id: 'roboforex',
+    logo: { src: '/loga/roboforex.svg', kind: 'wordmark' },
     name: 'RoboForex',
     group: 'brokeri',
     method: 'file',
@@ -164,48 +190,20 @@ export const PLATFORMS: PlatformInfo[] = [
       'Účty RoboForex běží na MT4/MT5 — ulož report přímo z platformy (viz MetaTrader 4/5 výše).',
   },
   {
-    id: 'portu',
-    name: 'Portu',
+    id: 'schwab',
+    logo: { src: '/loga/schwab.svg', kind: 'icon' },
+    name: 'Charles Schwab',
     group: 'brokeri',
     method: 'file',
     formats: 'CSV',
-    color: '#00B67A',
+    color: '#009DDC',
     guide:
-      'Peníze → Peněženka a transakce → filtry „Všechny Portu investice" + „Všechny transakce" → Stáhnout jako CSV.',
+      'Accounts → History → Export (CSV). Web dává max. 4 roky a 1 500 řádků na export — delší historii stáhni po částech.',
   },
-  {
-    id: 'patria',
-    name: 'Patria Finance',
-    group: 'brokeri',
-    method: 'template',
-    formats: 'XLSX',
-    color: '#003366',
-    guide:
-      'Transakce → Obchodní pokyny → ⋮ → Export → Excel; dividendy zvlášť ze záložky Cash flow. Import zatím přes univerzální šablonu.',
-  },
-  // ── banky a investiční společnosti ────────────────────────────────────────
-  {
-    id: 'fio',
-    name: 'Fio e-Broker',
-    group: 'banky',
-    method: 'file',
-    formats: 'CSV',
-    color: '#1C4E9D',
-    guide:
-      'e-Broker → Obchody → export CSV (kódování řešíme za tebe). Fio neexportuje ISIN — doplníš ho při prvním importu a zapamatujeme si ho.',
-  },
-  {
-    id: 'amundi',
-    name: 'Amundi (KB)',
-    group: 'banky',
-    method: 'template',
-    formats: 'XLS',
-    color: '#003C71',
-    guide:
-      'Portál Moje Amundi → Transakce → Export (XLS). Import zatím přes univerzální šablonu.',
-  },
+  // ── banky a investiční společnosti (dtto) ──
   {
     id: 'conseq',
+    logo: { src: '/loga/conseq.svg', kind: 'wordmark' },
     name: 'Conseq',
     group: 'banky',
     method: 'template',
@@ -216,6 +214,7 @@ export const PLATFORMS: PlatformInfo[] = [
   },
   {
     id: 'csob',
+    logo: { src: '/loga/csob.svg', kind: 'icon' },
     name: 'ČSOB Investice',
     group: 'banky',
     method: 'template',
@@ -225,37 +224,30 @@ export const PLATFORMS: PlatformInfo[] = [
       'Portál ČSOB Investice → Objednávky → Historie objednávek → filtr „Od začátku" → stažení XLS. Import zatím přes univerzální šablonu.',
   },
   {
-    id: 'jt',
-    name: 'J&T Banka',
-    group: 'banky',
-    method: 'template',
-    formats: 'CSV',
-    color: '#333333',
-    monogram: 'J&T',
-    guide:
-      'Nové bankovnictví → účet Investice → Historie → Pohyby → Stáhnout vše (CSV). Import zatím přes univerzální šablonu (výpis bohužel neuvádí ISIN).',
-  },
-  {
-    id: 'juliusbaer',
-    name: 'Julius Bär',
+    id: 'amundi',
+    logo: { src: '/loga/amundi.svg', kind: 'wordmark' },
+    name: 'Amundi (KB)',
     group: 'banky',
     method: 'template',
     formats: 'XLS',
-    color: '#14213D',
-    guide: 'E-Services → Activity → Excel export. Import zatím přes univerzální šablonu.',
+    color: '#003C71',
+    guide:
+      'Portál Moje Amundi → Transakce → Export (XLS). Import zatím přes univerzální šablonu.',
   },
   {
-    id: 'moventum',
-    name: 'Moventum',
+    id: 'fio',
+    logo: { src: '/loga/fio.svg', kind: 'wordmark' },
+    name: 'Fio e-Broker',
     group: 'banky',
-    method: 'template',
-    formats: 'export',
-    color: '#005EB8',
+    method: 'file',
+    formats: 'CSV',
+    color: '#1C4E9D',
     guide:
-      'MoventumOffice → Activity → zvol období → Export (případně požádej svého poradce). Import zatím přes univerzální šablonu.',
+      'e-Broker → Obchody → export CSV (kódování řešíme za tebe). Fio neexportuje ISIN — doplníš ho při prvním importu a zapamatujeme si ho.',
   },
   {
     id: 'raiffeisen',
+    logo: { src: '/loga/raiffeisen.svg', kind: 'wordmark' },
     name: 'Raiffeisenbank',
     group: 'banky',
     method: 'template',
@@ -266,7 +258,31 @@ export const PLATFORMS: PlatformInfo[] = [
       'RBroker → Transakce → Transakce na majetkových účtech → stažení XLS. Import zatím přes univerzální šablonu (dividendy výpis neobsahuje).',
   },
   {
+    id: 'jt',
+    logo: { src: '/loga/jt.svg', kind: 'wordmark' },
+    name: 'J&T Banka',
+    group: 'banky',
+    method: 'template',
+    formats: 'CSV',
+    color: '#333333',
+    monogram: 'J&T',
+    guide:
+      'Nové bankovnictví → účet Investice → Historie → Pohyby → Stáhnout vše (CSV). Import zatím přes univerzální šablonu (výpis bohužel neuvádí ISIN).',
+  },
+  {
+    id: 'moventum',
+    logo: { src: '/loga/moventum.png', kind: 'wordmark' },
+    name: 'Moventum',
+    group: 'banky',
+    method: 'template',
+    formats: 'export',
+    color: '#005EB8',
+    guide:
+      'MoventumOffice → Activity → zvol období → Export (případně požádej svého poradce). Import zatím přes univerzální šablonu.',
+  },
+  {
     id: 'eic',
+    logo: { src: '/loga/eic.png', kind: 'wordmark' },
     name: 'EIC',
     group: 'banky',
     method: 'template',
@@ -275,9 +291,51 @@ export const PLATFORMS: PlatformInfo[] = [
     guide:
       'Online zóna EIC → pohled Transakce → Export; dividendy z pohledu Transfery a dividendy. Import zatím přes univerzální šablonu.',
   },
-  // ── krypto ────────────────────────────────────────────────────────────────
+  {
+    id: 'juliusbaer',
+    logo: { src: '/loga/juliusbaer.svg', kind: 'wordmark' },
+    name: 'Julius Bär',
+    group: 'banky',
+    method: 'template',
+    formats: 'XLS',
+    color: '#14213D',
+    guide: 'E-Services → Activity → Excel export. Import zatím přes univerzální šablonu.',
+  },
+  // ── krypto (dtto; Revolut = nejširší krypto expozice v ČR) ──
+  {
+    id: 'revolut',
+    logo: { src: '/loga/revolut.svg', kind: 'icon' },
+    name: 'Revolut',
+    group: 'krypto',
+    method: 'file',
+    formats: 'CSV',
+    color: '#191C1F',
+    guide:
+      'Akcie: Invest → ⋯ → Statements → Account statement → Excel. Krypto: Crypto → Documents → Account statement. Nahraj oba.',
+  },
+  {
+    id: 'anycoin',
+    logo: { src: '/loga/anycoin.svg', kind: 'icon' },
+    name: 'Anycoin',
+    group: 'krypto',
+    method: 'file',
+    formats: 'CSV',
+    color: '#2F4DE0',
+    guide: 'Profil → Transakce → Export (CSV, soubor orders.csv).',
+  },
+  {
+    id: 'coinmate',
+    logo: { src: '/loga/coinmate.svg', kind: 'wordmark' },
+    name: 'Coinmate',
+    group: 'krypto',
+    method: 'file',
+    formats: 'CSV',
+    color: '#F7931E',
+    guide: 'Historie transakcí → Export (CSV — exportuje se vždy celá historie).',
+  },
   {
     id: 'coinbase',
+    logo: { src: '/loga/coinbase.svg', kind: 'icon' },
     name: 'Coinbase',
     group: 'krypto',
     method: 'file',
@@ -288,6 +346,7 @@ export const PLATFORMS: PlatformInfo[] = [
   },
   {
     id: 'kraken',
+    logo: { src: '/loga/kraken.svg', kind: 'wordmark' },
     name: 'Kraken',
     group: 'krypto',
     method: 'file',
@@ -295,34 +354,6 @@ export const PLATFORMS: PlatformInfo[] = [
     color: '#7132F5',
     guide:
       'Profil → Documents → Exports → Create Export → typ „Ledgers" (CSV, celá historie). Trades.csv nenahrávej — Ledgers obsahuje vše.',
-  },
-  {
-    id: 'coinmate',
-    name: 'Coinmate',
-    group: 'krypto',
-    method: 'file',
-    formats: 'CSV',
-    color: '#F7931E',
-    guide: 'Historie transakcí → Export (CSV — exportuje se vždy celá historie).',
-  },
-  {
-    id: 'anycoin',
-    name: 'Anycoin',
-    group: 'krypto',
-    method: 'file',
-    formats: 'CSV',
-    color: '#2F4DE0',
-    guide: 'Profil → Transakce → Export (CSV, soubor orders.csv).',
-  },
-  {
-    id: 'revolut',
-    name: 'Revolut',
-    group: 'krypto',
-    method: 'file',
-    formats: 'CSV',
-    color: '#191C1F',
-    guide:
-      'Akcie: Invest → ⋯ → Statements → Account statement → Excel. Krypto: Crypto → Documents → Account statement. Nahraj oba.',
   },
 ];
 
