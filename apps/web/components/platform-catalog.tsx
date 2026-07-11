@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   PLATFORM_GROUPS,
@@ -33,25 +34,84 @@ export function PlatformTile({
 }
 
 /**
+ * Logo platformy na světlém čipu — jednotně v obou barevných režimech
+ * (řada log má tmavý text, na tmavém pozadí by zanikla). Ikonové značky
+ * doplňuje název v textu, wordmark nese název sám; bez loga monogram.
+ */
+export function PlatformLogo({
+  platform,
+  withName = true,
+}: {
+  platform: Pick<PlatformInfo, 'name' | 'color' | 'ink' | 'monogram' | 'logo'>;
+  withName?: boolean;
+}) {
+  const logo = platform.logo;
+  if (!logo) {
+    return (
+      <span className="flex min-w-0 items-center gap-2.5">
+        <PlatformTile platform={platform} />
+        {withName && (
+          <span className="min-w-0 truncate text-sm font-semibold leading-tight">
+            {platform.name}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (logo.kind === 'icon') {
+    return (
+      <span className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-inset ring-inkoust/10">
+          <Image
+            src={logo.src}
+            alt=""
+            width={24}
+            height={24}
+            className="h-6 w-6 object-contain"
+          />
+        </span>
+        {withName && (
+          <span className="min-w-0 truncate text-sm font-semibold leading-tight">
+            {platform.name}
+          </span>
+        )}
+      </span>
+    );
+  }
+  // wordmark: název nese samo logo — text by se dubloval
+  return (
+    <span className="flex h-8 shrink-0 items-center rounded-md bg-white px-2.5 ring-1 ring-inset ring-inkoust/10">
+      <Image
+        src={logo.src}
+        alt={platform.name}
+        width={120}
+        height={20}
+        className="h-5 w-auto max-w-[110px] object-contain"
+      />
+    </span>
+  );
+}
+
+/**
  * Kompaktní mřížka pro landing: dlaždice + jméno, u živých API štítek.
  * `limit` ukáže jen nejznámější platformy a zbytek shrne dlaždicí s odkazem
  * na /platformy — plný výčet na landingu jen natahoval stránku.
  */
+/** Homepage: nejpoužívanější platformy v ČR (doloženo v docs/11) — brokeři
+    pro samostatné investory napřed, pak největší fondové platformy a krypto. */
 const GRID_PRIORITY = [
   'trading212',
-  'ibkr',
-  'lynx',
   'xtb',
-  'degiro',
-  'etoro',
   'portu',
-  'coinbase',
-  'kraken',
+  'fio',
+  'patria',
+  'conseq',
+  'csob',
+  'anycoin',
+  'revolut',
 ];
 
 export function PlatformGrid({ limit }: { limit?: number }) {
-  // kurátorské pořadí: živá API první, pak platformy nejběžnější u českých
-  // retail investorů (Portu a Coinbase sem patří — jsou to vstupní brány)
   const rank = (platform: PlatformInfo): number => {
     const index = GRID_PRIORITY.indexOf(platform.id);
     return index === -1 ? GRID_PRIORITY.length : index;
@@ -63,16 +123,8 @@ export function PlatformGrid({ limit }: { limit?: number }) {
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {shown.map((platform) => (
         <li key={platform.id}>
-          <div className="flex h-full items-center gap-2.5 rounded-lg border border-linka bg-plocha px-3 py-2.5">
-            <PlatformTile platform={platform} />
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold leading-tight">{platform.name}</span>
-              {platform.method === 'api' && (
-                <span className="font-mono text-[11px] font-semibold text-ruzova-text">
-                  {METHOD_BADGE.api!.label}
-                </span>
-              )}
-            </span>
+          <div className="flex h-full items-center rounded-lg border border-linka bg-plocha px-3 py-2.5">
+            <PlatformLogo platform={platform} />
           </div>
         </li>
       ))}
@@ -92,11 +144,11 @@ export function PlatformGrid({ limit }: { limit?: number }) {
   );
 }
 
-/** Badge jen tam, kde se metoda liší od defaultu (výpis s autodetekcí). */
-const METHOD_BADGE: Record<PlatformInfo['method'], { label: string; className: string } | null> = {
-  api: { label: 'živě přes API', className: 'bg-ruzova/10 text-ruzova-text font-semibold' },
+/** Popisek metody jen tam, kde se liší od defaultu (výpis s autodetekcí). */
+const METHOD_LABEL: Record<PlatformInfo['method'], string | null> = {
+  api: 'živě přes API',
   file: null,
-  template: { label: 'přes šablonu', className: 'bg-pozadi text-inkoust-tlumeny' },
+  template: 'přes šablonu',
 };
 
 /**
@@ -114,25 +166,19 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
           <GroupHeading className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
             {group.label}
           </GroupHeading>
-          <ul className="mt-2 divide-y divide-linka/60">
+          <ul className="mt-3 grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {PLATFORMS.filter((platform) => platform.group === group.key).map((platform) => (
               <li key={platform.id}>
-                <details className="group py-1.5">
-                  <summary className="flex cursor-pointer list-none items-center gap-3 py-2 [&::-webkit-details-marker]:hidden">
-                    <PlatformTile platform={platform} className="h-7 w-7 text-[11px]" />
-                    <span className="flex-1 text-sm font-medium">{platform.name}</span>
-                    {platform.formats && (
-                      <span className="hidden font-mono text-[11px] text-inkoust-tlumeny sm:inline">
+                <details className="group rounded-lg border border-linka bg-plocha">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
+                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                      <PlatformLogo platform={platform} />
+                      <span className="font-mono text-[11px] text-inkoust-tlumeny">
                         {platform.formats}
+                        {METHOD_LABEL[platform.method] &&
+                          ` · ${METHOD_LABEL[platform.method]}`}
                       </span>
-                    )}
-                    {METHOD_BADGE[platform.method] && (
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${METHOD_BADGE[platform.method]!.className}`}
-                      >
-                        {METHOD_BADGE[platform.method]!.label}
-                      </span>
-                    )}
+                    </span>
                     <span
                       aria-hidden
                       className="text-inkoust-tlumeny transition-transform group-open:rotate-90"
@@ -140,7 +186,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                       ›
                     </span>
                   </summary>
-                  <div className="space-y-1.5 pb-2 pl-10 text-sm text-inkoust-tlumeny">
+                  <div className="space-y-1.5 border-t border-linka/60 p-3.5 text-sm text-inkoust-tlumeny">
                     <p>{platform.guide}</p>
                     {platform.method === 'template' && (
                       <p>

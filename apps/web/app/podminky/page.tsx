@@ -56,8 +56,10 @@ export default function TermsPage() {
 
         <h2 className="font-display text-lg font-semibold">5. Provozovatel a kontakt</h2>
         <p>
-          Danero je osobní projekt — provozuje ho Jan Dunder. Připomínky a chyby posílej
-          na{' '}
+          Danero je osobní projekt — provozuje ho Jan Dunder, IČO 19642661, se sídlem
+          adresa-provozovatele-v-promenne-prostredi (fyzická osoba podnikající dle
+          živnostenského zákona, zapsaná v živnostenském rejstříku). Připomínky a chyby
+          posílej na{' '}
           <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
             dunder.jan@gmail.com
           </a>
