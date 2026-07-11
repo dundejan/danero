@@ -750,7 +750,7 @@ export default function LandingPage() {
                 src="/jan.jpg"
                 alt="Jan Dunder — autor Danera"
                 width={800}
-                height={1000}
+                height={900}
                 sizes="(min-width: 1024px) 320px, 224px"
                 className="rotate-1 rounded-lg border border-linka shadow-lg shadow-inkoust/10"
               />
