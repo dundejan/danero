@@ -54,7 +54,18 @@ export default function TermsPage() {
           </a>
           .
         </p>
+
+        <h2 className="font-display text-lg font-semibold">6. Rozhodné právo a změny podmínek</h2>
+        <p>
+          Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
+          Podmínky můžeme upravit — o každé změně ti dáme vědět e-mailem předem a na této
+          stránce vždy najdeš aktuální verzi s datem účinnosti.
+        </p>
       </section>
+
+      <p className="text-xs text-inkoust-tlumeny">
+        Verze 1.0 (beta) · účinnost od 10. července 2026 · změny oznámíme e-mailem
+      </p>
 
       <p className="text-sm">
         <Link href="/" className="font-medium text-ruzova">

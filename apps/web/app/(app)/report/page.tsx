@@ -8,13 +8,14 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
+import { firstParam } from '@/lib/utils';
 
 export const metadata = { title: 'Daňový report — Danero' };
 
 export default async function ReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rok?: string }>;
+  searchParams: Promise<{ rok?: string | string[] }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
@@ -26,7 +27,7 @@ export default async function ReportPage({
 
   const currentYear = Number(new Date().toISOString().slice(0, 4)); // UTC, konzistentně s today
   const years = availableYears(txs, currentYear);
-  const { rok } = await searchParams;
+  const rok = firstParam((await searchParams).rok);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní

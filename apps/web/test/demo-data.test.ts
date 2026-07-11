@@ -168,6 +168,20 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
     }
   });
 
+  it('varianty párování mají v historii co ukázat: rok Y−1 dává různé základy', () => {
+    // Y−1 prolomil limit 100k (prodej SHOP) → prodeje jsou zdanitelné a SHOP
+    // se dvěma loty za různé ceny dělá rozdíl mezi FIFO (zisk) a LIFO (ztráta);
+    // letošní rok zůstává celý osvobozený úhrnem (viz test CRITICAL výše)
+    const past = analyzeForUser(txs, profile, year - 1, `${year - 1}-12-31`);
+    expect(past.result.securities.exemptUnder100k).toBe(false);
+
+    const { variants } = compareVariants(engineInputForUser(txs, profile, year - 1, dailyRates));
+    const bases = new Set(
+      variants.filter((v) => v.fxMethod === 'UNIFIED').map((v) => v.base10Czk.toFixed(0)),
+    );
+    expect(bases.size).toBeGreaterThan(1);
+  });
+
   it('denní kurzy: syntetické, ±2 % od jednotného kurzu, varianty reportu 8×', () => {
     // kurz existuje pro datum transakce a drží se v pásmu ±2 % jednotného kurzu
     const buy = txs.find((tx) => tx.type === 'BUY' && tx.currency === 'USD')!;

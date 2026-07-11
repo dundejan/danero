@@ -26,8 +26,10 @@ import { MONTH_LABELS } from '@/lib/format';
 
 /**
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
- * kategorické série --graf-1..4 (validované pořadí), semafor jen pro
- * stav/polaritu (zisk/ztráta, pásma limitů). Mřížka a osy ustupují datům.
+ * kategorické série --graf-1..4 (pevné pořadí; největší kategorie — třeba US
+ * v dividendách — dostává --graf-1), semafor jen pro stav/polaritu
+ * (zisk/ztráta, pásma limitů). Brand růžová v sériích není — zůstává jen
+ * akcentem (dnes/limit/aktivní). Mřížka a osy ustupují datům.
  */
 
 const SERIES = ['var(--graf-1)', 'var(--graf-2)', 'var(--graf-3)', 'var(--graf-4)'];

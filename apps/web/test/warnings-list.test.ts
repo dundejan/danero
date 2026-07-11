@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { d } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
-import { groupByCode, withholdingSummary } from '@/components/warnings-list';
+import { groupByCode, warningCaseLine, withholdingSummary } from '@/components/warnings-list';
 
 const w = (over: Partial<EngineWarning>): EngineWarning => ({
   code: 'WITHHOLDING_ABOVE_TREATY',
@@ -74,5 +74,40 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
     const text = withholdingSummary(group, labels, d('126')).replace(/ /g, ' ');
     expect(text).toContain('126 Kč');
     expect(text).not.toContain('150 Kč');
+  });
+});
+
+describe('kompaktní řádek případu (warningCaseLine)', () => {
+  const labels = new Map([['US0378331005', 'AAPL']]);
+
+  it('se strukturovaným contextem skládá „TICKER · datum · částka"', () => {
+    const line = warningCaseLine(
+      w({
+        message: 'Dividenda AAPL z 13. 2. 2026 (US): dlouhé vysvětlení, které se nemá opakovat.',
+        context: { isin: 'US0378331005', date: '2026-02-13', country: 'US', overCzk: '75.45' },
+      }),
+      labels,
+    ).replace(/ /g, ' ');
+    expect(line).toBe('AAPL · 13. 2. 2026 · 75 Kč');
+  });
+
+  it('bez labelu použije ISIN; chybějící části vynechá', () => {
+    const line = warningCaseLine(
+      w({ context: { isin: 'DE0007164600', overCzk: '10.00' } }),
+      labels,
+    ).replace(/ /g, ' ');
+    expect(line).toBe('DE0007164600 · 10 Kč');
+  });
+
+  it('bez strukturovaného contextu vrací plný text (auditní stopa jiných kódů)', () => {
+    const line = warningCaseLine(
+      w({
+        code: 'TRANSFER_WITHOUT_ACQUISITION',
+        message: 'Převod bez údajů o nabytí.',
+        context: { txId: 't-1' },
+      }),
+      labels,
+    );
+    expect(line).toBe('Převod bez údajů o nabytí.');
   });
 });

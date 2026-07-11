@@ -12,6 +12,9 @@ export default function SignUpPage() {
           <Logo className="text-lg" />
         </Link>
         <h1 className="font-display text-3xl font-bold">Registrace</h1>
+        <p className="mt-2 text-sm text-inkoust-tlumeny">
+          Teď v betě všechno zdarma. Bez karty, stačí e-mail.
+        </p>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Už máš účet?{' '}
           <Link href="/prihlaseni" className="font-medium text-ruzova">
@@ -19,7 +22,12 @@ export default function SignUpPage() {
           </Link>
         </p>
       </div>
-      <AuthForm mode="registrace" />
+      <div>
+        <AuthForm mode="registrace" />
+        <p className="mt-3 text-center text-sm text-inkoust-tlumeny">
+          Za 2 minuty připojíš brokera a uvidíš svoje limity.
+        </p>
+      </div>
     </main>
   );
 }

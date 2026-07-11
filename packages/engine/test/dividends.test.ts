@@ -81,6 +81,23 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(us?.creditableCzk.toString()).toBe('225'); // strop 15 % z 1 500
   });
 
+  it('sražená daň po státech v celých Kč (HALF_UP) — souhrn = součet zaokrouhlených', () => {
+    // 150,3 per stát → řádky 150 + 150; souhrn 300 (ne 301 ze zaokrouhleného
+    // součtu 300,6) — tabulka po státech musí korunově sedět na kartu § 8
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '1003', withholdingTax: '150.3' }),
+      dividend({ sourceCountry: 'DE', gross: '1003', withholdingTax: '150.3' }),
+    ]);
+    expect(result.dividends.creditableByCountry['US']?.withholdingCzk.toString()).toBe('150');
+    expect(result.dividends.creditableByCountry['DE']?.withholdingCzk.toString()).toBe('150');
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('300');
+
+    // HALF_UP: 150,5 → 151 (matematicky, ne dolů jako zápočet)
+    const halfUp = run([dividend({ sourceCountry: 'US', gross: '1010', withholdingTax: '150.5' })]);
+    expect(halfUp.dividends.creditableByCountry['US']?.withholdingCzk.toString()).toBe('151');
+    expect(halfUp.dividends.foreignWithholdingCzk.toString()).toBe('151');
+  });
+
   it('R-07a: česká dividenda je srážková a do § 8 nevstupuje', () => {
     const result = run([dividend({ sourceCountry: 'CZ', gross: '5000' })]);
     expect(result.dividends.czechGrossCzk.toString()).toBe('5000');

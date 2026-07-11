@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
 import { czDate, MONTH_LABELS, plural, qty } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,7 @@ type RangeKey = (typeof RANGES)[number]['key'];
 
 /* Geometrie SVG (viewBox 1000×170): osa s tečkami nahoře, popisky měsíců,
    dole 44px vrstva kumulativního osvobozování. */
+const VIEWBOX_WIDTH = 1000;
 const AXIS_Y = 56;
 const TICK_TOP = 70;
 const TICK_BOTTOM = 76;
@@ -81,6 +82,15 @@ export function HorizonStrip({
   const [range, setRange] = useState<RangeKey>('3r');
   const [tip, setTip] = useState<Tip | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // gradientová affordance na pravé hraně — jen dokud je vpravo co odscrollovat
+  const [fadeRight, setFadeRight] = useState(false);
+
+  const syncFade = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setFadeRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 8);
+  }, []);
 
   const view = useMemo(() => {
     if (dots.length === 0) return null;
@@ -155,6 +165,19 @@ export function HorizonStrip({
     return { visible, hidden, todayX: x(todayDay), x, maxWeight, ticks, outlookPath };
   }, [dots, today, range, outlook]);
 
+  // mobil: pás přetéká (min-w 640 px) → výchozí odscrollování na čáru „dnes",
+  // ať uživatel nezírá na dávno osvobozenou historii vlevo
+  const todayX = view?.todayX;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || todayX === undefined) return;
+    if (el.scrollWidth > el.clientWidth) {
+      const target = (todayX / VIEWBOX_WIDTH) * el.scrollWidth - el.clientWidth * 0.4;
+      el.scrollLeft = Math.max(0, Math.min(target, el.scrollWidth - el.clientWidth));
+    }
+    syncFade();
+  }, [todayX, syncFade]);
+
   if (!view) return null;
   const basis = dots[0]?.weightBasis === 'value' ? 'celkové hodnoty' : 'celkového počtu kusů';
 
@@ -210,12 +233,17 @@ export function HorizonStrip({
   const strip = (
     <>
       {/* mobil: pás scrolluje uvnitř vlastního wrapperu — tečky a popisky
-          zůstanou čitelné a stránka nepřetéká */}
-      <div ref={wrapRef} className="relative">
-        <div className="overflow-x-auto">
+          zůstanou čitelné a stránka nepřetéká; min-w-0/max-w-full drží šířku
+          i uvnitř flex/grid rodičů (jinak by kontejner narostl a ořízl bez scrollu) */}
+      <div ref={wrapRef} className="relative min-w-0 max-w-full">
+        <div ref={scrollRef} onScroll={syncFade} className="w-full overflow-x-auto">
           <div className="min-w-[640px] md:min-w-0">
             {/* bez role="img" na svg — fokusovatelné tečky musí zůstat v accessibility tree */}
-            <svg viewBox="0 0 1000 170" className="mt-3 w-full" aria-label="Horizont osvobození">
+            <svg
+              viewBox={`0 0 ${VIEWBOX_WIDTH} 170`}
+              className="mt-3 w-full"
+              aria-label="Horizont osvobození"
+            >
               {/* osa + popisky měsíců/roků */}
               <line
                 x1={X_MIN}
@@ -331,7 +359,9 @@ export function HorizonStrip({
                     aria-label={label}
                     className={cn(
                       // dark:hover explicitně — samotný hover: by v dark prohrál s dark:fill
-                      'hover:fill-ruzova focus:outline-none focus-visible:fill-ruzova dark:hover:fill-ruzova',
+                      // viditelný focus ring: globální outline (:focus-visible) + růžový stroke,
+                      // žádné focus:outline-none (a11y)
+                      'hover:fill-ruzova focus-visible:fill-ruzova focus-visible:stroke-ruzova dark:hover:fill-ruzova',
                       // v dark módu čekající tečky světlejší, ať nesplývají s plochou
                       dot.isExempt ? 'fill-zelena' : 'fill-inkoust-tlumeny dark:fill-inkoust',
                     )}
@@ -346,6 +376,14 @@ export function HorizonStrip({
             </svg>
           </div>
         </div>
+
+        {/* affordance přetečení: gradient „vpravo je toho víc" (jen při overflow) */}
+        {fadeRight && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-r from-transparent to-plocha"
+          />
+        )}
 
         {/* hover/focus tooltip — mimo overflow-x kontejner (ten by ho svisle
             ořízl); u krajů ho pixelový clamp drží uvnitř wrapperu */}

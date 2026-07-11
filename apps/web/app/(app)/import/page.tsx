@@ -17,6 +17,7 @@ import { requireUser } from '@/lib/session';
 import { Toast } from '@/components/toast';
 import { FileField } from '@/components/ui/file-field';
 import { plural } from '@/lib/format';
+import { firstParam } from '@/lib/utils';
 import {
   deleteBatchAction,
   disconnectBrokerAction,
@@ -160,11 +161,13 @@ function ConnectedBroker({
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string; ulozeno?: string }>;
+  searchParams: Promise<{ chyba?: string | string[]; ulozeno?: string | string[] }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
-  const { chyba, ulozeno } = await searchParams;
+  const params = await searchParams;
+  const chyba = firstParam(params.chyba);
+  const ulozeno = firstParam(params.ulozeno);
   const [batches, unmappedSource, accounts, aliases] = await Promise.all([
     db
       .select()

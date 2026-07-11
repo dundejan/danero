@@ -27,14 +27,55 @@ test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
   // živý horizont osvobození (SVG pás s tečkami)
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
-  // ceník přímo na stránce — beta zdarma + cena po spuštění
+  // kotvy v hlavičce (Jak to funguje · Ceník · FAQ)
+  await expect(page.locator('header').getByRole('link', { name: 'Ceník' })).toBeVisible();
+
+  // ceník přímo na stránce — beta zdarma + cena po spuštění s měsíční kotvou
   await expect(page.getByRole('heading', { name: 'Teď v betě: všechno zdarma' })).toBeVisible();
-  await expect(page.getByText('990 Kč ročně')).toBeVisible();
+  await expect(page.getByText('990 Kč ročně', { exact: true })).toBeVisible();
+  await expect(page.getByText(/necelých 83 Kč měsíčně/)).toBeVisible();
 
   // FAQ: details/summary se dá rozkliknout
   const faq = page.locator('details', { hasText: 'Pro koho Danero je?' });
   await faq.locator('summary').click();
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
+
+  // FAQ: konec bety — bez karty se nic nestrhne
+  const beta = page.locator('details', { hasText: 'Co se stane, až beta skončí?' });
+  await beta.locator('summary').click();
+  await expect(beta.getByText(/nic se nestrhne samo/)).toBeVisible();
+});
+
+test('landing: kalkulačka „Musím podat přiznání?" dává orientační verdikt', async ({ page }) => {
+  await page.goto('/');
+
+  // zaměstnanec s prodeji do 100 000 Kč → osvobozeno + zlaté pravidlo
+  await page
+    .getByRole('group', { name: 'Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?' })
+    .getByRole('button', { name: 'Zaměstnanec' })
+    .click();
+  const prodeje = page.getByRole('group', { name: /za víc než 100 000 Kč celkem/ });
+  await prodeje.getByRole('button', { name: 'Ne', exact: true }).click();
+  await expect(
+    page.getByText('Vypadá to, že přiznání kvůli investicím řešit nemusíš.'),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Do 100 000 Kč tržeb z prodejů se daň z prodejů neřeší — vůbec.'),
+  ).toBeVisible();
+
+  // neosvobozené prodeje (nad 100k, drženo méně než 3 roky) → verdikt se otočí
+  await prodeje.getByRole('button', { name: 'Ano', exact: true }).click();
+  await page
+    .getByRole('group', { name: 'Držel jsi všechny prodané kusy déle než 3 roky?' })
+    .getByRole('button', { name: 'Ne', exact: true })
+    .click();
+  await expect(
+    page.getByText('Nejspíš podáš přiznání — Danero ti připraví podklady.'),
+  ).toBeVisible();
+  await expect(page.getByText('Orientačně — přesně to spočítá aplikace z tvých dat.')).toBeVisible();
+  await expect(
+    page.getByLabel('Musím podat přiznání?').getByRole('link', { name: 'Vyzkoušet demo' }),
+  ).toBeVisible();
 });
 
 test('landing: CTA vede rovnou do dema bez registrace', async ({ page }) => {

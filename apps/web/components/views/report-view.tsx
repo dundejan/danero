@@ -136,17 +136,19 @@ export function ReportView({
                 .toDecimalPlaces(0)
                 .sub(activeTax.taxCzk.toDecimalPlaces(0)),
             )}
-            . Prostý zápočet (§ 38f) je stropovaný podílem zahraničních příjmů na
-            základu — může být nižší než započitatelná srážka z tabulky států.
-          </p>
-          <p className="text-xs text-inkoust-tlumeny">
+            .{' '}
             {result.tax.recommended === 'SEPARATE_16A'
               ? 'Výhodnější je samostatný základ § 16a (Příloha č. 4).'
-              : 'Výhodnější je obecný základ (15/23 %).'}{' '}
-            {result.tax.note}
+              : 'Výhodnější je obecný základ (15/23 %).'}
           </p>
         </Card>
       </section>
+
+      {/* delší výklad k číslům v kartách — jednou pod gridem, ne v každé kartě */}
+      <p className="text-xs text-inkoust-tlumeny">
+        Prostý zápočet (§ 38f) je stropovaný podílem zahraničních příjmů na základu — může
+        být nižší než započitatelná srážka z tabulky států. {result.tax.note}
+      </p>
 
       <Card className="space-y-3">
         <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
@@ -218,9 +220,20 @@ export function ReportView({
           </p>
         )}
         <p className="text-xs text-inkoust-tlumeny">
-          Metodu změníš v Nastavení. FIFO je bezpečný standard; jinou metodu párování lze
-          obhájit jen průkaznou identifikací konkrétních prodávaných kusů — a zvolená
-          metoda se drží konzistentně celý rok (kombinovat nelze).
+          {demo ? (
+            <>
+              V plné verzi metodu přepneš v Nastavení —{' '}
+              <Link href="/registrace" className="font-medium text-ruzova">
+                založ si účet
+              </Link>
+              .
+            </>
+          ) : (
+            'Metodu změníš v Nastavení.'
+          )}{' '}
+          FIFO je bezpečný standard; jinou metodu párování lze obhájit jen průkaznou
+          identifikací konkrétních prodávaných kusů — a zvolená metoda se drží
+          konzistentně celý rok (kombinovat nelze).
         </p>
       </Card>
 
@@ -337,7 +350,10 @@ export function ReportView({
             <p className="text-xs text-jantar">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
               podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
-              druh" by základ daně snížil; přepínač najdeš v Nastavení.
+              druh" by základ daně snížil;{' '}
+              {demo
+                ? 'v plné verzi si výklad přepneš v Nastavení — založ si účet.'
+                : 'přepínač najdeš v Nastavení.'}
             </p>
           )}
         </Card>
@@ -368,6 +384,16 @@ export function ReportView({
               </tbody>
             </table>
           </div>
+          {/* hlavička § 8 zahrnuje i úroky — bez tohoto řádku by rozpis neseděl na souhrn */}
+          {result.dividends.taxableInterestCzk.gt(0) && (
+            <p className="text-xs text-inkoust-tlumeny">
+              Úroky (zdanitelné):{' '}
+              <span className="font-mono text-inkoust">
+                {czk(result.dividends.taxableInterestCzk)}
+              </span>{' '}
+              — vstupují do dílčího základu § 8 vedle dividend z tabulky.
+            </p>
+          )}
           {result.dividends.czechGrossCzk.gt(0) && (
             <p className="text-xs text-inkoust-tlumeny">
               České dividendy {czk(result.dividends.czechGrossCzk)} jsou zdaněny srážkou u
@@ -393,19 +419,35 @@ export function ReportView({
       <Card className="space-y-3">
         <CardTitle>Export pro mojedane.cz</CardTitle>
         {demo ? (
-          // teaser: XML s ukázkovými daty nemá kam vést — CTA na vlastní účet
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-inkoust-tlumeny">
-              V demu nedostupné — založ si účet a stáhni XML písemnosti DPFDP7 pro
-              podatelnu mojedane.cz s vlastními čísly z tohoto reportu.
+          // teaser: XML s vlastními čísly až s účtem — ukázkový soubor ale
+          // ukáže přesně, co z Danera padá na podatelnu
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-inkoust-tlumeny">
+                V demu nedostupné — založ si účet a stáhni XML písemnosti DPFDP7 pro
+                podatelnu mojedane.cz s vlastními čísly z tohoto reportu.
+              </p>
+              <Link
+                href="/registrace"
+                className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              >
+                Založit účet zdarma
+              </Link>
+            </div>
+            <p className="text-sm">
+              <a
+                href="/marketing/ukazka-dpfdp7-2025.xml"
+                download
+                className="font-medium text-ruzova"
+              >
+                Stáhni ukázkové XML (2025)
+              </a>{' '}
+              <span className="text-inkoust-tlumeny">
+                — přesně tohle nahraješ na podatelnu (fiktivní osobní údaje, čísla z demo
+                portfolia).
+              </span>
             </p>
-            <Link
-              href="/registrace"
-              className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              Založit účet zdarma
-            </Link>
-          </div>
+          </>
         ) : EPO_SUPPORTED_YEARS.includes(year) ? (
           <>
             <p className="text-sm text-inkoust-tlumeny">

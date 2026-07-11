@@ -1,13 +1,14 @@
-import { ZERO, type Money } from '@danero/shared';
+import { d, ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
-import { czk } from '@/lib/format';
+import { czDate, czk } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
  * Seskupené zobrazení kontrol výpočtu (varování enginu) — server komponenta
- * sdílená přehledem a reportem. Jeden výskyt kódu = prostý text (technický kód
- * jen v title atributu); víc výskytů = blok s lidským nadpisem, počtem
- * a rozbalitelnými jednotlivými případy.
+ * sdílená přehledem a reportem. Jeden výskyt kódu = prostý text; víc výskytů =
+ * blok s lidským nadpisem, počtem a rozbalitelnými jednotlivými případy
+ * (kompaktně „TICKER · datum · částka" — vysvětlení nese souhrn, ne každý
+ * řádek). Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
  */
 
 interface WarningGroup {
@@ -84,16 +85,33 @@ function groupTitle(group: WarningGroup): string {
   return cut === undefined ? message : message.slice(0, cut);
 }
 
+/**
+ * Kompaktní řádek jednoho případu: „TICKER · datum · částka" ze
+ * strukturovaného contextu varování. Bez strukturovaných dat (jiné kódy)
+ * se vrací plný text — auditní stopa nesmí přijít o informaci.
+ * Export kvůli unit testům — čistá funkce bez JSX.
+ */
+export function warningCaseLine(warning: EngineWarning, labels: Map<string, string>): string {
+  const ctx = warning.context ?? {};
+  const isin = typeof ctx.isin === 'string' ? ctx.isin : undefined;
+  const date = typeof ctx.date === 'string' ? ctx.date : undefined;
+  const overCzk = typeof ctx.overCzk === 'string' ? ctx.overCzk : undefined;
+  if (!isin && !date && !overCzk) return warning.message;
+  return [isin ? (labels.get(isin) ?? isin) : undefined, date && czDate(date), overCzk && czk(d(overCzk))]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 /** Rozbalitelný výčet jednotlivých případů skupiny (auditní stopa). */
-function GroupDetails({ group }: { group: WarningGroup }) {
+function GroupDetails({ group, labels }: { group: WarningGroup; labels: Map<string, string> }) {
   return (
     <details className="mt-1">
       <summary className="cursor-pointer text-xs opacity-80">
         Jednotlivé případy ({group.items.length})
       </summary>
-      <ul className="mt-1 space-y-1 text-sm">
+      <ul className="mt-1 space-y-1 font-mono text-xs">
         {group.items.map((warning, i) => (
-          <li key={i}>{warning.message}</li>
+          <li key={i}>{warningCaseLine(warning, labels)}</li>
         ))}
       </ul>
     </details>
@@ -169,11 +187,7 @@ export function WarningsList({
         const color = LEVEL_CLASS[group.level];
         if (group.items.length === 1) {
           return (
-            <p
-              key={group.code}
-              title={group.code}
-              className={cn('flex items-start gap-2 text-sm', color)}
-            >
+            <p key={group.code} className={cn('flex items-start gap-2 text-sm', color)}>
               <LevelBadge level={group.level} />
               <span>{group.items[0]!.message}</span>
             </p>
@@ -181,7 +195,7 @@ export function WarningsList({
         }
         return (
           <div key={group.code} className={color}>
-            <p className="flex items-start gap-2 text-sm font-medium" title={group.code}>
+            <p className="flex items-start gap-2 text-sm font-medium">
               <LevelBadge level={group.level} />
               <span>
                 {groupTitle(group)}{' '}
@@ -193,7 +207,7 @@ export function WarningsList({
                 {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
               </p>
             )}
-            <GroupDetails group={group} />
+            <GroupDetails group={group} labels={labels} />
           </div>
         );
       })}

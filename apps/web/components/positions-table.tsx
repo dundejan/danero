@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Position } from '@danero/engine';
 import { czDate, qty } from '@/lib/format';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -59,12 +60,15 @@ export function PositionsTable({
   labels,
   names,
   embedded = false,
+  basePath = '',
 }: {
   positions: Position[];
   labels: Map<string, string>;
   names: Map<string, string>;
   /** Bez vlastní karty a titulku — pro vložení do sekce s jednotným nadpisem. */
   embedded?: boolean;
+  /** Prefix odkazů na detail pozice ('' pro aplikaci, '/demo' pro demo). */
+  basePath?: string;
 }) {
   const rows: Row[] = positions
     .map((position) => {
@@ -98,6 +102,7 @@ export function PositionsTable({
           <PositionCard
             key={row.isin}
             isin={row.isin}
+            basePath={basePath}
             label={row.label}
             name={row.name}
             primaryText={`${qty(row.total)} ks`}
@@ -127,7 +132,13 @@ export function PositionsTable({
             {rows.map((row) => (
               <tr key={row.isin} className="border-b border-linka/60">
                 <td className="py-2 pr-4">
-                  <span className="font-sans font-medium">{row.label}</span>{' '}
+                  {/* klikací konzistentně s tabulkou na /portfolio */}
+                  <Link
+                    href={`${basePath}/portfolio/${row.isin}`}
+                    className="font-sans font-medium text-inkoust hover:text-ruzova"
+                  >
+                    {row.label}
+                  </Link>{' '}
                   <span className="text-xs text-inkoust-tlumeny">
                     {row.name ? `${row.name} · ` : ''}
                     {row.isin}

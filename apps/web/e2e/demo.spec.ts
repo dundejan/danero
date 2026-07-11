@@ -18,6 +18,11 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await page.waitForURL('**/demo/prehled');
   await expectDemoBanner(page);
 
+  // naváděcí checklist prohlídky pod bannerem + mini patička s právními odkazy
+  await expect(page.getByRole('navigation', { name: 'Prohlídka dema' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Simulátor — prodej nanečisto/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Podmínky užití' })).toBeVisible();
+
   // verdikt-box: prolomený limit 50k → „podáš přiznání" + orientační daň
   await expect(page.getByText(/podáš daňové přiznání/)).toBeVisible();
   await expect(page.getByText('Orientační daň z investic:')).toBeVisible();
@@ -28,7 +33,7 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await expect(page.getByText('Osvobození krypta — 100 000 Kč')).toBeVisible();
 
   // horizont osvobození s tečkami (SVG pás)
-  await expect(page.getByText('Horizont osvobození')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toBeVisible();
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
   // demo upozornění z hlídače (prolomený limit) — .first(): týž text nese
@@ -102,7 +107,9 @@ test('demo simulátor: GET výpočet nad ukázkovými daty', async ({ page }) =>
   await expectDemoBanner(page);
   await expect(page.getByRole('heading', { name: 'Simulátor prodeje' })).toBeVisible();
 
-  // formulář: VWCE, 5 ks za 140 EUR → GET → verdikt (prodej z osvobozeného lotu)
+  // formulář: VWCE, 5 ks za 140 EUR → GET → verdikt. Prodej je sice z lotu
+  // osvobozeného časovým testem, ale prolomí úhrn 100k (91k + ~17k) — poctivý
+  // verdikt varuje před knock-on zdaněním dřívějších letošních prodejů.
   await page.getByLabel('Pozice').selectOption('IE00BK5BQT80');
   await page.getByLabel('Kusů (prázdné = vše)').fill('5');
   await page.getByLabel('Cena/ks').fill('140');
@@ -110,7 +117,9 @@ test('demo simulátor: GET výpočet nad ukázkovými daty', async ({ page }) =>
   await page.waitForURL(/\/demo\/simulator\?.*isin=IE00BK5BQT80/);
 
   await expect(page.getByText('Verdikt')).toBeVisible();
-  await expect(page.getByText('Prodej je celý osvobozený — limity ani daň nečerpá.')).toBeVisible();
+  await expect(
+    page.getByText(/Prodej je osvobozený časovým testem, ale prolomí úhrn 100 000 Kč/),
+  ).toBeVisible();
   await expect(page.getByText('Rozpad prodeje')).toBeVisible();
   await expect(page.getByText('Paušální daň (50 000 Kč)')).toBeVisible();
 });
@@ -132,10 +141,17 @@ test('demo report: čísla k přiznání + teaser místo EPO exportu', async ({ 
   await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();
   await expect(page.getByText('Dividendy podle států', { exact: false })).toBeVisible();
 
-  // EPO export je v demu nahrazený teaserem s CTA
+  // EPO export je v demu nahrazený teaserem s CTA + odkazem na ukázkové XML
   await expect(page.getByText('Export pro mojedane.cz')).toBeVisible();
   await expect(page.getByText(/V demu nedostupné/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Stáhnout XML pro EPO' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Stáhni ukázkové XML (2025)' })).toHaveAttribute(
+    'href',
+    '/marketing/ukazka-dpfdp7-2025.xml',
+  );
+
+  // na reportu (konec prohlídky) vede poslední krok checklistu na registraci
+  await expect(page.getByRole('link', { name: 'Hotovo? Založ si účet' })).toBeVisible();
 
   // CTA z banneru vede na registraci
   await page.getByRole('link', { name: 'Založit účet zdarma' }).first().click();

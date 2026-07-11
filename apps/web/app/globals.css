@@ -14,20 +14,21 @@
   --oranz: #c25a25;
   --cervena: #b3362f;
   --linka: #e4e2da;
-  /* Kategorické barvy grafů (G3) — pevné pořadí, validováno dataviz skriptem
-     (CVD ΔE, lightness band, kontrast) proti ploše karet. Semaforové barvy
-     limitů se v grafech NEpoužívají pro série — jen pro stav/polaritu. */
-  --graf-1: #d6336c;
+  /* Kategorické barvy grafů (G3) — pevné pořadí, kontrast ≥ 3:1 proti ploše
+     karet. Semaforové barvy limitů se v grafech NEpoužívají pro série — jen
+     pro stav/polaritu. Brand růžová do sérií NEpatří vůbec (F1 z panelového
+     testování): zůstává výhradně akcentem (dnes/limit/aktivní/hover). */
+  --graf-1: #1c7ed6;
   --graf-2: #3b5bdb;
   --graf-3: #0ca678;
   --graf-4: #7048e8;
-  /* Rozšíření palety 5–8 (koláč alokace, kde jsou 4 sloty málo) — validováno
-     dataviz skriptem vč. wrap-around páru 8↔1; hodnoty se semaforem nekolidují
-     (žádná jantarová/oranžová/červená). */
+  /* Rozšíření palety 5–8 (koláč alokace, kde jsou 4 sloty málo) — barva tam
+     jen odděluje sousední výseče (identitu nesou popisky); hodnoty se
+     semaforem nekolidují (žádná jantarová/oranžová/červená). */
   --graf-5: #1098ad;
   --graf-6: #ae3ec9;
   --graf-7: #5c940d;
-  --graf-8: #1c7ed6;
+  --graf-8: #868e96;
   /* Syté výplně pro CTA/danger s bílým textem — v dark módu NEsmí zesvětlat
      (světlé odstíny --ruzova/--cervena tam slouží textu, bílá by na nich
      neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
@@ -47,14 +48,14 @@
   /* světlejší než světlý token — záporné hodnoty na --plocha 5,5:1 (WCAG AA) */
   --cervena: #e8746a;
   --linka: #2b2e4a;
-  --graf-1: #e0567f;
+  --graf-1: #339af0;
   --graf-2: #5c7cfa;
   --graf-3: #0ca678;
   --graf-4: #845ef7;
   --graf-5: #1098ad;
   --graf-6: #be4bdb;
   --graf-7: #66a80f;
-  --graf-8: #339af0;
+  --graf-8: #adb5bd;
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
 }

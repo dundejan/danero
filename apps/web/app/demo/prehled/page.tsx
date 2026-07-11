@@ -3,6 +3,7 @@ import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { computeNotificationCandidates } from '@/lib/notifications';
 import { availableYears } from '@/lib/portfolio';
+import { firstParam } from '@/lib/utils';
 
 // „dnešek" dema se odvíjí od skutečného data — žádný prerender při buildu
 export const dynamic = 'force-dynamic';
@@ -12,14 +13,14 @@ export const metadata = { title: 'Demo: Přehled — Danero' };
 export default async function DemoPrehledPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rok?: string }>;
+  searchParams: Promise<{ rok?: string | string[] }>;
 }) {
   const today = demoToday();
   const { txs, profile, prices } = demoDataset(today);
 
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
-  const { rok } = await searchParams;
+  const rok = firstParam((await searchParams).rok);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const analysis = analyzeForUserCached(DEMO_USER_ID, txs, profile, year, today);
 

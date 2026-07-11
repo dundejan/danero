@@ -14,6 +14,7 @@ import { headers } from 'next/headers';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
+import { firstParam } from '@/lib/utils';
 import {
   changeEmailAction,
   changePasswordAction,
@@ -28,12 +29,14 @@ export const metadata = { title: 'Nastavení — Danero' };
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string; ok?: string }>;
+  searchParams: Promise<{ chyba?: string | string[]; ok?: string | string[] }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
   const profile = await getProfile(db, user.id);
-  const { chyba, ok } = await searchParams;
+  const params = await searchParams;
+  const chyba = firstParam(params.chyba);
+  const ok = firstParam(params.ok);
   const requestHeaders = await headers();
   const auth = await getAuth();
   const sessions = await auth.api.listSessions({ headers: requestHeaders });

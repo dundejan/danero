@@ -156,27 +156,34 @@ export function PrehledView({
             status={result.limits.cryptoLimit100k}
           />
         )}
-        <Card className="space-y-1">
-          <CardTitle>Orientační daň z investic</CardTitle>
-          <p className="font-mono text-lg font-medium">
-            {czk(
-              result.tax.recommended === 'GENERAL'
-                ? result.tax.general.taxCzk
-                : result.tax.separate16a.taxCzk,
-            )}
-          </p>
-          <p className="text-xs text-inkoust-tlumeny">
-            Základ § 10 (prodeje):{' '}
-            {czk(
-              result.securities.base10Czk
-                .plus(result.crypto.base10Czk)
-                .plus(result.derivatives.base10Czk),
-            )}{' '}
-            · § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
-            {result.tax.recommended === 'SEPARATE_16A' &&
-              ' · doporučen § 16a (samostatný základ pro zahraniční dividendy)'}
-          </p>
-          <p className="text-xs text-inkoust-tlumeny">{result.tax.note}</p>
+        {/* horizontální pás přes celý řádek — karta nesmí sedět osaměle v 1/3 gridu */}
+        <Card className="md:col-span-2 xl:col-span-3">
+          <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_2fr] md:items-center">
+            <div className="space-y-1">
+              <CardTitle>Orientační daň z investic</CardTitle>
+              <p className="font-mono text-2xl font-semibold">
+                {czk(
+                  result.tax.recommended === 'GENERAL'
+                    ? result.tax.general.taxCzk
+                    : result.tax.separate16a.taxCzk,
+                )}
+              </p>
+            </div>
+            <div className="grid gap-x-6 gap-y-2 text-xs text-inkoust-tlumeny sm:grid-cols-2">
+              <p>
+                Základ § 10 (prodeje):{' '}
+                {czk(
+                  result.securities.base10Czk
+                    .plus(result.crypto.base10Czk)
+                    .plus(result.derivatives.base10Czk),
+                )}{' '}
+                · § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
+                {result.tax.recommended === 'SEPARATE_16A' &&
+                  ' · doporučen § 16a (samostatný základ pro zahraniční dividendy)'}
+              </p>
+              <p>{result.tax.note}</p>
+            </div>
+          </div>
         </Card>
       </section>
 
@@ -258,6 +265,7 @@ export function PrehledView({
                     labels={labels}
                     names={instrumentNames(txs)}
                     embedded
+                    basePath={basePath}
                   />
                 ),
               },

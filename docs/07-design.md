@@ -28,13 +28,14 @@ význam „daňově osvobozeno" (odměna za trpělivost).
 ### Grafy (G3)
 
 Kategorické série v grafech mají vlastní tokeny `--graf-1…4` (light:
-`#D6336C, #3B5BDB, #0CA678, #7048E8`; dark: `#E0567F, #5C7CFA, #0CA678, #845EF7`) —
-pevné pořadí, validováno dataviz skriptem (CVD ΔE ≥ 12 na sousedních párech,
-lightness band, kontrast ≥ 3:1 vůči ploše karty v obou režimech). Semaforové barvy
-se v grafech používají výhradně pro stav/polaritu (zisk/ztráta, pásma limitů),
-nikdy jako běžná série. Jednosériové grafy jedou na `--graf-1` (růžová = pozornost);
-sloupce mají 2px mezeru (stroke plochy), mřížka a osy ustupují datům
-(`--linka`, tlumený mono text). Víc než 4 kategorie = top 3 + „Ostatní".
+`#1C7ED6, #3B5BDB, #0CA678, #7048E8`; dark: `#339AF0, #5C7CFA, #0CA678, #845EF7`) —
+pevné pořadí (největší kategorie = `--graf-1`), kontrast ≥ 3:1 vůči ploše karty
+v obou režimech. Semaforové barvy se v grafech používají výhradně pro
+stav/polaritu (zisk/ztráta, pásma limitů), nikdy jako běžná série. **Brand
+růžová do sérií nepatří vůbec** (F1 z panelového testování) — zůstává jen
+akcentem (čára „dnes", aktivní stav, hover); jednosériové grafy jedou na
+`--graf-1`. Sloupce mají 2px mezeru (stroke plochy), mřížka a osy ustupují
+datům (`--linka`, tlumený mono text). Víc než 4 kategorie = top 3 + „Ostatní".
 
 ## Typografie
 

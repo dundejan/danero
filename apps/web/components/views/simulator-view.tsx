@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { positionsAt, simulateSale, analyzeTaxYear, type EngineInput } from '@danero/engine';
 import type { DisposalReport } from '@danero/engine';
-import { ZERO, type Money, type Transaction } from '@danero/shared';
+import { d, ZERO, type Money, type Transaction } from '@danero/shared';
 import { LimitBar, zoneForRatio } from '@/components/limit-gauge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle, keepCurrencyCase } from '@/components/ui/card';
@@ -13,13 +13,21 @@ import {
   instrumentNames,
   type ProfileRow,
 } from '@/lib/portfolio';
-import { cn } from '@/lib/utils';
+import type { InstrumentPrice } from '@/lib/prices';
+import { simulatorVerdict, type SimulatorVerdict } from '@/lib/simulator-verdict';
+import { cn, firstParam } from '@/lib/utils';
 
+/** Opakovaný query parametr přijde jako pole — normalizuje se přes firstParam. */
 export interface SimParams {
-  isin?: string;
-  kusy?: string;
-  cena?: string;
+  isin?: string | string[];
+  kusy?: string | string[];
+  cena?: string | string[];
 }
+
+/** Číslo ve tvaru „123" / „123.45" (bez vědecké notace — regex ji odmítne). */
+const NUM_RE = /^\d+(\.\d+)?$/;
+/** Horní mez vstupů (cena i kusy) — brání „∞ Kč" a absurdním procentům. */
+const MAX_INPUT = d('1000000000');
 
 /**
  * Sdílené tělo simulátoru prodeje: GET formulář + čistý výpočet dopadu
@@ -32,6 +40,7 @@ export function SimulatorView({
   today,
   params,
   dailyRates,
+  prices,
   basePath = '',
 }: {
   txs: Transaction[];
@@ -39,27 +48,61 @@ export function SimulatorView({
   today: string;
   params: SimParams;
   dailyRates?: EngineInput['dailyRates'];
+  /** Poslední známé ceny od brokera — předvyplnění pole „Cena/ks". */
+  prices?: Map<string, InstrumentPrice>;
   basePath?: string;
 }) {
   const year = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const baseline = analyzeTaxYear(input);
-  const positions = positionsAt(baseline.ledger, today).filter((p) => p.totalRemaining.gt(0));
+  // deriváty simulátor neumí (viz hláška níže) — do výběru pozic nepatří
+  const positions = positionsAt(baseline.ledger, today).filter(
+    (p) => p.totalRemaining.gt(0) && p.assetClass !== 'DERIVATIVE',
+  );
   const labels = instrumentLabels(txs);
   const names = instrumentNames(txs);
+  // options řadíme podle tickeru/labelu (ISIN uživateli nic neříká)
+  const options = [...positions].sort((a, b) =>
+    (labels.get(a.isin) ?? a.isin).localeCompare(labels.get(b.isin) ?? b.isin, 'cs'),
+  );
 
-  const selected = positions.find((p) => p.isin === params.isin);
-  const priceRaw = (params.cena ?? '').replace(',', '.').trim();
-  const quantityRaw = (params.kusy ?? '').replace(',', '.').trim();
+  const isinParam = firstParam(params.isin);
+  const selected = positions.find((p) => p.isin === isinParam);
+  const priceRaw = (firstParam(params.cena) ?? '').replace(',', '.').trim();
+  const quantityRaw = (firstParam(params.kusy) ?? '').replace(',', '.').trim();
+
+  // druh je vlastnost instrumentu — derivát poznáme z transakcí i bez pozice
+  const isDerivativeIsin =
+    isinParam !== undefined &&
+    txs.some(
+      (tx) =>
+        'isin' in tx && tx.isin === isinParam && 'assetClass' in tx && tx.assetClass === 'DERIVATIVE',
+    );
+
+  // předvyplnění poslední známou cenou od brokera (jen shodná měna — jiná by
+  // uživatele zmátla); simulace se s ní nespouští, jen šetří psaní
+  const lastKnown = selected ? prices?.get(selected.isin) : undefined;
+  const prefillPrice =
+    selected && priceRaw === '' && lastKnown && lastKnown.currency === selected.currency
+      ? lastKnown.price
+      : undefined;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
   let formError: string | null = null;
-  if (selected) {
+  if (isDerivativeIsin) {
+    // R-12: deriváty nemají osvobození ani limity — simulace by lhala
+    formError = 'Deriváty simulátor zatím neumí — daní se vždy, bez osvobození i limitů (§ 10, druh F).';
+  } else if (selected && (priceRaw !== '' || !prefillPrice)) {
     const quantity = quantityRaw === '' ? selected.totalRemaining.toString() : quantityRaw;
-    if (!/^\d+(\.\d+)?$/.test(priceRaw) || Number(priceRaw) <= 0) {
+    // validace výhradně Decimalem — Number by u velkých vstupů přetekl do Infinity
+    if (!NUM_RE.test(priceRaw) || !d(priceRaw).gt(0)) {
       formError = 'Zadej cenu za kus (kladné číslo, v měně instrumentu).';
-    } else if (!/^\d+(\.\d+)?$/.test(quantity) || Number(quantity) <= 0) {
+    } else if (d(priceRaw).gt(MAX_INPUT)) {
+      formError = 'To není reálná cena — zadej cenu do 1 000 000 000.';
+    } else if (!NUM_RE.test(quantity) || !d(quantity).gt(0)) {
       formError = 'Počet kusů musí být kladné číslo.';
+    } else if (d(quantity).gt(MAX_INPUT)) {
+      formError = 'Zadej počet kusů do 1 000 000 000.';
     } else if (selected.totalRemaining.lt(quantity)) {
       formError = `Držíš jen ${qty(selected.totalRemaining)} ks — tolik prodat nejde.`;
     } else {
@@ -87,22 +130,27 @@ export function SimulatorView({
         <form method="get" className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end">
           <div>
             <Label htmlFor="isin">Pozice</Label>
-            <Select id="isin" name="isin" defaultValue={params.isin ?? ''} required>
+            <Select id="isin" name="isin" defaultValue={selected?.isin ?? ''} required>
               <option value="" disabled>
                 Vyber instrument…
               </option>
-              {positions.map((position) => (
+              {options.map((position) => (
                 <option key={position.isin} value={position.isin}>
                   {labels.get(position.isin) ?? position.isin}
                   {names.get(position.isin) ? ` — ${names.get(position.isin)}` : ''} ·{' '}
-                  {qty(position.totalRemaining)} ks
+                  {qty(position.totalRemaining)} ks · {position.currency}
                 </option>
               ))}
             </Select>
           </div>
           <div>
             <Label htmlFor="kusy">Kusů (prázdné = vše)</Label>
-            <Input id="kusy" name="kusy" inputMode="decimal" defaultValue={params.kusy ?? ''} />
+            <Input
+              id="kusy"
+              name="kusy"
+              inputMode="decimal"
+              defaultValue={firstParam(params.kusy) ?? ''}
+            />
           </div>
           <div>
             <Label htmlFor="cena">Cena/ks</Label>
@@ -112,7 +160,7 @@ export function SimulatorView({
                 name="cena"
                 inputMode="decimal"
                 required
-                defaultValue={params.cena ?? ''}
+                defaultValue={firstParam(params.cena) ?? prefillPrice?.toString() ?? ''}
                 placeholder="cena za kus"
                 title="Cena za kus v měně instrumentu"
               />
@@ -126,6 +174,11 @@ export function SimulatorView({
           </div>
           <Button type="submit">Spočítat dopad</Button>
         </form>
+        {prefillPrice && (
+          <p className="mt-3 text-xs text-inkoust-tlumeny">
+            Předvyplnili jsme poslední známou cenu — uprav podle trhu a spočítej dopad.
+          </p>
+        )}
         {formError && <p className="mt-3 text-sm text-cervena">{formError}</p>}
       </Card>
 
@@ -163,18 +216,7 @@ export function SimulatorView({
         <>
           <Card className="space-y-2">
             <CardTitle>Verdikt</CardTitle>
-            {simulation.simulatedDisposal?.taxableProceedsCzk.lte(0) ? (
-              <p className="text-lg font-semibold text-zelena">
-                Prodej je celý osvobozený — limity ani daň nečerpá.
-              </p>
-            ) : simulation.simulated.flatTax50kExceeded &&
-              !simulation.baseline.flatTax50kExceeded ? (
-              <p className="text-lg font-semibold text-cervena">
-                Tento prodej prolomí limit 50 000 Kč pro paušální daň.
-              </p>
-            ) : (
-              <p className="text-lg font-semibold">Prodej je zdanitelný — dopad níže.</p>
-            )}
+            <VerdictLine verdict={simulatorVerdict(simulation)} />
             <p className="text-sm text-inkoust-tlumeny">
               Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
               <span className="font-mono text-zelena">
@@ -243,6 +285,46 @@ export function SimulatorView({
       )}
     </div>
   );
+}
+
+/**
+ * Věta verdiktu podle čisté funkce simulatorVerdict — poctivá i u knock-on
+ * efektu (osvobozený prodej, který prolomí úhrn 100k a zpětně zdaní dřívější
+ * letošní prodeje). Barva: zelená jen pro čistě osvobozený stav.
+ */
+function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
+  switch (verdict.kind) {
+    case 'EXEMPT_CLEAN':
+      return (
+        <p className="text-lg font-semibold text-zelena">
+          Prodej je celý osvobozený — limity ani daň nečerpá.
+        </p>
+      );
+    case 'EXEMPT_BREAKS_100K':
+      return (
+        <p className="text-lg font-semibold text-cervena">
+          Prodej je osvobozený časovým testem, ale prolomí úhrn 100 000 Kč
+          {verdict.crypto ? ' pro kryptoaktiva' : ''} — zpětně zdaní dřívější letošní prodeje
+          {verdict.taxDeltaCzk.gt(0) ? ` (daň +${czk(verdict.taxDeltaCzk)})` : ''}.
+        </p>
+      );
+    case 'EXEMPT_DRAWS_LIMIT':
+      return (
+        <p className="text-lg font-semibold text-jantar">
+          {verdict.taxDeltaCzk.gt(0)
+            ? `Prodej je osvobozený, ale celková daň se zvýší o ${czk(verdict.taxDeltaCzk)} — dopad níže.`
+            : `Prodej je osvobozený a daň nezvýší, ale čerpá roční limit 100 000 Kč${verdict.crypto ? ' pro kryptoaktiva' : ''} — hlídej zbývající prostor níže.`}
+        </p>
+      );
+    case 'BREAKS_50K':
+      return (
+        <p className="text-lg font-semibold text-cervena">
+          Tento prodej prolomí limit 50 000 Kč pro paušální daň.
+        </p>
+      );
+    case 'TAXABLE':
+      return <p className="text-lg font-semibold">Prodej je zdanitelný — dopad níže.</p>;
+  }
 }
 
 /**

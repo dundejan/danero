@@ -93,7 +93,12 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     <form onSubmit={onSubmit} className="space-y-4">
       {mode === 'registrace' && (
         <div>
-          <Label htmlFor="jmeno">Jméno</Label>
+          <Label htmlFor="jmeno">
+            Jméno{' '}
+            <span className="font-normal text-inkoust-tlumeny">
+              (nepovinné — jak ti máme říkat)
+            </span>
+          </Label>
           <Input id="jmeno" name="jmeno" autoComplete="name" />
         </div>
       )}

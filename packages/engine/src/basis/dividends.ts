@@ -35,6 +35,10 @@ export interface DividendsResult {
   czechGrossCzk: Money;
   /** Zahraniční dividendy brutto (R-07b) — vstupují i do limitu 50k (R-08d). */
   foreignGrossCzk: Money;
+  /**
+   * Sražená daň v zahraničí = SOUČET per-country hodnot zaokrouhlených na celé
+   * Kč (HALF_UP) — souhrn tak vždy korunově sedí na tabulku po státech.
+   */
   foreignWithholdingCzk: Money;
   /**
    * Zápočet po stropu smlouvou (R-07c) = součet per-country hodnot zaokrouhlených
@@ -43,8 +47,9 @@ export interface DividendsResult {
    */
   creditableWithholdingCzk: Money;
   /**
-   * Agregát po státech: brutto, sražená daň a zápočet (creditableCzk je
-   * zaokrouhlený na celé Kč dolů — R-07c).
+   * Agregát po státech: brutto, sražená daň a zápočet. Sražená daň je
+   * zaokrouhlená na celé Kč matematicky (HALF_UP), zápočet na celé Kč
+   * dolů (konzervativně — R-07c).
    */
   creditableByCountry: Record<
     string,
@@ -81,7 +86,6 @@ export function computeDividends(
 ): DividendsResult {
   let czechGross = ZERO;
   let foreignGross = ZERO;
-  let foreignWithholding = ZERO;
   const byCountry: Record<
     string,
     { grossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
@@ -155,6 +159,7 @@ export function computeDividends(
         {
           txId: tx.id,
           isin: tx.isin,
+          date: tx.date, // pro kompaktní výpis případů v UI („TICKER · datum · částka")
           country,
           overCzk: withholdingCzk.sub(grossCzk.mul(cap)).toFixed(2),
         },
@@ -162,7 +167,6 @@ export function computeDividends(
     }
 
     foreignGross = foreignGross.plus(grossCzk);
-    foreignWithholding = foreignWithholding.plus(withholdingCzk);
     const agg = byCountry[country] ?? { grossCzk: ZERO, withholdingCzk: ZERO, creditableCzk: ZERO };
     byCountry[country] = {
       grossCzk: agg.grossCzk.plus(grossCzk),
@@ -182,13 +186,22 @@ export function computeDividends(
   }
 
   // R-07c: zápočet po státech zaokrouhlujeme na celé Kč DOLŮ (nárokovanou
-  // částku nikdy nenadhodnocujeme — konzervativně) a souhrn počítáme jako
-  // SOUČET zaokrouhlených hodnot — tabulka po státech tak vždy sedí na součet.
+  // částku nikdy nenadhodnocujeme — konzervativně), sraženou daň matematicky
+  // (HALF_UP) a OBA souhrny počítáme jako SOUČET zaokrouhlených hodnot —
+  // tabulka po státech tak vždy korunově sedí na souhrn § 8 (žádný rozdíl
+  // ±1 Kč mezi řádky a hlavičkou).
   let creditable = ZERO;
+  let withholdingRounded = ZERO;
   for (const [country, agg] of Object.entries(byCountry)) {
     const roundedCreditable = agg.creditableCzk.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
-    byCountry[country] = { ...agg, creditableCzk: roundedCreditable };
+    const roundedWithholding = agg.withholdingCzk.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    byCountry[country] = {
+      ...agg,
+      withholdingCzk: roundedWithholding,
+      creditableCzk: roundedCreditable,
+    };
     creditable = creditable.plus(roundedCreditable);
+    withholdingRounded = withholdingRounded.plus(roundedWithholding);
   }
 
   let taxableInterest = ZERO;
@@ -211,7 +224,7 @@ export function computeDividends(
   return {
     czechGrossCzk: czechGross,
     foreignGrossCzk: foreignGross,
-    foreignWithholdingCzk: foreignWithholding,
+    foreignWithholdingCzk: withholdingRounded,
     creditableWithholdingCzk: creditable,
     creditableByCountry: byCountry,
     taxableInterestCzk: taxableInterest,

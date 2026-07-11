@@ -37,11 +37,31 @@ export default function PrivacyPage() {
           na provozovatele.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Zpracovatelé</h2>
+        <h2 className="font-display text-lg font-semibold">Jak dlouho data držíme</h2>
+        <p>
+          Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
+          všechno odstraníme. Technický audit log (záznamy o přihlášeních a synchronizacích)
+          držíme 90 dní, zálohy databáze se přepisují po 30 dnech — smazaná data tedy
+          zmizí i ze záloh nejpozději do 30 dní. Když se odhlásíš z e-mailových
+          upozornění, tvůj e-mail si necháme jen v seznamu potlačených adres — aby ti už
+          opravdu nic nepřišlo.
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">Cookies</h2>
+        <p>
+          Používáme jen nezbytné cookies pro přihlášení a bezpečnost relace (session a
+          auth cookies). Žádná analytika třetích stran, žádné marketingové ani sledovací
+          cookies — proto tu nenajdeš ani cookie lištu.
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">Zpracovatelé a předání mimo EU</h2>
         <p>
           Provoz zajišťují: hosting aplikace a databáze v EU (Vercel, Neon — region
           Frankfurt), odesílání e-mailů (Resend) a rozhraní brokera (Trading212) pro
-          čtení tvé historie. S dodavateli máme zpracovatelské smlouvy.
+          čtení tvé historie. S dodavateli máme zpracovatelské smlouvy. Vercel a Resend
+          jsou společnosti z USA — data drží primárně v EU, ale při provozu může dojít
+          k omezenému předání do USA; to je kryté standardními smluvními doložkami EU
+          (SCC).
         </p>
 
         <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>
@@ -52,7 +72,17 @@ export default function PrivacyPage() {
           <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
             dunder.jan@gmail.com
           </a>
-          .
+          . Pokud si myslíš, že s tvými údaji zacházíme špatně, máš právo podat stížnost
+          u dozorového úřadu — Úřadu pro ochranu osobních údajů (
+          <a
+            href="https://uoou.gov.cz"
+            className="font-medium text-ruzova"
+            target="_blank"
+            rel="noreferrer"
+          >
+            uoou.gov.cz
+          </a>
+          ).
         </p>
       </section>
 

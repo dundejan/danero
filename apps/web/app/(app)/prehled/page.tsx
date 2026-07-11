@@ -13,13 +13,14 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
+import { firstParam } from '@/lib/utils';
 
 export const metadata = { title: 'Přehled — Danero' };
 
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rok?: string }>;
+  searchParams: Promise<{ rok?: string | string[] }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
@@ -56,7 +57,7 @@ export default async function OverviewPage({
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const years = availableYears(txs, currentYear);
-  const { rok } = await searchParams;
+  const rok = firstParam((await searchParams).rok);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   const analysis = analyzeForUserCached(user.id, txs, profile, year, today, dailyRates);

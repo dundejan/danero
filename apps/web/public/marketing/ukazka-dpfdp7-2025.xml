@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Pisemnost nazevSW="Danero" verzeSW="1.0">
+<DPFDP7 verzePis="01.01">
+<VetaD dap_typ="B" dokument="DP7" k_uladis="DPF" rok="2025" pln_moc="N" audit="N" zdobd_od="1.1.2025" zdobd_do="31.12.2025" da_slezap="4379.19" da_celod13="4380" kc_dztrata="0" kc_op15_1a="30840" uhrn_slevy35ba="30840" da_slevy35ba="0" da_slevy35c="0" kc_dan_celk="0" kc_dan_po_db="0" kc_db_po_odpd="0" kc_zbyvpred="0"/>
+<VetaP prijmeni="Demo" jmeno="Ukázka" naz_obce="Praha" stat="ČESKÁ REPUBLIKA"/>
+<VetaO kc_zakldan8="42571" kc_zd10="23051" kc_uhrn="65622" kc_zakldan23="65622" kc_zakldan="65622"/>
+<VetaS kc_zdsniz="65622" kc_zdzaokr="65600" da_dan16="9840"/>
+<VetaB priloha2="A" pril3_samlist="3" seznam="1" priloh_celk="5"/>
+<VetaV kc_prij10="118045" kc_vyd10="94994" kc_zd10p="23051" uhrn_prijmy10="118045" uhrn_vydaje10="94994" uhrn_rozdil10="23051"/>
+<VetaJ kod_dr_prij10="D" druh_prij10="Prodej cenných papírů" prijmy10="118045" vydaje10="94994" rozdil10="23051" kod10="Z"/>
+<VetaW uhrn_uzndan="5460.81" uhrn_neuzndan="1.19" da_zazahr="4379.19"/>
+<VetaL kod_statu="DE" kc_prijzap="9864" kc_vydzap="0" da_zahr="1479" proczahr="15.03" kc_k_zapzahr="1478.95" da_uznzap="1478.95" roz_od12="0.05"/>
+<VetaL kod_statu="NL" kc_prijzap="4685" kc_vydzap="0" da_zahr="468" proczahr="7.14" kc_k_zapzahr="702.58" da_uznzap="468" roz_od12="0"/>
+<VetaL kod_statu="US" kc_prijzap="23434" kc_vydzap="0" da_zahr="3515" proczahr="35.71" kc_k_zapzahr="3513.86" da_uznzap="3513.86" roz_od12="1.14"/>
+<Vetad ident_udaje="Zahraniční plátci dividend dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="DE" zapl_dan="1479" prijmy_seznam="9864" dan_seznam="1479"/>
+<Vetad ident_udaje="Zahraniční plátci dividend dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="NL" zapl_dan="468" prijmy_seznam="4685" dan_seznam="468"/>
+<Vetad ident_udaje="Zahraniční plátci dividend dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="US" zapl_dan="3515" prijmy_seznam="23434" dan_seznam="3515"/>
+</DPFDP7>
+</Pisemnost>

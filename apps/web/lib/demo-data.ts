@@ -18,6 +18,11 @@ import { UNIFIED_RATES } from '@/lib/tax-config';
  *  - zdanitelné příjmy (dividendy + úroky + opce) ≈ 64 000 Kč → prolomený
  *    limit 50k paušální daně → verdikt „podáš přiznání";
  *  - prodej BTC 46 000 Kč → krypto limit v zeleném (osvobozeno úhrnem);
+ *  - AAPL má tři nákupní loty s různými cenami → v simulátoru je vidět, že
+ *    metoda párování mění výsledek (letošní prodej AAPL kryje úhrn do 100k);
+ *  - rok Y−1 prolomil limit 100k (velký prodej SHOP se dvěma loty za různé
+ *    ceny) → tabulka „Porovnání variant párování" má v historii co ukázat
+ *    (FIFO/LIFO dávají různý základ), letošní příběh zůstává beze změny;
  *  - v KAŽDÉM roce Y−5…Y jsou prodeje (zisk i ztráta), dividendy, úroky
  *    a poplatky → přehled i grafy žijí pro všechny roky v přepínači.
  *
@@ -161,13 +166,15 @@ interface Holding {
 }
 
 /**
- * 47 instrumentů (+ 4 s relativním datem níže = 51 otevřených pozic).
+ * 48 instrumentů (+ 4 s relativním datem níže = 52 otevřených pozic).
  * ISINy jsou skutečné; prodeje nikdy nevyprázdní pozici. Historické prodeje
  * jsou rozprostřené tak, aby KAŽDÝ rok Y−5…Y−1 měl zisk i ztrátu.
  */
 const HOLDINGS: Holding[] = [
   // ── US akcie ──────────────────────────────────────────────────────────
-  { tag: 'aapl', ticker: 'AAPL', isin: 'US0378331005', name: 'Apple', currency: 'USD', price: '210', buys: [{ y: -2, md: '01-20', qty: '20', price: '165', fee: '1' }], sells: [{ y: 0, md: '05-14', qty: '6', price: '210', fee: '1' }] }, // test NEsplněn → kryje úhrn do 100k
+  // tři loty s RŮZNÝMI cenami (rostoucí) → metoda párování má na co působit,
+  // tržba prodeje beze změny (limity a pásma drží); test NEsplněn → kryje úhrn do 100k
+  { tag: 'aapl', ticker: 'AAPL', isin: 'US0378331005', name: 'Apple', currency: 'USD', price: '210', buys: [{ y: -2, md: '01-20', qty: '8', price: '150', fee: '1' }, { y: -1, md: '03-12', qty: '6', price: '172', fee: '1' }, { y: 0, md: '02-05', qty: '6', price: '205', fee: '1' }], sells: [{ y: 0, md: '05-14', qty: '6', price: '210', fee: '1' }] },
   { tag: 'googl', ticker: 'GOOGL', isin: 'US02079K3059', name: 'Alphabet', currency: 'USD', price: '195', buys: [{ y: -4, md: '07-19', qty: '12', price: '105', fee: '1' }] },
   { tag: 'amzn', ticker: 'AMZN', isin: 'US0231351067', name: 'Amazon', currency: 'USD', price: '225', buys: [{ y: -2, md: '06-09', qty: '2.6', price: '185', fee: '1' }] },
   { tag: 'meta', ticker: 'META', isin: 'US30303M1027', name: 'Meta Platforms', currency: 'USD', price: '700', buys: [{ y: -2, md: '02-22', qty: '4', price: '480', fee: '1' }], sells: [{ y: -1, md: '06-18', qty: '1', price: '620', fee: '1' }] },
@@ -195,6 +202,10 @@ const HOLDINGS: Holding[] = [
   { tag: 'cost', ticker: 'COST', isin: 'US22160K1051', name: 'Costco', currency: 'USD', price: '940', buys: [{ y: -1, md: '02-04', qty: '1', price: '890', fee: '1' }] },
   { tag: 'mo', ticker: 'MO', isin: 'US02209S1033', name: 'Altria', currency: 'USD', price: '39.5', buys: [{ y: -1, md: '01-22', qty: '30', price: '41', fee: '1' }] },
   { tag: 'o', ticker: 'O', isin: 'US7561091049', name: 'Realty Income', currency: 'USD', price: '58', buys: [{ y: -4, md: '03-17', qty: '40.25', price: '52', fee: '1' }] },
+  // velký prodej v Y−1 (dva loty za různé ceny, prodej jen části) → rok Y−1
+  // prolomí limit 100k a varianty párování dávají RŮZNÝ základ (FIFO zisk,
+  // LIFO ztrátu) — letošního příběhu se nedotýká (engine počítá roky odděleně)
+  { tag: 'shop', ticker: 'SHOP', isin: 'CA82509L1076', name: 'Shopify', currency: 'USD', price: '105', buys: [{ y: -3, md: '05-08', qty: '80', price: '40', fee: '1' }, { y: -2, md: '04-14', qty: '80', price: '65', fee: '1' }], sells: [{ y: -1, md: '08-20', qty: '80', price: '48', fee: '1' }] },
   // ── mimo USA ──────────────────────────────────────────────────────────
   { tag: 'ulvr', ticker: 'ULVR', isin: 'GB00B10RZP78', name: 'Unilever', currency: 'GBP', price: '44.1', buys: [{ y: -2, md: '11-03', qty: '25', price: '38.2', fee: '1' }] },
   { tag: 'tm', ticker: '7203', isin: 'JP3633400001', name: 'Toyota Motor', currency: 'USD', price: '178', buys: [{ y: -1, md: '10-02', qty: '8', price: '168', fee: '1' }] },
