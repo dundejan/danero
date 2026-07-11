@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { KalkulackaPriznani } from '@/components/kalkulacka-priznani';
-import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
+import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 
 export const metadata: Metadata = {
   title: 'Musím podat daňové přiznání kvůli investicím? Kalkulačka zdarma — Danero',
@@ -26,70 +25,46 @@ const PRAVIDLA = [
 
 export default function KalkulackaPage() {
   return (
-    <div className="mx-auto max-w-3xl px-6">
-      <MarketingHeader />
-      <main className="pt-8 md:pt-12">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova">
-          Kalkulačka
-        </p>
-        <h1 className="mt-3 text-balance font-display text-3xl font-bold tracking-tight sm:text-4xl">
-          Musím kvůli investicím podat daňové přiznání?
-        </h1>
-        <p className="mt-4 text-inkoust-tlumeny">
-          Pár otázek, okamžitá orientační odpověď. Nic se neukládá a na nic se
-          neregistruješ — kalkulačka počítá jen z toho, co zaškrtneš.
-        </p>
+    <MarketingPage active="kalkulacka">
+      <PageHero
+        eyebrow="Kalkulačka"
+        title="Musím kvůli investicím podat daňové přiznání?"
+        lede="Pár otázek, okamžitá orientační odpověď. Nic se neukládá a na nic se neregistruješ — kalkulačka počítá jen z toho, co zaškrtneš."
+      />
 
-        <div className="mt-8">
-          <KalkulackaPriznani showHeader={false} />
+      <div className="mt-12">
+        <KalkulackaPriznani showHeader={false} />
+      </div>
+
+      <section aria-labelledby="pravidla-nadpis" className="mt-24 lg:mt-32">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+          Jak to počítáme
+        </p>
+        <h2
+          id="pravidla-nadpis"
+          className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+        >
+          Tři pravidla, která rozhodují
+        </h2>
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {PRAVIDLA.map((pravidlo) => (
+            <div key={pravidlo.title} className="rounded-lg border border-linka bg-plocha p-6">
+              <h3 className="font-semibold">{pravidlo.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">{pravidlo.body}</p>
+            </div>
+          ))}
         </div>
+        <p className="mt-4 max-w-3xl text-xs text-inkoust-tlumeny">
+          Kalkulačka je orientační — nezná tvoje data. Přesný výpočet nad skutečnou historií
+          účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech) dělá až aplikace.
+        </p>
+      </section>
 
-        <section aria-labelledby="pravidla-nadpis" className="mt-16">
-          <h2 id="pravidla-nadpis" className="font-display text-2xl font-bold tracking-tight">
-            Tři pravidla, která rozhodují
-          </h2>
-          <div className="mt-6 space-y-4">
-            {PRAVIDLA.map((pravidlo) => (
-              <div key={pravidlo.title} className="rounded-lg border border-linka bg-plocha p-5">
-                <h3 className="font-semibold">{pravidlo.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
-                  {pravidlo.body}
-                </p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-xs text-inkoust-tlumeny">
-            Kalkulačka je orientační — nezná tvoje data. Přesný výpočet nad skutečnou
-            historií účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech)
-            dělá až aplikace.
-          </p>
-        </section>
-
-        <section className="mt-16 rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-10 text-center">
-          <h2 className="font-display text-2xl font-bold tracking-tight">
-            Ať to za tebe hlídá Danero — celý rok
-          </h2>
-          <p className="mx-auto mt-3 max-w-lg text-sm text-inkoust-tlumeny">
-            Napoj brokera nebo nahraj výpis a Danero ti limity, časové testy i podklady
-            k přiznání pohlídá automaticky. Ozve se dřív, než něco prolomíš.
-          </p>
-          <div className="mt-6 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/demo/prehled"
-              className="inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:opacity-90"
-            >
-              Vyzkoušet demo — bez registrace
-            </Link>
-            <Link
-              href="/registrace"
-              className="inline-block rounded-md border border-inkoust/25 bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40"
-            >
-              Založit účet zdarma
-            </Link>
-          </div>
-        </section>
-      </main>
-      <MarketingFooter />
-    </div>
+      <MarketingCta
+        title="Ať to za tebe hlídá Danero — celý rok"
+        lede="Napoj brokera nebo nahraj výpis a Danero ti limity, časové testy i podklady k přiznání pohlídá automaticky. Ozve se dřív, než nějaký limit překročíš."
+        primary="registrace"
+      />
+    </MarketingPage>
   );
 }

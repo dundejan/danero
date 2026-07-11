@@ -27,13 +27,18 @@ export function keepCurrencyCase(children: React.ReactNode): React.ReactNode {
   );
 }
 
-export function CardTitle({ className, children, ...props }: React.ComponentProps<'h2'>) {
+export function CardTitle({
+  className,
+  children,
+  as: Tag = 'h2',
+  ...props
+}: React.ComponentProps<'h2'> & { as?: 'h2' | 'h3' | 'p' }) {
   return (
-    <h2
+    <Tag
       className={cn('text-sm font-semibold uppercase tracking-wide text-inkoust-tlumeny', className)}
       {...props}
     >
       {keepCurrencyCase(children)}
-    </h2>
+    </Tag>
   );
 }

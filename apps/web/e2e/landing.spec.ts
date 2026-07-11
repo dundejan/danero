@@ -15,7 +15,9 @@ test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
   await expect(h1).toContainText('Daně z investic hlídáme za tebe.');
 
   // řádek ověřitelné důvěry
-  await expect(page.getByText('XML ověřené testovací podatelnou EPO')).toBeVisible();
+  await expect(
+    page.getByText('Výstupy prošly zkušební podatelnou finanční správy'),
+  ).toBeVisible();
   await expect(page.getByText('Plné demo bez registrace')).toBeVisible();
 
   // živé odměrky limitů z demo enginu (50k prolomený, 100k těsně pod limitem)
@@ -54,8 +56,18 @@ test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => 
     .getByRole('group', { name: 'Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?' })
     .getByRole('button', { name: 'Zaměstnanec' })
     .click();
-  const prodeje = page.getByRole('group', { name: /za víc než 100 000 Kč celkem/ });
+  const prodeje = page.getByRole('group', { name: /akcie nebo ETF za víc než 100 000 Kč/ });
   await prodeje.getByRole('button', { name: 'Ne', exact: true }).click();
+  // krypto má vlastní limit (a žádný časový test) — samostatná otázka
+  await page
+    .getByRole('group', { name: /kryptoměny za víc než 100 000 Kč/ })
+    .getByRole('button', { name: 'Ne', exact: true })
+    .click();
+  // zaměstnanec má navíc otázku na vedlejší příjmy (20k) — bez ní verdikt nepadá
+  await page
+    .getByRole('group', { name: /vedle zaměstnání jiné zdanitelné příjmy/ })
+    .getByRole('button', { name: 'Ne', exact: true })
+    .click();
   await expect(
     page.getByText('Vypadá to, že přiznání kvůli investicím řešit nemusíš.'),
   ).toBeVisible();

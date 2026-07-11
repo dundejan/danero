@@ -1,15 +1,24 @@
 import Link from 'next/link';
+import { MarketingPage } from '@/components/marketing-page';
 
 export const metadata = { title: 'Ochrana soukromí — Danero' };
 
 /** ⚠️ PRACOVNÍ NÁVRH — před veřejným spuštěním musí projít právní kontrolou. */
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-2xl space-y-6 px-6 py-16">
-      <p className="rounded-md border border-jantar px-4 py-2 text-sm text-jantar">
+    <MarketingPage>
+      <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
+      <p className="rounded-md border border-jantar px-4 py-2 text-sm text-jantar-text">
         Pracovní návrh zásad pro beta provoz — finální znění projde právní kontrolou.
       </p>
-      <h1 className="font-display text-3xl font-bold">Ochrana soukromí</h1>
+      <div>
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+          Právní
+        </p>
+        <h1 className="mt-3 font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
+          Ochrana soukromí
+        </h1>
+      </div>
 
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
@@ -91,6 +100,7 @@ export default function PrivacyPage() {
           ← Zpět na úvod
         </Link>
       </p>
-    </main>
+      </div>
+    </MarketingPage>
   );
 }

@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+import { FaqList } from '@/components/faq-list';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
-import { Logo } from '@/components/logo';
+import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Danero — daně z investic pohlídané celý rok',
   description:
-    'Danero hlídá limit 100 000 Kč, limit paušální daně i tříleté časové testy — živě z Trading212. V březnu podklady k přiznání včetně XML. Plné demo bez registrace.',
+    'Danero pohlídá, jestli a kolik máš z investic danit: limit 100 000 Kč, limit paušální daně i tříleté časové testy. V březnu podklady k přiznání včetně XML. Plné demo bez registrace.',
 };
 
 /* ── drobné inline ikony (žádné externí zdroje — CSP self) ────────────────── */
@@ -67,28 +68,14 @@ function IconEye() {
   );
 }
 
-function IconCheck() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-4 w-4 shrink-0 text-zelena" aria-hidden>
-      <path d="m4.5 12.5 5 5 10-11" />
-    </svg>
-  );
-}
 
-function IconPlus() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4 shrink-0 text-inkoust-tlumeny transition-transform group-open:rotate-45" aria-hidden>
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
 
 /* ── stavební prvky ───────────────────────────────────────────────────────── */
 
 /** Mono štítek sekce — stejná řeč jako titulky karet uvnitř aplikace. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova">
+    <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
       {children}
     </p>
   );
@@ -141,11 +128,13 @@ function VariantTableMock() {
       <table className="mt-2 w-full text-[13px]">
         <thead>
           <tr className="border-b border-linka text-left text-[11px] uppercase tracking-wide text-inkoust-tlumeny">
-            <th className="py-1.5 pr-3 font-medium">Metoda</th>
-            <th className="py-1.5 pr-3 font-medium">Kurzy</th>
-            <th className="py-1.5 pr-3 text-right font-medium">Základ § 10</th>
-            <th className="py-1.5 pr-3 text-right font-medium">Daň</th>
-            <th className="py-1.5 font-medium" aria-hidden />
+            <th scope="col" className="py-1.5 pr-3 font-medium">Metoda</th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">Kurzy</th>
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">Základ § 10</th>
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">Daň</th>
+            <th scope="col" className="py-1.5 font-medium">
+              <span className="sr-only">Stav</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -157,7 +146,7 @@ function VariantTableMock() {
               <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">{row.tax} Kč</td>
               <td className="py-1.5 text-right">
                 {row.badge === 'nejvýhodnější' && (
-                  <span className="whitespace-nowrap rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
+                  <span className="whitespace-nowrap rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova-text">
                     nejvýhodnější
                   </span>
                 )}
@@ -186,8 +175,8 @@ const CTA_SECONDARY =
 /* ── obsah ────────────────────────────────────────────────────────────────── */
 
 const TRUST = [
-  { icon: <IconStamp />, text: 'XML ověřené testovací podatelnou EPO' },
-  { icon: <IconScale />, text: 'Bezpečný výklad — a ukážeme, co by ti výhodnější ušetřil' },
+  { icon: <IconStamp />, text: 'Výstupy prošly zkušební podatelnou finanční správy' },
+  { icon: <IconScale />, text: 'Počítáme opatrně — a ukážeme, kolik by šlo ušetřit' },
   { icon: <IconKey />, text: 'API klíče jen pro čtení, šifrované AES-256-GCM' },
   { icon: <IconEye />, text: 'Plné demo bez registrace' },
 ] as const;
@@ -195,7 +184,7 @@ const TRUST = [
 const STEPS = [
   {
     title: 'Připoj svého brokera',
-    body: 'Trading212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: čteme jich přes 25, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase.',
+    body: 'Trading 212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: čteme jich přes 25, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase.',
   },
   {
     title: 'Danero hlídá celý rok',
@@ -207,22 +196,6 @@ const STEPS = [
   },
 ] as const;
 
-const PRICING_INCLUDED: { key: string; text: React.ReactNode }[] = [
-  { key: 'zive', text: 'Živé napojení na Trading212, IBKR i Lynx a denní přepočet' },
-  {
-    key: 'limity',
-    text: (
-      <>
-        Hlídání limitů a časových testů s{' '}
-        <span className="whitespace-nowrap">e-mailovými</span> upozorněními
-      </>
-    ),
-  },
-  { key: 'horizont', text: 'Horizont osvobození a simulátor prodeje' },
-  { key: 'podklady', text: 'Podklady k přiznání včetně XML pro podatelnu' },
-  { key: 'brokeri', text: 'Přes 25 podporovaných platforem i univerzální šablona' },
-  { key: '2fa', text: 'Dvoufaktorové přihlášení, klíče šifrované AES-256-GCM' },
-];
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
@@ -230,9 +203,14 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Často ne: do 100 000 Kč tržeb z prodejů za rok se daň z prodejů neřeší vůbec
-        a kusy držené přes 3 roky jsou osvobozené úplně. Orientačně to zjistíš za
-        minutu v{' '}
-        <Link href="/kalkulacka" className="font-medium text-ruzova">
+        a kusy držené přes 3 roky jsou osvobozené úplně. Pozor ale na zahraniční
+        dividendy a úroky — do těchhle limitů nespadají a hlavně u OSVČ v paušálu
+        můžou samy prolomit hranici 50 000 Kč, i bez jediného prodeje. Orientačně to
+        zjistíš za minutu v{' '}
+        <Link
+          href="/kalkulacka"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+        >
           kalkulačce
         </Link>
         ; přesně ti to Danero spočítá z dat.
@@ -244,11 +222,14 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Trading 212, Interactive Brokers a Lynx živě přes API klíč jen pro čtení.
-        Výpisy čteme z více než 25 dalších platforem — XTB, Degiro, eToro, Charles
-        Schwab, Saxo, Portu, Coinbase, Kraken a dalších; cokoli jiného vezme
-        univerzální šablona. Kompletní seznam s návody, kde výpis stáhnout, je na
-        stránce{' '}
-        <Link href="/platformy" className="font-medium text-ruzova">
+        Výpisy ze 17 dalších platforem čteme automaticky — XTB, Degiro, eToro,
+        Charles Schwab, Saxo, Portu, Coinbase, Kraken a další. U devíti českých
+        bank a investičních společností tě provedeme univerzální šablonou.
+        Kompletní seznam s návody, kde výpis stáhnout, je na stránce{' '}
+        <Link
+          href="/platformy"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+        >
           Platformy
         </Link>
         .
@@ -257,7 +238,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: 'Pro koho Danero je?',
-    a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Ten limit hlídáme automaticky — včetně zahraničních dividend, na které se zapomíná.',
+    a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Hlídáme ale i limit 20 000 Kč vedlejších příjmů pro zaměstnance a limit 50 000 Kč pro podání přiznání — automaticky, včetně zahraničních dividend, na které se zapomíná.',
   },
   {
     q: 'Jak je to s bezpečností?',
@@ -301,51 +282,10 @@ export default function LandingPage() {
   const limitCritical = candidates.find((c) => c.dedupeKey.startsWith('limit|100k|CRITICAL'));
 
   return (
-    <div className="mx-auto max-w-6xl px-6">
-      <header className="flex items-center justify-between py-5">
-        <Logo className="text-lg" />
-        <nav className="flex items-center gap-2 text-sm sm:gap-5" aria-label="Hlavní navigace">
-          {/* kotvy na sekce — na mobilu se do řádku nevejdou, skryté */}
-          <a
-            href="#jak-to-funguje"
-            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
-          >
-            Jak to funguje
-          </a>
-          <Link
-            href="/platformy"
-            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
-          >
-            Platformy
-          </Link>
-          <Link
-            href="/kalkulacka"
-            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
-          >
-            Kalkulačka
-          </Link>
-          <a
-            href="#cenik"
-            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
-          >
-            Ceník
-          </a>
-          <Link
-            href="/prihlaseni"
-            className="font-medium text-inkoust-tlumeny hover:text-inkoust"
-          >
-            Přihlásit se
-          </Link>
-          <Link
-            href="/demo/prehled"
-            className="rounded-md bg-ruzova-syta px-4 py-2 font-semibold text-white hover:opacity-90"
-          >
-            Vyzkoušet demo
-          </Link>
-        </nav>
-      </header>
+    <div className="flex min-h-screen flex-col">
+      <MarketingHeader />
 
-      <main>
+      <main id="obsah" className="mx-auto w-full max-w-6xl flex-1 px-6">
         {/* ── hero: úleva + skutečná aplikace se živými upozorněními ───────── */}
         <section aria-labelledby="hero-nadpis" className="pt-12 md:pt-20">
           <h1
@@ -357,10 +297,11 @@ export default function LandingPage() {
             <span className="block text-ruzova">Celý rok, ne{' '}jen v{' '}březnu.</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-inkoust-tlumeny">
-            Danero se napojí na Trading212, Interactive Brokers či Lynx živě přes API
-            a denně přepočítává limity i tříleté časové testy — ozve se dřív, než něco
-            prolomíš. V březnu z něj stáhneš podklady k přiznání včetně XML. Výpisy čteme
-            od XTB a Degiro přes eToro, Schwab a Portu až po Coinbase — přes 25 platforem.
+            Danero pohlídá, jestli a kolik máš z investic danit — a ozve se dřív, než
+            tě prodej nebo dividenda bude stát daň navíc. V březnu stáhneš hotové
+            podklady k přiznání včetně XML. Trading 212, Interactive Brokers a Lynx
+            živě přes API; výpisy ze 17 dalších platforem čteme automaticky a u českých
+            bank tě provedeme šablonou.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link href="/demo/prehled" className={CTA_PRIMARY}>
@@ -370,10 +311,44 @@ export default function LandingPage() {
               Založit účet zdarma
             </Link>
           </div>
-          <p className="mt-3 text-sm text-inkoust-tlumeny">Teď v betě: všechno zdarma.</p>
+          <p className="mt-3 text-sm text-inkoust-tlumeny">
+            Teď v betě: všechno zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
+            <Link
+              href="/kalkulacka"
+              className="font-medium text-ruzova-text underline underline-offset-2"
+            >
+              Zjisti to za minutu v kalkulačce
+            </Link>
+            .
+          </p>
 
-          {/* skutečný screenshot přehledu + živé karty hlídače nad rohy */}
-          <div className="relative mt-14">
+          {/* skutečný screenshot přehledu + živé karty hlídače nad rohy;
+              na mobilu by z dashboardu zbyla nečitelná šmouha (~5px text) —
+              místo něj se ukážou samotné živé karty hlídače */}
+          <div className="mt-10 space-y-3 md:hidden">
+            {[exemptionSoon, limitBroken].map(
+              (candidate) =>
+                candidate && (
+                  <div
+                    key={candidate.dedupeKey}
+                    className="rounded-lg border border-linka bg-plocha p-4 shadow-lg shadow-inkoust/10"
+                  >
+                    <p className="flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${candidate === limitBroken ? 'bg-cervena' : 'bg-zelena'}`}
+                        aria-hidden
+                      />
+                      Upozornění z hlídače
+                    </p>
+                    <p className="mt-1.5 text-sm font-semibold">{candidate.title}</p>
+                    <p className="mt-0.5 line-clamp-3 text-xs text-inkoust-tlumeny">
+                      {candidate.body}
+                    </p>
+                  </div>
+                ),
+            )}
+          </div>
+          <div className="relative mt-14 hidden md:block">
             {/* bez záporných okrajů — rozšířily by scrollWidth stránky */}
             <div
               aria-hidden
@@ -391,7 +366,7 @@ export default function LandingPage() {
               />
               <Image
                 src="/marketing/hero-dark.png"
-                alt=""
+                alt="Přehled aplikace Danero: verdikt „podáš daňové přiznání“ a ukazatele čerpání limitů"
                 width={1440}
                 height={465}
                 loading="eager"
@@ -406,7 +381,7 @@ export default function LandingPage() {
                   Upozornění z hlídače
                 </p>
                 <p className="mt-1.5 text-sm font-semibold">{exemptionSoon.title}</p>
-                <p className="mt-0.5 line-clamp-2 text-xs text-inkoust-tlumeny">
+                <p className="mt-0.5 line-clamp-3 text-xs text-inkoust-tlumeny">
                   {exemptionSoon.body}
                 </p>
               </div>
@@ -418,7 +393,7 @@ export default function LandingPage() {
                   Upozornění z hlídače
                 </p>
                 <p className="mt-1.5 text-sm font-semibold">{limitBroken.title}</p>
-                <p className="mt-0.5 line-clamp-2 text-xs text-inkoust-tlumeny">
+                <p className="mt-0.5 line-clamp-3 text-xs text-inkoust-tlumeny">
                   {limitBroken.body}
                 </p>
               </div>
@@ -451,12 +426,12 @@ export default function LandingPage() {
               </h2>
               <p className="mt-4 text-inkoust-tlumeny">
                 Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň — včetně
-                zahraničních dividend, na které se zapomíná. Odměrky ukazují čerpání celý rok
-                a při 60, 85 a 100 % ti přijde e-mail.{' '}
+                zahraničních dividend, na které se zapomíná. Čerpání vidíš celý rok a při
+                60, 85 a 100 % ti přijde e-mail.{' '}
                 <strong className="text-inkoust">
-                  Řekneme ti to dřív, než limit prolomíš
+                  Ozveme se, dokud se s tím dá něco dělat
                 </strong>{' '}
-                — a další prodej si můžeš rozmyslet, nebo ho nechat na leden.
+                — další prodej si rozmyslíš, nebo ho necháš na leden.
               </p>
             </div>
             {/* živé komponenty aplikace nad demo daty — žádný obrázek */}
@@ -465,11 +440,13 @@ export default function LandingPage() {
                 label="Limit paušální daně — 50 000 Kč"
                 hint="Zdanitelné příjmy z investic mimo podnikání — dividendy, úroky, neosvobozené prodeje."
                 status={result.limits.flatTax50k.status}
+                headingAs="h3"
               />
               <LimitGauge
                 label="Osvobození prodejů CP — 100 000 Kč"
                 hint="Do 100 000 Kč tržeb z prodejů za rok jsou všechny prodeje osvobozené."
                 status={result.limits.limit100k}
+                headingAs="h3"
               />
               {limitCritical && (
                 <p className="flex items-start gap-2 rounded-md border border-linka bg-plocha px-4 py-3 text-sm">
@@ -516,7 +493,7 @@ export default function LandingPage() {
           <p className="mt-6">
             <Link
               href="/demo/prehled"
-              className="font-medium text-ruzova hover:underline"
+              className="font-medium text-ruzova-text underline underline-offset-2"
             >
               Vyzkoušej si živé tečky v demu →
             </Link>
@@ -558,7 +535,10 @@ export default function LandingPage() {
               </BrowserFrame>
               <p className="mt-3 text-xs text-inkoust-tlumeny">
                 Skutečná čísla z{' '}
-                <Link href="/demo/report?rok=2025" className="underline hover:text-ruzova">
+                <Link
+                  href="/demo/report?rok=2025"
+                  className="text-ruzova-text underline underline-offset-2"
+                >
                   demo reportu
                 </Link>{' '}
                 — celou tabulku (4 metody × 2 kurzy) si projdeš v demu.
@@ -594,7 +574,7 @@ export default function LandingPage() {
                   </span>
                   <span className="text-right tabular-nums">
                     {'daň 921\u00A0Kč'}{' '}
-                    <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova">
+                    <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova-text">
                       nejvýhodnější
                     </span>
                   </span>
@@ -640,69 +620,75 @@ export default function LandingPage() {
             Odkud umíme načíst obchody
           </h2>
           <p className="mt-4 max-w-2xl text-inkoust-tlumeny">
-            Trading 212, Interactive Brokers a Lynx živě přes API — ostatní z výpisu,
-            který u nás nahraješ na dvě kliknutí. U každé platformy ti ukážeme, kde
-            přesně výpis stáhnout.
+            Trading 212, Interactive Brokers a Lynx živě přes API. Výpisy z dalších
+            platforem čteme automaticky — a u českých bank a fondů tě provedeme
+            univerzální šablonou. U každé platformy máme návod, kde přesně výpis
+            stáhnout.
           </p>
           <div className="mt-8">
-            <PlatformGrid />
+            <PlatformGrid limit={9} />
           </div>
           <p className="mt-4 text-sm text-inkoust-tlumeny">
-            …a kterýkoli další broker přes univerzální šablonu s ukázkovými řádky.{' '}
-            <Link href="/platformy" className="font-medium text-ruzova hover:underline">
-              Návody, kde u každé platformy výpis stáhnout →
+            <Link
+              href="/platformy"
+              className="font-medium text-ruzova-text underline underline-offset-2"
+            >
+              Všechny platformy s návody, kde výpis stáhnout →
             </Link>
           </p>
         </section>
 
-        {/* ── ceník: jedna cena, žádné tarify — na levé ose jako FAQ ───────── */}
+        {/* ── ceník: teaser — detailní ceník má vlastní stránku /cenik ─────── */}
         <section id="cenik" aria-labelledby="cenik-nadpis" className="mt-24 lg:mt-32">
-          <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-8 sm:p-10">
-            <Eyebrow>Ceník</Eyebrow>
-            <h2
-              id="cenik-nadpis"
-              className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
-            >
-              Teď v betě: všechno zdarma
-            </h2>
-            {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
-            <p className="mt-3 text-inkoust-tlumeny">
-              Po spuštění{' '}
-              <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
-              necelých <span className="tabular-nums">83 Kč</span> měsíčně. Jedna cena,
-              žádné tarify. Stačí e-mail, karta ne.
-            </p>
-            <ul className="mt-6 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-              {PRICING_INCLUDED.map((item) => (
-                <li key={item.key} className="flex items-start gap-2.5 text-sm">
-                  <IconCheck />
-                  <span>{item.text}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-8">
-              <Link href="/registrace" className={CTA_PRIMARY}>
-                Založit účet zdarma
-              </Link>
+          <div className="rounded-lg border border-linka bg-plocha p-8 sm:p-10">
+            <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <div>
+                <Eyebrow>Ceník</Eyebrow>
+                <h2
+                  id="cenik-nadpis"
+                  className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+                >
+                  Teď v betě: všechno zdarma
+                </h2>
+                {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
+                <p className="mt-3 text-inkoust-tlumeny">
+                  Po spuštění{' '}
+                  <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
+                  necelých <span className="tabular-nums">83 Kč</span> měsíčně. Jedna cena,
+                  žádné tarify, všechny funkce pro každého. Stačí e-mail, karta ne.
+                </p>
+                <p className="mt-4">
+                  <Link
+                    href="/cenik"
+                    className="font-medium text-ruzova-text underline underline-offset-2"
+                  >
+                    Co všechno je v ceně →
+                  </Link>
+                </p>
+              </div>
+              <div className="flex flex-col items-start gap-3 lg:items-end">
+                <Link href="/registrace" className={CTA_PRIMARY}>
+                  Založit účet zdarma
+                </Link>
+                <p className="text-xs text-inkoust-tlumeny">
+                  Bez karty a bez závazků — po betě se rozhodneš sám.
+                </p>
+              </div>
             </div>
           </div>
         </section>
 
         {/* ── FAQ ───────────────────────────────────────────────────────────── */}
         <section id="faq" aria-labelledby="faq-nadpis" className="mt-24 lg:mt-32">
-          <h2 id="faq-nadpis" className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+          <Eyebrow>FAQ</Eyebrow>
+          <h2
+            id="faq-nadpis"
+            className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          >
             Časté otázky
           </h2>
-          <div className="mt-8 max-w-3xl space-y-3">
-            {FAQ.map((item) => (
-              <details key={item.q} className="group rounded-lg border border-linka bg-plocha p-5">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold [&::-webkit-details-marker]:hidden">
-                  {item.q}
-                  <IconPlus />
-                </summary>
-                <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">{item.a}</p>
-              </details>
-            ))}
+          <div className="mt-8">
+            <FaqList items={FAQ} />
           </div>
         </section>
 
@@ -740,14 +726,14 @@ export default function LandingPage() {
               tenhle problém opravdu štval. Když ti něco nebude sedět, napiš mi na{' '}
               <a
                 href="mailto:dunder.jan@gmail.com"
-                className="font-medium text-ruzova hover:underline"
+                className="font-medium text-ruzova-text underline underline-offset-2"
               >
                 dunder.jan@gmail.com
               </a>{' '}
               — odpovídám osobně. A víc o mně najdeš na{' '}
               <a
                 href="https://jandunder.dev"
-                className="font-medium text-ruzova hover:underline"
+                className="font-medium text-ruzova-text underline underline-offset-2"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -769,7 +755,7 @@ export default function LandingPage() {
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
               Demo běží nad vzorovým portfoliem s 50+ pozicemi za zhruba 2 miliony Kč:
-              odměrky, horizont, simulátor i report. Bez registrace, nic se neukládá.
+              ukazatele limitů, horizont osvobození, simulátor i report. Bez registrace, nic se neukládá.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <Link href="/demo/prehled" className={CTA_PRIMARY}>
@@ -783,92 +769,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="mt-20 border-t border-linka py-10 text-sm text-inkoust-tlumeny">
-        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-md space-y-3">
-            <Logo className="text-base text-inkoust" />
-            <p>
-              Danero je osobní projekt{' '}
-              <a
-                href="https://jandunder.dev"
-                className="font-medium hover:text-inkoust"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Jana Dundera
-              </a>{' '}
-              — vývojáře, který si přes něj hlídá vlastní daně z investic.
-            </p>
-          </div>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 md:justify-end">
-            <li>
-              <Link href="/platformy" className="font-medium hover:text-inkoust">
-                Platformy
-              </Link>
-            </li>
-            <li>
-              <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
-                Kalkulačka
-              </Link>
-            </li>
-            <li>
-              <Link href="/demo/prehled" className="font-medium hover:text-inkoust">
-                Demo
-              </Link>
-            </li>
-            <li>
-              <a
-                href="https://jandunder.dev"
-                className="font-medium hover:text-inkoust"
-                target="_blank"
-                rel="noreferrer"
-              >
-                jandunder.dev
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://github.com/dundejan"
-                className="font-medium hover:text-inkoust"
-                target="_blank"
-                rel="noreferrer"
-              >
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://www.linkedin.com/in/jan-dunder"
-                className="font-medium hover:text-inkoust"
-                target="_blank"
-                rel="noreferrer"
-              >
-                LinkedIn
-              </a>
-            </li>
-            <li>
-              <a href="mailto:dunder.jan@gmail.com" className="font-medium hover:text-inkoust">
-                dunder.jan@gmail.com
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div className="mt-8 space-y-3 border-t border-linka pt-6">
-          <p>
-            Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
-            č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
-          </p>
-          <p>
-            <Link href="/podminky" className="font-medium hover:text-inkoust">
-              Podmínky užití
-            </Link>{' '}
-            ·{' '}
-            <Link href="/soukromi" className="font-medium hover:text-inkoust">
-              Ochrana soukromí
-            </Link>
-          </p>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

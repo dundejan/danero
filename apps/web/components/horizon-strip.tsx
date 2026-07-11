@@ -186,7 +186,7 @@ export function HorizonStrip({
       {range === '1r'
         ? 'Každá tečka = den, kdy doběhne 3letý test dalším kusům'
         : 'Každá tečka = měsíc (aktuální měsíc po dnech), kdy doběhne 3letý test dalším kusům'}
-      ; velikost podle {basis}. Najetím zobrazíš rozpad.
+      ; velikost podle {basis}. Najetím či klepnutím zobrazíš rozpad.
       {view.hidden > 0 &&
         ` Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`}
     </p>

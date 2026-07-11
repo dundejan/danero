@@ -11,9 +11,9 @@ const ZONE_COLOR: Record<LimitStatus['zone'], string> = {
 };
 
 const ZONE_TEXT: Record<LimitStatus['zone'], string> = {
-  OK: 'text-zelena',
-  WARNING: 'text-jantar',
-  CRITICAL: 'text-oranz',
+  OK: 'text-zelena-text',
+  WARNING: 'text-jantar-text',
+  CRITICAL: 'text-oranz-text',
   EXCEEDED: 'text-cervena',
 };
 
@@ -86,15 +86,15 @@ export function LimitBar({
 export function LimitGauge({
   label,
   hint,
-  status,
-}: {
+  status, headingAs }: {
   label: string;
   hint: string;
   status: LimitStatus;
+  headingAs?: 'h2' | 'h3' | 'p';
 }) {
   return (
     <Card className="space-y-1.5">
-      <CardTitle>{label}</CardTitle>
+      <CardTitle as={headingAs}>{label}</CardTitle>
       <p className="font-mono text-lg font-medium">
         {czk(status.usedCzk)}
         <span className="text-sm text-inkoust-tlumeny"> / {czk(status.limitCzk)}</span>

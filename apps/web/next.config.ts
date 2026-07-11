@@ -1,5 +1,8 @@
 import type { NextConfig } from 'next';
 
+/* Dev overlay („N issues" bublina) mate při vizuálních kontrolách a screenshotech
+   — jediný trvalý nález je známý dev-only konflikt CSP × React eval. */
+
 /**
  * Security headers (G10a). CSP bez nonce (Next inline runtime skripty vyžadují
  * 'unsafe-inline' u script-src — vědomý kompromis; nonce režim by vynutil
@@ -30,6 +33,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   // workspace balíčky exportují TS zdrojáky — Next je transpiluje sám
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)

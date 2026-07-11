@@ -34,6 +34,13 @@
      neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
+  /* Textové odstíny akcentů — drobný text na tónovaných plochách musí držet
+     AA 4,5:1; světlé akcenty samy o sobě padají (růžová 4,2:1, jantar 2,8:1,
+     zelená 4,0:1 na --pozadi). Pro výplně/okraje dál platí základní tokeny. */
+  --ruzova-text: #bb2058;
+  --zelena-text: #1f6a4a;
+  --jantar-text: #8a5c0f;
+  --oranz-text: #9c451a;
 }
 
 .dark {
@@ -58,6 +65,11 @@
   --graf-8: #adb5bd;
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
+  /* v dark módu textové kontrasty drží už samotné (zesvětlené) akcenty */
+  --ruzova-text: var(--ruzova);
+  --zelena-text: var(--zelena);
+  --jantar-text: var(--jantar);
+  --oranz-text: var(--oranz);
 }
 
 @theme inline {
@@ -73,6 +85,10 @@
   --color-linka: var(--linka);
   --color-ruzova-syta: var(--ruzova-syta);
   --color-cervena-syta: var(--cervena-syta);
+  --color-ruzova-text: var(--ruzova-text);
+  --color-zelena-text: var(--zelena-text);
+  --color-jantar-text: var(--jantar-text);
+  --color-oranz-text: var(--oranz-text);
   --color-graf-1: var(--graf-1);
   --color-graf-2: var(--graf-2);
   --color-graf-3: var(--graf-3);
