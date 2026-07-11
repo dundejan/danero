@@ -60,7 +60,7 @@ function Otazka<T extends string | boolean>({
   );
 }
 
-export function KalkulackaPriznani() {
+export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean }) {
   const [situace, setSituace] = useState<Situace | null>(null);
   const [prodejeNad100k, setProdejeNad100k] = useState<boolean | null>(null);
   const [vseDrzeno3Roky, setVseDrzeno3Roky] = useState<boolean | null>(null);
@@ -96,17 +96,25 @@ export function KalkulackaPriznani() {
 
   return (
     <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6 sm:p-8">
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova">
-        Kalkulačka
-      </p>
-      <h2 id="kalkulacka-nadpis" className="mt-3 font-display text-2xl font-bold tracking-tight">
-        Musím podat přiznání?
-      </h2>
-      <p className="mt-1 text-sm text-inkoust-tlumeny">
-        Odpověz na pár otázek — bez čísel z výpisů a bez registrace.
-      </p>
+      {/* na samostatné /kalkulacka nese nadpis stránka — hlavička by se dublovala */}
+      {showHeader && (
+        <>
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova">
+            Kalkulačka
+          </p>
+          <h2
+            id="kalkulacka-nadpis"
+            className="mt-3 font-display text-2xl font-bold tracking-tight"
+          >
+            Musím podat přiznání?
+          </h2>
+          <p className="mt-1 text-sm text-inkoust-tlumeny">
+            Odpověz na pár otázek — bez čísel z výpisů a bez registrace.
+          </p>
+        </>
+      )}
 
-      <div className="mt-6 space-y-5">
+      <div className={showHeader ? 'mt-6 space-y-5' : 'space-y-5'}>
         <Otazka<Situace>
           otazka="Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?"
           volby={[

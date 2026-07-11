@@ -46,8 +46,8 @@ test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
   await expect(beta.getByText(/nic se nestrhne samo/)).toBeVisible();
 });
 
-test('landing: kalkulačka „Musím podat přiznání?" dává orientační verdikt', async ({ page }) => {
-  await page.goto('/');
+test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => {
+  await page.goto('/kalkulacka');
 
   // zaměstnanec s prodeji do 100 000 Kč → osvobozeno + zlaté pravidlo
   await page
@@ -73,8 +73,9 @@ test('landing: kalkulačka „Musím podat přiznání?" dává orientační ver
     page.getByText('Nejspíš podáš přiznání — Danero ti připraví podklady.'),
   ).toBeVisible();
   await expect(page.getByText('Orientačně — přesně to spočítá aplikace z tvých dat.')).toBeVisible();
+  // CTA přímo ve verdikt-boxu (role=status) — na stránce je víc demo odkazů
   await expect(
-    page.getByLabel('Musím podat přiznání?').getByRole('link', { name: 'Vyzkoušet demo' }),
+    page.getByRole('status').getByRole('link', { name: 'Vyzkoušet demo', exact: true }),
   ).toBeVisible();
 });
 

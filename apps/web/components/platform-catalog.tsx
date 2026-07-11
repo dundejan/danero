@@ -65,8 +65,12 @@ const METHOD_BADGE: Record<PlatformInfo['method'], { label: string; className: s
   template: { label: 'výpis přes šablonu', className: 'bg-pozadi text-inkoust-tlumeny' },
 };
 
-/** Plný katalog pro Zdroje dat: skupiny → rozbalovací návod per platforma. */
-export function PlatformCatalog() {
+/**
+ * Plný katalog: skupiny → rozbalovací návod per platforma. Varianta 'app'
+ * (Zdroje dat) odkazuje na karty napojení a upload na téže stránce; 'public'
+ * (marketingová /platformy) místo toho vede do registrace/aplikace.
+ */
+export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public' }) {
   return (
     <div className="space-y-5">
       {PLATFORM_GROUPS.map((group) => (
@@ -106,26 +110,39 @@ export function PlatformCatalog() {
                         <a href="/api/sablona" className="font-medium text-ruzova" download>
                           univerzální šablony
                         </a>{' '}
-                        (formát je popsaný přímo v souboru) a nahraj ji tady. Vlastní čtečku
-                        tohohle výpisu připravujeme — pošli nám anonymizovaný vzorek na{' '}
+                        (formát je popsaný přímo v souboru) a{' '}
+                        {variant === 'app'
+                          ? 'nahraj ji tady'
+                          : 'nahraj ji v aplikaci na stránce Zdroje dat'}
+                        . Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný
+                        vzorek na{' '}
                         <a href="mailto:podpora@danero.cz" className="font-medium text-ruzova">
                           podpora@danero.cz
                         </a>{' '}
                         a bude to rychlejší.
                       </p>
                     )}
-                    {platform.method === 'api' && (
-                      <p>
-                        Napojení nastavíš v{' '}
-                        <Link
-                          href={platform.connectAnchor ?? '#trading212'}
-                          className="font-medium text-ruzova"
-                        >
-                          kartě výš na této stránce
-                        </Link>
-                        .
-                      </p>
-                    )}
+                    {platform.method === 'api' &&
+                      (variant === 'app' ? (
+                        <p>
+                          Napojení nastavíš v{' '}
+                          <Link
+                            href={platform.connectAnchor ?? '#trading212'}
+                            className="font-medium text-ruzova"
+                          >
+                            kartě výš na této stránce
+                          </Link>
+                          .
+                        </p>
+                      ) : (
+                        <p>
+                          Klíč jen pro čtení připojíš po{' '}
+                          <Link href="/registrace" className="font-medium text-ruzova">
+                            registraci
+                          </Link>{' '}
+                          na stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout.
+                        </p>
+                      ))}
                   </div>
                 </details>
               </li>

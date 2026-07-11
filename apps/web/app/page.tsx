@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
-import { KalkulackaPriznani } from '@/components/kalkulacka-priznani';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
 import { Logo } from '@/components/logo';
@@ -225,7 +224,37 @@ const PRICING_INCLUDED: { key: string; text: React.ReactNode }[] = [
   { key: '2fa', text: 'Dvoufaktorové přihlášení, klíče šifrované AES-256-GCM' },
 ];
 
-const FAQ = [
+const FAQ: { q: string; a: React.ReactNode }[] = [
+  {
+    q: 'Musím kvůli investicím vůbec podávat přiznání?',
+    a: (
+      <>
+        Často ne: do 100 000 Kč tržeb z prodejů za rok se daň z prodejů neřeší vůbec
+        a kusy držené přes 3 roky jsou osvobozené úplně. Orientačně to zjistíš za
+        minutu v{' '}
+        <Link href="/kalkulacka" className="font-medium text-ruzova">
+          kalkulačce
+        </Link>
+        ; přesně ti to Danero spočítá z dat.
+      </>
+    ),
+  },
+  {
+    q: 'Které brokery a platformy umíte načíst?',
+    a: (
+      <>
+        Trading 212, Interactive Brokers a Lynx živě přes API klíč jen pro čtení.
+        Výpisy čteme z více než 25 dalších platforem — XTB, Degiro, eToro, Charles
+        Schwab, Saxo, Portu, Coinbase, Kraken a dalších; cokoli jiného vezme
+        univerzální šablona. Kompletní seznam s návody, kde výpis stáhnout, je na
+        stránce{' '}
+        <Link href="/platformy" className="font-medium text-ruzova">
+          Platformy
+        </Link>
+        .
+      </>
+    ),
+  },
   {
     q: 'Pro koho Danero je?',
     a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Ten limit hlídáme automaticky — včetně zahraničních dividend, na které se zapomíná.',
@@ -233,10 +262,6 @@ const FAQ = [
   {
     q: 'Jak je to s bezpečností?',
     a: 'API klíč od brokera je jen pro čtení a ukládáme ho šifrovaný (AES-256-GCM). Data leží v EU, přihlášení chrání volitelné dvoufaktorové ověření. Nepotřebujeme tvoje jméno ani rodné číslo — stačí e-mail.',
-  },
-  {
-    q: 'Co když nejsem na Trading212?',
-    a: 'Interactive Brokers i Lynx připojíš stejně živě — přes Flex API. Výpisy čteme z více než 25 platforem (XTB, Degiro, eToro, Charles Schwab, Saxo, Portu, Coinbase, Kraken…) a cokoli dalšího vezme univerzální CSV šablona.',
   },
   {
     q: 'Co když změním brokera nebo jich mám víc?',
@@ -254,7 +279,7 @@ const FAQ = [
     q: 'Nahrazuje Danero daňového poradce?',
     a: 'Ne. Danero je výpočetní a evidenční nástroj — počítá podle zveřejněné metodiky a sporné výklady označuje. Za přiznání odpovídá vždy poplatník.',
   },
-] as const;
+];
 
 export default function LandingPage() {
   // živá data pro landing = stejný deterministický dataset a stejný čistý
@@ -287,17 +312,23 @@ export default function LandingPage() {
           >
             Jak to funguje
           </a>
+          <Link
+            href="/platformy"
+            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
+          >
+            Platformy
+          </Link>
+          <Link
+            href="/kalkulacka"
+            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
+          >
+            Kalkulačka
+          </Link>
           <a
             href="#cenik"
             className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
           >
             Ceník
-          </a>
-          <a
-            href="#faq"
-            className="hidden font-medium text-inkoust-tlumeny hover:text-inkoust md:inline"
-          >
-            FAQ
           </a>
           <Link
             href="/prihlaseni"
@@ -405,11 +436,6 @@ export default function LandingPage() {
               </li>
             ))}
           </ul>
-        </section>
-
-        {/* ── kalkulačka: orientační verdikt na pár kliknutí ────────────────── */}
-        <section aria-labelledby="kalkulacka-nadpis" className="mt-20 lg:mt-24">
-          <KalkulackaPriznani />
         </section>
 
         {/* ── feature 1: hlídání limitů (živé odměrky z enginu) ────────────── */}
@@ -622,7 +648,10 @@ export default function LandingPage() {
             <PlatformGrid />
           </div>
           <p className="mt-4 text-sm text-inkoust-tlumeny">
-            …a kterýkoli další broker přes univerzální šablonu s ukázkovými řádky.
+            …a kterýkoli další broker přes univerzální šablonu s ukázkovými řádky.{' '}
+            <Link href="/platformy" className="font-medium text-ruzova hover:underline">
+              Návody, kde u každé platformy výpis stáhnout →
+            </Link>
           </p>
         </section>
 
@@ -686,22 +715,47 @@ export default function LandingPage() {
           >
             Kdo za tím stojí
           </h2>
-          <p className="mt-4 leading-relaxed text-inkoust-tlumeny">
-            Jmenuju se Jan Dunder — vývojář z Prahy, který sám investuje přes Trading212.
-            Jako OSVČ v paušálním režimu jsem si potřeboval pohlídat limit 50 000 Kč
-            a tříleté časové testy, a nic to za mě nehlídalo. Tak vzniklo Danero. Jsem
-            zároveň jeho první uživatel: aplikaci ladím na vlastních datech, takže když
-            něco nesedí, bolí to nejdřív mě. Víc o mně najdeš na{' '}
-            <a
-              href="https://jandunder.dev"
-              className="font-medium text-ruzova hover:underline"
-              target="_blank"
-              rel="noreferrer"
-            >
-              jandunder.dev
-            </a>
-            .
-          </p>
+          <div className="mt-4 space-y-4 leading-relaxed text-inkoust-tlumeny">
+            <p>
+              Jmenuju se Jan Dunder, jsem vývojář z Prahy — a Danero jsem původně napsal
+              pro sebe.
+            </p>
+            <p>
+              Investuju přes několik platforem najednou a jako OSVČ v paušálním režimu
+              mám každý rok stejný úkol: poskládat prodeje, dividendy a úroky ze všech
+              účtů dohromady a uhlídat, ať nikde nepřeteče limit — 50 000 Kč pro paušál,
+              100 000 Kč pro osvobozené prodeje, a k tomu tříletý test u každého nákupu
+              zvlášť. Dělal jsem to v tabulkách a stejně jsem si nikdy nebyl jistý, že
+              na něco nezapomínám. Ten nejistý pocit mě štval víc než samotná daň.
+            </p>
+            <p>
+              Tak jsem si napsal nástroj, který to hlídá za mě — průběžně, celý rok, nad
+              skutečnými daty ze všech mých účtů. Danero dodnes ladím na vlastním
+              portfoliu: jsem jeho první uživatel, a když něco nesedí, bolí to nejdřív
+              mě. Proto taky sporné daňové výklady nezametám pod koberec — aplikace je
+              označí, spočítá bezpečnou variantu a ukáže, co by znamenala ta výhodnější.
+            </p>
+            <p>
+              Není za tím firma s marketingovým oddělením. Jen jeden člověk, kterého
+              tenhle problém opravdu štval. Když ti něco nebude sedět, napiš mi na{' '}
+              <a
+                href="mailto:dunder.jan@gmail.com"
+                className="font-medium text-ruzova hover:underline"
+              >
+                dunder.jan@gmail.com
+              </a>{' '}
+              — odpovídám osobně. A víc o mně najdeš na{' '}
+              <a
+                href="https://jandunder.dev"
+                className="font-medium text-ruzova hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                jandunder.dev
+              </a>
+              .
+            </p>
+          </div>
         </section>
 
         {/* ── závěrečné CTA ─────────────────────────────────────────────────── */}
@@ -747,6 +801,21 @@ export default function LandingPage() {
             </p>
           </div>
           <ul className="flex flex-wrap gap-x-5 gap-y-2 md:justify-end">
+            <li>
+              <Link href="/platformy" className="font-medium hover:text-inkoust">
+                Platformy
+              </Link>
+            </li>
+            <li>
+              <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
+                Kalkulačka
+              </Link>
+            </li>
+            <li>
+              <Link href="/demo/prehled" className="font-medium hover:text-inkoust">
+                Demo
+              </Link>
+            </li>
             <li>
               <a
                 href="https://jandunder.dev"
