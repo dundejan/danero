@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test';
 
 /**
  * Marketingová landing page: hero s jediným h1, živé komponenty počítané
- * demo enginem (odměrky, horizont), ceník, FAQ a CTA vedoucí rovnou do dema
- * bez registrace. Texty odpovídají deterministickému demo datasetu.
+ * demo enginem (odměrky, horizont), ceník a CTA vedoucí rovnou do dema
+ * bez registrace. FAQ a „Kdo za tím stojí“ mají vlastní podstránky.
+ * Texty odpovídají deterministickému demo datasetu.
  */
 
-test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
+test('landing: hero, živé komponenty a ceník', async ({ page }) => {
   await page.goto('/');
 
   // jediný h1 s hlavním sdělením
@@ -37,6 +38,17 @@ test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
   await expect(page.getByText('990 Kč ročně', { exact: true })).toBeVisible();
   await expect(page.getByText(/necelých 83 Kč měsíčně/)).toBeVisible();
 
+  // FAQ a autor už na landingu nejsou — vedou na ně odkazy u závěrečného CTA
+  // (exact: true — jinak se název case-insensitivně sveze i s odkazy v hlavičce a patičce)
+  await expect(page.getByRole('link', { name: 'časté otázky', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'kdo za Danerem stojí' })).toBeVisible();
+});
+
+test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
+  await page.goto('/caste-otazky');
+
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Časté otázky');
+
   // FAQ: details/summary se dá rozkliknout
   const faq = page.locator('details', { hasText: 'Pro koho Danero je?' });
   await faq.locator('summary').click();
@@ -46,6 +58,18 @@ test('landing: hero, živé komponenty, ceník a FAQ', async ({ page }) => {
   const beta = page.locator('details', { hasText: 'Co se stane, až beta skončí?' });
   await beta.locator('summary').click();
   await expect(beta.getByText(/nic se nestrhne samo/)).toBeVisible();
+});
+
+test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }) => {
+  await page.goto('/o-projektu');
+
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Kdo za tím stojí');
+  await expect(page.getByRole('img', { name: 'Jan Dunder — autor Danera' })).toBeVisible();
+  // mailto je i v patičce — omezit na obsah stránky
+  await expect(
+    page.getByRole('main').getByRole('link', { name: 'dunder.jan@gmail.com' }),
+  ).toBeVisible();
+  await expect(page.getByText(/IČO\s*19642661/)).toBeVisible();
 });
 
 test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => {
