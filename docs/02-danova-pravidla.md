@@ -135,12 +135,19 @@ komplexní metodický materiál ke kryptoaktivům (společná pracovní skupina 
 poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
 
 - **R-10a Hodnotový limit 100k (§ 4/1 zj)**: osvobozen úhrn **hrubých příjmů (tržeb)**
-  z úplatného převodu kryptoaktiv ≤ 100 000 Kč/ZO. **Samostatný limit vedle limitu CP**
-  (R-02d) — oba se čerpají nezávisle. Cliff jako R-02a (překročení = osvobození padá
-  celé). Neplatí pro krypto v obchodním majetku (a 3 roky po ukončení činnosti).
-  ⚠️ Zákon vylučuje **elektronické peněžní tokeny** (EMT — stablecoiny typu USDT/USDC);
-  z dat brokera nedetekovatelné → engine osvobození aplikuje a přidá varování
-  `CRYPTO_EMT_ASSUMPTION` (viz R-10g).
+  z úplatného převodu kryptoaktiv ≤ 100 000 Kč/ZO — **s výjimkou elektronických
+  peněžních tokenů** (EMT — stablecoiny typu USDT/USDC): text § 4/1 zj) ve znění
+  zák. č. 32/2025 Sb. je z osvobození výslovně vylučuje. Prodej EMT je proto
+  zdanitelný **vždy** (§ 10, s výdaji) bez ohledu na úhrn a jeho tržby se do úhrnu
+  100k **nepočítají vůbec** — úhrn se posuzuje jen z ne-EMT tržeb. EMT zůstává
+  **stejným druhem příjmu § 10** jako ostatní kryptoaktiva (R-10c) — zisky a ztráty
+  se uvnitř druhu kompenzují. EMT detekujeme podle tickeru instrumentu (seznam
+  `EMT_TICKERS` v enginu: USDT, USDC, DAI… — hlavní fiat-podložené EMT dle MiCA,
+  rozšiřitelný); seznam nemůže být úplný — exotický stablecoin mimo seznam zachytí
+  stávající varování `CRYPTO_EMT_ASSUMPTION` (R-10g). **Samostatný limit vedle
+  limitu CP** (R-02d) — oba se čerpají nezávisle. Cliff jako R-02a (překročení =
+  osvobození padá celé). Neplatí pro krypto v obchodním majetku (a 3 roky po
+  ukončení činnosti).
 - **R-10b Časový test 3 roky (§ 4/1 zk) a účinnost novely**: příjem osvobozen,
   přesáhne-li doba mezi nabytím a převodem 3 roky. Doba držby **před účinností se
   započítává** (KOOV 625, závěr 2.2.1.2) — nákup 2020, prodej 3/2025 = osvobozen.
@@ -175,10 +182,15 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   dle § 38v (R-09d).
 - **R-10g Sporné body (⚠️, bezpečné defaulty)**:
   - ⚠️ **EMT a časový test**: zj) EMT výslovně vylučuje, **zk) nikoli** — výklad
-    nejednotný. Default: časový test osvobozuje i EMT; při každé aplikaci krypto
-    osvobození (zj i zk) engine přidá jedno varování `CRYPTO_EMT_ASSUMPTION`
-    („předpokládáme, že nejde o elektronické peněžní tokeny — případně je vyřaď/označ
-    ručně"). EMT nelze z dat brokera spolehlivě detekovat.
+    nejednotný. Přepínač `emtTimeTestExempt` (default `false` = bezpečný výklad:
+    EMT časovým testem NEosvobozovat, prodej EMT je zdanitelný vždy). Mírnější
+    výklad (`true`) EMT po 3 letech držby osvobodí — opora v liteře zk), které EMT
+    na rozdíl od zj) nevylučuje; správní praxe zatím chybí (riziko doměrku).
+    Při prodejích detekovaných EMT v roce engine přidá varování `CRYPTO_EMT_DETECTED`
+    s vyčíslením tržeb a částky, kterou by mírnější výklad osvobodil. Varování
+    `CRYPTO_EMT_ASSUMPTION` (při aplikaci krypto osvobození na ne-EMT tržby) nově
+    kryje jen tokeny mimo seznam `EMT_TICKERS` — „exotický stablecoin mimo seznam
+    vyřaď/označ ručně".
   - ⚠️ **Párování částečných prodejů**: metoda není předepsána (jako R-05c) — default
     FIFO, konzistence per rok, stejné strategie jako CP.
 
@@ -293,6 +305,7 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `fxMethod` | počítat obě, uživatel volí | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
 | `derivativesExpensesPerDruh` | `false` (restriktivní) | R-12i |
+| `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 

@@ -176,7 +176,8 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     { available: true, effectiveFrom: null },
   );
   // R-10b: krypto osvobození až od účinnosti zák. č. 32/2025 Sb. (2025: od 15. 2.;
-  // ZO ≤ 2024 žádné) — dřívější prodeje jsou plně zdanitelné a nečerpají limit 100k
+  // ZO ≤ 2024 žádné) — dřívější prodeje jsou plně zdanitelné a nečerpají limit 100k.
+  // R-10a: detekce EMT (stablecoinů) podle tickeru — jen u druhu kryptoaktiva.
   const cryptoPrepared = prepareDisposals(
     yearDisposals.filter((disposal) => isCryptoDisposal(disposal)),
     fx,
@@ -184,6 +185,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     {
       available: config.cryptoRules.exemptionsAvailable,
       effectiveFrom: config.cryptoRules.effectiveFrom,
+      detectEmt: true,
     },
   );
 
@@ -215,14 +217,36 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     warnings,
   );
 
-  // R-10g: osvobození zj) nezahrnuje elektronické peněžní tokeny (EMT), které
-  // z dat brokera nedetekujeme — při každé aplikaci krypto osvobození poctivě upozorni
-  const cryptoExemptCzk = sum(crypto.disposals.map((report) => report.exemptProceedsCzk));
+  // R-10a/R-10g: prodeje detekovaných EMT (stablecoinů) — zj) je vylučuje vždy,
+  // časový test zk) jen dle přepínače; poctivě vyčísli dopad mírnějšího výkladu
+  if (cryptoPrepared.emtProceedsCzk.gt(0)) {
+    const testable = cryptoPrepared.emtTimeTestableProceedsCzk;
+    const timeTestPart = options.emtTimeTestExempt
+      ? `Máš zapnutý mírnější výklad (R-10g): časový test 3 roky stablecoiny osvobozuje — z prodejů to je ${czkText(testable)}. Opora je jen v doslovném textu § 4/1 zk); finanční správa výklad nepotvrdila a při sporu hrozí doměrek daně s příslušenstvím.`
+      : testable.gt(0)
+        ? `Při bezpečném výkladu se na stablecoiny neuplatňuje ani časový test 3 let; mírnější výklad (§ 4/1 zk) je na rozdíl od zj) nevylučuje) by osvobodil ${czkText(testable)} — přepínač najdeš v Nastavení. Riziko mírnějšího výkladu: nepotvrzený výklad, hrozí doměrek daně s příslušenstvím.`
+        : `Při bezpečném výkladu se na stablecoiny neuplatňuje ani časový test 3 let (žádný z letošních prodejů ho zatím nesplňuje, mírnější výklad by nic nezměnil).`;
+    warnings.add(
+      'CRYPTO_EMT_DETECTED',
+      'WARNING',
+      `Prodeje stablecoinů (elektronických peněžních tokenů — EMT) za ${czkText(cryptoPrepared.emtProceedsCzk)}: osvobození do 100 000 Kč se na ně nevztahuje (§ 4/1 zj) je výslovně vylučuje) — prodeje jsou vždy zdanitelné dle § 10 s výdaji a jejich tržby se do úhrnu 100k nepočítají. ${timeTestPart}`,
+      {
+        emtProceedsCzk: cryptoPrepared.emtProceedsCzk.toFixed(2),
+        emtTimeTestableCzk: testable.toFixed(2),
+      },
+    );
+  }
+
+  // R-10g: seznam EMT tickerů nemůže být úplný — při aplikaci krypto osvobození
+  // na ne-EMT tržby upozorni na případný exotický stablecoin mimo seznam
+  const cryptoExemptCzk = sum(
+    crypto.disposals.filter((report) => !report.isEmt).map((report) => report.exemptProceedsCzk),
+  );
   if (cryptoExemptCzk.gt(0)) {
     warnings.add(
       'CRYPTO_EMT_ASSUMPTION',
       'WARNING',
-      `Osvobozené příjmy z kryptoaktiv ${czkText(cryptoExemptCzk)}: předpokládáme, že nejde o elektronické peněžní tokeny (např. USDT/USDC) — ty mají hodnotové osvobození 100 000 Kč (§ 4/1 zj) vyloučené. Pokud jsi prodával stablecoiny, vyřaď je nebo označ ručně.`,
+      `Osvobozené příjmy z kryptoaktiv ${czkText(cryptoExemptCzk)}: hlavní stablecoiny (USDT, USDC, DAI…) poznáme podle tickeru a z osvobození je vyloučíme sami — exotický stablecoin mimo náš seznam ale nepoznáme. Pokud jsi takový prodával, vyřaď ho nebo označ ručně (elektronické peněžní tokeny nárok na osvobození 100 000 Kč nemají).`,
       { exemptCzk: cryptoExemptCzk.toFixed(2) },
     );
   }

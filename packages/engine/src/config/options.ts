@@ -24,6 +24,12 @@ export interface EngineOptions {
    * (výklad „per druh", § 10/4 + D-59). Default false = restriktivní výklad.
    */
   derivativesExpensesPerDruh: boolean;
+  /**
+   * R-10g: osvobozuje časový test 3 roky (§ 4/1 zk) i EMT (stablecoiny)?
+   * Litera zk) EMT nevylučuje (na rozdíl od zj), výklad je ale nejednotný.
+   * Default false = bezpečný výklad (EMT zdanit vždy).
+   */
+  emtTimeTestExempt: boolean;
 }
 
 export const DEFAULT_OPTIONS: EngineOptions = {
@@ -37,6 +43,7 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   treatyWithholdingCap: { US: '0.15', DE: '0.15', NL: '0.10', JP: '0.15', IE: '0.15' },
   defaultTreatyCap: '0.15',
   derivativesExpensesPerDruh: false,
+  emtTimeTestExempt: false,
 };
 
 export const resolveOptions = (partial?: Partial<EngineOptions>): EngineOptions => ({

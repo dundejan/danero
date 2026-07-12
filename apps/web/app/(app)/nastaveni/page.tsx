@@ -224,6 +224,24 @@ export default async function SettingsPage({
                     derivátovým ziskům roku — sníží daň, ale neseš riziko doměrku.
                   </p>
                 </div>
+                <div>
+                  <Label htmlFor="emtTimeTestExempt" title="Pravidlo R-10g v metodice Danero">
+                    Stablecoiny a časový test
+                  </Label>
+                  <Select
+                    id="emtTimeTestExempt"
+                    name="emtTimeTestExempt"
+                    defaultValue={(profile?.emtTimeTestExempt ?? false) ? 'lenient' : 'safe'}
+                  >
+                    <option value="safe">Opatrný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
+                    <option value="lenient">Mírnější výklad — po 3 letech držení bez daně i stablecoiny (sporné)</option>
+                  </Select>
+                  <p className="mt-1 text-xs text-inkoust-tlumeny">
+                    Stablecoiny (USDT, USDC…) zákon vylučuje z osvobození do 100 000 Kč — jejich
+                    prodej se daní vždy. Zda pro ně platí aspoň tříleté osvobození, jasné není;
+                    mírnější čtení má oporu v textu zákona, ale neseš riziko doměrku.
+                  </p>
+                </div>
               </div>
               <p className="text-xs text-inkoust-tlumeny">
                 Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se

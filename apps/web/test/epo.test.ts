@@ -15,6 +15,7 @@ const PROFILE: ProfileRow = {
   fxMethod: 'UNIFIED',
   limit100kStrict: true,
   derivativesExpensesPerDruh: false,
+  emtTimeTestExempt: false,
   timeTestBasis: 'settlement',
   createdAt: new Date(),
   updatedAt: new Date(),

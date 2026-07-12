@@ -83,6 +83,7 @@ function demoProfile(): ProfileRow {
     limit100kStrict: true,
     timeTestBasis: 'settlement',
     derivativesExpensesPerDruh: false,
+    emtTimeTestExempt: false,
     createdAt: DEMO_PROFILE_AT,
     updatedAt: DEMO_PROFILE_AT,
   };

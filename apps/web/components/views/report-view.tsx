@@ -82,7 +82,8 @@ export function ReportView({
         párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
         {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'} ·
-        časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
+        časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
+        stablecoiny (EMT): {result.options.emtTimeTestExempt ? 'časový test uplatněn (mírnější výklad)' : 'bez osvobození (opatrný výklad)'}.
         Kurzy: pokyny GFŘ D-49…D-75 (2020–2025), viz dokumentace metodiky.
       </p>
 
@@ -621,7 +622,8 @@ export function ReportView({
           {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
           {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
-          časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'}.
+          časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
+          stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (opatrný výklad)'}.
           Jednotné kurzy 2020–2025 jsou ověřené z pokynů GFŘ řady D; kurz běžného roku je
           orientační do vydání pokynu. Danero je výpočetní nástroj, nikoli daňové poradenství.
         </p>
