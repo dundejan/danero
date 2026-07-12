@@ -1,6 +1,6 @@
 import { TransactionSchema } from '@danero/shared';
-import { cleanNumber, HeaderMap, parseCsv } from '../csv';
-import { fnv1a64 } from '../dedupe';
+import { cleanNumber, HeaderMap, isValidIsoDate, parseCsv } from '../csv';
+import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const UNIVERSAL_BROKER = 'universal';
@@ -67,6 +67,7 @@ export function parseUniversalCsv(text: string): ImportResult {
     }
   }
 
+  const uniqueId = uniqueIdFactory();
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2;
     if (row.every((cell) => cell.trim() === '')) return;
@@ -77,8 +78,26 @@ export function parseUniversalCsv(text: string): ImportResult {
       result.errors.push({ line, message: `Neznámý typ "${type}" (povolené: ${[...TYPES].join(', ')})` });
       return;
     }
+    // Ručně psaná data: regex schématu pustí i neexistující den (2026-02-30)
+    // a datumová aritmetika by ho tiše přetekla — řádek se odmítne s chybou
+    for (const [column, value] of [
+      ['date', date],
+      ['settlement_date', map.get(row, 'settlement_date')],
+      ['acquisition_date', map.get(row, 'acquisition_date')],
+    ] as const) {
+      if ((value || column === 'date') && !isValidIsoDate(value)) {
+        result.errors.push({
+          line,
+          message: `Neplatné datum "${value}" ve sloupci ${column} — očekáváme existující den ve formátu RRRR-MM-DD (např. 2026-03-05).`,
+          raw: row.join(','),
+        });
+        return;
+      }
+    }
 
-    const id = `uni-${fnv1a64(row.join('|'))}`;
+    // identické legitimní řádky (dva stejné obchody v týž den) nesmí tiše
+    // splynout — pořadový suffix drží klíče stabilní i napříč exporty
+    const id = uniqueId(`uni-${fnv1a64(row.join('|'))}`);
     const feeAmount = cleanNumber(map.get(row, 'fee'));
     const fee = feeAmount
       ? { amount: feeAmount, currency: map.get(row, 'fee_currency') || map.get(row, 'currency') }

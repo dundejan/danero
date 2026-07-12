@@ -134,6 +134,43 @@ describe('Trading212 CSV parser', () => {
     expect(result.warnings.some((w) => w.message.includes('Spin-off'))).toBe(true);
   });
 
+  it('záporný úrok = naúčtovaný náklad → FEE s varováním, ne příjem § 8', () => {
+    const csv = [
+      HEADER,
+      'Interest on cash,2025-05-01 00:00:00,,,,,,,,,,-3.21,CZK,,,,EOF-NI1,,',
+      'Interest on cash,2025-06-01 00:00:00,,,,,,,,,,12.34,CZK,,,,EOF-PI1,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['FEE', 'INTEREST']);
+    const fee = result.transactions[0]!;
+    if (fee.type !== 'FEE') throw new Error('unreachable');
+    expect(fee.amount.toString()).toBe('3.21');
+    expect(result.warnings.some((w) => w.message.includes('naúčtovaný úrok'))).toBe(true);
+  });
+
+  it('podezřelý poplatek obchodu (záporný / bez měny) se nezapočte a nahlásí', () => {
+    // vratka: záporná hodnota poplatku nesmí navýšit výdaje
+    const rebate = parseTrading212Csv(
+      `${HEADER}\nMarket buy,2024-01-10 09:00:00,US0378331005,AAPL,Apple,10,185.50,USD,,,,1855.00,USD,,,,EOF-R1,-2.10,CZK`,
+    );
+    const rebateBuy = rebate.transactions[0]!;
+    if (rebateBuy.type !== 'BUY') throw new Error('unreachable');
+    expect(rebateBuy.fee).toBeUndefined();
+    expect(rebate.warnings.some((w) => w.message.includes('vypadá jako vratka'))).toBe(true);
+
+    // poplatek s hodnotou, ale bez sloupce s měnou → nezapočíst, nahlásit
+    const noCurrencyHeader =
+      'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Total,Currency (Total),ID,Currency conversion fee';
+    const missing = parseTrading212Csv(
+      `${noCurrencyHeader}\nMarket buy,2024-01-10 09:00:00,US0378331005,AAPL,Apple,10,185.50,USD,1855.00,USD,EOF-M1,2.10`,
+    );
+    const missingBuy = missing.transactions[0]!;
+    if (missingBuy.type !== 'BUY') throw new Error('unreachable');
+    expect(missingBuy.fee).toBeUndefined();
+    expect(missing.warnings.some((w) => w.message.includes('sloupec s měnou'))).toBe(true);
+  });
+
   it('identické řádky bez ID: varování + dedupe je sloučí', () => {
     const duplicated = [
       HEADER,

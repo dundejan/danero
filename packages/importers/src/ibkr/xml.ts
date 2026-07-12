@@ -1008,10 +1008,12 @@ function collectOpenPositions(
     // SUMMARY level u pozic je žádoucí (per instrument); LOT level by zdvojil
     const level = (row.levelOfDetail ?? 'SUMMARY').toUpperCase();
     if (level === 'LOT') continue;
-    const isin = row.isin?.trim();
-    if (!isin || !row.position) continue;
+    // stejný klíč jako u obchodů: deriváty (opce, futures) ISIN nemají —
+    // bez fallbacku na symbol by každá otevřená opce věčně hlásila nesoulad
+    const key = row.isin?.trim() || row.symbol?.trim() || (row.conid ? `IBKR:${row.conid}` : '');
+    if (!key || !row.position) continue;
     result.openPositions.push({
-      isin,
+      isin: key,
       quantity: cleanNumber(row.position),
       ...(row.markPrice ? { markPrice: cleanNumber(row.markPrice) } : {}),
       ...(row.currency ? { currency: row.currency } : {}),

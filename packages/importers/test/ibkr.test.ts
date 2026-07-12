@@ -178,10 +178,12 @@ describe('IBKR Flex XML parser', () => {
     expect(transferOut.quantity.toString()).toBe('20');
   });
 
-  it('open positions pro rekonciliaci (LOT úroveň se nezdvojí)', () => {
+  it('open positions pro rekonciliaci (LOT úroveň se nezdvojí, opce bez ISIN přes symbol)', () => {
     expect(result.openPositions).toEqual([
       { isin: 'US0378331005', quantity: '340' },
       { isin: 'US5949181045', quantity: '10' },
+      // deriváty ISIN nemají — klíčem je symbol, stejně jako u obchodů
+      { isin: 'AAPL  260619C00200000', quantity: '2' },
     ]);
   });
 

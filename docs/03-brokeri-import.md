@@ -36,6 +36,14 @@ Zásady:
   `Spin off` (příjem kusů s cenou 0). Změny ISIN/fúze nepozorovány → rekonciliace
   přes API zůstává jako pojistka. Původní rešerše (i praxe Taxomatu) tvrdila opak.
 - Referenční parsery: `pkpio/trading212-csv` (Python), converter v Export-To-Ghostfolio (TS).
+- ⚠️ Známá omezení dedupe: řádek se sloupcem `ID` dostává klíč `t212-<ID>`,
+  bez něj hash obsahu — týž obchod ve starém exportu bez `ID` a v novém s `ID`
+  se tedy nespáruje (dvojí import při míchání épochálně různých exportů; dnešní
+  exporty i API `ID` mají vždy). Identické řádky bez `ID` naopak záměrně
+  splývají (nelze odlišit echo od skutečného duplikátu) — parser varuje.
+- ⚠️ Plný sync končí po 2 po sobě prázdných letech (API nezná datum založení
+  účtu) — účet s ≥2letou pauzou v obchodování si starší historii doplní ručním
+  CSV; nesoulad odhalí rekonciliace pozic.
 
 **API** ([docs.trading212.com/api](https://docs.trading212.com/api)):
 - Klíč: Settings → API (Beta), API Key + Secret, granularitní **read-only** oprávnění, volitelné IP restrikce. Autentizace pravděpodobně HTTP Basic — **ověřit prakticky na vlastním účtu** (starší v0 posílalo klíč přímo v `Authorization`).

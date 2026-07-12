@@ -77,6 +77,34 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
   );
 
   it(
+    'inkrementální sync přes přelom roku dotáhne i ocas předchozího roku',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u3', name: 'Test', email: 'novyrok@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc3',
+        userId: 'u3',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+        // poslední úspěšný sync 31. 12. — obchody z konce roku se do exportu
+        // propisují se zpožděním, po Novém roce je musí dotáhnout inkrementál
+        lastSyncedAt: new Date('2025-12-31T22:00:00Z'),
+        lastSyncStatus: 'ok',
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch();
+      await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-01-02T08:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(mock.requestedYears).toEqual([2026, 2025]);
+    },
+  );
+
+  it(
     'když API odmítne Basic (401), spadne se na samotný tajný klíč',
     { timeout: 30_000 },
     async () => {
