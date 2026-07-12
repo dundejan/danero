@@ -32,6 +32,7 @@ const GROUP_TITLES: Record<string, string> = {
   DELISTING_MANUAL: 'Delisting vyžaduje ruční posouzení',
   DERIVATIVE_ACTION_UNSUPPORTED: 'Korporátní akce na derivátovém instrumentu',
   ASSET_CLASS_NORMALIZED: 'Sjednocený druh instrumentu',
+  FRACTIONAL_SHARES: 'Frakční akcie — nejednoznačný status',
   FX_UNIFIED_RATE_MISSING: 'Chybějící jednotný kurz',
   FX_DAILY_RATE_MISSING: 'Chybějící denní kurz ČNB',
 };

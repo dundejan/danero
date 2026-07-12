@@ -251,6 +251,24 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     );
   }
 
+  // R-04j: frakční akcie mají nejasný právní status (u některých brokerů jde
+  // o derivátový nárok, ne CP) — počítáme je jako CP a poctivě to vlajkujeme
+  const fractionalIsins = [
+    ...new Set(
+      yearDisposals
+        .filter((disposal) => !isCryptoDisposal(disposal) && !disposal.quantity.isInteger())
+        .map((disposal) => disposal.isin),
+    ),
+  ];
+  if (fractionalIsins.length > 0) {
+    warnings.add(
+      'FRACTIONAL_SHARES',
+      'INFO',
+      `Část letošních prodejů proběhla ve frakcích (zlomcích akcií): ${fractionalIsins.join(', ')}. Právní status frakcí není jednoznačný — u některých brokerů jde technicky o derivátový nárok, ne o cenný papír. Počítáme je jako cenné papíry včetně časového testu a limitu 100 000 Kč (převažující výklad, R-04j).`,
+      { isins: fractionalIsins },
+    );
+  }
+
   const dividendTxs = input.transactions.filter(
     (tx): tx is DividendTransaction => tx.type === 'DIVIDEND' && yearOf(tx.date) === year,
   );

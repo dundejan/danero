@@ -92,9 +92,11 @@ export function computeLimits(
 
   // R-08c/d: do 50k vstupují jen NEosvobozené příjmy — hrubé tržby, zahraniční
   // dividendy brutto, zdanitelné úroky a ruční ostatní příjmy § 8–10.
-  const nonExemptProceeds = securities.exemptUnder100k
-    ? ZERO
-    : sum(securities.disposals.map((disposal) => disposal.taxableProceedsCzk));
+  // Součet per prodej i při exemptUnder100k: dodaněná část ze stropu § 4/3
+  // (R-03/R-10d) je zdanitelná a limit čerpá i v roce s poolem pod 100k.
+  const nonExemptProceeds = sum(
+    securities.disposals.map((disposal) => disposal.taxableProceedsCzk),
+  );
   // R-10f: u krypta per prodej — prodeje bez nároku na osvobození (R-10b) jsou
   // zdanitelné a čerpají limit i v roce, kdy pool 100k nepřeteče
   const nonExemptCryptoProceeds = sum(

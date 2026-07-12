@@ -117,4 +117,25 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     expect(result.securities.expensesCzk.toString()).toBe('10500000');
     expect(result.securities.base10Czk.toString()).toBe('10500000');
   });
+
+  it('dodanění ze stropu čerpá limit 50k i při CP poolu pod 100k (R-08d/R-10f)', () => {
+    // sdílený strop 2025: krypto 49,91M + CP 90k časově osvobozených = 50M
+    // → ratio 0,8; dodaní se 20 % z obou druhů VČETNĚ CP s poolem 90k ≤ 100k
+    const result = run([
+      buy({ quantity: '90', pricePerShare: '100', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
+      sell({ quantity: '90', pricePerShare: '1000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+      buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '1000000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' }),
+      sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '49910000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+
+    // CP zůstávají hodnotově osvobozené, ale dodaněná pětina tržby je zdanitelná
+    expect(result.securities.exemptUnder100k).toBe(true);
+    expect(result.securities.disposals[0]!.taxableProceedsCzk.toString()).toBe('18000');
+
+    const components = result.limits.flatTax50k.components;
+    expect(components.nonExemptSecuritiesProceedsCzk.toString()).toBe('18000');
+    expect(components.nonExemptCryptoProceedsCzk.toString()).toBe('9982000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('10000000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+  });
 });

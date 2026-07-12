@@ -222,6 +222,18 @@ describe('R-12f/g MARGIN vypořádání (futures, CFD): nominál není příjem'
     expect(result.limits.flatTax50k.status.exceeded).toBe(false);
   });
 
+  it('otevírací poplatek MARGIN pozice je výdajem při uzavření, kurzem roku zaplacení (R-12f, R-06a)', () => {
+    const result = run([
+      // fee 10 USD při otevření 2024 (kurz 23) → výdaj 230 Kč při uzavření 2025
+      cfdBuy({ pricePerShare: '100', currency: 'USD', tradeDate: '2024-05-01', settlementDate: '2024-05-01', fee: { amount: '10', currency: 'USD' } }),
+      cfdSell({ pricePerShare: '101', currency: 'USD', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+    // příjem (101 − 100) × 100 = 100 USD × kurz 2025 (20) = 2 000 Kč
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('2000');
+    expect(result.derivatives.expensesCzk.toString()).toBe('230');
+    expect(result.derivatives.base10Czk.toString()).toBe('1770');
+  });
+
   it('ztrátové uzavření = výdaj druhu (žádný příjem), short bez cash toku při otevření', () => {
     const result = run([
       // short future: otevření SELL bez příjmu (na rozdíl od prémie opce)
