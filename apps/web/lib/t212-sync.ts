@@ -147,6 +147,15 @@ export async function syncTrading212(
   const mode =
     options.mode ??
     (account.lastSyncedAt && account.lastSyncStatus !== 'error' ? 'incremental' : 'full');
+  // Inkrementálně se stahuje od běžného roku dolů až po rok posledního úspěšného
+  // syncu se 7denní rezervou: obchody se do exportů propisují se zpožděním, takže
+  // sync z 31. 12. nesmí po Novém roce nechat ocas prosince navždy nestažený.
+  const incrementalMinYear = account.lastSyncedAt
+    ? Math.min(
+        new Date(account.lastSyncedAt.getTime() - 7 * 86_400_000).getUTCFullYear(),
+        currentYear,
+      )
+    : currentYear;
 
   const yearProgress: SyncYearProgress[] = [];
   const report = async (phase: SyncProgress['phase']) => {
@@ -166,7 +175,8 @@ export async function syncTrading212(
   const dedupeKeys = await loadDedupeKeys(db, account.userId);
   let emptyStreak = 0;
 
-  for (let year = currentYear; year >= T212_MIN_YEAR; year -= 1) {
+  const minYear = mode === 'incremental' ? incrementalMinYear : T212_MIN_YEAR;
+  for (let year = currentYear; year >= minYear; year -= 1) {
     const current: SyncYearProgress = { year, status: 'running' };
     yearProgress.push(current);
     await report('exporting');
@@ -221,12 +231,12 @@ export async function syncTrading212(
 
     // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil
     // chyby — nesmí nám resetovat počítadlo a prohnat smyčku až do 2016).
+    // Inkrementální běh ukončuje spodní mez smyčky (minYear), ne obsah roku.
     if (parsed.transactions.length === 0) {
       emptyStreak += 1;
-      if (mode === 'incremental' || emptyStreak >= 2) break;
+      if (mode === 'full' && emptyStreak >= 2) break;
     } else {
       emptyStreak = 0;
-      if (mode === 'incremental') break;
     }
   }
 

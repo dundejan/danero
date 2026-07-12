@@ -49,6 +49,7 @@ export const IBKR_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
         <OpenPosition accountId="U1234567" assetCategory="STK" symbol="AAPL" conid="265598" isin="US0378331005" position="340" levelOfDetail="SUMMARY" />
         <OpenPosition accountId="U1234567" assetCategory="STK" symbol="MSFT" conid="272093" isin="US5949181045" position="10" levelOfDetail="SUMMARY" />
         <OpenPosition accountId="U1234567" assetCategory="STK" symbol="AAPL" conid="265598" isin="US0378331005" position="100" levelOfDetail="LOT" />
+        <OpenPosition accountId="U1234567" assetCategory="OPT" symbol="AAPL  260619C00200000" conid="999999" position="2" levelOfDetail="SUMMARY" />
       </OpenPositions>
     </FlexStatement>
   </FlexStatements>

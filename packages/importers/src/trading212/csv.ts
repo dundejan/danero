@@ -158,7 +158,7 @@ export function parseTrading212Csv(text: string): ImportResult {
           const shares = cleanNumber(map.get(row, 'No. of shares'));
           const price = cleanNumber(map.get(row, 'Price / share'));
           const instrumentCurrency = map.get(row, 'Currency (Price / share)');
-          const withholding = cleanNumber(map.get(row, 'Withholding tax')) || '0';
+          let withholding = cleanNumber(map.get(row, 'Withholding tax')) || '0';
           const withholdingCurrency = map.get(row, 'Currency (Withholding tax)');
 
           let gross: string;
@@ -168,9 +168,12 @@ export function parseTrading212Csv(text: string): ImportResult {
             gross = new Decimal(shares).mul(price).toString();
             currency = instrumentCurrency;
             if (withholdingCurrency && withholdingCurrency !== instrumentCurrency) {
+              // číslo v cizí měně by se tiše přepočetlo špatným kurzem —
+              // bezpečněji: zápočet nezapočíst (vyšší daň) a říct si o doplnění
+              withholding = '0';
               result.warnings.push({
                 line,
-                message: `Dividenda: srážková daň v jiné měně (${withholdingCurrency}) než brutto (${instrumentCurrency}) — zkontroluj ručně.`,
+                message: `Dividenda: srážková daň v jiné měně (${withholdingCurrency}) než brutto (${instrumentCurrency}) — do zápočtu nebyla započtena, doplň ji ručně.`,
               });
             }
           } else {
@@ -208,11 +211,29 @@ export function parseTrading212Csv(text: string): ImportResult {
             result.errors.push({ line, message: `${action}: chybí částka/měna úroku.` });
             return;
           }
+          // Záporný úrok = naúčtovaný (ne připsaný) — nesmí se tiše otočit
+          // do zdanitelného příjmu § 8; evidujeme ho jako poplatek účtu
+          if (amount.startsWith('-')) {
+            result.warnings.push({
+              line,
+              message: `${action}: záporná částka ${amount} ${currency} — jde o naúčtovaný úrok (náklad), ne příjem. Evidujeme jako poplatek účtu, do základu § 8 nevstupuje.`,
+            });
+            result.transactions.push(
+              TransactionSchema.parse({
+                type: 'FEE',
+                id: rowId(),
+                amount: amount.replace(/^-/, ''),
+                currency,
+                date,
+              }),
+            );
+            return;
+          }
           result.transactions.push(
             TransactionSchema.parse({
               type: 'INTEREST',
               id: rowId(),
-              amount: amount.replace(/^-/, ''),
+              amount,
               currency,
               date,
             }),
@@ -338,7 +359,9 @@ export function parseTrading212Csv(text: string): ImportResult {
   return result;
 }
 
-/** Sečte poplatkové sloupce řádku; při míchání měn vezme první měnu a zbytek nahlásí. */
+/** Sečte poplatkové sloupce řádku; při míchání měn vezme první měnu a zbytek nahlásí.
+ * Bezpečný směr: podezřelý poplatek (záporný = vratka, bez sloupce s měnou) se
+ * NEzapočte a nahlásí — nezapočtený výdaj daň nesníží, tichá chyba by ji zkreslila. */
 function collectFees(
   map: HeaderMap,
   row: string[],
@@ -350,8 +373,22 @@ function collectFees(
   for (const column of FEE_COLUMNS) {
     const raw = cleanNumber(map.get(row, column));
     if (!raw) continue;
+    if (raw.startsWith('-')) {
+      result.warnings.push({
+        line,
+        message: `Poplatek "${column}" je záporný (${raw}) — vypadá jako vratka, do výdajů nebyl započten. Zkontroluj ručně.`,
+      });
+      continue;
+    }
     const feeCurrency = map.get(row, `Currency (${column})`) || undefined;
-    if (currency !== undefined && feeCurrency !== undefined && feeCurrency !== currency) {
+    if (feeCurrency === undefined) {
+      result.warnings.push({
+        line,
+        message: `Poplatek "${column}" nemá v exportu sloupec s měnou — do výdajů nebyl započten, doplň ručně.`,
+      });
+      continue;
+    }
+    if (currency !== undefined && feeCurrency !== currency) {
       result.warnings.push({
         line,
         message: `Poplatek "${column}" je v jiné měně (${feeCurrency}) než ostatní poplatky (${currency}) — nebyl započten, doplň ručně.`,
@@ -359,10 +396,10 @@ function collectFees(
       continue;
     }
     currency = currency ?? feeCurrency;
-    total = (total ?? new Decimal(0)).plus(raw.replace(/^-/, ''));
+    total = (total ?? new Decimal(0)).plus(raw);
   }
-  if (!total || total.lte(0)) return undefined;
-  return { amount: total.toString(), currency: currency ?? 'CZK' };
+  if (!total || total.lte(0) || currency === undefined) return undefined;
+  return { amount: total.toString(), currency };
 }
 
 /** Deduplikační klíče pro výsledek importu (viz dedupe.ts). */

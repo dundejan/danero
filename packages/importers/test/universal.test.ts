@@ -98,4 +98,32 @@ describe('univerzální CSV šablona', () => {
     expect(result.errors).toEqual([]);
     expect(result.transactions.length).toBeGreaterThanOrEqual(8);
   });
+
+  it('dva identické legitimní řádky nesplynou — id dostane pořadový suffix', () => {
+    const csv = [
+      'type,date,isin,quantity,price,currency',
+      'BUY,2024-06-10,US0378331005,10,185.50,USD',
+      'BUY,2024-06-10,US0378331005,10,185.50,USD',
+    ].join('\n');
+    const result = parseUniversalCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(2);
+    const [first, second] = result.transactions;
+    expect(first!.id).not.toBe(second!.id);
+    expect(second!.id).toBe(`${first!.id}-2`);
+  });
+
+  it('neexistující kalendářní datum se odmítne s chybou, ne tichým posunem', () => {
+    const csv = [
+      'type,date,settlement_date,isin,quantity,price,currency',
+      'BUY,2026-02-30,,US0378331005,10,185.50,USD',
+      'SELL,2026-03-05,2026-13-01,US0378331005,5,210.00,USD',
+      'BUY,2026-03-05,,US0378331005,1,200.00,USD',
+    ].join('\n');
+    const result = parseUniversalCsv(csv);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]!.message).toContain('2026-02-30');
+    expect(result.errors[1]!.message).toContain('settlement_date');
+  });
 });
