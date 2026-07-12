@@ -120,6 +120,13 @@
       "when": 1783695116451,
       "tag": "0016_dear_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783849194771,
+      "tag": "0017_sour_magdalene",
+      "breakpoints": true
     }
   ]
 }

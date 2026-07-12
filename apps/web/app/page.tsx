@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
+import { WaitlistForm } from '@/components/waitlist-form';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
 import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
@@ -174,7 +175,9 @@ const CTA_SECONDARY =
 /* ── obsah ────────────────────────────────────────────────────────────────── */
 
 const TRUST = [
-  { icon: <IconStamp />, text: 'Výstupy prošly zkušební podatelnou finanční správy' },
+  // přesně „XML podání" — podatelna ověřuje strukturu podání, ne věcnou
+  // správnost výpočtů (nález V-5 právního auditu; detail vysvětluje FAQ)
+  { icon: <IconStamp />, text: 'XML podání ověřená zkušební podatelnou EPO' },
   { icon: <IconScale />, text: 'Počítáme opatrně — a ukážeme, kolik by šlo ušetřit' },
   { icon: <IconKey />, text: 'API klíče jen pro čtení, šifrované AES-256-GCM' },
   { icon: <IconEye />, text: 'Plné demo bez registrace' },
@@ -611,6 +614,31 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
+        {/* ── waitlist: režim před veřejným otevřením — na produkci se zapíná
+            NEXT_PUBLIC_WAITLIST=1, dokud beta nepřijímá veřejnost (docs/12 P0) */}
+        {process.env.NEXT_PUBLIC_WAITLIST === '1' && (
+          <section aria-labelledby="waitlist-nadpis" className="mt-24 lg:mt-32">
+            <div className="rounded-lg border border-linka bg-plocha p-8 sm:p-10">
+              <div className="max-w-2xl">
+                <Eyebrow>Otevíráme na podzim</Eyebrow>
+                <h2
+                  id="waitlist-nadpis"
+                  className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+                >
+                  Buď u toho mezi prvními
+                </h2>
+                <p className="mt-3 text-inkoust-tlumeny">
+                  Danero teď ladíme se zakládajícími uživateli. Nech nám e-mail
+                  a dostaneš přístup hned, jak otevřeme — ještě před daňovou sezónou.
+                </p>
+                <div className="mt-6">
+                  <WaitlistForm />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ── závěrečné CTA ─────────────────────────────────────────────────── */}
         <section aria-labelledby="zaver-nadpis" className="mt-24 lg:mt-32">
