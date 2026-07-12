@@ -5,7 +5,7 @@ import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-pa
 export const metadata: Metadata = {
   title: 'Průvodce daněmi z investic — Danero',
   description:
-    'Srozumitelné články o daních z investic pro české investory: limit 100 000 Kč z objemu prodejů, tříletý časový test, OSVČ v paušálním režimu, Trading 212, XTB a další platformy. Bez žargonu, s příklady.',
+    'Srozumitelné články o daních z investic pro české investory: limit 100 000 Kč z objemu prodejů, tříletý časový test a OSVČ v paušálním režimu. Bez žargonu, s příklady.',
 };
 
 const CLANKY: { slug: string; stitek: string; title: string; popis: string }[] = [
@@ -22,20 +22,6 @@ const CLANKY: { slug: string; stitek: string; title: string; popis: string }[] =
     title: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
     popis:
       'Limit 50 000 Kč jiných příjmů se počítá z hrubých částek — pár zahraničních dividend ho naplní i bez jediného prodeje. Co se počítá, co ne a co znamená prolomení.',
-  },
-  {
-    slug: 'trading-212-dane',
-    stitek: 'Platformy',
-    title: 'Trading 212 a české daně',
-    popis:
-      'Jak z Trading 212 dostat kompletní data (CSV export i API klíč jen pro čtení), co se daní — prodeje, dividendy s W-8BEN a úroky z hotovosti, na které se zapomíná.',
-  },
-  {
-    slug: 'xtb-dane',
-    stitek: 'Platformy',
-    title: 'XTB a české daně',
-    popis:
-      'Full report z xStation, proč česká pobočka na daních nic nemění, dividendy v hrubé výši — a proč se CFD daní úplně jinak než akcie.',
   },
 ];
 
@@ -71,26 +57,19 @@ export default function PruvodcePage() {
       </ul>
 
       <p className="mt-8 max-w-3xl text-sm text-inkoust-tlumeny">
-        Chceš rovnou odpověď na vlastní čísla? Zkus kalkulačky zdarma a bez registrace:{' '}
+        Chceš rovnou odpověď na vlastní situaci? Zkus zdarma a bez registrace{' '}
         <Link
           href="/kalkulacka"
           className="font-medium text-ruzova-text underline underline-offset-2"
         >
-          Musím podat přiznání?
-        </Link>
-        ,{' '}
-        <Link
-          href="/casovy-test"
-          className="font-medium text-ruzova-text underline underline-offset-2"
-        >
-          časový test
+          kalkulačku „Musím podat přiznání?"
         </Link>{' '}
-        a{' '}
+        — a jak přesně počítáme, popisuje stránka{' '}
         <Link
-          href="/pausalmetr"
+          href="/jak-pocitame"
           className="font-medium text-ruzova-text underline underline-offset-2"
         >
-          Paušálmetr
+          Jak počítáme
         </Link>
         .
       </p>

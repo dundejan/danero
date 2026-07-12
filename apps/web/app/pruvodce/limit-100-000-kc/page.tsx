@@ -100,8 +100,8 @@ export default function Limit100000KcPage() {
             osvobození</strong>. Kusy držené déle než 3 roky jsou osvobozené bez ohledu na
             objem — klidně i milionové prodeje. (Jen v roce 2025 pro časově osvobozené
             příjmy platil strop 40 mil. Kč ročně; od roku 2026 je pro cenné papíry
-            zrušený, pro krypto trvá.) Kdy tvému nákupu doběhnou tři roky, spočítá{' '}
-            <ClanekOdkaz href="/casovy-test">kalkulačka časového testu</ClanekOdkaz>.
+            zrušený, pro krypto trvá.) Kdy tvému nákupu doběhnou tři roky, hlídá Danero
+            u každého nákupu zvlášť na horizontu osvobození.
           </p>
           <SpornyVyklad>
             <p>
@@ -155,11 +155,8 @@ export default function Limit100000KcPage() {
               href: '/pruvodce/pausalni-rezim-a-investice',
               title: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
             },
-            {
-              href: '/pruvodce/trading-212-dane',
-              title: 'Trading 212 a české daně',
-            },
-            { href: '/casovy-test', title: 'Kalkulačka časového testu' },
+            { href: '/jak-pocitame', title: 'Jak počítáme — celá metodika s paragrafy' },
+            { href: '/kalkulacka', title: 'Kalkulačka: Musím podat přiznání?' },
           ]}
         />
       </ClanekTelo>

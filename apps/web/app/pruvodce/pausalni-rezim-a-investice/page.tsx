@@ -92,8 +92,8 @@ export default function PausalniRezimAInvesticePage() {
         <ClanekSekce title="Co se nepočítá">
           <ClanekSeznam>
             <li>
-              <strong>Osvobozené prodeje</strong> — kusy držené přes 3 roky (
-              <ClanekOdkaz href="/casovy-test">časový test</ClanekOdkaz>) a roky, kdy
+              <strong>Osvobozené prodeje</strong> — kusy držené přes 3 roky (časový
+              test) a roky, kdy
               tržby z prodejů cenných papírů nepřesáhly 100 000 Kč (
               <ClanekOdkaz href="/pruvodce/limit-100-000-kc">
                 jak limit funguje
@@ -134,8 +134,8 @@ export default function PausalniRezimAInvesticePage() {
         <ClanekSekce title="Jak to hlídá Danero">
           <p>
             Orientační odpověď dá zdarma a bez registrace{' '}
-            <ClanekOdkaz href="/pausalmetr">Paušálmetr</ClanekOdkaz>. V aplikaci pak běží
-            průběžný součet nad skutečnou historií účtů: každá dividenda přepočtená
+            <ClanekOdkaz href="/kalkulacka">kalkulačka „Musím podat přiznání?"</ClanekOdkaz>.
+            V aplikaci pak běží průběžný součet nad skutečnou historií účtů: každá dividenda přepočtená
             kurzem podle zvolené soustavy (jednotný kurz běžného roku je do lednového
             vyhlášení orientační — aplikace to viditelně označuje), osvobozené prodeje
             vyřazené, úroky započtené — a e-mail při 60, 85 a 100 % limitu. Prodej si
@@ -151,11 +151,8 @@ export default function PausalniRezimAInvesticePage() {
               href: '/pruvodce/limit-100-000-kc',
               title: 'Limit 100 000 Kč: počítá se objem prodejů, ne zisk',
             },
-            {
-              href: '/pruvodce/trading-212-dane',
-              title: 'Trading 212 a české daně',
-            },
-            { href: '/pausalmetr', title: 'Paušálmetr — kolik ti zbývá do 50 000 Kč' },
+            { href: '/jak-pocitame', title: 'Jak počítáme — celá metodika s paragrafy' },
+            { href: '/kalkulacka', title: 'Kalkulačka: Musím podat přiznání?' },
           ]}
         />
       </ClanekTelo>

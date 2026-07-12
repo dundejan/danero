@@ -26,7 +26,7 @@ const PRAVIDLA = [
 
 export default function KalkulackaPage() {
   return (
-    <MarketingPage active="kalkulacka">
+    <MarketingPage>
       <PageHero
         eyebrow="Kalkulačka"
         title="Musím kvůli investicím podat daňové přiznání?"
@@ -60,19 +60,12 @@ export default function KalkulackaPage() {
           účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech) dělá až aplikace.
         </p>
         <p className="mt-3 max-w-3xl text-sm text-inkoust-tlumeny">
-          Další kalkulačky zdarma:{' '}
+          Jak přesně Danero počítá — pravidlo po pravidlu, s paragrafy — popisuje stránka{' '}
           <Link
-            href="/casovy-test"
+            href="/jak-pocitame"
             className="font-medium text-ruzova-text underline underline-offset-2"
           >
-            kdy můžu prodat bez daně (časový test)
-          </Link>{' '}
-          a{' '}
-          <Link
-            href="/pausalmetr"
-            className="font-medium text-ruzova-text underline underline-offset-2"
-          >
-            Paušálmetr pro OSVČ v paušálu
+            Jak počítáme
           </Link>
           .
         </p>

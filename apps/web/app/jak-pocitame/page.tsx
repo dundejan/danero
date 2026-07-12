@@ -24,14 +24,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
         <p>
           Každý nákup má vlastní lhůtu. Přikupoval jsi stejné ETF postupně? Danero
           vede každý nákup zvlášť a při prodeji přesně ví, které kusy už testem
-          prošly a které ne. Konkrétní datum si můžeš spočítat v{' '}
-          <Link
-            href="/casovy-test"
-            className="font-medium text-ruzova-text underline underline-offset-2"
-          >
-            kalkulačce časového testu
-          </Link>
-          .
+          prošly a které ne — na časové ose uvidíš datum osvobození každého lotu.
         </p>
         <p>
           Lhůta běží ode dne vypořádání obchodu (dne, kdy se ti kusy skutečně
