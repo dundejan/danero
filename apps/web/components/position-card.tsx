@@ -28,7 +28,7 @@ export function PositionCard({
   secondaryText?: string;
   /** Nerealizovaný zisk/ztráta jako badge (semafor podle polarity). */
   pl?: { text: string; positive: boolean } | null;
-  /** „bez daně od …" / „vše bez daně". */
+  /** „bez daně od …“ / „vše bez daně“. */
   exemptText: string;
   exemptDone: boolean;
 }) {

@@ -19,7 +19,7 @@ export interface LimitStatus {
 
 export const limitStatus = (used: Money, limit: Money): LimitStatus => {
   const ratio = limit.gt(0) ? used.div(limit).toNumber() : 0;
-  const exceeded = used.gt(limit); // limity jsou „do X včetně" — přesně X ještě vyhovuje
+  const exceeded = used.gt(limit); // limity jsou „do X včetně“ — přesně X ještě vyhovuje
   const zone: LimitZone = exceeded
     ? 'EXCEEDED'
     : ratio >= 0.85

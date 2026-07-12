@@ -31,7 +31,7 @@ export const zoneForRatio = (ratio: number): LimitStatus['zone'] =>
 /**
  * Vodorovný bar čerpání limitu (H4): dráha 0–100 % limitu, výplň barvou pásma,
  * svislá ryska na 100 %. Při přetečení se škála protáhne na 130 % — výplň se
- * zastaví na rysce a dál pokračuje šrafovaně červeně (poctivé „kolik přes").
+ * zastaví na rysce a dál pokračuje šrafovaně červeně (poctivé „kolik přes“).
  */
 export function LimitBar({
   ratio,

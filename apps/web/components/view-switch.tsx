@@ -5,7 +5,7 @@ import { useState, type ReactNode } from 'react';
 /**
  * Sdílený přepínač pohledů (H4): segmented control ve stylu horizon-strip.
  * Obsah pohledů přichází jako server-rendered ReactNode (sloty) — komponenta
- * drží jen malý klientský stav „který pohled". Bez JS se vykreslí default.
+ * drží jen malý klientský stav „který pohled“. Bez JS se vykreslí default.
  */
 export interface View {
   key: string;

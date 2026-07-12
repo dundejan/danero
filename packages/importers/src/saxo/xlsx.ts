@@ -7,7 +7,7 @@ import { emptyResult, type ImportResult } from '../types';
 export const SAXO_BROKER = 'saxo';
 
 /**
- * Parser Saxo Bank „Transactions" XLSX exportu (SaxoTraderGO).
+ * Parser Saxo Bank „Transactions“ XLSX exportu (SaxoTraderGO).
  *
  * Jeden list (název lokalizovaný — bere se PRVNÍ list), 13 sloupců, hlavičky
  * lokalizované podle jazyka účtu. Jazyk se detekuje PŘESNOU shodou celého
@@ -16,7 +16,7 @@ export const SAXO_BROKER = 'saxo';
  *
  * Důkazy: EN a DA hlavičky doložené z reálných exportů (HIGH); NL a DE řádky
  * jsou ODVOZENÉ (MEDIUM) — pokud se skutečný export liší, spadne do chyby
- * „neznámý jazyk", nikdy do tichého špatného parsování.
+ * „neznámý jazyk“, nikdy do tichého špatného parsování.
  */
 
 interface SaxoLanguage {
@@ -67,7 +67,7 @@ const SAXO_LANGUAGES: readonly SaxoLanguage[] = [
     months: { jan: 1, feb: 2, mar: 3, apr: 4, maj: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dec: 12 },
   },
   {
-    // ODVOZENO (MEDIUM): Type obchodu je „Transactie", datumy malými „16-jan-2025";
+    // ODVOZENO (MEDIUM): Type obchodu je „Transactie“, datumy malými „16-jan-2025“;
     // přesný tvar hlaviček není doložen — při odchylce spadne do chyby neznámého jazyka.
     code: 'nl',
     headers: [
@@ -105,7 +105,7 @@ const SAXO_LANGUAGES: readonly SaxoLanguage[] = [
       'Auftrags-ID',
       'Umrechnungskurs',
     ],
-    // „Mär" po normalizeHeader = „mar"; „Mrz" je běžná alternativní zkratka
+    // „Mär“ po normalizeHeader = „mar“; „Mrz“ je běžná alternativní zkratka
     months: { jan: 1, feb: 2, mar: 3, mrz: 3, apr: 4, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dez: 12 },
   },
 ];
@@ -117,15 +117,15 @@ const SNIFF_COLUMNS = [1, 5, 9] as const;
 const TRADE_TYPES = new Set(['trade', 'handel', 'transactie']);
 const CORPORATE_TYPES = new Set(['corporate action']);
 const CASH_AMOUNT_TYPES = new Set(['cash amount']);
-// „ø" diakritika není (nerozkládá se) — v setu musí zůstat doslova
+// „ø“ diakritika není (nerozkládá se) — v setu musí zůstat doslova
 const CASH_TRANSFER_TYPES = new Set(['cash transfer', 'kontantoverførsel']);
 
-/** Eventy dividend napříč jazyky (EN/DA/DE; NL používá „Dividend"). */
+/** Eventy dividend napříč jazyky (EN/DA/DE; NL používá „Dividend“). */
 const DIVIDEND_EVENTS = new Set(['dividend', 'udbytte', 'bardividende']);
 /** Eventy vkladů/výběrů u Cash Transfer — vědomě mimo import (nejsou zdanitelné). */
 const CASH_TRANSFER_SKIP_EVENTS = new Set(['deposit', 'withdrawal', 'indbetaling', 'einlage']);
 
-/** Kusy a cena z Eventu obchodu: „Buy 3 @ 134.85 USD", „Købt 2,5 @ 615,20 DKK". */
+/** Kusy a cena z Eventu obchodu: „Buy 3 @ 134.85 USD“, „Købt 2,5 @ 615,20 DKK“. */
 const TRADE_EVENT_RE = /^(buy|sell|købt|salg|koop|verkoop|kauf|verkauf)\s+([\d.,]+)\s*@\s*([\d.,]+)/i;
 const BUY_VERBS = new Set(['buy', 'købt', 'koop', 'kauf']);
 
@@ -172,8 +172,8 @@ function detectLanguage(headerCells: string[]): SaxoLanguage | null {
 }
 
 /**
- * Číslo z XLSX buňky: nativní number dorazí jako „419.22", stringy tolerujeme
- * i s desetinnou čárkou a tisícovými oddělovači („1.234,56", „1,234.56", „1 234,56").
+ * Číslo z XLSX buňky: nativní number dorazí jako „419.22“, stringy tolerujeme
+ * i s desetinnou čárkou a tisícovými oddělovači („1.234,56“, „1,234.56“, „1 234,56“).
  * Konzervativně: poslední oddělovač = desetinný; víc výskytů téhož = tisíce.
  */
 function parseSaxoNumber(value: string): Decimal | null {
@@ -197,7 +197,7 @@ function parseSaxoNumber(value: string): Decimal | null {
 }
 
 /**
- * Datum „DD-MMM-YYYY" s lokalizovanou zkratkou měsíce (case-insensitive),
+ * Datum „DD-MMM-YYYY“ s lokalizovanou zkratkou měsíce (case-insensitive),
  * plus ISO fallback (nativní Date buňky z Excelu). Neexistující den → null.
  */
 function toIsoDate(value: string, months: Record<string, number>): string | null {
@@ -230,7 +230,7 @@ export function sniffSaxoXlsx(workbook: ExcelJS.Workbook): boolean {
 }
 
 /**
- * Parser Saxo „Transactions" XLSX. Obchody čte z Eventu („Buy 3 @ 134.85 USD"),
+ * Parser Saxo „Transactions“ XLSX. Obchody čte z Eventu („Buy 3 @ 134.85 USD“),
  * poplatek dopočítává z rozdilu Amount vs. kusy×cena; dividendy z Corporate
  * action (bez srážkové daně — ta v tomto reportu není!); Custody Fee/VAT jako
  * FEE, Interest jako INTEREST; vklady/výběry se vědomě přeskakují.
@@ -327,7 +327,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${cellAt(col.tradeDate)}" (očekáván formát DD-MMM-YYYY, např. 02-Jan-2025).`,
+        message: `Neplatné datum „${cellAt(col.tradeDate)}“ (očekáván formát DD-MMM-YYYY, např. 02-Jan-2025).`,
         raw,
       });
       continue;
@@ -340,7 +340,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       if (!match) {
         result.errors.push({
           line,
-          message: `Obchod: z textu „${eventRaw}" se nepodařilo přečíst směr, počet kusů a cenu (očekáván tvar „Buy 3 @ 134.85").`,
+          message: `Obchod: z textu „${eventRaw}“ se nepodařilo přečíst směr, počet kusů a cenu (očekáván tvar „Buy 3 @ 134.85“).`,
           raw,
         });
         continue;
@@ -351,7 +351,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       if (!quantity || quantity.lte(0) || !price || price.lt(0)) {
         result.errors.push({
           line,
-          message: `Obchod: neplatný počet kusů nebo cena v textu „${eventRaw}".`,
+          message: `Obchod: neplatný počet kusů nebo cena v textu „${eventRaw}“.`,
           raw,
         });
         continue;
@@ -439,7 +439,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       }
       result.warnings.push({
         line,
-        message: `Korporátní akci „${eventRaw}" zatím neumíme zaúčtovat automaticky — řádek přeskočen, zkontroluj a případně doplň ručně.`,
+        message: `Korporátní akci „${eventRaw}“ zatím neumíme zaúčtovat automaticky — řádek přeskočen, zkontroluj a případně doplň ručně.`,
         raw,
       });
       continue;
@@ -448,7 +448,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
     if (CASH_AMOUNT_TYPES.has(type)) {
       if (event === 'custody fee' || event === 'vat') {
         if (!amount) {
-          result.errors.push({ line, message: `Poplatek „${eventRaw}": chybí částka.`, raw });
+          result.errors.push({ line, message: `Poplatek „${eventRaw}“: chybí částka.`, raw });
           continue;
         }
         push(line, raw, {
@@ -485,7 +485,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       }
       result.errors.push({
         line,
-        message: `Neznámá peněžní operace „${eventRaw}" (Type „${typeRaw}") — nahlaš nám ji, doplníme podporu.`,
+        message: `Neznámá peněžní operace „${eventRaw}“ (Type „${typeRaw}“) — nahlaš nám ji, doplníme podporu.`,
         raw,
       });
       continue;
@@ -495,13 +495,13 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       if (CASH_TRANSFER_SKIP_EVENTS.has(event)) {
         result.skipped.push({
           line,
-          message: `„${eventRaw}": vklad/výběr hotovosti — pro daňový výpočet není potřeba.`,
+          message: `„${eventRaw}“: vklad/výběr hotovosti — pro daňový výpočet není potřeba.`,
         });
         continue;
       }
       result.errors.push({
         line,
-        message: `Neznámý převod hotovosti „${eventRaw}" (Type „${typeRaw}") — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý převod hotovosti „${eventRaw}“ (Type „${typeRaw}“) — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       continue;
@@ -509,7 +509,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
 
     result.errors.push({
       line,
-      message: `Neznámý typ řádku „${typeRaw}" (Event „${eventRaw}") — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ řádku „${typeRaw}“ (Event „${eventRaw}“) — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   }

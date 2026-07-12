@@ -38,7 +38,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#00B67A',
     guide:
-      'Peníze → Peněženka a transakce → filtry „Všechny Portu investice" + „Všechny transakce" → Stáhnout jako CSV.',
+      'Peníze → Peněženka a transakce → filtry „Všechny Portu investice“ + „Všechny transakce“ → Stáhnout jako CSV.',
   },
   {
     id: 'xtb',
@@ -48,7 +48,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#E3001B',
     guide:
-      'xStation → Historie účtu → export „Full report" (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
+      'xStation → Historie účtu → export „Full report“ (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
   },
   {
     id: 'trading212',
@@ -122,7 +122,7 @@ export const PLATFORMS: PlatformInfo[] = [
     color: '#0088CC',
     monogram: 'M5',
     guide:
-      'Toolbox (Ctrl+T) → History → pravý klik → Report → „Open XML (MS Office Excel)" nebo HTML.',
+      'Toolbox (Ctrl+T) → History → pravý klik → Report → „Open XML (MS Office Excel)“ nebo HTML.',
   },
   {
     id: 'lynx',
@@ -203,7 +203,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#009EE0',
     guide:
-      'Portál ČSOB Investice → Objednávky → Historie objednávek → filtr „Od začátku" → stažení XLS. Import zatím přes univerzální šablonu.',
+      'Portál ČSOB Investice → Objednávky → Historie objednávek → filtr „Od začátku“ → stažení XLS. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'amundi',
@@ -313,7 +313,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#0052FF',
     guide:
-      'Manage account → Statements → Transactions → Generate custom statement (CSV, všechna aktiva, celá historie). Pozor: ne sekce „Taxes" — ta generuje jiný soubor.',
+      'Manage account → Statements → Transactions → Generate custom statement (CSV, všechna aktiva, celá historie). Pozor: ne sekce „Taxes“ — ta generuje jiný soubor.',
   },
   {
     id: 'kraken',
@@ -323,7 +323,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#7132F5',
     guide:
-      'Profil → Documents → Exports → Create Export → typ „Ledgers" (CSV, celá historie). Trades.csv nenahrávej — Ledgers obsahuje vše.',
+      'Profil → Documents → Exports → Create Export → typ „Ledgers“ (CSV, celá historie). Trades.csv nenahrávej — Ledgers obsahuje vše.',
   },
 ];
 

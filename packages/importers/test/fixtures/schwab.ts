@@ -34,7 +34,7 @@ export const SCHWAB_MODERN = [
 
 /**
  * Starší export: titulní řádek před hlavičkou, koncová čárka (prázdný
- * 9. sloupec), neuvozený řádek, „as of" datum, Expired opce, split, footer.
+ * 9. sloupec), neuvozený řádek, „as of“ datum, Expired opce, split, footer.
  */
 export const SCHWAB_LEGACY = [
   '"Transactions  for account Individual XXXX-1234 as of 07/20/2024 22:00:00 ET"',

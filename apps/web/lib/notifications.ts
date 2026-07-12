@@ -48,7 +48,7 @@ export function computeNotificationCandidates(args: {
           dedupeKey: `tt7|${position.isin}|${lot.exemptFrom}`,
           type: 'TIME_TEST_7',
           title: `${label}: osvobození už za ${lot.daysToExempt} ${lot.daysToExempt === 1 ? 'den' : 'dní'}`,
-          // fakt + termín, žádný imperativ („počkej") — individualizovaný pokyn
+          // fakt + termín, žádný imperativ („počkej“) — individualizovaný pokyn
           // by se blížil radě dle § 1 zákona 523/1992 Sb. (nález V-4 právního auditu)
           body: `${amount} splní časový test ${czDate(lot.exemptFrom)}. Prodej po tomto datu bude od daně osvobozený — před ním se zisk daní celý.`,
         });

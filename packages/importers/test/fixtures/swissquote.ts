@@ -30,13 +30,13 @@ export const SWISSQUOTE_EN = [
 export const SWISSQUOTE_HEADER_DE =
   'Datum;Auftrag #;Transaktionen;Symbol;Name;ISIN;Anzahl;Stückpreis;Kosten;Aufgelaufene Zinsen;Nettobetrag;Währung Nettobetrag;Nettobetrag in der Währung des Kontos;Saldo;Währung';
 
-/** Varianta 13. sloupce „Nettobetrag in Kontowährung" (mapuje se podle názvů, ne pozičně). */
+/** Varianta 13. sloupce „Nettobetrag in Kontowährung“ (mapuje se podle názvů, ne pozičně). */
 export const SWISSQUOTE_HEADER_DE_ALT =
   'Datum;Auftrag #;Transaktionen;Symbol;Name;ISIN;Anzahl;Stückpreis;Kosten;Aufgelaufene Zinsen;Nettobetrag;Währung Nettobetrag;Nettobetrag in Kontowährung;Saldo;Währung';
 
 /**
- * DE 15 sloupců: měna transakce je „Währung Nettobetrag" (12. sloupec),
- * poslední „Währung" je měna subúčtu — nákup v EUR na CHF subúčtu to prověří.
+ * DE 15 sloupců: měna transakce je „Währung Nettobetrag“ (12. sloupec),
+ * poslední „Währung“ je měna subúčtu — nákup v EUR na CHF subúčtu to prověří.
  */
 export const SWISSQUOTE_DE = [
   SWISSQUOTE_HEADER_DE,
@@ -59,7 +59,7 @@ export const SWISSQUOTE_DE_ALT = [
 
 /**
  * DE hlavička s rozbitými přehláskami (UTF-8 dekódované jako Latin-1 →
- * „Ã¼"/„Ã¤"): mapování musí přežít díky fuzzy shodě přes normalizeHeader.
+ * „Ã¼“/„Ã¤“): mapování musí přežít díky fuzzy shodě přes normalizeHeader.
  */
 export const SWISSQUOTE_DE_BROKEN_UMLAUTS = [
   'Datum;Auftrag #;Transaktionen;Symbol;Name;ISIN;Anzahl;StÃ¼ckpreis;Kosten;Aufgelaufene Zinsen;Nettobetrag;WÃ¤hrung Nettobetrag;Nettobetrag in der WÃ¤hrung des Kontos;Saldo;WÃ¤hrung',

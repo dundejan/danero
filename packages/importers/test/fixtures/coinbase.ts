@@ -1,5 +1,5 @@
 /**
- * Fixtures Coinbase „transaction history" CSV — všechny čtyři generace hlaviček
+ * Fixtures Coinbase „transaction history“ CSV — všechny čtyři generace hlaviček
  * doslova podle reálných exportů. Ukázkové řádky zachovávají tvary z důkazů:
  * ISO timestamp se `Z` i `YYYY-MM-DD HH:MM:SS UTC`, symboly měn (€) a tisícové
  * čárky v částkách, Notes s lidským popisem.
@@ -23,7 +23,7 @@ export const COINBASE_V3 = [
   '2023-04-27 03:28:05 UTC,Staking Income,XTZ,0.000004,CZK,21.71,0.00,0.00,0,',
 ].join('\n');
 
-/** V2: `Total (inclusive of fees)` + `Fees` (bez „and/or Spread"). */
+/** V2: `Total (inclusive of fees)` + `Fees` (bez „and/or Spread“). */
 export const COINBASE_V2 = [
   'Timestamp,Transaction Type,Asset,Quantity Transacted,Spot Price Currency,Spot Price at Transaction,Subtotal,Total (inclusive of fees),Fees,Notes',
   '2021-04-14T09:00:00Z,Buy,ETH,0.5,EUR,1800.00,900.00,912.50,12.50,Bought 0.5 ETH for €912.50 EUR',

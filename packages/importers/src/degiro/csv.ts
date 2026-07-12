@@ -111,7 +111,7 @@ function detectDelimiter(text: string): ';' | ',' {
 /* ── Čísla a datumy ──────────────────────────────────────────────────────── */
 
 /**
- * Degiro čísla podle lokalizace: „1.234,56", „1,234.56" i „1234,56".
+ * Degiro čísla podle lokalizace: „1.234,56“, „1,234.56“ i „1234,56“.
  * Konzervativně: poslední oddělovač = desetinný; víc výskytů téhož = tisíce.
  * Vrací normalizovaný string s desetinnou tečkou, nebo null (prázdné/nečíslo).
  */
@@ -287,7 +287,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     if (!isoDate) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${cell(row, col.date)}" (očekáván formát dd-MM-yyyy).`,
+        message: `Neplatné datum „${cell(row, col.date)}“ (očekáván formát dd-MM-yyyy).`,
         raw: row.join(';'),
       });
       return;
@@ -310,7 +310,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     if (!isCurrency(currency)) {
       result.errors.push({
         line,
-        message: `U kurzu chybí měna (bezejmenný sloupec za kurzem) — nalezeno „${currency}".`,
+        message: `U kurzu chybí měna (bezejmenný sloupec za kurzem) — nalezeno „${currency}“.`,
         raw: row.join(';'),
       });
       return;
@@ -399,7 +399,7 @@ function classifyDescription(description: string): AccountKind {
     return { kind: 'CORPORATE', subtype: 'ISIN_CHANGE' };
   if (containsAny(lower, ['fúze', 'fusie', 'merger']))
     return { kind: 'CORPORATE', subtype: 'MERGER' };
-  // echo obchodů („Nákup 5 …") dřív než dividendy — název produktu může obsahovat „Dividend"
+  // echo obchodů („Nákup 5 …“) dřív než dividendy — název produktu může obsahovat „Dividend“
   if (/(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell)\b/i.test(description))
     return {
       kind: 'SKIP',
@@ -408,7 +408,7 @@ function classifyDescription(description: string): AccountKind {
   if (containsAny(lower, ['daň z dividendy', 'dividend tax', 'dividendbelasting']))
     return { kind: 'DIVIDEND_TAX' };
   if (containsAny(lower, ['dividenda', 'dividend'])) return { kind: 'DIVIDEND' };
-  // sweep/peněžní trh dřív než úrok („Flatex Interest" obsahuje „interest")
+  // sweep/peněžní trh dřív než úrok („Flatex Interest“ obsahuje „interest“)
   if (containsAny(lower, ['cash sweep', 'flatex interest', 'geldmarktfonds', 'money market']))
     return { kind: 'SKIP', reason: 'převod peněžního trhu / cash sweep — pro daň z CP nepodstatné' };
   if (
@@ -432,7 +432,7 @@ function classifyDescription(description: string): AccountKind {
     ])
   )
     return { kind: 'FEE' };
-  // výběr dřív než vklad („Terugstorting" obsahuje „storting")
+  // výběr dřív než vklad („Terugstorting“ obsahuje „storting“)
   if (containsAny(lower, ['výběr', 'withdrawal', 'terugstorting'])) return { kind: 'WITHDRAWAL' };
   if (containsAny(lower, ['vklad', 'deposit', 'storting', 'ideal'])) return { kind: 'DEPOSIT' };
   if (containsAny(lower, ['úrok', 'interest', 'rente'])) return { kind: 'INTEREST' };
@@ -446,7 +446,7 @@ function legDirection(lowerDescription: string): 'out' | 'in' | null {
   return null;
 }
 
-/** Počet kusů z popisu („Uitboeking 10 …") — jen číslo HNED za klíčovým slovem (ne cifry z ISIN). */
+/** Počet kusů z popisu („Uitboeking 10 …“) — jen číslo HNED za klíčovým slovem (ne cifry z ISIN). */
 function legQuantity(description: string): string | null {
   const match =
     /(?:uitboeking|inboeking|odpis|připis|pripis|removal|addition)[\s:]*(\d+(?:[.,]\d+)?)/i.exec(
@@ -538,7 +538,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     if (!isoDate) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${cell(row, col.date)}" (očekáván formát dd-MM-yyyy).`,
+        message: `Neplatné datum „${cell(row, col.date)}“ (očekáván formát dd-MM-yyyy).`,
         raw: row.join(';'),
       });
       return;
@@ -553,7 +553,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       if (!isin) {
         result.errors.push({
           line,
-          message: `Korporátní akce „${description}" nemá ISIN — doplň akci ručně přes univerzální šablonu.`,
+          message: `Korporátní akce „${description}“ nemá ISIN — doplň akci ručně přes univerzální šablonu.`,
           raw: row.join(';'),
         });
         return;
@@ -573,7 +573,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     }
 
     if (classified.kind === 'SKIP') {
-      result.skipped.push({ line, message: `„${description}": ${classified.reason}` });
+      result.skipped.push({ line, message: `„${description}“: ${classified.reason}` });
       return;
     }
 
@@ -585,7 +585,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     if (classified.kind === 'UNKNOWN') {
       result.errors.push({
         line,
-        message: `Neznámý popis pohybu „${description}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý popis pohybu „${description}“ — nahlaš nám ho, doplníme podporu.`,
         raw: row.join(';'),
       });
       return;
@@ -593,7 +593,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     if (pair.kind === 'invalid') {
       result.errors.push({
         line,
-        message: `Částku pohybu se nepodařilo přečíst — ve sloupci Změna a vedle něj je „${cell(row, col.change)}" / „${cell(row, col.change + 1)}", očekáváme číslo a třípísmenný kód měny.`,
+        message: `Částku pohybu se nepodařilo přečíst — ve sloupci Změna a vedle něj je „${cell(row, col.change)}“ / „${cell(row, col.change + 1)}“, očekáváme číslo a třípísmenný kód měny.`,
         raw: row.join(';'),
       });
       return;
@@ -613,7 +613,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
         if (change.lte(0)) {
           result.warnings.push({
             line,
-            message: `Záporná dividenda ${changeRaw} ${currency} („${description}") — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+            message: `Záporná dividenda ${changeRaw} ${currency} („${description}“) — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
           });
           return;
         }
@@ -664,7 +664,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
         if (change.gt(0)) {
           result.warnings.push({
             line,
-            message: `Vratka poplatku ${changeRaw} ${currency} („${description}") — evidujeme jen informativně, do výpočtu nevstupuje.`,
+            message: `Vratka poplatku ${changeRaw} ${currency} („${description}“) — evidujeme jen informativně, do výpočtu nevstupuje.`,
           });
           return;
         }
@@ -734,7 +734,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     for (const leg of legs.filter((l) => l.direction === null)) {
       result.errors.push({
         line: leg.line,
-        message: `${label} „${leg.description}": z popisu nepoznáme, jestli jde o odpis, nebo připis kusů — akci doplň ručně přes univerzální šablonu.`,
+        message: `${label} „${leg.description}“: z popisu nepoznáme, jestli jde o odpis, nebo připis kusů — akci doplň ručně přes univerzální šablonu.`,
         raw: leg.description,
       });
     }

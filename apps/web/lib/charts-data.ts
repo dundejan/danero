@@ -274,7 +274,7 @@ function weightBasisFor(
 
 /**
  * Tečky horizontu osvobození (v4): jedna tečka = DEN, kdy dalším kusům doběhne
- * 3letý test (přesné datum osvobození) — isExempt je tak vůči „dnešku" vždy
+ * 3letý test (přesné datum osvobození) — isExempt je tak vůči „dnešku“ vždy
  * jednoznačné. Hrubší (měsíční) zobrazení skládá až klient přes
  * groupHorizonDots podle zvoleného rozsahu.
  */
@@ -337,8 +337,8 @@ export function horizonDots(
 /**
  * Klientské slučování denních teček podle zvolené granularity zobrazení:
  * 'day' vrací tečky beze změny, 'month' slučuje po měsících — KROMĚ měsíce,
- * do kterého spadá „dnešek": ten zůstává po dnech, aby tečky před čárou
- * „dnes" byly zeleně osvobozené a za ní čekající (měsíční tečka by jinak
+ * do kterého spadá „dnešek“: ten zůstává po dnech, aby tečky před čárou
+ * „dnes“ byly zeleně osvobozené a za ní čekající (měsíční tečka by jinak
  * ležela za čárou a přitom nesla i už osvobozené kusy).
  *
  * Váhy jsou tu už čísla pro vykreslení (Decimal skončil v horizonDots) —
@@ -372,7 +372,7 @@ export function groupHorizonDots(
       continue;
     }
     merged.weight += dot.weight;
-    // mimo měsíc dneška je stav uniformní (celý měsíc před/po „dnes") —
+    // mimo měsíc dneška je stav uniformní (celý měsíc před/po „dnes“) —
     // AND je jen pojistka, aby sloučená tečka nikdy neslibovala osvobození
     merged.isExempt = merged.isExempt && dot.isExempt;
     for (const item of dot.items) {

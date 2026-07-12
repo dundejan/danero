@@ -12,14 +12,14 @@ const CURRENCY_SYMBOLS: [symbol: string, code: string][] = [
 export interface RevolutMoney {
   /** Normalizovaná částka s desetinnou tečkou (zachovává znaménko). */
   amount: string;
-  /** ISO kód měny z hodnoty (symbol € $ £ nebo kód „SEK"), null pokud hodnota měnu neuvádí. */
+  /** ISO kód měny z hodnoty (symbol € $ £ nebo kód „SEK“), null pokud hodnota měnu neuvádí. */
   currency: string | null;
 }
 
 /**
- * Peněžní hodnota Revolutu: symbol nebo kód měny UVNITŘ hodnoty („$52.07",
- * „€88.94", „-$0.01", „USD 529.68", „137,211.36 SEK"), tisícové čárky
- * („5,837.33") a ojediněle desetinná ČÁRKA („0,76672417") — jediná čárka
+ * Peněžní hodnota Revolutu: symbol nebo kód měny UVNITŘ hodnoty („$52.07“,
+ * „€88.94“, „-$0.01“, „USD 529.68“, „137,211.36 SEK“), tisícové čárky
+ * („5,837.33“) a ojediněle desetinná ČÁRKA („0,76672417“) — jediná čárka
  * s jinou než trojcifernou skupinou za ní je desetinná, jinak jde o tisíce.
  * Vrací null, pokud hodnota není číslo.
  */
@@ -44,7 +44,7 @@ export function parseRevolutMoney(value: string): RevolutMoney | null {
   const hasComma = digits.includes(',');
   const hasDot = digits.includes('.');
   if (hasComma && hasDot) {
-    // oba oddělovače: poslední je desetinný, ostatní tisícové („5,837.33")
+    // oba oddělovače: poslední je desetinný, ostatní tisícové („5,837.33“)
     if (digits.lastIndexOf('.') > digits.lastIndexOf(',')) {
       digits = digits.replace(/,/g, '');
     } else {
@@ -52,7 +52,7 @@ export function parseRevolutMoney(value: string): RevolutMoney | null {
     }
   } else if (hasComma) {
     const parts = digits.split(',');
-    // jediná čárka + skupina jiná než 3 číslice = desetinná čárka („0,76672417")
+    // jediná čárka + skupina jiná než 3 číslice = desetinná čárka („0,76672417“)
     digits = parts.length === 2 && parts[1]!.length !== 3 ? parts.join('.') : parts.join('');
   }
   if (!/^\d+(\.\d+)?$/.test(digits)) return null;

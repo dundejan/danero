@@ -12,7 +12,7 @@ import {
 export const MT4_BROKER = 'mt4';
 
 /**
- * Parser MT4 statementu (terminál: Account History → „Save as Report" → .htm)
+ * Parser MT4 statementu (terminál: Account History → „Save as Report“ → .htm)
  * — Purple Trading, InstaForex, Admirals, RoboForex a další MT4 brokeři.
  *
  * Statement neuvádí hodnoty podkladu, jen výsledek obchodu v měně účtu —
@@ -41,12 +41,12 @@ const MT4_COLUMNS = [
   'profit',
 ] as const;
 
-/** Klíč buňky hlavičky: lowercase, úplně bez mezer („S / L" → „s/l"). */
+/** Klíč buňky hlavičky: lowercase, úplně bez mezer („S / L“ → „s/l“). */
 const headerKey = (cell: string): string => cell.toLowerCase().replace(/\s+/g, '');
 
 type Section = 'preamble' | 'closed' | 'open' | 'working' | 'summary';
 
-/** Řádek s nadpisem sekce statementu („Closed Transactions:" …). */
+/** Řádek s nadpisem sekce statementu („Closed Transactions:“ …). */
 function sectionOf(row: HtmlRow): Section | null {
   for (const cell of row.cells) {
     const text = cell.trim().toLowerCase();
@@ -66,7 +66,7 @@ const isTradeShape = (row: HtmlRow): boolean =>
 
 /**
  * Autodetekce MT4 statementu: `<title>Statement…` + buňky Ticket / Open Time /
- * Close Time. „Direction" je poznávací znak MT5 reportu — MT4 a MT5 sniffy
+ * Close Time. „Direction“ je poznávací znak MT5 reportu — MT4 a MT5 sniffy
  * nesmí matchnout navzájem.
  */
 export function sniffMt4Html(text: string): boolean {
@@ -89,7 +89,7 @@ export function parseMt4Html(text: string): ImportResult {
     result.errors.push({
       line: 1,
       message:
-        'V souboru chybí sekce „Closed Transactions:" — nevypadá jako MT4 statement. V MT4 terminálu: záložka Account History → pravé tlačítko → „Save as Report".',
+        'V souboru chybí sekce „Closed Transactions:“ — nevypadá jako MT4 statement. V MT4 terminálu: záložka Account History → pravé tlačítko → „Save as Report“.',
     });
     return result;
   }
@@ -99,7 +99,7 @@ export function parseMt4Html(text: string): ImportResult {
     result.errors.push({
       line: 1,
       message:
-        'V hlavičce statementu chybí měna účtu („Currency: …") — bez ní neumíme výsledky obchodů zpracovat. Ulož statement znovu z MT4 terminálu (Account History → „Save as Report").',
+        'V hlavičce statementu chybí měna účtu („Currency: …“) — bez ní neumíme výsledky obchodů zpracovat. Ulož statement znovu z MT4 terminálu (Account History → „Save as Report“).',
     });
     return result;
   }
@@ -140,7 +140,7 @@ export function parseMt4Html(text: string): ImportResult {
       continue;
     }
 
-    // řádky bez čísla ticketu = mezisoučty a patička sekce („Closed P/L:", „No transactions")
+    // řádky bez čísla ticketu = mezisoučty a patička sekce („Closed P/L:“, „No transactions“)
     if (!/^\d+$/.test(first)) continue;
 
     const type = (row.cells[2] ?? '').trim().toLowerCase();
@@ -151,7 +151,7 @@ export function parseMt4Html(text: string): ImportResult {
       const amount = (row.cells[row.cells.length - 1] ?? '').trim();
       result.skipped.push({
         line: row.line,
-        message: `Vklad/výběr (${type})${comment !== '' ? ` „${comment}"` : ''}: ${amount} ${currency} — peněžní pohyby se nedaní a do importu nevstupují.`,
+        message: `Vklad/výběr (${type})${comment !== '' ? ` „${comment}“` : ''}: ${amount} ${currency} — peněžní pohyby se nedaní a do importu nevstupují.`,
         raw,
       });
       continue;
@@ -173,7 +173,7 @@ export function parseMt4Html(text: string): ImportResult {
       if (openDate === null || closeDate === null) {
         result.errors.push({
           line: row.line,
-          message: `Obchod ${ticket}: neplatné datum otevření/uzavření („${openTimeRaw}" / „${closeTimeRaw}") — očekáváme YYYY.MM.DD HH:MM:SS.`,
+          message: `Obchod ${ticket}: neplatné datum otevření/uzavření („${openTimeRaw}“ / „${closeTimeRaw}“) — očekáváme YYYY.MM.DD HH:MM:SS.`,
           raw,
         });
         continue;
@@ -185,7 +185,7 @@ export function parseMt4Html(text: string): ImportResult {
       if (commission === null || taxes === null || swap === null || profit === null) {
         result.errors.push({
           line: row.line,
-          message: `Obchod ${ticket}: nečitelné číslo ve sloupcích Commission/Taxes/Swap/Profit („${row.cells[10]}" / „${row.cells[11]}" / „${row.cells[12]}" / „${row.cells[13]}").`,
+          message: `Obchod ${ticket}: nečitelné číslo ve sloupcích Commission/Taxes/Swap/Profit („${row.cells[10]}“ / „${row.cells[11]}“ / „${row.cells[12]}“ / „${row.cells[13]}“).`,
           raw,
         });
         continue;
@@ -230,7 +230,7 @@ export function parseMt4Html(text: string): ImportResult {
 
     result.errors.push({
       line: row.line,
-      message: `Neznámý typ řádku „${row.cells[2] ?? ''}" v Closed Transactions — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ řádku „${row.cells[2] ?? ''}“ v Closed Transactions — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   }

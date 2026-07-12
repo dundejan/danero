@@ -124,7 +124,7 @@ export function cleanNumber(value: string): string {
 }
 
 /**
- * Evropský číselný zápis → kanonický: „1 234,56" i „1.234,56" → „1234.56".
+ * Evropský číselný zápis → kanonický: „1 234,56“ i „1.234,56“ → „1234.56“.
  * Použij tam, kde formát PROKAZATELNĚ píše desetinnou čárku — na US zápis
  * s tisícovými čárkami patří cleanNumber.
  */
@@ -135,8 +135,8 @@ export function cleanNumberEu(value: string): string {
 }
 
 /**
- * Datum evropských výpisů → ISO YYYY-MM-DD: „31.12.2025", „31. 12. 2025",
- * „31/12/2025" i ISO — případný čas za datem se zahodí. POZOR: lomítkový tvar
+ * Datum evropských výpisů → ISO YYYY-MM-DD: „31.12.2025“, „31. 12. 2025“,
+ * „31/12/2025“ i ISO — případný čas za datem se zahodí. POZOR: lomítkový tvar
  * čte den/měsíc/rok (EU) — na US formáty (mm/dd/yyyy, Schwab) nepatří.
  * Neexistující dny vrací null — řádek se odmítne s chybou, ne tichým posunem.
  */
@@ -157,8 +157,8 @@ export function parseEuroDate(value: string): string | null {
 
 /**
  * US datum MM/DD/YYYY → ISO (měsíc/den! — NIKDY nepoužívat parseEuroDate,
- * ta čte lomítkový tvar jako den/měsíc). Tvar „07/15/2024 as of 07/12/2024"
- * (Schwab) znamená „zaúčtováno později, efektivně platí druhý den" — bere se
+ * ta čte lomítkový tvar jako den/měsíc). Tvar „07/15/2024 as of 07/12/2024“
+ * (Schwab) znamená „zaúčtováno později, efektivně platí druhý den“ — bere se
  * DRUHÉ datum (skutečný obchodní den). Neexistující kalendářní den → null.
  */
 export function parseUsDate(value: string): string | null {
@@ -172,7 +172,7 @@ export function parseUsDate(value: string): string | null {
 
 /**
  * Skutečná kalendářní kontrola ISO data YYYY-MM-DD — regex sám nestačí
- * („2025-13-31" by prošlo). Round-trip přes Date UTC odhalí neexistující dny.
+ * („2025-13-31“ by prošlo). Round-trip přes Date UTC odhalí neexistující dny.
  */
 export function isValidIsoDate(iso: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;

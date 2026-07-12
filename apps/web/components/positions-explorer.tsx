@@ -15,7 +15,7 @@ export interface ExplorerRow {
   isin: string;
   label: string;
   name?: string;
-  /** Počet kusů jako text bez jednotky (tabulka/karta si „ks" doplní samy). */
+  /** Počet kusů jako text bez jednotky (tabulka/karta si „ks“ doplní samy). */
   qtyText: string;
   /** Cena za kus v měně instrumentu (undefined = broker cenu nedodal). */
   priceText?: string;
@@ -26,10 +26,10 @@ export interface ExplorerRow {
   /** Procento P/L — mobilní badge a řazení. */
   plPct?: number;
   plPositive?: boolean;
-  /** „bez daně od …" / „vše bez daně" — mobilní karta. */
+  /** „bez daně od …“ / „vše bez daně“ — mobilní karta. */
   exemptText: string;
   exemptDone: boolean;
-  /** Text sloupce Bez daně (např. „12 ks"); undefined = „—". */
+  /** Text sloupce Bez daně (např. „12 ks“); undefined = „—“. */
   exemptQtyText?: string;
   /** Čísla pro řazení; null = neznámé (řadí se vždy na konec). */
   sort: {
@@ -46,7 +46,7 @@ type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 10;
 
-/** Bez diakritiky a velikosti písmen — „vaclav" najde „Václav". */
+/** Bez diakritiky a velikosti písmen — „vaclav“ najde „Václav“. */
 const normalize = (value: string): string =>
   value
     .normalize('NFD')

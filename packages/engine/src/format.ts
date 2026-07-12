@@ -9,7 +9,7 @@ import { Decimal, type Money } from '@danero/shared';
 /** Nezlomitelná mezera — oddělovač tisíců i mezera před jednotkou (Kč, %). */
 const NBSP = ' ';
 
-/** „1234567" → „1 234 567" — tisíce oddělené nezlomitelnou mezerou. */
+/** „1234567“ → „1 234 567“ — tisíce oddělené nezlomitelnou mezerou. */
 const groupThousands = (digits: string): string =>
   digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
 
@@ -22,23 +22,23 @@ const czNumber = (value: Money, decimalPlaces?: number): string => {
   return `${sign}${groupThousands(whole)}${frac ? `,${frac}` : ''}`;
 };
 
-/** Částka v celých Kč (zaokrouhlení HALF_UP): „264 312 Kč". */
+/** Částka v celých Kč (zaokrouhlení HALF_UP): „264 312 Kč“. */
 export function czkText(m: Money): string {
   return `${czNumber(m.toDecimalPlaces(0, Decimal.ROUND_HALF_UP))}${NBSP}Kč`;
 }
 
-/** Desetinný zlomek jako procento: pctText(d('0.15')) → „15 %"; pctText(r, 2) → „93,75 %". */
+/** Desetinný zlomek jako procento: pctText(d('0.15')) → „15 %“; pctText(r, 2) → „93,75 %“. */
 export function pctText(fraction: Money, decimalPlaces = 0): string {
   const value = fraction.mul(100).toDecimalPlaces(decimalPlaces, Decimal.ROUND_HALF_UP);
   return `${czNumber(value, decimalPlaces)}${NBSP}%`;
 }
 
-/** Počet kusů/kontraktů: desetinná čárka, tisíce s mezerou („1 234,5"). */
+/** Počet kusů/kontraktů: desetinná čárka, tisíce s mezerou („1 234,5“). */
 export function qtyText(m: Money): string {
   return czNumber(m);
 }
 
-/** ISO datum po česku: „2026-03-12" → „12. 3. 2026". */
+/** ISO datum po česku: „2026-03-12“ → „12. 3. 2026“. */
 export function czDateText(iso: string): string {
   const [year, month, day] = iso.split('-');
   if (!year || !month || !day) return iso;

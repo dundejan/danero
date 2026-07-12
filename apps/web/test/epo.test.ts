@@ -229,7 +229,7 @@ describe('generateDpfdp7: osobní údaje a chyby', () => {
     expect(xml).toContain('Jan &amp; &quot;Ámos&quot; &lt;Komenský&gt;');
     const vetaP = dp.VetaP as Attrs;
     expect(vetaP.jmeno).toBe('Jan & "Ámos" <Komenský>'); // po parsování zpět původní text
-    expect(vetaP.dic).toBe('8501011233'); // bez „CZ"
+    expect(vetaP.dic).toBe('8501011233'); // bez „CZ“
     expect(vetaP.rod_c).toBe('8501011233'); // bez lomítka
     expect(vetaP.psc).toBe('11000'); // bez mezer
     expect(vetaP.stat).toBe('ČESKÁ REPUBLIKA');

@@ -1,5 +1,5 @@
 /**
- * Sdílené Revolut fixtures — akciový „Account statement" CSV a krypto výpisy
+ * Sdílené Revolut fixtures — akciový „Account statement“ CSV a krypto výpisy
  * v obou historických formátech. Ukázkové řádky odpovídají reálným vzorkům
  * (datum ISO 8601 s proměnným počtem desetinných sekund, symboly měn uvnitř
  * peněžních hodnot, ojedinělá desetinná čárka v Quantity).
@@ -24,7 +24,7 @@ export const REVOLUT_INVEST_CSV = [
   '2025-09-08T07:29:03.333Z,MSFT,BUY - MARKET,"0,76672417",€26.09,€20,EUR,1',
 ].join('\n');
 
-/** Rozšíření: LIMIT/STOP, fallback ceny z Total, „USD 0.51" zápis, starší CUSTODY_FEE, reversal, výběr. */
+/** Rozšíření: LIMIT/STOP, fallback ceny z Total, „USD 0.51“ zápis, starší CUSTODY_FEE, reversal, výběr. */
 export const REVOLUT_INVEST_EXTRAS_CSV = [
   REVOLUT_INVEST_HEADER,
   // SELL - LIMIT bez Price per share → cena = Total/Quantity (110.50 / 2 = 55.25)

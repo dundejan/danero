@@ -107,7 +107,7 @@ export default function PausalniRezimAInvesticePage() {
             </li>
           </ClanekSeznam>
           <p>
-            Rozdíl mezi „osvobozeným" a „neosvobozeným" prodejem tak pro OSVČ v paušálu
+            Rozdíl mezi „osvobozeným“ a „neosvobozeným“ prodejem tak pro OSVČ v paušálu
             rozhoduje o celém papírování za rok — proto se vyplatí hlídat limity 100 000
             a 50 000 Kč společně.
           </p>
@@ -134,7 +134,7 @@ export default function PausalniRezimAInvesticePage() {
         <ClanekSekce title="Jak to hlídá Danero">
           <p>
             Orientační odpověď dá zdarma a bez registrace{' '}
-            <ClanekOdkaz href="/kalkulacka">kalkulačka „Musím podat přiznání?"</ClanekOdkaz>.
+            <ClanekOdkaz href="/kalkulacka">kalkulačka „Musím podat přiznání?“</ClanekOdkaz>.
             V aplikaci pak běží průběžný součet nad skutečnou historií účtů: každá dividenda přepočtená
             kurzem podle zvolené soustavy (jednotný kurz běžného roku je do lednového
             vyhlášení orientační — aplikace to viditelně označuje), osvobozené prodeje

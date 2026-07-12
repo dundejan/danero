@@ -6,7 +6,7 @@ import { emptyResult, type ImportResult, type RowIssue } from '../types';
 export const COINBASE_BROKER = 'coinbase';
 
 /**
- * Parser Coinbase „transaction history" CSV. Čtyři generace hlaviček (mapování
+ * Parser Coinbase „transaction history“ CSV. Čtyři generace hlaviček (mapování
  * VÝHRADNĚ podle názvů):
  *  - V4: `ID,Timestamp,…,Price Currency,Price at Transaction,…,Fees and/or Spread,Notes`
  *  - V3: bez ID, `Spot Price Currency,Spot Price at Transaction,…`
@@ -84,7 +84,7 @@ function toIsoDate(timestamp: string): string | null {
 }
 
 
-/** Notes u Convert: „Converted 0.05413984 BTC to 451.212148 USDC". */
+/** Notes u Convert: „Converted 0.05413984 BTC to 451.212148 USDC“. */
 const CONVERT_NOTES = /^Converted [\d.,]+ \S+ to ([\d.,]+) (\S+)$/;
 
 /* ── Sniff ───────────────────────────────────────────────────────────────── */
@@ -115,7 +115,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     result.errors.push({
       line: 1,
       message:
-        'Soubor nevypadá jako Coinbase export — nenašli jsme hlavičku začínající „Timestamp" nebo „ID,Timestamp".',
+        'Soubor nevypadá jako Coinbase export — nenašli jsme hlavičku začínající „Timestamp“ nebo „ID,Timestamp“.',
     });
     return result;
   }
@@ -125,7 +125,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
   const map = new HeaderMap(headers);
   const headerLine = headerIndex + 1; // 1-based číslo řádku hlavičky v souboru
 
-  // V1: měnový prefix ve jménech sloupců („EUR Subtotal") — prefix = kód měny
+  // V1: měnový prefix ve jménech sloupců („EUR Subtotal“) — prefix = kód měny
   const prefix = headers
     .map((h) => /^([a-z]{3}) subtotal$/.exec(h)?.[1])
     .find((p) => p !== undefined);
@@ -161,7 +161,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     result.errors.push({
       line: headerLine,
       message:
-        'Soubor nevypadá jako Coinbase export — nenašli jsme měnu (sloupec „Price Currency"/„Spot Price Currency" ani měnový prefix názvů sloupců).',
+        'Soubor nevypadá jako Coinbase export — nenašli jsme měnu (sloupec „Price Currency“/„Spot Price Currency“ ani měnový prefix názvů sloupců).',
     });
     return result;
   }
@@ -196,7 +196,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     if (WARN_SKIP_TYPES.has(type)) {
       result.warnings.push({
         line,
-        message: `Typ „${typeRaw}" zatím nepodporujeme — řádek přeskočen. Pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
+        message: `Typ „${typeRaw}“ zatím nepodporujeme — řádek přeskočen. Pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
         raw,
       });
       return;
@@ -209,7 +209,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     if (!isBuy && !isSell && !isConvert && !isCardSpend) {
       result.errors.push({
         line,
-        message: `Neznámý typ transakce „${typeRaw}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ transakce „${typeRaw}“ — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       return;
@@ -220,7 +220,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     if (date === null) {
       result.errors.push({
         line,
-        message: `Neplatný čas „${get(col.timestamp)}" (očekáváme ISO datum, např. 2024-12-19T17:59:59Z).`,
+        message: `Neplatný čas „${get(col.timestamp)}“ (očekáváme ISO datum, např. 2024-12-19T17:59:59Z).`,
         raw,
       });
       return;
@@ -229,7 +229,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     if (!/^[A-Z]{3}$/.test(currency)) {
       result.errors.push({
         line,
-        message: `Měnu se nepodařilo přečíst — nalezeno „${currency}", očekáváme třípísmenný kód (EUR, USD…).`,
+        message: `Měnu se nepodařilo přečíst — nalezeno „${currency}“, očekáváme třípísmenný kód (EUR, USD…).`,
         raw,
       });
       return;
@@ -294,7 +294,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
       if (!match || targetQuantityRaw === null || d(targetQuantityRaw).eq(0)) {
         result.errors.push({
           line,
-          message: `Convert bez čitelné poznámky („${notes}") — nepoznáme cílové aktivum a počet kusů, směnu doplň přes univerzální šablonu jako prodej + nákup.`,
+          message: `Convert bez čitelné poznámky („${notes}“) — nepoznáme cílové aktivum a počet kusů, směnu doplň přes univerzální šablonu jako prodej + nákup.`,
           raw,
         });
         return;

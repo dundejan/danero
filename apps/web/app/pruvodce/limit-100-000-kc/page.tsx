@@ -56,7 +56,7 @@ export default function Limit100000KcPage() {
             <p>
               Prodáš za 60 000 Kč u jednoho brokera a za 50 000 Kč u druhého → úhrn
               110 000 Kč, limit překročen. Sčítá se přes všechny brokery a účty — limit
-              nejde „rozložit mezi platformy".
+              nejde „rozložit mezi platformy“.
             </p>
           </Priklad>
           <p>

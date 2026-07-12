@@ -113,7 +113,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     if (type !== 'trade payment' && type !== 'trade fill') {
       result.errors.push({
         line,
-        message: `Neznámý typ řádku „${map.get(row, 'type')}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ řádku „${map.get(row, 'type')}“ — nahlaš nám ho, doplníme podporu.`,
         raw: row.join(','),
       });
       return;
@@ -125,7 +125,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     if (!isValidIsoDate(isoDate)) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${map.get(row, 'date')}" (očekáváme ISO formát, např. 2021-04-10T18:16:50.367Z).`,
+        message: `Neplatné datum „${map.get(row, 'date')}“ (očekáváme ISO formát, např. 2021-04-10T18:16:50.367Z).`,
         raw: row.join(','),
       });
       return;

@@ -7,11 +7,11 @@ import { cn } from '@/lib/utils';
 
 /**
  * Horizont osvobození v4 (docs/07 signatura, G3, vizuál H4): časový pás,
- * tečka = den (pohled „1 rok"), nebo měsíc (delší pohledy — aktuální měsíc
- * ale zůstává po dnech, ať žádná tečka neleží za čárou „dnes" s neosvobozenými
+ * tečka = den (pohled „1 rok“), nebo měsíc (delší pohledy — aktuální měsíc
+ * ale zůstává po dnech, ať žádná tečka neleží za čárou „dnes“ s neosvobozenými
  * kusy). Velikost tečky = celková hodnota (známe-li ceny), jinak kusy;
  * hover/focus ukazuje rozpad po pozicích. Pod osou běží decentní kumulativní
- * plocha „kolik % už bude bez daně".
+ * plocha „kolik % už bude bez daně“.
  */
 
 const RANGES = [
@@ -43,7 +43,7 @@ const monthLabel = (month: string): string => {
 const isMonthDot = (dot: HorizonDot): boolean => dot.exemptFrom.length === 7;
 const dotIso = (dot: HorizonDot): string =>
   isMonthDot(dot) ? `${dot.exemptFrom}-01` : dot.exemptFrom;
-/** Popisek tečky: měsíc („čvc 2026"), nebo konkrétní den („23. 7. 2026"). */
+/** Popisek tečky: měsíc („čvc 2026“), nebo konkrétní den („23. 7. 2026“). */
 const dotLabel = (dot: HorizonDot): string =>
   isMonthDot(dot) ? monthLabel(dot.exemptFrom) : czDate(dot.exemptFrom);
 
@@ -54,7 +54,7 @@ const czkCompact = (value: number): string =>
 const totalText = (dot: HorizonDot): string =>
   dot.weightBasis === 'value' ? czkCompact(dot.weight) : `${qty(dot.weight)} ks`;
 
-/** Max řádků rozpadu v tooltipu — víc pozic shrne „+ dalších N". */
+/** Max řádků rozpadu v tooltipu — víc pozic shrne „+ dalších N“. */
 const TIP_MAX_ITEMS = 8;
 
 const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
@@ -95,7 +95,7 @@ export function HorizonStrip({
   const view = useMemo(() => {
     if (dots.length === 0) return null;
     const preset = RANGES.find((r) => r.key === range)!;
-    // „1 rok" po dnech; delší pohledy po měsících (aktuální měsíc po dnech)
+    // „1 rok“ po dnech; delší pohledy po měsících (aktuální měsíc po dnech)
     const grouped = groupHorizonDots(dots, preset.years === 1 ? 'day' : 'month', today);
     const todayDay = dayNumber(today);
     // aritmeticky (ne skládáním data) — „29. 2. + rok“ by byl Invalid Date
@@ -165,7 +165,7 @@ export function HorizonStrip({
     return { visible, hidden, todayX: x(todayDay), x, maxWeight, ticks, outlookPath };
   }, [dots, today, range, outlook]);
 
-  // mobil: pás přetéká (min-w 640 px) → výchozí odscrollování na čáru „dnes",
+  // mobil: pás přetéká (min-w 640 px) → výchozí odscrollování na čáru „dnes“,
   // ať uživatel nezírá na dávno osvobozenou historii vlevo
   const todayX = view?.todayX;
   useEffect(() => {
@@ -225,7 +225,7 @@ export function HorizonStrip({
     });
   };
 
-  // legenda jen pro stavy, které v datech opravdu jsou (žádné „osvobozené"
+  // legenda jen pro stavy, které v datech opravdu jsou (žádné „osvobozené“
   // bez jediné zelené tečky)
   const hasExempt = view.visible.some((dot) => dot.isExempt);
   const hasPending = view.visible.some((dot) => !dot.isExempt);
@@ -296,7 +296,7 @@ export function HorizonStrip({
                 dnes
               </text>
 
-              {/* mini vrstva: kumulativně „kolik % už bude bez daně" */}
+              {/* mini vrstva: kumulativně „kolik % už bude bez daně“ */}
               {view.outlookPath && (
                 <g>
                   <line
@@ -377,7 +377,7 @@ export function HorizonStrip({
           </div>
         </div>
 
-        {/* affordance přetečení: gradient „vpravo je toho víc" (jen při overflow) */}
+        {/* affordance přetečení: gradient „vpravo je toho víc“ (jen při overflow) */}
         {fadeRight && (
           <div
             aria-hidden

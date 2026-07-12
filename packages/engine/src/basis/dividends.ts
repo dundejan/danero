@@ -159,7 +159,7 @@ export function computeDividends(
         {
           txId: tx.id,
           isin: tx.isin,
-          date: tx.date, // pro kompaktní výpis případů v UI („TICKER · datum · částka")
+          date: tx.date, // pro kompaktní výpis případů v UI („TICKER · datum · částka“)
           country,
           overCzk: withholdingCzk.sub(grossCzk.mul(cap)).toFixed(2),
         },

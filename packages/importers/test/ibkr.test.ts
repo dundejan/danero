@@ -115,7 +115,7 @@ describe('IBKR Flex XML parser', () => {
     expect(splits).toHaveLength(2);
     const fs = splits.find((t) => 'isin' in t && t.isin === 'US0378331005');
     if (!fs || fs.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
-    // „SPLIT 4 FOR 1" = 4 nové za 1 starý
+    // „SPLIT 4 FOR 1“ = 4 nové za 1 starý
     expect(fs.ratio?.from.toString()).toBe('1');
     expect(fs.ratio?.to.toString()).toBe('4');
     expect(fs.date).toBe('2024-08-31');

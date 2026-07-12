@@ -53,7 +53,7 @@ export interface DerivativesResult {
   rawGainLossCzk: Money;
   /** Dílčí základ § 10 druhu: max(0, příjmy − výdaje) — R-12b/l. */
   base10Czk: Money;
-  /** R-12i: úhrn výdajů neuznaných v defaultu (expirace) — pro „co kdyby". */
+  /** R-12i: úhrn výdajů neuznaných v defaultu (expirace) — pro „co kdyby“. */
   deniedExpensesCzk: Money;
   items: DerivativeItem[];
   /** Otevřené pozice k 31. 12. roku (R-12g/j: sporný okamžik příjmu). */
@@ -99,7 +99,7 @@ function closeAgainst(
 }
 
 /**
- * Spočítá druh „deriváty" za daný rok z derivátových transakcí (BUY/SELL/
+ * Spočítá druh „deriváty“ za daný rok z derivátových transakcí (BUY/SELL/
  * převody; expirace i assignment = uzavření s cenou 0 — R-12i/k).
  */
 export function computeDerivatives(

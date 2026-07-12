@@ -6,7 +6,7 @@ import type { Money } from '@danero/shared';
  * Panelové testování odhalilo lhaní verdiktu: prodej osvobozený časovým
  * testem může prolomit úhrn 100 000 Kč (při striktním výkladu R-02c do něj
  * vstupují i osvobozené tržby) a tím ZPĚTNĚ zdanit dřívější letošní prodeje.
- * „Celý osvobozený — limity ani daň nečerpá" proto platí JEN když se nezvýší
+ * „Celý osvobozený — limity ani daň nečerpá“ proto platí JEN když se nezvýší
  * daň ani čerpání žádného limitu.
  */
 

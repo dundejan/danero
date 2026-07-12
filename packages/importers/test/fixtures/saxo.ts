@@ -1,5 +1,5 @@
 /**
- * Fixture Saxo Bank „Transactions" XLSX — binárka se do repa necommituje,
+ * Fixture Saxo Bank „Transactions“ XLSX — binárka se do repa necommituje,
  * workbook se staví za běhu testu přes exceljs (vzor fixtures/xtb.ts).
  *
  * Struktura kopíruje reálný export: jeden list (název lokalizovaný),

@@ -1,7 +1,7 @@
 /**
  * Coinmate fixtures — řádky doslova podle důkazů (WhaleBooks/everytrade).
  * CSV se středníkem; tři varianty transakční historie (EN krátká, EN dlouhá
- * se zůstatky, CZ s BOM a českým datem) + „account statement" V2, kde je
+ * se zůstatky, CZ s BOM a českým datem) + „account statement“ V2, kde je
  * měna PŘED hodnotou (Currency amount;Amount) a směr nese Type detail.
  */
 
@@ -28,7 +28,7 @@ export const COINMATE_EN_SHORT = [
 /**
  * CZ hlavička s BOM, české datum `16.08.2021 9:42` (čísla i tady s desetinnou
  * TEČKOU!), MARKET_* typy, DEPOSIT, affiliate s prázdným Typem a Popiskem
- * „User: …", interní přesun zůstatku.
+ * „User: …“, interní přesun zůstatku.
  */
 export const COINMATE_CZ =
   '\uFEFF' +
@@ -42,7 +42,7 @@ export const COINMATE_CZ =
   ].join('\n');
 
 /**
- * V2 „account statement": měna v „Currency …" sloupcích PŘED hodnotou,
+ * V2 „account statement“: měna v „Currency …“ sloupcích PŘED hodnotou,
  * Type = Trade/Quick trade + Type detail (CANCEL = zrušený obchod).
  * První řádek doslova z výzkumu.
  */

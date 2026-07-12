@@ -62,7 +62,7 @@ export default function PruvodcePage() {
           href="/kalkulacka"
           className="font-medium text-ruzova-text underline underline-offset-2"
         >
-          kalkulačku „Musím podat přiznání?"
+          kalkulačku „Musím podat přiznání?“
         </Link>{' '}
         — a jak přesně počítáme, popisuje stránka{' '}
         <Link

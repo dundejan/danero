@@ -4,7 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
  * Klient IBKR Flex Web Service (docs/03, docs/09 G2): dvoufázový protokol
  * SendRequest (token + query ID → referenceCode) → GetStatement (poll, dokud
  * se výpis generuje). Trpělivé retry — generování větších výpisů trvá minuty
- * a služba vrací 1019 „in progress", případně 1018 „throttled".
+ * a služba vrací 1019 „in progress“, případně 1018 „throttled“.
  */
 
 const DEFAULT_BASE_URL =

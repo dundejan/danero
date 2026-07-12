@@ -351,7 +351,7 @@ export function ReportView({
             <p className="text-xs text-jantar">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
               podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
-              druh" by základ daně snížil;{' '}
+              druh“ by základ daně snížil;{' '}
               {demo
                 ? 'v plné verzi si výklad přepneš v Nastavení — založ si účet.'
                 : 'přepínač najdeš v Nastavení.'}

@@ -1,5 +1,5 @@
 /**
- * Fixture XTB xStation „Full report" XLSX — binárka se do repa necommituje,
+ * Fixture XTB xStation „Full report“ XLSX — binárka se do repa necommituje,
  * workbook se staví za běhu testu přes exceljs (stejná knihovna jako parser,
  * ale opačný směr: write místo load).
  *
@@ -37,7 +37,7 @@ export const XTB_INSTRUMENT_MAP = {
 
 /**
  * Happy-path řádky EN reportu. Amount = dopad na hotovost v měně ÚČTU (EUR);
- * kusy a cena instrumentu jsou v Comment za „@". Záměrně mix formátů:
+ * kusy a cena instrumentu jsou v Comment za „@“. Záměrně mix formátů:
  * čísla jako number, datumy DD.MM.YYYY, ISO string i JS Date.
  */
 export const XTB_ROWS_EN: XtbCellValue[][] = [

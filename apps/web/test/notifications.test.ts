@@ -216,7 +216,7 @@ describe('notifikační preference + odhlášení (G8d, H3)', () => {
     const token = await unsubscribeToken('u-abc');
     expect(await verifyUnsubscribeToken(token)).toBe('u-abc');
     // padělek: poslední znak VŽDY přepnout na jiný — replace(/.$/, '0') byl
-    // flaky (1/16 podpisů nulou končí a „padělek" byl identický s originálem)
+    // flaky (1/16 podpisů nulou končí a „padělek“ byl identický s originálem)
     const forged = token.replace(/.$/, (ch) => (ch === '0' ? '1' : '0'));
     expect(await verifyUnsubscribeToken(forged)).toBeNull();
     expect(await verifyUnsubscribeToken('nesmysl')).toBeNull();

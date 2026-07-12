@@ -1,10 +1,10 @@
 import { cn } from '@/lib/utils';
 
 /**
- * Značka Danero — malé „d" složené ze signatury produktu (horizont osvobození):
+ * Značka Danero — malé „d“ složené ze signatury produktu (horizont osvobození):
  * růžová tečka = nákup (lot), svislá linie = dnešek. Tečka už je nalevo od
  * linie, tedy za časovým testem — přesně ten moment, kvůli kterému Danero
- * existuje. Jednobarevně (mono) se silueta slije do čistého „d".
+ * existuje. Jednobarevně (mono) se silueta slije do čistého „d“.
  *
  * Geometrie drží čitelnost od 16 px: dva plné tvary, žádné tenké tahy,
  * gradienty ani stíny. Stejné tvary používá i favicon (app/icon.svg).
@@ -28,7 +28,7 @@ export function LogoMark({
 }
 
 /**
- * Logotyp: mark + wordmark „Danero". Velikost se řídí velikostí písma
+ * Logotyp: mark + wordmark „Danero“. Velikost se řídí velikostí písma
  * rodiče/className (mark je v em), takže `<Logo className="text-lg" />` stačí.
  */
 export function Logo({ className }: { className?: string }) {

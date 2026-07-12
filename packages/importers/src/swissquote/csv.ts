@@ -14,8 +14,8 @@ export const SWISSQUOTE_BROKER = 'swissquote';
  * na rozbité přehlásky z Latin-1 dekódování) — NE pozičně: DE má 15 sloupců
  * a 13. sloupec existuje ve dvou variantách názvu.
  *
- * Měna transakce: EN sloupec „Currency"; DE „Währung Nettobetrag" (prosté
- * „Währung" je měna subúčtu — tu nepoužíváme).
+ * Měna transakce: EN sloupec „Currency“; DE „Währung Nettobetrag“ (prosté
+ * „Währung“ je měna subúčtu — tu nepoužíváme).
  *
  * Parser bere už DEKÓDOVANÝ text — dekódování (Latin-1 fallback) řeší service.
  */
@@ -25,7 +25,7 @@ export const SWISSQUOTE_BROKER = 'swissquote';
 interface FieldSpec {
   /** Přesné názvy po normalizeHeader. */
   names: readonly string[];
-  /** Tolerance na rozbité přehlásky („StÃ¼ckpreis" → „sta¼ckpreis"). */
+  /** Tolerance na rozbité přehlásky („StÃ¼ckpreis“ → „sta¼ckpreis“). */
   fuzzy?: (normalizedHeader: string) => boolean;
 }
 
@@ -40,8 +40,8 @@ const FIELDS = {
   unitPrice: { names: ['unit price', 'stuckpreis'], fuzzy: (h) => /^st.{0,2}ckpreis$/.test(h) },
   costs: { names: ['costs', 'kosten'] },
   netAmount: { names: ['net amount', 'nettobetrag'] },
-  // pořadí názvů je důležité: DE „Währung Nettobetrag" (měna transakce) má
-  // přednost; EN „Currency" je měna transakce, prosté DE „Währung" (subúčet) neexistuje v EN
+  // pořadí názvů je důležité: DE „Währung Nettobetrag“ (měna transakce) má
+  // přednost; EN „Currency“ je měna transakce, prosté DE „Währung“ (subúčet) neexistuje v EN
   currency: {
     names: ['wahrung nettobetrag', 'currency'],
     fuzzy: (h) => /^w.{0,2}hrung nettobetrag$/.test(h),
@@ -67,14 +67,14 @@ function findColumn(normalizedHeaders: string[], spec: FieldSpec): number {
 
 /**
  * Swissquote čísla mají desetinnou tečku; defenzivně stripujeme apostrofy
- * (švýcarské tisícové oddělovače „1'234.56") a tisícové čárky (cleanNumber).
+ * (švýcarské tisícové oddělovače „1'234.56“) a tisícové čárky (cleanNumber).
  */
 function parseSqNumber(value: string): Decimal | null {
   const cleaned = cleanNumber(value.replace(/['’]/g, ''));
   return /^-?\d+(\.\d+)?$/.test(cleaned) ? d(cleaned) : null;
 }
 
-/** „10-08-2022 15:30:02" (DD-MM-YYYY) → ISO; neexistující kalendářní den → null. */
+/** „10-08-2022 15:30:02“ (DD-MM-YYYY) → ISO; neexistující kalendářní den → null. */
 function toIsoDate(value: string): string | null {
   const match = /^(\d{2})-(\d{2})-(\d{4})/.exec(value.trim());
   if (!match) return null;
@@ -129,7 +129,7 @@ function classify(normalized: string): SqKind {
   ) {
     return { kind: 'FEE' };
   }
-  // debetní úrok dřív než obecné „zinsen"
+  // debetní úrok dřív než obecné „zinsen“
   if (normalized === 'zinsen auf belastungen') return { kind: 'INTEREST_DEBIT' };
   if (normalized === 'interests' || normalized === 'zins' || normalized === 'zinsen') {
     return { kind: 'INTEREST' };
@@ -147,8 +147,8 @@ function classify(normalized: string): SqKind {
 
 /**
  * Detekce Swissquote CSV: první řádek se středníky obsahuje sloupec
- * „Order #"/„Auftrag #", „ISIN" a „Unit price"/„Stückpreis". Kombinace je
- * dost specifická — Degiro má „ID objednávky"/„Order ID" (bez „#"), takže
+ * „Order #“/„Auftrag #“, „ISIN“ a „Unit price“/„Stückpreis“. Kombinace je
+ * dost specifická — Degiro má „ID objednávky“/„Order ID“ (bez „#“), takže
  * jeho středníkové exporty neprojdou.
  */
 export function sniffSwissquoteCsv(text: string): boolean {
@@ -225,14 +225,14 @@ export function parseSwissquoteCsv(text: string): ImportResult {
     if (classified.kind === 'SKIP') {
       result.skipped.push({
         line,
-        message: `„${transactionRaw}": ${classified.reason} — pro daňový výpočet není potřeba.`,
+        message: `„${transactionRaw}“: ${classified.reason} — pro daňový výpočet není potřeba.`,
       });
       return;
     }
     if (classified.kind === 'WARN_SKIP') {
       result.warnings.push({
         line,
-        message: `Operaci „${transactionRaw}" zatím neumíme zaúčtovat automaticky — řádek přeskočen, zkontroluj a případně doplň ručně (univerzální šablona).`,
+        message: `Operaci „${transactionRaw}“ zatím neumíme zaúčtovat automaticky — řádek přeskočen, zkontroluj a případně doplň ručně (univerzální šablona).`,
         raw,
       });
       return;
@@ -240,7 +240,7 @@ export function parseSwissquoteCsv(text: string): ImportResult {
     if (classified.kind === 'UNKNOWN') {
       result.errors.push({
         line,
-        message: `Neznámý typ transakce „${transactionRaw}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ transakce „${transactionRaw}“ — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       return;
@@ -250,7 +250,7 @@ export function parseSwissquoteCsv(text: string): ImportResult {
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${cellAt('date')}" (očekáván formát DD-MM-YYYY HH:MM:SS).`,
+        message: `Neplatné datum „${cellAt('date')}“ (očekáván formát DD-MM-YYYY HH:MM:SS).`,
         raw,
       });
       return;
@@ -362,7 +362,7 @@ export function parseSwissquoteCsv(text: string): ImportResult {
       }
       case 'FEE': {
         if (!netAmount) {
-          result.errors.push({ line, message: `Poplatek „${transactionRaw}": chybí částka.`, raw });
+          result.errors.push({ line, message: `Poplatek „${transactionRaw}“: chybí částka.`, raw });
           return;
         }
         push(line, raw, {
@@ -377,13 +377,13 @@ export function parseSwissquoteCsv(text: string): ImportResult {
       }
       case 'INTEREST': {
         if (!netAmount) {
-          result.errors.push({ line, message: `Úrok „${transactionRaw}": chybí částka.`, raw });
+          result.errors.push({ line, message: `Úrok „${transactionRaw}“: chybí částka.`, raw });
           return;
         }
         if (netAmount.lte(0)) {
           result.skipped.push({
             line,
-            message: `Záporný úrok ${netAmount.toString()} ${currency} („${transactionRaw}") — debetní úrok do § 8 nevstupuje, přeskočeno.`,
+            message: `Záporný úrok ${netAmount.toString()} ${currency} („${transactionRaw}“) — debetní úrok do § 8 nevstupuje, přeskočeno.`,
             raw,
           });
           return;
@@ -400,7 +400,7 @@ export function parseSwissquoteCsv(text: string): ImportResult {
       case 'INTEREST_DEBIT': {
         result.skipped.push({
           line,
-          message: `„${transactionRaw}": debetní úrok (úrok z čerpání) — do § 8 nevstupuje, přeskočeno.`,
+          message: `„${transactionRaw}“: debetní úrok (úrok z čerpání) — do § 8 nevstupuje, přeskočeno.`,
           raw,
         });
         return;

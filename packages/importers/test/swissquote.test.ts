@@ -122,7 +122,7 @@ describe('Swissquote CSV parser (EN, 13 sloupců)', () => {
     expect(gbx.fee?.currency).toBe('GBP');
   });
 
-  it('švýcarské tisícové apostrofy („1\'000.0") se stripují', () => {
+  it('švýcarské tisícové apostrofy („1\'000.0“) se stripují', () => {
     const result = parseSwissquoteCsv(SWISSQUOTE_EN);
 
     const buy = result.transactions.find((t) => t.type === 'BUY' && t.isin === 'CH0012138530');
@@ -133,7 +133,7 @@ describe('Swissquote CSV parser (EN, 13 sloupců)', () => {
 });
 
 describe('Swissquote CSV parser (DE, 15 sloupců)', () => {
-  it('happy path: měna transakce z „Währung Nettobetrag", ne z „Währung" (subúčet)', () => {
+  it('happy path: měna transakce z „Währung Nettobetrag“, ne z „Währung“ (subúčet)', () => {
     const result = parseSwissquoteCsv(SWISSQUOTE_DE);
 
     expect(result.errors).toEqual([]);
@@ -186,7 +186,7 @@ describe('Swissquote CSV parser (DE, 15 sloupců)', () => {
     expect(result.warnings[0]!.message).toContain('neumíme zaúčtovat automaticky');
   });
 
-  it('varianta 13. sloupce „Nettobetrag in Kontowährung" — mapování podle názvů funguje', () => {
+  it('varianta 13. sloupce „Nettobetrag in Kontowährung“ — mapování podle názvů funguje', () => {
     const result = parseSwissquoteCsv(SWISSQUOTE_DE_ALT);
 
     expect(result.errors).toEqual([]);
@@ -280,7 +280,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
   });
 
   it('odmítne cizí formáty: Degiro CZ středníkovou hlavičku, univerzální šablonu, prázdno', () => {
-    // Degiro má také středníky a ISIN, ale „ID objednávky" místo „Order #"
+    // Degiro má také středníky a ISIN, ale „ID objednávky“ místo „Order #“
     expect(sniffSwissquoteCsv(DEGIRO_TRANSACTIONS_HEADER_CZ)).toBe(false);
     expect(sniffSwissquoteCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);
     expect(sniffSwissquoteCsv('')).toBe(false);

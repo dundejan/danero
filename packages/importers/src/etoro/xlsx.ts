@@ -7,7 +7,7 @@ import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types
 export const ETORO_BROKER = 'etoro';
 
 /**
- * eToro „Account Statement" XLSX (listy Closed Positions / Account Activity /
+ * eToro „Account Statement“ XLSX (listy Closed Positions / Account Activity /
  * Dividends). Otevřené pozice v Account Activity neuvádějí ISIN — dodává ho
  * mapování symbolů; nenamapované BUY se neimportují a symbol skončí
  * v `unmappedSymbols`. Měnu mapování nenese — ledger eToro je vždy v USD.
@@ -19,11 +19,11 @@ const LEDGER_CURRENCY = 'USD';
 
 /**
  * Číslo z eToro výpisu — formát závisí na locale účtu a liší se PER HODNOTA:
- * US zápis „4,581.91" (tečka desetinná, čárka tisíce) i EU zápis „ 1 212,77 "
- * (čárka desetinná, mezery tisíce); záporné hodnoty v závorkách „(6.97)"/„(0,10)".
+ * US zápis „4,581.91“ (tečka desetinná, čárka tisíce) i EU zápis „ 1 212,77 “
+ * (čárka desetinná, mezery tisíce); záporné hodnoty v závorkách „(6.97)“/„(0,10)“.
  * Rozhodování: závorky = minus; obě oddělovadla → poslední je desetinné;
  * jen čárka → tvar tisícových skupin (1–3 číslice, pak po třech) = tisíce,
- * jinak desetinná čárka. Prázdno a „-" (výplň prázdných buněk) → null.
+ * jinak desetinná čárka. Prázdno a „-“ (výplň prázdných buněk) → null.
  */
 export function parseEtoroNumber(raw: string): Decimal | null {
   let s = raw.replace(/[\s\u00a0\u202f]/g, '');
@@ -58,7 +58,7 @@ export function parseEtoroNumber(raw: string): Decimal | null {
   return negative ? value.neg() : value;
 }
 
-/** „02/01/2024 00:10:33" je DEN/měsíc/rok (eToro), Excel Date buňky ISO → 'YYYY-MM-DD'. */
+/** „02/01/2024 00:10:33“ je DEN/měsíc/rok (eToro), Excel Date buňky ISO → 'YYYY-MM-DD'. */
 function toIsoDate(value: string): string | null {
   const trimmed = value.trim();
   const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(trimmed);
@@ -124,7 +124,7 @@ const prefixed =
 interface FoundHeader<F extends string> {
   index: number;
   columns: Partial<Record<F, number>>;
-  /** Kanonické texty hlavičky (např. pro čtení měny ze sufixu „(USD)"). */
+  /** Kanonické texty hlavičky (např. pro čtení měny ze sufixu „(USD)“). */
   headerCells: string[];
 }
 
@@ -152,13 +152,13 @@ function findHeaderRow<F extends string>(
   return null;
 }
 
-/** Leverage bývá „1"/„2", výjimečně „x2" — cokoli nečitelného čteme jako 1 (bez páky). */
+/** Leverage bývá „1“/„2“, výjimečně „x2“ — cokoli nečitelného čteme jako 1 (bez páky). */
 function parseLeverage(raw: string): Decimal {
   const value = parseEtoroNumber(raw.replace(/^x/i, ''));
   return value !== null && value.gt(0) ? value : d(1);
 }
 
-/** „Buy NVIDIA Corporation (NVDA)" i starší „Buy NVDA" → směr pozice + ticker. */
+/** „Buy NVIDIA Corporation (NVDA)“ i starší „Buy NVDA“ → směr pozice + ticker. */
 function parseAction(action: string): { short: boolean; ticker: string } | null {
   const match = /^(buy|sell)\s+(.+)$/i.exec(action.trim());
   if (!match) return null;
@@ -219,7 +219,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
   if (!header) {
     ctx.result.errors.push({
       line: rows[0]!.rowNumber,
-      message: `V listu „${sheet.name}" se nepodařilo najít hlavičku tabulky (Position ID, Action, Open/Close Date, Open/Close Rate…) — nevypadá jako výpis z eToro.`,
+      message: `V listu „${sheet.name}“ se nepodařilo najít hlavičku tabulky (Position ID, Action, Open/Close Date, Open/Close Rate…) — nevypadá jako výpis z eToro.`,
     });
     return;
   }
@@ -247,7 +247,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     if (!parsed) {
       ctx.result.errors.push({
         line,
-        message: `Uzavřená pozice ${pid}: z pole Action „${action}" se nepodařilo přečíst směr a instrument.`,
+        message: `Uzavřená pozice ${pid}: z pole Action „${action}“ se nepodařilo přečíst směr a instrument.`,
         raw,
       });
       continue;
@@ -258,7 +258,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     if (units === null || units.lte(0)) {
       ctx.result.errors.push({
         line,
-        message: `Uzavřená pozice ${pid} (${parsed.ticker}): neplatný počet kusů „${cell('units')}".`,
+        message: `Uzavřená pozice ${pid} (${parsed.ticker}): neplatný počet kusů „${cell('units')}“.`,
         raw,
       });
       continue;
@@ -268,7 +268,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     if (!openDate || !closeDate) {
       ctx.result.errors.push({
         line,
-        message: `Uzavřená pozice ${pid} (${parsed.ticker}): neplatné datum „${!openDate ? cell('openDate') : cell('closeDate')}" (očekáván formát DD/MM/RRRR).`,
+        message: `Uzavřená pozice ${pid} (${parsed.ticker}): neplatné datum „${!openDate ? cell('openDate') : cell('closeDate')}“ (očekáván formát DD/MM/RRRR).`,
         raw,
       });
       continue;
@@ -331,7 +331,7 @@ const ACTIVITY_MATCHERS = {
   date: oneOf('date'),
   type: oneOf('type'),
   details: oneOf('details'),
-  amount: oneOf('amount'), // přesná shoda — nesmí chytit „Amount in EUR"
+  amount: oneOf('amount'), // přesná shoda — nesmí chytit „Amount in EUR“
   units: oneOf('units / contracts', 'units/contracts', 'units'),
   positionId: oneOf('position id'),
   assetType: oneOf('asset type'),
@@ -371,7 +371,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
   if (!header) {
     ctx.result.errors.push({
       line: rows[0]!.rowNumber,
-      message: `V listu „${sheet.name}" se nepodařilo najít hlavičku tabulky (Date, Type, Amount, Position ID) — nevypadá jako výpis z eToro.`,
+      message: `V listu „${sheet.name}“ se nepodařilo najít hlavičku tabulky (Date, Type, Amount, Position ID) — nevypadá jako výpis z eToro.`,
     });
     return;
   }
@@ -411,7 +411,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       if (!date) {
         ctx.result.errors.push({
           line,
-          message: `Otevřená pozice ${pid}: neplatné datum „${cell('date')}" (očekáván formát DD/MM/RRRR).`,
+          message: `Otevřená pozice ${pid}: neplatné datum „${cell('date')}“ (očekáván formát DD/MM/RRRR).`,
           raw,
         });
         continue;
@@ -422,7 +422,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         continue;
       }
       const assetType = canon(cell('assetType'));
-      // „AMD/USD" → AMD; měnové páry (EUR/USD) se nezkracují — pár JE instrument
+      // „AMD/USD“ → AMD; měnové páry (EUR/USD) se nezkracují — pár JE instrument
       const ticker = assetType === 'currency' ? details.trim() : details.split('/')[0]!.trim();
       const amount = parseEtoroNumber(cell('amount'));
       const units = parseEtoroNumber(cell('units'));
@@ -467,7 +467,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       const date = toIsoDate(cell('date'));
       const amount = parseEtoroNumber(cell('amount'));
       if (!date) {
-        ctx.result.errors.push({ line, message: `Interest Payment: neplatné datum „${cell('date')}".`, raw });
+        ctx.result.errors.push({ line, message: `Interest Payment: neplatné datum „${cell('date')}“.`, raw });
         continue;
       }
       if (amount === null || amount.lt(0)) {
@@ -490,7 +490,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       const date = toIsoDate(cell('date'));
       const amount = parseEtoroNumber(cell('amount'));
       if (!date) {
-        ctx.result.errors.push({ line, message: `${typeRaw}: neplatné datum „${cell('date')}".`, raw });
+        ctx.result.errors.push({ line, message: `${typeRaw}: neplatné datum „${cell('date')}“.`, raw });
         continue;
       }
       if (amount === null) {
@@ -527,7 +527,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       } else {
         ctx.result.errors.push({
           line,
-          message: `Neznámý typ operace „${typeRaw}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý typ operace „${typeRaw}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
       }
@@ -539,7 +539,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       ctx.result.skipped.push({ line, message: skipMessage, raw });
       continue;
     }
-    // „Transfer: EUR > USD" a další interní převody — konkrétní znění se mění
+    // „Transfer: EUR > USD“ a další interní převody — konkrétní znění se mění
     if (t.startsWith('transfer')) {
       ctx.result.skipped.push({
         line,
@@ -551,7 +551,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 
     ctx.result.errors.push({
       line,
-      message: `Neznámý typ operace „${typeRaw}" — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ operace „${typeRaw}“ — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   }
@@ -560,7 +560,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 const DIVIDEND_MATCHERS = {
   date: oneOf('date of payment', 'date'),
   instrument: oneOf('instrument name', 'instrument'),
-  net: prefixed('net dividend'), // „Net Dividend Received (USD)" i „Net dividends (EUR)"
+  net: prefixed('net dividend'), // „Net Dividend Received (USD)“ i „Net dividends (EUR)“
   whtAmount: prefixed('withholding tax amount'),
   positionId: oneOf('position id'),
   isin: oneOf('isin'),
@@ -571,7 +571,7 @@ const DIVIDEND_REQUIRED = ['date', 'net'] as const satisfies readonly DividendFi
 
 /**
  * List Dividends: net + srážková daň po řádcích → gross = net + srážka.
- * Měna ze sufixu hlavičky „(USD)"/„(EUR)", případně ze sloupce Currency.
+ * Měna ze sufixu hlavičky „(USD)“/„(EUR)“, případně ze sloupce Currency.
  */
 function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
   const rows = readSheetRows(sheet);
@@ -580,7 +580,7 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
   if (!header) {
     ctx.result.errors.push({
       line: rows[0]!.rowNumber,
-      message: `V listu „${sheet.name}" se nepodařilo najít hlavičku tabulky (Date of Payment, Net Dividend…) — nevypadá jako výpis z eToro.`,
+      message: `V listu „${sheet.name}“ se nepodařilo najít hlavičku tabulky (Date of Payment, Net Dividend…) — nevypadá jako výpis z eToro.`,
     });
     return;
   }
@@ -609,7 +609,7 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     if (!date) {
       ctx.result.errors.push({
         line,
-        message: `Dividenda ${instrument}: neplatné datum „${cell('date')}" (očekáván formát DD/MM/RRRR).`,
+        message: `Dividenda ${instrument}: neplatné datum „${cell('date')}“ (očekáván formát DD/MM/RRRR).`,
         raw,
       });
       continue;
@@ -635,7 +635,7 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     const currency = /^[A-Za-z]{3}$/.test(rowCurrency)
       ? rowCurrency.toUpperCase()
       : (headerCurrency ?? LEDGER_CURRENCY);
-    // „NKE/USD" → ticker NKE; plný název firmy jde do poznámky, ticker není
+    // „NKE/USD“ → ticker NKE; plný název firmy jde do poznámky, ticker není
     const slash = instrument.split('/');
     const ticker =
       slash.length === 2 && /^[A-Za-z0-9.]+$/.test(slash[0]!.trim()) ? slash[0]!.trim() : undefined;
@@ -655,7 +655,7 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 }
 
 /**
- * Parser eToro „Account Statement" XLSX. Obchody bere z listu Closed Positions
+ * Parser eToro „Account Statement“ XLSX. Obchody bere z listu Closed Positions
  * (pár BUY/SELL za pozici), otevřené pozice z Account Activity (ISIN dodává
  * `instrumentMap` — eToro ho u aktivit neuvádí), dividendy z listu Dividends.
  * Ledger je v USD; čísla i datumy se čtou tolerantně k locale účtu.
@@ -682,8 +682,8 @@ export async function parseEtoroXlsx(
   const activitySheet = findSheet(workbook, 'account activity');
   if (!closedSheet || !activitySheet) {
     const missing = [
-      ...(closedSheet ? [] : ['„Closed Positions"']),
-      ...(activitySheet ? [] : ['„Account Activity"']),
+      ...(closedSheet ? [] : ['„Closed Positions“']),
+      ...(activitySheet ? [] : ['„Account Activity“']),
     ].join(' a ');
     result.errors.push({
       line: 1,

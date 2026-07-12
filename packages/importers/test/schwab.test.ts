@@ -19,7 +19,7 @@ describe('parseUsDate', () => {
     expect(parseUsDate('04/27/2023')).toBe('2023-04-27');
   });
 
-  it('„as of" tvar → druhé (efektivní) datum', () => {
+  it('„as of“ tvar → druhé (efektivní) datum', () => {
     expect(parseUsDate('07/15/2024 as of 07/12/2024')).toBe('2024-07-12');
     expect(parseUsDate('04/01/2020 as of 03/31/2020')).toBe('2020-03-31');
   });
@@ -148,7 +148,7 @@ describe('parseSchwabCsv — moderní export', () => {
 describe('parseSchwabCsv — starší export (titulní řádek, koncová čárka, footer)', () => {
   const result = parseSchwabCsv(SCHWAB_LEGACY, SCHWAB_INSTRUMENT_MAP);
 
-  it('titulní řádek a footer „Transactions Total" se přeskočí bez chyb', () => {
+  it('titulní řádek a footer „Transactions Total“ se přeskočí bez chyb', () => {
     expect(result.errors).toEqual([]);
     expect(result.transactions).toHaveLength(4);
   });
@@ -160,7 +160,7 @@ describe('parseSchwabCsv — starší export (titulní řádek, koncová čárka
     expect(result.warnings[0]!.line).toBe(3);
   });
 
-  it('Expired se záporným počtem → SELL |q| @ 0, datum z „as of" (druhé)', () => {
+  it('Expired se záporným počtem → SELL |q| @ 0, datum z „as of“ (druhé)', () => {
     const expired = result.transactions.find(
       (t) => t.type === 'SELL' && t.tradeDate === '2020-03-31',
     );
@@ -218,7 +218,7 @@ describe('parseSchwabCsv — opce', () => {
     if (!expired || expired.type !== 'BUY') throw new Error('unreachable');
     expect(expired.quantity.toString()).toBe('1');
     expect(expired.pricePerShare.toString()).toBe('0');
-    expect(expired.tradeDate).toBe('2020-03-31'); // „as of"
+    expect(expired.tradeDate).toBe('2020-03-31'); // „as of“
   });
 });
 
@@ -250,7 +250,7 @@ describe('parseSchwabCsv — edge cases', () => {
     expect(result.transactions).toEqual([]);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.line).toBe(2);
-    expect(result.errors[0]!.message).toContain('„Totally Unknown"');
+    expect(result.errors[0]!.message).toContain('„Totally Unknown“');
     expect(result.errors[0]!.message).toContain('nahlaš nám ho');
   });
 
@@ -262,7 +262,7 @@ describe('parseSchwabCsv — edge cases', () => {
     expect(result.errors[0]!.message).toContain('Neplatné datum');
   });
 
-  it('prázdný soubor i prázdný export (titul + hlavička + „") → prázdný výsledek bez chyb', () => {
+  it('prázdný soubor i prázdný export (titul + hlavička + „“) → prázdný výsledek bez chyb', () => {
     const empty = parseSchwabCsv('');
     expect(empty.transactions).toEqual([]);
     expect(empty.errors).toEqual([]);

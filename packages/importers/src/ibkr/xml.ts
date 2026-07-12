@@ -59,7 +59,7 @@ function toIsoDate(value: string | undefined): string | null {
 
 const ISIN_RE = /\b([A-Z]{2}[A-Z0-9]{9}\d)\b/g;
 
-/** „4 FOR 1" v actionDescription → { to: 4, from: 1 } (nové za staré). */
+/** „4 FOR 1“ v actionDescription → { to: 4, from: 1 } (nové za staré). */
 function parseForRatio(description: string): { from: string; to: string } | null {
   const match = /([\d.]+)\s+FOR\s+([\d.]+)/i.exec(description);
   if (!match) return null;
@@ -228,7 +228,7 @@ function processTrades(
     if (buySell !== 'BUY' && buySell !== 'SELL') {
       result.errors.push({
         line,
-        message: `Neznámý směr obchodu „${trade.buySell ?? ''}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý směr obchodu „${trade.buySell ?? ''}“ — nahlaš nám ho, doplníme podporu.`,
         raw: JSON.stringify(trade),
       });
       continue;
@@ -383,7 +383,7 @@ function processTrades(
   if (processed === 0 && filteredLevels > 0) {
     result.errors.push({
       line: 1,
-      message: `Sekce Trades obsahuje jen souhrny/objednávky (${filteredLevels} záznamů) — ve Flex Query zapni u Trades úroveň „Executions", jinak se obchody nenaimportují.`,
+      message: `Sekce Trades obsahuje jen souhrny/objednávky (${filteredLevels} záznamů) — ve Flex Query zapni u Trades úroveň „Executions“, jinak se obchody nenaimportují.`,
     });
   }
 }
@@ -536,7 +536,7 @@ function processCashTransactions(
       default: {
         result.errors.push({
           line,
-          message: `Neznámý typ hotovostního pohybu „${type}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý typ hotovostního pohybu „${type}“ — nahlaš nám ho, doplníme podporu.`,
           raw: JSON.stringify(row),
         });
       }
@@ -639,7 +639,7 @@ function processCashTransactions(
   if (processed === 0 && filteredLevels > 0) {
     result.errors.push({
       line: 1,
-      message: `Sekce CashTransactions obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail", jinak se dividendy a úroky nenaimportují.`,
+      message: `Sekce CashTransactions obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail“, jinak se dividendy a úroky nenaimportují.`,
     });
   }
 }
@@ -696,7 +696,7 @@ function processCorporateActions(
         if (!isin || !ratio) {
           result.errors.push({
             line,
-            message: `Split ${row.symbol ?? ''} se nepodařilo přečíst (chybí ISIN nebo poměr „X FOR Y" v popisu).`,
+            message: `Split ${row.symbol ?? ''} se nepodařilo přečíst (chybí ISIN nebo poměr „X FOR Y“ v popisu).`,
             raw: JSON.stringify(row),
           });
           break;
@@ -771,7 +771,7 @@ function processCorporateActions(
       default: {
         result.errors.push({
           line,
-          message: `Nepodporovaný typ korporátní akce „${type}" (${row.symbol ?? ''}) — nahlaš nám ho; zatím akci doplň ručně přes univerzální šablonu.`,
+          message: `Nepodporovaný typ korporátní akce „${type}“ (${row.symbol ?? ''}) — nahlaš nám ho; zatím akci doplň ručně přes univerzální šablonu.`,
           raw: JSON.stringify(row),
         });
       }
@@ -895,7 +895,7 @@ function processCorporateActions(
   if (processed === 0 && filteredLevels > 0) {
     result.errors.push({
       line: 1,
-      message: `Sekce CorporateActions obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail", jinak se korporátní akce nenaimportují.`,
+      message: `Sekce CorporateActions obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail“, jinak se korporátní akce nenaimportují.`,
     });
   }
 }
@@ -990,7 +990,7 @@ function processTransfers(
   if (processed === 0 && filteredLevels > 0) {
     result.errors.push({
       line: 1,
-      message: `Sekce Transfers obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail", jinak se převody nenaimportují.`,
+      message: `Sekce Transfers obsahuje jen souhrny (${filteredLevels} záznamů) — ve Flex Query zapni úroveň „Detail“, jinak se převody nenaimportují.`,
     });
   }
 }

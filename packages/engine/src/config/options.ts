@@ -21,7 +21,7 @@ export interface EngineOptions {
   defaultTreatyCap: string;
   /**
    * R-12i: prémie opce expirované bezcenně jako výdaj druhu deriváty
-   * (výklad „per druh", § 10/4 + D-59). Default false = restriktivní výklad.
+   * (výklad „per druh“, § 10/4 + D-59). Default false = restriktivní výklad.
    */
   derivativesExpensesPerDruh: boolean;
   /**

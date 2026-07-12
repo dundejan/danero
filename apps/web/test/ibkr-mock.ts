@@ -17,7 +17,7 @@ export function makeIbkrMockFetch(options: { failToken?: boolean } = {}) {
       if (options.failToken) return new Response(FLEX_BAD_TOKEN, { status: 200 });
       return new Response(FLEX_SEND_OK('https://flex.test/GetStatement'), { status: 200 });
     }
-    // první GetStatement „generuje se", pak hotový výpis
+    // první GetStatement „generuje se“, pak hotový výpis
     statementCalls += 1;
     return new Response(statementCalls === 1 ? FLEX_IN_PROGRESS : IBKR_FLEX_XML, { status: 200 });
   }) as typeof fetch;

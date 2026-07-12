@@ -80,7 +80,7 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
 describe('kompaktní řádek případu (warningCaseLine)', () => {
   const labels = new Map([['US0378331005', 'AAPL']]);
 
-  it('se strukturovaným contextem skládá „TICKER · datum · částka"', () => {
+  it('se strukturovaným contextem skládá „TICKER · datum · částka“', () => {
     const line = warningCaseLine(
       w({
         message: 'Dividenda AAPL z 13. 2. 2026 (US): dlouhé vysvětlení, které se nemá opakovat.',

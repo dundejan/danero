@@ -228,7 +228,7 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     ]);
     const dots = horizonDots(positions, labels, new Map(), 2026);
 
-    // po dnech: přesná data osvobození (den po „vypořádání + 3 roky", R-01)
+    // po dnech: přesná data osvobození (den po „vypořádání + 3 roky“, R-01)
     expect(dots.map((dot) => dot.exemptFrom)).toEqual(['2028-03-08', '2028-03-23']);
     expect(dots.map((dot) => dot.isExempt)).toEqual([false, false]);
     expect(dots.map((dot) => dot.weight)).toEqual([10, 30]);
@@ -257,12 +257,12 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const dots = horizonDots(positions, labels, new Map(), 2026);
     // AAPL (nákup 2022) už osvobozený, IWDA (nákup 2025) čeká na 2028
     expect(dots.map((dot) => dot.isExempt)).toEqual([true, false]);
-    expect(dots[0]!.exemptFrom).toBe('2025-06-13'); // den po „vypořádání 2022-06-12 + 3 roky"
+    expect(dots[0]!.exemptFrom).toBe('2025-06-13'); // den po „vypořádání 2022-06-12 + 3 roky“
     expect(dots[0]!.items[0]!.label).toBe('AAPL');
     expect(dots[1]!.exemptFrom).toBe('2028-02-04');
     expect(dots[1]!.items[0]!.label).toBe('IWDA');
 
-    // měsíční sloučení stavy nemíchá — každý měsíc je uniformně před/po „dnes"
+    // měsíční sloučení stavy nemíchá — každý měsíc je uniformně před/po „dnes“
     const monthly = groupHorizonDots(dots, 'month', '2026-09-01');
     expect(monthly.map((dot) => [dot.exemptFrom, dot.isExempt])).toEqual([
       ['2025-06', true],
@@ -302,8 +302,8 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const monthly = groupHorizonDots(dots, 'month', today);
     expect(monthly.map((d) => [d.exemptFrom, d.isExempt, d.weight])).toEqual([
       ['2026-06', true, 9], // sloučený minulý měsíc (celý osvobozený)
-      ['2026-07-04', true, 2], // aktuální měsíc po dnech — před „dnes" zelená…
-      ['2026-07-20', false, 4], // …za „dnes" čekající
+      ['2026-07-04', true, 2], // aktuální měsíc po dnech — před „dnes“ zelená…
+      ['2026-07-20', false, 4], // …za „dnes“ čekající
       ['2028-03', false, 31], // sloučený budoucí měsíc
     ]);
     // rozpad sloučené tečky: kusy téhož ISINu se sečtou, řadí se vahou sestupně
