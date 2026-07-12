@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TaxYearConfig } from '../src';
+import { isEmtIdentifier, type TaxYearConfig } from '../src';
 import { buy, CFG_2025, hasWarning, run, sell } from './helpers';
 
 /**
@@ -276,6 +276,148 @@ describe('R-10g varování CRYPTO_EMT_ASSUMPTION při aplikaci krypto osvobozen�
       sell({ tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
     ]);
     expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(false);
+  });
+});
+
+describe('R-10a EMT (stablecoiny) — vyloučené z hodnotového osvobození zj)', () => {
+  const usdtBuy = (over: Overrides = {}): ReturnType<typeof buy> =>
+    buy({ isin: 'USDT', assetClass: 'CRYPTO', ...over });
+  const usdtSell = (over: Overrides = {}): ReturnType<typeof sell> =>
+    sell({ isin: 'USDT', assetClass: 'CRYPTO', ...over });
+
+  it('detekce EMT podle tickeru: normalizace uppercase, sufixů a Kraken prefixů', () => {
+    expect(isEmtIdentifier('USDT')).toBe(true);
+    expect(isEmtIdentifier('usdc')).toBe(true);
+    expect(isEmtIdentifier(' dai ')).toBe(true);
+    expect(isEmtIdentifier('USDT.S')).toBe(true); // Kraken staked sufix
+    expect(isEmtIdentifier('ZUSDC')).toBe(true); // legacy Kraken prefix
+    expect(isEmtIdentifier('BTC')).toBe(false);
+    expect(isEmtIdentifier('XRP')).toBe(false); // prefix se zkouší jen proti seznamu
+    expect(isEmtIdentifier('USD')).toBe(false);
+    expect(isEmtIdentifier('US0378331005')).toBe(false);
+  });
+
+  it('prodej USDT 50k (pod limitem) je zdanitelný a do úhrnu 100k nevstupuje', () => {
+    const result = run([
+      usdtBuy({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      usdtSell({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ]);
+
+    // tržba 50k ≤ 100k, přesto zdanitelná — zj) EMT vylučuje; pool zůstává prázdný
+    expect(result.crypto.pool100kCzk.toString()).toBe('0');
+    expect(result.limits.cryptoLimit100k.usedCzk.toString()).toBe('0');
+    expect(result.crypto.taxableIncomeCzk.toString()).toBe('50000');
+    expect(result.crypto.expensesCzk.toString()).toBe('40000');
+    expect(result.crypto.base10Czk.toString()).toBe('10000');
+    expect(result.crypto.disposals[0]!.isEmt).toBe(true);
+    expect(result.crypto.disposals[0]!.taxableProceedsCzk.toString()).toBe('50000');
+
+    expect(hasWarning(result, 'CRYPTO_EMT_DETECTED')).toBe(true);
+    // žádné ne-EMT osvobození → varování o exotickém stablecoinu není potřeba
+    expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(false);
+  });
+
+  it('BTC 60k + USDT 50k tržeb: úhrn se počítá jen z ne-EMT → BTC osvobozen, USDT zdaněn', () => {
+    const result = run([
+      cryptoBuy({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      cryptoSell({ quantity: '1', pricePerShare: '60000', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+      usdtBuy({ quantity: '1', pricePerShare: '45000', tradeDate: '2024-07-01', settlementDate: '2024-07-01' }),
+      usdtSell({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ]);
+
+    // dohromady 110k > 100k, ale úhrn pro zj) je jen 60k (BTC) → osvobození trvá
+    expect(result.crypto.pool100kCzk.toString()).toBe('60000');
+    expect(result.crypto.exemptUnder100k).toBe(true);
+    const btc = result.crypto.disposals.find((d) => d.isin === 'BTC')!;
+    const usdt = result.crypto.disposals.find((d) => d.isin === 'USDT')!;
+    expect(btc.isEmt).toBe(false);
+    expect(btc.exemptProceedsCzk.toString()).toBe('60000');
+    expect(usdt.isEmt).toBe(true);
+    expect(usdt.exemptProceedsCzk.toString()).toBe('0');
+    expect(usdt.taxableProceedsCzk.toString()).toBe('50000');
+    // zdaní se jen USDT: 50k − 45k = 5k
+    expect(result.crypto.base10Czk.toString()).toBe('5000');
+
+    // BTC osvobozen → varování o exotickém stablecoinu mimo seznam zůstává
+    expect(hasWarning(result, 'CRYPTO_EMT_DETECTED')).toBe(true);
+    expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(true);
+  });
+
+  it('ztráta z EMT se kompenzuje se ziskem z BTC uvnitř druhu krypto (R-10c)', () => {
+    const result = run([
+      // BTC: tržba 150k > 100k → zdanitelný zisk +50k
+      cryptoBuy({ quantity: '1', pricePerShare: '100000', tradeDate: '2025-01-10', settlementDate: '2025-01-10' }),
+      cryptoSell({ quantity: '1', pricePerShare: '150000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+      // USDT: ztráta −10k — EMT je TENTÝŽ druh § 10, kompenzuje se
+      usdtBuy({ quantity: '1', pricePerShare: '30000', tradeDate: '2025-02-20', settlementDate: '2025-02-20' }),
+      usdtSell({ quantity: '1', pricePerShare: '20000', tradeDate: '2025-07-01', settlementDate: '2025-07-01' }),
+    ]);
+
+    expect(result.crypto.pool100kCzk.toString()).toBe('150000'); // jen BTC
+    expect(result.crypto.taxableIncomeCzk.toString()).toBe('170000');
+    expect(result.crypto.expensesCzk.toString()).toBe('130000');
+    expect(result.crypto.base10Czk.toString()).toBe('40000'); // 50k − 10k
+  });
+
+  it('R-10f: zdanitelné EMT tržby vstupují do limitu 50k paušální daně', () => {
+    const result = run([
+      usdtBuy({ quantity: '1', pricePerShare: '55000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      usdtSell({ quantity: '1', pricePerShare: '60000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ]);
+
+    expect(result.limits.flatTax50k.components.nonExemptCryptoProceedsCzk.toString()).toBe('60000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('60000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+    expect(hasWarning(result, 'FLAT_TAX_BROKEN')).toBe(true);
+  });
+
+  describe('R-10g: EMT a časový test — přepínač emtTimeTestExempt', () => {
+    const heldOver3y = [
+      usdtBuy({ quantity: '1', pricePerShare: '40000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' }),
+      usdtSell({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ];
+
+    it('default (bezpečný výklad): USDT držený > 3 roky je přesto zdaněn', () => {
+      const result = run(heldOver3y);
+
+      expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('0');
+      expect(result.crypto.taxableIncomeCzk.toString()).toBe('50000');
+      expect(result.crypto.base10Czk.toString()).toBe('10000');
+      expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('50000');
+
+      // varování vyčísluje, co by mírnější výklad osvobodil
+      const warning = result.warnings.find((w) => w.code === 'CRYPTO_EMT_DETECTED')!;
+      expect(warning).toBeDefined();
+      expect(warning.context?.emtTimeTestableCzk).toBe('50000.00');
+    });
+
+    it('emtTimeTestExempt=true (mírnější výklad): časový test USDT osvobodí', () => {
+      const result = run(heldOver3y, { options: { emtTimeTestExempt: true } });
+
+      expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('50000');
+      expect(result.crypto.taxableIncomeCzk.toString()).toBe('0');
+      expect(result.crypto.base10Czk.toString()).toBe('0');
+      expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('0');
+
+      expect(hasWarning(result, 'CRYPTO_EMT_DETECTED')).toBe(true);
+      // osvobozené je jen EMT → varování o exotickém stablecoinu se netýká
+      expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(false);
+    });
+
+    it('hodnotové osvobození zj) EMT nedostane ani při mírnějším výkladu', () => {
+      const result = run(
+        [
+          // držba < 3 roky a tržba pod 100k — zj) by pomohlo, ale EMT je vyloučen
+          usdtBuy({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+          usdtSell({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+        ],
+        { options: { emtTimeTestExempt: true } },
+      );
+
+      expect(result.crypto.pool100kCzk.toString()).toBe('0');
+      expect(result.crypto.taxableIncomeCzk.toString()).toBe('50000');
+      expect(result.crypto.base10Czk.toString()).toBe('10000');
+    });
   });
 });
 

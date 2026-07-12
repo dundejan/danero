@@ -22,6 +22,7 @@ const ProfileFormSchema = z.object({
   limit100kStrict: z.enum(['strict', 'lenient']),
   timeTestBasis: z.enum(['settlement', 'trade']),
   derivativesExpensesPerDruh: z.enum(['restrictive', 'perDruh']),
+  emtTimeTestExempt: z.enum(['safe', 'lenient']),
 });
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
@@ -38,6 +39,7 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     limit100kStrict: parsed.data.limit100kStrict === 'strict',
     timeTestBasis: parsed.data.timeTestBasis,
     derivativesExpensesPerDruh: parsed.data.derivativesExpensesPerDruh === 'perDruh',
+    emtTimeTestExempt: parsed.data.emtTimeTestExempt === 'lenient',
     updatedAt: new Date(),
   };
 

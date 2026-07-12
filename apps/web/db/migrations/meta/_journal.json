@@ -127,6 +127,13 @@
       "when": 1783849194771,
       "tag": "0017_sour_magdalene",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783853699310,
+      "tag": "0018_salty_starhawk",
+      "breakpoints": true
     }
   ]
 }

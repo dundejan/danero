@@ -4,6 +4,7 @@ import { czkText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import type { Disposal, DisposalAllocation } from '../ledger/ledger';
 import { WarningCollector } from '../warnings';
+import { isEmtIdentifier } from './emt';
 
 export interface AllocationReport {
   lotId: string;
@@ -22,6 +23,8 @@ export interface DisposalReport {
   sellTxId: string;
   isin: string;
   saleDate: IsoDate;
+  /** R-10a: instrument je EMT (stablecoin) — bez hodnotového osvobození zj). */
+  isEmt: boolean;
   grossProceedsCzk: Money;
   exemptProceedsCzk: Money;
   taxableProceedsCzk: Money;
@@ -65,19 +68,33 @@ export interface ExemptionAvailability {
   available: boolean;
   /** Prodeje přede dnem účinnosti nárok na osvobození nemají; null = celé období. */
   effectiveFrom: IsoDate | null;
+  /**
+   * R-10a: detekovat EMT (stablecoiny) podle tickeru — zapíná jen druh
+   * kryptoaktiva (u CP je identifikátorem ISIN, detekce nedává smysl).
+   */
+  detectEmt?: boolean;
 }
 
 interface PreparedDisposal {
   disposal: Disposal;
   grossCzk: Money;
   allocations: Array<{ alloc: DisposalAllocation; proceedsCzk: Money }>;
-  /** Má prodej nárok na osvobození zj)/zk)? U CP vždy true (R-10b). */
-  exemptionEligible: boolean;
+  /** R-10a: instrument je EMT (stablecoin) — zůstává ve stejném druhu § 10. */
+  isEmt: boolean;
+  /** Nárok na hodnotové osvobození zj)/t) — u EMT nikdy (R-10a), jinak dle R-10b. */
+  valueExemptionEligible: boolean;
+  /** Nárok na časový test zk)/u) — u EMT jen s přepínačem emtTimeTestExempt (R-10g). */
+  timeTestEligible: boolean;
   /** Část tržby osvobozená časovým testem (0 u prodejů bez nároku na osvobození). */
   exemptCzk: Money;
   taxableCzk: Money;
-  /** Příspěvek do poolu 100k (R-02c; prodeje bez nároku nepřispívají — KOOV 625, 2.2.1.5). */
+  /** Příspěvek do poolu 100k (R-02c; prodeje bez nároku a EMT nepřispívají). */
   pool100kContributionCzk: Money;
+  /**
+   * R-10g: tržby EMT alokací splňujících časový test (jen prodeje s nárokem dle
+   * R-10b) — vyčíslení dopadu mírnějšího výkladu, počítá se bez ohledu na přepínač.
+   */
+  emtTimeTestableCzk: Money;
 }
 
 export interface PreparedDisposals {
@@ -86,6 +103,13 @@ export interface PreparedDisposals {
   pool100kCzk: Money;
   /** Příjmy osvobozené časovým testem — vstup pro SDÍLENÝ strop 40M (R-03/R-10d). */
   timeTestExemptProceedsCzk: Money;
+  /** R-10a: úhrn hrubých tržeb z prodejů EMT (pro varování CRYPTO_EMT_DETECTED). */
+  emtProceedsCzk: Money;
+  /**
+   * R-10g: tržby EMT alokací splňujících časový test — vyčíslení, co by mírnější
+   * výklad (emtTimeTestExempt) osvobodil. Počítá se vždy, bez ohledu na přepínač.
+   */
+  emtTimeTestableProceedsCzk: Money;
 }
 
 /**
@@ -106,17 +130,23 @@ export function prepareDisposals(
     const eligible =
       exemption.available &&
       (exemption.effectiveFrom === null || disposal.saleDate >= exemption.effectiveFrom);
+    // R-10a: EMT (stablecoin) je z hodnotového osvobození zj) vyloučen vždy;
+    // časový test zk) se na něj vztahuje jen při mírnějším výkladu (R-10g)
+    const isEmt = exemption.detectEmt === true && isEmtIdentifier(disposal.isin);
+    const valueExemptionEligible = eligible && !isEmt;
+    const timeTestEligible = eligible && (!isEmt || options.emtTimeTestExempt);
     const allocations = disposal.allocations.map((alloc) => {
       const share = disposal.quantity.gt(0) ? alloc.quantity.div(disposal.quantity) : ZERO;
       return { alloc, proceedsCzk: grossCzk.mul(share) };
     });
-    const exemptCzk = eligible
+    const timeTestableCzk = eligible
       ? sum(allocations.filter((a) => a.alloc.timeTestExempt).map((a) => a.proceedsCzk))
       : ZERO;
+    const exemptCzk = timeTestEligible ? timeTestableCzk : ZERO;
     const taxableCzk = grossCzk.sub(exemptCzk);
-    // R-02c: striktně celá tržba, mírněji jen testem neosvobozená část;
-    // prodeje bez nároku (R-10b) do limitu 100k nevstupují vůbec
-    const pool100kContributionCzk = !eligible
+    // R-02c: striktně celá tržba, mírněji jen testem neosvobozená část; prodeje
+    // bez nároku (R-10b) a EMT (R-10a) do limitu 100k nevstupují vůbec
+    const pool100kContributionCzk = !valueExemptionEligible
       ? ZERO
       : options.limit100kIncludesTimeTestExempt
         ? grossCzk
@@ -125,18 +155,24 @@ export function prepareDisposals(
       disposal,
       grossCzk,
       allocations,
-      exemptionEligible: eligible,
+      isEmt,
+      valueExemptionEligible,
+      timeTestEligible,
       exemptCzk,
       taxableCzk,
       pool100kContributionCzk,
+      emtTimeTestableCzk: isEmt ? timeTestableCzk : ZERO,
     };
   });
 
+  const emtItems = items.filter((p) => p.isEmt);
   return {
     items,
     totalGrossCzk: sum(items.map((p) => p.grossCzk)),
     pool100kCzk: sum(items.map((p) => p.pool100kContributionCzk)),
     timeTestExemptProceedsCzk: sum(items.map((p) => p.exemptCzk)),
+    emtProceedsCzk: sum(emtItems.map((p) => p.grossCzk)),
+    emtTimeTestableProceedsCzk: sum(emtItems.map((p) => p.emtTimeTestableCzk)),
   };
 }
 
@@ -175,13 +211,16 @@ export function computeSecurities(
   const reports: DisposalReport[] = [];
 
   for (const item of prepared.items) {
-    const { disposal, grossCzk, allocations, exemptionEligible, exemptCzk } = item;
+    const { disposal, grossCzk, allocations, valueExemptionEligible, timeTestEligible, exemptCzk } =
+      item;
+    // R-10a: hodnotové osvobození zj)/t) se na EMT nevztahuje (valueExemptionEligible)
+    const fullyExemptByValue = valueExemptionEligible && exemptUnder100k;
     const allocationReports: AllocationReport[] = [];
     let realizedResult = ZERO;
     for (const { alloc, proceedsCzk } of allocations) {
-      // R-10b: bez nároku na osvobození je alokace zdanitelná i po časovém testu
-      const allocExempt = exemptionEligible && alloc.timeTestExempt;
-      const isTaxable = !exemptionEligible || (!exemptUnder100k && !alloc.timeTestExempt);
+      // R-10b/R-10g: bez nároku na osvobození je alokace zdanitelná i po časovém testu
+      const allocExempt = timeTestEligible && alloc.timeTestExempt;
+      const isTaxable = !allocExempt && !fullyExemptByValue;
       // Nabývací cena + poměrná část nákupního poplatku kurzem dne/roku vynaložení (R-06a),
       // + poměrná část prodejního poplatku kurzem dne/roku prodeje. Počítá se pro
       // všechny alokace (kvůli realizedResultCzk); DAŇOVÝM výdajem je jen u zdanitelných.
@@ -223,11 +262,11 @@ export function computeSecurities(
     // časově osvobozených kusů je zdanitelná i v roce s exemptUnder100k
     const taxedFromCap = exemptCzk.mul(d(1).minus(exemptRatio));
     const exemptAfterCap = exemptCzk.mul(exemptRatio);
-    const fullyExemptByValue = exemptionEligible && exemptUnder100k;
     reports.push({
       sellTxId: disposal.sellTxId,
       isin: disposal.isin,
       saleDate: disposal.saleDate,
+      isEmt: item.isEmt,
       grossProceedsCzk: grossCzk,
       exemptProceedsCzk: fullyExemptByValue ? grossCzk.sub(taxedFromCap) : exemptAfterCap,
       taxableProceedsCzk: fullyExemptByValue ? taxedFromCap : grossCzk.sub(exemptAfterCap),

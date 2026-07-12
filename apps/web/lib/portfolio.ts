@@ -45,6 +45,7 @@ export function profileToEngine(row: ProfileRow): {
       limit100kIncludesTimeTestExempt: row.limit100kStrict,
       timeTestDateBasis: row.timeTestBasis as EngineOptions['timeTestDateBasis'],
       derivativesExpensesPerDruh: row.derivativesExpensesPerDruh,
+      emtTimeTestExempt: row.emtTimeTestExempt,
     },
   };
 }

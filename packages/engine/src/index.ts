@@ -6,6 +6,7 @@ export * from './config/unifiedRates';
 export * from './fx/fx';
 export * from './ledger/ledger';
 export * from './timetest/timeTest';
+export * from './basis/emt';
 export * from './basis/securities';
 export * from './basis/derivatives';
 export * from './basis/dividends';

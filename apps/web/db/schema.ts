@@ -95,6 +95,8 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   timeTestBasis: text('time_test_basis').notNull().default('settlement'),
   // R-12i: prémie bezcenně expirovaných opcí jako výdaj druhu (default = restriktivní NE)
   derivativesExpensesPerDruh: boolean('derivatives_expenses_per_druh').notNull().default(false),
+  // R-10g: časový test osvobozuje i stablecoiny (EMT)? (default = bezpečné NE, zdanit)
+  emtTimeTestExempt: boolean('emt_time_test_exempt').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

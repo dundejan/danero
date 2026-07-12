@@ -1,0 +1,1 @@
+ALTER TABLE "taxpayer_profiles" ADD COLUMN "emt_time_test_exempt" boolean DEFAULT false NOT NULL;
