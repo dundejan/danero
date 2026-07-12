@@ -58,7 +58,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   const rawChange = await page.request.post('/api/auth/change-email', {
     data: { newEmail: 'utocnik@danero.cz' },
   });
-  expect(rawChange.status()).toBe(404);
+  expect(rawChange.status()).toBe(403);
 
   // ── export dat: JSON s transakcemi ───────────────────────────────────────
   const exportResponse = await page.request.get('/api/export');
@@ -81,6 +81,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   await page.getByLabel('Napiš SMAZAT').fill('SMAZAT');
   await page.getByRole('button', { name: 'Nevratně smazat účet' }).click();
   await page.waitForURL(/smazano=1/);
+  await expect(page.getByText('Účet byl smazán.')).toBeVisible();
 
   // přihlášení už nejde — účet neexistuje
   await page.goto('/prihlaseni');

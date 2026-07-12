@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .next/
+# oddělený distDir pro E2E vedle běžícího dev serveru (NEXT_DIST_DIR)
+.next-e2e/
 next-env.d.ts
 .turbo/
 coverage/

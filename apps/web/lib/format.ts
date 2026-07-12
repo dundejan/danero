@@ -36,6 +36,12 @@ export const METHOD_LABEL: Record<string, string> = {
   MAX_LOSS: 'Max. ztráta',
 };
 
+/** Popisky kurzové soustavy (R-06) ve srovnáních variant — jednotné pro celé UI. */
+export const FX_LABEL: Record<string, string> = {
+  UNIFIED: 'jednotný',
+  CNB_DAILY: 'denní ČNB',
+};
+
 /** České zkratky měsíců (osy grafů, horizont osvobození). */
 export const MONTH_LABELS = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
 

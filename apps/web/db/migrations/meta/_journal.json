@@ -134,6 +134,13 @@
       "when": 1783853699310,
       "tag": "0018_salty_starhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783873884450,
+      "tag": "0019_wandering_kat_farrell",
+      "breakpoints": true
     }
   ]
 }

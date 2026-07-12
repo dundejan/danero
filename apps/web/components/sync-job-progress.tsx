@@ -37,7 +37,7 @@ export function SyncJobProgress({
 }: {
   initialJob: SyncJobView;
   accountId: string;
-  /** Název brokera pro texty fází (např. „Trading212“). */
+  /** Název brokera pro texty fází (např. „Trading 212“). */
   broker?: string;
 }) {
   const router = useRouter();
@@ -81,7 +81,7 @@ export function SyncJobProgress({
       {progress?.mode === 'full' && (
         <p className="text-xs text-inkoust-tlumeny">
           První synchronizace prochází všechny roky od založení účtu — kvůli limitům
-          Trading212 může trvat i deset minut. Klidně odejdi, poběží dál.
+          Trading 212 může trvat i deset minut. Klidně odejdi, poběží dál.
         </p>
       )}
       {progress?.years && progress.years.length > 0 && (
@@ -90,7 +90,7 @@ export function SyncJobProgress({
             <li key={year.year} className="flex items-baseline gap-3 font-mono text-xs">
               <span className="font-semibold text-inkoust">{year.year}</span>
               {year.status === 'running' ? (
-                <span className="text-inkoust-tlumeny">Trading212 generuje export…</span>
+                <span className="text-inkoust-tlumeny">Trading 212 generuje export…</span>
               ) : year.status === 'empty' ? (
                 <span className="text-inkoust-tlumeny">žádné transakce</span>
               ) : (

@@ -15,7 +15,7 @@ const INCLUDED = [
   'Hlídání limitů a časových testů s e-mailovými upozorněními',
   'Horizont osvobození a simulátor prodeje',
   'Podklady k přiznání včetně XML pro podatelnu',
-  'Přes 25 podporovaných platforem i univerzální šablona',
+  '29 podporovaných platforem — API, výpisy i univerzální šablona',
   'Krypto i deriváty jako samostatné druhy příjmů',
   'Dvoufaktorové přihlášení, klíče šifrované AES-256-GCM',
   'Export a smazání dat kdykoli — účet je tvůj',
@@ -23,7 +23,7 @@ const INCLUDED = [
 
 const CENIK_FAQ = [
   {
-    q: 'Co znamená „beta zdarma"?',
+    q: 'Co znamená „beta zdarma“?',
     a: 'Všechny funkce bez omezení a bez karty — stačí e-mail. Hledáme první uživatele a zpětnou vazbu, ne platby.',
   },
   {

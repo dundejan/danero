@@ -23,13 +23,13 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await expect(page.getByRole('link', { name: /Simulátor — prodej nanečisto/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Podmínky užití' })).toBeVisible();
 
-  // verdikt-box: prolomený limit 50k → „podáš přiznání" + orientační daň
+  // verdikt-box: prolomený limit 50k → „podáš přiznání“ + orientační daň
   await expect(page.getByText(/podáš daňové přiznání/)).toBeVisible();
   await expect(page.getByText('Orientační daň z investic:')).toBeVisible();
 
   // odměrky limitů (50k prolomený, 100k CRITICAL, krypto OK)
   await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
-  await expect(page.getByText('Osvobození prodejů CP — 100 000 Kč')).toBeVisible();
+  await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
   await expect(page.getByText('Osvobození krypta — 100 000 Kč')).toBeVisible();
 
   // horizont osvobození s tečkami (SVG pás)
@@ -37,7 +37,7 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
   // demo upozornění z hlídače (prolomený limit) — .first(): týž text nese
-  // i varování enginu v „Kontrolách výpočtu"
+  // i varování enginu v „Kontrolách výpočtu“
   await expect(page.getByText('Poslední upozornění')).toBeVisible();
   await expect(page.getByText(/Prolomen limit 50.*paušální/).first()).toBeVisible();
 
@@ -59,7 +59,7 @@ test('demo portfolio: hodnota, tabulka s hledáním, donut, deriváty → detail
   await page.goto('/demo/portfolio');
   await expectDemoBanner(page);
 
-  // KPI: hodnota portfolia je oceněná (žádné „—")
+  // KPI: hodnota portfolia je oceněná (žádné „—“)
   await expect(page.getByText('Hodnota portfolia')).toBeVisible();
   await expect(page.getByText(/mil\.|\d{3}\s?\d{3}\s?Kč/).first()).toBeVisible();
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
@@ -97,7 +97,7 @@ test('demo portfolio: hodnota, tabulka s hledáním, donut, deriváty → detail
   await expect(page.getByText('už bez daně').first()).toBeVisible();
   await expect(page.getByText(/Historie \(\d+\)/)).toBeVisible();
 
-  // „Simulovat prodej" vede do demo simulátoru s předvyplněnou pozicí
+  // „Simulovat prodej“ vede do demo simulátoru s předvyplněnou pozicí
   await page.getByRole('link', { name: 'Simulovat prodej' }).click();
   await page.waitForURL('**/demo/simulator?isin=IE00BK5BQT80');
 });
@@ -177,5 +177,5 @@ test('onboarding: registrace → průvodce → profil → výzva k datům', asyn
   await page.waitForURL('**/prehled');
   await page.goto('/vitejte');
   await expect(page.getByText('Krok 2: Nahraj svoje obchody')).toBeVisible();
-  await expect(page.getByText('Trading212 / IBKR API')).toBeVisible();
+  await expect(page.getByText('Trading 212 / IBKR API')).toBeVisible();
 });

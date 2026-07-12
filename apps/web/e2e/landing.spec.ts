@@ -24,13 +24,13 @@ test('landing: hero, živé komponenty a ceník', async ({ page }) => {
   // živé odměrky limitů z demo enginu (50k prolomený, 100k těsně pod limitem)
   await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
   await expect(page.getByText(/% · přes limit/)).toBeVisible();
-  await expect(page.getByText('Osvobození prodejů CP — 100 000 Kč')).toBeVisible();
+  await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
   await expect(page.getByText(/% · těsně pod limitem/)).toBeVisible();
 
   // živý horizont osvobození (SVG pás s tečkami)
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
-  // kotvy v hlavičce (Jak to funguje · Ceník · FAQ)
+  // odkaz v hlavičce (menu: Platformy · Ceník · Časté otázky · O projektu)
   await expect(page.locator('header').getByRole('link', { name: 'Ceník' })).toBeVisible();
 
   // ceník přímo na stránce — beta zdarma + cena po spuštění s měsíční kotvou

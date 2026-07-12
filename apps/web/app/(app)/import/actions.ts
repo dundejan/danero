@@ -107,10 +107,11 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
     id: crypto.randomUUID(),
     userId: user.id,
     broker: 'trading212',
+    label: 'Trading 212',
     credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
   });
 
-  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading212');
+  await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading 212');
   revalidatePath('/import');
   redirect('/import');
 }

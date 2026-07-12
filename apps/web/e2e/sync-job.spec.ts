@@ -21,12 +21,12 @@ test('T212 sync jako job: připojení klíče → průběh po letech → výsled
 
   // průběh: fáze + stavy per rok (polling každé 3 s)
   await expect(
-    page.getByText(/Synchronizace čeká ve frontě|Připojuji se k Trading212|Stahuji transakce/),
+    page.getByText(/Synchronizace čeká ve frontě|Připojuji se k Trading 212|Stahuji transakce/),
   ).toBeVisible();
   await expect(page.getByText('2026', { exact: true })).toBeVisible();
 
   // ── dokončení: stránka se překreslí, rekonciliace sedí ──────────────────
-  await expect(page.getByText(/Pozice sedí s Trading212/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Pozice sedí s Trading 212/)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('t212-api-2026.csv')).toBeVisible();
   await expect(page.getByText('t212-api-2024.csv')).toBeVisible();
 

@@ -66,6 +66,14 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Kurzy**: jednotné kurzy v `apps/web/lib/tax-config.ts` jsou zatím ORIENTAČNÍ
   (přesný jen 2025 dle D-75) — výdaj se přepočítává kurzem roku nákupu!
 - `pkill` nezabije `next start` — použij `fuser -k PORT/tcp`.
+- Next 16 odmítne druhý `next dev` nad stejným adresářem (zámek v `distDir/dev/lock`,
+  i na jiném portu) — když už dev server běží (třeba jiná session), E2E pusť
+  s odděleným distDir: `NEXT_DIST_DIR=.next-e2e pnpm test:e2e`. Alternativa
+  `pnpm test:e2e:prod` (build + `next start`) funguje, ale server actions v ní
+  mají občasné mnohasekundové latence (lokální kuriozita `next start` + PGlite;
+  produkce běží na Postgres) — sada pak flakuje na 15s expect timeoutech.
+- E2E timeouty jsou těsné (15 s) — na vytíženém stroji (souběžná session, load > 5)
+  sada náhodně padá; spouštěj při klidu, pády ověř rerunnem konkrétního specu.
 - Po neúspěšném syncu se nesmí nastavit `lastSyncedAt` (jinak se plná historie už nestáhne).
 
 ## Stav a plán

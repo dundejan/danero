@@ -6,12 +6,15 @@ import { WaitlistForm } from '@/components/waitlist-form';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
 import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
+import { compareVariants, type VariantComparison } from '@danero/engine';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
+import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { computeNotificationCandidates } from '@/lib/notifications';
+import { engineInputForUser } from '@/lib/portfolio';
 
-// „dnešek" dema se odvíjí od skutečného data (horizont, upozornění) —
+// „dnešek“ dema se odvíjí od skutečného data (horizont, upozornění) —
 // žádný prerender při buildu; engine výsledek drží sdílená cache s /demo
 export const dynamic = 'force-dynamic';
 
@@ -100,26 +103,34 @@ function BrowserFrame({ url, children }: { url: string; children: React.ReactNod
   );
 }
 
-/** Tabulka variant párování jako živé HTML (screenshot byl při 544 px nečitelný).
-    Hodnoty odpovídají demo reportu za rok 2025 — tam se metody skutečně liší. */
-const VARIANT_ROWS: {
-  method: string;
-  fx: string;
-  base: string;
-  tax: string;
-  badge?: 'aktivní' | 'nejvýhodnější';
-}[] = [
-  { method: 'FIFO', fx: 'jednotný', base: '23 051', tax: '4 379', badge: 'aktivní' },
-  { method: 'FIFO', fx: 'denní ČNB', base: '23 857', tax: '4 504', badge: 'aktivní' },
-  { method: 'LIFO', fx: 'jednotný', base: '0', tax: '921', badge: 'nejvýhodnější' },
-  { method: 'LIFO', fx: 'denní ČNB', base: '0', tax: '924' },
-  { method: 'Max. zisk', fx: 'jednotný', base: '23 051', tax: '4 379' },
-  { method: 'Max. zisk', fx: 'denní ČNB', base: '23 857', tax: '4 504' },
-  { method: 'Max. ztráta', fx: 'jednotný', base: '0', tax: '921' },
-  { method: 'Max. ztráta', fx: 'denní ČNB', base: '0', tax: '924' },
-];
+/** Varianty párování pro landing — živý engine nad demo datasetem za poslední
+    uzavřený rok (tam se metody skutečně liší). Memo per „dnešek“ dema: dataset
+    je pro daný den deterministický a 8 přepočtů stačí jednou denně; rok se
+    odvozuje z `today` UVNITŘ, aby klíč memo nemohl lhát. */
+let variantsMemoDay: string | undefined;
+let variantsMemoValue: VariantComparison | undefined;
+function demoVariants(
+  today: string,
+  dataset: Pick<ReturnType<typeof demoDataset>, 'txs' | 'profile' | 'dailyRates'>,
+): VariantComparison {
+  if (variantsMemoDay !== today || !variantsMemoValue) {
+    const variantYear = Number(today.slice(0, 4)) - 1;
+    variantsMemoValue = compareVariants(
+      engineInputForUser(dataset.txs, dataset.profile, variantYear, dataset.dailyRates),
+    );
+    variantsMemoDay = today;
+  }
+  return variantsMemoValue;
+}
 
-function VariantTableMock() {
+type Variant = VariantComparison['variants'][number];
+
+/** Shoda polí, ne identita objektů — přežije i refactor enginu vracející kopii. */
+const isRecommended = (row: Variant, recommended: Variant): boolean =>
+  row.matchingMethod === recommended.matchingMethod && row.fxMethod === recommended.fxMethod;
+
+function VariantTable({ comparison }: { comparison: VariantComparison }) {
+  const { variants, recommended } = comparison;
   return (
     <div className="p-4 sm:p-5">
       <p className="font-mono text-[11px] font-semibold uppercase tracking-wide text-inkoust-tlumeny">
@@ -130,7 +141,10 @@ function VariantTableMock() {
           <tr className="border-b border-linka text-left text-[11px] uppercase tracking-wide text-inkoust-tlumeny">
             <th scope="col" className="py-1.5 pr-3 font-medium">Metoda</th>
             <th scope="col" className="py-1.5 pr-3 font-medium">Kurzy</th>
-            <th scope="col" className="py-1.5 pr-3 text-right font-medium">Základ § 10</th>
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+              {/* „základ daně“ místo paragrafu — landing nesmí chtít znalost zákona */}
+              Základ daně
+            </th>
             <th scope="col" className="py-1.5 pr-3 text-right font-medium">Daň</th>
             <th scope="col" className="py-1.5 font-medium">
               <span className="sr-only">Stav</span>
@@ -138,19 +152,28 @@ function VariantTableMock() {
           </tr>
         </thead>
         <tbody>
-          {VARIANT_ROWS.map((row, i) => (
-            <tr key={i} className="border-b border-linka/60 last:border-0">
-              <td className="py-1.5 pr-3 font-medium">{row.method}</td>
-              <td className="py-1.5 pr-3 text-inkoust-tlumeny">{row.fx}</td>
-              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">{row.base} Kč</td>
-              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">{row.tax} Kč</td>
+          {variants.map((row) => (
+            <tr
+              key={`${row.matchingMethod}-${row.fxMethod}`}
+              className="border-b border-linka/60 last:border-0"
+            >
+              <td className="py-1.5 pr-3 font-medium">{METHOD_LABEL[row.matchingMethod]}</td>
+              <td className="py-1.5 pr-3 text-inkoust-tlumeny">{FX_LABEL[row.fxMethod]}</td>
+              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">
+                {czk(row.base10Czk)}
+              </td>
+              <td className="whitespace-nowrap py-1.5 pr-3 text-right font-mono tabular-nums">
+                {czk(row.taxCzk)}
+              </td>
               <td className="py-1.5 text-right">
-                {row.badge === 'nejvýhodnější' && (
+                {/* odznaky nezávisle (jako v reálném reportu) — „aktivní“ je
+                    vlastnost řádku (default FIFO), ne stav vylučující doporučení */}
+                {isRecommended(row, recommended) && (
                   <span className="whitespace-nowrap rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova-text">
                     nejvýhodnější
                   </span>
-                )}
-                {row.badge === 'aktivní' && (
+                )}{' '}
+                {row.matchingMethod === 'FIFO' && (
                   <span className="rounded-full bg-pozadi px-2 py-0.5 font-mono text-[11px] text-inkoust-tlumeny">
                     aktivní
                   </span>
@@ -175,7 +198,7 @@ const CTA_SECONDARY =
 /* ── obsah ────────────────────────────────────────────────────────────────── */
 
 const TRUST = [
-  // přesně „XML podání" — podatelna ověřuje strukturu podání, ne věcnou
+  // přesně „XML podání“ — podatelna ověřuje strukturu podání, ne věcnou
   // správnost výpočtů (nález V-5 právního auditu; detail vysvětluje FAQ)
   { icon: <IconStamp />, text: 'XML podání ověřená zkušební podatelnou EPO' },
   { icon: <IconScale />, text: 'Počítáme opatrně — a ukážeme, kolik by šlo ušetřit' },
@@ -186,7 +209,7 @@ const TRUST = [
 const STEPS = [
   {
     title: 'Připoj svého brokera',
-    body: 'Trading 212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: čteme jich přes 25, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase.',
+    body: 'Trading 212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: ze 17 platforem ho čteme automaticky, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase; u devíti dalších tě provedeme univerzální šablonou.',
   },
   {
     title: 'Danero hlídá celý rok',
@@ -199,11 +222,18 @@ const STEPS = [
 ] as const;
 
 
-export default function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ smazano?: string }>;
+}) {
+  // jediné místo, kam uživatel po nevratném smazání účtu doputuje — bez
+  // potvrzení by nevěděl, jestli se smazání povedlo
+  const { smazano } = await searchParams;
   // živá data pro landing = stejný deterministický dataset a stejný čistý
   // engine jako demo prohlídka — stránka ukazuje skutečné komponenty aplikace
   const today = demoToday();
-  const { txs, profile, prices } = demoDataset(today);
+  const { txs, profile, prices, dailyRates } = demoDataset(today);
   const year = Number(today.slice(0, 4));
   const { result, positions, labels } = analyzeForUserCached(
     DEMO_USER_ID,
@@ -217,12 +247,38 @@ export default function LandingPage() {
   const exemptionSoon = candidates.find((c) => c.dedupeKey.startsWith('tt30|'));
   const limitBroken = candidates.find((c) => c.dedupeKey.startsWith('limit|50k|EXCEEDED'));
   const limitCritical = candidates.find((c) => c.dedupeKey.startsWith('limit|100k|CRITICAL'));
+  // tabulka variant za poslední uzavřený rok — živě z enginu, žádná zamrzlá čísla
+  const variantYear = year - 1;
+  const comparison = demoVariants(today, { txs, profile, dailyRates });
+  const variantRow = (method: Variant['matchingMethod'], fx: Variant['fxMethod']) =>
+    comparison.variants.find((v) => v.matchingMethod === method && v.fxMethod === fx);
+  // mobilní výtah: FIFO (aktivní default) v obou kurzech + VŽDY doporučený řádek —
+  // jinak by odznak „nejvýhodnější“ mohl z mobilu tiše zmizet, až se dataset posune
+  const mobileRows = [variantRow('FIFO', 'UNIFIED'), variantRow('FIFO', 'CNB_DAILY')].filter(
+    (row): row is Variant => row !== undefined,
+  );
+  if (!mobileRows.some((row) => isRecommended(row, comparison.recommended))) {
+    mobileRows.push(comparison.recommended);
+  } else {
+    const lifo = variantRow('LIFO', 'UNIFIED');
+    if (lifo) mobileRows.push(lifo);
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
       <MarketingHeader />
 
       <main id="obsah" className="mx-auto w-full max-w-6xl flex-1 px-6">
+        {smazano === '1' && (
+          <p
+            role="status"
+            className="mt-6 rounded-md border border-zelena/40 bg-zelena/10 px-4 py-3 text-sm text-inkoust"
+          >
+            <span className="font-semibold">Účet byl smazán.</span> Všechna tvoje data —
+            transakce, profily i šifrované API klíče — jsou nenávratně pryč. Díky, žes
+            Danero zkusil; kdyby ses vrátil, začneš s čistým štítem.
+          </p>
+        )}
         {/* ── hero: úleva + skutečná aplikace se živými upozorněními ───────── */}
         <section aria-labelledby="hero-nadpis" className="pt-12 md:pt-20">
           <h1
@@ -294,7 +350,7 @@ export default function LandingPage() {
             <BrowserFrame url="danero.cz/prehled">
               <Image
                 src="/marketing/hero-light.png"
-                alt="Přehled aplikace Danero: verdikt „podáš daňové přiznání“ a odměrky čerpání limitů"
+                alt="Přehled aplikace Danero: verdikt „podáš daňové přiznání“ a ukazatele čerpání limitů"
                 width={1440}
                 height={465}
                 priority
@@ -380,7 +436,7 @@ export default function LandingPage() {
                 headingAs="h3"
               />
               <LimitGauge
-                label="Osvobození prodejů CP — 100 000 Kč"
+                label="Osvobození prodejů cenných papírů — 100 000 Kč"
                 hint="Do 100 000 Kč tržeb z prodejů za rok jsou všechny prodeje osvobozené."
                 status={result.limits.limit100k}
                 headingAs="h3"
@@ -464,19 +520,19 @@ export default function LandingPage() {
               </p>
             </div>
             {/* místo screenshotu (text byl při 544px nečitelný ~5px) živá HTML
-                tabulka — ostrá v každé velikosti, nativní dark mode; čísla jsou
-                skutečné z demo reportu za rok 2025, kde se metody párování liší */}
+                tabulka — ostrá v každé velikosti, nativní dark mode; čísla počítá
+                engine z demo datasetu za poslední uzavřený rok (žádná zamrzlá) */}
             <div className="hidden sm:block">
               <BrowserFrame url="danero.cz/report">
-                <VariantTableMock />
+                <VariantTable comparison={comparison} />
               </BrowserFrame>
               <p className="mt-3 text-xs text-inkoust-tlumeny">
                 Skutečná čísla z{' '}
                 <Link
-                  href="/demo/report?rok=2025"
+                  href={`/demo/report?rok=${variantYear}`}
                   className="text-ruzova-text underline underline-offset-2"
                 >
-                  demo reportu
+                  demo reportu za rok {variantYear}
                 </Link>{' '}
                 — celou tabulku (4 metody × 2 kurzy) si projdeš v demu.
               </p>
@@ -486,40 +542,42 @@ export default function LandingPage() {
                 Porovnání variant párování
               </p>
               <ul className="mt-2 divide-y divide-linka text-sm">
-                <li className="flex items-baseline justify-between gap-3 py-2.5">
-                  <span className="font-semibold">
-                    FIFO{' '}
-                    <span className="font-normal text-inkoust-tlumeny">· jednotný kurz</span>
-                  </span>
-                  <span className="text-right tabular-nums">
-                    {'daň 4\u00A0379\u00A0Kč'}{' '}
-                    <span className="rounded-full bg-pozadi px-2 py-0.5 font-mono text-[11px] text-inkoust-tlumeny">
-                      aktivní
+                {mobileRows.map((row) => (
+                  <li
+                    key={`${row.matchingMethod}-${row.fxMethod}`}
+                    className="flex items-baseline justify-between gap-3 py-2.5"
+                  >
+                    <span className="font-semibold">
+                      {METHOD_LABEL[row.matchingMethod]}{' '}
+                      <span className="font-normal text-inkoust-tlumeny">
+                        · {FX_LABEL[row.fxMethod]}
+                      </span>
                     </span>
-                  </span>
-                </li>
-                <li className="flex items-baseline justify-between gap-3 py-2.5">
-                  <span className="font-semibold">
-                    FIFO <span className="font-normal text-inkoust-tlumeny">· denní ČNB</span>
-                  </span>
-                  <span className="tabular-nums">{'daň 4\u00A0504\u00A0Kč'}</span>
-                </li>
-                <li className="flex items-baseline justify-between gap-3 py-2.5">
-                  <span className="font-semibold">
-                    LIFO{' '}
-                    <span className="font-normal text-inkoust-tlumeny">· jednotný kurz</span>
-                  </span>
-                  <span className="text-right tabular-nums">
-                    {'daň 921\u00A0Kč'}{' '}
-                    <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova-text">
-                      nejvýhodnější
+                    <span className="text-right tabular-nums">
+                      daň {czk(row.taxCzk)}
+                      {isRecommended(row, comparison.recommended) && (
+                        <>
+                          {' '}
+                          <span className="rounded-full bg-ruzova/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-ruzova-text">
+                            nejvýhodnější
+                          </span>
+                        </>
+                      )}
+                      {row.matchingMethod === 'FIFO' && row.fxMethod === 'UNIFIED' && (
+                        <>
+                          {' '}
+                          <span className="rounded-full bg-pozadi px-2 py-0.5 font-mono text-[11px] text-inkoust-tlumeny">
+                            aktivní
+                          </span>
+                        </>
+                      )}
                     </span>
-                  </span>
-                </li>
+                  </li>
+                ))}
               </ul>
               <p className="mt-3 text-xs text-inkoust-tlumeny">
-                Skutečná čísla z demo reportu za rok 2025 — celou tabulku (4 metody × 2 kurzy) si
-                projdeš v demu.
+                Skutečná čísla z demo reportu za rok {variantYear} — celou tabulku (4 metody ×
+                2 kurzy) si projdeš v demu.
               </p>
             </div>
           </div>

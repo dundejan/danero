@@ -20,6 +20,18 @@ export default function SignInPage() {
         </p>
       </div>
       <AuthForm mode="prihlaseni" />
+      {/* samoobslužný reset hesla čeká na odesílání e-mailů (Resend) — do té
+          doby aspoň poctivá cesta, ne mrtvý konec */}
+      <p className="text-xs text-inkoust-tlumeny">
+        Zapomněl jsi heslo? Samoobslužné obnovení zatím nemáme — napiš na{' '}
+        <a
+          href="mailto:dunder.jan@gmail.com"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+        >
+          dunder.jan@gmail.com
+        </a>{' '}
+        a vyřešíme to spolu.
+      </p>
     </main>
   );
 }

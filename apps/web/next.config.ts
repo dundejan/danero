@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 
-/* Dev overlay („N issues" bublina) mate při vizuálních kontrolách a screenshotech
+/* Dev overlay („N issues“ bublina) mate při vizuálních kontrolách a screenshotech
    — jediný trvalý nález je známý dev-only konflikt CSP × React eval. */
 
 /**
@@ -34,6 +34,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Next 16 zamyká dev server per distDir (.next/dev/lock) — oddělený distDir
+  // umožní E2E dev server vedle běžícího `pnpm dev` (NEXT_DIST_DIR=.next-e2e)
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // workspace balíčky exportují TS zdrojáky — Next je transpiluje sám
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)
