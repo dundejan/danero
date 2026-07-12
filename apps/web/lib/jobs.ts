@@ -231,10 +231,13 @@ async function withSyncAccount<T>(
 ): Promise<T> {
   const { accountId } = jobPayload(job);
   const accounts = accountId
-    ? await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+    ? await db
+        .select()
+        .from(brokerAccounts)
+        .where(and(eq(brokerAccounts.id, accountId), eq(brokerAccounts.userId, job.userId)))
     : [];
   const account = accounts[0];
-  if (!account || account.userId !== job.userId) throw new Error('Účet u brokera už neexistuje.');
+  if (!account) throw new Error('Účet u brokera už neexistuje.');
 
   const onProgress = async (progress: SyncProgress) => {
     // odpojení účtu uprostřed běhu musí sync zastavit — jinak by „odpojený“

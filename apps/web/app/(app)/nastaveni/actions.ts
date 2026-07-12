@@ -94,7 +94,7 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
 }
 
 const ChangeEmailSchema = z.object({
-  newEmail: z.string().email(),
+  newEmail: z.email(),
   currentPassword: z.string().min(1),
 });
 
@@ -119,12 +119,15 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     if (!valid) redirect('/nastaveni?chyba=email-heslo');
   }
 
-  const { api, requestHeaders } = await authApi();
+  // endpoint /change-email je vypnutý (obcházel kontrolu hesla) — e-mail se
+  // mění přímo tady, unikátnost hlídá DB constraint
   try {
-    await api.changeEmail({
-      headers: requestHeaders,
-      body: { newEmail: parsed.data.newEmail },
-    });
+    const db = await getDb();
+    const { user: userTable } = await import('@/db/schema');
+    await db
+      .update(userTable)
+      .set({ email: parsed.data.newEmail.toLowerCase(), updatedAt: new Date() })
+      .where(eq(userTable.id, user.id));
   } catch (error) {
     logEvent('error', 'account.change_email_failed', { error: error instanceof Error ? error.message : String(error) });
     redirect('/nastaveni?chyba=email-obsazeny');

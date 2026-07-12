@@ -60,11 +60,13 @@ function buildAuth(db: Db) {
     },
     user: {
       // GDPR práva z /soukromi: hard delete (FK kaskády smažou i transakce
-      // a šifrované broker klíče) a změna e-mailu — obojí jen s heslem/session
+      // a šifrované broker klíče) — heslo vynucuje Better Auth uvnitř endpointu
       deleteUser: { enabled: true },
-      // e-mailová verifikace zatím není (Resend klíč čeká na Jana) — bez
-      // updateEmailWithoutVerification by /change-email vždy spadl
-      changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+      // Změna e-mailu VYPNUTA na úrovni endpointu: surové /change-email chce
+      // jen session cookie a bez verifikačních e-mailů (Resend čeká na klíč)
+      // by unesená session tiše přepsala identitu účtu. Jediná cesta je
+      // server action changeEmailAction s re-autentizací heslem (UPDATE přímo).
+      changeEmail: { enabled: false },
     },
     // G10a: rate limiting auth endpointů — jen v produkci (E2E registruje
     // opakovaně z jedné IP), DB storage kvůli serverless

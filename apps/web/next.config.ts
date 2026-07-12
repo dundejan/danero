@@ -38,6 +38,12 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)
   serverExternalPackages: ['@electric-sql/pglite', 'postgres', 'exceljs'],
+  experimental: {
+    // upload výpisů jde přes server action — default 1 MB by větší exporty
+    // (XTB/IBKR XLSX) utnul syrovou 413 dřív, než doběhne česká kontrola
+    // 20 MB v import/actions.ts (MAX_FILE_BYTES + rezerva na multipart)
+    serverActions: { bodySizeLimit: '25mb' },
+  },
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
   },
