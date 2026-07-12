@@ -31,7 +31,7 @@ export default function PruvodcePage() {
       <PageHero
         eyebrow="Průvodce"
         title="Průvodce daněmi z investic"
-        lede="Pravidla, limity a platformy bez žargonu. Každý článek začíná krátkou odpovědí a pokračuje konkrétními příklady s čísly — podle stejné metodiky, kterou počítá aplikace."
+        lede="Pravidla a limity bez žargonu. Každý článek začíná krátkou odpovědí a pokračuje konkrétními příklady s čísly — podle stejné metodiky, kterou počítá aplikace."
       />
 
       <ul className="mt-12 grid gap-4 sm:grid-cols-2">
