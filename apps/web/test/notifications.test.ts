@@ -116,6 +116,7 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
         fxMethod: 'UNIFIED',
         limit100kStrict: true,
   derivativesExpensesPerDruh: false,
+  emtTimeTestExempt: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -132,6 +133,51 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
     expect(crypto!.title).toContain('krypta');
     // CP limit zůstal nedotčený — krypto tržby ho nesmí prolomit
     expect(candidates.some((c) => c.dedupeKey === 'limit|100k|EXCEEDED|2026')).toBe(false);
+  });
+});
+
+describe('60% pásmo hlídače (LIMIT_WARNING)', () => {
+  it('čerpání přes 60 % limitu 100k vytvoří LIMIT_WARNING — web slibuje e-mail při 60/85/100 %', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+
+    // prodej CP za 70 000 Kč = 70 % limitu 100k (pásmo WARNING); prodej je
+    // hodnotově osvobozený → limit 50k pro paušál zůstává v pásmu OK
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'wb', isin: 'US0378331005', quantity: '10', pricePerShare: '5000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 'ws', isin: 'US0378331005', quantity: '10', pricePerShare: '7000', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, {
+        userId: 'u1',
+        regime: 'PAUSAL',
+        hasBusinessAssets: false,
+        w8benFiled: true,
+        otherIncomeCzk: '0',
+        matchingMethod: 'FIFO',
+        fxMethod: 'UNIFIED',
+        limit100kStrict: true,
+        derivativesExpensesPerDruh: false,
+        emtTimeTestExempt: false,
+        timeTestBasis: 'settlement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }, 2026),
+    );
+    const candidates = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+    });
+    const warning = candidates.find((c) => c.dedupeKey === 'limit|100k|WARNING|2026');
+    expect(warning).toBeDefined();
+    expect(warning!.type).toBe('LIMIT_WARNING');
+    expect(warning!.body).toContain('přes 60 %');
+    // 50k limit je v pásmu OK — žádná událost k němu
+    expect(candidates.some((c) => c.dedupeKey.startsWith('limit|50k|'))).toBe(false);
   });
 });
 

@@ -123,6 +123,15 @@ export function computeNotificationCandidates(args: {
         title: `Blížíš se: ${event.label}`,
         body: `${usage} — přes 85 %. ${event.consequence}`,
       });
+    } else if (event.status.zone === 'WARNING') {
+      // web slibuje e-mail při 60, 85 a 100 % — 60% pásmo musí reálně existovat
+      // (nález verifikace průvodce: dřív vznikaly události až od 85 %)
+      add({
+        dedupeKey: `limit|${event.key}|WARNING|${year}`,
+        type: 'LIMIT_WARNING',
+        title: `Za polovinou: ${event.label}`,
+        body: `${usage} — přes 60 %. ${event.consequence}`,
+      });
     }
   }
 
