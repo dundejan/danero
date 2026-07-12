@@ -48,7 +48,9 @@ export function computeNotificationCandidates(args: {
           dedupeKey: `tt7|${position.isin}|${lot.exemptFrom}`,
           type: 'TIME_TEST_7',
           title: `${label}: osvobození už za ${lot.daysToExempt} ${lot.daysToExempt === 1 ? 'den' : 'dní'}`,
-          body: `${amount} splní časový test ${czDate(lot.exemptFrom)}. Pokud plánuješ prodej, počkej — ušetříš daň z celého zisku.`,
+          // fakt + termín, žádný imperativ („počkej") — individualizovaný pokyn
+          // by se blížil radě dle § 1 zákona 523/1992 Sb. (nález V-4 právního auditu)
+          body: `${amount} splní časový test ${czDate(lot.exemptFrom)}. Prodej po tomto datu bude od daně osvobozený — před ním se zisk daní celý.`,
         });
       }
       if (lot.isExempt && diffDays(lot.exemptFrom, today) <= 3) {
@@ -56,7 +58,9 @@ export function computeNotificationCandidates(args: {
           dedupeKey: `ttdone|${position.isin}|${lot.exemptFrom}`,
           type: 'TIME_TEST_DONE',
           title: `${label}: osvobozeno 🎉`,
-          body: `${amount} od ${czDate(lot.exemptFrom)} splňuje časový test — prodej je osvobozený od daně a nepočítá se do žádného limitu.`,
+          // POZOR: při bezpečném výkladu (R-02c striktně, default) se i časově
+          // osvobozená tržba počítá do úhrnu 100k — netvrdit opak (nález 3 auditu)
+          body: `${amount} od ${czDate(lot.exemptFrom)} splňuje časový test — prodej je osvobozený od daně. Při bezpečném výkladu se ale tržba pořád počítá do ročního úhrnu 100 000 Kč — dopad prodeje si ověř v simulátoru.`,
         });
       }
     }
@@ -169,7 +173,7 @@ export function calendarCandidates(args: {
       dedupeKey: `rocni|${year - 1}`,
       type: 'YEAR_SUMMARY',
       title: `Podklady za rok ${year - 1} jsou připravené`,
-      body: `Daňový report za ${year - 1} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do 1. 4., elektronické do 2. 5.`,
+      body: `Daňový report za ${year - 1} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do 1. 4., elektronické do 2. 5. (připadne-li termín na víkend či svátek, posouvá se na nejbližší pracovní den).`,
     });
   }
   if (hadActivityLastYear && today >= `${year}-03-15` && today <= `${year}-04-01`) {
@@ -177,7 +181,7 @@ export function calendarCandidates(args: {
       dedupeKey: `termin|papir|${year}`,
       type: 'DEADLINE',
       title: 'Blíží se termín přiznání: 1. dubna',
-      body: `Papírové přiznání za rok ${year - 1} se podává do 1. 4. Podáváš-li elektronicky (mojedane.cz), máš čas do 2. 5. — XML export najdeš v reportu.`,
+      body: `Papírové přiznání za rok ${year - 1} se podává do 1. 4. Podáváš-li elektronicky (mojedane.cz), máš čas do 2. 5. (víkend a svátek posouvá termín na nejbližší pracovní den) — XML export najdeš v reportu.`,
     });
   }
   if (hadActivityLastYear && today >= `${year}-04-15` && today <= `${year}-05-02`) {
@@ -185,7 +189,7 @@ export function calendarCandidates(args: {
       dedupeKey: `termin|elektronicky|${year}`,
       type: 'DEADLINE',
       title: 'Blíží se termín elektronického přiznání: 2. května',
-      body: `Elektronické přiznání za rok ${year - 1} se podává do 2. 5. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
+      body: `Elektronické přiznání za rok ${year - 1} se podává do 2. 5. — připadne-li na víkend či svátek, platí nejbližší pracovní den. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
     });
   }
   return out;

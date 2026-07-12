@@ -33,9 +33,12 @@ export default function TermsPage() {
 
         <h2 className="font-display text-lg font-semibold">2. Beta provoz</h2>
         <p>
-          Služba běží v beta režimu a je poskytována „tak, jak je“, bezplatně a bez záruky
-          dostupnosti či úplnosti výpočtů. Sporné výklady daňových předpisů aplikace
-          viditelně označuje a volba výkladu je na tobě.
+          Služba běží v beta režimu a je poskytována bezplatně. Co konkrétně beta
+          znamená: služba nemá garantovanou dostupnost, podpora méně obvyklých brokerů
+          se teprve ladí (výpis ti ale do pár dní podpoříme) a jednotný kurz pro běžný
+          rok je orientační, dokud GFŘ nevydá pokyn — všechna taková místa aplikace
+          viditelně označuje. Sporné výklady daňových předpisů aplikace označuje
+          a volba výkladu je na tobě. S tímhle rozsahem služby souhlasíš vytvořením účtu.
         </p>
 
         <h2 className="font-display text-lg font-semibold">3. Tvůj účet a data</h2>
@@ -43,15 +46,21 @@ export default function TermsPage() {
           Účet je osobní a nepřenosný. Do aplikace vkládej pouze data ke svým vlastním
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
           smí být pouze pro čtení; Danero nikdy nezadává obchodní příkazy. Data můžeš
-          kdykoli smazat zrušením účtu.
+          kdykoli smazat zrušením účtu. A kdyby Danero někdy končilo, dozvíš se to
+          e-mailem nejméně 3 měsíce předem, po celou tu dobu si můžeš stáhnout export
+          všech svých dat a případné nevyužité předplacené období ti vrátíme.
         </p>
 
         <h2 className="font-display text-lg font-semibold">4. Odpovědnost</h2>
         <p>
-          V maximálním rozsahu povoleném právem neodpovídáme za škody vzniklé rozhodnutími
-          učiněnými na základě výstupů aplikace, za výpadky služby ani za změny výkladů
-          daňových předpisů. Aplikace tě na klíčové nejistoty upozorňuje přímo ve
-          výstupech.
+          Danero počítá podle zveřejněné metodiky z dat, která do něj vložíš nebo která
+          načteme z tvého brokera. Neodpovídáme za výsledek, pokud vstupní data nebyla
+          úplná nebo správná, ani za změny výkladu daňových předpisů — na klíčové
+          nejistoty tě upozorňujeme přímo ve výstupech a sporná místa viditelně
+          označujeme. Rozhodnutí, co podáš v přiznání, je vždy tvoje. Tím nejsou dotčena
+          tvoje zákonná práva — zejména práva z vadného plnění a právo na náhradu újmy
+          v rozsahu, v jakém je nelze smluvně omezit (jsi-li spotřebitel, neomezujeme
+          je vůbec).
         </p>
 
         <h2 className="font-display text-lg font-semibold">5. Provozovatel a kontakt</h2>
@@ -66,16 +75,46 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">6. Rozhodné právo a změny podmínek</h2>
+        <h2 className="font-display text-lg font-semibold">6. Když se neshodneme</h2>
+        <p>
+          Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
+          Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
+          inspekci, která řeší spotřebitelské spory mimosoudně: Česká obchodní inspekce,
+          Ústřední inspektorát — oddělení ADR, Gorazdova 24, 120 00 Praha 2,{' '}
+          <a
+            href="https://coi.gov.cz"
+            className="font-medium text-ruzova"
+            target="_blank"
+            rel="noreferrer"
+          >
+            coi.gov.cz
+          </a>
+          ; návrh jde podat online na{' '}
+          <a
+            href="https://adr.coi.cz"
+            className="font-medium text-ruzova"
+            target="_blank"
+            rel="noreferrer"
+          >
+            adr.coi.cz
+          </a>
+          .
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">7. Rozhodné právo a změny podmínek</h2>
         <p>
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
-          Podmínky můžeme upravit — o každé změně ti dáme vědět e-mailem předem a na této
-          stránce vždy najdeš aktuální verzi s datem účinnosti.
+          Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo
+          přidáme funkce. O každé změně ti dáme vědět e-mailem nejméně 30 dní předem.
+          Pokud s novým zněním nesouhlasíš, můžeš účet do dne účinnosti zdarma zrušit
+          (a máš-li předplacené období, vrátíme ti poměrnou část); jinak platí, že se
+          službou pokračuješ podle nových podmínek. Aktuální verzi s datem účinnosti
+          najdeš vždy na této stránce.
         </p>
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 1.0 (beta) · účinnost od 10. července 2026 · změny oznámíme e-mailem
+        Verze 1.1 (beta) · účinnost od 12. července 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

@@ -17,7 +17,7 @@ test('landing: hero, živé komponenty a ceník', async ({ page }) => {
 
   // řádek ověřitelné důvěry
   await expect(
-    page.getByText('Výstupy prošly zkušební podatelnou finanční správy'),
+    page.getByText('XML podání ověřená zkušební podatelnou EPO'),
   ).toBeVisible();
   await expect(page.getByText('Plné demo bez registrace')).toBeVisible();
 
@@ -107,6 +107,19 @@ test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => 
     .click();
   await expect(
     page.getByText('Nejspíš podáš přiznání — Danero ti připraví podklady.'),
+  ).toBeVisible();
+
+  // krypto nad 100k má od 15. 2. 2025 vlastní tříletý test (nález 2 daňového auditu)
+  await page
+    .getByRole('group', { name: /kryptoměny za víc než 100 000 Kč/ })
+    .getByRole('button', { name: 'Ano', exact: true })
+    .click();
+  await page
+    .getByRole('group', { name: 'Držel jsi všechno prodané krypto déle než 3 roky?' })
+    .getByRole('button', { name: 'Ne', exact: true })
+    .click();
+  await expect(
+    page.getByText(/kryptoaktiv nad 100 000 Kč ročně bez tří let držení/),
   ).toBeVisible();
   await expect(page.getByText('Orientačně — přesně to spočítá aplikace z tvých dat.')).toBeVisible();
   // CTA přímo ve verdikt-boxu (role=status) — na stránce je víc demo odkazů

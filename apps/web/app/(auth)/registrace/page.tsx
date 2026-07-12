@@ -27,6 +27,21 @@ export default function SignUpPage() {
         <p className="mt-3 text-center text-sm text-inkoust-tlumeny">
           Za 2 minuty připojíš brokera a uvidíš svoje limity.
         </p>
+        {/* B-1 právního auditu: podmínky se do smlouvy včleňují odkazem při
+            registraci (§ 1751 OZ) a GDPR informace patří ke sběru údajů (čl. 13);
+            věta o betě = výslovné seznámení s rozsahem služby (§ 2389i/2 OZ) */}
+        <p className="mt-4 text-center text-xs leading-relaxed text-inkoust-tlumeny">
+          Vytvořením účtu souhlasíš s{' '}
+          <Link href="/podminky" className="font-medium text-ruzova">
+            podmínkami užití
+          </Link>{' '}
+          a potvrzuješ, že víš,{' '}
+          <Link href="/soukromi" className="font-medium text-ruzova">
+            jak nakládáme s tvými daty
+          </Link>
+          . Danero je teď v betě — služba se může měnit a výpočty si vždy můžeš
+          zkontrolovat proti podkladům, které ti ukážeme.
+        </p>
       </div>
     </main>
   );

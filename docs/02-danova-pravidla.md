@@ -67,7 +67,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
 - **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
-- **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; hodnotu pro 2026 doplnit z nařízení vlády). Z § 10 se neplatí sociální ani zdravotní pojištění.
+- **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
 
 ## R-06 Měnové přepočty (§ 38 odst. 1)
 
@@ -275,7 +275,7 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   hrubá plnění, ale jediné z dat zjistitelné. Jistota střední.
 
 Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
-tiskopis 5405-P2 vzor 20 (číselník A–F); XTB „Informace o zdaňování příjmů
+tiskopis 5405-P2 vzor 21 (číselník A–H); XTB „Informace o zdaňování příjmů
 z obchodování s deriváty" (2022); Taxomat, Hedger, Taxero, danesestandou.cz,
 NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 derivátům.
 
