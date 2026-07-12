@@ -274,9 +274,6 @@ export async function importParsed(
   const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
   const unmapped = extras.unmapped ?? [];
 
-  const { logAudit } = await import('@/lib/audit');
-  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${fresh.length} nových`);
-
   const batchId = crypto.randomUUID();
 
   // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
@@ -307,6 +304,11 @@ export async function importParsed(
       .returning({ dedupeKey: transactions.dedupeKey });
     actuallyAdded += inserted.length;
   }
+
+  // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis
+  // před insertem lhal při pádu i při souběhu (in-memory dedupe vs. DB)
+  const { logAudit } = await import('@/lib/audit');
+  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${actuallyAdded} nových`);
 
   await db.insert(importBatches).values({
     id: batchId,

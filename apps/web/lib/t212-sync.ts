@@ -6,7 +6,6 @@ import {
 } from '@danero/importers';
 import type { Db } from '@/db';
 import {
-  emptyReconciliation,
   finishBrokerSync,
   reconcileBrokerPositions,
   testEnvBaseUrl,
@@ -31,7 +30,7 @@ export interface SyncOutcome {
   added: number;
   duplicates: number;
   errors: RowIssue[];
-  reconciliation: StoredReconciliation;
+  reconciliation: StoredReconciliation | null;
   status: SyncStatus;
 }
 
@@ -50,6 +49,13 @@ export interface SyncOptions {
   mode?: 'full' | 'incremental';
   /** Průběžné hlášení stavu (job runner ho zapisuje do DB pro UI). */
   onProgress?: (progress: SyncProgress) => void | Promise<void>;
+  /**
+   * Resume plného syncu: průběh posledního NEúspěšného plného běhu
+   * (jobs.progress) + kdy skončil. Dokončené roky se přeskočí — plný sync
+   * (65 s čekání na export ZA KAŽDÝ rok) by se jinak na serverless platformě
+   * nikdy nedokončil, protože každý pokus začínal od nuly.
+   */
+  resume?: { years: SyncYearProgress[]; syncedAt: Date };
 }
 
 /** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
@@ -175,8 +181,47 @@ export async function syncTrading212(
   const dedupeKeys = await loadDedupeKeys(db, account.userId);
   let emptyStreak = 0;
 
+  // Per-year resume: roky dokončené v posledním neúspěšném plném běhu se
+  // přeskočí (transakce už jsou v DB, dedupe by nic nepřidal — platilo by se
+  // jen čekání na export). Běžný rok a roky poblíž času pádu se stahují vždy
+  // znovu — obchody se do exportů propisují se zpožděním (stejná 7denní
+  // rezerva jako u inkrementálního syncu).
+  const resumeDone = new Map<number, SyncYearProgress>();
+  if (mode === 'full' && options.resume) {
+    const resumeSafeBelowYear = new Date(
+      options.resume.syncedAt.getTime() - 7 * 86_400_000,
+    ).getUTCFullYear();
+    for (const entry of options.resume.years) {
+      // rok s chybami řádků se nedědí — vadný export mohl být přechodný
+      // (useknutý soubor) a přeskočením by transakce chyběly navždy
+      if (
+        entry.year < resumeSafeBelowYear &&
+        entry.year !== currentYear &&
+        entry.status !== 'running' &&
+        (entry.errors ?? 0) === 0
+      ) {
+        resumeDone.set(entry.year, entry);
+      }
+    }
+  }
+
   const minYear = mode === 'incremental' ? incrementalMinYear : T212_MIN_YEAR;
   for (let year = currentYear; year >= minYear; year -= 1) {
+    const alreadyDone = resumeDone.get(year);
+    if (alreadyDone) {
+      // zděděný záznam v průběhu — UI vidí celou historii, další případný
+      // pád ho předá dalšímu resume
+      yearProgress.push({ ...alreadyDone });
+      // prázdnost se hodnotí stejně jako u živého běhu (počty minulého běhu):
+      // rok bez jediné transakce zvyšuje počítadlo a ukončuje smyčku
+      if ((alreadyDone.added ?? 0) + (alreadyDone.duplicates ?? 0) === 0) {
+        emptyStreak += 1;
+        if (emptyStreak >= 2) break;
+      } else {
+        emptyStreak = 0;
+      }
+      continue;
+    }
     const current: SyncYearProgress = { year, status: 'running' };
     yearProgress.push(current);
     await report('exporting');
@@ -241,7 +286,8 @@ export async function syncTrading212(
   }
 
   await report('reconciling');
-  let reconciliation: StoredReconciliation;
+  let reconciliation: StoredReconciliation | null = null;
+  let reconciliationError: string | null = null;
   try {
     const [positions, instruments] = await Promise.all([
       client.getPositions(),
@@ -264,14 +310,16 @@ export async function syncTrading212(
       mapped.unmatchedTickers,
     );
   } catch (error) {
-    reconciliation = emptyReconciliation(error instanceof Error ? error.message : String(error));
+    // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí
+    // přepsat poslední platný „pozice sedí“ — chyba se uloží vedle
+    reconciliationError = error instanceof Error ? error.message : String(error);
   }
 
   const added = batches.reduce((sum, batch) => sum + batch.added, 0);
   const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
   const errors = batches.flatMap((batch) => batch.errors);
 
-  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now);
+  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, reconciliationError);
 
   return { batches, yearsCovered, added, duplicates, errors, reconciliation, status };
 }

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 const INCLUDED = [
-  'Živé napojení na Trading 212, IBKR i Lynx a denní přepočet',
+  'Živé napojení na Trading 212, Interactive Brokers i Lynx a denní přepočet',
   'Hlídání limitů a časových testů s e-mailovými upozorněními',
   'Horizont osvobození a simulátor prodeje',
   'Podklady k přiznání včetně XML pro podatelnu',

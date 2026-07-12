@@ -14,7 +14,35 @@ export const czk = (value: Money | number): string =>
 export const qty = (value: Money | number): string =>
   numberFormat.format(typeof value === 'number' ? value : value.toNumber());
 
-export const czDate = (iso: string): string => new Date(`${iso}T00:00:00`).toLocaleDateString('cs-CZ');
+/** Datum česky — ISO string („2026-07-12“), nebo Date z DB (v české zóně;
+    server rendruje v UTC a kolem půlnoci by datum uteklo o den). */
+export const czDate = (value: string | Date): string =>
+  typeof value === 'string'
+    ? new Date(`${value}T00:00:00`).toLocaleDateString('cs-CZ')
+    : value.toLocaleDateString('cs-CZ', { timeZone: 'Europe/Prague' });
+
+/** Datum a čas z DB v české zóně, bez sekund — jednotný tvar pro celé UI. */
+export const czDateTime = (value: Date): string =>
+  value.toLocaleString('cs-CZ', {
+    timeZone: 'Europe/Prague',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+/** Kompaktní částka v Kč bez desetin (grafy, tooltips) — nezlomitelná mezera. */
+export const czkCompact = (value: number): string =>
+  `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value)}\u00A0Kč`;
+
+/** Procento česky s nezlomitelnou mezerou: pct(91,4) → „91 %“. */
+export const pct = (value: number, decimals = 0): string =>
+  `${value.toLocaleString('cs-CZ', { maximumFractionDigits: decimals })}\u00A0%`;
+
+/** Procento se znaménkem u kladných hodnot (P/L): signedPct(3,2, 1) → „+3,2 %“. */
+export const signedPct = (value: number, decimals = 0): string =>
+  `${value >= 0 ? '+' : ''}${pct(value, decimals)}`;
 
 const amountFormat = new Intl.NumberFormat('cs-CZ', {
   minimumFractionDigits: 2,

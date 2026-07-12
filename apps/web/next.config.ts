@@ -19,7 +19,10 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      // dev: React vyžaduje eval() (source mapy, Fast Refresh) — striktní CSP
+      // bez 'unsafe-eval' házela chybu do konzole na každé stránce; produkce
+      // zůstává bez eval
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",

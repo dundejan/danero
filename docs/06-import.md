@@ -7,10 +7,13 @@
   `skipped` (vědomě vynechané) a `warnings` (zpracováno s výhradou).
 - **Deduplikace**: `dedupeKey(broker, tx)` je stabilní otisk obsahu (FNV-1a 64).
   Překrývající se roční exporty tak lze nahrávat opakovaně — import je idempotentní.
-  Limity: dvě fyzicky identické transakce v souboru bez ID sloupce se sloučí (parser
-  na to upozorní varováním); tentýž obchod v souboru s ID a bez ID se nesloučí.
+  Identické legitimní řádky bez ID (dva stejné fill-y v téže sekundě) dostávají
+  pořadový suffix (`uniqueIdFactory`) a NEsplynou; duplicitní explicitní ID parser
+  ohlásí varováním a dedupe je sloučí. Limita: tentýž obchod v souboru s ID
+  a bez ID se nesloučí.
 - Datum obchodu = datum z exportu (UTC); datum vypořádání engine dopočítává
-  (T+1 US od 28. 5. 2024, jinak T+2, pracovní dny bez svátků), pokud ho export neuvádí.
+  (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
+  svátků), pokud ho export neuvádí.
 
 ## Trading212 (`parseTrading212Csv`)
 
@@ -80,23 +83,32 @@ Porovná vypočtené pozice (engine `positionsAt`) s pozicemi z API per ISIN:
 
 ## Univerzální šablona (`parseUniversalCsv`)
 
-Fallback pro nepodporované brokery. Hlavičky (malými písmeny, pořadí libovolné):
+Fallback pro nepodporované brokery. Hlavičky (malými písmeny, pořadí libovolné);
+předvyplněná šablona s ukázkovými řádky ke stažení: `/api/sablona`
+(`UNIVERSAL_TEMPLATE_CSV`). Úplná sada sloupců:
 
 ```csv
-type,date,settlement_date,isin,ticker,name,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,note
-BUY,2024-01-10,2024-01-12,US0378331005,AAPL,Apple Inc,10,185.50,USD,2.10,CZK,,,,
-SELL,2025-03-05,,US0378331005,AAPL,Apple Inc,10,210.00,USD,3.00,CZK,,,,
-DIVIDEND,2025-04-01,,US0378331005,AAPL,,,,USD,,,2.50,0.38,US,
-INTEREST,2025-05-01,,,,,,,CZK,,,12.34,,GB,úrok na hotovosti
-DEPOSIT,2024-01-05,,,,,,,CZK,,,10000,,,
+type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note
 ```
 
-- `type`: BUY, SELL, DIVIDEND, INTEREST, FEE, DEPOSIT, WITHDRAWAL
+- `type`: BUY, SELL, DIVIDEND, INTEREST, FEE, DEPOSIT, WITHDRAWAL,
+  CORPORATE_ACTION, TRANSFER_IN, TRANSFER_OUT
 - BUY/SELL: povinné `isin, quantity, price, currency`; `settlement_date` důrazně
   doporučeno (přesnost časového testu)
+- `asset_class`: STOCK (default), ETF, BOND, CRYPTO, DERIVATIVE, OTHER —
+  u kryptoaktiv a derivátů povinně vyplnit (určuje druh příjmu § 10)
+- `settlement_style` (jen deriváty; case-insensitive): `premium` = cena obchodu
+  je skutečný cash tok (opce; default), `margin` = daní se až **rozdíl cen při
+  uzavření** pozice, nominál není příjem (futures, CFD — R-12f). Derivát bez
+  vyplněného stylu se počítá premium stylem a parser přidá varování (jednou
+  per instrument); jiná hodnota než premium/margin je chyba řádku
 - DIVIDEND: `amount` = **brutto**, `withholding_tax` v téže měně, `source_country`
   (jinak se odvodí z ISIN)
 - INTEREST/FEE/DEPOSIT/WITHDRAWAL: `amount` + `currency`
+- CORPORATE_ACTION: `subtype` (SPLIT — s `ratio_from`/`ratio_to`; ISIN_CHANGE /
+  MERGER — s `new_isin`; SPINOFF; DELISTING)
+- TRANSFER_IN: `acquisition_date/price/currency` = PŮVODNÍ nabytí (bez nich
+  cena 0 a časový test od převodu — parser varuje)
 - Desetinná tečka; datum `YYYY-MM-DD`; kódování UTF-8
 
 ## Ověření na reálných datech (akceptace F2)

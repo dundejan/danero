@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { exemptFromDate } from '../src';
-import { buy, run, sell } from './helpers';
+import { exemptFromDate, type TaxYearConfig } from '../src';
+import { buy, CFG_2025, run, sell } from './helpers';
 
 describe('R-01 časový test 3 roky', () => {
   it('R-01: osvobození až když doba PŘESÁHNE 3 roky — přesně 3 roky nestačí', () => {
@@ -38,6 +38,32 @@ describe('R-01 časový test 3 roky', () => {
     const byTrade = run(txs, { options: { timeTestDateBasis: 'trade' } });
     expect(byTrade.securities.base10Czk.toString()).toBe('0');
     expect(byTrade.securities.timeTestExemptProceedsCzk.toString()).toBe('110000');
+  });
+
+  it('R-01a × R-05a/R-06a: báze trade mění JEN časový test — rok příjmu a kurz jdou po vypořádání', () => {
+    // prodej obchodovaný 30. 12. 2025, vypořádaný 2. 1. 2026 — s bází trade
+    // nesmí příjem sklouznout do 2025 ani se přepočítat kurzem 2025
+    const cfg2026: TaxYearConfig = {
+      ...CFG_2025,
+      year: 2026,
+      unifiedRatesByYear: { ...CFG_2025.unifiedRatesByYear, 2026: { USD: '25', EUR: '25' } },
+      limits: { ...CFG_2025.limits, timeTestCap: null },
+    };
+    const txs = [
+      buy({ isin: 'US0000000001', currency: 'USD', quantity: '100', pricePerShare: '50', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ isin: 'US0000000001', currency: 'USD', quantity: '100', pricePerShare: '60', tradeDate: '2025-12-30', settlementDate: '2026-01-02' }),
+    ];
+
+    // rok 2025 prodej nevidí — příjem patří roku připsání (R-05a)
+    const year2025 = run(txs, { options: { timeTestDateBasis: 'trade' } });
+    expect(year2025.securities.disposals).toHaveLength(0);
+
+    // rok 2026: tržba 6 000 USD × jednotný kurz 2026 (25), NE kurz 2025 (20)
+    const year2026 = run(txs, { config: cfg2026, options: { timeTestDateBasis: 'trade' } });
+    expect(year2026.securities.disposals).toHaveLength(1);
+    expect(year2026.securities.totalGrossProceedsCzk.toString()).toBe('150000');
+    // báze trade zůstává rozhodná pro časový test (saleDate = trade)
+    expect(year2026.securities.disposals[0]!.saleDate).toBe('2025-12-30');
   });
 
   it('R-01c: cenné papíry v obchodním majetku nemají nárok na osvobození', () => {

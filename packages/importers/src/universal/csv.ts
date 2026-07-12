@@ -9,10 +9,10 @@ export const UNIVERSAL_BROKER = 'universal';
  * Univerzální CSV šablona v2 — fallback pro brokery bez vlastního parseru
  * (pattern Koinly/Taxomat, docs/03). Formát je popsán v docs/06-import.md.
  *
- * Sloupce: type, date, settlement_date?, isin, ticker?, name?, quantity, price,
- * currency, fee?, fee_currency?, amount, withholding_tax?, source_country?,
- * subtype?, ratio_from?, ratio_to?, new_isin?, acquisition_date?,
- * acquisition_price?, acquisition_currency?, note?
+ * Sloupce: type, date, settlement_date?, isin, ticker?, name?, asset_class?,
+ * settlement_style?, quantity, price, currency, fee?, fee_currency?, amount,
+ * withholding_tax?, source_country?, subtype?, ratio_from?, ratio_to?,
+ * new_isin?, acquisition_date?, acquisition_price?, acquisition_currency?, note?
  */
 const REQUIRED_HEADERS = ['type', 'date'] as const;
 
@@ -33,19 +33,21 @@ const CA_SUBTYPES = new Set(['SPLIT', 'ISIN_CHANGE', 'MERGER', 'SPINOFF', 'DELIS
 
 /** Stažitelná předvyplněná šablona (hlavička + ukázkové řádky k přepsání). */
 export const UNIVERSAL_TEMPLATE_CSV = [
-  'type,date,settlement_date,isin,ticker,name,asset_class,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
-  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
-  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
-  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,0.5,60000,EUR,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
-  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,0.2,75000,EUR,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
-  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,1,1250,USD,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
-  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,1,1800,USD,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
-  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
-  'INTEREST,2026-06-01,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
-  'FEE,2026-06-01,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
-  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
-  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
-  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
+  'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
+  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
+  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
+  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,0.5,60000,EUR,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
+  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,0.2,75000,EUR,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
+  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,1,1250,USD,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
+  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,1,1800,USD,,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
+  'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5000,USD,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření, ne nominál',
+  'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5150,USD,,,,,,,,,,,,,uzavření CFD',
+  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
+  'INTEREST,2026-06-01,,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
+  'FEE,2026-06-01,,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
+  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
+  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
+  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
 ].join('\n');
 
 export function parseUniversalCsv(text: string): ImportResult {
@@ -68,6 +70,9 @@ export function parseUniversalCsv(text: string): ImportResult {
   }
 
   const uniqueId = uniqueIdFactory();
+  // R-12f/R-12r: derivát bez settlement_style se počítá prémiovým stylem —
+  // upozornit jednou per instrument, ne u každého řádku (CFD exporty mají stovky řádků)
+  const warnedMissingStyle = new Set<string>();
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2;
     if (row.every((cell) => cell.trim() === '')) return;
@@ -106,25 +111,48 @@ export function parseUniversalCsv(text: string): ImportResult {
     try {
       switch (type) {
         case 'BUY':
-        case 'SELL':
+        case 'SELL': {
+          const isin = map.get(row, 'isin');
+          const assetClass = map.get(row, 'asset_class').toUpperCase() || undefined;
+          // R-12f/R-12g: settlement_style určuje, zda je cash tokem cena (premium),
+          // nebo až rozdíl cen při uzavření (margin — futures, CFD)
+          const styleRaw = map.get(row, 'settlement_style');
+          const settlementStyle = styleRaw.toUpperCase();
+          if (settlementStyle !== '' && settlementStyle !== 'PREMIUM' && settlementStyle !== 'MARGIN') {
+            result.errors.push({
+              line,
+              message: `Neznámý settlement_style "${styleRaw}" — povolené hodnoty: premium (opce — cena je skutečný cash tok) a margin (futures/CFD — daní se rozdíl cen při uzavření).`,
+              raw: row.join(','),
+            });
+            return;
+          }
+          if (assetClass === 'DERIVATIVE' && settlementStyle === '' && !warnedMissingStyle.has(isin)) {
+            warnedMissingStyle.add(isin);
+            result.warnings.push({
+              line,
+              message: `Derivát ${isin} nemá vyplněný settlement_style — počítáme prémiový styl (celá cena obchodu = cash tok, R-12f). U CFD a futures vyplň settlement_style=margin, jinak se místo rozdílu cen zdaní nominál pozice.`,
+            });
+          }
           result.transactions.push(
             TransactionSchema.parse({
               type,
               id,
-              isin: map.get(row, 'isin'),
+              isin,
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
-              assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
+              assetClass,
               quantity: cleanNumber(map.get(row, 'quantity')),
               pricePerShare: cleanNumber(map.get(row, 'price')),
               currency: map.get(row, 'currency'),
               fee,
               tradeDate: date,
               settlementDate: map.get(row, 'settlement_date') || undefined,
+              settlementStyle: settlementStyle || undefined,
               note: map.get(row, 'note') || undefined,
             }),
           );
           return;
+        }
         case 'DIVIDEND':
           result.transactions.push(
             TransactionSchema.parse({

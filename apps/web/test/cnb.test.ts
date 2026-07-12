@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createPgliteDb } from '@/db';
 import { fxRates } from '@/db/schema';
-import { ensureCnbYears, fetchCnbYear, loadCnbRateProvider, parseCnbYearText } from '@/lib/cnb';
+import {
+  ensureCnbYears,
+  fetchCnbYear,
+  lastCnbDayOfYear,
+  loadCnbRateProvider,
+  parseCnbYearText,
+} from '@/lib/cnb';
 
 /** Formát ročního exportu ČNB: hlavička s množstvím, dny s desetinnou čárkou. */
 const CNB_SAMPLE = [
@@ -72,4 +78,46 @@ describe('denní kurzy ČNB (R-06b)', () => {
     await ensureCnbYears(db, [2026, 2026], fetchImpl);
     expect(calls).toBe(1); // dedup roků; 2026 je běžný rok → stáhne se
   });
+
+  it('lastCnbDayOfYear: 31. 12. v pracovní den, jinak poslední pátek', () => {
+    expect(lastCnbDayOfYear(2025)).toBe('2025-12-31'); // středa
+    expect(lastCnbDayOfYear(2023)).toBe('2023-12-29'); // 31. 12. 2023 = neděle
+    expect(lastCnbDayOfYear(2022)).toBe('2022-12-30'); // 31. 12. 2022 = sobota
+  });
+
+  it(
+    'ensureCnbYears dotáhne chybějící konec uzavřeného roku (kurz z 31. 12. po ranním cronu)',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      // rok 2025 „stažený“ naposledy ráno 31. 12.: přes 1000 řádků, ale poslední
+      // den 30. 12. — kurz z 31. 12. (vyhlášen ~14:30) už cron nestihl
+      const seed: Array<{ day: string; currency: string; rate: string }> = [];
+      const currencies = ['EUR', 'USD', 'GBP'];
+      const cursor = new Date(Date.UTC(2025, 0, 2));
+      for (;;) {
+        const day = cursor.toISOString().slice(0, 10);
+        if (day > '2025-12-30') break;
+        for (const currency of currencies) seed.push({ day, currency, rate: '20' });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+      expect(seed.length).toBeGreaterThanOrEqual(1000);
+      for (let i = 0; i < seed.length; i += 500) {
+        await db.insert(fxRates).values(seed.slice(i, i + 500));
+      }
+
+      let calls = 0;
+      const fullYear = 'Datum|1 EUR\n31.12.2025|25,000';
+      const fetchImpl: typeof fetch = (async () => {
+        calls += 1;
+        return new Response(fullYear, { status: 200 });
+      }) as typeof fetch;
+
+      await ensureCnbYears(db, [2025], fetchImpl);
+      expect(calls).toBe(1); // maxDay 30. 12. < 31. 12. → dotáhnout
+
+      await ensureCnbYears(db, [2025], fetchImpl);
+      expect(calls).toBe(1); // po doplnění 31. 12. už rok je kompletní
+    },
+  );
 });

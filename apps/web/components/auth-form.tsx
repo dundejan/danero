@@ -107,7 +107,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         <Input id="email" name="email" type="email" required autoComplete="email" />
       </div>
       <div>
-        <Label htmlFor="heslo">Heslo</Label>
+        <Label htmlFor="heslo">{mode === 'registrace' ? 'Heslo (min. 10 znaků)' : 'Heslo'}</Label>
         <Input
           id="heslo"
           name="heslo"

@@ -141,6 +141,13 @@
       "when": 1783873884450,
       "tag": "0019_wandering_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783880432830,
+      "tag": "0020_fixed_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

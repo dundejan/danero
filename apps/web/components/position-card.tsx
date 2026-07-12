@@ -53,7 +53,7 @@ export function PositionCard({
         <span
           className={cn(
             'font-medium',
-            exemptDone ? 'font-semibold text-zelena' : 'text-inkoust-tlumeny',
+            exemptDone ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
           )}
         >
           {exemptText}
@@ -62,7 +62,7 @@ export function PositionCard({
           <span
             className={cn(
               'rounded-md px-1.5 py-0.5 font-mono font-semibold',
-              pl.positive ? 'bg-zelena/10 text-zelena' : 'bg-cervena/10 text-cervena',
+              pl.positive ? 'bg-zelena/10 text-zelena-text' : 'bg-cervena/10 text-cervena',
             )}
           >
             {pl.text}

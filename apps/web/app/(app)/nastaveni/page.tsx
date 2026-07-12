@@ -15,6 +15,7 @@ import { headers } from 'next/headers';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
+import { czDateTime } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
 import {
   changeEmailAction,
@@ -77,6 +78,7 @@ export default async function SettingsPage({
     'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
     email: 'Zadej platný e-mail.',
     'email-obsazeny': 'E-mail se nepodařilo změnit (nejspíš už ho používá jiný účet).',
+    'email-ulozeni': 'E-mail se teď nepodařilo změnit — zkus to prosím za chvíli.',
     'email-heslo': 'Heslo nesedí — e-mail se nezměnil.',
     smazani: 'Pro smazání účtu napiš do potvrzení přesně SMAZAT.',
     'smazani-heslo': 'Heslo nesedí — účet se nesmazal.',
@@ -312,7 +314,7 @@ export default async function SettingsPage({
               <a
                 href="/api/export"
                 download
-                className="inline-block rounded-md border border-linka px-3 py-1.5 text-sm font-medium hover:border-ruzova hover:text-ruzova"
+                className="inline-block rounded-md border border-linka px-3 py-1.5 text-sm font-medium hover:border-inkoust-tlumeny"
               >
                 Stáhnout export (JSON)
               </a>
@@ -419,16 +421,10 @@ export default async function SettingsPage({
                     </span>
                     <span>
                       — {group.count} přihlášení, naposledy{' '}
-                      {group.lastAt.toLocaleString('cs-CZ', {
-                        day: 'numeric',
-                        month: 'numeric',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {czDateTime(group.lastAt)}
                     </span>
                     {group.isCurrent && (
-                      <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena">
+                      <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena-text">
                         toto zařízení
                       </span>
                     )}
@@ -452,7 +448,7 @@ export default async function SettingsPage({
                   {auditEvents.map((event) => (
                     <li key={event.id} className="flex flex-wrap items-baseline gap-2">
                       <span className="font-mono text-xs">
-                        {event.createdAt.toLocaleString('cs-CZ')}
+                        {czDateTime(event.createdAt)}
                       </span>
                       <span className="font-medium text-inkoust">
                         {AUDIT_LABELS[event.type as AuditType] ?? event.type}

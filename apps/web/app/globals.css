@@ -34,6 +34,7 @@
      neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
+  --zelena-syta: #2e8b62;
   /* Textové odstíny akcentů — drobný text na tónovaných plochách musí držet
      AA 4,5:1; světlé akcenty samy o sobě padají (růžová 4,2:1, jantar 2,8:1,
      zelená 4,0:1 na --pozadi). Pro výplně/okraje dál platí základní tokeny. */
@@ -65,6 +66,7 @@
   --graf-8: #adb5bd;
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
+  --zelena-syta: #2e8b62;
   /* v dark módu textové kontrasty drží už samotné (zesvětlené) akcenty */
   --ruzova-text: var(--ruzova);
   --zelena-text: var(--zelena);
@@ -85,6 +87,7 @@
   --color-linka: var(--linka);
   --color-ruzova-syta: var(--ruzova-syta);
   --color-cervena-syta: var(--cervena-syta);
+  --color-zelena-syta: var(--zelena-syta);
   --color-ruzova-text: var(--ruzova-text);
   --color-zelena-text: var(--zelena-text);
   --color-jantar-text: var(--jantar-text);
@@ -159,6 +162,27 @@
   from {
     opacity: 0;
   }
+}
+
+/* Vodorovně scrollovatelné tabulky (mobil): stínová affordance na hranách —
+   bez ní vypadá oříznutý poslední sloupec jako rozbitý layout. Čistě CSS
+   (Lea Verou scroll shadows): krycí gradienty scrollují s obsahem
+   (attachment: local), stínové drží na hranách. Předpoklad: plocha karty. */
+.scroll-stiny {
+  background:
+    linear-gradient(to right, var(--plocha) 30%, transparent) 0 0,
+    linear-gradient(to left, var(--plocha) 30%, transparent) 100% 0,
+    linear-gradient(to right, color-mix(in srgb, var(--inkoust) 14%, transparent), transparent)
+      0 0,
+    linear-gradient(to left, color-mix(in srgb, var(--inkoust) 14%, transparent), transparent)
+      100% 0;
+  background-size:
+    40px 100%,
+    40px 100%,
+    12px 100%,
+    12px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 @layer base {

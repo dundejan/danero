@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 
 export type MarketingNavKey = 'platformy' | 'cenik' | 'caste-otazky' | 'o-projektu';
 
@@ -65,7 +66,7 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
         </Link>
         <Link
           href="/demo/prehled"
-          className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className={buttonVariants({ variant: 'primary' })}
         >
           Vyzkoušet demo
         </Link>

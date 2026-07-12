@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
-import { czDate, MONTH_LABELS, plural, qty } from '@/lib/format';
+import { czDate, czkCompact, MONTH_LABELS, pct, plural, qty } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -46,9 +46,6 @@ const dotIso = (dot: HorizonDot): string =>
 /** Popisek tečky: měsíc („čvc 2026“), nebo konkrétní den („23. 7. 2026“). */
 const dotLabel = (dot: HorizonDot): string =>
   isMonthDot(dot) ? monthLabel(dot.exemptFrom) : czDate(dot.exemptFrom);
-
-const czkCompact = (value: number): string =>
-  new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value) + ' Kč';
 
 /** Celková váha tečky jako text: CZK, nebo počet kusů (weight = součet kusů). */
 const totalText = (dot: HorizonDot): string =>
@@ -327,7 +324,7 @@ export function HorizonStrip({
                     fill="var(--inkoust-tlumeny)"
                     fontFamily="var(--font-plex-mono)"
                   >
-                    {view.outlookPath.endShare.toLocaleString('cs-CZ')} %
+                    {pct(view.outlookPath.endShare, 1)}
                   </text>
                 </g>
               )}

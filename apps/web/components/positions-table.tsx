@@ -88,7 +88,7 @@ export function PositionsTable({
         daysToExempt: nearest?.daysToExempt ?? null,
       };
     })
-    .sort((a, b) => ((a.nearestExemptFrom ?? '0') < (b.nearestExemptFrom ?? '0') ? -1 : 1));
+    .sort((a, b) => (a.nearestExemptFrom ?? '0').localeCompare(b.nearestExemptFrom ?? '0'));
 
   // E2: sloupec „Z toho bez daně“ jen když má co říct — samé nuly nese
   // už KPI „Bez daně už dnes“ (0 %)
@@ -117,7 +117,7 @@ export function PositionsTable({
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto md:block">
+      <div className="scroll-stiny hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -149,7 +149,7 @@ export function PositionsTable({
                   <td
                     className={cn(
                       'py-2 pr-4 text-right',
-                      row.exemptQty > 0 ? 'font-semibold text-zelena' : 'text-inkoust-tlumeny',
+                      row.exemptQty > 0 ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
                     )}
                   >
                     {qty(row.exemptQty)}
@@ -159,7 +159,7 @@ export function PositionsTable({
                   {row.nearestExemptFrom ? (
                     czDate(row.nearestExemptFrom)
                   ) : (
-                    <span className="font-sans font-semibold text-zelena">vše osvobozeno</span>
+                    <span className="font-sans font-semibold text-zelena-text">vše bez daně</span>
                   )}
                 </td>
                 <td className="py-2 text-right">

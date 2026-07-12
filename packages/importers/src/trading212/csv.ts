@@ -1,6 +1,6 @@
 import { Decimal, TransactionSchema, type Transaction } from '@danero/shared';
 import { cleanNumber, HeaderMap, parseCsv } from '../csv';
-import { dedupeKey, fnv1a64 } from '../dedupe';
+import { dedupeKey, fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const TRADING212_BROKER = 'trading212';
@@ -66,7 +66,7 @@ interface SplitLeg {
  * Parser CSV exportu Trading212 (History → Export, kategorie Orders/Dividends/
  * Transactions/Interest). Mapuje výhradně podle NÁZVŮ sloupců — T212 mění jejich
  * sadu i pořadí podle zvolených kategorií. Datum vypořádání export neobsahuje,
- * engine ho dopočítá (T+1 US od 28. 5. 2024, jinak T+2).
+ * engine ho dopočítá (T+1 US od 28. 5. 2024 a CA od 27. 5. 2024, jinak T+2).
  */
 export function parseTrading212Csv(text: string): ImportResult {
   const result = emptyResult(TRADING212_BROKER);
@@ -86,6 +86,8 @@ export function parseTrading212Csv(text: string): ImportResult {
   }
 
   const seenIds = new Set<string>();
+  const uniqueId = uniqueIdFactory();
+  const seenNoIdBases = new Set<string>();
   const splitCloses: SplitLeg[] = [];
   const splitOpens: SplitLeg[] = [];
 
@@ -105,18 +107,29 @@ export function parseTrading212Csv(text: string): ImportResult {
     const classified = classifyAction(action);
     const rowId = (): string => {
       const explicit = map.get(row, 'ID');
-      const id =
-        explicit !== ''
-          ? `t212-${explicit}`
-          : `t212-${fnv1a64([action, time, map.get(row, 'ISIN'), map.get(row, 'No. of shares'), map.get(row, 'Price / share'), map.get(row, 'Total')].join('|'))}`;
-      if (seenIds.has(id)) {
+      if (explicit !== '') {
+        const id = `t212-${explicit}`;
+        if (seenIds.has(id)) {
+          result.warnings.push({
+            line,
+            message: `Řádek má stejné ID jako jiný řádek souboru (${action} ${time}) — deduplikace je sloučí v jednu transakci. Ověř, zda nejde o dvě skutečné transakce.`,
+          });
+        }
+        seenIds.add(id);
+        return id;
+      }
+      // identické legitimní řádky bez ID (dva stejné fill-y v téže sekundě) nesmí
+      // tiše splynout — pořadový suffix drží klíče stabilní i napříč exporty
+      const base = `t212-${fnv1a64([action, time, map.get(row, 'ISIN'), map.get(row, 'No. of shares'), map.get(row, 'Price / share'), map.get(row, 'Total')].join('|'))}`;
+      if (seenNoIdBases.has(base)) {
+        // nahlas: může jít o dva skutečné fill-y, ale i o omylem slepené exporty
         result.warnings.push({
           line,
-          message: `Řádek je identický s jiným řádkem bez ID (${action} ${time}) — deduplikace je může sloučit v jednu transakci. Ověř, zda nejde o dvě skutečné transakce.`,
+          message: `Obsahově identický řádek bez ID (${action} ${time}) — importuje se jako další samostatná transakce. Pokud jde o omylem zdvojený export, smaž duplicitní řádky.`,
         });
       }
-      seenIds.add(id);
-      return id;
+      seenNoIdBases.add(base);
+      return uniqueId(base);
     };
 
     try {
@@ -154,6 +167,15 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'DIVIDEND': {
+          // Return of capital: správně jde o snížení nabývací ceny pozice, ne příjem —
+          // konzervativně (bezpečný směr) danit jako dividendu, ale říct to uživateli
+          // (otevřený bod docs/14 #14 — vyžaduje produktové rozhodnutí)
+          if (action.toLowerCase().includes('return of capital')) {
+            result.warnings.push({
+              line,
+              message: `${action}: vratka kapitálu se konzervativně daní jako dividenda (§ 8) a čerpá limit 50 000 Kč paušální daně. Věcně správné zacházení je snížení nabývací ceny pozice (nižší daň až při prodeji) — pokud jde o významnou částku, uprav historii ručně nebo se poraď s poradcem.`,
+            });
+          }
           const isin = map.get(row, 'ISIN') || undefined;
           const shares = cleanNumber(map.get(row, 'No. of shares'));
           const price = cleanNumber(map.get(row, 'Price / share'));

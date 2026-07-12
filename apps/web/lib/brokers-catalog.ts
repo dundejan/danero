@@ -28,6 +28,8 @@ export interface PlatformInfo {
   logo?: { src: string; kind: 'icon' | 'wordmark' };
 }
 
+/** Počty platforem dle metody — jediný zdroj pro texty „ze 17 platforem…“
+    (natvrdo zapsané počty při přidání parseru zdriftují). Doplněno níže pod PLATFORMS. */
 export const PLATFORMS: PlatformInfo[] = [
   // ── brokeři a platformy (řazeno dle počtu českých uživatelů — docs/11) ──
   {
@@ -339,3 +341,10 @@ export const PLATFORM_GROUPS: { key: PlatformInfo['group']; label: string }[] = 
   { key: 'banky', label: 'Banky a investiční společnosti' },
   { key: 'krypto', label: 'Krypto burzy a směnárny' },
 ];
+
+/** Odvozené počty pro marketingové texty — viz komentář u PLATFORMS. */
+export const PLATFORM_COUNTS = {
+  api: PLATFORMS.filter((p) => p.method === 'api').length,
+  file: PLATFORMS.filter((p) => p.method === 'file').length,
+  template: PLATFORMS.filter((p) => p.method === 'template').length,
+} as const;

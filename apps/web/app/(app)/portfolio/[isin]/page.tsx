@@ -1,4 +1,5 @@
 import { analyzeForUserCached } from '@/lib/engine-cache';
+import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { notFound, redirect } from 'next/navigation';
 import { PoziceView, positionHistory } from '@/components/views/pozice-view';
 import { getDb } from '@/db';
@@ -59,7 +60,15 @@ export default async function PositionDetailPage({
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = Number(today.slice(0, 4));
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const analysis = analyzeForUserCached(user.id, txs, profile, currentYear, today, dailyRates);
+  let analysis;
+  try {
+    analysis = analyzeForUserCached(user.id, txs, profile, currentYear, today, dailyRates);
+  } catch (error) {
+    // chybějící kurz (EngineError) = srozumitelná karta, ne pád do error boundary
+    const message = engineErrorMessage(error);
+    if (!message) throw error;
+    return <EngineErrorCard message={message} />;
+  }
 
   const position = analysis.positions.find((p) => p.isin === isin);
   if (!position && positionHistory(txs, isin).length === 0) notFound();

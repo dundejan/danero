@@ -1,7 +1,6 @@
 import { IbkrFlexClient, parseIbkrFlexXml, type RowIssue } from '@danero/importers';
 import type { Db } from '@/db';
 import {
-  emptyReconciliation,
   finishBrokerSync,
   reconcileBrokerPositions,
   testEnvBaseUrl,
@@ -26,7 +25,7 @@ export interface IbkrSyncOutcome {
   added: number;
   duplicates: number;
   errors: RowIssue[];
-  reconciliation: StoredReconciliation;
+  reconciliation: StoredReconciliation | null;
   status: SyncStatus;
 }
 
@@ -98,7 +97,8 @@ export async function syncIbkr(
       .map((p) => ({ isin: p.isin, price: p.markPrice!, currency: p.currency })),
     now,
   );
-  let reconciliation: StoredReconciliation;
+  let reconciliation: StoredReconciliation | null = null;
+  let reconciliationError: string | null = null;
   if (parsed.openPositions.length > 0) {
     try {
       reconciliation = await reconcileBrokerPositions(
@@ -109,9 +109,9 @@ export async function syncIbkr(
         now.toISOString().slice(0, 10),
       );
     } catch (error) {
-      reconciliation = emptyReconciliation(
-        error instanceof Error ? error.message : String(error),
-      );
+      // přechodné selhání rekonciliace nepřepisuje poslední platný stav —
+      // chyba jde do lastSyncError (stejně jako v t212-sync)
+      reconciliationError = error instanceof Error ? error.message : String(error);
     }
   } else {
     // bez OpenPositions nemáme s čím srovnávat — sync ale PROBĚHL, takže
@@ -127,7 +127,7 @@ export async function syncIbkr(
   }
 
   const errors = batch?.errors ?? [];
-  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now);
+  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, reconciliationError);
 
   return {
     batch,

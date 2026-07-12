@@ -62,7 +62,7 @@ export default function Limit100000KcPage() {
           <p>
             Limit se počítá každý kalendářní rok znovu a je stejný pro rok 2025 i 2026.
             Jestli se tě týká přiznání, zjistíš orientačně za minutu v{' '}
-            <ClanekOdkaz href="/kalkulacka">kalkulačce Musím podat přiznání?</ClanekOdkaz>
+            <ClanekOdkaz href="/kalkulacka">kalkulačce „Musím podat přiznání?“</ClanekOdkaz>
           </p>
         </ClanekSekce>
 

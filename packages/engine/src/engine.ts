@@ -163,17 +163,19 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     );
   }
 
-  const ledger = buildLedger(ledgerTransactions, options, warnings);
-  classifyTimeTest(ledger.disposals, input.profile);
+  const ledger = buildLedger(ledgerTransactions, options, warnings, fx);
+  classifyTimeTest(ledger.disposals, input.profile, cryptoIsins);
   const isCryptoDisposal = (disposal: (typeof ledger.disposals)[number]) =>
     cryptoIsins.has(disposal.isin);
 
   const yearDisposals = ledger.disposals.filter((disposal) => disposal.incomeYear === year);
+  // R-02f: CP v obchodním majetku nemají ani hodnotové osvobození 100k (§ 4/1 t
+  // je vylučuje stejně jako u) — prodeje jsou zdanitelné a pool 100k nečerpají
   const securitiesPrepared = prepareDisposals(
     yearDisposals.filter((disposal) => !isCryptoDisposal(disposal)),
     fx,
     options,
-    { available: true, effectiveFrom: null },
+    { available: !input.profile.hasSecuritiesInBusinessAssets, effectiveFrom: null },
   );
   // R-10b: krypto osvobození až od účinnosti zák. č. 32/2025 Sb. (2025: od 15. 2.;
   // ZO ≤ 2024 žádné) — dřívější prodeje jsou plně zdanitelné a nečerpají limit 100k.

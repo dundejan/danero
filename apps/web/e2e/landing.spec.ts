@@ -50,7 +50,7 @@ test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Časté otázky');
 
   // FAQ: details/summary se dá rozkliknout
-  const faq = page.locator('details', { hasText: 'Pro koho Danero je?' });
+  const faq = page.locator('details', { hasText: 'Pro koho je Danero?' });
   await faq.locator('summary').click();
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
 

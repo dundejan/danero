@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { WaitlistForm } from '@/components/waitlist-form';
 import { PlatformGrid } from '@/components/platform-catalog';
+import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
 import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
 import { compareVariants, type VariantComparison } from '@danero/engine';
@@ -195,6 +196,23 @@ const CTA_PRIMARY =
 const CTA_SECONDARY =
   'inline-block rounded-md border border-inkoust/25 bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40';
 
+// waitlist režim (NEXT_PUBLIC_WAITLIST=1): registrace je na pozvánky — CTA míří
+// na čekací listinu, jinak by si stránka protiřečila se sekcí „Otevíráme na podzim“
+const WAITLIST = process.env.NEXT_PUBLIC_WAITLIST === '1';
+
+/** Registrační CTA se ve waitlist režimu mění na zápis do čekací listiny. */
+function SignupCta({ className }: { className: string }) {
+  return WAITLIST ? (
+    <a href="#waitlist" className={className}>
+      Zapsat se do čekací listiny
+    </a>
+  ) : (
+    <Link href="/registrace" className={className}>
+      Založit účet zdarma
+    </Link>
+  );
+}
+
 /* ── obsah ────────────────────────────────────────────────────────────────── */
 
 const TRUST = [
@@ -209,7 +227,7 @@ const TRUST = [
 const STEPS = [
   {
     title: 'Připoj svého brokera',
-    body: 'Trading 212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: ze 17 platforem ho čteme automaticky, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase; u devíti dalších tě provedeme univerzální šablonou.',
+    body: `Trading 212, Interactive Brokers i Lynx živě přes API klíč jen pro čtení — žádná hesla, žádné právo obchodovat. Odjinud nahraješ výpis: z ${PLATFORM_COUNTS.file} platforem ho čteme automaticky, od XTB a Degiro po eToro, Schwab, Portu nebo Coinbase; u ${PLATFORM_COUNTS.template} dalších tě provedeme univerzální šablonou.`,
   },
   {
     title: 'Danero hlídá celý rok',
@@ -293,16 +311,14 @@ export default async function LandingPage({
             Danero pohlídá, jestli a kolik máš z investic danit — a ozve se dřív, než
             tě prodej nebo dividenda bude stát daň navíc. V březnu stáhneš hotové
             podklady k přiznání včetně XML. Trading 212, Interactive Brokers a Lynx
-            živě přes API; výpisy ze 17 dalších platforem čteme automaticky a u českých
-            bank tě provedeme šablonou.
+            živě přes API; výpisy z {PLATFORM_COUNTS.file} dalších platforem čteme automaticky a u zbylých
+            — hlavně českých bank a fondů — tě provedeme šablonou.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link href="/demo/prehled" className={CTA_PRIMARY}>
               Vyzkoušet demo — bez registrace
             </Link>
-            <Link href="/registrace" className={CTA_SECONDARY}>
-              Založit účet zdarma
-            </Link>
+            <SignupCta className={CTA_SECONDARY} />
           </div>
           <p className="mt-3 text-sm text-inkoust-tlumeny">
             Teď v betě: všechno zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
@@ -418,8 +434,8 @@ export default async function LandingPage({
                 O limitu se dozvíš, dokud se s ním dá něco dělat
               </h2>
               <p className="mt-4 text-inkoust-tlumeny">
-                Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň — včetně
-                zahraničních dividend, na které se zapomíná. Čerpání vidíš celý rok a při
+                Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň, do kterého
+                se počítají i zahraniční dividendy, na které se zapomíná. Čerpání vidíš celý rok a při
                 60, 85 a 100 % ti přijde e-mail.{' '}
                 <strong className="text-inkoust">
                   Ozveme se, dokud se s tím dá něco dělat
@@ -505,10 +521,10 @@ export default async function LandingPage({
                 Žádná černá skříňka
               </h2>
               <p className="mt-4 text-inkoust-tlumeny">
-                FIFO i další metody párování vidíš vedle sebe, s daní spočtenou pro každou
+                FIFO (nejstarší kusy první) i další metody párování vidíš vedle sebe, s daní spočtenou pro každou
                 zvlášť — bezpečný výklad je výchozí a u sporných míst ti ukážeme, co by
                 výhodnější znamenal. V březnu stáhneš průvodce, co kam zapsat, po řádcích
-                přiznání — a XML pro podatelnu mojedane.cz, ověřené testovací podatelnou EPO{' '}
+                přiznání — a XML pro podatelnu mojedane.cz, ověřené zkušební podatelnou EPO{' '}
                 <span className="text-sm">
                   (struktura pro rok 2026 vyjde začátkem 2027 — ověřujeme každý rok)
                 </span>
@@ -662,9 +678,7 @@ export default async function LandingPage({
                 </p>
               </div>
               <div className="flex flex-col items-start gap-3 lg:items-end">
-                <Link href="/registrace" className={CTA_PRIMARY}>
-                  Založit účet zdarma
-                </Link>
+                <SignupCta className={CTA_PRIMARY} />
                 <p className="text-xs text-inkoust-tlumeny">
                   Bez karty a bez závazků — po betě se rozhodneš sám.
                 </p>
@@ -675,8 +689,8 @@ export default async function LandingPage({
 
         {/* ── waitlist: režim před veřejným otevřením — na produkci se zapíná
             NEXT_PUBLIC_WAITLIST=1, dokud beta nepřijímá veřejnost (docs/12 P0) */}
-        {process.env.NEXT_PUBLIC_WAITLIST === '1' && (
-          <section aria-labelledby="waitlist-nadpis" className="mt-24 lg:mt-32">
+        {WAITLIST && (
+          <section id="waitlist" aria-labelledby="waitlist-nadpis" className="mt-24 lg:mt-32">
             <div className="rounded-lg border border-linka bg-plocha p-8 sm:p-10">
               <div className="max-w-2xl">
                 <Eyebrow>Otevíráme na podzim</Eyebrow>
@@ -715,9 +729,7 @@ export default async function LandingPage({
               <Link href="/demo/prehled" className={CTA_PRIMARY}>
                 Vyzkoušet demo — bez registrace
               </Link>
-              <Link href="/registrace" className={CTA_SECONDARY}>
-                Založit účet zdarma
-              </Link>
+              <SignupCta className={CTA_SECONDARY} />
             </div>
             <p className="mt-6 text-sm text-inkoust-tlumeny">
               Ještě něco nevíš? Projdi si{' '}

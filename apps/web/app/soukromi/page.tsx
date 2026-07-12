@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
 
-export const metadata = { title: 'Ochrana soukromí — Danero' };
+export const metadata = {
+  title: 'Ochrana soukromí — Danero',
+  description:
+    'Jaká data Danero zpracovává, proč, jak dlouho a jaká máš práva — bez cookie lišty a bez trackerů.',
+};
 
 /** ⚠️ PRACOVNÍ NÁVRH — před veřejným spuštěním musí projít právní kontrolou. */
 export default function PrivacyPage() {
@@ -117,6 +121,10 @@ export default function PrivacyPage() {
           ).
         </p>
       </section>
+
+      <p className="text-xs text-inkoust-tlumeny">
+        Verze 1.1 (beta) · účinnost od 12. července 2026 · změny oznámíme e-mailem
+      </p>
 
       <p className="text-sm">
         <Link href="/" className="font-medium text-ruzova">

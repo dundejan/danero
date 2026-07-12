@@ -17,7 +17,7 @@ export default function SignUpPage() {
         </p>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Už máš účet?{' '}
-          <Link href="/prihlaseni" className="font-medium text-ruzova">
+          <Link href="/prihlaseni" className="font-medium text-ruzova-text">
             Přihlas se
           </Link>
         </p>
@@ -32,11 +32,11 @@ export default function SignUpPage() {
             věta o betě = výslovné seznámení s rozsahem služby (§ 2389i/2 OZ) */}
         <p className="mt-4 text-center text-xs leading-relaxed text-inkoust-tlumeny">
           Vytvořením účtu souhlasíš s{' '}
-          <Link href="/podminky" className="font-medium text-ruzova">
+          <Link href="/podminky" className="font-medium text-ruzova-text">
             podmínkami užití
           </Link>{' '}
           a potvrzuješ, že víš,{' '}
-          <Link href="/soukromi" className="font-medium text-ruzova">
+          <Link href="/soukromi" className="font-medium text-ruzova-text">
             jak nakládáme s tvými daty
           </Link>
           . Danero je teď v betě — služba se může měnit a výpočty si vždy můžeš

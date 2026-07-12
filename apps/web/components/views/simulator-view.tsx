@@ -42,6 +42,7 @@ export function SimulatorView({
   dailyRates,
   prices,
   basePath = '',
+  precomputedBaseline,
 }: {
   txs: Transaction[];
   profile: ProfileRow;
@@ -51,10 +52,12 @@ export function SimulatorView({
   /** Poslední známé ceny od brokera — předvyplnění pole „Cena/ks“. */
   prices?: Map<string, InstrumentPrice>;
   basePath?: string;
+  /** Baseline z page-guardu (EngineError) — bez něj by se engine počítal 2×. */
+  precomputedBaseline?: ReturnType<typeof analyzeTaxYear>;
 }) {
   const year = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const input = engineInputForUser(txs, profile, year, dailyRates);
-  const baseline = analyzeTaxYear(input);
+  const baseline = precomputedBaseline ?? analyzeTaxYear(input);
   // deriváty simulátor neumí (viz hláška níže) — do výběru pozic nepatří
   const positions = positionsAt(baseline.ledger, today).filter(
     (p) => p.totalRemaining.gt(0) && p.assetClass !== 'DERIVATIVE',
@@ -86,6 +89,21 @@ export function SimulatorView({
     selected && priceRaw === '' && lastKnown && lastKnown.currency === selected.currency
       ? lastKnown.price
       : undefined;
+
+  // karta limitu podle režimu (jako v přehledu) — čerpání (příjmy § 8–10) je
+  // pro všechny režimy stejné, liší se jen strop a název; zaměstnanec nesmí
+  // vidět nerelevantní paušální limit a OSVČ mimo paušál (podává přiznání
+  // vždy) žádnou režimovou kartu — stejně jako přehled
+  const regimeLimit = baseline.limits.flatTax50k.applicable
+    ? { label: 'Paušální daň', status: baseline.limits.flatTax50k.status }
+    : baseline.limits.employee20k.applicable
+      ? { label: 'Vedlejší příjmy', status: baseline.limits.employee20k.status }
+      : baseline.limits.generalFiling50k.applicable
+        ? { label: 'Podání přiznání', status: baseline.limits.generalFiling50k.status }
+        : null;
+  const regimeLimitLabel = regimeLimit
+    ? `${regimeLimit.label} (${czk(regimeLimit.status.limitCzk)})`
+    : null;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
   let formError: string | null = null;
@@ -195,7 +213,11 @@ export function SimulatorView({
               „Prodej je celý osvobozený — limity ani daň nečerpá.“
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
-              {['Paušální daň (50 000 Kč)', 'Prodeje CP (100 000 Kč)', 'Orientační daň'].map(
+              {[
+                ...(regimeLimitLabel ? [regimeLimitLabel] : []),
+                'Prodeje CP (100 000 Kč)',
+                'Orientační daň',
+              ].map(
                 (label) => (
                   <div key={label} className="rounded-lg border border-dashed border-linka p-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny/70">
@@ -219,7 +241,7 @@ export function SimulatorView({
             <VerdictLine verdict={simulatorVerdict(simulation)} />
             <p className="text-sm text-inkoust-tlumeny">
               Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
-              <span className="font-mono text-zelena">
+              <span className="font-mono text-zelena-text">
                 {czk(simulation.simulatedDisposal?.exemptProceedsCzk ?? 0)}
               </span>{' '}
               a zdanitelných{' '}
@@ -242,13 +264,15 @@ export function SimulatorView({
           )}
 
           <section className="grid gap-4 sm:grid-cols-3">
-            <DeltaCard
-              label="Paušální daň (50 000 Kč)"
-              beforeCzk={simulation.baseline.flatTax50kUsedCzk}
-              afterCzk={simulation.simulated.flatTax50kUsedCzk}
-              exceeded={simulation.simulated.flatTax50kExceeded}
-              limitCzk={baseline.limits.flatTax50k.status.limitCzk}
-            />
+            {regimeLimit && regimeLimitLabel && (
+              <DeltaCard
+                label={regimeLimitLabel}
+                beforeCzk={simulation.baseline.flatTax50kUsedCzk}
+                afterCzk={simulation.simulated.flatTax50kUsedCzk}
+                exceeded={simulation.simulated.flatTax50kUsedCzk.gt(regimeLimit.status.limitCzk)}
+                limitCzk={regimeLimit.status.limitCzk}
+              />
+            )}
             {/* exceeded = STAV po prodeji přes limit — konzistentně s kartou 50k */}
             {selected.assetClass === 'CRYPTO' ? (
               <DeltaCard
@@ -296,7 +320,7 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
   switch (verdict.kind) {
     case 'EXEMPT_CLEAN':
       return (
-        <p className="text-lg font-semibold text-zelena">
+        <p className="text-lg font-semibold text-zelena-text">
           Prodej je celý osvobozený — limity ani daň nečerpá.
         </p>
       );
@@ -310,7 +334,7 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
       );
     case 'EXEMPT_DRAWS_LIMIT':
       return (
-        <p className="text-lg font-semibold text-jantar">
+        <p className="text-lg font-semibold text-jantar-text">
           {verdict.taxDeltaCzk.gt(0)
             ? `Prodej je osvobozený, ale celková daň se zvýší o ${czk(verdict.taxDeltaCzk)} — dopad níže.`
             : `Prodej je osvobozený a daň nezvýší, ale čerpá roční limit 100 000 Kč${verdict.crypto ? ' pro kryptoaktiva' : ''} — hlídej zbývající prostor níže.`}
@@ -353,7 +377,7 @@ function DeltaCard({
   const badge = delta.gt(0)
     ? { text: `↑ +${czk(delta)}`, tone: 'bg-cervena/10 text-cervena' }
     : delta.lt(0)
-      ? { text: `↓ ${czk(delta)}`, tone: 'bg-zelena/10 text-zelena' }
+      ? { text: `↓ ${czk(delta)}`, tone: 'bg-zelena/10 text-zelena-text' }
       : { text: '→ beze změny', tone: 'bg-linka/50 text-inkoust-tlumeny' };
   const bars =
     limitCzk?.gt(0) &&

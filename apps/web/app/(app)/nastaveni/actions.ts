@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { d } from '@danero/shared';
 import { redirect } from 'next/navigation';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -16,7 +17,9 @@ const ProfileFormSchema = z.object({
   otherIncomeCzk: z
     .string()
     .transform((v) => v.replace(',', '.').trim() || '0')
-    .refine((v) => /^\d+(\.\d{1,2})?$/.test(v), 'Zadej částku v Kč'),
+    .refine((v) => /^\d+(\.\d{1,2})?$/.test(v), 'Zadej částku v Kč')
+    // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
+    .refine((v) => d(v).lte('1000000000000'), 'Částka je nereálně vysoká — zkontroluj ji.'),
   matchingMethod: z.enum(['FIFO', 'LIFO', 'MAX_PROFIT', 'MAX_LOSS']),
   fxMethod: z.enum(['UNIFIED', 'CNB_DAILY']),
   limit100kStrict: z.enum(['strict', 'lenient']),
@@ -130,7 +133,10 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .where(eq(userTable.id, user.id));
   } catch (error) {
     logEvent('error', 'account.change_email_failed', { error: error instanceof Error ? error.message : String(error) });
-    redirect('/nastaveni?chyba=email-obsazeny');
+    // „obsazený e-mail“ jen při unique violation — infrastrukturní chybu (výpadek
+    // DB apod.) nesmíme vydávat za obsazenou adresu
+    const { isUniqueViolation } = await import('@/lib/db-errors');
+    redirect(isUniqueViolation(error) ? '/nastaveni?chyba=email-obsazeny' : '/nastaveni?chyba=email-ulozeni');
   }
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
   revalidatePath('/nastaveni');

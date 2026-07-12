@@ -73,7 +73,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     return (
       <form onSubmit={onDisable} className="space-y-3">
         <p className="text-sm">
-          <span className="font-semibold text-zelena">Dvoufaktorové ověření je zapnuté.</span>{' '}
+          <span className="font-semibold text-zelena-text">Dvoufaktorové ověření je zapnuté.</span>{' '}
           <span className="text-inkoust-tlumeny">
             Při přihlášení se vyžaduje kód z autentikátoru.
           </span>
@@ -135,7 +135,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
 
   if (verified) {
     return (
-      <p className="text-sm font-semibold text-zelena">
+      <p className="text-sm font-semibold text-zelena-text">
         Dvoufaktorové ověření je aktivní. Záložní kódy máš uložené?
       </p>
     );

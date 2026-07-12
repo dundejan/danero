@@ -54,17 +54,18 @@ function Rail({
         <Logo className="text-lg" />
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-1">
+      <nav aria-label="Hlavní navigace" className="flex flex-1 flex-col gap-1">
         {items.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={cn(
                 'rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 active
-                  ? 'bg-pozadi font-semibold text-ruzova'
+                  ? 'bg-pozadi font-semibold text-ruzova-text'
                   : 'text-inkoust-tlumeny hover:text-inkoust',
               )}
             >
@@ -96,10 +97,11 @@ function TabBar({ items }: { items: NavItem[] }) {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? 'page' : undefined}
             className={cn(
               // 390 px / 6 položek ≈ 65 px — menší písmo + truncate, ať nic nepřetéká
               'min-w-0 truncate px-0.5 py-3 text-center text-[11px] font-medium tracking-tight',
-              active ? 'font-semibold text-ruzova' : 'text-inkoust-tlumeny',
+              active ? 'font-semibold text-ruzova-text' : 'text-inkoust-tlumeny',
             )}
           >
             {item.label}

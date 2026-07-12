@@ -16,11 +16,11 @@ const PRAVIDLA = [
   },
   {
     title: 'Tříletý časový test',
-    body: 'Cenné papíry držené déle než 3 roky se při prodeji nedaní vůbec (u prodejů v roce 2025 do úhrnu 40 mil. Kč ročně, od roku 2026 bez stropu). Od 15. 2. 2025 má vlastní tříletý test i krypto — tam strop 40 mil. Kč trvá a test neplatí pro stablecoiny. Rozhoduje datum nákupu a prodeje konkrétních kusů — přesně to, co Danero hlídá v horizontu osvobození.',
+    body: 'Cenné papíry držené déle než 3 roky se při prodeji nedaní vůbec (u prodejů v roce 2025 do úhrnu 40 mil. Kč ročně, od roku 2026 bez stropu). Od 15. 2. 2025 má vlastní tříletý test i krypto — tam strop 40 mil. Kč trvá a u stablecoinů je test sporný (počítáme bezpečně, jako by neplatil). Rozhoduje datum nákupu a prodeje konkrétních kusů — přesně to, co Danero hlídá v horizontu osvobození.',
   },
   {
     title: 'Limity pro podání přiznání',
-    body: 'OSVČ v paušálním režimu smí mít max. 50 000 Kč zdanitelných příjmů mimo podnikání — patří sem neosvobozené prodeje, zahraniční dividendy (brutto!) i úroky. Zaměstnancům stačí hlídat 20 000 Kč vedlejších příjmů. Osvobozené prodeje se do limitů nepočítají.',
+    body: 'OSVČ v paušálním režimu smí mít max. 50 000 Kč zdanitelných příjmů mimo podnikání — patří sem neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou) i úroky. Zaměstnancům stačí hlídat 20 000 Kč vedlejších příjmů. Osvobozené prodeje se do limitů nepočítají.',
   },
 ] as const;
 
@@ -30,7 +30,7 @@ export default function KalkulackaPage() {
       <PageHero
         eyebrow="Kalkulačka"
         title="Musím kvůli investicím podat daňové přiznání?"
-        lede="Pár otázek, okamžitá orientační odpověď. Nic se neukládá a na nic se neregistruješ — kalkulačka počítá jen z toho, co zaškrtneš."
+        lede="Pár otázek, okamžitá orientační odpověď. Nic se neukládá a nikam se neregistruješ — kalkulačka počítá jen z toho, co zaškrtneš."
       />
 
       <div className="mt-12">

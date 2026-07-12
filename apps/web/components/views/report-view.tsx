@@ -6,11 +6,11 @@ import {
   UNIFIED_RATE_SOURCES,
   type EngineInput,
 } from '@danero/engine';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/field';
-import { WarningsList } from '@/components/warnings-list';
+import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate, czk, METHOD_LABEL, plural } from '@/lib/format';
@@ -32,6 +32,7 @@ export function ReportView({
   dailyRates,
   basePath = '',
   demo = false,
+  precomputed,
 }: {
   txs: Transaction[];
   profile: ProfileRow;
@@ -40,10 +41,15 @@ export function ReportView({
   dailyRates?: EngineInput['dailyRates'];
   basePath?: string;
   demo?: boolean;
+  /** Výsledky z page-guardu (EngineError) — bez nich by se engine počítal 2×. */
+  precomputed?: {
+    result: ReturnType<typeof analyzeTaxYear>;
+    comparison: ReturnType<typeof compareVariants>;
+  };
 }) {
   const input = engineInputForUser(txs, profile, year, dailyRates);
-  const result = analyzeTaxYear(input);
-  const { variants, recommended } = compareVariants(input);
+  const result = precomputed?.result ?? analyzeTaxYear(input);
+  const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
   const labels = instrumentLabels(txs);
 
   const activeTax =
@@ -153,7 +159,7 @@ export function ReportView({
 
       <Card className="space-y-3">
         <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
-        <div className="overflow-x-auto">
+        <div className="scroll-stiny overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -184,7 +190,7 @@ export function ReportView({
                     <td
                       className={cn(
                         'py-2 pr-4 text-right',
-                        variant.flatTax50kExceeded ? 'text-cervena' : 'text-zelena',
+                        variant.flatTax50kExceeded ? 'text-cervena' : 'text-zelena-text',
                       )}
                     >
                       {variant.flatTax50kExceeded ? 'prolomen' : czk(variant.flatTax50kUsedCzk)}
@@ -215,7 +221,7 @@ export function ReportView({
             kurz GFŘ i denní kurzy s reálnými čísly; nejvýhodnější kombinace je zvýrazněná.
           </p>
         ) : (
-          <p className="text-xs text-jantar">
+          <p className="text-xs text-jantar-text">
             Denní kurzy ČNB se zatím nepodařilo načíst — srovnání zahrnuje jen jednotný
             kurz. Zkus stránku otevřít později.
           </p>
@@ -241,7 +247,7 @@ export function ReportView({
       {allDisposals.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Prodeje v roce {year} ({allDisposals.length})</CardTitle>
-          <div className="overflow-x-auto">
+          <div className="scroll-stiny overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -299,7 +305,7 @@ export function ReportView({
                           ? '—'
                           : czk(expensesCzk)}
                       </td>
-                      <td className="whitespace-nowrap py-2 pr-4 text-right text-zelena">
+                      <td className="whitespace-nowrap py-2 pr-4 text-right text-zelena-text">
                         {czk(disposal.exemptProceedsCzk)}
                       </td>
                       <td className="whitespace-nowrap py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
@@ -315,7 +321,7 @@ export function ReportView({
       {result.derivatives.items.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Derivátové obchody v roce {year} ({result.derivatives.items.length})</CardTitle>
-          <div className="overflow-x-auto">
+          <div className="scroll-stiny overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -348,7 +354,7 @@ export function ReportView({
             </table>
           </div>
           {result.derivatives.deniedExpensesCzk.gt(0) && (
-            <p className="text-xs text-jantar">
+            <p className="text-xs text-jantar-text">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
               podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
               druh“ by základ daně snížil;{' '}
@@ -363,7 +369,7 @@ export function ReportView({
       {result.dividends.items.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Dividendy podle států (zápočet dle § 38f, Příloha č. 3)</CardTitle>
-          <div className="overflow-x-auto">
+          <div className="scroll-stiny overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -406,7 +412,8 @@ export function ReportView({
 
       {result.warnings.length > 0 && (
         <Card className="space-y-2">
-          <CardTitle>Kontroly výpočtu ({result.warnings.length})</CardTitle>
+          {/* počet = zobrazené skupiny (viz prehled-view) */}
+          <CardTitle>Kontroly výpočtu ({groupByCode(result.warnings).length})</CardTitle>
           <WarningsList
             warnings={result.warnings}
             labels={labels}
@@ -430,7 +437,7 @@ export function ReportView({
               </p>
               <Link
                 href="/registrace"
-                className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                className={buttonVariants({ variant: 'primary' })}
               >
                 Založit účet zdarma
               </Link>
@@ -638,7 +645,7 @@ export function ReportView({
             JPY…) používáme z týchž pokynů. Nákupy před rokem 2020 se přepočítávají
             denními kurzy ČNB.
           </p>
-          <div className="overflow-x-auto">
+          <div className="scroll-stiny overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">

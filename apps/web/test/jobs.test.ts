@@ -171,8 +171,104 @@ describe('background joby (in-memory PGlite)', () => {
       expect(account.lastSyncStatus).toBe('error');
       // klíčový invariant: po chybě se lastSyncedAt nenastavuje (plná historie se dotáhne)
       expect(account.lastSyncedAt).toBeNull();
-      const reconciliation = account.lastReconciliation as { error?: string };
-      expect(reconciliation.error).toContain('oprávnění');
+      // chyba jde do vlastního sloupce — poslední platná rekonciliace se NEpřepisuje
+      expect(account.lastSyncError).toContain('oprávnění');
+      expect(account.lastReconciliation).toBeNull();
+    },
+  );
+
+  it(
+    'chyba syncu nepřepíše poslední platnou rekonciliaci (ukládá se vedle)',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupAccount(db);
+
+      // 1. běh: úspěch — rekonciliace „pozice sedí“ se uloží
+      const okJob = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const okMock = makeMockFetch();
+      await processJob(db, okJob.id, { fetchImpl: okMock.fetchImpl, now: NOW, pollIntervalMs: 5 });
+      const afterOk = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect((afterOk.lastReconciliation as { ok: boolean }).ok).toBe(true);
+
+      // 2. běh: pád API — status i chyba se propíšou, rekonciliace zůstává
+      const failJob = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const failMock = makeMockFetch({ failExports: true });
+      await processJob(db, failJob.id, {
+        fetchImpl: failMock.fetchImpl,
+        now: new Date(NOW.getTime() + 60_000),
+        pollIntervalMs: 5,
+      });
+      const afterFail = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect(afterFail.lastSyncStatus).toBe('error');
+      expect(afterFail.lastSyncError).toContain('403');
+      expect((afterFail.lastReconciliation as { ok: boolean }).ok).toBe(true); // poslední dobrá
+    },
+  );
+
+  it(
+    'per-year resume: po pádu plného syncu další běh stáhne jen nedokončené roky',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupAccount(db);
+
+      // spadlý plný běh: 2026 a 2025 dokončené, pád uprostřed roku 2024
+      await db.insert(jobs).values({
+        id: 'spadly-full',
+        userId: 'u1',
+        type: 't212-sync',
+        dedupeKey: accountId,
+        status: 'error',
+        error: 'Zpracování bylo přerušeno',
+        payload: { accountId },
+        progress: {
+          phase: 'exporting',
+          mode: 'full',
+          years: [
+            { year: 2026, status: 'done', added: 1, duplicates: 0 },
+            { year: 2025, status: 'empty' },
+            { year: 2024, status: 'running' },
+          ],
+        },
+        createdAt: HOUR_AGO,
+        startedAt: HOUR_AGO,
+        finishedAt: new Date(NOW.getTime() - 30 * 60_000),
+      });
+
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const mock = makeMockFetch();
+      const finished = await processJob(db, job.id, {
+        fetchImpl: mock.fetchImpl,
+        now: NOW,
+        pollIntervalMs: 5,
+      });
+
+      expect(finished?.status).toBe('success');
+      // 2025 (hotový, prázdný) se přeskočil; běžný rok 2026 se stahuje VŽDY
+      // znovu; 2024 byl při pádu rozdělaný → znovu; pak až po dvojici prázdných
+      expect(mock.requestedYears).toEqual([2026, 2024, 2023, 2022]);
+
+      // průběh ukazuje všechny roky včetně zděděného 2025
+      const progress = finished?.progress as SyncProgress;
+      expect(progress.years!.map((y) => [y.year, y.status])).toEqual([
+        [2026, 'done'],
+        [2025, 'empty'],
+        [2024, 'done'],
+        [2023, 'empty'],
+        [2022, 'empty'],
+      ]);
+
+      // sync doběhl → lastSyncedAt nastaven, chyba minulého běhu smazána
+      const account = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect(account.lastSyncedAt).not.toBeNull();
+      expect(account.lastSyncError).toBeNull();
     },
   );
 

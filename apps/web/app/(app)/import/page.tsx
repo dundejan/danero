@@ -17,7 +17,8 @@ import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
 import { requireUser } from '@/lib/session';
 import { Toast } from '@/components/toast';
 import { FileField } from '@/components/ui/file-field';
-import { plural } from '@/lib/format';
+import { czDateTime, plural } from '@/lib/format';
+import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { firstParam } from '@/lib/utils';
 import {
   deleteBatchAction,
@@ -30,6 +31,10 @@ import {
 } from './actions';
 
 export const metadata = { title: 'Zdroje dat — Danero' };
+
+// syncBrokerAction pouští přes after() plný sync (poll exportů T212 po 65 s) —
+// default limit server action by běh utnul v půlce (stejně jako cron routes)
+export const maxDuration = 800;
 
 interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
@@ -86,9 +91,9 @@ function ConnectedBroker({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-inkoust-tlumeny">
-          <span className="font-semibold text-zelena">Připojeno.</span>{' '}
+          <span className="font-semibold text-zelena-text">Připojeno.</span>{' '}
           {account.lastSyncedAt
-            ? `Naposledy ${account.lastSyncedAt.toLocaleString('cs-CZ')} (${syncStatusLabel(account.lastSyncStatus)}). ${copy.regular}`
+            ? `Naposledy ${czDateTime(account.lastSyncedAt)} (${syncStatusLabel(account.lastSyncStatus)}). ${copy.regular}`
             : copy.firstSync}{' '}
           {copy.note}
         </p>
@@ -99,12 +104,31 @@ function ConnectedBroker({
           </SubmitButton>
         </form>
       </div>
+      {/* selhání celého běhu (pád API, recovery) žije vedle rekonciliace —
+          ta drží poslední platný stav pozic a chybou se nepřepisuje */}
+      {account.lastSyncError && (
+        <div className="space-y-1 border-t border-linka pt-3">
+          <p className="text-sm font-medium text-cervena">
+            Poslední synchronizace selhala: {account.lastSyncError}
+          </p>
+          <p className="text-sm text-inkoust-tlumeny">
+            Klidně ji spusť znovu — co už se stáhlo, zůstává, a nic se nezdvojí.
+          </p>
+        </div>
+      )}
       {reconciliation && (
         <div className="space-y-1 border-t border-linka pt-3">
           {reconciliation.ok ? (
-            <p className="text-sm font-medium text-zelena">
+            <p className="text-sm font-medium text-zelena-text">
               Pozice sedí s {account.label} ({reconciliation.matchedCount}{' '}
-              {plural(reconciliation.matchedCount, 'instrument', 'instrumenty', 'instrumentů')}).
+              {plural(reconciliation.matchedCount, 'instrument', 'instrumenty', 'instrumentů')})
+              {account.lastSyncError && (
+                <span className="font-normal text-inkoust-tlumeny">
+                  {' '}
+                  — stav z posledního úspěšného syncu
+                </span>
+              )}
+              .
             </p>
           ) : reconciliation.error ? (
             <>
@@ -116,10 +140,10 @@ function ConnectedBroker({
               </p>
             </>
           ) : reconciliation.warning ? (
-            <p className="text-sm font-medium text-jantar">{reconciliation.warning}</p>
+            <p className="text-sm font-medium text-jantar-text">{reconciliation.warning}</p>
           ) : (
             <>
-              <p className="text-sm font-medium text-jantar">
+              <p className="text-sm font-medium text-jantar-text">
                 Pozice nesedí s {account.label} — pravděpodobně chybí historie nebo
                 korporátní akce:
               </p>
@@ -219,8 +243,9 @@ export default async function ImportPage({
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Trading 212, Interactive Brokers a Lynx se připojí živě přes API — Danero si
           stáhne historii samo a denně ji aktualizuje. Z ostatních platforem nahraješ
-          výpis; u 17 z nich formát poznáme sami, u zbylých tě provede univerzální
-          šablona. U každé platformy ti ukážeme, kde přesně výpis stáhnout.
+          výpis; u {PLATFORM_COUNTS.file} z nich formát
+          poznáme sami, u zbylých tě provede univerzální šablona. U každé platformy ti
+          ukážeme, kde přesně výpis stáhnout.
         </p>
       </header>
 
@@ -239,7 +264,7 @@ export default async function ImportPage({
                     ? 'Příliš mnoho nahrání za sebou — počkej chvíli a zkus to znovu.'
                     : chyba === 'zadny-ucet'
                       ? 'Tenhle účet u brokera už neexistuje — obnov stránku.'
-                      : 'Vyber aspoň jeden CSV, XML nebo XLSX soubor.'
+                      : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}
@@ -276,6 +301,7 @@ export default async function ImportPage({
                 <input
                   name={`isin-${index}`}
                   placeholder="ISIN (US0378331005)"
+                  aria-label={`ISIN pro ${item.symbol}`}
                   required
                   pattern="[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]"
                   className="w-48 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
@@ -284,6 +310,7 @@ export default async function ImportPage({
                   <input
                     name={`currency-${index}`}
                     placeholder="Měna (USD)"
+                    aria-label={`Měna pro ${item.symbol}`}
                     required
                     pattern="[A-Za-z]{3}"
                     className="w-28 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
@@ -515,7 +542,7 @@ export default async function ImportPage({
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="font-mono text-sm">{batch.filename}</span>
                 <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
-                  {batch.createdAt.toLocaleString('cs-CZ')} · {batch.broker}
+                  {czDateTime(batch.createdAt)} · {batch.broker}
                   <form action={deleteBatchAction}>
                     <input type="hidden" name="batchId" value={batch.id} />
                     <button
@@ -542,13 +569,14 @@ export default async function ImportPage({
                     </span>{' '}
                     · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
                   </p>
-                  {(issues.errors ?? []).slice(0, 10).map((issue) => (
-                    <p key={`e-${issue.line}`} className="text-xs text-cervena">
+                  {(issues.errors ?? []).slice(0, 10).map((issue, i) => (
+                    // index v klíči: na jednom řádku souboru může být víc chyb
+                    <p key={`e-${issue.line}-${i}`} className="text-xs text-cervena">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
-                  {(issues.warnings ?? []).slice(0, 5).map((issue) => (
-                    <p key={`w-${issue.line}`} className="text-xs text-jantar">
+                  {(issues.warnings ?? []).slice(0, 5).map((issue, i) => (
+                    <p key={`w-${issue.line}-${i}`} className="text-xs text-jantar-text">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}

@@ -18,8 +18,14 @@ Zároveň nás okamžitě odliší od genericky modrého Taxomatu i zelených fi
 | `--zelena` | `#2E8B62` | `#5CBD8F` | „osvobozeno" — barva odměny |
 | `--jantar` | `#C7861B` | `#E3A93C` | pásmo WARNING (≥ 60 %) |
 | `--oranz` | `#C25A25` | `#E07C42` | pásmo CRITICAL (≥ 85 %) |
-| `--cervena` | `#B3362F` | `#E05D52` | EXCEEDED / chyby (čistá červeň ≠ růžová značky) |
+| `--cervena` | `#B3362F` | `#E8746A` | EXCEEDED / chyby (čistá červeň ≠ růžová značky); dark zesvětlená na AA 4,5:1 pro text na `--plocha` |
 | `--linka` | `#E4E2DA` | `#2B2E4A` | bordery, dělítka |
+
+Odvozené tokeny (globals.css): `--ruzova-syta`, `--cervena-syta`, `--zelena-syta`
+= syté výplně pro CTA/danger/hotové stavy s bílým textem — v dark módu **nesmí**
+zesvětlat (světlé akcenty tam slouží textu, bílá by na nich neměla kontrast).
+`--ruzova-text`, `--zelena-text`, `--jantar-text`, `--oranz-text` = textové odstíny
+pro drobný text na tónovaných plochách (AA 4,5:1); v dark módu = základní akcenty.
 
 Zásada: růžová = značka a pozornost (CTA, aktivní stav, linie osvobození). Semafor
 limitů jede na zelená/jantar/oranž/červená — funkční, naučitelné. Zelená má druhý
