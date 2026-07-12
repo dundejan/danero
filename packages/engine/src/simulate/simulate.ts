@@ -64,7 +64,7 @@ export interface SaleSimulationResult {
   };
 }
 
-/** „Co když teď prodám X?" — dopad zamýšleného prodeje na limity a daň ještě před obchodem. */
+/** „Co když teď prodám X?“ — dopad zamýšleného prodeje na limity a daň ještě před obchodem. */
 export function simulateSale(
   input: EngineInput,
   sale: SaleSimulationRequest,

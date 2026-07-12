@@ -57,7 +57,7 @@ describe('Degiro Transactions.csv', () => {
     expect(ids[3]).toMatch(/^degiro-[0-9a-f]{16}$/);
   });
 
-  it('čísla „1.234,56" (tisícová tečka + desetinná čárka)', () => {
+  it('čísla „1.234,56“ (tisícová tečka + desetinná čárka)', () => {
     const result = parseDegiroTransactionsCsv(DEGIRO_TRANSACTIONS_CZ);
     const vwrl = result.transactions[3]!;
     if (vwrl.type !== 'BUY') throw new Error('unreachable');
@@ -66,7 +66,7 @@ describe('Degiro Transactions.csv', () => {
     expect(vwrl.fee?.amount.toString()).toBe('1');
   });
 
-  it('EN hlavičky + čárkový oddělovač + čísla „1,855.00" v uvozovkách', () => {
+  it('EN hlavičky + čárkový oddělovač + čísla „1,855.00“ v uvozovkách', () => {
     const result = parseDegiroTransactionsCsv(DEGIRO_TRANSACTIONS_EN);
     expect(result.errors).toEqual([]);
     expect(result.transactions).toHaveLength(1);
@@ -131,7 +131,7 @@ describe('Degiro Account.csv', () => {
   it('dividenda + daň z dividendy se spárují (stejný ISIN a den); prázdná Změna bez záznamu', () => {
     const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_CZ);
     const dividendy = result.transactions.filter((t) => t.type === 'DIVIDEND');
-    // řádek „Dividenda" s prázdnou Změnou nesmí vytvořit záznam
+    // řádek „Dividenda“ s prázdnou Změnou nesmí vytvořit záznam
     expect(dividendy).toHaveLength(1);
     const dividend = dividendy[0]!;
     if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
@@ -164,9 +164,9 @@ describe('Degiro Account.csv', () => {
 
     const deposit = result.transactions.find((t) => t.type === 'DEPOSIT')!;
     if (deposit.type !== 'DEPOSIT') throw new Error('unreachable');
-    expect(deposit.amount.toString()).toBe('1000'); // „1.000,00" v uvozovkách
+    expect(deposit.amount.toString()).toBe('1000'); // „1.000,00“ v uvozovkách
 
-    // „Terugstorting" obsahuje „storting" — musí být výběr, ne vklad
+    // „Terugstorting“ obsahuje „storting“ — musí být výběr, ne vklad
     const withdrawal = result.transactions.find((t) => t.type === 'WITHDRAWAL')!;
     if (withdrawal.type !== 'WITHDRAWAL') throw new Error('unreachable');
     expect(withdrawal.amount.toString()).toBe('200');
@@ -340,7 +340,7 @@ describe('isDegiroCsv (autodetekce)', () => {
     expect(isDegiroCsv(t212)).toBeNull();
   });
 
-  it('univerzální šablona (type,date,…,isin,quantity,price) → null, ne „transactions"', () => {
+  it('univerzální šablona (type,date,…,isin,quantity,price) → null, ne „transactions“', () => {
     expect(isDegiroCsv(UNIVERSAL_TEMPLATE_CSV)).toBeNull();
   });
 });

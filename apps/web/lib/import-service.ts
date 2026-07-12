@@ -96,7 +96,7 @@ const withUnmapped = (
  * `importFile` (jedno načtení workbooku pro všechny sniffy).
  */
 function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
-  // HTML reporty MetaTraderu dřív než obecný XML test — taky začínají „<"
+  // HTML reporty MetaTraderu dřív než obecný XML test — taky začínají „<“
   if (sniffMt4Html(text)) return noUnmapped(parseMt4Html(text));
   if (sniffMt5Html(text)) return noUnmapped(parseMt5Html(text));
   const trimmed = text.trimStart();
@@ -108,7 +108,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
       unknown.errors.push({
         line: 1,
         message:
-          'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report") a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
+          'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report“) a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
       });
       return noUnmapped(unknown);
     }

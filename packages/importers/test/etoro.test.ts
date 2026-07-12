@@ -45,12 +45,12 @@ describe('parseEtoroNumber', () => {
     ['12,345,678', '12345678'],
     ['30000', '30000'],
   ];
-  it.each(valid)('„%s" → %s', (input, expected) => {
+  it.each(valid)('„%s“ → %s', (input, expected) => {
     expect(parseEtoroNumber(input)?.toString()).toBe(expected);
   });
 
   const invalid = ['', '-', '--', 'abc', 'Daily', '1,23,45', '1.2.3'];
-  it.each(invalid)('„%s" → null', (input) => {
+  it.each(invalid)('„%s“ → null', (input) => {
     expect(parseEtoroNumber(input)).toBeNull();
   });
 });
@@ -78,7 +78,7 @@ describe('eToro XLSX parser', () => {
     const buy = result.transactions.find((t) => t.id === 'etoro-2355395242-open');
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.isin).toBe('US91347P1057');
-    expect(buy.ticker).toBe('OLED'); // z „Buy Universal Display (OLED)"
+    expect(buy.ticker).toBe('OLED'); // z „Buy Universal Display (OLED)“
     expect(buy.quantity.toString()).toBe('0.102626');
     expect(buy.pricePerShare.toString()).toBe('170.55');
     expect(buy.currency).toBe('USD');
@@ -138,7 +138,7 @@ describe('eToro XLSX parser', () => {
     const amd = result.transactions.find((t) => t.id === 'etoro-2596572937-open');
     if (!amd || amd.type !== 'BUY') throw new Error('unreachable');
     expect(amd.isin).toBe('US0079031078'); // z mapování — Activity ISIN nemá
-    expect(amd.ticker).toBe('AMD'); // z Details „AMD/USD"
+    expect(amd.ticker).toBe('AMD'); // z Details „AMD/USD“
     expect(amd.quantity.toString()).toBe('0.337209');
     expect(amd.pricePerShare.toString()).toBe(d('49.88').div('0.337209').toString());
     expect(amd.currency).toBe('USD');
@@ -176,7 +176,7 @@ describe('eToro XLSX parser', () => {
     if (!nke || nke.type !== 'DIVIDEND') throw new Error('unreachable');
     expect(nke.gross.toString()).toBe('0.24'); // 0.17 net + 0.07 srážka
     expect(nke.withholdingTax.toString()).toBe('0.07');
-    expect(nke.currency).toBe('USD'); // ze sufixu hlavičky „(USD)"
+    expect(nke.currency).toBe('USD'); // ze sufixu hlavičky „(USD)“
     expect(nke.isin).toBe('US6541061031');
     expect(nke.date).toBe('2024-01-02');
 
@@ -196,7 +196,7 @@ describe('eToro XLSX parser', () => {
 
     const sdrt = fees.find((t) => t.note?.startsWith('SDRT'));
     if (!sdrt || sdrt.type !== 'FEE') throw new Error('unreachable');
-    expect(sdrt.amount.toString()).toBe('6.97'); // „(6.97)" → kladný náklad
+    expect(sdrt.amount.toString()).toBe('6.97'); // „(6.97)“ → kladný náklad
     expect(sdrt.currency).toBe('USD');
     expect(sdrt.date).toBe('2025-07-10');
 
@@ -261,29 +261,29 @@ describe('eToro XLSX parser', () => {
     expect(result.unmappedSymbols).toEqual([]);
     expect(result.transactions).toHaveLength(5);
 
-    // stará hlavička bez „(USD)" sufixů, Action „Buy NVDA" bez závorek
+    // stará hlavička bez „(USD)“ sufixů, Action „Buy NVDA“ bez závorek
     const buy = result.transactions.find((t) => t.id === 'etoro-1074146905-open');
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.ticker).toBe('NVDA');
-    expect(buy.quantity.toString()).toBe('2.5'); // „2,5"
-    expect(buy.pricePerShare.toString()).toBe('85.11'); // „ 85,11 "
+    expect(buy.quantity.toString()).toBe('2.5'); // „2,5“
+    expect(buy.pricePerShare.toString()).toBe('85.11'); // „ 85,11 “
     expect(buy.tradeDate).toBe('2020-04-15');
 
     const sell = result.transactions.find((t) => t.id === 'etoro-1074146905-close');
     if (!sell || sell.type !== 'SELL') throw new Error('unreachable');
     expect(sell.pricePerShare.toString()).toBe('95.5');
 
-    // hlavička „Units / Contracts" + „Amount in EUR" (Amount se nesmí splést)
+    // hlavička „Units / Contracts“ + „Amount in EUR“ (Amount se nesmí splést)
     const adbe = result.transactions.find((t) => t.id === 'etoro-2000000001-open');
     if (!adbe || adbe.type !== 'BUY') throw new Error('unreachable');
-    expect(adbe.pricePerShare.toString()).toBe('400.2'); // „ 1 000,50 " / „2,5"
+    expect(adbe.pricePerShare.toString()).toBe('400.2'); // „ 1 000,50 “ / „2,5“
     expect(adbe.isin).toBe('US00724F1012');
 
     const fee = result.transactions.find((t) => t.type === 'FEE');
     if (!fee || fee.type !== 'FEE') throw new Error('unreachable');
-    expect(fee.amount.toString()).toBe('0.1'); // „(0,10)"
+    expect(fee.amount.toString()).toBe('0.1'); // „(0,10)“
 
-    // dividenda z varianty „Net dividends (EUR)" → měna ze sufixu hlavičky
+    // dividenda z varianty „Net dividends (EUR)“ → měna ze sufixu hlavičky
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
     if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
     expect(dividend.gross.toString()).toBe('3.65'); // 3,10 + 0,55
@@ -317,7 +317,7 @@ describe('eToro XLSX parser', () => {
     expect(result.warnings.some((w) => w.message.includes('sloupec se srážkovou daní'))).toBe(true);
   });
 
-  it('chybné řádky → error se skutečným číslem řádku; neznámý typ → výzva „nahlaš nám ho"', async () => {
+  it('chybné řádky → error se skutečným číslem řádku; neznámý typ → výzva „nahlaš nám ho“', async () => {
     const buffer = await buildEtoroXlsx({
       closed: {
         rows: [

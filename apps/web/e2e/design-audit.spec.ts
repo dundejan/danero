@@ -16,7 +16,7 @@ async function shoot(page: import('@playwright/test').Page, name: string) {
 
 test('design audit: screenshoty všech stránek', async ({ page }) => {
   test.setTimeout(300_000);
-  // bez animací: stagger tečka po tečce jinak vyrobí „prázdné" snímky
+  // bez animací: stagger tečka po tečce jinak vyrobí „prázdné“ snímky
   await page.emulateMedia({ reducedMotion: 'reduce' });
 
   // veřejné stránky

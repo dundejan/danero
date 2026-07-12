@@ -49,7 +49,7 @@ export function normalizeKrakenAsset(asset: string): string {
 }
 
 // Fiat poznáváme whitelistem ISO kódů (sdílený FIAT_CURRENCIES), NE prefixem —
-// „EUR" se vyskytuje i bez Z.
+// „EUR“ se vyskytuje i bez Z.
 
 /* ── Čísla a datumy ──────────────────────────────────────────────────────── */
 
@@ -127,7 +127,7 @@ export function parseKrakenCsv(text: string): ImportResult {
     if (!map.has(required)) {
       result.errors.push({
         line: 1,
-        message: `Soubor nevypadá jako Kraken ledgers.csv — chybí sloupec „${required}". Nalezené sloupce: ${rawHeaders.filter((h) => h !== '').join(', ')}`,
+        message: `Soubor nevypadá jako Kraken ledgers.csv — chybí sloupec „${required}“. Nalezené sloupce: ${rawHeaders.filter((h) => h !== '').join(', ')}`,
       });
       return result;
     }
@@ -204,14 +204,14 @@ export function parseKrakenCsv(text: string): ImportResult {
       case 'settled':
         result.warnings.push({
           line,
-          message: `Řádek „${type}": marginové obchody na Krakenu zatím nepodporujeme — řádek přeskočen, výsledek doplň přes univerzální šablonu.`,
+          message: `Řádek „${type}“: marginové obchody na Krakenu zatím nepodporujeme — řádek přeskočen, výsledek doplň přes univerzální šablonu.`,
           raw,
         });
         return;
       default:
         result.warnings.push({
           line,
-          message: `Typ záznamu „${map.get(row, 'type')}" zatím nepodporujeme — řádek přeskočen. Pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
+          message: `Typ záznamu „${map.get(row, 'type')}“ zatím nepodporujeme — řádek přeskočen. Pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
           raw,
         });
         return;
@@ -244,14 +244,14 @@ export function parseKrakenCsv(text: string): ImportResult {
       if (p.date === null) {
         result.errors.push({
           line: p.leg.line,
-          message: `Neplatný čas „${p.leg.time}" (očekáváme YYYY-MM-DD HH:MM:SS).`,
+          message: `Neplatný čas „${p.leg.time}“ (očekáváme YYYY-MM-DD HH:MM:SS).`,
           raw: p.leg.raw,
         });
         invalid = true;
       } else if (p.amount === null) {
         result.errors.push({
           line: p.leg.line,
-          message: `Částku „${p.leg.amountRaw}" se nepodařilo přečíst.`,
+          message: `Částku „${p.leg.amountRaw}“ se nepodařilo přečíst.`,
           raw: p.leg.raw,
         });
         invalid = true;

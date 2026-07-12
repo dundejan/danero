@@ -17,7 +17,7 @@ const USD = 'USD';
  */
 export type TastytradeInstrumentMap = IsinInstrumentMap;
 
-/** Číselná hodnota Tastytrade: tisícové čárky („1,000.00"); literál „--" = prázdno. */
+/** Číselná hodnota Tastytrade: tisícové čárky („1,000.00“); literál „--“ = prázdno. */
 function parseTastyNumber(value: string): string | null {
   const trimmed = value.trim();
   if (trimmed === '' || trimmed === '--') return null;
@@ -74,8 +74,8 @@ const dayDistance = (a: string, b: string): number =>
   Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
 /**
- * Autodetekce Tastytrade exportu: nová generace má sloupce „Sub Type"
- * a „Underlying Symbol", legacy „Transaction Code" a „Account Reference".
+ * Autodetekce Tastytrade exportu: nová generace má sloupce „Sub Type“
+ * a „Underlying Symbol“, legacy „Transaction Code“ a „Account Reference“.
  */
 export function sniffTastytradeCsv(text: string): boolean {
   if (text.trim() === '') return false;
@@ -121,8 +121,8 @@ interface NormalizedRow {
 }
 
 /**
- * Parser Tastytrade „History → Transactions" CSV. Podporuje tři hlavičky:
- * novou 20sloupcovou, 21sloupcovou (navíc „Total") a legacy 15sloupcovou
+ * Parser Tastytrade „History → Transactions“ CSV. Podporuje tři hlavičky:
+ * novou 20sloupcovou, 21sloupcovou (navíc „Total“) a legacy 15sloupcovou
  * (tastyworks). YTD daňový export z Tax Center se odmítá. Řádky jsou řazené
  * od nejnovějšího → zpracovávají se ODSPODU (chronologicky), aby fungovalo
  * sledování čisté pozice opcí — zániky opcí (expirace/assignment/exercise)
@@ -200,7 +200,7 @@ export function parseTastytradeCsv(
       underlying: map.get(row, 'Underlying Symbol') || map.get(row, 'Root Symbol') || symbol,
       instrumentRaw,
       isOption,
-      // OCC symbol má vícenásobné mezery → jedna pomlčka („OPT:SCHG-240920C00099000")
+      // OCC symbol má vícenásobné mezery → jedna pomlčka („OPT:SCHG-240920C00099000“)
       optionIsin: isOption && symbol !== '' ? `OPT:${symbol.replace(/\s+/g, '-')}` : null,
       quantityRaw: map.get(row, 'Quantity'),
       priceRaw: map.get(row, 'Average Price'),
@@ -228,7 +228,7 @@ export function parseTastytradeCsv(
       cells: row,
       raw: row.join(','),
       dateRaw,
-      // „MM/DD/YYYY H:MM AM/PM" — parseUsDate čte datum, čas ignoruje
+      // „MM/DD/YYYY H:MM AM/PM“ — parseUsDate čte datum, čas ignoruje
       date: parseUsDate(dateRaw),
       code: map.get(row, 'Transaction Code'),
       subType: map.get(row, 'Transaction Subcode'),
@@ -327,7 +327,7 @@ export function parseTastytradeCsv(
     if (!quantity || quantity.lte(0)) {
       result.errors.push({
         line,
-        message: `${norm.actionRaw} ${norm.symbol}: chybí kladný počet (Quantity „${norm.quantityRaw}").`,
+        message: `${norm.actionRaw} ${norm.symbol}: chybí kladný počet (Quantity „${norm.quantityRaw}“).`,
         raw,
       });
       return;
@@ -384,7 +384,7 @@ export function parseTastytradeCsv(
     if (norm.instrumentRaw !== 'Equity') {
       result.warnings.push({
         line,
-        message: `Instrument „${norm.instrumentRaw || 'neuvedený'}" (${norm.symbol}) zatím nepodporujeme — řádek přeskočen; doplň ho přes univerzální šablonu.`,
+        message: `Instrument „${norm.instrumentRaw || 'neuvedený'}“ (${norm.symbol}) zatím nepodporujeme — řádek přeskočen; doplň ho přes univerzální šablonu.`,
       });
       return;
     }
@@ -424,7 +424,7 @@ export function parseTastytradeCsv(
       if (!norm.isOption || norm.optionIsin === null) {
         result.warnings.push({
           line,
-          message: `„${norm.subType}" u ${norm.symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; doplň ho přes univerzální šablonu.`,
+          message: `„${norm.subType}“ u ${norm.symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; doplň ho přes univerzální šablonu.`,
         });
         return;
       }
@@ -433,7 +433,7 @@ export function parseTastytradeCsv(
       if (!quantity || quantity.lte(0)) {
         result.errors.push({
           line,
-          message: `${norm.subType} ${norm.symbol}: chybí počet kontraktů (Quantity „${norm.quantityRaw}").`,
+          message: `${norm.subType} ${norm.symbol}: chybí počet kontraktů (Quantity „${norm.quantityRaw}“).`,
           raw,
         });
         return;
@@ -470,20 +470,20 @@ export function parseTastytradeCsv(
     if (warnSkip !== undefined) {
       result.warnings.push({
         line,
-        message: `„${norm.subType}"${norm.symbol ? ` (${norm.symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
+        message: `„${norm.subType}“${norm.symbol ? ` (${norm.symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
       });
       return;
     }
     if (RD_SILENT_SKIP.has(norm.subType)) {
       result.skipped.push({
         line,
-        message: `„${norm.subType}": převod pozic — pro výpočet ho případně doplň jako TRANSFER_IN/OUT přes univerzální šablonu.`,
+        message: `„${norm.subType}“: převod pozic — pro výpočet ho případně doplň jako TRANSFER_IN/OUT přes univerzální šablonu.`,
       });
       return;
     }
     result.errors.push({
       line,
-      message: `Neznámý typ záznamu „Receive Deliver / ${norm.subType}" — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ záznamu „Receive Deliver / ${norm.subType}“ — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   };
@@ -496,7 +496,7 @@ export function parseTastytradeCsv(
       if (amountRaw === null) {
         result.errors.push({
           line,
-          message: `Dividenda ${norm.symbol || 'bez symbolu'}: chybí částka (Value „${norm.valueRaw}").`,
+          message: `Dividenda ${norm.symbol || 'bez symbolu'}: chybí částka (Value „${norm.valueRaw}“).`,
           raw,
         });
         return;
@@ -549,7 +549,7 @@ export function parseTastytradeCsv(
     if (norm.subType === 'Debit Interest') {
       result.skipped.push({
         line,
-        message: '„Debit Interest": debetní úrok je náklad — do daňového výpočtu ho nezařazujeme.',
+        message: '„Debit Interest“: debetní úrok je náklad — do daňového výpočtu ho nezařazujeme.',
       });
       return;
     }
@@ -571,18 +571,18 @@ export function parseTastytradeCsv(
     if (MM_SILENT_SKIP.has(norm.subType)) {
       result.skipped.push({
         line,
-        message: `„${norm.subType}": peněžní převod — pro daňový výpočet není potřeba.`,
+        message: `„${norm.subType}“: peněžní převod — pro daňový výpočet není potřeba.`,
       });
       return;
     }
     const warnSkip = MM_WARN_SKIP.get(norm.subType);
     if (warnSkip !== undefined) {
-      result.warnings.push({ line, message: `„${norm.subType}": ${warnSkip}. Řádek přeskočen.` });
+      result.warnings.push({ line, message: `„${norm.subType}“: ${warnSkip}. Řádek přeskočen.` });
       return;
     }
     result.errors.push({
       line,
-      message: `Neznámý typ pohybu „Money Movement / ${norm.subType}" — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ pohybu „Money Movement / ${norm.subType}“ — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   };
@@ -597,7 +597,7 @@ export function parseTastytradeCsv(
     if (norm.date === null) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${norm.dateRaw}" (očekáván ${legacy ? 'US formát MM/DD/YYYY s časem' : 'ISO čas, např. 2024-08-16T15:57:13+0200'}).`,
+        message: `Neplatné datum „${norm.dateRaw}“ (očekáván ${legacy ? 'US formát MM/DD/YYYY s časem' : 'ISO čas, např. 2024-08-16T15:57:13+0200'}).`,
         raw: norm.raw,
       });
       continue;
@@ -609,7 +609,7 @@ export function parseTastytradeCsv(
     if (norm.actionRaw !== '') {
       result.errors.push({
         line,
-        message: `Neznámý směr obchodu „${norm.actionRaw}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý směr obchodu „${norm.actionRaw}“ — nahlaš nám ho, doplníme podporu.`,
         raw: norm.raw,
       });
       continue;
@@ -624,7 +624,7 @@ export function parseTastytradeCsv(
     }
     result.errors.push({
       line,
-      message: `Neznámý typ řádku „${norm.code}${norm.subType ? ` / ${norm.subType}` : ''}" — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ řádku „${norm.code}${norm.subType ? ` / ${norm.subType}` : ''}“ — nahlaš nám ho, doplníme podporu.`,
       raw: norm.raw,
     });
   }

@@ -69,7 +69,7 @@ describe('Saxo XLSX parser', () => {
     expect(gbx.fee?.currency).toBe('GBP');
   });
 
-  it('stringové buňky s desetinnou čárkou: frakční kusy „Buy 1,5 @ 100,00"', async () => {
+  it('stringové buňky s desetinnou čárkou: frakční kusy „Buy 1,5 @ 100,00“', async () => {
     const buffer = await buildSaxoXlsx({ rows: SAXO_ROWS_EN });
     const result = await parseSaxoXlsx(buffer);
 

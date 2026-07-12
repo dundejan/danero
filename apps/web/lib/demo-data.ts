@@ -16,19 +16,19 @@ import { UNIFIED_RATES } from '@/lib/tax-config';
  *    VUAA za ~2 roky → horizont osvobození žije v různých vzdálenostech;
  *  - letošní prodeje CP ≈ 91 000 Kč → limit 100k v pásmu CRITICAL (oranžová);
  *  - zdanitelné příjmy (dividendy + úroky + opce) ≈ 64 000 Kč → prolomený
- *    limit 50k paušální daně → verdikt „podáš přiznání";
+ *    limit 50k paušální daně → verdikt „podáš přiznání“;
  *  - prodej BTC 46 000 Kč → krypto limit v zeleném (osvobozeno úhrnem);
  *  - AAPL má tři nákupní loty s různými cenami → v simulátoru je vidět, že
  *    metoda párování mění výsledek (letošní prodej AAPL kryje úhrn do 100k);
  *  - rok Y−1 prolomil limit 100k (velký prodej SHOP se dvěma loty za různé
- *    ceny) → tabulka „Porovnání variant párování" má v historii co ukázat
+ *    ceny) → tabulka „Porovnání variant párování“ má v historii co ukázat
  *    (FIFO/LIFO dávají různý základ), letošní příběh zůstává beze změny;
  *  - v KAŽDÉM roce Y−5…Y jsou prodeje (zisk i ztráta), dividendy, úroky
  *    a poplatky → přehled i grafy žijí pro všechny roky v přepínači.
  *
  * Události BĚŽNÉHO roku (prodeje, dividendy, opce) mají pevné datumy v rámci
  * roku — engine počítá celé zdaňovací období, takže verdikt a odměrky drží
- * po celý rok (část událostí může být vůči dnešku „v budoucnu", to je záměr).
+ * po celý rok (část událostí může být vůči dnešku „v budoucnu“, to je záměr).
  */
 
 // ── datumová aritmetika (UTC, ISO stringy) ──────────────────────────────────
@@ -55,7 +55,7 @@ const addYears = (isoDate: string, years: number): string =>
  *  (kurz nového roku se doplňuje ručně dle runbooku, R-06a). */
 const LAST_RATE_YEAR = Math.max(...Object.keys(UNIFIED_RATES).map(Number));
 
-/** „Dnešek" dema: skutečné datum s rokem přištípnutým na poslední rok s kurzy. */
+/** „Dnešek“ dema: skutečné datum s rokem přištípnutým na poslední rok s kurzy. */
 export function demoToday(now: Date = new Date()): string {
   const real = iso(now);
   const year = Math.min(Number(real.slice(0, 4)), LAST_RATE_YEAR);
@@ -162,7 +162,7 @@ interface Holding {
   assetClass?: 'STOCK' | 'ETF' | 'CRYPTO';
   buys: HoldingTrade[];
   sells?: HoldingTrade[];
-  /** Aktuální cena „od brokera" (měna = currency instrumentu). */
+  /** Aktuální cena „od brokera“ (měna = currency instrumentu). */
   price: string;
 }
 
@@ -260,7 +260,7 @@ const DIVIDEND_PLANS: DividendPlan[] = [
   { tag: 'jnj', isin: 'US4781601046', currency: 'USD', country: 'US', gross: '28', wht: '4.20', day: '10', byYear: { [-5]: ['06', '09', '12'], [-4]: Q_BREZEN, [-3]: Q_BREZEN, [-2]: Q_BREZEN, [-1]: Q_BREZEN, 0: Q_BREZEN } },
   { tag: 'pg', isin: 'US7427181091', currency: 'USD', country: 'US', gross: '26', wht: '3.90', day: '17', byYear: { [-5]: ['05', '08', '11'], [-4]: Q_UNOR, [-3]: Q_UNOR, [-2]: Q_UNOR, [-1]: Q_UNOR, 0: Q_UNOR } },
   { tag: 'xom', isin: 'US30231G1022', currency: 'USD', country: 'US', gross: '22', wht: '3.30', day: '10', byYear: { [-5]: ['09', '12'], [-4]: Q_BREZEN, [-3]: Q_BREZEN, [-2]: Q_BREZEN, [-1]: Q_BREZEN, 0: Q_BREZEN } },
-  // US 30 % — u custodiana chybí W-8BEN → varování „srážka nad smlouvu"
+  // US 30 % — u custodiana chybí W-8BEN → varování „srážka nad smlouvu“
   { tag: 'mo', isin: 'US02209S1033', currency: 'USD', country: 'US', gross: '75', wht: '22.50', day: '25', byYear: { [-1]: ['04', '07', '10'], 0: Q_LEDEN } },
   // DE 26,375 % (KESt nad smluvních 15 %)
   { tag: 'sap', isin: 'DE0007164600', currency: 'EUR', country: 'DE', gross: '160', wht: '42.20', day: '20', byYear: { [-2]: ['05'], [-1]: ['05'], 0: ['05'] } },

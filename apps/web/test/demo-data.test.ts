@@ -15,7 +15,7 @@ import { UNIFIED_RATES } from '@/lib/tax-config';
  * osvobození, dividendy z několika států, 50+ otevřených pozic a aktivita
  * (prodeje, dividendy, poplatky) v KAŽDÉM roce Y−5…Y. Kontroluje se ve třech
  * okamžicích roku (začátek, střed, konec), protože datumy jsou relativní
- * k „dnešku".
+ * k „dnešku“.
  */
 const TODAYS = [
   demoToday(new Date('2026-01-02T10:00:00Z')),
@@ -46,7 +46,7 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
     expect(result.securities.exemptUnder100k).toBe(true);
   });
 
-  it('limit 50k paušální daně je prolomený → verdikt „podáš přiznání"', () => {
+  it('limit 50k paušální daně je prolomený → verdikt „podáš přiznání“', () => {
     expect(result.limits.flatTax50k.applicable).toBe(true);
     expect(result.limits.flatTax50k.status.exceeded).toBe(true);
     // s rezervou na roční posun orientačních kurzů, ale ne přestřelený
@@ -198,7 +198,7 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
     expect(variants.filter((v) => v.fxMethod === 'UNIFIED')).toHaveLength(4);
   });
 
-  it('otisk pro engine cache je pro stejný „dnešek" stabilní', () => {
+  it('otisk pro engine cache je pro stejný „dnešek“ stabilní', () => {
     const again = demoDataset(today);
     expect(
       analysisFingerprint('demo', txs, profile, year, today, false),

@@ -142,7 +142,7 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     const result = run(
       [
         // base10 = 110 050 − 100 000 = 10 050; base8 = 10 050 → oddělené zaokrouhlení
-        // základů na stovky dolů dělá § 16a o pár Kč „levnější" (3 000 vs. 3 015)
+        // základů na stovky dolů dělá § 16a o pár Kč „levnější“ (3 000 vs. 3 015)
         buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
         sell({ quantity: '100', pricePerShare: '1100.5', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
         dividend({ gross: '10050', withholdingTax: '0' }),

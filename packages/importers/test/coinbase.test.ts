@@ -91,7 +91,7 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(result.warnings[0]!.message).toContain('nezařazujeme');
   });
 
-  it('V2 (Fees bez „and/or Spread"): Buy s měnou ze Spot Price Currency', () => {
+  it('V2 (Fees bez „and/or Spread“): Buy s měnou ze Spot Price Currency', () => {
     const result = parseCoinbaseCsv(COINBASE_V2);
 
     expect(result.errors).toEqual([]);
@@ -117,7 +117,7 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(buy.isin).toBe('BTC');
     expect(buy.quantity.toString()).toBe('0.03182812');
     expect(buy.pricePerShare.eq(d('295.60').div(d('0.03182812')))).toBe(true);
-    expect(buy.currency).toBe('EUR'); // z prefixu „EUR Subtotal"
+    expect(buy.currency).toBe('EUR'); // z prefixu „EUR Subtotal“
     expect(buy.fee?.amount.toString()).toBe('4.4');
     expect(buy.tradeDate).toBe('2020-09-27');
 

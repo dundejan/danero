@@ -144,7 +144,7 @@ function classifyRow(smer: string, text: string): RowKind {
   if (s.includes('převod')) return 'TRANSFER';
   if (s.includes('úrok')) return 'INTEREST';
   if (s.includes('poplatek')) return 'FEE';
-  // daň PŘED dividendou — „Daň z dividendy" obsahuje obě klíčová slova
+  // daň PŘED dividendou — „Daň z dividendy“ obsahuje obě klíčová slova
   if (t.includes('srážková daň') || t.startsWith('daň')) return 'TAX';
   if (s.includes('dividenda') || t.includes('dividend')) return 'DIVIDEND';
   if (s === '' && t !== '') return 'TEXT_ONLY';
@@ -256,7 +256,7 @@ export function parseFioCsv(
       if (!feeCurrencies.includes(tradeCurrency)) {
         result.warnings.push({
           line,
-          message: `Export nemá sloupec „Poplatky v ${tradeCurrency}" — poplatek počítáme 0, zkontroluj ho v e-Brokeru.`,
+          message: `Export nemá sloupec „Poplatky v ${tradeCurrency}“ — poplatek počítáme 0, zkontroluj ho v e-Brokeru.`,
         });
       }
       return undefined;
@@ -315,7 +315,7 @@ export function parseFioCsv(
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${rawDate}" (očekáván formát dd.mm.rrrr, případně s časem).`,
+        message: `Neplatné datum „${rawDate}“ (očekáván formát dd.mm.rrrr, případně s časem).`,
         raw,
       });
       return;
@@ -426,7 +426,7 @@ export function parseFioCsv(
           result.errors.push({ line, message: `${smer}: chybí částka.`, raw });
           return;
         }
-        // „Převod" nese směr znaménkem částky; Vloženo/Vybráno ho mají ve Směru
+        // „Převod“ nese směr znaménkem částky; Vloženo/Vybráno ho mají ve Směru
         const type =
           kind === 'TRANSFER' ? (resolved.amount.gte(0) ? 'DEPOSIT' : 'WITHDRAWAL') : kind;
         push(line, raw, {
@@ -455,7 +455,7 @@ export function parseFioCsv(
         }
         result.errors.push({
           line,
-          message: `Neznámý řádek „${note}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý řádek „${note}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
         return;
@@ -463,7 +463,7 @@ export function parseFioCsv(
       case 'UNKNOWN': {
         result.errors.push({
           line,
-          message: `Neznámý směr „${smer}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý směr „${smer}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
         return;

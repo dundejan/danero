@@ -1,6 +1,6 @@
 /**
  * Fixtures MetaTrader reportů. MT4 HTML statement je TS string se strukturou
- * PŘESNĚ podle reálného „Save as Report" vzorku (title, hlavička s Account/
+ * PŘESNĚ podle reálného „Save as Report“ vzorku (title, hlavička s Account/
  * Currency, sekce Closed Transactions / Open Trades / Working Orders /
  * Summary, čísla s mezerou v tisících). MT5 XLSX se staví za běhu přes
  * exceljs (binárky se necommitují), MT5 HTML je TS string.
@@ -10,7 +10,7 @@
  */
 import ExcelJS from 'exceljs';
 
-/* ── MT4 „Save as Report" (.htm) ─────────────────────────────────────────── */
+/* ── MT4 „Save as Report“ (.htm) ─────────────────────────────────────────── */
 
 export const MT4_TABLE_HEADER =
   '<tr align="center" bgcolor="#C0C0C0"><td>Ticket</td><td nowrap="">Open Time</td><td>Type</td><td>Size</td><td>Item</td><td>Price</td><td>S / L</td><td>T / P</td><td nowrap="">Close Time</td><td>Price</td><td>Commission</td><td>Taxes</td><td>Swap</td><td>Profit</td></tr>';
@@ -39,7 +39,7 @@ export interface Mt4StatementSpec {
   openRows?: string[];
 }
 
-/** Postaví MT4 statement doslova podle reálného vzorku „Save as Report". */
+/** Postaví MT4 statement doslova podle reálného vzorku „Save as Report“. */
 export function buildMt4Html(spec: Mt4StatementSpec = {}): string {
   const currencyCell =
     spec.currency === null
@@ -86,7 +86,7 @@ export const MT4_HTML = buildMt4Html();
 
 /* ── MT5 report (HTML i XLSX) ────────────────────────────────────────────── */
 
-/** Deal tabulky Deals — peníze jako stringy (zachová „1 234.56" s mezerou). */
+/** Deal tabulky Deals — peníze jako stringy (zachová „1 234.56“ s mezerou). */
 export interface Mt5Deal {
   time: string;
   deal: number;
@@ -201,7 +201,7 @@ export interface Mt5XlsxSpec {
   sheetName?: string;
 }
 
-/** Postaví MT5 XLSX „Open XML" report: hlavička, Orders (přeskakuje se), Deals. */
+/** Postaví MT5 XLSX „Open XML“ report: hlavička, Orders (přeskakuje se), Deals. */
 export async function buildMt5Xlsx(spec: Mt5XlsxSpec = {}): Promise<Buffer> {
   const withFee = spec.withFee ?? true;
   const workbook = new ExcelJS.Workbook();

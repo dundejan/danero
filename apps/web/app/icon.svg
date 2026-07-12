@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="2 2 20 20">
-  <!-- Favicon Danero: stejné „d" jako components/logo.tsx (tečka za linií dneška).
+  <!-- Favicon Danero: stejné „d“ jako components/logo.tsx (tečka za linií dneška).
        Barvy natvrdo — favicon nevidí CSS tokeny; tmavé rozhraní prohlížeče
        řeší prefers-color-scheme (hodnoty = dark tokeny z globals.css). -->
   <style>

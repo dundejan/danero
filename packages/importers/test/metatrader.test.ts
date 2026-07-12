@@ -44,7 +44,7 @@ function netSum(result: ImportResult) {
 /** Číslo řádku fixture podle obsahu — datové řádky jsou v souboru na jednom řádku. */
 function lineOf(text: string, needle: string): number {
   const index = text.split('\n').findIndex((line) => line.includes(needle));
-  if (index < 0) throw new Error(`řádek s „${needle}" nenalezen`);
+  if (index < 0) throw new Error(`řádek s „${needle}“ nenalezen`);
   return index + 1;
 }
 
@@ -101,7 +101,7 @@ describe('MT4 HTML statement parser', () => {
     expect(sell.pricePerShare.toString()).toBe('0');
   });
 
-  it('číslo s mezerou v tisících: profit „1 234.56" + swap -0.44 → SELL 1234.12', () => {
+  it('číslo s mezerou v tisících: profit „1 234.56“ + swap -0.44 → SELL 1234.12', () => {
     const result = parseMt4Html(MT4_HTML);
     const { buy, sell } = pairOf(result, 'MT4:128100002');
 
@@ -173,7 +173,7 @@ describe('MT4 HTML statement parser', () => {
     expect(result.transactions).toHaveLength(2); // vadné řádky nezastaví zbytek
   });
 
-  it('neznámý typ řádku → error „nahlaš nám ho"; zrušený čekající pokyn → skipped', () => {
+  it('neznámý typ řádku → error „nahlaš nám ho“; zrušený čekající pokyn → skipped', () => {
     const unknown =
       '<tr align="right"><td>128999003</td><td class="msdate">2023.11.01 10:00:00</td><td>rollover</td><td colspan="10">rollover fee</td><td class="mspt">-1.00</td></tr>';
     const cancelled =
@@ -290,8 +290,8 @@ describe('MT5 report parser (HTML)', () => {
     expect(result.errors).toHaveLength(4);
     expect(result.errors[0]!.message).toContain('neplatný čas');
     expect(result.errors[0]!.line).toBe(lineOf(html, '1101'));
-    expect(result.errors[1]!.message).toContain('Neznámý typ dealu „dividend"');
-    expect(result.errors[2]!.message).toContain('neznámý směr „sideways"');
+    expect(result.errors[1]!.message).toContain('Neznámý typ dealu „dividend“');
+    expect(result.errors[2]!.message).toContain('neznámý směr „sideways“');
     expect(result.errors[3]!.message).toContain('nečitelné číslo');
   });
 
@@ -300,7 +300,7 @@ describe('MT5 report parser (HTML)', () => {
 
     expect(result.transactions).toEqual([]);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.message).toContain('chybí sekce „Deals"');
+    expect(result.errors[0]!.message).toContain('chybí sekce „Deals“');
   });
 
   it('report bez měny účtu → error celého souboru', () => {
@@ -383,7 +383,7 @@ describe('MT5 report parser (XLSX)', () => {
     const noDeals = await parseMt5Xlsx(await buildMt5Xlsx({ deals: null }));
     expect(noDeals.transactions).toEqual([]);
     expect(noDeals.errors).toHaveLength(1);
-    expect(noDeals.errors[0]!.message).toContain('chybí sekce „Deals"');
+    expect(noDeals.errors[0]!.message).toContain('chybí sekce „Deals“');
   });
 
   it('prázdný list → prázdný výsledek; nečitelný soubor → error', async () => {

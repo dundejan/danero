@@ -77,8 +77,8 @@ export function PortfolioView({
   const allocation = portfolioAllocation(valuation);
   const exemptShareToday = outlook?.points[0]?.exemptShare ?? null;
 
-  // E2: sloupec „Bez daně" jen když má co říct — informaci o nule nese KPI
-  // „Bez daně už dnes"
+  // E2: sloupec „Bez daně“ jen když má co říct — informaci o nule nese KPI
+  // „Bez daně už dnes“
   const anyExempt = valuation.rows.some((row) => row.exemptQuantity.gt(0));
 
   // nejbližší konec časového testu per pozice — pro mobilní karty
@@ -94,7 +94,7 @@ export function PortfolioView({
     }),
   );
 
-  // KPI „Nejbližší osvobození": minimum přes všechny pozice s nesplněným testem
+  // KPI „Nejbližší osvobození“: minimum přes všechny pozice s nesplněným testem
   let nextExemption: { isin: string; exemptFrom: string } | null = null;
   for (const [isin, exemptFrom] of nearestExemption) {
     if (exemptFrom && (!nextExemption || exemptFrom < nextExemption.exemptFrom)) {

@@ -81,7 +81,7 @@ describe('parseTastytradeCsv — nový formát (20 sloupců)', () => {
     expect(buy.ticker).toBe('SCHG');
     expect(buy.quantity.toString()).toBe('100');
     expect(buy.pricePerShare.toString()).toBe('103'); // |Average Price|, kvótované tisíce ve Value
-    expect(buy.fee?.amount.toString()).toBe('5'); // Commissions „--" = 0
+    expect(buy.fee?.amount.toString()).toBe('5'); // Commissions „--“ = 0
   });
 
   it('chronologický tracker: otevření short call → expirace → správně BUY @ 0', () => {
@@ -147,7 +147,7 @@ describe('parseTastytradeCsv — legacy formát (15 sloupců)', () => {
     expect(result.skipped).toHaveLength(1);
   });
 
-  it('akcie: směr z Buy/Sell, datum „MM/DD/YYYY H:MM AM/PM", cena Price, poplatek Fees', () => {
+  it('akcie: směr z Buy/Sell, datum „MM/DD/YYYY H:MM AM/PM“, cena Price, poplatek Fees', () => {
     const buy = result.transactions.find((t) => t.type === 'BUY' && t.isin === 'US0378331005');
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.ticker).toBe('AAPL');

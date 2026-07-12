@@ -87,7 +87,7 @@ describe('Revolut akcie (Account statement CSV)', () => {
     expect(sell.pricePerShare.toString()).toBe('402.13');
     expect(sell.tradeDate).toBe('2023-07-14');
 
-    // „0,76672417" v uvozovkách = desetinná čárka
+    // „0,76672417“ v uvozovkách = desetinná čárka
     const msft = result.transactions[5]!;
     if (msft.type !== 'BUY') throw new Error('unreachable');
     expect(msft.ticker).toBe('MSFT');
@@ -142,7 +142,7 @@ describe('Revolut akcie (Account statement CSV)', () => {
     expect(result.warnings.some((w) => w.message.includes('TRANSFER'))).toBe(false);
   });
 
-  it('extras: LIMIT/STOP typy, cena fallbackem z Total/Quantity, „USD 0.51", CUSTODY_FEE, reversal', () => {
+  it('extras: LIMIT/STOP typy, cena fallbackem z Total/Quantity, „USD 0.51“, CUSTODY_FEE, reversal', () => {
     const result = parseRevolutInvestCsv(REVOLUT_INVEST_EXTRAS_CSV, REVOLUT_INSTRUMENT_MAP);
 
     expect(result.errors).toEqual([]);
@@ -157,7 +157,7 @@ describe('Revolut akcie (Account statement CSV)', () => {
     if (buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.pricePerShare.toString()).toBe('401');
 
-    // peněžní hodnota s ISO kódem („USD 0.51")
+    // peněžní hodnota s ISO kódem („USD 0.51“)
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND')!;
     if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
     expect(dividend.gross.toString()).toBe('0.51');
@@ -189,7 +189,7 @@ describe('Revolut akcie (Account statement CSV)', () => {
     expect(dividend.gross.toString()).toBe('0.04');
   });
 
-  it('neznámý typ řádku → error s číslem řádku a výzvou „nahlaš nám ho"', () => {
+  it('neznámý typ řádku → error s číslem řádku a výzvou „nahlaš nám ho“', () => {
     const result = parseRevolutInvestCsv(REVOLUT_INVEST_UNKNOWN_TYPE_CSV, REVOLUT_INSTRUMENT_MAP);
 
     expect(result.transactions).toEqual([]);
@@ -289,7 +289,7 @@ describe('Revolut krypto — nový formát (Symbol,Type,Quantity,Price,Value,Fee
     expect(buy.pricePerShare.toString()).toBe('5837.33'); // tisícová čárka odstraněná
     expect(buy.currency).toBe('EUR');
     expect(buy.fee).toBeUndefined(); // nulový poplatek se neukládá
-    expect(buy.tradeDate).toBe('2018-06-12'); // „Jun 12, 2018, 4:16:32 PM"
+    expect(buy.tradeDate).toBe('2018-06-12'); // „Jun 12, 2018, 4:16:32 PM“
   });
 
   it('Payment → SELL s poznámkou o platbě kryptem; měna z $', () => {

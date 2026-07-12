@@ -9,7 +9,7 @@ export const COINMATE_BROKER = 'coinmate';
  * Parser výpisů Coinmate (česká krypto burza). CSV se středníkem, UTF-8
  * (může mít BOM), hlavičky česky NEBO anglicky podle jazyka účtu — tři
  * varianty transakční historie (EN krátká, EN dlouhá se zůstatky, CZ) plus
- * „account statement" V2, kde je měna v pojmenovaném sloupci PŘED hodnotou
+ * „account statement“ V2, kde je měna v pojmenovaném sloupci PŘED hodnotou
  * (Currency amount;Amount) a směr obchodu nese sloupec Type detail.
  *
  * Čísla jsou vždy s desetinnou tečkou (i v CZ exportu), prázdné hodnoty bývají
@@ -83,9 +83,9 @@ const TRADE_WRAPPER_TYPES = new Set(['TRADE', 'QUICK TRADE']);
 
 /**
  * Detekce Coinmate CSV z první řádky: středníky + dvojice měnových sloupců
- * v některé z variant (EN, CZ, V2). Kombinace „Amount Currency" + „Price
- * Currency" (resp. CZ/V2 ekvivalenty) se v jiných podporovaných formátech
- * nevyskytuje — T212 má čárky a „Currency (Price / share)", Degiro nemá
+ * v některé z variant (EN, CZ, V2). Kombinace „Amount Currency“ + „Price
+ * Currency“ (resp. CZ/V2 ekvivalenty) se v jiných podporovaných formátech
+ * nevyskytuje — T212 má čárky a „Currency (Price / share)“, Degiro nemá
  * měnové sloupce pojmenované, univerzální šablona má čárky.
  */
 export function sniffCoinmateCsv(text: string): boolean {
@@ -131,7 +131,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
     if (status !== 'OK' && status !== 'COMPLETED') {
       result.skipped.push({
         line,
-        message: `Transakce se stavem „${cell(row, col.status)}" — zpracováváme jen dokončené (OK/COMPLETED).`,
+        message: `Transakce se stavem „${cell(row, col.status)}“ — zpracováváme jen dokončené (OK/COMPLETED).`,
       });
       return;
     }
@@ -157,7 +157,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
       type = detail;
     }
 
-    // odměny z affiliate programu — i řádky s prázdným typem a popiskem „User: …"
+    // odměny z affiliate programu — i řádky s prázdným typem a popiskem „User: …“
     if (AFFILIATE_TYPES.has(type) || (type === '' && description.startsWith('User:'))) {
       result.warnings.push({
         line,
@@ -186,7 +186,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
     if (!BUY_TYPES.has(type) && !SELL_TYPES.has(type)) {
       result.errors.push({
         line,
-        message: `Neznámý typ transakce „${cell(row, col.type) || 'prázdno'}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ transakce „${cell(row, col.type) || 'prázdno'}“ — nahlaš nám ho, doplníme podporu.`,
         raw: row.join(';'),
       });
       return;
@@ -198,7 +198,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
     if (!isoDate) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${cell(row, col.date)}" (očekáváme yyyy-MM-dd HH:mm:ss nebo dd.mm.yyyy).`,
+        message: `Neplatné datum „${cell(row, col.date)}“ (očekáváme yyyy-MM-dd HH:mm:ss nebo dd.mm.yyyy).`,
         raw: row.join(';'),
       });
       return;
@@ -220,7 +220,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
     if (!isFiatCode(currency)) {
       result.errors.push({
         line,
-        message: `Měna ceny „${currency || 'prázdno'}" není třípísmenný kód — řádek nelze zpracovat.`,
+        message: `Měna ceny „${currency || 'prázdno'}“ není třípísmenný kód — řádek nelze zpracovat.`,
         raw: row.join(';'),
       });
       return;
@@ -236,7 +236,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
       } else {
         result.warnings.push({
           line,
-          message: `Poplatek ${feeRaw} má měnu „${feeCurrency || 'prázdno'}", kterou neumíme zapsat — nebyl započten, zkontroluj ho ručně.`,
+          message: `Poplatek ${feeRaw} má měnu „${feeCurrency || 'prázdno'}“, kterou neumíme zapsat — nebyl započten, zkontroluj ho ručně.`,
         });
       }
     }

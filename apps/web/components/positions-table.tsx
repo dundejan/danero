@@ -15,7 +15,7 @@ interface Row {
   daysToExempt: number | null;
 }
 
-/** Délka 3letého časového testu ve dnech — pro mini progress „Zbývá dní". */
+/** Délka 3letého časového testu ve dnech — pro mini progress „Zbývá dní“. */
 const TEST_DAYS = 3 * 365;
 
 /** Zelený checkmark: časový test celé pozice splněn. */
@@ -90,8 +90,8 @@ export function PositionsTable({
     })
     .sort((a, b) => ((a.nearestExemptFrom ?? '0') < (b.nearestExemptFrom ?? '0') ? -1 : 1));
 
-  // E2: sloupec „Z toho bez daně" jen když má co říct — samé nuly nese
-  // už KPI „Bez daně už dnes" (0 %)
+  // E2: sloupec „Z toho bez daně“ jen když má co říct — samé nuly nese
+  // už KPI „Bez daně už dnes“ (0 %)
   const anyExempt = rows.some((row) => row.exemptQty > 0);
 
   const content = (

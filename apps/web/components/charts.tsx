@@ -125,7 +125,7 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
 
   return (
     <div>
-      {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit" */}
+      {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit“ */}
       <p className="mb-1 text-right font-mono text-xs text-inkoust-tlumeny">
         k 31. 12.: <span className="text-inkoust">{czkCompact(lastValue)}</span>
       </p>

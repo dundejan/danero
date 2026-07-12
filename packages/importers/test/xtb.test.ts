@@ -38,12 +38,12 @@ describe('XTB XLSX parser', () => {
     expect(buy.isin).toBe('US0378331005');
     expect(buy.ticker).toBe('AAPL.US');
     expect(buy.quantity.toString()).toBe('5');
-    expect(buy.pricePerShare.toString()).toBe('458.65'); // hodnota za „@", ne Amount
+    expect(buy.pricePerShare.toString()).toBe('458.65'); // hodnota za „@“, ne Amount
     expect(buy.currency).toBe('USD'); // z mapování — export měnu instrumentu nemá
     expect(buy.tradeDate).toBe('2025-01-02'); // DD.MM.YYYY → ISO
   });
 
-  it('SELL: „CLOSE BUY 5/10 @ 460.00" → zavřeno 5 kusů z 10 za 460', async () => {
+  it('SELL: „CLOSE BUY 5/10 @ 460.00“ → zavřeno 5 kusů z 10 za 460', async () => {
     const buffer = await buildXtbXlsx({ preamble: XTB_PREAMBLE_EN, rows: XTB_ROWS_EN });
     const result = await parseXtbXlsx(buffer, XTB_INSTRUMENT_MAP);
 
@@ -143,7 +143,7 @@ describe('XTB XLSX parser', () => {
     expect(dividend.withholdingTax.toString()).toBe('0.48');
     expect(dividend.currency).toBe('CZK'); // měna účtu z CZ preambule, ne měna instrumentu
 
-    // peněžní operace v měně účtu z CZ preambule („Měna účtu CZK")
+    // peněžní operace v měně účtu z CZ preambule („Měna účtu CZK“)
     const interest = result.transactions.find((t) => t.type === 'INTEREST');
     if (!interest || interest.type !== 'INTEREST') throw new Error('unreachable');
     expect(interest.currency).toBe('CZK');
@@ -194,7 +194,7 @@ describe('XTB XLSX parser', () => {
     expect(result.errors[0]!.message).toContain('Neplatný čas');
   });
 
-  it('neznámý typ operace → error s výzvou „nahlaš nám ho"', async () => {
+  it('neznámý typ operace → error s výzvou „nahlaš nám ho“', async () => {
     const buffer = await buildXtbXlsx({
       rows: [[1, 'Stock lending payment', '02.01.2025 10:00:00', 'lending', null, 0.5]],
     });

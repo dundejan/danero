@@ -14,7 +14,7 @@ import {
 export const MT5_BROKER = 'mt5';
 
 /**
- * Parser MT5 reportu — HTML („ReportHistory-<účet>.html") i XLSX „Open XML"
+ * Parser MT5 reportu — HTML („ReportHistory-<účet>.html“) i XLSX „Open XML“
  * export z terminálu (Historie → pravé tlačítko → Report / Export).
  *
  * Zpracovává sekci **Deals** (atomické obchody vč. balance operací); sekce
@@ -73,7 +73,7 @@ function mapColumns(normalizedCells: string[]): ColumnMap {
   return columns;
 }
 
-/** Nadpis sekce Deals: řádek s jedinou neprázdnou buňkou „Deals". */
+/** Nadpis sekce Deals: řádek s jedinou neprázdnou buňkou „Deals“. */
 const isDealsMarker = (row: Mt5Row): boolean => {
   const nonEmpty = row.cells.filter((cell) => cell.trim() !== '');
   return nonEmpty.length === 1 && nonEmpty[0]!.trim().toLowerCase() === 'deals';
@@ -92,7 +92,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     result.errors.push({
       line: 1,
       message:
-        'V reportu chybí sekce „Deals" — nahraj kompletní MT5 report (v terminálu: záložka Historie → pravé tlačítko → Report → HTML nebo Open XML).',
+        'V reportu chybí sekce „Deals“ — nahraj kompletní MT5 report (v terminálu: záložka Historie → pravé tlačítko → Report → HTML nebo Open XML).',
     });
     return result;
   }
@@ -111,7 +111,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     result.errors.push({
       line: rows[dealsIndex]!.line,
       message:
-        'Pod sekcí „Deals" chybí hlavička tabulky (sloupce „Time" a „Direction") — tuhle variantu MT5 reportu neznáme, nahlaš nám ji.',
+        'Pod sekcí „Deals“ chybí hlavička tabulky (sloupce „Time“ a „Direction“) — tuhle variantu MT5 reportu neznáme, nahlaš nám ji.',
     });
     return result;
   }
@@ -129,7 +129,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     result.errors.push({
       line: 1,
       message:
-        'V hlavičce reportu chybí měna účtu („Currency: …") — bez ní neumíme výsledky obchodů zpracovat. Vygeneruj report znovu z MT5 terminálu.',
+        'V hlavičce reportu chybí měna účtu („Currency: …“) — bez ní neumíme výsledky obchodů zpracovat. Vygeneruj report znovu z MT5 terminálu.',
     });
     return result;
   }
@@ -160,7 +160,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     if (date === null) {
       result.errors.push({
         line: row.line,
-        message: `Deal ${dealNo}: neplatný čas „${timeRaw}" — očekáváme YYYY.MM.DD HH:MM:SS.`,
+        message: `Deal ${dealNo}: neplatný čas „${timeRaw}“ — očekáváme YYYY.MM.DD HH:MM:SS.`,
         raw,
       });
       continue;
@@ -168,7 +168,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     if (!hasDealNumber) {
       result.errors.push({
         line: row.line,
-        message: `Řádek nemá číslo dealu (sloupec Deal obsahuje „${dealNo}") — nejde zpracovat.`,
+        message: `Řádek nemá číslo dealu (sloupec Deal obsahuje „${dealNo}“) — nejde zpracovat.`,
         raw,
       });
       continue;
@@ -182,7 +182,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
       const amount = cellOf(row, 'profit');
       result.skipped.push({
         line: row.line,
-        message: `Vklad/výběr (${type})${comment !== '' ? ` „${comment}"` : ''}: ${amount} ${currency} — peněžní pohyby se nedaní a do importu nevstupují.`,
+        message: `Vklad/výběr (${type})${comment !== '' ? ` „${comment}“` : ''}: ${amount} ${currency} — peněžní pohyby se nedaní a do importu nevstupují.`,
         raw,
       });
       continue;
@@ -190,7 +190,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     if (type !== 'buy' && type !== 'sell') {
       result.errors.push({
         line: row.line,
-        message: `Neznámý typ dealu „${cellOf(row, 'type')}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ dealu „${cellOf(row, 'type')}“ — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       continue;
@@ -234,7 +234,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     if (direction !== 'out' && direction !== 'in/out') {
       result.errors.push({
         line: row.line,
-        message: `Deal ${dealNo}: neznámý směr „${cellOf(row, 'direction')}" (očekáváme in, out nebo in/out) — nahlaš nám ho.`,
+        message: `Deal ${dealNo}: neznámý směr „${cellOf(row, 'direction')}“ (očekáváme in, out nebo in/out) — nahlaš nám ho.`,
         raw,
       });
       continue;
@@ -247,7 +247,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
     const net = profit.plus(swap).plus(commission).plus(fee).plus(openCosts);
     const feePart = columns.fee === undefined ? '' : ` + poplatek ${fee.toString()}`;
     const costPart = openCosts.eq(0) ? '' : ` + komise otevíracích dealů ${openCosts.toString()}`;
-    const note = `MT5 ${symbol}, deal ${dealNo}${comment !== '' ? ` („${comment}")` : ''}: čistý výsledek ${net.toString()} ${currency} (profit ${profit.toString()} + swap ${swap.toString()} + komise ${commission.toString()}${feePart}${costPart}).`;
+    const note = `MT5 ${symbol}, deal ${dealNo}${comment !== '' ? ` („${comment}“)` : ''}: čistý výsledek ${net.toString()} ${currency} (profit ${profit.toString()} + swap ${swap.toString()} + komise ${commission.toString()}${feePart}${costPart}).`;
     const [buyLeg, sellLeg] = syntheticDerivativePair({
       idBase: `mt5-${dealNo}`,
       isin: `MT5:${dealNo}`,
@@ -277,7 +277,7 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
 
 /* ── HTML ────────────────────────────────────────────────────────────────── */
 
-/** Autodetekce MT5 HTML reportu: sekce „Deals" + sloupec „Direction" (MT4 nemá ani jedno). */
+/** Autodetekce MT5 HTML reportu: sekce „Deals“ + sloupec „Direction“ (MT4 nemá ani jedno). */
 export function sniffMt5Html(text: string): boolean {
   return />\s*Deals\s*</i.test(text) && />\s*Direction\s*</i.test(text);
 }
@@ -323,7 +323,7 @@ function readSheetRows(sheet: ExcelJS.Worksheet): Mt5Row[] {
   return rows;
 }
 
-/** Autodetekce MT5 XLSX: některý list má buňku „Deals" a hlavičku s „Direction". */
+/** Autodetekce MT5 XLSX: některý list má buňku „Deals“ a hlavičku s „Direction“. */
 export function sniffMt5Xlsx(workbook: ExcelJS.Workbook): boolean {
   return workbook.worksheets.some((sheet) => {
     const rows = readSheetRows(sheet);

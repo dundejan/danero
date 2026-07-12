@@ -91,7 +91,7 @@ export function sniffXtbXlsx(workbook: ExcelJS.Workbook): boolean {
 }
 
 /**
- * Hlavičkový řádek se hledá obsahem (buňky „ID" + „Type/Typ") — v reálných
+ * Hlavičkový řádek se hledá obsahem (buňky „ID“ + „Type/Typ“) — v reálných
  * reportech tabulka začíná až pod metadaty reportu, ne na pevné pozici.
  */
 function findHeader(rows: SheetRow[]): { index: number; columns: ColumnMap } | null {
@@ -112,7 +112,7 @@ function findHeader(rows: SheetRow[]): { index: number; columns: ColumnMap } | n
   return null;
 }
 
-/** Měna účtu z metadat nad tabulkou („Account currency" / „Měna účtu"). */
+/** Měna účtu z metadat nad tabulkou („Account currency“ / „Měna účtu“). */
 function detectAccountCurrency(preambleRows: SheetRow[]): string | null {
   for (const row of preambleRows) {
     for (let i = 0; i < row.cells.length; i += 1) {
@@ -129,7 +129,7 @@ function detectAccountCurrency(preambleRows: SheetRow[]): string | null {
   return null;
 }
 
-/** „02.01.2025 14:30:15" (DD.MM.YYYY) i ISO → 'YYYY-MM-DD'; neexistující den → null. */
+/** „02.01.2025 14:30:15“ (DD.MM.YYYY) i ISO → 'YYYY-MM-DD'; neexistující den → null. */
 function toIsoDate(value: string): string | null {
   const czech = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(value);
   const iso = czech ? `${czech[3]}-${czech[2]}-${czech[1]}` : /^(\d{4}-\d{2}-\d{2})/.exec(value)?.[1];
@@ -142,14 +142,14 @@ function classifyOperation(type: string, comment: string): OperationKind {
   if (t.includes('stocks/etf purchase') || t.includes('nakup akcii/etf')) return 'BUY';
   if (t.includes('stocks/etf sale') || t.includes('prodej akcii/etf')) return 'SELL';
   if (t.includes('withholding tax') || t.includes('srazkova dan')) return 'WITHHOLDING';
-  // „Free funds interest tax" nutně před obecným úrokem
+  // „Free funds interest tax“ nutně před obecným úrokem
   if ((t.includes('free funds interest') && t.includes('tax')) || t.includes('dan z uroku')) {
     return 'INTEREST_TAX';
   }
   if (t.includes('free funds interest') || t.includes('uroky z volnych prostredku')) {
     return 'INTEREST';
   }
-  if (t.includes('dividend')) return 'DIVIDEND'; // pokrývá i CZ „Dividenda"
+  if (t.includes('dividend')) return 'DIVIDEND'; // pokrývá i CZ „Dividenda“
   const c = stripDiacritics(comment).toLowerCase();
   if (t.includes('commission') || t.includes('provize') || c.includes('commission') || c.includes('provize')) {
     return 'FEE';
@@ -160,8 +160,8 @@ function classifyOperation(type: string, comment: string): OperationKind {
 }
 
 /**
- * Kusy a cena z komentáře obchodu: „OPEN BUY 5 @ 458.65",
- * „CLOSE BUY 5/10 @ 460.00" (X/Y = zavřeno X z Y kusů → quantity je X).
+ * Kusy a cena z komentáře obchodu: „OPEN BUY 5 @ 458.65“,
+ * „CLOSE BUY 5/10 @ 460.00“ (X/Y = zavřeno X z Y kusů → quantity je X).
  * Směr transakce určuje sloupec Type — BUY/SELL v komentáři nese směr POZICE.
  */
 const TRADE_COMMENT_RE = /(?:OPEN|CLOSE)\s+(?:BUY|SELL)\s+([\d.,]+)(?:\/[\d.,]+)?\s*@\s*([\d.,]+)/i;
@@ -181,11 +181,11 @@ function parseAmount(raw: string): Decimal | null {
 }
 
 /**
- * Parser XTB xStation „Full report" XLSX (docs/03). Zpracovává list
+ * Parser XTB xStation „Full report“ XLSX (docs/03). Zpracovává list
  * CASH OPERATION HISTORY / HISTORIE PENĚŽNÍCH OPERACÍ; hlavičky i typy operací
  * mapuje EN/CZ podle názvů. Export neobsahuje ISIN ani měnu instrumentu —
  * dodává je `instrumentMap`; Amount u obchodů je dopad na hotovost v měně ÚČTU,
- * cena instrumentu se čte z komentáře („OPEN BUY 5 @ 458.65").
+ * cena instrumentu se čte z komentáře („OPEN BUY 5 @ 458.65“).
  */
 export async function parseXtbXlsx(
   data: ArrayBuffer | Buffer,
@@ -209,7 +209,7 @@ export async function parseXtbXlsx(
   if (!sheet) {
     result.errors.push({
       line: 1,
-      message: `Soubor neobsahuje list „CASH OPERATION HISTORY" / „HISTORIE PENĚŽNÍCH OPERACÍ" — nevypadá jako XTB Full report z xStation. Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}`,
+      message: `Soubor neobsahuje list „CASH OPERATION HISTORY“ / „HISTORIE PENĚŽNÍCH OPERACÍ“ — nevypadá jako XTB Full report z xStation. Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}`,
     });
     return result;
   }
@@ -222,7 +222,7 @@ export async function parseXtbXlsx(
   if (!header) {
     result.errors.push({
       line: 1,
-      message: `V listu „${sheet.name}" se nepodařilo najít hlavičku tabulky (sloupce „ID" a „Type/Typ") — nevypadá jako XTB Full report.`,
+      message: `V listu „${sheet.name}“ se nepodařilo najít hlavičku tabulky (sloupce „ID“ a „Type/Typ“) — nevypadá jako XTB Full report.`,
     });
     return result;
   }
@@ -347,7 +347,7 @@ export async function parseXtbXlsx(
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatný čas „${time}" (očekáván formát DD.MM.YYYY HH:mm:ss nebo ISO).`,
+        message: `Neplatný čas „${time}“ (očekáván formát DD.MM.YYYY HH:mm:ss nebo ISO).`,
         raw,
       });
       continue;
@@ -372,7 +372,7 @@ export async function parseXtbXlsx(
         if (!trade) {
           result.errors.push({
             line,
-            message: `${type}: z komentáře „${comment}" se nepodařilo přečíst počet kusů a cenu (očekáván tvar „OPEN BUY 5 @ 458.65").`,
+            message: `${type}: z komentáře „${comment}“ se nepodařilo přečíst počet kusů a cenu (očekáván tvar „OPEN BUY 5 @ 458.65“).`,
             raw,
           });
           break;
@@ -383,13 +383,13 @@ export async function parseXtbXlsx(
         if (!quantity || quantity.lte(0) || !price || price.lt(0)) {
           result.errors.push({
             line,
-            message: `${type}: neplatný počet kusů nebo cena v komentáři „${comment}".`,
+            message: `${type}: neplatný počet kusů nebo cena v komentáři „${comment}“.`,
             raw,
           });
           break;
         }
         // Amount řádku = dopad na hotovost v měně ÚČTU → pro obchod nepoužíváme;
-        // cena instrumentu je hodnota za „@" v měně instrumentu z mapování
+        // cena instrumentu je hodnota za „@“ v měně instrumentu z mapování
         push(line, raw, {
           type: kind,
           id: rowId,
@@ -505,7 +505,7 @@ export async function parseXtbXlsx(
       case 'UNKNOWN': {
         result.errors.push({
           line,
-          message: `Neznámý typ operace „${type}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý typ operace „${type}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
         break;

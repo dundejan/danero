@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
  * Seskupené zobrazení kontrol výpočtu (varování enginu) — server komponenta
  * sdílená přehledem a reportem. Jeden výskyt kódu = prostý text; víc výskytů =
  * blok s lidským nadpisem, počtem a rozbalitelnými jednotlivými případy
- * (kompaktně „TICKER · datum · částka" — vysvětlení nese souhrn, ne každý
+ * (kompaktně „TICKER · datum · částka“ — vysvětlení nese souhrn, ne každý
  * řádek). Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
  */
 
@@ -78,7 +78,7 @@ function groupTitle(group: WarningGroup): string {
   const known = GROUP_TITLES[group.code];
   if (known) return known;
   const message = group.items[0]!.message;
-  // první „věta" = úsek před dvojtečkou nebo pomlčkou (tečka koliduje s „§ 10 odst. 4" apod.)
+  // první „věta“ = úsek před dvojtečkou nebo pomlčkou (tečka koliduje s „§ 10 odst. 4“ apod.)
   const cut = [': ', ' — ']
     .map((sep) => message.indexOf(sep))
     .filter((i) => i !== -1)
@@ -87,7 +87,7 @@ function groupTitle(group: WarningGroup): string {
 }
 
 /**
- * Kompaktní řádek jednoho případu: „TICKER · datum · částka" ze
+ * Kompaktní řádek jednoho případu: „TICKER · datum · částka“ ze
  * strukturovaného contextu varování. Bez strukturovaných dat (jiné kódy)
  * se vrací plný text — auditní stopa nesmí přijít o informaci.
  * Export kvůli unit testům — čistá funkce bez JSX.
@@ -157,7 +157,7 @@ export function withholdingSummary(
     .join(' ');
 }
 
-/** Badge závažnosti („Chyba" / „Upozornění" / „Info"). */
+/** Badge závažnosti („Chyba“ / „Upozornění“ / „Info“). */
 function LevelBadge({ level }: { level: EngineWarning['level'] }) {
   const badge = LEVEL_BADGE[level];
   return (

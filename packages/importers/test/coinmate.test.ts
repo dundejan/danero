@@ -76,7 +76,7 @@ describe('Coinmate CSV parser', () => {
     expect(result.warnings[0]!.message).toContain('affiliate');
   });
 
-  it('CZ hlavička s BOM, české datum „16.08.2021 9:42", MARKET_* typy', () => {
+  it('CZ hlavička s BOM, české datum „16.08.2021 9:42“, MARKET_* typy', () => {
     const result = parseCoinmateCsv(COINMATE_CZ);
 
     expect(result.errors).toEqual([]);
@@ -99,7 +99,7 @@ describe('Coinmate CSV parser', () => {
     expect(result.skipped).toHaveLength(2);
     expect(result.skipped.map((s) => s.line)).toEqual([4, 6]);
 
-    // prázdný Typ s Popiskem „User: …" = affiliate odměna → warning
+    // prázdný Typ s Popiskem „User: …“ = affiliate odměna → warning
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]!.line).toBe(5);
     expect(result.warnings[0]!.message).toContain('affiliate');

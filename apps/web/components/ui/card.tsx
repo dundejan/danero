@@ -10,8 +10,8 @@ export function Card({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 /**
- * Symbol měny se neverzálkuje — titulek je CSS uppercase, ale „Kč" v něm musí
- * zůstat „Kč" (ne „KČ"). U textových titulků to řešíme centrálně tady.
+ * Symbol měny se neverzálkuje — titulek je CSS uppercase, ale „Kč“ v něm musí
+ * zůstat „Kč“ (ne „KČ“). U textových titulků to řešíme centrálně tady.
  */
 export function keepCurrencyCase(children: React.ReactNode): React.ReactNode {
   if (typeof children !== 'string' || !children.includes('Kč')) return children;

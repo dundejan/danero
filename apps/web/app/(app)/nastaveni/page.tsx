@@ -46,7 +46,7 @@ export default async function SettingsPage({
   const prefs = await getNotificationPrefs(db, user.id);
 
   // E4: seznam přihlášení seskupený podle zařízení (prohlížeč · OS) — dvacet
-  // identických řádků „Chrome · Linux" nic neříká; jeden řádek s počtem ano
+  // identických řádků „Chrome · Linux“ nic neříká; jeden řádek s počtem ano
   interface DeviceGroup {
     label: string;
     count: number;
@@ -133,7 +133,7 @@ export default async function SettingsPage({
                   id="otherIncomeCzk"
                   name="otherIncomeCzk"
                   inputMode="decimal"
-                  // DB numeric vrací „0.00" — do pole patří lidské „0" (uložení/parsování beze změny)
+                  // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
                   defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
                 />
               </div>

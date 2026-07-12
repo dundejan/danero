@@ -24,9 +24,9 @@ export interface SimParams {
   cena?: string | string[];
 }
 
-/** Číslo ve tvaru „123" / „123.45" (bez vědecké notace — regex ji odmítne). */
+/** Číslo ve tvaru „123“ / „123.45“ (bez vědecké notace — regex ji odmítne). */
 const NUM_RE = /^\d+(\.\d+)?$/;
-/** Horní mez vstupů (cena i kusy) — brání „∞ Kč" a absurdním procentům. */
+/** Horní mez vstupů (cena i kusy) — brání „∞ Kč“ a absurdním procentům. */
 const MAX_INPUT = d('1000000000');
 
 /**
@@ -48,7 +48,7 @@ export function SimulatorView({
   today: string;
   params: SimParams;
   dailyRates?: EngineInput['dailyRates'];
-  /** Poslední známé ceny od brokera — předvyplnění pole „Cena/ks". */
+  /** Poslední známé ceny od brokera — předvyplnění pole „Cena/ks“. */
   prices?: Map<string, InstrumentPrice>;
   basePath?: string;
 }) {
@@ -332,7 +332,7 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
  * (zhoršení červeně, zlepšení zeleně, beze změny neutrálně) vždy POD číslem —
  * tři karty mají stejný layout. Červené číslo jen u prolomeného limitu;
  * částka daně zůstává neutrálním inkoustem. Před/po progress bary limitu
- * doplňuje textové čerpání „X % → Y %" (při přetečení obou se bary neliší).
+ * doplňuje textové čerpání „X % → Y %“ (při přetečení obou se bary neliší).
  */
 function DeltaCard({
   label,
@@ -408,7 +408,7 @@ function DeltaCard({
 
 /**
  * Vodorovný waterfall rozpadu prodeje (H4): Tržba → (osvobozeno) → Výdaj →
- * Základ → Daň. Čisté divy nad společnou škálou 0–tržba; výdaj „visí"
+ * Základ → Daň. Čisté divy nad společnou škálou 0–tržba; výdaj „visí“
  * mezi základem a zdanitelnou částí, jak se odečítá.
  */
 function SaleWaterfall({

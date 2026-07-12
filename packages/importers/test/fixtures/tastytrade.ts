@@ -1,8 +1,8 @@
 /**
  * Fixtures Tastytrade — CSV s čárkou, řádky řazené od NEJNOVĚJŠÍHO.
- * Tři generace hlaviček: nová 20sloupcová, 21sloupcová (navíc „Total")
+ * Tři generace hlaviček: nová 20sloupcová, 21sloupcová (navíc „Total“)
  * a legacy 15sloupcová (tastyworks). Hodnoty doslova podle reálných exportů
- * (offset bez dvojtečky, literál „--", kvótované tisíce).
+ * (offset bez dvojtečky, literál „--“, kvótované tisíce).
  */
 
 export const TASTY_V2_HEADER =
@@ -23,7 +23,7 @@ export const TASTY_INSTRUMENT_MAP = {
 /**
  * Nový formát: short call, assignment short putu (zánik opce + akciová noha),
  * expirace short callu (tracker!), dividenda + záporná srážka, úrok, poplatek,
- * vklad. Kvótované tisíce i literál „--".
+ * vklad. Kvótované tisíce i literál „--“.
  */
 export const TASTY_V2 = [
   TASTY_V2_HEADER,
@@ -40,7 +40,7 @@ export const TASTY_V2 = [
   '2021-05-20T17:10:00+0200,Trade,Sell to Open,SELL_TO_OPEN,CLNE  210618C00014000,Equity Option,Sold 1 CLNE 06/18/21 Call 14.00 @ 0.95,95.00,1,95.00,-1.00,-0.14,100,CLNE,CLNE,6/18/21,14,CALL,335000001,USD',
 ].join('\n');
 
-/** 21sloupcová varianta (navíc „Total") — 2 kontrakty, prémie za kontrakt = |Value| / 2. */
+/** 21sloupcová varianta (navíc „Total“) — 2 kontrakty, prémie za kontrakt = |Value| / 2. */
 export const TASTY_V2_TOTAL = [
   TASTY_V2_TOTAL_HEADER,
   '2024-08-16T15:57:13+0200,Trade,Sell to Open,SELL_TO_OPEN,SCHG  240920C00099000,Equity Option,Sold 2 SCHG 09/20/24 Call 99.00 @ 3.70,740.00,2,370.00,-2.00,-0.30,100,SCHG,SCHG,9/20/24,99,CALL,337454037,737.70,USD',

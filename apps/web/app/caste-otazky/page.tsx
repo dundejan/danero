@@ -69,7 +69,7 @@ const FAQ: FaqItem[] = [
     a: 'Dáme ti vědět e-mailem. Kartu od tebe nemáme, nic se nestrhne samo — sám se rozhodneš, jestli budeš pokračovat za 990 Kč ročně. Data ti zůstanou.',
   },
   {
-    q: 'Co znamená „ověřeno zkušební podatelnou EPO"?',
+    q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',
     a: 'Finanční správa provozuje testovací podatelnu EPO, kde si jde podání nanečisto zvalidovat. Každou vygenerovanou písemnost XML tam ověřujeme — kontroluje se struktura, vazby mezi řádky a formální správnost podání. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
   },
   {

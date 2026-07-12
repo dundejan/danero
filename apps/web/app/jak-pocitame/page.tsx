@@ -29,7 +29,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
         <p>
           Lhůta běží ode dne vypořádání obchodu (dne, kdy se ti kusy skutečně
           připíšou na účet — u amerických akcií den po obchodu, v Evropě typicky dva
-          dny), ne ode dne kliknutí na „koupit&quot;. Část praxe počítá den obchodu —
+          dny), ne ode dne kliknutí na „koupit“. Část praxe počítá den obchodu —
           bereme to jako sporný výklad a defaultně počítáme bezpečnější den
           vypořádání.
         </p>
@@ -171,7 +171,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
     body: (
       <>
         <p>
-          OSVČ v paušálním režimu: aby daň zůstala „rovna paušální dani&quot;, smí
+          OSVČ v paušálním režimu: aby daň zůstala „rovna paušální dani“, smí
           tvoje příjmy z kapitálu, nájmu a ostatní příjmy (mimo podnikání) dělat
           v úhrnu nejvýš 50 000 Kč za rok. Počítají se hrubé tržby, ne zisk —
           prodej akcií za 120 000 Kč se ziskem 5 000 Kč znamená 120 000 Kč do

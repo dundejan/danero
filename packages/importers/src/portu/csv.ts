@@ -17,12 +17,12 @@ export const PORTU_BROKER = 'portu';
  * v Popisu. Forex nákup/prodej dělá Portu automaticky při vkladech — bez
  * daňové události, přeskakujeme.
  *
- * POZOR: hodnoty sloupce Typ mimo „Forex nákup/prodej" jsou ODVOZENÉ z filtrů
+ * POZOR: hodnoty sloupce Typ mimo „Forex nákup/prodej“ jsou ODVOZENÉ z filtrů
  * v aplikaci Portu (Vklady/Výběry/Nákupy/Prodeje/Převody/Poplatky/Forex/Ostatní),
  * ne z reálného souboru — neznámý typ proto hlásíme s DOSLOVNÝM zněním, ať
  * slovník doplníme z reálných exportů. Typy mapujeme přes normalizeHeader
  * (case-insensitive, bez diakritiky) — funguje i pro export s rozbitou nebo
- * vynechanou diakritikou („Nakup", „Vyber").
+ * vynechanou diakritikou („Nakup“, „Vyber“).
  */
 
 /** Sloupce v tvaru normalizeHeader — diakritiku v hlavičce srovná normalizace. */
@@ -50,7 +50,7 @@ function num(value: string): Decimal | null {
 
 /**
  * Autodetekce Portu CSV z prvního řádku. Jen ASCII-bezpečné fragmenty —
- * diakritika v hlavičce („Název", „Měna") se při špatném kódování rozpadá,
+ * diakritika v hlavičce („Název“, „Měna“) se při špatném kódování rozpadá,
  * sniff na ní nesmí stát. Kombinace `;Typ;Symbol;ISIN;` + `Kusy / Pozice`
  * se netrefí do Degiro (Datum;Čas;Produkt;ISIN…) ani čárkových exportů
  * (T212, univerzální šablona).
@@ -75,7 +75,7 @@ export function parsePortuCsv(text: string): ImportResult {
     if (!map.has(required)) {
       result.errors.push({
         line: 1,
-        message: `Soubor nevypadá jako export transakcí z Portu — chybí sloupec „${required}". Nalezené sloupce: ${headers.filter((h) => h.trim() !== '').join(', ')}`,
+        message: `Soubor nevypadá jako export transakcí z Portu — chybí sloupec „${required}“. Nalezené sloupce: ${headers.filter((h) => h.trim() !== '').join(', ')}`,
       });
       return result;
     }
@@ -116,28 +116,28 @@ export function parsePortuCsv(text: string): ImportResult {
     if (typ === 'vklad' || typ === 'vyber') {
       result.skipped.push({
         line,
-        message: `„${typRaw}": převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.`,
+        message: `„${typRaw}“: převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.`,
       });
       return;
     }
     if (typ === 'forex nakup' || typ === 'forex prodej') {
       result.skipped.push({
         line,
-        message: `„${typRaw}" (${map.get(row, COL.description) || 'měnový pár neuveden'}): měnová konverze v rámci Portu — bez daňové události (Portu ji provádí automaticky při vkladech).`,
+        message: `„${typRaw}“ (${map.get(row, COL.description) || 'měnový pár neuveden'}): měnová konverze v rámci Portu — bez daňové události (Portu ji provádí automaticky při vkladech).`,
       });
       return;
     }
     if (typ === 'prevod') {
       result.warnings.push({
         line,
-        message: `„${typRaw}": převod mezi portfolii — řádek jsme přeskočili, ale zkontroluj ve výpisu Portu, zda nejde ve skutečnosti o prodej (ten by byl daňová událost).`,
+        message: `„${typRaw}“: převod mezi portfolii — řádek jsme přeskočili, ale zkontroluj ve výpisu Portu, zda nejde ve skutečnosti o prodej (ten by byl daňová událost).`,
       });
       return;
     }
     if (typ !== 'nakup' && typ !== 'prodej' && typ !== 'dividenda' && typ !== 'poplatek') {
       result.errors.push({
         line,
-        message: `Neznámý typ pohybu „${typRaw}" — nahlaš nám ho, doplníme podporu (typy Portu mimo Forex zatím odvozujeme z filtrů v jejich aplikaci, reálný export je může pojmenovat jinak).`,
+        message: `Neznámý typ pohybu „${typRaw}“ — nahlaš nám ho, doplníme podporu (typy Portu mimo Forex zatím odvozujeme z filtrů v jejich aplikaci, reálný export je může pojmenovat jinak).`,
         raw,
       });
       return;
@@ -148,7 +148,7 @@ export function parsePortuCsv(text: string): ImportResult {
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${rawDate}" (očekáván formát dd.mm.rrrr).`,
+        message: `Neplatné datum „${rawDate}“ (očekáván formát dd.mm.rrrr).`,
         raw,
       });
       return;
@@ -158,7 +158,7 @@ export function parsePortuCsv(text: string): ImportResult {
     if (!isCurrency(currency)) {
       result.errors.push({
         line,
-        message: `Řádku chybí měna (sloupec Měna) — nalezeno „${currency}", očekáván třípísmenný kód (EUR, CZK…).`,
+        message: `Řádku chybí měna (sloupec Měna) — nalezeno „${currency}“, očekáván třípísmenný kód (EUR, CZK…).`,
         raw,
       });
       return;

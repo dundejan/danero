@@ -1,5 +1,5 @@
 /**
- * Fixture eToro „Account Statement" XLSX — binárka se do repa necommituje,
+ * Fixture eToro „Account Statement“ XLSX — binárka se do repa necommituje,
  * workbook se staví za běhu testu přes exceljs (vzor test/fixtures/xtb.ts).
  *
  * Struktura kopíruje reálný výpis: listy Account Summary, Closed Positions,
@@ -10,7 +10,7 @@ import ExcelJS from 'exceljs';
 
 export type EtoroCellValue = string | number | Date | null;
 
-/** Account Activity — starší varianta se sloupcem „Units". */
+/** Account Activity — starší varianta se sloupcem „Units“. */
 export const ETORO_ACTIVITY_HEADERS = [
   'Date',
   'Type',
@@ -25,7 +25,7 @@ export const ETORO_ACTIVITY_HEADERS = [
   'NWA',
 ];
 
-/** Account Activity — novější varianta: „Units / Contracts" + „Amount in EUR". */
+/** Account Activity — novější varianta: „Units / Contracts“ + „Amount in EUR“. */
 export const ETORO_ACTIVITY_HEADERS_V2 = [
   'Date',
   'Type',
@@ -41,7 +41,7 @@ export const ETORO_ACTIVITY_HEADERS_V2 = [
   'NWA',
 ];
 
-/** Closed Positions — novější varianta s „(USD)" sufixy a ISIN. */
+/** Closed Positions — novější varianta s „(USD)“ sufixy a ISIN. */
 export const ETORO_CLOSED_HEADERS = [
   'Position ID',
   'Action',
@@ -68,7 +68,7 @@ export const ETORO_CLOSED_HEADERS = [
   'Notes',
 ];
 
-/** Closed Positions — starší varianta („FX rate at open" bez sufixu, „Units"). */
+/** Closed Positions — starší varianta („FX rate at open“ bez sufixu, „Units“). */
 export const ETORO_CLOSED_HEADERS_OLD = [
   'Position ID',
   'Action',
@@ -105,7 +105,7 @@ export const ETORO_DIVIDEND_HEADERS = [
   'ISIN',
 ];
 
-/** Dividends — EU varianta („Net dividends", „(EUR)" sufixy). */
+/** Dividends — EU varianta („Net dividends“, „(EUR)“ sufixy). */
 export const ETORO_DIVIDEND_HEADERS_EU = [
   'Date of Payment',
   'Instrument Name',
@@ -197,7 +197,7 @@ export const ETORO_CLOSED_ROWS: EtoroCellValue[][] = [
 ];
 
 /**
- * Account Activity (US locale) — hlavičky se sloupcem „Units". Obsahuje řádky
+ * Account Activity (US locale) — hlavičky se sloupcem „Units“. Obsahuje řádky
  * pozic pokrytých listem Closed Positions (musí se přeskočit bez hlášky),
  * otevřené pozice, dividendu (duplikát listu Dividends), poplatky se zápory
  * v závorkách i s minusem, vklady/výběry/převody a staking + split.
@@ -483,7 +483,7 @@ export const ETORO_DIVIDEND_ROWS: EtoroCellValue[][] = [
   }),
 ];
 
-/** Uzavřené pozice EU locale + stará hlavička: desetinné čárky, mezery, „Buy NVDA". */
+/** Uzavřené pozice EU locale + stará hlavička: desetinné čárky, mezery, „Buy NVDA“. */
 export const ETORO_CLOSED_ROWS_EU: EtoroCellValue[][] = [
   rowFor(ETORO_CLOSED_HEADERS_OLD, {
     'Position ID': '1074146905',
@@ -504,7 +504,7 @@ export const ETORO_CLOSED_ROWS_EU: EtoroCellValue[][] = [
   }),
 ];
 
-/** Account Activity EU locale s hlavičkou „Units / Contracts" a „Amount in EUR". */
+/** Account Activity EU locale s hlavičkou „Units / Contracts“ a „Amount in EUR“. */
 export const ETORO_ACTIVITY_ROWS_EU: EtoroCellValue[][] = [
   rowFor(ETORO_ACTIVITY_HEADERS_V2, {
     Date: '15/04/2020 00:46:41',

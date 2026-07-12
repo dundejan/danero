@@ -8,10 +8,10 @@ import { simulatorVerdict, type VerdictInput } from '@/lib/simulator-verdict';
 /**
  * Verdikt simulátoru (nález z panelového testování): prodej osvobozený
  * časovým testem, který prolomí úhrn 100k, NESMÍ hlásit „limity ani daň
- * nečerpá" — zpětně zdaňuje dřívější letošní prodeje.
+ * nečerpá“ — zpětně zdaňuje dřívější letošní prodeje.
  */
 
-/** Stavebnice vstupu verdiktu — výchozí stav „nic se neděje". */
+/** Stavebnice vstupu verdiktu — výchozí stav „nic se neděje“. */
 function input(over: {
   taxable?: Money;
   taxDelta?: Money;

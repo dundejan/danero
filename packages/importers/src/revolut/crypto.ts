@@ -7,7 +7,7 @@ import { isIsoCurrency, parseRevolutMoney, REVOLUT_BROKER, revolutIdFactory } fr
  * Parser krypto výpisů Revolutu — dva historické formáty:
  *
  * 1. nový (2023+): `Symbol,Type,Quantity,Price,Value,Fees,Date` — peněžní
- *    hodnoty se symbolem/kódem měny uvnitř, datum anglicky „Jun 12, 2018, …";
+ *    hodnoty se symbolem/kódem měny uvnitř, datum anglicky „Jun 12, 2018, …“;
  * 2. starý (do ~2022/23): 13 sloupců s `Started Date`/`Completed Date`,
  *    krypto symbol ve sloupci Currency a fiat měnou v Base currency.
  *
@@ -49,7 +49,7 @@ export function parseRevolutCryptoCsv(text: string): ImportResult {
   if (format === null) {
     result.errors.push({
       line: 1,
-      message: `Soubor nevypadá jako krypto výpis Revolutu — očekávám sloupce „${NEW_HEADERS.join(', ')}" (nový formát), nebo „${OLD_SNIFF_HEADERS.join(', ')}" (starší formát). Nalezené sloupce: ${headers.filter((h) => h !== '').join(', ')}`,
+      message: `Soubor nevypadá jako krypto výpis Revolutu — očekávám sloupce „${NEW_HEADERS.join(', ')}“ (nový formát), nebo „${OLD_SNIFF_HEADERS.join(', ')}“ (starší formát). Nalezené sloupce: ${headers.filter((h) => h !== '').join(', ')}`,
     });
     return result;
   }
@@ -90,7 +90,7 @@ const MONTHS: Record<string, string> = {
   dec: '12',
 };
 
-/** „Jun 12, 2018, 4:16:32 PM" → „2018-06-12"; čas se zahazuje. */
+/** „Jun 12, 2018, 4:16:32 PM“ → „2018-06-12“; čas se zahazuje. */
 function parseEnglishDate(value: string): string | null {
   const match = /^([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})/.exec(value.trim());
   if (!match) return null;
@@ -134,7 +134,7 @@ function classifyCryptoType(type: string): CryptoKind {
     case 'other':
       return {
         kind: 'WARN_SKIP',
-        reason: 'typ „Other" neumíme daňově zařadit — řádek přeskočen, zkontroluj ho ve výpisu',
+        reason: 'typ „Other“ neumíme daňově zařadit — řádek přeskočen, zkontroluj ho ve výpisu',
       };
     default:
       return { kind: 'UNKNOWN' };
@@ -160,17 +160,17 @@ function parseNewFormat(
     const classified = classifyCryptoType(type);
 
     if (classified.kind === 'SKIP') {
-      result.skipped.push({ line, message: `${symbol} „${type}": ${classified.reason}` });
+      result.skipped.push({ line, message: `${symbol} „${type}“: ${classified.reason}` });
       return;
     }
     if (classified.kind === 'WARN_SKIP') {
-      result.warnings.push({ line, message: `${symbol} „${type}": ${classified.reason}` });
+      result.warnings.push({ line, message: `${symbol} „${type}“: ${classified.reason}` });
       return;
     }
     if (classified.kind === 'UNKNOWN') {
       result.errors.push({
         line,
-        message: `Neznámý typ řádku „${type}" — nahlaš nám ho, doplníme podporu.`,
+        message: `Neznámý typ řádku „${type}“ — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       return;
@@ -180,7 +180,7 @@ function parseNewFormat(
     if (isoDate === null) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${map.get(row, 'Date')}" (očekáván formát „Jun 12, 2018, 4:16:32 PM").`,
+        message: `Neplatné datum „${map.get(row, 'Date')}“ (očekáván formát „Jun 12, 2018, 4:16:32 PM“).`,
         raw,
       });
       return;
@@ -194,21 +194,21 @@ function parseNewFormat(
     if (!quantity || quantity.lte(0)) {
       result.errors.push({
         line,
-        message: `${type} ${symbol}: chybí kladné množství (Quantity „${map.get(row, 'Quantity')}").`,
+        message: `${type} ${symbol}: chybí kladné množství (Quantity „${map.get(row, 'Quantity')}“).`,
         raw,
       });
       return;
     }
 
     // Price = jednotková cena ve fiat, Value = celkem; měnu určuje symbol/kód
-    // uvnitř hodnoty (€ → EUR, $ → USD, £ → GBP, „137,211.36 SEK" → SEK)
+    // uvnitř hodnoty (€ → EUR, $ → USD, £ → GBP, „137,211.36 SEK“ → SEK)
     const priceMoney = parseRevolutMoney(map.get(row, 'Price'));
     const valueMoney = parseRevolutMoney(map.get(row, 'Value'));
     const currency = priceMoney?.currency ?? valueMoney?.currency ?? null;
     if (currency === null || !isIsoCurrency(currency)) {
       result.errors.push({
         line,
-        message: `${type} ${symbol}: z hodnot „${map.get(row, 'Price')}" / „${map.get(row, 'Value')}" se nepodařilo určit měnu.`,
+        message: `${type} ${symbol}: z hodnot „${map.get(row, 'Price')}“ / „${map.get(row, 'Value')}“ se nepodařilo určit měnu.`,
         raw,
       });
       return;
@@ -297,7 +297,7 @@ function parseOldFormat(
     if (state !== 'COMPLETED') {
       result.skipped.push({
         line,
-        message: `Stav „${state}" — transakce neproběhla, importují se jen dokončené (COMPLETED).`,
+        message: `Stav „${state}“ — transakce neproběhla, importují se jen dokončené (COMPLETED).`,
       });
       return;
     }
@@ -307,14 +307,14 @@ function parseOldFormat(
     if (lowerDescription.includes('balance migration')) {
       result.skipped.push({
         line,
-        message: `„${description}": migrace zůstatku mezi entitami Revolutu — není obchod, držení pokračuje.`,
+        message: `„${description}“: migrace zůstatku mezi entitami Revolutu — není obchod, držení pokračuje.`,
       });
       return;
     }
     if (lowerDescription.includes('closing transaction')) {
       result.skipped.push({
         line,
-        message: `„${description}": technický uzavírací řádek — není obchod.`,
+        message: `„${description}“: technický uzavírací řádek — není obchod.`,
       });
       return;
     }
@@ -323,18 +323,18 @@ function parseOldFormat(
     if (type !== 'EXCHANGE' && type !== 'CARD_PAYMENT') {
       result.warnings.push({
         line,
-        message: `Typ „${type}" (${description || 'bez popisu'}) zatím nepodporujeme — řádek přeskočen; pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
+        message: `Typ „${type}“ (${description || 'bez popisu'}) zatím nepodporujeme — řádek přeskočen; pokud jde o zdanitelnou událost, doplň ji přes univerzální šablonu.`,
       });
       return;
     }
 
-    // Completed Date „2021-06-04 7:27:08" → prvních 10 znaků
+    // Completed Date „2021-06-04 7:27:08“ → prvních 10 znaků
     const dateRaw = map.get(row, 'Completed Date');
     const isoDate = dateRaw.slice(0, 10);
     if (!isValidIsoDate(isoDate)) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${dateRaw}" (očekáván formát YYYY-MM-DD HH:mm:ss).`,
+        message: `Neplatné datum „${dateRaw}“ (očekáván formát YYYY-MM-DD HH:mm:ss).`,
         raw,
       });
       return;
@@ -349,7 +349,7 @@ function parseOldFormat(
     if (!isIsoCurrency(baseCurrency)) {
       result.errors.push({
         line,
-        message: `${type} ${symbol}: neplatná fiat měna „${baseCurrency}" ve sloupci Base currency.`,
+        message: `${type} ${symbol}: neplatná fiat měna „${baseCurrency}“ ve sloupci Base currency.`,
         raw,
       });
       return;
@@ -360,7 +360,7 @@ function parseOldFormat(
     if (amount === null || amount.eq(0) || fiat === null) {
       result.errors.push({
         line,
-        message: `${type} ${symbol}: chybí množství nebo fiat hodnota (Amount „${map.get(row, 'Amount')}", Fiat amount „${map.get(row, 'Fiat amount')}").`,
+        message: `${type} ${symbol}: chybí množství nebo fiat hodnota (Amount „${map.get(row, 'Amount')}“, Fiat amount „${map.get(row, 'Fiat amount')}“).`,
         raw,
       });
       return;

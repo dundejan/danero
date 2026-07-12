@@ -22,8 +22,8 @@ export type SchwabInstrumentMap = IsinInstrumentMap;
 
 
 /**
- * Peněžní/číselná hodnota Schwabu: „$261.50", „-$3,320.05" (minus PŘED
- * dolarem), tisícové čárky, holá čísla („45", „0.0249"). Prázdno a „--"
+ * Peněžní/číselná hodnota Schwabu: „$261.50“, „-$3,320.05“ (minus PŘED
+ * dolarem), tisícové čárky, holá čísla („45“, „0.0249“). Prázdno a „--“
  * = hodnota chybí (null).
  */
 function parseSchwabNumber(value: string): string | null {
@@ -34,10 +34,10 @@ function parseSchwabNumber(value: string): string | null {
   return digits;
 }
 
-/** Opční symbol Schwabu: „SPY 03/31/2020 284.00 P" (podklad, expirace, strike, C/P). */
+/** Opční symbol Schwabu: „SPY 03/31/2020 284.00 P“ (podklad, expirace, strike, C/P). */
 const OPTION_SYMBOL_RE = /^\S+ \d{2}\/\d{2}\/\d{4} [\d.]+ [CP]$/;
 
-/** Stabilní identifikátor opce: mezery → pomlčky („OPT:SPY-03/31/2020-284.00-P"). */
+/** Stabilní identifikátor opce: mezery → pomlčky („OPT:SPY-03/31/2020-284.00-P“). */
 const optionIsin = (symbol: string): string => `OPT:${symbol.replace(/\s+/g, '-')}`;
 
 /* ── Slovník Action (case-sensitive, hodnoty doslova z reálných exportů) ─── */
@@ -138,8 +138,8 @@ const dayDistance = (a: string, b: string): number =>
 
 /**
  * Autodetekce Schwab exportu: v prvních třech řádcích je řádek obsahující
- * „Action" i „Fees & Comm" (starší exporty mají před hlavičkou titulní řádek).
- * Bankovní (šekový) export Schwabu má místo toho „Type"/„Check #" → false.
+ * „Action“ i „Fees & Comm“ (starší exporty mají před hlavičkou titulní řádek).
+ * Bankovní (šekový) export Schwabu má místo toho „Type“/„Check #“ → false.
  */
 export function sniffSchwabCsv(text: string): boolean {
   if (text.trim() === '') return false;
@@ -152,7 +152,7 @@ export function sniffSchwabCsv(text: string): boolean {
  * pole v uvozovkách, výhradně USD). Pořadí sloupců se mezi exporty LIŠÍ →
  * mapování výhradně podle názvů. Starší exporty mají titulní řádek před
  * hlavičkou, koncovou čárku (prázdný 9. sloupec) a footer „Transactions
- * Total" — vše se toleruje/přeskakuje. Srážková daň z dividend jsou
+ * Total“ — vše se toleruje/přeskakuje. Srážková daň z dividend jsou
  * samostatné záporné řádky → párují se druhým průchodem (symbol + nejbližší
  * datum do ±5 dní).
  */
@@ -183,7 +183,7 @@ export function parseSchwabCsv(
       line: 1,
       message: looksLikeBank
         ? 'Tohle je výpis z bankovního (šekového) účtu Schwab — pro daně nahraj export transakcí z investičního (brokerage) účtu (Accounts → History → Export).'
-        : 'Soubor nevypadá jako Schwab export transakcí — v prvních řádcích chybí hlavička se sloupci „Action" a „Fees & Comm".',
+        : 'Soubor nevypadá jako Schwab export transakcí — v prvních řádcích chybí hlavička se sloupci „Action“ a „Fees & Comm“.',
     });
     return result;
   }
@@ -278,7 +278,7 @@ export function parseSchwabCsv(
     }
 
     if (SILENT_SKIP_ACTIONS.has(action)) {
-      result.skipped.push({ line, message: `„${action}": peněžní převod — pro daňový výpočet není potřeba.` });
+      result.skipped.push({ line, message: `„${action}“: peněžní převod — pro daňový výpočet není potřeba.` });
       continue;
     }
     const warnSkip = WARN_SKIP_ACTIONS[action];
@@ -286,7 +286,7 @@ export function parseSchwabCsv(
       const symbol = map.get(row, 'Symbol');
       result.warnings.push({
         line,
-        message: `„${action}"${symbol ? ` (${symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
+        message: `„${action}“${symbol ? ` (${symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
       });
       continue;
     }
@@ -295,7 +295,7 @@ export function parseSchwabCsv(
     if (!date) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${map.get(row, 'Date')}" (očekáván US formát MM/DD/YYYY).`,
+        message: `Neplatné datum „${map.get(row, 'Date')}“ (očekáván US formát MM/DD/YYYY).`,
         raw,
       });
       continue;
@@ -315,7 +315,7 @@ export function parseSchwabCsv(
       if (!quantity || quantity.lte(0)) {
         result.errors.push({
           line,
-          message: `${action} ${symbol}: chybí kladný počet kusů (Quantity „${map.get(row, 'Quantity')}").`,
+          message: `${action} ${symbol}: chybí kladný počet kusů (Quantity „${map.get(row, 'Quantity')}“).`,
           raw,
         });
         continue;
@@ -324,7 +324,7 @@ export function parseSchwabCsv(
       if (priceRaw === null || d(priceRaw).lt(0)) {
         result.errors.push({
           line,
-          message: `${action} ${symbol}: chybí cena (Price „${map.get(row, 'Price')}").`,
+          message: `${action} ${symbol}: chybí cena (Price „${map.get(row, 'Price')}“).`,
           raw,
         });
         continue;
@@ -369,7 +369,7 @@ export function parseSchwabCsv(
       if (!OPTION_SYMBOL_RE.test(symbol)) {
         result.warnings.push({
           line,
-          message: `„Expired" u ${symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; případně ho doplň přes univerzální šablonu.`,
+          message: `„Expired“ u ${symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; případně ho doplň přes univerzální šablonu.`,
         });
         continue;
       }
@@ -378,7 +378,7 @@ export function parseSchwabCsv(
       if (!quantity || quantity.eq(0)) {
         result.errors.push({
           line,
-          message: `Expired ${symbol}: chybí počet kontraktů (Quantity „${map.get(row, 'Quantity')}").`,
+          message: `Expired ${symbol}: chybí počet kontraktů (Quantity „${map.get(row, 'Quantity')}“).`,
           raw,
         });
         continue;
@@ -408,7 +408,7 @@ export function parseSchwabCsv(
       if (amountRaw === null) {
         result.errors.push({
           line,
-          message: `Dividenda ${symbol || 'bez symbolu'}: chybí částka (Amount „${map.get(row, 'Amount')}").`,
+          message: `Dividenda ${symbol || 'bez symbolu'}: chybí částka (Amount „${map.get(row, 'Amount')}“).`,
           raw,
         });
         continue;
@@ -417,7 +417,7 @@ export function parseSchwabCsv(
       if (amount.lte(0)) {
         result.warnings.push({
           line,
-          message: `Záporná/nulová dividenda ${amountRaw} USD („${action}" ${symbol}) — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+          message: `Záporná/nulová dividenda ${amountRaw} USD („${action}“ ${symbol}) — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
         });
         continue;
       }
@@ -438,7 +438,7 @@ export function parseSchwabCsv(
       if (amountRaw === null) {
         result.errors.push({
           line,
-          message: `Srážková daň („${action}" ${symbol}): chybí částka (Amount).`,
+          message: `Srážková daň („${action}“ ${symbol}): chybí částka (Amount).`,
           raw,
         });
         continue;
@@ -450,7 +450,7 @@ export function parseSchwabCsv(
     if (action === 'Margin Interest') {
       result.skipped.push({
         line,
-        message: '„Margin Interest": úrok z marginu je náklad — do daňového výpočtu ho nezařazujeme.',
+        message: '„Margin Interest“: úrok z marginu je náklad — do daňového výpočtu ho nezařazujeme.',
       });
       continue;
     }
@@ -464,7 +464,7 @@ export function parseSchwabCsv(
       if (d(amountRaw).lte(0)) {
         result.warnings.push({
           line,
-          message: `Záporný/nulový úrok ${amountRaw} USD („${action}") — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+          message: `Záporný/nulový úrok ${amountRaw} USD („${action}“) — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
         });
         continue;
       }
@@ -530,7 +530,7 @@ export function parseSchwabCsv(
 
     result.errors.push({
       line,
-      message: `Neznámý typ řádku „${action}" — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ řádku „${action}“ — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   }

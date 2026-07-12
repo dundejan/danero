@@ -94,7 +94,7 @@ describe('R-12i: bezcenná expirace long opce — sporný výklad s přepínače
     expect(hasWarning(result, 'DERIVATIVE_EXPIRED_PREMIUM')).toBe(true);
   });
 
-  it('přepínač „výdaje per druh": prémie se uplatní proti příjmům druhu', () => {
+  it('přepínač „výdaje per druh“: prémie se uplatní proti příjmům druhu', () => {
     const result = run(txs, { options: { derivativesExpensesPerDruh: true } });
     expect(result.derivatives.expensesCzk.toString()).toBe('15000'); // 5k + 10k
     expect(result.derivatives.base10Czk.toString()).toBe('0');

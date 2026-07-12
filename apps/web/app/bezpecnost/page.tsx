@@ -63,7 +63,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
       <>
         Kdykoli si stáhneš kompletní export (JSON se všemi transakcemi a
         nastavením) a kdykoli můžeš účet nevratně smazat — včetně všech dat,
-        šifrovaných klíčů a historie. Bez e-mailů „opravdu odcházíte?".
+        šifrovaných klíčů a historie. Bez e-mailů „opravdu odcházíte?“.
       </>
     ),
   },

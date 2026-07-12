@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compareVariants, simulateSale } from '../src';
 import { buy, dividend, interest, profile, run, sell, CFG_2025 } from './helpers';
 
-describe('simulace prodeje („co když teď prodám?")', () => {
+describe('simulace prodeje („co když teď prodám?“)', () => {
   const transactions = [
     buy({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '1000', tradeDate: '2019-05-05', settlementDate: '2019-05-05' }),
     buy({ isin: 'CZ0000000002', quantity: '100', pricePerShare: '1150', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),

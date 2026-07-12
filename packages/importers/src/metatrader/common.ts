@@ -58,14 +58,14 @@ export function extractHtmlRows(html: string): HtmlRow[] {
   return rows;
 }
 
-/** MetaTrader číslo: mezera (i nbsp) jako oddělovač tisíců („1 700.00"), desetinná tečka. */
+/** MetaTrader číslo: mezera (i nbsp) jako oddělovač tisíců („1 700.00“), desetinná tečka. */
 export function parseMtNumber(value: string): Decimal | null {
   const cleaned = value.replace(/[\s\u00a0\u202f]/g, '');
   if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
   return d(cleaned);
 }
 
-/** „2023.09.11 20:55:26" (MT4/MT5) i ISO tvar → 'YYYY-MM-DD'; neexistující den → null. */
+/** „2023.09.11 20:55:26“ (MT4/MT5) i ISO tvar → 'YYYY-MM-DD'; neexistující den → null. */
 export function mtDateToIso(value: string): string | null {
   const match = /^(\d{4})[.-](\d{2})[.-](\d{2})(?![\d.-])/.exec(value.trim());
   if (!match) return null;
@@ -74,8 +74,8 @@ export function mtDateToIso(value: string): string | null {
 }
 
 /**
- * Měna účtu z hlavičky reportu: „Currency: GBP" v jedné buňce, „Currency:"
- * + kód v následující buňce (MT5 XLSX), fallback „Account: 123 (USD, …)"
+ * Měna účtu z hlavičky reportu: „Currency: GBP“ v jedné buňce, „Currency:“
+ * + kód v následující buňce (MT5 XLSX), fallback „Account: 123 (USD, …)“
  * — některé MT5 buildy měnu uvádí jen v závorce u čísla účtu.
  */
 export function findAccountCurrency(rows: Array<{ cells: string[] }>): string | null {
@@ -104,7 +104,7 @@ export function findAccountCurrency(rows: Array<{ cells: string[] }>): string | 
 export interface SyntheticTradeSpec {
   /** Základ ID: `mt4-<ticket>` / `mt5-<deal>` → přípony `-open` / `-close`. */
   idBase: string;
-  /** Unikátní syntetický „ISIN" per obchod (`MT4:<ticket>` / `MT5:<deal>`). */
+  /** Unikátní syntetický „ISIN“ per obchod (`MT4:<ticket>` / `MT5:<deal>`). */
   isin: string;
   /** Symbol instrumentu uppercase (GBPUSD). */
   symbol: string;

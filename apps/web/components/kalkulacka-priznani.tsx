@@ -5,12 +5,12 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * Mini kalkulačka „Musím podat přiznání?": pár segmentovaných otázek →
+ * Mini kalkulačka „Musím podat přiznání?“: pár segmentovaných otázek →
  * okamžitý orientační verdikt. Čistý klientský stav (useState), žádný
  * formulář ani submit — přesný výpočet dělá až aplikace z dat.
  *
  * Logika je záměrně zjednodušená (bez detailů § 38g — jsme orientační):
- * – tržby z prodejů CP do 100 000 Kč za rok → prodeje osvobozené („zlaté pravidlo"),
+ * – tržby z prodejů CP do 100 000 Kč za rok → prodeje osvobozené („zlaté pravidlo“),
  * – vše drženo přes 3 roky → prodeje CP osvobozené (časový test),
  * – krypto má VLASTNÍ limit 100 000 Kč a od 15. 2. 2025 i vlastní tříletý test
  *   (R-10; test neplatí pro stablecoiny — hlídá nápověda),
@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * – zaměstnanec + vedlejší zdanitelné příjmy nad 20 000 Kč → přiznání (§ 38g/2),
  * – jiné situace + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
  * – neosvobozené prodeje → přiznání,
- * – „Nevím" u dividend/úroků → poctivé „bez dat to nejde říct" (neptáme se
+ * – „Nevím“ u dividend/úroků → poctivé „bez dat to nejde říct“ (neptáme se
  *   na nic, co aplikace zjistí sama — sem patří CTA na napojení dat).
  */
 

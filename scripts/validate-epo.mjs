@@ -3,7 +3,7 @@
  * Ruční ověření EPO XML proti OFICIÁLNÍ TESTOVACÍ podatelně finanční správy
  * (https://adisspr.mfcr.cz/dpr/epo_podani?test=1). V testovacím režimu se podání
  * nikdy nepřijme — podatelna jen vrátí seznam kontrol (<Chyby>). Úspěch =
- * jediná „chyba" typu I se zkratkou TEST_REZIM, případně propustné P.
+ * jediná „chyba“ typu I se zkratkou TEST_REZIM, případně propustné P.
  *
  * NENÍ součást CI (vyžaduje síť) — spouštěj ručně: `pnpm validate:epo [soubor.xml]`.
  * Bez argumentu si skript vygeneruje vzorová podání (GENERAL i SEPARATE_16A)

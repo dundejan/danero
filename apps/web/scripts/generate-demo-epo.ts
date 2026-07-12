@@ -1,13 +1,13 @@
 /**
  * Vygeneruje ukázkové XML písemnosti DPFDP7 za rok 2025 z demo datasetu
- * (fiktivní poplatník „Ukázka Demo") do public/marketing/ — doložení pro
+ * (fiktivní poplatník „Ukázka Demo“) do public/marketing/ — doložení pro
  * marketing/demo, že export z Danera je přesně soubor pro podatelnu
  * mojedane.cz. Čistý skript bez serveru i DB.
  *
- * Spuštění (z apps/web, tsx čte tsconfig s aliasem „@/"):
+ * Spuštění (z apps/web, tsx čte tsconfig s aliasem „@/“):
  *   pnpm exec tsx scripts/generate-demo-epo.ts
  *
- * „Dnešek" dema je PEVNÝ (2026-07-10), aby byl výstup reprodukovatelný —
+ * „Dnešek“ dema je PEVNÝ (2026-07-10), aby byl výstup reprodukovatelný —
  * rok 2025 je tak historický rok datasetu se zdanitelnými prodeji,
  * dividendami i zápočtem (Přílohy 2 a 3 mají co ukázat).
  */

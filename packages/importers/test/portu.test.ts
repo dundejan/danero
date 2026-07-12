@@ -52,7 +52,7 @@ describe('Portu CSV parser', () => {
     expect(sell.tradeDate).toBe('2026-02-20');
   });
 
-  it('dividenda: gross z „Hrubá výše dividendy", srážka ze „Srážková daň", ne z čisté Hodnoty', () => {
+  it('dividenda: gross z „Hrubá výše dividendy“, srážka ze „Srážková daň“, ne z čisté Hodnoty', () => {
     const result = parsePortuCsv(PORTU_FIXTURE);
 
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
@@ -92,7 +92,7 @@ describe('Portu CSV parser', () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.line).toBe(9);
-    expect(result.errors[0]!.message).toContain('„Odměna"');
+    expect(result.errors[0]!.message).toContain('„Odměna“');
     expect(result.errors[0]!.message).toContain('nahlaš nám ho');
     expect(result.errors[0]!.message).toContain('odvozujeme');
   });
@@ -128,7 +128,7 @@ describe('Portu CSV parser', () => {
     expect(result.errors).toEqual([]);
   });
 
-  it('rozbitá diakritika v Typ („Nakup") → mapuje se stejně jako „Nákup"', () => {
+  it('rozbitá diakritika v Typ („Nakup“) → mapuje se stejně jako „Nákup“', () => {
     const result = parsePortuCsv(PORTU_EDGE_FIXTURE);
 
     const buy = result.transactions.find((t) => t.type === 'BUY' && t.tradeDate === '2026-05-08');

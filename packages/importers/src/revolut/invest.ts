@@ -4,7 +4,7 @@ import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types
 import { isIsoCurrency, parseRevolutMoney, REVOLUT_BROKER, revolutIdFactory } from './common';
 
 /**
- * Parser akciového „Account statement" CSV z Revolutu. Výpis neobsahuje ISIN
+ * Parser akciového „Account statement“ CSV z Revolutu. Výpis neobsahuje ISIN
  * (jen ticker) — dodává ho mapování symbolů; BUY/SELL bez mapování se
  * neimportuje a ticker skončí v `unmappedSymbols` (vzor XTB). Měna obchodu
  * je ve sloupci Currency, sloupec FX Rate ignorujeme — kurzy počítá engine
@@ -121,7 +121,7 @@ export function parseRevolutInvestCsv(
     if (!isValidIsoDate(isoDate)) {
       result.errors.push({
         line,
-        message: `Neplatné datum „${dateRaw}" (očekáván ISO 8601 čas, např. 2023-09-22T13:30:10Z).`,
+        message: `Neplatné datum „${dateRaw}“ (očekáván ISO 8601 čas, např. 2023-09-22T13:30:10Z).`,
         raw,
       });
       return;
@@ -143,7 +143,7 @@ export function parseRevolutInvestCsv(
         if (!isIsoCurrency(currency)) {
           result.errors.push({
             line,
-            message: `${type} ${ticker}: neplatná měna „${currency}" ve sloupci Currency.`,
+            message: `${type} ${ticker}: neplatná měna „${currency}“ ve sloupci Currency.`,
             raw,
           });
           return;
@@ -153,7 +153,7 @@ export function parseRevolutInvestCsv(
         if (!quantity || quantity.lte(0)) {
           result.errors.push({
             line,
-            message: `${type} ${ticker}: chybí kladný počet kusů (Quantity „${map.get(row, 'Quantity')}").`,
+            message: `${type} ${ticker}: chybí kladný počet kusů (Quantity „${map.get(row, 'Quantity')}“).`,
             raw,
           });
           return;
@@ -195,7 +195,7 @@ export function parseRevolutInvestCsv(
         if (!gross || gross.lte(0)) {
           result.errors.push({
             line,
-            message: `Dividenda ${ticker || 'bez tickeru'}: chybí kladná částka (Total Amount „${map.get(row, 'Total Amount')}").`,
+            message: `Dividenda ${ticker || 'bez tickeru'}: chybí kladná částka (Total Amount „${map.get(row, 'Total Amount')}“).`,
             raw,
           });
           return;
@@ -203,7 +203,7 @@ export function parseRevolutInvestCsv(
         if (!isIsoCurrency(currency)) {
           result.errors.push({
             line,
-            message: `Dividenda ${ticker}: neplatná měna „${currency}" ve sloupci Currency.`,
+            message: `Dividenda ${ticker}: neplatná měna „${currency}“ ve sloupci Currency.`,
             raw,
           });
           return;
@@ -230,7 +230,7 @@ export function parseRevolutInvestCsv(
         if (!totalMoney) {
           result.errors.push({
             line,
-            message: `Poplatek za úschovu: chybí částka (Total Amount „${map.get(row, 'Total Amount')}").`,
+            message: `Poplatek za úschovu: chybí částka (Total Amount „${map.get(row, 'Total Amount')}“).`,
             raw,
           });
           return;
@@ -238,7 +238,7 @@ export function parseRevolutInvestCsv(
         if (!isIsoCurrency(currency)) {
           result.errors.push({
             line,
-            message: `Poplatek za úschovu: neplatná měna „${currency}" ve sloupci Currency.`,
+            message: `Poplatek za úschovu: neplatná měna „${currency}“ ve sloupci Currency.`,
             raw,
           });
           return;
@@ -262,13 +262,13 @@ export function parseRevolutInvestCsv(
         return;
       }
       case 'SKIP': {
-        result.skipped.push({ line, message: `„${type}": ${classified.reason}` });
+        result.skipped.push({ line, message: `„${type}“: ${classified.reason}` });
         return;
       }
       case 'UNKNOWN': {
         result.errors.push({
           line,
-          message: `Neznámý typ řádku „${type}" — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý typ řádku „${type}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
         return;
