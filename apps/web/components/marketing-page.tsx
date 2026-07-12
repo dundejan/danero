@@ -115,6 +115,11 @@ export function MarketingFooter() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/pruvodce" className="font-medium hover:text-inkoust">
+                    Průvodce
+                  </Link>
+                </li>
+                <li>
                   <Link href="/cenik" className="font-medium hover:text-inkoust">
                     Ceník
                   </Link>
@@ -127,6 +132,11 @@ export function MarketingFooter() {
                 <li>
                   <Link href="/caste-otazky" className="font-medium hover:text-inkoust">
                     Časté otázky
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/jak-pocitame" className="font-medium hover:text-inkoust">
+                    Jak počítáme
                   </Link>
                 </li>
                 <li>
