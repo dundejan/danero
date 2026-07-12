@@ -91,7 +91,7 @@ export default async function WelcomePage() {
               href="/import#trading212"
               className="rounded-md border border-linka p-3 text-sm hover:border-ruzova"
             >
-              <span className="block font-semibold">Trading212 / IBKR API</span>
+              <span className="block font-semibold">Trading 212 / IBKR API</span>
               <span className="text-inkoust-tlumeny">
                 Připoj klíč jen pro čtení — synchronizace pak běží sama každý den.
               </span>
@@ -102,8 +102,8 @@ export default async function WelcomePage() {
             >
               <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX/HTML)</span>
               <span className="text-inkoust-tlumeny">
-                Přes 25 platforem — XTB, Degiro, eToro, Schwab, Portu, Coinbase i další;
-                zbytek přes univerzální šablonu.
+                Výpisy ze 17 platforem čteme automaticky — XTB, Degiro, eToro, Schwab,
+                Portu, Coinbase i další; u devíti dalších tě provedeme univerzální šablonou.
               </span>
             </Link>
           </div>

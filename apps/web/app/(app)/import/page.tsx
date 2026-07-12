@@ -55,10 +55,10 @@ const DEFAULT_COPY: BrokerCopy = {
 const BROKER_COPY: Record<string, BrokerCopy> = {
   trading212: {
     firstSync:
-      'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading212 může trvat i deset minut. Poběží na pozadí, průběh uvidíš tady.',
+      'První synchronizace projde všechny roky od založení účtu — kvůli limitům Trading 212 může trvat i deset minut. Poběží na pozadí, průběh uvidíš tady.',
     regular: 'Stahuje se běžný rok; kompletní historie proběhla při prvním spuštění.',
     buttonFirst: 'Stáhnout kompletní historii',
-    note: 'Trading212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení“ — to jsme my, klidně je ignoruj.',
+    note: 'Trading 212 ti k tomu pošle notifikace „dokumenty připraveny ke stažení“ — to jsme my, klidně je ignoruj.',
   },
   ibkr: {
     firstSync:
@@ -217,9 +217,10 @@ export default async function ImportPage({
       <header>
         <h1 className="font-display text-3xl font-bold">Zdroje dat</h1>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Trading212, Interactive Brokers a Lynx se připojí živě přes API — Danero si
+          Trading 212, Interactive Brokers a Lynx se připojí živě přes API — Danero si
           stáhne historii samo a denně ji aktualizuje. Z ostatních platforem nahraješ
-          výpis; formát poznáme sami a u každé ti ukážeme, kde přesně ho stáhnout.
+          výpis; u 17 z nich formát poznáme sami, u zbylých tě provede univerzální
+          šablona. U každé platformy ti ukážeme, kde přesně výpis stáhnout.
         </p>
       </header>
 
@@ -301,7 +302,7 @@ export default async function ImportPage({
         <CardTitle>Napojení na brokery</CardTitle>
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card className="space-y-3" id="trading212">
-            <CardTitle>Trading212 — automatická synchronizace</CardTitle>
+            <CardTitle>Trading 212 — automatická synchronizace</CardTitle>
             {t212 ? (
               <ConnectedBroker
                 account={t212}
@@ -319,7 +320,7 @@ export default async function ImportPage({
                   </summary>
                   <div className="mt-2 space-y-2">
                     <p>
-                      V Trading212 otevři <strong>Settings → API (Beta) → Generate key</strong> a
+                      V Trading 212 otevři <strong>Settings → API (Beta) → Generate key</strong> a
                       nastav:
                     </p>
                     <ul className="space-y-1">
@@ -356,7 +357,7 @@ export default async function ImportPage({
                   <p className="text-sm text-cervena">Vlož platný tajný klíč (aspoň 10 znaků).</p>
                 )}
                 <p className="text-sm text-inkoust-tlumeny">
-                  Po vygenerování ti Trading212 ukáže <strong>dvě hodnoty</strong> — zkopíruj
+                  Po vygenerování ti Trading 212 ukáže <strong>dvě hodnoty</strong> — zkopíruj
                   sem obě. Pozor: <strong>Tajný klíč se zobrazuje jen jednou</strong>; kdyby
                   zmizel, prostě vygeneruj nový.
                 </p>
@@ -468,7 +469,8 @@ export default async function ImportPage({
         <Card className="space-y-3">
           <CardTitle>Nahrání výpisů</CardTitle>
           <p className="text-sm text-inkoust-tlumeny">
-            Nahraj výpis z kterékoli podporované platformy — formát poznáme automaticky.
+            Nahraj výpis z kterékoli platformy s vlastním parserem — formát poznáme
+            automaticky (výpisy z ostatních přepíšeš do univerzální šablony níže).
             Opakované nahrání nic nezdvojí, deduplikace funguje i napříč soubory.
           </p>
           <form action={uploadImportAction} className="flex flex-col gap-4 sm:flex-row sm:items-center">

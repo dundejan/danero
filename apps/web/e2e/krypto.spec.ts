@@ -21,7 +21,7 @@ test('krypto + deriváty: oddělené druhy § 10 na dashboardu a v reportu', asy
 
   // ── dashboard: dvě samostatné odměrky 100k ──────────────────────────────
   await page.goto('/prehled');
-  await expect(page.getByText('Osvobození prodejů CP — 100 000 Kč')).toBeVisible();
+  await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
   await expect(page.getByText('Osvobození krypta — 100 000 Kč')).toBeVisible();
 
   // ── report: § 10 s rozpadem CP + krypto + deriváty (druhy se nekompenzují) ──

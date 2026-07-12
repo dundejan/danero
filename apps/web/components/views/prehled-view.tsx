@@ -18,7 +18,7 @@ import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import type { Transaction } from '@danero/shared';
 
-/** Upozornění pro kartu „Poslední upozornění" — DB řádek i demo kandidát. */
+/** Upozornění pro kartu „Poslední upozornění“ — DB řádek i demo kandidát. */
 export interface PrehledNotification {
   dedupeKey: string;
   title: string;
@@ -70,7 +70,7 @@ export function PrehledView({
       : result.limits.generalFiling50k.applicable
         ? { status: result.limits.generalFiling50k.status, label: 'limit 50 000 Kč pro podání přiznání' }
         : null;
-  // „nejblíž prolomení" = nejvyšší čerpání ze sledovaných limitů
+  // „nejblíž prolomení“ = nejvyšší čerpání ze sledovaných limitů
   const watchedLimits = [
     ...(filingLimit ? [filingLimit] : []),
     { status: result.limits.limit100k, label: 'limit 100 000 Kč pro osvobození prodejů CP' },
@@ -79,7 +79,7 @@ export function PrehledView({
   const estimatedTaxCzk =
     result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
 
-  // Rozpad základu § 10 po druzích — souhrnné „(prodeje)" mátlo: daň může být
+  // Rozpad základu § 10 po druzích — souhrnné „(prodeje)“ mátlo: daň může být
   // jen z derivátů (bez osvobození, R-12c), zatímco prodeje CP/krypto jsou pod limity
   const base10Total = result.securities.base10Czk
     .plus(result.crypto.base10Czk)
@@ -166,7 +166,7 @@ export function PrehledView({
           />
         )}
         <LimitGauge
-          label="Osvobození prodejů CP — 100 000 Kč"
+          label="Osvobození prodejů cenných papírů — 100 000 Kč"
           hint="Platí pro každého (§ 4 odst. 1 písm. t): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
           status={result.limits.limit100k}
         />

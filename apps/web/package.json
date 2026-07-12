@@ -10,6 +10,7 @@
     "lint": "eslint app components db lib",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:prod": "playwright test --config playwright.prod.config.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

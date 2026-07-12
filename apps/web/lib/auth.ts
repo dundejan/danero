@@ -69,9 +69,12 @@ function buildAuth(db: Db) {
       changeEmail: { enabled: false },
     },
     // G10a: rate limiting auth endpointů — jen v produkci (E2E registruje
-    // opakovaně z jedné IP), DB storage kvůli serverless
+    // opakovaně z jedné IP), DB storage kvůli serverless.
+    // DANERO_DISABLE_RATE_LIMIT=1 nastavuje JEN playwright.prod.config.ts —
+    // E2E proti `next start` by jinak po 5. registraci dostávalo 429.
     rateLimit: {
-      enabled: process.env.NODE_ENV === 'production',
+      enabled:
+        process.env.NODE_ENV === 'production' && process.env.DANERO_DISABLE_RATE_LIMIT !== '1',
       storage: 'database',
       modelName: 'rateLimit',
       window: 60,

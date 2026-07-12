@@ -175,7 +175,7 @@ export const brokerAccounts = pgTable('broker_accounts', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   broker: text('broker').notNull(), // 'trading212'
-  label: text('label').notNull().default('Trading212'),
+  label: text('label').notNull().default('Trading 212'),
   credentialsEncrypted: text('credentials_encrypted').notNull(),
   lastSyncedAt: timestamp('last_synced_at'),
   lastSyncStatus: text('last_sync_status'),
@@ -297,7 +297,7 @@ export const instrumentAliases = pgTable(
 /**
  * Poslední známé ceny instrumentů z broker API (T212 portfolio, IBKR OpenPositions).
  * Zapisují se při každém syncu; CSV-only uživatelé řádky nemají → UI poctivě
- * ukazuje „bez cen". Ceny jsou v měně instrumentu, orientační (ne kotace burzy).
+ * ukazuje „bez cen“. Ceny jsou v měně instrumentu, orientační (ne kotace burzy).
  */
 export const instrumentPrices = pgTable(
   'instrument_prices',
