@@ -17,13 +17,25 @@ import type { Disposal, Ledger, Lot } from '../ledger/ledger';
 export const exemptFromDate = (acquisitionDate: IsoDate): IsoDate =>
   addDays(addYears(acquisitionDate, 3), 1);
 
-/** Doplní klasifikaci časového testu do alokací prodejů (mutuje ledger). */
-export function classifyTimeTest(disposals: Disposal[], profile: TaxpayerProfile): void {
+/**
+ * Doplní klasifikaci časového testu do alokací prodejů (mutuje ledger).
+ * `cryptoIsins`: flag obchodního majetku (R-01c/R-02f) se týká jen CP —
+ * kryptoaktiva mají vlastní vyloučení přímo v textu zj)/zk) a flagem CP
+ * se jim časový test nevypíná (R-02f).
+ */
+export function classifyTimeTest(
+  disposals: Disposal[],
+  profile: TaxpayerProfile,
+  cryptoIsins: ReadonlySet<string> = new Set(),
+): void {
   for (const disposal of disposals) {
+    // R-01c: CP v obchodním majetku bez nároku na osvobození (krypto flag nevypíná)
+    const businessAssets =
+      profile.hasSecuritiesInBusinessAssets && !cryptoIsins.has(disposal.isin);
     for (const alloc of disposal.allocations) {
       alloc.exemptFrom = exemptFromDate(alloc.acquisitionDate);
       alloc.timeTestExempt =
-        !profile.hasSecuritiesInBusinessAssets && // R-01c
+        !businessAssets &&
         alloc.origin !== 'SYNTHETIC' &&
         disposal.saleDate >= alloc.exemptFrom;
     }

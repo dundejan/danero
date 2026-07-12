@@ -1,5 +1,5 @@
 import type { LimitStatus } from '@danero/engine';
-import { czk } from '@/lib/format';
+import { czk, pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardTitle } from '@/components/ui/card';
 
@@ -100,7 +100,7 @@ export function LimitGauge({
         <span className="text-sm text-inkoust-tlumeny"> / {czk(status.limitCzk)}</span>
       </p>
       <p className={cn('text-sm font-semibold', ZONE_TEXT[status.zone])}>
-        {Math.round(status.ratio * 100)} % · {ZONE_LABEL[status.zone]}
+        {pct(status.ratio * 100)} · {ZONE_LABEL[status.zone]}
       </p>
       <LimitBar ratio={status.ratio} zone={status.zone} />
       <p className="pt-1 text-xs text-inkoust-tlumeny">{hint}</p>

@@ -17,7 +17,7 @@ import {
   portfolioAllocation,
   realizedGainsByYear,
 } from '@/lib/charts-data';
-import { czDate, czk, money, plural, qty } from '@/lib/format';
+import { czDate, czk, money, pct, plural, qty, signedPct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
   engineInputForUser,
@@ -29,7 +29,7 @@ import {
 import { valuePositions } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
 import type { Transaction } from '@danero/shared';
-import { analyzeTaxYear, type EngineInput, type TaxYearResult } from '@danero/engine';
+import { analyzeTaxYear, EngineError, type EngineInput, type TaxYearResult } from '@danero/engine';
 
 /**
  * Sdílené tělo portfolia: čisté výpočty (ocenění, grafy, řádky tabulky) nad
@@ -62,13 +62,21 @@ export function PortfolioView({
   const names = instrumentNames(txs);
   const valuation = valuePositions(positions, labels, names, prices, currentYear);
 
-  // realizované P/L: engine per rok (čistá funkce nad týmiž transakcemi)
-  const resultsByYear = new Map<number, TaxYearResult>(
-    years.map((y) => [
-      y,
-      y === year ? result : analyzeTaxYear(engineInputForUser(txs, profile, y, dailyRates)),
-    ]),
-  );
+  // realizované P/L: engine per rok (čistá funkce nad týmiž transakcemi);
+  // chybějící kurz v NEvybraném roce nesmí shodit stránku mimo page-guard —
+  // rok se z grafu vynechá (vybraný rok hlídá guard stránky)
+  const resultsByYear = new Map<number, TaxYearResult>();
+  for (const y of years) {
+    if (y === year) {
+      resultsByYear.set(y, result);
+      continue;
+    }
+    try {
+      resultsByYear.set(y, analyzeTaxYear(engineInputForUser(txs, profile, y, dailyRates)));
+    } catch (error) {
+      if (!(error instanceof EngineError)) throw error;
+    }
+  }
   const realized = realizedGainsByYear(resultsByYear);
   const dividends = dividendsByMonth(result);
   const fees = feesByYear(txs);
@@ -111,7 +119,7 @@ export function PortfolioView({
     const nearest = nearestExemption.get(row.isin) ?? null;
     const pctText =
       row.unrealizedPct !== undefined
-        ? `${row.unrealizedPct >= 0 ? '+' : ''}${row.unrealizedPct.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`
+        ? signedPct(row.unrealizedPct, 1)
         : undefined;
     return {
       isin: row.isin,
@@ -159,7 +167,7 @@ export function PortfolioView({
               <p className="mt-1 text-xs text-inkoust-tlumeny">
                 Orientační přepočet jednotným kurzem {valuation.fxYear}
                 {valuation.oldestPriceAt &&
-                  `, ceny k ${valuation.oldestPriceAt.toLocaleDateString('cs-CZ')}`}
+                  `, ceny k ${czDate(valuation.oldestPriceAt)}`}
                 {valuation.unpricedCount > 0 &&
                   ` · ${valuation.unpricedCount} ${plural(valuation.unpricedCount, 'pozice', 'pozice', 'pozic')} bez ceny či kurzu (nezapočteno)`}
                 . Ceny se obnovují při synchronizaci.
@@ -168,7 +176,11 @@ export function PortfolioView({
           ) : (
             <p className="mt-2 text-sm text-inkoust-tlumeny">
               Bez cen — ceny bereme jen z připojených brokerů (
-              <Link href="/import" className="font-medium text-ruzova">
+              {/* v demu /import nevede nikam — pozvat k registraci */}
+              <Link
+                href={basePath ? '/registrace' : '/import'}
+                className="font-medium text-ruzova-text"
+              >
                 připoj API
               </Link>
               ), žádný externí zdroj.
@@ -184,7 +196,7 @@ export function PortfolioView({
               exemptShareToday !== null && exemptShareToday > 0 && 'text-zelena',
             )}
           >
-            {exemptShareToday !== null ? `${exemptShareToday.toLocaleString('cs-CZ')} %` : '—'}
+            {exemptShareToday !== null ? pct(exemptShareToday, 1) : '—'}
           </p>
           <p className="mt-1 text-xs text-inkoust-tlumeny">
             Podíl portfolia ({outlook?.basis === 'value' ? 'podle hodnoty' : 'podle kusů'}) po
@@ -238,7 +250,7 @@ export function PortfolioView({
               content: (
                 <div className="space-y-2">
                   {valuation.unpricedCount > 0 && valuation.pricedCount > 0 && (
-                    <p className="text-xs text-jantar">
+                    <p className="text-xs text-jantar-text">
                       U {valuation.unpricedCount}{' '}
                       {plural(valuation.unpricedCount, 'pozice', 'pozic', 'pozic')} chybí cena od
                       brokera nebo kurz měny — hodnota a zisk/ztráta tam nejsou.
@@ -264,9 +276,12 @@ export function PortfolioView({
               ) : (
                 // poctivý prázdný stav — bez cen od brokera koláč nesestavíme
                 <p className="text-sm text-inkoust-tlumeny">
-                  Bez cen od brokera graf nesestavíme — připoj API na stránce{' '}
-                  <Link href="/import" className="font-medium text-ruzova">
-                    Zdroje dat
+                  Bez cen od brokera graf nesestavíme — připoj API{' '}
+                  <Link
+                    href={basePath ? '/registrace' : '/import'}
+                    className="font-medium text-ruzova-text"
+                  >
+                    {basePath ? 'po registraci' : 'na stránce Zdroje dat'}
                   </Link>
                   .
                 </p>
@@ -283,7 +298,7 @@ export function PortfolioView({
             Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy, bez
             ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
           </p>
-          <div className="overflow-x-auto">
+          <div className="scroll-stiny overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -299,7 +314,7 @@ export function PortfolioView({
                       {labels.get(position.isin) ?? position.isin}
                     </td>
                     <td
-                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar' : ''}`}
+                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar-text' : ''}`}
                     >
                       {qty(position.quantity)}
                     </td>

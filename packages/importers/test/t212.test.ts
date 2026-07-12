@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions, parseTrading212Csv, TRADING212_BROKER } from '../src';
+import { dedupeKey, dedupeTransactions, parseTrading212Csv, TRADING212_BROKER } from '../src';
 import { T212_FIXTURE as FIXTURE, T212_HEADER as HEADER } from './fixtures/t212';
 
 describe('Trading212 CSV parser', () => {
@@ -171,7 +171,7 @@ describe('Trading212 CSV parser', () => {
     expect(missing.warnings.some((w) => w.message.includes('sloupec s měnou'))).toBe(true);
   });
 
-  it('identické řádky bez ID: varování + dedupe je sloučí', () => {
+  it('identické legitimní řádky bez ID nesplynou — pořadový suffix, dedupe zachová obě', () => {
     const duplicated = [
       HEADER,
       'Interest on cash,2025-05-01 00:00:00,,,,,,,,,,12.34,CZK,,,,,,',
@@ -179,7 +179,49 @@ describe('Trading212 CSV parser', () => {
     ].join('\n');
     const result = parseTrading212Csv(duplicated);
     expect(result.transactions).toHaveLength(2);
-    expect(result.warnings).toHaveLength(1);
+    const [first, second] = result.transactions;
+    expect(first!.id).not.toBe(second!.id);
+    expect(second!.id).toBe(`${first!.id}-2`);
+    expect(dedupeTransactions(TRADING212_BROKER, result.transactions).fresh).toHaveLength(2);
+    // opakovaný import téhož souboru zůstává idempotentní (stejné suffixy → stejné klíče)
+    const again = parseTrading212Csv(duplicated);
+    const existingKeys = result.transactions.map((tx) => dedupeKey(TRADING212_BROKER, tx));
+    expect(
+      dedupeTransactions(TRADING212_BROKER, again.transactions, existingKeys).fresh,
+    ).toHaveLength(0);
+  });
+
+  it('Dividend (Return of capital): daní se konzervativně jako dividenda + varování', () => {
+    const csv = [
+      HEADER,
+      'Dividend (Return of capital),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.25,USD,,,,500.00,CZK,0.00,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]!.type).toBe('DIVIDEND');
+    expect(result.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(true);
+    expect(result.warnings.some((w) => w.message.includes('snížení nabývací ceny'))).toBe(true);
+
+    // běžná dividenda varování nedostane
+    const plain = parseTrading212Csv(
+      [
+        HEADER,
+        'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.25,USD,,,,500.00,CZK,3.75,USD,,,,',
+      ].join('\n'),
+    );
+    expect(plain.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(false);
+  });
+
+  it('duplicitní explicitní ID → varování, dedupe je sloučí (skutečný duplikát)', () => {
+    const duplicated = [
+      HEADER,
+      'Market buy,2024-01-10 09:00:00,US0378331005,AAPL,Apple,10,185.50,USD,,,,1855.00,USD,,,,DUP-1,,',
+      'Market buy,2024-01-10 09:00:00,US0378331005,AAPL,Apple,10,185.50,USD,,,,1855.00,USD,,,,DUP-1,,',
+    ].join('\n');
+    const result = parseTrading212Csv(duplicated);
+    expect(result.transactions).toHaveLength(2);
+    expect(result.warnings.some((w) => w.message.includes('stejné ID'))).toBe(true);
     expect(dedupeTransactions(TRADING212_BROKER, result.transactions).fresh).toHaveLength(1);
   });
 });

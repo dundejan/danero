@@ -32,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
   const db = await getDb();
   const { checkRateLimit } = await import('@/lib/rate-limit');
   if (!(await checkRateLimit(db, `epo:${session.user.id}`, { max: 10, windowMs: 60_000 }))) {
-    return chyba('Příliš mnoho exportů za sebou — počkej minutu.');
+    return chyba('Příliš mnoho exportů za sebou — počkej minutu.', 429);
   }
   const profile = await getProfile(db, session.user.id);
   if (!profile) return chyba('Nejdřív vyplň daňový profil v Nastavení.');

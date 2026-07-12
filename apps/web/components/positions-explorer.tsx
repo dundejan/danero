@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { PositionCard } from '@/components/position-card';
+import { keepCurrencyCase } from '@/components/ui/card';
+import { signedPct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -96,7 +98,7 @@ function SortableTh({
           active && 'text-inkoust',
         )}
       >
-        {label}
+        {keepCurrencyCase(label)}
         <span aria-hidden className={active ? undefined : 'opacity-40'}>
           {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
         </span>
@@ -204,7 +206,7 @@ export function PositionsExplorer({
                     ? {
                         text:
                           row.plPct !== undefined
-                            ? `${row.plPct >= 0 ? '+' : ''}${row.plPct.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`
+                            ? signedPct(row.plPct, 1)
                             : row.plText,
                         positive: row.plPositive,
                       }
@@ -216,7 +218,7 @@ export function PositionsExplorer({
             ))}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
+          <div className="scroll-stiny hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -297,7 +299,7 @@ export function PositionsExplorer({
                     <td
                       className={cn(
                         'whitespace-nowrap py-2 pr-4 text-right',
-                        row.plPositive !== undefined && (row.plPositive ? 'text-zelena' : 'text-cervena'),
+                        row.plPositive !== undefined && (row.plPositive ? 'text-zelena-text' : 'text-cervena'),
                       )}
                     >
                       {row.plText ?? '—'}
@@ -305,7 +307,7 @@ export function PositionsExplorer({
                     {showExempt && (
                       <td className="py-2 text-right">
                         {row.exemptQtyText ? (
-                          <span className="text-zelena">{row.exemptQtyText}</span>
+                          <span className="text-zelena-text">{row.exemptQtyText}</span>
                         ) : (
                           '—'
                         )}
@@ -328,7 +330,7 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage - 1)}
                   disabled={currentPage === 1}
                   aria-label="Předchozí stránka"
-                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-ruzova hover:text-ruzova disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
                 >
                   ‹
                 </button>
@@ -340,7 +342,7 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage + 1)}
                   disabled={currentPage === pageCount}
                   aria-label="Další stránka"
-                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-ruzova hover:text-ruzova disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
                 >
                   ›
                 </button>

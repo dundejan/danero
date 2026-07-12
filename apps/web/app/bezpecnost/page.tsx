@@ -93,7 +93,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
       <>
         Web posílá přísné bezpečnostní hlavičky (Content Security Policy,
         HSTS, zákaz vkládání do cizích stránek) a citlivé operace chrání
-        rate limity proti skriptovanému zneužití.
+        omezení počtu pokusů (rate limit) proti skriptovanému zneužití.
       </>
     ),
   },

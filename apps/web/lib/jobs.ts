@@ -6,7 +6,9 @@ import {
   markAccountSyncError,
   type SyncProgress,
   type SyncStatus,
+  type SyncYearProgress,
 } from '@/lib/broker-sync';
+import { isUniqueViolation } from '@/lib/db-errors';
 import { syncIbkr } from '@/lib/ibkr-sync';
 import { explainT212SyncError, syncTrading212, type SyncOptions } from '@/lib/t212-sync';
 
@@ -129,15 +131,6 @@ export async function enqueueSyncJob(
     if (winner) return winner;
     throw error;
   }
-}
-
-/** Drizzle chyby balí (DrizzleQueryError) — pg kód bývá v `cause`, ne na chybě samotné. */
-function isUniqueViolation(error: unknown): boolean {
-  for (let e = error; e instanceof Error; e = e.cause as Error) {
-    if ((e as { code?: string }).code === '23505') return true;
-    if (!(e.cause instanceof Error)) break;
-  }
-  return false;
 }
 
 async function findActiveJob(
@@ -269,6 +262,41 @@ async function withSyncAccount<T>(
   }
 }
 
+/**
+ * Průběh posledního NEúspěšného plného syncu účtu (jobs.progress přežívá
+ * dorovnání na error) — nový plný běh z něj přeskočí už dokončené roky.
+ * Plný T212 sync (poll exportu ~65 s za KAŽDÝ rok) se jinak na serverless
+ * platformě nikdy nedokončí: každý pokus by čekání platil celé znovu.
+ */
+async function fullSyncResume(
+  db: Db,
+  job: JobRow,
+): Promise<{ years: SyncYearProgress[]; syncedAt: Date } | undefined> {
+  const rows = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.userId, job.userId),
+        eq(jobs.type, job.type),
+        eq(jobs.dedupeKey, job.dedupeKey),
+        eq(jobs.status, 'error'),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  const failed = rows[0];
+  if (!failed) return undefined;
+  const progress = (failed.progress ?? null) as SyncProgress | null;
+  if (progress?.mode !== 'full' || !progress.years || progress.years.length === 0) {
+    return undefined;
+  }
+  // základ 7denní rezervy = START neúspěšného běhu: finishedAt může být až čas
+  // pozdějšího recovery (dorovnání zaseknutého jobu), což by rezervu posunulo
+  // a ocas posledního staženého roku by se už nikdy nestáhl
+  return { years: progress.years, syncedAt: failed.startedAt ?? failed.createdAt };
+}
+
 /** Běh T212 sync jobu — průběh se zapisuje do jobs.progress, ať ho UI může pollovat. */
 async function runT212SyncJob(
   db: Db,
@@ -279,7 +307,12 @@ async function runT212SyncJob(
     db,
     job,
     async (account, onProgress) => {
-      const outcome = await syncTrading212(db, account, { ...options, onProgress });
+      const resume = await fullSyncResume(db, job);
+      const outcome = await syncTrading212(db, account, {
+        ...options,
+        onProgress,
+        ...(resume ? { resume } : {}),
+      });
       return {
         added: outcome.added,
         duplicates: outcome.duplicates,

@@ -81,6 +81,9 @@ export function PlatformLogo({
   // wordmark: název nese samo logo — text by se dubloval
   return (
     <span className="flex h-8 shrink-0 items-center rounded-md bg-white px-2.5 ring-1 ring-inset ring-inkoust/10">
+      {/* h-5 + w-auto: u širokých wordmarků max-w strop mírně poruší poměr
+          stran (dev-only warning next/image) — h-auto by ale SVG bez
+          intrinsic rozměrů zkolabovalo na nulu; object-contain to kreslí správně */}
       <Image
         src={logo.src}
         alt={platform.name}

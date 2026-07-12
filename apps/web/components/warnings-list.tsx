@@ -39,14 +39,15 @@ const GROUP_TITLES: Record<string, string> = {
 
 const LEVEL_CLASS: Record<EngineWarning['level'], string> = {
   ERROR: 'text-cervena',
-  WARNING: 'text-jantar',
+  WARNING: 'text-jantar-text',
   INFO: 'text-inkoust-tlumeny',
 };
 
-/** Badge závažnosti u skupiny — barvy jen z tokenů (semafor). */
+/** Badge závažnosti u skupiny — barvy jen z tokenů (semafor). Bílý text smí
+    jen na syté výplně (v dark módu jsou základní akcenty zesvětlené). */
 const LEVEL_BADGE: Record<EngineWarning['level'], { text: string; tone: string }> = {
-  ERROR: { text: 'Chyba', tone: 'bg-cervena text-white' },
-  WARNING: { text: 'Upozornění', tone: 'bg-jantar/15 text-jantar' },
+  ERROR: { text: 'Chyba', tone: 'bg-cervena-syta text-white' },
+  WARNING: { text: 'Upozornění', tone: 'bg-jantar/15 text-jantar-text' },
   INFO: { text: 'Info', tone: 'bg-linka/50 text-inkoust-tlumeny' },
 };
 

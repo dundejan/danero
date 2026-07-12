@@ -125,11 +125,15 @@ export function prepareDisposals(
   exemption: ExemptionAvailability,
 ): PreparedDisposals {
   const items = disposals.map((disposal): PreparedDisposal => {
-    const grossCzk = fx.toCzk(disposal.grossProceeds, disposal.currency, disposal.saleDate);
-    // R-10b: prodej před účinností zák. 32/2025 Sb. nemá nárok na žádné osvobození
+    // R-05a/R-06a: příjem se realizuje připsáním peněz (settlement) — kurz tržby
+    // jde VŽDY po vypořádání; přepínač timeTestDateBasis (R-01a) mění jen saleDate
+    // pro časový test, roku příjmu ani kurzu se netýká
+    const grossCzk = fx.toCzk(disposal.grossProceeds, disposal.currency, disposal.settlementDate);
+    // R-10b: rozhodný je den realizace příjmu (vypořádání) — prodej vypořádaný
+    // před účinností zák. 32/2025 Sb. nemá nárok na žádné osvobození
     const eligible =
       exemption.available &&
-      (exemption.effectiveFrom === null || disposal.saleDate >= exemption.effectiveFrom);
+      (exemption.effectiveFrom === null || disposal.settlementDate >= exemption.effectiveFrom);
     // R-10a: EMT (stablecoin) je z hodnotového osvobození zj) vyloučen vždy;
     // časový test zk) se na něj vztahuje jen při mírnějším výkladu (R-10g)
     const isEmt = exemption.detectEmt === true && isEmtIdentifier(disposal.isin);
@@ -222,7 +226,8 @@ export function computeSecurities(
       const allocExempt = timeTestEligible && alloc.timeTestExempt;
       const isTaxable = !allocExempt && !fullyExemptByValue;
       // Nabývací cena + poměrná část nákupního poplatku kurzem dne/roku vynaložení (R-06a),
-      // + poměrná část prodejního poplatku kurzem dne/roku prodeje. Počítá se pro
+      // + poměrná část prodejního poplatku kurzem dne/roku vypořádání prodeje
+      // (R-06a — stejně jako tržba, nezávisle na bázi časového testu). Počítá se pro
       // všechny alokace (kvůli realizedResultCzk); DAŇOVÝM výdajem je jen u zdanitelných.
       const costCcy = alloc.quantity.mul(alloc.costPerShare);
       const sellFeeShare = disposal.quantity.gt(0)
@@ -231,7 +236,7 @@ export function computeSecurities(
       const fullExpenseCzk = fx
         .toCzk(costCcy, alloc.lotCurrency, alloc.expenseDate)
         .plus(fx.toCzk(alloc.buyFeeShare, alloc.buyFeeCurrency, alloc.expenseDate))
-        .plus(fx.toCzk(sellFeeShare, disposal.sellFeeCurrency, disposal.saleDate));
+        .plus(fx.toCzk(sellFeeShare, disposal.sellFeeCurrency, disposal.settlementDate));
       realizedResult = realizedResult.plus(proceedsCzk).minus(fullExpenseCzk);
 
       let expenseCzk = ZERO;

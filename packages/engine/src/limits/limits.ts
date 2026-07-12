@@ -1,4 +1,4 @@
-import { d, sum, ZERO, type Money, type TaxpayerProfile } from '@danero/shared';
+import { d, sum, ZERO, type IsoDate, type Money, type TaxpayerProfile } from '@danero/shared';
 import type { AssetScope, TaxYearConfig } from '../config/taxYear';
 import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
@@ -42,11 +42,19 @@ export interface FlatTax50kComponents {
   otherManualCzk: Money;
 }
 
+/**
+ * R-09d: „jednotlivý příjem“ dle D-59 = v jednom čase z jednoho titulu — proti
+ * prahu 5M se posuzuje ÚHRN osvobozených tržeb za (isin, den prodeje), ne každý
+ * fill zvlášť (2 × 3M týž den z téhož titulu oznámení podléhá).
+ */
 export interface Flagged38v {
-  sellTxId: string;
+  /** Prodeje (fill-y), které jednotlivý příjem tvoří. */
+  sellTxIds: string[];
   isin: string;
+  saleDate: IsoDate;
   /** Druh příjmu — § 38v se týká CP i kryptoaktiv (R-09d/R-10f). */
   assetScope: AssetScope;
+  /** Úhrn osvobozených tržeb jednotlivého příjmu (isin + den). */
   exemptProceedsCzk: Money;
 }
 
@@ -130,17 +138,34 @@ export function computeLimits(
   const employeeStatus = limitStatus(sideIncome, d(config.limits.employeeSideIncome));
   const generalStatus = limitStatus(sideIncome, d(config.limits.generalFiling));
 
-  // R-09d/R-10f: oznámení jednotlivého osvobozeného příjmu > 5M (§ 38v) — CP i krypto
+  // R-09d/R-10f: oznámení jednotlivého osvobozeného příjmu > 5M (§ 38v) — CP i krypto.
+  // Jednotlivý příjem = úhrn per (isin, den prodeje) — partial fill-y téhož prodeje
+  // se sčítají, jinak by 2 × 3M týž den povinnosti unikly (D-59: „v jednom čase
+  // z jednoho titulu od jednoho subjektu“).
   const reportingThreshold = d(config.limits.exemptIncomeReporting);
-  const flag38v = (result: SecuritiesResult, assetScope: AssetScope): Flagged38v[] =>
-    result.disposals
-      .filter((disposal) => disposal.exemptProceedsCzk.gt(reportingThreshold))
-      .map((disposal) => ({
-        sellTxId: disposal.sellTxId,
-        isin: disposal.isin,
-        assetScope,
-        exemptProceedsCzk: disposal.exemptProceedsCzk,
-      }));
+  const flag38v = (result: SecuritiesResult, assetScope: AssetScope): Flagged38v[] => {
+    const groups = new Map<string, Flagged38v>();
+    for (const disposal of result.disposals) {
+      if (disposal.exemptProceedsCzk.lte(0)) continue;
+      const key = `${disposal.isin}|${disposal.saleDate}`;
+      const group = groups.get(key);
+      if (group) {
+        group.sellTxIds.push(disposal.sellTxId);
+        group.exemptProceedsCzk = group.exemptProceedsCzk.plus(disposal.exemptProceedsCzk);
+      } else {
+        groups.set(key, {
+          sellTxIds: [disposal.sellTxId],
+          isin: disposal.isin,
+          saleDate: disposal.saleDate,
+          assetScope,
+          exemptProceedsCzk: disposal.exemptProceedsCzk,
+        });
+      }
+    }
+    return [...groups.values()].filter((group) =>
+      group.exemptProceedsCzk.gt(reportingThreshold),
+    );
+  };
   const reporting38v = [...flag38v(securities, 'SECURITIES'), ...flag38v(crypto, 'CRYPTO')];
   if (reporting38v.length > 0) {
     // lidský tvar podle počtu (1 / 2–4 / 5+) — deterministicky, bez Intl

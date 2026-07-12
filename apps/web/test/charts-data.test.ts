@@ -372,4 +372,37 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const iwda = valuation.rows.find((row) => row.isin === 'IE00B4L5Y983')!;
     expect(iwda.value).toBeUndefined();
   });
+
+  it('valuePositions: GBX loty vs. GBP cena — P/L se přepočte přes faktor 100', () => {
+    // londýnský titul: T212 kotuje v pencích (GBX), ceny z API normalizujeme
+    // na GBP (lib/prices.ts) — bez převodu by P/L u LSE titulů nikdy nevznikl
+    const position = {
+      isin: 'GB00B03MLX29',
+      assetClass: 'STOCK' as const,
+      currency: 'GBX',
+      totalRemaining: d('10'),
+      lots: [
+        {
+          lotId: 'l1',
+          remaining: d('10'),
+          acquisitionDate: '2024-01-02',
+          exemptFrom: '2027-01-03',
+          isExempt: false,
+          daysToExempt: 100,
+          costPerShare: d('250'), // pence za kus
+          interpretive: false,
+        },
+      ],
+    };
+    const prices = new Map<string, InstrumentPrice>([
+      // 3 GBP = 300 GBX za kus
+      ['GB00B03MLX29', { price: d('3'), currency: 'GBP', source: 'trading212', asOf: new Date() }],
+    ]);
+    const valuation = valuePositions([position], new Map(), new Map(), prices, 2026);
+    const row = valuation.rows[0]!;
+    expect(row.value!.toString()).toBe('30'); // 10 ks × 3 GBP
+    expect(row.cost!.toString()).toBe('25'); // 10 × 250 pencí = 25 GBP
+    expect(row.unrealized!.toString()).toBe('5');
+    expect(row.unrealizedPct).toBeCloseTo(20, 5);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLedger, resolveOptions, WarningCollector } from '../src';
+import { buildLedger, inferSettlementDate, resolveOptions, WarningCollector } from '../src';
 import { buy, corpAction, hasWarning, run, sell } from './helpers';
 import { TransactionSchema } from '@danero/shared';
 
@@ -113,6 +113,38 @@ describe('R-04 korporátní akce', () => {
     expect(withoutAcquisition.securities.base10Czk.toString()).toBe('120000');
     expect(hasWarning(withoutAcquisition, 'TRANSFER_WITHOUT_ACQUISITION')).toBe(true);
   });
+
+  it('R-04i: převod s datem nabytí, ale bez ceny → tichá cena 0 dostane vlastní WARNING', () => {
+    const partial = run([
+      TransactionSchema.parse({
+        type: 'TRANSFER_IN',
+        id: 'tr-3',
+        isin: 'CZ0000000001',
+        quantity: '100',
+        date: '2025-01-10',
+        acquisition: { date: '2024-05-05' }, // jen datum — cena chybí
+      }),
+      sell({ quantity: '100', pricePerShare: '1200', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+    // výpočet beze změny: výdaj 0, časový test od data nabytí (nesplněn → zdanitelné)
+    expect(partial.securities.base10Czk.toString()).toBe('120000');
+    expect(hasWarning(partial, 'TRANSFER_WITHOUT_COST')).toBe(true);
+    expect(hasWarning(partial, 'TRANSFER_WITHOUT_ACQUISITION')).toBe(false);
+
+    // úplné nabytí (s cenou) varování nedostane
+    const complete = run([
+      TransactionSchema.parse({
+        type: 'TRANSFER_IN',
+        id: 'tr-4',
+        isin: 'CZ0000000001',
+        quantity: '100',
+        date: '2025-01-10',
+        acquisition: { date: '2021-05-05', costPerShare: '500', currency: 'CZK' },
+      }),
+      sell({ quantity: '100', pricePerShare: '1200', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+    expect(hasWarning(complete, 'TRANSFER_WITHOUT_COST')).toBe(false);
+  });
 });
 
 describe('R-05 párování a dílčí základ § 10', () => {
@@ -144,6 +176,24 @@ describe('R-05 párování a dílčí základ § 10', () => {
     expect(hasWarning(overallLoss, 'LOSS_NOT_DEDUCTIBLE')).toBe(true);
   });
 
+  it('R-05c: MAX_PROFIT/MAX_LOSS porovnává nabývací ceny v CZK (kurz roku nákupu, R-06a), ne nominály napříč měnami', () => {
+    // lot A: 10 USD/ks × kurz 2024 (23) = 230 Kč/ks; lot B: 200 Kč/ks —
+    // nominálně je A „levnější“ (10 < 200), v CZK je levnější B (200 < 230)
+    const txs = [
+      buy({ currency: 'USD', quantity: '10', pricePerShare: '10', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      buy({ currency: 'CZK', quantity: '10', pricePerShare: '200', tradeDate: '2024-02-01', settlementDate: '2024-02-01' }),
+      sell({ currency: 'CZK', quantity: '10', pricePerShare: '12000', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ];
+
+    const maxProfit = run(txs, { options: { matchingMethod: 'MAX_PROFIT' } });
+    expect(maxProfit.ledger.disposals[0]!.allocations[0]!.lotCurrency).toBe('CZK');
+    expect(maxProfit.securities.base10Czk.toString()).toBe('118000'); // 120 000 − 10 × 200
+
+    const maxLoss = run(txs, { options: { matchingMethod: 'MAX_LOSS' } });
+    expect(maxLoss.ledger.disposals[0]!.allocations[0]!.lotCurrency).toBe('USD');
+    expect(maxLoss.securities.base10Czk.toString()).toBe('117700'); // 120 000 − 10 × 10 × 23
+  });
+
   it('R-05b: poplatky nákupu i prodeje snižují základ (jen u zdanitelných alokací)', () => {
     const result = run([
       buy({
@@ -164,6 +214,18 @@ describe('R-05 párování a dílčí základ § 10', () => {
     ]);
     expect(hasWarning(result, 'NEGATIVE_POSITION')).toBe(true);
     expect(result.securities.base10Czk.toString()).toBe('120000'); // výdaj 0, bez časového testu
+  });
+
+  it('dopočet vypořádání: US od 28. 5. 2024 a Kanada od 27. 5. 2024 T+1, před tím T+2', () => {
+    // Kanada (CIRO/CCMA): účinnost 27. 5. 2024 — o den dřív než US (Memorial Day)
+    expect(inferSettlementDate('2024-05-24', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pátek + T+2
+    expect(inferSettlementDate('2024-05-27', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pondělí + T+1
+    // US (SEC 15c6-1): účinnost 28. 5. 2024
+    expect(inferSettlementDate('2024-05-27', 'US0378331005', 'STOCK')).toBe('2024-05-29'); // ještě T+2
+    expect(inferSettlementDate('2024-05-28', 'US0378331005', 'STOCK')).toBe('2024-05-29'); // už T+1
+    // ostatní trhy zůstávají T+2, krypto T+0
+    expect(inferSettlementDate('2024-06-03', 'DE0007164600', 'STOCK')).toBe('2024-06-05');
+    expect(inferSettlementDate('2024-06-03', 'BTC', 'CRYPTO')).toBe('2024-06-03');
   });
 
   it('R-04j: prodej frakcí CP dostane informační vlajku, celé kusy a krypto ne', () => {

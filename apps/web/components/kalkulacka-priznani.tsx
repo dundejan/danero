@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 
 /**
  * Mini kalkulačka „Musím podat přiznání?“: pár segmentovaných otázek →
@@ -71,7 +72,8 @@ function Otazka<T extends string | boolean>({
 const PRIJMY_OTAZKA: Record<Situace, { otazka: string; napoveda: string }> = {
   pausal: {
     otazka: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
-    napoveda: 'Třeba dividendy, úroky nebo nájem.',
+    napoveda:
+      'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
   },
   zamestnanec: {
     otazka: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
@@ -79,13 +81,14 @@ const PRIJMY_OTAZKA: Record<Situace, { otazka: string; napoveda: string }> = {
   },
   jine: {
     otazka: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
-    napoveda: 'Včetně dividend, úroků či nájmu — osvobozené prodeje se nepočítají.',
+    napoveda:
+      'Včetně zahraničních dividend, úroků či nájmu — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
   },
 };
 
 const PRIJMY_DUVOD: Record<Situace, string> = {
   pausal:
-    'Jiné zdanitelné příjmy nad 50 000 Kč prolomí paušální režim — přiznání se podává kvůli nim.',
+    'Jiné zdanitelné příjmy nad 50 000 Kč znamenají, že daň za ten rok není rovna paušální dani — podáš přiznání a přehledy, v paušálním režimu ale zůstáváš.',
   zamestnanec:
     'Vedlejší zdanitelné příjmy nad 20 000 Kč vedle zaměstnání znamenají přiznání — i bez jediného prodeje.',
   jine: 'Zdanitelné příjmy nad 50 000 Kč za rok znamenají povinnost podat přiznání.',
@@ -214,7 +217,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         {kryptoNad100k === true && (
           <Otazka<boolean>
             otazka="Držel jsi všechno prodané krypto déle než 3 roky?"
-            napoveda="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. Pozor: neplatí pro stablecoiny (USDT, USDC…)."
+            napoveda="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. U stablecoinů (USDT, USDC…) je test sporný — počítáme bezpečně, jako by neplatil."
             volby={[
               { hodnota: true, popisek: 'Ano, všechno' },
               { hodnota: false, popisek: 'Ne' },
@@ -277,7 +280,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/demo/prehled"
-              className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              className={buttonVariants({ variant: 'primary' })}
             >
               Vyzkoušet demo
             </Link>

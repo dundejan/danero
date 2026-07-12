@@ -6,6 +6,7 @@ import { PrehledView } from '@/components/views/prehled-view';
 import { getDb } from '@/db';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { analyzeForUserCached } from '@/lib/engine-cache';
+import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import {
   availableYears,
   dailyRatesForProfile,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 
 export const metadata = { title: 'Přehled — Danero' };
 
@@ -39,7 +41,7 @@ export default async function OverviewPage({
         </p>
         <Link
           href="/vitejte"
-          className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className={buttonVariants({ variant: 'primary' })}
         >
           Otevřít průvodce
         </Link>
@@ -60,7 +62,15 @@ export default async function OverviewPage({
   const rok = firstParam((await searchParams).rok);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const analysis = analyzeForUserCached(user.id, txs, profile, year, today, dailyRates);
+  let analysis;
+  try {
+    analysis = analyzeForUserCached(user.id, txs, profile, year, today, dailyRates);
+  } catch (error) {
+    // chybějící kurz (EngineError) = srozumitelná karta, ne pád do error boundary
+    const message = engineErrorMessage(error);
+    if (!message) throw error;
+    return <EngineErrorCard message={message} />;
+  }
   const prices = await loadInstrumentPrices(db, user.id);
 
   return (

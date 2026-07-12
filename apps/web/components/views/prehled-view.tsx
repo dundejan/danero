@@ -5,7 +5,7 @@ import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ViewSwitch } from '@/components/view-switch';
-import { WarningsList } from '@/components/warnings-list';
+import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import {
   exemptionOutlook,
@@ -13,10 +13,11 @@ import {
   horizonDots,
   limit100kSeries,
 } from '@/lib/charts-data';
-import { czk, METHOD_LABEL, plural } from '@/lib/format';
+import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import type { Transaction } from '@danero/shared';
+import { buttonVariants } from '@/components/ui/button';
 
 /** Upozornění pro kartu „Poslední upozornění“ — DB řádek i demo kandidát. */
 export interface PrehledNotification {
@@ -108,7 +109,7 @@ export function PrehledView({
         <div className="flex flex-wrap items-baseline gap-4">
           <YearSwitcher years={years} active={year} hrefBase={`${basePath}/prehled`} />
           <p className="font-mono text-xs text-inkoust-tlumeny">
-            {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·{' '}
+            {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} v historii ·{' '}
             {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
             {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz' : 'denní kurzy ČNB'}
           </p>
@@ -131,7 +132,7 @@ export function PrehledView({
               </div>
               <Link
                 href={`${basePath}/report`}
-                className="rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                className={buttonVariants({ variant: 'primary' })}
               >
                 Připravit podklady
               </Link>
@@ -143,7 +144,7 @@ export function PrehledView({
               </p>
               <p className="text-sm text-inkoust-tlumeny">
                 Limity hlídáme denně. Nejblíž je {nearestLimit.label} — čerpáno{' '}
-                {Math.round(nearestLimit.status.ratio * 100)} %.
+                {pct(nearestLimit.status.ratio * 100)}.
               </p>
             </div>
           )}
@@ -163,6 +164,15 @@ export function PrehledView({
             label="Vedlejší příjmy — 20 000 Kč"
             hint="Zdanitelné příjmy § 7–10 vedle zaměstnání. Při překročení podáváš přiznání."
             status={result.limits.employee20k.status}
+          />
+        )}
+        {/* režim „jiné“: obecný limit § 38g — verdikt s ním počítá, odměrka
+            mu do teď chyběla (parita s paušálem/zaměstnancem) */}
+        {result.limits.generalFiling50k.applicable && (
+          <LimitGauge
+            label="Podání přiznání — 50 000 Kč"
+            hint="Obecný limit (§ 38g): zdanitelné příjmy do 50 000 Kč za rok bez povinnosti podat přiznání. Při překročení přiznání podáváš."
+            status={result.limits.generalFiling50k.status}
           />
         )}
         <LimitGauge
@@ -305,7 +315,9 @@ export function PrehledView({
 
       {importantWarnings.length > 0 && (
         <Card className="space-y-2">
-          <CardTitle>Kontroly výpočtu ({importantWarnings.length})</CardTitle>
+          {/* počet = zobrazené skupiny, ne surová varování — „(10)“ nad třemi
+              bloky mátlo; násobnost nese detail skupiny („8×“) */}
+          <CardTitle>Kontroly výpočtu ({groupByCode(importantWarnings).length})</CardTitle>
           <WarningsList
             warnings={importantWarnings}
             labels={labels}
@@ -321,7 +333,7 @@ export function PrehledView({
             <div key={notification.dedupeKey} className="text-sm">
               <span className="font-medium">{notification.title}</span>{' '}
               <span className="text-xs text-inkoust-tlumeny">
-                · {notification.createdAt.toLocaleDateString('cs-CZ')}
+                · {czDate(notification.createdAt)}
               </span>
               <p className="text-inkoust-tlumeny">{notification.body}</p>
             </div>

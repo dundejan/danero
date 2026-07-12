@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { TaxpayerProfileSchema } from '@danero/shared';
+import { analyzeTaxYear, type TaxYearConfig } from '@danero/engine';
 import { parseUniversalCsv, UNIVERSAL_TEMPLATE_CSV } from '../src';
 
 const SAMPLE = [
@@ -111,6 +113,89 @@ describe('univerzální CSV šablona', () => {
     const [first, second] = result.transactions;
     expect(first!.id).not.toBe(second!.id);
     expect(second!.id).toBe(`${first!.id}-2`);
+  });
+
+  describe('R-12f/R-12r: sloupec settlement_style (MARGIN vypořádání derivátů)', () => {
+    /** Testovací kurzy (kulaté, NE skutečné) — stejný vzor jako e2e.engine.test.ts. */
+    const CFG: TaxYearConfig = {
+      year: 2025,
+      unifiedRatesByYear: { 2025: { USD: '20' } },
+      limits: {
+        securitiesProceedsExemption: '100000',
+        cryptoProceedsExemption: '100000',
+        flatTaxOtherIncome: '50000',
+        employeeSideIncome: '20000',
+        generalFiling: '50000',
+        exemptIncomeReporting: '5000000',
+        timeTestCap: { amountCzk: '40000000', appliesTo: ['SECURITIES', 'CRYPTO'] },
+      },
+      cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
+      progressiveThreshold: '1676052',
+    };
+
+    it('CFD se settlement_style=margin: engine daní rozdíl cen, ne nominál', () => {
+      const csv = [
+        'type,date,isin,asset_class,settlement_style,quantity,price,currency',
+        'BUY,2025-03-01,CFD:US500,DERIVATIVE,margin,2,5000,USD',
+        'SELL,2025-04-01,CFD:US500,DERIVATIVE,Margin,2,5150,USD',
+      ].join('\n');
+      const imported = parseUniversalCsv(csv);
+      expect(imported.errors).toEqual([]);
+      expect(imported.warnings).toEqual([]);
+      // case-insensitive hodnoty se normalizují na kanonický tvar modelu
+      for (const tx of imported.transactions) {
+        if (tx.type !== 'BUY' && tx.type !== 'SELL') throw new Error('unreachable');
+        expect(tx.settlementStyle).toBe('MARGIN');
+      }
+
+      const result = analyzeTaxYear({
+        transactions: imported.transactions,
+        profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
+        config: CFG,
+      });
+      // R-12f: příjem = rozdíl 2 × (5150 − 5000) USD × kurz 20 = 6 000 Kč,
+      // NE nominál uzavření 2 × 5150 × 20 = 206 000 Kč
+      expect(result.derivatives.taxableIncomeCzk.toString()).toBe('6000');
+      expect(result.derivatives.base10Czk.toString()).toBe('6000');
+    });
+
+    it('derivát bez settlement_style: dnešní (premium) chování + varování jednou per instrument', () => {
+      const csv = [
+        'type,date,isin,asset_class,quantity,price,currency',
+        'BUY,2025-03-01,CFD:US500,DERIVATIVE,2,5000,USD',
+        'SELL,2025-04-01,CFD:US500,DERIVATIVE,2,5150,USD',
+      ].join('\n');
+      const imported = parseUniversalCsv(csv);
+      expect(imported.errors).toEqual([]);
+      expect(imported.warnings).toHaveLength(1); // jednou per ISIN, ne per řádek
+      expect(imported.warnings[0]!.message).toContain('settlement_style');
+
+      const tx = imported.transactions[0]!;
+      if (tx.type !== 'BUY') throw new Error('unreachable');
+      expect(tx.settlementStyle).toBeUndefined();
+
+      // bez sloupce zůstává dnešní chování: premium styl (nominál = cash tok)
+      const result = analyzeTaxYear({
+        transactions: imported.transactions,
+        profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
+        config: CFG,
+      });
+      expect(result.derivatives.taxableIncomeCzk.toString()).toBe('206000');
+    });
+
+    it('nederivátové řádky bez settlement_style nevarují; neznámá hodnota → error', () => {
+      const plain = parseUniversalCsv(
+        'type,date,isin,quantity,price,currency\nBUY,2025-03-01,US0378331005,10,185.50,USD',
+      );
+      expect(plain.warnings).toEqual([]);
+
+      const invalid = parseUniversalCsv(
+        'type,date,isin,asset_class,settlement_style,quantity,price,currency\nBUY,2025-03-01,CFD:US500,DERIVATIVE,nominal,2,5000,USD',
+      );
+      expect(invalid.transactions).toEqual([]);
+      expect(invalid.errors[0]!.message).toContain('settlement_style');
+      expect(invalid.errors[0]!.message).toContain('nominal');
+    });
   });
 
   it('neexistující kalendářní datum se odmítne s chybou, ne tichým posunem', () => {

@@ -16,6 +16,7 @@ import {
 } from '@danero/shared';
 import type { EngineOptions, MatchingMethod } from '../config/options';
 import { czDateText, qtyText } from '../format';
+import type { FxConverter } from '../fx/fx';
 import { EngineError, WarningCollector } from '../warnings';
 
 export interface Lot {
@@ -81,8 +82,11 @@ export interface Ledger {
   disposals: Disposal[];
 }
 
-/** Přechod US trhů na vypořádání T+1 (SEC, 28. 5. 2024). */
+/** Přechod US trhů na vypořádání T+1 (SEC rule 15c6-1(a), účinnost 28. 5. 2024). */
 const US_T1_SINCE = '2024-05-28';
+/** Kanada přešla na T+1 o den dřív než US — 27. 5. 2024 (CIRO/Canadian Capital
+ * Markets Association; v US byl 27. 5. svátek Memorial Day). Před tím T+2. */
+const CA_T1_SINCE = '2024-05-27';
 
 /** Dopočet data vypořádání, pokud jej broker neuvádí (aproximace bez svátků).
  * Burzovní lhůty (T+1/T+2) platí jen pro zaknihované CP (R-01a) — krypto se
@@ -94,8 +98,10 @@ export function inferSettlementDate(
   assetClass: AssetClass,
 ): IsoDate {
   if (assetClass === 'CRYPTO') return tradeDate;
-  const lag = isin.startsWith('US') && tradeDate >= US_T1_SINCE ? 1 : 2;
-  return addBusinessDays(tradeDate, lag);
+  const t1 =
+    (isin.startsWith('US') && tradeDate >= US_T1_SINCE) ||
+    (isin.startsWith('CA') && tradeDate >= CA_T1_SINCE);
+  return addBusinessDays(tradeDate, t1 ? 1 : 2);
 }
 
 const eventDate = (tx: Transaction): IsoDate =>
@@ -117,11 +123,22 @@ const eventPriority = (tx: Transaction): number => {
   }
 };
 
+/**
+ * Sestaví loty a prodeje z kompletní historie. `fx` je potřeba jen pro metody
+ * MAX_PROFIT/MAX_LOSS (R-05c) — nabývací ceny lotů se porovnávají v CZK kurzem
+ * roku nákupu (konvence výdajů R-06a), jinak by se míchaly měny; bez něj se
+ * porovnává nominál v měně lotu (dostačuje FIFO/LIFO a jednoměnovým portfoliím).
+ */
 export function buildLedger(
   transactions: Transaction[],
   options: EngineOptions,
   warnings: WarningCollector,
+  fx?: FxConverter,
 ): Ledger {
+  // sdílená cache CZK nabývacích cen pro MAX_PROFIT/MAX_LOSS — bez ní se
+  // každý prodej přepočítával přes všechny otevřené loty znovu; klíč obsahuje
+  // costPerShare, takže split/spin-off (mění cenu lotu) cache neotráví
+  const costCzkCache = new Map<string, Money>();
   const lots: Lot[] = [];
   const disposals: Disposal[] = [];
   let syntheticCounter = 0;
@@ -166,6 +183,15 @@ export function buildLedger(
         `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} bez údajů o původním nabytí — nabývací cena 0 a časový test běží až od převodu. Doplň datum a cenu původního nákupu.`,
         { txId: tx.id, isin: tx.isin },
       );
+    } else if (tx.acquisition.costPerShare === undefined) {
+      // částečné nabytí: datum je, cena chybí — časový test běží správně,
+      // ale výdaj je tiše 0 (vyšší daň); jen upozornit, výpočet neměnit
+      warnings.add(
+        'TRANSFER_WITHOUT_COST',
+        'WARNING',
+        `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} má datum původního nabytí (${czDateText(tx.acquisition.date)}), ale chybí cena — počítáme nabývací cenu 0, daň může vyjít vyšší. Časový test běží od data nabytí správně; doplň cenu (a měnu) původního nákupu z výpisu brokera.`,
+        { txId: tx.id, isin: tx.isin },
+      );
     }
     const acqDate = tx.acquisition?.date ?? tx.date;
     const currency = tx.acquisition?.currency ?? 'CZK';
@@ -193,7 +219,7 @@ export function buildLedger(
       tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass);
     const saleDate = options.timeTestDateBasis === 'settlement' ? settlement : tx.tradeDate;
     const candidates = openLots(tx.isin);
-    orderLots(candidates, options.matchingMethod);
+    orderLots(candidates, options.matchingMethod, fx, costCzkCache);
 
     let toFill = tx.quantity;
     const allocations: DisposalAllocation[] = [];
@@ -454,12 +480,39 @@ export function buildLedger(
   return { lots, disposals };
 }
 
-function orderLots(candidates: Lot[], method: MatchingMethod): void {
+function orderLots(
+  candidates: Lot[],
+  method: MatchingMethod,
+  fx?: FxConverter,
+  cache?: Map<string, Money>,
+): void {
   const byAcquisition = (a: Lot, b: Lot): number => {
     if (a.acquisitionDate !== b.acquisitionDate) {
       return a.acquisitionDate < b.acquisitionDate ? -1 : 1;
     }
     return a.id.localeCompare(b.id);
+  };
+  // MAX_PROFIT/MAX_LOSS: loty téhož ISIN mohou být v různých měnách (duální
+  // listing, GBX/GBP) — porovnávat nominály napříč měnami nedává smysl. S fx
+  // se porovnává nabývací cena v CZK kurzem roku nákupu (expenseDate, R-06a) —
+  // stejná hodnota, jaká pak vstoupí do výdajů.
+  const costCzk = cache ?? new Map<string, Money>();
+  const comparable = (lot: Lot): Money => {
+    if (!fx) return lot.costPerShare;
+    const key = `${lot.id}:${lot.costPerShare.toString()}`;
+    let cost = costCzk.get(key);
+    if (!cost) {
+      try {
+        cost = fx.toCzk(lot.costPerShare, lot.currency, lot.expenseDate);
+      } catch {
+        // chybějící kurz nesmí shodit stavbu ledgeru pro VŠECHNY roky (řadí se
+        // tu jen kandidáti prodeje) — nouzově nominál; výdajová větev roku
+        // příjmu chybu nahlásí/ošetří sama (FX_*_RATE_MISSING)
+        cost = lot.costPerShare;
+      }
+      costCzk.set(key, cost);
+    }
+    return cost;
   };
   switch (method) {
     case 'FIFO':
@@ -470,10 +523,10 @@ function orderLots(candidates: Lot[], method: MatchingMethod): void {
       break;
     case 'MAX_PROFIT':
       // Nejnižší nabývací cena první → maximalizace realizovaného zisku
-      candidates.sort((a, b) => a.costPerShare.cmp(b.costPerShare) || byAcquisition(a, b));
+      candidates.sort((a, b) => comparable(a).cmp(comparable(b)) || byAcquisition(a, b));
       break;
     case 'MAX_LOSS':
-      candidates.sort((a, b) => b.costPerShare.cmp(a.costPerShare) || byAcquisition(a, b));
+      candidates.sort((a, b) => comparable(b).cmp(comparable(a)) || byAcquisition(a, b));
       break;
   }
 }

@@ -94,7 +94,7 @@ export function SyncJobProgress({
               ) : year.status === 'empty' ? (
                 <span className="text-inkoust-tlumeny">žádné transakce</span>
               ) : (
-                <span className="text-zelena">
+                <span className="text-zelena-text">
                   {year.added ?? 0} {plural(year.added ?? 0, 'nová', 'nové', 'nových')} ·{' '}
                   {year.duplicates ?? 0} {plural(year.duplicates ?? 0, 'duplicita', 'duplicity', 'duplicit')}
                   {year.errors ? (

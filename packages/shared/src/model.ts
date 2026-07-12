@@ -44,7 +44,8 @@ const tradeFields = {
   currency: Currency,
   fee: FeeSchema.optional(),
   tradeDate: IsoDateSchema,
-  /** Datum vypořádání; pokud chybí, engine dopočte (T+1 US od 28. 5. 2024, jinak T+2). */
+  /** Datum vypořádání; pokud chybí, engine dopočte (T+1 US od 28. 5. 2024
+   * a CA od 27. 5. 2024, jinak T+2; krypto T+0). */
   settlementDate: IsoDateSchema.optional(),
   /**
    * R-12f/g: způsob vypořádání derivátu. PREMIUM (opce) = cena je skutečný
@@ -202,7 +203,8 @@ export const parseTransactions = (raw: unknown[]): Transaction[] =>
  */
 export const TaxpayerProfileSchema = z.object({
   regime: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
-  /** R-01c: CP v obchodním majetku (nebo do 3 let od ukončení činnosti) → žádné osvobození. */
+  /** R-01c/R-02f: CP v obchodním majetku (nebo do 3 let od ukončení činnosti) → žádné
+   * osvobození CP (časový test ani 100k); kryptoaktiv se flag netýká. */
   hasSecuritiesInBusinessAssets: z.boolean().default(false),
   /** Informativní pro UI (kontrola sazby srážky u US dividend); engine kryje přes treaty cap. */
   w8benFiled: z.boolean().default(true),

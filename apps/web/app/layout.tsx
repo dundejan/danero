@@ -20,7 +20,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Danero — daně z investic pod kontrolou',
+  title: 'Danero — daně z investic pohlídané celý rok',
   description:
     'Hlídač časových testů a daňových limitů pro české investory. Limit 100 000 Kč, paušální daň, podklady k přiznání.',
 };

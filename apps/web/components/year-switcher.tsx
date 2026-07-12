@@ -17,6 +17,7 @@ export function YearSwitcher({
         <Link
           key={year}
           href={`${hrefBase}?rok=${year}`}
+          aria-current={year === active ? 'page' : undefined}
           className={cn(
             'rounded-md px-3 py-1 font-mono text-sm',
             year === active

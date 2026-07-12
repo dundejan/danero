@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { PortfolioView } from '@/components/views/portfolio-view';
 import { getDb } from '@/db';
 import { analyzeForUserCached } from '@/lib/engine-cache';
+import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import {
   availableYears,
   dailyRatesForProfile,
@@ -48,7 +49,15 @@ export default async function PortfolioPage({
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
-  const analysis = analyzeForUserCached(user.id, txs, profile, year, today, dailyRates);
+  let analysis;
+  try {
+    analysis = analyzeForUserCached(user.id, txs, profile, year, today, dailyRates);
+  } catch (error) {
+    // chybějící kurz (EngineError) = srozumitelná karta, ne pád do error boundary
+    const message = engineErrorMessage(error);
+    if (!message) throw error;
+    return <EngineErrorCard message={message} />;
+  }
   const prices = await loadInstrumentPrices(db, user.id);
 
   return (

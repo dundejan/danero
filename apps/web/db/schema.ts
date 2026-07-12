@@ -179,6 +179,12 @@ export const brokerAccounts = pgTable('broker_accounts', {
   credentialsEncrypted: text('credentials_encrypted').notNull(),
   lastSyncedAt: timestamp('last_synced_at'),
   lastSyncStatus: text('last_sync_status'),
+  /**
+   * Chyba posledního (ne)doběhnutého syncu — ukládá se VEDLE rekonciliace,
+   * aby selhání běhu nepřepsalo poslední platný výsledek rekonciliace pozic.
+   * Úspěšný sync ji nuluje.
+   */
+  lastSyncError: text('last_sync_error'),
   /** Výsledek poslední rekonciliace pozic (serializovaný ReconciliationReport). */
   lastReconciliation: jsonb('last_reconciliation'),
   createdAt: timestamp('created_at').notNull().defaultNow(),

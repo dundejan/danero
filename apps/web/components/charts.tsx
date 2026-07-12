@@ -22,7 +22,7 @@ import type {
   PortfolioAllocation,
   YearBar,
 } from '@/lib/charts-data';
-import { MONTH_LABELS } from '@/lib/format';
+import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
 
 /**
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
@@ -33,9 +33,6 @@ import { MONTH_LABELS } from '@/lib/format';
  */
 
 const SERIES = ['var(--graf-1)', 'var(--graf-2)', 'var(--graf-3)', 'var(--graf-4)'];
-
-const czkCompact = (value: number): string =>
-  new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value) + ' Kč';
 
 const czkAxis = (value: number): string => {
   const abs = Math.abs(value);
@@ -371,7 +368,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
                 rows={[
                   {
                     name: `Bez daně (% ${basisLabel})`,
-                    value: `${Number(payload[0].value).toLocaleString('cs-CZ')} %`,
+                    value: pct(Number(payload[0].value), 1),
                     color: 'var(--zelena)',
                   },
                 ]}
@@ -454,9 +451,6 @@ export function AllocationPie({ allocation }: { allocation: PortfolioAllocation 
     ...slice,
     fill: fillFor(index),
   }));
-  const pct = (share: number): string =>
-    `${share.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} %`;
-
   return (
     <div>
       <div className="relative">
@@ -491,7 +485,7 @@ export function AllocationPie({ allocation }: { allocation: PortfolioAllocation 
                       },
                       {
                         name: 'Podíl',
-                        value: pct((payload[0].payload as { share: number }).share),
+                        value: pct((payload[0].payload as { share: number }).share, 1),
                       },
                     ]}
                   />

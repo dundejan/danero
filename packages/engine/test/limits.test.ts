@@ -22,6 +22,37 @@ describe('R-02 hodnotový test 100 000 Kč', () => {
     expect(over.limits.limit100k.exceeded).toBe(true);
   });
 
+  it('R-02f: CP v obchodním majetku — bez osvobození 100k, tržby pool nečerpají', () => {
+    const txs = [
+      buy({ quantity: '100', pricePerShare: '400', tradeDate: '2024-02-01', settlementDate: '2024-02-01' }),
+      sell({ quantity: '100', pricePerShare: '500', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+    ];
+
+    // bez flagu: tržba 50k ≤ 100k → osvobozeno
+    const privateAssets = run(txs);
+    expect(privateAssets.securities.base10Czk.toString()).toBe('0');
+
+    // s flagem: § 4/1 t) se nepoužije → zdanitelné (zisk 10k) a pool 100k = 0
+    const business = run(txs, { profile: { hasSecuritiesInBusinessAssets: true } });
+    expect(business.securities.base10Czk.toString()).toBe('10000');
+    expect(business.securities.pool100kCzk.toString()).toBe('0');
+    expect(business.limits.limit100k.usedCzk.toString()).toBe('0');
+    // neosvobozená tržba čerpá limit 50k paušální daně (R-08d)
+    expect(business.limits.flatTax50k.status.usedCzk.toString()).toBe('50000');
+  });
+
+  it('R-02f: flag obchodního majetku CP nevypíná krypto osvobození (zj/zk mají vlastní vyloučení)', () => {
+    const txs = [
+      // krypto: nákup 2020, prodej 5/2025 → časový test zk) splněn
+      buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '500000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' }),
+      sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '900000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ];
+    const result = run(txs, { profile: { hasSecuritiesInBusinessAssets: true } });
+    // flag CP krypto test nevypíná — příjem zůstává osvobozen dle zk)
+    expect(result.crypto.base10Czk.toString()).toBe('0');
+    expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('900000');
+  });
+
   it('R-02c: přepínač — počítají se do úhrnu i prodeje osvobozené časovým testem?', () => {
     const txs = [
       // A: drženo 6 let → osvobozeno testem, tržba 80 000
@@ -116,6 +147,38 @@ describe('R-09 povinnost přiznání a oznámení § 38v', () => {
     expect(result.limits.reporting38v[0]!.exemptProceedsCzk.toString()).toBe('6000000');
     expect(hasWarning(result, 'REPORTING_38V')).toBe(true);
     expect(result.limits.cap40M?.exceeded).toBe(false);
+  });
+
+  it('R-09d: jednotlivý příjem = úhrn per (titul, den) — partial fill-y 2×3M se sčítají', () => {
+    const result = run([
+      buy({ quantity: '1000', pricePerShare: '1000', tradeDate: '2019-02-01', settlementDate: '2019-02-01' }),
+      // dva fill-y téhož titulu v týž den po 3M — jednotlivý příjem 6M > 5M
+      sell({ quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+      sell({ quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+    ]);
+    expect(result.limits.reporting38v).toHaveLength(1);
+    expect(result.limits.reporting38v[0]!.exemptProceedsCzk.toString()).toBe('6000000');
+    expect(result.limits.reporting38v[0]!.sellTxIds).toHaveLength(2);
+    expect(result.limits.reporting38v[0]!.saleDate).toBe('2025-06-02');
+    expect(hasWarning(result, 'REPORTING_38V')).toBe(true);
+  });
+
+  it('R-09d: prodeje v různých dnech (či různých titulů) po 3M se nesčítají → bez oznámení', () => {
+    const differentDays = run([
+      buy({ quantity: '1000', pricePerShare: '1000', tradeDate: '2019-02-01', settlementDate: '2019-02-01' }),
+      sell({ quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+      sell({ quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-03', settlementDate: '2025-06-03' }),
+    ]);
+    expect(differentDays.limits.reporting38v).toHaveLength(0);
+    expect(hasWarning(differentDays, 'REPORTING_38V')).toBe(false);
+
+    const differentTitles = run([
+      buy({ isin: 'CZ0000000001', quantity: '500', pricePerShare: '1000', tradeDate: '2019-02-01', settlementDate: '2019-02-01' }),
+      buy({ isin: 'CZ0000000002', quantity: '500', pricePerShare: '1000', tradeDate: '2019-02-01', settlementDate: '2019-02-01' }),
+      sell({ isin: 'CZ0000000001', quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+      sell({ isin: 'CZ0000000002', quantity: '500', pricePerShare: '6000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+    ]);
+    expect(differentTitles.limits.reporting38v).toHaveLength(0);
   });
 
   it('R-03: překročení stropu 40M (rok 2025) → poměrné krácení s varováním', () => {

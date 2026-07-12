@@ -49,6 +49,28 @@ const rateToCzk = (currency: string, year: number): Money | null => {
   return rate ? d(rate) : null;
 };
 
+/**
+ * Nabývací cena zbývajících kusů převedená do měny ceny; null = měny nejdou
+ * srovnat (P/L by byl mix měn). GBX (pence, kotace LSE — tak nakupuje T212)
+ * a GBP se liší jen faktorem 100: ceny z API normalizujeme na GBP
+ * (lib/prices.ts), loty ale zůstávají v GBX — bez převodu by se P/L
+ * u londýnských titulů nikdy neukázal.
+ */
+const costInCurrency = (position: Position, currency: string): Money | null => {
+  const factor =
+    position.currency === currency
+      ? d(1)
+      : position.currency === 'GBX' && currency === 'GBP'
+        ? d('0.01') // cost v pencích ÷ 100 = libry
+        : position.currency === 'GBP' && currency === 'GBX'
+          ? d(100)
+          : null;
+  if (!factor) return null;
+  return position.lots
+    .reduce((sum, lot) => sum.plus(lot.remaining.mul(lot.costPerShare)), ZERO)
+    .mul(factor);
+};
+
 export function valuePositions(
   positions: Position[],
   labels: Map<string, string>,
@@ -89,12 +111,10 @@ export function valuePositions(
         if (!oldestPriceAt || priceInfo.asOf < oldestPriceAt) oldestPriceAt = priceInfo.asOf;
       }
 
-      // nerealizovaný P/L jen když měna lotů odpovídá měně ceny (jinak by šlo o mix)
-      if (position.currency === priceInfo.currency) {
-        const cost = position.lots.reduce(
-          (sum, lot) => sum.plus(lot.remaining.mul(lot.costPerShare)),
-          ZERO,
-        );
+      // nerealizovaný P/L jen když jde nabývací cenu převést do měny ceny
+      // (shodná měna, nebo pár GBX↔GBP) — jinak by šlo o mix měn
+      const cost = costInCurrency(position, priceInfo.currency);
+      if (cost !== null) {
         row.cost = cost;
         row.unrealized = row.value.minus(cost);
         if (cost.gt(0)) row.unrealizedPct = row.unrealized.div(cost).mul(100).toNumber();

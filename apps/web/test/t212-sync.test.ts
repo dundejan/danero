@@ -49,8 +49,8 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
       expect(outcome.added).toBe(2);
       expect(outcome.errors).toEqual([]);
       // nákup 100 (2024) − prodej 50 (2026) = 50 ks — sedí s API pozicí
-      expect(outcome.reconciliation.ok).toBe(true);
-      expect(outcome.reconciliation.matchedCount).toBe(1);
+      expect(outcome.reconciliation?.ok).toBe(true);
+      expect(outcome.reconciliation?.matchedCount).toBe(1);
 
       const txs = await loadTransactions(db, 'u1');
       expect(txs).toHaveLength(2);

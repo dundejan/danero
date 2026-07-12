@@ -100,15 +100,18 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
   if (secret.length < 10) redirect('/import?chyba=api-klic');
 
   const db = await getDb();
-  await db
-    .delete(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
-  await db.insert(brokerAccounts).values({
-    id: crypto.randomUUID(),
-    userId: user.id,
-    broker: 'trading212',
-    label: 'Trading 212',
-    credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
+  // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(brokerAccounts)
+      .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
+    await tx.insert(brokerAccounts).values({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      broker: 'trading212',
+      label: 'Trading 212',
+      credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: keyId || undefined, secret })),
+    });
   });
 
   await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading 212');
@@ -124,15 +127,18 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
   if (token.length < 10 || !/^\d+$/.test(queryId)) redirect('/import?chyba=ibkr');
 
   const db = await getDb();
-  await db
-    .delete(brokerAccounts)
-    .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'ibkr')));
-  await db.insert(brokerAccounts).values({
-    id: crypto.randomUUID(),
-    userId: user.id,
-    broker: 'ibkr',
-    label: 'Interactive Brokers',
-    credentialsEncrypted: encryptSecret(JSON.stringify({ token, queryId })),
+  // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(brokerAccounts)
+      .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'ibkr')));
+    await tx.insert(brokerAccounts).values({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      broker: 'ibkr',
+      label: 'Interactive Brokers',
+      credentialsEncrypted: encryptSecret(JSON.stringify({ token, queryId })),
+    });
   });
 
   await logAudit(db, user.id, 'BROKER_CONNECTED', 'Interactive Brokers');

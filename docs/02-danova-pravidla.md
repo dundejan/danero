@@ -33,6 +33,15 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-02c** ⚠️ Sporné, co vstupuje do úhrnu: převažující (striktní) výklad — **veškeré** příjmy z prodeje CP včetně osvobozených časovým testem (D-59 bod 20: osvobození t) a u) „nelze kombinovat"). Menšinový výklad: jen příjmy testem neosvobozené. Přepínač `limit100kIncludesTimeTestExempt` (default `true` = striktní).
 - **R-02d** Limit 100k pro CP a limit 100k pro krypto (zj) jsou **oddělené**.
 - **R-02e** Beze změny pro 2025 i 2026.
+- **R-02f Obchodní majetek**: text § 4 odst. 1 písm. t) obsahuje stejné vyloučení
+  jako u) — osvobození se nepoužije na příjem z prodeje CP, který je nebo byl
+  zahrnut do obchodního majetku (a to do 3 let od ukončení samostatné činnosti).
+  Flag profilu (`hasSecuritiesInBusinessAssets`, R-01c) tedy vypíná **obě**
+  osvobození CP: časový test i hodnotový limit 100k — prodeje jsou zdanitelné
+  vždy a jejich tržby **nevstupují do úhrnu 100k** (pool nečerpají; do stropu
+  40M dle R-03 nemají co přinést, nic osvobozeného nevzniká). Flag se týká
+  **jen CP** — kryptoaktiva mají vlastní vyloučení obchodního majetku přímo
+  v textu zj)/zk) (R-10a) a flagem CP se jim osvobození nevypíná.
 
 ## R-03 Strop 40 mil. Kč (§ 4 odst. 3)
 
@@ -65,15 +74,23 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   se naopak datum úmrtí zůstavitele zadává právem (R-04g). Odlišení druhu
   nabytí v modelu = kandidát na rozšíření.
 - **R-04i Převod mezi brokery**: není převod vlastnictví → nepřerušuje (⚠️ mírně výkladové). Typ transakce `TRANSFER_IN/OUT` s párováním.
+  Implementační poznámka: `TRANSFER_OUT` spotřebovává loty **vždy FIFO** bez
+  ohledu na zvolený `matchingMethod` — odchozí převod není zdanitelný převod
+  (žádný příjem se nepočítá), jde jen o evidenci kusů; zákon metodu výběru
+  nepředepisuje (R-05c) a deterministické FIFO je průkazné a konzistentní.
 - **R-04j Frakční akcie**: ⚠️ nejasný status (u některých brokerů derivátový nárok, ne CP). Default: zacházet jako s CP + informační vlajka v reportu.
 
 ## R-05 Dílčí základ daně § 10 (neosvobozené prodeje)
 
 - **R-05a Cash princip**: příjem patří do roku **připsání peněz** (na brokerský účet), ne roku obchodu.
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
-- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje.
+- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
 - **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
+  Pozn. k orientační dani: odhad daně v aplikaci se **nezaokrouhluje** na celé Kč
+  dle § 146 odst. 1 daňového řádu (základ na stovky dolů dle § 16 ZDP aplikován je) —
+  jde o orientační hodnotu a UI ji tak označuje; zaokrouhlení dle DŘ přijde až
+  s generováním podkladů pro přiznání (DAP).
 
 ## R-06 Měnové přepočty (§ 38 odst. 1)
 
@@ -257,6 +274,14 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   proti příjmu z prodeje podkladu; short opce po assignmentu → prémie zůstává
   derivátovým příjmem roku přijetí, cena podkladu se neupravuje. Shodná praxe
   3 zdrojů, bez oficiálního pramene. Jistota střední.
+  ⚠️ Implementační omezení (obdoba poznámky u R-04h): engine prémii uplatněné
+  long opce do nabývací ceny podkladu (resp. do výdajů proti prodeji podkladu)
+  **nepřenáší** — obchody podkladu přicházejí z importu jako samostatné BUY/SELL
+  a vazbu opce→podklad z dat nelze spolehlivě určit. Konzervativně se prémie
+  neuplatní vůbec (uzavření za 0 = stejný režim jako bezcenná expirace, R-12i)
+  a případ kryje varování `DERIVATIVE_EXPIRED_PREMIUM` s upozorněním, že
+  u uplatněné opce prémie patří do nabývací ceny podkladu a nesmí se uplatnit
+  dvakrát. Ruční úprava nabývací ceny podkladu = kandidát na rozšíření.
 - **R-12l Zákaz kompenzace mezi druhy**: ztráty/výdaje derivátů nelze proti CP,
   kryptu ani jiným druhům (a naopak); do ř. 209 P2 jen kladné rozdíly druhů.
   Jistota vysoká.

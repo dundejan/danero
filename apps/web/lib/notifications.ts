@@ -3,8 +3,13 @@ import type { LimitStatus, Position, TaxYearResult } from '@danero/engine';
 import { diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
-import { czDate, czk, qty } from '@/lib/format';
-import { analyzeForUser, getProfile, loadTransactions } from '@/lib/portfolio';
+import { czDate, czk, plural, qty } from '@/lib/format';
+import {
+  analyzeForUser,
+  dailyRatesForProfile,
+  getProfile,
+  loadTransactions,
+} from '@/lib/portfolio';
 
 export interface NotificationCandidate {
   dedupeKey: string;
@@ -160,7 +165,12 @@ export async function syncNotifications(
   const existingKeys = new Set(existing.map((row) => row.key));
   const fresh = candidates.filter((c) => !existingKeys.has(c.dedupeKey));
   if (fresh.length > 0) {
-    await db.insert(notifications).values(fresh.map((c) => ({ userId, ...c })));
+    // onConflictDoNothing: souběžné běhy (cron + ruční re-trigger) nesmí
+    // spadnout na PK violation — druhý zápis téže události se tiše přeskočí
+    await db
+      .insert(notifications)
+      .values(fresh.map((c) => ({ userId, ...c })))
+      .onConflictDoNothing();
   }
   return fresh.length;
 }
@@ -300,7 +310,10 @@ export async function processUserNotifications(
   if (profile) {
     const txs = await loadTransactions(db, target.id);
     if (txs.length > 0) {
-      const analysis = analyzeForUser(txs, profile, year, today);
+      // stejná kurzová metoda jako v aplikaci (denní ČNB podle profilu, fallback
+      // mimo pokrytí jednotné tabulky) — e-mail nesmí počítat jiná čísla než /prehled
+      const dailyRates = await dailyRatesForProfile(db, txs, profile, year);
+      const analysis = analyzeForUser(txs, profile, year, today, dailyRates);
       const lastYearPrefix = `${year - 1}-`;
       // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
       // preference filtrují až e-mailovou frontu níže
@@ -354,23 +367,11 @@ export async function processUserNotifications(
 
   let emailed = 0;
   if (queue.length > 0 && windowOpen) {
-    const lines = queue.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
-    const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
-    const odhlasit = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
-    await options.send({
-      to: target.email,
-      subject:
-        queue.length === 1
-          ? `Danero: ${queue[0]!.title}`
-          : prefs.emailFrequency === 'WEEKLY'
-            ? 'Danero: souhrn upozornění za týden'
-            : `Danero: ${queue.length} nových upozornění`,
-      text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
-    });
-    emailed = queue.length;
-    // odeslané označit a posunout týdenní okno (lastDigestAt i u DAILY —
-    // po přepnutí na WEEKLY se hned neodešle další souhrn)
-    await db
+    // claim-then-send: řádky se označí PŘED odesláním a posílá se jen to, co
+    // tento běh skutečně získal (returning) — souběžný druhý běh (ruční
+    // re-trigger přes plánovaný) tak nepošle tentýž digest podruhé; při
+    // selhání odeslání se claim vrací, ať se e-mail příště zkusí znovu
+    const claimed = await db
       .update(notifications)
       .set({ emailedAt: new Date() })
       .where(
@@ -379,14 +380,48 @@ export async function processUserNotifications(
           isNull(notifications.emailedAt),
           inArray(notifications.dedupeKey, queue.map((n) => n.dedupeKey)),
         ),
-      );
-    await db
-      .insert(notificationPrefs)
-      .values({ userId: target.id, lastDigestAt: todayDate })
-      .onConflictDoUpdate({
-        target: notificationPrefs.userId,
-        set: { lastDigestAt: todayDate },
-      });
+      )
+      .returning({ dedupeKey: notifications.dedupeKey });
+    const claimedKeys = new Set(claimed.map((c) => c.dedupeKey));
+    const toSend = queue.filter((n) => claimedKeys.has(n.dedupeKey));
+    if (toSend.length > 0) {
+      const lines = toSend.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
+      const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+      const odhlasit = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
+      try {
+        await options.send({
+          to: target.email,
+          subject:
+            toSend.length === 1
+              ? `Danero: ${toSend[0]!.title}`
+              : prefs.emailFrequency === 'WEEKLY'
+                ? 'Danero: souhrn upozornění za týden'
+                : `Danero: ${toSend.length} ${plural(toSend.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`,
+          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
+        });
+      } catch (error) {
+        await db
+          .update(notifications)
+          .set({ emailedAt: null })
+          .where(
+            and(
+              eq(notifications.userId, target.id),
+              inArray(notifications.dedupeKey, toSend.map((n) => n.dedupeKey)),
+            ),
+          );
+        throw error;
+      }
+      emailed = toSend.length;
+      // posunout okno digestu (lastDigestAt i u DAILY — po přepnutí na WEEKLY
+      // se hned neodešle další souhrn)
+      await db
+        .insert(notificationPrefs)
+        .values({ userId: target.id, lastDigestAt: todayDate })
+        .onConflictDoUpdate({
+          target: notificationPrefs.userId,
+          set: { lastDigestAt: todayDate },
+        });
+    }
   }
   if (suppressed.length > 0) {
     // potlačené preferencí označit vždy (třída 2) — bez ohledu na týdenní okno

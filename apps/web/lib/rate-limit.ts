@@ -3,10 +3,10 @@ import type { Db } from '@/db';
 import { appRateLimits } from '@/db/schema';
 
 /**
- * Aplikační rate limit (G10a) — sliding window per klíč, atomický upsert
- * (souběžné requesty nezdvojí čítač). Klíč = `${operace}:${userId}`.
- * Vrací true = povoleno. Limity jsou záměrně štědré: brání skriptovanému
- * zneužití, ne běžnému používání.
+ * Aplikační rate limit (G10a) — fixní okno per klíč (otevírá ho první request,
+ * po `resetAt` se čítač počítá od nuly), atomický upsert (souběžné requesty
+ * nezdvojí čítač). Klíč = `${operace}:${userId}`. Vrací true = povoleno.
+ * Limity jsou záměrně štědré: brání skriptovanému zneužití, ne běžnému používání.
  */
 export async function checkRateLimit(
   db: Db,

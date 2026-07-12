@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import Link from 'next/link';
 import { FaqList, type FaqItem } from '@/components/faq-list';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
@@ -34,9 +35,10 @@ const FAQ: FaqItem[] = [
     a: (
       <>
         Trading 212, Interactive Brokers a Lynx živě přes API klíč jen pro čtení.
-        Výpisy ze 17 dalších platforem čteme automaticky — XTB, Degiro, eToro,
-        Charles Schwab, Saxo, Portu, Coinbase, Kraken a další. U devíti dalších
-        bank a investičních společností tě provedeme univerzální šablonou.
+        Výpisy z {PLATFORM_COUNTS.file} dalších platforem čteme automaticky — XTB,
+        Degiro, eToro, Charles Schwab, Saxo, Portu, Coinbase, Kraken a další.
+        U {PLATFORM_COUNTS.template} dalších platforem — českých bank, fondů a dalších —
+        tě provedeme univerzální šablonou.
         Kompletní seznam s návody, kde výpis stáhnout, je na stránce{' '}
         <Link
           href="/platformy"
@@ -49,7 +51,7 @@ const FAQ: FaqItem[] = [
     ),
   },
   {
-    q: 'Pro koho Danero je?',
+    q: 'Pro koho je Danero?',
     a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Hlídáme ale i limit 20 000 Kč vedlejších příjmů pro zaměstnance a limit 50 000 Kč pro podání přiznání — automaticky, včetně zahraničních dividend, na které se zapomíná.',
   },
   {
@@ -70,7 +72,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',
-    a: 'Finanční správa provozuje testovací podatelnu EPO, kde si jde podání nanečisto zvalidovat. Každou vygenerovanou písemnost XML tam ověřujeme — kontroluje se struktura, vazby mezi řádky a formální správnost podání. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
+    a: 'Finanční správa provozuje zkušební podatelnu EPO, kde si jde podání nanečisto zvalidovat. Každou vygenerovanou písemnost XML tam ověřujeme — kontroluje se struktura, vazby mezi řádky a formální správnost podání. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
   },
   {
     q: 'Nahrazuje Danero daňového poradce?',

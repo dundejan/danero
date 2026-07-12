@@ -1,5 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 import {
+  addDays,
   parseTransactions,
   TaxpayerProfileSchema,
   type TaxpayerProfile,
@@ -15,7 +16,7 @@ import {
 } from '@danero/engine';
 import type { Db } from '@/db';
 import { taxpayerProfiles, transactions } from '@/db/schema';
-import { configForYear } from './tax-config';
+import { configForYear, UNIFIED_RATES } from './tax-config';
 
 export type ProfileRow = typeof taxpayerProfiles.$inferSelect;
 
@@ -155,9 +156,63 @@ export function analyzeForUser(
   };
 }
 
+/** GBX (pence) engine převádí přes GBP (R-06) — kontrola pokrytí musí dělat totéž. */
+const fxCode = (currency: string): string => (currency === 'GBX' ? 'GBP' : currency);
+
+/**
+ * Pokrývá jednotná tabulka kurzů (lib/tax-config) všechny měny a roky, které
+ * výpočet potřebuje? Mimo pokrytí (exotická měna, rok před první tabulkou) by
+ * engine bez denních kurzů spadl na EngineError FX_RATE_MISSING — a s ním celá
+ * stránka. Kontroluje se každé datum, kterým engine převádí: obchodní i
+ * vypořádací den (výdaj se přepočítává kurzem roku VYPOŘÁDÁNÍ nákupu — R-06a),
+ * u převodů datum původního nabytí.
+ */
+export function unifiedRatesCover(txs: Transaction[]): boolean {
+  const covered = (currency: string, date: string): boolean => {
+    const code = fxCode(currency);
+    if (code === 'CZK') return true;
+    return UNIFIED_RATES[Number(date.slice(0, 4))]?.[code] !== undefined;
+  };
+  for (const tx of txs) {
+    switch (tx.type) {
+      case 'BUY':
+      case 'SELL': {
+        // bez explicitního vypořádání ho engine dopočítává (T+1/T+2) — přes
+        // přelom roku může spadnout do dalšího roku; +7 dní je bezpečný strop
+        const dates = [tx.tradeDate, tx.settlementDate ?? addDays(tx.tradeDate, 7)];
+        if (!dates.every((day) => covered(tx.currency, day))) return false;
+        const fee = tx.fee;
+        if (fee && !dates.every((day) => covered(fee.currency, day))) return false;
+        break;
+      }
+      case 'DIVIDEND':
+      case 'INTEREST':
+      case 'FEE':
+      case 'DEPOSIT':
+      case 'WITHDRAWAL':
+        if (!covered(tx.currency, tx.date)) return false;
+        break;
+      case 'FX_CONVERSION':
+        if (!covered(tx.fromCurrency, tx.date) || !covered(tx.toCurrency, tx.date)) return false;
+        break;
+      case 'TRANSFER_IN':
+        if (tx.acquisition?.currency && !covered(tx.acquisition.currency, tx.acquisition.date)) {
+          return false;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  return true;
+}
+
 /**
  * Denní kurzy jen když je uživatel ZVOLIL (fxMethod CNB_DAILY) — jinak by
  * každé načtení stránky platilo backfill. Report si je bere vždy (srovnání).
+ * Výjimka pro UNIFIED: transakce mimo pokrytí jednotné tabulky (měna/rok bez
+ * kurzu) by engine bez denního fallbacku shodila — denní kurzy se načtou
+ * a engine je použije s warningem FX_UNIFIED_RATE_MISSING místo pádu.
  */
 export async function dailyRatesForProfile(
   db: Db,
@@ -165,6 +220,6 @@ export async function dailyRatesForProfile(
   profileRow: ProfileRow,
   currentYear: number,
 ): Promise<EngineInput['dailyRates']> {
-  if (profileRow.fxMethod !== 'CNB_DAILY') return undefined;
+  if (profileRow.fxMethod !== 'CNB_DAILY' && unifiedRatesCover(txs)) return undefined;
   return loadDailyRates(db, txs, currentYear);
 }

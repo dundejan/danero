@@ -129,6 +129,21 @@ describe('R-10b časový test a účinnost 15. 2. 2025 (KOOV 625, závěry 2.2.1
     expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(false);
   });
 
+  it('R-10b × R-01a: báze trade neposouvá hranici účinnosti — rozhoduje den vypořádání', () => {
+    // trade 13. 2. 2025 (před účinností), settlement 17. 2. 2025 (po ní):
+    // příjem je realizován připsáním → nárok na osvobození zk) se bází trade NEztrácí
+    const result = run(
+      [
+        cryptoBuy({ quantity: '1', pricePerShare: '500000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' }),
+        cryptoSell({ quantity: '1', pricePerShare: '900000', tradeDate: '2025-02-13', settlementDate: '2025-02-17' }),
+      ],
+      { options: { timeTestDateBasis: 'trade' } },
+    );
+    expect(result.crypto.base10Czk.toString()).toBe('0');
+    expect(result.crypto.disposals[0]!.exemptProceedsCzk.toString()).toBe('900000');
+    expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('900000');
+  });
+
   it('bez settlementDate se krypto vypořádává T+0 — prodej 13. 2. 2025 zůstává před účinností', () => {
     // Burzovní T+2 by posunulo vypořádání na 17. 2. (≥ 15. 2.) a prodej chybně osvobodilo
     const result = run([

@@ -4,8 +4,10 @@ import { eq } from 'drizzle-orm';
 import { Card, CardTitle } from '@/components/ui/card';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
+import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
+import { buttonVariants } from '@/components/ui/button';
 
 export const metadata = { title: 'Vítej — Danero' };
 
@@ -52,7 +54,7 @@ export default async function WelcomePage() {
           <li key={step.label} className="flex items-center gap-2">
             <span
               className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                step.done ? 'bg-zelena text-white' : 'border border-linka text-inkoust-tlumeny'
+                step.done ? 'bg-zelena-syta text-white' : 'border border-linka text-inkoust-tlumeny'
               }`}
             >
               {step.done ? '✓' : i + 1}
@@ -74,7 +76,7 @@ export default async function WelcomePage() {
           </p>
           <Link
             href="/nastaveni"
-            className="inline-block rounded-md bg-ruzova-syta px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            className={buttonVariants({ variant: 'primary' })}
           >
             Vyplnit daňový profil
           </Link>
@@ -102,13 +104,16 @@ export default async function WelcomePage() {
             >
               <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX/HTML)</span>
               <span className="text-inkoust-tlumeny">
-                Výpisy ze 17 platforem čteme automaticky — XTB, Degiro, eToro, Schwab,
-                Portu, Coinbase i další; u devíti dalších tě provedeme univerzální šablonou.
+                {/* počty z katalogu — natvrdo zapsané při přidání parseru zdriftují */}
+                Výpisy z {PLATFORM_COUNTS.file} platforem
+                čteme automaticky — XTB, Degiro, eToro, Schwab, Portu, Coinbase i další;
+                u {PLATFORM_COUNTS.template} dalších tě
+                provedeme univerzální šablonou.
               </span>
             </Link>
           </div>
           {hasBroker && (
-            <p className="text-sm text-zelena">
+            <p className="text-sm text-zelena-text">
               Broker připojen — první synchronizace běží na stránce{' '}
               <Link href="/import" className="font-medium underline">
                 Zdroje dat
@@ -121,7 +126,7 @@ export default async function WelcomePage() {
 
       <p className="text-xs text-inkoust-tlumeny">
         Chceš se nejdřív jen rozkoukat?{' '}
-        <Link href="/demo" className="font-medium text-ruzova">
+        <Link href="/demo" className="font-medium text-ruzova-text">
           Mrkni na demo s ukázkovými daty
         </Link>
         .

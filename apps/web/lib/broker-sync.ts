@@ -69,7 +69,9 @@ export function emptyReconciliation(error: string): StoredReconciliation {
 /**
  * Propíše chybu syncu k broker účtu (ukazuje ji /import). POZOR: lastSyncedAt
  * se při chybě NIKDY nenastavuje — jinak by další pokus přeskočil plnou
- * historii (mode se odvozuje z lastSyncedAt).
+ * historii (mode se odvozuje z lastSyncedAt). Chyba se ukládá do vlastního
+ * sloupce lastSyncError — NESMÍ přepsat lastReconciliation, jinak by recovery
+ * zaseknutého jobu zahodilo poslední platné „pozice sedí“.
  */
 export async function markAccountSyncError(
   db: Db,
@@ -79,7 +81,7 @@ export async function markAccountSyncError(
 ): Promise<void> {
   await db
     .update(brokerAccounts)
-    .set({ lastSyncStatus: 'error', lastReconciliation: emptyReconciliation(message) })
+    .set({ lastSyncStatus: 'error', lastSyncError: message })
     .where(and(eq(brokerAccounts.id, accountId), eq(brokerAccounts.userId, userId)));
 }
 
@@ -130,9 +132,11 @@ export async function reconcileBrokerPositions(
 /** Jednotné odvození stavu syncu (jediné místo pravdy pro tri-state). */
 export function deriveSyncStatus(
   errorCount: number,
-  reconciliation: StoredReconciliation,
+  reconciliation: StoredReconciliation | null,
 ): SyncStatus {
-  return errorCount > 0 ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
+  // null = rekonciliaci se nepodařilo provést (přechodná chyba API) — data
+  // jsou stažená, ale ověření pozic chybí
+  return errorCount > 0 || !reconciliation ? 'errors' : reconciliation.ok ? 'ok' : 'mismatch';
 }
 
 /**
@@ -143,14 +147,22 @@ export function deriveSyncStatus(
 export async function finishBrokerSync(
   db: Db,
   account: BrokerAccountRow,
-  reconciliation: StoredReconciliation,
+  reconciliation: StoredReconciliation | null,
   errorCount: number,
   now: Date,
+  reconciliationError: string | null = null,
 ): Promise<SyncStatus> {
   const status = deriveSyncStatus(errorCount, reconciliation);
   await db
     .update(brokerAccounts)
-    .set({ lastSyncedAt: now, lastSyncStatus: status, lastReconciliation: reconciliation })
+    .set({
+      lastSyncedAt: now,
+      lastSyncStatus: status,
+      // přechodné selhání rekonciliace jde do lastSyncError; poslední platná
+      // rekonciliace („pozice sedí“) se v tom případě NEpřepisuje
+      lastSyncError: reconciliationError,
+      ...(reconciliation ? { lastReconciliation: reconciliation } : {}),
+    })
     .where(and(eq(brokerAccounts.id, account.id), eq(brokerAccounts.userId, account.userId)));
   const { logAudit } = await import('@/lib/audit');
   await logAudit(db, account.userId, 'SYNC', `${account.broker} (${account.label})`);

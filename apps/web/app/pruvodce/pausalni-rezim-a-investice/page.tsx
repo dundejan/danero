@@ -13,7 +13,7 @@ import {
 export const metadata: Metadata = {
   title: 'OSVČ v paušálu a investice: limit 50 000 Kč — Danero',
   description:
-    'Paušální daň snese nejvýš 50 000 Kč zdanitelných příjmů mimo podnikání — a investice do limitu počítají hrubé částky: zahraniční dividendy před srážkou, tržby z neosvobozených prodejů i úroky. Co znamená prolomení a termín 10. ledna.',
+    'Paušální daň snese nejvýš 50 000 Kč zdanitelných příjmů mimo podnikání — a z investic se do něj počítají hrubé částky: zahraniční dividendy před srážkou, tržby z neosvobozených prodejů i úroky. Co znamená prolomení a termín 10. ledna.',
 };
 
 export default function PausalniRezimAInvesticePage() {

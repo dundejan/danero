@@ -37,7 +37,7 @@ export function Toast({
     <p
       role={kind === 'chyba' ? 'alert' : 'status'}
       className={`rounded-md border px-4 py-3 text-sm ${
-        kind === 'ok' ? 'border-zelena text-zelena' : 'border-cervena text-cervena'
+        kind === 'ok' ? 'border-zelena text-zelena-text' : 'border-cervena text-cervena'
       }${floating ? ' fixed bottom-4 right-4 z-50 max-w-sm bg-plocha shadow-lg' : ''}`}
     >
       {text}

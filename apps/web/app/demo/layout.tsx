@@ -12,9 +12,16 @@ import { ThemeToggle } from '@/components/theme-toggle';
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
+      {/* a11y: skip-link jako v aplikaci — demo má navíc banner a checklist */}
+      <a
+        href="#obsah"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-plocha focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-inkoust focus:shadow-sm"
+      >
+        Přeskočit na obsah
+      </a>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ruzova/40 bg-ruzova/10 px-4 py-2.5 md:px-6">
         <p className="text-sm">
-          <span className="font-semibold text-ruzova">Prohlížíš demo s ukázkovými daty</span>
+          <span className="font-semibold text-ruzova-text">Prohlížíš demo s ukázkovými daty</span>
           <span className="text-inkoust-tlumeny"> — nic se neukládá.</span>
         </p>
         <Link
@@ -28,7 +35,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
       <div className="flex flex-1">
         <DemoNavRail />
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 px-4 pt-8 md:px-6 lg:px-10">{children}</main>
+          <main id="obsah" className="flex-1 px-4 pt-8 md:px-6 lg:px-10">{children}</main>
           {/* mini patička: demo je veřejná vstupní brána — návštěvník potřebuje
               cestu zpět na ceník/FAQ i právní odkazy; pb-24 kryje mobilní tab bar */}
           <footer className="mt-12 border-t border-linka px-4 pb-24 pt-4 text-xs text-inkoust-tlumeny md:px-6 md:pb-4 lg:px-10">

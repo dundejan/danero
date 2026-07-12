@@ -85,7 +85,24 @@ export async function fetchCnbYear(
   return rows.length;
 }
 
+/**
+ * Poslední den roku, ke kterému ČNB kurz vyhlašuje: 31. 12., pokud je pracovní
+ * den, jinak nejbližší předchozí pátek (31. 12. není státní svátek).
+ */
+export function lastCnbDayOfYear(year: number): string {
+  const date = new Date(Date.UTC(year, 11, 31));
+  while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
+    date.setUTCDate(date.getUTCDate() - 1);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 /** Zajistí kurzy pro dané roky — stáhne jen ty, které v DB citelně chybí. */
+// Uzavřené roky dotažené už v tomto procesu: když roční soubor ČNB kurz
+// z 31. 12. trvale neobsahuje (výpadek na straně ČNB), refetch by se jinak
+// opakoval při každém renderu — jednou za život procesu stačí.
+const refetchedClosedYears = new Set<number>();
+
 export async function ensureCnbYears(
   db: Db,
   years: number[],
@@ -93,25 +110,26 @@ export async function ensureCnbYears(
 ): Promise<void> {
   for (const year of [...new Set(years)]) {
     const existing = await db
-      .select({ n: sql<number>`count(*)` })
+      .select({ n: sql<number>`count(*)`, maxDay: sql<string | null>`max(${fxRates.day})` })
       .from(fxRates)
       .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
     // plný rok má ~250 pracovních dní × ~30 měn; < 1000 řádků = evidentně chybí
     const count = Number(existing[0]?.n ?? 0);
+    const maxDay = existing[0]?.maxDay ?? null;
     const isCurrentYear = year === new Date().getUTCFullYear();
-    if (!isCurrentYear && count >= 1000) continue;
-    if (isCurrentYear && count > 0) {
+    if (!isCurrentYear && count >= 1000) {
+      // Uzavřený rok je kompletní, jen když sahá až k poslednímu vyhlášenému
+      // dni. Rok stažený naposledy jako BĚŽNÝ (ranní cron) končí před 31. 12. —
+      // kurz z 31. 12. ČNB vyhlašuje ~14:30 a bez dotažení by chyběl navždy.
+      if (maxDay !== null && maxDay >= lastCnbDayOfYear(year)) continue;
+      if (refetchedClosedYears.has(year)) continue;
+      refetchedClosedYears.add(year);
+    }
+    if (isCurrentYear && count > 0 && maxDay !== null) {
       // běžný rok drží čerstvý denní cron — stahovat znovu jen když data
       // očividně zaostávají (např. cron neběží), ne při každém renderu
-      const newest = await db
-        .select({ day: sql<string>`max(${fxRates.day})` })
-        .from(fxRates)
-        .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
-      const maxDay = newest[0]?.day;
-      if (maxDay) {
-        const ageDays = (Date.now() - Date.parse(`${maxDay}T00:00:00Z`)) / 86_400_000;
-        if (ageDays < 5) continue;
-      }
+      const ageDays = (Date.now() - Date.parse(`${maxDay}T00:00:00Z`)) / 86_400_000;
+      if (ageDays < 5) continue;
     }
     await fetchCnbYear(db, year, fetchImpl);
   }

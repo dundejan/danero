@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
 
-export const metadata = { title: 'Podmínky užití — Danero' };
+export const metadata = {
+  title: 'Podmínky užití — Danero',
+  description:
+    'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, beta provoz, cena a odpovědnost — srozumitelně a bez kliček.',
+};
 
 /** ⚠️ PRACOVNÍ NÁVRH — před veřejným spuštěním musí projít právní kontrolou. */
 export default function TermsPage() {
@@ -35,7 +39,7 @@ export default function TermsPage() {
         <p>
           Služba běží v beta režimu a je poskytována bezplatně. Co konkrétně beta
           znamená: služba nemá garantovanou dostupnost, podpora méně obvyklých brokerů
-          se teprve ladí (výpis ti ale do pár dní podpoříme) a jednotný kurz pro běžný
+          se teprve ladí (tvůj výpis ale do pár dní naučíme číst) a jednotný kurz pro běžný
           rok je orientační, dokud GFŘ nevydá pokyn — všechna taková místa aplikace
           viditelně označuje. Sporné výklady daňových předpisů aplikace označuje
           a volba výkladu je na tobě. S tímhle rozsahem služby souhlasíš vytvořením účtu.
