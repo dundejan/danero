@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { KalkulackaPriznani } from '@/components/kalkulacka-priznani';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 
@@ -11,11 +12,11 @@ export const metadata: Metadata = {
 const PRAVIDLA = [
   {
     title: 'Zlaté pravidlo 100 000 Kč',
-    body: 'Jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou všechny osvobozené — bez ohledu na zisk a bez tříletého čekání. Počítá se, kolik ti z prodejů přiteklo, ne kolik jsi vydělal. Kryptoaktiva mají od roku 2025 stejný limit zvlášť.',
+    body: 'Jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou všechny osvobozené — bez ohledu na zisk a bez tříletého čekání. Počítá se, kolik ti z prodejů přiteklo, ne kolik jsi vydělal. Kryptoaktiva mají od 15. 2. 2025 stejný limit zvlášť.',
   },
   {
     title: 'Tříletý časový test',
-    body: 'Cenné papíry držené déle než 3 roky se při prodeji nedaní vůbec (do 40 mil. Kč ročně). Rozhoduje datum nákupu a prodeje konkrétních kusů — přesně to, co Danero hlídá v horizontu osvobození.',
+    body: 'Cenné papíry držené déle než 3 roky se při prodeji nedaní vůbec (u prodejů v roce 2025 do úhrnu 40 mil. Kč ročně, od roku 2026 bez stropu). Od 15. 2. 2025 má vlastní tříletý test i krypto — tam strop 40 mil. Kč trvá a test neplatí pro stablecoiny. Rozhoduje datum nákupu a prodeje konkrétních kusů — přesně to, co Danero hlídá v horizontu osvobození.',
   },
   {
     title: 'Limity pro podání přiznání',
@@ -57,6 +58,23 @@ export default function KalkulackaPage() {
         <p className="mt-4 max-w-3xl text-xs text-inkoust-tlumeny">
           Kalkulačka je orientační — nezná tvoje data. Přesný výpočet nad skutečnou historií
           účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech) dělá až aplikace.
+        </p>
+        <p className="mt-3 max-w-3xl text-sm text-inkoust-tlumeny">
+          Další kalkulačky zdarma:{' '}
+          <Link
+            href="/casovy-test"
+            className="font-medium text-ruzova-text underline underline-offset-2"
+          >
+            kdy můžu prodat bez daně (časový test)
+          </Link>{' '}
+          a{' '}
+          <Link
+            href="/pausalmetr"
+            className="font-medium text-ruzova-text underline underline-offset-2"
+          >
+            Paušálmetr pro OSVČ v paušálu
+          </Link>
+          .
         </p>
       </section>
 

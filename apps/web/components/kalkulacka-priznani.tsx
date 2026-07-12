@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
  * Logika je záměrně zjednodušená (bez detailů § 38g — jsme orientační):
  * – tržby z prodejů CP do 100 000 Kč za rok → prodeje osvobozené („zlaté pravidlo"),
  * – vše drženo přes 3 roky → prodeje CP osvobozené (časový test),
- * – krypto má VLASTNÍ limit 100 000 Kč a časový test na něj neplatí (R-10),
+ * – krypto má VLASTNÍ limit 100 000 Kč a od 15. 2. 2025 i vlastní tříletý test
+ *   (R-10; test neplatí pro stablecoiny — hlídá nápověda),
  * – paušál + jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč → přiznání,
  * – zaměstnanec + vedlejší zdanitelné příjmy nad 20 000 Kč → přiznání (§ 38g/2),
  * – jiné situace + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
@@ -95,19 +96,23 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
   const [prodejeNad100k, setProdejeNad100k] = useState<boolean | null>(null);
   const [vseDrzeno3Roky, setVseDrzeno3Roky] = useState<boolean | null>(null);
   const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
+  const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
   const [prijmy, setPrijmy] = useState<OdpovedPrijmy | null>(null);
 
   // prodeje CP jsou osvobozené limitem 100k, nebo splněným časovým testem;
   // null = na verdikt zatím chybí odpověď
   const prodejeOsvobozene =
     prodejeNad100k === null ? null : !prodejeNad100k ? true : vseDrzeno3Roky;
+  // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10)
+  const kryptoOsvobozene =
+    kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
 
   let verdikt: 'osvobozeno' | 'priznani' | 'nejasne' | null = null;
   let duvod: string | null = null;
-  if (kryptoNad100k === true) {
+  if (kryptoOsvobozene === false) {
     verdikt = 'priznani';
     duvod =
-      'Prodeje a směny kryptoaktiv nad 100 000 Kč ročně jsou zdanitelné — tříletý test na krypto neplatí.';
+      'Prodeje a směny kryptoaktiv nad 100 000 Kč ročně bez tří let držení jsou zdanitelný příjem.';
   } else if (situace !== null && prijmy === 'ano') {
     verdikt = 'priznani';
     duvod = PRIJMY_DUVOD[situace];
@@ -117,7 +122,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
   } else if (
     situace !== null &&
     prodejeOsvobozene !== null &&
-    kryptoNad100k !== null &&
+    kryptoOsvobozene !== null &&
     prijmy !== null
   ) {
     if (prijmy === 'nevim') {
@@ -193,16 +198,32 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         {prodejeNad100k !== null && (
           <Otazka<boolean>
             otazka="Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?"
-            napoveda="Kryptoaktiva mají samostatný limit 100 000 Kč a tříletý test na ně neplatí. Nemáš krypto? Dej Ne."
+            napoveda="Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Nemáš krypto? Dej Ne."
             volby={[
               { hodnota: false, popisek: 'Ne' },
               { hodnota: true, popisek: 'Ano' },
             ]}
             hodnota={kryptoNad100k}
-            onChange={setKryptoNad100k}
+            onChange={(hodnota) => {
+              setKryptoNad100k(hodnota);
+              // podotázka na držení se týká jen odpovědi Ano — odpověď nepřenášet
+              setKryptoDrzeno3Roky(null);
+            }}
           />
         )}
-        {situace !== null && kryptoNad100k !== null && (
+        {kryptoNad100k === true && (
+          <Otazka<boolean>
+            otazka="Držel jsi všechno prodané krypto déle než 3 roky?"
+            napoveda="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. Pozor: neplatí pro stablecoiny (USDT, USDC…)."
+            volby={[
+              { hodnota: true, popisek: 'Ano, všechno' },
+              { hodnota: false, popisek: 'Ne' },
+            ]}
+            hodnota={kryptoDrzeno3Roky}
+            onChange={setKryptoDrzeno3Roky}
+          />
+        )}
+        {situace !== null && kryptoOsvobozene !== null && (
           <Otazka<OdpovedPrijmy>
             otazka={PRIJMY_OTAZKA[situace].otazka}
             napoveda={PRIJMY_OTAZKA[situace].napoveda}

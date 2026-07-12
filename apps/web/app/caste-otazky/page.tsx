@@ -62,11 +62,15 @@ const FAQ: FaqItem[] = [
   },
   {
     q: 'Umí Danero i krypto a deriváty?',
-    a: 'Ano. Kryptoaktiva mají od roku 2025 vlastní limit 100 000 Kč — hlídáme ho zvlášť, nezávisle na akciích. Opce a další deriváty se počítají jako samostatný druh příjmu bez osvobození. Všechno si můžeš prohlédnout v demu.',
+    a: 'Ano. Kryptoaktiva mají od 15. 2. 2025 vlastní limit 100 000 Kč i vlastní tříletý časový test — hlídáme obojí zvlášť, nezávisle na akciích. Opce a další deriváty se počítají jako samostatný druh příjmu bez osvobození. Všechno si můžeš prohlédnout v demu.',
   },
   {
     q: 'Co se stane, až beta skončí?',
     a: 'Dáme ti vědět e-mailem. Kartu od tebe nemáme, nic se nestrhne samo — sám se rozhodneš, jestli budeš pokračovat za 990 Kč ročně. Data ti zůstanou.',
+  },
+  {
+    q: 'Co znamená „ověřeno zkušební podatelnou EPO"?',
+    a: 'Finanční správa provozuje testovací podatelnu EPO, kde si jde podání nanečisto zvalidovat. Každou vygenerovanou písemnost XML tam ověřujeme — kontroluje se struktura, vazby mezi řádky a formální správnost podání. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
   },
   {
     q: 'Nahrazuje Danero daňového poradce?',

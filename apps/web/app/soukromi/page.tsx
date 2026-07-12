@@ -31,12 +31,26 @@ export default function PrivacyPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Co o tobě víme</h2>
+        <h2 className="font-display text-lg font-semibold">Co o tobě víme a proč</h2>
         <p>
           Jen to nejnutnější: <strong>e-mail a heslo</strong> (heslo jako Argon2 otisk),
           volitelně nastavení dvoufaktorového ověření, tvůj daňový profil (režim,
           zvolené metody výpočtu) a <strong>transakční historii</strong>, kterou nahraješ
-          nebo kterou stáhneme z brokera. Nepotřebujeme jméno, adresu ani rodné číslo.
+          nebo kterou stáhneme z brokera. K tomu technické údaje o přihlášení (IP adresa
+          a typ prohlížeče u aktivních relací, záznamy o přihlášeních a synchronizacích)
+          — kvůli bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
+        <p>
+          Účet, daňový profil a transakce zpracováváme, protože bez nich ti službu nejde
+          poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR). Bezpečnostní záznamy
+          a technické logy držíme z oprávněného zájmu na ochraně tvého účtu a provozu
+          služby (čl. 6 odst. 1 písm. f). E-mail zadaný do čekací listiny používáme jen
+          na základě tvého souhlasu — pošleme ti jediné oznámení o otevření a adresu pak
+          smažeme. A pokud ti někdy budeme chtít poslat něco jiného než upozornění ze
+          služby, zeptáme se předem na souhlas (čl. 6 odst. 1 písm. a) — a půjde kdykoli
+          odvolat.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Jak s daty zacházíme</h2>
@@ -53,8 +67,8 @@ export default function PrivacyPage() {
           všechno odstraníme. Technický audit log (záznamy o přihlášeních a synchronizacích)
           držíme 90 dní, zálohy databáze se přepisují po 30 dnech — smazaná data tedy
           zmizí i ze záloh nejpozději do 30 dní. Když se odhlásíš z e-mailových
-          upozornění, tvůj e-mail si necháme jen v seznamu potlačených adres — aby ti už
-          opravdu nic nepřišlo.
+          upozornění, e-maily ti přestanou chodit okamžitě — nastavení si pamatujeme
+          u tvého účtu, dokud ho nesmažeš.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Cookies</h2>
@@ -66,18 +80,26 @@ export default function PrivacyPage() {
 
         <h2 className="font-display text-lg font-semibold">Zpracovatelé a předání mimo EU</h2>
         <p>
-          Provoz zajišťují: hosting aplikace a databáze v EU (Vercel, Neon — region
-          Frankfurt), odesílání e-mailů (Resend) a rozhraní brokera (Trading212) pro
-          čtení tvé historie. S dodavateli máme zpracovatelské smlouvy. Vercel a Resend
-          jsou společnosti z USA — data drží primárně v EU, ale při provozu může dojít
-          k omezenému předání do USA; to je kryté standardními smluvními doložkami EU
-          (SCC).
+          Provoz zajišťují: hosting aplikace (Vercel) a databáze (Neon) — obojí
+          v regionu Frankfurt, odesílání e-mailů (Resend) a rozhraní tvého brokera
+          (např. Trading 212) pro čtení historie — broker je vůči tobě samostatný
+          správce tvých dat, my z něj jen čteme. Se všemi dodavateli máme zpracovatelské
+          smlouvy. Vercel, Neon i Resend jsou americké společnosti — data drží v EU,
+          ale při provozu (podpora, logy) může dojít k omezenému předání do USA.
+          Vercel a Resend jsou certifikované v rámci EU-U.S. Data Privacy Framework,
+          který Evropská komise uznává jako odpovídající ochranu; kde certifikace
+          nestačí, kryjí předání standardní smluvní doložky EU (SCC). Až spustíme
+          platby, přibude Stripe (platební údaje zpracovává Stripe sám, my tvoji kartu
+          nikdy nevidíme) — tuhle stránku předem aktualizujeme.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>
         <p>
-          Kdykoli můžeš požádat o export svých dat nebo smazat účet — smazání odstraní
-          všechna tvoje data včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
+          Kdykoli můžeš chtít vědět, co o tobě máme (přístup), nechat to opravit,
+          omezit zpracování, vznést námitku proti zpracování z oprávněného zájmu,
+          odnést si data ve strojově čitelném formátu (export máš přímo v aplikaci)
+          nebo všechno smazat zrušením účtu — smazání odstraní všechna tvoje data
+          včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
           na{' '}
           <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
             dunder.jan@gmail.com
