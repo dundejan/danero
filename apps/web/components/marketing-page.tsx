@@ -130,7 +130,7 @@ export function MarketingFooter() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/#faq" className="font-medium hover:text-inkoust">
+                  <Link href="/caste-otazky" className="font-medium hover:text-inkoust">
                     Časté otázky
                   </Link>
                 </li>
@@ -141,6 +141,11 @@ export function MarketingFooter() {
                 Autor
               </p>
               <ul className="mt-3 space-y-2">
+                <li>
+                  <Link href="/o-projektu" className="font-medium hover:text-inkoust">
+                    O projektu
+                  </Link>
+                </li>
                 <li>
                   <a
                     href="https://jandunder.dev"

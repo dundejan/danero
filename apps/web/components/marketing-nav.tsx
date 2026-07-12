@@ -4,12 +4,19 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-export type MarketingNavKey = 'platformy' | 'kalkulacka' | 'cenik';
+export type MarketingNavKey =
+  | 'platformy'
+  | 'kalkulacka'
+  | 'cenik'
+  | 'caste-otazky'
+  | 'o-projektu';
 
 const LINKS: { key: MarketingNavKey; href: string; label: string }[] = [
   { key: 'platformy', href: '/platformy', label: 'Platformy' },
   { key: 'kalkulacka', href: '/kalkulacka', label: 'Kalkulačka' },
   { key: 'cenik', href: '/cenik', label: 'Ceník' },
+  { key: 'caste-otazky', href: '/caste-otazky', label: 'Časté otázky' },
+  { key: 'o-projektu', href: '/o-projektu', label: 'O projektu' },
 ];
 
 /**
@@ -35,7 +42,8 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
 
   return (
     <>
-      <nav className="hidden items-center gap-6 md:flex" aria-label="Hlavní navigace">
+      {/* pět odkazů se na tablet (md) nevejde — plná navigace až od lg */}
+      <nav className="hidden items-center gap-6 lg:flex" aria-label="Hlavní navigace">
         {LINKS.map((link) => (
           <Link
             key={link.key}
@@ -51,6 +59,8 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
             {link.label}
           </Link>
         ))}
+        {/* svislý předěl: vlevo stránky, vpravo akce účtu (login + CTA) */}
+        <span aria-hidden className="h-5 w-px bg-linka" />
         <Link
           href="/prihlaseni"
           className="text-sm font-medium text-inkoust-tlumeny hover:text-inkoust"
@@ -65,8 +75,8 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
         </Link>
       </nav>
 
-      {/* mobil: CTA zůstává viditelné, zbytek pod tlačítkem menu */}
-      <div className="flex items-center gap-3 md:hidden">
+      {/* mobil a tablet: CTA zůstává viditelné, zbytek pod tlačítkem menu */}
+      <div className="flex items-center gap-3 lg:hidden">
         <Link
           href="/demo/prehled"
           className="rounded-md bg-ruzova-syta px-3.5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
@@ -106,11 +116,11 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
           <div
             aria-hidden
             onClick={() => setOpen(false)}
-            className="fixed inset-0 top-16 z-40 bg-inkoust/20 md:hidden"
+            className="fixed inset-0 top-16 z-40 bg-inkoust/20 lg:hidden"
           />
           <div
             id="mobilni-menu"
-            className="absolute inset-x-0 top-full z-50 border-b border-linka bg-plocha shadow-lg md:hidden"
+            className="absolute inset-x-0 top-full z-50 border-b border-linka bg-plocha shadow-lg lg:hidden"
           >
             <nav className="mx-auto max-w-6xl px-6 py-4" aria-label="Mobilní navigace">
               <ul className="space-y-1">
@@ -131,7 +141,8 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
                     </Link>
                   </li>
                 ))}
-                <li>
+                {/* akce účtu pohromadě pod předělem — stejná logika jako desktop */}
+                <li className="border-t border-linka pt-2">
                   <Link
                     href="/prihlaseni"
                     onClick={() => setOpen(false)}
@@ -140,7 +151,7 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
                     Přihlásit se
                   </Link>
                 </li>
-                <li className="border-t border-linka pt-2">
+                <li>
                   <Link
                     href="/registrace"
                     onClick={() => setOpen(false)}
