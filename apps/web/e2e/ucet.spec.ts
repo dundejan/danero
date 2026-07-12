@@ -53,6 +53,13 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   await expect(page.getByText('E-mail změněn.')).toBeVisible();
   await expect(page.getByText('ucet-novy@danero.cz').first()).toBeVisible();
 
+  // surový endpoint Better Auth je vypnutý — bez něj by session cookie stačila
+  // k přepsání identity účtu bez hesla; jediná cesta je akce s re-autentizací
+  const rawChange = await page.request.post('/api/auth/change-email', {
+    data: { newEmail: 'utocnik@danero.cz' },
+  });
+  expect(rawChange.status()).toBe(404);
+
   // ── export dat: JSON s transakcemi ───────────────────────────────────────
   const exportResponse = await page.request.get('/api/export');
   expect(exportResponse.ok()).toBe(true);
