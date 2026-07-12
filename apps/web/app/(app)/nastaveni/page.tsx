@@ -1,4 +1,5 @@
 import { d } from '@danero/shared';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Toast } from '@/components/toast';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -444,6 +445,14 @@ export default async function SettingsPage({
                 </ul>
               )}
             </div>
+          </Card>
+
+          <Card className="space-y-3" id="vzhled">
+            <CardTitle>Vzhled</CardTitle>
+            <ThemeToggle withLabels />
+            <p className="text-xs text-inkoust-tlumeny">
+              Volba se ukládá v tomhle prohlížeči — na jiném zařízení se nastavuje zvlášť.
+            </p>
           </Card>
         </div>
       </div>

@@ -6,7 +6,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 /**
  * Demo prohlídka (bez přihlášení, bez DB): stejný layout jako aplikace —
  * nav-rail + obsah — navrch výrazný banner s naváděcím checklistem a dole
- * mini patička (návrat na úvod, právní odkazy, na mobilu přepínač vzhledu).
+ * mini patička (návrat na úvod, právní odkazy, přepínač vzhledu).
  * Žádný requireUser; všechno uvnitř počítá čistý engine nad demo datasetem.
  */
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
@@ -46,10 +46,8 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
                   Ochrana soukromí
                 </Link>
               </p>
-              {/* na desktopu je přepínač vzhledu v railu — tady jen pro mobil */}
-              <div className="md:hidden">
-                <ThemeToggle />
-              </div>
+              {/* jediné místo přepínače vzhledu v demu — rail je jen navigace */}
+              <ThemeToggle />
             </div>
             <p className="mt-2">
               Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství — za
