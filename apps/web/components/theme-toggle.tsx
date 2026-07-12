@@ -13,16 +13,17 @@ const MODES = [
 /**
  * Přepínač vzhledu (H4): tři stavy systém/světlý/tmavý přes next-themes.
  * mounted-guard: server nezná uložené téma, aktivní stav se ukáže až po
- * hydrataci (jinak hydration mismatch).
+ * hydrataci (jinak hydration mismatch). `withLabels` ukáže vedle ikon i text
+ * (v Nastavení) — samotné glyfy vysvětluje jen title/aria-label.
  */
-export function ThemeToggle() {
+export function ThemeToggle({ withLabels = false }: { withLabels?: boolean }) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const active = mounted ? (theme ?? 'system') : null;
 
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Vzhled aplikace">
+    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Vzhled aplikace">
       {MODES.map((mode) => (
         <button
           key={mode.key}
@@ -32,13 +33,15 @@ export function ThemeToggle() {
           aria-pressed={active === mode.key}
           onClick={() => setTheme(mode.key)}
           className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-md text-sm',
+            'flex items-center justify-center rounded-md text-sm',
+            withLabels ? 'gap-1.5 px-3 py-1.5' : 'h-7 w-7',
             active === mode.key
               ? 'bg-pozadi font-semibold text-ruzova'
               : 'text-inkoust-tlumeny hover:text-inkoust',
           )}
         >
           <span aria-hidden>{mode.icon}</span>
+          {withLabels && <span>{mode.label}</span>}
         </button>
       ))}
     </div>

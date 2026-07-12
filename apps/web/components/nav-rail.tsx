@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { Logo } from '@/components/logo';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -38,7 +37,7 @@ function useSignOut() {
   };
 }
 
-/** Sdílený levý rail (desktop): logo, položky, patička dle režimu. */
+/** Sdílený levý rail (desktop): logo, položky; patička jen když je co ukázat. */
 function Rail({
   items,
   homeHref,
@@ -46,7 +45,7 @@ function Rail({
 }: {
   items: NavItem[];
   homeHref: string;
-  footer: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   const pathname = usePathname();
   return (
@@ -75,7 +74,7 @@ function Rail({
         })}
       </nav>
 
-      <div className="space-y-2 border-t border-linka pt-4">{footer}</div>
+      {footer && <div className="space-y-2 border-t border-linka pt-4">{footer}</div>}
     </aside>
   );
 }
@@ -111,7 +110,8 @@ function TabBar({ items }: { items: NavItem[] }) {
   );
 }
 
-/** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07). */
+/** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07).
+ *  Patička jen účet (e-mail + odhlášení) — přepínač vzhledu žije v Nastavení. */
 export function NavRail({ userEmail }: { userEmail: string }) {
   const signOut = useSignOut();
   return (
@@ -120,7 +120,6 @@ export function NavRail({ userEmail }: { userEmail: string }) {
       homeHref="/prehled"
       footer={
         <>
-          <ThemeToggle />
           <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
             {userEmail}
           </p>
@@ -141,32 +140,10 @@ export function NavTabBar() {
   return <TabBar items={ITEMS} />;
 }
 
-/** Demo rail: místo účtu CTA na registraci + cesta zpět na úvod (ceník, FAQ).
- *  Logo vede na landing — návštěvník se z dema musí umět vrátit. */
+/** Demo rail: bez patičky — CTA na registraci má demo v horním banneru,
+ *  návrat na úvod nese mini patička i logo (vede na landing). */
 export function DemoNavRail() {
-  return (
-    <Rail
-      items={DEMO_ITEMS}
-      homeHref="/"
-      footer={
-        <>
-          <ThemeToggle />
-          <Link
-            href="/registrace"
-            className="block rounded-md bg-ruzova-syta px-3 py-2 text-center text-xs font-semibold text-white hover:opacity-90"
-          >
-            Založit účet zdarma
-          </Link>
-          <Link
-            href="/"
-            className="block text-xs font-medium text-inkoust-tlumeny hover:text-inkoust"
-          >
-            ← Zpět na úvod
-          </Link>
-        </>
-      }
-    />
-  );
+  return <Rail items={DEMO_ITEMS} homeHref="/" />;
 }
 
 export function DemoNavTabBar() {
