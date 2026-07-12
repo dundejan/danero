@@ -128,6 +128,32 @@ describe('R-10b časový test a účinnost 15. 2. 2025 (KOOV 625, závěry 2.2.1
     expect(result.crypto.base10Czk.toString()).toBe('40000');
     expect(hasWarning(result, 'CRYPTO_EMT_ASSUMPTION')).toBe(false);
   });
+
+  it('bez settlementDate se krypto vypořádává T+0 — prodej 13. 2. 2025 zůstává před účinností', () => {
+    // Burzovní T+2 by posunulo vypořádání na 17. 2. (≥ 15. 2.) a prodej chybně osvobodilo
+    const result = run([
+      cryptoBuy({ quantity: '1', pricePerShare: '20000', tradeDate: '2024-05-10', settlementDate: undefined }),
+      cryptoSell({ quantity: '1', pricePerShare: '80000', tradeDate: '2025-02-13', settlementDate: undefined }),
+    ]);
+
+    expect(result.crypto.pool100kCzk.toString()).toBe('0');
+    expect(result.crypto.taxableIncomeCzk.toString()).toBe('80000');
+    expect(result.crypto.base10Czk.toString()).toBe('60000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('80000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+  });
+
+  it('bez settlementDate patří krypto prodej z 31. 12. do běžného roku (R-05a, T+0)', () => {
+    // Burzovní T+2 by příjem přesunulo do ledna 2026 a z roku 2025 by zmizel
+    const result = run([
+      cryptoBuy({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-03-01', settlementDate: undefined }),
+      cryptoSell({ quantity: '1', pricePerShare: '90000', tradeDate: '2025-12-31', settlementDate: undefined }),
+    ]);
+
+    expect(result.crypto.disposals).toHaveLength(1);
+    expect(result.crypto.pool100kCzk.toString()).toBe('90000');
+    expect(result.crypto.exemptUnder100k).toBe(true);
+  });
 });
 
 describe('R-10c jiný druh příjmu § 10 — bez kompenzace s CP (D-59 k § 10/4)', () => {

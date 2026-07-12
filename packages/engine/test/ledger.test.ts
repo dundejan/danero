@@ -165,4 +165,21 @@ describe('R-05 párování a dílčí základ § 10', () => {
     expect(hasWarning(result, 'NEGATIVE_POSITION')).toBe(true);
     expect(result.securities.base10Czk.toString()).toBe('120000'); // výdaj 0, bez časového testu
   });
+
+  it('R-04j: prodej frakcí CP dostane informační vlajku, celé kusy a krypto ne', () => {
+    const fractional = run([
+      buy({ quantity: '2.5', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '2.5', pricePerShare: '1200', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    expect(hasWarning(fractional, 'FRACTIONAL_SHARES')).toBe(true);
+
+    const whole = run([
+      buy({ quantity: '10', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '10', pricePerShare: '1200', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      // krypto je frakční z podstaty — vlajka mu nepatří
+      buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '0.5', pricePerShare: '100000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '0.5', pricePerShare: '120000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ]);
+    expect(hasWarning(whole, 'FRACTIONAL_SHARES')).toBe(false);
+  });
 });

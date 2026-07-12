@@ -188,6 +188,17 @@ export function computeDerivatives(
     const fee = feeCzk(tx);
     const feeShare = (part: Money): Money =>
       tx.quantity.gt(0) ? fee.mul(part).div(tx.quantity) : ZERO;
+    // poměrná část otevíracích poplatků uzavíraných lotů kurzem dne zaplacení (R-06a)
+    const openFeeCzk = (parts: { lot: OpenLot; take: Money }[]): Money =>
+      parts.reduce(
+        (acc, { lot, take }) =>
+          acc.plus(
+            lot.originalQuantity.gt(0)
+              ? fx.toCzk(lot.feeTotal.mul(take).div(lot.originalQuantity), lot.feeCurrency, lot.date)
+              : ZERO,
+          ),
+        ZERO,
+      );
     const isMargin = marginIsins.has(tx.isin);
 
     if (tx.type === 'SELL') {
@@ -195,7 +206,8 @@ export function computeDerivatives(
       const { matched, parts } = closeAgainst(longs.get(tx.isin) ?? [], tx.quantity);
       if (matched.gt(0)) {
         if (isMargin) {
-          // R-12f: cash tok = rozdíl cen při uzavření, kurz dne uzavření
+          // R-12f: cash tok = rozdíl cen při uzavření, kurz dne uzavření;
+          // výdajem je i poměrný otevírací poplatek kurzem dne zaplacení (R-06a)
           const openNominal = sum(parts.map(({ lot, take }) => lot.pricePerShare.mul(take)));
           const settlementCzk = fx.toCzk(
             tx.pricePerShare.mul(matched).sub(openNominal),
@@ -209,7 +221,9 @@ export function computeDerivatives(
             year: txYear,
             kind: 'MARGIN_CLOSE',
             incomeCzk: Decimal.max(ZERO, settlementCzk),
-            expenseCzk: Decimal.max(ZERO, settlementCzk.neg()).plus(feeShare(matched)),
+            expenseCzk: Decimal.max(ZERO, settlementCzk.neg())
+              .plus(feeShare(matched))
+              .plus(openFeeCzk(parts)),
             deniedExpenseCzk: ZERO,
           });
         } else {
@@ -286,7 +300,9 @@ export function computeDerivatives(
             year: txYear,
             kind: 'MARGIN_CLOSE',
             incomeCzk: Decimal.max(ZERO, settlementCzk),
-            expenseCzk: Decimal.max(ZERO, settlementCzk.neg()).plus(feeShare(matched)),
+            expenseCzk: Decimal.max(ZERO, settlementCzk.neg())
+              .plus(feeShare(matched))
+              .plus(openFeeCzk(parts)),
             deniedExpenseCzk: ZERO,
           });
         } else {

@@ -84,8 +84,16 @@ export interface Ledger {
 /** Přechod US trhů na vypořádání T+1 (SEC, 28. 5. 2024). */
 const US_T1_SINCE = '2024-05-28';
 
-/** Dopočet data vypořádání, pokud jej broker neuvádí (aproximace bez svátků). */
-export function inferSettlementDate(tradeDate: IsoDate, isin: string): IsoDate {
+/** Dopočet data vypořádání, pokud jej broker neuvádí (aproximace bez svátků).
+ * Burzovní lhůty (T+1/T+2) platí jen pro zaknihované CP (R-01a) — krypto se
+ * vypořádává okamžitě (T+0), jinak by se posunul rok příjmu (R-05a) i hranice
+ * účinnosti osvobození 15. 2. 2025 (R-10b). */
+export function inferSettlementDate(
+  tradeDate: IsoDate,
+  isin: string,
+  assetClass: AssetClass,
+): IsoDate {
+  if (assetClass === 'CRYPTO') return tradeDate;
   const lag = isin.startsWith('US') && tradeDate >= US_T1_SINCE ? 1 : 2;
   return addBusinessDays(tradeDate, lag);
 }
@@ -129,7 +137,8 @@ export function buildLedger(
   const openLots = (isin: string): Lot[] => lots.filter((l) => l.isin === isin && l.remaining.gt(0));
 
   const openLotFromBuy = (tx: BuyTransaction): void => {
-    const settlement = tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin);
+    const settlement =
+      tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass);
     lots.push({
       id: `lot-${tx.id}`,
       isin: tx.isin,
@@ -180,7 +189,8 @@ export function buildLedger(
   };
 
   const processSell = (tx: SellTransaction): void => {
-    const settlement = tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin);
+    const settlement =
+      tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass);
     const saleDate = options.timeTestDateBasis === 'settlement' ? settlement : tx.tradeDate;
     const candidates = openLots(tx.isin);
     orderLots(candidates, options.matchingMethod);

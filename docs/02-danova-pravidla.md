@@ -58,6 +58,12 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-04f Spin-off**: původní loty běží dál; nové akcie = nový lot s datem nabytí = den spin-offu. ⚠️ Alokace nabývací ceny neřešena zákonem — default: cost basis nové pozice 0 Kč (konzervativní), volitelně poměrná alokace.
 - **R-04g Dědictví**: od příbuzného v řadě přímé/manžela se doba držby zůstavitele **započítává** (nabytí = smrt zůstavitele); jinak nová lhůta.
 - **R-04h Dar**: doba držby dárce se nezapočítává, obdarovanému běží nová lhůta.
+  ⚠️ Implementační omezení: model zatím neodlišuje způsob nabytí — dar i dědictví
+  se zadávají přes `TRANSFER_IN.acquisition`. U daru je správné zadat **datum
+  převodu** (nová lhůta dle R-04h) a cenu určenou ke dni nabytí; zadání
+  původního data dárce by jeho lhůtu chybně započetlo. U dědictví v řadě přímé
+  se naopak datum úmrtí zůstavitele zadává právem (R-04g). Odlišení druhu
+  nabytí v modelu = kandidát na rozšíření.
 - **R-04i Převod mezi brokery**: není převod vlastnictví → nepřerušuje (⚠️ mírně výkladové). Typ transakce `TRANSFER_IN/OUT` s párováním.
 - **R-04j Frakční akcie**: ⚠️ nejasný status (u některých brokerů derivátový nárok, ne CP). Default: zacházet jako s CP + informační vlajka v reportu.
 
@@ -300,7 +306,7 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `timeTestDateBasis` | `settlement` | R-01a (`settlement` \| `trade`) |
 | `limit100kIncludesTimeTestExempt` | `true` (striktní) | R-02c |
 | `spinoffCostBasisAllocation` | `zero` | R-04f (`zero` \| `proportional`) |
-| `fractionalSharesAsCP` | `true` + vlajka | R-04j |
+| frakční akcie (bez přepínače) | vždy jako CP + vlajka `FRACTIONAL_SHARES` — derivátový výklad nemá definovaný výpočet, přepínač by nic nepřepínal | R-04j |
 | `matchingMethod` | `FIFO` | R-05c |
 | `fxMethod` | počítat obě, uživatel volí | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
