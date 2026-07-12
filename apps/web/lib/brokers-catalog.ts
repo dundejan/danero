@@ -8,16 +8,15 @@
  *  - 'template' — vedený import: návod kde výpis stáhnout + univerzální šablona
  *                 (vlastní parser doplníme, jakmile budeme mít reálný vzorek)
  *
- * `color` je orientační barva značky pro monogramovou dlaždici (žádná cizí
- * loga nebundlujeme — CSP self + ochranné známky); `ink: 'dark'` = tmavý text
- * na světlé dlaždici (např. žlutá RB).
+ * `color` je orientační barva značky pro monogramovou dlaždici — fallback,
+ * když platforma nemá `logo` (provenience log v docs/11); `ink: 'dark'` =
+ * tmavý text na světlé dlaždici (např. žlutá RB).
  */
 export interface PlatformInfo {
   id: string;
   name: string;
   group: 'brokeri' | 'banky' | 'krypto';
   method: 'api' | 'file' | 'template';
-  formats?: string;
   color: string;
   ink?: 'dark';
   monogram?: string;
@@ -37,7 +36,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Portu',
     group: 'brokeri',
     method: 'file',
-    formats: 'CSV',
     color: '#00B67A',
     guide:
       'Peníze → Peněženka a transakce → filtry „Všechny Portu investice" + „Všechny transakce" → Stáhnout jako CSV.',
@@ -48,7 +46,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'XTB',
     group: 'brokeri',
     method: 'file',
-    formats: 'XLSX',
     color: '#E3001B',
     guide:
       'xStation → Historie účtu → export „Full report" (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
@@ -59,7 +56,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Trading 212',
     group: 'brokeri',
     method: 'api',
-    formats: 'API · CSV',
     color: '#00A7E1',
     guide:
       'Živě přes API klíč jen pro čtení (Nastavení → API v aplikaci T212), nebo CSV export z History.',
@@ -71,7 +67,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Patria Finance',
     group: 'brokeri',
     method: 'template',
-    formats: 'XLSX',
     color: '#003366',
     guide:
       'Transakce → Obchodní pokyny → ⋮ → Export → Excel; dividendy zvlášť ze záložky Cash flow. Import zatím přes univerzální šablonu.',
@@ -82,7 +77,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Degiro',
     group: 'brokeri',
     method: 'file',
-    formats: 'CSV',
     color: '#009FDF',
     guide:
       'Inbox → Přehled transakcí (Transactions.csv) a Výpis účtu (Account.csv) → Export CSV. Nahraj OBA soubory: obchody jsou v Transactions, dividendy a poplatky v Account.',
@@ -93,7 +87,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'eToro',
     group: 'brokeri',
     method: 'file',
-    formats: 'XLSX',
     color: '#6AAC0E',
     guide: 'Portfolio → History (ikona hodin) → ozubené kolo → Account Statement → Excel.',
   },
@@ -103,7 +96,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Interactive Brokers',
     group: 'brokeri',
     method: 'api',
-    formats: 'Flex API · XML',
     color: '#D81222',
     guide:
       'Živě přes Flex Web Service (token + Query ID v Client Portalu), nebo stáhni Flex Query XML.',
@@ -115,7 +107,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'MetaTrader 4',
     group: 'brokeri',
     method: 'file',
-    formats: 'HTML',
     color: '#F2A900',
     ink: 'dark',
     monogram: 'M4',
@@ -128,7 +119,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'MetaTrader 5',
     group: 'brokeri',
     method: 'file',
-    formats: 'XLSX · HTML',
     color: '#0088CC',
     monogram: 'M5',
     guide:
@@ -140,7 +130,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Lynx',
     group: 'brokeri',
     method: 'api',
-    formats: 'Flex API · XML',
     color: '#0FA396',
     guide:
       'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Performance & Reports → Flex Queries.',
@@ -152,7 +141,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Saxo Bank',
     group: 'brokeri',
     method: 'file',
-    formats: 'XLSX',
     color: '#14283C',
     guide:
       'SaxoTraderGO → profil → Transaction overview → Export → Excel. Před exportem si přepni jazyk platformy na angličtinu.',
@@ -163,7 +151,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Swissquote',
     group: 'brokeri',
     method: 'file',
-    formats: 'CSV',
     color: '#E2001A',
     guide: 'Trading → Transactions → filtr období → Export CSV.',
   },
@@ -173,7 +160,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Tastytrade',
     group: 'brokeri',
     method: 'file',
-    formats: 'CSV',
     color: '#E31837',
     guide:
       'History → Transactions → CSV (vpravo nahoře). Export umí max. rok — stáhni po letech, duplicity odfiltrujeme.',
@@ -184,7 +170,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'RoboForex',
     group: 'brokeri',
     method: 'file',
-    formats: 'MT4/MT5 report',
     color: '#0056A8',
     guide:
       'Účty RoboForex běží na MT4/MT5 — ulož report přímo z platformy (viz MetaTrader 4/5 výše).',
@@ -195,7 +180,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Charles Schwab',
     group: 'brokeri',
     method: 'file',
-    formats: 'CSV',
     color: '#009DDC',
     guide:
       'Accounts → History → Export (CSV). Web dává max. 4 roky a 1 500 řádků na export — delší historii stáhni po částech.',
@@ -207,7 +191,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Conseq',
     group: 'banky',
     method: 'template',
-    formats: 'XLS',
     color: '#14477D',
     guide:
       'Můj Conseq → Přehled transakcí → Pohyby na majetkovém účtu → Exportovat do XLS. Import zatím přes univerzální šablonu.',
@@ -218,7 +201,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'ČSOB Investice',
     group: 'banky',
     method: 'template',
-    formats: 'XLS',
     color: '#009EE0',
     guide:
       'Portál ČSOB Investice → Objednávky → Historie objednávek → filtr „Od začátku" → stažení XLS. Import zatím přes univerzální šablonu.',
@@ -229,7 +211,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Amundi (KB)',
     group: 'banky',
     method: 'template',
-    formats: 'XLS',
     color: '#003C71',
     guide:
       'Portál Moje Amundi → Transakce → Export (XLS). Import zatím přes univerzální šablonu.',
@@ -240,7 +221,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Fio e-Broker',
     group: 'banky',
     method: 'file',
-    formats: 'CSV',
     color: '#1C4E9D',
     guide:
       'e-Broker → Obchody → export CSV (kódování řešíme za tebe). Fio neexportuje ISIN — doplníš ho při prvním importu a zapamatujeme si ho.',
@@ -251,7 +231,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Raiffeisenbank',
     group: 'banky',
     method: 'template',
-    formats: 'XLS',
     color: '#FFD500',
     ink: 'dark',
     guide:
@@ -263,7 +242,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'J&T Banka',
     group: 'banky',
     method: 'template',
-    formats: 'CSV',
     color: '#333333',
     monogram: 'J&T',
     guide:
@@ -275,7 +253,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Moventum',
     group: 'banky',
     method: 'template',
-    formats: 'export',
     color: '#005EB8',
     guide:
       'MoventumOffice → Activity → zvol období → Export (případně požádej svého poradce). Import zatím přes univerzální šablonu.',
@@ -286,7 +263,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'EIC',
     group: 'banky',
     method: 'template',
-    formats: 'export',
     color: '#1D4F91',
     guide:
       'Online zóna EIC → pohled Transakce → Export; dividendy z pohledu Transfery a dividendy. Import zatím přes univerzální šablonu.',
@@ -297,7 +273,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Julius Bär',
     group: 'banky',
     method: 'template',
-    formats: 'XLS',
     color: '#14213D',
     guide: 'E-Services → Activity → Excel export. Import zatím přes univerzální šablonu.',
   },
@@ -308,7 +283,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Revolut',
     group: 'krypto',
     method: 'file',
-    formats: 'CSV',
     color: '#191C1F',
     guide:
       'Akcie: Invest → ⋯ → Statements → Account statement → Excel. Krypto: Crypto → Documents → Account statement. Nahraj oba.',
@@ -319,7 +293,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Anycoin',
     group: 'krypto',
     method: 'file',
-    formats: 'CSV',
     color: '#2F4DE0',
     guide: 'Profil → Transakce → Export (CSV, soubor orders.csv).',
   },
@@ -329,7 +302,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Coinmate',
     group: 'krypto',
     method: 'file',
-    formats: 'CSV',
     color: '#F7931E',
     guide: 'Historie transakcí → Export (CSV — exportuje se vždy celá historie).',
   },
@@ -339,7 +311,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Coinbase',
     group: 'krypto',
     method: 'file',
-    formats: 'CSV',
     color: '#0052FF',
     guide:
       'Manage account → Statements → Transactions → Generate custom statement (CSV, všechna aktiva, celá historie). Pozor: ne sekce „Taxes" — ta generuje jiný soubor.',
@@ -350,7 +321,6 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Kraken',
     group: 'krypto',
     method: 'file',
-    formats: 'CSV',
     color: '#7132F5',
     guide:
       'Profil → Documents → Exports → Create Export → typ „Ledgers" (CSV, celá historie). Trades.csv nenahrávej — Ledgers obsahuje vše.',

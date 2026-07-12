@@ -144,13 +144,6 @@ export function PlatformGrid({ limit }: { limit?: number }) {
   );
 }
 
-/** Popisek metody jen tam, kde se liší od defaultu (výpis s autodetekcí). */
-const METHOD_LABEL: Record<PlatformInfo['method'], string | null> = {
-  api: 'živě přes API',
-  file: null,
-  template: 'přes šablonu',
-};
-
 /**
  * Plný katalog: skupiny → rozbalovací návod per platforma. Varianta 'app'
  * (Zdroje dat) odkazuje na karty napojení a upload na téže stránce; 'public'
@@ -170,14 +163,11 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
             {PLATFORMS.filter((platform) => platform.group === group.key).map((platform) => (
               <li key={platform.id}>
                 <details className="group rounded-lg border border-linka bg-plocha">
+                  {/* jen logo a jméno — formáty a typ napojení jsou žargon,
+                      detail (kde co stáhnout) říká rozbalený návod */}
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
-                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="flex min-w-0 flex-1 items-center">
                       <PlatformLogo platform={platform} />
-                      <span className="font-mono text-[11px] text-inkoust-tlumeny">
-                        {platform.formats}
-                        {METHOD_LABEL[platform.method] &&
-                          ` · ${METHOD_LABEL[platform.method]}`}
-                      </span>
                     </span>
                     <span
                       aria-hidden
