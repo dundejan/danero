@@ -339,3 +339,13 @@ export const transactions = pgTable(
     index('transactions_user_date_idx').on(t.userId, t.txDate),
   ],
 );
+
+/**
+ * Waitlist před spuštěním (docs/12, fáze P0): jen e-mail + čas. Souhlas je
+ * omezený na jednorázové oznámení o otevření (zákon 480/2004 Sb.) — text
+ * souhlasu nese formulář; PK e-mail = opakované přihlášení nic nezdvojí.
+ */
+export const waitlist = pgTable('waitlist', {
+  email: text('email').primaryKey(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});

@@ -103,7 +103,7 @@ export function MarketingFooter() {
               i podklady k přiznání.
             </p>
           </div>
-          <div className="flex gap-16">
+          <div className="flex flex-wrap gap-x-16 gap-y-8">
             <div>
               <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
                 Danero
@@ -112,11 +112,6 @@ export function MarketingFooter() {
                 <li>
                   <Link href="/platformy" className="font-medium hover:text-inkoust">
                     Platformy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
-                    Kalkulačka
                   </Link>
                 </li>
                 <li>
@@ -133,6 +128,38 @@ export function MarketingFooter() {
                   <Link href="/caste-otazky" className="font-medium hover:text-inkoust">
                     Časté otázky
                   </Link>
+                </li>
+                <li>
+                  <Link href="/bezpecnost" className="font-medium hover:text-inkoust">
+                    Bezpečnost
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+                Kalkulačky
+              </p>
+              <ul className="mt-3 space-y-2">
+                <li>
+                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
+                    Musím podat přiznání?
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/casovy-test" className="font-medium hover:text-inkoust">
+                    Časový test
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/pausalmetr" className="font-medium hover:text-inkoust">
+                    Paušálmetr
+                  </Link>
+                </li>
+                <li>
+                  <a href="/api/kalendar" className="font-medium hover:text-inkoust">
+                    Daňový kalendář (.ics)
+                  </a>
                 </li>
               </ul>
             </div>

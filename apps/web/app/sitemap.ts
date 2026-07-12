@@ -8,7 +8,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${BASE}/`, changeFrequency: 'weekly', priority: 1 },
     { url: `${BASE}/kalkulacka`, changeFrequency: 'monthly', priority: 0.9 },
+    { url: `${BASE}/casovy-test`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE}/pausalmetr`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${BASE}/platformy`, changeFrequency: 'monthly', priority: 0.9 },
+    { url: `${BASE}/bezpecnost`, changeFrequency: 'yearly', priority: 0.5 },
     { url: `${BASE}/cenik`, changeFrequency: 'monthly', priority: 0.9 },
     { url: `${BASE}/demo/prehled`, changeFrequency: 'weekly', priority: 0.8 },
     { url: `${BASE}/caste-otazky`, changeFrequency: 'monthly', priority: 0.7 },
