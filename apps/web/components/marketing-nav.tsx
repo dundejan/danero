@@ -4,16 +4,12 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-export type MarketingNavKey =
-  | 'platformy'
-  | 'kalkulacka'
-  | 'cenik'
-  | 'caste-otazky'
-  | 'o-projektu';
+export type MarketingNavKey = 'platformy' | 'cenik' | 'caste-otazky' | 'o-projektu';
 
+// Kalkulačka v menu není (Janovo rozhodnutí 12. 7.) — žije v patičce
+// a v odkazech z hero/textů
 const LINKS: { key: MarketingNavKey; href: string; label: string }[] = [
   { key: 'platformy', href: '/platformy', label: 'Platformy' },
-  { key: 'kalkulacka', href: '/kalkulacka', label: 'Kalkulačka' },
   { key: 'cenik', href: '/cenik', label: 'Ceník' },
   { key: 'caste-otazky', href: '/caste-otazky', label: 'Časté otázky' },
   { key: 'o-projektu', href: '/o-projektu', label: 'O projektu' },

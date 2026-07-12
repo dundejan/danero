@@ -115,6 +115,11 @@ export function MarketingFooter() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
+                    Kalkulačka
+                  </Link>
+                </li>
+                <li>
                   <Link href="/pruvodce" className="font-medium hover:text-inkoust">
                     Průvodce
                   </Link>
@@ -143,33 +148,6 @@ export function MarketingFooter() {
                   <Link href="/bezpecnost" className="font-medium hover:text-inkoust">
                     Bezpečnost
                   </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                Kalkulačky
-              </p>
-              <ul className="mt-3 space-y-2">
-                <li>
-                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
-                    Musím podat přiznání?
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/casovy-test" className="font-medium hover:text-inkoust">
-                    Časový test
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/pausalmetr" className="font-medium hover:text-inkoust">
-                    Paušálmetr
-                  </Link>
-                </li>
-                <li>
-                  <a href="/api/kalendar" className="font-medium hover:text-inkoust">
-                    Daňový kalendář (.ics)
-                  </a>
                 </li>
               </ul>
             </div>
