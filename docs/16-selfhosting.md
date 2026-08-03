@@ -15,10 +15,42 @@ stačí, aby to prostě běželo, je tu [danero.cz](https://danero.cz).
 
 ## Co budeš potřebovat
 
-- **Node.js 22+** a **pnpm**
-- **PostgreSQL 16+** (kdekoli — vlastní server, Neon, Supabase…)
+- **Docker** (doporučeno), nebo **Node.js 22+** a **pnpm**
+- **PostgreSQL 16+** — s Dockerem ho rozjede `docker compose` sám
 - Doménu s HTTPS (aplikace posílá cookies s `Secure` a nastavuje HSTS)
 - *Volitelně* účet u [Resendu](https://resend.com) na odesílání e-mailů
+
+## Nejrychlejší cesta: Docker
+
+```bash
+git clone https://github.com/dundejan/danero.git && cd danero
+
+# .env s vlastními tajemstvími (žádné výchozí hodnoty neexistují — schválně)
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+DANERO_ENCRYPTION_KEY=$(openssl rand -hex 32)
+CRON_SECRET=$(openssl rand -hex 32)
+BETTER_AUTH_URL=https://tvoje.domena
+EOF
+
+docker compose up -d --build     # → http://localhost:3000
+```
+
+Vznikne trojice služeb: `db` (Postgres s pojmenovaným volume), `web`
+(aplikace) a `cron` (naplánované úlohy — bez něj Danero nic nehlídá, jen
+počítá, když se přihlásíš).
+
+- **Migrace** se dotáhnou samy při startu (`DANERO_MIGRATE_ON_START=1`
+  v compose). Platí to pro **jednu** instanci; při více současně běžících
+  by si migrace lezly do zelí — tam patří `drizzle-kit migrate` do deploye.
+- **Aktualizace:** `git pull && docker compose up -d --build`.
+- **Záloha:** `docker compose exec db pg_dump -U danero danero > zaloha.sql`
+  (a odděleně `DANERO_ENCRYPTION_KEY`, viz varování níže).
+- Port změníš přes `PORT=8080` v `.env`.
+
+Před aplikaci ještě patří reverzní proxy s TLS. Aplikace si nastavuje vlastní
+bezpečnostní hlavičky včetně CSP — **v proxy je neduplikuj**, přebily by se.
 
 ## Konfigurace
 
@@ -40,12 +72,13 @@ openssl rand -hex 32      # CRON_SECRET
 | `CRON_SECRET` | ano | bez ní všechny `/api/cron/*` odmítají vše (401) — tedy žádné syncy ani e-maily |
 | `RESEND_API_KEY` | ne | bez ní se e-maily jen zapisují do logu (na jedno-uživatelské instanci to může stačit) |
 | `RESEND_FROM` | ne | odesílatel, např. `"Danero <notifikace@example.cz>"` |
+| `DANERO_MIGRATE_ON_START` | ne | `1` = zmigruj Postgres při startu (compose to nastavuje sám). Jen pro jednu instanci. |
 
 > ⚠️ **`DANERO_ENCRYPTION_KEY` si zálohuj odděleně od databáze.** Když ho
 > ztratíš, uložené API klíče brokerů jsou nečitelné a musíš je zadat znovu.
 > A obráceně: záloha databáze *spolu* s klíčem = klíče brokerů v plaintextu.
 
-## Instalace a běh
+## Bez Dockeru, přímo přes Node
 
 ```bash
 git clone https://github.com/dundejan/danero.git && cd danero
@@ -58,14 +91,14 @@ cd apps/web && DATABASE_URL='postgres://…' pnpm exec drizzle-kit migrate && cd
 pnpm --filter @danero/web start        # poslouchá na :3000
 ```
 
-Za tím dej reverzní proxy s TLS (Caddy, nginx, Traefik). Aplikace si nastavuje
-vlastní bezpečnostní hlavičky včetně CSP — **neduplikuj je v proxy**, přebily by
-se navzájem.
+Za tím opět reverzní proxy s TLS (Caddy, nginx, Traefik) a naplánované úlohy
+z další sekce.
 
 ## Naplánované úlohy
 
-Danero potřebuje čtyři pravidelné joby. Na Vercelu je definuje `apps/web/vercel.json`,
-jinde je zavolej běžným cronem — jsou to prosté `GET` požadavky s hlavičkou
+Danero potřebuje čtyři pravidelné joby. V compose je má na starost služba `cron`,
+na Vercelu je definuje `apps/web/vercel.json`; jinde je zavolej běžným cronem —
+jsou to prosté `GET` požadavky s hlavičkou
 `Authorization: Bearer $CRON_SECRET`:
 
 ```cron
@@ -108,5 +141,6 @@ nespadají — pokud instanci nabízíš dalším lidem, dej jí vlastní jméno
 
 ---
 
-*Docker image a `docker-compose.yml` jsou v plánu; do repozitáře se přidají,
-až budou skutečně vyzkoušené proti čisté databázi.*
+*`Dockerfile` i `docker-compose.yml` jsou ověřené proti čisté databázi:
+migrace při startu založí schéma, `/api/health` odpovídá 200, cron joby mají
+naplánovaný běh a bez `CRON_SECRET` vracejí 401.*

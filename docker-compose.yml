@@ -1,0 +1,70 @@
+# Vlastní instance Danera. Návod: docs/16-selfhosting.md
+#   1) vygeneruj .env  (viz docs/16 — bez něj se aplikace nespustí)
+#   2) docker compose up -d --build
+#   3) http://localhost:3000
+#
+# Za tímhle ještě potřebuješ reverzní proxy s TLS. Aplikace si nastavuje vlastní
+# bezpečnostní hlavičky včetně CSP — v proxy je neduplikuj.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: danero
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?nastav POSTGRES_PASSWORD v .env}
+      POSTGRES_DB: danero
+    volumes:
+      - danero-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U danero -d danero']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://danero:${POSTGRES_PASSWORD}@db:5432/danero
+      # migrace se dotáhnou při startu — platí pro JEDNU instanci (viz docs/16)
+      DANERO_MIGRATE_ON_START: '1'
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?nastav BETTER_AUTH_SECRET v .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      DANERO_ENCRYPTION_KEY: ${DANERO_ENCRYPTION_KEY:?nastav DANERO_ENCRYPTION_KEY v .env}
+      CRON_SECRET: ${CRON_SECRET:?nastav CRON_SECRET v .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+    ports:
+      - '${PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:3000/api/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Naplánované úlohy (kurzy, sync brokerů, notifikace, dokončení jobů).
+  # Bez téhle služby Danero nic nehlídá — jen počítá, když se přihlásíš.
+  cron:
+    image: alpine:3.22
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    command: >
+      sh -c "apk add --no-cache curl >/dev/null &&
+      printf '%s\n'
+      '45 4 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/fx'
+      '0 5 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/sync-brokers'
+      '30 5 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/notify'
+      '0 * * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/jobs'
+      > /etc/crontabs/root && crond -f -l 8"
+
+volumes:
+  danero-db:

@@ -63,6 +63,9 @@ klíče se vygenerují samy. Reset = smazat `.data/`.
 pnpm build && pnpm typecheck && pnpm test && pnpm lint   # musí být zelené
 ```
 
+Vlastní instance (Postgres + aplikace + naplánované úlohy) běží přes
+`docker compose up -d --build` — návod v [docs/16](docs/16-selfhosting.md).
+
 ## Architektura
 
 Monorepo (pnpm + Turborepo, TypeScript strict). Klíčový invariant: **transakce
