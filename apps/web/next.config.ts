@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { NextConfig } from 'next';
 
 /* Dev overlay („N issues“ bublina) mate při vizuálních kontrolách a screenshotech
@@ -37,6 +38,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Vlastní instance (Docker) potřebuje samostatný server.js se zabaleným
+  // node_modules; na Vercelu se nechává vypnuté, aby build zůstal beze změny.
+  // Trasování musí začínat v kořeni monorepa, jinak vypadnou workspace balíčky.
+  ...(process.env.NEXT_OUTPUT_STANDALONE
+    ? { output: 'standalone' as const, outputFileTracingRoot: join(import.meta.dirname, '../..') }
+    : {}),
   // Next 16 zamyká dev server per distDir (.next/dev/lock) — oddělený distDir
   // umožní E2E dev server vedle běžícího `pnpm dev` (NEXT_DIST_DIR=.next-e2e)
   distDir: process.env.NEXT_DIST_DIR || '.next',
