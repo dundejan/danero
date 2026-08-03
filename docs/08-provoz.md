@@ -21,7 +21,8 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    (`/api/cron/sync-brokers`), notifikace v 5:30 (`/api/cron/notify`) a hodinovou
    záchrannou síť background jobů (`/api/cron/jobs`); Vercel posílá
    `Authorization: Bearer $CRON_SECRET` sám. Pozor: hodinový cron vyžaduje placený
-   plán (Hobby umí jen denní) a dlouhý první sync viz poznámka v docs/DENIK.md.
+   plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz „Limity Vercel funkcí"
+   níže.
 
 ## Roční runbook (leden)
 

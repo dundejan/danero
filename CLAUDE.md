@@ -78,6 +78,10 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 
 ## Stav a plán
 
-Hotové fáze F0–F5 (MVP kompletní vč. živého ověření na reálném účtu). Další vývoj:
-**`docs/09-plan-v2.md`** — fáze G1–G10 s akceptačními kritérii. Průběh zapisuj tamtéž
-(checkboxy) a po každé fázi doplň řádek do `docs/DENIK.md`.
+Aplikace je funkčně kompletní (fáze F, G i H), ověřená na reálném účtu.
+Od 3. 8. 2026 je kód open source (AGPL-3.0) a hostovaná služba běží na danero.cz
+— pravidla přispívání v `CONTRIBUTING.md`, hranice zdarma/placené a harmonogram
+spuštění v interním repozitáři `danero-interni` (`docs/15-open-source.md`).
+
+**Plány, marketing, audity a deník žijí v privátním repozitáři `danero-interni`**
+— průběh fází a poznámky zapisuj tam (`docs/09`, `docs/12`, `DENIK.md`), ne sem.

@@ -6,6 +6,32 @@ on:
   pull_request:
 
 jobs:
+  # DCO — příspěvky musí být podepsané (git commit -s), viz CONTRIBUTING.md.
+  # Běží jen nad PR; commity vlastníka na main se nekontrolují.
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Kontrola podpisu commitů
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          fail=0
+          for sha in $(git rev-list --no-merges "$BASE".."$HEAD"); do
+            if ! git log -1 --format='%B' "$sha" | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+              echo "Chybí Signed-off-by: $(git log -1 --format='%h %s' "$sha")"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "Podepiš commity přes 'git commit -s' — viz CONTRIBUTING.md."
+            exit 1
+          fi
+
   ci:
     runs-on: ubuntu-latest
     steps:

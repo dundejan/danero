@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Dotaz nebo pomoc s vlastní instancí
+    url: https://github.com/dundejan/danero/discussions
+    about: Otázky k provozu, self-hostingu a použití patří do Discussions. Podpora self-hostingu je best effort, bez záruky.
+  - name: Bezpečnostní chyba
+    url: https://github.com/dundejan/danero/security/advisories/new
+    about: Nikdy ne do veřejného issue. Nahlas soukromě, viz SECURITY.md.
