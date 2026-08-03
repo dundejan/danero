@@ -1,6 +1,6 @@
 /**
  * Katalog podporovaných platforem — jediný zdroj pravdy pro stránku Zdroje dat
- * i landing. Pokrývá minimálně vše, co podporuje Taxomat (docs/11-plan-brokeri.md).
+ * i landing. Nový formát se přidává podle docs/06-import.md.
  *
  * `method`:
  *  - 'api'      — živé napojení (klíč jen pro čtení), plus jde nahrát i výpis
