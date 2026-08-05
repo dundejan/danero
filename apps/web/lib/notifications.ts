@@ -255,41 +255,9 @@ export async function verifyUnsubscribeToken(token: string): Promise<string | nu
   return timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? userId : null;
 }
 
-export interface EmailMessage {
-  to: string;
-  subject: string;
-  text: string;
-}
-export type EmailSender = (message: EmailMessage) => Promise<void>;
-
-/** Resend za env klíčem; bez něj dev log (žádný setup, nic se neposílá). */
-export function resolveEmailSender(): EmailSender {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    // produkce bez klíče nesmí digest tiše „odeslat“ do console a označit
-    // notifikace za doručené — selhání nechá frontu čekat na doplnění klíče
-    if (process.env.NODE_ENV === 'production') {
-      return async () => {
-        throw new Error('RESEND_API_KEY není nastaven — e-mail se neodeslal, notifikace čekají.');
-      };
-    }
-    return async (message) => {
-      console.info(`[email:dev] to=${message.to} | ${message.subject}\n${message.text}`);
-    };
-  }
-  const from = process.env.RESEND_FROM ?? 'Danero <notifikace@danero.cz>';
-  return async (message) => {
-    const { Resend } = await import('resend');
-    const resend = new Resend(apiKey);
-    const { error } = await resend.emails.send({
-      from,
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-    });
-    if (error) throw new Error(`Resend: ${error.message}`);
-  };
-}
+// odesílání žije v lib/email.ts (sdílí ho auth vrstva, která nesmí tahat engine)
+import type { EmailSender } from '@/lib/email';
+export { resolveEmailSender, type EmailMessage, type EmailSender } from '@/lib/email';
 
 /**
  * Denní běh pro jednoho uživatele: přepočet → nové události (do DB VŽDY,

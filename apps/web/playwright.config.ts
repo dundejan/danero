@@ -11,6 +11,9 @@ import { defineConfig, devices } from '@playwright/test';
 const APP_PORT = 3210;
 const MOCK_PORT = 3211;
 
+/** Sdílené s e2e/helpers.ts — relativní k apps/web, kde běží server i testy. */
+export const EMAIL_LOG = '.data/e2e-emails.log';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
@@ -42,6 +45,9 @@ export default defineConfig({
         // Better Auth ověřuje Origin proti baseURL — musí sedět na E2E port
         BETTER_AUTH_URL: `http://localhost:${APP_PORT}`,
         PGLITE_DATA_DIR: mkdtempSync(join(tmpdir(), 'danero-e2e-')),
+        // e-maily do souboru místo odeslání — testy z nich berou ověřovací
+        // odkaz, takže procházejí skutečný tok potvrzení e-mailu (viz helpers.ts)
+        DANERO_EMAIL_LOG: EMAIL_LOG,
         T212_API_BASE_URL: `http://localhost:${MOCK_PORT}/api/v0`,
         // dost pomalu, aby UI polling (3 s) stihl zachytit průběh po letech
         T212_POLL_INTERVAL_MS: '1500',

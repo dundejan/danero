@@ -129,7 +129,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     const { user: userTable } = await import('@/db/schema');
     await db
       .update(userTable)
-      .set({ email: parsed.data.newEmail.toLowerCase(), updatedAt: new Date() })
+      // nová adresa je nepotvrzená: kdyby v ní byl překlep, uživatel by jinak
+      // tiše přišel o upozornění i o obnovu hesla (ta chodí právě sem)
+      .set({ email: parsed.data.newEmail.toLowerCase(), emailVerified: false, updatedAt: new Date() })
       .where(eq(userTable.id, user.id));
   } catch (error) {
     logEvent('error', 'account.change_email_failed', { error: error instanceof Error ? error.message : String(error) });
@@ -139,6 +141,19 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     redirect(isUniqueViolation(error) ? '/nastaveni?chyba=email-obsazeny' : '/nastaveni?chyba=email-ulozeni');
   }
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
+  // ověřovací odkaz na novou adresu; selhání odeslání nesmí shodit už provedenou
+  // změnu — uživatel si odkaz vyžádá znovu na /overeni-emailu
+  try {
+    const { authApi } = await import('@/lib/session');
+    const { api } = await authApi();
+    await api.sendVerificationEmail({
+      body: { email: parsed.data.newEmail.toLowerCase(), callbackURL: '/overeni-emailu' },
+    });
+  } catch (error) {
+    logEvent('error', 'account.change_email_verification_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   revalidatePath('/nastaveni');
   redirect('/nastaveni?ok=email');
 }

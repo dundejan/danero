@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { signUpVerified } from './auth-helpers';
 import { totp } from './totp-util';
 
 const cookiesFrom = (response: Response): string =>
@@ -14,12 +15,17 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
     const { getAuth } = await import('@/lib/auth');
     const auth = await getAuth();
 
-    // registrace + session cookies
-    const signUpRes = await auth.api.signUpEmail({
-      body: { email: '2fa@test.cz', password: 'superbezpecneheslo', name: 'Dvoufaktor' },
+    // registrace + potvrzení e-mailu (bez něj se nedá přihlásit) + session cookies
+    await signUpVerified(auth, {
+      email: '2fa@test.cz',
+      password: 'superbezpecneheslo',
+      name: 'Dvoufaktor',
+    });
+    const prvniPrihlaseni = await auth.api.signInEmail({
+      body: { email: '2fa@test.cz', password: 'superbezpecneheslo' },
       asResponse: true,
     });
-    const sessionCookies = cookiesFrom(signUpRes);
+    const sessionCookies = cookiesFrom(prvniPrihlaseni);
     expect(sessionCookies).toContain('session_token');
 
     // zapnutí 2FA (vyžaduje heslo) → totpURI + záložní kódy
