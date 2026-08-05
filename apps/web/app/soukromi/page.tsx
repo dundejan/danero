@@ -96,6 +96,14 @@ export default function PrivacyPage() {
           platby, přibude Stripe (platební údaje zpracovává Stripe sám, my tvoji kartu
           nikdy nevidíme) — tuhle stránku předem aktualizujeme.
         </p>
+        <p>
+          Zdrojový kód Danera je veřejný na GitHubu. Když nám tam napíšeš — issue,
+          pull request, diskuse — zpracovává tvoje údaje GitHub podle svých vlastních
+          podmínek a to, co napíšeš, je veřejné. <strong>Do veřejných issue nikdy
+          nevkládej výpis od brokera</strong>; jsou to osobní údaje. Když potřebuješ
+          poslat vzorek, aby Danero tvůj formát naučilo číst, pošli ho e-mailem —
+          používáme ho jen na převod do anonymního testovacího vzorku a pak ho mažeme.
+        </p>
 
         <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>
         <p>
@@ -123,7 +131,7 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 1.1 (beta) · účinnost od 12. července 2026 · změny oznámíme e-mailem
+        Verze 1.2 (beta) · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">
