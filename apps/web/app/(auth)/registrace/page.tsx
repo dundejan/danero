@@ -13,7 +13,7 @@ export default function SignUpPage() {
         </Link>
         <h1 className="font-display text-3xl font-bold">Registrace</h1>
         <p className="mt-2 text-sm text-inkoust-tlumeny">
-          Teď v betě všechno zdarma. Bez karty, stačí e-mail.
+          Za rok 2026 všechno zdarma. Bez karty, stačí e-mail.
         </p>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Už máš účet?{' '}
@@ -28,8 +28,7 @@ export default function SignUpPage() {
           Za 2 minuty připojíš brokera a uvidíš svoje limity.
         </p>
         {/* B-1 právního auditu: podmínky se do smlouvy včleňují odkazem při
-            registraci (§ 1751 OZ) a GDPR informace patří ke sběru údajů (čl. 13);
-            věta o betě = výslovné seznámení s rozsahem služby (§ 2389i/2 OZ) */}
+            registraci (§ 1751 OZ) a GDPR informace patří ke sběru údajů (čl. 13) */}
         <p className="mt-4 text-center text-xs leading-relaxed text-inkoust-tlumeny">
           Vytvořením účtu souhlasíš s{' '}
           <Link href="/podminky" className="font-medium text-ruzova-text">
@@ -39,8 +38,8 @@ export default function SignUpPage() {
           <Link href="/soukromi" className="font-medium text-ruzova-text">
             jak nakládáme s tvými daty
           </Link>
-          . Danero je teď v betě — služba se může měnit a výpočty si vždy můžeš
-          zkontrolovat proti podkladům, které ti ukážeme.
+          . Výpočty si vždy můžeš zkontrolovat proti podkladům, které ti u každého
+          čísla ukážeme.
         </p>
       </div>
     </main>

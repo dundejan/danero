@@ -33,8 +33,8 @@ test('landing: hero, živé komponenty a ceník', async ({ page }) => {
   // odkaz v hlavičce (menu: Platformy · Ceník · Časté otázky · O projektu)
   await expect(page.locator('header').getByRole('link', { name: 'Ceník' })).toBeVisible();
 
-  // ceník přímo na stránce — beta zdarma + cena po spuštění s měsíční kotvou
-  await expect(page.getByRole('heading', { name: 'Teď v betě: všechno zdarma' })).toBeVisible();
+  // ceník přímo na stránce — rok 2026 zdarma + cena od 2027 s měsíční kotvou
+  await expect(page.getByRole('heading', { name: 'Rok 2026: všechno zdarma' })).toBeVisible();
   await expect(page.getByText('990 Kč ročně', { exact: true })).toBeVisible();
   await expect(page.getByText(/necelých 83 Kč měsíčně/)).toBeVisible();
 
@@ -54,10 +54,10 @@ test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
   await faq.locator('summary').click();
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
 
-  // FAQ: konec bety — bez karty se nic nestrhne
-  const beta = page.locator('details', { hasText: 'Co se stane, až beta skončí?' });
-  await beta.locator('summary').click();
-  await expect(beta.getByText(/nic se nestrhne samo/)).toBeVisible();
+  // FAQ: přechod na placené — bez karty se nic nestrhne
+  const cena = page.locator('details', { hasText: 'Co se stane v roce 2027?' });
+  await cena.locator('summary').click();
+  await expect(cena.getByText(/nic se nestrhne samo/)).toBeVisible();
 });
 
 test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }) => {

@@ -4,17 +4,13 @@ import { MarketingPage } from '@/components/marketing-page';
 export const metadata = {
   title: 'Podmínky užití — Danero',
   description:
-    'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, beta provoz, cena a odpovědnost — srozumitelně a bez kliček.',
+    'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, cena a odpovědnost — srozumitelně a bez kliček.',
 };
 
-/** ⚠️ PRACOVNÍ NÁVRH — před veřejným spuštěním musí projít právní kontrolou. */
 export default function TermsPage() {
   return (
     <MarketingPage>
       <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
-      <p className="rounded-md border border-jantar px-4 py-2 text-sm text-jantar-text">
-        Pracovní návrh podmínek pro beta provoz — finální znění projde právní kontrolou.
-      </p>
       <div>
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
           Právní
@@ -70,14 +66,22 @@ export default function TermsPage() {
           ni nic z toho, co slibujeme tady.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">3. Beta provoz</h2>
+        <h2 className="font-display text-lg font-semibold">3. Cena a rozsah služby</h2>
         <p>
-          Služba běží v beta režimu a je poskytována bezplatně. Co konkrétně beta
-          znamená: služba nemá garantovanou dostupnost, podpora méně obvyklých brokerů
-          se teprve ladí (tvůj výpis ale do pár dní naučíme číst) a jednotný kurz pro běžný
-          rok je orientační, dokud GFŘ nevydá pokyn — všechna taková místa aplikace
-          viditelně označuje. Sporné výklady daňových předpisů aplikace označuje
-          a volba výkladu je na tobě. S tímhle rozsahem služby souhlasíš vytvořením účtu.
+          Za daňový rok 2026 je Danero zdarma pro všechny — včetně podkladů k přiznání,
+          které se podává na jaře 2027. Od roku 2027 je celoroční hlídání placené;
+          aktuální cenu najdeš vždy na stránce{' '}
+          <Link href="/cenik" className="font-medium text-ruzova">
+            Ceník
+          </Link>{' '}
+          a případnou změnu ti oznámíme předem podle článku 8.
+        </p>
+        <p>
+          Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
+          usilujeme o nepřetržitý provoz, ale krátké odstávky kvůli údržbě nebo výpadku
+          dodavatele nastat můžou. Jednotný kurz pro právě probíhající rok je orientační,
+          dokud GFŘ nevydá pokyn, a sporné výklady daňových předpisů nechává aplikace na
+          tobě — obojí u konkrétních výpočtů viditelně označuje, ať víš, na čem stojíš.
         </p>
 
         <h2 className="font-display text-lg font-semibold">4. Tvůj účet a data</h2>
@@ -153,7 +157,7 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 1.2 (beta) · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.0 · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

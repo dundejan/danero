@@ -321,7 +321,7 @@ export default async function LandingPage({
             <SignupCta className={CTA_SECONDARY} />
           </div>
           <p className="mt-3 text-sm text-inkoust-tlumeny">
-            Teď v betě: všechno zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
+            Rok 2026 máš zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
             <Link
               href="/kalkulacka"
               className="font-medium text-ruzova-text underline underline-offset-2"
@@ -659,11 +659,11 @@ export default async function LandingPage({
                   id="cenik-nadpis"
                   className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
                 >
-                  Teď v betě: všechno zdarma
+                  Rok 2026: všechno zdarma
                 </h2>
                 {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
                 <p className="mt-3 text-inkoust-tlumeny">
-                  Po spuštění{' '}
+                  Od roku 2027{' '}
                   <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
                   necelých <span className="tabular-nums">83 Kč</span> měsíčně. Jedna cena,
                   žádné tarify, všechny funkce pro každého. Stačí e-mail, karta ne.
@@ -680,7 +680,7 @@ export default async function LandingPage({
               <div className="flex flex-col items-start gap-3 lg:items-end">
                 <SignupCta className={CTA_PRIMARY} />
                 <p className="text-xs text-inkoust-tlumeny">
-                  Bez karty a bez závazků — po betě se rozhodneš sám.
+                  Bez karty a bez závazků — v roce 2027 se rozhodneš sám.
                 </p>
               </div>
             </div>
@@ -688,7 +688,7 @@ export default async function LandingPage({
         </section>
 
         {/* ── waitlist: režim před veřejným otevřením — na produkci se zapíná
-            NEXT_PUBLIC_WAITLIST=1, dokud beta nepřijímá veřejnost (docs/12 P0) */}
+            NEXT_PUBLIC_WAITLIST=1, dokud se registrace neotevřou veřejnosti */}
         {WAITLIST && (
           <section id="waitlist" aria-labelledby="waitlist-nadpis" className="mt-24 lg:mt-32">
             <div className="rounded-lg border border-linka bg-plocha p-8 sm:p-10">
@@ -701,8 +701,9 @@ export default async function LandingPage({
                   Buď u toho mezi prvními
                 </h2>
                 <p className="mt-3 text-inkoust-tlumeny">
-                  Danero teď ladíme se zakládajícími uživateli. Nech nám e-mail
-                  a dostaneš přístup hned, jak otevřeme — ještě před daňovou sezónou.
+                  Registrace otevíráme postupně, ať stihneme každého pořádně přivítat.
+                  Nech nám e-mail a dostaneš přístup hned, jak otevřeme — ještě před
+                  daňovou sezónou.
                 </p>
                 <div className="mt-6">
                   <WaitlistForm />

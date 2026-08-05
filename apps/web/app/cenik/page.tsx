@@ -7,7 +7,7 @@ import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-pa
 export const metadata: Metadata = {
   title: 'Ceník — Danero',
   description:
-    'Teď v betě je Danero zdarma. Po spuštění 990 Kč ročně — jedna cena, žádné tarify, všechny funkce: živé napojení na brokery, hlídání limitů, podklady k přiznání včetně XML.',
+    'Za rok 2026 je Danero zdarma. Od roku 2027 990 Kč ročně — jedna cena, žádné tarify, všechny funkce: živé napojení na brokery, hlídání limitů, podklady k přiznání včetně XML.',
 };
 
 const INCLUDED = [
@@ -23,12 +23,12 @@ const INCLUDED = [
 
 const CENIK_FAQ = [
   {
-    q: 'Co znamená „beta zdarma“?',
-    a: 'Všechny funkce bez omezení a bez karty — stačí e-mail. Hledáme první uživatele a zpětnou vazbu, ne platby.',
+    q: 'Proč je rok 2026 zdarma?',
+    a: 'Protože Danero teprve začíná a chceme první uživatele, ne jejich peníze. Máš všechny funkce bez omezení a bez karty — stačí e-mail.',
   },
   {
-    q: 'Co se stane, až beta skončí?',
-    a: 'Dáme ti vědět e-mailem. Kartu od tebe nemáme, nic se nestrhne samo — sám se rozhodneš, jestli budeš pokračovat za 990 Kč ročně. Data ti zůstanou.',
+    q: 'Co se stane v roce 2027?',
+    a: 'Kdo se zaregistruje do konce roku 2026, má daňový rok 2026 zdarma navždy — včetně podkladů k přiznání, které se podává až na jaře 2027. Placené je pak hlídání dalších let. Kartu od tebe nemáme, nic se nestrhne samo a data ti zůstanou.',
   },
   {
     q: 'Proč jedna cena, a ne tarify?',
@@ -42,14 +42,14 @@ export default function CenikPage() {
       <PageHero
         eyebrow="Ceník"
         title="Jedna cena. Žádné tarify."
-        lede="Teď v betě je všechno zdarma — stačí e-mail, kartu nechceme. Po spuštění 990 Kč ročně, tedy necelých 83 Kč měsíčně."
+        lede="Za rok 2026 je všechno zdarma — stačí e-mail, kartu nechceme. Od roku 2027 990 Kč ročně, tedy necelých 83 Kč měsíčně."
       />
 
       <section aria-label="Cena a obsah" className="mt-12">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-8">
             <p className="font-mono text-xs font-semibold uppercase tracking-wide text-ruzova-text">
-              Teď v betě
+              Rok 2026
             </p>
             <p className="mt-3 font-display text-5xl font-bold tracking-tight">zdarma</p>
             <p className="mt-2 text-sm text-inkoust-tlumeny">
@@ -57,7 +57,7 @@ export default function CenikPage() {
             </p>
             <div className="mt-6 border-t border-ruzova/20 pt-6">
               <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                Po spuštění
+                Od roku 2027
               </p>
               <p className="mt-2 font-display text-3xl font-bold tracking-tight">
                 990 Kč <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
@@ -73,7 +73,7 @@ export default function CenikPage() {
               Založit účet zdarma
             </Link>
             <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
-              bez karty — po betě se rozhodneš sám
+              bez karty — v roce 2027 se rozhodneš sám
             </p>
           </div>
           <div className="rounded-lg border border-linka bg-plocha p-8">
