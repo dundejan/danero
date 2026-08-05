@@ -63,6 +63,16 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Better Auth**: drizzle schéma musí přesně sedět na plugin (twoFactor vyžaduje
   i `verified`, `failedVerificationCount`, `lockedUntil` — při přidávání pluginů
   čti `node_modules/better-auth/dist/plugins/*/schema.mjs`).
+- **Better Auth `callbackURL`**: patří JEN k registraci (určuje, kam vede odkaz
+  z ověřovacího e-mailu; bez něj vede na `/`). U přihlášení ho neposílat —
+  klient na něj skočí i po ÚSPĚŠNÉM loginu a přihlášení skončí jinde, než má.
+  `sendOnSignIn` z téhož důvodu nepoužíváme (cíl odkazu mu nejde předat) —
+  nový odkaz posílá UI přes `sendVerificationEmail`. Nepotvrzený účet poznávej
+  podle kódu `EMAIL_NOT_VERIFIED`, ne podle stavu 403: na 403 končí i neshoda
+  originu (`BETTER_AUTH_URL` vs. doména) a ta by se pod tou hláškou schovala.
+- **E2E e-maily**: `DANERO_EMAIL_LOG=cesta` přesměruje odesílání do souboru
+  (nastavuje jen Playwright) — testy pak klikají na skutečný odkaz z e-mailu
+  místo obcházení ověření. Stejný mechanismus mají unit testy (`test/auth-helpers.ts`).
 - **Kurzy**: jednotné kurzy v `apps/web/lib/tax-config.ts` jsou zatím ORIENTAČNÍ
   (přesný jen 2025 dle D-75) — výdaj se přepočítává kurzem roku nákupu!
 - `pkill` nezabije `next start` — použij `fuser -k PORT/tcp`.
