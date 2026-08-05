@@ -357,3 +357,49 @@ export const waitlist = pgTable('waitlist', {
   email: text('email').primaryKey(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+/**
+ * Roční hlídání (docs/19). Jedna aktivní řádka na uživatele; historii obnov
+ * drží Stripe. `source: 'grant'` je ruční přidělení bez platby (partneři,
+ * kompenzace) — proto nejsou stripe sloupce povinné.
+ */
+export const subscriptions = pgTable('subscriptions', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** 'active' | 'past_due' | 'canceled' — mapuje stav ze Stripe. */
+  status: text('status').notNull(),
+  /** Do kdy je zaplaceno; po tomhle datu hlídání nefunguje ani u 'active'. */
+  currentPeriodEnd: timestamp('current_period_end').notNull(),
+  /** Uživatel zrušil obnovu, ale do konce období mu služba běží dál. */
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+  source: text('source').notNull().default('stripe'),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  /** Použitý promokód — podklad pro výplaty partnerům (docs/19). */
+  promoCode: text('promo_code'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * Jednorázový nákup podkladů k přiznání za JEDEN daňový rok (docs/19).
+ * Platí navždy — jednou zaplacený rok zůstává odemčený.
+ */
+export const reportPurchases = pgTable(
+  'report_purchases',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    promoCode: text('promo_code'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  // druhý nákup téhož roku nedává smysl a webhook chodí i opakovaně
+  (t) => [uniqueIndex('report_purchases_user_year_idx').on(t.userId, t.taxYear)],
+);
