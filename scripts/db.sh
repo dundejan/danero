@@ -3,11 +3,11 @@
 # v terminálu, v historii nebo v logu. Čte ho z ~/.danero/produkce.env
 # (mimo repozitář, práva 600) — viz docs/08-provoz.md.
 #
-#   scripts/db.sh stav      — počty tabulek, migrací a účtů
-#   scripts/db.sh migrace   — aplikuje čekající migrace
-#   scripts/db.sh zaloha    — logický dump do ./zalohy/ (gitignorováno)
+#   scripts/db.sh status    — počty tabulek, migrací a účtů
+#   scripts/db.sh migrate   — aplikuje čekající migrace
+#   scripts/db.sh backup    — logický dump do ./zalohy/ (gitignorováno)
 #
-# Běžné migrace při nasazení řeší GitHub Actions (.github/workflows/migrace.yml),
+# Běžné migrace při nasazení řeší GitHub Actions (.github/workflows/migrate.yml),
 # tenhle skript je pro ruční zásahy a zálohy.
 
 set -euo pipefail
@@ -30,14 +30,14 @@ if [ -z "$DATABASE_URL" ]; then
   exit 1
 fi
 
-case "${1:-stav}" in
-  stav)
+case "${1:-status}" in
+  status)
     cd "$REPO/apps/web" && node db/status.mjs
     ;;
-  migrace)
+  migrate)
     cd "$REPO/apps/web" && pnpm exec drizzle-kit migrate && node db/status.mjs
     ;;
-  zaloha)
+  backup)
     mkdir -p "$REPO/zalohy"
     OUT="$REPO/zalohy/danero-$(date +%F).dump"
     pg_dump "$DATABASE_URL" -Fc -f "$OUT"
@@ -45,7 +45,7 @@ case "${1:-stav}" in
     echo "⚠️  uchovávej mimo tenhle stroj a ODDĚLENĚ od DANERO_ENCRYPTION_KEY"
     ;;
   *)
-    echo "Použití: scripts/db.sh [stav|migrace|zaloha]" >&2
+    echo "Použití: scripts/db.sh [status|migrate|backup]" >&2
     exit 1
     ;;
 esac

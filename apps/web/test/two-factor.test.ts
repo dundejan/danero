@@ -21,11 +21,11 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
       password: 'superbezpecneheslo',
       name: 'Dvoufaktor',
     });
-    const prvniPrihlaseni = await auth.api.signInEmail({
+    const firstSignIn = await auth.api.signInEmail({
       body: { email: '2fa@test.cz', password: 'superbezpecneheslo' },
       asResponse: true,
     });
-    const sessionCookies = cookiesFrom(prvniPrihlaseni);
+    const sessionCookies = cookiesFrom(firstSignIn);
     expect(sessionCookies).toContain('session_token');
 
     // zapnutí 2FA (vyžaduje heslo) → totpURI + záložní kódy
