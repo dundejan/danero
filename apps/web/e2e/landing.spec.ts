@@ -33,8 +33,11 @@ test('landing: hero, živé komponenty a ceník', async ({ page }) => {
   // odkaz v hlavičce (menu: Platformy · Ceník · Časté otázky · O projektu)
   await expect(page.locator('header').getByRole('link', { name: 'Ceník' })).toBeVisible();
 
-  // ceník přímo na stránce — rok 2026 zdarma + cena od 2027 s měsíční kotvou
-  await expect(page.getByRole('heading', { name: 'Rok 2026: všechno zdarma' })).toBeVisible();
+  // ceník přímo na stránce — free vrstva + obě placené ceny s měsíční kotvou
+  await expect(
+    page.getByRole('heading', { name: 'Zjistit, jak na tom jsi, je zdarma' }),
+  ).toBeVisible();
+  await expect(page.getByText('490 Kč', { exact: true })).toBeVisible();
   await expect(page.getByText('990 Kč ročně', { exact: true })).toBeVisible();
   await expect(page.getByText(/necelých 83 Kč měsíčně/)).toBeVisible();
 
@@ -55,7 +58,7 @@ test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
 
   // FAQ: přechod na placené — bez karty se nic nestrhne
-  const cena = page.locator('details', { hasText: 'Co se stane v roce 2027?' });
+  const cena = page.locator('details', { hasText: 'Co je zdarma a za co se platí?' });
   await cena.locator('summary').click();
   await expect(cena.getByText(/nic se nestrhne samo/)).toBeVisible();
 });

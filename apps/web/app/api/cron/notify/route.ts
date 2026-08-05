@@ -1,5 +1,6 @@
 import { getDb } from '@/db';
 import { withCron } from '@/lib/cron-auth';
+import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import {
   listNotificationTargets,
   processUserNotifications,
@@ -12,7 +13,15 @@ export const GET = withCron('notify', async (_request: Request): Promise<Respons
 
   const db = await getDb();
   const send = resolveEmailSender();
-  const targets = await listNotificationTargets(db);
+  const allTargets = await listNotificationTargets(db);
+
+  // Celoroční hlídání je placené (docs/19). Neplatícím se denní běh nedělá vůbec —
+  // ne kvůli e-mailu, ale protože ten přepočet je ta drahá část. Svůj stav uvidí
+  // kdykoli v aplikaci, počítá se jim on-demand při otevření.
+  const paying = await usersWithActiveSubscription(db);
+  const targets = billingEnabled()
+    ? allTargets.filter((target) => paying.has(target.id))
+    : allTargets;
 
   const results: Array<{ userId: string; created?: number; emailed?: number; error?: string }> =
     [];
@@ -28,5 +37,9 @@ export const GET = withCron('notify', async (_request: Request): Promise<Respons
     }
   }
 
-  return Response.json({ users: targets.length, results });
+  return Response.json({
+    users: targets.length,
+    withoutSubscription: allTargets.length - targets.length,
+    results,
+  });
 });

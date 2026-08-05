@@ -13,7 +13,7 @@ export default function SignUpPage() {
         </Link>
         <h1 className="font-display text-3xl font-bold">Registrace</h1>
         <p className="mt-2 text-sm text-inkoust-tlumeny">
-          Za rok 2026 všechno zdarma. Bez karty, stačí e-mail.
+          Účet je zdarma a bez karty. Stačí e-mail.
         </p>
         <p className="mt-1 text-sm text-inkoust-tlumeny">
           Už máš účet?{' '}

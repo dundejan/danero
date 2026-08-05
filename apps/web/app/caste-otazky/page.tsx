@@ -67,8 +67,8 @@ const FAQ: FaqItem[] = [
     a: 'Ano. Kryptoaktiva mají od 15. 2. 2025 vlastní limit 100 000 Kč i vlastní tříletý časový test — hlídáme obojí zvlášť, nezávisle na akciích. Opce a další deriváty se počítají jako samostatný druh příjmu bez osvobození. Všechno si můžeš prohlédnout v demu.',
   },
   {
-    q: 'Co se stane v roce 2027?',
-    a: 'Kdo se zaregistruje do konce roku 2026, má daňový rok 2026 zdarma navždy — včetně podkladů k přiznání, které se podává až na jaře 2027. Placené je pak hlídání dalších let za 990 Kč ročně. Kartu od tebe nemáme, nic se nestrhne samo a data ti zůstanou.',
+    q: 'Co je zdarma a za co se platí?',
+    a: 'Zdarma je import výpisů ze všech platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (490 Kč za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API (990 Kč ročně). Účet založíš bez karty a nic se nestrhne samo.',
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',

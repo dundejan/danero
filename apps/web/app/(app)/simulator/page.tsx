@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import { analyzeTaxYear } from '@danero/engine';
+import { PaywallCard } from '@/components/paywall-card';
 import { SimulatorView, type SimParams } from '@/components/views/simulator-view';
 import { getDb } from '@/db';
+import { resolveEntitlements } from '@/lib/entitlements';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import {
   dailyRatesForProfile,
@@ -26,6 +28,25 @@ export default async function SimulatorPage({
 
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) redirect('/prehled');
+
+  const entitlements = await resolveEntitlements(db, user.id);
+  if (!entitlements.simulator) {
+    return (
+      <main className="py-12">
+        <PaywallCard
+          title="Simulátor prodeje"
+          body={
+            <>
+              Spočítá, co se stane s tvojí daní, když teď prodáš konkrétní pozici — ještě
+              než to uděláš. Ukáže i datum, kdy bude prodej osvobozený, takže poznáš,
+              jestli se vyplatí počkat.
+            </>
+          }
+          price="Součást hlídání za 990 Kč ročně"
+        />
+      </main>
+    );
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   const year = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today

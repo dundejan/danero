@@ -7,32 +7,53 @@ import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-pa
 export const metadata: Metadata = {
   title: 'Ceník — Danero',
   description:
-    'Za rok 2026 je Danero zdarma. Od roku 2027 990 Kč ročně — jedna cena, žádné tarify, všechny funkce: živé napojení na brokery, hlídání limitů, podklady k přiznání včetně XML.',
+    'Nahrát výpisy a zjistit, jak na tom jsi, je v Daneru zdarma. Podklady k přiznání za jeden rok 490 Kč, celoroční hlídání s napojením na brokery 990 Kč ročně.',
 };
 
-const INCLUDED = [
-  'Živé napojení na Trading 212, Interactive Brokers i Lynx a denní přepočet',
-  'Hlídání limitů a časových testů s e-mailovými upozorněními',
-  'Horizont osvobození a simulátor prodeje',
-  'Podklady k přiznání včetně XML pro podatelnu',
-  '29 podporovaných platforem — API, výpisy i univerzální šablona',
+const FREE = [
+  'Import výpisů — neomezeně platforem',
+  'Limity 100 000 Kč i 50 000 Kč v reálném čase',
+  'Stav tříletých časových testů',
+  'Orientační daň z investic',
   'Krypto i deriváty jako samostatné druhy příjmů',
-  'Dvoufaktorové přihlášení, klíče šifrované AES-256-GCM',
-  'Export a smazání dat kdykoli — účet je tvůj',
+] as const;
+
+const ONE_OFF = [
+  'Všechno ze zdarma',
+  'Čísla přesně do řádků přiznání',
+  'XML pro elektronické podání',
+  'Rozpad na jednotlivé nákupy a použité kurzy',
+  'Srovnání variant výpočtu (FIFO/LIFO, kurzy)',
+] as const;
+
+const FULL = [
+  'Všechno z podkladů — za všechny daňové roky',
+  'Živé napojení na Trading 212, IBKR i Lynx',
+  'Automatický denní sync a přepočet',
+  'E-mailová upozornění na limity a termíny',
+  'Simulátor prodeje a horizont osvobození',
 ] as const;
 
 const CENIK_FAQ = [
   {
-    q: 'Proč je rok 2026 zdarma?',
-    a: 'Protože Danero teprve začíná a chceme první uživatele, ne jejich peníze. Máš všechny funkce bez omezení a bez karty — stačí e-mail.',
+    q: 'Co přesně je zdarma?',
+    a: 'Nahrávání výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá: kolik ti zbývá do limitů, jak jsi na tom s tříletými časovými testy a orientační daň. Bez omezení počtu platforem — schválně, protože limity se sčítají přes všechny a s neúplnými daty by ti Danero lhalo.',
   },
   {
-    q: 'Co se stane v roce 2027?',
-    a: 'Kdo se zaregistruje do konce roku 2026, má daňový rok 2026 zdarma navždy — včetně podkladů k přiznání, které se podává až na jaře 2027. Placené je pak hlídání dalších let. Kartu od tebe nemáme, nic se nestrhne samo a data ti zůstanou.',
+    q: 'Proč je napojení přes API placené?',
+    a: 'Protože to je ta část, která běží každý den sama a něco stojí — Danero si u brokera samo stahuje nové obchody, přepočítává je a hlídá limity. Stejná čísla dostaneš zdarma, když si výpis jednou za čas nahraješ sám.',
   },
   {
-    q: 'Proč jedna cena, a ne tarify?',
-    a: 'Protože daně nejsou prémiová funkce. Limity, časové testy i podklady k přiznání potřebuje každý investor stejně — ať má pět pozic, nebo padesát.',
+    q: 'Kdy se mi vyplatí jednorázové podklady a kdy roční hlídání?',
+    a: 'Podklady za 490 Kč, když víš, že letos přiznání podáváš, a víc od Danera nechceš. Hlídání za 990 Kč, když chceš mít klid celý rok — Danero pak samo sleduje limity a časové testy, ozve se e-mailem a podklady máš za všechny roky v ceně.',
+  },
+  {
+    q: 'Obnovuje se předplatné samo?',
+    a: 'Ano, ale nikdy potichu — 14 dní předem ti přijde e-mail. Zrušit ho můžeš kdykoli jedním kliknutím a služba ti doběhne do konce zaplaceného období.',
+  },
+  {
+    q: 'Proč jedna cena, a ne tarify podle počtu brokerů?',
+    a: 'Protože limity 100 000 Kč i 50 000 Kč se sčítají přes všechny platformy. Kdybychom ti plotem bránili připojit druhého brokera, počítali bychom ti špatná čísla — a přesně před tím tě má Danero chránit.',
   },
 ] as const;
 
@@ -41,53 +62,102 @@ export default function CenikPage() {
     <MarketingPage active="cenik">
       <PageHero
         eyebrow="Ceník"
-        title="Jedna cena. Žádné tarify."
-        lede="Za rok 2026 je všechno zdarma — stačí e-mail, kartu nechceme. Od roku 2027 990 Kč ročně, tedy necelých 83 Kč měsíčně."
+        title="Zjistit, jak na tom jsi, je zdarma"
+        lede="Platíš, až když chceš podklady k přiznání — nebo aby to Danero hlídalo za tebe. Žádné tarify podle počtu brokerů: limity se sčítají přes všechny platformy, takže je musíš mít připojené všechny."
       />
 
       <section aria-label="Cena a obsah" className="mt-12">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-8">
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-ruzova-text">
-              Rok 2026
-            </p>
-            <p className="mt-3 font-display text-5xl font-bold tracking-tight">zdarma</p>
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
-              všechny funkce, bez karty, bez závazků
-            </p>
-            <div className="mt-6 border-t border-ruzova/20 pt-6">
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                Od roku 2027
-              </p>
-              <p className="mt-2 font-display text-3xl font-bold tracking-tight">
-                990 Kč <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
-              </p>
-              <p className="mt-1 text-sm text-inkoust-tlumeny">
-                necelých 83 Kč měsíčně — méně než jedna chyba v přiznání
-              </p>
-            </div>
-            <Link
-              href="/registrace"
-              className="mt-6 inline-block w-full rounded-md bg-ruzova-syta px-6 py-3 text-center font-semibold text-white hover:opacity-90"
-            >
-              Založit účet zdarma
-            </Link>
-            <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
-              bez karty — v roce 2027 se rozhodneš sám
-            </p>
-          </div>
+        <div className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-lg border border-linka bg-plocha p-8">
-            <h2 className="font-display text-xl font-bold">Všechno je v ceně</h2>
-            <ul className="mt-5 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-              {INCLUDED.map((item) => (
+            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+              Zdarma
+            </p>
+            <p className="mt-3 font-display text-4xl font-bold tracking-tight">0 Kč</p>
+            <p className="mt-2 text-sm text-inkoust-tlumeny">navždy, bez karty</p>
+            <ul className="mt-6 grid gap-3">
+              {FREE.map((item) => (
                 <li key={item} className="flex items-start gap-2.5 text-sm">
                   <IconCheck />
                   <span>{item}</span>
                 </li>
               ))}
             </ul>
+            <Link
+              href="/registrace"
+              className="mt-6 inline-block w-full rounded-md border border-linka px-6 py-3 text-center font-semibold hover:border-inkoust-tlumeny"
+            >
+              Založit účet
+            </Link>
+          </div>
+
+          <div className="rounded-lg border border-linka bg-plocha p-8">
+            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+              Podklady za rok
+            </p>
+            <p className="mt-3 font-display text-4xl font-bold tracking-tight">490 Kč</p>
+            <p className="mt-2 text-sm text-inkoust-tlumeny">
+              jednorázově za jeden daňový rok
+            </p>
+            <ul className="mt-6 grid gap-3">
+              {ONE_OFF.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-sm">
+                  <IconCheck />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/registrace"
+              className="mt-6 inline-block w-full rounded-md border border-linka px-6 py-3 text-center font-semibold hover:border-inkoust-tlumeny"
+            >
+              Začít zdarma
+            </Link>
+            <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
+              koupíš až ve chvíli, kdy podklady potřebuješ
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-8">
+            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-ruzova-text">
+              Celoroční hlídání
+            </p>
+            <p className="mt-3 font-display text-4xl font-bold tracking-tight">
+              990 Kč <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
+            </p>
+            <p className="mt-2 text-sm text-inkoust-tlumeny">
+              necelých 83 Kč měsíčně — méně než jedna chyba v přiznání
+            </p>
+            <ul className="mt-6 grid gap-3">
+              {FULL.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-sm">
+                  <IconCheck />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/registrace"
+              className="mt-6 inline-block w-full rounded-md bg-ruzova-syta px-6 py-3 text-center font-semibold text-white hover:opacity-90"
+            >
+              Založit účet
+            </Link>
+            <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
+              obnova s e-mailem 14 dní předem, zrušíš kdykoli
+            </p>
           </div>
         </div>
+        <p className="mt-6 text-center text-sm text-inkoust-tlumeny">
+          Ceny jsou konečné. Danero si můžeš{' '}
+          <a
+            href="https://github.com/dundejan/danero"
+            className="font-medium text-ruzova-text underline underline-offset-2"
+            target="_blank"
+            rel="noreferrer"
+          >
+            provozovat i sám
+          </a>{' '}
+          — kód je otevřený a tam neplatíš nic.
+        </p>
       </section>
 
       <section aria-labelledby="cenik-faq-nadpis" className="mt-24 lg:mt-32">

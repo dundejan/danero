@@ -321,7 +321,7 @@ export default async function LandingPage({
             <SignupCta className={CTA_SECONDARY} />
           </div>
           <p className="mt-3 text-sm text-inkoust-tlumeny">
-            Rok 2026 máš zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
+            Přehled o limitech máš zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
             <Link
               href="/kalkulacka"
               className="font-medium text-ruzova-text underline underline-offset-2"
@@ -659,14 +659,15 @@ export default async function LandingPage({
                   id="cenik-nadpis"
                   className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
                 >
-                  Rok 2026: všechno zdarma
+                  Zjistit, jak na tom jsi, je zdarma
                 </h2>
                 {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
                 <p className="mt-3 text-inkoust-tlumeny">
-                  Od roku 2027{' '}
+                  Import výpisů, limity i časové testy zdarma navždy. Podklady k přiznání
+                  za jeden rok <strong className="text-inkoust tabular-nums">490 Kč</strong>,
+                  celoroční hlídání s napojením na brokery{' '}
                   <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
-                  necelých <span className="tabular-nums">83 Kč</span> měsíčně. Jedna cena,
-                  žádné tarify, všechny funkce pro každého. Stačí e-mail, karta ne.
+                  necelých <span className="tabular-nums">83 Kč</span> měsíčně.
                 </p>
                 <p className="mt-4">
                   <Link
@@ -680,7 +681,7 @@ export default async function LandingPage({
               <div className="flex flex-col items-start gap-3 lg:items-end">
                 <SignupCta className={CTA_PRIMARY} />
                 <p className="text-xs text-inkoust-tlumeny">
-                  Bez karty a bez závazků — v roce 2027 se rozhodneš sám.
+                  Účet zdarma a bez karty — platíš, až když budeš chtít.
                 </p>
               </div>
             </div>

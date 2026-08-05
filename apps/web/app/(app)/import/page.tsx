@@ -264,7 +264,9 @@ export default async function ImportPage({
                     ? 'Příliš mnoho nahrání za sebou — počkej chvíli a zkus to znovu.'
                     : chyba === 'zadny-ucet'
                       ? 'Tenhle účet u brokera už neexistuje — obnov stránku.'
-                      : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                      : chyba === 'api-placene'
+                        ? 'Automatické napojení přes API je součástí hlídání za 990 Kč ročně. Nahrát výpis ze stejného brokera můžeš zdarma dál — čísla budou stejná.'
+                        : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}

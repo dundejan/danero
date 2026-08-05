@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { analyzeTaxYear, compareVariants } from '@danero/engine';
+import { PaywallCard } from '@/components/paywall-card';
 import { ReportView } from '@/components/views/report-view';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { getDb } from '@/db';
@@ -10,6 +11,7 @@ import {
   loadDailyRates,
   loadTransactions,
 } from '@/lib/portfolio';
+import { canGenerateReport } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 
@@ -32,6 +34,26 @@ export default async function ReportPage({
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+
+  // podklady se odemykají po daňových letech: buď předplatným, nebo nákupem
+  // konkrétního roku (docs/19)
+  if (!(await canGenerateReport(db, user.id, year))) {
+    return (
+      <main className="py-12">
+        <PaywallCard
+          title={`Podklady k přiznání za rok ${year}`}
+          body={
+            <>
+              Čísla přesně do řádků přiznání, rozpad na jednotlivé nákupy, použité kurzy
+              s odkazem na pokyn GFŘ a XML pro elektronické podání. Srovná i varianty
+              výpočtu, ať víš, která ti vychází líp.
+            </>
+          }
+          price={`490 Kč za rok ${year} — nebo 990 Kč ročně se všemi roky a hlídáním`}
+        />
+      </main>
+    );
+  }
 
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
   const dailyRates = await loadDailyRates(db, txs, currentYear);
