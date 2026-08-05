@@ -1,6 +1,9 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, lt } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { auditLog } from '@/db/schema';
+
+/** Doba držení audit logu — musí sedět na to, co slibuje /soukromi. */
+export const AUDIT_RETENTION_DAYS = 90;
 
 /**
  * Audit události účtu (G8b) — transparentnost pro uživatele v nastavení.
@@ -41,6 +44,18 @@ export async function logAudit(
   } catch (error) {
     console.error('[audit] zápis selhal:', error);
   }
+}
+
+/**
+ * Smaže audit záznamy starší než AUDIT_RETENTION_DAYS. Bez tohohle úklidu by
+ * /soukromi lhalo — slibuje 90 dní, ale nic je nemazalo. Vrací počet smazaných.
+ */
+export async function pruneAuditLog(db: Db, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const deleted = await db.delete(auditLog).where(lt(auditLog.createdAt, cutoff)).returning({
+    id: auditLog.id,
+  });
+  return deleted.length;
 }
 
 export async function recentAuditEvents(db: Db, userId: string, limit = 20) {

@@ -96,12 +96,13 @@ z další sekce.
 
 ## Naplánované úlohy
 
-Danero potřebuje čtyři pravidelné joby. V compose je má na starost služba `cron`,
+Danero potřebuje pět pravidelných jobů. V compose je má na starost služba `cron`,
 na Vercelu je definuje `apps/web/vercel.json`; jinde je zavolej běžným cronem —
 jsou to prosté `GET` požadavky s hlavičkou
 `Authorization: Bearer $CRON_SECRET`:
 
 ```cron
+15 4 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://tvoje.domena/api/cron/maintenance
 45 4 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://tvoje.domena/api/cron/fx
  0 5 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://tvoje.domena/api/cron/sync-brokers
 30 5 * * *  curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://tvoje.domena/api/cron/notify
@@ -114,6 +115,7 @@ jsou to prosté `GET` požadavky s hlavičkou
 | `sync-brokers` | stáhne nové transakce ze všech napojených platforem |
 | `notify` | přepočítá limity a časové testy a rozešle upozornění |
 | `jobs` | záchranná síť — dokončí běhy, které spadly nebo se nestihly |
+| `maintenance` | smaže data po retenční lhůtě (audit log po 90 dnech) |
 
 ⚠️ **První plný sync trvá dlouho** — Trading 212 pouští export ~1×/min, takže
 celá historie zabere minuty až ~10. Pod serverless funkcí s krátkým časovým

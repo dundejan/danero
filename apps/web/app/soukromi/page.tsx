@@ -69,8 +69,9 @@ export default function PrivacyPage() {
         <p>
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
           všechno odstraníme. Technický audit log (záznamy o přihlášeních a synchronizacích)
-          držíme 90 dní, zálohy databáze se přepisují po 30 dnech — smazaná data tedy
-          zmizí i ze záloh nejpozději do 30 dní. Když se odhlásíš z e-mailových
+          držíme 90 dní a starší se každý den automaticky mažou. Zálohy databáze se
+          přepisují průběžně, nejdéle po dvou měsících — smazaná data tedy zmizí i ze
+          záloh nejpozději do 60 dnů. Když se odhlásíš z e-mailových
           upozornění, e-maily ti přestanou chodit okamžitě — nastavení si pamatujeme
           u tvého účtu, dokud ho nesmažeš.
         </p>

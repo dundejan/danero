@@ -20,18 +20,19 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    (produkční URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`.
 4. **Cron**: `apps/web/vercel.json` definuje denní sync všech brokerů v 5:00 UTC
    (`/api/cron/sync-brokers`), notifikace v 5:30 (`/api/cron/notify`) a hodinovou
-   záchrannou síť background jobů (`/api/cron/jobs`); Vercel posílá
+   záchrannou síť background jobů (`/api/cron/jobs`) a denní úklid dat po
+   retenční lhůtě v 4:15 (`/api/cron/maintenance`); Vercel posílá
    `Authorization: Bearer $CRON_SECRET` sám. Pozor: hodinový cron vyžaduje placený
    plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz „Limity Vercel funkcí"
    níže.
 
 ## Migrace databáze
 
-**Nespouštějí se ručně.** Řídí je `.github/workflows/migrace.yml`:
+**Nespouštějí se ručně.** Řídí je `.github/workflows/migrate.yml`:
 
 - **samy** při pushi do `main`, který mění `apps/web/db/migrations/**`,
-- **na vyžádání**: `gh workflow run migrace.yml` (nebo tlačítko „Run workflow";
-  volba `stav` jen vypíše počty, nic nemění).
+- **na vyžádání**: `gh workflow run migrate.yml` (nebo tlačítko „Run workflow";
+  volba `status` jen vypíše počty, nic nemění).
 
 Připojovací řetězec je v secretu `PRODUCTION_DATABASE_URL` (přímý, nepoolovaný).
 Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
@@ -39,10 +40,10 @@ Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
 
 ⚠️ **Migrace, která musí předcházet kódu** (typicky doplnění dat, na které nový
 kód spoléhá — třeba 0021), se pouští **před** nasazením: `gh workflow run
-migrace.yml`, počkat na doběhnutí, teprve pak push kódu. Automatický běh na
+migrate.yml`, počkat na doběhnutí, teprve pak push kódu. Automatický běh na
 pushi jede paralelně s buildem na Vercelu a pořadí negarantuje.
 
-Ruční zásahy a zálohy: `scripts/db.sh [stav|migrace|zaloha]`. Bere řetězec
+Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup]`. Bere řetězec
 z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
 `chmod 600`) a nikdy ho nevypisuje.
 
@@ -71,9 +72,10 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
 - **PITR**: Neon drží point-in-time recovery (dle plánu 7–30 dní). Obnova:
   Neon Console → Branches → „Restore from history" → nový branch k času T →
   přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
-- **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh zaloha`
-  → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Uchovávat 8 týdnů mimo
-  Neon (S3/Backblaze). Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+- **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh backup`
+  → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Uchovávat **nejvýš 8 týdnů**
+  mimo Neon (S3/Backblaze) — `/soukromi` slibuje, že smazaná data zmizí ze záloh
+  do 60 dnů, delší držení by z toho udělalo lež. Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
 
   ⚠️ **Zálohy nikdy nedělej přes GitHub Actions.** Repozitář je veřejný a
   artefakty veřejného repozitáře si může stáhnout kdokoli — byl by to únik dat

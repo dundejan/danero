@@ -29,7 +29,19 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 
 ## Pravidla (závazná)
 
-1. **Vše uživatelské česky** (UI, chyby, e-maily); commit messages česky. Kód/identifikátory anglicky, komentáře česky.
+1. **Jazyk: česky mluvíme na uživatele, anglicky programujeme.**
+   - **Česky:** všechno, co člověk čte — UI texty, chybové hlášky, e-maily,
+     dokumentace, komentáře v kódu, popisy testů (`it('…')`), commit messages.
+     A taky dvě věci, které vypadají jako kód, ale uživatel je vidí:
+     **URL aplikačních stránek** (`/prihlaseni`, `/zapomenute-heslo`) a
+     **`name` atributy formulářových polí** (`heslo`, `jmeno`, `kod`).
+   - **Anglicky:** všechny identifikátory bez výjimky — proměnné, funkce, typy,
+     sloupce v DB, klíče v JSON odpovědích, interní API routy (`/api/cron/*`),
+     názvy souborů, podpříkazy skriptů, id jobů a vstupů v GitHub Actions.
+   - **Když váháš:** přečte to uživatel → česky. Zpracovává to stroj → anglicky.
+   - ⚠️ Ověřeno bolestí (5. 8. 2026): do kódu se vloudily identifikátory jako
+     `hranice`, `smazane`, `akce`, `udrzba` a musely se plošně přepisovat.
+     Zbytek repozitáře je důsledně anglický — drž to.
 2. **Daňová logika jen podle docs/02** — každé pravidlo má ID R-xx; nové pravidlo
    nejdřív doplň do docs/02 (se zdrojem: paragraf, pokyn GFŘ), pak implementuj,
    testy odkazují na R-xx. Sporné výklady = konfigurační přepínač: **default bezpečný**,
