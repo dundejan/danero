@@ -68,7 +68,7 @@ export default async function SettingsPage({
     'Přístup z příkazové řádky (např. skript). Pokud ho nepoznáváš, odhlas ostatní zařízení.';
   const OK_LABELS: Record<string, string> = {
     heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
-    email: 'E-mail změněn.',
+    email: 'E-mail změněn. Poslali jsme na novou adresu ověřovací odkaz — potvrď ho, jinak se příště nepřihlásíš.',
     odhlaseno: 'Ostatní zařízení byla odhlášena.',
     profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
     notifikace: 'Uloženo. E-maily se řídí novým nastavením.',

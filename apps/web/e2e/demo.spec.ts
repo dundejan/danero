@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { linkFromEmail } from './helpers';
 
 /**
  * Demo prohlídka: návštěvník bez registrace vidí vizuálně totéž co přihlášený
@@ -165,6 +166,9 @@ test('onboarding: registrace → průvodce → profil → výzva k datům', asyn
   await page.getByLabel('E-mail').fill('onboarding@danero.cz');
   await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
   await page.getByRole('button', { name: 'Vytvořit účet' }).click();
+  // registrace nepřihlašuje — nejdřív potvrzení adresy odkazem z e-mailu
+  await page.waitForURL('**/overeni-emailu**');
+  await page.goto(await linkFromEmail(page, 'onboarding@danero.cz'));
   await page.waitForURL('**/vitejte');
 
   await expect(page.getByText('Vítej v Daneru')).toBeVisible();
