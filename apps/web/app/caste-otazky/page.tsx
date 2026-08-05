@@ -67,8 +67,8 @@ const FAQ: FaqItem[] = [
     a: 'Ano. Kryptoaktiva mají od 15. 2. 2025 vlastní limit 100 000 Kč i vlastní tříletý časový test — hlídáme obojí zvlášť, nezávisle na akciích. Opce a další deriváty se počítají jako samostatný druh příjmu bez osvobození. Všechno si můžeš prohlédnout v demu.',
   },
   {
-    q: 'Co se stane, až beta skončí?',
-    a: 'Dáme ti vědět e-mailem. Kartu od tebe nemáme, nic se nestrhne samo — sám se rozhodneš, jestli budeš pokračovat za 990 Kč ročně. Data ti zůstanou.',
+    q: 'Co se stane v roce 2027?',
+    a: 'Kdo se zaregistruje do konce roku 2026, má daňový rok 2026 zdarma navždy — včetně podkladů k přiznání, které se podává až na jaře 2027. Placené je pak hlídání dalších let za 990 Kč ročně. Kartu od tebe nemáme, nic se nestrhne samo a data ti zůstanou.',
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',
@@ -94,7 +94,7 @@ export default function CasteOtazkyPage() {
       </div>
 
       <p className="mt-8 max-w-3xl text-sm text-inkoust-tlumeny">
-        Otázky přímo k ceně a betě najdeš na stránce{' '}
+        Otázky přímo k ceně najdeš na stránce{' '}
         <Link
           href="/cenik"
           className="font-medium text-ruzova-text underline underline-offset-2"

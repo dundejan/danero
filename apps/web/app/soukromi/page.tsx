@@ -7,14 +7,10 @@ export const metadata = {
     'Jaká data Danero zpracovává, proč, jak dlouho a jaká máš práva — bez cookie lišty a bez trackerů.',
 };
 
-/** ⚠️ PRACOVNÍ NÁVRH — před veřejným spuštěním musí projít právní kontrolou. */
 export default function PrivacyPage() {
   return (
     <MarketingPage>
       <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
-      <p className="rounded-md border border-jantar px-4 py-2 text-sm text-jantar-text">
-        Pracovní návrh zásad pro beta provoz — finální znění projde právní kontrolou.
-      </p>
       <div>
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
           Právní
@@ -132,7 +128,7 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 1.2 (beta) · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.0 · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">
