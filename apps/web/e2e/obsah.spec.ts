@@ -78,5 +78,10 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
 
   await page.goto('/cenik');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await expect(page.getByText('990 Kč ročně').first()).toBeVisible();
+  // tři tarify (docs/19): zdarma · jednorázové podklady · celoroční hlídání
+  await expect(page.getByText('0 Kč', { exact: true })).toBeVisible();
+  await expect(page.getByText('490 Kč', { exact: true })).toBeVisible();
+  await expect(page.getByText(/990 Kč/).first()).toBeVisible();
+  // free vrstva nesmí být omezená počtem platforem — limity se sčítají přes všechny
+  await expect(page.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
 });

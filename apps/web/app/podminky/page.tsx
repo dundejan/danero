@@ -68,9 +68,10 @@ export default function TermsPage() {
 
         <h2 className="font-display text-lg font-semibold">3. Cena a rozsah služby</h2>
         <p>
-          Za daňový rok 2026 je Danero zdarma pro všechny — včetně podkladů k přiznání,
-          které se podává na jaře 2027. Od roku 2027 je celoroční hlídání placené;
-          aktuální cenu najdeš vždy na stránce{' '}
+          Základní použití je zdarma a bez časového omezení: import výpisů ze všech
+          podporovaných platforem a přehled limitů, časových testů a orientační daně.
+          Placené jsou podklady k přiznání za konkrétní daňový rok a celoroční hlídání
+          s automatickým napojením na brokery. Aktuální ceny najdeš vždy na stránce{' '}
           <Link href="/cenik" className="font-medium text-ruzova">
             Ceník
           </Link>{' '}
