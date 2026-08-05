@@ -1,0 +1,54 @@
+name: Migrace produkční databáze
+
+# Migrace se pouštějí samy, když se v repu objeví nová (push do main mění
+# db/migrations/**), a kdykoli ručně přes „Run workflow" nebo
+# `gh workflow run migrace.yml`. Připojovací řetězec je jen v secrets —
+# do logu se nedostane a nikdo ho nemusí mít v terminálu.
+on:
+  workflow_dispatch:
+    inputs:
+      akce:
+        description: Co provést
+        type: choice
+        default: migrace
+        options: [migrace, stav]
+  push:
+    branches: [main]
+    paths: ['apps/web/db/migrations/**']
+
+# dvě migrace nad jednou databází naráz = rozbité schéma
+concurrency:
+  group: migrace-produkce
+  cancel-in-progress: false
+
+jobs:
+  migrace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Stav před
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: node db/status.mjs
+
+      - name: Migrace
+        if: inputs.akce != 'stav'
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: pnpm exec drizzle-kit migrate
+
+      - name: Stav po
+        if: inputs.akce != 'stav'
+        working-directory: apps/web
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: node db/status.mjs
