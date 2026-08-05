@@ -11,8 +11,9 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 
 ## Produkce (Vercel + Neon)
 
-1. **Neon**: projekt v regionu EU (Frankfurt) → `DATABASE_URL`. Migrace:
-   `cd apps/web && DATABASE_URL=... pnpm exec drizzle-kit migrate` (spouštět při deployi).
+1. **Neon**: projekt v regionu EU (Frankfurt) → `DATABASE_URL`. Aplikace jede přes
+   **pooled** řetězec (proto `prepare: false`), migrace přes **přímý** —
+   transakční pooler si s DDL nerozumí.
 2. **Vercel**: projekt s root directory `apps/web` (monorepo, pnpm). Funkce region `fra1`.
 3. **Env proměnné** (všechny povinné — aplikace bez nich spadne při startu, viz
    `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
@@ -23,6 +24,27 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    `Authorization: Bearer $CRON_SECRET` sám. Pozor: hodinový cron vyžaduje placený
    plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz „Limity Vercel funkcí"
    níže.
+
+## Migrace databáze
+
+**Nespouštějí se ručně.** Řídí je `.github/workflows/migrace.yml`:
+
+- **samy** při pushi do `main`, který mění `apps/web/db/migrations/**`,
+- **na vyžádání**: `gh workflow run migrace.yml` (nebo tlačítko „Run workflow";
+  volba `stav` jen vypíše počty, nic nemění).
+
+Připojovací řetězec je v secretu `PRODUCTION_DATABASE_URL` (přímý, nepoolovaný).
+Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
+`concurrency`, takže dvě migrace nad jednou databází nemůžou jet naráz.
+
+⚠️ **Migrace, která musí předcházet kódu** (typicky doplnění dat, na které nový
+kód spoléhá — třeba 0021), se pouští **před** nasazením: `gh workflow run
+migrace.yml`, počkat na doběhnutí, teprve pak push kódu. Automatický běh na
+pushi jede paralelně s buildem na Vercelu a pořadí negarantuje.
+
+Ruční zásahy a zálohy: `scripts/db.sh [stav|migrace|zaloha]`. Bere řetězec
+z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
+`chmod 600`) a nikdy ho nevypisuje.
 
 ## Roční runbook (leden)
 
@@ -49,9 +71,13 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
 - **PITR**: Neon drží point-in-time recovery (dle plánu 7–30 dní). Obnova:
   Neon Console → Branches → „Restore from history" → nový branch k času T →
   přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
-- **Týdenní logický dump navíc** (nezávislý na Neonu):
-  `pg_dump "$DATABASE_URL" -Fc -f danero-$(date +%F).dump` — uchovávat 8 týdnů
-  mimo Neon (S3/Backblaze). Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+- **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh zaloha`
+  → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Uchovávat 8 týdnů mimo
+  Neon (S3/Backblaze). Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+
+  ⚠️ **Zálohy nikdy nedělej přes GitHub Actions.** Repozitář je veřejný a
+  artefakty veřejného repozitáře si může stáhnout kdokoli — byl by to únik dat
+  všech uživatelů. Dump patří na tvůj stroj nebo do privátního úložiště.
 - **Ověření obnovy**: po restore spustit `/api/health`, přihlásit se, na
   /prehled zkontrolovat počty transakcí; případné mezery řeší re-sync brokerů
   (idempotentní dedupe) nebo opakovaný import výpisů.
