@@ -173,12 +173,12 @@ export function MarketingFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/dundejan"
+                    href="https://github.com/dundejan/danero"
                     className="font-medium hover:text-inkoust"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    GitHub
+                    Zdrojový kód
                   </a>
                 </li>
                 <li>

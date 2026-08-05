@@ -48,6 +48,33 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
     ),
   },
   {
+    title: 'Nemusíš nám věřit — můžeš si to přečíst',
+    body: (
+      <>
+        Celý zdrojový kód Danera je veřejný na{' '}
+        <a
+          href="https://github.com/dundejan/danero"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHubu
+        </a>{' '}
+        pod licencí AGPL-3.0 — včetně toho, jak nakládáme s klíči a hesly. Bezpečnostní
+        chybu nám nahlas soukromě podle{' '}
+        <a
+          href="https://github.com/dundejan/danero/blob/main/SECURITY.md"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+          target="_blank"
+          rel="noreferrer"
+        >
+          SECURITY.md
+        </a>
+        , ne do veřejného issue.
+      </>
+    ),
+  },
+  {
     title: 'Přihlášení pod tvou kontrolou',
     body: (
       <>

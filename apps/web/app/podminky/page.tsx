@@ -35,7 +35,42 @@ export default function TermsPage() {
           daňového přiznání odpovídá vždy poplatník.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">2. Beta provoz</h2>
+        <h2 className="font-display text-lg font-semibold">
+          2. Na co se tyhle podmínky vztahují
+        </h2>
+        <p>
+          Danero jsou dvě věci a je dobré je nesměšovat:
+        </p>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            <strong>Služba na danero.cz</strong>, kterou provozuje níže uvedený
+            provozovatel. Na ni se vztahují tyhle podmínky i všechna tvoje spotřebitelská
+            práva. Je to jediná instance, kterou provozujeme my.
+          </li>
+          <li>
+            <strong>Software Danero</strong>, jehož zdrojový kód je veřejný pod licencí{' '}
+            <a
+              href="https://www.gnu.org/licenses/agpl-3.0.html"
+              className="font-medium text-ruzova"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GNU AGPL-3.0
+            </a>
+            . Ten si smí kdokoli stáhnout, upravit a provozovat sám. Na takovou vlastní
+            instanci se tyhle podmínky <strong>nevztahují</strong> — software se poskytuje
+            „jak stojí a leží", bez záruky, v rozsahu, který připouští licence a zákon.
+            Kdo si Danero provozuje sám, je vůči datům svých uživatelů sám správcem a
+            odpovídá za ně, včetně povinností podle GDPR.
+          </li>
+        </ul>
+        <p>
+          Název „Danero", logo a doména danero.cz do licence nespadají. Když narazíš na
+          instanci Danera, kterou neprovozujeme my, poznáš to podle adresy — a neplatí pro
+          ni nic z toho, co slibujeme tady.
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">3. Beta provoz</h2>
         <p>
           Služba běží v beta režimu a je poskytována bezplatně. Co konkrétně beta
           znamená: služba nemá garantovanou dostupnost, podpora méně obvyklých brokerů
@@ -45,7 +80,7 @@ export default function TermsPage() {
           a volba výkladu je na tobě. S tímhle rozsahem služby souhlasíš vytvořením účtu.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">3. Tvůj účet a data</h2>
+        <h2 className="font-display text-lg font-semibold">4. Tvůj účet a data</h2>
         <p>
           Účet je osobní a nepřenosný. Do aplikace vkládej pouze data ke svým vlastním
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
@@ -55,7 +90,7 @@ export default function TermsPage() {
           všech svých dat a případné nevyužité předplacené období ti vrátíme.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">4. Odpovědnost</h2>
+        <h2 className="font-display text-lg font-semibold">5. Odpovědnost</h2>
         <p>
           Danero počítá podle zveřejněné metodiky z dat, která do něj vložíš nebo která
           načteme z tvého brokera. Neodpovídáme za výsledek, pokud vstupní data nebyla
@@ -67,7 +102,7 @@ export default function TermsPage() {
           je vůbec).
         </p>
 
-        <h2 className="font-display text-lg font-semibold">5. Provozovatel a kontakt</h2>
+        <h2 className="font-display text-lg font-semibold">6. Provozovatel a kontakt</h2>
         <p>
           Danero je osobní projekt — provozuje ho Jan Dunder, IČO 19642661, se sídlem
           adresa-provozovatele-v-promenne-prostredi (fyzická osoba podnikající dle
@@ -79,7 +114,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">6. Když se neshodneme</h2>
+        <h2 className="font-display text-lg font-semibold">7. Když se neshodneme</h2>
         <p>
           Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
           Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
@@ -105,7 +140,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">7. Rozhodné právo a změny podmínek</h2>
+        <h2 className="font-display text-lg font-semibold">8. Rozhodné právo a změny podmínek</h2>
         <p>
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
           Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo
@@ -118,7 +153,7 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 1.1 (beta) · účinnost od 12. července 2026 · změny oznámíme e-mailem
+        Verze 1.2 (beta) · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

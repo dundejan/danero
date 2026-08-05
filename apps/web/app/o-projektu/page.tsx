@@ -70,6 +70,44 @@ export default function OProjektuPage() {
         </div>
       </section>
 
+      {/* otevřený kód je u daňového nástroje trust signál, ne technikálie:
+          je to jediná odpověď na „proč mám věřit, že to počítáš správně“ */}
+      <section aria-label="Otevřený kód" className="mt-16">
+        <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
+          <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+            Otevřený kód
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
+            <strong className="text-inkoust">Danero si můžeš přečíst.</strong> Celý
+            zdrojový kód i{' '}
+            <a
+              href="https://github.com/dundejan/danero/blob/main/docs/02-danova-pravidla.md"
+              className="font-medium text-ruzova-text underline underline-offset-2"
+              target="_blank"
+              rel="noreferrer"
+            >
+              pravidla, podle kterých počítá
+            </a>{' '}
+            — s odkazy na paragrafy zákona a pokyny GFŘ — jsou veřejné na{' '}
+            <a
+              href="https://github.com/dundejan/danero"
+              className="font-medium text-ruzova-text underline underline-offset-2"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHubu
+            </a>{' '}
+            pod licencí AGPL-3.0. U nástroje, který ti počítá daň, mi to přišlo jako
+            jediná poctivá odpověď na otázku „proč ti mám věřit". Vedlejší efekt: kdyby
+            Danero někdy skončilo, kód zůstane a data si vyvezeš.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">
+            Provozovat si ho můžeš i sám — tady na danero.cz platíš za to, že ho
+            provozovat nemusíš.
+          </p>
+        </div>
+      </section>
+
       {/* věcná identifikace provozovatele — u daní a API klíčů se hodí vědět,
           s kým máš tu čest; detail je v podmínkách užití */}
       <section aria-label="Provozovatel" className="mt-16">
