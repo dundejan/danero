@@ -38,7 +38,7 @@ export function ForgotPasswordForm() {
   // formulář prozrazoval, kdo Danero používá.
   if (sent) {
     return (
-      <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+      <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
         <p className="font-medium">Pokud u nás účet s touhle adresou je, poslali jsme na ni odkaz.</p>
         <p className="mt-2 text-inkoust-tlumeny">
           Zkontroluj schránku i spam. Odkaz platí hodinu a použít ho jde jednou.

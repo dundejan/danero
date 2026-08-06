@@ -10,6 +10,7 @@ import {
   type SyncStatus,
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
+import { errorText } from '@/lib/log';
 import { importParsed, type ImportSummary } from '@/lib/import-service';
 import { upsertInstrumentPrices } from '@/lib/prices';
 
@@ -111,7 +112,7 @@ export async function syncIbkr(
     } catch (error) {
       // přechodné selhání rekonciliace nepřepisuje poslední platný stav —
       // chyba jde do lastSyncError (stejně jako v t212-sync)
-      reconciliationError = error instanceof Error ? error.message : String(error);
+      reconciliationError = errorText(error);
     }
   } else {
     // bez OpenPositions nemáme s čím srovnávat — sync ale PROBĚHL, takže

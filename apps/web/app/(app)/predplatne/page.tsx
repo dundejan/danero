@@ -70,7 +70,7 @@ export default async function SubscriptionPage({
       {stav && STAV_CHYBA[stav] && <Toast kind="chyba" text={STAV_CHYBA[stav]} />}
 
       {!billingEnabled() && (
-        <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
           Tahle instance běží bez plateb — všechny funkce máš odemčené.
         </div>
       )}

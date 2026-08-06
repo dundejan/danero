@@ -39,7 +39,7 @@ export function NewPasswordForm({ token }: { token: string }) {
   if (done) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
           <p className="font-medium">Heslo je změněné.</p>
           <p className="mt-2 text-inkoust-tlumeny">
             Pro jistotu jsme tě odhlásili ze všech zařízení — přihlas se prosím znovu.

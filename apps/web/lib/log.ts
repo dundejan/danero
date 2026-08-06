@@ -5,6 +5,23 @@
  */
 type Level = 'info' | 'warn' | 'error';
 
+/**
+ * Text chyby bezpečný k zalogování i k zobrazení uživateli.
+ *
+ * Drizzle dává do `DrizzleQueryError.message` celý dotaz VČETNĚ hodnot
+ * parametrů („Failed query: … params: reset-token-abc,…"). Do logu by tak
+ * z jednoho selhaného insertu spadly ověřovací a resetovací tokeny, e-mailové
+ * adresy i obsah transakcí — přesně to, co má hlavička tohohle souboru zakázané.
+ * Parametry proto uřízneme a délku omezíme.
+ */
+export function errorText(error: unknown, maxLength = 500): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const withoutParams = raw.split(/\n\s*params:/)[0]!;
+  return withoutParams.length > maxLength
+    ? `${withoutParams.slice(0, maxLength)}…`
+    : withoutParams;
+}
+
 export function logEvent(
   level: Level,
   event: string,

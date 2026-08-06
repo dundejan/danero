@@ -56,7 +56,7 @@ export default function OdstoupeniPage() {
             Použít ho nemusíš, stačí jakékoli jednoznačné oznámení. Ale když se ti hodí,
             zkopíruj si tenhle:
           </p>
-          <pre className="overflow-x-auto rounded-md border border-linka bg-papir-tlumeny p-4 text-xs leading-relaxed">
+          <pre className="overflow-x-auto rounded-md border border-linka bg-plocha p-4 text-xs leading-relaxed">
 {`Adresát: Jan Dunder, IČO 19642661
 adresa-provozovatele-v-promenne-prostredi
 dunder.jan@gmail.com

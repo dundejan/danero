@@ -3,6 +3,7 @@ import { getDb } from '@/db';
 import { getAuth } from '@/lib/auth';
 import { canGenerateReport } from '@/lib/entitlements';
 import { generateDpfdp7, type EpoPersonalData } from '@/lib/epo';
+import { errorText, logEvent } from '@/lib/log';
 import { engineInputForUser, getProfile, loadDailyRates, loadTransactions } from '@/lib/portfolio';
 
 const field = (form: FormData, name: string): string | undefined => {
@@ -72,6 +73,9 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    return chyba(error instanceof Error ? error.message : 'Export se nepodařil.');
+    // Interní hláška uživateli nepomůže a může nést obsah dotazu i s parametry
+    // (Drizzle je dává do message) — do odpovědi jde jen česká věta, detail do logu.
+    logEvent('error', 'epo.export_failed', { userId: session.user.id, year, error: errorText(error) });
+    return chyba('Export se nepodařil. Zkus to prosím znovu, případně napiš na podpora@danero.cz.', 500);
   }
 }
