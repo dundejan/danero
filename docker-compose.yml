@@ -29,11 +29,14 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://danero:${POSTGRES_PASSWORD}@db:5432/danero
+      DATABASE_URL: postgres://danero:${POSTGRES_PASSWORD:?nastav POSTGRES_PASSWORD v .env}@db:5432/danero
       # migrace se dotáhnou při startu — platí pro JEDNU instanci (viz docs/16)
       DANERO_MIGRATE_ON_START: '1'
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?nastav BETTER_AUTH_SECRET v .env}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      # POZOR: žádný tichý default. Bez správné https adresy vydává Better Auth
+      # session cookie BEZ příznaku Secure (odvozuje ho z baseURL) — přesně to,
+      # čemu má zabránit pojistka v lib/auth.ts. Radši nenastartovat.
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?nastav BETTER_AUTH_URL v .env (veřejná https adresa instance)}
       DANERO_ENCRYPTION_KEY: ${DANERO_ENCRYPTION_KEY:?nastav DANERO_ENCRYPTION_KEY v .env}
       CRON_SECRET: ${CRON_SECRET:?nastav CRON_SECRET v .env}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -49,23 +52,33 @@ services:
 
   # Naplánované úlohy (kurzy, sync brokerů, notifikace, dokončení jobů).
   # Bez téhle služby Danero nic nehlídá — jen počítá, když se přihlásíš.
+  # Časy jsou v UTC (kontejner nemá nastavenou zónu) — 5:00 UTC je 7:00 v létě
+  # a 6:00 v zimě. Vercel má tytéž časy v apps/web/vercel.json.
   cron:
-    image: alpine:3.22
+    # curl se instaluje při BUILDU, ne při každém startu kontejneru
+    build:
+      dockerfile_inline: |
+        FROM alpine:3.22
+        RUN apk add --no-cache curl
     restart: unless-stopped
     depends_on:
       web:
         condition: service_healthy
     environment:
-      CRON_SECRET: ${CRON_SECRET}
+      CRON_SECRET: ${CRON_SECRET:?nastav CRON_SECRET v .env}
+    # --retry: přechodný výpadek (5xx, síť) nesmí zahodit celý denní běh;
+    # --max-time: dlouhé joby (sync, notifikace) potřebují minuty, krátké ne.
+    # crond -d 8 (NE -l 8): -l nastavuje jen úroveň, cílem zůstává syslog,
+    # který v kontejneru nikdo neposlouchá → `docker compose logs cron` bylo
+    # prázdné i při selhání. S -d jde výstup na stderr, tedy do logu.
     command: >
-      sh -c "apk add --no-cache curl >/dev/null &&
-      printf '%s\n'
-      '15 4 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/maintenance'
-      '45 4 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/fx'
-      '0 5 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/sync-brokers'
-      '30 5 * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/notify'
-      '0 * * * * curl -fsS -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/jobs'
-      > /etc/crontabs/root && crond -f -l 8"
+      sh -c "printf '%s\n'
+      '15 4 * * * curl -fsS --retry 3 --retry-delay 30 --retry-connrefused --max-time 300 -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/maintenance'
+      '45 4 * * * curl -fsS --retry 3 --retry-delay 30 --retry-connrefused --max-time 300 -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/fx'
+      '0 5 * * * curl -fsS --retry 3 --retry-delay 60 --retry-connrefused --max-time 1800 -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/sync-brokers'
+      '30 5 * * * curl -fsS --retry 3 --retry-delay 60 --retry-connrefused --max-time 1800 -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/notify'
+      '0 * * * * curl -fsS --retry 3 --retry-delay 60 --retry-connrefused --max-time 1800 -H \"Authorization: Bearer $$CRON_SECRET\" http://web:3000/api/cron/jobs'
+      > /etc/crontabs/root && crond -f -d 8"
 
 volumes:
   danero-db:

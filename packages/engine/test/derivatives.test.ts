@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseTransactions } from '@danero/shared';
+import { d, parseTransactions } from '@danero/shared';
+import { czkText } from '../src';
 import { buy, CFG_2025, hasWarning, run, sell } from './helpers';
 
 /**
@@ -95,11 +96,42 @@ describe('R-12i: bezcenná expirace long opce — sporný výklad s přepínače
   });
 
   it('přepínač „výdaje per druh“: prémie se uplatní proti příjmům druhu', () => {
-    const result = run(txs, { options: { derivativesExpensesPerDruh: true } });
+    const result = run(txs, { options: { derivativesExpensesPerType: true } });
     expect(result.derivatives.expensesCzk.toString()).toBe('15000'); // 5k + 10k
     expect(result.derivatives.base10Czk.toString()).toBe('0');
     expect(result.derivatives.deniedExpensesCzk.toString()).toBe('0');
     expect(hasWarning(result, 'DERIVATIVE_EXPIRED_PREMIUM')).toBe(false);
+  });
+
+  it('varování hlásí SKUTEČNÝ rozdíl základu, ne hrubou výši neuznaných prémií', () => {
+    const result = run([
+      // příjem druhu jen 5 000 (prodej za 5 000 s prémií 1 000) → základ 4 000
+      optBuy({ isin: 'OPT:B', pricePerShare: '1000', tradeDate: '2025-03-03', settlementDate: '2025-03-03' }),
+      optSell({ isin: 'OPT:B', pricePerShare: '5000', tradeDate: '2025-08-01', settlementDate: '2025-08-01' }),
+      // bezcenně expirovaná prémie 30 000
+      optBuy({ pricePerShare: '30000', tradeDate: '2025-02-03', settlementDate: '2025-02-03' }),
+      optSell({ pricePerShare: '0', tradeDate: '2025-06-20', settlementDate: '2025-06-20' }),
+    ]);
+    expect(result.derivatives.base10Czk.toString()).toBe('4000');
+    expect(result.derivatives.deniedExpensesCzk.toString()).toBe('30000');
+    // výdaje jsou stropované příjmy druhu (§ 10/4) — přepínač by ušetřil jen 4 000
+    expect(result.derivatives.deniedExpensesImpactCzk.toString()).toBe('4000');
+
+    const warning = result.warnings.find((w) => w.code === 'DERIVATIVE_EXPIRED_PREMIUM')!;
+    expect(warning.context).toMatchObject({ deniedCzk: '30000.00', impactCzk: '4000.00' });
+    expect(warning.message).toContain(czkText(d('4000')));
+
+    // kontrola: se zapnutým přepínačem základ opravdu klesne o oněch 4 000, ne o 30 000
+    const lenient = run(
+      [
+        optBuy({ isin: 'OPT:B', pricePerShare: '1000', tradeDate: '2025-03-03', settlementDate: '2025-03-03' }),
+        optSell({ isin: 'OPT:B', pricePerShare: '5000', tradeDate: '2025-08-01', settlementDate: '2025-08-01' }),
+        optBuy({ pricePerShare: '30000', tradeDate: '2025-02-03', settlementDate: '2025-02-03' }),
+        optSell({ pricePerShare: '0', tradeDate: '2025-06-20', settlementDate: '2025-06-20' }),
+      ],
+      { options: { derivativesExpensesPerType: true } },
+    );
+    expect(lenient.derivatives.base10Czk.toString()).toBe('0');
   });
 });
 
@@ -131,6 +163,24 @@ describe('R-12j: vypsaná (short) opce — hotovostní princip', () => {
     expect(y2026.derivatives.base10Czk.toString()).toBe('0');
   });
 
+  it('odkup přes přelom roku bez derivátových příjmů → varování, že výdaj propadá', () => {
+    const txs = [
+      // short otevřený 1. 11. 2025 (prémie 5 000), odkoupený 15. 1. 2026 za 1 200
+      optSell({ pricePerShare: '5000', tradeDate: '2025-11-01', settlementDate: '2025-11-03' }),
+      optBuy({ pricePerShare: '1200', tradeDate: '2026-01-15', settlementDate: '2026-01-19' }),
+    ];
+    const y2025 = run(txs);
+    expect(y2025.derivatives.base10Czk.toString()).toBe('5000');
+    expect(hasWarning(y2025, 'DERIVATIVE_BUYBACK_WITHOUT_INCOME')).toBe(false);
+
+    const cfg2026 = { ...CFG_2025, year: 2026, limits: { ...CFG_2025.limits, timeTestCap: null } };
+    const y2026 = run(txs, { config: cfg2026 });
+    expect(y2026.derivatives.base10Czk.toString()).toBe('0');
+    expect(hasWarning(y2026, 'DERIVATIVE_BUYBACK_WITHOUT_INCOME')).toBe(true);
+    const warning = y2026.warnings.find((w) => w.code === 'DERIVATIVE_BUYBACK_WITHOUT_INCOME')!;
+    expect(warning.context).toMatchObject({ buybackCzk: '1200.00', lostCzk: '1200.00' });
+  });
+
   it('short otevřená a odkoupená v témže roce: prémie příjem, odkup výdaj', () => {
     const result = run([
       optSell({ pricePerShare: '12000', tradeDate: '2025-03-01', settlementDate: '2025-03-01' }),
@@ -149,6 +199,70 @@ describe('R-12j: vypsaná (short) opce — hotovostní princip', () => {
     ]);
     expect(result.derivatives.base10Czk.toString()).toBe('12000');
     expect(result.derivatives.openPositions).toHaveLength(0);
+  });
+});
+
+describe('R-12e: rozhodné datum je vypořádání, ne obchod', () => {
+  const cfg2026 = { ...CFG_2025, year: 2026, limits: { ...CFG_2025.limits, timeTestCap: null } };
+
+  it('prodej opce s obchodem 31. 12. 2025 a vypořádáním 2. 1. 2026 patří do ZO 2026', () => {
+    const txs = [
+      optBuy({ pricePerShare: '8000', tradeDate: '2025-06-02', settlementDate: '2025-06-03' }),
+      optSell({ pricePerShare: '20000', tradeDate: '2025-12-31', settlementDate: '2026-01-02' }),
+    ];
+
+    const y2025 = run(txs);
+    expect(y2025.derivatives.items).toHaveLength(0);
+    expect(y2025.derivatives.base10Czk.toString()).toBe('0');
+    expect(y2025.derivatives.openPositions).toHaveLength(1); // k 31. 12. ještě otevřená
+
+    const y2026 = run(txs, { config: cfg2026 });
+    expect(y2026.derivatives.taxableIncomeCzk.toString()).toBe('20000');
+    expect(y2026.derivatives.expensesCzk.toString()).toBe('8000');
+    expect(y2026.derivatives.base10Czk.toString()).toBe('12000');
+  });
+
+  it('0DTE opce koupená a bezcenně expirovaná týž den vyjde stejně bez ohledu na ID (R-12i)', () => {
+    const scenario = (buyId: string, sellId: string) =>
+      run([
+        optBuy({ id: buyId, pricePerShare: '8000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+        optSell({ id: sellId, pricePerShare: '0', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+        // druhý, ziskový obchod — aby druh vůbec nějaké příjmy měl
+        optBuy({ isin: 'OPT:B', pricePerShare: '2000', tradeDate: '2025-03-03', settlementDate: '2025-03-03' }),
+        optSell({ isin: 'OPT:B', pricePerShare: '21000', tradeDate: '2025-08-01', settlementDate: '2025-08-01' }),
+      ]);
+
+    for (const [buyId, sellId] of [
+      ['opt-a-buy', 'opt-z-sell'],
+      ['opt-z-buy', 'opt-a-sell'],
+    ]) {
+      const result = scenario(buyId!, sellId!);
+      // nákup se musí zpracovat před uzavřením, jinak z prodeje za 0 vznikne
+      // výpis a prémie 8 000 se uplatní navzdory vypnutému přepínači R-12i
+      expect(result.derivatives.base10Czk.toString()).toBe('19000');
+      expect(result.derivatives.deniedExpensesCzk.toString()).toBe('8000');
+      expect(result.derivatives.openPositions).toHaveLength(0);
+    }
+  });
+
+  it('převod opce a prodej týž den: uplatní se otevírací cena a nevzniknou fantomové pozice', () => {
+    const scenario = (transferId: string, sellId: string) =>
+      run([
+        ...parseTransactions([
+          { type: 'TRANSFER_IN', id: transferId, isin: 'OPT:Z', assetClass: 'DERIVATIVE', quantity: '1', date: '2025-06-02', acquisition: { date: '2024-11-01', costPerShare: '6000', currency: 'CZK' } },
+        ]),
+        optSell({ id: sellId, isin: 'OPT:Z', pricePerShare: '9000', tradeDate: '2025-06-02', settlementDate: '2025-06-02' }),
+      ]);
+
+    for (const [transferId, sellId] of [
+      ['opt-a-transfer', 'opt-z-sell2'],
+      ['opt-z-transfer', 'opt-a-sell2'],
+    ]) {
+      const result = scenario(transferId!, sellId!);
+      expect(result.derivatives.base10Czk.toString()).toBe('3000'); // 9 000 − 6 000
+      expect(result.derivatives.openPositions).toHaveLength(0);
+      expect(hasWarning(result, 'DERIVATIVE_OPEN_OVER_YEAR_END')).toBe(false);
+    }
   });
 });
 

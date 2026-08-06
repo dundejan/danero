@@ -49,7 +49,7 @@ export function AutoSubmit() {
       <noscript>
         <button
           type="submit"
-          className="rounded-md bg-ruzova-syta px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-3 py-1.5 text-sm font-semibold text-white hover:brightness-95"
         >
           Uložit
         </button>

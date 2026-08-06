@@ -94,7 +94,7 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   limit100kStrict: boolean('limit_100k_strict').notNull().default(true),
   timeTestBasis: text('time_test_basis').notNull().default('settlement'),
   // R-12i: prémie bezcenně expirovaných opcí jako výdaj druhu (default = restriktivní NE)
-  derivativesExpensesPerDruh: boolean('derivatives_expenses_per_druh').notNull().default(false),
+  derivativesExpensesPerType: boolean('derivatives_expenses_per_type').notNull().default(false),
   // R-10g: časový test osvobozuje i stablecoiny (EMT)? (default = bezpečné NE, zdanit)
   emtTimeTestExempt: boolean('emt_time_test_exempt').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -384,6 +384,14 @@ export const subscriptions = pgTable('subscriptions', {
    * odstoupení už nepřipadá v úvahu — proto se ukládá k platbě, ne do auditu.
    */
   consentAt: timestamp('consent_at'),
+  /**
+   * Čas události ze Stripe, ze které uložený stav pochází. Stripe negarantuje
+   * pořadí doručení: bez téhle známky by opožděné „zrušeno" k STARÉMU
+   * předplatnému přepsalo čerstvě zaplacené nové a zákazník by přišel
+   * o přístup, za který právě zaplatil. `null` = stav z jiného zdroje než
+   * událost (ruční grant, vazba uložená při checkoutu).
+   */
+  lastEventAt: timestamp('last_event_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -403,6 +411,11 @@ export const reportPurchases = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     taxYear: integer('tax_year').notNull(),
     stripePaymentIntentId: text('stripe_payment_intent_id'),
+    /**
+     * Zákazník ve Stripe i u jednorázového nákupu — bez něj se do zákaznického
+     * portálu (doklad o zaplacení, § 16 z. 634/1992) dostane jen předplatitel.
+     */
+    stripeCustomerId: text('stripe_customer_id'),
     promoCode: text('promo_code'),
     /** Výslovná žádost o zahájení plnění před lhůtou (§ 1837 písm. l OZ). */
     consentAt: timestamp('consent_at'),

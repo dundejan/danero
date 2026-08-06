@@ -212,6 +212,17 @@ export function parseTrading212Csv(text: string): ImportResult {
                 'Dividenda: brutto odhadnuto z čisté připsané částky (export neobsahuje kusy × dividenda/kus) — základ § 8 může být podhodnocen o srážkovou daň.',
             });
           }
+          // nulové brutto s nenulovou srážkou = zápočet daně bez příjmu; nulová
+          // dividenda vůbec je podezřelá vždy (chybějící kusy/cena v exportu)
+          if (new Decimal(gross || '0').eq(0)) {
+            const tax = new Decimal(withholding || '0');
+            result.warnings.push({
+              line,
+              message: tax.gt(0)
+                ? `${action}: dividenda má nulové brutto (kusy „${shares || '—'}“ × cena „${price || '—'}“), ale sraženou daň ${tax.toString()} ${currency} — zápočet daně bez příjmu je podezřelý. Zkontroluj řádek ve výpisu brokera a částku případně doplň ručně.`
+                : `${action}: dividenda s nulovou částkou — v exportu chybí počet kusů nebo dividenda na kus. Zkontroluj řádek ve výpisu brokera.`,
+            });
+          }
           result.transactions.push(
             TransactionSchema.parse({
               type: 'DIVIDEND',

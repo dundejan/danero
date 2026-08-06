@@ -36,7 +36,7 @@ export function ThemeToggle({ withLabels = false }: { withLabels?: boolean }) {
             'flex items-center justify-center rounded-md text-sm',
             withLabels ? 'gap-1.5 px-3 py-1.5' : 'h-7 w-7',
             active === mode.key
-              ? 'bg-pozadi font-semibold text-ruzova'
+              ? 'bg-pozadi font-semibold text-ruzova-text'
               : 'text-inkoust-tlumeny hover:text-inkoust',
           )}
         >

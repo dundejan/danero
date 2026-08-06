@@ -116,3 +116,41 @@ describe('mapPositionsToIsin', () => {
     expect(unmatchedTickers).toEqual(['NEZNAMY_EQ']);
   });
 });
+
+// B-5: useknuté tělo se parsuje BEZ jediné chyby — rok by pak navždy platil za
+// stažený. Nesoulad s Content-Length musí skončit výjimkou, ať se rok stáhne znovu.
+describe('downloadCsv: kontrola úplnosti přenosu', () => {
+  const csvFetch = (body: string, headers: Record<string, string>): typeof fetch =>
+    (async () => new Response(body, { status: 200, headers })) as typeof fetch;
+
+  const client = (fetchImpl: typeof fetch): Trading212Client =>
+    new Trading212Client({ apiKey: 'k', fetchImpl });
+
+  it('useknuté tělo (kratší než Content-Length) → chyba s výzvou opakovat', async () => {
+    const c = client(csvFetch('Action,Time\nMarket buy,2024', { 'content-length': '4096' }));
+    await expect(c.downloadCsv('https://downloads.t212.test/1.csv')).rejects.toThrow(
+      /neúplný/,
+    );
+  });
+
+  it('sedící Content-Length projde (délka v BAJTECH, ne znacích)', async () => {
+    const body = 'Akce,Čas\nNákup,2024';
+    const bytes = new TextEncoder().encode(body).length;
+    const c = client(csvFetch(body, { 'content-length': String(bytes) }));
+    await expect(c.downloadCsv('https://downloads.t212.test/1.csv')).resolves.toBe(body);
+  });
+
+  it('bez Content-Length se neověřuje (nemáme s čím porovnat)', async () => {
+    const c = client(csvFetch('cokoli', {}));
+    await expect(c.downloadCsv('https://downloads.t212.test/1.csv')).resolves.toBe('cokoli');
+  });
+
+  it('komprimovaná odpověď se neověřuje (hlavička platí pro komprimované bajty)', async () => {
+    const c = client(
+      csvFetch('rozbalený obsah', { 'content-length': '12', 'content-encoding': 'gzip' }),
+    );
+    await expect(c.downloadCsv('https://downloads.t212.test/1.csv')).resolves.toBe(
+      'rozbalený obsah',
+    );
+  });
+});

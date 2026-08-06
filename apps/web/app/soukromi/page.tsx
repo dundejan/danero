@@ -25,7 +25,7 @@ export default function PrivacyPage() {
         <p>
           Danero je osobní projekt Jana Dundera (IČO 19642661, [adresa odstraněna] 640/3, Vršovice,
           101 00 Praha 10) — on je i správcem tvých údajů. Kontakt:{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
             dunder.jan@gmail.com
           </a>
           .
@@ -33,18 +33,29 @@ export default function PrivacyPage() {
 
         <h2 className="font-display text-lg font-semibold">Co o tobě víme a proč</h2>
         <p>
-          Jen to nejnutnější: <strong>e-mail a heslo</strong> (heslo jako Argon2 otisk),
-          volitelně nastavení dvoufaktorového ověření, tvůj daňový profil (režim,
-          zvolené metody výpočtu) a <strong>transakční historii</strong>, kterou nahraješ
-          nebo kterou stáhneme z brokera. K tomu technické údaje o přihlášení (IP adresa
-          a typ prohlížeče u aktivních relací, záznamy o přihlášeních a synchronizacích)
-          — kvůli bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
+          Jen to nejnutnější: <strong>e-mail a heslo</strong> (heslo neukládáme, jen
+          jeho jednosměrný otisk), volitelně nastavení dvoufaktorového ověření, tvůj
+          daňový profil (režim, zvolené metody výpočtu) a{' '}
+          <strong>transakční historii</strong>, kterou nahraješ nebo kterou stáhneme
+          z brokera. K tomu technické údaje o přihlášení (IP adresa a typ prohlížeče
+          u aktivních relací, záznamy o přihlášeních a synchronizacích) — kvůli
+          bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
+        </p>
+        <p>
+          Když si něco koupíš, přibude k účtu <strong>historie nákupů</strong>: co a kdy
+          sis koupil (celoroční hlídání, nebo podklady za konkrétní daňový rok), do kdy
+          máš zaplaceno, jestli je obnova zrušená, identifikátory, pod kterými platbu
+          vede Stripe (zákazník, předplatné, platba), případný promokód a čas, kdy jsi
+          u objednávky odsouhlasil zahájení plnění — ten musíme umět doložit kvůli
+          14denní lhůtě na odstoupení. Číslo karty ani fakturační adresu nedostáváme,
+          ty zůstávají u Stripu.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
         <p>
-          Účet, daňový profil a transakce zpracováváme, protože bez nich ti službu nejde
-          poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR). Bezpečnostní záznamy
+          Účet, daňový profil, transakce i historii nákupů zpracováváme, protože bez
+          nich ti službu nejde poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR).
+          Bezpečnostní záznamy
           a technické logy držíme z oprávněného zájmu na ochraně tvého účtu a provozu
           služby (čl. 6 odst. 1 písm. f). E-mail zadaný do čekací listiny používáme jen
           na základě tvého souhlasu — pošleme ti jediné oznámení o otevření a adresu pak
@@ -71,6 +82,13 @@ export default function PrivacyPage() {
           upozornění, e-maily ti přestanou chodit okamžitě — nastavení si pamatujeme
           u tvého účtu, dokud ho nesmažeš.
         </p>
+        <p>
+          Historie nákupů a stav předplatného žijí u účtu stejně jako zbytek dat:
+          smazáním účtu zmizí i ony (aktivní předplatné přitom ve Stripu zrušíme, ať
+          se nestrhne další platba). Doklad o zaplacení a údaje o samotné platbě
+          zůstávají u Stripu, který je drží podle svých pravidel a zákonných lhůt —
+          my je u sebe nemáme.
+        </p>
 
         <h2 className="font-display text-lg font-semibold">Cookies</h2>
         <p>
@@ -89,10 +107,12 @@ export default function PrivacyPage() {
           ale při provozu (podpora, logy) může dojít k omezenému předání do USA.
           Vercel a Resend jsou certifikované v rámci EU-U.S. Data Privacy Framework,
           který Evropská komise uznává jako odpovídající ochranu; kde certifikace
-          nestačí, kryjí předání standardní smluvní doložky EU (SCC). Až spustíme
-          platby zpracovává <strong>Stripe</strong> (Stripe Payments Europe, Irsko) —
-          platební údaje zpracovává sám, číslo tvojí karty se k nám nikdy nedostane;
-          my od něj dostáváme jen informaci, že platba proběhla.
+          nestačí, kryjí předání standardní smluvní doložky EU (SCC). Platby vyřizuje{' '}
+          <strong>Stripe</strong> (Stripe Payments Europe, Irsko) — platební údaje
+          zpracovává sám, číslo tvojí karty se k nám nikdy nedostane. Předáváme mu
+          tvůj e-mail, identifikátor účtu a informaci, co si kupuješ; zpátky dostáváme
+          jen to, že platba
+          proběhla, do kdy je zaplaceno a identifikátory, pod kterými platbu vede.
         </p>
         <p>
           Zdrojový kód Danera je veřejný na GitHubu. Když nám tam napíšeš — issue,
@@ -111,14 +131,14 @@ export default function PrivacyPage() {
           nebo všechno smazat zrušením účtu — smazání odstraní všechna tvoje data
           včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
           na{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
             dunder.jan@gmail.com
           </a>
           . Pokud si myslíš, že s tvými údaji zacházíme špatně, máš právo podat stížnost
           u dozorového úřadu — Úřadu pro ochranu osobních údajů (
           <a
             href="https://uoou.gov.cz"
-            className="font-medium text-ruzova"
+            className="font-medium text-ruzova-text"
             target="_blank"
             rel="noreferrer"
           >
@@ -129,11 +149,11 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.1 · účinnost od 6. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.2 · účinnost od 7. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">
-        <Link href="/" className="font-medium text-ruzova">
+        <Link href="/" className="font-medium text-ruzova-text">
           ← Zpět na úvod
         </Link>
       </p>

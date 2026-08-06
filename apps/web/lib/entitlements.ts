@@ -11,9 +11,21 @@ import { reportPurchases, subscriptions } from '@/db/schema';
  * VLASTNÍ INSTANCE: bez `DANERO_BILLING=stripe` je odemčené všechno. Paywall je
  * konfigurace provozovatele, ne zmrzačený kód — u AGPL by cokoli jiného bylo
  * trapné a self-hoster by ho stejně za minutu vyndal.
+ *
+ * Pojistka (C-5) v duchu `lib/auth.ts` a `lib/crypto.ts`: samotný přepínač je
+ * fail-open, takže překlep nebo chybějící proměnná na novém prostředí tiše
+ * rozdá všechno zdarma. Kdo nastavil Stripe klíč, ten platby chce — nesoulad
+ * je proto zjevná miskonfigurace a v produkci se na ni umírá hlasitě.
+ * Self-host bez Stripu tím netrpí: bez `STRIPE_SECRET_KEY` se nic nekontroluje.
  */
 export function billingEnabled(): boolean {
-  return process.env.DANERO_BILLING === 'stripe';
+  const mode = process.env.DANERO_BILLING;
+  if (mode !== 'stripe' && process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'STRIPE_SECRET_KEY je nastavený, ale DANERO_BILLING není "stripe" — paywall by byl vypnutý a všechno zdarma. Nastav DANERO_BILLING=stripe, nebo Stripe klíč odeber.',
+    );
+  }
+  return mode === 'stripe';
 }
 
 export interface Entitlements {

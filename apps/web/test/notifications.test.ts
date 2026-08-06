@@ -115,7 +115,7 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
         matchingMethod: 'FIFO',
         fxMethod: 'UNIFIED',
         limit100kStrict: true,
-  derivativesExpensesPerDruh: false,
+  derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
@@ -159,7 +159,7 @@ describe('60% pásmo hlídače (LIMIT_WARNING)', () => {
         matchingMethod: 'FIFO',
         fxMethod: 'UNIFIED',
         limit100kStrict: true,
-        derivativesExpensesPerDruh: false,
+        derivativesExpensesPerType: false,
         emtTimeTestExempt: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
@@ -178,6 +178,68 @@ describe('60% pásmo hlídače (LIMIT_WARNING)', () => {
     expect(warning!.body).toContain('přes 60 %');
     // 50k limit je v pásmu OK — žádná událost k němu
     expect(candidates.some((c) => c.dedupeKey.startsWith('limit|50k|'))).toBe(false);
+  });
+});
+
+/**
+ * Nález V-4 právního auditu (docs/13), znovu otevřený jako E-12: e-mail
+ * s konkrétními čísly uživatele smí nést fakt a termín, ale ne pokyn, co má
+ * udělat („zvaž, zda další prodeje letos počkají"). Individualizovaná rada je
+ * za hranicí § 1 zákona 523/1992 Sb. o daňovém poradenství — obecná doporučení
+ * patří jen do marketingu.
+ */
+describe('hlídací e-maily nesou fakt, ne pokyn (E-12 / V-4)', () => {
+  /** Slovesa, kterými bychom uživateli radili, co má udělat. */
+  const POKYN = /zvaž|počkej|prodej si|nech si|raději|doporuč|radíme|měl bys/i;
+
+  it('události k limitům neobsahují radu, co má uživatel udělat', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+
+    // prodej CP za 150 000 Kč (limit 100k prolomený) i krypta za 150 000 Kč
+    // (vlastní limit 100k prolomený) — obě události musí vzniknout naráz
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'b1', isin: 'US0378331005', quantity: '10', pricePerShare: '10000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 's1', isin: 'US0378331005', quantity: '10', pricePerShare: '15000', currency: 'CZK', tradeDate: '2026-04-01' },
+      { type: 'BUY', id: 'cb1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '100000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 'cs1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '150000', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, {
+        userId: 'u1',
+        regime: 'PAUSAL',
+        hasBusinessAssets: false,
+        w8benFiled: true,
+        otherIncomeCzk: '0',
+        matchingMethod: 'FIFO',
+        fxMethod: 'UNIFIED',
+        limit100kStrict: true,
+        derivativesExpensesPerType: false,
+        emtTimeTestExempt: false,
+        timeTestBasis: 'settlement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }, 2026),
+    );
+    const candidates = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+    });
+
+    const limity = candidates.filter((c) => c.type.startsWith('LIMIT_'));
+    expect(limity.length).toBeGreaterThanOrEqual(2);
+    for (const event of limity) {
+      expect(`${event.title} ${event.body}`, event.dedupeKey).not.toMatch(POKYN);
+    }
+    // fakt a termín naopak zůstávají: kolik z limitu je vyčerpáno a co to znamená
+    const stovka = limity.find((c) => c.dedupeKey === 'limit|100k|EXCEEDED|2026');
+    expect(stovka).toBeDefined();
+    expect(stovka!.body).toContain('Čerpání je');
+    expect(stovka!.body).toContain('bez splněného časového testu');
   });
 });
 

@@ -14,10 +14,11 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
     title: 'API klíče jen pro čtení',
     body: (
       <>
-        K brokerovi se připojujeme výhradně klíčem, který umí data číst — nikdy
-        obchodovat, převádět peníze ani měnit nastavení účtu. U každého napojení
-        máme návod, která práva při vytváření klíče zaškrtnout (a která ne).
-        Hesla od brokera po tobě nikdy nechceme.
+        U brokera jenom čteme — historii obchodů a stav pozic. Danero neumí zadat
+        obchodní příkaz, převést peníze ani změnit nastavení účtu; takový kód v něm
+        není. Rozsah klíče si nastavuješ u brokera ty, a u každého napojení máme
+        návod, která práva zaškrtnout (a která ne) — vždycky jen čtení. Hesla od
+        brokera po tobě nikdy nechceme.
       </>
     ),
   },
@@ -118,8 +119,11 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
     title: 'Zamčený prohlížeč',
     body: (
       <>
-        Web posílá přísné bezpečnostní hlavičky (Content Security Policy,
-        HSTS, zákaz vkládání do cizích stránek) a citlivé operace chrání
+        Web posílá bezpečnostní hlavičky (Content Security Policy, HSTS, zákaz
+        vkládání do cizích stránek). Politika obsahu je přísná na původ: prohlížeč
+        nesmí načíst skript, styl, font ani obrázek odjinud než z Danera — cizí kód
+        se sem tedy nemá jak dostat. Vlastní skripty, které Next.js potřebuje ke
+        svému běhu přímo ve stránce, povolené jsou. Citlivé operace navíc chrání
         omezení počtu pokusů (rate limit) proti skriptovanému zneužití.
       </>
     ),

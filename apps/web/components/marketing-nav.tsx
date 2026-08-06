@@ -76,7 +76,7 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
       <div className="flex items-center gap-3 lg:hidden">
         <Link
           href="/demo/prehled"
-          className="rounded-md bg-ruzova-syta px-3.5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-3.5 py-2.5 text-sm font-semibold text-white hover:brightness-95"
         >
           Demo
         </Link>

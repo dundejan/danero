@@ -82,7 +82,7 @@ function demoProfile(): ProfileRow {
     fxMethod: 'UNIFIED',
     limit100kStrict: true,
     timeTestBasis: 'settlement',
-    derivativesExpensesPerDruh: false,
+    derivativesExpensesPerType: false,
     emtTimeTestExempt: false,
     createdAt: DEMO_PROFILE_AT,
     updatedAt: DEMO_PROFILE_AT,

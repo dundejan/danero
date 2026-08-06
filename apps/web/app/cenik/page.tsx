@@ -14,6 +14,7 @@ const FREE = [
   'Import výpisů — neomezeně platforem',
   'Limity 100 000 Kč i 50 000 Kč v reálném čase',
   'Stav tříletých časových testů',
+  'Horizont osvobození: kdy je co bez daně',
   'Orientační daň z investic',
   'Krypto i deriváty jako samostatné druhy příjmů',
 ] as const;
@@ -31,13 +32,13 @@ const FULL = [
   'Živé napojení na Trading 212, IBKR i Lynx',
   'Automatický denní sync a přepočet',
   'E-mailová upozornění na limity a termíny',
-  'Simulátor prodeje a horizont osvobození',
+  'Simulátor prodeje: co udělá další obchod',
 ] as const;
 
 const CENIK_FAQ = [
   {
     q: 'Co přesně je zdarma?',
-    a: 'Nahrávání výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá: kolik ti zbývá do limitů, jak jsi na tom s tříletými časovými testy a orientační daň. Bez omezení počtu platforem — schválně, protože limity se sčítají přes všechny a s neúplnými daty by ti Danero lhalo.',
+    a: 'Nahrávání výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá: kolik ti zbývá do limitů, jak jsi na tom s tříletými časovými testy — včetně horizontu osvobození, kde u každého nákupu vidíš datum, odkdy je prodej bez daně — a orientační daň. Bez omezení počtu platforem — schválně, protože limity se sčítají přes všechny a s neúplnými daty by ti Danero lhalo.',
   },
   {
     q: 'Proč je napojení přes API placené?',

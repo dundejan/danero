@@ -15,7 +15,11 @@ export function makeIbkrMockFetch(options: { failToken?: boolean } = {}) {
     urls.push(url);
     if (url.includes('SendRequest')) {
       if (options.failToken) return new Response(FLEX_BAD_TOKEN, { status: 200 });
-      return new Response(FLEX_SEND_OK('https://flex.test/GetStatement'), { status: 200 });
+      // adresa musí být na doméně IBKR — klient cizí hostname odmítá (D-7)
+      return new Response(
+        FLEX_SEND_OK('https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement'),
+        { status: 200 },
+      );
     }
     // první GetStatement „generuje se“, pak hotový výpis
     statementCalls += 1;

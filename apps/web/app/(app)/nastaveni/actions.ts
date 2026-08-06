@@ -24,7 +24,7 @@ const ProfileFormSchema = z.object({
   fxMethod: z.enum(['UNIFIED', 'CNB_DAILY']),
   limit100kStrict: z.enum(['strict', 'lenient']),
   timeTestBasis: z.enum(['settlement', 'trade']),
-  derivativesExpensesPerDruh: z.enum(['restrictive', 'perDruh']),
+  derivativesExpensesPerType: z.enum(['restrictive', 'perType']),
   emtTimeTestExempt: z.enum(['safe', 'lenient']),
 });
 
@@ -41,7 +41,7 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     fxMethod: parsed.data.fxMethod,
     limit100kStrict: parsed.data.limit100kStrict === 'strict',
     timeTestBasis: parsed.data.timeTestBasis,
-    derivativesExpensesPerDruh: parsed.data.derivativesExpensesPerDruh === 'perDruh',
+    derivativesExpensesPerType: parsed.data.derivativesExpensesPerType === 'perType',
     emtTimeTestExempt: parsed.data.emtTimeTestExempt === 'lenient',
     updatedAt: new Date(),
   };
@@ -66,6 +66,36 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
 
 /* ── G8a: účet — změna hesla, e-mailu, smazání (GDPR práva z /soukromi) ──── */
 
+/**
+ * D-2/D-3: server actions volají `auth.api.*` napřímo, jenže rate limity
+ * z `lib/auth.ts` visí na `router.onRequest`, tedy jen na `/api/auth/*` —
+ * tudy se obejdou. Bez tohohle je z unesené session neomezený password oracle
+ * (uhádnuté heslo = změna e-mailu i vypnutí 2FA) a formulář změny e-mailu je
+ * rozesílač ověřovacích e-mailů na libovolné cizí adresy.
+ *
+ * Čítač je per ÚČET, ne per IP: útočníkovi nepomůže střídat adresy ani
+ * podvrhávat `X-Forwarded-For`. Limity jsou stejné jako u odpovídajících
+ * endpointů Better Authu, jen v okně 5 minut.
+ */
+const ACCOUNT_WINDOW_MS = 5 * 60_000;
+
+async function limitAccountAction(
+  userId: string,
+  operation: string,
+  max: number,
+  errorCode: string,
+): Promise<void> {
+  const { checkRateLimit } = await import('@/lib/rate-limit');
+  const allowed = await checkRateLimit(await getDb(), `${operation}:${userId}`, {
+    max,
+    windowMs: ACCOUNT_WINDOW_MS,
+  });
+  if (!allowed) {
+    logEvent('warn', `account.${operation}_rate_limited`, { userId });
+    redirect(`/nastaveni?chyba=${errorCode}`);
+  }
+}
+
 const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(10),
@@ -75,6 +105,7 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangePasswordSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=heslo');
+  await limitAccountAction(user.id, 'password_change', 5, 'heslo-limit');
 
   const { api, requestHeaders } = await authApi();
   try {
@@ -87,8 +118,10 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
       },
     });
   } catch (error) {
-    // infrastrukturní chyba nesmí být němá — jinak „špatné heslo“ maskuje výpadek
-    logEvent('error', 'account.change_password_failed', { error: errorText(error) });
+    // infrastrukturní chyba nesmí být němá — jinak „špatné heslo“ maskuje výpadek.
+    // G-16: bez userId nejde v logu odlišit jeden opakovaně chybující účet
+    // od stovky překlepů různých uživatelů
+    logEvent('error', 'account.change_password_failed', { userId: user.id, error: errorText(error) });
     redirect('/nastaveni?chyba=heslo-spatne');
   }
   // audit PŘES id z úvodní session — po rotaci session by requireUser selhal
@@ -105,6 +138,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangeEmailSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=email');
+  // limit sedí i na odesílání ověřovacích e-mailů níž — jinak je z formuláře
+  // rozesílač na cizí adresy jménem Danera
+  await limitAccountAction(user.id, 'email_change', 3, 'email-limit');
 
   // re-autentizace heslem: bez verifikačních e-mailů (Resend čeká na klíč) by
   // unesená session mohla tiše přepsat identitu účtu — heslo to blokuje
@@ -115,7 +151,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .select({ hash: account.password })
       .from(account)
       .where(and(eq(account.userId, user.id), eq(account.providerId, 'credential')));
-    const { verifyPassword } = await import('better-auth/crypto');
+    // stejná funkce jako v lib/auth.ts — po přepnutí na Argon2id by původní
+    // verifyPassword z Better Authu nový otisk neověřila
+    const { verifyPassword } = await import('@/lib/password');
     const valid =
       credential?.hash &&
       (await verifyPassword({ hash: credential.hash, password: parsed.data.currentPassword }));
@@ -134,7 +172,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .set({ email: parsed.data.newEmail.toLowerCase(), emailVerified: false, updatedAt: new Date() })
       .where(eq(userTable.id, user.id));
   } catch (error) {
-    logEvent('error', 'account.change_email_failed', { error: errorText(error) });
+    logEvent('error', 'account.change_email_failed', { userId: user.id, error: errorText(error) });
     // „obsazený e-mail“ jen při unique violation — infrastrukturní chybu (výpadek
     // DB apod.) nesmíme vydávat za obsazenou adresu
     const { isUniqueViolation } = await import('@/lib/db-errors');
@@ -151,6 +189,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     });
   } catch (error) {
     logEvent('error', 'account.change_email_verification_failed', {
+      userId: user.id,
       error: errorText(error),
     });
   }
@@ -167,6 +206,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = DeleteAccountSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=smazani');
+  await limitAccountAction(user.id, 'account_delete', 3, 'smazani-limit');
 
   // ID předplatného si přečteme PŘED smazáním (kaskáda řádek zahodí), ale zrušit
   // ho smíme až POTOM: heslo ověřuje teprve deleteUser a špatné heslo nesmí

@@ -213,6 +213,35 @@ describe('Trading212 CSV parser', () => {
     expect(plain.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(false);
   });
 
+  // B-11: nulové brutto s nenulovou srážkou = zápočet daně bez příjmu; dřív
+  // vzniklo DIVIDEND s gross "0" úplně beze slova
+  it.each([
+    ['nulová cena za kus', '100', '0'],
+    ['nulový počet kusů', '0', '0.25'],
+  ])('dividenda s nulovým brutto (%s) → varování', (_label, shares, price) => {
+    const csv = [
+      HEADER,
+      `Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,${shares},${price},USD,,,,0.00,USD,1.88,USD,,,,`,
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.gross.toString()).toBe('0');
+    const warning = result.warnings.find((w) => w.message.includes('nulové brutto'));
+    expect(warning).toBeDefined();
+    expect(warning!.message).toContain('1.88');
+  });
+
+  it('dividenda s nulovým brutto a bez srážky → varování o chybějící částce', () => {
+    const csv = [
+      HEADER,
+      'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,0,0.25,USD,,,,0.00,USD,0,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.warnings.some((w) => w.message.includes('nulovou částkou'))).toBe(true);
+  });
+
   it('duplicitní explicitní ID → varování, dedupe je sloučí (skutečný duplikát)', () => {
     const duplicated = [
       HEADER,

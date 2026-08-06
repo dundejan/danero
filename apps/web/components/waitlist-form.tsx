@@ -35,12 +35,15 @@ export function WaitlistForm() {
           required
           autoComplete="email"
           placeholder="tvuj@email.cz"
-          className="w-full min-w-0 flex-1 rounded-md border border-inkoust/25 bg-plocha px-4 py-3 text-sm shadow-sm outline-none focus:border-ruzova sm:w-auto"
+          // žádné outline-none: rušilo by globální růžový fokusový ring
+          // (:focus-visible v globals.css) a pole by při procházení klávesnicí
+          // nebylo poznat
+          className="w-full min-w-0 flex-1 rounded-md border border-inkoust/25 bg-plocha px-4 py-3 text-sm shadow-sm focus:border-ruzova sm:w-auto"
         />
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-ruzova-syta px-6 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+          className="rounded-md bg-ruzova-syta px-6 py-3 text-sm font-semibold text-white hover:brightness-95 disabled:opacity-60"
         >
           {pending ? 'Ukládám…' : 'Dát vědět, až otevřeme'}
         </button>

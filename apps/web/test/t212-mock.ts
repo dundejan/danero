@@ -9,7 +9,18 @@ export const MOCK_CREDENTIALS = JSON.stringify({
 });
 
 /** Mock T212 API: exporty per rok (rok čteme z těla requestu), pozice pro rekonciliaci. */
-export function makeMockFetch(options: { rejectBasicAuth?: boolean; failExports?: boolean } = {}) {
+export function makeMockFetch(
+  options: {
+    rejectBasicAuth?: boolean;
+    failExports?: boolean;
+    /** Výpadek generování exportů: každý rok se stáhne jako ÚPLNĚ prázdný soubor. */
+    emptyExports?: boolean;
+    /** Účet u brokera nedrží žádnou pozici (nově založený účet). */
+    emptyPortfolio?: boolean;
+    /** Data vydá jen za tyhle roky (neúplná historie — ostatní roky prázdné). */
+    onlyYears?: number[];
+  } = {},
+) {
   const reportYears = new Map<number, number>();
   let lastReportId = 100;
   const requestedYears: number[] = [];
@@ -52,11 +63,12 @@ export function makeMockFetch(options: { rejectBasicAuth?: boolean; failExports?
     const download = /downloads\.t212\.test\/(\d+)\.csv/.exec(url);
     if (download) {
       const year = reportYears.get(Number(download[1]))!;
+      const hidden = options.emptyExports || (options.onlyYears && !options.onlyYears.includes(year));
       // prázdné roky vrací T212 jako ÚPLNĚ prázdný soubor (ověřeno na reálném API)
-      return new Response(CSV_BY_YEAR[year] ?? '', { status: 200 });
+      return new Response(hidden ? '' : (CSV_BY_YEAR[year] ?? ''), { status: 200 });
     }
     if (url.endsWith('/equity/portfolio')) {
-      return json(PORTFOLIO);
+      return json(options.emptyPortfolio ? [] : PORTFOLIO);
     }
     if (url.endsWith('/equity/metadata/instruments')) {
       return json(INSTRUMENTS);

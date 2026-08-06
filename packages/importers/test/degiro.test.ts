@@ -304,6 +304,136 @@ describe('Degiro Account.csv', () => {
     expect(result.errors[0]!.message).toContain('nahlaš');
   });
 
+  // B-1: řádek s nerozpoznaným popisem a BEZ peněžního pohybu mizel úplně beze
+  // stopy (žádná transakce, chyba, skipped ani varování) — a přesně tak Degiro
+  // reportuje korporátní akce
+  it('neznámý popis BEZ peněžního pohybu → error, ne tiché zahození', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '05-05-2024;10:00;05-05-2024;OLD CORP;US1111111117;Kapitálová restrukturalizace: Odpis 10 ks;;;;EUR;0,00;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Kapitálová restrukturalizace');
+    expect(result.errors[0]!.message).toContain('nahlaš');
+  });
+
+  it('rozpoznaný popis bez peněžního pohybu (avízo dividendy) i dál tiše mizí', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '04-06-2024;09:00;04-06-2024;;;Dividenda;;;;EUR;7877,12;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  // B-1b: splity, reverse splity a spin-offy Degiro reportuje textem — parser
+  // je musel poznat ve všech lokalizacích, které docs/03 slibuje (CZ/EN/NL/DE/FR)
+  it.each([
+    ['NL', 'AANDELENSPLITSING: Uitboeking 10 aandelen', 'AANDELENSPLITSING: Inboeking 40 aandelen'],
+    ['EN', 'STOCK SPLIT: Removal 10 shares', 'STOCK SPLIT: Addition 40 shares'],
+    ['CZ', 'Štěpení akcií: Odpis 10 ks', 'Štěpení akcií: Připis 40 ks'],
+    ['CZ (rozdělení)', 'Rozdělení akcií: Odpis 10 ks', 'Rozdělení akcií: Připis 40 ks'],
+    ['DE', 'Aktiensplit: Ausbuchung 10 Stück', 'Aktiensplit: Einbuchung 40 Stück'],
+    ["FR", "Division d'actions: Sortie 10 titres", "Division d'actions: Entrée 40 titres"],
+  ])('split %s → CORPORATE_ACTION SPLIT s poměrem 10:40', (_label, out, into) => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      `20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;${out};;;;EUR;0,00;`,
+      `20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;${into};;;;EUR;0,00;`,
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const action = result.transactions[0]!;
+    if (action.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
+    expect(action.subtype).toBe('SPLIT');
+    expect(action.isin).toBe('US0378331005');
+    expect(action.ratio?.from.toString()).toBe('10');
+    expect(action.ratio?.to.toString()).toBe('40');
+  });
+
+  it('reverse split (40 → 10) je týž SPLIT s obráceným poměrem', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;REVERSE SPLIT: Removal 40 shares;;;;EUR;0,00;',
+      '20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;REVERSE SPLIT: Addition 10 shares;;;;EUR;0,00;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    const action = result.transactions[0]!;
+    if (action.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
+    expect(action.subtype).toBe('SPLIT');
+    expect(action.ratio?.from.toString()).toBe('40');
+    expect(action.ratio?.to.toString()).toBe('10');
+  });
+
+  it('split bez počtů kusů v popisu → error (bez poměru je split nepoužitelný)', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;Aandelensplitsing: Uitboeking;;;;EUR;0,00;',
+      '20-05-2024;12:00;20-05-2024;APPLE INC;US0378331005;Aandelensplitsing: Inboeking;;;;EUR;0,00;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('poměr');
+  });
+
+  it.each([
+    ['EN', 'SPIN-OFF: Addition 5 shares NEW CORP'],
+    ['NL', 'Afsplitsing: Inboeking 5 aandelen NEW CORP'],
+    ['DE', 'Abspaltung: Einbuchung 5 Stück NEW CORP'],
+    ['FR', 'Scission: Entrée 5 titres NEW CORP'],
+  ])('spin-off %s → error s výzvou doplnit ručně (alokaci ceny z výpisu nevyčteme)', (_l, text) => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      `20-05-2024;12:00;20-05-2024;NEW CORP;US2222222226;${text};;;;EUR;0,00;`,
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Spin-off');
+    expect(result.errors[0]!.message).toContain('univerzální šablonu');
+  });
+
+  it.each([
+    ['DE fúze', 'Verschmelzung: Ausbuchung 10 Stück', 'Verschmelzung: Einbuchung 5 Stück'],
+    ['FR fúze', 'Fusion: Sortie 10 titres', 'Fusion: Entrée 5 titres'],
+  ])('%s → CORPORATE_ACTION MERGER s poměrem 10:5', (_label, out, into) => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      `10-02-2024;12:00;10-02-2024;OLD CORP;US1111111117;${out};;;;EUR;0,00;`,
+      `10-02-2024;12:00;10-02-2024;NEW CORP;US2222222226;${into};;;;EUR;0,00;`,
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    const action = result.transactions[0]!;
+    if (action.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
+    expect(action.subtype).toBe('MERGER');
+    expect(action.newIsin).toBe('US2222222226');
+    expect(action.ratio?.from.toString()).toBe('10');
+    expect(action.ratio?.to.toString()).toBe('5');
+  });
+
+  it('FR změna ISIN → CORPORATE_ACTION ISIN_CHANGE', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      "20-05-2024;12:00;20-05-2024;VANGUARD;IE00B3RBWM25;Changement d'ISIN: Sortie 3 titres;;;;EUR;0,00;",
+      "20-05-2024;12:00;20-05-2024;VANGUARD;IE00BK5BQT80;Changement d'ISIN: Entrée 3 titres;;;;EUR;0,00;",
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    const action = result.transactions[0]!;
+    if (action.type !== 'CORPORATE_ACTION') throw new Error('unreachable');
+    expect(action.subtype).toBe('ISIN_CHANGE');
+    expect(action.newIsin).toBe('IE00BK5BQT80');
+  });
+
   it('idempotentní obsahová id (Account.csv nemá ID řádku)', () => {
     const first = parseDegiroAccountCsv(DEGIRO_ACCOUNT_CZ).transactions;
     const second = parseDegiroAccountCsv(DEGIRO_ACCOUNT_CZ).transactions;

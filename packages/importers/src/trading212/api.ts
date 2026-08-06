@@ -145,7 +145,12 @@ export class Trading212Client {
     return this.request('/history/exports');
   }
 
-  /** Stáhne hotový CSV export (downloadLink je podepsaná URL bez autentizace). */
+  /**
+   * Stáhne hotový CSV export (downloadLink je podepsaná URL bez autentizace).
+   * Useknuté tělo (přerušený přenos) se naparsuje BEZ jediné chyby a rok by se
+   * pak navždy považoval za stažený — proto se délka porovnává s Content-Length.
+   * Komprimovanou odpověď neověřujeme (hlavička platí pro komprimované bajty).
+   */
   async downloadCsv(downloadLink: string): Promise<string> {
     const response = await (this.fetchImpl)(downloadLink, {
       signal: AbortSignal.timeout(60_000),
@@ -153,7 +158,17 @@ export class Trading212Client {
     if (!response.ok) {
       throw new Trading212ApiError(response.status, `Stažení exportu selhalo (${response.status})`);
     }
-    return response.text();
+    const text = await response.text();
+    const declared = response.headers.get('content-length');
+    const encoding = (response.headers.get('content-encoding') ?? 'identity').toLowerCase();
+    const actual = new TextEncoder().encode(text).length;
+    if (declared !== null && encoding === 'identity' && Number(declared) !== actual) {
+      throw new Trading212ApiError(
+        502,
+        `Stažený export je neúplný — přišlo ${actual} z ${declared} bajtů, přenos se zřejmě přerušil. Spusť synchronizaci znovu.`,
+      );
+    }
+    return text;
   }
 
   /**

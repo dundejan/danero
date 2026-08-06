@@ -2,6 +2,7 @@ import { IbkrFlexClient, parseIbkrFlexXml, type RowIssue } from '@danero/importe
 import type { Db } from '@/db';
 import {
   finishBrokerSync,
+  previouslyVerifiedYears,
   reconcileBrokerPositions,
   testEnvBaseUrl,
   type BrokerAccountRow,
@@ -108,6 +109,10 @@ export async function syncIbkr(
         account.broker,
         parsed.openPositions,
         now.toISOString().slice(0, 10),
+        [],
+        // rozsah výpisu (fromDate–toDate): rok bez transakcí uvnitř něj je
+        // ověřeně prázdný, mimo něj je to díra v historii
+        [...previouslyVerifiedYears(account), ...parsed.coveredYears],
       );
     } catch (error) {
       // přechodné selhání rekonciliace nepřepisuje poslední platný stav —
@@ -128,7 +133,9 @@ export async function syncIbkr(
   }
 
   const errors = batch?.errors ?? [];
-  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, reconciliationError);
+  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, {
+    reconciliationError,
+  });
 
   return {
     batch,

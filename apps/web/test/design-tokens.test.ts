@@ -72,3 +72,35 @@ describe('design tokeny', () => {
     expect(chybejici).toEqual([]);
   });
 });
+
+/** Relativní jas dle WCAG 2.x. */
+function luminance(hex: string): number {
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe('kontrast sytých výplní', () => {
+  it('bílý text na -syta výplních drží AA 4,5:1', () => {
+    // globals.css o nich říká „syté výplně pro CTA/danger s bílým textem" —
+    // --zelena-syta to nesplňovala (4,21:1) a nikdo si toho nevšiml, protože
+    // axe kontroluje jen vykreslené stránky a token byl použit na jediném místě.
+    const css = readFileSync(join(webRoot, 'app', 'globals.css'), 'utf8');
+    const syte = [...css.matchAll(/--([a-z]+-syta):\s*(#[0-9a-f]{6})/gi)];
+    expect(syte.length).toBeGreaterThan(0);
+
+    const slabe = syte
+      .map(([, name, hex]) => ({ name: name!, ratio: contrast('#ffffff', hex!) }))
+      .filter(({ ratio }) => ratio < 4.5);
+
+    expect(slabe).toEqual([]);
+  });
+});

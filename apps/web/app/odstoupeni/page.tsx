@@ -27,19 +27,25 @@ export default function OdstoupeniPage() {
             Jsi-li spotřebitel, můžeš od smlouvy odstoupit do 14 dnů ode dne jejího
             uzavření, a to bez udání důvodu a bez sankce. Stačí nám to v té lhůtě
             oznámit — e-mailem na{' '}
-            <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+            <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
               dunder.jan@gmail.com
             </a>
             . Peníze ti vrátíme nejpozději do 14 dnů od doručení odstoupení, stejným
             způsobem, jakým jsi platil.
           </p>
+          <p>
+            Jak dlouho to právo trvá a kolik se vrací, se liší podle toho, co sis
+            koupil: jednorázové podklady k přiznání jsou digitální obsah dodaný hned,
+            celoroční hlídání je služba, která ti běží celý rok. Obojí rozebíráme
+            hned níž.
+          </p>
 
           <h2 className="font-display text-lg font-semibold">
-            Kdy právo odstoupit zaniká (a proč se tě to nejspíš týká)
+            Podklady k přiznání za jeden rok (490 Kč): právo zaniká dodáním
           </h2>
           <p>
-            Danero je digitální obsah, který dodáváme okamžitě — hned po zaplacení máš
-            funkce odemčené. U takového plnění právo odstoupit zaniká, pokud jsi{' '}
+            Podklady jsou digitální obsah, který dodáváme okamžitě — hned po zaplacení
+            si je stáhneš. U takového plnění právo odstoupit zaniká, pokud jsi{' '}
             <strong>výslovně požádal, abychom začali plnit před uplynutím lhůty</strong>,
             a vzal na vědomí, že tím právo odstoupit ztrácíš (§ 1837 písm. l občanského
             zákoníku). Přesně tohle potvrzuješ zaškrtnutím políčka u objednávky —
@@ -51,18 +57,52 @@ export default function OdstoupeniPage() {
             nepřeješ, nekupuj a napiš nám — domluvíme se.
           </p>
 
+          <h2 className="font-display text-lg font-semibold">
+            Celoroční hlídání (990 Kč): odstoupit můžeš, doplatíš jen využité dny
+          </h2>
+          <p>
+            Hlídání není jednorázové stažení souboru — je to služba, kterou ti
+            poskytujeme průběžně celý rok: každý den stahujeme obchody, přepočítáváme
+            limity a posíláme upozornění. Proto u něj{' '}
+            <strong>právo odstoupit do 14 dnů trvá i po zaplacení</strong>. Zaškrtnutí
+            políčka u objednávky znamená jen to, že si přeješ začít hned — o právo
+            odstoupit tě nepřipraví.
+          </p>
+          <p>
+            Když v těch 14 dnech odstoupíš, vrátíme ti zaplacenou částku sníženou
+            o poměrnou část za dny, kdy ti hlídání běželo (§ 1834 občanského zákoníku).
+            U 990 Kč ročně jsou to necelé 3 Kč za den — po týdnu ti tedy vrátíme zhruba
+            971 Kč. Právo odstoupit zaniká až tím, že službu poskytneme úplně, tedy
+            uplynutím celého předplaceného roku (§ 1837 písm. a).
+          </p>
+          <p>
+            Odstoupení je něco jiného než zrušení obnovy: obnovu zrušíš kdykoli jedním
+            kliknutím v zákaznickém portálu a služba ti doběhne do konce zaplaceného
+            období — nic se nevrací, protože sis ho zaplatil celé.
+          </p>
+
           <h2 className="font-display text-lg font-semibold">Vzorový formulář</h2>
           <p>
             Použít ho nemusíš, stačí jakékoli jednoznačné oznámení. Ale když se ti hodí,
-            zkopíruj si tenhle:
+            zkopíruj si tenhle — pokrývá obě věci, které u nás jde koupit:
           </p>
-          <pre className="overflow-x-auto rounded-md border border-linka bg-plocha p-4 text-xs leading-relaxed">
+          {/* scrollovatelná oblast musí jít zaostřit, jinak se k pravé části
+              formuláře klávesnicí nedostaneš (WCAG 2.1.1) */}
+          <pre
+            tabIndex={0}
+            role="region"
+            aria-label="Vzorový formulář pro odstoupení od smlouvy"
+            className="overflow-x-auto rounded-md border border-linka bg-plocha p-4 text-xs leading-relaxed"
+          >
 {`Adresát: Jan Dunder, IČO 19642661
 adresa-provozovatele-v-promenne-prostredi
 dunder.jan@gmail.com
 
 Oznamuji, že tímto odstupuji od smlouvy o poskytnutí
-digitálního obsahu / služby:
+digitálního obsahu / služby (nehodící se škrtni):
+
+  [ ] celoroční hlídání — roční předplatné (990 Kč)
+  [ ] podklady k přiznání za daňový rok ....... (490 Kč)
 
 Objednáno dne: ..........................................
 Jméno spotřebitele: .....................................
@@ -83,7 +123,7 @@ Datum: ..................................................`}
         </section>
 
         <p className="text-sm">
-          <Link href="/podminky" className="font-medium text-ruzova">
+          <Link href="/podminky" className="font-medium text-ruzova-text">
             ← Podmínky užití
           </Link>
         </p>

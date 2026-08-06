@@ -81,6 +81,21 @@ Porovná vypočtené pozice (engine `positionsAt`) s pozicemi z API per ISIN:
 - `MISSING_LOCALLY` (broker má, my ne → chybí historie nebo změna ISIN);
 - `MISSING_AT_BROKER` (my máme, broker ne → chybí prodej/převod nebo změna ISIN).
 
+⚠️ Rekonciliace vidí **jen otevřené pozice** — chybí-li ve výpisech nákup i prodej
+téhož titulu, zůstatek vyjde a „pozice sedí“ by stálo nad neúplnými daty. Proto
+`reconcileBrokerPositions` (apps/web) přidává **rozsah dat** (`coverage`): od kterého
+roku transakce máme, které roky se u brokera skutečně stáhly, které roky v rozsahu
+chybí a jestli engine hlásil prodej nad evidovanou pozici (`NEGATIVE_POSITION` =
+historie nesahá k prvnímu nákupu). Kterákoli z těch dvou vad shodí `ok` na `false`
+a stav řekne důvod česky — zelené „pozice sedí“ smí zůstat jen nad ověřenými daty.
+Ověřené roky se kumulují napříč běhy (uložená rekonciliace), takže inkrementální
+sync nezahodí, co plný sync poctivě ověřil jako prázdné.
+
+Prázdný export **není** totéž co prázdný rok: plný sync, který nepřinesl ani jednu
+transakci a zároveň nemá potvrzeno, že pozice sedí, se **neuzavírá** — `lastSyncedAt`
+zůstane prázdný a další běh je zase plný (jinak by výpadek generování výpisů na
+straně brokera trvale uřízl historii).
+
 ## Univerzální šablona (`parseUniversalCsv`)
 
 Fallback pro nepodporované brokery. Hlavičky (malými písmeny, pořadí libovolné);
@@ -110,6 +125,13 @@ type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity
 - TRANSFER_IN: `acquisition_date/price/currency` = PŮVODNÍ nabytí (bez nich
   cena 0 a časový test od převodu — parser varuje)
 - Desetinná tečka; datum `YYYY-MM-DD`; kódování UTF-8
+- **Čísla s čárkou**: čárka se bere jako desetinná (`1,25` = 1.25). Zápis
+  „čárka + přesně tři číslice“ (`0,001`, `1,500`) je ale nejednoznačný —
+  může jít o 0.001 i o 1 a o 1.5 i o 1500 — a parser ho **odmítne chybou**
+  s výzvou napsat desetinnou tečku. Jednoznačné tvary projdou: `1,234.56`
+  i `1.234,56` = 1234.56, `1,234,567` = 1234567.
+  (Dřív se čárka vždy brala jako oddělovač tisíců, takže `0,001` BTC se tiše
+  naimportovalo jako 1 kus — tisícinásobek.)
 
 ## Ověření na reálných datech (akceptace F2)
 

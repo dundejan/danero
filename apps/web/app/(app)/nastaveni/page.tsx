@@ -82,6 +82,10 @@ export default async function SettingsPage({
     'email-heslo': 'Heslo nesedí — e-mail se nezměnil.',
     smazani: 'Pro smazání účtu napiš do potvrzení přesně SMAZAT.',
     'smazani-heslo': 'Heslo nesedí — účet se nesmazal.',
+    // ochrana účtu (D-2/D-3): po několika pokusech se operace na pár minut zamkne
+    'heslo-limit': 'Moc pokusů o změnu hesla po sobě — zkus to prosím za pět minut.',
+    'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
+    'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
   };
 
   return (
@@ -209,16 +213,16 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="derivativesExpensesPerDruh" title="Pravidlo R-12i v metodice Danero">
+                  <Label htmlFor="derivativesExpensesPerType" title="Pravidlo R-12i v metodice Danero">
                     Prémie bezcenně expirovaných opcí
                   </Label>
                   <Select
-                    id="derivativesExpensesPerDruh"
-                    name="derivativesExpensesPerDruh"
-                    defaultValue={(profile?.derivativesExpensesPerDruh ?? false) ? 'perDruh' : 'restrictive'}
+                    id="derivativesExpensesPerType"
+                    name="derivativesExpensesPerType"
+                    defaultValue={(profile?.derivativesExpensesPerType ?? false) ? 'perType' : 'restrictive'}
                   >
                     <option value="restrictive">Opatrný výklad — neuplatnit jako výdaj (doporučeno)</option>
-                    <option value="perDruh">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
+                    <option value="perType">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
                   </Select>
                   <p className="mt-1 text-xs text-inkoust-tlumeny">
                     Když koupená opce vyprší bezcenná, oficiální výklad chybí. Mírnější čtení

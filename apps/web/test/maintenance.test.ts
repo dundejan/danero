@@ -39,3 +39,29 @@ describe('pojistka na DANERO_EMAIL_LOG', () => {
     expect(resolveEmailSender()).toBeTypeOf('function');
   });
 });
+
+describe('retence záznamů o synchronizacích (E-16)', () => {
+  it('smaže staré joby, ale poslední u každého účtu nechá', { timeout: 30_000 }, async () => {
+    const { jobs } = await import('@/db/schema');
+    const { pruneJobs } = await import('@/lib/jobs');
+    const db = await createPgliteDb();
+    const { user } = await import('@/db/schema');
+    await db.insert(user).values({ id: 'u1', name: 'T', email: 't@danero.cz' });
+
+    const den = (iso: string) => new Date(iso);
+    await db.insert(jobs).values([
+      // starý neúspěšný plný sync — je to POSLEDNÍ u svého účtu, drží resume stav
+      { id: 'stary-posledni', userId: 'u1', type: 't212-sync', dedupeKey: 'acc-a', status: 'error', createdAt: den('2025-01-01') },
+      // starší joby téhož účtu už držet nemusíme
+      { id: 'stary-predchozi', userId: 'u1', type: 't212-sync', dedupeKey: 'acc-b', status: 'success', createdAt: den('2025-01-02') },
+      { id: 'novejsi', userId: 'u1', type: 't212-sync', dedupeKey: 'acc-b', status: 'success', createdAt: den('2026-08-01') },
+    ]);
+
+    const smazano = await pruneJobs(db, den('2026-08-07'));
+
+    expect(smazano).toBe(1);
+    const zbyle = (await db.select({ id: jobs.id }).from(jobs)).map((j) => j.id).sort();
+    // resume stav posledního neúspěšného syncu musí přežít i po 90 dnech
+    expect(zbyle).toEqual(['novejsi', 'stary-posledni']);
+  });
+});

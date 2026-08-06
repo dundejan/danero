@@ -57,10 +57,12 @@ test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
   await faq.locator('summary').click();
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
 
-  // FAQ: přechod na placené — bez karty se nic nestrhne
+  // FAQ: přechod na placené — účet je bez karty, ale předplatné se obnovuje
+  // samo (E-11: dřív tu stálo „nic se nestrhne samo" hned vedle ceny 990 Kč)
   const cena = page.locator('details', { hasText: 'Co je zdarma a za co se platí?' });
   await cena.locator('summary').click();
-  await expect(cena.getByText(/nic se nestrhne samo/)).toBeVisible();
+  await expect(cena.getByText(/Účet založíš zdarma a bez karty/)).toBeVisible();
+  await expect(cena.getByText(/automaticky obnovuje/)).toBeVisible();
 });
 
 test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }) => {

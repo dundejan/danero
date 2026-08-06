@@ -38,8 +38,13 @@ export async function loadAliases(db: Db, userId: string): Promise<AliasMaps> {
     >,
   };
   for (const row of rows) {
-    if (row.broker === 'xtb' && row.currency) {
-      maps.xtb[row.symbol] = { isin: row.isin, currency: row.currency };
+    if (row.broker === 'xtb') {
+      // alias bez měny se dřív TIŠE zahodil — přitom dividendám XTB stačí ISIN
+      // (jsou v měně účtu); měna chybí jen obchodům, ty si o ni řeknou samy
+      maps.xtb[row.symbol] = {
+        isin: row.isin,
+        ...(row.currency ? { currency: row.currency } : {}),
+      };
     } else if (isIsinOnlyBroker(row.broker)) {
       maps.isinOnly[row.broker][row.symbol] = { isin: row.isin };
     }

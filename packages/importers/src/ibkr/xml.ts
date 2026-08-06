@@ -31,6 +31,12 @@ export interface IbkrParseOutcome extends ImportResult {
   openPositions: IbkrOpenPosition[];
   /** accountId z FlexStatement (pro multi-účet UI). */
   accountIds: string[];
+  /**
+   * Roky, které výpis pokrývá (fromDate–toDate z FlexStatement). Rok bez jediné
+   * transakce uvnitř tohoto rozsahu je OVĚŘENĚ prázdný — mimo něj je to díra
+   * v historii a kontrola pozic to musí říct (B-6).
+   */
+  coveredYears: number[];
 }
 
 type Attrs = Record<string, string>;
@@ -98,6 +104,18 @@ function contentId(prefix: string, parts: Array<string | undefined>): string {
   return seen === 1 ? base : `${base}-${seen}`;
 }
 
+/** Roky pokryté výpisem: fromDate–toDate (YYYYMMDD) z FlexStatement. */
+function statementYears(statement: Record<string, unknown>): number[] {
+  const yearOf = (value: unknown): number | null => {
+    const match = /^(\d{4})/.exec(String(value ?? ''));
+    return match ? Number(match[1]) : null;
+  };
+  const from = yearOf(statement.fromDate ?? statement.periodStart);
+  const to = yearOf(statement.toDate ?? statement.periodEnd);
+  if (from === null || to === null || to < from || to - from > 50) return [];
+  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+}
+
 export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
   const result: IbkrParseOutcome = {
     broker: IBKR_BROKER,
@@ -107,6 +125,7 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
     warnings: [],
     openPositions: [],
     accountIds: [],
+    coveredYears: [],
   };
 
   resetContentIds();
@@ -167,6 +186,9 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
   for (const statement of statements) {
     const accountId = String(statement.accountId ?? '');
     if (accountId && !result.accountIds.includes(accountId)) result.accountIds.push(accountId);
+    for (const year of statementYears(statement)) {
+      if (!result.coveredYears.includes(year)) result.coveredYears.push(year);
+    }
 
     processTrades(statement, accountId, result, () => (line += 1), push);
     processCashTransactions(statement, accountId, result, () => (line += 1), push);
@@ -1011,7 +1033,15 @@ function collectOpenPositions(
     // stejný klíč jako u obchodů: deriváty (opce, futures) ISIN nemají —
     // bez fallbacku na symbol by každá otevřená opce věčně hlásila nesoulad
     const key = row.isin?.trim() || row.symbol?.trim() || (row.conid ? `IBKR:${row.conid}` : '');
-    if (!key || !row.position) continue;
+    // pozice bez identifikátoru či počtu kusů se nedá porovnat — tiché vynechání
+    // by ale znamenalo zelené „pozice sedí“ nad neúplným srovnáním
+    if (!key || !row.position) {
+      result.warnings.push({
+        line: 1,
+        message: `Otevřená pozice „${row.description?.trim() || row.symbol?.trim() || 'bez popisu'}“ nemá ${!key ? 'ISIN, symbol ani conid' : 'počet kusů'} — do kontroly pozic proti výpisu ji nezapočítáváme. Ve Flex Query zapni u sekce Open Positions pole ISIN, Symbol, Conid a Position.`,
+      });
+      continue;
+    }
     result.openPositions.push({
       isin: key,
       quantity: cleanNumber(row.position),

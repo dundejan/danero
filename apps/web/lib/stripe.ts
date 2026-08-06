@@ -14,6 +14,17 @@ export function stripe(): Stripe {
   return client;
 }
 
+/**
+ * Běží aplikace na ostrém klíči? Webhook tím porovnává `event.livemode`
+ * s režimem, ve kterém sami jsme (C-13) — tvrdé „jen livemode" by rozbilo
+ * provoz v sandboxu, tohle chytí záměnu secretů v obou směrech.
+ */
+export function stripeLivemode(): boolean {
+  const key = process.env.STRIPE_SECRET_KEY ?? '';
+  // omezené klíče (restricted) mají prefix rk_, plné sk_
+  return key.startsWith('sk_live_') || key.startsWith('rk_live_');
+}
+
 export interface StripePrices {
   report: string;
   subscription: string;
@@ -33,14 +44,3 @@ export function appUrl(): string {
   return process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 }
 
-/**
- * Použitý promokód z dokončené Checkout session — podklad pro výplaty partnerům
- * (docs/19). Stripe ho vrací jen po rozbalení `total_details.breakdown`.
- */
-export function promoCodeFrom(session: Stripe.Checkout.Session): string | null {
-  const discount = session.total_details?.breakdown?.discounts?.[0]?.discount;
-  if (!discount) return null;
-  const promo = discount.promotion_code;
-  // rozbalený objekt jen když si ho vyžádáme přes `expand`; jinak přijde ID
-  return typeof promo === 'string' ? promo : (promo?.code ?? null);
-}

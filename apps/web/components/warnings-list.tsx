@@ -108,7 +108,10 @@ export function warningCaseLine(warning: EngineWarning, labels: Map<string, stri
 function GroupDetails({ group, labels }: { group: WarningGroup; labels: Map<string, string> }) {
   return (
     <details className="mt-1">
-      <summary className="cursor-pointer text-xs opacity-80">
+      {/* žádné opacity-80: průhlednost srazí kontrast pod AA (na --plocha
+          3,80:1 pro jantar-text, 4,04:1 pro inkoust-tlumeny, 4,17:1 pro
+          červenou) — plné tokeny drží 5,8–6,4:1. Drobnost nese text-xs. */}
+      <summary className="cursor-pointer text-xs">
         Jednotlivé případy ({group.items.length})
       </summary>
       <ul className="mt-1 space-y-1 font-mono text-xs">

@@ -290,17 +290,19 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
   const dividends = computeDividends(dividendTxs, interestTxs, fx, options, warnings);
   const derivatives = computeDerivatives(derivativeTxs, year, fx, options, warnings);
 
+  // daň se počítá PŘED limity: hlídač 50k z ní vyčísluje dopad prolomení (R-08f)
+  const tax = estimateTax(securities, crypto, derivatives, dividends, config, warnings);
   const limits = computeLimits(
     securities,
     crypto,
     derivatives,
     dividends,
+    tax,
     input.profile,
     config,
     warnings,
     options.limit100kIncludesTimeTestExempt,
   );
-  const tax = estimateTax(securities, crypto, derivatives, dividends, config, warnings);
   const positions = positionsAt(ledger, `${year}-12-31`);
 
   return {

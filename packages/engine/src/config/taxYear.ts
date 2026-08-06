@@ -54,6 +54,18 @@ export interface TaxYearConfig {
   };
   /** 36násobek průměrné mzdy — hranice 23% sazby (§ 16); null = neznámé (engine varuje). */
   progressiveThreshold: string | null;
+  /**
+   * R-08f: měsíční paušální záloha **1. pásma** (§ 38lk) — celková částka
+   * a její daňová složka. Na daň v přiznání se započte JEN daňová složka
+   * (100 Kč/měsíc), pojistné složky se vypořádají v přehledech ČSSZ a ZP.
+   * Profil poplatníka pásmo nenese, engine proto počítá 1. pásmo a říká to.
+   * Chybí-li (null/nevyplněno), engine dopad prolomení limitu 50k vyčíslí bez
+   * započtení záloh a řekne to — proto je pole volitelné, aby starší
+   * konfigurace (a testovací fixtury) zůstaly platné.
+   * Hodnota patří ke konkrétnímu roku — kdo konfiguraci recykluje na jiný rok,
+   * musí ji přenastavit (stejně jako `progressiveThreshold`).
+   */
+  flatTaxAdvance?: { monthlyTotalCzk: string; monthlyTaxCzk: string } | null;
 }
 
 export const TAX_YEAR_2025: TaxYearConfig = {
@@ -73,6 +85,9 @@ export const TAX_YEAR_2025: TaxYearConfig = {
   },
   cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
   progressiveThreshold: '1676052',
+  // 1. pásmo 2025 = 8 716 Kč/měsíc (daň 100 + důchodové 5 473 + zdravotní 3 143);
+  // zdroj: Finanční správa, „Informace k institutu paušální daně pro rok 2025 a 2026“
+  flatTaxAdvance: { monthlyTotalCzk: '8716', monthlyTaxCzk: '100' },
 };
 
 /**
@@ -95,6 +110,8 @@ export const TAX_YEAR_2024: TaxYearConfig = {
   },
   cryptoRules: { exemptionsAvailable: false, effectiveFrom: null },
   progressiveThreshold: '1582812',
+  // 1. pásmo 2024 = 7 498 Kč/měsíc (daň 100 + důchodové 4 430 + zdravotní 2 968)
+  flatTaxAdvance: { monthlyTotalCzk: '7498', monthlyTaxCzk: '100' },
 };
 
 export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
@@ -114,4 +131,8 @@ export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
   cryptoRules: { exemptionsAvailable: true, effectiveFrom: null },
   // 36 × 48 967 Kč (průměrná mzda dle NV č. 365/2025 Sb.)
   progressiveThreshold: '1762812',
+  // 1. pásmo 2026 = 9 162 Kč/měsíc (daň 100 + důchodové 5 756 + zdravotní 3 306)
+  // po zpětném snížení odvodů OSVČ od 1. 1. 2026; leden–červen se platilo
+  // 9 984 Kč a rozdíl (4 932 Kč) je přeplatek — zdroj: tiskové zprávy GFŘ 2026
+  flatTaxAdvance: { monthlyTotalCzk: '9162', monthlyTaxCzk: '100' },
 };

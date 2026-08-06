@@ -41,8 +41,55 @@ function resolveBaseUrl(): string {
   return 'http://localhost:3000';
 }
 
+/**
+ * Rate limit Better Authu se klíčuje podle IP klienta z `X-Forwarded-For`.
+ * Tu hlavičku ale smí napsat kdokoli, takže Better Auth musí vědět, kterým
+ * hopům v řetězci věřit — bez `trustedProxies` platí „věřím jen hlavičce
+ * s JEDINOU hodnotou“ a obě odchylky bolí:
+ *
+ *  - hodnot je víc (běžná nginx proxy s `$proxy_add_x_forwarded_for`) → IP
+ *    vyjde `null` a VŠICHNI sdílí jeden kbelík: kdokoli spálí 5 pokusů
+ *    a nikdo se nepřihlásí,
+ *  - hodnota chybí (kontejner bez proxy) → totéž.
+ *
+ * S neprázdným seznamem se řetězec čte ZPRAVA a první nedůvěryhodná adresa je
+ * klient. Default kryje obě produkční topologie:
+ *  - Vercel (danero.cz): edge hlavičku přepisuje a cizí IP nepropouští, takže
+ *    v řetězci je právě jedna veřejná adresa klienta — v žádném privátním
+ *    rozsahu není, projde jako klient,
+ *  - self-hosting za vlastní proxy: hopy proxy mají adresy z privátních
+ *    rozsahů (loopback, RFC1918, docker), přeskočí se a zbyde veřejná IP,
+ *    kterou proxy do řetězce doplnila.
+ *
+ * Kdo má před sebou CDN s veřejnými adresami (Cloudflare) nebo chce seznam
+ * zúžit na konkrétní adresu své proxy, vyjmenuje rozsahy v
+ * `DANERO_TRUSTED_PROXIES` (IP nebo CIDR, oddělené čárkou; prázdná hodnota
+ * = žádná důvěryhodná proxy). Zúžení dává smysl tam, kde do aplikace chodí
+ * klienti PŘÍMO z privátního rozsahu (instance v LAN) — ti by jinak sdíleli
+ * kbelík s ostatními v téže síti.
+ */
+const DEFAULT_TRUSTED_PROXIES = [
+  '127.0.0.0/8',
+  '::1/128',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '100.64.0.0/10',
+  'fc00::/7',
+];
+
+export function resolveTrustedProxies(): string[] {
+  const fromEnv = process.env.DANERO_TRUSTED_PROXIES;
+  if (fromEnv === undefined) return DEFAULT_TRUSTED_PROXIES;
+  return fromEnv
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function buildAuth(db: Db) {
   return betterAuth({
+    advanced: { ipAddress: { trustedProxies: resolveTrustedProxies() } },
     database: drizzleAdapter(db, {
       provider: 'pg',
       schema: {
@@ -63,6 +110,12 @@ function buildAuth(db: Db) {
       // Better Auth při pokusu o přihlášení nepotvrzeného účtu pošle nový
       // odkaz sám, takže uživatel nezůstane viset.
       requireEmailVerification: true,
+      // E-8: Argon2id místo výchozího scryptu. Otisky vzniklé dřív se ověřují
+      // původní funkcí, takže vlastní instance s živými účty se nezamknou.
+      password: {
+        hash: (password) => import('@/lib/password').then((m) => m.hashPassword(password)),
+        verify: (data) => import('@/lib/password').then((m) => m.verifyPassword(data)),
+      },
       resetPasswordTokenExpiresIn: 60 * 60,
       // ukradená session nepřežije obnovu hesla
       revokeSessionsOnPasswordReset: true,

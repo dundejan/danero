@@ -57,6 +57,30 @@ describe('autodetekce textových formátů (detectAndParse)', () => {
     expect(result.errors[0]?.message).toContain('MetaTrader');
   });
 
+  // B-8: fragment bez atributů (`<tr>`, `<div>`, `<table>`) se dřív do seznamu
+  // značek nevešel a skončil zapsaný brokeru „ibkr“
+  it.each([
+    ['<tr><td>10</td></tr>'],
+    ['<div>výpis</div>'],
+    ['<table><tr><td>1</td></tr></table>'],
+    ['<TABLE>\n<TR><TD>1</TD></TR>\n</TABLE>'],
+    ['<p>Výpis z účtu</p>'],
+    ['<span>nic</span>'],
+  ])('HTML fragment %s se nepřipíše brokeru ibkr', (html) => {
+    const result = detectAndParse(html);
+    expect(result.broker).toBe('neznámý formát');
+    expect(result.errors[0]?.message).toContain('MetaTrader');
+  });
+
+  it('IBKR Flex XML se pořád pozná (kontrola značek nesmí ukrást XML)', () => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?><FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20240101" toDate="20241231"></FlexStatement></FlexStatements></FlexQueryResponse>';
+    expect(detectAndParse(xml).broker).toBe('ibkr');
+    const noProlog =
+      '<FlexQueryResponse><FlexStatements count="1"><FlexStatement accountId="U1" fromDate="20240101" toDate="20241231"></FlexStatement></FlexStatements></FlexQueryResponse>';
+    expect(detectAndParse(noProlog).broker).toBe('ibkr');
+  });
+
   it('Schwab a Tastytrade se poznají podle hlaviček', () => {
     const schwab =
       '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n"04/27/2023","Buy","BND","VANGUARD","45","$73.7789","","-$3320.05"';

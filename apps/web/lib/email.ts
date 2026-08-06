@@ -114,22 +114,41 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
  * po každém nákupu a nést i poučení o odstoupení. Ceny jsou konečné,
  * provozovatel není plátce DPH.
  */
+/**
+ * Potvrzení o uzavření smlouvy (§ 1824a OZ).
+ *
+ * Poučení o odstoupení se pro obě věci LIŠÍ (E-3 z auditu). Podklady jsou
+ * digitální obsah dodaný okamžitě — právo zaniká jejich zpřístupněním
+ * (§ 1837 písm. l). Roční hlídání je průběžně poskytovaná služba — právo
+ * odstoupit trvá a zaniká až úplným poskytnutím (§ 1837 písm. a); při
+ * odstoupení se doplácí poměrná část za využité dny (§ 1834). Tvrdit u něj
+ * zánik práva by bylo ujednání, ke kterému se nepřihlíží (§ 1812 odst. 2).
+ */
 export function purchaseConfirmationEmail(args: {
   what: string;
   priceCzk: number;
   consentGiven: boolean;
+  kind: 'subscription' | 'report';
 }): Omit<EmailMessage, 'to'> {
-  const odstoupeni = args.consentGiven
-    ? [
-        'Právo odstoupit od smlouvy do 14 dnů: u digitálního obsahu dodaného',
-        'okamžitě zaniká, jakmile začneme plnit — a ty jsi při objednávce výslovně',
-        'požádal, abychom začali hned, a vzal na vědomí, že tím právo odstoupit',
-        'ztrácíš (§ 1837 písm. l občanského zákoníku).',
-      ]
-    : [
-        'Od smlouvy můžeš odstoupit do 14 dnů bez udání důvodu — napiš na',
-        'dunder.jan@gmail.com nebo použij formulář na danero.cz/odstoupeni.',
-      ];
+  const odstoupeni =
+    args.kind === 'subscription'
+      ? [
+          'Právo odstoupit od smlouvy do 14 dnů ti u ročního hlídání zůstává —',
+          'je to průběžně poskytovaná služba. Když odstoupíš, vrátíme ti zaplacenou',
+          'částku sníženou o poměrnou část za dny, kdy ti hlídání běželo',
+          '(§ 1834 občanského zákoníku). Formulář: danero.cz/odstoupeni',
+        ]
+      : args.consentGiven
+        ? [
+            'Právo odstoupit od smlouvy do 14 dnů: u digitálního obsahu dodaného',
+            'okamžitě zaniká, jakmile ti ho zpřístupníme — a ty jsi při objednávce',
+            'výslovně požádal, abychom začali hned, a vzal na vědomí, že tím právo',
+            'odstoupit ztrácíš (§ 1837 písm. l občanského zákoníku).',
+          ]
+        : [
+            'Od smlouvy můžeš odstoupit do 14 dnů bez udání důvodu — napiš na',
+            'dunder.jan@gmail.com nebo použij formulář na danero.cz/odstoupeni.',
+          ];
 
   return {
     subject: `Potvrzení objednávky — ${args.what}`,
@@ -146,6 +165,37 @@ export function purchaseConfirmationEmail(args: {
       '',
       'Doklad o zaplacení a historii plateb najdeš v aplikaci v sekci',
       'Předplatné. Podmínky užití: danero.cz/podminky',
+    ].join('\n'),
+  };
+}
+
+/**
+ * Oznámení před automatickou obnovou předplatného. Slibují ho /podminky,
+ * /cenik i /predplatne — bez něj by šlo o tichý auto-renew, který docs/19 §5
+ * výslovně zakazuje, a o nepravdivé tvrzení ve smluvních podmínkách.
+ *
+ * Jde o službní sdělení ke smlouvě, ne obchodní sdělení — proto bez opt-outu.
+ */
+export function subscriptionRenewalEmail(args: {
+  renewsOn: string;
+  priceCzk: number;
+}): Omit<EmailMessage, 'to'> {
+  return {
+    subject: `Předplatné Danera se obnoví ${args.renewsOn}`,
+    text: [
+      `Tvoje roční hlídání daní z investic se ${args.renewsOn} automaticky obnoví`,
+      `na další rok a strhneme ${args.priceCzk} Kč. Cena je konečná.`,
+      '',
+      'Nemusíš dělat nic — pokud chceš pokračovat.',
+      '',
+      'Pokud pokračovat nechceš, zruš obnovu do toho data v aplikaci:',
+      'danero.cz/predplatne → Spravovat platby a zrušit obnovu.',
+      'Do konce zaplaceného období ti služba poběží dál.',
+      '',
+      'Prodávající: Jan Dunder, IČO 19642661, [adresa odstraněna] 640/3, Vršovice,',
+      '101 00 Praha 10. Není plátcem DPH.',
+      '',
+      'Podmínky užití: danero.cz/podminky',
     ].join('\n'),
   };
 }

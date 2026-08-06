@@ -16,6 +16,10 @@ on:
     branches: [main]
     paths: ['apps/web/db/migrations/**']
 
+# workflow nepotřebuje zapisovat nic — jen si vyzvednout kód
+permissions:
+  contents: read
+
 # dvě migrace nad jednou databází naráz = rozbité schéma
 concurrency:
   group: production-migrations
@@ -25,6 +29,14 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
+      # bez tohohle pustí `gh workflow run migrate.yml --ref moje-vetev`
+      # migrace z libovolné větve proti PRODUKČNÍ databázi
+      - name: Jen z větve main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Migrace produkce se smí pouštět jen z main (teď: $GITHUB_REF)."
+          exit 1
+
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -33,18 +45,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # migraci se starším `when` by drizzle na produkci tiše přeskočil (M-3)
+      - name: Kontrola pořadí migrací
+        working-directory: apps/web
+        run: node db/check-journal.mjs
+
       - name: Stav před
         working-directory: apps/web
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: node db/status.mjs
 
+      # vlastní skript místo `drizzle-kit migrate`: při selhání vypíše celou
+      # chybu včetně SQLSTATE a dotazu, na kterém to spadlo (M-4)
       - name: Migrace
         if: inputs.action != 'status'
         working-directory: apps/web
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: pnpm exec drizzle-kit migrate
+        run: node db/migrate.mjs
 
       - name: Stav po
         if: inputs.action != 'status'

@@ -57,6 +57,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Drizzle porovnává jen timestamp nejnovější migrace, nikdy hash: migrace
+      # se starším `when` (dva PR vygenerované paralelně) se na produkci tiše
+      # přeskočí navždy, i když na čerstvé DB v CI projde. Musí padnout tady.
+      - name: Kontrola pořadí migrací
+        working-directory: apps/web
+        run: node db/check-journal.mjs
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint

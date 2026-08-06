@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+
+const ERROR_ID = 'overeni-emailu-error';
 
 export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string }) {
   const [sent, setSent] = useState(false);
@@ -53,9 +55,10 @@ export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string
           required
           defaultValue={defaultEmail}
           autoComplete="email"
+          {...describedByError(error !== null, ERROR_ID)}
         />
       </div>
-      {error && <p className="text-sm text-cervena">{error}</p>}
+      {error && <FieldError id={ERROR_ID}>{error}</FieldError>}
       <Button type="submit" disabled={pending} variant="secondary" className="w-full">
         {pending ? 'Odesílám…' : 'Poslat odkaz znovu'}
       </Button>

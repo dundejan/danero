@@ -39,7 +39,9 @@ export default async function ReportPage({
   // konkrétního roku (docs/19)
   if (!(await canGenerateReport(db, user.id, year))) {
     return (
-      <main className="py-12">
+      // <main> nese už layout aplikace (cíl skip-linku) — druhý by udělal
+      // dva landmarky a rozbil „Přeskočit na obsah“
+      <div className="py-12">
         <PaywallCard
           title={`Podklady k přiznání za rok ${year}`}
           body={
@@ -51,7 +53,7 @@ export default async function ReportPage({
           }
           price={`490 Kč za rok ${year} — nebo 990 Kč ročně se všemi roky a hlídáním`}
         />
-      </main>
+      </div>
     );
   }
 

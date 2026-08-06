@@ -12,7 +12,11 @@ export const XTB_BROKER = 'xtb';
  * dividendy mapování nepotřebují (jsou v měně účtu, ISIN je u nich optional).
  */
 export interface XtbInstrumentMap {
-  [symbol: string]: { isin: string; currency: string };
+  /**
+   * Měna je volitelná: dividendám XTB stačí ISIN (jsou v měně účtu), obchod bez
+   * měny instrumentu ale spočítat nejde — takový symbol se hlásí k doplnění.
+   */
+  [symbol: string]: { isin: string; currency?: string };
 }
 
 /**
@@ -290,7 +294,7 @@ export async function parseXtbXlsx(
     line: number,
   ): { isin: string; currency: string } | null => {
     const instrument = instrumentMap[symbol];
-    if (instrument) return instrument;
+    if (instrument?.currency) return { isin: instrument.isin, currency: instrument.currency };
     if (!unmapped.has(symbol)) {
       unmapped.add(symbol);
       result.errors.push({

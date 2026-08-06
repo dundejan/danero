@@ -1,9 +1,39 @@
 import { TransactionSchema } from '@danero/shared';
-import { cleanNumber, HeaderMap, isValidIsoDate, parseCsv } from '../csv';
+import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const UNIVERSAL_BROKER = 'universal';
+
+/** Nejednoznačný číselný zápis v šabloně — chytá se u řádku a hlásí uživateli. */
+class AmbiguousNumberError extends Error {}
+
+/**
+ * Číslo z univerzální šablony. Šablona předepisuje desetinnou TEČKU, ale
+ * v českém Excelu vzniká čárka — a „1,500“ může znamenat 1,5 i 1500. Takový
+ * zápis ODMÍTÁME (dřív se tiše bral jako tisícový oddělovač, takže „0,001“ BTC
+ * se naimportovalo jako 1 kus — tisícinásobek). Ostatní čárky bereme jako
+ * desetinné: „1,25“ → 1.25. Dvě a víc čárek jednoznačně oddělují tisíce
+ * („1,234,567“), stejně jako čárka následovaná tečkou („1,234.56“).
+ */
+function universalNumber(value: string, column: string): string {
+  const trimmed = value.replace(/[\s\u00a0\u202f]/g, '');
+  if (!trimmed.includes(',')) return trimmed;
+  if (trimmed.includes('.')) {
+    // tečka i čárka = jednoznačné: poslední oddělovač je desetinný, ten druhý dělí tisíce
+    return trimmed.lastIndexOf('.') > trimmed.lastIndexOf(',')
+      ? trimmed.replace(/,/g, '')
+      : trimmed.replace(/\./g, '').replace(',', '.');
+  }
+  // dvě a víc čárek nemůže být desetinná čárka → oddělovač tisíců
+  if (trimmed.split(',').length > 2) return trimmed.replace(/,/g, '');
+  if (/^-?\d+,\d{3}$/.test(trimmed)) {
+    throw new AmbiguousNumberError(
+      `Hodnota „${value.trim()}“ ve sloupci ${column} je nejednoznačná — čárka může být desetinná čárka (${trimmed.replace(',', '.')}) i oddělovač tisíců (${trimmed.replace(',', '')}). Piš čísla s desetinnou TEČKOU, bez oddělovačů tisíců.`,
+    );
+  }
+  return trimmed.replace(',', '.');
+}
 
 /**
  * Univerzální CSV šablona v2 — fallback pro brokery bez vlastního parseru
@@ -103,12 +133,14 @@ export function parseUniversalCsv(text: string): ImportResult {
     // identické legitimní řádky (dva stejné obchody v týž den) nesmí tiše
     // splynout — pořadový suffix drží klíče stabilní i napříč exporty
     const id = uniqueId(`uni-${fnv1a64(row.join('|'))}`);
-    const feeAmount = cleanNumber(map.get(row, 'fee'));
-    const fee = feeAmount
-      ? { amount: feeAmount, currency: map.get(row, 'fee_currency') || map.get(row, 'currency') }
-      : undefined;
 
     try {
+      // uvnitř try: nejednoznačný číselný zápis (desetinná čárka vs. tisíce)
+      // vyhodí AmbiguousNumberError a musí skončit chybou řádku, ne pádem
+      const feeAmount = universalNumber(map.get(row, 'fee'), 'fee');
+      const fee = feeAmount
+        ? { amount: feeAmount, currency: map.get(row, 'fee_currency') || map.get(row, 'currency') }
+        : undefined;
       switch (type) {
         case 'BUY':
         case 'SELL': {
@@ -141,8 +173,8 @@ export function parseUniversalCsv(text: string): ImportResult {
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
               assetClass,
-              quantity: cleanNumber(map.get(row, 'quantity')),
-              pricePerShare: cleanNumber(map.get(row, 'price')),
+              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
+              pricePerShare: universalNumber(map.get(row, 'price'), 'price'),
               currency: map.get(row, 'currency'),
               fee,
               tradeDate: date,
@@ -159,9 +191,9 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin') || undefined,
-              gross: cleanNumber(map.get(row, 'amount')),
+              gross: universalNumber(map.get(row, 'amount'), 'amount'),
               currency: map.get(row, 'currency'),
-              withholdingTax: cleanNumber(map.get(row, 'withholding_tax')) || '0',
+              withholdingTax: universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
               sourceCountry: map.get(row, 'source_country') || undefined,
               date,
             }),
@@ -175,7 +207,7 @@ export function parseUniversalCsv(text: string): ImportResult {
             TransactionSchema.parse({
               type,
               id,
-              amount: cleanNumber(map.get(row, 'amount')),
+              amount: universalNumber(map.get(row, 'amount'), 'amount'),
               currency: map.get(row, 'currency'),
               ...(type === 'INTEREST'
                 ? { sourceCountry: map.get(row, 'source_country') || undefined }
@@ -194,8 +226,8 @@ export function parseUniversalCsv(text: string): ImportResult {
             });
             return;
           }
-          const ratioFrom = cleanNumber(map.get(row, 'ratio_from'));
-          const ratioTo = cleanNumber(map.get(row, 'ratio_to'));
+          const ratioFrom = universalNumber(map.get(row, 'ratio_from'), 'ratio_from');
+          const ratioTo = universalNumber(map.get(row, 'ratio_to'), 'ratio_to');
           if (subtype === 'SPLIT' && (!ratioFrom || !ratioTo)) {
             result.errors.push({
               line,
@@ -245,13 +277,13 @@ export function parseUniversalCsv(text: string): ImportResult {
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
               assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
-              quantity: cleanNumber(map.get(row, 'quantity')),
+              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
               date,
               ...(acquisitionDate
                 ? {
                     acquisition: {
                       date: acquisitionDate,
-                      costPerShare: cleanNumber(map.get(row, 'acquisition_price')) || undefined,
+                      costPerShare: universalNumber(map.get(row, 'acquisition_price'), 'acquisition_price') || undefined,
                       currency: map.get(row, 'acquisition_currency') || undefined,
                     },
                   }
@@ -267,7 +299,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin'),
-              quantity: cleanNumber(map.get(row, 'quantity')),
+              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
               date,
               note: map.get(row, 'note') || undefined,
             }),
@@ -275,6 +307,12 @@ export function parseUniversalCsv(text: string): ImportResult {
           return;
       }
     } catch (err) {
+      // nejednoznačné číslo má vlastní srozumitelnou hlášku — technický kontext
+      // Zodu by ji jen zamlžil
+      if (err instanceof AmbiguousNumberError) {
+        result.errors.push({ line, message: err.message, raw: row.join(',') });
+        return;
+      }
       // kontext řádku: první neprázdné buňky, ať uživatel řádek v souboru najde
       const context = row
         .filter((cell) => cell.trim() !== '')

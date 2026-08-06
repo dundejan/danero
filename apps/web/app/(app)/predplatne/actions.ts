@@ -1,9 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { subscriptions } from '@/db/schema';
+import { purchaseBlock, stripeCustomerFor } from '@/lib/billing';
 import { appUrl, stripe, stripePrices } from '@/lib/stripe';
 import { requireUser } from '@/lib/session';
 
@@ -18,6 +17,7 @@ async function checkout(params: {
   price: string;
   userId: string;
   email: string;
+  customerId: string | null;
   metadata: Record<string, string>;
   consentAt: string;
 }): Promise<never> {
@@ -27,7 +27,11 @@ async function checkout(params: {
     line_items: [{ price: params.price, quantity: 1 }],
     // párování platby s účtem — webhook z toho pozná, komu funkce odemknout
     client_reference_id: params.userId,
-    customer_email: params.email,
+    // Existujícího zákazníka posíláme dál, ať každý nákup nezakládá nového:
+    // jinak se platby jednoho člověka rozpadnou mezi několik zákazníků, portál
+    // ukáže jen jednu z nich a `invoice.payment_failed` nemá koho dohledat.
+    // `customer` a `customer_email` se navzájem vylučují.
+    ...(params.customerId ? { customer: params.customerId } : { customer_email: params.email }),
     metadata: { userId: params.userId, consentAt: params.consentAt, ...params.metadata },
     ...(params.mode === 'subscription'
       ? {
@@ -35,7 +39,9 @@ async function checkout(params: {
             metadata: { userId: params.userId, consentAt: params.consentAt },
           },
         }
-      : {}),
+      : // Doklad o zaplacení (§ 435 OZ): u předplatného ho Stripe vystaví sám
+        // (faktura ke každému období), u jednorázové platby jen na vyžádání.
+        { invoice_creation: { enabled: true } }),
     // pole na promokód (docs/19) — kupóny spravuje Stripe, my si jen uložíme,
     // který kód se použil, kvůli výplatám partnerům
     allow_promotion_codes: true,
@@ -65,12 +71,16 @@ function consentOrRedirect(formData: FormData): string {
 export async function buySubscriptionAction(formData: FormData): Promise<never> {
   const consentAt = consentOrRedirect(formData);
   const user = await requireUser();
+  const db = await getDb();
+  const blocked = await purchaseBlock(db, user.id, 'subscription');
+  if (blocked) redirect(`/predplatne?stav=${blocked}`);
   return checkout({
     consentAt,
     mode: 'subscription',
     price: stripePrices().subscription,
     userId: user.id,
     email: user.email,
+    customerId: await stripeCustomerFor(db, user.id),
     metadata: { kind: 'subscription' },
   });
 }
@@ -80,12 +90,17 @@ export async function buyReportAction(formData: FormData): Promise<never> {
   const user = await requireUser();
   const taxYear = Number(formData.get('rok'));
   if (!Number.isInteger(taxYear)) redirect('/predplatne?stav=chyba-rok');
+  const db = await getDb();
+  // předplatitel má podklady za všechny roky v ceně — neprodávat mu je znovu
+  const blocked = await purchaseBlock(db, user.id, 'report');
+  if (blocked) redirect(`/predplatne?stav=${blocked}`);
   return checkout({
     consentAt,
     mode: 'payment',
     price: stripePrices().report,
     userId: user.id,
     email: user.email,
+    customerId: await stripeCustomerFor(db, user.id),
     metadata: { kind: 'report', taxYear: String(taxYear) },
   });
 }
@@ -93,19 +108,17 @@ export async function buyReportAction(formData: FormData): Promise<never> {
 /**
  * Zákaznický portál Stripu — zrušení obnovy, změna karty, historie plateb
  * a doklady. Vlastní obrazovky na tohle nestavíme, Stripe to má hotové
- * a právně ošetřené.
+ * a právně ošetřené. Otevře se každému, kdo u nás někdy zaplatil: doklad
+ * potřebuje i ten, kdo koupil jen podklady, i ten, komu předplatné doběhlo.
  */
 export async function openBillingPortalAction(): Promise<never> {
   const user = await requireUser();
   const db = await getDb();
-  const [row] = await db
-    .select({ customerId: subscriptions.stripeCustomerId })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, user.id));
-  if (!row?.customerId) redirect('/predplatne?stav=bez-predplatneho');
+  const customerId = await stripeCustomerFor(db, user.id);
+  if (!customerId) redirect('/predplatne?stav=bez-plateb');
 
   const session = await stripe().billingPortal.sessions.create({
-    customer: row.customerId,
+    customer: customerId,
     return_url: `${appUrl()}/predplatne`,
   });
   redirect(session.url);

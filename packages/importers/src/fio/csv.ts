@@ -296,7 +296,17 @@ export function parseFioCsv(
   };
 
   const symbolMap = options.symbolMap ?? {};
-  const unmappedReported = new Set<string>();
+  // dvě evidence: `unmappedListed` hlídá, ať se symbol dostane do unmappedSymbols
+  // jen jednou; `unmappedErrored` hlídá chybu u obchodů — dividendové varování
+  // ji nesmí umlčet (obchod bez ISIN se zahazuje a bez chyby by zmizel tiše)
+  const unmappedListed = new Set<string>();
+  const unmappedErrored = new Set<string>();
+  /** Symbol bez ISIN → jednou do seznamu k doplnění (UI nabídne číselník). */
+  const listUnmapped = (symbol: string): void => {
+    if (unmappedListed.has(symbol)) return;
+    unmappedListed.add(symbol);
+    result.unmappedSymbols.push(symbol);
+  };
   const dividends: DividendEntry[] = [];
   const taxes: TaxEntry[] = [];
 
@@ -343,9 +353,9 @@ export function parseFioCsv(
         const isin = symbolMap[symbol]?.isin;
         if (!isin) {
           // jeden error per symbol — uživatel doplní mapování a import zopakuje
-          if (!unmappedReported.has(symbol)) {
-            unmappedReported.add(symbol);
-            result.unmappedSymbols.push(symbol);
+          listUnmapped(symbol);
+          if (!unmappedErrored.has(symbol)) {
+            unmappedErrored.add(symbol);
             result.errors.push({
               line,
               message: `Symbol ${symbol}: doplň ISIN — Fio ho neexportuje.`,
@@ -373,6 +383,15 @@ export function parseFioCsv(
         if (!resolved) {
           result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.', raw });
           return;
+        }
+        // symbol, ke kterému má soubor JEN dividendy, se dřív k doplnění ISIN
+        // vůbec nenabídl (unmappedSymbols se plnily jen ve větvi BUY/SELL)
+        if (symbol && !symbolMap[symbol]?.isin && !unmappedListed.has(symbol)) {
+          listUnmapped(symbol);
+          result.warnings.push({
+            line,
+            message: `Symbol ${symbol}: doplň ISIN — Fio ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a zemi zdroje odhadujeme jen z textu.`,
+          });
         }
         dividends.push({
           line,

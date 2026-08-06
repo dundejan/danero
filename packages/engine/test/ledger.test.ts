@@ -34,6 +34,18 @@ describe('R-04 korporátní akce', () => {
     expect(result.securities.timeTestExemptProceedsCzk.toString()).toBe('120000');
   });
 
+  it('R-11: změna ISIN může být i změna třídy fondu → lot je výkladový a engine varuje', () => {
+    const result = run([
+      buy({ isin: 'IE00B4L5Y983', quantity: '10', pricePerShare: '1000', tradeDate: '2021-03-01', settlementDate: '2021-03-01' }),
+      corpAction({ subtype: 'ISIN_CHANGE', isin: 'IE00B4L5Y983', newIsin: 'IE00B4L5YC18', date: '2024-03-01' }),
+    ]);
+    // R-04e: časový test běží dál od původního nákupu, lot se ale označí k posouzení
+    expect(result.ledger.lots[0]!.acquisitionDate).toBe('2021-03-01');
+    expect(result.ledger.lots[0]!.isin).toBe('IE00B4L5YC18');
+    expect(result.ledger.lots[0]!.interpretive).toBe(true);
+    expect(hasWarning(result, 'ISIN_CHANGE_INTERPRETIVE')).toBe(true);
+  });
+
   it('R-04b: fúze bez explicitního příznaku test zachová a přidá výkladové varování', () => {
     const result = run([
       buy({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '1000', tradeDate: '2022-01-10', settlementDate: '2022-01-10' }),
@@ -217,8 +229,10 @@ describe('R-05 párování a dílčí základ § 10', () => {
   });
 
   it('dopočet vypořádání: US od 28. 5. 2024 a Kanada od 27. 5. 2024 T+1, před tím T+2', () => {
-    // Kanada (CIRO/CCMA): účinnost 27. 5. 2024 — o den dřív než US (Memorial Day)
-    expect(inferSettlementDate('2024-05-24', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pátek + T+2
+    // Kanada (CIRO/CCMA): účinnost 27. 5. 2024 — o den dřív než US (Memorial Day).
+    // Kanadské ISIN jedou na kalendáři US (R-01a, dokumentovaná aproximace), takže
+    // 27. 5. je pro ně svátek a T+2 z pátku dopadá až na středu 29. 5.
+    expect(inferSettlementDate('2024-05-24', 'CA9861913023', 'STOCK')).toBe('2024-05-29'); // pátek + T+2
     expect(inferSettlementDate('2024-05-27', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pondělí + T+1
     // US (SEC 15c6-1): účinnost 28. 5. 2024
     expect(inferSettlementDate('2024-05-27', 'US0378331005', 'STOCK')).toBe('2024-05-29'); // ještě T+2
@@ -226,6 +240,40 @@ describe('R-05 párování a dílčí základ § 10', () => {
     // ostatní trhy zůstávají T+2, krypto T+0
     expect(inferSettlementDate('2024-06-03', 'DE0007164600', 'STOCK')).toBe('2024-06-05');
     expect(inferSettlementDate('2024-06-03', 'BTC', 'CRYPTO')).toBe('2024-06-03');
+  });
+
+  it('R-01a: dopočet vypořádání přeskakuje i burzovní svátky (velikonoční nákup IE ETF)', () => {
+    // obchod ve středu 13. 4. 2022; Velký pátek 15. 4. a Velikonoční pondělí
+    // 18. 4. Euronext Dublin neobchoduje → T+2 padá až na úterý 19. 4.
+    expect(inferSettlementDate('2022-04-13', 'IE00B4L5Y983', 'ETF')).toBe('2022-04-19');
+
+    const result = run([
+      // vypořádání schválně nevyplněné — přesně tak chodí z výpisů bez settle date
+      buy({ isin: 'IE00B4L5Y983', quantity: '100', pricePerShare: '2000', tradeDate: '2022-04-13', settlementDate: undefined }),
+      sell({ isin: 'IE00B4L5Y983', quantity: '100', pricePerShare: '3000', tradeDate: '2025-04-16', settlementDate: '2025-04-16' }),
+    ]);
+    const allocation = result.ledger.disposals[0]!.allocations[0]!;
+    expect(allocation.acquisitionDate).toBe('2022-04-19');
+    expect(allocation.exemptFrom).toBe('2025-04-20');
+    // bez svátků by vypořádání vyšlo 15. 4. 2022 a prodej 16. 4. 2025 by byl
+    // (chybně) osvobozený — takhle je zdanitelný: 300 000 − 200 000
+    expect(allocation.timeTestExempt).toBe(false);
+    expect(result.securities.base10Czk.toString()).toBe('100000');
+  });
+
+  it('R-01a: kalendář svátků se vybírá podle prefixu ISIN', () => {
+    // US: 4. 7. 2025 Independence Day → T+1 ze čtvrtka až na pondělí
+    expect(inferSettlementDate('2025-07-03', 'US0378331005', 'STOCK')).toBe('2025-07-07');
+    // DE: Xetra neobchoduje 24.–26. 12. → T+2 z 23. 12. 2025 až na 30. 12.
+    expect(inferSettlementDate('2025-12-23', 'DE0007164600', 'STOCK')).toBe('2025-12-30');
+    // UK: 5. 5. 2025 Early May bank holiday
+    expect(inferSettlementDate('2025-05-02', 'GB0002374006', 'STOCK')).toBe('2025-05-07');
+    // CZ: 8. 5. 2025 Den vítězství
+    expect(inferSettlementDate('2025-05-06', 'CZ0008019106', 'STOCK')).toBe('2025-05-09');
+    // IE: 1. 5. (Euronext) i 5. 5. 2025 (irský May Bank Holiday)
+    expect(inferSettlementDate('2025-04-30', 'IE00B4L5Y983', 'ETF')).toBe('2025-05-06');
+    // ostatní ISIN jedou na TARGET2 — 1. 5. ano, irské pondělí ne
+    expect(inferSettlementDate('2025-04-30', 'FR0000120271', 'STOCK')).toBe('2025-05-05');
   });
 
   it('R-04j: prodej frakcí CP dostane informační vlajku, celé kusy a krypto ne', () => {

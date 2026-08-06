@@ -89,6 +89,33 @@ describe('Fio e-Broker CSV parser', () => {
     expect(dividend.date).toBe('2026-05-10');
   });
 
+  // B-13: unmappedSymbols se plnily jen ve větvi BUY/SELL, takže symbol
+  // s pouhými dividendami se uživateli k doplnění ISIN nikdy nenabídl
+  it('symbol jen s dividendami se nabídne k doplnění ISIN (warning, ne error)', () => {
+    const csv = [
+      FIO_HEADER,
+      '10.05.2026;;MSFT;;;USD;;;25,00;;;;Dividenda MSFT, USA',
+      '10.05.2026;;MSFT;;;USD;;;-3,75;;;;Daň z dividendy MSFT, USA',
+    ].join('\n');
+    const result = parseFioCsv(csv, { symbolMap: FIO_SYMBOL_MAP });
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSymbols).toEqual(['MSFT']);
+    expect(result.warnings.some((w) => w.message.includes('MSFT: doplň ISIN'))).toBe(true);
+    // dividenda se přesto zaúčtuje (ISIN u ní není povinný)
+    expect(result.transactions.filter((t) => t.type === 'DIVIDEND')).toHaveLength(1);
+  });
+
+  it('symbol s dividendou i obchodem: v seznamu jednou, obchod pořád hlásí chybu', () => {
+    const csv = [
+      FIO_HEADER,
+      '10.05.2026;;MSFT;;;USD;;;25,00;;;;Dividenda MSFT, USA',
+      '11.05.2026;Nákup;MSFT;400,00;10;USD;;;4000,00;;;;',
+    ].join('\n');
+    const result = parseFioCsv(csv, { symbolMap: FIO_SYMBOL_MAP });
+    expect(result.unmappedSymbols).toEqual(['MSFT']);
+    expect(result.errors.filter((e) => e.message.includes('doplň ISIN'))).toHaveLength(1);
+  });
+
   it('nespárovaná srážková daň → warning, žádná transakce', () => {
     const csv = [FIO_HEADER, '10.05.2026;;AAPL;;;USD;;;-3,75;;;;Daň z dividendy AAPL, USA'].join(
       '\n',

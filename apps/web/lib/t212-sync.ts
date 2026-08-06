@@ -14,6 +14,7 @@ import {
   type SyncProgress,
   type SyncStatus,
   type SyncYearProgress,
+  previouslyVerifiedYears,
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
 import {
@@ -181,6 +182,9 @@ export async function syncTrading212(
   // dedupe klíče jednou za sync, ne per rok — importParsed do množiny doplňuje
   const dedupeKeys = await loadDedupeKeys(db, account.userId);
   let emptyStreak = 0;
+  // kolik řádků nám brokerovy exporty vůbec vydaly (nezávisle na dedupe) —
+  // rozlišuje „účet nic neobchodoval“ od „broker nic nevrátil“ (G-1)
+  let parsedTransactions = 0;
 
   // Per-year resume: roky dokončené v posledním neúspěšném plném běhu se
   // přeskočí (transakce už jsou v DB, dedupe by nic nepřidal — platilo by se
@@ -193,11 +197,14 @@ export async function syncTrading212(
       options.resume.syncedAt.getTime() - 7 * 86_400_000,
     ).getUTCFullYear();
     for (const entry of options.resume.years) {
-      // rok s chybami řádků se nedědí — vadný export mohl být přechodný
-      // (useknutý soubor) a přeskočením by transakce chyběly navždy
+      // Dědí se JEN rok, jehož stažení i zpracování doběhlo celé bez výjimky
+      // (`complete`). Status 'done' sám nestačí: sedí i na roku z běhu starší
+      // verze, kde se úplnost neznačila. Rok s chybami řádků se nedědí taky —
+      // vadný export mohl být přechodný a přeskočením by transakce chyběly navždy.
       if (
         entry.year < resumeSafeBelowYear &&
         entry.year !== currentYear &&
+        entry.complete === true &&
         entry.status !== 'running' &&
         (entry.errors ?? 0) === 0
       ) {
@@ -215,6 +222,7 @@ export async function syncTrading212(
       yearProgress.push({ ...alreadyDone });
       // prázdnost se hodnotí stejně jako u živého běhu (počty minulého běhu):
       // rok bez jediné transakce zvyšuje počítadlo a ukončuje smyčku
+      parsedTransactions += (alreadyDone.added ?? 0) + (alreadyDone.duplicates ?? 0);
       if ((alreadyDone.added ?? 0) + (alreadyDone.duplicates ?? 0) === 0) {
         emptyStreak += 1;
         if (emptyStreak >= 2) break;
@@ -252,6 +260,7 @@ export async function syncTrading212(
     }
     const parsed = detectAndParse(rawExport);
     yearsCovered.push(year);
+    parsedTransactions += parsed.transactions.length;
 
     const hasContent =
       parsed.transactions.length > 0 ||
@@ -274,6 +283,9 @@ export async function syncTrading212(
     // „empty“ jen když v roce opravdu nic nebylo — rok plný chybových řádků
     // musí v průběhu ukázat počty, ne „žádné transakce“
     current.status = hasContent ? 'done' : 'empty';
+    // až sem se dojde jen bez výjimky (stažení, parsování i uložení) — teprve
+    // takový rok smí příští resume přeskočit
+    current.complete = true;
 
     // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil
     // chyby — nesmí nám resetovat počítadlo a prohnat smyčku až do 2016).
@@ -309,6 +321,9 @@ export async function syncTrading212(
       mapped.positions.map((p) => ({ isin: p.isin, quantity: p.quantity })),
       now.toISOString().slice(0, 10),
       mapped.unmatchedTickers,
+      // roky ověřené dřívějšími běhy + tímhle během (inkrementál stahuje jen
+      // běžný rok, ale co plný sync ověřil, platí dál)
+      [...previouslyVerifiedYears(account), ...yearsCovered],
     );
   } catch (error) {
     // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí
@@ -320,7 +335,19 @@ export async function syncTrading212(
   const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
   const errors = batches.flatMap((batch) => batch.errors);
 
-  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, reconciliationError);
+  // G-1: prázdný export (výpadek generování na straně T212) vypadá stejně jako
+  // prázdný rok. Plný sync, který nepřinesl ANI JEDNU transakci a zároveň nemá
+  // potvrzeno, že pozice sedí, se proto neuzavírá — jinak by se lastSyncedAt
+  // nastavil, další běh by byl inkrementální a plná historie by chyběla navždy.
+  const incomplete =
+    mode === 'full' && parsedTransactions === 0 && reconciliation?.ok !== true
+      ? 'Trading212 nevrátil za žádný rok jedinou transakci a zároveň se nepodařilo ověřit, že pozice sedí — synchronizaci proto nepovažujeme za dokončenou a příště se stáhne znovu celá historie. Bývá to dočasný výpadek generování výpisů na straně Trading212; zkus to za chvíli znovu.'
+      : null;
+
+  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, {
+    reconciliationError,
+    incomplete,
+  });
 
   return { batches, yearsCovered, added, duplicates, errors, reconciliation, status };
 }

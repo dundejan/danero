@@ -10,6 +10,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/field';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
@@ -159,7 +160,7 @@ export function ReportView({
 
       <Card className="space-y-3">
         <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
-        <div className="scroll-stiny overflow-x-auto">
+        <ScrollArea label="Porovnání variant párování">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -197,7 +198,7 @@ export function ReportView({
                     </td>
                     <td className="py-2 font-sans text-xs">
                       {isRecommended && (
-                        <span className="rounded bg-ruzova/10 px-2 py-0.5 font-semibold text-ruzova">
+                        <span className="rounded bg-ruzova/10 px-2 py-0.5 font-semibold text-ruzova-text">
                           nejvýhodnější
                         </span>
                       )}{' '}
@@ -208,7 +209,7 @@ export function ReportView({
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollArea>
         {demo ? (
           <p className="text-xs text-inkoust-tlumeny">
             Denní kurzy jsou v demu ukázkové (odvozené z jednotného kurzu roku) — s vlastním
@@ -247,7 +248,7 @@ export function ReportView({
       {allDisposals.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Prodeje v roce {year} ({allDisposals.length})</CardTitle>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label={`Prodeje v roce ${year}`}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -314,14 +315,14 @@ export function ReportView({
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
         </Card>
       )}
 
       {result.derivatives.items.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Derivátové obchody v roce {year} ({result.derivatives.items.length})</CardTitle>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label={`Derivátové obchody v roce ${year}`}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -352,12 +353,28 @@ export function ReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
           {result.derivatives.deniedExpensesCzk.gt(0) && (
             <p className="text-xs text-jantar-text">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
-              podle opatrného výkladu jako neuznatelný výdaj (R-12i) — mírnější výklad „výdaje za celý
-              druh“ by základ daně snížil;{' '}
+              podle opatrného výkladu jako neuznatelný výdaj (R-12i). Mírnější výklad „výdaje za
+              celý druh“ by{' '}
+              {/* skutečný dopad, ne hrubá prémie: výdaje druhu jsou stropované
+                  jeho příjmy (§ 10/4), takže rozdíl bývá výrazně menší */}
+              {result.derivatives.deniedExpensesImpactCzk.gt(0) ? (
+                <>
+                  základ daně snížil o{' '}
+                  <span className="font-mono">
+                    {czk(result.derivatives.deniedExpensesImpactCzk)}
+                  </span>{' '}
+                  (méně než celá prémie — výdaje druhu se uplatní nejvýš do výše jeho příjmů,
+                  § 10/4)
+                </>
+              ) : (
+                <>na základu daně letos nic nezměnil — výdaje druhu už teď dosáhly stropu jeho
+                příjmů (§ 10/4)</>
+              )}
+              ;{' '}
               {demo
                 ? 'v plné verzi si výklad přepneš v Nastavení — založ si účet.'
                 : 'přepínač najdeš v Nastavení.'}
@@ -369,7 +386,7 @@ export function ReportView({
       {result.dividends.items.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Dividendy podle států (zápočet dle § 38f, Příloha č. 3)</CardTitle>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label="Dividendy podle států">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -390,7 +407,7 @@ export function ReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
           {/* hlavička § 8 zahrnuje i úroky — bez tohoto řádku by rozpis neseděl na souhrn */}
           {result.dividends.taxableInterestCzk.gt(0) && (
             <p className="text-xs text-inkoust-tlumeny">
@@ -645,7 +662,7 @@ export function ReportView({
             JPY…) používáme z týchž pokynů. Nákupy před rokem 2020 se přepočítávají
             denními kurzy ČNB.
           </p>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label="Použité jednotné kurzy GFŘ">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -674,7 +691,7 @@ export function ReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
         </Card>
       )}
     </div>

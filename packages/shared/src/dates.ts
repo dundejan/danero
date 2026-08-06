@@ -34,14 +34,22 @@ export function addYears(date: IsoDate, years: number): IsoDate {
   return `${targetYear}-${pad(m)}-${pad(Math.min(day, daysInMonth))}`;
 }
 
-/** Přičte pracovní dny (přeskakuje so+ne; svátky neřeší — aproximace pro dopočet vypořádání). */
-export function addBusinessDays(date: IsoDate, days: number): IsoDate {
+/**
+ * Přičte pracovní dny — přeskakuje víkendy a dny, které `isHoliday` označí za
+ * svátek. Kalendáře svátků jsou doména enginu (burzy, R-01a), ne tohohle modulu;
+ * bez predikátu se přeskakují jen víkendy.
+ */
+export function addBusinessDays(
+  date: IsoDate,
+  days: number,
+  isHoliday: (date: IsoDate) => boolean = () => false,
+): IsoDate {
   let current = date;
   let remaining = days;
   while (remaining > 0) {
     current = addDays(current, 1);
     const dow = new Date(`${current}T00:00:00Z`).getUTCDay();
-    if (dow !== 0 && dow !== 6) remaining -= 1;
+    if (dow !== 0 && dow !== 6 && !isHoliday(current)) remaining -= 1;
   }
   return current;
 }

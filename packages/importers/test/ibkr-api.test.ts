@@ -5,7 +5,7 @@ import { IBKR_FIXTURE } from './fixtures/ibkr';
 const SEND_OK = `<FlexStatementResponse timestamp="x">
   <Status>Success</Status>
   <ReferenceCode>REF123</ReferenceCode>
-  <Url>https://flex.test/GetStatement</Url>
+  <Url>https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement</Url>
 </FlexStatementResponse>`;
 
 const IN_PROGRESS = `<FlexStatementResponse timestamp="x">
