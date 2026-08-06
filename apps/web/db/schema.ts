@@ -378,6 +378,12 @@ export const subscriptions = pgTable('subscriptions', {
   stripeSubscriptionId: text('stripe_subscription_id'),
   /** Použitý promokód — podklad pro výplaty partnerům (docs/19). */
   promoCode: text('promo_code'),
+  /**
+   * Kdy zákazník výslovně požádal o zahájení plnění před uplynutím 14denní
+   * lhůty (§ 1837 písm. l OZ). Bez tohohle záznamu bychom nedoložili, že
+   * odstoupení už nepřipadá v úvahu — proto se ukládá k platbě, ne do auditu.
+   */
+  consentAt: timestamp('consent_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -398,6 +404,8 @@ export const reportPurchases = pgTable(
     taxYear: integer('tax_year').notNull(),
     stripePaymentIntentId: text('stripe_payment_intent_id'),
     promoCode: text('promo_code'),
+    /** Výslovná žádost o zahájení plnění před lhůtou (§ 1837 písm. l OZ). */
+    consentAt: timestamp('consent_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   // druhý nákup téhož roku nedává smysl a webhook chodí i opakovaně

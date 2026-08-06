@@ -162,6 +162,13 @@
       "when": 1785957610631,
       "tag": "0022_tarify_predplatne_a_nakupy",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786000535173,
+      "tag": "0023_souhlas_se_zahajenim_plneni",
+      "breakpoints": true
     }
   ]
 }

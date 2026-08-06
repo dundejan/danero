@@ -19,6 +19,7 @@ async function checkout(params: {
   userId: string;
   email: string;
   metadata: Record<string, string>;
+  consentAt: string;
 }): Promise<never> {
   const base = appUrl();
   const session = await stripe().checkout.sessions.create({
@@ -27,9 +28,13 @@ async function checkout(params: {
     // párování platby s účtem — webhook z toho pozná, komu funkce odemknout
     client_reference_id: params.userId,
     customer_email: params.email,
-    metadata: { userId: params.userId, ...params.metadata },
+    metadata: { userId: params.userId, consentAt: params.consentAt, ...params.metadata },
     ...(params.mode === 'subscription'
-      ? { subscription_data: { metadata: { userId: params.userId } } }
+      ? {
+          subscription_data: {
+            metadata: { userId: params.userId, consentAt: params.consentAt },
+          },
+        }
       : {}),
     // pole na promokód (docs/19) — kupóny spravuje Stripe, my si jen uložíme,
     // který kód se použil, kvůli výplatám partnerům
@@ -42,9 +47,21 @@ async function checkout(params: {
   redirect(session.url);
 }
 
-export async function buySubscriptionAction(): Promise<never> {
+/**
+ * Bez výslovné žádosti o zahájení plnění před uplynutím 14denní lhůty se
+ * nekupuje (§ 1837 písm. l OZ). Formulář checkbox vyžaduje, tady se to hlídá
+ * i na serveru — a okamžik se pošle do Stripe, aby skončil u platby v databázi.
+ */
+function consentOrRedirect(formData: FormData): string {
+  if (formData.get('souhlas') !== 'on') redirect('/predplatne?stav=chybi-souhlas');
+  return new Date().toISOString();
+}
+
+export async function buySubscriptionAction(formData: FormData): Promise<never> {
+  const consentAt = consentOrRedirect(formData);
   const user = await requireUser();
   return checkout({
+    consentAt,
     mode: 'subscription',
     price: stripePrices().subscription,
     userId: user.id,
@@ -54,10 +71,12 @@ export async function buySubscriptionAction(): Promise<never> {
 }
 
 export async function buyReportAction(formData: FormData): Promise<never> {
+  const consentAt = consentOrRedirect(formData);
   const user = await requireUser();
   const taxYear = Number(formData.get('rok'));
   if (!Number.isInteger(taxYear)) redirect('/predplatne?stav=chyba-rok');
   return checkout({
+    consentAt,
     mode: 'payment',
     price: stripePrices().report,
     userId: user.id,
