@@ -39,6 +39,11 @@ async function checkout(params: {
     // pole na promokód (docs/19) — kupóny spravuje Stripe, my si jen uložíme,
     // který kód se použil, kvůli výplatám partnerům
     allow_promotion_codes: true,
+    // Bez tohohle Stripe přepočítá cenu do měny návštěvníka a přidá 2–4 %
+    // konverzní poplatek — zákazník by pak platil jinou částku, než jakou
+    // slibuje ceník i potvrzovací e-mail („cena je konečná"). Danero počítá
+    // českou daň, takže cizí měna nemá komu pomoct.
+    adaptive_pricing: { enabled: false },
     locale: 'cs',
     success_url: `${base}/predplatne?stav=hotovo`,
     cancel_url: `${base}/predplatne?stav=zruseno`,
