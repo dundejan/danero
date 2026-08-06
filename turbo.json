@@ -6,10 +6,20 @@
       "persistent": true
     },
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ]
     },
-    "test": {},
+    "test": {
+      "passThroughEnv": [
+        "TEST_DATABASE_URL"
+      ]
+    },
     "typecheck": {},
     "lint": {}
   }

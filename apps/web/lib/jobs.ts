@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
+import { ts } from '@/lib/sql';
 import { brokerAccounts, jobs } from '@/db/schema';
 import type { SyncJobView } from '@/components/sync-job-progress';
 import {
@@ -370,7 +371,7 @@ export async function recoverStaleJobs(db: Db, now: Date = new Date()): Promise<
     .where(
       and(
         eq(jobs.status, 'running'),
-        sql`coalesce(${jobs.heartbeatAt}, ${jobs.startedAt}, ${jobs.createdAt}) <= ${cutoff}`,
+        sql`coalesce(${jobs.heartbeatAt}, ${jobs.startedAt}, ${jobs.createdAt}) <= ${ts(cutoff)}`,
       ),
     )
     .returning();
