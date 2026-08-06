@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { lt, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { appRateLimits } from '@/db/schema';
 import { ts } from '@/lib/sql';
@@ -28,4 +28,17 @@ export async function checkRateLimit(
     })
     .returning({ count: appRateLimits.count });
   return (row?.count ?? 1) <= max;
+}
+
+/**
+ * Úklid prošlých oken. Tabulka nemá cizí klíč na uživatele, takže bez tohohle
+ * roste donekonečna a přežije i smazání účtu — a u klíčů z waitlistu drží
+ * syrovou IP adresu, kterou po vypršení okna nemáme proč uchovávat.
+ */
+export async function pruneRateLimits(db: Db, now = new Date()): Promise<number> {
+  const deleted = await db
+    .delete(appRateLimits)
+    .where(lt(appRateLimits.resetAt, now))
+    .returning({ key: appRateLimits.key });
+  return deleted.length;
 }

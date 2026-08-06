@@ -27,6 +27,16 @@ function fileSink(path: string): EmailSender {
 /** Resend za env klíčem; bez něj dev log (žádný setup, nic se neposílá). */
 export function resolveEmailSender(): EmailSender {
   const logPath = process.env.DANERO_EMAIL_LOG;
+  // Pojistka v duchu té u chybějícího RESEND_API_KEY níž: kde je nakonfigurované
+  // skutečné odesílání, tam přesměrování do souboru znamená němou frontu —
+  // a ověřovací i resetovací odkazy v plaintextu na disku. Podmínka schválně
+  // není na NODE_ENV: `pnpm test:e2e:prod` běží taky v produkčním režimu, ale
+  // Resend klíč nemá, takže ho to nesmí zastavit.
+  if (logPath && process.env.RESEND_API_KEY) {
+    throw new Error(
+      'DANERO_EMAIL_LOG je nastaven vedle RESEND_API_KEY — e-maily by se neodeslaly a odkazy by ležely v souboru. Proměnnou odstraň.',
+    );
+  }
   if (logPath) {
     console.warn(`[email] DANERO_EMAIL_LOG je nastaven — e-maily jdou do ${logPath}, neodesílají se.`);
     return fileSink(logPath);
