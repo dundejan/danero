@@ -41,7 +41,28 @@ const NOTHING_PAID: Entitlements = {
   reportYears: [],
 };
 
-/** Aktivní předplatné = stav sedí a zaplacené období ještě neskončilo. */
+/**
+ * Stavy Stripe předplatného, které znamenají ZAPLACENO. Schválně výčtem, ne
+ * výjimkou z něj: kdyby se ptalo „co není past_due", dostal by přístup i stav
+ * `canceled` po vyčerpaném dunningu — Stripe totiž při zrušení pro nezaplacení
+ * nechá `current_period_end` na konci toho NEzaplaceného období, takže by
+ * neplatič dostal rok zdarma. Totéž `unpaid`, `incomplete` (opuštěná 3DS výzva),
+ * `paused` i jakýkoli stav, který Stripe teprve zavede.
+ *
+ * Zrušení k datu obnovy tím netrpí: Stripe u něj drží stav `active` a jen zvedne
+ * `cancel_at_period_end`, na `canceled` přepne až po konci zaplaceného období.
+ */
+const PAID_STATUSES = new Set(['active', 'trialing']);
+
+/** Jediné místo, kde se rozhoduje „běží předplatné?" — používá i stránka /predplatne. */
+export function isPaidSubscription<T extends { status: string; currentPeriodEnd: Date }>(
+  row: T | undefined,
+  now = new Date(),
+): row is T {
+  return Boolean(row && PAID_STATUSES.has(row.status) && row.currentPeriodEnd > now);
+}
+
+/** Aktivní předplatné = zaplacený stav a zaplacené období ještě neskončilo. */
 export async function hasActiveSubscription(
   db: Db,
   userId: string,
@@ -51,10 +72,7 @@ export async function hasActiveSubscription(
     .select({ status: subscriptions.status, currentPeriodEnd: subscriptions.currentPeriodEnd })
     .from(subscriptions)
     .where(eq(subscriptions.userId, userId));
-  if (!row) return false;
-  // 'canceled' se drží do konce zaplaceného období (cancelAtPeriodEnd), takže
-  // rozhoduje datum; 'past_due' po splatnosti nechává službu vypnutou
-  return row.status !== 'past_due' && row.currentPeriodEnd > now;
+  return isPaidSubscription(row, now);
 }
 
 export async function resolveEntitlements(
@@ -99,6 +117,6 @@ export async function usersWithActiveSubscription(db: Db, now = new Date()): Pro
     .select({ userId: subscriptions.userId, status: subscriptions.status, end: subscriptions.currentPeriodEnd })
     .from(subscriptions);
   return new Set(
-    rows.filter((r) => r.status !== 'past_due' && r.end > now).map((r) => r.userId),
+    rows.filter((r) => PAID_STATUSES.has(r.status) && r.end > now).map((r) => r.userId),
   );
 }

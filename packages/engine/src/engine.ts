@@ -119,18 +119,28 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       (tx.type === 'BUY' || tx.type === 'SELL' || tx.type === 'TRANSFER_IN' || tx.type === 'TRANSFER_OUT') &&
       derivativeIsins.has(tx.isin),
   );
-  const ledgerTransactions = input.transactions.filter((tx) => {
-    if (!isDerivativeIsin(tx)) return true;
-    if (tx.type === 'CORPORATE_ACTION') {
-      warnings.add(
-        'DERIVATIVE_ACTION_UNSUPPORTED',
-        'WARNING',
-        `Korporátní akce na derivátovém instrumentu ${tx.isin} z ${czDateText(tx.date)} — u derivátů ji neumíme zpracovat, transakce je vynechána. Uprav historii ručně (např. uzavření a nové otevření pozice).`,
-        { txId: tx.id },
-      );
-    }
-    return false;
-  });
+  const ledgerTransactions = input.transactions
+    .filter((tx) => {
+      if (!isDerivativeIsin(tx)) return true;
+      if (tx.type === 'CORPORATE_ACTION') {
+        warnings.add(
+          'DERIVATIVE_ACTION_UNSUPPORTED',
+          'WARNING',
+          `Korporátní akce na derivátovém instrumentu ${tx.isin} z ${czDateText(tx.date)} — u derivátů ji neumíme zpracovat, transakce je vynechána. Uprav historii ručně (např. uzavření a nové otevření pozice).`,
+          { txId: tx.id },
+        );
+      }
+      return false;
+    })
+    // Normalizaci druhu musí vidět UŽ ledger, ne až klasifikace za ním: dopočet
+    // data vypořádání se řídí `assetClass` řádku (`inferSettlementDate`) a krypto
+    // se vypořádává T+0. Řádek bez asset_class by dostal T+2, což posune rok
+    // příjmu (R-05a) i hranici účinnosti krypto osvobození 15. 2. 2025 (R-10b).
+    .map((tx) =>
+      'assetClass' in tx && tx.assetClass !== 'CRYPTO' && cryptoIsins.has(tx.isin)
+        ? { ...tx, assetClass: 'CRYPTO' as const }
+        : tx,
+    );
 
   // R-10/R-12: smíšené označení instrumentu (část transakcí bez asset_class)
   // normalizujeme na úroveň instrumentu — ale nahlas, ne tiše

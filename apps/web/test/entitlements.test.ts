@@ -97,9 +97,11 @@ describe('tarify a oprávnění', () => {
     ]);
     const konecObdobi = new Date('2027-01-01T00:00:00Z');
     await db.insert(subscriptions).values([
+      // Stripe drží u zrušení k datu obnovy stav 'active' a jen zvedne
+      // cancel_at_period_end; na 'canceled' přepne až po konci období.
       {
         userId: 'zrusil',
-        status: 'canceled',
+        status: 'active',
         currentPeriodEnd: konecObdobi,
         cancelAtPeriodEnd: true,
       },
@@ -109,5 +111,47 @@ describe('tarify a oprávnění', () => {
     const now = new Date('2026-08-05T00:00:00Z');
     expect(await hasActiveSubscription(db, 'zrusil', now)).toBe(true);
     expect(await hasActiveSubscription(db, 'nezaplatil', now)).toBe(false);
+  });
+
+  it('přístup dává jen zaplacený stav — ne cokoli, co není past_due', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await createPgliteDb();
+    // Konec období v budoucnu u VŠECH: přesně tak to Stripe nechává po
+    // vyčerpaném dunningu (zruší předplatné, ale current_period_end zůstane
+    // na konci NEZAPLACENÉHO roku) i po opuštěné 3DS výzvě v Checkoutu.
+    const konecObdobi = new Date('2027-01-01T00:00:00Z');
+    const stavy = [
+      'active',
+      'trialing',
+      'canceled',
+      'unpaid',
+      'incomplete',
+      'incomplete_expired',
+      'paused',
+      'neco_noveho_od_stripe',
+    ];
+    await db.insert(user).values(
+      stavy.map((s) => ({ id: s, name: s, email: `${s}@danero.cz` })),
+    );
+    await db
+      .insert(subscriptions)
+      .values(stavy.map((s) => ({ userId: s, status: s, currentPeriodEnd: konecObdobi })));
+
+    const now = new Date('2026-08-05T00:00:00Z');
+    const pristup: Record<string, boolean> = {};
+    for (const s of stavy) pristup[s] = await hasActiveSubscription(db, s, now);
+
+    expect(pristup).toEqual({
+      active: true,
+      trialing: true,
+      canceled: false,
+      unpaid: false,
+      incomplete: false,
+      incomplete_expired: false,
+      paused: false,
+      neco_noveho_od_stripe: false,
+    });
+    // crony musí filtrovat stejně jako stránky, jinak by neplatícím běžel sync
+    expect(await usersWithActiveSubscription(db, now)).toEqual(new Set(['active', 'trialing']));
   });
 });

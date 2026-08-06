@@ -164,9 +164,15 @@ const DeleteAccountSchema = z.object({
 });
 
 export async function deleteAccountAction(formData: FormData): Promise<void> {
-  await requireUser();
+  const user = await requireUser();
   const parsed = DeleteAccountSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=smazani');
+
+  // Předplatné ve Stripe musí padnout DŘÍV, než kaskáda smaže řádek s jeho ID —
+  // jinak by zákazníkovi chodila platba za neexistující účet a neměl by ji jak
+  // zastavit (portál chce přihlášení).
+  const { cancelSubscriptionBeforeDelete } = await import('@/lib/billing');
+  await cancelSubscriptionBeforeDelete(await getDb(), user.id);
 
   const { api, requestHeaders } = await authApi();
   try {
