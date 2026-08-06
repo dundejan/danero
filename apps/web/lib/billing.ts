@@ -99,30 +99,37 @@ async function sendConfirmation(
 }
 
 /**
- * Zruší běžící předplatné ve Stripe — volá se před smazáním účtu. Bez toho by
- * zákazníkovi chodila platba za službu, kterou už nemá, a zrušit by si ji nemohl:
- * do zákaznického portálu se vchází jen přihlášením, které po smazání neexistuje.
- *
- * Selhání nesmí zablokovat smazání (právo na výmaz je silnější), ale musí být
- * hlasité — `stripeSubscriptionId` po kaskádě zmizí, takže tenhle log je jediná
- * stopa, podle které jde předplatné dohledat ručně.
+ * ID předplatného, které bude po smazání účtu potřeba zrušit ve Stripe. Čte se
+ * PŘED smazáním, protože FK kaskáda řádek `subscriptions` zahodí — samotné
+ * zrušení ale patří až za úspěšné smazání (heslo ověřuje teprve `deleteUser`).
  */
-export async function cancelSubscriptionBeforeDelete(db: Db, userId: string): Promise<void> {
+export async function pendingSubscriptionId(db: Db, userId: string): Promise<string | null> {
   const [row] = await db
     .select({ subscriptionId: subscriptions.stripeSubscriptionId })
     .from(subscriptions)
     .where(eq(subscriptions.userId, userId));
-  if (!row?.subscriptionId) return;
+  return row?.subscriptionId ?? null;
+}
+
+/**
+ * Zruší předplatné ve Stripe po smazání účtu. Bez toho by zákazníkovi chodila
+ * platba za službu, kterou už nemá, a zrušit by si ji nemohl: do zákaznického
+ * portálu se vchází jen přihlášením, které po smazání neexistuje.
+ *
+ * Selhání nesmí shodit už provedené smazání (právo na výmaz je silnější), ale
+ * musí být hlasité — `stripeSubscriptionId` je v tu chvíli už jen v tomhle logu.
+ */
+export async function cancelStripeSubscription(
+  subscriptionId: string,
+  userId: string,
+): Promise<void> {
   try {
-    await stripe().subscriptions.cancel(row.subscriptionId);
-    logEvent('info', 'billing.subscription_canceled_on_delete', {
-      userId,
-      subscriptionId: row.subscriptionId,
-    });
+    await stripe().subscriptions.cancel(subscriptionId);
+    logEvent('info', 'billing.subscription_canceled_on_delete', { userId, subscriptionId });
   } catch (error) {
     logEvent('error', 'billing.cancel_on_delete_failed', {
       userId,
-      subscriptionId: row.subscriptionId,
+      subscriptionId,
       error: errorText(error),
     });
   }
