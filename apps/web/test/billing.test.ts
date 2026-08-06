@@ -2,7 +2,7 @@ import type Stripe from 'stripe';
 import { describe, expect, it, vi } from 'vitest';
 import { createPgliteDb } from '@/db';
 import { user } from '@/db/schema';
-import { applyStripeEvent, cancelSubscriptionBeforeDelete } from '@/lib/billing';
+import { applyStripeEvent, cancelStripeSubscription, pendingSubscriptionId } from '@/lib/billing';
 import { canGenerateReport, hasActiveSubscription } from '@/lib/entitlements';
 
 /** Stripe klient je jediné, co v testech nahrazujeme — po síti nechodíme. */
@@ -163,17 +163,20 @@ describe('zpracování plateb ze Stripe', () => {
     await applyStripeEvent(db, subscriptionEvent({ id: 'sub_ke_zruseni' }));
     zrusena.length = 0;
 
-    await cancelSubscriptionBeforeDelete(db, 'u1');
+    // ID se čte před smazáním (kaskáda řádek zahodí), ruší se až po něm
+    const id = await pendingSubscriptionId(db, 'u1');
+    expect(id).toBe('sub_ke_zruseni');
+    await cancelStripeSubscription(id!, 'u1');
 
     // bez tohohle by zákazníkovi bez účtu chodilo 990 Kč ročně dál
     expect(zrusena).toEqual(['sub_ke_zruseni']);
     delete process.env.DANERO_BILLING;
   });
 
-  it('účet bez předplatného se maže bez volání do Stripe', { timeout: 30_000 }, async () => {
+  it('účet bez předplatného nemá co rušit', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
     zrusena.length = 0;
-    await cancelSubscriptionBeforeDelete(db, 'u1');
+    expect(await pendingSubscriptionId(db, 'u1')).toBeNull();
     expect(zrusena).toEqual([]);
   });
 

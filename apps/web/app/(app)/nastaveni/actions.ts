@@ -168,11 +168,11 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   const parsed = DeleteAccountSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni?chyba=smazani');
 
-  // Předplatné ve Stripe musí padnout DŘÍV, než kaskáda smaže řádek s jeho ID —
-  // jinak by zákazníkovi chodila platba za neexistující účet a neměl by ji jak
-  // zastavit (portál chce přihlášení).
-  const { cancelSubscriptionBeforeDelete } = await import('@/lib/billing');
-  await cancelSubscriptionBeforeDelete(await getDb(), user.id);
+  // ID předplatného si přečteme PŘED smazáním (kaskáda řádek zahodí), ale zrušit
+  // ho smíme až POTOM: heslo ověřuje teprve deleteUser a špatné heslo nesmí
+  // nikomu zrušit placenou službu.
+  const { pendingSubscriptionId, cancelStripeSubscription } = await import('@/lib/billing');
+  const subscriptionId = await pendingSubscriptionId(await getDb(), user.id);
 
   const { api, requestHeaders } = await authApi();
   try {
@@ -183,9 +183,13 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
       body: { password: parsed.data.password },
     });
   } catch (error) {
-    logEvent('error', 'account.delete_failed', { error: errorText(error) });
+    logEvent('error', 'account.delete_failed', { userId: user.id, error: errorText(error) });
     redirect('/nastaveni?chyba=smazani-heslo');
   }
+
+  // Bez tohohle by zákazníkovi bez účtu chodila platba dál a neměl by ji jak
+  // zastavit — do zákaznického portálu se vchází jen přihlášením.
+  if (subscriptionId) await cancelStripeSubscription(subscriptionId, user.id);
   redirect('/?smazano=1');
 }
 
