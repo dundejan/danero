@@ -61,6 +61,13 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 
 ## Známé zrady (ověřeno provozem — neobjevuj znovu)
 
+- **PGlite je tolerantnější než produkční Postgres.** `Date` v syrovém `sql`
+  fragmentu PGlite spolkne, ale postgres.js ho odmítne („Received an instance of
+  Date") — takhle se 6. 8. 2026 dostal do produkce rozbitý import výpisů
+  i hodinová záchrana jobů, protože všechny testy jedou na PGlite. Do syrového
+  SQL dávej data přes `ts()` z `lib/sql.ts`. Testy citlivé na driver patří do
+  `test/postgres-compat.test.ts`, který v CI běží proti opravdovému Postgresu
+  (`TEST_DATABASE_URL`; lokálně stačí docker kontejner).
 - **PGlite**: jediné připojení (zámek!) — proto je auth/DB **líně inicializované**
   a `next build` se DB nesmí dotknout; `serverExternalPackages: ['@electric-sql/pglite','postgres']`
   nutné; testy s PGlite potřebují `{ timeout: 30_000 }`.

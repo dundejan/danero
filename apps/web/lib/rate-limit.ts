@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { appRateLimits } from '@/db/schema';
+import { ts } from '@/lib/sql';
 
 /**
  * Aplikační rate limit (G10a) — fixní okno per klíč (otevírá ho první request,
@@ -21,8 +22,8 @@ export async function checkRateLimit(
     .onConflictDoUpdate({
       target: appRateLimits.key,
       set: {
-        count: sql`CASE WHEN ${appRateLimits.resetAt} < ${now} THEN 1 ELSE ${appRateLimits.count} + 1 END`,
-        resetAt: sql`CASE WHEN ${appRateLimits.resetAt} < ${now} THEN ${reset} ELSE ${appRateLimits.resetAt} END`,
+        count: sql`CASE WHEN ${appRateLimits.resetAt} < ${ts(now)} THEN 1 ELSE ${appRateLimits.count} + 1 END`,
+        resetAt: sql`CASE WHEN ${appRateLimits.resetAt} < ${ts(now)} THEN ${ts(reset)} ELSE ${appRateLimits.resetAt} END`,
       },
     })
     .returning({ count: appRateLimits.count });

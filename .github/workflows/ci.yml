@@ -34,6 +34,21 @@ jobs:
 
   ci:
     runs-on: ubuntu-latest
+    # Produkce jede na Postgresu, testy jinak na PGlite — a PGlite je
+    # tolerantnější. Bez téhle služby prošel 6. 8. 2026 do produkce rozbitý
+    # import (Date v syrovém sql), viz test/postgres-compat.test.ts.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: danero
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/danero
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
