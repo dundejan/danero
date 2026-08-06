@@ -35,7 +35,7 @@ export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string
 
   if (sent) {
     return (
-      <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+      <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
         <p className="font-medium">Odkaz je na cestě.</p>
         <p className="mt-2 text-inkoust-tlumeny">Zkontroluj schránku i spam.</p>
       </div>

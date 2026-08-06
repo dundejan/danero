@@ -1,5 +1,6 @@
 import { getDb } from '@/db';
 import { withCron } from '@/lib/cron-auth';
+import { errorText } from '@/lib/log';
 import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import {
   listNotificationTargets,
@@ -32,7 +33,7 @@ export const GET = withCron('notify', async (_request: Request): Promise<Respons
     } catch (error) {
       results.push({
         userId: target.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
     }
   }

@@ -4,7 +4,7 @@ import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
 import { user } from '@/db/schema';
 import { purchaseConfirmationEmail, resolveEmailSender } from '@/lib/email';
-import { logEvent } from '@/lib/log';
+import { errorText, logEvent } from '@/lib/log';
 import { promoCodeFrom, stripe } from '@/lib/stripe';
 
 /**
@@ -93,7 +93,7 @@ async function sendConfirmation(
   } catch (error) {
     logEvent('error', 'billing.confirmation_email_failed', {
       userId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
   }
 }
@@ -123,7 +123,7 @@ export async function cancelSubscriptionBeforeDelete(db: Db, userId: string): Pr
     logEvent('error', 'billing.cancel_on_delete_failed', {
       userId,
       subscriptionId: row.subscriptionId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
   }
 }

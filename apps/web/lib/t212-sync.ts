@@ -22,6 +22,7 @@ import {
   loadDedupeKeys,
   type ImportSummary,
 } from '@/lib/import-service';
+import { errorText } from '@/lib/log';
 import { upsertInstrumentPrices } from '@/lib/prices';
 
 export interface SyncOutcome {
@@ -312,7 +313,7 @@ export async function syncTrading212(
   } catch (error) {
     // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí
     // přepsat poslední platný „pozice sedí“ — chyba se uloží vedle
-    reconciliationError = error instanceof Error ? error.message : String(error);
+    reconciliationError = errorText(error);
   }
 
   const added = batches.reduce((sum, batch) => sum + batch.added, 0);

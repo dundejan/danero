@@ -91,7 +91,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   if (unverified) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
           <p className="font-medium">Účet ještě není potvrzený.</p>
           <p className="mt-2 text-inkoust-tlumeny">
             {unverified.resent

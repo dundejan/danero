@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
-import { logEvent } from '@/lib/log';
+import { errorText, logEvent } from '@/lib/log';
 import { authApi, requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
@@ -88,7 +88,7 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
     });
   } catch (error) {
     // infrastrukturní chyba nesmí být němá — jinak „špatné heslo“ maskuje výpadek
-    logEvent('error', 'account.change_password_failed', { error: error instanceof Error ? error.message : String(error) });
+    logEvent('error', 'account.change_password_failed', { error: errorText(error) });
     redirect('/nastaveni?chyba=heslo-spatne');
   }
   // audit PŘES id z úvodní session — po rotaci session by requireUser selhal
@@ -134,7 +134,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .set({ email: parsed.data.newEmail.toLowerCase(), emailVerified: false, updatedAt: new Date() })
       .where(eq(userTable.id, user.id));
   } catch (error) {
-    logEvent('error', 'account.change_email_failed', { error: error instanceof Error ? error.message : String(error) });
+    logEvent('error', 'account.change_email_failed', { error: errorText(error) });
     // „obsazený e-mail“ jen při unique violation — infrastrukturní chybu (výpadek
     // DB apod.) nesmíme vydávat za obsazenou adresu
     const { isUniqueViolation } = await import('@/lib/db-errors');
@@ -151,7 +151,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     });
   } catch (error) {
     logEvent('error', 'account.change_email_verification_failed', {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
   }
   revalidatePath('/nastaveni');
@@ -183,7 +183,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
       body: { password: parsed.data.password },
     });
   } catch (error) {
-    logEvent('error', 'account.delete_failed', { error: error instanceof Error ? error.message : String(error) });
+    logEvent('error', 'account.delete_failed', { error: errorText(error) });
     redirect('/nastaveni?chyba=smazani-heslo');
   }
   redirect('/?smazano=1');

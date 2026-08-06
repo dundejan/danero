@@ -1,6 +1,7 @@
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { withCron } from '@/lib/cron-auth';
+import { errorText } from '@/lib/log';
 import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs';
 
@@ -34,7 +35,7 @@ export const GET = withCron('sync-brokers', async (_request: Request): Promise<R
     } catch (error) {
       skipped.push({
         accountId: account.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
     }
   }

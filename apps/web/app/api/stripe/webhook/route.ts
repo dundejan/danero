@@ -1,6 +1,6 @@
 import { getDb } from '@/db';
 import { applyStripeEvent } from '@/lib/billing';
-import { logEvent } from '@/lib/log';
+import { errorText, logEvent } from '@/lib/log';
 import { stripe } from '@/lib/stripe';
 
 /**
@@ -24,7 +24,7 @@ export async function POST(request: Request): Promise<Response> {
     event = await stripe().webhooks.constructEventAsync(payload, signature, secret);
   } catch (error) {
     logEvent('warn', 'billing.webhook_invalid_signature', {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
     return new Response('Neplatný podpis', { status: 400 });
   }
@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
     // 500 → Stripe to zkusí znovu; zápisy jsou idempotentní, takže opakování nevadí
     logEvent('error', 'billing.webhook_failed', {
       type: event.type,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
     return new Response('Zpracování selhalo', { status: 500 });
   }

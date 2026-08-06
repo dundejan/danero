@@ -10,6 +10,7 @@ import {
   type SyncYearProgress,
 } from '@/lib/broker-sync';
 import { isUniqueViolation } from '@/lib/db-errors';
+import { errorText } from '@/lib/log';
 import { syncIbkr } from '@/lib/ibkr-sync';
 import { explainT212SyncError, syncTrading212, type SyncOptions } from '@/lib/t212-sync';
 
@@ -190,7 +191,7 @@ export async function processJob(
     if (!handler) throw new Error(`Neznámý typ jobu: ${job.type}`);
     outcome = { status: 'success', result: await handler(db, job, options) };
   } catch (error) {
-    outcome = { status: 'error', error: error instanceof Error ? error.message : String(error) };
+    outcome = { status: 'error', error: errorText(error) };
   }
   logEvent(outcome.status === 'error' ? 'error' : 'info', 'job.finished', {
     jobId: job.id,
@@ -257,7 +258,7 @@ async function withSyncAccount<T>(
       db,
       account.id,
       job.userId,
-      explainError(error instanceof Error ? error.message : String(error)),
+      explainError(errorText(error)),
     );
     throw error;
   }

@@ -28,7 +28,7 @@ export default async function NewPasswordPage({
         <NewPasswordForm token={token} />
       ) : (
         <div className="space-y-4">
-          <div className="rounded-lg border border-linka bg-papir-tlumeny p-4 text-sm">
+          <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
             <p className="font-medium">Odkaz už neplatí.</p>
             <p className="mt-2 text-inkoust-tlumeny">
               Odkaz na obnovu hesla platí hodinu a použít ho jde jen jednou. Nech si poslat nový.

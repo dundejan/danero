@@ -24,7 +24,14 @@ export type Db = PgDatabase<PgQueryResultHKT>;
 const globalForDb = globalThis as unknown as { __daneroDb?: Promise<Db> };
 
 export function getDb(): Promise<Db> {
-  globalForDb.__daneroDb ??= init();
+  // Odmítnutý Promise se NESMÍ zacachovat: kdyby byla databáze při prvním dotazu
+  // chvilku dole (restart Neonu, migrace při startu v Dockeru), zůstal by v paměti
+  // navždy a instance by vracela 503 do konce života procesu — i po tom, co se
+  // databáze vrátí. `restart: unless-stopped` to nevytrhne, proces totiž běží dál.
+  globalForDb.__daneroDb ??= init().catch((error: unknown) => {
+    delete globalForDb.__daneroDb;
+    throw error;
+  });
   return globalForDb.__daneroDb;
 }
 
