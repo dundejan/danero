@@ -17,6 +17,7 @@ const ITEMS: NavItem[] = [
   { href: '/simulator', label: 'Simulátor' },
   { href: '/report', label: 'Report' },
   { href: '/import', label: 'Zdroje dat' },
+  { href: '/predplatne', label: 'Předplatné' },
   { href: '/nastaveni', label: 'Nastavení' },
 ];
 

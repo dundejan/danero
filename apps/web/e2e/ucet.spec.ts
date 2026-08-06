@@ -93,3 +93,32 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   const after = await page.request.get('/api/export');
   expect(after.status()).toBe(401);
 });
+
+/**
+ * Předplatné (docs/19): stránka musí být v navigaci a nákup nesmí jít dokončit
+ * bez výslovné žádosti o zahájení plnění (§ 1837 písm. l OZ) — ta je zákonná
+ * podmínka, ne kosmetika, a checkbox nesmí být předškrtnutý.
+ */
+test('předplatné: v navigaci a bez souhlasu se nekupuje', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Platby', email: 'platby@danero.cz' });
+
+  await page.getByRole('link', { name: 'Předplatné' }).click();
+  await page.waitForURL('**/predplatne');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Předplatné');
+  await expect(page.getByText('990 Kč')).toBeVisible();
+
+  const souhlas = page.locator('#souhlas-predplatne');
+  await expect(souhlas).not.toBeChecked();
+  await expect(souhlas).toHaveAttribute('required', '');
+
+  // odeslání bez zaškrtnutí prohlížeč nepustí — zůstáváme na stránce
+  await page
+    .locator('form', { has: souhlas })
+    .getByRole('button', { name: 'Objednat s povinností platby' })
+    .click();
+  await expect(page).toHaveURL(/\/predplatne/);
+
+  // ceny jsou konečné a je vidět, kdo prodává
+  await expect(page.getByText(/Ceny jsou konečné/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'poučení o odstoupení' })).toBeVisible();
+});
