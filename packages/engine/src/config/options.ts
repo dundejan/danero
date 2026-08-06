@@ -23,7 +23,7 @@ export interface EngineOptions {
    * R-12i: prémie opce expirované bezcenně jako výdaj druhu deriváty
    * (výklad „per druh“, § 10/4 + D-59). Default false = restriktivní výklad.
    */
-  derivativesExpensesPerDruh: boolean;
+  derivativesExpensesPerType: boolean;
   /**
    * R-10g: osvobozuje časový test 3 roky (§ 4/1 zk) i EMT (stablecoiny)?
    * Litera zk) EMT nevylučuje (na rozdíl od zj), výklad je ale nejednotný.
@@ -42,7 +42,7 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   // DE 18/1984 Sb., NL 138/1974 Sb. (10 %!), JP 46/1979 Sb., IE 163/1996 Sb.
   treatyWithholdingCap: { US: '0.15', DE: '0.15', NL: '0.10', JP: '0.15', IE: '0.15' },
   defaultTreatyCap: '0.15',
-  derivativesExpensesPerDruh: false,
+  derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
 };
 

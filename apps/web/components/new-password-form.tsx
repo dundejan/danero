@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+
+const ERROR_ID = 'nove-heslo-error';
 
 export function NewPasswordForm({ token }: { token: string }) {
   const [done, setDone] = useState(false);
@@ -67,6 +69,9 @@ export function NewPasswordForm({ token }: { token: string }) {
           minLength={10}
           autoFocus
           autoComplete="new-password"
+          // chyba se týká obou polí (neshoda hesel i neplatný odkaz) — proto
+          // odkaz na tutéž hlášku z obou
+          {...describedByError(error !== null, ERROR_ID)}
         />
       </div>
       <div>
@@ -78,9 +83,10 @@ export function NewPasswordForm({ token }: { token: string }) {
           required
           minLength={10}
           autoComplete="new-password"
+          {...describedByError(error !== null, ERROR_ID)}
         />
       </div>
-      {error && <p className="text-sm text-cervena">{error}</p>}
+      {error && <FieldError id={ERROR_ID}>{error}</FieldError>}
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? 'Ukládám…' : 'Nastavit heslo'}
       </Button>

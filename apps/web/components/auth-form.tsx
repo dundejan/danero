@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+
+/** Cíle `aria-describedby` u polí, kterých se chyba týká. */
+const TOTP_ERROR_ID = 'kod-error';
+const CREDENTIALS_ERROR_ID = 'prihlaseni-error';
 
 export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const router = useRouter();
@@ -123,9 +127,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             required
             autoFocus
             className="font-mono tracking-widest"
+            {...describedByError(error !== null, TOTP_ERROR_ID)}
           />
         </div>
-        {error && <p className="text-sm text-cervena">{error}</p>}
+        {error && <FieldError id={TOTP_ERROR_ID}>{error}</FieldError>}
         <Button type="submit" disabled={pending} className="w-full">
           {pending ? 'Ověřuji…' : 'Ověřit kód'}
         </Button>
@@ -148,7 +153,16 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
       )}
       <div>
         <Label htmlFor="email">E-mail</Label>
-        <Input id="email" name="email" type="email" required autoComplete="email" />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="email"
+          // chyba přihlášení je společná pro e-mail i heslo (server záměrně
+          // neprozrazuje, které z nich nesedí) — odkazujeme ji z obou polí
+          {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
+        />
       </div>
       <div>
         <Label htmlFor="heslo">{mode === 'registrace' ? 'Heslo (min. 10 znaků)' : 'Heslo'}</Label>
@@ -161,9 +175,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           // stejně odmítne server jednotnou hláškou)
           {...(mode === 'registrace' ? { required: true, minLength: 10 } : {})}
           autoComplete={mode === 'registrace' ? 'new-password' : 'current-password'}
+          {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
         />
       </div>
-      {error && <p className="text-sm text-cervena">{error}</p>}
+      {error && <FieldError id={CREDENTIALS_ERROR_ID}>{error}</FieldError>}
       <Button type="submit" disabled={pending} className="w-full">
         {pending
           ? mode === 'registrace'

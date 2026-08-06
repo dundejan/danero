@@ -34,7 +34,7 @@
      neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
-  --zelena-syta: #2e8b62;
+  --zelena-syta: #2a7d59;
   /* Textové odstíny akcentů — drobný text na tónovaných plochách musí držet
      AA 4,5:1; světlé akcenty samy o sobě padají (růžová 4,2:1, jantar 2,8:1,
      zelená 4,0:1 na --pozadi). Pro výplně/okraje dál platí základní tokeny. */
@@ -66,7 +66,7 @@
   --graf-8: #adb5bd;
   --ruzova-syta: #d6336c;
   --cervena-syta: #b3362f;
-  --zelena-syta: #2e8b62;
+  --zelena-syta: #2a7d59;
   /* v dark módu textové kontrasty drží už samotné (zesvětlené) akcenty */
   --ruzova-text: var(--ruzova);
   --zelena-text: var(--zelena);

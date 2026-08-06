@@ -4,7 +4,8 @@ import postgres from 'postgres';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '@/db';
 import * as schema from '@/db/schema';
-import { appRateLimits, jobs, user } from '@/db/schema';
+import { appRateLimits, fxRates, jobs, user } from '@/db/schema';
+import { fetchCnbYear } from '@/lib/cnb';
 import { recoverStaleJobs } from '@/lib/jobs';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -71,5 +72,76 @@ popis('kompatibilita s produkčním Postgresem', () => {
     });
 
     expect(await recoverStaleJobs(db)).toBeGreaterThanOrEqual(1);
+  });
+
+  it(
+    'kurzy ČNB: duplicitní (den, měna) v jedné dávce neshodí upsert (G-5)',
+    { timeout: 30_000 },
+    async () => {
+      // ČNB umí mít měnu v hlavičce dvakrát. Bez deduplikace vrátí Postgres
+      // „ON CONFLICT DO UPDATE command cannot affect row a second time“
+      // a celý fx cron umře — PGlite tuhle chybu nehlásí stejně, proto test tady.
+      const text = ['Datum|1 EUR|1 EUR|1 USD', '02.01.1999|25,120|25,120|22,510'].join('\n');
+      const fetchImpl: typeof fetch = (async () =>
+        new Response(text, { status: 200 })) as typeof fetch;
+
+      await expect(fetchCnbYear(db, 1999, fetchImpl)).resolves.toBe(2);
+
+      const stored = await db
+        .select({ currency: fxRates.currency, rate: fxRates.rate })
+        .from(fxRates)
+        .where(eq(fxRates.day, '1999-01-02'));
+      expect(stored).toHaveLength(2);
+    },
+  );
+
+  it('neúspěšná migrace vypíše celou chybu včetně SQLSTATE (M-4)', { timeout: 60_000 }, async () => {
+    // `drizzle-kit migrate` po selhání vypsal 250 B logu bez jediného vodítka —
+    // db/migrate.mjs musí ukázat SQLSTATE, hlášku i dotaz, na kterém to spadlo
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const dir = mkdtempSync(join(tmpdir(), 'danero-migrate-'));
+    mkdirSync(join(dir, 'meta'), { recursive: true });
+    writeFileSync(join(dir, '0000_rozbita.sql'), 'CREATE TABLE "x" ("a" nonexistent_type);');
+    writeFileSync(
+      join(dir, 'meta/_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'postgresql',
+        entries: [{ idx: 0, version: '7', when: 1, tag: '0000_rozbita', breakpoints: true }],
+      }),
+    );
+
+    // vlastní prázdná databáze — jinak by drizzle migraci s when=1 přeskočil
+    const client = postgres(URL!, { max: 1, prepare: false });
+    const name = `mig_test_${Date.now()}`;
+    await client.unsafe(`CREATE DATABASE ${name}`);
+    const target = new global.URL(URL!);
+    target.pathname = `/${name}`;
+
+    let output = '';
+    let failed = false;
+    try {
+      execFileSync('node', ['db/migrate.mjs', dir], {
+        env: { ...process.env, DATABASE_URL: target.toString() },
+        // bez tohohle propadne stderr skriptu do výpisu testů
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      const err = error as { stdout: Buffer; stderr: Buffer };
+      failed = true;
+      output = `${err.stdout}${err.stderr}`;
+    } finally {
+      await client.unsafe(`DROP DATABASE IF EXISTS ${name}`);
+      await client.end();
+    }
+
+    expect(failed).toBe(true);
+    expect(output).toContain('42704'); // SQLSTATE: undefined_object
+    expect(output).toContain('nonexistent_type');
+    expect(output).toContain('Migrace SELHALA');
   });
 });

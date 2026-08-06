@@ -18,6 +18,15 @@ describe('dates', () => {
     expect(addBusinessDays('2024-05-31', 2)).toBe('2024-06-04');
   });
 
+  it('addBusinessDays přeskakuje i svátky z předaného kalendáře (R-01a)', () => {
+    // pondělí 2024-06-03 je „svátek“ → T+1 z pátku padá na úterý
+    const isHoliday = (date: string): boolean => date === '2024-06-03';
+    expect(addBusinessDays('2024-05-31', 1, isHoliday)).toBe('2024-06-04');
+    expect(addBusinessDays('2024-05-31', 2, isHoliday)).toBe('2024-06-05');
+    // bez kalendáře se chování nemění
+    expect(addBusinessDays('2024-05-31', 1)).toBe('2024-06-03');
+  });
+
   it('diffDays a yearOf', () => {
     expect(diffDays('2025-01-01', '2025-01-31')).toBe(30);
     expect(diffDays('2025-01-31', '2025-01-01')).toBe(-30);

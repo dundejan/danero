@@ -89,16 +89,84 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
 /**
  * Distanční balíček (B-4 z docs/13): poučení o odstoupení, vzorový formulář
  * a povinná výslovná žádost o zahájení plnění u objednávky.
+ *
+ * E-3: obě věci, které jde koupit, se musí odlišit. Jednorázové podklady jsou
+ * digitální obsah dodaný okamžitě (§ 1837 písm. l), roční hlídání je průběžně
+ * poskytovaná služba — u ní právo odstoupit trvá a platí se jen poměrná část
+ * (§ 1834, § 1837 písm. a). Text, který by ho rušil dopředu, by byl ujednáním,
+ * ke kterému se nepřihlíží (§ 1812 odst. 2).
  */
-test('poučení o odstoupení má vzorový formulář a vysvětluje zánik práva', async ({ page }) => {
+test('poučení o odstoupení rozlišuje jednorázové podklady a roční předplatné', async ({ page }) => {
   await page.goto('/odstoupeni');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Odstoupení od smlouvy');
+
+  // jednorázové podklady: právo zaniká dodáním
+  await expect(page.getByRole('heading', { name: /Podklady k přiznání za jeden rok/ })).toBeVisible();
   await expect(page.getByText('§ 1837 písm. l')).toBeVisible();
-  await expect(page.getByText('Oznamuji, že tímto odstupuji od smlouvy')).toBeVisible();
+
+  // roční hlídání: právo trvá, vrací se vše kromě poměrné části
+  await expect(page.getByRole('heading', { name: /Celoroční hlídání/ })).toBeVisible();
+  await expect(page.getByText('právo odstoupit do 14 dnů trvá i po zaplacení')).toBeVisible();
+  await expect(page.getByText('§ 1834')).toBeVisible();
+  await expect(page.getByText('§ 1837 písm. a')).toBeVisible();
+
+  // vzorový formulář musí pokrýt obě situace
+  const formular = page.locator('pre');
+  await expect(formular).toContainText('Oznamuji, že tímto odstupuji od smlouvy');
+  await expect(formular).toContainText('celoroční hlídání');
+  await expect(formular).toContainText('podklady k přiznání za daňový rok');
 
   await page.goto('/podminky');
   await expect(
     page.getByRole('heading', { name: '4. Placené objednávky a odstoupení' }),
   ).toBeVisible();
   await expect(page.getByText('Ceny jsou konečné')).toBeVisible();
+  // podmínky nesmí u předplatného tvrdit zánik práva podle písm. l
+  await expect(page.getByText('poměrnou část za dny')).toBeVisible();
+  await expect(page.getByText('o právo odstoupit tě nepřipraví')).toBeVisible();
+});
+
+/**
+ * E-10 + E-13: hlídací e-maily jsou v tarifu 990 Kč — landing je nesmí slibovat
+ * jako součást „zdarma navždy" (§ 5a z. 634/1992), a u cen musí zaznít, že jsou
+ * konečné (Jan není plátce DPH).
+ */
+test('landing: hlídací e-maily jsou u placeného tarifu a ceny jsou konečné', async ({ page }) => {
+  await page.goto('/');
+  await expect(
+    page.getByText(/celoročním hlídáním za 990 Kč ročně ti navíc při 60, 85 a 100 % přijde e-mail/),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/s celoročním hlídáním ti navíc e-mail přijde 30 a 7 dní předem/),
+  ).toBeVisible();
+  await expect(page.getByText('Ceny jsou konečné.')).toBeVisible();
+});
+
+/**
+ * C-10: horizont osvobození běží zdarma na /prehled — ceník ho nesmí prodávat
+ * jako součást tarifu za 990 Kč.
+ */
+test('ceník: horizont osvobození je ve zdarma, ne v placeném tarifu', async ({ page }) => {
+  await page.goto('/cenik');
+  await expect(page.getByText('Horizont osvobození: kdy je co bez daně')).toBeVisible();
+  await expect(page.getByText('Simulátor prodeje a horizont osvobození')).toHaveCount(0);
+});
+
+/**
+ * E-9 + E-11: FAQ nesmí tvrdit, že se u předplatného nic nestrhne samo, ani že
+ * zkušební podatelnou proženeme každé vygenerované XML.
+ */
+test('FAQ: automatická obnova přiznaná, EPO popsané pravdivě', async ({ page }) => {
+  await page.goto('/caste-otazky');
+
+  const cena = page.locator('details', { hasText: 'Co je zdarma a za co se platí?' });
+  await cena.locator('summary').click();
+  await expect(cena.getByText(/automaticky obnovuje/)).toBeVisible();
+  await expect(cena.getByText(/Ceny jsou konečné/)).toBeVisible();
+  await expect(page.getByText('nic se nestrhne samo')).toHaveCount(0);
+
+  const epo = page.locator('details', { hasText: 'ověřeno zkušební podatelnou EPO' });
+  await epo.locator('summary').click();
+  await expect(epo.getByText(/Posíláme jí vzorová podání každého typu/)).toBeVisible();
+  await expect(page.getByText('Každou vygenerovanou písemnost XML tam ověřujeme')).toHaveCount(0);
 });

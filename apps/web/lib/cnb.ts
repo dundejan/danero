@@ -3,6 +3,7 @@ import { d, type Money } from '@danero/shared';
 import type { DailyRateProvider } from '@danero/engine';
 import type { Db } from '@/db';
 import { fxRates } from '@/db/schema';
+import { logEvent } from '@/lib/log';
 
 /**
  * Denní kurzy ČNB (R-06b): oficiální roční textový export ČNB → cache v DB
@@ -14,12 +15,21 @@ import { fxRates } from '@/db/schema';
 const CNB_YEAR_URL = (year: number) =>
   `https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/rok.txt?rok=${year}`;
 
+/** Číslo s desetinnou tečkou — cokoli jiného (`N/A`, pomlčka, prázdno) přeskočíme. */
+const NUMBER_RE = /^-?\d+(\.\d+)?$/;
+
+/** Vypadá text jako kurzovní lístek ČNB, nebo jsme dostali chybovou stránku? */
+export function looksLikeCnbYearText(text: string): boolean {
+  return /^Datum\s*\|/.test(text.trimStart());
+}
+
 /** Parsuje roční export ČNB: 1. řádek hlavička „Datum|1 AUD|100 JPY|…“, pak dny. */
 export function parseCnbYearText(
   text: string,
 ): Array<{ day: string; currency: string; rate: string }> {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
+  let invalidCells = 0;
 
   // ČNB při změně kurzovního lístku uprostřed roku vloží NOVOU hlavičku
   // (ověřeno na roce 2022 — vypadl RUB) — mapování sloupců se musí přepočítat,
@@ -30,7 +40,12 @@ export function parseCnbYearText(
       .slice(1)
       .map((cell) => {
         const [amount, code] = cell.trim().split(/\s+/);
-        return { amount: d(amount ?? '1'), code: (code ?? '').toUpperCase() };
+        // nečíselné množství v hlavičce (poškozený soubor) nesmí shodit celý
+        // rok — nula ho níž vyřadí stejně jako sloupec bez kódu měny
+        return {
+          amount: d(NUMBER_RE.test(amount ?? '') ? amount! : '0'),
+          code: (code ?? '').toUpperCase(),
+        };
       });
 
   let columns = parseHeader(lines[0]!);
@@ -49,10 +64,19 @@ export function parseCnbYearText(
     columns.forEach((column, index) => {
       const raw = cells[index + 1]?.trim().replace(',', '.');
       if (!raw || !column.code) return;
+      // G-4: tvar se musí ověřit PŘED d(raw) — Decimal na „N/A“ nebo pomlčce
+      // vyhodí a jedna taková buňka by shodila kurzy celého roku
+      if (!NUMBER_RE.test(raw)) {
+        invalidCells += 1;
+        return;
+      }
       const value = d(raw);
       if (!value.isFinite() || value.lte(0) || column.amount.lte(0)) return;
       rows.push({ day, currency: column.code, rate: value.div(column.amount).toString() });
     });
+  }
+  if (invalidCells > 0) {
+    logEvent('warn', 'cnb.cells_skipped', { invalidCells, rows: rows.length });
   }
   return rows;
 }
@@ -70,19 +94,37 @@ export async function fetchCnbYear(
   if (!response.ok) {
     throw new Error(`ČNB kurzy pro rok ${year}: HTTP ${response.status} — zkus to později.`);
   }
-  const rows = parseCnbYearText(await response.text());
+  const text = await response.text();
+  // G-6: ČNB umí při výpadku vrátit HTTP 200 s HTML chybovou stránkou. Ta se
+  // rozparsuje na nula řádků a cron by hlásil úspěch, zatímco kurzy stojí.
+  if (!looksLikeCnbYearText(text)) {
+    throw new Error(
+      `ČNB kurzy pro rok ${year}: odpověď není kurzovní lístek (chybí hlavička „Datum|“) — služba nejspíš hlásí výpadek. Zkus to později.`,
+    );
+  }
+  const rows = parseCnbYearText(text);
+  if (rows.length === 0) {
+    logEvent('warn', 'cnb.year_empty', { year });
+  }
+
+  // G-5: duplicitní (den, měna) — třeba táž měna dvakrát v hlavičce — shodí
+  // celý upsert („ON CONFLICT DO UPDATE cannot affect row a second time“,
+  // jen na skutečném Postgresu, PGlite to spolkne). Poslední hodnota vyhrává.
+  const unique = new Map<string, { day: string; currency: string; rate: string }>();
+  for (const row of rows) unique.set(`${row.day}|${row.currency}`, row);
+  const values = [...unique.values()];
+
   // dávkový upsert po dnech (řádově tisíce řádků za rok)
-  for (let i = 0; i < rows.length; i += 500) {
-    const chunk = rows.slice(i, i + 500);
+  for (let i = 0; i < values.length; i += 500) {
     await db
       .insert(fxRates)
-      .values(chunk.map((row) => ({ day: row.day, currency: row.currency, rate: row.rate })))
+      .values(values.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [fxRates.day, fxRates.currency],
         set: { rate: sql`excluded.rate` },
       });
   }
-  return rows.length;
+  return values.length;
 }
 
 /**

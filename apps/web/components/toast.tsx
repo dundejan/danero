@@ -44,7 +44,9 @@ export function Toast({
       <button
         type="button"
         onClick={() => setVisible(false)}
-        className="float-right ml-3 font-bold opacity-60 hover:opacity-100"
+        // bez opacity: průhlednost srazí kontrast pod AA (text-cervena/60 dá na
+        // --plocha jen 2,8:1) a tohle je ovládací prvek, ne dekorace
+        className="float-right ml-3 font-bold"
         aria-label="Zavřít"
       >
         ×

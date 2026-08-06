@@ -1,8 +1,17 @@
-import { d, sum, ZERO, type IsoDate, type Money, type TaxpayerProfile } from '@danero/shared';
+import {
+  d,
+  Decimal,
+  sum,
+  ZERO,
+  type IsoDate,
+  type Money,
+  type TaxpayerProfile,
+} from '@danero/shared';
 import type { AssetScope, TaxYearConfig } from '../config/taxYear';
 import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
+import type { TaxEstimate } from '../tax/estimate';
 import { czkText } from '../format';
 import { WarningCollector } from '../warnings';
 
@@ -58,11 +67,39 @@ export interface Flagged38v {
   exemptProceedsCzk: Money;
 }
 
+/**
+ * R-08f: vyčíslení dopadu prolomení limitu 50k. Daň z § 8 + § 10 proti
+ * zaplaceným zálohám na daň; pojistné engine nepočítá (chybí základ § 7),
+ * varování ho zmiňuje slovně.
+ */
+export interface FlatTaxBreachImpact {
+  /** Orientační daň z investičních příjmů (§ 8 + § 10) po zápočtu zahraniční srážky. */
+  taxCzk: Money;
+  /** Zálohy na daň zaplacené v paušálním režimu — jen daňová složka paušální zálohy. */
+  advancesCreditCzk: Money;
+  /** Doplatek daně = daň − zálohy (min. 0). */
+  additionalTaxCzk: Money;
+  /** Celková měsíční paušální záloha 1. pásma (pro kontext v UI). */
+  monthlyAdvanceCzk: Money | null;
+}
+
 export interface LimitsResult {
   limit100k: LimitStatus & { includesTimeTestExempt: boolean };
-  /** R-10a: samostatný limit 100k pro kryptoaktiva (§ 4/1 zj) — čerpá se nezávisle na CP. */
-  cryptoLimit100k: LimitStatus;
-  flatTax50k: { applicable: boolean; status: LimitStatus; components: FlatTax50kComponents };
+  /**
+   * R-10a: samostatný limit 100k pro kryptoaktiva (§ 4/1 zj) — čerpá se
+   * nezávisle na CP. `applicable: false` v roce, kdy krypto osvobození vůbec
+   * nemá (ZO ≤ 2024, R-10b): měřák „0/100 000, zóna OK“ by tam lhal.
+   * Příznak (místo `null`) proto, že limit100k má stejný tvar a konzument tak
+   * nemusí řešit dvě různé struktury — stačí, aby příznak respektoval.
+   */
+  cryptoLimit100k: LimitStatus & { applicable: boolean };
+  flatTax50k: {
+    applicable: boolean;
+    status: LimitStatus;
+    components: FlatTax50kComponents;
+    /** R-08f: vyčíslení dopadu — jen když je limit prolomený a profil paušální. */
+    breachImpact: FlatTaxBreachImpact | null;
+  };
   employee20k: { applicable: boolean; status: LimitStatus };
   generalFiling50k: { applicable: boolean; status: LimitStatus };
   reporting38v: Flagged38v[];
@@ -82,6 +119,7 @@ export function computeLimits(
   crypto: SecuritiesResult,
   derivatives: DerivativesResult,
   dividends: DividendsResult,
+  tax: TaxEstimate,
   profile: TaxpayerProfile,
   config: TaxYearConfig,
   warnings: WarningCollector,
@@ -92,11 +130,16 @@ export function computeLimits(
     ...limitStatus(securities.pool100kCzk, d(config.limits.securitiesProceedsExemption)),
     includesTimeTestExempt,
   };
-  // R-10a: vlastní pool kryptoaktiv (prodeje před 15. 2. 2025 do něj nevstupují — R-10b)
-  const cryptoLimit100k = limitStatus(
-    crypto.pool100kCzk,
-    d(config.limits.cryptoProceedsExemption),
-  );
+  // R-10a: vlastní pool kryptoaktiv (prodeje před 15. 2. 2025 do něj nevstupují — R-10b).
+  // R-10b: v roce bez krypto osvobození limit neexistuje — hlásí se jako neaplikovatelný.
+  const cryptoExemptionsAvailable = config.cryptoRules.exemptionsAvailable;
+  const cryptoLimit100k = {
+    ...limitStatus(
+      crypto.pool100kCzk,
+      cryptoExemptionsAvailable ? d(config.limits.cryptoProceedsExemption) : ZERO,
+    ),
+    applicable: cryptoExemptionsAvailable,
+  };
 
   // R-08c/d: do 50k vstupují jen NEosvobozené příjmy — hrubé tržby, zahraniční
   // dividendy brutto, zdanitelné úroky a ruční ostatní příjmy § 8–10.
@@ -126,12 +169,39 @@ export function computeLimits(
     .plus(profile.otherTaxableIncome8to10Czk);
 
   const flatStatus = limitStatus(sideIncome, d(config.limits.flatTaxOtherIncome));
-  if (profile.regime === 'PAUSAL' && flatStatus.exceeded) {
+  const flatTaxApplicable = profile.regime === 'PAUSAL';
+  // R-08f: dopad prolomení v korunách. Daň bereme z varianty obecného základu —
+  // § 16a (samostatný základ) se v roce s přiznáním teprve volí a jeho výhodnost
+  // závisí i na § 7, který Danero nezná. Zálohy: jen daňová složka paušální
+  // zálohy (§ 38lk); pojistné se vypořádává v přehledech, ne v přiznání.
+  const advance = config.flatTaxAdvance;
+  const breachImpact: FlatTaxBreachImpact | null =
+    flatTaxApplicable && flatStatus.exceeded
+      ? (() => {
+          const taxCzk = tax.general.taxCzk;
+          const advancesCreditCzk = advance ? d(advance.monthlyTaxCzk).mul(12) : ZERO;
+          return {
+            taxCzk,
+            advancesCreditCzk,
+            additionalTaxCzk: Decimal.max(ZERO, taxCzk.sub(advancesCreditCzk)),
+            monthlyAdvanceCzk: advance ? d(advance.monthlyTotalCzk) : null,
+          };
+        })()
+      : null;
+  if (breachImpact) {
+    const advancesPart = advance
+      ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}.`
+      : `Zálohy na daň za tento rok v konfiguraci nemáme, doplatek daně proto vyčíslujeme bez jejich započtení.`;
     warnings.add(
       'FLAT_TAX_BROKEN',
       'WARNING',
-      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání a přehledy ČSSZ/ZP; v paušálním režimu zůstáváš.`,
-      { usedCzk: sideIncome.toFixed(2) },
+      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání; v paušálním režimu zůstáváš. Daň z investičních příjmů (§ 8 + § 10) vychází na ${czkText(breachImpact.taxCzk)}. ${advancesPart} Nezapočítali jsme daň z podnikání (§ 7), kterou Danero nevidí. Navíc vzniká povinnost podat přehledy ČSSZ a ZP a doplatit pojistné ze skutečných příjmů — to spočítat neumíme, protože neznáme tvůj základ z § 7.`,
+      {
+        usedCzk: sideIncome.toFixed(2),
+        taxCzk: breachImpact.taxCzk.toFixed(2),
+        advancesCreditCzk: breachImpact.advancesCreditCzk.toFixed(2),
+        additionalTaxCzk: breachImpact.additionalTaxCzk.toFixed(2),
+      },
     );
   }
 
@@ -206,9 +276,10 @@ export function computeLimits(
     limit100k,
     cryptoLimit100k,
     flatTax50k: {
-      applicable: profile.regime === 'PAUSAL',
+      applicable: flatTaxApplicable,
       status: flatStatus,
       components,
+      breachImpact,
     },
     employee20k: { applicable: profile.regime === 'ZAMESTNANEC', status: employeeStatus },
     generalFiling50k: { applicable: profile.regime === 'JINE', status: generalStatus },

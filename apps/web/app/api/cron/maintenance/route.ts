@@ -1,6 +1,7 @@
 import { getDb } from '@/db';
 import { pruneAuditLog } from '@/lib/audit';
 import { withCron } from '@/lib/cron-auth';
+import { pruneJobs } from '@/lib/jobs';
 import { pruneRateLimits } from '@/lib/rate-limit';
 
 /**
@@ -12,5 +13,6 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
   const db = await getDb();
   const auditDeleted = await pruneAuditLog(db);
   const rateLimitsDeleted = await pruneRateLimits(db);
-  return Response.json({ auditDeleted, rateLimitsDeleted });
+  const jobsDeleted = await pruneJobs(db);
+  return Response.json({ auditDeleted, rateLimitsDeleted, jobsDeleted });
 });

@@ -38,9 +38,30 @@ case "${1:-status}" in
     cd "$REPO/apps/web" && pnpm exec drizzle-kit migrate && node db/status.mjs
     ;;
   backup)
+    # pg_dump odmítne server novější, než je sám (Neon jede na Postgresu 18) —
+    # ověř to PŘED dumpem, ať po sobě nenecháš nulový soubor vypadající jako záloha
+    SERVER_VERSION="$(psql "$DATABASE_URL" -tAc 'SHOW server_version;' 2>/dev/null | cut -d. -f1 || true)"
+    DUMP_VERSION="$(pg_dump --version | grep -oE '[0-9]+' | head -1 || true)"
+    if [ -n "$SERVER_VERSION" ] && [ -n "$DUMP_VERSION" ] && [ "$DUMP_VERSION" -lt "$SERVER_VERSION" ]; then
+      echo "pg_dump je verze $DUMP_VERSION, ale server běží na $SERVER_VERSION — dump by selhal." >&2
+      echo "Doinstaluj klienta odpovídající verze, např.:" >&2
+      echo "  sudo apt install postgresql-client-$SERVER_VERSION" >&2
+      exit 1
+    fi
+
     mkdir -p "$REPO/zalohy"
     OUT="$REPO/zalohy/danero-$(date +%F).dump"
-    pg_dump "$DATABASE_URL" -Fc -f "$OUT"
+    # při selhání nesmí zůstat prázdný soubor — vypadal by jako pořízená záloha
+    if ! pg_dump "$DATABASE_URL" -Fc -f "$OUT"; then
+      rm -f "$OUT"
+      echo "Záloha se nepořídila, nic jsem nenechal v $REPO/zalohy." >&2
+      exit 1
+    fi
+    if [ ! -s "$OUT" ]; then
+      rm -f "$OUT"
+      echo "pg_dump skončil úspěchem, ale soubor je prázdný — zálohu neuznávám." >&2
+      exit 1
+    fi
     echo "záloha: $OUT ($(du -h "$OUT" | cut -f1))"
     echo "⚠️  uchovávej mimo tenhle stroj a ODDĚLENĚ od DANERO_ENCRYPTION_KEY"
     ;;

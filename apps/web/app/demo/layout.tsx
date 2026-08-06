@@ -26,7 +26,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
         </p>
         <Link
           href="/registrace"
-          className="rounded-md bg-ruzova-syta px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded-md bg-ruzova-syta px-4 py-1.5 text-sm font-semibold text-white hover:brightness-95"
         >
           Založit účet zdarma
         </Link>

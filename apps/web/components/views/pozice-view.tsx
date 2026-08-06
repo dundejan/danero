@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Card, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { czk, czDate, money, qty, signedPct } from '@/lib/format';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
@@ -87,12 +88,19 @@ export function PoziceView({
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-inkoust-tlumeny">
-            <Link href={`${basePath}/portfolio`} className="hover:text-ruzova">
-              Portfolio
-            </Link>{' '}
-            / {label}
-          </p>
+          {/* drobečky patří do <nav> se seznamem — jako odstavec je čtečka
+              přečte jako běžný text a nenabídne je v seznamu navigací */}
+          <nav aria-label="Drobečková navigace" className="text-sm text-inkoust-tlumeny">
+            <ol className="flex flex-wrap items-baseline gap-1">
+              <li>
+                <Link href={`${basePath}/portfolio`} className="hover:text-ruzova">
+                  Portfolio
+                </Link>
+              </li>
+              <li aria-hidden>/</li>
+              <li aria-current="page">{label}</li>
+            </ol>
+          </nav>
           <h1 className="font-display text-3xl font-bold">
             {label}
             {fullName && fullName !== label && (
@@ -165,7 +173,7 @@ export function PoziceView({
       {position && (
         <Card className="space-y-2">
           <CardTitle>Nákupy (loty) a časové testy</CardTitle>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label="Nákupy (loty) a časové testy">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -201,7 +209,7 @@ export function PoziceView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
           {position.lots.some((lot) => lot.interpretive) && (
             <p className="text-xs text-inkoust-tlumeny">
               * datum nabytí vychází z výkladu korporátní akce (detail v reportu).

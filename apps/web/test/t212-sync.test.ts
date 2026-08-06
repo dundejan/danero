@@ -104,6 +104,215 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
     },
   );
 
+  // G-1: prázdný export z výpadku generování vypadá stejně jako prázdný rok.
+  // Dřív se sync uzavřel jako úspěšný, nastavil lastSyncedAt → další běh byl
+  // inkrementální a plná historie se už nikdy nestáhla.
+  it(
+    'plný sync bez jediné transakce a s nesedícími pozicemi se NEuzavře',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u4', name: 'Test', email: 'prazdny@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc4',
+        userId: 'u4',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const first = makeMockFetch({ emptyExports: true });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: first.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      expect(outcome.added).toBe(0);
+      // broker hlásí 50 ks AAPL, my nemáme nic → rekonciliace nesedí
+      expect(outcome.reconciliation?.ok).toBe(false);
+
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc4'))
+      )[0]!;
+      expect(updated.lastSyncedAt).toBeNull();
+      expect(updated.lastSyncStatus).toBe('error');
+      expect(updated.lastSyncError).toContain('nepovažujeme za dokončenou');
+
+      // a proto je další běh zase PLNÝ, ne inkrementální
+      const second = makeMockFetch();
+      await syncTrading212(db, updated, {
+        fetchImpl: second.fetchImpl,
+        now: new Date('2026-07-08T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(second.requestedYears).toEqual([2026, 2025, 2024, 2023, 2022]);
+    },
+  );
+
+  it(
+    'nový účet bez historie (broker taky nic nedrží) se uzavře normálně',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u5', name: 'Test', email: 'novy@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc5',
+        userId: 'u5',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch({ emptyExports: true, emptyPortfolio: true });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(outcome.reconciliation?.ok).toBe(true);
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc5'))
+      )[0]!;
+      expect(updated.lastSyncedAt).not.toBeNull();
+      expect(updated.lastSyncStatus).toBe('ok');
+    },
+  );
+
+  // B-5: rok se dědí jako hotový jen tehdy, když jeho stažení i zpracování
+  // doběhlo celé bez výjimky — useknuté CSV se parsuje bez jediné chyby
+  it(
+    'resume nedědí rok bez značky complete — stáhne ho znovu',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u6', name: 'Test', email: 'resume@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc6',
+        userId: 'u6',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+      const syncedAt = new Date('2026-07-01T12:00:00Z');
+
+      const useknuty = makeMockFetch();
+      await syncTrading212(db, account, {
+        fetchImpl: useknuty.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+        mode: 'full',
+        resume: {
+          syncedAt,
+          years: [
+            // 2024 doběhl celý → smí se přeskočit
+            { year: 2024, status: 'done', added: 1, duplicates: 0, complete: true },
+            // 2023 vypadá hotově, ale úplnost potvrzenou nemá → znovu
+            { year: 2023, status: 'empty' },
+          ],
+        },
+      });
+      expect(useknuty.requestedYears).toContain(2023);
+      expect(useknuty.requestedYears).not.toContain(2024);
+    },
+  );
+
+  // B-6: rekonciliace vidí jen OTEVŘENÉ pozice — chybí-li nákup i prodej téhož
+  // titulu, zůstatek sedí. Rozsah dat proto musí být součástí výsledku a díra
+  // v historii nesmí skončit zeleným „pozice sedí“.
+  it(
+    'rekonciliace hlásí rozsah dat a stažené roky',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u7', name: 'Test', email: 'rozsah@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc7',
+        userId: 'u7',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch();
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      const coverage = outcome.reconciliation?.coverage;
+      expect(coverage).toBeDefined();
+      expect(coverage!.firstYear).toBe(2024);
+      expect(coverage!.lastYear).toBe(2026);
+      // 2025 nemá transakce, ale sync ho stáhl → ověřeně prázdný, ne díra
+      expect(coverage!.syncedYears).toEqual([2022, 2023, 2024, 2025, 2026]);
+      expect(coverage!.missingYears).toEqual([]);
+      expect(coverage!.historyBeforeFirstBuyMissing).toBe(false);
+      expect(outcome.reconciliation?.ok).toBe(true);
+    },
+  );
+
+  it(
+    'prodej bez evidovaného nákupu → „pozice sedí“ se nezobrazí, stav řekne proč',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u8', name: 'Test', email: 'neuplna@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc8',
+        userId: 'u8',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      // export jen za běžný rok = samotný prodej 50 ks bez předchozího nákupu
+      // (historie k prvnímu nákupu nesahá — přesně scénář B-6)
+      const onlySell = makeMockFetch({ onlyYears: [2026] });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: onlySell.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      const coverage = outcome.reconciliation?.coverage;
+      expect(coverage!.historyBeforeFirstBuyMissing).toBe(true);
+      expect(coverage!.incompleteIsins).toEqual(['US0378331005']);
+      expect(outcome.reconciliation?.ok).toBe(false);
+    },
+  );
+
+  it(
+    'když historie nesahá k prvnímu nákupu ani po plném syncu, stav to řekne',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u9', name: 'Test', email: 'diry@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc9',
+        userId: 'u9',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch({ onlyYears: [2026] });
+      await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc9'))
+      )[0]!;
+      const stored = updated.lastReconciliation as { ok: boolean; coverage?: { firstYear: number } };
+      expect(stored.ok).toBe(false);
+      expect(stored.coverage?.firstYear).toBe(2026);
+    },
+  );
+
   it(
     'když API odmítne Basic (401), spadne se na samotný tajný klíč',
     { timeout: 30_000 },

@@ -10,6 +10,9 @@ import { XMLParser } from 'fast-xml-parser';
 const DEFAULT_BASE_URL =
   'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService';
 
+/** Doména, které jediné smíme poslat Flex token (D-7). */
+const IBKR_DOMAIN = 'interactivebrokers.com';
+
 export interface IbkrFlexClientOptions {
   token: string;
   queryId: string;
@@ -89,6 +92,40 @@ export class IbkrFlexClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
+  /**
+   * D-7: adresu pro vyzvednutí výpisu diktuje odpověď IBKR a my k ní připojíme
+   * Flex token. Cizí hostname by tedy znamenal token poslaný cizímu serveru —
+   * povolíme jen doménu IBKR (výpisy chodí i z jiné subdomény, než na kterou
+   * se posílá SendRequest) nebo přesně tu, kterou má klient nakonfigurovanou
+   * (mock v testech, vlastní proxy). Případný query string z odpovědi
+   * zahazujeme — parametry si skládáme sami.
+   */
+  private resolveStatementUrl(raw: string | undefined): string {
+    const fallback = `${this.baseUrl}/GetStatement`;
+    if (!raw) return fallback;
+    const base = new URL(fallback);
+    let parsed: URL;
+    try {
+      parsed = new URL(raw, base);
+    } catch {
+      throw new IbkrFlexError(
+        'bad-url',
+        'IBKR vrátil nesrozumitelný odkaz na výpis — zkus synchronizaci za chvíli znovu.',
+      );
+    }
+    const sameAsConfigured = parsed.origin === base.origin;
+    const ibkrDomain =
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === IBKR_DOMAIN || parsed.hostname.endsWith(`.${IBKR_DOMAIN}`));
+    if (!sameAsConfigured && !ibkrDomain) {
+      throw new IbkrFlexError(
+        'bad-url',
+        `IBKR vrátil odkaz na cizí adresu (${parsed.hostname}) — synchronizaci jsme zastavili a token nikam neposlali. Zkus to za chvíli znovu.`,
+      );
+    }
+    return `${parsed.origin}${parsed.pathname}`;
+  }
+
   private async get(url: string): Promise<string> {
     // HTTP vrstva: retry na 429/5xx a síťové chyby (max 5 pokusů, backoff)
     let lastError: unknown;
@@ -145,7 +182,7 @@ export class IbkrFlexClient {
       if (response.status === 'Success' && response.referenceCode) {
         return {
           referenceCode: response.referenceCode,
-          url: response.url || `${this.baseUrl}/GetStatement`,
+          url: this.resolveStatementUrl(response.url),
         };
       }
       if (response.errorCode === '1018' && Date.now() < deadline) {

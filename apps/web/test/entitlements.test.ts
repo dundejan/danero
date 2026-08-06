@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb } from '@/db';
 import { reportPurchases, subscriptions, user } from '@/db/schema';
 import {
+  billingEnabled,
   canGenerateReport,
   hasActiveSubscription,
   resolveEntitlements,
@@ -12,6 +13,9 @@ import {
 describe('tarify a oprávnění', () => {
   afterEach(() => {
     delete process.env.DANERO_BILLING;
+    delete process.env.STRIPE_SECRET_KEY;
+    // NODE_ENV je v typech Nextu readonly — přiřazení neprojde typecheckem
+    vi.unstubAllEnvs();
   });
 
   it('vlastní instance bez DANERO_BILLING má odemčeno všechno', { timeout: 30_000 }, async () => {
@@ -28,6 +32,28 @@ describe('tarify a oprávnění', () => {
     expect(await canGenerateReport(db, 'u1', 2026)).toBe(true);
     // crony si nefiltrují nic — filtr má smysl jen v hostované verzi
     expect(await usersWithActiveSubscription(db)).toEqual(new Set());
+  });
+
+  it('produkce se Stripe klíčem a bez DANERO_BILLING spadne, ne aby rozdávala zdarma', () => {
+    // Přepínač je fail-open: chybějící nebo překlepnutá hodnota tiše odemkne
+    // všechno (nový projekt, preview prostředí, obnova ze zálohy). Kdo nastavil
+    // Stripe klíč, ten platby chce — nesoulad je zjevná miskonfigurace.
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.STRIPE_SECRET_KEY = 'sk_test_ukazka';
+
+    expect(() => billingEnabled()).toThrow(/DANERO_BILLING/);
+
+    process.env.DANERO_BILLING = 'stripee'; // překlep
+    expect(() => billingEnabled()).toThrow(/DANERO_BILLING/);
+
+    process.env.DANERO_BILLING = 'stripe';
+    expect(billingEnabled()).toBe(true);
+  });
+
+  it('vlastní instance bez Stripu běží dál se vším odemčeným', () => {
+    // záměr z docs/19: paywall je konfigurace provozovatele, ne zmrzačený kód
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(billingEnabled()).toBe(false);
   });
 
   it('bez předplatného je placené zamčené, import a přehled ne', { timeout: 30_000 }, async () => {

@@ -86,6 +86,18 @@ const PRIJMY_OTAZKA: Record<Situace, { otazka: string; napoveda: string }> = {
   },
 };
 
+/**
+ * Znění otázek na jednom místě — hláška „chybí odpověď“ (H-24) musí uživateli
+ * říct přesně tu otázku, kterou vidí na stránce.
+ */
+const QUESTIONS = {
+  situation: 'Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?',
+  sales: 'Prodal jsi letos akcie nebo ETF za víc než 100 000 Kč celkem?',
+  holding: 'Držel jsi všechny prodané kusy déle než 3 roky?',
+  crypto: 'Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?',
+  cryptoHolding: 'Držel jsi všechno prodané krypto déle než 3 roky?',
+} as const;
+
 const PRIJMY_DUVOD: Record<Situace, string> = {
   pausal:
     'Jiné zdanitelné příjmy nad 50 000 Kč znamenají, že daň za ten rok není rovna paušální dani — podáš přiznání a přehledy, v paušálním režimu ale zůstáváš.',
@@ -94,14 +106,39 @@ const PRIJMY_DUVOD: Record<Situace, string> = {
   jine: 'Zdanitelné příjmy nad 50 000 Kč za rok znamenají povinnost podat přiznání.',
 };
 
-export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean }) {
-  const [situace, setSituace] = useState<Situace | null>(null);
-  const [prodejeNad100k, setProdejeNad100k] = useState<boolean | null>(null);
-  const [vseDrzeno3Roky, setVseDrzeno3Roky] = useState<boolean | null>(null);
-  const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
-  const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
-  const [prijmy, setPrijmy] = useState<OdpovedPrijmy | null>(null);
+/** Odpovědi kalkulačky; `null` = uživatel na otázku zatím neodpověděl. */
+export interface CalculatorAnswers {
+  situace: Situace | null;
+  prodejeNad100k: boolean | null;
+  vseDrzeno3Roky: boolean | null;
+  kryptoNad100k: boolean | null;
+  kryptoDrzeno3Roky: boolean | null;
+  prijmy: OdpovedPrijmy | null;
+}
 
+export interface CalculatorOutcome {
+  verdikt: 'osvobozeno' | 'priznani' | 'nejasne' | null;
+  duvod: string | null;
+  /**
+   * Otázka, kterou uživatel přeskočil a bez níž verdikt nevznikne. Podotázky
+   * se totiž objevují průběžně, takže jde jednu minout a odpovědět až na
+   * pozdější — dřív se v takovém případě nevykreslilo vůbec nic a kalkulačka
+   * mlčela, aniž by řekla, co jí chybí (H-24).
+   */
+  skippedQuestion: string | null;
+}
+
+/**
+ * Verdikt kalkulačky z odpovědí. Čistá funkce bez JSX — export kvůli testům.
+ */
+export function evaluateCalculator({
+  situace,
+  prodejeNad100k,
+  vseDrzeno3Roky,
+  kryptoNad100k,
+  kryptoDrzeno3Roky,
+  prijmy,
+}: CalculatorAnswers): CalculatorOutcome {
   // prodeje CP jsou osvobozené limitem 100k, nebo splněným časovým testem;
   // null = na verdikt zatím chybí odpověď
   const prodejeOsvobozene =
@@ -110,7 +147,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
   const kryptoOsvobozene =
     kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
 
-  let verdikt: 'osvobozeno' | 'priznani' | 'nejasne' | null = null;
+  let verdikt: CalculatorOutcome['verdikt'] = null;
   let duvod: string | null = null;
   if (kryptoOsvobozene === false) {
     verdikt = 'priznani';
@@ -140,6 +177,57 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
     }
   }
 
+  // otázky v pořadí, ve kterém je uživatel vidí (podmínky = podmínky vykreslení)
+  const questions: Array<{ label: string; answered: boolean }> = [
+    { label: QUESTIONS.situation, answered: situace !== null },
+    ...(situace !== null ? [{ label: QUESTIONS.sales, answered: prodejeNad100k !== null }] : []),
+    ...(prodejeNad100k === true
+      ? [{ label: QUESTIONS.holding, answered: vseDrzeno3Roky !== null }]
+      : []),
+    ...(prodejeNad100k !== null
+      ? [{ label: QUESTIONS.crypto, answered: kryptoNad100k !== null }]
+      : []),
+    ...(kryptoNad100k === true
+      ? [{ label: QUESTIONS.cryptoHolding, answered: kryptoDrzeno3Roky !== null }]
+      : []),
+    ...(situace !== null && kryptoOsvobozene !== null
+      ? [{ label: PRIJMY_OTAZKA[situace].otazka, answered: prijmy !== null }]
+      : []),
+  ];
+  const firstUnanswered = questions.findIndex((question) => !question.answered);
+  // „přeskočená“ = nezodpovězená otázka, za kterou už uživatel na něco odpověděl
+  const skippedQuestion =
+    verdikt === null &&
+    firstUnanswered !== -1 &&
+    questions.slice(firstUnanswered + 1).some((question) => question.answered)
+      ? questions[firstUnanswered]!.label
+      : null;
+
+  return { verdikt, duvod, skippedQuestion };
+}
+
+export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean }) {
+  const [situace, setSituace] = useState<Situace | null>(null);
+  const [prodejeNad100k, setProdejeNad100k] = useState<boolean | null>(null);
+  const [vseDrzeno3Roky, setVseDrzeno3Roky] = useState<boolean | null>(null);
+  const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
+  const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
+  const [prijmy, setPrijmy] = useState<OdpovedPrijmy | null>(null);
+
+  // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10) —
+  // řídí, kdy se ukáže poslední otázka
+  const kryptoOsvobozene =
+    kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
+
+  const { verdikt, duvod, skippedQuestion } = evaluateCalculator({
+    situace,
+    prodejeNad100k,
+    vseDrzeno3Roky,
+    kryptoNad100k,
+    kryptoDrzeno3Roky,
+    prijmy,
+  });
+
   return (
     <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6 sm:p-8">
       {/* na samostatné /kalkulacka nese nadpis stránka — hlavička by se dublovala */}
@@ -162,7 +250,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
 
       <div className={showHeader ? 'mt-6 space-y-5' : 'space-y-5'}>
         <Otazka<Situace>
-          otazka="Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?"
+          otazka={QUESTIONS.situation}
           volby={[
             { hodnota: 'zamestnanec', popisek: 'Zaměstnanec' },
             { hodnota: 'pausal', popisek: 'OSVČ v paušálu' },
@@ -177,7 +265,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         />
         {situace !== null && (
           <Otazka<boolean>
-            otazka="Prodal jsi letos akcie nebo ETF za víc než 100 000 Kč celkem?"
+            otazka={QUESTIONS.sales}
             napoveda="Počítá se, za kolik jsi prodal — ne zisk. Krypto má vlastní limit, přijde na řadu za chvíli."
             volby={[
               { hodnota: false, popisek: 'Ne' },
@@ -189,7 +277,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         )}
         {prodejeNad100k === true && (
           <Otazka<boolean>
-            otazka="Držel jsi všechny prodané kusy déle než 3 roky?"
+            otazka={QUESTIONS.holding}
             volby={[
               { hodnota: true, popisek: 'Ano, všechny' },
               { hodnota: false, popisek: 'Ne' },
@@ -200,7 +288,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         )}
         {prodejeNad100k !== null && (
           <Otazka<boolean>
-            otazka="Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?"
+            otazka={QUESTIONS.crypto}
             napoveda="Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Nemáš krypto? Dej Ne."
             volby={[
               { hodnota: false, popisek: 'Ne' },
@@ -216,7 +304,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         )}
         {kryptoNad100k === true && (
           <Otazka<boolean>
-            otazka="Držel jsi všechno prodané krypto déle než 3 roky?"
+            otazka={QUESTIONS.cryptoHolding}
             napoveda="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. U stablecoinů (USDT, USDC…) je test sporný — počítáme bezpečně, jako by neplatil."
             volby={[
               { hodnota: true, popisek: 'Ano, všechno' },
@@ -240,6 +328,17 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
           />
         )}
       </div>
+
+      {/* přeskočená otázka: bez tohohle bloku by kalkulačka jen mlčela a
+          uživatel by nevěděl, že na verdikt něco chybí (H-24) */}
+      {skippedQuestion && (
+        <div role="status" className="mt-6 rounded-md border border-linka bg-pozadi p-4">
+          <p className="font-semibold">Ještě jedna odpověď a verdikt je hotový.</p>
+          <p className="mt-1 text-sm text-inkoust-tlumeny">
+            Chybí odpověď na otázku „{skippedQuestion}“ — doplň ji výš.
+          </p>
+        </div>
+      )}
 
       {verdikt && (
         <div

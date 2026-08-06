@@ -8,6 +8,7 @@ import {
   RealizedByYearChart,
 } from '@/components/charts';
 import { PositionsExplorer, type ExplorerRow } from '@/components/positions-explorer';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { ViewSwitch } from '@/components/view-switch';
 import { YearSwitcher } from '@/components/year-switcher';
 import {
@@ -298,7 +299,7 @@ export function PortfolioView({
             Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy, bez
             ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
           </p>
-          <div className="scroll-stiny overflow-x-auto">
+          <ScrollArea label="Otevřené derivátové pozice">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -323,7 +324,7 @@ export function PortfolioView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
         </Card>
       )}
 
@@ -374,7 +375,7 @@ export function PortfolioView({
       <p className="text-xs text-inkoust-tlumeny">
         Popisky instrumentů: {labelsAll.size} známých. Hodnoty jsou orientační a neslouží jako
         podklad pro obchodní rozhodnutí — daňové výpočty najdeš v{' '}
-        <Link href={`${basePath}/report`} className="font-medium text-ruzova">
+        <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
           reportu
         </Link>
         .

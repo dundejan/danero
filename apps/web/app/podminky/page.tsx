@@ -47,7 +47,7 @@ export default function TermsPage() {
             <strong>Software Danero</strong>, jehož zdrojový kód je veřejný pod licencí{' '}
             <a
               href="https://www.gnu.org/licenses/agpl-3.0.html"
-              className="font-medium text-ruzova"
+              className="font-medium text-ruzova-text"
               target="_blank"
               rel="noreferrer"
             >
@@ -70,9 +70,10 @@ export default function TermsPage() {
         <p>
           Základní použití je zdarma a bez časového omezení: import výpisů ze všech
           podporovaných platforem a přehled limitů, časových testů a orientační daně.
-          Placené jsou podklady k přiznání za konkrétní daňový rok a celoroční hlídání
-          s automatickým napojením na brokery. Aktuální ceny najdeš vždy na stránce{' '}
-          <Link href="/cenik" className="font-medium text-ruzova">
+          Placené jsou podklady k přiznání za konkrétní daňový rok a celoroční hlídání —
+          tedy automatické napojení na brokery, hlídací e-maily a simulátor prodeje.
+          Aktuální ceny najdeš vždy na stránce{' '}
+          <Link href="/cenik" className="font-medium text-ruzova-text">
             Ceník
           </Link>{' '}
           a případnou změnu ti oznámíme předem podle článku 9.
@@ -95,11 +96,30 @@ export default function TermsPage() {
           do konce zaplaceného období ti služba běží dál.
         </p>
         <p>
-          Jsi-li spotřebitel, máš právo odstoupit od smlouvy do 14 dnů. Protože Danero
-          je digitální obsah dodaný okamžitě, toto právo zaniká, jakmile na tvou
-          výslovnou žádost začneme plnit — potvrzuješ ji zaškrtnutím u objednávky.
-          Podrobnosti i vzorový formulář najdeš v{' '}
-          <Link href="/odstoupeni" className="font-medium text-ruzova">
+          Jsi-li spotřebitel, máš právo odstoupit od smlouvy do 14 dnů od jejího
+          uzavření. Jak dlouho to právo trvá, se liší podle toho, co sis koupil:
+        </p>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            <strong>Podklady k přiznání za jeden rok</strong> jsou digitální obsah,
+            který dodáváme okamžitě. U nich právo odstoupit zaniká ve chvíli, kdy na
+            tvou výslovnou žádost začneme plnit — potvrzuješ ji zaškrtnutím
+            u objednávky (§ 1837 písm. l občanského zákoníku).
+          </li>
+          <li>
+            <strong>Celoroční hlídání</strong> je naopak služba, kterou ti poskytujeme
+            průběžně celý rok. Od té můžeš odstoupit do 14 dnů i poté, co ti začne
+            běžet: vrátíme ti zaplacenou částku sníženou o poměrnou část za dny, kdy
+            už jsi hlídání měl (§ 1834 občanského zákoníku). Právo odstoupit u ní
+            zaniká až tím, že službu poskytneme úplně, tedy po uplynutí celého
+            předplaceného roku (§ 1837 písm. a). Zaškrtnutí u objednávky u ní
+            znamená jen to, že si přeješ začít hned — o právo odstoupit tě
+            nepřipraví.
+          </li>
+        </ul>
+        <p>
+          Podrobnosti i vzorový formulář pro obě situace najdeš v{' '}
+          <Link href="/odstoupeni" className="font-medium text-ruzova-text">
             poučení o odstoupení
           </Link>
           .
@@ -133,7 +153,7 @@ export default function TermsPage() {
           Žitomírská 640/3, Vršovice, 101 00 Praha 10 (fyzická osoba podnikající dle
           živnostenského zákona, zapsaná v živnostenském rejstříku). Připomínky a chyby
           posílej na{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
             dunder.jan@gmail.com
           </a>
           .
@@ -147,7 +167,7 @@ export default function TermsPage() {
           Ústřední inspektorát — oddělení ADR, Gorazdova 24, 120 00 Praha 2,{' '}
           <a
             href="https://coi.gov.cz"
-            className="font-medium text-ruzova"
+            className="font-medium text-ruzova-text"
             target="_blank"
             rel="noreferrer"
           >
@@ -156,7 +176,7 @@ export default function TermsPage() {
           ; návrh jde podat online na{' '}
           <a
             href="https://adr.coi.cz"
-            className="font-medium text-ruzova"
+            className="font-medium text-ruzova-text"
             target="_blank"
             rel="noreferrer"
           >
@@ -178,11 +198,11 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.1 · účinnost od 6. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.2 · účinnost od 7. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">
-        <Link href="/" className="font-medium text-ruzova">
+        <Link href="/" className="font-medium text-ruzova-text">
           ← Zpět na úvod
         </Link>
       </p>

@@ -5,7 +5,12 @@ import { useEffect, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+
+/** Cíle `aria-describedby` — každý formulář sekce má vlastní pole i hlášku. */
+const DISABLE_ERROR_ID = 'heslo-2fa-off-error';
+const VERIFY_ERROR_ID = 'kod-2fa-error';
+const ENABLE_ERROR_ID = 'heslo-2fa-error';
 
 interface SetupData {
   totpURI: string;
@@ -81,13 +86,20 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Label htmlFor="heslo-2fa-off">Heslo (pro vypnutí)</Label>
-            <Input id="heslo-2fa-off" name="heslo" type="password" required autoComplete="current-password" />
+            <Input
+              id="heslo-2fa-off"
+              name="heslo"
+              type="password"
+              required
+              autoComplete="current-password"
+              {...describedByError(error !== null, DISABLE_ERROR_ID)}
+            />
           </div>
           <Button type="submit" variant="danger" size="sm" disabled={pending}>
             {pending ? 'Vypínám…' : 'Vypnout 2FA'}
           </Button>
         </div>
-        {error && <p className="text-sm text-cervena">{error}</p>}
+        {error && <FieldError id={DISABLE_ERROR_ID}>{error}</FieldError>}
       </form>
     );
   }
@@ -122,13 +134,14 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
               pattern="\d{6}"
               required
               className="font-mono tracking-widest"
+              {...describedByError(error !== null, VERIFY_ERROR_ID)}
             />
           </div>
           <Button type="submit" disabled={pending}>
             {pending ? 'Ověřuji…' : 'Dokončit zapnutí'}
           </Button>
         </form>
-        {error && <p className="text-sm text-cervena">{error}</p>}
+        {error && <FieldError id={VERIFY_ERROR_ID}>{error}</FieldError>}
       </div>
     );
   }
@@ -149,13 +162,20 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1">
           <Label htmlFor="heslo-2fa">Heslo (pro potvrzení)</Label>
-          <Input id="heslo-2fa" name="heslo" type="password" required autoComplete="current-password" />
+          <Input
+            id="heslo-2fa"
+            name="heslo"
+            type="password"
+            required
+            autoComplete="current-password"
+            {...describedByError(error !== null, ENABLE_ERROR_ID)}
+          />
         </div>
         <Button type="submit" disabled={pending}>
           {pending ? 'Připravuji…' : 'Zapnout 2FA'}
         </Button>
       </div>
-      {error && <p className="text-sm text-cervena">{error}</p>}
+      {error && <FieldError id={ENABLE_ERROR_ID}>{error}</FieldError>}
     </form>
   );
 }

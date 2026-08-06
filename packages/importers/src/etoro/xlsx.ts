@@ -182,6 +182,8 @@ interface Ctx {
   push: (line: number, raw: string, candidate: Record<string, unknown>) => void;
   contentId: (parts: string[]) => string;
   requireIsin: (ticker: string, line: number) => string | null;
+  /** Kolik dividendových řádků má Account Activity — musí je pokrýt list Dividends. */
+  activityDividendRows: { count: number };
 }
 
 const CLOSED_MATCHERS = {
@@ -391,8 +393,12 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       ctx.result.skipped.push({ line, message: 'Řádek bez typu operace — přeskočen.', raw });
       continue;
     }
-    // dividendy duplikují list Dividends (tam je i srážková daň) — bez hlášky
-    if (t === 'dividend') continue;
+    // dividendy duplikují list Dividends (tam je i srážková daň) — bez hlášky,
+    // ale spočítat: bez listu Dividends by jinak tiše zmizely (§ 8 by chyběl)
+    if (t === 'dividend') {
+      ctx.activityDividendRows.count += 1;
+      continue;
+    }
 
     const pid = cell('positionId');
 
@@ -744,12 +750,23 @@ export async function parseEtoroXlsx(
     push,
     contentId,
     requireIsin,
+    activityDividendRows: { count: 0 },
   };
   // pořadí je závazné: Closed Positions plní closedPositionIds, Activity je čte
   parseClosedSheet(ctx, closedSheet);
   parseActivitySheet(ctx, activitySheet);
   const dividendsSheet = findSheet(workbook, 'dividends');
   if (dividendsSheet) parseDividendsSheet(ctx, dividendsSheet);
+
+  // Activity dividendy jen přeskakuje (srážková daň je jen v listu Dividends) —
+  // chybí-li ten list, zmizely by beze stopy a příjem § 8 by se do daně nedostal
+  const imported = result.transactions.filter((tx) => tx.type === 'DIVIDEND').length;
+  if (ctx.activityDividendRows.count > 0 && imported === 0) {
+    result.errors.push({
+      line: 1,
+      message: `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale list „Dividends“ ve výpisu chybí (nebo je prázdný) — dividendy jsme proto nenaimportovali. Stáhni z eToro Account Statement za celé období včetně listu Dividends (je v něm i sražená daň) a nahraj ho znovu.`,
+    });
+  }
 
   result.unmappedSymbols = [...unmapped];
   return result;

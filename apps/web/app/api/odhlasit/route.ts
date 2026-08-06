@@ -4,6 +4,31 @@ import { verifyUnsubscribeToken } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
+/** Společný obal stránky odhlášení — text/plain by uživatele nechal na holé
+    bílé stránce bez jediného odkazu zpátky (úspěšná větev navigaci má). */
+function page(title: string, body: string, status = 200): Response {
+  const html = `<!doctype html><html lang="cs"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} — Danero</title>
+<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem">
+<h1 style="font-size:1.25rem">${title}</h1>
+${body}
+</body></html>`;
+  return new Response(html, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+/** Neplatný, vypršelý nebo podvržený token — vždy s cestou zpět. */
+const invalidLink = (): Response =>
+  page(
+    'Odkaz na odhlášení neplatí',
+    `<p>Odkaz je poškozený nebo už vypršel. Zkopíruj ho z e-mailu celý, nebo si e-maily vypni přímo v aplikaci.</p>
+<p><a href="/nastaveni">Nastavení → E-mailová upozornění</a> · <a href="/">Úvodní stránka Danera</a></p>`,
+    400,
+  );
+
 /**
  * Odhlášení e-mailových upozornění z odkazu v e-mailu (G8d) — bez přihlášení,
  * token je HMAC podepsaný. GET jen zobrazí potvrzení (mail scannery a prefetch
@@ -12,25 +37,22 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? '';
   const userId = await verifyUnsubscribeToken(token);
-  if (!userId) return new Response('Neplatný odkaz.', { status: 400 });
+  if (!userId) return invalidLink();
 
-  const html = `<!doctype html><html lang="cs"><meta charset="utf-8">
-<title>Odhlášení upozornění — Danero</title>
-<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem">
-<h1 style="font-size:1.25rem">Odhlásit e-mailová upozornění?</h1>
-<p>Upozornění v aplikaci ti zůstanou; e-maily jde kdykoli zapnout zpět.</p>
+  return page(
+    'Odhlásit e-mailová upozornění?',
+    `<p>Upozornění v aplikaci ti zůstanou; e-maily jde kdykoli zapnout zpět.</p>
 <p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni">Nastavení → E-mailová upozornění</a>.</p>
 <form method="post">
   <button type="submit" style="padding:.5rem 1rem;cursor:pointer">Ano, vypnout e-maily</button>
-</form>
-</body></html>`;
-  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+</form>`,
+  );
 }
 
 export async function POST(request: Request): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? '';
   const userId = await verifyUnsubscribeToken(token);
-  if (!userId) return new Response('Neplatný odkaz.', { status: 400 });
+  if (!userId) return invalidLink();
 
   const db = await getDb();
   await db
@@ -42,12 +64,9 @@ export async function POST(request: Request): Promise<Response> {
     });
 
   // potvrzení jako HTML — kvůli odkazu na jemnější nastavení
-  const html = `<!doctype html><html lang="cs"><meta charset="utf-8">
-<title>Odhlášeno — Danero</title>
-<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem">
-<h1 style="font-size:1.25rem">E-mailová upozornění jsou vypnutá</h1>
-<p>Upozornění v aplikaci ti zůstávají.</p>
-<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni">Nastavení → E-mailová upozornění</a>.</p>
-</body></html>`;
-  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  return page(
+    'E-mailová upozornění jsou vypnutá',
+    `<p>Upozornění v aplikaci ti zůstávají.</p>
+<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni">Nastavení → E-mailová upozornění</a>.</p>`,
+  );
 }

@@ -32,7 +32,9 @@ export default async function SimulatorPage({
   const entitlements = await resolveEntitlements(db, user.id);
   if (!entitlements.simulator) {
     return (
-      <main className="py-12">
+      // <main> nese už layout aplikace (cíl skip-linku) — druhý by udělal
+      // dva landmarky a rozbil „Přeskočit na obsah“
+      <div className="py-12">
         <PaywallCard
           title="Simulátor prodeje"
           body={
@@ -44,7 +46,7 @@ export default async function SimulatorPage({
           }
           price="Součást hlídání za 990 Kč ročně"
         />
-      </main>
+      </div>
     );
   }
 

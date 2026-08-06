@@ -211,4 +211,78 @@ describe('univerzální CSV šablona', () => {
     expect(result.errors[0]!.message).toContain('2026-02-30');
     expect(result.errors[1]!.message).toContain('settlement_date');
   });
+  // B-3: „1,500“ je v českém Excelu 1,5 i 1500 — dřív se čárka VŽDY brala jako
+  // oddělovač tisíců, takže „0,001“ BTC skončilo jako 1 kus (tisícinásobek)
+  describe('desetinná čárka v šabloně (B-3)', () => {
+    const buy = (quantity: string, price = '60000'): ReturnType<typeof parseUniversalCsv> =>
+      parseUniversalCsv(
+        ['type,date,isin,asset_class,quantity,price,currency',
+         `BUY,2025-03-01,BTC,CRYPTO,${quantity},${price},EUR`].join('\n'),
+      );
+
+    it('„0,001“ se nenaimportuje jako 1 kus, ale skončí chybou s návodem', () => {
+      const result = buy('"0,001"');
+      expect(result.transactions).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('0,001');
+      expect(result.errors[0]!.message).toContain('quantity');
+      expect(result.errors[0]!.message).toContain('TEČKOU');
+    });
+
+    it('nejednoznačná cena „1,500“ → chyba, ne 1500 ani 1,5', () => {
+      const result = buy('1', '"1,500"');
+      expect(result.transactions).toEqual([]);
+      expect(result.errors[0]!.message).toContain('price');
+      expect(result.errors[0]!.message).toContain('1,500');
+    });
+
+    it('jednoznačná desetinná čárka projde („1,25“ = 1.25, „0,5“ = 0.5)', () => {
+      const result = buy('"0,5"', '"1,25"');
+      expect(result.errors).toEqual([]);
+      const tx = result.transactions[0]!;
+      if (tx.type !== 'BUY') throw new Error('unreachable');
+      expect(tx.quantity.toString()).toBe('0.5');
+      expect(tx.pricePerShare.toString()).toBe('1.25');
+    });
+
+    it('jednoznačné tisíce projdou: „1,234.56“ i „1,234,567“ i „1.234,56“', () => {
+      expect(
+        (buy('1', '"1,234.56"').transactions[0] as { pricePerShare: { toString(): string } })
+          .pricePerShare.toString(),
+      ).toBe('1234.56');
+      expect(
+        (buy('1', '"1,234,567"').transactions[0] as { pricePerShare: { toString(): string } })
+          .pricePerShare.toString(),
+      ).toBe('1234567');
+      expect(
+        (buy('1', '"1.234,56"').transactions[0] as { pricePerShare: { toString(): string } })
+          .pricePerShare.toString(),
+      ).toBe('1234.56');
+    });
+
+    it('přísný převod platí i pro amount, withholding_tax a acquisition_price', () => {
+      const dividend = parseUniversalCsv(
+        ['type,date,isin,currency,amount,withholding_tax',
+         'DIVIDEND,2026-05-10,US0378331005,USD,"25,000","3,750"'].join('\n'),
+      );
+      expect(dividend.transactions).toEqual([]);
+      expect(dividend.errors[0]!.message).toContain('amount');
+
+      const transfer = parseUniversalCsv(
+        ['type,date,isin,quantity,acquisition_date,acquisition_price,acquisition_currency',
+         'TRANSFER_IN,2025-05-05,US5949181045,10,2021-03-01,"240,000",USD'].join('\n'),
+      );
+      expect(transfer.transactions).toEqual([]);
+      expect(transfer.errors[0]!.message).toContain('acquisition_price');
+    });
+
+    it('poměr splitu se převádí stejně přísně (ratio_from/ratio_to)', () => {
+      const result = parseUniversalCsv(
+        ['type,date,isin,subtype,ratio_from,ratio_to',
+         'CORPORATE_ACTION,2024-08-31,US0378331005,SPLIT,1,"1,000"'].join('\n'),
+      );
+      expect(result.transactions).toEqual([]);
+      expect(result.errors[0]!.message).toContain('ratio_to');
+    });
+  });
 });

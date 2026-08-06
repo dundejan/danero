@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { PositionCard } from '@/components/position-card';
 import { keepCurrencyCase } from '@/components/ui/card';
-import { signedPct } from '@/lib/format';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { plural, signedPct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -186,6 +187,15 @@ export function PositionsExplorer({
         </label>
       </div>
 
+      {/* filtrování mění obsah tabulky bez přenačtení stránky — bez živé oblasti
+          se čtečka o výsledku hledání nedozví (a při nule nepozná ani prázdno);
+          oblast je v DOM pořád, jinak by se změna neohlásila */}
+      <p aria-live="polite" className="sr-only">
+        {needle === ''
+          ? `${rows.length} ${plural(rows.length, 'pozice', 'pozice', 'pozic')} celkem`
+          : `Hledání „${query.trim()}“: ${sorted.length} z ${rows.length} ${plural(rows.length, 'pozice', 'pozic', 'pozic')}`}
+      </p>
+
       {sorted.length === 0 ? (
         <p className="text-sm text-inkoust-tlumeny">Nic nenalezeno pro „{query.trim()}“.</p>
       ) : (
@@ -218,7 +228,7 @@ export function PositionsExplorer({
             ))}
           </div>
 
-          <div className="scroll-stiny hidden overflow-x-auto md:block">
+          <ScrollArea label="Tabulka pozic" className="hidden md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -317,7 +327,7 @@ export function PositionsExplorer({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
 
           {sorted.length > PAGE_SIZE && (
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-inkoust-tlumeny">

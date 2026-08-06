@@ -6,6 +6,8 @@ import {
   importBatches,
   instrumentAliases,
   notifications,
+  reportPurchases,
+  subscriptions,
   taxpayerProfiles,
   transactions,
 } from '@/db/schema';
@@ -15,7 +17,8 @@ export const dynamic = 'force-dynamic';
 /**
  * GDPR export (právo na přenositelnost z /soukromi): kompletní JSON všech dat
  * uživatele — transakce v kanonickém formátu, profil, broker účty (bez
- * šifrovaných klíčů!), číselník instrumentů, notifikace, importní dávky.
+ * šifrovaných klíčů!), číselník instrumentů, notifikace, importní dávky
+ * a historie nákupů (předplatné + zaplacené daňové roky).
  */
 export async function GET(request: Request): Promise<Response> {
   const auth = await getAuth();
@@ -60,6 +63,13 @@ export async function GET(request: Request): Promise<Response> {
     })
     .from(importBatches)
     .where(eq(importBatches.userId, userId));
+  // historie nákupů (/soukromi slibuje odnést si i ji) — stripe identifikátory
+  // jsou součástí údajů o uživateli, doklad o zaplacení má Stripe
+  const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+  const purchases = await db
+    .select()
+    .from(reportPurchases)
+    .where(eq(reportPurchases.userId, userId));
 
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -72,6 +82,8 @@ export async function GET(request: Request): Promise<Response> {
     instrumentAliases: aliases,
     notifications: notif,
     importBatches: batches,
+    subscriptions: subs,
+    reportPurchases: purchases,
   };
 
   return new Response(JSON.stringify(payload, null, 2), {

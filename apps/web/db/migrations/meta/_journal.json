@@ -169,6 +169,20 @@
       "when": 1786000535173,
       "tag": "0023_souhlas_se_zahajenim_plneni",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786050315528,
+      "tag": "0024_billing_event_order_and_customer",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786050316528,
+      "tag": "0025_rename_derivatives_expenses_column",
+      "breakpoints": true
     }
   ]
 }

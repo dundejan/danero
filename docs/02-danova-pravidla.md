@@ -20,6 +20,28 @@ Klíč k písmenům § 4 odst. 1 ZDP (po přečíslování od 1. 1. 2024; starš
 Příjem z úplatného převodu CP je osvobozen, **přesáhne-li** doba mezi nabytím a převodem 3 roky (tj. 3 roky + aspoň 1 den). Platí i pro zahraniční CP.
 
 - **R-01a Okamžik nabytí**: u zaknihovaných CP den zápisu na majetkový účet = **settlement date** (D-59 k § 4/1, bod 1 písm. e). US akcie T+1 (od 5/2024), EU typicky T+2. ⚠️ Část praxe počítá trade date → přepínač `timeTestDateBasis` (default `settlement`), evidujeme obě data.
+
+  **Burzovní svátky.** Když broker datum vypořádání neuvádí, engine ho dopočte —
+  a lhůta T+1/T+2 běží v **obchodních dnech dané burzy**, tedy se přeskakuje
+  víkend **i burzovní svátek**. Bez svátků vycházelo vypořádání až o 4–5 dní
+  dřív (velikonoční týden, Vánoce) a časový test se otevíral dřív, než smí —
+  chyba v neprospěch státu, tedy riziko doměrku. Kalendář se volí podle prefixu
+  ISIN: `US`/`CA` → NYSE/Nasdaq, `DE` → Xetra, `GB` → LSE, `IE` → Euronext
+  Dublin, `CZ` → BCPP, ostatní → TARGET2 (společný vypořádací kalendář eurozóny:
+  1. 1., Velký pátek, Velikonoční pondělí, 1. 5., 25. a 26. 12.). Tabulky se
+  zdroji jsou v `packages/engine/src/config/exchangeHolidays.ts`, pokryté roky
+  **2019–2027**; mimo ně se přeskakují jen víkendy (starší nákupy mají časový
+  test dávno splněný, takže dopad je nulový).
+
+  Poctivě k aproximacím: kanadské ISIN používají kalendář US (vlastní kalendář
+  TSX zatím nemáme — americký svátek tak může vypořádání posunout o den
+  později), a vypořádací systémy (T2S) bývají otevřené i v den, kdy burza
+  neobchoduje. Obojí posouvá dopočtené vypořádání spíš **později** = pozdější
+  nabytí = pozdější osvobození, což je bezpečný směr. Datum vypořádání
+  z výpisu brokera má vždy přednost před dopočtem.
+
+  Runbook: **každý leden doplnit svátky nového roku** (nové kalendáře burz
+  vycházejí obvykle v listopadu/prosinci) a posunout `HOLIDAY_CALENDAR_LAST_YEAR`.
 - **R-01b Konec lhůty**: den úplatného převodu — konzistentně stejná báze jako nabytí.
 - **R-01c Obchodní majetek**: osvobození neplatí pro CP v obchodním majetku a do 3 let od ukončení samostatné činnosti. OSVČ v paušálu obchodní majetek nemá → CP vždy soukromé. Flag na profilu poplatníka.
 - **R-01d Smlouva o budoucím převodu** uzavřená do 3 let od nabytí ruší osvobození, i když se převod uskuteční po testu. (Jen dokumentace/upozornění, nedetekovatelné z dat.)
@@ -137,7 +159,24 @@ Dvě oddělené roviny:
 - **R-08c Co se do 50k NEPOČÍTÁ**: osvobozené příjmy (časový test splněn — R-01; úhrn prodejů CP ≤ 100k — R-02; krypto analogicky), české dividendy/úroky se srážkou (R-07a). Objem osvobozených příjmů je neomezený.
 - **R-08d Co se POČÍTÁ (hrubé příjmy, ne zisk!)**: zahraniční dividendy **brutto**, neosvobozené **tržby** z prodeje CP/krypta, zdanitelné úroky, nájmy. Příklad: prodej za 120 000 Kč, držba < 3 roky, zisk 5 000 Kč → do limitu vstupuje 120 000 Kč → prolomeno.
 - **R-08e Důsledky prolomení**: daň není rovna paušální dani → povinnost podat přiznání (vše standardně vč. § 7) + přehledy ČSSZ a ZP + pojistné standardně; zaplacené paušální zálohy se započtou.
-- **R-08f Danero hlídá**: běžící součet (zahraniční dividendy brutto + neosvobozené tržby + ostatní § 8–10 dle ručního zadání) vůči 50 000 Kč; warning pásma 60 % / 85 % / prolomeno; simulace prodeje ukazuje dopad na tento limit **před** obchodem; odhad finančního dopadu prolomení (doplatek daně + pojistného vs. paušální zálohy).
+- **R-08f Danero hlídá**: běžící součet (zahraniční dividendy brutto + neosvobozené tržby + ostatní § 8–10 dle ručního zadání) vůči 50 000 Kč; warning pásma 60 % / 85 % / prolomeno; simulace prodeje ukazuje dopad na tento limit **před** obchodem; odhad finančního dopadu prolomení.
+
+  **Vyčíslení dopadu (co engine počítá a co ne).** Při prolomení se dopočte
+  **doplatek daně** = orientační daň z § 8 + § 10 (varianta obecného základu
+  po zápočtu zahraniční srážky, R-07c) **minus zaplacené zálohy na daň**
+  z paušálních záloh. Započítává se jen **daňová složka** paušální zálohy
+  (§ 38lk odst. 1: 100 Kč/měsíc v 1. pásmu, tj. 1 200 Kč/rok) — pojistné složky
+  se započítávají v přehledech ČSSZ a ZP, ne v přiznání. Výše zálohy je
+  v konfiguraci roku (`flatTaxAdvance`; 2024 = 7 498 Kč, 2025 = 8 716 Kč,
+  2026 = 9 162 Kč měsíčně, vždy 1. pásmo — zdroj: Finanční správa, Informace
+  k institutu paušální daně; u 2026 po zpětném snížení odvodů OSVČ od 1. 1. 2026,
+  leden–červen se platilo 9 984 Kč a rozdíl je přeplatek). Předpokládá se
+  **1. pásmo** — profil poplatníka pásmo nenese.
+
+  **Pojistné engine nepočítá** (chybí základ § 7, který je mimo evidovaná data) —
+  varování ho zmiňuje slovně: prolomením vzniká povinnost podat přehledy ČSSZ
+  a ZP a doplatit pojistné ze skutečných příjmů. Doplatek daně z § 7 taky není
+  součástí odhadu, protože § 7 Danero neeviduje.
 
 ## R-09 Povinnost podat přiznání (§ 38g) a oznámení (§ 38v)
 
@@ -179,6 +218,9 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   jsou plně zdanitelné dle § 10 (s výdaji) a **do limitu 100k se nepočítají**
   (KOOV 625, závěr 2.2.1.5 + příklady, souhlas GFŘ). Pro ZO **≤ 2024 krypto žádné
   osvobození nemá** (GFŘ 18809/22) — config `cryptoRules.exemptionsAvailable: false`.
+  V takovém roce **žádný limit 100k neexistuje** a nesmí se zobrazovat jako
+  splněný: hlídač limitu proto nese příznak `applicable: false` (čerpání i strop
+  jsou nulové, protože osvobozovat není co) a UI měřák v tom roce neukazuje.
   Dědictví od příbuzného v řadě přímé/manžela dobu zůstavitele započítává; sloučení/
   splynutí kryptoaktiv a výměna kryptoaktiva jeho vydavatelem test nepřerušují (text zk).
 - **R-10c Jiný druh příjmu § 10**: krypto = § 10/1 b) bod 3 „převod jiné věci" —
@@ -223,6 +265,11 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
 - **Akumulační ETF**: interní reinvestice není zdanitelná událost — daní se až prodej.
 - **Distribuční ETF**: dividendy = § 8 (R-07) dle domicilu fondu (IE typicky 0% srážka, česká 15% daň zůstává).
 - Přeměny fondů: R-04d; ⚠️ u zahraničních SICAV/ICAV výkladové. **Změna třídy (dist→acc)** = riziko přerušení testu, nevyjasněno → označit jako událost k posouzení.
+  Implementace: změna třídy přichází z brokerů jako `ISIN_CHANGE`. Lot podle
+  R-04e **pokračuje** (test se nepřerušuje), ale označí se jako výkladový
+  (`lot.interpretive`) a engine vydá varování `ISIN_CHANGE_INTERPRETIVE` —
+  z dat nejde odlišit prostou změnu ISIN od změny třídy fondu, a mlčky přenesený
+  časový test je přesně to, co si zaslouží posouzení.
 
 ---
 
@@ -252,6 +299,15 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   realizace (uzavření/vypořádání); nerealizované přecenění se nedaní; „příjem"
   druhu = úhrn hrubých kladných plnění (sloupec 2 P2), ne netto zisk. Jistota
   střední (oficiální definice neexistuje).
+  **Rozhodné datum = vypořádání, ne obchod** — stejně jako u CP (R-05a): peníze
+  jsou na účtu až vypořádáním, a hotovostní princip § 5 se váže na ně. Prodej
+  opce s obchodem 31. 12. a vypořádáním 2. 1. patří proto do **následujícího**
+  zdaňovacího období. Datum vypořádání z výpisu brokera má přednost; když chybí,
+  dopočítá se jako u CP (R-01a, včetně burzovních svátků).
+  **Pořadí událostí téhož dne** je deterministické a nezávislé na ID transakcí:
+  korporátní akce → otevření (BUY, TRANSFER_IN) → uzavření (SELL, TRANSFER_OUT).
+  Jinak by 0DTE opce (nákup i expirace týž den) vyšla podle abecedy ID buď
+  správně, nebo s uplatněnou prémií navzdory vypnutému přepínači R-12i.
 - **R-12f CFD**: příjem = kladný rozdíl při uzavření pozice; záporný rozdíl
   a poplatky = výdaj druhu. Nominál pozice není příjem. Jistota střední.
 - **R-12g Futures**: denní vypořádání (variation margin) by hotovostně bylo
@@ -264,11 +320,21 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
 - **R-12i Opce — bezcenná expirace long**: **sporné**. Restriktivně (Taxomat,
   Hedger) prémie není výdaj (nedosáhla příjmu); per druh (XTB, Taxero, opora
   § 10/4 + D-59 K § 10/4 b. 2) je výdajem druhu v roce expirace. **Default:
-  neuplatnit**; přepínač `derivativesExpensesPerDruh` uplatní a aplikace
+  neuplatnit**; přepínač `derivativesExpensesPerType` uplatní a aplikace
   vyčíslí rozdíl + riziko. Nikdy nelze přenést do dalšího roku.
+  Vyčíslení musí být **skutečný rozdíl dílčího základu** (základ s přepínačem
+  vs. bez něj), ne hrubá výše neuznaných prémií: výdaje druhu jsou stropované
+  příjmy druhu (§ 10/4, R-12b), takže neuznaná prémie 30 000 Kč při příjmech
+  druhu 5 000 Kč nemůže základ snížit o víc než o těch 5 000 Kč. Hlásit horní
+  odhad by uživatele hnalo do rizikového výkladu za výhodu, která neexistuje.
 - **R-12j Opce — short prémie**: přijatá prémie = příjem druhu v roce PŘIJETÍ
   (hotovostní princip § 5); zpětný odkup = výdaj druhu v roce zaplacení (přes
   přelom roku nemusí mít proti čemu jít — varování). Jistota střední.
+  Varování `DERIVATIVE_BUYBACK_WITHOUT_INCOME` vzniká, když rok obsahuje zpětný
+  odkup vypsané opce a výdaje druhu přesáhnou příjmy druhu — propadlá část se
+  vyčíslí. Typicky short otevřený v listopadu a odkoupený v lednu: prémie se
+  zdanila loni, letošní výdaj nemá proti čemu jít a do dalšího roku ho převést
+  nelze (R-12b).
 - **R-12k Exercise/assignment**: uplatněná long call → prémie vstupuje do
   nabývací ceny podkladu (daní se v režimu CP); long put → prémie do výdajů
   proti příjmu z prodeje podkladu; short opce po assignmentu → prémie zůstává
@@ -287,7 +353,9 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   Jistota vysoká.
 - **R-12m Kurzy**: jako u CP — jednotný kurz (§ 38/7) nebo denní ČNB (§ 38/1 b),
   bez kombinace v roce; výdaj z dřívějšího roku kurzem roku vynaložení. Jistota
-  vysoká (přepočet výdajů: střední, praxe).
+  vysoká (přepočet výdajů: střední, praxe). Rokem vynaložení i rokem přijetí se
+  rozumí rok **vypořádání** obchodu (R-12e) — u denních kurzů se přepočítává
+  kurzem dne vypořádání, ne dne obchodu.
 - **R-12n Vykazování**: Příloha 2, kód druhu **F — jiné ostatní příjmy**
   (tiskopis 25 5405/P2 **vzor č. 21** za rok 2025, číselník **A–H**:
   A – příležitostná činnost, B – prodej nemovitostí, C – prodej movitých věcí,
@@ -335,14 +403,14 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `matchingMethod` | `FIFO` | R-05c |
 | `fxMethod` | počítat obě, uživatel volí | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
-| `derivativesExpensesPerDruh` | `false` (restriktivní) | R-12i |
+| `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 
 ## Roční údržba (runbook)
 
-Každý leden: nový jednotný kurz (pokyn GFŘ D-xx z Finančního zpravodaje), průměrná mzda pro 23% hranici (nařízení vlády), výše paušálních záloh, kontrola novel ZDP (sledovat: KPMG danovky.cz, dReport, FS tiskové zprávy). Legislativa je verzovaná per zdaňovací období — engine přijímá `TaxYearConfig`.
+Každý leden: nový jednotný kurz (pokyn GFŘ D-xx z Finančního zpravodaje), průměrná mzda pro 23% hranici (nařízení vlády), výše paušálních záloh (`flatTaxAdvance` v `TaxYearConfig`, R-08f), **burzovní svátky nového roku** (`packages/engine/src/config/exchangeHolidays.ts` + posunout `HOLIDAY_CALENDAR_LAST_YEAR`, R-01a), kontrola novel ZDP (sledovat: KPMG danovky.cz, dReport, FS tiskové zprávy). Legislativa je verzovaná per zdaňovací období — engine přijímá `TaxYearConfig`.
 
 ## Klíčové zdroje
 

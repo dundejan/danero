@@ -30,6 +30,11 @@ import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
  * v dividendách — dostává --graf-1), semafor jen pro stav/polaritu
  * (zisk/ztráta, pásma limitů). Brand růžová v sériích není — zůstává jen
  * akcentem (dnes/limit/aktivní). Mřížka a osy ustupují datům.
+ *
+ * Přístupnost: každý graf dostává `title` a `desc` — Recharts je vykreslí do
+ * `<svg role="application" tabindex="0">`. Bez nich se na graf dá klávesnicí
+ * vstoupit, ale čtečka o něm neřekne vůbec nic. `desc` proto nese i skutečná
+ * čísla, ne jen popis typu grafu; jinak jsou data pro nevidomého nedostupná.
  */
 
 const SERIES = ['var(--graf-1)', 'var(--graf-2)', 'var(--graf-3)', 'var(--graf-4)'];
@@ -127,7 +132,12 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
         k 31. 12.: <span className="text-inkoust">{czkCompact(lastValue)}</span>
       </p>
       <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+        <LineChart
+          data={points}
+          margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
+          title={`Čerpání limitu ${czkCompact(series.limitCzk)} v roce ${year} — ${name.toLowerCase()}`}
+          desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušované čáry označují pásma 60, 85 a 100 % limitu.`}
+        >
           <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
           <XAxis
             {...axisProps}
@@ -195,7 +205,12 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
   );
   return (
     <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={data.rows} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+      <BarChart
+        data={data.rows}
+        margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
+        title="Dividendy po měsících a státech"
+        desc={`Skládané sloupce: brutto dividendy v Kč po měsících, barevně podle státu (${data.countries.join(', ')}). Celkem ${czkCompact(data.totalCzk)}.`}
+      >
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="month" tickFormatter={monthLabel} />
         <YAxis
@@ -258,7 +273,12 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
   );
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
+        title="Realizovaný zisk a ztráta po letech"
+        desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}. Zelená = zisk, červená = ztráta.`}
+      >
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
@@ -298,7 +318,12 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
   const yScale = niceTicks(Math.max(...bars.map((bar) => bar.valueCzk), 0));
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={bars} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+      <BarChart
+        data={bars}
+        margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
+        title="Poplatky brokerům po letech"
+        desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}.`}
+      >
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
@@ -342,9 +367,20 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
 export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }) {
   const basisLabel = outlook.basis === 'value' ? 'hodnoty' : 'kusů';
   const points = outlook.points.map((point) => ({ ...point, t: toMs(point.date) }));
+  const firstPoint = outlook.points[0];
+  const lastPoint = outlook.points[outlook.points.length - 1];
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <LineChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
+      <LineChart
+        data={points}
+        margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
+        title="Osvobozování portfolia v čase"
+        desc={
+          firstPoint && lastPoint
+            ? `Podíl ${basisLabel} portfolia, který půjde prodat bez daně: dnes ${pct(firstPoint.exemptShare, 1)}, k ${dateLabel(lastPoint.date)} ${pct(lastPoint.exemptShare, 1)}.`
+            : `Podíl ${basisLabel} portfolia, který půjde prodat bez daně, v čase.`
+        }
+      >
         <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
         <XAxis
           {...axisProps}
@@ -455,7 +491,14 @@ export function AllocationPie({ allocation }: { allocation: PortfolioAllocation 
     <div>
       <div className="relative">
         <ResponsiveContainer width="100%" height={360}>
-          <PieChart margin={{ top: 16, right: 16, bottom: 16, left: 16 }}>
+          <PieChart
+            margin={{ top: 16, right: 16, bottom: 16, left: 16 }}
+            title="Alokace portfolia podle pozic"
+            desc={`Celkem ${czkCompact(allocation.totalCzk)} v ${data.length} pozicích. Největší: ${data
+              .slice(0, 5)
+              .map((slice) => `${slice.label} ${pct(slice.share, 1)}`)
+              .join(', ')}.`}
+          >
             <Pie
               data={data}
               dataKey="valueCzk"

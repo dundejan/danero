@@ -19,3 +19,10 @@ coverage
 !.env.example
 Dockerfile
 docker-compose.yml
+# .dockerignore se .gitignorem NEŘÍDÍ a Dockerfile dělá `COPY . .` — bez těchhle
+# řádků by se do vrstev builder stage dostal produkční dump databáze
+# (scripts/db.sh backup ho zakládá v kořeni repa) i reálná data Jana.
+zalohy
+**/zalohy
+packages/importers/test/fixtures/real
+**/*.dump

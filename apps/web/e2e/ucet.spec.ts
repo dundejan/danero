@@ -105,7 +105,15 @@ test('předplatné: v navigaci a bez souhlasu se nekupuje', async ({ page }) => 
   await page.getByRole('link', { name: 'Předplatné' }).click();
   await page.waitForURL('**/predplatne');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Předplatné');
-  await expect(page.getByText('990 Kč')).toBeVisible();
+  // cena je i v poučení o obnově, proto cílíme na cenovku
+  await expect(page.getByText(/990 Kč\s*\/ rok/)).toBeVisible();
+
+  // § 1811/2 a § 1820/1 OZ: doba trvání a automatická obnova musí být vidět
+  // PŘED objednávkou, ne až ve stavu „mám zaplaceno"
+  await expect(page.getByText(/Předplatné trvá/)).toBeVisible();
+  await expect(page.getByText(/automaticky obnovuje za 990 Kč/)).toBeVisible();
+  await expect(page.getByText(/14 dní před obnovou/)).toBeVisible();
+  await expect(page.getByText(/zrušit ji můžeš kdykoli v zákaznickém portálu/)).toBeVisible();
 
   const souhlas = page.locator('#souhlas-predplatne');
   await expect(souhlas).not.toBeChecked();

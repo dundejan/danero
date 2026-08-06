@@ -4,6 +4,7 @@ import { Toast } from '@/components/toast';
 import { buttonVariants } from '@/components/ui/button';
 import { getDb } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
+import { stripeCustomerFor } from '@/lib/billing';
 import { billingEnabled, isPaidSubscription } from '@/lib/entitlements';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
@@ -21,7 +22,11 @@ const STAV_CHYBA: Record<string, string> = {
   'chybi-souhlas':
     'Bez zaškrtnutí žádosti o okamžité zahájení plnění nákup dokončit nejde — je to zákonná podmínka.',
   'chyba-rok': 'Vyber daňový rok, za který podklady chceš.',
-  'bez-predplatneho': 'Zatím nemáš žádné předplatné, není co spravovat.',
+  'bez-plateb': 'Zatím jsi u nás nic nekoupil, není co spravovat.',
+  'uz-mas-predplatne':
+    'Hlídání ti běží — druhé předplatné vedle něj nedává smysl. Spravovat ho můžeš v zákaznickém portálu.',
+  'mas-v-predplatnem': 'Podklady za všechny daňové roky máš v ceně hlídání, kupovat je znovu nemusíš.',
+  'prilis-casto': 'Zkoušíš to moc často. Dej tomu pár minut a zkus to znovu.',
 };
 
 /**
@@ -50,6 +55,9 @@ export default async function SubscriptionPage({
 
   const now = new Date();
   const active = isPaidSubscription(subscription, now);
+  // portál je i pro toho, kdo koupil jen podklady, i pro toho, komu předplatné
+  // doběhlo — doklad o zaplacení má právo najít pořád (§ 16 z. 634/1992)
+  const customerId = await stripeCustomerFor(db, user.id);
 
   const txs = await loadTransactions(db, user.id);
   const years = availableYears(txs, now.getUTCFullYear());
@@ -57,7 +65,7 @@ export default async function SubscriptionPage({
   const nabizeneRoky = years.filter((rok) => !koupeneRoky.has(rok));
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 py-8">
+    <div className="mx-auto max-w-3xl space-y-8 py-8">
       <header>
         <h1 className="font-display text-3xl font-bold tracking-tight">Předplatné</h1>
         <p className="mt-2 text-sm text-inkoust-tlumeny">
@@ -78,19 +86,12 @@ export default async function SubscriptionPage({
       <section className="rounded-lg border border-linka bg-plocha p-6">
         <h2 className="font-display text-xl font-bold">Celoroční hlídání</h2>
         {active ? (
-          <>
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
-              Aktivní do <strong className="text-inkoust">{czDate(subscription.currentPeriodEnd)}</strong>
-              {subscription.cancelAtPeriodEnd
-                ? ' — obnova je zrušená, do té doby ti služba běží dál.'
-                : ' — obnoví se automaticky, e-mail ti přijde 14 dní předem.'}
-            </p>
-            <form action={openBillingPortalAction} className="mt-4">
-              <button type="submit" className={buttonVariants({ variant: 'secondary' })}>
-                Spravovat platby a zrušit obnovu
-              </button>
-            </form>
-          </>
+          <p className="mt-2 text-sm text-inkoust-tlumeny">
+            Aktivní do <strong className="text-inkoust">{czDate(subscription.currentPeriodEnd)}</strong>
+            {subscription.cancelAtPeriodEnd
+              ? ' — obnova je zrušená, do té doby ti služba běží dál.'
+              : ' — obnoví se automaticky, e-mail ti přijde 14 dní předem.'}
+          </p>
         ) : (
           <form action={buySubscriptionAction} className="mt-4 space-y-4">
             <p className="text-sm text-inkoust-tlumeny">
@@ -100,7 +101,15 @@ export default async function SubscriptionPage({
             <p className="font-display text-2xl font-bold">
               990 Kč <span className="text-base font-semibold text-inkoust-tlumeny">/ rok</span>
             </p>
-            <SouhlasCheckbox id="souhlas-predplatne" />
+            {/* § 1811 odst. 2 a § 1820 odst. 1 OZ: doba trvání a automatická
+                obnova musí být na očích PŘED objednávkou, ne až po ní. */}
+            <p className="text-sm text-inkoust-tlumeny">
+              Předplatné trvá <strong className="text-inkoust">1 rok</strong> a po roce se
+              automaticky obnovuje za 990 Kč na další rok. E-mail s připomenutím ti přijde
+              14 dní před obnovou a zrušit ji můžeš kdykoli v zákaznickém portálu — do konce
+              zaplaceného období ti služba běží dál.
+            </p>
+            <SouhlasCheckbox id="souhlas-predplatne" kind="subscription" />
             <button type="submit" className={buttonVariants({ variant: 'primary' })}>
               Objednat s povinností platby
             </button>
@@ -152,13 +161,31 @@ export default async function SubscriptionPage({
                 ))}
               </select>
             </div>
-            <SouhlasCheckbox id="souhlas-podklady" />
+            <SouhlasCheckbox id="souhlas-podklady" kind="report" />
             <button type="submit" className={buttonVariants({ variant: 'primary' })}>
               Objednat s povinností platby
             </button>
           </form>
         )}
       </section>
+
+      {/* Portál není součástí větve „mám předplatné": doklad o zaplacení
+          a historii plateb potřebuje najít i ten, kdo koupil jen podklady,
+          i ten, komu předplatné doběhlo. */}
+      {customerId && (
+        <section className="rounded-lg border border-linka bg-plocha p-6">
+          <h2 className="font-display text-xl font-bold">Platby a doklady</h2>
+          <p className="mt-2 text-sm text-inkoust-tlumeny">
+            Doklady o zaplacení, historie plateb, změna karty a zrušení obnovy —
+            všechno v zabezpečeném portálu Stripu.
+          </p>
+          <form action={openBillingPortalAction} className="mt-4">
+            <button type="submit" className={buttonVariants({ variant: 'secondary' })}>
+              {active ? 'Spravovat platby a zrušit obnovu' : 'Zobrazit platby a doklady'}
+            </button>
+          </form>
+        </section>
+      )}
 
       <p className="text-xs leading-relaxed text-inkoust-tlumeny">
         Ceny jsou konečné. Prodávající: Jan Dunder, IČO 19642661 — není plátcem DPH.
@@ -172,22 +199,30 @@ export default async function SubscriptionPage({
         </Link>
         .
       </p>
-    </main>
+    </div>
   );
 }
 
 /**
- * § 1837 písm. l OZ: u digitálního obsahu dodaného okamžitě musí zákazník
- * výslovně požádat o zahájení plnění a vzít na vědomí ztrátu práva odstoupit.
- * Bez zaškrtnutí server nákup nepustí.
+ * Výslovná žádost o zahájení plnění před uplynutím 14denní lhůty. Bez
+ * zaškrtnutí server nákup nepustí.
+ *
+ * Znění se pro obě věci LIŠÍ (E-3 z auditu):
+ * - podklady = digitální obsah dodaný okamžitě, právo odstoupit zaniká jejich
+ *   zpřístupněním (§ 1837 písm. l OZ);
+ * - roční hlídání = průběžně poskytovaná služba, právo odstoupit TRVÁ a zaniká
+ *   až úplným poskytnutím (§ 1837 písm. a); při odstoupení se doplácí poměrná
+ *   část za využité dny (§ 1834). Vzdát se ho dopředu nejde — k takovému
+ *   ujednání se nepřihlíží (§ 1812 odst. 2), takže ho tady ani nechceme.
  */
-function SouhlasCheckbox({ id }: { id: string }) {
+function SouhlasCheckbox({ id, kind }: { id: string; kind: 'subscription' | 'report' }) {
   return (
     <label htmlFor={id} className="flex items-start gap-2.5 text-xs leading-relaxed">
       <input id={id} name="souhlas" type="checkbox" required className="mt-0.5" />
       <span>
-        Žádám, aby Danero začalo plnit hned po zaplacení, a beru na vědomí, že tím
-        ztrácím právo odstoupit od smlouvy do 14 dnů.
+        {kind === 'report'
+          ? 'Žádám, aby Danero začalo plnit hned po zaplacení, a beru na vědomí, že jakmile mi podklady zpřístupní, ztrácím právo odstoupit od smlouvy do 14 dnů.'
+          : 'Žádám, aby mi hlídání začalo běžet hned po zaplacení. Právo odstoupit do 14 dnů mi tím zůstává — když ho využiju, zaplatím jen poměrnou část za dny, kdy mi hlídání běželo.'}
       </span>
     </label>
   );

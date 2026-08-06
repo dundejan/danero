@@ -230,8 +230,10 @@ describe('background joby (in-memory PGlite)', () => {
           phase: 'exporting',
           mode: 'full',
           years: [
-            { year: 2026, status: 'done', added: 1, duplicates: 0 },
-            { year: 2025, status: 'empty' },
+            // `complete` = stažení i zpracování roku doběhlo bez výjimky; jen
+            // takový rok smí resume přeskočit (B-5)
+            { year: 2026, status: 'done', added: 1, duplicates: 0, complete: true },
+            { year: 2025, status: 'empty', complete: true },
             { year: 2024, status: 'running' },
           ],
         },

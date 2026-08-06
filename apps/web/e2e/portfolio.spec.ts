@@ -51,8 +51,12 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   await expect(page.getByText('Bez cen — ceny bereme jen z připojených brokerů')).toBeVisible();
   await expect(page.getByText('Bez daně už dnes')).toBeVisible();
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
-  // grafy už nejsou schované v tabu — jsou vidět bez kliku
-  await expect(page.getByText('Osvobozování portfolia v čase')).toBeVisible();
+  // Grafy už nejsou schované v tabu — jsou vidět bez kliku.
+  // Přes roli, ne přes text: graf má stejný název i jako přístupné jméno
+  // v <title> uvnitř <svg>, takže `getByText` by našel dva prvky.
+  await expect(
+    page.getByRole('heading', { name: 'Osvobozování portfolia v čase' }),
+  ).toBeVisible();
   await expect(page.getByText('Realizovaný zisk/ztráta po letech')).toBeVisible();
 
   // Alokace (koláč) žije v sekci Pozice pod přepínačem Tabulka | Graf —

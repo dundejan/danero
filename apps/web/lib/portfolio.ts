@@ -45,7 +45,7 @@ export function profileToEngine(row: ProfileRow): {
       fxMethod: row.fxMethod as EngineOptions['fxMethod'],
       limit100kIncludesTimeTestExempt: row.limit100kStrict,
       timeTestDateBasis: row.timeTestBasis as EngineOptions['timeTestDateBasis'],
-      derivativesExpensesPerDruh: row.derivativesExpensesPerDruh,
+      derivativesExpensesPerType: row.derivativesExpensesPerType,
       emtTimeTestExempt: row.emtTimeTestExempt,
     },
   };

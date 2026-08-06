@@ -14,6 +14,7 @@ import {
   type Transaction,
   type TransferInTransaction,
 } from '@danero/shared';
+import { calendarForIsin, isExchangeHoliday } from '../config/exchangeHolidays';
 import type { EngineOptions, MatchingMethod } from '../config/options';
 import { czDateText, qtyText } from '../format';
 import type { FxConverter } from '../fx/fx';
@@ -88,10 +89,11 @@ const US_T1_SINCE = '2024-05-28';
  * Markets Association; v US byl 27. 5. svátek Memorial Day). Před tím T+2. */
 const CA_T1_SINCE = '2024-05-27';
 
-/** Dopočet data vypořádání, pokud jej broker neuvádí (aproximace bez svátků).
- * Burzovní lhůty (T+1/T+2) platí jen pro zaknihované CP (R-01a) — krypto se
- * vypořádává okamžitě (T+0), jinak by se posunul rok příjmu (R-05a) i hranice
- * účinnosti osvobození 15. 2. 2025 (R-10b). */
+/** Dopočet data vypořádání, pokud jej broker neuvádí. Lhůta T+1/T+2 běží
+ * v obchodních dnech burzy — přeskakují se víkendy I burzovní svátky (R-01a,
+ * kalendáře v config/exchangeHolidays.ts). Burzovní lhůty platí jen pro
+ * zaknihované CP — krypto se vypořádává okamžitě (T+0), jinak by se posunul
+ * rok příjmu (R-05a) i hranice účinnosti osvobození 15. 2. 2025 (R-10b). */
 export function inferSettlementDate(
   tradeDate: IsoDate,
   isin: string,
@@ -101,14 +103,20 @@ export function inferSettlementDate(
   const t1 =
     (isin.startsWith('US') && tradeDate >= US_T1_SINCE) ||
     (isin.startsWith('CA') && tradeDate >= CA_T1_SINCE);
-  return addBusinessDays(tradeDate, t1 ? 1 : 2);
+  const calendar = calendarForIsin(isin);
+  return addBusinessDays(tradeDate, t1 ? 1 : 2, (day) => isExchangeHoliday(calendar, day));
 }
 
 const eventDate = (tx: Transaction): IsoDate =>
   tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
 
-/** Korporátní akce se aplikují před obchody téhož dne (brokeři reportují post-split ceny). */
-const eventPriority = (tx: Transaction): number => {
+/**
+ * Pořadí událostí téhož dne — deterministické, nezávislé na ID transakcí:
+ * korporátní akce (brokeři reportují post-split ceny) → otevření pozice →
+ * uzavření pozice. Sdílí ho i výpočet derivátů (R-12e), aby 0DTE opce nebo
+ * převod a prodej týž den nevycházely podle abecedy ID.
+ */
+export const eventPriority = (tx: Transaction): number => {
   switch (tx.type) {
     case 'CORPORATE_ACTION':
       return 0;
@@ -358,9 +366,24 @@ export function buildLedger(
         break;
       }
       case 'ISIN_CHANGE': {
-        // R-04e: změna ISIN bez výměny nástroje test nepřerušuje
+        // R-04e: změna ISIN bez výměny nástroje test nepřerušuje — lot pokračuje.
+        // R-11: z dat ale nejde odlišit prostou změnu ISIN od změny třídy fondu
+        // (dist→acc), u které je přenos testu nevyjasněný → výkladová vlajka
+        // a varování, ať se přenesený test neschová.
         const newIsin = requireNewIsin(tx);
-        for (const lot of openLots(tx.isin)) lot.isin = newIsin;
+        const affected = openLots(tx.isin);
+        for (const lot of affected) {
+          lot.isin = newIsin;
+          lot.interpretive = true;
+        }
+        if (affected.length > 0) {
+          warnings.add(
+            'ISIN_CHANGE_INTERPRETIVE',
+            'WARNING',
+            `Změna ISIN ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): počítáme, že časový test běží dál od původního nákupu (R-04e). Jde-li ale o změnu třídy fondu (distribuční → akumulační), je zachování testu nevyjasněné — ověř podmínky výměny.`,
+            { txId: tx.id, isin: tx.isin, newIsin },
+          );
+        }
         break;
       }
       case 'MERGER': {

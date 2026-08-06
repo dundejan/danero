@@ -30,4 +30,7 @@ COPY --from=builder --chown=node:node /app/apps/web/db/migrations ./apps/web/db/
 
 USER node
 EXPOSE 3000
+# aby se nezdravá instance poznala i bez docker-compose (orchestrátor, `docker run`)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${PORT}/api/health" || exit 1
 CMD ["node", "apps/web/server.js"]

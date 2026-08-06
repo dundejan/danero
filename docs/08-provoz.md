@@ -15,16 +15,38 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    **pooled** řetězec (proto `prepare: false`), migrace přes **přímý** —
    transakční pooler si s DDL nerozumí.
 2. **Vercel**: projekt s root directory `apps/web` (monorepo, pnpm). Funkce region `fra1`.
-3. **Env proměnné** (všechny povinné — aplikace bez nich spadne při startu, viz
-   `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
-   (produkční URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`.
-4. **Cron**: `apps/web/vercel.json` definuje denní sync všech brokerů v 5:00 UTC
-   (`/api/cron/sync-brokers`), notifikace v 5:30 (`/api/cron/notify`) a hodinovou
-   záchrannou síť background jobů (`/api/cron/jobs`) a denní úklid dat po
-   retenční lhůtě v 4:15 (`/api/cron/maintenance`); Vercel posílá
-   `Authorization: Bearer $CRON_SECRET` sám. Pozor: hodinový cron vyžaduje placený
-   plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz „Limity Vercel funkcí"
-   níže.
+3. **Env proměnné** (viz `.env.example`). Povinné — aplikace bez nich spadne při
+   startu: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (produkční
+   URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Pro platby navíc:
+   `DANERO_BILLING=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_REPORT`,
+   `STRIPE_PRICE_SUBSCRIPTION`, `STRIPE_WEBHOOK_SECRET` — nastavený Stripe klíč
+   bez `DANERO_BILLING=stripe` v produkci shodí start (jinak by paywall tiše
+   rozdal všechno zdarma). Volitelně `RESEND_API_KEY`, `RESEND_FROM`,
+   `DANERO_TRUSTED_PROXIES` (viz níž).
+4. **Cron**: `apps/web/vercel.json` definuje **v UTC** (Vercel Cron jiné pásmo
+   neumí — v létě je to +2 h, v zimě +1 h pražského času):
+
+   | UTC | Routa | Co dělá |
+   |---|---|---|
+   | 3:40 denně | `/api/cron/billing-reconcile` | srovnání předplatných proti Stripu |
+   | 4:15 denně | `/api/cron/maintenance` | úklid dat po retenční lhůtě |
+   | 4:45 denně | `/api/cron/fx` | denní kurzy ČNB |
+   | 5:00 denně | `/api/cron/sync-brokers` | sync všech napojených brokerů |
+   | 5:30 denně | `/api/cron/notify` | přepočet limitů + upozornění |
+   | každou hodinu | `/api/cron/jobs` | záchranná síť background jobů |
+
+   `Authorization: Bearer $CRON_SECRET` posílá Vercel sám. Pozor: hodinový cron
+   vyžaduje placený plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz
+   „Limity Vercel funkcí" níže.
+
+   Notifikační běh je dávkovaný (25 uživatelů na invokaci) a zbytek fronty si
+   předává sám dál přes `?offset=` — timeout u 50. uživatele proto neznamená,
+   že zbytek ten den nedostane nic.
+5. **Za jakou proxy to běží**: rate limit přihlašování se klíčuje podle IP
+   klienta z `X-Forwarded-For`. Na Vercelu hlavičku přepisuje edge a cizí IP
+   nepropouští, takže výchozí nastavení stačí. Za vlastní proxí (CDN s veřejnými
+   adresami) vyjmenuj její rozsahy v `DANERO_TRUSTED_PROXIES` — jinak by se
+   klíčovalo podle adresy proxy a všichni by sdíleli jeden kbelík.
 
 ## Migrace databáze
 
@@ -36,12 +58,30 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 
 Připojovací řetězec je v secretu `PRODUCTION_DATABASE_URL` (přímý, nepoolovaný).
 Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
-`concurrency`, takže dvě migrace nad jednou databází nemůžou jet naráz.
+`concurrency`, takže dvě migrace nad jednou databází nemůžou jet naráz, má
+`permissions: contents: read` a **pouští se jen z větve `main`** — `gh workflow
+run migrate.yml --ref moje-vetev` skončí hned na prvním kroku.
 
-⚠️ **Migrace, která musí předcházet kódu** (typicky doplnění dat, na které nový
-kód spoléhá — třeba 0021), se pouští **před** nasazením: `gh workflow run
-migrate.yml`, počkat na doběhnutí, teprve pak push kódu. Automatický běh na
-pushi jede paralelně s buildem na Vercelu a pořadí negarantuje.
+Migruje `apps/web/db/migrate.mjs` (ne `drizzle-kit migrate`): při selhání vypíše
+celou chybu včetně SQLSTATE, hlášky a dotazu, na kterém to spadlo. `drizzle-kit`
+po sobě nechával ~250 B logu bez jediného vodítka.
+
+⚠️ **Pořadí migrací hlídá `db/check-journal.mjs`** (běží v CI i před migrací).
+Drizzle porovnává jen timestamp nejnovější aplikované migrace, nikdy hash —
+migrace se starším `when` (dva PR vygenerované paralelně, ten dřívější mergnutý
+později) by se na produkci **tiše přeskočila navždy**, ačkoli na čerstvé
+databázi v CI projde a `drizzle-kit check` řekne „Everything's fine". Když
+kontrola padne: migraci vygeneruj znovu (nebo jí v `_journal.json` zvedni `when`
+nad předchozí) a přečísluj soubor.
+
+⚠️ **Migrace jede paralelně s buildem na Vercelu a pořadí nikdo negarantuje**
+(M-5). Když deploy vyhraje, nový kód se ptá na neexistující sloupec a stránky
+vrací 500; když vyhraje migrace, starý kód běží nad novým schématem (to je
+skoro vždy v pořádku). Drž se proto pravidla: **schéma se mění ve dvou krocích**
+— nejdřív migrace zpětně kompatibilní se starým kódem (přidat sloupec, ne
+přejmenovat), teprve pak kód. Migraci, na kterou nový kód spoléhá (typicky
+doplnění dat — třeba 0021), pusť **před** nasazením: `gh workflow run
+migrate.yml`, počkat na doběhnutí, teprve pak push kódu.
 
 Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup]`. Bere řetězec
 z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
@@ -96,10 +136,18 @@ klíč drž v password manageru odděleně od záloh (jinak záloha = plaintext 
 
 ## Monitoring
 
-- `/api/health` — DB ping + latence (200/503); zapoj do uptime monitoringu.
+- `/api/health` — 200/503. Ověřuje **dostupnost DB i počet aplikovaných migrací**
+  (nezmigrovaná databáze na `SELECT 1` odpoví, ale aplikace všude padá → health
+  proto vrací 503 s `migrations: { applied, expected }`). Má vlastní timeout,
+  takže i při nedostupné databázi odpoví do pár sekund (`db: "timeout"`).
+  Zapoj do uptime monitoringu.
 - Strukturované logy: jeden JSON řádek na událost (`lib/log.ts`) — joby
   (`job.started`/`job.finished` s trváním), cron běhy, health selhání.
   Ve Vercelu filtruj podle `event`.
+- Cron běhy logují `cron.<jméno>.run`, `cron.<jméno>.finished` (s trváním
+  a počty zpracovaných položek) a `cron.<jméno>.failed`. **Chybějící `finished`
+  nebo nulové počty = cron tiše nic neudělal** — přesně to se dělo, když ČNB
+  vrátila HTTP 200 s HTML chybovou stránkou.
 
 ## Limity Vercel funkcí (první plný sync)
 

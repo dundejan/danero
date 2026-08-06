@@ -57,6 +57,9 @@ export function PrehledView({
   const flatTax50kChart = flatTax50kSeries(result);
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
+  const hasCrypto =
+    result.crypto.disposals.length > 0 ||
+    positions.some((p) => p.assetClass === 'CRYPTO' && p.totalRemaining.gt(0));
   const forfeitedWithholdingCzk = result.dividends.foreignWithholdingCzk.sub(
     result.dividends.creditableWithholdingCzk,
   );
@@ -79,6 +82,8 @@ export function PrehledView({
   const nearestLimit = watchedLimits.reduce((a, b) => (b.status.ratio > a.status.ratio ? b : a));
   const estimatedTaxCzk =
     result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
+  // R-08f: vyčíslení dopadu prolomení limitu 50k (jen paušál a jen při prolomení)
+  const breachImpact = result.limits.flatTax50k.breachImpact;
 
   // Rozpad základu § 10 po druzích — souhrnné „(prodeje)“ mátlo: daň může být
   // jen z derivátů (bez osvobození, R-12c), zatímco prodeje CP/krypto jsou pod limity
@@ -119,23 +124,58 @@ export function PrehledView({
       {filingLimit && (
         <Card className="border-l-4 border-l-ruzova">
           {filingLimit.status.exceeded ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="font-display text-xl font-bold">
-                  Za rok {year} podáš daňové přiznání
-                </p>
-                <p className="text-sm text-inkoust-tlumeny">
-                  Orientační daň z investic:{' '}
-                  <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> · papírově
-                  do 1. 4. {year + 1}, elektronicky do 2. 5. {year + 1}
-                </p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="font-display text-xl font-bold">
+                    Za rok {year} podáš daňové přiznání
+                  </p>
+                  <p className="text-sm text-inkoust-tlumeny">
+                    Orientační daň z investic:{' '}
+                    <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> ·
+                    papírově do 1. 4. {year + 1}, elektronicky do 2. 5. {year + 1}
+                  </p>
+                </div>
+                <Link
+                  href={`${basePath}/report`}
+                  className={buttonVariants({ variant: 'primary' })}
+                >
+                  Připravit podklady
+                </Link>
               </div>
-              <Link
-                href={`${basePath}/report`}
-                className={buttonVariants({ variant: 'primary' })}
-              >
-                Připravit podklady
-              </Link>
+              {/* R-08f: „kolik mě to bude stát“ je hlavní otázka za prolomením
+                  limitu 50k — engine ji vyčíslí, tohle je její místo v UI */}
+              {breachImpact && (
+                <div className="space-y-2 border-t border-linka pt-3">
+                  <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs text-inkoust-tlumeny">Daň z investic (§ 8 + § 10)</dt>
+                      <dd className="font-mono font-medium">{czk(breachImpact.taxCzk)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-inkoust-tlumeny">
+                        − zaplacené zálohy na daň
+                        {breachImpact.monthlyAdvanceCzk &&
+                          ` (z paušální zálohy ${czk(breachImpact.monthlyAdvanceCzk)}/měs.)`}
+                      </dt>
+                      <dd className="font-mono font-medium">
+                        {czk(breachImpact.advancesCreditCzk)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-inkoust-tlumeny">= doplatek daně</dt>
+                      <dd className="font-mono text-lg font-semibold">
+                        {czk(breachImpact.additionalTaxCzk)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="text-xs text-inkoust-tlumeny">
+                    Orientačně a jen z investic — daň z podnikání (§ 7) Danero nevidí. K tomu
+                    přibude přehled ČSSZ a zdravotní pojišťovně a doplatek pojistného ze
+                    skutečných příjmů; ten spočítat neumíme, protože neznáme tvůj základ z § 7.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1">
@@ -180,14 +220,30 @@ export function PrehledView({
           hint="Platí pro každého (§ 4 odst. 1 písm. t): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
           status={result.limits.limit100k}
         />
-        {(result.crypto.disposals.length > 0 ||
-          positions.some((p) => p.assetClass === 'CRYPTO' && p.totalRemaining.gt(0))) && (
-          <LimitGauge
-            label="Osvobození krypta — 100 000 Kč"
-            hint="Samostatný limit pro kryptoaktiva (§ 4/1 zj — R-10a), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
-            status={result.limits.cryptoLimit100k}
-          />
-        )}
+        {hasCrypto &&
+          (result.limits.cryptoLimit100k.applicable ? (
+            <LimitGauge
+              label="Osvobození krypta — 100 000 Kč"
+              hint="Samostatný limit pro kryptoaktiva (§ 4/1 zj — R-10a), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
+              status={result.limits.cryptoLimit100k}
+            />
+          ) : (
+            /* R-10b: do roku 2024 krypto žádné osvobození nemá — měřák
+               „0 / 100 000, v pořádku“ by tvrdil pravý opak toho, co platí */
+            <Card className="space-y-1.5">
+              <CardTitle>Krypto {year}: osvobození neexistuje</CardTitle>
+              <p className="font-mono text-lg font-medium">
+                {czk(result.crypto.totalGrossProceedsCzk)}
+                <span className="text-sm text-inkoust-tlumeny"> zdanitelných tržeb</span>
+              </p>
+              <p className="text-sm font-semibold text-cervena">daní se každý prodej</p>
+              <p className="pt-1 text-xs text-inkoust-tlumeny">
+                Roční limit 100 000 Kč ani tříletý časový test pro kryptoaktiva za rok {year}{' '}
+                neplatí — zavedl je až zákon č. 32/2025 Sb. s účinností od 15. 2. 2025 (R-10b).
+                Zdanitelný je proto každý prodej i směna, bez ohledu na výši tržeb a dobu držení.
+              </p>
+            </Card>
+          ))}
         {/* horizontální pás přes celý řádek — karta nesmí sedět osaměle v 1/3 gridu */}
         <Card className="md:col-span-2 xl:col-span-3">
           <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_2fr] md:items-center">

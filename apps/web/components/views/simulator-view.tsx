@@ -5,7 +5,7 @@ import { d, ZERO, type Money, type Transaction } from '@danero/shared';
 import { LimitBar, zoneForRatio } from '@/components/limit-gauge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle, keepCurrencyCase } from '@/components/ui/card';
-import { Input, Label, Select } from '@/components/ui/field';
+import { describedByError, FieldError, Input, Label, Select } from '@/components/ui/field';
 import { czk, METHOD_LABEL, qty } from '@/lib/format';
 import {
   engineInputForUser,
@@ -23,6 +23,12 @@ export interface SimParams {
   kusy?: string | string[];
   cena?: string | string[];
 }
+
+/** Pole formuláře simulátoru — určuje, ke kterému inputu chyba patří. */
+type SimField = 'isin' | 'kusy' | 'cena';
+
+/** Cíl `aria-describedby` u pole, kterého se chyba týká. */
+const FORM_ERROR_ID = 'simulator-error';
 
 /** Číslo ve tvaru „123“ / „123.45“ (bez vědecké notace — regex ji odmítne). */
 const NUM_RE = /^\d+(\.\d+)?$/;
@@ -106,23 +112,32 @@ export function SimulatorView({
     : null;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
-  let formError: string | null = null;
+  // chyba nese i pole, kterého se týká — jen tak ji jde svázat s inputem přes
+  // aria-describedby / aria-invalid (WCAG 3.3.1)
+  let formError: { field: SimField; message: string } | null = null;
   if (isDerivativeIsin) {
     // R-12: deriváty nemají osvobození ani limity — simulace by lhala
-    formError = 'Deriváty simulátor zatím neumí — daní se vždy, bez osvobození i limitů (§ 10, druh F).';
+    formError = {
+      field: 'isin',
+      message:
+        'Deriváty simulátor zatím neumí — daní se vždy, bez osvobození i limitů (§ 10, druh F).',
+    };
   } else if (selected && (priceRaw !== '' || !prefillPrice)) {
     const quantity = quantityRaw === '' ? selected.totalRemaining.toString() : quantityRaw;
     // validace výhradně Decimalem — Number by u velkých vstupů přetekl do Infinity
     if (!NUM_RE.test(priceRaw) || !d(priceRaw).gt(0)) {
-      formError = 'Zadej cenu za kus (kladné číslo, v měně instrumentu).';
+      formError = { field: 'cena', message: 'Zadej cenu za kus (kladné číslo, v měně instrumentu).' };
     } else if (d(priceRaw).gt(MAX_INPUT)) {
-      formError = 'To není reálná cena — zadej cenu do 1 000 000 000.';
+      formError = { field: 'cena', message: 'To není reálná cena — zadej cenu do 1 000 000 000.' };
     } else if (!NUM_RE.test(quantity) || !d(quantity).gt(0)) {
-      formError = 'Počet kusů musí být kladné číslo.';
+      formError = { field: 'kusy', message: 'Počet kusů musí být kladné číslo.' };
     } else if (d(quantity).gt(MAX_INPUT)) {
-      formError = 'Zadej počet kusů do 1 000 000 000.';
+      formError = { field: 'kusy', message: 'Zadej počet kusů do 1 000 000 000.' };
     } else if (selected.totalRemaining.lt(quantity)) {
-      formError = `Držíš jen ${qty(selected.totalRemaining)} ks — tolik prodat nejde.`;
+      formError = {
+        field: 'kusy',
+        message: `Držíš jen ${qty(selected.totalRemaining)} ks — tolik prodat nejde.`,
+      };
     } else {
       simulation = simulateSale(input, {
         isin: selected.isin,
@@ -148,7 +163,13 @@ export function SimulatorView({
         <form method="get" className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end">
           <div>
             <Label htmlFor="isin">Pozice</Label>
-            <Select id="isin" name="isin" defaultValue={selected?.isin ?? ''} required>
+            <Select
+              id="isin"
+              name="isin"
+              defaultValue={selected?.isin ?? ''}
+              required
+              {...describedByError(formError?.field === 'isin', FORM_ERROR_ID)}
+            >
               <option value="" disabled>
                 Vyber instrument…
               </option>
@@ -168,6 +189,7 @@ export function SimulatorView({
               name="kusy"
               inputMode="decimal"
               defaultValue={firstParam(params.kusy) ?? ''}
+              {...describedByError(formError?.field === 'kusy', FORM_ERROR_ID)}
             />
           </div>
           <div>
@@ -181,6 +203,7 @@ export function SimulatorView({
                 defaultValue={firstParam(params.cena) ?? prefillPrice?.toString() ?? ''}
                 placeholder="cena za kus"
                 title="Cena za kus v měně instrumentu"
+                {...describedByError(formError?.field === 'cena', FORM_ERROR_ID)}
               />
               {/* měnu instrumentu známe z pozice — uživatel nemusí hádat */}
               {selected && (
@@ -197,7 +220,11 @@ export function SimulatorView({
             Předvyplnili jsme poslední známou cenu — uprav podle trhu a spočítej dopad.
           </p>
         )}
-        {formError && <p className="mt-3 text-sm text-cervena">{formError}</p>}
+        {formError && (
+          <FieldError id={FORM_ERROR_ID} className="mt-3">
+            {formError.message}
+          </FieldError>
+        )}
       </Card>
 
       {/* H4: před prvním výpočtem místo prázdné plochy ukázka výsledku */}
@@ -209,7 +236,9 @@ export function SimulatorView({
             dopad na limity i orientační daň. Třeba takhle:
           </p>
           <div aria-hidden className="select-none space-y-4 pt-1">
-            <p className="text-lg font-semibold text-inkoust-tlumeny/60">
+            {/* plný token místo /60: průhlednost dávala 2,65:1 (light) a
+                3,09:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
+            <p className="text-lg font-semibold text-inkoust-tlumeny">
               „Prodej je celý osvobozený — limity ani daň nečerpá.“
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -220,7 +249,9 @@ export function SimulatorView({
               ].map(
                 (label) => (
                   <div key={label} className="rounded-lg border border-dashed border-linka p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny/70">
+                    {/* plný token místo /70: průhlednost dávala 3,23:1 (light)
+                        a 3,72:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
+                    <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
                       {keepCurrencyCase(label)}
                     </p>
                     <div className="mt-3 h-5 w-24 rounded bg-linka/60" />
@@ -275,13 +306,27 @@ export function SimulatorView({
             )}
             {/* exceeded = STAV po prodeji přes limit — konzistentně s kartou 50k */}
             {selected.assetClass === 'CRYPTO' ? (
-              <DeltaCard
-                label="Prodeje krypta (100 000 Kč)"
-                beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
-                afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
-                exceeded={!simulation.simulated.cryptoExemptUnder100k}
-                limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
-              />
+              baseline.limits.cryptoLimit100k.applicable ? (
+                <DeltaCard
+                  label="Prodeje krypta (100 000 Kč)"
+                  beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
+                  afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
+                  exceeded={!simulation.simulated.cryptoExemptUnder100k}
+                  limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
+                />
+              ) : (
+                /* R-10b: v roce bez krypto osvobození žádný limit není — karta
+                   „0 / 100 000“ by tvrdila, že je co čerpat */
+                <Card className="space-y-2">
+                  <CardTitle>Prodeje krypta ({year})</CardTitle>
+                  <p className="text-sm font-semibold text-cervena">osvobození neexistuje</p>
+                  <p className="text-xs text-inkoust-tlumeny">
+                    Limit 100 000 Kč ani tříletý test pro kryptoaktiva za rok {year} neplatí
+                    (zavedl je až zákon č. 32/2025 Sb. od 15. 2. 2025) — tenhle prodej se zdaní
+                    celý a naplno čerpá limit paušální daně.
+                  </p>
+                </Card>
+              )
             ) : (
               <DeltaCard
                 label="Prodeje CP (100 000 Kč)"
@@ -300,7 +345,7 @@ export function SimulatorView({
 
           <p className="text-xs text-inkoust-tlumeny">
             Simulace počítá s prodejem k dnešnímu dni za zadanou cenu.{' '}
-            <Link href={`${basePath}/report`} className="font-medium text-ruzova">
+            <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
               Detailní rozpad najdeš v reportu
             </Link>
             .

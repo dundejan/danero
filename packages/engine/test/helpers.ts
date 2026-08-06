@@ -33,6 +33,8 @@ export const CFG_2025: TaxYearConfig = {
   // R-10b: krypto osvobození v ZO 2025 jen pro příjmy od 15. 2. 2025
   cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
   progressiveThreshold: '1676052',
+  // R-08f: paušální záloha 1. pásma 2025 (daňová složka 100 Kč/měsíc)
+  flatTaxAdvance: { monthlyTotalCzk: '8716', monthlyTaxCzk: '100' },
 };
 
 let seq = 0;
@@ -40,31 +42,44 @@ const nextId = (prefix: string): string => `${prefix}-${(seq += 1)}`;
 
 type Overrides = Record<string, unknown>;
 
+/**
+ * Vypořádání se defaultně rovná dni obchodu — test, který přepíše jen
+ * `tradeDate`, tak nezdědí vypořádání z jiného roku. Dopočet vypořádání
+ * (R-01a) se testuje adresně přes `inferSettlementDate` a scénáře, které
+ * `settlementDate` schválně vynechají.
+ */
+const trade = (type: 'BUY' | 'SELL', defaults: Overrides, over: Overrides): Transaction => {
+  const tradeDate = over.tradeDate ?? defaults.tradeDate;
+  return TransactionSchema.parse({ type, ...defaults, tradeDate, settlementDate: tradeDate, ...over });
+};
+
 export const buy = (over: Overrides = {}): Transaction =>
-  TransactionSchema.parse({
-    type: 'BUY',
-    id: nextId('buy'),
-    isin: 'CZ0000000001',
-    quantity: '100',
-    pricePerShare: '1000',
-    currency: 'CZK',
-    tradeDate: '2024-01-10',
-    settlementDate: '2024-01-10',
-    ...over,
-  });
+  trade(
+    'BUY',
+    {
+      id: nextId('buy'),
+      isin: 'CZ0000000001',
+      quantity: '100',
+      pricePerShare: '1000',
+      currency: 'CZK',
+      tradeDate: '2024-01-10',
+    },
+    over,
+  );
 
 export const sell = (over: Overrides = {}): Transaction =>
-  TransactionSchema.parse({
-    type: 'SELL',
-    id: nextId('sell'),
-    isin: 'CZ0000000001',
-    quantity: '100',
-    pricePerShare: '1200',
-    currency: 'CZK',
-    tradeDate: '2025-03-05',
-    settlementDate: '2025-03-05',
-    ...over,
-  });
+  trade(
+    'SELL',
+    {
+      id: nextId('sell'),
+      isin: 'CZ0000000001',
+      quantity: '100',
+      pricePerShare: '1200',
+      currency: 'CZK',
+      tradeDate: '2025-03-05',
+    },
+    over,
+  );
 
 export const dividend = (over: Overrides = {}): Transaction =>
   TransactionSchema.parse({

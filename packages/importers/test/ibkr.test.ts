@@ -187,6 +187,21 @@ describe('IBKR Flex XML parser', () => {
     ]);
   });
 
+  // B-12: pozice bez ISIN/symbolu/conid (nebo bez počtu kusů) se z rekonciliace
+  // tiše vynechávala — účet pak mohl hlásit „pozice sedí“ nad neúplným srovnáním
+  it('pozice bez identifikátoru nebo počtu kusů → varování, ne tiché vynechání', () => {
+    const xml = wrapStatement(`<OpenPositions>
+      <OpenPosition accountId="U1234567" assetCategory="STK" description="ZÁHADNÁ AKCIE" position="5" levelOfDetail="SUMMARY" />
+      <OpenPosition accountId="U1234567" assetCategory="STK" symbol="MSFT" isin="US5949181045" levelOfDetail="SUMMARY" />
+    </OpenPositions>`);
+    const parsed = parseIbkrFlexXml(xml);
+    expect(parsed.openPositions).toEqual([]);
+    expect(parsed.warnings).toHaveLength(2);
+    expect(parsed.warnings[0]!.message).toContain('ZÁHADNÁ AKCIE');
+    expect(parsed.warnings[0]!.message).toContain('ISIN, symbol ani conid');
+    expect(parsed.warnings[1]!.message).toContain('počet kusů');
+  });
+
   it('deduplikace: opakovaný import téhož XML nepřidá nic nového', () => {
     const again = parseIbkrFlexXml(IBKR_FIXTURE);
     const existingKeys = result.transactions.map((tx) => dedupeKey(IBKR_BROKER, tx));

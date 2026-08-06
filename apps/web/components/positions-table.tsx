@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Position } from '@danero/engine';
 import { czDate, qty } from '@/lib/format';
 import { Card, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { PositionCard } from '@/components/position-card';
 import { cn } from '@/lib/utils';
 
@@ -117,7 +118,7 @@ export function PositionsTable({
         ))}
       </div>
 
-      <div className="scroll-stiny hidden overflow-x-auto md:block">
+      <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
@@ -173,7 +174,7 @@ export function PositionsTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollArea>
     </>
   );
 

@@ -499,3 +499,38 @@ export function toSyncJobView(job: JobRow): SyncJobView {
     progress: (job.progress ?? null) as SyncProgress | null,
   };
 }
+
+/** Kolik dní držíme záznamy o synchronizacích — /soukromi slibuje 90 dní. */
+const JOB_RETENTION_DAYS = 90;
+
+/**
+ * Úklid starých jobů. `/soukromi` slibuje u záznamů o synchronizacích 90 dní,
+ * ale tabulka dosud jen rostla.
+ *
+ * Poslední job každého klíče zůstává bez ohledu na stáří: `jobs.progress`
+ * neúspěšného plného syncu nese stav per rok a slouží jako resume pro T212
+ * (známá zrada z CLAUDE.md). Smazat ho by znamenalo stahovat historii od nuly —
+ * nebo, hůř, považovat nedotažené roky za hotové.
+ */
+export async function pruneJobs(db: Db, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const all = await db
+    .select({ id: jobs.id, dedupeKey: jobs.dedupeKey, createdAt: jobs.createdAt })
+    .from(jobs)
+    .orderBy(desc(jobs.createdAt));
+  const newestPerKey = new Set<string>();
+  const removable: string[] = [];
+  for (const job of all) {
+    if (!newestPerKey.has(job.dedupeKey)) {
+      newestPerKey.add(job.dedupeKey);
+      continue;
+    }
+    if (job.createdAt < cutoff) removable.push(job.id);
+  }
+  if (removable.length === 0) return 0;
+  const deleted = await db
+    .delete(jobs)
+    .where(inArray(jobs.id, removable))
+    .returning({ id: jobs.id });
+  return deleted.length;
+}

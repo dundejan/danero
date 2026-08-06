@@ -2,6 +2,7 @@ import { Decimal, sum, ZERO, type IsoDate, type Money, type Transaction } from '
 import type { EngineOptions } from '../config/options';
 import { czDateText, czkText, qtyText } from '../format';
 import type { FxConverter } from '../fx/fx';
+import { eventPriority, inferSettlementDate } from '../ledger/ledger';
 import { WarningCollector } from '../warnings';
 
 /**
@@ -13,7 +14,7 @@ import { WarningCollector } from '../warnings';
  *    = příjem v roce prodeje s výdajem otevírací ceny (kurz roku zaplacení,
  *    R-12m); otevření SHORT (výpis) = příjem prémie v roce PŘIJETÍ (R-12j);
  *    zpětný odkup = výdaj v roce zaplacení; bezcenná expirace long výdaj
- *    v defaultu NEuplatňuje (R-12i, přepínač `derivativesExpensesPerDruh`).
+ *    v defaultu NEuplatňuje (R-12i, přepínač `derivativesExpensesPerType`).
  *  - MARGIN (futures, CFD): nominál pozice NENÍ příjem (R-12f) — cash tok je
  *    až rozdíl cen při uzavření, přepočtený kurzem dne uzavření; kladný rozdíl
  *    = příjem druhu, záporný = výdaj druhu.
@@ -55,6 +56,12 @@ export interface DerivativesResult {
   base10Czk: Money;
   /** R-12i: úhrn výdajů neuznaných v defaultu (expirace) — pro „co kdyby“. */
   deniedExpensesCzk: Money;
+  /**
+   * R-12i: o kolik by se dílčí základ druhu SKUTEČNĚ snížil při zapnutém
+   * přepínači `derivativesExpensesPerType` — výdaje jsou stropované příjmy
+   * druhu (§ 10/4), takže bývá výrazně nižší než `deniedExpensesCzk`.
+   */
+  deniedExpensesImpactCzk: Money;
   items: DerivativeItem[];
   /** Otevřené pozice k 31. 12. roku (R-12g/j: sporný okamžik příjmu). */
   openPositions: OpenDerivativePosition[];
@@ -78,7 +85,16 @@ type DerivativeTx = Extract<
 type Trade = Extract<Transaction, { type: 'BUY' | 'SELL' }>;
 
 const yearOf = (date: IsoDate): number => Number(date.slice(0, 4));
-const eventDate = (tx: DerivativeTx): IsoDate => (tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date);
+
+/**
+ * R-12e: rozhodné je datum VYPOŘÁDÁNÍ, ne obchodu — hotovostní princip § 5 se
+ * váže na okamžik, kdy peníze doopravdy tečou (stejně jako u CP, R-05a). Když
+ * ho broker neuvádí, dopočte se jako u CP (R-01a, včetně burzovních svátků).
+ */
+const eventDate = (tx: DerivativeTx): IsoDate =>
+  tx.type === 'BUY' || tx.type === 'SELL'
+    ? (tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass))
+    : tx.date;
 
 /** Uzavře množství proti FIFO frontě; vrací spárované loty (pro výdaj i MARGIN rozdíl). */
 function closeAgainst(
@@ -110,12 +126,18 @@ export function computeDerivatives(
   warnings: WarningCollector,
 ): DerivativesResult {
   const yearEnd = `${year}-12-31`;
+  // R-12e: uvnitř dne řadí priorita události (korporátní akce → otevření →
+  // uzavření), ne abeceda ID — jinak by 0DTE opce nebo převod a prodej týž den
+  // vycházely náhodně (uplatněná prémie navzdory vypnutému přepínači R-12i,
+  // fantomové pozice). ID rozhoduje až na posledním místě, kvůli determinismu.
   const sorted = transactions
     .filter((tx) => eventDate(tx) <= yearEnd)
     .sort((a, b) => {
       const da = eventDate(a);
       const db = eventDate(b);
-      return da === db ? a.id.localeCompare(b.id) : da < db ? -1 : 1;
+      if (da !== db) return da < db ? -1 : 1;
+      const priority = eventPriority(a) - eventPriority(b);
+      return priority !== 0 ? priority : a.id.localeCompare(b.id);
     });
 
   // R-12f/g: styl vypořádání je vlastnost instrumentu (stačí jediný obchod MARGIN)
@@ -131,8 +153,8 @@ export function computeDerivatives(
   const shorts = new Map<string, OpenLot[]>();
   const items: DerivativeItem[] = [];
 
-  const feeCzk = (tx: Trade): Money =>
-    tx.fee ? fx.toCzk(tx.fee.amount, tx.fee.currency, tx.tradeDate) : ZERO;
+  const feeCzk = (tx: Trade, date: IsoDate): Money =>
+    tx.fee ? fx.toCzk(tx.fee.amount, tx.fee.currency, date) : ZERO;
 
   const openLot = (
     map: Map<string, OpenLot[]>,
@@ -184,8 +206,10 @@ export function computeDerivatives(
       continue;
     }
 
-    const txYear = yearOf(tx.tradeDate);
-    const fee = feeCzk(tx);
+    // R-12e/R-12m: vše (rok příjmu, kurz i datum položky) se řídí vypořádáním
+    const txDate = eventDate(tx);
+    const txYear = yearOf(txDate);
+    const fee = feeCzk(tx, txDate);
     const feeShare = (part: Money): Money =>
       tx.quantity.gt(0) ? fee.mul(part).div(tx.quantity) : ZERO;
     // poměrná část otevíracích poplatků uzavíraných lotů kurzem dne zaplacení (R-06a)
@@ -212,12 +236,12 @@ export function computeDerivatives(
           const settlementCzk = fx.toCzk(
             tx.pricePerShare.mul(matched).sub(openNominal),
             tx.currency,
-            tx.tradeDate,
+            txDate,
           );
           pushItem({
             txId: tx.id,
             isin: tx.isin,
-            date: tx.tradeDate,
+            date: txDate,
             year: txYear,
             kind: 'MARGIN_CLOSE',
             incomeCzk: Decimal.max(ZERO, settlementCzk),
@@ -227,7 +251,7 @@ export function computeDerivatives(
             deniedExpenseCzk: ZERO,
           });
         } else {
-          const incomeCzk = fx.toCzk(tx.pricePerShare.mul(matched), tx.currency, tx.tradeDate);
+          const incomeCzk = fx.toCzk(tx.pricePerShare.mul(matched), tx.currency, txDate);
           // R-12m: výdaj = otevírací cena kurzem data otevření + poměrné poplatky
           const costCzk = parts.reduce(
             (acc, { lot, take }) =>
@@ -246,13 +270,13 @@ export function computeDerivatives(
           pushItem({
             txId: tx.id,
             isin: tx.isin,
-            date: tx.tradeDate,
+            date: txDate,
             year: txYear,
             kind: 'LONG_CLOSE',
             incomeCzk,
-            expenseCzk: isWorthless && !options.derivativesExpensesPerDruh ? ZERO : expense,
+            expenseCzk: isWorthless && !options.derivativesExpensesPerType ? ZERO : expense,
             deniedExpenseCzk:
-              isWorthless && !options.derivativesExpensesPerDruh ? expense : ZERO,
+              isWorthless && !options.derivativesExpensesPerType ? expense : ZERO,
           });
         }
       }
@@ -263,10 +287,10 @@ export function computeDerivatives(
           pushItem({
             txId: tx.id,
             isin: tx.isin,
-            date: tx.tradeDate,
+            date: txDate,
             year: txYear,
             kind: 'SHORT_OPEN',
-            incomeCzk: fx.toCzk(tx.pricePerShare.mul(remainder), tx.currency, tx.tradeDate),
+            incomeCzk: fx.toCzk(tx.pricePerShare.mul(remainder), tx.currency, txDate),
             expenseCzk: feeShare(remainder),
             deniedExpenseCzk: ZERO,
           });
@@ -278,7 +302,7 @@ export function computeDerivatives(
           currency: tx.currency,
           feeTotal: isMargin && tx.fee ? tx.fee.amount.mul(remainder).div(tx.quantity) : ZERO,
           feeCurrency: tx.fee?.currency ?? tx.currency,
-          date: tx.tradeDate,
+          date: txDate,
         });
       }
     } else {
@@ -291,12 +315,12 @@ export function computeDerivatives(
           const settlementCzk = fx.toCzk(
             openNominal.sub(tx.pricePerShare.mul(matched)),
             tx.currency,
-            tx.tradeDate,
+            txDate,
           );
           pushItem({
             txId: tx.id,
             isin: tx.isin,
-            date: tx.tradeDate,
+            date: txDate,
             year: txYear,
             kind: 'MARGIN_CLOSE',
             incomeCzk: Decimal.max(ZERO, settlementCzk),
@@ -310,12 +334,12 @@ export function computeDerivatives(
           pushItem({
             txId: tx.id,
             isin: tx.isin,
-            date: tx.tradeDate,
+            date: txDate,
             year: txYear,
             kind: 'SHORT_CLOSE',
             incomeCzk: ZERO,
             expenseCzk: fx
-              .toCzk(tx.pricePerShare.mul(matched), tx.currency, tx.tradeDate)
+              .toCzk(tx.pricePerShare.mul(matched), tx.currency, txDate)
               .plus(feeShare(matched)),
             deniedExpenseCzk: ZERO,
           });
@@ -328,7 +352,7 @@ export function computeDerivatives(
         currency: tx.currency,
         feeTotal: tx.fee && tx.quantity.gt(0) ? tx.fee.amount.mul(remainder).div(tx.quantity) : ZERO,
         feeCurrency: tx.fee?.currency ?? tx.currency,
-        date: tx.tradeDate,
+        date: txDate,
       });
     }
   }
@@ -340,6 +364,10 @@ export function computeDerivatives(
   // § 10/4 (R-12b): výdaje druhu max. do výše příjmů druhu, ztráta zaniká
   const expenses = Decimal.min(expensesUncapped, income);
   const base10 = Decimal.max(ZERO, raw);
+  // R-12i: skutečný dopad neuznaných prémií = základ bez přepínače − základ
+  // s přepínačem. Hrubá výše neuznaných prémií je jen horní odhad: výdaje druhu
+  // jsou stropované příjmy druhu, takže víc než celý základ ušetřit nemohou.
+  const deniedImpact = base10.sub(Decimal.max(ZERO, raw.sub(denied)));
 
   const openPositions: OpenDerivativePosition[] = [];
   const collectOpen = (map: Map<string, OpenLot[]>, sign: 1 | -1) => {
@@ -359,11 +387,30 @@ export function computeDerivatives(
   collectOpen(shorts, -1);
 
   if (denied.gt(0)) {
+    const impactPart = deniedImpact.gt(0)
+      ? `Základ daně by to letos snížilo o ${czkText(deniedImpact)} — přepínač najdeš v nastavení.`
+      : `Na letošní základ daně by to ale nemělo vliv: výdaje druhu se uplatní nejvýš do výše jeho příjmů (§ 10/4) a ty jsou už vyčerpané. Do dalšího roku prémie převést nelze.`;
     warnings.add(
       'DERIVATIVE_EXPIRED_PREMIUM',
       'INFO',
-      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj. Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku — přepínač v nastavení; rozdíl základu daně až ${czkText(denied)}. Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu — neuplatňuj ji pak dvakrát.`,
-      { deniedCzk: denied.toFixed(2) },
+      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj. Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku. ${impactPart} Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu — neuplatňuj ji pak dvakrát.`,
+      { deniedCzk: denied.toFixed(2), impactCzk: deniedImpact.toFixed(2) },
+    );
+  }
+  // R-12j: zpětný odkup vypsané opce přes přelom roku nemusí mít proti čemu jít —
+  // prémie se zdanila loni, letošní výdaj propadá (a přenést ho nelze, R-12b)
+  const buybackExpense = sum(
+    items.filter((item) => item.kind === 'SHORT_CLOSE').map((item) => item.expenseCzk),
+  );
+  const lostExpense = expensesUncapped.sub(expenses);
+  if (buybackExpense.gt(0) && lostExpense.gt(0)) {
+    warnings.add(
+      'DERIVATIVE_BUYBACK_WITHOUT_INCOME',
+      'WARNING',
+      income.lte(0)
+        ? `Zpětný odkup vypsané opce za ${czkText(buybackExpense)} nemá v roce ${year} proti čemu jít: žádné derivátové příjmy letos nejsou, takže výdaj ${czkText(lostExpense)} propadá. Přijatá prémie se zdanila v roce přijetí (§ 5, R-12j) a ztrátu druhu nelze převést do dalšího roku ani započíst proti cenným papírům či kryptu (R-12l).`
+        : `Zpětný odkup vypsané opce za ${czkText(buybackExpense)} převyšuje letošní derivátové příjmy — výdaj ${czkText(lostExpense)} propadá. Výdaje druhu se uplatní nejvýš do výše jeho příjmů (§ 10/4, R-12b), ztrátu nelze převést do dalšího roku ani započíst proti jiným druhům příjmů (R-12l).`,
+      { buybackCzk: buybackExpense.toFixed(2), lostCzk: lostExpense.toFixed(2) },
     );
   }
   if (openPositions.length > 0) {
@@ -389,6 +436,7 @@ export function computeDerivatives(
     rawGainLossCzk: raw,
     base10Czk: base10,
     deniedExpensesCzk: denied,
+    deniedExpensesImpactCzk: deniedImpact,
     items,
     openPositions,
   };

@@ -7,11 +7,14 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         // syté výplně: v dark módu drží plnou barvu (světlé --ruzova/--cervena
-        // jsou tam pro text — bílá by na nich neměla kontrast)
-        primary: 'bg-ruzova-syta text-white hover:opacity-90',
+        // jsou tam pro text — bílá by na nich neměla kontrast).
+        // Hover ZTMAVUJE (brightness), nezprůhledňuje: `opacity-90` prosvítá
+        // plochu pod tlačítkem a bílý text na růžové spadne ze 4,62:1 na
+        // 3,58:1 — pod AA. S brightness-95 drží 5,05:1 a efekt zůstává.
+        primary: 'bg-ruzova-syta text-white hover:brightness-95',
         secondary: 'border border-linka bg-plocha text-inkoust hover:border-inkoust-tlumeny',
         ghost: 'text-inkoust-tlumeny hover:text-inkoust',
-        danger: 'bg-cervena-syta text-white hover:opacity-90',
+        danger: 'bg-cervena-syta text-white hover:brightness-95',
       },
       size: {
         md: 'h-10 px-4',

@@ -98,8 +98,10 @@ export function computeNotificationCandidates(args: {
       applicable: true,
       status: result.limits.limit100k,
       label: 'limit 100 000 Kč pro osvobození prodejů',
-      consequence:
-        'Nad limit se daní prodeje bez splněného časového testu — zvaž, zda další prodeje letos počkají.',
+      // fakt bez imperativu: individualizovaný pokyn („zvaž, počkej“) je za
+      // hranicí § 1 zákona 523/1992 Sb. (nález V-4 auditu) — rada patří leda
+      // obecně do marketingu, ne do e-mailu s čísly konkrétního člověka
+      consequence: 'Nad limit se daní prodeje bez splněného časového testu.',
     },
     {
       key: 'krypto100k',
@@ -107,7 +109,7 @@ export function computeNotificationCandidates(args: {
       status: result.limits.cryptoLimit100k,
       label: 'limit 100 000 Kč pro osvobození krypta',
       consequence:
-        'Nad limit se daní prodeje a směny kryptoaktiv bez splněného časového testu — zvaž, zda další prodeje letos počkají.',
+        'Nad limit se daní prodeje a směny kryptoaktiv bez splněného časového testu.',
     },
   ];
 

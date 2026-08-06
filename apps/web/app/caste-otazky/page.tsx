@@ -68,11 +68,11 @@ const FAQ: FaqItem[] = [
   },
   {
     q: 'Co je zdarma a za co se platí?',
-    a: 'Zdarma je import výpisů ze všech platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (490 Kč za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API (990 Kč ročně). Účet založíš bez karty a nic se nestrhne samo.',
+    a: 'Zdarma je import výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (490 Kč za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API a hlídacími e-maily (990 Kč ročně). Ceny jsou konečné — nejsme plátcem DPH. Účet založíš zdarma a bez karty; podklady jsou jednorázový nákup, celoroční hlídání se po roce automaticky obnovuje — e-mail ti přijde 14 dní předem a zrušit obnovu můžeš kdykoli jedním kliknutím.',
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',
-    a: 'Finanční správa provozuje zkušební podatelnu EPO, kde si jde podání nanečisto zvalidovat. Každou vygenerovanou písemnost XML tam ověřujeme — kontroluje se struktura, vazby mezi řádky a formální správnost podání. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
+    a: 'Finanční správa provozuje zkušební podatelnu EPO, kde si jde podání nanečisto zvalidovat: nic se nepodá, jen se vrátí seznam kontrol. Posíláme jí vzorová podání každého typu, který Danero umí vygenerovat, a děláme to pokaždé, když sáhneme na strukturu XML nebo když finanční správa vydá novou verzi formuláře. Kontroluje se struktura, vazby mezi řádky a formální správnost podání. Tvoje konkrétní XML tam neposíláme — jsou v něm tvoje osobní údaje, a podatelna je veřejná, takže si ho tam můžeš poslat sám. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
   },
   {
     q: 'Nahrazuje Danero daňového poradce?',

@@ -1,7 +1,7 @@
 import { getDb } from '@/db';
 import { applyStripeEvent } from '@/lib/billing';
 import { errorText, logEvent } from '@/lib/log';
-import { stripe } from '@/lib/stripe';
+import { stripe, stripeLivemode } from '@/lib/stripe';
 
 /**
  * Stripe webhook. Podpis se ověřuje VŽDY — bez něj by kdokoli mohl poslat
@@ -27,6 +27,18 @@ export async function POST(request: Request): Promise<Response> {
       error: errorText(error),
     });
     return new Response('Neplatný podpis', { status: 400 });
+  }
+
+  // Režim události musí sedět na režim klíče, se kterým běžíme. Tvrdé „jen
+  // livemode" nejde — služba zatím jede ve Stripe sandboxu — ale záměna
+  // secretů (ostrý endpoint × testovací data i naopak) se tím chytí v obou
+  // směrech a po přepnutí na ostrý režim to platí samo.
+  if (event.livemode !== stripeLivemode()) {
+    logEvent('warn', 'billing.webhook_livemode_mismatch', {
+      type: event.type,
+      eventLivemode: event.livemode,
+    });
+    return new Response('Událost je z jiného režimu Stripe', { status: 400 });
   }
 
   try {

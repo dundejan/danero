@@ -13,6 +13,8 @@ import {
   buildEtoroEuLocale,
   buildEtoroXlsx,
   ETORO_ACTIVITY_HEADERS,
+  ETORO_ACTIVITY_ROWS,
+  ETORO_CLOSED_ROWS,
   ETORO_INSTRUMENT_MAP,
 } from './fixtures/etoro';
 import { buildXtbXlsx } from './fixtures/xtb';
@@ -185,6 +187,25 @@ describe('eToro XLSX parser', () => {
     expect(apple.gross.toString()).toBe('0.85');
     expect(apple.withholdingTax.toString()).toBe('0');
     expect(apple.ticker).toBeUndefined(); // plný název firmy není ticker
+  });
+
+  // B-2: bez listu Dividends dividendy z Activity mizely beze stopy — počty
+  // chyb ani varování se nezměnily a příjem § 8 se do daně nedostal
+  it.each([
+    ['chybějící list Dividends', false as const],
+    ['prázdný list Dividends', { rows: [] }],
+  ])('%s při dividendách v Account Activity → chyba, ne tiché zmizení', async (_label, spec) => {
+    const buffer = await buildEtoroXlsx({
+      closed: { rows: ETORO_CLOSED_ROWS },
+      activity: { rows: ETORO_ACTIVITY_ROWS },
+      dividends: spec,
+    });
+    const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
+
+    expect(result.transactions.filter((t) => t.type === 'DIVIDEND')).toEqual([]);
+    const missing = result.errors.find((e) => e.message.includes('Dividends'));
+    expect(missing).toBeDefined();
+    expect(missing!.message).toContain('Account Activity');
   });
 
   it('poplatky (SDRT ze závorky, Commission, Overnight fee) → FEE; Interest Payment → INTEREST', async () => {

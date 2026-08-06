@@ -197,7 +197,9 @@ export function HorizonStrip({
           type="button"
           onClick={() => setRange(preset.key)}
           aria-pressed={range === preset.key}
-          className={`rounded-md px-2 py-0.5 font-mono text-xs ${
+          // min-h-6 (24 px) = minimální dotykový cíl dle WCAG 2.2 SC 2.5.8;
+          // gap-1 mezi tlačítky na výjimku „spacing“ nestačí
+          className={`min-h-6 rounded-md px-2 py-1 font-mono text-xs ${
             range === preset.key
               ? 'bg-ruzova-syta font-semibold text-white'
               : 'text-inkoust-tlumeny hover:text-inkoust'

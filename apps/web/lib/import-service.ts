@@ -102,8 +102,14 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('<')) {
     // HTML, které není MT report, nesmí spadnout do XML parseru — matoucí
-    // chyba by se v historii připsala brokeru ibkr
-    if (/^<(!doctype\s+html|html|head|body|table|meta|title)/i.test(trimmed)) {
+    // chyba by se v historii připsala brokeru ibkr. Fragment bez atributů
+    // (`<tr>`, `<div>`, `<table>`) je pořád HTML — hranice slova odliší značku
+    // od XML elementu (`<Trade …>`, `<TransferOut …>`).
+    if (
+      /^<(?:!doctype\s+html|\/?(?:html|head|body|table|thead|tbody|tfoot|tr|td|th|caption|col|colgroup|div|span|p|pre|br|hr|img|a|b|i|u|em|strong|small|font|center|ul|ol|li|dl|dt|dd|h[1-6]|meta|title|link|style|script|form|section|article|main|header|footer|nav|blockquote)\b)/i.test(
+        trimmed,
+      )
+    ) {
       const unknown = emptyResult('neznámý formát');
       unknown.errors.push({
         line: 1,

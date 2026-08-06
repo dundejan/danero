@@ -435,8 +435,9 @@ export default async function LandingPage({
               </h2>
               <p className="mt-4 text-inkoust-tlumeny">
                 Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň, do kterého
-                se počítají i zahraniční dividendy, na které se zapomíná. Čerpání vidíš celý rok a při
-                60, 85 a 100 % ti přijde e-mail.{' '}
+                se počítají i zahraniční dividendy, na které se zapomíná. Čerpání vidíš
+                celý rok zdarma; s celoročním hlídáním za 990 Kč ročně ti navíc při
+                60, 85 a 100 % přijde e-mail.{' '}
                 <strong className="text-inkoust">
                   Ozveme se, dokud se s tím dá něco dělat
                 </strong>{' '}
@@ -487,8 +488,9 @@ export default async function LandingPage({
             </h2>
             <p className="mt-4 text-inkoust-tlumeny">
               Po třech letech držení je prodej osvobozený. Každý tvůj nákup putuje po časové
-              ose k vlastnímu datu osvobození — vidíš přesně kdy, e-mail přijde 30 a 7 dní
-              předem. Vyzkoušej: tečky níže jsou živé.
+              ose k vlastnímu datu osvobození — časovou osu máš zdarma, s celoročním
+              hlídáním ti navíc e-mail přijde 30 a 7 dní předem. Vyzkoušej: tečky níže
+              jsou živé.
             </p>
           </div>
           <div className="mt-8 rounded-lg border border-linka bg-plocha p-5">
@@ -524,7 +526,8 @@ export default async function LandingPage({
                 FIFO (nejstarší kusy první) i další metody párování vidíš vedle sebe, s daní spočtenou pro každou
                 zvlášť — bezpečný výklad je výchozí a u sporných míst ti ukážeme, co by
                 výhodnější znamenal. V březnu stáhneš průvodce, co kam zapsat, po řádcích
-                přiznání — a XML pro podatelnu mojedane.cz, ověřené zkušební podatelnou EPO{' '}
+                přiznání — a XML pro podatelnu mojedane.cz, jehož strukturu ověřujeme
+                vzorovými podáními ve zkušební podatelně EPO{' '}
                 <span className="text-sm">
                   (struktura pro rok 2026 vyjde začátkem 2027 — ověřujeme každý rok)
                 </span>
@@ -665,9 +668,10 @@ export default async function LandingPage({
                 <p className="mt-3 text-inkoust-tlumeny">
                   Import výpisů, limity i časové testy zdarma navždy. Podklady k přiznání
                   za jeden rok <strong className="text-inkoust tabular-nums">490 Kč</strong>,
-                  celoroční hlídání s napojením na brokery{' '}
+                  celoroční hlídání s napojením na brokery a hlídacími e-maily{' '}
                   <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
-                  necelých <span className="tabular-nums">83 Kč</span> měsíčně.
+                  necelých <span className="tabular-nums">83 Kč</span> měsíčně.{' '}
+                  <span className="whitespace-nowrap">Ceny jsou konečné.</span>
                 </p>
                 <p className="mt-4">
                   <Link

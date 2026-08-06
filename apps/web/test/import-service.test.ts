@@ -72,6 +72,30 @@ describe('audit log (G8b)', () => {
   });
 });
 
+// B-10: XTB alias uložený bez měny se v loadAliases tiše zahazoval — přitom
+// dividendám XTB stačí ISIN (jsou v měně účtu)
+describe('číselník instrumentů (loadAliases)', () => {
+  it('XTB alias bez měny se nezahodí — ISIN zůstane použitelný', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const { instrumentAliases, user } = await import('@/db/schema');
+    const { loadAliases } = await import('@/lib/instrument-aliases');
+
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'al1', name: 'Alias', email: 'alias@danero.cz' });
+    await db.insert(instrumentAliases).values([
+      { userId: 'al1', broker: 'xtb', symbol: 'AAPL.US', isin: 'US0378331005', currency: 'USD' },
+      // starší záznam bez měny (nebo import z doby před validací)
+      { userId: 'al1', broker: 'xtb', symbol: 'MSFT.US', isin: 'US5949181045', currency: null },
+      { userId: 'al1', broker: 'fio', symbol: 'CEZ', isin: 'CZ0005112300', currency: null },
+    ]);
+
+    const aliases = await loadAliases(db, 'al1');
+    expect(aliases.xtb['AAPL.US']).toEqual({ isin: 'US0378331005', currency: 'USD' });
+    expect(aliases.xtb['MSFT.US']).toEqual({ isin: 'US5949181045' });
+    expect(aliases.isinOnly.fio['CEZ']).toEqual({ isin: 'CZ0005112300' });
+  });
+});
+
 describe('izolace uživatelů (tenancy přes userId)', () => {
   it('dva uživatelé mají oddělené transakce, profily i dedupe', { timeout: 30_000 }, async () => {
     const { createPgliteDb } = await import('@/db');

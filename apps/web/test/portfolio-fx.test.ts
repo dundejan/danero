@@ -32,7 +32,7 @@ const profileRow = (fxMethod: 'UNIFIED' | 'CNB_DAILY'): ProfileRow => ({
   fxMethod,
   limit100kStrict: true,
   timeTestBasis: 'settlement',
-  derivativesExpensesPerDruh: false,
+  derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
   createdAt: new Date(),
   updatedAt: new Date(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buy, dividend, hasWarning, run, sell } from './helpers';
+import { buy, CFG_2025, dividend, hasWarning, run, sell } from './helpers';
 
 describe('R-02 hodnotový test 100 000 Kč', () => {
   it('R-02a: cliff — do 100k včetně vše osvobozeno, nad 100k padá osvobození celé', () => {
@@ -116,6 +116,33 @@ describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
     expect(result.dividends.base8Czk.toString()).toBe('2000');
   });
 
+  it('R-08f: prolomení vyčíslí doplatek daně proti zaplaceným paušálním zálohám', () => {
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1150', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '2000', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+
+    const impact = result.limits.flatTax50k.breachImpact!;
+    // základ 200 000 − 115 000 = 85 000 → daň 12 750; zálohy na daň 12 × 100 Kč
+    expect(impact.taxCzk.toString()).toBe('12750');
+    expect(impact.advancesCreditCzk.toString()).toBe('1200');
+    expect(impact.additionalTaxCzk.toString()).toBe('11550');
+    expect(impact.monthlyAdvanceCzk!.toString()).toBe('8716');
+
+    const warning = result.warnings.find((w) => w.code === 'FLAT_TAX_BROKEN')!;
+    expect(warning.context).toMatchObject({ additionalTaxCzk: '11550.00' });
+    // pojistné neumíme spočítat (chybí základ § 7) — musí zaznít aspoň slovně
+    expect(warning.message).toContain('přehledy ČSSZ a ZP');
+
+    // pod limitem se nic nevyčísluje
+    const under = run([
+      buy({ quantity: '100', pricePerShare: '800', tradeDate: '2024-02-01', settlementDate: '2024-02-01' }),
+      sell({ quantity: '100', pricePerShare: '900', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+    ]);
+    expect(under.limits.flatTax50k.breachImpact).toBeNull();
+  });
+
   it('R-08f: pásma hlídače (60 % / 85 % / prolomeno) a ruční ostatní příjmy', () => {
     const zones = (gross: string, other?: string) =>
       run([dividend({ gross })], { profile: other ? { otherTaxableIncome8to10Czk: other } : {} })
@@ -126,6 +153,35 @@ describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
     expect(zones('43000')).toBe('CRITICAL'); // 86 %
     expect(zones('50000')).toBe('CRITICAL'); // přesně 100 % — ještě neprolomen
     expect(zones('8000', '45000')).toBe('EXCEEDED'); // 8k dividendy + 45k nájem = 53k
+  });
+});
+
+describe('R-10a/R-10b limit 100k pro kryptoaktiva', () => {
+  const cryptoTrades = (year: number) => [
+    buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '10000', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
+    sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '80000', tradeDate: `${year}-06-03`, settlementDate: `${year}-06-03` }),
+  ];
+
+  it('rok bez krypto osvobození (≤ 2024) limit nemá — hlásí se jako neaplikovatelný', () => {
+    const config2024 = {
+      ...CFG_2025,
+      year: 2024,
+      limits: { ...CFG_2025.limits, timeTestCap: null },
+      cryptoRules: { exemptionsAvailable: false, effectiveFrom: null },
+    };
+    const result = run(cryptoTrades(2024), { config: config2024 });
+
+    // základ je 70 000, měřák „0 / 100 000, zóna OK“ by k němu lhal
+    expect(result.crypto.base10Czk.toString()).toBe('70000');
+    expect(result.limits.cryptoLimit100k.applicable).toBe(false);
+    expect(result.limits.cryptoLimit100k.limitCzk.toString()).toBe('0');
+    expect(result.limits.cryptoLimit100k.exceeded).toBe(false);
+
+    // v roce s osvobozením limit existuje a čerpá se
+    const result2025 = run(cryptoTrades(2025));
+    expect(result2025.limits.cryptoLimit100k.applicable).toBe(true);
+    expect(result2025.limits.cryptoLimit100k.limitCzk.toString()).toBe('100000');
+    expect(result2025.limits.cryptoLimit100k.usedCzk.toString()).toBe('80000');
   });
 });
 

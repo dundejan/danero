@@ -377,6 +377,8 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
 
 /* ── Account.csv (peněžní pohyby + korporátní akce) ──────────────────────── */
 
+type CorporateSubtype = 'ISIN_CHANGE' | 'MERGER' | 'SPLIT' | 'SPINOFF';
+
 type AccountKind =
   | { kind: 'DIVIDEND' }
   | { kind: 'DIVIDEND_TAX' }
@@ -384,21 +386,57 @@ type AccountKind =
   | { kind: 'FEE' }
   | { kind: 'DEPOSIT' }
   | { kind: 'WITHDRAWAL' }
-  | { kind: 'CORPORATE'; subtype: 'ISIN_CHANGE' | 'MERGER' }
+  | { kind: 'CORPORATE'; subtype: CorporateSubtype }
   | { kind: 'SKIP'; reason: string }
   | { kind: 'UNKNOWN' };
 
 const containsAny = (haystack: string, needles: string[]): boolean =>
   needles.some((needle) => haystack.includes(needle));
 
-/** Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL, case-insensitive contains. */
+/**
+ * Hranice slova s diakritikou: `\b` v JS zná jen [A-Za-z0-9_], takže „štěpení“
+ * by na začátku popisu nikdy nechytil. Lookaround přes \p{L}\p{N} to řeší.
+ */
+const wordPattern = (source: string): RegExp =>
+  new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, 'u');
+
+/**
+ * Popisy korporátních akcí v lokalizacích, které Degiro používá (CZ/EN/NL/DE/FR).
+ * Hledá se na HRANICI SLOV — holé `includes('split')` by chytilo i název produktu
+ * v echu obchodu („Koop 2 SPLIT INC@…“) a řádek by skončil v párování akcí.
+ * Reverzní štěpení je pro nás obyčejný SPLIT — směr určí poměr kusů z popisů
+ * párových řádků (odpis 40 ks → připis 10 ks je poměr 40:10).
+ */
+const CORPORATE_PATTERNS: Array<{ subtype: CorporateSubtype; pattern: RegExp }> = [
+  {
+    subtype: 'ISIN_CHANGE',
+    pattern: wordPattern(
+      "změna\\s+isin|isin\\s+change|wijziging\\s+isin|isin[\\s-]?(?:wijziging|änderung|anderung)|(?:changement|modification)\\s+(?:d[eu]\\s+l['’]?|d['’])?isin",
+    ),
+  },
+  {
+    subtype: 'SPINOFF',
+    pattern: wordPattern('spin[\\s-]?off|afsplitsing|abspaltung|odštěpení|scission'),
+  },
+  {
+    subtype: 'SPLIT',
+    pattern: wordPattern(
+      "aandelensplitsing|split|aktiensplit|štěpení\\s+akcií|rozdělení\\s+akcií|division\\s+(?:d['’]?actions|du\\s+nominal)|regroupement\\s+d['’]?actions",
+    ),
+  },
+  {
+    subtype: 'MERGER',
+    pattern: wordPattern('fúze|fusie|merger|fusion|verschmelzung'),
+  },
+];
+
+/** Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive. */
 function classifyDescription(description: string): AccountKind {
   const lower = description.toLowerCase();
   // korporátní akce dřív než cokoli jiného — NIKDY je neinterpretovat jako obchod
-  if (containsAny(lower, ['změna isin', 'isin change', 'wijziging isin']))
-    return { kind: 'CORPORATE', subtype: 'ISIN_CHANGE' };
-  if (containsAny(lower, ['fúze', 'fusie', 'merger']))
-    return { kind: 'CORPORATE', subtype: 'MERGER' };
+  for (const { subtype, pattern } of CORPORATE_PATTERNS) {
+    if (pattern.test(lower)) return { kind: 'CORPORATE', subtype };
+  }
   // echo obchodů („Nákup 5 …“) dřív než dividendy — název produktu může obsahovat „Dividend“
   if (/(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell)\b/i.test(description))
     return {
@@ -439,21 +477,41 @@ function classifyDescription(description: string): AccountKind {
   return { kind: 'UNKNOWN' };
 }
 
+/** Klíčová slova odpisu a připisu kusů (CZ/EN/NL/DE/FR) — sdílí je směr i počet kusů. */
+const LEG_OUT_WORDS = ['uitboeking', 'odpis', 'removal', 'ausbuchung', 'sortie', 'retrait'];
+const LEG_IN_WORDS = [
+  'inboeking',
+  'připis',
+  'pripis',
+  'addition',
+  'einbuchung',
+  'entrée',
+  'entree',
+  'apport',
+];
+
 /** Směr párového řádku korporátní akce: odpis (staré kusy) vs. připis (nové). */
 function legDirection(lowerDescription: string): 'out' | 'in' | null {
-  if (containsAny(lowerDescription, ['uitboeking', 'odpis', 'removal'])) return 'out';
-  if (containsAny(lowerDescription, ['inboeking', 'připis', 'pripis', 'addition'])) return 'in';
+  if (containsAny(lowerDescription, LEG_OUT_WORDS)) return 'out';
+  if (containsAny(lowerDescription, LEG_IN_WORDS)) return 'in';
   return null;
 }
 
 /** Počet kusů z popisu („Uitboeking 10 …“) — jen číslo HNED za klíčovým slovem (ne cifry z ISIN). */
 function legQuantity(description: string): string | null {
-  const match =
-    /(?:uitboeking|inboeking|odpis|připis|pripis|removal|addition)[\s:]*(\d+(?:[.,]\d+)?)/i.exec(
-      description,
-    );
+  const match = new RegExp(
+    `(?:${[...LEG_OUT_WORDS, ...LEG_IN_WORDS].join('|')})[\\s:]*(\\d+(?:[.,]\\d+)?)`,
+    'i',
+  ).exec(description);
   return match ? parseDegiroNumber(match[1]!) : null;
 }
+
+/** České popisky akcí do chybových hlášek (uživatel je čte). */
+const CORPORATE_LABELS: Record<Exclude<CorporateSubtype, 'SPINOFF'>, string> = {
+  ISIN_CHANGE: 'Změna ISIN',
+  MERGER: 'Fúze',
+  SPLIT: 'Štěpení akcií',
+};
 
 interface CorporateLeg {
   line: number;
@@ -549,6 +607,17 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
 
     // korporátní akce nemají peněžní pohyb (Změna bývá prázdná) — sbíráme páry
     if (classified.kind === 'CORPORATE') {
+      // Spin-off Degiro reportuje jen připisem nových kusů; rozdělení nabývací
+      // ceny mezi mateřskou a novou pozici z výpisu nevyčteme (R-04f) — radši
+      // chyba k ručnímu doplnění než tiše špatná nabývací cena.
+      if (classified.subtype === 'SPINOFF') {
+        result.errors.push({
+          line,
+          message: `Spin-off „${description}“: rozdělení nabývací ceny mezi původní a novou pozici z výpisu Degiro nevyčteme — doplň akci ručně přes univerzální šablonu (typ CORPORATE_ACTION, subtype SPINOFF, sloupce isin, new_isin a ratio_from/ratio_to).`,
+          raw: row.join(';'),
+        });
+        return;
+      }
       const isin = cell(row, col.isin);
       if (!isin) {
         result.errors.push({
@@ -577,11 +646,9 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
-    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
-    const pair = readAmountCurrencyPair(row, col.change);
-    // prázdná dvojice = informativní řádek bez peněžního pohybu → bez záznamu
-    if (pair.kind === 'empty') return;
-
+    // POŘADÍ JE ZÁVAZNÉ: neznámý popis musí skončit chybou i BEZ peněžního
+    // pohybu. Degiro takhle reportuje korporátní akce (prázdná Změna) — dřívější
+    // kontrola na prázdnou dvojici je zahazovala úplně beze stopy.
     if (classified.kind === 'UNKNOWN') {
       result.errors.push({
         line,
@@ -590,6 +657,13 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       });
       return;
     }
+
+    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
+    const pair = readAmountCurrencyPair(row, col.change);
+    // prázdná dvojice u ROZPOZNANÉHO popisu = informativní řádek bez peněžního
+    // pohybu → bez záznamu (např. avízo dividendy před připsáním)
+    if (pair.kind === 'empty') return;
+
     if (pair.kind === 'invalid') {
       result.errors.push({
         line,
@@ -728,8 +802,8 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
 
   // párování korporátních akcí: odpis starého ISIN + připis nového, stejné datum
   for (const [key, legs] of corporateLegs) {
-    const subtype = key.startsWith('ISIN_CHANGE') ? 'ISIN_CHANGE' : 'MERGER';
-    const label = subtype === 'ISIN_CHANGE' ? 'Změna ISIN' : 'Fúze';
+    const subtype = key.slice(0, key.indexOf('|')) as Exclude<CorporateSubtype, 'SPINOFF'>;
+    const label = CORPORATE_LABELS[subtype];
 
     for (const leg of legs.filter((l) => l.direction === null)) {
       result.errors.push({
@@ -759,10 +833,19 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       const oldLeg = outs[i]!;
       const newLeg = ins[i]!;
       let ratio: { from: string; to: string } | undefined;
-      if (subtype === 'MERGER') {
+      if (subtype === 'MERGER' || subtype === 'SPLIT') {
         if (oldLeg.quantity !== null && newLeg.quantity !== null) {
           // za `from` starých kusů `to` nových — počty z popisů obou řádků
           ratio = { from: oldLeg.quantity, to: newLeg.quantity };
+        } else if (subtype === 'SPLIT') {
+          // bez poměru je split nepoužitelný (engine ho odmítne) a tichý
+          // přeskok by rozbil počty kusů u každého dalšího prodeje
+          result.errors.push({
+            line: oldLeg.line,
+            message: `Štěpení akcií ${oldLeg.isin} (${oldLeg.date}): z popisů „${oldLeg.description}“ / „${newLeg.description}“ nejde zjistit poměr staré:nové kusy — doplň akci ručně přes univerzální šablonu (subtype SPLIT, ratio_from a ratio_to).`,
+            raw: `${oldLeg.description} | ${newLeg.description}`,
+          });
+          continue;
         } else {
           result.warnings.push({
             line: oldLeg.line,
@@ -770,12 +853,22 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           });
         }
       }
+      // Split, který zároveň mění ISIN, engine neumí jednou transakcí (SPLIT
+      // nový ISIN ignoruje) — radši chyba než tiše zamlčená změna ISIN
+      if (subtype === 'SPLIT' && oldLeg.isin !== newLeg.isin) {
+        result.errors.push({
+          line: oldLeg.line,
+          message: `Štěpení akcií ${oldLeg.isin} → ${newLeg.isin} (${oldLeg.date}) zároveň mění ISIN — doplň akci ručně přes univerzální šablonu (SPLIT s poměrem a samostatně ISIN_CHANGE).`,
+          raw: `${oldLeg.description} | ${newLeg.description}`,
+        });
+        continue;
+      }
       push(oldLeg.line, oldLeg.description, {
         type: 'CORPORATE_ACTION',
         id: nextId(`degiro-${fnv1a64([subtype, oldLeg.date, oldLeg.isin, newLeg.isin].join('|'))}`),
         subtype,
         isin: oldLeg.isin,
-        newIsin: newLeg.isin,
+        ...(subtype === 'SPLIT' ? {} : { newIsin: newLeg.isin }),
         date: oldLeg.date,
         ...(ratio ? { ratio } : {}),
         note: `${oldLeg.description} / ${newLeg.description}`,
