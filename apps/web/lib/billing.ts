@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
+import { user } from '@/db/schema';
+import { purchaseConfirmationEmail, resolveEmailSender } from '@/lib/email';
 import { logEvent } from '@/lib/log';
 import { promoCodeFrom } from '@/lib/stripe';
 
@@ -21,6 +23,7 @@ export async function upsertSubscription(
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
     promoCode?: string | null;
+    consentAt?: Date | null;
   },
 ): Promise<void> {
   const values = {
@@ -32,6 +35,7 @@ export async function upsertSubscription(
     stripeCustomerId: args.stripeCustomerId ?? null,
     stripeSubscriptionId: args.stripeSubscriptionId ?? null,
     promoCode: args.promoCode ?? null,
+    ...(args.consentAt ? { consentAt: args.consentAt } : {}),
     updatedAt: new Date(),
   };
   await db
@@ -48,17 +52,58 @@ export async function recordReportPurchase(
     taxYear: number;
     stripePaymentIntentId?: string | null;
     promoCode?: string | null;
+    consentAt?: Date | null;
   },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  // vrací, jestli řádek opravdu vznikl — podle toho se pozná první doručení
+  // webhooku a pošle se potvrzovací e-mail jen jednou
+  const inserted = await db
     .insert(reportPurchases)
     .values({
       userId: args.userId,
       taxYear: args.taxYear,
       stripePaymentIntentId: args.stripePaymentIntentId ?? null,
       promoCode: args.promoCode ?? null,
+      consentAt: args.consentAt ?? null,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: reportPurchases.id });
+  return inserted.length > 0;
+}
+
+/**
+ * Potvrzení o uzavření smlouvy (§ 1824a OZ). Selhání odeslání nesmí shodit
+ * webhook — platba proběhla, e-mail se dá poslat znovu, ale opakovaný 500 by
+ * Stripe zbytečně zkoušel dokola.
+ */
+async function sendConfirmation(
+  db: Db,
+  userId: string,
+  what: string,
+  priceCzk: number,
+  consentAt: Date | null,
+): Promise<void> {
+  try {
+    const [row] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId));
+    if (!row) return;
+    await resolveEmailSender()({
+      to: row.email,
+      ...purchaseConfirmationEmail({ what, priceCzk, consentGiven: Boolean(consentAt) }),
+    });
+  } catch (error) {
+    logEvent('error', 'billing.confirmation_email_failed', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Souhlas se zahájením plnění z metadat Checkoutu. */
+function consentFrom(metadata: Stripe.Metadata | null | undefined): Date | null {
+  const raw = metadata?.consentAt;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** Konec zaplaceného období ze Stripe předplatného (vteřiny → Date). */
@@ -89,13 +134,24 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
           logEvent('error', 'billing.purchase_without_year', { sessionId: session.id });
           return 'nákup bez daňového roku';
         }
-        await recordReportPurchase(db, {
+        const created = await recordReportPurchase(db, {
           userId,
           taxYear,
           stripePaymentIntentId:
             typeof session.payment_intent === 'string' ? session.payment_intent : null,
           promoCode,
+          consentAt: consentFrom(session.metadata),
         });
+        // e-mail jen při prvním doručení webhooku, ne při každém opakování
+        if (created) {
+          await sendConfirmation(
+            db,
+            userId,
+            `Podklady k přiznání za rok ${taxYear}`,
+            490,
+            consentFrom(session.metadata),
+          );
+        }
         return `podklady ${taxYear} pro ${userId}`;
       }
       // předplatné dorovná následující customer.subscription.* event, tady jen
@@ -112,6 +168,11 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
         logEvent('error', 'billing.subscription_without_user', { id: subscription.id });
         return 'předplatné bez uživatele';
       }
+      const [existing] = await db
+        .select({ userId: subscriptions.userId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId));
+
       // 'canceled' držíme do konce zaplaceného období — rozhoduje datum, ne stav
       await upsertSubscription(db, {
         userId,
@@ -121,7 +182,17 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
         stripeCustomerId:
           typeof subscription.customer === 'string' ? subscription.customer : null,
         stripeSubscriptionId: subscription.id,
+        consentAt: consentFrom(subscription.metadata),
       });
+      if (!existing && subscription.status === 'active') {
+        await sendConfirmation(
+          db,
+          userId,
+          'Celoroční hlídání daní z investic (roční předplatné)',
+          990,
+          consentFrom(subscription.metadata),
+        );
+      }
       return `předplatné ${subscription.status} pro ${userId}`;
     }
 

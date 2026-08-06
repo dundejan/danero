@@ -75,7 +75,7 @@ export default function TermsPage() {
           <Link href="/cenik" className="font-medium text-ruzova">
             Ceník
           </Link>{' '}
-          a případnou změnu ti oznámíme předem podle článku 8.
+          a případnou změnu ti oznámíme předem podle článku 9.
         </p>
         <p>
           Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
@@ -85,7 +85,27 @@ export default function TermsPage() {
           tobě — obojí u konkrétních výpočtů viditelně označuje, ať víš, na čem stojíš.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">4. Tvůj účet a data</h2>
+        <h2 className="font-display text-lg font-semibold">4. Placené objednávky a odstoupení</h2>
+        <p>
+          Ceny jsou konečné — nejsme plátcem DPH, takže se k nim nic nepřipočítává.
+          Platby vyřizuje Stripe; číslo tvojí karty se k nám nikdy nedostane. Po každé
+          objednávce ti přijde e-mailem potvrzení uzavřené smlouvy, které si ulož.
+          Roční předplatné se obnovuje automaticky, ale nikdy potichu: 14 dní předem
+          ti přijde e-mail a zrušit obnovu můžeš kdykoli jedním kliknutím —
+          do konce zaplaceného období ti služba běží dál.
+        </p>
+        <p>
+          Jsi-li spotřebitel, máš právo odstoupit od smlouvy do 14 dnů. Protože Danero
+          je digitální obsah dodaný okamžitě, toto právo zaniká, jakmile na tvou
+          výslovnou žádost začneme plnit — potvrzuješ ji zaškrtnutím u objednávky.
+          Podrobnosti i vzorový formulář najdeš v{' '}
+          <Link href="/odstoupeni" className="font-medium text-ruzova">
+            poučení o odstoupení
+          </Link>
+          .
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">5. Tvůj účet a data</h2>
         <p>
           Účet je osobní a nepřenosný. Do aplikace vkládej pouze data ke svým vlastním
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
@@ -95,7 +115,7 @@ export default function TermsPage() {
           všech svých dat a případné nevyužité předplacené období ti vrátíme.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">5. Odpovědnost</h2>
+        <h2 className="font-display text-lg font-semibold">6. Odpovědnost</h2>
         <p>
           Danero počítá podle zveřejněné metodiky z dat, která do něj vložíš nebo která
           načteme z tvého brokera. Neodpovídáme za výsledek, pokud vstupní data nebyla
@@ -107,7 +127,7 @@ export default function TermsPage() {
           je vůbec).
         </p>
 
-        <h2 className="font-display text-lg font-semibold">6. Provozovatel a kontakt</h2>
+        <h2 className="font-display text-lg font-semibold">7. Provozovatel a kontakt</h2>
         <p>
           Danero je osobní projekt — provozuje ho Jan Dunder, IČO 19642661, se sídlem
           Žitomírská 640/3, Vršovice, 101 00 Praha 10 (fyzická osoba podnikající dle
@@ -119,7 +139,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">7. Když se neshodneme</h2>
+        <h2 className="font-display text-lg font-semibold">8. Když se neshodneme</h2>
         <p>
           Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
           Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
@@ -145,7 +165,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">8. Rozhodné právo a změny podmínek</h2>
+        <h2 className="font-display text-lg font-semibold">9. Rozhodné právo a změny podmínek</h2>
         <p>
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
           Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo
@@ -158,7 +178,7 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.0 · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.1 · účinnost od 6. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

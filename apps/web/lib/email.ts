@@ -98,3 +98,44 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
     ].join('\n'),
   };
 }
+
+/**
+ * Potvrzení o uzavření smlouvy na trvalém nosiči (§ 1824a OZ) — musí odejít
+ * po každém nákupu a nést i poučení o odstoupení. Ceny jsou konečné,
+ * provozovatel není plátce DPH.
+ */
+export function purchaseConfirmationEmail(args: {
+  what: string;
+  priceCzk: number;
+  consentGiven: boolean;
+}): Omit<EmailMessage, 'to'> {
+  const odstoupeni = args.consentGiven
+    ? [
+        'Právo odstoupit od smlouvy do 14 dnů: u digitálního obsahu dodaného',
+        'okamžitě zaniká, jakmile začneme plnit — a ty jsi při objednávce výslovně',
+        'požádal, abychom začali hned, a vzal na vědomí, že tím právo odstoupit',
+        'ztrácíš (§ 1837 písm. l občanského zákoníku).',
+      ]
+    : [
+        'Od smlouvy můžeš odstoupit do 14 dnů bez udání důvodu — napiš na',
+        'dunder.jan@gmail.com nebo použij formulář na danero.cz/odstoupeni.',
+      ];
+
+  return {
+    subject: `Potvrzení objednávky — ${args.what}`,
+    text: [
+      'Díky za objednávku. Tohle je potvrzení uzavřené smlouvy, ulož si ho.',
+      '',
+      `Co sis pořídil: ${args.what}`,
+      `Cena: ${args.priceCzk} Kč — cena je konečná`,
+      '',
+      'Prodávající: Jan Dunder, IČO 19642661, Žitomírská 640/3, Vršovice,',
+      '101 00 Praha 10. Není plátcem DPH.',
+      '',
+      ...odstoupeni,
+      '',
+      'Doklad o zaplacení a historii plateb najdeš v aplikaci v sekci',
+      'Předplatné. Podmínky užití: danero.cz/podminky',
+    ].join('\n'),
+  };
+}

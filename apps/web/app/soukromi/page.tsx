@@ -90,8 +90,9 @@ export default function PrivacyPage() {
           Vercel a Resend jsou certifikované v rámci EU-U.S. Data Privacy Framework,
           který Evropská komise uznává jako odpovídající ochranu; kde certifikace
           nestačí, kryjí předání standardní smluvní doložky EU (SCC). Až spustíme
-          platby, přibude Stripe (platební údaje zpracovává Stripe sám, my tvoji kartu
-          nikdy nevidíme) — tuhle stránku předem aktualizujeme.
+          platby zpracovává <strong>Stripe</strong> (Stripe Payments Europe, Irsko) —
+          platební údaje zpracovává sám, číslo tvojí karty se k nám nikdy nedostane;
+          my od něj dostáváme jen informaci, že platba proběhla.
         </p>
         <p>
           Zdrojový kód Danera je veřejný na GitHubu. Když nám tam napíšeš — issue,
@@ -128,7 +129,7 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.0 · účinnost od 5. srpna 2026 · změny oznámíme e-mailem
+        Verze 2.1 · účinnost od 6. srpna 2026 · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

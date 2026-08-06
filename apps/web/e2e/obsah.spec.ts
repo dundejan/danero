@@ -85,3 +85,20 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
   // free vrstva nesmí být omezená počtem platforem — limity se sčítají přes všechny
   await expect(page.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
 });
+
+/**
+ * Distanční balíček (B-4 z docs/13): poučení o odstoupení, vzorový formulář
+ * a povinná výslovná žádost o zahájení plnění u objednávky.
+ */
+test('poučení o odstoupení má vzorový formulář a vysvětluje zánik práva', async ({ page }) => {
+  await page.goto('/odstoupeni');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Odstoupení od smlouvy');
+  await expect(page.getByText('§ 1837 písm. l')).toBeVisible();
+  await expect(page.getByText('Oznamuji, že tímto odstupuji od smlouvy')).toBeVisible();
+
+  await page.goto('/podminky');
+  await expect(
+    page.getByRole('heading', { name: '4. Placené objednávky a odstoupení' }),
+  ).toBeVisible();
+  await expect(page.getByText('Ceny jsou konečné')).toBeVisible();
+});
