@@ -4,7 +4,7 @@ import { Toast } from '@/components/toast';
 import { buttonVariants } from '@/components/ui/button';
 import { getDb } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
-import { billingEnabled } from '@/lib/entitlements';
+import { billingEnabled, isPaidSubscription } from '@/lib/entitlements';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
@@ -49,8 +49,7 @@ export default async function SubscriptionPage({
     .orderBy(desc(reportPurchases.taxYear));
 
   const now = new Date();
-  const active =
-    subscription && subscription.status !== 'past_due' && subscription.currentPeriodEnd > now;
+  const active = isPaidSubscription(subscription, now);
 
   const txs = await loadTransactions(db, user.id);
   const years = availableYears(txs, now.getUTCFullYear());

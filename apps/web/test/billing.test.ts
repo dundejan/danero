@@ -1,19 +1,33 @@
 import type Stripe from 'stripe';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createPgliteDb } from '@/db';
 import { user } from '@/db/schema';
-import { applyStripeEvent } from '@/lib/billing';
+import { applyStripeEvent, cancelSubscriptionBeforeDelete } from '@/lib/billing';
 import { canGenerateReport, hasActiveSubscription } from '@/lib/entitlements';
+
+/** Stripe klient je jediné, co v testech nahrazujeme — po síti nechodíme. */
+const zrusena: string[] = [];
+vi.mock('@/lib/stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/stripe')>()),
+  stripe: () => ({
+    subscriptions: {
+      cancel: async (id: string) => {
+        zrusena.push(id);
+        return { id, status: 'canceled' };
+      },
+    },
+  }),
+}));
 
 /**
  * Zpracování Stripe událostí (docs/19). Webhook chodí i opakovaně a mimo pořadí,
  * takže hlavní vlastnost, kterou testujeme, je idempotence.
  */
 
-const checkoutEvent = (overrides: Record<string, unknown>) =>
+const checkoutEvent = (overrides: Record<string, unknown>, type = 'checkout.session.completed') =>
   ({
-    type: 'checkout.session.completed',
-    data: { object: { id: 'cs_test_1', mode: 'payment', ...overrides } },
+    type,
+    data: { object: { id: 'cs_test_1', mode: 'payment', payment_status: 'paid', ...overrides } },
   }) as unknown as Stripe.Event;
 
 const subscriptionEvent = (overrides: Record<string, unknown>) =>
@@ -83,17 +97,57 @@ describe('zpracování plateb ze Stripe', () => {
     delete process.env.DANERO_BILLING;
   });
 
-  it('zrušení běží do konce období, teprve pak se zamkne', { timeout: 30_000 }, async () => {
+  it('zrušení obnovy běží do konce období, teprve pak se zamkne', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const db = await dbWithUser();
 
-    await applyStripeEvent(
-      db,
-      subscriptionEvent({ status: 'canceled', cancel_at_period_end: true }),
-    );
+    // Stripe u zrušení k datu obnovy drží stav 'active' a jen zvedne příznak;
+    // na 'canceled' přepne až po konci zaplaceného období.
+    await applyStripeEvent(db, subscriptionEvent({ status: 'active', cancel_at_period_end: true }));
 
     expect(await hasActiveSubscription(db, 'u1', new Date('2026-08-05T00:00:00Z'))).toBe(true);
     expect(await hasActiveSubscription(db, 'u1', new Date('2027-06-01T00:00:00Z'))).toBe(false);
+    delete process.env.DANERO_BILLING;
+  });
+
+  it('zrušení pro nezaplacení zamkne hned, i když období ještě neuplynulo', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // vyčerpaný dunning: Stripe předplatné zruší, ale current_period_end nechá
+    // na konci NEZAPLACENÉHO období — bez výčtu zaplacených stavů by neplatič
+    // dostal celý rok zdarma
+    await applyStripeEvent(db, subscriptionEvent({ status: 'past_due' }));
+    expect(await hasActiveSubscription(db, 'u1', new Date('2026-08-05T00:00:00Z'))).toBe(false);
+    await applyStripeEvent(db, {
+      ...subscriptionEvent({ status: 'canceled' }),
+      type: 'customer.subscription.deleted',
+    } as unknown as Stripe.Event);
+
+    expect(await hasActiveSubscription(db, 'u1', new Date('2026-08-05T00:00:00Z'))).toBe(false);
+    delete process.env.DANERO_BILLING;
+  });
+
+  it('nezaplacená Checkout session nic neodemkne; odemkne ji až potvrzená platba', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const session = {
+      client_reference_id: 'u1',
+      metadata: { userId: 'u1', taxYear: '2026' },
+      payment_intent: 'pi_odlozena',
+    };
+
+    // odložená platební metoda (převod, SEPA): session je completed, ale nezaplacená
+    const outcome = await applyStripeEvent(db, checkoutEvent({ ...session, payment_status: 'unpaid' }));
+    expect(outcome).toContain('nezaplacen');
+    expect(await canGenerateReport(db, 'u1', 2026)).toBe(false);
+
+    // až když peníze dorazí, Stripe pošle async_payment_succeeded
+    await applyStripeEvent(
+      db,
+      checkoutEvent({ ...session }, 'checkout.session.async_payment_succeeded'),
+    );
+    expect(await canGenerateReport(db, 'u1', 2026)).toBe(true);
     delete process.env.DANERO_BILLING;
   });
 
@@ -101,6 +155,26 @@ describe('zpracování plateb ze Stripe', () => {
     const db = await dbWithUser();
     const outcome = await applyStripeEvent(db, checkoutEvent({ metadata: {} }));
     expect(outcome).toContain('bez uživatele');
+  });
+
+  it('smazání účtu zruší běžící předplatné ve Stripe', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await applyStripeEvent(db, subscriptionEvent({ id: 'sub_ke_zruseni' }));
+    zrusena.length = 0;
+
+    await cancelSubscriptionBeforeDelete(db, 'u1');
+
+    // bez tohohle by zákazníkovi bez účtu chodilo 990 Kč ročně dál
+    expect(zrusena).toEqual(['sub_ke_zruseni']);
+    delete process.env.DANERO_BILLING;
+  });
+
+  it('účet bez předplatného se maže bez volání do Stripe', { timeout: 30_000 }, async () => {
+    const db = await dbWithUser();
+    zrusena.length = 0;
+    await cancelSubscriptionBeforeDelete(db, 'u1');
+    expect(zrusena).toEqual([]);
   });
 
   it('neznámý typ události se ignoruje', { timeout: 30_000 }, async () => {

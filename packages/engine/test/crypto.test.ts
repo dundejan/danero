@@ -477,4 +477,23 @@ describe('R-10 normalizace druhu: asset_class je vlastnost instrumentu', () => {
     expect(result.limits.limit100k.usedCzk.toString()).toBe('0');
     expect(hasWarning(result, 'ASSET_CLASS_NORMALIZED')).toBe(true);
   });
+
+  it('SELL bez asset_class se vypořádá T+0, ne T+2 — jinak přeskočí hranici 15. 2. 2025 (R-10b)', () => {
+    // Prodej 13. 2. 2025 je PŘED účinností zák. č. 32/2025 Sb. → plně zdanitelný
+    // a pool 100k nečerpá. Dopočet vypořádání se ale řídil asset_class ŘÁDKU:
+    // prázdná hodnota = STOCK = T+2 → 17. 2. → prodej vypadal jako po účinnosti
+    // a osvobodil se. Krypto se vypořádává okamžitě (R-01a/R-10b).
+    const result = run([
+      cryptoBuy({ quantity: '1', pricePerShare: '10000', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
+      // settlementDate schválně nevyplněný — přesně tak chodí z importu
+      sell({ isin: 'BTC', quantity: '1', pricePerShare: '500000', tradeDate: '2025-02-13', settlementDate: undefined }),
+    ]);
+
+    expect(result.crypto.pool100kCzk.toString()).toBe('0');
+    expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('0');
+    expect(result.crypto.base10Czk.toString()).toBe('490000');
+    // R-10f: hrubá zdanitelná tržba prolomí limit 50k paušální daně
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('500000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+  });
 });

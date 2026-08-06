@@ -5,7 +5,7 @@ import { reportPurchases, subscriptions } from '@/db/schema';
 import { user } from '@/db/schema';
 import { purchaseConfirmationEmail, resolveEmailSender } from '@/lib/email';
 import { logEvent } from '@/lib/log';
-import { promoCodeFrom } from '@/lib/stripe';
+import { promoCodeFrom, stripe } from '@/lib/stripe';
 
 /**
  * Zápis výsledků plateb do databáze (docs/19). Volá se z webhooku, který chodí
@@ -98,6 +98,36 @@ async function sendConfirmation(
   }
 }
 
+/**
+ * Zruší běžící předplatné ve Stripe — volá se před smazáním účtu. Bez toho by
+ * zákazníkovi chodila platba za službu, kterou už nemá, a zrušit by si ji nemohl:
+ * do zákaznického portálu se vchází jen přihlášením, které po smazání neexistuje.
+ *
+ * Selhání nesmí zablokovat smazání (právo na výmaz je silnější), ale musí být
+ * hlasité — `stripeSubscriptionId` po kaskádě zmizí, takže tenhle log je jediná
+ * stopa, podle které jde předplatné dohledat ručně.
+ */
+export async function cancelSubscriptionBeforeDelete(db: Db, userId: string): Promise<void> {
+  const [row] = await db
+    .select({ subscriptionId: subscriptions.stripeSubscriptionId })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+  if (!row?.subscriptionId) return;
+  try {
+    await stripe().subscriptions.cancel(row.subscriptionId);
+    logEvent('info', 'billing.subscription_canceled_on_delete', {
+      userId,
+      subscriptionId: row.subscriptionId,
+    });
+  } catch (error) {
+    logEvent('error', 'billing.cancel_on_delete_failed', {
+      userId,
+      subscriptionId: row.subscriptionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Souhlas se zahájením plnění z metadat Checkoutu. */
 function consentFrom(metadata: Stripe.Metadata | null | undefined): Date | null {
   const raw = metadata?.consentAt;
@@ -119,12 +149,26 @@ function periodEnd(subscription: Stripe.Subscription): Date {
  */
 export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<string> {
   switch (event.type) {
-    case 'checkout.session.completed': {
+    // async_payment_succeeded je druhá polovina odložených plateb (převod, SEPA):
+    // completed dorazí hned a NEZAPLACENÁ, peníze až po dnech.
+    case 'checkout.session.completed':
+    case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object;
       const userId = session.client_reference_id ?? session.metadata?.userId;
       if (!userId) {
         logEvent('error', 'billing.session_without_user', { sessionId: session.id });
         return 'session bez uživatele';
+      }
+      // Dokončený checkout ≠ zaplaceno. Bez téhle kontroly by odložená platební
+      // metoda odemkla podklady dřív, než peníze dorazí — a kdyby nedorazily
+      // nikdy, zůstalo by odemčeno navždy (Stripe pošle async_payment_failed,
+      // který nic nevrací zpět).
+      if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+        logEvent('info', 'billing.session_unpaid', {
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+        });
+        return `session ${session.id} zatím nezaplacená (${session.payment_status})`;
       }
       const promoCode = promoCodeFrom(session);
 
