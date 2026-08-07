@@ -107,6 +107,19 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-05a Cash princip**: příjem patří do roku **připsání peněz** (na brokerský účet), ne roku obchodu.
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
 - **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
+
+  **Fixace metody per rok (implementace).** Podmínku konzistence nese tabulka
+  `tax_year_settings` (uživatel + daňový rok + metoda + čas fixace). Metoda se
+  zafixuje ve chvíli, kdy si uživatel za daný rok skutečně vygeneruje podklady
+  k přiznání — otevře report za ten rok nebo stáhne XML pro EPO. Fixuje se
+  **jen už skončený rok**: za běžící rok přiznání podat nelze, takže jeho
+  metoda zůstává volná a sleduje profil. Fixace je idempotentní — jednou
+  zapsaná metoda se nikdy nepřepisuje, ani při dalším generování podkladů.
+  Od té chvíle se ten rok počítá zafixovanou metodou ve **všech** pohledech
+  (přehled, portfolio, simulátor, report i XML); změna metody v profilu se
+  projeví jen v letech bez fixace. Zrušit fixaci jde výslovně v Nastavení
+  (jeden rok, s potvrzením) — pro případ dodatečného přiznání; rok se pak
+  zase počítá metodou z profilu.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
 - **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
   Pozn. k orientační dani: odhad daně v aplikaci se **nezaokrouhluje** na celé Kč
@@ -400,7 +413,7 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `limit100kIncludesTimeTestExempt` | `true` (striktní) | R-02c |
 | `spinoffCostBasisAllocation` | `zero` | R-04f (`zero` \| `proportional`) |
 | frakční akcie (bez přepínače) | vždy jako CP + vlajka `FRACTIONAL_SHARES` — derivátový výklad nemá definovaný výpočet, přepínač by nic nepřepínal | R-04j |
-| `matchingMethod` | `FIFO` | R-05c |
+| `matchingMethod` | `FIFO`; per rok se fixuje při generování podkladů | R-05c |
 | `fxMethod` | počítat obě, uživatel volí | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |

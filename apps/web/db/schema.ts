@@ -102,6 +102,27 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
 });
 
 /**
+ * Zafixovaná konfigurace jednoho daňového roku (R-05c). Vzniká ve chvíli, kdy
+ * si uživatel za rok vygeneruje podklady k přiznání, a od té chvíle se ten rok
+ * počítá zapsanou metodou i po pozdější změně profilu — zákon u párování
+ * prodejů žádá průkaznost a konzistenci, takže podané přiznání se nesmí zpětně
+ * přepočítat. Chybějící řádek = platí metoda z `taxpayer_profiles`.
+ */
+export const taxYearSettings = pgTable(
+  'tax_year_settings',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    /** FIFO | LIFO | MAX_PROFIT | MAX_LOSS — hodnota platná pro tenhle rok. */
+    matchingMethod: text('matching_method').notNull(),
+    pinnedAt: timestamp('pinned_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.taxYear] })],
+);
+
+/**
  * Audit události účtu (G8b): přihlášení, importy, změny profilu a klíčů.
  * Jen zobrazení uživateli (transparentnost) — žádná citlivá data v detailu.
  */

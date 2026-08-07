@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import {
   addDays,
   parseTransactions,
@@ -15,20 +15,131 @@ import {
   type TaxYearResult,
 } from '@danero/engine';
 import type { Db } from '@/db';
-import { taxpayerProfiles, transactions } from '@/db/schema';
+import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
 import { configForYear, UNIFIED_RATES } from './tax-config';
 
-export type ProfileRow = typeof taxpayerProfiles.$inferSelect;
+/** R-05c: daňový rok → metoda párování, se kterou se ten rok zafixoval. */
+export type PinnedMatchingMethods = Record<number, string>;
+
+export type ProfileRow = typeof taxpayerProfiles.$inferSelect & {
+  /**
+   * Roky, za které si uživatel vygeneroval podklady, si drží metodu párování,
+   * se kterou se počítaly (R-05c). Plní je `getProfile`, aby přehled,
+   * portfolio, simulátor i report vycházely ze stejné konfigurace.
+   */
+  pinnedMatchingMethods?: PinnedMatchingMethods;
+};
 
 export async function getProfile(db: Db, userId: string): Promise<ProfileRow | null> {
   const rows = await db
     .select()
     .from(taxpayerProfiles)
     .where(eq(taxpayerProfiles.userId, userId));
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  return { ...row, pinnedMatchingMethods: await loadPinnedMatchingMethods(db, userId) };
 }
 
-/** Převod DB řádku profilu na vstup enginu (profil + přepínače z docs/02). */
+export type PinnedTaxYear = typeof taxYearSettings.$inferSelect;
+
+/** Zafixované roky od nejnovějšího — pro výpis v nastavení i pro `getProfile`. */
+export async function listPinnedTaxYears(db: Db, userId: string): Promise<PinnedTaxYear[]> {
+  return db
+    .select()
+    .from(taxYearSettings)
+    .where(eq(taxYearSettings.userId, userId))
+    .orderBy(desc(taxYearSettings.taxYear));
+}
+
+export async function loadPinnedMatchingMethods(
+  db: Db,
+  userId: string,
+): Promise<PinnedMatchingMethods> {
+  const rows = await listPinnedTaxYears(db, userId);
+  return Object.fromEntries(rows.map((row) => [row.taxYear, row.matchingMethod]));
+}
+
+/**
+ * Metoda párování platná pro daný rok (R-05c): zafixovaná, pokud existuje,
+ * jinak aktuální z profilu. Jediné místo, kde se to rozhoduje — díky tomu
+ * ukazuje přehled i report stejná čísla.
+ */
+export function matchingMethodForYear(
+  profileRow: ProfileRow,
+  year: number,
+): EngineOptions['matchingMethod'] {
+  const pinned = profileRow.pinnedMatchingMethods?.[year];
+  return (pinned ?? profileRow.matchingMethod) as EngineOptions['matchingMethod'];
+}
+
+/**
+ * Rok se fixuje, teprve když může sloužit pro přiznání — tedy až po jeho konci.
+ * Za běžící rok se přiznání podat nedá, takže si uživatel může metodu dál
+ * volně měnit a report za letošek ho nezamkne.
+ */
+export function isPinnableTaxYear(year: number, currentYear: number): boolean {
+  return year < currentYear;
+}
+
+/** UTC, konzistentně se zbytkem aplikace (`today`). */
+const utcYear = (): number => Number(new Date().toISOString().slice(0, 4));
+
+/**
+ * R-05c: zafixuje metodu párování pro rok, za který si uživatel právě
+ * generuje podklady k přiznání, a vrátí profil s touto fixací. Idempotentní —
+ * jednou zapsanou metodu nikdy nepřepisuje. Fixace sama čísla nemění (fixuje
+ * se právě ta metoda, kterou výpočet v tu chvíli používá), takže cache
+ * výsledků v lib/engine-cache zůstává platná.
+ */
+export async function pinMatchingMethod(
+  db: Db,
+  profileRow: ProfileRow,
+  year: number,
+  currentYear: number = utcYear(),
+): Promise<ProfileRow> {
+  if (!isPinnableTaxYear(year, currentYear)) return profileRow;
+  if (profileRow.pinnedMatchingMethods?.[year]) return profileRow;
+  const matchingMethod = matchingMethodForYear(profileRow, year);
+  const inserted = await db
+    .insert(taxYearSettings)
+    .values({ userId: profileRow.userId, taxYear: year, matchingMethod })
+    // souběžné generování podkladů (dvě záložky) nesmí spadnout ani přepsat
+    .onConflictDoNothing()
+    .returning({ matchingMethod: taxYearSettings.matchingMethod });
+  if (inserted.length === 0) {
+    // konflikt: fixaci mezitím zapsal jiný požadavek — platí ta jeho, ať
+    // report ukazuje čísla spočítaná tím, co je opravdu v databázi
+    return {
+      ...profileRow,
+      pinnedMatchingMethods: await loadPinnedMatchingMethods(db, profileRow.userId),
+    };
+  }
+  return {
+    ...profileRow,
+    pinnedMatchingMethods: { ...profileRow.pinnedMatchingMethods, [year]: matchingMethod },
+  };
+}
+
+/**
+ * Zrušení fixace (dodatečné přiznání) — rok se zase počítá metodou z profilu.
+ * Posune `updatedAt` profilu: otisk v lib/engine-cache stojí na něm a bez
+ * posunu by přehled dál servíroval čísla spočítaná zafixovanou metodou.
+ */
+export async function unpinMatchingMethod(db: Db, userId: string, year: number): Promise<void> {
+  await db
+    .delete(taxYearSettings)
+    .where(and(eq(taxYearSettings.userId, userId), eq(taxYearSettings.taxYear, year)));
+  await db
+    .update(taxpayerProfiles)
+    .set({ updatedAt: new Date() })
+    .where(eq(taxpayerProfiles.userId, userId));
+}
+
+/**
+ * Převod DB řádku profilu na vstup enginu (profil + přepínače z docs/02).
+ * Metodu párování přebíjí `engineInputForUser` podle roku (R-05c) — tudy
+ * chodí vždycky hodnota z profilu.
+ */
 export function profileToEngine(row: ProfileRow): {
   profile: TaxpayerProfile;
   options: Partial<EngineOptions>;
@@ -106,7 +217,15 @@ export function engineInputForUser(
   dailyRates?: EngineInput['dailyRates'],
 ): EngineInput {
   const { profile, options } = profileToEngine(profileRow);
-  return { transactions: txs, profile, options, config: configForYear(year), dailyRates };
+  return {
+    transactions: txs,
+    profile,
+    // R-05c: rok, za který už uživatel generoval podklady, se počítá svou
+    // zafixovanou metodou — pozdější změna v profilu ho zpětně nepřepíše
+    options: { ...options, matchingMethod: matchingMethodForYear(profileRow, year) },
+    config: configForYear(year),
+    dailyRates,
+  };
 }
 
 /**

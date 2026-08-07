@@ -183,6 +183,13 @@
       "when": 1786050316528,
       "tag": "0025_rename_derivatives_expenses_column",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786062418648,
+      "tag": "0026_tax_year_settings",
+      "breakpoints": true
     }
   ]
 }

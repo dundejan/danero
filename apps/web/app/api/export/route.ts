@@ -9,6 +9,7 @@ import {
   reportPurchases,
   subscriptions,
   taxpayerProfiles,
+  taxYearSettings,
   transactions,
 } from '@/db/schema';
 
@@ -66,6 +67,12 @@ export async function GET(request: Request): Promise<Response> {
   // historie nákupů (/soukromi slibuje odnést si i ji) — stripe identifikátory
   // jsou součástí údajů o uživateli, doklad o zaplacení má Stripe
   const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+  // R-05c: metoda párování zafixovaná za roky, které už uživatel použil pro
+  // přiznání — bez ní by z exportu nešlo doložit, čím se jeho podaná čísla počítala
+  const pinnedMethods = await db
+    .select()
+    .from(taxYearSettings)
+    .where(eq(taxYearSettings.userId, userId));
   const purchases = await db
     .select()
     .from(reportPurchases)
@@ -83,6 +90,7 @@ export async function GET(request: Request): Promise<Response> {
     notifications: notif,
     importBatches: batches,
     subscriptions: subs,
+    pinnedMatchingMethods: pinnedMethods,
     reportPurchases: purchases,
   };
 
