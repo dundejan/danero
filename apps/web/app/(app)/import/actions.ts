@@ -54,7 +54,7 @@ const MAX_ALIAS_ROWS = 200;
 export async function saveAliasesAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   // tvrdý strop a celočíselnost — count je z formuláře (DoS přes Infinity/1e9)
-  const rawCount = Number(formData.get('count') ?? 0);
+  const rawCount = Number(formData.get('pocet') ?? 0);
   const count = Number.isInteger(rawCount) ? Math.min(Math.max(rawCount, 0), MAX_ALIAS_ROWS) : 0;
   const rows: AliasInput[] = [];
   for (let i = 0; i < count; i += 1) {
@@ -81,7 +81,7 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
 /** Smaže záznam o importu z historie — transakce zůstávají (jen úklid logu). */
 export async function deleteBatchAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const batchId = String(formData.get('batchId') ?? '');
+  const batchId = String(formData.get('davka') ?? '');
   if (batchId) {
     const db = await getDb();
     await db
@@ -106,8 +106,8 @@ async function requireBrokerSync(db: Db, userId: string): Promise<void> {
 
 export async function saveTrading212KeyAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const keyId = String(formData.get('keyId') ?? '').trim();
-  const secret = String(formData.get('secret') ?? '').trim();
+  const keyId = String(formData.get('id-klice') ?? '').trim();
+  const secret = String(formData.get('tajny-klic') ?? '').trim();
   if (secret.length < 10) redirect('/import?chyba=api-klic');
 
   const db = await getDb();
@@ -135,7 +135,7 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
 export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const token = String(formData.get('token') ?? '').trim();
-  const queryId = String(formData.get('queryId') ?? '').trim();
+  const queryId = String(formData.get('id-dotazu') ?? '').trim();
   if (token.length < 10 || !/^\d+$/.test(queryId)) redirect('/import?chyba=ibkr');
 
   const db = await getDb();
@@ -162,7 +162,7 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
 /** Odpojí jeden broker účet (multi-broker: každá karta má vlastní tlačítko). */
 export async function disconnectBrokerAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const accountId = String(formData.get('accountId') ?? '');
+  const accountId = String(formData.get('ucet') ?? '');
   const db = await getDb();
   const deleted = await db
     .delete(brokerAccounts)
@@ -182,7 +182,7 @@ export async function disconnectBrokerAction(formData: FormData): Promise<void> 
  */
 export async function syncBrokerAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const accountId = String(formData.get('accountId') ?? '');
+  const accountId = String(formData.get('ucet') ?? '');
   const db = await getDb();
   await requireBrokerSync(db, user.id);
   const accounts = await db

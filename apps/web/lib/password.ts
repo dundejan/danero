@@ -4,13 +4,21 @@ import { argon2idAsync } from '@noble/hashes/argon2.js';
 /**
  * Otisky hesel: Argon2id (E-8 z auditu). Better Auth má ve výchozím stavu
  * scrypt — legitimní KDF, ale Argon2id je dnešní doporučení OWASP a odolnější
- * proti GPU/ASIC útoku. Přepnutí je zadarmo jen dokud nemáme živé účty, proto
- * teď.
+ * proti GPU/ASIC útoku. Měnit ho jde jen dokud nejsou živé účty, proto teď.
  *
  * Parametry dle OWASP Password Storage Cheat Sheet (Argon2id): 19 MiB paměti,
- * 2 iterace, paralelismus 1. Implementace je čistě v JS (`@noble/hashes`, který
- * si Better Auth stejně táhne) — žádná nativní závislost, takže to jede
- * i v serverless funkci beze změny buildu.
+ * 2 iterace, paralelismus 1.
+ *
+ * CENA (změřeno): otisk i ověření trvají ~450 ms, scrypt zvládne totéž za ~68 ms.
+ * Přihlášení i registrace se tím prodlouží zhruba o půl vteřiny a na serverless
+ * funkci je to blokující výpočet. Je to obvyklá cena za KDF odolný proti GPU
+ * a brute force chrání i rate limit (5 pokusů/min), ale kdyby to vadilo, návrat
+ * ke scryptu je odebrání bloku `password` v lib/auth.ts — staré otisky se pak
+ * ověří dál, protože `verifyPassword` obě varianty rozpozná.
+ *
+ * Implementace je čistě v JS (`@noble/hashes`, který si Better Auth stejně
+ * táhne) — žádná nativní závislost, takže to jede i v serverless funkci
+ * beze změny buildu.
  *
  * Formát je standardní PHC řetězec, takže z otisku samotného je poznat, jak
  * vznikl: `$argon2id$v=19$m=19456,t=2,p=1$<sůl>$<otisk>`.

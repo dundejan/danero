@@ -98,7 +98,7 @@ function ConnectedBroker({
           {copy.note}
         </p>
         <form action={syncBrokerAction}>
-          <input type="hidden" name="accountId" value={account.id} />
+          <input type="hidden" name="ucet" value={account.id} />
           <SubmitButton variant="secondary" pendingLabel="Spouštím…">
             {account.lastSyncedAt ? 'Synchronizovat teď' : copy.buttonFirst}
           </SubmitButton>
@@ -173,7 +173,7 @@ function ConnectedBroker({
           Klíč je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
         </p>
         <form action={disconnectBrokerAction}>
-          <input type="hidden" name="accountId" value={account.id} />
+          <input type="hidden" name="ucet" value={account.id} />
           <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
             Odpojit {account.label}
           </SubmitButton>
@@ -288,7 +288,7 @@ export default async function ImportPage({
             obchody těchto symbolů se bez doplnění neimportují.
           </p>
           <form action={saveAliasesAction} className="space-y-2">
-            <input type="hidden" name="count" value={unmappedSymbols.length} />
+            <input type="hidden" name="pocet" value={unmappedSymbols.length} />
             {unmappedSymbols.map((item, index) => (
               <div
                 key={`${item.broker}|${item.symbol}`}
@@ -393,12 +393,12 @@ export default async function ImportPage({
                 <form action={saveTrading212KeyAction} className="space-y-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <Label htmlFor="keyId">ID klíče API</Label>
-                      <Input id="keyId" name="keyId" autoComplete="off" spellCheck={false} />
+                      <Label htmlFor="id-klice">ID klíče API</Label>
+                      <Input id="id-klice" name="id-klice" autoComplete="off" spellCheck={false} />
                     </div>
                     <div>
-                      <Label htmlFor="secret">Tajný klíč</Label>
-                      <Input id="secret" name="secret" type="password" required autoComplete="new-password" />
+                      <Label htmlFor="tajny-klic">Tajný klíč</Label>
+                      <Input id="tajny-klic" name="tajny-klic" type="password" required autoComplete="new-password" />
                     </div>
                   </div>
                   <SubmitButton pendingLabel="Ukládám…">Připojit</SubmitButton>
@@ -475,10 +475,10 @@ export default async function ImportPage({
                       <Input id="token" name="token" type="password" required autoComplete="new-password" />
                     </div>
                     <div>
-                      <Label htmlFor="queryId">Query ID</Label>
+                      <Label htmlFor="id-dotazu">Query ID</Label>
                       <Input
-                        id="queryId"
-                        name="queryId"
+                        id="id-dotazu"
+                        name="id-dotazu"
                         required
                         inputMode="numeric"
                         autoComplete="off"
@@ -546,7 +546,7 @@ export default async function ImportPage({
                 <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   <form action={deleteBatchAction}>
-                    <input type="hidden" name="batchId" value={batch.id} />
+                    <input type="hidden" name="davka" value={batch.id} />
                     <button
                       type="submit"
                       className="font-medium text-inkoust-tlumeny hover:text-cervena"
