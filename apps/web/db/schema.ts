@@ -102,11 +102,12 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
 });
 
 /**
- * Zafixovaná konfigurace jednoho daňového roku (R-05c). Vzniká ve chvíli, kdy
- * si uživatel za rok vygeneruje podklady k přiznání, a od té chvíle se ten rok
- * počítá zapsanou metodou i po pozdější změně profilu — zákon u párování
- * prodejů žádá průkaznost a konzistenci, takže podané přiznání se nesmí zpětně
- * přepočítat. Chybějící řádek = platí metoda z `taxpayer_profiles`.
+ * Zafixovaná konfigurace jednoho daňového roku (R-05c, R-06, R-02c). Vzniká ve
+ * chvíli, kdy si uživatel za rok vygeneruje podklady k přiznání, a od té chvíle
+ * se ten rok počítá zapsanými hodnotami i po pozdější změně profilu — zákon
+ * u párování prodejů i u kurzů žádá průkaznost a konzistenci za celé zdaňovací
+ * období, takže podané přiznání se nesmí zpětně přepočítat. Fixují se všechny
+ * volby, které mění už spočítaná čísla; chybějící řádek = platí `taxpayer_profiles`.
  */
 export const taxYearSettings = pgTable(
   'tax_year_settings',
@@ -115,8 +116,12 @@ export const taxYearSettings = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     taxYear: integer('tax_year').notNull(),
-    /** FIFO | LIFO | MAX_PROFIT | MAX_LOSS — hodnota platná pro tenhle rok. */
+    /** R-05c: FIFO | LIFO | MAX_PROFIT | MAX_LOSS — hodnota platná pro tenhle rok. */
     matchingMethod: text('matching_method').notNull(),
+    /** R-06: UNIFIED | CNB_DAILY — soustava kurzů, kterou se rok počítal. */
+    fxMethod: text('fx_method').notNull(),
+    /** R-02c: vstupovaly do úhrnu 100k i prodeje osvobozené časovým testem? */
+    limit100kStrict: boolean('limit_100k_strict').notNull(),
     pinnedAt: timestamp('pinned_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.taxYear] })],
@@ -449,6 +454,15 @@ export const reportPurchases = pgTable(
     promoCode: text('promo_code'),
     /** Výslovná žádost o zahájení plnění před lhůtou (§ 1837 písm. l OZ). */
     consentAt: timestamp('consent_at'),
+    /**
+     * Kdy nákup přestal platit (vrácené peníze, reklamace). Řádek se NEMAŽE ze
+     * dvou důvodů: denní rekonciliace by zaplacenou session ve Stripe našla
+     * znovu a nákup obnovila, a vyhraná reklamace by neměla co vrátit zpátky
+     * (C-24, C-25). Odemyká jen řádek s `revokedAt = null`.
+     */
+    revokedAt: timestamp('revoked_at'),
+    /** Proč se odemčení vzalo zpět — 'refund' | 'dispute' | 'async_failed'. */
+    revokedReason: text('revoked_reason'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   // druhý nákup téhož roku nedává smysl a webhook chodí i opakovaně

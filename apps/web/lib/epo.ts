@@ -135,7 +135,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     const minYear = Math.min(...EPO_SUPPORTED_YEARS);
     throw new Error(
       year < minYear
-        ? `Roky před ${minYear} v XML nepodporujeme — použij čísla z reportu a vyplň formulář ručně.`
+        ? `Roky před ${minYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře jsou v reportu.`
         : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
     );
   }

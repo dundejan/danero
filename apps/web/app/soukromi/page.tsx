@@ -63,6 +63,15 @@ export default function PrivacyPage() {
           služby, zeptáme se předem na souhlas (čl. 6 odst. 1 písm. a) — a půjde kdykoli
           odvolat.
         </p>
+        <p>
+          Poskytnout nám tyhle údaje ti neukládá žádný zákon — je to{' '}
+          <strong>smluvní požadavek</strong>:
+          bez e-mailu a hesla ti nezaložíme účet, bez daňového profilu a transakční historie
+          nemá Danero co počítat, takže bychom ti službu nedokázali poskytnout. Volitelné je
+          dvoufázové ověření a napojení brokera přes API klíč — bez nich přijdeš jen o tu
+          konkrétní funkci, ne o účet. A když nechceš dát nic, nemusíš: většinu toho, co
+          Danero umí, si prohlédneš v demu bez registrace.
+        </p>
 
         <h2 className="font-display text-lg font-semibold">Jak s daty zacházíme</h2>
         <p>
@@ -117,10 +126,26 @@ export default function PrivacyPage() {
         <p>
           Zdrojový kód Danera je veřejný na GitHubu. Když nám tam napíšeš — issue,
           pull request, diskuse — zpracovává tvoje údaje GitHub podle svých vlastních
-          podmínek a to, co napíšeš, je veřejné. <strong>Do veřejných issue nikdy
+          podmínek a to, co napíšeš, je veřejné. GitHub je{' '}
+          <strong>americká společnost a data drží v USA</strong>; zárukou jsou tu jeho
+          vlastní podmínky a hlavně to, že se předává výhradně to, co sám zveřejníš —
+          tvoje jméno nebo přezdívka na GitHubu a obsah příspěvku. Nic z tvého účtu
+          v Daneru se tam nedostane. <strong>Do veřejných issue nikdy
           nevkládej výpis od brokera</strong>; jsou to osobní údaje. Když potřebuješ
           poslat vzorek, aby Danero tvůj formát naučilo číst, pošli ho e-mailem —
           používáme ho jen na převod do anonymního testovacího vzorku a pak ho mažeme.
+        </p>
+
+        <h2 className="font-display text-lg font-semibold">
+          Automatizované rozhodování neprobíhá
+        </h2>
+        <p>
+          Danero o tobě nerozhoduje — počítá a upozorňuje. Žádné automatizované
+          rozhodování s právním nebo obdobně závažným účinkem (čl. 22 GDPR) tu neprobíhá,
+          stejně jako profilování pro marketing. Co nakonec podáš v daňovém přiznání a
+          jaký výklad sporných míst zvolíš, rozhoduješ ty; sporné výklady proto aplikace
+          nechává jako přepínač a obě čísla ukazuje vedle sebe. Ani cenu ti podle žádných
+          dat nepřizpůsobujeme — platí ta z ceníku, pro všechny stejná.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>

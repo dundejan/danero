@@ -18,16 +18,27 @@ import type { Db } from '@/db';
 import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
 import { configForYear, UNIFIED_RATES } from './tax-config';
 
-/** R-05c: daňový rok → metoda párování, se kterou se ten rok zafixoval. */
-export type PinnedMatchingMethods = Record<number, string>;
+/**
+ * Volby, které se fixují za daňový rok: mění už spočítaná (a klidně podaná)
+ * čísla zpětně, takže je uzavřený rok musí držet. Párování žádá konzistenci
+ * podle R-05c, kurzová soustava podle R-06 („jednu soustavu pro celé
+ * zdaňovací období"), výklad limitu 100k je sporný přepínač R-02c.
+ */
+export type PinnedTaxYearOptions = Pick<
+  EngineOptions,
+  'matchingMethod' | 'fxMethod' | 'limit100kIncludesTimeTestExempt'
+>;
+
+/** Daňový rok → konfigurace, se kterou se ten rok zafixoval. */
+export type PinnedTaxYears = Record<number, PinnedTaxYearOptions>;
 
 export type ProfileRow = typeof taxpayerProfiles.$inferSelect & {
   /**
-   * Roky, za které si uživatel vygeneroval podklady, si drží metodu párování,
+   * Roky, za které si uživatel vygeneroval podklady, si drží konfiguraci,
    * se kterou se počítaly (R-05c). Plní je `getProfile`, aby přehled,
    * portfolio, simulátor i report vycházely ze stejné konfigurace.
    */
-  pinnedMatchingMethods?: PinnedMatchingMethods;
+  pinnedTaxYears?: PinnedTaxYears;
 };
 
 export async function getProfile(db: Db, userId: string): Promise<ProfileRow | null> {
@@ -37,13 +48,13 @@ export async function getProfile(db: Db, userId: string): Promise<ProfileRow | n
     .where(eq(taxpayerProfiles.userId, userId));
   const row = rows[0];
   if (!row) return null;
-  return { ...row, pinnedMatchingMethods: await loadPinnedMatchingMethods(db, userId) };
+  return { ...row, pinnedTaxYears: await loadPinnedTaxYears(db, userId) };
 }
 
-export type PinnedTaxYear = typeof taxYearSettings.$inferSelect;
+export type PinnedTaxYearRow = typeof taxYearSettings.$inferSelect;
 
 /** Zafixované roky od nejnovějšího — pro výpis v nastavení i pro `getProfile`. */
-export async function listPinnedTaxYears(db: Db, userId: string): Promise<PinnedTaxYear[]> {
+export async function listPinnedTaxYears(db: Db, userId: string): Promise<PinnedTaxYearRow[]> {
   return db
     .select()
     .from(taxYearSettings)
@@ -51,25 +62,34 @@ export async function listPinnedTaxYears(db: Db, userId: string): Promise<Pinned
     .orderBy(desc(taxYearSettings.taxYear));
 }
 
-export async function loadPinnedMatchingMethods(
-  db: Db,
-  userId: string,
-): Promise<PinnedMatchingMethods> {
+/** Řádek fixace → volby enginu (názvy sloupců se od klíčů enginu liší). */
+const pinnedRowToOptions = (row: PinnedTaxYearRow): PinnedTaxYearOptions => ({
+  matchingMethod: row.matchingMethod as EngineOptions['matchingMethod'],
+  fxMethod: row.fxMethod as EngineOptions['fxMethod'],
+  limit100kIncludesTimeTestExempt: row.limit100kStrict,
+});
+
+export async function loadPinnedTaxYears(db: Db, userId: string): Promise<PinnedTaxYears> {
   const rows = await listPinnedTaxYears(db, userId);
-  return Object.fromEntries(rows.map((row) => [row.taxYear, row.matchingMethod]));
+  return Object.fromEntries(rows.map((row) => [row.taxYear, pinnedRowToOptions(row)]));
 }
 
+/** Tytéž volby, jak je má uživatel právě teď nastavené v profilu. */
+const profileTaxYearOptions = (profileRow: ProfileRow): PinnedTaxYearOptions => ({
+  matchingMethod: profileRow.matchingMethod as EngineOptions['matchingMethod'],
+  fxMethod: profileRow.fxMethod as EngineOptions['fxMethod'],
+  limit100kIncludesTimeTestExempt: profileRow.limit100kStrict,
+});
+
 /**
- * Metoda párování platná pro daný rok (R-05c): zafixovaná, pokud existuje,
- * jinak aktuální z profilu. Jediné místo, kde se to rozhoduje — díky tomu
- * ukazuje přehled i report stejná čísla.
+ * Konfigurace platná pro daný rok: zafixovaná, pokud existuje, jinak aktuální
+ * z profilu. Jediné místo, kde se to rozhoduje — díky tomu ukazuje přehled,
+ * portfolio, simulátor, report, XML pro EPO i notifikační cron stejná čísla.
+ * Fixace je vždy celá (všechny sloupce jsou NOT NULL), takže se hodnoty
+ * z profilu a z fixace nikdy nemíchají.
  */
-export function matchingMethodForYear(
-  profileRow: ProfileRow,
-  year: number,
-): EngineOptions['matchingMethod'] {
-  const pinned = profileRow.pinnedMatchingMethods?.[year];
-  return (pinned ?? profileRow.matchingMethod) as EngineOptions['matchingMethod'];
+export function taxYearOptions(profileRow: ProfileRow, year: number): PinnedTaxYearOptions {
+  return profileRow.pinnedTaxYears?.[year] ?? profileTaxYearOptions(profileRow);
 }
 
 /**
@@ -85,47 +105,47 @@ export function isPinnableTaxYear(year: number, currentYear: number): boolean {
 const utcYear = (): number => Number(new Date().toISOString().slice(0, 4));
 
 /**
- * R-05c: zafixuje metodu párování pro rok, za který si uživatel právě
- * generuje podklady k přiznání, a vrátí profil s touto fixací. Idempotentní —
- * jednou zapsanou metodu nikdy nepřepisuje. Fixace sama čísla nemění (fixuje
- * se právě ta metoda, kterou výpočet v tu chvíli používá), takže cache
+ * R-05c: zafixuje konfiguraci roku, za který si uživatel právě generuje
+ * podklady k přiznání, a vrátí profil s touto fixací. Idempotentní — jednou
+ * zapsané hodnoty nikdy nepřepisuje. Fixace sama čísla nemění (fixuje se
+ * právě ta konfigurace, kterou výpočet v tu chvíli používá), takže cache
  * výsledků v lib/engine-cache zůstává platná.
  */
-export async function pinMatchingMethod(
+export async function pinTaxYear(
   db: Db,
   profileRow: ProfileRow,
   year: number,
   currentYear: number = utcYear(),
 ): Promise<ProfileRow> {
   if (!isPinnableTaxYear(year, currentYear)) return profileRow;
-  if (profileRow.pinnedMatchingMethods?.[year]) return profileRow;
-  const matchingMethod = matchingMethodForYear(profileRow, year);
+  if (profileRow.pinnedTaxYears?.[year]) return profileRow;
+  const options = taxYearOptions(profileRow, year);
   const inserted = await db
     .insert(taxYearSettings)
-    .values({ userId: profileRow.userId, taxYear: year, matchingMethod })
+    .values({
+      userId: profileRow.userId,
+      taxYear: year,
+      matchingMethod: options.matchingMethod,
+      fxMethod: options.fxMethod,
+      limit100kStrict: options.limit100kIncludesTimeTestExempt,
+    })
     // souběžné generování podkladů (dvě záložky) nesmí spadnout ani přepsat
     .onConflictDoNothing()
-    .returning({ matchingMethod: taxYearSettings.matchingMethod });
+    .returning({ taxYear: taxYearSettings.taxYear });
   if (inserted.length === 0) {
     // konflikt: fixaci mezitím zapsal jiný požadavek — platí ta jeho, ať
     // report ukazuje čísla spočítaná tím, co je opravdu v databázi
-    return {
-      ...profileRow,
-      pinnedMatchingMethods: await loadPinnedMatchingMethods(db, profileRow.userId),
-    };
+    return { ...profileRow, pinnedTaxYears: await loadPinnedTaxYears(db, profileRow.userId) };
   }
-  return {
-    ...profileRow,
-    pinnedMatchingMethods: { ...profileRow.pinnedMatchingMethods, [year]: matchingMethod },
-  };
+  return { ...profileRow, pinnedTaxYears: { ...profileRow.pinnedTaxYears, [year]: options } };
 }
 
 /**
- * Zrušení fixace (dodatečné přiznání) — rok se zase počítá metodou z profilu.
+ * Zrušení fixace (dodatečné přiznání) — rok se zase počítá podle profilu.
  * Posune `updatedAt` profilu: otisk v lib/engine-cache stojí na něm a bez
- * posunu by přehled dál servíroval čísla spočítaná zafixovanou metodou.
+ * posunu by přehled dál servíroval čísla spočítaná zafixovanou konfigurací.
  */
-export async function unpinMatchingMethod(db: Db, userId: string, year: number): Promise<void> {
+export async function unpinTaxYear(db: Db, userId: string, year: number): Promise<void> {
   await db
     .delete(taxYearSettings)
     .where(and(eq(taxYearSettings.userId, userId), eq(taxYearSettings.taxYear, year)));
@@ -137,8 +157,8 @@ export async function unpinMatchingMethod(db: Db, userId: string, year: number):
 
 /**
  * Převod DB řádku profilu na vstup enginu (profil + přepínače z docs/02).
- * Metodu párování přebíjí `engineInputForUser` podle roku (R-05c) — tudy
- * chodí vždycky hodnota z profilu.
+ * Fixovatelné volby (párování, kurzy, výklad limitu 100k) přebíjí
+ * `engineInputForUser` podle roku — tudy chodí vždycky hodnoty z profilu.
  */
 export function profileToEngine(row: ProfileRow): {
   profile: TaxpayerProfile;
@@ -221,8 +241,8 @@ export function engineInputForUser(
     transactions: txs,
     profile,
     // R-05c: rok, za který už uživatel generoval podklady, se počítá svou
-    // zafixovanou metodou — pozdější změna v profilu ho zpětně nepřepíše
-    options: { ...options, matchingMethod: matchingMethodForYear(profileRow, year) },
+    // zafixovanou konfigurací — pozdější změna v profilu ho zpětně nepřepíše
+    options: { ...options, ...taxYearOptions(profileRow, year) },
     config: configForYear(year),
     dailyRates,
   };
@@ -327,11 +347,22 @@ export function unifiedRatesCover(txs: Transaction[]): boolean {
 }
 
 /**
- * Denní kurzy jen když je uživatel ZVOLIL (fxMethod CNB_DAILY) — jinak by
- * každé načtení stránky platilo backfill. Report si je bere vždy (srovnání).
- * Výjimka pro UNIFIED: transakce mimo pokrytí jednotné tabulky (měna/rok bez
- * kurzu) by engine bez denního fallbacku shodila — denní kurzy se načtou
- * a engine je použije s warningem FX_UNIFIED_RATE_MISSING místo pádu.
+ * Potřebuje uživatel denní kurzy ČNB? Nestačí se ptát profilu: rok zafixovaný
+ * na denní kurzy je počítá i po pozdějším přepnutí profilu na jednotný kurz —
+ * a bez provideru by mu engine potichu dosadil jednotný kurz (FxConverter má
+ * fallback s warningem), tedy jiná čísla, než jaká uživatel podal.
+ */
+const needsDailyRates = (profileRow: ProfileRow): boolean =>
+  profileRow.fxMethod === 'CNB_DAILY' ||
+  Object.values(profileRow.pinnedTaxYears ?? {}).some((o) => o.fxMethod === 'CNB_DAILY');
+
+/**
+ * Denní kurzy jen když je uživatel ZVOLIL (fxMethod CNB_DAILY, ať v profilu
+ * nebo v zafixovaném roce) — jinak by každé načtení stránky platilo backfill.
+ * Report si je bere vždy (srovnání). Výjimka pro UNIFIED: transakce mimo
+ * pokrytí jednotné tabulky (měna/rok bez kurzu) by engine bez denního
+ * fallbacku shodila — denní kurzy se načtou a engine je použije s warningem
+ * FX_UNIFIED_RATE_MISSING místo pádu.
  */
 export async function dailyRatesForProfile(
   db: Db,
@@ -339,6 +370,6 @@ export async function dailyRatesForProfile(
   profileRow: ProfileRow,
   currentYear: number,
 ): Promise<EngineInput['dailyRates']> {
-  if (profileRow.fxMethod !== 'CNB_DAILY' && unifiedRatesCover(txs)) return undefined;
+  if (!needsDailyRates(profileRow) && unifiedRatesCover(txs)) return undefined;
   return loadDailyRates(db, txs, currentYear);
 }

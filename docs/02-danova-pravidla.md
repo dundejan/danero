@@ -66,6 +66,22 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 ## R-03 Strop 40 mil. Kč (§ 4 odst. 3)
 
 - Platí pro úhrn příjmů osvobozených dle q), u), zk) přijatých **v roce 2025** (zaveden zák. č. 349/2023 Sb.). **Od 1. 1. 2026 zrušen pro CP a podíly** (zák. č. 360/2025 Sb.); **pro krypto (zk) trvá**.
+- **R-03a Hodnotový limit t)/zj) pod strop NESPADÁ.** Výčet v § 4 odst. 3 je
+  taxativní — q), u), zk). Osvobození úhrnem do 100 000 Kč (t pro CP, zj pro
+  krypto) v něm není, takže druh příjmu, jehož úhrn tržeb se do limitu vejde,
+  do stropu **nevstupuje ani se jím nekrátí** — a to i tehdy, když strop
+  přetáhne druhý druh sdílející týž strop (2025: CP + krypto, R-10d).
+
+  Podmínka je vázaná na výklad R-02c: „úhrn do 100k" pokryje časově osvobozené
+  tržby jen tehdy, když do toho úhrnu **vstupují** (striktní výklad, default).
+  Při mírnějším výkladu je pool klidně nulový, a přesto jsou tytéž tržby
+  osvobozené podle u)/zk) — tam strop dopadá plnou vahou.
+
+  ⚠️ Bez tohohle pravidla vzniká absurdita, která chybu prozradí: táž krypto
+  tržba 90 000 Kč vycházela při držbě **5 let dráž** (daň 1 028 289,84 Kč) než
+  při držbě 1 rok (1 015 915,84 Kč), protože delší držba ji přesunula pod strop
+  sdílený s cennými papíry. Delší držba nikdy nesmí vyjít dráž —
+  `cap40m.test.ts` to hlídá vlastnostním testem.
 - Krácení poměrné: osvobozená část = příjem × (40M / úhrn); výdaje se krátí stejným poměrem. Rozhodný je moment přijetí peněz.
 - Step-up: u CP nabytých do 31. 12. 2024 lze jako výdaj uplatnit tržní hodnotu k 31. 12. 2024. (Engine: volitelný `costBasisOverride` na lotu.)
 - **Implementováno (G5, zobecněno v G6)**: exemptRatio = strop / kombinovaný úhrn
@@ -106,18 +122,27 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
 - **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
 
-  **Fixace metody per rok (implementace).** Podmínku konzistence nese tabulka
-  `tax_year_settings` (uživatel + daňový rok + metoda + čas fixace). Metoda se
-  zafixuje ve chvíli, kdy si uživatel za daný rok skutečně vygeneruje podklady
-  k přiznání — otevře report za ten rok nebo stáhne XML pro EPO. Fixuje se
-  **jen už skončený rok**: za běžící rok přiznání podat nelze, takže jeho
-  metoda zůstává volná a sleduje profil. Fixace je idempotentní — jednou
-  zapsaná metoda se nikdy nepřepisuje, ani při dalším generování podkladů.
-  Od té chvíle se ten rok počítá zafixovanou metodou ve **všech** pohledech
-  (přehled, portfolio, simulátor, report i XML); změna metody v profilu se
-  projeví jen v letech bez fixace. Zrušit fixaci jde výslovně v Nastavení
-  (jeden rok, s potvrzením) — pro případ dodatečného přiznání; rok se pak
-  zase počítá metodou z profilu.
+  **Fixace konfigurace per rok (implementace).** Podmínku konzistence nese
+  tabulka `tax_year_settings` (uživatel + daňový rok + čas fixace + zafixované
+  volby). Fixují se **všechny volby, které mění už spočítaná čísla zpětně**:
+  metoda párování (R-05c), kurzová soustava (R-06 — „jednu soustavu pro celé
+  zdaňovací období") a výklad limitu 100k (R-02c). Ostatní sporné přepínače
+  (báze časového testu R-01a, alokace spin-offu R-04f, deriváty R-12i, EMT
+  R-10g) zafixované zatím **nejsou** — mají užší záběr (báze časového testu
+  překlopí jen prodej padnoucí přesně na hranici tří let), ale je to známá
+  mezera, ne záměr; rozšíření = další sloupce v téže tabulce.
+  Konfigurace se zafixuje ve chvíli, kdy si uživatel za daný
+  rok skutečně vygeneruje podklady k přiznání — otevře report za ten rok nebo
+  stáhne XML pro EPO. Fixuje se **jen už skončený rok**: za běžící rok přiznání
+  podat nelze, takže jeho konfigurace zůstává volná a sleduje profil. Fixace je
+  idempotentní — jednou zapsané hodnoty se nikdy nepřepisují, ani při dalším
+  generování podkladů. Od té chvíle se ten rok počítá zafixovanou konfigurací
+  ve **všech** pohledech (přehled, portfolio, simulátor, report, XML i
+  notifikační cron); změna v profilu se projeví jen v letech bez fixace.
+  Zrušit fixaci jde výslovně v Nastavení (jeden rok, s potvrzením) — pro případ
+  dodatečného přiznání; rok se pak zase počítá podle profilu. Zafixované
+  hodnoty jsou i v exportu dat (`/api/export`), aby šlo doložit, čím se
+  počítala už odeslaná čísla.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
 - **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
   Pozn. k orientační dani: odhad daně v aplikaci se **nezaokrouhluje** na celé Kč
@@ -139,6 +164,10 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   runbook: každý leden doplnit nový pokyn a posunout LAST_VERIFIED_RATE_YEAR.
 - **R-06b Denní kurzy ČNB** (dle zákona o účetnictví; příp. pevný kurz).
 - Engine počítá **obě varianty** a reportuje rozdíl (recenze Taxomatu: rozdíl až desítky tisíc Kč).
+- **R-06c Volba soustavy se per rok fixuje** — stejným mechanismem jako metoda
+  párování (viz R-05c, „Fixace konfigurace per rok"). Požadavek jedné soustavy
+  pro celé zdaňovací období by jinak pozdější přepnutí v profilu zpětně porušilo
+  a přepočítalo už podaný rok: na reálném portfoliu je to rozdíl desítek tisíc Kč.
 
 ## R-07 Dividendy a úroky (§ 8)
 
@@ -433,11 +462,11 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | Klíč | Default | Pravidlo |
 |---|---|---|
 | `timeTestDateBasis` | `settlement` | R-01a (`settlement` \| `trade`) |
-| `limit100kIncludesTimeTestExempt` | `true` (striktní) | R-02c |
+| `limit100kIncludesTimeTestExempt` | `true` (striktní); per rok se fixuje při generování podkladů | R-02c |
 | `spinoffCostBasisAllocation` | `zero` | R-04f (`zero` \| `proportional`) |
 | frakční akcie (bez přepínače) | vždy jako CP + vlajka `FRACTIONAL_SHARES` — derivátový výklad nemá definovaný výpočet, přepínač by nic nepřepínal | R-04j |
 | `matchingMethod` | `FIFO`; per rok se fixuje při generování podkladů | R-05c |
-| `fxMethod` | počítat obě, uživatel volí | R-06 |
+| `fxMethod` | počítat obě, uživatel volí; per rok se fixuje při generování podkladů | R-06 |
 | `dividendsSeparateBase16a` | auto-doporučit | R-07d |
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |

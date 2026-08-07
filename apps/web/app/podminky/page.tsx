@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
+import { yearList } from '@/lib/format';
 
 export const metadata = {
   title: 'Podmínky užití — Danero',
@@ -76,7 +78,7 @@ export default function TermsPage() {
           <Link href="/cenik" className="font-medium text-ruzova-text">
             Ceník
           </Link>{' '}
-          a případnou změnu ti oznámíme předem podle článku 9.
+          a případnou změnu ti oznámíme předem podle článku 10.
         </p>
         <p>
           Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
@@ -86,7 +88,40 @@ export default function TermsPage() {
           tobě — obojí u konkrétních výpočtů viditelně označuje, ať víš, na čem stojíš.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">4. Placené objednávky a odstoupení</h2>
+        <h2 className="font-display text-lg font-semibold">
+          4. Co Danero potřebuje k provozu a co z něj vypadne
+        </h2>
+        <p>
+          Povinný údaj o funkčnosti digitálního obsahu a o tom, s jakým hardwarem a
+          softwarem spolupracuje (§ 1820 odst. 1 písm. r občanského zákoníku).
+        </p>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            <strong>Co potřebuješ:</strong> běžný webový prohlížeč v aktuální verzi
+            (Chrome, Firefox, Safari, Edge) a připojení k internetu. Nic se neinstaluje —
+            Danero běží celé v prohlížeči, na počítači i na telefonu. Dál potřebuješ{' '}
+            <strong>funkční e-mailovou adresu</strong>: registraci potvrzuješ odkazem
+            z e-mailu a na tutéž adresu chodí potvrzení objednávek i upozornění. Data do
+            aplikace dostaneš buď nahráním výpisu (CSV, XLSX, XML nebo HTML podle
+            platformy), nebo API klíčem k účtu u brokera, který to umí.
+          </li>
+          <li>
+            <strong>Žádná technická ochranná opatření:</strong> nepoužíváme DRM ani jinou
+            ochranu obsahu. Co si z Danera stáhneš, je obyčejný soubor, který nikam
+            nevolá, není vázaný na zařízení a otevřeš ho i bez Danera.
+          </li>
+          <li>
+            <strong>Co z Danera vypadne a s čím to funguje:</strong> XML písemnosti DPFDP7
+            pro portál MOJE daně (mojedane.cz), a to <strong>za daňové roky{' '}
+            {yearList(EPO_SUPPORTED_YEARS)}</strong> — pro další rok zveřejňuje finanční
+            správa strukturu až začátkem roku následujícího, takže do té doby XML za něj
+            neexistuje a podklady zůstávají jako čísla k opsání do formuláře. Dál si
+            kdykoli stáhneš export všech svých dat ve formátu JSON a podklady k přiznání
+            vytiskneš (nebo uložíš do PDF) tiskovým dialogem prohlížeče.
+          </li>
+        </ul>
+
+        <h2 className="font-display text-lg font-semibold">5. Placené objednávky a odstoupení</h2>
         <p>
           Ceny jsou konečné — nejsme plátcem DPH, takže se k nim nic nepřipočítává.
           Platby vyřizuje Stripe; číslo tvojí karty se k nám nikdy nedostane. Po každé
@@ -125,7 +160,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">5. Tvůj účet a data</h2>
+        <h2 className="font-display text-lg font-semibold">6. Tvůj účet a data</h2>
         <p>
           Účet je osobní a nepřenosný. Do aplikace vkládej pouze data ke svým vlastním
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
@@ -135,7 +170,7 @@ export default function TermsPage() {
           všech svých dat a případné nevyužité předplacené období ti vrátíme.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">6. Odpovědnost</h2>
+        <h2 className="font-display text-lg font-semibold">7. Odpovědnost</h2>
         <p>
           Danero počítá podle zveřejněné metodiky z dat, která do něj vložíš nebo která
           načteme z tvého brokera. Neodpovídáme za výsledek, pokud vstupní data nebyla
@@ -147,7 +182,7 @@ export default function TermsPage() {
           je vůbec).
         </p>
 
-        <h2 className="font-display text-lg font-semibold">7. Provozovatel a kontakt</h2>
+        <h2 className="font-display text-lg font-semibold">8. Provozovatel a kontakt</h2>
         <p>
           Danero je osobní projekt — provozuje ho Jan Dunder, IČO 19642661, se sídlem
           adresa-provozovatele-v-promenne-prostredi (fyzická osoba podnikající dle
@@ -159,7 +194,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">8. Když se neshodneme</h2>
+        <h2 className="font-display text-lg font-semibold">9. Když se neshodneme</h2>
         <p>
           Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
           Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
@@ -185,7 +220,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">9. Rozhodné právo a změny podmínek</h2>
+        <h2 className="font-display text-lg font-semibold">10. Rozhodné právo a změny podmínek</h2>
         <p>
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
           Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo

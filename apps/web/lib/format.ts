@@ -32,6 +32,16 @@ export const czDateTime = (value: Date): string =>
     minute: '2-digit',
   });
 
+/**
+ * Výčet roků česky: [2024, 2025] → „2024 a 2025“. Roky, za které existuje XML
+ * pro EPO, se v textech neopisují ručně — berou se z `EPO_SUPPORTED_YEARS`.
+ */
+export const yearList = (years: readonly number[]): string => {
+  const sorted = [...years].sort((a, b) => a - b);
+  if (sorted.length <= 1) return String(sorted[0] ?? '');
+  return `${sorted.slice(0, -1).join(', ')} a ${sorted[sorted.length - 1]}`;
+};
+
 /** Kompaktní částka v Kč bez desetin (grafy, tooltips) — nezlomitelná mezera. */
 export const czkCompact = (value: number): string =>
   `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(value)}\u00A0Kč`;
@@ -69,6 +79,18 @@ export const FX_LABEL: Record<string, string> = {
   UNIFIED: 'jednotný',
   CNB_DAILY: 'denní ČNB',
 };
+
+/** Táž soustava (R-06) celou větou — nastavení a výpis zafixovaných roků. */
+export const FX_METHOD_LABEL: Record<string, string> = {
+  UNIFIED: 'jednotný kurz GFŘ',
+  CNB_DAILY: 'denní kurzy ČNB',
+};
+
+/** Popisek sporného výkladu limitu 100 000 Kč (R-02c) — bez daňového žargonu. */
+export const limit100kLabel = (strict: boolean): string =>
+  strict
+    ? 'bezpečný výklad — všechny prodeje'
+    : 'mírnější výklad — jen prodeje bez časového testu';
 
 /** České zkratky měsíců (osy grafů, horizont osvobození). */
 export const MONTH_LABELS = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];

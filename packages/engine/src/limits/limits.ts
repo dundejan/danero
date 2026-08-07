@@ -257,9 +257,17 @@ export function computeLimits(
   // R-03/R-10d: poměrné krácení počítá engine.ts (sdílený strop přes druhy, vč.
   // varování CAP_40M_REDUCED s čísly); tady jen strukturovaný stav pro UI.
   const cap = config.limits.timeTestCap;
+  // Druh osvobozený hodnotovým limitem t)/zj) do stropu nevstupuje — § 4 odst. 3
+  // kryje jen q), u) a zk) (nález A2-9). Stejná podmínka jako v engine.ts:
+  // hodnotové osvobození časově osvobozené tržby pokryje jen tehdy, když do
+  // úhrnu 100k vůbec vstupují, tedy při striktním výkladu R-02c.
   const exemptByScope: Record<AssetScope, Money> = {
-    SECURITIES: securities.timeTestExemptProceedsCzk,
-    CRYPTO: crypto.timeTestExemptProceedsCzk,
+    SECURITIES:
+      includesTimeTestExempt && securities.exemptUnder100k
+        ? ZERO
+        : securities.timeTestExemptProceedsCzk,
+    CRYPTO:
+      includesTimeTestExempt && crypto.exemptUnder100k ? ZERO : crypto.timeTestExemptProceedsCzk,
   };
   const combinedExempt = cap ? sum(cap.appliesTo.map((scope) => exemptByScope[scope])) : ZERO;
   const cap40M = cap

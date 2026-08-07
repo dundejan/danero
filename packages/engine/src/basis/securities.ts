@@ -193,6 +193,14 @@ export interface SecuritiesComputeParams {
   label: string;
   /** ID pravidla kompenzace ztrát do varování (R-05d pro CP, R-10c pro krypto). */
   lossRuleId: string;
+  /**
+   * R-10b: existuje v tomhle zdaňovacím období hodnotové osvobození vůbec?
+   * U CP vždy, u kryptoaktiv až od účinnosti zák. č. 32/2025 Sb. V roce bez
+   * osvobození je pool nulový, takže by `pool ≤ limit` vyšlo `true` a report
+   * by u každého lotu tvrdil „osvobozeno úhrnem do 100 000 Kč“, přestože se
+   * celý prodej daní (nález A2-12).
+   */
+  valueExemptionAvailable: boolean;
 }
 
 /**
@@ -206,7 +214,8 @@ export function computeSecurities(
   params: SecuritiesComputeParams,
   warnings: WarningCollector,
 ): SecuritiesResult {
-  const exemptUnder100k = prepared.pool100kCzk.lte(params.exemptionLimitCzk);
+  const exemptUnder100k =
+    params.valueExemptionAvailable && prepared.pool100kCzk.lte(params.exemptionLimitCzk);
   const exemptRatio = params.capExemptRatio;
   const capApplies = exemptRatio.lt(1);
 

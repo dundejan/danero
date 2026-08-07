@@ -20,7 +20,7 @@ const PRAVIDLA = [
   },
   {
     title: 'Limity pro podání přiznání',
-    body: 'OSVČ v paušálním režimu smí mít max. 50 000 Kč zdanitelných příjmů mimo podnikání — patří sem neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou) i úroky. Zaměstnancům stačí hlídat 20 000 Kč vedlejších příjmů. Osvobozené prodeje se do limitů nepočítají.',
+    body: 'OSVČ v paušálním režimu smí mít max. 50 000 Kč zdanitelných příjmů mimo podnikání — patří sem neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnancům stačí hlídat 20 000 Kč vedlejších příjmů. Osvobozené prodeje se do limitů nepočítají. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
   },
 ] as const;
 

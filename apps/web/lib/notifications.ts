@@ -182,41 +182,59 @@ export async function syncNotifications(
  * přiznání. Termíny se **počítají** dle R-09e (§ 136 + § 33/4 daňového řádu) —
  * natvrdo zapsané „2. 5." platilo za ZO 2024, za ZO 2025 vychází až 4. 5. 2026
  * a upomínka končila dva dny PŘED skutečným termínem.
+ *
+ * Texty jsou fakt a termín, žádný pokyn — individualizovaná rada je za hranicí
+ * § 1 zákona č. 523/1992 Sb. (docs/13 V-4, nálezy E-23 a E-26).
  */
 export function calendarCandidates(args: {
   today: string;
   /** Měl předchozí rok nějaké transakce? (jinak shrnutí nedává smysl) */
   hadActivityLastYear: boolean;
+  /**
+   * OSVČ (paušál i mimo něj) má od 1. 1. 2023 datovou schránku zřízenou ze
+   * zákona, takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání **jen
+   * elektronicky**; písemné podání je vada podání (§ 74 DŘ) s pokutou dle
+   * § 247a odst. 2 DŘ. Upomínka na tříměsíční písemný termín by ji tedy poslala
+   * do pokuty a zbytečně jí zkrátila lhůtu o měsíc (E-23). Přehledy ČSSZ a
+   * zdravotní pojišťovně se také týkají jen jí.
+   */
+  selfEmployed?: boolean;
 }): NotificationCandidate[] {
-  const { today, hadActivityLastYear } = args;
+  const { today, hadActivityLastYear, selfEmployed = false } = args;
   const year = Number(today.slice(0, 4));
   const taxYear = year - 1;
   const { paper, electronic, advisor } = filingDeadlines(taxYear);
   const out: NotificationCandidate[] = [];
   if (hadActivityLastYear && today >= `${year}-01-01` && today <= `${year}-01-31`) {
+    const deadlineNote = selfEmployed
+      ? `Jako OSVČ máš datovou schránku zřízenou ze zákona, takže se přiznání podává jen elektronicky (§ 72 odst. 6 daňového řádu) — do ${czDate(electronic)}, s daňovým poradcem do ${czDate(advisor)}.`
+      : `Písemné přiznání se podává do ${czDate(paper)}, elektronické do ${czDate(electronic)}, s daňovým poradcem do ${czDate(advisor)}.`;
     out.push({
       dedupeKey: `rocni|${taxYear}`,
       type: 'YEAR_SUMMARY',
       title: `Podklady za rok ${taxYear} jsou připravené`,
-      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do ${czDate(paper)}, elektronické do ${czDate(electronic)}, s daňovým poradcem do ${czDate(advisor)}.`,
+      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. ${deadlineNote}`,
     });
   }
   // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
   // dny před termínem nepřijde nic zrovna tomu, kdo ještě nepodal
-  if (hadActivityLastYear && today >= addDays(paper, -17) && today <= paper) {
+  if (!selfEmployed && hadActivityLastYear && today >= addDays(paper, -17) && today <= paper) {
     out.push({
       dedupeKey: `termin|papir|${year}`,
       type: 'DEADLINE',
       title: `Blíží se termín přiznání: ${czDate(paper)}`,
-      body: `Papírové přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Podáváš-li elektronicky (mojedane.cz), máš čas do ${czDate(electronic)} — XML export najdeš v reportu.`,
+      body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)} — XML export najdeš v reportu.`,
     });
   }
   if (hadActivityLastYear && today >= addDays(electronic, -17) && today <= electronic) {
+    const extra = selfEmployed
+      ? ' Jako OSVČ podáváš přiznání jen elektronicky (§ 72 odst. 6 daňového řádu). Vedle přiznání se za stejné období podávají přehledy ČSSZ a zdravotní pojišťovně; Danero je nesleduje.'
+      : '';
     out.push({
       dedupeKey: `termin|elektronicky|${year}`,
       type: 'DEADLINE',
       title: `Blíží se termín elektronického přiznání: ${czDate(electronic)}`,
-      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
+      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}. XML pro mojedane.cz vygeneruješ v reportu.${extra}`,
     });
   }
   return out;
@@ -305,6 +323,8 @@ export async function processUserNotifications(
           hadActivityLastYear: txs.some((tx) =>
             ('tradeDate' in tx ? tx.tradeDate : tx.date).startsWith(lastYearPrefix),
           ),
+          // § 72 odst. 6 DŘ: OSVČ má datovou schránku ze zákona → jen elektronicky (E-23)
+          selfEmployed: profile.regime === 'PAUSAL' || profile.regime === 'OSVC',
         }),
       ];
       created = await syncNotifications(db, target.id, candidates);

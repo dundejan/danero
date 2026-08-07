@@ -75,6 +75,17 @@ export function OverviewView({
       : result.limits.generalFiling50k.applicable
         ? { status: result.limits.generalFiling50k.status, label: 'limit 50 000 Kč pro podání přiznání' }
         : null;
+  const deadlines = filingDeadlines(year);
+  /**
+   * Limit 50k pro paušální daň je aplikovatelný právě u režimu PAUSAL
+   * (`limits.ts`), takže tenhle příznak = „uživatel je OSVČ“. OSVČ má od
+   * 1. 1. 2023 datovou schránku zřízenou ze zákona a § 72 odst. 6 daňového řádu
+   * jí ukládá podat přiznání jen elektronicky; písemné podání je vada podání
+   * (§ 74 DŘ) s pokutou dle § 247a odst. 2 DŘ. Nabízet jí papírový termín tedy
+   * znamená poslat ji do pokuty a zbytečně jí zkrátit lhůtu o měsíc (E-23).
+   * OSVČ mimo paušál se sem nedostane — verdikt-box se jí nevykresluje vůbec.
+   */
+  const filesElectronicallyOnly = result.limits.flatTax50k.applicable;
   // „nejblíž prolomení“ = nejvyšší čerpání ze sledovaných limitů
   const watchedLimits = [
     ...(filingLimit ? [filingLimit] : []),
@@ -133,9 +144,19 @@ export function OverviewView({
                   </p>
                   <p className="text-sm text-inkoust-tlumeny">
                     Orientační daň z investic:{' '}
-                    <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> ·
-                    papírově do {czDate(filingDeadlines(year).paper)}, elektronicky do{' '}
-                    {czDate(filingDeadlines(year).electronic)}
+                    <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> ·{' '}
+                    {filesElectronicallyOnly ? (
+                      <>
+                        termín podání {czDate(deadlines.electronic)} — jako OSVČ máš datovou
+                        schránku zřízenou ze zákona, takže se přiznání podává jen elektronicky
+                        (§ 72 odst. 6 daňového řádu) a platí pro tebe čtyřměsíční lhůta
+                      </>
+                    ) : (
+                      <>
+                        písemně do {czDate(deadlines.paper)}, elektronicky do{' '}
+                        {czDate(deadlines.electronic)}
+                      </>
+                    )}
                   </p>
                 </div>
                 <Link
@@ -267,8 +288,10 @@ export function OverviewView({
                 )}
                 {exemptNotes.length > 0 && <> — {exemptNotes.join(', ')}</>}
                 {' '}· § 8 (dividendy a úroky): {czk(result.dividends.base8Czk)}
-                {result.tax.recommended === 'SEPARATE_16A' &&
-                  ' · doporučen § 16a (samostatný základ pro zahraniční dividendy)'}
+                {/* E-27: nedoporučujeme variantu zdanění § 8 — ukážeme obě čísla
+                    a volbu necháme na uživateli (docs/13 V-4) */}
+                {result.dividends.base8Czk.gt(0) &&
+                  ` · daň v obecném základu ${czk(result.tax.general.taxCzk)}, v samostatném základu § 16a ${czk(result.tax.separate16a.taxCzk)} (před slevami — variantu volíš v přiznání)`}
               </p>
               <p>{result.tax.note}</p>
             </div>

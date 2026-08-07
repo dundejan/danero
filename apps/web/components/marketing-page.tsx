@@ -215,6 +215,12 @@ export function MarketingFooter() {
             ·{' '}
             <Link href="/soukromi" className="font-medium hover:text-inkoust">
               Ochrana soukromí
+            </Link>{' '}
+            ·{' '}
+            {/* povinné poučení dle § 1820 odst. 1 písm. i) OZ musí být dohledatelné
+                odjinud než z podmínek a z objednávky (nález E-39) */}
+            <Link href="/odstoupeni" className="font-medium hover:text-inkoust">
+              Odstoupení od smlouvy
             </Link>
           </p>
         </div>

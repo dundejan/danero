@@ -474,3 +474,68 @@ describe('isDegiroCsv (autodetekce)', () => {
     expect(isDegiroCsv(UNIVERSAL_TEMPLATE_CSV)).toBeNull();
   });
 });
+
+/**
+ * Nálezy B4-0 a B4-2: klasifikace popisu v Account.csv rozhoduje podle TVARU
+ * řádku, ne podle výskytu slova kdekoli v názvu titulu. Degiro reportuje
+ * korporátní akce jako `PREFIX: <sloveso> <počet>`, kdežto echo obchodu má
+ * sloveso na začátku.
+ */
+describe('Degiro Account.csv — echo obchodu vs. korporátní akce (B4-0, B4-2)', () => {
+  // CZ formát Degira je STŘEDNÍKOVÝ (viz DEGIRO_ACCOUNT_HEADER_CZ); částka
+  // a měna jsou dvojice „Změna“ + bezejmenný sloupec za ní
+  const radek = (popis: string, zmena = '') =>
+    [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      `02-10-2024;10:00;02-10-2024;Titul;US1111111117;${popis};;${zmena ? `EUR;${zmena}` : ';'};100;EUR;`,
+    ].join('\n');
+
+  it('titul s „Fusion“ nebo „Split“ v NÁZVU je obchod, ne korporátní akce', () => {
+    // Fusion Fuel Green i Split Rock Partners jsou skutečné tituly. Dřív
+    // skončily chybou „Fúze …“, která naváděla doplnit akci ručně — kdo
+    // poslechl, rozbil si držení.
+    for (const popis of [
+      'Koop 100 Fusion Fuel Green@2,50 EUR (XEAM)',
+      'Buy 10 Split Rock Partners@12,00 USD (XSPL)',
+      'Verkoop 5 The Merger Fund@33,00 EUR',
+    ]) {
+      const result = parseDegiroAccountCsv(radek(popis, '-250,00'));
+      expect(result.errors, popis).toEqual([]);
+      expect(result.skipped, popis).toHaveLength(1);
+    }
+  });
+
+  it('německé a francouzské echo obchodu se přeskočí, ne aby skončilo chybou', () => {
+    // DE a FR slovesa ve slovníku chyběla úplně → chyba na KAŽDÉM obchodním
+    // řádku německého i francouzského výpisu.
+    for (const popis of ['Kauf 3 zu je 60,5 USD', 'Achat 11 ASML Holding@700,00 EUR']) {
+      const result = parseDegiroAccountCsv(radek(popis, '-181,50'));
+      expect(result.errors, popis).toEqual([]);
+      expect(result.skipped, popis).toHaveLength(1);
+    }
+  });
+
+  it('korporátní akce ve tvaru „PREFIX: sloveso počet“ se pořád pozná', () => {
+    const result = parseDegiroAccountCsv(radek('AKTIENSPLIT: Kauf 40 NĚCO'));
+    // sama o sobě je to jen jedna noha páru, takže chyba — ale rozpoznaná jako
+    // štěpení, ne jako obchod
+    expect(result.errors[0]!.message).toContain('Štěpení akcií');
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('řádek bez peněžního pohybu, který hýbe KUSY, nesmí zmizet beze stopy', () => {
+    // „STOCK DIVIDEND: Verkoop 35“ se kvůli slovu „dividend“ klasifikuje jako
+    // dividenda a bez částky mizel i s pohybem 35 kusů.
+    const result = parseDegiroAccountCsv(radek('STOCK DIVIDEND: Verkoop 35 NĚCO'));
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('kusy');
+  });
+
+  it('skutečné avízo dividendy (bez počtu kusů) se pořád tiše přeskočí', () => {
+    // kontrola opačným směrem, ať se z opravy nestane falešný poplach
+    const result = parseDegiroAccountCsv(radek('Dividenda ABC Corp'));
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+  });
+});

@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { FaqList } from '@/components/faq-list';
 import { IconCheck } from '@/components/marketing-icons';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
+import { yearList } from '@/lib/format';
+import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 
 export const metadata: Metadata = {
   title: 'Ceník — Danero',
@@ -22,7 +25,9 @@ const FREE = [
 const ONE_OFF = [
   'Všechno ze zdarma',
   'Čísla přesně do řádků přiznání',
-  'XML pro elektronické podání',
+  // roky se berou z konfigurace EPO — kupující musí vědět PŘED zaplacením,
+  // za které roky XML existuje (§ 1820/1 r OZ, nález E-29)
+  `XML pro elektronické podání (roky ${yearList(EPO_SUPPORTED_YEARS)})`,
   'Rozpad na jednotlivé nákupy a použité kurzy',
   'Srovnání variant výpočtu (FIFO/LIFO, kurzy)',
 ] as const;
@@ -53,6 +58,10 @@ const CENIK_FAQ = [
     a: 'Ano, ale nikdy potichu — 14 dní předem ti přijde e-mail. Zrušit ho můžeš kdykoli jedním kliknutím a služba ti doběhne do konce zaplaceného období.',
   },
   {
+    q: 'Za které roky dostanu XML pro elektronické podání?',
+    a: `Za daňové roky ${yearList(EPO_SUPPORTED_YEARS)} — pro ně finanční správa zveřejnila oficiální strukturu písemnosti DPFDP7. Strukturu pro nový rok vydává až začátkem roku následujícího, takže do té doby za něj XML neexistuje: dostaneš kompletní čísla s odkazy na řádky formuláře, ale soubor k nahrání ne. Roky před ${Math.min(...EPO_SUPPORTED_YEARS)} v XML nepodporujeme vůbec — podklady k ručnímu vyplnění za ně spočítáme. Zbytek placených podkladů (rozpad prodejů, kurzy, srovnání variant) platí pro každý rok stejně.`,
+  },
+  {
     q: 'Proč jedna cena, a ne tarify podle počtu brokerů?',
     a: 'Protože limity 100 000 Kč i 50 000 Kč se sčítají přes všechny platformy. Kdybychom ti plotem bránili připojit druhého brokera, počítali bychom ti špatná čísla — a přesně před tím tě má Danero chránit.',
   },
@@ -66,6 +75,15 @@ export default function CenikPage() {
         title="Zjistit, jak na tom jsi, je zdarma"
         lede="Platíš, až když chceš podklady k přiznání — nebo aby to Danero hlídalo za tebe. Žádné tarify podle počtu brokerů: limity se sčítají přes všechny platformy, takže je musíš mít připojené všechny."
       />
+
+      {/* C-29: dokud běží platby na zkušebním klíči, nesmí ceník tvrdit, že se
+          za tyhle ceny dá zaplatit — nic by se nestrhlo. Zmizí to samo ve
+          chvíli, kdy se nasadí ostrý klíč. */}
+      {stripeSandboxInProduction() && (
+        <p className="mt-8 rounded-lg border border-linka bg-plocha p-4 text-sm">
+          {SANDBOX_NOTICE}
+        </p>
+      )}
 
       <section aria-label="Cena a obsah" className="mt-12">
         <div className="grid gap-6 lg:grid-cols-3">

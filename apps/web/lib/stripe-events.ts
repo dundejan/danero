@@ -23,6 +23,7 @@ export const HANDLED_STRIPE_EVENTS = [
   'customer.subscription.deleted',
   'charge.refunded',
   'charge.dispute.created',
+  'charge.dispute.closed',
   'invoice.payment_failed',
   'invoice.upcoming',
 ] as const;

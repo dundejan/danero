@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateCalculator,
+  INCOME_QUESTION,
   type CalculatorAnswers,
 } from '@/components/filing-calculator';
 
@@ -111,5 +112,33 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
     );
 
     expect(outcome.verdict).toBe('nejasne');
+  });
+
+  it('E-33: nápověda k limitu příjmů jmenuje deriváty u všech tří situací', () => {
+    // R-08d/R-10f počítá kladná plnění z derivátů do limitů 50k i 20k. Dokud je
+    // nápověda vyjmenovávala jako „dividendy, úroky nebo nájem“, odpověděl
+    // obchodník s CFD poctivě „Ne“ — a dostal verdikt, že přiznání řešit nemusí.
+    for (const situation of ['pausal', 'zamestnanec', 'jine'] as const) {
+      const { hint } = INCOME_QUESTION[situation];
+      expect(hint, situation).toContain('derivát');
+      expect(hint, situation).toContain('CFD');
+    }
+  });
+
+  it('E-33: zaměstnanec s plněním z derivátů 25 000 Kč → přiznání, ne „řešit nemusíš“', () => {
+    // scénář z nálezu: žádné prodeje, žádné krypto, jen CFD za 25 000 Kč —
+    // nápověda teď říká, že takové plnění patří do limitu 20 000 Kč, takže
+    // uživatel odpoví „Ano“
+    const outcome = evaluateCalculator(
+      answers({
+        situation: 'zamestnanec',
+        salesOver100k: false,
+        kryptoNad100k: false,
+        prijmy: 'ano',
+      }),
+    );
+
+    expect(outcome.verdict).toBe('priznani');
+    expect(outcome.reason).toContain('20 000 Kč');
   });
 });

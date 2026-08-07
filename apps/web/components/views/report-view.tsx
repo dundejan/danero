@@ -10,25 +10,37 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
-import { Input, Label } from '@/components/ui/field';
+import { Input, Label, Select } from '@/components/ui/field';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
-import { czDate, czk, METHOD_LABEL, plural } from '@/lib/format';
+import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
 import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
-import { engineInputForUser, instrumentLabels, type ProfileRow } from '@/lib/portfolio';
+import {
+  engineInputForUser,
+  instrumentLabels,
+  type PinnedTaxYearOptions,
+  type ProfileRow,
+} from '@/lib/portfolio';
 import { cn } from '@/lib/utils';
 
 /**
- * Věta o zafixované metodě párování (R-05c) — laicky, proč se rok nepřepočítá
- * podle aktuálního nastavení. Exportováno kvůli testu znění.
+ * Věta o zafixované konfiguraci roku — laicky, proč se rok nepřepočítá podle
+ * aktuálního nastavení. Fixuje se celá trojice, která mění už podaný rok
+ * zpětně: párování (R-05c), kurzová soustava (R-06c) i výklad limitu 100k
+ * (R-02c). Dřív se jmenovalo jen párování, přestože kurzy hýbou daní víc.
+ * Exportováno kvůli testu znění.
  */
-export function pinnedMethodNote(year: number, method: string): string {
+export function pinnedMethodNote(year: number, pinned: PinnedTaxYearOptions): string {
+  const method = METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod;
+  const fx = FX_METHOD_LABEL[pinned.fxMethod] ?? pinned.fxMethod;
   return (
-    `Rok ${year} se počítá metodou ${METHOD_LABEL[method] ?? method} — zafixovali jsme ji, ` +
+    `Rok ${year} se počítá takhle: párování ${method}, ${fx}, ` +
+    `${limit100kLabel(pinned.limit100kIncludesTimeTestExempt)}. Zafixovali jsme to, ` +
     'když sis za tenhle rok poprvé vygeneroval podklady, aby se ti čísla v už podaném ' +
-    'přiznání zpětně nezměnila. Kvůli dodatečnému přiznání jde fixace zrušit v Nastavení.'
+    'přiznání zpětně nezměnila — změna v Nastavení se proto do tohohle roku nepromítne. ' +
+    'Kvůli dodatečnému přiznání jde fixace zrušit v Nastavení.'
   );
 }
 
@@ -64,7 +76,7 @@ export function ReportView({
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = precomputed?.result ?? analyzeTaxYear(input);
   // R-05c: metoda zafixovaná pro tenhle rok (podklady už se za něj generovaly)
-  const pinnedMethod = profile.pinnedMatchingMethods?.[year];
+  const pinned = profile.pinnedTaxYears?.[year];
   const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
   const labels = instrumentLabels(txs);
 
@@ -81,6 +93,16 @@ export function ReportView({
   const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
     .filter((y) => UNIFIED_RATES[y] !== undefined);
   const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
+  // § 16a je reálná alternativa jen se zahraničními dividendami/úroky v § 8
+  const hasDividendBase = result.dividends.base8Czk.gt(0);
+  const deadlines = filingDeadlines(year);
+  /**
+   * OSVČ (paušál i běžná) má od 1. 1. 2023 datovou schránku zřízenou ze zákona,
+   * takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání jen elektronicky;
+   * písemné podání je vada podání (§ 74 DŘ). Nabízet jí papírový termín znamená
+   * poslat ji do pokuty a zbytečně jí zkrátit lhůtu o měsíc (nález E-23).
+   */
+  const filesElectronicallyOnly = profile.regime === 'PAUSAL' || profile.regime === 'OSVC';
 
   return (
     <div className="space-y-6">
@@ -101,10 +123,10 @@ export function ReportView({
       <p className="hidden text-xs text-inkoust-tlumeny print:block">
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(new Date().toISOString().slice(0, 10))}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
-        párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod}
-        {pinnedMethod && ' (zafixováno pro tento rok)'} ·{' '}
+        párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
         {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
-        výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'} ·
+        výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
+        {pinned && ' (všechny tři zafixovány pro tento rok)'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
         stablecoiny (EMT): {result.options.emtTimeTestExempt ? 'časový test uplatněn (mírnější výklad)' : 'bez osvobození (opatrný výklad)'}.
         Kurzy: pokyny GFŘ D-49…D-75 (2020–2025), viz dokumentace metodiky.
@@ -161,9 +183,12 @@ export function ReportView({
                 .sub(activeTax.taxCzk.toDecimalPlaces(0)),
             )}
             .{' '}
-            {result.tax.recommended === 'SEPARATE_16A'
-              ? 'Výhodnější je samostatný základ § 16a (Příloha č. 4).'
-              : 'Výhodnější je obecný základ (15/23 %).'}
+            {hasDividendBase &&
+              `Číslo je z varianty ${
+                result.tax.recommended === 'SEPARATE_16A'
+                  ? '§ 16a (samostatný základ)'
+                  : 'obecného základu (15/23 %)'
+              }.`}
           </p>
         </Card>
       </section>
@@ -173,6 +198,20 @@ export function ReportView({
         Prostý zápočet (§ 38f) je stropovaný podílem zahraničních příjmů na základu — může
         být nižší než započitatelná srážka z tabulky států. {result.tax.note}
       </p>
+
+      {/* E-27: obě varianty vedle sebe, bez slova „výhodnější“ — kterou v přiznání
+          uplatníš, je tvoje volba, stejně jako u metod párování (docs/13 V-4) */}
+      {hasDividendBase && (
+        <p className="text-xs text-inkoust-tlumeny">
+          Zahraniční dividendy a úroky (§ 8) lze zdanit dvěma způsoby a volba je na tobě:
+          orientační daň z investic v <strong>obecném základu</strong> je{' '}
+          <span className="font-mono">{czk(result.tax.general.taxCzk)}</span>, v{' '}
+          <strong>samostatném základu § 16a</strong>{' '}
+          <span className="font-mono">{czk(result.tax.separate16a.taxCzk)}</span> — obojí před
+          slevami na dani. V samostatném základu nelze uplatnit slevy na dani ani nezdanitelné
+          části základu, takže o výsledné dani rozhoduje i tvůj zbytek přiznání, který Danero nevidí.
+        </p>
+      )}
 
       <Card className="space-y-3">
         <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
@@ -252,8 +291,8 @@ export function ReportView({
               </Link>
               .
             </>
-          ) : pinnedMethod ? (
-            pinnedMethodNote(year, pinnedMethod)
+          ) : pinned ? (
+            pinnedMethodNote(year, pinned)
           ) : (
             'Metodu změníš v Nastavení.'
           )}{' '}
@@ -501,6 +540,31 @@ export function ReportView({
             </p>
             <form method="post" action="/api/epo" className="space-y-3">
               <input type="hidden" name="rok" value={year} />
+              {/* E-27: variantu zdanění § 8 nevybíráme za uživatele — ukážeme obě
+                  čísla a rozhodnutí necháme na něm, stejně jako u metod párování.
+                  Endpoint /api/epo pole `varianta` přijímal už dřív. */}
+              {hasDividendBase && (
+                <div className="max-w-md">
+                  <Label htmlFor="epo-varianta">Zdanění zahraničních dividend a úroků (§ 8)</Label>
+                  <Select
+                    id="epo-varianta"
+                    name="varianta"
+                    defaultValue={result.tax.recommended}
+                  >
+                    <option value="GENERAL">
+                      Obecný základ (ř. 38) — daň {czk(result.tax.general.taxCzk)}
+                    </option>
+                    <option value="SEPARATE_16A">
+                      Samostatný základ § 16a (Příloha č. 4) — daň{' '}
+                      {czk(result.tax.separate16a.taxCzk)}
+                    </option>
+                  </Select>
+                  <p className="mt-1 text-xs text-inkoust-tlumeny">
+                    Obě částky jsou před slevami na dani; v samostatném základu § 16a nelze
+                    uplatnit slevy na dani ani nezdanitelné části základu.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <Label htmlFor="epo-jmeno">Jméno</Label>
@@ -554,16 +618,15 @@ export function ReportView({
               <Button type="submit">Stáhnout XML pro EPO</Button>
             </form>
             <p className="text-xs text-inkoust-tlumeny">
-              XML obsahuje jen investiční příjmy (§ 8 a § 10
-              {result.tax.recommended === 'SEPARATE_16A' ? ', Příloha č. 4' : ''}) z tohoto
-              reportu. Máš-li i jiné příjmy (zaměstnání, podnikání, nájem), doplň je v EPO —
-              výpočet daně se tam přepočítá. Ber to jako podklad, ne hotové přiznání.
+              XML obsahuje jen investiční příjmy (§ 8 a § 10{hasDividendBase ? '; ve variantě § 16a navíc Přílohu č. 4' : ''}) z tohoto
+              reportu; ostatní příjmy (zaměstnání, podnikání, nájem) v něm nejsou a EPO
+              výpočet daně přepočítá až po jejich zadání. Je to podklad, ne hotové přiznání.
             </p>
           </>
         ) : year < epoMinYear ? (
           <p className="text-sm text-inkoust-tlumeny">
-            Roky před {epoMinYear} v XML nepodporujeme — použij čísla níže a vyplň
-            formulář ručně.
+            Roky před {epoMinYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře
+            jsou níže.
           </p>
         ) : (
           <p className="text-sm text-inkoust-tlumeny">
@@ -582,8 +645,8 @@ export function ReportView({
               <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, řádek tabulky s druhem{' '}
               <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
               <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span>,
-              výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>. U
-              zahraničních brokerů zaškrtni kód „Z“.
+              výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>.
+              Řádek u zahraničního brokera nese kód „Z“ (příjem ze zdrojů v zahraničí).
             </li>
             {result.crypto.disposals.length > 0 && (
               <li>
@@ -609,25 +672,27 @@ export function ReportView({
               všechny druhy, rozdíl (ř. 209) → <strong>ř. 40</strong> přiznání.
             </li>
             <li>
-              <strong>Dividendy a úroky ze zahraničí (§ 8):</strong>{' '}
-              {result.tax.recommended === 'SEPARATE_16A' ? (
-                <>
-                  výhodnější je samostatný základ (§ 16a): Příloha č. 4, ř. 401a{' '}
-                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
-                  ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
-                  <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). V samostatném
-                  základu ale nelze uplatnit slevy na dani ani nezdanitelné části —
-                  porovnání je orientační, před slevami.
-                </>
-              ) : (
-                <>
-                  brutto <span className="font-mono">{czk(result.dividends.base8Czk)}</span> →{' '}
+              {/* E-27: obě cesty popsané vedle sebe, bez „výhodnější je“ — variantu
+                  vybírá uživatel (i ve formuláři pro XML výš) */}
+              <strong>Dividendy a úroky ze zahraničí (§ 8):</strong> dvě možné cesty, mezi
+              kterými volíš ty:
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                <li>
+                  <strong>Obecný základ:</strong> brutto{' '}
+                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span> →{' '}
                   <strong>ř. 38</strong> přiznání; zápočet sražené daně po státech přes
                   Přílohu č. 3 (ř. 321–330; uznatelný zápočet{' '}
                   <span className="font-mono">{czk(result.dividends.creditableWithholdingCzk)}</span>
                   ) → ř. 58 + povinný Seznam dle § 38f odst. 10.
-                </>
-              )}
+                </li>
+                <li>
+                  <strong>Samostatný základ § 16a:</strong> Příloha č. 4, ř. 401a{' '}
+                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
+                  ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
+                  <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). Slevy na dani ani
+                  nezdanitelné části základu v něm uplatnit nelze.
+                </li>
+              </ul>
             </li>
             <li>
               <strong>Sleva na poplatníka:</strong> ř. 64 přesně{' '}
@@ -639,12 +704,26 @@ export function ReportView({
             </li>
             <li>
               <strong>Paušální režim:</strong> zaplacené zálohy z paušálního režimu patří na
-              ř. 86. Termín podání za rok {year}:{' '}
-              <strong>{czDate(filingDeadlines(year).paper)}</strong> papírově /{' '}
-              <strong>{czDate(filingDeadlines(year).electronic)}</strong> elektronicky
-              (3 a 4 měsíce od konce roku dle § 136 daňového řádu; svátek a víkend termín
-              posouvají na nejbližší pracovní den). S daňovým poradcem{' '}
-              {czDate(filingDeadlines(year).advisor)}.
+              ř. 86.
+            </li>
+            <li>
+              <strong>Termín podání za rok {year}:</strong>{' '}
+              {filesElectronicallyOnly ? (
+                <>
+                  <strong>{czDate(deadlines.electronic)}</strong>. OSVČ má od 1. 1. 2023
+                  datovou schránku zřízenou ze zákona, a přiznání se proto podává jen
+                  elektronicky (§ 72 odst. 6 daňového řádu) — platí pro ni čtyřměsíční lhůta,
+                  ne tříměsíční lhůta pro písemné podání. S daňovým poradcem{' '}
+                  {czDate(deadlines.advisor)}.
+                </>
+              ) : (
+                <>
+                  <strong>{czDate(deadlines.paper)}</strong> písemně /{' '}
+                  <strong>{czDate(deadlines.electronic)}</strong> elektronicky (3 a 4 měsíce
+                  od konce roku dle § 136 daňového řádu; svátek a víkend termín posouvají na
+                  nejbližší pracovní den). S daňovým poradcem {czDate(deadlines.advisor)}.
+                </>
+              )}
             </li>
             <li className="text-inkoust-tlumeny">
               Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období

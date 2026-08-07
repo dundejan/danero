@@ -393,7 +393,7 @@ export function computeDerivatives(
     warnings.add(
       'DERIVATIVE_EXPIRED_PREMIUM',
       'INFO',
-      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj. Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku. ${impactPart} Pozor: u UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu — neuplatňuj ji pak dvakrát.`,
+      `Prémie opcí uzavřených bez příjmu (expirace či uplatnění) za ${czkText(denied)} počítáme podle restriktivního výkladu jako neuznatelný výdaj. Výklad „výdaje per druh“ (§ 10/4, D-59) by je uplatnil proti ostatním derivátovým příjmům roku. ${impactPart} U UPLATNĚNÉ opce patří prémie do nabývací ceny podkladu; jako samostatný výdaj se pak už neuplatňuje.`,
       { deniedCzk: denied.toFixed(2), impactCzk: deniedImpact.toFixed(2) },
     );
   }

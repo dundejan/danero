@@ -25,27 +25,38 @@ describe('výkon: sestavení ledgeru neroste kvadraticky (G-P1)', () => {
     return txs;
   };
 
-  const nejrychlejsiZeTri = (pairs: number): number => {
+  /**
+   * Měří se **procesorový** čas, ne hodinový: na vytíženém stroji (v auditu
+   * běželo souběžně pět agentů) hodinový čas počítá i dobu, kdy proces vůbec
+   * neběžel, a poměr pak náhodně vyskočí. `process.cpuUsage()` odstavení
+   * neúčtuje. Z pěti běhů se bere nejnižší hodnota.
+   */
+  const nejnizsiCpuMs = (pairs: number): number => {
     const txs = dayTrader(pairs);
     let nej = Infinity;
-    for (let i = 0; i < 3; i += 1) {
-      const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 5; i += 1) {
+      const t0 = process.cpuUsage();
       analyzeTaxYear({ transactions: txs, profile: profile(), config: CFG_2025 });
-      nej = Math.min(nej, Number(process.hrtime.bigint() - t0) / 1e6);
+      const { user, system } = process.cpuUsage(t0);
+      nej = Math.min(nej, (user + system) / 1000);
     }
     return Math.max(nej, 0.5); // dolní mez proti dělení nulou u velmi rychlých strojů
   };
 
-  it('dvojnásobek obchodů nesmí zabrat čtyřnásobek času', { timeout: 60_000 }, () => {
-    nejrychlejsiZeTri(200); // rozehřátí JITu
-    const maly = nejrychlejsiZeTri(1000);
-    const velky = nejrychlejsiZeTri(2000);
+  it('osminásobek obchodů nesmí zabrat čtyřiašedesátinásobek času', { timeout: 60_000 }, () => {
+    // OSMINÁSOBEK dat, ne dvojnásobek: lineární průchod z toho udělá ~8×,
+    // kvadratický ~64×. Takový odstup nerozhodí ani rozehřívání JITu, ani
+    // vytížený stroj — u dvojnásobku (2× vs. 4×) se měření o šum opíralo
+    // a test náhodně padal.
+    nejnizsiCpuMs(200); // rozehřátí JITu
+    const maly = nejnizsiCpuMs(500);
+    const velky = nejnizsiCpuMs(4000);
     const pomer = velky / maly;
     expect(
       pomer,
-      `dvojnásobek dat zabral ${pomer.toFixed(2)}× času (${maly.toFixed(1)} → ${velky.toFixed(1)} ms). ` +
-        'Kvadratický průchod dává ~4×, lineární ~2×. Vrátil se filter přes všechny loty?',
-    ).toBeLessThan(2.8);
+      `osminásobek dat zabral ${pomer.toFixed(1)}× procesorového času (${maly.toFixed(1)} → ${velky.toFixed(1)} ms). ` +
+        'Kvadratický průchod dává ~64×, lineární ~8×. Vrátil se filter přes všechny loty?',
+    ).toBeLessThan(20);
   });
 
   it('vyčerpaný lot z indexu vypadne, ale ze seznamu lotů ne', () => {

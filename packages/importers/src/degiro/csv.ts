@@ -430,19 +430,51 @@ const CORPORATE_PATTERNS: Array<{ subtype: CorporateSubtype; pattern: RegExp }> 
   },
 ];
 
+/**
+ * Echo obchodu z Account.csv: sloveso NA ZAČÁTKU popisu, hned za ním počet kusů
+ * („Koop 100 Fusion Fuel Green@2,50 EUR“, „Kauf 3 zu je 60,5 USD“).
+ *
+ * Ukotvení na začátek je podstatné, a to v obou směrech:
+ *
+ * - Bez něj se echo obchodu s tituly jako **Fusion** Fuel Green, **Split** Rock
+ *   Partners nebo The **Merger** Fund klasifikovalo jako korporátní akce
+ *   a skončilo chybou, která uživatele naváděla doplnit akci ručně — kdo
+ *   poslechl, rozbil si držení (nález B4-2). Hranice slova na to nestačí:
+ *   název produktu JE samostatné slovo.
+ * - A naopak: Degiro reportuje korporátní akce jako `PREFIX: <sloveso> <počet>`
+ *   (`STOCK DIVIDEND: Verkoop 35`). Neukotvené sloveso je odsoudilo k přeskočení
+ *   „bereme z Transactions.csv“ — jenže tam nejsou, takže pohyb kusů zmizel.
+ *   S ukotvením spadnou na neznámý popis a skončí chybou (bezpečný směr).
+ *
+ * DE a FR slovesa v seznamu dřív chyběla úplně, takže německý i francouzský
+ * výpis dostával „Neznámý popis pohybu“ na KAŽDÉM obchodním řádku (B4-0).
+ */
+const TRADE_ECHO =
+  /^\s*(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+[\d\s.,]+/iu;
+
+/**
+ * Pohyb KUSŮ kdekoli v popisu (sloveso + počet), typicky za prefixem korporátní
+ * akce: `STOCK DIVIDEND: Verkoop 35 …`. Na rozdíl od `TRADE_ECHO` neukotvené —
+ * slouží jen k tomu, aby řádek bez peněžního pohybu, který přesto přesouvá kusy,
+ * neodešel do ztracena.
+ */
+const SHARE_MOVEMENT =
+  /(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+\d/iu;
+
 /** Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive. */
 function classifyDescription(description: string): AccountKind {
   const lower = description.toLowerCase();
-  // korporátní akce dřív než cokoli jiného — NIKDY je neinterpretovat jako obchod
-  for (const { subtype, pattern } of CORPORATE_PATTERNS) {
-    if (pattern.test(lower)) return { kind: 'CORPORATE', subtype };
-  }
-  // echo obchodů („Nákup 5 …“) dřív než dividendy — název produktu může obsahovat „Dividend“
-  if (/(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell)\b/i.test(description))
+  // Echo obchodu dřív než korporátní akce: rozhoduje TVAR řádku (sloveso +
+  // počet na začátku), ne výskyt slova kdekoli v názvu titulu.
+  if (TRADE_ECHO.test(description))
     return {
       kind: 'SKIP',
       reason: 'obchod — nákupy a prodeje bereme z Transactions.csv (jinak by se importovaly dvakrát)',
     };
+  // korporátní akce dřív než zbytek — NIKDY je neinterpretovat jako obchod
+  for (const { subtype, pattern } of CORPORATE_PATTERNS) {
+    if (pattern.test(lower)) return { kind: 'CORPORATE', subtype };
+  }
   if (containsAny(lower, ['daň z dividendy', 'dividend tax', 'dividendbelasting']))
     return { kind: 'DIVIDEND_TAX' };
   if (containsAny(lower, ['dividenda', 'dividend'])) return { kind: 'DIVIDEND' };
@@ -662,7 +694,20 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     const pair = readAmountCurrencyPair(row, col.change);
     // prázdná dvojice u ROZPOZNANÉHO popisu = informativní řádek bez peněžního
     // pohybu → bez záznamu (např. avízo dividendy před připsáním)
-    if (pair.kind === 'empty') return;
+    if (pair.kind === 'empty') {
+      // ...ale pozor na řádky, které nehýbou penězi, zato HÝBOU KUSY.
+      // `STOCK DIVIDEND: Verkoop 35 …` se kvůli slovu „dividend“ klasifikuje
+      // jako dividenda a bez částky by zmizel beze stopy i s pohybem 35 kusů
+      // (nález B4-0). Skutečné avízo dividendy počet kusů v popisu nemá.
+      if (SHARE_MOVEMENT.test(description)) {
+        result.errors.push({
+          line,
+          message: `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
+          raw: row.join(';'),
+        });
+      }
+      return;
+    }
 
     if (pair.kind === 'invalid') {
       result.errors.push({

@@ -15,7 +15,7 @@ import { headers } from 'next/headers';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
-import { czDateTime, METHOD_LABEL } from '@/lib/format';
+import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
 import {
   changeEmailAction,
@@ -24,7 +24,7 @@ import {
   revokeOtherSessionsAction,
   saveNotificationPrefsAction,
   saveProfileAction,
-  unpinMatchingMethodAction,
+  unpinTaxYearAction,
 } from './actions';
 
 export const metadata = { title: 'Nastavení — Danero' };
@@ -46,7 +46,7 @@ export default async function SettingsPage({
   const currentSession = await auth.api.getSession({ headers: requestHeaders });
   const auditEvents = await recentAuditEvents(db, user.id);
   const prefs = await getNotificationPrefs(db, user.id);
-  // R-05c: roky, které si drží metodu párování z doby, kdy se za ně generovaly podklady
+  // R-05c: roky, které si drží konfiguraci z doby, kdy se za ně generovaly podklady
   const pinnedYears = await listPinnedTaxYears(db, user.id);
 
   // E4: seznam přihlášení seskupený podle zařízení (prohlížeč · OS) — dvacet
@@ -75,7 +75,7 @@ export default async function SettingsPage({
     odhlaseno: 'Ostatní zařízení byla odhlášena.',
     profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
     notifikace: 'Uloženo. E-maily se řídí novým nastavením.',
-    fixace: 'Fixace zrušená. Rok se zase počítá metodou vybranou v profilu.',
+    fixace: 'Fixace zrušená. Rok se zase počítá podle nastavení v profilu.',
   };
   const CHYBA_LABELS: Record<string, string> = {
     heslo: 'Nové heslo musí mít aspoň 10 znaků.',
@@ -176,11 +176,6 @@ export default async function SettingsPage({
                     <option value="MAX_PROFIT">Max. zisk — nejlevnější kusy první</option>
                     <option value="MAX_LOSS">Max. ztráta — nejdražší kusy první</option>
                   </Select>
-                  <p className="mt-1 text-xs text-inkoust-tlumeny">
-                    Změna platí pro roky, za které sis ještě nevygeneroval podklady k přiznání
-                    — ty už podané si drží metodu, se kterou byly spočítané (zákon u párování
-                    prodejů žádá konzistenci).{profile && ' Seznam je pod formulářem.'}
-                  </p>
                 </div>
                 <div>
                   <Label htmlFor="kurzy" title="Pravidlo R-06 v metodice Danero">
@@ -190,6 +185,10 @@ export default async function SettingsPage({
                     <option value="UNIFIED">Jednotný kurz GFŘ</option>
                     <option value="CNB_DAILY">Denní kurzy ČNB</option>
                   </Select>
+                  <p className="mt-1 text-xs text-inkoust-tlumeny">
+                    V jednom roce platí jedna soustava — kombinovat je nelze. Rozdíl mezi
+                    nimi bývají i desítky tisíc korun, report ti ukáže obě varianty.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="limit-100k">Co se počítá do limitu 100k</Label>
@@ -261,7 +260,11 @@ export default async function SettingsPage({
               </div>
               <p className="text-xs text-inkoust-tlumeny">
                 Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se
-                tiskne do každého reportu.
+                tiskne do každého reportu. Párování prodejů, měnové kurzy a výklad limitu
+                100 000 Kč se u každého skončeného roku zafixují ve chvíli, kdy si za něj
+                vygeneruješ podklady k přiznání — změna tady se pak projeví jen v letech
+                bez fixace, aby se čísla v už podaném přiznání zpětně nezměnila.
+                {profile && ' Seznam zafixovaných roků je pod formulářem.'}
               </p>
             </Card>
 
@@ -276,41 +279,60 @@ export default async function SettingsPage({
               (a auto-save nahoře by se se zrušením fixace pral) */}
           {profile && (
             <Card className="space-y-3" id="fixace">
-              <CardTitle>Roky se zafixovaným párováním</CardTitle>
+              <CardTitle>Zafixované daňové roky</CardTitle>
               {pinnedYears.length === 0 ? (
                 <p className="text-sm text-inkoust-tlumeny">
                   Zatím žádný. Jakmile si za skončený rok vygeneruješ podklady k přiznání,
-                  metodu párování pro ten rok zafixujeme — pozdější změna nastavení už ho
+                  zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho
                   nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.
                 </p>
               ) : (
                 <>
                   <p className="text-sm text-inkoust-tlumeny">
                     Za tyhle roky sis už vygeneroval podklady, takže se počítají pořád
-                    stejnou metodou — i když nahoře vybereš jinou.
+                    stejně — i když nahoře vybereš něco jiného.
                   </p>
                   <ul className="space-y-3">
                     {pinnedYears.map((pinned) => (
                       <li key={pinned.taxYear} className="border-t border-linka pt-3 first:border-0 first:pt-0">
-                        <p className="text-sm">
-                          <span className="font-semibold">{pinned.taxYear}</span> —{' '}
-                          {METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod}{' '}
-                          <span className="text-inkoust-tlumeny">
+                        <p className="text-sm font-semibold">
+                          {pinned.taxYear}{' '}
+                          <span className="font-normal text-inkoust-tlumeny">
                             (zafixováno {czDateTime(pinned.pinnedAt)})
                           </span>
                         </p>
-                        <details className="mt-1">
+                        <ul className="mt-1 space-y-0.5 text-sm text-inkoust-tlumeny">
+                          <li>
+                            Párování prodejů:{' '}
+                            <span className="text-inkoust">
+                              {METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod}
+                            </span>
+                          </li>
+                          <li>
+                            Měnové kurzy:{' '}
+                            <span className="text-inkoust">
+                              {FX_METHOD_LABEL[pinned.fxMethod] ?? pinned.fxMethod}
+                            </span>
+                          </li>
+                          <li>
+                            Limit 100 000 Kč:{' '}
+                            <span className="text-inkoust">{limit100kLabel(pinned.limit100kStrict)}</span>
+                          </li>
+                        </ul>
+                        <details className="mt-2">
                           <summary className="cursor-pointer text-sm text-inkoust-tlumeny hover:text-inkoust">
                             Zrušit fixaci roku {pinned.taxYear}
                           </summary>
                           <div className="mt-2 space-y-2">
                             <p className="text-xs text-inkoust-tlumeny">
-                              Rok {pinned.taxYear} se pak přepočítá metodou z nastavení výš (
-                              {METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod}) a
-                              čísla se můžou lišit od těch, které jsi už poslal na finanční úřad.
-                              Dělej to jen tehdy, když za ten rok budeš podávat dodatečné přiznání.
+                              Rok {pinned.taxYear} se pak přepočítá podle nastavení výš (
+                              {METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod},{' '}
+                              {FX_METHOD_LABEL[profile.fxMethod] ?? profile.fxMethod},{' '}
+                              {limit100kLabel(profile.limit100kStrict)}) a čísla se můžou lišit
+                              od těch, které jsi už poslal na finanční úřad. Dělej to jen tehdy,
+                              když za ten rok budeš podávat dodatečné přiznání.
                             </p>
-                            <form action={unpinMatchingMethodAction}>
+                            <form action={unpinTaxYearAction}>
                               <input type="hidden" name="rok" value={pinned.taxYear} />
                               <SubmitButton variant="danger" size="sm" pendingLabel="Ruším…">
                                 Ano, zrušit fixaci roku {pinned.taxYear}

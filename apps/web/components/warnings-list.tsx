@@ -150,11 +150,14 @@ export function withholdingSummary(
   ].sort((a, b) => a.localeCompare(b, 'cs'));
   const hasUs = contexts.some((ctx) => ctx.country === 'US');
 
+  // Fakt, ne pokyn: „to vyřešíš formulářem W-8BEN“ a „lze žádat zpět v zemi
+  // zdroje“ byly individualizované rady nad konkrétními čísly uživatele —
+  // hranice § 1 zákona č. 523/1992 Sb. (docs/13 V-4, nález E-26).
   return [
-    `U ${group.items.length} dividend ti v zahraničí srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl ${czk(overCzk)} se v ČR započíst nedá a propadá (někdy ho lze žádat zpět přímo v zemi zdroje).`,
+    `U ${group.items.length} dividend ti v zahraničí srazili víc daně, než dovoluje mezinárodní smlouva. Rozdíl ${czk(overCzk)} nad smluvní strop v ČR započíst nelze. Vrácení nadměrné srážky se řídí právem státu zdroje.`,
     titles.length > 0 ? `Dotčené tituly: ${titles.join(', ')}.` : '',
     hasUs
-      ? 'U amerických akcií to vyřešíš potvrzením formuláře W-8BEN u brokera — sníží srážku z 30 % na 15 %.'
+      ? 'U amerických dividend je smluvní sazba 15 % (čl. 10 smlouvy č. 32/1994 Sb.); sazba 30 % odpovídá účtu bez potvrzeného formuláře W-8BEN.'
       : '',
   ]
     .filter(Boolean)

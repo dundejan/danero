@@ -40,7 +40,7 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
     ['NL0010273215', 'ASML'],
   ]);
 
-  it('sečte overCzk, vypíše unikátní seřazené tituly a u US přidá radu W-8BEN', () => {
+  it('sečte overCzk, vypíše unikátní seřazené tituly a u US doplní sazbu podle smlouvy', () => {
     const group = groupByCode([
       w({ context: { isin: 'US0378331005', country: 'US', overCzk: '100.50' } }),
       w({ context: { isin: 'US0378331005', country: 'US', overCzk: '200.00' } }),
@@ -54,7 +54,23 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
     expect(text).toContain('W-8BEN');
   });
 
-  it('bez US výskytu radu W-8BEN vynechá; bez ISIN vynechá výčet titulů', () => {
+  it('E-26: souhrn říká fakt, ne pokyn — žádné „to vyřešíš“ ani „lze žádat zpět“', () => {
+    // docs/13 V-4: nad konkrétními čísly uživatele smí stát fakt a termín,
+    // ne rada, co má udělat (hranice § 1 zákona č. 523/1992 Sb.)
+    const group = groupByCode([
+      w({ context: { isin: 'US0378331005', country: 'US', overCzk: '100.00' } }),
+      w({ context: { isin: 'US0378331005', country: 'US', overCzk: '50.00' } }),
+    ])[0]!;
+    const text = withholdingSummary(group, labels);
+    expect(text).not.toContain('vyřešíš');
+    expect(text).not.toContain('žádat zpět');
+    // místo pokynu holá fakta o sazbách a o tom, čím se vrácení řídí
+    expect(text).toContain('započíst nelze');
+    expect(text).toContain('řídí právem státu zdroje');
+    expect(text).toContain('čl. 10 smlouvy č. 32/1994 Sb.');
+  });
+
+  it('bez US výskytu větu o W-8BEN vynechá; bez ISIN vynechá výčet titulů', () => {
     const group = groupByCode([
       w({ context: { country: 'NL', overCzk: '10.00' } }),
       w({ context: { country: 'DE', overCzk: '5.00' } }),

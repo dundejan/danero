@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
 
@@ -26,6 +26,39 @@ export function billingEnabled(): boolean {
     );
   }
   return mode === 'stripe';
+}
+
+/**
+ * Rok, který smí vůbec vstoupit do dotazu nad `report_purchases`.
+ *
+ * `tax_year` je `integer`, takže cokoli mimo rozsah int4 dotaz shodí — a to se
+ * dá vyvolat zvenčí: `POST /api/epo` s `rok: 1e21` skončil místo hlášky
+ * neošetřenou výjimkou (C-27). Tohle je jen pojistka proti nesmyslu, ne
+ * pravidlo, co se smí prodat — na to je `isSellableTaxYear`.
+ */
+export function isPlausibleTaxYear(year: number): boolean {
+  return Number.isInteger(year) && year >= 1900 && year <= 2999;
+}
+
+/**
+ * Kolik let zpět jde koupit podklady. Daň jde stanovit (a přiznání podat či
+ * opravit) nejdéle 10 let po lhůtě pro řádné přiznání — § 148 odst. 5 daňového
+ * řádu. Za starší rok už podklady nemají komu posloužit.
+ */
+const OLDEST_SELLABLE_TAX_YEAR_OFFSET = 10;
+
+/**
+ * Daňový rok, za který se smí prodat jednorázový nákup podkladů.
+ *
+ * Bez téhle meze prošlo do Stripu i do databáze cokoli: chybějící pole dalo
+ * `Number(null) === 0` a uložil se „rok 0", stejně tak 1999, 2100 nebo −2024
+ * (C-27). Rok, který ještě neskončil, prodáváme schválně — hlídač počítá
+ * průběžně a podklady za běžný rok dávají smysl už v jeho průběhu.
+ */
+export function isSellableTaxYear(year: number, now = new Date()): boolean {
+  if (!isPlausibleTaxYear(year)) return false;
+  const current = now.getUTCFullYear();
+  return year >= current - OLDEST_SELLABLE_TAX_YEAR_OFFSET && year <= current;
 }
 
 export interface Entitlements {
@@ -95,10 +128,11 @@ export async function resolveEntitlements(
   if (!billingEnabled()) return EVERYTHING;
   if (await hasActiveSubscription(db, userId, now)) return EVERYTHING;
 
+  // vrácené peníze a prohraná reklamace řádek nemažou, jen ho zneplatní (C-24)
   const purchases = await db
     .select({ taxYear: reportPurchases.taxYear })
     .from(reportPurchases)
-    .where(eq(reportPurchases.userId, userId));
+    .where(and(eq(reportPurchases.userId, userId), isNull(reportPurchases.revokedAt)));
 
   return { ...NOTHING_PAID, reportYears: purchases.map((p) => p.taxYear) };
 }
@@ -111,11 +145,19 @@ export async function canGenerateReport(
   now = new Date(),
 ): Promise<boolean> {
   if (!billingEnabled()) return true;
+  // rok mimo rozsah `integer` neptáme databáze — dotaz by spadl (C-27)
+  if (!isPlausibleTaxYear(taxYear)) return false;
   if (await hasActiveSubscription(db, userId, now)) return true;
   const [row] = await db
     .select({ id: reportPurchases.id })
     .from(reportPurchases)
-    .where(and(eq(reportPurchases.userId, userId), eq(reportPurchases.taxYear, taxYear)));
+    .where(
+      and(
+        eq(reportPurchases.userId, userId),
+        eq(reportPurchases.taxYear, taxYear),
+        isNull(reportPurchases.revokedAt),
+      ),
+    );
   return Boolean(row);
 }
 

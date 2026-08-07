@@ -32,7 +32,7 @@ import {
   recoverStaleJobs,
 } from '@/lib/jobs';
 import { processUserNotifications } from '@/lib/notifications';
-import { getProfile, loadTransactions, pinMatchingMethod } from '@/lib/portfolio';
+import { getProfile, loadTransactions, pinTaxYear } from '@/lib/portfolio';
 import { upsertInstrumentPrices } from '@/lib/prices';
 import { checkRateLimit, pruneRateLimits } from '@/lib/rate-limit';
 
@@ -449,17 +449,27 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(prices.find((p) => p.isin === 'US0000000015')!.price).toBe('130.5');
     expect(prices.find((p) => p.isin === 'GB0000000015')!.price).toBe('2.5');
 
-    // R-05c: fixace metody párování — onConflictDoNothing().returning() na
+    // R-05c: fixace konfigurace roku — onConflictDoNothing().returning() na
     // složeném primárním klíči, dvakrát za sebou nesmí přepsat ani spadnout
     const profile = (await getProfile(db, userId))!;
-    await pinMatchingMethod(db, profile, 2024, 2026);
-    await pinMatchingMethod(db, { ...profile, matchingMethod: 'LIFO' }, 2024, 2026);
+    await pinTaxYear(db, profile, 2024, 2026);
+    await pinTaxYear(
+      db,
+      { ...profile, matchingMethod: 'LIFO', fxMethod: 'CNB_DAILY', limit100kStrict: false },
+      2024,
+      2026,
+    );
     const pinned = await db
       .select()
       .from(taxYearSettings)
       .where(eq(taxYearSettings.userId, userId));
     expect(pinned).toHaveLength(1);
-    expect(pinned[0]!.matchingMethod).toBe('FIFO');
+    // text i boolean musí přežít round-trip přes postgres.js (ne jen PGlite)
+    expect(pinned[0]).toMatchObject({
+      matchingMethod: 'FIFO',
+      fxMethod: 'UNIFIED',
+      limit100kStrict: true,
+    });
   });
 
   it('smazání účtu odnese kaskádou všechna navázaná data', { timeout: 60_000 }, async () => {

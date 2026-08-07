@@ -9,6 +9,10 @@ import { billingEnabled } from '@/lib/entitlements';
  * zákazník by zůstal bez přístupu a neplatící s ním. Tohle je záchranná síť,
  * ne primární mechanismus.
  *
+ * Součástí je i dohledání plateb, ke kterým v databázi není ŽÁDNÝ řádek
+ * (`recovered` v odpovědi): u jednorázových podkladů je `checkout.session.completed`
+ * jediná událost, která kdy přijde — když se ztratí, nemá co srovnávat (C-21).
+ *
  * Vlastní instance bez plateb nemá se Stripe co srovnávat.
  */
 export const GET = withCron('billing-reconcile', async (_request: Request): Promise<Response> => {

@@ -1,3 +1,5 @@
+import { operatorLines } from '@/lib/contact';
+
 /**
  * Odesílání e-mailů. Vytaženo z lib/notifications.ts, aby si auth vrstva
  * netahala celý daňový engine kvůli jednomu `send()`.
@@ -175,8 +177,7 @@ export function purchaseConfirmationEmail(args: {
       `Co sis pořídil: ${args.what}`,
       `Cena: ${args.priceCzk} Kč — cena je konečná`,
       '',
-      'Prodávající: Jan Dunder, IČO 19642661, [adresa odstraněna] 640/3, Vršovice,',
-      '101 00 Praha 10. Není plátcem DPH.',
+      ...operatorLines(),
       '',
       ...odstoupeni,
       '',
@@ -209,8 +210,7 @@ export function subscriptionRenewalEmail(args: {
       'danero.cz/predplatne → Spravovat platby a zrušit obnovu.',
       'Do konce zaplaceného období ti služba poběží dál.',
       '',
-      'Prodávající: Jan Dunder, IČO 19642661, [adresa odstraněna] 640/3, Vršovice,',
-      '101 00 Praha 10. Není plátcem DPH.',
+      ...operatorLines(),
       '',
       'Podmínky užití: danero.cz/podminky',
     ].join('\n'),
