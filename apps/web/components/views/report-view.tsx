@@ -20,6 +20,18 @@ import { engineInputForUser, instrumentLabels, type ProfileRow } from '@/lib/por
 import { cn } from '@/lib/utils';
 
 /**
+ * Věta o zafixované metodě párování (R-05c) — laicky, proč se rok nepřepočítá
+ * podle aktuálního nastavení. Exportováno kvůli testu znění.
+ */
+export function pinnedMethodNote(year: number, method: string): string {
+  return (
+    `Rok ${year} se počítá metodou ${METHOD_LABEL[method] ?? method} — zafixovali jsme ji, ` +
+    'když sis za tenhle rok poprvé vygeneroval podklady, aby se ti čísla v už podaném ' +
+    'přiznání zpětně nezměnila. Kvůli dodatečnému přiznání jde fixace zrušit v Nastavení.'
+  );
+}
+
+/**
  * Sdílené tělo daňového reportu: kompletní podklady k přiznání z čistého
  * enginu. Reálná stránka dodá data z DB (a denní kurzy ČNB), demo ukázkový
  * dataset. V demu se export XML nahrazuje teaserem — soubor by nesl smyšlená
@@ -50,6 +62,8 @@ export function ReportView({
 }) {
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = precomputed?.result ?? analyzeTaxYear(input);
+  // R-05c: metoda zafixovaná pro tenhle rok (podklady už se za něj generovaly)
+  const pinnedMethod = profile.pinnedMatchingMethods?.[year];
   const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
   const labels = instrumentLabels(txs);
 
@@ -86,7 +100,8 @@ export function ReportView({
       <p className="hidden text-xs text-inkoust-tlumeny print:block">
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(new Date().toISOString().slice(0, 10))}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
-        párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
+        párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod}
+        {pinnedMethod && ' (zafixováno pro tento rok)'} ·{' '}
         {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
@@ -236,6 +251,8 @@ export function ReportView({
               </Link>
               .
             </>
+          ) : pinnedMethod ? (
+            pinnedMethodNote(year, pinnedMethod)
           ) : (
             'Metodu změníš v Nastavení.'
           )}{' '}

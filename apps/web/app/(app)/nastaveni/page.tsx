@@ -8,14 +8,14 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Input, Label, Select } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
-import { getProfile } from '@/lib/portfolio';
+import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { getAuth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
-import { czDateTime } from '@/lib/format';
+import { czDateTime, METHOD_LABEL } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
 import {
   changeEmailAction,
@@ -24,6 +24,7 @@ import {
   revokeOtherSessionsAction,
   saveNotificationPrefsAction,
   saveProfileAction,
+  unpinMatchingMethodAction,
 } from './actions';
 
 export const metadata = { title: 'Nastavení — Danero' };
@@ -45,6 +46,8 @@ export default async function SettingsPage({
   const currentSession = await auth.api.getSession({ headers: requestHeaders });
   const auditEvents = await recentAuditEvents(db, user.id);
   const prefs = await getNotificationPrefs(db, user.id);
+  // R-05c: roky, které si drží metodu párování z doby, kdy se za ně generovaly podklady
+  const pinnedYears = await listPinnedTaxYears(db, user.id);
 
   // E4: seznam přihlášení seskupený podle zařízení (prohlížeč · OS) — dvacet
   // identických řádků „Chrome · Linux“ nic neříká; jeden řádek s počtem ano
@@ -72,6 +75,7 @@ export default async function SettingsPage({
     odhlaseno: 'Ostatní zařízení byla odhlášena.',
     profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
     notifikace: 'Uloženo. E-maily se řídí novým nastavením.',
+    fixace: 'Fixace zrušená. Rok se zase počítá metodou vybranou v profilu.',
   };
   const CHYBA_LABELS: Record<string, string> = {
     heslo: 'Nové heslo musí mít aspoň 10 znaků.',
@@ -86,6 +90,7 @@ export default async function SettingsPage({
     'heslo-limit': 'Moc pokusů o změnu hesla po sobě — zkus to prosím za pět minut.',
     'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
     'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
+    fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
   };
 
   return (
@@ -171,6 +176,11 @@ export default async function SettingsPage({
                     <option value="MAX_PROFIT">Max. zisk — nejlevnější kusy první</option>
                     <option value="MAX_LOSS">Max. ztráta — nejdražší kusy první</option>
                   </Select>
+                  <p className="mt-1 text-xs text-inkoust-tlumeny">
+                    Změna platí pro roky, za které sis ještě nevygeneroval podklady k přiznání
+                    — ty už podané si drží metodu, se kterou byly spočítané (zákon u párování
+                    prodejů žádá konzistenci).{profile && ' Seznam je pod formulářem.'}
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="fxMethod" title="Pravidlo R-06 v metodice Danero">
@@ -261,6 +271,60 @@ export default async function SettingsPage({
             {profile && <AutoSubmit />}
             {!profile && <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>}
           </form>
+
+          {/* R-05c — mimo formulář profilu: vnořené <form> HTML nedovoluje
+              (a auto-save nahoře by se se zrušením fixace pral) */}
+          {profile && (
+            <Card className="space-y-3" id="fixace">
+              <CardTitle>Roky se zafixovaným párováním</CardTitle>
+              {pinnedYears.length === 0 ? (
+                <p className="text-sm text-inkoust-tlumeny">
+                  Zatím žádný. Jakmile si za skončený rok vygeneruješ podklady k přiznání,
+                  metodu párování pro ten rok zafixujeme — pozdější změna nastavení už ho
+                  nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-inkoust-tlumeny">
+                    Za tyhle roky sis už vygeneroval podklady, takže se počítají pořád
+                    stejnou metodou — i když nahoře vybereš jinou.
+                  </p>
+                  <ul className="space-y-3">
+                    {pinnedYears.map((pinned) => (
+                      <li key={pinned.taxYear} className="border-t border-linka pt-3 first:border-0 first:pt-0">
+                        <p className="text-sm">
+                          <span className="font-semibold">{pinned.taxYear}</span> —{' '}
+                          {METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod}{' '}
+                          <span className="text-inkoust-tlumeny">
+                            (zafixováno {czDateTime(pinned.pinnedAt)})
+                          </span>
+                        </p>
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-sm text-inkoust-tlumeny hover:text-inkoust">
+                            Zrušit fixaci roku {pinned.taxYear}
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <p className="text-xs text-inkoust-tlumeny">
+                              Rok {pinned.taxYear} se pak přepočítá metodou z nastavení výš (
+                              {METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod}) a
+                              čísla se můžou lišit od těch, které jsi už poslal na finanční úřad.
+                              Dělej to jen tehdy, když za ten rok budeš podávat dodatečné přiznání.
+                            </p>
+                            <form action={unpinMatchingMethodAction}>
+                              <input type="hidden" name="rok" value={pinned.taxYear} />
+                              <SubmitButton variant="danger" size="sm" pendingLabel="Ruším…">
+                                Ano, zrušit fixaci roku {pinned.taxYear}
+                              </SubmitButton>
+                            </form>
+                          </div>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Card>
+          )}
         </div>
 
         {/* pravý sloupec: účet a zabezpečení */}

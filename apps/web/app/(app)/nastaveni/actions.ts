@@ -9,6 +9,7 @@ import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
+import { unpinMatchingMethod } from '@/lib/portfolio';
 import { authApi, requireUser } from '@/lib/session';
 
 const ProfileFormSchema = z.object({
@@ -62,6 +63,31 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   // první uložení = onboarding pokračuje na přehled; další změny se ukládají
   // samy (auto-save) a uživatel zůstává u formuláře s potvrzením
   redirect(existed.length === 0 ? '/prehled' : '/nastaveni?ok=profil#dan');
+}
+
+/**
+ * R-05c: zrušení fixace metody párování za jeden rok. Uživatel se tím
+ * odemyká pro dodatečné přiznání — rok se zase počítá metodou z profilu.
+ * Potvrzení řeší formulář v UI (rozbalovací krok), tady se jen ověří rok.
+ */
+const UnpinFormSchema = z.object({
+  rok: z.coerce.number().int().min(2000).max(2100),
+});
+
+export async function unpinMatchingMethodAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const parsed = UnpinFormSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect('/nastaveni?chyba=fixace');
+  const year = parsed.data.rok;
+
+  const db = await getDb();
+  await unpinMatchingMethod(db, user.id, year);
+  await logAudit(db, user.id, 'PROFILE_CHANGE', `zrušena fixace metody párování za rok ${year}`);
+
+  revalidatePath('/prehled');
+  revalidatePath('/report');
+  revalidatePath('/nastaveni');
+  redirect('/nastaveni?ok=fixace#fixace');
 }
 
 /* ── G8a: účet — změna hesla, e-mailu, smazání (GDPR práva z /soukromi) ──── */

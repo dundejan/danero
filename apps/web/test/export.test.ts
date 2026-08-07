@@ -35,12 +35,15 @@ interface ExportPayload {
   subscriptions: Array<{ status: string; stripeCustomerId: string | null; consentAt: string | null }>;
   reportPurchases: Array<{ taxYear: number; stripePaymentIntentId: string | null }>;
   brokerAccounts: Array<Record<string, unknown>>;
+  pinnedMatchingMethods: Array<{ taxYear: number; matchingMethod: string }>;
 }
 
 async function seed(): Promise<Db> {
   const db = await createPgliteDb();
   await db.insert(user).values({ id: 'u1', name: 'Test', email: 'export@danero.cz' });
   await db.insert(taxpayerProfiles).values({ userId: 'u1', regime: 'PAUSAL' });
+  const { taxYearSettings } = await import('@/db/schema');
+  await db.insert(taxYearSettings).values({ userId: 'u1', taxYear: 2025, matchingMethod: 'LIFO' });
   await db.insert(subscriptions).values({
     userId: 'u1',
     status: 'active',
@@ -109,5 +112,19 @@ describe('GDPR export dat (/api/export)', () => {
     const { GET } = await import('@/app/api/export/route');
     const response = await GET(new Request('https://danero.cz/api/export'));
     expect(response.status).toBe(401);
+  });
+});
+
+describe('export a zafixované párování (R-05c)', () => {
+  it('nese metodu, kterou se počítaly už podané roky', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const payload = (await (await GET(new Request('https://danero.cz/api/export'))).json()) as ExportPayload;
+
+    // bez toho by z exportu nešlo doložit, čím se počítala už odeslaná čísla
+    expect(payload.pinnedMatchingMethods).toHaveLength(1);
+    expect(payload.pinnedMatchingMethods[0]).toMatchObject({ taxYear: 2025, matchingMethod: 'LIFO' });
   });
 });

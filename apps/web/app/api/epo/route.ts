@@ -4,7 +4,13 @@ import { getAuth } from '@/lib/auth';
 import { canGenerateReport } from '@/lib/entitlements';
 import { generateDpfdp7, type EpoPersonalData } from '@/lib/epo';
 import { errorText, logEvent } from '@/lib/log';
-import { engineInputForUser, getProfile, loadDailyRates, loadTransactions } from '@/lib/portfolio';
+import {
+  engineInputForUser,
+  getProfile,
+  loadDailyRates,
+  loadTransactions,
+  pinMatchingMethod,
+} from '@/lib/portfolio';
 
 const field = (form: FormData, name: string): string | undefined => {
   const value = form.get(name);
@@ -47,8 +53,11 @@ export async function POST(request: Request): Promise<Response> {
   if (txs.length === 0) return chyba('Zatím nemáš žádné transakce — nejdřív importuj data.');
 
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
-  const dailyRates = await loadDailyRates(db, txs, Number(new Date().toISOString().slice(0, 4)));
-  const result = analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates));
+  const currentYear = Number(new Date().toISOString().slice(0, 4));
+  const dailyRates = await loadDailyRates(db, txs, currentYear);
+  // R-05c: XML je podklad pro podání → metoda párování se pro ten rok zafixuje
+  const pinnedProfile = await pinMatchingMethod(db, profile, year, currentYear);
+  const result = analyzeTaxYear(engineInputForUser(txs, pinnedProfile, year, dailyRates));
 
   const personal: EpoPersonalData = {
     dic: field(form, 'dic'),

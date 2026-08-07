@@ -10,6 +10,7 @@ import {
   getProfile,
   loadDailyRates,
   loadTransactions,
+  pinMatchingMethod,
 } from '@/lib/portfolio';
 import { canGenerateReport } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
@@ -57,6 +58,11 @@ export default async function ReportPage({
     );
   }
 
+  // R-05c: podklady za skončený rok fixují metodu párování — od téhle chvíle
+  // se rok počítá jí, i když si uživatel v nastavení vybere jinou (zákon chce
+  // konzistenci a čísla v podaném přiznání se nesmí zpětně změnit)
+  const pinnedProfile = await pinMatchingMethod(db, profile, year, currentYear);
+
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
   const dailyRates = await loadDailyRates(db, txs, currentYear);
 
@@ -64,7 +70,7 @@ export default async function ReportPage({
   // v generickém error boundary; výsledky se předávají dál (žádný dvojí běh)
   let precomputed: { result: ReturnType<typeof analyzeTaxYear>; comparison: ReturnType<typeof compareVariants> };
   try {
-    const input = engineInputForUser(txs, profile, year, dailyRates);
+    const input = engineInputForUser(txs, pinnedProfile, year, dailyRates);
     precomputed = { result: analyzeTaxYear(input), comparison: compareVariants(input) };
   } catch (error) {
     const message = engineErrorMessage(error);
@@ -75,7 +81,7 @@ export default async function ReportPage({
   return (
     <ReportView
       txs={txs}
-      profile={profile}
+      profile={pinnedProfile}
       year={year}
       years={years}
       dailyRates={dailyRates}
