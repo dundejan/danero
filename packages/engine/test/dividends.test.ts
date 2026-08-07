@@ -99,9 +99,21 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
   });
 
   it('R-07a: česká dividenda je srážková a do § 8 nevstupuje', () => {
-    const result = run([dividend({ sourceCountry: 'CZ', gross: '5000' })]);
+    const result = run([dividend({ sourceCountry: 'CZ', gross: '5000', withholdingTax: '750' })]);
     expect(result.dividends.czechGrossCzk.toString()).toBe('5000');
     expect(result.dividends.base8Czk.toString()).toBe('0');
+    expect(hasWarning(result, 'CZECH_DIVIDEND_WITHOUT_WITHHOLDING')).toBe(false);
+  });
+
+  it('R-07a: česká dividenda s NULOVOU srážkou se nesmí vypustit potichu (nález A1-06)', () => {
+    // R-07a stojí na tom, že příjem vypořádala 15% srážka u zdroje. Nulová
+    // srážka ten předpoklad boří — buď ji importér nepřečetl, nebo sražena
+    // nebyla. Výpočet neměníme (nevíme které), ale mlčet nesmíme: tiše
+    // vypuštěný příjem podhodnotí základ i všechny limity, tedy riziko doměrku.
+    const result = run([dividend({ sourceCountry: 'CZ', gross: '80000', withholdingTax: '0' })]);
+    expect(result.dividends.base8Czk.toString()).toBe('0');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('0');
+    expect(hasWarning(result, 'CZECH_DIVIDEND_WITHOUT_WITHHOLDING')).toBe(true);
   });
 
   it('země zdroje se odvodí z ISIN; bez ISIN i země → varování a výchozí strop', () => {

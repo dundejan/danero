@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
 import { createPgliteDb, type Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { filingDeadlines } from '@danero/engine';
+import { czDate } from '@/lib/format';
 import { importCsvText } from '@/lib/import-service';
 import {
   getNotificationPrefs,
@@ -457,12 +459,32 @@ describe('kalendářní připomínky (G9c)', () => {
 
     const brezen = calendarCandidates({ today: '2027-03-20', hadActivityLastYear: true });
     expect(brezen.map((c) => c.type)).toEqual(['DEADLINE']);
-    expect(brezen[0]!.title).toContain('1. dubna');
+    // termín se odvozuje z pravidla (R-09e), ne z konstanty v testu
+    expect(brezen[0]!.title).toContain(czDate(filingDeadlines(2026).paper));
 
     const duben = calendarCandidates({ today: '2027-04-20', hadActivityLastYear: true });
-    expect(duben[0]!.title).toContain('2. května');
+    expect(duben[0]!.title).toContain(czDate(filingDeadlines(2026).electronic));
 
     expect(calendarCandidates({ today: '2027-07-15', hadActivityLastYear: true })).toEqual([]);
     expect(calendarCandidates({ today: '2027-01-05', hadActivityLastYear: false })).toEqual([]);
+  });
+
+  it('upomínka na elektronický termín chodí až do dne termínu (R-09e)', async () => {
+    const { calendarCandidates } = await import('@/lib/notifications');
+    // Za ZO 2025 vychází elektronický termín na pondělí 4. 5. 2026 (1. 5. je
+    // pátek a svátek). Dřív bylo okno natvrdo do „2. 5.“, takže poslední dva
+    // dny před termínem už uživatel nedostal nic.
+    const termin = filingDeadlines(2025).electronic;
+    expect(termin).toBe('2026-05-04');
+    for (const den of ['2026-05-02', '2026-05-03', '2026-05-04']) {
+      const events = calendarCandidates({ today: den, hadActivityLastYear: true });
+      expect(events.map((c) => c.dedupeKey), `${den} musí ještě upomínat`).toContain(
+        'termin|elektronicky|2026',
+      );
+    }
+    // den po termínu už nic
+    expect(
+      calendarCandidates({ today: '2026-05-05', hadActivityLastYear: true }).map((c) => c.type),
+    ).toEqual([]);
   });
 });

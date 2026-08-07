@@ -7,7 +7,22 @@ export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  /**
+   * Strojové hlavičky navíc — dnes jen `List-Unsubscribe` a
+   * `List-Unsubscribe-Post` u hromadného digestu (RFC 8058). Bez nich Gmail
+   * nenabídne vlastní tlačítko „Odhlásit odběr“ a uživatel místo něj sáhne po
+   * „Nahlásit spam“, což poškodí doručitelnost i u obnovy hesla.
+   */
+  headers?: Record<string, string>;
 }
+
+/**
+ * Kam míří odpovědi. `From` je `notifikace@danero.cz` a doména **nemá MX
+ * záznam**, takže odpověď na ni se nikam nedoručí — a „Odpovědět“ je přitom
+ * první, co uživatel udělá, když chce zrušit předplatné. Adresa je stejná,
+ * jakou už uvádí potvrzení objednávky.
+ */
+const REPLY_TO = process.env.RESEND_REPLY_TO ?? 'dunder.jan@gmail.com';
 export type EmailSender = (message: EmailMessage) => Promise<void>;
 
 /**
@@ -61,9 +76,11 @@ export function resolveEmailSender(): EmailSender {
     const resend = new Resend(apiKey);
     const { error } = await resend.emails.send({
       from,
+      replyTo: REPLY_TO,
       to: message.to,
       subject: message.subject,
       text: message.text,
+      ...(message.headers ? { headers: message.headers } : {}),
     });
     if (error) throw new Error(`Resend: ${error.message}`);
   };

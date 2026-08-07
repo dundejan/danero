@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { LimitStatus, Position, TaxYearResult } from '@danero/engine';
-import { diffDays } from '@danero/shared';
+import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
+import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
 import { czDate, czk, plural, qty } from '@/lib/format';
@@ -179,7 +179,9 @@ export async function syncNotifications(
 
 /**
  * Kalendářní události (G9c): lednové roční shrnutí a připomínky termínů
- * přiznání (1. 4. papírově, 2. 5. elektronicky).
+ * přiznání. Termíny se **počítají** dle R-09e (§ 136 + § 33/4 daňového řádu) —
+ * natvrdo zapsané „2. 5." platilo za ZO 2024, za ZO 2025 vychází až 4. 5. 2026
+ * a upomínka končila dva dny PŘED skutečným termínem.
  */
 export function calendarCandidates(args: {
   today: string;
@@ -188,29 +190,33 @@ export function calendarCandidates(args: {
 }): NotificationCandidate[] {
   const { today, hadActivityLastYear } = args;
   const year = Number(today.slice(0, 4));
+  const taxYear = year - 1;
+  const { paper, electronic, advisor } = filingDeadlines(taxYear);
   const out: NotificationCandidate[] = [];
   if (hadActivityLastYear && today >= `${year}-01-01` && today <= `${year}-01-31`) {
     out.push({
-      dedupeKey: `rocni|${year - 1}`,
+      dedupeKey: `rocni|${taxYear}`,
       type: 'YEAR_SUMMARY',
-      title: `Podklady za rok ${year - 1} jsou připravené`,
-      body: `Daňový report za ${year - 1} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do 1. 4., elektronické do 2. 5. (připadne-li termín na víkend či svátek, posouvá se na nejbližší pracovní den).`,
+      title: `Podklady za rok ${taxYear} jsou připravené`,
+      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. Papírové přiznání se podává do ${czDate(paper)}, elektronické do ${czDate(electronic)}, s daňovým poradcem do ${czDate(advisor)}.`,
     });
   }
-  if (hadActivityLastYear && today >= `${year}-03-15` && today <= `${year}-04-01`) {
+  // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
+  // dny před termínem nepřijde nic zrovna tomu, kdo ještě nepodal
+  if (hadActivityLastYear && today >= addDays(paper, -17) && today <= paper) {
     out.push({
       dedupeKey: `termin|papir|${year}`,
       type: 'DEADLINE',
-      title: 'Blíží se termín přiznání: 1. dubna',
-      body: `Papírové přiznání za rok ${year - 1} se podává do 1. 4. Podáváš-li elektronicky (mojedane.cz), máš čas do 2. 5. (víkend a svátek posouvá termín na nejbližší pracovní den) — XML export najdeš v reportu.`,
+      title: `Blíží se termín přiznání: ${czDate(paper)}`,
+      body: `Papírové přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Podáváš-li elektronicky (mojedane.cz), máš čas do ${czDate(electronic)} — XML export najdeš v reportu.`,
     });
   }
-  if (hadActivityLastYear && today >= `${year}-04-15` && today <= `${year}-05-02`) {
+  if (hadActivityLastYear && today >= addDays(electronic, -17) && today <= electronic) {
     out.push({
       dedupeKey: `termin|elektronicky|${year}`,
       type: 'DEADLINE',
-      title: 'Blíží se termín elektronického přiznání: 2. května',
-      body: `Elektronické přiznání za rok ${year - 1} se podává do 2. 5. — připadne-li na víkend či svátek, platí nejbližší pracovní den. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
+      title: `Blíží se termín elektronického přiznání: ${czDate(electronic)}`,
+      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}. XML pro mojedane.cz vygeneruješ v reportu; nezapomeň na přehledy ČSSZ a zdravotní pojišťovny, pokud se tě týkají.`,
     });
   }
   return out;
@@ -367,7 +373,14 @@ export async function processUserNotifications(
               : prefs.emailFrequency === 'WEEKLY'
                 ? 'Danero: souhrn upozornění za týden'
                 : `Danero: ${toSend.length} ${plural(toSend.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`,
-          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}`,
+          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\nJan Dunder, IČO 19642661, [adresa odstraněna] 640/3, 101 00 Praha 10`,
+          // RFC 8058: jednoklikové odhlášení. `/api/odhlasit` na to je připravené —
+          // GET jen ptá (mail scannery nic nezmění), stav mění až POST, přesně
+          // jak to jednoklik vyžaduje.
+          headers: {
+            'List-Unsubscribe': `<${odhlasit}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
         });
       } catch (error) {
         await db

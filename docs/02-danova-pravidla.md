@@ -195,6 +195,31 @@ Dvě oddělené roviny:
 - **R-09b** Zaměstnanec: vedlejší příjmy § 7–10 > **20 000 Kč** (hrubé zdanitelné) → přiznání. Danero hlídá pro profil „zaměstnanec".
 - **R-09c** Paušální OSVČ: viz R-08.
 - **R-09d § 38v**: oznámení osvobozeného příjmu > **5 mil. Kč** (jednotlivý příjem = „v jednom čase z jednoho titulu od jednoho subjektu", D-59) — týká se i prodejů osvobozených časovým testem; pokuty 0,1–15 % (§ 38w). Danero: detekce jednotlivých prodejů > 5M a upozornění.
+- **R-09e Lhůty pro podání** (§ 136 daňového řádu, zák. č. 280/2009 Sb.): lhůta
+  běží od konce zdaňovacího období (§ 33 odst. 1 DŘ — počítá se ode dne
+  následujícího a končí dnem téhož označení), takže za ZO `R` vychází:
+
+  | Způsob podání | Lhůta | Základní datum |
+  |---|---|---|
+  | písemně (papírově) | 3 měsíce (§ 136/1) | 1. 4. `R+1` |
+  | elektronicky | 4 měsíce (§ 136/2 a) | 1. 5. `R+1` |
+  | poradcem / povinný audit | 6 měsíců (§ 136/2 b) | 1. 7. `R+1` |
+
+  **Datum se musí POČÍTAT, ne psát natvrdo.** Připadne-li poslední den lhůty na
+  sobotu, neděli nebo svátek, je posledním dnem lhůty nejblíže následující
+  pracovní den (**§ 33 odst. 4 DŘ**). Svátky dle zák. č. 245/2000 Sb. —
+  seznam už v repu je (`CZ_HOLIDAYS` v `packages/engine/src/config/exchangeHolidays.ts`,
+  pokryté roky 2019–2027; runbook R-01a doplňuje oba kalendáře společně).
+
+  Ověřovací příklad (ZO 2025): papírově **1. 4. 2026** (středa, neposouvá se);
+  elektronicky 1. 5. 2026 je **pátek a státní svátek** → 2. 5. sobota → 3. 5.
+  neděle → **pondělí 4. 5. 2026**; poradcem **1. 7. 2026** (středa).
+  Zdroj: [Finanční správa — Vyplňujete daňové přiznání za rok 2025](https://financnisprava.gov.cz/cs/financni-sprava/media-a-verejnost/tiskove-zpravy-gfr/tiskove-zpravy-2026/vyplnujete-danove-priznani-za-rok-2025).
+
+  ⚠️ Natvrdo zapsané datum je chyba, která se **sama neprojeví** — jen jednou
+  za rok ukáže jiný den, než platí (za ZO 2024 vycházel elektronický termín
+  na 2. 5. 2025, za ZO 2025 už na 4. 5. 2026). Testy proto nesmí očekávanou
+  hodnotu zapsat konstantou, ale odvodit ji z pravidla.
 
 ## R-10 Kryptoaktiva (zák. č. 32/2025 Sb., účinnost 15. 2. 2025) — implementováno (G6)
 

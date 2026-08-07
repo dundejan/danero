@@ -23,18 +23,18 @@ za software, ale za to, že ho nemusíš provozovat: běží to každý den samo
 k brokerům jsou šifrované a zálohované, a každý leden se do toho promítne nový
 jednotný kurz, nové hranice a nová struktura formuláře EPO.
 
-| | Zdarma | Plné — 990 Kč/rok |
-|---|---|---|
-| Import výpisů, neomezeně platforem | ✅ | ✅ |
-| Napojení platformy přes API | ✅ | ✅ |
-| Snímek stavu: limity, časové testy, orientační daň | ✅ | ✅ |
-| Automatický denní sync a hlídací e-maily | — | ✅ |
-| Simulátor prodeje a horizont osvobození | — | ✅ |
-| Podklady k přiznání + XML pro EPO | — | ✅ |
+| | Zdarma | Podklady — 490 Kč jednorázově | Plné — 990 Kč/rok |
+|---|---|---|---|
+| Import výpisů, neomezeně platforem | ✅ | ✅ | ✅ |
+| Limity, časové testy, orientační daň | ✅ | ✅ | ✅ |
+| Horizont osvobození: kdy je co bez daně | ✅ | ✅ | ✅ |
+| Podklady k přiznání + XML pro EPO | — | ✅ (jeden rok) | ✅ (všechny roky) |
+| Napojení platformy přes API a denní sync | — | — | ✅ |
+| Hlídací e-maily na limity a termíny | — | — | ✅ |
+| Simulátor prodeje | — | — | ✅ |
 
-**Celý rok 2026 je na danero.cz všechno zdarma pro všechny.** Kdo se
-zaregistruje do 31. 12. 2026, má daňový rok 2026 zdarma navždy — včetně
-podkladů, které se podávají až na jaře 2027.
+Vrstva zdarma je **trvalá**, ne zkušební období — import a přehled zůstávají
+zdarma bez časového omezení. Ceny jsou konečné, provozovatel není plátcem DPH.
 
 ## Co umí
 
