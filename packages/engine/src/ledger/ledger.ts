@@ -159,12 +159,61 @@ export function buildLedger(
       return a.seq - b.seq;
     });
 
-  const openLots = (isin: string): Lot[] => lots.filter((l) => l.isin === isin && l.remaining.gt(0));
+  /**
+   * Index lotů podle ISIN. Bez něj byl `openLots()` lineární průchod VŠEMI loty
+   * při KAŽDÉM prodeji, takže sestavení ledgeru bylo O(n²): u 50 000 transakcí
+   * ~472 milionů porovnání a 28 s CPU jen za jeden rok (nález G-P1). Mapa drží
+   * loty v pořadí vložení, takže výběr lotů (FIFO/LIFO/MAX_*) zůstává shodný —
+   * `orderLots` si je stejně řadí sám.
+   */
+  const lotsByIsin = new Map<string, Lot[]>();
+  const registerLot = (lot: Lot): void => {
+    lots.push(lot);
+    const bucket = lotsByIsin.get(lot.isin);
+    if (bucket) bucket.push(lot);
+    else lotsByIsin.set(lot.isin, [lot]);
+  };
+  /**
+   * Otevřené loty jednoho ISIN. Vyčerpané loty z indexu **natrvalo vyřazuje** —
+   * bez toho by kbelík rostl s počtem obchodů a průchod by zůstal kvadratický
+   * i s indexem (day-trader má všechno pod jedním ISIN). Lot se z `remaining`
+   * 0 nikdy nevrátí zpět: prodej i převod jen ubírají a korporátní akce nulu
+   * jen přenásobí. Plný seznam lotů pro výstup drží `lots`, tenhle index je
+   * jen pracovní.
+   */
+  const openLots = (isin: string): Lot[] => {
+    const bucket = lotsByIsin.get(isin);
+    if (!bucket) return [];
+    let zapis = 0;
+    for (let cteni = 0; cteni < bucket.length; cteni += 1) {
+      const lot = bucket[cteni]!;
+      if (lot.remaining.gt(0)) bucket[zapis++] = lot;
+    }
+    bucket.length = zapis;
+    return bucket.slice();
+  };
+  /**
+   * Korporátní akce (ISIN_CHANGE, MERGER) přepisují `lot.isin` — index se tím
+   * musí přerejstříkovat, jinak by lot pod novým ISIN nikdo nenašel. Pořadí
+   * v cílovém kbelíku zůstává vložením na konec, tedy stejné jako u původního
+   * `filter()` přes celé pole.
+   */
+  const moveLotToIsin = (lot: Lot, newIsin: string): void => {
+    const from = lotsByIsin.get(lot.isin);
+    if (from) {
+      const at = from.indexOf(lot);
+      if (at >= 0) from.splice(at, 1);
+    }
+    lot.isin = newIsin;
+    const to = lotsByIsin.get(newIsin);
+    if (to) to.push(lot);
+    else lotsByIsin.set(newIsin, [lot]);
+  };
 
   const openLotFromBuy = (tx: BuyTransaction): void => {
     const settlement =
       tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass);
-    lots.push({
+    registerLot({
       id: `lot-${tx.id}`,
       isin: tx.isin,
       assetClass: tx.assetClass,
@@ -216,7 +265,7 @@ export function buildLedger(
         { txId: tx.id, isin: tx.isin },
       );
     }
-    lots.push({
+    registerLot({
       id: `lot-${tx.id}`,
       isin: tx.isin,
       assetClass: tx.assetClass,
@@ -290,7 +339,7 @@ export function buildLedger(
         origin: 'SYNTHETIC',
         interpretive: true,
       };
-      lots.push(synthetic);
+      registerLot(synthetic);
       allocations.push({
         lotId: synthetic.id,
         quantity: toFill,
@@ -386,7 +435,7 @@ export function buildLedger(
         const newIsin = requireNewIsin(tx);
         const affected = openLots(tx.isin);
         for (const lot of affected) {
-          lot.isin = newIsin;
+          moveLotToIsin(lot, newIsin);
           lot.interpretive = true;
         }
         if (affected.length > 0) {
@@ -413,7 +462,7 @@ export function buildLedger(
           );
         }
         for (const lot of openLots(tx.isin)) {
-          lot.isin = newIsin;
+          moveLotToIsin(lot, newIsin);
           lot.quantity = lot.quantity.mul(factor);
           lot.remaining = lot.remaining.mul(factor);
           lot.costPerShare = lot.costPerShare.div(factor);
@@ -453,7 +502,7 @@ export function buildLedger(
           }
         }
         const first = parents[0]!;
-        lots.push({
+        registerLot({
           id: `lot-${tx.id}`,
           isin: newIsin,
           assetClass: first.assetClass,
