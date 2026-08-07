@@ -89,11 +89,14 @@ const yearOf = (date: IsoDate): number => Number(date.slice(0, 4));
 /**
  * R-12e: rozhodné je datum VYPOŘÁDÁNÍ, ne obchodu — hotovostní princip § 5 se
  * váže na okamžik, kdy peníze doopravdy tečou (stejně jako u CP, R-05a). Když
- * ho broker neuvádí, dopočte se jako u CP (R-01a, včetně burzovních svátků).
+ * ho broker neuvádí, dopočte se jako u CP (R-01a, včetně burzovních svátků) —
+ * s výjimkou MARGIN instrumentů (CFD, futures), které se vypořádávají okamžitě
+ * uzavřením pozice (R-12e/R-12f, nález A2-10).
  */
 const eventDate = (tx: DerivativeTx): IsoDate =>
   tx.type === 'BUY' || tx.type === 'SELL'
-    ? (tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass))
+    ? (tx.settlementDate ??
+      inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass, tx.settlementStyle))
     : tx.date;
 
 /** Uzavře množství proti FIFO frontě; vrací spárované loty (pro výdaj i MARGIN rozdíl). */

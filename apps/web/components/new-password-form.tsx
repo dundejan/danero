@@ -24,18 +24,24 @@ export function NewPasswordForm({ token }: { token: string }) {
 
     setPending(true);
     setError(null);
-    const result = await authClient.resetPassword({ newPassword: heslo, token });
-    setPending(false);
-
-    if (result.error) {
-      setError(
-        result.error.status === 429
-          ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
-          : 'Heslo se nepodařilo změnit — odkaz už nejspíš neplatí. Nech si poslat nový.',
-      );
-      return;
+    try {
+      const result = await authClient.resetPassword({ newPassword: heslo, token });
+      if (result.error) {
+        setError(
+          result.error.status === 429
+            ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
+            : 'Heslo se nepodařilo změnit — odkaz už nejspíš neplatí. Nech si poslat nový.',
+        );
+        return;
+      }
+      setDone(true);
+    } catch {
+      // Bez tohohle bloku promise při výpadku sítě rejectla, `setPending(false)`
+      // se neprovedlo a formulář zůstal zamčený navždy a beze slova (H2-01).
+      setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.');
+    } finally {
+      setPending(false);
     }
-    setDone(true);
   }
 
   if (done) {

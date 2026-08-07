@@ -18,21 +18,27 @@ export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string
     setError(null);
     const email = String(new FormData(event.currentTarget).get('email') ?? '');
 
-    const result = await authClient.sendVerificationEmail({
-      email,
-      callbackURL: '/overeni-emailu',
-    });
-    setPending(false);
-
-    if (result.error) {
-      setError(
-        result.error.status === 429
-          ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
-          : 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
-      );
-      return;
+    try {
+      const result = await authClient.sendVerificationEmail({
+        email,
+        callbackURL: '/overeni-emailu',
+      });
+      if (result.error) {
+        setError(
+          result.error.status === 429
+            ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
+            : 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
+        );
+        return;
+      }
+      setSent(true);
+    } catch {
+      // Bez tohohle bloku promise při výpadku sítě rejectla, `setPending(false)`
+      // se neprovedlo a formulář zůstal zamčený navždy a beze slova (H2-01).
+      setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.');
+    } finally {
+      setPending(false);
     }
-    setSent(true);
   }
 
   if (sent) {

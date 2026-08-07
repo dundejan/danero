@@ -17,6 +17,13 @@ import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
+/**
+ * Stránka pouští daňový engine nad celou historií uživatele — u velkého
+ * portfolia to je nejdražší výpočet v aplikaci. Bez `maxDuration` platí výchozí
+ * limit funkce a stránka skončí timeoutem místo výsledku (nález G-P2).
+ */
+export const maxDuration = 800;
+
 export const metadata = { title: 'Přehled — Danero' };
 
 export default async function OverviewPage({

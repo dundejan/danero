@@ -82,3 +82,28 @@ test('vypršelý ověřovací odkaz nabídne poslat nový', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Odkaz už neplatí' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Poslat odkaz znovu' })).toBeVisible();
 });
+
+/**
+ * H2-01: výpadek sítě nesmí zamknout formulář navždy a mlčet.
+ *
+ * `await authClient.signIn.email()` bez `try/catch` znamenalo, že při odmítnutém
+ * požadavku promise rejectla, `setPending(false)` se nikdy neprovedlo a tlačítko
+ * zůstalo v „Přihlašuji…“ bez jediné hlášky. Jediné východisko byl reload —
+ * a uživatel nevěděl proč.
+ */
+test('výpadek sítě při přihlášení odemkne formulář a řekne, co se stalo', async ({ page }) => {
+  await page.goto('/prihlaseni');
+  // simulace výpadku: požadavek na auth se vůbec nedoručí
+  await page.route('**/api/auth/**', (route) => route.abort('failed'));
+
+  await page.getByLabel('E-mail').fill('kdokoli@danero.cz');
+  await page.getByLabel('Heslo').fill('nejake-heslo-e2e');
+  await page.getByRole('button', { name: 'Přihlásit se' }).click();
+
+  // Chybová hláška formuláře, ne jakýkoli role="alert" — Next.js má vlastní
+  // oznamovač routy (#__next-route-announcer__) se stejnou rolí a selektor by
+  // byl dvojznačný.
+  await expect(page.locator('#prihlaseni-error')).toContainText('spojit se serverem');
+  // a formulář jde použít znovu
+  await expect(page.getByRole('button', { name: 'Přihlásit se' })).toBeEnabled();
+});

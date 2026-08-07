@@ -408,3 +408,51 @@ describe('R-12 převody a řez rokem', () => {
     expect(hasWarning(result, 'ASSET_CLASS_NORMALIZED')).toBe(true);
   });
 });
+
+/**
+ * R-12e, nález A2-10: CFD a futures (`settlementStyle: 'MARGIN'`) se
+ * vypořádávají okamžitě uzavřením pozice — burzovní T+1/T+2 se na ně
+ * nedopočítává. Importéry MT4/MT5, XTB, eToro ani tastytrade `settlementDate`
+ * neplní (jediný IBKR ano), takže se dopočet uplatní a posouval rok příjmu.
+ */
+describe('R-12e: MARGIN se vypořádává T+0, ne burzovní lhůtou (A2-10)', () => {
+  const cfd = (over: Record<string, unknown>, prodej = false) =>
+    (prodej ? sell : buy)({
+      isin: 'CFD:DAX',
+      assetClass: 'DERIVATIVE',
+      settlementStyle: 'MARGIN',
+      quantity: '1',
+      currency: 'CZK',
+      // POZOR: pomocníci buy/sell doplňují settlementDate = tradeDate, takže by
+      // se dopočet vůbec nespustil a test by procházel z chybného důvodu.
+      // Tady ho schválně vynecháváme — o to v tomhle nálezu jde.
+      settlementDate: undefined,
+      ...over,
+    });
+
+  it('obchod uzavřený 30. 12. patří do TÉHOŽ roku, ne do následujícího', () => {
+    // Bez opravy vyšlo vypořádání 2. 1. 2026 (TARGET2: 31. 12. → 1. 1. svátek),
+    // zisk 60 000 Kč spadl do ZO 2026 a limit 50 000 Kč za 2025 hlásil
+    // „neprolomeno“, přestože prolomený byl.
+    const txs = [
+      cfd({ tradeDate: '2025-12-29', pricePerShare: '0' }),
+      cfd({ tradeDate: '2025-12-30', pricePerShare: '60000' }, true),
+    ];
+    const rok2025 = run(txs);
+    expect(rok2025.derivatives.taxableIncomeCzk.toString()).toBe('60000');
+    expect(rok2025.derivatives.base10Czk.toString()).toBe('60000');
+    expect(rok2025.limits.flatTax50k.status.exceeded).toBe(true);
+  });
+
+  it('vyplněné datum vypořádání z výpisu brokera má i u MARGIN přednost', () => {
+    const txs = [
+      cfd({ tradeDate: '2025-12-29', settlementDate: '2025-12-29', pricePerShare: '0' }),
+      cfd(
+        { tradeDate: '2025-12-30', settlementDate: '2026-01-05', pricePerShare: '60000' },
+        true,
+      ),
+    ];
+    // broker říká, že peníze přišly až 5. 1. → příjem patří do 2026
+    expect(run(txs).derivatives.taxableIncomeCzk.toString()).toBe('0');
+  });
+});
