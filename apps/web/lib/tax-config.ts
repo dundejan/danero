@@ -24,8 +24,15 @@ export const UNIFIED_RATES: Record<number, Record<string, string>> = {
   },
 };
 
-/** Je kurz pro daný rok ověřený pokynem GFŘ, nebo jen orientační? */
-export const isRateVerified = (year: number): boolean => year <= LAST_VERIFIED_RATE_YEAR;
+/**
+ * Je kurz pro daný rok ověřený pokynem GFŘ, nebo jen orientační?
+ *
+ * Roky, pro které v tabulce žádný kurz není (2019 a starší), nesmí vyjít jako
+ * ověřené — jinak by UI u nich tvrdilo „podle pokynu GFŘ" o hodnotě, která
+ * neexistuje (nález A3-10).
+ */
+export const isRateVerified = (year: number): boolean =>
+  year <= LAST_VERIFIED_RATE_YEAR && UNIFIED_RATES[year] !== undefined;
 
 /** Konfigurace zdaňovacího období pro engine (limity dle roku, kurzy viz výše). */
 export function configForYear(year: number): TaxYearConfig {

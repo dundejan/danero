@@ -17,9 +17,18 @@ const PODATELNA_URL = 'https://adisspr.mfcr.cz/dpr/epo_podani?test=1';
 const TYP_POPIS = {
   S: 'strukturální chyba (XML neodpovídá struktuře písemnosti)',
   N: 'nepropustná/věcná chyba',
+  K: 'kritická chyba',
   P: 'propustná chyba (upozornění)',
   I: 'informace',
 };
+
+/**
+ * Typy, které podání NEBLOKUJÍ. Schválně allowlist, ne denylist: podatelna
+ * vrací i typy, které jsme neznali (`K` nám takhle proklouzl a skript hlásil
+ * „podání by ostrá podatelna přijala“ i u písemnosti se dvěma kritickými
+ * chybami — nález A3-02). Neznámý typ je proto blokující, ne tichý průchod.
+ */
+const NEBLOKUJICI = new Set(['P', 'I']);
 
 const decodeEntities = (s) =>
   s
@@ -61,11 +70,11 @@ async function submit(label, xml) {
   }
   let ok = true;
   for (const ch of chyby) {
-    const veca = ch.Typ === 'S' || ch.Typ === 'N';
+    const veca = !NEBLOKUJICI.has(ch.Typ);
     if (veca) ok = false;
     const kde = [ch.Polozka && `položka ${ch.Polozka}`, ch.Zkr].filter(Boolean).join(', ');
     console.log(
-      `  [${ch.Typ ?? '?'}] ${TYP_POPIS[ch.Typ] ?? ''}${kde ? ` (${kde})` : ''}\n      ${ch.text}`,
+      `  [${ch.Typ ?? '?'}] ${TYP_POPIS[ch.Typ] ?? 'NEZNÁMÝ TYP KONTROLY'}${kde ? ` (${kde})` : ''}\n      ${ch.text}`,
     );
   }
   console.log(
