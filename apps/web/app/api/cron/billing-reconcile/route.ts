@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { reconcileSubscriptions } from '@/lib/billing';
+import { reconcileSubscriptions, sendRenewalNotices } from '@/lib/billing';
 import { withCron } from '@/lib/cron-auth';
 import { billingEnabled } from '@/lib/entitlements';
 
@@ -14,5 +14,9 @@ import { billingEnabled } from '@/lib/entitlements';
 export const GET = withCron('billing-reconcile', async (_request: Request): Promise<Response> => {
   if (!billingEnabled()) return Response.json({ skipped: 'billing off' });
   const db = await getDb();
-  return Response.json(await reconcileSubscriptions(db));
+  // pořadí záleží: nejdřív srovnat stav se Stripe, teprve pak rozesílat
+  // upomínky — jinak by e-mail mohl odejít podle zastaralého data obnovy
+  const reconciled = await reconcileSubscriptions(db);
+  const notices = await sendRenewalNotices(db);
+  return Response.json({ ...reconciled, renewalNotices: notices });
 });

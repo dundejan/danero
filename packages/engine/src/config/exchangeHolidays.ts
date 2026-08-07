@@ -29,12 +29,11 @@ import type { IsoDate } from '@danero/shared';
  *   Velikonoční pondělí, 1. 5., 25. a 26. 12. Default pro ISIN bez vlastního
  *   kalendáře (konzervativní: méně obchodních dnů = pozdější nabytí).
  *
- * Poctivě k aproximacím (docs/02 R-01a): kanadské ISIN jedou na kalendáři US
- * (vlastní kalendář TSX zatím nemáme) a vypořádací systémy (T2S) bývají otevřené
+ * Poctivě k aproximacím (docs/02 R-01a): vypořádací systémy (T2S) bývají otevřené
  * i v den, kdy burza neobchoduje. Obojí posouvá dopočet spíš později = pozdější
  * osvobození = bezpečný směr. Datum z výpisu brokera má vždy přednost.
  */
-export type ExchangeCalendar = 'US' | 'DE' | 'UK' | 'IE' | 'CZ' | 'TARGET2';
+export type ExchangeCalendar = 'US' | 'CA' | 'DE' | 'UK' | 'IE' | 'CZ' | 'TARGET2';
 
 /** První pokrytý rok — starší nákupy mají časový test dávno splněný. */
 export const HOLIDAY_CALENDAR_FIRST_YEAR = 2019;
@@ -217,19 +216,51 @@ const TARGET2_HOLIDAYS: readonly IsoDate[] = [
   '2027-01-01', '2027-03-26', '2027-03-29',
 ];
 
+/**
+ * TSX (Toronto) — kanadské zákonné svátky, na které burza nezavírá jen zčásti.
+ * Zdroj: oficiální TMX kalendář (tsx.com/en/trading/calendars-and-trading-hours/calendar).
+ * Data jsem dopočítal pravidly (Family Day = 3. pondělí v únoru, Victoria Day =
+ * pondělí před 25. 5., Civic Holiday = 1. pondělí v srpnu, Thanksgiving =
+ * 2. pondělí v říjnu, náhradní dny za Vánoce a sv. Štěpána o víkendu) a proti
+ * oficiálnímu kalendáři ověřil roky 2025 a 2026 — sedí do posledního dne včetně
+ * náhradního pondělí 28. 12. 2026. Zkrácené dny (24. 12.) vypořádání neovlivňují.
+ */
+const CA_HOLIDAYS: readonly IsoDate[] = [
+  // 2019
+  '2019-01-01', '2019-02-18', '2019-04-19', '2019-05-20', '2019-07-01', '2019-08-05', '2019-09-02', '2019-10-14', '2019-12-25', '2019-12-26',
+  // 2020
+  '2020-01-01', '2020-02-17', '2020-04-10', '2020-05-18', '2020-07-01', '2020-08-03', '2020-09-07', '2020-10-12', '2020-12-25', '2020-12-28',
+  // 2021
+  '2021-01-01', '2021-02-15', '2021-04-02', '2021-05-24', '2021-07-01', '2021-08-02', '2021-09-06', '2021-10-11', '2021-12-27', '2021-12-28',
+  // 2022
+  '2022-01-03', '2022-02-21', '2022-04-15', '2022-05-23', '2022-07-01', '2022-08-01', '2022-09-05', '2022-10-10', '2022-12-26', '2022-12-27',
+  // 2023
+  '2023-01-02', '2023-02-20', '2023-04-07', '2023-05-22', '2023-07-03', '2023-08-07', '2023-09-04', '2023-10-09', '2023-12-25', '2023-12-26',
+  // 2024
+  '2024-01-01', '2024-02-19', '2024-03-29', '2024-05-20', '2024-07-01', '2024-08-05', '2024-09-02', '2024-10-14', '2024-12-25', '2024-12-26',
+  // 2025
+  '2025-01-01', '2025-02-17', '2025-04-18', '2025-05-19', '2025-07-01', '2025-08-04', '2025-09-01', '2025-10-13', '2025-12-25', '2025-12-26',
+  // 2026
+  '2026-01-01', '2026-02-16', '2026-04-03', '2026-05-18', '2026-07-01', '2026-08-03', '2026-09-07', '2026-10-12', '2026-12-25', '2026-12-28',
+  // 2027
+  '2027-01-01', '2027-02-15', '2027-03-26', '2027-05-24', '2027-07-01', '2027-08-02', '2027-09-06', '2027-10-11', '2027-12-27', '2027-12-28',
+];
+
 const CALENDARS: Record<ExchangeCalendar, ReadonlySet<IsoDate>> = {
   US: new Set(US_HOLIDAYS),
   DE: new Set(DE_HOLIDAYS),
   UK: new Set(UK_HOLIDAYS),
   IE: new Set(IE_HOLIDAYS),
+  CA: new Set(CA_HOLIDAYS),
   CZ: new Set(CZ_HOLIDAYS),
   TARGET2: new Set(TARGET2_HOLIDAYS),
 };
 
+
 /** Prefix ISIN (kód země emitenta) → kalendář burzy, kde se nástroj typicky obchoduje. */
 const CALENDAR_BY_ISIN_PREFIX: Record<string, ExchangeCalendar> = {
   US: 'US',
-  CA: 'US', // aproximace: kalendář TSX zatím nemáme (docs/02 R-01a)
+  CA: 'CA',
   DE: 'DE',
   GB: 'UK',
   IE: 'IE',

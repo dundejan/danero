@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" ADD COLUMN "renewal_notice_sent_for" timestamp;

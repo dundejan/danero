@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLedger, inferSettlementDate, resolveOptions, WarningCollector } from '../src';
+import { buildLedger, inferSettlementDate, isExchangeHoliday, resolveOptions, WarningCollector } from '../src';
 import { buy, corpAction, hasWarning, run, sell } from './helpers';
 import { TransactionSchema } from '@danero/shared';
 
@@ -229,10 +229,10 @@ describe('R-05 párování a dílčí základ § 10', () => {
   });
 
   it('dopočet vypořádání: US od 28. 5. 2024 a Kanada od 27. 5. 2024 T+1, před tím T+2', () => {
-    // Kanada (CIRO/CCMA): účinnost 27. 5. 2024 — o den dřív než US (Memorial Day).
-    // Kanadské ISIN jedou na kalendáři US (R-01a, dokumentovaná aproximace), takže
-    // 27. 5. je pro ně svátek a T+2 z pátku dopadá až na středu 29. 5.
-    expect(inferSettlementDate('2024-05-24', 'CA9861913023', 'STOCK')).toBe('2024-05-29'); // pátek + T+2
+    // Kanada (CIRO/CCMA): účinnost 27. 5. 2024 — o den dřív než US právě proto,
+    // že 27. 5. byl americký Memorial Day, zatímco TSX ten den obchodovala.
+    // S vlastním kanadským kalendářem to vychází správně: T+2 z pátku = úterý.
+    expect(inferSettlementDate('2024-05-24', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pátek + T+2
     expect(inferSettlementDate('2024-05-27', 'CA9861913023', 'STOCK')).toBe('2024-05-28'); // pondělí + T+1
     // US (SEC 15c6-1): účinnost 28. 5. 2024
     expect(inferSettlementDate('2024-05-27', 'US0378331005', 'STOCK')).toBe('2024-05-29'); // ještě T+2
@@ -291,5 +291,26 @@ describe('R-05 párování a dílčí základ § 10', () => {
       sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '0.5', pricePerShare: '120000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
     ]);
     expect(hasWarning(whole, 'FRACTIONAL_SHARES')).toBe(false);
+  });
+});
+
+describe('R-01a: kanadské ISIN mají vlastní kalendář TSX', () => {
+  it('Family Day ani Civic Holiday nejsou obchodní dny v Kanadě, ale v USA ano', () => {
+    // Family Day 16. 2. 2026 je kanadský svátek; v USA je ten den Presidents' Day,
+    // takže obě burzy zavírají — rozdíl ukáže Civic Holiday 3. 8. 2026,
+    // kdy TSX zavírá a NYSE obchoduje.
+    expect(isExchangeHoliday('CA', '2026-08-03')).toBe(true);
+    expect(isExchangeHoliday('US', '2026-08-03')).toBe(false);
+    // a naopak Den díkůvzdání: US 26. 11. 2026, CA už 12. 10. 2026
+    expect(isExchangeHoliday('US', '2026-11-26')).toBe(true);
+    expect(isExchangeHoliday('CA', '2026-11-26')).toBe(false);
+    expect(isExchangeHoliday('CA', '2026-10-12')).toBe(true);
+  });
+
+  it('kanadský ISIN se vypořádá až po Civic Holiday, ne skrz něj', () => {
+    // Nákup v pátek 31. 7. 2026, T+1 → pondělí 3. 8. je Civic Holiday → úterý 4. 8.
+    expect(inferSettlementDate('2026-07-31', 'CA73044W3021', 'STOCK')).toBe('2026-08-04');
+    // stejný den u US titulu: pondělí se obchoduje, takže T+1 = 3. 8.
+    expect(inferSettlementDate('2026-07-31', 'US0378331005', 'STOCK')).toBe('2026-08-03');
   });
 });
