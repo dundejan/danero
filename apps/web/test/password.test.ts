@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { hashPassword, verifyPassword } from '@/lib/password';
 
 /**
- * E-8: /soukromi tvrdilo Argon2, Better Auth přitom jel na výchozím scryptu.
- * Přepnutí je zadarmo, dokud nejsou živé účty — ale otisky vzniklé dřív se
- * musí dál ověřit, jinak by se vlastní instance pod AGPL zamkly.
+ * E-8: hesla se otiskují nativním scryptem s dvojnásobnou pamětí proti výchozímu
+ * nastavení Better Authu (64 vs 32 MiB). Otisky vzniklé dřív se musí dál ověřit,
+ * jinak by se vlastní instance pod AGPL zamkly.
  */
 describe('otisky hesel', () => {
-  it('vyrobí Argon2id otisk v PHC formátu a ověří ho', async () => {
+  it('vyrobí scrypt otisk v PHC formátu a ověří ho', async () => {
     const hash = await hashPassword('Tajne-Heslo-2026');
 
-    expect(hash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    expect(hash.startsWith('$scrypt$N=65536,r=8,p=1$')).toBe(true);
     expect(hash).not.toContain('Tajne-Heslo-2026');
     expect(await verifyPassword({ hash, password: 'Tajne-Heslo-2026' })).toBe(true);
     expect(await verifyPassword({ hash, password: 'Tajne-Heslo-2027' })).toBe(false);
@@ -23,17 +23,17 @@ describe('otisky hesel', () => {
     expect(await verifyPassword({ hash: b, password: 'stejne' })).toBe(true);
   });
 
-  it('ověří i starý scrypt otisk z Better Authu', async () => {
+  it('ověří i otisk ve výchozím formátu Better Authu', async () => {
     const { hashPassword: legacyHash } = await import('better-auth/crypto');
     const legacy = await legacyHash('Stare-Heslo-2025');
 
-    expect(legacy.startsWith('$argon2id$')).toBe(false);
+    expect(legacy.startsWith('$scrypt$')).toBe(false);
     expect(await verifyPassword({ hash: legacy, password: 'Stare-Heslo-2025' })).toBe(true);
     expect(await verifyPassword({ hash: legacy, password: 'spatne' })).toBe(false);
   });
 
   it('poškozený otisk neprojde a neshodí přihlášení', async () => {
-    for (const hash of ['$argon2id$rozbite', '$argon2id$v=19$m=1$sul', '']) {
+    for (const hash of ['$scrypt$rozbite', '$scrypt$N=1,r=1,p=1$sul', '']) {
       expect(await verifyPassword({ hash, password: 'cokoliv' })).toBe(false);
     }
   });

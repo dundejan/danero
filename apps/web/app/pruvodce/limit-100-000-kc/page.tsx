@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import {
-  ClanekOdkaz,
-  ClanekPata,
-  ClanekSekce,
-  ClanekTelo,
-  ClanekUvod,
-  Priklad,
-  SpornyVyklad,
-} from '@/components/pruvodce-clanek';
+  ArticleLink,
+  ArticleFooter,
+  ArticleSection,
+  ArticleBody,
+  ArticleIntro,
+  Example,
+  DisputedReading,
+} from '@/components/guide-article';
 
 export const metadata: Metadata = {
   title: 'Limit 100 000 Kč z prodeje akcií: počítá se objem, ne zisk — Danero',
@@ -25,8 +25,8 @@ export default function Limit100000KcPage() {
         lede="Nejrozšířenější omyl českých investorů. Kdy se prodeje akcií a ETF nedaní vůbec, co udělá jediná koruna nad limit a jak do toho vstupují časový test a krypto."
       />
 
-      <ClanekTelo>
-        <ClanekUvod>
+      <ArticleBody>
+        <ArticleIntro>
           <strong>
             Do limitu 100 000 Kč se počítá, za kolik jsi za rok prodal — úhrn hrubých
             tržeb ze všech prodejů cenných papírů dohromady — a ne, kolik jsi na nich
@@ -35,16 +35,16 @@ export default function Limit100000KcPage() {
           Prodej za 105 000 Kč se ztrátou tedy limit překračuje, zatímco prodej za
           99 000 Kč se ziskem 40 000 Kč je celý osvobozený. Přesně 100 000 Kč ještě
           vyhovuje; první koruna navíc shazuje osvobození celé.
-        </ClanekUvod>
+        </ArticleIntro>
 
-        <ClanekSekce title="Jak limit funguje">
+        <ArticleSection title="Jak limit funguje">
           <p>
             Zákon o daních z příjmů (§ 4 odst. 1 písm. t) osvobozuje příjmy z prodeje
             cenných papírů, pokud jejich <strong>úhrn za kalendářní rok nepřesáhne
             100 000 Kč</strong>. Nezkoumá se zisk, ztráta ani doba držení — jen součet
             toho, co ti prodeje hrubě vynesly. Tři důsledky, které se pletou nejčastěji:
           </p>
-          <Priklad title="Tři situace, stejné pravidlo">
+          <Example title="Tři situace, stejné pravidlo">
             <p>
               Prodáš akcie za 105 000 Kč se ztrátou 10 000 Kč → limit překročen, prodeje
               osvobozené limitem nejsou.
@@ -58,15 +58,15 @@ export default function Limit100000KcPage() {
               110 000 Kč, limit překročen. Sčítá se přes všechny brokery a účty — limit
               nejde „rozložit mezi platformy“.
             </p>
-          </Priklad>
+          </Example>
           <p>
             Limit se počítá každý kalendářní rok znovu a je stejný pro rok 2025 i 2026.
             Jestli se tě týká přiznání, zjistíš orientačně za minutu v{' '}
-            <ClanekOdkaz href="/kalkulacka">kalkulačce „Musím podat přiznání?“</ClanekOdkaz>
+            <ArticleLink href="/kalkulacka">kalkulačce „Musím podat přiznání?“</ArticleLink>
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Koruna navíc a osvobození padá celé">
+        <ArticleSection title="Koruna navíc a osvobození padá celé">
           <p>
             Limit funguje jako práh, ne jako odpočet: při překročení se nedaní jen částka
             nad 100 000 Kč, ale <strong>osvobození padá pro všechny prodeje</strong>.
@@ -74,7 +74,7 @@ export default function Limit100000KcPage() {
             přiznání — daní se rozdíl mezi prodejní a nabývací cenou včetně poplatků,
             zisky a ztráty z prodejů se v rámci roku vzájemně započtou.
           </p>
-          <Priklad title="99 000 vs. 101 000 Kč">
+          <Example title="99 000 vs. 101 000 Kč">
             <p>
               Koupíš akcie za 100 000 Kč a za rok je prodáš za 101 000 Kč: limit je
               překročen, zisk 1 000 Kč se daní 15 % — daň 150 Kč, ale přiznání podáváš.
@@ -83,7 +83,7 @@ export default function Limit100000KcPage() {
               Kdybys prodal za 99 000 Kč (a jiné prodeje neměl), je všechno osvobozené
               a kvůli prodejům se přiznání neřeší vůbec.
             </p>
-          </Priklad>
+          </Example>
           <p>
             A pozor: povinnost podat přiznání se posuzuje z <strong>hrubých</strong>{' '}
             příjmů, ne ze zisku. Neosvobozené prodeje za 101 000 Kč jsou nad obecnou
@@ -92,9 +92,9 @@ export default function Limit100000KcPage() {
             prodával se ztrátou. A platí to i naruby: když jsou prodeje osvobozené,
             ztráty z nich nikam neuplatníš.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Vztah k tříletému testu">
+        <ArticleSection title="Vztah k tříletému testu">
           <p>
             Limit 100 000 Kč a tříletý časový test jsou <strong>dvě nezávislá
             osvobození</strong>. Kusy držené déle než 3 roky jsou osvobozené bez ohledu na
@@ -103,7 +103,7 @@ export default function Limit100000KcPage() {
             zrušený, pro krypto trvá.) Kdy tvému nákupu doběhnou tři roky, hlídá Danero
             u každého nákupu zvlášť na horizontu osvobození.
           </p>
-          <SpornyVyklad>
+          <DisputedReading>
             <p>
               Sporné je, jestli se prodeje osvobozené časovým testem počítají do úhrnu
               100 000 Kč. Převažující (přísnější) výklad říká, že ano; menšinový je
@@ -117,10 +117,10 @@ export default function Limit100000KcPage() {
               cena), ne celá tržba (těch 80 000 Kč chrání časový test dál). Podle
               mírnějšího výkladu se počítá jen 90 000 Kč → pod limitem, osvobozeno všechno.
             </p>
-          </SpornyVyklad>
-        </ClanekSekce>
+          </DisputedReading>
+        </ArticleSection>
 
-        <ClanekSekce title="Krypto má vlastní stovku">
+        <ArticleSection title="Krypto má vlastní stovku">
           <p>
             Od 15. 2. 2025 mají kryptoaktiva <strong>vlastní limit 100 000 Kč</strong>{' '}
             a vlastní tříletý test — oddělené od cenných papírů, oba limity se čerpají
@@ -135,9 +135,9 @@ export default function Limit100000KcPage() {
             stablecoiny (tzv. elektronické peněžní tokeny, třeba USDT) se limit 100 000 Kč
             ze zákona nevztahuje; u tříletého testu je jejich postavení sporné.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Jak limit uhlídat v praxi">
+        <ArticleSection title="Jak limit uhlídat v praxi">
           <p>
             Zrada limitu je v tom, že o něm rozhoduje součet za celý rok přes všechny
             účty — a v prosinci už bývá pozdě. Danero průběžně sčítá tržby ze všech
@@ -145,12 +145,12 @@ export default function Limit100000KcPage() {
             a prodej si můžeš nanečisto nasimulovat ještě před obchodem: uvidíš, co udělá
             s limitem i s časovými testy. Když se hranice blíží, přijde e-mail. Které
             platformy umíme načíst, najdeš na stránce{' '}
-            <ClanekOdkaz href="/platformy">Platformy</ClanekOdkaz>.
+            <ArticleLink href="/platformy">Platformy</ArticleLink>.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekPata
-          dalsi={[
+        <ArticleFooter
+          next={[
             {
               href: '/pruvodce/pausalni-rezim-a-investice',
               title: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
@@ -159,7 +159,7 @@ export default function Limit100000KcPage() {
             { href: '/kalkulacka', title: 'Kalkulačka: Musím podat přiznání?' },
           ]}
         />
-      </ClanekTelo>
+      </ArticleBody>
 
       <MarketingCta
         title="Kolik ze stovky máš letos vyčerpáno?"

@@ -1,4 +1,4 @@
-import { PrehledView, type PrehledNotification } from '@/components/views/prehled-view';
+import { OverviewView, type PrehledNotification } from '@/components/views/overview-view';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { computeNotificationCandidates } from '@/lib/notifications';
@@ -36,7 +36,7 @@ export default async function DemoPrehledPage({
     .map((candidate) => ({ ...candidate, createdAt: new Date(`${today}T00:00:00Z`) }));
 
   return (
-    <PrehledView
+    <OverviewView
       txs={txs}
       analysis={analysis}
       prices={prices}
