@@ -25,6 +25,29 @@ export function stripeLivemode(): boolean {
   return key.startsWith('sk_live_') || key.startsWith('rk_live_');
 }
 
+/**
+ * Běží ostrý provoz na zkušebním (sandboxovém) klíči? (C-29)
+ *
+ * Nasazená aplikace prodává za 490 a 990 Kč, ale se sandboxovým klíčem se
+ * žádné peníze nepřevedou: „platba" projde testovací kartou a funkce se
+ * odemknou zadarmo. Zákazník by přitom byl v dobré víře, že zaplatil.
+ *
+ * Poznává se to z prefixu klíče, ne z vlastní proměnné — druhá pravda by se
+ * dala rozejít s tou první. Jakmile Jan nastaví `sk_live_…`, pojistka zmizí
+ * sama, bez zásahu do kódu. Mimo produkci (vývoj, E2E, testy) nedělá nic:
+ * tam je zkušební klíč to jediné správné.
+ */
+export function stripeSandboxInProduction(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  // vlastní instance bez plateb žádný klíč nemá a nic neprodává
+  if (!process.env.STRIPE_SECRET_KEY) return false;
+  return !stripeLivemode();
+}
+
+/** Hláška do UI — jedna věta česky, bez žargonu, stejná všude. */
+export const SANDBOX_NOTICE =
+  'Platby tu teď běží ve zkušebním režimu: objednávka se nedokončí a nic se ti nestrhne. Než to spustíme naostro, je Danero pro tebe zdarma.';
+
 export interface StripePrices {
   report: string;
   subscription: string;

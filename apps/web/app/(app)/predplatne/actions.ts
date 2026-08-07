@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
 import { purchaseBlock, stripeCustomerFor } from '@/lib/billing';
-import { appUrl, stripe, stripePrices } from '@/lib/stripe';
+import { appUrl, stripe, stripePrices, stripeSandboxInProduction } from '@/lib/stripe';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -64,6 +64,10 @@ async function checkout(params: {
  * i na serveru — a okamžik se pošle do Stripe, aby skončil u platby v databázi.
  */
 function consentOrRedirect(formData: FormData): string {
+  // Zkušební klíč v ostrém provozu neúčtuje nic (C-29). Objednávku proto ani
+  // nezakládáme — zákazník by odešel s dojmem, že zaplatil, a přitom by mu
+  // Stripe nabídl testovací kartu a nestrhl ani korunu.
+  if (stripeSandboxInProduction()) redirect('/predplatne?stav=zkusebni-rezim');
   if (formData.get('souhlas') !== 'on') redirect('/predplatne?stav=chybi-souhlas');
   return new Date().toISOString();
 }
@@ -72,7 +76,7 @@ export async function buySubscriptionAction(formData: FormData): Promise<never> 
   const consentAt = consentOrRedirect(formData);
   const user = await requireUser();
   const db = await getDb();
-  const blocked = await purchaseBlock(db, user.id, 'subscription');
+  const blocked = await purchaseBlock(db, user.id, { kind: 'subscription' });
   if (blocked) redirect(`/predplatne?stav=${blocked}`);
   return checkout({
     consentAt,
@@ -88,11 +92,12 @@ export async function buySubscriptionAction(formData: FormData): Promise<never> 
 export async function buyReportAction(formData: FormData): Promise<never> {
   const consentAt = consentOrRedirect(formData);
   const user = await requireUser();
+  // Number(null) === 0, takže chybějící pole dřív koupilo „podklady za rok 0";
+  // rozsah i vlastnictví roku hlídá purchaseBlock, ať je kontrola na jednom místě
   const taxYear = Number(formData.get('rok'));
-  if (!Number.isInteger(taxYear)) redirect('/predplatne?stav=chyba-rok');
   const db = await getDb();
   // předplatitel má podklady za všechny roky v ceně — neprodávat mu je znovu
-  const blocked = await purchaseBlock(db, user.id, 'report');
+  const blocked = await purchaseBlock(db, user.id, { kind: 'report', taxYear });
   if (blocked) redirect(`/predplatne?stav=${blocked}`);
   return checkout({
     consentAt,

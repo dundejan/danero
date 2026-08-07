@@ -118,9 +118,11 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     expect(result.securities.base10Czk.toString()).toBe('10500000');
   });
 
-  it('dodanění ze stropu čerpá limit 50k i při CP poolu pod 100k (R-08d/R-10f)', () => {
-    // sdílený strop 2025: krypto 49,91M + CP 90k časově osvobozených = 50M
-    // → ratio 0,8; dodaní se 20 % z obou druhů VČETNĚ CP s poolem 90k ≤ 100k
+  it('druh osvobozený hodnotovým limitem se stropem NEkrátí (R-03, nález A2-9)', () => {
+    // § 4 odst. 3 váže strop jen na osvobození dle q), u) a zk). Hodnotový limit
+    // t)/zj) v tom výčtu není, takže CP s úhrnem 90 000 Kč ≤ 100 000 Kč jsou
+    // osvobozené hodnotově a strop na ně nedopadá — ani když ho přetáhne krypto.
+    // Dřív se krátily taky a vznikala absurdita „delší držba = vyšší daň".
     const result = run([
       buy({ quantity: '90', pricePerShare: '100', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
       sell({ quantity: '90', pricePerShare: '1000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
@@ -128,14 +130,35 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
       sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '49910000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
     ]);
 
-    // CP zůstávají hodnotově osvobozené, ale dodaněná pětina tržby je zdanitelná
+    // CP: pool 90 000 ≤ 100 000 → osvobozeno hodnotově, nic se nedodaňuje
     expect(result.securities.exemptUnder100k).toBe(true);
-    expect(result.securities.disposals[0]!.taxableProceedsCzk.toString()).toBe('18000');
+    expect(result.securities.disposals[0]!.taxableProceedsCzk.toString()).toBe('0');
 
+    // Krypto: do stropu vstupuje samo → 49 910 000 − 40 000 000 = 9 910 000
     const components = result.limits.flatTax50k.components;
-    expect(components.nonExemptSecuritiesProceedsCzk.toString()).toBe('18000');
-    expect(components.nonExemptCryptoProceedsCzk.toString()).toBe('9982000');
-    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('10000000');
+    expect(components.nonExemptSecuritiesProceedsCzk.toString()).toBe('0');
+    expect(components.nonExemptCryptoProceedsCzk.toString()).toBe('9910000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('9910000');
     expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+  });
+
+  it('delší držba nesmí vyjít dráž než kratší (absurdita, která A2-9 odhalila)', () => {
+    // Táž krypto tržba 90 000 Kč, jediný rozdíl je datum nákupu. Dřív vycházela
+    // při splněném časovém testu VYŠŠÍ daň (1 028 289,84 vs. 1 015 915,84 Kč),
+    // protože delší držba tržbu přesunula pod strop sdílený s cennými papíry.
+    const velkeCP = [
+      buy({ quantity: '25000', pricePerShare: '1000', tradeDate: '2021-01-10', settlementDate: '2021-01-10' }),
+      sell({ quantity: '25000', pricePerShare: '2000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ];
+    const krypto = (nakup: string) => [
+      buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '1000', tradeDate: nakup, settlementDate: nakup }),
+      sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '90000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+    ];
+    const dlouha = run([...velkeCP, ...krypto('2020-06-01')]); // držba 5 let
+    const kratka = run([...velkeCP, ...krypto('2024-06-01')]); // držba 1 rok
+
+    expect(dlouha.crypto.base10Czk.toString()).toBe('0');
+    expect(kratka.crypto.base10Czk.toString()).toBe('0');
+    expect(dlouha.tax.general.taxCzk.lte(kratka.tax.general.taxCzk)).toBe(true);
   });
 });

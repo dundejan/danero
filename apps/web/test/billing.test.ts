@@ -16,6 +16,8 @@ import {
   stripeCustomerFor,
 } from '@/lib/billing';
 import { canGenerateReport, hasActiveSubscription } from '@/lib/entitlements';
+import { HANDLED_STRIPE_EVENTS } from '@/lib/stripe-events';
+import { stripeSandboxInProduction } from '@/lib/stripe';
 
 /** Stripe klient je jediné, co v testech nahrazujeme — po síti nechodíme. */
 const zrusena: string[] = [];
@@ -27,9 +29,20 @@ const stripeState = {
   /** Skutečný stav ve Stripe pro rekonciliaci. */
   subscriptionsByCustomer: new Map<string, Stripe.Subscription[]>(),
   subscriptionsById: new Map<string, Stripe.Subscription>(),
+  /** Zaplacené Checkout sessions, které ve Stripe existují (záchrana C-21). */
+  checkoutSessions: [] as Stripe.Checkout.Session[],
+  /** Náhled nadcházející faktury podle ID předplatného (E-25). */
+  upcomingInvoices: new Map<string, { amount_due: number; currency: string }>(),
   /** Událost, kterou vrátí ověření podpisu ve webhook routě. */
   event: null as Stripe.Event | null,
 };
+
+/** Server actions končí přesměrováním — v testu ho zachytíme jako výjimku. */
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => {
+    throw new Error(`přesměrování na ${url}`);
+  },
+}));
 
 vi.mock('@/lib/stripe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/stripe')>()),
@@ -60,6 +73,18 @@ vi.mock('@/lib/stripe', async (importOriginal) => ({
         const charge = stripeState.charges.get(id);
         if (!charge) throw new Error('No such charge');
         return charge;
+      },
+    },
+    checkout: {
+      sessions: {
+        list: async () => ({ data: stripeState.checkoutSessions, has_more: false }),
+      },
+    },
+    invoices: {
+      createPreview: async ({ subscription }: { subscription?: string }) => {
+        const invoice = subscription ? stripeState.upcomingInvoices.get(subscription) : undefined;
+        if (!invoice) throw new Error('No upcoming invoice');
+        return invoice;
       },
     },
     webhooks: {
@@ -109,6 +134,10 @@ const subscriptionEvent = (
     },
   }) as unknown as Stripe.Event;
 
+/** Zaplacená Checkout session tak, jak ji vrátí seznam ze Stripe (C-21). */
+const checkoutSession = (overrides: Record<string, unknown>): Stripe.Checkout.Session =>
+  ({ id: 'cs_test_1', mode: 'payment', payment_status: 'paid', ...overrides }) as unknown as Stripe.Checkout.Session;
+
 /** Předplatné tak, jak ho vrátí Stripe API při rekonciliaci. */
 const stripeSubscription = (overrides: Record<string, unknown>): Stripe.Subscription =>
   ({
@@ -152,6 +181,8 @@ afterEach(() => {
   stripeState.charges.clear();
   stripeState.subscriptionsByCustomer.clear();
   stripeState.subscriptionsById.clear();
+  stripeState.upcomingInvoices.clear();
+  stripeState.checkoutSessions = [];
   stripeState.event = null;
   zrusena.length = 0;
 });
@@ -274,6 +305,36 @@ describe('zpracování plateb ze Stripe', () => {
     expect(zrusena).toEqual([]);
   });
 
+  it('platba smazaného uživatele se zahodí, ne aby shodila webhook', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // Smazání účtu ruší předplatné ve Stripe, takže tahle událost dorazí při
+    // KAŽDÉM takovém smazání. Cizí klíč by z ní udělal 500 a Stripe by ji
+    // zkoušel tři dny (C-23).
+    const podklady = await applyStripeEvent(
+      db,
+      checkoutEvent({
+        client_reference_id: 'smazany',
+        metadata: { userId: 'smazany', taxYear: '2026' },
+        payment_intent: 'pi_1',
+      }),
+    );
+    const predplatne = await applyStripeEvent(
+      db,
+      subscriptionEvent(
+        { status: 'canceled', metadata: { userId: 'smazany' } },
+        1_786_000_100,
+        'customer.subscription.deleted',
+      ),
+    );
+
+    expect(podklady).toContain('už neexistuje');
+    expect(predplatne).toContain('už neexistuje');
+    expect(await db.select().from(reportPurchases)).toHaveLength(0);
+    expect(await db.select().from(subscriptions)).toHaveLength(0);
+  });
+
   it('neznámý typ události se ignoruje', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
     const outcome = await applyStripeEvent(db, {
@@ -286,7 +347,7 @@ describe('zpracování plateb ze Stripe', () => {
 
 /** C-3: Stripe pořadí doručení negarantuje a řádek je jeden na uživatele. */
 describe('pořadí událostí o předplatném', () => {
-  it('opožděné zrušení STARÉHO předplatného nesebere přístup, za který zákazník právě zaplatil', { timeout: 30_000 }, async () => {
+  it('dunning STARÉHO předplatného doběhne AŽ POTOM a nesmí sebrat přístup, za který zákazník právě zaplatil', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const db = await dbWithUser();
 
@@ -306,8 +367,43 @@ describe('pořadí událostí o předplatném', () => {
     );
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
 
-    // teprve teď dorazí dunning k předplatnému A — událost STARŠÍ než stav v DB
+    // Teprve teď dojede dunning u předplatného A a Stripe ho zruší. Dunning
+    // trvá dny, takže ta událost je NOVĚJŠÍ než všechno ostatní — čekat, že
+    // dorazí opožděně, znamená čekat na méně pravděpodobný případ (C-20).
     const outcome = await applyStripeEvent(
+      db,
+      subscriptionEvent(
+        { id: 'sub_A', status: 'canceled' },
+        1_786_000_400,
+        'customer.subscription.deleted',
+      ),
+    );
+
+    // kdo právě zaplatil, nesmí přijít o přístup kvůli mrtvému předplatnému
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+    // a portál musí vést k předplatnému B, ne ke starému
+    const [row] = await db.select().from(subscriptions);
+    expect(row?.stripeSubscriptionId).toBe('sub_B');
+    expect(outcome).toContain('zahozena');
+  });
+
+  it('opožděné zrušení STARÉHO předplatného nesebere přístup ani při přeházeném doručení', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    await applyStripeEvent(db, subscriptionEvent({ id: 'sub_A' }, 1_786_000_000));
+    await applyStripeEvent(db, subscriptionEvent({ id: 'sub_A', status: 'past_due' }, 1_786_000_100));
+    await applyStripeEvent(
+      db,
+      subscriptionEvent(
+        { id: 'sub_B', items: { data: [{ current_period_end: 1861920000 }] } },
+        1_786_000_300,
+        'customer.subscription.created',
+      ),
+    );
+
+    // tentýž konec, jen událost dorazila mimo pořadí (STARŠÍ než stav v DB)
+    await applyStripeEvent(
       db,
       subscriptionEvent(
         { id: 'sub_A', status: 'canceled' },
@@ -316,12 +412,7 @@ describe('pořadí událostí o předplatném', () => {
       ),
     );
 
-    // kdo právě zaplatil, nesmí přijít o přístup kvůli opožděné poště Stripu
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
-    // a portál musí vést k předplatnému B, ne ke starému
-    const [row] = await db.select().from(subscriptions);
-    expect(row?.stripeSubscriptionId).toBe('sub_B');
-    expect(outcome).toContain('zahozena');
   });
 
   it('opožděná událost o TÉMŽE předplatném nevrátí starý stav', { timeout: 30_000 }, async () => {
@@ -335,16 +426,38 @@ describe('pořadí událostí o předplatném', () => {
     expect(outcome).toContain('zahozena');
   });
 
-  it('novější událost o jiném předplatném stav přepíše', { timeout: 30_000 }, async () => {
+  it('událost o jiném ZAPLACENÉM předplatném stav přepíše', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const db = await dbWithUser();
 
     await applyStripeEvent(db, subscriptionEvent({ id: 'sub_A' }, 1_786_000_000));
     await applyStripeEvent(
       db,
+      subscriptionEvent(
+        { id: 'sub_B', items: { data: [{ current_period_end: 1861920000 }] } },
+        1_786_000_900,
+        'customer.subscription.created',
+      ),
+    );
+
+    const [row] = await db.select().from(subscriptions);
+    expect(row?.stripeSubscriptionId).toBe('sub_B');
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+  });
+
+  it('nad mrtvým předplatným vyhraje čerstvější událost o jiném, i když je taky mrtvá', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // nic zaplaceného v sázce není — ať v řádku zůstane to, co je aktuálnější
+    await applyStripeEvent(db, subscriptionEvent({ id: 'sub_A', status: 'past_due' }, 1_786_000_000));
+    await applyStripeEvent(
+      db,
       subscriptionEvent({ id: 'sub_B', status: 'canceled' }, 1_786_000_900, 'customer.subscription.deleted'),
     );
 
+    const [row] = await db.select().from(subscriptions);
+    expect(row?.stripeSubscriptionId).toBe('sub_B');
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
   });
 });
@@ -416,6 +529,94 @@ describe('denní rekonciliace se Stripe', () => {
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
   });
 
+  it('najde zaplacené podklady, o kterých v databázi není ANI ŘÁDEK', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    // jediná událost o téhle platbě se ztratila; po třech dnech to Stripe vzdal
+    stripeState.checkoutSessions = [
+      checkoutSession({
+        id: 'cs_ztracena',
+        mode: 'payment',
+        payment_status: 'paid',
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1', taxYear: '2026' },
+        payment_intent: 'pi_ztracena',
+        customer: 'cus_1',
+      }),
+    ];
+
+    const result = await reconcileSubscriptions(db, ROK_2026);
+
+    // success_url zákazníkovi napsala „funkce jsou odemčené" — musí to platit
+    expect(result.recovered).toBe(1);
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+
+    // druhý běh cronu už nemá co zachraňovat
+    expect((await reconcileSubscriptions(db, ROK_2026)).recovered).toBe(0);
+    expect(await db.select().from(reportPurchases)).toHaveLength(1);
+  });
+
+  it('najde předplatné, o kterém v databázi není ani řádek', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    stripeState.checkoutSessions = [
+      checkoutSession({
+        id: 'cs_sub',
+        mode: 'subscription',
+        payment_status: 'paid',
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1' },
+        customer: 'cus_ztraceny',
+        subscription: 'sub_ztracene',
+      }),
+    ];
+    stripeState.subscriptionsByCustomer.set('cus_ztraceny', [
+      stripeSubscription({ id: 'sub_ztracene', customer: 'cus_ztraceny' }),
+    ]);
+
+    const result = await reconcileSubscriptions(db, ROK_2026);
+
+    expect(result.recovered).toBe(1);
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+  });
+
+  it('vrácenou platbu rekonciliace neodemkne zpátky', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const session = {
+      id: 'cs_vracena',
+      mode: 'payment' as const,
+      payment_status: 'paid' as const,
+      client_reference_id: 'u1',
+      metadata: { userId: 'u1', taxYear: '2026' },
+      payment_intent: 'pi_vracena',
+      customer: 'cus_1',
+    };
+    await applyStripeEvent(db, checkoutEvent(session));
+    await applyStripeEvent(db, {
+      type: 'charge.refunded',
+      created: 1_786_000_500,
+      data: {
+        object: {
+          id: 'ch_1',
+          payment_intent: 'pi_vracena',
+          refunded: true,
+          amount: 49000,
+          amount_refunded: 49000,
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+
+    // session ve Stripe zůstává „complete" napořád — záchranná síť ji nesmí
+    // vyložit jako platbu, o které nevíme
+    stripeState.checkoutSessions = [checkoutSession(session)];
+    const result = await reconcileSubscriptions(db, ROK_2026);
+
+    expect(result.recovered).toBe(0);
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+  });
+
   it('ruční grant se do Stripe neptá', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const db = await dbWithUser();
@@ -440,23 +641,76 @@ describe('kontrola před nákupem', () => {
     const db = await dbWithUser();
     await applyStripeEvent(db, subscriptionEvent({}));
 
-    expect(await purchaseBlock(db, 'u1', 'subscription', ROK_2026)).toBe('uz-mas-predplatne');
+    expect(await purchaseBlock(db, 'u1', { kind: 'subscription' }, ROK_2026)).toBe('uz-mas-predplatne');
     // podklady za všechny roky má v ceně hlídání — prodat mu je znovu za 490 Kč
     // by bylo účtování za něco, co už zaplatil
-    expect(await purchaseBlock(db, 'u1', 'report', ROK_2026)).toBe('mas-v-predplatnem');
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2026 }, ROK_2026)).toBe(
+      'mas-v-predplatnem',
+    );
   });
 
   it('bez předplatného nákup projde', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
-    expect(await purchaseBlock(db, 'u1', 'subscription', ROK_2026)).toBeNull();
+    expect(await purchaseBlock(db, 'u1', { kind: 'subscription' }, ROK_2026)).toBeNull();
   });
 
   it('nákupní akce mají rate limit jako upload a export', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
     for (let i = 0; i < 10; i += 1) {
-      expect(await purchaseBlock(db, 'u1', 'report', ROK_2026)).toBeNull();
+      expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2026 }, ROK_2026)).toBeNull();
     }
-    expect(await purchaseBlock(db, 'u1', 'report', ROK_2026)).toBe('prilis-casto');
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2026 }, ROK_2026)).toBe(
+      'prilis-casto',
+    );
+  });
+
+  it('rok, který má uživatel zaplacený, se podruhé neprodá', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await db
+      .insert(reportPurchases)
+      .values({ userId: 'u1', taxYear: 2024, stripePaymentIntentId: 'pi_1' });
+
+    // dřív to zachytil až unique index ve webhooku — tedy když byly peníze pryč
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2024 }, ROK_2026)).toBe(
+      'uz-mas-rok',
+    );
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2025 }, ROK_2026)).toBeNull();
+  });
+
+  it('rok vrácený zákazníkovi jde koupit znovu', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await db.insert(reportPurchases).values({
+      userId: 'u1',
+      taxYear: 2024,
+      stripePaymentIntentId: 'pi_1',
+      revokedAt: new Date('2026-03-01T00:00:00Z'),
+      revokedReason: 'refund',
+    });
+
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2024 }, ROK_2026)).toBeNull();
+  });
+
+  it('nesmyslný daňový rok se ke Stripu vůbec nedostane', { timeout: 30_000 }, async () => {
+    const db = await dbWithUser();
+    // Number(null) === 0 a Number.isInteger(0) === true — takhle se prodávaly
+    // „podklady za rok 0"; 1e21 navíc shodilo SQL dotaz (C-27)
+    const nesmysly = [Number(null), Number(''), Number('x'), 2024.5, 1999, 2100, -2024, 1e21];
+    for (const rok of nesmysly) {
+      expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: rok }, ROK_2026)).toBe(
+        'chyba-rok',
+      );
+    }
+    // hranice rozsahu: běžný rok a deset let zpátky ano, o rok dál ne
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2026 }, ROK_2026)).toBeNull();
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2016 }, ROK_2026)).toBeNull();
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2015 }, ROK_2026)).toBe(
+      'chyba-rok',
+    );
+    expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2027 }, ROK_2026)).toBe(
+      'chyba-rok',
+    );
   });
 });
 
@@ -718,6 +972,98 @@ describe('vrácení peněz a reklamace', () => {
     expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
   });
 
+  it('částečná refundace nesebere celé podklady', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await applyStripeEvent(
+      db,
+      checkoutEvent({
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1', taxYear: '2026' },
+        payment_intent: 'pi_1',
+        customer: 'cus_1',
+      }),
+    );
+
+    // 20 Kč zpátky jako gesto (`refunded: false`) — ne odstoupení od smlouvy
+    const outcome = await applyStripeEvent(
+      db,
+      refundEvent({ refunded: false, amount: 49000, amount_refunded: 2000 }),
+    );
+
+    expect(outcome).toContain('částečná');
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+
+    // celá částka zpátky už zamyká
+    await applyStripeEvent(db, refundEvent());
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+  });
+
+  it('vyhraná reklamace vrátí přístup zpátky', { timeout: 30_000 }, async () => {
+    const db = await dbSePlatbami();
+    stripeState.charges.set('ch_1', { customer: 'cus_1' });
+    stripeState.subscriptionsByCustomer.set('cus_1', [stripeSubscription({})]);
+
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.created',
+      created: 1_786_000_600,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1' } },
+    } as unknown as Stripe.Event);
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
+
+    // banka rozhodla ve prospěch obchodníka: peníze zůstaly u nás, takže
+    // služba patří zákazníkovi (C-25)
+    const outcome = await applyStripeEvent(db, {
+      type: 'charge.dispute.closed',
+      created: 1_786_000_900,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1', status: 'won' } },
+    } as unknown as Stripe.Event);
+
+    expect(outcome).toContain('vyhrána');
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+  });
+
+  it('prohraná reklamace nechává zamčeno', { timeout: 30_000 }, async () => {
+    const db = await dbSePlatbami();
+    stripeState.charges.set('ch_1', { customer: 'cus_1' });
+
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.created',
+      created: 1_786_000_600,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1' } },
+    } as unknown as Stripe.Event);
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.closed',
+      created: 1_786_000_900,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1', status: 'lost' } },
+    } as unknown as Stripe.Event);
+
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+  });
+
+  it('reklamaci vyhranou po vrácení peněz přístup nevrací', { timeout: 30_000 }, async () => {
+    const db = await dbSePlatbami();
+    stripeState.charges.set('ch_1', { customer: 'cus_1' });
+
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.created',
+      created: 1_786_000_600,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1' } },
+    } as unknown as Stripe.Event);
+    // spor se typicky uzavře ve prospěch obchodníka právě proto, že peníze
+    // vrátil sám — protiplnění se za ně vracet nesmí
+    await applyStripeEvent(db, refundEvent());
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.closed',
+      created: 1_786_001_000,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1', status: 'won' } },
+    } as unknown as Stripe.Event);
+
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+  });
+
   it('refundace bez odpovídajícího záznamu neshodí webhook', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
     await expect(
@@ -734,6 +1080,44 @@ describe('webhook a režim Stripe', () => {
       body: '{}',
       headers: { 'stripe-signature': 't=1,v1=fake' },
     });
+
+  it('obsluhované typy událostí jsou v seznamu pro přihlášení endpointu', { timeout: 30_000 }, async () => {
+    // C-22: obsluha, která ve Stripe není přihlášená, je v produkci mrtvá —
+    // nová větev v applyStripeEvent musí přibýt i sem
+    expect(HANDLED_STRIPE_EVENTS).toContain('charge.dispute.closed');
+    expect(HANDLED_STRIPE_EVENTS).toContain('charge.refunded');
+  });
+
+  it('událost o smazaném uživateli webhook nespadne, ale potvrdí', { timeout: 30_000 }, async () => {
+    // účet s předplatným se smaže → Stripe pošle deleted s userId, který už
+    // neexistuje. 500 by Stripe zkoušel tři dny a endpoint mohl zakázat (C-23).
+    process.env.PGLITE_DATA_DIR = ':memory:';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    stripeState.event = {
+      type: 'customer.subscription.deleted',
+      livemode: false,
+      created: 1_786_000_000,
+      data: {
+        object: {
+          id: 'sub_smazany',
+          customer: 'cus_1',
+          status: 'canceled',
+          cancel_at_period_end: false,
+          items: { data: [{ current_period_end: 1798761600 }] },
+          metadata: { userId: 'smazany_ucet' },
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    const { POST } = await import('@/app/api/stripe/webhook/route');
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    delete process.env.PGLITE_DATA_DIR;
+  });
 
   it('testovací událost na ostrém klíči se odmítne', { timeout: 30_000 }, async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
@@ -802,6 +1186,72 @@ describe('upomínka před automatickou obnovou (E-1)', () => {
     expect(emails().filter((m) => m.subject.includes('obnoví'))).toHaveLength(1);
   });
 
+  it('uvádí částku z nadcházející faktury, ne ceníkovou konstantu', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const emails = captureEmails();
+    const db = await dbWithUser();
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+      cancelAtPeriodEnd: false,
+      stripeSubscriptionId: 'sub_1',
+      stripeCustomerId: 'cus_1',
+      promoCode: 'PARTNER20',
+    });
+    // se slevovým kupónem se strhne 792 Kč — e-mail nesmí slibovat 990 Kč
+    stripeState.upcomingInvoices.set('sub_1', { amount_due: 79_200, currency: 'czk' });
+
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({
+      due: 1,
+      sent: 1,
+    });
+
+    const mail = emails().find((m) => m.subject.includes('obnoví'));
+    expect(mail?.text).toContain('792 Kč');
+    expect(mail?.text).not.toContain('990 Kč');
+  });
+
+  it('když se na fakturu nedovoláme, použije se ceníková cena', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const emails = captureEmails();
+    const db = await dbWithUser();
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+      cancelAtPeriodEnd: false,
+      stripeSubscriptionId: 'sub_bez_faktury',
+    });
+
+    // výpadek Stripu nesmí upomínku zdržet — 14denní lhůta z /podminky běží
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({
+      due: 1,
+      sent: 1,
+    });
+    expect(emails().find((m) => m.subject.includes('obnoví'))?.text).toContain('990 Kč');
+  });
+
+  it('ruční grant upomínku nedostane — nic se nestrhne', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const emails = captureEmails();
+    const db = await dbWithUser();
+    // partner/přispěvatel s hostováním zdarma (docs/15 §4)
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+      cancelAtPeriodEnd: false,
+      source: 'grant',
+    });
+
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({
+      due: 0,
+      sent: 0,
+    });
+    expect(emails()).toEqual([]);
+  });
+
   it('zrušené obnově ani neplatícímu se neposílá nic', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const emails = captureEmails();
@@ -831,6 +1281,56 @@ describe('upomínka před automatickou obnovou (E-1)', () => {
     } as unknown as Stripe.Event);
     expect(outcome).toContain('cron');
     expect(emails()).toEqual([]);
+  });
+});
+
+/**
+ * C-29: nasazená aplikace prodává za 490 a 990 Kč, ale se zkušebním klíčem se
+ * nic nestrhne — „platba" projde testovací kartou a funkce se odemknou zdarma.
+ */
+describe('zkušební klíč Stripe v ostrém provozu', () => {
+  afterEach(() => {
+    delete process.env.STRIPE_SECRET_KEY;
+    vi.unstubAllEnvs();
+  });
+
+  it('pozná se z prefixu klíče a jen v produkci', { timeout: 30_000 }, async () => {
+    expect(stripeSandboxInProduction()).toBe(false);
+
+    // ve vývoji i v E2E je zkušební klíč to jediné správné
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    expect(stripeSandboxInProduction()).toBe(false);
+
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(stripeSandboxInProduction()).toBe(true);
+
+    // po přepnutí na ostrý klíč musí pojistka zmizet sama, bez zásahu do kódu
+    process.env.STRIPE_SECRET_KEY = 'sk_live_x';
+    expect(stripeSandboxInProduction()).toBe(false);
+
+    // vlastní instance bez plateb nemá klíč a nic neprodává
+    delete process.env.STRIPE_SECRET_KEY;
+    expect(stripeSandboxInProduction()).toBe(false);
+  });
+
+  it('objednávka se na zkušebním klíči vůbec nezaloží', { timeout: 30_000 }, async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    const { buyReportAction, buySubscriptionAction } = await import(
+      '@/app/(app)/predplatne/actions'
+    );
+    const formData = new FormData();
+    formData.set('souhlas', 'on');
+    formData.set('rok', '2026');
+
+    // zákazník by odešel s dojmem, že zaplatil — Checkout by mu přitom nabídl
+    // testovací kartu a nestrhl ani korunu
+    await expect(buySubscriptionAction(formData)).rejects.toThrow('stav=zkusebni-rezim');
+    await expect(buyReportAction(formData)).rejects.toThrow('stav=zkusebni-rezim');
+
+    // s ostrým klíčem se nákup zastavit nesmí (dál padne až na chybějící relaci)
+    process.env.STRIPE_SECRET_KEY = 'sk_live_x';
+    await expect(buySubscriptionAction(formData)).rejects.not.toThrow('zkusebni-rezim');
   });
 });
 

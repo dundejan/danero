@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { Toast } from '@/components/toast';
 import { buttonVariants } from '@/components/ui/button';
 import { getDb } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
 import { stripeCustomerFor } from '@/lib/billing';
-import { billingEnabled, isPaidSubscription } from '@/lib/entitlements';
+import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
+import { billingEnabled, isPaidSubscription, isSellableTaxYear } from '@/lib/entitlements';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
@@ -21,12 +22,14 @@ const STAV_CHYBA: Record<string, string> = {
   zruseno: 'Platbu jsi zrušil, nic se nestrhlo.',
   'chybi-souhlas':
     'Bez zaškrtnutí žádosti o okamžité zahájení plnění nákup dokončit nejde — je to zákonná podmínka.',
-  'chyba-rok': 'Vyber daňový rok, za který podklady chceš.',
+  'chyba-rok': 'Vyber daňový rok, za který podklady chceš — nabízíme posledních deset let.',
+  'uz-mas-rok': 'Podklady za tenhle rok už máš zaplacené, zůstávají ti odemčené napořád.',
   'bez-plateb': 'Zatím jsi u nás nic nekoupil, není co spravovat.',
   'uz-mas-predplatne':
     'Hlídání ti běží — druhé předplatné vedle něj nedává smysl. Spravovat ho můžeš v zákaznickém portálu.',
   'mas-v-predplatnem': 'Podklady za všechny daňové roky máš v ceně hlídání, kupovat je znovu nemusíš.',
   'prilis-casto': 'Zkoušíš to moc často. Dej tomu pár minut a zkus to znovu.',
+  'zkusebni-rezim': SANDBOX_NOTICE,
 };
 
 /**
@@ -47,10 +50,12 @@ export default async function SubscriptionPage({
     .select()
     .from(subscriptions)
     .where(eq(subscriptions.userId, user.id));
+  // vrácené peníze řádek nemažou, jen ho zamknou — takový rok se nesmí tvářit
+  // jako zaplacený a musí jít koupit znovu
   const purchases = await db
     .select({ taxYear: reportPurchases.taxYear, createdAt: reportPurchases.createdAt })
     .from(reportPurchases)
-    .where(eq(reportPurchases.userId, user.id))
+    .where(and(eq(reportPurchases.userId, user.id), isNull(reportPurchases.revokedAt)))
     .orderBy(desc(reportPurchases.taxYear));
 
   const now = new Date();
@@ -60,7 +65,12 @@ export default async function SubscriptionPage({
   const customerId = await stripeCustomerFor(db, user.id);
 
   const txs = await loadTransactions(db, user.id);
-  const years = availableYears(txs, now.getUTCFullYear());
+  // Rok z dat může být jakýkoli (překlep v datu ve výpisu, prastarý obchod).
+  // Nabízet smíme jen to, co server opravdu prodá — jinak by tlačítko končilo
+  // chybovou hláškou (C-27).
+  const years = availableYears(txs, now.getUTCFullYear()).filter((rok) =>
+    isSellableTaxYear(rok, now),
+  );
   const koupeneRoky = new Set(purchases.map((p) => p.taxYear));
   const nabizeneRoky = years.filter((rok) => !koupeneRoky.has(rok));
 
@@ -82,6 +92,10 @@ export default async function SubscriptionPage({
           Tahle instance běží bez plateb — všechny funkce máš odemčené.
         </div>
       )}
+
+      {/* C-29: se zkušebním klíčem by „platba" prošla testovací kartou a nic
+          by se nestrhlo — to musí být vidět dřív, než na tlačítko sáhneš. */}
+      {stripeSandboxInProduction() && <Toast kind="chyba" text={SANDBOX_NOTICE} />}
 
       <section className="rounded-lg border border-linka bg-plocha p-6">
         <h2 className="font-display text-xl font-bold">Celoroční hlídání</h2>

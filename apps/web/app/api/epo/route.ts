@@ -9,7 +9,7 @@ import {
   getProfile,
   loadDailyRates,
   loadTransactions,
-  pinMatchingMethod,
+  pinTaxYear,
 } from '@/lib/portfolio';
 
 const field = (form: FormData, name: string): string | undefined => {
@@ -55,8 +55,8 @@ export async function POST(request: Request): Promise<Response> {
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
   const currentYear = Number(new Date().toISOString().slice(0, 4));
   const dailyRates = await loadDailyRates(db, txs, currentYear);
-  // R-05c: XML je podklad pro podání → metoda párování se pro ten rok zafixuje
-  const pinnedProfile = await pinMatchingMethod(db, profile, year, currentYear);
+  // R-05c: XML je podklad pro podání → konfigurace se pro ten rok zafixuje
+  const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
   const result = analyzeTaxYear(engineInputForUser(txs, pinnedProfile, year, dailyRates));
 
   const personal: EpoPersonalData = {

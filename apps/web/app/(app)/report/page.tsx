@@ -10,7 +10,7 @@ import {
   getProfile,
   loadDailyRates,
   loadTransactions,
-  pinMatchingMethod,
+  pinTaxYear,
 } from '@/lib/portfolio';
 import { canGenerateReport } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
@@ -58,10 +58,11 @@ export default async function ReportPage({
     );
   }
 
-  // R-05c: podklady za skončený rok fixují metodu párování — od téhle chvíle
-  // se rok počítá jí, i když si uživatel v nastavení vybere jinou (zákon chce
-  // konzistenci a čísla v podaném přiznání se nesmí zpětně změnit)
-  const pinnedProfile = await pinMatchingMethod(db, profile, year, currentYear);
+  // R-05c: podklady za skončený rok fixují párování, kurzovou soustavu i výklad
+  // limitu 100k — od téhle chvíle se rok počítá jimi, i když si uživatel
+  // v nastavení vybere jiné (zákon chce konzistenci a čísla v podaném přiznání
+  // se nesmí zpětně změnit)
+  const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
 
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
   const dailyRates = await loadDailyRates(db, txs, currentYear);

@@ -163,10 +163,13 @@ export function computeDividends(
       warnings.add(
         'WITHHOLDING_ABOVE_TREATY',
         'WARNING',
-        `${dividendLabel(tx)} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá (někdy ho lze žádat zpět přímo v zemi zdroje). ${
+        // Fakt, ne pokyn: individualizovaná rada nad konkrétními čísly poplatníka
+        // je za hranicí § 1 zákona 523/1992 Sb. o daňovém poradenství (docs/13 V-4,
+        // nález E-26). Informační hodnota zůstává, imperativ mizí.
+        `${dividendLabel(tx)} (${country}): v zahraničí ti srazili víc daně, než dovoluje mezinárodní smlouva — rozdíl v ČR započíst nejde a propadá. ${
           country === 'US'
-            ? 'U amerických akcií tomu příště předejdeš formulářem W-8BEN — u většiny brokerů stačí potvrdit v nastavení účtu (sníží srážku z 30 % na 15 %).'
-            : 'Přeplatek lze zkusit vymáhat po zahraničním správci daně.'
+            ? 'Sazba 30 % odpovídá účtu bez potvrzeného formuláře W-8BEN; smluvní sazba pro portfoliového investora je 15 % (čl. 10 smlouvy č. 32/1994 Sb.).'
+            : 'Vrácení nadměrné srážky se řídí právem státu zdroje.'
         }`,
         {
           txId: tx.id,

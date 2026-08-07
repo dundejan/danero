@@ -24,5 +24,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/o-projektu`, changeFrequency: 'yearly', priority: 0.5 },
     { url: `${BASE}/podminky`, changeFrequency: 'yearly', priority: 0.2 },
     { url: `${BASE}/soukromi`, changeFrequency: 'yearly', priority: 0.2 },
+    // povinné poučení o odstoupení (§ 1820 odst. 1 písm. i OZ) — patří do indexu
+    { url: `${BASE}/odstoupeni`, changeFrequency: 'yearly', priority: 0.2 },
   ];
 }

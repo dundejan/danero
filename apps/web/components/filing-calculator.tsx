@@ -19,6 +19,8 @@ import { buttonVariants } from '@/components/ui/button';
  * – zaměstnanec + vedlejší zdanitelné příjmy nad 20 000 Kč → přiznání (§ 38g/2),
  * – jiné situation + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
  * – neosvobozené prodeje → přiznání,
+ * – do limitů 50k/20k patří i kladná plnění z derivátů (R-08d/R-10f) —
+ *   nápověda je musí jmenovat, jinak na ně tazatel odpoví „Ne“,
  * – „Nevím“ u dividend/úroků → poctivé „bez dat to nejde říct“ (neptáme se
  *   na nic, co aplikace zjistí sama — sem patří CTA na napojení dat).
  */
@@ -68,21 +70,29 @@ function Question<T extends string | boolean>({
   );
 }
 
-/** Text otázky na dividendy/úroky podle situation (limit 50k / 20k / 50k). */
-const INCOME_QUESTION: Record<Situation, { question: string; hint: string }> = {
+/**
+ * Text otázky na ostatní zdanitelné příjmy podle situation (limit 50k / 20k / 50k).
+ * Nápověda musí vyjmenovat i **deriváty**: do limitů vstupují kladná plnění
+ * z opcí, futures a CFD (R-08d/R-10f, `limits.ts` je sčítá jako
+ * `derivatives.taxableIncomeCzk`). Bez nich odpověděl obchodník s CFD „Ne“
+ * a kalkulačka mu řekla, že přiznání řešit nemusí, i když limit prolomil.
+ * Export kvůli testu znění.
+ */
+export const INCOME_QUESTION: Record<Situation, { question: string; hint: string }> = {
   pausal: {
     question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
     hint:
-      'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
+      'Třeba zahraniční dividendy, úroky, nájem nebo kladná plnění z derivátů (CFD, opce, futures) — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
   },
   zamestnanec: {
     question: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
-    hint: 'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje se nepočítají.',
+    hint:
+      'Třeba zahraniční dividendy, úroky, nájem nebo kladná plnění z derivátů (CFD, opce, futures) — osvobozené prodeje se nepočítají.',
   },
   jine: {
     question: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
     hint:
-      'Včetně zahraničních dividend, úroků či nájmu — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
+      'Včetně zahraničních dividend, úroků, nájmu i kladných plnění z derivátů (CFD, opce, futures) — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
   },
 };
 

@@ -63,16 +63,37 @@ function resolveSharedCapRatios(
   config: TaxYearConfig,
   prepared: Record<AssetScope, PreparedDisposals>,
   warnings: WarningCollector,
+  includesTimeTestExempt: boolean,
 ): Record<AssetScope, Money> {
   const ratios: Record<AssetScope, Money> = { SECURITIES: d(1), CRYPTO: d(1) };
   const cap = config.limits.timeTestCap;
   if (!cap) return ratios;
   const capCzk = d(cap.amountCzk);
-  const combined = sum(cap.appliesTo.map((scope) => prepared[scope].timeTestExemptProceedsCzk));
+  // § 4 odst. 3 váže strop VÝHRADNĚ na osvobození podle q), u) a zk) — tedy na
+  // časový test a podíly. Hodnotový limit t)/zj) v tom výčtu není, takže druh,
+  // jehož úhrn tržeb se vejde do 100 000 Kč, je osvobozený hodnotově a do stropu
+  // nemá co přinést ani z něj co ubrat. Bez téhle podmínky vycházela absurdita:
+  // táž krypto tržba 90 000 Kč dala při držbě 5 let VYŠŠÍ daň než při držbě
+  // 1 rok (1 028 289,84 vs. 1 015 915,84 Kč), protože delší držba ji přesunula
+  // pod strop sdílený s cennými papíry (nález A2-9).
+  //
+  // Pozor na podmínku: „úhrn do 100k" osvobozuje časově osvobozené tržby jen
+  // tehdy, když do toho úhrnu vůbec vstupují — tedy při striktním výkladu R-02c
+  // (default). Při mírnějším výkladu je pool klidně nulový, a přesto jsou desítky
+  // milionů osvobozené časovým testem podle u)/zk), takže strop na ně dopadá
+  // plnou vahou (golden test „strop platí i při mírnějším výkladu limitu 100k").
+  const valueLimit: Record<AssetScope, Money> = {
+    SECURITIES: d(config.limits.securitiesProceedsExemption),
+    CRYPTO: d(config.limits.cryptoProceedsExemption),
+  };
+  const osvobozenoHodnotou = (scope: AssetScope): boolean =>
+    includesTimeTestExempt && prepared[scope].pool100kCzk.lte(valueLimit[scope]);
+  const podStropem = cap.appliesTo.filter((scope) => !osvobozenoHodnotou(scope));
+  const combined = sum(podStropem.map((scope) => prepared[scope].timeTestExemptProceedsCzk));
   if (combined.lte(capCzk)) return ratios;
 
   const ratio = capCzk.div(combined);
-  const scopeLabel = cap.appliesTo
+  const scopeLabel = podStropem
     .map((scope) => (scope === 'SECURITIES' ? 'CP' : 'kryptoaktiva'))
     .join(' + ');
   warnings.add(
@@ -80,7 +101,8 @@ function resolveSharedCapRatios(
     'WARNING',
     `Úhrn příjmů osvobozených časovým testem (${scopeLabel}) ${czkText(combined)} přesáhl strop ${czkText(capCzk)} (§ 4 odst. 3, R-03/R-10d). Osvobození je kráceno poměrně: osvobozeno zůstává ${pctText(ratio, 2)} těchto příjmů, zbytek vstupuje do dílčího základu § 10 s poměrnou částí výdajů. Rozhodný je moment přijetí peněz — zkontroluj vypořádání přes přelom roku.`,
   );
-  for (const scope of cap.appliesTo) ratios[scope] = ratio;
+  // krátí se jen druhy, které do stropu skutečně vstoupily
+  for (const scope of podStropem) ratios[scope] = ratio;
   return ratios;
 }
 
@@ -205,6 +227,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     config,
     { SECURITIES: securitiesPrepared, CRYPTO: cryptoPrepared },
     warnings,
+    options.limit100kIncludesTimeTestExempt,
   );
   const securities = computeSecurities(
     securitiesPrepared,
@@ -214,6 +237,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       capExemptRatio: capRatios.SECURITIES,
       label: 'CP',
       lossRuleId: 'R-05d',
+      valueExemptionAvailable: !input.profile.hasSecuritiesInBusinessAssets,
     },
     warnings,
   );
@@ -225,6 +249,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       capExemptRatio: capRatios.CRYPTO,
       label: 'kryptoaktiv',
       lossRuleId: 'R-10c',
+      valueExemptionAvailable: config.cryptoRules.exemptionsAvailable,
     },
     warnings,
   );

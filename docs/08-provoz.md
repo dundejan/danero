@@ -171,3 +171,37 @@ historickou synchronizaci proveď ručním nahráním CSV/XML exportů (idempote
 ⚠️ `vercel.json` nesnese vlastní klíče — schéma odmítne i `"//"` jako komentář
 a **deploy spadne** (ověřeno bolestí 7. 8. 2026: dva commity se nenasadily,
 protože jsem si do něj přidal vysvětlující poznámku). Komentáře patří sem.
+
+## DNS pro odesílání e-mailů (SPF, DKIM, DMARC, MX)
+
+Ověřeno v auditu 7. 8. 2026 skutečným odesláním přes produkční Resend a rozborem
+doručených hlaviček. **SPF a DKIM jsou nastavené správně** — zpráva nese dvě
+platné DKIM signatury (Resend + SES) s doménou `danero.cz`, takže se shodují
+s hlavičkou `From` a DMARC by prošel oběma mechanismy:
+
+| Záznam | Host | Hodnota | Stav |
+|---|---|---|---|
+| TXT (SPF) | `send.danero.cz` | `v=spf1 include:amazonses.com ~all` | ✅ |
+| MX | `send.danero.cz` | `10 feedback-smtp.eu-west-1.amazonses.com` | ✅ |
+| TXT (DKIM) | `resend._domainkey.danero.cz` | veřejný klíč od Resendu | ✅ |
+
+**Chybí dva záznamy** (nálezy M-2 a M-3). Oba se přidávají tam, kde je hostovaný
+DNS domény, a nic nerozbijí — DKIM i SPF už sedí, takže zpřísnění DMARC nemá
+co shodit:
+
+| Záznam | Host | Hodnota | Proč |
+|---|---|---|---|
+| TXT | `_dmarc.danero.cz` | `v=DMARC1; p=quarantine; rua=mailto:dunder.jan@gmail.com; adkim=r; aspf=r; pct=100` | Dnes je tam `p=none;` **bez `rua=`** — tedy ani ochrana, ani zprávy. Kdokoli může poslat e-mail s `From: podpora@danero.cz` („ověřte si účet") a příjemce ho nezkarantenuje. U služby, která rozesílá odkazy na obnovu hesla, je to připravený phishing; bez `rua=` se o něm navíc nikdy nedozvíš. |
+| MX | `danero.cz` (kořen) | libovolný funkční příjem pošty | Kořenová doména **nemá MX**, takže odpověď na `notifikace@danero.cz` se nikam nedoručí. „Odpovědět" je přitom první, co uživatel udělá, když chce zrušit předplatné. Kód mezitím posílá `Reply-To` na kontaktní adresu, takže to není tichá ztráta — ale doména bez MX vypadá pro některé příjemce hůř. |
+
+Opatrnější postup u DMARC: nasadit nejdřív `p=none; rua=…`, počkat týden na
+zprávy, a teprve pak zvednout na `p=quarantine`. Vzhledem k tomu, že veškerá
+odchozí pošta jde jedinou cestou (Resend) a alignment sedí, je skok rovnou na
+`quarantine` bezpečný.
+
+Ověření po změně:
+
+```bash
+dig +short TXT _dmarc.danero.cz
+dig +short MX danero.cz
+```

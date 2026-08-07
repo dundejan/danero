@@ -1,11 +1,16 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
 import { user } from '@/db/schema';
 import { purchaseConfirmationEmail, resolveEmailSender, subscriptionRenewalEmail } from '@/lib/email';
 import { czDate } from '@/lib/format';
-import { hasActiveSubscription, isPaidSubscription } from '@/lib/entitlements';
+import {
+  hasActiveSubscription,
+  isPaidSubscription,
+  isPlausibleTaxYear,
+  isSellableTaxYear,
+} from '@/lib/entitlements';
 import { errorText, logEvent } from '@/lib/log';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { stripe } from '@/lib/stripe';
@@ -40,31 +45,50 @@ interface StoredSubscription {
 }
 
 /**
- * Smí událost přepsat uložený stav předplatného? (C-3)
+ * Smí událost přepsat uložený stav předplatného? (C-3, C-20)
  *
  * Stripe pořadí doručení negarantuje a `subscriptions` má jeden řádek na
  * uživatele, takže bez téhle brány vyhraje poslední doručená událost — i kdyby
- * byla o týden starší nebo o úplně jiném předplatném. Reálný scénář: staré
- * předplatné doběhne dunning a pošle `deleted` až potom, co si zákazník koupil
- * nové a zaplatil do příštího roku; přepis by mu sebral přístup, za který
- * právě zaplatil, a poslal ho ke starému zákazníkovi v portálu.
+ * byla o týden starší nebo o úplně jiném předplatném.
  *
- * - TÉHOŽ předplatného: starší událost zahodit (stejný čas projde — je to
- *   opakované doručení téže události a zápis je idempotentní),
- * - JINÉHO předplatného: zpracovat jen ostře novější,
+ * - TÉHOŽ předplatného: rozhoduje čas události, starší se zahodí (stejný čas
+ *   projde — je to opakované doručení téže události a zápis je idempotentní),
+ * - JINÉHO předplatného: čas NErozhoduje. Dunning starého předplatného trvá
+ *   dny, takže jeho `deleted` skoro vždy dorazí AŽ POTOM, co si zákazník koupil
+ *   a zaplatil nové (C-20) — a je to událost pravdivá i čerstvá, jen o něčem,
+ *   co už zákazníka nezajímá. Rozhoduje proto stejné pořadí jako v rekonciliaci
+ *   (`bestSubscription`): zaplacené vyhrává, při shodě pozdější konec období.
+ *   Opačný případ — řádek drží mrtvé předplatné a přijde událost o novém
+ *   zaplaceném — projde, protože zaplacené vyhrává nad nezaplaceným.
  * - bez uložené známky (ruční grant, vazba z checkoutu): pustit.
+ *
+ * Zbytkové riziko (zákazník má ve Stripe zrušeno, ale řádek drží staré
+ * zaplacené předplatné, o kterém událost nikdy nedorazila) padá na denní
+ * rekonciliaci — ta se ptá Stripe a řádek srovná do 24 h.
  */
 export function acceptsEvent(
   stored: StoredSubscription | undefined,
-  incoming: { stripeSubscriptionId: string | null; eventAt: Date },
+  incoming: {
+    stripeSubscriptionId: string | null;
+    status: string;
+    currentPeriodEnd: Date;
+    eventAt: Date;
+  },
+  now = new Date(),
 ): boolean {
   if (!stored?.lastEventAt) return true;
   const sameSubscription =
     stored.stripeSubscriptionId === null ||
     stored.stripeSubscriptionId === incoming.stripeSubscriptionId;
-  return sameSubscription
-    ? incoming.eventAt.getTime() >= stored.lastEventAt.getTime()
-    : incoming.eventAt.getTime() > stored.lastEventAt.getTime();
+  if (sameSubscription) return incoming.eventAt.getTime() >= stored.lastEventAt.getTime();
+
+  const storedPaid = isPaidSubscription(stored, now);
+  const incomingPaid = isPaidSubscription(incoming, now);
+  if (storedPaid !== incomingPaid) return incomingPaid;
+  if (incoming.currentPeriodEnd.getTime() !== stored.currentPeriodEnd.getTime()) {
+    return incoming.currentPeriodEnd.getTime() > stored.currentPeriodEnd.getTime();
+  }
+  return incoming.eventAt.getTime() > stored.lastEventAt.getTime();
 }
 
 export interface SubscriptionState {
@@ -132,7 +156,13 @@ async function writeSubscription(
 ): Promise<{ written: boolean; unlocked: boolean }> {
   const stored = await storedSubscription(db, state.userId);
   const eventAt = state.eventAt ?? now;
-  if (!acceptsEvent(stored, { stripeSubscriptionId: state.stripeSubscriptionId ?? null, eventAt })) {
+  const incoming = {
+    stripeSubscriptionId: state.stripeSubscriptionId ?? null,
+    status: state.status,
+    currentPeriodEnd: state.currentPeriodEnd,
+    eventAt,
+  };
+  if (!acceptsEvent(stored, incoming, now)) {
     logEvent('warn', 'billing.stale_subscription_event', {
       userId: state.userId,
       subscriptionId: state.stripeSubscriptionId ?? null,
@@ -163,31 +193,77 @@ export async function recordReportPurchase(
     consentAt?: Date | null;
   },
 ): Promise<boolean> {
-  // vrací, jestli řádek opravdu vznikl — podle toho se pozná první doručení
+  // vrací, jestli se rok opravdu odemkl — podle toho se pozná první doručení
   // webhooku a pošle se potvrzovací e-mail jen jednou
+  const values = {
+    userId: args.userId,
+    taxYear: args.taxYear,
+    stripePaymentIntentId: args.stripePaymentIntentId ?? null,
+    stripeCustomerId: args.stripeCustomerId ?? null,
+    promoCode: args.promoCode ?? null,
+    consentAt: args.consentAt ?? null,
+  };
   const inserted = await db
     .insert(reportPurchases)
-    .values({
-      userId: args.userId,
-      taxYear: args.taxYear,
-      stripePaymentIntentId: args.stripePaymentIntentId ?? null,
-      stripeCustomerId: args.stripeCustomerId ?? null,
-      promoCode: args.promoCode ?? null,
-      consentAt: args.consentAt ?? null,
-    })
+    .values(values)
     .onConflictDoNothing()
     .returning({ id: reportPurchases.id });
-  if (inserted.length === 0) {
-    // Druhá platba za tentýž rok narazí na unique index. Tiché zahození by
-    // znamenalo peníze na účtu bez protiplnění a bez jakékoli stopy — tohle je
-    // jediné místo, odkud se dá dohledat, komu se má vrátit (C-6).
-    logEvent('error', 'billing.duplicate_report_purchase', {
+  if (inserted.length > 0) return true;
+
+  // Řádek pro ten rok už existuje. Když ho zrušilo vrácení peněz a tohle je
+  // JINÁ platba, koupil si zákazník rok znovu — a musí ho zase dostat.
+  if (args.stripePaymentIntentId) {
+    const revived = await db
+      .update(reportPurchases)
+      .set({ ...values, revokedAt: null, revokedReason: null })
+      .where(
+        and(
+          eq(reportPurchases.userId, args.userId),
+          eq(reportPurchases.taxYear, args.taxYear),
+          isNotNull(reportPurchases.revokedAt),
+          or(
+            isNull(reportPurchases.stripePaymentIntentId),
+            ne(reportPurchases.stripePaymentIntentId, args.stripePaymentIntentId),
+          ),
+        ),
+      )
+      .returning({ id: reportPurchases.id });
+    if (revived.length > 0) {
+      logEvent('warn', 'billing.report_purchase_repurchased', {
+        userId: args.userId,
+        taxYear: args.taxYear,
+        paymentIntentId: args.stripePaymentIntentId,
+      });
+      return true;
+    }
+  }
+
+  const [existing] = await db
+    .select({ revokedAt: reportPurchases.revokedAt })
+    .from(reportPurchases)
+    .where(
+      and(eq(reportPurchases.userId, args.userId), eq(reportPurchases.taxYear, args.taxYear)),
+    );
+  // Tatáž platba, kterou jsme už jednou vrátili (typicky ji znovu našla
+  // rekonciliace v seznamu zaplacených sessions). Odemknout ji zpátky by
+  // znamenalo dát protiplnění za peníze, které zákazník má u sebe.
+  if (existing?.revokedAt) {
+    logEvent('info', 'billing.revoked_purchase_left_locked', {
       userId: args.userId,
       taxYear: args.taxYear,
       paymentIntentId: args.stripePaymentIntentId ?? null,
     });
+    return false;
   }
-  return inserted.length > 0;
+  // Druhá platba za tentýž rok narazí na unique index. Tiché zahození by
+  // znamenalo peníze na účtu bez protiplnění a bez jakékoli stopy — tohle je
+  // jediné místo, odkud se dá dohledat, komu se má vrátit (C-6).
+  logEvent('error', 'billing.duplicate_report_purchase', {
+    userId: args.userId,
+    taxYear: args.taxYear,
+    paymentIntentId: args.stripePaymentIntentId ?? null,
+  });
+  return false;
 }
 
 /**
@@ -240,27 +316,57 @@ export async function stripeCustomerFor(db: Db, userId: string): Promise<string 
 }
 
 /** Důvod, proč nákup nepustit dál — zároveň hodnota `?stav=` pro hlášku v UI. */
-export type PurchaseBlock = 'prilis-casto' | 'uz-mas-predplatne' | 'mas-v-predplatnem';
+export type PurchaseBlock =
+  | 'prilis-casto'
+  | 'uz-mas-predplatne'
+  | 'mas-v-predplatnem'
+  | 'chyba-rok'
+  | 'uz-mas-rok';
+
+/** Co se kupuje. Podklady bez daňového roku neexistují — proto ho typ vyžaduje. */
+export type Purchase = { kind: 'subscription' } | { kind: 'report'; taxYear: number };
 
 /**
- * Vstupní kontrola nákupu (C-12, C-3c, C-6). Vrací důvod odmítnutí, nebo null.
+ * Vstupní kontrola nákupu (C-12, C-3c, C-6, C-26, C-27). Vrací důvod odmítnutí,
+ * nebo null. Jediné místo, kde se rozhoduje, jestli se smí založit Checkout —
+ * server action ho jen zavolá, takže obejít UI nic nezmění.
  *
+ * - rok mimo rozsah: dřív prošlo cokoli, včetně „roku 0" z chybějícího pole,
  * - rate limit: nákupní akce ho jako jediné neměly, přestože upload i export ano,
  * - dvě předplatná vedle sebe nedávají smysl a rozjela by se z nich dvě různá
  *   Stripe předplatná téhož uživatele,
- * - podklady za rok, který má předplatitel v ceně hlídání, se neprodávají.
+ * - podklady za rok, který má předplatitel v ceně hlídání, se neprodávají,
+ * - a ani rok, který už jednou zaplatil: unique index ho zachytil až ve
+ *   webhooku, tedy ve chvíli, kdy jsou peníze pryč.
+ *
+ * Pořadí je schválně takové: rok se ověří dřív, než se sáhne na rate limit,
+ * ať překlep neubírá pokusy o skutečný nákup.
  */
 export async function purchaseBlock(
   db: Db,
   userId: string,
-  kind: 'subscription' | 'report',
+  purchase: Purchase,
   now = new Date(),
 ): Promise<PurchaseBlock | null> {
+  if (purchase.kind === 'report' && !isSellableTaxYear(purchase.taxYear, now)) return 'chyba-rok';
   if (!(await checkRateLimit(db, `checkout:${userId}`, { max: 10, windowMs: 10 * 60_000 }))) {
     return 'prilis-casto';
   }
   if (await hasActiveSubscription(db, userId, now)) {
-    return kind === 'subscription' ? 'uz-mas-predplatne' : 'mas-v-predplatnem';
+    return purchase.kind === 'subscription' ? 'uz-mas-predplatne' : 'mas-v-predplatnem';
+  }
+  if (purchase.kind === 'report') {
+    const [owned] = await db
+      .select({ id: reportPurchases.id })
+      .from(reportPurchases)
+      .where(
+        and(
+          eq(reportPurchases.userId, userId),
+          eq(reportPurchases.taxYear, purchase.taxYear),
+          isNull(reportPurchases.revokedAt),
+        ),
+      );
+    if (owned) return 'uz-mas-rok';
   }
   return null;
 }
@@ -439,6 +545,11 @@ async function linkCheckoutSubscription(
  * Vrácení peněz zamyká přístup (C-8): po odstoupení do 14 dnů, refundaci nebo
  * chargebacku nesmí zůstat odemčeno. Nenajít odpovídající nákup je legitimní
  * (vrácená platba za předplatné, ruční refund mimo Danero) — jen se to zaloguje.
+ *
+ * Řádek se NEMAŽE, jen se označí (C-24, C-25): smazaný by ho denní rekonciliace
+ * našla ve Stripe jako zaplacenou session a odemkla znovu, a vyhraná reklamace
+ * by neměla co vrátit zpátky. Důvod se přepisuje schválně — po refundaci už
+ * vyhraná reklamace přístup nevrací, peníze jsou u zákazníka.
  */
 async function revokeReportPurchase(
   db: Db,
@@ -446,18 +557,45 @@ async function revokeReportPurchase(
   reason: string,
 ): Promise<number> {
   if (!paymentIntentId) return 0;
-  const removed = await db
-    .delete(reportPurchases)
+  const revoked = await db
+    .update(reportPurchases)
+    .set({ revokedAt: new Date(), revokedReason: reason })
     .where(eq(reportPurchases.stripePaymentIntentId, paymentIntentId))
     .returning({ userId: reportPurchases.userId, taxYear: reportPurchases.taxYear });
-  logEvent(removed.length > 0 ? 'warn' : 'info', 'billing.report_purchase_revoked', {
+  logEvent(revoked.length > 0 ? 'warn' : 'info', 'billing.report_purchase_revoked', {
     reason,
     paymentIntentId,
-    removed: removed.length,
-    userId: removed[0]?.userId ?? null,
-    taxYear: removed[0]?.taxYear ?? null,
+    removed: revoked.length,
+    userId: revoked[0]?.userId ?? null,
+    taxYear: revoked[0]?.taxYear ?? null,
   });
-  return removed.length;
+  return revoked.length;
+}
+
+/**
+ * Vrátí přístup, který sebrala reklamace (C-25). Vrací se JEN to, co zamkla
+ * reklamace: když mezitím zákazník dostal peníze zpátky (`revokedReason`
+ * přepsal refund), zůstává zamčeno.
+ */
+async function restoreReportPurchase(db: Db, paymentIntentId: string | null): Promise<number> {
+  if (!paymentIntentId) return 0;
+  const restored = await db
+    .update(reportPurchases)
+    .set({ revokedAt: null, revokedReason: null })
+    .where(
+      and(
+        eq(reportPurchases.stripePaymentIntentId, paymentIntentId),
+        eq(reportPurchases.revokedReason, 'dispute'),
+      ),
+    )
+    .returning({ userId: reportPurchases.userId, taxYear: reportPurchases.taxYear });
+  logEvent(restored.length > 0 ? 'warn' : 'info', 'billing.report_purchase_restored', {
+    paymentIntentId,
+    restored: restored.length,
+    userId: restored[0]?.userId ?? null,
+    taxYear: restored[0]?.taxYear ?? null,
+  });
+  return restored.length;
 }
 
 /** Ukončí zaplacené období předplatného daného zákazníka (chargeback, refundace). */
@@ -489,6 +627,36 @@ async function endSubscriptionPeriod(
   return updated.length > 0;
 }
 
+/**
+ * Srovná předplatné zákazníka se skutečným stavem ve Stripe (vyhraná reklamace).
+ * Totéž, co dělá denní rekonciliace, jen hned — zákazník, kterému banka dala
+ * za pravdu, nemá čekat do rána na přístup, za který zaplatil.
+ */
+async function resyncSubscription(db: Db, customerId: string | null, at: Date): Promise<boolean> {
+  if (!customerId) return false;
+  const [row] = await db
+    .select({
+      userId: subscriptions.userId,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.stripeCustomerId, customerId));
+  if (!row) return false;
+  try {
+    const actual = await currentSubscription(customerId, row.stripeSubscriptionId, at);
+    if (!actual) return false;
+    await upsertSubscription(db, stateFrom(actual, row.userId, at));
+    logEvent('warn', 'billing.subscription_restored', { userId: row.userId, customerId });
+    return true;
+  } catch (error) {
+    logEvent('error', 'billing.subscription_restore_failed', {
+      customerId,
+      error: errorText(error),
+    });
+    return false;
+  }
+}
+
 /** Zákazník, kterému patří platba — dispute ho na rozdíl od charge nenese. */
 async function customerOfCharge(charge: string | Stripe.Charge | null): Promise<string | null> {
   if (!charge) return null;
@@ -500,6 +668,20 @@ async function customerOfCharge(charge: string | Stripe.Charge | null): Promise<
     logEvent('error', 'billing.charge_lookup_failed', { chargeId: charge, error: errorText(error) });
     return null;
   }
+}
+
+/**
+ * Existuje uživatel, kterému má platba patřit? (C-23)
+ *
+ * Smazání účtu ruší předplatné ve Stripe, takže `customer.subscription.deleted`
+ * s `metadata.userId` neexistujícího uživatele dorazí při KAŽDÉM takovém
+ * smazání. Bez téhle kontroly na něm zápis narazí na cizí klíč, webhook vrátí
+ * 500, Stripe to zkouší tři dny a při opakovaných selháních endpoint zakáže —
+ * čímž by přestaly chodit i platby ostatních.
+ */
+async function knownUser(db: Db, userId: string): Promise<boolean> {
+  const [row] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId));
+  return Boolean(row);
 }
 
 /**
@@ -518,6 +700,10 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
         logEvent('error', 'billing.session_without_user', { sessionId: session.id });
         return 'session bez uživatele';
       }
+      if (!(await knownUser(db, userId))) {
+        logEvent('warn', 'billing.event_for_deleted_user', { type: event.type, userId });
+        return `uživatel ${userId} už neexistuje — ${event.type} zahozena`;
+      }
       // Dokončený checkout ≠ zaplaceno. Bez téhle kontroly by odložená platební
       // metoda odemkla podklady dřív, než peníze dorazí — a kdyby nedorazily
       // nikdy, zůstalo by odemčeno navždy (Stripe pošle async_payment_failed,
@@ -534,8 +720,15 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
 
       if (session.mode === 'payment') {
         const taxYear = Number(session.metadata?.taxYear);
-        if (!Number.isInteger(taxYear)) {
-          logEvent('error', 'billing.purchase_without_year', { sessionId: session.id });
+        // Rok z metadat plníme sami, ale zaplacenou session s nesmyslným rokem
+        // (nebo bez něj) nesmí webhook shodit dotazem mimo rozsah `integer` —
+        // peníze na účtu bez záznamu se pak dohledávají jen z tohohle logu.
+        if (!isPlausibleTaxYear(taxYear)) {
+          logEvent('error', 'billing.purchase_without_year', {
+            sessionId: session.id,
+            userId,
+            taxYear: session.metadata?.taxYear ?? null,
+          });
           return 'nákup bez daňového roku';
         }
         const created = await recordReportPurchase(db, {
@@ -577,6 +770,12 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
         logEvent('error', 'billing.subscription_without_user', { id: subscription.id });
         return 'předplatné bez uživatele';
       }
+      // smazaný účet: předplatné se při mazání ruší, takže `deleted` o něm
+      // dorazí vždycky — a cizí klíč by z webhooku udělal 500 (C-23)
+      if (!(await knownUser(db, userId))) {
+        logEvent('warn', 'billing.event_for_deleted_user', { type: event.type, userId });
+        return `uživatel ${userId} už neexistuje — ${event.type} zahozena`;
+      }
       // 'canceled' držíme do konce zaplaceného období — rozhoduje datum, ne stav
       const result = await writeSubscription(db, stateFrom(subscription, userId, eventTime(event)));
       if (!result.written) return `zastaralá událost o ${subscription.id} pro ${userId} — zahozena`;
@@ -610,6 +809,18 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
     // poskytnutého období služba běží (§ 1834 OZ, viz E-3).
     case 'charge.refunded': {
       const charge = event.data.object;
+      // `charge.refunded` chodí i u ČÁSTEČNÉ refundace (C-24). Vrácených 20 Kč
+      // z 490 je gesto, ne odstoupení od smlouvy — sebrat za ně celé podklady
+      // by bylo horší než nevrátit nic. Zamyká se až vrácení celé částky.
+      const refunded = charge.amount_refunded ?? 0;
+      if (!charge.refunded && refunded < charge.amount) {
+        logEvent('info', 'billing.partial_refund', {
+          chargeId: charge.id,
+          amount: charge.amount,
+          amountRefunded: refunded,
+        });
+        return `částečná refundace ${charge.id} (${refunded} z ${charge.amount}): přístup zůstává`;
+      }
       const removed = await revokeReportPurchase(db, idOf(charge.payment_intent), 'refund');
       return `refundace ${charge.id}: podklady ${removed}`;
     }
@@ -624,6 +835,25 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
         'dispute',
       );
       return `reklamace platby ${dispute.id}: podklady ${removed}, předplatné ${ended ? 'ukončeno' : 'beze změny'}`;
+    }
+
+    // Reklamace skončila. Prohraná nechává zamčeno (peníze jsou pryč), ale
+    // vyhraná — a stejně tak dotaz banky uzavřený bez chargebacku — musí
+    // přístup vrátit: peníze zůstaly u nás, takže služba zákazníkovi patří
+    // (C-25). Bez tohohle by placený zákazník zůstal zamčený natrvalo.
+    case 'charge.dispute.closed': {
+      const dispute = event.data.object;
+      if (dispute.status !== 'won' && dispute.status !== 'warning_closed') {
+        logEvent('warn', 'billing.dispute_lost', { disputeId: dispute.id, status: dispute.status });
+        return `reklamace ${dispute.id} skončila jako ${dispute.status}: zůstává zamčeno`;
+      }
+      const restored = await restoreReportPurchase(db, idOf(dispute.payment_intent));
+      const resumed = await resyncSubscription(
+        db,
+        await customerOfCharge(dispute.charge),
+        eventTime(event),
+      );
+      return `reklamace ${dispute.id} vyhrána: podklady ${restored}, předplatné ${resumed ? 'obnoveno' : 'beze změny'}`;
     }
 
     // Odložená platba nakonec neprošla: nic se odemknout nesmí, a kdyby se
@@ -676,6 +906,8 @@ export interface ReconcileResult {
   updated: number;
   /** Kolika chyběl řádek úplně (událost nikdy nedorazila). */
   linked: number;
+  /** Kolik zaplacených nákupů se našlo jen ve Stripe a doplnilo do databáze. */
+  recovered: number;
   /** U kolika dotaz do Stripe selhal — příště znovu. */
   failed: number;
 }
@@ -703,6 +935,11 @@ function isPaidStripe(subscription: Stripe.Subscription, now: Date): boolean {
  * zůstal bez přístupu a neplatící s ním. Rekonciliace se ptá Stripe na skutečný
  * stav a je zároveň pojistkou na pořadí událostí — ptá se přes ZÁKAZNÍKA, takže
  * najde i předplatné, o kterém řádek neví.
+ *
+ * Druhá půlka (C-21) jde opačným směrem: projde zaplacené Checkout sessions ve
+ * Stripe a hledá platby, ke kterým v databázi NENÍ ŽÁDNÝ řádek. Bez toho byl
+ * zákazník, jehož jediný webhook se ztratil, pro záchrannou síť neviditelný
+ * navždy — a u jednorázových podkladů je ta událost jediná, která kdy přijde.
  *
  * Ruční granty (`source = 'grant'`) se nekontrolují, ty ve Stripe nejsou.
  */
@@ -732,7 +969,7 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
     }
   }
 
-  const result: ReconcileResult = { checked: 0, updated: 0, linked: 0, failed: 0 };
+  const result: ReconcileResult = { checked: 0, updated: 0, linked: 0, recovered: 0, failed: 0 };
 
   for (const row of rows) {
     if (row.source !== 'stripe') continue;
@@ -795,7 +1032,184 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
     }
   }
 
+  const recovered = await recoverLostCheckouts(db, now);
+  result.checked += recovered.checked;
+  result.recovered += recovered.recovered;
+  result.failed += recovered.failed;
+
   return result;
+}
+
+/**
+ * Kolik dní zpátky se ve Stripe hledají platby, o kterých databáze neví.
+ *
+ * Stripe doručuje webhook 3 dny a pak to vzdá; s denním cronem je týden sedm
+ * pokusů o záchranu i pro platbu, u které selhalo doručení úplně (výpadek,
+ * zakázaný endpoint). Delší okno by jen vytahovalo tytéž zaplacené sessions
+ * dokola — z každé je po jednom úspěšném zpracování řádek v databázi.
+ */
+const CHECKOUT_LOOKBACK_DAYS = 7;
+
+/** Kolik stránek po 100 sessions se maximálně projde, ať cron neběží donekonečna. */
+const CHECKOUT_MAX_PAGES = 10;
+
+export interface RecoverResult {
+  /** Kolik zaplacených sessions se prošlo. */
+  checked: number;
+  /** Kolik z nich v databázi chybělo a doplnilo se. */
+  recovered: number;
+  /** U kolika to selhalo — příště znovu. */
+  failed: number;
+}
+
+/**
+ * Platby, o kterých naše databáze neví (C-21).
+ *
+ * Rekonciliace předplatných umí jen srovnat řádky, které už existují. Kdo
+ * zaplatil a jehož jediný webhook se ztratil, ale žádný řádek nemá — a je tedy
+ * pro záchrannou síť neviditelný, přestože mu `success_url` napsala „funkce
+ * jsou odemčené". Proto se ptáme Stripe na zaplacené Checkout sessions a
+ * dohledáváme je zpátky na uživatele (`client_reference_id`).
+ *
+ * Vrácené peníze se tím neobnoví: nákup se při refundaci nemaže, jen zamyká,
+ * takže `recordReportPurchase` pozná, že tuhle platbu už jednou vrátil.
+ */
+export async function recoverLostCheckouts(db: Db, now = new Date()): Promise<RecoverResult> {
+  const result: RecoverResult = { checked: 0, recovered: 0, failed: 0 };
+  const since = Math.floor((now.getTime() - CHECKOUT_LOOKBACK_DAYS * 86_400_000) / 1000);
+  let startingAfter: string | undefined;
+
+  for (let page = 0; page < CHECKOUT_MAX_PAGES; page += 1) {
+    let batch: Stripe.ApiList<Stripe.Checkout.Session>;
+    try {
+      batch = await stripe().checkout.sessions.list({
+        status: 'complete',
+        created: { gte: since },
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+    } catch (error) {
+      result.failed += 1;
+      logEvent('error', 'billing.recover_list_failed', { error: errorText(error) });
+      return result;
+    }
+
+    for (const session of batch.data) {
+      result.checked += 1;
+      try {
+        if (await recoverSession(db, session, now)) result.recovered += 1;
+      } catch (error) {
+        result.failed += 1;
+        logEvent('error', 'billing.recover_failed', {
+          sessionId: session.id,
+          error: errorText(error),
+        });
+      }
+    }
+
+    if (!batch.has_more) break;
+    startingAfter = batch.data[batch.data.length - 1]?.id;
+    if (!startingAfter) break;
+  }
+  return result;
+}
+
+/** Jedna zaplacená session ze Stripe → chybějící řádek v databázi. */
+async function recoverSession(
+  db: Db,
+  session: Stripe.Checkout.Session,
+  now: Date,
+): Promise<boolean> {
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+    return false;
+  }
+  const userId = session.client_reference_id ?? session.metadata?.userId;
+  if (!userId || !(await knownUser(db, userId))) return false;
+
+  if (session.mode === 'payment') {
+    const paymentIntentId = idOf(session.payment_intent);
+    // bez ID platby se nedá poznat, jestli tenhle nákup už neznáme
+    if (!paymentIntentId) return false;
+    const [known] = await db
+      .select({ id: reportPurchases.id })
+      .from(reportPurchases)
+      .where(eq(reportPurchases.stripePaymentIntentId, paymentIntentId));
+    if (known) return false;
+    const taxYear = Number(session.metadata?.taxYear);
+    if (!isPlausibleTaxYear(taxYear)) {
+      logEvent('error', 'billing.recover_without_year', { sessionId: session.id, userId });
+      return false;
+    }
+    const consentAt = consentFrom(session.metadata);
+    const created = await recordReportPurchase(db, {
+      userId,
+      taxYear,
+      stripePaymentIntentId: paymentIntentId,
+      stripeCustomerId: idOf(session.customer),
+      promoCode: await promoCodeFrom(session),
+      consentAt,
+    });
+    if (!created) return false;
+    logEvent('warn', 'billing.recovered_report_purchase', { userId, taxYear, sessionId: session.id });
+    // potvrzení o uzavření smlouvy (§ 1824a OZ) zákazníkovi nikdy nedorazilo
+    await sendConfirmation(
+      db,
+      userId,
+      `Podklady k přiznání za rok ${taxYear}`,
+      PRICE_REPORT_CZK,
+      consentAt,
+      'report',
+    );
+    return true;
+  }
+
+  // Předplatné: řádek s vazbou na zákazníka už rekonciliace výše vidí, takže
+  // zachraňujeme jen toho, o kom nevíme vůbec nic.
+  const [row] = await db
+    .select({
+      stripeCustomerId: subscriptions.stripeCustomerId,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+  if (row?.stripeCustomerId || row?.stripeSubscriptionId) return false;
+
+  const customerId = idOf(session.customer);
+  const subscriptionId = idOf(session.subscription);
+  const consentAt = consentFrom(session.metadata);
+  const promoCode = await promoCodeFrom(session);
+  const actual = await currentSubscription(customerId, subscriptionId, now);
+  if (!actual) {
+    // ve Stripe už žádné předplatné neběží — aspoň uložíme vazbu na zákazníka,
+    // ať ho zítřejší rekonciliace vidí a ať se zákazník dostane do portálu
+    await linkCheckoutSubscription(db, {
+      userId,
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      promoCode,
+      consentAt,
+    });
+    logEvent('warn', 'billing.recovered_customer_link', { userId, sessionId: session.id });
+    return true;
+  }
+  const state = stateFrom(actual, userId, now);
+  const written = await writeSubscription(
+    db,
+    { ...state, promoCode, consentAt: state.consentAt ?? consentAt },
+    now,
+  );
+  logEvent('warn', 'billing.recovered_subscription', { userId, sessionId: session.id });
+  if (written.unlocked) {
+    await sendConfirmation(
+      db,
+      userId,
+      'Celoroční hlídání daní z investic (roční předplatné)',
+      PRICE_SUBSCRIPTION_CZK,
+      consentAt,
+      'subscription',
+    );
+  }
+  return true;
 }
 
 /**
@@ -837,6 +1251,42 @@ async function currentSubscription(
  */
 const RENEWAL_NOTICE_DAYS = 15;
 
+/**
+ * Kolik se při obnově opravdu strhne (E-25).
+ *
+ * Konstanta 990 Kč je jen záloha pro případ, že se Stripe nedovoláme: Checkout
+ * má zapnuté promokódy (docs/19 §4), takže zákazník se slevou by dostal e-mail
+ * s cenou, která se mu nestrhne — a údaj o ceně před stržením musí být pravdivý
+ * (§ 1811 odst. 2 písm. c OZ). Ptáme se proto na náhled nadcházející faktury,
+ * kde je sleva i případný zůstatek zákazníka už započítaný.
+ */
+async function renewalPriceCzk(
+  subscriptionId: string | null,
+  customerId: string | null,
+): Promise<number> {
+  if (!subscriptionId && !customerId) return PRICE_SUBSCRIPTION_CZK;
+  try {
+    const invoice = await stripe().invoices.createPreview(
+      subscriptionId ? { subscription: subscriptionId } : { customer: customerId! },
+    );
+    const amount = invoice.amount_due;
+    if (typeof amount !== 'number' || amount < 0) return PRICE_SUBSCRIPTION_CZK;
+    // e-mail mluví o korunách; cizí měnu radši nepřevádíme, ať v něm nevznikne
+    // číslo, které nikde neplatí
+    if (invoice.currency && invoice.currency !== 'czk') {
+      logEvent('warn', 'billing.renewal_price_currency', {
+        subscriptionId,
+        currency: invoice.currency,
+      });
+      return PRICE_SUBSCRIPTION_CZK;
+    }
+    return Number((amount / 100).toFixed(2));
+  } catch (error) {
+    logEvent('warn', 'billing.renewal_price_failed', { subscriptionId, error: errorText(error) });
+    return PRICE_SUBSCRIPTION_CZK;
+  }
+}
+
 export interface RenewalNoticeResult {
   /** Kolik předplatných spadlo do okna 14 dnů před obnovou. */
   due: number;
@@ -870,6 +1320,9 @@ export async function sendRenewalNotices(
       currentPeriodEnd: subscriptions.currentPeriodEnd,
       cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
       status: subscriptions.status,
+      source: subscriptions.source,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+      stripeCustomerId: subscriptions.stripeCustomerId,
       noticeSentFor: subscriptions.renewalNoticeSentFor,
     })
     .from(subscriptions)
@@ -877,6 +1330,9 @@ export async function sendRenewalNotices(
 
   const due = rows.filter(
     (row) =>
+      // ruční grant (partner, přispěvatel) se neobnovuje a nic se nestrhne —
+      // upomínka „obnoví se za 990 Kč" by u něj byla nepravdivá
+      row.source === 'stripe' &&
       !row.cancelAtPeriodEnd &&
       isPaidSubscription(row, now) &&
       row.currentPeriodEnd <= window &&
@@ -890,7 +1346,7 @@ export async function sendRenewalNotices(
         to: row.email,
         ...subscriptionRenewalEmail({
           renewsOn: czDate(row.currentPeriodEnd),
-          priceCzk: PRICE_SUBSCRIPTION_CZK,
+          priceCzk: await renewalPriceCzk(row.stripeSubscriptionId, row.stripeCustomerId),
         }),
       });
       // značka až PO odeslání: když e-mail selže, zkusí se zítra znovu

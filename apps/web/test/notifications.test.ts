@@ -337,12 +337,15 @@ describe('nastavitelné e-maily (H3)', () => {
     await db.insert(notificationPrefs).values({ userId: 'u6', calendarEmails: false });
 
     const sent: EmailMessage[] = [];
-    // 20. 3. = okno připomínky papírového přiznání (aktivita v 2025 ve fixtuře je)
+    // 25. 4. = okno připomínky elektronického přiznání (aktivita v 2025 ve fixtuře je).
+    // Fixtura je paušalista, tedy OSVČ — ta má datovou schránku ze zákona a podává
+    // jen elektronicky (§ 72 odst. 6 DŘ), takže upomínku na písemný termín nedostane
+    // vůbec (E-23); jediné okno, ve kterém jí DEADLINE vzniká, je tohle.
     const outcome = await processUserNotifications(db, { id: 'u6', email: 'kalendar@danero.cz' }, {
       send: async (m) => {
         sent.push(m);
       },
-      today: '2026-03-20',
+      today: '2026-04-25',
     });
     expect(outcome.created).toBeGreaterThanOrEqual(3); // DEADLINE + limity 50k a 100k
     expect(sent).toHaveLength(1);
@@ -486,5 +489,38 @@ describe('kalendářní připomínky (G9c)', () => {
     expect(
       calendarCandidates({ today: '2026-05-05', hadActivityLastYear: true }).map((c) => c.type),
     ).toEqual([]);
+  });
+
+  it('E-23: OSVČ nedostane upomínku na písemný termín — podat ho nesmí (§ 72/6 DŘ)', async () => {
+    const { calendarCandidates } = await import('@/lib/notifications');
+    // OSVČ má od 1. 1. 2023 datovou schránku zřízenou ze zákona, takže podává
+    // jen elektronicky; písemné podání je vada podání (§ 74 DŘ) s pokutou.
+    const { paper, electronic } = filingDeadlines(2026);
+
+    expect(
+      calendarCandidates({ today: paper, hadActivityLastYear: true, selfEmployed: true }),
+    ).toEqual([]);
+    // ostatní režimy (zaměstnanec, jiné) upomínku dál dostávají
+    expect(
+      calendarCandidates({ today: paper, hadActivityLastYear: true }).map((c) => c.dedupeKey),
+    ).toContain('termin|papir|2027');
+
+    // elektronický termín má OSVČ i s poznámkou o přehledech ČSSZ a ZP
+    const elektronicky = calendarCandidates({
+      today: electronic,
+      hadActivityLastYear: true,
+      selfEmployed: true,
+    });
+    expect(elektronicky.map((c) => c.dedupeKey)).toEqual(['termin|elektronicky|2027']);
+    expect(elektronicky[0]!.body).toContain('§ 72 odst. 6');
+
+    // lednové shrnutí OSVČ písemný termín vůbec nenabízí
+    const leden = calendarCandidates({
+      today: '2027-01-05',
+      hadActivityLastYear: true,
+      selfEmployed: true,
+    });
+    expect(leden[0]!.body).toContain(czDate(electronic));
+    expect(leden[0]!.body).not.toContain(czDate(paper));
   });
 });

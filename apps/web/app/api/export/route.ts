@@ -67,9 +67,10 @@ export async function GET(request: Request): Promise<Response> {
   // historie nákupů (/soukromi slibuje odnést si i ji) — stripe identifikátory
   // jsou součástí údajů o uživateli, doklad o zaplacení má Stripe
   const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
-  // R-05c: metoda párování zafixovaná za roky, které už uživatel použil pro
-  // přiznání — bez ní by z exportu nešlo doložit, čím se jeho podaná čísla počítala
-  const pinnedMethods = await db
+  // R-05c: konfigurace zafixovaná za roky, které už uživatel použil pro přiznání
+  // (párování, kurzová soustava, výklad limitu 100k) — bez ní by z exportu nešlo
+  // doložit, čím se jeho podaná čísla počítala
+  const pinnedTaxYears = await db
     .select()
     .from(taxYearSettings)
     .where(eq(taxYearSettings.userId, userId));
@@ -90,7 +91,7 @@ export async function GET(request: Request): Promise<Response> {
     notifications: notif,
     importBatches: batches,
     subscriptions: subs,
-    pinnedMatchingMethods: pinnedMethods,
+    pinnedTaxYears,
     reportPurchases: purchases,
   };
 

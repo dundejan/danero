@@ -497,3 +497,35 @@ describe('R-10 normalizace druhu: asset_class je vlastnost instrumentu', () => {
     expect(result.limits.flatTax50k.status.exceeded).toBe(true);
   });
 });
+
+describe('R-10b: rok bez krypto osvobození (nález A2-12)', () => {
+  const CFG_2024 = {
+    ...CFG_2025,
+    year: 2024,
+    cryptoRules: { exemptionsAvailable: false, effectiveFrom: null },
+    limits: { ...CFG_2025.limits, timeTestCap: null },
+  } as typeof CFG_2025;
+
+  it('exemptUnder100k je false — report nesmí tvrdit „osvobozeno úhrnem do 100k“', () => {
+    // Pool je v takovém roce nulový (osvobozovat není co), takže samotné
+    // `pool ≤ limit` vycházelo true a report u každého lotu tiskl osvobození,
+    // přestože se celý prodej daní.
+    const result = run(
+      [
+        buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '10000', tradeDate: '2023-01-10', settlementDate: '2023-01-10' }),
+        sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '80000', tradeDate: '2024-06-10', settlementDate: '2024-06-10' }),
+      ],
+      { config: CFG_2024 },
+    );
+    expect(result.crypto.base10Czk.toString()).toBe('70000');
+    expect(result.crypto.exemptUnder100k).toBe(false);
+  });
+
+  it('v roce s osvobozením zůstává příznak beze změny', () => {
+    const result = run([
+      buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '10000', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
+      sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '80000', tradeDate: '2025-06-10', settlementDate: '2025-06-10' }),
+    ]);
+    expect(result.crypto.exemptUnder100k).toBe(true);
+  });
+});

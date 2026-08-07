@@ -82,6 +82,37 @@ describe('tarify a oprávnění', () => {
     expect(ent.reportYears).toEqual([2026]);
   });
 
+  it('vrácený nákup neodemyká nic', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Vrácený', email: 'vraceny@danero.cz' });
+    // řádek se při vrácení peněz nemaže, jen zamyká (C-24, C-25) — nesmí ale
+    // dál odemykat podklady
+    await db.insert(reportPurchases).values({
+      userId: 'u1',
+      taxYear: 2026,
+      revokedAt: new Date('2026-03-01T00:00:00Z'),
+      revokedReason: 'refund',
+    });
+
+    expect(await canGenerateReport(db, 'u1', 2026)).toBe(false);
+    expect((await resolveEntitlements(db, 'u1')).reportYears).toEqual([]);
+  });
+
+  it('nesmyslný daňový rok se databáze ani neptá', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Hraniční', email: 'hranice@danero.cz' });
+    await db.insert(reportPurchases).values({ userId: 'u1', taxYear: 2026 });
+
+    // `tax_year` je integer — 1e21 v dotazu skončilo neošetřenou výjimkou,
+    // takže /api/epo vracelo 500 místo hlášky (C-27)
+    for (const rok of [1e21, -1e21, 2024.5, Number.NaN]) {
+      expect(await canGenerateReport(db, 'u1', rok)).toBe(false);
+    }
+    expect(await canGenerateReport(db, 'u1', 2026)).toBe(true);
+  });
+
   it('předplatné odemkne všechno včetně všech daňových roků', { timeout: 30_000 }, async () => {
     process.env.DANERO_BILLING = 'stripe';
     const db = await createPgliteDb();
