@@ -54,6 +54,32 @@ export function addBusinessDays(
   return current;
 }
 
+/** Je datum sobota, nebo neděle? */
+export function isWeekend(date: IsoDate): boolean {
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+/**
+ * Vrátí `date`, je-li to pracovní den; jinak nejbližší následující pracovní den.
+ * Na rozdíl od `addBusinessDays(date, 1)` **neposouvá**, když už datum sedí —
+ * to je přesně pravidlo § 33 odst. 4 daňového řádu (a stejně tak § 605/2 OZ)
+ * pro poslední den lhůty. Kalendáře svátků jsou doména enginu, ne tohohle
+ * modulu; bez predikátu se přeskakují jen víkendy.
+ */
+export function nextBusinessDay(
+  date: IsoDate,
+  isHoliday: (date: IsoDate) => boolean = () => false,
+): IsoDate {
+  let current = date;
+  // 10 iterací bohatě stačí i na nejdelší řetěz svátků; pojistka proti
+  // překlepnutému predikátu, který by vracel true pro všechno
+  for (let i = 0; i < 10 && (isWeekend(current) || isHoliday(current)); i += 1) {
+    current = addDays(current, 1);
+  }
+  return current;
+}
+
 /** Počet dní od `from` do `to` (kladný, když `to` je později). */
 export function diffDays(from: IsoDate, to: IsoDate): number {
   const a = new Date(`${from}T00:00:00Z`).getTime();

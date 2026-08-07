@@ -203,6 +203,19 @@ export function buildLedger(
     }
     const acqDate = tx.acquisition?.date ?? tx.date;
     const currency = tx.acquisition?.currency ?? 'CZK';
+    if (tx.acquisition?.costPerShare && !tx.acquisition.currency) {
+      // Cena bez měny se ocení jako CZK. U zahraničního titulu je to tichá
+      // chyba v neprospěch poplatníka: cena „50“ myšlená v USD se počítá jako
+      // 50 Kč, takže výdaj klesne ~20× a daň o tolik vyroste. Univerzální
+      // šablona přitom `acquisition_currency` pustí prázdné, takže tahle cesta
+      // je reálná — hlásit, ne mlčet (výpočet neměníme, jen upozorňujeme).
+      warnings.add(
+        'TRANSFER_COST_WITHOUT_CURRENCY',
+        'WARNING',
+        `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} má vyplněnou nabývací cenu (${tx.acquisition.costPerShare.toString()}), ale ne její měnu — počítáme ji v korunách. Je-li cena v cizí měně, vyjde výdaj mnohonásobně nižší a daň vyšší; doplň měnu původního nákupu.`,
+        { txId: tx.id, isin: tx.isin },
+      );
+    }
     lots.push({
       id: `lot-${tx.id}`,
       isin: tx.isin,

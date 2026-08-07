@@ -109,6 +109,18 @@ export function computeDividends(
     const isCzech = country === 'CZ';
 
     if (isCzech) {
+      if (withholdingCzk.isZero() && grossCzk.gt(0)) {
+        // R-07a stojí na tom, že českou dividendu vypořádala 15% srážka u zdroje —
+        // proto se do přiznání neuvádí. Nulová srážka tenhle předpoklad boří:
+        // buď ji importér nepřečetl, nebo sražena opravdu nebyla. Tiše příjem
+        // vypustit znamená podhodnotit daň i všechny limity, tedy riziko doměrku.
+        warnings.add(
+          'CZECH_DIVIDEND_WITHOUT_WITHHOLDING',
+          'WARNING',
+          `${dividendLabel(tx)}: český zdroj, ale nulová sražená daň. Počítáme s tím, že příjem vypořádala srážka u zdroje (§ 36), takže do přiznání ani do limitů nevstupuje. Pokud sražena nebyla, patří do § 8 a limity čerpá — zkontroluj sloupec sražené daně ve výpisu.`,
+          { txId: tx.id, isin: tx.isin },
+        );
+      }
       czechGross = czechGross.plus(grossCzk);
       items.push({
         txId: tx.id,

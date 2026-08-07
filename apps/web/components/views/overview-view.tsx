@@ -17,6 +17,7 @@ import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import type { Transaction } from '@danero/shared';
+import { filingDeadlines } from '@danero/engine';
 import { buttonVariants } from '@/components/ui/button';
 
 /** Upozornění pro kartu „Poslední upozornění“ — DB řádek i demo kandidát. */
@@ -133,7 +134,8 @@ export function OverviewView({
                   <p className="text-sm text-inkoust-tlumeny">
                     Orientační daň z investic:{' '}
                     <span className="font-mono text-inkoust">{czk(estimatedTaxCzk)}</span> ·
-                    papírově do 1. 4. {year + 1}, elektronicky do 2. 5. {year + 1}
+                    papírově do {czDate(filingDeadlines(year).paper)}, elektronicky do{' '}
+                    {czDate(filingDeadlines(year).electronic)}
                   </p>
                 </div>
                 <Link

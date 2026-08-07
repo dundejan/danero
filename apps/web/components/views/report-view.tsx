@@ -3,6 +3,7 @@ import { ZERO, type Transaction } from '@danero/shared';
 import {
   analyzeTaxYear,
   compareVariants,
+  filingDeadlines,
   UNIFIED_RATE_SOURCES,
   type EngineInput,
 } from '@danero/engine';
@@ -638,8 +639,12 @@ export function ReportView({
             </li>
             <li>
               <strong>Paušální režim:</strong> zaplacené zálohy z paušálního režimu patří na
-              ř. 86. Termín podání: 1. 4. {year + 1} papírově / elektronicky 4 měsíce od
-              konce roku (2. 5., připadne-li na víkend, tak nejbližší pracovní den).
+              ř. 86. Termín podání za rok {year}:{' '}
+              <strong>{czDate(filingDeadlines(year).paper)}</strong> papírově /{' '}
+              <strong>{czDate(filingDeadlines(year).electronic)}</strong> elektronicky
+              (3 a 4 měsíce od konce roku dle § 136 daňového řádu; svátek a víkend termín
+              posouvají na nejbližší pracovní den). S daňovým poradcem{' '}
+              {czDate(filingDeadlines(year).advisor)}.
             </li>
             <li className="text-inkoust-tlumeny">
               Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období

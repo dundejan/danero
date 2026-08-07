@@ -157,6 +157,43 @@ describe('R-04 korporátní akce', () => {
     ]);
     expect(hasWarning(complete, 'TRANSFER_WITHOUT_COST')).toBe(false);
   });
+
+  it('R-04i: nabývací cena bez měny se ocení v CZK — ale nahlas (nález A1-01)', () => {
+    // Univerzální šablona pustí `acquisition_currency` prázdné. Cena „50“
+    // myšlená v USD se pak počítá jako 50 Kč: výdaj klesne ~20× a daň o tolik
+    // vyroste. Výpočet neměníme (měnu neumíme uhodnout), ale nesmí to být tiché.
+    const transfer = (acquisition: Record<string, unknown>) =>
+      TransactionSchema.parse({
+        type: 'TRANSFER_IN',
+        id: 'tr-5',
+        isin: 'US0000000001',
+        quantity: '100',
+        date: '2024-03-01',
+        acquisition,
+      });
+    const prodej = sell({
+      isin: 'US0000000001',
+      quantity: '100',
+      pricePerShare: '80',
+      currency: 'USD',
+      tradeDate: '2025-06-10',
+      settlementDate: '2025-06-10',
+    });
+
+    const bezMeny = run([transfer({ date: '2023-02-01', costPerShare: '50' }), prodej]);
+    expect(hasWarning(bezMeny, 'TRANSFER_COST_WITHOUT_CURRENCY')).toBe(true);
+
+    // s měnou: výdaj 100 × 50 USD × kurz 2023 (22) = 110 000; tržba 100 × 80 × 20 = 160 000
+    const sMenou = run([
+      transfer({ date: '2023-02-01', costPerShare: '50', currency: 'USD' }),
+      prodej,
+    ]);
+    expect(sMenou.securities.base10Czk.toString()).toBe('50000');
+    expect(hasWarning(sMenou, 'TRANSFER_COST_WITHOUT_CURRENCY')).toBe(false);
+
+    // bez měny se výdaj scvrkne na 5 000 Kč → základ o 105 000 Kč vyšší
+    expect(bezMeny.securities.base10Czk.toString()).toBe('155000');
+  });
 });
 
 describe('R-05 párování a dílčí základ § 10', () => {

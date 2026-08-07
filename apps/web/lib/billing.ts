@@ -654,18 +654,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
     }
 
     /**
-     * Upomínka před automatickou obnovou (E-1). Slibují ji /podminky, /cenik
-     * i /predplatne — bez ní je to tichý auto-renew, který docs/19 §5 zakazuje,
-     * a nepravdivé tvrzení ve smluvních podmínkách.
-     *
-     * `invoice.upcoming` posílá Stripe podle nastavení Billing → Subscriptions
-     * → „Upcoming invoice notification"; aby text seděl, musí tam být **14 dní**
-     * (výchozí je 7). Odesílá se z webhooku, ne z vlastního cronu — Stripe zná
-     * skutečné datum a částku obnovy včetně slev a proraty, my bychom je jen
-     * odhadovali z `currentPeriodEnd`.
-     */
-    /**
-     * Upomínku před obnovou posíláme z vlastního cronu (`sendRenewalNotices`),
+     * Upomínku před obnovou (E-1) posíláme z vlastního cronu (`sendRenewalNotices`),
      * ne odsud: interval `invoice.upcoming` se nastavuje jen v dashboardu Stripu
      * (API ho nevystavuje) a /podminky slibují konkrétních 14 dní — smluvní
      * závazek nemá viset na přepínači, který nejde ověřit z kódu. Událost tu
@@ -836,7 +825,17 @@ async function currentSubscription(
 }
 
 /** Kolik dní předem se posílá upomínka — /podminky slibují 14. */
-const RENEWAL_NOTICE_DAYS = 14;
+/**
+ * Kolik dní před obnovou se otevírá okno upomínky.
+ *
+ * Slib v `/podminky`, `/cenik` i `/predplatne` zní **14 dní předem**. Okno je
+ * proto o den širší: cron běží jednou denně ve 03:40 UTC, kdežto období končí
+ * v okamžik nákupu (třeba v 10:00). Při okně přesně 14 dnů by první běh, který
+ * do okna trefí, odeslal e-mail jen **13,26 dne** předem — tedy míň, než
+ * podmínky slibují (nález E-24). S 15 dny odejde upomínka vždy 14–15 dní
+ * předem a závazek je splnitelný i při posunu běhu cronu.
+ */
+const RENEWAL_NOTICE_DAYS = 15;
 
 export interface RenewalNoticeResult {
   /** Kolik předplatných spadlo do okna 14 dnů před obnovou. */
