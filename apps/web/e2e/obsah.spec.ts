@@ -41,8 +41,9 @@ test('otevřený kód: odkaz v patičce, sekce na /o-projektu i /bezpecnost', as
 
 test('podmínky oddělují službu danero.cz od softwaru pod AGPL', async ({ page }) => {
   await page.goto('/podminky');
+  // bez čísla článku — viz poznámka u „Placené objednávky a odstoupení“ níž
   await expect(
-    page.getByRole('heading', { name: '2. Na co se tyhle podmínky vztahují' }),
+    page.getByRole('heading', { name: /Na co se tyhle podmínky vztahují/ }),
   ).toBeVisible();
   await expect(page.getByText('Služba na danero.cz', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'GNU AGPL-3.0' })).toBeVisible();
@@ -117,8 +118,11 @@ test('poučení o odstoupení rozlišuje jednorázové podklady a roční předp
   await expect(formular).toContainText('podklady k přiznání za daňový rok');
 
   await page.goto('/podminky');
+  // Nadpis se hledá BEZ čísla článku: přečíslování (doplnění nového článku výš)
+  // není změna obsahu a nesmí shodit test. Přesně tohle se stalo, když
+  // v podmínkách přibyl článek o funkčnosti digitálního obsahu (§ 1820/1 r).
   await expect(
-    page.getByRole('heading', { name: '4. Placené objednávky a odstoupení' }),
+    page.getByRole('heading', { name: /Placené objednávky a odstoupení/ }),
   ).toBeVisible();
   await expect(page.getByText('Ceny jsou konečné')).toBeVisible();
   // podmínky nesmí u předplatného tvrdit zánik práva podle písm. l

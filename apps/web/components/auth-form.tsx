@@ -30,66 +30,74 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
+    try {
 
-    if (totpStep) {
-      const result = await authClient.twoFactor.verifyTotp({
-        code: String(form.get('kod') ?? ''),
-      });
-      setPending(false);
+      if (totpStep) {
+        const result = await authClient.twoFactor.verifyTotp({
+          code: String(form.get('kod') ?? ''),
+        });
+        if (result.error) {
+          setError('Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.');
+          return;
+        }
+        finish();
+        return;
+      }
+
+      const email = String(form.get('email') ?? '');
+      const password = String(form.get('heslo') ?? '');
+
+      // callbackURL u registrace = kam vede odkaz z ověřovacího e-mailu; bez něj
+      // by Better Auth poslal ověřeného uživatele na landing místo do onboardingu.
+      // U přihlášení ho NEposílat: klient by na něj skočil i po úspěšném loginu
+      // a normální přihlášení by končilo v onboardingu místo na přehledu.
+      const result =
+        mode === 'registrace'
+          ? await authClient.signUp.email({
+              email,
+              password,
+              name: String(form.get('jmeno') ?? '') || email.split('@')[0]!,
+              callbackURL: '/overeni-emailu',
+            })
+          : await authClient.signIn.email({ email, password });
+
       if (result.error) {
-        setError('Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.');
+        // Nepotvrzený účet — pošli nový odkaz. Schválně jen podle kódu: na 403
+        // končí i neshoda originu (BETTER_AUTH_URL vs. doména) a tu by tahle
+        // hláška zamaskovala.
+        if (result.error.code === 'EMAIL_NOT_VERIFIED') {
+          const resend = await authClient.sendVerificationEmail({
+            email,
+            callbackURL: '/overeni-emailu',
+          });
+          setUnverified({ email, resent: !resend.error });
+          return;
+        }
+        setError(
+          mode === 'registrace'
+            ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo o délce aspoň 10 znaků.'
+            : 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.',
+        );
+        return;
+      }
+      if (mode === 'registrace') {
+        router.push(`/overeni-emailu?email=${encodeURIComponent(email)}`);
+        return;
+      }
+      if (result.data && 'twoFactorRedirect' in result.data && result.data.twoFactorRedirect) {
+        setTotpStep(true);
         return;
       }
       finish();
-      return;
+    } catch {
+      // Síť selhala (offline, spadlý server, blokovaný požadavek). Bez tohohle
+      // bloku promise rejectla, `setPending(false)` se neprovedlo a formulář
+      // zůstal zamčený NAVŽDY, aniž by cokoli řekl — jediné východisko byl
+      // reload stránky (nález H2-01).
+      setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.');
+    } finally {
+      setPending(false);
     }
-
-    const email = String(form.get('email') ?? '');
-    const password = String(form.get('heslo') ?? '');
-
-    // callbackURL u registrace = kam vede odkaz z ověřovacího e-mailu; bez něj
-    // by Better Auth poslal ověřeného uživatele na landing místo do onboardingu.
-    // U přihlášení ho NEposílat: klient by na něj skočil i po úspěšném loginu
-    // a normální přihlášení by končilo v onboardingu místo na přehledu.
-    const result =
-      mode === 'registrace'
-        ? await authClient.signUp.email({
-            email,
-            password,
-            name: String(form.get('jmeno') ?? '') || email.split('@')[0]!,
-            callbackURL: '/overeni-emailu',
-          })
-        : await authClient.signIn.email({ email, password });
-
-    setPending(false);
-    if (result.error) {
-      // Nepotvrzený účet — pošli nový odkaz. Schválně jen podle kódu: na 403
-      // končí i neshoda originu (BETTER_AUTH_URL vs. doména) a tu by tahle
-      // hláška zamaskovala.
-      if (result.error.code === 'EMAIL_NOT_VERIFIED') {
-        const resend = await authClient.sendVerificationEmail({
-          email,
-          callbackURL: '/overeni-emailu',
-        });
-        setUnverified({ email, resent: !resend.error });
-        return;
-      }
-      setError(
-        mode === 'registrace'
-          ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo o délce aspoň 10 znaků.'
-          : 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.',
-      );
-      return;
-    }
-    if (mode === 'registrace') {
-      router.push(`/overeni-emailu?email=${encodeURIComponent(email)}`);
-      return;
-    }
-    if (result.data && 'twoFactorRedirect' in result.data && result.data.twoFactorRedirect) {
-      setTotpStep(true);
-      return;
-    }
-    finish();
   }
 
   if (unverified) {

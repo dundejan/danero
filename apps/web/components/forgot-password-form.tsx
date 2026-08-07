@@ -18,22 +18,28 @@ export function ForgotPasswordForm() {
     setError(null);
     const email = String(new FormData(event.currentTarget).get('email') ?? '');
 
-    const result = await authClient.requestPasswordReset({
-      email,
-      // odkaz z e-mailu projde ověřením tokenu na serveru a skončí tady
-      redirectTo: '/nove-heslo',
-    });
-    setPending(false);
-
-    if (result.error) {
-      setError(
-        result.error.status === 429
-          ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
-          : 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
-      );
-      return;
+    try {
+      const result = await authClient.requestPasswordReset({
+        email,
+        // odkaz z e-mailu projde ověřením tokenu na serveru a skončí tady
+        redirectTo: '/nove-heslo',
+      });
+      if (result.error) {
+        setError(
+          result.error.status === 429
+            ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
+            : 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
+        );
+        return;
+      }
+      setSent(true);
+    } catch {
+      // Bez tohohle bloku promise při výpadku sítě rejectla, `setPending(false)`
+      // se neprovedlo a formulář zůstal zamčený navždy a beze slova (H2-01).
+      setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.');
+    } finally {
+      setPending(false);
     }
-    setSent(true);
   }
 
   // Záměrně stejná odpověď bez ohledu na to, jestli účet existuje — jinak by

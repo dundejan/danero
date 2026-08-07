@@ -98,8 +98,15 @@ export function inferSettlementDate(
   tradeDate: IsoDate,
   isin: string,
   assetClass: AssetClass,
+  settlementStyle?: 'PREMIUM' | 'MARGIN',
 ): IsoDate {
   if (assetClass === 'CRYPTO') return tradeDate;
+  // R-12e: CFD a futures (MARGIN) se nepřevádějí na majetkový účet, takže na ně
+  // burzovní lhůta T+1/T+2 nedopadá — plnění je realizované uzavřením pozice
+  // (R-12f, R-12r). Dopočtené T+2 posouvalo rok příjmu: MT4 obchod uzavřený
+  // 30. 12. 2025 dostal vypořádání 2. 1. 2026, zisk 60 000 Kč spadl do ZO 2026
+  // a limit 50k za 2025 hlásil „neprolomeno“, přestože prolomený byl (A2-10).
+  if (settlementStyle === 'MARGIN') return tradeDate;
   const t1 =
     (isin.startsWith('US') && tradeDate >= US_T1_SINCE) ||
     (isin.startsWith('CA') && tradeDate >= CA_T1_SINCE);

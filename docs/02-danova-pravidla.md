@@ -369,6 +369,19 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   opce s obchodem 31. 12. a vypořádáním 2. 1. patří proto do **následujícího**
   zdaňovacího období. Datum vypořádání z výpisu brokera má přednost; když chybí,
   dopočítá se jako u CP (R-01a, včetně burzovních svátků).
+
+  **Výjimka: instrumenty s `settlementStyle = MARGIN` (CFD, futures) se
+  vypořádávají okamžitě, T+0.** Burzovní lhůta T+1/T+2 je lhůta pro převod
+  *cenného papíru* na majetkový účet — CFD ani futures se takhle nepřevádějí
+  a plnění je realizované **uzavřením pozice** (R-12f: „příjem = kladný rozdíl
+  při uzavření pozice"; R-12r: reporty MT dávají „realizovaný výsledek
+  uzavřeného obchodu"). Dopočítávat jim T+2 posouvá rok příjmu.
+
+  ⚠️ Doloženo měřením: MT4 obchod uzavřený **30. 12. 2025** dostal dopočtem
+  vypořádání 2. 1. 2026 (TARGET2: 31. 12. → 1. 1. svátek → 2. 1.), takže zisk
+  60 000 Kč spadl do ZO 2026 a limit 50 000 Kč za rok 2025 hlásil „neprolomeno“,
+  přestože prolomený byl. Plní-li broker `settlementDate` sám (dnes jedině IBKR),
+  má jeho hodnota přednost i u MARGIN.
   **Pořadí událostí téhož dne** je deterministické a nezávislé na ID transakcí:
   korporátní akce → otevření (BUY, TRANSFER_IN) → uzavření (SELL, TRANSFER_OUT).
   Jinak by 0DTE opce (nákup i expirace týž den) vyšla podle abecedy ID buď
