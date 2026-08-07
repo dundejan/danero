@@ -1,5 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "//": "regions: /soukromi i /bezpecnost tvrdí, že data leží v EU. Dokud to bylo jen v dashboardu, nebylo to v repu ničím podepřené a jedno omylem přepnuté nastavení by z toho udělalo nepravdivé tvrzení. fra1 = Frankfurt, ve stejném regionu jako databáze (Neon eu-central-1) — proto tam funkce běžely 2-3 ms místo 93 ms z iad1 (docs/17).",
+  "regions": ["fra1"],
   "crons": [
     {
       "path": "/api/cron/sync-brokers",

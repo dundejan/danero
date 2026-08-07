@@ -26,17 +26,15 @@ Příjem z úplatného převodu CP je osvobozen, **přesáhne-li** doba mezi nab
   víkend **i burzovní svátek**. Bez svátků vycházelo vypořádání až o 4–5 dní
   dřív (velikonoční týden, Vánoce) a časový test se otevíral dřív, než smí —
   chyba v neprospěch státu, tedy riziko doměrku. Kalendář se volí podle prefixu
-  ISIN: `US`/`CA` → NYSE/Nasdaq, `DE` → Xetra, `GB` → LSE, `IE` → Euronext
-  Dublin, `CZ` → BCPP, ostatní → TARGET2 (společný vypořádací kalendář eurozóny:
-  1. 1., Velký pátek, Velikonoční pondělí, 1. 5., 25. a 26. 12.). Tabulky se
+  ISIN: `US` → NYSE/Nasdaq, `CA` → TSX, `DE` → Xetra, `GB` → LSE,
+  `IE` → Euronext Dublin, `CZ` → BCPP, ostatní → TARGET2 (společný vypořádací
+  kalendář eurozóny: 1. 1., Velký pátek, Velikonoční pondělí, 1. 5., 25. a 26. 12.). Tabulky se
   zdroji jsou v `packages/engine/src/config/exchangeHolidays.ts`, pokryté roky
   **2019–2027**; mimo ně se přeskakují jen víkendy (starší nákupy mají časový
   test dávno splněný, takže dopad je nulový).
 
-  Poctivě k aproximacím: kanadské ISIN používají kalendář US (vlastní kalendář
-  TSX zatím nemáme — americký svátek tak může vypořádání posunout o den
-  později), a vypořádací systémy (T2S) bývají otevřené i v den, kdy burza
-  neobchoduje. Obojí posouvá dopočtené vypořádání spíš **později** = pozdější
+  Poctivě k aproximacím: vypořádací systémy (T2S) bývají otevřené i v den,
+  kdy burza neobchoduje. To posouvá dopočtené vypořádání spíš **později** = pozdější
   nabytí = pozdější osvobození, což je bezpečný směr. Datum vypořádání
   z výpisu brokera má vždy přednost před dopočtem.
 

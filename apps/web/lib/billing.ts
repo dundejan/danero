@@ -664,39 +664,16 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
      * skutečné datum a částku obnovy včetně slev a proraty, my bychom je jen
      * odhadovali z `currentPeriodEnd`.
      */
-    case 'invoice.upcoming': {
-      const invoice = event.data.object;
-      const customerId = idOf(invoice.customer);
-      if (!customerId) return 'nadcházející faktura bez zákazníka';
-      const [row] = await db
-        .select({ userId: subscriptions.userId, email: user.email })
-        .from(subscriptions)
-        .innerJoin(user, eq(user.id, subscriptions.userId))
-        .where(eq(subscriptions.stripeCustomerId, customerId));
-      if (!row) {
-        logEvent('warn', 'billing.renewal_notice_without_user', { customerId });
-        return `nadcházející faktura bez uživatele (${customerId})`;
-      }
-      // částka i datum ze Stripe: zná slevy i proratu, my bychom hádali
-      const priceCzk = Math.round((invoice.amount_due ?? 0) / 100) || PRICE_SUBSCRIPTION_CZK;
-      const renewsAt = invoice.next_payment_attempt ?? invoice.period_end;
-      try {
-        await resolveEmailSender()({
-          to: row.email,
-          ...subscriptionRenewalEmail({
-            renewsOn: czDate(new Date((renewsAt ?? 0) * 1000)),
-            priceCzk,
-          }),
-        });
-      } catch (error) {
-        // e-mail se dá poslat znovu; opakovaný 500 by Stripe zkoušel dokola
-        logEvent('error', 'billing.renewal_notice_failed', {
-          userId: row.userId,
-          error: errorText(error),
-        });
-      }
-      return `upomínka před obnovou pro ${row.userId}`;
-    }
+    /**
+     * Upomínku před obnovou posíláme z vlastního cronu (`sendRenewalNotices`),
+     * ne odsud: interval `invoice.upcoming` se nastavuje jen v dashboardu Stripu
+     * (API ho nevystavuje) a /podminky slibují konkrétních 14 dní — smluvní
+     * závazek nemá viset na přepínači, který nejde ověřit z kódu. Událost tu
+     * jen potvrdíme, ať z logu není vidět „ignorováno" a nikdo ji nezapojí
+     * podruhé; e-mail by pak odešel dvakrát.
+     */
+    case 'invoice.upcoming':
+      return 'nadcházející faktura — upomínku řeší cron, ne webhook';
 
     default:
       return `ignorováno: ${event.type}`;
@@ -856,4 +833,79 @@ async function currentSubscription(
     if ((error as { code?: string }).code === 'resource_missing') return null;
     throw error;
   }
+}
+
+/** Kolik dní předem se posílá upomínka — /podminky slibují 14. */
+const RENEWAL_NOTICE_DAYS = 14;
+
+export interface RenewalNoticeResult {
+  /** Kolik předplatných spadlo do okna 14 dnů před obnovou. */
+  due: number;
+  /** Kolika reálně odešel e-mail (zbytek už ho za tohle období dostal). */
+  sent: number;
+}
+
+/**
+ * Upomínka před automatickou obnovou (E-1 z auditu). `/podminky`, `/cenik`
+ * i `/predplatne` slibují e-mail 14 dní předem; bez něj by šlo o tichý
+ * auto-renew, který docs/19 §5 zakazuje.
+ *
+ * Proč vlastní cron a ne `invoice.upcoming`: interval té události se nastavuje
+ * jen v dashboardu Stripu (v API není) a výchozí je 7 dní. Smluvní závazek
+ * nemá viset na přepínači, který z kódu neověřím.
+ *
+ * `renewalNoticeSentFor` drží konec období, pro který už upomínka odešla —
+ * cron tak může běžet klidně každou hodinu a e-mail odejde za období právě
+ * jednou. Zrušené obnovy (`cancelAtPeriodEnd`) se přeskakují: tam se nic
+ * nestrhne a upomínka by matoucí.
+ */
+export async function sendRenewalNotices(
+  db: Db,
+  now = new Date(),
+): Promise<RenewalNoticeResult> {
+  const window = new Date(now.getTime() + RENEWAL_NOTICE_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      userId: subscriptions.userId,
+      email: user.email,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+      cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+      status: subscriptions.status,
+      noticeSentFor: subscriptions.renewalNoticeSentFor,
+    })
+    .from(subscriptions)
+    .innerJoin(user, eq(user.id, subscriptions.userId));
+
+  const due = rows.filter(
+    (row) =>
+      !row.cancelAtPeriodEnd &&
+      isPaidSubscription(row, now) &&
+      row.currentPeriodEnd <= window &&
+      row.noticeSentFor?.getTime() !== row.currentPeriodEnd.getTime(),
+  );
+
+  let sent = 0;
+  for (const row of due) {
+    try {
+      await resolveEmailSender()({
+        to: row.email,
+        ...subscriptionRenewalEmail({
+          renewsOn: czDate(row.currentPeriodEnd),
+          priceCzk: PRICE_SUBSCRIPTION_CZK,
+        }),
+      });
+      // značka až PO odeslání: když e-mail selže, zkusí se zítra znovu
+      await db
+        .update(subscriptions)
+        .set({ renewalNoticeSentFor: row.currentPeriodEnd })
+        .where(eq(subscriptions.userId, row.userId));
+      sent += 1;
+    } catch (error) {
+      logEvent('error', 'billing.renewal_notice_failed', {
+        userId: row.userId,
+        error: errorText(error),
+      });
+    }
+  }
+  return { due: due.length, sent };
 }

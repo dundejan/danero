@@ -38,21 +38,44 @@ case "${1:-status}" in
     cd "$REPO/apps/web" && pnpm exec drizzle-kit migrate && node db/status.mjs
     ;;
   backup)
-    # pg_dump odmítne server novější, než je sám (Neon jede na Postgresu 18) —
-    # ověř to PŘED dumpem, ať po sobě nenecháš nulový soubor vypadající jako záloha
+    # pg_dump odmítne server novější, než je sám. Neon jede na Postgresu 18,
+    # distribuce běžně nabízí starší — místo instalace klienta si proto
+    # odpovídající verzi půjčíme z obrazu postgres:<verze>. Když je lokální
+    # pg_dump dost nový, použije se přímo (rychlejší, bez Dockeru).
     SERVER_VERSION="$(psql "$DATABASE_URL" -tAc 'SHOW server_version;' 2>/dev/null | cut -d. -f1 || true)"
-    DUMP_VERSION="$(pg_dump --version | grep -oE '[0-9]+' | head -1 || true)"
-    if [ -n "$SERVER_VERSION" ] && [ -n "$DUMP_VERSION" ] && [ "$DUMP_VERSION" -lt "$SERVER_VERSION" ]; then
-      echo "pg_dump je verze $DUMP_VERSION, ale server běží na $SERVER_VERSION — dump by selhal." >&2
-      echo "Doinstaluj klienta odpovídající verze, např.:" >&2
-      echo "  sudo apt install postgresql-client-$SERVER_VERSION" >&2
+    DUMP_VERSION="$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+    if [ -z "$SERVER_VERSION" ]; then
+      echo "Nepodařilo se zjistit verzi serveru — je DATABASE_URL_DIRECT správně?" >&2
       exit 1
     fi
 
     mkdir -p "$REPO/zalohy"
     OUT="$REPO/zalohy/danero-$(date +%F).dump"
+
+    if [ -n "$DUMP_VERSION" ] && [ "$DUMP_VERSION" -ge "$SERVER_VERSION" ]; then
+      DUMP_CMD=(pg_dump "$DATABASE_URL" -Fc -f "$OUT")
+    elif command -v docker > /dev/null 2>&1; then
+      echo "Lokální pg_dump je verze ${DUMP_VERSION:-?}, server běží na $SERVER_VERSION —"
+      echo "beru pg_dump z obrazu postgres:$SERVER_VERSION."
+      # dump jde na stdout a přesměruje se do souboru: nemusíme do kontejneru
+      # mountovat adresář ani řešit práva k zapsanému souboru
+      DUMP_CMD=(docker run --rm --network host -e "PGURL=$DATABASE_URL"
+        "postgres:$SERVER_VERSION-alpine" sh -c 'pg_dump "$PGURL" -Fc')
+    else
+      echo "pg_dump je verze ${DUMP_VERSION:-chybí}, ale server běží na $SERVER_VERSION." >&2
+      echo "Doinstaluj klienta (sudo apt install postgresql-client-$SERVER_VERSION)," >&2
+      echo "nebo nainstaluj Docker — skript si pak verzi půjčí z obrazu sám." >&2
+      exit 1
+    fi
+
     # při selhání nesmí zůstat prázdný soubor — vypadal by jako pořízená záloha
-    if ! pg_dump "$DATABASE_URL" -Fc -f "$OUT"; then
+    if [ "${DUMP_CMD[0]}" = "docker" ]; then
+      if ! "${DUMP_CMD[@]}" > "$OUT"; then
+        rm -f "$OUT"
+        echo "Záloha se nepořídila, nic jsem nenechal v $REPO/zalohy." >&2
+        exit 1
+      fi
+    elif ! "${DUMP_CMD[@]}"; then
       rm -f "$OUT"
       echo "Záloha se nepořídila, nic jsem nenechal v $REPO/zalohy." >&2
       exit 1

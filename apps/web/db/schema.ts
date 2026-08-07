@@ -413,6 +413,15 @@ export const subscriptions = pgTable('subscriptions', {
    * událost (ruční grant, vazba uložená při checkoutu).
    */
   lastEventAt: timestamp('last_event_at'),
+  /**
+   * Konec období, pro který už odešla upomínka před automatickou obnovou.
+   * /podminky slibují e-mail 14 dní předem — posíláme ho z vlastního cronu,
+   * protože interval `invoice.upcoming` se nastavuje jen v dashboardu Stripu
+   * (API ho nevystavuje) a smluvní závazek nemá viset na přepínači, který
+   * nejde ověřit z kódu. Tenhle sloupec zajišťuje, že za jedno období odejde
+   * právě jeden e-mail, i když cron poběží vícekrát.
+   */
+  renewalNoticeSentFor: timestamp('renewal_notice_sent_for'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

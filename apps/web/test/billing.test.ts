@@ -12,6 +12,7 @@ import {
   purchaseBlock,
   recordReportPurchase,
   reconcileSubscriptions,
+  sendRenewalNotices,
   stripeCustomerFor,
 } from '@/lib/billing';
 import { canGenerateReport, hasActiveSubscription } from '@/lib/entitlements';
@@ -774,42 +775,61 @@ describe('webhook a režim Stripe', () => {
 });
 
 describe('upomínka před automatickou obnovou (E-1)', () => {
-  it('invoice.upcoming pošle uživateli oznámení s datem a cenou', { timeout: 30_000 }, async () => {
+  it('odejde 14 dní předem a za totéž období jen jednou', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
     const emails = captureEmails();
     const db = await dbWithUser();
-    await applyStripeEvent(db, subscriptionEvent({ customer: 'cus_obnova' }));
+    const konec = new Date('2027-01-01T00:00:00Z');
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: konec,
+      cancelAtPeriodEnd: false,
+    });
 
-    const outcome = await applyStripeEvent(db, {
-      type: 'invoice.upcoming',
-      created: 1_786_000_100,
-      data: {
-        object: {
-          customer: 'cus_obnova',
-          amount_due: 99_000,
-          next_payment_attempt: Math.floor(Date.parse('2027-01-01T09:00:00Z') / 1000),
-        },
-      },
-    } as unknown as Stripe.Event);
+    // 20 dní předem je brzy
+    expect(await sendRenewalNotices(db, new Date('2026-12-12T08:00:00Z'))).toEqual({ due: 0, sent: 0 });
+    expect(emails()).toEqual([]);
 
-    expect(outcome).toContain('upomínka');
-    // první e-mail je potvrzení objednávky ze setupu — hledáme tu upomínku
+    // 14 dní předem odejde
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({ due: 1, sent: 1 });
     const mail = emails().find((m) => m.subject.includes('obnoví'));
-    // bez tohohle e-mailu je věta „14 dní předem ti přijde e-mail" v podmínkách nepravdivá
-    expect(mail?.subject).toContain('obnoví');
     expect(mail?.text).toContain('990 Kč');
     expect(mail?.text).toContain('1. 1. 2027');
-    expect(mail?.text).toContain('zrušit obnovu');
+
+    // cron běží denně — druhý běh za totéž období už nic neposílá
+    expect(await sendRenewalNotices(db, new Date('2026-12-19T08:00:00Z'))).toEqual({ due: 0, sent: 0 });
+    expect(emails().filter((m) => m.subject.includes('obnoví'))).toHaveLength(1);
   });
 
-  it('faktura zákazníka, kterého neznáme, nic nepošle a neshodí webhook', { timeout: 30_000 }, async () => {
+  it('zrušené obnově ani neplatícímu se neposílá nic', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const emails = captureEmails();
+    const db = await createPgliteDb();
+    await db.insert(user).values([
+      { id: 'zrusil', name: 'Z', email: 'z@danero.cz' },
+      { id: 'neplati', name: 'N', email: 'n@danero.cz' },
+    ]);
+    const konec = new Date('2027-01-01T00:00:00Z');
+    await db.insert(subscriptions).values([
+      // obnovu zrušil — nic se nestrhne, upomínka by mátla
+      { userId: 'zrusil', status: 'active', currentPeriodEnd: konec, cancelAtPeriodEnd: true },
+      { userId: 'neplati', status: 'past_due', currentPeriodEnd: konec, cancelAtPeriodEnd: false },
+    ]);
+
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({ due: 0, sent: 0 });
+    expect(emails()).toEqual([]);
+  });
+
+  it('webhook invoice.upcoming e-mail neposílá — jinak by odešel dvakrát', { timeout: 30_000 }, async () => {
     const emails = captureEmails();
     const db = await dbWithUser();
     const outcome = await applyStripeEvent(db, {
       type: 'invoice.upcoming',
       created: 1_786_000_100,
-      data: { object: { customer: 'cus_neznamy', amount_due: 99_000 } },
+      data: { object: { customer: 'cus_1', amount_due: 99_000 } },
     } as unknown as Stripe.Event);
-    expect(outcome).toContain('bez uživatele');
+    expect(outcome).toContain('cron');
     expect(emails()).toEqual([]);
   });
 });
