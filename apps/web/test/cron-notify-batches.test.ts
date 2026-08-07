@@ -32,6 +32,16 @@ vi.mock('@/lib/notifications', () => ({
   resolveEmailSender: () => async () => {},
 }));
 
+/**
+ * Dobere celý řetěz štafet. `Promise.all(stav.cekajici)` nestačí: pole si
+ * udělá snímek, ale navazující dávka do něj přidá další promise teprve během
+ * čekání — a assertace pak běží nad rozpracovaným řetězem (v CI to spolehlivě
+ * ukázalo 59 z 60 uživatelů).
+ */
+async function dobehniStafetu(): Promise<void> {
+  while (stav.cekajici.length > 0) await Promise.all(stav.cekajici.splice(0));
+}
+
 const URL_CRON = 'https://danero.cz/api/cron/notify';
 const request = (url = URL_CRON) =>
   new Request(url, { headers: { authorization: 'Bearer tajne' } });
@@ -67,7 +77,7 @@ describe('dávkování notifikačního cronu (G-11)', () => {
     expect(stav.zpracovani).toHaveLength(25);
     expect(stav.zpracovani[0]).toBe('u-000'); // stabilní pořadí navzdory DB
 
-    await Promise.all(stav.cekajici);
+    await dobehniStafetu();
     expect(predane).toEqual([`${URL_CRON}?offset=25`]);
   });
 
@@ -80,7 +90,7 @@ describe('dávkování notifikačního cronu (G-11)', () => {
     });
 
     await GET(request());
-    await Promise.all(stav.cekajici);
+    await dobehniStafetu();
 
     expect(invokaci).toBe(2); // 60 uživatelů = 25 + 25 + 10
     expect(stav.zpracovani).toHaveLength(60);
@@ -100,7 +110,7 @@ describe('dávkování notifikačního cronu (G-11)', () => {
 
     expect(body.processed).toBe(10);
     expect(body.remaining).toBe(0);
-    await Promise.all(stav.cekajici);
+    await dobehniStafetu();
     expect(predane).toEqual([]);
   });
 });
