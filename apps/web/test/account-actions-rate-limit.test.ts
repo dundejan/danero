@@ -60,7 +60,7 @@ describe('limity účtových server actions (D-2/D-3)', () => {
 
   it('změna hesla: 6. pokus v okně narazí na limit (5/5 min)', { timeout: 30_000 }, async () => {
     const { changePasswordAction } = await import('@/app/(app)/nastaveni/actions');
-    const data = () => form({ currentPassword: 'stareheslo123', newPassword: 'noveheslo123' });
+    const data = () => form({ 'stavajici-heslo': 'stareheslo123', 'nove-heslo': 'noveheslo123' });
 
     for (let i = 0; i < 5; i += 1) {
       expect(await cilRedirectu(() => changePasswordAction(data()))).toBe('/nastaveni?ok=heslo');
@@ -72,7 +72,7 @@ describe('limity účtových server actions (D-2/D-3)', () => {
 
   it('změna e-mailu: 4. pokus v okně narazí na limit (3/5 min)', { timeout: 30_000 }, async () => {
     const { changeEmailAction } = await import('@/app/(app)/nastaveni/actions');
-    const data = () => form({ newEmail: 'jiny@danero.cz', currentPassword: 'stareheslo123' });
+    const data = () => form({ 'novy-email': 'jiny@danero.cz', 'stavajici-heslo': 'stareheslo123' });
 
     // účet nemá heslo v credential accountu → prvních 2 pokusy končí na hesle,
     // ale limit spotřebují (tj. e-mail se z formuláře neodešle donekonečna)

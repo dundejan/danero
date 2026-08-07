@@ -128,8 +128,8 @@ export default async function SettingsPage({
             <Card className="space-y-4">
               <CardTitle>Kdo jsi vůči dani</CardTitle>
               <div>
-                <Label htmlFor="regime">Daňový režim</Label>
-                <Select id="regime" name="regime" defaultValue={profile?.regime ?? 'PAUSAL'}>
+                <Label htmlFor="rezim">Daňový režim</Label>
+                <Select id="rezim" name="rezim" defaultValue={profile?.regime ?? 'PAUSAL'}>
                   <option value="PAUSAL">OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)</option>
                   <option value="ZAMESTNANEC">Zaměstnanec (hlídá se limit 20 000 Kč)</option>
                   <option value="OSVC">OSVČ mimo paušál (přiznání podávám tak jako tak)</option>
@@ -137,12 +137,12 @@ export default async function SettingsPage({
                 </Select>
               </div>
               <div>
-                <Label htmlFor="otherIncomeCzk">
+                <Label htmlFor="ostatni-prijmy">
                   Další zdanitelné příjmy § 8–10 mimo investice (nájem apod.), Kč/rok
                 </Label>
                 <Input
-                  id="otherIncomeCzk"
-                  name="otherIncomeCzk"
+                  id="ostatni-prijmy"
+                  name="ostatni-prijmy"
                   inputMode="decimal"
                   // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
                   defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
@@ -151,7 +151,7 @@ export default async function SettingsPage({
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  name="hasBusinessAssets"
+                  name="obchodni-majetek"
                   defaultChecked={profile?.hasBusinessAssets ?? false}
                   className="h-4 w-4 accent-[var(--ruzova)]"
                 />
@@ -163,12 +163,12 @@ export default async function SettingsPage({
               <CardTitle>Metody výpočtu</CardTitle>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <Label htmlFor="matchingMethod" title="Pravidlo R-05c v metodice Danero">
+                  <Label htmlFor="parovani" title="Pravidlo R-05c v metodice Danero">
                     Párování prodejů
                   </Label>
                   <Select
-                    id="matchingMethod"
-                    name="matchingMethod"
+                    id="parovani"
+                    name="parovani"
                     defaultValue={profile?.matchingMethod ?? 'FIFO'}
                   >
                     <option value="FIFO">FIFO — nejstarší kusy první (doporučeno)</option>
@@ -183,19 +183,19 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="fxMethod" title="Pravidlo R-06 v metodice Danero">
+                  <Label htmlFor="kurzy" title="Pravidlo R-06 v metodice Danero">
                     Měnové kurzy
                   </Label>
-                  <Select id="fxMethod" name="fxMethod" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
+                  <Select id="kurzy" name="kurzy" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
                     <option value="UNIFIED">Jednotný kurz GFŘ</option>
                     <option value="CNB_DAILY">Denní kurzy ČNB</option>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="limit100kStrict">Co se počítá do limitu 100k</Label>
+                  <Label htmlFor="limit-100k">Co se počítá do limitu 100k</Label>
                   <Select
-                    id="limit100kStrict"
-                    name="limit100kStrict"
+                    id="limit-100k"
+                    name="limit-100k"
                     defaultValue={(profile?.limit100kStrict ?? true) ? 'strict' : 'lenient'}
                   >
                     <option value="strict">Bezpečný výklad — všechny prodeje (doporučeno)</option>
@@ -207,12 +207,12 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="timeTestBasis" title="Pravidlo R-01a v metodice Danero">
+                  <Label htmlFor="zaklad-casoveho-testu" title="Pravidlo R-01a v metodice Danero">
                     Báze časového testu
                   </Label>
                   <Select
-                    id="timeTestBasis"
-                    name="timeTestBasis"
+                    id="zaklad-casoveho-testu"
+                    name="zaklad-casoveho-testu"
                     defaultValue={profile?.timeTestBasis ?? 'settlement'}
                   >
                     <option value="settlement">Datum vypořádání (dle pokynu D-59)</option>
@@ -223,12 +223,12 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="derivativesExpensesPerType" title="Pravidlo R-12i v metodice Danero">
+                  <Label htmlFor="derivaty-vydaje" title="Pravidlo R-12i v metodice Danero">
                     Prémie bezcenně expirovaných opcí
                   </Label>
                   <Select
-                    id="derivativesExpensesPerType"
-                    name="derivativesExpensesPerType"
+                    id="derivaty-vydaje"
+                    name="derivaty-vydaje"
                     defaultValue={(profile?.derivativesExpensesPerType ?? false) ? 'perType' : 'restrictive'}
                   >
                     <option value="restrictive">Opatrný výklad — neuplatnit jako výdaj (doporučeno)</option>
@@ -241,12 +241,12 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="emtTimeTestExempt" title="Pravidlo R-10g v metodice Danero">
+                  <Label htmlFor="emt-casovy-test" title="Pravidlo R-10g v metodice Danero">
                     Stablecoiny a časový test
                   </Label>
                   <Select
-                    id="emtTimeTestExempt"
-                    name="emtTimeTestExempt"
+                    id="emt-casovy-test"
+                    name="emt-casovy-test"
                     defaultValue={(profile?.emtTimeTestExempt ?? false) ? 'lenient' : 'safe'}
                   >
                     <option value="safe">Opatrný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
@@ -339,12 +339,12 @@ export default async function SettingsPage({
               <p className="text-sm font-semibold">Změna hesla</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label htmlFor="currentPassword">Současné heslo</Label>
-                  <Input id="currentPassword" name="currentPassword" type="password" required autoComplete="current-password" />
+                  <Label htmlFor="stavajici-heslo">Současné heslo</Label>
+                  <Input id="stavajici-heslo" name="stavajici-heslo" type="password" required autoComplete="current-password" />
                 </div>
                 <div>
-                  <Label htmlFor="newPassword">Nové heslo (min. 10 znaků)</Label>
-                  <Input id="newPassword" name="newPassword" type="password" required minLength={10} autoComplete="new-password" />
+                  <Label htmlFor="nove-heslo">Nové heslo (min. 10 znaků)</Label>
+                  <Input id="nove-heslo" name="nove-heslo" type="password" required minLength={10} autoComplete="new-password" />
                 </div>
               </div>
               <SubmitButton size="sm" pendingLabel="Měním…">Změnit heslo</SubmitButton>
@@ -354,16 +354,16 @@ export default async function SettingsPage({
               <p className="text-sm font-semibold">Změna e-mailu</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label htmlFor="newEmail">Nový e-mail</Label>
+                  <Label htmlFor="novy-email">Nový e-mail</Label>
                   {/* autoComplete NESMÍ být „email“ — password manager sem cpal
                       starou adresu; „off“ + rozbití páru s heslem níže */}
-                  <Input id="newEmail" name="newEmail" type="email" required autoComplete="off" />
+                  <Input id="novy-email" name="novy-email" type="email" required autoComplete="off" />
                 </div>
                 <div>
                   <Label htmlFor="emailPassword">Heslo (potvrzení)</Label>
                   <Input
                     id="emailPassword"
-                    name="currentPassword"
+                    name="stavajici-heslo"
                     type="password"
                     required
                     autoComplete="new-password"
@@ -397,7 +397,7 @@ export default async function SettingsPage({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="deletePassword">Heslo</Label>
-                  <Input id="deletePassword" name="password" type="password" required autoComplete="current-password" />
+                  <Input id="deletePassword" name="heslo" type="password" required autoComplete="current-password" />
                 </div>
                 <div>
                   <Label htmlFor="potvrzeni">Napiš SMAZAT</Label>
@@ -418,14 +418,14 @@ export default async function SettingsPage({
           <Card className="space-y-4" id="notifikace">
             <CardTitle>E-mailová upozornění</CardTitle>
             <form action={saveNotificationPrefsAction} className="space-y-4">
-              <Switch name="emailEnabled" defaultChecked={prefs.emailEnabled} label="Posílat e-maily" />
+              <Switch name="emaily-zapnute" defaultChecked={prefs.emailEnabled} label="Posílat e-maily" />
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-semibold">Frekvence</legend>
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="radio"
-                    name="emailFrequency"
+                    name="frekvence-emailu"
                     value="DAILY"
                     defaultChecked={prefs.emailFrequency !== 'WEEKLY'}
                     className="accent-[var(--ruzova)]"
@@ -435,7 +435,7 @@ export default async function SettingsPage({
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="radio"
-                    name="emailFrequency"
+                    name="frekvence-emailu"
                     value="WEEKLY"
                     defaultChecked={prefs.emailFrequency === 'WEEKLY'}
                     className="accent-[var(--ruzova)]"
@@ -447,17 +447,17 @@ export default async function SettingsPage({
               <fieldset className="space-y-3">
                 <legend className="mb-2 text-sm font-semibold">Typy upozornění</legend>
                 <Switch
-                  name="timeTestEvents"
+                  name="upozorneni-casove-testy"
                   defaultChecked={prefs.timeTestEvents}
                   label="Časové testy (blížící se osvobození pozic)"
                 />
                 <Switch
-                  name="limitEvents"
+                  name="upozorneni-limity"
                   defaultChecked={prefs.limitEvents}
                   label="Limity (blížící se nebo prolomené limity)"
                 />
                 <Switch
-                  name="calendarEmails"
+                  name="upozorneni-kalendar"
                   defaultChecked={prefs.calendarEmails}
                   label="Daňový kalendář (termíny přiznání, roční shrnutí)"
                 />

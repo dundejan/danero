@@ -12,21 +12,26 @@ import { errorText, logEvent } from '@/lib/log';
 import { unpinMatchingMethod } from '@/lib/portfolio';
 import { authApi, requireUser } from '@/lib/session';
 
+/**
+ * Klíče schématu = `name` atributy formuláře, které jsou podle pravidla 1
+ * z CLAUDE.md česky (uživatel je vidí v DOM). Na anglické identifikátory se
+ * překlápějí hned níž, takže dál v kódu ani v databázi čeština není.
+ */
 const ProfileFormSchema = z.object({
-  regime: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
-  hasBusinessAssets: z.literal('on').optional(),
-  otherIncomeCzk: z
+  rezim: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
+  'obchodni-majetek': z.literal('on').optional(),
+  'ostatni-prijmy': z
     .string()
     .transform((v) => v.replace(',', '.').trim() || '0')
     .refine((v) => /^\d+(\.\d{1,2})?$/.test(v), 'Zadej částku v Kč')
     // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
     .refine((v) => d(v).lte('1000000000000'), 'Částka je nereálně vysoká — zkontroluj ji.'),
-  matchingMethod: z.enum(['FIFO', 'LIFO', 'MAX_PROFIT', 'MAX_LOSS']),
-  fxMethod: z.enum(['UNIFIED', 'CNB_DAILY']),
-  limit100kStrict: z.enum(['strict', 'lenient']),
-  timeTestBasis: z.enum(['settlement', 'trade']),
-  derivativesExpensesPerType: z.enum(['restrictive', 'perType']),
-  emtTimeTestExempt: z.enum(['safe', 'lenient']),
+  parovani: z.enum(['FIFO', 'LIFO', 'MAX_PROFIT', 'MAX_LOSS']),
+  kurzy: z.enum(['UNIFIED', 'CNB_DAILY']),
+  'limit-100k': z.enum(['strict', 'lenient']),
+  'zaklad-casoveho-testu': z.enum(['settlement', 'trade']),
+  'derivaty-vydaje': z.enum(['restrictive', 'perType']),
+  'emt-casovy-test': z.enum(['safe', 'lenient']),
 });
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
@@ -35,15 +40,15 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   if (!parsed.success) redirect('/nastaveni?chyba=formular');
 
   const values = {
-    regime: parsed.data.regime,
-    hasBusinessAssets: parsed.data.hasBusinessAssets === 'on',
-    otherIncomeCzk: parsed.data.otherIncomeCzk,
-    matchingMethod: parsed.data.matchingMethod,
-    fxMethod: parsed.data.fxMethod,
-    limit100kStrict: parsed.data.limit100kStrict === 'strict',
-    timeTestBasis: parsed.data.timeTestBasis,
-    derivativesExpensesPerType: parsed.data.derivativesExpensesPerType === 'perType',
-    emtTimeTestExempt: parsed.data.emtTimeTestExempt === 'lenient',
+    regime: parsed.data.rezim,
+    hasBusinessAssets: parsed.data['obchodni-majetek'] === 'on',
+    otherIncomeCzk: parsed.data['ostatni-prijmy'],
+    matchingMethod: parsed.data.parovani,
+    fxMethod: parsed.data.kurzy,
+    limit100kStrict: parsed.data['limit-100k'] === 'strict',
+    timeTestBasis: parsed.data['zaklad-casoveho-testu'],
+    derivativesExpensesPerType: parsed.data['derivaty-vydaje'] === 'perType',
+    emtTimeTestExempt: parsed.data['emt-casovy-test'] === 'lenient',
     updatedAt: new Date(),
   };
 
@@ -123,8 +128,8 @@ async function limitAccountAction(
 }
 
 const ChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(10),
+  'stavajici-heslo': z.string().min(1),
+  'nove-heslo': z.string().min(10),
 });
 
 export async function changePasswordAction(formData: FormData): Promise<void> {
@@ -138,8 +143,8 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
     await api.changePassword({
       headers: requestHeaders,
       body: {
-        currentPassword: parsed.data.currentPassword,
-        newPassword: parsed.data.newPassword,
+        currentPassword: parsed.data['stavajici-heslo'],
+        newPassword: parsed.data['nove-heslo'],
         revokeOtherSessions: true, // po změně hesla odhlásit ostatní zařízení
       },
     });
@@ -156,8 +161,8 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
 }
 
 const ChangeEmailSchema = z.object({
-  newEmail: z.email(),
-  currentPassword: z.string().min(1),
+  'novy-email': z.email(),
+  'stavajici-heslo': z.string().min(1),
 });
 
 export async function changeEmailAction(formData: FormData): Promise<void> {
@@ -182,7 +187,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     const { verifyPassword } = await import('@/lib/password');
     const valid =
       credential?.hash &&
-      (await verifyPassword({ hash: credential.hash, password: parsed.data.currentPassword }));
+      (await verifyPassword({ hash: credential.hash, password: parsed.data['stavajici-heslo'] }));
     if (!valid) redirect('/nastaveni?chyba=email-heslo');
   }
 
@@ -195,7 +200,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .update(userTable)
       // nová adresa je nepotvrzená: kdyby v ní byl překlep, uživatel by jinak
       // tiše přišel o upozornění i o obnovu hesla (ta chodí právě sem)
-      .set({ email: parsed.data.newEmail.toLowerCase(), emailVerified: false, updatedAt: new Date() })
+      .set({ email: parsed.data['novy-email'].toLowerCase(), emailVerified: false, updatedAt: new Date() })
       .where(eq(userTable.id, user.id));
   } catch (error) {
     logEvent('error', 'account.change_email_failed', { userId: user.id, error: errorText(error) });
@@ -211,7 +216,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     const { authApi } = await import('@/lib/session');
     const { api } = await authApi();
     await api.sendVerificationEmail({
-      body: { email: parsed.data.newEmail.toLowerCase(), callbackURL: '/overeni-emailu' },
+      body: { email: parsed.data['novy-email'].toLowerCase(), callbackURL: '/overeni-emailu' },
     });
   } catch (error) {
     logEvent('error', 'account.change_email_verification_failed', {
@@ -224,7 +229,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
 }
 
 const DeleteAccountSchema = z.object({
-  password: z.string().min(1),
+  heslo: z.string().min(1),
   potvrzeni: z.literal('SMAZAT'),
 });
 
@@ -246,7 +251,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
     // (profil, transakce, šifrované broker klíče, notifikace, joby, ceny)
     await api.deleteUser({
       headers: requestHeaders,
-      body: { password: parsed.data.password },
+      body: { password: parsed.data.heslo },
     });
   } catch (error) {
     logEvent('error', 'account.delete_failed', { userId: user.id, error: errorText(error) });
@@ -275,12 +280,12 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
   const db = await getDb();
   const { notificationPrefs } = await import('@/db/schema');
   const values = {
-    emailEnabled: formData.get('emailEnabled') === 'on',
-    timeTestEvents: formData.get('timeTestEvents') === 'on',
-    limitEvents: formData.get('limitEvents') === 'on',
-    calendarEmails: formData.get('calendarEmails') === 'on',
+    emailEnabled: formData.get('emaily-zapnute') === 'on',
+    timeTestEvents: formData.get('upozorneni-casove-testy') === 'on',
+    limitEvents: formData.get('upozorneni-limity') === 'on',
+    calendarEmails: formData.get('upozorneni-kalendar') === 'on',
     // radio validujeme na whitelist — cokoli jiného spadne na bezpečný default
-    emailFrequency: formData.get('emailFrequency') === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
+    emailFrequency: formData.get('frekvence-emailu') === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
     updatedAt: new Date(),
   };
   await db

@@ -58,5 +58,5 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.getByText('Posílat e-maily').click();
   await expect(page.getByText('Uloženo. E-maily se řídí novým nastavením.')).toBeVisible();
   await page.reload();
-  await expect(page.locator('input[name="emailEnabled"]')).not.toBeChecked();
+  await expect(page.locator('input[name="emaily-zapnute"]')).not.toBeChecked();
 });
