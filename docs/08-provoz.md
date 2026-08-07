@@ -157,3 +157,17 @@ Plná T212 historie trvá minuty až ~10 min (rate limit exportů ~1/min). Cron 
 pravděpodobně spadne uprostřed; záchranný hodinový cron ho dorovná na chybu
 a další pokus jede znovu — pro produkci proto počítej s Pro plánem, nebo první
 historickou synchronizaci proveď ručním nahráním CSV/XML exportů (idempotentní).
+
+## Region funkcí
+
+`apps/web/vercel.json` má `"regions": ["fra1"]` (Frankfurt). Dva důvody:
+
+- `/soukromi` i `/bezpecnost` tvrdí, že data leží v EU — dokud byl region jen
+  v dashboardu, nebylo to v repu ničím podepřené a jedno omylem přepnuté
+  nastavení by z toho udělalo nepravdivé tvrzení.
+- Je to region databáze (Neon `eu-central-1`). Když funkce běžely v `iad1`,
+  stál každý dotaz do DB 93 ms; po přepnutí na `fra1` 2–3 ms (docs/17).
+
+⚠️ `vercel.json` nesnese vlastní klíče — schéma odmítne i `"//"` jako komentář
+a **deploy spadne** (ověřeno bolestí 7. 8. 2026: dva commity se nenasadily,
+protože jsem si do něj přidal vysvětlující poznámku). Komentáře patří sem.
