@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { PoziceView, positionHistory } from '@/components/views/pozice-view';
+import { PositionView, positionHistory } from '@/components/views/position-view';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { instrumentLabels } from '@/lib/portfolio';
@@ -37,7 +37,7 @@ export default async function DemoPositionDetailPage({
   if (!position && positionHistory(txs, isin).length === 0) notFound();
 
   return (
-    <PoziceView
+    <PositionView
       isin={isin}
       txs={txs}
       analysis={analysis}

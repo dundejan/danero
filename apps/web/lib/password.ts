@@ -1,57 +1,77 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { argon2idAsync } from '@noble/hashes/argon2.js';
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
 /**
- * Otisky hesel: Argon2id (E-8 z auditu). Better Auth má ve výchozím stavu
- * scrypt — legitimní KDF, ale Argon2id je dnešní doporučení OWASP a odolnější
- * proti GPU/ASIC útoku. Měnit ho jde jen dokud nejsou živé účty, proto teď.
+ * Otisky hesel: scrypt z `node:crypto` s tvrdšími parametry, než má Better Auth
+ * ve výchozím stavu (E-8 z auditu).
  *
- * Parametry dle OWASP Password Storage Cheat Sheet (Argon2id): 19 MiB paměti,
- * 2 iterace, paralelismus 1.
+ * Nejdřív jsem sem dal Argon2id, protože ho doporučuje OWASP — a bylo to horší
+ * rozhodnutí. Změřeno:
  *
- * CENA (změřeno): otisk i ověření trvají ~450 ms, scrypt zvládne totéž za ~68 ms.
- * Přihlášení i registrace se tím prodlouží zhruba o půl vteřiny a na serverless
- * funkci je to blokující výpočet. Je to obvyklá cena za KDF odolný proti GPU
- * a brute force chrání i rate limit (5 pokusů/min), ale kdyby to vadilo, návrat
- * ke scryptu je odebrání bloku `password` v lib/auth.ts — staré otisky se pak
- * ověří dál, protože `verifyPassword` obě varianty rozpozná.
+ * | varianta                         | paměť   | čas    | blokuje event loop |
+ * |----------------------------------|---------|--------|--------------------|
+ * | Argon2id 19 MiB (čistě v JS)     |  19 MiB | 450 ms | ANO                |
+ * | scrypt Better Auth (N=2^14,r=16) |  32 MiB |  72 ms | ne                 |
+ * | scrypt tady (N=2^16, r=8)        |  64 MiB | 146 ms | ne                 |
+ * | scrypt OWASP (N=2^17, r=8)       | 128 MiB | 294 ms | ne                 |
  *
- * Implementace je čistě v JS (`@noble/hashes`, který si Better Auth stejně
- * táhne) — žádná nativní závislost, takže to jede i v serverless funkci
- * beze změny buildu.
+ * Argon2id byl tedy paměťově SLABŠÍ než scrypt, který nahrazoval (19 vs 32 MiB),
+ * a přitom 6× pomalejší — jediná dostupná implementace je čistě v JS a blokuje
+ * event loop. Nativní scrypt jede na libuv threadpoolu: čtyři souběžná
+ * přihlášení odbaví za 173 ms, kdežto blokující Argon2id by je seřadil za sebe.
+ * Algoritmus je jen tak dobrý, jak dobře ho umí spustit runtime.
  *
- * Formát je standardní PHC řetězec, takže z otisku samotného je poznat, jak
- * vznikl: `$argon2id$v=19$m=19456,t=2,p=1$<sůl>$<otisk>`.
+ * Parametry `N=65536, r=8, p=1` = 64 MiB, tedy dvojnásobek toho, co dává Better
+ * Auth, a spodní patro doporučení OWASP pro scrypt. Zvednout na 128 MiB
+ * (`N=131072`) je změna jednoho čísla — cena je ~300 ms na přihlášení.
+ *
+ * Formát je PHC řetězec, takže z otisku je poznat, čím vznikl:
+ * `$scrypt$N=65536,r=8,p=1$<sůl>$<otisk>`.
  */
-const MEMORY_KIB = 19_456;
-const ITERATIONS = 2;
-const PARALLELISM = 1;
+const COST = 65_536; // N
+const BLOCK_SIZE = 8; // r
+const PARALLELISM = 1; // p
 const SALT_BYTES = 16;
-const HASH_BYTES = 32;
-const PREFIX = '$argon2id$';
+const HASH_BYTES = 64;
+const PREFIX = '$scrypt$';
+/** scrypt si hlídá strop paměti sám — bez zvednutí by 64 MiB odmítl. */
+const MAX_MEM = 256 * 1024 * 1024;
 
 const b64 = (data: Uint8Array): string => Buffer.from(data).toString('base64');
 
-async function derive(password: string, salt: Uint8Array): Promise<Uint8Array> {
-  return argon2idAsync(password, salt, {
-    m: MEMORY_KIB,
-    t: ITERATIONS,
-    p: PARALLELISM,
-    dkLen: HASH_BYTES,
+function derive(
+  password: string,
+  salt: Uint8Array,
+  params: { N: number; r: number; p: number; dkLen: number },
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    // NFKC jako Better Auth — jinak by se týž znak zadaný jinou klávesnicí
+    // otiskl jinak a uživatel by se nepřihlásil
+    scrypt(
+      password.normalize('NFKC'),
+      salt,
+      params.dkLen,
+      { N: params.N, r: params.r, p: params.p, maxmem: MAX_MEM },
+      (error, key) => (error ? reject(error) : resolve(key)),
+    );
   });
 }
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = new Uint8Array(randomBytes(SALT_BYTES));
-  const hash = await derive(password, salt);
-  return `${PREFIX}v=19$m=${MEMORY_KIB},t=${ITERATIONS},p=${PARALLELISM}$${b64(salt)}$${b64(hash)}`;
+  const hash = await derive(password, salt, {
+    N: COST,
+    r: BLOCK_SIZE,
+    p: PARALLELISM,
+    dkLen: HASH_BYTES,
+  });
+  return `${PREFIX}N=${COST},r=${BLOCK_SIZE},p=${PARALLELISM}$${b64(salt)}$${b64(hash)}`;
 }
 
 /**
- * Ověření otisku. Otisky, které nevznikly tady (scrypt z Better Authu), se
- * ověřují jeho původní funkcí — jinak by po přepnutí algoritmu nikdo se starým
- * účtem neprošel přihlášením. Produkce je sice prázdná, ale vlastní instance
- * pod AGPL prázdné nejsou.
+ * Ověření otisku. Otisky, které nevznikly tady (výchozí formát Better Authu),
+ * se ověřují jeho původní funkcí — jinak by se po změně parametrů nikdo se
+ * starým účtem nepřihlásil. Poškozený otisk je selhání ověření, ne pád
+ * endpointu: jinak by jeden rozbitý řádek vracel 500 místo „špatné heslo".
  */
 export async function verifyPassword({
   hash,
@@ -60,8 +80,6 @@ export async function verifyPassword({
   hash: string;
   password: string;
 }): Promise<boolean> {
-  // Poškozený otisk v databázi je selhání ověření, ne pád přihlašovacího
-  // endpointu — jinak by jeden rozbitý řádek vracel 500 místo „špatné heslo".
   if (!hash.startsWith(PREFIX)) {
     try {
       const { verifyPassword: legacyVerify } = await import('better-auth/crypto');
@@ -71,24 +89,26 @@ export async function verifyPassword({
     }
   }
   const parts = hash.split('$');
-  // ['', 'argon2id', 'v=19', 'm=…,t=…,p=…', salt, hash]
-  if (parts.length !== 6) return false;
+  // ['', 'scrypt', 'N=…,r=…,p=…', salt, hash]
+  if (parts.length !== 5) return false;
   const params = Object.fromEntries(
-    parts[3]!.split(',').map((pair) => {
+    parts[2]!.split(',').map((pair) => {
       const [key, value] = pair.split('=');
       return [key, Number(value)];
     }),
   );
-  const salt = new Uint8Array(Buffer.from(parts[4]!, 'base64'));
-  const expected = Buffer.from(parts[5]!, 'base64');
-  const actual = Buffer.from(
-    await argon2idAsync(password, salt, {
-      m: params.m ?? MEMORY_KIB,
-      t: params.t ?? ITERATIONS,
+  const salt = new Uint8Array(Buffer.from(parts[3]!, 'base64'));
+  const expected = Buffer.from(parts[4]!, 'base64');
+  try {
+    const actual = await derive(password, salt, {
+      N: params.N ?? COST,
+      r: params.r ?? BLOCK_SIZE,
       p: params.p ?? PARALLELISM,
       dkLen: expected.length,
-    }),
-  );
-  // konstantní čas: délku porovnat zvlášť, timingSafeEqual na různých délkách vyhodí
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+    });
+    // konstantní čas: délku porovnat zvlášť, timingSafeEqual na různých délkách vyhodí
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }

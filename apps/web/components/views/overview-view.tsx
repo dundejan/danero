@@ -32,7 +32,7 @@ export interface PrehledNotification {
  * ukázkový dataset. Vše uvnitř jsou čisté výpočty nad hotovou analýzou —
  * žádné I/O. `basePath` směruje odkazy ('' pro aplikaci, '/demo' pro demo).
  */
-export function PrehledView({
+export function OverviewView({
   txs,
   analysis,
   prices,

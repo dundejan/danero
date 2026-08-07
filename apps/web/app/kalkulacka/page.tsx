@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { KalkulackaPriznani } from '@/components/kalkulacka-priznani';
+import { KalkulackaPriznani } from '@/components/filing-calculator';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 
 export const metadata: Metadata = {

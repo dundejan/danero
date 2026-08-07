@@ -57,7 +57,7 @@ export function positionHistory(
  * čisté výpočty nad hotovou analýzou. `basePath` směruje odkazy
  * ('' pro aplikaci, '/demo' pro demo).
  */
-export function PoziceView({
+export function PositionView({
   isin,
   txs,
   analysis,

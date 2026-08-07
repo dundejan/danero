@@ -7,7 +7,7 @@ import { buttonVariants } from '@/components/ui/button';
 
 /**
  * Mini kalkulačka „Musím podat přiznání?“: pár segmentovaných otázek →
- * okamžitý orientační verdikt. Čistý klientský stav (useState), žádný
+ * okamžitý orientační verdict. Čistý klientský stav (useState), žádný
  * formulář ani submit — přesný výpočet dělá až aplikace z dat.
  *
  * Logika je záměrně zjednodušená (bez detailů § 38g — jsme orientační):
@@ -17,50 +17,50 @@ import { buttonVariants } from '@/components/ui/button';
  *   (R-10; test neplatí pro stablecoiny — hlídá nápověda),
  * – paušál + jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč → přiznání,
  * – zaměstnanec + vedlejší zdanitelné příjmy nad 20 000 Kč → přiznání (§ 38g/2),
- * – jiné situace + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
+ * – jiné situation + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
  * – neosvobozené prodeje → přiznání,
  * – „Nevím“ u dividend/úroků → poctivé „bez dat to nejde říct“ (neptáme se
  *   na nic, co aplikace zjistí sama — sem patří CTA na napojení dat).
  */
 
-type Situace = 'zamestnanec' | 'pausal' | 'jine';
-type OdpovedPrijmy = 'ne' | 'ano' | 'nevim';
+type Situation = 'zamestnanec' | 'pausal' | 'jine';
+type IncomeAnswer = 'ne' | 'ano' | 'nevim';
 
-const ZLATE_PRAVIDLO = 'Do 100 000 Kč tržeb z prodejů se daň z prodejů neřeší — vůbec.';
+const GOLDEN_RULE = 'Do 100 000 Kč tržeb z prodejů se daň z prodejů neřeší — vůbec.';
 
 /** Jedna otázka se segmentovanými volbami ve stylu aplikace (aria-pressed). */
-function Otazka<T extends string | boolean>({
-  otazka,
-  napoveda,
-  volby,
-  hodnota,
+function Question<T extends string | boolean>({
+  question,
+  hint,
+  options,
+  value,
   onChange,
 }: {
-  otazka: string;
-  napoveda?: string;
-  volby: readonly { hodnota: T; popisek: string }[];
-  hodnota: T | null;
-  onChange: (hodnota: T) => void;
+  question: string;
+  hint?: string;
+  options: readonly { value: T; label: string }[];
+  value: T | null;
+  onChange: (value: T) => void;
 }) {
   return (
-    <div role="group" aria-label={otazka}>
-      <p className="text-sm font-medium tabular-nums">{otazka}</p>
-      {napoveda && <p className="mt-0.5 text-xs text-inkoust-tlumeny">{napoveda}</p>}
+    <div role="group" aria-label={question}>
+      <p className="text-sm font-medium tabular-nums">{question}</p>
+      {hint && <p className="mt-0.5 text-xs text-inkoust-tlumeny">{hint}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
-        {volby.map((volba) => (
+        {options.map((volba) => (
           <button
-            key={String(volba.hodnota)}
+            key={String(volba.value)}
             type="button"
-            aria-pressed={hodnota === volba.hodnota}
-            onClick={() => onChange(volba.hodnota)}
+            aria-pressed={value === volba.value}
+            onClick={() => onChange(volba.value)}
             className={cn(
               'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-              hodnota === volba.hodnota
+              value === volba.value
                 ? 'border-ruzova-syta bg-ruzova-syta text-white'
                 : 'border-linka bg-plocha text-inkoust-tlumeny hover:border-ruzova hover:text-ruzova',
             )}
           >
-            {volba.popisek}
+            {volba.label}
           </button>
         ))}
       </div>
@@ -68,20 +68,20 @@ function Otazka<T extends string | boolean>({
   );
 }
 
-/** Text otázky na dividendy/úroky podle situace (limit 50k / 20k / 50k). */
-const PRIJMY_OTAZKA: Record<Situace, { otazka: string; napoveda: string }> = {
+/** Text otázky na dividendy/úroky podle situation (limit 50k / 20k / 50k). */
+const INCOME_QUESTION: Record<Situation, { question: string; hint: string }> = {
   pausal: {
-    otazka: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
-    napoveda:
+    question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
+    hint:
       'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
   },
   zamestnanec: {
-    otazka: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
-    napoveda: 'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje se nepočítají.',
+    question: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
+    hint: 'Třeba zahraniční dividendy, úroky nebo nájem — osvobozené prodeje se nepočítají.',
   },
   jine: {
-    otazka: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
-    napoveda:
+    question: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
+    hint:
       'Včetně zahraničních dividend, úroků či nájmu — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
   },
 };
@@ -98,7 +98,7 @@ const QUESTIONS = {
   cryptoHolding: 'Držel jsi všechno prodané krypto déle než 3 roky?',
 } as const;
 
-const PRIJMY_DUVOD: Record<Situace, string> = {
+const PRIJMY_DUVOD: Record<Situation, string> = {
   pausal:
     'Jiné zdanitelné příjmy nad 50 000 Kč znamenají, že daň za ten rok není rovna paušální dani — podáš přiznání a přehledy, v paušálním režimu ale zůstáváš.',
   zamestnanec:
@@ -108,19 +108,19 @@ const PRIJMY_DUVOD: Record<Situace, string> = {
 
 /** Odpovědi kalkulačky; `null` = uživatel na otázku zatím neodpověděl. */
 export interface CalculatorAnswers {
-  situace: Situace | null;
-  prodejeNad100k: boolean | null;
-  vseDrzeno3Roky: boolean | null;
+  situation: Situation | null;
+  salesOver100k: boolean | null;
+  allHeldThreeYears: boolean | null;
   kryptoNad100k: boolean | null;
   kryptoDrzeno3Roky: boolean | null;
-  prijmy: OdpovedPrijmy | null;
+  prijmy: IncomeAnswer | null;
 }
 
 export interface CalculatorOutcome {
-  verdikt: 'osvobozeno' | 'priznani' | 'nejasne' | null;
-  duvod: string | null;
+  verdict: 'osvobozeno' | 'priznani' | 'nejasne' | null;
+  reason: string | null;
   /**
-   * Otázka, kterou uživatel přeskočil a bez níž verdikt nevznikne. Podotázky
+   * Otázka, kterou uživatel přeskočil a bez níž verdict nevznikne. Podotázky
    * se totiž objevují průběžně, takže jde jednu minout a odpovědět až na
    * pozdější — dřív se v takovém případě nevykreslilo vůbec nic a kalkulačka
    * mlčela, aniž by řekla, co jí chybí (H-24).
@@ -132,97 +132,97 @@ export interface CalculatorOutcome {
  * Verdikt kalkulačky z odpovědí. Čistá funkce bez JSX — export kvůli testům.
  */
 export function evaluateCalculator({
-  situace,
-  prodejeNad100k,
-  vseDrzeno3Roky,
+  situation,
+  salesOver100k,
+  allHeldThreeYears,
   kryptoNad100k,
   kryptoDrzeno3Roky,
   prijmy,
 }: CalculatorAnswers): CalculatorOutcome {
   // prodeje CP jsou osvobozené limitem 100k, nebo splněným časovým testem;
-  // null = na verdikt zatím chybí odpověď
-  const prodejeOsvobozene =
-    prodejeNad100k === null ? null : !prodejeNad100k ? true : vseDrzeno3Roky;
+  // null = na verdict zatím chybí odpověď
+  const salesExempt =
+    salesOver100k === null ? null : !salesOver100k ? true : allHeldThreeYears;
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10)
   const kryptoOsvobozene =
     kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
 
-  let verdikt: CalculatorOutcome['verdikt'] = null;
-  let duvod: string | null = null;
+  let verdict: CalculatorOutcome['verdict'] = null;
+  let reason: string | null = null;
   if (kryptoOsvobozene === false) {
-    verdikt = 'priznani';
-    duvod =
+    verdict = 'priznani';
+    reason =
       'Prodeje a směny kryptoaktiv nad 100 000 Kč ročně bez tří let držení jsou zdanitelný příjem.';
-  } else if (situace !== null && prijmy === 'ano') {
-    verdikt = 'priznani';
-    duvod = PRIJMY_DUVOD[situace];
-  } else if (prodejeOsvobozene === false) {
-    verdikt = 'priznani';
-    duvod = 'Prodeje nad 100 000 Kč bez tří let držení jsou zdanitelný příjem.';
+  } else if (situation !== null && prijmy === 'ano') {
+    verdict = 'priznani';
+    reason = PRIJMY_DUVOD[situation];
+  } else if (salesExempt === false) {
+    verdict = 'priznani';
+    reason = 'Prodeje nad 100 000 Kč bez tří let držení jsou zdanitelný příjem.';
   } else if (
-    situace !== null &&
-    prodejeOsvobozene !== null &&
+    situation !== null &&
+    salesExempt !== null &&
     kryptoOsvobozene !== null &&
     prijmy !== null
   ) {
     if (prijmy === 'nevim') {
-      verdikt = 'nejasne';
-      duvod =
+      verdict = 'nejasne';
+      reason =
         'Jestli dividendy a úroky limit přesáhly, zjistí Danero přesně z napojeného účtu nebo výpisu — včetně zahraniční srážkové daně.';
     } else {
-      verdikt = 'osvobozeno';
-      duvod = prodejeNad100k
+      verdict = 'osvobozeno';
+      reason = salesOver100k
         ? 'Po třech letech držení jsou prodeje osvobozené — a osvobozené příjmy do přiznání nepatří.'
-        : ZLATE_PRAVIDLO;
+        : GOLDEN_RULE;
     }
   }
 
   // otázky v pořadí, ve kterém je uživatel vidí (podmínky = podmínky vykreslení)
   const questions: Array<{ label: string; answered: boolean }> = [
-    { label: QUESTIONS.situation, answered: situace !== null },
-    ...(situace !== null ? [{ label: QUESTIONS.sales, answered: prodejeNad100k !== null }] : []),
-    ...(prodejeNad100k === true
-      ? [{ label: QUESTIONS.holding, answered: vseDrzeno3Roky !== null }]
+    { label: QUESTIONS.situation, answered: situation !== null },
+    ...(situation !== null ? [{ label: QUESTIONS.sales, answered: salesOver100k !== null }] : []),
+    ...(salesOver100k === true
+      ? [{ label: QUESTIONS.holding, answered: allHeldThreeYears !== null }]
       : []),
-    ...(prodejeNad100k !== null
+    ...(salesOver100k !== null
       ? [{ label: QUESTIONS.crypto, answered: kryptoNad100k !== null }]
       : []),
     ...(kryptoNad100k === true
       ? [{ label: QUESTIONS.cryptoHolding, answered: kryptoDrzeno3Roky !== null }]
       : []),
-    ...(situace !== null && kryptoOsvobozene !== null
-      ? [{ label: PRIJMY_OTAZKA[situace].otazka, answered: prijmy !== null }]
+    ...(situation !== null && kryptoOsvobozene !== null
+      ? [{ label: INCOME_QUESTION[situation].question, answered: prijmy !== null }]
       : []),
   ];
   const firstUnanswered = questions.findIndex((question) => !question.answered);
   // „přeskočená“ = nezodpovězená otázka, za kterou už uživatel na něco odpověděl
   const skippedQuestion =
-    verdikt === null &&
+    verdict === null &&
     firstUnanswered !== -1 &&
     questions.slice(firstUnanswered + 1).some((question) => question.answered)
       ? questions[firstUnanswered]!.label
       : null;
 
-  return { verdikt, duvod, skippedQuestion };
+  return { verdict, reason, skippedQuestion };
 }
 
 export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean }) {
-  const [situace, setSituace] = useState<Situace | null>(null);
-  const [prodejeNad100k, setProdejeNad100k] = useState<boolean | null>(null);
-  const [vseDrzeno3Roky, setVseDrzeno3Roky] = useState<boolean | null>(null);
+  const [situation, setSituace] = useState<Situation | null>(null);
+  const [salesOver100k, setProdejeNad100k] = useState<boolean | null>(null);
+  const [allHeldThreeYears, setVseDrzeno3Roky] = useState<boolean | null>(null);
   const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
   const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
-  const [prijmy, setPrijmy] = useState<OdpovedPrijmy | null>(null);
+  const [prijmy, setPrijmy] = useState<IncomeAnswer | null>(null);
 
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10) —
   // řídí, kdy se ukáže poslední otázka
   const kryptoOsvobozene =
     kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
 
-  const { verdikt, duvod, skippedQuestion } = evaluateCalculator({
-    situace,
-    prodejeNad100k,
-    vseDrzeno3Roky,
+  const { verdict, reason, skippedQuestion } = evaluateCalculator({
+    situation,
+    salesOver100k,
+    allHeldThreeYears,
     kryptoNad100k,
     kryptoDrzeno3Roky,
     prijmy,
@@ -249,131 +249,131 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
       )}
 
       <div className={showHeader ? 'mt-6 space-y-5' : 'space-y-5'}>
-        <Otazka<Situace>
-          otazka={QUESTIONS.situation}
-          volby={[
-            { hodnota: 'zamestnanec', popisek: 'Zaměstnanec' },
-            { hodnota: 'pausal', popisek: 'OSVČ v paušálu' },
-            { hodnota: 'jine', popisek: 'Jiné' },
+        <Question<Situation>
+          question={QUESTIONS.situation}
+          options={[
+            { value: 'zamestnanec', label: 'Zaměstnanec' },
+            { value: 'pausal', label: 'OSVČ v paušálu' },
+            { value: 'jine', label: 'Jiné' },
           ]}
-          hodnota={situace}
-          onChange={(hodnota) => {
-            setSituace(hodnota);
+          value={situation}
+          onChange={(value) => {
+            setSituace(value);
             // limit otázky na příjmy se situací mění (50k vs. 20k) — odpověď nepřenášet
             setPrijmy(null);
           }}
         />
-        {situace !== null && (
-          <Otazka<boolean>
-            otazka={QUESTIONS.sales}
-            napoveda="Počítá se, za kolik jsi prodal — ne zisk. Krypto má vlastní limit, přijde na řadu za chvíli."
-            volby={[
-              { hodnota: false, popisek: 'Ne' },
-              { hodnota: true, popisek: 'Ano' },
+        {situation !== null && (
+          <Question<boolean>
+            question={QUESTIONS.sales}
+            hint="Počítá se, za kolik jsi prodal — ne zisk. Krypto má vlastní limit, přijde na řadu za chvíli."
+            options={[
+              { value: false, label: 'Ne' },
+              { value: true, label: 'Ano' },
             ]}
-            hodnota={prodejeNad100k}
+            value={salesOver100k}
             onChange={setProdejeNad100k}
           />
         )}
-        {prodejeNad100k === true && (
-          <Otazka<boolean>
-            otazka={QUESTIONS.holding}
-            volby={[
-              { hodnota: true, popisek: 'Ano, všechny' },
-              { hodnota: false, popisek: 'Ne' },
+        {salesOver100k === true && (
+          <Question<boolean>
+            question={QUESTIONS.holding}
+            options={[
+              { value: true, label: 'Ano, všechny' },
+              { value: false, label: 'Ne' },
             ]}
-            hodnota={vseDrzeno3Roky}
+            value={allHeldThreeYears}
             onChange={setVseDrzeno3Roky}
           />
         )}
-        {prodejeNad100k !== null && (
-          <Otazka<boolean>
-            otazka={QUESTIONS.crypto}
-            napoveda="Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Nemáš krypto? Dej Ne."
-            volby={[
-              { hodnota: false, popisek: 'Ne' },
-              { hodnota: true, popisek: 'Ano' },
+        {salesOver100k !== null && (
+          <Question<boolean>
+            question={QUESTIONS.crypto}
+            hint="Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Nemáš krypto? Dej Ne."
+            options={[
+              { value: false, label: 'Ne' },
+              { value: true, label: 'Ano' },
             ]}
-            hodnota={kryptoNad100k}
-            onChange={(hodnota) => {
-              setKryptoNad100k(hodnota);
+            value={kryptoNad100k}
+            onChange={(value) => {
+              setKryptoNad100k(value);
               // podotázka na držení se týká jen odpovědi Ano — odpověď nepřenášet
               setKryptoDrzeno3Roky(null);
             }}
           />
         )}
         {kryptoNad100k === true && (
-          <Otazka<boolean>
-            otazka={QUESTIONS.cryptoHolding}
-            napoveda="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. U stablecoinů (USDT, USDC…) je test sporný — počítáme bezpečně, jako by neplatil."
-            volby={[
-              { hodnota: true, popisek: 'Ano, všechno' },
-              { hodnota: false, popisek: 'Ne' },
+          <Question<boolean>
+            question={QUESTIONS.cryptoHolding}
+            hint="Od 15. 2. 2025 má i krypto tříletý test — počítá se i držení před tímto datem. U stablecoinů (USDT, USDC…) je test sporný — počítáme bezpečně, jako by neplatil."
+            options={[
+              { value: true, label: 'Ano, všechno' },
+              { value: false, label: 'Ne' },
             ]}
-            hodnota={kryptoDrzeno3Roky}
+            value={kryptoDrzeno3Roky}
             onChange={setKryptoDrzeno3Roky}
           />
         )}
-        {situace !== null && kryptoOsvobozene !== null && (
-          <Otazka<OdpovedPrijmy>
-            otazka={PRIJMY_OTAZKA[situace].otazka}
-            napoveda={PRIJMY_OTAZKA[situace].napoveda}
-            volby={[
-              { hodnota: 'ne', popisek: 'Ne' },
-              { hodnota: 'ano', popisek: 'Ano' },
-              { hodnota: 'nevim', popisek: 'Nevím' },
+        {situation !== null && kryptoOsvobozene !== null && (
+          <Question<IncomeAnswer>
+            question={INCOME_QUESTION[situation].question}
+            hint={INCOME_QUESTION[situation].hint}
+            options={[
+              { value: 'ne', label: 'Ne' },
+              { value: 'ano', label: 'Ano' },
+              { value: 'nevim', label: 'Nevím' },
             ]}
-            hodnota={prijmy}
+            value={prijmy}
             onChange={setPrijmy}
           />
         )}
       </div>
 
       {/* přeskočená otázka: bez tohohle bloku by kalkulačka jen mlčela a
-          uživatel by nevěděl, že na verdikt něco chybí (H-24) */}
+          uživatel by nevěděl, že na verdict něco chybí (H-24) */}
       {skippedQuestion && (
         <div role="status" className="mt-6 rounded-md border border-linka bg-pozadi p-4">
-          <p className="font-semibold">Ještě jedna odpověď a verdikt je hotový.</p>
+          <p className="font-semibold">Ještě jedna odpověď a verdict je hotový.</p>
           <p className="mt-1 text-sm text-inkoust-tlumeny">
             Chybí odpověď na otázku „{skippedQuestion}“ — doplň ji výš.
           </p>
         </div>
       )}
 
-      {verdikt && (
+      {verdict && (
         <div
           role="status"
           className={cn(
             'mt-6 rounded-md border p-4',
-            verdikt === 'osvobozeno' && 'border-zelena/40 bg-zelena/5',
-            verdikt === 'priznani' && 'border-ruzova/30 bg-ruzova/5',
-            verdikt === 'nejasne' && 'border-linka bg-pozadi',
+            verdict === 'osvobozeno' && 'border-zelena/40 bg-zelena/5',
+            verdict === 'priznani' && 'border-ruzova/30 bg-ruzova/5',
+            verdict === 'nejasne' && 'border-linka bg-pozadi',
           )}
         >
           <p className="font-semibold tabular-nums">
-            {verdikt === 'osvobozeno' && 'Vypadá to, že přiznání kvůli investicím řešit nemusíš.'}
-            {verdikt === 'priznani' && 'Nejspíš podáš přiznání — Danero ti připraví podklady.'}
-            {verdikt === 'nejasne' && 'Tohle bez dat s jistotou říct nejde.'}
+            {verdict === 'osvobozeno' && 'Vypadá to, že přiznání kvůli investicím řešit nemusíš.'}
+            {verdict === 'priznani' && 'Nejspíš podáš přiznání — Danero ti připraví podklady.'}
+            {verdict === 'nejasne' && 'Tohle bez dat s jistotou říct nejde.'}
           </p>
           <p
             className={cn(
               'mt-1 text-sm tabular-nums',
-              duvod === ZLATE_PRAVIDLO ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
+              reason === GOLDEN_RULE ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
             )}
           >
-            {duvod}
+            {reason}
           </p>
-          {verdikt !== 'nejasne' && (
+          {verdict !== 'nejasne' && (
             <p className="mt-2 text-xs text-inkoust-tlumeny">
               Orientačně — přesně to spočítá aplikace z tvých dat.
             </p>
           )}
           <p className="mt-3 text-sm text-inkoust-tlumeny">
-            {verdikt === 'osvobozeno' &&
+            {verdict === 'osvobozeno' &&
               'Limity se počítají každý rok znovu — Danero je pohlídá, ať to tak zůstane.'}
-            {verdikt === 'priznani' &&
+            {verdict === 'priznani' &&
               'Danero spočítá přesnou daň a v březnu ti připraví podklady i XML pro podatelnu.'}
-            {verdikt === 'nejasne' &&
+            {verdict === 'nejasne' &&
               'Napoj brokera nebo nahraj výpis — na nic dalšího se ptát nebudeme.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-3">

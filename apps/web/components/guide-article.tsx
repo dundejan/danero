@@ -7,12 +7,12 @@ import Link from 'next/link';
  */
 
 /** Tělo článku: čitelná šířka pod hero blokem. */
-export function ClanekTelo({ children }: { children: React.ReactNode }) {
+export function ArticleBody({ children }: { children: React.ReactNode }) {
   return <article className="mt-10 max-w-3xl">{children}</article>;
 }
 
 /** Úvodní odstavec — krátká odpověď článku; tučnou část označí článek přes <strong>. */
-export function ClanekUvod({ children }: { children: React.ReactNode }) {
+export function ArticleIntro({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-lg leading-relaxed text-inkoust-tlumeny [&_strong]:font-semibold [&_strong]:text-inkoust">
       {children}
@@ -21,7 +21,7 @@ export function ClanekUvod({ children }: { children: React.ReactNode }) {
 }
 
 /** Sekce článku: nadpis + odstavce a bloky s jednotnými mezerami. */
-export function ClanekSekce({ title, children }: { title: string; children: React.ReactNode }) {
+export function ArticleSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-12">
       <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
@@ -33,12 +33,12 @@ export function ClanekSekce({ title, children }: { title: string; children: Reac
 }
 
 /** Odrážkový seznam uvnitř sekce. */
-export function ClanekSeznam({ children }: { children: React.ReactNode }) {
+export function ArticleList({ children }: { children: React.ReactNode }) {
   return <ul className="list-disc space-y-2 pl-5">{children}</ul>;
 }
 
 /** Rámeček s konkrétním příkladem — čísla řeknou víc než poučky. */
-export function Priklad({ title, children }: { title?: string; children: React.ReactNode }) {
+export function Example({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-linka bg-plocha p-5">
       <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
@@ -53,7 +53,7 @@ export function Priklad({ title, children }: { title?: string; children: React.R
 }
 
 /** Rámeček pro poctivě označený sporný výklad (stejně jako v metodice aplikace). */
-export function SpornyVyklad({ children }: { children: React.ReactNode }) {
+export function DisputedReading({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-5 text-sm leading-relaxed text-inkoust-tlumeny">
       <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
@@ -65,7 +65,7 @@ export function SpornyVyklad({ children }: { children: React.ReactNode }) {
 }
 
 /** Interní odkaz ve stylu ostatních marketingových stránek. */
-export function ClanekOdkaz({ href, children }: { href: string; children: React.ReactNode }) {
+export function ArticleLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link href={href} className="font-medium text-ruzova-text underline underline-offset-2">
       {children}
@@ -74,7 +74,7 @@ export function ClanekOdkaz({ href, children }: { href: string; children: React.
 }
 
 /** Pata článku: platnost pravidel, další čtení a cesta zpět na rozcestník. */
-export function ClanekPata({ dalsi }: { dalsi: { href: string; title: string }[] }) {
+export function ArticleFooter({ next }: { next: { href: string; title: string }[] }) {
   return (
     <footer className="mt-12 border-t border-linka pt-6">
       <p className="text-xs text-inkoust-tlumeny">
@@ -86,13 +86,13 @@ export function ClanekPata({ dalsi }: { dalsi: { href: string; title: string }[]
         Další čtení
       </p>
       <ul className="mt-2 space-y-1 text-sm">
-        {dalsi.map((odkaz) => (
+        {next.map((odkaz) => (
           <li key={odkaz.href}>
-            <ClanekOdkaz href={odkaz.href}>{odkaz.title}</ClanekOdkaz>
+            <ArticleLink href={odkaz.href}>{odkaz.title}</ArticleLink>
           </li>
         ))}
         <li>
-          <ClanekOdkaz href="/pruvodce">Všechny články průvodce</ClanekOdkaz>
+          <ArticleLink href="/pruvodce">Všechny články průvodce</ArticleLink>
         </li>
       </ul>
     </footer>

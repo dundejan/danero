@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { desc, eq } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
-import { PrehledView } from '@/components/views/prehled-view';
+import { OverviewView } from '@/components/views/overview-view';
 import { getDb } from '@/db';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { analyzeForUserCached } from '@/lib/engine-cache';
@@ -74,7 +74,7 @@ export default async function OverviewPage({
   const prices = await loadInstrumentPrices(db, user.id);
 
   return (
-    <PrehledView
+    <OverviewView
       txs={txs}
       analysis={analysis}
       prices={prices}

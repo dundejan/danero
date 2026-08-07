@@ -110,8 +110,9 @@ function buildAuth(db: Db) {
       // Better Auth při pokusu o přihlášení nepotvrzeného účtu pošle nový
       // odkaz sám, takže uživatel nezůstane viset.
       requireEmailVerification: true,
-      // E-8: Argon2id místo výchozího scryptu. Otisky vzniklé dřív se ověřují
-      // původní funkcí, takže vlastní instance s živými účty se nezamknou.
+      // E-8: scrypt s dvojnásobnou pamětí proti výchozímu nastavení Better Authu
+      // (64 vs 32 MiB). Otisky vzniklé dřív se ověřují původní funkcí, takže
+      // vlastní instance s živými účty se nezamknou.
       password: {
         hash: (password) => import('@/lib/password').then((m) => m.hashPassword(password)),
         verify: (data) => import('@/lib/password').then((m) => m.verifyPassword(data)),

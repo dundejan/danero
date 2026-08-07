@@ -1,7 +1,7 @@
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { notFound, redirect } from 'next/navigation';
-import { PoziceView, positionHistory } from '@/components/views/pozice-view';
+import { PositionView, positionHistory } from '@/components/views/position-view';
 import { getDb } from '@/db';
 import { dailyRatesForProfile, getProfile, loadTransactions } from '@/lib/portfolio';
 import { loadInstrumentPrices } from '@/lib/prices';
@@ -75,5 +75,5 @@ export default async function PositionDetailPage({
 
   const prices = await loadInstrumentPrices(db, user.id);
 
-  return <PoziceView isin={isin} txs={txs} analysis={analysis} prices={prices} today={today} />;
+  return <PositionView isin={isin} txs={txs} analysis={analysis} prices={prices} today={today} />;
 }

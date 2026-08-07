@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import {
-  ClanekOdkaz,
-  ClanekPata,
-  ClanekSekce,
-  ClanekSeznam,
-  ClanekTelo,
-  ClanekUvod,
-  Priklad,
-} from '@/components/pruvodce-clanek';
+  ArticleLink,
+  ArticleFooter,
+  ArticleSection,
+  ArticleList,
+  ArticleBody,
+  ArticleIntro,
+  Example,
+} from '@/components/guide-article';
 
 export const metadata: Metadata = {
   title: 'OSVČ v paušálu a investice: limit 50 000 Kč — Danero',
@@ -25,8 +25,8 @@ export default function PausalniRezimAInvesticePage() {
         lede="Paušální režim tě zbavil přiznání i přehledů. Investice ti je můžou vrátit — limit je 50 000 Kč ročně a počítá se z hrubých částek. Co do něj patří, co ne a co se při prolomení opravdu stane."
       />
 
-      <ClanekTelo>
-        <ClanekUvod>
+      <ArticleBody>
+        <ArticleIntro>
           <strong>
             Aby tvoje daň zůstala rovna paušální dani, smějí tvoje zdanitelné příjmy mimo
             podnikání — z kapitálu, z nájmu a ostatní — činit v úhrnu nejvýš 50 000 Kč za
@@ -35,9 +35,9 @@ export default function PausalniRezimAInvesticePage() {
           </strong>{' '}
           Prolomení přitom není konec světa ani konec paušálu: za daný rok podáš přiznání
           a přehledy, v paušálním režimu ale zůstáváš.
-        </ClanekUvod>
+        </ArticleIntro>
 
-        <ClanekSekce title="Proč se to týká zrovna investorů">
+        <ArticleSection title="Proč se to týká zrovna investorů">
           <p>
             Paušální daň znamená jednu platbu měsíčně a žádné přiznání ani přehledy pro
             ČSSZ a zdravotní pojišťovnu — dokud plníš podmínky. Jednou z nich je, že vedle
@@ -47,10 +47,10 @@ export default function PausalniRezimAInvesticePage() {
             prodávání. Limit se navíc počítá z hrubých příjmů, takže nepomůže ani to, že
             jsi na obchodu skoro nic nevydělal.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Co se do 50 000 Kč počítá">
-          <ClanekSeznam>
+        <ArticleSection title="Co se do 50 000 Kč počítá">
+          <ArticleList>
             <li>
               <strong>Zahraniční dividendy v hrubé výši</strong> — před daní sraženou
               v zahraničí, přepočtené na koruny. To, co ti přistálo na účtu, je míň, než
@@ -72,32 +72,32 @@ export default function PausalniRezimAInvesticePage() {
               <strong>Příjmy z nájmu</strong> a další ostatní příjmy — investice nejsou
               jediné, co limit plní.
             </li>
-          </ClanekSeznam>
-          <Priklad title="Prodej, který limit prolomí i s minimálním ziskem">
+          </ArticleList>
+          <Example title="Prodej, který limit prolomí i s minimálním ziskem">
             <p>
               Prodáš akcie za 120 000 Kč držené dva roky se ziskem 5 000 Kč. Prodej není
               osvobozený (tržby nad 100 000 Kč, test nesplněn) — a do limitu 50 000 Kč
               nevstupuje zisk 5 000 Kč, ale celých 120 000 Kč. Prolomeno jedním obchodem.
             </p>
-          </Priklad>
-          <Priklad title="Limit prolomený bez jediného prodeje">
+          </Example>
+          <Example title="Limit prolomený bez jediného prodeje">
             <p>
               Dividendy z amerických akcií v úhrnu 2 300 USD brutto za rok jsou zhruba
               50 000 Kč — portfolio, které celý rok jen tiše vyplácí dividendy, může limit
               naplnit samo. Počítá se hrubá částka před 15% americkou srážkou.
             </p>
-          </Priklad>
-        </ClanekSekce>
+          </Example>
+        </ArticleSection>
 
-        <ClanekSekce title="Co se nepočítá">
-          <ClanekSeznam>
+        <ArticleSection title="Co se nepočítá">
+          <ArticleList>
             <li>
               <strong>Osvobozené prodeje</strong> — kusy držené přes 3 roky (časový
               test) a roky, kdy
               tržby z prodejů cenných papírů nepřesáhly 100 000 Kč (
-              <ClanekOdkaz href="/pruvodce/limit-100-000-kc">
+              <ArticleLink href="/pruvodce/limit-100-000-kc">
                 jak limit funguje
-              </ClanekOdkaz>
+              </ArticleLink>
               ; krypto má vlastní stovku). Objem osvobozených příjmů není omezen — po
               třech letech můžeš prodat klidně za milion a paušál to nezasáhne.
             </li>
@@ -105,15 +105,15 @@ export default function PausalniRezimAInvesticePage() {
               <strong>České dividendy a úroky z českých bank</strong> — 15% daň srazil
               plátce a tím jsou vyřízené, limit neplní.
             </li>
-          </ClanekSeznam>
+          </ArticleList>
           <p>
             Rozdíl mezi „osvobozeným“ a „neosvobozeným“ prodejem tak pro OSVČ v paušálu
             rozhoduje o celém papírování za rok — proto se vyplatí hlídat limity 100 000
             a 50 000 Kč společně.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Co se při prolomení opravdu stane">
+        <ArticleSection title="Co se při prolomení opravdu stane">
           <p>
             Překročíš-li 50 000 Kč, tvoje daň za ten rok <strong>není rovna paušální
             dani</strong>. Znamená to: podáváš daňové přiznání (včetně příjmů z podnikání,
@@ -129,24 +129,24 @@ export default function PausalniRezimAInvesticePage() {
             (připadne-li na víkend, platí nejbližší pracovní den). Leden je tedy moment,
             kdy se stav za loňský rok hodí znát přesně.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekSekce title="Jak to hlídá Danero">
+        <ArticleSection title="Jak to hlídá Danero">
           <p>
             Orientační odpověď dá zdarma a bez registrace{' '}
-            <ClanekOdkaz href="/kalkulacka">kalkulačka „Musím podat přiznání?“</ClanekOdkaz>.
+            <ArticleLink href="/kalkulacka">kalkulačka „Musím podat přiznání?“</ArticleLink>.
             V aplikaci pak běží průběžný součet nad skutečnou historií účtů: každá dividenda přepočtená
             kurzem podle zvolené soustavy (jednotný kurz běžného roku je do lednového
             vyhlášení orientační — aplikace to viditelně označuje), osvobozené prodeje
             vyřazené, úroky započtené — a e-mail při 60, 85 a 100 % limitu. Prodej si
             nasimuluješ předem a uvidíš jeho dopad na limit 50 000 Kč ještě dřív, než ho
             zadáš brokerovi. Podporované platformy najdeš na stránce{' '}
-            <ClanekOdkaz href="/platformy">Platformy</ClanekOdkaz>.
+            <ArticleLink href="/platformy">Platformy</ArticleLink>.
           </p>
-        </ClanekSekce>
+        </ArticleSection>
 
-        <ClanekPata
-          dalsi={[
+        <ArticleFooter
+          next={[
             {
               href: '/pruvodce/limit-100-000-kc',
               title: 'Limit 100 000 Kč: počítá se objem prodejů, ne zisk',
@@ -155,7 +155,7 @@ export default function PausalniRezimAInvesticePage() {
             { href: '/kalkulacka', title: 'Kalkulačka: Musím podat přiznání?' },
           ]}
         />
-      </ClanekTelo>
+      </ArticleBody>
 
       <MarketingCta
         title="Paušál se hlídá celý rok, ne až v lednu"
