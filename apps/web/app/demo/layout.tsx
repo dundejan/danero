@@ -19,7 +19,10 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
       >
         Přeskočit na obsah
       </a>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ruzova/40 bg-ruzova/10 px-4 py-2.5 md:px-6">
+      {/* <header>, ne <div>: text banneru jinak leží mimo jakýkoli landmark
+          a čtečka ho v režimu procházení oblastí přeskočí (axe `region`,
+          moderate — pod prahem sady z 1. kola, viz audit H2-05a) */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ruzova/40 bg-ruzova/10 px-4 py-2.5 md:px-6">
         <p className="text-sm">
           <span className="font-semibold text-ruzova-text">Prohlížíš demo s ukázkovými daty</span>
           <span className="text-inkoust-tlumeny"> — nic se neukládá.</span>
@@ -30,7 +33,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
         >
           Založit účet zdarma
         </Link>
-      </div>
+      </header>
       <DemoChecklist />
       <div className="flex flex-1">
         <DemoNavRail />

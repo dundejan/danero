@@ -311,7 +311,7 @@ export default async function ImportPage({
                   aria-label={`ISIN pro ${item.symbol}`}
                   required
                   pattern="[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]"
-                  className="w-48 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
+                  className="w-48 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
                 />
                 {item.needsCurrency && (
                   <input
@@ -320,7 +320,7 @@ export default async function ImportPage({
                     aria-label={`Měna pro ${item.symbol}`}
                     required
                     pattern="[A-Za-z]{3}"
-                    className="w-28 rounded-md border border-linka bg-plocha px-3 py-1.5 font-mono text-sm"
+                    className="w-28 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
                   />
                 )}
               </div>

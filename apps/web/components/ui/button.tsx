@@ -12,7 +12,10 @@ export const buttonVariants = cva(
         // plochu pod tlačítkem a bílý text na růžové spadne ze 4,62:1 na
         // 3,58:1 — pod AA. S brightness-95 drží 5,05:1 a efekt zůstává.
         primary: 'bg-ruzova-syta text-white hover:brightness-95',
-        secondary: 'border border-linka bg-plocha text-inkoust hover:border-inkoust-tlumeny',
+        // hranice sekundárního tlačítka je jediné, co ho odlišuje od plochy pod
+        // ním — proto --linka-ovladaci (≥ 3:1, WCAG 1.4.11), ne vlásová --linka
+        secondary:
+          'border border-linka-ovladaci bg-plocha text-inkoust hover:border-inkoust-tlumeny',
         ghost: 'text-inkoust-tlumeny hover:text-inkoust',
         danger: 'bg-cervena-syta text-white hover:brightness-95',
       },

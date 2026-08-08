@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import type { LegendPayload } from 'recharts';
 import type {
   DividendsByMonth,
   ExemptionOutlook,
@@ -108,6 +109,34 @@ function TooltipBox({
         </p>
       ))}
     </div>
+  );
+}
+
+/**
+ * Vlastní legenda. Výchozí legenda Rechartu kreslí ke každé sérii
+ * `<svg aria-label="US legend icon">` — anglický řetězec, který čtečka
+ * doopravdy přečte (audit H2-09, porušení pravidla 1). `formatter` mění jen
+ * text vedle ikony, ne její popisek, takže je potřeba vlastní `content`.
+ * Barevná tečka je čistě dekorativní (identitu nese text vedle ní), proto
+ * `aria-hidden` — čtečka pak oznámí jen „US, CZ“, ne obrázky.
+ */
+function ChartLegend({ payload }: { payload?: ReadonlyArray<LegendPayload> }) {
+  return (
+    <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1 pt-2">
+      {(payload ?? []).map((entry) => (
+        <li
+          key={String(entry.value)}
+          className="flex items-center gap-1.5 text-xs text-inkoust-tlumeny"
+        >
+          <span
+            aria-hidden
+            className="inline-block size-2 shrink-0 rounded-full"
+            style={{ background: entry.color }}
+          />
+          {entry.value}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -237,11 +266,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
             ) : null
           }
         />
-        <Legend
-          formatter={(value: string) => (
-            <span className="text-xs text-inkoust-tlumeny">{value}</span>
-          )}
-        />
+        <Legend content={(props) => <ChartLegend payload={props.payload} />} />
         {data.countries.map((country, index) => (
           <Bar
             key={country}

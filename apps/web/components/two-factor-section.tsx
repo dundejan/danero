@@ -53,7 +53,11 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     const result = await authClient.twoFactor.verifyTotp({ code });
     setPending(false);
     if (result.error) {
-      setError('Kód nesedí — zkontroluj aplikaci a zkus to znovu.');
+      setError(
+        result.error.code === 'TOTP_CODE_ALREADY_USED'
+          ? 'Tenhle kód už byl použitý. Počkej na další a zadej ten.'
+          : 'Kód nesedí — zkontroluj aplikaci a zkus to znovu.',
+      );
       return;
     }
     setVerified(true);
