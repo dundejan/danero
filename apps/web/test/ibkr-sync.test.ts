@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import { brokerAccounts, user } from '@/db/schema';
+import { syncStatusLabel } from '@/lib/broker-sync';
 import { encryptSecret } from '@/lib/crypto';
 import { enqueueSyncJob, processJob } from '@/lib/jobs';
 import { loadTransactions } from '@/lib/portfolio';
@@ -68,6 +69,36 @@ describe('IBKR sync job (mock Flex, in-memory PGlite)', () => {
       const result2 = finished2?.result as { added: number; duplicates: number };
       expect(result2.added).toBe(0);
       expect(result2.duplicates).toBe(3);
+    },
+  );
+
+  // B4-4: výpis bez sekce Open Positions → porovnávat není co. Prázdný seznam
+  // rozdílů vypadal jako shoda a stav u účtu tvrdil „pozice sedí“.
+  it(
+    'výpis bez Open Positions: stav netvrdí, že pozice sedí',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupIbkrAccount(db);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 'ibkr-sync');
+
+      const mock = makeIbkrMockFetch({ withoutOpenPositions: true });
+      const finished = await processJob(db, job.id, {
+        fetchImpl: mock.fetchImpl,
+        now: NOW,
+        pollIntervalMs: 5,
+      });
+
+      expect(finished?.status).toBe('success');
+      const account = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      // transakce se naimportovaly, jen kontrola pozic neproběhla
+      expect(await loadTransactions(db, 'u1', 'ibkr')).toHaveLength(3);
+      expect(account.lastSyncStatus).toBe('unverified');
+      expect(syncStatusLabel(account.lastSyncStatus)).not.toContain('pozice sedí');
+      const reconciliation = account.lastReconciliation as { warning?: string };
+      expect(reconciliation.warning).toContain('Open Positions');
     },
   );
 

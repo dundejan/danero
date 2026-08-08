@@ -25,6 +25,14 @@ export interface ReconciliationCoverage {
   lastYear: number | null;
   /** Roky, které tento běh u brokera skutečně stáhl (T212 stahuje po letech). */
   syncedYears?: number[];
+  /**
+   * Nejstarší rok, ke kterému jsme se u brokera vůbec dostali — pod ním jsme se
+   * NEDÍVALI. Stahování plné historie se zastaví po dvou letech bez obchodu,
+   * takže po delší pauze v obchodování může celý starší rok chybět, a protože se
+   * rozsah dat odvozuje z toho, co máme, díra by o sobě nedala vědět (B4-3).
+   * Chybí, když jsme došli až na začátek nabídky brokera (starší roky neexistují).
+   */
+  checkedFromYear?: number;
   /** Roky v rozsahu historie, ze kterých nemáme nic a ani je tento běh neověřil. */
   missingYears: number[];
   /** Prodej převýšil evidovanou pozici → historie nesahá k prvnímu nákupu. */
@@ -49,11 +57,17 @@ export interface StoredReconciliation {
   error?: string;
   /** Rekonciliaci nešlo provést, ale sync PROBĚHL (např. chybí OpenPositions) — jantarově. */
   warning?: string;
+  /**
+   * Pozice se vůbec neporovnávaly — broker je ve výpisu neposlal. Bez tohohle
+   * příznaku by stav vyšel jako „pozice sedí, historie neúplná“, ačkoli se
+   * nesrovnávalo nic (B4-4).
+   */
+  positionsUnavailable?: boolean;
   /** Rozsah dat pod rekonciliací — bez něj by „sedí“ nešlo brát vážně. */
   coverage?: ReconciliationCoverage;
 }
 
-export type SyncStatus = 'ok' | 'incomplete' | 'mismatch' | 'errors';
+export type SyncStatus = 'ok' | 'incomplete' | 'unverified' | 'mismatch' | 'errors';
 
 /**
  * České popisky stavů syncu — surové enum hodnoty do UI nepatří.
@@ -67,6 +81,7 @@ export type SyncStatus = 'ok' | 'incomplete' | 'mismatch' | 'errors';
 export const SYNC_STATUS_LABELS: Record<string, string> = {
   ok: 'v pořádku',
   incomplete: 'pozice sedí, historie neúplná',
+  unverified: 'data stažena, pozice jsme neporovnali',
   mismatch: 'pozice nesedí',
   errors: 'import s chybami',
   error: 'chyba',
@@ -135,9 +150,20 @@ export async function reconcileBrokerPositions(
   broker: string,
   brokerPositions: Array<{ isin: string; quantity: string | number }>,
   atDate: string,
-  unmatchedTickers: string[] = [],
-  syncedYears: number[] = [],
+  scope: {
+    /** Pozice brokera, které se nepodařilo spárovat na ISIN. */
+    unmatchedTickers?: string[];
+    /** Roky, které u účtu ověřil tenhle běh nebo některý dřívější. */
+    syncedYears?: number[];
+    /**
+     * Nejstarší rok, na který jsme se u brokera ptali; `null` = došli jsme až na
+     * začátek jeho nabídky, takže starší historie existovat nemůže.
+     */
+    checkedFromYear?: number | null;
+  } = {},
 ): Promise<StoredReconciliation> {
+  const unmatchedTickers = scope.unmatchedTickers ?? [];
+  const syncedYears = scope.syncedYears ?? [];
   const [own, manual] = await Promise.all([
     loadTransactions(db, userId, broker),
     loadTransactions(db, userId, 'universal'),
@@ -152,7 +178,13 @@ export async function reconcileBrokerPositions(
     quantity: position.totalRemaining,
   }));
   const report = reconcilePositions(computed, brokerPositions);
-  const coverage = buildCoverage(txs.map(dateOf), syncedYears, warnings, atDate);
+  const coverage = buildCoverage(
+    txs.map(dateOf),
+    syncedYears,
+    warnings,
+    atDate,
+    scope.checkedFromYear ?? null,
+  );
   return {
     // zelené „pozice sedí“ nesmí stát nad neúplnou historií — rekonciliace vidí
     // jen otevřené pozice, takže chybějící nákup I prodej téhož titulu by jinak
@@ -194,6 +226,7 @@ function buildCoverage(
   syncedYears: number[],
   warnings: WarningCollector,
   atDate: string,
+  checkedFromYear: number | null,
 ): ReconciliationCoverage {
   const years = dates.map((date) => Number(date.slice(0, 4))).filter(Number.isFinite);
   const withData = new Set(years);
@@ -217,10 +250,20 @@ function buildCoverage(
         .filter((isin) => isin !== ''),
     ),
   ];
+  // Nejstarší rok, o kterém vůbec něco víme (data nebo ověřeně prázdný rok).
+  // Roky pod ním jsme u brokera nikdy nevyžádali — díra v nich se z dat poznat
+  // nedá, protože firstYear se posune nahoru spolu s ní.
+  const checkedFrom =
+    checkedFromYear === null
+      ? null
+      : firstYear === null
+        ? checkedFromYear
+        : Math.min(checkedFromYear, firstYear);
   return {
     firstYear,
     lastYear,
     ...(verified.size > 0 ? { syncedYears: [...verified].sort((a, b) => a - b) } : {}),
+    ...(checkedFrom !== null ? { checkedFromYear: checkedFrom } : {}),
     missingYears,
     historyBeforeFirstBuyMissing: incompleteIsins.length > 0,
     incompleteIsins,
@@ -249,6 +292,19 @@ export function coverageText(coverage: ReconciliationCoverage): string {
   return parts.join(' ');
 }
 
+/**
+ * Věta o tom, odkud data vlastně jsou. Není to poplach (pozice můžou sedět
+ * a nic nemusí chybět) — je to jediná pravdivá odpověď na otázku „prošli jste
+ * opravdu celou historii?“. Žádný broker nám nepokryje historii vždy celou
+ * (T212 se zastaví po dvou letech bez obchodu, IBKR Flex Query nese typicky
+ * jen posledních 365 dní), a „rok bez obchodů“ od „roku, na který jsme se
+ * nezeptali“ z dat odlišit nejde — rozhodnout to umí jen uživatel (B4-3).
+ */
+export function historyScopeText(coverage: ReconciliationCoverage): string | null {
+  if (coverage.checkedFromYear === undefined) return null;
+  return `Historii jsme u brokera prošli od roku ${coverage.checkedFromYear} — starší roky jsme od něj nestahovali. Pokud jsi v nich obchodoval, nahraj za ně výpisy; jinak je vše v pořádku.`;
+}
+
 /** Jednotné odvození stavu syncu (jediné místo pravdy pro stavy účtu). */
 export function deriveSyncStatus(
   errorCount: number,
@@ -258,6 +314,9 @@ export function deriveSyncStatus(
   // jsou stažená, ale ověření pozic chybí
   if (errorCount > 0 || !reconciliation) return 'errors';
   if (reconciliation.ok) return 'ok';
+  // Broker pozice neposlal → neporovnávalo se nic. „Pozice sedí, historie
+  // neúplná“ by tu byla lež o kontrole, která vůbec neproběhla.
+  if (reconciliation.positionsUnavailable) return 'unverified';
   // Pozice sedí a jediná vada je díra v pokrytí → není to nesoulad pozic.
   // Rozlišení je potřeba i proto, že tenhle stav uživatel často nemá jak
   // odstranit (starý rok už z API brokera nedostane).

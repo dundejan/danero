@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb } from '@/db';
 import { brokerAccounts, user } from '@/db/schema';
+import { historyScopeText } from '@/lib/broker-sync';
 import { decryptSecret, encryptSecret } from '@/lib/crypto';
 import { loadTransactions } from '@/lib/portfolio';
 import { syncTrading212 } from '@/lib/t212-sync';
@@ -217,6 +218,55 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
     },
   );
 
+  // B4-1: přenos exportu se přerušil hned za hlavičkou. Hlavička Content-Length
+  // u exportů chybět může, takže ochrana v downloadCsv nemusí zabrat — useknutý
+  // rok se pak tvářil jako prázdný, zvýšil počítadlo prázdných let a předčasně
+  // ukončil smyčku plné historie. Sync se uzavřel jako ok a další běh už byl
+  // inkrementální: chybějící roky se nikdy nedostáhly.
+  it(
+    'useknutý export (jen hlavička, bez Content-Length) není prázdný rok — sync se neuzavře',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u10', name: 'Test', email: 'useknuty@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc10',
+        userId: 'u10',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      // 2026 data → 2025 USEKNUTÝ (hlavička bez řádků) → 2024 data → 2023, 2022
+      // prázdné. Bez pojistky se sync uzavře úplně zeleně (pozice 50 ks sedí),
+      // nastaví lastSyncedAt — a rok 2025 se už nikdy nedostáhne.
+      const truncated = makeMockFetch({ truncatedYears: [2025] });
+      await expect(
+        syncTrading212(db, account, {
+          fetchImpl: truncated.fetchImpl,
+          now: new Date('2026-07-07T12:00:00Z'),
+          pollIntervalMs: 5,
+        }),
+      ).rejects.toThrow(/přenos se zřejmě přerušil/);
+
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc10'))
+      )[0]!;
+      expect(updated.lastSyncedAt).toBeNull();
+
+      // a proto je další běh zase PLNÝ — nákup 100 ks z roku 2024 se dotáhne
+      const healthy = makeMockFetch();
+      await syncTrading212(db, updated, {
+        fetchImpl: healthy.fetchImpl,
+        now: new Date('2026-07-08T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      expect(healthy.requestedYears).toEqual([2026, 2025, 2024, 2023, 2022]);
+      const txs = await loadTransactions(db, 'u10');
+      expect(txs.map((tx) => tx.type).sort()).toEqual(['BUY', 'SELL']);
+    },
+  );
+
   // B-6: rekonciliace vidí jen OTEVŘENÉ pozice — chybí-li nákup i prodej téhož
   // titulu, zůstatek sedí. Rozsah dat proto musí být součástí výsledku a díra
   // v historii nesmí skončit zeleným „pozice sedí“.
@@ -310,6 +360,68 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
       const stored = updated.lastReconciliation as { ok: boolean; coverage?: { firstYear: number } };
       expect(stored.ok).toBe(false);
       expect(stored.coverage?.firstYear).toBe(2026);
+    },
+  );
+
+  // B4-3: smyčka plné historie se zastaví po dvou prázdných letech. Kdo si dal
+  // v obchodování pauzu, má pod tou hranicí celý nezkontrolovaný rok — a protože
+  // se rozsah dat počítal z toho, co JE staženo, díra o sobě nedala vědět.
+  it(
+    'plná historie zastavená na dvou prázdných letech řekne, odkud vlastně data má',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u11', name: 'Test', email: 'pauza@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc11',
+        userId: 'u11',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      // data jen za 2026, 2025 i 2024 prázdné → smyčka končí na 2024,
+      // roky 2023 a starší se NIKDY nevyžádaly (uživatel v nich obchodovat mohl)
+      const mock = makeMockFetch({ onlyYears: [2026] });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      expect(mock.requestedYears).toEqual([2026, 2025, 2024]);
+      const coverage = outcome.reconciliation?.coverage;
+      expect(coverage!.checkedFromYear).toBe(2024);
+      expect(historyScopeText(coverage!)).toMatch(/od roku 2024/);
+    },
+  );
+
+  it(
+    'historie dotažená až na začátek nabídky brokera se na starší roky neptá',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u12', name: 'Test', email: 'zacatek@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc12',
+        userId: 'u12',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      // rok 2017: smyčka dojde na 2016 (dřív T212 Invest neexistovalo) —
+      // pod ním už žádná nezkontrolovaná historie být nemůže
+      const mock = makeMockFetch({ onlyYears: [], emptyPortfolio: true });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2017-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      expect(mock.requestedYears).toEqual([2017, 2016]);
+      expect(outcome.reconciliation?.coverage?.checkedFromYear).toBeUndefined();
+      expect(historyScopeText(outcome.reconciliation!.coverage!)).toBeNull();
     },
   );
 

@@ -66,6 +66,25 @@ const kc = (v: Money): string => round0(v).toFixed(0);
 /** Částka s max. 2 des. místy (XSD fractionDigits=2) — bez koncových nul. */
 const kc2 = (v: Money): string => round2(v).toString();
 
+/**
+ * Číselník zemí (ISO 3166-1 alpha-2), který podatelna u Přílohy 3 vyžaduje.
+ *
+ * Kód státu se odvozuje z prefixu ISIN, jenže **ne každý prefix je země**:
+ * `XS` (eurobondy), `EU`, `QS` a celá řada `X…` jsou technické prefixy. Podatelna
+ * na ně odpoví kritickou chybou „Kód země není uveden v číselníku zemí" a podání
+ * odmítne (nález A3-06). Radši to poznáme my a řekneme uživateli, co doplnit,
+ * než aby mu to spadlo až na podatelně.
+ */
+const KODY_ZEMI = new Set(
+  ('AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ ' +
+    'CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR ' +
+    'GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP ' +
+    'KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT ' +
+    'MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW ' +
+    'SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG ' +
+    'UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW').split(' '),
+);
+
 // ---------- XML ----------
 
 /**
@@ -149,14 +168,37 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // Druhy se posuzují samostatně (R-10c/R-12l, pokyn D-59 k § 10/4): výdaje
   // každého druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
   // pořadí řádků VetaJ v XML = pořadí tady (D → C → F)
+  // `kod10 = 'Z'` znamená příjem ZE ZDROJŮ V ZAHRANIČÍ. Bylo natvrdo u všech
+  // druhů, takže i prodej českých akcií za koruny se hlásil jako zahraniční
+  // (nález A3-05). Rozhoduje původ instrumentu: ISIN začínající `CZ` je tuzemský.
+  // Míchá-li druh tuzemské i zahraniční, označí se `Z` — přiznat zahraniční
+  // zdroj je bezpečnější směr než ho zamlčet.
+  const jeTuzemsky = (isin: string): boolean => isin.toUpperCase().startsWith('CZ');
+  const zahranicniZdroj = (isins: string[]): boolean =>
+    isins.length === 0 || isins.some((isin) => !jeTuzemsky(isin));
   const druhy10 = [
-    { kod: 'D', popis: 'Prodej cenných papírů', zdroj: result.securities },
-    { kod: 'C', popis: 'Prodej kryptoaktiv (movitá věc)', zdroj: result.crypto }, // R-10c
-    { kod: 'F', popis: 'Deriváty (opce, futures, CFD)', zdroj: result.derivatives }, // R-12n
-  ].map(({ kod, popis, zdroj }) => {
+    {
+      kod: 'D',
+      popis: 'Prodej cenných papírů',
+      zdroj: result.securities,
+      isins: result.securities.disposals.map((d) => d.isin),
+    },
+    {
+      kod: 'C',
+      popis: 'Prodej kryptoaktiv (movitá věc)',
+      zdroj: result.crypto,
+      isins: result.crypto.disposals.map((d) => d.isin),
+    }, // R-10c
+    {
+      kod: 'F',
+      popis: 'Deriváty (opce, futures, CFD)',
+      zdroj: result.derivatives,
+      isins: result.derivatives.items.map((i) => i.isin),
+    }, // R-12n
+  ].map(({ kod, popis, zdroj, isins }) => {
     const prij = round0(zdroj.taxableIncomeCzk);
     const vyd = Decimal.min(round0(zdroj.expensesCzk), prij);
-    return { kod, popis, prij, vyd, zd: prij.sub(vyd) };
+    return { kod, popis, prij, vyd, zd: prij.sub(vyd), zahranicni: zahranicniZdroj(isins) };
   });
   const prij10 = druhy10.reduce((sum, d) => sum.plus(d.prij), ZERO); // ř. 207
   const vyd10 = druhy10.reduce((sum, d) => sum.plus(d.vyd), ZERO); // ř. 208
@@ -186,6 +228,18 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ---------- Příloha 3 — prostý zápočet po státech (jen GENERAL, § 38f) ----------
   const hasPriloha3 =
     varianta === 'GENERAL' && result.dividends.creditableWithholdingCzk.gt(0) && r57.gt(0);
+  // Kód státu jde do Přílohy 3 i do Seznamu; podatelna ho kontroluje proti
+  // číselníku zemí a neplatný kód shodí CELÉ podání (A3-06). Prefix ISIN ale
+  // není vždy země — `XS` (eurobondy), `EU`, `QS`. Radši to poznáme tady
+  // a řekneme uživateli, co doplnit, než aby mu podání odmítla podatelna.
+  const neznameZeme = [
+    ...new Set(staty.filter((s) => s.creditable.gt(0) && !KODY_ZEMI.has(s.country)).map((s) => s.country)),
+  ];
+  if (hasPriloha3 && neznameZeme.length > 0) {
+    throw new Error(
+      `Kód státu ${neznameZeme.join(', ')} není zemí podle číselníku finanční správy — vznikl z prefixu ISIN (např. XS u eurobondů). Doplň u těchhle dividend zemi zdroje v importu, jinak podatelna podání odmítne.`,
+    );
+  }
   const p3 = (hasPriloha3 ? staty.filter((s) => s.creditable.gt(0)) : []).map((s) => {
     const r321 = s.gross; // příjmy ze státu (metoda zápočtu)
     // ř. 323: daň zaplacená v zahraničí JEN do výše dle smlouvy (R-07c) — přeplatek
@@ -347,7 +401,8 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
           prijmy10: kc(druh.prij),
           vydaje10: kc(druh.vyd),
           rozdil10: kc(druh.zd),
-          kod10: 'Z', // příjem ze zdrojů v zahraničí (zahraniční broker)
+          // 'Z' jen u skutečně zahraničního zdroje; u tuzemského se atribut vynechá
+          kod10: druh.zahranicni ? 'Z' : undefined,
         }),
       );
     }

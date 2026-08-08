@@ -88,11 +88,26 @@ export const GET = withCron('notify', async (request: Request): Promise<Response
   // se štafeta nepředává
   if (remaining > 0 && results.length > 0) handOff(request, nextOffset);
 
+  // G-O1: bez tohohle logu končily chyby jednotlivých uživatelů jen v těle
+  // odpovědi, cron vracel 200 a výpadek Resendu se z monitoringu nedal poznat.
+  // Text chyby (ne identifikátor uživatele) je jediné, čím se odliší výpadek
+  // odesílatele od chyby v datech jednoho účtu.
+  const failures = results.filter((result) => result.error !== undefined);
+  if (failures.length > 0) {
+    logEvent('error', 'cron.notify.failures', {
+      failed: failures.length,
+      processed: results.length,
+      error: failures[0]!.error!,
+    });
+  }
+
   return Response.json({
     users: targets.length,
     withoutSubscription: allTargets.length - targets.length,
     offset,
     processed: results.length,
+    // konvence pro withCron: > 0 zvedne úroveň logu běhu na error
+    failed: failures.length,
     remaining,
     results,
   });

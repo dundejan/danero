@@ -9,6 +9,8 @@ const stav = vi.hoisted(() => ({
   zpracovani: [] as string[],
   cekajici: [] as Promise<unknown>[],
   ucty: [] as Array<{ id: string; email: string }>,
+  /** Komu má odeslání spadnout (simulace výpadku Resendu). */
+  selhavajici: new Set<string>(),
 }));
 
 vi.mock('next/server', () => ({
@@ -27,6 +29,9 @@ vi.mock('@/lib/notifications', () => ({
   listNotificationTargets: async () => [...stav.ucty].reverse(),
   processUserNotifications: async (_db: unknown, target: { id: string }) => {
     stav.zpracovani.push(target.id);
+    if (stav.selhavajici.has(target.id)) {
+      throw new Error('Resend: Internal server error (500)');
+    }
     return { created: 1, emailed: 1 };
   },
   resolveEmailSender: () => async () => {},
@@ -51,6 +56,7 @@ describe('dávkování notifikačního cronu (G-11)', () => {
     process.env.CRON_SECRET = 'tajne';
     stav.zpracovani = [];
     stav.cekajici = [];
+    stav.selhavajici = new Set();
     stav.ucty = Array.from({ length: 60 }, (_, i) => ({
       id: `u-${String(i).padStart(3, '0')}`,
       email: `u${i}@danero.cz`,
@@ -59,6 +65,7 @@ describe('dávkování notifikačního cronu (G-11)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     delete process.env.CRON_SECRET;
   });
 
@@ -96,6 +103,40 @@ describe('dávkování notifikačního cronu (G-11)', () => {
     expect(stav.zpracovani).toHaveLength(60);
     expect(new Set(stav.zpracovani).size).toBe(60);
     expect(stav.zpracovani.at(-1)).toBe('u-059');
+  });
+
+  it('výpadek odesílatele skončí v logu jako error, ne jen v těle odpovědi (G-O1)', async () => {
+    // Celodenní výpadek Resendu: chyby jednotlivých uživatelů se dřív spolkly
+    // do těla odpovědi, cron vrátil 200 a v logu zůstaly dvě info hlášky.
+    // Tělo odpovědi Vercel Cron neuchovává — z monitoringu tedy nešlo poznat,
+    // že ten den nikomu nic nepřišlo.
+    stav.ucty = Array.from({ length: 3 }, (_, i) => ({ id: `u-${i}`, email: `u${i}@danero.cz` }));
+    stav.selhavajici = new Set(stav.ucty.map((u) => u.id));
+
+    const chybove: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((line: unknown) => {
+      chybove.push(String(line));
+    });
+
+    const { GET } = await import('@/app/api/cron/notify/route');
+    const odpoved = await GET(request());
+    const telo = await odpoved.json();
+
+    expect(odpoved.status).toBe(200); // zbytek fronty se zpracovat má
+    expect(telo.processed).toBe(3);
+    expect(telo.failed).toBe(3);
+
+    const udalosti = chybove.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(udalosti.map((u) => u.event)).toEqual([
+      'cron.notify.failures',
+      'cron.notify.finished',
+    ]);
+    // text chyby musí být vidět — jinak nejde odlišit výpadek odesílatele
+    // od chyby v datech jednoho účtu
+    expect(udalosti[0]).toMatchObject({ level: 'error', failed: 3 });
+    expect(String(udalosti[0]!.error)).toContain('Resend');
+    // i souhrnný log běhu je error, ne info
+    expect(udalosti[1]).toMatchObject({ level: 'error', status: 200, failed: 3 });
   });
 
   it('poslední dávka už štafetu nepředává', async () => {

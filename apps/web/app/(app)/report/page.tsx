@@ -28,7 +28,7 @@ export const metadata = { title: 'Daňový report — Danero' };
 export default async function ReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rok?: string | string[] }>;
+  searchParams: Promise<{ rok?: string | string[]; strana?: string | string[] }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
@@ -40,7 +40,9 @@ export default async function ReportPage({
 
   const currentYear = Number(new Date().toISOString().slice(0, 4)); // UTC, konzistentně s today
   const years = availableYears(txs, currentYear);
-  const rok = firstParam((await searchParams).rok);
+  const params = await searchParams;
+  const rok = firstParam(params.rok);
+  const strana = Math.max(1, Number(firstParam(params.strana)) || 1);
   const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
 
   // podklady se odemykají po daňových letech: buď předplatným, nebo nákupem
@@ -94,6 +96,7 @@ export default async function ReportPage({
       years={years}
       dailyRates={dailyRates}
       precomputed={precomputed}
+      strana={strana}
     />
   );
 }

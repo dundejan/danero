@@ -103,16 +103,21 @@ export async function syncIbkr(
   let reconciliationError: string | null = null;
   if (parsed.openPositions.length > 0) {
     try {
+      // rozsah výpisu (fromDate–toDate): rok bez transakcí uvnitř něj je
+      // ověřeně prázdný, mimo něj je to díra v historii
+      const verifiedYears = [...previouslyVerifiedYears(account), ...parsed.coveredYears];
       reconciliation = await reconcileBrokerPositions(
         db,
         account.userId,
         account.broker,
         parsed.openPositions,
         now.toISOString().slice(0, 10),
-        [],
-        // rozsah výpisu (fromDate–toDate): rok bez transakcí uvnitř něj je
-        // ověřeně prázdný, mimo něj je to díra v historii
-        [...previouslyVerifiedYears(account), ...parsed.coveredYears],
+        {
+          syncedYears: verifiedYears,
+          // Flex Query pokrývá typicky posledních 365 dní — starší roky si
+          // uživatel nahrává sám, takže nikdy netvrdíme, že je historie celá
+          ...(verifiedYears.length > 0 ? { checkedFromYear: Math.min(...verifiedYears) } : {}),
+        },
       );
     } catch (error) {
       // přechodné selhání rekonciliace nepřepisuje poslední platný stav —
@@ -127,6 +132,9 @@ export async function syncIbkr(
       matchedCount: 0,
       unmatchedTickers: [],
       issues: [],
+      // prázdné `issues` samo o sobě vypadá jako „pozice sedí“ — tohle říká,
+      // že se neporovnávalo nic (B4-4)
+      positionsUnavailable: true,
       warning:
         'Výpis neobsahuje sekci Open Positions — přidej ji do Flex Query (úroveň Summary), ať můžeme kontrolovat, že pozice sedí. Transakce se naimportovaly v pořádku.',
     };

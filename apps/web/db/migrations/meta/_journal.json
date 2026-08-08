@@ -211,6 +211,13 @@
       "when": 1786124899211,
       "tag": "0029_tax_year_settings_fx_and_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786170710014,
+      "tag": "0030_fx_rate_scale_and_fk_indexes",
+      "breakpoints": true
     }
   ]
 }

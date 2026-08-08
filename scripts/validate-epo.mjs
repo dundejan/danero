@@ -5,8 +5,11 @@
  * nikdy nepřijme — podatelna jen vrátí seznam kontrol (<Chyby>). Úspěch =
  * jediná „chyba“ typu I se zkratkou TEST_REZIM, případně propustné P.
  *
- * NENÍ součást CI (vyžaduje síť) — spouštěj ručně: `pnpm validate:epo [soubor.xml]`.
- * Bez argumentu si skript vygeneruje vzorová podání (GENERAL i SEPARATE_16A)
+ * V CI běží jako NEPOVINNÝ krok (`continue-on-error`) — závisí na cizí službě
+ * a na síti, takže výpadek ADIS nesmí shodit build. Ručně: `pnpm validate:epo
+ * [soubor.xml]`. Bez argumentu si skript vygeneruje vzorová podání pokrývající
+ * i struktury, na kterých se to v auditu lámalo (prázdný rok, tuzemský prodej,
+ * rok jen se ztrátou)
  * přes engine a apps/web/lib/epo.ts — proto se pouští přes tsx (viz root
  * package.json), který zvládne extensionless TS importy workspace balíčků.
  */
@@ -108,11 +111,8 @@ async function buildSamples() {
     { type: 'BUY', id: 'db1', isin: 'OPT:AAPL-C200', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '1000', currency: 'USD', tradeDate: '2025-02-03' },
     { type: 'SELL', id: 'ds1', isin: 'OPT:AAPL-C200', assetClass: 'DERIVATIVE', quantity: '1', pricePerShare: '1500', currency: 'USD', tradeDate: '2025-06-10' },
   ]);
-  const result = analyzeTaxYear({
-    transactions,
-    profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
-    config: TAX_YEAR_2025,
-  });
+  const profile = TaxpayerProfileSchema.parse({ regime: 'PAUSAL' });
+  const result = analyzeTaxYear({ transactions, profile, config: TAX_YEAR_2025 });
   // fiktivní testovací identita (stejná jako v empiricky ověřených vzorech)
   const personal = {
     dic: '8501011233',
@@ -126,9 +126,41 @@ async function buildSamples() {
     ufoCil: '451',
     pracUfo: '2001',
   };
+  // Dva vzorky nestačí: struktury, které podatelna odmítala, mezi nimi nebyly
+  // (nález A3-02). Posíláme proto i ty, na kterých se to v auditu lámalo —
+  // prázdný rok, čistě tuzemský prodej a rok jen se ztrátou.
+  const prazdny = analyzeTaxYear({
+    transactions: parseTransactions([]),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+  const tuzemsky = analyzeTaxYear({
+    transactions: parseTransactions([
+      { type: 'BUY', id: 'cb', isin: 'CZ0005112300', quantity: '100', pricePerShare: '500', currency: 'CZK', tradeDate: '2024-02-01', settlementDate: '2024-02-05' },
+      { type: 'SELL', id: 'cs', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1500', currency: 'CZK', tradeDate: '2025-04-01', settlementDate: '2025-04-03' },
+    ]),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+  const ztrata = analyzeTaxYear({
+    transactions: parseTransactions([
+      { type: 'BUY', id: 'zb', isin: 'US5949181045', quantity: '100', pricePerShare: '200', currency: 'USD', tradeDate: '2024-02-01', settlementDate: '2024-02-05' },
+      { type: 'SELL', id: 'zs', isin: 'US5949181045', quantity: '100', pricePerShare: '100', currency: 'USD', tradeDate: '2025-04-01', settlementDate: '2025-04-03' },
+    ]),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+
+  const gen = (label, res, varianta = 'GENERAL') => [
+    label,
+    generateDpfdp7({ year: 2025, result: res, personal, varianta }).xml,
+  ];
   return [
-    ['vzorek GENERAL (P2 + P3 zápočet)', generateDpfdp7({ year: 2025, result, personal, varianta: 'GENERAL' }).xml],
-    ['vzorek SEPARATE_16A (P2 + P4)', generateDpfdp7({ year: 2025, result, personal, varianta: 'SEPARATE_16A' }).xml],
+    gen('vzorek GENERAL (P2 + P3 zápočet)', result),
+    gen('vzorek SEPARATE_16A (P2 + P4)', result, 'SEPARATE_16A'),
+    gen('rok bez zdanitelných investičních příjmů (A3-01)', prazdny),
+    gen('čistě tuzemský prodej — kod10 bez „Z“ (A3-05)', tuzemsky),
+    gen('rok jen se ztrátovým prodejem (A3-13)', ztrata),
   ];
 }
 

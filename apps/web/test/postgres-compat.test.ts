@@ -15,11 +15,13 @@ import {
   notificationPrefs,
   notifications,
   reportPurchases,
+  session,
   subscriptions,
   taxpayerProfiles,
   taxYearSettings,
   transactions,
   user,
+  verification,
 } from '@/db/schema';
 import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { recordReportPurchase, upsertSubscription } from '@/lib/billing';
@@ -35,6 +37,12 @@ import { processUserNotifications } from '@/lib/notifications';
 import { getProfile, loadTransactions, pinTaxYear } from '@/lib/portfolio';
 import { upsertInstrumentPrices } from '@/lib/prices';
 import { checkRateLimit, pruneRateLimits } from '@/lib/rate-limit';
+import {
+  pruneImportBatches,
+  pruneNotifications,
+  pruneSessions,
+  pruneVerifications,
+} from '@/lib/retention';
 
 /**
  * Kompatibilita s PRODUKČNÍM Postgresem.
@@ -198,6 +206,46 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(output).toContain('Migrace SELHALA');
   });
 
+  it('stav databáze projde i nad čerstvou, nezmigrovanou databází (G-M1)', {
+    timeout: 60_000,
+  }, async () => {
+    // V .github/workflows/migrate.yml běží `db/status.mjs` jako krok „Stav
+    // před" PŘED migrací. Dokud padal na chybějící `drizzle.__drizzle_migrations`,
+    // workflow nad novou databází skončil dřív, než se k migraci vůbec dostal —
+    // bootstrap přes CI tedy nebyl možný.
+    const { execFileSync } = await import('node:child_process');
+
+    const client = postgres(URL!, { max: 1, prepare: false });
+    const name = `status_test_${Date.now()}`;
+    await client.unsafe(`CREATE DATABASE ${name}`);
+    const target = new global.URL(URL!);
+    target.pathname = `/${name}`;
+
+    let output = '';
+    let failed = false;
+    try {
+      output = String(
+        execFileSync('node', ['db/status.mjs'], {
+          env: { ...process.env, DATABASE_URL: target.toString() },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }),
+      );
+    } catch (error) {
+      const err = error as { stdout: Buffer; stderr: Buffer };
+      failed = true;
+      output = `${err.stdout}${err.stderr}`;
+    } finally {
+      await client.unsafe(`DROP DATABASE IF EXISTS ${name}`);
+      await client.end();
+    }
+
+    expect(failed).toBe(false);
+    expect(output).toContain('tabulek:              0');
+    expect(output).toContain('databáze ještě nebyla migrovaná');
+    // a nesmí to být pád driveru přeposlaný do CI logu
+    expect(output).not.toContain('PostgresError');
+  });
+
   it(
     'import výpisu: dvě dávky insertu, jsonb payload i opakovaný import',
     { timeout: 60_000 },
@@ -337,15 +385,53 @@ popis('kompatibilita s produkčním Postgresem', () => {
       },
     ]);
 
+    // tabulky, které do 8. 8. 2026 neuklízel nikdo (G-R1) — mažou se přes
+    // `IN (poddotaz LIMIT …)`, což je konstrukce, kterou PGlite spolkne vždycky
+    await db.insert(session).values({
+      id: `s-${userId}`,
+      userId,
+      token: `tok-${userId}`,
+      expiresAt: stary,
+    });
+    await db.insert(verification).values({
+      id: `v-${userId}`,
+      identifier: `reset:${userId}`,
+      value: 'token',
+      expiresAt: stary,
+    });
+    await db.insert(importBatches).values({
+      id: `ib-${userId}`,
+      userId,
+      broker: 'trading212',
+      filename: 'stary.csv',
+      added: 1,
+      duplicates: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      warningCount: 0,
+      issues: {},
+      createdAt: stary,
+    });
+
     expect(await pruneAuditLog(db)).toBeGreaterThanOrEqual(1);
     expect(await pruneRateLimits(db)).toBeGreaterThanOrEqual(1);
     expect(await pruneJobs(db)).toBeGreaterThanOrEqual(1);
+    expect(await pruneSessions(db)).toBeGreaterThanOrEqual(1);
+    expect(await pruneVerifications(db)).toBeGreaterThanOrEqual(1);
+    expect(await pruneImportBatches(db)).toBeGreaterThanOrEqual(1);
+    expect(await pruneNotifications(db)).toBeGreaterThanOrEqual(0);
 
     const zbylo = await db.select().from(jobs).where(eq(jobs.userId, userId));
     expect(zbylo).toHaveLength(1);
     expect(zbylo[0]!.id).toBe(`j2-${userId}`);
+    expect(await db.select().from(session).where(eq(session.userId, userId))).toHaveLength(0);
+    expect(
+      await db.select().from(importBatches).where(eq(importBatches.userId, userId)),
+    ).toHaveLength(0);
     // druhý běh téže údržby už nemá co mazat (idempotence cronu)
     expect(await pruneAuditLog(db)).toBe(0);
+    expect(await pruneSessions(db)).toBe(0);
+    expect(await pruneImportBatches(db)).toBe(0);
     const audit = await db.select().from(auditLog).where(eq(auditLog.userId, userId));
     expect(audit).toHaveLength(0);
   });
@@ -353,7 +439,9 @@ popis('kompatibilita s produkčním Postgresem', () => {
   it('kurzy ČNB: numeric se vrátí jako string bez ztráty přesnosti', {
     timeout: 60_000,
   }, async () => {
-    const text = ['Datum|1 USD|100 JPY', '02.01.1998|22,123456|15,987654'].join('\n');
+    const text = ['Datum|1 USD|100 JPY|1000 IDR', '02.01.1998|22,123456|15,987654|1,5074'].join(
+      '\n',
+    );
     const fetchImpl: typeof fetch = (async () =>
       new Response(text, { status: 200 })) as typeof fetch;
     await fetchCnbYear(db, 1998, fetchImpl);
@@ -362,19 +450,22 @@ popis('kompatibilita s produkčním Postgresem', () => {
       .select()
       .from(fxRates)
       .where(and(eq(fxRates.day, '1998-01-02'), eq(fxRates.currency, 'USD')));
-    // numeric(18,6) přes postgres.js MUSÍ přijít jako string — number by tiše
-    // ořezal přesnost a s ním i každý přepočet, který ten kurz použije
+    // numeric přes postgres.js MUSÍ přijít jako string — number by tiše ořezal
+    // přesnost a s ním i každý přepočet, který ten kurz použije
+    // (numeric(18,10) doplní hodnotu nulami na deklarovaný scale)
     expect(typeof row!.rate).toBe('string');
-    expect(row!.rate).toBe('22.123456');
+    expect(row!.rate).toBe('22.1234560000');
 
     const provider = await loadCnbRateProvider(db, 1998, 1998);
     expect(provider.getRate('USD', '1998-01-02')?.toString()).toBe('22.123456');
-    // Kotace za 100 se normalizuje na jednotku (15,987654 / 100 = 0,15987654),
-    // ale sloupec je numeric(18,6) → uloží se ZAOKROUHLENÉ na šest desetinných
-    // míst. U měn kotovaných za 100/1000 (JPY, HUF, KRW, IDR) tím mizí přesnost:
-    // u JPY jde o ~6·10⁻⁴ %, u kotace za 1000 už o desetiny procenta. Test to
-    // drží zdokumentované, aby se změna scale nestala nepozorovaně.
-    expect(provider.getRate('JPY', '1998-01-02')?.toString()).toBe('0.159877');
+    // Kotace za 100/1000 se normalizuje na jednotku a desetinná místa přibývají:
+    // 15,987654 / 100 = 0,15987654 a 1,5074 / 1000 = 0,0015074. Do 7. 8. 2026 byl
+    // sloupec numeric(18,6) a obě hodnoty se tiše ZAOKROUHLILY (0,159877 a
+    // 0,001507) — u kotace za 1000 to je chyba v desetinách procenta. Reálný
+    // kurzovní lístek ČNB má 3 desetinná místa, takže se to zatím nedělo, ale
+    // scale 6 na to stačil přesně na doraz (IDR: 1,507/1000 = 0,001507).
+    expect(provider.getRate('JPY', '1998-01-02')?.toString()).toBe('0.15987654');
+    expect(provider.getRate('IDR', '1998-01-02')?.toString()).toBe('0.0015074');
   });
 
   it('předplatné a nákup podkladů: upsert i unikátní index (rok se neprodá dvakrát)', {

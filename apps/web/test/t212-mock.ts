@@ -1,5 +1,5 @@
 /** Sdílený mock T212 API pro testy syncu a background jobů. Data: test/t212-data.mjs. */
-import { CASH, csvByYear, INSTRUMENTS, PORTFOLIO } from './t212-data.mjs';
+import { CASH, csvByYear, CSV_HEADER, INSTRUMENTS, PORTFOLIO } from './t212-data.mjs';
 
 export const CSV_BY_YEAR = csvByYear('EOFSYNC');
 
@@ -19,6 +19,12 @@ export function makeMockFetch(
     emptyPortfolio?: boolean;
     /** Data vydá jen za tyhle roky (neúplná historie — ostatní roky prázdné). */
     onlyYears?: number[];
+    /**
+     * Přenos exportu se u těchto let přerušil hned za hlavičkou — přijde CSV
+     * hlavička bez jediného datového řádku (B4-1). Prázdný rok tohle NENÍ:
+     * ten posílá T212 jako úplně prázdný soubor.
+     */
+    truncatedYears?: number[];
   } = {},
 ) {
   const reportYears = new Map<number, number>();
@@ -63,6 +69,11 @@ export function makeMockFetch(
     const download = /downloads\.t212\.test\/(\d+)\.csv/.exec(url);
     if (download) {
       const year = reportYears.get(Number(download[1]))!;
+      // useknutý přenos: hlavička dorazila, datové řádky ne (bez Content-Length
+      // ho nemá co odhalit) — schválně BEZ hlavičky Content-Length
+      if (options.truncatedYears?.includes(year)) {
+        return new Response(CSV_HEADER, { status: 200 });
+      }
       const hidden = options.emptyExports || (options.onlyYears && !options.onlyYears.includes(year));
       // prázdné roky vrací T212 jako ÚPLNĚ prázdný soubor (ověřeno na reálném API)
       return new Response(hidden ? '' : (CSV_BY_YEAR[year] ?? ''), { status: 200 });

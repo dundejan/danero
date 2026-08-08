@@ -15,5 +15,8 @@ export const GET = withCron('jobs', async (_request: Request): Promise<Response>
 
   const db = await getDb();
   const { recovered, results } = await processPendingJobs(db);
-  return Response.json({ recovered, results });
+  // konvence pro withCron: > 0 zvedne úroveň logu běhu na error (detail chyby
+  // už zalogoval processJob jako `job.finished`)
+  const failed = results.filter((result) => result.status === 'error').length;
+  return Response.json({ recovered, failed, results });
 });

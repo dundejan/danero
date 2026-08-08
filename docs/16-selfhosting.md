@@ -131,7 +131,7 @@ zůstává syslog — a ten v kontejneru nikdo neposlouchá, takže špatný
 | `sync-brokers` | stáhne nové transakce ze všech napojených platforem |
 | `notify` | přepočítá limity a časové testy a rozešle upozornění |
 | `jobs` | záchranná síť — dokončí běhy, které spadly nebo se nestihly |
-| `maintenance` | smaže data po retenční lhůtě (audit log po 90 dnech) |
+| `maintenance` | smaže data po retenční lhůtě (audit log, historie importů a joby po 90 dnech, prošlé přihlašovací relace a ověřovací tokeny hned, doručená upozornění po 400 dnech) |
 
 ⚠️ **První plný sync trvá dlouho** — Trading 212 pouští export ~1×/min, takže
 celá historie zabere minuty až ~10. Pod serverless funkcí s krátkým časovým
