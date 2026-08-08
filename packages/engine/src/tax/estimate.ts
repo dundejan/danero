@@ -32,16 +32,31 @@ function progressiveTax(base: Money, threshold: Money | null): Money {
   return threshold.mul(RATE_BASE).plus(rounded.sub(threshold).mul(RATE_HIGHER));
 }
 
-/** R-07c: prostý zápočet po státech — strop podílem příjmu státu na základu daně. */
+/**
+ * R-07c/R-07f: prostý zápočet po státech — strop podílem příjmu státu na základu
+ * daně. Příjem státu = dividendy i úroky (§ 38f počítá zápočet za stát jako
+ * celek, ne za druh příjmu zvlášť).
+ */
 function allocateCredit(tax: Money, base: Money, dividends: DividendsResult): Money {
   if (base.lte(0) || tax.lte(0)) return ZERO;
   let credit = ZERO;
-  for (const { grossCzk, creditableCzk } of Object.values(dividends.creditableByCountry)) {
-    const maxCredit = tax.mul(grossCzk.div(base));
+  for (const { grossCzk, interestGrossCzk, creditableCzk } of Object.values(
+    dividends.creditableByCountry,
+  )) {
+    const maxCredit = tax.mul(grossCzk.plus(interestGrossCzk).div(base));
     credit = credit.plus(Decimal.min(creditableCzk, maxCredit));
   }
   return Decimal.min(credit, tax);
 }
+
+/**
+ * R-07d: mez významnosti doporučení § 16a. Obecná varianta zaokrouhluje na sta
+ * dolů jediný základ (§ 16 odst. 2), § 16a dva odděleně — § 16a tak může vyjít
+ * nanejvýš o 100 Kč základu levněji, tedy max. o 23 Kč daně, aniž by to byla
+ * skutečná úspora. Pod touhle mezí by doporučení stálo slevy na dani
+ * a nezdanitelné části základu za pár korun (nález A1-04).
+ */
+const SEPARATE_16A_MIN_SAVING_CZK = d('100');
 
 /**
  * Orientační daň z investičních příjmů (§ 8 + § 10) ve dvou variantách.
@@ -100,12 +115,13 @@ export function estimateTax(
     general,
     separate16a,
     // § 16a doporučujeme jen když obecný základ skutečně překračuje ZNÁMOU
-    // hranici progrese — jinak obě varianty počítají 15 % a rozdíl je jen
-    // zaokrouhlovací šum (sta dolů se zaokrouhlují u variant odděleně, max
-    // ~15 Kč); § 16a navíc znamená ztrátu slev na dani a nezdanitelných
-    // částí — nedoporučovat kvůli šumu.
+    // hranici progrese A úspora přesáhne mez významnosti — jinak je rozdíl jen
+    // zaokrouhlovací šum (sta dolů se zaokrouhlují u variant odděleně); § 16a
+    // navíc znamená ztrátu slev na dani a nezdanitelných částí.
     recommended:
-      threshold !== null && baseA.gt(threshold) && separate16a.taxCzk.lt(general.taxCzk)
+      threshold !== null &&
+      baseA.gt(threshold) &&
+      general.taxCzk.sub(separate16a.taxCzk).gte(SEPARATE_16A_MIN_SAVING_CZK)
         ? 'SEPARATE_16A'
         : 'GENERAL',
     note: 'Orientační výpočet pouze z investičních příjmů — skutečná progrese (23 %) závisí na celkovém základu daně včetně § 7. Ve variantě § 16a nelze uplatnit slevy na dani ani nezdanitelné části základu.',

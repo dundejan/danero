@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { SOURCE_URL } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Bezpečnost — Danero',
@@ -54,7 +55,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
       <>
         Celý zdrojový kód Danera je veřejný na{' '}
         <a
-          href="https://github.com/dundejan/danero"
+          href={SOURCE_URL}
           className="font-medium text-ruzova-text underline underline-offset-2"
           target="_blank"
           rel="noreferrer"
@@ -64,7 +65,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
         pod licencí AGPL-3.0 — včetně toho, jak nakládáme s klíči a hesly. Bezpečnostní
         chybu nám nahlas soukromě podle{' '}
         <a
-          href="https://github.com/dundejan/danero/blob/main/SECURITY.md"
+          href={`${SOURCE_URL}/blob/main/SECURITY.md`}
           className="font-medium text-ruzova-text underline underline-offset-2"
           target="_blank"
           rel="noreferrer"

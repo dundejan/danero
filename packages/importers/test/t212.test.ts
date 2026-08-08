@@ -182,6 +182,26 @@ describe('Trading212 CSV parser', () => {
     expect(result.warnings.some((w) => w.message.includes('naúčtovaný úrok'))).toBe(true);
   });
 
+  it('R-07f: sražená daň u úroku se přenese; v jiné měně se nezapočte a nahlásí', () => {
+    const csv = [
+      HEADER,
+      'Interest on cash,2025-05-01 00:00:00,,,,,,,,,,100.00,USD,10.00,USD,,EOF-IW1,,',
+      'Interest on cash,2025-06-01 00:00:00,,,,,,,,,,100.00,USD,250.00,CZK,,EOF-IW2,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.errors).toEqual([]);
+
+    const withTax = result.transactions[0]!;
+    if (withTax.type !== 'INTEREST') throw new Error('unreachable');
+    expect(withTax.withholdingTax.toString()).toBe('10');
+
+    // jiná měna srážky než úroku: přepočet špatným kurzem by zápočet nadhodnotil
+    const mismatch = result.transactions[1]!;
+    if (mismatch.type !== 'INTEREST') throw new Error('unreachable');
+    expect(mismatch.withholdingTax.toString()).toBe('0');
+    expect(result.warnings.some((w) => w.message.includes('srážková daň v jiné měně'))).toBe(true);
+  });
+
   it('podezřelý poplatek obchodu (záporný / bez měny) se nezapočte a nahlásí', () => {
     // vratka: záporná hodnota poplatku nesmí navýšit výdaje
     const rebate = parseTrading212Csv(

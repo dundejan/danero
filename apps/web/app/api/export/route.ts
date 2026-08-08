@@ -2,15 +2,19 @@ import { and, asc, eq, gt } from 'drizzle-orm';
 import { getAuth } from '@/lib/auth';
 import { getDb, type Db } from '@/db';
 import {
+  auditLog,
   brokerAccounts,
   importBatches,
   instrumentAliases,
+  notificationPrefs,
   notifications,
   reportPurchases,
+  session,
   subscriptions,
   taxpayerProfiles,
   taxYearSettings,
   transactions,
+  user,
 } from '@/db/schema';
 
 export const dynamic = 'force-dynamic';
@@ -54,10 +58,25 @@ async function* exportChunks(
   yield '{\n';
   yield line('exportedAt', new Date().toISOString());
   yield line('format', 'danero-export-v1');
-  yield line('user', { email: account.email, name: account.name });
+  // 2FA jen jako příznak: tajemství TOTP ani záložní kódy do staženého souboru
+  // nepatří (byl by to klíč k účtu v plaintextu ve složce Stažené)
+  const [account2fa] = await db
+    .select({ twoFactorEnabled: user.twoFactorEnabled })
+    .from(user)
+    .where(eq(user.id, userId));
+  yield line('user', {
+    email: account.email,
+    name: account.name,
+    twoFactorEnabled: account2fa?.twoFactorEnabled ?? false,
+  });
   yield line(
     'profiles',
     await db.select().from(taxpayerProfiles).where(eq(taxpayerProfiles.userId, userId)),
+  );
+  // nastavení upozornění zadal uživatel sám → čl. 20 GDPR (přenositelnost)
+  yield line(
+    'notificationPrefs',
+    await db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId)),
   );
 
   // kanonický model (docs/04) — payload je zdroj pravdy každé transakce.
@@ -113,6 +132,35 @@ async function* exportChunks(
     'subscriptions',
     await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)),
   );
+  // /soukromi jmenuje mezi drženými údaji i „záznamy o přihlášeních a
+  // synchronizacích" a „IP adresu a typ prohlížeče u aktivních relací" —
+  // právo na přístup (čl. 15 GDPR) se týká i jich. Token relace se
+  // NEexportuje: je to přihlašovací tajemství, ne údaj o uživateli.
+  yield line(
+    'auditLog',
+    await db
+      .select({
+        type: auditLog.type,
+        detail: auditLog.detail,
+        createdAt: auditLog.createdAt,
+      })
+      .from(auditLog)
+      .where(eq(auditLog.userId, userId))
+      .orderBy(asc(auditLog.createdAt)),
+  );
+  yield line(
+    'sessions',
+    await db
+      .select({
+        id: session.id,
+        ipAddress: session.ipAddress,
+        userAgent: session.userAgent,
+        createdAt: session.createdAt,
+        expiresAt: session.expiresAt,
+      })
+      .from(session)
+      .where(eq(session.userId, userId)),
+  );
   // R-05c: konfigurace zafixovaná za roky, které už uživatel použil pro přiznání
   // (párování, kurzová soustava, výklad limitu 100k) — bez ní by z exportu nešlo
   // doložit, čím se jeho podaná čísla počítala
@@ -149,9 +197,15 @@ function toStream(chunks: AsyncGenerator<string>): ReadableStream<Uint8Array> {
 
 /**
  * GDPR export (právo na přenositelnost z /soukromi): kompletní JSON všech dat
- * uživatele — transakce v kanonickém formátu, profil, broker účty (bez
- * šifrovaných klíčů!), číselník instrumentů, notifikace, importní dávky
- * a historie nákupů (předplatné + zaplacené daňové roky).
+ * uživatele — transakce v kanonickém formátu, profil, nastavení upozornění,
+ * broker účty (bez šifrovaných klíčů!), číselník instrumentů, notifikace,
+ * importní dávky, audit log, přihlášené relace a historie nákupů
+ * (předplatné + zaplacené daňové roky).
+ *
+ * Co se ven NIKDY nedostane, i když to u účtu leží: šifrované klíče
+ * k brokerovi, tajemství TOTP a záložní kódy 2FA, token relace a otisk hesla.
+ * Jsou to přístupová tajemství — uživateli o něm nic neřeknou a stažený soubor
+ * by z nich udělal kopii klíčů od účtu (nález E-40).
  *
  * Odpověď se **streamuje**. Nestreamovaná má na Vercelu tvrdý strop 4,5 MB
  * (`FUNCTION_PAYLOAD_TOO_LARGE`) a export stojí ~287 B na transakci — uživatel

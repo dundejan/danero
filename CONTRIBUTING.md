@@ -10,8 +10,19 @@ přijme a co ne, rozhoduje vlastník projektu (Jan Dunder). U větší změny si
 napřed **založ issue a domluv se** — ušetří to zbytečnou práci na obou stranách.
 
 Odměna, která platí: **kdo přispěje parserem nebo anonymizovanou fixturou,
-která povede k podpoře platformy, má hostovanou službu na danero.cz zdarma
-napořád.**
+která povede k podpoře platformy, dostane na danero.cz celoroční hlídání
+zdarma.** Ať je jasné, co se tím slibuje:
+
+- **Na jak dlouho:** po celou dobu, co hostovanou službu provozujeme. Není to
+  převoditelné na jiného člověka a neplatí to pro vlastní instanci — tam nic
+  platit nemusíš tak jako tak.
+- **Kdy vzniká:** až se přispěná podpora platformy dostane do `main`. Napiš
+  do PR e-mail účtu, nebo ho pošli na dunder.jan@gmail.com.
+- **Když bychom skončili:** o ukončení služby dáme vědět e-mailem nejméně
+  3 měsíce předem a po celou tu dobu si stáhneš export všech svých dat —
+  stejně jako platícím zákazníkům (viz [podmínky užití](https://danero.cz/podminky)).
+- **Co to není:** nárok na to, že přispěný parser budeme udržovat věčně,
+  ani na konkrétní funkce. Formáty výpisů se mění a některé podpory zaniknou.
 
 ## ⚠️ Nikdy neposílej reálné výpisy do issue nebo PR
 

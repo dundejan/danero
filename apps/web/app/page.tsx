@@ -14,6 +14,12 @@ import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { computeNotificationCandidates } from '@/lib/notifications';
 import { engineInputForUser } from '@/lib/portfolio';
+import {
+  PRICE_REPORT_CZK,
+  PRICE_SUBSCRIPTION_CZK,
+  priceLabel,
+  SUBSCRIPTION_PER_MONTH_CZK,
+} from '@/lib/pricing';
 
 // „dnešek“ dema se odvíjí od skutečného data (horizont, upozornění) —
 // žádný prerender při buildu; engine výsledek drží sdílená cache s /demo
@@ -438,7 +444,8 @@ export default async function LandingPage({
               <p className="mt-4 text-inkoust-tlumeny">
                 Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň, do kterého
                 se počítají i zahraniční dividendy, na které se zapomíná. Čerpání vidíš
-                celý rok zdarma; s celoročním hlídáním za 990 Kč ročně ti navíc při
+                celý rok zdarma; s celoročním hlídáním za {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
+                ročně ti navíc při
                 60, 85 a 100 % přijde e-mail.{' '}
                 <strong className="text-inkoust">
                   Ozveme se, dokud se s tím dá něco dělat
@@ -669,10 +676,17 @@ export default async function LandingPage({
                 {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
                 <p className="mt-3 text-inkoust-tlumeny">
                   Import výpisů, limity i časové testy zdarma navždy. Podklady k přiznání
-                  za jeden rok <strong className="text-inkoust tabular-nums">490 Kč</strong>,
-                  celoroční hlídání s napojením na brokery a hlídacími e-maily{' '}
-                  <strong className="text-lg text-inkoust tabular-nums">990 Kč ročně</strong> —
-                  necelých <span className="tabular-nums">83 Kč</span> měsíčně.{' '}
+                  za jeden rok{' '}
+                  <strong className="text-inkoust tabular-nums">
+                    {priceLabel(PRICE_REPORT_CZK)}
+                  </strong>
+                  , celoroční hlídání s napojením na brokery a hlídacími e-maily{' '}
+                  <strong className="text-lg text-inkoust tabular-nums">
+                    {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně
+                  </strong>{' '}
+                  — necelých{' '}
+                  <span className="tabular-nums">{priceLabel(SUBSCRIPTION_PER_MONTH_CZK)}</span>{' '}
+                  měsíčně.{' '}
                   <span className="whitespace-nowrap">Ceny jsou konečné.</span>
                 </p>
                 <p className="mt-4">
@@ -730,7 +744,10 @@ export default async function LandingPage({
               Prohlédni si Danero zevnitř — hned teď
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
-              Demo běží nad vzorovým portfoliem s 50+ pozicemi za zhruba 2 miliony Kč:
+              {/* číslo hlídá test demo datasetu („50+ oceněných pozic v hodnotě
+                  přes 2,3 mil. Kč“) — dřív tu stál odhad „zhruba 2 miliony“,
+                  přitom hodnotu jde spočítat (nález E-48) */}
+              Demo běží nad vzorovým portfoliem s 50+ pozicemi za víc než 2,3 milionu Kč:
               ukazatele limitů, horizont osvobození, simulátor i report. Bez registrace, nic se neukládá.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">

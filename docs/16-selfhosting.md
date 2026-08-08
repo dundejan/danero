@@ -77,6 +77,7 @@ openssl rand -hex 32      # CRON_SECRET
 | `RESEND_FROM` | ne | odesílatel, např. `"Danero <notifikace@example.cz>"` |
 | `DANERO_MIGRATE_ON_START` | ne | `1` = zmigruj Postgres při startu (compose to nastavuje sám). Jen pro jednu instanci. |
 | `DANERO_TRUSTED_PROXIES` | ne | IP/CIDR tvých reverzních proxy oddělené čárkou. Podle nich se z `X-Forwarded-For` hledá skutečná IP klienta (klíč rate limitu přihlašování). Nevyplněno = privátní rozsahy (loopback, RFC1918, docker), což sedí na běžnou proxy na témž stroji. Vyplň, když máš před sebou CDN s veřejnými adresami — jinak by se limity počítaly na adresu CDN a sdíleli by je všichni. |
+| `NEXT_PUBLIC_SOURCE_URL` | **ano, pokud kód měníš** | adresa repozitáře **s tvými úpravami**. Aplikace ji ukazuje přihlášeným uživatelům v patičce, protože § 13 licence AGPL-3.0 ukládá nabídnout zdrojový kód každému, komu instanci nabízíš po síti. Bez ní ukazuje upstream — a ten tvoje změny neobsahuje, takže bys licenci porušoval. |
 | `DANERO_BILLING` | ne | `stripe` zapne placené tarify. Pro vlastní instanci to nechceš — bez ní je odemčené všechno (viz `lib/entitlements.ts`). |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_REPORT`, `STRIPE_PRICE_SUBSCRIPTION`, `STRIPE_WEBHOOK_SECRET` | jen s platbami | klíč, ID cen a podpis webhooku ze Stripu. Nastavený `STRIPE_SECRET_KEY` bez `DANERO_BILLING=stripe` v produkci aplikaci schválně shodí. |
 

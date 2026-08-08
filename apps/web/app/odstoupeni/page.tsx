@@ -1,5 +1,13 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
+import { OPERATOR } from '@/lib/contact';
+import {
+  PRICE_REPORT_CZK,
+  PRICE_SUBSCRIPTION_CZK,
+  priceLabel,
+  refundAfterDays,
+  SUBSCRIPTION_PER_DAY_CZK,
+} from '@/lib/pricing';
 
 export const metadata = {
   title: 'Odstoupení od smlouvy — Danero',
@@ -27,11 +35,25 @@ export default function OdstoupeniPage() {
             Jsi-li spotřebitel, můžeš od smlouvy odstoupit do 14 dnů ode dne jejího
             uzavření, a to bez udání důvodu a bez sankce. Stačí nám to v té lhůtě
             oznámit — e-mailem na{' '}
-            <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
-              dunder.jan@gmail.com
+            <a
+              href={`mailto:${OPERATOR.email}`}
+              className="font-medium text-ruzova-text"
+            >
+              {OPERATOR.email}
             </a>
             . Peníze ti vrátíme nejpozději do 14 dnů od doručení odstoupení, stejným
             způsobem, jakým jsi platil.
+          </p>
+          {/* E-36: odstoupení nemá v aplikaci tlačítko — vyřizuje se ručně
+              (refundace i zrušení předplatného ve Stripe). Zákazník to musí vědět,
+              jinak čeká automat a diví se, že mu předplatné dál běží. Runbook, aby
+              se nezapomněl druhý krok, je v docs/08-provoz.md. */}
+          <p>
+            Odstoupení vyřizujeme ručně, ne tlačítkem v aplikaci: přijde nám tvoje
+            oznámení, vrátíme peníze přes Stripe a zároveň ukončíme hlídání, ať se ti
+            už nic nestrhne. Do té doby, než to potvrdíme e-mailem, ti může služba
+            ještě běžet — počítá se ale datum, kdy jsi odstoupení odeslal, ne kdy jsme
+            ho zpracovali.
           </p>
           <p>
             Jak dlouho to právo trvá a kolik se vrací, se liší podle toho, co sis
@@ -41,7 +63,8 @@ export default function OdstoupeniPage() {
           </p>
 
           <h2 className="font-display text-lg font-semibold">
-            Podklady k přiznání za jeden rok (490 Kč): právo zaniká dodáním
+            Podklady k přiznání za jeden rok ({priceLabel(PRICE_REPORT_CZK)}): právo
+            zaniká dodáním
           </h2>
           <p>
             Podklady jsou digitální obsah, který dodáváme okamžitě — hned po zaplacení
@@ -58,7 +81,8 @@ export default function OdstoupeniPage() {
           </p>
 
           <h2 className="font-display text-lg font-semibold">
-            Celoroční hlídání (990 Kč): odstoupit můžeš, doplatíš jen využité dny
+            Celoroční hlídání ({priceLabel(PRICE_SUBSCRIPTION_CZK)}): odstoupit můžeš,
+            doplatíš jen využité dny
           </h2>
           <p>
             Hlídání není jednorázové stažení souboru — je to služba, kterou ti
@@ -71,9 +95,11 @@ export default function OdstoupeniPage() {
           <p>
             Když v těch 14 dnech odstoupíš, vrátíme ti zaplacenou částku sníženou
             o poměrnou část za dny, kdy ti hlídání běželo (§ 1834 občanského zákoníku).
-            U 990 Kč ročně jsou to necelé 3 Kč za den — po týdnu ti tedy vrátíme zhruba
-            971 Kč. Právo odstoupit zaniká až tím, že službu poskytneme úplně, tedy
-            uplynutím celého předplaceného roku (§ 1837 písm. a).
+            U {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně jsou to necelé{' '}
+            {priceLabel(SUBSCRIPTION_PER_DAY_CZK)} za den — po týdnu ti tedy vrátíme
+            zhruba {priceLabel(refundAfterDays(7))}. Právo odstoupit zaniká až tím, že
+            službu poskytneme úplně, tedy uplynutím celého předplaceného roku
+            (§ 1837 písm. a).
           </p>
           <p>
             Odstoupení je něco jiného než zrušení obnovy: obnovu zrušíš kdykoli jedním
@@ -94,15 +120,15 @@ export default function OdstoupeniPage() {
             aria-label="Vzorový formulář pro odstoupení od smlouvy"
             className="overflow-x-auto rounded-md border border-linka bg-plocha p-4 text-xs leading-relaxed"
           >
-{`Adresát: Jan Dunder, IČO 19642661
-adresa-provozovatele-v-promenne-prostredi
-dunder.jan@gmail.com
+{`Adresát: ${OPERATOR.name}, IČO ${OPERATOR.ico}
+${OPERATOR.address}
+${OPERATOR.email}
 
 Oznamuji, že tímto odstupuji od smlouvy o poskytnutí
 digitálního obsahu / služby (nehodící se škrtni):
 
-  [ ] celoroční hlídání — roční předplatné (990 Kč)
-  [ ] podklady k přiznání za daňový rok ....... (490 Kč)
+  [ ] celoroční hlídání — roční předplatné (${priceLabel(PRICE_SUBSCRIPTION_CZK)})
+  [ ] podklady k přiznání za daňový rok ....... (${priceLabel(PRICE_REPORT_CZK)})
 
 Objednáno dne: ..........................................
 Jméno spotřebitele: .....................................

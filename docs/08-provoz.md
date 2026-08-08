@@ -83,9 +83,10 @@ přejmenovat), teprve pak kód. Migraci, na kterou nový kód spoléhá (typicky
 doplnění dat — třeba 0021), pusť **před** nasazením: `gh workflow run
 migrate.yml`, počkat na doběhnutí, teprve pak push kódu.
 
-Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup]`. Bere řetězec
+Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup|prune]`. Bere řetězec
 z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
-`chmod 600`) a nikdy ho nevypisuje.
+`chmod 600`) a nikdy ho nevypisuje. `prune` databázi nepotřebuje — maže jen staré
+soubory záloh.
 
 ## Roční runbook (leden)
 
@@ -113,9 +114,16 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
   Neon Console → Branches → „Restore from history" → nový branch k času T →
   přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
 - **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh backup`
-  → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Uchovávat **nejvýš 8 týdnů**
-  mimo Neon (S3/Backblaze) — `/soukromi` slibuje, že smazaná data zmizí ze záloh
-  do 60 dnů, delší držení by z toho udělalo lež. Obnova: `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+  → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Obnova:
+  `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+- **Retence 8 týdnů běží ve skriptu**, ne v hlavě: po každé úspěšné záloze se
+  dumpy starší než `DANERO_BACKUP_RETENTION_DAYS` (výchozích 56) smažou, totéž
+  udělá `scripts/db.sh prune` samostatně. `/soukromi` slibuje uživateli, že
+  smazaná data zmizí i ze záloh — do 7. 8. 2026 za tím slibem nestál žádný
+  mechanismus (nález E-32).
+  ⚠️ **Kopie uložené jinam skript neuklidí.** Dump zkopírovaný na S3/Backblaze
+  nebo na externí disk smaž po stejné době ručně (nebo lifecycle pravidlem
+  v úložišti), jinak slib na `/soukromi` přestane platit tam, kde ho nikdo nevidí.
 
   ⚠️ **Zálohy nikdy nedělej přes GitHub Actions.** Repozitář je veřejný a
   artefakty veřejného repozitáře si může stáhnout kdokoli — byl by to únik dat
@@ -133,6 +141,35 @@ serveru, PGlite drží zámek). Reset = smazat `.data/`.
 
 Šifrované broker klíče v dumpu jsou bez `DANERO_ENCRYPTION_KEY` bezcenné —
 klíč drž v password manageru odděleně od záloh (jinak záloha = plaintext klíče).
+
+## Odstoupení od smlouvy (runbook, E-36)
+
+`/odstoupeni` slibuje spotřebiteli u ročního hlídání vrácení částky snížené
+o poměrnou část za využité dny (§ 1834 OZ). **Aplikace na to nemá tlačítko** a
+webhook `charge.refunded` předplatné schválně neruší (refundace samo o sobě
+odstoupení neznamená — může jít o kompenzaci). Odstoupení jsou proto **dva ruční
+kroky ve Stripe a musí se udělat oba**: kdyby zůstal jen ten první, zákazník má
+po odstoupení dál běžící hlídání a za rok se mu strhne další platba — plnění
+i inkaso bez smlouvy.
+
+1. **Ověř lhůtu.** Rozhoduje datum, kdy zákazník odstoupení **odeslal**, ne kdy
+   jsi ho přečetl. Datum uzavření smlouvy je `subscriptions.created_at`
+   (u podkladů `report_purchases.created_at`); lhůta je 14 dní.
+   U jednorázových podkladů se souhlasem (`consent_at` není prázdné) právo
+   odstoupit zaniklo dodáním — viz `/odstoupeni`.
+2. **Spočítej vratku.** `cena × (1 − využité_dny / 365)`, zaokrouhli na koruny;
+   stejný vzorec počítá `refundAfterDays()` v `apps/web/lib/pricing.ts`, takže
+   číslo sedí na to, co zákazník četl na `/odstoupeni`.
+3. **Stripe → Payments** → najdi platbu → **Refund** částečnou vratkou z bodu 2.
+4. **Stripe → Subscriptions** → totéž předplatné → **Cancel subscription**,
+   volba *immediately* (ne „na konci období" — smlouva už neexistuje).
+   Webhook `customer.subscription.deleted` stav v databázi srovná sám.
+5. **Zkontroluj v aplikaci**, že uživatel nemá aktivní hlídání
+   (`scripts/db.sh status` nebo Stripe dashboard), a **odpověz e-mailem** —
+   potvrzení o vyřízení a částka.
+
+Peníze musí odejít **do 14 dnů od doručení odstoupení** (§ 1832 OZ), stejným
+způsobem, jakým zákazník platil.
 
 ## Monitoring
 

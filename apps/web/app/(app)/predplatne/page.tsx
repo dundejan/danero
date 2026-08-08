@@ -9,6 +9,7 @@ import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 import { billingEnabled, isPaidSubscription, isSellableTaxYear } from '@/lib/entitlements';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
+import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 import { buyReportAction, buySubscriptionAction, openBillingPortalAction } from './actions';
@@ -113,13 +114,15 @@ export default async function SubscriptionPage({
               simulátor prodeje a podklady k přiznání za všechny roky.
             </p>
             <p className="font-display text-2xl font-bold">
-              990 Kč <span className="text-base font-semibold text-inkoust-tlumeny">/ rok</span>
+              {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
+              <span className="text-base font-semibold text-inkoust-tlumeny">/ rok</span>
             </p>
             {/* § 1811 odst. 2 a § 1820 odst. 1 OZ: doba trvání a automatická
                 obnova musí být na očích PŘED objednávkou, ne až po ní. */}
             <p className="text-sm text-inkoust-tlumeny">
               Předplatné trvá <strong className="text-inkoust">1 rok</strong> a po roce se
-              automaticky obnovuje za 990 Kč na další rok. E-mail s připomenutím ti přijde
+              automaticky obnovuje za {priceLabel(PRICE_SUBSCRIPTION_CZK)} na další rok.
+              E-mail s připomenutím ti přijde
               14 dní před obnovou a zrušit ji můžeš kdykoli v zákaznickém portálu — do konce
               zaplaceného období ti služba běží dál.
             </p>
@@ -158,7 +161,7 @@ export default async function SubscriptionPage({
               Čísla do řádků přiznání, rozpad na jednotlivé nákupy, použité kurzy a XML
               pro elektronické podání — za jeden daňový rok.
             </p>
-            <p className="font-display text-2xl font-bold">490 Kč</p>
+            <p className="font-display text-2xl font-bold">{priceLabel(PRICE_REPORT_CZK)}</p>
             <div>
               <label htmlFor="rok" className="text-sm font-medium">
                 Daňový rok

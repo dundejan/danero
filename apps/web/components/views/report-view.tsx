@@ -5,6 +5,7 @@ import {
   compareVariants,
   filingDeadlines,
   UNIFIED_RATE_SOURCES,
+  type DerivativeItem,
   type EngineInput,
 } from '@danero/engine';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { Input, Label, Select } from '@/components/ui/field';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
-import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
+import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
 import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
 import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
 import {
@@ -43,6 +44,21 @@ export function strankaProdeju(
   const aktualniStrana = Math.min(Math.max(1, Math.floor(strana) || 1), stranCelkem);
   return { stranCelkem, aktualniStrana, odRadku: (aktualniStrana - 1) * naStranu };
 }
+
+/**
+ * Popis derivátové události ve výpisu obchodů. Musí pokrýt všechny čtyři druhy,
+ * které engine rozlišuje — dřív to byl ternář se dvěma větvemi a `MARGIN_CLOSE`
+ * padal do zbytkové větve „zpětný odkup výpisu“, takže každý CFD, future
+ * i MT4/MT5 obchod se v daňovém podkladu popsal jako zpětný odkup vypsané opce
+ * (nález A2-11). Mapa přes `kind` má tu výhodu, že další druh z enginu neprojde
+ * typovou kontrolou, dokud se sem nedoplní text.
+ */
+export const DERIVATIVE_KIND_LABEL: Record<DerivativeItem['kind'], string> = {
+  LONG_CLOSE: 'uzavření nakoupené pozice',
+  SHORT_OPEN: 'výpis (prémie = příjem přijetí)',
+  SHORT_CLOSE: 'zpětný odkup výpisu',
+  MARGIN_CLOSE: 'uzavření CFD/futures (daní se vypořádaný rozdíl)',
+};
 
 /**
  * Věta o zafixované konfiguraci roku — laicky, proč se rok nepřepočítá podle
@@ -454,11 +470,7 @@ export function ReportView({
                     </td>
                     <td className="py-2 pr-4 text-right">{czDate(item.date)}</td>
                     <td className="py-2 pr-4 font-sans text-xs text-inkoust-tlumeny">
-                      {item.kind === 'LONG_CLOSE'
-                        ? 'uzavření nakoupené pozice'
-                        : item.kind === 'SHORT_OPEN'
-                          ? 'výpis (prémie = příjem přijetí)'
-                          : 'zpětný odkup výpisu'}
+                      {DERIVATIVE_KIND_LABEL[item.kind]}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(item.incomeCzk)}</td>
                     <td className="whitespace-nowrap py-2 text-right">{czk(item.expenseCzk)}</td>
@@ -498,13 +510,13 @@ export function ReportView({
 
       {result.dividends.items.length > 0 && (
         <Card className="space-y-3">
-          <CardTitle>Dividendy podle států (zápočet dle § 38f, Příloha č. 3)</CardTitle>
-          <ScrollArea label="Dividendy podle států">
+          <CardTitle>Příjmy podle států (zápočet dle § 38f, Příloha č. 3)</CardTitle>
+          <ScrollArea label="Příjmy podle států">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
                   <th className="py-2 pr-4 font-medium">Stát</th>
-                  <th className="py-2 pr-4 text-right font-medium">Brutto</th>
+                  <th className="py-2 pr-4 text-right font-medium">Příjem do zápočtu</th>
                   <th className="py-2 pr-4 text-right font-medium">Sraženo</th>
                   <th className="py-2 text-right font-medium">Započitatelná srážka</th>
                 </tr>
@@ -513,7 +525,10 @@ export function ReportView({
                 {Object.entries(result.dividends.creditableByCountry).map(([country, data]) => (
                   <tr key={country} className="border-b border-linka/60">
                     <td className="py-2 pr-4 font-sans font-medium">{country}</td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.grossCzk)}</td>
+                    {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda */}
+                    <td className="whitespace-nowrap py-2 pr-4 text-right">
+                      {czk(prijmyZeStatuProZapocet(country, data, result.options))}
+                    </td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.withholdingCzk)}</td>
                     <td className="whitespace-nowrap py-2 text-right">{czk(data.creditableCzk)}</td>
                   </tr>
@@ -528,7 +543,11 @@ export function ReportView({
               <span className="font-mono text-inkoust">
                 {czk(result.dividends.taxableInterestCzk)}
               </span>{' '}
-              — vstupují do dílčího základu § 8 vedle dividend z tabulky.
+              — vstupují do dílčího základu § 8 vedle dividend z tabulky. Do sloupce
+              „příjem do zápočtu“ se počítají jen úroky, které smlouva o zamezení dvojího
+              zdanění dovoluje zdanit i státu zdroje (§ 38f odst. 3); u většiny států
+              včetně USA a Německa smí úrok zdanit jen země, kde bydlíš, takže do zápočtu
+              nevstupuje a případnou srážku vrací zahraniční správce daně.
             </p>
           )}
           {result.dividends.czechGrossCzk.gt(0) && (

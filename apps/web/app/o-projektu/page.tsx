@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { SOURCE_URL } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Kdo za tím stojí — Danero',
@@ -81,7 +82,7 @@ export default function OProjektuPage() {
             <strong className="text-inkoust">Danero si můžeš přečíst.</strong> Celý
             zdrojový kód i{' '}
             <a
-              href="https://github.com/dundejan/danero/blob/main/docs/02-danova-pravidla.md"
+              href={`${SOURCE_URL}/blob/main/docs/02-danova-pravidla.md`}
               className="font-medium text-ruzova-text underline underline-offset-2"
               target="_blank"
               rel="noreferrer"
@@ -90,7 +91,7 @@ export default function OProjektuPage() {
             </a>{' '}
             — s odkazy na paragrafy zákona a pokyny GFŘ — jsou veřejné na{' '}
             <a
-              href="https://github.com/dundejan/danero"
+              href={SOURCE_URL}
               className="font-medium text-ruzova-text underline underline-offset-2"
               target="_blank"
               rel="noreferrer"

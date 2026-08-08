@@ -2,10 +2,14 @@ import { sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import {
+  auditLog,
   brokerAccounts,
+  notificationPrefs,
   reportPurchases,
+  session,
   subscriptions,
   taxpayerProfiles,
+  twoFactor,
   user,
 } from '@/db/schema';
 
@@ -30,9 +34,17 @@ vi.mock('@/lib/auth', () => ({
 
 /** Šifrovaný klíč k brokerovi — v exportu se nesmí objevit ani takhle. */
 const SIFROVANY_KLIC = 'gcm:tajny-klic-t212:nikdy-do-exportu';
+/** Tajemství TOTP a token relace — přístupová tajemství, ne údaje o uživateli. */
+const TOTP_TAJEMSTVI = 'JBSWY3DPEHPK3PXP-nikdy-do-exportu';
+const ZALOZNI_KODY = 'zalozni-kod-1,zalozni-kod-2';
+const TOKEN_RELACE = 'session-token-nikdy-do-exportu';
 
 interface ExportPayload {
   format: string;
+  user: { email: string; name: string; twoFactorEnabled: boolean };
+  notificationPrefs: Array<{ emailEnabled: boolean; emailFrequency: string; limitEvents: boolean }>;
+  auditLog: Array<{ type: string; detail: string | null }>;
+  sessions: Array<{ id: string; ipAddress: string | null; userAgent: string | null }>;
   subscriptions: Array<{ status: string; stripeCustomerId: string | null; consentAt: string | null }>;
   reportPurchases: Array<{ taxYear: number; stripePaymentIntentId: string | null }>;
   brokerAccounts: Array<Record<string, unknown>>;
@@ -46,8 +58,36 @@ interface ExportPayload {
 
 async function seed(): Promise<Db> {
   const db = await createPgliteDb();
-  await db.insert(user).values({ id: 'u1', name: 'Test', email: 'export@danero.cz' });
+  await db
+    .insert(user)
+    .values({ id: 'u1', name: 'Test', email: 'export@danero.cz', twoFactorEnabled: true });
   await db.insert(taxpayerProfiles).values({ userId: 'u1', regime: 'PAUSAL' });
+  await db.insert(notificationPrefs).values({
+    userId: 'u1',
+    emailEnabled: false,
+    limitEvents: false,
+    emailFrequency: 'WEEKLY',
+  });
+  await db.insert(auditLog).values({
+    userId: 'u1',
+    type: 'LOGIN',
+    detail: 'ip=203.0.113.9',
+  });
+  await db.insert(session).values({
+    id: 's1',
+    userId: 'u1',
+    token: TOKEN_RELACE,
+    expiresAt: new Date('2027-01-01T00:00:00Z'),
+    ipAddress: '203.0.113.9',
+    userAgent: 'Mozilla/5.0 (audit)',
+  });
+  await db.insert(twoFactor).values({
+    id: 'tf1',
+    userId: 'u1',
+    secret: TOTP_TAJEMSTVI,
+    backupCodes: ZALOZNI_KODY,
+    verified: true,
+  });
   const { taxYearSettings } = await import('@/db/schema');
   await db.insert(taxYearSettings).values({
     userId: 'u1',
@@ -115,6 +155,49 @@ describe('GDPR export dat (/api/export)', () => {
     expect(text).not.toContain('credentialsEncrypted');
     // účet samotný v exportu je (uživatel má právo vědět, co u nás má připojené)
     expect(text).toContain('trading212');
+  });
+
+  it('nese nastavení upozornění, audit log i relace (E-40)', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const payload = (await (
+      await GET(new Request('https://danero.cz/api/export'))
+    ).json()) as ExportPayload;
+
+    // nastavení upozornění zadal uživatel sám → čl. 20 GDPR (přenositelnost);
+    // bez něj by si odnesl data, ale ne to, jak si službu nastavil
+    expect(payload.notificationPrefs).toHaveLength(1);
+    expect(payload.notificationPrefs[0]).toMatchObject({
+      emailEnabled: false,
+      limitEvents: false,
+      emailFrequency: 'WEEKLY',
+    });
+    // /soukromi jmenuje audit log i aktivní relace mezi drženými údaji → čl. 15
+    expect(payload.auditLog).toHaveLength(1);
+    expect(payload.auditLog[0]).toMatchObject({ type: 'LOGIN', detail: 'ip=203.0.113.9' });
+    expect(payload.sessions).toHaveLength(1);
+    expect(payload.sessions[0]).toMatchObject({
+      ipAddress: '203.0.113.9',
+      userAgent: 'Mozilla/5.0 (audit)',
+    });
+    // 2FA jen jako příznak — stav účtu ano, tajemství ne
+    expect(payload.user.twoFactorEnabled).toBe(true);
+  });
+
+  it('nevydá tajemství 2FA ani token relace', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const text = await (await GET(new Request('https://danero.cz/api/export'))).text();
+
+    // stažený soubor leží uživateli ve složce Stažené — nesmí to být kopie
+    // klíčů od účtu
+    expect(text).not.toContain(TOTP_TAJEMSTVI);
+    expect(text).not.toContain(ZALOZNI_KODY);
+    expect(text).not.toContain(TOKEN_RELACE);
   });
 
   it('bez přihlášení vrací 401', { timeout: 30_000 }, async () => {

@@ -61,6 +61,55 @@ describe('EPO: co odmítla zkušební podatelna (A3-01, A3-07)', () => {
     expect(Number(vetaO.kc_uhrn)).toBe(Number(vetaO.kc_zakldan8) + Number(vetaO.kc_zd10));
   });
 
+  it('A3-13: rok jen se ztrátovým prodejem nevyplňuje úhrn kladných rozdílů', () => {
+    // Nákup 100 ks à 200 USD (2024, kurz 23,28) = 465 600 Kč, prodej à 100 USD
+    // (2025, kurz 21,84) = 218 400 Kč. Výdaje druhu se uplatní nejvýš do výše
+    // jeho příjmů (§ 10 odst. 4), takže rozdíl je 0. Úhrn 4. sloupce tabulky je
+    // ale součet KLADNÝCH hodnot — a když žádná není, musí zůstat prázdný:
+    // napsaná „0“ podatelnu rozesmutní hláškou „neodpovídá součtu kladný hodnot
+    // uvedeného sloupce“.
+    const { dp } = xmlFor([
+      {
+        type: 'BUY', id: 'zb', isin: 'US5949181045', quantity: '100',
+        pricePerShare: '200', currency: 'USD',
+        tradeDate: '2024-02-01', settlementDate: '2024-02-05',
+      },
+      {
+        type: 'SELL', id: 'zs', isin: 'US5949181045', quantity: '100',
+        pricePerShare: '100', currency: 'USD',
+        tradeDate: '2025-04-01', settlementDate: '2025-04-03',
+      },
+    ]);
+    const vetaV = dp.VetaV as unknown as Attrs;
+    const vetaJ = dp.VetaJ as unknown as Attrs;
+    expect(vetaJ.prijmy10).toBe('218400');
+    expect(vetaJ.vydaje10).toBe('218400'); // § 10 odst. 4: výdaj max do výše příjmu
+    expect(vetaJ.rozdil10).toBe('0');
+    expect(vetaV.uhrn_rozdil10).toBeUndefined();
+    // řádek tabulky ale zůstává — bez něj přestanou sedět úhrny 2. a 3. sloupce
+    // (ř. 207 a 208) a z propustného upozornění je věcná chyba
+    expect(vetaV.uhrn_prijmy10).toBe(vetaJ.prijmy10);
+    expect(vetaV.uhrn_vydaje10).toBe(vetaJ.vydaje10);
+    // ř. 40 se vyplňuje dál, jinak nesedí vzorec ř. 41 (A3-01)
+    expect((dp.VetaO as unknown as Attrs).kc_zd10).toBe('0');
+  });
+
+  it('A3-13: ztrátový druh vedle ziskového úhrn kladných rozdílů nesnižuje', () => {
+    const { dp } = xmlFor([
+      // CP se ztrátou → rozdíl 0
+      { type: 'BUY', id: 'zb', isin: 'US5949181045', quantity: '100', pricePerShare: '200', currency: 'USD', tradeDate: '2024-02-01', settlementDate: '2024-02-05' },
+      { type: 'SELL', id: 'zs', isin: 'US5949181045', quantity: '100', pricePerShare: '100', currency: 'USD', tradeDate: '2025-04-01', settlementDate: '2025-04-03' },
+      // krypto se ziskem 246 600 Kč → rozdíl kladný
+      { type: 'BUY', id: 'cb', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
+      { type: 'SELL', id: 'cs', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
+    ]);
+    const vetaV = dp.VetaV as unknown as Attrs;
+    const radky = (Array.isArray(dp.VetaJ) ? dp.VetaJ : [dp.VetaJ]) as unknown as Attrs[];
+    expect(radky.map((r) => r.rozdil10)).toEqual(['0', '246600']);
+    expect(vetaV.uhrn_rozdil10).toBe('246600');
+    expect((dp.VetaO as unknown as Attrs).kc_zd10).toBe('246600'); // druhy se nekompenzují
+  });
+
   it('A3-07: řídicí znak ve jméně nesmí udělat z písemnosti nevalidní XML', () => {
     // U+0001 se do jména dostane kopírováním z PDF nebo z Wordu; XML 1.0 ho
     // v obsahu nepřipouští vůbec, takže podatelna soubor ani nenačte.
@@ -128,6 +177,33 @@ describe('EPO: zdroj příjmu a kód státu (A3-05, A3-06)', () => {
         },
       ]),
     ).toThrow(/není zemí podle číselníku/);
+  });
+});
+
+describe('report: popis derivátové události (A2-11)', () => {
+  it('CFD ani MT5 obchod se nepopíše jako zpětný odkup vypsané opce', async () => {
+    const { DERIVATIVE_KIND_LABEL } = await import('@/components/views/report-view');
+    // CFD long: otevření i uzavření se stylem vypořádání MARGIN — engine z toho
+    // dělá druh MARGIN_CLOSE, tedy nejčastější položku z MT4/MT5 a CFD účtů
+    const result = analyzeTaxYear(
+      engineInputForUser(
+        parseTransactions([
+          { type: 'BUY', id: 'cfd-o', isin: 'CFD:AAPL', assetClass: 'DERIVATIVE', settlementStyle: 'MARGIN', quantity: '10', pricePerShare: '100', currency: 'CZK', tradeDate: '2025-02-03' },
+          { type: 'SELL', id: 'cfd-c', isin: 'CFD:AAPL', assetClass: 'DERIVATIVE', settlementStyle: 'MARGIN', quantity: '10', pricePerShare: '600', currency: 'CZK', tradeDate: '2025-06-10' },
+        ]),
+        PROFILE,
+        2025,
+      ),
+    );
+    const margin = result.derivatives.items.find((item) => item.kind === 'MARGIN_CLOSE');
+    expect(margin, 'engine musí CFD uzavřít jako MARGIN_CLOSE').toBeDefined();
+    expect(margin!.incomeCzk.toFixed(0)).toBe('5000');
+    expect(DERIVATIVE_KIND_LABEL[margin!.kind]).toBe('uzavření CFD/futures (daní se vypořádaný rozdíl)');
+    expect(DERIVATIVE_KIND_LABEL[margin!.kind]).not.toBe(DERIVATIVE_KIND_LABEL.SHORT_CLOSE);
+    // každý druh z enginu má vlastní text — žádný nespadne do zbytkové věty
+    expect(new Set(Object.values(DERIVATIVE_KIND_LABEL)).size).toBe(
+      Object.keys(DERIVATIVE_KIND_LABEL).length,
+    );
   });
 });
 

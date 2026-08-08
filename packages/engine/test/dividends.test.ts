@@ -132,6 +132,99 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('1500');
   });
 
+  it('R-07f: sražená daň z úroku se do modelu vůbec dostane (nález A1-07)', () => {
+    // Bez pole `withholdingTax` na INTEREST ji Zod potichu zahodí a informace
+    // se ztratí už v importu — souhrn sražené daně pak lže, že sraženo nebylo.
+    const result = run([interest({ amount: '10000', sourceCountry: 'JP', withholdingTax: '1000' })]);
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('1000');
+    expect(result.dividends.interestItems[0]!.withholdingCzk.toString()).toBe('1000');
+  });
+
+  it('R-07f: úrok JP (čl. 11 dovoluje 10 %) — zápočet se uplatní celý', () => {
+    // úrok 10 000 Kč, sraženo 1 000 Kč = přesně smluvních 10 %
+    const result = run([interest({ amount: '10000', sourceCountry: 'JP', withholdingTax: '1000' })]);
+    expect(result.dividends.base8Czk.toString()).toBe('10000');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('1000');
+    const jp = result.dividends.creditableByCountry['JP']!;
+    expect(jp.interestGrossCzk.toString()).toBe('10000');
+    expect(jp.creditableCzk.toString()).toBe('1000');
+    expect(hasWarning(result, 'INTEREST_WITHHOLDING_ABOVE_TREATY')).toBe(false);
+  });
+
+  it('R-07f: úrok US — čl. 11 dává právo zdanit jen ČR, zápočet je 0 a řekneme to', () => {
+    // Audit A1-07 počítal s 15% stropem jako u dividend; smlouva 32/1994 Sb.
+    // ale úrok stát zdroje zdanit nenechá, takže srážka se žádá zpět v USA.
+    const result = run([interest({ amount: '10000', sourceCountry: 'US', withholdingTax: '1000' })]);
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('1000');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('0');
+    // úrok zdaněný proti smlouvě nesmí zvednout strop zápočtu dividendám téhož
+    // státu — do koeficientu § 38f nevstupuje (shodně s Přílohou 3 v XML)
+    expect(result.dividends.creditableByCountry['US']!.interestGrossCzk.toString()).toBe('0');
+    const warning = result.warnings.find((w) => w.code === 'INTEREST_WITHHOLDING_ABOVE_TREATY');
+    expect(warning?.context).toMatchObject({ country: 'US', overCzk: '1000.00' });
+  });
+
+  it('R-07f: varování o propadlé srážce je jedno per země, ne per úrok', () => {
+    // T212 připisuje úrok z hotovosti denně — varování u každého řádku by
+    // souhrn kontrol zavalilo; částky se proto sčítají do jednoho.
+    const result = run([
+      interest({ amount: '1000', sourceCountry: 'US', withholdingTax: '100' }),
+      interest({ amount: '1000', sourceCountry: 'US', withholdingTax: '100' }),
+      interest({ amount: '1000', sourceCountry: 'PL', withholdingTax: '190' }),
+    ]);
+    const forfeited = result.warnings.filter((w) => w.code === 'INTEREST_WITHHOLDING_ABOVE_TREATY');
+    expect(forfeited).toHaveLength(2);
+    expect(forfeited.find((w) => w.context?.country === 'US')?.context).toMatchObject({
+      overCzk: '200.00',
+    });
+    // PL nemáme ověřenou → bezpečný default 0 %, propadá celá srážka
+    expect(forfeited.find((w) => w.context?.country === 'PL')?.context).toMatchObject({
+      overCzk: '190.00',
+    });
+  });
+
+  it('R-07f: zápočet z úroku snižuje daň stejně jako u dividendy', () => {
+    // úrok 100 000 Kč (JP), sraženo 10 000 Kč → daň 15 000 − zápočet 10 000
+    const result = run([interest({ amount: '100000', sourceCountry: 'JP', withholdingTax: '10000' })]);
+    expect(result.tax.general.taxBeforeCreditCzk.toString()).toBe('15000');
+    expect(result.tax.general.foreignTaxCreditCzk.toString()).toBe('10000');
+    expect(result.tax.general.taxCzk.toString()).toBe('5000');
+  });
+
+  it('R-07f: zápočet z úroku se zaokrouhluje po státech dolů jako u dividend', () => {
+    // 10 % z 26 Kč = 2,6 → 2 Kč (nikdy nahoru — nárok se nenadhodnocuje)
+    const result = run([interest({ amount: '26', sourceCountry: 'JP', withholdingTax: '2.6' })]);
+    expect(result.dividends.creditableByCountry['JP']!.creditableCzk.toString()).toBe('2');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('2');
+  });
+
+  it('R-07f: úrok a dividenda z téhož státu se sčítají do jednoho řádku Přílohy 3', () => {
+    const result = run([
+      dividend({ sourceCountry: 'JP', gross: '1000', withholdingTax: '150' }),
+      interest({ amount: '2000', sourceCountry: 'JP', withholdingTax: '200' }),
+    ]);
+    const jp = result.dividends.creditableByCountry['JP']!;
+    expect(jp.grossCzk.toString()).toBe('1000'); // dividendy brutto zvlášť
+    expect(jp.interestGrossCzk.toString()).toBe('2000');
+    expect(jp.withholdingCzk.toString()).toBe('350');
+    expect(jp.creditableCzk.toString()).toBe('350'); // 15 % z 1 000 + 10 % z 2 000
+  });
+
+  it('R-07f: úrok BEZ sražené daně řádek po státech nezakládá (nemá co započítat)', () => {
+    const result = run([interest({ amount: '5000', sourceCountry: 'JP' })]);
+    expect(result.dividends.taxableInterestCzk.toString()).toBe('5000');
+    expect(Object.keys(result.dividends.creditableByCountry)).toEqual([]);
+  });
+
+  it('R-07f: srážka z úroku v cizí měně se přepočte kurzem jako částka úroku', () => {
+    // fixture kurz 2025: USD 20 → úrok 500 USD = 10 000 Kč, srážka 50 USD = 1 000 Kč
+    const result = run([
+      interest({ amount: '500', currency: 'USD', sourceCountry: 'JP', withholdingTax: '50' }),
+    ]);
+    expect(result.dividends.taxableInterestCzk.toString()).toBe('10000');
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('1000');
+  });
+
   it('R-07d: § 16a chrání před progresí — engine doporučí výhodnější variantu', () => {
     // uměle nízká hranice progrese, ať 23 % nastoupí už od 10 000 Kč základu
     const config = { ...CFG_2025, progressiveThreshold: '10000' };
@@ -176,6 +269,35 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(hasWarning(result, 'PROGRESSIVE_THRESHOLD_UNKNOWN')).toBe(false);
     // 1 762 812 × 15 % + (2 000 000 − 1 762 812) × 23 % = 264 421,80 + 54 553,24
     expect(result.tax.general.taxCzk.toString()).toBe('318975.04');
+  });
+
+  it('R-07d: těsně nad hranicí progrese se § 16a nedoporučuje kvůli 18,84 Kč (nález A1-04)', () => {
+    // base10 = 110 050 − 100 000 = 10 050; base8 = 1 666 050 → obecný základ
+    // 1 676 100 Kč, tedy 48 Kč nad hranicí 2025 (1 676 052).
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '1100.5', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      dividend({ gross: '1666050', withholdingTax: '0' }),
+    ]);
+    // obecná: 1 676 052 × 15 % + 48 × 23 % = 251 418,84
+    expect(result.tax.general.taxCzk.toString()).toBe('251418.84');
+    // § 16a: floor100(10 050) × 15 % + floor100(1 666 050) × 15 % = 1 500 + 249 900
+    expect(result.tax.separate16a.taxCzk.toString()).toBe('251400');
+    // rozdíl 18,84 Kč, z toho 15 Kč jen oddělené zaokrouhlení na stovky —
+    // za to nemá cenu ztratit slevy na dani a nezdanitelné části
+    expect(result.tax.recommended).toBe('GENERAL');
+  });
+
+  it('R-07d: nad mezí významnosti se § 16a doporučí (úspora přes 100 Kč)', () => {
+    // base8 o 2 000 Kč výš: 2 000 × (23 − 15) % = 160 Kč skutečné úspory
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '1100.5', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      dividend({ gross: '1668050', withholdingTax: '0' }),
+    ]);
+    const uspora = result.tax.general.taxCzk.sub(result.tax.separate16a.taxCzk);
+    expect(uspora.toString()).toBe('178.84'); // 160 skutečných + 18,84 z hraniční části
+    expect(result.tax.recommended).toBe('SEPARATE_16A');
   });
 
   it('R-07d: pod známou hranicí progrese se § 16a nedoporučuje ani při šumově nižší dani', () => {

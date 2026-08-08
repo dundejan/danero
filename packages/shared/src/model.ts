@@ -76,6 +76,12 @@ export const InterestTxSchema = z.object({
   ...base,
   amount: NonNegativeMoney,
   currency: Currency,
+  /**
+   * R-07f: daň sražená v zahraničí z úroku (ve stejné měně jako `amount`).
+   * Bez tohoto pole se informace ztratila už v importu a zápočet z úroku
+   * nešlo uplatnit vůbec — strop je ale dle čl. 11 smlouvy, ne čl. 10.
+   */
+  withholdingTax: NonNegativeMoney.default(ZERO),
   sourceCountry: Country.optional(),
   date: IsoDateSchema,
 });

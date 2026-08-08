@@ -1,4 +1,5 @@
-import { operatorLines } from '@/lib/contact';
+import { operatorLines, operatorSignature, OPERATOR } from '@/lib/contact';
+import { ADR, TERMS_VERSION } from '@/lib/legal';
 
 /**
  * Odesílání e-mailů. Vytaženo z lib/notifications.ts, aby si auth vrstva
@@ -105,6 +106,8 @@ export function resetPasswordEmail(url: string): Omit<EmailMessage, 'to'> {
       'odhlásí ze všech zařízení.',
       '',
       'Pokud jsi o obnovu nežádal, nemusíš dělat nic — heslo zůstává beze změny.',
+      '',
+      ...operatorSignature(),
     ].join('\n'),
   };
 }
@@ -124,6 +127,8 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
       'překlep, o účet i s naimportovanými daty bys přišel.',
       '',
       'Pokud sis účet nezakládal, nemusíš dělat nic.',
+      '',
+      ...operatorSignature(),
     ].join('\n'),
   };
 }
@@ -132,9 +137,6 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
  * Potvrzení o uzavření smlouvy na trvalém nosiči (§ 1824a OZ) — musí odejít
  * po každém nákupu a nést i poučení o odstoupení. Ceny jsou konečné,
  * provozovatel není plátce DPH.
- */
-/**
- * Potvrzení o uzavření smlouvy (§ 1824a OZ).
  *
  * Poučení o odstoupení se pro obě věci LIŠÍ (E-3 z auditu). Podklady jsou
  * digitální obsah dodaný okamžitě — právo zaniká jejich zpřístupněním
@@ -142,6 +144,14 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
  * odstoupit trvá a zaniká až úplným poskytnutím (§ 1837 písm. a); při
  * odstoupení se doplácí poměrná část za využité dny (§ 1834). Tvrdit u něj
  * zánik práva by bylo ujednání, ke kterému se nepřihlíží (§ 1812 odst. 2).
+ *
+ * **Proč je e-mail tak dlouhý (nález E-30):** potvrzení musí obsahovat údaje
+ * podle § 1820, ne na ně jen odkázat. Podle rozsudku SDEU C-49/11 (Content
+ * Services) není webová stránka trvalý nosič — může se kdykoli změnit, takže
+ * odkaz na danero.cz/podminky sám o sobě povinnost nesplní. Trvalým nosičem je
+ * tenhle e-mail, proto v něm musí být doba trvání a obnova, práva z vadného
+ * plnění, mimosoudní řešení sporů i verze podmínek, podle které se nakupovalo.
+ * Nic se nepřikládá jako soubor — všechno podstatné je přímo v textu.
  */
 export function purchaseConfirmationEmail(args: {
   what: string;
@@ -149,6 +159,24 @@ export function purchaseConfirmationEmail(args: {
   consentGiven: boolean;
   kind: 'subscription' | 'report';
 }): Omit<EmailMessage, 'to'> {
+  const trvani =
+    args.kind === 'subscription'
+      ? [
+          // částka je cena z ceníku, ne fakturovaná částka ze Stripe — s promo
+          // kódem se liší, proto se tu neslibuje jako konečná (souvisí s E-25)
+          'Doba trvání a obnova: předplatné trvá jeden rok ode dneška a pak se',
+          `automaticky obnovuje na další rok za cenu podle ceníku (dnes ${args.priceCzk} Kč;`,
+          'uplatněný slevový kód ji může snížit). Přibližně dva týdny před obnovou',
+          'ti přijde e-mail; obnovu zrušíš kdykoli jedním kliknutím v aplikaci',
+          '(Předplatné → Spravovat platby) a do konce zaplaceného období ti služba',
+          'běží dál. Nejkratší doba závazku je těch dvanáct měsíců, žádná',
+          'výpovědní lhůta ani poplatek za ukončení se neúčtují.',
+        ]
+      : [
+          'Doba trvání: jednorázový nákup, nic se neobnovuje a nic dalšího se',
+          'nestrhne. Zaplacený daňový rok ti v účtu zůstává odemčený i později —',
+          'včetně pozdějších oprav výpočtu za ten rok.',
+        ];
   const odstoupeni =
     args.kind === 'subscription'
       ? [
@@ -172,17 +200,35 @@ export function purchaseConfirmationEmail(args: {
   return {
     subject: `Potvrzení objednávky — ${args.what}`,
     text: [
-      'Díky za objednávku. Tohle je potvrzení uzavřené smlouvy, ulož si ho.',
+      'Díky za objednávku. Tohle je potvrzení uzavřené smlouvy — ulož si ho,',
+      'shrnuje všechno podstatné, co jsme si ujednali.',
       '',
       `Co sis pořídil: ${args.what}`,
       `Cena: ${args.priceCzk} Kč — cena je konečná`,
       '',
       ...operatorLines(),
       '',
+      ...trvani,
+      '',
       ...odstoupeni,
       '',
+      'Co je k užívání potřeba: běžný webový prohlížeč a funkční e-mailová',
+      'adresa, nic se neinstaluje. Soubory, které si z Danera stáhneš (XML pro',
+      'portál MOJE daně, export dat v JSON), nejsou chráněné žádným technickým',
+      'opatřením ani vázané na zařízení.',
+      '',
+      'Práva z vadného plnění: když Danero nedělá, co slibujeme, máš zákonná',
+      `práva z vadného plnění a nijak je neomezujeme. Uplatni je na ${OPERATOR.email}`,
+      '— tamtéž patří i případná stížnost.',
+      '',
+      'Když se nedohodneme: jsi-li spotřebitel, můžeš se obrátit na subjekt',
+      `mimosoudního řešení spotřebitelských sporů — ${ADR.authority},`,
+      `${ADR.address}, ${ADR.web}; návrh jde podat online na ${ADR.online}.`,
+      '',
       'Doklad o zaplacení a historii plateb najdeš v aplikaci v sekci',
-      'Předplatné. Podmínky užití: danero.cz/podminky',
+      `Předplatné. Nakupoval jsi podle podmínek užití ve verzi ${TERMS_VERSION};`,
+      'jejich úplné znění je na danero.cz/podminky a na požádání ti ho pošleme',
+      'e-mailem.',
     ].join('\n'),
   };
 }

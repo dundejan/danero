@@ -182,8 +182,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       .select({ hash: account.password })
       .from(account)
       .where(and(eq(account.userId, user.id), eq(account.providerId, 'credential')));
-    // stejná funkce jako v lib/auth.ts — po přepnutí na Argon2id by původní
-    // verifyPassword z Better Authu nový otisk neověřila
+    // stejná funkce jako v lib/auth.ts — otisky si počítá lib/password.ts
+    // (scrypt s vlastními parametry), takže vestavěná verifyPassword
+    // z Better Authu by je neověřila
     const { verifyPassword } = await import('@/lib/password');
     const valid =
       credential?.hash &&

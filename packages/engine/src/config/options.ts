@@ -16,9 +16,16 @@ export interface EngineOptions {
   limit100kIncludesTimeTestExempt: boolean;
   /** R-04f: alokace nabývací ceny na spin-off ('zero' = konzervativní default). */
   spinoffCostBasisAllocation: 'zero' | 'proportional';
-  /** R-07c: smluvní strop zápočtu srážkové daně per země (desetinný zlomek). */
+  /** R-07c: smluvní strop zápočtu srážkové daně z DIVIDEND per země (desetinný zlomek). */
   treatyWithholdingCap: Record<string, string>;
   defaultTreatyCap: string;
+  /**
+   * R-07f: smluvní strop zápočtu srážkové daně z ÚROKŮ per země. Vlastní tabulka,
+   * protože úroky řeší čl. 11 smlouvy, ne čl. 10 jako dividendy — a ten skoro
+   * vždy nechává právo zdanit úrok jen státu rezidenta (strop 0 %).
+   */
+  treatyInterestWithholdingCap: Record<string, string>;
+  defaultInterestTreatyCap: string;
   /**
    * R-12i: prémie opce expirované bezcenně jako výdaj druhu deriváty
    * (výklad „per druh“, § 10/4 + D-59). Default false = restriktivní výklad.
@@ -42,6 +49,12 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   // DE 18/1984 Sb., NL 138/1974 Sb. (10 %!), JP 46/1979 Sb., IE 163/1996 Sb.
   treatyWithholdingCap: { US: '0.15', DE: '0.15', NL: '0.10', JP: '0.15', IE: '0.15' },
   defaultTreatyCap: '0.15',
+  // R-07f: ověřené smluvní stropy pro ÚROKY (čl. 11) — US/DE/NL/IE/GB nechávají
+  // právo zdanit úrok jen státu rezidenta (0 %), JP dovoluje obecných 10 %.
+  // Default 0 % je bezpečný: neověřenou smlouvu nikdy nenadhodnotíme, srážka
+  // nad strop se žádá zpět ve státě zdroje (engine to řekne ve varování).
+  treatyInterestWithholdingCap: { US: '0', DE: '0', NL: '0', IE: '0', GB: '0', JP: '0.10' },
+  defaultInterestTreatyCap: '0',
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
 };

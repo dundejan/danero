@@ -3,6 +3,7 @@ import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import Link from 'next/link';
 import { FaqList, type FaqItem } from '@/components/faq-list';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 
 export const metadata: Metadata = {
   title: 'Časté otázky — Danero',
@@ -68,7 +69,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: 'Co je zdarma a za co se platí?',
-    a: 'Zdarma je import výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (490 Kč za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API a hlídacími e-maily (990 Kč ročně). Ceny jsou konečné — nejsme plátcem DPH. Účet založíš zdarma a bez karty; podklady jsou jednorázový nákup, celoroční hlídání se po roce automaticky obnovuje — e-mail ti přijde 14 dní předem a zrušit obnovu můžeš kdykoli jedním kliknutím.',
+    a: `Zdarma je import výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (${priceLabel(PRICE_REPORT_CZK)} za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API a hlídacími e-maily (${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně). Ceny jsou konečné — nejsme plátcem DPH. Účet založíš zdarma a bez karty; podklady jsou jednorázový nákup, celoroční hlídání se po roce automaticky obnovuje — e-mail ti přijde 14 dní předem a zrušit obnovu můžeš kdykoli jedním kliknutím.`,
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',

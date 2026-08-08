@@ -20,6 +20,7 @@ import { Toast } from '@/components/toast';
 import { FileField } from '@/components/ui/file-field';
 import { czDateTime, plural } from '@/lib/format';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
+import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { firstParam } from '@/lib/utils';
 import {
   deleteBatchAction,
@@ -270,7 +271,7 @@ export default async function ImportPage({
                     : chyba === 'zadny-ucet'
                       ? 'Tenhle účet u brokera už neexistuje — obnov stránku.'
                       : chyba === 'api-placene'
-                        ? 'Automatické napojení přes API je součástí hlídání za 990 Kč ročně. Nahrát výpis ze stejného brokera můžeš zdarma dál — čísla budou stejná.'
+                        ? `Automatické napojení přes API je součástí hlídání za ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně. Nahrát výpis ze stejného brokera můžeš zdarma dál — čísla budou stejná.`
                         : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />

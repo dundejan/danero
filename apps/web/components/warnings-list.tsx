@@ -20,6 +20,7 @@ interface WarningGroup {
 /** Lidské nadpisy skupin pro kódy, které se typicky opakují per transakce. */
 const GROUP_TITLES: Record<string, string> = {
   WITHHOLDING_ABOVE_TREATY: 'Srážková daň nad smluvní strop',
+  INTEREST_WITHHOLDING_ABOVE_TREATY: 'Srážková daň z úroku nad smluvní strop',
   TREATY_RATE_UNVERIFIED: 'Neověřená smluvní sazba srážkové daně',
   DIVIDEND_UNKNOWN_COUNTRY: 'Dividendy bez určené země zdroje',
   CZ_INTEREST_WITHHELD: 'České úroky se srážkou u zdroje',

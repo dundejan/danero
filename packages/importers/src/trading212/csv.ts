@@ -262,12 +262,30 @@ export function parseTrading212Csv(text: string): ImportResult {
             );
             return;
           }
+          // R-07f: sloupec srážkové daně nese T212 na každém řádku (u úroků bývá
+          // prázdný). Když vyplněný je, musí se přenést — jinak zápočet propadne
+          // už v importu. V jiné měně než úrok ho radši nezapočítáme (stejně
+          // jako u dividend: špatný kurz by zápočet nadhodnotil).
+          let interestWithholding = cleanNumber(map.get(row, 'Withholding tax')) || '0';
+          const interestWithholdingCurrency = map.get(row, 'Currency (Withholding tax)');
+          if (
+            new Decimal(interestWithholding).gt(0) &&
+            interestWithholdingCurrency &&
+            interestWithholdingCurrency !== currency
+          ) {
+            result.warnings.push({
+              line,
+              message: `${action}: srážková daň v jiné měně (${interestWithholdingCurrency}) než úrok (${currency}) — do zápočtu nebyla započtena, doplň ji ručně.`,
+            });
+            interestWithholding = '0';
+          }
           result.transactions.push(
             TransactionSchema.parse({
               type: 'INTEREST',
               id: rowId(),
               amount,
               currency,
+              withholdingTax: interestWithholding,
               date,
             }),
           );

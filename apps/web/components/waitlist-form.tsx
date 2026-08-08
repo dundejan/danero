@@ -1,12 +1,22 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { joinWaitlistAction, type WaitlistState } from '@/app/waitlist-actions';
+import { OPERATOR } from '@/lib/contact';
 
 /**
  * Formulář waitlistu (docs/12, P0) — jedno pole, žádná registrace.
- * Souhlas dle zákona 480/2004 Sb. je omezený na jednorázové oznámení
- * o otevření; říká to text pod polem.
+ *
+ * Souhlas dle § 7 odst. 2 zákona 480/2004 Sb. je omezený na jednorázové
+ * oznámení o otevření. Text pod polem proto musí unést i informační povinnost
+ * podle čl. 13 GDPR: kdo je správce, k čemu adresa slouží, kde jsou celé
+ * zásady a že souhlas jde odvolat (čl. 7 odst. 3) — registrace to má, waitlist
+ * do 7. 8. 2026 ne (nález E-35).
+ *
+ * Neslibuje se tu automatické smazání: žádný kód e-maily z waitlistu nemaže,
+ * takže by to byl slib bez opory. Odvolání souhlasu je ruční krok a tak se
+ * i popisuje.
  */
 export function WaitlistForm() {
   const [state, formAction, pending] = useActionState<WaitlistState, FormData>(
@@ -54,7 +64,17 @@ export function WaitlistForm() {
         </p>
       )}
       <p className="text-xs text-inkoust-tlumeny">
-        Pošleme ti jediný e-mail — že Danero otevírá. Žádný newsletter, adresu pak smažeme.
+        Pošleme ti jediný e-mail — že Danero otevírá. Žádný newsletter, žádné předávání
+        dál. Správcem adresy je {OPERATOR.name}, IČO {OPERATOR.ico}; souhlas můžeš kdykoli
+        odvolat na{' '}
+        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+          {OPERATOR.email}
+        </a>{' '}
+        a adresu ze seznamu smažeme. Podrobnosti a tvoje práva:{' '}
+        <Link href="/soukromi" className="font-medium text-ruzova-text">
+          ochrana soukromí
+        </Link>
+        .
       </p>
     </form>
   );

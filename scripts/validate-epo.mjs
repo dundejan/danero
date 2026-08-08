@@ -9,7 +9,7 @@
  * a na síti, takže výpadek ADIS nesmí shodit build. Ručně: `pnpm validate:epo
  * [soubor.xml]`. Bez argumentu si skript vygeneruje vzorová podání pokrývající
  * i struktury, na kterých se to v auditu lámalo (prázdný rok, tuzemský prodej,
- * rok jen se ztrátou)
+ * rok jen se ztrátou, ztrátový druh vedle ziskového a zápočet daně z úroku)
  * přes engine a apps/web/lib/epo.ts — proto se pouští přes tsx (viz root
  * package.json), který zvládne extensionless TS importy workspace balíčků.
  */
@@ -104,6 +104,9 @@ async function buildSamples() {
     { type: 'DIVIDEND', id: 'd1', isin: 'US0378331005', gross: '1000', withholdingTax: '150', currency: 'USD', date: '2025-05-10' },
     { type: 'DIVIDEND', id: 'd2', isin: 'DE0007164600', gross: '100', withholdingTax: '30', currency: 'EUR', date: '2025-06-01' },
     { type: 'INTEREST', id: 'i1', amount: '10', currency: 'USD', sourceCountry: 'US', date: '2025-07-01' },
+    // úrok se srážkou ve státě, kde smlouva zdanění u zdroje dovoluje (JP, čl. 11)
+    // → vlastní stát v Příloze 3 bez jediné dividendy (R-07f, nález A3-12)
+    { type: 'INTEREST', id: 'i2', amount: '100', currency: 'USD', withholdingTax: '10', sourceCountry: 'JP', date: '2025-07-02' },
     // krypto nad 100k → zdanitelné, v P2 musí vzniknout druhý řádek VetaJ (kod C)
     { type: 'BUY', id: 'cb1', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
     { type: 'SELL', id: 'cs1', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
@@ -142,10 +145,22 @@ async function buildSamples() {
     profile,
     config: TAX_YEAR_2025,
   });
+  const ztratove = [
+    { type: 'BUY', id: 'zb', isin: 'US5949181045', quantity: '100', pricePerShare: '200', currency: 'USD', tradeDate: '2024-02-01', settlementDate: '2024-02-05' },
+    { type: 'SELL', id: 'zs', isin: 'US5949181045', quantity: '100', pricePerShare: '100', currency: 'USD', tradeDate: '2025-04-01', settlementDate: '2025-04-03' },
+  ];
   const ztrata = analyzeTaxYear({
+    transactions: parseTransactions(ztratove),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+  // ztrátový druh (rozdíl 0) VEDLE ziskového — úhrn 4. sloupce Přílohy 2 se
+  // sčítá jen z kladných hodnot, tahle kombinace to na podatelně ověří
+  const smisene = analyzeTaxYear({
     transactions: parseTransactions([
-      { type: 'BUY', id: 'zb', isin: 'US5949181045', quantity: '100', pricePerShare: '200', currency: 'USD', tradeDate: '2024-02-01', settlementDate: '2024-02-05' },
-      { type: 'SELL', id: 'zs', isin: 'US5949181045', quantity: '100', pricePerShare: '100', currency: 'USD', tradeDate: '2025-04-01', settlementDate: '2025-04-03' },
+      ...ztratove,
+      { type: 'BUY', id: 'mb', isin: 'BTC', ticker: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', currency: 'EUR', tradeDate: '2025-03-01' },
+      { type: 'SELL', id: 'ms', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '60000', currency: 'EUR', tradeDate: '2025-06-15' },
     ]),
     profile,
     config: TAX_YEAR_2025,
@@ -161,6 +176,7 @@ async function buildSamples() {
     gen('rok bez zdanitelných investičních příjmů (A3-01)', prazdny),
     gen('čistě tuzemský prodej — kod10 bez „Z“ (A3-05)', tuzemsky),
     gen('rok jen se ztrátovým prodejem (A3-13)', ztrata),
+    gen('ztrátový druh vedle ziskového — nulový rozdíl v tabulce (A3-13)', smisene),
   ];
 }
 

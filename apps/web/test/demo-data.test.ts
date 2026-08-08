@@ -100,13 +100,15 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
     expect(countries).toEqual(expect.arrayContaining(['US', 'DE', 'NL', 'JP']));
   });
 
-  it('portfolio: 50+ oceněných pozic v hodnotě 1,5–2,5 mil. Kč', () => {
+  it('portfolio: 50+ oceněných pozic v hodnotě 2,3–2,5 mil. Kč', () => {
     const open = positions.filter((p) => p.totalRemaining.gt(0));
     expect(open.length).toBeGreaterThanOrEqual(50);
 
     const valuation = valuePositions(positions, labels, instrumentNames(txs), prices, year);
     expect(valuation.unpricedCount).toBe(0);
-    expect(valuation.totalCzk.toNumber()).toBeGreaterThan(1_500_000);
+    // dolní mez drží tvrzení na landingu („50+ pozic za víc než 2,3 milionu Kč“) —
+    // do 7. 8. 2026 tam byl odhad „zhruba 2 miliony“, který nic nehlídalo (E-48)
+    expect(valuation.totalCzk.toNumber()).toBeGreaterThan(2_300_000);
     expect(valuation.totalCzk.toNumber()).toBeLessThan(2_500_000);
     // nerealizovaný P/L kladný i záporný
     expect(valuation.rows.some((row) => row.unrealized?.gt(0))).toBe(true);

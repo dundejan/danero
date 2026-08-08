@@ -119,7 +119,11 @@ type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity
   per instrument); jiná hodnota než premium/margin je chyba řádku
 - DIVIDEND: `amount` = **brutto**, `withholding_tax` v téže měně, `source_country`
   (jinak se odvodí z ISIN)
-- INTEREST/FEE/DEPOSIT/WITHDRAWAL: `amount` + `currency`
+- INTEREST: `amount` + `currency`; volitelně `source_country` (`CZ` = srážka
+  u zdroje, do § 8 nevstupuje) a `withholding_tax` v téže měně — daň sraženou
+  v zahraničí bez ní nelze započíst (R-07f; strop dle čl. 11 smlouvy, u většiny
+  států 0 %)
+- FEE/DEPOSIT/WITHDRAWAL: `amount` + `currency`
 - CORPORATE_ACTION: `subtype` (SPLIT — s `ratio_from`/`ratio_to`; ISIN_CHANGE /
   MERGER — s `new_isin`; SPINOFF; DELISTING)
 - TRANSFER_IN: `acquisition_date/price/currency` = PŮVODNÍ nabytí (bez nich
