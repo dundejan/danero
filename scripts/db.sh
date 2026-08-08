@@ -5,7 +5,8 @@
 #
 #   scripts/db.sh status    — počty tabulek, migrací a účtů
 #   scripts/db.sh migrate   — aplikuje čekající migrace
-#   scripts/db.sh backup    — logický dump do ./zalohy/ (gitignorováno)
+#   scripts/db.sh backup    — logický dump do ./zalohy/ (gitignorováno) + úklid starých
+#   scripts/db.sh prune     — jen úklid: smaže zálohy starší než retenční lhůta
 #
 # Běžné migrace při nasazení řeší GitHub Actions (.github/workflows/migrate.yml),
 # tenhle skript je pro ruční zásahy a zálohy.
@@ -15,29 +16,73 @@ set -euo pipefail
 ENV_FILE="${DANERO_PROD_ENV:-$HOME/.danero/produkce.env}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ ! -f "$ENV_FILE" ]; then
-  echo "Chybí $ENV_FILE — vytvoř ho s řádkem DATABASE_URL_DIRECT=postgres://…" >&2
-  echo "(přímý, NEpoolovaný řetězec z Neonu; chmod 600)" >&2
-  exit 1
-fi
+# Kam se ukládají dumpy. Přepínatelné kvůli testům a kvůli tomu, aby si Jan
+# mohl zálohy držet mimo repozitář (na šifrovaném disku).
+BACKUP_DIR="${DANERO_BACKUP_DIR:-$REPO/zalohy}"
 
-# jen vytažení hodnoty, žádné sourcování celého souboru — to by shell mohl
-# vypsat do výstupu (job control) a tajemství by skončilo v logu konverzace
-DATABASE_URL="$(grep -m1 '^DATABASE_URL_DIRECT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')"
-export DATABASE_URL
-if [ -z "$DATABASE_URL" ]; then
-  echo "V $ENV_FILE chybí řádek DATABASE_URL_DIRECT=…" >&2
-  exit 1
-fi
+# Jak dlouho se záloha smí uchovávat, ve dnech.
+#
+# 56 dní = 8 týdnů. Není to kosmetika: /soukromi slibuje uživateli, že smazaná
+# data zmizí i ze záloh, a doba uložení je povinný údaj podle čl. 13 odst. 2
+# písm. a) GDPR. Do 7. 8. 2026 za tím slibem nestál žádný mechanismus — skript
+# zálohu jen vytvořil a nikdy nic nemazal (nález E-32).
+BACKUP_RETENTION_DAYS="${DANERO_BACKUP_RETENTION_DAYS:-56}"
+
+# Smaže dumpy starší než retenční lhůta. Vypisuje, co zmizelo — mlčící úklid
+# u záloh je ta nejhorší varianta.
+#
+# `-mtime +N` bere celé 24hodinové úseky a zaokrouhluje dolů, takže „starší než
+# 56 dní" se zapisuje jako `+55`. S `+56` by se soubor mazal až 57. den a slib
+# „nejdéle 56 dní" by neplatil o den.
+prune_backups() {
+  if [ ! -d "$BACKUP_DIR" ]; then
+    echo "úklid: $BACKUP_DIR neexistuje, žádné zálohy k úklidu"
+    return 0
+  fi
+  local smazane
+  smazane="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'danero-*.dump' \
+    -mtime "+$((BACKUP_RETENTION_DAYS - 1))" -print -delete)"
+  if [ -n "$smazane" ]; then
+    echo "úklid: smazáno $(printf '%s\n' "$smazane" | wc -l) záloh starších než ${BACKUP_RETENTION_DAYS} dní:"
+    printf '%s\n' "$smazane" | sed 's/^/  /'
+  else
+    echo "úklid: žádná záloha není starší než ${BACKUP_RETENTION_DAYS} dní"
+  fi
+}
+
+# Připojovací řetězec načítáme až u příkazů, které databázi opravdu potřebují —
+# `prune` sahá jen na soubory a nesmí kvůli chybějícímu env souboru selhat.
+load_database_url() {
+  if [ ! -f "$ENV_FILE" ]; then
+    echo "Chybí $ENV_FILE — vytvoř ho s řádkem DATABASE_URL_DIRECT=postgres://…" >&2
+    echo "(přímý, NEpoolovaný řetězec z Neonu; chmod 600)" >&2
+    exit 1
+  fi
+
+  # jen vytažení hodnoty, žádné sourcování celého souboru — to by shell mohl
+  # vypsat do výstupu (job control) a tajemství by skončilo v logu konverzace
+  DATABASE_URL="$(grep -m1 '^DATABASE_URL_DIRECT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')"
+  export DATABASE_URL
+  if [ -z "$DATABASE_URL" ]; then
+    echo "V $ENV_FILE chybí řádek DATABASE_URL_DIRECT=…" >&2
+    exit 1
+  fi
+}
 
 case "${1:-status}" in
   status)
+    load_database_url
     cd "$REPO/apps/web" && node db/status.mjs
     ;;
   migrate)
+    load_database_url
     cd "$REPO/apps/web" && pnpm exec drizzle-kit migrate && node db/status.mjs
     ;;
+  prune)
+    prune_backups
+    ;;
   backup)
+    load_database_url
     # pg_dump odmítne server novější, než je sám. Neon jede na Postgresu 18,
     # distribuce běžně nabízí starší — místo instalace klienta si proto
     # odpovídající verzi půjčíme z obrazu postgres:<verze>. Když je lokální
@@ -49,8 +94,8 @@ case "${1:-status}" in
       exit 1
     fi
 
-    mkdir -p "$REPO/zalohy"
-    OUT="$REPO/zalohy/danero-$(date +%F).dump"
+    mkdir -p "$BACKUP_DIR"
+    OUT="$BACKUP_DIR/danero-$(date +%F).dump"
 
     if [ -n "$DUMP_VERSION" ] && [ "$DUMP_VERSION" -ge "$SERVER_VERSION" ]; then
       DUMP_CMD=(pg_dump "$DATABASE_URL" -Fc -f "$OUT")
@@ -72,7 +117,7 @@ case "${1:-status}" in
     if [ "${DUMP_CMD[0]}" = "docker" ]; then
       if ! "${DUMP_CMD[@]}" > "$OUT"; then
         rm -f "$OUT"
-        echo "Záloha se nepořídila, nic jsem nenechal v $REPO/zalohy." >&2
+        echo "Záloha se nepořídila, nic jsem nenechal v $BACKUP_DIR." >&2
         exit 1
       fi
     elif ! "${DUMP_CMD[@]}"; then
@@ -87,9 +132,14 @@ case "${1:-status}" in
     fi
     echo "záloha: $OUT ($(du -h "$OUT" | cut -f1))"
     echo "⚠️  uchovávej mimo tenhle stroj a ODDĚLENĚ od DANERO_ENCRYPTION_KEY"
+    # retence běží hned po úspěšné záloze: kdyby se čistilo předem, po každém
+    # neúspěšném dumpu by ubyla i poslední použitelná záloha
+    prune_backups
+    echo "⚠️  kopii uloženou jinam (S3, disk) smaž po ${BACKUP_RETENTION_DAYS} dnech taky —"
+    echo "    tenhle skript uklidí jen $BACKUP_DIR"
     ;;
   *)
-    echo "Použití: scripts/db.sh [status|migrate|backup]" >&2
+    echo "Použití: scripts/db.sh [status|migrate|backup|prune]" >&2
     exit 1
     ;;
 esac

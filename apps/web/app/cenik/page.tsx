@@ -5,12 +5,18 @@ import { IconCheck } from '@/components/marketing-icons';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
+import { SOURCE_URL } from '@/lib/legal';
+import {
+  PRICE_REPORT_CZK,
+  PRICE_SUBSCRIPTION_CZK,
+  priceLabel,
+  SUBSCRIPTION_PER_MONTH_CZK,
+} from '@/lib/pricing';
 import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 
 export const metadata: Metadata = {
   title: 'Ceník — Danero',
-  description:
-    'Nahrát výpisy a zjistit, jak na tom jsi, je v Daneru zdarma. Podklady k přiznání za jeden rok 490 Kč, celoroční hlídání s napojením na brokery 990 Kč ročně.',
+  description: `Nahrát výpisy a zjistit, jak na tom jsi, je v Daneru zdarma. Podklady k přiznání za jeden rok ${priceLabel(PRICE_REPORT_CZK)}, celoroční hlídání s napojením na brokery ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.`,
 };
 
 const FREE = [
@@ -51,7 +57,7 @@ const CENIK_FAQ = [
   },
   {
     q: 'Kdy se mi vyplatí jednorázové podklady a kdy roční hlídání?',
-    a: 'Podklady za 490 Kč, když víš, že letos přiznání podáváš, a víc od Danera nechceš. Hlídání za 990 Kč, když chceš mít klid celý rok — Danero pak samo sleduje limity a časové testy, ozve se e-mailem a podklady máš za všechny roky v ceně.',
+    a: `Podklady za ${priceLabel(PRICE_REPORT_CZK)}, když víš, že letos přiznání podáváš, a víc od Danera nechceš. Hlídání za ${priceLabel(PRICE_SUBSCRIPTION_CZK)}, když chceš mít klid celý rok — Danero pak samo sleduje limity a časové testy, ozve se e-mailem a podklady máš za všechny roky v ceně.`,
   },
   {
     q: 'Obnovuje se předplatné samo?',
@@ -113,7 +119,9 @@ export default function CenikPage() {
             <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
               Podklady za rok
             </p>
-            <p className="mt-3 font-display text-4xl font-bold tracking-tight">490 Kč</p>
+            <p className="mt-3 font-display text-4xl font-bold tracking-tight">
+              {priceLabel(PRICE_REPORT_CZK)}
+            </p>
             <p className="mt-2 text-sm text-inkoust-tlumeny">
               jednorázově za jeden daňový rok
             </p>
@@ -141,10 +149,12 @@ export default function CenikPage() {
               Celoroční hlídání
             </p>
             <p className="mt-3 font-display text-4xl font-bold tracking-tight">
-              990 Kč <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
+              {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
+              <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
             </p>
             <p className="mt-2 text-sm text-inkoust-tlumeny">
-              necelých 83 Kč měsíčně — méně než jedna chyba v přiznání
+              necelých {priceLabel(SUBSCRIPTION_PER_MONTH_CZK)} měsíčně — méně než jedna
+              chyba v přiznání
             </p>
             <ul className="mt-6 grid gap-3">
               {FULL.map((item) => (
@@ -168,7 +178,7 @@ export default function CenikPage() {
         <p className="mt-6 text-center text-sm text-inkoust-tlumeny">
           Ceny jsou konečné. Danero si můžeš{' '}
           <a
-            href="https://github.com/dundejan/danero"
+            href={SOURCE_URL}
             className="font-medium text-ruzova-text underline underline-offset-2"
             target="_blank"
             rel="noreferrer"

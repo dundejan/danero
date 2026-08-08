@@ -1,5 +1,5 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import type { TaxYearResult } from '@danero/engine';
+import type { EngineOptions, TaxYearResult } from '@danero/engine';
 
 /**
  * Generátor XML písemnosti DPFDP7 (přiznání k dani z příjmů fyzických osob)
@@ -140,6 +140,36 @@ const cleanRodneCislo = (value?: string): string | undefined =>
 const cleanPsc = (value?: string): string | undefined =>
   clean(clean(value)?.replace(/\s+/g, ''));
 
+/**
+ * Příjmy ze státu, u nichž se použije metoda prostého zápočtu — ř. 321 Přílohy 3
+ * (a ř. 411 Přílohy 4). § 38f odst. 3 jimi rozumí příjmy, které v zahraničí
+ * podléhají zdanění **v souladu s uzavřenou mezinárodní smlouvou**, ne všechno,
+ * co ze státu přiteklo:
+ *
+ * - **dividendy** ano — čl. 10 smluv zdanění ve státě zdroje dovoluje (proto má
+ *   engine tabulku smluvních stropů),
+ * - **úroky** jen tam, kde je smlouva u zdroje zdanit vůbec nechává (čl. 11,
+ *   R-07f): u US, DE, NL, IE i GB je strop 0 %, u JP 10 %. Úrok, ze kterého
+ *   broker srazil daň proti smlouvě, do koeficientu zápočtu nepatří — zvedl by
+ *   strop zápočtu i pro dividendy téhož státu, na který nárok není (přeplatek
+ *   se vrací ve státě zdroje, ne v českém přiznání).
+ *
+ * Engine do `interestGrossCzk` dává jen úroky, ze kterých se v zahraničí daň
+ * skutečně strhla (R-07f); nezdaněný úrok zůstává v § 8 na ř. 38, ale do
+ * zápočtu nevstupuje. Exportováno, aby report ukazoval po státech tatáž čísla
+ * jako XML (nález A3-12).
+ */
+export function prijmyZeStatuProZapocet(
+  country: string,
+  agg: { grossCzk: Money; interestGrossCzk: Money },
+  options: Pick<EngineOptions, 'treatyInterestWithholdingCap' | 'defaultInterestTreatyCap'>,
+): Money {
+  const stropUroku = d(
+    options.treatyInterestWithholdingCap[country] ?? options.defaultInterestTreatyCap,
+  );
+  return stropUroku.gt(0) ? agg.grossCzk.plus(agg.interestGrossCzk) : agg.grossCzk;
+}
+
 /** Daň podle § 16: 15 % do hranice, 23 % nad ní; vstupem základ zaokrouhlený na sta dolů. */
 const danPodle16 = (zdZaokrouhleny: Money, threshold: Money): Money =>
   zdZaokrouhleny.lte(threshold)
@@ -161,8 +191,33 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const varianta = input.varianta ?? result.tax.recommended;
   const threshold = d(PROGRESSIVE_THRESHOLD[year]!);
 
-  // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
-  const base8 = round0(result.dividends.base8Czk);
+  /**
+   * Rozdělení nezaokrouhlených dílčích základů do celých korun formuláře.
+   *
+   * Formulář nese jen celé koruny, jenže § 16 zaokrouhluje ZÁKLAD DANĚ jedinkrát —
+   * a to na celá sta **dolů**. Když se každý dílčí základ zaokrouhlí zvlášť
+   * matematicky, jejich úhrn může stovku přeskočit nahoru a daň se pak počítá
+   * ze základu, který § 16 zaokrouhluje pryč (report ukazoval 52 092 Kč, XML
+   * 52 107 Kč — nález A3-08; jiné zaokrouhlení základu než na sta dolů žádný
+   * předpis neukládá, § 146 odst. 1 daňového řádu zaokrouhluje až daň).
+   *
+   * Celé koruny proto přidělujeme průběžně: i-tá položka dostane tolik, aby
+   * součet prvních i položek byl celá koruna **dolů** z jejich nezaokrouhleného
+   * součtu. Úhrn na ř. 41 pak odpovídá celé koruně dolů z nezaokrouhleného
+   * základu a `roundBaseDownTo100` nad ním dá do haléře tentýž základ jako
+   * engine v reportu i v simulátoru.
+   */
+  const celeKorunyPodleUhrnu = (values: Money[]): Money[] => {
+    let exact = ZERO;
+    let allocated = ZERO;
+    return values.map((value) => {
+      exact = exact.plus(value);
+      const cil = exact.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
+      const part = cil.sub(allocated);
+      allocated = cil;
+      return part;
+    });
+  };
 
   // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
   // Druhy se posuzují samostatně (R-10c/R-12l, pokyn D-59 k § 10/4): výdaje
@@ -176,7 +231,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const jeTuzemsky = (isin: string): boolean => isin.toUpperCase().startsWith('CZ');
   const zahranicniZdroj = (isins: string[]): boolean =>
     isins.length === 0 || isins.some((isin) => !jeTuzemsky(isin));
-  const druhy10 = [
+  const zdroje10 = [
     {
       kod: 'D',
       popis: 'Prodej cenných papírů',
@@ -195,22 +250,47 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       zdroj: result.derivatives,
       isins: result.derivatives.items.map((i) => i.isin),
     }, // R-12n
-  ].map(({ kod, popis, zdroj, isins }) => {
-    const prij = round0(zdroj.taxableIncomeCzk);
-    const vyd = Decimal.min(round0(zdroj.expensesCzk), prij);
-    return { kod, popis, prij, vyd, zd: prij.sub(vyd), zahranicni: zahranicniZdroj(isins) };
+  ];
+  // Pořadí dílčích základů pro rozdělení celých korun: nejdřív druhy § 10
+  // (v pořadí řádků Přílohy 2), pak § 8 — ten nemá vlastní přílohu s vlastními
+  // součty, takže zbytek do celé koruny unese bez dalších dopadů.
+  const casti = celeKorunyPodleUhrnu([
+    ...zdroje10.map((z) => z.zdroj.base10Czk),
+    ...(varianta === 'GENERAL' ? [result.dividends.base8Czk] : []),
+  ]);
+  const druhy10 = zdroje10.map(({ kod, popis, zdroj, isins }, i) => {
+    const zd = casti[i]!;
+    // Výdaje druhu se uplatní nejvýš do výše jeho příjmů (§ 10 odst. 4) a do
+    // celých korun je zaokrouhlujeme DOLŮ — uplatněný výdaj nikdy nenadhodnotíme.
+    // Příjmy pak dopočteme, aby řádek seděl (P − V = rozdíl): podatelna kontroluje
+    // jak jednotlivé řádky, tak úhrny sloupců.
+    const vyd = Decimal.min(zdroj.expensesCzk, zdroj.taxableIncomeCzk).toDecimalPlaces(
+      0,
+      Decimal.ROUND_FLOOR,
+    );
+    return { kod, popis, prij: vyd.plus(zd), vyd, zd, zahranicni: zahranicniZdroj(isins) };
   });
   const prij10 = druhy10.reduce((sum, d) => sum.plus(d.prij), ZERO); // ř. 207
   const vyd10 = druhy10.reduce((sum, d) => sum.plus(d.vyd), ZERO); // ř. 208
   const zd10 = druhy10.reduce((sum, d) => sum.plus(d.zd), ZERO); // ř. 209
   const hasPriloha2 = prij10.gt(0);
 
+  // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
+  // V obecném základu je § 8 posledním dílem rozdělení výše. V samostatném
+  // základu § 16a jde do Přílohy 4 s vlastním zaokrouhlením na sta dolů
+  // (ř. 409) — i tam zaokrouhlujeme na celé koruny dolů, aby ř. 409 vyšel
+  // stejně jako `roundBaseDownTo100` v enginu.
+  const base8 =
+    varianta === 'GENERAL'
+      ? casti[casti.length - 1]!
+      : result.dividends.base8Czk.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
+
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
   const staty = Object.entries(result.dividends.creditableByCountry)
-    .map(([country, { grossCzk, creditableCzk }]) => ({
+    .map(([country, agg]) => ({
       country,
-      gross: round0(grossCzk),
-      creditable: creditableCzk,
+      gross: round0(prijmyZeStatuProZapocet(country, agg, result.options)),
+      creditable: agg.creditableCzk,
     }))
     .sort((a, b) => a.country.localeCompare(b.country));
 
@@ -389,7 +469,14 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
         kc_zd10p: kc(zd10),
         uhrn_prijmy10: kc(prij10),
         uhrn_vydaje10: kc(vyd10),
-        uhrn_rozdil10: kc(zd10),
+        // Úhrn 4. sloupce tabulky je součet KLADNÝCH rozdílů. Skončily-li
+        // všechny druhy nanejvýš na nule (rok jen se ztrátovým prodejem —
+        // výdaje jsou stropované příjmy druhu, § 10 odst. 4), není co sčítat
+        // a políčko zůstává prázdné: napsané „0" podatelna hlásí jako rozpor
+        // se součtem kladných hodnot sloupce (nález A3-13, ověřeno zkušební
+        // podatelnou). Řádky tabulky se ale vypisují dál — bez nich přestanou
+        // sedět úhrny 2. a 3. sloupce (ř. 207 a 208) a to je už věcná chyba.
+        uhrn_rozdil10: zd10.gt(0) ? kc(zd10) : undefined,
       }),
     );
     for (const druh of druhy10) {
@@ -432,7 +519,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       lines.push(
         veta('Vetad', {
           ident_udaje:
-            'Zahraniční plátci dividend dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč',
+            'Zahraniční plátci dividend a úroků dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč',
           k_stat_zdroj: row.country,
           zapl_dan: kc(row.r323),
           prijmy_seznam: kc(row.r321),

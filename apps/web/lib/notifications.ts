@@ -3,6 +3,7 @@ import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } 
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { operatorSignature } from '@/lib/contact';
 import { czDate, czk, plural, qty } from '@/lib/format';
 import {
   analyzeForUser,
@@ -393,7 +394,9 @@ export async function processUserNotifications(
               : prefs.emailFrequency === 'WEEKLY'
                 ? 'Danero: souhrn upozornění za týden'
                 : `Danero: ${toSend.length} ${plural(toSend.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`,
-          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\nJan Dunder, IČO 19642661, Žitomírská 640/3, 101 00 Praha 10`,
+          // patička jde z lib/contact.ts — identifikace i kontakt na jednom místě,
+          // ať se digest nerozejde s potvrzením objednávky (nález E-46)
+          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\n${operatorSignature().slice(1).join('\n')}`,
           // RFC 8058: jednoklikové odhlášení. `/api/odhlasit` na to je připravené —
           // GET jen ptá (mail scannery nic nezmění), stav mění až POST, přesně
           // jak to jednoklik vyžaduje.

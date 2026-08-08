@@ -73,7 +73,7 @@ export const UNIVERSAL_TEMPLATE_CSV = [
   'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5000,USD,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření, ne nominál',
   'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5150,USD,,,,,,,,,,,,,uzavření CFD',
   'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
-  'INTEREST,2026-06-01,,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti',
+  'INTEREST,2026-06-01,,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti (withholding_tax vyplň, jen když ti z něj v zahraničí srazili daň)',
   'FEE,2026-06-01,,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
   'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
   'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
@@ -209,8 +209,13 @@ export function parseUniversalCsv(text: string): ImportResult {
               id,
               amount: universalNumber(map.get(row, 'amount'), 'amount'),
               currency: map.get(row, 'currency'),
+              // R-07f: u úroku má smysl i sražená daň — bez ní zápočet propadá
               ...(type === 'INTEREST'
-                ? { sourceCountry: map.get(row, 'source_country') || undefined }
+                ? {
+                    sourceCountry: map.get(row, 'source_country') || undefined,
+                    withholdingTax:
+                      universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
+                  }
                 : {}),
               date,
             }),

@@ -68,6 +68,15 @@ export interface Flagged38v {
 }
 
 /**
+ * R-08f: počet měsíců v paušálním režimu, se kterým počítáme zálohy. Profil
+ * poplatníka ho nenese a z transakcí ho zjistit nejde — kdo do režimu vstoupil
+ * nebo z něj vystoupil během roku, zaplatil záloh míň a skutečný doplatek je
+ * vyšší (až o 1 100 Kč). Chyba jde jen jedním směrem, ale mlčet se o ní nesmí
+ * (nález A1-05) — varování `FLAT_TAX_BROKEN` předpoklad říká nahlas.
+ */
+const FLAT_TAX_ADVANCE_MONTHS = 12;
+
+/**
  * R-08f: vyčíslení dopadu prolomení limitu 50k. Daň z § 8 + § 10 proti
  * zaplaceným zálohám na daň; pojistné engine nepočítá (chybí základ § 7),
  * varování ho zmiňuje slovně.
@@ -77,6 +86,8 @@ export interface FlatTaxBreachImpact {
   taxCzk: Money;
   /** Zálohy na daň zaplacené v paušálním režimu — jen daňová složka paušální zálohy. */
   advancesCreditCzk: Money;
+  /** Počet měsíců, za který jsme zálohy započetli (vždy 12 — viz FLAT_TAX_ADVANCE_MONTHS). */
+  advanceMonths: number;
   /** Doplatek daně = daň − zálohy (min. 0). */
   additionalTaxCzk: Money;
   /** Celková měsíční paušální záloha 1. pásma (pro kontext v UI). */
@@ -179,10 +190,13 @@ export function computeLimits(
     flatTaxApplicable && flatStatus.exceeded
       ? (() => {
           const taxCzk = tax.general.taxCzk;
-          const advancesCreditCzk = advance ? d(advance.monthlyTaxCzk).mul(12) : ZERO;
+          const advancesCreditCzk = advance
+            ? d(advance.monthlyTaxCzk).mul(FLAT_TAX_ADVANCE_MONTHS)
+            : ZERO;
           return {
             taxCzk,
             advancesCreditCzk,
+            advanceMonths: FLAT_TAX_ADVANCE_MONTHS,
             additionalTaxCzk: Decimal.max(ZERO, taxCzk.sub(advancesCreditCzk)),
             monthlyAdvanceCzk: advance ? d(advance.monthlyTotalCzk) : null,
           };
@@ -190,7 +204,7 @@ export function computeLimits(
       : null;
   if (breachImpact) {
     const advancesPart = advance
-      ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}.`
+      ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}. Počítáme s ${FLAT_TAX_ADVANCE_MONTHS} měsíci v paušálním režimu — pokud jsi do něj vstoupil nebo z něj vystoupil během roku, zaplatil jsi záloh míň a doplatek bude vyšší o ${czkText(d(advance.monthlyTaxCzk))} za každý měsíc mimo režim.`
       : `Zálohy na daň za tento rok v konfiguraci nemáme, doplatek daně proto vyčíslujeme bez jejich započtení.`;
     warnings.add(
       'FLAT_TAX_BROKEN',
@@ -200,6 +214,7 @@ export function computeLimits(
         usedCzk: sideIncome.toFixed(2),
         taxCzk: breachImpact.taxCzk.toFixed(2),
         advancesCreditCzk: breachImpact.advancesCreditCzk.toFixed(2),
+        advanceMonths: breachImpact.advanceMonths,
         additionalTaxCzk: breachImpact.additionalTaxCzk.toFixed(2),
       },
     );

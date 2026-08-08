@@ -187,7 +187,30 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   | ostatní | default 15 % | neověřeno — engine přidá varování `TREATY_RATE_UNVERIFIED` (jednou per země); skutečná smluvní sazba může být nižší → riziko nadhodnoceného zápočtu |
 
   Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč **dolů** (nárokovanou částku konzervativně nenadhodnocujeme); souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
-- **R-07d § 16a**: volitelně samostatný základ daně 15 % pro zahraniční dividendy/úroky (ochrana před 23% progresí; Příloha 4). Engine spočítá obě varianty a doporučí výhodnější — ale **jen když obecný základ skutečně překračuje známou hranici progrese**. Bez známé hranice (`progressiveThreshold = null`) i pod hranicí se § 16a **nedoporučuje**: obě varianty pak počítají 15 % a rozdíl je jen zaokrouhlovací šum (základy se u variant zaokrouhlují na sta dolů odděleně, max ~15 Kč), zatímco § 16a znamená ztrátu slev na dani a nezdanitelných částí základu.
+- **R-07f Zápočet ze zahraničních ÚROKŮ**: úrok je stejný dílčí základ § 8 jako dividenda a § 38f zápočet po státech nerozlišuje — sražená daň z úroku se tedy započítává **stejným postupem jako u dividend** (strop smlouvou, zaokrouhlení po státech dolů, souhrn = součet zaokrouhlených). ⚠️ **Strop je ale jiný**: dividendy řeší čl. 10 SZDZ, úroky **čl. 11**, a ten ve smlouvách ČR skoro vždy dává právo zdanit úrok **jen státu rezidenta** — tj. strop **0 %**.
+
+  Ověřené smluvní stropy srážkové daně z úroků (čl. 11 SZDZ; smlouvy jsou v tomhle recipročně formulované — strop platí bez ohledu na směr platby):
+
+  | Stát | Strop | Zdroj (SZDZ) |
+  |------|-------|--------------|
+  | US | **0 %** | 32/1994 Sb. (úrok zdaňuje jen stát rezidenta) |
+  | DE | **0 %** | 18/1984 Sb. |
+  | NL | **0 %** | 138/1974 Sb. |
+  | IE | **0 %** | 163/1996 Sb. |
+  | GB | **0 %** | 89/1992 Sb. |
+  | JP | 10 % | 46/1979 Sb. |
+  | ostatní | default **0 %** | neověřeno — bezpečný default nikdy nenadhodnotí zápočet; engine přidá varování `INTEREST_WITHHOLDING_ABOVE_TREATY` s částkou a s tím, že se srážka žádá zpět ve státě zdroje |
+
+  Sazby ověřeny proti přehledu smluvních sazeb [PwC Worldwide Tax Summaries — Czech Republic, Withholding taxes](https://taxsummaries.pwc.com/czech-republic/corporate/withholding-taxes) (US/DE/NL/IE/GB 0 %, JP 0/10 % — u portfoliového investora platí obecných 10 %); jde o odborný přehled, ne o text smlouvy — před rozšířením tabulky ověř konkrétní čl. 11.
+
+  Důsledek: daň sraženou z úroku nad smluvní strop **nelze v ČR započíst** — žádá se zpět ve státě zdroje. Engine ji přesto eviduje (`withholdingTax` na transakci úroku, souhrn `foreignWithholdingCzk`), aby ji uživatel viděl a věděl, o co žádat; bez toho pole se informace ztrácela už v importu.
+
+  Do rozpisu po státech (podklad Přílohy 3, ř. 321) vstupuje úrok **jen se sraženou daní a jen ze státu, kde smlouva zdanění u zdroje vůbec dovoluje** (strop > 0 %). Úrok nezdaněný i úrok zdaněný proti smlouvě zůstává v dílčím základu § 8 (ř. 38), ale koeficient zápočtu podle § 38f odst. 2 (příjmy státu / základ daně) nezvedá — jinak by strop zápočtu vyrostl i dividendám téhož státu, na což nárok není. Obojí je konzervativní směr.
+- **R-07d § 16a**: volitelně samostatný základ daně 15 % pro zahraniční dividendy/úroky (ochrana před 23% progresí; Příloha 4). Engine spočítá obě varianty a doporučí výhodnější — ale **jen když obecný základ skutečně překračuje známou hranici progrese** a **úspora dosáhne meze významnosti 100 Kč**. Bez známé hranice (`progressiveThreshold = null`) i pod hranicí se § 16a **nedoporučuje**: obě varianty pak počítají 15 % a rozdíl je jen zaokrouhlovací šum, zatímco § 16a znamená ztrátu slev na dani a nezdanitelných částí základu.
+
+  **Mez významnosti (proč 100 Kč).** Šum má tvrdý strop: obecná varianta zaokrouhluje na sta dolů jediný základ (§ 16 odst. 2), varianta § 16a **dva** základy odděleně, takže § 16a může vyjít nanejvýš o 100 Kč základu levněji — při horní sazbě 23 % je to **max. 23 Kč** čistě zaokrouhlovacího rozdílu. Doložený případ (nález A1-04): základ 1 676 100 Kč, tedy 48 Kč nad hranicí 2025 → obecná daň 251 418,84 Kč, § 16a 251 400 Kč, rozdíl **18,84 Kč**, z toho 15 Kč zaokrouhlení a jen 3,84 Kč skutečné progrese. Mez 100 Kč šum bezpečně přesahuje (odpovídá ~1 250 Kč příjmu § 8 skutečně v pásmu 23 %) a zároveň zůstává tak nízko, aby nezakryla reálnou úsporu. Obě varianty jsou v UI vidět vždy — mez řídí jen doporučení, nic neschovává.
+
+  Práh **nemá smysl posouvat až za slevy na dani**: slevy ani nezdanitelné části engine nezná (závisí na § 7 a na osobní situaci mimo evidovaná data), takže by se porovnávalo s vymyšleným číslem. Uživatel s obecným základem nad 1,68 mil. Kč má navíc slevu na poplatníka spotřebovanou už příjmy § 7.
 - **R-07e** Prokazování: výpisy brokera FS v praxi akceptuje, není nárokové — dokumentační upozornění.
 
 ## R-08 Paušální daň (§ 2a, § 7a) — klíčová funkce Danero
@@ -212,6 +235,13 @@ Dvě oddělené roviny:
   k institutu paušální daně; u 2026 po zpětném snížení odvodů OSVČ od 1. 1. 2026,
   leden–červen se platilo 9 984 Kč a rozdíl je přeplatek). Předpokládá se
   **1. pásmo** — profil poplatníka pásmo nenese.
+
+  Stejně tak se předpokládá **12 měsíců v paušálním režimu** (12 × daňová složka
+  zálohy). Kdo do režimu vstoupil nebo z něj vystoupil během roku, zaplatil záloh
+  míň a **skutečný doplatek je vyšší** — až o 1 100 Kč (11 měsíců × 100 Kč).
+  Počet měsíců profil poplatníka nenese, engine ho neumí zjistit z transakcí,
+  a tak ten předpoklad **říká nahlas** ve varování `FLAT_TAX_BROKEN` (nález A1-05).
+  Chyba jde jen jedním směrem — doplatek je podhodnocený, nikdy nadhodnocený.
 
   **Pojistné engine nepočítá** (chybí základ § 7, který je mimo evidovaná data) —
   varování ho zmiňuje slovně: prolomením vzniká povinnost podat přehledy ČSSZ
@@ -480,7 +510,8 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | frakční akcie (bez přepínače) | vždy jako CP + vlajka `FRACTIONAL_SHARES` — derivátový výklad nemá definovaný výpočet, přepínač by nic nepřepínal | R-04j |
 | `matchingMethod` | `FIFO`; per rok se fixuje při generování podkladů | R-05c |
 | `fxMethod` | počítat obě, uživatel volí; per rok se fixuje při generování podkladů | R-06 |
-| `dividendsSeparateBase16a` | auto-doporučit | R-07d |
+| `dividendsSeparateBase16a` | auto-doporučit při úspoře ≥ 100 Kč | R-07d |
+| `treatyInterestWithholdingCap` / `defaultInterestTreatyCap` | ověřené státy dle tabulky, jinak `0` (bezpečný) | R-07f |
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 

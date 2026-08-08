@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
+import { TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
 
 export const metadata = {
   title: 'Ochrana soukromí — Danero',
@@ -58,10 +59,16 @@ export default function PrivacyPage() {
           Bezpečnostní záznamy
           a technické logy držíme z oprávněného zájmu na ochraně tvého účtu a provozu
           služby (čl. 6 odst. 1 písm. f). E-mail zadaný do čekací listiny používáme jen
-          na základě tvého souhlasu — pošleme ti jediné oznámení o otevření a adresu pak
-          smažeme. A pokud ti někdy budeme chtít poslat něco jiného než upozornění ze
-          služby, zeptáme se předem na souhlas (čl. 6 odst. 1 písm. a) — a půjde kdykoli
-          odvolat.
+          na základě tvého souhlasu — pošleme ti jediné oznámení o otevření služby a víc
+          nic; {/* E-35: „adresu pak smažeme" tady stálo dřív, ale žádný kód to nedělal.
+          Odvolání souhlasu je ruční krok a jako ruční se taky popisuje. */}
+          souhlas můžeš kdykoli odvolat — napiš na{' '}
+          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
+            dunder.jan@gmail.com
+          </a>{' '}
+          a adresu ze seznamu smažeme. A pokud ti někdy budeme chtít poslat něco jiného
+          než upozornění ze služby, zeptáme se předem na souhlas (čl. 6 odst. 1 písm. a)
+          — a půjde kdykoli odvolat.
         </p>
         <p>
           Poskytnout nám tyhle údaje ti neukládá žádný zákon — je to{' '}
@@ -85,9 +92,14 @@ export default function PrivacyPage() {
         <p>
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
           všechno odstraníme. Technický audit log (záznamy o přihlášeních a synchronizacích)
-          držíme 90 dní a starší se každý den automaticky mažou. Zálohy databáze se
-          přepisují průběžně, nejdéle po dvou měsících — smazaná data tedy zmizí i ze
-          záloh nejpozději do 60 dnů. Když se odhlásíš z e-mailových
+          držíme 90 dní a starší se každý den automaticky mažou.{' '}
+          {/* E-32: dřív tu stálo „nejdéle po dvou měsících“, ale zálohovací skript
+              nikdy nic nemazal. Retenci teď drží scripts/db.sh (56 dní) — text říká
+              přesně to, co ten mechanismus umí, ne víc. */}
+          <strong>Zálohy databáze uchováváme nejvýš 8 týdnů</strong> — při každé nové
+          záloze se ty starší než 56 dní automaticky mažou, takže smazaná data mizí
+          i ze záloh do dvou měsíců. Databázi navíc provozuje Neon, který drží krátkou
+          historii pro obnovu do bodu v čase (v řádu dnů). Když se odhlásíš z e-mailových
           upozornění, e-maily ti přestanou chodit okamžitě — nastavení si pamatujeme
           u tvého účtu, dokud ho nesmažeš.
         </p>
@@ -111,8 +123,14 @@ export default function PrivacyPage() {
           Provoz zajišťují: hosting aplikace (Vercel) a databáze (Neon) — obojí
           v regionu Frankfurt, odesílání e-mailů (Resend) a rozhraní tvého brokera
           (např. Trading 212) pro čtení historie — broker je vůči tobě samostatný
-          správce tvých dat, my z něj jen čteme. Se všemi dodavateli máme zpracovatelské
-          smlouvy. Vercel, Neon i Resend jsou americké společnosti — data drží v EU,
+          správce tvých dat, my z něj jen čteme.{' '}
+          {/* E-31: „se všemi dodavateli máme zpracovatelské smlouvy" bylo tvrzení
+              o podpisech, které z kódu nikdo neověří. Tohle znění mluví o tom, co
+              je pravda vždycky: podle čeho se dodavatel vybírá a čí podmínky platí. */}
+          Dodavatele vybíráme tak, aby zpracovatelskou smlouvu podle čl. 28 GDPR ke
+          svým službám měli — u Vercelu, Neonu, Resendu i Stripu je součástí podmínek,
+          za kterých jejich službu používáme. Vercel, Neon i Resend jsou americké
+          společnosti — data drží v EU,
           ale při provozu (podpora, logy) může dojít k omezenému předání do USA.
           Vercel a Resend jsou certifikované v rámci EU-U.S. Data Privacy Framework,
           který Evropská komise uznává jako odpovídající ochranu; kde certifikace
@@ -174,7 +192,7 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.2 · účinnost od 7. srpna 2026 · změny oznámíme e-mailem
+        Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

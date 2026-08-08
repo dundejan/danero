@@ -12,6 +12,7 @@ import {
   isSellableTaxYear,
 } from '@/lib/entitlements';
 import { errorText, logEvent } from '@/lib/log';
+import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK } from '@/lib/pricing';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { stripe } from '@/lib/stripe';
 
@@ -22,9 +23,8 @@ import { stripe } from '@/lib/stripe';
  * stav (C-3, viz `acceptsEvent`).
  */
 
-/** Cena za rok podkladů a za roční hlídání (docs/19 §1) — do potvrzovacího e-mailu. */
-const PRICE_REPORT_CZK = 490;
-const PRICE_SUBSCRIPTION_CZK = 990;
+// Ceny mají jediný zdroj pravdy (lib/pricing.ts) — dvě kopie by se dřív nebo
+// později rozešly a zákazník by viděl jinou cenu v ceníku a jinou v potvrzení.
 
 /** ID ze Stripe pole, které může přijít rozbalené jako objekt. */
 function idOf(value: string | { id: string } | null | undefined): string | null {

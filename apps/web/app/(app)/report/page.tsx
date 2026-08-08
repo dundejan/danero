@@ -13,6 +13,7 @@ import {
   pinTaxYear,
 } from '@/lib/portfolio';
 import { canGenerateReport } from '@/lib/entitlements';
+import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 
@@ -61,7 +62,7 @@ export default async function ReportPage({
               výpočtu, ať víš, která ti vychází líp.
             </>
           }
-          price={`490 Kč za rok ${year} — nebo 990 Kč ročně se všemi roky a hlídáním`}
+          price={`${priceLabel(PRICE_REPORT_CZK)} za rok ${year} — nebo ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně se všemi roky a hlídáním`}
         />
       </div>
     );

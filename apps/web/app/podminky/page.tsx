@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
+import { ADR, TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
 
 export const metadata = {
   title: 'Podmínky užití — Danero',
@@ -80,7 +81,13 @@ export default function TermsPage() {
           </Link>{' '}
           a případnou změnu ti oznámíme předem podle článku 10.
         </p>
-        <p>
+        {/*
+          § 2389i odst. 2 OZ: odchylku od zákonné jakosti digitálního obsahu lze
+          ujednat jen tehdy, když ji spotřebitel ZVLÁŠŤ potvrdil. Odstavec proto
+          nese vlastní kotvu — registrace a objednávka na něj musí umět odkázat
+          adresně, ne jen na celé podmínky (nález E-43).
+        */}
+        <p id="odchylky-od-jakosti">
           Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
           usilujeme o nepřetržitý provoz, ale krátké odstávky kvůli údržbě nebo výpadku
           dodavatele nastat můžou. Jednotný kurz pro právě probíhající rok je orientační,
@@ -198,24 +205,24 @@ export default function TermsPage() {
         <p>
           Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
           Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
-          inspekci, která řeší spotřebitelské spory mimosoudně: Česká obchodní inspekce,
-          Ústřední inspektorát — oddělení ADR, Gorazdova 24, 120 00 Praha 2,{' '}
+          inspekci, která řeší spotřebitelské spory mimosoudně: {ADR.authority},{' '}
+          {ADR.address},{' '}
           <a
-            href="https://coi.gov.cz"
+            href={`https://${ADR.web}`}
             className="font-medium text-ruzova-text"
             target="_blank"
             rel="noreferrer"
           >
-            coi.gov.cz
+            {ADR.web}
           </a>
           ; návrh jde podat online na{' '}
           <a
-            href="https://adr.coi.cz"
+            href={`https://${ADR.online}`}
             className="font-medium text-ruzova-text"
             target="_blank"
             rel="noreferrer"
           >
-            adr.coi.cz
+            {ADR.online}
           </a>
           .
         </p>
@@ -233,7 +240,7 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-inkoust-tlumeny">
-        Verze 2.2 · účinnost od 7. srpna 2026 · změny oznámíme e-mailem
+        Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
       </p>
 
       <p className="text-sm">

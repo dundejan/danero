@@ -12,6 +12,7 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { loadInstrumentPrices } from '@/lib/prices';
+import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -51,7 +52,7 @@ export default async function SimulatorPage({
               jestli se vyplatí počkat.
             </>
           }
-          price="Součást hlídání za 990 Kč ročně"
+          price={`Součást hlídání za ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně`}
         />
       </div>
     );

@@ -40,8 +40,8 @@ zdarma bez časového omezení. Ceny jsou konečné, provozovatel není plátcem
 
 - **Platformy:** Trading 212 a IBKR/Lynx živě přes API; parsery výpisů pro XTB,
   Degiro, Fio, eToro, Revolut, Kraken, Coinbase, Coinmate, Anycoin, Portu,
-  MT4/MT5, Schwab, Tastytrade, Saxo, Swissquote; české banky a fondy vedeným
-  importem přes univerzální šablonu.
+  MT4/MT5, RoboForex, Schwab, Tastytrade, Saxo, Swissquote; české banky a fondy
+  vedeným importem přes univerzální šablonu.
 - **Tři druhy příjmů podle § 10** bez vzájemné kompenzace — cenné papíry,
   kryptoaktiva, deriváty.
 - **Podklady k přiznání a XML (DPFDP7)** ověřené zkušební podatelnou EPO.

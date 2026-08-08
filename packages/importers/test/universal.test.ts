@@ -35,6 +35,26 @@ describe('univerzální CSV šablona', () => {
     expect(dividend.sourceCountry).toBe('US');
   });
 
+  it('R-07f: u úroku se přenese i sražená daň (bez ní zápočet propadne)', () => {
+    const csv = [
+      'type,date,currency,amount,withholding_tax,source_country',
+      'INTEREST,2025-06-01,USD,100.00,10.00,JP',
+      'INTEREST,2025-07-01,USD,50.00,,GB',
+    ].join('\n');
+    const result = parseUniversalCsv(csv);
+    expect(result.errors).toEqual([]);
+
+    const withTax = result.transactions[0]!;
+    if (withTax.type !== 'INTEREST') throw new Error('unreachable');
+    expect(withTax.withholdingTax.toString()).toBe('10');
+    expect(withTax.sourceCountry).toBe('JP');
+
+    // prázdný sloupec = nula, ne chyba (většina brokerů z úroků nesráží)
+    const without = result.transactions[1]!;
+    if (without.type !== 'INTEREST') throw new Error('unreachable');
+    expect(without.withholdingTax.toString()).toBe('0');
+  });
+
   it('neznámý typ a chybějící hlavička → srozumitelné chyby', () => {
     const badType = parseUniversalCsv('type,date,amount,currency\nSWAP,2025-01-01,5,CZK');
     expect(badType.errors[0]!.message).toContain('Neznámý typ "SWAP"');

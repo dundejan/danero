@@ -140,7 +140,10 @@ test('demo report: čísla k přiznání + teaser místo EPO exportu', async ({ 
   await expect(page.getByText('Dílčí základ § 8 (dividendy, úroky)')).toBeVisible();
   await expect(page.getByText(/Prodeje v roce \d{4}/)).toBeVisible();
   await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();
-  await expect(page.getByText('Dividendy podle států', { exact: false })).toBeVisible();
+  // Podstata, ne formulace: rozpad zahraničních příjmů po státech pro zápočet
+  // dle § 38f. Nadpis se změnil z „Dividendy" na „Příjmy", jakmile do tabulky
+  // přibyly i úroky — tvrzení zůstalo stejné, jen přesnější.
+  await expect(page.getByRole('heading', { name: /podle států/ })).toBeVisible();
 
   // EPO export je v demu nahrazený teaserem s CTA + odkazem na ukázkové XML
   await expect(page.getByText('Export pro mojedane.cz')).toBeVisible();

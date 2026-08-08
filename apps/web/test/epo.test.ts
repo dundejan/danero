@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
-import { parseTransactions } from '@danero/shared';
+import { parseTransactions, roundBaseDownTo100 } from '@danero/shared';
 import { analyzeTaxYear } from '@danero/engine';
 import { generateDpfdp7 } from '@/lib/epo';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
@@ -257,6 +257,76 @@ describe('generateDpfdp7: osobní údaje a chyby', () => {
       varianta: result.tax.recommended,
     });
     expect(xml).toBe(expected.xml);
+  });
+});
+
+describe('generateDpfdp7: základ daně sedí na engine (A3-08)', () => {
+  // Prodej CP se ziskem přesně 94 800 Kč + úrok 9,14 USD (= 199,6176 Kč).
+  // § 16 zaokrouhluje ZÁKLAD DANĚ jedinkrát a na celá sta dolů:
+  // 94 999,6176 → 94 900. Kdyby se každý dílčí základ zaokrouhlil zvlášť
+  // matematicky (200 + 94 800), vyjde základ 95 000 — o stovku vyšší, než
+  // § 16 dovoluje, a daň o 15 Kč vyšší, než ukazuje report ze stejných dat.
+  const urokTxs = parseTransactions([
+    { type: 'INTEREST', id: 'i9', amount: '9.14', currency: 'USD', date: '2025-08-01' },
+  ]);
+  const cpOnly = TXS.filter((tx) => tx.type === 'BUY' || tx.type === 'SELL');
+  const res = analyzeTaxYear(engineInputForUser([...cpOnly, ...urokTxs], PROFILE, 2025));
+  const { dp } = (() => {
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta: 'GENERAL' });
+    return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
+  })();
+  const nezaokrouhlenyZaklad = res.securities.base10Czk
+    .plus(res.crypto.base10Czk)
+    .plus(res.derivatives.base10Czk)
+    .plus(res.dividends.base8Czk);
+
+  it('dílčí základy se do celých Kč rozdělí tak, aby úhrn nepřeskočil stovku nahoru', () => {
+    expect(nezaokrouhlenyZaklad.toFixed(4)).toBe('94999.6176');
+    const vetaO = dp.VetaO as Attrs;
+    expect(vetaO.kc_zakldan8).toBe('199'); // ne 200: celé Kč dolů
+    expect(vetaO.kc_zd10).toBe('94800');
+    expect(vetaO.kc_uhrn).toBe('94999');
+  });
+
+  it('ř. 56 a ř. 57 dají tentýž základ i daň jako engine v reportu', () => {
+    const vetaS = dp.VetaS as Attrs;
+    expect(vetaS.kc_zdzaokr).toBe(roundBaseDownTo100(nezaokrouhlenyZaklad).toFixed(0));
+    expect(vetaS.kc_zdzaokr).toBe('94900'); // bez opravy 95 000
+    expect(vetaS.da_dan16).toBe(res.tax.general.taxBeforeCreditCzk.toDecimalPlaces(2).toString());
+    expect(vetaS.da_dan16).toBe('14235'); // bez opravy 14 250
+    // report ukazuje `tax.general.taxCzk`; bez zápočtu je to totéž číslo
+    expect((dp.VetaD as Attrs).da_celod13).toBe(res.tax.general.taxCzk.toFixed(0));
+  });
+});
+
+describe('generateDpfdp7: úroky zdaněné v zahraničí v Příloze 3 (A3-12)', () => {
+  // JP úrok 100 USD se srážkou 10 USD — čl. 11 smlouvy s Japonskem zdanění
+  // u zdroje do 10 % dovoluje, takže patří do ř. 321 (§ 38f odst. 3).
+  // US úrok 100 USD se srážkou 30 USD naopak ne: smlouva s USA nechává právo
+  // zdanit úrok jen státu rezidenta (strop 0 %), sražené se žádá zpět v USA.
+  const uroky = parseTransactions([
+    { type: 'INTEREST', id: 'i-jp', amount: '100', currency: 'USD', withholdingTax: '10', sourceCountry: 'JP', date: '2025-08-01' },
+    { type: 'INTEREST', id: 'i-us', amount: '100', currency: 'USD', withholdingTax: '30', sourceCountry: 'US', date: '2025-08-02' },
+  ]);
+  const res = analyzeTaxYear(engineInputForUser([...TXS, ...uroky], PROFILE, 2025));
+  const { dp } = (() => {
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta: 'GENERAL' });
+    return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
+  })();
+  const rows = Object.fromEntries(toArray(dp.VetaL).map((row) => [row.kod_statu!, row]));
+
+  it('úrok zdanitelný ve státě zdroje jde na ř. 321 a zápočet z něj projde', () => {
+    const jp = rows.JP!;
+    expect(jp.kc_prijzap).toBe('2184'); // 100 USD × 21,84 — bez opravy „0“
+    expect(jp.da_zahr).toBe('218'); // sraženo 10 USD, celé v mezích smlouvy
+    expect(jp.da_uznzap).toBe('218'); // bez opravy 0 = zápočet by celý propadl
+  });
+
+  it('úrok sražený proti smlouvě koeficient zápočtu nezvyšuje', () => {
+    // US: jen dividenda 1 000 USD; úrok 100 USD do ř. 321 nepatří, jinak by
+    // zvedl strop zápočtu i pro dividendu (§ 38f odst. 3)
+    expect(rows.US!.kc_prijzap).toBe('21840');
+    expect(rows.DE!.kc_prijzap).toBe('2466');
   });
 });
 

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
+import { SOURCE_URL } from '@/lib/legal';
 
 /**
  * Jednotný shell veřejných (marketingových) stránek: sticky hlavička s plnou
@@ -173,7 +174,7 @@ export function MarketingFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/dundejan/danero"
+                    href={SOURCE_URL}
                     className="font-medium hover:text-inkoust"
                     target="_blank"
                     rel="noreferrer"

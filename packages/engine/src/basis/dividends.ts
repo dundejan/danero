@@ -7,7 +7,7 @@ import {
   type Money,
 } from '@danero/shared';
 import type { EngineOptions } from '../config/options';
-import { czDateText, pctText } from '../format';
+import { czDateText, czkText, pctText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import { WarningCollector } from '../warnings';
 
@@ -28,6 +28,10 @@ export interface InterestItem {
   txId: string;
   date: string;
   amountCzk: Money;
+  /** R-07f: daň sražená v zahraničí (často 0 — brokeři z úroků obvykle nesráží). */
+  withholdingCzk: Money;
+  /** R-07f: z toho započitatelné po stropu dle čl. 11 smlouvy. */
+  creditableCzk: Money;
 }
 
 export interface DividendsResult {
@@ -36,24 +40,32 @@ export interface DividendsResult {
   /** Zahraniční dividendy brutto (R-07b) — vstupují i do limitu 50k (R-08d). */
   foreignGrossCzk: Money;
   /**
-   * Sražená daň v zahraničí = SOUČET per-country hodnot zaokrouhlených na celé
-   * Kč (HALF_UP) — souhrn tak vždy korunově sedí na tabulku po státech.
+   * Sražená daň v zahraničí z dividend I ÚROKŮ (R-07f) = SOUČET per-country
+   * hodnot zaokrouhlených na celé Kč (HALF_UP) — souhrn tak vždy korunově
+   * sedí na tabulku po státech.
    */
   foreignWithholdingCzk: Money;
   /**
-   * Zápočet po stropu smlouvou (R-07c) = součet per-country hodnot zaokrouhlených
-   * na celé Kč (tabulka po státech vždy sedí na součet); finální strop českou
-   * daní řeší estimateTax.
+   * Zápočet po stropu smlouvou (R-07c/R-07f) = součet per-country hodnot
+   * zaokrouhlených na celé Kč (tabulka po státech vždy sedí na součet);
+   * finální strop českou daní řeší estimateTax.
    */
   creditableWithholdingCzk: Money;
   /**
-   * Agregát po státech: brutto, sražená daň a zápočet. Sražená daň je
-   * zaokrouhlená na celé Kč matematicky (HALF_UP), zápočet na celé Kč
-   * dolů (konzervativně — R-07c).
+   * Agregát po státech pro Přílohu 3 (§ 38f počítá zápočet za každý stát
+   * zvlášť, přes všechny druhy příjmů dohromady): dividendy brutto, úroky
+   * brutto, sražená daň a zápočet za celý stát. Sražená daň je zaokrouhlená
+   * na celé Kč matematicky (HALF_UP), zápočet na celé Kč dolů (konzervativně
+   * — R-07c).
+   *
+   * `interestGrossCzk` = úroky, které do koeficientu zápočtu skutečně patří:
+   * jen se sraženou daní A jen ze států, kde smlouva zdanění u zdroje dovoluje
+   * (R-07f). Nezdaněný úrok i úrok zdaněný proti smlouvě zůstává v § 8
+   * (`taxableInterestCzk`), ale strop zápočtu nezvedá.
    */
   creditableByCountry: Record<
     string,
-    { grossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
+    { grossCzk: Money; interestGrossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
   >;
   /** Zahraniční úroky (§ 8) — zdanitelné, vstupují do limitu 50k. */
   taxableInterestCzk: Money;
@@ -88,8 +100,14 @@ export function computeDividends(
   let foreignGross = ZERO;
   const byCountry: Record<
     string,
-    { grossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
+    { grossCzk: Money; interestGrossCzk: Money; withholdingCzk: Money; creditableCzk: Money }
   > = {};
+  const emptyCountry = {
+    grossCzk: ZERO,
+    interestGrossCzk: ZERO,
+    withholdingCzk: ZERO,
+    creditableCzk: ZERO,
+  };
   const items: DividendItem[] = [];
   /** Země s už vydaným varováním o neověřené smluvní sazbě — varujeme jednou per země. */
   const unverifiedTreatyWarned = new Set<string>();
@@ -182,8 +200,9 @@ export function computeDividends(
     }
 
     foreignGross = foreignGross.plus(grossCzk);
-    const agg = byCountry[country] ?? { grossCzk: ZERO, withholdingCzk: ZERO, creditableCzk: ZERO };
+    const agg = byCountry[country] ?? emptyCountry;
     byCountry[country] = {
+      ...agg,
       grossCzk: agg.grossCzk.plus(grossCzk),
       withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
       creditableCzk: agg.creditableCzk.plus(creditableCzk),
@@ -200,11 +219,79 @@ export function computeDividends(
     });
   }
 
-  // R-07c: zápočet po státech zaokrouhlujeme na celé Kč DOLŮ (nárokovanou
+  let taxableInterest = ZERO;
+  const interestItems: InterestItem[] = [];
+  /** Propadlá srážka z úroků per země (viz varování za smyčkou). */
+  const forfeitedInterest = new Map<string, { cap: Money; overCzk: Money }>();
+  for (const tx of interests) {
+    if (tx.sourceCountry === 'CZ') {
+      warnings.add(
+        'CZ_INTEREST_WITHHELD',
+        'INFO',
+        `Úrok z ${czDateText(tx.date)} ze zdroje v ČR — předpoklad srážkové daně u zdroje, do základu § 8 nevstupuje.`,
+        { txId: tx.id },
+      );
+      continue;
+    }
+    const amountCzk = fx.toCzk(tx.amount, tx.currency, tx.date);
+    const withholdingCzk = fx.toCzk(tx.withholdingTax, tx.currency, tx.date);
+    taxableInterest = taxableInterest.plus(amountCzk);
+
+    // R-07f: zápočet z úroku jde stejným postupem jako u dividendy, ale strop
+    // je dle čl. 11 smlouvy — ten skoro vždy nechává právo zdanit úrok jen
+    // státu rezidenta (0 %), takže sražená daň se typicky žádá zpět v zahraničí.
+    // Úrok bez srážky do rozpisu po státech nepatří: nemá co započítat a řádek
+    // navíc by jen mátl (Příloha 3 se plní jen za státy se zápočtem).
+    if (withholdingCzk.lte(0)) {
+      interestItems.push({ txId: tx.id, date: tx.date, amountCzk, withholdingCzk, creditableCzk: ZERO });
+      continue;
+    }
+    const country = tx.sourceCountry ?? 'XX';
+    const cap = d(
+      options.treatyInterestWithholdingCap[country] ?? options.defaultInterestTreatyCap,
+    );
+    const creditableCzk = Decimal.min(withholdingCzk, amountCzk.mul(cap));
+    if (withholdingCzk.gt(creditableCzk)) {
+      // Varujeme jednou per země, ne per transakci: brokeři připisují úrok
+      // z hotovosti klidně denně a stovka řádků se stejnou hláškou by souhrn
+      // kontrol zavalila. Částky se proto sčítají a warning se vydá až za smyčkou.
+      const over = forfeitedInterest.get(country) ?? { cap, overCzk: ZERO };
+      forfeitedInterest.set(country, {
+        cap,
+        overCzk: over.overCzk.plus(withholdingCzk.sub(creditableCzk)),
+      });
+    }
+    const agg = byCountry[country] ?? emptyCountry;
+    byCountry[country] = {
+      ...agg,
+      // Do koeficientu § 38f (příjmy státu / základ daně) úrok vstupuje jen tam,
+      // kde smlouva zdanění u zdroje vůbec dovoluje. Jinak by zvedl strop
+      // zápočtu i DIVIDENDÁM téhož státu, na což nárok není — daň sraženou
+      // proti smlouvě vrací stát zdroje, ne české přiznání.
+      interestGrossCzk: cap.gt(0) ? agg.interestGrossCzk.plus(amountCzk) : agg.interestGrossCzk,
+      withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
+      creditableCzk: agg.creditableCzk.plus(creditableCzk),
+    };
+    interestItems.push({ txId: tx.id, date: tx.date, amountCzk, withholdingCzk, creditableCzk });
+  }
+
+  for (const [country, { cap, overCzk }] of forfeitedInterest) {
+    warnings.add(
+      'INTEREST_WITHHOLDING_ABOVE_TREATY',
+      'WARNING',
+      // Fakt, ne pokyn (docs/13 V-4): pojmenuj situaci a smluvní strop; „zažádej
+      // si o vrácení“ nad konkrétní částkou by byla individualizovaná rada.
+      `${country === 'XX' ? 'Úroky bez určené země zdroje' : `Úroky ze zdroje v zemi ${country}`}: v zahraničí z nich srazili ${czkText(overCzk)} daně, kterou v ČR započíst nejde. Úroky řeší jiný článek mezinárodní smlouvy než dividendy a ten obvykle nechává právo zdanit úrok jen státu, kde bydlíš — započíst lze nejvýš ${pctText(cap)} z úroku. Nadměrná srážka se vrací ve státě zdroje.`,
+      { country, overCzk: overCzk.toFixed(2) },
+    );
+  }
+
+  // R-07c/R-07f: zápočet po státech zaokrouhlujeme na celé Kč DOLŮ (nárokovanou
   // částku nikdy nenadhodnocujeme — konzervativně), sraženou daň matematicky
   // (HALF_UP) a OBA souhrny počítáme jako SOUČET zaokrouhlených hodnot —
   // tabulka po státech tak vždy korunově sedí na souhrn § 8 (žádný rozdíl
-  // ±1 Kč mezi řádky a hlavičkou).
+  // ±1 Kč mezi řádky a hlavičkou). Zaokrouhluje se až po přičtení úroků:
+  // § 38f počítá zápočet za stát jako celek, ne za každý druh příjmu zvlášť.
   let creditable = ZERO;
   let withholdingRounded = ZERO;
   for (const [country, agg] of Object.entries(byCountry)) {
@@ -217,23 +304,6 @@ export function computeDividends(
     };
     creditable = creditable.plus(roundedCreditable);
     withholdingRounded = withholdingRounded.plus(roundedWithholding);
-  }
-
-  let taxableInterest = ZERO;
-  const interestItems: InterestItem[] = [];
-  for (const tx of interests) {
-    if (tx.sourceCountry === 'CZ') {
-      warnings.add(
-        'CZ_INTEREST_WITHHELD',
-        'INFO',
-        `Úrok z ${czDateText(tx.date)} ze zdroje v ČR — předpoklad srážkové daně u zdroje, do základu § 8 nevstupuje.`,
-        { txId: tx.id },
-      );
-      continue;
-    }
-    const amountCzk = fx.toCzk(tx.amount, tx.currency, tx.date);
-    taxableInterest = taxableInterest.plus(amountCzk);
-    interestItems.push({ txId: tx.id, date: tx.date, amountCzk });
   }
 
   return {

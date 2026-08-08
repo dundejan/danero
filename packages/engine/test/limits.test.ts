@@ -143,6 +143,20 @@ describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
     expect(under.limits.flatTax50k.breachImpact).toBeNull();
   });
 
+  it('R-08f: předpoklad 12 měsíců v paušálním režimu musí zaznít (nález A1-05)', () => {
+    // Kdo do režimu vstoupil během roku, zaplatil záloh míň (až o 1 100 Kč)
+    // a doplatek je podhodnocený. Počet měsíců profil nenese — engine to
+    // neumí spočítat, ale nesmí ten předpoklad zamlčet.
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1150', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '2000', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    const warning = result.warnings.find((w) => w.code === 'FLAT_TAX_BROKEN')!;
+    expect(warning.context).toMatchObject({ advanceMonths: 12 });
+    expect(warning.message).toContain('12 měsíc');
+    expect(warning.message).toContain('doplatek bude vyšší');
+  });
+
   it('R-08f: pásma hlídače (60 % / 85 % / prolomeno) a ruční ostatní příjmy', () => {
     const zones = (gross: string, other?: string) =>
       run([dividend({ gross })], { profile: other ? { otherTaxableIncome8to10Czk: other } : {} })
