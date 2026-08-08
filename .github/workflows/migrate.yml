@@ -50,6 +50,10 @@ jobs:
         working-directory: apps/web
         run: node db/check-journal.mjs
 
+      # POZOR: tenhle krok běží PŘED migrací, takže db/status.mjs MUSÍ projít
+      # i nad čerstvou, ještě nezmigrovanou databází. Dokud padal na chybějící
+      # `drizzle.__drizzle_migrations`, workflow nad novou databází skončil
+      # dřív, než se k migraci dostal — bootstrap přes CI nešel vůbec (G-M1).
       - name: Stav před
         working-directory: apps/web
         env:

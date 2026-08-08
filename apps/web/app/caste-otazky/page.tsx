@@ -72,7 +72,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',
-    a: 'Finanční správa provozuje zkušební podatelnu EPO, kde si jde podání nanečisto zvalidovat: nic se nepodá, jen se vrátí seznam kontrol. Posíláme jí vzorová podání každého typu, který Danero umí vygenerovat, a děláme to pokaždé, když sáhneme na strukturu XML nebo když finanční správa vydá novou verzi formuláře. Kontroluje se struktura, vazby mezi řádky a formální správnost podání. Tvoje konkrétní XML tam neposíláme — jsou v něm tvoje osobní údaje, a podatelna je veřejná, takže si ho tam můžeš poslat sám. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
+    a: 'Finanční správa provozuje zkušební podatelnu EPO, kde si jde podání nanečisto zvalidovat: nic se nepodá, jen se vrátí seznam kontrol. Posíláme jí vzorová podání pokrývající struktury, které Danero umí vygenerovat — obě varianty výpočtu, rok bez zdanitelných příjmů, čistě tuzemský prodej i rok jen se ztrátou. Běží to automaticky při každé změně kódu, ne jen když si na to vzpomeneme. Kontroluje se struktura, vazby mezi řádky a formální správnost podání. Tvoje konkrétní XML tam neposíláme — jsou v něm tvoje osobní údaje, a podatelna je veřejná, takže si ho tam můžeš poslat sám. Věcnou správnost výpočtu hlídáme sami: každé pravidlo má odkaz na paragraf a testy a metodiku zveřejňujeme. Neznamená to, že finanční správa schválila naše výpočty — to žádný nástroj tvrdit nemůže.',
   },
   {
     q: 'Nahrazuje Danero daňového poradce?',

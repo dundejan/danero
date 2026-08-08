@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSyncStatus, type StoredReconciliation } from '@/lib/broker-sync';
+import { deriveSyncStatus, syncStatusLabel, type StoredReconciliation } from '@/lib/broker-sync';
 
 /**
  * Díra v historii není nesoulad pozic. Tvrdit „pozice nesedí" tam, kde sedí,
@@ -36,6 +36,24 @@ describe('stav synchronizace účtu', () => {
       }),
     );
     expect(stav).toBe('incomplete');
+  });
+
+  // B4-4: bez sekce Open Positions se neporovnávalo nic. Prázdné `issues`
+  // vypadají stejně jako shoda, takže by stav tvrdil „pozice sedí“ o kontrole,
+  // která vůbec neproběhla.
+  it('broker pozice neposlal → neporovnáno, ne „pozice sedí“', () => {
+    const stav = deriveSyncStatus(
+      0,
+      reconciliation({
+        ok: false,
+        matchedCount: 0,
+        positionsUnavailable: true,
+        warning: 'Výpis neobsahuje sekci Open Positions…',
+      }),
+    );
+    expect(stav).toBe('unverified');
+    expect(syncStatusLabel(stav)).not.toContain('pozice sedí');
+    expect(syncStatusLabel(stav)).toBe('data stažena, pozice jsme neporovnali');
   });
 
   it('pozice opravdu nesedí → nesoulad', () => {

@@ -6,9 +6,18 @@ export const IBKR_MOCK_CREDENTIALS = JSON.stringify({
   queryId: '654321',
 });
 
-export function makeIbkrMockFetch(options: { failToken?: boolean } = {}) {
+export function makeIbkrMockFetch(
+  options: {
+    failToken?: boolean;
+    /** Flex Query bez sekce Open Positions — není s čím porovnávat (B4-4). */
+    withoutOpenPositions?: boolean;
+  } = {},
+) {
   const urls: string[] = [];
   let statementCalls = 0;
+  const xml = options.withoutOpenPositions
+    ? IBKR_FLEX_XML.replace(/ {6}<OpenPositions>[\s\S]*?<\/OpenPositions>\n/, '')
+    : IBKR_FLEX_XML;
 
   const fetchImpl: typeof fetch = (async (input: string | URL | Request) => {
     const url = String(input);
@@ -23,7 +32,7 @@ export function makeIbkrMockFetch(options: { failToken?: boolean } = {}) {
     }
     // první GetStatement „generuje se“, pak hotový výpis
     statementCalls += 1;
-    return new Response(statementCalls === 1 ? FLEX_IN_PROGRESS : IBKR_FLEX_XML, { status: 200 });
+    return new Response(statementCalls === 1 ? FLEX_IN_PROGRESS : xml, { status: 200 });
   }) as typeof fetch;
 
   return { fetchImpl, urls };

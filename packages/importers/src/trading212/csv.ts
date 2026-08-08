@@ -437,3 +437,23 @@ function collectFees(
 
 /** Deduplikační klíče pro výsledek importu (viz dedupe.ts). */
 export const trading212DedupeKey = (tx: Transaction): string => dedupeKey(TRADING212_BROKER, tx);
+
+/**
+ * Poznávací znamení přenosu přerušeného hned za hlavičkou: přišel neprázdný
+ * soubor, ale ani jeden datový řádek. Prázdné období posílá T212 jako ÚPLNĚ
+ * prázdný soubor (ověřeno provozem), takže tohle prázdný rok NENÍ — a kdyby
+ * se za něj vydával, ukončil by předčasně stahování plné historie a chybějící
+ * roky by se už nikdy nedotáhly. Kontrola nestojí na hlavičce Content-Length:
+ * tu server poslat nemusí (chunked přenos) a u komprimované odpovědi neplatí
+ * pro rozbalený text.
+ *
+ * Schválně se nedívá na názvy sloupců: řez může padnout i doprostřed hlavičky
+ * a takový soubor by pak prošel jako „cizí formát“ = chybný import, po kterém
+ * se rok považuje za stažený. Řez uprostřed dat (hlavička + část řádků) takhle
+ * poznat nejde — na ten je Content-Length jediná obrana.
+ */
+export function isTruncatedTrading212Export(text: string): boolean {
+  if (text.trim() === '') return false;
+  const { rows } = parseCsv(text);
+  return rows.every((row) => row.every((cell) => cell.trim() === ''));
+}

@@ -67,6 +67,15 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # Vygenerovaná XML posíláme na OFICIÁLNÍ testovací podatelnu finanční
+      # správy. Tři vady z auditu (odmítnutý rok bez zdanitelných příjmů, český
+      # prodej hlášený jako zahraniční zdroj, řídicí znak v jméně) unit testy
+      # chytit nemohly — XML bylo „hezké“, jen ho podatelna nepřijala.
+      # `continue-on-error`: závisí to na cizí službě a na síti, takže výpadek
+      # ADIS nesmí shodit build. Výsledek je vidět v logu i v souhrnu běhu.
+      - name: Kontrola EPO XML proti testovací podatelně (nepovinné)
+        continue-on-error: true
+        run: pnpm validate:epo
 
   e2e:
     runs-on: ubuntu-latest

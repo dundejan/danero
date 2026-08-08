@@ -45,6 +45,10 @@ export const GET = withCron('sync-brokers', async (_request: Request): Promise<R
     accounts: accounts.length,
     withoutSubscription: allAccounts.length - accounts.length,
     recovered,
+    // konvence pro withCron: > 0 zvedne úroveň logu běhu na error — jinak by
+    // den, kdy se nesynchronizoval ani jeden účet, vypadal v logu stejně jako
+    // úspěšný (detail už zalogoval processJob jako `job.finished`)
+    failed: results.filter((result) => result.status === 'error').length + skipped.length,
     results,
     skipped,
   });

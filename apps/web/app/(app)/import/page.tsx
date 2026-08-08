@@ -7,6 +7,7 @@ import { getDb } from '@/db';
 import { PlatformCatalog } from '@/components/platform-catalog';
 import { brokerAccounts, importBatches } from '@/db/schema';
 import {
+  historyScopeText,
   syncStatusLabel,
   type BrokerAccountRow,
   type StoredReconciliation,
@@ -83,6 +84,9 @@ function ConnectedBroker({
 }) {
   const reconciliation = (account.lastReconciliation ?? null) as StoredReconciliation | null;
   const copy = BROKER_COPY[account.broker] ?? DEFAULT_COPY;
+  // Odkud data vlastně jsou. Patří i pod zelené „pozice sedí“: zavřenou pozici
+  // z roku, na který jsme se brokera nezeptali, kontrola pozic neodhalí (B4-3).
+  const historyScope = reconciliation?.coverage ? historyScopeText(reconciliation.coverage) : null;
 
   if (activeJob) {
     return <SyncJobProgress initialJob={activeJob} accountId={account.id} broker={account.label} />;
@@ -166,6 +170,7 @@ function ConnectedBroker({
               </p>
             </>
           )}
+          {historyScope && <p className="text-xs text-inkoust-tlumeny">{historyScope}</p>}
         </div>
       )}
       <div className="border-t border-linka pt-3">

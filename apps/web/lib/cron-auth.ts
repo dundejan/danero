@@ -41,6 +41,12 @@ async function countsFrom(response: Response): Promise<Record<string, number>> {
  * G-6: loguje se i konec běhu (s trváním a počty zpracovaných položek) a
  * selhání. Bez toho z monitoringu nejde poznat cron, který tiše nic neudělal —
  * tělo odpovědi Vercel Cron neuchovává.
+ *
+ * G-O1: **klíč `failed` v těle je konvence** — počet položek, které v tomhle
+ * běhu selhaly. Cron vrací 200 (zbytek fronty se zpracovat má a Vercel běh
+ * neopakuje), ale do logu jde `error`. Bez toho by celodenní výpadek Resendu
+ * skončil jako tři chyby schované v těle odpovědi, kterou nikdo neuvidí,
+ * a v monitoringu by nebyl jediný error log.
  */
 export function withCron(
   name: string,
@@ -56,11 +62,12 @@ export function withCron(
     logEvent('info', `cron.${name}.run`);
     try {
       const response = await handler(request);
-      const level = response.ok ? 'info' : 'error';
+      const counts = await countsFrom(response);
+      const level = response.ok && (counts.failed ?? 0) === 0 ? 'info' : 'error';
       logEvent(level, `cron.${name}.finished`, {
         durationMs: Date.now() - startedAt,
         status: response.status,
-        ...(await countsFrom(response)),
+        ...counts,
       });
       return response;
     } catch (error) {

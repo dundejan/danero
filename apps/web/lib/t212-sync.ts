@@ -1,4 +1,5 @@
 import {
+  isTruncatedTrading212Export,
   mapPositionsToIsin,
   Trading212ApiError,
   Trading212Client,
@@ -62,6 +63,16 @@ export interface SyncOptions {
 
 /** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
 const T212_MIN_YEAR = 2016;
+
+/**
+ * Nejstarší rok, na který jsme se u T212 ptali (napříč běhy). `null` = došli
+ * jsme až na začátek nabídky brokera, takže starší historie existovat nemůže.
+ */
+function oldestCheckedYear(verifiedYears: number[]): number | null {
+  if (verifiedYears.length === 0) return null;
+  const oldest = Math.min(...verifiedYears);
+  return oldest <= T212_MIN_YEAR ? null : oldest;
+}
 
 /** Uložené přihlašovací údaje: nový formát JSON {keyId, secret}, starší = samotný klíč. */
 interface StoredCredentials {
@@ -258,6 +269,17 @@ export async function syncTrading212(
         `Trading212 vrátil pro rok ${year} neočekávanou odpověď místo CSV exportu — zkus synchronizaci za chvíli znovu.`,
       );
     }
+    // Export se sloupci, ale bez jediného řádku = přenos utnutý za hlavičkou.
+    // Prázdný rok posílá T212 jako úplně prázdný soubor, takže tenhle rok bez
+    // obchodů NENÍ — kdyby se za něj vydával, počítal by se do dvou prázdných
+    // let v řadě, ukončil by stahování starších roků a sync by se uzavřel jako
+    // v pořádku. Kontrola v downloadCsv na to nestačí: stojí na hlavičce
+    // Content-Length, kterou server poslat nemusí.
+    if (isTruncatedTrading212Export(rawExport)) {
+      throw new Error(
+        `Export za rok ${year} dorazil bez jediného datového řádku — přenos se zřejmě přerušil hned za hlavičkou (rok bez obchodů posílá Trading212 jako úplně prázdný soubor). Spusť synchronizaci znovu; co už se stáhlo, zůstává a nic se nezdvojí.`,
+      );
+    }
     const parsed = detectAndParse(rawExport);
     yearsCovered.push(year);
     parsedTransactions += parsed.transactions.length;
@@ -314,16 +336,23 @@ export async function syncTrading212(
       mapped.positions.map((p) => ({ isin: p.isin, price: p.currentPrice ?? 0, currency: p.currency })),
       now,
     );
+    // roky ověřené dřívějšími běhy + tímhle během (inkrementál stahuje jen
+    // běžný rok, ale co plný sync ověřil, platí dál)
+    const verifiedYears = [...previouslyVerifiedYears(account), ...yearsCovered];
     reconciliation = await reconcileBrokerPositions(
       db,
       account.userId,
       account.broker,
       mapped.positions.map((p) => ({ isin: p.isin, quantity: p.quantity })),
       now.toISOString().slice(0, 10),
-      mapped.unmatchedTickers,
-      // roky ověřené dřívějšími běhy + tímhle během (inkrementál stahuje jen
-      // běžný rok, ale co plný sync ověřil, platí dál)
-      [...previouslyVerifiedYears(account), ...yearsCovered],
+      {
+        unmatchedTickers: mapped.unmatchedTickers,
+        syncedYears: verifiedYears,
+        // Kam až jsme se u brokera podívali. Smyčka končí po dvou prázdných
+        // letech, takže pod tou hranicí může být celý neobjevený rok obchodů
+        // (B4-3). Na T212_MIN_YEAR už žádná starší historie neexistuje.
+        checkedFromYear: oldestCheckedYear(verifiedYears),
+      },
     );
   } catch (error) {
     // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí

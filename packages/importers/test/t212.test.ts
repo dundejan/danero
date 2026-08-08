@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeKey, dedupeTransactions, parseTrading212Csv, TRADING212_BROKER } from '../src';
+import {
+  dedupeKey,
+  dedupeTransactions,
+  isTruncatedTrading212Export,
+  parseTrading212Csv,
+  TRADING212_BROKER,
+} from '../src';
 import { T212_FIXTURE as FIXTURE, T212_HEADER as HEADER } from './fixtures/t212';
 
 describe('Trading212 CSV parser', () => {
@@ -60,6 +66,33 @@ describe('Trading212 CSV parser', () => {
     const whitespace = parseTrading212Csv('\n\n');
     expect(whitespace.errors).toEqual([]);
     expect(whitespace.transactions).toEqual([]);
+  });
+
+  // B4-1: prázdné období posílá T212 jako ÚPLNĚ prázdný soubor. Hlavička bez
+  // jediného řádku je tedy useknutý přenos — parser na něm chybu nenajde, takže
+  // by se rok tvářil jako „bez obchodů“ a stahování starších roků by skončilo.
+  it('hlavička bez datových řádků = useknutý přenos, ne prázdné období', () => {
+    expect(isTruncatedTrading212Export(HEADER)).toBe(true);
+    expect(isTruncatedTrading212Export(`${HEADER}\n`)).toBe(true);
+    // řez uprostřed hlavičky vypadá stejně — pořád to není prázdný rok
+    expect(isTruncatedTrading212Export('Action,Time,ISIN,Tick')).toBe(true);
+    // ani řez tak brzký, že se z názvů sloupců nedá nic poznat: bez tohohle by
+    // takový soubor propadl jako „cizí formát“ a rok by platil za stažený
+    expect(isTruncatedTrading212Export('Act')).toBe(true);
+  });
+
+  it('úplně prázdný soubor a soubor s daty se za useknutý přenos nepovažují', () => {
+    expect(isTruncatedTrading212Export('')).toBe(false);
+    expect(isTruncatedTrading212Export('\n\n')).toBe(false);
+    expect(isTruncatedTrading212Export(FIXTURE)).toBe(false);
+    // rok, ve kterém byly jen přeskočené řádky (platba kartou), transakce
+    // nevydá — přesto je to kompletní export a useknutý přenos to není
+    const onlySkipped = [
+      HEADER,
+      'Card debit,2025-02-03 10:00:00,,,,,,,,,,-250.00,CZK,,,,,,',
+    ].join('\n');
+    expect(parseTrading212Csv(onlySkipped).transactions).toEqual([]);
+    expect(isTruncatedTrading212Export(onlySkipped)).toBe(false);
   });
 
   it('neznámá Action → error řádek; soubor bez T212 hlaviček → error', () => {

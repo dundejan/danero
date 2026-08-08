@@ -26,48 +26,63 @@ export const user = pgTable('user', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const twoFactor = pgTable('two_factor', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  secret: text('secret').notNull(),
-  backupCodes: text('backup_codes').notNull(),
-  verified: boolean('verified').notNull().default(false),
-  failedVerificationCount: integer('failed_verification_count').notNull().default(0),
-  lockedUntil: timestamp('locked_until'),
-});
+export const twoFactor = pgTable(
+  'two_factor',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    verified: boolean('verified').notNull().default(false),
+    failedVerificationCount: integer('failed_verification_count').notNull().default(0),
+    lockedUntil: timestamp('locked_until'),
+  },
+  (t) => [index('two_factor_user_idx').on(t.userId)],
+);
 
-export const session = pgTable('session', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  token: text('token').notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
-  ipAddress: text('ip_address'),
-  userAgent: text('user_agent'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+// Postgres na cizí klíč index NEDĚLÁ sám — bez něj jde každé čtení relací
+// uživatele (/bezpecnost) i kaskádové smazání účtu přes seq scan celé tabulky
+// (audit G-R3). Totéž platí pro account, two_factor a broker_accounts níž.
+export const session = pgTable(
+  'session',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    expiresAt: timestamp('expires_at').notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('session_user_idx').on(t.userId)],
+);
 
-export const account = pgTable('account', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope: text('scope'),
-  password: text('password'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const account = pgTable(
+  'account',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at'),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('account_user_idx').on(t.userId)],
+);
 
 export const verification = pgTable('verification', {
   id: text('id').primaryKey(),
@@ -144,7 +159,12 @@ export const auditLog = pgTable(
     detail: text('detail'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => [index('audit_log_user_created_idx').on(t.userId, t.createdAt)],
+  (t) => [
+    index('audit_log_user_created_idx').on(t.userId, t.createdAt),
+    // denní pruneAuditLog filtruje JEN podle created_at — složený index
+    // s userId na začátku mu je k ničemu a úklid jel seq scanem (G-R3)
+    index('audit_log_created_idx').on(t.createdAt),
+  ],
 );
 
 /**
@@ -195,26 +215,30 @@ export const notificationPrefs = pgTable('notification_prefs', {
 });
 
 /** Napojený broker účet — API klíč šifrovaný AES-256-GCM (lib/crypto.ts), nikdy plaintext. */
-export const brokerAccounts = pgTable('broker_accounts', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  broker: text('broker').notNull(), // 'trading212'
-  label: text('label').notNull().default('Trading 212'),
-  credentialsEncrypted: text('credentials_encrypted').notNull(),
-  lastSyncedAt: timestamp('last_synced_at'),
-  lastSyncStatus: text('last_sync_status'),
-  /**
-   * Chyba posledního (ne)doběhnutého syncu — ukládá se VEDLE rekonciliace,
-   * aby selhání běhu nepřepsalo poslední platný výsledek rekonciliace pozic.
-   * Úspěšný sync ji nuluje.
-   */
-  lastSyncError: text('last_sync_error'),
-  /** Výsledek poslední rekonciliace pozic (serializovaný ReconciliationReport). */
-  lastReconciliation: jsonb('last_reconciliation'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const brokerAccounts = pgTable(
+  'broker_accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    broker: text('broker').notNull(), // 'trading212'
+    label: text('label').notNull().default('Trading 212'),
+    credentialsEncrypted: text('credentials_encrypted').notNull(),
+    lastSyncedAt: timestamp('last_synced_at'),
+    lastSyncStatus: text('last_sync_status'),
+    /**
+     * Chyba posledního (ne)doběhnutého syncu — ukládá se VEDLE rekonciliace,
+     * aby selhání běhu nepřepsalo poslední platný výsledek rekonciliace pozic.
+     * Úspěšný sync ji nuluje.
+     */
+    lastSyncError: text('last_sync_error'),
+    /** Výsledek poslední rekonciliace pozic (serializovaný ReconciliationReport). */
+    lastReconciliation: jsonb('last_reconciliation'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('broker_accounts_user_idx').on(t.userId)],
+);
 
 export const importBatches = pgTable('import_batches', {
   id: text('id').primaryKey(),
@@ -300,7 +324,14 @@ export const fxRates = pgTable(
     /** Den vyhlášení (ISO). ČNB vyhlašuje jen pracovní dny. */
     day: text('day').notNull(),
     currency: text('currency').notNull(),
-    rate: numeric('rate', { precision: 18, scale: 6 }).notNull(),
+    /**
+     * ČNB kotuje na 3 desetinná místa a dělíme množstvím z hlavičky — u kotace
+     * za 1000 (IDR) tak vzniká přesně 6 desetinných míst. Původní
+     * `numeric(18, 6)` na to stačilo přesně na doraz, bez jediné rezervy:
+     * čtvrté desetinné místo od ČNB nebo nová měna kotovaná za 1000 by se tiše
+     * zaokrouhlily (audit G-R5) a s nimi každý přepočet, který kurz použije.
+     */
+    rate: numeric('rate', { precision: 18, scale: 10 }).notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.day, t.currency] })],

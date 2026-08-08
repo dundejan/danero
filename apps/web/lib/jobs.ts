@@ -1,5 +1,6 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
+import { deleteInBatches } from '@/lib/retention';
 import { ts } from '@/lib/sql';
 import { brokerAccounts, jobs } from '@/db/schema';
 import type { SyncJobView } from '@/components/sync-job-progress';
@@ -511,26 +512,32 @@ const JOB_RETENTION_DAYS = 90;
  * neúspěšného plného syncu nese stav per rok a slouží jako resume pro T212
  * (známá zrada z CLAUDE.md). Smazat ho by znamenalo stahovat historii od nuly —
  * nebo, hůř, považovat nedotažené roky za hotové.
+ *
+ * Výběr i mazání běží celé v SQL a po dávkách. Původní verze si natáhla všechna
+ * id do paměti a poslala je do jednoho `IN (…)`: nad 65 534 parametry dotaz
+ * spadl, nesmazal nic, backlog nikdy neklesl a denní údržba tím byla rozbitá
+ * natrvalo (audit G-R2).
  */
 export async function pruneJobs(db: Db, now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-  const all = await db
-    .select({ id: jobs.id, dedupeKey: jobs.dedupeKey, createdAt: jobs.createdAt })
+  const newestPerKey = db
+    .selectDistinctOn([jobs.dedupeKey], { id: jobs.id })
     .from(jobs)
-    .orderBy(desc(jobs.createdAt));
-  const newestPerKey = new Set<string>();
-  const removable: string[] = [];
-  for (const job of all) {
-    if (!newestPerKey.has(job.dedupeKey)) {
-      newestPerKey.add(job.dedupeKey);
-      continue;
-    }
-    if (job.createdAt < cutoff) removable.push(job.id);
-  }
-  if (removable.length === 0) return 0;
-  const deleted = await db
-    .delete(jobs)
-    .where(inArray(jobs.id, removable))
-    .returning({ id: jobs.id });
-  return deleted.length;
+    .orderBy(jobs.dedupeKey, desc(jobs.createdAt));
+
+  return deleteInBatches((limit) =>
+    db
+      .delete(jobs)
+      .where(
+        inArray(
+          jobs.id,
+          db
+            .select({ id: jobs.id })
+            .from(jobs)
+            .where(and(lt(jobs.createdAt, cutoff), notInArray(jobs.id, newestPerKey)))
+            .limit(limit),
+        ),
+      )
+      .returning({ id: jobs.id }),
+  );
 }

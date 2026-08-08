@@ -25,6 +25,25 @@ import {
 } from '@/lib/portfolio';
 import { cn } from '@/lib/utils';
 
+/** Kolik prodejů se vejde na jednu stranu reportu. */
+export const PRODEJU_NA_STRANU = 200;
+
+/**
+ * Stránkování tabulky prodejů. Vytaženo jako čistá funkce, aby šlo otestovat
+ * bez renderu — na tom totiž záleží: rozpad na jednotlivé nákupy je součást
+ * placeného tarifu, takže se řádky smí rozdělit, ale nikdy ztratit.
+ * Strana mimo rozsah se ořízne, ne aby vyšla prázdná tabulka.
+ */
+export function strankaProdeju(
+  celkem: number,
+  strana: number,
+  naStranu = PRODEJU_NA_STRANU,
+): { stranCelkem: number; aktualniStrana: number; odRadku: number } {
+  const stranCelkem = Math.max(1, Math.ceil(celkem / naStranu));
+  const aktualniStrana = Math.min(Math.max(1, Math.floor(strana) || 1), stranCelkem);
+  return { stranCelkem, aktualniStrana, odRadku: (aktualniStrana - 1) * naStranu };
+}
+
 /**
  * Věta o zafixované konfiguraci roku — laicky, proč se rok nepřepočítá podle
  * aktuálního nastavení. Fixuje se celá trojice, která mění už podaný rok
@@ -59,6 +78,7 @@ export function ReportView({
   basePath = '',
   demo = false,
   precomputed,
+  strana = 1,
 }: {
   txs: Transaction[];
   profile: ProfileRow;
@@ -67,6 +87,8 @@ export function ReportView({
   dailyRates?: EngineInput['dailyRates'];
   basePath?: string;
   demo?: boolean;
+  /** Stránka tabulky prodejů (od 1) — velké portfolio se jinak nevykreslí. */
+  strana?: number;
   /** Výsledky z page-guardu (EngineError) — bez nich by se engine počítal 2×. */
   precomputed?: {
     result: ReturnType<typeof analyzeTaxYear>;
@@ -88,6 +110,13 @@ export function ReportView({
     ...result.securities.disposals.map((disposal) => ({ disposal, isCrypto: false })),
     ...result.crypto.disposals.map((disposal) => ({ disposal, isCrypto: true })),
   ].sort((a, b) => a.disposal.saleDate.localeCompare(b.disposal.saleDate));
+
+  // Tabulka prodejů se stránkuje: u day-tradera je to desetitisíce řádků i s
+  // alokacemi a stránka se nevykreslila vůbec (proces vyrostl na 3,9 GB).
+  // Rozpad na jednotlivé nákupy je součást placeného tarifu, takže se nesmí
+  // oříznout — jen rozdělit. Tisk i XML zůstávají úplné.
+  const { stranCelkem, aktualniStrana, odRadku } = strankaProdeju(allDisposals.length, strana);
+  const disposalsNaStrane = allDisposals.slice(odRadku, odRadku + PRODEJU_NA_STRANU);
 
   // roky jednotných kurzů pro kartu „Použité kurzy“ (výdaj = kurz roku nákupu)
   const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
@@ -318,7 +347,7 @@ export function ReportView({
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {allDisposals.map(({ disposal, isCrypto }) => {
+                {disposalsNaStrane.map(({ disposal, isCrypto }) => {
                   // osvobození úhrnem do 100k platí pro celý druh — výdaje se pak
                   // daňově neuplatňují (R-05b), ale nabývací cena nulová nebyla
                   const under100k = isCrypto
@@ -373,6 +402,33 @@ export function ReportView({
               </tbody>
             </table>
           </ScrollArea>
+          {stranCelkem > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linka pt-3 text-sm print:hidden">
+              <p className="text-inkoust-tlumeny">
+                Prodeje {odRadku + 1}–{odRadku + disposalsNaStrane.length} z{' '}
+                {allDisposals.length} · strana {aktualniStrana} z {stranCelkem}. Tisk
+                i XML pro podatelnu obsahují všechny prodeje.
+              </p>
+              <nav className="flex items-center gap-2" aria-label="Stránkování prodejů">
+                {aktualniStrana > 1 && (
+                  <Link
+                    href={`${basePath}/report?rok=${year}&strana=${aktualniStrana - 1}`}
+                    className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                  >
+                    Předchozí
+                  </Link>
+                )}
+                {aktualniStrana < stranCelkem && (
+                  <Link
+                    href={`${basePath}/report?rok=${year}&strana=${aktualniStrana + 1}`}
+                    className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                  >
+                    Další
+                  </Link>
+                )}
+              </nav>
+            </div>
+          )}
         </Card>
       )}
 

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import {
@@ -124,6 +125,66 @@ describe('GDPR export dat (/api/export)', () => {
     const response = await GET(new Request('https://danero.cz/api/export'));
     expect(response.status).toBe(401);
   });
+});
+
+describe('export velké historie se streamuje (G-P4)', () => {
+  it(
+    'tělo chodí po částech, ne jedním kusem přes limit odpovědi',
+    { timeout: 60_000 },
+    async () => {
+      const db = await seed();
+      // Vercel má u NEstreamované odpovědi tvrdý strop 4,5 MB a export stojí
+      // ~287 B na transakci — od ~15 700 transakcí by uživatel nedostal nic
+      // (FUNCTION_PAYLOAD_TOO_LARGE). 5 000 transakcí je na důkaz dost:
+      // původní verze serializovala celý JSON do jednoho řetězce a odeslala
+      // ho jako jediný kus.
+      await db.execute(sql`
+        insert into transactions (user_id, dedupe_key, batch_id, broker, type, tx_date, isin, payload)
+        select 'u1', 'dk-' || lpad(g::text, 6, '0'), 'b1', 'trading212', 'BUY',
+               '2025-01-02', 'US0378331005',
+               jsonb_build_object(
+                 'type', 'BUY', 'broker', 'trading212', 'isin', 'US0378331005',
+                 'ticker', 'AAPL', 'name', 'Apple Inc.',
+                 'tradeDate', '2025-01-02', 'settlementDate', '2025-01-06',
+                 'quantity', '1.2345678', 'price', '234.5678', 'currency', 'USD',
+                 'fee', '0.15', 'feeCurrency', 'USD', 'note', 'radek ' || g
+               )
+        from generate_series(1, 5000) g
+      `);
+      stav.db = db;
+      stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+      const { GET } = await import('@/app/api/export/route');
+      const response = await GET(new Request('https://danero.cz/api/export'));
+      expect(response.status).toBe(200);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      const casti: number[] = [];
+      let text = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        casti.push(value.length);
+        text += decoder.decode(value, { stream: true });
+      }
+
+      // jediný kus = celý dokument v paměti a v jedné odpovědi (stav před opravou)
+      expect(casti.length).toBeGreaterThan(1);
+      // první kus odchází dřív, než se přečte poslední transakce
+      expect(casti[0]!).toBeLessThan(1_000);
+      const celkem = casti.reduce((a, b) => a + b, 0);
+      expect(celkem).toBeGreaterThan(1_000_000);
+
+      // a pořád je to platný JSON se vším, co v exportu být má
+      const payload = JSON.parse(text) as ExportPayload & { transactions: Array<{ note: string }> };
+      expect(payload.format).toBe('danero-export-v1');
+      expect(payload.transactions).toHaveLength(5000);
+      expect(payload.transactions.at(-1)!.note).toBe('radek 5000');
+      expect(payload.subscriptions).toHaveLength(1);
+      expect(payload.reportPurchases).toHaveLength(1);
+    },
+  );
 });
 
 describe('export a zafixované daňové roky (R-05c)', () => {
