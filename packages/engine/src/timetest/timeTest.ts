@@ -100,5 +100,9 @@ export function positionsAt(ledger: Ledger, atDate: IsoDate): Position[] {
         })
         .sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate)),
     }))
-    .sort((a, b) => a.isin.localeCompare(b.isin));
+    // ordinálně, ne `localeCompare` — pod českým locale se digraf „ch“ řadí
+    // až za „h“, takže by se švýcarské ISINy (CH…) přeskládaly za české (CZ…)
+    // podle jazykového nastavení serveru. Na daň to nemá vliv, na
+    // reprodukovatelnost výstupu ano (A2-3-10).
+    .sort((a, b) => (a.isin < b.isin ? -1 : a.isin > b.isin ? 1 : 0));
 }

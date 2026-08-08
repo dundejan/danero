@@ -27,7 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 
 /** Kolik prodejů se vejde na jednu stranu reportu. */
-export const PRODEJU_NA_STRANU = 200;
+export const DISPOSALS_PER_PAGE = 200;
 
 /**
  * Stránkování tabulky prodejů. Vytaženo jako čistá funkce, aby šlo otestovat
@@ -35,14 +35,46 @@ export const PRODEJU_NA_STRANU = 200;
  * placeného tarifu, takže se řádky smí rozdělit, ale nikdy ztratit.
  * Strana mimo rozsah se ořízne, ne aby vyšla prázdná tabulka.
  */
-export function strankaProdeju(
-  celkem: number,
-  strana: number,
-  naStranu = PRODEJU_NA_STRANU,
-): { stranCelkem: number; aktualniStrana: number; odRadku: number } {
-  const stranCelkem = Math.max(1, Math.ceil(celkem / naStranu));
-  const aktualniStrana = Math.min(Math.max(1, Math.floor(strana) || 1), stranCelkem);
-  return { stranCelkem, aktualniStrana, odRadku: (aktualniStrana - 1) * naStranu };
+export function disposalPage(
+  total: number,
+  page: number,
+  perPage = DISPOSALS_PER_PAGE,
+): { totalPages: number; currentPage: number; fromRow: number } {
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const currentPage = Math.min(Math.max(1, Math.floor(page) || 1), totalPages);
+  return { totalPages, currentPage, fromRow: (currentPage - 1) * perPage };
+}
+
+/**
+ * Věta, kterou nese VYTIŠTĚNÝ podklad, když se tabulka prodejů stránkuje.
+ *
+ * Stránkovací lišta je `print:hidden`, takže bez tohohle odstavce vypadal
+ * výtisk kompletně, přestože u 25 000 prodejů obsahoval 200 řádků a 24 800
+ * chybělo — a v aplikaci nad ním stálo „Tisk i XML pro podatelnu obsahují
+ * všechny prodeje“, což neplatilo ani u tisku (`window.print()` tiskne DOM),
+ * ani u XML (to nese úhrny do řádků přiznání, ne rozpis prodejů). Nález
+ * H-3-01: neúplný podklad odnesený na finanční úřad v domnění, že je úplný.
+ *
+ * Čistá funkce kvůli testu — na papír se nedá nahlédnout jinak.
+ */
+export function printedRangeNote({
+  fromRow,
+  onPage,
+  total,
+  page,
+  totalPages,
+}: {
+  fromRow: number;
+  onPage: number;
+  total: number;
+  page: number;
+  totalPages: number;
+}): string {
+  return (
+    `Tento výtisk obsahuje prodeje ${fromRow + 1}–${fromRow + onPage} z ${total} ` +
+    `(strana ${page} z ${totalPages}). Zbylé strany vytiskneš postupně z aplikace; ` +
+    'úhrny výš jsou spočítané ze všech prodejů.'
+  );
 }
 
 /**
@@ -131,8 +163,8 @@ export function ReportView({
   // alokacemi a stránka se nevykreslila vůbec (proces vyrostl na 3,9 GB).
   // Rozpad na jednotlivé nákupy je součást placeného tarifu, takže se nesmí
   // oříznout — jen rozdělit. Tisk i XML zůstávají úplné.
-  const { stranCelkem, aktualniStrana, odRadku } = strankaProdeju(allDisposals.length, strana);
-  const disposalsNaStrane = allDisposals.slice(odRadku, odRadku + PRODEJU_NA_STRANU);
+  const { totalPages, currentPage, fromRow } = disposalPage(allDisposals.length, strana);
+  const disposalsOnPage = allDisposals.slice(fromRow, fromRow + DISPOSALS_PER_PAGE);
 
   // roky jednotných kurzů pro kartu „Použité kurzy“ (výdaj = kurz roku nákupu)
   const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
@@ -363,7 +395,7 @@ export function ReportView({
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {disposalsNaStrane.map(({ disposal, isCrypto }) => {
+                {disposalsOnPage.map(({ disposal, isCrypto }) => {
                   // osvobození úhrnem do 100k platí pro celý druh — výdaje se pak
                   // daňově neuplatňují (R-05b), ale nabývací cena nulová nebyla
                   const under100k = isCrypto
@@ -418,25 +450,46 @@ export function ReportView({
               </tbody>
             </table>
           </ScrollArea>
-          {stranCelkem > 1 && (
+          {/* Na papíře musí být vidět, že tabulka pokračuje — stránkovací lišta
+              je `print:hidden`, takže bez téhle věty odnese uživatel na finanční
+              úřad neúplný rozpis v domnění, že je kompletní (H-3-01). */}
+          {totalPages > 1 && (
+            <p className="hidden border-t border-linka pt-3 text-xs text-inkoust-tlumeny print:block">
+              {printedRangeNote({
+                fromRow,
+                onPage: disposalsOnPage.length,
+                total: allDisposals.length,
+                page: currentPage,
+                totalPages,
+              })}
+            </p>
+          )}
+          {totalPages > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linka pt-3 text-sm print:hidden">
+              {/* Dřív tu stálo „Tisk i XML pro podatelnu obsahují všechny
+                  prodeje.“ — nebyla to pravda ani v jedné půlce (nález H-3-01).
+                  `window.print()` tiskne DOM, a v něm je jen tahle strana;
+                  XML pro podatelnu nese úhrny do řádků přiznání, ne rozpis
+                  jednotlivých prodejů. Vytištěný podklad tak vypadal úplně,
+                  a přitom mu u 25 000 prodejů chybělo 24 800 řádků. */}
               <p className="text-inkoust-tlumeny">
-                Prodeje {odRadku + 1}–{odRadku + disposalsNaStrane.length} z{' '}
-                {allDisposals.length} · strana {aktualniStrana} z {stranCelkem}. Tisk
-                i XML pro podatelnu obsahují všechny prodeje.
+                Prodeje {fromRow + 1}–{fromRow + disposalsOnPage.length} z{' '}
+                {allDisposals.length} · strana {currentPage} z {totalPages}. Vytiskne
+                se vždy jen zobrazená strana; úhrny do řádků přiznání i XML pro
+                podatelnu jsou spočítané ze všech prodejů.
               </p>
               <nav className="flex items-center gap-2" aria-label="Stránkování prodejů">
-                {aktualniStrana > 1 && (
+                {currentPage > 1 && (
                   <Link
-                    href={`${basePath}/report?rok=${year}&strana=${aktualniStrana - 1}`}
+                    href={`${basePath}/report?rok=${year}&strana=${currentPage - 1}`}
                     className={buttonVariants({ variant: 'secondary', size: 'sm' })}
                   >
                     Předchozí
                   </Link>
                 )}
-                {aktualniStrana < stranCelkem && (
+                {currentPage < totalPages && (
                   <Link
-                    href={`${basePath}/report?rok=${year}&strana=${aktualniStrana + 1}`}
+                    href={`${basePath}/report?rok=${year}&strana=${currentPage + 1}`}
                     className={buttonVariants({ variant: 'secondary', size: 'sm' })}
                   >
                     Další

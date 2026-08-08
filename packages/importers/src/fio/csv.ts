@@ -104,6 +104,24 @@ function cleanFioNumber(value: string): string {
   return value.replace(/\s/g, '').replace(',', '.');
 }
 
+/**
+ * Číslo z Fio buňky, nebo `null`, když se přečíst nedá.
+ *
+ * `d()` na nečitelném vstupu vyhodí `DecimalError`, a ta letěla z celého
+ * `parseFioCsv` ven: jeden řádek s `Objem v CZK = "12.345,67"` (nebo „N/A“
+ * či pomlčkou) shodil import **včetně všech zdravých řádků** a uživatel dostal
+ * anglickou hlášku knihovny. Fuzz přes 24 fixtur našel 231 pádů — všechny
+ * ve Fiu, ostatních 23 parserů výjimku nevyhodilo ani jednou (nález B-3-5).
+ * Nečitelná buňka teď zůstane chybou jednoho řádku, jak to dělají ostatní.
+ */
+function fioNumber(value: string): Decimal | null {
+  try {
+    return d(cleanFioNumber(value));
+  } catch {
+    return null;
+  }
+}
+
 /** Fio datum `dd.MM.yyyy`, s časem `dd.MM.yyyy HH:mm[:ss]` → ISO; neexistující den → null. */
 function toIsoDate(value: string): string | null {
   const match = /^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(
@@ -234,7 +252,12 @@ export function parseFioCsv(
       : volumeCurrencies;
     for (const currency of order) {
       const raw = map.get(row, `Objem v ${currency}`);
-      if (raw !== '') return { amount: d(cleanFioNumber(raw)), currency };
+      if (raw === '') continue;
+      const amount = fioNumber(raw);
+      // nečitelná částka = chyba tohohle řádku (volající ji ohlásí), ne pád
+      // celého importu (B-3-5)
+      if (amount) return { amount, currency };
+      return null;
     }
     return null;
   };
@@ -249,7 +272,15 @@ export function parseFioCsv(
     for (const currency of feeCurrencies) {
       const raw = map.get(row, `Poplatky v ${currency}`);
       if (raw === '') continue;
-      const amount = d(cleanFioNumber(raw)).abs();
+      const parsed = fioNumber(raw);
+      if (!parsed) {
+        result.warnings.push({
+          line,
+          message: `Poplatek „${raw}“ ve sloupci „Poplatky v ${currency}“ se nepodařilo přečíst — počítáme ho 0, zkontroluj ho v e-Brokeru.`,
+        });
+        continue;
+      }
+      const amount = parsed.abs();
       if (amount.gt(0)) candidates.push({ currency, amount });
     }
     if (candidates.length === 0) {

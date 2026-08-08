@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
+import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
 
 /**
@@ -192,14 +193,28 @@ export function MarketingFooter() {
                     LinkedIn
                   </a>
                 </li>
+                {/* § 1820 odst. 1 písm. c) OZ: adresa, telefon i e-mail musí být
+                    k dispozici PŘED uzavřením smlouvy, tedy na veřejných
+                    stránkách — ne až v potvrzovacím e-mailu (nález E-3-02).
+                    Telefon se vypíše, jen když je nastavený DANERO_CONTACT_PHONE. */}
                 <li>
                   <a
-                    href="mailto:dunder.jan@gmail.com"
+                    href={`mailto:${OPERATOR.email}`}
                     className="font-medium hover:text-inkoust"
                   >
-                    dunder.jan@gmail.com
+                    {OPERATOR.email}
                   </a>
                 </li>
+                {OPERATOR.phone && (
+                  <li>
+                    <a
+                      href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
+                      className="font-medium hover:text-inkoust"
+                    >
+                      {OPERATOR.phone}
+                    </a>
+                  </li>
+                )}
               </ul>
             </div>
           </div>
@@ -208,6 +223,17 @@ export function MarketingFooter() {
           <p>
             Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
             č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
+          </p>
+          {/* Katalog platforem i mřížka na landingu ukazují 29 cizích log. Bez
+              téhle věty se to čte jako „naši partneři" — vyvolání dojmu
+              obchodního spojení je klamavá praktika (§ 5 odst. 1 písm. e)
+              zák. č. 634/1992 Sb.) a odkazové užití známky je přípustné jen
+              v souladu s poctivými zvyklostmi (§ 10 odst. 1 zák. č. 441/2003 Sb.).
+              Nález E-3-06. */}
+          <p>
+            Názvy a loga brokerů, bank a burz jsou ochranné známky jejich vlastníků.
+            Uvádíme je jen proto, aby ses poznal — Danero s nimi není nijak propojené
+            a žádná z těch firem ho neschvaluje ani nesponzoruje.
           </p>
           <p>
             <Link href="/podminky" className="font-medium hover:text-inkoust">

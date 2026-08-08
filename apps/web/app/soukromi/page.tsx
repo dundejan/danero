@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
+import { OPERATOR } from '@/lib/contact';
 import { TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
 
 export const metadata = {
@@ -23,12 +24,27 @@ export default function PrivacyPage() {
 
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
+        {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR i § 1820 odst. 1
+            písm. c) OZ chtějí totožnost a kontakt správce, a musí sedět všude
+            stejně (nálezy E-3-02 a E-3-15) */}
         <p>
-          Danero je osobní projekt Jana Dundera (IČO 19642661, [adresa odstraněna] 640/3, Vršovice,
-          101 00 Praha 10) — on je i správcem tvých údajů. Kontakt:{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
-            dunder.jan@gmail.com
+          Danero je osobní projekt {OPERATOR.name.split(' ')[0]}a {OPERATOR.name.split(' ')[1]}a
+          (IČO {OPERATOR.ico}, {OPERATOR.address}) — on je i správcem tvých údajů. Kontakt:{' '}
+          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+            {OPERATOR.email}
           </a>
+          {OPERATOR.phone ? (
+            <>
+              {' '}
+              nebo telefon{' '}
+              <a
+                href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
+                className="font-medium text-ruzova-text"
+              >
+                {OPERATOR.phone}
+              </a>
+            </>
+          ) : null}
           .
         </p>
 

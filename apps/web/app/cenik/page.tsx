@@ -14,6 +14,20 @@ import {
 } from '@/lib/pricing';
 import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 
+/**
+ * Ceník se renderuje při každém požadavku, ne při buildu (nález C-3-06).
+ *
+ * Pojistka C-29 níž se ptá na `STRIPE_SECRET_KEY`. Ten je ve Vercelu uložený
+ * jako citlivá proměnná, takže při `next build` k dispozici NENÍ — staticky
+ * předrenderovaný ceník proto vyšel bez varování a veřejně prodával za 490
+ * a 990 Kč, přestože se ve zkušebním režimu nemohlo nic strhnout. Změřeno na
+ * živém webu: `x-nextjs-prerender: 1`, 6× „490 Kč“ a 0× „zkušebním režimu“.
+ *
+ * Dynamické renderování jedné marketingové stránky je levnější než ceník,
+ * který lže o tom, že se za ty ceny dá zaplatit.
+ */
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Ceník — Danero',
   description: `Nahrát výpisy a zjistit, jak na tom jsi, je v Daneru zdarma. Podklady k přiznání za jeden rok ${priceLabel(PRICE_REPORT_CZK)}, celoroční hlídání s napojením na brokery ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.`,

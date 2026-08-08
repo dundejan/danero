@@ -94,6 +94,32 @@ export function resolveTrustedProxies(): string[] {
 
 function buildAuth(db: Db) {
   return betterAuth({
+    /**
+     * Dvě výchozí HTTP cesty Better Authu, které Danero nepoužívá a které
+     * z jedné ukradené session cookie dělají mnohem větší škodu (nálezy
+     * D-3-01 a D-3-04). `disabledPaths` zavírá jen HTTP router (`api/index.mjs`
+     * vrátí 404) — serverová volání `auth.api.*` fungují dál, takže vlastní
+     * server actions zůstávají nedotčené.
+     *
+     * `/delete-user`: heslo je v Better Authu **volitelné** — bez něj stačí
+     * „čerstvá" relace (`session.freshAge`, výchozích 24 h). Ověřeno naostro
+     * na danero.cz: `POST /api/auth/delete-user` s prázdným tělem `{}` vrátilo
+     * `200 {"success":true,"message":"User deleted"}` a účet zmizel i s FK
+     * kaskádami (transakce, šifrované broker klíče, joby, audit log) — bez
+     * hesla, bez opsaného „SMAZAT" a bez zrušení předplatného ve Stripe, které
+     * `deleteAccountAction` dělá schválně. Mazání účtu tak jde JEN přes tu
+     * action.
+     * ⚠️ `session: { freshAge: 0 }` je past, ne oprava: nula kontrolu čerstvosti
+     * vypne úplně (`update-user.mjs`: `if (!ctx.body.password && freshAge !== 0)`).
+     *
+     * `/list-sessions`: vrací **syrové `token`** všech relací uživatele, tedy
+     * přímo hodnoty session cookies ostatních zařízení (platnost 7 dní) —
+     * jedna ukradená cookie tak vydá všechny ostatní. Jde to proti vlastnímu
+     * invariantu exportu („token relace se NEexportuje"). Stránka Nastavení
+     * čte relace serverově přes `auth.api.listSessions` a do klienta posílá
+     * jen popisek zařízení a čas.
+     */
+    disabledPaths: ['/delete-user', '/list-sessions'],
     advanced: { ipAddress: { trustedProxies: resolveTrustedProxies() } },
     database: drizzleAdapter(db, {
       provider: 'pg',
@@ -149,7 +175,9 @@ function buildAuth(db: Db) {
     },
     user: {
       // GDPR práva z /soukromi: hard delete (FK kaskády smažou i transakce
-      // a šifrované broker klíče) — heslo vynucuje Better Auth uvnitř endpointu
+      // a šifrované broker klíče). Heslo vynucuje `deleteAccountAction`, NE
+      // Better Auth — ten ho bere jako volitelné (D-3-01), proto je HTTP cesta
+      // `/delete-user` v `disabledPaths` výš.
       deleteUser: { enabled: true },
       // Změna e-mailu VYPNUTA na úrovni endpointu: surové /change-email chce
       // jen session cookie a bez verifikačních e-mailů (Resend čeká na klíč)

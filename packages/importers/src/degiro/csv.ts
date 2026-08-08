@@ -705,7 +705,18 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           message: `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
           raw: row.join(';'),
         });
+        return;
       }
+      // Zbytek (avízo dividendy, řádek daně či poplatku s prázdnou částkou)
+      // peněžní pohyb opravdu nenese, takže transakce nevzniká — ale nesmí
+      // zmizet beze stopy. Do 8. 8. 2026 se takový řádek zahodil úplně:
+      // nešel do transakcí, do chyb, do varování ani do přeskočených, takže
+      // import hlásil „0 chyb, 0 přeskočeno“ a řádek nebylo jak dohledat
+      // (nález B-3-6, dřív hlášeno úžeji jako B1-1 „mizí dividenda“).
+      result.skipped.push({
+        line,
+        message: `„${description}“ nemá vyplněnou částku ve sloupci Změna — bereme to jako avízo bez peněžního pohybu a transakci z něj nevytváříme.`,
+      });
       return;
     }
 

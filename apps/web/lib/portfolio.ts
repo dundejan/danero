@@ -193,7 +193,24 @@ export async function loadTransactions(
     .select({ payload: transactions.payload })
     .from(transactions)
     .where(broker ? and(scope, eq(transactions.broker, broker)) : scope)
-    .orderBy(asc(transactions.txDate));
+    // Řadit JEN podle data nestačí. Engine si události téhož dne se stejnou
+    // prioritou (dva prodeje; prodej vs. TRANSFER_OUT) rozhodne podle pořadí
+    // ve vstupním poli — a to pořadí sem dodává databáze. Bez druhého klíče
+    // ho Postgres nezaručuje vůbec: shodné `tx_date` vrátí v pořadí, které
+    // dá zrovna zvolený plán (index scan, bitmap, paralelní seq scan) a které
+    // se mění po UPDATE i po VACUUM. Táž sada transakcí tak mohla vyjít pokaždé
+    // jinak — na náhodných portfoliích rozdíl daně 0 vs. 148 875 Kč podle toho,
+    // který ze dvou prodejů téhož dne se spároval s lotem, co splnil časový
+    // test (nález A1-3-01). To porušuje jak invariant „výpočet je čistá funkce
+    // a jde reprodukovat od nuly“, tak podmínku průkaznosti a konzistence
+    // z R-05c.
+    //
+    // `created_at` drží pořadí importu, tedy pořadí z výpisu brokera — to je
+    // nejvěrnější dostupná chronologie uvnitř dne (čas obchodu model nenese).
+    // Celá dávka se vkládá jedním příkazem, takže má `created_at` shodné;
+    // zbytek remíz proto láme `dedupe_key`, který je v rámci uživatele unikátní
+    // (je součástí primárního klíče), takže výsledné pořadí je vždy jednoznačné.
+    .orderBy(asc(transactions.txDate), asc(transactions.createdAt), asc(transactions.dedupeKey));
   return parseTransactions(rows.map((r) => r.payload));
 }
 
