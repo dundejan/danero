@@ -139,6 +139,22 @@ export const eventPriority = (tx: Transaction): number => {
 };
 
 /**
+ * Poslední kritérium řazení: ID **ordinálně**, nikdy `localeCompare`.
+ *
+ * `localeCompare` bere řadicí pravidla z locale procesu (ICU podle `LANG`
+ * / `LC_ALL`). Česká abeceda řadí digraf „ch“ až za „h“, takže tentýž vstup
+ * vyšel pod `LC_ALL=cs_CZ` jinak než pod `en_US` — a s jiným pořadím lotů
+ * vyšel jiný dílčí základ daně (nález A2-3-10; naměřeno `ibkr-ch1` × `ibkr-h9`,
+ * základ 3 000 vs. 0 Kč). Daň nesmí záviset na jazykovém nastavení serveru:
+ * vlastní instance podle docs/16 běží typicky v českém prostředí.
+ *
+ * Hlídá to `test/determinismus.test.ts` a strážný test na výskyt `localeCompare`
+ * kdekoli v enginu.
+ */
+export const ordinalById = (a: { id: string }, b: { id: string }): number =>
+  a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+/**
  * Sestaví loty a prodeje z kompletní historie. `fx` je potřeba jen pro metody
  * MAX_PROFIT/MAX_LOSS (R-05c) — nabývací ceny lotů se porovnávají v CZK kurzem
  * roku nákupu (konvence výdajů R-06a), jinak by se míchaly měny; bez něj se
@@ -582,7 +598,10 @@ function orderLots(
     if (a.acquisitionDate !== b.acquisitionDate) {
       return a.acquisitionDate < b.acquisitionDate ? -1 : 1;
     }
-    return a.id.localeCompare(b.id);
+    // Ordinálně, NE `localeCompare` — viz `ordinalById` (nález A2-3-10).
+    // Tady to rozhoduje, KTERÝ lot se prodeji spáruje, tedy přímo nabývací
+    // cenu a dílčí základ daně.
+    return ordinalById(a, b);
   };
   // MAX_PROFIT/MAX_LOSS: loty téhož ISIN mohou být v různých měnách (duální
   // listing, GBX/GBP) — porovnávat nominály napříč měnami nedává smysl. S fx

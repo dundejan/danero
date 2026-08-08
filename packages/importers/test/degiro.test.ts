@@ -105,8 +105,11 @@ describe('Degiro Account.csv', () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.transactions).toHaveLength(6);
-    expect(result.skipped).toHaveLength(3);
+    // 3 přeskočené řádky (obchod, FX, sweep) + avízo dividendy s prázdnou
+    // částkou, které dřív mizelo úplně beze stopy (B-3-6)
+    expect(result.skipped).toHaveLength(4);
     expect(result.skipped.some((s) => s.message.includes('Transactions.csv'))).toBe(true);
+    expect(result.skipped.some((s) => s.message.includes('nemá vyplněnou částku'))).toBe(true);
 
     const deposit = result.transactions.find((t) => t.type === 'DEPOSIT')!;
     if (deposit.type !== 'DEPOSIT') throw new Error('unreachable');
@@ -320,7 +323,7 @@ describe('Degiro Account.csv', () => {
     expect(result.errors[0]!.message).toContain('nahlaš');
   });
 
-  it('rozpoznaný popis bez peněžního pohybu (avízo dividendy) i dál tiše mizí', () => {
+  it('rozpoznaný popis bez peněžního pohybu (avízo dividendy) se přeskočí, ale zůstane po něm stopa (B-3-6)', () => {
     const csv = [
       DEGIRO_ACCOUNT_HEADER_CZ,
       '04-06-2024;09:00;04-06-2024;;;Dividenda;;;;EUR;7877,12;',
@@ -329,6 +332,11 @@ describe('Degiro Account.csv', () => {
     expect(result.transactions).toEqual([]);
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
+    // dřív řádek zmizel úplně — ani transakce, ani chyba, ani přeskočení,
+    // takže se nedal dohledat a import hlásil „0 chyb, 0 přeskočeno“
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.line).toBe(2);
+    expect(result.skipped[0]!.message).toContain('Dividenda');
   });
 
   // B-1b: splity, reverse splity a spin-offy Degiro reportuje textem — parser
@@ -532,10 +540,11 @@ describe('Degiro Account.csv — echo obchodu vs. korporátní akce (B4-0, B4-2)
     expect(result.errors[0]!.message).toContain('kusy');
   });
 
-  it('skutečné avízo dividendy (bez počtu kusů) se pořád tiše přeskočí', () => {
+  it('skutečné avízo dividendy (bez počtu kusů) se pořád jen přeskočí, chyba z něj není', () => {
     // kontrola opačným směrem, ať se z opravy nestane falešný poplach
     const result = parseDegiroAccountCsv(radek('Dividenda ABC Corp'));
     expect(result.errors).toEqual([]);
     expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
   });
 });

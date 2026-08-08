@@ -82,19 +82,43 @@ export const INCOME_QUESTION: Record<Situation, { question: string; hint: string
   pausal: {
     question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
     hint:
-      'Třeba zahraniční dividendy, úroky, nájem nebo kladná plnění z derivátů (CFD, opce, futures) — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
+      'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
   },
   zamestnanec: {
     question: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
     hint:
-      'Třeba zahraniční dividendy, úroky, nájem nebo kladná plnění z derivátů (CFD, opce, futures) — osvobozené prodeje se nepočítají.',
+      'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje se nepočítají.',
   },
   jine: {
     question: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
     hint:
-      'Včetně zahraničních dividend, úroků, nájmu i kladných plnění z derivátů (CFD, opce, futures) — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
+      'Včetně zahraničních dividend, úroků, nájmu, kladných plnění z derivátů (CFD, opce, futures) i prodejů a směn stablecoinů — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
   },
 };
+
+/**
+ * Otázka na krypto. Nápověda **musí** vyjmenovat stablecoiny: § 4 odst. 1
+ * písm. zj) elektronické peněžní tokeny z osvobození výslovně vylučuje (R-10a),
+ * takže jejich prodej i směna se daní vždy a do stovky se nepočítají. Bez téhle
+ * věty odpověděl člověk, který směnil 60 000 Kč v USDC, „Ne“ a kalkulačka mu
+ * řekla, že přiznání řešit nemusí — přitom má 60 000 Kč zdanitelného příjmu
+ * a jako zaměstnanec je 20 000 Kč hranice dávno pryč (nález E-3-03).
+ * Export kvůli testu znění.
+ */
+export const CRYPTO_QUESTION = {
+  question: 'Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?',
+  hint:
+    'Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Stablecoiny (USDT, USDC a další tokeny navázané na měnu) se do něj nepočítají — ty se daní vždy, takže je zahrň až do otázky na ostatní zdanitelné příjmy. Nemáš krypto? Dej Ne.',
+} as const;
+
+/**
+ * Oznámení osvobozeného příjmu (§ 38v ZDP, R-09d). Patří k verdiktu
+ * „přiznání řešit nemusíš“: kdo prodal za 6 milionů akcie držené pět let,
+ * přiznání opravdu nepodává — ale oznámení podat musí a pokuta je 0,1–15 %
+ * z částky (§ 38w). Zamlčet to je horší než zamlčet daň.
+ */
+export const OZNAMENI_5M =
+  'Pozor na jednu výjimku: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů). Přiznání to není, lhůta je ale stejná.';
 
 /**
  * Znění otázek na jednom místě — hláška „chybí odpověď“ (H-24) musí uživateli
@@ -104,7 +128,7 @@ const QUESTIONS = {
   situation: 'Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?',
   sales: 'Prodal jsi letos akcie nebo ETF za víc než 100 000 Kč celkem?',
   holding: 'Držel jsi všechny prodané kusy déle než 3 roky?',
-  crypto: 'Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?',
+  crypto: CRYPTO_QUESTION.question,
   cryptoHolding: 'Držel jsi všechno prodané krypto déle než 3 roky?',
 } as const;
 
@@ -298,8 +322,8 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
         )}
         {salesOver100k !== null && (
           <Question<boolean>
-            question={QUESTIONS.crypto}
-            hint="Kryptoaktiva mají vlastní limit 100 000 Kč, nezávislý na akciích. Nemáš krypto? Dej Ne."
+            question={CRYPTO_QUESTION.question}
+            hint={CRYPTO_QUESTION.hint}
             options={[
               { value: false, label: 'Ne' },
               { value: true, label: 'Ano' },
@@ -377,6 +401,12 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
             <p className="mt-2 text-xs text-inkoust-tlumeny">
               Orientačně — přesně to spočítá aplikace z tvých dat.
             </p>
+          )}
+          {/* R-09d: osvobozeno ≠ bez povinností — oznámení nad 5 mil. Kč má
+              vlastní pokutu 0,1–15 % (§ 38w), takže se o něm musí dozvědět
+              i ten, komu kalkulačka řekla „nemusíš“ */}
+          {verdict === 'osvobozeno' && (
+            <p className="mt-2 text-xs text-inkoust-tlumeny">{OZNAMENI_5M}</p>
           )}
           <p className="mt-3 text-sm text-inkoust-tlumeny">
             {verdict === 'osvobozeno' &&

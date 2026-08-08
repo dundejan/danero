@@ -314,3 +314,40 @@ describe('Fio e-Broker CSV parser', () => {
     expect(broken.errors[0]!.message).toContain('chybí symbol, počet kusů, cena nebo měna');
   });
 });
+
+describe('Fio: nečitelné číslo shodí řádek, ne celý import (B-3-5)', () => {
+  const zdravyRadek = '05.01.2024;Vloženo;;;;CZK;100 000,00;;;;;;Vklad na účet';
+
+  it.each([
+    ['tisícová tečka i čárka', '12.345,67'],
+    ['textová hodnota', 'N/A'],
+    ['pomlčka', '-'],
+  ])('%s v „Objem v CZK“ nevyhodí výjimku a zdravé řádky projdou', (_popis, hodnota) => {
+    const csv = [
+      FIO_HEADER,
+      zdravyRadek,
+      `06.01.2024;Vloženo;;;;CZK;${hodnota};;;;;;Vklad na účet`,
+      zdravyRadek.replace('05.01.2024', '07.01.2024'),
+    ].join('\n');
+
+    // dřív tohle vyhodilo DecimalError z celého parseFioCsv a nezůstalo nic
+    const result = parseFioCsv(csv, { symbolMap: FIO_SYMBOL_MAP });
+
+    expect(result.transactions).toHaveLength(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.line).toBe(3);
+  });
+
+  it('nečitelný poplatek se ohlásí varováním a obchod zůstane', () => {
+    const csv = [
+      FIO_HEADER,
+      '10.01.2024;Nákup;AAPL;185,50;100;USD;;;-18 550,00;N/A;;;Nákup: AAPL 100 ks',
+    ].join('\n');
+
+    const result = parseFioCsv(csv, { symbolMap: FIO_SYMBOL_MAP });
+
+    expect(result.transactions).toHaveLength(1);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.some((w) => w.message.includes('nepodařilo přečíst'))).toBe(true);
+  });
+});

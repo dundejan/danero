@@ -140,7 +140,13 @@ export function computeDerivatives(
       const db = eventDate(b);
       if (da !== db) return da < db ? -1 : 1;
       const priority = eventPriority(a) - eventPriority(b);
-      return priority !== 0 ? priority : a.id.localeCompare(b.id);
+      // Ordinální porovnání, NE `localeCompare`: to bere řadicí pravidla
+      // z locale procesu (ICU), takže tentýž vstup vyšel pod `LC_ALL=cs_CZ`
+      // jinak než pod `en_US` — česká abeceda řadí digraf „ch“ za „h“, takže
+      // se prohodilo pořadí lotů a s ním i dílčí základ daně (nález A2-3-10).
+      // Daň nesmí záviset na jazykovém nastavení serveru.
+      if (priority !== 0) return priority;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
 
   // R-12f/g: styl vypořádání je vlastnost instrumentu (stačí jediný obchod MARGIN)

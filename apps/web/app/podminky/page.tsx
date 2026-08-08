@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
+import { OPERATOR } from '@/lib/contact';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
 import { ADR, TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
@@ -190,14 +191,28 @@ export default function TermsPage() {
         </p>
 
         <h2 className="font-display text-lg font-semibold">8. Provozovatel a kontakt</h2>
+        {/* § 1820 odst. 1 písm. c) OZ chce adresu, telefon i e-mail sdělit PŘED
+            uzavřením smlouvy. Do 8. 8. 2026 se telefon vypisoval jen v e-mailech,
+            tedy až potom (nález E-3-02). Údaje se berou z lib/contact.ts, ať se
+            jednotlivé stránky nerozejdou (E-3-15). */}
         <p>
-          Danero je osobní projekt — provozuje ho Jan Dunder, IČO 19642661, se sídlem
-          Žitomírská 640/3, Vršovice, 101 00 Praha 10 (fyzická osoba podnikající dle
-          živnostenského zákona, zapsaná v živnostenském rejstříku). Připomínky a chyby
-          posílej na{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
-            dunder.jan@gmail.com
+          Danero je osobní projekt — provozuje ho {OPERATOR.name}, IČO {OPERATOR.ico}, se
+          sídlem {OPERATOR.address} (fyzická osoba podnikající dle živnostenského zákona,
+          zapsaná v živnostenském rejstříku). Připomínky a chyby posílej na{' '}
+          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+            {OPERATOR.email}
           </a>
+          {OPERATOR.phone ? (
+            <>
+              , telefon{' '}
+              <a
+                href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
+                className="font-medium text-ruzova-text"
+              >
+                {OPERATOR.phone}
+              </a>
+            </>
+          ) : null}
           .
         </p>
 
