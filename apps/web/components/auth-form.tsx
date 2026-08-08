@@ -37,7 +37,13 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           code: String(form.get('kod') ?? ''),
         });
         if (result.error) {
-          setError('Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.');
+          // Použitý kód se podruhé neuzná (D-01). Bez rozlišení by uživatel
+          // opisoval týž kód znovu a zase neuspěl — musí počkat na další.
+          setError(
+            result.error.code === 'TOTP_CODE_ALREADY_USED'
+              ? 'Tenhle kód už byl použitý. Počkej v aplikaci autentikátoru na další a zadej ten.'
+              : 'Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.',
+          );
           return;
         }
         finish();

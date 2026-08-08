@@ -59,7 +59,7 @@ function Question<T extends string | boolean>({
               'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
               value === volba.value
                 ? 'border-ruzova-syta bg-ruzova-syta text-white'
-                : 'border-linka bg-plocha text-inkoust-tlumeny hover:border-ruzova hover:text-ruzova',
+                : 'border-linka-ovladaci bg-plocha text-inkoust-tlumeny hover:border-ruzova hover:text-ruzova',
             )}
           >
             {volba.label}
@@ -395,7 +395,7 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
             </Link>
             <Link
               href="/registrace"
-              className="rounded-md border border-inkoust/25 bg-plocha px-4 py-2 text-sm font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40"
+              className="rounded-md border border-linka-ovladaci bg-plocha px-4 py-2 text-sm font-semibold shadow-sm hover:border-ruzova hover:text-ruzova"
             >
               Založit účet
             </Link>

@@ -120,13 +120,29 @@ export function PositionsTable({
 
       <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
         <table className="w-full text-sm">
+          {/* caption = název tabulky pro čtečku (audit H2-12); vizuálně ho nese
+              CardTitle nad ní, proto sr-only. `scope="col"` váže buňky
+              na hlavičku i tam, kde si to prohlížeč sám neodvodí. */}
+          <caption className="sr-only">Pozice a jejich časové testy</caption>
           <thead>
             <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-              <th className="py-2 pr-4 font-medium">Instrument</th>
-              <th className="py-2 pr-4 text-right font-medium">Kusů</th>
-              {anyExempt && <th className="py-2 pr-4 text-right font-medium">Z toho bez daně</th>}
-              <th className="py-2 pr-4 text-right font-medium">Nejbližší osvobození</th>
-              <th className="py-2 text-right font-medium">Zbývá dní</th>
+              <th scope="col" className="py-2 pr-4 font-medium">
+                Instrument
+              </th>
+              <th scope="col" className="py-2 pr-4 text-right font-medium">
+                Kusů
+              </th>
+              {anyExempt && (
+                <th scope="col" className="py-2 pr-4 text-right font-medium">
+                  Z toho bez daně
+                </th>
+              )}
+              <th scope="col" className="py-2 pr-4 text-right font-medium">
+                Nejbližší osvobození
+              </th>
+              <th scope="col" className="py-2 text-right font-medium">
+                Zbývá dní
+              </th>
             </tr>
           </thead>
           <tbody className="font-mono">

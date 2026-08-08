@@ -166,7 +166,7 @@ export default async function SubscriptionPage({
               <select
                 id="rok"
                 name="rok"
-                className="mt-1 block rounded-md border border-linka bg-plocha px-3 py-2 text-sm"
+                className="mt-1 block rounded-md border border-linka-ovladaci bg-plocha px-3 py-2 text-sm"
               >
                 {nabizeneRoky.map((rok) => (
                   <option key={rok} value={rok}>

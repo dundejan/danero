@@ -70,6 +70,7 @@ openssl rand -hex 32      # CRON_SECRET
 | `BETTER_AUTH_SECRET` | ano | podpis session a odhlašovacích tokenů; v produkci bez ní aplikace spadne při startu |
 | `BETTER_AUTH_URL` | ano | veřejná URL instance, např. `https://dane.example.cz`. **Musí být https** — z ní si Better Auth odvozuje příznak `Secure` u session cookie. Compose bez ní nenastartuje (schválně: tichý `http://localhost` default by vydával cookie bez `Secure`) |
 | `DANERO_ENCRYPTION_KEY` | ano | AES-256-GCM klíč pro API klíče brokerů; v produkci bez ní aplikace spadne při startu |
+| `DANERO_ENCRYPTION_KEYS_OLD` | ne | klíče vyřazené při výměně `DANERO_ENCRYPTION_KEY` (hex oddělené čárkou). Šifruje se vždy tím aktuálním, ale data od těch starých se dál čtou — viz „Výměna šifrovacího klíče" níž |
 | `CRON_SECRET` | ano | bez ní všechny `/api/cron/*` odmítají vše (401) — tedy žádné syncy ani e-maily |
 | `PORT` | ne | na kterém portu hostitele instance poslouchá (výchozí `3000`); uvnitř kontejneru je to vždy 3000 |
 | `RESEND_API_KEY` | ne | bez ní se e-maily jen zapisují do logu (na jedno-uživatelské instanci to může stačit) |
@@ -82,6 +83,22 @@ openssl rand -hex 32      # CRON_SECRET
 > ⚠️ **`DANERO_ENCRYPTION_KEY` si zálohuj odděleně od databáze.** Když ho
 > ztratíš, uložené API klíče brokerů jsou nečitelné a musíš je zadat znovu.
 > A obráceně: záloha databáze *spolu* s klíčem = klíče brokerů v plaintextu.
+
+### Výměna šifrovacího klíče
+
+Každý zašifrovaný údaj v databázi nese osmiznakový otisk klíče, kterým vznikl
+(`v2-3f7a1c9d.…`), takže výměna nemusí být skokem přes propast:
+
+1. vygeneruj nový klíč (`openssl rand -hex 32`),
+2. nový dej do `DANERO_ENCRYPTION_KEY`, ten dosavadní přesuň do
+   `DANERO_ENCRYPTION_KEYS_OLD` a restartuj,
+3. od té chvíle se šifruje novým klíčem a stará data se čtou tím vyřazeným,
+4. starý klíč smíš zahodit, až žádný záznam nemá jeho otisk. Překlopení
+   jednotlivého údaje umí `reencryptSecret()` z `apps/web/lib/crypto.ts`;
+   automatický přešifrovací průchod v aplikaci zatím není.
+
+Bez kroku 2 (starý klíč nikde) se uložené broker klíče po výměně nepřečtou —
+aplikace to řekne nahlas a uživatel je zadá znovu, ale je to zbytečná otrava.
 
 ## Bez Dockeru, přímo přes Node
 

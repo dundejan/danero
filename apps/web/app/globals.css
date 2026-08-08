@@ -14,6 +14,14 @@
   --oranz: #c25a25;
   --cervena: #b3362f;
   --linka: #e4e2da;
+  /* Hranice ovládacích prvků (pole, selecty, přepínače, sekundární tlačítka).
+     WCAG 2.1 SC 1.4.11 žádá u hranice, která prvek odlišuje od okolí, ≥ 3:1 —
+     a `--linka` má proti bílé výplni jen 1,30:1 (audit H2-02, 7. 8. 2026):
+     bílé pole na bílé kartě pak splývá s plochou. Ztmavit rovnou `--linka`
+     nešlo — nese i vlásové oddělovače a rámečky karet, kde by taková čára
+     byla hrubá. Proto vlastní token; ověřuje ho test/design-tokens.test.ts.
+     #8f8a7e: 3,44:1 na --plocha, 3,15:1 na --pozadi. */
+  --linka-ovladaci: #8f8a7e;
   /* Kategorické barvy grafů (G3) — pevné pořadí, kontrast ≥ 3:1 proti ploše
      karet. Semaforové barvy limitů se v grafech NEpoužívají pro série — jen
      pro stav/polaritu. Brand růžová do sérií NEpatří vůbec (F1 z panelového
@@ -56,6 +64,9 @@
   /* světlejší než světlý token — záporné hodnoty na --plocha 5,5:1 (WCAG AA) */
   --cervena: #e8746a;
   --linka: #2b2e4a;
+  /* v tmavém režimu musí hranice naopak zesvětlat: #686c8d = 3,20:1 na
+     --plocha, 3,46:1 na --pozadi (samotná --linka má 1,24:1) */
+  --linka-ovladaci: #686c8d;
   --graf-1: #339af0;
   --graf-2: #5c7cfa;
   --graf-3: #0ca678;
@@ -85,6 +96,7 @@
   --color-oranz: var(--oranz);
   --color-cervena: var(--cervena);
   --color-linka: var(--linka);
+  --color-linka-ovladaci: var(--linka-ovladaci);
   --color-ruzova-syta: var(--ruzova-syta);
   --color-cervena-syta: var(--cervena-syta);
   --color-zelena-syta: var(--zelena-syta);
@@ -119,6 +131,9 @@
     --inkoust: #000000;
     --inkoust-tlumeny: #444444;
     --linka: #bbbbbb;
+    /* ovládací prvky se netisknou (form/button níž), ale token musí být
+       definovaný i tady — jinak by v tisku zůstala tmavá varianta */
+    --linka-ovladaci: #767676;
   }
   aside,
   nav,

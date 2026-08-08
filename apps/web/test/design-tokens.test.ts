@@ -88,6 +88,131 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/**
+ * Otevírací JSX tagy formulářových prvků. Naivní `/<input[^>]*>/` by se
+ * zastavilo na první `>` — a to bývá šipka v `onChange={(event) => …}`,
+ * takže by se className vůbec nedostal do porovnání. Proto ruční průchod,
+ * který počítá `{}` a přeskakuje uvozovky.
+ */
+function openingTags(source: string): string[] {
+  const out: string[] = [];
+  for (const match of source.matchAll(/<(input|select|textarea|button)(?=[\s/>])/g)) {
+    let depth = 0;
+    let quote: string | null = null;
+    let i = match.index + match[0].length;
+    for (; i < source.length; i++) {
+      const char = source[i]!;
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'" || char === '`') quote = char;
+      else if (char === '{') depth++;
+      else if (char === '}') depth--;
+      else if (char === '>' && depth === 0) break;
+    }
+    out.push(source.slice(match.index, i));
+  }
+  return out;
+}
+
+/**
+ * Blok pravidla (`:root { … }`) z globals.css — s hlídáním zanoření závorek.
+ *
+ * Selektor se hledá VÝHRADNĚ na začátku řádku a s vlastní `{`. Prosté
+ * `indexOf('.dark')` totiž trefí `@custom-variant dark (&:where(.dark, …))`
+ * hned na třetím řádku, odtud doskáče na první `{` — a tím je `:root {`.
+ * „Tmavý“ režim by se pak měřil světlými hodnotami a test by mlčel.
+ */
+function cssBlock(css: string, selector: string): string {
+  const start = css.search(new RegExp(`(^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`));
+  expect(start, `selektor ${selector} v globals.css`).toBeGreaterThanOrEqual(0);
+  let depth = 0;
+  for (let i = css.indexOf('{', start); i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return css.slice(start, i);
+  }
+  throw new Error(`neuzavřený blok ${selector}`);
+}
+
+/** Barevné tokeny jednoho režimu: `--jmeno: #hex`. */
+function tokensOf(css: string, selector: string): Record<string, string> {
+  const block = cssBlock(css, selector);
+  return Object.fromEntries(
+    [...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map(([, name, hex]) => [
+      name!,
+      hex!.toLowerCase(),
+    ]),
+  );
+}
+
+/**
+ * WCAG 2.1 SC 1.4.11 (Non-text Contrast): hranice, která odlišuje ovládací
+ * prvek od okolí, musí mít proti sousedním barvám ≥ 3:1.
+ *
+ * Hlídá se to tady, a ne axem: axe pro 1.4.11 pravidlo NEMÁ, takže e2e sada
+ * tuhle celou třídu nálezů nikdy neuvidí (audit H2-02 — pole měla proti své
+ * bílé výplni 1,30:1, v tmavém režimu 1,24:1). Z tokenů se to navíc spočítá
+ * přesně a bez prohlížeče.
+ */
+describe('nontextový kontrast ovládacích prvků (WCAG 1.4.11)', () => {
+  const css = readFileSync(join(webRoot, 'app', 'globals.css'), 'utf8');
+  const REZIMY = [
+    { name: 'světlý', selector: ':root' },
+    { name: 'tmavý', selector: '.dark' },
+  ];
+
+  it('parser čte oba režimy, ne dvakrát ten samý', () => {
+    // pojistka proti tiché chybě v cssBlock: kdyby `.dark` spadl zpátky na
+    // `:root`, oba režimy by měly stejné hodnoty a měření tmavého by bylo lež
+    expect(tokensOf(css, ':root')['plocha']).not.toEqual(tokensOf(css, '.dark')['plocha']);
+  });
+
+  it.each(REZIMY)('okraj polí a tlačítek drží 3:1 v obou režimech ($name)', ({ selector }) => {
+    const tokens = tokensOf(css, selector);
+    const border = tokens['linka-ovladaci'];
+    expect(border, `${selector} --linka-ovladaci`).toBeDefined();
+
+    // sousední barvy: výplň prvku (--plocha) i plocha stránky pod ním (--pozadi)
+    const slabe = (['plocha', 'pozadi'] as const)
+      .map((surface) => ({
+        surface,
+        ratio: Number(contrast(border!, tokens[surface]!).toFixed(2)),
+      }))
+      .filter(({ ratio }) => ratio < 3);
+
+    expect(slabe).toEqual([]);
+  });
+
+  /**
+   * `--linka` je vlásový oddělovač (rámečky karet, čáry v tabulkách) — na tu
+   * se 1.4.11 nevztahuje. Ale kdyby se jí zase orámoval ovládací prvek, byla
+   * by chyba zpátky, a v prohlížeči ji nic nechytí. Proto zdrojová kontrola.
+   */
+  it('žádné pole, select ani tlačítko nemá vlásový okraj --linka', () => {
+    const HAIRLINE = /border-linka(?![\w-])/;
+    const nalezy: string[] = [];
+
+    for (const file of sourceFiles(join(webRoot, 'app')).concat(
+      sourceFiles(join(webRoot, 'components')),
+    )) {
+      for (const tag of openingTags(readFileSync(file, 'utf8'))) {
+        if (HAIRLINE.test(tag)) {
+          nalezy.push(`${file.replace(webRoot + '/', '')}: ${tag.slice(0, 60).replace(/\s+/g, ' ')}`);
+        }
+      }
+    }
+
+    // třídy tlačítek nežijí v JSX tagu, ale v `cva` — na primitiva se proto
+    // díváme celým souborem
+    for (const primitive of ['components/ui/button.tsx', 'components/ui/switch.tsx']) {
+      if (HAIRLINE.test(readFileSync(join(webRoot, primitive), 'utf8'))) {
+        nalezy.push(`${primitive}: border-linka na sdíleném ovládacím prvku`);
+      }
+    }
+
+    expect(nalezy).toEqual([]);
+  });
+});
+
 describe('kontrast sytých výplní', () => {
   it('bílý text na -syta výplních drží AA 4,5:1', () => {
     // globals.css o nich říká „syté výplně pro CTA/danger s bílým textem" —

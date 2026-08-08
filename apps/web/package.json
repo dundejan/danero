@@ -43,7 +43,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "drizzle-kit": "^0.31.10",
-    "fast-xml-parser": "^5.9.3",
+    "fast-xml-parser": "^5.10.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"

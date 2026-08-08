@@ -38,7 +38,7 @@ export function WaitlistForm() {
           // žádné outline-none: rušilo by globální růžový fokusový ring
           // (:focus-visible v globals.css) a pole by při procházení klávesnicí
           // nebylo poznat
-          className="w-full min-w-0 flex-1 rounded-md border border-inkoust/25 bg-plocha px-4 py-3 text-sm shadow-sm focus:border-ruzova sm:w-auto"
+          className="w-full min-w-0 flex-1 rounded-md border border-linka-ovladaci bg-plocha px-4 py-3 text-sm shadow-sm focus:border-ruzova sm:w-auto"
         />
         <button
           type="submit"

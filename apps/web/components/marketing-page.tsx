@@ -66,11 +66,11 @@ export function MarketingCta({
   const demoClass =
     primary === 'demo'
       ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-inkoust/25 bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40';
+      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
   const registerClass =
     primary === 'registrace'
       ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-inkoust/25 bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40';
+      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
   return (
     <section className="mt-24 lg:mt-32">
       <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">

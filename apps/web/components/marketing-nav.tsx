@@ -87,7 +87,7 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
           aria-controls="mobilni-menu"
           aria-label={open ? 'Zavřít menu' : 'Otevřít menu'}
           onClick={() => setOpen((value) => !value)}
-          className="flex h-11 w-11 items-center justify-center rounded-md border border-linka bg-plocha"
+          className="flex h-11 w-11 items-center justify-center rounded-md border border-linka-ovladaci bg-plocha"
         >
           <svg
             viewBox="0 0 24 24"

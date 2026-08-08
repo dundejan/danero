@@ -10,7 +10,10 @@ import { registerWithProfile } from './helpers';
  * a jen na 11 z 31 stránek — nechytila by ani jeden nález auditu ze 6. 8. 2026
  * (nefokusovatelné tabulky, kontrasty pod AA). Proto:
  *
- * – práh je `serious` (tam spadá `scrollable-region-focusable` i `color-contrast`),
+ * – práh je `moderate` (tam spadá rozbitá struktura landmarků; `serious` kryje
+ *   `scrollable-region-focusable` i `color-contrast`),
+ * – auditují se i chybové stavy (404 uvnitř aplikace i uvnitř dema),
+ * – kontroluje se struktura shellu: právě jeden `<main>` a jedno `#obsah`,
  * – běží se ve světlém i tmavém režimu (tokeny mají v každém jiné hodnoty),
  * – seznam pokrývá VŠECHNY stránky: aplikaci, onboarding, demo, přihlašovací
  *   tok i marketing včetně právních textů,
@@ -34,6 +37,15 @@ const APP_PAGES = [
   '/nastaveni',
   '/predplatne',
 ];
+
+/**
+ * Chybové stavy — dřív neauditoval žádný (audit H2-05). ISIN, který uživatel
+ * nemá, spustí v aplikaci `notFound()`; než pro `(app)` vznikla vlastní
+ * `not-found.tsx`, vykreslil se marketingový shell UVNITŘ aplikačního layoutu
+ * a stránka měla dva `<main>` a dvě `id="obsah"` (axe: `landmark-no-duplicate-main`,
+ * `landmark-unique` — obojí `moderate`, tedy pod tehdejším prahem `serious`).
+ */
+const ERROR_PAGES = ['/portfolio/US9999999999', '/demo/portfolio/US9999999999'];
 
 /** Demo prohlídka je veřejná vstupní brána — musí splňovat totéž. */
 const DEMO_PAGES = [
@@ -79,11 +91,14 @@ const MOBILE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 900 };
 
 /**
- * Nálezy, které stránku shodí. `serious` je práh, pod nímž zůstávají už jen
- * kosmetické „moderate/minor“ — a nad ním leží všechno, co reálně brání
- * v ovládání (klávesnice, kontrast, chybějící názvy).
+ * Nálezy, které stránku shodí.
+ *
+ * Původně `critical` + `serious`. Jenže rozbitá struktura landmarků (dva
+ * `<main>`, duplicitní `id`) je pro axe **`moderate`** — takže 404 uvnitř
+ * aplikace prošla sadou bez povšimnutí (audit H2-05a). Práh je proto
+ * `moderate`; pod ním zůstává jen `minor` (kosmetika typu `empty-table-header`).
  */
-const BLOCKING_IMPACTS = new Set(['critical', 'serious']);
+const BLOCKING_IMPACTS = new Set(['critical', 'serious', 'moderate']);
 
 /**
  * Kontroly jsou `soft`: jeden běh trvá minuty, takže musí vypsat VŠECHNY
@@ -108,10 +123,33 @@ async function expectNoSeriousViolations(page: Page, label: string) {
   expect.soft(summary, `${label}`).toEqual([]);
 }
 
+/**
+ * Právě jeden `<main>` a právě jedno `id="obsah"`.
+ *
+ * axe to sice hlásí taky (`landmark-no-duplicate-main`, `landmark-unique`), ale
+ * jen jako `moderate` a s hláškou, ze které není poznat příčinu. Tenhle test
+ * pojmenuje přesně to, co se rozbilo: shell se vykreslil uvnitř jiného shellu.
+ * Skip-link „Přeskočit na obsah“ míří na `#obsah` — se dvěma stejnými `id`
+ * skočí na to první, tedy nikoli na obsah stránky.
+ */
+async function expectSingleContentLandmark(page: Page, label: string) {
+  const counts = await page.evaluate(() => ({
+    main: document.querySelectorAll('main').length,
+    obsah: document.querySelectorAll('#obsah').length,
+  }));
+  const problemy: string[] = [];
+  if (counts.main !== 1) problemy.push(`<main> ${counts.main}× (má být právě 1)`);
+  // přihlašovací stránky skip-link nemají (jeden krátký formulář, není co
+  // přeskakovat), takže 0 je v pořádku — chybou je až duplicita
+  if (counts.obsah > 1) problemy.push(`id="obsah" ${counts.obsah}× (dvojznačná kotva)`);
+  expect.soft(problemy, label).toEqual([]);
+}
+
 /** Jeden průchod stránkou: světlý i tmavý režim, mobil i desktop. */
 async function auditPage(page: Page, path: string) {
   await page.goto(path);
   await page.waitForLoadState('networkidle');
+  await expectSingleContentLandmark(page, path);
   // kurzor zůstává tam, kam naposledy klikl test — jinak by axe měřil `:hover`
   // stav náhodného prvku pod ním a nález by záležel na rozložení stránky
   await page.mouse.move(0, 0);
@@ -141,7 +179,7 @@ async function auditPage(page: Page, path: string) {
 test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení (light i dark)', async ({
   page,
 }) => {
-  // 33 stránek × 2 režimy × 2 viewporty — pomalé, ale je to jediná pojistka
+  // 35 stránek × 2 režimy × 2 viewporty — pomalé, ale je to jediná pojistka
   // proti tomu, aby se přístupnost zase tiše rozpadla
   test.setTimeout(1_800_000);
   await registerWithProfile(page, { name: 'E2E A11y', email: 'a11y@danero.cz' });
@@ -159,7 +197,13 @@ test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
   await expect(page.getByText('sablona.csv')).toBeVisible();
 
-  for (const path of [...APP_PAGES, ...DEMO_PAGES, ...AUTH_PAGES, ...MARKETING_PAGES]) {
+  for (const path of [
+    ...APP_PAGES,
+    ...ERROR_PAGES,
+    ...DEMO_PAGES,
+    ...AUTH_PAGES,
+    ...MARKETING_PAGES,
+  ]) {
     await auditPage(page, path);
   }
 });

@@ -7,6 +7,11 @@ import { nextCookies } from 'better-auth/next-js';
 import { twoFactor } from 'better-auth/plugins';
 import { getDb, type Db } from '@/db';
 import * as schema from '@/db/schema';
+import {
+  rejectReusedTotpCode,
+  revokePasswordResetTokens,
+  revokeResetTokensAfterPasswordChange,
+} from '@/lib/auth-hooks';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -120,6 +125,9 @@ function buildAuth(db: Db) {
       resetPasswordTokenExpiresIn: 60 * 60,
       // ukradená session nepřežije obnovu hesla
       revokeSessionsOnPasswordReset: true,
+      // D-02: dokončený reset musí sundat i ostatní vydané odkazy — jinak je
+      // starý odkaz ve schránce ještě hodinu živý (detail v lib/auth-hooks.ts)
+      onPasswordReset: ({ user }) => revokePasswordResetTokens(db, user.id),
       sendResetPassword: async ({ user, url }) => {
         const { resolveEmailSender, resetPasswordEmail } = await import('@/lib/email');
         await resolveEmailSender()({ to: user.email, ...resetPasswordEmail(url) });
@@ -171,6 +179,12 @@ function buildAuth(db: Db) {
         '/reset-password': { window: 300, max: 5 },
         '/send-verification-email': { window: 300, max: 3 },
       },
+    },
+    // D-01 (jednorázový TOTP kód) a D-02 (zneplatnění reset odkazů po změně
+    // hesla) — proč a jak je v lib/auth-hooks.ts
+    hooks: {
+      before: rejectReusedTotpCode(db),
+      after: revokeResetTokensAfterPasswordChange(db),
     },
     databaseHooks: {
       session: {

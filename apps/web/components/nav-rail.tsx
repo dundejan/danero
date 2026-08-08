@@ -9,15 +9,22 @@ import { cn } from '@/lib/utils';
 interface NavItem {
   href: string;
   label: string;
+  /**
+   * Kratší popisek pro mobilní tab bar. Sedm položek se na 360 px dělí o 51 px
+   * na položku, do kterých se „Zdroje dat“ (56 px) ani „Předplatné“ (58 px)
+   * nevejdou — uživatel viděl „Zdroje …“ a „Předpla…“ (audit H2-07). Ořezaný
+   * popisek je horší než kratší slovo, proto tady jedno slovo, které se vejde.
+   */
+  short?: string;
 }
 
 const ITEMS: NavItem[] = [
   { href: '/prehled', label: 'Přehled' },
   { href: '/portfolio', label: 'Portfolio' },
-  { href: '/simulator', label: 'Simulátor' },
+  { href: '/simulator', label: 'Simulátor', short: 'Simulace' },
   { href: '/report', label: 'Report' },
-  { href: '/import', label: 'Zdroje dat' },
-  { href: '/predplatne', label: 'Předplatné' },
+  { href: '/import', label: 'Zdroje dat', short: 'Data' },
+  { href: '/predplatne', label: 'Předplatné', short: 'Tarif' },
   { href: '/nastaveni', label: 'Nastavení' },
 ];
 
@@ -101,12 +108,14 @@ function TabBar({ items }: { items: NavItem[] }) {
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              // 390 px / 6 položek ≈ 65 px — menší písmo + truncate, ať nic nepřetéká
-              'min-w-0 truncate px-0.5 py-3 text-center text-[11px] font-medium tracking-tight',
+              // 360 px / 7 položek ≈ 51 px na položku (běžný telefon, ne 390).
+              // 10px písmo + `short` popisky se do toho vejdou celé; `truncate`
+              // zůstává jen jako pojistka pro ještě užší displeje.
+              'min-w-0 truncate px-0 py-3 text-center text-[10px] font-medium tracking-tight',
               active ? 'font-semibold text-ruzova-text' : 'text-inkoust-tlumeny',
             )}
           >
-            {item.label}
+            {item.short ?? item.label}
           </Link>
         );
       })}

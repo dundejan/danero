@@ -87,6 +87,7 @@ function SortableTh({
 }) {
   return (
     <th
+      scope="col"
       className={cn('py-2 pr-4', alignRight && 'text-right')}
       aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
@@ -158,7 +159,7 @@ export function PositionsExplorer({
           }}
           placeholder="Hledat pozici…"
           aria-label="Hledat pozici (název, ticker nebo ISIN)"
-          className="h-9 w-full max-w-xs rounded-md border border-linka bg-plocha px-3 text-sm text-inkoust placeholder:text-inkoust-tlumeny"
+          className="h-9 w-full max-w-xs rounded-md border border-linka-ovladaci bg-plocha px-3 text-sm text-inkoust placeholder:text-inkoust-tlumeny"
         />
         {/* mobil: řazení jako select — hlavičky tabulky tam nejsou */}
         <label className="flex items-center gap-2 text-xs text-inkoust-tlumeny md:hidden">
@@ -171,7 +172,7 @@ export function PositionsExplorer({
               setSortDir(dir);
               setPage(1);
             }}
-            className="h-8 rounded-md border border-linka bg-plocha px-2 text-xs text-inkoust"
+            className="h-8 rounded-md border border-linka-ovladaci bg-plocha px-2 text-xs text-inkoust"
           >
             <option value="value-desc">Hodnota ↓</option>
             <option value="value-asc">Hodnota ↑</option>
@@ -230,6 +231,9 @@ export function PositionsExplorer({
 
           <ScrollArea label="Tabulka pozic" className="hidden md:block">
             <table className="w-full text-sm">
+              {/* název tabulky pro čtečku (audit H2-12) — vizuálně ho nese
+                  nadpis sekce nad ní, proto sr-only */}
+              <caption className="sr-only">Tabulka pozic</caption>
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
                   <SortableTh
@@ -250,6 +254,7 @@ export function PositionsExplorer({
                   {/* bez řazení — ceny jsou v měnách instrumentů a mezi měnami
                       by pořadí nedávalo smysl; srovnatelná je Hodnota (Kč) */}
                   <th
+                    scope="col"
                     className="py-2 pr-4 text-right"
                     title="Ceny jsou v různých měnách — pro srovnání řaď podle hodnoty v Kč"
                   >
@@ -340,7 +345,7 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage - 1)}
                   disabled={currentPage === 1}
                   aria-label="Předchozí stránka"
-                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-linka-ovladaci px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
                 >
                   ‹
                 </button>
@@ -352,7 +357,7 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage + 1)}
                   disabled={currentPage === pageCount}
                   aria-label="Další stránka"
-                  className="rounded-md border border-linka px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-linka-ovladaci px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
                 >
                   ›
                 </button>

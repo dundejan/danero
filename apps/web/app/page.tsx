@@ -190,11 +190,13 @@ function VariantTable({ comparison }: { comparison: VariantComparison }) {
 
 const CTA_PRIMARY =
   'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:opacity-90';
-// sekundární CTA: border z inkoustu (linka měla na ploše kontrast jen 1,07:1
-// a tlačítko zanikalo) + shadow-sm; v dark módu je inkoust světlý, takže
-// vyšší alpha border naopak zesvětlí
+// sekundární CTA: bílé tlačítko na skoro bílé ploše pozná uživatel jen podle
+// okraje, takže ten musí držet 3:1 (WCAG 1.4.11) — dřív to zkoušel
+// `border-inkoust/25`, ale ten dá po smíchání s bílou jen 1,71:1.
+// `--linka-ovladaci` má poměr spočítaný v globals.css a platí v obou režimech,
+// takže odpadá i `dark:` varianta.
 const CTA_SECONDARY =
-  'inline-block rounded-md border border-inkoust/25 bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova dark:border-inkoust/40';
+  'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
 
 // waitlist režim (NEXT_PUBLIC_WAITLIST=1): registrace je na pozvánky — CTA míří
 // na čekací listinu, jinak by si stránka protiřečila se sekcí „Otevíráme na podzim“
