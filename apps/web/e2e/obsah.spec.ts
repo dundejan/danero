@@ -171,6 +171,12 @@ test('FAQ: automatická obnova přiznaná, EPO popsané pravdivě', async ({ pag
 
   const epo = page.locator('details', { hasText: 'ověřeno zkušební podatelnou EPO' });
   await epo.locator('summary').click();
-  await expect(epo.getByText(/Posíláme jí vzorová podání každého typu/)).toBeVisible();
+  // Hlídá se PODSTATA, ne formulace: posíláme vzorky (ne uživatelovo XML)
+  // a děláme to automaticky. Doslovné znění se mění — dřív tenhle test spadl
+  // jen kvůli přeformulování věty, přestože tvrzení zůstalo pravdivé.
+  await expect(epo.getByText(/Posíláme jí vzorová podání/)).toBeVisible();
+  await expect(epo.getByText(/automaticky při každé změně kódu/)).toBeVisible();
+  // nesmí se vrátit slib, že se ověřuje KAŽDÉ uživatelovo XML — to není pravda
   await expect(page.getByText('Každou vygenerovanou písemnost XML tam ověřujeme')).toHaveCount(0);
+  await expect(epo.getByText(/Tvoje konkrétní XML tam neposíláme/)).toBeVisible();
 });
