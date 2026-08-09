@@ -68,6 +68,24 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   SQL dávej data přes `ts()` z `lib/sql.ts`. Testy citlivé na driver patří do
   `test/postgres-compat.test.ts`, který v CI běží proti opravdovému Postgresu
   (`TEST_DATABASE_URL`; lokálně stačí docker kontejner).
+- **Datovou migraci pusť dvakrát, než ji commitneš.** Migrace 0032 přečíslovala
+  `dedupe_key` na `<broker>|<otisk>|<pořadí>` a při druhém běhu padala na
+  primárním klíči: `ORDER BY dedupe_key` je TEXTOVÉ, takže pořadí 10 leží mezi
+  1 a 2 a řádku s desítkou se přidělila dvojka, kterou už měl někdo jiný.
+  Chytil to až test proti opravdovému Postgresu s daty z předchozího běhu —
+  na PGlite s čerstvou fixturou se to neprojeví. Druhý běh není teorie: obnova
+  ze zálohy, ruční spuštění, přesun databáze. Řešení bylo omezit UPDATE jen na
+  řádky se starým tvarem klíče (`NOT LIKE '%|%|%'`).
+- **PL/pgSQL port `fnv1a64` XORuje CELOU UTF-16 jednotku, ne jen spodní bajt.**
+  Osmibitová varianta z migrace 0031 („obsah je stejně ASCII") se u instrumentu
+  s diakritikou rozešla s TypeScriptem (`ČEZ`: SQL fd99…, TS 289d…) — a `isin`
+  je v modelu obyčejný string, takže si ho uživatel přes univerzální šablonu
+  zapíše, jak chce.
+- **Ostrý Postgres i bez Dockeru**: v téhle WSL distribuci `docker` není, ale
+  jsou nainstalované klastry (`/usr/lib/postgresql/16/bin`). Vlastní instance:
+  `initdb -D <dir> -U postgres --auth=trust` a `pg_ctl -D <dir> -o "-p 55433 -k
+  /tmp/nejaky-kratky-adresar"` (socket delší než 107 znaků server odmítne, takže
+  scratchpad na `-k` nestačí).
 - **Migrace s víc příkazy se musí dělit `--> statement-breakpoint`.** Bez toho
   je drizzle pošle jako jeden prepared statement a driver odmítne
   (`cannot insert multiple commands into a prepared statement`) — spadne
