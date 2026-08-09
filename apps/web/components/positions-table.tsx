@@ -14,6 +14,8 @@ interface Row {
   exemptQty: number;
   nearestExemptFrom: string | null;
   daysToExempt: number | null;
+  /** Osvobození časovým testem u téhle pozice nikdy nepřijde (A2-3-04). */
+  neverExempt: boolean;
 }
 
 /** Délka 3letého časového testu ve dnech — pro mini progress „Zbývá dní“. */
@@ -73,7 +75,11 @@ export function PositionsTable({
 }) {
   const rows: Row[] = positions
     .map((position) => {
-      const pending = position.lots.filter((lot) => !lot.isExempt);
+      // A2-3-04: pozice bez nároku na osvobození (obchodní majetek, stablecoiny,
+      // deriváty, období bez krypto osvobození) nesmí ukazovat odpočet ani
+      // „vše bez daně“ — čeká se u nich na něco, co nikdy nepřijde
+      const neverExempt = position.lots.every((lot) => !lot.exemptionPossible);
+      const pending = position.lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
       const nearest = pending.length
         ? pending.reduce((a, b) => (a.exemptFrom < b.exemptFrom ? a : b))
         : null;
@@ -85,6 +91,7 @@ export function PositionsTable({
         exemptQty: position.lots
           .filter((lot) => lot.isExempt)
           .reduce((sum, lot) => sum + lot.remaining.toNumber(), 0),
+        neverExempt,
         nearestExemptFrom: nearest?.exemptFrom ?? null,
         daysToExempt: nearest?.daysToExempt ?? null,
       };
@@ -109,11 +116,13 @@ export function PositionsTable({
             primaryText={`${qty(row.total)} ks`}
             secondaryText={row.exemptQty > 0 ? `${qty(row.exemptQty)} ks bez daně` : undefined}
             exemptText={
-              row.nearestExemptFrom
-                ? `bez daně od ${czDate(row.nearestExemptFrom)}`
-                : 'vše bez daně'
+              row.neverExempt
+                ? 'časový test se nevztahuje'
+                : row.nearestExemptFrom
+                  ? `bez daně od ${czDate(row.nearestExemptFrom)}`
+                  : 'vše bez daně'
             }
-            exemptDone={row.nearestExemptFrom === null}
+            exemptDone={!row.neverExempt && row.nearestExemptFrom === null}
           />
         ))}
       </div>
@@ -173,14 +182,20 @@ export function PositionsTable({
                   </td>
                 )}
                 <td className="py-2 pr-4 text-right">
-                  {row.nearestExemptFrom ? (
+                  {row.neverExempt ? (
+                    <span className="font-sans text-inkoust-tlumeny">
+                      časový test se nevztahuje
+                    </span>
+                  ) : row.nearestExemptFrom ? (
                     czDate(row.nearestExemptFrom)
                   ) : (
                     <span className="font-sans font-semibold text-zelena-text">vše bez daně</span>
                   )}
                 </td>
                 <td className="py-2 text-right">
-                  {row.daysToExempt === null ? (
+                  {row.neverExempt ? (
+                    <span className="text-inkoust-tlumeny">—</span>
+                  ) : row.daysToExempt === null ? (
                     <CheckIcon />
                   ) : (
                     <TestProgress daysToExempt={row.daysToExempt} />

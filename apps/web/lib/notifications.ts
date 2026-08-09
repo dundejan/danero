@@ -40,6 +40,10 @@ export function computeNotificationCandidates(args: {
   for (const position of positions) {
     const label = labels.get(position.isin) ?? position.isin;
     for (const lot of position.lots) {
+      // A2-3-04: pozice bez nároku na osvobození (obchodní majetek, stablecoiny,
+      // období bez krypto osvobození, deriváty) nesmí dostat ani odpočet, ani
+      // „osvobozeno 🎉" — je zdanitelná vždycky
+      if (!lot.exemptionPossible) continue;
       const amount = `${qty(lot.remaining)} ks ${label}`;
       if (!lot.isExempt && lot.daysToExempt <= 30 && lot.daysToExempt > 7) {
         add({

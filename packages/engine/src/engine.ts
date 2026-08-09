@@ -23,7 +23,12 @@ import { FxConverter, type DailyRateProvider } from './fx/fx';
 import { buildLedger, type Ledger } from './ledger/ledger';
 import { computeLimits, type LimitsResult } from './limits/limits';
 import { estimateTax, type TaxEstimate } from './tax/estimate';
-import { classifyTimeTest, positionsAt, type Position } from './timetest/timeTest';
+import {
+  classifyTimeTest,
+  positionsAt,
+  type Position,
+  type TimeTestContext,
+} from './timetest/timeTest';
 import { WarningCollector, type EngineWarning } from './warnings';
 
 export interface EngineInput {
@@ -104,6 +109,23 @@ function resolveSharedCapRatios(
   // krátí se jen druhy, které do stropu skutečně vstoupily
   for (const scope of podStropem) ratios[scope] = ratio;
   return ratios;
+}
+
+/**
+ * Kontext pro hlídač otevřených pozic: co všechno kromě tří let rozhoduje
+ * o tom, jestli osvobození vůbec přijde (A2-3-04). Vytažené ven, aby si
+ * aplikace mohla `positionsAt` zavolat s dneškem a se stejnými pravidly,
+ * jaká používá výpočet roku.
+ */
+export function timeTestContext(input: EngineInput): TimeTestContext {
+  return {
+    securitiesInBusinessAssets: input.profile.hasSecuritiesInBusinessAssets,
+    crypto: {
+      available: input.config.cryptoRules.exemptionsAvailable,
+      effectiveFrom: input.config.cryptoRules.effectiveFrom,
+    },
+    emtTimeTestExempt: resolveOptions(input.options).emtTimeTestExempt,
+  };
 }
 
 /**
@@ -328,7 +350,10 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     warnings,
     options.limit100kIncludesTimeTestExempt,
   );
-  const positions = positionsAt(ledger, `${year}-12-31`);
+  // A2-3-04: hlídač musí znát i důvody, proč osvobození NIKDY nepřijde
+  // (obchodní majetek, EMT, období bez krypto osvobození) — jinak posílá
+  // „osvobozeno 🎉" k pozici, která je zdanitelná vždy
+  const positions = positionsAt(ledger, `${year}-12-31`, timeTestContext(input));
 
   return {
     year,

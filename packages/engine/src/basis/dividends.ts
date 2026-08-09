@@ -32,6 +32,12 @@ export interface InterestItem {
   withholdingCzk: Money;
   /** R-07f: z toho započitatelné po stropu dle čl. 11 smlouvy. */
   creditableCzk: Money;
+  /**
+   * Vstoupil úrok do dílčího základu § 8 (a tím i do limitů)? České úroky
+   * vypořádané srážkou u zdroje ne (R-07g) — ve výpisu ale zůstávají, aby
+   * nemizely z časových řad v UI.
+   */
+  inBase8: boolean;
 }
 
 export interface DividendsResult {
@@ -224,17 +230,44 @@ export function computeDividends(
   /** Propadlá srážka z úroků per země (viz varování za smyčkou). */
   const forfeitedInterest = new Map<string, { cap: Money; overCzk: Money }>();
   for (const tx of interests) {
-    if (tx.sourceCountry === 'CZ') {
-      warnings.add(
-        'CZ_INTEREST_WITHHELD',
-        'INFO',
-        `Úrok z ${czDateText(tx.date)} ze zdroje v ČR — předpoklad srážkové daně u zdroje, do základu § 8 nevstupuje.`,
-        { txId: tx.id },
-      );
-      continue;
-    }
     const amountCzk = fx.toCzk(tx.amount, tx.currency, tx.date);
     const withholdingCzk = fx.toCzk(tx.withholdingTax, tx.currency, tx.date);
+
+    // R-07g: český úrok se do přiznání neuvádí jen tehdy, když ho opravdu
+    // vypořádala srážka u zdroje. Rozhoduje tedy sražená daň v datech, ne země:
+    // úrok z poskytnutých zápůjček a úvěrů (P2P platformy) srážce nepodléhá
+    // a je běžným příjmem § 8. Dokud se to poznávalo podle země, zmizelo
+    // 80 000 Kč nezdaněného úroku ze základu i z limitu 50k a verdikt zněl
+    // „paušál v pořádku“ (nález A1-3-03).
+    if (tx.sourceCountry === 'CZ') {
+      if (withholdingCzk.gt(0)) {
+        warnings.add(
+          'CZ_INTEREST_WITHHELD',
+          'INFO',
+          `Úrok z ${czDateText(tx.date)} ze zdroje v ČR se sraženou daní — je vypořádaný u zdroje (§ 36), do základu § 8 ani do limitů nevstupuje.`,
+          { txId: tx.id },
+        );
+      } else if (amountCzk.gt(0)) {
+        warnings.add(
+          'CZ_INTEREST_WITHOUT_WITHHOLDING',
+          'WARNING',
+          `Úrok z ${czDateText(tx.date)} ze zdroje v ČR, ale bez sražené daně — počítáme ho proto do základu § 8 a do limitů (tak se daní třeba úrok z P2P půjček). Pokud ti srážka strhnuta byla a jen ji výpis neuvádí, oprav sraženou daň u téhle transakce; jinak by ti vyšla vyšší daň, než máš platit.`,
+          { txId: tx.id },
+        );
+        taxableInterest = taxableInterest.plus(amountCzk);
+      }
+      // do rozpisu po státech český úrok nepatří (není co započítat), ale ve
+      // výpisu úroků zůstat musí — jinak mizí i z časových řad v UI
+      interestItems.push({
+        txId: tx.id,
+        date: tx.date,
+        amountCzk,
+        withholdingCzk,
+        creditableCzk: ZERO,
+        inBase8: withholdingCzk.lte(0) && amountCzk.gt(0),
+      });
+      continue;
+    }
     taxableInterest = taxableInterest.plus(amountCzk);
 
     // R-07f: zápočet z úroku jde stejným postupem jako u dividendy, ale strop
@@ -243,7 +276,14 @@ export function computeDividends(
     // Úrok bez srážky do rozpisu po státech nepatří: nemá co započítat a řádek
     // navíc by jen mátl (Příloha 3 se plní jen za státy se zápočtem).
     if (withholdingCzk.lte(0)) {
-      interestItems.push({ txId: tx.id, date: tx.date, amountCzk, withholdingCzk, creditableCzk: ZERO });
+      interestItems.push({
+        txId: tx.id,
+        date: tx.date,
+        amountCzk,
+        withholdingCzk,
+        creditableCzk: ZERO,
+        inBase8: true,
+      });
       continue;
     }
     const country = tx.sourceCountry ?? 'XX';
@@ -272,7 +312,14 @@ export function computeDividends(
       withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
       creditableCzk: agg.creditableCzk.plus(creditableCzk),
     };
-    interestItems.push({ txId: tx.id, date: tx.date, amountCzk, withholdingCzk, creditableCzk });
+    interestItems.push({
+      txId: tx.id,
+      date: tx.date,
+      amountCzk,
+      withholdingCzk,
+      creditableCzk,
+      inBase8: true,
+    });
   }
 
   for (const [country, { cap, overCzk }] of forfeitedInterest) {

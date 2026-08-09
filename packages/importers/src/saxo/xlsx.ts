@@ -389,10 +389,14 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
         const converted = rate && rate.gt(0) && !rate.eq(1) ? amount.mul(rate) : undefined;
         const impliedFee = (value: Decimal): Decimal =>
           isBuy ? value.abs().minus(gross) : gross.minus(value);
-        const feeAmount = [amount, converted]
+        // Přepočtená varianta má PŘEDNOST: vyplněný kurz jiný než 1 je sám
+        // o sobě doklad, že Amount je v jiné měně než cena. Poplatek uznáme jen
+        // nezáporný a menší než obchod — přepočet špatným směrem vyjde záporný
+        // a propadne zpátky na částku, jak přišla.
+        const feeAmount = [converted, amount]
           .filter((value): value is Decimal => value !== undefined)
           .map(impliedFee)
-          .find((candidate) => candidate.abs().lte(gross));
+          .find((candidate) => candidate.gte(0) && candidate.lte(gross));
         if (feeAmount === undefined) {
           result.warnings.push({
             line,

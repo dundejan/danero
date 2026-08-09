@@ -93,7 +93,9 @@ export function PortfolioView({
   // nejbližší konec časového testu per pozice — pro mobilní karty
   const nearestExemption = new Map<string, string | null>(
     positions.map((position) => {
-      const pending = position.lots.filter((lot) => !lot.isExempt);
+      // A2-3-04: lot bez nároku na osvobození (obchodní majetek, stablecoin,
+      // derivát) nesmí vyrobit „nejbližší osvobození“, které nikdy nenastane
+      const pending = position.lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
       return [
         position.isin,
         pending.length

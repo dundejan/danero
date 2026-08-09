@@ -212,6 +212,24 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
 
   Práh **nemá smysl posouvat až za slevy na dani**: slevy ani nezdanitelné části engine nezná (závisí na § 7 a na osobní situaci mimo evidovaná data), takže by se porovnávalo s vymyšleným číslem. Uživatel s obecným základem nad 1,68 mil. Kč má navíc slevu na poplatníka spotřebovanou už příjmy § 7.
 - **R-07e** Prokazování: výpisy brokera FS v praxi akceptuje, není nárokové — dokumentační upozornění.
+- **R-07g České úroky**: úrok ze zdroje v ČR bývá vypořádaný srážkou u zdroje
+  (§ 36 odst. 2 — mimo jiné úrok z účtu, který není určen k podnikání), a pak se
+  do přiznání neuvádí a nečerpá limity, stejně jako česká dividenda podle R-07a.
+  ⚠️ **Neplatí to ale plošně**: srážce nepodléhá třeba úrok z poskytnutých
+  zápůjček a úvěrů (P2P platformy typu Zonky nebo Bondster) — ten je běžným
+  příjmem podle § 8 a do přiznání i do limitů R-08 vstupuje.
+
+  Engine se proto řídí sraženou daní v datech, ne zemí zdroje:
+  - `withholdingTax > 0` → mimo dílčí základ § 8 i mimo limity, INFO
+    `CZ_INTEREST_WITHHELD`;
+  - `withholdingTax = 0` → **do § 8 a do limitů** (bezpečný směr: nezdanit by
+    znamenalo podhodnotit daň i limit 50k), WARNING
+    `CZ_INTEREST_WITHOUT_WITHHOLDING` s výzvou ověřit, jestli srážku jen
+    nepřečetl importér.
+
+  Úrok se v obou případech objeví ve výpisu úroků (časové řady v UI) — dřív
+  český úrok mizel úplně, takže 80 000 Kč nezdaněného úroku vyšlo jako
+  „základ § 8 = 0, limit 50k nevyčerpán, paušál v pořádku“ (nález A1-3-03).
 
 ## R-08 Paušální daň (§ 2a, § 7a) — klíčová funkce Danero
 
@@ -219,7 +237,7 @@ Dvě oddělené roviny:
 
 - **R-08a Paušální REŽIM (§ 2a)**: překročení 50k limitu jej **neukončuje** (končí až např. obratem § 7 nad 2 mil., plátcovstvím DPH…). Poplatník v režimu zůstává a platí zálohy i další rok.
 - **R-08b Daň rovna paušální dani (§ 7a)**: podmínka — kromě § 7 jen příjmy osvobozené / mimo předmět / srážkové, a příjmy § 8 + § 9 + § 10 **v úhrnu ≤ 50 000 Kč**.
-- **R-08c Co se do 50k NEPOČÍTÁ**: osvobozené příjmy (časový test splněn — R-01; úhrn prodejů CP ≤ 100k — R-02; krypto analogicky), české dividendy/úroky se srážkou (R-07a). Objem osvobozených příjmů je neomezený.
+- **R-08c Co se do 50k NEPOČÍTÁ**: osvobozené příjmy (časový test splněn — R-01; úhrn prodejů CP ≤ 100k — R-02; krypto analogicky), české dividendy (R-07a) a české úroky **se sraženou daní** (R-07g — bez srážky se počítají). Objem osvobozených příjmů je neomezený.
 - **R-08d Co se POČÍTÁ (hrubé příjmy, ne zisk!)**: zahraniční dividendy **brutto**, neosvobozené **tržby** z prodeje CP/krypta, zdanitelné úroky, nájmy. Příklad: prodej za 120 000 Kč, držba < 3 roky, zisk 5 000 Kč → do limitu vstupuje 120 000 Kč → prolomeno.
 - **R-08e Důsledky prolomení**: daň není rovna paušální dani → povinnost podat přiznání (vše standardně vč. § 7) + přehledy ČSSZ a ZP + pojistné standardně; zaplacené paušální zálohy se započtou.
 - **R-08f Danero hlídá**: běžící součet (zahraniční dividendy brutto + neosvobozené tržby + ostatní § 8–10 dle ručního zadání) vůči 50 000 Kč; warning pásma 60 % / 85 % / prolomeno; simulace prodeje ukazuje dopad na tento limit **před** obchodem; odhad finančního dopadu prolomení.

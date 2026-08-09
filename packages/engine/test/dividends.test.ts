@@ -125,11 +125,35 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(unknown.dividends.base8Czk.toString()).toBe('1000'); // zachází se s ní jako zahraniční
   });
 
-  it('úroky: zahraniční vstupují do § 8 (a limitu 50k), české srážkové ne', () => {
-    const result = run([interest({ amount: '1500', sourceCountry: 'GB' }), interest({ amount: '999', sourceCountry: 'CZ' })]);
+  it('úroky: zahraniční vstupují do § 8 (a limitu 50k), český SE SRÁŽKOU ne', () => {
+    const result = run([
+      interest({ amount: '1500', sourceCountry: 'GB' }),
+      // srážka 15 % u zdroje → § 36, vypořádáno (R-07g)
+      interest({ amount: '1000', sourceCountry: 'CZ', withholdingTax: '150' }),
+    ]);
     expect(result.dividends.taxableInterestCzk.toString()).toBe('1500');
     expect(result.dividends.base8Czk.toString()).toBe('1500');
     expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('1500');
+    // ve výpisu úroků ale zůstává, ať nemizí z časových řad v UI
+    expect(result.dividends.interestItems).toHaveLength(2);
+    expect(hasWarning(result, 'CZ_INTEREST_WITHHELD')).toBe(true);
+  });
+
+  /**
+   * A1-3-03: český úrok se vyhazoval ze základu i ze všech limitů podle ZEMĚ,
+   * bez ohledu na sraženou daň — takže 80 000 Kč úroku z P2P půjček (které
+   * srážce nepodléhají) dalo „základ § 8 = 0, limit 50k nevyčerpán, paušál
+   * v pořádku“. Rozhoduje sražená daň v datech, ne země (R-07g).
+   */
+  it('R-07g: český úrok BEZ srážky patří do § 8 i do limitu 50k', () => {
+    const result = run([interest({ amount: '80000', sourceCountry: 'CZ' })]);
+    expect(result.dividends.taxableInterestCzk.toString()).toBe('80000');
+    expect(result.dividends.base8Czk.toString()).toBe('80000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('80000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+    expect(hasWarning(result, 'CZ_INTEREST_WITHOUT_WITHHOLDING')).toBe(true);
+    // do rozpisu po státech nepatří — není co započítat
+    expect(result.dividends.creditableByCountry['CZ']).toBeUndefined();
   });
 
   it('R-07f: sražená daň z úroku se do modelu vůbec dostane (nález A1-07)', () => {

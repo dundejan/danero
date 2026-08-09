@@ -98,3 +98,87 @@ describe('R-01 časový test 3 roky', () => {
     expect(lot.daysToExempt).toBe(426); // od 2025-12-31 do 2027-03-02
   });
 });
+
+/**
+ * A2-3-04: hlídač otevřených pozic klasifikoval osvobození jen tříletým testem
+ * a neznal nic dalšího — posílal proto „osvobozeno 🎉, prodej je osvobozený od
+ * daně“ i k pozicím, které osvobození nemají nikdy. Doloženo: USDT nakoupený
+ * 1. 6. 2021 hlásil `isExempt=true, daysToExempt=0`, přestože skutečný prodej
+ * za 220 000 Kč dal základ 20 000 Kč a daň 3 000 Kč.
+ */
+describe('hlídač pozic zná i důvody, proč osvobození nepřijde (A2-3-04)', () => {
+  const usdt = (over: Record<string, unknown> = {}) =>
+    buy({
+      isin: 'USDT',
+      assetClass: 'CRYPTO',
+      quantity: '10000',
+      pricePerShare: '1',
+      currency: 'USD',
+      tradeDate: '2021-06-01',
+      settlementDate: '2021-06-01',
+      ...over,
+    });
+
+  const lotOf = (result: ReturnType<typeof run>, isin: string) =>
+    result.positions.find((p) => p.isin === isin)!.lots[0]!;
+
+  it('stablecoin (EMT) drží tři roky, a přesto osvobozený není', () => {
+    const lot = lotOf(run([usdt()]), 'USDT');
+    expect(lot.exemptionPossible).toBe(false);
+    expect(lot.isExempt).toBe(false);
+  });
+
+  it('se zapnutým sporným výkladem (R-10g) se stablecoin osvobodit může', () => {
+    const lot = lotOf(run([usdt()], { options: { emtTimeTestExempt: true } }), 'USDT');
+    expect(lot.exemptionPossible).toBe(true);
+    expect(lot.isExempt).toBe(true);
+  });
+
+  it('CP v obchodním majetku osvobození nemají vůbec (R-01c/R-02f)', () => {
+    const txs = [
+      buy({ quantity: '10', pricePerShare: '100', tradeDate: '2020-01-02', settlementDate: '2020-01-02' }),
+    ];
+    expect(lotOf(run(txs), 'CZ0000000001').exemptionPossible).toBe(true);
+    const vObchodnimMajetku = run(txs, { profile: { hasSecuritiesInBusinessAssets: true } });
+    const lot = lotOf(vObchodnimMajetku, 'CZ0000000001');
+    expect(lot.exemptionPossible).toBe(false);
+    expect(lot.isExempt).toBe(false);
+  });
+
+  it('krypto v období bez osvobození (ZO ≤ 2024) nárok nemá (R-10b)', () => {
+    const btc = buy({
+      isin: 'BTC',
+      assetClass: 'CRYPTO',
+      quantity: '1',
+      pricePerShare: '1000',
+      currency: 'USD',
+      tradeDate: '2020-01-02',
+      settlementDate: '2020-01-02',
+    });
+    expect(lotOf(run([btc]), 'BTC').exemptionPossible).toBe(true);
+
+    const config: TaxYearConfig = {
+      ...CFG_2025,
+      year: 2024,
+      cryptoRules: { exemptionsAvailable: false, effectiveFrom: null },
+    };
+    const lot = lotOf(run([btc], { config }), 'BTC');
+    expect(lot.exemptionPossible).toBe(false);
+    expect(lot.isExempt).toBe(false);
+  });
+
+  it('krypto osvobozuje až prodej ode dne účinnosti novely, ne dřív (R-10b)', () => {
+    // nákup 2019 → tři roky uplynuly 2022, ale osvobození existuje až od 15. 2. 2025
+    const btc = buy({
+      isin: 'BTC',
+      assetClass: 'CRYPTO',
+      quantity: '1',
+      pricePerShare: '1000',
+      currency: 'USD',
+      tradeDate: '2019-01-02',
+      settlementDate: '2019-01-02',
+    });
+    const lot = lotOf(run([btc]), 'BTC');
+    expect(lot.exemptFrom).toBe('2025-02-15');
+  });
+});

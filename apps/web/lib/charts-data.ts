@@ -70,10 +70,11 @@ export function flatTax50kSeries(result: TaxYearResult): LimitSeries | null {
     ...result.dividends.items
       .filter((item) => !item.isCzech)
       .map((item) => ({ date: item.date, amountCzk: item.grossCzk })),
-    ...result.dividends.interestItems.map((item) => ({
-      date: item.date,
-      amountCzk: item.amountCzk,
-    })),
+    // R-07a/R-07g: český příjem vypořádaný srážkou u zdroje limit nečerpá —
+    // ve výpisu úroků je kvůli časovým řadám, ale do čerpání nepatří
+    ...result.dividends.interestItems
+      .filter((item) => item.inBase8)
+      .map((item) => ({ date: item.date, amountCzk: item.amountCzk })),
   ];
   // ruční „ostatní příjmy“ z profilu čerpají limit od začátku roku
   const initial = result.limits.flatTax50k.components.otherManualCzk;
@@ -298,6 +299,10 @@ export function horizonDots(
   for (const position of positions) {
     const priceCzk = pricePerShareCzk(position.isin, prices, fxYear);
     for (const lot of position.lots) {
+      // A2-3-04: horizont ukazuje cestu k osvobození — lot, který na osvobození
+      // nárok nemá (obchodní majetek, stablecoin, derivát, období bez krypto
+      // osvobození), do něj nepatří ani jako čekající tečka
+      if (!lot.exemptionPossible) continue;
       // klíč = přesný den osvobození → loty téhož dne sdílí i stav isExempt
       const key = lot.exemptFrom;
       const weight = basis === 'value' && priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
@@ -428,8 +433,10 @@ export function exemptionOutlook(
     .filter(({ lot }) => lot.isExempt)
     .reduce((sum, item) => sum.plus(weight(item)), ZERO);
 
+  // A2-3-04: lot bez nároku na osvobození nikdy „nedojde" — v křivce by posunul
+  // podíl osvobozeného majetku ke 100 % a s datem v minulosti rozbil i osu
   const future = lots
-    .filter(({ lot }) => !lot.isExempt)
+    .filter(({ lot }) => lot.exemptionPossible && !lot.isExempt)
     .sort((a, b) => a.lot.exemptFrom.localeCompare(b.lot.exemptFrom));
 
   const share = () => Number(exempt.div(total).mul(100).toFixed(1));

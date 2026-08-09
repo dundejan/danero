@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import {
   addDays,
   parseTransactions,
+  yearOf,
   TaxpayerProfileSchema,
   type TaxpayerProfile,
   type Transaction,
@@ -10,6 +11,7 @@ import {
   analyzeTaxYear,
   compareVariants,
   positionsAt,
+  timeTestContext,
   type EngineInput,
   type EngineOptions,
   type Position,
@@ -333,10 +335,22 @@ export function analyzeForUser(
   atDate: string,
   dailyRates?: EngineInput['dailyRates'],
 ): YearAnalysis {
-  const result = analyzeTaxYear(engineInputForUser(txs, profileRow, year, dailyRates));
+  const input = engineInputForUser(txs, profileRow, year, dailyRates);
+  const result = analyzeTaxYear(input);
   return {
     result,
-    positions: positionsAt(result.ledger, atDate),
+    // A2-3-04: pozice k DNEŠKU, ale se stejnými pravidly osvobození jako
+    // výpočet roku — jinak hlídač slibuje osvobození i tam, kde nikdy nepřijde.
+    // Krypto pravidla se ale řídí rokem, ve kterém by se prodávalo (tedy
+    // `atDate`), ne prohlíženým rokem: přepnutí na `?rok=2024` jinak u všech
+    // krypto pozic hlásilo „časový test se nevztahuje“, přestože dnes platí.
+    positions: positionsAt(result.ledger, atDate, {
+      ...timeTestContext(input),
+      crypto: {
+        available: configForYear(yearOf(atDate)).cryptoRules.exemptionsAvailable,
+        effectiveFrom: configForYear(yearOf(atDate)).cryptoRules.effectiveFrom,
+      },
+    }),
     labels: instrumentLabels(txs),
     transactionCount: txs.length,
   };

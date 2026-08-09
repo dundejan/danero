@@ -193,14 +193,19 @@ export function PositionView({
                       {money(lot.costPerShare, position.currency)}
                     </td>
                     <td className="py-2 pr-4">
-                      {lot.isExempt ? (
+                      {/* A2-3-04: u pozice bez nároku (obchodní majetek, stablecoin,
+                          derivát) by datum i odpočet slibovaly osvobození, které
+                          nikdy nepřijde */}
+                      {!lot.exemptionPossible ? (
+                        <span className="text-inkoust-tlumeny">nevztahuje se</span>
+                      ) : lot.isExempt ? (
                         <span className="font-medium text-zelena-text">už bez daně</span>
                       ) : (
                         czDate(lot.exemptFrom)
                       )}
                     </td>
                     <td className="py-2 text-right">
-                      {lot.isExempt ? '—' : lot.daysToExempt}
+                      {!lot.exemptionPossible || lot.isExempt ? '—' : lot.daysToExempt}
                       {lot.interpretive && (
                         <span title="Datum nabytí vychází z výkladu (fúze/spin-off)"> *</span>
                       )}

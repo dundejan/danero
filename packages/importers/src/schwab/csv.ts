@@ -292,11 +292,11 @@ export function parseSchwabCsv(
       // cena 0 Kč a bez časového testu, tedy maximálně nadhodnocený zisk.
       // A protože UI u `skipped` ukazuje jen počet (texty ne), musí to být
       // varování — jinak se to uživatel nedozví vůbec.
-      if (symbol !== '' && quantity !== '' && Number(quantity) !== 0) {
+      if (quantity !== '' && Number(quantity) !== 0) {
         result.warnings.push({
           line,
           message:
-            `„${action}“ (${symbol}): přesun ${quantity} ks mezi účty — výpis neuvádí, odkud a za kolik. ` +
+            `„${action}“${symbol ? ` (${symbol})` : ''}: přesun ${quantity} ks mezi účty — výpis neuvádí, odkud a za kolik. ` +
             'Doplň ho jako TRANSFER_IN (s původním datem a cenou nákupu) nebo TRANSFER_OUT přes univerzální šablonu, ' +
             'jinak se prodej těchto kusů spočítá s nulovou nabývací cenou a bez časového testu.',
         });

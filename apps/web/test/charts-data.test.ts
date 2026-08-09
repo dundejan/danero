@@ -388,6 +388,7 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
           acquisitionDate: '2024-01-02',
           exemptFrom: '2027-01-03',
           isExempt: false,
+          exemptionPossible: true,
           daysToExempt: 100,
           costPerShare: d('250'), // pence za kus
           interpretive: false,

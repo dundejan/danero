@@ -524,3 +524,58 @@ describe('kalendářní připomínky (G9c)', () => {
     expect(leden[0]!.body).not.toContain(czDate(paper));
   });
 });
+
+/**
+ * A2-3-04: hlídač posílal „osvobozeno 🎉 … prodej je osvobozený od daně“
+ * i k pozicím, které osvobození nemají nikdy — doloženo na USDT drženém
+ * od 1. 6. 2021, jehož prodej za 220 000 Kč znamená základ 20 000 Kč
+ * a daň 3 000 Kč.
+ */
+describe('hlídač neslibuje osvobození tam, kde nepřijde (A2-3-04)', () => {
+  it('stablecoin držený čtyři roky nedostane ani odpočet, ani „osvobozeno“', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+
+    const txs = parseTransactions([
+      {
+        type: 'BUY',
+        id: 'usdt-buy',
+        isin: 'USDT',
+        assetClass: 'CRYPTO',
+        quantity: '10000',
+        pricePerShare: '1',
+        currency: 'USD',
+        tradeDate: '2021-06-01',
+      },
+    ]);
+    const profil = {
+      userId: 'u-emt',
+      regime: 'PAUSAL',
+      hasBusinessAssets: false,
+      w8benFiled: true,
+      otherIncomeCzk: '0',
+      matchingMethod: 'FIFO',
+      fxMethod: 'UNIFIED',
+      limit100kStrict: true,
+      derivativesExpensesPerType: false,
+      emtTimeTestExempt: false,
+      timeTestBasis: 'settlement',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Parameters<typeof analyzeForUser>[1];
+
+    const analysis = analyzeForUser(txs, profil, 2026, '2026-08-09');
+    const lot = analysis.positions[0]!.lots[0]!;
+    expect(lot.exemptionPossible).toBe(false);
+    expect(lot.isExempt).toBe(false);
+
+    const candidates = computeNotificationCandidates({
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today: '2026-08-09',
+    });
+    expect(candidates.some((c) => c.type.startsWith('TIME_TEST'))).toBe(false);
+  });
+});
