@@ -407,8 +407,12 @@ export const transactions = pgTable(
 
 /**
  * Waitlist před spuštěním (docs/12, fáze P0): jen e-mail + čas. Souhlas je
- * omezený na jednorázové oznámení o otevření (zákon 480/2004 Sb.) — text
- * souhlasu nese formulář; PK e-mail = opakované přihlášení nic nezdvojí.
+ * omezený na jednorázové oznámení o otevření (zákon 480/2004 Sb.).
+ *
+ * ⚠️ ARCHIV: služba je otevřená, formulář i zápis do listiny jsou pryč
+ * (9. 8. 2026). Tabulka zůstává, protože adresy nasbírané před spuštěním
+ * jsou pořád v ní a mazat cizí data bez pokynu se nedělá — popisuje je
+ * `/soukromi`. Nezakládej na ní nic nového.
  */
 export const waitlist = pgTable('waitlist', {
   email: text('email').primaryKey(),

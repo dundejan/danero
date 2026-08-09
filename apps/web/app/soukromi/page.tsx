@@ -74,10 +74,11 @@ export default function PrivacyPage() {
           nich ti službu nejde poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR).
           Bezpečnostní záznamy
           a technické logy držíme z oprávněného zájmu na ochraně tvého účtu a provozu
-          služby (čl. 6 odst. 1 písm. f). E-mail zadaný do čekací listiny používáme jen
-          na základě tvého souhlasu — pošleme ti jediné oznámení o otevření služby a víc
-          nic; {/* E-35: „adresu pak smažeme" tady stálo dřív, ale žádný kód to nedělal.
-          Odvolání souhlasu je ruční krok a jako ruční se taky popisuje. */}
+          služby (čl. 6 odst. 1 písm. f). E-maily, které nám lidé nechali v čekací
+          listině před spuštěním, pořád držíme na základě jejich souhlasu — službu
+          jsme mezitím otevřeli, takže už do listiny nejde zapsat a k ničemu dalšímu
+          adresy nepoužíváme; {/* E-35: „adresu pak smažeme" tady stálo dřív, ale žádný
+          kód to nedělal. Odvolání souhlasu je ruční krok a jako ruční se taky popisuje. */}
           souhlas můžeš kdykoli odvolat — napiš na{' '}
           <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
             dunder.jan@gmail.com

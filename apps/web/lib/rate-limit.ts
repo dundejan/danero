@@ -32,8 +32,12 @@ export async function checkRateLimit(
 
 /**
  * Úklid prošlých oken. Tabulka nemá cizí klíč na uživatele, takže bez tohohle
- * roste donekonečna a přežije i smazání účtu — a u klíčů z waitlistu drží
- * syrovou IP adresu, kterou po vypršení okna nemáme proč uchovávat.
+ * roste donekonečna a řádky přežijou i smazání účtu.
+ *
+ * Dokud existoval waitlist, držely jeho klíče navíc syrovou IP adresu; ta je
+ * po jeho zrušení (9. 8. 2026) pryč a všechny klíče jsou dnes odvozené od
+ * userId. Kdyby sem někdy přibyl anonymní limit klíčovaný IP adresou, tenhle
+ * úklid je jediné, co ji zase přestane uchovávat — počítej s tím.
  */
 export async function pruneRateLimits(db: Db, now = new Date()): Promise<number> {
   const deleted = await db

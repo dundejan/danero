@@ -21,9 +21,10 @@ import {
 describe('úklid provozních tabulek', () => {
   it('prošlá okna rate limitů se smažou, běžící zůstanou', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
-    // klíč z waitlistu drží syrovou IP — po vypršení okna ji nemáme proč držet
+    // prošlá okna se mažou bez ohledu na tvar klíče — i kdyby v něm někdy
+    // zase byla syrová IP (anonymní limit), tohle je jediné, co ji uklidí
     await db.insert(appRateLimits).values([
-      { key: 'waitlist:203.0.113.7', count: 1, resetAt: new Date('2026-01-01T00:00:00Z') },
+      { key: 'epo:203.0.113.7', count: 1, resetAt: new Date('2026-01-01T00:00:00Z') },
       { key: 'upload:smazany-uzivatel', count: 3, resetAt: new Date('2026-02-01T00:00:00Z') },
     ]);
     await checkRateLimit(db, 'upload:aktivni', { max: 10, windowMs: 600_000 });

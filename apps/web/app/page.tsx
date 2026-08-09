@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
-import { WaitlistForm } from '@/components/waitlist-form';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
@@ -204,17 +203,9 @@ const CTA_PRIMARY =
 const CTA_SECONDARY =
   'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
 
-// waitlist režim (NEXT_PUBLIC_WAITLIST=1): registrace je na pozvánky — CTA míří
-// na čekací listinu, jinak by si stránka protiřečila se sekcí „Otevíráme na podzim“
-const WAITLIST = process.env.NEXT_PUBLIC_WAITLIST === '1';
-
-/** Registrační CTA se ve waitlist režimu mění na zápis do čekací listiny. */
+/** Registrační CTA. Služba běží veřejně — žádný režim „otevřeme někdy“. */
 function SignupCta({ className }: { className: string }) {
-  return WAITLIST ? (
-    <a href="#waitlist" className={className}>
-      Zapsat se do čekací listiny
-    </a>
-  ) : (
+  return (
     <Link href="/registrace" className={className}>
       Založit účet zdarma
     </Link>
@@ -707,32 +698,6 @@ export default async function LandingPage({
             </div>
           </div>
         </section>
-
-        {/* ── waitlist: režim před veřejným otevřením — na produkci se zapíná
-            NEXT_PUBLIC_WAITLIST=1, dokud se registrace neotevřou veřejnosti */}
-        {WAITLIST && (
-          <section id="waitlist" aria-labelledby="waitlist-nadpis" className="mt-24 lg:mt-32">
-            <div className="rounded-lg border border-linka bg-plocha p-8 sm:p-10">
-              <div className="max-w-2xl">
-                <Eyebrow>Otevíráme na podzim</Eyebrow>
-                <h2
-                  id="waitlist-nadpis"
-                  className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
-                >
-                  Buď u toho mezi prvními
-                </h2>
-                <p className="mt-3 text-inkoust-tlumeny">
-                  Registrace otevíráme postupně, ať stihneme každého pořádně přivítat.
-                  Nech nám e-mail a dostaneš přístup hned, jak otevřeme — ještě před
-                  daňovou sezónou.
-                </p>
-                <div className="mt-6">
-                  <WaitlistForm />
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
 
         {/* ── závěrečné CTA ─────────────────────────────────────────────────── */}
         <section aria-labelledby="zaver-nadpis" className="mt-24 lg:mt-32">
