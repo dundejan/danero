@@ -92,8 +92,10 @@ od nuly.** Engine nikdy nevidí formát brokera.
 
 ## Přispívání
 
-Nejcennější příspěvek je **podpora dalšího brokera** — a je za ni hostovaná
-služba zdarma napořád. Pravidla v [CONTRIBUTING.md](CONTRIBUTING.md), zejména:
+Nejcennější příspěvek je **podpora dalšího brokera** — a je za ni celoroční
+hlídání na danero.cz zdarma po celou dobu, co službu provozujeme (co přesně se
+tím slibuje, včetně toho, co to není, stojí v CONTRIBUTING). Pravidla
+v [CONTRIBUTING.md](CONTRIBUTING.md), zejména:
 **do veřejného repozitáře nikdy neposílej reálné výpisy** (jsou to osobní údaje).
 
 Bezpečnostní chyby: [SECURITY.md](SECURITY.md).

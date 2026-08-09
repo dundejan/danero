@@ -83,6 +83,19 @@ export default function TermsPage() {
           a případnou změnu ti oznámíme předem podle článku 10.
         </p>
         {/*
+          E-3-09: aktualizace za nový daňový rok jsou hlavní protiplnění ročního
+          hlídání (README je slibuje výslovně), takže musí být i v podmínkách —
+          § 1820 odst. 1 písm. d) a § 2389g odst. 2 písm. a) OZ nás k tomu
+          zavazují tak jako tak, aby zákazník věděl, co za 990 Kč dostává.
+        */}
+        <p>
+          U ročního hlídání je součástí služby i to, že aplikaci držíme aktuální: každý
+          leden do ní doplníme jednotný kurz vyhlášený GFŘ, nové hranice a limity pro
+          uplynulý daňový rok a strukturu formuláře pro elektronické podání, jakmile ji
+          finanční správa zveřejní. Do té doby počítáme s orientačními hodnotami a je to
+          v aplikaci vidět. Aktualizace dostáváš po celou dobu, na kterou máš zaplaceno.
+        </p>
+        {/*
           § 2389i odst. 2 OZ: odchylku od zákonné jakosti digitálního obsahu lze
           ujednat jen tehdy, když ji spotřebitel ZVLÁŠŤ potvrdil. Odstavec proto
           nese vlastní kotvu — registrace a objednávka na něj musí umět odkázat

@@ -103,3 +103,39 @@ describe('služební e-maily se identifikují (E-46)', () => {
     });
   }
 });
+
+/**
+ * E-3-08/E-3-09: texty nesmí slibovat, co v kódu není, a naopak musí slíbit to,
+ * co je hlavní protiplnění. Veřejná architektura tvrdila „passkeys“ a
+ * „Sentry + Vercel Analytics“ (v repozitáři nula výskytů, a tentýž soubor si
+ * o pár řádků níž odporoval), zatímco podmínky mlčely o každoročních
+ * aktualizacích, které README prodává jako důvod platit 990 Kč.
+ */
+describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
+  const read = async (relativni: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
+  };
+
+  it('architektura neslibuje passkeys ani externí monitoring, dokud nasazené nejsou', async () => {
+    const doc = await read('../../docs/04-architektura.md');
+    const kod = [
+      await read('lib/auth.ts'),
+      await read('lib/log.ts'),
+      await read('package.json'),
+    ].join('\n');
+
+    for (const tvrzeni of ['passkey', 'Sentry', 'Vercel Analytics']) {
+      const slibuje = new RegExp(`\\| .*\\*\\*.*${tvrzeni}`, 'i').test(doc);
+      const existuje = new RegExp(tvrzeni.replace(' ', '.?'), 'i').test(kod);
+      expect(slibuje && !existuje, `docs/04 slibuje ${tvrzeni}, ale v kódu není`).toBe(false);
+    }
+  });
+
+  it('podmínky slibují každoroční aktualizace, které README prodává', async () => {
+    const podminky = await read('app/podminky/page.tsx');
+    expect(podminky).toContain('jednotný kurz');
+    expect(podminky).toContain('elektronické podání');
+  });
+});

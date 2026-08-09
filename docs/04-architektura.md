@@ -15,11 +15,11 @@ Rozhodnuto 7/2026. Priority zadání: spolehlivost, rychlost, **krásné modern�
 | Peníze/čísla | **decimal.js** (v DB `numeric` jako string) | nikdy `number`/float pro částky |
 | Validace | **Zod** | sdílená schémata engine ↔ API ↔ formuláře |
 | DB | **PostgreSQL (Neon, region Frankfurt)** + **Drizzle ORM** | EU data-residency, TS-first ORM, `numeric` bez ztráty přesnosti |
-| Auth | **Better Auth** (self-hosted) | data i hesla v naší DB (žádná třetí strana u citlivých dat), TOTP 2FA + passkeys out-of-the-box |
+| Auth | **Better Auth** (self-hosted) | data i hesla v naší DB (žádná třetí strana u citlivých dat), TOTP 2FA out-of-the-box |
 | E-maily | **Resend** + React Email | notifikace, transakční maily |
 | Billing | **Stripe** (subscriptions) | až fáze F5 |
 | Hosting | **Vercel** (functions region fra1) | zero-ops, cron joby, preview deploye; exit-path: Docker na Hetzner (architektura na Vercelu nezávislá — žádné vendor-specific API kromě cronu) |
-| Monitoring | **Sentry** + Vercel Analytics (bez PII) | |
+| Monitoring | **strukturované logy** (JSON) ve Vercelu + `/api/health` | externí sběr chyb ani analytika nasazené nejsou (viz „Provoz" níž) |
 | Testy | **Vitest** (engine: golden + property testy via fast-check), **Playwright** (E2E) | |
 
 ## Struktura monorepa
@@ -68,7 +68,7 @@ Držíme citlivá finanční data → bezpečnost je marketingová výhoda proti
 3. **Auth**: scrypt (N=2^16, r=8 — 64 MiB, nativní `node:crypto`), TOTP 2FA se zálohovými kódy, rate limiting na login i per účet, session revokace při změně hesla.
 4. **Aplikační**: Zod validace všech vstupů; parsování CSV s limity velikosti a řádků (ochrana proti CSV bombám), bez `eval`/formula injection při exportech; CSP a security headers; CSRF ochrana (Server Actions origin-check); závislosti hlídané přes `pnpm audit` + Renovate.
 5. **Tenancy**: repository vrstva s povinným `user_id`; testy na izolaci.
-6. **GDPR**: data v EU (Frankfurt), zpracovatelská smlouva s Neon/Vercel/Resend/Stripe, právo na export (JSON) a smazání účtu (hard delete + purge záloh dle retence), privacy policy bez právního ptydepe.
+6. **GDPR**: data v EU (Frankfurt), zpracovatelé vypsaní v `/soukromi` (Neon, Vercel, Resend, Stripe), právo na export (JSON) a smazání účtu (hard delete + purge záloh dle retence), privacy policy bez právního ptydepe.
 7. **Provoz**: audit log (přihlášení, importy, změny dat) s retencí 90 dní; zálohy ručním `scripts/db.sh backup` s ověřenou obnovou. Externí sběr chyb (Sentry apod.) **nasazený není** — logy jsou ve Vercelu.
 8. **Post-launch**: security.txt, responsible disclosure; případně externí mini-pentest před škálováním.
 
