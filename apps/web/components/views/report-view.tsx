@@ -293,15 +293,18 @@ export function ReportView({
       <Card className="space-y-3">
         <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
         <ScrollArea label="Porovnání variant párování">
-          <table className="w-full text-sm">
+          {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+          <table aria-label="Srovnání variant výpočtu daně" className="w-full text-sm">
             <thead>
               <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                <th className="py-2 pr-4 font-medium">Metoda</th>
-                <th className="py-2 pr-4 font-medium">Kurzy</th>
-                <th className="py-2 pr-4 text-right font-medium">Základ § 10</th>
-                <th className="py-2 pr-4 text-right font-medium">Daň</th>
-                <th className="py-2 pr-4 text-right font-medium">Limit 50k</th>
-                <th className="py-2 font-medium" />
+                <th scope="col" className="py-2 pr-4 font-medium">Metoda</th>
+                <th scope="col" className="py-2 pr-4 font-medium">Kurzy</th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Základ § 10</th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Daň</th>
+                <th scope="col" className="py-2 pr-4 text-right font-medium">Limit 50k</th>
+                {/* sloupec s odznakem doporučení — název jen pro čtečku; `sr-only` span
+                    uvnitř posuvné tabulky přetékal na mobilu, atribut ne */}
+                <th scope="col" aria-label="Doporučení" className="py-2 font-medium" />
               </tr>
             </thead>
             <tbody className="font-mono">
@@ -383,15 +386,16 @@ export function ReportView({
         <Card className="space-y-3">
           <CardTitle>Prodeje v roce {year} ({allDisposals.length})</CardTitle>
           <ScrollArea label={`Prodeje v roce ${year}`}>
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Rozpis prodejů cenných papírů a kryptoaktiv" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4 font-medium">Instrument</th>
-                  <th className="py-2 pr-4 text-right font-medium">Datum</th>
-                  <th className="py-2 pr-4 text-right font-medium">Tržba</th>
-                  <th className="py-2 pr-4 text-right font-medium">Výdaje</th>
-                  <th className="py-2 pr-4 text-right font-medium">Osvobozeno</th>
-                  <th className="py-2 text-right font-medium">Zdanitelná tržba</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Tržba</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Výdaje</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Osvobozeno</th>
+                  <th scope="col" className="py-2 text-right font-medium">Zdanitelná tržba</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -505,14 +509,15 @@ export function ReportView({
         <Card className="space-y-3">
           <CardTitle>Derivátové obchody v roce {year} ({result.derivatives.items.length})</CardTitle>
           <ScrollArea label={`Derivátové obchody v roce ${year}`}>
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Rozpis derivátových obchodů" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4 font-medium">Instrument</th>
-                  <th className="py-2 pr-4 text-right font-medium">Datum</th>
-                  <th className="py-2 pr-4 font-medium">Událost</th>
-                  <th className="py-2 pr-4 text-right font-medium">Příjem</th>
-                  <th className="py-2 text-right font-medium">Výdaj</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Událost</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Příjem</th>
+                  <th scope="col" className="py-2 text-right font-medium">Výdaj</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -565,13 +570,14 @@ export function ReportView({
         <Card className="space-y-3">
           <CardTitle>Příjmy podle států (zápočet dle § 38f, Příloha č. 3)</CardTitle>
           <ScrollArea label="Příjmy podle států">
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Zahraniční příjmy a sražená daň po státech" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4 font-medium">Stát</th>
-                  <th className="py-2 pr-4 text-right font-medium">Příjem do zápočtu</th>
-                  <th className="py-2 pr-4 text-right font-medium">Sraženo</th>
-                  <th className="py-2 text-right font-medium">Započitatelná srážka</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Stát</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Příjem do zápočtu</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Sraženo</th>
+                  <th scope="col" className="py-2 text-right font-medium">Započitatelná srážka</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -892,14 +898,15 @@ export function ReportView({
             denními kurzy ČNB.
           </p>
           <ScrollArea label="Použité jednotné kurzy GFŘ">
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Použité jednotné kurzy podle roku" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4 font-medium">Rok</th>
-                  <th className="py-2 pr-4 text-right font-medium">USD</th>
-                  <th className="py-2 pr-4 text-right font-medium">EUR</th>
-                  <th className="py-2 pr-4 text-right font-medium">GBP</th>
-                  <th className="py-2 font-medium">Zdroj</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Rok</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">USD</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">EUR</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">GBP</th>
+                  <th scope="col" className="py-2 font-medium">Zdroj</th>
                 </tr>
               </thead>
               <tbody className="font-mono">

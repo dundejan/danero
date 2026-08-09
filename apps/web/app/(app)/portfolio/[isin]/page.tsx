@@ -30,16 +30,22 @@ export async function generateMetadata({
         .from(transactions)
         .where(and(eq(transactions.userId, session.user.id), eq(transactions.isin, isin)))
         .limit(20);
+      // H-3-09: žádná transakce = stránka za chvíli skončí `notFound()`,
+      // takže titulek nesmí tvrdit, že pozice existuje. Záložka jinak nese
+      // ISIN, který uživatel nikdy neměl (a klidně cizí překlep z odkazu).
+      if (rows.length === 0) return { title: 'Pozice nenalezena — Danero' };
       for (const row of rows) {
         const payload = row.payload as { ticker?: string; name?: string };
         const label = payload.ticker ?? payload.name;
         if (label) return { title: `${label} — Danero` };
       }
+      return { title: `${isin} — Danero` };
     }
   } catch {
-    // titulek nikdy nesmí shodit stránku — fallback na ISIN níže
+    // titulek nikdy nesmí shodit stránku — fallback níž
   }
-  return { title: `${isin} — Danero` };
+  // nepřihlášený požadavek (stránka přesměruje na přihlášení) nebo výpadek DB
+  return { title: 'Pozice — Danero' };
 }
 
 export default async function PositionDetailPage({

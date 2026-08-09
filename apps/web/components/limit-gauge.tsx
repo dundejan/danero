@@ -3,9 +3,17 @@ import { czk, pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardTitle } from '@/components/ui/card';
 
+/**
+ * Výplň odměrky vůči dráze (`bg-linka/40`). WCAG 1.4.11 chce u grafiky, která
+ * nese informaci, aspoň 3:1 — a jantarová `--jantar` (#c7861b) dávala proti
+ * dráze #f4f3f0 jen 2,76:1, přitom pásmo „zvýšené čerpání“ je nejběžnější stav
+ * (30 000–42 500 Kč z limitu 50 000). Čitelný odstín téže barvy
+ * (`--jantar-text`) má 5,2:1; v tmavém režimu se oba tokeny rovnají, takže se
+ * tam nic nemění (H-3-04).
+ */
 const ZONE_COLOR: Record<LimitStatus['zone'], string> = {
   OK: 'bg-zelena',
-  WARNING: 'bg-jantar',
+  WARNING: 'bg-jantar-text',
   CRITICAL: 'bg-oranz',
   EXCEEDED: 'bg-cervena',
 };

@@ -229,3 +229,62 @@ describe('kontrast sytých výplní', () => {
     expect(slabe).toEqual([]);
   });
 });
+
+/**
+ * H-3-04: výplň odměrky v pásmu „zvýšené čerpání“ měla proti dráze `bg-linka/40`
+ * jen 2,76:1, přestože WCAG 1.4.11 chce u grafiky nesoucí informaci 3:1 — a je
+ * to nejběžnější stav (30 000–42 500 Kč z limitu 50 000 Kč).
+ *
+ * H-3-05: `@media print` předefinovával jen šest tokenů, takže tisk z tmavého
+ * režimu dal na papír `--zelena-text` 2,30:1 a `--jantar-text` 2,10:1 (AA pro
+ * drobný text chce 4,50).
+ */
+describe('kontrasty odměrky a tisku (H-3-04, H-3-05)', () => {
+  const css = readFileSync(join(import.meta.dirname, '..', 'app', 'globals.css'), 'utf8');
+  const svetle = tokensOf(css, ':root');
+
+  /** Průhledná dráha `bg-linka/40` na ploše — smíchané barvy, ne token. */
+  const smes = (a: string, b: string, alpha: number): string => {
+    const kanal = (i: number) =>
+      Math.round(
+        parseInt(a.slice(1 + i * 2, 3 + i * 2), 16) * alpha +
+          parseInt(b.slice(1 + i * 2, 3 + i * 2), 16) * (1 - alpha),
+      );
+    return `#${[0, 1, 2].map((i) => kanal(i).toString(16).padStart(2, '0')).join('')}`;
+  };
+
+  it('každé pásmo odměrky se od dráhy odliší aspoň 3:1', () => {
+    const draha = smes(svetle['linka']!, svetle['plocha']!, 0.4);
+    const gauge = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'limit-gauge.tsx'),
+      'utf8',
+    );
+    const pasma = [...gauge.matchAll(/^\s+(OK|WARNING|CRITICAL|EXCEEDED): 'bg-([a-z-]+)'/gm)];
+    expect(pasma).toHaveLength(4);
+    for (const [, zona, token] of pasma) {
+      const hex = svetle[token!];
+      expect(hex, `token --${token} ve světlém režimu`).toBeDefined();
+      expect(
+        Number(contrast(hex!, draha).toFixed(2)),
+        `pásmo ${zona} (--${token}) proti dráze odměrky`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('tisk vrací semafor na světlé hodnoty, ať je papír čitelný', () => {
+    const print = cssBlock(css, '@media print');
+    const tisk = Object.fromEntries(
+      [...print.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map(([, n, hex]) => [
+        n!.toLowerCase(),
+        hex!.toLowerCase(),
+      ]),
+    );
+    for (const token of ['zelena-text', 'jantar-text', 'oranz-text', 'ruzova-text', 'cervena']) {
+      expect(tisk[token], `--${token} v @media print`).toBeDefined();
+      expect(
+        Number(contrast(tisk[token]!, '#ffffff').toFixed(2)),
+        `--${token} na bílém papíře`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});

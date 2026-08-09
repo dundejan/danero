@@ -302,12 +302,13 @@ export function PortfolioView({
             ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
           </p>
           <ScrollArea label="Otevřené derivátové pozice">
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Pozice v portfoliu s hodnotou a časovým testem" className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4">Instrument</th>
-                  <th className="py-2 pr-4 text-right">Kontraktů</th>
-                  <th className="py-2 text-right">Otevřeno</th>
+                  <th scope="col" className="py-2 pr-4">Instrument</th>
+                  <th scope="col" className="py-2 pr-4 text-right">Kontraktů</th>
+                  <th scope="col" className="py-2 text-right">Otevřeno</th>
                 </tr>
               </thead>
               <tbody className="font-mono">

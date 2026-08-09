@@ -174,14 +174,15 @@ export function PositionView({
         <Card className="space-y-2">
           <CardTitle>Nákupy (loty) a časové testy</CardTitle>
           <ScrollArea label="Nákupy (loty) a časové testy">
-            <table className="w-full text-sm">
+            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
+            <table aria-label="Nákupy (loty) a jejich časové testy" className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th className="py-2 pr-4">Nabytí</th>
-                  <th className="py-2 pr-4 text-right">Kusů</th>
-                  <th className="py-2 pr-4 text-right">Cena/ks</th>
-                  <th className="py-2 pr-4">Bez daně od</th>
-                  <th className="py-2 text-right">Zbývá dní</th>
+                  <th scope="col" className="py-2 pr-4">Nabytí</th>
+                  <th scope="col" className="py-2 pr-4 text-right">Kusů</th>
+                  <th scope="col" className="py-2 pr-4 text-right">Cena/ks</th>
+                  <th scope="col" className="py-2 pr-4">Bez daně od</th>
+                  <th scope="col" className="py-2 text-right">Zbývá dní</th>
                 </tr>
               </thead>
               <tbody className="font-mono">

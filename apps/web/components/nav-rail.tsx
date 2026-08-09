@@ -94,7 +94,9 @@ function TabBar({ items }: { items: NavItem[] }) {
   return (
     <nav
       aria-label="Hlavní navigace"
-      className="fixed inset-x-0 bottom-0 z-20 grid border-t border-linka bg-plocha md:hidden"
+      // H-3-18: bez rezervy na gesto home indicatoru (34 px) ležely popisky
+      // navigace uvnitř systémového gesta
+      className="fixed inset-x-0 bottom-0 z-20 grid border-t border-linka bg-plocha pb-[env(safe-area-inset-bottom)] md:hidden"
       // Počet sloupců z délky seznamu, ne natvrdo: přidání položky do ITEMS
       // dřív tiše shodilo tab bar do dvou řad (7 položek v mřížce pro 4).
       // Tailwind `grid-cols-${n}` staticky nevygeneruje, proto inline styl.
