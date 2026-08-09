@@ -218,6 +218,13 @@
       "when": 1786170710014,
       "tag": "0030_fx_rate_scale_and_fk_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786370000000,
+      "tag": "0031_etoro_derivative_isin",
+      "breakpoints": true
     }
   ]
 }

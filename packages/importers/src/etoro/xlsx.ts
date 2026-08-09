@@ -173,6 +173,25 @@ function parseAction(action: string): { short: boolean; ticker: string } | null 
 /** Typy Closed Positions / Asset type, které jsou deriváty (R-12, vypořádání rozdílem). */
 const DERIVATIVE_TYPES = new Set(['cfd', 'currency', 'commodities']);
 
+/**
+ * Klíč instrumentu pro derivát. **Nikdy to nesmí být holý ticker ani ISIN
+ * podkladu** — engine bere druh příjmu jako vlastnost instrumentu, takže by
+ * derivát a spotová pozice se stejným klíčem splynuly v jeden instrument
+ * a celá držba by se překlopila na derivátový příjem.
+ *
+ * Doloženo (nález A2-3-06): krypto se napříč VŠEMI importéry klíčuje tickerem,
+ * takže jediný short nebo pákový obchod na eToru sdílel klíč se spotovým BTC —
+ * klidně u jiného brokera. Šest let držené BTC osvobozené časovým testem se tím
+ * překlopilo na zdanitelný derivát: **daň 0 → 159 120 Kč** a prolomený limit
+ * 50 000 Kč. Výchozí konfigurace, běžné částky. Engine sice vydal
+ * `ASSET_CLASS_CONFLICT`, ale jeho rada „oprav asset_class v importu“ je
+ * u eToro exportu nesplnitelná — takový sloupec tam není.
+ *
+ * Prefix `CFD:` je konvence, kterou používá i univerzální šablona
+ * (`CFD:US500`, `OPT:…`), takže se derivát pozná i v UI.
+ */
+const derivativeIsin = (ticker: string): string => `CFD:${ticker}`;
+
 /** Sdílený stav parsování napříč listy jednoho workbooku. */
 interface Ctx {
   result: ImportResult & { unmappedSymbols: string[] };
@@ -294,7 +313,9 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     let isin: string | null;
     if (derivative) {
       assetClass = 'DERIVATIVE';
-      isin = cell('isin') || parsed.ticker; // deriváty ISIN mívají prázdný — klíčem je symbol
+      // ISIN podkladu se schválně NEPOUŽIJE ani když ho export nese — sdílený
+      // klíč se spotovou pozicí je právě ta vada (viz `derivativeIsin`)
+      isin = derivativeIsin(parsed.ticker);
     } else if (typeNorm === 'crypto') {
       assetClass = 'CRYPTO';
       isin = parsed.ticker; // krypto: isin = symbol (kanonický klíč napříč brokery)
@@ -444,7 +465,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       let isin: string | null;
       if (DERIVATIVE_TYPES.has(assetType)) {
         assetClass = 'DERIVATIVE';
-        isin = ticker;
+        isin = derivativeIsin(ticker);
       } else if (assetType === 'crypto') {
         assetClass = 'CRYPTO';
         isin = ticker;

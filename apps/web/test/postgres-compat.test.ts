@@ -83,6 +83,68 @@ popis('kompatibilita s produkčním Postgresem', () => {
     return id;
   }
 
+
+  /**
+   * A2-3-06: migrace 0031 přepisuje eToro derivátům klíč instrumentu na
+   * `CFD:<ticker>` — a s ním MUSÍ přepočítat i `dedupe_key`, protože ten se
+   * z ISINu počítá. Bez přepočtu by se tytéž řádky při dalším importu téhož
+   * výpisu uložily podruhé.
+   *
+   * Hash v migraci je ruční port `fnv1a64` do PL/pgSQL, takže tenhle test
+   * porovnává výsledek migrace se skutečným klíčem z TypeScriptu.
+   */
+  it('migrace 0031: eToro derivát dostane klíč CFD: a sedící dedupe_key', async () => {
+    const userId = await makeUser();
+    const { dedupeKey } = await import('@danero/importers');
+    const { TransactionSchema } = await import('@danero/shared');
+
+    const puvodni = TransactionSchema.parse({
+      type: 'SELL',
+      id: 'etoro-2400000011-open',
+      isin: 'BTC',
+      ticker: 'BTC',
+      assetClass: 'DERIVATIVE',
+      settlementStyle: 'MARGIN',
+      quantity: '1',
+      pricePerShare: '150',
+      currency: 'USD',
+      tradeDate: '2024-04-01',
+      settlementDate: '2024-04-01',
+    });
+    await db.insert(transactions).values({
+      userId,
+      dedupeKey: dedupeKey('etoro', puvodni),
+      batchId: 'davka-0031',
+      broker: 'etoro',
+      type: 'SELL',
+      txDate: '2024-04-01',
+      isin: 'BTC',
+      payload: JSON.parse(JSON.stringify(puvodni)) as unknown,
+    });
+
+    // tělo migrace 0031 (bez CREATE FUNCTION, ta je v pg_temp jen po dobu sezení)
+    const { readFileSync } = await import('node:fs');
+    // stejně jako migrátor: soubor se dělí na `--> statement-breakpoint`,
+    // driver víc příkazů v jednom dotazu nepřijme
+    const migrace = readFileSync('db/migrations/0031_etoro_derivative_isin.sql', 'utf8');
+    for (const prikaz of migrace.split('--> statement-breakpoint')) {
+      if (prikaz.trim() !== '') await db.execute(sql.raw(prikaz));
+    }
+
+    const [radek] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), eq(transactions.batchId, 'davka-0031')));
+
+    expect(radek!.isin).toBe('CFD:BTC');
+    expect((radek!.payload as { isin: string }).isin).toBe('CFD:BTC');
+
+    // klíč musí sedět na to, co by spočítal importér po opravě parseru —
+    // jinak by se řádek při dalším importu uložil podruhé
+    const poOprave = TransactionSchema.parse({ ...puvodni, isin: 'CFD:BTC' });
+    expect(radek!.dedupeKey).toBe(dedupeKey('etoro', poOprave));
+  });
+
   /** Dvě dávky insertu (chunk = 500) + jedna transakce s extrémní přesností. */
   function csvRows(count: number): string {
     const lines = ['type,date,isin,ticker,quantity,price,currency,note'];

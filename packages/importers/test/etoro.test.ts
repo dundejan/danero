@@ -14,6 +14,7 @@ import {
   buildEtoroXlsx,
   ETORO_ACTIVITY_HEADERS,
   ETORO_ACTIVITY_ROWS,
+  ETORO_CLOSED_HEADERS,
   ETORO_CLOSED_ROWS,
   ETORO_INSTRUMENT_MAP,
 } from './fixtures/etoro';
@@ -95,13 +96,16 @@ describe('eToro XLSX parser', () => {
     expect(sell.quantity.toString()).toBe('0.102626');
   });
 
-  it('CFD short s pákou → otevření SELL, uzavření BUY, DERIVATIVE + MARGIN, klíč = ticker', async () => {
+  it('CFD short s pákou → otevření SELL, uzavření BUY, DERIVATIVE + MARGIN, klíč s prefixem CFD:', async () => {
     const buffer = await buildEtoroHappyPath();
     const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
 
     const open = result.transactions.find((t) => t.id === 'etoro-2400000001-open');
     if (!open || open.type !== 'SELL') throw new Error('unreachable');
-    expect(open.isin).toBe('TSLA'); // ISIN sloupec u CFD prázdný → symbol
+    // klíč NESMÍ být holý ticker: se spotovou pozicí téhož tickeru (klidně
+    // u jiného brokera) by splynuly v jeden instrument a celá držba by se
+    // překlopila na derivátový příjem (A2-3-06)
+    expect(open.isin).toBe('CFD:TSLA');
     expect(open.assetClass).toBe('DERIVATIVE');
     expect(open.settlementStyle).toBe('MARGIN'); // R-12g: CFD se vypořádává rozdílem
     expect(open.pricePerShare.toString()).toBe('200');
@@ -454,5 +458,66 @@ describe('eToro XLSX parser', () => {
     if (!interest || interest.type !== 'INTEREST') throw new Error('unreachable');
     expect(interest.amount.toString()).toBe('0.08');
     expect(interest.date).toBe('2024-01-01');
+  });
+});
+
+/**
+ * A2-3-06: derivát nesmí sdílet klíč instrumentu se spotovou pozicí.
+ *
+ * Krypto se napříč všemi importéry klíčuje tickerem, takže jediný short nebo
+ * pákový obchod na eToru dřív sdílel klíč se spotovým BTC — klidně drženým
+ * u jiného brokera. Šest let držené BTC osvobozené časovým testem se tím
+ * překlopilo na zdanitelný derivát: daň 0 → 159 120 Kč.
+ */
+describe('derivát a spot se nesmí potkat pod jedním klíčem (A2-3-06)', () => {
+  const pozice = (over: Record<string, unknown>) =>
+    ETORO_CLOSED_HEADERS.map((header) => (over[header] ?? '') as never);
+
+  it('krypto short dostane klíč CFD:BTC, spotová pozice zůstane BTC', async () => {
+    const buffer = await buildEtoroXlsx({
+      closed: {
+        rows: [
+          // spotový nákup BTC — klíč musí zůstat holý ticker
+          pozice({
+            'Position ID': '2400000010',
+            Action: 'Buy BTC',
+            'Long / Short': 'Long',
+            Amount: 100,
+            'Units / Contracts': 1,
+            'Open Date': '01/02/2024 10:00:00',
+            'Close Date': '01/03/2024 10:00:00',
+            Leverage: 1,
+            'Open Rate': 100,
+            'Close Rate': 200,
+            Type: 'Crypto',
+          }),
+          // short na tomtéž tickeru — derivát, klíč s prefixem
+          pozice({
+            'Position ID': '2400000011',
+            Action: 'Sell BTC',
+            'Long / Short': 'Short',
+            Amount: 150,
+            'Units / Contracts': 1,
+            'Open Date': '01/04/2024 10:00:00',
+            'Close Date': '01/05/2024 10:00:00',
+            Leverage: 1,
+            'Open Rate': 150,
+            'Close Rate': 120,
+            Type: 'Crypto',
+          }),
+        ],
+      },
+    });
+    const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
+
+    const spot = result.transactions.find((t) => t.id === 'etoro-2400000010-open');
+    const short = result.transactions.find((t) => t.id === 'etoro-2400000011-open');
+    if (spot?.type !== 'BUY' || short?.type !== 'SELL') throw new Error('unreachable');
+    expect(spot.isin).toBe('BTC');
+    expect(spot.assetClass).toBe('CRYPTO');
+    expect(short.isin).toBe('CFD:BTC');
+    expect(short.assetClass).toBe('DERIVATIVE');
+    // a hlavně: nesmí to být tentýž instrument
+    expect(short.isin).not.toBe(spot.isin);
   });
 });
