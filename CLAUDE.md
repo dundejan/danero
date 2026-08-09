@@ -104,6 +104,29 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   push notifikace o vygenerovaných dokumentech (v UI vysvětleno).
 - **T212 CSV**: sloupce mapovat VÝHRADNĚ podle názvů (sada se mění); splity = pár
   řádků `Stock split close/open`; spin-off = příjem kusů s cenou 0; GBX = pence → GBP/100.
+- **Broker přejmenuje sloupec a rozbije import ÚPLNĚ — a testy o tom mlčí.**
+  9. 8. 2026 udělal T212 z `Time` sloupec `Time (UTC)`. Autodetekce v
+  `import-service.ts` měla VLASTNÍ kopii podmínky (`headers.includes('Time')`),
+  takže soubor propadl přes všechny sniffery až na univerzální šablonu a Jan
+  naostro četl „Chybí povinný sloupec type“ — hlášku parseru, se kterým jeho
+  soubor nemá nic společného. Platilo to pro ruční nahrání i API sync (jedna
+  autodetekce). Celá sada byla přitom zelená, protože fixtury měly starý název.
+  Odtud tři pravidla: (1) každý broker má **jediný sniffer** sdílený detekcí
+  i parserem (`sniffTrading212Csv`, `sniffFioCsv`) — žádnou podmínku
+  nekopíruj do `import-service.ts`; (2) alternativní názvy téhož sloupce patří
+  do konstanty (`TRADING212_TIME_COLUMNS`) a čtou se přes `HeaderMap.getAny`;
+  (3) nepoznaný soubor musí vypsat, **co v hlavičce našel**, ne hlášku cizího
+  parseru — jinak je příčina z chyby neuhodnutelná. Fixtura pro nový formát
+  patří i do `test/import-detect.test.ts` (routing) a do E2E uploadu.
+- **Placenou hranici musí být vidět DŘÍV, než do ní uživatel investuje práci.**
+  Formulář pro napojení brokera se do 9. 8. 2026 zobrazoval i bez předplatného
+  a odmítnutí přišlo až po odeslání — uživatel si mezitím u brokera vygeneroval
+  klíč. Nastavení hlídacích e-mailů bylo horší: přepínače fungovaly, ale
+  rozesílku dělá `api/cron/notify` jen platícím, takže e-mail prostě nikdy
+  nepřišel a nikde nebylo proč. Stránka si proto musí `resolveEntitlements`
+  načíst sama; server action zůstává jako backstop, ne jako jediná obrana.
+  Hlídá to `pnpm --filter @danero/web test:e2e:paywall` (vlastní konfigurace,
+  protože `DANERO_BILLING=stripe` by zbytku E2E zamkl funkce).
 - **Zod v4**: `.default()` bere OUTPUT hodnotu (u Decimal polí `.default(ZERO)`).
 - **Better Auth**: drizzle schéma musí přesně sedět na plugin (twoFactor vyžaduje
   i `verified`, `failedVerificationCount`, `lockedUntil` — při přidávání pluginů
