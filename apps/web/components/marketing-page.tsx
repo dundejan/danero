@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { connection } from 'next/server';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
 import { OPERATOR } from '@/lib/contact';
@@ -93,7 +94,22 @@ export function MarketingCta({
   );
 }
 
-export function MarketingFooter() {
+/**
+ * Patička vypisuje telefon provozovatele z `DANERO_CONTACT_PHONE` (§ 1820 odst.
+ * 1 písm. c OZ). Ta proměnná při `next build` k dispozici NENÍ — ověřeno čtyřmi
+ * nasazeními, na kterých nepomohlo ani odebrání příznaku Sensitive, ani build
+ * bez cache. Staticky předrenderovaná stránka si tedy zapekla `phone = null`
+ * a telefon na ní nebyl vidět, i když byl ve Vercelu nastavený.
+ *
+ * `connection()` zastaví předrenderování, takže se patička vykreslí až při
+ * požadavku, kdy proměnná existuje. Je schválně TADY a ne jako
+ * `export const dynamic` na stránkách: patičku má každá marketingová stránka,
+ * takže by ten příznak musel být na dvanácti místech a u třinácté by se na něj
+ * zapomnělo. Cena je, že se veřejné stránky renderují při požadavku — u statických
+ * marketingových stránek zanedbatelné, správnost povinného údaje je přednější.
+ */
+export async function MarketingFooter() {
+  await connection();
   return (
     <footer className="mt-24 border-t border-linka">
       <div className="mx-auto max-w-6xl px-6 py-10 text-sm text-inkoust-tlumeny">

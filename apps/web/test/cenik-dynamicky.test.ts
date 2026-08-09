@@ -49,6 +49,54 @@ describe('pojistka zkušebního režimu Stripu (C-29)', () => {
 });
 
 /**
+ * Telefon provozovatele (§ 1820 odst. 1 písm. c OZ) se bere z proměnné
+ * `DANERO_CONTACT_PHONE`, která při `next build` neexistuje. Staticky
+ * předrenderovaná stránka si proto zapekla `phone = null` a telefon na ní nebyl
+ * vidět, přestože byl ve Vercelu nastavený — týkalo se to dvanácti veřejných
+ * stránek, ne jen podmínek a soukromí.
+ *
+ * Hlídá se mechanismus, ne text: patička ruší předrenderování a každá stránka,
+ * která telefon vypisuje, jde přes marketingový shell, takže render při
+ * požadavku zdědí. Jedno místo místo dvanácti příznaků.
+ */
+describe('telefon provozovatele se renderuje při požadavku (§ 1820/1 c)', () => {
+  const SHELL = readFileSync(
+    join(import.meta.dirname, '..', 'components', 'marketing-page.tsx'),
+    'utf8',
+  );
+
+  it('patička telefon opravdu vypisuje', () => {
+    expect(SHELL).toContain('OPERATOR.phone');
+  });
+
+  it('patička zastaví předrenderování', () => {
+    // Na začátku řádku, ne kdekoli v souboru: `toContain` by si `await
+    // connection()` našel i v zakomentovaném řádku nebo v tomhle komentáři
+    // a pojistka by mlčky prošla i s vypnutou opravou (vyzkoušeno).
+    expect(SHELL).toMatch(/^\s*await connection\(\);/m);
+    expect(SHELL).toMatch(/^import \{[^}]*\bconnection\b[^}]*\} from 'next\/server';/m);
+  });
+
+  const sTelefonem = pageFiles(APP_DIR)
+    .map((file) => ({ file, zdroj: readFileSync(file, 'utf8') }))
+    .filter(({ zdroj }) => zdroj.includes('OPERATOR.phone'));
+
+  it('telefon vypisuje i některá stránka ve vlastním textu', () => {
+    expect(sTelefonem.length).toBeGreaterThan(0);
+  });
+
+  it.each(sTelefonem.map(({ file }) => file))(
+    'stránka s telefonem dědí render při požadavku ze shellu: %s',
+    (file) => {
+      const zdroj = readFileSync(file, 'utf8');
+      const jdePresShell = /MarketingPage|MarketingFooter/.test(zdroj);
+      const vlastniPriznak = zdroj.includes("export const dynamic = 'force-dynamic'");
+      expect(jdePresShell || vlastniPriznak).toBe(true);
+    },
+  );
+});
+
+/**
  * E-3-04: prodejní formulář nabízí deset daňových let a slibuje k nim „XML pro
  * elektronické podání" bez jediné výhrady, přestože oficiální struktura DPFDP7
  * existuje jen pro roky v `EPO_SUPPORTED_YEARS`. Informace o omezení plnění
