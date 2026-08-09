@@ -174,7 +174,6 @@ export default async function SubscriptionPage({
               zaplaceného období ti služba běží dál.
             </p>
             <SouhlasCheckbox id="souhlas-predplatne" kind="subscription" />
-            <DostupnostCheckbox id="dostupnost-predplatne" />
             <button type="submit" className={buttonVariants({ variant: 'primary' })}>
               Objednat s povinností platby
             </button>
@@ -215,7 +214,6 @@ export default async function SubscriptionPage({
               </select>
             </div>
             <SouhlasCheckbox id="souhlas-podklady" kind="report" />
-            <DostupnostCheckbox id="dostupnost-podklady" />
             <button type="submit" className={buttonVariants({ variant: 'primary' })}>
               Objednat s povinností platby
             </button>
@@ -277,34 +275,6 @@ function SouhlasCheckbox({ id, kind }: { id: string; kind: 'subscription' | 'rep
         {kind === 'report'
           ? 'Žádám, aby Danero začalo plnit hned po zaplacení, a beru na vědomí, že jakmile mi podklady zpřístupní, ztrácím právo odstoupit od smlouvy do 14 dnů.'
           : 'Žádám, aby mi hlídání začalo běžet hned po zaplacení. Právo odstoupit do 14 dnů mi tím zůstává — když ho využiju, zaplatím jen poměrnou část za dny, kdy mi hlídání běželo.'}
-      </span>
-    </label>
-  );
-}
-
-/**
- * § 2389i odst. 2 OZ: odchylku od zákonné jakosti digitálního obsahu lze
- * ujednat jen tehdy, když ji spotřebitel potvrdí ZVLÁŠŤ — samostatným
- * projevem vůle, ne odkazem na podmínky (nález E-3-01).
- *
- * Odchylky byly původně tři. Dvě z nich odchylkou být přestaly: jednotný kurz
- * běžného roku aplikace po vydání pokynu GFŘ dopočítá (a do té doby ho
- * viditelně označuje jako orientační) a u sporných výkladů počítá obě varianty
- * a ukazuje rozdíl, takže neplní míň, než se čeká. Zůstává jediná — nemáme
- * sjednanou garantovanou dostupnost — a právě tu potvrzuje tenhle checkbox.
- */
-function DostupnostCheckbox({ id }: { id: string }) {
-  return (
-    <label htmlFor={id} className="flex items-start gap-2.5 text-xs leading-relaxed">
-      <input id={id} name="dostupnost" type="checkbox" required className="mt-0.5" />
-      <span>
-        Beru na vědomí, že Danero nemá sjednanou garantovanou dostupnost: usilujeme
-        o nepřetržitý provoz, ale krátké odstávky kvůli údržbě nebo výpadku dodavatele
-        nastat můžou.{' '}
-        <Link href="/podminky#odchylky-od-jakosti" className="font-medium text-ruzova-text">
-          Podrobnosti v podmínkách
-        </Link>
-        .
       </span>
     </label>
   );

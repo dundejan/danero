@@ -96,16 +96,23 @@ export default function TermsPage() {
           v aplikaci vidět. Aktualizace dostáváš po celou dobu, na kterou máš zaplaceno.
         </p>
         {/*
-          § 2389i odst. 2 OZ: odchylku od zákonné jakosti digitálního obsahu lze
-          ujednat jen tehdy, když ji spotřebitel ZVLÁŠŤ potvrdil. Odstavec proto
-          nese vlastní kotvu — registrace a objednávka na něj musí umět odkázat
-          adresně, ne jen na celé podmínky (nález E-43).
+          Do verze 2.3 tu stála výhrada „nemáme sjednanou garantovanou dostupnost",
+          kterou musel kupující podle § 2389i odst. 2 OZ potvrzovat zvlášť dalším
+          checkboxem u objednávky. Od verze 2.4 je místo ní závazek s nápravou:
+          odchylka od zákonné jakosti tím zmizela, a s ní i ten checkbox.
+          Kotva `dostupnost` zůstává, aby na tenhle odstavec šlo odkázat adresně.
         */}
-        <p id="odchylky-od-jakosti">
-          Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
-          usilujeme o nepřetržitý provoz, ale krátké odstávky kvůli údržbě nebo výpadku
-          dodavatele nastat můžou. Právě tuhle jedinou výhradu proto u objednávky
-          potvrzuješ zvlášť.
+        <p id="dostupnost">
+          <strong>Dostupnost.</strong> Usilujeme o nepřetržitý provoz, ale krátké
+          odstávky kvůli údržbě nebo výpadku dodavatele nastat můžou. Když je Danero
+          nedostupné souvisle déle než 24 hodin, prodloužíme ti roční hlídání o každý
+          započatý den výpadku. Pokud o výpadku víme, uděláme to sami; jinak nám stačí
+          napsat na{' '}
+          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+            {OPERATOR.email}
+          </a>
+          . U jednorázových podkladů za daňový rok se prodlužovat nedá nic — ty
+          dostaneš jednou; když ti je kvůli výpadku nedodáme, vrátíme ti peníze.
         </p>
         <p>
           Dvě věci, které se jako výhrada číst daly, výhradou nejsou: jednotný kurz pro

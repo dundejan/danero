@@ -141,29 +141,39 @@ describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
 });
 
 /**
- * E-3-01: § 2389i odst. 2 OZ chce, aby odchylku od zákonné jakosti spotřebitel
- * potvrdil ZVLÁŠŤ — samostatným projevem vůle, ne odkazem na podmínky. Ze tří
- * původních odchylek dvě odchylkou být přestaly (kurz se po pokynu GFŘ
- * dopočítá, sporné výklady aplikace počítá oběma způsoby a ukazuje rozdíl),
- * takže se potvrzuje jen chybějící garance dostupnosti.
+ * § 2389i odst. 2 OZ chce, aby odchylku od zákonné jakosti spotřebitel potvrdil
+ * ZVLÁŠŤ. Původní tři odchylky jsou dnes nula:
+ *
+ * - jednotný kurz běžného roku se po pokynu GFŘ dopočítá (a do té doby je
+ *   viditelně označený jako orientační),
+ * - u sporných výkladů aplikace počítá obě varianty a ukazuje rozdíl,
+ * - dostupnost byla do verze podmínek 2.3 výhradou („negarantujeme"), od 2.4 je
+ *   z ní závazek s nápravou: výpadek nad 24 hodin prodlužuje roční hlídání.
+ *
+ * Odchylka tím zmizela a s ní i druhý povinný checkbox u objednávky. Test hlídá,
+ * že se výhrada nevrátí zadními vrátky — kdyby ji někdo do podmínek dopsal, musí
+ * s ní vrátit i samostatné potvrzení, jinak je ujednání podle § 2389i neplatné.
  */
-describe('odchylka od jakosti se potvrzuje zvlášť (E-3-01)', () => {
+describe('u objednávky nezůstala nepotvrzená odchylka od jakosti (§ 2389i)', () => {
   const read = async (relativni: string): Promise<string> => {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
     return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
   };
 
-  it('objednávka má vlastní checkbox o dostupnosti a odkaz do podmínek', async () => {
-    const page = await read('app/(app)/predplatne/page.tsx');
-    expect(page).toContain('name="dostupnost"');
-    expect(page).toContain('required');
-    expect(page).toContain('/podminky#odchylky-od-jakosti');
-    // u obou plnění, ne jen u jednoho
-    expect((page.match(/<DostupnostCheckbox /g) ?? []).length).toBe(2);
+  it('podmínky slibují dostupnost s nápravou, ne výhradu', async () => {
+    const podminky = await read('app/podminky/page.tsx');
+    expect(podminky).toContain('id="dostupnost"');
+    expect(podminky).toMatch(/nedostupné souvisle déle než 24 hodin/);
+    expect(podminky).toMatch(/prodloužíme/);
+    // stará formulace výhrady se nesmí vrátit bez samostatného potvrzení
+    expect(podminky).not.toMatch(/nemá sjednanou garantovanou dostupnost/);
   });
 
-  it('podmínky mají kotvu, na kterou checkbox míří', async () => {
-    expect(await read('app/podminky/page.tsx')).toContain('id="odchylky-od-jakosti"');
+  it('objednávka nemá druhý povinný checkbox — zbyl jen souhlas dle § 1837 l', async () => {
+    const page = await read('app/(app)/predplatne/page.tsx');
+    expect(page).not.toContain('name="dostupnost"');
+    expect((page.match(/<SouhlasCheckbox /g) ?? []).length).toBe(2);
+    expect((page.match(/type="checkbox"/g) ?? []).length).toBe(1);
   });
 });

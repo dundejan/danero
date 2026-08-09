@@ -9,7 +9,7 @@
  * e-mailem **nejméně 30 dní předem**. Číslo se tu proto nepřepisuje spolu
  * s opravou překlepu, ale až s věcnou změnou závazku.
  */
-export const TERMS_VERSION = '2.3';
+export const TERMS_VERSION = '2.4';
 
 /** Datum účinnosti aktuálního znění, česky (vypisuje se v patičce právních stránek). */
 export const TERMS_EFFECTIVE_FROM = '9. srpna 2026';
