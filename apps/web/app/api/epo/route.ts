@@ -1,6 +1,7 @@
 import { analyzeTaxYear } from '@danero/engine';
 import { getDb } from '@/db';
 import { getAuth } from '@/lib/auth';
+import { OPERATOR } from '@/lib/contact';
 import { canGenerateReport } from '@/lib/entitlements';
 import { generateDpfdp7, type EpoPersonalData } from '@/lib/epo';
 import { errorText, logEvent } from '@/lib/log';
@@ -85,6 +86,12 @@ export async function POST(request: Request): Promise<Response> {
     // Interní hláška uživateli nepomůže a může nést obsah dotazu i s parametry
     // (Drizzle je dává do message) — do odpovědi jde jen česká věta, detail do logu.
     logEvent('error', 'epo.export_failed', { userId: session.user.id, year, error: errorText(error) });
-    return chyba('Export se nepodařil. Zkus to prosím znovu, případně napiš na podpora@danero.cz.', 500);
+    // Adresa se bere z lib/contact.ts, ať se neslibuje schránka, která
+    // neexistuje: `podpora@danero.cz` tu stálo natvrdo, ale kořenová doména
+    // nemá MX záznam, takže by taková zpráva nikam nedošla.
+    return chyba(
+      `Export se nepodařil. Zkus to prosím znovu, případně napiš na ${OPERATOR.email}.`,
+      500,
+    );
   }
 }
