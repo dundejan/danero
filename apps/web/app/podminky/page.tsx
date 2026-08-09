@@ -143,11 +143,25 @@ export default function TermsPage() {
           uzavření. Jak dlouho to právo trvá, se liší podle toho, co sis koupil:
         </p>
         <ul className="list-disc space-y-2 pl-5">
+          {/*
+            § 1837 písm. l) OZ má TŘI kumulativní podmínky, ne dvě: výslovná
+            žádost, poučení o ztrátě práva a poskytnuté potvrzení podle § 1824a.
+            Potvrzovací e-mail posíláme „best effort" (selhání se jen zaloguje
+            a podklady se odemknou tak jako tak), takže třetí podmínka splněná
+            být nemusí — a pak právo odstoupit trvá. Text, který by ho spotřebiteli
+            upřel nad rámec zákona, by byl ujednáním, ke kterému se nepřihlíží
+            (§ 1812 odst. 2, § 1814 písm. a) — nález E-3-05.
+          */}
           <li>
             <strong>Podklady k přiznání za jeden rok</strong> jsou digitální obsah,
-            který dodáváme okamžitě. U nich právo odstoupit zaniká ve chvíli, kdy na
-            tvou výslovnou žádost začneme plnit — potvrzuješ ji zaškrtnutím
-            u objednávky (§ 1837 písm. l občanského zákoníku).
+            který dodáváme okamžitě. Právo odstoupit u nich zaniká, ale jen když jsou
+            splněné všechny <strong>tři</strong> podmínky § 1837 písm. l občanského
+            zákoníku: začali jsme plnit na tvou výslovnou žádost, vzal jsi na vědomí,
+            že tím právo odstoupit ztrácíš (obojí potvrzuješ zaškrtnutím u objednávky)
+            — a my ti poskytli <strong>potvrzení o uzavřené smlouvě</strong> na trvalém
+            nosiči, tedy e-mailem podle § 1824a. Třetí podmínka je na nás: dokud ti
+            takové potvrzení nedorazí, <strong>právo odstoupit ti zůstává</strong>,
+            i kdyby sis podklady mezitím stáhl.
           </li>
           <li>
             <strong>Celoroční hlídání</strong> je naopak služba, kterou ti poskytujeme

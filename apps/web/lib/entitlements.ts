@@ -99,6 +99,42 @@ const NOTHING_PAID: Entitlements = {
  */
 const PAID_STATUSES = new Set(['active', 'trialing']);
 
+/**
+ * Stavy, ve kterých předplatné ve Stripe pořád ŽIJE, jen zrovna neodemyká:
+ * platba neprošla a Stripe ji dny až týdny zkouší znovu (dunning), nebo je
+ * inkaso pozastavené. Nic z toho staré předplatné neruší.
+ *
+ * `incomplete` sem NEPATŘÍ: to je opuštěná výzva 3DS, kde se nestrhlo nic
+ * a Stripe ji do 24 hodin zahodí — kdyby blokovala nový pokus o nákup,
+ * zákazník by kvůli jednomu nedokončenému kliknutí nemohl den zaplatit.
+ */
+const UNSETTLED_STATUSES = new Set(['past_due', 'unpaid', 'paused']);
+
+/** Řeší se u předplatného nezaplacená platba? (dunning) */
+export function isUnsettledStatus(status: string | null | undefined): boolean {
+  return Boolean(status && UNSETTLED_STATUSES.has(status));
+}
+
+/**
+ * Má uživatel ve Stripe předplatné, které sice neodemyká, ale pořád existuje?
+ *
+ * Bez téhle otázky pouštěl `purchaseBlock` nákup po celou dobu dunningu (dny
+ * až týdny), a protože staré předplatné nikdo neruší, skončil zákazník se
+ * DVĚMA běžícími předplatnými u téhož zákazníka — až se dunning vybere,
+ * strhne se **2× 990 Kč**. V databázi je přitom na uživatele jen jeden řádek,
+ * takže to druhé předplatné není odkud vidět (nález C-3-05).
+ */
+export async function hasUnsettledSubscription(
+  db: Db,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ status: subscriptions.status })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+  return isUnsettledStatus(row?.status);
+}
+
 /** Jediné místo, kde se rozhoduje „běží předplatné?" — používá i stránka /predplatne. */
 export function isPaidSubscription<T extends { status: string; currentPeriodEnd: Date }>(
   row: T | undefined,

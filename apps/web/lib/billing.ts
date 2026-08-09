@@ -7,6 +7,7 @@ import { purchaseConfirmationEmail, resolveEmailSender, subscriptionRenewalEmail
 import { czDate } from '@/lib/format';
 import {
   hasActiveSubscription,
+  hasUnsettledSubscription,
   isPaidSubscription,
   isPlausibleTaxYear,
   isSellableTaxYear,
@@ -321,7 +322,8 @@ export type PurchaseBlock =
   | 'uz-mas-predplatne'
   | 'mas-v-predplatnem'
   | 'chyba-rok'
-  | 'uz-mas-rok';
+  | 'uz-mas-rok'
+  | 'resi-se-platba';
 
 /** Co se kupuje. Podklady bez daňového roku neexistují — proto ho typ vyžaduje. */
 export type Purchase = { kind: 'subscription' } | { kind: 'report'; taxYear: number };
@@ -354,6 +356,13 @@ export async function purchaseBlock(
   }
   if (await hasActiveSubscription(db, userId, now)) {
     return purchase.kind === 'subscription' ? 'uz-mas-predplatne' : 'mas-v-predplatnem';
+  }
+  // Dunning (`past_due`, `unpaid`, `paused`) přístup nedává, ale předplatné ve
+  // Stripe pořád běží a nikdo ho neruší — druhý nákup by tedy vyrobil dvě
+  // souběžná předplatná téhož zákazníka a po vybrání dluhu 2× 990 Kč (C-3-05).
+  // Podkladů za jeden rok se to netýká, ty vedle sebe stát můžou.
+  if (purchase.kind === 'subscription' && (await hasUnsettledSubscription(db, userId))) {
+    return 'resi-se-platba';
   }
   if (purchase.kind === 'report') {
     const [owned] = await db

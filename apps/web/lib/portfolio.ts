@@ -16,6 +16,7 @@ import {
 } from '@danero/engine';
 import type { Db } from '@/db';
 import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
+import { errorText, logEvent } from '@/lib/log';
 import { configForYear, UNIFIED_RATES } from './tax-config';
 
 /**
@@ -280,13 +281,39 @@ export async function loadDailyRates(
   // rok−1 kvůli transakcím z 1.–2. ledna: fallback bere poslední vyhlášený
   // kurz PŘEDCHOZÍHO roku (Silvestr)
   const fromYear = Math.min(...years) - 1;
+  const toYear = Math.max(...years, currentYear);
+  // SOUVISLÝ rozsah, ne jen roky s transakcemi. `availableYears` vrací množinu,
+  // takže portfolio s obchody v 2023, 2024 a 2026 nikdy nestáhlo rok 2025 —
+  // a přesto se z něj počítalo (F-3-2).
+  const needed = Array.from({ length: toYear - fromYear + 1 }, (_, i) => fromYear + i);
+
   try {
-    await ensureCnbYears(db, [fromYear, ...years]);
-  } catch {
-    // offline/backfill selhal — zkusíme, co už v DB je; report stav přizná
+    await ensureCnbYears(db, needed);
+  } catch (error) {
+    // Dřív tu byl `catch {}` — výpadek ČNB, timeout i 404 vypadaly
+    // v monitoringu úplně stejně jako úspěch (F-3-10).
+    logEvent('error', 'cnb.backfill_failed', {
+      fromYear,
+      toYear,
+      error: errorText(error),
+    });
   }
-  const provider = await loadCnbRateProvider(db, fromYear, currentYear);
-  return provider.isEmpty ? undefined : provider;
+
+  const provider = await loadCnbRateProvider(db, fromYear, toYear);
+  if (provider.isEmpty) return undefined;
+
+  // Bez pokrytí VŠECH potřebných let se denní varianta nesmí nabídnout.
+  // Poloprázdná tabulka totiž nedá chybu: `getRate` se u chybějícího roku
+  // vrátí prázdný, engine spadne na jednotný kurz — a v jednom zdaňovacím
+  // období se tak namíchají obě soustavy, což § 38 odst. 1 zakazuje (R-06).
+  // Na doloženém případu to byl rozdíl 2 340 Kč vyrobený z kurzů, které
+  // v databázi vůbec nejsou. `isEmpty` se ptá na CELOU tabulku, takže díru
+  // uprostřed rozsahu nepoznalo (F-3-2).
+  if (provider.missingYears?.length) {
+    logEvent('warn', 'cnb.years_missing', { missing: provider.missingYears.join(',') });
+    return undefined;
+  }
+  return provider;
 }
 
 export interface YearAnalysis {

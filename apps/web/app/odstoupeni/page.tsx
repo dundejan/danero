@@ -66,13 +66,21 @@ export default function OdstoupeniPage() {
             Podklady k přiznání za jeden rok ({priceLabel(PRICE_REPORT_CZK)}): právo
             zaniká dodáním
           </h2>
+          {/* Tři kumulativní podmínky § 1837 písm. l), ne dvě — třetí (potvrzení
+              dle § 1824a) je na nás a e-mail se posílá „best effort“, takže
+              splněná být nemusí. Musí to být stejně napsané tady i v čl. 5
+              podmínek (nález E-3-05). */}
           <p>
             Podklady jsou digitální obsah, který dodáváme okamžitě — hned po zaplacení
-            si je stáhneš. U takového plnění právo odstoupit zaniká, pokud jsi{' '}
-            <strong>výslovně požádal, abychom začali plnit před uplynutím lhůty</strong>,
-            a vzal na vědomí, že tím právo odstoupit ztrácíš (§ 1837 písm. l občanského
-            zákoníku). Přesně tohle potvrzuješ zaškrtnutím políčka u objednávky —
-            bez něj nákup nedokončíš a políčko není předškrtnuté.
+            si je stáhneš. U takového plnění právo odstoupit zaniká, ale jen když jsou
+            splněné všechny <strong>tři</strong> podmínky § 1837 písm. l občanského
+            zákoníku: <strong>výslovně jsi požádal, abychom začali plnit před uplynutím
+            lhůty</strong>, vzal jsi na vědomí, že tím právo odstoupit ztrácíš (obojí
+            potvrzuješ zaškrtnutím políčka u objednávky — bez něj nákup nedokončíš
+            a políčko není předškrtnuté), a my ti poskytli{' '}
+            <strong>potvrzení o uzavřené smlouvě</strong> e-mailem. Dokud ti to
+            potvrzení nedorazí, právo odstoupit ti zůstává — i kdyby sis podklady
+            mezitím stáhl. Napiš nám a vyřídíme to.
           </p>
           <p>
             Píšeme to takhle natvrdo schválně: je to jediné místo, kde ti nákupem něco

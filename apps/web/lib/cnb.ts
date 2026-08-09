@@ -139,6 +139,42 @@ export function lastCnbDayOfYear(year: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Je rok v DB pokrytý natolik, že se z něj dá počítat?
+ *
+ * Jediné místo, kde se to rozhoduje — stahování i kontrola před výpočtem se
+ * musí ptát stejně, jinak se rozejdou. Přesně to se stalo: `ensureCnbYears`
+ * považovala rok bez řádků za „ke stažení“, ale výpočet se ptal jen
+ * `provider.isEmpty` (tj. „je prázdná CELÁ tabulka?“), takže chybějící rok
+ * uprostřed rozsahu nikdo nepoznal (nález F-3-2).
+ */
+export async function cnbYearCoverage(
+  db: Db,
+  year: number,
+  now: Date = new Date(),
+): Promise<{ rows: number; maxDay: string | null; complete: boolean }> {
+  const existing = await db
+    .select({ n: sql<number>`count(*)`, maxDay: sql<string | null>`max(${fxRates.day})` })
+    .from(fxRates)
+    .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
+  const rows = Number(existing[0]?.n ?? 0);
+  const maxDay = existing[0]?.maxDay ?? null;
+  const isCurrentYear = year === now.getUTCFullYear();
+
+  if (isCurrentYear) {
+    // běžný rok je „kompletní“, dokud data znatelně nezaostávají za dneškem
+    if (rows === 0 || maxDay === null) return { rows, maxDay, complete: false };
+    const ageDays = (now.getTime() - Date.parse(`${maxDay}T00:00:00Z`)) / 86_400_000;
+    return { rows, maxDay, complete: ageDays < 5 };
+  }
+  // plný rok má ~250 pracovních dní × ~30 měn; < 1000 řádků = evidentně chybí.
+  // Uzavřený rok je kompletní, jen když sahá až k poslednímu vyhlášenému dni:
+  // rok stažený naposledy jako BĚŽNÝ (ranní cron) končí před 31. 12., a kurz
+  // z 31. 12. ČNB vyhlašuje ~14:30, takže by bez dotažení chyběl navždy.
+  const complete = rows >= 1000 && maxDay !== null && maxDay >= lastCnbDayOfYear(year);
+  return { rows, maxDay, complete };
+}
+
 /** Zajistí kurzy pro dané roky — stáhne jen ty, které v DB citelně chybí. */
 // Uzavřené roky dotažené už v tomto procesu: když roční soubor ČNB kurz
 // z 31. 12. trvale neobsahuje (výpadek na straně ČNB), refetch by se jinak
@@ -151,27 +187,13 @@ export async function ensureCnbYears(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   for (const year of [...new Set(years)]) {
-    const existing = await db
-      .select({ n: sql<number>`count(*)`, maxDay: sql<string | null>`max(${fxRates.day})` })
-      .from(fxRates)
-      .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
-    // plný rok má ~250 pracovních dní × ~30 měn; < 1000 řádků = evidentně chybí
-    const count = Number(existing[0]?.n ?? 0);
-    const maxDay = existing[0]?.maxDay ?? null;
-    const isCurrentYear = year === new Date().getUTCFullYear();
-    if (!isCurrentYear && count >= 1000) {
-      // Uzavřený rok je kompletní, jen když sahá až k poslednímu vyhlášenému
-      // dni. Rok stažený naposledy jako BĚŽNÝ (ranní cron) končí před 31. 12. —
-      // kurz z 31. 12. ČNB vyhlašuje ~14:30 a bez dotažení by chyběl navždy.
-      if (maxDay !== null && maxDay >= lastCnbDayOfYear(year)) continue;
+    const { rows, complete } = await cnbYearCoverage(db, year);
+    if (complete) continue;
+    // uzavřený rok, který vypadá plný, ale nesahá k poslednímu dni: dotáhnout
+    // jednou za život procesu, ne při každém renderu
+    if (rows >= 1000) {
       if (refetchedClosedYears.has(year)) continue;
       refetchedClosedYears.add(year);
-    }
-    if (isCurrentYear && count > 0 && maxDay !== null) {
-      // běžný rok drží čerstvý denní cron — stahovat znovu jen když data
-      // očividně zaostávají (např. cron neběží), ne při každém renderu
-      const ageDays = (Date.now() - Date.parse(`${maxDay}T00:00:00Z`)) / 86_400_000;
-      if (ageDays < 5) continue;
     }
     await fetchCnbYear(db, year, fetchImpl);
   }
@@ -185,13 +207,24 @@ export async function loadCnbRateProvider(
   db: Db,
   fromYear: number,
   toYear: number,
-): Promise<DailyRateProvider & { isEmpty: boolean }> {
+): Promise<DailyRateProvider & { isEmpty: boolean; missingYears: number[] }> {
   const rows = await db
     .select()
     .from(fxRates)
     .where(and(gte(fxRates.day, `${fromYear}-01-01`), lte(fxRates.day, `${toYear}-12-31`)));
   const map = new Map<string, Money>();
-  for (const row of rows) map.set(`${row.day}|${row.currency}`, d(row.rate));
+  const yearsWithRates = new Set<number>();
+  for (const row of rows) {
+    map.set(`${row.day}|${row.currency}`, d(row.rate));
+    yearsWithRates.add(Number(row.day.slice(0, 4)));
+  }
+  // Které roky rozsahu nemají ANI JEDEN kurz. Počítá se z týchž řádků, žádný
+  // dotaz navíc — a je to jediná informace, která chyběla: `isEmpty` se ptá na
+  // celou tabulku, takže díru uprostřed rozsahu nepoznalo (F-3-2).
+  const missingYears: number[] = [];
+  for (let year = fromYear; year <= toYear; year += 1) {
+    if (!yearsWithRates.has(year)) missingYears.push(year);
+  }
 
   const shiftDay = (iso: string, days: number): string => {
     const date = new Date(`${iso}T00:00:00Z`);
@@ -201,6 +234,7 @@ export async function loadCnbRateProvider(
 
   return {
     isEmpty: map.size === 0,
+    missingYears,
     getRate(currency: string, date: string): Money | undefined {
       if (currency === 'CZK') return d(1);
       for (let back = 0; back <= 7; back += 1) {

@@ -649,6 +649,27 @@ describe('kontrola před nákupem', () => {
     );
   });
 
+  it(
+    'C-3-05: během dunningu se druhé předplatné nezaloží, podklady jdou koupit dál',
+    { timeout: 30_000 },
+    async () => {
+      process.env.DANERO_BILLING = 'stripe';
+      const db = await dbWithUser();
+      // platba neprošla a Stripe ji dny až týdny zkouší znovu; staré předplatné
+      // přitom ve Stripe pořád běží a nikdo ho neruší
+      await applyStripeEvent(db, subscriptionEvent({ status: 'past_due' }));
+
+      expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
+      // dřív tady vyšlo null a zákazník si koupil DRUHÉ předplatné —
+      // po vybrání dluhu se mu strhlo 2× 990 Kč
+      expect(await purchaseBlock(db, 'u1', { kind: 'subscription' }, ROK_2026)).toBe(
+        'resi-se-platba',
+      );
+      // podklady za jeden rok vedle dunningu stát můžou
+      expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2026 }, ROK_2026)).toBeNull();
+    },
+  );
+
   it('bez předplatného nákup projde', { timeout: 30_000 }, async () => {
     const db = await dbWithUser();
     expect(await purchaseBlock(db, 'u1', { kind: 'subscription' }, ROK_2026)).toBeNull();

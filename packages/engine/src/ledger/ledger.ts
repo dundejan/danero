@@ -107,6 +107,18 @@ export function inferSettlementDate(
   // 30. 12. 2025 dostal vypořádání 2. 1. 2026, zisk 60 000 Kč spadl do ZO 2026
   // a limit 50k za 2025 hlásil „neprolomeno“, přestože prolomený byl (A2-10).
   if (settlementStyle === 'MARGIN') return tradeDate;
+  // R-12e: opce se vypořádávají T+1 (prémie i výsledek uzavření připisuje
+  // clearing následující obchodní den). Bez téhle větve na ně dopadal zbytkový
+  // dopočet T+2 podle kalendáře TARGET2, protože brokeři je reportují pod
+  // SYNTETICKÝM identifikátorem (`OPT:SPY-…`), ze kterého se burza poznat nedá,
+  // a `settlementDate` u opcí plní jedině IBKR. Doloženo přes parser Schwabu:
+  // prodej opce 30. 12. 2025 dostal vypořádání 2. 1. 2026, takže ZO 2025
+  // vykázalo derivátové příjmy 0 Kč a limit 50k „neprolomeno“, zatímco do
+  // ZO 2026 přiteklo 124 800 Kč navíc (A2-3-05, táž vada jako A2-10).
+  if (settlementStyle === 'PREMIUM') {
+    const calendar = calendarForIsin(isin);
+    return addBusinessDays(tradeDate, 1, (day) => isExchangeHoliday(calendar, day));
+  }
   const t1 =
     (isin.startsWith('US') && tradeDate >= US_T1_SINCE) ||
     (isin.startsWith('CA') && tradeDate >= CA_T1_SINCE);

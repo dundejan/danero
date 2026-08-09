@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { d, parseTransactions } from '@danero/shared';
-import { czkText } from '../src';
+import { czkText, inferSettlementDate } from '../src';
 import { buy, CFG_2025, hasWarning, run, sell } from './helpers';
 
 /**
@@ -453,6 +453,63 @@ describe('R-12e: MARGIN se vypořádává T+0, ne burzovní lhůtou (A2-10)', ()
       ),
     ];
     // broker říká, že peníze přišly až 5. 1. → příjem patří do 2026
+    expect(run(txs).derivatives.taxableIncomeCzk.toString()).toBe('0');
+  });
+});
+
+/**
+ * R-12e, nález A2-3-05: opce (`settlementStyle: 'PREMIUM'`) se vypořádávají
+ * T+1. Brokeři je reportují pod SYNTETICKÝM identifikátorem (`OPT:SPY-…`),
+ * ze kterého se burza poznat nedá, takže na ně dopadal zbytkový dopočet T+2
+ * podle kalendáře TARGET2 — a `settlementDate` u opcí plní jedině IBKR.
+ */
+describe('R-12e: opce se vypořádávají T+1, ne T+2 (A2-3-05)', () => {
+  const opce = (over: Record<string, unknown>, prodej = false) =>
+    (prodej ? sell : buy)({
+      isin: 'OPT:SPY-01/16/2026-500.00-C',
+      assetClass: 'DERIVATIVE',
+      settlementStyle: 'PREMIUM',
+      quantity: '1',
+      currency: 'CZK',
+      // pomocníci buy/sell doplňují settlementDate = tradeDate; tady ho
+      // schválně vynecháváme, jinak by se dopočet vůbec nespustil
+      settlementDate: undefined,
+      ...over,
+    });
+
+  it('prodej opce 30. 12. patří do TÉHOŽ roku (T+1 = 31. 12.)', () => {
+    // Bez opravy vyšlo vypořádání 2. 1. 2026 (TARGET2: 31. 12. → 1. 1. svátek
+    // → 2. 1.), takže ZO 2025 vykázalo derivátové příjmy 0 Kč a limit 50 000 Kč
+    // hlásil „neprolomeno“, přestože prolomený byl.
+    const txs = [
+      opce({ tradeDate: '2025-06-02', pricePerShare: '0' }),
+      opce({ tradeDate: '2025-12-30', pricePerShare: '124800' }, true),
+    ];
+    const rok2025 = run(txs);
+    expect(rok2025.derivatives.taxableIncomeCzk.toString()).toBe('124800');
+    expect(rok2025.limits.flatTax50k.status.exceeded).toBe(true);
+  });
+
+  it('lhůta se počítá v obchodních dnech a přeskakuje svátky', () => {
+    const opt = 'OPT:SPY-01/16/2026-500.00-C';
+    // úterý 30. 12. 2025 → středa 31. 12. (T+2 by dalo až 2. 1. 2026)
+    expect(inferSettlementDate('2025-12-30', opt, 'DERIVATIVE', 'PREMIUM')).toBe('2025-12-31');
+    // středa 31. 12. → čtvrtek 1. 1. je svátek → pátek 2. 1. 2026
+    expect(inferSettlementDate('2025-12-31', opt, 'DERIVATIVE', 'PREMIUM')).toBe('2026-01-02');
+    // pátek 2. 1. 2026 → pondělí 5. 1.
+    expect(inferSettlementDate('2026-01-02', opt, 'DERIVATIVE', 'PREMIUM')).toBe('2026-01-05');
+    // kontrolní protipól: bez stylu (běžný CP) zůstává T+2
+    expect(inferSettlementDate('2025-12-30', opt, 'DERIVATIVE')).toBe('2026-01-02');
+  });
+
+  it('vyplněné datum vypořádání z výpisu brokera má přednost', () => {
+    const txs = [
+      opce({ tradeDate: '2025-06-02', settlementDate: '2025-06-03', pricePerShare: '0' }),
+      opce(
+        { tradeDate: '2025-12-30', settlementDate: '2026-01-05', pricePerShare: '124800' },
+        true,
+      ),
+    ];
     expect(run(txs).derivatives.taxableIncomeCzk.toString()).toBe('0');
   });
 });

@@ -412,6 +412,22 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   60 000 Kč spadl do ZO 2026 a limit 50 000 Kč za rok 2025 hlásil „neprolomeno“,
   přestože prolomený byl. Plní-li broker `settlementDate` sám (dnes jedině IBKR),
   má jeho hodnota přednost i u MARGIN.
+
+  **Opce (`settlementStyle = PREMIUM`) se vypořádávají T+1.** Prémie i výsledek
+  uzavření se u listovaných opcí připisují **následující obchodní den** —
+  clearing zajišťuje OCC (US) a obdobné protistrany v EU, a od zkrácení
+  akciového cyklu na T+1 (28. 5. 2024) je to shodné s podkladem. Bez tohohle
+  pravidla dopadá na opce zbytkový dopočet T+2 podle kalendáře TARGET2, protože
+  brokeři je reportují pod **syntetickým identifikátorem** (`OPT:SPY-…`), ze
+  kterého se burza poznat nedá — a `settlementDate` u opcí plní jedině IBKR.
+
+  ⚠️ Doloženo měřením přes skutečný parser Schwabu: prodej opce **30. 12. 2025**
+  za 2 500 USD dostal dopočtem vypořádání **2. 1. 2026**, takže ZO 2025 vykázalo
+  derivátové příjmy 0 Kč a limit 50 000 Kč „neprolomeno“, zatímco ZO 2026
+  dostalo 124 800 Kč navíc. Je to táž vada jako u MT4/MT5 výš, jen jinou cestou.
+  Dřívější datum je tu zároveň bezpečný směr: příjem se vykáže dřív, takže se
+  limit 50k nepodhodnotí. Zdroj: [OCC — Settlement Process](https://www.theocc.com/clearance-and-settlement/clearing)
+  (prémie T+1), tiskové zprávy SEC ke zkrácení cyklu na T+1 od 28. 5. 2024.
   **Pořadí událostí téhož dne** je deterministické a nezávislé na ID transakcí:
   korporátní akce → otevření (BUY, TRANSFER_IN) → uzavření (SELL, TRANSFER_OUT).
   Jinak by 0DTE opce (nákup i expirace týž den) vyšla podle abecedy ID buď

@@ -30,6 +30,8 @@ const STAV_CHYBA: Record<string, string> = {
     'Hlídání ti běží — druhé předplatné vedle něj nedává smysl. Spravovat ho můžeš v zákaznickém portálu.',
   'mas-v-predplatnem': 'Podklady za všechny daňové roky máš v ceně hlídání, kupovat je znovu nemusíš.',
   'prilis-casto': 'Zkoušíš to moc často. Dej tomu pár minut a zkus to znovu.',
+  'resi-se-platba':
+    'U tvého hlídání se právě řeší nezaplacená platba. Než ji dořešíš v zákaznickém portálu, druhé předplatné zakládat nebudeme — jinak by ti běžela dvě naráz a strhly se dvě platby.',
   'zkusebni-rezim': SANDBOX_NOTICE,
 };
 
