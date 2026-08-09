@@ -8,6 +8,8 @@ import { yearList } from '@/lib/format';
 import { SOURCE_URL } from '@/lib/legal';
 import { PLANS, type PlanId } from '@/lib/plans';
 import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
+import { getDb } from '@/db';
+import { resolveEntitlements } from '@/lib/entitlements';
 import { currentUser } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
@@ -59,20 +61,32 @@ const CENIK_FAQ = [
 ] as const;
 
 /** Kam CTA karty vede: nepřihlášený na registraci, přihlášený rovnou k nákupu. */
-const ctaHref = (plan: PlanId, signedIn: boolean): string => {
+const ctaHref = (plan: PlanId, signedIn: boolean, active: boolean): string => {
   if (!signedIn) return '/registrace';
-  return plan === 'free' ? '/prehled' : '/predplatne';
+  // co uživatel má, se nekupuje — pošli ho rovnou do aplikace
+  return plan === 'free' || active ? '/prehled' : '/predplatne';
 };
 
-const ctaLabel = (plan: PlanId, signedIn: boolean): string => {
+const ctaLabel = (signedIn: boolean, active: boolean): string => {
   if (!signedIn) return 'Založit účet';
-  return plan === 'free' ? 'Přejít do aplikace' : 'Objednat v aplikaci';
+  return active ? 'Přejít do aplikace' : 'Objednat v aplikaci';
 };
 
 export default async function CenikPage() {
   // Ceník je veřejná stránka, ale čte ji i přihlášený uživatel (odkaz
-  // z paywallu, z patičky). Registrační CTA by ho poslalo do slepé uličky.
-  const signedIn = Boolean(await currentUser());
+  // z paywallu, z patičky). Registrační CTA by ho poslalo do slepé uličky
+  // a nabízet předplatiteli tarif, který už platí, taky nedává smysl —
+  // proto se u přihlášeného značí aktivní tarif stejně jako na /predplatne.
+  const user = await currentUser();
+  const entitlements = user ? await resolveEntitlements(await getDb(), user.id) : null;
+  const signedIn = Boolean(user);
+  const aktivni = (plan: PlanId): boolean => {
+    if (!entitlements) return false;
+    if (plan === 'free') return true;
+    if (plan === 'subscription') return entitlements.reportYears === 'all';
+    // podklady: buď je pokrývá předplatné, nebo si uživatel koupil aspoň rok
+    return entitlements.reportYears === 'all' || entitlements.reportYears.length > 0;
+  };
   return (
     <MarketingPage active="cenik">
       <PageHero
@@ -93,11 +107,11 @@ export default async function CenikPage() {
       <section aria-label="Cena a obsah" className="mt-12">
         <div className="grid gap-6 lg:grid-cols-3">
           {PLANS.map((plan) => (
-            <PlanCard key={plan.id} plan={plan}>
+            <PlanCard key={plan.id} plan={plan} active={aktivni(plan.id)}>
               {/* Přihlášenému je registrace k ničemu — koupit se dá jen
                   v aplikaci, tak ho tam odkaz pošle rovnou. */}
               <Link
-                href={ctaHref(plan.id, signedIn)}
+                href={ctaHref(plan.id, signedIn, aktivni(plan.id))}
                 className={cn(
                   'inline-block w-full rounded-md px-6 py-3 text-center font-semibold',
                   plan.highlight
@@ -105,7 +119,7 @@ export default async function CenikPage() {
                     : 'border border-linka hover:border-inkoust-tlumeny',
                 )}
               >
-                {ctaLabel(plan.id, signedIn)}
+                {ctaLabel(signedIn, aktivni(plan.id))}
               </Link>
               {plan.id === 'report' && !signedIn && (
                 <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
