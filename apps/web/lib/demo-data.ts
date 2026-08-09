@@ -291,7 +291,10 @@ function rateWiggle(key: string): number {
  * deterministicky (sinus z hashe klíče). Reálný report bere denní kurzy ČNB
  * z DB (loadDailyRates) — demo tak ukáže kompletní tabulku 8 variant.
  */
-function syntheticDailyRates(txs: Transaction[]): DailyRateProvider {
+function syntheticDailyRates(
+  txs: Transaction[],
+  today: string,
+): DailyRateProvider & { fingerprint: string } {
   const rates: Record<string, string> = {};
   const add = (currency: string, date: string | undefined): void => {
     if (!date || currency === 'CZK') return;
@@ -316,7 +319,11 @@ function syntheticDailyRates(txs: Transaction[]): DailyRateProvider {
       add(tx.currency, tx.date);
     }
   }
-  return new MapRateProvider(rates);
+  const provider = new MapRateProvider(rates);
+  // otisk pro cache výsledků enginu (F-3-1): dataset i kurzy jsou plně určené
+  // „dneškem" dema, takže veřejný demo report nepočítá 9 běhů enginu při každém
+  // zobrazení znovu
+  return { fingerprint: `demo:${today}`, getRate: (c, day) => provider.getRate(c, day) };
 }
 
 // ── sestavení datasetu ──────────────────────────────────────────────────────
@@ -326,7 +333,7 @@ export interface DemoDataset {
   profile: ProfileRow;
   prices: Map<string, InstrumentPrice>;
   /** Syntetické denní kurzy (jednotný kurz roku ±2 %) — pro varianty v reportu. */
-  dailyRates: DailyRateProvider;
+  dailyRates: DailyRateProvider & { fingerprint: string };
 }
 
 export function demoDataset(today: string): DemoDataset {
@@ -393,5 +400,5 @@ export function demoDataset(today: string): DemoDataset {
   ]);
 
   const txs = parseTransactions(raw);
-  return { txs, profile: demoProfile(), prices, dailyRates: syntheticDailyRates(txs) };
+  return { txs, profile: demoProfile(), prices, dailyRates: syntheticDailyRates(txs, today) };
 }

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb } from '@/db';
-import { fetchCnbYear, looksLikeCnbYearText, parseCnbYearText } from '@/lib/cnb';
+import {
+  ensureCnbYears,
+  fetchCnbYear,
+  looksLikeCnbYearText,
+  parseCnbYearText,
+  resetCnbBackfillState,
+} from '@/lib/cnb';
 import { withCron } from '@/lib/cron-auth';
 
 /** Roční soubor ČNB s jednou nevalidní buňkou — přesně to, co shazovalo rok. */
@@ -40,6 +46,51 @@ describe('odolnost stahování kurzů ČNB', () => {
     const duplicita = ['Datum|1 EUR|1 EUR', '02.01.2026|25,120|25,120'].join('\n');
     // bez deduplikace by tady na produkčním Postgresu spadl celý fx cron
     await expect(fetchCnbYear(db, 2026, odpoved(duplicita))).resolves.toBe(1);
+  }, 30_000);
+
+  /**
+   * F-3-5: `ensureCnbYears` běží uvnitř renderu stránky a nic ho
+   * nededuplikovalo — 20 souběžných renderů znamenalo 60 stažení z cnb.cz
+   * (naměřeno), při 10leté historii a 50 uživatelích 550 požadavků v jedné
+   * vlně. A protože `fetchCnbYear` má timeout 60 s na rok, každý neúspěch
+   * ukrajoval z rozpočtu stránky.
+   */
+  it('souběžné rendery sdílejí jedno stažení na rok, ne jedno na render', async () => {
+    resetCnbBackfillState();
+    const db = await createPgliteDb();
+    let stazeni = 0;
+    const pomaly: typeof fetch = (async () => {
+      stazeni += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return new Response(['Datum|1 EUR', '02.01.2026|25,120'].join('\n'), { status: 200 });
+    }) as typeof fetch;
+
+    const roky = [2024, 2025, 2026];
+    await Promise.all(
+      Array.from({ length: 20 }, () => ensureCnbYears(db, roky, pomaly)),
+    );
+
+    expect(stazeni).toBe(roky.length);
+  }, 30_000);
+
+  it('po neúspěchu se rok chvíli nezkouší znovu (timeout 60 s na pokus)', async () => {
+    resetCnbBackfillState();
+    const db = await createPgliteDb();
+    let pokusy = 0;
+    const rozbity: typeof fetch = (async () => {
+      pokusy += 1;
+      return new Response('mimo provoz', { status: 503 });
+    }) as typeof fetch;
+
+    await expect(ensureCnbYears(db, [2026], rozbity)).rejects.toThrow(/HTTP 503/);
+    // druhý render v pauze už ČNB neobtěžuje a nezdržuje uživatele
+    await expect(ensureCnbYears(db, [2026], rozbity)).resolves.toBeUndefined();
+    expect(pokusy).toBe(1);
+
+    // po vypršení pauzy (tady simulované resetem stavu) se to zkusí znovu
+    resetCnbBackfillState();
+    await expect(ensureCnbYears(db, [2026], rozbity)).rejects.toThrow(/HTTP 503/);
+    expect(pokusy).toBe(2);
   }, 30_000);
 });
 

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { parseUniversalCsv } from '@danero/importers';
-import type { Transaction } from '@danero/shared';
+import { d, type Transaction } from '@danero/shared';
 import {
   analyzeForUserCached,
-  createAnalysisCache,
+  compareVariantsForUserCached,
+  createResultCache,
   engineCacheStats,
   estimateAnalysisBytes,
+  reportDataCached,
 } from '@/lib/engine-cache';
+import type { CnbRateProvider } from '@/lib/cnb';
 import type { ProfileRow, YearAnalysis } from '@/lib/portfolio';
 
 /**
@@ -52,7 +55,7 @@ describe('cache enginu: paměťový strop a expirace (F-3-4)', () => {
   });
 
   it('starší záznamy vypadnou, jakmile by se přesáhl paměťový strop', () => {
-    const cache = createAnalysisCache({ maxBytes: 4 * MB, maxEntries: 50, ttlMs: 60_000 });
+    const cache = createResultCache({ maxBytes: 4 * MB, maxEntries: 50, ttlMs: 60_000 }, estimateAnalysisBytes);
     // každý záznam ~1,6 MB odhadu → do 4 MB se vejdou dva, třetí vytlačí první
     for (const key of ['a', 'b', 'c']) cache.set(key, fakeAnalysis(700));
 
@@ -62,7 +65,7 @@ describe('cache enginu: paměťový strop a expirace (F-3-4)', () => {
   });
 
   it('záznam větší než celý strop se necachuje (nevytlačí všechno ostatní)', () => {
-    const cache = createAnalysisCache({ maxBytes: 4 * MB, maxEntries: 50, ttlMs: 60_000 });
+    const cache = createResultCache({ maxBytes: 4 * MB, maxEntries: 50, ttlMs: 60_000 }, estimateAnalysisBytes);
     cache.set('maly', fakeAnalysis(700));
     cache.set('obr', fakeAnalysis(100_000));
 
@@ -71,7 +74,7 @@ describe('cache enginu: paměťový strop a expirace (F-3-4)', () => {
   });
 
   it('záznam po vypršení TTL neplatí a paměť uvolní', () => {
-    const cache = createAnalysisCache({ maxBytes: 128 * MB, maxEntries: 50, ttlMs: 10 * 60_000 });
+    const cache = createResultCache({ maxBytes: 128 * MB, maxEntries: 50, ttlMs: 10 * 60_000 }, estimateAnalysisBytes);
     cache.set('a', fakeAnalysis(700), 1_000_000);
 
     expect(cache.get('a', 1_000_000 + 9 * 60_000)).toBeDefined();
@@ -80,7 +83,7 @@ describe('cache enginu: paměťový strop a expirace (F-3-4)', () => {
   });
 
   it('prošlé záznamy uvolní i zápis jiného klíče', () => {
-    const cache = createAnalysisCache({ maxBytes: 128 * MB, maxEntries: 50, ttlMs: 10 * 60_000 });
+    const cache = createResultCache({ maxBytes: 128 * MB, maxEntries: 50, ttlMs: 10 * 60_000 }, estimateAnalysisBytes);
     cache.set('a', fakeAnalysis(700), 1_000_000);
     cache.set('b', fakeAnalysis(700), 1_000_000 + 11 * 60_000);
 
@@ -138,4 +141,59 @@ describe('cache enginu nad skutečnými daty', () => {
       expect(analyzeForUserCached('u1', txs, profil, 2025, '2026-08-08')).not.toBe(prvni);
     },
   );
+});
+
+/* ── Denní kurzy a srovnání variant (F-3-1) ───────────────────────────────── */
+
+/**
+ * F-3-1: `/report` pouštěl engine 5× (s denními kurzy 9×) a necachoval nic —
+ * každé přelistování strany tabulky stálo celý výpočet znovu. U day-tradera to
+ * bylo naměřených 194 s CPU na jedno kliknutí (50 000 transakcí, 125 stran).
+ * Cache se s denními kurzy vynechávala, protože se jejich obsah mění nezávisle
+ * na transakcích; teď je součástí klíče otisk kurzů z `loadCnbRateProvider`.
+ */
+const kurzy = (fingerprint: string): CnbRateProvider => ({
+  isEmpty: false,
+  missingYears: [],
+  fingerprint,
+  getRate: (currency) => (currency === 'CZK' ? d(1) : d(20)),
+});
+
+describe('cache enginu: denní kurzy a srovnání variant (F-3-1)', () => {
+  const txs: Transaction[] = parseUniversalCsv(bigCsv(200)).transactions;
+  const args = ['u-kurzy', txs, profil, 2025] as const;
+
+  it('výsledek s denními kurzy se cachuje podle otisku kurzů', () => {
+    const prvni = analyzeForUserCached(...args, '2026-08-08', kurzy('abc'));
+    expect(analyzeForUserCached(...args, '2026-08-08', kurzy('abc'))).toBe(prvni);
+  });
+
+  it('změna kurzů (jiný otisk) výsledek přepočítá', () => {
+    const prvni = analyzeForUserCached(...args, '2026-08-08', kurzy('abc'));
+    expect(analyzeForUserCached(...args, '2026-08-08', kurzy('xyz'))).not.toBe(prvni);
+  });
+
+  it('provider bez otisku se necachuje — obsah se může měnit bez varování', () => {
+    const bezOtisku = { getRate: () => d(20) };
+    const prvni = analyzeForUserCached(...args, '2026-08-08', bezOtisku);
+    expect(analyzeForUserCached(...args, '2026-08-08', bezOtisku)).not.toBe(prvni);
+  });
+
+  it('srovnání variant se cachuje (4–8 běhů enginu na jedno zobrazení)', () => {
+    const prvni = compareVariantsForUserCached(...args, kurzy('abc'));
+    expect(compareVariantsForUserCached(...args, kurzy('abc'))).toBe(prvni);
+    expect(compareVariantsForUserCached(...args, kurzy('xyz'))).not.toBe(prvni);
+  });
+
+  it('podklady reportu berou z cache obojí — výsledek i varianty', () => {
+    const prvni = reportDataCached(...args, '2026-08-08', kurzy('abc'));
+    const druhy = reportDataCached(...args, '2026-08-08', kurzy('abc'));
+    expect(druhy.result).toBe(prvni.result);
+    expect(druhy.comparison).toBe(prvni.comparison);
+  });
+
+  it('varianty se počítají za celý rok — jiné datum pozic je nezmění', () => {
+    const prvni = compareVariantsForUserCached(...args, kurzy('abc'));
+    expect(reportDataCached(...args, '2026-01-31', kurzy('abc')).comparison).toBe(prvni);
+  });
 });

@@ -8,13 +8,16 @@ import {
 } from '@danero/shared';
 import {
   analyzeTaxYear,
+  compareVariants,
   positionsAt,
   type EngineInput,
   type EngineOptions,
   type Position,
   type TaxYearResult,
+  type VariantComparison,
 } from '@danero/engine';
 import type { Db } from '@/db';
+import type { CnbRateProvider } from '@/lib/cnb';
 import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
 import { errorText, logEvent } from '@/lib/log';
 import { configForYear, UNIFIED_RATES } from './tax-config';
@@ -275,7 +278,7 @@ export async function loadDailyRates(
   db: Db,
   txs: Transaction[],
   currentYear: number,
-): Promise<EngineInput['dailyRates']> {
+): Promise<CnbRateProvider | undefined> {
   const { ensureCnbYears, loadCnbRateProvider } = await import('@/lib/cnb');
   const years = availableYears(txs, currentYear);
   // rok−1 kvůli transakcím z 1.–2. ledna: fallback bere poslední vyhlášený
@@ -337,6 +340,20 @@ export function analyzeForUser(
     labels: instrumentLabels(txs),
     transactionCount: txs.length,
   };
+}
+
+/**
+ * Srovnání variant párování × kurzové soustavy pro daný rok (R-05c × R-06).
+ * Stejné vstupy jako `analyzeForUser`, jen jiný výstup — proto se cachuje
+ * stejným otiskem (lib/engine-cache).
+ */
+export function compareVariantsForUser(
+  txs: Transaction[],
+  profileRow: ProfileRow,
+  year: number,
+  dailyRates?: EngineInput['dailyRates'],
+): VariantComparison {
+  return compareVariants(engineInputForUser(txs, profileRow, year, dailyRates));
 }
 
 /** GBX (pence) engine převádí přes GBP (R-06) — kontrola pokrytí musí dělat totéž. */
@@ -401,6 +418,17 @@ const needsDailyRates = (profileRow: ProfileRow): boolean =>
   Object.values(profileRow.pinnedTaxYears ?? {}).some((o) => o.fxMethod === 'CNB_DAILY');
 
 /**
+ * Mění denní kurzy hlavní výsledek? Buď je uživatel zvolil, nebo je potřebuje
+ * jako záchranu pro transakce mimo pokrytí jednotné tabulky. Report se podle
+ * toho rozhoduje, jestli je pustit i do výpočtu roku, nebo jen do srovnání
+ * variant (lib/engine-cache).
+ */
+export const dailyRatesAffectAnalysis = (
+  profileRow: ProfileRow,
+  txs: Transaction[],
+): boolean => needsDailyRates(profileRow) || !unifiedRatesCover(txs);
+
+/**
  * Denní kurzy jen když je uživatel ZVOLIL (fxMethod CNB_DAILY, ať v profilu
  * nebo v zafixovaném roce) — jinak by každé načtení stránky platilo backfill.
  * Report si je bere vždy (srovnání). Výjimka pro UNIFIED: transakce mimo
@@ -413,7 +441,7 @@ export async function dailyRatesForProfile(
   txs: Transaction[],
   profileRow: ProfileRow,
   currentYear: number,
-): Promise<EngineInput['dailyRates']> {
-  if (!needsDailyRates(profileRow) && unifiedRatesCover(txs)) return undefined;
+): Promise<CnbRateProvider | undefined> {
+  if (!dailyRatesAffectAnalysis(profileRow, txs)) return undefined;
   return loadDailyRates(db, txs, currentYear);
 }

@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation';
-import { analyzeTaxYear, compareVariants } from '@danero/engine';
 import { PaywallCard } from '@/components/paywall-card';
 import { ReportView } from '@/components/views/report-view';
+import { reportDataCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { getDb } from '@/db';
 import {
   availableYears,
-  engineInputForUser,
   getProfile,
   loadDailyRates,
   loadTransactions,
@@ -39,7 +38,8 @@ export default async function ReportPage({
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) redirect('/prehled');
 
-  const currentYear = Number(new Date().toISOString().slice(0, 4)); // UTC, konzistentně s today
+  const today = new Date().toISOString().slice(0, 10);
+  const currentYear = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const years = availableYears(txs, currentYear);
   const params = await searchParams;
   const rok = firstParam(params.rok);
@@ -78,11 +78,12 @@ export default async function ReportPage({
   const dailyRates = await loadDailyRates(db, txs, currentYear);
 
   // EngineError (chybějící kurz) chytáme tady — pád ve view by skončil
-  // v generickém error boundary; výsledky se předávají dál (žádný dvojí běh)
-  let precomputed: { result: ReturnType<typeof analyzeTaxYear>; comparison: ReturnType<typeof compareVariants> };
+  // v generickém error boundary; výsledky se předávají dál (žádný dvojí běh).
+  // Přes cache: stránkování tabulky prodejů jinak platí celý engine (a v něm
+  // 4–8 variant párování) při každém kliknutí na další stranu (F-3-1).
+  let precomputed: ReturnType<typeof reportDataCached>;
   try {
-    const input = engineInputForUser(txs, pinnedProfile, year, dailyRates);
-    precomputed = { result: analyzeTaxYear(input), comparison: compareVariants(input) };
+    precomputed = reportDataCached(user.id, txs, pinnedProfile, year, today, dailyRates);
   } catch (error) {
     const message = engineErrorMessage(error);
     if (!message) throw error;

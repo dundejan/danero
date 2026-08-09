@@ -203,8 +203,8 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
   it('otisk pro engine cache je pro stejný „dnešek“ stabilní', () => {
     const again = demoDataset(today);
     expect(
-      analysisFingerprint('demo', txs, profile, year, today, false),
-    ).toBe(analysisFingerprint('demo', again.txs, again.profile, year, today, false));
+      analysisFingerprint('demo', txs, profile, year, today, 'unified'),
+    ).toBe(analysisFingerprint('demo', again.txs, again.profile, year, today, 'unified'));
   });
 
   it('hlídač nad demo daty vyrobí upozornění (limity + časové testy)', () => {

@@ -1,8 +1,13 @@
 import type { YearAnalysis, ProfileRow } from '@/lib/portfolio';
 import type { Transaction } from '@danero/shared';
-import type { EngineInput } from '@danero/engine';
+import type { EngineInput, TaxYearResult, VariantComparison } from '@danero/engine';
 import { fnv1a64 } from '@danero/importers';
-import { analyzeForUser } from '@/lib/portfolio';
+import type { CnbRateProvider } from '@/lib/cnb';
+import {
+  analyzeForUser,
+  compareVariantsForUser,
+  dailyRatesAffectAnalysis,
+} from '@/lib/portfolio';
 
 /**
  * In-process cache výsledků enginu (G10b). Engine je čistá funkce → výsledek
@@ -72,14 +77,14 @@ export interface CacheLimits {
   ttlMs: number;
 }
 
-export interface AnalysisCache {
-  get(key: string, now?: number): YearAnalysis | undefined;
-  set(key: string, value: YearAnalysis, now?: number): void;
+export interface ResultCache<T> {
+  get(key: string, now?: number): T | undefined;
+  set(key: string, value: T, now?: number): void;
   stats(): { entries: number; bytes: number };
 }
 
-interface CacheEntry {
-  value: YearAnalysis;
+interface CacheEntry<T> {
+  value: T;
   bytes: number;
   storedAt: number;
 }
@@ -87,13 +92,16 @@ interface CacheEntry {
 /**
  * Cache s paměťovým stropem, TTL a FIFO vyhazováním. Vlastní instance kvůli
  * testům (produkční strop 128 MB by se testem plnil minutu) — v aplikaci
- * existuje jediná, níž.
+ * existují dvě, níž: výsledky roku a srovnání variant.
  */
-export function createAnalysisCache(limits: CacheLimits): AnalysisCache {
-  const entries = new Map<string, CacheEntry>();
+export function createResultCache<T>(
+  limits: CacheLimits,
+  estimateBytes: (value: T) => number,
+): ResultCache<T> {
+  const entries = new Map<string, CacheEntry<T>>();
   let bytes = 0;
 
-  const drop = (key: string, entry: CacheEntry): void => {
+  const drop = (key: string, entry: CacheEntry<T>): void => {
     entries.delete(key);
     bytes -= entry.bytes;
   };
@@ -118,7 +126,7 @@ export function createAnalysisCache(limits: CacheLimits): AnalysisCache {
       const existing = entries.get(key);
       if (existing) drop(key, existing);
       dropExpired(now);
-      const entryBytes = estimateAnalysisBytes(value);
+      const entryBytes = estimateBytes(value);
       // záznam větší než celý strop se necachuje vůbec — jinak by kvůli němu
       // vypadlo všechno ostatní a stejně by se hned vyhodil sám
       if (entryBytes > limits.maxBytes) return;
@@ -134,14 +142,40 @@ export function createAnalysisCache(limits: CacheLimits): AnalysisCache {
   };
 }
 
-const cache = createAnalysisCache({
-  maxBytes: MAX_CACHE_BYTES,
-  maxEntries: MAX_ENTRIES,
-  ttlMs: TTL_MS,
-});
+const cache = createResultCache<YearAnalysis>(
+  { maxBytes: MAX_CACHE_BYTES, maxEntries: MAX_ENTRIES, ttlMs: TTL_MS },
+  estimateAnalysisBytes,
+);
+
+/**
+ * Srovnání variant (R-05c × R-06) má vlastní cache: hodnota je proti
+ * `YearAnalysis` drobná (4–8 variant po hrstce čísel), ale výpočet je
+ * NEJDRAŽŠÍ v aplikaci — `compareVariants` pouští engine 4× (s denními kurzy
+ * 8×) a `MAX_PROFIT`/`MAX_LOSS` stojí každý ~6,7× tolik co FIFO. Naměřeno na
+ * day-traderovi: 25 000 transakcí = 42 s CPU, 50 000 = 185 s. Bez cache to
+ * `/report` platil při každém přelistování strany tabulky (F-3-1).
+ */
+const COMPARISON_ENTRY_BYTES = 8 * 1024;
+const comparisonCache = createResultCache<VariantComparison>(
+  { maxBytes: 4 * 1024 * 1024, maxEntries: MAX_ENTRIES, ttlMs: TTL_MS },
+  () => COMPARISON_ENTRY_BYTES,
+);
 
 /** Obsazenost cache — pro testy a případnou diagnostiku. */
 export const engineCacheStats = (): { entries: number; bytes: number } => cache.stats();
+
+/**
+ * Otisk denních kurzů do klíče cache. `undefined` znamená „necachovat":
+ * provider bez otisku (test, cizí zdroj) může svůj obsah měnit bez varování
+ * a cache by po takové změně servírovala stará čísla. Prázdný otisk se počítá
+ * jako žádný — jinak by z něj vznikl prázdný klíč SPOLEČNÝ pro všechny
+ * uživatele a roky, tedy servírování cizích čísel.
+ */
+const ratesFingerprint = (dailyRates?: EngineInput['dailyRates']): string | undefined => {
+  if (dailyRates === undefined) return 'unified';
+  const { fingerprint } = dailyRates as Partial<CnbRateProvider>;
+  return fingerprint ? `daily:${fingerprint}` : undefined;
+};
 
 export function analysisFingerprint(
   userId: string,
@@ -149,19 +183,27 @@ export function analysisFingerprint(
   profileRow: ProfileRow,
   year: number,
   atDate: string,
-  hasDailyRates: boolean,
+  rates: string,
 ): string {
   // hash ID transakcí: levný a citlivý na přidání/odebrání i pořadí
   const txHash = fnv1a64(txs.map((tx) => tx.id).join('|'));
-  return [
-    userId,
-    year,
-    atDate,
-    txs.length,
-    txHash,
-    profileRow.updatedAt.getTime(),
-    hasDailyRates ? 'daily' : 'unified',
-  ].join(':');
+  return [userId, year, atDate, txs.length, txHash, profileRow.updatedAt.getTime(), rates].join(
+    ':',
+  );
+}
+
+/** Společné jádro obou cachovaných vstupů: klíč, hit, výpočet, uložení. */
+function cached<T>(
+  store: ResultCache<T>,
+  key: string | undefined,
+  compute: () => T,
+): T {
+  if (key === undefined) return compute();
+  const hit = store.get(key);
+  if (hit) return hit;
+  const value = compute();
+  store.set(key, value);
+  return value;
 }
 
 export function analyzeForUserCached(
@@ -172,16 +214,59 @@ export function analyzeForUserCached(
   atDate: string,
   dailyRates?: EngineInput['dailyRates'],
 ): YearAnalysis {
-  // denní kurzy ČNB se do otisku promítnout neumí (jejich obsah se mění
-  // nezávisle na transakcích — backfill po výpadku by servíroval stará čísla)
-  // → s denními kurzy cache vynecháváme; jednotný kurz je za rok neměnný
-  if (dailyRates !== undefined) {
-    return analyzeForUser(txs, profileRow, year, atDate, dailyRates);
-  }
-  const key = analysisFingerprint(userId, txs, profileRow, year, atDate, false);
-  const hit = cache.get(key);
-  if (hit) return hit;
-  const value = analyzeForUser(txs, profileRow, year, atDate, dailyRates);
-  cache.set(key, value);
-  return value;
+  const rates = ratesFingerprint(dailyRates);
+  const key =
+    rates === undefined
+      ? undefined
+      : analysisFingerprint(userId, txs, profileRow, year, atDate, rates);
+  return cached(cache, key, () => analyzeForUser(txs, profileRow, year, atDate, dailyRates));
+}
+
+/**
+ * Srovnání variant nad týmiž vstupy jako `analyzeForUserCached` — jen bez
+ * `atDate`, protože varianty se počítají za celý daňový rok a na dni pozic
+ * nezávisí.
+ */
+export function compareVariantsForUserCached(
+  userId: string,
+  txs: Transaction[],
+  profileRow: ProfileRow,
+  year: number,
+  dailyRates?: EngineInput['dailyRates'],
+): VariantComparison {
+  const rates = ratesFingerprint(dailyRates);
+  const key =
+    rates === undefined
+      ? undefined
+      : analysisFingerprint(userId, txs, profileRow, year, 'varianty', rates);
+  return cached(comparisonCache, key, () =>
+    compareVariantsForUser(txs, profileRow, year, dailyRates),
+  );
+}
+
+/**
+ * Podklady pro `/report`: výsledek roku i srovnání variant z cache. Stránka je
+ * jediný jejich konzument a musí je mít oba — a bez cache se obojí počítalo
+ * znovu při každém přelistování strany tabulky prodejů (F-3-1).
+ *
+ * Denní kurzy si report bere VŽDY, protože bez nich by srovnání variant
+ * neukázalo kurzovou soustavu. Do hlavního výsledku ale vstupují jen tehdy,
+ * když je uživatel opravdu potřebuje — jinak by měl report v cache vlastní
+ * záznam vedle přehledu, oba přes 100 MB odhadu, a při každém přepnutí mezi
+ * stránkami by se navzájem vyhazovaly a počítaly znovu. Čísla to nemění:
+ * u pokrytého jednotného kurzu se provider stejně nepoužije.
+ */
+export function reportDataCached(
+  userId: string,
+  txs: Transaction[],
+  profileRow: ProfileRow,
+  year: number,
+  atDate: string,
+  dailyRates?: EngineInput['dailyRates'],
+): { result: TaxYearResult; comparison: VariantComparison } {
+  const analysisRates = dailyRatesAffectAnalysis(profileRow, txs) ? dailyRates : undefined;
+  return {
+    result: analyzeForUserCached(userId, txs, profileRow, year, atDate, analysisRates).result,
+    comparison: compareVariantsForUserCached(userId, txs, profileRow, year, dailyRates),
+  };
 }

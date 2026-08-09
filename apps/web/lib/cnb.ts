@@ -1,4 +1,5 @@
-import { and, gte, lte, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, asc, gte, lte, sql } from 'drizzle-orm';
 import { d, type Money } from '@danero/shared';
 import type { DailyRateProvider } from '@danero/engine';
 import type { Db } from '@/db';
@@ -175,29 +176,92 @@ export async function cnbYearCoverage(
   return { rows, maxDay, complete };
 }
 
-/** Zajistí kurzy pro dané roky — stáhne jen ty, které v DB citelně chybí. */
 // Uzavřené roky dotažené už v tomto procesu: když roční soubor ČNB kurz
 // z 31. 12. trvale neobsahuje (výpadek na straně ČNB), refetch by se jinak
 // opakoval při každém renderu — jednou za život procesu stačí.
 const refetchedClosedYears = new Set<number>();
 
+/**
+ * Rozpracované backfilly v tomhle procesu: rok → běžící slib (F-3-5).
+ *
+ * `ensureCnbYears` se volá UVNITŘ renderu stránky a nic ho nededuplikovalo:
+ * 20 souběžných renderů = 60 stažení z cnb.cz (naměřeno), při 10leté historii
+ * a 50 uživatelích 550 požadavků v jedné vlně — a každý neúspěch stojí až 60 s
+ * z rozpočtu stránky. Souběžné rendery teď sdílejí jedno stahování na rok.
+ * Je to per instance (serverless běží víc instancí), takže to není zámek přes
+ * celý provoz, ale právě špičku „jeden uživatel otevře pět záložek" ustojí.
+ */
+const inFlightYears = new Map<number, Promise<void>>();
+
+/**
+ * Po neúspěchu se rok chvíli nezkouší znovu. ČNB bývá mimo provoz v řádu minut
+ * a každý pokus stojí až 60 s timeoutu — bez téhle pauzy by výpadek zpomalil
+ * každé zobrazení přehledu. Chyba se loguje tam, kde vznikla; tichý skip
+ * v pauze pak nezaplaví log tímtéž řádkem z každého renderu.
+ */
+const FAILURE_COOLDOWN_MS = 60_000;
+const failedYearAt = new Map<number, number>();
+
+/** Jen pro testy — stav backfillu je záměrně per proces. */
+export function resetCnbBackfillState(): void {
+  refetchedClosedYears.clear();
+  inFlightYears.clear();
+  failedYearAt.clear();
+}
+
+async function ensureCnbYear(db: Db, year: number, fetchImpl: typeof fetch): Promise<void> {
+  const running = inFlightYears.get(year);
+  if (running) return running;
+
+  const failedAt = failedYearAt.get(year);
+  if (failedAt !== undefined && Date.now() - failedAt < FAILURE_COOLDOWN_MS) return;
+
+  const task = (async () => {
+    const { rows, complete } = await cnbYearCoverage(db, year);
+    if (complete) return;
+    // uzavřený rok, který vypadá plný, ale nesahá k poslednímu dni: dotáhnout
+    // jednou za život procesu, ne při každém renderu
+    if (rows >= 1000) {
+      if (refetchedClosedYears.has(year)) return;
+      refetchedClosedYears.add(year);
+    }
+    try {
+      await fetchCnbYear(db, year, fetchImpl);
+      failedYearAt.delete(year);
+    } catch (error) {
+      failedYearAt.set(year, Date.now());
+      throw error;
+    }
+  })().finally(() => inFlightYears.delete(year));
+
+  inFlightYears.set(year, task);
+  return task;
+}
+
+/** Zajistí kurzy pro dané roky — stáhne jen ty, které v DB citelně chybí. */
 export async function ensureCnbYears(
   db: Db,
   years: number[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   for (const year of [...new Set(years)]) {
-    const { rows, complete } = await cnbYearCoverage(db, year);
-    if (complete) continue;
-    // uzavřený rok, který vypadá plný, ale nesahá k poslednímu dni: dotáhnout
-    // jednou za život procesu, ne při každém renderu
-    if (rows >= 1000) {
-      if (refetchedClosedYears.has(year)) continue;
-      refetchedClosedYears.add(year);
-    }
-    await fetchCnbYear(db, year, fetchImpl);
+    await ensureCnbYear(db, year, fetchImpl);
   }
 }
+
+export type CnbRateProvider = DailyRateProvider & {
+  isEmpty: boolean;
+  missingYears: number[];
+  /**
+   * Otisk obsahu načtených kurzů — vstupuje do klíče cache výsledků enginu
+   * (lib/engine-cache). Kurzy se mění nezávisle na transakcích (backfill po
+   * výpadku ČNB, oprava zaokrouhlení), takže samotný otisk transakcí by po
+   * takové změně servíroval stará čísla. Kvůli tomu se s denními kurzy
+   * necachovalo vůbec a `/report` počítal celý engine znovu při každém
+   * přelistování strany (F-3-1).
+   */
+  fingerprint: string;
+};
 
 /**
  * Provider pro engine: kurzy načtené do paměti, s dohledáním posledního
@@ -207,16 +271,25 @@ export async function loadCnbRateProvider(
   db: Db,
   fromYear: number,
   toYear: number,
-): Promise<DailyRateProvider & { isEmpty: boolean; missingYears: number[] }> {
+): Promise<CnbRateProvider> {
   const rows = await db
     .select()
     .from(fxRates)
-    .where(and(gte(fxRates.day, `${fromYear}-01-01`), lte(fxRates.day, `${toYear}-12-31`)));
+    .where(and(gte(fxRates.day, `${fromYear}-01-01`), lte(fxRates.day, `${toYear}-12-31`)))
+    // otisk níž musí být na pořadí řádků nezávislý; databáze ho bez ORDER BY
+    // nezaručuje (jiný plán = jiné pořadí = falešný promach cache). Řadíme
+    // primárním klíčem, takže je to čtení v pořadí indexu, ne sort navíc.
+    .orderBy(asc(fxRates.day), asc(fxRates.currency));
   const map = new Map<string, Money>();
   const yearsWithRates = new Set<number>();
+  // podklad otisku se skládá v témž průchodu; jedno `update` nad slepencem je
+  // řádově levnější než 80 000 volání po řádcích
+  const digestParts: string[] = [];
   for (const row of rows) {
-    map.set(`${row.day}|${row.currency}`, d(row.rate));
+    const key = `${row.day}|${row.currency}`;
+    map.set(key, d(row.rate));
     yearsWithRates.add(Number(row.day.slice(0, 4)));
+    digestParts.push(`${key}|${row.rate}`);
   }
   // Které roky rozsahu nemají ANI JEDEN kurz. Počítá se z týchž řádků, žádný
   // dotaz navíc — a je to jediná informace, která chyběla: `isEmpty` se ptá na
@@ -235,6 +308,7 @@ export async function loadCnbRateProvider(
   return {
     isEmpty: map.size === 0,
     missingYears,
+    fingerprint: createHash('sha1').update(digestParts.join('\n')).digest('hex').slice(0, 16),
     getRate(currency: string, date: string): Money | undefined {
       if (currency === 'CZK') return d(1);
       for (let back = 0; back <= 7; back += 1) {

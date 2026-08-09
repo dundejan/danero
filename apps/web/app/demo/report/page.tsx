@@ -1,5 +1,6 @@
 import { ReportView } from '@/components/views/report-view';
-import { demoDataset, demoToday } from '@/lib/demo-data';
+import { DEMO_USER_ID, demoDataset, demoToday } from '@/lib/demo-data';
+import { reportDataCached } from '@/lib/engine-cache';
 import { availableYears } from '@/lib/portfolio';
 import { firstParam } from '@/lib/utils';
 
@@ -30,6 +31,8 @@ export default async function DemoReportPage({
       dailyRates={dailyRates}
       basePath="/demo"
       demo
+      // veřejná stránka: bez cache stojí každé zobrazení 9 běhů enginu (F-3-1)
+      precomputed={reportDataCached(DEMO_USER_ID, txs, profile, year, today, dailyRates)}
     />
   );
 }
