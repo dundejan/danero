@@ -46,3 +46,40 @@ describe('runbook: tabulka jednotných kurzů nesmí vyexpirovat', () => {
     ).toBeDefined();
   });
 });
+
+/**
+ * F-3-6, M-3-03: záloha bez ověřené obnovy je půlka věty.
+ *
+ * Runbook do 9. 8. 2026 doporučoval `pg_restore --clean` bez dalších přepínačů.
+ * Na produkčním dumpu to dá 105 chyb a **přesto exit 0** (vlastnictví
+ * `neondb_owner` v cizím clusteru neexistuje), takže by v nich skutečná chyba
+ * zanikla — a bez `--if-exists` zůstanou v cíli objekty, které v záloze nejsou.
+ * Test hlídá, že skript i runbook drží ověřenou sadu přepínačů.
+ */
+describe('runbook: obnova ze zálohy', () => {
+  const OVERENE = ['--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error'];
+
+  it('scripts/db.sh umí restore a používá ověřené přepínače', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const skript = readFileSync(
+      join(import.meta.dirname, '..', '..', '..', 'scripts', 'db.sh'),
+      'utf8',
+    );
+    expect(skript).toContain('restore)');
+    for (const prepinac of OVERENE) expect(skript).toContain(prepinac);
+    // obnova přepisuje databázi — nesmí jít spustit bez potvrzení
+    expect(skript).toContain('OBNOVIT');
+  });
+
+  it('docs/08 nedoporučuje obnovu bez těch přepínačů', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const runbook = readFileSync(
+      join(import.meta.dirname, '..', '..', '..', 'docs', '08-provoz.md'),
+      'utf8',
+    );
+    expect(runbook).toContain('scripts/db.sh restore');
+    for (const prepinac of OVERENE) expect(runbook).toContain(prepinac);
+  });
+});

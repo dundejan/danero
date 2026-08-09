@@ -83,7 +83,7 @@ přejmenovat), teprve pak kód. Migraci, na kterou nový kód spoléhá (typicky
 doplnění dat — třeba 0021), pusť **před** nasazením: `gh workflow run
 migrate.yml`, počkat na doběhnutí, teprve pak push kódu.
 
-Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup|prune]`. Bere řetězec
+Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup|prune|restore SOUBOR]`. Bere řetězec
 z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
 `chmod 600`) a nikdy ho nevypisuje. `prune` databázi nepotřebuje — maže jen staré
 soubory záloh.
@@ -115,7 +115,25 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
   přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
 - **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh backup`
   → `zalohy/danero-RRRR-MM-DD.dump` (gitignorováno). Obnova:
-  `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+  **`scripts/db.sh restore zalohy/danero-RRRR-MM-DD.dump`** (ptá se na
+  potvrzení a vypíše stav před i po).
+
+  ⚠️ Do 9. 8. 2026 tu stálo `pg_restore -d "$NEW_URL" --clean danero-X.dump`.
+  Na produkčním dumpu to dá **105 chyb a přesto exit 0** — všechny neškodné
+  (`role "neondb_owner" does not exist`, vlastnictví z Neonu), jenže právě
+  proto by se v nich skutečná chyba ztratila. A `--clean` bez `--if-exists`
+  nechá v cíli objekty, které v záloze nejsou: obnova do neprázdné databáze
+  skončila míchanicí 1 původního a 16 obnovených uživatelů (nálezy M-3-03,
+  F-3-6). Skript používá ověřenou sadu přepínačů:
+
+  ```
+  pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error
+  ```
+
+  Ověřeno naostro obnovou produkční zálohy do kontejneru s Postgresem 18:
+  0 chyb, exit 0, 22 tabulek, 32 migrací, 0 účtů. Chybí-li lokální
+  `pg_restore` nebo je starší než server, půjčí si ho skript z obrazu
+  `postgres:<verze>-alpine` — stejně jako u zálohy.
 - **Retence 8 týdnů běží ve skriptu**, ne v hlavě: po každé úspěšné záloze se
   dumpy starší než `DANERO_BACKUP_RETENTION_DAYS` (výchozích 56) smažou, totéž
   udělá `scripts/db.sh prune` samostatně. `/soukromi` slibuje uživateli, že

@@ -261,7 +261,7 @@ export default async function ImportPage({
           kind="chyba"
           text={
             chyba === 'velikost'
-              ? 'Soubor je větší než 20 MB — rozděl export na kratší období.'
+              ? 'Soubor je větší než 4 MB — tolik jich hosting v jednom nahrání propustí. Stáhni export po kratších obdobích (třeba po roce) a nahraj je postupně, nebo napoj brokera přes API, kde limit neplatí.'
               : chyba === 'isin'
                 ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
                 : chyba === 'mena'

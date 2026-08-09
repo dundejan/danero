@@ -7,6 +7,7 @@
 #   scripts/db.sh migrate   — aplikuje čekající migrace
 #   scripts/db.sh backup    — logický dump do ./zalohy/ (gitignorováno) + úklid starých
 #   scripts/db.sh prune     — jen úklid: smaže zálohy starší než retenční lhůta
+#   scripts/db.sh restore SOUBOR — obnova ze zálohy (ptá se na potvrzení!)
 #
 # Běžné migrace při nasazení řeší GitHub Actions (.github/workflows/migrate.yml),
 # tenhle skript je pro ruční zásahy a zálohy.
@@ -138,8 +139,66 @@ case "${1:-status}" in
     echo "⚠️  kopii uloženou jinam (S3, disk) smaž po ${BACKUP_RETENTION_DAYS} dnech taky —"
     echo "    tenhle skript uklidí jen $BACKUP_DIR"
     ;;
+  restore)
+    # Obnova ze zálohy do PRÁZDNÉ nebo existující databáze.
+    #
+    # Runbook do 9. 8. 2026 doporučoval `pg_restore -d URL --clean dump`. Na
+    # produkčním dumpu to dalo **105 chyb a přesto exit 0** (vlastnictví
+    # `neondb_owner` v cizím clusteru neexistuje), takže by v nich skutečná
+    # chyba zanikla — a `--clean` bez `--if-exists` navíc nechal v cíli
+    # objekty, které v záloze nejsou: obnova do neprázdné databáze skončila
+    # míchanicí 1 původního a 16 obnovených uživatelů (nález F-3-6, M-3-03).
+    #
+    # Přepínače, které to řeší (ověřeno: 0 chyb, exit 0, přesně stav zálohy):
+    #   --clean --if-exists   zahodí objekty ze zálohy, i když v cíli nejsou
+    #   --no-owner            nepokouší se nastavit vlastníka z Neonu
+    #   --no-privileges       totéž pro GRANTy
+    #   --exit-on-error       PRVNÍ skutečná chyba běh zastaví, ne aby se
+    #                         schovala mezi stovkou neškodných
+    DUMP="${2:-}"
+    if [ -z "$DUMP" ] || [ ! -f "$DUMP" ]; then
+      echo "Použití: scripts/db.sh restore CESTA/K/ZALOZE.dump" >&2
+      echo "Dostupné zálohy:" >&2
+      ls -1t "$BACKUP_DIR"/*.dump 2>/dev/null | head -5 >&2 || echo "  (žádné v $BACKUP_DIR)" >&2
+      exit 1
+    fi
+    load_database_url
+
+    # Obnova PŘEPISUJE cílovou databázi — bez potvrzení se nespouští.
+    echo "⚠️  Obnova přepíše databázi, na kterou míří DATABASE_URL_DIRECT."
+    echo "Stav před obnovou:"
+    (cd "$REPO/apps/web" && node db/status.mjs)
+    printf 'Opravdu obnovit z %s? Napiš OBNOVIT: ' "$DUMP"
+    read -r POTVRZENI
+    if [ "$POTVRZENI" != "OBNOVIT" ]; then
+      echo "Zrušeno, nic se nezměnilo."
+      exit 1
+    fi
+
+    SERVER_VERSION="$(psql "$DATABASE_URL" -tAc 'SHOW server_version;' 2>/dev/null | cut -d. -f1 || true)"
+    RESTORE_VERSION="$(pg_restore --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+    RESTORE_ARGS=(--clean --if-exists --no-owner --no-privileges --exit-on-error)
+
+    if [ -n "$RESTORE_VERSION" ] && [ -n "$SERVER_VERSION" ] && [ "$RESTORE_VERSION" -ge "$SERVER_VERSION" ]; then
+      pg_restore -d "$DATABASE_URL" "${RESTORE_ARGS[@]}" "$DUMP"
+    elif command -v docker > /dev/null 2>&1; then
+      echo "Lokální pg_restore je verze ${RESTORE_VERSION:-?}, beru ho z obrazu postgres:${SERVER_VERSION:-18}."
+      # PGURL se musí rozbalit až UVNITŘ kontejneru, proto `sh -c`
+      docker run --rm --network host -e "PGURL=$DATABASE_URL" \
+        -v "$(cd "$(dirname "$DUMP")" && pwd):/zalohy:ro" \
+        "postgres:${SERVER_VERSION:-18}-alpine" \
+        sh -c "pg_restore -d \"\$PGURL\" ${RESTORE_ARGS[*]} /zalohy/$(basename "$DUMP")" \
+        || { echo "Obnova selhala." >&2; exit 1; }
+    else
+      echo "Chybí pg_restore i Docker — nemám čím obnovit." >&2
+      exit 1
+    fi
+
+    echo "Obnoveno. Stav po:"
+    (cd "$REPO/apps/web" && node db/status.mjs)
+    ;;
   *)
-    echo "Použití: scripts/db.sh [status|migrate|backup|prune]" >&2
+    echo "Použití: scripts/db.sh [status|migrate|backup|prune|restore SOUBOR]" >&2
     exit 1
     ;;
 esac

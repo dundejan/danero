@@ -14,7 +14,20 @@ import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { resolveEntitlements } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/**
+ * Strop velikosti nahraného souboru.
+ *
+ * NENÍ to naše volba, ale tvrdý limit platformy: Vercel utne tělo požadavku
+ * na **4,5 MB** dřív, než se dostane k aplikaci. Změřeno naostro proti
+ * `https://danero.cz/api/health` (POST s rostoucím tělem): 4 300 kB projde
+ * (HTTP 405 od aplikace), **4 400 kB → HTTP 413 `FUNCTION_PAYLOAD_TOO_LARGE`**,
+ * a to je syrová anglická stránka od Vercelu, ne naše česká hláška.
+ *
+ * Do 9. 8. 2026 tu bylo 20 MB, takže uživatel s velkým exportem dostal
+ * nesrozumitelnou chybu místo rady, co dělat (nález F-3-3). 4 MB nechává
+ * rezervu na multipart hlavičky a ostatní pole formuláře.
+ */
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export async function uploadImportAction(formData: FormData): Promise<void> {
   const user = await requireUser();

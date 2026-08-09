@@ -52,10 +52,12 @@ const nextConfig: NextConfig = {
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)
   serverExternalPackages: ['@electric-sql/pglite', 'postgres', 'exceljs'],
   experimental: {
-    // upload výpisů jde přes server action — default 1 MB by větší exporty
-    // (XTB/IBKR XLSX) utnul syrovou 413 dřív, než doběhne česká kontrola
-    // 20 MB v import/actions.ts (MAX_FILE_BYTES + rezerva na multipart)
-    serverActions: { bodySizeLimit: '25mb' },
+    // Upload výpisů jde přes server action a default 1 MB by větší exporty
+    // (XTB/IBKR XLSX) utnul syrovou 413 dřív, než doběhne česká kontrola.
+    // Strop drží MAX_FILE_BYTES v import/actions.ts (4 MB) — tady je o něco
+    // víc kvůli multipart režii. Výš než 4,5 MB to nemá smysl posouvat:
+    // tam těleso požadavku utne sám Vercel (změřeno, nález F-3-3).
+    serverActions: { bodySizeLimit: '4.4mb' },
   },
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
