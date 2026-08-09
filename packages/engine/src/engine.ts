@@ -11,6 +11,7 @@ import {
 import { computeDerivatives, type DerivativesResult } from './basis/derivatives';
 import { computeDividends, type DividendsResult } from './basis/dividends';
 import {
+  capExposedProceedsCzk,
   computeSecurities,
   prepareDisposals,
   type PreparedDisposals,
@@ -69,6 +70,7 @@ function resolveSharedCapRatios(
   prepared: Record<AssetScope, PreparedDisposals>,
   warnings: WarningCollector,
   includesTimeTestExempt: boolean,
+  valueExemptionAvailable: Record<AssetScope, boolean>,
 ): Record<AssetScope, Money> {
   const ratios: Record<AssetScope, Money> = { SECURITIES: d(1), CRYPTO: d(1) };
   const cap = config.limits.timeTestCap;
@@ -87,14 +89,25 @@ function resolveSharedCapRatios(
   // (default). Při mírnějším výkladu je pool klidně nulový, a přesto jsou desítky
   // milionů osvobozené časovým testem podle u)/zk), takže strop na ně dopadá
   // plnou vahou (golden test „strop platí i při mírnějším výkladu limitu 100k").
-  const valueLimit: Record<AssetScope, Money> = {
-    SECURITIES: d(config.limits.securitiesProceedsExemption),
-    CRYPTO: d(config.limits.cryptoProceedsExemption),
+  // R-03a: vyloučení hodnotově osvobozených příjmů je per PRODEJ, ne per druh —
+  // prodej stablecoinu osvobozený časovým testem stojí čistě na zk) a strop na
+  // něj dopadá, i když úhrn ostatních tržeb druhu zůstane pod 100 000 Kč
+  // (nález A2-3-01). Formule je sdílená s `computeSecurities`, aby se ukazatel
+  // v UI nemohl rozejít s výpočtem.
+  const exposed: Record<AssetScope, Money> = {
+    SECURITIES: capExposedProceedsCzk(prepared.SECURITIES, {
+      exemptionLimitCzk: d(config.limits.securitiesProceedsExemption),
+      valueExemptionAvailable: valueExemptionAvailable.SECURITIES,
+      includesTimeTestExempt,
+    }),
+    CRYPTO: capExposedProceedsCzk(prepared.CRYPTO, {
+      exemptionLimitCzk: d(config.limits.cryptoProceedsExemption),
+      valueExemptionAvailable: valueExemptionAvailable.CRYPTO,
+      includesTimeTestExempt,
+    }),
   };
-  const osvobozenoHodnotou = (scope: AssetScope): boolean =>
-    includesTimeTestExempt && prepared[scope].pool100kCzk.lte(valueLimit[scope]);
-  const podStropem = cap.appliesTo.filter((scope) => !osvobozenoHodnotou(scope));
-  const combined = sum(podStropem.map((scope) => prepared[scope].timeTestExemptProceedsCzk));
+  const podStropem = cap.appliesTo.filter((scope) => exposed[scope].gt(0));
+  const combined = sum(podStropem.map((scope) => exposed[scope]));
   if (combined.lte(capCzk)) return ratios;
 
   const ratio = capCzk.div(combined);
@@ -245,11 +258,16 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     },
   );
 
+  const valueExemptionAvailable: Record<AssetScope, boolean> = {
+    SECURITIES: !input.profile.hasSecuritiesInBusinessAssets,
+    CRYPTO: config.cryptoRules.exemptionsAvailable,
+  };
   const capRatios = resolveSharedCapRatios(
     config,
     { SECURITIES: securitiesPrepared, CRYPTO: cryptoPrepared },
     warnings,
     options.limit100kIncludesTimeTestExempt,
+    valueExemptionAvailable,
   );
   const securities = computeSecurities(
     securitiesPrepared,
@@ -257,9 +275,10 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     {
       exemptionLimitCzk: d(config.limits.securitiesProceedsExemption),
       capExemptRatio: capRatios.SECURITIES,
+      includesTimeTestExempt: options.limit100kIncludesTimeTestExempt,
       label: 'CP',
       lossRuleId: 'R-05d',
-      valueExemptionAvailable: !input.profile.hasSecuritiesInBusinessAssets,
+      valueExemptionAvailable: valueExemptionAvailable.SECURITIES,
     },
     warnings,
   );
@@ -269,9 +288,10 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     {
       exemptionLimitCzk: d(config.limits.cryptoProceedsExemption),
       capExemptRatio: capRatios.CRYPTO,
+      includesTimeTestExempt: options.limit100kIncludesTimeTestExempt,
       label: 'kryptoaktiv',
       lossRuleId: 'R-10c',
-      valueExemptionAvailable: config.cryptoRules.exemptionsAvailable,
+      valueExemptionAvailable: valueExemptionAvailable.CRYPTO,
     },
     warnings,
   );

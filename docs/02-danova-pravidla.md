@@ -68,9 +68,21 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - Platí pro úhrn příjmů osvobozených dle q), u), zk) přijatých **v roce 2025** (zaveden zák. č. 349/2023 Sb.). **Od 1. 1. 2026 zrušen pro CP a podíly** (zák. č. 360/2025 Sb.); **pro krypto (zk) trvá**.
 - **R-03a Hodnotový limit t)/zj) pod strop NESPADÁ.** Výčet v § 4 odst. 3 je
   taxativní — q), u), zk). Osvobození úhrnem do 100 000 Kč (t pro CP, zj pro
-  krypto) v něm není, takže druh příjmu, jehož úhrn tržeb se do limitu vejde,
+  krypto) v něm není, takže příjem, který je osvobozený hodnotově,
   do stropu **nevstupuje ani se jím nekrátí** — a to i tehdy, když strop
   přetáhne druhý druh sdílející týž strop (2025: CP + krypto, R-10d).
+
+  ⚠️ Vyloučení je **per PRODEJ s nárokem na t)/zj)**, ne per DRUH příjmu.
+  Rozdíl je vidět u EMT: § 4/1 zj) je z hodnotového osvobození vylučuje
+  výslovně (R-10a), takže se jejich tržby do úhrnu 100 000 Kč vůbec nepočítají.
+  Prodej stablecoinu osvobozený časovým testem zk) proto stojí **čistě na zk)**
+  a strop na něj dopadá, i když úhrn ostatních krypto tržeb zůstane pod
+  100 000 Kč. Zkratka „celý druh je pod limitem → celý druh je mimo strop“ na
+  tomhle případu selhala: se zapnutým přepínačem `emtTimeTestExempt` (R-10g)
+  unikly stropu i tržby, které jinou oporu než zk) nemají — doložený rozdíl
+  daně **1 238 975,04 Kč** (nález A2-3-01). Totéž platí obráceně: prodej bez
+  nároku na osvobození podle R-10b do stropu nevstupuje, protože osvobozený
+  vůbec není.
 
   Podmínka je vázaná na výklad R-02c: „úhrn do 100k" pokryje časově osvobozené
   tržby jen tehdy, když do toho úhrnu **vstupují** (striktní výklad, default).

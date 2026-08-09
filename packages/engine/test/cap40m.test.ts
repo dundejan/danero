@@ -162,3 +162,58 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     expect(dlouha.tax.general.taxCzk.lte(kratka.tax.general.taxCzk)).toBe(true);
   });
 });
+
+/**
+ * A2-3-01: vyloučení hodnotově osvobozených příjmů ze stropu se počítalo per
+ * DRUH („pool ≤ 100 000 → celý druh je mimo strop“). Tržby EMT ale do poolu
+ * nevstupují vůbec (§ 4/1 zj) je vylučuje — R-10a), takže druh složený jen
+ * z nich měl pool 0 a stropu unikl celý, přestože jeho osvobození stálo čistě
+ * na časovém testu zk) — a právě na ten strop § 4 odst. 3 dopadá.
+ */
+describe('R-03a: strop 40M se počítá per PRODEJ, ne per druh (A2-3-01)', () => {
+  const emtProdej = [
+    buy({
+      isin: 'USDT',
+      assetClass: 'CRYPTO',
+      quantity: '10000000',
+      pricePerShare: '1',
+      tradeDate: '2020-06-01',
+      settlementDate: '2020-06-01',
+    }),
+    sell({
+      isin: 'USDT',
+      assetClass: 'CRYPTO',
+      quantity: '10000000',
+      pricePerShare: '5',
+      tradeDate: '2025-06-01',
+      settlementDate: '2025-06-01',
+    }),
+  ];
+
+  it('stablecoin osvobozený jen časovým testem stropu neunikne', () => {
+    // mírnější výklad R-10g: časový test osvobozuje i EMT
+    const result = run(emtProdej, { options: { emtTimeTestExempt: true } });
+
+    // tržba 50 000 000, do poolu 100k z ní nejde nic (R-10a) → dřív = mimo strop
+    expect(result.crypto.pool100kCzk.toString()).toBe('0');
+    expect(result.crypto.timeTestExemptProceedsCzk.toString()).toBe('50000000');
+    expect(result.crypto.capExposedProceedsCzk.toString()).toBe('50000000');
+
+    // krácení poměrem 40/50 → zdaněno 20 % tržby i výdaje
+    expect(result.crypto.taxableIncomeCzk.toString()).toBe('10000000');
+    expect(result.crypto.expensesCzk.toString()).toBe('2000000');
+    expect(result.crypto.base10Czk.toString()).toBe('8000000');
+    expect(hasWarning(result, 'CAP_40M_REDUCED')).toBe(true);
+
+    // a měřák v UI ukazuje totéž číslo, ne vlastní kopii zkratky
+    expect(result.limits.cap40M!.exemptProceedsCzk.toString()).toBe('50000000');
+    expect(result.limits.cap40M!.exceeded).toBe(true);
+  });
+
+  it('bez mírnějšího výkladu je stablecoin zdanitelný celý — strop nemá co krátit', () => {
+    const result = run(emtProdej);
+    expect(result.crypto.capExposedProceedsCzk.toString()).toBe('0');
+    expect(result.crypto.base10Czk.toString()).toBe('40000000');
+    expect(hasWarning(result, 'CAP_40M_REDUCED')).toBe(false);
+  });
+});

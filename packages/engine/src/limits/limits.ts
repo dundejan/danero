@@ -276,13 +276,12 @@ export function computeLimits(
   // kryje jen q), u) a zk) (nález A2-9). Stejná podmínka jako v engine.ts:
   // hodnotové osvobození časově osvobozené tržby pokryje jen tehdy, když do
   // úhrnu 100k vůbec vstupují, tedy při striktním výkladu R-02c.
+  // R-03a: co pod strop vstupuje, spočítal už výpočet druhu (per PRODEJ, ne per
+  // druh) — měřák v UI musí ukazovat totéž číslo, jinak lže o tom, kolik do
+  // stropu zbývá (nález A2-3-01: obě místa měla vlastní kopii téže zkratky).
   const exemptByScope: Record<AssetScope, Money> = {
-    SECURITIES:
-      includesTimeTestExempt && securities.exemptUnder100k
-        ? ZERO
-        : securities.timeTestExemptProceedsCzk,
-    CRYPTO:
-      includesTimeTestExempt && crypto.exemptUnder100k ? ZERO : crypto.timeTestExemptProceedsCzk,
+    SECURITIES: securities.capExposedProceedsCzk,
+    CRYPTO: crypto.capExposedProceedsCzk,
   };
   const combinedExempt = cap ? sum(cap.appliesTo.map((scope) => exemptByScope[scope])) : ZERO;
   const cap40M = cap

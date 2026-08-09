@@ -57,6 +57,8 @@ export interface SecuritiesResult {
   base10Czk: Money;
   /** Příjmy osvobozené časovým testem — vstup pro strop 40M (R-03/R-10d) a § 38v. */
   timeTestExemptProceedsCzk: Money;
+  /** Z toho to, co pod strop 40M skutečně vstupuje (R-03a — per prodej). */
+  capExposedProceedsCzk: Money;
   disposals: DisposalReport[];
 }
 
@@ -189,6 +191,8 @@ export interface SecuritiesComputeParams {
    * Počítá engine.ts (sdílený přes druhy), krácení aplikuje každý druh na své alokace.
    */
   capExemptRatio: Money;
+  /** R-02c: vstupují do úhrnu 100k i časově osvobozené tržby? (striktní výklad) */
+  includesTimeTestExempt: boolean;
   /** Popisek druhu do textů varování ('CP' | 'kryptoaktiv'). */
   label: string;
   /** ID pravidla kompenzace ztrát do varování (R-05d pro CP, R-10c pro krypto). */
@@ -201,6 +205,37 @@ export interface SecuritiesComputeParams {
    * celý prodej daní (nález A2-12).
    */
   valueExemptionAvailable: boolean;
+}
+
+/**
+ * R-03a: kolik z časově osvobozených tržeb druhu vstupuje pod strop 40M.
+ *
+ * Vyloučení hodnotově osvobozených příjmů je per PRODEJ, ne per DRUH. Dokud se
+ * počítalo per druh („pool ≤ 100 000 → celý druh je mimo strop"), unikly stropu
+ * i prodeje, které hodnotové osvobození nikdy mít nemohou: § 4/1 zj) vylučuje
+ * EMT výslovně (R-10a), takže se jejich tržby do úhrnu 100k vůbec nepočítají
+ * a osvobození stojí čistě na zk) — přesně na to strop dopadá. Se zapnutým
+ * přepínačem `emtTimeTestExempt` to byl doložený rozdíl daně 1 238 975,04 Kč
+ * (nález A2-3-01).
+ *
+ * Podmínka `includesTimeTestExempt` zůstává: hodnotové osvobození časově
+ * osvobozenou tržbu pokryje jen tehdy, když do úhrnu 100k vůbec vstupuje, tedy
+ * při striktním výkladu R-02c (default).
+ */
+export function capExposedProceedsCzk(
+  prepared: PreparedDisposals,
+  params: {
+    exemptionLimitCzk: Money;
+    valueExemptionAvailable: boolean;
+    includesTimeTestExempt: boolean;
+  },
+): Money {
+  const coveredByValue =
+    params.includesTimeTestExempt &&
+    params.valueExemptionAvailable &&
+    prepared.pool100kCzk.lte(params.exemptionLimitCzk);
+  if (!coveredByValue) return prepared.timeTestExemptProceedsCzk;
+  return sum(prepared.items.filter((p) => !p.valueExemptionEligible).map((p) => p.exemptCzk));
 }
 
 /**
@@ -309,6 +344,11 @@ export function computeSecurities(
     rawGainLossCzk: raw,
     base10Czk: base10,
     timeTestExemptProceedsCzk: prepared.timeTestExemptProceedsCzk,
+    capExposedProceedsCzk: capExposedProceedsCzk(prepared, {
+      exemptionLimitCzk: params.exemptionLimitCzk,
+      valueExemptionAvailable: params.valueExemptionAvailable,
+      includesTimeTestExempt: params.includesTimeTestExempt,
+    }),
     disposals: reports,
   };
 }
