@@ -27,9 +27,12 @@ test.describe('uživatel bez předplatného', () => {
     await expect(page.locator('input[name="token"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Připojit' })).toHaveCount(0);
 
-    // místo nich je jasně řečeno, že jde o součást předplatného, a kam dál
+    // místo nich je jasně řečeno, že jde o součást předplatného, a kam dál.
+    // Hlídá se CÍL odkazu, ne jeho popisek: text se přepisuje, ale skončit
+    // musí tam, kde se dá koupit — do 9. 8. 2026 vedl na veřejný ceník,
+    // který přihlášenému nabízí akorát registraci.
     await expect(page.getByText(/Součást hlídání za/).first()).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Zobrazit ceník' }).first()).toBeVisible();
+    await expect(page.locator('a[href="/predplatne"]').first()).toBeVisible();
   });
 
   test('hlídací e-maily se nenabízejí, když je stejně nikdo neodešle', async ({ page }) => {

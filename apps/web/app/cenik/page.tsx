@@ -1,17 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FaqList } from '@/components/faq-list';
-import { IconCheck } from '@/components/marketing-icons';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { PlanCard } from '@/components/plan-card';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
 import { SOURCE_URL } from '@/lib/legal';
-import {
-  PRICE_REPORT_CZK,
-  PRICE_SUBSCRIPTION_CZK,
-  priceLabel,
-  SUBSCRIPTION_PER_MONTH_CZK,
-} from '@/lib/pricing';
+import { PLANS, type PlanId } from '@/lib/plans';
+import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
+import { currentUser } from '@/lib/session';
+import { cn } from '@/lib/utils';
 import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 
 /**
@@ -32,33 +30,6 @@ export const metadata: Metadata = {
   title: 'Ceník — Danero',
   description: `Nahrát výpisy a zjistit, jak na tom jsi, je v Daneru zdarma. Podklady k přiznání za jeden rok ${priceLabel(PRICE_REPORT_CZK)}, celoroční hlídání s napojením na brokery ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.`,
 };
-
-const FREE = [
-  'Import výpisů — neomezeně platforem',
-  'Limity 100 000 Kč i 50 000 Kč v reálném čase',
-  'Stav tříletých časových testů',
-  'Horizont osvobození: kdy je co bez daně',
-  'Orientační daň z investic',
-  'Krypto i deriváty jako samostatné druhy příjmů',
-] as const;
-
-const ONE_OFF = [
-  'Všechno ze zdarma',
-  'Čísla přesně do řádků přiznání',
-  // roky se berou z konfigurace EPO — kupující musí vědět PŘED zaplacením,
-  // za které roky XML existuje (§ 1820/1 r OZ, nález E-29)
-  `XML pro elektronické podání (roky ${yearList(EPO_SUPPORTED_YEARS)})`,
-  'Rozpad na jednotlivé nákupy a použité kurzy',
-  'Srovnání variant výpočtu (FIFO/LIFO, kurzy)',
-] as const;
-
-const FULL = [
-  'Všechno z podkladů — za všechny daňové roky',
-  'Živé napojení na Trading 212, IBKR i Lynx',
-  'Automatický denní sync a přepočet',
-  'E-mailová upozornění na limity a termíny',
-  'Simulátor prodeje: co udělá další obchod',
-] as const;
 
 const CENIK_FAQ = [
   {
@@ -87,7 +58,21 @@ const CENIK_FAQ = [
   },
 ] as const;
 
-export default function CenikPage() {
+/** Kam CTA karty vede: nepřihlášený na registraci, přihlášený rovnou k nákupu. */
+const ctaHref = (plan: PlanId, signedIn: boolean): string => {
+  if (!signedIn) return '/registrace';
+  return plan === 'free' ? '/prehled' : '/predplatne';
+};
+
+const ctaLabel = (plan: PlanId, signedIn: boolean): string => {
+  if (!signedIn) return 'Založit účet';
+  return plan === 'free' ? 'Přejít do aplikace' : 'Objednat v aplikaci';
+};
+
+export default async function CenikPage() {
+  // Ceník je veřejná stránka, ale čte ji i přihlášený uživatel (odkaz
+  // z paywallu, z patičky). Registrační CTA by ho poslalo do slepé uličky.
+  const signedIn = Boolean(await currentUser());
   return (
     <MarketingPage active="cenik">
       <PageHero
@@ -107,87 +92,33 @@ export default function CenikPage() {
 
       <section aria-label="Cena a obsah" className="mt-12">
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-lg border border-linka bg-plocha p-8">
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-              Zdarma
-            </p>
-            <p className="mt-3 font-display text-4xl font-bold tracking-tight">0 Kč</p>
-            <p className="mt-2 text-sm text-inkoust-tlumeny">navždy, bez karty</p>
-            <ul className="mt-6 grid gap-3">
-              {FREE.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 text-sm">
-                  <IconCheck />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/registrace"
-              className="mt-6 inline-block w-full rounded-md border border-linka px-6 py-3 text-center font-semibold hover:border-inkoust-tlumeny"
-            >
-              Založit účet
-            </Link>
-          </div>
-
-          <div className="rounded-lg border border-linka bg-plocha p-8">
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-              Podklady za rok
-            </p>
-            <p className="mt-3 font-display text-4xl font-bold tracking-tight">
-              {priceLabel(PRICE_REPORT_CZK)}
-            </p>
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
-              jednorázově za jeden daňový rok
-            </p>
-            <ul className="mt-6 grid gap-3">
-              {ONE_OFF.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 text-sm">
-                  <IconCheck />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/registrace"
-              className="mt-6 inline-block w-full rounded-md border border-linka px-6 py-3 text-center font-semibold hover:border-inkoust-tlumeny"
-            >
-              Začít zdarma
-            </Link>
-            <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
-              koupíš až ve chvíli, kdy podklady potřebuješ
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-8">
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-ruzova-text">
-              Celoroční hlídání
-            </p>
-            <p className="mt-3 font-display text-4xl font-bold tracking-tight">
-              {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
-              <span className="text-lg font-semibold text-inkoust-tlumeny">/ rok</span>
-            </p>
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
-              necelých {priceLabel(SUBSCRIPTION_PER_MONTH_CZK)} měsíčně — méně než jedna
-              chyba v přiznání
-            </p>
-            <ul className="mt-6 grid gap-3">
-              {FULL.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 text-sm">
-                  <IconCheck />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/registrace"
-              className="mt-6 inline-block w-full rounded-md bg-ruzova-syta px-6 py-3 text-center font-semibold text-white hover:opacity-90"
-            >
-              Založit účet
-            </Link>
-            <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
-              obnova s e-mailem 14 dní předem, zrušíš kdykoli
-            </p>
-          </div>
+          {PLANS.map((plan) => (
+            <PlanCard key={plan.id} plan={plan}>
+              {/* Přihlášenému je registrace k ničemu — koupit se dá jen
+                  v aplikaci, tak ho tam odkaz pošle rovnou. */}
+              <Link
+                href={ctaHref(plan.id, signedIn)}
+                className={cn(
+                  'inline-block w-full rounded-md px-6 py-3 text-center font-semibold',
+                  plan.highlight
+                    ? 'bg-ruzova-syta text-white hover:opacity-90'
+                    : 'border border-linka hover:border-inkoust-tlumeny',
+                )}
+              >
+                {ctaLabel(plan.id, signedIn)}
+              </Link>
+              {plan.id === 'report' && !signedIn && (
+                <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
+                  koupíš až ve chvíli, kdy podklady potřebuješ
+                </p>
+              )}
+              {plan.id === 'subscription' && (
+                <p className="mt-2 text-center text-xs text-inkoust-tlumeny">
+                  obnova s e-mailem 14 dní předem, zrušíš kdykoli
+                </p>
+              )}
+            </PlanCard>
+          ))}
         </div>
         <p className="mt-6 text-center text-sm text-inkoust-tlumeny">
           Ceny jsou konečné. Danero si můžeš{' '}

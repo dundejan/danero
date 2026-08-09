@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { PlanCard } from '@/components/plan-card';
 import { Toast } from '@/components/toast';
 import { buttonVariants } from '@/components/ui/button';
 import { getDb } from '@/db';
@@ -10,6 +11,7 @@ import { billingEnabled, isPaidSubscription, isSellableTaxYear } from '@/lib/ent
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
+import { PLANS } from '@/lib/plans';
 import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
@@ -77,9 +79,10 @@ export default async function SubscriptionPage({
   );
   const koupeneRoky = new Set(purchases.map((p) => p.taxYear));
   const nabizeneRoky = years.filter((rok) => !koupeneRoky.has(rok));
+  const koupeneRokyText = purchases.map((p) => p.taxYear).join(', ');
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 py-8">
+    <div className="mx-auto max-w-5xl space-y-8 py-8">
       <header>
         <h1 className="font-display text-3xl font-bold tracking-tight">Předplatné</h1>
         <p className="mt-2 text-sm text-inkoust-tlumeny">
@@ -101,21 +104,62 @@ export default async function SubscriptionPage({
           by se nestrhlo — to musí být vidět dřív, než na tlačítko sáhneš. */}
       {stripeSandboxInProduction() && <Toast kind="chyba" text={SANDBOX_NOTICE} />}
 
-      <section className="rounded-lg border border-linka bg-plocha p-6">
-        <h2 className="font-display text-xl font-bold">Celoroční hlídání</h2>
-        {active ? (
-          <p className="mt-2 text-sm text-inkoust-tlumeny">
-            Aktivní do <strong className="text-inkoust">{czDate(subscription.currentPeriodEnd)}</strong>
-            {subscription.cancelAtPeriodEnd
-              ? ' — obnova je zrušená, do té doby ti služba běží dál.'
-              : ' — obnoví se automaticky, e-mail ti přijde 14 dní předem.'}
-          </p>
-        ) : (
+      {/* Tytéž tarify a tytéž seznamy funkcí jako veřejný ceník (lib/plans.ts) —
+          uživatel u placení nesmí číst jiný slib, než jaký ho sem přivedl.
+          Co má právě teď, nese odznak na kartě; kupuje se ve formulářích níž,
+          kde má právní text plnou šířku. */}
+      <section aria-label="Tarify" className="grid gap-6 lg:grid-cols-3">
+        {PLANS.map((plan) => {
+          const jeAktivni =
+            plan.id === 'free' ||
+            (plan.id === 'subscription' && active) ||
+            (plan.id === 'report' && (active || purchases.length > 0));
+
+          return (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              active={jeAktivni}
+              activeNote={
+                plan.id === 'subscription' && active
+                  ? `Aktivní do ${czDate(subscription.currentPeriodEnd)}${
+                      subscription.cancelAtPeriodEnd
+                        ? ' — obnova je zrušená, do té doby ti služba běží dál.'
+                        : ' — obnoví se automaticky, e-mail ti přijde 14 dní předem.'
+                    }`
+                  : plan.id === 'report' && active
+                    ? 'V ceně hlídání za všechny daňové roky.'
+                    : plan.id === 'report' && purchases.length > 0
+                      ? `Zaplacené roky: ${koupeneRokyText} — zůstávají odemčené napořád.`
+                      : undefined
+              }
+            >
+              {plan.id === 'subscription' && !active && (
+                <a href="#hlidani" className={`${buttonVariants({ variant: 'primary' })} w-full`}>
+                  Objednat hlídání
+                </a>
+              )}
+              {plan.id === 'report' && !active && nabizeneRoky.length > 0 && (
+                <a href="#podklady" className={`${buttonVariants({ variant: 'secondary' })} w-full`}>
+                  {purchases.length > 0 ? 'Koupit další rok' : 'Koupit podklady'}
+                </a>
+              )}
+              {plan.id === 'report' && !active && nabizeneRoky.length === 0 && (
+                <p className="text-sm text-inkoust-tlumeny">
+                  {years.length === 0
+                    ? 'Nejdřív nahraj výpisy — pak tu půjde koupit podklady za konkrétní rok.'
+                    : 'Za všechny roky se svými daty už podklady máš.'}
+                </p>
+              )}
+            </PlanCard>
+          );
+        })}
+      </section>
+
+      {!active && (
+        <section id="hlidani" className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
+          <h2 className="font-display text-xl font-bold">Objednat celoroční hlídání</h2>
           <form action={buySubscriptionAction} className="mt-4 space-y-4">
-            <p className="text-sm text-inkoust-tlumeny">
-              Automatické napojení na brokery, denní přepočet, upozornění e-mailem,
-              simulátor prodeje a podklady k přiznání za všechny roky.
-            </p>
             <p className="font-display text-2xl font-bold">
               {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
               <span className="text-base font-semibold text-inkoust-tlumeny">/ rok</span>
@@ -135,36 +179,13 @@ export default async function SubscriptionPage({
               Objednat s povinností platby
             </button>
           </form>
-        )}
-      </section>
+        </section>
+      )}
 
-      <section className="rounded-lg border border-linka bg-plocha p-6">
-        <h2 className="font-display text-xl font-bold">Podklady k přiznání</h2>
-        {purchases.length > 0 && (
-          <p className="mt-2 text-sm text-inkoust-tlumeny">
-            Zaplacené roky:{' '}
-            <strong className="text-inkoust">
-              {purchases.map((p) => p.taxYear).join(', ')}
-            </strong>{' '}
-            — zůstávají odemčené napořád.
-          </p>
-        )}
-        {active ? (
-          <p className="mt-2 text-sm text-inkoust-tlumeny">
-            Máš je v ceně hlídání za všechny daňové roky.
-          </p>
-        ) : nabizeneRoky.length === 0 ? (
-          <p className="mt-2 text-sm text-inkoust-tlumeny">
-            {years.length === 0
-              ? 'Nejdřív nahraj výpisy — pak tu půjde koupit podklady za konkrétní rok.'
-              : 'Za všechny roky se svými daty už podklady máš.'}
-          </p>
-        ) : (
+      {!active && nabizeneRoky.length > 0 && (
+        <section id="podklady" className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
+          <h2 className="font-display text-xl font-bold">Koupit podklady k přiznání</h2>
           <form action={buyReportAction} className="mt-4 space-y-4">
-            <p className="text-sm text-inkoust-tlumeny">
-              Čísla do řádků přiznání, rozpad na jednotlivé nákupy, použité kurzy a XML
-              pro elektronické podání — za jeden daňový rok.
-            </p>
             {/* E-3-04: informace o omezení musí padnout PŘED platbou, ne až
                 v ceníku. Formulář nabízí deset let, ale oficiální struktura
                 DPFDP7 existuje jen pro roky v EPO_SUPPORTED_YEARS. */}
@@ -199,8 +220,8 @@ export default async function SubscriptionPage({
               Objednat s povinností platby
             </button>
           </form>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Portál není součástí větve „mám předplatné": doklad o zaplacení
           a historii plateb potřebuje najít i ten, kdo koupil jen podklady,

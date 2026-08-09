@@ -9,6 +9,7 @@ import { MarketingFooter, MarketingHeader } from '@/components/marketing-page';
 import { compareVariants, type VariantComparison } from '@danero/engine';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
+import { currentUser } from '@/lib/session';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { computeNotificationCandidates } from '@/lib/notifications';
@@ -203,9 +204,19 @@ const CTA_PRIMARY =
 const CTA_SECONDARY =
   'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
 
-/** Registrační CTA. Služba běží veřejně — žádný režim „otevřeme někdy“. */
-function SignupCta({ className }: { className: string }) {
-  return (
+/**
+ * Hlavní CTA landingu. Služba běží veřejně — žádný režim „otevřeme někdy“.
+ *
+ * Přihlášenému nabízí vstup do aplikace: na vlastní landing se dá doklikat
+ * z patičky, z ceníku i z odkazu v e-mailu a „Založit účet zdarma“ by ho
+ * poslalo na registraci, kterou už má za sebou.
+ */
+function SignupCta({ className, signedIn }: { className: string; signedIn: boolean }) {
+  return signedIn ? (
+    <Link href="/prehled" className={className}>
+      Přejít do aplikace
+    </Link>
+  ) : (
     <Link href="/registrace" className={className}>
       Založit účet zdarma
     </Link>
@@ -247,6 +258,9 @@ export default async function LandingPage({
   // jediné místo, kam uživatel po nevratném smazání účtu doputuje — bez
   // potvrzení by nevěděl, jestli se smazání povedlo
   const { smazano } = await searchParams;
+  // landing zůstává přístupný i přihlášenému (odkazy z patičky, ceníku,
+  // e-mailů) — jen mu nabízí vstup do aplikace místo registrace
+  const signedIn = Boolean(await currentUser());
   // živá data pro landing = stejný deterministický dataset a stejný čistý
   // engine jako demo prohlídka — stránka ukazuje skutečné komponenty aplikace
   const today = demoToday();
@@ -317,7 +331,7 @@ export default async function LandingPage({
             <Link href="/demo/prehled" className={CTA_PRIMARY}>
               Vyzkoušet demo — bez registrace
             </Link>
-            <SignupCta className={CTA_SECONDARY} />
+            <SignupCta className={CTA_SECONDARY} signedIn={signedIn} />
           </div>
           <p className="mt-3 text-sm text-inkoust-tlumeny">
             Přehled o limitech máš zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
@@ -690,7 +704,7 @@ export default async function LandingPage({
                 </p>
               </div>
               <div className="flex flex-col items-start gap-3 lg:items-end">
-                <SignupCta className={CTA_PRIMARY} />
+                <SignupCta className={CTA_PRIMARY} signedIn={signedIn} />
                 <p className="text-xs text-inkoust-tlumeny">
                   Účet zdarma a bez karty — platíš, až když budeš chtít.
                 </p>
@@ -719,7 +733,7 @@ export default async function LandingPage({
               <Link href="/demo/prehled" className={CTA_PRIMARY}>
                 Vyzkoušet demo — bez registrace
               </Link>
-              <SignupCta className={CTA_SECONDARY} />
+              <SignupCta className={CTA_SECONDARY} signedIn={signedIn} />
             </div>
             <p className="mt-6 text-sm text-inkoust-tlumeny">
               Ještě něco nevíš? Projdi si{' '}

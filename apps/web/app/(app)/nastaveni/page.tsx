@@ -458,8 +458,8 @@ export default async function SettingsPage({
                 <p className="text-sm font-semibold">
                   Součást hlídání za {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.
                 </p>
-                <Link href="/cenik" className={buttonVariants({ variant: 'primary' })}>
-                  Zobrazit ceník
+                <Link href="/predplatne" className={buttonVariants({ variant: 'primary' })}>
+                  Objednat hlídání
                 </Link>
                 <p className="text-xs text-inkoust-tlumeny">
                   Upozornění v aplikaci vidíš i bez předplatného — spočítáme je vždy, když

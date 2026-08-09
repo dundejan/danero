@@ -95,8 +95,8 @@ function BrokerSyncLocked({ broker, whatItDoes }: { broker: string; whatItDoes: 
       <p className="text-sm font-semibold">
         Součást hlídání za {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.
       </p>
-      <Link href="/cenik" className={buttonVariants({ variant: 'primary' })}>
-        Zobrazit ceník
+      <Link href="/predplatne" className={buttonVariants({ variant: 'primary' })}>
+        Objednat hlídání
       </Link>
       <p className="text-xs text-inkoust-tlumeny">
         Výpis z {broker} můžeš i bez předplatného nahrát ručně níž na téhle stránce —
@@ -137,7 +137,7 @@ function ConnectedBroker({
           {copy.note}
         </p>
         {locked ? (
-          <Link href="/cenik" className={buttonVariants({ variant: 'secondary' })}>
+          <Link href="/predplatne" className={buttonVariants({ variant: 'secondary' })}>
             Obnovit hlídání
           </Link>
         ) : (

@@ -105,8 +105,11 @@ test('předplatné: v navigaci a bez souhlasu se nekupuje', async ({ page }) => 
   await page.getByRole('link', { name: 'Předplatné' }).click();
   await page.waitForURL('**/predplatne');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Předplatné');
-  // cena je i v poučení o obnově, proto cílíme na cenovku
-  await expect(page.getByText(/990 Kč\s*\/ rok/)).toBeVisible();
+  // Cena je na stránce dvakrát a obojí schválně: jednou na kartě tarifu
+  // (přehled jako v ceníku) a jednou v objednávkovém formuláři, kde na ni
+  // navazuje poučení o obnově. Test hlídá tu druhou — jde o nákup.
+  await expect(page.getByLabel('Tarify').getByText(/990 Kč\s*\/ rok/)).toBeVisible();
+  await expect(page.locator('#hlidani').getByText(/990 Kč\s*\/ rok/)).toBeVisible();
 
   // § 1811/2 a § 1820/1 OZ: doba trvání a automatická obnova musí být vidět
   // PŘED objednávkou, ne až ve stavu „mám zaplaceno"

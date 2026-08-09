@@ -21,7 +21,14 @@ const LINKS: { key: MarketingNavKey; href: string; label: string }[] = [
  * (Escape i klik mimo zavírá, fokus se vrací na tlačítko). `active` zvýrazní
  * aktuální stránku (aria-current); landing ho nepředává.
  */
-export function MarketingNav({ active }: { active?: MarketingNavKey }) {
+export function MarketingNav({
+  active,
+  signedIn,
+}: {
+  active?: MarketingNavKey;
+  /** Přihlášený návštěvník — místo přihlášení/registrace nabídneme aplikaci. */
+  signedIn?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -56,29 +63,35 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
             {link.label}
           </Link>
         ))}
-        {/* svislý předěl: vlevo stránky, vpravo akce účtu (login + CTA) */}
+        {/* svislý předěl: vlevo stránky, vpravo akce účtu */}
         <span aria-hidden className="h-5 w-px bg-linka" />
-        <Link
-          href="/prihlaseni"
-          className="text-sm font-medium text-inkoust-tlumeny hover:text-inkoust"
-        >
-          Přihlásit se
-        </Link>
-        <Link
-          href="/demo/prehled"
-          className={buttonVariants({ variant: 'primary' })}
-        >
-          Vyzkoušet demo
-        </Link>
+        {signedIn ? (
+          // přihlášenému nemá smysl nabízet přihlášení ani demo na cizích datech
+          <Link href="/prehled" className={buttonVariants({ variant: 'primary' })}>
+            Přejít do aplikace
+          </Link>
+        ) : (
+          <>
+            <Link
+              href="/prihlaseni"
+              className="text-sm font-medium text-inkoust-tlumeny hover:text-inkoust"
+            >
+              Přihlásit se
+            </Link>
+            <Link href="/demo/prehled" className={buttonVariants({ variant: 'primary' })}>
+              Vyzkoušet demo
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* mobil a tablet: CTA zůstává viditelné, zbytek pod tlačítkem menu */}
       <div className="flex items-center gap-3 lg:hidden">
         <Link
-          href="/demo/prehled"
+          href={signedIn ? '/prehled' : '/demo/prehled'}
           className="rounded-md bg-ruzova-syta px-3.5 py-2.5 text-sm font-semibold text-white hover:brightness-95"
         >
-          Demo
+          {signedIn ? 'Do aplikace' : 'Demo'}
         </Link>
         <button
           ref={buttonRef}
@@ -140,23 +153,35 @@ export function MarketingNav({ active }: { active?: MarketingNavKey }) {
                 ))}
                 {/* akce účtu pohromadě pod předělem — stejná logika jako desktop */}
                 <li className="border-t border-linka pt-2">
-                  <Link
-                    href="/prihlaseni"
-                    onClick={() => setOpen(false)}
-                    className="block rounded-md px-3 py-3 text-sm font-medium text-inkoust hover:bg-pozadi"
-                  >
-                    Přihlásit se
-                  </Link>
+                  {signedIn ? (
+                    <Link
+                      href="/prehled"
+                      onClick={() => setOpen(false)}
+                      className="block rounded-md px-3 py-3 text-sm font-semibold text-ruzova-text hover:bg-pozadi"
+                    >
+                      Přejít do aplikace
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/prihlaseni"
+                      onClick={() => setOpen(false)}
+                      className="block rounded-md px-3 py-3 text-sm font-medium text-inkoust hover:bg-pozadi"
+                    >
+                      Přihlásit se
+                    </Link>
+                  )}
                 </li>
-                <li>
-                  <Link
-                    href="/registrace"
-                    onClick={() => setOpen(false)}
-                    className="block rounded-md px-3 py-3 text-sm font-semibold text-ruzova-text hover:bg-pozadi"
-                  >
-                    Založit účet zdarma
-                  </Link>
-                </li>
+                {!signedIn && (
+                  <li>
+                    <Link
+                      href="/registrace"
+                      onClick={() => setOpen(false)}
+                      className="block rounded-md px-3 py-3 text-sm font-semibold text-ruzova-text hover:bg-pozadi"
+                    >
+                      Založit účet zdarma
+                    </Link>
+                  </li>
+                )}
               </ul>
             </nav>
           </div>

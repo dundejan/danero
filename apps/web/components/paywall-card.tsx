@@ -4,12 +4,16 @@ import { buttonVariants } from '@/components/ui/button';
 /**
  * Zamčená placená funkce (docs/19). Pravidlo pro texty: řekni, co funkce dělá
  * a co stojí — žádné „upgradujte nyní" a žádná šedá zamčená obrazovka.
+ *
+ * Odkaz míří na /predplatne, ne na veřejný ceník: tuhle kartu vidí JEN
+ * přihlášený uživatel a ceník mu nabízí akorát registraci, kterou už má za
+ * sebou (nález 9. 8. 2026 — placené funkce vedly do slepé uličky).
  */
 export function PaywallCard({
   title,
   body,
   price,
-  cta = 'Zobrazit ceník',
+  cta = 'Zobrazit tarify',
 }: {
   title: string;
   body: React.ReactNode;
@@ -23,7 +27,7 @@ export function PaywallCard({
       <h1 className="font-display text-2xl font-bold tracking-tight">{title}</h1>
       <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">{body}</p>
       <p className="mt-4 font-display text-lg font-semibold">{price}</p>
-      <Link href="/cenik" className={`${buttonVariants({ variant: 'primary' })} mt-5`}>
+      <Link href="/predplatne" className={`${buttonVariants({ variant: 'primary' })} mt-5`}>
         {cta}
       </Link>
       <p className="mt-4 text-xs text-inkoust-tlumeny">

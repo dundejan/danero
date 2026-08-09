@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { connection } from 'next/server';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
+import { currentUser } from '@/lib/session';
 import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
 
@@ -11,7 +12,11 @@ import { SOURCE_URL } from '@/lib/legal';
  * landing i podstránky. Obsah stránek si čitelnost řeší vnitřními max-w.
  */
 
-export function MarketingHeader({ active }: { active?: MarketingNavKey }) {
+export async function MarketingHeader({ active }: { active?: MarketingNavKey }) {
+  // Přihlášenému nemá hlavička nabízet registraci — marketingové stránky
+  // zůstávají přístupné oběma, mění se jen akce účtu. currentUser() sahá na DB
+  // jen když je přítomná session cookie, takže anonymní provoz nic nestojí.
+  const user = await currentUser();
   // bez backdrop-blur: filter by z headeru udělal containing block pro fixed
   // scrim mobilního menu (nulová výška) — plné pozadí je i čitelnější
   return (
@@ -26,7 +31,7 @@ export function MarketingHeader({ active }: { active?: MarketingNavKey }) {
         <Link href="/" aria-label="Danero — úvodní stránka">
           <Logo className="text-lg" />
         </Link>
-        <MarketingNav active={active} />
+        <MarketingNav active={active} signedIn={Boolean(user)} />
       </div>
     </header>
   );
@@ -56,7 +61,7 @@ export function PageHero({
 }
 
 /** Závěrečné CTA — stejný blok na landingu i podstránkách. */
-export function MarketingCta({
+export async function MarketingCta({
   title,
   lede,
   primary = 'demo',
@@ -66,6 +71,32 @@ export function MarketingCta({
   /** Co je plné tlačítko: demo (default) nebo registrace (ceník, kalkulačka). */
   primary?: 'demo' | 'registrace';
 }) {
+  // „Založit účet zdarma" pod článkem, který si čte přihlášený uživatel, je
+  // slepá ulička — registrace ho jen pošle zpátky. Demo na cizích datech taky
+  // ne, když má vlastní.
+  const user = await currentUser();
+  if (user) {
+    return (
+      <section className="mt-24 lg:mt-32">
+        <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
+          <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
+            {title}
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
+            Účet už máš — stačí se do něj vrátit.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-4">
+            <Link
+              href="/prehled"
+              className="inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95"
+            >
+              Přejít do aplikace
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
   const demoClass =
     primary === 'demo'
       ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
