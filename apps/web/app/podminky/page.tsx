@@ -104,9 +104,15 @@ export default function TermsPage() {
         <p id="odchylky-od-jakosti">
           Co ti naopak neslibujeme: Danero nemá sjednanou garantovanou dostupnost —
           usilujeme o nepřetržitý provoz, ale krátké odstávky kvůli údržbě nebo výpadku
-          dodavatele nastat můžou. Jednotný kurz pro právě probíhající rok je orientační,
-          dokud GFŘ nevydá pokyn, a sporné výklady daňových předpisů nechává aplikace na
-          tobě — obojí u konkrétních výpočtů viditelně označuje, ať víš, na čem stojíš.
+          dodavatele nastat můžou. Právě tuhle jedinou výhradu proto u objednávky
+          potvrzuješ zvlášť.
+        </p>
+        <p>
+          Dvě věci, které se jako výhrada číst daly, výhradou nejsou: jednotný kurz pro
+          právě probíhající rok je do vydání pokynu GFŘ orientační a aplikace ho tak
+          i označuje — jakmile pokyn vyjde, čísla dopočítáme. A u sporných výkladů
+          daňových předpisů počítáme obě varianty a ukazujeme rozdíl i riziko, takže
+          rozhodnutí je na tobě, ale podklad k němu dostaneš.
         </p>
 
         <h2 className="font-display text-lg font-semibold">

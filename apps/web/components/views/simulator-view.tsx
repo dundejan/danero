@@ -436,7 +436,9 @@ function DeltaCard({
     <Card className="space-y-2">
       <CardTitle>{label}</CardTitle>
       <div>
-        <p className={cn('font-mono text-lg font-semibold', exceeded && 'text-cervena')}>
+        {/* H-3-02: milionová částka se do třetiny gridu na mobilu nevejde jako
+            nezlomitelný token — na úzkém displeji proto o stupeň menší písmo */}
+        <p className={cn('font-mono text-base font-semibold sm:text-lg', exceeded && 'text-cervena')}>
           {czk(afterCzk)}
         </p>
         <span

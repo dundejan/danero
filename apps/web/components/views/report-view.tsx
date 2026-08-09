@@ -212,7 +212,7 @@ export function ReportView({
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
           <CardTitle>Dílčí základ § 10 (součet druhů)</CardTitle>
-          <p className="font-mono text-xl font-semibold">
+          <p className="font-mono text-lg font-semibold sm:text-xl">
             {czk(
               result.securities.base10Czk
                 .plus(result.crypto.base10Czk)
@@ -236,12 +236,12 @@ export function ReportView({
               </>
             )}
             {(result.crypto.disposals.length > 0 || result.derivatives.items.length > 0) &&
-              ' — druhy se nekompenzují (R-10c/R-12l)'}
+              ' — druhy se nekompenzují'}
           </p>
         </Card>
         <Card className="space-y-1">
           <CardTitle>Dílčí základ § 8 (dividendy, úroky)</CardTitle>
-          <p className="font-mono text-xl font-semibold">{czk(result.dividends.base8Czk)}</p>
+          <p className="font-mono text-lg font-semibold sm:text-xl">{czk(result.dividends.base8Czk)}</p>
           <p className="text-xs text-inkoust-tlumeny">
             Srážková daň v zahraničí {czk(result.dividends.foreignWithholdingCzk)}, započitatelná{' '}
             {czk(result.dividends.creditableWithholdingCzk)}
@@ -249,7 +249,7 @@ export function ReportView({
         </Card>
         <Card className="space-y-1">
           <CardTitle>Orientační daň z investic</CardTitle>
-          <p className="font-mono text-xl font-semibold">{czk(activeTax.taxCzk)}</p>
+          <p className="font-mono text-lg font-semibold sm:text-xl">{czk(activeTax.taxCzk)}</p>
           <p className="text-xs text-inkoust-tlumeny">
             {/* uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
                 zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout titulek) */}
@@ -291,7 +291,7 @@ export function ReportView({
       )}
 
       <Card className="space-y-3">
-        <CardTitle title="Pravidlo R-05c v metodice Danero">Porovnání variant párování</CardTitle>
+        <CardTitle>Porovnání variant párování</CardTitle>
         <ScrollArea label="Porovnání variant párování">
           {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
           <table aria-label="Srovnání variant výpočtu daně" className="w-full text-sm">
@@ -540,7 +540,7 @@ export function ReportView({
           {result.derivatives.deniedExpensesCzk.gt(0) && (
             <p className="text-xs text-jantar-text">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
-              podle opatrného výkladu jako neuznatelný výdaj (R-12i). Mírnější výklad „výdaje za
+              podle opatrného výkladu jako neuznatelný výdaj. Mírnější výklad „výdaje za
               celý druh“ by{' '}
               {/* skutečný dopad, ne hrubá prémie: výdaje druhu jsou stropované
                   jeho příjmy (§ 10/4), takže rozdíl bývá výrazně menší */}

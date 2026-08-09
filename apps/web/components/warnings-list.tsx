@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { d, ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
 import { czDate, czk } from '@/lib/format';
@@ -220,6 +221,17 @@ export function WarningsList({
           </div>
         );
       })}
+      {warnings.length > 0 && (
+        // H-3-03: aplikace ukazovala interní kódy pravidel („R-05c"), ale
+        // odkaz na jejich vysvětlení z přihlášené části nevedl NIKAM. Kódy
+        // z UI zmizely (v tištěném podkladu zůstávají kvůli průkaznosti)
+        // a místo nich je tu cesta k metodice.
+        <p className="pt-1 text-sm">
+          <Link href="/jak-pocitame" className="font-medium text-ruzova-text hover:underline">
+            Jak Danero počítá →
+          </Link>
+        </p>
+      )}
     </>
   );
 }

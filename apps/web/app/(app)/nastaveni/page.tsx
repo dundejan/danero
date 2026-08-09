@@ -163,7 +163,7 @@ export default async function SettingsPage({
               <CardTitle>Metody výpočtu</CardTitle>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <Label htmlFor="parovani" title="Pravidlo R-05c v metodice Danero">
+                  <Label htmlFor="parovani">
                     Párování prodejů
                   </Label>
                   <Select
@@ -178,7 +178,7 @@ export default async function SettingsPage({
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="kurzy" title="Pravidlo R-06 v metodice Danero">
+                  <Label htmlFor="kurzy">
                     Měnové kurzy
                   </Label>
                   <Select id="kurzy" name="kurzy" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
@@ -206,7 +206,7 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="zaklad-casoveho-testu" title="Pravidlo R-01a v metodice Danero">
+                  <Label htmlFor="zaklad-casoveho-testu">
                     Báze časového testu
                   </Label>
                   <Select
@@ -222,7 +222,7 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="derivaty-vydaje" title="Pravidlo R-12i v metodice Danero">
+                  <Label htmlFor="derivaty-vydaje">
                     Prémie bezcenně expirovaných opcí
                   </Label>
                   <Select
@@ -240,7 +240,7 @@ export default async function SettingsPage({
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="emt-casovy-test" title="Pravidlo R-10g v metodice Danero">
+                  <Label htmlFor="emt-casovy-test">
                     Stablecoiny a časový test
                   </Label>
                   <Select

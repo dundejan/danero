@@ -80,3 +80,32 @@ describe('mobilní spodní pruh a toast si nelezou do zelí (H-3-06, H-3-18)', (
     expect(read('components/nav-rail.tsx')).toContain('safe-area-inset-bottom');
   });
 });
+
+/**
+ * H-3-03: interní ID pravidel („R-05c") se ukazovala uživateli na deseti
+ * místech, ale `/jak-pocitame` žádné R-xx neobsahuje a z přihlášené části na
+ * něj nevedl jediný odkaz — tedy žargon bez vysvětlení (pravidlo 3 CLAUDE.md).
+ * V UI proto zůstává česká věta a odkaz na metodiku; kódy patří do tištěného
+ * podkladu, kde slouží průkaznosti výpočtu.
+ */
+describe('interní kódy pravidel nejsou v UI bez vysvětlení (H-3-03)', () => {
+  it('žádný viditelný text v komponentách neuvádí R-xx', () => {
+    for (const path of tsxFiles(COMPONENTS)) {
+      const source = readFileSync(path, 'utf8');
+      // komentáře (řádkové i blokové) jsou v pořádku — čte je jen vývojář
+      const bezKomentaru = source
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      const kody = bezKomentaru.match(/\bR-\d{2}[a-z]?\b/g) ?? [];
+      expect(kody, `${path}: kódy pravidel ve viditelném textu`).toEqual([]);
+    }
+  });
+
+  it('seznam varování odkazuje na metodiku', () => {
+    const source = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'warnings-list.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('/jak-pocitame');
+  });
+});

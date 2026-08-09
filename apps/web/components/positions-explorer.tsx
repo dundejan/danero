@@ -6,6 +6,7 @@ import { PositionCard } from '@/components/position-card';
 import { keepCurrencyCase } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { plural, signedPct } from '@/lib/format';
+import { Hint } from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 
 /**
@@ -75,7 +76,7 @@ function SortableTh({
   dir,
   onSort,
   alignRight,
-  title,
+  hint,
 }: {
   label: string;
   sortKey: SortKey;
@@ -83,7 +84,8 @@ function SortableTh({
   dir: SortDir;
   onSort: (key: SortKey) => void;
   alignRight?: boolean;
-  title?: string;
+  /** Výklad sloupce — rozbalovací, ne `title=` (H-3-08). */
+  hint?: string;
 }) {
   return (
     <th
@@ -94,7 +96,6 @@ function SortableTh({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        title={title}
         className={cn(
           'inline-flex items-center gap-1 uppercase tracking-wide hover:text-inkoust',
           active && 'text-inkoust',
@@ -105,6 +106,7 @@ function SortableTh({
           {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
         </span>
       </button>
+      {hint && <Hint label={label}>{hint}</Hint>}
     </th>
   );
 }
@@ -253,12 +255,12 @@ export function PositionsExplorer({
                   />
                   {/* bez řazení — ceny jsou v měnách instrumentů a mezi měnami
                       by pořadí nedávalo smysl; srovnatelná je Hodnota (Kč) */}
-                  <th
-                    scope="col"
-                    className="py-2 pr-4 text-right"
-                    title="Ceny jsou v různých měnách — pro srovnání řaď podle hodnoty v Kč"
-                  >
+                  <th scope="col" className="py-2 pr-4 text-right">
                     Cena/ks
+                    <Hint label="Cena za kus">
+                      Ceny jsou v měnách jednotlivých instrumentů — pro srovnání řaď podle
+                      hodnoty v Kč.
+                    </Hint>
                   </th>
                   <SortableTh
                     label="Hodnota (Kč)"
@@ -275,7 +277,7 @@ export function PositionsExplorer({
                     dir={sortDir}
                     onSort={toggleSort}
                     alignRight
-                    title="Rozdíl aktuální hodnoty a nabývací ceny — zisk/ztráta, kdybys prodal teď (před zdaněním); řadí se podle procenta"
+                    hint="Rozdíl aktuální hodnoty a nabývací ceny — zisk nebo ztráta, kdybys prodal teď (před zdaněním). Řadí se podle procenta."
                   />
                   {showExempt && (
                     <SortableTh

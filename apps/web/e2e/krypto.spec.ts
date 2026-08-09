@@ -27,7 +27,10 @@ test('krypto + deriváty: oddělené druhy § 10 na dashboardu a v reportu', asy
   // ── report: § 10 s rozpadem CP + krypto + deriváty (druhy se nekompenzují) ──
   await page.goto('/report');
   await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
-  await expect(page.getByText(/druhy se nekompenzují \(R-10c\/R-12l\)/)).toBeVisible();
+  // H-3-03: interní kódy pravidel z UI zmizely — text musí zůstat srozumitelný
+  // i bez nich (metodiku nese odkaz „Jak Danero počítá")
+  // pomlčka odliší souhrnný řádek § 10 od vysvětlivek níž na stránce
+  await expect(page.getByText(/— druhy se nekompenzují/)).toBeVisible();
 
   // ── deriváty (R-12): tabulka obchodů a řádek F v průvodci ────────────────
   await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();

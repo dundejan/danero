@@ -555,12 +555,15 @@ export default async function ImportPage({
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   <form action={deleteBatchAction}>
                     <input type="hidden" name="davka" value={batch.id} />
+                    {/* H-3-08: vysvětlení viselo jen v `title=`, které se na
+                        dotyku nezobrazí a klávesnicí se k němu nedostaneš —
+                        u tlačítka, co něco maže, je to nejhorší možné místo */}
                     <button
                       type="submit"
                       className="font-medium text-inkoust-tlumeny hover:text-cervena"
-                      title="Smaže jen záznam o importu — transakce zůstávají"
                     >
                       Smazat záznam
+                      <span className="sr-only"> — smaže jen záznam o importu, transakce zůstávají</span>
                     </button>
                   </form>
                 </span>

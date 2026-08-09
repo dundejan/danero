@@ -139,3 +139,31 @@ describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
     expect(podminky).toContain('elektronické podání');
   });
 });
+
+/**
+ * E-3-01: § 2389i odst. 2 OZ chce, aby odchylku od zákonné jakosti spotřebitel
+ * potvrdil ZVLÁŠŤ — samostatným projevem vůle, ne odkazem na podmínky. Ze tří
+ * původních odchylek dvě odchylkou být přestaly (kurz se po pokynu GFŘ
+ * dopočítá, sporné výklady aplikace počítá oběma způsoby a ukazuje rozdíl),
+ * takže se potvrzuje jen chybějící garance dostupnosti.
+ */
+describe('odchylka od jakosti se potvrzuje zvlášť (E-3-01)', () => {
+  const read = async (relativni: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
+  };
+
+  it('objednávka má vlastní checkbox o dostupnosti a odkaz do podmínek', async () => {
+    const page = await read('app/(app)/predplatne/page.tsx');
+    expect(page).toContain('name="dostupnost"');
+    expect(page).toContain('required');
+    expect(page).toContain('/podminky#odchylky-od-jakosti');
+    // u obou plnění, ne jen u jednoho
+    expect((page.match(/<DostupnostCheckbox /g) ?? []).length).toBe(2);
+  });
+
+  it('podmínky mají kotvu, na kterou checkbox míří', async () => {
+    expect(await read('app/podminky/page.tsx')).toContain('id="odchylky-od-jakosti"');
+  });
+});

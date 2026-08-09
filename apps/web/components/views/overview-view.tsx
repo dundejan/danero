@@ -247,7 +247,7 @@ export function OverviewView({
           (result.limits.cryptoLimit100k.applicable ? (
             <LimitGauge
               label="Osvobození krypta — 100 000 Kč"
-              hint="Samostatný limit pro kryptoaktiva (§ 4/1 zj — R-10a), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
+              hint="Samostatný limit pro kryptoaktiva (§ 4 odst. 1 písm. zj zákona o daních z příjmů), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
               status={result.limits.cryptoLimit100k}
             />
           ) : (
@@ -262,7 +262,7 @@ export function OverviewView({
               <p className="text-sm font-semibold text-cervena">daní se každý prodej</p>
               <p className="pt-1 text-xs text-inkoust-tlumeny">
                 Roční limit 100 000 Kč ani tříletý časový test pro kryptoaktiva za rok {year}{' '}
-                neplatí — zavedl je až zákon č. 32/2025 Sb. s účinností od 15. 2. 2025 (R-10b).
+                neplatí — zavedl je až zákon č. 32/2025 Sb. s účinností od 15. 2. 2025.
                 Zdanitelný je proto každý prodej i směna, bez ohledu na výši tržeb a dobu držení.
               </p>
             </Card>
@@ -272,7 +272,7 @@ export function OverviewView({
           <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_2fr] md:items-center">
             <div className="space-y-1">
               <CardTitle>Orientační daň z investic</CardTitle>
-              <p className="font-mono text-2xl font-semibold">
+              <p className="font-mono text-xl font-semibold sm:text-2xl">
                 {czk(
                   result.tax.recommended === 'GENERAL'
                     ? result.tax.general.taxCzk
