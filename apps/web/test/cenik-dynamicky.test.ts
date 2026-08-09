@@ -47,3 +47,24 @@ describe('pojistka zkušebního režimu Stripu (C-29)', () => {
     },
   );
 });
+
+/**
+ * E-3-04: prodejní formulář nabízí deset daňových let a slibuje k nim „XML pro
+ * elektronické podání" bez jediné výhrady, přestože oficiální struktura DPFDP7
+ * existuje jen pro roky v `EPO_SUPPORTED_YEARS`. Informace o omezení plnění
+ * musí padnout PŘED platbou, ne až v ceníku o stránku vedle.
+ */
+describe('omezení XML pro EPO je vidět před platbou (E-3-04)', () => {
+  it('stránka předplatného vypisuje podporované roky z jediného zdroje', async () => {
+    const source = readFileSync(join(APP_DIR, '(app)', 'predplatne', 'page.tsx'), 'utf8');
+    expect(source).toContain('EPO_SUPPORTED_YEARS');
+    // ne natvrdo zapsané roky, které by se rozešly s lib/epo.ts
+    expect(source).toMatch(/XML pro elektronické podání umíme/);
+
+    const { EPO_SUPPORTED_YEARS } = await import('@/lib/epo');
+    expect(EPO_SUPPORTED_YEARS.length).toBeGreaterThan(0);
+    for (const rok of EPO_SUPPORTED_YEARS) {
+      expect(source).not.toContain(`roky ${rok} a`); // roky se skládají z konstanty
+    }
+  });
+});

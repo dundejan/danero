@@ -877,6 +877,61 @@ describe('stopy po platbě', () => {
     await applyStripeEvent(db, subscriptionEvent({ cancel_at_period_end: true }, 1_786_000_200));
     expect(emails()).toHaveLength(1);
   });
+
+  /**
+   * C-3-03: potvrzení uvádělo ceníkovou konstantu, ne skutečně strženou částku.
+   * S partnerským kódem se strhlo 392 Kč a e-mail tvrdil „Cena: 490 Kč — cena
+   * je konečná". Zatím latentní (nemáme promokódy), spustí se partnerským
+   * programem.
+   */
+  it('potvrzení uvádí skutečně strženou částku, ne ceníkovou', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const emails = captureEmails();
+
+    await applyStripeEvent(
+      db,
+      checkoutEvent({
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1', taxYear: '2026' },
+        payment_intent: 'pi_sleva',
+        // sleva 20 %: 490 → 392 Kč (Stripe posílá haléře)
+        amount_total: 39200,
+        currency: 'czk',
+      }),
+    );
+
+    const [mail] = emails();
+    expect(mail?.subject).toContain('Podklady');
+    expect(mail?.text).toContain('392');
+    expect(mail?.text).not.toContain('490 Kč');
+  });
+
+  /**
+   * C-3-04: zákazník, kterému se ztratil webhook a přístup mu vrátila až denní
+   * rekonciliace, nikdy nedostal potvrzení o uzavření smlouvy (§ 1824a OZ) —
+   * `upsertSubscription` se volal napřímo, bez detekce prvního odemčení.
+   */
+  it('potvrzení dostane i zákazník, kterého odemkla až rekonciliace', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // řádek existuje (vazba z checkoutu), ale odemykací událost se ztratila
+    await applyStripeEvent(
+      db,
+      subscriptionEvent({ status: 'incomplete' }, 1_786_000_000, 'customer.subscription.created'),
+    );
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
+
+    const emails = captureEmails();
+    stripeState.subscriptionsByCustomer.set('cus_1', [stripeSubscription({})]);
+    const result = await reconcileSubscriptions(db, ROK_2026);
+
+    expect(result.updated).toBe(1);
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+    const [mail] = emails();
+    expect(mail?.subject).toContain('Celoroční hlídání');
+  });
 });
 
 /** C-8: vrácené peníze musí zamknout přístup. */

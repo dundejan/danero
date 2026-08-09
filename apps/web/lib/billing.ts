@@ -272,6 +272,22 @@ export async function recordReportPurchase(
  * webhook — platba proběhla, e-mail se dá poslat znovu, ale opakovaný 500 by
  * Stripe zbytečně zkoušel dokola.
  */
+/**
+ * C-3-03: potvrzení objednávky musí uvádět, co jsme SKUTEČNĚ strhli, ne
+ * ceníkovou konstantu. S partnerským kódem PARTNER20 se strhlo 392 Kč, zatímco
+ * e-mail tvrdil „Cena: 490 Kč — cena je konečná". Stripe posílá částky
+ * v haléřích; cizí měnu radši nepřevádíme (viz `renewalPriceCzk`).
+ */
+function paidCzkFrom(
+  amountTotal: number | null | undefined,
+  currency: string | null | undefined,
+  fallbackCzk: number,
+): number {
+  if (typeof amountTotal !== 'number' || amountTotal < 0) return fallbackCzk;
+  if (currency && currency.toLowerCase() !== 'czk') return fallbackCzk;
+  return Number((amountTotal / 100).toFixed(2));
+}
+
 async function sendConfirmation(
   db: Db,
   userId: string,
@@ -762,7 +778,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
             db,
             userId,
             `Podklady k přiznání za rok ${taxYear}`,
-            PRICE_REPORT_CZK,
+            paidCzkFrom(session.amount_total, session.currency, PRICE_REPORT_CZK),
             consentFrom(session.metadata),
             'report',
           );
@@ -804,7 +820,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
           db,
           userId,
           'Celoroční hlídání daní z investic (roční předplatné)',
-          PRICE_SUBSCRIPTION_CZK,
+          await renewalPriceCzk(subscription.id, idOf(subscription.customer)),
           consentFrom(subscription.metadata),
           'subscription',
         );
@@ -1036,12 +1052,30 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
         row.cancelAtPeriodEnd === state.cancelAtPeriodEnd &&
         row.stripeSubscriptionId === state.stripeSubscriptionId;
       if (same) continue;
+      // C-3-04: rekonciliace zapisuje napřímo (a musí — je autoritativní i pro
+      // událost, která by prošla jako zastaralá), ale první odemčení si musí
+      // všimnout sama. Zákazník, kterému se ztratil webhook, jinak nikdy
+      // nedostal potvrzení o uzavření smlouvy (§ 1824a OZ).
+      // hodnoty si vytáhneme dřív: `isPaidSubscription` je typový guard, takže
+      // by za negací zúžil `row` na never
+      const { userId, stripeCustomerId } = row;
+      const wasPaid = isPaidSubscription(row, now);
       await upsertSubscription(db, state);
       logEvent('warn', 'billing.reconcile_fixed', {
-        userId: row.userId,
+        userId,
         from: row.status,
         to: state.status,
       });
+      if (!wasPaid && isPaidSubscription(state, now)) {
+        await sendConfirmation(
+          db,
+          userId,
+          'Celoroční hlídání daní z investic (roční předplatné)',
+          await renewalPriceCzk(state.stripeSubscriptionId ?? null, stripeCustomerId),
+          state.consentAt ?? null,
+          'subscription',
+        );
+      }
       result.updated += 1;
     } catch (error) {
       result.failed += 1;
@@ -1190,7 +1224,7 @@ async function recoverSession(
       db,
       userId,
       `Podklady k přiznání za rok ${taxYear}`,
-      PRICE_REPORT_CZK,
+      paidCzkFrom(session.amount_total, session.currency, PRICE_REPORT_CZK),
       consentAt,
       'report',
     );
@@ -1238,7 +1272,7 @@ async function recoverSession(
       db,
       userId,
       'Celoroční hlídání daní z investic (roční předplatné)',
-      PRICE_SUBSCRIPTION_CZK,
+      await renewalPriceCzk(actual.id, customerId),
       consentAt,
       'subscription',
     );

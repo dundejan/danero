@@ -7,6 +7,7 @@ import { reportPurchases, subscriptions } from '@/db/schema';
 import { stripeCustomerFor } from '@/lib/billing';
 import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
 import { billingEnabled, isPaidSubscription, isSellableTaxYear } from '@/lib/entitlements';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
 import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
@@ -162,6 +163,17 @@ export default async function SubscriptionPage({
             <p className="text-sm text-inkoust-tlumeny">
               Čísla do řádků přiznání, rozpad na jednotlivé nákupy, použité kurzy a XML
               pro elektronické podání — za jeden daňový rok.
+            </p>
+            {/* E-3-04: informace o omezení musí padnout PŘED platbou, ne až
+                v ceníku. Formulář nabízí deset let, ale oficiální struktura
+                DPFDP7 existuje jen pro roky v EPO_SUPPORTED_YEARS. */}
+            <p className="text-sm text-inkoust-tlumeny">
+              XML pro elektronické podání umíme za{' '}
+              {EPO_SUPPORTED_YEARS.length === 1
+                ? `rok ${EPO_SUPPORTED_YEARS[0]}`
+                : `roky ${EPO_SUPPORTED_YEARS.join(' a ')}`}{' '}
+              — jen pro ně finanční správa zveřejnila strukturu formuláře. U ostatních let
+              dostaneš čísla i rozpad, ale přiznání do EPO opíšeš ručně.
             </p>
             <p className="font-display text-2xl font-bold">{priceLabel(PRICE_REPORT_CZK)}</p>
             <div>
