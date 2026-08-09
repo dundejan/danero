@@ -781,11 +781,20 @@ export async function parseEtoroXlsx(
 
   // Activity dividendy jen přeskakuje (srážková daň je jen v listu Dividends) —
   // chybí-li ten list, zmizely by beze stopy a příjem § 8 by se do daně nedostal
+  // Pojistka byla všechno-nebo-nic (`imported === 0`), takže stačila JEDINÁ
+  // dividenda v listu Dividends a zbytek zmizel bez hlášky: 3 řádky v Account
+  // Activity + 1 v Dividends → naimportovala se 1 a mezi errors/warnings/skipped
+  // o dividendách ani zmínka. Vynechaný příjem § 8 přitom umí shodit i limit
+  // 50 000 Kč (nález B-3-7). Porovnává se proto s POČTEM řádků, ne s nulou.
   const imported = result.transactions.filter((tx) => tx.type === 'DIVIDEND').length;
-  if (ctx.activityDividendRows.count > 0 && imported === 0) {
+  const chybi = ctx.activityDividendRows.count - imported;
+  if (chybi > 0) {
     result.errors.push({
       line: 1,
-      message: `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale list „Dividends“ ve výpisu chybí (nebo je prázdný) — dividendy jsme proto nenaimportovali. Stáhni z eToro Account Statement za celé období včetně listu Dividends (je v něm i sražená daň) a nahraj ho znovu.`,
+      message:
+        imported === 0
+          ? `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale list „Dividends“ ve výpisu chybí (nebo je prázdný) — dividendy jsme proto nenaimportovali. Stáhni z eToro Account Statement za celé období včetně listu Dividends (je v něm i sražená daň) a nahraj ho znovu.`
+          : `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale z listu „Dividends“ jich jde načíst jen ${imported} — ${chybi} by se do daně nedostalo. Stáhni z eToro Account Statement za celé období, ať je list Dividends kompletní (je v něm i sražená daň), a nahraj ho znovu.`,
     });
   }
 

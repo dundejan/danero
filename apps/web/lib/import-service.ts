@@ -26,7 +26,9 @@ import {
   parseSchwabCsv,
   parseSwissquoteCsv,
   parseTastytradeCsv,
+  isTruncatedTrading212Export,
   parseTrading212Csv,
+  TRADING212_BROKER,
   parseUniversalCsv,
   parseXtbXlsx,
   sniffAnycoinCsv,
@@ -125,6 +127,18 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
   const newline = text.indexOf('\n');
   const { headers } = parseCsv(newline === -1 ? text : text.slice(0, newline));
   if (headers.includes('Action') && headers.includes('Time')) {
+    // Useknutý přenos poznáme z obsahu (B-3-1) — do 9. 8. 2026 se na to koukal
+    // jen API sync, takže ručně nahraný nedostažený soubor se naimportoval
+    // z části a tvářil se jako celý.
+    if (isTruncatedTrading212Export(text)) {
+      const useknuty = emptyResult(TRADING212_BROKER);
+      useknuty.errors.push({
+        line: 1,
+        message:
+          'Soubor vypadá nedostažený — poslední řádek je uříznutý uprostřed. Stáhni export z Trading212 znovu a nahraj ho celý; kdybychom ho vzali takhle, chyběla by ti část obchodů a limity by vyšly nižší, než jsou.',
+      });
+      return noUnmapped(useknuty);
+    }
     return noUnmapped(parseTrading212Csv(text));
   }
   const degiroKind = isDegiroCsv(text);

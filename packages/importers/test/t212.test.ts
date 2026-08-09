@@ -307,3 +307,39 @@ describe('Trading212 CSV parser', () => {
     expect(dedupeTransactions(TRADING212_BROKER, result.transactions).fresh).toHaveLength(1);
   });
 });
+
+/**
+ * B-3-1: řez UPROSTŘED dat. Původní kontrola uměla poznat jen soubor bez
+ * jediného datového řádku, takže nedostažený export prošel jako platný a rok
+ * se uzavřel jako hotový — naměřeno na reálném exportu (179 446 B, 833 tx)
+ * a 4 000 místech řezu: 41,3 % skončilo úplně tiše (řez na 8 207 B dal
+ * 47 transakcí místo 833 s nulou chyb). Dvě obsahové kontroly posledního
+ * řádku to srazily na jednotky procent a na Janových třech reálných exportech
+ * nevyrobily jediný falešný poplach (98,5–99,3 % řezů zachyceno).
+ */
+describe('useknutý export T212 uprostřed dat (B-3-1)', () => {
+  const HLAVICKA =
+    'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Total,Currency (Total)';
+  const RADEK =
+    'Market buy,2025-03-04 10:00:00,US0378331005,AAPL,Apple,10,180.5,USD,1805,USD';
+
+  it('poslední řádek s míň sloupci než hlavička = useknuto', () => {
+    const useknuty = `${HLAVICKA}\n${RADEK}\nMarket buy,2025-03-05 10:00:00,US0378331005,AAPL,Ap`;
+    expect(isTruncatedTrading212Export(useknuty)).toBe(true);
+  });
+
+  it('poslední řádek končící uvnitř uvozovky = useknuto', () => {
+    const useknuty = `${HLAVICKA}\n${RADEK}\nMarket buy,2025-03-05 10:00:00,US0378331005,AAPL,"Apple Inc`;
+    expect(isTruncatedTrading212Export(useknuty)).toBe(true);
+  });
+
+  it('celý soubor s plnými řádky projde bez poplachu', () => {
+    expect(isTruncatedTrading212Export(`${HLAVICKA}\n${RADEK}\n${RADEK}`)).toBe(false);
+    expect(isTruncatedTrading212Export(`${HLAVICKA}\n${RADEK}\n${RADEK}\n`)).toBe(false);
+  });
+
+  it('uvozovka s čárkou uvnitř názvu není useknutí', () => {
+    const sCarkou = `${HLAVICKA}\nMarket buy,2025-03-04 10:00:00,US0378331005,AAPL,"Apple, Inc.",10,180.5,USD,1805,USD`;
+    expect(isTruncatedTrading212Export(sCarkou)).toBe(false);
+  });
+});

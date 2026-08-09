@@ -90,3 +90,29 @@ describe('autodetekce textových formátů (detectAndParse)', () => {
     expect(detectAndParse(tasty).broker).toBe('tastytrade');
   });
 });
+
+/**
+ * B-3-1: nedostažený export T212 se nesmí naimportovat z části a tvářit se
+ * jako celý. Do 9. 8. 2026 na to koukal jen API sync — ruční upload ne.
+ */
+describe('useknutý export T212 v ručním uploadu (B-3-1)', () => {
+  const HLAVICKA =
+    'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Total,Currency (Total)';
+  const RADEK =
+    'Market buy,2025-03-04 10:00:00,US0378331005,AAPL,Apple,10,180.5,USD,1805,USD';
+
+  it('uříznutý poslední řádek skončí chybou, ne částečným importem', () => {
+    const useknuty = `${HLAVICKA}\n${RADEK}\nMarket buy,2025-03-05 10:00:00,US0378331005,AAPL,Ap`;
+    const vysledek = detectAndParse(useknuty);
+
+    expect(vysledek.transactions).toEqual([]);
+    expect(vysledek.errors).toHaveLength(1);
+    expect(vysledek.errors[0]!.message).toContain('nedostažen');
+  });
+
+  it('celý soubor se naimportuje normálně', () => {
+    const vysledek = detectAndParse(`${HLAVICKA}\n${RADEK}\n${RADEK.replace('10:00:00', '11:00:00')}`);
+    expect(vysledek.errors).toEqual([]);
+    expect(vysledek.transactions).toHaveLength(2);
+  });
+});

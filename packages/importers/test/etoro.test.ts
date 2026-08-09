@@ -16,6 +16,8 @@ import {
   ETORO_ACTIVITY_ROWS,
   ETORO_CLOSED_HEADERS,
   ETORO_CLOSED_ROWS,
+  ETORO_DIVIDEND_ROWS,
+  type EtoroCellValue,
   ETORO_INSTRUMENT_MAP,
 } from './fixtures/etoro';
 import { buildXtbXlsx } from './fixtures/xtb';
@@ -210,6 +212,42 @@ describe('eToro XLSX parser', () => {
     const missing = result.errors.find((e) => e.message.includes('Dividends'));
     expect(missing).toBeDefined();
     expect(missing!.message).toContain('Account Activity');
+  });
+
+  /**
+   * B-3-7: pojistka byla všechno-nebo-nic (`imported === 0`), takže stačila
+   * JEDINÁ dividenda v listu Dividends a zbytek zmizel bez hlášky — ani chyba,
+   * ani varování, ani přeskočení. Vynechaný příjem § 8 umí shodit i limit
+   * 50 000 Kč.
+   */
+  /** Klony dividendového řádku z Account Activity (mění se jen Position ID). */
+  const dividendoveRadkyNavic = (kolik: number): EtoroCellValue[][] => {
+    const typIndex = ETORO_ACTIVITY_HEADERS.indexOf('Type');
+    const idIndex = ETORO_ACTIVITY_HEADERS.indexOf('Position ID');
+    const vzor = ETORO_ACTIVITY_ROWS.find((radek) => radek[typIndex] === 'Dividend');
+    if (!vzor) throw new Error('fixtura nemá dividendový řádek v Account Activity');
+    return Array.from({ length: kolik }, (_, i) => {
+      const kopie = [...vzor];
+      kopie[idIndex] = `9900000${i}`;
+      return kopie;
+    });
+  };
+
+  it('částečný list Dividends: chybějící dividendy se ohlásí, ne přejdou mlčky', async () => {
+    const buffer = await buildEtoroXlsx({
+      closed: { rows: ETORO_CLOSED_ROWS },
+      // tři dividendové řádky v aktivitě…
+      activity: { rows: [...ETORO_ACTIVITY_ROWS, ...dividendoveRadkyNavic(2)] },
+      // …ale v listu Dividends jen dva → jeden by zmizel beze stopy
+      dividends: { rows: ETORO_DIVIDEND_ROWS },
+    });
+    const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
+
+    const nactene = result.transactions.filter((t) => t.type === 'DIVIDEND');
+    expect(nactene.length).toBeGreaterThan(0);
+    const chyba = result.errors.find((e) => e.message.includes('Dividends'));
+    expect(chyba).toBeDefined();
+    expect(chyba!.message).toContain('Account Activity');
   });
 
   it('poplatky (SDRT ze závorky, Commission, Overnight fee) → FEE; Interest Payment → INTEREST', async () => {

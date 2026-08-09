@@ -467,11 +467,39 @@ export const trading212DedupeKey = (tx: Transaction): string => dedupeKey(TRADIN
  *
  * Schválně se nedívá na názvy sloupců: řez může padnout i doprostřed hlavičky
  * a takový soubor by pak prošel jako „cizí formát“ = chybný import, po kterém
- * se rok považuje za stažený. Řez uprostřed dat (hlavička + část řádků) takhle
- * poznat nejde — na ten je Content-Length jediná obrana.
+ * se rok považuje za stažený.
+ *
+ * **Řez uprostřed dat** (hlavička + část řádků) poznají dvě obsahové kontroly
+ * na POSLEDNÍM řádku — hlavička ani ostatní řádky se nekontrolují, protože
+ * kratší řádek uprostřed souboru je legitimní jev (T212 vynechává koncové
+ * prázdné sloupce), kdežto na konci je to stopa po přerušeném přenosu:
+ *
+ * 1. poslední řádek má **míň polí než hlavička**,
+ * 2. poslední řádek končí uvnitř **neuzavřené uvozovky**.
+ *
+ * Naměřeno na reálném exportu (179 446 B, 833 transakcí) a 4 000 místech řezu:
+ * původní kontrola „ani jeden datový řádek“ chytila 9 řezů (0,2 %), parser
+ * zhavaroval u 2 337 a **1 654 (41,3 %) skončilo úplně tiše** — řez na 8 207 B
+ * dal 47 transakcí místo 833 s `errors=0, warnings=0`. Tyhle dvě kontroly
+ * podíl tichých řezů srazí na **1,8 %** a falešný poplach nevyrobily ani na
+ * jednom ze tří reálných exportů (395/1 583/1 369 řádků) — všechny mají
+ * všechny řádky plné šířky (nález B-3-1).
  */
 export function isTruncatedTrading212Export(text: string): boolean {
   if (text.trim() === '') return false;
   const { rows } = parseCsv(text);
-  return rows.every((row) => row.every((cell) => cell.trim() === ''));
+  if (rows.every((row) => row.every((cell) => cell.trim() === ''))) return true;
+
+  // Neuzavřená uvozovka: sudý počet uvozovek je v pořádku, lichý znamená, že
+  // pole začalo a soubor skončil dřív, než se zavřelo.
+  const radky = text.split('\n').filter((radek) => radek.trim() !== '');
+  const posledni = radky.at(-1) ?? '';
+  if ((posledni.match(/"/g)?.length ?? 0) % 2 === 1) return true;
+
+  // Ořezaný poslední řádek: míň polí, než má hlavička. Počítá se
+  // z rozparsovaného CSV, ať se čárky uvnitř uvozovek nepletou do počtu.
+  const { headers } = parseCsv(text);
+  const posledniRadek = rows.at(-1);
+  if (headers.length === 0 || !posledniRadek) return false;
+  return posledniRadek.length < headers.length;
 }
