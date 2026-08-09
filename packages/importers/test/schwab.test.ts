@@ -6,6 +6,7 @@ import {
   SCHWAB_EMPTY_EXPORT,
   SCHWAB_HEADER,
   SCHWAB_INSTRUMENT_MAP,
+  SCHWAB_JOURNALED,
   SCHWAB_LEGACY,
   SCHWAB_MODERN,
   SCHWAB_OPTIONS,
@@ -291,5 +292,70 @@ describe('parseSchwabCsv — edge cases', () => {
     ]);
     expect(combined.fresh).toHaveLength(9);
     expect(combined.duplicates).toBe(9);
+  });
+
+  /**
+   * B-3-9: „Journaled Shares“ přesouvá KUSY, ale končilo to ve `skipped`
+   * s textem „peněžní převod — pro daňový výpočet není potřeba“. UI u skipped
+   * ukazuje jen počet, takže se to uživatel nedozvěděl vůbec — a pozdější
+   * prodej pak narazil na „prodáno víc, než je evidováno“ → nabývací cena 0 Kč
+   * a bez časového testu, tedy maximálně nadhodnocený zisk.
+   */
+  it('„Journaled Shares“ s kusy → varování s návodem, peněžní „Journal“ zůstává tichý (B-3-9)', () => {
+    const result = parseSchwabCsv(SCHWAB_JOURNALED, SCHWAB_INSTRUMENT_MAP);
+
+    expect(result.errors).toEqual([]);
+    // peněžní převod bez kusů se dál přeskakuje potichu
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.message).toContain('Journal');
+
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0]!.message;
+    expect(warning).toContain('Journaled Shares');
+    expect(warning).toContain('BND');
+    expect(warning).toContain('10 ks');
+    expect(warning).toContain('TRANSFER_IN');
+  });
+
+  /**
+   * B-3-2: klíč se počítal z otisku SYROVÉHO řádku (`fnv1a64(row.join('|'))`),
+   * takže tentýž obchod v jiném tvaru exportu vyrobil jiný klíč a uložil se
+   * znovu — s hlášením „0 duplicit". A že se tvar mění, ví sám parser: nad
+   * mapováním sloupců stojí „Pořadí sloupců se mezi exporty LIŠÍ".
+   */
+  it('týž obchod ve třech tvarech exportu je jedna transakce, ne tři (B-3-2)', () => {
+    const prodej =
+      '"11/05/2020","Sell","FB","FACEBOOK INC CLASS A","100","$261.50","$6.06","$26143.94"';
+    const tvary = [
+      // moderní export
+      [SCHWAB_HEADER, prodej].join('\n'),
+      // starší export: titulní řádek a koncová čárka (prázdný 9. sloupec)
+      [
+        '"Transactions  for account Individual XXXX-1234 as of 11/06/2020 22:00:00 ET"',
+        `${SCHWAB_HEADER},`,
+        `${prodej},`,
+      ].join('\n'),
+      // jiné pořadí sloupců
+      [
+        '"Action","Date","Amount","Symbol","Description","Quantity","Price","Fees & Comm"',
+        '"Sell","11/05/2020","$26143.94","FB","FACEBOOK INC CLASS A","100","$261.50","$6.06"',
+      ].join('\n'),
+    ];
+
+    // každý tvar je vlastní soubor, tedy vlastní import (jako v import-service)
+    const klice = new Set<string>();
+    let ulozeno = 0;
+    let duplicit = 0;
+    for (const csv of tvary) {
+      const parsed = parseSchwabCsv(csv, SCHWAB_INSTRUMENT_MAP);
+      expect(parsed.transactions).toHaveLength(1);
+      const outcome = dedupeTransactions(SCHWAB_BROKER, parsed.transactions, klice);
+      for (const row of outcome.fresh) klice.add(row.key);
+      ulozeno += outcome.fresh.length;
+      duplicit += outcome.duplicates;
+    }
+
+    expect(ulozeno).toBe(1);
+    expect(duplicit).toBe(2);
   });
 });

@@ -192,6 +192,46 @@ describe('Saxo XLSX parser', () => {
     expect(result.warnings[0]!.message).toContain('Stock split');
   });
 
+  /**
+   * B-3-8: poplatek se dopočítával jako |Amount| − kusy×cena bez ohledu na to,
+   * že Amount může být v měně ÚČTU. Doložený případ: `Buy 3 @ 134.85 USD`,
+   * Amount −2 903,75, Conversion Rate 0,13966 → poplatek 2 499,20 USD na
+   * obchodu za 404,55 USD (6× hodnota obchodu) a `errors=0`.
+   */
+  it('částka v měně účtu: poplatek se přepočte kurzem, ne aby přerostl obchod (B-3-8)', async () => {
+    const buffer = await buildSaxoXlsx({
+      rows: [
+        ['', '30-Dec-2024', '31-Dec-2024', 'Trade', 'NVIDIA Corp.', 'US67066G1040', 'USD', 'NASDAQ', 'NVDA:xnas', 'Buy 3 @ 134.85 USD', -2903.75, '', 0.13966],
+      ],
+    });
+    const result = await parseSaxoXlsx(buffer);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('unreachable');
+    // 2 903,75 × 0,13966 = 405,5377 USD → poplatek 0,987725 USD, ne 2 499,20
+    expect(buy.fee?.currency).toBe('USD');
+    expect(buy.fee!.amount.toString()).toBe('0.987725');
+  });
+
+  it('nesmyslný poplatek bez použitelného kurzu → varování, ne vymyšlené číslo (B-3-8)', async () => {
+    const buffer = await buildSaxoXlsx({
+      rows: [
+        ['', '30-Dec-2024', '31-Dec-2024', 'Trade', 'NVIDIA Corp.', 'US67066G1040', 'USD', 'NASDAQ', 'NVDA:xnas', 'Buy 3 @ 134.85 USD', -2903.75, '', 1],
+      ],
+    });
+    const result = await parseSaxoXlsx(buffer);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.fee).toBeUndefined();
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('nesmyslný poplatek');
+  });
+
   it('záporný úrok → skipped s poznámkou, ne error ani tichá ztráta', async () => {
     const buffer = await buildSaxoXlsx({
       rows: [['', '30-Apr-2025', '30-Apr-2025', 'Cash amount', '', '', 'USD', '', '', 'Interest', -0.5, '', 1]],

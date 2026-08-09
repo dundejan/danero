@@ -86,9 +86,10 @@ describe.skipIf(!apiKey)('živé Trading212 API (T212_API_KEY)', () => {
       for (const file of files) {
         all.push(...parseTrading212Csv(readFileSync(join(realDir, file), 'utf8')).transactions);
       }
-      const { fresh, duplicates } = dedupeTransactions(TRADING212_BROKER, all);
+      const outcome = dedupeTransactions(TRADING212_BROKER, all);
+      const fresh = outcome.fresh.map((row) => row.tx);
       console.info(
-        `[api] k rekonciliaci ${fresh.length} transakcí (${duplicates} duplicit; ` +
+        `[api] k rekonciliaci ${fresh.length} transakcí (${outcome.duplicates} duplicit; ` +
           `${files.length} ručních souborů z fixtures/real)`,
       );
 

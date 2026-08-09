@@ -63,8 +63,11 @@ describe.skipIf(files.length === 0)('reálné exporty (fixtures/real)', () => {
       all.push(...result.transactions);
     }
 
-    const { fresh, duplicates } = dedupeTransactions(TRADING212_BROKER, all);
-    console.info(`[real] ${fresh.length} unikátních transakcí (${duplicates} duplicit napříč soubory)`);
+    const outcome = dedupeTransactions(TRADING212_BROKER, all);
+    const fresh = outcome.fresh.map((row) => row.tx);
+    console.info(
+      `[real] ${fresh.length} unikátních transakcí (${outcome.duplicates} duplicit napříč soubory)`,
+    );
 
     const targetYear = Math.max(...fresh.map((tx) => yearOf(txDate(tx))));
     const result = analyzeTaxYear({

@@ -85,15 +85,16 @@ popis('kompatibilita s produkčním Postgresem', () => {
 
 
   /**
-   * A2-3-06: migrace 0031 přepisuje eToro derivátům klíč instrumentu na
-   * `CFD:<ticker>` — a s ním MUSÍ přepočítat i `dedupe_key`, protože ten se
-   * z ISINu počítá. Bez přepočtu by se tytéž řádky při dalším importu téhož
-   * výpisu uložily podruhé.
+   * A2-3-06 + B-3-2: migrace 0031 přepisuje eToro derivátům klíč instrumentu na
+   * `CFD:<ticker>` a 0032 přepočítává `dedupe_key` všech uložených transakcí na
+   * sémantický tvar. Obě sahají na týž sloupec, takže se testují jako řetěz —
+   * rozhodující je stav PO obou. Bez přepočtu by se tytéž řádky při dalším
+   * importu téhož výpisu uložily podruhé.
    *
-   * Hash v migraci je ruční port `fnv1a64` do PL/pgSQL, takže tenhle test
+   * Hash v migracích je ruční port `fnv1a64` do PL/pgSQL, takže tenhle test
    * porovnává výsledek migrace se skutečným klíčem z TypeScriptu.
    */
-  it('migrace 0031: eToro derivát dostane klíč CFD: a sedící dedupe_key', async () => {
+  it('migrace 0031 + 0032: eToro derivát dostane klíč CFD: a sedící dedupe_key', async () => {
     const userId = await makeUser();
     const { dedupeKey } = await import('@danero/importers');
     const { TransactionSchema } = await import('@danero/shared');
@@ -122,13 +123,17 @@ popis('kompatibilita s produkčním Postgresem', () => {
       payload: JSON.parse(JSON.stringify(puvodni)) as unknown,
     });
 
-    // tělo migrace 0031 (bez CREATE FUNCTION, ta je v pg_temp jen po dobu sezení)
     const { readFileSync } = await import('node:fs');
     // stejně jako migrátor: soubor se dělí na `--> statement-breakpoint`,
     // driver víc příkazů v jednom dotazu nepřijme
-    const migrace = readFileSync('db/migrations/0031_etoro_derivative_isin.sql', 'utf8');
-    for (const prikaz of migrace.split('--> statement-breakpoint')) {
-      if (prikaz.trim() !== '') await db.execute(sql.raw(prikaz));
+    for (const soubor of [
+      '0031_etoro_derivative_isin.sql',
+      '0032_semantic_dedupe_key.sql',
+    ]) {
+      const migrace = readFileSync(`db/migrations/${soubor}`, 'utf8');
+      for (const prikaz of migrace.split('--> statement-breakpoint')) {
+        if (prikaz.trim() !== '') await db.execute(sql.raw(prikaz));
+      }
     }
 
     const [radek] = await db

@@ -1,6 +1,6 @@
-import { Decimal, TransactionSchema, type Transaction } from '@danero/shared';
+import { Decimal, TransactionSchema } from '@danero/shared';
 import { cleanNumber, HeaderMap, parseCsv } from '../csv';
-import { dedupeKey, fnv1a64, uniqueIdFactory } from '../dedupe';
+import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const TRADING212_BROKER = 'trading212';
@@ -452,9 +452,6 @@ function collectFees(
   if (!total || total.lte(0) || currency === undefined) return undefined;
   return { amount: total.toString(), currency };
 }
-
-/** Deduplikační klíče pro výsledek importu (viz dedupe.ts). */
-export const trading212DedupeKey = (tx: Transaction): string => dedupeKey(TRADING212_BROKER, tx);
 
 /**
  * Poznávací znamení přenosu přerušeného hned za hlavičkou: přišel neprázdný

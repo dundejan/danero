@@ -1,5 +1,5 @@
 import { d, TransactionSchema } from '@danero/shared';
-import { HeaderMap, parseCsv, parseUsDate } from '../csv';
+import { cleanNumber, HeaderMap, parseCsv, parseUsDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 
@@ -108,7 +108,14 @@ const WARN_SKIP_ACTIONS: Record<string, string> = {
   'Misc Credits': OTHER_WARNING,
 };
 
-/** Peněžní převody — pro daňový výpočet nejsou potřeba, skip bez varování. */
+/**
+ * Peněžní převody — pro daňový výpočet nejsou potřeba, skip bez varování.
+ *
+ * POZOR: část těchhle akcí umí přesouvat i KUSY, ne jen peníze („Journaled
+ * Shares" je běžný řádek migrace TDA → Schwab, „Security Transfer" převod mezi
+ * účty). Rozhoduje se proto podle obsahu řádku, ne podle názvu akce — viz
+ * `movesShares` níž (nález B-3-9).
+ */
 const SILENT_SKIP_ACTIONS = new Set([
   'Journal',
   'Journaled Shares',
@@ -278,6 +285,23 @@ export function parseSchwabCsv(
     }
 
     if (SILENT_SKIP_ACTIONS.has(action)) {
+      const symbol = map.get(row, 'Symbol');
+      const quantity = cleanNumber(map.get(row, 'Quantity'));
+      // B-3-9: převod KUSŮ se nesmí ztratit mezi peněžními převody. Bez něj
+      // narazí pozdější prodej na „prodáno víc, než je evidováno“ → nabývací
+      // cena 0 Kč a bez časového testu, tedy maximálně nadhodnocený zisk.
+      // A protože UI u `skipped` ukazuje jen počet (texty ne), musí to být
+      // varování — jinak se to uživatel nedozví vůbec.
+      if (symbol !== '' && quantity !== '' && Number(quantity) !== 0) {
+        result.warnings.push({
+          line,
+          message:
+            `„${action}“ (${symbol}): přesun ${quantity} ks mezi účty — výpis neuvádí, odkud a za kolik. ` +
+            'Doplň ho jako TRANSFER_IN (s původním datem a cenou nákupu) nebo TRANSFER_OUT přes univerzální šablonu, ' +
+            'jinak se prodej těchto kusů spočítá s nulovou nabývací cenou a bez časového testu.',
+        });
+        continue;
+      }
       result.skipped.push({ line, message: `„${action}“: peněžní převod — pro daňový výpočet není potřeba.` });
       continue;
     }

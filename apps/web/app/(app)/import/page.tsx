@@ -42,6 +42,8 @@ interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
   warnings?: Array<{ line: number; message: string }>;
   unmapped?: UnmappedSymbol[];
+  /** Shoda s transakcemi jiného brokera (B-3-3) — hlásíme, neslučujeme. */
+  crossBroker?: string[];
 }
 
 interface BrokerCopy {
@@ -586,6 +588,12 @@ export default async function ImportPage({
                   {(issues.warnings ?? []).slice(0, 5).map((issue, i) => (
                     <p key={`w-${issue.line}-${i}`} className="text-xs text-jantar-text">
                       Řádek {issue.line}: {issue.message}
+                    </p>
+                  ))}
+                  {/* nevztahuje se k řádku souboru, ale k celé dávce */}
+                  {(issues.crossBroker ?? []).map((message, i) => (
+                    <p key={`cb-${i}`} className="text-xs text-jantar-text">
+                      {message}
                     </p>
                   ))}
                 </>

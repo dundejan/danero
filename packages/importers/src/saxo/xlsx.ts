@@ -286,6 +286,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
     symbol: columnOf(8),
     event: columnOf(9),
     amount: columnOf(10),
+    conversionRate: columnOf(12),
   };
 
   // stabilní obsahová ID; identické řádky rozliší pořadový suffix -2, -3…
@@ -367,12 +368,44 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       const currency = isGbx ? 'GBP' : rawCurrency;
       const toGbp = (v: Decimal): Decimal => (isGbx ? v.div(100) : v);
 
-      // poplatek = rozdíl mezi peněžním dopadem (Amount) a kusy×cena, v měně instrumentu
+      // Poplatek = rozdíl mezi peněžním dopadem (Amount) a kusy×cena.
+      //
+      // B-3-8: nemusí ale jít o tutéž měnu. U vícemenového účtu je Amount
+      // v měně ÚČTU, zatímco cena v měně instrumentu — a z rozdílu pak vyjde
+      // jako „poplatek" celý kurzový rozdíl: doloženo na `Buy 3 @ 134.85 USD`
+      // s Amount −2 903,75 a Conversion Rate 0,13966, kde se zaúčtoval poplatek
+      // 2 499,20 USD na obchodu za 404,55 USD (6× hodnota obchodu, žádná chyba).
+      // Sloupec Conversion Rate byl přitom v hlavičkách vypsaný a nikdo ho nečetl.
+      //
+      // Ve které měně Amount je, se z exportu spolehlivě určit nedá (v jednom
+      // exportu je v měně instrumentu, v jiném v měně účtu), takže se přijme
+      // jen ta varianta, která dává smysl: poplatek nesmí přerůst samotný
+      // obchod. Když nedává smysl ani jedna, poplatek nedopočítáváme a řekneme
+      // to nahlas — vymyšlený poplatek by tiše snížil zisk.
       let fee: { amount: string; currency: string } | undefined;
       if (amount) {
         const gross = quantity.mul(price);
-        const feeAmount = isBuy ? amount.abs().minus(gross) : gross.minus(amount);
-        if (feeAmount.gt(0)) fee = { amount: toGbp(feeAmount).toString(), currency };
+        const rate = parseSaxoNumber(cellAt(col.conversionRate));
+        const converted = rate && rate.gt(0) && !rate.eq(1) ? amount.mul(rate) : undefined;
+        const impliedFee = (value: Decimal): Decimal =>
+          isBuy ? value.abs().minus(gross) : gross.minus(value);
+        const feeAmount = [amount, converted]
+          .filter((value): value is Decimal => value !== undefined)
+          .map(impliedFee)
+          .find((candidate) => candidate.abs().lte(gross));
+        if (feeAmount === undefined) {
+          result.warnings.push({
+            line,
+            message:
+              `Obchod ${cellAt(col.symbol) || isin}: z částky ${amount.toString()} a ceny ` +
+              `${quantity.toString()} × ${price.toString()} ${currency} vychází nesmyslný poplatek ` +
+              '(vyšší než celý obchod) — typicky je částka v jiné měně, než je cena. Poplatek jsme ' +
+              'radši nedopočítali, ať ti vymyšlené číslo nesníží zisk; pokud jsi nějaký zaplatil, ' +
+              'doplň obchod ručně přes univerzální šablonu.',
+          });
+        } else if (feeAmount.gt(0)) {
+          fee = { amount: toGbp(feeAmount).toString(), currency };
+        }
       } else {
         result.warnings.push({
           line,

@@ -11,8 +11,10 @@ import {
   TASTY_LEGACY,
   TASTY_V2,
   TASTY_V2_FUTURE,
+  TASTY_V2_HEADER,
   TASTY_V2_ORPHAN_EXPIRATION,
   TASTY_V2_TOTAL,
+  TASTY_V2_TOTAL_HEADER,
   TASTY_V2_UNKNOWN_MOVEMENT,
   TASTY_V2_UNMAPPED,
   TASTY_V2_UNMATCHED_TAX,
@@ -262,5 +264,35 @@ describe('parseTastytradeCsv — edge cases', () => {
     ]);
     expect(combined.fresh).toHaveLength(9);
     expect(combined.duplicates).toBe(9);
+  });
+
+  /**
+   * B-3-2: dokud se klíč počítal z otisku syrového řádku, stačilo, aby
+   * Tastytrade přidal sloupec „Total" (21sloupcová generace hlavičky), a tentýž
+   * obchod se při dalším importu uložil podruhé — s hlášením „0 duplicit".
+   */
+  it('týž obchod ve 20- i 21sloupcovém exportu je jedna transakce (B-3-2)', () => {
+    const obchod =
+      '2024-08-16T15:57:13+0200,Trade,Sell to Open,SELL_TO_OPEN,SCHG  240920C00099000,Equity Option,Sold 1 SCHG 09/20/24 Call 99.00 @ 3.70,370.00,1,370.00,-1.00,-0.15,100,SCHG,SCHG,9/20/24,99,CALL,337454037';
+    const tvary = [
+      [TASTY_V2_HEADER, `${obchod},USD`].join('\n'),
+      // o generaci novější hlavička má navíc sloupec „Total“ před měnou
+      [TASTY_V2_TOTAL_HEADER, `${obchod},368.85,USD`].join('\n'),
+    ];
+
+    const klice = new Set<string>();
+    let ulozeno = 0;
+    let duplicit = 0;
+    for (const csv of tvary) {
+      const parsed = parseTastytradeCsv(csv, TASTY_INSTRUMENT_MAP);
+      expect(parsed.transactions).toHaveLength(1);
+      const outcome = dedupeTransactions(TASTYTRADE_BROKER, parsed.transactions, klice);
+      for (const row of outcome.fresh) klice.add(row.key);
+      ulozeno += outcome.fresh.length;
+      duplicit += outcome.duplicates;
+    }
+
+    expect(ulozeno).toBe(1);
+    expect(duplicit).toBe(1);
   });
 });

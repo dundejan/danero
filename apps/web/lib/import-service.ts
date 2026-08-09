@@ -1,5 +1,4 @@
 import {
-  dedupeKey,
   dedupeTransactions,
   decodeCp1250,
   decodeFioCsv,
@@ -54,7 +53,9 @@ import type { Transaction } from '@danero/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
+import { plural } from '@/lib/format';
 import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
+import { errorText, logEvent } from '@/lib/log';
 
 /** Symbol, kterému chybí ISIN/měna (XTB, Fio) — UI nabídne doplnění číselníku. */
 export interface UnmappedSymbol {
@@ -73,6 +74,8 @@ export interface ImportSummary {
   skipped: RowIssue[];
   warnings: RowIssue[];
   unmapped: UnmappedSymbol[];
+  /** Věty o transakcích shodných s jiným brokerem (B-3-3) — hlásíme, neslučujeme. */
+  crossBroker: string[];
 }
 
 /** Výsledek parsování + případné nenamapované symboly (brokeři bez ISIN). */
@@ -277,6 +280,67 @@ export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string
   return new Set(rows.map((row) => row.key));
 }
 
+/** Broker z dedupe klíče a zbytek klíče (otisk obsahu + pořadí výskytu). */
+const splitDedupeKey = (key: string): { broker: string; content: string } => {
+  const at = key.indexOf('|');
+  return { broker: key.slice(0, at), content: key.slice(at + 1) };
+};
+
+/**
+ * Tatáž událost od DVOU zdrojů (B-3-3).
+ *
+ * Dedupe klíč je jmenný prostor per broker, takže obchod zadaný ručně přes
+ * univerzální šablonu — dokumentovaný postup, UI k němu navádí — a později
+ * stažený z brokera se uloží dvakrát a engine mlčí. Doloženo reálným splitem
+ * BYDDY: pozice 5,8565544 → 35,1393264 (6×) a nabývací cena 15,61 → 2,60 USD.
+ *
+ * Slučovat je ale NESMÍME: dvě obsahově shodné transakce od dvou brokerů jsou
+ * legitimní stav (týž obchod na dvou účtech) a falešné sloučení je horší než
+ * duplikát — proto se to jen hlásí a rozhodnutí zůstává na uživateli.
+ *
+ * Hlásí se výhradně události s instrumentem. Hotovostní řádky (vklad, výběr,
+ * poplatek, úrok, směna) nesou jen typ, datum, částku a měnu, takže vklad
+ * 5 000 Kč k dvěma brokerům v jeden den je běžná shoda náhodou — a hláška
+ * „vypadá to na duplicitu, smaž jednu dávku“ by u nich radila zahodit poctivá
+ * data.
+ */
+const CROSS_BROKER_TYPES = new Set<Transaction['type']>([
+  'BUY',
+  'SELL',
+  'DIVIDEND',
+  'CORPORATE_ACTION',
+  'TRANSFER_IN',
+  'TRANSFER_OUT',
+]);
+
+function crossBrokerMatches(
+  broker: string,
+  fresh: Array<{ tx: Transaction; key: string }>,
+  existingKeys: Iterable<string>,
+): string[] {
+  const foreign = new Map<string, string>();
+  for (const key of existingKeys) {
+    const { broker: other, content } = splitDedupeKey(key);
+    if (other !== broker) foreign.set(content, other);
+  }
+  if (foreign.size === 0) return [];
+
+  const byBroker = new Map<string, number>();
+  for (const { tx, key } of fresh) {
+    if (!CROSS_BROKER_TYPES.has(tx.type)) continue;
+    const other = foreign.get(splitDedupeKey(key).content);
+    if (other) byBroker.set(other, (byBroker.get(other) ?? 0) + 1);
+  }
+
+  return [...byBroker.entries()].map(
+    ([other, count]) =>
+      `${count} ${plural(count, 'transakce vypadá', 'transakce vypadají', 'transakcí vypadá')} ` +
+      `úplně stejně jako to, co už máš od „${other}“ (stejný typ, datum, instrument, počet kusů i cena). ` +
+      'Sloučit je automaticky nemůžeme — týž obchod může být opravdu na dvou účtech. Jestli jde o duplicitu ' +
+      '(typicky obchod zadaný ručně a později stažený i od brokera), smaž jednu z dávek importu.',
+  );
+}
+
 /**
  * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
  * `existingKeys` (volitelné) ušetří opakovaný select při dávkových importech —
@@ -293,6 +357,7 @@ export async function importParsed(
   const keys = existingKeys ?? (await loadDedupeKeys(db, userId));
   const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
   const unmapped = extras.unmapped ?? [];
+  const crossBroker = crossBrokerMatches(parsed.broker, fresh, keys);
 
   const batchId = crypto.randomUUID();
 
@@ -304,8 +369,7 @@ export async function importParsed(
     const inserted = await db
       .insert(transactions)
       .values(
-        part.map((tx) => {
-          const key = dedupeKey(parsed.broker, tx);
+        part.map(({ tx, key }) => {
           existingKeys?.add(key);
           return {
             userId,
@@ -345,6 +409,7 @@ export async function importParsed(
       skipped: parsed.skipped,
       warnings: parsed.warnings,
       ...(unmapped.length > 0 ? { unmapped } : {}),
+      ...(crossBroker.length > 0 ? { crossBroker } : {}),
     },
   });
 
@@ -358,5 +423,39 @@ export async function importParsed(
     skipped: parsed.skipped,
     warnings: parsed.warnings,
     unmapped,
+    crossBroker,
   };
+}
+
+/**
+ * Import jednoho souboru z dávky, který NESMÍ shodit ostatní (F-3-7).
+ *
+ * Nahrání víc souborů najednou jelo v prostém `for … await importFile(…)` bez
+ * try/catch: poškozený druhý soubor tak zabil celou akci — první zůstal uložený,
+ * třetí se vůbec nezpracoval a uživatel dostal generický error boundary bez
+ * jediné informace o tom, co se stalo a s čím.
+ *
+ * Selhání se proto zapíše jako dávka s chybou (UI ji vypíše u seznamu importů)
+ * a zbytek souborů pokračuje. Když selže i zápis té dávky, chyba propadne dál —
+ * to už je výpadek databáze, ne vada jednoho souboru.
+ */
+export async function importFileIsolated(
+  db: Db,
+  userId: string,
+  filename: string,
+  data: ArrayBuffer,
+): Promise<ImportSummary> {
+  try {
+    return await importFile(db, userId, filename, data);
+  } catch (error) {
+    logEvent('error', 'import.file_failed', { filename, error: errorText(error) });
+    const failed = emptyResult('neznámý formát');
+    failed.errors.push({
+      line: 1,
+      message:
+        'Soubor se nepodařilo zpracovat — nejspíš je poškozený nebo neúplně stažený. ' +
+        'Stáhni ho od brokera znovu; pokud to nepomůže, napiš nám a soubor přilož.',
+    });
+    return importParsed(db, userId, filename, failed);
+  }
 }

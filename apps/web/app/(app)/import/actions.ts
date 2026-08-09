@@ -8,7 +8,7 @@ import { getDb, type Db } from '@/db';
 import { brokerAccounts, importBatches } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
-import { importFile } from '@/lib/import-service';
+import { importFileIsolated } from '@/lib/import-service';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { resolveEntitlements } from '@/lib/entitlements';
@@ -43,8 +43,10 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   if (!(await checkRateLimit(db, `upload:${user.id}`, { max: 30, windowMs: 10 * 60_000 }))) {
     redirect('/import?chyba=limit');
   }
+  // každý soubor zvlášť: poškozený druhý soubor nesmí sebrat třetí ani zamlčet
+  // první (F-3-7) — selhání se zapíše jako dávka s chybou a je vidět v seznamu
   for (const file of files) {
-    await importFile(db, user.id, file.name, await file.arrayBuffer());
+    await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
   }
 
   revalidatePath('/prehled');

@@ -56,6 +56,17 @@ export const SCHWAB_OPTIONS = [
   '"03/10/2020","Sell to Open","QQQ 03/31/2020 300.00 C","CALL INVESCO QQQ $300 EXP 03/31/20","1","$3.00","$0.65","$299.35"',
 ].join('\n');
 
+/**
+ * Migrace TDA → Schwab: „Journaled Shares“ přesouvá KUSY, „Journal“ peníze.
+ * Řádek s kusy nesmí zmizet mezi peněžními převody (B-3-9).
+ */
+export const SCHWAB_JOURNALED = [
+  SCHWAB_HEADER,
+  '"03/02/2021","Sell","BND","VANGUARD TOTAL BOND MARKET ETF","10","$80.00","","$800.00"',
+  '"01/05/2021","Journaled Shares","BND","VANGUARD TOTAL BOND MARKET ETF","10","","",""',
+  '"01/04/2021","Journal","","TDA TO CS&CO TRANSFER","","","","$1000.00"',
+].join('\n');
+
 /** Jiné pořadí sloupců — mapování musí jít podle názvů, ne indexů. */
 export const SCHWAB_REORDERED = [
   '"Action","Date","Amount","Symbol","Description","Quantity","Price","Fees & Comm"',

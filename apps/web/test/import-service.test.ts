@@ -72,6 +72,127 @@ describe('audit log (G8b)', () => {
   });
 });
 
+/**
+ * B-3-3: dedupe klíč je jmenný prostor per broker, takže tentýž obchod zadaný
+ * ručně přes univerzální šablonu (dokumentovaný postup) a později stažený
+ * z brokera se uložil dvakrát — engine mlčel a rekonciliace pak nabídla „split
+ * 6:1“, tedy pozvánku ke třetí chybě. Slučovat je ale nesmíme (dva účty mohou
+ * mít týž obchod legitimně), takže se to hlásí.
+ */
+describe('shoda transakcí napříč brokery (B-3-3)', () => {
+  it('týž obchod ručně a od brokera se uloží dvakrát, ale import to řekne', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const { user } = await import('@/db/schema');
+    const { importCsvText } = await import('@/lib/import-service');
+    const { loadTransactions } = await import('@/lib/portfolio');
+
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'ux', name: 'Kříž', email: 'kriz@danero.cz' });
+
+    // 1) ručně přes univerzální šablonu
+    const rucne = await importCsvText(
+      db,
+      'ux',
+      'rucne.csv',
+      'type,date,isin,quantity,price,currency\nBUY,2025-07-30,US05606L1008,5.8565544,15.61,USD',
+    );
+    expect(rucne.added).toBe(1);
+    expect(rucne.crossBroker).toEqual([]);
+
+    // 2) týž obchod později stažený z Trading212
+    const zBrokera = await importCsvText(
+      db,
+      'ux',
+      't212.csv',
+      [
+        'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
+        'Market buy,2025-07-30 06:42:25,US05606L1008,BYDDY,BYD,5.8565544,15.61,USD,,,,,,,,,EOF-X1',
+      ].join('\n'),
+    );
+
+    // uloží se obojí — slučovat cizí zdroje nesmíme
+    expect(zBrokera.added).toBe(1);
+    expect(await loadTransactions(db, 'ux')).toHaveLength(2);
+    // ale uživatel se to musí dozvědět
+    expect(zBrokera.crossBroker).toHaveLength(1);
+    expect(zBrokera.crossBroker[0]).toContain('universal');
+    expect(zBrokera.crossBroker[0]).toContain('1 transakce vypadá');
+  });
+
+  it('shodný vklad u dvou brokerů v jeden den se za duplicitu nevydává', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const { user } = await import('@/db/schema');
+    const { importCsvText } = await import('@/lib/import-service');
+
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'uc', name: 'Cash', email: 'cash@danero.cz' });
+
+    // hotovostní řádek nese jen typ, datum, částku a měnu — shoda náhodou je
+    // u vkladů běžná a rada „smaž jednu dávku“ by brala poctivá data
+    const vklad = 'type,date,currency,amount,note\nDEPOSIT,2025-03-01,CZK,5000,vklad';
+    await importCsvText(db, 'uc', 'rucne.csv', vklad);
+    const t212 = await importCsvText(
+      db,
+      'uc',
+      't212.csv',
+      [
+        'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
+        'Deposit,2025-03-01 09:00:00,,,,,,,,,,5000,CZK,,,,EOF-D1',
+      ].join('\n'),
+    );
+
+    expect(t212.added).toBe(1);
+    expect(t212.crossBroker).toEqual([]);
+  });
+});
+
+/**
+ * F-3-7: nahrání víc souborů jelo bez try/catch, takže poškozený druhý soubor
+ * zabil celou akci — první zůstal uložený, třetí se nezpracoval a uživatel
+ * dostal generický error boundary. Reprodukce z auditu skončila na
+ * `{"zpracovanoPredPadem":1,"transakciVDb":1}`.
+ */
+describe('nahrání víc souborů: poškozený soubor nesmí sebrat ostatní (F-3-7)', () => {
+  it('vadný soubor skončí jako dávka s chybou a zbytek se doimportuje', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await import('@/db');
+    const { importBatches, user } = await import('@/db/schema');
+    const { importFile, importFileIsolated } = await import('@/lib/import-service');
+    const { loadTransactions } = await import('@/lib/portfolio');
+    const { eq } = await import('drizzle-orm');
+
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'uf', name: 'Files', email: 'files@danero.cz' });
+
+    const radek = (isin: string) =>
+      `type,date,isin,quantity,price,currency\nBUY,2025-01-10,${isin},1,100,USD`;
+    const soubory: Array<[string, ArrayBuffer]> = [
+      ['prvni.csv', new TextEncoder().encode(radek('US0378331005')).buffer as ArrayBuffer],
+      // .xlsx podle názvu, uvnitř nesmysl → loadXlsxWorkbook vyhodí výjimku
+      ['vadny.xlsx', new TextEncoder().encode('tohle není XLSX').buffer as ArrayBuffer],
+      ['treti.csv', new TextEncoder().encode(radek('US5949181045')).buffer as ArrayBuffer],
+    ];
+
+    // bez izolace celá akce spadne — tohle je ta výjimka, která brala i zbytek
+    await expect(importFile(db, 'uf', ...soubory[1]!)).rejects.toThrow();
+
+    for (const [filename, data] of soubory) {
+      await importFileIsolated(db, 'uf', filename, data);
+    }
+
+    // třetí soubor se musí uložit i po pádu druhého
+    expect(await loadTransactions(db, 'uf')).toHaveLength(2);
+
+    const batches = await db.select().from(importBatches).where(eq(importBatches.userId, 'uf'));
+    expect(batches).toHaveLength(3);
+    const vadny = batches.find((b) => b.filename === 'vadny.xlsx')!;
+    expect(vadny.added).toBe(0);
+    expect(vadny.errorCount).toBe(1);
+    // uživatel se v UI dozví, co s tím — ne generický error boundary
+    const issues = vadny.issues as { errors?: Array<{ message: string }> };
+    expect(issues.errors?.[0]?.message).toContain('poškozený');
+  });
+});
+
 // B-10: XTB alias uložený bez měny se v loadAliases tiše zahazoval — přitom
 // dividendám XTB stačí ISIN (jsou v měně účtu)
 describe('číselník instrumentů (loadAliases)', () => {

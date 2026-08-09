@@ -235,10 +235,16 @@ describe('Trading212 CSV parser', () => {
     const [first, second] = result.transactions;
     expect(first!.id).not.toBe(second!.id);
     expect(second!.id).toBe(`${first!.id}-2`);
-    expect(dedupeTransactions(TRADING212_BROKER, result.transactions).fresh).toHaveLength(2);
-    // opakovaný import téhož souboru zůstává idempotentní (stejné suffixy → stejné klíče)
+    const prvni = dedupeTransactions(TRADING212_BROKER, result.transactions);
+    expect(prvni.fresh).toHaveLength(2);
+    // obsah je u obou řádků totožný, takže je odliší až pořadí výskytu
+    expect(prvni.fresh.map((row) => row.key)).toEqual([
+      dedupeKey(TRADING212_BROKER, result.transactions[0]!, 1),
+      dedupeKey(TRADING212_BROKER, result.transactions[1]!, 2),
+    ]);
+    // opakovaný import téhož souboru zůstává idempotentní (stejné pořadí → stejné klíče)
     const again = parseTrading212Csv(duplicated);
-    const existingKeys = result.transactions.map((tx) => dedupeKey(TRADING212_BROKER, tx));
+    const existingKeys = prvni.fresh.map((row) => row.key);
     expect(
       dedupeTransactions(TRADING212_BROKER, again.transactions, existingKeys).fresh,
     ).toHaveLength(0);
