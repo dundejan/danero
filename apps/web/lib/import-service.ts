@@ -3,12 +3,15 @@ import {
   decodeCp1250,
   decodeFioCsv,
   emptyResult,
+  firstLine,
   isDegiroCsv,
+  parseCsv,
+  sniffFioCsv,
+  sniffDelimiter,
   loadXlsxWorkbook,
   parseAnycoinCsv,
   parseCoinbaseCsv,
   parseCoinmateCsv,
-  parseCsv,
   parseDegiroAccountCsv,
   parseDegiroTransactionsCsv,
   parseEtoroXlsx,
@@ -27,6 +30,7 @@ import {
   parseTastytradeCsv,
   isTruncatedTrading212Export,
   parseTrading212Csv,
+  sniffTrading212Csv,
   TRADING212_BROKER,
   parseUniversalCsv,
   parseXtbXlsx,
@@ -126,10 +130,8 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
     return noUnmapped(parseIbkrFlexXml(text));
   }
 
-  // hlavička se čte jen z prvního řádku — full parse 20MB CSV by tu byl zbytečný
-  const newline = text.indexOf('\n');
-  const { headers } = parseCsv(newline === -1 ? text : text.slice(0, newline));
-  if (headers.includes('Action') && headers.includes('Time')) {
+  // hlavičku posuzuje sniffer v parseru (jedna definice pro detekci i parsování)
+  if (sniffTrading212Csv(text)) {
     // Useknutý přenos poznáme z obsahu (B-3-1) — do 9. 8. 2026 se na to koukal
     // jen API sync, takže ručně nahraný nedostažený soubor se naimportoval
     // z části a tvářil se jako celý.
@@ -163,7 +165,47 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
   if (sniffTastytradeCsv(text)) {
     return withUnmapped('tastytrade', parseTastytradeCsv(text, aliases?.isinOnly.tastytrade));
   }
-  return noUnmapped(parseUniversalCsv(text));
+  return noUnmapped(universalOrUnknown(text));
+}
+
+/** Kolik nalezených sloupců vypsat do hlášky, ať zůstane čitelná. */
+const MAX_LISTED_COLUMNS = 12;
+
+/**
+ * Poslední krok autodetekce: univerzální šablona, nebo poctivé „nepoznáváme“.
+ *
+ * Šablona bývala fallback pro VŠECHNO, co neprošlo sniffery, takže každý
+ * nepoznaný soubor skončil u její hlášky „Chybí povinný sloupec type“ — a ta
+ * je pro uživatele s exportem od známého brokera nesmysl: žádný „type“ v něm
+ * není a mít nemá. Přesně tak se 9. 8. 2026 projevil přejmenovaný sloupec
+ * v T212 exportu: skutečná příčina (hlavičku nepoznáváme) byla z hlášky
+ * neuhodnutelná. Teď se vypíšou nalezené sloupce, takže je vidět, co dorazilo.
+ */
+function universalOrUnknown(text: string): ImportResult {
+  // prázdný soubor = prázdné období (T212 tak posílá roky před založením účtu)
+  if (text.trim() === '') return parseUniversalCsv(text);
+
+  const header = firstLine(text);
+  const columns = parseCsv(header, sniffDelimiter(header)).headers;
+  // Poznávacím znamením je sloupec „type“ — ten mají jen naše šablony. Stačí
+  // sám: rozepsaná šablona, které chybí „date“, tak dostane přesnou hlášku
+  // od parseru šablony místo obecného „nepoznáváme“.
+  if (columns.some((column) => column.toLowerCase() === 'type')) {
+    return parseUniversalCsv(text);
+  }
+
+  const listed = columns.slice(0, MAX_LISTED_COLUMNS).join(', ');
+  const unknown = emptyResult('neznámý formát');
+  unknown.errors.push({
+    line: 1,
+    message:
+      `Formát souboru nepoznáváme${
+        listed ? ` — v hlavičce jsme našli: ${listed}${columns.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : ''
+      }. Zkontroluj v seznamu platforem níž, který export od své platformy stáhnout. ` +
+      'Pokud ji nečteme automaticky, přepiš data do univerzální šablony. ' +
+      'Když si myslíš, že tenhle soubor číst umíme, napiš nám a přilož ho — nejspíš broker změnil formát.',
+  });
+  return unknown;
 }
 
 /** Zpětně kompatibilní vstup pro T212 sync (text bez číselníku aliasů). */
@@ -243,11 +285,12 @@ export async function importFile(
 
   const utf8 = new TextDecoder().decode(data);
 
-  // Fio: hlavička „Datum obchodu“ je čitelná i při špatném dekódování (ASCII),
-  // samotný obsah se ale musí dekódovat jako windows-1250. Kontroluje se JEN
-  // první řádek — poznámka v jiném souboru nesmí import přesměrovat na Fio.
-  const firstLine = utf8.slice(0, utf8.indexOf('\n') === -1 ? undefined : utf8.indexOf('\n'));
-  if (firstLine.includes('Datum obchodu')) {
+  // Fio: hlavička je čitelná i při špatném dekódování, samotný obsah se ale
+  // musí dekódovat jako windows-1250 (proč právě takhle vysvětluje sniffFioCsv).
+  // Kontroluje se JEN první řádek — poznámka v jiném souboru nesmí import
+  // přesměrovat na Fio.
+  const header = firstLine(utf8);
+  if (sniffFioCsv(header)) {
     const aliases = await loadAliases(db, userId);
     const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.isinOnly.fio });
     return importParsed(db, userId, filename, outcome, undefined, {
@@ -263,7 +306,7 @@ export async function importFile(
   // bývají windows-1250 (Coinmate, Swissquote DE aj.). Kontroluje se JEN první
   // řádek: legitimní UTF-8 soubor s ojedinělým U+FFFD hlouběji v datech se
   // nesmí celý předekódovat (rozsypaly by se správné české názvy).
-  const text = firstLine.includes('�') ? decodeCp1250(data) : utf8;
+  const text = header.includes('�') ? decodeCp1250(data) : utf8;
   const aliases = await loadAliases(db, userId);
   const parsed = detectAndParseText(text, aliases);
   return importParsed(db, userId, filename, parsed.outcome, undefined, {

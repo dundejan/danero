@@ -19,6 +19,10 @@ import {
   SWISSQUOTE_DE,
   SWISSQUOTE_EN,
 } from '../../../packages/importers/test/fixtures/swissquote';
+import {
+  T212_FIXTURE,
+  T212_FIXTURE_2026,
+} from '../../../packages/importers/test/fixtures/t212';
 import { detectAndParse } from '@/lib/import-service';
 
 /**
@@ -42,6 +46,10 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Coinbase V4', COINBASE_V4, 'coinbase'],
   ['Coinbase V1 (EUR prefix)', COINBASE_V1_EUR, 'coinbase'],
   ['Degiro CZ Transactions (regrese)', DEGIRO_TRANSACTIONS_CZ, 'degiro'],
+  ['Trading212 (sloupec „Time“)', T212_FIXTURE, 'trading212'],
+  // regrese ze srpna 2026: přejmenovaný sloupec poslal celý export do
+  // univerzální šablony a import se rozbil naostro, přestože testy svítily
+  ['Trading212 2026 (sloupec „Time (UTC)“)', T212_FIXTURE_2026, 'trading212'],
   ['univerzální šablona (poslední záchrana)', UNIVERSAL_TEMPLATE_CSV, 'universal'],
 ];
 
@@ -114,5 +122,51 @@ describe('useknutý export T212 v ručním uploadu (B-3-1)', () => {
     const vysledek = detectAndParse(`${HLAVICKA}\n${RADEK}\n${RADEK.replace('10:00:00', '11:00:00')}`);
     expect(vysledek.errors).toEqual([]);
     expect(vysledek.transactions).toHaveLength(2);
+  });
+});
+
+/**
+ * Nepoznaný CSV soubor nesmí skončit u hlášky univerzální šablony. Právě
+ * tahle záměna udělala z přejmenovaného sloupce v T212 exportu (srpen 2026)
+ * neřešitelnou hádanku: uživatel četl „Chybí povinný sloupec type“ nad
+ * souborem, který žádný „type“ mít nemá.
+ */
+describe('nepoznaný CSV formát', () => {
+  const foreign = 'Datum;Popis;Castka\n2026-01-01;Nákup;100';
+
+  it('neskončí u univerzální šablony', () => {
+    expect(detectAndParse(foreign).broker).toBe('neznámý formát');
+  });
+
+  it('hláška vypíše nalezené sloupce, ne chybějící „type“', () => {
+    const message = detectAndParse(foreign).errors[0]!.message;
+    expect(message).toContain('nepoznáváme');
+    expect(message).toContain('Datum');
+    expect(message).not.toContain('type');
+  });
+
+  it('rozepsaná šablona bez sloupce „date“ dostane přesnou hlášku šablony', () => {
+    // sloupec „type“ je poznávací znamení šablony — hlásit u ní obecné
+    // „nepoznáváme“ by bylo horší než říct, který sloupec chybí
+    const result = detectAndParse('type,isin,quantity\nBUY,US0378331005,10');
+    expect(result.broker).toBe('universal');
+    expect(result.errors[0]?.message).toContain('date');
+  });
+
+  it('prázdný soubor je prázdné období, ne chyba formátu', () => {
+    const result = detectAndParse('');
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+  });
+
+  it('univerzální šablona uložená v českém Excelu (středníky) se pozná', () => {
+    const template = UNIVERSAL_TEMPLATE_CSV.split('\n')
+      .slice(0, 2)
+      .map((line) => line.replace(/,/g, ';'))
+      .join('\n');
+    const result = detectAndParse(template);
+    expect(result.broker).toBe('universal');
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
   });
 });

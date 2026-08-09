@@ -1,9 +1,21 @@
 import { Decimal, TransactionSchema } from '@danero/shared';
-import { cleanNumber, HeaderMap, parseCsv } from '../csv';
+import { cleanNumber, firstLine, HeaderMap, parseCsv } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const TRADING212_BROKER = 'trading212';
+
+/**
+ * Názvy sloupce s časem obchodu, novější první.
+ *
+ * ⚠️ T212 sloupec kdykoli přejmenuje: v srpnu 2026 se z „Time“ stalo
+ * „Time (UTC)“ a protože se autodetekce ptala na přesné „Time“, přestal se
+ * export poznávat ÚPLNĚ — soubor propadl až k univerzální šabloně a uživatel
+ * dostal nesmyslné „Chybí povinný sloupec type“. Platí to pro ruční nahrání
+ * i pro API sync, protože obojí jde stejnou autodetekcí. Nový název přidávej
+ * SEM, ne do podmínek.
+ */
+export const TRADING212_TIME_COLUMNS = ['Time (UTC)', 'Time'] as const;
 
 /**
  * Poplatkové sloupce T212 exportu (sada se liší podle účtu a období).
@@ -63,6 +75,21 @@ interface SplitLeg {
 }
 
 /**
+ * Poznává T212 export podle hlavičky. Čte se JEN první řádek — plný parse
+ * 20MB CSV by tu byl zbytečný.
+ *
+ * Tohle je JEDINÉ místo, kde se rozhoduje „tenhle soubor je z T212“:
+ * autodetekce i parser se ptají stejnou funkcí, takže se nemůžou rozejít.
+ * Dokud měla autodetekce vlastní kopii podmínky, stačilo přejmenování sloupce
+ * v exportu a import přestal fungovat, aniž by spadl jediný test.
+ */
+export function sniffTrading212Csv(text: string): boolean {
+  const { headers } = parseCsv(firstLine(text));
+  const map = new HeaderMap(headers);
+  return map.has('Action') && map.hasAny(TRADING212_TIME_COLUMNS);
+}
+
+/**
  * Parser CSV exportu Trading212 (History → Export, kategorie Orders/Dividends/
  * Transactions/Interest). Mapuje výhradně podle NÁZVŮ sloupců — T212 mění jejich
  * sadu i pořadí podle zvolených kategorií. Datum vypořádání export neobsahuje,
@@ -77,7 +104,7 @@ export function parseTrading212Csv(text: string): ImportResult {
   // účtu) — to není chyba formátu, ale nula transakcí.
   if (text.trim() === '') return result;
 
-  if (!map.has('Action') || !map.has('Time')) {
+  if (!map.has('Action') || !map.hasAny(TRADING212_TIME_COLUMNS)) {
     result.errors.push({
       line: 1,
       message: `Soubor nevypadá jako Trading212 export — chybí sloupce "Action"/"Time". Nalezené sloupce: ${headers.join(', ')}`,
@@ -94,7 +121,7 @@ export function parseTrading212Csv(text: string): ImportResult {
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
     const action = map.get(row, 'Action');
-    const time = map.get(row, 'Time');
+    const time = map.getAny(row, TRADING212_TIME_COLUMNS);
     const date = time.slice(0, 10);
 
     if (action === '' && row.every((cell) => cell.trim() === '')) return;
@@ -484,19 +511,19 @@ function collectFees(
  */
 export function isTruncatedTrading212Export(text: string): boolean {
   if (text.trim() === '') return false;
-  const { rows } = parseCsv(text);
+  // jeden parse na celý soubor — u 20MB exportu není zadarmo
+  const { headers, rows } = parseCsv(text);
   if (rows.every((row) => row.every((cell) => cell.trim() === ''))) return true;
 
   // Neuzavřená uvozovka: sudý počet uvozovek je v pořádku, lichý znamená, že
   // pole začalo a soubor skončil dřív, než se zavřelo.
-  const radky = text.split('\n').filter((radek) => radek.trim() !== '');
-  const posledni = radky.at(-1) ?? '';
-  if ((posledni.match(/"/g)?.length ?? 0) % 2 === 1) return true;
+  const lines = text.split('\n').filter((line) => line.trim() !== '');
+  const lastLine = lines.at(-1) ?? '';
+  if ((lastLine.match(/"/g)?.length ?? 0) % 2 === 1) return true;
 
   // Ořezaný poslední řádek: míň polí, než má hlavička. Počítá se
   // z rozparsovaného CSV, ať se čárky uvnitř uvozovek nepletou do počtu.
-  const { headers } = parseCsv(text);
-  const posledniRadek = rows.at(-1);
-  if (headers.length === 0 || !posledniRadek) return false;
-  return posledniRadek.length < headers.length;
+  const lastRow = rows.at(-1);
+  if (headers.length === 0 || !lastRow) return false;
+  return lastRow.length < headers.length;
 }

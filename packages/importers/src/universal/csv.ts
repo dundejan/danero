@@ -1,5 +1,5 @@
 import { TransactionSchema } from '@danero/shared';
-import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
+import { firstLine, HeaderMap, isValidIsoDate, parseCsv, sniffDelimiter } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -82,7 +82,8 @@ export const UNIVERSAL_TEMPLATE_CSV = [
 
 export function parseUniversalCsv(text: string): ImportResult {
   const result = emptyResult(UNIVERSAL_BROKER);
-  const { headers, rows } = parseCsv(text);
+  // středník: šablona vyplněná a uložená v českém Excelu (viz sniffDelimiter)
+  const { headers, rows } = parseCsv(text, sniffDelimiter(firstLine(text)));
   const normalizedHeaders = headers.map((h) => h.toLowerCase());
   const map = new HeaderMap(normalizedHeaders);
 

@@ -76,6 +76,33 @@ export function parseCsv(text: string, delimiter: ',' | ';' | '\t' = ','): CsvTa
   return { headers, rows };
 }
 
+/** První řádek textu (hlavička) — bez kopírování celého souboru. */
+export function firstLine(text: string): string {
+  const newline = text.indexOf('\n');
+  return newline === -1 ? text : text.slice(0, newline);
+}
+
+/**
+ * Oddělovač podle hlavičkového řádku.
+ *
+ * Český Excel ukládá „CSV“ se STŘEDNÍKEM (řídí se desetinnou čárkou v locale),
+ * takže uživatel, který si stáhne univerzální šablonu, vyplní ji a uloží,
+ * dostane soubor, který by čárkový parser přečetl jako JEDINÝ sloupec — a
+ * import by ho odmítl s hláškou, že chybí sloupec „type“, přestože ho tam má.
+ * Počítá se mimo uvozovky; při shodě vyhrává čárka (formát šablony).
+ */
+export function sniffDelimiter(header: string): ',' | ';' | '\t' {
+  const counts = { ',': 0, ';': 0, '\t': 0 };
+  let inQuotes = false;
+  for (const ch of header) {
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && (ch === ',' || ch === ';' || ch === '\t')) counts[ch] += 1;
+  }
+  if (counts[';'] > counts[','] && counts[';'] >= counts['\t']) return ';';
+  if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) return '\t';
+  return ',';
+}
+
 /** Přístup k buňkám podle názvu sloupce — formáty brokerů mění pořadí i sadu sloupců. */
 export class HeaderMap {
   private readonly index = new Map<string, number>();
@@ -88,9 +115,24 @@ export class HeaderMap {
     return this.index.has(name);
   }
 
+  /** Je přítomen ALESPOŇ JEDEN z alternativních názvů téhož sloupce? */
+  hasAny(names: readonly string[]): boolean {
+    return names.some((name) => this.index.has(name));
+  }
+
   get(row: string[], name: string): string {
     const i = this.index.get(name);
     return i === undefined ? '' : (row[i] ?? '').trim();
+  }
+
+  /**
+   * Buňka podle PRVNÍHO nalezeného z alternativních názvů sloupce. Brokeři
+   * sloupce přejmenovávají za pochodu (T212: „Time“ → „Time (UTC)“), takže
+   * jediný pevný název je časovaná bomba — viz `TRADING212_TIME_COLUMNS`.
+   */
+  getAny(row: string[], names: readonly string[]): string {
+    const name = names.find((candidate) => this.index.has(candidate));
+    return name === undefined ? '' : this.get(row, name);
   }
 }
 

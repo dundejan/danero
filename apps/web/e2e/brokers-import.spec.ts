@@ -9,6 +9,7 @@ import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
 import { REVOLUT_INVEST_CSV } from '../../../packages/importers/test/fixtures/revolut';
 import { SWISSQUOTE_EN } from '../../../packages/importers/test/fixtures/swissquote';
 import { buildXtbXlsx, XTB_ROWS_EN } from '../../../packages/importers/test/fixtures/xtb';
+import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
 import { registerWithProfile } from './helpers';
 
 /**
@@ -148,4 +149,27 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote'
     buffer: Buffer.from(SWISSQUOTE_EN, 'utf8'),
   });
   await expect(page.getByText(/swissquote/).first()).toBeVisible();
+});
+
+/**
+ * Regrese ze srpna 2026 hlášená z produkce: T212 přejmenoval sloupec „Time“
+ * na „Time (UTC)“, autodetekce si o něj říkala přesným názvem, a tak celý
+ * export propadl až na univerzální šablonu — uživatel dostal nesmyslné
+ * „Chybí povinný sloupec type“. Jednotkové testy to nechytily, protože
+ * fixtury měly starý název; proto se to hlídá i tudy, skutečným uploadem.
+ */
+test('T212 export s přejmenovaným sloupcem „Time (UTC)“ se naimportuje', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E T212 2026', email: 't212-2026@danero.cz' });
+  await page.goto('/import');
+
+  await page.locator('input[name="soubory"]').setInputFiles({
+    name: 't212-2026.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(T212_FIXTURE_2026, 'utf8'),
+  });
+  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
+
+  await expect(page.getByText('t212-2026.csv')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Chybí povinný sloupec/)).toHaveCount(0);
+  await expect(page.getByText(/trading212/).first()).toBeVisible();
 });

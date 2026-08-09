@@ -22,6 +22,19 @@ export interface FioImportResult extends ImportResult {
  * Fio exportuje CSV v kódování windows-1250 — dekódování drž mimo parsování,
  * string vstup parseru už musí být dekódovaný.
  */
+/**
+ * Poznává Fio export z hlavičky — jediná definice pro autodetekci i parser.
+ *
+ * ⚠️ Ptá se JEN na „Datum obchodu“, ne na „Směr“, a schválně: autodetekce běží
+ * nad textem dekódovaným jako UTF-8, ale Fio posílá windows-1250. „Datum
+ * obchodu“ je čisté ASCII, takže je čitelné i při špatném dekódování — „Směr“
+ * by se rozsypalo na „Sm?r“ a soubor by se nepoznal. Parser si obě hlavičky
+ * ověřuje znovu, už nad správně dekódovaným textem.
+ */
+export function sniffFioCsv(header: string): boolean {
+  return header.includes('Datum obchodu');
+}
+
 export function decodeFioCsv(data: ArrayBuffer | Uint8Array): string {
   return new TextDecoder('windows-1250').decode(data);
 }

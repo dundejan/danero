@@ -3,10 +3,17 @@ import {
   dedupeKey,
   dedupeTransactions,
   isTruncatedTrading212Export,
+  parseCsv,
   parseTrading212Csv,
+  sniffTrading212Csv,
   TRADING212_BROKER,
 } from '../src';
-import { T212_FIXTURE as FIXTURE, T212_HEADER as HEADER } from './fixtures/t212';
+import {
+  T212_FIXTURE as FIXTURE,
+  T212_FIXTURE_2026 as FIXTURE_2026,
+  T212_HEADER as HEADER,
+  T212_HEADER_2026 as HEADER_2026,
+} from './fixtures/t212';
 
 describe('Trading212 CSV parser', () => {
   it('namapuje všechny podporované typy, FX konverzi přeskočí', () => {
@@ -347,5 +354,95 @@ describe('useknutý export T212 uprostřed dat (B-3-1)', () => {
   it('uvozovka s čárkou uvnitř názvu není useknutí', () => {
     const sCarkou = `${HLAVICKA}\nMarket buy,2025-03-04 10:00:00,US0378331005,AAPL,"Apple, Inc.",10,180.5,USD,1805,USD`;
     expect(isTruncatedTrading212Export(sCarkou)).toBe(false);
+  });
+});
+
+/**
+ * Regrese formátu ze srpna 2026 (nález hlášený Janem z produkce): T212
+ * přejmenoval „Time“ na „Time (UTC)“ a celý import se rozbil — soubor se
+ * přestal poznávat jako T212, propadl na univerzální šablonu a uživatel dostal
+ * „Chybí povinný sloupec type“. Celá sada přitom svítila zeleně, protože
+ * fixtury měly starý název.
+ */
+describe('Trading212 export 2026 (Time (UTC), merchant sloupce)', () => {
+  it('fixture má stejný počet polí jako hlavička (jinak netestuje, co si myslí)', () => {
+    const lines = FIXTURE_2026.split('\n');
+    const columns = lines[0]!.split(',').length;
+    for (const line of lines.slice(1)) {
+      expect(parseCsv(`${lines[0]}\n${line}`).rows[0]).toHaveLength(columns);
+    }
+  });
+
+  it('pozná se jako T212 export, ne jako univerzální šablona', () => {
+    expect(sniffTrading212Csv(FIXTURE_2026)).toBe(true);
+    expect(sniffTrading212Csv(HEADER_2026)).toBe(true);
+  });
+
+  it('starý název sloupce „Time“ pořád funguje', () => {
+    expect(sniffTrading212Csv(FIXTURE)).toBe(true);
+  });
+
+  it('naparsuje obchody a úrok, platby kartou a cashback přeskočí', () => {
+    const result = parseTrading212Csv(FIXTURE_2026);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual([
+      'INTEREST',
+      'BUY',
+      'SELL',
+      'DIVIDEND',
+    ]);
+    // Card debit + Spending cashback = pohyby mimo daňový výpočet CP
+    expect(result.skipped).toHaveLength(2);
+  });
+
+  it('datum se vezme i z času s offsetem (+00:00)', () => {
+    const result = parseTrading212Csv(FIXTURE_2026);
+    const buy = result.transactions.find((t) => t.type === 'BUY')!;
+    if (buy.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.tradeDate).toBe('2026-02-10');
+    expect(buy.quantity.toString()).toBe('10');
+    expect(buy.pricePerShare.toString()).toBe('185.5');
+  });
+
+  it('není označen za useknutý (nové sloupce jsou často prázdné)', () => {
+    expect(isTruncatedTrading212Export(FIXTURE_2026)).toBe(false);
+  });
+});
+
+/**
+ * Přechod na nový formát nesmí nic zdvojit. T212 s přejmenováním sloupce změnil
+ * i tvar ID (číslo → UUID), takže kdyby dedupe stál na ID brokera, Jan by si
+ * po prvním úspěšném importu naimportoval celou historii podruhé. Stojí na
+ * OTISKU OBSAHU, a tohle to hlídá.
+ */
+describe('starý a nový formát téhož výpisu se nezdvojí', () => {
+  it('tytéž události ze starých i nových sloupců dají tytéž dedupe klíče', () => {
+    // stejná data, jen hlavička a ID ve starém tvaru
+    const stary = FIXTURE_2026.split('\n')
+      .map((line, index) =>
+        index === 0
+          ? line.replace('Time (UTC)', 'Time')
+          : line.replace(/019fbae1-[0-9a-f-]+|019fc06a-[0-9a-f-]+|019fbffe-[0-9a-f-]+/, (m) =>
+              `EOF${m.length}`,
+            ),
+      )
+      .join('\n');
+
+    const novy = parseTrading212Csv(FIXTURE_2026);
+    const stare = parseTrading212Csv(stary);
+    expect(novy.errors).toEqual([]);
+    expect(stare.errors).toEqual([]);
+    expect(stare.transactions).toHaveLength(novy.transactions.length);
+
+    // první import proběhne, druhý (v opačném tvaru) je celý duplicitní
+    const prvni = dedupeTransactions(TRADING212_BROKER, stare.transactions);
+    const druhy = dedupeTransactions(
+      TRADING212_BROKER,
+      novy.transactions,
+      prvni.fresh.map((f) => f.key),
+    );
+    expect(prvni.fresh).toHaveLength(novy.transactions.length);
+    expect(druhy.fresh).toHaveLength(0);
+    expect(druhy.duplicates).toBe(novy.transactions.length);
   });
 });
