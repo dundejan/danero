@@ -436,6 +436,13 @@ export const subscriptions = pgTable('subscriptions', {
   /** Použitý promokód — podklad pro výplaty partnerům (docs/19). */
   promoCode: text('promo_code'),
   /**
+   * Proč jsme přístup odebrali my ('dispute'), ne Stripe. Denní rekonciliace
+   * takový řádek NESMÍ odemknout: ve Stripe předplatné běží dál (chargeback
+   * ruší platbu, ne předplatné), takže se stav rozchází záměrně a srovnání
+   * by zámek do rána zrušilo (nález C-3-02). Vyhraná reklamace ho maže.
+   */
+  revokedReason: text('revoked_reason'),
+  /**
    * Kdy zákazník výslovně požádal o zahájení plnění před uplynutím 14denní
    * lhůty (§ 1837 písm. l OZ). Bez tohohle záznamu bychom nedoložili, že
    * odstoupení už nepřipadá v úvahu — proto se ukládá k platbě, ne do auditu.

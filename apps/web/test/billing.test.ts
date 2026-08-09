@@ -897,6 +897,22 @@ describe('vrácení peněz a reklamace', () => {
     return db;
   }
 
+  /** Jen zaplacené podklady, bez předplatného — pro testy, které zkoumají je. */
+  async function dbSPodklady() {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await applyStripeEvent(
+      db,
+      checkoutEvent({
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1', taxYear: '2026' },
+        payment_intent: 'pi_1',
+        customer: 'cus_1',
+      }),
+    );
+    return db;
+  }
+
   const refundEvent = (overrides: Record<string, unknown> = {}) =>
     ({
       type: 'charge.refunded',
@@ -947,7 +963,12 @@ describe('vrácení peněz a reklamace', () => {
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
   });
 
-  it('reklamace platby (chargeback) zamkne podklady i předplatné', { timeout: 30_000 }, async () => {
+  /**
+   * C-3-02: `endSubscriptionPeriod` hledá předplatné jen podle zákazníka, takže
+   * reklamace platby za PODKLADY (490 Kč) ukončila i samostatné předplatné za
+   * 990 Kč, které zákazník řádně platí.
+   */
+  it('reklamace podkladů zamkne podklady, ale hlídání běží dál', { timeout: 30_000 }, async () => {
     const db = await dbSePlatbami();
     // dispute nese jen ID platby, zákazníka si musíme dohledat
     stripeState.charges.set('ch_1', { customer: 'cus_1' });
@@ -958,8 +979,38 @@ describe('vrácení peněz a reklamace', () => {
       data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1' } },
     } as unknown as Stripe.Event);
 
+    expect(outcome).toContain('podklady 1');
+    expect(outcome).toContain('předplatné beze změny');
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+    // podklady drží dál běžící předplatné, ne zreklamovaná platba za rok 2026
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+  });
+
+  /**
+   * C-3-02: reklamace zamykala předplatné jen u nás, ve Stripe běželo dál —
+   * a denní rekonciliace ho podle Stripe zase odemkla. Ochrana tak platila
+   * nanejvýš do 3:40 ráno.
+   */
+  it('reklamace předplatného ho zamkne a rekonciliace ho neodemkne', { timeout: 30_000 }, async () => {
+    const db = await dbSePlatbami();
+    // platba za předplatné (žádné podklady na ni nejsou navázané)
+    stripeState.charges.set('ch_sub', { customer: 'cus_1' });
+    // ve Stripe předplatné dál běží — chargeback ruší platbu, ne předplatné
+    stripeState.subscriptionsByCustomer.set('cus_1', [stripeSubscription({})]);
+
+    const outcome = await applyStripeEvent(db, {
+      type: 'charge.dispute.created',
+      created: 1_786_000_600,
+      data: { object: { id: 'dp_2', charge: 'ch_sub', payment_intent: 'pi_sub' } },
+    } as unknown as Stripe.Event);
+
     expect(outcome).toContain('ukončeno');
-    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
+    // podklady zaplacené jinou platbou zůstávají
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+
+    const result = await reconcileSubscriptions(db, ROK_2026);
+    expect(result.updated).toBe(0);
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
   });
 
@@ -1025,10 +1076,17 @@ describe('vrácení peněz a reklamace', () => {
     stripeState.charges.set('ch_1', { customer: 'cus_1' });
     stripeState.subscriptionsByCustomer.set('cus_1', [stripeSubscription({})]);
 
+    // reklamují se obě platby: podklady i předplatné
+    stripeState.charges.set('ch_sub', { customer: 'cus_1' });
     await applyStripeEvent(db, {
       type: 'charge.dispute.created',
       created: 1_786_000_600,
       data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1' } },
+    } as unknown as Stripe.Event);
+    await applyStripeEvent(db, {
+      type: 'charge.dispute.created',
+      created: 1_786_000_601,
+      data: { object: { id: 'dp_2', charge: 'ch_sub', payment_intent: 'pi_sub' } },
     } as unknown as Stripe.Event);
     expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
     expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(false);
@@ -1047,7 +1105,7 @@ describe('vrácení peněz a reklamace', () => {
   });
 
   it('prohraná reklamace nechává zamčeno', { timeout: 30_000 }, async () => {
-    const db = await dbSePlatbami();
+    const db = await dbSPodklady();
     stripeState.charges.set('ch_1', { customer: 'cus_1' });
 
     await applyStripeEvent(db, {
@@ -1065,7 +1123,7 @@ describe('vrácení peněz a reklamace', () => {
   });
 
   it('reklamaci vyhranou po vrácení peněz přístup nevrací', { timeout: 30_000 }, async () => {
-    const db = await dbSePlatbami();
+    const db = await dbSPodklady();
     stripeState.charges.set('ch_1', { customer: 'cus_1' });
 
     await applyStripeEvent(db, {

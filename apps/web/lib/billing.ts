@@ -621,6 +621,9 @@ async function endSubscriptionPeriod(
       status: 'canceled',
       currentPeriodEnd: at,
       cancelAtPeriodEnd: true,
+      // C-3-02: bez tohohle důvodu denní rekonciliace zámek do rána zrušila —
+      // ve Stripe předplatné běží dál, chargeback ruší platbu, ne předplatné
+      revokedReason: reason,
       lastEventAt: at,
       updatedAt: new Date(),
     })
@@ -655,6 +658,11 @@ async function resyncSubscription(db: Db, customerId: string | null, at: Date): 
     const actual = await currentSubscription(customerId, row.stripeSubscriptionId, at);
     if (!actual) return false;
     await upsertSubscription(db, stateFrom(actual, row.userId, at));
+    // zámek po reklamaci padá, teprve když reklamaci vyhrajeme (C-3-02)
+    await db
+      .update(subscriptions)
+      .set({ revokedReason: null, updatedAt: new Date() })
+      .where(eq(subscriptions.userId, row.userId));
     logEvent('warn', 'billing.subscription_restored', { userId: row.userId, customerId });
     return true;
   } catch (error) {
@@ -837,12 +845,18 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
     case 'charge.dispute.created': {
       const dispute = event.data.object;
       const removed = await revokeReportPurchase(db, idOf(dispute.payment_intent), 'dispute');
-      const ended = await endSubscriptionPeriod(
-        db,
-        await customerOfCharge(dispute.charge),
-        eventTime(event),
-        'dispute',
-      );
+      // Reklamovaná platba za PODKLADY nesmí sebrat hlídání: `endSubscriptionPeriod`
+      // hledá jen podle zákazníka, takže chargeback 490 Kč ukončil i samostatné
+      // předplatné za 990 Kč, které zákazník řádně platí (nález C-3-02).
+      const ended =
+        removed > 0
+          ? false
+          : await endSubscriptionPeriod(
+              db,
+              await customerOfCharge(dispute.charge),
+              eventTime(event),
+              'dispute',
+            );
       return `reklamace platby ${dispute.id}: podklady ${removed}, předplatné ${ended ? 'ukončeno' : 'beze změny'}`;
     }
 
@@ -960,6 +974,7 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
       currentPeriodEnd: subscriptions.currentPeriodEnd,
       cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
       source: subscriptions.source,
+      revokedReason: subscriptions.revokedReason,
       stripeCustomerId: subscriptions.stripeCustomerId,
       stripeSubscriptionId: subscriptions.stripeSubscriptionId,
     })
@@ -983,6 +998,16 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
   for (const row of rows) {
     if (row.source !== 'stripe') continue;
     if (!row.stripeCustomerId && !row.stripeSubscriptionId) continue;
+    // C-3-02: přístup, který jsme odebrali my (reklamace platby), se srovnáním
+    // se Stripe nesmí vrátit — ve Stripe předplatné běží dál, protože
+    // chargeback ruší platbu, ne předplatné. Rozdíl je záměrný, jen ho hlásíme.
+    if (row.revokedReason) {
+      logEvent('warn', 'billing.reconcile_skipped_revoked', {
+        userId: row.userId,
+        reason: row.revokedReason,
+      });
+      continue;
+    }
     result.checked += 1;
     try {
       const actual = await currentSubscription(row.stripeCustomerId, row.stripeSubscriptionId, now);

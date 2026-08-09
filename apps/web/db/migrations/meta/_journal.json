@@ -232,6 +232,13 @@
       "when": 1786380000000,
       "tag": "0032_semantic_dedupe_key",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786381000000,
+      "tag": "0033_subscription_revoked_reason",
+      "breakpoints": true
     }
   ]
 }
