@@ -139,4 +139,6 @@ Od 3. 8. 2026 je kód open source (AGPL-3.0) a hostovaná služba běží na dan
 spuštění v interním repozitáři `danero-interni` (`docs/15-open-source.md`).
 
 **Plány, marketing, audity a deník žijí v privátním repozitáři `danero-interni`**
-— průběh fází a poznámky zapisuj tam (`docs/09`, `docs/12`, `DENIK.md`), ne sem.
+— průběh a poznámky zapisuj tam, ne sem. Rozcestník je jeho `README.md`;
+prakticky potřebuješ `docs/27-zbyva-opravit.md` (akční backlog) a `docs/DENIK.md`.
+Dokončená práce (staré plány, audity 1 a 2) je v `docs/archiv/`.
