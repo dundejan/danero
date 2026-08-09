@@ -1,7 +1,9 @@
+import Link from 'next/link';
 import { desc, eq } from 'drizzle-orm';
 import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { buttonVariants } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { PlatformCatalog } from '@/components/platform-catalog';
@@ -15,6 +17,7 @@ import {
 import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
+import { resolveEntitlements } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 import { Toast } from '@/components/toast';
 import { FileField } from '@/components/ui/file-field';
@@ -77,13 +80,42 @@ const BROKER_COPY: Record<string, BrokerCopy> = {
   },
 };
 
+/**
+ * Zamčené napojení brokera přes API (docs/19) — MÍSTO formuláře, ne vedle něj.
+ *
+ * Dokud tu formulář stál i bez předplatného, uživatel poctivě prošel návod,
+ * vygeneroval si u brokera klíč, vyplnil ho — a teprve po odeslání se dozvěděl,
+ * že funkce je placená. Návod na klíč se schválně taky neukazuje: k ničemu mu
+ * teď není. Ruční nahrání výpisů zůstává zdarma, proto na něj odkazujeme.
+ */
+function BrokerSyncLocked({ broker, whatItDoes }: { broker: string; whatItDoes: string }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-inkoust-tlumeny">{whatItDoes}</p>
+      <p className="text-sm font-semibold">
+        Součást hlídání za {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.
+      </p>
+      <Link href="/cenik" className={buttonVariants({ variant: 'primary' })}>
+        Zobrazit ceník
+      </Link>
+      <p className="text-xs text-inkoust-tlumeny">
+        Výpis z {broker} můžeš i bez předplatného nahrát ručně níž na téhle stránce —
+        limity i časové testy pak počítáme ze stejných dat.
+      </p>
+    </div>
+  );
+}
+
 /** Připojený broker: stav synchronizace + spuštění + rekonciliace + odpojení. */
 function ConnectedBroker({
   account,
   activeJob,
+  locked,
 }: {
   account: BrokerAccountRow;
   activeJob: SyncJobView | null;
+  /** Předplatné doběhlo, ale účet zůstal připojený — sync spustit nejde. */
+  locked: boolean;
 }) {
   const reconciliation = (account.lastReconciliation ?? null) as StoredReconciliation | null;
   const copy = BROKER_COPY[account.broker] ?? DEFAULT_COPY;
@@ -104,13 +136,26 @@ function ConnectedBroker({
             : copy.firstSync}{' '}
           {copy.note}
         </p>
-        <form action={syncBrokerAction}>
-          <input type="hidden" name="ucet" value={account.id} />
-          <SubmitButton variant="secondary" pendingLabel="Spouštím…">
-            {account.lastSyncedAt ? 'Synchronizovat teď' : copy.buttonFirst}
-          </SubmitButton>
-        </form>
+        {locked ? (
+          <Link href="/cenik" className={buttonVariants({ variant: 'secondary' })}>
+            Obnovit hlídání
+          </Link>
+        ) : (
+          <form action={syncBrokerAction}>
+            <input type="hidden" name="ucet" value={account.id} />
+            <SubmitButton variant="secondary" pendingLabel="Spouštím…">
+              {account.lastSyncedAt ? 'Synchronizovat teď' : copy.buttonFirst}
+            </SubmitButton>
+          </form>
+        )}
       </div>
+      {locked && (
+        <p className="border-t border-linka pt-3 text-sm text-inkoust-tlumeny">
+          Automatická synchronizace je součást hlídání za{' '}
+          {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně a teď neběží. Klíč zůstává uložený —
+          po obnovení naváže tam, kde skončil. Výpisy můžeš dál nahrávat ručně.
+        </p>
+      )}
       {/* selhání celého běhu (pád API, recovery) žije vedle rekonciliace —
           ta drží poslední platný stav pozic a chybou se nepřepisuje */}
       {account.lastSyncError && (
@@ -219,6 +264,9 @@ export default async function ImportPage({
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
     loadAliases(db, user.id),
   ]);
+  // Napojení brokera přes API je placené (docs/19) — stránka to musí vědět
+  // DOPŘEDU, ne až server action po odeslání formuláře.
+  const entitlements = await resolveEntitlements(db, user.id);
   const t212 = accounts.find((account) => account.broker === 'trading212');
   const ibkr = accounts.find((account) => account.broker === 'ibkr');
 
@@ -263,7 +311,7 @@ export default async function ImportPage({
           kind="chyba"
           text={
             chyba === 'velikost'
-              ? 'Soubor je větší než 4 MB — tolik jich hosting v jednom nahrání propustí. Stáhni export po kratších obdobích (třeba po roce) a nahraj je postupně, nebo napoj brokera přes API, kde limit neplatí.'
+              ? 'Soubor je větší než 4 MB — tolik jich hosting v jednom nahrání propustí. Stáhni export po kratších obdobích (třeba po roce) a nahraj je postupně; nic se nezdvojí. Limit obchází i napojení brokera přes API, to je ale součást placeného hlídání.'
               : chyba === 'isin'
                 ? 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.'
                 : chyba === 'mena'
@@ -344,6 +392,12 @@ export default async function ImportPage({
               <ConnectedBroker
                 account={t212}
                 activeJob={activeJobs.has(t212.id) ? toSyncJobView(activeJobs.get(t212.id)!) : null}
+                locked={!entitlements.brokerSync}
+              />
+            ) : !entitlements.brokerSync ? (
+              <BrokerSyncLocked
+                broker="Trading 212"
+                whatItDoes="Danero si přes klíč jen pro čtení stáhne celou historii, denně ji aktualizuje a hlídá, že sedí pozice — bez jediného ručního exportu."
               />
             ) : (
               <>
@@ -421,6 +475,12 @@ export default async function ImportPage({
               <ConnectedBroker
                 account={ibkr}
                 activeJob={activeJobs.has(ibkr.id) ? toSyncJobView(activeJobs.get(ibkr.id)!) : null}
+                locked={!entitlements.brokerSync}
+              />
+            ) : !entitlements.brokerSync ? (
+              <BrokerSyncLocked
+                broker="Interactive Brokers nebo Lynx"
+                whatItDoes="Danero si přes Flex Query a token jen pro čtení stáhne výpisy sám, denně je aktualizuje a hlídá, že sedí pozice."
               />
             ) : (
               <>

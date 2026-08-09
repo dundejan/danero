@@ -1,8 +1,11 @@
 node_modules/
 dist/
 .next/
-# oddělený distDir pro E2E vedle běžícího dev serveru (NEXT_DIST_DIR)
-.next-e2e/
+# Oddělené distDiry (NEXT_DIST_DIR) — E2E i ladicí běhy vedle spuštěného
+# `pnpm dev`. Glob schválně: každý nový běh si zakládá vlastní adresář
+# (.next-e2e, .next-paywall, .next-a11y…) a vyjmenovávat je po jednom
+# znamenalo, že se dřív nebo později některý commitne.
+.next-*/
 next-env.d.ts
 .turbo/
 coverage/

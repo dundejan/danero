@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { d } from '@danero/shared';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Toast } from '@/components/toast';
@@ -5,10 +6,12 @@ import { TwoFactorSection } from '@/components/two-factor-section';
 import { Card, CardTitle } from '@/components/ui/card';
 import { AutoSubmit } from '@/components/ui/auto-submit';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { buttonVariants } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
+import { resolveEntitlements } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 import { getAuth } from '@/lib/auth';
 import { headers } from 'next/headers';
@@ -16,6 +19,7 @@ import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { getNotificationPrefs } from '@/lib/notifications';
 import { humanizeUserAgent } from '@/lib/ua';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
+import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { firstParam } from '@/lib/utils';
 import {
   changeEmailAction,
@@ -46,6 +50,10 @@ export default async function SettingsPage({
   const currentSession = await auth.api.getSession({ headers: requestHeaders });
   const auditEvents = await recentAuditEvents(db, user.id);
   const prefs = await getNotificationPrefs(db, user.id);
+  // Hlídací e-maily rozesílá cron JEN platícím (api/cron/notify) — stránka to
+  // musí říct rovnou, jinak si uživatel zdarma poctivě nastaví typy a frekvenci
+  // a pak marně čeká na e-mail, který nikdy nepřijde.
+  const entitlements = await resolveEntitlements(db, user.id);
   // R-05c: roky, které si drží konfiguraci z doby, kdy se za ně generovaly podklady
   const pinnedYears = await listPinnedTaxYears(db, user.id);
 
@@ -439,6 +447,26 @@ export default async function SettingsPage({
 
           <Card className="space-y-4" id="notifikace">
             <CardTitle>E-mailová upozornění</CardTitle>
+            {!entitlements.notifications ? (
+              /* Rozesílku dělá cron jen platícím — nabízet tu funkční přepínače
+                 by znamenalo slíbit e-maily, které nikdy nedorazí. */
+              <div className="space-y-3">
+                <p className="text-sm text-inkoust-tlumeny">
+                  Hlídáme za tebe časové testy, limity i termíny přiznání a dáme ti vědět
+                  e-mailem dřív, než bude pozdě — každý den, nebo v týdenním souhrnu.
+                </p>
+                <p className="text-sm font-semibold">
+                  Součást hlídání za {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně.
+                </p>
+                <Link href="/cenik" className={buttonVariants({ variant: 'primary' })}>
+                  Zobrazit ceník
+                </Link>
+                <p className="text-xs text-inkoust-tlumeny">
+                  Upozornění v aplikaci vidíš i bez předplatného — spočítáme je vždy, když
+                  si otevřeš přehled. Placené je jen to, že za tebou přijdou samy.
+                </p>
+              </div>
+            ) : (
             <form action={saveNotificationPrefsAction} className="space-y-4">
               <Switch name="emaily-zapnute" defaultChecked={prefs.emailEnabled} label="Posílat e-maily" />
 
@@ -492,6 +520,7 @@ export default async function SettingsPage({
               </p>
               <AutoSubmit />
             </form>
+            )}
           </Card>
 
           <Card className="space-y-4" id="aktivita">
