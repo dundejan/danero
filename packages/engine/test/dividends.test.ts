@@ -181,9 +181,11 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     const result = run([interest({ amount: '10000', sourceCountry: 'US', withholdingTax: '1000' })]);
     expect(result.dividends.foreignWithholdingCzk.toString()).toBe('1000');
     expect(result.dividends.creditableWithholdingCzk.toString()).toBe('0');
-    // úrok zdaněný proti smlouvě nesmí zvednout strop zápočtu dividendám téhož
-    // státu — do koeficientu § 38f nevstupuje (shodně s Přílohou 3 v XML)
-    expect(result.dividends.creditableByCountry['US']!.interestGrossCzk.toString()).toBe('0');
+    // A1-3-05: úrok zdaněný proti smlouvě nesmí zvednout strop zápočtu
+    // dividendám téhož státu — do koeficientu § 38f nevstupuje. Řádek proto
+    // nevzniká vůbec: dřív tu stál s příjmem 0 a srážkou 1 000 Kč, což je
+    // v Příloze 3 nesmyslná sazba a v součtu za stát čirý šum.
+    expect(result.dividends.creditableByCountry['US']).toBeUndefined();
     const warning = result.warnings.find((w) => w.code === 'INTEREST_WITHHOLDING_ABOVE_TREATY');
     expect(warning?.context).toMatchObject({ country: 'US', overCzk: '1000.00' });
   });
@@ -334,5 +336,32 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     ]);
     expect(result.tax.separate16a.taxCzk.lt(result.tax.general.taxCzk)).toBe(true);
     expect(result.tax.recommended).toBe('GENERAL');
+  });
+});
+
+/**
+ * A1-3-05: srážka z úroku se přičítala do řádku státu, jehož příjem se tam
+ * záměrně nepřičetl (strop čl. 11 = 0 %). US pak v Příloze 3 vycházel jako
+ * příjem 100 000 / srážka 18 000, tedy 18 % nad smluvních 15 %.
+ */
+describe('R-07f: nezapočitatelná srážka z úroku nekazí rozpis po státech (A1-3-05)', () => {
+  it('řádek US nese jen dividendu — srážka z úroku do sazby nevstoupí', () => {
+    const result = run([
+      dividend({ gross: '100000', sourceCountry: 'US', withholdingTax: '15000' }),
+      interest({ amount: '10000', sourceCountry: 'US', withholdingTax: '3000' }),
+    ]);
+    const us = result.dividends.creditableByCountry['US']!;
+    expect(us.grossCzk.toString()).toBe('100000');
+    expect(us.interestGrossCzk.toString()).toBe('0');
+    expect(us.withholdingCzk.toString()).toBe('15000');
+    // celková sražená daň v zahraničí o propadlou část nepřijde
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('18000');
+    expect(hasWarning(result, 'INTEREST_WITHHOLDING_ABOVE_TREATY')).toBe(true);
+  });
+
+  it('úrok bez určené země nezaloží řádek XX s nulovým příjmem', () => {
+    const result = run([interest({ amount: '5000', sourceCountry: undefined, withholdingTax: '1500' })]);
+    expect(result.dividends.creditableByCountry['XX']).toBeUndefined();
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('1500');
   });
 });

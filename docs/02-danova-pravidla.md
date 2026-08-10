@@ -132,7 +132,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 
 - **R-05a Cash princip**: příjem patří do roku **připsání peněz** (na brokerský účet), ne roku obchodu.
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
-- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS` | `MANUAL`; zvolená metoda se per rok zafixuje a dokumentuje. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
+- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS`; zvolená metoda se per rok zafixuje a dokumentuje. Individuální identifikaci (`MANUAL`) zákon připouští, ale **engine ji neumí** a tenhle dokument ji dřív omylem sliboval (nález A1-3-10) — typ `MatchingMethod` má čtyři hodnoty a ruční párování lotů nemá ani UI. Až přibude, patří sem zpátky. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
 
   **Fixace konfigurace per rok (implementace).** Podmínku konzistence nese
   tabulka `tax_year_settings` (uživatel + daňový rok + čas fixace + zafixované
@@ -329,9 +329,20 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   100k **nepočítají vůbec** — úhrn se posuzuje jen z ne-EMT tržeb. EMT zůstává
   **stejným druhem příjmu § 10** jako ostatní kryptoaktiva (R-10c) — zisky a ztráty
   se uvnitř druhu kompenzují. EMT detekujeme podle tickeru instrumentu (seznam
-  `EMT_TICKERS` v enginu: USDT, USDC, DAI… — hlavní fiat-podložené EMT dle MiCA,
+  `EMT_TICKERS` v enginu: USDT, USDC, EURC… — hlavní fiat-podložené EMT dle MiCA,
   rozšiřitelný); seznam nemůže být úplný — exotický stablecoin mimo seznam zachytí
-  stávající varování `CRYPTO_EMT_ASSUMPTION` (R-10g). **Samostatný limit vedle
+  stávající varování `CRYPTO_EMT_ASSUMPTION` (R-10g).
+
+  ⚠️ **Ne každý stablecoin je EMT.** Definice v MiCA čl. 3 odst. 1 bodu 7 chce
+  kryptoaktivum, které drží stabilní hodnotu odkazem na **jednu úřední měnu**
+  a je kryté peněžními prostředky. `DAI` (nadkolateralizovaný kryptoaktivy)
+  a `USDD` (algoritmický) tuhle podmínku nesplňují — jsou nanejvýš ART
+  (asset-referenced token), a § 4/1 zj) vylučuje z osvobození **jen EMT**.
+  Jejich zařazení mezi EMT proto poplatníka **přetěžuje bez opory v zákoně**
+  (nález A2-3-13). Engine je drží ve vyloučení jako **bezpečný default**
+  (opačné rozhodnutí = doměrek), ale eviduje je zvlášť v `EMT_DISPUTED_TICKERS`
+  a vydává INFO `CRYPTO_EMT_DISPUTED` s vyčíslením dotčených tržeb, aby
+  rozhodnutí zůstalo na poplatníkovi. **Samostatný limit vedle
   limitu CP** (R-02d) — oba se čerpají nezávisle. Cliff jako R-02a (překročení =
   osvobození padá celé). Neplatí pro krypto v obchodním majetku (a 3 roky po
   ukončení činnosti).
@@ -481,6 +492,17 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   příjmy druhu (§ 10/4, R-12b), takže neuznaná prémie 30 000 Kč při příjmech
   druhu 5 000 Kč nemůže základ snížit o víc než o těch 5 000 Kč. Hlásit horní
   odhad by uživatele hnalo do rizikového výkladu za výhodu, která neexistuje.
+
+  ⚠️ **Hranice je nulový příjem a zůstává skoková — vědomě.** Pravidlo míří na
+  *bezcennou expiraci*, ne na ztrátový prodej. Nabízí se uznávat výdaj jen do
+  výše příjmu z téhož uzavření (tím by útes „za 0 Kč neuznáno celé, za 1 Kč
+  uznáno celé“ zmizel), jenže takové krácení dopadne i na obyčejný ztrátový
+  prodej — opce koupená za 10 000 a prodaná za 2 000 by přišla o 8 000 Kč
+  výdaje — a tím zruší kompenzaci ztrát uvnitř druhu, kterou § 10/4 přiznává
+  (R-12b). Vyzkoušeno, padá na tom golden test kompenzace. Citlivost výsledku
+  na to, jestli výpis ukazuje nulu nebo pár haléřů, proto neřeší výpočet, ale
+  INFO `DERIVATIVE_NEAR_WORTHLESS_CLOSE` (příjem pod 1 % pořizovací ceny při
+  vypnutém přepínači), aby si uživatel podklad zkontroloval (nález A2-3-07).
 - **R-12j Opce — short prémie**: přijatá prémie = příjem druhu v roce PŘIJETÍ
   (hotovostní princip § 5); zpětný odkup = výdaj druhu v roce zaplacení (přes
   přelom roku nemusí mít proti čemu jít — varování). Jistota střední.

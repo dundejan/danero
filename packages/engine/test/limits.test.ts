@@ -261,3 +261,62 @@ describe('R-09 povinnost přiznání a oznámení § 38v', () => {
     expect(hasWarning(result, 'CAP_40M_REDUCED')).toBe(true);
   });
 });
+
+/**
+ * A1-3-04: u poplatníka s cennými papíry v obchodním majetku (R-02f)
+ * osvobození t) ani u) neexistuje. Pool je proto nulový — a měřák z toho
+ * dělal „0 / 100 000, zóna OK“ přesně tam, kde se daní každá koruna.
+ */
+describe('R-02f: limit 100k u obchodního majetku není nevyčerpaný, ale neaplikovatelný', () => {
+  const txs = [
+    buy({ quantity: '1', pricePerShare: '50000', tradeDate: '2020-01-10', settlementDate: '2020-01-10' }),
+    sell({ quantity: '1', pricePerShare: '90000', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+  ];
+
+  it('s obchodním majetkem je limit neaplikovatelný a nehlásí zónu v pořádku', () => {
+    const result = run(txs, { profile: { hasSecuritiesInBusinessAssets: true } });
+    expect(result.limits.limit100k.applicable).toBe(false);
+    expect(result.limits.limit100k.limitCzk.toString()).toBe('0');
+    // daní se celý prodej, i když je tržba pod 100 000 Kč
+    expect(result.securities.base10Czk.toString()).toBe('40000');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('90000');
+  });
+
+  it('bez obchodního majetku zůstává limit beze změny', () => {
+    const result = run(txs);
+    expect(result.limits.limit100k.applicable).toBe(true);
+    expect(result.limits.limit100k.limitCzk.toString()).toBe('100000');
+    expect(result.securities.base10Czk.toString()).toBe('0');
+  });
+});
+
+/**
+ * A1-3-06: § 38g počítá do limitu i příjmy podle § 7, které Danero z výpisů
+ * nevidí a ruční pole v Nastavení je (kvůli paušálu) nepokrývá. Zaměstnanec
+ * s 15 000 Kč z investic viděl „15 000/20 000 v pořádku“, přestože mu stačilo
+ * 5 001 Kč z faktury, aby povinnost podat přiznání vznikla.
+ */
+describe('R-09: limity podání říkají, že o příjmech z § 7 nevědí (A1-3-06)', () => {
+  it('zaměstnanec pod limitem se dozví, že se počítá i samostatná činnost', () => {
+    const result = run([dividend({ gross: '15000', sourceCountry: 'US' })], {
+      profile: { regime: 'ZAMESTNANEC' },
+    });
+    expect(result.limits.employee20k.status.exceeded).toBe(false);
+    expect(hasWarning(result, 'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT')).toBe(true);
+  });
+
+  it('když je limit prolomený už z investic, upozornění nemá co dodat', () => {
+    const result = run([dividend({ gross: '25000', sourceCountry: 'US' })], {
+      profile: { regime: 'ZAMESTNANEC' },
+    });
+    expect(result.limits.employee20k.status.exceeded).toBe(true);
+    expect(hasWarning(result, 'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT')).toBe(false);
+  });
+
+  it('paušalistovi se nevydá — u něj je § 7 sám paušál (R-08)', () => {
+    const result = run([dividend({ gross: '15000', sourceCountry: 'US' })], {
+      profile: { regime: 'PAUSAL' },
+    });
+    expect(hasWarning(result, 'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT')).toBe(false);
+  });
+});

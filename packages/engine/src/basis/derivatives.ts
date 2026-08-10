@@ -184,11 +184,15 @@ export function computeDerivatives(
     if (tx.type === 'TRANSFER_IN') {
       // R-04i analogicky: převod nepřerušuje nic (deriváty test nemají) — jen
       // přenáší otevírací cenu; bez ní počítáme 0 a upozorníme
-      if (!tx.acquisition) {
+      // A2-3-08: hlídat se musí i `acquisition` BEZ ceny. Datum bez
+      // `costPerShare` prošlo tiše s nulou, takže z převedené opce prodané
+      // za 12 000 Kč vyšel základ 12 000 Kč, výdaj 0 a ani jedno varování —
+      // ledger cenných papírů na týž vstup hlásí `TRANSFER_WITHOUT_COST`.
+      if (!tx.acquisition || !tx.acquisition.costPerShare) {
         warnings.add(
           'TRANSFER_WITHOUT_ACQUISITION',
           'ERROR',
-          `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} bez údajů o původním otevření — otevírací cena 0. Doplň acquisition_date/price/currency z výpisu původního brokera.`,
+          `Převod ${tx.ticker ?? tx.name ?? tx.isin} z ${czDateText(tx.date)} ${tx.acquisition ? 'bez otevírací ceny' : 'bez údajů o původním otevření'} — počítáme s otevírací cenou 0, takže celá tržba z uzavření vyjde jako zisk. Doplň acquisition_date/price/currency z výpisu původního brokera.`,
           { txId: tx.id, isin: tx.isin },
         );
       }
@@ -273,9 +277,29 @@ export function computeDerivatives(
                 ),
             ZERO,
           );
-          // R-12i: uzavření bez příjmu (expirace/uplatnění za 0) — výdaj dle přepínače
+          // R-12i: uzavření bez příjmu (expirace/uplatnění za 0) — výdaj dle přepínače.
+          //
+          // Hranice schválně zůstává na nule a NE „výdaj jen do výše příjmu“:
+          // takové plynulé krácení by zasáhlo každý ztrátový prodej a zrušilo
+          // kompenzaci ztrát uvnitř druhu, kterou garantuje § 10/4 (R-12b) —
+          // ověřeno golden testem, který na tom padá. Citlivost výsledku na
+          // rozdíl mezi expirací za 0 a prodejem za pár haléřů proto neřešíme
+          // výpočtem, ale varováním níž (nález A2-3-07).
           const isWorthless = incomeCzk.lte(0);
           const expense = costCzk.plus(feeShare(matched));
+          if (
+            !options.derivativesExpensesPerType &&
+            !isWorthless &&
+            expense.gt(0) &&
+            incomeCzk.lt(expense.mul('0.01'))
+          ) {
+            warnings.add(
+              'DERIVATIVE_NEAR_WORTHLESS_CLOSE',
+              'INFO',
+              `Opce ${tx.ticker ?? tx.name ?? tx.isin} uzavřená ${czDateText(txDate)} vynesla jen ${czkText(incomeCzk)} proti pořizovací ceně ${czkText(expense)}. Tu jsme ti jako výdaj uznali, protože prodej nějaký příjem přinesl. Kdyby v podkladech stála nula (bezcenná expirace), uznat by se nesměla — rozdíl v základu daně by byl ${czkText(expense)}. Zkontroluj si, že to výpis od brokera zachycuje správně.`,
+              { txId: tx.id, isin: tx.isin, incomeCzk: incomeCzk.toFixed(2), expenseCzk: expense.toFixed(2) },
+            );
+          }
           pushItem({
             txId: tx.id,
             isin: tx.isin,

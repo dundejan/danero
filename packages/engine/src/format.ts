@@ -18,7 +18,11 @@ const czNumber = (value: Money, decimalPlaces?: number): string => {
   const abs = value.abs();
   const fixed = decimalPlaces === undefined ? abs.toFixed() : abs.toFixed(decimalPlaces);
   const [whole = '0', frac] = fixed.split('.');
-  const sign = value.isNegative() ? '-' : '';
+  // Zaokrouhlením může ze záporné částky zbýt nula (−0,4 Kč → „-0 Kč“, nález
+  // A1-3-09). Znaménko u nuly nic nesděluje a v hlášce vypadá jako chyba
+  // výpočtu, takže se zahazuje — rozhoduje VYPSANÁ hodnota, ne původní.
+  const isZero = !/[1-9]/.test(fixed);
+  const sign = value.isNegative() && !isZero ? '-' : '';
   return `${sign}${groupThousands(whole)}${frac ? `,${frac}` : ''}`;
 };
 
@@ -33,9 +37,23 @@ export function pctText(fraction: Money, decimalPlaces = 0): string {
   return `${czNumber(value, decimalPlaces)}${NBSP}%`;
 }
 
-/** Počet kusů/kontraktů: desetinná čárka, tisíce s mezerou („1 234,5“). */
+/**
+ * Maximum desetinných míst u počtu kusů. Osm pokryje i satoshi (1e-8 BTC),
+ * což je nejjemnější jednotka, jakou výpisy brokerů reálně nesou.
+ */
+const QTY_DECIMALS = 8;
+
+/**
+ * Počet kusů/kontraktů: desetinná čárka, tisíce s mezerou („1 234,5“).
+ *
+ * Podíly z reverzních splitů jsou periodická čísla (3:1 → 0,666…) a Decimal je
+ * nese na 32 platných cifer, takže se do hlášky vypsalo „prodáno o
+ * 0,66666666666666666666666666666667 ks více“ (nález A1-3-08). Zaokrouhluje se
+ * proto na `QTY_DECIMALS`; koncové nuly `toFixed()` bez argumentu nepřidává,
+ * takže „1,5 ks“ nezhrubne na „1,50000000 ks“.
+ */
 export function qtyText(m: Money): string {
-  return czNumber(m);
+  return czNumber(m.toDecimalPlaces(QTY_DECIMALS, Decimal.ROUND_HALF_UP));
 }
 
 /** ISO datum po česku: „2026-03-12“ → „12. 3. 2026“. */

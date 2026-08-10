@@ -9,31 +9,61 @@
 export const EMT_TICKERS: ReadonlySet<string> = new Set([
   'USDT', // Tether USD
   'USDC', // USD Coin (Circle)
-  'DAI', // Dai (MakerDAO) — algoritmický, ale navázaný na USD
   'BUSD', // Binance USD
   'TUSD', // TrueUSD
   'USDP', // Pax Dollar
   'PYUSD', // PayPal USD
   'FDUSD', // First Digital USD
   'GUSD', // Gemini Dollar
-  'USDD', // USDD (Tron)
   'EURC', // Euro Coin (Circle)
   'EURT', // Tether EUR
   'EURS', // STASIS Euro
 ]);
 
 /**
- * Je identifikátor krypto instrumentu EMT? Importéři u kryptoaktiv ukládají do
- * pole `isin` ticker (Kraken `crypto.asset`, Coinbase/Coinmate/Anycoin/Revolut
- * symbol) — normalizujeme uppercase, ořízneme burzovní sufix (Kraken staked
- * `USDT.S`) a zkusíme i legacy prefix X/Z starých Kraken exportů. Porovnává se
- * výhradně proti seznamu, falešná detekce ne-EMT tickerů proto nehrozí.
+ * Tokeny, které se běžně řadí ke stablecoinům, ale **fiat za sebou nemají**:
+ * DAI je krytý nadkolateralizovanými kryptoaktivy (MakerDAO), USDD je
+ * algoritmický (Tron). Definice EMT v MiCA čl. 3 odst. 1 bodu 7 chce vazbu na
+ * jednu úřední měnu krytou peněžními prostředky — tyhle dva jsou nanejvýš ART
+ * (asset-referenced token), a § 4/1 zj) vylučuje z osvobození jen EMT.
+ *
+ * Do vyloučení je proto pouštíme dál jako **bezpečný default** (R-10g): kdyby
+ * je správce daně za EMT považoval, znamenalo by opačné rozhodnutí doměrek.
+ * Držíme je ale zvlášť, aby engine mohl poctivě říct, kolik na tomhle sporném
+ * výkladu visí, a nechal rozhodnutí na uživateli (nález A2-3-13).
  */
-export function isEmtIdentifier(identifier: string): boolean {
+export const EMT_DISPUTED_TICKERS: ReadonlySet<string> = new Set([
+  'DAI', // Dai (MakerDAO) — nadkolateralizovaný kryptoaktivy, ne fiat
+  'USDD', // USDD (Tron) — algoritmický
+]);
+
+/**
+ * Ticker krypto instrumentu na porovnatelný tvar. Importéři u kryptoaktiv
+ * ukládají do pole `isin` ticker (Kraken `crypto.asset`,
+ * Coinbase/Coinmate/Anycoin/Revolut symbol) — uppercase, ořízne burzovní sufix
+ * (Kraken staked `USDT.S`) a legacy prefix X/Z starých Kraken exportů.
+ */
+function candidates(identifier: string): string[] {
   const code = identifier
     .trim()
     .toUpperCase()
     .replace(/\.[A-Z0-9]{1,4}$/, '');
-  if (EMT_TICKERS.has(code)) return true;
-  return (code.startsWith('X') || code.startsWith('Z')) && EMT_TICKERS.has(code.slice(1));
+  const stripped = code.startsWith('X') || code.startsWith('Z') ? code.slice(1) : null;
+  return stripped ? [code, stripped] : [code];
+}
+
+/**
+ * Je identifikátor krypto instrumentu EMT? Porovnává se výhradně proti
+ * seznamům, falešná detekce ne-EMT tickerů proto nehrozí. Sporné tokeny
+ * (`EMT_DISPUTED_TICKERS`) sem patří taky — default je bezpečný výklad.
+ */
+export function isEmtIdentifier(identifier: string): boolean {
+  return candidates(identifier).some(
+    (code) => EMT_TICKERS.has(code) || EMT_DISPUTED_TICKERS.has(code),
+  );
+}
+
+/** Je to EMT jen podle sporného výkladu (fiat za sebou nemá)? Viz R-10g. */
+export function isDisputedEmtIdentifier(identifier: string): boolean {
+  return candidates(identifier).some((code) => EMT_DISPUTED_TICKERS.has(code));
 }

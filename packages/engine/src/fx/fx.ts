@@ -26,6 +26,25 @@ export class FxConverter {
     return amount.mul(rate);
   }
 
+  /**
+   * Převod pro POMOCNÉ účely (řazení lotů), který nesmí nic hlásit.
+   *
+   * A1-3-07: řazení kandidátů u MAX_PROFIT/MAX_LOSS přepočítává všechny
+   * otevřené loty ISIN — i ty, které se v daném roce vůbec neprodají. Když
+   * takovému lotu chyběl jednotný kurz, `toCzk` sáhl po denním a **zapsal
+   * varování** „metody kurzů se nesmí kombinovat“, přestože se ten lot do
+   * žádného výpočtu nedostal. Chyba se tu polyká celá: výdajová větev roku
+   * příjmu si chybějící kurz nahlásí sama.
+   */
+  toCzkQuiet(amount: Money, currency: string, date: IsoDate): Money | null {
+    const silent = new FxConverter(this.config, this.method, new WarningCollector(), this.daily);
+    try {
+      return silent.toCzk(amount, currency, date);
+    } catch {
+      return null;
+    }
+  }
+
   /** R-06a: jednotný kurz roku, do kterého transakce spadá. */
   private unifiedRate(currency: string, date: IsoDate): Money {
     const year = yearOf(date);

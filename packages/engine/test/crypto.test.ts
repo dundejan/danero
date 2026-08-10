@@ -529,3 +529,81 @@ describe('R-10b: rok bez krypto osvobození (nález A2-12)', () => {
     expect(result.crypto.exemptUnder100k).toBe(true);
   });
 });
+
+/**
+ * A2-3-09: varování o stablecoinech se vydávalo i ve zdaňovacím období před
+ * účinností novely (15. 2. 2025), kde žádné krypto osvobození neexistuje —
+ * tvrdilo tedy, že „osvobození do 100 000 Kč se na ně nevztahuje“ v roce,
+ * kdy se nevztahuje na nic, a u dlouho drženého USDT lhalo i o držbě.
+ */
+describe('R-10a: EMT varování v roce bez krypto osvobození (A2-3-09)', () => {
+  const CFG_2024 = {
+    ...CFG_2025,
+    year: 2024,
+    cryptoRules: { exemptionsAvailable: false, effectiveFrom: null },
+    limits: { ...CFG_2025.limits, timeTestCap: null },
+  } as TaxYearConfig;
+
+  const usdt = (over: Overrides = {}) => ({ isin: 'USDT', assetClass: 'CRYPTO', ...over });
+
+  it('v ZO 2024 se varování nevydá — osvobozovat není co', () => {
+    const result = run(
+      [
+        buy(usdt({ quantity: '1', pricePerShare: '40000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' })),
+        sell(usdt({ quantity: '1', pricePerShare: '50000', tradeDate: '2024-05-01', settlementDate: '2024-05-01' })),
+      ],
+      { config: CFG_2024 },
+    );
+    // prodej se zdaní tak jako tak, jen se o tom nemá tvrdit nepravda
+    expect(result.crypto.base10Czk.toString()).toBe('10000');
+    expect(hasWarning(result, 'CRYPTO_EMT_DETECTED')).toBe(false);
+  });
+
+  it('v ZO 2025 se varování vydá dál', () => {
+    const result = run([
+      buy(usdt({ quantity: '1', pricePerShare: '40000', tradeDate: '2020-06-01', settlementDate: '2020-06-01' })),
+      sell(usdt({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' })),
+    ]);
+    expect(hasWarning(result, 'CRYPTO_EMT_DETECTED')).toBe(true);
+  });
+});
+
+/**
+ * A2-3-13: DAI a USDD za sebou nemají fiat, takže podle MiCA nejsou EMT
+ * a § 4/1 zj) je vylučovat nemusí. Zůstávají vyloučené jako bezpečný default,
+ * ale uživatel se musí dozvědět, že je to sporné (R-10a, R-10g).
+ */
+describe('R-10a: sporné stablecoiny DAI a USDD (A2-3-13)', () => {
+  const dai = (over: Overrides = {}) => ({ isin: 'DAI', assetClass: 'CRYPTO', ...over });
+
+  it('DAI zůstává vyloučený z osvobození — bezpečný default se nemění', () => {
+    const result = run([
+      buy(dai({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' })),
+      sell(dai({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' })),
+    ]);
+    expect(result.crypto.disposals[0]!.isEmt).toBe(true);
+    expect(result.crypto.pool100kCzk.toString()).toBe('0');
+    expect(result.crypto.base10Czk.toString()).toBe('10000');
+  });
+
+  it('u sporných tokenů engine vyčíslí, kolik na tom výkladu visí', () => {
+    const result = run([
+      buy(dai({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' })),
+      sell(dai({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' })),
+    ]);
+    const w = result.warnings.find((x) => x.code === 'CRYPTO_EMT_DISPUTED');
+    expect(w).toBeDefined();
+    expect(w!.level).toBe('INFO');
+    expect(w!.context).toMatchObject({ disputedProceedsCzk: '50000.00', tickers: 'DAI' });
+    // v textu nesmí být interní kód pravidla (pravidlo 3 CLAUDE.md)
+    expect(w!.message).not.toMatch(/R-\d/);
+  });
+
+  it('u jistých EMT (USDT) se sporné varování nevydá', () => {
+    const result = run([
+      buy({ isin: 'USDT', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),
+      sell({ isin: 'USDT', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ]);
+    expect(hasWarning(result, 'CRYPTO_EMT_DISPUTED')).toBe(false);
+  });
+});

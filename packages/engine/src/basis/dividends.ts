@@ -229,6 +229,12 @@ export function computeDividends(
   const interestItems: InterestItem[] = [];
   /** Propadlá srážka z úroků per země (viz varování za smyčkou). */
   const forfeitedInterest = new Map<string, { cap: Money; overCzk: Money }>();
+  /**
+   * A1-3-05: srážka z úroku, u kterého smlouva státu zdroje zdanit nedovoluje.
+   * Do rozpisu po státech nepatří (zkreslila by koeficient § 38f i Přílohu 3),
+   * ale ze souhrnu sražené daně v zahraničí zmizet nesmí.
+   */
+  let nonCreditableInterestWithholding = ZERO;
   for (const tx of interests) {
     const amountCzk = fx.toCzk(tx.amount, tx.currency, tx.date);
     const withholdingCzk = fx.toCzk(tx.withholdingTax, tx.currency, tx.date);
@@ -301,17 +307,30 @@ export function computeDividends(
         overCzk: over.overCzk.plus(withholdingCzk.sub(creditableCzk)),
       });
     }
-    const agg = byCountry[country] ?? emptyCountry;
-    byCountry[country] = {
-      ...agg,
-      // Do koeficientu § 38f (příjmy státu / základ daně) úrok vstupuje jen tam,
-      // kde smlouva zdanění u zdroje vůbec dovoluje. Jinak by zvedl strop
-      // zápočtu i DIVIDENDÁM téhož státu, na což nárok není — daň sraženou
-      // proti smlouvě vrací stát zdroje, ne české přiznání.
-      interestGrossCzk: cap.gt(0) ? agg.interestGrossCzk.plus(amountCzk) : agg.interestGrossCzk,
-      withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
-      creditableCzk: agg.creditableCzk.plus(creditableCzk),
-    };
+    // Do koeficientu § 38f (příjmy státu / základ daně) úrok vstupuje jen tam,
+    // kde smlouva zdanění u zdroje vůbec dovoluje. Jinak by zvedl strop
+    // zápočtu i DIVIDENDÁM téhož státu, na což nárok není — daň sraženou
+    // proti smlouvě vrací stát zdroje, ne české přiznání.
+    //
+    // A1-3-05: při nulovém stropu se do řádku nesmí přičíst ani SRÁŽKA. Dřív
+    // se přičítala, takže US s dividendami 100 000/15 000 a úrokem 10 000/3 000
+    // vycházel jako {příjem 100 000, srážka 18 000} = 18 % nad smluvních 15 %,
+    // a úrok bez uvedené země vyrobil řádek `XX` s příjmem 0 a srážkou 1 500 Kč.
+    // Nezapočitatelná srážka zůstává vidět ve výpisu úroků a ve varování
+    // INTEREST_WITHHOLDING_ABOVE_TREATY — v Příloze 3 nemá co dělat.
+    if (cap.gt(0)) {
+      const agg = byCountry[country] ?? emptyCountry;
+      byCountry[country] = {
+        ...agg,
+        interestGrossCzk: agg.interestGrossCzk.plus(amountCzk),
+        withholdingCzk: agg.withholdingCzk.plus(withholdingCzk),
+        creditableCzk: agg.creditableCzk.plus(creditableCzk),
+      };
+    } else {
+      // Sražená daň v zahraničí padla, i když se nedá započíst — v souhrnu
+      // (§ 8 i UI) zůstat musí, jen mimo rozpis po státech.
+      nonCreditableInterestWithholding = nonCreditableInterestWithholding.plus(withholdingCzk);
+    }
     interestItems.push({
       txId: tx.id,
       date: tx.date,
@@ -352,6 +371,9 @@ export function computeDividends(
     creditable = creditable.plus(roundedCreditable);
     withholdingRounded = withholdingRounded.plus(roundedWithholding);
   }
+  withholdingRounded = withholdingRounded.plus(
+    nonCreditableInterestWithholding.toDecimalPlaces(0, Decimal.ROUND_HALF_UP),
+  );
 
   return {
     czechGrossCzk: czechGross,

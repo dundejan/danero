@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildLedger, inferSettlementDate, isExchangeHoliday, resolveOptions, WarningCollector } from '../src';
-import { buy, corpAction, hasWarning, run, sell } from './helpers';
+import { buy, CFG_2025, corpAction, hasWarning, run, sell } from './helpers';
 import { TransactionSchema } from '@danero/shared';
 
 describe('R-04 korporátní akce', () => {
@@ -349,5 +349,43 @@ describe('R-01a: kanadské ISIN mají vlastní kalendář TSX', () => {
     expect(inferSettlementDate('2026-07-31', 'CA73044W3021', 'STOCK')).toBe('2026-08-04');
     // stejný den u US titulu: pondělí se obchoduje, takže T+1 = 3. 8.
     expect(inferSettlementDate('2026-07-31', 'US0378331005', 'STOCK')).toBe('2026-08-03');
+  });
+});
+
+/**
+ * A1-3-07: řazení kandidátů u MAX_PROFIT/MAX_LOSS přepočítává na CZK všechny
+ * otevřené loty ISIN — i ty, které se v roce vůbec neprodají. Lotu z roku 2019
+ * chyběl jednotný kurz, řazení sáhlo po denním a zapsalo varování „metody
+ * kurzů se nesmí kombinovat“, přestože ten lot do žádného výpočtu nevstoupil.
+ */
+describe('R-06: řazení lotů nesmí hlásit chybějící kurz lotu, který se neprodává (A1-3-07)', () => {
+  // CFG_2025 zná USD pro 2019 i 2023; pro 2018 schválně ne
+  const CFG_BEZ_2018 = {
+    ...CFG_2025,
+    unifiedRatesByYear: { ...CFG_2025.unifiedRatesByYear, 2018: {} },
+  } as typeof CFG_2025;
+
+  // tržba schválně nad 100 000 Kč, jinak by prodej osvobodil hodnotový test
+  // (R-02) a základ by byl 0 bez ohledu na to, který lot se spáruje
+  const txs = [
+    // starý lot v USD bez jednotného kurzu — letos se neprodá
+    buy({ quantity: '10', pricePerShare: '100', currency: 'USD', tradeDate: '2018-03-01', settlementDate: '2018-03-01' }),
+    // dražší lot, který si vybere MAX_LOSS i LIFO
+    buy({ quantity: '10', pricePerShare: '20000', currency: 'CZK', tradeDate: '2023-03-01', settlementDate: '2023-03-01' }),
+    sell({ quantity: '10', pricePerShare: '30000', tradeDate: '2025-06-01', settlementDate: '2025-06-01' }),
+  ];
+
+  it('MAX_LOSS nevydá falešné varování o kombinování kurzů', () => {
+    const result = run(txs, { config: CFG_BEZ_2018, options: { matchingMethod: 'MAX_LOSS' } });
+    // spáruje se dražší lot 2023 (nákup 200 000, tržba 300 000) — lot 2018 se
+    // jen ŘADIL, do výdajů nevstoupil, takže o jeho kurzu není co hlásit
+    expect(result.securities.base10Czk.toString()).toBe('100000');
+    expect(hasWarning(result, 'FX_UNIFIED_RATE_MISSING')).toBe(false);
+  });
+
+  it('LIFO dává tentýž výsledek — kontrola, že scénář stojí na řazení', () => {
+    const result = run(txs, { config: CFG_BEZ_2018, options: { matchingMethod: 'LIFO' } });
+    expect(result.securities.base10Czk.toString()).toBe('100000');
+    expect(hasWarning(result, 'FX_UNIFIED_RATE_MISSING')).toBe(false);
   });
 });

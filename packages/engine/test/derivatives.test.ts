@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { d, parseTransactions } from '@danero/shared';
+import { d, parseTransactions, TransactionSchema } from '@danero/shared';
 import { czkText, inferSettlementDate } from '../src';
 import { buy, CFG_2025, hasWarning, run, sell } from './helpers';
 
@@ -511,5 +511,69 @@ describe('R-12e: opce se vypořádávají T+1, ne T+2 (A2-3-05)', () => {
       ),
     ];
     expect(run(txs).derivatives.taxableIncomeCzk.toString()).toBe('0');
+  });
+});
+
+/**
+ * A2-3-08: `acquisition` s datem, ale bez ceny procházelo tiše s nulou —
+ * z převedené opce prodané za 12 000 Kč vyšel základ 12 000 Kč, výdaj 0
+ * a ani jedno varování. Ledger cenných papírů na týž vstup hlásí chybu.
+ */
+describe('R-04i: derivátový převod bez otevírací ceny se neschová (A2-3-08)', () => {
+  const transferIn = (acquisition: Record<string, unknown> | undefined) =>
+    TransactionSchema.parse({
+      type: 'TRANSFER_IN',
+      id: 'tin-a2308',
+      isin: 'OPT:X',
+      assetClass: 'DERIVATIVE',
+      quantity: '1',
+      date: '2025-01-10',
+      ...(acquisition ? { acquisition } : {}),
+    });
+
+  it('datum bez ceny hlásí chybu stejně jako chybějící údaje úplně', () => {
+    const result = run([
+      transferIn({ date: '2023-05-01' }),
+      optSell({ isin: 'OPT:X', quantity: '1', pricePerShare: '12000', tradeDate: '2025-06-01' }),
+    ]);
+    expect(hasWarning(result, 'TRANSFER_WITHOUT_ACQUISITION')).toBe(true);
+    // číslo se nemění (0 je bezpečný směr — nadhodnocený zisk), jen se o něm ví
+    expect(result.derivatives.base10Czk.toString()).toBe('12000');
+  });
+
+  it('s doplněnou cenou varování nevzniká a výdaj se uplatní', () => {
+    const result = run([
+      transferIn({ date: '2023-05-01', costPerShare: '9000', currency: 'CZK' }),
+      optSell({ isin: 'OPT:X', quantity: '1', pricePerShare: '12000', tradeDate: '2025-06-01' }),
+    ]);
+    expect(hasWarning(result, 'TRANSFER_WITHOUT_ACQUISITION')).toBe(false);
+    expect(result.derivatives.base10Czk.toString()).toBe('3000');
+  });
+});
+
+/**
+ * A2-3-07: útes u R-12i necháváme (jeho zahlazení by zrušilo kompenzaci ztrát
+ * podle § 10/4), ale uzavření za pár haléřů si zaslouží upozornění.
+ */
+describe('R-12i: uzavření těsně nad nulou se ohlásí (A2-3-07)', () => {
+  it('příjem pod 1 % pořizovací ceny vydá INFO s vyčíslením rozdílu', () => {
+    const result = run([
+      optBuy({ isin: 'OPT:C', pricePerShare: '30000', tradeDate: '2025-02-03' }),
+      optSell({ isin: 'OPT:C', pricePerShare: '1', tradeDate: '2025-08-01' }),
+    ]);
+    const w = result.warnings.find((x) => x.code === 'DERIVATIVE_NEAR_WORTHLESS_CLOSE');
+    expect(w).toBeDefined();
+    expect(w!.level).toBe('INFO');
+    // výdaj se uznal — prodej příjem přinesl
+    expect(result.derivatives.expensesCzk.toString()).toBe('1');
+  });
+
+  it('běžný ztrátový prodej upozornění nevydá a výdaj neztrácí', () => {
+    const result = run([
+      optBuy({ isin: 'OPT:D', pricePerShare: '10000', tradeDate: '2025-02-03' }),
+      optSell({ isin: 'OPT:D', pricePerShare: '2000', tradeDate: '2025-08-01' }),
+    ]);
+    expect(hasWarning(result, 'DERIVATIVE_NEAR_WORTHLESS_CLOSE')).toBe(false);
+    expect(result.derivatives.expensesCzk.toString()).toBe('2000');
   });
 });

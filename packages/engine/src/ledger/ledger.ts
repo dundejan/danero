@@ -625,14 +625,10 @@ function orderLots(
     const key = `${lot.id}:${lot.costPerShare.toString()}`;
     let cost = costCzk.get(key);
     if (!cost) {
-      try {
-        cost = fx.toCzk(lot.costPerShare, lot.currency, lot.expenseDate);
-      } catch {
-        // chybějící kurz nesmí shodit stavbu ledgeru pro VŠECHNY roky (řadí se
-        // tu jen kandidáti prodeje) — nouzově nominál; výdajová větev roku
-        // příjmu chybu nahlásí/ošetří sama (FX_*_RATE_MISSING)
-        cost = lot.costPerShare;
-      }
+      // Tiše (A1-3-07): řadí se i loty, které se letos neprodají, takže
+      // chybějící kurz tu nesmí ani shodit ledger, ani vyrobit varování —
+      // výdajová větev roku příjmu si chybu nahlásí sama (FX_*_RATE_MISSING).
+      cost = fx.toCzkQuiet(lot.costPerShare, lot.currency, lot.expenseDate) ?? lot.costPerShare;
       costCzk.set(key, cost);
     }
     return cost;

@@ -10,6 +10,7 @@ import {
 } from '@danero/shared';
 import { computeDerivatives, type DerivativesResult } from './basis/derivatives';
 import { computeDividends, type DividendsResult } from './basis/dividends';
+import { isDisputedEmtIdentifier } from './basis/emt';
 import {
   capExposedProceedsCzk,
   computeSecurities,
@@ -297,8 +298,13 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
   );
 
   // R-10a/R-10g: prodeje detekovaných EMT (stablecoinů) — zj) je vylučuje vždy,
-  // časový test zk) jen dle přepínače; poctivě vyčísli dopad mírnějšího výkladu
-  if (cryptoPrepared.emtProceedsCzk.gt(0)) {
+  // časový test zk) jen dle přepínače; poctivě vyčísli dopad mírnějšího výkladu.
+  //
+  // Ve zdaňovacím období před účinností novely (15. 2. 2025) žádné krypto
+  // osvobození neexistuje, takže EMT nemá být vůči čemu vylučovat — varování
+  // tam tvrdilo nesmysl („osvobození se na ně nevztahuje“, když se nevztahuje
+  // na nic) a u čtyři roky drženého USDT i nepravdu o držbě (nález A2-3-09).
+  if (config.cryptoRules.exemptionsAvailable && cryptoPrepared.emtProceedsCzk.gt(0)) {
     const testable = cryptoPrepared.emtTimeTestableProceedsCzk;
     const timeTestPart = options.emtTimeTestExempt
       ? `Máš zapnutý mírnější výklad (R-10g): časový test 3 roky stablecoiny osvobozuje — z prodejů to je ${czkText(testable)}. Opora je jen v doslovném textu § 4/1 zk); finanční správa výklad nepotvrdila a při sporu hrozí doměrek daně s příslušenstvím.`
@@ -314,6 +320,27 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
         emtTimeTestableCzk: testable.toFixed(2),
       },
     );
+  }
+
+  // R-10g / A2-3-13: DAI a USDD za sebou nemají fiat (nadkolateralizovaný,
+  // resp. algoritmický), takže podle MiCA nejsou EMT a § 4/1 zj) je vylučovat
+  // nemusí. Držíme je ve vyloučení jako bezpečný default, ale uživatel má
+  // právo vědět, kolik na tom sporném výkladu visí.
+  if (config.cryptoRules.exemptionsAvailable) {
+    const disputed = crypto.disposals.filter((report) => isDisputedEmtIdentifier(report.isin));
+    if (disputed.length > 0) {
+      const disputedProceedsCzk = sum(disputed.map((report) => report.grossProceedsCzk));
+      const tickers = [...new Set(disputed.map((report) => report.isin.toUpperCase()))].sort();
+      warnings.add(
+        'CRYPTO_EMT_DISPUTED',
+        'INFO',
+        `Prodeje ${tickers.join(', ')} za ${czkText(disputedProceedsCzk)} počítáme jako stablecoiny, tedy bez osvobození do 100 000 Kč — je to bezpečnější varianta. Sporné na tom je, že tyhle tokeny nekryjí skutečné peníze (DAI stojí na kryptozástavě, USDD na algoritmu), takže podle evropské definice elektronických peněžních tokenů mezi ně nepatří a § 4/1 zj) je vylučovat nemusí. Kdyby se braly jako běžné kryptoaktivum, vstoupily by jejich tržby do úhrnu 100 000 Kč. Výklad zatím nikdo nepotvrdil; opačné rozhodnutí by znamenalo doměrek daně s příslušenstvím.`,
+        {
+          disputedProceedsCzk: disputedProceedsCzk.toFixed(2),
+          tickers: tickers.join(','),
+        },
+      );
+    }
   }
 
   // R-10g: seznam EMT tickerů nemůže být úplný — při aplikaci krypto osvobození

@@ -225,7 +225,7 @@ export function OverviewView({
         {result.limits.employee20k.applicable && (
           <LimitGauge
             label="Vedlejší příjmy — 20 000 Kč"
-            hint="Zdanitelné příjmy § 7–10 vedle zaměstnání. Při překročení podáváš přiznání."
+            hint="Zdanitelné příjmy vedle zaměstnání — investice, nájmy i vlastní výdělek ze samostatné činnosti (§ 7 až 10). Odměrka ukazuje jen to, co Danero vidí z výpisů a z tvého nastavení; příjmy z podnikání do limitu patří taky, ale my o nich nevíme. Při překročení podáváš přiznání."
             status={result.limits.employee20k.status}
           />
         )}
@@ -238,11 +238,30 @@ export function OverviewView({
             status={result.limits.generalFiling50k.status}
           />
         )}
-        <LimitGauge
-          label="Osvobození prodejů cenných papírů — 100 000 Kč"
-          hint="Platí pro každého (§ 4 odst. 1 písm. t): jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou VŠECHNY osvobozené (i bez 3 let držení). Nad limit se daní prodeje bez splněného časového testu."
-          status={result.limits.limit100k}
-        />
+        {result.limits.limit100k.applicable ? (
+          <LimitGauge
+            label="Osvobození prodejů cenných papírů — 100 000 Kč"
+            hint="Do 100 000 Kč tržeb z prodeje cenných papírů za rok (§ 4 odst. 1 písm. t) jsou VŠECHNY osvobozené, i bez 3 let držení. Nad limit se daní prodeje bez splněného časového testu. Neplatí pro cenné papíry zahrnuté v obchodním majetku."
+            status={result.limits.limit100k}
+          />
+        ) : (
+          /* R-02f: s cennými papíry v obchodním majetku osvobození neexistuje —
+             pool je nulový, takže měřák hlásil „0 / 100 000, v pořádku“ přesně
+             tam, kde se daní každý prodej (nález A1-3-04) */
+          <Card className="space-y-1.5">
+            <CardTitle>Obchodní majetek: osvobození neexistuje</CardTitle>
+            <p className="font-mono text-lg font-medium">
+              {czk(result.securities.totalGrossProceedsCzk)}
+              <span className="text-sm text-inkoust-tlumeny"> zdanitelných tržeb</span>
+            </p>
+            <p className="text-sm font-semibold text-cervena">daní se každý prodej</p>
+            <p className="pt-1 text-xs text-inkoust-tlumeny">
+              Máš v nastavení uvedeno, že cenné papíry patří do tvého obchodního majetku.
+              Roční limit 100 000 Kč ani tříletý časový test se na ně nevztahují (§ 4 odst.
+              1 písm. t a u) — a neplatí ani tři roky po ukončení činnosti.
+            </p>
+          </Card>
+        )}
         {hasCrypto &&
           (result.limits.cryptoLimit100k.applicable ? (
             <LimitGauge

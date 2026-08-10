@@ -95,7 +95,13 @@ export interface FlatTaxBreachImpact {
 }
 
 export interface LimitsResult {
-  limit100k: LimitStatus & { includesTimeTestExempt: boolean };
+  /**
+   * R-02: hodnotový test 100k na hrubé tržby z prodeje CP. `applicable: false`
+   * u poplatníka s cennými papíry v obchodním majetku (R-02f) — osvobození t)
+   * ani u) tam neexistuje, pool je nulový, a měřák „0/100 000, zóna OK“ by
+   * tvrdil klid tam, kde se daní každá koruna (nález A1-3-04).
+   */
+  limit100k: LimitStatus & { includesTimeTestExempt: boolean; applicable: boolean };
   /**
    * R-10a: samostatný limit 100k pro kryptoaktiva (§ 4/1 zj) — čerpá se
    * nezávisle na CP. `applicable: false` v roce, kdy krypto osvobození vůbec
@@ -136,10 +142,17 @@ export function computeLimits(
   warnings: WarningCollector,
   includesTimeTestExempt: boolean,
 ): LimitsResult {
-  // R-02: hodnotový test 100k na hrubé tržby z prodeje CP
+  // R-02: hodnotový test 100k na hrubé tržby z prodeje CP.
+  // R-02f: s CP v obchodním majetku osvobození neexistuje — limit se nehlásí
+  // jako nevyčerpaný, ale jako neaplikovatelný (stejně jako krypto v ZO ≤ 2024).
+  const securitiesExemptionAvailable = !profile.hasSecuritiesInBusinessAssets;
   const limit100k = {
-    ...limitStatus(securities.pool100kCzk, d(config.limits.securitiesProceedsExemption)),
+    ...limitStatus(
+      securities.pool100kCzk,
+      securitiesExemptionAvailable ? d(config.limits.securitiesProceedsExemption) : ZERO,
+    ),
     includesTimeTestExempt,
+    applicable: securitiesExemptionAvailable,
   };
   // R-10a: vlastní pool kryptoaktiv (prodeje před 15. 2. 2025 do něj nevstupují — R-10b).
   // R-10b: v roce bez krypto osvobození limit neexistuje — hlásí se jako neaplikovatelný.
@@ -222,6 +235,26 @@ export function computeLimits(
 
   const employeeStatus = limitStatus(sideIncome, d(config.limits.employeeSideIncome));
   const generalStatus = limitStatus(sideIncome, d(config.limits.generalFiling));
+
+  // A1-3-06: R-09a (§ 38g/1) i R-09b (§ 38g/2) počítají příjmy podle § 7 AŽ 10,
+  // ale ruční pole v Nastavení bere výslovně jen § 8–10 — pro paušál je § 7
+  // samotný paušál (R-08), takže tentýž údaj sdílet nejde. Z dat se § 7 zjistit
+  // nedá; když měřák hlásí klid a přitom stačí jediná faktura na jeho
+  // překlopení, musí to aspoň říct nahlas.
+  const filingLimitApplicable =
+    profile.regime === 'ZAMESTNANEC' ? !employeeStatus.exceeded : !generalStatus.exceeded;
+  if ((profile.regime === 'ZAMESTNANEC' || profile.regime === 'JINE') && filingLimitApplicable) {
+    const limitCzk =
+      profile.regime === 'ZAMESTNANEC'
+        ? d(config.limits.employeeSideIncome)
+        : d(config.limits.generalFiling);
+    warnings.add(
+      'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT',
+      'INFO',
+      `Do limitu ${czkText(limitCzk)} se počítají i příjmy ze samostatné činnosti (živnost, faktury, autorské honoráře) — ty Danero z výpisů od brokera nevidí. Máme z tvých investic ${czkText(sideIncome)}, takže limit zatím vychází nepřekročený; pokud jsi měl i vlastní výdělek mimo zaměstnání, přičti si ho a přiznání může být povinné.`,
+      { sideIncomeCzk: sideIncome.toFixed(2), limitCzk: limitCzk.toFixed(2) },
+    );
+  }
 
   // R-09d/R-10f: oznámení jednotlivého osvobozeného příjmu > 5M (§ 38v) — CP i krypto.
   // Jednotlivý příjem = úhrn per (isin, den prodeje) — partial fill-y téhož prodeje
