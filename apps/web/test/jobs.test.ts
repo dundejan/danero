@@ -396,3 +396,40 @@ describe('background joby (in-memory PGlite)', () => {
     },
   );
 });
+
+/**
+ * G-P5: běh cronu je sekvenční schválně (limity T212, jediné připojení PGlite),
+ * ale neměl strop. Na Vercelu funkci utne `maxDuration` uprostřed jobu:
+ * rozpracovaný zůstane `running` do `recoverStaleJobs` a joby za ním se ten
+ * tick vůbec nespustí, aniž by to bylo kdekoli vidět.
+ */
+describe('cron tick má časový rozpočet (G-P5)', () => {
+  it('po vyčerpání rozpočtu nechá zbytek na příště a řekne kolik', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'u1@danero.cz' });
+    // neznámý typ skončí chybou hned, takže se měří jen režie smyčky
+    for (const id of ['j1', 'j2', 'j3']) {
+      await db.insert(jobs).values({ id, userId: 'u1', type: 'xtb-sync', dedupeKey: id, payload: {} });
+    }
+
+    // rozpočet 0 ms: první job se dokončí (jinak by tick neudělal nic),
+    // druhý a třetí se odloží
+    const { results, deferred } = await processPendingJobs(db, { budgetMs: 0 });
+    expect(results).toHaveLength(1);
+    expect(deferred).toBe(2);
+
+    const zbyle = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.status, 'pending'));
+    expect(zbyle).toHaveLength(2);
+  });
+
+  it('s běžným rozpočtem doběhne všechno a nic se neodloží', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'u1@danero.cz' });
+    for (const id of ['k1', 'k2']) {
+      await db.insert(jobs).values({ id, userId: 'u1', type: 'xtb-sync', dedupeKey: id, payload: {} });
+    }
+    const { results, deferred } = await processPendingJobs(db);
+    expect(results).toHaveLength(2);
+    expect(deferred).toBe(0);
+  });
+});

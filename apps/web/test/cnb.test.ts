@@ -136,7 +136,6 @@ describe('zaokrouhlené kurzy se poznají a rok se dotáhne (F-3-8)', () => {
       day: `${rok}-01-01`,
       currency: `M${i}`,
       rate,
-      amount: 1,
     }));
     await db.insert(fxRates).values(radky);
   };
@@ -152,7 +151,7 @@ describe('zaokrouhlené kurzy se poznají a rok se dotáhne (F-3-8)', () => {
   it('plná přesnost se za nekompletní nepovažuje', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await naplnit(db, '0.1456789012');
-    await db.insert(fxRates).values({ day: `${rok}-12-31`, currency: 'EUR', rate: '25.1234567890', amount: 1 });
+    await db.insert(fxRates).values({ day: `${rok}-12-31`, currency: 'EUR', rate: '25.1234567890' });
     const coverage = await cnbYearCoverage(db, rok, new Date('2026-08-10T00:00:00Z'));
     expect(coverage.complete).toBe(true);
   });

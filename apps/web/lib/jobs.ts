@@ -58,7 +58,17 @@ export interface SyncJobResult {
 }
 
 /** Volby běhu pro testy (mock fetch, rychlý poll, deterministický čas). */
-export type JobRunOptions = Pick<SyncOptions, 'fetchImpl' | 'pollIntervalMs' | 'now'>;
+export type JobRunOptions = Pick<SyncOptions, 'fetchImpl' | 'pollIntervalMs' | 'now'> & {
+  /** Strop pro jeden tick cronu (G-P5) — po jeho překročení se další job už nezačíná. */
+  budgetMs?: number;
+};
+
+/**
+ * Rozpočet jednoho ticku. `maxDuration` cronu je 800 s; necháváme si rezervu,
+ * aby se stihl dopsat výsledek a odpověď — utnutá funkce by nechala job viset
+ * v `running` až do `recoverStaleJobs`.
+ */
+const DEFAULT_JOB_BUDGET_MS = 600_000;
 
 /**
  * Job bez známky života déle než 15 minut = mrtvý proces. Sync zapisuje heartbeat
@@ -402,7 +412,7 @@ export interface ProcessedJobSummary {
 export async function processPendingJobs(
   db: Db,
   options: JobRunOptions = {},
-): Promise<{ recovered: number; results: ProcessedJobSummary[] }> {
+): Promise<{ recovered: number; results: ProcessedJobSummary[]; deferred: number }> {
   const recovered = await recoverStaleJobs(db, options.now ?? new Date());
   const pending = await db
     .select({ id: jobs.id })
@@ -410,8 +420,21 @@ export async function processPendingJobs(
     .where(eq(jobs.status, 'pending'))
     .orderBy(asc(jobs.createdAt));
 
+  // G-P5: běh je sekvenční schválně (limity T212, jediné připojení PGlite),
+  // ale neměl strop. Na Vercelu funkci utne `maxDuration` uprostřed jobu:
+  // rozpracovaný job zůstane `running` a čeká na `recoverStaleJobs`, a joby
+  // za ním se ten tick vůbec nespustí — a nikde to není vidět. S rozpočtem
+  // se doběhne rozdělaný job, zbytek zůstane `pending` na další tick a počet
+  // odložených jde do výsledku, odkud ho `withCron` propíše do logu.
+  const budgetMs = options.budgetMs ?? DEFAULT_JOB_BUDGET_MS;
+  const startedAt = Date.now();
   const results: ProcessedJobSummary[] = [];
+  let deferred = 0;
   for (const row of pending) {
+    if (results.length > 0 && Date.now() - startedAt > budgetMs) {
+      deferred = pending.length - results.length;
+      break;
+    }
     const finished = await processJob(db, row.id, options);
     if (finished) {
       results.push({
@@ -422,7 +445,7 @@ export async function processPendingJobs(
       });
     }
   }
-  return { recovered, results };
+  return { recovered, results, deferred };
 }
 
 /**
