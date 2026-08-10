@@ -14,10 +14,15 @@ import { cn } from '@/lib/utils';
  * plocha „kolik % už bude bez daně“.
  */
 
+/**
+ * Dvě období stačí. Tečka se dál než na konec tříletého časového testu dostat
+ * nemůže, takže samostatná volba „vše“ ukazovala pořád totéž co „3 roky“, jen
+ * o kousek přiblížené — klik navíc bez nové informace. „3 roky“ proto rovnou
+ * je úplný pohled (`full`) a natáhne se i za tři roky, když je za čím.
+ */
 const RANGES = [
-  { key: '1r', label: '1 rok', years: 1 },
-  { key: '3r', label: '3 roky', years: 3 },
-  { key: 'vse', label: 'vše', years: null },
+  { key: '1r', label: '1 rok', years: 1, full: false },
+  { key: '3r', label: '3 roky', years: 3, full: true },
 ] as const;
 
 type RangeKey = (typeof RANGES)[number]['key'];
@@ -96,9 +101,13 @@ export function HorizonStrip({
     const grouped = groupHorizonDots(dots, preset.years === 1 ? 'day' : 'month', today);
     const todayDay = dayNumber(today);
     // aritmeticky (ne skládáním data) — „29. 2. + rok“ by byl Invalid Date
-    const horizonEnd = preset.years
-      ? todayDay + preset.years * 365.25
-      : Math.max(...grouped.map((dot) => dayNumber(dotIso(dot))), todayDay);
+    const presetEnd = todayDay + preset.years * 365.25;
+    // Úplný pohled sahá i za tři roky: kusům koupeným dnes doběhne test o pár
+    // dní později (vypořádání T+2, přestupný rok) a bez tohohle by z grafu
+    // vypadly do hlášky „mimo zobrazené období“ — přitom nikde jinde je vidět nejde.
+    const horizonEnd = preset.full
+      ? Math.max(presetEnd, ...grouped.map((dot) => dayNumber(dotIso(dot))))
+      : presetEnd;
 
     const visible = grouped.filter((dot) => dayNumber(dotIso(dot)) <= horizonEnd);
     const hidden = grouped.length - visible.length;

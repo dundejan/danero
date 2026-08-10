@@ -22,7 +22,9 @@ test('portfolio: přehled grafů → pozice → detail s loty (+ screenshoty)', 
   await page.goto('/prehled');
   await expect(page.getByText('Čerpání limitu 100 000 Kč v průběhu roku')).toBeVisible();
   await expect(page.getByText('Horizont osvobození')).toBeVisible();
-  await page.getByRole('button', { name: 'vše' }).click();
+  // přepínač období: „1 rok“ přiblíží, „3 roky“ (výchozí) je zároveň úplný pohled
+  await page.getByRole('button', { name: '1 rok' }).click();
+  await page.getByRole('button', { name: '3 roky' }).click();
   await page.screenshot({
     path: 'test-results/screenshots/prehled-desktop-light.png',
     fullPage: true,
