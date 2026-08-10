@@ -8,6 +8,7 @@ import {
   lastCnbDayOfYear,
   loadCnbRateProvider,
   parseCnbYearText,
+  cnbYearCoverage,
 } from '@/lib/cnb';
 
 /** Formát ročního exportu ČNB: hlavička s množstvím, dny s desetinnou čárkou. */
@@ -120,4 +121,39 @@ describe('denní kurzy ČNB (R-06b)', () => {
       expect(calls).toBe(1); // po doplnění 31. 12. už rok je kompletní
     },
   );
+});
+
+/**
+ * F-3-8: migrace 0030 rozšířila `rate` na numeric(18,10), ale uložené hodnoty
+ * nedopočítala — u JPY, HUF, KRW a spol. tam pořád leží čísla zaokrouhlená
+ * na 6 míst. `rows >= 1000` přitom znamenalo, že se uzavřený rok už NIKDY
+ * nestáhne znovu, takže by tam ta hrubší čísla zůstala natrvalo.
+ */
+describe('zaokrouhlené kurzy se poznají a rok se dotáhne (F-3-8)', () => {
+  const rok = 2023;
+  const naplnit = async (db: Awaited<ReturnType<typeof createPgliteDb>>, rate: string) => {
+    const radky = Array.from({ length: 1200 }, (_, i) => ({
+      day: `${rok}-01-01`,
+      currency: `M${i}`,
+      rate,
+      amount: 1,
+    }));
+    await db.insert(fxRates).values(radky);
+  };
+
+  it('rok se šesti desetinnými místy není kompletní, i když má přes 1000 řádků', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await naplnit(db, '0.145678');
+    const coverage = await cnbYearCoverage(db, rok, new Date('2026-08-10T00:00:00Z'));
+    expect(coverage.rows).toBeGreaterThanOrEqual(1000);
+    expect(coverage.complete).toBe(false);
+  });
+
+  it('plná přesnost se za nekompletní nepovažuje', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await naplnit(db, '0.1456789012');
+    await db.insert(fxRates).values({ day: `${rok}-12-31`, currency: 'EUR', rate: '25.1234567890', amount: 1 });
+    const coverage = await cnbYearCoverage(db, rok, new Date('2026-08-10T00:00:00Z'));
+    expect(coverage.complete).toBe(true);
+  });
 });

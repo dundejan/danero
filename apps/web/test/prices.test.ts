@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb } from '@/db';
-import { user } from '@/db/schema';
+import { instrumentPrices, user } from '@/db/schema';
 import { loadInstrumentPrices, upsertInstrumentPrices } from '@/lib/prices';
 
 /**
@@ -36,5 +37,70 @@ describe('ceny instrumentů: nečíselná cena od brokera', () => {
     expect(prices.get('GB0002374006')?.price.toString()).toBe('10');
     expect(prices.get('GB0002374006')?.currency).toBe('GBP');
     expect(prices.has('US5949181045')).toBe(false);
+  });
+});
+
+/**
+ * F-3-12: zápis cen běžel jeden `INSERT` na instrument — u 500 pozic to bylo
+ * 500 round-tripů, na Neonu (~3 ms) 1,5 s po každém syncu.
+ */
+describe('ceny se zapisují dávkově (F-3-12)', () => {
+  it('velké portfolio se uloží celé a druhý běh hodnoty přepíše', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({
+      id: 'u1',
+      name: 'Test',
+      email: 'u1@danero.cz',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const prices = Array.from({ length: 600 }, (_, i) => ({
+      isin: `CZ${String(i).padStart(10, '0')}`,
+      price: '100',
+      currency: 'CZK',
+    }));
+
+    const asOf = new Date('2026-08-10T10:00:00Z');
+    expect(await upsertInstrumentPrices(db, 'u1', 'trading212', prices, asOf)).toBe(600);
+
+    const znovu = prices.map((p) => ({ ...p, price: '250' }));
+    const pozdeji = new Date('2026-08-10T11:00:00Z');
+    expect(await upsertInstrumentPrices(db, 'u1', 'trading212', znovu, pozdeji)).toBe(600);
+
+    const rows = await db
+      .select({ price: instrumentPrices.price })
+      .from(instrumentPrices)
+      .where(eq(instrumentPrices.userId, 'u1'));
+    expect(rows).toHaveLength(600);
+    expect(new Set(rows.map((r) => r.price))).toEqual(new Set(['250']));
+  });
+
+  it('tentýž ISIN dvakrát v jedné dávce nespadne — vyhraje poslední', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({
+      id: 'u2',
+      name: 'Test',
+      email: 'u2@danero.cz',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const written = await upsertInstrumentPrices(
+      db,
+      'u2',
+      'trading212',
+      [
+        { isin: 'CZ0000000001', price: '100', currency: 'CZK' },
+        { isin: 'CZ0000000001', price: '300', currency: 'CZK' },
+      ],
+      new Date('2026-08-10T10:00:00Z'),
+    );
+    expect(written).toBe(1);
+    const [row] = await db
+      .select({ price: instrumentPrices.price })
+      .from(instrumentPrices)
+      .where(eq(instrumentPrices.userId, 'u2'));
+    expect(row!.price).toBe('300');
   });
 });

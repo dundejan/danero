@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { d, type Money } from '@danero/shared';
 import type { Db } from '@/db';
 import { instrumentPrices } from '@/db/schema';
@@ -51,7 +51,7 @@ export async function upsertInstrumentPrices(
   prices: PriceInput[],
   asOf: Date,
 ): Promise<number> {
-  let written = 0;
+  const rows: (typeof instrumentPrices.$inferInsert)[] = [];
   for (const item of prices) {
     if (!item.currency) continue;
     // Guard MUSÍ být před `d()`, ne za ním: `new Decimal('N/A')` vyhodí, takže
@@ -61,23 +61,34 @@ export async function upsertInstrumentPrices(
     const raw = safeDecimal(item.price);
     if (!raw || !raw.isFinite() || raw.lte(0)) continue;
     const { price, currency } = normalize(raw, item.currency);
+    rows.push({ userId, isin: item.isin, price: price.toString(), currency, source, asOf });
+  }
+  if (rows.length === 0) return 0;
+
+  // F-3-12: jeden `INSERT` na instrument znamenal u portfolia s 500 pozicemi
+  // 500 round-tripů — na Neonu (~3 ms) 1,5 s čisté latence po každém syncu.
+  // Dávkujeme; strop je kvůli limitu parametrů v jednom dotazu (Postgres jich
+  // bere 65 535, tady je jich 6 na řádek).
+  const DAVKA = 500;
+  // Tentýž ISIN dvakrát v JEDNOM příkazu Postgres odmítne („cannot affect row
+  // a second time"), takže poslední hodnota vyhrává ještě před zápisem.
+  const posledni = new Map(rows.map((row) => [row.isin, row]));
+  const unikatni = [...posledni.values()];
+  for (let i = 0; i < unikatni.length; i += DAVKA) {
     await db
       .insert(instrumentPrices)
-      .values({
-        userId,
-        isin: item.isin,
-        price: price.toString(),
-        currency,
-        source,
-        asOf,
-      })
+      .values(unikatni.slice(i, i + DAVKA))
       .onConflictDoUpdate({
         target: [instrumentPrices.userId, instrumentPrices.isin],
-        set: { price: price.toString(), currency, source, asOf },
+        set: {
+          price: sql`excluded.price`,
+          currency: sql`excluded.currency`,
+          source: sql`excluded.source`,
+          asOf: sql`excluded.as_of`,
+        },
       });
-    written += 1;
   }
-  return written;
+  return unikatni.length;
 }
 
 export async function loadInstrumentPrices(

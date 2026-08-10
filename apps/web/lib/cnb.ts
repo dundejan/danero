@@ -155,12 +155,25 @@ export async function cnbYearCoverage(
   now: Date = new Date(),
 ): Promise<{ rows: number; maxDay: string | null; complete: boolean }> {
   const existing = await db
-    .select({ n: sql<number>`count(*)`, maxDay: sql<string | null>`max(${fxRates.day})` })
+    .select({
+      n: sql<number>`count(*)`,
+      maxDay: sql<string | null>`max(${fxRates.day})`,
+      // F-3-8: migrace 0030 rozšířila sloupec na numeric(18,10), ale uložené
+      // hodnoty nedopočítala. U měn s malým kurzem (JPY, HUF, KRW, IDR, ISK,
+      // PHP, THB) tam pořád leží čísla zaokrouhlená na 6 míst — a `rows >= 1000`
+      // znamenalo, že se uzavřený rok už NIKDY nestáhne znovu. Poznáme to podle
+      // maximálního počtu desetinných míst v roce: plná data mají 10.
+      maxScale: sql<number>`coalesce(max(scale(${fxRates.rate})), 0)`,
+    })
     .from(fxRates)
     .where(and(gte(fxRates.day, `${year}-01-01`), lte(fxRates.day, `${year}-12-31`)));
   const rows = Number(existing[0]?.n ?? 0);
   const maxDay = existing[0]?.maxDay ?? null;
+  // Zaokrouhlená data se musí přetáhnout i u roku, který jinak vypadá plný.
+  const truncated = rows > 0 && Number(existing[0]?.maxScale ?? 0) <= 6;
   const isCurrentYear = year === now.getUTCFullYear();
+
+  if (truncated) return { rows, maxDay, complete: false };
 
   if (isCurrentYear) {
     // běžný rok je „kompletní“, dokud data znatelně nezaostávají za dneškem
