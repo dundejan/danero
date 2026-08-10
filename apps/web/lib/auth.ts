@@ -8,7 +8,7 @@ import { twoFactor } from 'better-auth/plugins';
 import { getDb, type Db } from '@/db';
 import * as schema from '@/db/schema';
 import {
-  rejectReusedTotpCode,
+  beforeHooks,
   revokePasswordResetTokens,
   revokeResetTokensAfterPasswordChange,
 } from '@/lib/auth-hooks';
@@ -208,10 +208,11 @@ function buildAuth(db: Db) {
         '/send-verification-email': { window: 300, max: 3 },
       },
     },
-    // D-01 (jednorázový TOTP kód) a D-02 (zneplatnění reset odkazů po změně
-    // hesla) — proč a jak je v lib/auth-hooks.ts
+    // D-01 (jednorázový TOTP kód), D-3-02 (per-účet strop citlivých operací)
+    // a D-02 (zneplatnění reset odkazů po změně hesla) — proč a jak je
+    // v lib/auth-hooks.ts
     hooks: {
-      before: rejectReusedTotpCode(db),
+      before: beforeHooks(db),
       after: revokeResetTokensAfterPasswordChange(db),
     },
     databaseHooks: {

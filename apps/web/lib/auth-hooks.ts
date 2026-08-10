@@ -64,6 +64,66 @@ export function rejectReusedTotpCode(db: Db) {
 }
 
 /**
+ * D-3-02: citlivé operace musí mít strop i PER ÚČET, ne jen per IP.
+ *
+ * Vestavěné limity Better Authu se počítají podle IP adresy, a tu si klient
+ * u nás píše sám do `X-Forwarded-For`. Naměřeno: při rotaci téhle hlavičky
+ * prošlo na `/api/auth/change-password` **25 z 25 pokusů, ani jedna 429**.
+ * Server actions v Nastavení per-účet limit mají (`limitAccountAction`),
+ * jenže tytéž operace jdou zavolat přímo na `/api/auth/*`, kde neplatil.
+ * Z unesené relace je tím pádem neomezený password oracle: uhádnuté heslo
+ * = změna e-mailu i vypnutí druhého faktoru.
+ *
+ * Klíč je userId, takže střídání adres nepomůže. Okno a stropy jsou stejné
+ * jako u odpovídajících server actions, aby se limit nedal obejít přechodem
+ * z jedné cesty na druhou — čítač je pro obě tentýž.
+ */
+const ACCOUNT_WINDOW_MS = 5 * 60_000;
+
+/** Cesta → (operace sdílená se server action, strop v okně). */
+const ACCOUNT_LIMITS: Record<string, { operation: string; max: number }> = {
+  '/change-password': { operation: 'password_change', max: 5 },
+  '/change-email': { operation: 'email_change', max: 5 },
+  '/delete-user': { operation: 'account_delete', max: 3 },
+  '/two-factor/enable': { operation: 'two_factor_enable', max: 5 },
+  '/two-factor/disable': { operation: 'two_factor_disable', max: 5 },
+};
+
+export function limitSensitiveAccountOperations(db: Db) {
+  return createAuthMiddleware(async (ctx) => {
+    const limit = ACCOUNT_LIMITS[ctx.path];
+    if (!limit) return;
+    // Bez relace endpoint stejně skončí na 401 — kbelík nezakládáme, jinak by
+    // šlo cizí účet vyčerpat zvenčí (a útočník userId ani nezná).
+    const session = await getSessionFromCtx(ctx);
+    const userId = session?.user.id;
+    if (!userId) return;
+
+    const allowed = await checkRateLimit(db, `${limit.operation}:${userId}`, {
+      max: limit.max,
+      windowMs: ACCOUNT_WINDOW_MS,
+    });
+    if (!allowed) {
+      throw new APIError('TOO_MANY_REQUESTS', {
+        message: 'Zkoušíš to moc často. Dej tomu pár minut a zkus to znovu.',
+        code: 'ACCOUNT_RATE_LIMITED',
+      });
+    }
+  });
+}
+
+/**
+ * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
+ * a drží jejich pořadí na jednom místě.
+ */
+export function beforeHooks(db: Db) {
+  const hooks = [rejectReusedTotpCode(db), limitSensitiveAccountOperations(db)];
+  return createAuthMiddleware(async (ctx) => {
+    for (const hook of hooks) await hook(ctx);
+  });
+}
+
+/**
  * D-02: po změně hesla musí padnout všechny vydané odkazy na obnovu hesla.
  *
  * Better Auth spotřebuje jen ten token, kterým se reset provedl — ostatní žijí

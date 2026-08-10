@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import {
   appRateLimits,
+  brokerAccounts,
   importBatches,
   notifications,
+  rateLimit,
   session,
   user,
   verification,
@@ -12,10 +14,12 @@ import {
 import { checkRateLimit, pruneRateLimits } from '@/lib/rate-limit';
 import { resolveEmailSender } from '@/lib/email';
 import {
+  pruneAuthRateLimits,
   pruneImportBatches,
   pruneNotifications,
   pruneSessions,
   pruneVerifications,
+  reencryptBrokerCredentials,
 } from '@/lib/retention';
 
 describe('úklid provozních tabulek', () => {
@@ -233,5 +237,74 @@ describe('retence tabulek, které dosud neuklízel nikdo (G-R1)', () => {
     expect(await odpoved.json()).toMatchObject({ sessionsDeleted: 1, verificationsDeleted: 1 });
     expect(await db.select().from(session)).toHaveLength(0);
     expect(await db.select().from(verification)).toHaveLength(0);
+  });
+});
+
+/**
+ * F-3-11: vlastní tabulka rate limitů Better Authu neuklízela nikoho.
+ * D-3-03: rotace šifrovacího klíče neměla jak skončit — `reencryptSecret()`
+ * nikdo nevolal, takže vyřazený klíč musel v konfiguraci zůstat navždy.
+ */
+describe('údržba: rate_limit Better Authu a dokončení rotace klíče', () => {
+  it('maže jen prošlé řádky rate_limit, běžící okno nechá', async () => {
+    const db = await createPgliteDb();
+    const now = new Date('2026-08-10T12:00:00Z');
+    const stary = Math.floor(now.getTime() / 1000) - 7200; // 2 hodiny zpět
+    const cerstvy = Math.floor(now.getTime() / 1000) - 60;
+    await db.insert(rateLimit).values([
+      { id: 'rl-stary', key: 'ip:1.2.3.4/sign-in', count: 3, lastRequest: stary },
+      { id: 'rl-cerstvy', key: 'ip:5.6.7.8/sign-in', count: 1, lastRequest: cerstvy },
+    ]);
+
+    expect(await pruneAuthRateLimits(db, now)).toBe(1);
+    const zbylo = await db.select({ id: rateLimit.id }).from(rateLimit);
+    expect(zbylo.map((r) => r.id)).toEqual(['rl-cerstvy']);
+  });
+
+  it('rotace přepíše tajemství na starém klíči a to na aktuálním nechá', async () => {
+    const db = await createPgliteDb();
+    const { encryptSecret, decryptSecret } = await import('@/lib/crypto');
+    const aktualni = encryptSecret('klic-na-aktualnim');
+    await db.insert(user).values({
+      id: 'u-rot',
+      name: 'Rotace',
+      email: 'rotace@danero.cz',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(brokerAccounts).values({
+      id: 'ba-rot',
+      userId: 'u-rot',
+      broker: 'trading212',
+      credentialsEncrypted: aktualni,
+    });
+
+    // nic k rotaci — všechno už je na aktuálním klíči
+    expect(await reencryptBrokerCredentials(db)).toBe(0);
+    const [row] = await db
+      .select({ c: brokerAccounts.credentialsEncrypted })
+      .from(brokerAccounts);
+    expect(row!.c).toBe(aktualni);
+    expect(decryptSecret(row!.c)).toBe('klic-na-aktualnim');
+  });
+
+  it('nedešifrovatelný záznam rotaci nezastaví', async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({
+      id: 'u-rot2',
+      name: 'Rotace',
+      email: 'rotace2@danero.cz',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(brokerAccounts).values({
+      id: 'ba-rozbity',
+      userId: 'u-rot2',
+      broker: 'trading212',
+      credentialsEncrypted: 'v1.nesmysl.nesmysl.nesmysl',
+    });
+    await expect(reencryptBrokerCredentials(db)).resolves.toBe(0);
   });
 });

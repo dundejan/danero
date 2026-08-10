@@ -1,6 +1,7 @@
 import { desc, eq, lt } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { auditLog } from '@/db/schema';
+import { errorText, logEvent } from '@/lib/log';
 
 /** Doba držení audit logu — musí sedět na to, co slibuje /soukromi. */
 export const AUDIT_RETENTION_DAYS = 90;
@@ -42,7 +43,11 @@ export async function logAudit(
   try {
     await db.insert(auditLog).values({ userId, type, detail });
   } catch (error) {
-    console.error('[audit] zápis selhal:', error);
+    // D-3-05: syrový objekt chyby sem nepatří. `DrizzleQueryError.message`
+    // nese celý dotaz včetně `params:`, tedy e-maily i obsah transakcí —
+    // a `console.error` s objektem navíc nevyjde jako JSON, takže by to
+    // v logu ani nešlo odfiltrovat. Stejný filtr jako zbytek `lib/`.
+    logEvent('error', 'audit.write_failed', { userId, type, error: errorText(error) });
   }
 }
 

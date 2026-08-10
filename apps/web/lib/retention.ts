@@ -1,6 +1,7 @@
-import { and, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { importBatches, notifications, session, verification } from '@/db/schema';
+import { brokerAccounts, importBatches, notifications, rateLimit, session, verification } from '@/db/schema';
+import { errorText, logEvent } from '@/lib/log';
 
 /**
  * Denní retence provozních tabulek. Audit log si uklízí lib/audit.ts, okna
@@ -136,4 +137,75 @@ export function pruneImportBatches(db: Db, now = new Date()): Promise<number> {
       )
       .returning({ id: importBatches.id }),
   );
+}
+
+/**
+ * F-3-11: vlastní tabulka rate limitů Better Authu (`rate_limit`, zapnutá
+ * v `lib/auth.ts`) neuklízela nikoho. Roste s počtem klíčů (IP × cesta),
+ * takže bez retence nabobtná tím víc, čím víc má aplikace návštěvníků —
+ * a syrové IP adresy v ní leží donekonečna. Naše vlastní `app_rate_limits`
+ * uklízí `pruneRateLimits`; tohle je ta druhá, cizí.
+ *
+ * Maže se podle `lastRequest` (epoch v sekundách, ne timestamp). Nejdelší
+ * okno v `customRules` je 300 s, takže hodina je bohatá rezerva i pro řádek,
+ * který právě běží.
+ */
+export const AUTH_RATE_LIMIT_RETENTION_MS = 60 * 60_000;
+
+export function pruneAuthRateLimits(db: Db, now = new Date()): Promise<number> {
+  const cutoffSeconds = Math.floor((now.getTime() - AUTH_RATE_LIMIT_RETENTION_MS) / 1000);
+  return deleteInBatches((limit) =>
+    db
+      .delete(rateLimit)
+      .where(
+        inArray(
+          rateLimit.id,
+          db
+            .select({ id: rateLimit.id })
+            .from(rateLimit)
+            .where(lt(rateLimit.lastRequest, cutoffSeconds))
+            .limit(limit),
+        ),
+      )
+      .returning({ id: rateLimit.id }),
+  );
+}
+
+/**
+ * D-3-03: dokončení rotace šifrovacího klíče.
+ *
+ * `reencryptSecret()` v `lib/crypto.ts` existoval, ale nikdo ho nevolal —
+ * rotace `DANERO_ENCRYPTION_KEY` tím pádem neměla jak skončit a vyřazený klíč
+ * musel zůstat v `DANERO_ENCRYPTION_KEYS_OLD` navždy. Stačí, aby se jednou
+ * denně přepsala tajemství, která na starém klíči pořád visí; pak jde starý
+ * klíč z konfigurace vyhodit (a teprve tehdy je rotace k něčemu).
+ *
+ * Chyba u jednoho účtu nesmí zastavit ostatní: nedešifrovatelný záznam (klíč
+ * už z konfigurace zmizel) se přeskočí a zaloguje — přepsat ho nejde a shodit
+ * kvůli němu celou údržbu by bylo horší.
+ */
+export async function reencryptBrokerCredentials(db: Db): Promise<number> {
+  const { reencryptSecret } = await import('@/lib/crypto');
+  const rows = await db
+    .select({ id: brokerAccounts.id, credentials: brokerAccounts.credentialsEncrypted })
+    .from(brokerAccounts);
+
+  let rotated = 0;
+  for (const row of rows) {
+    try {
+      const rotatedSecret = reencryptSecret(row.credentials);
+      if (rotatedSecret === null) continue;
+      await db
+        .update(brokerAccounts)
+        .set({ credentialsEncrypted: rotatedSecret })
+        .where(eq(brokerAccounts.id, row.id));
+      rotated += 1;
+    } catch (error) {
+      logEvent('error', 'maintenance.reencrypt_failed', {
+        brokerAccountId: row.id,
+        error: errorText(error),
+      });
+    }
+  }
+  return rotated;
 }

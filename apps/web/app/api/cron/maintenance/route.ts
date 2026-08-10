@@ -4,6 +4,8 @@ import { withCron } from '@/lib/cron-auth';
 import { pruneJobs } from '@/lib/jobs';
 import { pruneRateLimits } from '@/lib/rate-limit';
 import {
+  pruneAuthRateLimits,
+  reencryptBrokerCredentials,
   pruneImportBatches,
   pruneNotifications,
   pruneSessions,
@@ -25,6 +27,8 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
   const sessionsDeleted = await pruneSessions(db);
   const verificationsDeleted = await pruneVerifications(db);
   const rateLimitsDeleted = await pruneRateLimits(db);
+  const authRateLimitsDeleted = await pruneAuthRateLimits(db);
+  const credentialsRotated = await reencryptBrokerCredentials(db);
   const jobsDeleted = await pruneJobs(db);
   const importBatchesDeleted = await pruneImportBatches(db);
   const notificationsDeleted = await pruneNotifications(db);
@@ -33,6 +37,8 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
     sessionsDeleted,
     verificationsDeleted,
     rateLimitsDeleted,
+    authRateLimitsDeleted,
+    credentialsRotated,
     jobsDeleted,
     importBatchesDeleted,
     notificationsDeleted,

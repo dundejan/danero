@@ -579,3 +579,39 @@ describe('hlídač neslibuje osvobození tam, kde nepřijde (A2-3-04)', () => {
     expect(candidates.some((c) => c.type.startsWith('TIME_TEST'))).toBe(false);
   });
 });
+
+/**
+ * D-3-06: odhlašovací token neměl časovou složku — platil věčně a zneplatnit
+ * ho šlo jedině výměnou BETTER_AUTH_SECRET, tedy odhlášením všech uživatelů.
+ * Zároveň to byl trvalý identifikátor člověka putující v URL každého e-mailu.
+ */
+describe('odhlašovací token má omezenou platnost (D-3-06)', () => {
+  it('čerstvý token platí, roční ještě taky, starší už ne', async () => {
+    const { unsubscribeToken, verifyUnsubscribeToken, UNSUBSCRIBE_TOKEN_TTL_DAYS } = await import(
+      '@/lib/notifications'
+    );
+    const vydan = new Date('2026-01-01T00:00:00Z');
+    const token = await unsubscribeToken('u-ttl', vydan);
+
+    expect(await verifyUnsubscribeToken(token, vydan)).toBe('u-ttl');
+
+    const denPredKoncem = new Date(vydan.getTime() + (UNSUBSCRIBE_TOKEN_TTL_DAYS - 1) * 86_400_000);
+    expect(await verifyUnsubscribeToken(token, denPredKoncem)).toBe('u-ttl');
+
+    const poVyprseni = new Date(vydan.getTime() + (UNSUBSCRIBE_TOKEN_TTL_DAYS + 1) * 86_400_000);
+    expect(await verifyUnsubscribeToken(token, poVyprseni)).toBeNull();
+  });
+
+  it('podvržené datum vydání podpis neprojde', async () => {
+    const { unsubscribeToken, verifyUnsubscribeToken } = await import('@/lib/notifications');
+    const token = await unsubscribeToken('u-ttl2', new Date('2026-01-01T00:00:00Z'));
+    const [encoded, , sig] = token.split('.');
+    // posunuté datum s původním podpisem — útočník by si tím prodloužil platnost
+    expect(await verifyUnsubscribeToken(`${encoded}.99999.${sig}`)).toBeNull();
+  });
+
+  it('token bez data (starý tvar) už neplatí', async () => {
+    const { verifyUnsubscribeToken } = await import('@/lib/notifications');
+    expect(await verifyUnsubscribeToken('dS1hYmM.abcdef')).toBeNull();
+  });
+});

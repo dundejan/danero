@@ -267,23 +267,50 @@ export async function getNotificationPrefs(db: Db, userId: string) {
 /**
  * Podepsaný odhlašovací token (HMAC přes BETTER_AUTH_SECRET) — odkaz v e-mailu
  * funguje bez přihlášení, ale nejde zfalšovat pro cizí účet.
+ *
+ * D-3-06: token nese **datum vydání** a po `UNSUBSCRIBE_TOKEN_TTL_DAYS`
+ * přestane platit. Bez toho platil věčně a zneplatnit ho šlo jedině výměnou
+ * `BETTER_AUTH_SECRET`, tedy odhlášením všech uživatelů — a zároveň to byl
+ * trvalý identifikátor člověka putující v URL napříč všemi e-maily (kdo se
+ * dostane ke starému e-mailu, odhlásí oběť z upozornění i za rok).
+ *
+ * Rok je kompromis: odkaz musí fungovat i ve zprávě, kterou si člověk otevře
+ * po měsících, ale nesmí být doživotní. Starší token vede na stránku, která
+ * nabídne odhlášení po přihlášení.
  */
-export async function unsubscribeToken(userId: string): Promise<string> {
+export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
+
+const unsubscribeSignature = async (userId: string, issuedDay: string): Promise<string> => {
   const { createHmac } = await import('node:crypto');
   const { resolveSecret } = await import('@/lib/auth');
-  const sig = createHmac('sha256', resolveSecret()).update(`unsub|${userId}`).digest('hex');
-  return `${Buffer.from(userId).toString('base64url')}.${sig}`;
+  return createHmac('sha256', resolveSecret()).update(`unsub|${userId}|${issuedDay}`).digest('hex');
+};
+
+/** Den vydání jako celé číslo dní od epochy — krátké a bez závislosti na locale. */
+const dayNumber = (date: Date): number => Math.floor(date.getTime() / 86_400_000);
+
+export async function unsubscribeToken(userId: string, now = new Date()): Promise<string> {
+  const issuedDay = String(dayNumber(now));
+  const sig = await unsubscribeSignature(userId, issuedDay);
+  return `${Buffer.from(userId).toString('base64url')}.${issuedDay}.${sig}`;
 }
 
-export async function verifyUnsubscribeToken(token: string): Promise<string | null> {
-  const [encoded, sig] = token.split('.');
-  if (!encoded || !sig) return null;
+export async function verifyUnsubscribeToken(
+  token: string,
+  now = new Date(),
+): Promise<string | null> {
+  const [encoded, issuedDay, sig] = token.split('.');
+  if (!encoded || !issuedDay || !sig || !/^\d+$/.test(issuedDay)) return null;
   const userId = Buffer.from(encoded, 'base64url').toString('utf8');
-  const { createHmac, timingSafeEqual } = await import('node:crypto');
-  const { resolveSecret } = await import('@/lib/auth');
-  const expected = createHmac('sha256', resolveSecret()).update(`unsub|${userId}`).digest('hex');
+  const { timingSafeEqual } = await import('node:crypto');
+  const expected = await unsubscribeSignature(userId, issuedDay);
   if (sig.length !== expected.length) return null;
-  return timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? userId : null;
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  // Podpis sedí — teprve teď má smysl ptát se na stáří (jinak by šlo z délky
+  // odpovědi hádat, jestli token platí).
+  const age = dayNumber(now) - Number(issuedDay);
+  if (age < 0 || age > UNSUBSCRIBE_TOKEN_TTL_DAYS) return null;
+  return userId;
 }
 
 // odesílání žije v lib/email.ts (sdílí ho auth vrstva, která nesmí tahat engine)
