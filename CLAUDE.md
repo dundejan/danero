@@ -58,6 +58,13 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 7. Bezpečnost: broker klíče jen read-only + AES-256-GCM (lib/crypto.ts), žádné
    secrety v kódu (produkce = env, dev = vygenerované v `.data/`), tenancy přes
    userId v každém dotazu.
+8. **Identifikace provozovatele NIKDY do kódu** — jméno, IČO, adresa, e-mail
+   i telefon jdou z `DANERO_OPERATOR_*` / `DANERO_CONTACT_*` (`lib/contact.ts`).
+   Repozitář je veřejný a pod AGPL: cizí self-hoster nemá vozit Janovu
+   identitu a hlavně **jednou commitnutá adresa z historie nezmizí** ani po
+   přestěhování. Kvůli tomu se 10. 8. 2026 přepisovala historie (148 commitů,
+   force push) — podruhé už to nepůjde levně, až budou forky. Hlídá to strážný
+   test v `test/email-legal.test.ts` a `/api/health` (`operatorContact`).
 
 ## Známé zrady (ověřeno provozem — neobjevuj znovu)
 
