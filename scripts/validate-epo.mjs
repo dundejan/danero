@@ -189,13 +189,48 @@ if (fileArg) {
   samples = await buildSamples();
 }
 
-let allOk = true;
+/**
+ * E-3-14: krok v CI má `continue-on-error`, protože závisí na cizí službě —
+ * jenže tím se ztratilo i ODMÍTNUTÍ podatelnou, zatímco landing i FAQ nesou
+ * odznak „XML ověřená zkušební podatelnou“. Výpadek sítě a odmítnutí obsahu
+ * jsou dvě různé věci: první se toleruje, druhá musí být vidět.
+ *
+ * Rozlišujeme je návratovým kódem (2 = síť/služba nedostupná, 1 = podatelna
+ * XML odmítla) a zápisem do souhrnu běhu, aby se odmítnutí nedalo přehlédnout
+ * v tisícovce řádků logu.
+ */
+async function writeSummary(text) {
+  const path = process.env.GITHUB_STEP_SUMMARY;
+  if (!path) return;
+  const { appendFile } = await import('node:fs/promises');
+  await appendFile(path, `${text}\n`);
+}
+
+let rejected = 0;
+let unreachable = 0;
 for (const [label, xml] of samples) {
   try {
-    if (!(await submit(label, xml))) allOk = false;
+    if (!(await submit(label, xml))) rejected += 1;
   } catch (error) {
     console.error(`  ✗ Odeslání selhalo (síť?): ${error?.message ?? error}`);
-    allOk = false;
+    unreachable += 1;
   }
 }
-process.exit(allOk ? 0 : 1);
+
+if (rejected > 0) {
+  await writeSummary(
+    `### ❌ Zkušební podatelna odmítla ${rejected} z ${samples.length} vzorků XML\n` +
+      'Landing i FAQ přitom tvrdí „XML ověřená zkušební podatelnou“. ' +
+      'Než se to spraví, je to nepravdivé tvrzení — detaily v logu kroku.',
+  );
+  process.exit(1);
+}
+if (unreachable > 0) {
+  await writeSummary(
+    `### ⚠️ Zkušební podatelnu se nepodařilo oslovit (${unreachable} z ${samples.length})\n` +
+      'Nejspíš výpadek ADIS nebo sítě — obsah XML tím ověřený NENÍ.',
+  );
+  process.exit(2);
+}
+await writeSummary(`### ✅ Zkušební podatelna přijala všech ${samples.length} vzorků XML`);
+process.exit(0);

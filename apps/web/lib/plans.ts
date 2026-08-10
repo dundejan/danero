@@ -40,7 +40,10 @@ export const PLANS: readonly Plan[] = [
     priceNote: 'navždy, bez karty',
     features: [
       'Import výpisů — neomezeně platforem',
-      'Limity 100 000 Kč i 50 000 Kč v reálném čase',
+      // E-3-16: dřívější formulace slibovala průběžnou automatiku, kterou
+      // tenhle tarif nemá — automatický denní sync je až v placeném hlídání.
+      // Zdarma se čísla přepočítají po každém nahrání výpisu.
+      'Limity 100 000 Kč i 50 000 Kč po každém nahrání výpisu',
       'Stav tříletých časových testů',
       'Horizont osvobození: kdy je co bez daně',
       'Orientační daň z investic',

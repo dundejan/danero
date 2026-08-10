@@ -194,10 +194,20 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
           </Link>
           .
         </p>
+        {/* E-3-07: § 38v je v kalkulačce i v hlídání limitů, ale tady chyběl —
+            a je to jediná povinnost, která se týká i příjmu OSVOBOZENÉHO. */}
+        <p>
+          Zvlášť stojí <strong>oznámení osvobozeného příjmu nad 5 000 000 Kč</strong>.
+          Týká se i příjmu, který danit nemusíš — třeba prodeje akcií po třech
+          letech držby. Přiznání kvůli němu nevzniká, ale finanční správě se ta
+          jediná částka musí oznámit, a to ve stejné lhůtě jako přiznání. Pokuta
+          za neoznámení jde do procent z neoznámené částky, takže se to vyplatí
+          nepřehlédnout. Danero takové příjmy označí samo.
+        </p>
       </>
     ),
     zdroj:
-      '§ 7a a § 38g zákona o daních z příjmů; FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
+      '§ 7a, § 38g a § 38v zákona o daních z příjmů; FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
   },
   {
     id: 'kurzy',

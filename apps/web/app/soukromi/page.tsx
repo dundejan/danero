@@ -117,8 +117,11 @@ export default function PrivacyPage() {
           záloze se ty starší než 56 dní automaticky mažou, takže smazaná data mizí
           i ze záloh do dvou měsíců. Databázi navíc provozuje Neon, který drží krátkou
           historii pro obnovu do bodu v čase (v řádu dnů). Když se odhlásíš z e-mailových
-          upozornění, e-maily ti přestanou chodit okamžitě — nastavení si pamatujeme
-          u tvého účtu, dokud ho nesmažeš.
+          upozornění, přestaneme ti posílat hlídací e-maily. Nepřestanou tím chodit
+          zprávy, bez kterých by služba nefungovala nebo bys přišel o peníze:
+          potvrzení objednávky, upomínka před automatickou obnovou předplatného
+          (tu slibují i podmínky, čl. 5), obnova hesla a ověření adresy.
+          Nastavení si pamatujeme u tvého účtu, dokud ho nesmažeš.
         </p>
         <p>
           Historie nákupů a stav předplatného žijí u účtu stejně jako zbytek dat:

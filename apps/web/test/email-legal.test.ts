@@ -177,3 +177,42 @@ describe('u objednávky nezůstala nepotvrzená odchylka od jakosti (§ 2389i)',
     expect((page.match(/type="checkbox"/g) ?? []).length).toBe(1);
   });
 });
+
+/**
+ * Dávka textových nálezů z 3. auditu — každý z nich byl tvrzení, které
+ * neplatilo. Hlídá se to, co je na nich ověřitelné z kódu.
+ */
+describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)', () => {
+  const read = async (relativni: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
+  };
+
+  it('E-3-16: tarif zdarma neslibuje limity „v reálném čase“ — sync je placený', async () => {
+    const plans = await read('lib/plans.ts');
+    const free = plans.slice(plans.indexOf("id: 'free'"), plans.indexOf("id: 'report'"));
+    expect(free).not.toMatch(/v reálném čase/);
+    expect(free).toMatch(/po každém nahrání výpisu/);
+  });
+
+  it('E-3-11: soukromí neslibuje, že po odhlášení přestanou chodit VŠECHNY e-maily', async () => {
+    const soukromi = await read('app/soukromi/page.tsx');
+    expect(soukromi).not.toMatch(/e-maily ti přestanou chodit okamžitě/);
+    // provozní zprávy musí být jmenované, jinak je slib zase příliš široký
+    expect(soukromi).toMatch(/upomínka před automatickou obnovou/);
+    expect(soukromi).toMatch(/obnova hesla/);
+  });
+
+  it('E-3-12: kalkulačka netvrdí, že překročení 50k vyhazuje z paušálního režimu', async () => {
+    const kalkulacka = await read('app/kalkulacka/page.tsx');
+    expect(kalkulacka).not.toMatch(/smí mít max\. 50 000/);
+    expect(kalkulacka).toMatch(/z režimu nevyhazuje/);
+  });
+
+  it('E-3-07: „Jak počítáme“ zná oznámení osvobozeného příjmu (§ 38v)', async () => {
+    const jakPocitame = await read('app/jak-pocitame/page.tsx');
+    expect(jakPocitame).toMatch(/38v/);
+    expect(jakPocitame).toMatch(/5 000 000 Kč/);
+  });
+});

@@ -71,11 +71,22 @@ jobs:
       # správy. Tři vady z auditu (odmítnutý rok bez zdanitelných příjmů, český
       # prodej hlášený jako zahraniční zdroj, řídicí znak v jméně) unit testy
       # chytit nemohly — XML bylo „hezké“, jen ho podatelna nepřijala.
-      # `continue-on-error`: závisí to na cizí službě a na síti, takže výpadek
-      # ADIS nesmí shodit build. Výsledek je vidět v logu i v souhrnu běhu.
-      - name: Kontrola EPO XML proti testovací podatelně (nepovinné)
-        continue-on-error: true
-        run: pnpm validate:epo
+      # E-3-14: výpadek cizí služby build shodit nesmí, ODMÍTNUTÍ podatelnou
+      # ale ano — landing i FAQ nesou odznak „XML ověřená zkušební podatelnou“,
+      # takže tiché odmítnutí by z něj udělalo nepravdivé tvrzení. Skript to
+      # rozlišuje návratovým kódem: 2 = nedostupná služba (tolerujeme),
+      # 1 = podatelna XML odmítla (padáme). Obojí zapíše do souhrnu běhu.
+      - name: Kontrola EPO XML proti testovací podatelně
+        run: |
+          set +e
+          pnpm validate:epo
+          kod=$?
+          set -e
+          if [ "$kod" = "2" ]; then
+            echo "::warning::Zkušební podatelna je nedostupná — XML tímhle během ověřené není."
+            exit 0
+          fi
+          exit "$kod"
 
   e2e:
     runs-on: ubuntu-latest
