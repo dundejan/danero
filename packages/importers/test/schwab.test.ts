@@ -359,3 +359,58 @@ describe('parseSchwabCsv — edge cases', () => {
     expect(duplicit).toBe(2);
   });
 });
+
+/**
+ * B-3-11: kladný `NRA Tax Adj` je VRATKA přeplatku srážkové daně. Přes
+ * `.abs()` se zaúčtovala jako další srážka, takže zápočet vyšel vyšší
+ * a česká daň nižší — nejhorší směr chyby.
+ */
+describe('Schwab: vratka srážkové daně snižuje srážku, nezakládá novou', () => {
+  const csv = (radky: string[]) => [SCHWAB_HEADER, ...radky].join('\n');
+
+  it('kladná částka odečte z už zaúčtované srážky téhož symbolu', () => {
+    const result = parseSchwabCsv(
+      csv([
+        '"02/01/2023","Cash Dividend","GIS","GENERAL MILLS","","","","$0.54"',
+        '"02/03/2023","NRA Tax Adj","GIS","GENERAL MILLS","","","","-$0.15"',
+        '"02/05/2023","NRA Tax Adj","GIS","GENERAL MILLS","","","","$0.08"',
+      ]),
+      SCHWAB_INSTRUMENT_MAP,
+    );
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.gross.toString()).toBe('0.54');
+    // 0,15 sraženo − 0,08 vráceno = 0,07 (dřív vycházelo 0,08 jako druhá srážka)
+    expect(dividend.withholdingTax.toString()).toBe('0.07');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('vratka bez odpovídající srážky se nezaúčtuje a upozorní', () => {
+    const result = parseSchwabCsv(
+      csv([
+        '"02/01/2023","Cash Dividend","GIS","GENERAL MILLS","","","","$0.54"',
+        '"02/03/2023","NRA Tax Adj","GIS","GENERAL MILLS","","","","$0.08"',
+      ]),
+      SCHWAB_INSTRUMENT_MAP,
+    );
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.withholdingTax.toString()).toBe('0');
+    expect(result.warnings.some((w) => w.message.includes('Vratka srážkové daně'))).toBe(true);
+  });
+
+  it('vratka vyšší než srážka končí na nule, ne v záporu', () => {
+    const result = parseSchwabCsv(
+      csv([
+        '"02/01/2023","Cash Dividend","GIS","GENERAL MILLS","","","","$0.54"',
+        '"02/02/2023","NRA Tax Adj","GIS","GENERAL MILLS","","","","-$0.05"',
+        '"02/03/2023","NRA Tax Adj","GIS","GENERAL MILLS","","","","$0.20"',
+      ]),
+      SCHWAB_INSTRUMENT_MAP,
+    );
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.withholdingTax.toString()).toBe('0');
+    expect(result.warnings.some((w) => w.message.includes('vyšší než sražená daň'))).toBe(true);
+  });
+});

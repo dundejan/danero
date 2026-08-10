@@ -166,6 +166,23 @@ export function cleanNumber(value: string): string {
 }
 
 /**
+ * Je zápis nerozhodnutelný mezi tisícovou a desetinnou čárkou? (B-3-12)
+ *
+ * „7,848“ může být 7848 (US tisíce) i 7,848 (evropská desetinná čárka) a
+ * `cleanNumber` z něj vždycky udělá 7848. U počtu kusů je to **tisícinásobná**
+ * chyba, a protože Trading 212 prodává zlomky akcií, je desetinný výklad
+ * u „No. of shares“ dokonce pravděpodobnější. Rozhodnout to z jednoho pole
+ * nejde — chování proto neměníme (jinak by se rozbily exporty, kde tisícová
+ * čárka opravdu je), ale volající o tom může uživatele zpravit.
+ *
+ * Nejednoznačné je jen JEDNO trojčíslí bez desetinné tečky: „1,234,567“ ani
+ * „1,234.56“ jinak než jako tisíce číst nejdou.
+ */
+export function isAmbiguousThousands(value: string): boolean {
+  return /^-?\d{1,3},\d{3}$/.test(value.replace(/\s/g, ''));
+}
+
+/**
  * Evropský číselný zápis → kanonický: „1 234,56“ i „1.234,56“ → „1234.56“.
  * Použij tam, kde formát PROKAZATELNĚ píše desetinnou čárku — na US zápis
  * s tisícovými čárkami patří cleanNumber.

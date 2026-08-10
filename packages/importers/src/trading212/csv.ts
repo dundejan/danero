@@ -1,5 +1,5 @@
 import { Decimal, TransactionSchema } from '@danero/shared';
-import { cleanNumber, firstLine, HeaderMap, parseCsv } from '../csv';
+import { cleanNumber, firstLine, HeaderMap, isAmbiguousThousands, parseCsv } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -164,7 +164,18 @@ export function parseTrading212Csv(text: string): ImportResult {
         case 'BUY':
         case 'SELL': {
           const isin = map.get(row, 'ISIN');
-          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          const sharesRaw = map.get(row, 'No. of shares');
+          // B-3-12: „7,848“ přečteme jako 7848, ale u brokera, který prodává
+          // zlomky akcií, to klidně může být 7,848 kusu — tisícinásobný rozdíl,
+          // který se propíše do nabývací ceny, limitů i daně. Rozhodnout to
+          // z jednoho pole nejde, takže o tom aspoň řekneme.
+          if (isAmbiguousThousands(sharesRaw)) {
+            result.warnings.push({
+              line,
+              message: `Počet kusů „${sharesRaw}“ jsme přečetli jako ${cleanNumber(sharesRaw)}. Čárka tu může být i desetinná (Trading 212 prodává zlomky akcií) — pak by šlo o tisíckrát menší množství. Zkontroluj si tenhle řádek ve výpisu.`,
+            });
+          }
+          const shares = cleanNumber(sharesRaw);
           const price = cleanNumber(map.get(row, 'Price / share'));
           const currency = map.get(row, 'Currency (Price / share)');
           if (!isin || !shares || !price || !currency) {
@@ -201,6 +212,17 @@ export function parseTrading212Csv(text: string): ImportResult {
             result.warnings.push({
               line,
               message: `${action}: vratka kapitálu se konzervativně daní jako dividenda (§ 8) a čerpá limit 50 000 Kč paušální daně. Věcně správné zacházení je snížení nabývací ceny pozice (nižší daň až při prodeji) — pokud jde o významnou částku, uprav historii ručně nebo se poraď s poradcem.`,
+            });
+          }
+          // B-3-10: náhrada za dividendu u zapůjčených akcií (T212 půjčuje kusy
+          // na short). Formálně to není dividenda, ale platba od půjčovatele —
+          // nárok na zápočet zahraniční srážky u ní není jistý. Danit ji jako
+          // dividendu je bezpečný směr, mlčet o tom ne; IBKR na týž případ
+          // upozorňuje („Payment In Lieu Of Dividends“).
+          if (action.toLowerCase().includes('manufactured payment')) {
+            result.warnings.push({
+              line,
+              message: `${action}: tohle není dividenda od firmy, ale náhrada za ni od toho, komu Trading 212 tvoje akcie půjčil. Daníme ji jako dividendu (§ 8), protože je to bezpečnější varianta — u zápočtu případné zahraniční srážkové daně je ale nárok sporný. Pokud jde o významnou částku, ověř si ji s poradcem.`,
             });
           }
           const isin = map.get(row, 'ISIN') || undefined;

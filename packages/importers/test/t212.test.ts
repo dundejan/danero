@@ -446,3 +446,53 @@ describe('starý a nový formát téhož výpisu se nezdvojí', () => {
     expect(druhy.duplicates).toBe(novy.transactions.length);
   });
 });
+
+/**
+ * B-3-10: náhrada za dividendu u zapůjčených akcií není dividenda od firmy.
+ * B-3-12: „7,848“ v počtu kusů je nerozhodnutelné mezi 7848 a 7,848.
+ */
+describe('Trading 212: sporné řádky se nezpracují potichu', () => {
+  it('Dividend manufactured payment se daní jako dividenda, ale s upozorněním', () => {
+    const csv = [
+      HEADER,
+      'Dividend (manufactured payment),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    // číslo se nemění (bezpečný směr), jen se o něm ví
+    expect(dividend.gross.toString()).toBe('14.2');
+    expect(result.warnings.some((w) => w.message.includes('půjčil'))).toBe(true);
+  });
+
+  it('běžná dividenda upozornění nedostane', () => {
+    const csv = [
+      HEADER,
+      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.warnings.some((w) => w.message.includes('půjčil'))).toBe(false);
+  });
+
+  it('nerozhodnutelná čárka v počtu kusů se ohlásí', () => {
+    const csv = [
+      HEADER,
+      'Market buy,2025-03-03 10:00:00,US0378331005,AAPL,Apple,"7,848",100.00,USD,,,,784800.00,USD,,,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    const buy = result.transactions.find((t) => t.type === 'BUY');
+    if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
+    // chování beze změny — jen se o nejednoznačnosti ví
+    expect(buy.quantity.toString()).toBe('7848');
+    expect(result.warnings.some((w) => w.message.includes('tisíckrát menší'))).toBe(true);
+  });
+
+  it('jednoznačný zápis („1,234.56“ i „12.5“) upozornění nevyvolá', () => {
+    const csv = [
+      HEADER,
+      'Market buy,2025-03-03 10:00:00,US0378331005,AAPL,Apple,12.5,100.00,USD,,,,1250.00,USD,,,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    expect(result.warnings.some((w) => w.message.includes('tisíckrát menší'))).toBe(false);
+  });
+});

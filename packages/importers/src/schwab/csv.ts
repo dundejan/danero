@@ -1,4 +1,4 @@
-import { d, TransactionSchema } from '@danero/shared';
+import { d, Decimal, TransactionSchema } from '@danero/shared';
 import { cleanNumber, HeaderMap, parseCsv, parseUsDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
@@ -467,7 +467,19 @@ export function parseSchwabCsv(
         });
         continue;
       }
-      taxes.push({ line, symbol, date, amount: d(amountRaw).abs().toString() });
+      // B-3-11: znaménko rozhoduje. Srážka přichází jako ZÁPORNÁ částka
+      // (peníze odešly), kladný `NRA Tax Adj` je naopak VRATKA přeplatku.
+      // `.abs()` z ní dělalo další srážku, takže se zápočet nadhodnotil
+      // a česká daň vyšla nižší — nejhorší možný směr chyby.
+      const signed = d(amountRaw);
+      if (signed.isZero()) {
+        result.warnings.push({
+          line,
+          message: `Srážková daň („${action}“ ${symbol}) má nulovou částku — nezaúčtováno.`,
+        });
+        continue;
+      }
+      taxes.push({ line, symbol, date, amount: signed.neg().toString() });
       continue;
     }
 
@@ -560,18 +572,24 @@ export function parseSchwabCsv(
   }
 
   // párování srážek: stejný symbol, nejbližší datum (±5 dní), dividenda bez srážky
-  for (const tax of taxes) {
+  const nearest = (tax: PendingTax, accept: (dividend: PendingDividend) => boolean) => {
     let best: PendingDividend | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const dividend of dividends) {
-      if (dividend.withholding !== undefined || dividend.symbol !== tax.symbol) continue;
+      if (dividend.symbol !== tax.symbol || !accept(dividend)) continue;
       const distance = dayDistance(dividend.date, tax.date);
       if (distance < bestDistance) {
         best = dividend;
         bestDistance = distance;
       }
     }
-    if (!best || bestDistance > TAX_MATCH_MAX_DAYS) {
+    return bestDistance > TAX_MATCH_MAX_DAYS ? null : best;
+  };
+
+  // Nejdřív skutečné srážky, teprve pak vratky — vratka musí mít co snižovat.
+  for (const tax of taxes.filter((t) => d(t.amount).gt(0))) {
+    const best = nearest(tax, (dividend) => dividend.withholding === undefined);
+    if (!best) {
       result.warnings.push({
         line: tax.line,
         message: `Srážková daň ${tax.amount} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá dohledatelnou dividendu — přiřaď ji přes univerzální šablonu.`,
@@ -579,6 +597,26 @@ export function parseSchwabCsv(
       continue;
     }
     best.withholding = tax.amount;
+  }
+  // B-3-11: vratka přeplatku snižuje už zaúčtovanou srážku téhož symbolu.
+  for (const tax of taxes.filter((t) => d(t.amount).lt(0))) {
+    const refund = d(tax.amount).abs();
+    const best = nearest(tax, (dividend) => d(dividend.withholding ?? '0').gt(0));
+    if (!best) {
+      result.warnings.push({
+        line: tax.line,
+        message: `Vratka srážkové daně ${refund.toString()} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá k čemu se přiřadit — u téhle dividendy žádnou sraženou daň neevidujeme. Zkontroluj výpis, jinak bude zápočet nadhodnocený.`,
+      });
+      continue;
+    }
+    const zbytek = d(best.withholding ?? '0').minus(refund);
+    if (zbytek.isNegative()) {
+      result.warnings.push({
+        line: tax.line,
+        message: `Vratka srážkové daně ${refund.toString()} USD (${tax.symbol}, ${tax.date}) je vyšší než sražená daň ${best.withholding} USD u dividendy z ${best.date} — započítali jsme ji jen do nuly. Zkontroluj výpis.`,
+      });
+    }
+    best.withholding = Decimal.max(zbytek, d('0')).toString();
   }
   for (const dividend of dividends) {
     push(dividend.line, dividend.raw, {

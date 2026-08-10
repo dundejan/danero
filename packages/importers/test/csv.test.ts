@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanNumber, isValidIsoDate, parseCsv } from '../src/csv';
+import { cleanNumber, isAmbiguousThousands, isValidIsoDate, parseCsv } from '../src/csv';
 
 describe('RFC 4180 CSV parser', () => {
   it('parsuje uvozovky, čárky a nové řádky uvnitř polí', () => {
@@ -65,5 +65,22 @@ describe('pomocníci pro evropské formáty (sdílené parserovými moduly)', ()
   it('normalizeHeader: trim, lowercase, bez diakritiky', async () => {
     const { normalizeHeader } = await import('../src/csv');
     expect(normalizeHeader('  Čas Otevření ')).toBe('cas otevreni');
+  });
+});
+
+describe('isAmbiguousThousands (B-3-12)', () => {
+  it('jedno trojčíslí bez desetinné tečky je nerozhodnutelné', () => {
+    expect(isAmbiguousThousands('7,848')).toBe(true);
+    expect(isAmbiguousThousands('-1,000')).toBe(true);
+    expect(isAmbiguousThousands(' 12,345 ')).toBe(true);
+  });
+
+  it('víc trojčíslí nebo desetinná tečka nejednoznačné nejsou', () => {
+    expect(isAmbiguousThousands('1,234,567')).toBe(false);
+    expect(isAmbiguousThousands('1,234.56')).toBe(false);
+    expect(isAmbiguousThousands('12.5')).toBe(false);
+    expect(isAmbiguousThousands('7848')).toBe(false);
+    // čtyři číslice za čárkou nejsou tisícové trojčíslí
+    expect(isAmbiguousThousands('7,8480')).toBe(false);
   });
 });
