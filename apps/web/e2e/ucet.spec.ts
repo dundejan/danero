@@ -95,39 +95,29 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 });
 
 /**
- * Předplatné (docs/19): stránka musí být v navigaci a nákup nesmí jít dokončit
- * bez výslovné žádosti o zahájení plnění (§ 1837 písm. l OZ) — ta je zákonná
- * podmínka, ne kosmetika, a checkbox nesmí být předškrtnutý.
+ * Předplatné (docs/19) na instanci BEZ plateb — tak jede tahle sada
+ * (`DANERO_BILLING` není nastavené) a tak běží každý self-host.
+ *
+ * Stránka musí být v navigaci a ukazovat ceník, ale nesmí nic nabízet:
+ * kupovat není co a objednávka by spadla až v server action na chybějícím
+ * Stripe klíči. Samotnou objednávku hlídá `e2e-paywall`, kde platby běží.
  */
-test('předplatné: v navigaci a bez souhlasu se nekupuje', async ({ page }) => {
+test('předplatné: v navigaci, ale bez plateb neprodává', async ({ page }) => {
   await registerWithProfile(page, { name: 'E2E Platby', email: 'platby@danero.cz' });
 
   await page.getByRole('link', { name: 'Předplatné' }).click();
   await page.waitForURL('**/predplatne');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Předplatné');
-  // Cena je na stránce dvakrát a obojí schválně: jednou na kartě tarifu
-  // (přehled jako v ceníku) a jednou v objednávkovém formuláři, kde na ni
-  // navazuje poučení o obnově. Test hlídá tu druhou — jde o nákup.
   await expect(page.getByLabel('Tarify').getByText(/990 Kč\s*\/ rok/)).toBeVisible();
-  await expect(page.locator('#hlidani').getByText(/990 Kč\s*\/ rok/)).toBeVisible();
 
-  // § 1811/2 a § 1820/1 OZ: doba trvání a automatická obnova musí být vidět
-  // PŘED objednávkou, ne až ve stavu „mám zaplaceno"
-  await expect(page.getByText(/Předplatné trvá/)).toBeVisible();
-  await expect(page.getByText(/automaticky obnovuje za 990 Kč/)).toBeVisible();
-  await expect(page.getByText(/14 dní před obnovou/)).toBeVisible();
-  await expect(page.getByText(/zrušit ji můžeš kdykoli v zákaznickém portálu/)).toBeVisible();
-
-  const souhlas = page.locator('#souhlas-predplatne');
-  await expect(souhlas).not.toBeChecked();
-  await expect(souhlas).toHaveAttribute('required', '');
-
-  // odeslání bez zaškrtnutí prohlížeč nepustí — zůstáváme na stránce
-  await page
-    .locator('form', { has: souhlas })
-    .getByRole('button', { name: 'Objednat s povinností platby' })
-    .click();
-  await expect(page).toHaveURL(/\/predplatne/);
+  await expect(page.getByText(/Tahle instance běží bez plateb/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Objednat hlídání' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Koupit podklady' })).toHaveCount(0);
+  // ani přímý odkaz na objednávku formulář neotevře
+  await page.goto('/predplatne/hlidani');
+  await expect(page).toHaveURL(/\/predplatne$/);
+  await page.goto('/predplatne/podklady');
+  await expect(page).toHaveURL(/\/predplatne$/);
 
   // ceny jsou konečné a je vidět, kdo prodává
   await expect(page.getByText(/Ceny jsou konečné/)).toBeVisible();

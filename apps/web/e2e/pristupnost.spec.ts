@@ -1,5 +1,5 @@
-import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { auditPage } from './a11y';
 import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universal/csv';
 import { registerWithProfile } from './helpers';
 
@@ -36,6 +36,9 @@ const APP_PAGES = [
   '/import',
   '/nastaveni',
   '/predplatne',
+  // objednávkové stránky (`/predplatne/hlidani`, `/predplatne/podklady`) tady
+  // být nemůžou: bez `DANERO_BILLING=stripe` se neprodává nic a obě
+  // přesměrují zpátky. Auditují se v `e2e-paywall/pristupnost-objednavky`.
 ];
 
 /**
@@ -57,17 +60,18 @@ const DEMO_PAGES = [
 ];
 
 /**
- * Přihlašovací tok. `/nove-heslo` bez tokenu i `/overeni-emailu?error=1`
- * schválně míří na chybové větve — ty uživatel vidí nejčastěji a dřív je
- * nekontroloval nikdo.
+ * Přihlašovací tok. `/nove-heslo` bez tokenu schválně míří na chybovou větev —
+ * tu uživatel vidí nejčastěji a dřív ji nekontroloval nikdo.
  */
-const AUTH_PAGES = [
-  '/prihlaseni',
-  '/registrace',
-  '/zapomenute-heslo',
-  '/nove-heslo',
-  '/overeni-emailu?error=1',
-];
+const AUTH_PAGES = ['/prihlaseni', '/registrace', '/zapomenute-heslo', '/nove-heslo'];
+
+/**
+ * Stránky, které se dají auditovat JEN odhlášené. `/overeni-emailu` posílá
+ * potvrzeného uživatele na `/vitejte`, takže ve společné smyčce (ta běží
+ * přihlášená) se místo chybové větve auditoval podruhé onboarding — a nikdo
+ * o tom nevěděl, dokud `auditPage` nezačala hlídat, kde skutečně skončila.
+ */
+const LOGGED_OUT_PAGES = ['/overeni-emailu?error=1'];
 
 /** Marketing a právní texty — první, co návštěvník uvidí. */
 const MARKETING_PAGES = [
@@ -87,101 +91,17 @@ const MARKETING_PAGES = [
   '/odstoupeni',
 ];
 
-const MOBILE = { width: 390, height: 844 };
-const DESKTOP = { width: 1280, height: 900 };
-
-/**
- * Nálezy, které stránku shodí.
- *
- * Původně `critical` + `serious`. Jenže rozbitá struktura landmarků (dva
- * `<main>`, duplicitní `id`) je pro axe **`moderate`** — takže 404 uvnitř
- * aplikace prošla sadou bez povšimnutí (audit H2-05a). Práh je proto
- * `moderate`; pod ním zůstává jen `minor` (kosmetika typu `empty-table-header`).
- */
-const BLOCKING_IMPACTS = new Set(['critical', 'serious', 'moderate']);
-
-/**
- * Kontroly jsou `soft`: jeden běh trvá minuty, takže musí vypsat VŠECHNY
- * stránky najednou — tvrdý expect by sadu zastavil na první z nich a na
- * zbytek by se přišlo až za dalších pár minut.
- */
-async function expectNoHorizontalOverflow(page: Page, label: string) {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect.soft(overflow, `${label} přetéká vodorovně o ${overflow}px`).toBeLessThanOrEqual(1);
-}
-
-async function expectNoSeriousViolations(page: Page, label: string) {
-  const results = await new AxeBuilder({ page }).analyze();
-  const blocking = results.violations.filter((v) => BLOCKING_IMPACTS.has(v.impact ?? ''));
-  // porovnává se seznam popisů, ne celé objekty nálezů — hláška při pádu se
-  // pak dá přečíst (celý axe node má stovky řádků JSONu)
-  const summary = blocking.map(
-    (v) => `${v.id} [${v.impact}] ${v.nodes.length}× ${v.help} @ ${v.nodes[0]?.target.join(' ')}`,
-  );
-  expect.soft(summary, `${label}`).toEqual([]);
-}
-
-/**
- * Právě jeden `<main>` a právě jedno `id="obsah"`.
- *
- * axe to sice hlásí taky (`landmark-no-duplicate-main`, `landmark-unique`), ale
- * jen jako `moderate` a s hláškou, ze které není poznat příčinu. Tenhle test
- * pojmenuje přesně to, co se rozbilo: shell se vykreslil uvnitř jiného shellu.
- * Skip-link „Přeskočit na obsah“ míří na `#obsah` — se dvěma stejnými `id`
- * skočí na to první, tedy nikoli na obsah stránky.
- */
-async function expectSingleContentLandmark(page: Page, label: string) {
-  const counts = await page.evaluate(() => ({
-    main: document.querySelectorAll('main').length,
-    obsah: document.querySelectorAll('#obsah').length,
-  }));
-  const problemy: string[] = [];
-  if (counts.main !== 1) problemy.push(`<main> ${counts.main}× (má být právě 1)`);
-  // přihlašovací stránky skip-link nemají (jeden krátký formulář, není co
-  // přeskakovat), takže 0 je v pořádku — chybou je až duplicita
-  if (counts.obsah > 1) problemy.push(`id="obsah" ${counts.obsah}× (dvojznačná kotva)`);
-  expect.soft(problemy, label).toEqual([]);
-}
-
-/** Jeden průchod stránkou: světlý i tmavý režim, mobil i desktop. */
-async function auditPage(page: Page, path: string) {
-  await page.goto(path);
-  await page.waitForLoadState('networkidle');
-  await expectSingleContentLandmark(page, path);
-  // kurzor zůstává tam, kam naposledy klikl test — jinak by axe měřil `:hover`
-  // stav náhodného prvku pod ním a nález by záležel na rozložení stránky
-  await page.mouse.move(0, 0);
-
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    // ThemeProvider přepíná třídu na <html> podle systémového nastavení;
-    // bez téhle kontroly by se „tmavý“ průchod mohl tiše měřit ve světlém
-    await expect
-      .soft(page.locator('html'))
-      .toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
-
-    for (const [name, size] of [
-      ['mobil', MOBILE],
-      ['desktop', DESKTOP],
-    ] as const) {
-      await page.setViewportSize(size);
-      // grafy se překreslují přes ResizeObserver — bez snímku navíc by axe
-      // měřil na plátně o předchozí šířce
-      await page.waitForTimeout(150);
-      if (name === 'mobil') await expectNoHorizontalOverflow(page, `${path} (${scheme}, ${name})`);
-      await expectNoSeriousViolations(page, `${path} (${scheme}, ${name})`);
-    }
-  }
-}
-
 test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení (light i dark)', async ({
   page,
 }) => {
   // 35 stránek × 2 režimy × 2 viewporty — pomalé, ale je to jediná pojistka
   // proti tomu, aby se přístupnost zase tiše rozpadla
   test.setTimeout(1_800_000);
+  // dokud je prohlížeč odhlášený — potvrzenému uživateli tyhle stránky utečou
+  for (const path of LOGGED_OUT_PAGES) {
+    await auditPage(page, path);
+  }
+
   await registerWithProfile(page, { name: 'E2E A11y', email: 'a11y@danero.cz' });
 
   // onboarding se po naimportování dat přesměruje na přehled — projít ho jde

@@ -179,10 +179,22 @@ describe('u objednávky nezůstala nepotvrzená odchylka od jakosti (§ 2389i)',
   });
 
   it('objednávka nemá druhý povinný checkbox — zbyl jen souhlas dle § 1837 l', async () => {
-    const page = await read('app/(app)/predplatne/page.tsx');
-    expect(page).not.toContain('name="dostupnost"');
-    expect((page.match(/<SouhlasCheckbox /g) ?? []).length).toBe(2);
-    expect((page.match(/type="checkbox"/g) ?? []).length).toBe(1);
+    // Objednávka má od 10. 8. 2026 vlastní stránky a jedno společné shrnutí;
+    // zaškrtávátko je právě jedno a je jen v něm.
+    const objednavka = await read('components/order-page.tsx');
+    expect(objednavka).not.toContain('name="dostupnost"');
+    expect((objednavka.match(/<SouhlasCheckbox /g) ?? []).length).toBe(1);
+    expect((objednavka.match(/type="checkbox"/g) ?? []).length).toBe(1);
+
+    for (const stranka of [
+      'app/(app)/predplatne/page.tsx',
+      'app/(app)/predplatne/hlidani/page.tsx',
+      'app/(app)/predplatne/podklady/page.tsx',
+    ]) {
+      const zdroj = await read(stranka);
+      expect(zdroj, `${stranka} přidává vlastní checkbox`).not.toContain('type="checkbox"');
+      expect(zdroj).not.toContain('name="dostupnost"');
+    }
   });
 });
 

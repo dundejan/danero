@@ -1,22 +1,21 @@
-import { OPERATOR } from '@/lib/contact';
 import Link from 'next/link';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { BillingModeNotice } from '@/components/order-page';
 import { PlanCard } from '@/components/plan-card';
+import { PurchaseLegalNote } from '@/components/purchase-legal-note';
 import { Toast } from '@/components/toast';
 import { buttonVariants } from '@/components/ui/button';
 import { getDb } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
 import { stripeCustomerFor } from '@/lib/billing';
-import { SANDBOX_NOTICE, stripeSandboxInProduction } from '@/lib/stripe';
+import { SANDBOX_NOTICE } from '@/lib/stripe';
 import { billingEnabled, isPaidSubscription, isSellableTaxYear } from '@/lib/entitlements';
-import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { czDate } from '@/lib/format';
 import { availableYears, loadTransactions } from '@/lib/portfolio';
 import { PLANS } from '@/lib/plans';
-import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
-import { buyReportAction, buySubscriptionAction, openBillingPortalAction } from './actions';
+import { openBillingPortalAction } from './actions';
 
 export const metadata = { title: 'Předplatné — Danero' };
 
@@ -36,6 +35,7 @@ const STAV_CHYBA: Record<string, string> = {
     'Bez zaškrtnutí žádosti o okamžité zahájení plnění nákup dokončit nejde — je to zákonná podmínka.',
   'chyba-rok': 'Vyber daňový rok, za který podklady chceš — nabízíme posledních deset let.',
   'uz-mas-rok': 'Podklady za tenhle rok už máš zaplacené, zůstávají ti odemčené napořád.',
+  'vse-koupeno': 'Za všechny roky se svými daty už podklady máš — kupovat teď není co.',
   'bez-plateb': 'Zatím jsi u nás nic nekoupil, není co spravovat.',
   'uz-mas-predplatne':
     'Hlídání ti běží — druhé předplatné vedle něj nedává smysl. Spravovat ho můžeš v zákaznickém portálu.',
@@ -47,9 +47,9 @@ const STAV_CHYBA: Record<string, string> = {
 };
 
 /**
- * Stav plateb a nákup (docs/19). Souhlas se zahájením plnění je povinný
- * checkbox u obou formulářů — bez něj by šlo odstoupit i po vygenerování
- * podkladů (§ 1837 písm. l OZ).
+ * Přehled tarifů a stav plateb (docs/19). Tahle stránka JEN ukazuje nabídku
+ * a co z ní uživatel má — kupuje se o krok dál, na `/predplatne/hlidani`
+ * a `/predplatne/podklady`, kde má objednávka celou stránku i právní text.
  */
 export default async function SubscriptionPage({
   searchParams,
@@ -85,6 +85,8 @@ export default async function SubscriptionPage({
   const years = availableYears(txs, now.getUTCFullYear()).filter((rok) =>
     isSellableTaxYear(rok, now),
   );
+  // vlastní instance bez Stripu nemá co prodávat (viz `billingEnabled`)
+  const prodavame = billingEnabled();
   const koupeneRoky = new Set(purchases.map((p) => p.taxYear));
   const nabizeneRoky = years.filter((rok) => !koupeneRoky.has(rok));
   const koupeneRokyText = purchases.map((p) => p.taxYear).join(', ');
@@ -104,20 +106,12 @@ export default async function SubscriptionPage({
       )}
       {stav && STAV_CHYBA[stav] && <Toast kind="chyba" text={STAV_CHYBA[stav]} />}
 
-      {!billingEnabled() && (
-        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
-          Tahle instance běží bez plateb — všechny funkce máš odemčené.
-        </div>
-      )}
-
-      {/* C-29: se zkušebním klíčem by „platba" prošla testovací kartou a nic
-          by se nestrhlo — to musí být vidět dřív, než na tlačítko sáhneš. */}
-      {stripeSandboxInProduction() && <Toast kind="chyba" text={SANDBOX_NOTICE} />}
+      <BillingModeNotice />
 
       {/* Tytéž tarify a tytéž seznamy funkcí jako veřejný ceník (lib/plans.ts) —
           uživatel u placení nesmí číst jiný slib, než jaký ho sem přivedl.
-          Co má právě teď, nese odznak na kartě; kupuje se ve formulářích níž,
-          kde má právní text plnou šířku. */}
+          Co má právě teď, nese odznak na kartě; tlačítko vede na objednávku,
+          kde se teprve platí. */}
       <section aria-label="Tarify" className="grid gap-6 lg:grid-cols-3">
         {PLANS.map((plan) => {
           const jeAktivni =
@@ -144,92 +138,38 @@ export default async function SubscriptionPage({
                       : undefined
               }
             >
-              {plan.id === 'subscription' && !active && (
-                <a href="#hlidani" className={`${buttonVariants({ variant: 'primary' })} w-full`}>
+              {/* Na instanci bez plateb se nenabízí nic: kupovat není co
+                  a tlačítko by vedlo jen zpátky sem (vysvětluje to hláška nad
+                  tarify). */}
+              {plan.id === 'subscription' && !active && prodavame && (
+                <Link
+                  href="/predplatne/hlidani"
+                  className={`${buttonVariants({ variant: 'primary' })} w-full`}
+                >
                   Objednat hlídání
-                </a>
+                </Link>
               )}
-              {plan.id === 'report' && !active && nabizeneRoky.length > 0 && (
-                <a href="#podklady" className={`${buttonVariants({ variant: 'secondary' })} w-full`}>
-                  {purchases.length > 0 ? 'Koupit další rok' : 'Koupit podklady'}
-                </a>
-              )}
-              {plan.id === 'report' && !active && nabizeneRoky.length === 0 && (
-                <p className="text-sm text-inkoust-tlumeny">
-                  {years.length === 0
-                    ? 'Nejdřív nahraj výpisy — pak tu půjde koupit podklady za konkrétní rok.'
-                    : 'Za všechny roky se svými daty už podklady máš.'}
-                </p>
-              )}
+              {plan.id === 'report' &&
+                !active &&
+                prodavame &&
+                (nabizeneRoky.length > 0 ? (
+                  <Link
+                    href="/predplatne/podklady"
+                    className={`${buttonVariants({ variant: 'secondary' })} w-full`}
+                  >
+                    {purchases.length > 0 ? 'Koupit další rok' : 'Koupit podklady'}
+                  </Link>
+                ) : (
+                  <p className="text-sm text-inkoust-tlumeny">
+                    {years.length === 0
+                      ? 'Nejdřív nahraj výpisy — pak tu půjde koupit podklady za konkrétní rok.'
+                      : 'Za všechny roky se svými daty už podklady máš.'}
+                  </p>
+                ))}
             </PlanCard>
           );
         })}
       </section>
-
-      {!active && (
-        <section id="hlidani" className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
-          <h2 className="font-display text-xl font-bold">Objednat celoroční hlídání</h2>
-          <form action={buySubscriptionAction} className="mt-4 space-y-4">
-            <p className="font-display text-2xl font-bold">
-              {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
-              <span className="text-base font-semibold text-inkoust-tlumeny">/ rok</span>
-            </p>
-            {/* § 1811 odst. 2 a § 1820 odst. 1 OZ: doba trvání a automatická
-                obnova musí být na očích PŘED objednávkou, ne až po ní. */}
-            <p className="text-sm text-inkoust-tlumeny">
-              Předplatné trvá <strong className="text-inkoust">1 rok</strong> a po roce se
-              automaticky obnovuje za {priceLabel(PRICE_SUBSCRIPTION_CZK)} na další rok.
-              E-mail s připomenutím ti přijde
-              14 dní před obnovou a zrušit ji můžeš kdykoli v zákaznickém portálu — do konce
-              zaplaceného období ti služba běží dál.
-            </p>
-            <SouhlasCheckbox id="souhlas-predplatne" kind="subscription" />
-            <button type="submit" className={buttonVariants({ variant: 'primary' })}>
-              Objednat s povinností platby
-            </button>
-          </form>
-        </section>
-      )}
-
-      {!active && nabizeneRoky.length > 0 && (
-        <section id="podklady" className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
-          <h2 className="font-display text-xl font-bold">Koupit podklady k přiznání</h2>
-          <form action={buyReportAction} className="mt-4 space-y-4">
-            {/* E-3-04: informace o omezení musí padnout PŘED platbou, ne až
-                v ceníku. Formulář nabízí deset let, ale oficiální struktura
-                DPFDP7 existuje jen pro roky v EPO_SUPPORTED_YEARS. */}
-            <p className="text-sm text-inkoust-tlumeny">
-              XML pro elektronické podání umíme za{' '}
-              {EPO_SUPPORTED_YEARS.length === 1
-                ? `rok ${EPO_SUPPORTED_YEARS[0]}`
-                : `roky ${EPO_SUPPORTED_YEARS.join(' a ')}`}{' '}
-              — jen pro ně finanční správa zveřejnila strukturu formuláře. U ostatních let
-              dostaneš čísla i rozpad, ale přiznání do EPO opíšeš ručně.
-            </p>
-            <p className="font-display text-2xl font-bold">{priceLabel(PRICE_REPORT_CZK)}</p>
-            <div>
-              <label htmlFor="rok" className="text-sm font-medium">
-                Daňový rok
-              </label>
-              <select
-                id="rok"
-                name="rok"
-                className="mt-1 block rounded-md border border-linka-ovladaci bg-plocha px-3 py-2 text-sm"
-              >
-                {nabizeneRoky.map((rok) => (
-                  <option key={rok} value={rok}>
-                    {rok}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <SouhlasCheckbox id="souhlas-podklady" kind="report" />
-            <button type="submit" className={buttonVariants({ variant: 'primary' })}>
-              Objednat s povinností platby
-            </button>
-          </form>
-        </section>
-      )}
 
       {/* Portál není součástí větve „mám předplatné": doklad o zaplacení
           a historii plateb potřebuje najít i ten, kdo koupil jen podklady,
@@ -249,53 +189,9 @@ export default async function SubscriptionPage({
         </section>
       )}
 
-      <p className="text-xs leading-relaxed text-inkoust-tlumeny">
-        {/* § 1820 odst. 1 písm. c): telefon i adresa musí být k dispozici PŘED
-            objednávkou. Vypisují se na jednom místě (`/podminky#kontakt`), sem
-            vede přímý odkaz — na všech stránkách je jen e-mail, protože
-            preferovaný kanál je psaní. */}
-        Ceny jsou konečné. Prodávající: {OPERATOR.name}, IČO {OPERATOR.ico} — není plátcem DPH.{' '}
-        <Link
-          href="/podminky#kontakt"
-          className="font-medium text-ruzova-text underline underline-offset-2"
-        >
-          Adresa a telefon prodávajícího
-        </Link>
-        . Podrobnosti o odstoupení od smlouvy najdeš v{' '}
-        <Link href="/odstoupeni" className="font-medium text-ruzova-text underline underline-offset-2">
-          poučení o odstoupení
-        </Link>{' '}
-        a v{' '}
-        <Link href="/podminky" className="font-medium text-ruzova-text underline underline-offset-2">
-          podmínkách užití
-        </Link>
-        .
-      </p>
+      {/* § 1820 odst. 1 písm. c): telefon i adresa musí být k dispozici PŘED
+          objednávkou — na jednom místě (`/podminky#kontakt`), sem vede odkaz. */}
+      <PurchaseLegalNote />
     </div>
-  );
-}
-
-/**
- * Výslovná žádost o zahájení plnění před uplynutím 14denní lhůty. Bez
- * zaškrtnutí server nákup nepustí.
- *
- * Znění se pro obě věci LIŠÍ (E-3 z auditu):
- * - podklady = digitální obsah dodaný okamžitě, právo odstoupit zaniká jejich
- *   zpřístupněním (§ 1837 písm. l OZ);
- * - roční hlídání = průběžně poskytovaná služba, právo odstoupit TRVÁ a zaniká
- *   až úplným poskytnutím (§ 1837 písm. a); při odstoupení se doplácí poměrná
- *   část za využité dny (§ 1834). Vzdát se ho dopředu nejde — k takovému
- *   ujednání se nepřihlíží (§ 1812 odst. 2), takže ho tady ani nechceme.
- */
-function SouhlasCheckbox({ id, kind }: { id: string; kind: 'subscription' | 'report' }) {
-  return (
-    <label htmlFor={id} className="flex items-start gap-2.5 text-xs leading-relaxed">
-      <input id={id} name="souhlas" type="checkbox" required className="mt-0.5" />
-      <span>
-        {kind === 'report'
-          ? 'Žádám, aby Danero začalo plnit hned po zaplacení, a beru na vědomí, že jakmile mi podklady zpřístupní, ztrácím právo odstoupit od smlouvy do 14 dnů.'
-          : 'Žádám, aby mi hlídání začalo běžet hned po zaplacení. Právo odstoupit do 14 dnů mi tím zůstává — když ho využiju, zaplatím jen poměrnou část za dny, kdy mi hlídání běželo.'}
-      </span>
-    </label>
   );
 }

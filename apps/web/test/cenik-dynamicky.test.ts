@@ -28,9 +28,21 @@ function pageFiles(dir: string): string[] {
 }
 
 describe('pojistka zkušebního režimu Stripu (C-29)', () => {
+  /**
+   * Pojistka se dá vykreslit i NEPŘÍMO: `OrderPage` (objednávka) i obal
+   * `BillingModeNotice` ji mají uvnitř, takže objednávková stránka o ní
+   * v kódu nemá ani zmínku. Kdyby se hledal jen `stripeSandboxInProduction`,
+   * první veřejná stránka postavená na `OrderPage` by se předrenderovala bez
+   * varování a strážce by mlčel — přesně ta regrese, kvůli které vznikl.
+   */
   const stranky = pageFiles(APP_DIR)
     .map((file) => ({ file, zdroj: readFileSync(file, 'utf8') }))
-    .filter(({ zdroj }) => zdroj.includes('stripeSandboxInProduction'));
+    .filter(
+      ({ zdroj }) =>
+        zdroj.includes('stripeSandboxInProduction') ||
+        zdroj.includes('BillingModeNotice') ||
+        zdroj.includes("from '@/components/order-page'"),
+    );
 
   it('pojistku vůbec někde vykreslujeme', () => {
     expect(stranky.length).toBeGreaterThan(0);
@@ -90,8 +102,16 @@ describe('telefon provozovatele se renderuje při požadavku (§ 1820/1 c)', () 
   });
 
   it('objednávka na ten odstavec odkazuje adresně (§ 1820 před uzavřením smlouvy)', () => {
-    const objednavka = readFileSync(join(APP_DIR, '(app)', 'predplatne', 'page.tsx'), 'utf8');
-    expect(objednavka).toContain('/podminky#kontakt');
+    const KOMPONENTY = join(import.meta.dirname, '..', 'components');
+    const poznamka = readFileSync(join(KOMPONENTY, 'purchase-legal-note.tsx'), 'utf8');
+    expect(poznamka).toContain('/podminky#kontakt');
+    // vykresluje ji přehled tarifů i obě objednávkové stránky (přes `OrderPage`)
+    for (const soubor of [
+      join(APP_DIR, '(app)', 'predplatne', 'page.tsx'),
+      join(KOMPONENTY, 'order-page.tsx'),
+    ]) {
+      expect(readFileSync(soubor, 'utf8')).toContain('<PurchaseLegalNote');
+    }
     expect(readFileSync(join(APP_DIR, 'podminky', 'page.tsx'), 'utf8')).toContain('id="kontakt"');
   });
 
@@ -114,7 +134,10 @@ describe('telefon provozovatele se renderuje při požadavku (§ 1820/1 c)', () 
  */
 describe('omezení XML pro EPO je vidět před platbou (E-3-04)', () => {
   it('stránka předplatného vypisuje podporované roky z jediného zdroje', async () => {
-    const source = readFileSync(join(APP_DIR, '(app)', 'predplatne', 'page.tsx'), 'utf8');
+    const source = readFileSync(
+      join(APP_DIR, '(app)', 'predplatne', 'podklady', 'page.tsx'),
+      'utf8',
+    );
     expect(source).toContain('EPO_SUPPORTED_YEARS');
     // ne natvrdo zapsané roky, které by se rozešly s lib/epo.ts
     expect(source).toMatch(/XML pro elektronické podání umíme/);

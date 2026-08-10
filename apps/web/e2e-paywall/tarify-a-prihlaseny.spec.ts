@@ -19,8 +19,64 @@ test.describe('cesta k nákupu a přihlášený na marketingu', () => {
 
     await page.getByRole('link', { name: 'Objednat hlídání' }).first().click();
     await page.waitForURL('**/predplatne');
-    // a rovnou tu je objednávkový formulář, ne další rozcestník
-    await expect(page.getByRole('button', { name: 'Objednat s povinností platby' }).first()).toBeVisible();
+    // odsud vede k objednávce jediné kliknutí, ne další rozcestník
+    await page.getByRole('link', { name: 'Objednat hlídání' }).click();
+    await page.waitForURL('**/predplatne/hlidani');
+    await expect(page.getByRole('button', { name: 'Objednat s povinností platby' })).toBeVisible();
+  });
+
+  /**
+   * Objednávka má od 10. 8. 2026 vlastní stránku (dřív to byla kotva na
+   * formulář pod kartami). Co musí být vidět PŘED odesláním, hlídá tenhle
+   * test — v hlavní sadě běžet nemůže, tam se bez `DANERO_BILLING=stripe`
+   * neprodává vůbec nic.
+   */
+  test('objednávka hlídání: podmínky vidět a bez souhlasu se nekupuje', async ({ page }) => {
+    await registruj(page, 'objednavka');
+    await page.goto('/predplatne');
+
+    await page.getByRole('link', { name: 'Objednat hlídání' }).click();
+    await page.waitForURL('**/predplatne/hlidani');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Celoroční hlídání');
+    await expect(page.getByText(/990 Kč\s*\/ rok/)).toBeVisible();
+
+    // § 1811/2 a § 1820/1 OZ: doba trvání a automatická obnova musí být vidět
+    // PŘED objednávkou, ne až ve stavu „mám zaplaceno"
+    await expect(page.getByText(/Předplatné trvá/)).toBeVisible();
+    await expect(page.getByText(/automaticky obnovuje za 990 Kč/)).toBeVisible();
+    await expect(page.getByText(/14 dní před obnovou/)).toBeVisible();
+    await expect(page.getByText(/zrušit ji můžeš kdykoli v zákaznickém portálu/)).toBeVisible();
+    await expect(page.getByText(/Ceny jsou konečné/)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'poučení o odstoupení' })).toBeVisible();
+
+    // § 1837 l OZ: souhlas se zahájením plnění je podmínka, ne kosmetika
+    const souhlas = page.locator('#souhlas-predplatne');
+    await expect(souhlas).not.toBeChecked();
+    await expect(souhlas).toHaveAttribute('required', '');
+
+    const objednat = page.getByRole('button', { name: 'Objednat s povinností platby' });
+    // Tailwind v4 zrušil `cursor: pointer` v preflightu (v3 ho dával), takže nad
+    // KAŽDÝM tlačítkem v aplikaci stála obyčejná šipka. Vrací to `globals.css`.
+    await expect(objednat).toHaveCSS('cursor', 'pointer');
+    // odeslání bez zaškrtnutí prohlížeč nepustí — zůstáváme na stránce
+    await objednat.click();
+    await expect(page).toHaveURL(/\/predplatne\/hlidani/);
+
+    await page.getByRole('link', { name: 'Zpět na předplatné' }).click();
+    await page.waitForURL('**/predplatne');
+  });
+
+  test('objednávka podkladů nabízí rok a hlásí meze XML', async ({ page }) => {
+    await registruj(page, 'podklady');
+    await page.goto('/predplatne');
+
+    await page.getByRole('link', { name: 'Koupit podklady' }).click();
+    await page.waitForURL('**/predplatne/podklady');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Podklady za rok');
+    await expect(page.getByLabel('Daňový rok')).toBeVisible();
+    // E-3-04: omezení plnění musí padnout před platbou
+    await expect(page.getByText(/XML pro elektronické podání umíme/)).toBeVisible();
+    await expect(page.locator('#souhlas-podklady')).toHaveAttribute('required', '');
   });
 
   test('/predplatne zrcadlí ceník a značí, co uživatel má', async ({ page }) => {

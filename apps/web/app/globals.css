@@ -225,6 +225,22 @@
     outline-offset: 2px;
   }
 
+  /* Tailwind v4 zrušil `cursor: pointer` v preflightu (v3 ho dával), takže nad
+     každým tlačítkem v aplikaci stála obyčejná šipka — u odkazů se ručička
+     měnila, u tlačítek ne, a klikatelnost tím přestala být poznat. Vracíme to
+     pro prvky, které se chovají jako tlačítko: `button`, `role="button"`,
+     rozbalovací `summary` a popisek se zaškrtávátkem (klik na text přepíná
+     stejně jako klik na políčko). `select` schválně ne — tam je systémová
+     šipka správně. Zakázaný prvek ručičku dostat nesmí, u něj kurzor nese
+     informaci „tohle teď nejde". */
+  button:not(:disabled),
+  summary,
+  [role='button']:not([aria-disabled='true']),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)) {
+    cursor: pointer;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
