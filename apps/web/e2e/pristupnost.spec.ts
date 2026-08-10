@@ -35,6 +35,7 @@ const APP_PAGES = [
   '/simulator',
   '/import',
   '/nastaveni',
+  '/nastaveni/ucet',
   '/predplatne',
   // objednávkové stránky (`/predplatne/hlidani`, `/predplatne/podklady`) tady
   // být nemůžou: bez `DANERO_BILLING=stripe` se neprodává nic a obě

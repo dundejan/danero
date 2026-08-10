@@ -123,7 +123,7 @@ async function limitAccountAction(
   });
   if (!allowed) {
     logEvent('warn', `account.${operation}_rate_limited`, { userId });
-    redirect(`/nastaveni?chyba=${errorCode}`);
+    redirect(`/nastaveni/ucet?chyba=${errorCode}`);
   }
 }
 
@@ -135,7 +135,7 @@ const ChangePasswordSchema = z.object({
 export async function changePasswordAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangePasswordSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect('/nastaveni?chyba=heslo');
+  if (!parsed.success) redirect('/nastaveni/ucet?chyba=heslo');
   await limitAccountAction(user.id, 'password_change', 5, 'heslo-limit');
 
   const { api, requestHeaders } = await authApi();
@@ -153,11 +153,11 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
     // G-16: bez userId nejde v logu odlišit jeden opakovaně chybující účet
     // od stovky překlepů různých uživatelů
     logEvent('error', 'account.change_password_failed', { userId: user.id, error: errorText(error) });
-    redirect('/nastaveni?chyba=heslo-spatne');
+    redirect('/nastaveni/ucet?chyba=heslo-spatne');
   }
   // audit PŘES id z úvodní session — po rotaci session by requireUser selhal
   await logAudit(await getDb(), user.id, 'PASSWORD_CHANGE');
-  redirect('/nastaveni?ok=heslo');
+  redirect('/nastaveni/ucet?ok=heslo');
 }
 
 const ChangeEmailSchema = z.object({
@@ -168,7 +168,7 @@ const ChangeEmailSchema = z.object({
 export async function changeEmailAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangeEmailSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect('/nastaveni?chyba=email');
+  if (!parsed.success) redirect('/nastaveni/ucet?chyba=email');
   // limit sedí i na odesílání ověřovacích e-mailů níž — jinak je z formuláře
   // rozesílač na cizí adresy jménem Danera
   await limitAccountAction(user.id, 'email_change', 3, 'email-limit');
@@ -189,7 +189,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     const valid =
       credential?.hash &&
       (await verifyPassword({ hash: credential.hash, password: parsed.data['stavajici-heslo'] }));
-    if (!valid) redirect('/nastaveni?chyba=email-heslo');
+    if (!valid) redirect('/nastaveni/ucet?chyba=email-heslo');
   }
 
   // endpoint /change-email je vypnutý (obcházel kontrolu hesla) — e-mail se
@@ -208,7 +208,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     // „obsazený e-mail“ jen při unique violation — infrastrukturní chybu (výpadek
     // DB apod.) nesmíme vydávat za obsazenou adresu
     const { isUniqueViolation } = await import('@/lib/db-errors');
-    redirect(isUniqueViolation(error) ? '/nastaveni?chyba=email-obsazeny' : '/nastaveni?chyba=email-ulozeni');
+    redirect(
+      isUniqueViolation(error) ? '/nastaveni/ucet?chyba=email-obsazeny' : '/nastaveni/ucet?chyba=email-ulozeni',
+    );
   }
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
   // ověřovací odkaz na novou adresu; selhání odeslání nesmí shodit už provedenou
@@ -225,8 +227,8 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       error: errorText(error),
     });
   }
-  revalidatePath('/nastaveni');
-  redirect('/nastaveni?ok=email');
+  revalidatePath('/nastaveni/ucet');
+  redirect('/nastaveni/ucet?ok=email');
 }
 
 const DeleteAccountSchema = z.object({
@@ -237,7 +239,7 @@ const DeleteAccountSchema = z.object({
 export async function deleteAccountAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = DeleteAccountSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect('/nastaveni?chyba=smazani');
+  if (!parsed.success) redirect('/nastaveni/ucet?chyba=smazani');
   await limitAccountAction(user.id, 'account_delete', 3, 'smazani-limit');
 
   // ID předplatného si přečteme PŘED smazáním (kaskáda řádek zahodí), ale zrušit
@@ -256,7 +258,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
     });
   } catch (error) {
     logEvent('error', 'account.delete_failed', { userId: user.id, error: errorText(error) });
-    redirect('/nastaveni?chyba=smazani-heslo');
+    redirect('/nastaveni/ucet?chyba=smazani-heslo');
   }
 
   // Bez tohohle by zákazníkovi bez účtu chodila platba dál a neměl by ji jak
@@ -270,8 +272,8 @@ export async function revokeOtherSessionsAction(): Promise<void> {
   const { api, requestHeaders } = await authApi();
   await api.revokeOtherSessions({ headers: requestHeaders });
   await logAudit(await getDb(), user.id, 'SESSIONS_REVOKED');
-  revalidatePath('/nastaveni');
-  redirect('/nastaveni?ok=odhlaseno');
+  revalidatePath('/nastaveni/ucet');
+  redirect('/nastaveni/ucet?ok=odhlaseno');
 }
 
 /* ── G8d + H3: notifikační preference ────────────────────────────────────── */
@@ -293,6 +295,6 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
     .insert(notificationPrefs)
     .values({ userId: user.id, ...values })
     .onConflictDoUpdate({ target: notificationPrefs.userId, set: values });
-  revalidatePath('/nastaveni');
-  redirect('/nastaveni?ok=notifikace#notifikace');
+  revalidatePath('/nastaveni/ucet');
+  redirect('/nastaveni/ucet?ok=notifikace#notifikace');
 }

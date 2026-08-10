@@ -47,12 +47,18 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.goto('/nastaveni');
   // s existujícím profilem žádná tlačítka Uložit u profilu/metod/upozornění
   await expect(page.getByRole('button', { name: 'Uložit profil' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Uložit upozornění' })).toHaveCount(0);
   // změna selectu metody → uloží se hned, potvrzení toastem
   await page.getByLabel('Párování prodejů').selectOption('LIFO');
   await expect(page.getByText('Uloženo. Výpočty se přepočítají podle nového profilu.')).toBeVisible();
   await page.reload();
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+
+  // účet a upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
+  await page.getByRole('link', { name: 'Účet a zabezpečení' }).click();
+  await page.waitForURL('**/nastaveni/ucet');
+  // ani u upozornění se neukládá tlačítkem (hledáme v jejich kartě, jinak by
+  // podmínka procházela i tehdy, kdyby tlačítko přibylo)
+  await expect(page.locator('#notifikace').getByRole('button', { name: 'Uložit' })).toHaveCount(0);
 
   // přepnutí switche upozornění → taky auto-save
   await page.getByText('Posílat e-maily').click();

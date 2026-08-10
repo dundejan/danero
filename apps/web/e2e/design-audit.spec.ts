@@ -48,6 +48,7 @@ test('design audit: screenshoty všech stránek', async ({ page }) => {
     ['/simulator', 'simulator'],
     ['/import', 'import'],
     ['/nastaveni', 'nastaveni'],
+    ['/nastaveni/ucet', 'nastaveni-ucet'],
   ] as const;
 
   // desktop light

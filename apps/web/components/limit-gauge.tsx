@@ -94,14 +94,16 @@ export function LimitBar({
 export function LimitGauge({
   label,
   hint,
-  status, headingAs }: {
+  status, headingAs, className }: {
   label: string;
   hint: string;
   status: LimitStatus;
   headingAs?: 'h2' | 'h3' | 'p';
+  /** Umístění v mřížce (např. dorovnání řádku) — vzhled karty zůstává. */
+  className?: string;
 }) {
   return (
-    <Card className="space-y-1.5">
+    <Card className={cn('space-y-1.5', className)}>
       <CardTitle as={headingAs}>{label}</CardTitle>
       <p className="font-mono text-lg font-medium">
         {czk(status.usedCzk)}

@@ -23,7 +23,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   await expect(page.getByText('sablona.csv')).toBeVisible();
 
   // ── zabezpečení: sessions + audit (G8b) ──────────────────────────────────
-  await page.goto('/nastaveni');
+  await page.goto('/nastaveni/ucet');
   await expect(page.getByText(/Aktivní přihlášení \(\d+\)/)).toBeVisible();
   await expect(page.getByText('toto zařízení')).toBeVisible();
   await expect(page.getByText('Přihlášení').first()).toBeVisible(); // audit LOGIN
@@ -46,7 +46,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   await page.waitForURL('**/prehled');
 
   // ── změna e-mailu (proti mrtvé konfiguraci — dřív padala vždy) ──────────
-  await page.goto('/nastaveni');
+  await page.goto('/nastaveni/ucet');
   await page.getByLabel('Nový e-mail').fill('ucet-novy@danero.cz');
   await page.getByLabel('Heslo (potvrzení)').fill(NOVE_HESLO);
   await page.getByRole('button', { name: 'Změnit e-mail' }).click();
@@ -76,7 +76,7 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   expect(JSON.stringify(exported.brokerAccounts)).not.toContain('encrypted');
 
   // ── smazání účtu ─────────────────────────────────────────────────────────
-  await page.goto('/nastaveni');
+  await page.goto('/nastaveni/ucet');
   await page.getByLabel('Heslo', { exact: true }).fill(NOVE_HESLO);
   await page.getByLabel('Napiš SMAZAT').fill('SMAZAT');
   await page.getByRole('button', { name: 'Nevratně smazat účet' }).click();

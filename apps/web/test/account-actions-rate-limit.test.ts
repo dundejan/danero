@@ -63,10 +63,10 @@ describe('limity účtových server actions (D-2/D-3)', () => {
     const data = () => form({ 'stavajici-heslo': 'stareheslo123', 'nove-heslo': 'noveheslo123' });
 
     for (let i = 0; i < 5; i += 1) {
-      expect(await cilRedirectu(() => changePasswordAction(data()))).toBe('/nastaveni?ok=heslo');
+      expect(await cilRedirectu(() => changePasswordAction(data()))).toBe('/nastaveni/ucet?ok=heslo');
     }
     expect(await cilRedirectu(() => changePasswordAction(data()))).toBe(
-      '/nastaveni?chyba=heslo-limit',
+      '/nastaveni/ucet?chyba=heslo-limit',
     );
   });
 
@@ -78,11 +78,11 @@ describe('limity účtových server actions (D-2/D-3)', () => {
     // ale limit spotřebují (tj. e-mail se z formuláře neodešle donekonečna)
     for (let i = 0; i < 3; i += 1) {
       expect(await cilRedirectu(() => changeEmailAction(data()))).toBe(
-        '/nastaveni?chyba=email-heslo',
+        '/nastaveni/ucet?chyba=email-heslo',
       );
     }
     expect(await cilRedirectu(() => changeEmailAction(data()))).toBe(
-      '/nastaveni?chyba=email-limit',
+      '/nastaveni/ucet?chyba=email-limit',
     );
   });
 });

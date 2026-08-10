@@ -14,6 +14,7 @@ import {
   limit100kSeries,
 } from '@/lib/charts-data';
 import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import type { Transaction } from '@danero/shared';
@@ -56,6 +57,9 @@ export function OverviewView({
   const currentYear = Number(today.slice(0, 4));
   const limit100kChart = limit100kSeries(result);
   const flatTax50kChart = flatTax50kSeries(result);
+  // graf dává smysl až od dvou bodů (jeden prodej = svislá čára v prázdnu)
+  const showLimit100kChart = limit100kChart.points.length > 1;
+  const showFlatTax50kChart = (flatTax50kChart?.points.length ?? 0) > 1;
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
   const hasCrypto =
@@ -107,6 +111,26 @@ export function OverviewView({
     { label: 'krypto', value: result.crypto.base10Czk },
     { label: 'deriváty', value: result.derivatives.base10Czk },
   ].filter((part) => part.value.gt(0));
+  /**
+   * Kolik odměrek se v mřížce vykreslí (1–3): limit pro podání přiznání (právě
+   * jeden z trojice podle režimu — viz `filingLimit`), osvobození prodejů CP
+   * (vždy, i v podobě karty „obchodní majetek“) a krypto (jen když ho uživatel
+   * má). Rozvržení se tím musí řídit: napevno tři sloupce nechávaly u jediné
+   * odměrky dvě třetiny řádku prázdné.
+   */
+  const gaugeCount = (filingLimit ? 1 : 0) + 1 + (hasCrypto ? 1 : 0);
+  const gaugeGrid =
+    gaugeCount === 1
+      ? 'lg:grid-cols-2' // jediná odměrka + karta daně vedle sebe
+      : gaugeCount === 2
+        ? 'md:grid-cols-2'
+        : 'md:grid-cols-2 xl:grid-cols-3';
+  // tři odměrky se do dvousloupcové mřížky nevejdou beze zbytku — poslední
+  // (krypto) řádek dorovná, dokud se nerozjede třetí sloupec
+  const lastGaugeSpan = gaugeCount === 3 ? 'md:col-span-2 xl:col-span-1' : undefined;
+  // karta daně: vedle jediné odměrky vyplní zbytek řádku, jinak stojí přes celou šířku
+  const taxSpan = gaugeCount === 1 ? undefined : 'col-span-full';
+
   // prodeje proběhly, ale jsou celé osvobozené → řekni to, jinak čtenář hledá
   // chybu; rozhoduje taxableIncome (base10 = 0 může vzniknout i kompenzací
   // zisků a ztrát — to NENÍ osvobození)
@@ -214,7 +238,7 @@ export function OverviewView({
         </Card>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className={cn('grid gap-4', gaugeGrid)}>
         {result.limits.flatTax50k.applicable && (
           <LimitGauge
             label="Limit paušální daně — 50 000 Kč"
@@ -268,11 +292,12 @@ export function OverviewView({
               label="Osvobození krypta — 100 000 Kč"
               hint="Samostatný limit pro kryptoaktiva (§ 4 odst. 1 písm. zj zákona o daních z příjmů), nezávislý na limitu pro cenné papíry: jsou-li tržby z prodejů a směn krypta za rok do 100 000 Kč, jsou osvobozené. Neplatí pro stablecoiny (elektronické peněžní tokeny) a pro příjmy před 15. 2. 2025."
               status={result.limits.cryptoLimit100k}
+              className={lastGaugeSpan}
             />
           ) : (
             /* R-10b: do roku 2024 krypto žádné osvobození nemá — měřák
                „0 / 100 000, v pořádku“ by tvrdil pravý opak toho, co platí */
-            <Card className="space-y-1.5">
+            <Card className={cn('space-y-1.5', lastGaugeSpan)}>
               <CardTitle>Krypto {year}: osvobození neexistuje</CardTitle>
               <p className="font-mono text-lg font-medium">
                 {czk(result.crypto.totalGrossProceedsCzk)}
@@ -286,9 +311,12 @@ export function OverviewView({
               </p>
             </Card>
           ))}
-        {/* horizontální pás přes celý řádek — karta nesmí sedět osaměle v 1/3 gridu */}
-        <Card className="md:col-span-2 xl:col-span-3">
-          <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_2fr] md:items-center">
+        {/* Rozvržení uvnitř karty se řídí ŠÍŘKOU KARTY (@container), ne šířkou
+            okna: vedle jediné odměrky je karta poloviční a třídy `md:`/`sm:` by
+            se v ní pořád řídily oknem — na širokém displeji by tak vznikly tři
+            sloupce po 120 px. */}
+        <Card className={cn('@container', taxSpan)}>
+          <div className="grid gap-4 @3xl:grid-cols-[minmax(10rem,1fr)_2fr] @3xl:items-center">
             <div className="space-y-1">
               <CardTitle>Orientační daň z investic</CardTitle>
               <p className="font-mono text-xl font-semibold sm:text-2xl">
@@ -299,7 +327,10 @@ export function OverviewView({
                 )}
               </p>
             </div>
-            <div className="grid gap-x-6 gap-y-2 text-xs text-inkoust-tlumeny sm:grid-cols-2">
+            {/* stejný práh jako u pásu výš: jakmile má karta na vodorovné
+                rozvržení šířku, zlomí se i text do dvou sloupců — jeden sloupec
+                přes celý pás by měl přes sto znaků na řádek */}
+            <div className="grid gap-x-6 gap-y-2 text-xs text-inkoust-tlumeny @3xl:grid-cols-2">
               <p>
                 Základ § 10: {czk(base10Total)}
                 {base10Parts.length > 0 && (
@@ -318,9 +349,13 @@ export function OverviewView({
         </Card>
       </section>
 
-      {(limit100kChart.points.length > 1 || (flatTax50kChart?.points.length ?? 0) > 1) && (
-        <section className="grid gap-4 lg:grid-cols-2">
-          {limit100kChart.points.length > 1 && (
+      {(showLimit100kChart || showFlatTax50kChart) && (
+        /* dva sloupce jen pro dva grafy — jediný graf jinak zabral půl řádku
+           a druhá půlka zůstala prázdná */
+        <section
+          className={cn('grid gap-4', showLimit100kChart && showFlatTax50kChart && 'lg:grid-cols-2')}
+        >
+          {showLimit100kChart && (
             <Card>
               <CardTitle>Čerpání limitu 100 000 Kč v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
@@ -329,7 +364,7 @@ export function OverviewView({
               <LimitDrawdownChart series={limit100kChart} name="Tržby z prodejů" />
             </Card>
           )}
-          {flatTax50kChart && flatTax50kChart.points.length > 1 && (
+          {flatTax50kChart && showFlatTax50kChart && (
             <Card>
               <CardTitle>Čerpání limitu 50 000 Kč v průběhu roku</CardTitle>
               <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
