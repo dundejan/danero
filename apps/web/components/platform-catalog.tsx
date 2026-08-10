@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -194,8 +195,8 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                           : 'nahraj ji v aplikaci na stránce Zdroje dat'}
                         . Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný
                         vzorek na{' '}
-                        <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text underline underline-offset-2">
-                          dunder.jan@gmail.com
+                        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text underline underline-offset-2">
+                          {OPERATOR.email}
                         </a>{' '}
                         a bude to rychlejší.
                       </p>

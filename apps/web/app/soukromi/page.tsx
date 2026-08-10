@@ -80,8 +80,8 @@ export default function PrivacyPage() {
           adresy nepoužíváme; {/* E-35: „adresu pak smažeme" tady stálo dřív, ale žádný
           kód to nedělal. Odvolání souhlasu je ruční krok a jako ruční se taky popisuje. */}
           souhlas můžeš kdykoli odvolat — napiš na{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
-            dunder.jan@gmail.com
+          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+            {OPERATOR.email}
           </a>{' '}
           a adresu ze seznamu smažeme. A pokud ti někdy budeme chtít poslat něco jiného
           než upozornění ze služby, zeptáme se předem na souhlas (čl. 6 odst. 1 písm. a)
@@ -194,8 +194,8 @@ export default function PrivacyPage() {
           nebo všechno smazat zrušením účtu — smazání odstraní všechna tvoje data
           včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
           na{' '}
-          <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova-text">
-            dunder.jan@gmail.com
+          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+            {OPERATOR.email}
           </a>
           . Pokud si myslíš, že s tvými údaji zacházíme špatně, máš právo podat stížnost
           u dozorového úřadu — Úřadu pro ochranu osobních údajů (

@@ -216,3 +216,55 @@ describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)',
     expect(jakPocitame).toMatch(/5 000 000 Kč/);
   });
 });
+
+/**
+ * Identifikace provozovatele nepatří do repozitáře — je veřejný a pod AGPL,
+ * takže by si ji s sebou vozil každý, kdo si Danero rozjede sám. A hlavně:
+ * jednou commitnutá adresa z historie nezmizí ani po přestěhování. Historie
+ * se kvůli tomu 10. 8. 2026 přepisovala; tenhle test hlídá, ať se to neopakuje.
+ */
+describe('osobní údaje provozovatele nejsou v kódu', () => {
+  it('contact.ts bere jméno, IČO, adresu i e-mail z prostředí', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const zdroj = readFileSync(join(import.meta.dirname, '..', 'lib', 'contact.ts'), 'utf8');
+    for (const env of [
+      'DANERO_OPERATOR_NAME',
+      'DANERO_OPERATOR_ICO',
+      'DANERO_OPERATOR_ADDRESS',
+      'DANERO_CONTACT_EMAIL',
+      'DANERO_CONTACT_PHONE',
+    ]) {
+      expect(zdroj).toContain(`process.env.${env}`);
+    }
+  });
+
+  it('aplikace nemá adresu ani e-mail provozovatele natvrdo', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const korene = ['app', 'lib', 'components'].map((d) => join(import.meta.dirname, '..', d));
+    const soubory = (dir: string): string[] =>
+      readdirSync(dir).flatMap((e) => {
+        const full = join(dir, e);
+        if (statSync(full).isDirectory()) return soubory(full);
+        return /\.(ts|tsx)$/.test(e) ? [full] : [];
+      });
+
+    // PSČ v české adrese („101 00") a zavináč v doméně poskytovatele pošty —
+    // obojí je tvar, který se do zdrojáku dostane jedině ručním vepsáním
+    const vzory: [RegExp, string][] = [
+      [/\b\d{3} \d{2}\b\s+Praha/i, 'adresa provozovatele'],
+      [/[\w.]+@gmail\.com/i, 'osobní e-mail'],
+    ];
+    // `lib/legal.ts` schválně nese adresu České obchodní inspekce (mimosoudní
+    // řešení sporů, § 14 z. 634/1992) — veřejná instituce, ne provozovatel.
+    const VYJIMKY = [join('lib', 'legal.ts')];
+    for (const soubor of korene.flatMap(soubory)) {
+      if (VYJIMKY.some((vyjimka) => soubor.endsWith(vyjimka))) continue;
+      const zdroj = readFileSync(soubor, 'utf8');
+      for (const [vzor, co] of vzory) {
+        expect(vzor.test(zdroj), `${soubor} nese ${co} natvrdo`).toBe(false);
+      }
+    }
+  });
+});

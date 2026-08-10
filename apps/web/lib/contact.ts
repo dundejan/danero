@@ -1,15 +1,22 @@
 /**
- * Kontaktní údaje provozovatele, které vyžaduje § 1820 odst. 1 písm. c) OZ
- * u smluv uzavíraných na dálku: adresa sídla, **telefonní číslo** a e-mail.
+ * Kontaktní údaje provozovatele, které vyžaduje § 435 OZ (identifikace na webu)
+ * a § 1820 odst. 1 písm. c) OZ u smluv na dálku: jméno, IČO, **adresa sídla**,
+ * telefon a e-mail.
  *
- * Telefon schválně NENÍ v repozitáři. Je to osobní číslo provozovatele a
- * repozitář je veřejný — jednou commitnuté číslo už z historie nezmizí.
- * Zákonná povinnost se přitom splní stejně dobře proměnnou prostředí, takže
- * na produkci je číslo vidět a ve zdrojácích ne (nález E-28).
+ * ⚠️ **Žádný z těch údajů nepatří do repozitáře.** Repozitář je veřejný a pod
+ * AGPL, takže by si každý, kdo si Danero rozjede sám, vozil s sebou identifikaci
+ * cizího člověka — a hlavně: jednou commitnutá adresa z historie nezmizí, ani
+ * když se provozovatel přestěhuje. Telefon se takhle držel od nálezu E-28,
+ * zbytek se doplnil 10. 8. 2026 spolu s přepsáním historie.
  *
- * Nastavení: `DANERO_CONTACT_PHONE` ve Vercelu (Production). Bez ní se telefon
- * nikde nevypisuje — vlastní instance tím netrpí, provozovatel si tam vyplní
- * svůj vlastní kontakt.
+ * Nastavení (Vercel → Production i Preview, lokálně `.env.local`):
+ * `DANERO_OPERATOR_NAME`, `DANERO_OPERATOR_ICO`, `DANERO_OPERATOR_ADDRESS`,
+ * `DANERO_CONTACT_EMAIL`, `DANERO_CONTACT_PHONE`.
+ *
+ * Bez nich se vypíše zástupný text. To je schválně vidět na první pohled:
+ * chybějící identifikace provozovatele je u placené služby porušení § 435,
+ * takže je lepší mít na stránce nápadné „nenastaveno" než tiše nic. Hlídá to
+ * i `/api/health` (`operatorContact: 'incomplete'`).
  */
 export interface OperatorContact {
   name: string;
@@ -20,13 +27,25 @@ export interface OperatorContact {
   phone: string | null;
 }
 
+/** Zástupný text pro nenastavený povinný údaj — musí být poznat na první pohled. */
+export const OPERATOR_UNSET = 'nenastaveno';
+
+const fromEnv = (value: string | undefined): string => value?.trim() || OPERATOR_UNSET;
+
 export const OPERATOR: OperatorContact = {
-  name: 'Jan Dunder',
-  ico: '19642661',
-  address: 'adresa-provozovatele-v-promenne-prostredi',
-  email: 'dunder.jan@gmail.com',
+  name: fromEnv(process.env.DANERO_OPERATOR_NAME),
+  ico: fromEnv(process.env.DANERO_OPERATOR_ICO),
+  address: fromEnv(process.env.DANERO_OPERATOR_ADDRESS),
+  email: fromEnv(process.env.DANERO_CONTACT_EMAIL),
   phone: process.env.DANERO_CONTACT_PHONE?.trim() || null,
 };
+
+/** Je identifikace provozovatele kompletní? Čte `/api/health`. */
+export function operatorContactComplete(contact: OperatorContact = OPERATOR): boolean {
+  return [contact.name, contact.ico, contact.address, contact.email].every(
+    (value) => value !== OPERATOR_UNSET,
+  );
+}
 
 /** Řádek „Prodávající: …“ do potvrzení objednávky a dalších dokladů. */
 export function operatorLines(contact: OperatorContact = OPERATOR): string[] {

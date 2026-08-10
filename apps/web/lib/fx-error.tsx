@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import Link from 'next/link';
 import { EngineError } from '@danero/engine';
 
@@ -24,8 +25,8 @@ export function EngineErrorCard({ message }: { message: string }) {
           Nastavení
         </Link>{' '}
         — stáhnou se automaticky. Pokud potíž trvá, napiš nám na{' '}
-        <a href="mailto:dunder.jan@gmail.com" className="font-medium text-ruzova">
-          dunder.jan@gmail.com
+        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova">
+          {OPERATOR.email}
         </a>
         .
       </p>

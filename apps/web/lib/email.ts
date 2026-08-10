@@ -25,7 +25,7 @@ export interface EmailMessage {
  * první, co uživatel udělá, když chce zrušit předplatné. Adresa je stejná,
  * jakou už uvádí potvrzení objednávky.
  */
-const REPLY_TO = process.env.RESEND_REPLY_TO ?? 'dunder.jan@gmail.com';
+const REPLY_TO = process.env.RESEND_REPLY_TO ?? OPERATOR.email;
 export type EmailSender = (message: EmailMessage) => Promise<void>;
 
 /**
@@ -194,7 +194,7 @@ export function purchaseConfirmationEmail(args: {
           ]
         : [
             'Od smlouvy můžeš odstoupit do 14 dnů bez udání důvodu — napiš na',
-            'dunder.jan@gmail.com nebo použij formulář na danero.cz/odstoupeni.',
+            `${OPERATOR.email} nebo použij formulář na danero.cz/odstoupeni.`,
           ];
 
   return {

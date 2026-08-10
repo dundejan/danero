@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import Link from 'next/link';
@@ -87,7 +88,7 @@ export default function CasteOtazkyPage() {
       <PageHero
         eyebrow="FAQ"
         title="Časté otázky"
-        lede="Co lidi nejčastěji zajímá, než pustí Danero ke svým daním. Nenašel jsi odpověď? Napiš na dunder.jan@gmail.com — odpovídám osobně."
+        lede={`Co lidi nejčastěji zajímá, než pustí Danero ke svým daním. Nenašel jsi odpověď? Napiš na ${OPERATOR.email} — odpovídám osobně.`}
       />
 
       <div className="mt-12">

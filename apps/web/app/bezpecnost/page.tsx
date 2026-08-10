@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
@@ -159,10 +160,10 @@ export default function BezpecnostPage() {
           <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
             Napiš prosím rovnou na{' '}
             <a
-              href="mailto:dunder.jan@gmail.com"
+              href={`mailto:${OPERATOR.email}`}
               className="font-medium text-ruzova-text underline underline-offset-2"
             >
-              dunder.jan@gmail.com
+              {OPERATOR.email}
             </a>{' '}
             — odpovídá autor osobně, zpravidla do 24 hodin. Nahlášené chyby
             opravujeme přednostně a nálezce rádi (se souhlasem) uvedeme.

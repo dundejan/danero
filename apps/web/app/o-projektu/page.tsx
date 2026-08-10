@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -41,10 +42,10 @@ export default function OProjektuPage() {
               Není za tím firma s marketingovým oddělením. Jen jeden člověk, kterého
               tenhle problém opravdu štval. Když ti něco nebude sedět, napiš mi na{' '}
               <a
-                href="mailto:dunder.jan@gmail.com"
+                href={`mailto:${OPERATOR.email}`}
                 className="font-medium text-ruzova-text underline underline-offset-2"
               >
-                dunder.jan@gmail.com
+                {OPERATOR.email}
               </a>{' '}
               — odpovídám osobně. A víc o mně najdeš na{' '}
               <a
