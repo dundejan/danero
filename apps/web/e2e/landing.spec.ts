@@ -1,3 +1,4 @@
+import { E2E_OPERATOR } from './operator';
 import { expect, test } from '@playwright/test';
 
 /**
@@ -72,9 +73,10 @@ test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }
   await expect(page.getByRole('img', { name: 'Jan Dunder — autor Danera' })).toBeVisible();
   // mailto je i v patičce — omezit na obsah stránky
   await expect(
-    page.getByRole('main').getByRole('link', { name: 'dunder.jan@gmail.com' }),
+    page.getByRole('main').getByRole('link', { name: E2E_OPERATOR.email }),
   ).toBeVisible();
-  await expect(page.getByText(/IČO\s*19642661/)).toBeVisible();
+  // údaje se berou z prostředí, takže se tu zároveň ověřuje, že tudy projdou
+  await expect(page.getByText(new RegExp(`IČO\\s*${E2E_OPERATOR.ico}`))).toBeVisible();
 });
 
 test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => {

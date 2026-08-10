@@ -1,3 +1,4 @@
+import { E2E_OPERATOR } from './e2e/operator';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,6 +53,12 @@ export default defineConfig({
         // dost pomalu, aby UI polling (3 s) stihl zachytit průběh po letech
         T212_POLL_INTERVAL_MS: '1500',
         IBKR_FLEX_BASE_URL: `http://localhost:${MOCK_PORT}/flex`,
+        // identifikace provozovatele je od 10. 8. 2026 jen v prostředí
+        // (pravidlo 8 v CLAUDE.md) — E2E jede na zjevně smyšlené
+        DANERO_OPERATOR_NAME: E2E_OPERATOR.name,
+        DANERO_OPERATOR_ICO: E2E_OPERATOR.ico,
+        DANERO_OPERATOR_ADDRESS: E2E_OPERATOR.address,
+        DANERO_CONTACT_EMAIL: E2E_OPERATOR.email,
       },
       reuseExistingServer: Boolean(process.env.PW_REUSE),
       timeout: 120_000,

@@ -118,8 +118,8 @@ export default function OProjektuPage() {
             Provozovatel
           </p>
           <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
-            Danero provozuje <strong className="text-inkoust">Jan Dunder</strong>, IČO
-            19642661, fyzická osoba podnikající se sídlem v Praze. Úplné údaje a pravidla
+            Danero provozuje <strong className="text-inkoust">{OPERATOR.name}</strong>, IČO{' '}
+            {OPERATOR.ico}, fyzická osoba podnikající. Úplné údaje a pravidla
             najdeš v{' '}
             <Link
               href="/podminky"

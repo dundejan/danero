@@ -1,3 +1,4 @@
+import { E2E_OPERATOR } from './e2e/operator';
 import { defineConfig } from '@playwright/test';
 import base from './playwright.config';
 
@@ -26,6 +27,10 @@ export default defineConfig({
           command: 'pnpm build && pnpm start',
           timeout: 600_000,
           env: {
+            DANERO_OPERATOR_NAME: E2E_OPERATOR.name,
+            DANERO_OPERATOR_ICO: E2E_OPERATOR.ico,
+            DANERO_OPERATOR_ADDRESS: E2E_OPERATOR.address,
+            DANERO_CONTACT_EMAIL: E2E_OPERATOR.email,
             ...server.env,
             DANERO_DISABLE_RATE_LIMIT: '1',
             // v produkčním režimu si aplikace secrety negeneruje (dev je má

@@ -1,3 +1,4 @@
+import { E2E_OPERATOR } from './e2e/operator';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +43,10 @@ export default defineConfig({
         // stejný soubor jako hlavní sada: e2e/helpers.ts si ho bere odtamtud
         // a filtruje podle adresáta, takže cizí řádky nevadí
         DANERO_EMAIL_LOG: EMAIL_LOG,
+        DANERO_OPERATOR_NAME: E2E_OPERATOR.name,
+        DANERO_OPERATOR_ICO: E2E_OPERATOR.ico,
+        DANERO_OPERATOR_ADDRESS: E2E_OPERATOR.address,
+        DANERO_CONTACT_EMAIL: E2E_OPERATOR.email,
         // tohle je celý smysl téhle konfigurace
         DANERO_BILLING: 'stripe',
         NEXT_DIST_DIR: '.next-paywall',

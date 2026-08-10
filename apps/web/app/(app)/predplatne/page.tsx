@@ -1,3 +1,4 @@
+import { OPERATOR } from '@/lib/contact';
 import Link from 'next/link';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { PlanCard } from '@/components/plan-card';
@@ -249,7 +250,7 @@ export default async function SubscriptionPage({
       )}
 
       <p className="text-xs leading-relaxed text-inkoust-tlumeny">
-        Ceny jsou konečné. Prodávající: Jan Dunder, IČO 19642661 — není plátcem DPH.
+        Ceny jsou konečné. Prodávající: {OPERATOR.name}, IČO {OPERATOR.ico} — není plátcem DPH.
         Podrobnosti o odstoupení od smlouvy najdeš v{' '}
         <Link href="/odstoupeni" className="font-medium text-ruzova-text underline underline-offset-2">
           poučení o odstoupení
