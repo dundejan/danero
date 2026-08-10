@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OPERATOR } from '@/lib/contact';
+import { OPERATOR, OPERATOR as operatorContact } from '@/lib/contact';
 import { ADR, TERMS_VERSION } from '@/lib/legal';
 import {
   purchaseConfirmationEmail,
@@ -20,6 +20,13 @@ import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK } from '@/lib/pricing';
  * Testuje se **podstata**, ne formulace: že tam ta informace je, ne jakou
  * větou. Doslovné znění se smí přepsat kdykoli.
  */
+
+/**
+ * Textová verze se od 10. 8. 2026 zalamuje na 78 znaků, takže dlouhý název
+ * instituce může přeskočit na další řádek. Hlídá se, že informace v e-mailu
+ * JE — ne na kterém je řádku.
+ */
+const bezZalomeni = (text: string): string => text.replace(/\s+/g, ' ');
 
 const subscription = purchaseConfirmationEmail({
   what: 'Celoroční hlídání daní z investic (roční předplatné)',
@@ -47,7 +54,8 @@ describe('potvrzení o uzavření smlouvy nese údaje podle § 1820 (E-30)', () 
       });
 
       it('uvádí dobu trvání závazku', () => {
-        expect(email.text).toMatch(/[Dd]oba trvání/);
+        // nadpisy se v textové verzi píšou verzálkami — hlídá se obsah, ne zápis
+        expect(email.text).toMatch(/doba trvání/i);
       });
 
       it('poučuje o právech z vadného plnění a kam je uplatnit', () => {
@@ -55,8 +63,8 @@ describe('potvrzení o uzavření smlouvy nese údaje podle § 1820 (E-30)', () 
       });
 
       it('uvádí subjekt mimosoudního řešení sporů (§ 14 z. 634/1992)', () => {
-        expect(email.text).toContain(ADR.online);
-        expect(email.text).toContain(ADR.authority);
+        expect(bezZalomeni(email.text)).toContain(ADR.online);
+        expect(bezZalomeni(email.text)).toContain(ADR.authority);
       });
 
       it('říká, podle které verze podmínek se nakupovalo', () => {
@@ -265,6 +273,58 @@ describe('osobní údaje provozovatele nejsou v kódu', () => {
       for (const [vzor, co] of vzory) {
         expect(vzor.test(zdroj), `${soubor} nese ${co} natvrdo`).toBe(false);
       }
+    }
+  });
+});
+
+/**
+ * E-maily byly do 10. 8. 2026 holý text a `operatorSignature()` vozil adresu
+ * provozovatele v každé zprávě — i v obnově hesla. HTML verze se skládá
+ * z týchž bloků jako text, takže se obě nemůžou rozejít.
+ */
+describe('vzhled a obsah odchozích e-mailů', () => {
+  const vsechny = [
+    ['obnova hesla', resetPasswordEmail('https://danero.cz/nove-heslo?token=x')],
+    ['ověření adresy', verifyEmailEmail('https://danero.cz/overeni?token=x')],
+    ['potvrzení předplatného', subscription],
+    ['potvrzení podkladů', report],
+    [
+      'upomínka před obnovou',
+      subscriptionRenewalEmail({ renewsOn: '7. 8. 2027', priceCzk: PRICE_SUBSCRIPTION_CZK }),
+    ],
+  ] as const;
+
+  it.each(vsechny.map(([nazev]) => nazev))('%s má textovou i HTML verzi', (nazev) => {
+    const email = vsechny.find(([n]) => n === nazev)![1];
+    expect(email.text.length).toBeGreaterThan(80);
+    expect(email.html).toBeDefined();
+    expect(email.html).toMatch(/^<!doctype html>/);
+    // žádný externí zdroj — prozradil by, kdy si příjemce zprávu otevřel
+    expect(email.html).not.toMatch(/<img|src="http|@import|<link/i);
+  });
+
+  it.each(vsechny.map(([nazev]) => nazev))('%s: HTML nese totéž co text', (nazev) => {
+    const email = vsechny.find(([n]) => n === nazev)![1];
+    const html = bezZalomeni(email.html!.replace(/<[^>]+>/g, ' '));
+    // věty z textové verze musí být i v HTML (bere se první delší odstavec)
+    const prvniVeta = bezZalomeni(email.text).split('. ')[0]!;
+    expect(html).toContain(prvniVeta);
+  });
+
+  it('adresu provozovatele nese JEN potvrzení objednávky (§ 1824a)', () => {
+    for (const [nazev, email] of vsechny) {
+      const maAdresu =
+        bezZalomeni(email.text).includes(OPERATOR.address) ||
+        bezZalomeni(email.html ?? '').includes(OPERATOR.address);
+      const smiMitAdresu = nazev.startsWith('potvrzení');
+      expect(maAdresu, `${nazev}: adresa ${maAdresu ? 'JE' : 'CHYBÍ'}`).toBe(smiMitAdresu);
+    }
+  });
+
+  it('všechny e-maily se identifikují jménem a IČO (proti phishingu)', () => {
+    for (const [nazev, email] of vsechny) {
+      expect(bezZalomeni(email.text), nazev).toContain(operatorContact.name);
+      expect(bezZalomeni(email.text), nazev).toContain(operatorContact.ico);
     }
   });
 });

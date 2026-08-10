@@ -56,18 +56,22 @@ export function operatorLines(contact: OperatorContact = OPERATOR): string[] {
 }
 
 /**
- * Patička služebních e-mailů (obnova hesla, ověření adresy, digest).
+ * Patička služebních e-mailů (obnova hesla, ověření adresy, digest, upomínka).
  *
  * Obchodní sdělení to nejsou, takže identifikaci zákon nevyžaduje — jenže
  * e-mail bez odesílatele a bez kontaktu vypadá jako phishing přesně u těch
- * zpráv, které nesou odkaz ke změně hesla (nález E-46). Adresa je navíc jediná
- * cesta, jak odpovědět: `From` je notifikace@danero.cz a ta schránka poštu
- * nepřijímá.
+ * zpráv, které nesou odkaz ke změně hesla (nález E-46). Kontakt je navíc
+ * jediná cesta, jak odpovědět: `From` je notifikace@danero.cz a ta schránka
+ * poštu nepřijímá.
+ *
+ * **Poštovní adresa tu ale NENÍ.** Identifikaci proti phishingu obstará jméno
+ * a IČO (podle nějž si kdokoli dohledá zbytek v rejstříku) a povinné plnění
+ * podle § 1824a nese potvrzení objednávky, kde adresa zůstává. Rozesílat
+ * bydliště provozovatele v každé zprávě o obnově hesla je zbytečné.
  */
 export function operatorSignature(contact: OperatorContact = OPERATOR): string[] {
   return [
-    '—',
-    `Danero — ${contact.name}, IČO ${contact.ico}, ${contact.address}`,
+    `Danero — ${contact.name}, IČO ${contact.ico}`,
     `Napiš nám: ${contact.email}`,
   ];
 }
