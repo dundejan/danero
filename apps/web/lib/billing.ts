@@ -262,7 +262,10 @@ export async function recordReportPurchase(
   }
 
   const [existing] = await db
-    .select({ revokedAt: reportPurchases.revokedAt })
+    .select({
+      revokedAt: reportPurchases.revokedAt,
+      paymentIntentId: reportPurchases.stripePaymentIntentId,
+    })
     .from(reportPurchases)
     .where(
       and(eq(reportPurchases.userId, args.userId), eq(reportPurchases.taxYear, args.taxYear)),
@@ -278,14 +281,38 @@ export async function recordReportPurchase(
     });
     return false;
   }
+  // Táž platba podruhé (opakované doručení webhooku, rekonciliace prochází
+  // sedmidenní okno každý den) — rok je odemčený a nic nechybí.
+  if (
+    args.stripePaymentIntentId &&
+    existing?.paymentIntentId === args.stripePaymentIntentId
+  ) {
+    return true;
+  }
+
   // Druhá platba za tentýž rok narazí na unique index. Tiché zahození by
   // znamenalo peníze na účtu bez protiplnění a bez jakékoli stopy — tohle je
   // jediné místo, odkud se dá dohledat, komu se má vrátit (C-6).
-  logEvent('error', 'billing.duplicate_report_purchase', {
-    userId: args.userId,
-    taxYear: args.taxYear,
-    paymentIntentId: args.stripePaymentIntentId ?? null,
-  });
+  //
+  // C-3-12: hlásit se to ale smí JEDNOU. Po opětovném nákupu roku nese řádek
+  // nové `stripePaymentIntentId`, takže stará (pořád `complete`) session
+  // vycházela jako cizí platba a rekonciliace psala `error` každý den po celé
+  // sedmidenní okno. Klíč nese konkrétní platbu, takže skutečná druhá platba
+  // se pořád ohlásí — jen ne osmkrát.
+  const prvniHlaseni = args.stripePaymentIntentId
+    ? await checkRateLimit(
+        db,
+        `dupreport:${args.userId}:${args.taxYear}:${args.stripePaymentIntentId}`,
+        { max: 1, windowMs: 30 * 24 * 60 * 60_000 },
+      )
+    : true;
+  if (prvniHlaseni) {
+    logEvent('error', 'billing.duplicate_report_purchase', {
+      userId: args.userId,
+      taxYear: args.taxYear,
+      paymentIntentId: args.stripePaymentIntentId ?? null,
+    });
+  }
   return false;
 }
 
@@ -573,6 +600,28 @@ async function linkCheckoutSubscription(
       })
       .onConflictDoNothing();
     return `checkout předplatného pro ${args.userId} — uložena vazba na zákazníka`;
+  }
+
+  // C-3-11: jde-li o JINÉ předplatné, než co v řádku leží, je to nový nákup —
+  // promokód i souhlas se zahájením plnění patří k němu, ne k tomu starému.
+  // „Doplnit jen chybějící" tady zahazovalo partnerský kód druhého nákupu
+  // (a tím i podklad pro výplatu partnerovi).
+  const jinyOdber =
+    !!args.stripeSubscriptionId &&
+    !!row.stripeSubscriptionId &&
+    row.stripeSubscriptionId !== args.stripeSubscriptionId;
+  if (jinyOdber) {
+    await db
+      .update(subscriptions)
+      .set({
+        stripeSubscriptionId: args.stripeSubscriptionId,
+        ...(args.stripeCustomerId ? { stripeCustomerId: args.stripeCustomerId } : {}),
+        promoCode: args.promoCode,
+        consentAt: args.consentAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.userId, args.userId));
+    return `checkout předplatného pro ${args.userId}`;
   }
 
   // událost o předplatném dorazila dřív: doplní se jen to, co v řádku chybí,
