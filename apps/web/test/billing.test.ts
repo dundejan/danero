@@ -1498,3 +1498,60 @@ describe('poučení o odstoupení v potvrzení objednávky (E-3)', () => {
     delete process.env.DANERO_BILLING;
   });
 });
+
+/**
+ * C-3-09: `unlocked = !wasPaid && isPaid` platilo i po vybraném dunningu, takže
+ * active → past_due → active poslalo potvrzení objednávky podruhé.
+ * C-3-10: `>=` pouštělo i událost se STEJNÝM `created` — Stripe posílá
+ * `deleted` a `updated` běžně v téže vteřině, takže po zrušení zůstalo aktivní.
+ * C-3-13: rate limit se spotřeboval dřív než kontrola vlastnictví.
+ */
+describe('platby: dodělané drobnosti 3. auditu', () => {
+  it('C-3-09: po vybraném dunningu se potvrzení objednávky neposílá podruhé', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const emails = captureEmails();
+
+    await applyStripeEvent(db, subscriptionEvent({}, 1_786_000_000));
+    expect(emails()).toHaveLength(1);
+
+    // neproběhlá platba → dunning → vybráno
+    await applyStripeEvent(db, subscriptionEvent({ status: 'past_due' }, 1_786_000_100));
+    await applyStripeEvent(db, subscriptionEvent({ status: 'active' }, 1_786_000_200));
+
+    expect(await hasActiveSubscription(db, 'u1')).toBe(true);
+    expect(emails()).toHaveLength(1);
+  });
+
+  it('C-3-10: událost se stejným časem nesmí vrátit zrušené předplatné do aktivního', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    await applyStripeEvent(db, subscriptionEvent({}, 1_786_000_000));
+    // Stripe pošle deleted i updated v TÉŽE vteřině
+    await applyStripeEvent(
+      db,
+      subscriptionEvent({ status: 'canceled' }, 1_786_000_100, 'customer.subscription.deleted'),
+    );
+    await applyStripeEvent(db, subscriptionEvent({ status: 'active' }, 1_786_000_100));
+
+    expect(await hasActiveSubscription(db, 'u1')).toBe(false);
+  });
+
+  it('C-3-13: rok, který má uživatel zaplacený, odpoví „už ho máš“ i po vyčerpání limitu', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await db.insert(reportPurchases).values({
+      id: 'rp-limit',
+      userId: 'u1',
+      taxYear: 2025,
+      stripeCustomerId: 'cus_x',
+      createdAt: new Date(),
+    });
+
+    // limit je 10 pokusů; jedenáctý na VLASTNĚNÝ rok musí pořád říct pravdu
+    for (let i = 0; i < 12; i += 1) {
+      expect(await purchaseBlock(db, 'u1', { kind: 'report', taxYear: 2025 })).toBe('uz-mas-rok');
+    }
+  });
+});

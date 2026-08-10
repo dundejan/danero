@@ -81,7 +81,17 @@ export function acceptsEvent(
   const sameSubscription =
     stored.stripeSubscriptionId === null ||
     stored.stripeSubscriptionId === incoming.stripeSubscriptionId;
-  if (sameSubscription) return incoming.eventAt.getTime() >= stored.lastEventAt.getTime();
+  if (sameSubscription) {
+    const rozdil = incoming.eventAt.getTime() - stored.lastEventAt.getTime();
+    if (rozdil > 0) return true;
+    if (rozdil < 0) return false;
+    // C-3-10: shodná vteřina. Stripe posílá `deleted` a `updated` běžně
+    // v tomtéž `created`, takže se pořadí z časové známky poznat nedá —
+    // a `>=` nechalo vyhrát to, co dorazilo druhé: po `deleted(canceled)`
+    // přišlo `updated(active)` a v DB zůstalo aktivní předplatné.
+    // Při shodě proto NIKDY neodemykáme; opačný směr (zamknout) projde.
+    return !(isPaidSubscription(incoming, now) && !isPaidSubscription(stored, now));
+  }
 
   const storedPaid = isPaidSubscription(stored, now);
   const incomingPaid = isPaidSubscription(incoming, now);
@@ -179,7 +189,19 @@ async function writeSubscription(
     { status: state.status, currentPeriodEnd: state.currentPeriodEnd },
     now,
   );
-  return { written: true, unlocked: !wasPaid && isPaid };
+  // C-3-09: `!wasPaid && isPaid` platí i po vybraném dunningu
+  // (active → past_due → active), takže zákazník dostal potvrzení objednávky
+  // podruhé. Potvrzení podle § 1824a se váže na UZAVŘENÍ smlouvy, a to je
+  // nové předplatné — dunning běží pod tímtéž `stripeSubscriptionId`.
+  // Rozhoduje stav, ze kterého se přechází, ne shoda ID: `incomplete` je
+  // předplatné, které se ještě nikdy nerozběhlo (3DS výzva u prvního nákupu),
+  // kdežto `past_due`/`unpaid` znamená, že aktivní už bylo a jen se doplácí.
+  const NIKDY_NEBEZELO = new Set(['incomplete', 'incomplete_expired']);
+  const prvniAktivace =
+    !stored ||
+    stored.stripeSubscriptionId !== (state.stripeSubscriptionId ?? null) ||
+    NIKDY_NEBEZELO.has(stored.status);
+  return { written: true, unlocked: prvniAktivace && !wasPaid && isPaid };
 }
 
 /** Jednorázový nákup podkladů; druhý webhook o téže platbě nic nezdvojí. */
@@ -357,8 +379,12 @@ export type Purchase = { kind: 'subscription' } | { kind: 'report'; taxYear: num
  * - a ani rok, který už jednou zaplatil: unique index ho zachytil až ve
  *   webhooku, tedy ve chvíli, kdy jsou peníze pryč.
  *
- * Pořadí je schválně takové: rok se ověří dřív, než se sáhne na rate limit,
- * ať překlep neubírá pokusy o skutečný nákup.
+ * Pořadí je schválně takové: nejdřív se odpoví na otázky, které se dají
+ * zodpovědět z dat (rok mimo rozsah, „tohle už máš zaplacené"), a teprve pak
+ * se sahá na rate limit. Kdo mačká tlačítko u roku, který má v ceně hlídání,
+ * ať se dozví právě tohle — ne „Zkoušíš to moc často" po jedenáctém kliknutí
+ * (nález C-3-13). Limit tak zůstává na to, k čemu je: na skutečné pokusy
+ * o založení Checkoutu.
  */
 export async function purchaseBlock(
   db: Db,
@@ -367,9 +393,6 @@ export async function purchaseBlock(
   now = new Date(),
 ): Promise<PurchaseBlock | null> {
   if (purchase.kind === 'report' && !isSellableTaxYear(purchase.taxYear, now)) return 'chyba-rok';
-  if (!(await checkRateLimit(db, `checkout:${userId}`, { max: 10, windowMs: 10 * 60_000 }))) {
-    return 'prilis-casto';
-  }
   if (await hasActiveSubscription(db, userId, now)) {
     return purchase.kind === 'subscription' ? 'uz-mas-predplatne' : 'mas-v-predplatnem';
   }
@@ -392,6 +415,13 @@ export async function purchaseBlock(
         ),
       );
     if (owned) return 'uz-mas-rok';
+  }
+  // Až úplně na konci: sem se dostane jen pokus, ze kterého by SKUTEČNĚ vznikl
+  // Checkout. Dřív limit ubíral i klikání na rok, který má uživatel dávno
+  // zaplacený, a od jedenáctého kliknutí mu místo „Tohle už máš" odpovědělo
+  // „Zkoušíš to moc často" (C-3-13).
+  if (!(await checkRateLimit(db, `checkout:${userId}`, { max: 10, windowMs: 10 * 60_000 }))) {
+    return 'prilis-casto';
   }
   return null;
 }

@@ -19,9 +19,16 @@ import { buyReportAction, buySubscriptionAction, openBillingPortalAction } from 
 
 export const metadata = { title: 'Předplatné — Danero' };
 
-const STAV_OK: Record<string, string> = {
-  hotovo: 'Platba proběhla. Potvrzení jsme ti poslali e-mailem — funkce jsou odemčené.',
-};
+/**
+ * C-3-08: „funkce jsou odemčené" se tvrdilo bezpodmínečně, jenže u odložené
+ * platby (bankovní převod, některé lokální metody) je Checkout `completed`,
+ * ale `unpaid` — odemčeno bude klidně až za pár dní. Hláška proto vychází
+ * ze SKUTEČNÉHO stavu účtu, ne z toho, že se uživatel vrátil ze Stripu.
+ */
+const stavHotovo = (odemceno: boolean): string =>
+  odemceno
+    ? 'Platba proběhla. Potvrzení jsme ti poslali e-mailem — funkce jsou odemčené.'
+    : 'Platbu jsme přijali ke zpracování. U některých způsobů platby (třeba bankovního převodu) potvrzení z banky trvá i pár dní — jakmile dorazí, funkce se odemknou samy a přijde ti e-mail. Znovu platit nemusíš.';
 const STAV_CHYBA: Record<string, string> = {
   zruseno: 'Platbu jsi zrušil, nic se nestrhlo.',
   'chybi-souhlas':
@@ -91,7 +98,9 @@ export default async function SubscriptionPage({
         </p>
       </header>
 
-      {stav && STAV_OK[stav] && <Toast kind="ok" text={STAV_OK[stav]} />}
+      {stav === 'hotovo' && (
+        <Toast kind="ok" text={stavHotovo(active || purchases.length > 0)} />
+      )}
       {stav && STAV_CHYBA[stav] && <Toast kind="chyba" text={STAV_CHYBA[stav]} />}
 
       {!billingEnabled() && (
