@@ -230,15 +230,25 @@ export default function TermsPage() {
           je vůbec).
         </p>
 
-        <h2 className="font-display text-lg font-semibold">8. Provozovatel a kontakt</h2>
+        <h2 id="kontakt" className="font-display text-lg font-semibold">
+          8. Provozovatel a kontakt
+        </h2>
         {/* § 1820 odst. 1 písm. c) OZ chce adresu, telefon i e-mail sdělit PŘED
             uzavřením smlouvy. Do 8. 8. 2026 se telefon vypisoval jen v e-mailech,
             tedy až potom (nález E-3-02). Údaje se berou z lib/contact.ts, ať se
-            jednotlivé stránky nerozejdou (E-3-15). */}
+            jednotlivé stránky nerozejdou (E-3-15).
+
+            Tohle je JEDINÁ stránka, kde se telefon vypisuje — proto ta kotva
+            `#kontakt`, na kterou míří objednávkový formulář. Ve zbytku webu
+            (patička, /soukromi) je záměrně jen e-mail: povinnost plní tenhle
+            odstavec plus potvrzení objednávky na trvalém nosiči a preferovaný
+            kanál je psaní, ne volání. */}
         <p>
           Danero je osobní projekt — provozuje ho {OPERATOR.name}, IČO {OPERATOR.ico}, se
           sídlem {OPERATOR.address} (fyzická osoba podnikající dle živnostenského zákona,
-          zapsaná v živnostenském rejstříku). Připomínky a chyby posílej na{' '}
+          zapsaná v živnostenském rejstříku). <strong>Piš radši e-mailem</strong> — na
+          telefon se nedovoláš vždycky, kdežto na zprávu odpovím a zůstane z ní stopa
+          pro obě strany. Připomínky a chyby posílej na{' '}
           <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
             {OPERATOR.email}
           </a>

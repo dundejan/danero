@@ -252,16 +252,12 @@ export async function MarketingFooter() {
                     {OPERATOR.email}
                   </a>
                 </li>
-                {OPERATOR.phone && (
-                  <li>
-                    <a
-                      href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
-                      className="font-medium hover:text-inkoust"
-                    >
-                      {OPERATOR.phone}
-                    </a>
-                  </li>
-                )}
+                {/* Telefon tu schválně NENÍ. § 1820 odst. 1 písm. c) chce, aby
+                    byl k dispozici před uzavřením smlouvy — to plní `/podminky`
+                    (odkaz je v patičce hned vedle) a potvrzení objednávky na
+                    trvalém nosiči. Vypisovat ho na všech dvanácti veřejných
+                    stránkách povinnost nepřidává, jen zve k volání, které
+                    nikdo nezvedne. Preferovaný kanál je e-mail. */}
               </ul>
             </div>
           </div>

@@ -250,8 +250,18 @@ export default async function SubscriptionPage({
       )}
 
       <p className="text-xs leading-relaxed text-inkoust-tlumeny">
-        Ceny jsou konečné. Prodávající: {OPERATOR.name}, IČO {OPERATOR.ico} — není plátcem DPH.
-        Podrobnosti o odstoupení od smlouvy najdeš v{' '}
+        {/* § 1820 odst. 1 písm. c): telefon i adresa musí být k dispozici PŘED
+            objednávkou. Vypisují se na jednom místě (`/podminky#kontakt`), sem
+            vede přímý odkaz — na všech stránkách je jen e-mail, protože
+            preferovaný kanál je psaní. */}
+        Ceny jsou konečné. Prodávající: {OPERATOR.name}, IČO {OPERATOR.ico} — není plátcem DPH.{' '}
+        <Link
+          href="/podminky#kontakt"
+          className="font-medium text-ruzova-text underline underline-offset-2"
+        >
+          Adresa a telefon prodávajícího
+        </Link>
+        . Podrobnosti o odstoupení od smlouvy najdeš v{' '}
         <Link href="/odstoupeni" className="font-medium text-ruzova-text underline underline-offset-2">
           poučení o odstoupení
         </Link>{' '}

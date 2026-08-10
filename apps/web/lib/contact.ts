@@ -68,6 +68,6 @@ export function operatorSignature(contact: OperatorContact = OPERATOR): string[]
   return [
     '—',
     `Danero — ${contact.name}, IČO ${contact.ico}, ${contact.address}`,
-    `Napiš nám: ${contact.email}${contact.phone ? `, ${contact.phone}` : ''}`,
+    `Napiš nám: ${contact.email}`,
   ];
 }

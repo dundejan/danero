@@ -65,8 +65,11 @@ describe('telefon provozovatele se renderuje při požadavku (§ 1820/1 c)', () 
     'utf8',
   );
 
-  it('patička telefon opravdu vypisuje', () => {
-    expect(SHELL).toContain('OPERATOR.phone');
+  it('patička vypisuje kontakt z prostředí (e-mail; telefon je jen v podmínkách)', () => {
+    expect(SHELL).toContain('OPERATOR.email');
+    // telefon v patičce být NEMÁ — § 1820 plní /podminky#kontakt a potvrzení
+    // objednávky, na dvanácti stránkách by jen zval k volání
+    expect(SHELL).not.toContain('OPERATOR.phone');
   });
 
   it('patička zastaví předrenderování', () => {
@@ -81,8 +84,15 @@ describe('telefon provozovatele se renderuje při požadavku (§ 1820/1 c)', () 
     .map((file) => ({ file, zdroj: readFileSync(file, 'utf8') }))
     .filter(({ zdroj }) => zdroj.includes('OPERATOR.phone'));
 
-  it('telefon vypisuje i některá stránka ve vlastním textu', () => {
-    expect(sTelefonem.length).toBeGreaterThan(0);
+  it('telefon vypisuje právě jedna stránka — podmínky', () => {
+    const relativni = sTelefonem.map(({ file }) => file.slice(APP_DIR.length + 1));
+    expect(relativni).toEqual([join('podminky', 'page.tsx')]);
+  });
+
+  it('objednávka na ten odstavec odkazuje adresně (§ 1820 před uzavřením smlouvy)', () => {
+    const objednavka = readFileSync(join(APP_DIR, '(app)', 'predplatne', 'page.tsx'), 'utf8');
+    expect(objednavka).toContain('/podminky#kontakt');
+    expect(readFileSync(join(APP_DIR, 'podminky', 'page.tsx'), 'utf8')).toContain('id="kontakt"');
   });
 
   it.each(sTelefonem.map(({ file }) => file))(

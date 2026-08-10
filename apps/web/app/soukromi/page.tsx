@@ -33,19 +33,11 @@ export default function PrivacyPage() {
           <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
             {OPERATOR.email}
           </a>
-          {OPERATOR.phone ? (
-            <>
-              {' '}
-              nebo telefon{' '}
-              <a
-                href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
-                className="font-medium text-ruzova-text"
-              >
-                {OPERATOR.phone}
-              </a>
-            </>
-          ) : null}
-          .
+          {/* Čl. 13 odst. 1 písm. a) GDPR chce kontaktní údaje správce, ne
+              konkrétně telefon — e-mailem se dá vyřídit každé právo subjektu
+              údajů a máme z něj písemnou stopu. Telefon je v `/podminky`. */}
+          . Žádosti podle GDPR vyřizujeme e-mailem — je z nich písemná stopa
+          pro obě strany.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Co o tobě víme a proč</h2>
