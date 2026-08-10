@@ -85,6 +85,29 @@ export function renderText(blocks: EmailBlock[], footer: string[]): string {
   return [...casti, '', ...footer].join('\n\n').replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * Značka Danero: růžová tečka (nákup) + tmavá linie (dnešek) + slovo.
+ *
+ * Skládá se z HTML, ne z obrázku — schválně. Obrázek by musel viset na
+ * danero.cz (data: URI Gmail u `<img>` zahazuje), takže by prozrazoval, kdy
+ * si příjemce zprávu otevřel, a půlka klientů ho stejně blokuje, dokud
+ * uživatel neklikne na „zobrazit obrázky". Tvary jsou dost jednoduché na to,
+ * aby je zvládl obyčejný `border-radius`.
+ *
+ * ⚠️ Outlook pro Windows (jádro Wordu) `border-radius` ignoruje — tečka tam
+ * vyjde jako čtvereček a linie jako obdélník. Značka se tím nerozpadne, jen
+ * zhranatí; alternativa (hostovaný PNG) by stála za to leda tehdy, kdyby se
+ * ukázalo, že tenhle klient používá reálná část zákazníků.
+ */
+function znacka(): string {
+  const tvar = (styl: string) => `<div style="${styl};font-size:0;line-height:0">&nbsp;</div>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="padding:0;vertical-align:bottom">${tvar(`width:11px;height:11px;border-radius:50%;background:${BARVY.ruzova}`)}</td>
+<td style="padding:0 0 0 1px;vertical-align:bottom">${tvar(`width:3px;height:18px;border-radius:2px;background:${BARVY.inkoust}`)}</td>
+<td style="padding:0 0 0 8px;vertical-align:bottom"><span style="font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1;color:${BARVY.inkoust};font-family:${PISMO}">Danero</span></td>
+</tr></table>`;
+}
+
 /** HTML verze. */
 export function renderHtml(args: {
   title: string;
@@ -140,7 +163,7 @@ ${block.rows
 <tr><td align="center" style="padding:32px 16px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px">
 <tr><td style="padding:0 0 20px">
-<span style="font-size:19px;font-weight:700;letter-spacing:-.02em;color:${BARVY.inkoust};font-family:${PISMO}">Danero</span><span style="color:${BARVY.ruzova};font-size:19px;font-weight:700">.</span>
+${znacka()}
 </td></tr>
 <tr><td style="background:${BARVY.plocha};border:1px solid ${BARVY.linka};border-radius:14px;padding:32px 28px;font-family:${PISMO}">
 ${telo}

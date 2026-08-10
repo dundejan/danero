@@ -156,10 +156,6 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
       { kind: 'p', text: 'Vítej v Daneru. Potvrď prosím, že ti tahle adresa patří.' },
       { kind: 'cta', label: 'Potvrdit e-mail', url },
       { kind: 'p', text: 'Odkaz platí 24 hodin.' },
-      {
-        kind: 'p',
-        text: 'Ptáme se proto, že na tuhle adresu ti budou chodit upozornění na limity a termíny — a taky obnova hesla, kdybys ho zapomněl. Kdyby v adrese byl překlep, o účet i s naimportovanými daty bys přišel.',
-      },
       { kind: 'note', text: 'Pokud sis účet nezakládal, nemusíš dělat nic.' },
     ],
     footer: operatorSignature(),
@@ -197,8 +193,11 @@ export function purchaseConfirmationEmail(args: {
       ? [
           // částka je cena z ceníku, ne fakturovaná částka ze Stripe — s promo
           // kódem se liší, proto se tu neslibuje jako konečná (souvisí s E-25)
-          `Předplatné trvá jeden rok ode dneška a pak se automaticky obnovuje na další rok za cenu podle ceníku (dnes ${args.priceCzk} Kč; uplatněný slevový kód ji může snížit). Přibližně dva týdny před obnovou ti přijde e-mail; obnovu zrušíš kdykoli jedním kliknutím v aplikaci (Předplatné → Spravovat platby) a do konce zaplaceného období ti služba běží dál.`,
-          'Nejkratší doba závazku je těch dvanáct měsíců, žádná výpovědní lhůta ani poplatek za ukončení se neúčtují.',
+          // § 1820 odst. 1 u automaticky obnovovaného závazku vyžaduje i
+          // nejkratší dobu, po kterou smlouva strany zavazuje. Stála tu jako
+          // samostatná věta i s ujištěním o poplatcích — to ujištění povinné
+          // není a znělo jako vata, tak zbyl jen ten povinný údaj na konci.
+          `Předplatné trvá jeden rok ode dneška a pak se automaticky obnovuje na další rok za cenu podle ceníku (dnes ${args.priceCzk} Kč; uplatněný slevový kód ji může snížit). Přibližně dva týdny před obnovou ti přijde e-mail; obnovu zrušíš kdykoli jedním kliknutím v aplikaci (Předplatné → Spravovat platby) a do konce zaplaceného období ti služba běží dál — zavazuje tě vždycky jen ten zaplacený rok.`,
         ]
       : [
           'Jednorázový nákup, nic se neobnovuje a nic dalšího se nestrhne. Zaplacený daňový rok ti v účtu zůstává odemčený i později — včetně pozdějších oprav výpočtu za ten rok.',
@@ -253,7 +252,14 @@ export function purchaseConfirmationEmail(args: {
       },
       {
         kind: 'note',
-        text: `Když se nedohodneme a jsi spotřebitel, můžeš se obrátit na subjekt mimosoudního řešení spotřebitelských sporů — ${ADR.authority}, ${ADR.address}, ${ADR.web}; návrh jde podat online na ${ADR.online}.`,
+        // Povinné to je: § 1820 odst. 1 (informace před uzavřením distanční
+        // smlouvy, čl. 6 odst. 1 písm. t) směrnice 2011/83/EU) a § 1824a chce
+        // tytéž údaje zopakovat v potvrzení na trvalém nosiči — web trvalý
+        // nosič není (SDEU C-49/11). § 14 z. 634/1992 sám o sobě e-mail
+        // nevyžaduje, ten míří na web a na trvalý nosič až po vzniku sporu.
+        // Poštovní adresa ČOI povinná NENÍ (§ 14 chce jméno a internetovou
+        // adresu), takže tady zkrácena — na /podminky zůstává celá.
+        text: `Když se nedohodneme a jsi spotřebitel, můžeš se obrátit na subjekt mimosoudního řešení spotřebitelských sporů — ${ADR.authority}, ${ADR.web}; návrh jde podat online na ${ADR.online}.`,
       },
       {
         kind: 'note',
