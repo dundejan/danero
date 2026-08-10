@@ -14,7 +14,7 @@ import {
 import { canGenerateReport } from '@/lib/entitlements';
 import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 /**
  * Stránka pouští daňový engine nad celou historií uživatele — u velkého
@@ -44,7 +44,7 @@ export default async function ReportPage({
   const params = await searchParams;
   const rok = firstParam(params.rok);
   const strana = Math.max(1, Number(firstParam(params.strana)) || 1);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/report');
 
   // podklady se odemykají po daňových letech: buď předplatným, nebo nákupem
   // konkrétního roku (docs/19)

@@ -14,7 +14,7 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
 /**
@@ -67,7 +67,7 @@ export default async function OverviewPage({
   const currentYear = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/prehled');
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   let analysis;
   try {

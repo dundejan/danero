@@ -482,22 +482,73 @@ export function ReportView({
                 se vždy jen zobrazená strana; úhrny do řádků přiznání i XML pro
                 podatelnu jsou spočítané ze všech prodejů.
               </p>
-              <nav className="flex items-center gap-2" aria-label="Stránkování prodejů">
+              {/* H-3-21: dřív tu bylo jen „Předchozí/Další“, takže na stranu
+                  100 ze 125 vedlo 99 kliknutí — a každé je celý render reportu.
+                  Skok na první a poslední stranu plus přímé zadání čísla to
+                  zkrátí na jedno. */}
+              <nav
+                className="flex flex-wrap items-center gap-2"
+                aria-label="Stránkování prodejů"
+              >
                 {currentPage > 1 && (
-                  <Link
-                    href={`${basePath}/report?rok=${year}&strana=${currentPage - 1}`}
-                    className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                  <>
+                    <Link
+                      href={`${basePath}/report?rok=${year}&strana=1`}
+                      className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                      První
+                    </Link>
+                    <Link
+                      href={`${basePath}/report?rok=${year}&strana=${currentPage - 1}`}
+                      className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                      Předchozí
+                    </Link>
+                  </>
+                )}
+                {totalPages > 2 && (
+                  <form
+                    method="get"
+                    action={`${basePath}/report`}
+                    className="flex items-center gap-1.5"
                   >
-                    Předchozí
-                  </Link>
+                    <input type="hidden" name="rok" value={year} />
+                    <label htmlFor="strana" className="text-inkoust-tlumeny">
+                      Strana
+                    </label>
+                    <input
+                      id="strana"
+                      name="strana"
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      defaultValue={currentPage}
+                      inputMode="numeric"
+                      className="w-16 rounded-md border border-linka-ovladaci bg-plocha px-2 py-1 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                      Přejít
+                    </button>
+                  </form>
                 )}
                 {currentPage < totalPages && (
-                  <Link
-                    href={`${basePath}/report?rok=${year}&strana=${currentPage + 1}`}
-                    className={buttonVariants({ variant: 'secondary', size: 'sm' })}
-                  >
-                    Další
-                  </Link>
+                  <>
+                    <Link
+                      href={`${basePath}/report?rok=${year}&strana=${currentPage + 1}`}
+                      className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                      Další
+                    </Link>
+                    <Link
+                      href={`${basePath}/report?rok=${year}&strana=${totalPages}`}
+                      className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                      Poslední
+                    </Link>
+                  </>
                 )}
               </nav>
             </div>

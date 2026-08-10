@@ -12,7 +12,7 @@ import {
 } from '@/lib/portfolio';
 import { loadInstrumentPrices } from '@/lib/prices';
 import { requireUser } from '@/lib/session';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 /**
  * Stránka pouští daňový engine nad celou historií uživatele — u velkého
@@ -53,7 +53,7 @@ export default async function PortfolioPage({
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/portfolio');
 
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   let analysis;

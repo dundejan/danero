@@ -30,7 +30,13 @@ function describeTx(tx: {
         text: `Dividenda ${money(tx.gross as never, String(tx.currency))} (srážka ${money(tx.withholdingTax as never, String(tx.currency))})`,
       };
     case 'CORPORATE_ACTION':
-      return { date: String(tx.date), text: `Korporátní akce (${String(tx.subtype)})` };
+      // H-3-14: sousední větve téhož `switch` jsou česky, tahle tiskla surový
+      // enum („Korporátní akce (SPINOFF)"). Neznámý druh radši opíšeme, než
+      // abychom ho zamlčeli — ale česky pojmenované musí být to, co umíme.
+      return {
+        date: String(tx.date),
+        text: `Korporátní akce: ${KORPORATNI_AKCE[String(tx.subtype)] ?? String(tx.subtype)}`,
+      };
     case 'TRANSFER_IN':
       return { date: String(tx.date), text: `Převod na účet: ${qty(tx.quantity as never)} ks` };
     case 'TRANSFER_OUT':
@@ -41,6 +47,16 @@ function describeTx(tx: {
 }
 
 /** Historie transakcí ISIN (nejnovější první) — pro view i kontrolu existence. */
+/** Druhy korporátních akcí česky — klíče jsou hodnoty `subtype` z modelu. */
+const KORPORATNI_AKCE: Record<string, string> = {
+  SPLIT: 'štěpení akcií',
+  REVERSE_SPLIT: 'zpětné štěpení akcií',
+  SPINOFF: 'oddělení části firmy (spin-off)',
+  MERGER: 'fúze',
+  ISIN_CHANGE: 'změna identifikátoru cenného papíru',
+  DELISTING: 'stažení z burzy',
+};
+
 export function positionHistory(
   txs: Transaction[],
   isin: string,

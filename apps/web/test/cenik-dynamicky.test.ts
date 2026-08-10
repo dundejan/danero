@@ -116,3 +116,37 @@ describe('omezení XML pro EPO je vidět před platbou (E-3-04)', () => {
     }
   });
 });
+
+/**
+ * H-3-20: `?rok=` mimo rozsah se tiše nahradil běžným rokem, ale v adresním
+ * řádku zůstal — stránka ukazovala 2025 a URL tvrdila `?rok=1999`. Uložený
+ * nebo přeposlaný odkaz pak dával jiná čísla, než na kterých vznikl.
+ */
+describe('neplatný ?rok= srovná URL, nespadne tiše (H-3-20)', () => {
+  it('všech šest stránek s výběrem roku používá společný pomocník', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const stranky = [
+      ['(app)', 'report'],
+      ['(app)', 'prehled'],
+      ['(app)', 'portfolio'],
+      ['demo', 'report'],
+      ['demo', 'prehled'],
+      ['demo', 'portfolio'],
+    ];
+    for (const [skupina, cesta] of stranky) {
+      const zdroj = readFileSync(join(APP_DIR, skupina!, cesta!, 'page.tsx'), 'utf8');
+      expect(zdroj, `${skupina}/${cesta} nepoužívá resolveTaxYear`).toContain('resolveTaxYear(');
+      // starý tichý fallback se nesmí vrátit
+      expect(zdroj).not.toMatch(/years\.includes\(Number\(rok\)\) \? Number\(rok\) : currentYear/);
+    }
+  });
+
+  it('pomocník přesměruje jen tehdy, když parametr opravdu přišel', async () => {
+    const { resolveTaxYear } = await import('@/lib/utils');
+    expect(resolveTaxYear(undefined, [2024, 2025], 2025, '/report')).toBe(2025);
+    expect(resolveTaxYear('2024', [2024, 2025], 2025, '/report')).toBe(2024);
+    // neplatný rok skončí přesměrováním, tedy výjimkou z next/navigation
+    expect(() => resolveTaxYear('1999', [2024, 2025], 2025, '/report')).toThrow();
+  });
+});

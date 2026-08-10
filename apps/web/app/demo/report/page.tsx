@@ -2,7 +2,7 @@ import { ReportView } from '@/components/views/report-view';
 import { DEMO_USER_ID, demoDataset, demoToday } from '@/lib/demo-data';
 import { reportDataCached } from '@/lib/engine-cache';
 import { availableYears } from '@/lib/portfolio';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,7 @@ export default async function DemoReportPage({
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/demo/report');
 
   return (
     <ReportView

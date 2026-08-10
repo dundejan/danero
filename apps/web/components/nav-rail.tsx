@@ -113,8 +113,14 @@ function TabBar({ items }: { items: NavItem[] }) {
               // 360 px / 7 položek ≈ 51 px na položku (běžný telefon, ne 390).
               // 10px písmo + `short` popisky se do toho vejdou celé; `truncate`
               // zůstává jen jako pojistka pro ještě užší displeje.
-              'min-w-0 truncate px-0 py-3 text-center text-[10px] font-medium tracking-tight',
-              active ? 'font-semibold text-ruzova-text' : 'text-inkoust-tlumeny',
+              // H-3-12: aktivní položka se lišila jen odstínem a tučností
+              // (1,06:1 proti neaktivní), takže stav nebyl poznat. Pruh nahoře
+              // je nebarevný signál s dostatečným kontrastem — a `border-transparent`
+              // u neaktivních drží stejnou výšku, aby lišta neposkakovala.
+              'min-w-0 truncate border-t-2 px-0 py-3 text-center text-[10px] font-medium tracking-tight',
+              active
+                ? 'border-ruzova font-semibold text-ruzova-text'
+                : 'border-transparent text-inkoust-tlumeny',
             )}
           >
             {item.short ?? item.label}

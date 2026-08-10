@@ -36,7 +36,7 @@ export function FileField({
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 text-sm">
-      <label className="shrink-0 cursor-pointer rounded-md bg-pozadi px-4 py-2 text-sm font-semibold text-inkoust hover:opacity-90 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ruzova">
+      <label className="shrink-0 cursor-pointer rounded-md border border-linka-ovladaci bg-pozadi px-4 py-2 text-sm font-semibold text-inkoust hover:opacity-90 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ruzova">
         Vybrat soubory
         <input
           ref={inputRef}

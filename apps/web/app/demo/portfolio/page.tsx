@@ -2,7 +2,7 @@ import { PortfolioView } from '@/components/views/portfolio-view';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { availableYears } from '@/lib/portfolio';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ export default async function DemoPortfolioPage({
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/demo/portfolio');
   const analysis = analyzeForUserCached(DEMO_USER_ID, txs, profile, year, today);
 
   return (

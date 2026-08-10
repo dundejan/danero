@@ -14,7 +14,10 @@ const hanken = Hanken_Grotesk({
 });
 
 const plexMono = IBM_Plex_Mono({
-  weight: ['400', '500'],
+  // H-3-16: kód kombinuje `font-mono` s `font-semibold` (600) na desítkách
+  // míst — bez načtené váhy 600 to prohlížeč dopočítá syntetickým tučným
+  // řezem, který u čísel rozhazuje šířku a v tabulkách se to pozná.
+  weight: ['400', '500', '600'],
   subsets: ['latin', 'latin-ext'],
   variable: '--font-plex-mono',
 });

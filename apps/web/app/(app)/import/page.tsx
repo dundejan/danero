@@ -610,7 +610,9 @@ export default async function ImportPage({
           return (
             <Card key={batch.id} className="space-y-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="font-mono text-sm">{batch.filename}</span>
+                {/* H-3-17: IBKR názvy („U1234567_20240101_20241231.xml") přetečou
+                    kartu od 30 znaků a rozjedou vodorovně celou stránku */}
+                <span className="min-w-0 break-all font-mono text-sm">{batch.filename}</span>
                 <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   <form action={deleteBatchAction}>

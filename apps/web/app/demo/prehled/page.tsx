@@ -3,7 +3,7 @@ import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { computeNotificationCandidates } from '@/lib/notifications';
 import { availableYears } from '@/lib/portfolio';
-import { firstParam } from '@/lib/utils';
+import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 // „dnešek“ dema se odvíjí od skutečného data — žádný prerender při buildu
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,7 @@ export default async function DemoPrehledPage({
   const currentYear = Number(today.slice(0, 4));
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
-  const year = years.includes(Number(rok)) ? Number(rok) : currentYear;
+  const year = resolveTaxYear(rok, years, currentYear, '/demo/prehled');
   const analysis = analyzeForUserCached(DEMO_USER_ID, txs, profile, year, today);
 
   // „Poslední upozornění“ v demu: kandidáti hlídače nad demo výsledkem —

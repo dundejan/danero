@@ -362,7 +362,8 @@ export default async function SettingsPage({
           <Card className="space-y-5" id="ucet">
             <CardTitle>Účet</CardTitle>
             <p className="text-sm text-inkoust-tlumeny">
-              Přihlášený účet: <span className="font-medium text-inkoust">{user.email}</span>
+              Přihlášený účet:{' '}
+              <span className="break-all font-medium text-inkoust">{user.email}</span>
             </p>
 
             <form action={changePasswordAction} className="space-y-3">
@@ -412,7 +413,7 @@ export default async function SettingsPage({
               <a
                 href="/api/export"
                 download
-                className="inline-block rounded-md border border-linka px-3 py-1.5 text-sm font-medium hover:border-inkoust-tlumeny"
+                className="inline-block rounded-md border border-linka-ovladaci px-3 py-1.5 text-sm font-medium hover:border-inkoust-tlumeny"
               >
                 Stáhnout export (JSON)
               </a>
