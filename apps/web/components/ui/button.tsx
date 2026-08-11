@@ -17,7 +17,17 @@ export const buttonVariants = cva(
         secondary:
           'border border-linka-ovladaci bg-plocha text-inkoust hover:border-inkoust-tlumeny',
         ghost: 'text-inkoust-tlumeny hover:text-inkoust',
-        danger: 'bg-cervena-syta text-white hover:brightness-95',
+        /*
+         * Nebezpečná akce je obtažená, ne vylitá. Sytá cihlová výplň seděla
+         * vedle brandové růžové tak blízko, že to vypadalo jako druhý odstín
+         * téže barvy, ne jako varování — a zároveň si dvě plné barvy braly
+         * stejnou pozornost. Obrys drží červený signál, výplň si nechává až
+         * na hover, kdy uživatel opravdu míří na smazání.
+         * Kontrast: --cervena 5,9:1 na bílé (světlý režim) a v dark módu je
+         * to zesvětlený textový odstín, obojí nad AA i nad 3:1 pro hranici.
+         */
+        danger:
+          'border border-cervena text-cervena hover:bg-cervena-syta hover:text-white',
       },
       size: {
         md: 'h-10 px-4',

@@ -77,9 +77,9 @@ export default async function AccountSettingsPage({
       <Card className="space-y-5" id="ucet">
         <CardTitle>Účet</CardTitle>
 
-        <SettingsSection title="Přihlášený účet">
-          <p className="break-all text-sm font-medium">{user.email}</p>
-        </SettingsSection>
+        <p className="text-sm text-inkoust-tlumeny">
+          Přihlášený účet: <span className="break-all font-medium text-inkoust">{user.email}</span>
+        </p>
 
         <SettingsSection title="Změna hesla">
           <form action={changePasswordAction} className="space-y-3">

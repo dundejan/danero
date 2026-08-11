@@ -92,10 +92,10 @@ export default async function SubscriptionPage({
   const koupeneRokyText = purchases.map((p) => p.taxYear).join(', ');
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 py-8">
+    <div className="max-w-5xl space-y-8">
       <header>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Předplatné</h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
+        <h1 className="font-display text-3xl font-bold">Předplatné</h1>
+        <p className="mt-1 text-sm text-inkoust-tlumeny">
           Import výpisů, limity i časové testy máš zdarma navždy. Platí se podklady
           k přiznání a celoroční hlídání.
         </p>
@@ -177,7 +177,7 @@ export default async function SubscriptionPage({
       {customerId && (
         <section className="rounded-lg border border-linka bg-plocha p-6">
           <h2 className="font-display text-xl font-bold">Platby a doklady</h2>
-          <p className="mt-2 text-sm text-inkoust-tlumeny">
+          <p className="mt-1 text-sm text-inkoust-tlumeny">
             Doklady o zaplacení, historie plateb, změna karty a zrušení obnovy —
             všechno v zabezpečeném portálu Stripu.
           </p>

@@ -46,7 +46,7 @@ export default async function OverviewPage({
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
     return (
-      <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
+      <div className="flex max-w-xl flex-col items-start gap-4">
         <h1 className="font-display text-3xl font-bold">Zatím žádná data</h1>
         <p className="text-inkoust-tlumeny">
           Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity i podklady
@@ -95,7 +95,13 @@ export default async function OverviewPage({
    * nepřijde.
    */
   const rules = notificationRules(await getNotificationPrefs(db, user.id));
-  const candidates = [
+  /*
+   * Jen pro AKTUÁLNÍ rok: analýza je za vybraný rok (`?rok=`), ale události
+   * nesou dnešní datum. U starého roku by se tak každé otevření přehledu
+   * ozvalo „prolomen limit 2024“ jako dnešní novinka — a vytlačilo ze seznamu
+   * skutečné letošní.
+   */
+  const candidates = year !== currentYear ? [] : [
     ...computeNotificationCandidates({
       result: analysis.result,
       positions: analysis.positions,

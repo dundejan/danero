@@ -769,7 +769,7 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
     // den nato přijde prolomený limit — okno je zavřené, ale naléhavé se posílá hned
     await db.insert(notifications).values({
       userId: 'u-urgent', dedupeKey: 'test|urgent', type: 'LIMIT_EXCEEDED',
-      title: 'Prolomen limit', body: 'naléhavé',
+      title: 'Prolomen limit', body: 'naléhavé', urgent: true,
     });
     const hned = await processUserNotifications(db, target, { send, today: '2026-07-21' });
     expect(hned.emailed).toBe(1);
@@ -782,7 +782,7 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
       .where(eq(notificationPrefs.userId, 'u-urgent'));
     await db.insert(notifications).values({
       userId: 'u-urgent', dedupeKey: 'test|urgent2', type: 'LIMIT_EXCEEDED',
-      title: 'Prolomen další limit', body: 'naléhavé',
+      title: 'Prolomen další limit', body: 'naléhavé', urgent: true,
     });
     const ceka = await processUserNotifications(db, target, { send, today: '2026-07-22' });
     expect(ceka.emailed).toBe(0);
@@ -877,7 +877,25 @@ describe('pravidla platí i na už založené události', () => {
     expect(sent.map((m) => m.text).slice(posledni).join('')).not.toContain('Přehled k');
   });
 
-  it('upomínka na termín s dlouhým předstihem nepřetlačí týdenní okno', { timeout: 30_000 }, async () => {
+  it('naléhavost termínu se rozhoduje předstihem už při vzniku události', async () => {
+    const { calendarCandidates } = await import('@/lib/notifications');
+    const { addDays } = await import('@danero/shared');
+    const { electronic } = filingDeadlines(2026);
+    // pět dní před termínem: spadá do 30denního i 7denního okna upomínky
+    const today = addDays(electronic, -5);
+    const args = { today, hadActivityLastYear: true, selfEmployed: true };
+
+    const dlouhy = calendarCandidates({ ...args, deadlineLeadDays: 30 }).find(
+      (c) => c.type === 'DEADLINE',
+    );
+    const kratky = calendarCandidates({ ...args, deadlineLeadDays: 7 }).find(
+      (c) => c.type === 'DEADLINE',
+    );
+    expect(dlouhy?.urgent).toBe(false);
+    expect(kratky?.urgent).toBe(true);
+  });
+
+  it('nenaléhavá událost týdenní okno neprorazí', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await seedUser(db, 'u-termin', 'termin@danero.cz');
     await db.insert(notificationPrefs).values({ userId: 'u-termin', emailFrequency: 'WEEKLY' });
@@ -889,18 +907,95 @@ describe('pravidla platí i na už založené události', () => {
     await processUserNotifications(db, target, { send, today: '2026-07-20' });
     expect(sent).toHaveLength(1);
 
-    // měsíc dopředu naléhavé není — počká na souhrn
     await db.insert(notifications).values({
       userId: 'u-termin', dedupeKey: 'test|termin', type: 'DEADLINE',
-      title: 'Blíží se termín přiznání', body: 'za měsíc',
+      title: 'Blíží se termín přiznání', body: 'za měsíc', urgent: false,
     });
     expect((await processUserNotifications(db, target, { send, today: '2026-07-21' })).emailed).toBe(0);
 
-    // se zkráceným předstihem (7 dní) je upomínka naléhavá a jde hned
-    await db
-      .update(notificationPrefs)
-      .set({ deadlineLeadDays: 7 })
-      .where(eq(notificationPrefs.userId, 'u-termin'));
-    expect((await processUserNotifications(db, target, { send, today: '2026-07-22' })).emailed).toBe(1);
+    // tentýž typ s příznakem naléhavosti (krátký předstih) jde hned
+    await db.insert(notifications).values({
+      userId: 'u-termin', dedupeKey: 'test|termin-blizko', type: 'DEADLINE',
+      title: 'Termín je za týden', body: 'naléhavé', urgent: true,
+    });
+    expect((await processUserNotifications(db, target, { send, today: '2026-07-22' })).emailed).toBe(2);
+  });
+});
+
+/**
+ * Nálezy druhého kola review: naléhavost i formulace se musí řídit skutečností
+ * (kolik dní zbývá, jestli je limit opravdu prolomen), ne tím, do které
+ * uživatelovy škatulky událost spadla.
+ */
+describe('naléhavost a formulace podle skutečnosti, ne podle škatulky', () => {
+  it('pozice 3 dny před osvobozením je naléhavá i s jedinou 30denní lhůtou', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { DEFAULT_NOTIFICATION_RULES } = await import('@/lib/notification-rules');
+
+    const txs = parseTransactions([
+      {
+        type: 'BUY', id: 'aapl', isin: 'US0378331005', quantity: '10',
+        pricePerShare: '100', currency: 'CZK',
+        tradeDate: '2023-08-08', settlementDate: '2023-08-08',
+      },
+    ]);
+    const profil = {
+      userId: 'u-nal', regime: 'PAUSAL', hasBusinessAssets: false, w8benFiled: true,
+      otherIncomeCzk: '0', matchingMethod: 'FIFO', fxMethod: 'UNIFIED', limit100kStrict: true,
+      derivativesExpensesPerType: false, emtTimeTestExempt: false, timeTestBasis: 'settlement',
+      createdAt: new Date(), updatedAt: new Date(),
+    } as Parameters<typeof analyzeForUser>[1];
+    // osvobození 2026-08-09, dnes 2026-08-06 → zbývají 3 dny
+    const analysis = analyzeForUser(txs, profil, 2026, '2026-08-06');
+    const [event] = computeNotificationCandidates({
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today: '2026-08-06',
+      rules: { ...DEFAULT_NOTIFICATION_RULES, timeTestLeadDays: [30] },
+    }).filter((c) => c.type.startsWith('TIME_TEST'));
+
+    expect(event!.type).toBe('TIME_TEST_30');
+    expect(event!.urgent).toBe(true);
+    // čeština: 3 dny, ne „3 dní“
+    expect(event!.title).toContain('už za 3 dny');
+  });
+
+  it('prolomený limit se hlásí jako prolomený, i když má uživatel zaškrtnuto jen 60 a 85 %', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { DEFAULT_NOTIFICATION_RULES } = await import('@/lib/notification-rules');
+
+    // prodej CP za 150 000 Kč = 150 % limitu 100k
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'b', isin: 'US0378331005', quantity: '10', pricePerShare: '10000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 's', isin: 'US0378331005', quantity: '10', pricePerShare: '15000', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, {
+        userId: 'u-prolom', regime: 'OSVC', hasBusinessAssets: false, w8benFiled: true,
+        otherIncomeCzk: '0', matchingMethod: 'FIFO', fxMethod: 'UNIFIED', limit100kStrict: true,
+        derivativesExpensesPerType: false, emtTimeTestExempt: false, timeTestBasis: 'settlement',
+        createdAt: new Date(), updatedAt: new Date(),
+      } as Parameters<typeof engineInputForUser>[1], 2026),
+    );
+    const event = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map<string, string>(),
+      today: '2026-07-20',
+      rules: { ...DEFAULT_NOTIFICATION_RULES, limitThresholdsPct: [60, 85] },
+    }).find((c) => c.dedupeKey.startsWith('limit|100k|'));
+
+    expect(event).toBeDefined();
+    expect(event!.title).toContain('Prolomen');
+    expect(event!.type).toBe('LIMIT_EXCEEDED');
+    expect(event!.urgent).toBe(true);
+    // klíč nese hranici, která se ozvala — nižší, protože 100 % uživatel nechce
+    expect(event!.dedupeKey).toBe('limit|100k|CRITICAL|2026');
   });
 });

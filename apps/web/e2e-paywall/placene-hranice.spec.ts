@@ -43,7 +43,11 @@ test.describe('uživatel bez předplatného', () => {
     await page.goto('/nastaveni/upozorneni');
 
     await expect(page.getByLabel('Posílat e-maily')).toHaveCount(0);
-    await expect(page.getByText('denní souhrn')).toHaveCount(0);
+    // cíl mířený na SOUČASNÉ popisky formuláře — „denní souhrn“ z původních
+    // rádiových přepínačů už na stránce není, takže by podmínka prošla
+    // i s celým formulářem vykresleným
+    await expect(page.getByLabel('Frekvence souhrnu')).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: '30 dní předem' })).toHaveCount(0);
     await expect(page.getByText(/Součást hlídání za/).first()).toBeVisible();
     // v aplikaci se upozornění počítají dál a stránka to musí říct
     await expect(page.getByText(/Upozornění v aplikaci vidíš i bez předplatného/)).toBeVisible();

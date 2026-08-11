@@ -3,8 +3,8 @@ import { Toast } from '@/components/toast';
 /**
  * Potvrzení a chyby obou stránek nastavení na jednom místě — akce v
  * `actions.ts` posílají kód v `?ok=` / `?chyba=` a která stránka ho zobrazí,
- * je na cíli přesměrování. Toast plave, protože po auto-save s kotvou
- * (#dan, #notifikace) musí být vidět bez ohledu na pozici scrollu.
+ * je na cíli přesměrování. Toast plave, protože po auto-save uprostřed dlouhé
+ * stránky musí být potvrzení vidět bez ohledu na pozici scrollu.
  */
 const OK_LABELS: Record<string, string> = {
   heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',

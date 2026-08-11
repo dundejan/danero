@@ -36,7 +36,7 @@ export default async function PortfolioPage({
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="max-w-3xl space-y-4">
         <h1 className="font-display text-3xl font-bold">Portfolio</h1>
         <p className="text-sm text-inkoust-tlumeny">
           Zatím žádná data —{' '}

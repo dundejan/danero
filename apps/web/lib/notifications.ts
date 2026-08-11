@@ -24,6 +24,8 @@ export interface NotificationCandidate {
   type: string;
   title: string;
   body: string;
+  /** Nesnese odklad do týdenního souhrnu — viz sloupec `urgent` ve schématu. */
+  urgent?: boolean;
 }
 
 /**
@@ -72,13 +74,18 @@ export function computeNotificationCandidates(args: {
         ? undefined
         : [...rules.timeTestLeadDays].sort((a, b) => a - b).find((days) => lot.daysToExempt <= days);
       if (lead !== undefined) {
-        const soon = lead <= 7;
+        // naléhavost i formulace se řídí SKUTEČNÝM počtem dní, ne lhůtou, do
+        // které pozice spadla: s jedinou nastavenou lhůtou „30 dní“ by jinak
+        // i pozice den před osvobozením čekala na týdenní souhrn
+        const soon = lot.daysToExempt <= 7;
+        const dny = plural(lot.daysToExempt, 'den', 'dny', 'dní');
         add({
           dedupeKey: `tt${lead}|${position.isin}|${lot.exemptFrom}`,
           type: `TIME_TEST_${lead}`,
+          urgent: soon,
           title: soon
-            ? `${label}: osvobození už za ${lot.daysToExempt} ${lot.daysToExempt === 1 ? 'den' : 'dní'}`
-            : `${label}: osvobození za ${lot.daysToExempt} dní`,
+            ? `${label}: osvobození už za ${lot.daysToExempt} ${dny}`
+            : `${label}: osvobození za ${lot.daysToExempt} ${dny}`,
           // fakt + termín, žádný imperativ („počkej“) — individualizovaný pokyn
           // by se blížil radě dle § 1 zákona 523/1992 Sb. (nález V-4 právního auditu)
           body: soon
@@ -155,16 +162,20 @@ export function computeNotificationCandidates(args: {
     );
     const top = reached.length > 0 ? Math.max(...reached) : null;
     if (top === null) continue;
+    // O tom, jestli je limit prolomený, rozhoduje engine — ne to, kterou
+    // hranici má uživatel zaškrtnutou. Bez toho by ten, kdo si odškrtl 100 %,
+    // dostal při 150 % limitu titulek „Blížíš se“.
+    const breached = event.status.exceeded;
     add({
       dedupeKey: `limit|${event.key}|${thresholdKey(top)}|${year}`,
-      type: top >= 100 ? 'LIMIT_EXCEEDED' : top >= 85 ? 'LIMIT_CRITICAL' : 'LIMIT_WARNING',
-      title:
-        top >= 100
-          ? `Prolomen ${event.label}`
-          : top >= 85
-            ? `Blížíš se: ${event.label}`
-            : `Za polovinou: ${event.label}`,
-      body: top >= 100 ? `${usage}. ${event.consequence}` : `${usage} — přes ${top} %. ${event.consequence}`,
+      type: breached ? 'LIMIT_EXCEEDED' : top >= 85 ? 'LIMIT_CRITICAL' : 'LIMIT_WARNING',
+      urgent: breached,
+      title: breached
+        ? `Prolomen ${event.label}`
+        : top >= 85
+          ? `Blížíš se: ${event.label}`
+          : `Za polovinou: ${event.label}`,
+      body: breached ? `${usage}. ${event.consequence}` : `${usage} — přes ${top} %. ${event.consequence}`,
     });
   }
 
@@ -260,6 +271,7 @@ export function calendarCandidates(args: {
     out.push({
       dedupeKey: `termin|papir|${year}`,
       type: 'DEADLINE',
+      urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín přiznání: ${czDate(paper)}`,
       body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)} — XML export najdeš v reportu.`,
     });
@@ -275,6 +287,7 @@ export function calendarCandidates(args: {
     out.push({
       dedupeKey: `termin|elektronicky|${year}`,
       type: 'DEADLINE',
+      urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín elektronického přiznání: ${czDate(electronic)}`,
       body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}. XML pro mojedane.cz vygeneruješ v reportu.${extra}`,
     });
@@ -519,14 +532,7 @@ export async function processUserNotifications(
   // by v týdenním režimu čekaly na souhrn i šest dní — a upozornění „osvobození
   // za 7 dní“ doručené po termínu je k ničemu. Kdo si to nechá zapnuté, dostane
   // je hned, pořád ale nejvýš jeden e-mail za půl dne.
-  const urgent = queue.some(
-    (n) =>
-      n.type === 'LIMIT_EXCEEDED' ||
-      // termín přiznání je naléhavý jen při krátkém předstihu: upomínka měsíc
-      // dopředu klidně počká na týdenní souhrn, ta týden dopředu ne
-      (n.type === 'DEADLINE' && rules.deadlineLeadDays <= 14) ||
-      (n.type.startsWith('TIME_TEST_') && Number(n.type.slice('TIME_TEST_'.length)) <= 7),
-  );
+  const urgent = queue.some((n) => n.urgent);
   const windowDays = prefs.emailFrequency === 'WEEKLY' && !(rules.urgentImmediately && urgent) ? 6.5 : 0.5;
   const windowOpen = sinceLastMs >= windowDays * DAY_MS;
 

@@ -12,7 +12,7 @@ import { SettingsNav } from './settings-nav';
 import { SettingsToast } from './settings-toast';
 import { saveProfileAction, unpinTaxYearAction } from './actions';
 
-export const metadata = { title: 'Nastavení — Danero' };
+export const metadata = { title: 'Daň a výpočet — Danero' };
 
 export default async function SettingsPage({
   searchParams,
@@ -32,8 +32,11 @@ export default async function SettingsPage({
     <div className="max-w-4xl space-y-8">
       <header className="space-y-4">
         <div>
+          {/* nadpis pojmenovává SEKCI, ne celé nastavení: /nastaveni je první
+              ze tří záložek a „Nastavení“ nahoře nad aktivní záložkou
+              „Daň a výpočet“ vypadalo, že se stránka nepřepnula */}
           <h1 className="font-display text-3xl font-bold">
-            {profile ? 'Nastavení' : 'Nastav svůj daňový profil'}
+            {profile ? 'Daň a výpočet' : 'Nastav svůj daňový profil'}
           </h1>
           <p className="mt-1 text-sm text-inkoust-tlumeny">
             Profil určuje, které limity Danero hlídá a jak počítá. Vše jde kdykoli změnit —
@@ -50,8 +53,10 @@ export default async function SettingsPage({
         <Card className="space-y-4">
           <CardTitle>Kdo jsi vůči dani</CardTitle>
           {/* dvě pole vedle sebe (stejně jako u metod výpočtu) — přes celou
-              šířku karty by se z nich staly zbytečně roztažené ovládací prvky */}
-          <div className="grid gap-4 sm:grid-cols-2">
+              šířku karty by se z nich staly zbytečně roztažené ovládací prvky.
+              `items-end`: druhý popisek se na užším displeji zalomí na dva
+              řádky a pole by si bez toho stála v jiné výšce */}
+          <div className="grid items-end gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="rezim">Daňový režim</Label>
               <Select id="rezim" name="rezim" defaultValue={profile?.regime ?? 'PAUSAL'}>
@@ -102,6 +107,10 @@ export default async function SettingsPage({
                 <option value="MAX_PROFIT">Max. zisk — nejlevnější kusy první</option>
                 <option value="MAX_LOSS">Max. ztráta — nejdražší kusy první</option>
               </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Které kusy se prodejem spotřebují dřív — mění zisk i to, jestli prodané
+                kusy splnily tříletý test.
+              </p>
             </div>
             <div>
               <Label htmlFor="kurzy">
@@ -156,7 +165,7 @@ export default async function SettingsPage({
                 name="derivaty-vydaje"
                 defaultValue={(profile?.derivativesExpensesPerType ?? false) ? 'perType' : 'restrictive'}
               >
-                <option value="restrictive">Opatrný výklad — neuplatnit jako výdaj (doporučeno)</option>
+                <option value="restrictive">Bezpečný výklad — neuplatnit jako výdaj (doporučeno)</option>
                 <option value="perType">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
               </Select>
               <p className="mt-1 text-xs text-inkoust-tlumeny">
@@ -174,7 +183,7 @@ export default async function SettingsPage({
                 name="emt-casovy-test"
                 defaultValue={(profile?.emtTimeTestExempt ?? false) ? 'lenient' : 'safe'}
               >
-                <option value="safe">Opatrný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
+                <option value="safe">Bezpečný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
                 <option value="lenient">Mírnější výklad — po 3 letech držení bez daně i stablecoiny (sporné)</option>
               </Select>
               <p className="mt-1 text-xs text-inkoust-tlumeny">
@@ -260,7 +269,7 @@ export default async function SettingsPage({
                         </p>
                         <form action={unpinTaxYearAction}>
                           <input type="hidden" name="rok" value={pinned.taxYear} />
-                          <SubmitButton variant="danger" size="sm" pendingLabel="Ruším…">
+                          <SubmitButton variant="danger" pendingLabel="Ruším…">
                             Ano, zrušit fixaci roku {pinned.taxYear}
                           </SubmitButton>
                         </form>

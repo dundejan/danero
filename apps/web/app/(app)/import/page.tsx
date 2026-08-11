@@ -227,7 +227,7 @@ function ConnectedBroker({
         </p>
         <form action={disconnectBrokerAction}>
           <input type="hidden" name="ucet" value={account.id} />
-          <SubmitButton variant="danger" size="sm" pendingLabel="Odpojuji…">
+          <SubmitButton variant="danger" pendingLabel="Odpojuji…">
             Odpojit {account.label}
           </SubmitButton>
         </form>

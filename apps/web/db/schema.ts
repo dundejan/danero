@@ -293,6 +293,13 @@ export const notifications = pgTable('notifications', {
   body: text('body').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   emailedAt: timestamp('emailed_at'),
+  /**
+   * Nesnese odklad do týdenního souhrnu (prolomený limit, osvobození do týdne,
+   * blížící se termín). Ukládá se při vzniku, protože jedině tam se ví, kolik
+   * dní doopravdy zbývá — z typu `TIME_TEST_30` to vyčíst nejde: při lhůtách
+   * bez krátkého intervalu do něj spadne i pozice den před osvobozením.
+   */
+  urgent: boolean('urgent').notNull().default(false),
 }, (t) => [primaryKey({ columns: [t.userId, t.dedupeKey] })]);
 
 /**
