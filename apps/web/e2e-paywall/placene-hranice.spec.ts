@@ -40,7 +40,7 @@ test.describe('uživatel bez předplatného', () => {
     // přepínače, uživatel zdarma si zapnul „Posílat e-maily“, vybral frekvenci
     // i typy — a pak čekal na e-mail, který nikdy nepřišel, bez jediné zmínky proč.
     await registruj(page, 'notifikace');
-    await page.goto('/nastaveni/ucet#notifikace');
+    await page.goto('/nastaveni/upozorneni');
 
     await expect(page.getByLabel('Posílat e-maily')).toHaveCount(0);
     await expect(page.getByText('denní souhrn')).toHaveCount(0);

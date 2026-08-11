@@ -239,6 +239,13 @@
       "when": 1786381000000,
       "tag": "0033_subscription_revoked_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786434698482,
+      "tag": "0034_notification_rules",
+      "breakpoints": true
     }
   ]
 }

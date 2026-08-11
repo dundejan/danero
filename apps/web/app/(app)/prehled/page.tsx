@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
 import { OverviewView } from '@/components/views/overview-view';
 import { getDb } from '@/db';
@@ -13,6 +13,12 @@ import {
   getProfile,
   loadTransactions,
 } from '@/lib/portfolio';
+import {
+  calendarCandidates,
+  computeNotificationCandidates,
+  getNotificationPrefs,
+} from '@/lib/notifications';
+import { notificationRules } from '@/lib/notification-rules';
 import { requireUser } from '@/lib/session';
 import { firstParam, resolveTaxYear } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
@@ -80,6 +86,58 @@ export default async function OverviewPage({
   }
   const prices = await loadInstrumentPrices(db, user.id);
 
+  /*
+   * Uložené události zakládá jen denní cron, a ten běží pouze platícím — bez
+   * tohohle byla karta „Poslední upozornění“ u účtu zdarma navždy prázdná,
+   * přestože předplatné slibuje jen to, že upozornění přijdou SAMA e-mailem.
+   * Analýzu už tady máme, takže je dopočítáme z ní; do DB je NEzapisujeme,
+   * jinak by si je cron odškrtl jako odeslané a e-mail o nich platícímu nikdy
+   * nepřijde.
+   */
+  const rules = notificationRules(await getNotificationPrefs(db, user.id));
+  const candidates = [
+    ...computeNotificationCandidates({
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today,
+      rules,
+    }),
+    ...calendarCandidates({
+      today,
+      hadActivityLastYear: txs.some((tx) =>
+        ('tradeDate' in tx ? tx.tradeDate : tx.date).startsWith(`${currentYear - 1}-`),
+      ),
+      // § 72 odst. 6 DŘ: OSVČ má datovou schránku ze zákona → jen elektronicky (E-23)
+      selfEmployed: profile.regime === 'PAUSAL' || profile.regime === 'OSVC',
+      deadlineLeadDays: rules.deadlineLeadDays,
+    }),
+  ];
+  /*
+   * Ptáme se PŘESNĚ na klíče spočítaných událostí, ne na pět posledních řádků:
+   * jarní „prolomen limit“ z databáze by po pár měsících z pětice vypadl,
+   * dopočet by ho měl za nový a každé otevření přehledu by ho vyneslo nahoru
+   * s dnešním datem — a vytlačilo skutečné novinky.
+   */
+  const storedKeys = new Set(
+    candidates.length === 0
+      ? []
+      : (
+          await db
+            .select({ key: notifications.dedupeKey })
+            .from(notifications)
+            .where(
+              and(
+                eq(notifications.userId, user.id),
+                inArray(notifications.dedupeKey, candidates.map((candidate) => candidate.dedupeKey)),
+              ),
+            )
+        ).map((row) => row.key),
+  );
+  const computed = candidates
+    .filter((candidate) => !storedKeys.has(candidate.dedupeKey))
+    .map((candidate) => ({ ...candidate, createdAt: new Date(`${today}T00:00:00Z`) }));
+
   return (
     <OverviewView
       txs={txs}
@@ -88,7 +146,11 @@ export default async function OverviewPage({
       years={years}
       year={year}
       today={today}
-      notifications={recentNotifications}
+      // společné pořadí podle data: dopočítané (dnešní) nesmí spadnout pod
+      // starší uložené jen proto, že se přidávají na konec seznamu
+      notifications={[...recentNotifications, ...computed]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, 5)}
     />
   );
 }

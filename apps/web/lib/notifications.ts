@@ -4,7 +4,14 @@ import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
 import { operatorSignature } from '@/lib/contact';
-import { czDate, czk, plural, qty } from '@/lib/format';
+import {
+  DEFAULT_NOTIFICATION_RULES,
+  formatNumberList,
+  notificationRules,
+  summaryPeriod,
+  type NotificationRules,
+} from '@/lib/notification-rules';
+import { czDate, czk, pct, plural, qty } from '@/lib/format';
 import {
   analyzeForUser,
   dailyRatesForProfile,
@@ -20,18 +27,30 @@ export interface NotificationCandidate {
 }
 
 /**
- * Události hlídače (docs/05 F4): blížící se osvobození pozic (30/7 dní),
- * čerstvě osvobozené pozice a vstup limitů do pásem CRITICAL/EXCEEDED.
- * Dedupe klíč zajistí, že každá událost vznikne jen jednou (per pozice+datum,
- * per limit+pásmo+rok).
+ * Pásmo v dedupe klíči limitu. Tři výchozí hranice si nesou názvy, které
+ * hlídač používal, dokud byly natvrdo — jinak by lidem, kteří upozornění na
+ * 85 % už dostali, přišlo po nasazení znovu.
+ */
+const thresholdKey = (pct: number): string =>
+  pct === 60 ? 'WARNING' : pct === 85 ? 'CRITICAL' : pct === 100 ? 'EXCEEDED' : `P${pct}`;
+
+/**
+ * Události hlídače (docs/05 F4): blížící se osvobození pozic, čerstvě
+ * osvobozené pozice a čerpání limitů přes nastavené hranice. Dedupe klíč
+ * zajistí, že každá událost vznikne jen jednou (per pozice+datum, per
+ * limit+hranice+rok).
+ *
+ * `rules` jsou uživatelova pravidla (lhůty, hranice); bez nich platí výchozí,
+ * takže demo i landing počítají to co dřív.
  */
 export function computeNotificationCandidates(args: {
   result: TaxYearResult;
   positions: Position[];
   labels: Map<string, string>;
   today: string;
+  rules?: NotificationRules;
 }): NotificationCandidate[] {
-  const { result, positions, labels, today } = args;
+  const { result, positions, labels, today, rules = DEFAULT_NOTIFICATION_RULES } = args;
   const out = new Map<string, NotificationCandidate>();
   const add = (candidate: NotificationCandidate) => {
     if (!out.has(candidate.dedupeKey)) out.set(candidate.dedupeKey, candidate);
@@ -45,25 +64,29 @@ export function computeNotificationCandidates(args: {
       // „osvobozeno 🎉" — je zdanitelná vždycky
       if (!lot.exemptionPossible) continue;
       const amount = `${qty(lot.remaining)} ks ${label}`;
-      if (!lot.isExempt && lot.daysToExempt <= 30 && lot.daysToExempt > 7) {
+      // nejbližší nastavená lhůta, do které se zbývající dny vejdou: se
+      // stahující se lhůtou (30 → 7) vznikne pokaždé vlastní událost, ale
+      // v jednom běhu jen jedna. U výchozích 30 a 7 to dá tytéž klíče,
+      // jaké hlídač vydával, dokud byly lhůty natvrdo.
+      const lead = lot.isExempt
+        ? undefined
+        : [...rules.timeTestLeadDays].sort((a, b) => a - b).find((days) => lot.daysToExempt <= days);
+      if (lead !== undefined) {
+        const soon = lead <= 7;
         add({
-          dedupeKey: `tt30|${position.isin}|${lot.exemptFrom}`,
-          type: 'TIME_TEST_30',
-          title: `${label}: osvobození za ${lot.daysToExempt} dní`,
-          body: `${amount} splní tříletý časový test ${czDate(lot.exemptFrom)} — od té doby je prodej bez daně.`,
-        });
-      }
-      if (!lot.isExempt && lot.daysToExempt <= 7) {
-        add({
-          dedupeKey: `tt7|${position.isin}|${lot.exemptFrom}`,
-          type: 'TIME_TEST_7',
-          title: `${label}: osvobození už za ${lot.daysToExempt} ${lot.daysToExempt === 1 ? 'den' : 'dní'}`,
+          dedupeKey: `tt${lead}|${position.isin}|${lot.exemptFrom}`,
+          type: `TIME_TEST_${lead}`,
+          title: soon
+            ? `${label}: osvobození už za ${lot.daysToExempt} ${lot.daysToExempt === 1 ? 'den' : 'dní'}`
+            : `${label}: osvobození za ${lot.daysToExempt} dní`,
           // fakt + termín, žádný imperativ („počkej“) — individualizovaný pokyn
           // by se blížil radě dle § 1 zákona 523/1992 Sb. (nález V-4 právního auditu)
-          body: `${amount} splní časový test ${czDate(lot.exemptFrom)}. Prodej po tomto datu bude od daně osvobozený — před ním se zisk daní celý.`,
+          body: soon
+            ? `${amount} splní časový test ${czDate(lot.exemptFrom)}. Prodej po tomto datu bude od daně osvobozený — před ním se zisk daní celý.`
+            : `${amount} splní tříletý časový test ${czDate(lot.exemptFrom)} — od té doby je prodej bez daně.`,
         });
       }
-      if (lot.isExempt && diffDays(lot.exemptFrom, today) <= 3) {
+      if (rules.timeTestDone && lot.isExempt && diffDays(lot.exemptFrom, today) <= 3) {
         add({
           dedupeKey: `ttdone|${position.isin}|${lot.exemptFrom}`,
           type: 'TIME_TEST_DONE',
@@ -121,30 +144,28 @@ export function computeNotificationCandidates(args: {
   for (const event of limitEvents) {
     if (!event.applicable) continue;
     const usage = `Čerpání je ${czk(event.status.usedCzk)} z ${czk(event.status.limitCzk)} (${year})`;
-    if (event.status.zone === 'EXCEEDED') {
-      add({
-        dedupeKey: `limit|${event.key}|EXCEEDED|${year}`,
-        type: 'LIMIT_EXCEEDED',
-        title: `Prolomen ${event.label}`,
-        body: `${usage}. ${event.consequence}`,
-      });
-    } else if (event.status.zone === 'CRITICAL') {
-      add({
-        dedupeKey: `limit|${event.key}|CRITICAL|${year}`,
-        type: 'LIMIT_CRITICAL',
-        title: `Blížíš se: ${event.label}`,
-        body: `${usage} — přes 85 %. ${event.consequence}`,
-      });
-    } else if (event.status.zone === 'WARNING') {
-      // web slibuje e-mail při 60, 85 a 100 % — 60% pásmo musí reálně existovat
-      // (nález verifikace průvodce: dřív vznikaly události až od 85 %)
-      add({
-        dedupeKey: `limit|${event.key}|WARNING|${year}`,
-        type: 'LIMIT_WARNING',
-        title: `Za polovinou: ${event.label}`,
-        body: `${usage} — přes 60 %. ${event.consequence}`,
-      });
-    }
+    // jen NEJVYŠŠÍ dosažená hranice: kdo přijde rovnou na 90 %, nemá dostat
+    // zvlášť i „přes 60 %“ — nižší hranice se ozvaly dřív, každá vlastním
+    // klíčem (web slibuje e-mail při 60, 85 a 100 %, proto ty výchozí)
+    const reached = rules.limitThresholdsPct.filter((pct) =>
+      // 100 % = „prolomeno“ podle enginu (§ 4 odst. 1 písm. t mluví o příjmech
+      // limit NEPŘESAHUJÍCÍCH, takže přesně 100 000 Kč je pořád pod limitem);
+      // nižší hranice jsou náš vlastní předstih, tam stačí poměr
+      pct >= 100 ? event.status.exceeded : event.status.ratio * 100 >= pct,
+    );
+    const top = reached.length > 0 ? Math.max(...reached) : null;
+    if (top === null) continue;
+    add({
+      dedupeKey: `limit|${event.key}|${thresholdKey(top)}|${year}`,
+      type: top >= 100 ? 'LIMIT_EXCEEDED' : top >= 85 ? 'LIMIT_CRITICAL' : 'LIMIT_WARNING',
+      title:
+        top >= 100
+          ? `Prolomen ${event.label}`
+          : top >= 85
+            ? `Blížíš se: ${event.label}`
+            : `Za polovinou: ${event.label}`,
+      body: top >= 100 ? `${usage}. ${event.consequence}` : `${usage} — přes ${top} %. ${event.consequence}`,
+    });
   }
 
   return [...out.values()];
@@ -195,6 +216,8 @@ export function calendarCandidates(args: {
   today: string;
   /** Měl předchozí rok nějaké transakce? (jinak shrnutí nedává smysl) */
   hadActivityLastYear: boolean;
+  /** Kolik dní před termínem připomenout (uživatelovo nastavení). */
+  deadlineLeadDays?: number;
   /**
    * OSVČ (paušál i mimo něj) má od 1. 1. 2023 datovou schránku zřízenou ze
    * zákona, takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání **jen
@@ -205,7 +228,12 @@ export function calendarCandidates(args: {
    */
   selfEmployed?: boolean;
 }): NotificationCandidate[] {
-  const { today, hadActivityLastYear, selfEmployed = false } = args;
+  const {
+    today,
+    hadActivityLastYear,
+    selfEmployed = false,
+    deadlineLeadDays = DEFAULT_NOTIFICATION_RULES.deadlineLeadDays,
+  } = args;
   const year = Number(today.slice(0, 4));
   const taxYear = year - 1;
   const { paper, electronic, advisor } = filingDeadlines(taxYear);
@@ -223,7 +251,12 @@ export function calendarCandidates(args: {
   }
   // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
   // dny před termínem nepřijde nic zrovna tomu, kdo ještě nepodal
-  if (!selfEmployed && hadActivityLastYear && today >= addDays(paper, -17) && today <= paper) {
+  if (
+    !selfEmployed &&
+    hadActivityLastYear &&
+    today >= addDays(paper, -deadlineLeadDays) &&
+    today <= paper
+  ) {
     out.push({
       dedupeKey: `termin|papir|${year}`,
       type: 'DEADLINE',
@@ -231,7 +264,11 @@ export function calendarCandidates(args: {
       body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)} — XML export najdeš v reportu.`,
     });
   }
-  if (hadActivityLastYear && today >= addDays(electronic, -17) && today <= electronic) {
+  if (
+    hadActivityLastYear &&
+    today >= addDays(electronic, -deadlineLeadDays) &&
+    today <= electronic
+  ) {
     const extra = selfEmployed
       ? ' Jako OSVČ podáváš přiznání jen elektronicky (§ 72 odst. 6 daňového řádu). Vedle přiznání se za stejné období podávají přehledy ČSSZ a zdravotní pojišťovně; Danero je nesleduje.'
       : '';
@@ -243,6 +280,67 @@ export function calendarCandidates(args: {
     });
   }
   return out;
+}
+
+/**
+ * Pravidelný přehled (měsíční/čtvrtletní): jediná událost, která vzniká i ve
+ * chvíli, kdy se NIC nestalo — od toho je. Shrne, kde je uživatel s limity,
+ * co ho nejdřív čeká a na kolik zatím vychází daň, aby nemusel nic otvírat.
+ *
+ * Období je součástí dedupe klíče, takže za měsíc (čtvrtletí) odejde nejvýš
+ * jeden — i když cron poběží každý den. V titulku ale období NENÍ: přehled
+ * odchází první den období a nese stav k tomu dni, takže „Přehled za srpen“
+ * odeslaný 1. srpna by popisoval červenec. Je to snímek k datu, ne uzávěrka.
+ */
+export function summaryCandidate(args: {
+  result: TaxYearResult;
+  positions: Position[];
+  labels: Map<string, string>;
+  today: string;
+  period: string;
+}): NotificationCandidate {
+  const { result, positions, labels, today, period } = args;
+
+  const limits: Array<{ label: string; status: LimitStatus }> = [
+    ...(result.limits.flatTax50k.applicable
+      ? [{ label: 'limit 50 000 Kč pro paušální daň', status: result.limits.flatTax50k.status }]
+      : []),
+    ...(result.limits.employee20k.applicable
+      ? [{ label: 'limit 20 000 Kč vedlejších příjmů', status: result.limits.employee20k.status }]
+      : []),
+    { label: 'limit 100 000 Kč pro osvobození prodejů', status: result.limits.limit100k },
+    ...(result.limits.cryptoLimit100k.usedCzk.gt(0)
+      ? [{ label: 'limit 100 000 Kč pro osvobození krypta', status: result.limits.cryptoLimit100k }]
+      : []),
+  ];
+  const limitLines = limits.map(
+    (limit) =>
+      `${limit.label}: ${czk(limit.status.usedCzk)} z ${czk(limit.status.limitCzk)} (${pct(limit.status.ratio * 100)})`,
+  );
+
+  // nejbližší pozice, které doběhne časový test — jediné číslo, kvůli kterému
+  // má smysl přehled číst i v měsíci, kdy se nic nestalo
+  const next = positions
+    .flatMap((position) =>
+      position.lots
+        .filter((lot) => lot.exemptionPossible && !lot.isExempt)
+        .map((lot) => ({ isin: position.isin, exemptFrom: lot.exemptFrom, remaining: lot.remaining })),
+    )
+    .sort((a, b) => a.exemptFrom.localeCompare(b.exemptFrom))[0];
+  const nextLine = next
+    ? `Nejbližší osvobození: ${qty(next.remaining)} ks ${labels.get(next.isin) ?? next.isin} ${czDate(next.exemptFrom)}.`
+    : 'Žádná pozice zatím na tříletý časový test nečeká.';
+
+  const taxCzk =
+    result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
+
+  return {
+    dedupeKey: `souhrn|${period}`,
+    type: 'SUMMARY',
+    title: `Přehled k ${czDate(today)}`,
+    // fakt a čísla, žádný pokyn (V-4) — stejná pravidla jako u ostatních e-mailů
+    body: `Stav k ${czDate(today)} za rok ${result.year}. ${limitLines.join('. ')}. ${nextLine} Orientační daň z investic zatím ${czk(taxCzk)}.`,
+  };
 }
 
 /** Preference uživatele; chybějící řádek = vše zapnuté, denní souhrn (G8d, H3). */
@@ -260,6 +358,13 @@ export async function getNotificationPrefs(db: Db, userId: string) {
       calendarEmails: true,
       emailFrequency: 'DAILY',
       lastDigestAt: null,
+      // vlastní pravidla hlídače: výchozí = to, co dělal, dokud se nedala měnit
+      timeTestLeadDays: formatNumberList(DEFAULT_NOTIFICATION_RULES.timeTestLeadDays),
+      timeTestDone: DEFAULT_NOTIFICATION_RULES.timeTestDone,
+      limitThresholdsPct: formatNumberList(DEFAULT_NOTIFICATION_RULES.limitThresholdsPct),
+      deadlineLeadDays: DEFAULT_NOTIFICATION_RULES.deadlineLeadDays,
+      summaryFrequency: DEFAULT_NOTIFICATION_RULES.summaryFrequency,
+      urgentImmediately: DEFAULT_NOTIFICATION_RULES.urgentImmediately,
     }
   );
 }
@@ -330,6 +435,7 @@ export async function processUserNotifications(
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   const year = Number(today.slice(0, 4));
   const prefs = await getNotificationPrefs(db, target.id);
+  const rules = notificationRules(prefs);
 
   let created = 0;
   const profile = await getProfile(db, target.id);
@@ -343,12 +449,14 @@ export async function processUserNotifications(
       const lastYearPrefix = `${year - 1}-`;
       // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
       // preference filtrují až e-mailovou frontu níže
+      const period = summaryPeriod(today, rules.summaryFrequency);
       const candidates = [
         ...computeNotificationCandidates({
           result: analysis.result,
           positions: analysis.positions,
           labels: analysis.labels,
           today,
+          rules,
         }),
         ...calendarCandidates({
           today,
@@ -357,7 +465,19 @@ export async function processUserNotifications(
           ),
           // § 72 odst. 6 DŘ: OSVČ má datovou schránku ze zákona → jen elektronicky (E-23)
           selfEmployed: profile.regime === 'PAUSAL' || profile.regime === 'OSVC',
+          deadlineLeadDays: rules.deadlineLeadDays,
         }),
+        ...(period
+          ? [
+              summaryCandidate({
+                result: analysis.result,
+                positions: analysis.positions,
+                labels: analysis.labels,
+                today,
+                period,
+              }),
+            ]
+          : []),
       ];
       created = await syncNotifications(db, target.id, candidates);
     }
@@ -375,6 +495,10 @@ export async function processUserNotifications(
     .where(and(eq(notifications.userId, target.id), isNull(notifications.emailedAt)));
   const emailAllowed = (type: string): boolean => {
     if (!prefs.emailEnabled) return false;
+    // pravidelný přehled má vlastní vypínač (kadenci) — a musí platit i pro
+    // řádek, který už vznikl: kdo si přehled vypne den po jeho založení,
+    // nesmí ho v nejbližším souhrnu přesto dostat
+    if (type === 'SUMMARY') return rules.summaryFrequency !== 'OFF';
     if (type === 'YEAR_SUMMARY' || type === 'DEADLINE') return prefs.calendarEmails;
     return type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents;
   };
@@ -391,7 +515,20 @@ export async function processUserNotifications(
     prefs.lastDigestAt === null
       ? Number.POSITIVE_INFINITY
       : todayDate.getTime() - prefs.lastDigestAt.getTime();
-  const windowOpen = sinceLastMs >= (prefs.emailFrequency === 'WEEKLY' ? 6.5 : 0.5) * DAY_MS;
+  // Naléhavé události (prolomený limit, osvobození do týdne, blížící se termín)
+  // by v týdenním režimu čekaly na souhrn i šest dní — a upozornění „osvobození
+  // za 7 dní“ doručené po termínu je k ničemu. Kdo si to nechá zapnuté, dostane
+  // je hned, pořád ale nejvýš jeden e-mail za půl dne.
+  const urgent = queue.some(
+    (n) =>
+      n.type === 'LIMIT_EXCEEDED' ||
+      // termín přiznání je naléhavý jen při krátkém předstihu: upomínka měsíc
+      // dopředu klidně počká na týdenní souhrn, ta týden dopředu ne
+      (n.type === 'DEADLINE' && rules.deadlineLeadDays <= 14) ||
+      (n.type.startsWith('TIME_TEST_') && Number(n.type.slice('TIME_TEST_'.length)) <= 7),
+  );
+  const windowDays = prefs.emailFrequency === 'WEEKLY' && !(rules.urgentImmediately && urgent) ? 6.5 : 0.5;
+  const windowOpen = sinceLastMs >= windowDays * DAY_MS;
 
   let emailed = 0;
   if (queue.length > 0 && windowOpen) {

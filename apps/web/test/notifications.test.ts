@@ -615,3 +615,292 @@ describe('odhlašovací token má omezenou platnost (D-3-06)', () => {
     expect(await verifyUnsubscribeToken('dS1hYmM.abcdef')).toBeNull();
   });
 });
+
+/**
+ * Vlastní pravidla hlídače: co si uživatel nastaví na /nastaveni/upozorneni,
+ * musí se projevit na tom, jaké události vůbec vzniknou. Výchozí hodnoty
+ * schválně opisují dřívější natvrdo zadané chování — to hlídají testy výš,
+ * které tahle sada nechává být.
+ */
+describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
+  /** Analýza jedné pozice koupené tak, aby jí test doběhl za 20 dní. */
+  async function pozice(today: string) {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeForUser } = await import('@/lib/portfolio');
+    const txs = parseTransactions([
+      {
+        type: 'BUY',
+        id: 'aapl',
+        isin: 'US0378331005',
+        quantity: '10',
+        pricePerShare: '100',
+        currency: 'CZK',
+        tradeDate: '2023-08-08',
+        settlementDate: '2023-08-08',
+      },
+    ]);
+    const profil = {
+      userId: 'u-pravidla',
+      regime: 'PAUSAL',
+      hasBusinessAssets: false,
+      w8benFiled: true,
+      otherIncomeCzk: '0',
+      matchingMethod: 'FIFO',
+      fxMethod: 'UNIFIED',
+      limit100kStrict: true,
+      derivativesExpensesPerType: false,
+      emtTimeTestExempt: false,
+      timeTestBasis: 'settlement',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Parameters<typeof analyzeForUser>[1];
+    return analyzeForUser(txs, profil, 2026, today);
+  }
+
+  it('lhůta 90 dní zachytí pozici, kterou výchozích 30 dní ještě nevidí', async () => {
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { DEFAULT_NOTIFICATION_RULES } = await import('@/lib/notification-rules');
+    // osvobození 2026-08-09, dnes 2026-06-01 → zbývá 69 dní
+    const today = '2026-06-01';
+    const analysis = await pozice(today);
+    const args = {
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today,
+    };
+
+    expect(computeNotificationCandidates(args).some((c) => c.type.startsWith('TIME_TEST'))).toBe(
+      false,
+    );
+
+    const sDelsiLhutou = computeNotificationCandidates({
+      ...args,
+      rules: { ...DEFAULT_NOTIFICATION_RULES, timeTestLeadDays: [90, 30, 7] },
+    });
+    const event = sDelsiLhutou.find((c) => c.type === 'TIME_TEST_90');
+    expect(event).toBeDefined();
+    expect(event!.dedupeKey).toBe('tt90|US0378331005|2026-08-09');
+    expect(event!.title).toContain('za 69 dní');
+  });
+
+  it('vypnuté „osvobozeno“ událost nevytvoří', async () => {
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { DEFAULT_NOTIFICATION_RULES } = await import('@/lib/notification-rules');
+    const today = '2026-08-10'; // den po osvobození
+    const analysis = await pozice(today);
+    const args = {
+      result: analysis.result,
+      positions: analysis.positions,
+      labels: analysis.labels,
+      today,
+    };
+    expect(computeNotificationCandidates(args).some((c) => c.type === 'TIME_TEST_DONE')).toBe(true);
+    expect(
+      computeNotificationCandidates({
+        ...args,
+        rules: { ...DEFAULT_NOTIFICATION_RULES, timeTestDone: false },
+      }).some((c) => c.type === 'TIME_TEST_DONE'),
+    ).toBe(false);
+  });
+
+  it('vlastní hranice limitu: 90 % vydá vlastní klíč, 50 % se ozve dřív než výchozí 60 %', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { DEFAULT_NOTIFICATION_RULES } = await import('@/lib/notification-rules');
+
+    // prodej CP za 55 000 Kč = 55 % limitu 100k
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'b', isin: 'US0378331005', quantity: '10', pricePerShare: '5000', currency: 'CZK', tradeDate: '2026-01-10' },
+      { type: 'SELL', id: 's', isin: 'US0378331005', quantity: '10', pricePerShare: '5500', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, {
+        userId: 'u-hranice',
+        regime: 'OSVC',
+        hasBusinessAssets: false,
+        w8benFiled: true,
+        otherIncomeCzk: '0',
+        matchingMethod: 'FIFO',
+        fxMethod: 'UNIFIED',
+        limit100kStrict: true,
+        derivativesExpensesPerType: false,
+        emtTimeTestExempt: false,
+        timeTestBasis: 'settlement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Parameters<typeof engineInputForUser>[1], 2026),
+    );
+    const args = { result, positions: [], labels: new Map<string, string>(), today: '2026-07-20' };
+
+    // výchozí hranice (60/85/100) ještě mlčí
+    expect(computeNotificationCandidates(args).some((c) => c.dedupeKey.startsWith('limit|100k|'))).toBe(
+      false,
+    );
+
+    const opatrny = computeNotificationCandidates({
+      ...args,
+      rules: { ...DEFAULT_NOTIFICATION_RULES, limitThresholdsPct: [50, 90] },
+    });
+    const event = opatrny.find((c) => c.dedupeKey === 'limit|100k|P50|2026');
+    expect(event).toBeDefined();
+    expect(event!.type).toBe('LIMIT_WARNING');
+    expect(event!.body).toContain('přes 50 %');
+    // vyšší hranice zatím dosažená není — vzniká jen ta nejvyšší dosažená
+    expect(opatrny.some((c) => c.dedupeKey === 'limit|100k|P90|2026')).toBe(false);
+  });
+
+  it('naléhavá událost otevře i zavřené týdenní okno (a bez volby počká)', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-urgent', 'urgent@danero.cz');
+    await db.insert(notificationPrefs).values({ userId: 'u-urgent', emailFrequency: 'WEEKLY' });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-urgent', email: 'urgent@danero.cz' };
+
+    // první běh vyprázdní frontu a nastaví lastDigestAt
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+
+    // den nato přijde prolomený limit — okno je zavřené, ale naléhavé se posílá hned
+    await db.insert(notifications).values({
+      userId: 'u-urgent', dedupeKey: 'test|urgent', type: 'LIMIT_EXCEEDED',
+      title: 'Prolomen limit', body: 'naléhavé',
+    });
+    const hned = await processUserNotifications(db, target, { send, today: '2026-07-21' });
+    expect(hned.emailed).toBe(1);
+    expect(sent).toHaveLength(2);
+
+    // s vypnutou volbou počká naléhavá událost na týdenní souhrn jako ostatní
+    await db
+      .update(notificationPrefs)
+      .set({ urgentImmediately: false })
+      .where(eq(notificationPrefs.userId, 'u-urgent'));
+    await db.insert(notifications).values({
+      userId: 'u-urgent', dedupeKey: 'test|urgent2', type: 'LIMIT_EXCEEDED',
+      title: 'Prolomen další limit', body: 'naléhavé',
+    });
+    const ceka = await processUserNotifications(db, target, { send, today: '2026-07-22' });
+    expect(ceka.emailed).toBe(0);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('pravidelný přehled odejde jednou za období a nese čísla i beze změn', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-souhrn', 'souhrn@danero.cz');
+    await db
+      .insert(notificationPrefs)
+      .values({ userId: 'u-souhrn', summaryFrequency: 'MONTHLY' });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-souhrn', email: 'souhrn@danero.cz' };
+
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    const souhrny = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u-souhrn'), eq(notifications.type, 'SUMMARY')));
+    expect(souhrny).toHaveLength(1);
+    expect(souhrny[0]!.dedupeKey).toBe('souhrn|2026-07');
+    // titulek nese DEN, ne období: přehled odchází první den období a nesl by
+    // jinak název měsíce, který ještě nezačal
+    expect(souhrny[0]!.title).toBe('Přehled k 20. 7. 2026');
+    expect(souhrny[0]!.body).toContain('limit 100 000 Kč pro osvobození prodejů');
+
+    // druhý běh v témž měsíci nic nepřidá, další měsíc ano
+    await processUserNotifications(db, target, { send, today: '2026-07-25' });
+    await processUserNotifications(db, target, { send, today: '2026-08-03' });
+    const vsechny = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u-souhrn'), eq(notifications.type, 'SUMMARY')));
+    expect(vsechny.map((n) => n.dedupeKey).sort()).toEqual(['souhrn|2026-07', 'souhrn|2026-08']);
+  });
+
+  it('bez volby přehledu nevzniká žádný SUMMARY', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-bez', 'bez@danero.cz');
+    const send = async () => {};
+    await processUserNotifications(db, { id: 'u-bez', email: 'bez@danero.cz' }, { send, today: '2026-07-20' });
+    const souhrny = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u-bez'), eq(notifications.type, 'SUMMARY')));
+    expect(souhrny).toHaveLength(0);
+  });
+});
+
+/**
+ * Nálezy z code review: pravidelný přehled a naléhavost se musí řídit tím,
+ * co má uživatel nastavené TEĎ, ne tím, co platilo ve chvíli, kdy událost
+ * vznikla.
+ */
+describe('pravidla platí i na už založené události', () => {
+  it('vypnutý přehled se neodešle, ani když už řádek vznikl', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-off', 'off@danero.cz');
+    await db.insert(notificationPrefs).values({
+      userId: 'u-off',
+      emailFrequency: 'WEEKLY',
+      summaryFrequency: 'MONTHLY',
+    });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-off', email: 'off@danero.cz' };
+
+    // 1. běh: souhrn i přehled odejdou, okno se zavře na týden
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+
+    // nový měsíc → vznikne další přehled, ale uživatel si ho mezitím vypne
+    await processUserNotifications(db, target, { send, today: '2026-08-01' });
+    const [pred] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u-off'), eq(notifications.dedupeKey, 'souhrn|2026-08')));
+    expect(pred).toBeDefined();
+    await db
+      .update(notificationPrefs)
+      .set({ summaryFrequency: 'OFF' })
+      .where(eq(notificationPrefs.userId, 'u-off'));
+
+    const posledni = sent.length;
+    await processUserNotifications(db, target, { send, today: '2026-08-02' });
+    expect(sent.map((m) => m.text).slice(posledni).join('')).not.toContain('Přehled k');
+  });
+
+  it('upomínka na termín s dlouhým předstihem nepřetlačí týdenní okno', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-termin', 'termin@danero.cz');
+    await db.insert(notificationPrefs).values({ userId: 'u-termin', emailFrequency: 'WEEKLY' });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-termin', email: 'termin@danero.cz' };
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+
+    // měsíc dopředu naléhavé není — počká na souhrn
+    await db.insert(notifications).values({
+      userId: 'u-termin', dedupeKey: 'test|termin', type: 'DEADLINE',
+      title: 'Blíží se termín přiznání', body: 'za měsíc',
+    });
+    expect((await processUserNotifications(db, target, { send, today: '2026-07-21' })).emailed).toBe(0);
+
+    // se zkráceným předstihem (7 dní) je upomínka naléhavá a jde hned
+    await db
+      .update(notificationPrefs)
+      .set({ deadlineLeadDays: 7 })
+      .where(eq(notificationPrefs.userId, 'u-termin'));
+    expect((await processUserNotifications(db, target, { send, today: '2026-07-22' })).emailed).toBe(1);
+  });
+});

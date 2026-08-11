@@ -35,6 +35,7 @@ const APP_PAGES = [
   '/simulator',
   '/import',
   '/nastaveni',
+  '/nastaveni/upozorneni',
   '/nastaveni/ucet',
   '/predplatne',
   // objednávkové stránky (`/predplatne/hlidani`, `/predplatne/podklady`) tady

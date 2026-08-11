@@ -282,19 +282,49 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
   const user = await requireUser();
   const db = await getDb();
   const { notificationPrefs } = await import('@/db/schema');
+  const {
+    DEADLINE_LEAD_OPTIONS,
+    DEFAULT_NOTIFICATION_RULES,
+    formatNumberList,
+    LIMIT_THRESHOLD_OPTIONS,
+    parseNumberList,
+    pickOption,
+    SUMMARY_FREQUENCIES,
+    TIME_TEST_LEAD_OPTIONS,
+  } = await import('@/lib/notification-rules');
+  /** Zaškrtnuté volby → text pro DB; mimo nabídku se cokoli zahodí. */
+  const checked = (name: string, allowed: readonly number[]): string =>
+    formatNumberList(
+      parseNumberList(formData.getAll(name).map(String).join(','), allowed, []),
+    );
   const values = {
     emailEnabled: formData.get('emaily-zapnute') === 'on',
     timeTestEvents: formData.get('upozorneni-casove-testy') === 'on',
     limitEvents: formData.get('upozorneni-limity') === 'on',
     calendarEmails: formData.get('upozorneni-kalendar') === 'on',
-    // radio validujeme na whitelist — cokoli jiného spadne na bezpečný default
+    // hodnoty ze selectů a zaškrtávátek validujeme na whitelist — cokoli jiného
+    // spadne na bezpečný default (formulář jde odeslat i mimo naše UI)
     emailFrequency: formData.get('frekvence-emailu') === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
+    timeTestLeadDays: checked('lhuta-casoveho-testu', TIME_TEST_LEAD_OPTIONS),
+    timeTestDone: formData.get('osvobozeno-hotovo') === 'on',
+    limitThresholdsPct: checked('hranice-limitu', LIMIT_THRESHOLD_OPTIONS),
+    deadlineLeadDays: pickOption(
+      Number(formData.get('lhuta-terminu')),
+      DEADLINE_LEAD_OPTIONS,
+      DEFAULT_NOTIFICATION_RULES.deadlineLeadDays,
+    ),
+    summaryFrequency: pickOption(
+      formData.get('pravidelny-prehled'),
+      SUMMARY_FREQUENCIES,
+      DEFAULT_NOTIFICATION_RULES.summaryFrequency,
+    ),
+    urgentImmediately: formData.get('nalehave-hned') === 'on',
     updatedAt: new Date(),
   };
   await db
     .insert(notificationPrefs)
     .values({ userId: user.id, ...values })
     .onConflictDoUpdate({ target: notificationPrefs.userId, set: values });
-  revalidatePath('/nastaveni/ucet');
-  redirect('/nastaveni/ucet?ok=notifikace#notifikace');
+  revalidatePath('/nastaveni/upozorneni');
+  redirect('/nastaveni/upozorneni?ok=notifikace');
 }

@@ -25,6 +25,13 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByRole('heading', { name: /Přehled \d{4}/ })).toBeVisible();
   await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
   await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
+  // upozornění se v aplikaci počítají při otevření přehledu — bez tohohle by
+  // je uživatel viděl až po nočním běhu hlídače (a bez předplatného nikdy),
+  // přestože to nastavení upozornění slibuje
+  await expect(page.getByText('Poslední upozornění')).toBeVisible();
+  await expect(
+    page.getByText('Prolomen limit 100 000 Kč pro osvobození prodejů').first(),
+  ).toBeVisible();
 
   // ── simulátor: prodej 10 ks zbývajících AAPL ────────────────────────────
   await page.goto('/simulator');
@@ -53,12 +60,11 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.reload();
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
-  // účet a upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
-  await page.getByRole('link', { name: 'Účet a zabezpečení' }).click();
-  await page.waitForURL('**/nastaveni/ucet');
-  // ani u upozornění se neukládá tlačítkem (hledáme v jejich kartě, jinak by
-  // podmínka procházela i tehdy, kdyby tlačítko přibylo)
-  await expect(page.locator('#notifikace').getByRole('button', { name: 'Uložit' })).toHaveCount(0);
+  // upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
+  await page.getByRole('link', { name: 'Upozornění' }).click();
+  await page.waitForURL('**/nastaveni/upozorneni');
+  // ani tady se neukládá tlačítkem
+  await expect(page.getByRole('button', { name: 'Uložit' })).toHaveCount(0);
 
   // přepnutí switche upozornění → taky auto-save
   await page.getByText('Posílat e-maily').click();

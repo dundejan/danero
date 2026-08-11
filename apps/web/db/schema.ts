@@ -207,6 +207,27 @@ export const notificationPrefs = pgTable('notification_prefs', {
   calendarEmails: boolean('calendar_emails').notNull().default(true),
   /** 'DAILY' | 'WEEKLY' — jak často chodí digest. */
   emailFrequency: text('email_frequency').notNull().default('DAILY'),
+  /*
+   * Vlastní pravidla hlídače (lib/notification-rules.ts). Výchozí hodnoty
+   * opisují chování, které měl hlídač natvrdo v kódu, takže se nikomu nezmění,
+   * co dostává — a web může dál slibovat „60, 85 a 100 %“ i „30 a 7 dní“.
+   * Výjimka je `deadline_lead_days`: natvrdo tam bylo 17 dní, nově 30
+   * (úmyslná změna — na doplnění podkladů k přiznání byl týden a půl málo).
+   * Seznamy jsou text („30,7“), ne `integer[]`: pole se mezi PGlite a
+   * postgres.js chovají jinak a zbytek schématu se jim vyhýbá.
+   */
+  /** Kolik dní před osvobozením se ozvat (sestupně, oddělené čárkou). */
+  timeTestLeadDays: text('time_test_lead_days').notNull().default('30,7'),
+  /** Ozvat se i ve chvíli, kdy pozice časový test právě splnila. */
+  timeTestDone: boolean('time_test_done').notNull().default(true),
+  /** Při jakém čerpání limitu (v %) psát. */
+  limitThresholdsPct: text('limit_thresholds_pct').notNull().default('60,85,100'),
+  /** Kolik dní před termínem přiznání připomenout. */
+  deadlineLeadDays: integer('deadline_lead_days').notNull().default(30),
+  /** 'OFF' | 'MONTHLY' | 'QUARTERLY' — přehled i ve chvíli, kdy se nic nestalo. */
+  summaryFrequency: text('summary_frequency').notNull().default('OFF'),
+  /** Naléhavou událost poslat i mimo týdenní okno souhrnu. */
+  urgentImmediately: boolean('urgent_immediately').notNull().default(true),
   /** Kdy naposledy odešel digest — WEEKLY podle něj čeká na týdenní okno. */
   // withTimezone: bez zóny by postgres.js četl hodnotu v lokální zóně serveru
   // (latentní posun týdenního okna mimo UTC) — timestamptz je round-trip čistý

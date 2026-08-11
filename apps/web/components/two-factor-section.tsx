@@ -99,7 +99,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
               {...describedByError(error !== null, DISABLE_ERROR_ID)}
             />
           </div>
-          <Button type="submit" variant="danger" size="sm" disabled={pending}>
+          <Button type="submit" variant="danger" disabled={pending}>
             {pending ? 'Vypínám…' : 'Vypnout 2FA'}
           </Button>
         </div>

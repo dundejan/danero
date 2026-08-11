@@ -25,7 +25,7 @@ const invalidLink = (): Response =>
   page(
     'Odkaz na odhlášení neplatí',
     `<p>Odkaz je poškozený nebo už vypršel. Zkopíruj ho z e-mailu celý, nebo si e-maily vypni přímo v aplikaci.</p>
-<p><a href="/nastaveni/ucet">Nastavení → E-mailová upozornění</a> · <a href="/">Úvodní stránka Danera</a></p>`,
+<p><a href="/nastaveni/upozorneni">Nastavení → Upozornění</a> · <a href="/">Úvodní stránka Danera</a></p>`,
     400,
   );
 
@@ -42,7 +42,7 @@ export async function GET(request: Request): Promise<Response> {
   return page(
     'Odhlásit e-mailová upozornění?',
     `<p>Upozornění v aplikaci ti zůstanou; e-maily jde kdykoli zapnout zpět.</p>
-<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni/ucet">Nastavení → E-mailová upozornění</a>.</p>
+<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni/upozorneni">Nastavení → Upozornění</a>.</p>
 <form method="post">
   <button type="submit" style="padding:.5rem 1rem;cursor:pointer">Ano, vypnout e-maily</button>
 </form>`,
@@ -67,6 +67,6 @@ export async function POST(request: Request): Promise<Response> {
   return page(
     'E-mailová upozornění jsou vypnutá',
     `<p>Upozornění v aplikaci ti zůstávají.</p>
-<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni/ucet">Nastavení → E-mailová upozornění</a>.</p>`,
+<p>Jemnější nastavení (typy a frekvence) najdeš po přihlášení v <a href="/nastaveni/upozorneni">Nastavení → Upozornění</a>.</p>`,
   );
 }
