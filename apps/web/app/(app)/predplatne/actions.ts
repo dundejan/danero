@@ -20,6 +20,8 @@ async function checkout(params: {
   customerId: string | null;
   metadata: Record<string, string>;
   consentAt: string;
+  /** Věta nad tlačítkem Zaplatit — co se stane hned po zaplacení. */
+  submitMessage: string;
 }): Promise<never> {
   const base = appUrl();
   const session = await stripe().checkout.sessions.create({
@@ -51,6 +53,10 @@ async function checkout(params: {
     // českou daň, takže cizí měna nemá komu pomoct.
     adaptive_pricing: { enabled: false },
     locale: 'cs',
+    // Hostovaný Checkout je jediná obrazovka nákupu, kterou nekreslíme sami —
+    // vzhled se řídí značkou nastavenou ve Stripe, ale řeč zůstává na nás.
+    // Věta říká, co se stane po zaplacení, ať se člověk nemusí ptát.
+    custom_text: { submit: { message: params.submitMessage } },
     success_url: `${base}/predplatne?stav=hotovo`,
     cancel_url: `${base}/predplatne?stav=zruseno`,
   });
@@ -86,6 +92,8 @@ export async function buySubscriptionAction(formData: FormData): Promise<never> 
     email: user.email,
     customerId: await stripeCustomerFor(db, user.id),
     metadata: { kind: 'subscription' },
+    submitMessage:
+      'Po zaplacení se hlídání zapne hned — potvrzení objednávky i doklad ti přijdou e-mailem.',
   });
 }
 
@@ -107,6 +115,7 @@ export async function buyReportAction(formData: FormData): Promise<never> {
     email: user.email,
     customerId: await stripeCustomerFor(db, user.id),
     metadata: { kind: 'report', taxYear: String(taxYear) },
+    submitMessage: `Po zaplacení se ti podklady k přiznání za rok ${taxYear} odemknou hned — potvrzení objednávky i doklad ti přijdou e-mailem.`,
   });
 }
 
