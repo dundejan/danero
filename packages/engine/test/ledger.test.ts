@@ -389,3 +389,51 @@ describe('R-06: řazení lotů nesmí hlásit chybějící kurz lotu, který se 
     expect(hasWarning(result, 'FX_UNIFIED_RATE_MISSING')).toBe(false);
   });
 });
+
+/**
+ * Seřazená zásoba lotů se kvůli výkonu drží mezi prodeji (nepřeřazuje se
+ * dokola — u MAX_PROFIT/MAX_LOSS to bylo 6,6–6,8× dražší než FIFO). Cache
+ * platí jen do chvíle, kdy se zásoba změní jinak než prodejem; tyhle testy
+ * hlídají obě cesty, kterými se změnit může. Bez zneplatnění se spáruje jiný
+ * lot, tedy vyjde jiná daň — a všechny ostatní testy zůstanou zelené.
+ */
+describe('párování vidí i loty, které přibyly po prvním prodeji', () => {
+  it('MAX_PROFIT sáhne po levnějším lotu koupeném až mezi dvěma prodeji', () => {
+    const txs = [
+      buy({ quantity: '1', pricePerShare: '100000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      buy({ quantity: '1', pricePerShare: '50000', tradeDate: '2024-02-10', settlementDate: '2024-02-10' }),
+      sell({ quantity: '1', pricePerShare: '200000', tradeDate: '2025-03-01', settlementDate: '2025-03-01' }),
+      // nejlevnější kus přijde AŽ TEĎ — pořadí spočítané u prvního prodeje o něm neví
+      buy({ quantity: '1', pricePerShare: '10000', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+      sell({ quantity: '1', pricePerShare: '200000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' }),
+    ];
+    const result = run(txs, { options: { matchingMethod: 'MAX_PROFIT' } });
+
+    // MAX_PROFIT bere vždy nejlevnější dostupný kus: nejdřív za 50 000,
+    // pak za 10 000 (ne za 100 000, který by zbyl z původního pořadí)
+    expect(result.ledger.disposals.map((d) => d.allocations[0]!.costPerShare.toString())).toEqual([
+      '50000',
+      '10000',
+    ]);
+    // 2 × 200 000 tržba − (50 000 + 10 000) výdaje
+    expect(result.securities.base10Czk.toString()).toBe('340000');
+  });
+
+  it('fúze přisune loty pod cizí ISIN a párování je musí vzít v potaz', () => {
+    const txs = [
+      // drahý lot pod cílovým ISIN — do fúze jediný kandidát
+      buy({ isin: 'CZ0000000088', quantity: '1', pricePerShare: '100000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      // levný lot pod původním ISIN, který se fúzí přestěhuje
+      buy({ isin: 'CZ0000000001', quantity: '1', pricePerShare: '10000', tradeDate: '2024-02-10', settlementDate: '2024-02-10' }),
+      sell({ isin: 'CZ0000000088', quantity: '1', pricePerShare: '150000', tradeDate: '2025-02-01', settlementDate: '2025-02-01' }),
+      corpAction({ subtype: 'MERGER', isin: 'CZ0000000001', newIsin: 'CZ0000000088', date: '2025-03-01', preservesAcquisitionDate: true }),
+      sell({ isin: 'CZ0000000088', quantity: '1', pricePerShare: '150000', tradeDate: '2025-04-01', settlementDate: '2025-04-01' }),
+    ];
+    const result = run(txs, { options: { matchingMethod: 'MAX_PROFIT' } });
+
+    expect(result.ledger.disposals.map((d) => d.allocations[0]!.costPerShare.toString())).toEqual([
+      '100000',
+      '10000',
+    ]);
+  });
+});

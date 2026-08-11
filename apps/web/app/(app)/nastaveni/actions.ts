@@ -281,6 +281,16 @@ export async function revokeOtherSessionsAction(): Promise<void> {
 export async function saveNotificationPrefsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const db = await getDb();
+  /*
+   * Rozesílku dělá cron jen platícím, takže stránka formulář bez předplatného
+   * vůbec nevykreslí. Server action jde ale zavolat přímo — a pravidlo z
+   * CLAUDE.md zní, že hranice se hlídá na obou místech (stránka kvůli tomu,
+   * aby uživatel nedělal práci zbytečně, action jako pojistka). Stejný vzor
+   * má napojení brokera v `import/actions.ts`.
+   */
+  const { resolveEntitlements } = await import('@/lib/entitlements');
+  const entitlements = await resolveEntitlements(db, user.id);
+  if (!entitlements.notifications) redirect('/nastaveni/upozorneni?chyba=hlidani-placene');
   const { notificationPrefs } = await import('@/db/schema');
   const {
     DEADLINE_LEAD_OPTIONS,

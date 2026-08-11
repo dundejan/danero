@@ -72,3 +72,67 @@ describe('výkon: sestavení ledgeru neroste kvadraticky (G-P1)', () => {
     expect(result.ledger.disposals).toHaveLength(5);
   });
 });
+
+/**
+ * Druhá polovina téhož problému: sestavení ledgeru sice není kvadratické
+ * v počtu transakcí (G-P1), ale `orderLots` se volalo při KAŽDÉM prodeji.
+ * U FIFO/LIFO je pole prakticky seřazené a TimSort ho projde lineárně,
+ * u MAX_PROFIT/MAX_LOSS se řadí podle nabývací ceny, tedy nanovo a celé.
+ * Naměřeno před opravou (25 000 transakcí, 20 instrumentů, velká zásoba
+ * otevřených lotů): FIFO 1,3 s × MAX_PROFIT 9,3 s. Po opravě 0,6 × 0,7 s.
+ *
+ * Test měří POMĚR, ne absolutní čas — ten je na každém stroji jiný. Práh 3×
+ * leží mezi oběma stavy s velkou rezervou na obě strany.
+ */
+describe('výkon: výběr lotů se nepřeřazuje při každém prodeji', () => {
+  /** Držák: nejdřív všechny nákupy, pak prodeje — největší zásoba otevřených lotů. */
+  const holder = (pairs: number) => {
+    const txs = [];
+    for (let i = 0; i < pairs; i += 1) {
+      const den = `2024-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`;
+      // ceny schválně rozházené, ať MAX_PROFIT nedostane seřazený vstup
+      txs.push(
+        buy({
+          quantity: '10',
+          pricePerShare: String(100 + ((i * 37) % 500)),
+          tradeDate: den,
+          settlementDate: den,
+        }),
+      );
+    }
+    for (let i = 0; i < pairs; i += 1) {
+      const den = `2025-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`;
+      txs.push(sell({ quantity: '10', pricePerShare: '600', tradeDate: den, settlementDate: den }));
+    }
+    return txs;
+  };
+
+  const cpuMs = (method: 'FIFO' | 'MAX_PROFIT', txs: ReturnType<typeof holder>): number => {
+    let nej = Infinity;
+    for (let i = 0; i < 3; i += 1) {
+      const t0 = process.cpuUsage();
+      analyzeTaxYear({
+        transactions: txs,
+        profile: profile(),
+        config: CFG_2025,
+        options: { matchingMethod: method },
+      });
+      const { user, system } = process.cpuUsage(t0);
+      nej = Math.min(nej, (user + system) / 1000);
+    }
+    return Math.max(nej, 0.5);
+  };
+
+  it('MAX_PROFIT nesmí být nad velkou zásobou lotů řádově dražší než FIFO', { timeout: 60_000 }, () => {
+    const txs = holder(1500);
+    cpuMs('FIFO', txs.slice(0, 100)); // rozehřátí JITu
+    const fifo = cpuMs('FIFO', txs);
+    const maxProfit = cpuMs('MAX_PROFIT', txs);
+    const pomer = maxProfit / fifo;
+    expect(
+      pomer,
+      `MAX_PROFIT zabral ${pomer.toFixed(1)}× procesorového času proti FIFO (${fifo.toFixed(0)} → ${maxProfit.toFixed(0)} ms). ` +
+        'Řadí se kandidáti při každém prodeji znovu? Zásoba se má přeřazovat jen při změně (viz orderedByIsin).',
+    ).toBeLessThan(3);
+  });
+});

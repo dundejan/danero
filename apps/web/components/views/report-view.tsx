@@ -591,7 +591,7 @@ export function ReportView({
           {result.derivatives.deniedExpensesCzk.gt(0) && (
             <p className="text-xs text-jantar-text">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
-              podle opatrného výkladu jako neuznatelný výdaj. Mírnější výklad „výdaje za
+              podle bezpečného výkladu jako neuznatelný výdaj. Mírnější výklad „výdaje za
               celý druh“ by{' '}
               {/* skutečný dopad, ne hrubá prémie: výdaje druhu jsou stropované
                   jeho příjmy (§ 10/4), takže rozdíl bývá výrazně menší */}

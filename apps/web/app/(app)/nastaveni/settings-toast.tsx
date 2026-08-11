@@ -30,6 +30,7 @@ const CHYBA_LABELS: Record<string, string> = {
   'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
   'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
+  'hlidani-placene': 'Hlídací e-maily jsou součástí předplatného — nastavení se neuložilo.',
 };
 
 export function SettingsToast({ ok, chyba }: { ok?: string; chyba?: string }) {

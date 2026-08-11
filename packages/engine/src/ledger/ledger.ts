@@ -202,11 +202,39 @@ export function buildLedger(
    * `orderLots` si je stejně řadí sám.
    */
   const lotsByIsin = new Map<string, Lot[]>();
+  /**
+   * Seřazená zásoba lotů jednoho ISIN pro párování prodejů — a kurzor, kam až
+   * je vyčerpaná.
+   *
+   * `orderLots` se do téhle změny volalo při KAŽDÉM prodeji. U FIFO/LIFO to
+   * skoro nic nestojí (pole už v pořadí nabytí je, TimSort ho projde lineárně),
+   * ale MAX_PROFIT/MAX_LOSS řadí podle nabývací ceny, tedy v prakticky náhodném
+   * pořadí — a to je řazení `Decimal` porovnáními při každém prodeji znovu.
+   * Naměřeno na 25 000 transakcích s velkou zásobou otevřených lotů:
+   * FIFO 1,3 s · LIFO 1,5 s · **MAX_PROFIT 9,3 s · MAX_LOSS 8,4 s**.
+   *
+   * Prodej ale pořadí neruší — jen ubírá z čela. Řadí se proto znovu jen tehdy,
+   * když se zásoba změní jinak než prodejem (nový lot, korporátní akce,
+   * odchozí převod, který spotřebovává ve FIFO pořadí bez ohledu na metodu).
+   * Řazení je úplné uspořádání (shody rozhoduje `ordinalById`), takže vybraná
+   * podposloupnost je totožná s tím, co by dalo řazení znovu — spárování lotů
+   * se nemění, jen se nepočítá pořád dokola.
+   */
+  interface OrderedLots {
+    lots: Lot[];
+    /** Index prvního lotu, který ještě má zbytek; nižší jsou vyčerpané. */
+    cursor: number;
+  }
+  const orderedByIsin = new Map<string, OrderedLots>();
+  const invalidateOrder = (isin: string): void => {
+    orderedByIsin.delete(isin);
+  };
   const registerLot = (lot: Lot): void => {
     lots.push(lot);
     const bucket = lotsByIsin.get(lot.isin);
     if (bucket) bucket.push(lot);
     else lotsByIsin.set(lot.isin, [lot]);
+    invalidateOrder(lot.isin);
   };
   /**
    * Otevřené loty jednoho ISIN. Vyčerpané loty z indexu **natrvalo vyřazuje** —
@@ -228,12 +256,28 @@ export function buildLedger(
     return bucket.slice();
   };
   /**
+   * Kandidáti na spárování prodeje, seřazení podle zvolené metody. Výsledek se
+   * drží do nejbližší změny zásoby (viz `orderedByIsin`) — metoda párování je
+   * v rámci jednoho běhu enginu neměnná, takže se cache nemusí klíčovat i jí.
+   */
+  const orderedLotsFor = (isin: string): OrderedLots => {
+    const cached = orderedByIsin.get(isin);
+    if (cached) return cached;
+    const fresh: OrderedLots = { lots: openLots(isin), cursor: 0 };
+    orderLots(fresh.lots, options.matchingMethod, fx, costCzkCache);
+    orderedByIsin.set(isin, fresh);
+    return fresh;
+  };
+  /**
    * Korporátní akce (ISIN_CHANGE, MERGER) přepisují `lot.isin` — index se tím
    * musí přerejstříkovat, jinak by lot pod novým ISIN nikdo nenašel. Pořadí
    * v cílovém kbelíku zůstává vložením na konec, tedy stejné jako u původního
    * `filter()` přes celé pole.
    */
   const moveLotToIsin = (lot: Lot, newIsin: string): void => {
+    // zásoba se mění na OBOU stranách — seřazené pohledy obou ISIN jsou pryč
+    invalidateOrder(lot.isin);
+    invalidateOrder(newIsin);
     const from = lotsByIsin.get(lot.isin);
     if (from) {
       const at = from.indexOf(lot);
@@ -323,16 +367,23 @@ export function buildLedger(
     const settlement =
       tx.settlementDate ?? inferSettlementDate(tx.tradeDate, tx.isin, tx.assetClass);
     const saleDate = options.timeTestDateBasis === 'settlement' ? settlement : tx.tradeDate;
-    const candidates = openLots(tx.isin);
-    orderLots(candidates, options.matchingMethod, fx, costCzkCache);
+    const ordered = orderedLotsFor(tx.isin);
 
     let toFill = tx.quantity;
     const allocations: DisposalAllocation[] = [];
-    for (const lot of candidates) {
-      if (toFill.lte(0)) break;
+    while (ordered.cursor < ordered.lots.length && toFill.gt(0)) {
+      const lot = ordered.lots[ordered.cursor]!;
+      // vyčerpaný lot (prodejem i odchozím převodem) už kandidát není
+      if (lot.remaining.lte(0)) {
+        ordered.cursor += 1;
+        continue;
+      }
       const take = Decimal.min(lot.remaining, toFill);
       lot.remaining = lot.remaining.sub(take);
       toFill = toFill.sub(take);
+      // kurzor se posouvá jen u DOČERPANÉHO lotu — částečně prodaný zůstává
+      // prvním kandidátem i pro další prodej
+      if (lot.remaining.lte(0)) ordered.cursor += 1;
       allocations.push({
         lotId: lot.id,
         quantity: take,
@@ -410,6 +461,10 @@ export function buildLedger(
   };
 
   const processTransferOut = (tx: Extract<Transaction, { type: 'TRANSFER_OUT' }>): void => {
+    // Odchozí převod spotřebovává loty ve FIFO pořadí bez ohledu na zvolenou
+    // metodu (R-04i), takže může vyprázdnit lot uprostřed seřazeného pohledu —
+    // ten se proto zahazuje.
+    invalidateOrder(tx.isin);
     const candidates = openLots(tx.isin);
     orderLots(candidates, 'FIFO');
     let toFill = tx.quantity;
@@ -419,6 +474,7 @@ export function buildLedger(
       lot.remaining = lot.remaining.sub(take);
       toFill = toFill.sub(take);
     }
+    invalidateOrder(tx.isin);
     if (toFill.gt(0)) {
       warnings.add(
         'TRANSFER_OUT_EXCEEDS_POSITION',
@@ -450,6 +506,14 @@ export function buildLedger(
   };
 
   const processCorporateAction = (tx: CorporateActionTransaction): void => {
+    // Split i spin-off přepisují `costPerShare` otevřených lotů, fúze a změna
+    // ISIN je stěhují jinam — pořadí pro párování prodejů se po tomhle musí
+    // spočítat znovu. Zneplatňuje se PŘED i po (uvnitř se čte `openLots`)
+    // a schválně tupě pro všechny dotčené ISIN, ne podle podtypu: levné to je,
+    // a výjimka „tenhle podtyp pořadí nemění" je přesně to, co se při další
+    // změně zapomene.
+    invalidateOrder(tx.isin);
+    if (tx.newIsin) invalidateOrder(tx.newIsin);
     switch (tx.subtype) {
       case 'SPLIT': {
         // R-04a: výměna při zachování celkové jmenovité hodnoty test nepřerušuje
@@ -572,6 +636,8 @@ export function buildLedger(
         break;
       }
     }
+    invalidateOrder(tx.isin);
+    if (tx.newIsin) invalidateOrder(tx.newIsin);
   };
 
   for (const { tx } of events) {
