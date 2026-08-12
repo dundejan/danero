@@ -60,41 +60,42 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.reload();
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
+  /**
+   * Auto-save je asynchronní a `AutoSubmit` navíc změnu během běžícího uložení
+   * ZAŘADÍ DO FRONTY — čekat na jednu odpověď serveru proto nestačí, dá se
+   * chytit odpověď předchozího uložení a reload pak předběhne to skutečné.
+   * Ověřuje se tedy VÝSLEDEK: opakovaně načíst stránku, dokud tam hodnota není.
+   */
+  const ulozenoJako = async (popisek: RegExp | string, hodnota: string) => {
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByLabel(popisek)).toHaveValue(hodnota);
+    }).toPass({ timeout: 20_000 });
+  };
+
   // Částku lidé píšou s mezerou mezi tisíci — a Danero ji tak samo tiskne,
   // takže zkopírované číslo se sem vrací i s NEDĚLITELNOU mezerou. Dokud se
   // hodnota kontrolovala dvěma refine za sebou, spadlo tohle na výjimku
   // z Decimalu a uživatel dostal chybovou stránku místo hlášky.
   await page.getByLabel(/Další zdanitelné příjmy/).fill('10 000');
-  await Promise.all([
-    page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/nastaveni')),
-    page.getByLabel('Párování prodejů').focus(), // blur → auto-save
-  ]);
-  await page.reload();
-  await expect(page.getByLabel(/Další zdanitelné příjmy/)).toHaveValue('10000');
+  await page.getByLabel('Párování prodejů').focus(); // blur → auto-save
+  await ulozenoJako(/Další zdanitelné příjmy/, '10000');
 
   // nesmysl musí skončit radou, ne pádem
   await page.getByLabel(/Další zdanitelné příjmy/).fill('12 000 Kč');
   await page.getByLabel('Párování prodejů').focus();
   await expect(page.getByText(/Další zdanitelné příjmy zadej jako částku/)).toBeVisible();
-  await page.getByLabel(/Další zdanitelné příjmy/).fill('0');
-  await page.getByLabel('Párování prodejů').focus();
 
-  // R-07h: sporný výklad se musí uložit a být vidět i v podkladech k přiznání.
-  // Čeká se na odpověď server action, ne na toast: text „Uloženo“ zůstává na
-  // obrazovce po předchozím uložení, takže by reload předběhl zápis do DB.
-  const ulozeno = () =>
-    page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().includes('/nastaveni'),
-    );
-  await Promise.all([ulozeno(), page.getByLabel('Vratka kapitálu').selectOption('lenient')]);
-  await page.reload();
-  await expect(page.getByLabel('Vratka kapitálu')).toHaveValue('lenient');
+  // R-07h: sporný výklad se musí uložit a být vidět i v podkladech k přiznání
+  await page.getByLabel('Vratka kapitálu').selectOption('lenient');
+  await ulozenoJako('Vratka kapitálu', 'lenient');
   await page.goto('/report');
-  await expect(page.getByText(/vratka kapitálu: snižuje nabývací cenu/).first()).toBeVisible();
+  // pozor: tatáž věta je i v odstavci `print:block` (jen pro tisk, na obrazovce
+  // skrytý) — hledá se ta viditelná, tedy bez dvojtečky
+  await expect(page.getByText(/vratka kapitálu snižuje nabývací cenu/)).toBeVisible();
   await page.goto('/nastaveni');
-  await Promise.all([ulozeno(), page.getByLabel('Vratka kapitálu').selectOption('safe')]);
-  await page.reload();
-  await expect(page.getByLabel('Vratka kapitálu')).toHaveValue('safe');
+  await page.getByLabel('Vratka kapitálu').selectOption('safe');
+  await ulozenoJako('Vratka kapitálu', 'safe');
 
   // upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
   await page.getByRole('link', { name: 'Upozornění' }).click();
