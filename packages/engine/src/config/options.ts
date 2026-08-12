@@ -37,6 +37,12 @@ export interface EngineOptions {
    * Default false = bezpečný výklad (EMT zdanit vždy).
    */
   emtTimeTestExempt: boolean;
+  /**
+   * R-07h: snižuje vratka kapitálu (return of capital) nabývací cenu pozice
+   * místo toho, aby se danila jako dividenda? Default false = bezpečný výklad
+   * (zdanit hned podle R-07b) — nikdy nepodhodnotí daň, jen ji vybere dřív.
+   */
+  returnOfCapitalReducesBasis: boolean;
 }
 
 export const DEFAULT_OPTIONS: EngineOptions = {
@@ -57,6 +63,7 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   defaultInterestTreatyCap: '0',
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
+  returnOfCapitalReducesBasis: false,
 };
 
 export const resolveOptions = (partial?: Partial<EngineOptions>): EngineOptions => ({

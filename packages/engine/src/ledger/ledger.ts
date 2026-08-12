@@ -8,6 +8,7 @@ import {
   type AssetClass,
   type BuyTransaction,
   type CorporateActionTransaction,
+  type DividendTransaction,
   type IsoDate,
   type Money,
   type SellTransaction,
@@ -16,7 +17,7 @@ import {
 } from '@danero/shared';
 import { calendarForIsin, isExchangeHoliday } from '../config/exchangeHolidays';
 import type { EngineOptions, MatchingMethod } from '../config/options';
-import { czDateText, qtyText } from '../format';
+import { czDateText, moneyText, qtyText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import { EngineError, WarningCollector } from '../warnings';
 
@@ -81,6 +82,13 @@ export interface Disposal {
 export interface Ledger {
   lots: Lot[];
   disposals: Disposal[];
+  /**
+   * R-07h: kolik z vratky kapitálu zůstalo zdanitelné jako dividenda — klíčem
+   * je id výplaty, hodnota je v její měně. Záznam vzniká JEN při zapnutém
+   * přepínači `returnOfCapitalReducesBasis`; jeho nepřítomnost tedy znamená
+   * „daní se celá" a `computeDividends` nemusí přepínač znát podruhé.
+   */
+  returnOfCapitalTaxable: Map<string, Money>;
 }
 
 /** Přechod US trhů na vypořádání T+1 (SEC rule 15c6-1(a), účinnost 28. 5. 2024). */
@@ -184,6 +192,8 @@ export function buildLedger(
   const costCzkCache = new Map<string, Money>();
   const lots: Lot[] = [];
   const disposals: Disposal[] = [];
+  /** R-07h: zdanitelný zbytek vratky kapitálu per transakce (v její měně). */
+  const returnOfCapitalTaxable = new Map<string, Money>();
   let syntheticCounter = 0;
 
   const events = transactions
@@ -460,6 +470,93 @@ export function buildLedger(
     });
   };
 
+  /**
+   * R-07h: vratka kapitálu snižuje nabývací cenu otevřených lotů téhož ISIN
+   * poměrně podle zbývajícího množství — stejnou mechanikou, jakou spin-off
+   * odkrajuje cenu mateřské pozice (R-04f).
+   *
+   * Co se nedá vstřebat, zůstává zdanitelné jako dividenda (R-07b) — mantinely
+   * jsou v docs/02 u R-07h a všechny míří konzervativním směrem: bez pozice,
+   * v cizí měně i nad rámec nabývací ceny se daní.
+   *
+   * Vratka se nerozpouští „na kus a zpátky": zdanitelný zbytek se skládá
+   * z konkrétních nevstřebaných kusů, takže při dělitelném podílu vyjde přesná
+   * nula. Kdyby se počítal jako `brutto − vstřebáno`, zbyl by po dělení
+   * (1/3 pozice) zlomek haléře a vyrobil falešné varování o přebytku.
+   */
+  const processReturnOfCapital = (tx: DividendTransaction): void => {
+    const zdanitelne = (amount: Money): void => {
+      returnOfCapitalTaxable.set(tx.id, amount);
+    };
+    const nazev = tx.ticker ?? tx.isin ?? 'vratka kapitálu';
+    if (tx.withholdingTax.gt(0)) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_WITHHELD',
+        'WARNING',
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} má sraženou daň ${moneyText(tx.withholdingTax, tx.currency)} — z vrácení vkladu se daň nesráží, takže řádek daníme jako dividendu (§ 8) i při zapnutém mírnějším výkladu. Zkontroluj ho ve výpisu brokera.`,
+        { txId: tx.id },
+      );
+      return zdanitelne(tx.gross);
+    }
+    const candidates = tx.isin ? openLots(tx.isin) : [];
+    const held = sum(candidates.map((lot) => lot.remaining));
+    if (held.lte(0)) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_NO_POSITION',
+        'WARNING',
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)}: k tomuhle dni už není otevřená pozice, které by šlo snížit nabývací cenu — celá částka ${moneyText(tx.gross, tx.currency)} se daní jako dividenda (§ 8).`,
+        { txId: tx.id },
+      );
+      return zdanitelne(tx.gross);
+    }
+
+    const perShare = tx.gross.div(held);
+    let reduced = ZERO;
+    /** Část připadající na loty v jiné měně — nesnižuje se, daní se (mantinel 3). */
+    let otherCurrency = ZERO;
+    /** Část, kterou nabývací cena neunesla (mantinel 1) — vlastní varování s částkou. */
+    let overBasis = ZERO;
+    for (const lot of candidates) {
+      if (lot.currency !== tx.currency) {
+        otherCurrency = otherCurrency.plus(perShare.mul(lot.remaining));
+        continue;
+      }
+      const reduction = Decimal.min(lot.costPerShare, perShare);
+      lot.costPerShare = lot.costPerShare.sub(reduction);
+      reduced = reduced.plus(reduction.mul(lot.remaining));
+      const excess = perShare.sub(reduction);
+      if (excess.gt(0)) overBasis = overBasis.plus(excess.mul(lot.remaining));
+    }
+    // nabývací ceny se změnily → pořadí kandidátů pro MAX_PROFIT/MAX_LOSS taky
+    invalidateOrder(tx.isin!);
+
+    if (otherCurrency.gt(0)) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_CURRENCY_MISMATCH',
+        'WARNING',
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} je v ${tx.currency}, ale pozice je vedená v jiné měně — část ${moneyText(otherCurrency, tx.currency)} připadající na tyhle kusy se daní jako dividenda (§ 8). Přepočet vratky a nabývací ceny dvěma různými kurzovými soustavami by pozici rozhodil (R-06a).`,
+        { txId: tx.id },
+      );
+    }
+    if (reduced.gt(0)) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_REDUCED_BASIS',
+        'INFO',
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} snížila nabývací cenu pozice o ${moneyText(reduced, tx.currency)} (R-07h) — daň z ní přijde až s prodejem.`,
+        { txId: tx.id },
+      );
+    }
+    if (overBasis.gt(0)) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_EXCESS',
+        'WARNING',
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} přesáhla nabývací cenu pozice o ${moneyText(overBasis, tx.currency)} — přebytek se daní jako dividenda (§ 8).`,
+        { txId: tx.id },
+      );
+    }
+    zdanitelne(otherCurrency.plus(overBasis));
+  };
+
   const processTransferOut = (tx: Extract<Transaction, { type: 'TRANSFER_OUT' }>): void => {
     // Odchozí převod spotřebovává loty ve FIFO pořadí bez ohledu na zvolenou
     // metodu (R-04i), takže může vyprázdnit lot uprostřed seřazeného pohledu —
@@ -657,13 +754,20 @@ export function buildLedger(
       case 'CORPORATE_ACTION':
         processCorporateAction(tx);
         break;
+      case 'DIVIDEND':
+        // R-07h: bez zapnutého mírnějšího výkladu se dividendy (ani vratky
+        // kapitálu) lotů nedotýkají — celý řádek řeší computeDividends
+        if (options.returnOfCapitalReducesBasis && tx.returnOfCapital) {
+          processReturnOfCapital(tx);
+        }
+        break;
       default:
         // DIVIDEND / INTEREST / FEE / FX_CONVERSION / DEPOSIT / WITHDRAWAL loty neovlivňují
         break;
     }
   }
 
-  return { lots, disposals };
+  return { lots, disposals, returnOfCapitalTaxable };
 }
 
 function orderLots(

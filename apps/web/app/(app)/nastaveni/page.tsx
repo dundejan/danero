@@ -192,6 +192,26 @@ export default async function SettingsPage({
                 mírnější čtení má oporu v textu zákona, ale neseš riziko doměrku.
               </p>
             </div>
+            <div>
+              <Label htmlFor="vratka-kapitalu">Vratka kapitálu</Label>
+              <Select
+                id="vratka-kapitalu"
+                name="vratka-kapitalu"
+                defaultValue={(profile?.returnOfCapitalReducesBasis ?? false) ? 'lenient' : 'safe'}
+              >
+                <option value="safe">Bezpečný výklad — zdanit jako dividendu (doporučeno)</option>
+                <option value="lenient">Mírnější výklad — snížit nabývací cenu pozice (sporné)</option>
+              </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Některé fondy a REITy vracejí část vloženého kapitálu (broker to hlásí jako
+                „Return of capital“). Není to podíl na zisku, takže věcně jen snižuje
+                nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních
+                fondů neřeší. Bezpečný výklad daní hned a čerpá limit 50 000 Kč.
+                Volba se týká jen výplat, které jsou ve výpisu takhle označené — u výpisů
+                nahraných před 12. 8. 2026 příznak v datech chybí, takže je potřeba dávku
+                v Zdrojích dat smazat a výpis nahrát znovu.
+              </p>
+            </div>
           </div>
           <p className="text-xs text-inkoust-tlumeny">
             Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se

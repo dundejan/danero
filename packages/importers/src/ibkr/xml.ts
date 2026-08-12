@@ -495,6 +495,39 @@ function processCashTransactions(
         dividendGroups.set(key, group);
         break;
       }
+      /**
+       * R-07h: vratka kapitálu. Schválně MIMO skupinu dividend — je to jiný
+       * druh výplaty a spárovat ji se srážkovou daní téhož dne by z ní udělalo
+       * dividendu se zápočtem. Případná osamocená srážka se ohlásí sama
+       * („Srážková daň bez párové dividendy"), takže se nic neztratí potichu.
+       */
+      case 'Return of Capital': {
+        if (amount.lte(0)) {
+          result.warnings.push({
+            line,
+            message: `Vratka kapitálu ${row.symbol ?? row.isin ?? ''} s částkou ${amount.toString()} ${row.currency} — nezáporná se čekala, řádek přeskočen. Zkontroluj ho ve výpisu.`,
+          });
+          break;
+        }
+        push(line, row, {
+          type: 'DIVIDEND',
+          id,
+          account: accountId || undefined,
+          isin: row.isin || undefined,
+          ticker: row.symbol || undefined,
+          gross: amount.toString(),
+          currency: row.currency,
+          withholdingTax: '0',
+          returnOfCapital: true,
+          date,
+          note: row.description || undefined,
+        });
+        result.warnings.push({
+          line,
+          message: `Return of Capital ${row.symbol ?? row.isin ?? ''}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu pozice (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč; přepnout to jde v Nastavení u „Vratka kapitálu" (R-07h).`,
+        });
+        break;
+      }
       case 'Broker Interest Received':
       case 'Credit Interest': {
         push(line, row, {

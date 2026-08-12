@@ -84,6 +84,7 @@ function demoProfile(): ProfileRow {
     timeTestBasis: 'settlement',
     derivativesExpensesPerType: false,
     emtTimeTestExempt: false,
+    returnOfCapitalReducesBasis: false,
     createdAt: DEMO_PROFILE_AT,
     updatedAt: DEMO_PROFILE_AT,
   };

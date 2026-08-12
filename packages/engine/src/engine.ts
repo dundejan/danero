@@ -381,7 +381,14 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
   const interestTxs = input.transactions.filter(
     (tx): tx is InterestTransaction => tx.type === 'INTEREST' && yearOf(tx.date) === year,
   );
-  const dividends = computeDividends(dividendTxs, interestTxs, fx, options, warnings);
+  const dividends = computeDividends(
+    dividendTxs,
+    interestTxs,
+    fx,
+    options,
+    warnings,
+    ledger.returnOfCapitalTaxable,
+  );
   const derivatives = computeDerivatives(derivativeTxs, year, fx, options, warnings);
 
   // daň se počítá PŘED limity: hlídač 50k z ní vyčísluje dopad prolomení (R-08f)

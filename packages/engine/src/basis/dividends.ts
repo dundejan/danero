@@ -101,6 +101,12 @@ export function computeDividends(
   fx: FxConverter,
   options: EngineOptions,
   warnings: WarningCollector,
+  /**
+   * R-07h: zdanitelný zbytek vratky kapitálu z ledgeru (v měně výplaty).
+   * Chybějící záznam = daní se celá — přepínač se tak vyhodnocuje na jednom
+   * místě (v ledgeru, kde se snížení nabývací ceny opravdu děje).
+   */
+  returnOfCapitalTaxable: Map<string, Money> = new Map(),
 ): DividendsResult {
   let czechGross = ZERO;
   let foreignGross = ZERO;
@@ -118,7 +124,33 @@ export function computeDividends(
   /** Země s už vydaným varováním o neověřené smluvní sazbě — varujeme jednou per země. */
   const unverifiedTreatyWarned = new Set<string>();
 
-  for (const tx of dividends) {
+  for (let tx of dividends) {
+    // R-07h: vratka kapitálu, kterou ledger vstřebal do nabývací ceny, není
+    // příjmem — do § 8 jde jen nevstřebaný zbytek (a s ním i poměrná srážka,
+    // která u vratky stejně nemá co dělat, viz mantinel 4 v docs/02).
+    const roc = returnOfCapitalTaxable.get(tx.id);
+    if (roc !== undefined) {
+      if (roc.lte(0)) continue;
+      tx = { ...tx, gross: roc };
+    } else if (tx.returnOfCapital && !options.returnOfCapitalReducesBasis) {
+      warnings.add(
+        'RETURN_OF_CAPITAL_TAXED_AS_DIVIDEND',
+        'INFO',
+        `${dividendLabel(tx)}: broker označil výplatu za vrácení vloženého kapitálu. Daníme ji jako dividendu (§ 8) a čerpá limity — je to bezpečnější výklad. Mírnější výklad (R-07h) by jí snížil nabývací cenu pozice a daň odložil na prodej; přepnout jde v nastavení.`,
+        { txId: tx.id, isin: tx.isin },
+      );
+    } else if (tx.returnOfCapital) {
+      // Mírnější výklad je ZAPNUTÝ, a přesto se k výplatě nedostal ledger —
+      // stane se to u instrumentu vedeného jako derivát (ten se z ledgeru
+      // vyřazuje, `engine.ts`). Radit uživateli přepnout něco, co má zapnuté,
+      // by ho poslalo hledat chybu na špatné místo.
+      warnings.add(
+        'RETURN_OF_CAPITAL_NOT_APPLIED',
+        'WARNING',
+        `${dividendLabel(tx)}: vratku kapitálu nešlo promítnout do nabývací ceny — instrument je vedený jako derivát, a ten pozice v lotech nemá. Daní se jako dividenda (§ 8).`,
+        { txId: tx.id, isin: tx.isin },
+      );
+    }
     const country = tx.sourceCountry ?? countryFromIsin(tx.isin) ?? 'XX';
     if (country === 'XX') {
       warnings.add(

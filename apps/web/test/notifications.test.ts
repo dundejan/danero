@@ -119,6 +119,7 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
         limit100kStrict: true,
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
+  returnOfCapitalReducesBasis: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -163,6 +164,7 @@ describe('60% pásmo hlídače (LIMIT_WARNING)', () => {
         limit100kStrict: true,
         derivativesExpensesPerType: false,
         emtTimeTestExempt: false,
+        returnOfCapitalReducesBasis: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -220,6 +222,7 @@ describe('hlídací e-maily nesou fakt, ne pokyn (E-12 / V-4)', () => {
         limit100kStrict: true,
         derivativesExpensesPerType: false,
         emtTimeTestExempt: false,
+        returnOfCapitalReducesBasis: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -560,6 +563,7 @@ describe('hlídač neslibuje osvobození tam, kde nepřijde (A2-3-04)', () => {
       limit100kStrict: true,
       derivativesExpensesPerType: false,
       emtTimeTestExempt: false,
+      returnOfCapitalReducesBasis: false,
       timeTestBasis: 'settlement',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -650,6 +654,7 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
       limit100kStrict: true,
       derivativesExpensesPerType: false,
       emtTimeTestExempt: false,
+      returnOfCapitalReducesBasis: false,
       timeTestBasis: 'settlement',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -728,6 +733,7 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
         limit100kStrict: true,
         derivativesExpensesPerType: false,
         emtTimeTestExempt: false,
+        returnOfCapitalReducesBasis: false,
         timeTestBasis: 'settlement',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -944,7 +950,8 @@ describe('naléhavost a formulace podle skutečnosti, ne podle škatulky', () =>
     const profil = {
       userId: 'u-nal', regime: 'PAUSAL', hasBusinessAssets: false, w8benFiled: true,
       otherIncomeCzk: '0', matchingMethod: 'FIFO', fxMethod: 'UNIFIED', limit100kStrict: true,
-      derivativesExpensesPerType: false, emtTimeTestExempt: false, timeTestBasis: 'settlement',
+      derivativesExpensesPerType: false, emtTimeTestExempt: false,
+ returnOfCapitalReducesBasis: false, timeTestBasis: 'settlement',
       createdAt: new Date(), updatedAt: new Date(),
     } as Parameters<typeof analyzeForUser>[1];
     // osvobození 2026-08-09, dnes 2026-08-06 → zbývají 3 dny
@@ -979,7 +986,8 @@ describe('naléhavost a formulace podle skutečnosti, ne podle škatulky', () =>
       engineInputForUser(txs, {
         userId: 'u-prolom', regime: 'OSVC', hasBusinessAssets: false, w8benFiled: true,
         otherIncomeCzk: '0', matchingMethod: 'FIFO', fxMethod: 'UNIFIED', limit100kStrict: true,
-        derivativesExpensesPerType: false, emtTimeTestExempt: false, timeTestBasis: 'settlement',
+        derivativesExpensesPerType: false, emtTimeTestExempt: false,
+ returnOfCapitalReducesBasis: false, timeTestBasis: 'settlement',
         createdAt: new Date(), updatedAt: new Date(),
       } as Parameters<typeof engineInputForUser>[1], 2026),
     );

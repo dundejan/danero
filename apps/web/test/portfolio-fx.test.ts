@@ -34,6 +34,7 @@ const profileRow = (fxMethod: 'UNIFIED' | 'CNB_DAILY'): ProfileRow => ({
   timeTestBasis: 'settlement',
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
+  returnOfCapitalReducesBasis: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 });

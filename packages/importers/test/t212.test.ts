@@ -267,7 +267,9 @@ describe('Trading212 CSV parser', () => {
     expect(result.transactions).toHaveLength(1);
     expect(result.transactions[0]!.type).toBe('DIVIDEND');
     expect(result.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(true);
-    expect(result.warnings.some((w) => w.message.includes('snížení nabývací ceny'))).toBe(true);
+    // varování musí říct, co je věcně správně A že to jde přepnout (R-07h)
+    expect(result.warnings.some((w) => w.message.includes('nabývací cenu pozice'))).toBe(true);
+    expect(result.warnings.some((w) => w.message.includes('Nastavení'))).toBe(true);
 
     // běžná dividenda varování nedostane
     const plain = parseTrading212Csv(
@@ -463,6 +465,31 @@ describe('Trading 212: sporné řádky se nezpracují potichu', () => {
     // číslo se nemění (bezpečný směr), jen se o něm ví
     expect(dividend.gross.toString()).toBe('14.2');
     expect(result.warnings.some((w) => w.message.includes('půjčil'))).toBe(true);
+  });
+
+  it('Return of capital se označí v modelu, ať o něm ví engine (R-07h)', () => {
+    const csv = [
+      HEADER,
+      'Dividend (Return of capital),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,0,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    // parser jen označuje — co je daňově správně, rozhoduje engine podle přepínače
+    expect(dividend.returnOfCapital).toBe(true);
+    expect(dividend.gross.toString()).toBe('14.2');
+    expect(result.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(true);
+  });
+
+  it('běžná dividenda příznak vratky nemá', () => {
+    const csv = [
+      HEADER,
+      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+    ].join('\n');
+    const result = parseTrading212Csv(csv);
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.returnOfCapital).toBe(false);
   });
 
   it('běžná dividenda upozornění nedostane', () => {

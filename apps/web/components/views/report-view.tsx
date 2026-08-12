@@ -205,7 +205,8 @@ export function ReportView({
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
         {pinned && ' (všechny tři zafixovány pro tento rok)'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
-        stablecoiny (EMT): {result.options.emtTimeTestExempt ? 'časový test uplatněn (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'}.
+        stablecoiny (EMT): {result.options.emtTimeTestExempt ? 'časový test uplatněn (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·
+        vratka kapitálu: {result.options.returnOfCapitalReducesBasis ? 'snižuje nabývací cenu (mírnější výklad)' : 'daněna jako dividenda (bezpečný výklad)'}.
         Kurzy: pokyny GFŘ D-49…D-75 (2020–2025), viz dokumentace metodiky.
       </p>
 
@@ -933,7 +934,8 @@ export function ReportView({
           {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
-          stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'}.
+          stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·
+          vratka kapitálu {result.options.returnOfCapitalReducesBasis ? 'snižuje nabývací cenu (mírnější výklad)' : 'daněna jako dividenda (bezpečný výklad)'}.
           Jednotné kurzy 2020–2025 jsou ověřené z pokynů GFŘ řady D; kurz běžného roku je
           orientační do vydání pokynu. Danero je výpočetní nástroj, nikoli daňové poradenství.
         </p>

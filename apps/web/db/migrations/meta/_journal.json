@@ -253,6 +253,13 @@
       "when": 1786443948677,
       "tag": "0035_notification_urgent",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786523768402,
+      "tag": "0036_return_of_capital",
+      "breakpoints": true
     }
   ]
 }

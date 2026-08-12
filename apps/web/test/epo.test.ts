@@ -16,6 +16,7 @@ const PROFILE: ProfileRow = {
   limit100kStrict: true,
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
+  returnOfCapitalReducesBasis: false,
   timeTestBasis: 'settlement',
   createdAt: new Date(),
   updatedAt: new Date(),

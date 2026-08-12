@@ -184,6 +184,7 @@ export function profileToEngine(row: ProfileRow): {
       timeTestDateBasis: row.timeTestBasis as EngineOptions['timeTestDateBasis'],
       derivativesExpensesPerType: row.derivativesExpensesPerType,
       emtTimeTestExempt: row.emtTimeTestExempt,
+      returnOfCapitalReducesBasis: row.returnOfCapitalReducesBasis,
     },
   };
 }

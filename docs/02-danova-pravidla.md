@@ -242,6 +242,59 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   Úrok se v obou případech objeví ve výpisu úroků (časové řady v UI) — dřív
   český úrok mizel úplně, takže 80 000 Kč nezdaněného úroku vyšlo jako
   „základ § 8 = 0, limit 50k nevyčerpán, paušál v pořádku“ (nález A1-3-03).
+- **R-07h Vratka kapitálu (return of capital)**: některé fondy a REITy vyplácejí
+  vedle dividendy i **vrácení části vloženého kapitálu** — brokeři to reportují
+  jako zvláštní druh dividendy (Trading 212 `Dividend (Return of capital)`,
+  IBKR `Return of Capital`). Věcně to není podíl na zisku podle § 8 odst. 1
+  písm. a) ZDP: vyplácí se z vloženého kapitálu, ne ze zisku, a poplatníkovi se
+  jím **vrací část pořizovací ceny**. Příjem tak vzniká až prodejem (nižší
+  nabývací cena = vyšší základ podle § 10), případně hned v části, která
+  pořizovací cenu pozice přesáhne.
+
+  ZDP tenhle případ u **zahraničních** fondů výslovně neupravuje (§ 36 odst. 2
+  míří na snížení základního kapitálu české obchodní korporace) a pokyn GFŘ
+  k němu není. Je to tedy sporný výklad, a proto **konfigurační přepínač
+  `returnOfCapitalReducesBasis` s bezpečným defaultem `false`**:
+
+  - **`false` (default, bezpečný)** — vratka se daní jako dividenda podle
+    R-07b: brutto do dílčího základu § 8, čerpá limity R-08. Nikdy nepodhodnotí
+    daň; jen ji vybere dřív, než by musela být. Engine na to upozorní (INFO
+    `RETURN_OF_CAPITAL_TAXED_AS_DIVIDEND`), ať uživatel ví, že druhý výklad
+    existuje.
+  - **`true` (mírnější)** — vratka **snižuje nabývací cenu otevřených lotů**
+    téhož ISIN k datu výplaty, poměrně podle zbývajícího množství (tedy stejnou
+    mechanikou jako alokace u spin-offu, R-04f), a do § 8 nevstupuje.
+
+  Mantinely mírnějšího výkladu (všechny konzervativním směrem):
+
+  1. **Přebytek nad nabývací cenu** se zdaní jako dividenda podle R-07b
+     (WARNING `RETURN_OF_CAPITAL_EXCESS`). Věcně by šlo o příjem podle § 10,
+     ale ten by vyžadoval fiktivní prodej bez protiplnění; § 8 je jednodušší
+     a nikdy nevyjde nižší.
+  2. **Bez otevřené pozice** (kusy už jsou prodané nebo výplata nemá ISIN) se
+     daní celá částka podle R-07b (WARNING `RETURN_OF_CAPITAL_NO_POSITION`) —
+     nabývací cena, kterou by měla snížit, už neexistuje.
+  3. **Jiná měna než měna lotu** se nepřepočítává a daní se podle R-07b
+     (WARNING `RETURN_OF_CAPITAL_CURRENCY_MISMATCH`): přepočet vratky jednou
+     soustavou a nabývací ceny druhou (R-06a počítá výdaj kurzem roku nákupu)
+     by míchal dvě kurzové soustavy uvnitř jedné pozice.
+  4. **Vratka se sraženou daní** se daní podle R-07b (WARNING
+     `RETURN_OF_CAPITAL_WITHHELD`) — srážka z vratky je vnitřně rozporná
+     (z vrácení vkladu se daň nesráží) a nezdanit příjem, ze kterého se přitom
+     počítá zápočet, by nadhodnotilo koeficient § 38f (táž vada jako A1-3-05).
+
+  Snížení nabývací ceny se propisuje do reportu jako každá jiná úprava lotu
+  (INFO `RETURN_OF_CAPITAL_REDUCED_BASIS` s částkou), takže je průkazné, proč
+  má pozice jinou nabývací cenu než nákupní doklad.
+
+  ⚠️ **Přepínač působí jen na výplaty, které jsou jako vratka OZNAČENÉ.**
+  Příznak zavádějí parsery (Trading 212 `Dividend (Return of capital)`, IBKR
+  `Return of Capital`) až od 12. 8. 2026 — u dřív naimportovaných výpisů
+  v datech není a dopočítat ho zpětně nejde, protože kanonický model si
+  původní popis řádku nedrží. Kdo chce mírnější výklad uplatnit i na starší
+  data, smaže dávku importu a nahraje výpis znovu. Deduplikační otisk příznak
+  ZÁMĚRNĚ neobsahuje (je odvozený z popisu, ne z peněz), takže samotné opakované
+  nahrání téhož souboru nic nezmění — musí se smazat dávka.
 
 ## R-08 Paušální daň (§ 2a, § 7a) — klíčová funkce Danero
 
@@ -582,6 +635,7 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `treatyInterestWithholdingCap` / `defaultInterestTreatyCap` | ověřené státy dle tabulky, jinak `0` (bezpečný) | R-07f |
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
+| `returnOfCapitalReducesBasis` | `false` (vratku kapitálu zdanit jako dividendu) | R-07h |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 

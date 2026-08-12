@@ -210,6 +210,22 @@ describe('IBKR Flex XML parser', () => {
     expect(outcome.duplicates).toBe(result.transactions.length);
   });
 
+  it('Return of Capital se naimportuje s příznakem, ne jako neznámý pohyb (R-07h)', () => {
+    const xml = wrapStatement(`<CashTransactions>
+      <CashTransaction type="Return of Capital" symbol="O" isin="US7561091049" description="RETURN OF CAPITAL" currency="USD" amount="12.50" dateTime="20250401" levelOfDetail="DETAIL" />
+    </CashTransactions>`);
+    const parsed = parseIbkrFlexXml(xml);
+
+    // dřív skončil řádek chybou „Neznámý typ hotovostního pohybu“ a import padal
+    expect(parsed.errors).toEqual([]);
+    const dividend = parsed.transactions.find((t) => t.type === 'DIVIDEND');
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.returnOfCapital).toBe(true);
+    expect(dividend.gross.toString()).toBe('12.5');
+    expect(dividend.withholdingTax.toString()).toBe('0');
+    expect(parsed.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(true);
+  });
+
   it('id bez transactionID jsou stabilní vůči obsahu, ne pořadí v souboru', () => {
     const deposit = wrapStatement(`<CashTransactions>
       <CashTransaction type="Deposits/Withdrawals" description="CASH RECEIPT" currency="CZK" amount="100000" dateTime="20240605" levelOfDetail="DETAIL" />

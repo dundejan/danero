@@ -31,6 +31,19 @@ export function czkText(m: Money): string {
   return `${czNumber(m.toDecimalPlaces(0, Decimal.ROUND_HALF_UP))}${NBSP}Kč`;
 }
 
+/**
+ * Částka v CIZÍ měně: „1 234,56 USD“. Na rozdíl od `czkText` se zaokrouhluje
+ * na dvě desetinná místa (haléře cizí měny mají smysl) a jednotkou je kód měny.
+ *
+ * Existuje kvůli tomu, že `Decimal.toString()` v hlášce vypíše celý periodický
+ * rozvoj: vratka kapitálu 100 CZK na 3 kusy dala „snížila nabývací cenu
+ * o 99.99999999999999999999999999999999 CZK“ (týž případ jako nález A1-3-08
+ * u počtu kusů). Do textu pro člověka nesmí jít syrový Decimal.
+ */
+export function moneyText(m: Money, currency: string): string {
+  return `${czNumber(m.toDecimalPlaces(2, Decimal.ROUND_HALF_UP), 2)}${NBSP}${currency}`;
+}
+
 /** Desetinný zlomek jako procento: pctText(d('0.15')) → „15 %“; pctText(r, 2) → „93,75 %“. */
 export function pctText(fraction: Money, decimalPlaces = 0): string {
   const value = fraction.mul(100).toDecimalPlaces(decimalPlaces, Decimal.ROUND_HALF_UP);

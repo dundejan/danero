@@ -68,6 +68,17 @@ export const DividendTxSchema = z.object({
   withholdingTax: NonNegativeMoney.default(ZERO),
   /** Země zdroje; pokud chybí, odvodí se z prefixu ISIN. */
   sourceCountry: Country.optional(),
+  /**
+   * R-07h: broker označil výplatu za vrácení vloženého kapitálu, ne za podíl
+   * na zisku (Trading 212 `Dividend (Return of capital)`, IBKR `Return of
+   * Capital`). Zachází se s ní podle přepínače `returnOfCapitalReducesBasis`;
+   * default ji daní jako běžnou dividendu, tedy bezpečným směrem.
+   *
+   * Do deduplikačního otisku pole ZÁMĚRNĚ nevstupuje (`contentFingerprint`):
+   * je odvozené z popisu řádku, ne z peněz, takže by jeho přidání změnilo
+   * klíče už uloženým transakcím a tentýž výpis by se naimportoval podruhé.
+   */
+  returnOfCapital: z.boolean().default(false),
   date: IsoDateSchema,
 });
 

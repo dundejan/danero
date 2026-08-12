@@ -205,13 +205,14 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'DIVIDEND': {
-          // Return of capital: správně jde o snížení nabývací ceny pozice, ne příjem —
-          // konzervativně (bezpečný směr) danit jako dividendu, ale říct to uživateli
-          // (otevřený bod docs/14 #14 — vyžaduje produktové rozhodnutí)
-          if (action.toLowerCase().includes('return of capital')) {
+          // R-07h: vratka kapitálu není podíl na zisku, ale vrácení části vkladu.
+          // Označí se v modelu a zbytek řeší engine podle přepínače — parser
+          // sám nerozhoduje, co je daňově správně.
+          const returnOfCapital = action.toLowerCase().includes('return of capital');
+          if (returnOfCapital) {
             result.warnings.push({
               line,
-              message: `${action}: vratka kapitálu se konzervativně daní jako dividenda (§ 8) a čerpá limit 50 000 Kč paušální daně. Věcně správné zacházení je snížení nabývací ceny pozice (nižší daň až při prodeji) — pokud jde o významnou částku, uprav historii ručně nebo se poraď s poradcem.`,
+              message: `${action}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu pozice (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`,
             });
           }
           // B-3-10: náhrada za dividendu u zapůjčených akcií (T212 půjčuje kusy
@@ -281,6 +282,7 @@ export function parseTrading212Csv(text: string): ImportResult {
               gross,
               currency,
               withholdingTax: withholding,
+              returnOfCapital,
               date,
             }),
           );

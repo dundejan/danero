@@ -112,6 +112,8 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   derivativesExpensesPerType: boolean('derivatives_expenses_per_type').notNull().default(false),
   // R-10g: časový test osvobozuje i stablecoiny (EMT)? (default = bezpečné NE, zdanit)
   emtTimeTestExempt: boolean('emt_time_test_exempt').notNull().default(false),
+  // R-07h: vratka kapitálu snižuje nabývací cenu místo zdanění (default = bezpečné NE)
+  returnOfCapitalReducesBasis: boolean('return_of_capital_reduces_basis').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

@@ -53,6 +53,7 @@ const form = (castka: string): FormData => {
     'zaklad-casoveho-testu': 'settlement',
     'derivaty-vydaje': 'restrictive',
     'emt-casovy-test': 'safe',
+    'vratka-kapitalu': 'safe',
   })) {
     data.append(key, value);
   }
