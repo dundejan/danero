@@ -1,5 +1,5 @@
 import { d, TransactionSchema } from '@danero/shared';
-import { isValidIsoDate } from '../csv';
+import { detectDecimalSeparator, isAmbiguousThousandGroup, isValidIsoDate } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -8,7 +8,7 @@ export const DEGIRO_BROKER = 'degiro';
 /**
  * Parser Degiro exportů (docs/03): dva soubory — Transactions.csv (obchody)
  * a Account.csv (peněžní pohyby vč. korporátních akcí jako textových párových
- * řádků). Formát je lokalizovaný: hlavičky i popisy CZ/EN/NL, oddělovač
+ * řádků). Formát je lokalizovaný: hlavičky i popisy CZ/EN/NL/DE/FR, oddělovač
  * středník NEBO čárka (detekce z hlavičky), čísla s desetinnou čárkou i tečkou,
  * datum dd-MM-yyyy. Částka a měna tvoří DVOJICI pojmenovaný + bezejmenný
  * sloupec: Transactions.csv má číslo v pojmenovaném (Kurz) a měnu za ním,
@@ -115,7 +115,7 @@ function detectDelimiter(text: string): ';' | ',' {
  * Konzervativně: poslední oddělovač = desetinný; víc výskytů téhož = tisíce.
  * Vrací normalizovaný string s desetinnou tečkou, nebo null (prázdné/nečíslo).
  */
-function parseDegiroNumber(value: string): string | null {
+function parseDegiroNumber(value: string, decimal: DecimalSeparator = ','): string | null {
   let v = value.replace(/[\s\u00a0]/g, '');
   if (v === '' || v === '-') return null;
   const hasComma = v.includes(',');
@@ -128,12 +128,32 @@ function parseDegiroNumber(value: string): string | null {
     }
   } else if (hasComma) {
     const parts = v.split(',');
-    v = parts.length > 2 ? parts.join('') : parts.join('.');
-  } else if (hasDot && v.split('.').length > 2) {
-    v = v.replaceAll('.', '');
+    // víc čárek = jistě tisíce; jedna čárka + trojčíslí rozhodne lokalizace
+    // souboru (v anglickém exportu je „1,000“ tisíc kusů, v holandském jedna)
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(v) && decimal === '.');
+    v = thousands ? parts.join('') : parts.join('.');
+  } else if (hasDot) {
+    const parts = v.split('.');
+    // Zrcadlově: „1.000“ je v holandském/českém exportu TISÍC. Do 12. 8. 2026
+    // se tahle větev nebrala v úvahu vůbec, takže 1 000 kusů se uložilo jako
+    // 1 kus — tiše, bez chyby i bez varování.
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(v) && decimal !== '.');
+    v = thousands ? parts.join('') : v;
   }
   return /^-?\d+(\.\d+)?$/.test(v) ? v : null;
 }
+
+/** Desetinný oddělovač souboru; `null` = soubor nedal důkaz (viz warning níž). */
+type DecimalSeparator = ',' | '.' | null;
+
+/**
+ * Věta pro uživatele k nerozhodnutelnému zápisu — soubor nedal jediné číslo,
+ * ze kterého by šla lokalizace poznat, takže voláme po kontrole očima.
+ */
+const ambiguousNote = (field: string, raw: string, used: string): string =>
+  `${field} „${raw}“ jsme přečetli jako ${used}. Tenhle výpis nikde neprozrazuje, jestli tečka a čárka ` +
+  'oddělují tisíce, nebo desetinná místa — zkontroluj si ten řádek ve výpisu; kdyby to bylo naopak, ' +
+  'lišila by se hodnota tisíckrát.';
 
 /** Degiro datum dd-MM-yyyy → ISO YYYY-MM-DD; neexistující kalendářní den → null. */
 function toIsoDate(value: string): string | null {
@@ -143,17 +163,32 @@ function toIsoDate(value: string): string | null {
   return isValidIsoDate(iso) ? iso : null;
 }
 
-/* ── Hlavičky (CZ/EN/NL synonyma) ────────────────────────────────────────── */
+/* ── Hlavičky (CZ/EN/NL/DE/FR synonyma) ──────────────────────────────────── */
 
+/*
+ * Degiro exportuje v jazyce rozhraní. Klasifikace POPISŮ níž zná pět jazyků
+ * (CZ/EN/NL/DE/FR), hlavičky ale do 12. 8. 2026 uměly jen tři — německý
+ * a francouzský výpis tak neprošel ani autodetekcí a celá DE/FR větev
+ * klasifikace byla nedosažitelný kód. Pozor na dvojici `kurz` (CZ) vs.
+ * `kurs` (DE): liší se jediným písmenem a znamenají totéž.
+ */
 const DATE_HEADERS = ['datum', 'date'];
-const TIME_HEADERS = ['čas', 'time', 'tijd'];
-const PRODUCT_HEADERS = ['produkt', 'product'];
-const QUANTITY_HEADERS = ['počet', 'quantity', 'aantal'];
-const PRICE_HEADERS = ['kurz', 'price', 'koers'];
-const TOTAL_HEADERS = ['celkem', 'total', 'totaal'];
-const ORDER_ID_HEADERS = ['id objednávky', 'order id', 'ordernummer'];
-const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving'];
-const CHANGE_HEADERS = ['změna', 'change', 'mutatie'];
+const TIME_HEADERS = ['čas', 'time', 'tijd', 'uhrzeit', 'heure'];
+const PRODUCT_HEADERS = ['produkt', 'product', 'produit'];
+const QUANTITY_HEADERS = ['počet', 'quantity', 'aantal', 'anzahl', 'nombre', 'quantité'];
+const PRICE_HEADERS = ['kurz', 'price', 'koers', 'kurs', 'cours', 'prix'];
+const TOTAL_HEADERS = ['celkem', 'total', 'totaal', 'gesamt'];
+const ORDER_ID_HEADERS = [
+  'id objednávky',
+  'order id',
+  'ordernummer',
+  'order-id',
+  'auftrags-id',
+  'id de l ordre',
+  "id de l'ordre",
+];
+const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving', 'beschreibung'];
+const CHANGE_HEADERS = ['změna', 'change', 'mutatie', 'änderung', 'anderung', 'variation'];
 
 /** Poplatkový sloupec má dlouhý lokalizovaný název → fuzzy shoda. */
 const isFeeHeader = (lower: string): boolean =>
@@ -161,7 +196,10 @@ const isFeeHeader = (lower: string): boolean =>
   (lower.includes('poplatek') ||
     lower.includes('fee') ||
     lower.includes('costs') ||
-    lower.includes('kosten'));
+    lower.includes('kosten') ||
+    lower.includes('gebühr') ||
+    lower.includes('gebuhr') ||
+    lower.includes('frais'));
 
 /** Najde sloupec podle přesných synonym (case-insensitive), případně fuzzy predikátem. */
 function findColumn(
@@ -187,7 +225,7 @@ const cell = (row: string[], index: number): string =>
 const isCurrency = (value: string): boolean => /^[A-Z]{3}$/.test(value);
 
 type AmountCurrencyPair =
-  | { kind: 'ok'; amount: string; currency: string }
+  | { kind: 'ok'; amount: string; currency: string; raw: string }
   | { kind: 'empty' }
   | { kind: 'invalid' };
 
@@ -197,7 +235,11 @@ type AmountCurrencyPair =
  * sloupci MĚNU a v bezejmenném ČÁSTKU, jiné varianty pořadí opačné — rozhoduje
  * obsah (třípísmenný kód = měna, parsovatelné číslo = částka), obě pořadí OK.
  */
-function readAmountCurrencyPair(row: string[], namedIndex: number): AmountCurrencyPair {
+function readAmountCurrencyPair(
+  row: string[],
+  namedIndex: number,
+  decimal: DecimalSeparator,
+): AmountCurrencyPair {
   const first = cell(row, namedIndex);
   const second = cell(row, namedIndex + 1);
   if (first === '' && second === '') return { kind: 'empty' };
@@ -206,8 +248,8 @@ function readAmountCurrencyPair(row: string[], namedIndex: number): AmountCurren
     [second, first],
   ] as const) {
     if (!isCurrency(currency)) continue;
-    const amount = parseDegiroNumber(amountRaw);
-    if (amount !== null) return { kind: 'ok', amount, currency };
+    const amount = parseDegiroNumber(amountRaw, decimal);
+    if (amount !== null) return { kind: 'ok', amount, currency, raw: amountRaw };
   }
   return { kind: 'invalid' };
 }
@@ -277,6 +319,9 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     return result;
   }
 
+  // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (viz csv.ts)
+  const decimal = detectDecimalSeparator(rows.flat());
+
   const nextId = uniqueIdFactory();
 
   rows.forEach((row, rowIndex) => {
@@ -294,8 +339,20 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     }
 
     const isin = cell(row, col.isin);
-    const quantityRaw = parseDegiroNumber(cell(row, col.quantity));
-    const priceRaw = parseDegiroNumber(cell(row, col.price));
+    const quantityRaw = parseDegiroNumber(cell(row, col.quantity), decimal);
+    const priceRaw = parseDegiroNumber(cell(row, col.price), decimal);
+    // nerozhodnutelný zápis bez důkazu ze souboru → řekni to nahlas
+    if (decimal === null) {
+      for (const [field, index, parsed] of [
+        ['Počet kusů', col.quantity, quantityRaw],
+        ['Kurz', col.price, priceRaw],
+      ] as const) {
+        const raw = cell(row, index);
+        if (parsed !== null && isAmbiguousThousandGroup(raw)) {
+          result.warnings.push({ line, message: ambiguousNote(field, raw, parsed) });
+        }
+      }
+    }
     if (!isin || quantityRaw === null || priceRaw === null) {
       result.errors.push({
         line,
@@ -329,7 +386,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
     // poplatek: záporná částka, měna hned za ním; může být prázdný
     let fee: { amount: string; currency: string } | undefined;
     if (col.fee >= 0) {
-      const feeRaw = parseDegiroNumber(cell(row, col.fee));
+      const feeRaw = parseDegiroNumber(cell(row, col.fee), decimal);
       if (feeRaw !== null && !d(feeRaw).eq(0)) {
         const feeCurrency = cell(row, col.fee + 1);
         if (isCurrency(feeCurrency)) {
@@ -475,7 +532,17 @@ function classifyDescription(description: string): AccountKind {
   for (const { subtype, pattern } of CORPORATE_PATTERNS) {
     if (pattern.test(lower)) return { kind: 'CORPORATE', subtype };
   }
-  if (containsAny(lower, ['daň z dividendy', 'dividend tax', 'dividendbelasting']))
+  if (
+    containsAny(lower, [
+      'daň z dividendy',
+      'dividend tax',
+      'dividendbelasting',
+      'dividendensteuer',
+      'quellensteuer',
+      'retenue à la source',
+      'retenue a la source',
+    ])
+  )
     return { kind: 'DIVIDEND_TAX' };
   if (containsAny(lower, ['dividenda', 'dividend'])) return { kind: 'DIVIDEND' };
   // sweep/peněžní trh dřív než úrok („Flatex Interest“ obsahuje „interest“)
@@ -488,6 +555,11 @@ function classifyDescription(description: string): AccountKind {
       'fx debit',
       'valuta creditering',
       'valuta debitering',
+      'währungswechsel',
+      'wahrungswechsel',
+      'devisen',
+      'conversion de devise',
+      'change de devise',
     ])
   )
     return { kind: 'SKIP', reason: 'FX konverze — pro daňový výpočet CP není potřeba' };
@@ -499,13 +571,25 @@ function classifyDescription(description: string): AccountKind {
       'degiro transaction fee',
       'transactiekosten',
       'transakční poplatek',
+      'anschlusskosten',
+      'transaktionsgebühr',
+      'transaktionsgebuhr',
+      'gebühren',
+      'gebuhren',
+      'frais de connexion',
+      'frais de transaction',
     ])
   )
     return { kind: 'FEE' };
   // výběr dřív než vklad („Terugstorting“ obsahuje „storting“)
-  if (containsAny(lower, ['výběr', 'withdrawal', 'terugstorting'])) return { kind: 'WITHDRAWAL' };
-  if (containsAny(lower, ['vklad', 'deposit', 'storting', 'ideal'])) return { kind: 'DEPOSIT' };
-  if (containsAny(lower, ['úrok', 'interest', 'rente'])) return { kind: 'INTEREST' };
+  if (containsAny(lower, ['výběr', 'withdrawal', 'terugstorting', 'auszahlung', 'retrait']))
+    return { kind: 'WITHDRAWAL' };
+  if (
+    containsAny(lower, ['vklad', 'deposit', 'storting', 'ideal', 'einzahlung', 'versement', 'dépôt'])
+  )
+    return { kind: 'DEPOSIT' };
+  if (containsAny(lower, ['úrok', 'interest', 'rente', 'zinsen', 'intérêt', 'interet']))
+    return { kind: 'INTEREST' };
   return { kind: 'UNKNOWN' };
 }
 
@@ -530,12 +614,12 @@ function legDirection(lowerDescription: string): 'out' | 'in' | null {
 }
 
 /** Počet kusů z popisu („Uitboeking 10 …“) — jen číslo HNED za klíčovým slovem (ne cifry z ISIN). */
-function legQuantity(description: string): string | null {
+function legQuantity(description: string, decimal: DecimalSeparator): string | null {
   const match = new RegExp(
     `(?:${[...LEG_OUT_WORDS, ...LEG_IN_WORDS].join('|')})[\\s:]*(\\d+(?:[.,]\\d+)?)`,
     'i',
   ).exec(description);
-  return match ? parseDegiroNumber(match[1]!) : null;
+  return match ? parseDegiroNumber(match[1]!, decimal) : null;
 }
 
 /** České popisky akcí do chybových hlášek (uživatel je čte). */
@@ -578,6 +662,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     description: findColumn(headers, DESCRIPTION_HEADERS),
     change: findColumn(headers, CHANGE_HEADERS),
   };
+  const decimal = detectDecimalSeparator(rows.flat());
   if (col.date < 0 || col.description < 0 || col.change < 0) {
     result.errors.push({
       line: 1,
@@ -665,7 +750,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
         line,
         isin,
         direction: legDirection(description.toLowerCase()),
-        quantity: legQuantity(description),
+        quantity: legQuantity(description, decimal),
         date: isoDate,
         description,
       });
@@ -691,7 +776,10 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     }
 
     // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
-    const pair = readAmountCurrencyPair(row, col.change);
+    const pair = readAmountCurrencyPair(row, col.change, decimal);
+    if (decimal === null && pair.kind === 'ok' && isAmbiguousThousandGroup(pair.raw)) {
+      result.warnings.push({ line, message: ambiguousNote('Částka', pair.raw, pair.amount) });
+    }
     // prázdná dvojice u ROZPOZNANÉHO popisu = informativní řádek bez peněžního
     // pohybu → bez záznamu (např. avízo dividendy před připsáním)
     if (pair.kind === 'empty') {

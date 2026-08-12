@@ -183,6 +183,53 @@ export function isAmbiguousThousands(value: string): boolean {
 }
 
 /**
+ * Zápis `1.000` / `1,234` — jedna skupina přesně tří číslic, tedy neodlišitelně
+ * tisíce nebo tři desetinná místa. Sám o sobě nerozhodnutelný; rozhodne až
+ * `detectDecimalSeparator` nad celým souborem.
+ */
+export function isAmbiguousThousandGroup(value: string): boolean {
+  return /^-?\d{1,3}[.,]\d{3}$/.test(value.replace(/[\s\u00a0\u202f]/g, ''));
+}
+
+/**
+ * Desetinný oddělovač CELÉHO souboru z jeho vlastních čísel (B-3-12).
+ *
+ * Broker píše čísla podle lokalizace, kterou nikde neuvádí: `1.000` je
+ * v holandském exportu Degira tisíc kusů, v anglickém jedna celá nula.
+ * Z jedné buňky to rozhodnout nejde, ze souboru ano — stačí jediné číslo,
+ * které jednoznačné je (`26,45` = desetinná čárka, `185.50` = desetinná tečka,
+ * `1.234,56` i `1,234.56` = obojí zároveň). Hlasování přes celý soubor je
+ * odolné i vůči jednomu divnému políčku.
+ *
+ * `null` = soubor neobsahuje jediné rozhodující číslo → volající musí
+ * nejednoznačné hodnoty ohlásit uživateli, ne tiše hádat.
+ */
+export function detectDecimalSeparator(values: Iterable<string>): ',' | '.' | null {
+  let comma = 0;
+  let dot = 0;
+  for (const raw of values) {
+    const value = raw.replace(/[\s\u00a0\u202f]/g, '');
+    if (!/^-?[\d.,]+$/.test(value) || value === '') continue;
+    const lastComma = value.lastIndexOf(',');
+    const lastDot = value.lastIndexOf('.');
+    if (lastComma >= 0 && lastDot >= 0) {
+      // oba oddělovače naráz: ten poslední je desetinný
+      if (lastComma > lastDot) comma += 1;
+      else dot += 1;
+      continue;
+    }
+    // jediný oddělovač: rozhoduje počet číslic za ním (tři = nerozhodnutelné)
+    const single = /^-?\d+([.,])(\d+)$/.exec(value);
+    if (!single) continue;
+    if (single[2]!.length === 3) continue;
+    if (single[1] === ',') comma += 1;
+    else dot += 1;
+  }
+  if (comma === dot) return null;
+  return comma > dot ? ',' : '.';
+}
+
+/**
  * Evropský číselný zápis → kanonický: „1 234,56“ i „1.234,56“ → „1234.56“.
  * Použij tam, kde formát PROKAZATELNĚ píše desetinnou čárku — na US zápis
  * s tisícovými čárkami patří cleanNumber.

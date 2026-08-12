@@ -1,7 +1,15 @@
 import { d, TransactionSchema, type Decimal } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { emptyResult, type ImportResult } from '../types';
-import { isIsoCurrency, parseRevolutMoney, REVOLUT_BROKER, revolutIdFactory } from './common';
+import {
+  detectRevolutDecimal,
+  isIsoCurrency,
+  parseRevolutMoney,
+  type RevolutMoney,
+  REVOLUT_BROKER,
+  revolutAmbiguityNote,
+  revolutIdFactory,
+} from './common';
 
 /**
  * Parser krypto výpisů Revolutu — dva historické formáty:
@@ -23,10 +31,11 @@ const OLD_SNIFF_HEADERS = ['Started Date', 'Completed Date', 'Base currency', 'F
 type CryptoFormat = 'new' | 'old';
 
 function detectCryptoFormat(headers: string[]): CryptoFormat | null {
-  // nový formát: hlavička je přesně těchto 7 sloupců (žádné falešné pozitivy)
-  if (headers.length === NEW_HEADERS.length && NEW_HEADERS.every((h, i) => headers[i] === h)) {
-    return 'new';
-  }
+  // Nový formát: všech sedm sloupců JE v hlavičce — na pořadí ani na sloupci
+  // navíc nezáleží (parser čte podle názvů). Porovnání na přesnou délku
+  // a pořadí znamenalo, že jediný přidaný sloupec import zabil a uživatel
+  // dostal hlášku univerzální šablony o nečitelném datu.
+  if (NEW_HEADERS.every((name) => headers.includes(name))) return 'new';
   if (OLD_SNIFF_HEADERS.every((name) => headers.includes(name))) return 'old';
   return null;
 }
@@ -45,6 +54,8 @@ export function parseRevolutCryptoCsv(text: string): ImportResult {
   if (text.trim() === '') return result;
 
   const { headers, rows } = parseCsv(text);
+  // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (B-3-12)
+  const decimal = detectRevolutDecimal(rows);
   const format = detectCryptoFormat(headers);
   if (format === null) {
     result.errors.push({
@@ -66,12 +77,14 @@ export function parseRevolutCryptoCsv(text: string): ImportResult {
     }
   };
 
-  if (format === 'new') parseNewFormat(headers, rows, result, push);
+  if (format === 'new') parseNewFormat(headers, rows, result, push, decimal);
   else parseOldFormat(headers, rows, result, push);
   return result;
 }
 
 type PushFn = (line: number, raw: string, candidate: Record<string, unknown>) => void;
+/** Desetinný oddělovač souboru; null = výpis ho neprozradil (viz varování). */
+type DecimalSeparator = ',' | '.' | null;
 
 /* ── Nový formát (2023+): Symbol,Type,Quantity,Price,Value,Fees,Date ─────── */
 
@@ -146,8 +159,10 @@ function parseNewFormat(
   rows: string[][],
   result: ImportResult,
   push: PushFn,
+  decimal: DecimalSeparator,
 ): void {
   const map = new HeaderMap(headers);
+  const money = (value: string): RevolutMoney | null => parseRevolutMoney(value, decimal);
   const nextId = revolutIdFactory();
 
   rows.forEach((row, rowIndex) => {
@@ -189,8 +204,12 @@ function parseNewFormat(
       result.errors.push({ line, message: `${type}: chybí symbol kryptoaktiva.`, raw });
       return;
     }
-    const quantityMoney = parseRevolutMoney(map.get(row, 'Quantity'));
+    const quantityMoney = money(map.get(row, 'Quantity'));
     const quantity = quantityMoney ? d(quantityMoney.amount).abs() : null;
+    if (decimal === null && quantity !== null) {
+      const note = revolutAmbiguityNote('Množství', map.get(row, 'Quantity'), quantity.toString());
+      if (note !== null) result.warnings.push({ line, message: note });
+    }
     if (!quantity || quantity.lte(0)) {
       result.errors.push({
         line,
@@ -202,8 +221,8 @@ function parseNewFormat(
 
     // Price = jednotková cena ve fiat, Value = celkem; měnu určuje symbol/kód
     // uvnitř hodnoty (€ → EUR, $ → USD, £ → GBP, „137,211.36 SEK“ → SEK)
-    const priceMoney = parseRevolutMoney(map.get(row, 'Price'));
-    const valueMoney = parseRevolutMoney(map.get(row, 'Value'));
+    const priceMoney = money(map.get(row, 'Price'));
+    const valueMoney = money(map.get(row, 'Value'));
     const currency = priceMoney?.currency ?? valueMoney?.currency ?? null;
     if (currency === null || !isIsoCurrency(currency)) {
       result.errors.push({
@@ -228,7 +247,7 @@ function parseNewFormat(
     }
 
     // poplatek zvlášť ze sloupce Fees; nulový se neukládá
-    const feesMoney = parseRevolutMoney(map.get(row, 'Fees'));
+    const feesMoney = money(map.get(row, 'Fees'));
     const feeAmount = feesMoney ? d(feesMoney.amount).abs() : null;
     const fee =
       feeAmount && feeAmount.gt(0)
@@ -271,12 +290,9 @@ function parsePlainNumber(value: string): Decimal | null {
   return /^-?\d+(\.\d+)?$/.test(trimmed) ? d(trimmed) : null;
 }
 
-function parseOldFormat(
-  headers: string[],
-  rows: string[][],
-  result: ImportResult,
-  push: PushFn,
-): void {
+function parseOldFormat(headers: string[], rows: string[][], result: ImportResult, push: PushFn): void {
+  // starší formát má čísla vždy s desetinnou tečkou (parseOldNumber), takže
+  // lokalizaci souboru tady řešit netřeba
   const map = new HeaderMap(headers);
   const missing = OLD_REQUIRED_HEADERS.filter((name) => !map.has(name));
   if (missing.length > 0) {

@@ -1,7 +1,14 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
-import { isIsoCurrency, parseRevolutMoney, REVOLUT_BROKER, revolutIdFactory } from './common';
+import {
+  detectRevolutDecimal,
+  isIsoCurrency,
+  parseRevolutMoney,
+  REVOLUT_BROKER,
+  revolutAmbiguityNote,
+  revolutIdFactory,
+} from './common';
 
 /**
  * Parser akciového „Account statement“ CSV z Revolutu. Výpis neobsahuje ISIN
@@ -23,8 +30,14 @@ const REQUIRED_HEADERS = [
   'Currency',
 ] as const;
 
-/** Sloupce, podle kterých akciový výpis poznáme (kombinace je revolut-specifická). */
-const SNIFF_HEADERS = ['Date', 'Ticker', 'Type', 'Price per share', 'FX Rate'] as const;
+/**
+ * Sloupce, podle kterých akciový výpis poznáme — kombinace je revolut-specifická.
+ * Musí to být PODMNOŽINA toho, co parser vyžaduje: sniffer přísnější než parser
+ * znamená, že soubor, který umíme přečíst, propadne na univerzální šablonu
+ * a uživatel čte hlášku o „neznámém typu BUY - MARKET“. Proto tu není `FX Rate`
+ * (parser ho ignoruje, kurzy počítá engine z ČNB).
+ */
+const SNIFF_HEADERS = ['Date', 'Ticker', 'Type', 'Quantity', 'Price per share'] as const;
 
 export function sniffRevolutInvestCsv(text: string): boolean {
   if (text.trim() === '') return false;
@@ -44,8 +57,10 @@ type InvestKind =
 
 /** Klasifikace řádku podle sloupce Type (hodnoty jsou ve výpisu uppercase). */
 function classifyInvestType(type: string): InvestKind {
-  if (/^BUY - (MARKET|LIMIT|STOP)$/.test(type)) return { kind: 'BUY' };
-  if (/^SELL - (MARKET|LIMIT|STOP)$/.test(type)) return { kind: 'SELL' };
+  // směr nese první slovo; typ příkazu (MARKET/LIMIT/STOP/STOP LIMIT/…) je pro
+  // daň lhostejný a Revolut si ho rozšiřuje, ať kvůli tomu obchod nezmizí
+  if (/^BUY - \S/.test(type)) return { kind: 'BUY' };
+  if (/^SELL - \S/.test(type)) return { kind: 'SELL' };
   if (type === 'DIVIDEND') return { kind: 'DIVIDEND' };
   if (type === 'CASH TOP-UP')
     return { kind: 'SKIP', reason: 'vklad hotovosti — pohyb peněz mimo daňový výpočet CP' };
@@ -71,6 +86,10 @@ export function parseRevolutInvestCsv(
   if (text.trim() === '') return result;
 
   const { headers, rows } = parseCsv(text);
+  // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (B-3-12)
+  const decimal = detectRevolutDecimal(rows);
+  const money = (value: string): ReturnType<typeof parseRevolutMoney> =>
+    parseRevolutMoney(value, decimal);
   const map = new HeaderMap(headers);
   const missing = REQUIRED_HEADERS.filter((name) => !map.has(name));
   if (missing.length > 0) {
@@ -148,8 +167,16 @@ export function parseRevolutInvestCsv(
           });
           return;
         }
-        const quantityMoney = parseRevolutMoney(map.get(row, 'Quantity'));
+        const quantityMoney = money(map.get(row, 'Quantity'));
         const quantity = quantityMoney ? d(quantityMoney.amount) : null;
+        if (decimal === null && quantity !== null) {
+          const note = revolutAmbiguityNote(
+            'Počet kusů',
+            map.get(row, 'Quantity'),
+            quantity.toString(),
+          );
+          if (note !== null) result.warnings.push({ line, message: note });
+        }
         if (!quantity || quantity.lte(0)) {
           result.errors.push({
             line,
@@ -160,8 +187,8 @@ export function parseRevolutInvestCsv(
         }
         // Price per share je přesná jednotková cena; Total Amount jen jako
         // fallback (Total/Quantity) — Revolut ho zaokrouhluje
-        const priceMoney = parseRevolutMoney(map.get(row, 'Price per share'));
-        const totalMoney = parseRevolutMoney(map.get(row, 'Total Amount'));
+        const priceMoney = money(map.get(row, 'Price per share'));
+        const totalMoney = money(map.get(row, 'Total Amount'));
         const price = priceMoney
           ? d(priceMoney.amount).abs()
           : totalMoney
@@ -190,7 +217,7 @@ export function parseRevolutInvestCsv(
         return;
       }
       case 'DIVIDEND': {
-        const totalMoney = parseRevolutMoney(map.get(row, 'Total Amount'));
+        const totalMoney = money(map.get(row, 'Total Amount'));
         const gross = totalMoney ? d(totalMoney.amount) : null;
         if (!gross || gross.lte(0)) {
           result.errors.push({
@@ -226,7 +253,7 @@ export function parseRevolutInvestCsv(
         return;
       }
       case 'FEE': {
-        const totalMoney = parseRevolutMoney(map.get(row, 'Total Amount'));
+        const totalMoney = money(map.get(row, 'Total Amount'));
         if (!totalMoney) {
           result.errors.push({
             line,

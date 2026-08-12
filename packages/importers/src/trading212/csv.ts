@@ -95,6 +95,15 @@ export function sniffTrading212Csv(text: string): boolean {
  * sadu i pořadí podle zvolených kategorií. Datum vypořádání export neobsahuje,
  * engine ho dopočítá (T+1 US od 28. 5. 2024 a CA od 27. 5. 2024, jinak T+2).
  */
+/**
+ * Věta k nerozhodnutelnému počtu kusů (B-3-12) — jedna definice pro obchody
+ * i dividendy: u obou se z kusů počítá číslo, které jde do přiznání.
+ */
+const ambiguousSharesNote = (sharesRaw: string): string =>
+  `Počet kusů „${sharesRaw}“ jsme přečetli jako ${cleanNumber(sharesRaw)}. Čárka tu může být ` +
+  'i desetinná (Trading 212 prodává zlomky akcií) — pak by šlo o tisíckrát menší množství. ' +
+  'Zkontroluj si tenhle řádek ve výpisu.';
+
 export function parseTrading212Csv(text: string): ImportResult {
   const result = emptyResult(TRADING212_BROKER);
   const { headers, rows } = parseCsv(text);
@@ -170,10 +179,7 @@ export function parseTrading212Csv(text: string): ImportResult {
           // který se propíše do nabývací ceny, limitů i daně. Rozhodnout to
           // z jednoho pole nejde, takže o tom aspoň řekneme.
           if (isAmbiguousThousands(sharesRaw)) {
-            result.warnings.push({
-              line,
-              message: `Počet kusů „${sharesRaw}“ jsme přečetli jako ${cleanNumber(sharesRaw)}. Čárka tu může být i desetinná (Trading 212 prodává zlomky akcií) — pak by šlo o tisíckrát menší množství. Zkontroluj si tenhle řádek ve výpisu.`,
-            });
+            result.warnings.push({ line, message: ambiguousSharesNote(sharesRaw) });
           }
           const shares = cleanNumber(sharesRaw);
           const price = cleanNumber(map.get(row, 'Price / share'));
@@ -227,7 +233,13 @@ export function parseTrading212Csv(text: string): ImportResult {
             });
           }
           const isin = map.get(row, 'ISIN') || undefined;
-          const shares = cleanNumber(map.get(row, 'No. of shares'));
+          const sharesRaw = map.get(row, 'No. of shares');
+          // B-3-12 platí i tady: z týchž kusů se počítá BRUTTO dividendy,
+          // tedy základ § 8 i čerpání limitu — varování patřilo jen k obchodům.
+          if (isAmbiguousThousands(sharesRaw)) {
+            result.warnings.push({ line, message: ambiguousSharesNote(sharesRaw) });
+          }
+          const shares = cleanNumber(sharesRaw);
           const price = cleanNumber(map.get(row, 'Price / share'));
           const instrumentCurrency = map.get(row, 'Currency (Price / share)');
           let withholding = cleanNumber(map.get(row, 'Withholding tax')) || '0';
@@ -539,11 +551,20 @@ export function isTruncatedTrading212Export(text: string): boolean {
   const { headers, rows } = parseCsv(text);
   if (rows.every((row) => row.every((cell) => cell.trim() === ''))) return true;
 
-  // Neuzavřená uvozovka: sudý počet uvozovek je v pořádku, lichý znamená, že
+  // Neuzavřená uvozovka: v celém souboru musí být uvozovek sudý počet (i
+  // zdvojené `""` uvnitř pole se počítají po dvou). Lichý počet znamená, že
   // pole začalo a soubor skončil dřív, než se zavřelo.
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  const lastLine = lines.at(-1) ?? '';
-  if ((lastLine.match(/"/g)?.length ?? 0) % 2 === 1) return true;
+  //
+  // Počítá se přes CELÝ soubor, ne přes poslední fyzický řádek: pole s novým
+  // řádkem uvnitř uvozovek (poznámka na dva řádky) končí poslední fyzický
+  // řádek jedinou uvozovkou, a kompletní export tak byl odmítnut jako
+  // „nedostažený“ — ručnímu uploadu i syncu, který kvůli tomu padal.
+  //
+  // Cena za to: osamocená neescapovaná uvozovka KDEKOLI v souboru ho odmítne
+  // celý. Bereme to vědomě — takový soubor stejně parsuje špatně (uvozovka
+  // spolkne zbytek pole) a mýlit se směrem „stáhni znovu“ je u daňových čísel
+  // levnější než naimportovat půlku obchodů.
+  if ((text.match(/"/g)?.length ?? 0) % 2 === 1) return true;
 
   // Ořezaný poslední řádek: míň polí, než má hlavička. Počítá se
   // z rozparsovaného CSV, ať se čárky uvnitř uvozovek nepletou do počtu.

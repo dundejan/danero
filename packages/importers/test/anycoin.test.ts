@@ -154,6 +154,20 @@ describe('Anycoin CSV parser', () => {
       );
     });
 
+    it('vezme i variantu se sloupcem navíc („anycoin TX ID“)', () => {
+      // Anycoin exportuje obě podoby; parser sloupce mapuje podle názvů, takže
+      // rozdíl je mu jedno — do 12. 8. 2026 ho ale odmítala autodetekce.
+      const withTxId = [
+        'Date,Type,Amount,Currency,Order ID,anycoin TX ID',
+        '2026-01-02T10:00:00.000Z,trade payment,-1000.00,CZK,ORD1,TX1',
+        '2026-01-02T10:00:00.000Z,trade fill,0.00100000,BTC,ORD1,TX2',
+      ].join('\n');
+      expect(sniffAnycoinCsv(withTxId)).toBe(true);
+      const parsed = parseAnycoinCsv(withTxId);
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.transactions).toHaveLength(1);
+    });
+
     it('cizí formáty nechytá: T212, univerzální šablona, Coinmate, prázdno', () => {
       const t212 =
         'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Total\nMarket buy,2024-01-10 14:30:02,US0378331005,AAPL,Apple,10,185.50,USD,1855.00';
@@ -161,8 +175,8 @@ describe('Anycoin CSV parser', () => {
       expect(sniffAnycoinCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);
       expect(sniffAnycoinCsv(COINMATE_EN_LONG)).toBe(false);
       expect(sniffAnycoinCsv('')).toBe(false);
-      // podobná, ale ne přesná hlavička
-      expect(sniffAnycoinCsv('Date,Type,Amount,Currency,Order ID,Extra')).toBe(false);
+      // chybějící povinný sloupec = ne Anycoin
+      expect(sniffAnycoinCsv('Date,Type,Amount,Currency')).toBe(false);
     });
   });
 });

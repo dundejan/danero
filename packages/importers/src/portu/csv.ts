@@ -49,16 +49,23 @@ function num(value: string): Decimal | null {
 }
 
 /**
- * Autodetekce Portu CSV z prvního řádku. Jen ASCII-bezpečné fragmenty —
+ * Autodetekce Portu CSV z prvního řádku. Jen ASCII-bezpečné názvy sloupců —
  * diakritika v hlavičce („Název“, „Měna“) se při špatném kódování rozpadá,
- * sniff na ní nesmí stát. Kombinace `;Typ;Symbol;ISIN;` + `Kusy / Pozice`
- * se netrefí do Degiro (Datum;Čas;Produkt;ISIN…) ani čárkových exportů
- * (T212, univerzální šablona).
+ * sniff na ní nesmí stát. Kombinace `Typ` + `Symbol` + `ISIN` + `Kusy / Pozice`
+ * ve STŘEDNÍKOVÉM souboru se netrefí do Degiro (Datum;Čas;Produkt;ISIN…) ani
+ * do čárkových exportů (T212, univerzální šablona).
+ *
+ * Podle NÁZVŮ, ne podle doslovného pořadí: parser sloupce mapuje `HeaderMap`ou,
+ * takže přehozené `Typ` a `Název` přečte — do 12. 8. 2026 mu je ale autodetekce
+ * nepustila („;Typ;Symbol;ISIN;“ jako podřetězec) a soubor skončil hláškou
+ * „Formát souboru nepoznáváme“.
  */
 export function sniffPortuCsv(text: string): boolean {
   const newline = text.indexOf('\n');
   const firstLine = newline === -1 ? text : text.slice(0, newline);
-  return firstLine.includes(';Typ;Symbol;ISIN;') && firstLine.includes('Kusy / Pozice');
+  if (!firstLine.includes(';')) return false;
+  const map = new HeaderMap(parseCsv(firstLine, ';').headers.map(normalizeHeader));
+  return [COL.type, COL.symbol, COL.isin, COL.quantity].every((column) => map.has(column));
 }
 
 export function parsePortuCsv(text: string): ImportResult {

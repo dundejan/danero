@@ -73,9 +73,17 @@ const TAX_MATCH_MAX_DAYS = 5;
 const dayDistance = (a: string, b: string): number =>
   Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
+/** Poznávací sloupce exportu z Tax Center (Year-to-Date Data Export). */
+const YTD_MARKERS = ['SEC_SUBTYPE', '8949_CODE'];
+
 /**
  * Autodetekce Tastytrade exportu: nová generace má sloupce „Sub Type“
  * a „Underlying Symbol“, legacy „Transaction Code“ a „Account Reference“.
+ *
+ * Bere i špatný export z Tax Center — parser pro něj má připravenou hlášku
+ * „nahraj History → Transactions“, jenže dokud ho autodetekce nepustila dál,
+ * uživatel místo ní dostal obecné „Formát souboru nepoznáváme“ a rada byla
+ * dosažitelná jen z unit testu.
  */
 export function sniffTastytradeCsv(text: string): boolean {
   if (text.trim() === '') return false;
@@ -85,7 +93,8 @@ export function sniffTastytradeCsv(text: string): boolean {
   const has = (name: string): boolean => headers.includes(name);
   return (
     (has('Sub Type') && has('Underlying Symbol')) ||
-    (has('Transaction Code') && has('Account Reference'))
+    (has('Transaction Code') && has('Account Reference')) ||
+    headers.some((header) => YTD_MARKERS.some((marker) => header.includes(marker)))
   );
 }
 
@@ -137,7 +146,7 @@ export function parseTastytradeCsv(
   if (text.trim() === '') return result;
 
   const { headers, rows } = parseCsv(text);
-  if (headers.some((h) => h.includes('SEC_SUBTYPE') || h.includes('8949_CODE'))) {
+  if (headers.some((header) => YTD_MARKERS.some((marker) => header.includes(marker)))) {
     result.errors.push({
       line: 1,
       message:

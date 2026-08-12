@@ -7,6 +7,7 @@ import {
   COINMATE_EN_LONG,
   COINMATE_EN_SHORT,
   COINMATE_V2,
+  COINMATE_HEADER_EN_LONG,
 } from './fixtures/coinmate';
 import { ANYCOIN_BASIC } from './fixtures/anycoin';
 
@@ -205,5 +206,23 @@ describe('Coinmate CSV parser', () => {
       ).toBe(false);
       expect(sniffCoinmateCsv('')).toBe(false);
     });
+  });
+});
+
+describe('poplatek v kryptu (pojistka proti pádu enginu)', () => {
+  it('poplatek v BTC se nezapočte a řekne se to', () => {
+    // `^[A-Z]{3}$` propouštělo BTC/ETH/ADA jako by to byly měny, takže poplatek
+    // v kryptu prošel do modelu a engine na chybějícím kurzu shodil CELÝ výpočet
+    // (FX_RATE_MISSING), ne jeden řádek.
+    const csv = [
+      COINMATE_HEADER_EN_LONG,
+      '9;2026-01-15 10:00:00;M;QUICK_BUY;0.005;BTC;982000.5;CZK;0.0000125;BTC;-4910;CZK;;OK;0.005;BTC;0;CZK',
+    ].join('\n');
+    const result = parseCoinmateCsv(csv);
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.fee).toBeUndefined();
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('BTC');
   });
 });

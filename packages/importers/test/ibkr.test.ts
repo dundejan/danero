@@ -319,3 +319,58 @@ describe('IBKR Flex XML parser', () => {
     expect(notFlex.transactions).toHaveLength(0);
   });
 });
+
+describe('formát data z Flex Query si volí uživatel', () => {
+  const trade = (date: string): string =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement><Trades>` +
+    `<Trade symbol="AAPL" isin="US0378331005" currency="USD" quantity="10" tradePrice="185.50" ` +
+    `ibCommission="-1" tradeDate="${date}" buySell="BUY" assetCategory="STK" />` +
+    `</Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  // Delivery Configuration ve Flex Query nabízí víc formátů data. Do 12. 8. 2026
+  // uměl parser jen yyyyMMdd a yyyy-MM-dd; ostatní vracely 0 transakcí s hláškou
+  // „obchodu chybí datum“ — přestože datum v souboru bylo.
+  it.each([
+    ['20250610', '2025-06-10'],
+    ['2025-06-10', '2025-06-10'],
+    ['06/10/2025', '2025-06-10'],
+    ['10-Jun-25', '2025-06-10'],
+    ['10-Jun-2025', '2025-06-10'],
+    ['10-OCT-25', '2025-10-10'],
+    ['2025-06-10T13:45:00', '2025-06-10'],
+  ])('„%s“ → %s', (input, expected) => {
+    const result = parseIbkrFlexXml(trade(input));
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    if (tx.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(tx.tradeDate).toBe(expected);
+  });
+
+  it('nesmyslný den skončí chybou řádku, ne posunutým datem', () => {
+    const result = parseIbkrFlexXml(trade('20250631'));
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+});
+
+describe('hotovostní pohyby z dluhopisů a poradcovské poplatky', () => {
+  const cash = (type: string, amount: string): string =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement><CashTransactions>` +
+    `<CashTransaction type="${type}" currency="USD" amount="${amount}" dateTime="20250610" description="TEST" />` +
+    `</CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  it('úrok z dluhopisu je úrok (§ 8), ne neznámý typ', () => {
+    const result = parseIbkrFlexXml(cash('Bond Interest Received', '12.34'));
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    expect(tx.type).toBe('INTEREST');
+  });
+
+  it('zaplacený úrok z dluhopisu a poradcovský poplatek jsou náklad', () => {
+    for (const type of ['Bond Interest Paid', 'Advisor Fees']) {
+      const result = parseIbkrFlexXml(cash(type, '-5.00'));
+      expect(result.errors).toEqual([]);
+      expect(result.transactions[0]!.type).toBe('FEE');
+    }
+  });
+});

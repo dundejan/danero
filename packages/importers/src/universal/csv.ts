@@ -192,10 +192,14 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin') || undefined,
+              // ticker i poznámku šablona nabízí a uživatel je vyplňuje —
+              // zahazovat je bylo tiché mrhání tím, co si dal práci vypsat
+              ticker: map.get(row, 'ticker') || undefined,
               gross: universalNumber(map.get(row, 'amount'), 'amount'),
               currency: map.get(row, 'currency'),
               withholdingTax: universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
               sourceCountry: map.get(row, 'source_country') || undefined,
+              note: map.get(row, 'note') || undefined,
               date,
             }),
           );
@@ -210,6 +214,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               id,
               amount: universalNumber(map.get(row, 'amount'), 'amount'),
               currency: map.get(row, 'currency'),
+              note: map.get(row, 'note') || undefined,
               // R-07f: u úroku má smysl i sražená daň — bez ní zápočet propadá
               ...(type === 'INTEREST'
                 ? {

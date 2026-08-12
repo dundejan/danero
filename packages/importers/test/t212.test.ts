@@ -523,3 +523,29 @@ describe('Trading 212: sporné řádky se nezpracují potichu', () => {
     expect(result.warnings.some((w) => w.message.includes('tisíckrát menší'))).toBe(false);
   });
 });
+
+describe('detekce nedostaženého exportu nesmí odmítat celé soubory', () => {
+  const HEADER =
+    'Action,Time,ISIN,Ticker,Name,Notes,ID,No. of shares,Price / share,Currency (Price / share),Total,Currency (Total)';
+
+  it('poznámka přes dva řádky (uvozovky s novým řádkem) je v pořádku', () => {
+    const csv = [
+      HEADER,
+      'Market buy,2025-01-02 10:00:00,US0378331005,AAPL,Apple,pozn,ord-1,1,100.00,USD,100.00,USD',
+      'Market buy,2025-01-03 10:00:00,US0378331005,AAPL,Apple,"pozn. 1\npozn. 2",ord-2,1,100.00,USD,100.00,USD',
+    ].join('\n');
+    expect(isTruncatedTrading212Export(csv)).toBe(false);
+    const parsed = parseTrading212Csv(csv);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.transactions).toHaveLength(2);
+  });
+
+  it('uříznutá uvozovka na konci souboru se pozná dál', () => {
+    const csv = [
+      HEADER,
+      'Market buy,2025-01-02 10:00:00,US0378331005,AAPL,Apple,pozn,ord-1,1,100.00,USD,100.00,USD',
+      'Market buy,2025-01-03 10:00:00,US0378331005,AAPL,Apple,"pozn. 1',
+    ].join('\n');
+    expect(isTruncatedTrading212Export(csv)).toBe(true);
+  });
+});

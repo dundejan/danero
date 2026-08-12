@@ -1,5 +1,6 @@
 export * from './types';
 export * from './csv';
+export * from './formats';
 export * from './xlsx';
 export * from './dedupe';
 export * from './trading212/csv';

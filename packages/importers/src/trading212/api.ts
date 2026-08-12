@@ -136,13 +136,34 @@ export class Trading212Client {
     return this.request('/equity/metadata/instruments');
   }
 
+  /**
+   * Cesta exportních endpointů. V produkci nám funguje `/history/exports`,
+   * dokumentace T212 ale od 2026 uvádí `/equity/history/exports` — kdyby starou
+   * cestu zrušili, sync by přestal stahovat historii a v logu by bylo jen 404.
+   * Proto se na 404 zkusí i dokumentovaná varianta a ta úspěšná se zapamatuje
+   * (opakovaný pokus stojí požadavek a limit je tu 1 za 30 s).
+   */
+  private exportPath = '/history/exports';
+  private static readonly EXPORT_PATH_FALLBACK = '/equity/history/exports';
+
+  private async requestExportEndpoint<T>(init?: { method?: string; body?: unknown }): Promise<T> {
+    try {
+      return await this.request<T>(this.exportPath, init);
+    } catch (error) {
+      const notFound = error instanceof Trading212ApiError && error.status === 404;
+      if (!notFound || this.exportPath === Trading212Client.EXPORT_PATH_FALLBACK) throw error;
+      this.exportPath = Trading212Client.EXPORT_PATH_FALLBACK;
+      return this.request<T>(this.exportPath, init);
+    }
+  }
+
   /** Požádá o vygenerování CSV exportu historie (asynchronní; sleduj listExports). */
   requestExport(request: ExportRequest): Promise<{ reportId: number }> {
-    return this.request('/history/exports', { method: 'POST', body: request });
+    return this.requestExportEndpoint({ method: 'POST', body: request });
   }
 
   listExports(): Promise<ExportStatus[]> {
-    return this.request('/history/exports');
+    return this.requestExportEndpoint();
   }
 
   /**

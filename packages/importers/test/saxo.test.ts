@@ -6,6 +6,7 @@ import {
   buildSaxoWorkbook,
   buildSaxoXlsx,
   SAXO_HEADERS_DA,
+  SAXO_HEADERS_EN,
   SAXO_HEADERS_UNKNOWN_LANG,
   SAXO_ROWS_DA,
   SAXO_ROWS_EN,
@@ -310,5 +311,48 @@ describe('sniffSaxoXlsx (autodetekce)', () => {
     expect(sniffSaxoXlsx(await buildForeignWorkbook())).toBe(false);
     expect(sniffSaxoXlsx(await buildSaxoWorkbook({ headers: SAXO_HEADERS_UNKNOWN_LANG }))).toBe(false);
     expect(sniffSaxoXlsx(await buildSaxoWorkbook({ headers: null }))).toBe(false);
+  });
+});
+
+describe('odolnost proti odchylkám reálných exportů', () => {
+  it('sloupec navíc v hlavičce import nezabije (a nesvádí to na cizí jazyk)', async () => {
+    // Reálné exporty mívají za poslední hlavičkou prázdnou nastylovanou buňku
+    // nebo sloupec navíc. Porovnání na přesnou DÉLKU hlavičky kvůli tomu vracelo
+    // „hlavičky v jazyce, který neumíme“ nad anglickým exportem.
+    const headers = [...SAXO_HEADERS_EN, 'Booking Date'];
+    const rows = SAXO_ROWS_EN.map((row) => [...row, '']);
+    const workbook = await buildSaxoWorkbook({ headers, rows });
+    expect(sniffSaxoXlsx(workbook)).toBe(true);
+
+    const result = await parseSaxoXlsx(await buildSaxoXlsx({ headers, rows }));
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.length).toBeGreaterThan(0);
+  });
+
+  it('anglický export: „Buy 1,500 @ 12.34 USD“ je 1500 kusů, ne 1,5', async () => {
+    const rows = [
+      ['', '02-Jan-2025', '02-Jan-2025', 'Trade', 'Apple Inc.', 'US0378331005', 'USD', 'NASDAQ', 'AAPL:xnas', 'Buy 1,500 @ 12.34 USD', -18510, '', 1],
+      ...SAXO_ROWS_EN.slice(0, 2),
+    ];
+    const result = await parseSaxoXlsx(await buildSaxoXlsx({ rows }));
+    expect(result.errors).toEqual([]);
+    const trade = result.transactions[0]!;
+    if (trade.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(trade.quantity.toString()).toBe('1500');
+    expect(trade.pricePerShare.toString()).toBe('12.34');
+  });
+
+  it('dánský export: „Købt 1.000 @ 615,20 DKK“ je tisíc kusů', async () => {
+    const rows = [
+      ['', '14-maj-2025', '15-maj-2025', 'Handel', 'Novo Nordisk B A/S', 'DK0062498333', 'DKK', 'København', 'NOVOB:xcse', 'Købt 1.000 @ 615,20 DKK', '-615.200,00', '', 1],
+      ...SAXO_ROWS_DA.slice(1),
+    ];
+    const result = await parseSaxoXlsx(
+      await buildSaxoXlsx({ sheetName: SAXO_SHEET_DA, headers: SAXO_HEADERS_DA, rows }),
+    );
+    expect(result.errors).toEqual([]);
+    const trade = result.transactions[0]!;
+    if (trade.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(trade.quantity.toString()).toBe('1000');
   });
 });

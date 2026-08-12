@@ -261,6 +261,21 @@ export function parseKrakenCsv(text: string): ImportResult {
 
     const a = parsed[0]!;
     const b = parsed[1]!;
+
+    // Dvě nohy spojuje jen refid, a ten může být i prázdný — bez kontroly času
+    // se pak tiše slepily nohy z různých měsíců do jednoho „obchodu“ s datem
+    // té druhé. Obě strany směny nastávají naráz, takže různý den = nepárujeme.
+    if (a.date !== b.date) {
+      for (const leg of [a, b]) {
+        result.errors.push({
+          line: leg.leg.line,
+          message: `Obchod ${refid || '(bez refid)'}: nohy směny mají různá data (${a.date} a ${b.date}), takže je nepárujeme — zkontroluj export, nebo řádky doplň přes univerzální šablonu.`,
+          raw: leg.leg.raw,
+        });
+      }
+      continue;
+    }
+
     const aIsFiat = FIAT_CURRENCIES.has(a.asset);
     const bIsFiat = FIAT_CURRENCIES.has(b.asset);
 

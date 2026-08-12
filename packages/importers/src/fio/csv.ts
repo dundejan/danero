@@ -394,6 +394,20 @@ export function parseFioCsv(
           });
           return;
         }
+        // Nečitelné číslo patří k JEDNOMU řádku. `d()` v argumentech push()
+        // stálo mimo jeho try/catch, takže jediná buňka jako „1.234,50“
+        // vyhodila DecimalError z celého parseru a nenaimportoval se ani jeden
+        // zdravý řádek — uživatel dostal „soubor je nejspíš poškozený“ (B-3-5).
+        const quantityValue = fioNumber(quantity);
+        const priceValue = fioNumber(price);
+        if (quantityValue === null || priceValue === null) {
+          result.errors.push({
+            line,
+            message: `${smer}: nečitelný počet kusů „${map.get(row, 'Počet')}“ nebo cena „${map.get(row, 'Cena')}“ — řádek nelze zpracovat.`,
+            raw,
+          });
+          return;
+        }
         const isin = symbolMap[symbol]?.isin;
         if (!isin) {
           // jeden error per symbol — uživatel doplní mapování a import zopakuje
@@ -413,8 +427,8 @@ export function parseFioCsv(
           id: rowId(),
           isin,
           ticker: symbol,
-          quantity: d(quantity).abs().toString(),
-          pricePerShare: d(price).abs().toString(),
+          quantity: quantityValue.abs().toString(),
+          pricePerShare: priceValue.abs().toString(),
           currency: mena,
           fee: resolveFee(row, mena, line),
           tradeDate: date,

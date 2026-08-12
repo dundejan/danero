@@ -185,6 +185,26 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(sniffCoinbaseCsv('')).toBe(false);
   });
 
+  it('sniff: sedmiřádková preambule daňového exportu se pozná (a naimportuje)', () => {
+    // Varianta „You can use this transaction report…“ má nad hlavičkou 7 řádků;
+    // autodetekce koukala jen na prvních 5, takže soubor propadl jako nepoznaný,
+    // přestože parser hlavičku najde. Sniffer i parser teď hledají stejně.
+    const dlouhaPreambule = [
+      'You can use this transaction report to inform your likely tax obligations.',
+      'For US customers, Sales, Converts, Rewards Income and Coinbase Earn are taxable events.',
+      '',
+      'Transactions',
+      'User,Jan Novák,00000000-0000-0000-0000-000000000000',
+      '',
+      '',
+      ...COINBASE_V4.split('\n'),
+    ].join('\n');
+    expect(sniffCoinbaseCsv(dlouhaPreambule)).toBe(true);
+    const parsed = parseCoinbaseCsv(dlouhaPreambule);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.transactions).toEqual(parseCoinbaseCsv(COINBASE_V4).transactions);
+  });
+
   it('dedupe-stabilita: dva parse téhož souboru → stejná id (ID sloupec i fnv fallback)', () => {
     for (const fixture of [COINBASE_V4, COINBASE_V3, COINBASE_V1_EUR]) {
       const first = parseCoinbaseCsv(fixture);

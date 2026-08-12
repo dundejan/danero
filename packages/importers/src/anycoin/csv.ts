@@ -14,6 +14,8 @@ export const ANYCOIN_BROKER = 'anycoin';
  * s desetinnou tečkou, staked assety mají sufix `.S` (SOL.S → SOL).
  */
 
+/** Povinné sloupce — jediná definice pro autodetekci i parser. */
+const ANYCOIN_COLUMNS = ['date', 'type', 'amount', 'currency', 'order id'] as const;
 const ANYCOIN_HEADER = 'Date,Type,Amount,Currency,Order ID';
 
 /**
@@ -41,12 +43,21 @@ const SKIP_TYPES = new Map<string, string>([
 
 /* ── Autodetekce ────────────────────────────────────────────────────────── */
 
-/** Detekce Anycoin CSV: první řádek je přesně hlavička `Date,Type,Amount,Currency,Order ID`. */
+/**
+ * Detekce Anycoin CSV podle POVINNÝCH sloupců, ne podle celé hlavičky doslova.
+ *
+ * Do 12. 8. 2026 se první řádek porovnával na rovnost s
+ * `Date,Type,Amount,Currency,Order ID` — jenže Anycoin exportuje i variantu
+ * se sloupcem `anycoin TX ID` navíc. Parser ji zpracoval bez potíží, ale
+ * autodetekce ji nepustila dál, takže uživatel dostal „Formát souboru
+ * nepoznáváme“ nad souborem, který umíme přečíst.
+ */
 export function sniffAnycoinCsv(text: string): boolean {
   const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   const newline = input.indexOf('\n');
-  const firstLine = (newline === -1 ? input : input.slice(0, newline)).trim();
-  return firstLine === ANYCOIN_HEADER;
+  const firstLine = newline === -1 ? input : input.slice(0, newline);
+  const map = new HeaderMap(parseCsv(firstLine).headers.map((h) => h.toLowerCase()));
+  return ANYCOIN_COLUMNS.every((column) => map.has(column));
 }
 
 /* ── Parser ─────────────────────────────────────────────────────────────── */
@@ -67,7 +78,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
   const { headers, rows } = parseCsv(text);
   const map = new HeaderMap(headers.map((h) => h.toLowerCase()));
-  for (const required of ['date', 'type', 'amount', 'currency', 'order id']) {
+  for (const required of ANYCOIN_COLUMNS) {
     if (!map.has(required)) {
       result.errors.push({
         line: 1,

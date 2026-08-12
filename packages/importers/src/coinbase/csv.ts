@@ -90,11 +90,34 @@ const CONVERT_NOTES = /^Converted [\d.,]+ \S+ to ([\d.,]+) (\S+)$/;
 /* ── Sniff ───────────────────────────────────────────────────────────────── */
 
 /** Detekce Coinbase CSV: v prvních ~5 řádcích je hlavička s Transaction Type + Quantity Transacted. */
-export function sniffCoinbaseCsv(text: string): boolean {
-  return text
+/**
+ * Kolik řádků nad hlavičkou snese preambule. Coinbase jich podle generace
+ * exportu sype 0 až 7 („You can use this transaction report…“, `Transactions`,
+ * `User,<jméno>,<uuid>`, prázdné řádky) — strop 5 v autodetekci znamenal, že
+ * daňová varianta exportu propadla jako nepoznaný formát, přestože parser
+ * hlavičku najde a soubor přečte. Odtud jedna sdílená funkce pro obojí.
+ */
+const MAX_PREAMBLE_LINES = 20;
+
+/** Hlavička všech generací začíná `Timestamp,` nebo `ID,Timestamp,`… */
+const HEADER_START = /^"?(?:ID"?,"?)?Timestamp"?,/;
+/** …a vždy nese tyhle dva sloupce (odliší ji od cizího souboru). */
+const HEADER_MARKERS = ['Transaction Type', 'Quantity Transacted'];
+
+/** Index řádku s hlavičkou, nebo −1. Sdílí autodetekce i parser. */
+export function findCoinbaseHeaderLine(text: string): number {
+  const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return input
     .split(/\r?\n/)
-    .slice(0, 5)
-    .some((line) => line.includes('Transaction Type') && line.includes('Quantity Transacted'));
+    .slice(0, MAX_PREAMBLE_LINES)
+    .findIndex(
+      (line) =>
+        HEADER_START.test(line.trim()) && HEADER_MARKERS.every((marker) => line.includes(marker)),
+    );
+}
+
+export function sniffCoinbaseCsv(text: string): boolean {
+  return findCoinbaseHeaderLine(text) !== -1;
 }
 
 /* ── Parser ──────────────────────────────────────────────────────────────── */
@@ -106,11 +129,10 @@ export function parseCoinbaseCsv(text: string): ImportResult {
 
   const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 
-  // starší exporty mají před hlavičkou preambuli → najdi řádek s hlavičkou
+  // exporty mají před hlavičkou preambuli → najdi řádek s hlavičkou (tatáž
+  // funkce, kterou používá autodetekce — jedna definice pro obojí)
   const lines = input.split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) =>
-    /^"?(?:ID"?,"?)?Timestamp"?,/.test(line.trim()),
-  );
+  const headerIndex = findCoinbaseHeaderLine(input);
   if (headerIndex === -1) {
     result.errors.push({
       line: 1,

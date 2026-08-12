@@ -11,6 +11,11 @@
  * `color` je orientační barva značky pro monogramovou dlaždici — fallback,
  * když platforma nemá `logo` (provenience log v docs/11); `ink: 'dark'` =
  * tmavý text na světlé dlaždici (např. žlutá RB).
+ *
+ * Návody (`guide`) jsou ověřené proti nápovědám platforem 12. 8. 2026 — každý
+ * z nich je cesta, kterou uživatel proklikává, takže přejmenovaná položka menu
+ * je stejná vada jako rozbitý parser. Když platforma rozhraní změní, oprav to
+ * TADY (texty se nikde jinde neopisují).
  */
 export interface PlatformInfo {
   id: string;
@@ -40,7 +45,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#00B67A',
     guide:
-      'Peníze → Peněženka a transakce → filtry „Všechny Portu investice“ + „Všechny transakce“ → Stáhnout jako CSV.',
+      'Peníze → Peněženka a transakce → „Vaše Portu investice“ nastav na Všechny a „Časový horizont“ na Všechny transakce (zaškrtnutá políčka Vklady/Výběry/Nákupy/Prodeje/… nech být) → Stáhnout jako CSV. Dluhopisy z Portu Opportunity mají vlastní výpis (Transakce a peníze → Pokyny).',
   },
   {
     id: 'xtb',
@@ -50,7 +55,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#E3001B',
     guide:
-      'xStation → Historie účtu → export „Full report“ (XLSX). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
+      'xStation → Historie → tlačítko „Export (new)“ → Nový report → období a účty → Vygenerovat → Stáhnout: přijde ZIP, rozbal ho a nahraj XLSX zevnitř (starší tlačítko „Export“ → Full report funguje taky). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
   },
   {
     id: 'trading212',
@@ -60,7 +65,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#00A7E1',
     guide:
-      'Živě přes API klíč jen pro čtení (Nastavení → API v aplikaci T212), nebo CSV export z History.',
+      'Živě přes API klíč jen pro čtení (Nastavení → API v aplikaci T212), nebo CSV export z History — ten umí max. rok, takže starší historii stáhni po letech (duplicity odfiltrujeme).',
     connectAnchor: '#trading212',
   },
   {
@@ -71,7 +76,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#003366',
     guide:
-      'Transakce → Obchodní pokyny → ⋮ → Export → Excel; dividendy zvlášť ze záložky Cash flow. Import zatím přes univerzální šablonu.',
+      'WebTrader → Transakce → záložka Obchodní pokyny → ⋮ vpravo nahoře → Export → Excel; dividendy stáhni stejně ze záložky Cash flow (ve starší aplikaci Historie aktivity → Obchodní pokyny / Cash Flow). Import zatím přes univerzální šablonu; splity a spin-offy výpis neobsahuje, ty doplň ručně.',
   },
   {
     id: 'degiro',
@@ -81,7 +86,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#009FDF',
     guide:
-      'Inbox → Přehled transakcí (Transactions.csv) a Výpis účtu (Account.csv) → Export CSV. Nahraj OBA soubory: obchody jsou v Transactions, dividendy a poplatky v Account.',
+      'Inbox → „Transakce“ (Transactions.csv) a „Přehled účtu“ (Account.csv) → Export CSV. Nahraj OBA soubory: obchody jsou v Transakcích, dividendy a poplatky v Přehledu účtu. Výpis čteme v češtině, angličtině, nizozemštině, němčině i francouzštině.',
   },
   {
     id: 'etoro',
@@ -90,7 +95,8 @@ export const PLATFORMS: PlatformInfo[] = [
     group: 'brokeri',
     method: 'file',
     color: '#6AAC0E',
-    guide: 'Portfolio → History (ikona hodin) → ozubené kolo → Account Statement → Excel.',
+    guide:
+      'Portfolio → History (ikona hodin) → ozubené kolo vpravo nahoře → Account Statement → období → Create → stáhni jako XLS.',
   },
   {
     id: 'ibkr',
@@ -100,7 +106,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#D81222',
     guide:
-      'Živě přes Flex Web Service (token + Query ID v Client Portalu), nebo stáhni Flex Query XML.',
+      'Živě přes Flex Web Service: Client Portal → Performance & Reports → Flex Queries (token se zapíná tamtéž ve Flex Web Service Configuration). Nebo si stejnou Flex Query stáhni jako XML — jeden běh pokrývá max. rok, starší historii stahuj po letech.',
     connectAnchor: '#ibkr',
   },
   {
@@ -113,7 +119,7 @@ export const PLATFORMS: PlatformInfo[] = [
     ink: 'dark',
     monogram: 'M4',
     guide:
-      'Terminál (Ctrl+T) → Account History → pravý klik → celá historie → Save as Report (.htm). Platí pro Purple Trading, InstaForex, Admirals i další MT4 brokery.',
+      'Terminál (Ctrl+T) → Account History / Historie účtu → pravý klik → All History (celá historie) → Save as Report (.htm). V témže menu měj zapnuté sloupce Commissions a Taxes, jinak v reportu nebudou. Platí pro Purple Trading, InstaForex, Admirals i další MT4 brokery.',
   },
   {
     id: 'mt5',
@@ -124,7 +130,7 @@ export const PLATFORMS: PlatformInfo[] = [
     color: '#0088CC',
     monogram: 'M5',
     guide:
-      'Toolbox (Ctrl+T) → History → pravý klik → Report → „Open XML (MS Office Excel)“ nebo HTML.',
+      'Toolbox (Ctrl+T) → History / Historie → pravý klik → celá historie → Report → „Open XML“ (v novějších buildech „Open XML (MS Office Excel)“) nebo HTML. Volbu „XML“ bez Open nepoužívej — tu číst neumíme.',
   },
   {
     id: 'lynx',
@@ -134,7 +140,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#0FA396',
     guide:
-      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Performance & Reports → Flex Queries.',
+      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Client Portal → Performance & Reports → Flex Queries.',
     connectAnchor: '#ibkr',
   },
   {
@@ -145,7 +151,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#14283C',
     guide:
-      'SaxoTraderGO → profil → Transaction overview → Export → Excel. Před exportem si přepni jazyk platformy na angličtinu.',
+      'SaxoTrader (dřív SaxoTraderGO) → Portfolio → Transactions → období → Export → Excel. Před exportem si přepni jazyk platformy na angličtinu.',
   },
   {
     id: 'swissquote',
@@ -154,7 +160,8 @@ export const PLATFORMS: PlatformInfo[] = [
     group: 'brokeri',
     method: 'file',
     color: '#E2001A',
-    guide: 'Trading → Transactions → filtr období → Export CSV.',
+    guide:
+      'eTrading → Portfolio → Transactions → nastav období → šipka u pravého okraje → export CSV. Hlavičku čteme anglicky i německy.',
   },
   {
     id: 'tastytrade',
@@ -164,7 +171,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#E31837',
     guide:
-      'History → Transactions → CSV (vpravo nahoře). Export umí max. rok — stáhni po letech, duplicity odfiltrujeme.',
+      'History → Transactions → nastav období → ikona CSV vpravo nahoře. Tabulka se donačítá po ~200 řádcích, takže před stažením sjeď úplně dolů — jinak bude export neúplný a nikde se to nedozvíš.',
   },
   {
     id: 'roboforex',
@@ -174,7 +181,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#0056A8',
     guide:
-      'Účty RoboForex běží na MT4/MT5 — ulož report přímo z platformy (viz MetaTrader 4/5 výše).',
+      'Účty na MT4/MT5: ulož report přímo z platformy (viz MetaTrader 4/5 výše). Účty R StocksTrader/cTrader report z MetaTraderu nemají — z klientské zóny (Trading account → Account history) stáhni Excel a přepiš ho do univerzální šablony.',
   },
   {
     id: 'schwab',
@@ -184,7 +191,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#009DDC',
     guide:
-      'Accounts → History → Export (CSV). Web dává max. 4 roky a 1 500 řádků na export — delší historii stáhni po částech.',
+      'Accounts → Transaction History → období (jde i „All“) → Export vpravo nahoře → v dialogu zvol CSV. Web drží jen 4 roky historie a u velkých objemů vrací prázdný soubor — pak stahuj po čtvrtletích; starší roky jsou ve Statements & Tax Forms.',
   },
   // ── banky a investiční společnosti (dtto) ──
   {
@@ -195,7 +202,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#14477D',
     guide:
-      'Můj Conseq → Přehled transakcí → Pohyby na majetkovém účtu → Exportovat do XLS. Import zatím přes univerzální šablonu.',
+      'Můj Conseq → otevři smlouvu → Přehled transakcí → Pohyby na majetkovém účtu → Exportovat do XLS. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'csob',
@@ -205,7 +212,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#009EE0',
     guide:
-      'Portál ČSOB Investice → Objednávky → Historie objednávek → filtr „Od začátku“ → stažení XLS. Import zatím přes univerzální šablonu.',
+      'Portál ČSOB Investice → Objednávky → Historie objednávek → Filtrovat → Období „Od začátku“ (jinak ukáže jen rok) → Zobrazit → XLS. Dividendy, kupóny a poplatky jsou zvlášť v Objednávky → Peněžní toky. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'amundi',
@@ -215,7 +222,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#003C71',
     guide:
-      'Portál Moje Amundi → Transakce → Export (XLS). Import zatím přes univerzální šablonu.',
+      'Portál Moje Amundi → Můj přehled → Transakce → Export (vpravo nahoře). Import zatím přes univerzální šablonu.',
   },
   {
     id: 'fio',
@@ -225,7 +232,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#1C4E9D',
     guide:
-      'e-Broker → Obchody → export CSV (kódování řešíme za tebe). Fio neexportuje ISIN — doplníš ho při prvním importu a zapamatujeme si ho.',
+      'e-Broker → Obchody → nastav období → Zobraz → export CSV (kódování řešíme za tebe). Fio zobrazuje max. rok, takže starší historii stáhni po letech. Sloupce si volíš sám v !Nastavení — nech tam aspoň Datum obchodu, Směr, Symbol, Cena, Počet, Měna, Objem a Poplatky. ISIN Fio neexportuje: doplníš ho při prvním importu a zapamatujeme si ho.',
   },
   {
     id: 'raiffeisen',
@@ -236,7 +243,7 @@ export const PLATFORMS: PlatformInfo[] = [
     color: '#FFD500',
     ink: 'dark',
     guide:
-      'RBroker → Transakce → Transakce na majetkových účtech → stažení XLS. Import zatím přes univerzální šablonu (dividendy výpis neobsahuje).',
+      'RBroker → Transakce → Transakce na majetkových účtech → Filtrovat → stažení XLS. Import zatím přes univerzální šablonu (dividendy jsou jen v pohledu na hotovostní účty).',
   },
   {
     id: 'jt',
@@ -247,7 +254,7 @@ export const PLATFORMS: PlatformInfo[] = [
     color: '#333333',
     monogram: 'J&T',
     guide:
-      'Nové bankovnictví → účet Investice → Historie → Pohyby → Stáhnout vše (CSV). Import zatím přes univerzální šablonu (výpis bohužel neuvádí ISIN).',
+      'Nové bankovnictví → Přehled → Historie u investičního účtu → Pohyby → Stáhnout vše (CSV). Import zatím přes univerzální šablonu — výpis neuvádí ISIN ani symbol, takže instrumenty i dividendy dopiš do šablony ručně.',
   },
   {
     id: 'moventum',
@@ -257,7 +264,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#005EB8',
     guide:
-      'MoventumOffice → Activity → zvol období → Export (případně požádej svého poradce). Import zatím přes univerzální šablonu.',
+      'MoventumOffice (platforma pro poradce) → Activity → období → Export. Jako klient máš Moventum AccountView, kde se pohyby tisknou do Excelu po 12 měsících — nebo si výpis vyžádej u svého poradce. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'eic',
@@ -267,7 +274,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'template',
     color: '#1D4F91',
     guide:
-      'Online zóna EIC → pohled Transakce → Export; dividendy z pohledu Transfery a dividendy. Import zatím přes univerzální šablonu.',
+      'Online aplikace EIC (online.eic.eu) → pohled Transakce → Export; dividendy z pohledu Transfery a dividendy. Import zatím přes univerzální šablonu.',
   },
   {
     id: 'juliusbaer',
@@ -276,7 +283,8 @@ export const PLATFORMS: PlatformInfo[] = [
     group: 'banky',
     method: 'template',
     color: '#14213D',
-    guide: 'E-Services → Activity → Excel export. Import zatím přes univerzální šablonu.',
+    guide:
+      'E-Services → Activity → Activity Details (ne Activity Summary) → Excel export. Import zatím přes univerzální šablonu.',
   },
   // ── krypto (dtto; Revolut = nejširší krypto expozice v ČR) ──
   {
@@ -287,7 +295,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#191C1F',
     guide:
-      'Akcie: Invest → ⋯ → Statements → Account statement → Excel. Krypto: Crypto → Documents → Account statement. Nahraj oba.',
+      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát Excel a celé období. Krypto: Accounts → Documents & statements → Crypto → Account statement. Nahraj oba; kdyby ti přišel soubor .xlsx, otevři ho a ulož jako CSV.',
   },
   {
     id: 'anycoin',
@@ -295,8 +303,9 @@ export const PLATFORMS: PlatformInfo[] = [
     name: 'Anycoin',
     group: 'krypto',
     method: 'file',
-    color: '#2F4DE0',
-    guide: 'Profil → Transakce → Export (CSV, soubor orders.csv).',
+    color: '#00BBE0',
+    guide:
+      'Profil (vpravo nahoře) → Nastavení → Transakce → Export (CSV). Sekci „Daně“ nepoužívej — generuje jiný soubor po jednotlivých letech.',
   },
   {
     id: 'coinmate',
@@ -305,17 +314,18 @@ export const PLATFORMS: PlatformInfo[] = [
     group: 'krypto',
     method: 'file',
     color: '#F7931E',
-    guide: 'Historie transakcí → Export (CSV — exportuje se vždy celá historie).',
+    guide:
+      'Prostředky → Historie → Export (CSV — exportuje se vždy celá historie, období vybrat nejde). Čteme českou i anglickou hlavičku.',
   },
   {
     id: 'coinbase',
-    logo: { src: '/loga/coinbase.svg', kind: 'icon' },
+    logo: { src: '/loga/coinbase.svg', kind: 'wordmark' },
     name: 'Coinbase',
     group: 'krypto',
     method: 'file',
     color: '#0052FF',
     guide:
-      'Manage account → Statements → Transactions → Generate custom statement (CSV, všechna aktiva, celá historie). Pozor: ne sekce „Taxes“ — ta generuje jiný soubor.',
+      'Manage account → Statements → záložka Transactions → Generate custom statement → přepni na All assets, All transactions a celé období (výchozí je jen část!) → formát CSV → Generate. Pozor: ne sekce „Taxes“ — ta generuje jiný soubor.',
   },
   {
     id: 'kraken',
@@ -325,7 +335,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#7132F5',
     guide:
-      'Profil → Documents → Exports → Create Export → typ „Ledgers“ (CSV, celá historie). Trades.csv nenahrávej — Ledgers obsahuje vše.',
+      'Profil → Documents → Exports → Create Export → typ „Ledgers“, produkt Spot (a Futures, pokud je obchoduješ), pole nech všechna a nastav období od založení účtu. Přijde ZIP — rozbal ho a nahraj ledgers.csv. Trades.csv nenahrávej, Ledgers obsahuje vše.',
   },
 ];
 

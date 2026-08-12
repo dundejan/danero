@@ -165,31 +165,44 @@ describe('nahrání víc souborů: poškozený soubor nesmí sebrat ostatní (F-
 
     const radek = (isin: string) =>
       `type,date,isin,quantity,price,currency\nBUY,2025-01-10,${isin},1,100,USD`;
+    // uříznutý sešit: hlavička zipu s položkou OOXML, ale bez konce archivu
+    const zipHead = Buffer.alloc(30);
+    zipHead.writeUInt32LE(0x04034b50, 0);
+    zipHead.writeUInt16LE('[Content_Types].xml'.length, 26);
+    const vadnyXlsx = Buffer.concat([
+      zipHead,
+      Buffer.from('[Content_Types].xml', 'utf8'),
+      Buffer.alloc(40, 0x41),
+    ]);
     const soubory: Array<[string, ArrayBuffer]> = [
       ['prvni.csv', new TextEncoder().encode(radek('US0378331005')).buffer as ArrayBuffer],
-      // .xlsx podle názvu, uvnitř nesmysl → loadXlsxWorkbook vyhodí výjimku
-      ['vadny.xlsx', new TextEncoder().encode('tohle není XLSX').buffer as ArrayBuffer],
+      ['vadny.xlsx', vadnyXlsx.buffer.slice(vadnyXlsx.byteOffset, vadnyXlsx.byteOffset + vadnyXlsx.byteLength) as ArrayBuffer],
       ['treti.csv', new TextEncoder().encode(radek('US5949181045')).buffer as ArrayBuffer],
     ];
 
-    // bez izolace celá akce spadne — tohle je ta výjimka, která brala i zbytek
-    await expect(importFile(db, 'uf', ...soubory[1]!)).rejects.toThrow();
+    // Poškozený sešit dnes vrací dávku s konkrétní hláškou (od 12. 8. 2026 se
+    // chyby XLSX odchytávají uvnitř importFile, aby uživatel nedostal generické
+    // „soubor je poškozený“ místo rady). Izolace ale platí dál — kdyby cokoli
+    // jiného vyhodilo výjimku, nesmí sebrat ostatní soubory dávky.
+    await expect(importFile(db, 'uf', ...soubory[1]!)).resolves.toMatchObject({ added: 0 });
 
     for (const [filename, data] of soubory) {
       await importFileIsolated(db, 'uf', filename, data);
     }
 
-    // třetí soubor se musí uložit i po pádu druhého
+    // třetí soubor se musí uložit i po selhání druhého
     expect(await loadTransactions(db, 'uf')).toHaveLength(2);
 
     const batches = await db.select().from(importBatches).where(eq(importBatches.userId, 'uf'));
-    expect(batches).toHaveLength(3);
-    const vadny = batches.find((b) => b.filename === 'vadny.xlsx')!;
-    expect(vadny.added).toBe(0);
-    expect(vadny.errorCount).toBe(1);
+    // 3 dávky z cyklu + 1 z přímého volání importFile výš
+    expect(batches).toHaveLength(4);
+    const vadny = batches.filter((b) => b.filename === 'vadny.xlsx');
+    expect(vadny).toHaveLength(2);
+    expect(vadny[0]!.added).toBe(0);
+    expect(vadny[0]!.errorCount).toBe(1);
     // uživatel se v UI dozví, co s tím — ne generický error boundary
-    const issues = vadny.issues as { errors?: Array<{ message: string }> };
-    expect(issues.errors?.[0]?.message).toContain('poškozený');
+    const issues = vadny[0]!.issues as { errors?: Array<{ message: string }> };
+    expect(issues.errors?.[0]?.message).toContain('XLSX');
   });
 });
 

@@ -388,12 +388,34 @@ export function parseSwissquoteCsv(text: string): ImportResult {
           });
           return;
         }
+        // Sloupec Costs nese u úroků švýcarskou srážkovou daň (Verrechnungssteuer,
+        // 35 %) — stejně jako u dividend. Dokud se ignoroval, uložil se jen čistý
+        // úrok: podhodnocený příjem podle § 8 a zahozený nárok na zápočet (R-07f).
+        //
+        // Brát ho za srážku ale smíme JEN když sedí na rozklad brutto = netto +
+        // Costs, tj. když Unit price (brutto) tomu odpovídá — přesně tak to dělá
+        // i dividendová větev výš. Bez toho ověření by obyčejný poplatek v Costs
+        // nafoukl příjem § 8 a ještě vyrobil zápočet daně, kterou nikdo nesrazil.
+        const chargedCosts = costs && costs.gt(0) ? costs : d(0);
+        const reconciles =
+          chargedCosts.gt(0) &&
+          unitPrice !== null &&
+          unitPrice.gt(0) &&
+          netAmount.plus(chargedCosts).minus(unitPrice).abs().lte('0.01');
+        const withholding = reconciles ? chargedCosts : d(0);
+        if (chargedCosts.gt(0) && !reconciles) {
+          result.warnings.push({
+            line,
+            message: `Úrok „${transactionRaw}“: sloupec Costs (${chargedCosts.toString()} ${currency}) nesedí na rozdíl brutto−netto, sraženou daň proto nepočítáme — když šlo o srážku, doplň ji přes univerzální šablonu.`,
+          });
+        }
         push(line, raw, {
           type: 'INTEREST',
           id: contentId(row),
-          amount: toGbp(netAmount).toString(),
+          amount: toGbp(netAmount.plus(withholding)).toString(),
           currency,
           date,
+          ...(withholding.gt(0) ? { withholdingTax: toGbp(withholding).toString() } : {}),
         });
         return;
       }

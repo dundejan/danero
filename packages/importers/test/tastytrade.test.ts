@@ -28,8 +28,17 @@ describe('sniffTastytradeCsv (autodetekce)', () => {
     expect(sniffTastytradeCsv(TASTY_LEGACY)).toBe(true);
   });
 
-  it('odmítne YTD daňový export, prázdný text a cizí formáty', () => {
-    expect(sniffTastytradeCsv(TASTY_YTD)).toBe(false);
+  it('YTD daňový export vezme, aby uživatel dostal radu, a ne „nepoznáváme“', () => {
+    // Parser pro tenhle soubor má připravenou přesnou hlášku („nahraj export
+    // z History → Transactions“). Dokud ho autodetekce odmítala, propadl až na
+    // univerzální šablonu a rada byla dosažitelná jen z unit testu.
+    expect(sniffTastytradeCsv(TASTY_YTD)).toBe(true);
+    const result = parseTastytradeCsv(TASTY_YTD);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors[0]!.message).toContain('History → Transactions');
+  });
+
+  it('odmítne prázdný text a cizí formáty', () => {
     expect(sniffTastytradeCsv('')).toBe(false);
     expect(sniffTastytradeCsv(SCHWAB_MODERN)).toBe(false);
     expect(sniffTastytradeCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);

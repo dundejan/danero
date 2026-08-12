@@ -322,3 +322,48 @@ describe('dividenda s cenou za kus (Quantity > 1) — křížové ověření př
     expect(result.warnings.some((w) => w.message.includes('nejdou dohromady'))).toBe(true);
   });
 });
+
+describe('srážková daň z úroku (R-07f)', () => {
+  it('sloupec Costs u úroku je sražená daň, ne ztracené číslo', () => {
+    // Švýcarská Verrechnungssteuer 35 % se strhává i z úroků. Dokud se sloupec
+    // Costs u úrokového řádku ignoroval, uložil se jen čistý úrok — nižší
+    // příjem § 8 a zahozený zápočet, a to bez jediného varování.
+    const csv = [
+      'Date;Order #;Transaction;Symbol;Name;ISIN;Quantity;Unit price;Costs;Accrued Interest;Net Amount;Balance;Currency',
+      '31-12-2025 23:59:59;00000000;Interests;;;;1.0;100.00;35.00;0.00;65.00;500.00;CHF',
+    ].join('\n');
+    const result = parseSwissquoteCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const interest = result.transactions[0]!;
+    if (interest.type !== 'INTEREST') throw new Error('čekáme úrok');
+    expect(interest.amount.toString()).toBe('100');
+    expect(interest.withholdingTax.toString()).toBe('35');
+  });
+
+  it('úrok bez sražené daně zůstává beze změny', () => {
+    const result = parseSwissquoteCsv(SWISSQUOTE_EN);
+    const interest = result.transactions.find((t) => t.type === 'INTEREST')!;
+    if (interest.type !== 'INTEREST') throw new Error('čekáme úrok');
+    expect(interest.amount.toString()).toBe('12.34');
+    expect(interest.withholdingTax.toString()).toBe('0');
+  });
+});
+
+describe('poplatek v Costs u úroku není srážková daň', () => {
+  it('Costs, které nesedí na brutto−netto, se nezapočtou a řekne se to', () => {
+    // Kdyby se Costs braly jako srážka vždycky, obyčejný poplatek by nafoukl
+    // příjem podle § 8 a ještě vyrobil zápočet daně, kterou nikdo nesrazil.
+    const csv = [
+      'Date;Order #;Transaction;Symbol;Name;ISIN;Quantity;Unit price;Costs;Accrued Interest;Net Amount;Balance;Currency',
+      '31-12-2025 23:59:59;00000000;Interests;;;;;;5.00;0.00;65.00;500.00;CHF',
+    ].join('\n');
+    const result = parseSwissquoteCsv(csv);
+    expect(result.errors).toEqual([]);
+    const interest = result.transactions[0]!;
+    if (interest.type !== 'INTEREST') throw new Error('čekáme úrok');
+    expect(interest.amount.toString()).toBe('65');
+    expect(interest.withholdingTax.toString()).toBe('0');
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('nesedí');
+  });
+});

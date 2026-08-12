@@ -1,6 +1,11 @@
 import ExcelJS from 'exceljs';
 import { Decimal, d, TransactionSchema } from '@danero/shared';
-import { isValidIsoDate, normalizeHeader } from '../csv';
+import {
+  detectDecimalSeparator,
+  isAmbiguousThousandGroup,
+  isValidIsoDate,
+  normalizeHeader,
+} from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -110,9 +115,6 @@ const SAXO_LANGUAGES: readonly SaxoLanguage[] = [
   },
 ];
 
-/** Pozice klíčových sloupců v 13sloupcové struktuře (Trade Date, ISIN, Event). */
-const SNIFF_COLUMNS = [1, 5, 9] as const;
-
 /** Typy řádků — hodnoty sloupce Type napříč jazyky (po normalizeHeader). */
 const TRADE_TYPES = new Set(['trade', 'handel', 'transactie']);
 const CORPORATE_TYPES = new Set(['corporate action']);
@@ -157,18 +159,22 @@ function readSheetRows(sheet: ExcelJS.Worksheet): SheetRow[] {
   return rows;
 }
 
-/** Jazyk podle PŘESNÉ shody celého hlavičkového řádku (po normalizeHeader). */
+/**
+ * Jazyk podle NÁZVŮ sloupců, ne podle délky hlavičky.
+ *
+ * Do 12. 8. 2026 se porovnával celý řádek na přesnou shodu i délku, takže
+ * jediný sloupec navíc — stačila prázdná, ale nastylovaná buňka za hlavičkou —
+ * shodil celý import s hláškou „hlavičky v jazyce, který zatím neumíme“
+ * NAD ANGLICKÝM exportem. Sloupce se stejně mapují podle názvů (`columnOf`),
+ * takže stačí, aby všechny názvy daného jazyka v hlavičce byly.
+ */
 function detectLanguage(headerCells: string[]): SaxoLanguage | null {
-  const normalized = headerCells.map(normalizeHeader);
-  for (const lang of SAXO_LANGUAGES) {
-    if (
-      lang.headers.length === normalized.length &&
-      lang.headers.every((h, i) => normalizeHeader(h) === normalized[i])
-    ) {
-      return lang;
-    }
-  }
-  return null;
+  const normalized = new Set(headerCells.map(normalizeHeader).filter((h) => h !== ''));
+  return (
+    SAXO_LANGUAGES.find((lang) =>
+      lang.headers.every((header) => normalized.has(normalizeHeader(header))),
+    ) ?? null
+  );
 }
 
 /**
@@ -176,7 +182,7 @@ function detectLanguage(headerCells: string[]): SaxoLanguage | null {
  * i s desetinnou čárkou a tisícovými oddělovači („1.234,56“, „1,234.56“, „1 234,56“).
  * Konzervativně: poslední oddělovač = desetinný; víc výskytů téhož = tisíce.
  */
-function parseSaxoNumber(value: string): Decimal | null {
+function parseSaxoNumber(value: string, decimal: ',' | '.' | null = null): Decimal | null {
   let v = value.replace(/[\s\u00a0\u202f]/g, '');
   if (v === '' || v === '-') return null;
   const hasComma = v.includes(',');
@@ -189,9 +195,15 @@ function parseSaxoNumber(value: string): Decimal | null {
     }
   } else if (hasComma) {
     const parts = v.split(',');
-    v = parts.length > 2 ? parts.join('') : parts.join('.');
-  } else if (hasDot && v.split('.').length > 2) {
-    v = v.replaceAll('.', '');
+    // trojčíslí („Buy 1,500 @ …“) rozhodne lokalizace celého souboru: bez ní
+    // se z 1 500 kusů stalo 1,5 kusu — tiše, jen se zavádějícím varováním
+    // o „nesmyslném poplatku“
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(v) && decimal !== ',');
+    v = thousands ? parts.join('') : parts.join('.');
+  } else if (hasDot) {
+    const parts = v.split('.');
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(v) && decimal === ',');
+    v = thousands ? parts.join('') : v;
   }
   return /^-?\d+(\.\d+)?$/.test(v) ? d(v) : null;
 }
@@ -213,9 +225,11 @@ function toIsoDate(value: string, months: Record<string, number>): string | null
 }
 
 /**
- * Autodetekce Saxo Transactions XLSX: hlavičkový řádek prvního listu odpovídá
- * některému známému jazyku aspoň ve sloupcích 2, 6 a 10 (Trade Date /
- * Instrument ISIN / Event a jejich ekvivalenty).
+ * Autodetekce Saxo Transactions XLSX: hlavičkový řádek prvního listu nese
+ * všechny sloupce některého známého jazyka. Sniffer i parser rozhodují STEJNĚ
+ * (touž funkcí `detectLanguage`, podle názvů sloupců, ne podle pozic) —
+ * volnější sniffer nad přísnějším parserem znamenal, že soubor prošel detekcí,
+ * ale parser ho odmítl hláškou o cizím jazyce.
  */
 export function sniffSaxoXlsx(workbook: ExcelJS.Workbook): boolean {
   const sheet = workbook.worksheets[0];
@@ -223,10 +237,7 @@ export function sniffSaxoXlsx(workbook: ExcelJS.Workbook): boolean {
   const rows = readSheetRows(sheet);
   const header = rows[0];
   if (!header) return false;
-  const normalized = header.cells.map(normalizeHeader);
-  return SAXO_LANGUAGES.some((lang) =>
-    SNIFF_COLUMNS.every((i) => normalized[i] === normalizeHeader(lang.headers[i]!)),
-  );
+  return detectLanguage(header.cells) !== null;
 }
 
 /**
@@ -261,6 +272,9 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
   // úplně prázdný list = prázdné období, ne chyba formátu (konzistentně s T212)
   if (rows.length === 0) return result;
 
+  // lokalizace čísel z celého listu — Saxo míchá nativní čísla (tečka)
+  // s textovými buňkami v jazyce účtu („419,22“)
+  const decimal = detectDecimalSeparator(rows.flatMap((row) => row.cells));
   const header = rows[0]!;
   const lang = detectLanguage(header.cells);
   if (!lang) {
@@ -334,7 +348,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       continue;
     }
 
-    const amount = parseSaxoNumber(cellAt(col.amount));
+    const amount = parseSaxoNumber(cellAt(col.amount), decimal);
 
     if (TRADE_TYPES.has(type)) {
       const match = TRADE_EVENT_RE.exec(eventRaw);
@@ -347,8 +361,8 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
         continue;
       }
       const isBuy = BUY_VERBS.has(normalizeHeader(match[1]!));
-      const quantity = parseSaxoNumber(match[2]!);
-      const price = parseSaxoNumber(match[3]!);
+      const quantity = parseSaxoNumber(match[2]!, decimal);
+      const price = parseSaxoNumber(match[3]!, decimal);
       if (!quantity || quantity.lte(0) || !price || price.lt(0)) {
         result.errors.push({
           line,
@@ -385,7 +399,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       let fee: { amount: string; currency: string } | undefined;
       if (amount) {
         const gross = quantity.mul(price);
-        const rate = parseSaxoNumber(cellAt(col.conversionRate));
+        const rate = parseSaxoNumber(cellAt(col.conversionRate), decimal);
         const converted = rate && rate.gt(0) && !rate.eq(1) ? amount.mul(rate) : undefined;
         const impliedFee = (value: Decimal): Decimal =>
           isBuy ? value.abs().minus(gross) : gross.minus(value);

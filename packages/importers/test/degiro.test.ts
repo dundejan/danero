@@ -12,6 +12,7 @@ import {
   DEGIRO_ACCOUNT_NL,
   DEGIRO_TRANSACTIONS_CZ,
   DEGIRO_TRANSACTIONS_EN,
+  DEGIRO_TRANSACTIONS_HEADER_CZ,
 } from './fixtures/degiro';
 
 describe('Degiro Transactions.csv', () => {
@@ -546,5 +547,98 @@ describe('Degiro Account.csv — echo obchodu vs. korporátní akce (B4-0, B4-2)
     expect(result.errors).toEqual([]);
     expect(result.transactions).toEqual([]);
     expect(result.skipped).toHaveLength(1);
+  });
+});
+
+describe('lokalizovaná čísla: tisíce vs. desetinná místa (B-3-12)', () => {
+  const CZ_HEADER = DEGIRO_TRANSACTIONS_HEADER_CZ;
+
+  it('holandský/český export: „1.000“ kusů je tisíc kusů, ne jeden', () => {
+    // Do 12. 8. 2026 se tenhle řádek uložil jako 1 kus — tiše, bez varování:
+    // nákup za 185 500 USD se v přiznání tvářil jako nákup za 185,50 USD.
+    const csv = [
+      CZ_HEADER,
+      '10-01-2024;14:30;APPLE INC;US0378331005;NSY;XNAS;1.000;185,50;USD;-185.500,00;USD;-185.500,00;USD;;-2,50;USD;-185.502,50;USD;ord-1',
+    ].join('\n');
+    const result = parseDegiroTransactionsCsv(csv);
+    expect(result.errors).toEqual([]);
+    const trade = result.transactions[0]!;
+    if (trade.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(trade.quantity.toString()).toBe('1000');
+    expect(trade.pricePerShare.toString()).toBe('185.5');
+  });
+
+  it('anglický export: „1,000“ kusů je taky tisíc kusů', () => {
+    const csv = [
+      'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value,,Exchange rate,Transaction and/or third party fees,,Total,,Order ID',
+      '10-01-2024,14:30,APPLE INC,US0378331005,NSY,XNAS,"1,000",185.50,USD,"-185,500.00",USD,"-185,500.00",USD,,-2.50,USD,"-185,502.50",USD,ord-2',
+    ].join('\n');
+    const result = parseDegiroTransactionsCsv(csv);
+    expect(result.errors).toEqual([]);
+    const trade = result.transactions[0]!;
+    if (trade.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(trade.quantity.toString()).toBe('1000');
+    expect(trade.pricePerShare.toString()).toBe('185.5');
+  });
+
+  it('bez jediného rozhodujícího čísla se nehádá tiše — varuje', () => {
+    // v celém souboru není číslo, které by lokalizaci prozradilo
+    const csv = [
+      CZ_HEADER,
+      '10-01-2024;14:30;APPLE INC;US0378331005;NSY;XNAS;1.000;200;USD;-200.000;USD;-200.000;USD;;;;-200.000;USD;ord-3',
+    ].join('\n');
+    const result = parseDegiroTransactionsCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('tisíckrát');
+  });
+
+  it('Account.csv: vklad 1.000 CZK je tisíc korun', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      '02-01-2024;10:00;02-01-2024;;;Vklad;;CZK;1.000;CZK;1.000,50;',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    const deposit = result.transactions[0]!;
+    if (deposit.type !== 'DEPOSIT') throw new Error('čekáme vklad');
+    expect(deposit.amount.toString()).toBe('1000');
+  });
+});
+
+describe('výpis v jazyce rozhraní: DE a FR (klasifikace popisů je uměla, hlavičky ne)', () => {
+  it('německý Account.csv se pozná i naimportuje', () => {
+    const csv = [
+      'Datum,Uhrzeit,Valutadatum,Produkt,ISIN,Beschreibung,FX,Änderung,,Saldo,,Order-ID',
+      '02-01-2024,10:00,02-01-2024,,,Einzahlung,,EUR,1000.00,EUR,1000.00,',
+    ].join('\n');
+    expect(isDegiroCsv(csv)).toBe('account');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions[0]!.type).toBe('DEPOSIT');
+  });
+
+  it('francouzský Account.csv se pozná i naimportuje', () => {
+    const csv = [
+      "Date,Heure,Date de valeur,Produit,ISIN,Description,FX,Variation,,Solde,,ID de l'ordre",
+      '02-01-2024,10:00,02-01-2024,,,Versement de fonds,,EUR,1000.00,EUR,1000.00,',
+    ].join('\n');
+    expect(isDegiroCsv(csv)).toBe('account');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions[0]!.type).toBe('DEPOSIT');
+  });
+
+  it('německý Transactions.csv se pozná i naimportuje', () => {
+    const csv = [
+      'Datum,Uhrzeit,Produkt,ISIN,Referenzbörse,Börse,Anzahl,Kurs,,Wert in Lokalwährung,,Wert,,Wechselkurs,Transaktionsgebühren,,Gesamt,,Order-ID',
+      '10-01-2024,14:30,APPLE INC,US0378331005,NSY,XNAS,10,185.50,USD,-1855.00,USD,-1855.00,USD,,-2.50,USD,-1857.50,USD,de-1',
+    ].join('\n');
+    expect(isDegiroCsv(csv)).toBe('transactions');
+    const result = parseDegiroTransactionsCsv(csv);
+    expect(result.errors).toEqual([]);
+    const trade = result.transactions[0]!;
+    if (trade.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(trade.quantity.toString()).toBe('10');
+    expect(trade.fee?.amount.toString()).toBe('2.5');
   });
 });

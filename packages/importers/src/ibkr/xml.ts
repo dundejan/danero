@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { d, TransactionSchema, ZERO } from '@danero/shared';
-import { cleanNumber } from '../csv';
+import { cleanNumber, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import type { ImportResult } from '../types';
 
@@ -55,12 +55,56 @@ function asArray(value: unknown): Attrs[] {
   return (Array.isArray(value) ? value : [value]) as Attrs[];
 }
 
-/** IBKR datumy: '20240610', '2024-06-10', s časem za ';' nebo mezerou. */
+/** Zkratky měsíců v IBKR datumech typu „10-Jun-25“. */
+const MONTH_ABBR: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+};
+
+/**
+ * IBKR datumy. Formát data si uživatel VOLÍ ve Flex Query (Delivery
+ * Configuration), takže krom výchozího `yyyyMMdd` chodí i `yyyy-MM-dd`,
+ * `MM/dd/yyyy`, `dd-MMM-yy` a ISO s `T`. Do 12. 8. 2026 uměl parser jen první
+ * dva: ostatní varianty vracely 0 transakcí a hlášku „obchodu chybí datum“ —
+ * přestože datum v souboru bylo, jen jinak zapsané.
+ */
 function toIsoDate(value: string | undefined): string | null {
+  const iso = toIsoDateCandidate(value);
+  // neexistující kalendářní den (překlep i špatně uhodnutý formát) musí skončit
+  // chybou řádku, ne tichým posunem data
+  return iso !== null && isValidIsoDate(iso) ? iso : null;
+}
+
+function toIsoDateCandidate(value: string | undefined): string | null {
   if (!value) return null;
-  const datePart = value.split(/[;, ]/)[0]!.replaceAll('-', '');
-  if (!/^\d{8}$/.test(datePart)) return null;
-  return `${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)}`;
+  // čas se odděluje `;`, čárkou, mezerou nebo ISO `T` — `T` ale jen když za ním
+  // opravdu jde čas, jinak by se `10-OCT-25` uříznulo na `10-OC` a říjnové
+  // řádky by se jako jediné neimportovaly
+  const datePart = value.trim().split(/[;,\s]|T(?=\d)/)[0]!;
+
+  const compact = datePart.replaceAll('-', '');
+  if (/^\d{8}$/.test(compact)) {
+    return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  }
+
+  // MM/dd/yyyy (US) i dd/MM/yyyy — rozliší se podle toho, které číslo je > 12;
+  // při nerozhodnu vyhrává US tvar, který IBKR nabízí
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(datePart);
+  if (slash) {
+    const [, first, second, year] = slash;
+    const [month, day] = Number(first) > 12 ? [second!, first!] : [first!, second!];
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  // dd-MMM-yy i dd-MMM-yyyy („10-Jun-25“)
+  const named = /^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})$/.exec(datePart);
+  if (named) {
+    const month = MONTH_ABBR[named[2]!.toLowerCase()];
+    if (month === undefined) return null;
+    const year = named[3]!.length === 2 ? `20${named[3]}` : named[3]!;
+    return `${year}-${month}-${named[1]!.padStart(2, '0')}`;
+  }
+  return null;
 }
 
 const ISIN_RE = /\b([A-Z]{2}[A-Z0-9]{9}\d)\b/g;
@@ -529,6 +573,7 @@ function processCashTransactions(
         break;
       }
       case 'Broker Interest Received':
+      case 'Bond Interest Received':
       case 'Credit Interest': {
         push(line, row, {
           type: 'INTEREST',
@@ -542,6 +587,7 @@ function processCashTransactions(
         break;
       }
       case 'Broker Interest Paid':
+      case 'Bond Interest Paid':
       case 'Debit Interest': {
         push(line, row, {
           type: 'FEE',
@@ -555,6 +601,7 @@ function processCashTransactions(
         break;
       }
       case 'Other Fees':
+      case 'Advisor Fees':
       case 'Commission Adjustments': {
         if (amount.gte(0)) {
           result.warnings.push({

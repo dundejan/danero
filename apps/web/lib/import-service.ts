@@ -28,10 +28,16 @@ import {
   parseSchwabCsv,
   parseSwissquoteCsv,
   parseTastytradeCsv,
+  isSpreadsheetMlXml,
   isTruncatedTrading212Export,
   parseTrading212Csv,
+  printableSample,
+  sniffFileFormat,
   sniffTrading212Csv,
   TRADING212_BROKER,
+  unsupportedFormatMessage,
+  XlsxTooLargeError,
+  XlsxUnreadableError,
   parseUniversalCsv,
   parseXtbXlsx,
   sniffAnycoinCsv,
@@ -90,6 +96,13 @@ interface ParsedFile {
 
 const noUnmapped = (outcome: ImportResult): ParsedFile => ({ outcome, unmapped: [] });
 
+/** Nepoznaný (nebo nepodporovaný) soubor → dávka s jedinou srozumitelnou chybou. */
+function unknownFormat(message: string): ImportResult {
+  const outcome = emptyResult('neznámý formát');
+  outcome.errors.push({ line: 1, message });
+  return outcome;
+}
+
 const withUnmapped = (
   broker: string,
   outcome: ImportResult & { unmappedSymbols: string[] },
@@ -119,13 +132,22 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
         trimmed,
       )
     ) {
-      const unknown = emptyResult('neznámý formát');
-      unknown.errors.push({
-        line: 1,
-        message:
+      return noUnmapped(
+        unknownFormat(
           'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report“) a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
-      });
-      return noUnmapped(unknown);
+        ),
+      );
+    }
+    // Sešit SpreadsheetML je taky XML — bez téhle odbočky by uživatel dostal
+    // hlášku IBKR parseru o brokerovi, se kterým jeho soubor nemá nic společného.
+    if (isSpreadsheetMlXml(text)) {
+      return noUnmapped(
+        unknownFormat(
+          'Tohle je excelový sešit uložený jako XML (starší formát „XML tabulka 2003“), který číst neumíme. ' +
+            'V MetaTraderu ulož report jako XLSX („Open XML“) nebo HTML; z jiné platformy ho otevři v Excelu ' +
+            'a ulož znovu jako .xlsx nebo CSV.',
+        ),
+      );
     }
     return noUnmapped(parseIbkrFlexXml(text));
   }
@@ -194,18 +216,16 @@ function universalOrUnknown(text: string): ImportResult {
     return parseUniversalCsv(text);
   }
 
-  const listed = columns.slice(0, MAX_LISTED_COLUMNS).join(', ');
-  const unknown = emptyResult('neznámý formát');
-  unknown.errors.push({
-    line: 1,
-    message:
-      `Formát souboru nepoznáváme${
-        listed ? ` — v hlavičce jsme našli: ${listed}${columns.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : ''
-      }. Zkontroluj v seznamu platforem níž, který export od své platformy stáhnout. ` +
+  // binární smetí (přejmenovaný .xls, obrázek) se do hlášky nesmí obtisknout
+  // syrové — řídicí znaky rozsypou UI i mail, ze kterého to řešíme
+  const listed = printableSample(columns.slice(0, MAX_LISTED_COLUMNS).join(', '), 200);
+  return unknownFormat(
+    `Formát souboru nepoznáváme${
+      listed ? ` — v hlavičce jsme našli: ${listed}${columns.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : ''
+    }. Zkontroluj v seznamu platforem níž, který export od své platformy stáhnout. ` +
       'Pokud ji nečteme automaticky, přepiš data do univerzální šablony. ' +
       'Když si myslíš, že tenhle soubor číst umíme, napiš nám a přilož ho — nejspíš broker změnil formát.',
-  });
-  return unknown;
+  );
 }
 
 /** Zpětně kompatibilní vstup pro T212 sync (text bez číselníku aliasů). */
@@ -248,39 +268,40 @@ export async function importFile(
   filename: string,
   data: ArrayBuffer,
 ): Promise<ImportSummary> {
-  if (/\.xlsx$/i.test(filename)) {
-    const workbook = await loadXlsxWorkbook(data);
-    if (sniffXtbXlsx(workbook)) {
-      const aliases = await loadAliases(db, userId);
-      const outcome = await parseXtbXlsx(data, aliases.xtb);
-      return importParsed(db, userId, filename, outcome, undefined, {
-        unmapped: outcome.unmappedSymbols.map((symbol) => ({
-          broker: 'xtb',
-          symbol,
-          needsCurrency: true,
-        })),
-      });
+  // Prázdný NAHRANÝ soubor je vždycky vada stahování — na rozdíl od prázdného
+  // těla z API T212, které legitimně znamená rok bez obchodů (a tudy nechodí).
+  // Dřív ho odchytila kontrola XLSX; po přechodu na detekci podle obsahu by
+  // propadl do textové větve a skončil jako „0 transakcí, 0 chyb“.
+  if (data.byteLength === 0) {
+    return importParsed(
+      db,
+      userId,
+      filename,
+      unknownFormat(
+        'Soubor je prázdný (0 bajtů) — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
+      ),
+    );
+  }
+
+  // Formát určuje OBSAH, ne přípona: portály nabízejí „XLS“ a doručí XLSX,
+  // prohlížeč připíše .csv k sešitu a uživatel soubory přejmenovává.
+  const format = sniffFileFormat(data);
+  if (format !== null && format !== 'xlsx') {
+    return importParsed(db, userId, filename, unknownFormat(unsupportedFormatMessage(format)!));
+  }
+
+  if (format === 'xlsx') {
+    try {
+      return await importXlsxUpload(db, userId, filename, data);
+    } catch (error) {
+      // Konkrétní diagnózu XLSX (zip bomba, uříznutý archiv) jinak spolkne
+      // importFileIsolated a uživatel dostane generické „soubor je poškozený“ —
+      // rada „rozděl export na kratší období“ je přitom úplně jiná.
+      if (error instanceof XlsxTooLargeError || error instanceof XlsxUnreadableError) {
+        return importParsed(db, userId, filename, unknownFormat(error.message));
+      }
+      throw error;
     }
-    if (sniffEtoroXlsx(workbook)) {
-      const aliases = await loadAliases(db, userId);
-      const parsed = withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro));
-      return importParsed(db, userId, filename, parsed.outcome, undefined, {
-        unmapped: parsed.unmapped,
-      });
-    }
-    if (sniffSaxoXlsx(workbook)) {
-      return importParsed(db, userId, filename, await parseSaxoXlsx(data));
-    }
-    if (sniffMt5Xlsx(workbook)) {
-      return importParsed(db, userId, filename, await parseMt5Xlsx(data));
-    }
-    const unknown = emptyResult('neznámý formát');
-    unknown.errors.push({
-      line: 1,
-      message:
-        'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
-    });
-    return importParsed(db, userId, filename, unknown);
   }
 
   const utf8 = new TextDecoder().decode(data);
@@ -312,6 +333,48 @@ export async function importFile(
   return importParsed(db, userId, filename, parsed.outcome, undefined, {
     unmapped: parsed.unmapped,
   });
+}
+
+/** XLSX větev importu: jedno načtení workbooku pro všechny sniffy. */
+async function importXlsxUpload(
+  db: Db,
+  userId: string,
+  filename: string,
+  data: ArrayBuffer,
+): Promise<ImportSummary> {
+  const workbook = await loadXlsxWorkbook(data);
+  if (sniffXtbXlsx(workbook)) {
+    const aliases = await loadAliases(db, userId);
+    const outcome = await parseXtbXlsx(data, aliases.xtb);
+    return importParsed(db, userId, filename, outcome, undefined, {
+      unmapped: outcome.unmappedSymbols.map((symbol) => ({
+        broker: 'xtb',
+        symbol,
+        needsCurrency: true,
+      })),
+    });
+  }
+  if (sniffEtoroXlsx(workbook)) {
+    const aliases = await loadAliases(db, userId);
+    const parsed = withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro));
+    return importParsed(db, userId, filename, parsed.outcome, undefined, {
+      unmapped: parsed.unmapped,
+    });
+  }
+  if (sniffSaxoXlsx(workbook)) {
+    return importParsed(db, userId, filename, await parseSaxoXlsx(data));
+  }
+  if (sniffMt5Xlsx(workbook)) {
+    return importParsed(db, userId, filename, await parseMt5Xlsx(data));
+  }
+  return importParsed(
+    db,
+    userId,
+    filename,
+    unknownFormat(
+      'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
+    ),
+  );
 }
 
 /** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */

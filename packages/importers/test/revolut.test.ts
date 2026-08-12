@@ -12,6 +12,7 @@ import {
   REVOLUT_CRYPTO_EXCHANGE_PAIR_CSV,
   REVOLUT_CRYPTO_NEW_CSV,
   REVOLUT_CRYPTO_NEW_NO_CURRENCY_CSV,
+  REVOLUT_CRYPTO_NEW_HEADER,
   REVOLUT_CRYPTO_NEW_UNKNOWN_TYPE_CSV,
   REVOLUT_CRYPTO_OLD_CSV,
   REVOLUT_CRYPTO_OLD_UNSUPPORTED_TYPE_CSV,
@@ -482,5 +483,45 @@ describe('Revolut krypto — společné', () => {
     ]);
     expect(combined.fresh).toHaveLength(5);
     expect(combined.duplicates).toBe(5);
+  });
+});
+
+describe('lokalizovaná čísla: tisíce vs. desetinná místa (B-3-12)', () => {
+  it('evropský výpis: „0,125“ je 0,125 BTC, ne 125 BTC', () => {
+    // Do 12. 8. 2026 vyhrávaly u trojčíslí vždycky tisíce, takže se z nákupu
+    // 0,125 BTC stal nákup 125 BTC — mlčky, bez chyby i bez varování.
+    const csv = [
+      REVOLUT_CRYPTO_NEW_HEADER,
+      'BTC,Buy,"0,125","60000,50 EUR","7500,06 EUR","0,00 EUR","Jun 12, 2018, 4:16:32 PM"',
+      'ETH,Buy,"0,76672417","2000,25 EUR","1533,66 EUR","0,00 EUR","Jun 13, 2018, 4:16:32 PM"',
+    ].join('\n');
+    const result = parseRevolutCryptoCsv(csv);
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.quantity.toString()).toBe('0.125');
+  });
+
+  it('anglický výpis: „1,500“ kusů je patnáct set kusů', () => {
+    const csv = [
+      REVOLUT_INVEST_HEADER,
+      '2023-09-22T13:30:10.514Z,MSFT,BUY - MARKET,"1,500",$26.09,"$39,135.00",USD,1.0665',
+    ].join('\n');
+    const result = parseRevolutInvestCsv(csv, { MSFT: { isin: 'US5949181045' } });
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.quantity.toString()).toBe('1500');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('bez rozhodujícího čísla se nehádá tiše — varuje', () => {
+    const csv = [
+      REVOLUT_INVEST_HEADER,
+      '2023-09-22T13:30:10.514Z,MSFT,BUY - MARKET,"1,500",$26,"$39135",USD,1',
+    ].join('\n');
+    const result = parseRevolutInvestCsv(csv, { MSFT: { isin: 'US5949181045' } });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('tisíckrát');
   });
 });

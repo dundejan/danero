@@ -154,3 +154,26 @@ describe('downloadCsv: kontrola úplnosti přenosu', () => {
     );
   });
 });
+
+describe('cesta exportních endpointů (T212 ji v dokumentaci přesunul pod /equity)', () => {
+  it('na 404 zkusí dokumentovanou cestu a tu úspěšnou si zapamatuje', async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL): Promise<Response> => {
+      const path = new URL(String(url)).pathname;
+      calls.push(path);
+      if (path.endsWith('/api/v0/history/exports')) {
+        return new Response('not found', { status: 404 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const client = new Trading212Client({ apiKey: 'k', fetchImpl });
+    await expect(client.listExports()).resolves.toEqual([]);
+    expect(calls).toEqual(['/api/v0/history/exports', '/api/v0/equity/history/exports']);
+
+    // druhé volání už jde rovnou na fungující cestu (limit je 1 dotaz / 30 s)
+    calls.length = 0;
+    await client.listExports();
+    expect(calls).toEqual(['/api/v0/equity/history/exports']);
+  });
+});

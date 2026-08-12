@@ -1,5 +1,5 @@
 import { d, TransactionSchema } from '@danero/shared';
-import { normalizeHeader, parseCsv, parseEuroDate } from '../csv';
+import { FIAT_CURRENCIES, normalizeHeader, parseCsv, parseEuroDate } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -67,7 +67,15 @@ const cell = (row: string[], index: number): string =>
 const parseNumber = (value: string): string | null =>
   /^-?\d+(\.\d+)?$/.test(value) ? value : null;
 
-const isFiatCode = (value: string): boolean => /^[A-Z]{3}$/.test(value);
+/**
+ * Opravdová fiat měna, ne jen „tři velká písmena“.
+ *
+ * Regulární výraz `^[A-Z]{3}$` propouštěl `BTC`, `ETH`, `ADA` i `SOL`, takže
+ * poplatek zaplacený v kryptu prošel jako by šlo o měnu — a pojistka
+ * s varováním pod ním byla mrtvý kód. V enginu to pak končí `FX_RATE_MISSING`
+ * na chybějícím kurzu, což neshodí jeden řádek, ale CELÝ výpočet daně.
+ */
+const isFiatCode = (value: string): boolean => FIAT_CURRENCIES.has(value);
 
 /** Typy transakcí podle směru; ostatní se přeskakují nebo hlásí. */
 const BUY_TYPES = new Set(['BUY', 'QUICK_BUY', 'MARKET_BUY']);
