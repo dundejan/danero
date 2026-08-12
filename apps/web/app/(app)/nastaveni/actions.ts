@@ -20,12 +20,39 @@ import { authApi, requireUser } from '@/lib/session';
 const ProfileFormSchema = z.object({
   rezim: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
   'obchodni-majetek': z.literal('on').optional(),
+  /**
+   * Částku píše člověk, ne stroj: „10 000“, „1 234,50“, klidně s nedělitelnou
+   * mezerou zkopírovanou z Danera (aplikace sama odděluje tisíce NBSP, takže
+   * kopie vlastního čísla zpátky do formuláře je běžný pohyb). Mezery se proto
+   * odstraní a desetinná čárka převede na tečku.
+   *
+   * ⚠️ Kontrola nesmí být rozdělená do dvou `.refine()`: Zod pustí i to druhé,
+   * i když první selhalo, a `d('10 000')` vyhodí `DecimalError`. Ten už není
+   * chybou validace, ale výjimkou uvnitř `safeParse` — a uživatel místo hlášky
+   * dostal chybovou stránku. Rozhoduje se proto v jednom `superRefine`, který
+   * `d()` zavolá až na tvaru, o kterém ví, že je číslo.
+   */
   'ostatni-prijmy': z
     .string()
-    .transform((v) => v.replace(',', '.').trim() || '0')
-    .refine((v) => /^\d+(\.\d{1,2})?$/.test(v), 'Zadej částku v Kč')
-    // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
-    .refine((v) => d(v).lte('1000000000000'), 'Částka je nereálně vysoká — zkontroluj ji.'),
+    .transform((v) => v.replace(/\s/g, '').replace(',', '.') || '0')
+    .superRefine((v, ctx) => {
+      if (!/^\d+(\.\d{1,2})?$/.test(v)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Zadej částku v korunách, třeba 12000 nebo 12000,50.',
+          params: { kod: 'prijmy' },
+        });
+        return;
+      }
+      // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
+      if (d(v).gt('1000000000000')) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Částka je nereálně vysoká — zkontroluj ji.',
+          params: { kod: 'prijmy' },
+        });
+      }
+    }),
   parovani: z.enum(['FIFO', 'LIFO', 'MAX_PROFIT', 'MAX_LOSS']),
   kurzy: z.enum(['UNIFIED', 'CNB_DAILY']),
   'limit-100k': z.enum(['strict', 'lenient']),
@@ -37,7 +64,16 @@ const ProfileFormSchema = z.object({
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ProfileFormSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect('/nastaveni?chyba=formular');
+  if (!parsed.success) {
+    // u částky umíme poradit konkrétně; zbytek formuláře jsou jen nabídky,
+    // do kterých se z UI nedá napsat nic vlastního
+    const kod = parsed.error.issues.some(
+      (issue) => (issue as { params?: { kod?: string } }).params?.kod === 'prijmy',
+    )
+      ? 'prijmy'
+      : 'formular';
+    redirect(`/nastaveni?chyba=${kod}`);
+  }
 
   const values = {
     regime: parsed.data.rezim,

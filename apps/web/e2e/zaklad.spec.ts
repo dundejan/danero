@@ -60,6 +60,23 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.reload();
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
+  // Částku lidé píšou s mezerou mezi tisíci — a Danero ji tak samo tiskne,
+  // takže zkopírované číslo se sem vrací i s NEDĚLITELNOU mezerou. Dokud se
+  // hodnota kontrolovala dvěma refine za sebou, spadlo tohle na výjimku
+  // z Decimalu a uživatel dostal chybovou stránku místo hlášky.
+  await page.getByLabel(/Další zdanitelné příjmy/).fill('10 000');
+  await page.getByLabel('Párování prodejů').focus(); // blur → auto-save
+  await expect(page.getByText('Uloženo. Výpočty se přepočítají podle nového profilu.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel(/Další zdanitelné příjmy/)).toHaveValue('10000');
+
+  // nesmysl musí skončit radou, ne pádem
+  await page.getByLabel(/Další zdanitelné příjmy/).fill('12 000 Kč');
+  await page.getByLabel('Párování prodejů').focus();
+  await expect(page.getByText(/Další zdanitelné příjmy zadej jako částku/)).toBeVisible();
+  await page.getByLabel(/Další zdanitelné příjmy/).fill('0');
+  await page.getByLabel('Párování prodejů').focus();
+
   // upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
   await page.getByRole('link', { name: 'Upozornění' }).click();
   await page.waitForURL('**/nastaveni/upozorneni');
