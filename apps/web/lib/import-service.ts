@@ -180,7 +180,10 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
       useknuty.errors.push({
         line: 1,
         message:
-          'Soubor vypadá nedostažený — poslední řádek je uříznutý uprostřed. Stáhni export z Trading212 znovu a nahraj ho celý; kdybychom ho vzali takhle, chyběla by ti část obchodů a limity by vyšly nižší, než jsou.',
+          'Soubor vypadá poškozený — končí rozepsaným řádkem nebo v něm zůstala neuzavřená ' +
+          'uvozovka (typicky nedokončené stahování). Stáhni export z Trading212 znovu a nahraj ' +
+          'ho celý; kdybychom ho vzali takhle, chyběla by ti část obchodů a limity by vyšly ' +
+          'nižší, než jsou.',
       });
       return noUnmapped(useknuty);
     }

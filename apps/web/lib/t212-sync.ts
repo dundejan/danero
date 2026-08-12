@@ -278,7 +278,7 @@ export async function syncTrading212(
     // Content-Length, kterou server poslat nemusí.
     if (isTruncatedTrading212Export(rawExport)) {
       throw new Error(
-        `Export za rok ${year} dorazil bez jediného datového řádku — přenos se zřejmě přerušil hned za hlavičkou (rok bez obchodů posílá Trading212 jako úplně prázdný soubor). Spusť synchronizaci znovu; co už se stáhlo, zůstává a nic se nezdvojí.`,
+        `Export za rok ${year} dorazil poškozený — buď bez jediného datového řádku, nebo s rozepsaným posledním řádkem (rok bez obchodů posílá Trading212 jako úplně prázdný soubor, takže tohle přerušený přenos je). Spusť synchronizaci znovu; co už se stáhlo, zůstává a nic se nezdvojí.`,
       );
     }
     const parsed = detectAndParse(rawExport);

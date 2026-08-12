@@ -115,7 +115,7 @@ describe('useknutý export T212 v ručním uploadu (B-3-1)', () => {
 
     expect(vysledek.transactions).toEqual([]);
     expect(vysledek.errors).toHaveLength(1);
-    expect(vysledek.errors[0]!.message).toContain('nedostažen');
+    expect(vysledek.errors[0]!.message).toContain('poškozený');
   });
 
   it('celý soubor se naimportuje normálně', () => {

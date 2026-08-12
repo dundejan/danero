@@ -247,7 +247,7 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
           now: new Date('2026-07-07T12:00:00Z'),
           pollIntervalMs: 5,
         }),
-      ).rejects.toThrow(/přenos se zřejmě přerušil/);
+      ).rejects.toThrow(/dorazil poškozený/);
 
       const updated = (
         await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc10'))
