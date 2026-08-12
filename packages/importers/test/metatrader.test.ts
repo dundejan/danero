@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import { d } from '@danero/shared';
-import { dedupeTransactions } from '../src';
+import { brokerIdKey, dedupeTransactions } from '../src';
 import { MT4_BROKER, parseMt4Html, sniffMt4Html } from '../src/metatrader/mt4-html';
 import {
   MT5_BROKER,
@@ -19,6 +19,8 @@ import {
   buildMt5Xlsx,
   MT4_HTML,
   MT4_OPEN_TRADE_ROW,
+  MT5_DEALS,
+  mt5DealHtmlRow,
   MT5_HTML,
 } from './fixtures/metatrader';
 
@@ -420,5 +422,50 @@ describe('MT5 report parser (XLSX)', () => {
     ]);
     expect(combined.fresh).toHaveLength(6);
     expect(combined.duplicates).toBe(6);
+  });
+});
+
+describe('MT5: dva překrývající se reporty (kratší období po delším)', () => {
+  it('tentýž obchod se podruhé neuloží, jen se ohlásí jiná čísla', () => {
+    // Výsledek uzavíracího dealu závisí na tom, jestli je v reportu i deal
+    // otevírací (komise se do něj započítávají), takže export „poslední
+    // 3 měsíce“ dá jinou cenu než „celá historie“ — obsahový dedupe je proto
+    // nepozná. Id dealu je ale v obou stejné, a to je ta druhá síť.
+    const cely = parseMt5Html(MT5_HTML);
+    expect(cely.errors).toEqual([]);
+
+    // report jen s uzavíracími dealy (otevírací padly mimo období)
+    const jenUzavreni = parseMt5Html(
+      buildMt5Html({
+        deals: MT5_DEALS.filter((deal) => deal.direction !== 'in').map(mt5DealHtmlRow),
+      }),
+    );
+    expect(jenUzavreni.errors).toEqual([]);
+
+    const prvni = dedupeTransactions(MT5_BROKER, cely.transactions);
+    const druhy = dedupeTransactions(
+      MT5_BROKER,
+      jenUzavreni.transactions,
+      prvni.fresh.map((f) => f.key),
+      prvni.fresh.map((f) => brokerIdKey(MT5_BROKER, f.tx.id)),
+    );
+    // bez druhé sítě by se tytéž obchody uložily znovu s jinou cenou
+    expect(druhy.fresh).toHaveLength(0);
+    expect(druhy.restated.length).toBeGreaterThan(0);
+  });
+});
+
+describe('volitelné sloupce reportu bývají prázdné', () => {
+  it('MT4: prázdné Commission/Taxes se čtou jako nula, obchod se nezahodí', () => {
+    // Commission a Taxes jsou v terminálu zaškrtávací sloupce; když je uživatel
+    // nemá zapnuté, broker je v reportu nechá prázdné (často jako &nbsp;).
+    // Dokud to byla „nečitelná čísla“, mizel kvůli tomu CELÝ obchod.
+    const html = MT4_HTML.replace(
+      '<td class="mspt">-0.50</td><td class="mspt">0.00</td>',
+      '<td class="mspt">&nbsp;</td><td class="mspt"></td>',
+    );
+    const result = parseMt4Html(html);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.length).toBeGreaterThan(0);
   });
 });

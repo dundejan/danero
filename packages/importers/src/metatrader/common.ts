@@ -65,6 +65,17 @@ export function parseMtNumber(value: string): Decimal | null {
   return d(cleaned);
 }
 
+/**
+ * \u010c\u00edslo z voliteln\u00e9ho sloupce reportu; PR\u00c1ZDN\u00c1 bu\u0148ka je nula, ne ne\u010diteln\u00e9
+ * \u010d\u00edslo. Commission, Taxes, Swap i Fee jsou v termin\u00e1lu voliteln\u00e9 sloupce
+ * a \u010d\u00e1st broker\u016f je nech\u00e1v\u00e1 pr\u00e1zdn\u00e9 (\u010dasto jako `&nbsp;`) \u2014 MT4 parser kv\u016fli
+ * tomu zahazoval cel\u00fd obchod, MT5 na t\u00e9m\u017ee m\u00edst\u011b dosazoval nulu. Pouh\u00e9
+ * `value || '0'` nesta\u010d\u00ed: nezlomiteln\u00e1 mezera je nepr\u00e1zdn\u00fd \u0159et\u011bzec.
+ */
+export function parseMtNumberOrZero(value: string): Decimal | null {
+  return value.replace(/[\s\u00a0\u202f]/g, '') === '' ? d(0) : parseMtNumber(value);
+}
+
 /** „2023.09.11 20:55:26“ (MT4/MT5) i ISO tvar → 'YYYY-MM-DD'; neexistující den → null. */
 export function mtDateToIso(value: string): string | null {
   const match = /^(\d{4})[.-](\d{2})[.-](\d{2})(?![\d.-])/.exec(value.trim());

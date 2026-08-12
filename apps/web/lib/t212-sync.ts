@@ -21,7 +21,7 @@ import { decryptSecret } from '@/lib/crypto';
 import {
   detectAndParse,
   importParsed,
-  loadDedupeKeys,
+  loadImportState,
   type ImportSummary,
 } from '@/lib/import-service';
 import { errorText } from '@/lib/log';
@@ -190,8 +190,9 @@ export async function syncTrading212(
 
   const batches: ImportSummary[] = [];
   const yearsCovered: number[] = [];
-  // dedupe klíče jednou za sync, ne per rok — importParsed do množiny doplňuje
-  const dedupeKeys = await loadDedupeKeys(db, account.userId);
+  // stav dedupe (klíče + id brokera) jednou za sync, ne per rok —
+  // importParsed do něj nově uložené doplňuje
+  const importState = await loadImportState(db, account.userId);
   let emptyStreak = 0;
   // kolik řádků nám brokerovy exporty vůbec vydaly (nezávisle na dedupe) —
   // rozlišuje „účet nic neobchodoval“ od „broker nic nevrátil“ (G-1)
@@ -295,7 +296,7 @@ export async function syncTrading212(
         account.userId,
         `t212-api-${year}.csv`,
         parsed,
-        dedupeKeys,
+        importState,
       );
       batches.push(batch);
       current.added = batch.added;

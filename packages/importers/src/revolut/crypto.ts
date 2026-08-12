@@ -25,7 +25,7 @@ import {
  * směny podle universal šablony: SELL oceněný protiplněním + BUY kupovaného).
  */
 
-const NEW_HEADERS = ['Symbol', 'Type', 'Quantity', 'Price', 'Value', 'Fees', 'Date'] as const;
+export const REVOLUT_CRYPTO_COLUMNS = ['Symbol', 'Type', 'Quantity', 'Price', 'Value', 'Fees', 'Date'] as const;
 const OLD_SNIFF_HEADERS = ['Started Date', 'Completed Date', 'Base currency', 'Fiat amount'] as const;
 
 type CryptoFormat = 'new' | 'old';
@@ -35,7 +35,7 @@ function detectCryptoFormat(headers: string[]): CryptoFormat | null {
   // navíc nezáleží (parser čte podle názvů). Porovnání na přesnou délku
   // a pořadí znamenalo, že jediný přidaný sloupec import zabil a uživatel
   // dostal hlášku univerzální šablony o nečitelném datu.
-  if (NEW_HEADERS.every((name) => headers.includes(name))) return 'new';
+  if (REVOLUT_CRYPTO_COLUMNS.every((name) => headers.includes(name))) return 'new';
   if (OLD_SNIFF_HEADERS.every((name) => headers.includes(name))) return 'old';
   return null;
 }
@@ -48,19 +48,22 @@ export function sniffRevolutCryptoCsv(text: string): boolean {
 }
 
 export function parseRevolutCryptoCsv(text: string): ImportResult {
-  const result = emptyResult(REVOLUT_BROKER);
-
   // prázdný soubor = prázdné období, ne chyba formátu (konzistentně s T212)
-  if (text.trim() === '') return result;
-
+  if (text.trim() === '') return emptyResult(REVOLUT_BROKER);
   const { headers, rows } = parseCsv(text);
+  return parseRevolutCryptoTable(headers, rows);
+}
+
+/** Jádro parseru nad tabulkou — sdílí ho CSV i XLSX větev (viz invest.ts). */
+export function parseRevolutCryptoTable(headers: string[], rows: string[][]): ImportResult {
+  const result = emptyResult(REVOLUT_BROKER);
   // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (B-3-12)
   const decimal = detectRevolutDecimal(rows);
   const format = detectCryptoFormat(headers);
   if (format === null) {
     result.errors.push({
       line: 1,
-      message: `Soubor nevypadá jako krypto výpis Revolutu — očekávám sloupce „${NEW_HEADERS.join(', ')}“ (nový formát), nebo „${OLD_SNIFF_HEADERS.join(', ')}“ (starší formát). Nalezené sloupce: ${headers.filter((h) => h !== '').join(', ')}`,
+      message: `Soubor nevypadá jako krypto výpis Revolutu — očekávám sloupce „${REVOLUT_CRYPTO_COLUMNS.join(', ')}“ (nový formát), nebo „${OLD_SNIFF_HEADERS.join(', ')}“ (starší formát). Nalezené sloupce: ${headers.filter((h) => h !== '').join(', ')}`,
     });
     return result;
   }

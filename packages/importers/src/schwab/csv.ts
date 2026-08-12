@@ -45,6 +45,31 @@ const optionIsin = (symbol: string): string => `OPT:${symbol.replace(/\s+/g, '-'
 const BUY_ACTIONS = new Set(['Buy', 'Buy to Open', 'Buy to Close', 'Reinvest Shares']);
 const SELL_ACTIONS = new Set(['Sell', 'Sell to Open', 'Sell to Close']);
 
+/**
+ * Prodej nakrátko na spotu. NEIMPORTUJEME ho jako běžný obchod, i když by to
+ * bylo snadné: prodej bez předchozího nákupu engine ocení nulou (ERROR
+ * NEGATIVE_POSITION v ledger.ts) a zdanil by se CELÝ výnos shortu, zpětný
+ * nákup by pak zůstal jako lot, který se nikdy neprodá. Daňové pravidlo pro
+ * shorty v docs/02 zatím není, a vymýšlet ho v parseru se nesmí (pravidlo 2
+ * v CLAUDE.md) — dokud nebude, je poctivější říct to nahlas.
+ */
+const SHORT_ACTIONS = new Map<string, string>([
+  ['Sell Short', 'prodej nakrátko'],
+  ['Buy to Cover', 'zpětný nákup k pokrytí shortu'],
+]);
+
+/**
+ * Zánik opce bez ceny (uzavření za 0). „Expired“ tu bylo od začátku, assignment
+ * a exercise končily „neznámým typem“ — akciová noha se přitom naimportovala,
+ * takže short opce zůstala v enginu otevřená napořád (Tastytrade parser tytéž
+ * události řeší, viz REMOVAL_SUBTYPES).
+ */
+const OPTION_REMOVAL_ACTIONS = new Map<string, string>([
+  ['Expired', 'Expirace opce (uzavření za 0)'],
+  ['Assigned', 'Assignment — zánik opce uplatněním (uzavření za 0)'],
+  ['Exercised', 'Exercise — zánik opce uplatněním (uzavření za 0)'],
+]);
+
 const DIVIDEND_ACTIONS = new Set([
   'Qualified Dividend',
   'Non-Qualified Div',
@@ -328,6 +353,15 @@ export function parseSchwabCsv(
     const symbol = map.get(row, 'Symbol');
     const description = map.get(row, 'Description');
 
+    const shortAction = SHORT_ACTIONS.get(action);
+    if (shortAction !== undefined) {
+      result.warnings.push({
+        line,
+        message: `${symbol || 'Řádek'}: ${shortAction} („${action}“) zatím neumíme daňově zpracovat — řádek jsme přeskočili. Doplň obchod přes univerzální šablonu, nebo nám napiš; spočítat short bez pravidla by dalo špatné číslo.`,
+      });
+      continue;
+    }
+
     if (BUY_ACTIONS.has(action) || SELL_ACTIONS.has(action)) {
       const type = BUY_ACTIONS.has(action) ? 'BUY' : 'SELL';
       if (symbol === '') {
@@ -389,11 +423,12 @@ export function parseSchwabCsv(
       continue;
     }
 
-    if (action === 'Expired') {
+    const removalNote = OPTION_REMOVAL_ACTIONS.get(action);
+    if (removalNote !== undefined) {
       if (!OPTION_SYMBOL_RE.test(symbol)) {
         result.warnings.push({
           line,
-          message: `„Expired“ u ${symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; případně ho doplň přes univerzální šablonu.`,
+          message: `„${action}“ u ${symbol || 'řádku bez symbolu'} nevypadá jako opce — řádek přeskočen; případně ho doplň přes univerzální šablonu.`,
         });
         continue;
       }
@@ -402,7 +437,7 @@ export function parseSchwabCsv(
       if (!quantity || quantity.eq(0)) {
         result.errors.push({
           line,
-          message: `Expired ${symbol}: chybí počet kontraktů (Quantity „${map.get(row, 'Quantity')}“).`,
+          message: `${action} ${symbol}: chybí počet kontraktů (Quantity „${map.get(row, 'Quantity')}“).`,
           raw,
         });
         continue;
@@ -422,7 +457,7 @@ export function parseSchwabCsv(
         currency: USD,
         fee: feeOf(row),
         tradeDate: date,
-        note: 'Expirace opce (uzavření za 0)',
+        note: removalNote,
       });
       continue;
     }

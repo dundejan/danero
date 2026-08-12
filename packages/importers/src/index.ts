@@ -14,6 +14,7 @@ export * from './degiro/csv';
 export * from './fio/csv';
 export * from './etoro/xlsx';
 export * from './revolut/csv';
+export * from './revolut/xlsx';
 export * from './kraken/csv';
 export * from './coinbase/csv';
 export * from './coinmate/csv';

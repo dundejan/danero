@@ -414,3 +414,42 @@ describe('Schwab: vratka srážkové daně snižuje srážku, nezakládá novou'
     expect(result.warnings.some((w) => w.message.includes('vyšší než sražená daň'))).toBe(true);
   });
 });
+
+describe('opce uplatněním a prodej nakrátko', () => {
+  const rows = (...lines: string[]): string => [SCHWAB_HEADER, ...lines].join('\n');
+
+  it('Assigned a Exercised zavřou opci za 0 (dřív „neznámý typ“)', () => {
+    // U assignmentu se akciová noha naimportovala, ale uzavření opce nikdy —
+    // short opce tak zůstala v enginu otevřená napořád.
+    const csv = rows(
+      '"03/15/2024","Sell to Open","SPY 03/31/2024 500.00 P","PUT SPY","-2","$3.10","$1.30","$618.70"',
+      '"03/31/2024","Assigned","SPY 03/31/2024 500.00 P","PUT SPY","2","","",""',
+      '"04/05/2024","Buy to Open","SPY 04/30/2024 480.00 C","CALL SPY","1","$2.00","","-$200.00"',
+      '"04/30/2024","Exercised","SPY 04/30/2024 480.00 C","CALL SPY","-1","","",""',
+    );
+    const result = parseSchwabCsv(csv);
+    expect(result.errors).toEqual([]);
+    const zaniky = result.transactions.filter(
+      (tx) => (tx.type === 'BUY' || tx.type === 'SELL') && tx.pricePerShare.eq(0),
+    );
+    expect(zaniky).toHaveLength(2);
+    // kladný počet u short pozice = pokrytí (BUY), záporný u long = odpis (SELL)
+    expect(zaniky.map((tx) => tx.type).sort()).toEqual(['BUY', 'SELL']);
+    expect(zaniky.every((tx) => 'assetClass' in tx && tx.assetClass === 'DERIVATIVE')).toBe(true);
+  });
+
+  it('Sell Short a Buy to Cover se neimportují, ale řekne se proč', () => {
+    const csv = rows(
+      '"05/02/2024","Sell Short","AAPL","APPLE INC","10","$180.00","$1.00","$1799.00"',
+      '"05/20/2024","Buy to Cover","AAPL","APPLE INC","10","$170.00","$1.00","-$1701.00"',
+    );
+    // Naimportovat je jako běžný prodej/nákup by dalo ŠPATNÉ číslo: engine
+    // ocení prodej bez lotu nulou a zdanil by celý výnos shortu.
+    const result = parseSchwabCsv(csv, { AAPL: { isin: 'US0378331005' } });
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings[0]!.message).toContain('nakrátko');
+    expect(result.warnings[0]!.message).toContain('univerzální šablonu');
+  });
+});

@@ -113,3 +113,17 @@ export const REVOLUT_CRYPTO_OLD_UNSUPPORTED_TYPE_CSV = [
   REVOLUT_CRYPTO_OLD_HEADER,
   'REWARD,Current,2022-03-01 10:00:00,2022-03-01 10:00:00,Learn reward,1.0000,DOT,20.00,20.00,0.00,EUR,COMPLETED,1.0000',
 ].join('\n');
+
+/**
+ * Výpis Revolutu jako XLSX — v aplikaci se volí formát „Excel“ a podle účtu
+ * z něj chodí jednou CSV a jindy opravdový sešit.
+ */
+export async function buildRevolutXlsx(headers: string[], rows: string[][]): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Statement');
+  sheet.addRow(headers);
+  for (const row of rows) sheet.addRow(row);
+  const raw = await workbook.xlsx.writeBuffer();
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+}

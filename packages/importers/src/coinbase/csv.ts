@@ -104,20 +104,25 @@ const HEADER_START = /^"?(?:ID"?,"?)?Timestamp"?,/;
 /** …a vždy nese tyhle dva sloupce (odliší ji od cizího souboru). */
 const HEADER_MARKERS = ['Transaction Type', 'Quantity Transacted'];
 
-/** Index řádku s hlavičkou, nebo −1. Sdílí autodetekce i parser. */
-export function findCoinbaseHeaderLine(text: string): number {
+/**
+ * Index řádku s hlavičkou, nebo −1. Sdílí autodetekce i parser.
+ *
+ * `limit` je strop preambule: autodetekce se dívá jen na začátek souboru (ať
+ * nečte kvůli rozhodnutí celý export), parser hledá bez omezení — počet řádků
+ * preambule se mezi generacemi liší a strop v parseru by odmítl soubor, který
+ * dřív prošel.
+ */
+export function findCoinbaseHeaderLine(text: string, limit = Number.POSITIVE_INFINITY): number {
   const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  return input
-    .split(/\r?\n/)
-    .slice(0, MAX_PREAMBLE_LINES)
-    .findIndex(
-      (line) =>
-        HEADER_START.test(line.trim()) && HEADER_MARKERS.every((marker) => line.includes(marker)),
-    );
+  const lines = input.split(/\r?\n/);
+  return (Number.isFinite(limit) ? lines.slice(0, limit) : lines).findIndex(
+    (line) =>
+      HEADER_START.test(line.trim()) && HEADER_MARKERS.every((marker) => line.includes(marker)),
+  );
 }
 
 export function sniffCoinbaseCsv(text: string): boolean {
-  return findCoinbaseHeaderLine(text) !== -1;
+  return findCoinbaseHeaderLine(text, MAX_PREAMBLE_LINES) !== -1;
 }
 
 /* ── Parser ──────────────────────────────────────────────────────────────── */

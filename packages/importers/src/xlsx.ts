@@ -21,6 +21,42 @@ const MAX_EOCD_SEARCH = 65_535 + 22;
 export class XlsxTooLargeError extends Error {}
 export class XlsxUnreadableError extends Error {}
 
+/** Řádek listu: číslo řádku (pro chybové hlášky) a buňky jako text. */
+export interface SheetRow {
+  rowNumber: number;
+  cells: string[];
+}
+
+/**
+ * Text buňky nezávisle na tom, jak ji Excel uložil.
+ *
+ * ExcelJS vrací podle formátu číslo, `Date`, objekt formule nebo `richText` —
+ * parsery brokerů si všechny stejně převádějí na string, takže to má být na
+ * jednom místě. `Date` se zkracuje na ISO datum: `excelToDate` v ExcelJS je
+ * ukotvený v UTC, takže `toISOString()` den neposouvá ani v UTC+2.
+ */
+export function cellText(cell: ExcelJS.Cell): string {
+  const value = cell.value;
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === 'object') return String(cell.text ?? '').trim();
+  return String(value).trim();
+}
+
+/** Neprázdné řádky listu jako text; díry ve sloupcích se vyplní prázdnem. */
+export function readSheetRows(sheet: ExcelJS.Worksheet): SheetRow[] {
+  const rows: SheetRow[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    const cells: string[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cells[colNumber - 1] = cellText(cell);
+    });
+    for (let i = 0; i < cells.length; i += 1) cells[i] = cells[i] ?? '';
+    if (cells.some((c) => c !== '')) rows.push({ rowNumber, cells });
+  });
+  return rows;
+}
+
 /** Najde konec centrálního adresáře (EOCD) — od konce, kvůli komentáři. */
 function findEocd(view: DataView): number | null {
   const from = Math.max(0, view.byteLength - MAX_EOCD_SEARCH);

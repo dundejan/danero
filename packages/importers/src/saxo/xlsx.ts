@@ -7,6 +7,7 @@ import {
   normalizeHeader,
 } from '../csv';
 import { fnv1a64 } from '../dedupe';
+import { readSheetRows } from '../xlsx';
 import { emptyResult, type ImportResult } from '../types';
 
 export const SAXO_BROKER = 'saxo';
@@ -130,34 +131,6 @@ const CASH_TRANSFER_SKIP_EVENTS = new Set(['deposit', 'withdrawal', 'indbetaling
 /** Kusy a cena z Eventu obchodu: „Buy 3 @ 134.85 USD“, „Købt 2,5 @ 615,20 DKK“. */
 const TRADE_EVENT_RE = /^(buy|sell|købt|salg|koop|verkoop|kauf|verkauf)\s+([\d.,]+)\s*@\s*([\d.,]+)/i;
 const BUY_VERBS = new Set(['buy', 'købt', 'koop', 'kauf']);
-
-/** Buňka jako string — čísla přes String(value), datumy ISO, formule/richtext přes cell.text. */
-function cellText(cell: ExcelJS.Cell): string {
-  const value = cell.value;
-  if (value === null || value === undefined) return '';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === 'object') return String(cell.text ?? '').trim();
-  return String(value).trim();
-}
-
-interface SheetRow {
-  rowNumber: number;
-  cells: string[];
-}
-
-/** Načte list do matice stringů; úplně prázdné řádky vynechá (rowNumber = řádek v Excelu). */
-function readSheetRows(sheet: ExcelJS.Worksheet): SheetRow[] {
-  const rows: SheetRow[] = [];
-  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    const cells: string[] = [];
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      cells[colNumber - 1] = cellText(cell);
-    });
-    for (let i = 0; i < cells.length; i += 1) cells[i] = cells[i] ?? '';
-    if (cells.some((c) => c !== '')) rows.push({ rowNumber, cells });
-  });
-  return rows;
-}
 
 /**
  * Jazyk podle NÁZVŮ sloupců, ne podle délky hlavičky.
@@ -363,6 +336,21 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
       const isBuy = BUY_VERBS.has(normalizeHeader(match[1]!));
       const quantity = parseSaxoNumber(match[2]!, decimal);
       const price = parseSaxoNumber(match[3]!, decimal);
+      // nerozhodnutelný zápis bez důkazu ze souboru → řekni to nahlas, stejně
+      // jako u Degira, Revolutu a T212 (tichý tisícinásobek je to nejhorší)
+      if (decimal === null) {
+        for (const [field, raw2, parsed] of [
+          ['Počet kusů', match[2]!, quantity],
+          ['Cena', match[3]!, price],
+        ] as const) {
+          if (parsed !== null && isAmbiguousThousandGroup(raw2)) {
+            result.warnings.push({
+              line,
+              message: `${field} „${raw2}“ v textu „${eventRaw}“ jsme přečetli jako ${parsed.toString()}. Tenhle výpis nikde neprozrazuje, jestli tečka a čárka oddělují tisíce, nebo desetinná místa — zkontroluj si ten řádek; kdyby to bylo naopak, lišila by se hodnota tisíckrát.`,
+            });
+          }
+        }
+      }
       if (!quantity || quantity.lte(0) || !price || price.lt(0)) {
         result.errors.push({
           line,

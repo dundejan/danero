@@ -119,7 +119,7 @@ export const MT5_DEALS: Mt5Deal[] = [
   { time: '2025.05.02 10:00:00', deal: 1007, symbol: 'AUDUSD', type: 'buy', direction: 'in', volume: '1', price: '0.65500', order: 2007, commission: '-0.30', fee: '0.00', swap: '0.00', profit: '0.00', balance: '11 316.01' },
 ];
 
-const mt5DealHtmlRow = (deal: Mt5Deal): string =>
+export const mt5DealHtmlRow = (deal: Mt5Deal): string =>
   '<tr align="right">' +
   [
     deal.time,

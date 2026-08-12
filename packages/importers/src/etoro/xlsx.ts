@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { Decimal, d, ZERO, TransactionSchema } from '@danero/shared';
 import { isValidIsoDate, normalizeHeader } from '../csv';
 import { fnv1a64 } from '../dedupe';
+import { readSheetRows, type SheetRow } from '../xlsx';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 
 export const ETORO_BROKER = 'etoro';
@@ -68,35 +69,8 @@ function toIsoDate(value: string): string | null {
   return iso !== undefined && isValidIsoDate(iso) ? iso : null;
 }
 
-/** Buňka jako string — čísla přes String(value), datumy ISO, formule/richtext přes cell.text. */
-function cellText(cell: ExcelJS.Cell): string {
-  const value = cell.value;
-  if (value === null || value === undefined) return '';
-  if (value instanceof Date) return value.toISOString().replace('T', ' ').slice(0, 19);
-  if (typeof value === 'object') return String(cell.text ?? '').trim();
-  return String(value).trim();
-}
-
 /** Řádek listu: skutečné číslo řádku v Excelu (uživatel ho tam vidí) + buňky jako stringy. */
-interface SheetRow {
-  rowNumber: number;
-  cells: string[];
-}
-
 /** Načte list do matice stringů; úplně prázdné řádky vynechá. */
-function readSheetRows(sheet: ExcelJS.Worksheet): SheetRow[] {
-  const rows: SheetRow[] = [];
-  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    const cells: string[] = [];
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      cells[colNumber - 1] = cellText(cell);
-    });
-    for (let i = 0; i < cells.length; i += 1) cells[i] = cells[i] ?? '';
-    if (cells.some((c) => c !== '')) rows.push({ rowNumber, cells });
-  });
-  return rows;
-}
-
 /** Kanonický tvar hlavičky/hodnoty: trim, lowercase, bez diakritiky, sjednocené mezery. */
 const canon = (value: string): string => normalizeHeader(value).replace(/\s+/g, ' ');
 

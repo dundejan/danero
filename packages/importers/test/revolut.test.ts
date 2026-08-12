@@ -1,4 +1,7 @@
+import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
+import { parseCsv } from '../src/csv';
+import { parseRevolutXlsx, sniffRevolutXlsx } from '../src/revolut/xlsx';
 import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import {
   parseRevolutCryptoCsv,
@@ -523,5 +526,80 @@ describe('lokalizovaná čísla: tisíce vs. desetinná místa (B-3-12)', () => 
     const result = parseRevolutInvestCsv(csv, { MSFT: { isin: 'US5949181045' } });
     expect(result.errors).toEqual([]);
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('tisíckrát');
+  });
+});
+
+describe('Revolut jako XLSX (volba „Excel“ nevrací vždycky CSV)', () => {
+  const buildXlsx = async (headers: string[], rows: string[][]): Promise<Buffer> => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Statement');
+    sheet.addRow(headers);
+    for (const row of rows) sheet.addRow(row);
+    const raw = await workbook.xlsx.writeBuffer();
+    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+  };
+
+  const asTable = (csv: string): { headers: string[]; rows: string[][] } => {
+    const parsed = parseCsv(csv);
+    return { headers: parsed.headers, rows: parsed.rows };
+  };
+
+  it('akciový sešit dá tytéž transakce jako totéž CSV', async () => {
+    const { headers, rows } = asTable(REVOLUT_INVEST_CSV);
+    const buffer = await buildXlsx(headers, rows);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    expect(sniffRevolutXlsx(workbook)).toBe(true);
+
+    const zeSesitu = await parseRevolutXlsx(buffer, REVOLUT_INSTRUMENT_MAP);
+    const zCsv = parseRevolutInvestCsv(REVOLUT_INVEST_CSV, REVOLUT_INSTRUMENT_MAP);
+    expect(zeSesitu.errors).toEqual(zCsv.errors);
+    expect(zeSesitu.transactions).toEqual(zCsv.transactions);
+  });
+
+  it('krypto sešit dá tytéž transakce jako totéž CSV', async () => {
+    const { headers, rows } = asTable(REVOLUT_CRYPTO_NEW_CSV);
+    const buffer = await buildXlsx(headers, rows);
+    const zeSesitu = await parseRevolutXlsx(buffer);
+    const zCsv = parseRevolutCryptoCsv(REVOLUT_CRYPTO_NEW_CSV);
+    expect(zeSesitu.errors).toEqual(zCsv.errors);
+    expect(zeSesitu.transactions).toEqual(zCsv.transactions);
+  });
+
+  it('cizí sešit se nevydává za Revolut a hláška vypíše nalezené sloupce', async () => {
+    const buffer = await buildXlsx(['ID', 'Type', 'Time', 'Symbol'], [['1', 'buy', '2026', 'X']]);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    expect(sniffRevolutXlsx(workbook)).toBe(false);
+    const result = await parseRevolutXlsx(buffer);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors[0]!.message).toContain('V prvním řádku jsme našli');
+  });
+});
+
+describe('sešit s preambulí (číslo účtu a období nad tabulkou)', () => {
+  it('hlavička se najde i pod pár řádky metadat', async () => {
+    // Reálný „Account statement“ z Revolutu začíná blokem o účtu a období —
+    // brát první řádek jako hlavičku by uživatele vrátilo k „XLSX nepoznáváme“.
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Statement');
+    sheet.addRow(['Account statement']);
+    sheet.addRow(['Jan Novák']);
+    sheet.addRow(['Period', '1 Jan 2026 - 31 Dec 2026']);
+    sheet.addRow([]);
+    const { headers, rows } = parseCsv(REVOLUT_INVEST_CSV);
+    sheet.addRow(headers);
+    for (const row of rows) sheet.addRow(row);
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+
+    const nacteny = new ExcelJS.Workbook();
+    await nacteny.xlsx.load(buffer as unknown as ArrayBuffer);
+    expect(sniffRevolutXlsx(nacteny)).toBe(true);
+
+    const zeSesitu = await parseRevolutXlsx(buffer, REVOLUT_INSTRUMENT_MAP);
+    const zCsv = parseRevolutInvestCsv(REVOLUT_INVEST_CSV, REVOLUT_INSTRUMENT_MAP);
+    expect(zeSesitu.errors).toEqual(zCsv.errors);
+    expect(zeSesitu.transactions).toEqual(zCsv.transactions);
   });
 });

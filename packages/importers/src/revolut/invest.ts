@@ -37,14 +37,14 @@ const REQUIRED_HEADERS = [
  * a uživatel čte hlášku o „neznámém typu BUY - MARKET“. Proto tu není `FX Rate`
  * (parser ho ignoruje, kurzy počítá engine z ČNB).
  */
-const SNIFF_HEADERS = ['Date', 'Ticker', 'Type', 'Quantity', 'Price per share'] as const;
+export const REVOLUT_INVEST_SNIFF_COLUMNS = ['Date', 'Ticker', 'Type', 'Quantity', 'Price per share'] as const;
 
 export function sniffRevolutInvestCsv(text: string): boolean {
   if (text.trim() === '') return false;
   const newline = text.indexOf('\n');
   const firstLine = newline === -1 ? text : text.slice(0, newline);
   const { headers } = parseCsv(firstLine);
-  return SNIFF_HEADERS.every((name) => headers.includes(name));
+  return REVOLUT_INVEST_SNIFF_COLUMNS.every((name) => headers.includes(name));
 }
 
 type InvestKind =
@@ -80,12 +80,25 @@ export function parseRevolutInvestCsv(
   text: string,
   instrumentMap: RevolutInstrumentMap = {},
 ): ImportResult & { unmappedSymbols: string[] } {
-  const result = { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
-
   // prázdný soubor = prázdné období, ne chyba formátu (konzistentně s T212)
-  if (text.trim() === '') return result;
-
+  if (text.trim() === '') {
+    return { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
+  }
   const { headers, rows } = parseCsv(text);
+  return parseRevolutInvestTable(headers, rows, instrumentMap);
+}
+
+/**
+ * Jádro parseru nad už rozparsovanou tabulkou — sdílí ho CSV i XLSX větev.
+ * Revolut nabízí „Account statement“ ve formátu Excel a podle účtu z něj
+ * chodí jednou CSV a jindy XLSX; číst umíme obojí, tabulka je stejná.
+ */
+export function parseRevolutInvestTable(
+  headers: string[],
+  rows: string[][],
+  instrumentMap: RevolutInstrumentMap = {},
+): ImportResult & { unmappedSymbols: string[] } {
+  const result = { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
   // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (B-3-12)
   const decimal = detectRevolutDecimal(rows);
   const money = (value: string): ReturnType<typeof parseRevolutMoney> =>

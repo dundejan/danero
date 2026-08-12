@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
+import { brokerIdKey, dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import {
   DEGIRO_BROKER,
   isDegiroCsv,
@@ -640,5 +640,35 @@ describe('výpis v jazyce rozhraní: DE a FR (klasifikace popisů je uměla, hla
     if (trade.type !== 'BUY') throw new Error('čekáme nákup');
     expect(trade.quantity.toString()).toBe('10');
     expect(trade.fee?.amount.toString()).toBe('2.5');
+  });
+});
+
+describe('částečné plnění objednávky napříč soubory (id ≠ transakce)', () => {
+  it('druhé plnění téže objednávky v pozdějším exportu se NEZAHODÍ', () => {
+    // Degiro id je číslo OBJEDNÁVKY a ta se plní i několik dní, takže druhé
+    // plnění v jiném souboru má totéž id. Dedupe podle id (druhá síť pro eToro
+    // a MetaTrader) tady zahazovala skutečný nákup — z FIFO i ze základu daně.
+    const soubor = (radek: string): string => [DEGIRO_TRANSACTIONS_HEADER_CZ, radek].join('\n');
+    const prvni = parseDegiroTransactionsCsv(
+      soubor(
+        '10-01-2024;14:30;APPLE INC;US0378331005;NSY;XNAS;10;185,50;USD;-1855,00;USD;-1855,00;USD;;-2,50;USD;-1857,50;USD;ord-1',
+      ),
+    );
+    const druhy = parseDegiroTransactionsCsv(
+      soubor(
+        '11-01-2024;09:15;APPLE INC;US0378331005;NSY;XNAS;5;186,00;USD;-930,00;USD;-930,00;USD;;-1,50;USD;-931,50;USD;ord-1',
+      ),
+    );
+    expect(prvni.transactions[0]!.id).toBe(druhy.transactions[0]!.id);
+
+    const ulozene = dedupeTransactions(DEGIRO_BROKER, prvni.transactions);
+    const dalsi = dedupeTransactions(
+      DEGIRO_BROKER,
+      druhy.transactions,
+      ulozene.fresh.map((f) => f.key),
+      ulozene.fresh.map((f) => brokerIdKey(DEGIRO_BROKER, f.tx.id)),
+    );
+    expect(dalsi.fresh).toHaveLength(1);
+    expect(dalsi.restated).toEqual([]);
   });
 });

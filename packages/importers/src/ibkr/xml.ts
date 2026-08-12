@@ -55,6 +55,34 @@ function asArray(value: unknown): Attrs[] {
   return (Array.isArray(value) ? value : [value]) as Attrs[];
 }
 
+/**
+ * Pořadí dne a měsíce v lomítkovém datu. Platí pro CELÝ dokument a nastaví se
+ * jednou na začátku parsování (parser je synchronní, takže si běhy nelezou do
+ * zelí). Výchozí je americký tvar, který IBKR nabízí jako první.
+ */
+type SlashOrder = 'MM/dd' | 'dd/MM';
+let slashOrder: SlashOrder = 'MM/dd';
+
+/**
+ * Rozhodne pořadí z celého dokumentu: stačí jediné datum, kde je první číslo
+ * větší než 12 (pak je to den), nebo druhé (pak je to den na druhém místě).
+ * Vrací i to, jestli soubor rozhodl — když ne a lomítková data v něm jsou,
+ * volající o tom uživatele zpraví.
+ */
+function detectSlashOrder(text: string): { order: SlashOrder; decided: boolean; present: boolean } {
+  let dayFirst = 0;
+  let monthFirst = 0;
+  let present = false;
+  for (const match of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/\d{4}\b/g)) {
+    present = true;
+    if (Number(match[1]) > 12) dayFirst += 1;
+    else if (Number(match[2]) > 12) monthFirst += 1;
+  }
+  if (dayFirst > monthFirst) return { order: 'dd/MM', decided: true, present };
+  if (monthFirst > dayFirst) return { order: 'MM/dd', decided: true, present };
+  return { order: 'MM/dd', decided: false, present };
+}
+
 /** Zkratky měsíců v IBKR datumech typu „10-Jun-25“. */
 const MONTH_ABBR: Record<string, string> = {
   jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
@@ -87,12 +115,13 @@ function toIsoDateCandidate(value: string | undefined): string | null {
     return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
   }
 
-  // MM/dd/yyyy (US) i dd/MM/yyyy — rozliší se podle toho, které číslo je > 12;
-  // při nerozhodnu vyhrává US tvar, který IBKR nabízí
+  // MM/dd/yyyy (US) i dd/MM/yyyy — pořadí rozhoduje CELÝ dokument, ne jednotlivá
+  // hodnota: „05/06/2025“ je samo o sobě nerozhodnutelné a hádat řádek po řádku
+  // znamená, že v jednom souboru vyjde jednou květen a jindy červen
   const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(datePart);
   if (slash) {
     const [, first, second, year] = slash;
-    const [month, day] = Number(first) > 12 ? [second!, first!] : [first!, second!];
+    const [month, day] = slashOrder === 'dd/MM' ? [second!, first!] : [first!, second!];
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
 
@@ -173,6 +202,17 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
   };
 
   resetContentIds();
+  const slash = detectSlashOrder(text);
+  slashOrder = slash.order;
+  if (slash.present && !slash.decided) {
+    result.warnings.push({
+      line: 1,
+      message:
+        'Datumy ve výpisu jsou ve tvaru „05/06/2025“ a soubor nikde neprozrazuje, jestli je vpředu měsíc, ' +
+        'nebo den — čteme je americky (měsíc/den). Ve Flex Query si radši přepni Date Format na yyyyMMdd ' +
+        'a export stáhni znovu; jinak si zkontroluj datumy obchodů.',
+    });
+  }
   let root: Record<string, unknown>;
   try {
     root = parser.parse(text) as Record<string, unknown>;

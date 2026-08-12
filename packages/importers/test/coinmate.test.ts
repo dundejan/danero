@@ -226,3 +226,19 @@ describe('poplatek v kryptu (pojistka proti pádu enginu)', () => {
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('BTC');
   });
 });
+
+describe('výpis přeuložený v českém Excelu (desetinná čárka)', () => {
+  it('naimportuje se; dřív hlásil „chybí množství, cena nebo symbol“', () => {
+    const csv = [
+      COINMATE_HEADER_EN_LONG,
+      '11;2026-01-15 10:00:00;M;QUICK_BUY;0,005;BTC;982000,5;CZK;24,55;CZK;-4910,00;CZK;;OK;0,005;BTC;0;CZK',
+    ].join('\n');
+    const result = parseCoinmateCsv(csv);
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.quantity.toString()).toBe('0.005');
+    expect(buy.pricePerShare.toString()).toBe('982000.5');
+    expect(buy.fee?.amount.toString()).toBe('24.55');
+  });
+});

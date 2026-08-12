@@ -89,15 +89,64 @@ export interface DedupeOutcome {
   /** Transakce k uložení i s klíčem — počítat ho podruhé zvlášť nejde (pořadí). */
   fresh: Array<{ tx: Transaction; key: string }>;
   duplicates: number;
+  /**
+   * Táž událost brokera (shodné `id`), ale s JINÝMI čísly, než co už je
+   * uložené — typicky jinak zaokrouhlená cena podle toho, ze které sekce
+   * výpisu pochází. Neukládá se (jinak by vznikl duplikát), ale hlásí se.
+   */
+  restated: Transaction[];
 }
 
-/** Odfiltruje transakce, jejichž klíč už existuje (např. z DB nebo dřívějších souborů). */
+/** Jmenný prostor id přiděleného brokerem — id samo o sobě není unikátní napříč brokery. */
+export const brokerIdKey = (broker: string, id: string): string => `${broker}|${id}`;
+
+/**
+ * Brokeři, jejichž `id` identifikuje JEDNU UDÁLOST, ne objednávku či řádek.
+ *
+ * Jen u nich smí id fungovat jako druhá síť dedupe (níž). Kritérium je tvrdé:
+ * dva RŮZNÉ obchody nesmí dostat totéž id ani napříč soubory. Splňuje ho
+ * eToro (`etoro-<pozice>-open/close`) a MetaTrader (`mt4-<ticket>-…`,
+ * `mt5-<deal>-…`) — a právě u těch tří se tatáž událost popisuje dvakrát
+ * s jinak zaokrouhlenými čísly.
+ *
+ * Degiro sem NEPATŘÍ: jeho id je číslo OBJEDNÁVKY a ta se plní i několik dní.
+ * Druhé plnění v pozdějším exportu má totéž id, takže by ho síť zahodila jako
+ * „už uložené“ — skutečný nákup by zmizel z FIFO i ze základu daně. Ověřeno
+ * testem; ostatní parsery skládají id z otisku řádku, kde se táž kolize
+ * projeví stejně. Nový broker se sem přidává, až když je doložené, že jeho id
+ * je per transakce — výchozí (chybějící) stav je bezpečný.
+ */
+const TRANSACTION_ID_BROKERS = new Set(['etoro', 'mt4', 'mt5']);
+
+/**
+ * Odfiltruje transakce, jejichž klíč už existuje (např. z DB nebo dřívějších
+ * souborů).
+ *
+ * `existingIds` je DRUHÁ síť pod obsahovým klíčem: tatáž událost popsaná
+ * dvěma sekcemi výpisu má různá čísla, a tedy různý obsahový otisk, takže by
+ * se uložila dvakrát. Doloženo eToro (otevřená pozice: cena z Account Activity
+ * je `Amount / Units` = 147,9201326…, po uzavření z Closed Positions `Open
+ * Rate` = 147,92) a MetaTraderem 5 (výsledek uzavíracího dealu závisí na tom,
+ * jestli je v reportu i deal otevírací). Id, které přiděluje broker, je přitom
+ * v obou případech totéž — a když si ho parser skládá z otisku řádku, prostě
+ * se neshodne a rozhoduje dál obsah.
+ *
+ * Porovnává se VÝHRADNĚ proti už uloženým id, nikdy v rámci jedné dávky, a jen
+ * u id, které je v dávce jedinečné: starší exporty (a formáty bez ID sloupce)
+ * umí poslat dva různé řádky pod týmž id, a ty se zahodit nesmí.
+ */
 export function dedupeTransactions(
   broker: string,
   incoming: Transaction[],
   existingKeys: Iterable<string> = [],
+  existingIds: Iterable<string> = [],
 ): DedupeOutcome {
   const seen = new Set(existingKeys);
+  const storedIds = new Set(existingIds);
+  const restated: Transaction[] = [];
+  // id, které se v dávce opakuje, není spolehlivý identifikátor události
+  const idCounts = new Map<string, number>();
+  for (const tx of incoming) idCounts.set(tx.id, (idCounts.get(tx.id) ?? 0) + 1);
   const fresh: DedupeOutcome['fresh'] = [];
   // otisk obsahu → (id transakce → pořadí). Pořadí se váže na ID, ne na pouhé
   // pořadí v poli: týž soubor naparsovaný dvakrát za sebou (nebo dvě
@@ -122,10 +171,20 @@ export function dedupeTransactions(
       duplicates += 1;
       continue;
     }
+    if (
+      TRANSACTION_ID_BROKERS.has(broker) &&
+      idCounts.get(tx.id) === 1 &&
+      storedIds.has(brokerIdKey(broker, tx.id))
+    ) {
+      // tutéž událost už máme, jen s jinými čísly — uložit ji podruhé by
+      // zdvojilo držbu i nabývací cenu, takže ji jen ohlásíme
+      restated.push(tx);
+      continue;
+    }
     seen.add(key);
     fresh.push({ tx, key });
   }
-  return { fresh, duplicates };
+  return { fresh, duplicates, restated };
 }
 
 /**

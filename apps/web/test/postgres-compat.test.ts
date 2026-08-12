@@ -26,7 +26,7 @@ import {
 import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { recordReportPurchase, upsertSubscription } from '@/lib/billing';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
-import { importCsvText } from '@/lib/import-service';
+import { importCsvText, loadImportState } from '@/lib/import-service';
 import {
   enqueueSyncJob,
   processPendingJobs,
@@ -182,6 +182,27 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(row?.count).toBe(1);
     // nové okno se posunulo do budoucnosti
     expect(row!.resetAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('stav importu čte id z payloadu i na ostrém Postgresu', { timeout: 30_000 }, async () => {
+    // `payload ->> 'id'` je syrový SQL fragment — PGlite je tolerantnější než
+    // produkční driver, takže tenhle dotaz patří sem (viz „známé zrady“).
+    const userId = `u-${Date.now()}`;
+    await db.insert(user).values({ id: userId, name: 'PG', email: `${userId}@danero.cz` });
+    await db.insert(transactions).values({
+      userId,
+      dedupeKey: `etoro|${Date.now()}|1`,
+      batchId: crypto.randomUUID(),
+      broker: 'etoro',
+      type: 'BUY',
+      txDate: '2026-01-15',
+      isin: 'US0378331005',
+      payload: { id: 'etoro-42-open', type: 'BUY' },
+    });
+
+    const state = await loadImportState(db, userId);
+    expect(state.keys.size).toBe(1);
+    expect(state.brokerIds.has('etoro|etoro-42-open')).toBe(true);
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {

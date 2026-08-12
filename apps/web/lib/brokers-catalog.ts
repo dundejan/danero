@@ -295,7 +295,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#191C1F',
     guide:
-      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát Excel a celé období. Krypto: Accounts → Documents & statements → Crypto → Account statement. Nahraj oba; kdyby ti přišel soubor .xlsx, otevři ho a ulož jako CSV.',
+      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát Excel a celé období. Krypto: Accounts → Documents & statements → Crypto → Account statement. Nahraj oba — přečteme CSV i sešit .xlsx.',
   },
   {
     id: 'anycoin',

@@ -8,6 +8,7 @@ import {
   makePush,
   mtDateToIso,
   parseMtNumber,
+  parseMtNumberOrZero,
   syntheticDerivativePair,
 } from './common';
 
@@ -196,10 +197,11 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
       continue;
     }
 
-    const commission = parseMtNumber(cellOf(row, 'commission') || '0');
-    const swap = parseMtNumber(cellOf(row, 'swap') || '0');
-    const profit = parseMtNumber(cellOf(row, 'profit') || '0');
-    const fee = columns.fee === undefined ? ZERO : parseMtNumber(cellOf(row, 'fee') || '0');
+    const commission = parseMtNumberOrZero(cellOf(row, 'commission'));
+    const swap = parseMtNumberOrZero(cellOf(row, 'swap'));
+    // Profit je výsledek dealu, ne volitelný sloupec (viz MT4)
+    const profit = parseMtNumber(cellOf(row, 'profit'));
+    const fee = columns.fee === undefined ? ZERO : parseMtNumberOrZero(cellOf(row, 'fee'));
     if (commission === null || swap === null || profit === null || fee === null) {
       result.errors.push({
         line: row.line,

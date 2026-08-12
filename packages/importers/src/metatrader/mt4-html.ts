@@ -5,6 +5,7 @@ import {
   makePush,
   mtDateToIso,
   parseMtNumber,
+  parseMtNumberOrZero,
   syntheticDerivativePair,
   type HtmlRow,
 } from './common';
@@ -178,9 +179,14 @@ export function parseMt4Html(text: string): ImportResult {
         });
         continue;
       }
-      const commission = parseMtNumber(row.cells[10]!);
-      const taxes = parseMtNumber(row.cells[11]!);
-      const swap = parseMtNumber(row.cells[12]!);
+      // prázdná buňka = nula, ne nečitelné číslo (stejně jako v MT5 parseru):
+      // sloupce Commission a Taxes jsou v terminálu volitelné a část brokerů
+      // je v reportu nechává prázdné — celý obchod se kvůli tomu zahazoval
+      const commission = parseMtNumberOrZero(row.cells[10]!);
+      const taxes = parseMtNumberOrZero(row.cells[11]!);
+      const swap = parseMtNumberOrZero(row.cells[12]!);
+      // Profit je VÝSLEDEK obchodu, ne volitelný sloupec — prázdná buňka je
+      // chyba řádku, ne nula (jinak tichý podhodnocený § 10)
       const profit = parseMtNumber(row.cells[13]!);
       if (commission === null || taxes === null || swap === null || profit === null) {
         result.errors.push({

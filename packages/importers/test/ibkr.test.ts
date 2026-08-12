@@ -374,3 +374,33 @@ describe('hotovostní pohyby z dluhopisů a poradcovské poplatky', () => {
     }
   });
 });
+
+describe('lomítkové datum se rozhoduje z celého dokumentu', () => {
+  const dva = (a: string, b: string): string =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement><Trades>` +
+    `<Trade symbol="AAPL" isin="US0378331005" currency="USD" quantity="10" tradePrice="185.50" ibCommission="-1" tradeDate="${a}" buySell="BUY" assetCategory="STK" />` +
+    `<Trade symbol="MSFT" isin="US5949181045" currency="USD" quantity="5" tradePrice="400.00" ibCommission="-1" tradeDate="${b}" buySell="BUY" assetCategory="STK" />` +
+    `</Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  it('evropský výpis: jedno jednoznačné datum rozhodne i o tom druhém', () => {
+    // „25/06/2025“ může být jen 25. června, takže „05/06/2025“ ve stejném
+    // souboru je 5. června — ne 6. května, jak by vyšlo z hádání po řádcích.
+    const result = parseIbkrFlexXml(dva('25/06/2025', '05/06/2025'));
+    expect(result.errors).toEqual([]);
+    const data = result.transactions.map((tx) => (tx.type === 'BUY' ? tx.tradeDate : ''));
+    expect(data).toEqual(['2025-06-25', '2025-06-05']);
+  });
+
+  it('americký výpis zůstává americký', () => {
+    const result = parseIbkrFlexXml(dva('06/25/2025', '05/06/2025'));
+    expect(result.errors).toEqual([]);
+    const data = result.transactions.map((tx) => (tx.type === 'BUY' ? tx.tradeDate : ''));
+    expect(data).toEqual(['2025-06-25', '2025-05-06']);
+  });
+
+  it('když soubor nerozhodne, čte se americky a řekne se to', () => {
+    const result = parseIbkrFlexXml(dva('05/06/2025', '07/08/2025'));
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('měsíc');
+  });
+});

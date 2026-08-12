@@ -1,4 +1,5 @@
 import {
+  brokerIdKey,
   dedupeTransactions,
   decodeCp1250,
   decodeFioCsv,
@@ -23,6 +24,7 @@ import {
   parseMt5Xlsx,
   parsePortuCsv,
   parseRevolutCryptoCsv,
+  parseRevolutXlsx,
   parseRevolutInvestCsv,
   parseSaxoXlsx,
   parseSchwabCsv,
@@ -51,6 +53,7 @@ import {
   sniffPortuCsv,
   sniffRevolutCryptoCsv,
   sniffRevolutInvestCsv,
+  sniffRevolutXlsx,
   sniffSaxoXlsx,
   sniffSchwabCsv,
   sniffSwissquoteCsv,
@@ -60,7 +63,7 @@ import {
   type RowIssue,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { plural } from '@/lib/format';
@@ -95,6 +98,21 @@ interface ParsedFile {
 }
 
 const noUnmapped = (outcome: ImportResult): ParsedFile => ({ outcome, unmapped: [] });
+
+/**
+ * Prázdný nahraný soubor — včetně toho, co nese jen BOM, mezery nebo jediný
+ * nový řádek. Kontrola na nulovou délku nestačí: neúspěšné stahování často
+ * uloží pár bajtů, ty propadnou do textové větve a univerzální šablona je
+ * vyhodnotí jako „prázdné období“, tedy 0 transakcí a 0 chyb.
+ *
+ * Strop 64 B je schválně: větší soubor už nějaký obsah má a dekódovat ho tady
+ * podruhé je zbytečné.
+ */
+function isBlankUpload(data: ArrayBuffer): boolean {
+  if (data.byteLength === 0) return true;
+  if (data.byteLength > 64) return false;
+  return new TextDecoder().decode(data).replace(/\uFEFF/g, '').trim() === '';
+}
 
 /** Nepoznaný (nebo nepodporovaný) soubor → dávka s jedinou srozumitelnou chybou. */
 function unknownFormat(message: string): ImportResult {
@@ -272,13 +290,13 @@ export async function importFile(
   // těla z API T212, které legitimně znamená rok bez obchodů (a tudy nechodí).
   // Dřív ho odchytila kontrola XLSX; po přechodu na detekci podle obsahu by
   // propadl do textové větve a skončil jako „0 transakcí, 0 chyb“.
-  if (data.byteLength === 0) {
+  if (isBlankUpload(data)) {
     return importParsed(
       db,
       userId,
       filename,
       unknownFormat(
-        'Soubor je prázdný (0 bajtů) — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
+        'Soubor je prázdný — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
       ),
     );
   }
@@ -367,23 +385,60 @@ async function importXlsxUpload(
   if (sniffMt5Xlsx(workbook)) {
     return importParsed(db, userId, filename, await parseMt5Xlsx(data));
   }
+  // Revolut nabízí „Account statement“ jako Excel a podle účtu z něj chodí
+  // jednou CSV a jindy opravdový sešit — obojí vede na tentýž parser
+  if (sniffRevolutXlsx(workbook)) {
+    const aliases = await loadAliases(db, userId);
+    const parsed = withUnmapped('revolut', await parseRevolutXlsx(data, aliases.isinOnly.revolut));
+    return importParsed(db, userId, filename, parsed.outcome, undefined, {
+      unmapped: parsed.unmapped,
+    });
+  }
   return importParsed(
     db,
     userId,
     filename,
     unknownFormat(
-      'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
+      'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
     ),
   );
 }
 
-/** Dedupe klíče uživatele — sync po letech si je načte jednou a předává dál. */
-export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string>> {
+/**
+ * Co už uživatel má — obsahové klíče i id přidělená brokerem.
+ *
+ * Obojí se čte JEDNÍM dotazem: obsahový klíč je primární dedupe (B-3-2),
+ * id brokera je druhá síť pod ním pro události, které tentýž výpis popisuje
+ * dvakrát s jinak zaokrouhlenými čísly (viz `dedupeTransactions`). Sync po
+ * letech si stav načte jednou a předává ho dál.
+ */
+export interface ImportState {
+  keys: Set<string>;
+  brokerIds: Set<string>;
+}
+
+export async function loadImportState(db: Db, userId: string): Promise<ImportState> {
   const rows = await db
-    .select({ key: transactions.dedupeKey })
+    .select({
+      key: transactions.dedupeKey,
+      broker: transactions.broker,
+      // id přiděluje parser a je uložené v payloadu; sloupec navíc kvůli němu
+      // nezavádíme — tenhle select stejně čte všechny řádky uživatele
+      id: sql<string | null>`${transactions.payload} ->> 'id'`,
+    })
     .from(transactions)
     .where(eq(transactions.userId, userId));
-  return new Set(rows.map((row) => row.key));
+  return {
+    keys: new Set(rows.map((row) => row.key)),
+    brokerIds: new Set(
+      rows.filter((row) => row.id !== null).map((row) => brokerIdKey(row.broker, row.id!)),
+    ),
+  };
+}
+
+/** Jen dedupe klíče (zpětně kompatibilní vstup pro starší volající). */
+export async function loadDedupeKeys(db: Db, userId: string): Promise<Set<string>> {
+  return (await loadImportState(db, userId)).keys;
 }
 
 /** Broker z dedupe klíče a zbytek klíče (otisk obsahu + pořadí výskytu). */
@@ -448,22 +503,47 @@ function crossBrokerMatches(
 }
 
 /**
+ * Táž událost brokera podruhé, jen s jinými čísly (viz `dedupeTransactions`).
+ *
+ * Neukládá se — dvě verze téhož nákupu by zdvojily držbu i nabývací cenu
+ * a pozdější prodej by se FIFO spároval s lotem, který nikdy neexistoval.
+ * Uživatel se to ale musí dozvědět: čísla se liší a my si necháváme ta dřív
+ * uložená.
+ */
+const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
+  restated.map((tx) => ({
+    line: 1,
+    message:
+      `Událost „${tx.id}“ už máš uloženou z dřívějšího výpisu, jen s jinými čísly — ` +
+      'necháváme tu původní a tuhle neukládáme (jinak by ses o ni v přehledu počítal dvakrát). ' +
+      'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
+      'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, smaž starší dávku importu ' +
+      'a nahraj výpis znovu.',
+  }));
+
+/**
  * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
- * `existingKeys` (volitelné) ušetří opakovaný select při dávkových importech —
- * funkce do předané množiny DOPLŇUJE klíče nově uložených transakcí.
+ * `existing` (volitelné) ušetří opakovaný select při dávkových importech —
+ * funkce do předaného stavu DOPLŇUJE klíče i id nově uložených transakcí.
  */
 export async function importParsed(
   db: Db,
   userId: string,
   filename: string,
   parsed: ImportResult,
-  existingKeys?: Set<string>,
+  existing?: ImportState,
   extras: { unmapped?: UnmappedSymbol[] } = {},
 ): Promise<ImportSummary> {
-  const keys = existingKeys ?? (await loadDedupeKeys(db, userId));
-  const { fresh, duplicates } = dedupeTransactions(parsed.broker, parsed.transactions, keys);
+  const state = existing ?? (await loadImportState(db, userId));
+  const { fresh, duplicates, restated } = dedupeTransactions(
+    parsed.broker,
+    parsed.transactions,
+    state.keys,
+    state.brokerIds,
+  );
   const unmapped = extras.unmapped ?? [];
-  const crossBroker = crossBrokerMatches(parsed.broker, fresh, keys);
+  const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
+  const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
 
   const batchId = crypto.randomUUID();
 
@@ -476,7 +556,8 @@ export async function importParsed(
       .insert(transactions)
       .values(
         part.map(({ tx, key }) => {
-          existingKeys?.add(key);
+          state.keys.add(key);
+          state.brokerIds.add(brokerIdKey(parsed.broker, tx.id));
           return {
             userId,
             dedupeKey: key,
@@ -509,11 +590,11 @@ export async function importParsed(
     duplicates: duplicates + (fresh.length - actuallyAdded),
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
-    warningCount: parsed.warnings.length,
+    warningCount: warnings.length,
     issues: {
       errors: parsed.errors,
       skipped: parsed.skipped,
-      warnings: parsed.warnings,
+      warnings,
       ...(unmapped.length > 0 ? { unmapped } : {}),
       ...(crossBroker.length > 0 ? { crossBroker } : {}),
     },
@@ -527,7 +608,7 @@ export async function importParsed(
     duplicates: duplicates + (fresh.length - actuallyAdded),
     errors: parsed.errors,
     skipped: parsed.skipped,
-    warnings: parsed.warnings,
+    warnings,
     unmapped,
     crossBroker,
   };

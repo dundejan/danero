@@ -1,5 +1,11 @@
 import { d, TransactionSchema } from '@danero/shared';
-import { FIAT_CURRENCIES, normalizeHeader, parseCsv, parseEuroDate } from '../csv';
+import {
+  detectDecimalSeparator,
+  FIAT_CURRENCIES,
+  normalizeHeader,
+  parseCsv,
+  parseEuroDate,
+} from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
@@ -63,9 +69,17 @@ function mapColumns(headers: string[]): Record<ColumnKey, number> {
 const cell = (row: string[], index: number): string =>
   index >= 0 ? (row[index] ?? '').trim() : '';
 
-/** Coinmate píše čísla vždy s desetinnou tečkou; prázdno bývá mezera → null. */
-const parseNumber = (value: string): string | null =>
-  /^-?\d+(\.\d+)?$/.test(value) ? value : null;
+/**
+ * Coinmate píše čísla s desetinnou TEČKOU, jenže výpis přeuložený v českém
+ * Excelu má čárku — a hláška „chybí množství, cena nebo symbol“ nad souborem,
+ * kde všechno je, je z ničeho neuhodnutelná (týž vzorec jako T212 „Time (UTC)“).
+ * Čárku proto přijmeme, když ji soubor jako desetinný oddělovač používá.
+ */
+const parseNumber = (value: string, decimal: ',' | '.' | null = '.'): string | null => {
+  const trimmed = value.trim();
+  const normalized = decimal === ',' ? trimmed.replace(/[\s  ]/g, '').replace(',', '.') : trimmed;
+  return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : null;
+};
 
 /**
  * Opravdová fiat měna, ne jen „tři velká písmena“.
@@ -117,6 +131,9 @@ export function parseCoinmateCsv(text: string): ImportResult {
 
   const { headers, rows } = parseCsv(text, ';');
   const col = mapColumns(headers);
+  // lokalizace čísel z celého souboru (viz csv.ts) — výchozí je tečka, kterou
+  // Coinmate exportuje sám
+  const decimal = detectDecimalSeparator(rows.flat()) ?? '.';
 
   const missing = (['date', 'type', 'amount', 'amountCurrency', 'priceCurrency', 'status'] as const)
     .filter((key) => col[key] < 0);
@@ -212,8 +229,8 @@ export function parseCoinmateCsv(text: string): ImportResult {
       return;
     }
 
-    const amountRaw = parseNumber(cell(row, col.amount));
-    const priceRaw = parseNumber(cell(row, col.price));
+    const amountRaw = parseNumber(cell(row, col.amount), decimal);
+    const priceRaw = parseNumber(cell(row, col.price), decimal);
     const symbol = cell(row, col.amountCurrency);
     const currency = cell(row, col.priceCurrency);
 
@@ -236,7 +253,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
 
     // poplatek: v samostatném sloupci, u obchodů ve fiat měně; nula/prázdno = bez poplatku
     let fee: { amount: string; currency: string } | undefined;
-    const feeRaw = parseNumber(cell(row, col.fee));
+    const feeRaw = parseNumber(cell(row, col.fee), decimal);
     if (feeRaw !== null && !d(feeRaw).eq(0)) {
       const feeCurrency = cell(row, col.feeCurrency);
       if (isFiatCode(feeCurrency)) {
