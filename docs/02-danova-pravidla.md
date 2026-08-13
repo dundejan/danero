@@ -621,6 +621,104 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 
 ---
 
+## R-13 Prodej nakrátko (short) na spotu — ⚠️ NÁVRH, NEIMPLEMENTOVÁNO
+
+Prodej vypůjčených akcií s pozdějším zpětným nákupem (Interactive Brokers,
+Lynx, Fio na BCPP, Degiro s profilem Active). **Netýká se CFD ani vypsaných
+opcí** — ty jsou deriváty podle R-12 a jsou hotové.
+
+⚠️ **Tohle pravidlo zatím NEPLATÍ.** Import shorty vědomě přeskakuje
+s vysvětlením (Schwab `Sell Short`/`Buy to Cover`), protože naimportovat je
+jako běžný prodej dá prokazatelně špatné číslo: prodej bez otevřené pozice
+engine ocení nulou (`NEGATIVE_POSITION`) a zdanil by celý hrubý výnos.
+Rozhodnutí o implementaci je otevřené — viz „Co chybí“ na konci.
+
+**Výchozí bod je tvrdý: k prodeji nakrátko neexistuje v ČR ŽÁDNÝ výkladový
+zdroj.** Ověřeno negativně, ne odhadem: pokyn GFŘ D-59 (plný text) neobsahuje
+„nakrátko“, „short“ ani „zápůjčka cenných papírů“; ZDP slovo „nakrátko“ nezná;
+prohledané zápisy KOOV k tomu mlčí; Taxomat spot short nepodporuje (kryje jen
+CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto stojí
+**na zákonném textu**, ne na praxi — u každého bodu je to rozlišené.
+
+- **R-13a Kvalifikace**: příjem z prodeje nakrátko je příjem z úplatného
+  převodu cenného papíru podle **§ 10/1 b) bod 2** — tedy TÝŽ druh jako běžný
+  prodej akcií (kód D), ne zbytková kategorie. Písmeno b) neváže kvalifikaci na
+  délku držby ani na způsob nabytí a short prodávající vlastnictví skutečně
+  převádí: zápůjčka zastupitelné věci (§ 2390 ObčZ) převádí vlastnictví na
+  vydlužitele, takže v okamžiku prodeje akcie vlastní. Zbytkové písmeno pro
+  „jiný ostatní příjem“ v zákoně neexistuje (výčet a–q končí zaměstnaneckou
+  opcí; „F“ je kolonka tiskopisu, ne zákonné písmeno). **Jistota střední**
+  (text zákona jednoznačný, autorita chybí).
+- **R-13b Okamžik příjmu**: hotovostní princip § 5/1 — příjem plyne
+  **připsáním výnosu z prodeje**, ne uzavřením pozice. Pro § 10/1 b) není
+  „stanoveno jinak“ a zákonodárce mezidobí přes přelom roku řeší výslovně tam,
+  kde chce (§ 10/5 věta o vrácené záloze) — pro zpětný nákup obdobné pravidlo
+  chybí. Rozhodné datum = **vypořádání** obchodu, konzistentně s R-05a.
+  **Jistota nízká.** Opačný výklad (příjem až uzavřením pozice) se objevuje
+  jen v diskusích, a to v takových, které short zaměňují s CFD a odvolávají se
+  na osvobození, které na písmeno b) nedopadá — jako oporu ho brát nelze.
+- **R-13c Výdaj**: nabývací cenou je **zpětný nákup** (§ 10/5: „cena, za kterou
+  poplatník věc prokazatelně nabyl“ — zákon nikde nežádá, aby nabytí předcházelo
+  převodu), plus komise brokera („výdaje související s uskutečněním úplatného
+  převodu“). Uplatní se v roce zaplacení (hotovostně). **Jistota střední**
+  (nabývací cena) / **nízká** (rok uplatnění: § 5/1 páruje výdaje s příjmy,
+  hotovostní logika § 10 svědčí pro rok platby; rozpor nikdo neřeší).
+- **R-13d Osvobození — časový test NEDOPADÁ**: § 4/1 u) žádá dobu mezi nabytím
+  a úplatným převodem delší než 3 roky; u shortu leží nabytí bezprostředně před
+  prodejem (zápůjčka), resp. zpětný nákup až po něm. Test **nelze splnit
+  konstrukčně**. **Jistota vysoká.**
+- **R-13e Osvobození — stovka DOPADÁ (a je to past)**: § 4/1 t) osvobozuje
+  „příjmy z úplatného převodu cenných papírů, pokud jejich úhrn u poplatníka
+  nepřesáhne ve zdaňovacím období částku 100 000 Kč“ — **bez jakékoli podmínky
+  držby**. Platí-li R-13a, hrubý výnos shortu se do úhrnu **započítává** a může
+  přes limit přetlačit i jinak osvobozené běžné prodeje: short za 300 000 Kč
+  vedle dlouhého prodeje za 50 000 Kč znamená, že se zdaní obojí.
+  ⚠️ **Rozhodnutí je vázané, ne dvě nezávislé volby:** buď je short úplatný
+  převod CP (pak čerpá stovku *i* je jí kryt), nebo není (pak ani jedno).
+  Vyloučit ho z úhrnu a zároveň mu přiznat osvobození je nekonzistentní.
+  **Jistota střední.**
+- **R-13f Osvobození 50k neplatí**: § 10/3 a) osvobozuje jen druhy **jiné než
+  podle odstavce 1 písm. b) nebo c)**. **Jistota vysoká.**
+- **R-13g Poplatek za půjčení a náhrada dividendy — NEDOLOŽENO**: borrow fee
+  Fio sám popisuje jako „úrok z tržní hodnoty půjčených akcií“; úrok do výčtu
+  v § 10/5 nespadá a § 10 nezná obdobu § 24, takže **default je neuplatnit**.
+  Náhrada dividendy (manufactured dividend), kterou short prodávající platí
+  půjčiteli, nemá v českých pramenech vůbec nic — doložena je jen existence
+  povinnosti (Lynx), ne daňový režim. **Default neuplatnit**, obojí s výčtem
+  v reportu, ať to uživatel může uplatnit po dohodě s poradcem.
+  **Jistota nízká.**
+- **R-13h Zápůjčka samotná**: přijetí ani vrácení akcií není předmětem daně
+  (§ 3/4 b: „předmětem daně nejsou úvěry nebo zápůjčky“, výjimky na vydlužitele
+  nedopadají). Daňově relevantní je jen prodej a zpětný nákup. **Jistota
+  střední** (odvozeno ze zákona, žádný pramen to o securities lendingu neříká).
+- **R-13i Vykazování a kompenzace**: kód **D** v Příloze 2 — shorty a longy
+  jsou týž jednotlivý druh příjmu, takže se v rámci roku kompenzují (D-59
+  ke § 10/4), a úhrnná ztráta druhu zaniká (§ 10/4). **Jistota vysoká**
+  (číselník) / **střední** (zařazení shortu).
+- **R-13j Přelom roku je nejtvrdší důsledek**: prodej v listopadu = zdanitelný
+  příjem toho roku **bez jediného výdaje**; zpětný nákup v lednu = výdaj v roce,
+  kde nemusí mít proti čemu jít, a podle § 10/4 propadá. To je legitimní
+  bezpečný default, ale aplikace na něj musí upozornit **před koncem roku**,
+  ne až v březnu u přiznání (obdoba `DERIVATIVE_BUYBACK_WITHOUT_INCOME`, R-12j).
+
+**Co chybí k implementaci** (rozhodnutí, ne rešerše):
+1. Zda podporovat vůbec — na T212 ani XTB short na spotu nejde, takže se týká
+   jen uživatelů IBKR/Lynx, Degiro Active a Fio s margin účtem na BCPP.
+2. Rozsah brokerů: spolehlivá data má **jen IBKR** (`openCloseIndicator`
+   + znaménko množství, párování přes `<Lot>` v podsekci Closed Lots)
+   a Tastytrade (`Sub Type = Sell to Open` i u akcií). **Schwab uzavírá short
+   obyčejným `Buy`** — od běžného nákupu ho z exportu nerozeznáš.
+3. Short musí nést **výslovnou značku z parseru**: „prodej bez pozice“ dnes
+   znamená `NEGATIVE_POSITION` = neúplná historie, a splést si to lze oběma
+   směry.
+
+Zdroje: § 3/4, § 4/1 t) a u), § 5/1, § 10/1 b), § 10/3 a), § 10/4, § 10/5 ZDP;
+§ 2390 ObčZ (zápůjčka zastupitelné věci); tiskopis 5405-P2 vzor 21 (číselník);
+pokyn GFŘ D-59 ke § 10/4 (jednotlivý druh příjmu). Negativní zjištění: žádné
+stanovisko GFŘ, KOOV ani judikát NSS ke spot shortu; Taxomat ho nepodporuje.
+
+---
+
 ## Konfigurační přepínače (sporné výklady)
 
 | Klíč | Default | Pravidlo |
@@ -636,6 +734,8 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 | `returnOfCapitalReducesBasis` | `false` (vratku kapitálu zdanit jako dividendu) | R-07h |
+| `shortSaleIsSecurityTransfer` (NÁVRH) | `true` — short čerpá stovku i je jí kryt; volba je VÁZANÁ, ne dvě nezávislé | R-13e |
+| `shortSaleBorrowCostsDeductible` (NÁVRH) | `false` (borrow fee ani náhradu dividendy neuplatnit) | R-13g |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 
