@@ -159,7 +159,39 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   produkce běží na Postgres) — sada pak flakuje na 15s expect timeoutech.
 - E2E timeouty jsou těsné (15 s) — na vytíženém stroji (souběžná session, load > 5)
   sada náhodně padá; spouštěj při klidu, pády ověř rerunnem konkrétního specu.
+  Totéž platí pro **unit testy webu**: při load > 10 padalo i 60 nesouvisejících
+  testů (PGlite zámek), a přitom každý soubor sám prošel. Řešení není rerun
+  dokola, ale `pnpm --filter @danero/web exec vitest run --no-file-parallelism`.
 - Po neúspěšném syncu se nesmí nastavit `lastSyncedAt` (jinak se plná historie už nestáhne).
+- **Lokalizaci čísel řeš přes `detectDecimalSeparator` nad CELÝM souborem**
+  (`packages/importers/src/csv.ts`), nikdy větvením per hodnota. `1.000` je
+  v holandském exportu Degira tisíc kusů a v anglickém jedna celá nula; Degiro,
+  Revolut i Saxo si to každý hádaly po svém a mlčky — tisícinásobek se propsal
+  do nabývací ceny i do limitů. Když soubor důkaz nedá, **řekni to varováním**,
+  nehádej potichu.
+- **Sniffer musí být PODMNOŽINA toho, co vyžaduje jeho parser.** Přísnější
+  sniffer znamená, že soubor, který umíme přečíst, propadne na univerzální
+  šablonu a uživatel čte hlášku cizího parseru. Našlo se to šestkrát naráz
+  (Anycoin, Coinbase, Portu, Revolut ×2, Tastytrade) — ideálně ať obojí volá
+  tutéž funkci (`findCoinbaseHeaderLine`, `detectLanguage` u Saxa).
+- **Formát souboru poznávej z obsahu, ne z přípony** (`src/formats.ts`):
+  tlačítko v portálu se jmenuje „XLS" a doručí XLSX, Kraken i XTB posílají ZIP,
+  uživatel nahraje PDF. Prázdný soubor kontroluj po dekódování — samotné BOM
+  nebo nový řádek projde kontrolou na nulovou délku a skončí jako
+  „0 transakcí, 0 chyb".
+- **Nové pole v modelu transakce se do UŽ NAIMPORTOVANÝCH dat nedostane.**
+  Dedupe je obsahový (B-3-2), takže opakované nahrání téhož výpisu je duplicita
+  a payload zůstane starý. Vždy to napiš do nápovědy („dávku smaž a nahraj
+  znovu") — tak to má R-07h i R-13.
+- **Id od brokera není univerzální identifikátor události.** Jako druhá síť pod
+  obsahovým dedupe (eToro a MT tutéž událost popisují dvakrát s jinak
+  zaokrouhlenou cenou) se smí použít jen tam, kde je doloženě per transakce —
+  seznam je v `dedupe.ts`. Degiro tam dává číslo OBJEDNÁVKY a ta se plní i pár
+  dní: druhé plnění v pozdějším exportu by se zahodilo jako „už uložené".
+- **Český text nepiš přes shell heredoc.** `node - <<'EOF'` (a `cat` s českým
+  obsahem) uloží diakritiku jako literální `č` escapy — v komentářích je to
+  nečitelné, v šablonových řetězcích to projde testy a nikdo si toho nevšimne.
+  Na české texty používej editační nástroj.
 
 ## Stav a plán
 
