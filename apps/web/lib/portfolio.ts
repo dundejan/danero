@@ -185,6 +185,7 @@ export function profileToEngine(row: ProfileRow): {
       derivativesExpensesPerType: row.derivativesExpensesPerType,
       emtTimeTestExempt: row.emtTimeTestExempt,
       returnOfCapitalReducesBasis: row.returnOfCapitalReducesBasis,
+      shortSaleIncomeOnSale: row.shortSaleIncomeOnSale,
     },
   };
 }

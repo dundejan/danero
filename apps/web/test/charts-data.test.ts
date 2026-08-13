@@ -28,6 +28,7 @@ const PROFILE: ProfileRow = {
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
   returnOfCapitalReducesBasis: false,
+    shortSaleIncomeOnSale: true,
   timeTestBasis: 'settlement',
   createdAt: new Date(),
   updatedAt: new Date(),

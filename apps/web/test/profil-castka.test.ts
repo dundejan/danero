@@ -54,6 +54,7 @@ const form = (castka: string): FormData => {
     'derivaty-vydaje': 'restrictive',
     'emt-casovy-test': 'safe',
     'vratka-kapitalu': 'safe',
+    'short-prijem': 'safe',
   })) {
     data.append(key, value);
   }

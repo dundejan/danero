@@ -98,6 +98,19 @@ export function sniffTastytradeCsv(text: string): boolean {
   );
 }
 
+/**
+ * R-13: prodej nakrátko na SPOTU. Tastytrade značí záměr i u akcií
+ * (`SELL_TO_OPEN` / `BUY_TO_CLOSE` s `Instrument Type = Equity`), takže short
+ * jde poznat rovnou z dat a nemusí se hádat ze sledu obchodů. U opcí se pole
+ * nepoužívá — ty jsou deriváty podle R-12 a short prémii řeší vlastní logikou.
+ */
+const shortEffect = (norm: NormalizedRow): 'OPEN' | 'CLOSE' | undefined => {
+  if (norm.isOption) return undefined;
+  if (norm.actionRaw === 'SELL_TO_OPEN') return 'OPEN';
+  if (norm.actionRaw === 'BUY_TO_CLOSE') return 'CLOSE';
+  return undefined;
+};
+
 /** Sjednocený tvar řádku obou generací exportu — mapování výhradně podle názvů sloupců. */
 interface NormalizedRow {
   line: number;
@@ -414,6 +427,9 @@ export function parseTastytradeCsv(
     if (isin === null) return; // error per symbol už je nahlášený
     push(line, raw, {
       type: norm.direction,
+      // R-13: u akcií nese Tastytrade záměr stejně jako u opcí — SELL_TO_OPEN
+      // je prodej nakrátko, BUY_TO_CLOSE jeho pokrytí
+      ...(shortEffect(norm) ? { positionEffect: shortEffect(norm) } : {}),
       id: nextId(norm.cells),
       isin,
       ticker: norm.symbol,

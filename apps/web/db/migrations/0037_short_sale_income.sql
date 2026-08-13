@@ -1,0 +1,1 @@
+ALTER TABLE "taxpayer_profiles" ADD COLUMN "short_sale_income_on_sale" boolean DEFAULT true NOT NULL;

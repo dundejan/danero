@@ -84,13 +84,13 @@ export async function parseRevolutXlsx(
 
   const empty = { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
   // úplně prázdný sešit = prázdné období, ne chyba formátu (konzistentně s T212)
-  const prvniRadky = workbook.worksheets.flatMap((sheet) => readSheetRows(sheet));
-  if (prvniRadky.length === 0) return empty;
+  const anyRows = workbook.worksheets.flatMap((sheet) => readSheetRows(sheet));
+  if (anyRows.length === 0) return empty;
 
-  const nalezene = prvniRadky[0]!.cells.filter((cell) => cell.trim() !== '').join(', ');
+  const found = anyRows[0]!.cells.filter((cell) => cell.trim() !== '').join(', ');
   empty.errors.push({
-    line: prvniRadky[0]!.rowNumber,
-    message: `Sešit nevypadá jako výpis Revolutu — nenašli jsme ani akciové sloupce (${REVOLUT_INVEST_SNIFF_COLUMNS.join(', ')}), ani krypto (${REVOLUT_CRYPTO_COLUMNS.join(', ')}). V prvním řádku jsme našli: ${nalezene}`,
+    line: anyRows[0]!.rowNumber,
+    message: `Sešit nevypadá jako výpis Revolutu — nenašli jsme ani akciové sloupce (${REVOLUT_INVEST_SNIFF_COLUMNS.join(', ')}), ani krypto (${REVOLUT_CRYPTO_COLUMNS.join(', ')}). V prvním řádku jsme našli: ${found}`,
   });
   return empty;
 }

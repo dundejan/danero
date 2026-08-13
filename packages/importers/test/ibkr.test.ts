@@ -404,3 +404,35 @@ describe('lomítkové datum se rozhoduje z celého dokumentu', () => {
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('měsíc');
   });
 });
+
+describe('R-13: prodej nakrátko z Flex Query', () => {
+  const trade = (attrs: string): string =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement><Trades><Trade symbol="AAPL" isin="US0378331005" currency="USD" tradePrice="185.50" ibCommission="-1" tradeDate="20250610" assetCategory="STK" ${attrs} /></Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  /** `positionEffect` je jen na obchodech — union je potřeba zúžit. */
+  const effectOf = (attrs: string): string | undefined => {
+    const result = parseIbkrFlexXml(trade(attrs));
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    if (tx.type !== 'BUY' && tx.type !== 'SELL') throw new Error('čekáme obchod');
+    return tx.positionEffect;
+  };
+
+  it('short se pozná až kombinací openCloseIndicator a znaménka množství', () => {
+    // prodej + „O“ = otevření krátké pozice, nákup + „C“ = jeho pokrytí
+    expect(effectOf('buySell="SELL" quantity="-10" openCloseIndicator="O"')).toBe('OPEN');
+    expect(effectOf('buySell="BUY" quantity="10" openCloseIndicator="C"')).toBe('CLOSE');
+  });
+
+  it('běžný nákup a prodej dlouhé pozice značku nedostanou', () => {
+    expect(effectOf('buySell="BUY" quantity="10" openCloseIndicator="O"')).toBeUndefined();
+    expect(effectOf('buySell="SELL" quantity="-10" openCloseIndicator="C"')).toBeUndefined();
+  });
+
+  it('fill „C;O“ se neoznačí a řekne se proč (nevíme, kolik kusů je na které straně)', () => {
+    const result = parseIbkrFlexXml(trade('buySell="SELL" quantity="-10" openCloseIndicator="C;O"'));
+    expect(result.errors).toEqual([]);
+    expect(effectOf('buySell="SELL" quantity="-10" openCloseIndicator="C;O"')).toBeUndefined();
+    expect(result.warnings.map((w) => w.message).join(' ')).toContain('otevírá opačnou');
+  });
+});

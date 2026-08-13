@@ -33,6 +33,8 @@ const GROUP_TITLES: Record<string, string> = {
   SPINOFF_NO_POSITION: 'Spin-off bez otevřené pozice',
   DELISTING_MANUAL: 'Delisting vyžaduje ruční posouzení',
   DERIVATIVE_ACTION_UNSUPPORTED: 'Korporátní akce na derivátovém instrumentu',
+  SHORT_OPEN_AT_YEAR_END: 'Prodej nakrátko otevřený přes konec roku',
+  SHORT_COVER_WITHOUT_OPEN: 'Zpětný nákup bez otevřeného prodeje nakrátko',
   ASSET_CLASS_NORMALIZED: 'Sjednocený druh instrumentu',
   FRACTIONAL_SHARES: 'Frakční akcie — nejednoznačný status',
   FX_UNIFIED_RATE_MISSING: 'Chybějící jednotný kurz',

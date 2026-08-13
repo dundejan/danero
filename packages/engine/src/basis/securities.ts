@@ -5,6 +5,7 @@ import type { FxConverter } from '../fx/fx';
 import type { Disposal, DisposalAllocation } from '../ledger/ledger';
 import { WarningCollector } from '../warnings';
 import { isEmtIdentifier } from './emt';
+import type { ShortSalesResult } from './shortSales';
 
 export interface AllocationReport {
   lotId: string;
@@ -205,6 +206,13 @@ export interface SecuritiesComputeParams {
    * celý prodej daní (nález A2-12).
    */
   valueExemptionAvailable: boolean;
+  /**
+   * R-13: prodeje nakrátko téhož druhu (kód D). Loty nemají, takže se počítají
+   * zvlášť — do stovky (R-13e) i do kompenzace uvnitř druhu (§ 10/4) ale patří
+   * dohromady s ostatními prodeji. U kryptoaktiv se nepředává (short na spotu
+   * u nich neevidujeme).
+   */
+  shortSales?: ShortSalesResult;
 }
 
 /**
@@ -228,12 +236,16 @@ export function capExposedProceedsCzk(
     exemptionLimitCzk: Money;
     valueExemptionAvailable: boolean;
     includesTimeTestExempt: boolean;
+    /** R-13e: tržby ze shortů čerpají tentýž pool — bez nich by test osvobození
+        uvnitř stropu vycházel jinak než test v `computeSecurities`. */
+    extraPoolCzk?: Money;
   },
 ): Money {
+  const pool = prepared.pool100kCzk.plus(params.extraPoolCzk ?? ZERO);
   const coveredByValue =
     params.includesTimeTestExempt &&
     params.valueExemptionAvailable &&
-    prepared.pool100kCzk.lte(params.exemptionLimitCzk);
+    pool.lte(params.exemptionLimitCzk);
   if (!coveredByValue) return prepared.timeTestExemptProceedsCzk;
   return sum(prepared.items.filter((p) => !p.valueExemptionEligible).map((p) => p.exemptCzk));
 }
@@ -249,8 +261,13 @@ export function computeSecurities(
   params: SecuritiesComputeParams,
   warnings: WarningCollector,
 ): SecuritiesResult {
+  const shortSales = params.shortSales;
+  // R-13e: hrubá tržba shortu čerpá tutéž stovku jako běžné prodeje — a může
+  // přes ni přetlačit i jinak osvobozené longy. Buď je short úplatný převod CP
+  // (pak platí obojí), nebo není (pak ani jedno) — vázané, ne dvě volby.
+  const pool100kCzk = prepared.pool100kCzk.plus(shortSales?.proceedsCzk ?? ZERO);
   const exemptUnder100k =
-    params.valueExemptionAvailable && prepared.pool100kCzk.lte(params.exemptionLimitCzk);
+    params.valueExemptionAvailable && pool100kCzk.lte(params.exemptionLimitCzk);
   const exemptRatio = params.capExemptRatio;
   const capApplies = exemptRatio.lt(1);
 
@@ -325,6 +342,21 @@ export function computeSecurities(
     });
   }
 
+  // R-13: short je týž druh — do součtů vstupuje stejně jako ostatní prodeje.
+  // Osvobozený druh nepřináší ANI příjem, ANI výdaj: uplatnit zpětný nákup
+  // proti nezdaněné tržbě by vyrobilo ztrátu z osvobozeného příjmu (u dlouhých
+  // prodejů to `isTaxable` v alokacích řeší stejně).
+  if (shortSales) {
+    if (exemptUnder100k) {
+      // letošní tržby jsou osvobozené → jejich výdaje se neuplatní; výdaj
+      // k tržbě zdaněné v dřívějším roce ale zůstává (R-13c)
+      expenses = expenses.plus(shortSales.priorYearIncomeExpensesCzk);
+    } else {
+      taxableIncome = taxableIncome.plus(shortSales.incomeCzk);
+      expenses = expenses.plus(shortSales.expensesCzk);
+    }
+  }
+
   const raw = taxableIncome.sub(expenses);
   const base10 = raw.gt(0) ? raw : ZERO;
   if (raw.lt(0)) {
@@ -336,8 +368,8 @@ export function computeSecurities(
   }
 
   return {
-    totalGrossProceedsCzk: prepared.totalGrossCzk,
-    pool100kCzk: prepared.pool100kCzk,
+    totalGrossProceedsCzk: prepared.totalGrossCzk.plus(shortSales?.proceedsCzk ?? ZERO),
+    pool100kCzk,
     exemptUnder100k,
     taxableIncomeCzk: taxableIncome,
     expensesCzk: expenses,
@@ -348,6 +380,7 @@ export function computeSecurities(
       exemptionLimitCzk: params.exemptionLimitCzk,
       valueExemptionAvailable: params.valueExemptionAvailable,
       includesTimeTestExempt: params.includesTimeTestExempt,
+      extraPoolCzk: shortSales?.proceedsCzk,
     }),
     disposals: reports,
   };

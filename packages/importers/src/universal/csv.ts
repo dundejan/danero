@@ -63,21 +63,23 @@ const CA_SUBTYPES = new Set(['SPLIT', 'ISIN_CHANGE', 'MERGER', 'SPINOFF', 'DELIS
 
 /** Stažitelná předvyplněná šablona (hlavička + ukázkové řádky k přepsání). */
 export const UNIVERSAL_TEMPLATE_CSV = [
-  'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
-  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
-  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
-  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,0.5,60000,EUR,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
-  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,0.2,75000,EUR,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
-  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,1,1250,USD,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
-  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,1,1800,USD,,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
-  'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5000,USD,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření, ne nominál',
-  'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,2,5150,USD,,,,,,,,,,,,,uzavření CFD',
-  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
-  'INTEREST,2026-06-01,,,,,,,,,USD,,,1.23,,US,,,,,,,,úrok z hotovosti (withholding_tax vyplň, jen když ti z něj v zahraničí srazili daň)',
-  'FEE,2026-06-01,,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
-  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
-  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
-  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
+  'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
+  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
+  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
+  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.5,60000,EUR,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
+  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.2,75000,EUR,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
+  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1250,USD,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
+  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1800,USD,,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
+  'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5000,USD,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření (ne nominál)',
+  'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5150,USD,,,,,,,,,,,,,uzavření CFD',
+  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
+  'INTEREST,2026-06-01,,,,,,,,,,USD,,,1.23,,US,,,,,,,,"úrok z hotovosti (withholding_tax vyplň jen tehdy, když ti z něj v zahraničí srazili daň)"',
+  'FEE,2026-06-01,,,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
+  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
+  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
+  'SELL,2026-02-10,2026-02-11,US0378331005,AAPL,Apple Inc,,,open,100,300.00,USD,1.00,USD,,,,,,,,,,,prodej NAKRÁTKO (short) — otevření krátké pozice; daní se jinak než běžný prodej',
+  'BUY,2026-04-20,2026-04-21,US0378331005,AAPL,Apple Inc,,,close,100,250.00,USD,1.00,USD,,,,,,,,,,,zpětný nákup k pokrytí shortu — uzavření krátké pozice',
+  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
 ].join('\n');
 
 export function parseUniversalCsv(text: string): ImportResult {
@@ -166,6 +168,29 @@ export function parseUniversalCsv(text: string): ImportResult {
               message: `Derivát ${isin} nemá vyplněný settlement_style — počítáme prémiový styl (celá cena obchodu = cash tok, R-12f). U CFD a futures vyplň settlement_style=margin, jinak se místo rozdílu cen zdaní nominál pozice.`,
             });
           }
+          // R-13: prodej nakrátko a jeho pokrytí. Značka dává smysl jen
+          // u dvojice SELL+open / BUY+close — u běžného obchodu je zbytečná
+          // a mlčky ji ignorovat by znamenalo, že překlep („open“ u nákupu)
+          // zmizí beze stopy.
+          const effectRaw = map.get(row, 'position_effect').toUpperCase();
+          if (effectRaw !== '' && effectRaw !== 'OPEN' && effectRaw !== 'CLOSE') {
+            result.errors.push({
+              line,
+              message: `Neznámý position_effect "${map.get(row, 'position_effect')}" — povolené hodnoty: open (otevření prodeje nakrátko) a close (zpětný nákup, kterým ho zavíráš).`,
+              raw: row.join(','),
+            });
+            return;
+          }
+          const shortEffect =
+            (type === 'SELL' && effectRaw === 'OPEN') || (type === 'BUY' && effectRaw === 'CLOSE')
+              ? effectRaw
+              : undefined;
+          if (effectRaw !== '' && shortEffect === undefined) {
+            result.warnings.push({
+              line,
+              message: `${type} s position_effect="${effectRaw.toLowerCase()}" je běžný obchod — prodej nakrátko se zapisuje jako SELL s "open" a jeho pokrytí jako BUY s "close". Značku jsme ignorovali.`,
+            });
+          }
           result.transactions.push(
             TransactionSchema.parse({
               type,
@@ -174,6 +199,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
               assetClass,
+              positionEffect: shortEffect,
               quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
               pricePerShare: universalNumber(map.get(row, 'price'), 'price'),
               currency: map.get(row, 'currency'),

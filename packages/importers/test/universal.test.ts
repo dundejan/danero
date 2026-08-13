@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseCsv } from '../src/csv';
 import { TaxpayerProfileSchema } from '@danero/shared';
 import { analyzeTaxYear, type TaxYearConfig } from '@danero/engine';
 import { parseUniversalCsv, UNIVERSAL_TEMPLATE_CSV } from '../src';
@@ -303,6 +304,57 @@ describe('univerzální CSV šablona', () => {
       );
       expect(result.transactions).toEqual([]);
       expect(result.errors[0]!.message).toContain('ratio_to');
+    });
+  });
+});
+
+describe('R-13: prodej nakrátko v univerzální šabloně', () => {
+  const radek = (type: string, effect: string, price: string): string =>
+    `${type},2026-02-10,2026-02-11,US0378331005,AAPL,Apple Inc,,,${effect},100,${price},USD,1.00,USD,,,,,,,,,,`;
+  const hlavicka = UNIVERSAL_TEMPLATE_CSV.split('\n')[0]!;
+
+  it('SELL+open a BUY+close nesou značku shortu', () => {
+    const result = parseUniversalCsv(
+      [hlavicka, radek('SELL', 'open', '300.00'), radek('BUY', 'close', '250.00')].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    const efekt = (type: 'BUY' | 'SELL'): string | undefined => {
+      const tx = result.transactions.find((t) => t.type === type);
+      if (!tx || (tx.type !== 'BUY' && tx.type !== 'SELL')) throw new Error(`chybí ${type}`);
+      return tx.positionEffect;
+    };
+    expect(efekt('SELL')).toBe('OPEN');
+    expect(efekt('BUY')).toBe('CLOSE');
+  });
+
+  it('nesmyslná kombinace se ignoruje, ale nahlas (BUY+open je běžný nákup)', () => {
+    const result = parseUniversalCsv([hlavicka, radek('BUY', 'open', '300.00')].join('\n'));
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    if (tx.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(tx.positionEffect).toBeUndefined();
+    expect(result.warnings[0]!.message).toContain('běžný obchod');
+  });
+
+  it('překlep v position_effect skončí chybou řádku', () => {
+    const result = parseUniversalCsv([hlavicka, radek('SELL', 'shrot', '300.00')].join('\n'));
+    expect(result.transactions).toEqual([]);
+    expect(result.errors[0]!.message).toContain('position_effect');
+  });
+
+  it('vzorová šablona se sama naparsuje bez chyb', () => {
+    const result = parseUniversalCsv(UNIVERSAL_TEMPLATE_CSV);
+    expect(result.errors).toEqual([]);
+  });
+});
+
+describe('vzorová šablona je konzistentní tabulka', () => {
+  it('každý řádek má přesně tolik polí jako hlavička', () => {
+    // Čárka v české poznámce (poslední sloupec) udělá pole navíc a text se
+    // rozpadne — v šabloně, kterou si uživatel stahuje, to nikdo nepozná.
+    const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_CSV);
+    rows.forEach((row, index) => {
+      expect(row.length, `řádek ${index + 2} (${row[0]})`).toBe(headers.length);
     });
   });
 });

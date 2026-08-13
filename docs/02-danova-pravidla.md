@@ -621,17 +621,20 @@ NeoTax (výkladová praxe). Negativní zjištění: žádný KOOV/NSS k § 10 de
 
 ---
 
-## R-13 Prodej nakrátko (short) na spotu — ⚠️ NÁVRH, NEIMPLEMENTOVÁNO
+## R-13 Prodej nakrátko (short) na spotu — implementováno
 
 Prodej vypůjčených akcií s pozdějším zpětným nákupem (Interactive Brokers,
 Lynx, Fio na BCPP, Degiro s profilem Active). **Netýká se CFD ani vypsaných
 opcí** — ty jsou deriváty podle R-12 a jsou hotové.
 
-⚠️ **Tohle pravidlo zatím NEPLATÍ.** Import shorty vědomě přeskakuje
-s vysvětlením (Schwab `Sell Short`/`Buy to Cover`), protože naimportovat je
-jako běžný prodej dá prokazatelně špatné číslo: prodej bez otevřené pozice
-engine ocení nulou (`NEGATIVE_POSITION`) a zdanil by celý hrubý výnos.
-Rozhodnutí o implementaci je otevřené — viz „Co chybí“ na konci.
+Short se pozná VÝHRADNĚ podle značky `positionEffect` z parseru (SELL+OPEN,
+BUY+CLOSE) — odvozovat ho ze sledu obchodů nejde, protože „prodej bez pozice“
+je v datech nerozeznatelný od neúplné historie (`NEGATIVE_POSITION`) a splést
+si to lze oběma směry. Značku plní **IBKR** (`openCloseIndicator` + znaménko
+množství), **Tastytrade** (`SELL_TO_OPEN`/`BUY_TO_CLOSE` u `Instrument Type =
+Equity`) a ručně **univerzální šablona** (sloupec `position_effect`).
+**Schwab značku nemá** — v reálném exportu uzavírá short obyčejným `Buy`, takže
+se jeho shorty dál vědomě přeskakují s vysvětlením.
 
 **Výchozí bod je tvrdý: k prodeji nakrátko neexistuje v ČR ŽÁDNÝ výkladový
 zdroj.** Ověřeno negativně, ne odhadem: pokyn GFŘ D-59 (plný text) neobsahuje
@@ -701,16 +704,28 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   bezpečný default, ale aplikace na něj musí upozornit **před koncem roku**,
   ne až v březnu u přiznání (obdoba `DERIVATIVE_BUYBACK_WITHOUT_INCOME`, R-12j).
 
-**Co chybí k implementaci** (rozhodnutí, ne rešerše):
-1. Zda podporovat vůbec — na T212 ani XTB short na spotu nejde, takže se týká
-   jen uživatelů IBKR/Lynx, Degiro Active a Fio s margin účtem na BCPP.
-2. Rozsah brokerů: spolehlivá data má **jen IBKR** (`openCloseIndicator`
-   + znaménko množství, párování přes `<Lot>` v podsekci Closed Lots)
-   a Tastytrade (`Sub Type = Sell to Open` i u akcií). **Schwab uzavírá short
-   obyčejným `Buy`** — od běžného nákupu ho z exportu nerozeznáš.
-3. Short musí nést **výslovnou značku z parseru**: „prodej bez pozice“ dnes
-   znamená `NEGATIVE_POSITION` = neúplná historie, a splést si to lze oběma
-   směry.
+**Implementační poznámky:**
+- Výpočet je v `packages/engine/src/basis/shortSales.ts`; do inventáře lotů
+  shorty nevstupují (`engine.ts` je z ledgeru vyřazuje), aby nevyráběly
+  syntetický lot za 0 Kč a hlášku o neúplné historii.
+- Do druhu CP se slévají v `computeSecurities`: sdílený pool 100k, sdílená
+  kompenzace, jeden řádek Přílohy 2. Report je vypisuje ve vlastní tabulce —
+  loty nemají, takže v rozpisu prodejů by neměly co ukázat.
+- Osvobozený rok: když je úhrn pod stovkou, neuplatní se ani výdaje ze shortů —
+  **kromě** části připadající na tržbu zdaněnou v dřívějším roce
+  (`priorYearIncomeExpensesCzk`), protože její příjem osvobozený nebyl.
+- Fill `C;O` z IBKR (jedním obchodem se zavře jedna pozice a otevře opačná) se
+  neoznačuje vůbec — kolik kusů patří na kterou stranu, výpis neuvádí — a
+  uživatel dostane varování. U derivátů se značka nepoužívá (řeší je R-12).
+- Uvnitř dne musí být otevření (PRODEJ) před uzavřením — sdílená priorita
+  událostí řadí nákup první, což je u shortu obráceně; jinak se intradenní
+  short páruje proti prázdné frontě.
+- Značku nesou jen nově naimportované výpisy: dedupe je obsahový, takže
+  opakované nahrání téhož souboru ji do už uložených řádků nedoplní — dávku je
+  potřeba smazat a nahrát znovu (stejně jako u R-07h).
+
+**Co zůstává otevřené:** borrow fee a náhrada dividendy se neuplatňují (R-13g,
+nedoloženo); podpora shortů u Schwabu čeká na export, ze kterého by šly poznat.
 
 Zdroje: § 3/4, § 4/1 t) a u), § 5/1, § 10/1 b), § 10/3 a), § 10/4, § 10/5 ZDP;
 § 2390 ObčZ (zápůjčka zastupitelné věci); tiskopis 5405-P2 vzor 21 (číselník);
@@ -734,8 +749,7 @@ stanovisko GFŘ, KOOV ani judikát NSS ke spot shortu; Taxomat ho nepodporuje.
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 | `returnOfCapitalReducesBasis` | `false` (vratku kapitálu zdanit jako dividendu) | R-07h |
-| `shortSaleIsSecurityTransfer` (NÁVRH) | `true` — short čerpá stovku i je jí kryt; volba je VÁZANÁ, ne dvě nezávislé | R-13e |
-| `shortSaleBorrowCostsDeductible` (NÁVRH) | `false` (borrow fee ani náhradu dividendy neuplatnit) | R-13g |
+| `shortSaleIncomeOnSale` | `true` (příjem už prodejem — dřívější zdanění) | R-13b |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 

@@ -212,6 +212,28 @@ export default async function SettingsPage({
                 v Zdrojích dat smazat a výpis nahrát znovu.
               </p>
             </div>
+            <div>
+              <Label htmlFor="short-prijem">Prodej nakrátko (short)</Label>
+              <Select
+                id="short-prijem"
+                name="short-prijem"
+                defaultValue={(profile?.shortSaleIncomeOnSale ?? true) ? 'safe' : 'lenient'}
+              >
+                <option value="safe">Bezpečný výklad — příjem už prodejem (doporučeno)</option>
+                <option value="lenient">Mírnější výklad — příjem až uzavřením pozice (sporné)</option>
+              </Select>
+              <p className="mt-1 text-xs text-inkoust-tlumeny">
+                Prodáš-li vypůjčené akcie, peníze ti přijdou hned — daň se podle bezpečného
+                výkladu platí už za ten rok a zpětný nákup je výdaj až v roce, kdy ho
+                zaplatíš. Rozdíl uvidíš jen u shortu drženého přes Silvestr, zato velký:
+                zdaní se celá tržba bez výdaje. K prodeji nakrátko neexistuje v Česku
+                žádné oficiální stanovisko, takže obojí je výklad — mírnější je pro tebe
+                výhodnější, ale hůř se obhajuje.
+                Značka „prodej nakrátko“ jde jen z výpisů Interactive Brokers a Tastytrade
+                (a z univerzální šablony) — u výpisů nahraných před 13. 8. 2026 v datech
+                chybí, takže je potřeba dávku v Zdrojích dat smazat a nahrát znovu.
+              </p>
+            </div>
           </div>
           <p className="text-xs text-inkoust-tlumeny">
             Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se

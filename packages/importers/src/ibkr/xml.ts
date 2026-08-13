@@ -138,6 +138,39 @@ function toIsoDateCandidate(value: string | undefined): string | null {
 
 const ISIN_RE = /\b([A-Z]{2}[A-Z0-9]{9}\d)\b/g;
 
+/**
+ * R-13: prodej nakrátko z Flex Query. Pozná se až KOMBINACÍ dvou údajů —
+ * `openCloseIndicator` sám o sobě říká jen otevření/uzavření pozice, směr nese
+ * `buySell` (a shodně s ním znaménko `quantity`, které je u prodeje vždy
+ * záporné). Short je tedy `O` u prodeje a `C` u nákupu; obyčejný nákup je
+ * `O` u nákupu.
+ *
+ * Hodnota `C;O` je jediný fill, který zavírá jednu pozici a otevírá opačnou.
+ * Rozdělit ho na dvě transakce z dat nejde (Flex neuvádí, kolik kusů připadá
+ * na kterou stranu), takže se raději neoznačí vůbec — spočítá se jako dosud
+ * a uživatel dostane varování. Tiše ho označit za short by bylo horší.
+ */
+function shortPositionEffect(
+  trade: Attrs,
+  buySell: string,
+  line: number,
+  result: ImportResult,
+): 'OPEN' | 'CLOSE' | undefined {
+  const indicator = String(trade.openCloseIndicator ?? '').toUpperCase().trim();
+  if (indicator === '' || indicator === '-') return undefined;
+  if (indicator.includes(';')) {
+    result.warnings.push({
+      line,
+      message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''} zároveň zavírá jednu pozici a otevírá opačnou (openCloseIndicator „${trade.openCloseIndicator}“) — kolik kusů patří na kterou stranu, výpis neuvádí. Zpracovali jsme ho jako běžný obchod; jestli šlo o prodej nakrátko, doplň ho ručně přes univerzální šablonu.`,
+    });
+    return undefined;
+  }
+  if (indicator !== 'O' && indicator !== 'C') return undefined;
+  const isShortSide = buySell === 'SELL' ? indicator === 'O' : indicator === 'C';
+  if (!isShortSide) return undefined;
+  return indicator === 'O' ? 'OPEN' : 'CLOSE';
+}
+
 /** „4 FOR 1“ v actionDescription → { to: 4, from: 1 } (nové za staré). */
 function parseForRatio(description: string): { from: string; to: string } | null {
   const match = /([\d.]+)\s+FOR\s+([\d.]+)/i.exec(description);
@@ -345,6 +378,7 @@ function processTrades(
     const quantity = trade.quantity ? d(cleanNumber(trade.quantity)) : null;
     const price = trade.tradePrice ?? '';
 
+
     if (isDerivative) {
       // klíč instrumentu = symbol (deriváty ISIN nemají), cash tok = cena × multiplikátor
       const symbol = (trade.symbol ?? '').trim();
@@ -442,9 +476,14 @@ function processTrades(
     const commission = trade.ibCommission ? d(cleanNumber(trade.ibCommission)).abs() : ZERO;
     const settlement = toIsoDate(trade.settleDateTarget);
     const id = trade.tradeID || trade.transactionID;
+    // R-13 se týká jen spotových obchodů — u derivátů (výše) se značka
+    // nepoužívá, takže se tady ani nepočítá a varování o „C;O“ nepadá na
+    // rolování opce, se kterým short nemá nic společného
+    const positionEffect = shortPositionEffect(trade, buySell, line, result);
 
     push(line, trade, {
       type: buySell,
+      ...(positionEffect ? { positionEffect } : {}),
       id: id
         ? `ibkr-${id}`
         : contentId('trade', [buySell, tradeDate, isin, quantity.toString(), pricePerShare]),

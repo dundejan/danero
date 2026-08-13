@@ -53,6 +53,21 @@ const tradeFields = {
    * (nominál pozice není příjem). U nederivátů se ignoruje.
    */
   settlementStyle: z.enum(['PREMIUM', 'MARGIN']).optional(),
+  /**
+   * R-13: co obchod dělá s pozicí — `OPEN` otevírá, `CLOSE` uzavírá.
+   *
+   * Rozhoduje jen u kombinací, které samy o sobě nedávají smysl v inventáři:
+   * **SELL + OPEN = prodej nakrátko** (short), **BUY + CLOSE = zpětný nákup**
+   * k jeho pokrytí. U běžných obchodů (BUY+OPEN, SELL+CLOSE) je pole
+   * bezvýznamné a smí chybět.
+   *
+   * Bez něj by short nešel odlišit od neúplné historie: „prodej bez pozice“
+   * dnes znamená `NEGATIVE_POSITION`, tedy „nahraj starší data“. Značku proto
+   * plní jen brokeři, kteří ji v exportu skutečně mají (IBKR
+   * `openCloseIndicator` + znaménko množství, Tastytrade `Sub Type`), a ručně
+   * jde zadat přes univerzální šablonu.
+   */
+  positionEffect: z.enum(['OPEN', 'CLOSE']).optional(),
 };
 
 export const BuyTxSchema = z.object({ type: z.literal('BUY'), ...tradeFields });

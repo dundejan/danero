@@ -260,6 +260,13 @@
       "when": 1786523768402,
       "tag": "0036_return_of_capital",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786609653355,
+      "tag": "0037_short_sale_income",
+      "breakpoints": true
     }
   ]
 }

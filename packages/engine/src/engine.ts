@@ -9,6 +9,12 @@ import {
   type Transaction,
 } from '@danero/shared';
 import { computeDerivatives, type DerivativesResult } from './basis/derivatives';
+import {
+  computeShortSales,
+  isShortSaleTrade,
+  warnOpenShorts,
+  type ShortSalesResult,
+} from './basis/shortSales';
 import { computeDividends, type DividendsResult } from './basis/dividends';
 import { isDisputedEmtIdentifier } from './basis/emt';
 import {
@@ -47,6 +53,12 @@ export interface TaxYearResult {
   /** Použitá konfigurace přepínačů — tiskne se do reportu (průkaznost). */
   options: EngineOptions;
   securities: SecuritiesResult;
+  /**
+   * R-13: prodeje nakrátko. Jsou součástí druhu `securities` (týž kód D, tatáž
+   * stovka), ale nemají loty, takže v rozpisu prodejů nefigurují — report je
+   * vypisuje zvlášť, aby čísla druhu šla dohledat do posledního řádku.
+   */
+  shortSales: ShortSalesResult;
   /** R-10: kryptoaktiva — jiný druh příjmu § 10 s vlastními limity (zj/zk), bez kompenzace s CP. */
   crypto: SecuritiesResult;
   /** R-12: deriváty — třetí druh § 10 bez jakéhokoli osvobození, bez kompenzace s CP/kryptem. */
@@ -72,6 +84,10 @@ function resolveSharedCapRatios(
   warnings: WarningCollector,
   includesTimeTestExempt: boolean,
   valueExemptionAvailable: Record<AssetScope, boolean>,
+  /** R-13e: tržby ze shortů čerpají pool 100k druhu CP — test uvnitř stropu
+      musí vidět tentýž úhrn jako `computeSecurities`, jinak by u téhož roku
+      vycházel jednou osvobozený a jednou ne. */
+  shortProceedsCzk: Money,
 ): Record<AssetScope, Money> {
   const ratios: Record<AssetScope, Money> = { SECURITIES: d(1), CRYPTO: d(1) };
   const cap = config.limits.timeTestCap;
@@ -100,6 +116,7 @@ function resolveSharedCapRatios(
       exemptionLimitCzk: d(config.limits.securitiesProceedsExemption),
       valueExemptionAvailable: valueExemptionAvailable.SECURITIES,
       includesTimeTestExempt,
+      extraPoolCzk: shortProceedsCzk,
     }),
     CRYPTO: capExposedProceedsCzk(prepared.CRYPTO, {
       exemptionLimitCzk: d(config.limits.cryptoProceedsExemption),
@@ -177,7 +194,15 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       (tx.type === 'BUY' || tx.type === 'SELL' || tx.type === 'TRANSFER_IN' || tx.type === 'TRANSFER_OUT') &&
       derivativeIsins.has(tx.isin),
   );
+  // R-13: prodeje nakrátko a jejich pokrytí do inventáře lotů NEPATŘÍ — short
+  // žádný lot nespotřebovává a zpětný nákup není pořízení pozice. V ledgeru by
+  // vyrobily `NEGATIVE_POSITION` (nulová nabývací cena) a fantomový lot.
+  const shortSaleTxs = input.transactions.filter(
+    (tx) => isShortSaleTrade(tx) && !isDerivativeIsin(tx) && !cryptoIsins.has(tx.isin),
+  );
+  const shortSaleIds = new Set(shortSaleTxs.map((tx) => tx.id));
   const ledgerTransactions = input.transactions
+    .filter((tx) => !shortSaleIds.has(tx.id))
     .filter((tx) => {
       if (!isDerivativeIsin(tx)) return true;
       if (tx.type === 'CORPORATE_ACTION') {
@@ -263,13 +288,20 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     SECURITIES: !input.profile.hasSecuritiesInBusinessAssets,
     CRYPTO: config.cryptoRules.exemptionsAvailable,
   };
+  // shorty musí být spočítané dřív než poměr stropu — jejich tržby patří do
+  // téhož poolu 100k jako běžné prodeje CP
+  const shortSales = computeShortSales(shortSaleTxs, year, fx, options, warnings);
+  warnOpenShorts(shortSales, year, options, warnings);
   const capRatios = resolveSharedCapRatios(
     config,
     { SECURITIES: securitiesPrepared, CRYPTO: cryptoPrepared },
     warnings,
     options.limit100kIncludesTimeTestExempt,
     valueExemptionAvailable,
+    shortSales.proceedsCzk,
   );
+  // R-13: shorty jsou týž druh jako ostatní prodeje CP — počítají se zvlášť
+  // (nemají loty), ale do stovky i do kompenzace vstupují dohromady s nimi.
   const securities = computeSecurities(
     securitiesPrepared,
     fx,
@@ -280,6 +312,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       label: 'CP',
       lossRuleId: 'R-05d',
       valueExemptionAvailable: valueExemptionAvailable.SECURITIES,
+      shortSales,
     },
     warnings,
   );
@@ -413,6 +446,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     year,
     options,
     securities,
+    shortSales,
     crypto,
     derivatives,
     dividends,

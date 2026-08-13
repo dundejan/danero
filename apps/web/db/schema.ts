@@ -114,6 +114,9 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   emtTimeTestExempt: boolean('emt_time_test_exempt').notNull().default(false),
   // R-07h: vratka kapitálu snižuje nabývací cenu místo zdanění (default = bezpečné NE)
   returnOfCapitalReducesBasis: boolean('return_of_capital_reduces_basis').notNull().default(false),
+  // R-13b: příjem z prodeje nakrátko plyne už prodejem (default = bezpečné ANO,
+  // tedy dřívější zdanění); NE = až uzavřením pozice
+  shortSaleIncomeOnSale: boolean('short_sale_income_on_sale').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

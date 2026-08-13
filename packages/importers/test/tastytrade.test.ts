@@ -305,3 +305,39 @@ describe('parseTastytradeCsv — edge cases', () => {
     expect(duplicit).toBe(1);
   });
 });
+
+describe('R-13: akciový short (Tastytrade značí záměr i u akcií)', () => {
+  const header =
+    'Date,Type,Sub Type,Action,Symbol,Instrument Type,Description,Value,Quantity,Average Price,Commissions,Fees,Multiplier,Root Symbol,Underlying Symbol,Expiration Date,Strike Price,Call or Put,Order #,Total,Currency';
+  const csv = [
+    header,
+    '2026-06-23T19:46:02+0200,Trade,Sell to Open,SELL_TO_OPEN,IWM,Equity,Sold 3 IWM @ 208.32,624.97,3,208.33,0.00,0.00,,,,,,,391052108,624.97,USD',
+    '2026-06-24T16:30:00+0200,Trade,Buy to Close,BUY_TO_CLOSE,IWM,Equity,Bought 3 IWM @ 200.00,-600.00,3,-200.00,0.00,0.00,,,,,,,391195659,-600.00,USD',
+  ].join('\n');
+
+  it('SELL_TO_OPEN a BUY_TO_CLOSE u akcie nesou značku prodeje nakrátko', () => {
+    const result = parseTastytradeCsv(csv, { IWM: { isin: 'US4642876555' } });
+    expect(result.errors).toEqual([]);
+    // na pořadí řádků nezáleží — rozhoduje směr obchodu
+    const efekt = (type: 'BUY' | 'SELL'): string | undefined => {
+      const tx = result.transactions.find((t) => t.type === type);
+      if (!tx || (tx.type !== 'BUY' && tx.type !== 'SELL')) throw new Error(`chybí ${type}`);
+      return tx.positionEffect;
+    };
+    expect(efekt('SELL')).toBe('OPEN');
+    expect(efekt('BUY')).toBe('CLOSE');
+  });
+
+  it('u opcí se značka nepoužívá — ty řeší R-12 vlastní logikou', () => {
+    const opce = [
+      header,
+      '2026-06-23T19:46:02+0200,Trade,Sell to Open,SELL_TO_OPEN,SPY   260731P00400000,Equity Option,Sold 1 SPY,310.00,1,3.10,1.00,0.14,100,SPY,SPY,2026-07-31,400.0,PUT,391052108,308.86,USD',
+    ].join('\n');
+    const result = parseTastytradeCsv(opce);
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    if (tx.type !== 'SELL') throw new Error('čekáme prodej');
+    expect(tx.positionEffect).toBeUndefined();
+    expect(tx.assetClass).toBe('DERIVATIVE');
+  });
+});

@@ -32,6 +32,16 @@ export interface EngineOptions {
    */
   derivativesExpensesPerType: boolean;
   /**
+   * R-13b: kdy plyne příjem z prodeje nakrátko (short na spotu)?
+   *
+   * Default `true` = při PRODEJI (hotovostní princip § 5/1) — dřívější zdanění,
+   * tedy bezpečný výklad. `false` = až uzavřením pozice, kdy se daní jen rozdíl
+   * (výklad se objevuje v poradenské praxi, oporu v zákoně nemá).
+   *
+   * Rozdíl je vidět jen u shortu drženého přes konec roku; jinak vyjde totéž.
+   */
+  shortSaleIncomeOnSale: boolean;
+  /**
    * R-10g: osvobozuje časový test 3 roky (§ 4/1 zk) i EMT (stablecoiny)?
    * Litera zk) EMT nevylučuje (na rozdíl od zj), výklad je ale nejednotný.
    * Default false = bezpečný výklad (EMT zdanit vždy).
@@ -62,6 +72,7 @@ export const DEFAULT_OPTIONS: EngineOptions = {
   treatyInterestWithholdingCap: { US: '0', DE: '0', NL: '0', IE: '0', GB: '0', JP: '0.10' },
   defaultInterestTreatyCap: '0',
   derivativesExpensesPerType: false,
+  shortSaleIncomeOnSale: true,
   emtTimeTestExempt: false,
   returnOfCapitalReducesBasis: false,
 };

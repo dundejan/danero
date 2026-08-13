@@ -35,6 +35,7 @@ const form = (vratka: 'safe' | 'lenient'): FormData => {
     'derivaty-vydaje': 'restrictive',
     'emt-casovy-test': 'safe',
     'vratka-kapitalu': vratka,
+    'short-prijem': 'safe',
   })) {
     data.append(key, value);
   }

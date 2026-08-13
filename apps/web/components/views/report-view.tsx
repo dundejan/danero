@@ -383,6 +383,50 @@ export function ReportView({
         </p>
       </Card>
 
+      {result.shortSales.items.length > 0 && (
+        <Card className="space-y-3">
+          <CardTitle>
+            Prodeje nakrátko v roce {year} ({result.shortSales.items.length})
+          </CardTitle>
+          {/* R-13: shorty patří do téhož druhu jako ostatní prodeje CP (kód D),
+              ale nemají loty — v rozpisu prodejů výš by neměly co ukázat, takže
+              je vypisujeme zvlášť, ať jdou čísla druhu dohledat do řádku. */}
+          <p className="text-sm text-inkoust-tlumeny">
+            Prodej vypůjčených akcií se počítá do stejného druhu příjmu jako běžné prodeje —
+            čerpá tedy i osvobození do 100 000 Kč. Tržbu daníme v roce prodeje, zpětný nákup
+            je výdaj v roce, kdy ho zaplatíš.
+          </p>
+          <ScrollArea label={`Prodeje nakrátko v roce ${year}`}>
+            <table aria-label="Rozpis prodejů nakrátko" className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                  <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
+                  <th scope="col" className="py-2 pr-4 font-medium">Událost</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Kusů</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Příjem</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-medium">Výdaj</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.shortSales.items.map((item, index) => (
+                  <tr key={`${item.isin}-${item.date}-${index}`} className="border-b border-linka/60">
+                    <td className="py-2 pr-4">{labels.get(item.isin) ?? item.isin}</td>
+                    <td className="py-2 pr-4">
+                      {item.kind === 'SHORT_OPEN' ? 'Prodej nakrátko' : 'Zpětný nákup'}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{czDate(item.date)}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{item.quantity.toString()}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{czk(item.incomeCzk)}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{czk(item.expenseCzk)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+        </Card>
+      )}
+
       {allDisposals.length > 0 && (
         <Card className="space-y-3">
           <CardTitle>Prodeje v roce {year} ({allDisposals.length})</CardTitle>
