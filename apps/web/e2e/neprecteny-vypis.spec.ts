@@ -33,8 +33,8 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
 
   // uživatel se dozví, co se stalo a co bude dál — ne jen že to nešlo
-  await expect(page.getByText('Tenhle výpis jsme nepřečetli — pracujeme na tom.')).toBeVisible();
-  await expect(page.getByText(/Soubor jsme si uložili/)).toBeVisible();
+  await expect(page.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
+  await expect(page.getByText(/Dáme ti e-mailem vědět/)).toBeVisible();
 
   // vrácení importu se u nepřečteného výpisu nenabízí (není co vracet)
   await expect(page.getByRole('button', { name: 'Vrátit import zpět' })).toHaveCount(0);

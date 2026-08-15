@@ -62,10 +62,9 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
   if (item.status === 'fixed') {
     return (
       <div className="rounded-md border border-zelena/40 bg-zelena/5 p-3 text-sm">
-        <p className="font-medium">Výpis jsme přečetli a nahráli za tebe.</p>
+        <p className="font-medium">Výpis jsme zpracovali a nahráli za tebe.</p>
         <p className="mt-1 text-inkoust-tlumeny">
-          Formát jsme do Danera doplnili a obchody z tohohle souboru už v přehledu máš
-          (najdeš je v historii jako novější import). Dělat nemusíš nic.
+          Obchody z něj najdeš v historii jako novější import. Dělat nemusíš nic.
           {item.resolutionNote ? ` ${item.resolutionNote}` : ''}
         </p>
       </div>
@@ -74,7 +73,7 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
   if (item.status === 'rejected') {
     return (
       <div className="rounded-md border border-linka bg-pozadi p-3 text-sm">
-        <p className="font-medium">Tenhle výpis číst neumíme.</p>
+        <p className="font-medium">Tenhle výpis zpracovat neumíme.</p>
         <p className="mt-1 text-inkoust-tlumeny">
           {item.resolutionNote ??
             'Stáhni od své platformy jiný typ exportu (u každé je v seznamu níž napsané, který chceme), nebo data přepiš do univerzální šablony.'}
@@ -87,21 +86,16 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
   const fromSync = item.source === 'sync';
   return (
     <div className="space-y-2 rounded-md border border-jantar bg-jantar/5 p-3 text-sm">
-      <p className="font-medium">
-        {fromSync
-          ? 'Výpis stažený od brokera jsme nepřečetli — pracujeme na tom.'
-          : 'Tenhle výpis jsme nepřečetli — pracujeme na tom.'}
-      </p>
-      <p className="text-inkoust-tlumeny">
-        {fromSync
-          ? 'Vypadá to, že broker změnil formát exportu. Víme o tom, soubor jsme si uložili a během několika dní ho načteme za tebe — dáme ti vědět e-mailem. Dělat nemusíš nic.'
-          : 'Soubor jsme si uložili. Během několika dní se do Danera pokusíme jeho formát doplnit a výpis nahrát za tebe — až se to povede, dáme ti vědět e-mailem. Do té doby můžeš obchody přidat přes univerzální šablonu, ať ti přehled sedí hned.'}
-      </p>
+      {/* Krátce schválně: uživateli stačí vědět, že se to řeší a že se ozveme.
+          Že si soubor necháváme, říká /soukromi; jediné, co po něm chceme, je
+          platforma — a ta se ptá hned pod tím. */}
+      <p className="font-medium">Na zpracování tohohle výpisu pracujeme.</p>
+      {/* „jakmile ho zpracujeme“, ne „jakmile půjde nahrát“ — druhé zní, jako by
+          měl uživatel po e-mailu ještě něco dělat. Nahrajeme ho za něj. */}
+      <p className="text-inkoust-tlumeny">Dáme ti e-mailem vědět, jakmile ho zpracujeme.</p>
       {fromSync ? null : item.reportedAt ? (
         <p className="text-inkoust-tlumeny">
-          Díky, máme to
-          {item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}. Ozveme se
-          e-mailem, jakmile bude výpis načtený.
+          Díky, máme to{item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}.
         </p>
       ) : (
         <form action={reportFailedImportAction} className="space-y-2">
@@ -437,7 +431,7 @@ export default async function ImportPage({
         <Toast
           key={crypto.randomUUID()}
           kind="ok"
-          text="Díky — máme to. Pustíme se do formátu toho výpisu a jakmile ho půjde načíst, nahrajeme ho za tebe a dáme ti vědět e-mailem."
+          text="Díky — máme to. Dáme ti vědět e-mailem, jakmile výpis půjde nahrát."
         />
       )}
 

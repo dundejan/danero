@@ -189,8 +189,10 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Výpis, který nepřečteme, si necháváme** (`lib/failed-imports.ts`, tabulka
   `failed_imports`): originál je jediný způsob, jak formát doplnit, a bez něj
   se informace ztratí — nepoznaná hlavička není výjimka, takže o ní neví ani
-  log. Provozovateli chodí e-mail (adresa z `DANERO_ALERT_EMAIL`, obsah souboru
-  NIKDY), uživatel v `/import` vidí, že se na to koukneme, a může doplnit
+  log. **Obsah souboru se ukládá celý** (base64 v `content`) — jen do e-mailu
+  jde pouhá hlavička, ne obsah. Provozovateli chodí upozornění na
+  `DANERO_ALERT_EMAIL`, a když není nastavená, na `DANERO_CONTACT_EMAIL`
+  (běžný stav); uživatel v `/import` vidí, že se na to koukneme, a může doplnit
   platformu. Rozbor a doimport dělá `pnpm --filter @danero/web failed-imports`
   (`list`/`dump`/`retry`/`reject`). Schovává se jen selhání, kde může být vada
   naše: nepoznaný formát **a nově i parser, který se rozeběhl a nevydal jedinou
