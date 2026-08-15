@@ -125,6 +125,33 @@ describe('zachycení nepřečteného výpisu', () => {
     expect(await listOpenCases(db)).toHaveLength(0);
   });
 
+  it('špatně vyplněná univerzální šablona se neschovává — hláška je přesná', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    // šablona bez povinného sloupce „date": parser vrátí 0 transakcí a chybu,
+    // ale je to naše šablona a uživatel dostane návodnou hlášku
+    const summary = await importFileIsolated(
+      db,
+      'u1',
+      'sablona.csv',
+      bytes('type,isin,quantity\nBUY,US0378331005,10'),
+    );
+    expect(summary.errors.length).toBeGreaterThan(0);
+    expect(summary.unrecognized).toBeUndefined();
+    expect(await listOpenCases(db)).toHaveLength(0);
+  });
+
+  it('hlavička se pozná i u souboru bez LF (Excel pro Mac)', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    // celý soubor na jednom „řádku" oddělený samotnými \r — bez správného
+    // hledání konce řádku by se do e-mailu obtiskly obchody
+    const crOnly = NEZNAMY_VYPIS.replace(/\n/g, '\r');
+    await importFileIsolated(db, 'u1', 'mac.csv', bytes(crOnly));
+
+    const alert = emails().at(-1)!;
+    expect(alert.text).toContain('Obchodni den');
+    expect(alert.text).not.toContain('1050,50');
+  });
+
   it('úspěšný import nic neschovává', { timeout: 30_000 }, async () => {
     const db = await freshDb();
     const summary = await importFileIsolated(db, 'u1', 't212.csv', bytes(T212_VYPIS));

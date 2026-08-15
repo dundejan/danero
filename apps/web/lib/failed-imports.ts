@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { printableSample } from '@danero/importers';
+import { firstLine, printableSample } from '@danero/importers';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { failedImports, user } from '@/db/schema';
@@ -85,8 +85,9 @@ const sha256 = (data: ArrayBuffer): string =>
  */
 function headerSample(data: ArrayBuffer): string {
   const text = new TextDecoder().decode(data.slice(0, 4096));
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
-  return printableSample(firstLine, HEADER_SAMPLE_CHARS);
+  // konec řádku hledej i u samotného `\r` (Excel pro Mac) — jinak je „hlavička“
+  // celý soubor a do e-mailu by se dostaly řádky s obchody
+  return printableSample(firstLine(text), HEADER_SAMPLE_CHARS);
 }
 
 /**

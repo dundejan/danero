@@ -113,6 +113,25 @@ export interface SyncProgress {
   years?: SyncYearProgress[];
 }
 
+/**
+ * Název dávky, kterou založila SYNCHRONIZACE (ne ruční nahrání).
+ *
+ * Jediná definice schválně: podle ní se pozná, že vrácení takového importu
+ * musí zahodit `lastSyncedAt` — jinak by inkrementální sync smazaný rok už
+ * nikdy nestáhl (`undoImportAction`). U ručně nahraného výpisu se `lastSyncedAt`
+ * sahat nesmí: příští sync by zbytečně stahoval celou historii při limitu
+ * ~1 dotaz/minutu a napojený účet by v UI vypadal jako nikdy nesynchronizovaný.
+ */
+export const syncBatchFilename = {
+  trading212: (year: number) => `t212-api-${year}.csv`,
+  ibkr: (day: string) => `ibkr-flex-${day}.xml`,
+};
+
+const SYNC_FILENAME_PATTERNS = [/^t212-api-\d{4}\.csv$/, /^ibkr-flex-\d{4}-\d{2}-\d{2}\.xml$/];
+
+export const isSyncBatchFilename = (filename: string): boolean =>
+  SYNC_FILENAME_PATTERNS.some((pattern) => pattern.test(filename));
+
 /** Rekonciliace „nedoběhla“ — jediný tvar pro všechna chybová místa. */
 export function emptyReconciliation(error: string): StoredReconciliation {
   return { ok: false, matchedCount: 0, unmatchedTickers: [], issues: [], error };

@@ -22,9 +22,9 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { importBatches } from '@/db/schema';
+import { auditLog, importBatches } from '@/db/schema';
 import { listOpenCases, loadCase, resolveCase } from '@/lib/failed-imports';
 import { importFile } from '@/lib/import-service';
 
@@ -100,10 +100,22 @@ async function retry(caseId: string): Promise<void> {
     console.error(`Případ ${caseId} neexistuje.`);
     process.exit(1);
   }
+  const startedAt = new Date();
   const summary = await importFile(db, item.userId, item.filename, item.data);
   const nothingImported = summary.added === 0 && summary.duplicates === 0;
   if (summary.unrecognized || nothingImported) {
     await db.delete(importBatches).where(eq(importBatches.id, summary.batchId));
+    // `importParsed` zapíše audit ještě před dávkou, takže po neúspěchu zbývá
+    // uživateli v Nastavení „Import výpisu“ souboru, který sám nenahrál
+    await db
+      .delete(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, item.userId),
+          eq(auditLog.type, 'IMPORT'),
+          gte(auditLog.createdAt, startedAt),
+        ),
+      );
     console.log(
       `${caseId}: ${summary.unrecognized ? 'pořád nepoznáváme' : 'projde, ale nic z něj nevypadlo'}` +
         ` — ${summary.errors[0]?.message ?? 'bez hlášky'}`,
@@ -125,7 +137,18 @@ async function retryAll(): Promise<void> {
   const db = await getDb();
   const cases = await listOpenCases(db);
   console.log(`Zkouším ${cases.length} případů…`);
-  for (const item of cases) await retry(item.id);
+  // Jeden poškozený soubor (importFile na rozdíl od importFileIsolated vyhazuje)
+  // ani neodeslaný e-mail nesmí zbytek fronty tiše přeskočit.
+  let failed = 0;
+  for (const item of cases) {
+    try {
+      await retry(item.id);
+    } catch (error) {
+      failed += 1;
+      console.error(`${item.id}: pokus spadl — ${error instanceof Error ? error.message : error}`);
+    }
+  }
+  if (failed > 0) console.error(`Neúspěšných pokusů: ${failed} z ${cases.length}.`);
 }
 
 async function reject(caseId: string, note: string): Promise<void> {

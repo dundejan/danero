@@ -431,7 +431,7 @@ export default async function ImportPage({
         <Toast
           key={crypto.randomUUID()}
           kind="ok"
-          text="Díky — máme to. Dáme ti vědět e-mailem, jakmile výpis půjde nahrát."
+          text="Díky — máme to. Dáme ti e-mailem vědět, jakmile výpis zpracujeme."
         />
       )}
 

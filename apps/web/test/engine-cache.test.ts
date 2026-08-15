@@ -6,6 +6,7 @@ import {
   compareVariantsForUserCached,
   createResultCache,
   engineCacheStats,
+  invalidateUserCache,
   estimateAnalysisBytes,
   reportDataCached,
 } from '@/lib/engine-cache';
@@ -143,6 +144,29 @@ describe('cache enginu nad skutečnými daty', () => {
       expect(analyzeForUserCached('u1', txs, profil, 2025, '2026-08-08')).not.toBe(prvni);
     },
   );
+
+  /**
+   * Otisk v klíči stojí na SEZNAMU id transakcí, ne na obsahu payloadu. Když
+   * uživatel podle naší rady vrátí import zpět a nahraje týž výpis znovu (aby
+   * se do dat dostalo nové pole modelu — R-07h, R-13), vyjde klíč identický
+   * s tím z doby před vrácením a Danero by mu deset minut ukazovalo stará
+   * čísla. Proto `undoImportAction` cache uživatele zahazuje.
+   */
+  it('vrácení importu zahodí spočítané výsledky uživatele', () => {
+    const txs: Transaction[] = parseUniversalCsv(bigCsv(50)).transactions;
+    const prvni = analyzeForUserCached('undo', txs, profil, 2025, '2026-08-08');
+    expect(analyzeForUserCached('undo', txs, profil, 2025, '2026-08-08')).toBe(prvni);
+
+    invalidateUserCache('undo');
+    expect(analyzeForUserCached('undo', txs, profil, 2025, '2026-08-08')).not.toBe(prvni);
+  });
+
+  it('zahození sáhne jen na svého uživatele', () => {
+    const txs: Transaction[] = parseUniversalCsv(bigCsv(50)).transactions;
+    const cizi = analyzeForUserCached('jiny', txs, profil, 2025, '2026-08-08');
+    invalidateUserCache('undo');
+    expect(analyzeForUserCached('jiny', txs, profil, 2025, '2026-08-08')).toBe(cizi);
+  });
 });
 
 /* ── Denní kurzy a srovnání variant (F-3-1) ───────────────────────────────── */

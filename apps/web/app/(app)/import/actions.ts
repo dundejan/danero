@@ -8,6 +8,8 @@ import { getDb, type Db } from '@/db';
 import { brokerAccounts, importBatches, transactions } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
+import { isSyncBatchFilename } from '@/lib/broker-sync';
+import { invalidateUserCache } from '@/lib/engine-cache';
 import { reportFailedImport } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
@@ -110,10 +112,9 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
  *
  * ⚠️ Dávka může pocházet i z API brokera, a tam „nahrát znovu" nestačí:
  * inkrementální sync se ptá jen na roky od poslední synchronizace
- * (`lib/t212-sync.ts`), takže vrácený rok 2019 by se už nikdy nestáhl. Proto se
- * účtu téhož brokera zahodí `lastSyncedAt` — příští synchronizace projde plnou
- * historii. Je to bezpečné i u ručně nahraného výpisu: nejhůř se stáhne víc,
- * než bylo nutné, a dedupe stejně nic nezdvojí.
+ * (`lib/t212-sync.ts`), takže vrácený rok 2019 by se už nikdy nestáhl. Takové
+ * dávce se proto účtu zahodí `lastSyncedAt` — poznává se podle názvu, který
+ * jim dává `syncBatchFilename` (jediná definice v `lib/broker-sync.ts`).
  */
 export async function undoImportAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -137,16 +138,23 @@ export async function undoImportAction(formData: FormData): Promise<void> {
         .where(and(eq(transactions.userId, user.id), eq(transactions.batchId, batchId)))
         .returning({ dedupeKey: transactions.dedupeKey });
       await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
-      // ať se smazaná historie dá zase stáhnout (viz komentář výš)
-      await tx
-        .update(brokerAccounts)
-        .set({ lastSyncedAt: null })
-        .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, batch.broker)));
+      // Jen u dávky ze SYNCU: ať se smazaná historie dá zase stáhnout (viz
+      // komentář výš). U ručně nahraného výpisu by to znamenalo zbytečné
+      // stahování celé historie a účet by v UI vypadal jako nesynchronizovaný.
+      if (isSyncBatchFilename(batch.filename)) {
+        await tx
+          .update(brokerAccounts)
+          .set({ lastSyncedAt: null })
+          .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, batch.broker)));
+      }
       return { filename: batch.filename, count: deleted.length };
     });
-    // cache výpočtů se nezneplatňuje ručně: klíč nese otisk množiny transakcí
-    // (lib/engine-cache.ts), takže po smazání vyjde jiný a spočítá se znovu
+    // Cache výpočtů se MUSÍ zahodit ručně: otisk v klíči stojí na seznamu id
+    // transakcí, ne na obsahu payloadu. Po vrácení a novém nahrání téhož výpisu
+    // (dokumentovaný postup u nového pole v modelu) vyjde klíč identický s tím
+    // z doby před vrácením a uživatel by deset minut viděl stará čísla.
     if (removed) {
+      invalidateUserCache(user.id);
       const { plural } = await import('@/lib/format');
       await logAudit(
         db,

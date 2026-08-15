@@ -76,10 +76,18 @@ export function parseCsv(text: string, delimiter: ',' | ';' | '\t' = ','): CsvTa
   return { headers, rows };
 }
 
-/** První řádek textu (hlavička) — bez kopírování celého souboru. */
+/**
+ * První řádek textu (hlavička) — bez kopírování celého souboru.
+ *
+ * Bere v úvahu i samotné `\r`: starší Excel pro Mac tak ukládá CSV celé a bez
+ * téhle větve by „hlavička“ byla CELÝ soubor. To není teorie — hlavička se
+ * vypisuje do hlášky „v hlavičce jsme našli…“ i do upozornění provozovateli,
+ * takže by se do nich obtiskla data uživatele; a sniffery hledající slovo
+ * v hlavičce by ho našly kdekoli v souboru.
+ */
 export function firstLine(text: string): string {
-  const newline = text.indexOf('\n');
-  return newline === -1 ? text : text.slice(0, newline);
+  const end = text.search(/[\r\n]/);
+  return end === -1 ? text : text.slice(0, end);
 }
 
 /**

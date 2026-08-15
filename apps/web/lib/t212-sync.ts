@@ -16,6 +16,7 @@ import {
   type SyncStatus,
   type SyncYearProgress,
   previouslyVerifiedYears,
+  syncBatchFilename,
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
 import {
@@ -298,7 +299,7 @@ export async function syncTrading212(
       const batch = await importParsed(
         db,
         account.userId,
-        `t212-api-${year}.csv`,
+        syncBatchFilename.trading212(year),
         parsed,
         importState,
         { unrecognized },
@@ -312,7 +313,7 @@ export async function syncTrading212(
         await keepFailedUpload(db, {
           userId: account.userId,
           batchId: batch.batchId,
-          filename: `t212-api-${year}.csv`,
+          filename: syncBatchFilename.trading212(year),
           data: new TextEncoder().encode(rawExport).buffer as ArrayBuffer,
           reason: batch.errors[0]?.message ?? 'Formát exportu z API nepoznáváme.',
           // stažené od brokera: platformu známe, uživatele se nemáme nač ptát

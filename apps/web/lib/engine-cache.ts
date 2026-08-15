@@ -80,6 +80,8 @@ export interface CacheLimits {
 export interface ResultCache<T> {
   get(key: string, now?: number): T | undefined;
   set(key: string, value: T, now?: number): void;
+  /** Zahodí všechny záznamy s daným prefixem klíče (klíč začíná userId). */
+  dropByPrefix(prefix: string): void;
   stats(): { entries: number; bytes: number };
 }
 
@@ -138,6 +140,11 @@ export function createResultCache<T>(
       entries.set(key, { value, bytes: entryBytes, storedAt: now });
       bytes += entryBytes;
     },
+    dropByPrefix(prefix) {
+      for (const [key, entry] of entries) {
+        if (key.startsWith(prefix)) drop(key, entry);
+      }
+    },
     stats: () => ({ entries: entries.size, bytes }),
   };
 }
@@ -163,6 +170,25 @@ const comparisonCache = createResultCache<VariantComparison>(
 
 /** Obsazenost cache — pro testy a případnou diagnostiku. */
 export const engineCacheStats = (): { entries: number; bytes: number } => cache.stats();
+
+/**
+ * Zahodí spočítané výsledky jednoho uživatele.
+ *
+ * Otisk v klíči stojí na SEZNAMU id transakcí a jejich počtu, ne na obsahu
+ * payloadu — a to nestačí, když se tytéž transakce naimportují znovu s bohatším
+ * payloadem. Přesně to dělá dokumentovaný postup „vrať import zpět a nahraj
+ * znovu“ u nového pole v modelu (R-07h, R-13): po vrácení a novém nahrání má
+ * uživatel tytéž id ve stejném počtu, takže klíč vyjde IDENTICKÝ s tím, co
+ * v cache leží z doby před vrácením — a Danero by mu deset minut ukazovalo
+ * stará čísla, přestože udělal přesně to, co mu poradilo.
+ *
+ * Volá se proto při vrácení importu (`undoImportAction`); klíč začíná userId,
+ * takže se nikomu jinému nesáhne.
+ */
+export function invalidateUserCache(userId: string): void {
+  cache.dropByPrefix(`${userId}:`);
+  comparisonCache.dropByPrefix(`${userId}:`);
+}
 
 /**
  * Otisk denních kurzů do klíče cache. `undefined` znamená „necachovat":

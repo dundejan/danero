@@ -258,8 +258,13 @@ const MAX_LISTED_COLUMNS = 12;
  * neuhodnutelná. Teď se vypíšou nalezené sloupce, takže je vidět, co dorazilo.
  */
 function universalOrUnknown(text: string): ParsedFile {
-  // prázdný soubor = prázdné období (T212 tak posílá roky před založením účtu)
-  if (text.trim() === '') return noUnmapped(parseUniversalCsv(text));
+  // Šablona je NAŠE formát a její hlášky jsou přesné („Chybí povinný sloupec
+  // date“, „Neznámý typ …“), takže špatně vyplněná šablona není vada na naší
+  // straně — schovávat ji a slibovat „pracujeme na tom“ by byla lež a zabralo
+  // by to místo skutečnému nečitelnému výpisu (strop pěti případů).
+  if (text.trim() === '') {
+    return { outcome: parseUniversalCsv(text), unmapped: [], unrecognized: false };
+  }
 
   const header = firstLine(text);
   const columns = parseCsv(header, sniffDelimiter(header)).headers;
@@ -267,7 +272,7 @@ function universalOrUnknown(text: string): ParsedFile {
   // sám: rozepsaná šablona, které chybí „date“, tak dostane přesnou hlášku
   // od parseru šablony místo obecného „nepoznáváme“.
   if (columns.some((column) => column.toLowerCase() === 'type')) {
-    return noUnmapped(parseUniversalCsv(text));
+    return { outcome: parseUniversalCsv(text), unmapped: [], unrecognized: false };
   }
 
   // binární smetí (přejmenovaný .xls, obrázek) se do hlášky nesmí obtisknout

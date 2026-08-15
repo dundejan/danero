@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanNumber, isAmbiguousThousands, isValidIsoDate, parseCsv } from '../src/csv';
+import { cleanNumber, firstLine, isAmbiguousThousands, isValidIsoDate, parseCsv } from '../src/csv';
 
 describe('RFC 4180 CSV parser', () => {
   it('parsuje uvozovky, čárky a nové řádky uvnitř polí', () => {
@@ -82,5 +82,26 @@ describe('isAmbiguousThousands (B-3-12)', () => {
     expect(isAmbiguousThousands('7848')).toBe(false);
     // čtyři číslice za čárkou nejsou tisícové trojčíslí
     expect(isAmbiguousThousands('7,8480')).toBe(false);
+  });
+});
+
+describe('firstLine', () => {
+  it('bere první řádek u LF i CRLF', () => {
+    expect(firstLine('a,b\n1,2\n3,4')).toBe('a,b');
+    expect(firstLine('a,b\r\n1,2')).toBe('a,b');
+  });
+
+  /**
+   * Starší Excel pro Mac ukládá CSV se samotnými `\r`. Bez téhle větve by
+   * „hlavička“ byl celý soubor — a ta se vypisuje uživateli do hlášky
+   * „v hlavičce jsme našli…“ i provozovateli do upozornění o nepřečteném
+   * výpisu, takže by se do nich obtiskly obchody.
+   */
+  it('bere první řádek i u souboru bez LF (Excel pro Mac)', () => {
+    expect(firstLine('a,b\r1,2\r3,4')).toBe('a,b');
+  });
+
+  it('soubor o jediném řádku vrací celý', () => {
+    expect(firstLine('a,b')).toBe('a,b');
   });
 });

@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import { auditLog, brokerAccounts, importBatches, transactions, user } from '@/db/schema';
+import { isSyncBatchFilename } from '@/lib/broker-sync';
 import { importFileIsolated } from '@/lib/import-service';
 
 /**
@@ -30,7 +31,11 @@ const bytes = (text: string): ArrayBuffer =>
 async function undo(db: Db, userId: string, batchId: string): Promise<number> {
   return db.transaction(async (tx) => {
     const [batch] = await tx
-      .select({ id: importBatches.id, broker: importBatches.broker })
+      .select({
+        id: importBatches.id,
+        broker: importBatches.broker,
+        filename: importBatches.filename,
+      })
       .from(importBatches)
       .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, userId)));
     if (!batch) return 0;
@@ -39,10 +44,12 @@ async function undo(db: Db, userId: string, batchId: string): Promise<number> {
       .where(and(eq(transactions.userId, userId), eq(transactions.batchId, batchId)))
       .returning({ dedupeKey: transactions.dedupeKey });
     await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
-    await tx
-      .update(brokerAccounts)
-      .set({ lastSyncedAt: null })
-      .where(and(eq(brokerAccounts.userId, userId), eq(brokerAccounts.broker, batch.broker)));
+    if (isSyncBatchFilename(batch.filename)) {
+      await tx
+        .update(brokerAccounts)
+        .set({ lastSyncedAt: null })
+        .where(and(eq(brokerAccounts.userId, userId), eq(brokerAccounts.broker, batch.broker)));
+    }
     return deleted.length;
   });
 }
@@ -102,6 +109,22 @@ describe('vrácení importu', () => {
     expect(zbytek[0]!.id).toBe(prvni.batchId);
   });
 
+  const napojenyUcet = async (db: Db): Promise<void> => {
+    await db.insert(brokerAccounts).values({
+      id: 'acc1',
+      userId: 'u1',
+      broker: 'trading212',
+      label: 'Trading 212',
+      credentialsEncrypted: 'x',
+      lastSyncedAt: new Date('2026-08-01T10:00:00Z'),
+    });
+  };
+
+  const lastSyncedAt = async (db: Db): Promise<Date | null> => {
+    const [ucet] = await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc1'));
+    return ucet!.lastSyncedAt;
+  };
+
   it(
     'vrácení dávky od napojeného brokera odemkne stažení plné historie',
     { timeout: 30_000 },
@@ -109,23 +132,29 @@ describe('vrácení importu', () => {
       const db = await freshDb();
       // účet po dřívějším syncu: inkrementální režim by se ptal jen na roky
       // od lastSyncedAt, takže vrácený rok by se už nikdy nestáhl
-      await db.insert(brokerAccounts).values({
-        id: 'acc1',
-        userId: 'u1',
-        broker: 'trading212',
-        label: 'Trading 212',
-        credentialsEncrypted: 'x',
-        lastSyncedAt: new Date('2026-08-01T10:00:00Z'),
-      });
+      await napojenyUcet(db);
       const summary = await importFileIsolated(db, 'u1', 't212-api-2024.csv', bytes(T212_CSV));
 
       await undo(db, 'u1', summary.batchId);
 
-      const [ucet] = await db
-        .select()
-        .from(brokerAccounts)
-        .where(eq(brokerAccounts.id, 'acc1'));
-      expect(ucet!.lastSyncedAt).toBeNull();
+      expect(await lastSyncedAt(db)).toBeNull();
+    },
+  );
+
+  it(
+    'vrácení RUČNĚ nahraného výpisu na synchronizaci nesahá',
+    { timeout: 30_000 },
+    async () => {
+      const db = await freshDb();
+      await napojenyUcet(db);
+      // tentýž broker, ale soubor nahrál uživatel — zahodit lastSyncedAt by
+      // znamenalo stahovat celou historii při limitu ~1 dotaz/min a účet by
+      // v UI vypadal jako nikdy nesynchronizovaný
+      const summary = await importFileIsolated(db, 'u1', 'muj-export.csv', bytes(T212_CSV));
+
+      await undo(db, 'u1', summary.batchId);
+
+      expect(await lastSyncedAt(db)).not.toBeNull();
     },
   );
 

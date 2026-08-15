@@ -4,6 +4,7 @@ import {
   finishBrokerSync,
   previouslyVerifiedYears,
   reconcileBrokerPositions,
+  syncBatchFilename,
   testEnvBaseUrl,
   type BrokerAccountRow,
   type StoredReconciliation,
@@ -86,7 +87,7 @@ export async function syncIbkr(
     parsed.errors.length > 0 ||
     parsed.skipped.length > 0 ||
     parsed.warnings.length > 0;
-  const filename = `ibkr-flex-${now.toISOString().slice(0, 10)}.xml`;
+  const filename = syncBatchFilename.ibkr(now.toISOString().slice(0, 10));
   const batch = hasContent ? await importParsed(db, account.userId, filename, parsed) : null;
 
   await report('reconciling');

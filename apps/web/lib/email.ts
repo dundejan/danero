@@ -334,10 +334,13 @@ const appUrl = (): string => process.env.BETTER_AUTH_URL ?? 'http://localhost:30
  * Nechodí zákazníkovi, ale provozovateli — je to jediný způsob, jak se
  * o změněném formátu brokera vůbec dozvědět dřív, než si někdo stěžuje.
  *
- * ⚠️ **Obsah výpisu se sem nikdy nedává** (ani jako příloha): jsou to všechny
+ * ⚠️ **Samotný soubor se sem nikdy nedává** (ani jako příloha): jsou to všechny
  * obchody jednoho člověka a e-mail je nejhorší možné úložiště. Originál leží
  * v `failed_imports` a dostane se k němu jen skript `scripts/failed-imports.ts`.
- * Ze souboru jde ven jen hlavička — už pročištěná `printableSample`.
+ * Ze souboru jde ven hlavička (pročištěná `printableSample`) a chybová hláška —
+ * ta u parseru brokera cituje hodnotu z řádku, na kterém se zastavil, takže
+ * jednu buňku ven vzít může. Přesně tak to říká i /soukromi; kdyby se to mělo
+ * změnit, musí se změnit obojí.
  */
 export function failedImportAlertEmail(args: {
   caseId: string;
