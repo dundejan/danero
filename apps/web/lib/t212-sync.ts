@@ -19,7 +19,7 @@ import {
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
 import {
-  detectAndParse,
+  detectAndParseExport,
   importParsed,
   loadImportState,
   type ImportSummary,
@@ -194,6 +194,10 @@ export async function syncTrading212(
   // importParsed do něj nově uložené doplňuje
   const importState = await loadImportState(db, account.userId);
   let emptyStreak = 0;
+  // Nepoznaný export si schováme jen JEDNOU za běh: kdyby T212 přejmenoval
+  // sloupec, propadne detekcí každý stažený rok a z jedné příčiny by vzniklo
+  // deset stejných případů k rozboru.
+  let unrecognizedKept = false;
   // kolik řádků nám brokerovy exporty vůbec vydaly (nezávisle na dedupe) —
   // rozlišuje „účet nic neobchodoval“ od „broker nic nevrátil“ (G-1)
   let parsedTransactions = 0;
@@ -281,7 +285,7 @@ export async function syncTrading212(
         `Export za rok ${year} dorazil poškozený — buď bez jediného datového řádku, nebo s rozepsaným posledním řádkem (rok bez obchodů posílá Trading212 jako úplně prázdný soubor, takže tohle přerušený přenos je). Spusť synchronizaci znovu; co už se stáhlo, zůstává a nic se nezdvojí.`,
       );
     }
-    const parsed = detectAndParse(rawExport);
+    const { outcome: parsed, unrecognized } = detectAndParseExport(rawExport);
     yearsCovered.push(year);
     parsedTransactions += parsed.transactions.length;
 
@@ -297,8 +301,25 @@ export async function syncTrading212(
         `t212-api-${year}.csv`,
         parsed,
         importState,
+        { unrecognized },
       );
       batches.push(batch);
+      // až souhrn zná výsledný příznak (parser bez jediné transakce se pozná
+      // teprve z počtů) — proto se čte batch.unrecognized, ne to, co šlo dovnitř
+      if (batch.unrecognized && !unrecognizedKept) {
+        unrecognizedKept = true;
+        const { keepFailedUpload } = await import('@/lib/failed-imports');
+        await keepFailedUpload(db, {
+          userId: account.userId,
+          batchId: batch.batchId,
+          filename: `t212-api-${year}.csv`,
+          data: new TextEncoder().encode(rawExport).buffer as ArrayBuffer,
+          reason: batch.errors[0]?.message ?? 'Formát exportu z API nepoznáváme.',
+          // stažené od brokera: platformu známe, uživatele se nemáme nač ptát
+          source: 'sync',
+          platform: 'Trading 212',
+        });
+      }
       current.added = batch.added;
       current.duplicates = batch.duplicates;
       if (batch.errors.length > 0) current.errors = batch.errors.length;

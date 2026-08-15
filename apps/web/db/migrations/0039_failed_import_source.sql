@@ -1,0 +1,1 @@
+ALTER TABLE "failed_imports" ADD COLUMN "source" text DEFAULT 'upload' NOT NULL;

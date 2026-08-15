@@ -6,6 +6,7 @@ import { pruneRateLimits } from '@/lib/rate-limit';
 import {
   pruneAuthRateLimits,
   reencryptBrokerCredentials,
+  pruneFailedImports,
   pruneImportBatches,
   pruneNotifications,
   pruneSessions,
@@ -31,6 +32,8 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
   const credentialsRotated = await reencryptBrokerCredentials(db);
   const jobsDeleted = await pruneJobs(db);
   const importBatchesDeleted = await pruneImportBatches(db);
+  // dřív než upozornění: leží tu cizí výpisy, ne naše provozní záznamy
+  const failedImportsDeleted = await pruneFailedImports(db);
   const notificationsDeleted = await pruneNotifications(db);
   return Response.json({
     auditDeleted,
@@ -41,6 +44,7 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
     credentialsRotated,
     jobsDeleted,
     importBatchesDeleted,
+    failedImportsDeleted,
     notificationsDeleted,
   });
 });

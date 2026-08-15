@@ -5,9 +5,10 @@ import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb, type Db } from '@/db';
-import { brokerAccounts, importBatches } from '@/db/schema';
+import { brokerAccounts, importBatches, transactions } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
+import { reportFailedImport } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
@@ -93,17 +94,95 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   redirect('/import?ulozeno=ciselnik');
 }
 
-/** Smaže záznam o importu z historie — transakce zůstávají (jen úklid logu). */
-export async function deleteBatchAction(formData: FormData): Promise<void> {
+/**
+ * Vrátí import zpět: smaže transakce z té dávky **i** záznam o ní.
+ *
+ * Do 13. 8. 2026 tu bylo „Smazat záznam", které mazalo JEN řádek v historii —
+ * transakce zůstávaly navždy a smazat je nešlo vůbec nijak (kromě zrušení
+ * účtu). Přitom hned tři hlášky uživateli radí „smaž dávku importu", aby se
+ * zbavil duplicity, a stejný postup předpokládá i doplnění nového pole do už
+ * naimportovaných dat. Rada tedy neplatila a historie navíc lhala: import byl
+ * z výpisu pryč, jeho transakce ne.
+ *
+ * Transakce se mažou podle `batchId`, což je dávka, která je poprvé uložila
+ * (dedupe zaručuje, že tatáž transakce ve druhé dávce nevznikne) — po vrácení
+ * jde tedy tentýž soubor nahrát znovu.
+ *
+ * ⚠️ Dávka může pocházet i z API brokera, a tam „nahrát znovu" nestačí:
+ * inkrementální sync se ptá jen na roky od poslední synchronizace
+ * (`lib/t212-sync.ts`), takže vrácený rok 2019 by se už nikdy nestáhl. Proto se
+ * účtu téhož brokera zahodí `lastSyncedAt` — příští synchronizace projde plnou
+ * historii. Je to bezpečné i u ručně nahraného výpisu: nejhůř se stáhne víc,
+ * než bylo nutné, a dedupe stejně nic nezdvojí.
+ */
+export async function undoImportAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const batchId = String(formData.get('davka') ?? '');
   if (batchId) {
     const db = await getDb();
-    await db
-      .delete(importBatches)
-      .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, user.id)));
+    // jedna transakce: pád mezi mazáním transakcí a dávky by nechal osiřelé
+    // řádky bez záznamu v historii, tedy data, ke kterým se uživatel nedostane
+    const removed = await db.transaction(async (tx) => {
+      const [batch] = await tx
+        .select({
+          id: importBatches.id,
+          filename: importBatches.filename,
+          broker: importBatches.broker,
+        })
+        .from(importBatches)
+        .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, user.id)));
+      if (!batch) return null;
+      const deleted = await tx
+        .delete(transactions)
+        .where(and(eq(transactions.userId, user.id), eq(transactions.batchId, batchId)))
+        .returning({ dedupeKey: transactions.dedupeKey });
+      await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
+      // ať se smazaná historie dá zase stáhnout (viz komentář výš)
+      await tx
+        .update(brokerAccounts)
+        .set({ lastSyncedAt: null })
+        .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, batch.broker)));
+      return { filename: batch.filename, count: deleted.length };
+    });
+    // cache výpočtů se nezneplatňuje ručně: klíč nese otisk množiny transakcí
+    // (lib/engine-cache.ts), takže po smazání vyjde jiný a spočítá se znovu
+    if (removed) {
+      const { plural } = await import('@/lib/format');
+      await logAudit(
+        db,
+        user.id,
+        'IMPORT_UNDONE',
+        `${removed.filename}: ${removed.count} ${plural(removed.count, 'transakce', 'transakce', 'transakcí')}`,
+      );
+    }
   }
+  revalidatePath('/prehled');
+  revalidatePath('/portfolio');
   revalidatePath('/import');
+}
+
+/**
+ * Uživatel doplnil, ze které platformy je výpis, který jsme nepřečetli.
+ * Provozovateli o tom odejde upozornění — teprve tahle informace stačí na to,
+ * aby se dal formát dohledat a doplnit.
+ */
+export async function reportFailedImportAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const caseId = String(formData.get('pripad') ?? '');
+  const db = await getDb();
+  const outcome = caseId
+    ? await reportFailedImport(db, user.id, caseId, {
+        platform: String(formData.get('platforma') ?? ''),
+        note: String(formData.get('poznamka') ?? ''),
+      })
+    : 'neexistuje';
+
+  revalidatePath('/import');
+  // „Díky, máme to" se nesmí ukázat, když se nic neuložilo — hlášku o prázdném
+  // formuláři i o zmizelém případu si uživatel zaslouží slyšet
+  if (outcome === 'prazdne') redirect('/import?chyba=hlaseni-prazdne');
+  if (outcome === 'neexistuje') redirect('/import?chyba=hlaseni-neexistuje');
+  redirect('/import?ulozeno=hlaseni');
 }
 
 /* ── Napojení na brokery (Zdroje dat) ────────────────────────────────────── */

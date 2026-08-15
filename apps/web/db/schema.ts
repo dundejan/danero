@@ -284,6 +284,66 @@ export const importBatches = pgTable('import_batches', {
 }, (t) => [index('import_batches_user_created_idx').on(t.userId, t.createdAt)]);
 
 /**
+ * Výpis, který jsme NEPŘEČETLI — schovaný originál k rozboru.
+ *
+ * Podpora brokerů se psala proti fixturám; reálné výpisy prvních uživatelů jsou
+ * jediný zdroj pravdy o tom, co doopravdy chodí. Bez tohohle zápisu ta informace
+ * mizí: uživatel dostane „Formát souboru nepoznáváme“, soubor se zahodí a nikdo
+ * se nedozví, co v něm bylo (nepoznaná hlavička není výjimka, takže ji nezachytí
+ * ani `import.file_failed` v logu).
+ *
+ * Ukládá se jen podmnožina selhání — ta, kde je vada možná na NAŠÍ straně (viz
+ * `lib/failed-imports.ts`). Prázdný soubor ani PDF si neschováváme.
+ */
+export const failedImports = pgTable(
+  'failed_imports',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Dávka, kterou import založil (volná vazba jako u `transactions.batchId`). */
+    batchId: text('batch_id').notNull(),
+    filename: text('filename').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    /** sha256 obsahu — týž soubor podruhé nezaloží druhý případ. */
+    contentHash: text('content_hash').notNull(),
+    /**
+     * Bajty souboru v base64. Schválně NE `bytea`: binární hodnoty si PGlite
+     * a postgres.js podávají každý po svém a rozdíl by se ukázal až v produkci
+     * (viz „známé zrady“ v CLAUDE.md). Text projde oběma stejně.
+     */
+    content: text('content').notNull(),
+    /** Chybová hláška, kterou k tomu uživatel viděl. */
+    reason: text('reason').notNull(),
+    /**
+     * `upload` = uživatel nahrál soubor, `sync` = stáhli jsme si ho sami z API
+     * brokera. Rozdíl je vidět v UI: u staženého výpisu se nemáme na co ptát
+     * (platformu známe) a uživatel za to nemůže — nahrával leda tlačítko.
+     */
+    source: text('source').notNull().default('upload'),
+    /** Co k tomu dopsal uživatel (ze které platformy výpis je + poznámka). */
+    reportedPlatform: text('reported_platform'),
+    reportedNote: text('reported_note'),
+    reportedAt: timestamp('reported_at'),
+    /** `open` → `fixed` (doimportováno) nebo `rejected` (nepůjde). */
+    status: text('status').notNull().default('open'),
+    resolutionNote: text('resolution_note'),
+    resolvedAt: timestamp('resolved_at'),
+    /** Dávka, kterou vytvořil úspěšný opakovaný import. */
+    resolvedBatchId: text('resolved_batch_id'),
+    /** Kdy o případu vědělo upozornění provozovateli (ať nechodí dvakrát). */
+    notifiedAt: timestamp('notified_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('failed_imports_user_hash_idx').on(t.userId, t.contentHash),
+    index('failed_imports_status_idx').on(t.status, t.createdAt),
+    index('failed_imports_batch_idx').on(t.batchId),
+  ],
+);
+
+/**
  * Notifikace hlídače (osvobození pozic, pásma limitů). PK (userId, dedupeKey)
  * zaručuje, že každá událost vznikne jen jednou; e-mail se posílá dávkově
  * (digest) a značí emailedAt.

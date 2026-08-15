@@ -4,7 +4,7 @@ import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progres
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { buttonVariants } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { PlatformCatalog } from '@/components/platform-catalog';
 import { brokerAccounts, importBatches } from '@/db/schema';
@@ -22,16 +22,18 @@ import { requireUser } from '@/lib/session';
 import { Toast } from '@/components/toast';
 import { FileField } from '@/components/ui/file-field';
 import { czDateTime, plural } from '@/lib/format';
-import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
+import { PLATFORMS, PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { firstParam } from '@/lib/utils';
+import { casesForBatches, MAX_NOTE_CHARS, type FailedImportCase } from '@/lib/failed-imports';
 import {
-  deleteBatchAction,
   disconnectBrokerAction,
+  reportFailedImportAction,
   saveAliasesAction,
   saveIbkrKeyAction,
   saveTrading212KeyAction,
   syncBrokerAction,
+  undoImportAction,
   uploadImportAction,
 } from './actions';
 
@@ -47,6 +49,93 @@ interface BatchIssues {
   unmapped?: UnmappedSymbol[];
   /** Shoda s transakcemi jiného brokera (B-3-3) — hlásíme, neslučujeme. */
   crossBroker?: string[];
+}
+
+/**
+ * Nepřečtený výpis: co s ním děláme a co po uživateli chceme.
+ *
+ * Originál si necháváme (`lib/failed-imports.ts`), takže se tady neprosí
+ * o zaslání souboru e-mailem — jediné, co ze souboru vyčíst neumíme, je,
+ * odkud vlastně je. Panel proto vede na jednu otázku a jedno pole navíc.
+ */
+function FailedImportPanel({ item }: { item: FailedImportCase }) {
+  if (item.status === 'fixed') {
+    return (
+      <div className="rounded-md border border-zelena/40 bg-zelena/5 p-3 text-sm">
+        <p className="font-medium">Výpis jsme přečetli a nahráli za tebe.</p>
+        <p className="mt-1 text-inkoust-tlumeny">
+          Formát jsme do Danera doplnili a obchody z tohohle souboru už v přehledu máš
+          (najdeš je v historii jako novější import). Dělat nemusíš nic.
+          {item.resolutionNote ? ` ${item.resolutionNote}` : ''}
+        </p>
+      </div>
+    );
+  }
+  if (item.status === 'rejected') {
+    return (
+      <div className="rounded-md border border-linka bg-pozadi p-3 text-sm">
+        <p className="font-medium">Tenhle výpis číst neumíme.</p>
+        <p className="mt-1 text-inkoust-tlumeny">
+          {item.resolutionNote ??
+            'Stáhni od své platformy jiný typ exportu (u každé je v seznamu níž napsané, který chceme), nebo data přepiš do univerzální šablony.'}
+        </p>
+      </div>
+    );
+  }
+  // Výpis stažený z napojeného účtu: platformu známe, ptát se nemáme nač —
+  // a uživatel za to nemůže, žádný soubor nenahrával.
+  const fromSync = item.source === 'sync';
+  return (
+    <div className="space-y-2 rounded-md border border-jantar bg-jantar/5 p-3 text-sm">
+      <p className="font-medium">
+        {fromSync
+          ? 'Výpis stažený od brokera jsme nepřečetli — pracujeme na tom.'
+          : 'Tenhle výpis jsme nepřečetli — pracujeme na tom.'}
+      </p>
+      <p className="text-inkoust-tlumeny">
+        {fromSync
+          ? 'Vypadá to, že broker změnil formát exportu. Víme o tom, soubor jsme si uložili a během několika dní ho načteme za tebe — dáme ti vědět e-mailem. Dělat nemusíš nic.'
+          : 'Soubor jsme si uložili. Během několika dní se do Danera pokusíme jeho formát doplnit a výpis nahrát za tebe — až se to povede, dáme ti vědět e-mailem. Do té doby můžeš obchody přidat přes univerzální šablonu, ať ti přehled sedí hned.'}
+      </p>
+      {fromSync ? null : item.reportedAt ? (
+        <p className="text-inkoust-tlumeny">
+          Díky, máme to
+          {item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}. Ozveme se
+          e-mailem, jakmile bude výpis načtený.
+        </p>
+      ) : (
+        <form action={reportFailedImportAction} className="space-y-2">
+          <input type="hidden" name="pripad" value={item.id} />
+          <div className="max-w-64">
+            <Label htmlFor={`platforma-${item.id}`}>Ze které platformy výpis je?</Label>
+            {/* required: prázdné odeslání by formulář schovalo natrvalo
+                (`reportedAt`), a to je jediná cesta, jak nám platformu říct */}
+            <Select id={`platforma-${item.id}`} name="platforma" defaultValue="" required>
+              <option value="">Vyber platformu…</option>
+              {PLATFORMS.map((platform) => (
+                <option key={platform.id} value={platform.name}>
+                  {platform.name}
+                </option>
+              ))}
+              <option value="jiná">Jiná / nevím</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor={`poznamka-${item.id}`}>Poznámka (nepovinné)</Label>
+            <textarea
+              id={`poznamka-${item.id}`}
+              name="poznamka"
+              rows={2}
+              maxLength={MAX_NOTE_CHARS}
+              placeholder="Např. jak se export v aplikaci jmenuje nebo co v něm je."
+              className="w-full rounded-md border border-linka-ovladaci bg-plocha px-3 py-2 text-sm text-inkoust placeholder:text-inkoust-tlumeny"
+            />
+          </div>
+          <SubmitButton pendingLabel="Odesílám…">Odeslat</SubmitButton>
+        </form>
+      )}
+    </div>
+  );
 }
 
 interface BrokerCopy {
@@ -289,6 +378,13 @@ export default async function ImportPage({
   // (jeden dotaz; cestou se samoléčí zaseknuté joby vč. odpojených účtů)
   const activeJobs = await activeSyncJobsByAccount(db, user.id);
 
+  // nepřečtené výpisy k vypsaným dávkám (originál si necháváme k rozboru)
+  const failedCases = await casesForBatches(
+    db,
+    user.id,
+    batches.map((batch) => batch.id),
+  );
+
   // chyby formulářů připojení mají specifickou inline hlášku v kartě brokera
   const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr';
 
@@ -322,7 +418,11 @@ export default async function ImportPage({
                       ? 'Tenhle účet u brokera už neexistuje — obnov stránku.'
                       : chyba === 'api-placene'
                         ? `Automatické napojení přes API je součástí hlídání za ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně. Nahrát výpis ze stejného brokera můžeš zdarma dál — čísla budou stejná.`
-                        : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                        : chyba === 'hlaseni-prazdne'
+                          ? 'Vyber platformu nebo napiš poznámku — bez toho nám hlášení nepomůže.'
+                          : chyba === 'hlaseni-neexistuje'
+                            ? 'Tenhle výpis už mezitím vyřešený je — obnov stránku.'
+                            : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}
@@ -331,6 +431,13 @@ export default async function ImportPage({
           key={crypto.randomUUID()}
           kind="ok"
           text="Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují (a nic se nezdvojí)."
+        />
+      )}
+      {ulozeno === 'hlaseni' && (
+        <Toast
+          key={crypto.randomUUID()}
+          kind="ok"
+          text="Díky — máme to. Pustíme se do formátu toho výpisu a jakmile ho půjde načíst, nahrajeme ho za tebe a dáme ti vědět e-mailem."
         />
       )}
 
@@ -607,6 +714,7 @@ export default async function ImportPage({
             batch.skippedCount === 0 &&
             batch.errorCount === 0 &&
             batch.warningCount === 0;
+          const failedCase = failedCases.get(batch.id);
           return (
             <Card key={batch.id} className="space-y-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -615,19 +723,28 @@ export default async function ImportPage({
                 <span className="min-w-0 break-all font-mono text-sm">{batch.filename}</span>
                 <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
                   {czDateTime(batch.createdAt)} · {batch.broker}
-                  <form action={deleteBatchAction}>
-                    <input type="hidden" name="davka" value={batch.id} />
-                    {/* H-3-08: vysvětlení viselo jen v `title=`, které se na
-                        dotyku nezobrazí a klávesnicí se k němu nedostaneš —
-                        u tlačítka, co něco maže, je to nejhorší možné místo */}
-                    <button
-                      type="submit"
-                      className="font-medium text-inkoust-tlumeny hover:text-cervena"
-                    >
-                      Smazat záznam
-                      <span className="sr-only"> — smaže jen záznam o importu, transakce zůstávají</span>
-                    </button>
-                  </form>
+                  {/* Vracet je co jen u dávky, která něco přidala. U nepřečteného
+                      výpisu by tlačítko navíc zahodilo případ, který čeká na rozbor. */}
+                  {batch.added > 0 && (
+                    <form action={undoImportAction}>
+                      <input type="hidden" name="davka" value={batch.id} />
+                      {/* H-3-08: vysvětlení viselo jen v `title=`, které se na
+                          dotyku nezobrazí a klávesnicí se k němu nedostaneš —
+                          u tlačítka, co něco maže, je to nejhorší možné místo */}
+                      <button
+                        type="submit"
+                        className="font-medium text-inkoust-tlumeny hover:text-cervena"
+                      >
+                        Vrátit import zpět
+                        <span className="sr-only">
+                          {' '}
+                          — smaže {batch.added}{' '}
+                          {plural(batch.added, 'transakci', 'transakce', 'transakcí')} z tohohle
+                          importu i záznam o něm; nahrát nebo znovu stáhnout je můžeš kdykoli
+                        </span>
+                      </button>
+                    </form>
+                  )}
                 </span>
               </div>
               {isEmptyPeriod ? (
@@ -655,6 +772,7 @@ export default async function ImportPage({
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
+                  {failedCase && <FailedImportPanel item={failedCase} />}
                   {/* nevztahuje se k řádku souboru, ale k celé dávce */}
                   {(issues.crossBroker ?? []).map((message, i) => (
                     <p key={`cb-${i}`} className="text-xs text-jantar-text">

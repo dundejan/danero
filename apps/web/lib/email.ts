@@ -1,5 +1,6 @@
-import { operatorLines, operatorSignature, OPERATOR } from '@/lib/contact';
+import { operatorLines, operatorSignature, OPERATOR, OPERATOR_UNSET } from '@/lib/contact';
 import { renderHtml, renderText, type EmailBlock } from '@/lib/email-layout';
+import { plural } from '@/lib/format';
 import { ADR, TERMS_VERSION } from '@/lib/legal';
 
 /**
@@ -34,6 +35,22 @@ export interface EmailMessage {
  * jakou už uvádí potvrzení objednávky.
  */
 const REPLY_TO = process.env.RESEND_REPLY_TO ?? OPERATOR.email;
+
+/**
+ * Kam chodí provozní upozornění (dnes: „výpis jsme nepřečetli"). Není to zpráva
+ * pro zákazníka, ale pro toho, kdo Danero provozuje — a jeho adresa **nesmí být
+ * v kódu** (pravidlo 8: repozitář je veřejný a jednou commitnutá adresa
+ * z historie nezmizí). Vlastní proměnná proto, že self-hoster může chtít
+ * provozní poštu jinam než veřejný kontakt z § 435.
+ *
+ * `null` = není kam poslat (nenastavené proměnné) → volající to jen zaloguje.
+ */
+export function alertRecipient(): string | null {
+  const explicit = process.env.DANERO_ALERT_EMAIL?.trim();
+  if (explicit) return explicit;
+  return OPERATOR.email === OPERATOR_UNSET ? null : OPERATOR.email;
+}
+
 export type EmailSender = (message: EmailMessage) => Promise<void>;
 
 /**
@@ -303,6 +320,135 @@ export function subscriptionRenewalEmail(args: {
       },
       { kind: 'cta', label: 'Spravovat předplatné', url: 'https://danero.cz/predplatne' },
       { kind: 'note', text: 'Podmínky užití: danero.cz/podminky' },
+    ],
+    footer: operatorSignature(),
+  });
+}
+
+/** Veřejná adresa aplikace pro odkazy v e-mailech (stejně jako v notifications.ts). */
+const appUrl = (): string => process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+
+/**
+ * Provozní upozornění: uživateli jsme nepřečetli výpis.
+ *
+ * Nechodí zákazníkovi, ale provozovateli — je to jediný způsob, jak se
+ * o změněném formátu brokera vůbec dozvědět dřív, než si někdo stěžuje.
+ *
+ * ⚠️ **Obsah výpisu se sem nikdy nedává** (ani jako příloha): jsou to všechny
+ * obchody jednoho člověka a e-mail je nejhorší možné úložiště. Originál leží
+ * v `failed_imports` a dostane se k němu jen skript `scripts/failed-imports.ts`.
+ * Ze souboru jde ven jen hlavička — už pročištěná `printableSample`.
+ */
+export function failedImportAlertEmail(args: {
+  caseId: string;
+  filename: string;
+  byteSize: number;
+  reason: string;
+  headerSample: string;
+  userEmail: string;
+  reportedPlatform?: string | null;
+  reportedNote?: string | null;
+}): Omit<EmailMessage, 'to'> {
+  const reported = args.reportedPlatform ?? args.reportedNote;
+  return zprava({
+    subject: reported
+      ? `Danero: uživatel nahlásil nepřečtený výpis (${args.reportedPlatform ?? 'bez platformy'})`
+      : `Danero: nepřečetli jsme výpis (${args.filename})`,
+    preheader: args.reason.slice(0, 120),
+    blocks: [
+      {
+        kind: 'p',
+        text: reported
+          ? 'Uživatel doplnil, odkud jeho nepřečtený výpis je. Originál čeká na rozbor.'
+          : 'Import spadl na nepoznaném formátu. Originál je uložený, uživatel vidí, že se na to podíváme.',
+      },
+      {
+        kind: 'rows',
+        rows: [
+          ['Případ', args.caseId],
+          ['Soubor', args.filename],
+          // pod kilobajt vypisuj bajty — „0 kB“ vypadá jako prázdný soubor,
+          // a to je úplně jiná diagnóza
+          [
+            'Velikost',
+            args.byteSize < 1024 ? `${args.byteSize} B` : `${Math.round(args.byteSize / 1024)} kB`,
+          ],
+          ['Uživatel', args.userEmail],
+          ...(args.reportedPlatform ? ([['Platforma', args.reportedPlatform]] as [string, string][]) : []),
+          ...(args.reportedNote ? ([['Poznámka', args.reportedNote]] as [string, string][]) : []),
+        ],
+      },
+      { kind: 'h', text: 'Proč to spadlo' },
+      { kind: 'p', text: args.reason },
+      ...(args.headerSample
+        ? ([{ kind: 'h', text: 'Hlavička souboru' }, { kind: 'p', text: args.headerSample }] as EmailBlock[])
+        : []),
+      {
+        kind: 'note',
+        text: `Rozbor: pnpm --filter @danero/web failed-imports dump ${args.caseId} — pak retry ${args.caseId}, až parser umí číst.`,
+      },
+    ],
+    footer: ['Danero — provozní upozornění, nechodí zákazníkům.'],
+  });
+}
+
+/**
+ * Zpráva uživateli, jak dopadl jeho nepřečtený výpis.
+ *
+ * Posílá se PŘÍMO, ne přes digest v `api/cron/notify` — ten běží jen platícím,
+ * takže uživatel zdarma by se výsledek nikdy nedozvěděl. Je to služební sdělení
+ * k jeho vlastnímu nahrání, ne hlídací upozornění, takže do přepínačů
+ * v Nastavení nespadá.
+ */
+export function failedImportResolvedEmail(args: {
+  filename: string;
+  /** `fixed` = doimportováno, `rejected` = číst to neumíme. */
+  outcome: 'fixed' | 'rejected';
+  /** Kolik transakcí přibylo (jen u `fixed`). */
+  added?: number;
+  /** Co k tomu má uživatel vědět (jen u `rejected`, případně vysvětlení navíc). */
+  note?: string | null;
+}): Omit<EmailMessage, 'to'> {
+  const url = `${appUrl()}/import`;
+  if (args.outcome === 'fixed') {
+    return zprava({
+      subject: 'Tvůj výpis už umíme přečíst — je naimportovaný',
+      preheader: `${args.filename}: hotovo, nic dalšího dělat nemusíš.`,
+      blocks: [
+        {
+          kind: 'p',
+          // added === 0 znamená, že tytéž obchody už v Daneru máš odjinud —
+          // slíbit „nově z něj máš 0 transakcí“ by znělo jako porucha
+          text:
+            (args.added ?? 0) > 0
+              ? `Výpis „${args.filename}“ jsme minule nepřečetli. Doplnili jsme jeho formát do Danera a nahráli ho za tebe — nově z něj máš ${args.added} ${plural(args.added ?? 0, 'transakci', 'transakce', 'transakcí')}. Dělat už nemusíš nic.`
+              : `Výpis „${args.filename}“ jsme minule nepřečetli. Formát jsme do Danera doplnili a výpis načetli — všechny obchody z něj už jsi mezitím měl uložené odjinud, takže se ti čísla nezmění. Dělat nemusíš nic.`,
+        },
+        ...(args.note ? ([{ kind: 'p', text: args.note }] as EmailBlock[])
+          : []),
+        { kind: 'cta', label: 'Zkontrolovat import', url },
+        {
+          kind: 'note',
+          text: 'Nic se nezdvojilo — Danero pozná obchody, které už máš uložené. Díky, že jsi nám tím pomohl vylepšit čtení výpisů.',
+        },
+      ],
+      footer: operatorSignature(),
+    });
+  }
+  return zprava({
+    subject: 'Tvůj výpis se nám přečíst nepodařilo',
+    preheader: `${args.filename}: co s tím dál.`,
+    blocks: [
+      {
+        kind: 'p',
+        text: `Prošli jsme si výpis „${args.filename}“, který se nám nepodařilo naimportovat. Bohužel ho číst neumíme.`,
+      },
+      ...(args.note ? ([{ kind: 'p', text: args.note }] as EmailBlock[]) : []),
+      {
+        kind: 'p',
+        text: 'Data se do Danera dostanou i tak: stáhni od své platformy jiný typ exportu (v seznamu na stránce Zdroje dat je u každé napsané, který chceme), nebo je přepiš do univerzální šablony, kterou si tamtéž stáhneš.',
+      },
+      { kind: 'cta', label: 'Otevřít Zdroje dat', url },
     ],
     footer: operatorSignature(),
   });

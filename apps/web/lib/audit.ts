@@ -14,6 +14,7 @@ export const AUDIT_RETENTION_DAYS = 90;
 export type AuditType =
   | 'LOGIN'
   | 'IMPORT'
+  | 'IMPORT_UNDONE'
   | 'SYNC'
   | 'PROFILE_CHANGE'
   | 'PASSWORD_CHANGE'
@@ -25,6 +26,7 @@ export type AuditType =
 export const AUDIT_LABELS: Record<AuditType, string> = {
   LOGIN: 'Přihlášení',
   IMPORT: 'Import výpisu',
+  IMPORT_UNDONE: 'Vrácení importu',
   SYNC: 'Synchronizace brokera',
   PROFILE_CHANGE: 'Změna daňového profilu',
   PASSWORD_CHANGE: 'Změna hesla',

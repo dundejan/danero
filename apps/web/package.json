@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "test:e2e:prod": "playwright test --config playwright.prod.config.ts",
     "test:e2e:paywall": "playwright test --config playwright.paywall.config.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "failed-imports": "tsx scripts/failed-imports.ts"
   },
   "dependencies": {
     "@danero/engine": "workspace:*",

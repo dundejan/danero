@@ -1,6 +1,14 @@
 import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { brokerAccounts, importBatches, notifications, rateLimit, session, verification } from '@/db/schema';
+import {
+  brokerAccounts,
+  failedImports,
+  importBatches,
+  notifications,
+  rateLimit,
+  session,
+  verification,
+} from '@/db/schema';
 import { errorText, logEvent } from '@/lib/log';
 
 /**
@@ -136,6 +144,36 @@ export function pruneImportBatches(db: Db, now = new Date()): Promise<number> {
         ),
       )
       .returning({ id: importBatches.id }),
+  );
+}
+
+/**
+ * Nepřečtené výpisy schované k rozboru (`lib/failed-imports.ts`).
+ *
+ * Je to celá obchodní historie jednoho člověka, takže tu nesmí ležet o den
+ * déle, než je potřeba — a 90 dní odpovídá tomu, co /soukromi slibuje. Maže se
+ * podle stáří, ne podle stavu: nerozebraný případ po třech měsících už stejně
+ * nikdo neopraví (upozornění provozovateli chodí hned při vzniku) a držet kvůli
+ * němu cizí data „pro jistotu“ je přesně to, co dělat nechceme.
+ */
+export const FAILED_IMPORT_RETENTION_DAYS = 90;
+
+export function pruneFailedImports(db: Db, now = new Date()): Promise<number> {
+  const cutoff = daysBefore(now, FAILED_IMPORT_RETENTION_DAYS);
+  return deleteInBatches((limit) =>
+    db
+      .delete(failedImports)
+      .where(
+        inArray(
+          failedImports.id,
+          db
+            .select({ id: failedImports.id })
+            .from(failedImports)
+            .where(lt(failedImports.createdAt, cutoff))
+            .limit(limit),
+        ),
+      )
+      .returning({ id: failedImports.id }),
   );
 }
 

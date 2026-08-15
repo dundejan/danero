@@ -89,15 +89,47 @@ export interface ImportSummary {
   unmapped: UnmappedSymbol[];
   /** Věty o transakcích shodných s jiným brokerem (B-3-3) — hlásíme, neslučujeme. */
   crossBroker: string[];
+  /**
+   * Soubor jsme nepřečetli a chyba může být na NAŠÍ straně (nepoznaný formát,
+   * přejmenovaný sloupec). Originál si proto necháme k rozboru
+   * (`lib/failed-imports.ts`).
+   */
+  unrecognized?: boolean;
 }
 
 /** Výsledek parsování + případné nenamapované symboly (brokeři bez ISIN). */
 interface ParsedFile {
   outcome: ImportResult;
   unmapped: UnmappedSymbol[];
+  /**
+   * Tříhodnotové schválně:
+   * - `true` — formát jsme nepoznali, soubor si necháme,
+   * - `false` — vada je prokazatelně jinde (prázdný soubor, PDF, useknutý
+   *   přenos) a hláška je návodná, schovávat není co,
+   * - `undefined` — rozhodne se z výsledku v `importParsed`: parser, který
+   *   nevydal jedinou transakci a jen chyby, je podezřelý sám o sobě.
+   */
+  unrecognized?: boolean;
 }
 
 const noUnmapped = (outcome: ImportResult): ParsedFile => ({ outcome, unmapped: [] });
+
+/**
+ * Formát jsme nepoznali a **mohla to být naše chyba** — soubor si necháme.
+ *
+ * Vědomě se tak neoznačuje selhání, kde je vada prokazatelně jinde a hláška
+ * je návodná: prázdný soubor, PDF/ZIP/.xls, useknutý přenos, sešit
+ * SpreadsheetML. Ty dostanou `NOT_OURS` — schovávat je znamená jen sbírat cizí
+ * smetí a topit v něm případy, kde se dá formát opravdu doplnit.
+ */
+const unrecognizedFile = (message: string): ParsedFile => ({
+  outcome: unknownFormat(message),
+  unmapped: [],
+  unrecognized: true,
+});
+
+/** `extras` pro `importParsed` u selhání, za které nemůžeme (viz `ParsedFile`). */
+const NOT_OURS = { unrecognized: false } as const;
 
 /**
  * Prázdný nahraný soubor — včetně toho, co nese jen BOM, mezery nebo jediný
@@ -150,22 +182,22 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
         trimmed,
       )
     ) {
-      return noUnmapped(
-        unknownFormat(
-          'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report“) a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
-        ),
+      return unrecognizedFile(
+        'HTML soubor nepoznáváme — podporujeme reporty MetaTrader 4 („Save as Report“) a MetaTrader 5. Zkontroluj návod u své platformy v seznamu na stránce.',
       );
     }
     // Sešit SpreadsheetML je taky XML — bez téhle odbočky by uživatel dostal
     // hlášku IBKR parseru o brokerovi, se kterým jeho soubor nemá nic společného.
     if (isSpreadsheetMlXml(text)) {
-      return noUnmapped(
-        unknownFormat(
+      return {
+        outcome: unknownFormat(
           'Tohle je excelový sešit uložený jako XML (starší formát „XML tabulka 2003“), který číst neumíme. ' +
             'V MetaTraderu ulož report jako XLSX („Open XML“) nebo HTML; z jiné platformy ho otevři v Excelu ' +
             'a ulož znovu jako .xlsx nebo CSV.',
         ),
-      );
+        unmapped: [],
+        unrecognized: false,
+      };
     }
     return noUnmapped(parseIbkrFlexXml(text));
   }
@@ -177,6 +209,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
     // z části a tvářil se jako celý.
     if (isTruncatedTrading212Export(text)) {
       const useknuty = emptyResult(TRADING212_BROKER);
+      // vada je v přenosu, ne v našem parseru — soubor si neschováváme
       useknuty.errors.push({
         line: 1,
         message:
@@ -185,7 +218,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
           'ho celý; kdybychom ho vzali takhle, chyběla by ti část obchodů a limity by vyšly ' +
           'nižší, než jsou.',
       });
-      return noUnmapped(useknuty);
+      return { outcome: useknuty, unmapped: [], unrecognized: false };
     }
     return noUnmapped(parseTrading212Csv(text));
   }
@@ -208,7 +241,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
   if (sniffTastytradeCsv(text)) {
     return withUnmapped('tastytrade', parseTastytradeCsv(text, aliases?.isinOnly.tastytrade));
   }
-  return noUnmapped(universalOrUnknown(text));
+  return universalOrUnknown(text);
 }
 
 /** Kolik nalezených sloupců vypsat do hlášky, ať zůstane čitelná. */
@@ -224,9 +257,9 @@ const MAX_LISTED_COLUMNS = 12;
  * v T212 exportu: skutečná příčina (hlavičku nepoznáváme) byla z hlášky
  * neuhodnutelná. Teď se vypíšou nalezené sloupce, takže je vidět, co dorazilo.
  */
-function universalOrUnknown(text: string): ImportResult {
+function universalOrUnknown(text: string): ParsedFile {
   // prázdný soubor = prázdné období (T212 tak posílá roky před založením účtu)
-  if (text.trim() === '') return parseUniversalCsv(text);
+  if (text.trim() === '') return noUnmapped(parseUniversalCsv(text));
 
   const header = firstLine(text);
   const columns = parseCsv(header, sniffDelimiter(header)).headers;
@@ -234,22 +267,34 @@ function universalOrUnknown(text: string): ImportResult {
   // sám: rozepsaná šablona, které chybí „date“, tak dostane přesnou hlášku
   // od parseru šablony místo obecného „nepoznáváme“.
   if (columns.some((column) => column.toLowerCase() === 'type')) {
-    return parseUniversalCsv(text);
+    return noUnmapped(parseUniversalCsv(text));
   }
 
   // binární smetí (přejmenovaný .xls, obrázek) se do hlášky nesmí obtisknout
   // syrové — řídicí znaky rozsypou UI i mail, ze kterého to řešíme
   const listed = printableSample(columns.slice(0, MAX_LISTED_COLUMNS).join(', '), 200);
-  return unknownFormat(
+  return unrecognizedFile(
     `Formát souboru nepoznáváme${
       listed ? ` — v hlavičce jsme našli: ${listed}${columns.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : ''
     }. Zkontroluj v seznamu platforem níž, který export od své platformy stáhnout. ` +
-      'Pokud ji nečteme automaticky, přepiš data do univerzální šablony. ' +
-      'Když si myslíš, že tenhle soubor číst umíme, napiš nám a přilož ho — nejspíš broker změnil formát.',
+      'Pokud ji nečteme automaticky, přepiš data do univerzální šablony.',
   );
 }
 
-/** Zpětně kompatibilní vstup pro T212 sync (text bez číselníku aliasů). */
+/**
+ * Autodetekce nad textem staženým z API brokera — vrací i příznak „nepoznali
+ * jsme to“. U ručního nahrání ho řeší `importFileIsolated`, jenže sync jde
+ * jinudy: přejmenovaný sloupec u brokera by u napojených účtů zůstal němý.
+ */
+export function detectAndParseExport(text: string): {
+  outcome: ImportResult;
+  unrecognized: boolean | undefined;
+} {
+  const parsed = detectAndParseText(text);
+  return { outcome: parsed.outcome, unrecognized: parsed.unrecognized };
+}
+
+/** Prostý výsledek autodetekce (text bez číselníku aliasů). */
 export function detectAndParse(text: string): ImportResult {
   return detectAndParseText(text).outcome;
 }
@@ -301,6 +346,8 @@ export async function importFile(
       unknownFormat(
         'Soubor je prázdný — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
       ),
+      undefined,
+      NOT_OURS,
     );
   }
 
@@ -308,7 +355,14 @@ export async function importFile(
   // prohlížeč připíše .csv k sešitu a uživatel soubory přejmenovává.
   const format = sniffFileFormat(data);
   if (format !== null && format !== 'xlsx') {
-    return importParsed(db, userId, filename, unknownFormat(unsupportedFormatMessage(format)!));
+    return importParsed(
+      db,
+      userId,
+      filename,
+      unknownFormat(unsupportedFormatMessage(format)!),
+      undefined,
+      NOT_OURS,
+    );
   }
 
   if (format === 'xlsx') {
@@ -319,7 +373,14 @@ export async function importFile(
       // importFileIsolated a uživatel dostane generické „soubor je poškozený“ —
       // rada „rozděl export na kratší období“ je přitom úplně jiná.
       if (error instanceof XlsxTooLargeError || error instanceof XlsxUnreadableError) {
-        return importParsed(db, userId, filename, unknownFormat(error.message));
+        return importParsed(
+          db,
+          userId,
+          filename,
+          unknownFormat(error.message),
+          undefined,
+          NOT_OURS,
+        );
       }
       throw error;
     }
@@ -353,8 +414,20 @@ export async function importFile(
   const parsed = detectAndParseText(text, aliases);
   return importParsed(db, userId, filename, parsed.outcome, undefined, {
     unmapped: parsed.unmapped,
+    unrecognized: parsed.unrecognized,
   });
 }
+
+/**
+ * Parser se rozeběhl, ale nevydal jedinou transakci a jen chyby.
+ *
+ * Sniffer tedy formát POZNAL a parser mu pak nerozuměl — přesně takhle vypadá
+ * broker, který přejmenoval sloupec (9. 8. 2026: T212 `Time` → `Time (UTC)`).
+ * Takový soubor je pro opravu ještě cennější než úplně neznámý formát, protože
+ * jde o platformu, kterou už podporujeme.
+ */
+const producedNothing = (parsed: ImportResult): boolean =>
+  parsed.transactions.length === 0 && parsed.errors.length > 0;
 
 /** XLSX větev importu: jedno načtení workbooku pro všechny sniffy. */
 async function importXlsxUpload(
@@ -404,6 +477,8 @@ async function importXlsxUpload(
     unknownFormat(
       'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
     ),
+    undefined,
+    { unrecognized: true },
   );
 }
 
@@ -501,7 +576,8 @@ function crossBrokerMatches(
       `${count} ${plural(count, 'transakce vypadá', 'transakce vypadají', 'transakcí vypadá')} ` +
       `úplně stejně jako to, co už máš od „${other}“ (stejný typ, datum, instrument, počet kusů i cena). ` +
       'Sloučit je automaticky nemůžeme — týž obchod může být opravdu na dvou účtech. Jestli jde o duplicitu ' +
-      '(typicky obchod zadaný ručně a později stažený i od brokera), smaž jednu z dávek importu.',
+      '(typicky obchod zadaný ručně a později stažený i od brokera), vrať jeden z těch importů zpět ' +
+      'tlačítkem v historii níž — smaže se i s transakcemi.',
   );
 }
 
@@ -520,8 +596,8 @@ const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
       `Událost „${tx.id}“ už máš uloženou z dřívějšího výpisu, jen s jinými čísly — ` +
       'necháváme tu původní a tuhle neukládáme (jinak by ses o ni v přehledu počítal dvakrát). ' +
       'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
-      'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, smaž starší dávku importu ' +
-      'a nahraj výpis znovu.',
+      'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, vrať starší import zpět ' +
+      'tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu.',
   }));
 
 /**
@@ -535,7 +611,7 @@ export async function importParsed(
   filename: string,
   parsed: ImportResult,
   existing?: ImportState,
-  extras: { unmapped?: UnmappedSymbol[] } = {},
+  extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
   const { fresh, duplicates, restated } = dedupeTransactions(
@@ -545,6 +621,9 @@ export async function importParsed(
     state.brokerIds,
   );
   const unmapped = extras.unmapped ?? [];
+  // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak
+  // rozhoduje výsledek — parser bez jediné transakce a jen s chybami.
+  const unrecognized = extras.unrecognized ?? producedNothing(parsed);
   const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
   const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
 
@@ -614,6 +693,7 @@ export async function importParsed(
     warnings,
     unmapped,
     crossBroker,
+    ...(unrecognized ? { unrecognized: true } : {}),
   };
 }
 
@@ -628,8 +708,32 @@ export async function importParsed(
  * Selhání se proto zapíše jako dávka s chybou (UI ji vypíše u seznamu importů)
  * a zbytek souborů pokračuje. Když selže i zápis té dávky, chyba propadne dál —
  * to už je výpadek databáze, ne vada jednoho souboru.
+ *
+ * Je to zároveň JEDINÁ cesta ručního nahrání, takže tady se schovává originál
+ * nepřečteného výpisu (`lib/failed-imports.ts`) — bez toho se soubor, na kterém
+ * jsme si vylámali zuby, zahodí a formát se nemá podle čeho doplnit.
  */
 export async function importFileIsolated(
+  db: Db,
+  userId: string,
+  filename: string,
+  data: ArrayBuffer,
+): Promise<ImportSummary> {
+  const summary = await runIsolated(db, userId, filename, data);
+  if (summary.unrecognized) {
+    const { keepFailedUpload } = await import('@/lib/failed-imports');
+    await keepFailedUpload(db, {
+      userId,
+      batchId: summary.batchId,
+      filename,
+      data,
+      reason: summary.errors[0]?.message ?? 'Formát souboru nepoznáváme.',
+    });
+  }
+  return summary;
+}
+
+async function runIsolated(
   db: Db,
   userId: string,
   filename: string,
@@ -644,8 +748,11 @@ export async function importFileIsolated(
       line: 1,
       message:
         'Soubor se nepodařilo zpracovat — nejspíš je poškozený nebo neúplně stažený. ' +
-        'Stáhni ho od brokera znovu; pokud to nepomůže, napiš nám a soubor přilož.',
+        'Stáhni ho od brokera znovu. Soubor jsme si uložili a podíváme se, jestli ' +
+        'není chyba na naší straně.',
     });
-    return importParsed(db, userId, filename, failed);
+    // výjimka v parseru je podezřelá vždycky: buď je soubor rozbitý, nebo se
+    // parser dusí na něčem, co v něm dřív nebylo
+    return importParsed(db, userId, filename, failed, undefined, { unrecognized: true });
   }
 }

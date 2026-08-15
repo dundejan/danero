@@ -16,14 +16,24 @@ function lastEmailFor(to: string): { subject: string; text: string } | null {
   return messages.at(-1) ?? null;
 }
 
-/** Odkaz z e-mailu; čeká, než ho server stihne zapsat. */
-export async function linkFromEmail(page: Page, to: string): Promise<string> {
+/** Poslední e-mail pro adresáta; čeká, než ho server stihne zapsat. */
+export async function waitForEmail(
+  page: Page,
+  to: string,
+  matches: (message: { subject: string; text: string }) => boolean = () => true,
+): Promise<{ subject: string; text: string }> {
   for (let attempt = 0; attempt < 40; attempt++) {
-    const url = lastEmailFor(to)?.text.match(/https?:\/\/\S+/)?.[0];
-    if (url) return url;
+    const message = lastEmailFor(to);
+    if (message && matches(message)) return message;
     await page.waitForTimeout(250);
   }
   throw new Error(`E-mail pro ${to} nedorazil do ${EMAIL_LOG}`);
+}
+
+/** Odkaz z e-mailu; čeká, než ho server stihne zapsat. */
+export async function linkFromEmail(page: Page, to: string): Promise<string> {
+  const message = await waitForEmail(page, to, (m) => /https?:\/\/\S+/.test(m.text));
+  return message.text.match(/https?:\/\/\S+/)![0];
 }
 
 /**

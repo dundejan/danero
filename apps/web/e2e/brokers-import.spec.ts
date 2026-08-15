@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   DEGIRO_TRANSACTIONS_CZ,
 } from '../../../packages/importers/test/fixtures/degiro';
@@ -12,6 +12,9 @@ import { buildXtbXlsx, XTB_ROWS_EN } from '../../../packages/importers/test/fixt
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
 import { registerWithProfile } from './helpers';
 
+/** Sekce „Historie importů“ — jediné místo, kde je název souboru záznamem. */
+const historie = (page: Page) => page.locator('section').filter({ hasText: 'Historie importů' });
+
 /**
  * Akceptace G4: import každého nového formátu end-to-end — Degiro CSV,
  * Fio (windows-1250) a XTB XLSX včetně doplnění číselníku (ISIN/měna)
@@ -24,11 +27,14 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   // deterministický upload: čeká, až se import propíše do historie (nový batch),
   // jinak další setInputFiles závodí s překreslením stránky po redirectu
   const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
-    const batchButtons = page.getByRole('button', { name: 'Smazat záznam' });
-    const before = await batchButtons.count();
+    // Čeká se na nový záznam V HISTORII (ne na tlačítko dávky: to má jen import,
+    // který něco přidal). Scope na sekci je nutný — jméno souboru krátce svítí
+    // i u samotného pole pro výběr, než ho server action zresetuje.
+    const zaznamy = historie(page).getByText(file.name, { exact: true });
+    const before = await zaznamy.count();
     await page.locator('input[name="soubory"]').setInputFiles(file);
     await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-    await expect(batchButtons).toHaveCount(before + 1, { timeout: 20_000 });
+    await expect(zaznamy).toHaveCount(before + 1, { timeout: 20_000 });
   };
 
   // ── Degiro Transactions (CZ hlavičky, středníky, des. čárka) ────────────
@@ -101,11 +107,14 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote'
   await page.goto('/import');
 
   const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
-    const batchButtons = page.getByRole('button', { name: 'Smazat záznam' });
-    const before = await batchButtons.count();
+    // Čeká se na nový záznam V HISTORII (ne na tlačítko dávky: to má jen import,
+    // který něco přidal). Scope na sekci je nutný — jméno souboru krátce svítí
+    // i u samotného pole pro výběr, než ho server action zresetuje.
+    const zaznamy = historie(page).getByText(file.name, { exact: true });
+    const before = await zaznamy.count();
     await page.locator('input[name="soubory"]').setInputFiles(file);
     await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-    await expect(batchButtons).toHaveCount(before + 1, { timeout: 20_000 });
+    await expect(zaznamy).toHaveCount(before + 1, { timeout: 20_000 });
   };
 
   // Revolut invest (ISIN se doplňuje číselníkem — objeví se formulář)

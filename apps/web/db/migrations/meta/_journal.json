@@ -267,6 +267,20 @@
       "when": 1786609653355,
       "tag": "0037_short_sale_income",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786646697422,
+      "tag": "0038_failed_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786656138551,
+      "tag": "0039_failed_import_source",
+      "breakpoints": true
     }
   ]
 }

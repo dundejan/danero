@@ -97,6 +97,18 @@ export default function PrivacyPage() {
           na provozovatele.
         </p>
 
+        <h2 className="font-display text-lg font-semibold">Když výpis nepřečteme</h2>
+        <p>
+          Když nahraješ výpis, jehož formát Danero nezná, <strong>necháme si ten soubor</strong>{' '}
+          — jinak nemáme podle čeho jeho čtení doplnit. Uvidíš to přímo u toho importu.
+          Používáme ho k jedinému účelu: doplnit formát a výpis ti pak naimportovat
+          (napsat nám k němu, ze které platformy je, můžeš, ale nemusíš). Provozovateli
+          o tom chodí upozornění, ve kterém je název souboru, chybová hláška a první řádek
+          s názvy sloupců — <strong>obsah výpisu se e-mailem neposílá</strong> a soubor
+          nikomu dalšímu nepředáváme. Mažeme ho nejpozději po 90 dnech, a hned, když
+          smažeš účet. Nechceš-li ho u nás mít dřív, napiš nám a smažeme ho.
+        </p>
+
         <h2 className="font-display text-lg font-semibold">Jak dlouho data držíme</h2>
         <p>
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak

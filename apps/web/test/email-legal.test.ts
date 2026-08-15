@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { OPERATOR, OPERATOR as operatorContact } from '@/lib/contact';
+import { OPERATOR, OPERATOR_UNSET, OPERATOR as operatorContact } from '@/lib/contact';
 import { ADR, TERMS_VERSION } from '@/lib/legal';
 import {
+  alertRecipient,
+  failedImportAlertEmail,
+  failedImportResolvedEmail,
   purchaseConfirmationEmail,
   resetPasswordEmail,
   subscriptionRenewalEmail,
@@ -304,6 +307,14 @@ describe('vzhled a obsah odchozích e-mailů', () => {
       'upomínka před obnovou',
       subscriptionRenewalEmail({ renewsOn: '7. 8. 2027', priceCzk: PRICE_SUBSCRIPTION_CZK }),
     ],
+    [
+      'výpis doimportován',
+      failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'fixed', added: 12 }),
+    ],
+    [
+      'výpis číst neumíme',
+      failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'rejected', note: 'Stáhni Historii transakcí.' }),
+    ],
   ] as const;
 
   it.each(vsechny.map(([nazev]) => nazev))('%s má textovou i HTML verzi', (nazev) => {
@@ -338,5 +349,43 @@ describe('vzhled a obsah odchozích e-mailů', () => {
       expect(bezZalomeni(email.text), nazev).toContain(operatorContact.name);
       expect(bezZalomeni(email.text), nazev).toContain(operatorContact.ico);
     }
+  });
+});
+
+/**
+ * Upozornění na nepřečtený výpis chodí PROVOZOVATELI, ne zákazníkovi — a nese
+ * cizí data. Obsah výpisu (celá obchodní historie jednoho člověka) se do něj
+ * nesmí dostat ani omylem: originál leží v `failed_imports` a sahá na něj jen
+ * skript provozovatele. Ven jde jenom hlavička, kterou tam dáváme schválně —
+ * podle názvů sloupců se formát pozná.
+ */
+describe('upozornění na nepřečtený výpis (provozovateli)', () => {
+  const alert = failedImportAlertEmail({
+    caseId: 'case-1',
+    filename: 'vypis.csv',
+    byteSize: 2048,
+    reason: 'Formát souboru nepoznáváme — v hlavičce jsme našli: Obchodni den, Titul.',
+    headerSample: 'Obchodni den;Titul;Operace',
+    userEmail: 'zakaznik@example.test',
+    reportedPlatform: 'Fio e-Broker',
+    reportedNote: 'Export z Obchody → Historie.',
+  });
+
+  it('nese to, podle čeho se formát dohledá', () => {
+    expect(alert.text).toContain('case-1');
+    expect(alert.text).toContain('vypis.csv');
+    expect(alert.text).toContain('Obchodni den');
+    expect(alert.text).toContain('Fio e-Broker');
+    expect(alert.subject).toContain('Fio e-Broker');
+  });
+
+  it('míří na adresu z prostředí, ne z kódu', () => {
+    const puvodni = process.env.DANERO_ALERT_EMAIL;
+    process.env.DANERO_ALERT_EMAIL = 'provoz@example.test';
+    expect(alertRecipient()).toBe('provoz@example.test');
+    delete process.env.DANERO_ALERT_EMAIL;
+    // bez proměnné padá zpátky na veřejný kontakt (taky z prostředí)
+    expect(alertRecipient()).toBe(OPERATOR.email === OPERATOR_UNSET ? null : OPERATOR.email);
+    if (puvodni !== undefined) process.env.DANERO_ALERT_EMAIL = puvodni;
   });
 });

@@ -181,8 +181,21 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   „0 transakcí, 0 chyb".
 - **Nové pole v modelu transakce se do UŽ NAIMPORTOVANÝCH dat nedostane.**
   Dedupe je obsahový (B-3-2), takže opakované nahrání téhož výpisu je duplicita
-  a payload zůstane starý. Vždy to napiš do nápovědy („dávku smaž a nahraj
-  znovu") — tak to má R-07h i R-13.
+  a payload zůstane starý. Vždy to napiš do nápovědy („vrať import zpět a nahraj
+  znovu") — tak to má R-07h i R-13. Do 13. 8. 2026 tam stálo „dávku smaž",
+  jenže tlačítko v historii maže jen ZÁZNAM o importu a transakce nechává
+  (smazat je nešlo vůbec nijak) — rada tedy nefungovala. Dnes `undoImportAction`
+  smaže dávku i s jejími transakcemi.
+- **Výpis, který nepřečteme, si necháváme** (`lib/failed-imports.ts`, tabulka
+  `failed_imports`): originál je jediný způsob, jak formát doplnit, a bez něj
+  se informace ztratí — nepoznaná hlavička není výjimka, takže o ní neví ani
+  log. Provozovateli chodí e-mail (adresa z `DANERO_ALERT_EMAIL`, obsah souboru
+  NIKDY), uživatel v `/import` vidí, že se na to koukneme, a může doplnit
+  platformu. Rozbor a doimport dělá `pnpm --filter @danero/web failed-imports`
+  (`list`/`dump`/`retry`/`reject`). Schovává se jen selhání, kde může být vada
+  naše: nepoznaný formát **a nově i parser, který se rozeběhl a nevydal jedinou
+  transakci** (přesně tak vypadal přejmenovaný sloupec T212 z 9. 8. 2026).
+  Prázdný soubor, PDF ani useknutý přenos ne — to je `unrecognized: false`.
 - **Id od brokera není univerzální identifikátor události.** Jako druhá síť pod
   obsahovým dedupe (eToro a MT tutéž událost popisují dvakrát s jinak
   zaokrouhlenou cenou) se smí použít jen tam, kde je doloženě per transakce —
