@@ -184,6 +184,12 @@ export const engineCacheStats = (): { entries: number; bytes: number } => cache.
  *
  * Volá se proto při vrácení importu (`undoImportAction`); klíč začíná userId,
  * takže se nikomu jinému nesáhne.
+ *
+ * ⚠️ Cache je modulová `Map`, tedy **per instance funkce**. Když Vercel drží
+ * víc instancí, zahodí se jen ta, na které vrácení proběhlo — jiná může stará
+ * čísla servírovat až do vypršení TTL (10 min). Úplné řešení chce otisk dat
+ * ve sdíleném úložišti; než bude uživatelů dost na víc instancí, je desetiminutový
+ * strop přijatelný a tohle je jediné, co proti tomu dnes stojí.
  */
 export function invalidateUserCache(userId: string): void {
   cache.dropByPrefix(`${userId}:`);

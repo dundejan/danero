@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { getDb, type Db } from '@/db';
-import { brokerAccounts, importBatches, transactions } from '@/db/schema';
+import { brokerAccounts, importBatches, notifications, transactions } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
 import { isSyncBatchFilename } from '@/lib/broker-sync';
@@ -136,7 +136,19 @@ export async function undoImportAction(formData: FormData): Promise<void> {
       const deleted = await tx
         .delete(transactions)
         .where(and(eq(transactions.userId, user.id), eq(transactions.batchId, batchId)))
-        .returning({ dedupeKey: transactions.dedupeKey });
+        .returning({ dedupeKey: transactions.dedupeKey, txDate: transactions.txDate });
+      // Upozornění hlídače na roky, kterých se to týkalo, přestala platit —
+      // „limit překročen" by na přehledu viselo za obchody, které už neexistují,
+      // a dedupe klíč by jeho přepočet napořád zablokoval. Smazané se založí
+      // znovu při dalším běhu cronu, pokud pořád platí.
+      const years = [...new Set(deleted.map((row) => row.txDate.slice(0, 4)))];
+      for (const year of years) {
+        await tx
+          .delete(notifications)
+          .where(
+            and(eq(notifications.userId, user.id), like(notifications.dedupeKey, `%|${year}`)),
+          );
+      }
       await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
       // Jen u dávky ze SYNCU: ať se smazaná historie dá zase stáhnout (viz
       // komentář výš). U ručně nahraného výpisu by to znamenalo zbytečné

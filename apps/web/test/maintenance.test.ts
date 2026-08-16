@@ -8,6 +8,7 @@ import {
   notifications,
   rateLimit,
   session,
+  transactions,
   user,
   verification,
 } from '@/db/schema';
@@ -170,6 +171,41 @@ describe('retence tabulek, které dosud neuklízel nikdo (G-R1)', () => {
     expect(await pruneImportBatches(db, TED)).toBe(1);
     const zbyle = await db.select({ id: importBatches.id }).from(importBatches);
     expect(zbyle.map((b) => b.id)).toEqual(['cerstva']);
+  });
+
+  /**
+   * Od zavedení „Vrátit import zpět" je záznam o dávce jediná cesta, jak její
+   * transakce smazat (a jediný způsob, jak provést „vrať import zpět a nahraj
+   * znovu" u nového pole v modelu). Kdyby po 90 dnech zmizel, data by se stala
+   * nesmazatelnými — a to právě u starých importů, kterým pole chybí nejčastěji.
+   */
+  it('stará dávka, na které visí transakce, zůstane', { timeout: 30_000 }, async () => {
+    const db = await seed();
+    await db.insert(importBatches).values({
+      id: 'stara-s-daty',
+      userId: 'u1',
+      broker: 'trading212',
+      filename: 'stara-s-daty.csv',
+      added: 1,
+      duplicates: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      warningCount: 0,
+      issues: {},
+      createdAt: pred(120),
+    });
+    await db.insert(transactions).values({
+      userId: 'u1',
+      dedupeKey: 'trading212|abc|1',
+      batchId: 'stara-s-daty',
+      broker: 'trading212',
+      type: 'BUY',
+      txDate: '2020-01-02',
+      payload: {},
+    });
+
+    expect(await pruneImportBatches(db, TED)).toBe(0);
+    expect(await db.select({ id: importBatches.id }).from(importBatches)).toHaveLength(1);
   });
 
   it(

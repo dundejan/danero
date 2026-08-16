@@ -90,6 +90,22 @@ export async function syncIbkr(
   const filename = syncBatchFilename.ibkr(now.toISOString().slice(0, 10));
   const batch = hasContent ? await importParsed(db, account.userId, filename, parsed) : null;
 
+  // Změna formátu na straně brokera by u napojeného účtu jinak zůstala němá:
+  // parser se rozeběhne, nevydá jedinou transakci a uživatel ani provozovatel
+  // se nedozví proč. Totéž dělá T212 sync (lib/t212-sync.ts).
+  if (batch?.unrecognized) {
+    const { keepFailedUpload } = await import('@/lib/failed-imports');
+    await keepFailedUpload(db, {
+      userId: account.userId,
+      batchId: batch.batchId,
+      filename,
+      data: new TextEncoder().encode(xml).buffer as ArrayBuffer,
+      reason: batch.errors[0]?.message ?? 'Formát Flex výpisu z API nepoznáváme.',
+      source: 'sync',
+      platform: 'Interactive Brokers',
+    });
+  }
+
   await report('reconciling');
   await upsertInstrumentPrices(
     db,

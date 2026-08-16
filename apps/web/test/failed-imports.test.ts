@@ -181,6 +181,22 @@ describe('zachycení nepřečteného výpisu', () => {
     }
     expect(await listOpenCases(db)).toHaveLength(MAX_OPEN_CASES_PER_USER);
   });
+
+  it('plný strop nebrání přepnutí existujícího případu na novou dávku', { timeout: 60_000 }, async () => {
+    const db = await freshDb();
+    const prvni = bytes(`${NEZNAMY_VYPIS}\n;;;0;;`);
+    await importFileIsolated(db, 'u1', 'vypis-0.csv', prvni);
+    for (let i = 1; i < MAX_OPEN_CASES_PER_USER; i += 1) {
+      await importFileIsolated(db, 'u1', `vypis-${i}.csv`, bytes(`${NEZNAMY_VYPIS}\n;;;${i};;`));
+    }
+    // strop je plný; nahrání JIŽ ZNÁMÉHO souboru přesto musí panel přesunout
+    // na dávku, kterou má uživatel před očima
+    const znovu = await importFileIsolated(db, 'u1', 'vypis-0-znovu.csv', prvni);
+
+    const cases = await casesForBatches(db, 'u1', [znovu.batchId]);
+    expect(cases.get(znovu.batchId)?.filename).toBe('vypis-0-znovu.csv');
+    expect(await listOpenCases(db)).toHaveLength(MAX_OPEN_CASES_PER_USER);
+  });
 });
 
 describe('hlášení od uživatele', () => {
@@ -314,6 +330,11 @@ describe('výpis stažený z API brokera', () => {
     const [item] = await listOpenCases(db);
     expect(item!.source).toBe('sync');
     expect(item!.reportedPlatform).toBe('Trading 212');
+
+    // …ale upozornění nesmí tvrdit, že to nahlásil uživatel — ten neudělal nic
+    const alert = emails().at(-1)!;
+    expect(alert.subject).not.toContain('uživatel nahlásil');
+    expect(alert.text).not.toContain('Uživatel doplnil');
   });
 
   it('obří export se neschovává (base64 v jednom řádku)', { timeout: 30_000 }, async () => {

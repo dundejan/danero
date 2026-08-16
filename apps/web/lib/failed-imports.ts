@@ -118,13 +118,26 @@ export async function keepFailedUpload(
       });
       return null;
     }
-    const open = await db
-      .select({ count: sql<number>`count(*)::int` })
+    const contentHash = sha256(args.data);
+    // Strop platí jen pro NOVÝ případ. Kdyby se počítal i u souboru, který už
+    // svůj případ má, pátý otevřený případ by zablokoval i pouhé přepnutí
+    // existujícího případu na čerstvou dávku — a panel „pracujeme na tom“ by
+    // uživateli visel u staršího importu než toho, který má před očima.
+    const [known] = await db
+      .select({ id: failedImports.id })
       .from(failedImports)
-      .where(and(eq(failedImports.userId, args.userId), eq(failedImports.status, 'open')));
-    if ((open[0]?.count ?? 0) >= MAX_OPEN_CASES_PER_USER) {
-      logEvent('warn', 'failed_import.cap_reached', { userId: args.userId });
-      return null;
+      .where(
+        and(eq(failedImports.userId, args.userId), eq(failedImports.contentHash, contentHash)),
+      );
+    if (!known) {
+      const open = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(failedImports)
+        .where(and(eq(failedImports.userId, args.userId), eq(failedImports.status, 'open')));
+      if ((open[0]?.count ?? 0) >= MAX_OPEN_CASES_PER_USER) {
+        logEvent('warn', 'failed_import.cap_reached', { userId: args.userId });
+        return null;
+      }
     }
 
     // Týž soubor podruhé je pořád JEDEN případ (klíč je otisk obsahu) — jinak
@@ -139,7 +152,7 @@ export async function keepFailedUpload(
         batchId: args.batchId,
         filename: args.filename,
         byteSize: args.data.byteLength,
-        contentHash: sha256(args.data),
+        contentHash,
         content: Buffer.from(args.data).toString('base64'),
         reason: args.reason,
         source: args.source ?? 'upload',
@@ -190,6 +203,7 @@ async function sendAlert(
         reason: failedImports.reason,
         reportedPlatform: failedImports.reportedPlatform,
         reportedNote: failedImports.reportedNote,
+        reportedAt: failedImports.reportedAt,
         email: user.email,
       })
       .from(failedImports)
@@ -214,6 +228,7 @@ async function sendAlert(
         userEmail: row.email,
         reportedPlatform: row.reportedPlatform,
         reportedNote: row.reportedNote,
+        reported: row.reportedAt !== null,
       }),
     });
     await db

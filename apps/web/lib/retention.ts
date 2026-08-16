@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, notExists, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import {
   brokerAccounts,
@@ -7,6 +7,7 @@ import {
   notifications,
   rateLimit,
   session,
+  transactions,
   verification,
 } from '@/db/schema';
 import { errorText, logEvent } from '@/lib/log';
@@ -122,9 +123,17 @@ export async function pruneNotifications(db: Db, now = new Date()): Promise<numb
 }
 
 /**
- * Historie importů (/import). Je to čistě log: transakce na dávce nevisí —
- * i ruční „smazat záznam o importu" v UI je nechává na místě. Po 90 dnech
- * tedy platí totéž co pro audit log.
+ * Historie importů (/import) po 90 dnech, ale **jen dávky, na kterých už
+ * nevisí žádná transakce**.
+ *
+ * Do 13. 8. 2026 byla historie čistě log a mazala se celá. Od zavedení
+ * „Vrátit import zpět" je ale záznam o dávce JEDINÁ cesta, jak její transakce
+ * smazat — a jediný způsob, jak provést dokumentovaný postup „vrať import zpět
+ * a nahraj znovu" u nového pole v modelu (R-07h, R-13). Kdyby řádek po 90 dnech
+ * zmizel, data by se staly nesmazatelnými a rada by u starších importů
+ * přestala platit; přitom právě starým importům nová pole chybí nejčastěji.
+ * Uklízí se tedy jen prázdné dávky: nepřečtené výpisy, prázdná období
+ * a všechno, co uživatel mezitím vrátil.
  */
 export const IMPORT_BATCH_RETENTION_DAYS = 90;
 
@@ -139,7 +148,17 @@ export function pruneImportBatches(db: Db, now = new Date()): Promise<number> {
           db
             .select({ id: importBatches.id })
             .from(importBatches)
-            .where(lt(importBatches.createdAt, cutoff))
+            .where(
+              and(
+                lt(importBatches.createdAt, cutoff),
+                notExists(
+                  db
+                    .select({ one: sql`1` })
+                    .from(transactions)
+                    .where(eq(transactions.batchId, importBatches.id)),
+                ),
+              ),
+            )
             .limit(limit),
         ),
       )

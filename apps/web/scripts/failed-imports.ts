@@ -22,11 +22,11 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { and, eq, gte } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { auditLog, importBatches } from '@/db/schema';
 import { listOpenCases, loadCase, resolveCase } from '@/lib/failed-imports';
-import { importFile } from '@/lib/import-service';
+import { importFile, type ImportSummary } from '@/lib/import-service';
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -45,6 +45,10 @@ function required(index: number): string {
 /** „0 kB“ vypadá jako prázdný soubor, a to je jiná diagnóza. */
 const velikost = (bytes: number): string =>
   bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
+
+/** Detail, který k importu zapisuje `importParsed` — musí sedět DOSLOVA. */
+const auditDetail = (filename: string, summary: ImportSummary): string =>
+  `${filename} (${summary.broker}): ${summary.added} nových`;
 
 async function list(): Promise<void> {
   const db = await getDb();
@@ -100,20 +104,21 @@ async function retry(caseId: string): Promise<void> {
     console.error(`Případ ${caseId} neexistuje.`);
     process.exit(1);
   }
-  const startedAt = new Date();
   const summary = await importFile(db, item.userId, item.filename, item.data);
   const nothingImported = summary.added === 0 && summary.duplicates === 0;
   if (summary.unrecognized || nothingImported) {
     await db.delete(importBatches).where(eq(importBatches.id, summary.batchId));
     // `importParsed` zapíše audit ještě před dávkou, takže po neúspěchu zbývá
-    // uživateli v Nastavení „Import výpisu“ souboru, který sám nenahrál
+    // uživateli v Nastavení „Import výpisu“ souboru, který sám nenahrál.
+    // Maže se podle PŘESNÉHO detailu, ne podle času: `retry-all` běží dlouho
+    // a časové okno by sebralo i import, který si uživatel mezitím nahrál sám.
     await db
       .delete(auditLog)
       .where(
         and(
           eq(auditLog.userId, item.userId),
           eq(auditLog.type, 'IMPORT'),
-          gte(auditLog.createdAt, startedAt),
+          eq(auditLog.detail, auditDetail(item.filename, summary)),
         ),
       );
     console.log(

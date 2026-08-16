@@ -1,7 +1,14 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
-import { auditLog, brokerAccounts, importBatches, transactions, user } from '@/db/schema';
+import {
+  auditLog,
+  brokerAccounts,
+  importBatches,
+  notifications,
+  transactions,
+  user,
+} from '@/db/schema';
 import { isSyncBatchFilename } from '@/lib/broker-sync';
 import { importFileIsolated } from '@/lib/import-service';
 
@@ -42,7 +49,12 @@ async function undo(db: Db, userId: string, batchId: string): Promise<number> {
     const deleted = await tx
       .delete(transactions)
       .where(and(eq(transactions.userId, userId), eq(transactions.batchId, batchId)))
-      .returning({ dedupeKey: transactions.dedupeKey });
+      .returning({ dedupeKey: transactions.dedupeKey, txDate: transactions.txDate });
+    for (const year of new Set(deleted.map((row) => row.txDate.slice(0, 4)))) {
+      await tx
+        .delete(notifications)
+        .where(and(eq(notifications.userId, userId), like(notifications.dedupeKey, `%|${year}`)));
+    }
     await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
     if (isSyncBatchFilename(batch.filename)) {
       await tx
@@ -157,6 +169,22 @@ describe('vrácení importu', () => {
       expect(await lastSyncedAt(db)).not.toBeNull();
     },
   );
+
+  it('vrácení smaže upozornění hlídače za dotčené roky', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const summary = await importFileIsolated(db, 'u1', 't212.csv', bytes(T212_CSV));
+    // hlídač už stihl založit událost za rok prodeje i za jiný rok
+    await db.insert(notifications).values([
+      { userId: 'u1', dedupeKey: 'limit|100k|EXCEEDED|2026', type: 'LIMIT', title: 'x', body: 'y' },
+      { userId: 'u1', dedupeKey: 'limit|100k|EXCEEDED|2019', type: 'LIMIT', title: 'x', body: 'y' },
+    ]);
+
+    await undo(db, 'u1', summary.batchId);
+
+    // 2024 (nákup) a 2026 (prodej) jsou dotčené, 2019 zůstává
+    const zbylo = await db.select().from(notifications).where(eq(notifications.userId, 'u1'));
+    expect(zbylo.map((row) => row.dedupeKey)).toEqual(['limit|100k|EXCEEDED|2019']);
+  });
 
   it('audit log zná typ IMPORT_UNDONE', { timeout: 30_000 }, async () => {
     const db = await freshDb();

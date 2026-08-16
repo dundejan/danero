@@ -730,11 +730,16 @@ export default async function ImportPage({
                         className="font-medium text-inkoust-tlumeny hover:text-cervena"
                       >
                         Vrátit import zpět
+                        {/* Poctivě: maže se podle toho, KTERÝ import obchod uložil
+                            jako první. Když týž obchod obsahuje i pozdější výpis,
+                            zmizí i z něj (v jeho kartě je počítaný jako duplicita)
+                            — proto ta věta o novém nahrání. */}
                         <span className="sr-only">
                           {' '}
                           — smaže {batch.added}{' '}
-                          {plural(batch.added, 'transakci', 'transakce', 'transakcí')} z tohohle
-                          importu i záznam o něm; nahrát nebo znovu stáhnout je můžeš kdykoli
+                          {plural(batch.added, 'transakci', 'transakce', 'transakcí')}, které
+                          přibyly tímhle importem, i záznam o něm. Pokud tytéž obchody obsahuje
+                          i jiný výpis, nahraj ho potom znovu — nic se nezdvojí.
                         </span>
                       </button>
                     </form>

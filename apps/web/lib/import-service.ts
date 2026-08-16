@@ -751,10 +751,12 @@ async function runIsolated(
     const failed = emptyResult('neznámý formát');
     failed.errors.push({
       line: 1,
+      // O tom, že si soubor necháváme, mluví JEN panel v historii — ten se
+      // ukáže, jen když se opravdu uložil. Slíbit to tady natvrdo by lhalo
+      // uživateli, kterému úschovu odmítl strop případů nebo velikost souboru.
       message:
         'Soubor se nepodařilo zpracovat — nejspíš je poškozený nebo neúplně stažený. ' +
-        'Stáhni ho od brokera znovu. Soubor jsme si uložili a podíváme se, jestli ' +
-        'není chyba na naší straně.',
+        'Stáhni ho od brokera znovu.',
     });
     // výjimka v parseru je podezřelá vždycky: buď je soubor rozbitý, nebo se
     // parser dusí na něčem, co v něm dřív nebylo

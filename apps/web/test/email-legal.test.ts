@@ -360,7 +360,7 @@ describe('vzhled a obsah odchozích e-mailů', () => {
  * podle názvů sloupců se formát pozná.
  */
 describe('upozornění na nepřečtený výpis (provozovateli)', () => {
-  const alert = failedImportAlertEmail({
+  const podklady = {
     caseId: 'case-1',
     filename: 'vypis.csv',
     byteSize: 2048,
@@ -369,7 +369,8 @@ describe('upozornění na nepřečtený výpis (provozovateli)', () => {
     userEmail: 'zakaznik@example.test',
     reportedPlatform: 'Fio e-Broker',
     reportedNote: 'Export z Obchody → Historie.',
-  });
+  };
+  const alert = failedImportAlertEmail({ ...podklady, reported: true });
 
   it('nese to, podle čeho se formát dohledá', () => {
     expect(alert.text).toContain('case-1');
@@ -377,6 +378,20 @@ describe('upozornění na nepřečtený výpis (provozovateli)', () => {
     expect(alert.text).toContain('Obchodni den');
     expect(alert.text).toContain('Fio e-Broker');
     expect(alert.subject).toContain('Fio e-Broker');
+  });
+
+  /**
+   * U výpisu staženého z API si platformu předvyplní Danero samo. Kdyby se
+   * „uživatel nahlásil“ odvozovalo z vyplněné platformy, první automatické
+   * upozornění by tvrdilo, že to nahlásil někdo, kdo neudělal nic — a čerstvé
+   * nálezy by ve schránce nešly odlišit od skutečných hlášení.
+   */
+  it('nehlásí „uživatel nahlásil“, když platformu doplnil Danero sám', () => {
+    const automat = failedImportAlertEmail({ ...podklady, reportedNote: null, reported: false });
+    expect(automat.subject).not.toContain('uživatel nahlásil');
+    expect(automat.text).not.toContain('Uživatel doplnil');
+    // platformu ale vypsat musí — provozovateli šetří hledání
+    expect(automat.text).toContain('Fio e-Broker');
   });
 
   it('míří na adresu z prostředí, ne z kódu', () => {

@@ -351,8 +351,15 @@ export function failedImportAlertEmail(args: {
   userEmail: string;
   reportedPlatform?: string | null;
   reportedNote?: string | null;
+  /**
+   * Doplnil to UŽIVATEL? Neodvozovat z vyplněné platformy — u výpisu staženého
+   * z API si ji Danero předvyplní samo, takže by první automatické upozornění
+   * tvrdilo „uživatel nahlásil“ o někom, kdo neudělal nic, a v schránce by
+   * nešly odlišit čerstvé nálezy od skutečných hlášení.
+   */
+  reported?: boolean;
 }): Omit<EmailMessage, 'to'> {
-  const reported = args.reportedPlatform ?? args.reportedNote;
+  const reported = args.reported === true;
   return zprava({
     subject: reported
       ? `Danero: uživatel nahlásil nepřečtený výpis (${args.reportedPlatform ?? 'bez platformy'})`
