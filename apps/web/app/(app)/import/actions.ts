@@ -3,15 +3,15 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, type Db } from '@/db';
-import { brokerAccounts, importBatches, notifications, transactions } from '@/db/schema';
+import { brokerAccounts } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
-import { isSyncBatchFilename } from '@/lib/broker-sync';
 import { invalidateUserCache } from '@/lib/engine-cache';
 import { reportFailedImport } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
+import { undoImportBatch } from '@/lib/import-undo';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { resolveEntitlements } from '@/lib/entitlements';
@@ -121,46 +121,7 @@ export async function undoImportAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('davka') ?? '');
   if (batchId) {
     const db = await getDb();
-    // jedna transakce: pád mezi mazáním transakcí a dávky by nechal osiřelé
-    // řádky bez záznamu v historii, tedy data, ke kterým se uživatel nedostane
-    const removed = await db.transaction(async (tx) => {
-      const [batch] = await tx
-        .select({
-          id: importBatches.id,
-          filename: importBatches.filename,
-          broker: importBatches.broker,
-        })
-        .from(importBatches)
-        .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, user.id)));
-      if (!batch) return null;
-      const deleted = await tx
-        .delete(transactions)
-        .where(and(eq(transactions.userId, user.id), eq(transactions.batchId, batchId)))
-        .returning({ dedupeKey: transactions.dedupeKey, txDate: transactions.txDate });
-      // Upozornění hlídače na roky, kterých se to týkalo, přestala platit —
-      // „limit překročen" by na přehledu viselo za obchody, které už neexistují,
-      // a dedupe klíč by jeho přepočet napořád zablokoval. Smazané se založí
-      // znovu při dalším běhu cronu, pokud pořád platí.
-      const years = [...new Set(deleted.map((row) => row.txDate.slice(0, 4)))];
-      for (const year of years) {
-        await tx
-          .delete(notifications)
-          .where(
-            and(eq(notifications.userId, user.id), like(notifications.dedupeKey, `%|${year}`)),
-          );
-      }
-      await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
-      // Jen u dávky ze SYNCU: ať se smazaná historie dá zase stáhnout (viz
-      // komentář výš). U ručně nahraného výpisu by to znamenalo zbytečné
-      // stahování celé historie a účet by v UI vypadal jako nesynchronizovaný.
-      if (isSyncBatchFilename(batch.filename)) {
-        await tx
-          .update(brokerAccounts)
-          .set({ lastSyncedAt: null })
-          .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, batch.broker)));
-      }
-      return { filename: batch.filename, count: deleted.length };
-    });
+    const removed = await undoImportBatch(db, user.id, batchId);
     // Cache výpočtů se MUSÍ zahodit ručně: otisk v klíči stojí na seznamu id
     // transakcí, ne na obsahu payloadu. Po vrácení a novém nahrání téhož výpisu
     // (dokumentovaný postup u nového pole v modelu) vyjde klíč identický s tím

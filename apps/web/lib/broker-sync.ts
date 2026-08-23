@@ -1,9 +1,10 @@
 import { reconcilePositions } from '@danero/importers';
 import { buildLedger, positionsAt, resolveOptions, WarningCollector } from '@danero/engine';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { loadTransactions } from '@/lib/portfolio';
+import { ts } from '@/lib/sql';
 
 /**
  * Broker-neutrální základ synchronizací (G2 multi-broker): sdílené tvary
@@ -358,6 +359,18 @@ export interface FinishSyncOptions {
  * Úspěšný závěr syncu: odvodí stav a zapíše ho k účtu — JEDINÉ místo, které
  * smí nastavit lastSyncedAt (známá zrada: po neúspěchu se nastavit nesmí,
  * jinak se plná historie už nestáhne). Tenancy guard přímo v dotazu.
+ *
+ * K6a-02: `lastSyncedAt` se píše přes compare-and-set proti hodnotě, kterou měl
+ * účet na startu jobu (`account.lastSyncedAt`). Vrácení importu uprostřed
+ * běžícího syncu totiž `lastSyncedAt` schválně nuluje, aby se rok stáhl znovu —
+ * a nepodmíněný zápis na konci ten reset přebil, takže rok zmizel navždy
+ * (týž následek jako K6a-01, jen jinými dveřmi).
+ *
+ * ⚠️ Naivní „nepřepisuj, když je null" by rozbilo KAŽDÝ plný sync: tam je null
+ * i na začátku. Rozhoduje proto shoda se startovní hodnotou, ne samotné null.
+ * Když se hodnota mezitím změnila, zbytek stavu (status, chyba, rekonciliace)
+ * se zapíše stejně — jen účet zůstane „nesynchronizovaný" a příští běh bude
+ * plný. To je bezpečný směr: nejhůř se stáhne víc, než bylo nutné.
  */
 export async function finishBrokerSync(
   db: Db,
@@ -371,11 +384,18 @@ export async function finishBrokerSync(
   const status: SyncStatus | 'error' = incomplete
     ? 'error'
     : deriveSyncStatus(errorCount, reconciliation);
+  const startedWith = account.lastSyncedAt;
   await db
     .update(brokerAccounts)
     .set({
       // podezřelý běh se NEuzavírá: bez lastSyncedAt zůstane příští sync plný
-      ...(incomplete ? {} : { lastSyncedAt: now }),
+      ...(incomplete
+        ? {}
+        : {
+            lastSyncedAt: sql`case when ${brokerAccounts.lastSyncedAt} is not distinct from ${
+              startedWith ? ts(startedWith) : sql`null`
+            } then ${ts(now)} else ${brokerAccounts.lastSyncedAt} end`,
+          }),
       lastSyncStatus: status,
       // přechodné selhání rekonciliace jde do lastSyncError; poslední platná
       // rekonciliace („pozice sedí“) se v tom případě NEpřepisuje

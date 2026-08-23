@@ -707,6 +707,52 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(Number(rows[0]?.applied ?? 0)).toBe(journal.entries.length);
   });
 
+  /**
+   * K6a-02: závěr syncu píše `lastSyncedAt` syrovým `case … is not distinct
+   * from …` fragmentem. Datum v syrovém SQL je přesně ta věc, kterou PGlite
+   * spolkne a postgres.js odmítne („Received an instance of Date"), takže
+   * compare-and-set musí projít i tudy.
+   */
+  it('finishBrokerSync: compare-and-set na lastSyncedAt', { timeout: 60_000 }, async () => {
+    const userId = await makeUser();
+    const { finishBrokerSync } = await import('@/lib/broker-sync');
+    const { encryptSecret } = await import('@/lib/crypto');
+    const accountId = `pg-acc-${userId}`;
+    await db.insert(brokerAccounts).values({
+      id: accountId,
+      userId,
+      broker: 'trading212',
+      credentialsEncrypted: encryptSecret('{"keyId":"a","secret":"b"}'),
+      lastSyncedAt: new Date('2026-06-01T10:00:00Z'),
+    });
+    const account = (
+      await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+    )[0]!;
+    const now = new Date('2026-07-07T12:00:00Z');
+
+    // shoda se startovní hodnotou → čas se posune
+    await finishBrokerSync(db, account, null, 0, now);
+    let [row] = await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId));
+    expect(row!.lastSyncedAt?.toISOString()).toBe(now.toISOString());
+
+    // vrácení importu mezitím vynulovalo → zápis se NESMÍ prosadit
+    await db
+      .update(brokerAccounts)
+      .set({ lastSyncedAt: null })
+      .where(eq(brokerAccounts.id, accountId));
+    await finishBrokerSync(db, account, null, 0, new Date('2026-07-08T12:00:00Z'));
+    [row] = await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId));
+    expect(row!.lastSyncedAt).toBeNull();
+
+    // a plný sync z nuly se uzavře normálně (startovní hodnota je null)
+    const zNuly = (
+      await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+    )[0]!;
+    await finishBrokerSync(db, zNuly, null, 0, now);
+    [row] = await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId));
+    expect(row!.lastSyncedAt?.toISOString()).toBe(now.toISOString());
+  });
+
   it('logAudit zapíše i bez detailu a čte se seřazeně', { timeout: 30_000 }, async () => {
     const userId = await makeUser();
     await logAudit(db, userId, 'LOGIN');

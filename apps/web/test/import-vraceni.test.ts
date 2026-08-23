@@ -11,6 +11,7 @@ import {
 } from '@/db/schema';
 import { isSyncBatchFilename } from '@/lib/broker-sync';
 import { importFileIsolated } from '@/lib/import-service';
+import { undoImportBatch } from '@/lib/import-undo';
 
 /**
  * Vrácení importu (`undoImportAction`).
@@ -32,38 +33,12 @@ const bytes = (text: string): ArrayBuffer =>
   new TextEncoder().encode(text).buffer as ArrayBuffer;
 
 /**
- * Tělo `undoImportAction` bez `requireUser()`. Kdyby se v akci logika změnila,
- * tenhle test to nechytí — proto ho doplňuje E2E, které klikne na tlačítko.
+ * Server action `undoImportAction` je jen autentizační obal nad
+ * `undoImportBatch` — test volá TUTÉŽ funkci. Vlastní kopii logiky tu mít
+ * nesmí: do 23. 8. 2026 ji tu měl a sám si u ní psal, že změnu v akci nechytí.
  */
 async function undo(db: Db, userId: string, batchId: string): Promise<number> {
-  return db.transaction(async (tx) => {
-    const [batch] = await tx
-      .select({
-        id: importBatches.id,
-        broker: importBatches.broker,
-        filename: importBatches.filename,
-      })
-      .from(importBatches)
-      .where(and(eq(importBatches.id, batchId), eq(importBatches.userId, userId)));
-    if (!batch) return 0;
-    const deleted = await tx
-      .delete(transactions)
-      .where(and(eq(transactions.userId, userId), eq(transactions.batchId, batchId)))
-      .returning({ dedupeKey: transactions.dedupeKey, txDate: transactions.txDate });
-    for (const year of new Set(deleted.map((row) => row.txDate.slice(0, 4)))) {
-      await tx
-        .delete(notifications)
-        .where(and(eq(notifications.userId, userId), like(notifications.dedupeKey, `%|${year}`)));
-    }
-    await tx.delete(importBatches).where(eq(importBatches.id, batch.id));
-    if (isSyncBatchFilename(batch.filename)) {
-      await tx
-        .update(brokerAccounts)
-        .set({ lastSyncedAt: null })
-        .where(and(eq(brokerAccounts.userId, userId), eq(brokerAccounts.broker, batch.broker)));
-    }
-    return deleted.length;
-  });
+  return (await undoImportBatch(db, userId, batchId))?.count ?? 0;
 }
 
 async function freshDb(): Promise<Db> {

@@ -285,6 +285,13 @@ async function fullSyncResume(
   db: Db,
   job: JobRow,
 ): Promise<{ years: SyncYearProgress[]; syncedAt: Date } | undefined> {
+  // K6a-01: bere se poslední DOKONČENÝ běh, ne poslední spadlý. Spadlý job
+  // v tabulce zůstává navždy (pruneJobs nejnovější job každého dedupeKey
+  // nechává), takže se z něj po pozdějším úspěšném plném syncu stalo trvalé
+  // orákulum „tenhle rok už máš" — a když uživatel dávku ze syncu vrátil,
+  // resume ten rok přeskočil a nastavil lastSyncedAt. Rok zmizel tiše a natrvalo.
+  // Staré `error` joby se schválně NEMAŽOU: jsou jediným zdrojem průběhu,
+  // ze kterého resume žije.
   const rows = await db
     .select()
     .from(jobs)
@@ -293,13 +300,13 @@ async function fullSyncResume(
         eq(jobs.userId, job.userId),
         eq(jobs.type, job.type),
         eq(jobs.dedupeKey, job.dedupeKey),
-        eq(jobs.status, 'error'),
+        inArray(jobs.status, ['error', 'success']),
       ),
     )
     .orderBy(desc(jobs.createdAt))
     .limit(1);
   const failed = rows[0];
-  if (!failed) return undefined;
+  if (!failed || failed.status !== 'error') return undefined;
   const progress = (failed.progress ?? null) as SyncProgress | null;
   if (progress?.mode !== 'full' || !progress.years || progress.years.length === 0) {
     return undefined;
@@ -446,6 +453,53 @@ export async function processPendingJobs(
     }
   }
   return { recovered, results, deferred };
+}
+
+/**
+ * K6a-01, druhá pojistka: vrácení dávky ze syncu musí zneplatnit i průběh
+ * uložený u spadlých jobů.
+ *
+ * `lastSyncedAt = null` samo nestačí. Další plný sync si z posledního spadlého
+ * jobu přečte, že rok už je „complete", a přeskočí ho — jenže jeho transakce
+ * uživatel právě smazal. Rok tím zmizí tiše a natrvalo (u uzavřeného obchodu
+ * o něm nedá vědět ani rekonciliace, protože na dnešní pozice nemá vliv).
+ *
+ * Značí se `complete: false`, ne mazání celého záznamu ani celého jobu: průběh
+ * zůstane čitelný pro UI a resume se na ten rok prostě zeptá znovu.
+ * Vrací počet upravených jobů.
+ */
+export async function forgetSyncProgressYears(
+  db: Db,
+  userId: string,
+  years: number[],
+): Promise<number> {
+  if (years.length === 0) return 0;
+  const affected = new Set(years);
+  const rows = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.userId, userId),
+        inArray(jobs.type, SYNC_JOB_TYPES),
+        eq(jobs.status, 'error'),
+      ),
+    );
+
+  let updated = 0;
+  for (const job of rows) {
+    const progress = (job.progress ?? null) as SyncProgress | null;
+    if (!progress?.years?.some((entry) => affected.has(entry.year) && entry.complete)) continue;
+    const next: SyncProgress = {
+      ...progress,
+      years: progress.years.map((entry) =>
+        affected.has(entry.year) ? { ...entry, complete: false } : entry,
+      ),
+    };
+    await db.update(jobs).set({ progress: next }).where(eq(jobs.id, job.id));
+    updated += 1;
+  }
+  return updated;
 }
 
 /**
