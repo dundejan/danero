@@ -21,7 +21,9 @@ export type AuditType =
   | 'EMAIL_CHANGE'
   | 'BROKER_CONNECTED'
   | 'BROKER_DISCONNECTED'
-  | 'SESSIONS_REVOKED';
+  | 'SESSIONS_REVOKED'
+  | 'TWO_FACTOR_ENABLED'
+  | 'TWO_FACTOR_DISABLED';
 
 export const AUDIT_LABELS: Record<AuditType, string> = {
   LOGIN: 'Přihlášení',
@@ -34,6 +36,8 @@ export const AUDIT_LABELS: Record<AuditType, string> = {
   BROKER_CONNECTED: 'Připojení brokera',
   BROKER_DISCONNECTED: 'Odpojení brokera',
   SESSIONS_REVOKED: 'Odhlášení ostatních zařízení',
+  TWO_FACTOR_ENABLED: 'Zapnutí dvoufaktorového ověření',
+  TWO_FACTOR_DISABLED: 'Vypnutí dvoufaktorového ověření',
 };
 
 export async function logAudit(

@@ -8,9 +8,9 @@ import { twoFactor } from 'better-auth/plugins';
 import { getDb, type Db } from '@/db';
 import * as schema from '@/db/schema';
 import {
+  afterHooks,
   beforeHooks,
   revokePasswordResetTokens,
-  revokeResetTokensAfterPasswordChange,
 } from '@/lib/auth-hooks';
 
 /**
@@ -152,8 +152,14 @@ function buildAuth(db: Db) {
       // ukradená session nepřežije obnovu hesla
       revokeSessionsOnPasswordReset: true,
       // D-02: dokončený reset musí sundat i ostatní vydané odkazy — jinak je
-      // starý odkaz ve schránce ještě hodinu živý (detail v lib/auth-hooks.ts)
-      onPasswordReset: ({ user }) => revokePasswordResetTokens(db, user.id),
+      // starý odkaz ve schránce ještě hodinu živý (detail v lib/auth-hooks.ts).
+      // K4-04: a musí být vidět v auditu — kdo se dostane do cizí schránky,
+      // projde „zapomenuté heslo" a majitel účtu nesmí zůstat bez stopy.
+      onPasswordReset: async ({ user }) => {
+        await revokePasswordResetTokens(db, user.id);
+        const { logAudit } = await import('@/lib/audit');
+        await logAudit(db, user.id, 'PASSWORD_CHANGE', 'obnova přes odkaz v e-mailu');
+      },
       sendResetPassword: async ({ user, url }) => {
         const { resolveEmailSender, resetPasswordEmail } = await import('@/lib/email');
         await resolveEmailSender()({ to: user.email, ...resetPasswordEmail(url) });
@@ -200,6 +206,8 @@ function buildAuth(db: Db) {
         '/sign-in/email': { window: 60, max: 5 },
         '/sign-up/email': { window: 60, max: 5 },
         '/two-factor/verify-totp': { window: 60, max: 5 },
+        // K2-01: záložní kód je druhá cesta k témuž účtu, tak ať má i týž strop
+        '/two-factor/verify-backup-code': { window: 60, max: 5 },
         '/change-password': { window: 300, max: 5 },
         '/delete-user': { window: 300, max: 3 },
         // odesílání e-mailů drž nízko — jinak je z formulářů rozesílač
@@ -213,7 +221,7 @@ function buildAuth(db: Db) {
     // v lib/auth-hooks.ts
     hooks: {
       before: beforeHooks(db),
-      after: revokeResetTokensAfterPasswordChange(db),
+      after: afterHooks(db),
     },
     databaseHooks: {
       session: {

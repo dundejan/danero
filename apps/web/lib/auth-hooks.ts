@@ -150,3 +150,54 @@ export function revokeResetTokensAfterPasswordChange(db: Db) {
     if (userId) await revokePasswordResetTokens(db, userId);
   });
 }
+
+/**
+ * K4-04: audit účtu musí vidět i změny druhého faktoru.
+ *
+ * Zapnutí 2FA se v Better Authu NEDOKONČUJE na `/two-factor/enable` — ten jen
+ * vydá QR kód a záložní kódy. Faktor přeskočí do zapnutého stavu až prvním
+ * správným kódem na `/two-factor/verify-totp`, tedy na téže cestě, kudy chodí
+ * i přihlášení druhým faktorem. Rozlišíme je podle dvou věcí naráz:
+ *
+ * 1. **Přihlášení běží bez relace** (jen s cookie přihlašovací výzvy), kdežto
+ *    potvrzení nastavení jde z přihlášené relace. Přihlášení navíc audit už má
+ *    — zapisuje ho `databaseHooks.session.create`.
+ * 2. Novou relaci (`newSession`) vystaví Better Auth na téhle cestě jen tehdy,
+ *    když faktor opravdu přepnul na zapnutý. Je to tím pádem pojistka proti
+ *    zápisu při opakovaném ověření už zapnutého faktoru.
+ *
+ * Vypnutí je přímočaré: `/two-factor/disable` má relaci z middleware.
+ * Zápis nesmí shodit operaci — `logAudit` si chyby polyká sám.
+ */
+export function logTwoFactorChanges(db: Db) {
+  return createAuthMiddleware(async (ctx) => {
+    if (ctx.path !== '/two-factor/verify-totp' && ctx.path !== '/two-factor/disable') return;
+    if (isAPIError(ctx.context.returned)) return;
+    const { logAudit } = await import('@/lib/audit');
+
+    if (ctx.path === '/two-factor/disable') {
+      const userId = ctx.context.session?.user.id;
+      if (userId) await logAudit(db, userId, 'TWO_FACTOR_DISABLED');
+      return;
+    }
+
+    const sessionCookie = await ctx.getSignedCookie(
+      ctx.context.authCookies.sessionToken.name,
+      ctx.context.secret,
+    );
+    if (!sessionCookie) return; // přihlášení druhým faktorem, ne zapínání
+    const userId = ctx.context.newSession?.user.id;
+    if (userId) await logAudit(db, userId, 'TWO_FACTOR_ENABLED');
+  });
+}
+
+/**
+ * `hooks.after` bere jediný middleware — stejně jako u `beforeHooks` je jejich
+ * pořadí a soupiska na jednom místě.
+ */
+export function afterHooks(db: Db) {
+  const hooks = [revokeResetTokensAfterPasswordChange(db), logTwoFactorChanges(db)];
+  return createAuthMiddleware(async (ctx) => {
+    for (const hook of hooks) await hook(ctx);
+  });
+}

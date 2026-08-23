@@ -21,7 +21,7 @@ export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string
     try {
       const result = await authClient.sendVerificationEmail({
         email,
-        callbackURL: '/overeni-emailu',
+        callbackURL: '/overeni-emailu/hotovo',
       });
       if (result.error) {
         setError(

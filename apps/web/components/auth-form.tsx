@@ -9,6 +9,7 @@ import { describedByError, FieldError, Input, Label } from '@/components/ui/fiel
 
 /** Cíle `aria-describedby` u polí, kterých se chyba týká. */
 const TOTP_ERROR_ID = 'kod-error';
+const BACKUP_ERROR_ID = 'zalozni-kod-error';
 const CREDENTIALS_ERROR_ID = 'prihlaseni-error';
 
 export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
@@ -17,6 +18,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const [unverified, setUnverified] = useState<{ email: string; resent: boolean } | null>(null);
   const [pending, setPending] = useState(false);
   const [totpStep, setTotpStep] = useState(false);
+  // K2-01: druhá větev téhož kroku — kdo přišel o telefon, opíše záložní kód.
+  // Bez ní byly vypsané kódy k ničemu: server je přijímá, formulář je neuměl
+  // odeslat (do pole na šest číslic se `xxxxx-xxxxx` ani nevejde).
+  const [backupStep, setBackupStep] = useState(false);
 
   const finish = () => {
     // registrace nevytváří session — účet čeká na potvrzení e-mailu, teprve
@@ -31,6 +36,18 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
+
+      if (backupStep) {
+        const result = await authClient.twoFactor.verifyBackupCode({
+          code: String(form.get('zalozni-kod') ?? '').trim(),
+        });
+        if (result.error) {
+          setError('Záložní kód nesedí. Zkontroluj, že jsi ho opsal celý včetně pomlčky.');
+          return;
+        }
+        finish();
+        return;
+      }
 
       if (totpStep) {
         const result = await authClient.twoFactor.verifyTotp({
@@ -57,13 +74,16 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
       // by Better Auth poslal ověřeného uživatele na landing místo do onboardingu.
       // U přihlášení ho NEposílat: klient by na něj skočil i po úspěšném loginu
       // a normální přihlášení by končilo v onboardingu místo na přehledu.
+      // Cíl je /overeni-emailu/hotovo, ne rozcestník: když odkaz spotřebuje
+      // skener firemní pošty, uživatel dorazí bez relace a musí číst pravdu
+      // („adresu máme potvrzenou, přihlas se"), ne „poslali jsme ti odkaz" (K8-05).
       const result =
         mode === 'registrace'
           ? await authClient.signUp.email({
               email,
               password,
               name: String(form.get('jmeno') ?? '') || email.split('@')[0]!,
-              callbackURL: '/overeni-emailu',
+              callbackURL: '/overeni-emailu/hotovo',
             })
           : await authClient.signIn.email({ email, password });
 
@@ -74,7 +94,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         if (result.error.code === 'EMAIL_NOT_VERIFIED') {
           const resend = await authClient.sendVerificationEmail({
             email,
-            callbackURL: '/overeni-emailu',
+            callbackURL: '/overeni-emailu/hotovo',
           });
           setUnverified({ email, resent: !resend.error });
           return;
@@ -127,6 +147,43 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     );
   }
 
+  if (backupStep) {
+    return (
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="zalozni-kod">Záložní kód</Label>
+          <Input
+            id="zalozni-kod"
+            name="zalozni-kod"
+            autoComplete="one-time-code"
+            required
+            autoFocus
+            placeholder="xxxxx-xxxxx"
+            className="font-mono tracking-widest"
+            {...describedByError(error !== null, BACKUP_ERROR_ID)}
+          />
+          <p className="mt-2 text-xs text-inkoust-tlumeny">
+            Kódy sis uložil při zapínání dvoufaktorového ověření. Každý funguje jen jednou.
+          </p>
+        </div>
+        {error && <FieldError id={BACKUP_ERROR_ID}>{error}</FieldError>}
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending ? 'Ověřuji…' : 'Přihlásit záložním kódem'}
+        </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setBackupStep(false);
+            setError(null);
+          }}
+          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+        >
+          Mám telefon po ruce — zadat kód z autentikátoru
+        </button>
+      </form>
+    );
+  }
+
   if (totpStep) {
     return (
       <form onSubmit={onSubmit} className="space-y-4">
@@ -148,6 +205,16 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         <Button type="submit" disabled={pending} className="w-full">
           {pending ? 'Ověřuji…' : 'Ověřit kód'}
         </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setBackupStep(true);
+            setError(null);
+          }}
+          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+        >
+          Nemáš telefon? Zadej záložní kód
+        </button>
       </form>
     );
   }
