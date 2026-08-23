@@ -252,3 +252,39 @@ describe('sniff pozná i trades.csv (routing na vysvětlující odmítnutí)', (
     expect(result.errors[0]?.message).toContain('ledgers.csv');
   });
 });
+
+/**
+ * K7b-01: sniffer musí být PODMNOŽINOU toho, co vyžaduje parser.
+ *
+ * `sniffKrakenCsv` chtěl `aclass` a `balance`, která parser NIKDY nečte —
+ * všechny tři výskyty byly ve snifferu. Export bez nich se dal přečíst, ale
+ * sniffer ho odmítl; a protože Kraken má sloupec doslova `type`, propadl až
+ * na univerzální šablonu a uživatel četl hlášku cizího parseru o sloupci,
+ * který jeho broker nikdy nemá.
+ */
+describe('sniffer nesmí být přísnější než parser (K7b-01)', () => {
+  const bezAclassABalance = [
+    '"txid","refid","time","type","subtype","asset","amount","fee"',
+    '"L1","R1","2024-03-01 10:00:00","trade","","ZEUR","-1001.60","1.60"',
+    '"L2","R1","2024-03-01 10:00:00","trade","","XXBT","0.02","0"',
+  ].join('\n');
+
+  it('ledgers bez aclass a balance sniffer pozná a parser přečte', async () => {
+    const { sniffKrakenCsv, parseKrakenCsv } = await import('../src/kraken/csv');
+    expect(sniffKrakenCsv(bezAclassABalance)).toBe(true);
+
+    const result = parseKrakenCsv(bezAclassABalance);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+  });
+
+  it('soubor, kterému chybí sloupec vyžadovaný parserem, sniffer nepozná', async () => {
+    const { sniffKrakenCsv } = await import('../src/kraken/csv');
+    // bez `amount` parser skončí chybou → propustit ho k němu nemá smysl
+    const bezAmount = bezAclassABalance
+      .split('\n')
+      .map((line) => line.replace(',"amount"', '').replace(/,"-?[\d.]+","[\d.]+"$/, ',"0"'))
+      .join('\n');
+    expect(sniffKrakenCsv(bezAmount)).toBe(false);
+  });
+});

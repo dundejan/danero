@@ -35,14 +35,33 @@ function universalNumber(value: string, column: string): string {
   return trimmed.replace(',', '.');
 }
 
+/** Hodnoty, které v šabloně znamenají „ano“ — česky i anglicky, jak kdo napíše. */
+const TRUTHY = new Set(['ano', 'yes', 'true', '1', 'y', 'a']);
+const FALSY = new Set(['', 'ne', 'no', 'false', '0', 'n']);
+
+/**
+ * Zaškrtávací sloupec šablony. Neznámou hodnotu NEbereme jako „ne“: tiché
+ * ignorování překlepu je přesně ten druh ztráty, kvůli kterému se ve výdajích
+ * hlídají nejednoznačná čísla.
+ */
+function universalFlag(value: string, column: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (TRUTHY.has(normalized)) return true;
+  if (FALSY.has(normalized)) return false;
+  throw new AmbiguousNumberError(
+    `Hodnotě „${value.trim()}“ ve sloupci ${column} nerozumíme — napiš „ano“, nebo pole nech prázdné.`,
+  );
+}
+
 /**
  * Univerzální CSV šablona v2 — fallback pro brokery bez vlastního parseru
  * (pattern Koinly/Taxomat, docs/03). Formát je popsán v docs/06-import.md.
  *
  * Sloupce: type, date, settlement_date?, isin, ticker?, name?, asset_class?,
- * settlement_style?, quantity, price, currency, fee?, fee_currency?, amount,
- * withholding_tax?, source_country?, subtype?, ratio_from?, ratio_to?,
- * new_isin?, acquisition_date?, acquisition_price?, acquisition_currency?, note?
+ * settlement_style?, position_effect?, quantity, price, currency, fee?,
+ * fee_currency?, amount, withholding_tax?, source_country?,
+ * return_of_capital?, subtype?, ratio_from?, ratio_to?, new_isin?,
+ * acquisition_date?, acquisition_price?, acquisition_currency?, note?
  */
 const REQUIRED_HEADERS = ['type', 'date'] as const;
 
@@ -63,23 +82,24 @@ const CA_SUBTYPES = new Set(['SPLIT', 'ISIN_CHANGE', 'MERGER', 'SPINOFF', 'DELIS
 
 /** Stažitelná předvyplněná šablona (hlavička + ukázkové řádky k přepsání). */
 export const UNIVERSAL_TEMPLATE_CSV = [
-  'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
-  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,,10,185.50,USD,1.00,USD,,,,,,,,,,,nákup přes brokera XY',
-  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,,5,210.00,USD,1.00,USD,,,,,,,,,,,',
-  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.5,60000,EUR,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
-  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.2,75000,EUR,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
-  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1250,USD,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
-  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1800,USD,,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
-  'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5000,USD,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření (ne nominál)',
-  'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5150,USD,,,,,,,,,,,,,uzavření CFD',
-  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,,USD,,,25.00,3.75,US,,,,,,,,brutto a sražená daň',
-  'INTEREST,2026-06-01,,,,,,,,,,USD,,,1.23,,US,,,,,,,,"úrok z hotovosti (withholding_tax vyplň jen tehdy, když ti z něj v zahraničí srazili daň)"',
-  'FEE,2026-06-01,,,,,,,,,,EUR,,,2.50,,,,,,,,,,poplatek za vedení účtu',
-  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
-  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
-  'SELL,2026-02-10,2026-02-11,US0378331005,AAPL,Apple Inc,,,open,100,300.00,USD,1.00,USD,,,,,,,,,,,prodej NAKRÁTKO (short) — otevření krátké pozice; daní se jinak než běžný prodej',
-  'BUY,2026-04-20,2026-04-21,US0378331005,AAPL,Apple Inc,,,close,100,250.00,USD,1.00,USD,,,,,,,,,,,zpětný nákup k pokrytí shortu — uzavření krátké pozice',
-  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,,10,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
+  'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,return_of_capital,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
+  'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,,10,185.50,USD,1.00,USD,,,,,,,,,,,,nákup přes brokera XY',
+  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,,5,210.00,USD,1.00,USD,,,,,,,,,,,,',
+  'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.5,60000,EUR,,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
+  'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.2,75000,EUR,,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
+  'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1250,USD,,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
+  'SELL,2026-04-10,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1800,USD,,,,,,,,,,,,,,prodej opce; expirace bezcenné opce = prodej za 0',
+  'BUY,2026-02-02,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5000,USD,,,,,,,,,,,,,,otevření CFD — margin: daní se rozdíl cen při uzavření (ne nominál)',
+  'SELL,2026-03-16,,CFD:US500,,S&P 500 CFD,DERIVATIVE,margin,,2,5150,USD,,,,,,,,,,,,,,uzavření CFD',
+  'DIVIDEND,2026-05-10,,US0378331005,AAPL,Apple Inc,,,,,,USD,,,25.00,3.75,US,,,,,,,,,brutto a sražená daň',
+  'DIVIDEND,2026-07-15,,IE00B4L5Y983,IWDA,iShares Core MSCI World,,,,,,USD,,,40.00,0,,ano,,,,,,,,"vratka kapitálu (return of capital) — u fondů a REITů; snižuje nabývací cenu držených kusů, ne podíl na zisku (R-07h)"',
+  'INTEREST,2026-06-01,,,,,,,,,,USD,,,1.23,,US,,,,,,,,,"úrok z hotovosti (withholding_tax vyplň jen tehdy, když ti z něj v zahraničí srazili daň)"',
+  'FEE,2026-06-01,,,,,,,,,,EUR,,,2.50,,,,,,,,,,,poplatek za vedení účtu',
+  'CORPORATE_ACTION,2024-08-31,,US0378331005,,,,,,,,,,,,,,,SPLIT,1,4,,,,,split 4:1 (za 1 starý kus 4 nové)',
+  'CORPORATE_ACTION,2025-04-01,,GB0002222222,,,,,,,,,,,,,,,ISIN_CHANGE,,,GB0003333333,,,,změna ISIN',
+  'SELL,2026-02-10,2026-02-11,US0378331005,AAPL,Apple Inc,,,open,100,300.00,USD,1.00,USD,,,,,,,,,,,,prodej NAKRÁTKO (short) — otevření krátké pozice; daní se jinak než běžný prodej',
+  'BUY,2026-04-20,2026-04-21,US0378331005,AAPL,Apple Inc,,,close,100,250.00,USD,1.00,USD,,,,,,,,,,,,zpětný nákup k pokrytí shortu — uzavření krátké pozice',
+  'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,,10,,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
 ].join('\n');
 
 export function parseUniversalCsv(text: string): ImportResult {
@@ -212,7 +232,11 @@ export function parseUniversalCsv(text: string): ImportResult {
           );
           return;
         }
-        case 'DIVIDEND':
+        case 'DIVIDEND': {
+          const returnOfCapital = universalFlag(
+            map.get(row, 'return_of_capital'),
+            'return_of_capital',
+          );
           result.transactions.push(
             TransactionSchema.parse({
               type,
@@ -225,11 +249,16 @@ export function parseUniversalCsv(text: string): ImportResult {
               currency: map.get(row, 'currency'),
               withholdingTax: universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
               sourceCountry: map.get(row, 'source_country') || undefined,
+              // R-07h/K6a-14: bez tohohle sloupce neměl uživatel Schwabu nebo
+              // Degira jak přepínač „vratka kapitálu“ vůbec využít — příznak
+              // zavádějí jen parsery T212 a IBKR a dopočítat ho zpětně nejde.
+              ...(returnOfCapital ? { returnOfCapital: true } : {}),
               note: map.get(row, 'note') || undefined,
               date,
             }),
           );
           return;
+        }
         case 'INTEREST':
         case 'FEE':
         case 'DEPOSIT':

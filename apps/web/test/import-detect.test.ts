@@ -146,11 +146,78 @@ describe('nepoznaný CSV formát', () => {
   });
 
   it('rozepsaná šablona bez sloupce „date“ dostane přesnou hlášku šablony', () => {
-    // sloupec „type“ je poznávací znamení šablony — hlásit u ní obecné
-    // „nepoznáváme“ by bylo horší než říct, který sloupec chybí
-    const result = detectAndParse('type,isin,quantity\nBUY,US0378331005,10');
+    // Poznávacím znamením šablony je „type“ plus některý z jejích vlastních
+    // snake_case sloupců — hlásit u ní obecné „nepoznáváme“ by bylo horší
+    // než říct, který sloupec chybí.
+    const result = detectAndParse(
+      'type,isin,quantity,settlement_date\nBUY,US0378331005,10,2024-06-12',
+    );
     expect(result.broker).toBe('universal');
     expect(result.errors[0]?.message).toContain('date');
+  });
+
+  /**
+   * K7b-01: samotný sloupec `type` za šablonu prohlásil i cizí výpis. Sedm
+   * podporovaných formátů ho má (Anycoin, Coinmate, Kraken, Revolut Invest,
+   * obě generace Revolut Crypto, Schwab, Tastytrade) — a když se u nich minul
+   * sniffer, uživatel četl hlášku NAŠEHO parseru o sloupci `date`, který jeho
+   * broker nikdy nemá. `unrecognized: false` navíc přebilo záchrannou síť,
+   * takže se originál neuložil a provozovateli nepřišlo upozornění.
+   */
+  it('cizí formát se sloupcem „type“ se za šablonu nevydává', () => {
+    const cizi = 'Datum,Type,Popis,Castka\n2026-01-01,Nakup,x,100';
+    const result = detectAndParse(cizi);
+    expect(result.broker).toBe('neznámý formát');
+    expect(result.errors[0]?.message).toContain('nepoznáváme');
+    expect(result.errors[0]?.message).toContain('Datum');
+  });
+
+  it('Kraken bez aclass a balance jde ke svému parseru, ne na šablonu', () => {
+    // přesně soubor z nálezu K7b-01: sniffer ho odmítal, `type` ho poslal na
+    // šablonu a uživatel dostal hlášku o sloupci `date`
+    const kraken = [
+      '"txid","refid","time","type","subtype","asset","amount","fee"',
+      '"L1","R1","2024-03-01 10:00:00","trade","","ZEUR","-1001.60","1.60"',
+      '"L2","R1","2024-03-01 10:00:00","trade","","XXBT","0.02","0"',
+    ].join('\n');
+    const result = detectAndParse(kraken);
+    expect(result.broker).toBe('kraken');
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+  });
+
+  /**
+   * ⚠️ Dvojice `type` + `date`, kterou nález navrhoval, nestačí: změřeno na
+   * fixturách, že `date` má vedle `type` i Revolut (obě rodiny), Schwab Bank
+   * a Tastytrade. Rozhoduje proto celý slovník hlavičky.
+   */
+  it('ani dvojice „type“ + „date“ sama o sobě šablonu nedělá', () => {
+    const cizi = 'Date,Type,Description,Withdrawal,Deposit\n03/01/2024,Deposit,x,,100';
+    expect(detectAndParse(cizi).broker).not.toBe('universal');
+  });
+
+  /**
+   * ⚠️ A přísnější heuristika nesmí odstřihnout ručně sestavenou šablonu jen
+   * s potřebnými sloupci — dokumentovaný postup, kterým se doplňuje historie
+   * k napojenému účtu. Zpřísnění na „musí mít snake_case sloupec“ ji shodilo
+   * (chytily to testy B-3-3 a tenancy), proto rozhoduje CELÝ slovník hlavičky.
+   */
+  it('ručně sestavená šablona jen s potřebnými sloupci se pozná', () => {
+    const result = detectAndParse(
+      'type,date,isin,quantity,price,currency\nBUY,2025-07-30,US05606L1008,5.85,15.61,USD',
+    );
+    expect(result.broker).toBe('universal');
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+  });
+
+  it('šablona s vlastním sloupcem navíc se pozná podle značky', () => {
+    const result = detectAndParse(
+      'type,date,isin,quantity,price,currency,settlement_date,moje_poznamka\n' +
+        'BUY,2025-07-30,US05606L1008,5.85,15.61,USD,2025-08-01,x',
+    );
+    expect(result.broker).toBe('universal');
+    expect(result.transactions).toHaveLength(1);
   });
 
   it('prázdný soubor je prázdné období, ne chyba formátu', () => {

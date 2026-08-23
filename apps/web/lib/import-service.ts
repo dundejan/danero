@@ -40,6 +40,7 @@ import {
   unsupportedFormatMessage,
   XlsxTooLargeError,
   XlsxUnreadableError,
+  UNIVERSAL_TEMPLATE_CSV,
   parseUniversalCsv,
   parseXtbXlsx,
   sniffAnycoinCsv,
@@ -68,6 +69,7 @@ import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { plural } from '@/lib/format';
 import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
+import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
 
 /** Symbol, kterému chybí ISIN/měna (XTB, Fio) — UI nabídne doplnění číselníku. */
@@ -247,6 +249,34 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
 /** Kolik nalezených sloupců vypsat do hlášky, ať zůstane čitelná. */
 const MAX_LISTED_COLUMNS = 12;
 
+/** Slovník sloupců univerzální šablony — odvozený z ní samotné. */
+const TEMPLATE_COLUMNS = new Set(
+  UNIVERSAL_TEMPLATE_CSV.split('\n')[0]!.split(',').map((column) => column.trim().toLowerCase()),
+);
+
+/**
+ * Sloupce, které má JEN univerzální šablona — snake_case hlavičku nepoužívá
+ * žádný podporovaný export brokera. Odvozeno ze šablony, takže nový sloupec
+ * se do seznamu přidá sám (K7b-01).
+ */
+const TEMPLATE_MARKERS = [...TEMPLATE_COLUMNS].filter((column) => column.includes('_'));
+
+/**
+ * Vypadá hlavička jako NAŠE šablona?
+ *
+ * Dvě cesty, protože šablonu lidé používají dvěma způsoby:
+ *  1. **Celá hlavička je z našeho slovníku** — tak vypadá ručně sestavená
+ *     šablona jen s potřebnými sloupci (`type,date,isin,quantity,price,currency`).
+ *  2. **Je v ní aspoň jeden snake_case sloupec šablony** — tak vypadá stažená
+ *     šablona, do které si uživatel přidal vlastní sloupec navíc.
+ */
+function looksLikeTemplate(columns: string[]): boolean {
+  const lower = columns.map((column) => column.trim().toLowerCase()).filter(Boolean);
+  if (!lower.includes('type')) return false;
+  if (lower.every((column) => TEMPLATE_COLUMNS.has(column))) return true;
+  return TEMPLATE_MARKERS.some((marker) => lower.includes(marker));
+}
+
 /**
  * Poslední krok autodetekce: univerzální šablona, nebo poctivé „nepoznáváme“.
  *
@@ -268,10 +298,23 @@ function universalOrUnknown(text: string): ParsedFile {
 
   const header = firstLine(text);
   const columns = parseCsv(header, sniffDelimiter(header)).headers;
-  // Poznávacím znamením je sloupec „type“ — ten mají jen naše šablony. Stačí
-  // sám: rozepsaná šablona, které chybí „date“, tak dostane přesnou hlášku
-  // od parseru šablony místo obecného „nepoznáváme“.
-  if (columns.some((column) => column.toLowerCase() === 'type')) {
+  // Poznávacím znamením je `type` a k tomu důkaz, že hlavička je NAŠE
+  // (`looksLikeTemplate`) — K7b-01.
+  //
+  // ⚠️ Samotný `type` nestačí: sloupec doslova toho jména má sedm cizích
+  // formátů (Anycoin, Coinmate, Kraken, Revolut Invest, obě generace Revolut
+  // Crypto, Schwab, Tastytrade). Když se u kteréhokoli z nich minul sniffer,
+  // prohlásili jsme cizí výpis za NAŠI šablonu — uživatel četl „Chybí povinný
+  // sloupec date“ o sloupci, který jeho broker nikdy nemá, a `unrecognized:
+  // false` navíc přebilo záchrannou síť, takže se originál neuložil a
+  // provozovateli nepřišlo upozornění. Přesně kvůli téhle třídě se ta síť
+  // stavěla.
+  //
+  // ⚠️ A dvojice `type` + `date` taky nestačí, i když ji nález navrhoval:
+  // změřeno na fixturách, že `date` má vedle `type` i Revolut (obě rodiny),
+  // Schwab Bank a Tastytrade. Rozhoduje proto celý slovník hlavičky, ne
+  // jednotlivý sloupec — detail v `looksLikeTemplate`.
+  if (looksLikeTemplate(columns)) {
     return { outcome: parseUniversalCsv(text), unmapped: [], unrecognized: false };
   }
 
@@ -748,18 +791,27 @@ async function runIsolated(
     return await importFile(db, userId, filename, data);
   } catch (error) {
     logEvent('error', 'import.file_failed', { filename, error: errorText(error) });
+    const fromDb = isDatabaseError(error);
     const failed = emptyResult('neznámý formát');
     failed.errors.push({
       line: 1,
       // O tom, že si soubor necháváme, mluví JEN panel v historii — ten se
       // ukáže, jen když se opravdu uložil. Slíbit to tady natvrdo by lhalo
       // uživateli, kterému úschovu odmítl strop případů nebo velikost souboru.
-      message:
-        'Soubor se nepodařilo zpracovat — nejspíš je poškozený nebo neúplně stažený. ' +
-        'Stáhni ho od brokera znovu.',
+      // A radit „stáhni ho od brokera znovu“ u výpadku databáze je taky lež:
+      // se souborem není nic v nepořádku a nové stažení nepomůže (K5-08).
+      message: fromDb
+        ? 'Soubor se nepodařilo uložit — na naší straně selhala databáze. ' +
+          'Se souborem nic není, zkus ho nahrát znovu za chvíli.'
+        : 'Soubor se nepodařilo zpracovat — nejspíš je poškozený nebo neúplně stažený. ' +
+          'Stáhni ho od brokera znovu.',
     });
-    // výjimka v parseru je podezřelá vždycky: buď je soubor rozbitý, nebo se
-    // parser dusí na něčem, co v něm dřív nebylo
-    return importParsed(db, userId, filename, failed, undefined, { unrecognized: true });
+    // Výjimka v PARSERU je podezřelá vždycky: buď je soubor rozbitý, nebo se
+    // parser dusí na něčem, co v něm dřív nebylo. Výpadek DATABÁZE ale o formátu
+    // neříká nic (K5-08) — schovat kvůli němu originál by znamenalo falešný
+    // poplach provozovateli, zbytečně uschovaný cizí výpis (a tedy i osobní
+    // údaje navíc) a uživateli hlášku „soubor je nejspíš poškozený“ o souboru,
+    // který umíme přečíst.
+    return importParsed(db, userId, filename, failed, undefined, { unrecognized: !fromDb });
   }
 }

@@ -133,7 +133,9 @@ describe('zachycení nepřečteného výpisu', () => {
       db,
       'u1',
       'sablona.csv',
-      bytes('type,isin,quantity\nBUY,US0378331005,10'),
+      // `settlement_date` je jeden ze sloupců, které má JEN naše šablona —
+      // podle nich se od 23. 8. 2026 pozná (K7b-01)
+      bytes('type,isin,quantity,settlement_date\nBUY,US0378331005,10,2024-06-12'),
     );
     expect(summary.errors.length).toBeGreaterThan(0);
     expect(summary.unrecognized).toBeUndefined();
@@ -371,5 +373,58 @@ describe('retence', () => {
     await db.delete(user).where(eq(user.id, 'u1'));
     expect(await db.select().from(failedImports)).toHaveLength(0);
     expect(await db.select().from(transactions)).toHaveLength(0);
+  });
+});
+
+/**
+ * K5-08 (levná půlka): výpadek databáze uprostřed importu se tvářil stejně
+ * jako rozbitý výpis.
+ *
+ * Naměřeno v auditu na skutečně zabitém spojení: uživatel četl „Soubor se
+ * nepodařilo zpracovat — nejspíš je poškozený… Stáhni ho od brokera znovu“,
+ * originál se uschoval do `failed_imports` a provozovateli přišel poplach
+ * o formátu, který ve skutečnosti umíme přečíst. Tři nepravdy z jedné příčiny,
+ * a k tomu uložené osobní údaje, které tam nemají co dělat.
+ *
+ * Atomicita importu (osiřelé transakce) je samostatná, dražší položka —
+ * tohle řeší jen rozlišení „spadl parser“ vs. „spadla databáze“.
+ */
+describe('výpadek databáze není vada souboru (K5-08)', () => {
+  const dbChyba = () => {
+    const error = new Error('write CONNECTION_CLOSED');
+    (error as { code?: string }).code = 'CONNECTION_CLOSED';
+    return error;
+  };
+
+  it('chyba z databáze: soubor se neschovává a hláška neobviňuje broker', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const puvodni = db.insert.bind(db);
+    let pad = true;
+    // Soubor je čitelný T212 export — jediné, co selže, je zápis do databáze.
+    (db as unknown as { insert: typeof puvodni }).insert = ((table: never) => {
+      if (pad) {
+        pad = false;
+        throw dbChyba();
+      }
+      return puvodni(table);
+    }) as typeof puvodni;
+
+    const summary = await importFileIsolated(db, 'u1', 't212.csv', bytes(T212_VYPIS));
+    (db as unknown as { insert: typeof puvodni }).insert = puvodni;
+
+    // `unrecognized` je v souhrnu jen když se opravdu schovává (viz importParsed)
+    expect(summary.unrecognized).not.toBe(true);
+    expect(summary.errors[0]!.message).toContain('databáze');
+    expect(summary.errors[0]!.message).not.toContain('poškozený');
+    expect(await listOpenCases(db)).toHaveLength(0);
+  });
+
+  it('výjimka v parseru se schovává dál', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const summary = await importFileIsolated(db, 'u1', 'vypis.csv', bytes(NEZNAMY_VYPIS));
+    expect(summary.unrecognized).toBe(true);
+    expect(await listOpenCases(db)).toHaveLength(1);
   });
 });

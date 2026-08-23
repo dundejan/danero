@@ -358,3 +358,56 @@ describe('vzorová šablona je konzistentní tabulka', () => {
     });
   });
 });
+
+/**
+ * K6a-14: šablona neměla sloupec pro vratku kapitálu, takže uživatel Schwabu
+ * nebo Degira neměl jak přepínač `returnOfCapitalReducesBasis` využít, i když
+ * mu ho R-07h nabízí. Příznak zavádějí jen parsery T212 a IBKR a dopočítat ho
+ * zpětně nejde — kanonický model si původní popis řádku nedrží.
+ */
+describe('R-07h: vratka kapitálu v univerzální šabloně', () => {
+  const radek = (hodnota: string) =>
+    [
+      'type,date,isin,ticker,amount,currency,withholding_tax,return_of_capital',
+      `DIVIDEND,2026-07-15,IE00B4L5Y983,IWDA,40.00,USD,0,${hodnota}`,
+    ].join('\n');
+
+  it('„ano“ označí výplatu jako vratku kapitálu', () => {
+    const result = parseUniversalCsv(radek('ano'));
+    expect(result.errors).toEqual([]);
+    const tx = result.transactions[0]!;
+    expect(tx.type).toBe('DIVIDEND');
+    expect((tx as { returnOfCapital?: boolean }).returnOfCapital).toBe(true);
+  });
+
+  it('prázdné pole i „ne“ nechají běžnou dividendu', () => {
+    for (const hodnota of ['', 'ne', 'no', 'false']) {
+      const tx = parseUniversalCsv(radek(hodnota)).transactions[0]!;
+      // model má `.default(false)`, takže „nevratka“ je false, ne undefined
+      expect((tx as { returnOfCapital?: boolean }).returnOfCapital).toBe(false);
+    }
+  });
+
+  it('anglické varianty se berou taky', () => {
+    for (const hodnota of ['yes', 'true', '1', 'ANO']) {
+      const tx = parseUniversalCsv(radek(hodnota)).transactions[0]!;
+      expect((tx as { returnOfCapital?: boolean }).returnOfCapital).toBe(true);
+    }
+  });
+
+  it('nesrozumitelná hodnota skončí chybou řádku, ne tichým „ne“', () => {
+    const result = parseUniversalCsv(radek('mozna'));
+    expect(result.transactions).toHaveLength(0);
+    expect(result.errors[0]!.message).toContain('return_of_capital');
+  });
+
+  it('stažitelná šablona sloupec nabízí i s ukázkovým řádkem', () => {
+    expect(UNIVERSAL_TEMPLATE_CSV.split('\n')[0]).toContain('return_of_capital');
+    const result = parseUniversalCsv(UNIVERSAL_TEMPLATE_CSV);
+    expect(result.errors).toEqual([]);
+    const vratky = result.transactions.filter(
+      (tx) => (tx as { returnOfCapital?: boolean }).returnOfCapital === true,
+    );
+    expect(vratky).toHaveLength(1);
+  });
+});

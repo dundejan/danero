@@ -224,3 +224,32 @@ describe('sniffPortuCsv (autodetekce)', () => {
     expect(sniffPortuCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);
   });
 });
+
+/**
+ * K7b-15: týž vzorec jako u Krakenu — sniffer vyžadoval `symbol` a `isin`,
+ * které parser mezi povinné nepočítá. Soubor z Portu s ISIN, ale bez sloupce
+ * Symbol, parser přečte (1 transakce, 0 chyb), sniffer ho ale odmítl.
+ */
+describe('sniffer nesmí být přísnější než parser (K7b-15)', () => {
+  const bezSymbolu = [
+    'Datum;Typ;ISIN;Kusy / pozice;Cena;Hodnota;Mena',
+    '01.03.2025;Nákup;IE00B4L5Y983;10;100,00;1000,00;EUR',
+  ].join('\n');
+
+  it('výpis bez sloupce Symbol sniffer pozná a parser přečte', async () => {
+    const { sniffPortuCsv, parsePortuCsv } = await import('../src/portu/csv');
+    expect(sniffPortuCsv(bezSymbolu)).toBe(true);
+
+    const result = parsePortuCsv(bezSymbolu);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+  });
+
+  it('soubor bez sloupce, který parser vyžaduje, sniffer nepozná', async () => {
+    const { sniffPortuCsv } = await import('../src/portu/csv');
+    const bezHodnoty = bezSymbolu
+      .replace(';Hodnota', '')
+      .replace(';1000,00;', ';');
+    expect(sniffPortuCsv(bezHodnoty)).toBe(false);
+  });
+});

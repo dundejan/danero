@@ -25,6 +25,12 @@ export function makeMockFetch(
      * ten posílá T212 jako úplně prázdný soubor.
      */
     truncatedYears?: number[];
+    /**
+     * Roky, u kterých broker vrátí hlavičku, kterou NEUMÍME přečíst (přesně
+     * takhle vypadal přejmenovaný sloupec T212 z 9. 8. 2026). Hodnota je počet
+     * bajtů výplně — nad stropem `keepFailedUpload` se případ neuschová.
+     */
+    unrecognizedYears?: Record<number, number>;
   } = {},
 ) {
   const reportYears = new Map<number, number>();
@@ -73,6 +79,13 @@ export function makeMockFetch(
       // ho nemá co odhalit) — schválně BEZ hlavičky Content-Length
       if (options.truncatedYears?.includes(year)) {
         return new Response(CSV_HEADER, { status: 200 });
+      }
+      const padding = options.unrecognizedYears?.[year];
+      if (padding !== undefined) {
+        return new Response(
+          `Sloupec A;Sloupec B;Sloupec C\n${'x'.repeat(padding)};y;z`,
+          { status: 200 },
+        );
       }
       const hidden = options.emptyExports || (options.onlyYears && !options.onlyYears.includes(year));
       // prázdné roky vrací T212 jako ÚPLNĚ prázdný soubor (ověřeno na reálném API)

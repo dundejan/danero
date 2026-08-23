@@ -65,7 +65,10 @@ export function sniffPortuCsv(text: string): boolean {
   const firstLine = newline === -1 ? text : text.slice(0, newline);
   if (!firstLine.includes(';')) return false;
   const map = new HeaderMap(parseCsv(firstLine, ';').headers.map(normalizeHeader));
-  return [COL.type, COL.symbol, COL.isin, COL.quantity].every((column) => map.has(column));
+  // ⚠️ Přesně ty sloupce, které vyžaduje parser — nic navíc (K7b-15). Se
+  // `symbol` a `isin` v seznamu odmítl sniffer soubor, který parser přečte
+  // (1 transakce, 0 chyb), a uživatel dostal „Formát souboru nepoznáváme".
+  return [COL.date, COL.type, COL.quantity, COL.value].every((column) => map.has(column));
 }
 
 export function parsePortuCsv(text: string): ImportResult {

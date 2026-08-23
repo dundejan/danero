@@ -308,9 +308,13 @@ export async function syncTrading212(
       // až souhrn zná výsledný příznak (parser bez jediné transakce se pozná
       // teprve z počtů) — proto se čte batch.unrecognized, ne to, co šlo dovnitř
       if (batch.unrecognized && !unrecognizedKept) {
-        unrecognizedKept = true;
+        // ⚠️ Příznak až podle NÁVRATOVÉ hodnoty (K6a-12): dřív se nastavil
+        // bezpodmínečně, takže velký export 2026 odmítnutý stropem velikosti
+        // (`failed_import.too_large`) spálil jediný pokus za celý běh — malý
+        // nepoznaný export za 2025 se pak už neuschoval a případ, kvůli
+        // kterému se ta záchrana stavěla, skončil bez jediného vzorku.
         const { keepFailedUpload } = await import('@/lib/failed-imports');
-        await keepFailedUpload(db, {
+        const kept = await keepFailedUpload(db, {
           userId: account.userId,
           batchId: batch.batchId,
           filename: syncBatchFilename.trading212(year),
@@ -320,6 +324,7 @@ export async function syncTrading212(
           source: 'sync',
           platform: 'Trading 212',
         });
+        unrecognizedKept = kept !== null;
       }
       current.added = batch.added;
       current.duplicates = batch.duplicates;

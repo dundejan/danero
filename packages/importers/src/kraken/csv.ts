@@ -74,16 +74,24 @@ const firstLine = (text: string): string => {
   return newline === -1 ? text : text.slice(0, newline);
 };
 
+/** Sloupce, bez kterých se ledgers.csv přečíst NEDÁ — sdílí je sniffer i parser. */
+const REQUIRED_HEADERS = ['txid', 'refid', 'time', 'type', 'asset', 'amount'] as const;
+
 /**
- * Detekce Kraken exportů podle hlavičky: ledgers.csv (txid + refid + aclass +
- * balance) i trades.csv (txid + ordertxid + pair) — trades parser odmítne se
+ * Detekce Kraken exportů podle hlavičky: ledgers.csv (sloupce, které vyžaduje
+ * parser) i trades.csv (txid + ordertxid + pair) — trades parser odmítne se
  * srozumitelnou hláškou, nesmí ale propadnout do univerzální šablony.
+ *
+ * ⚠️ Sniffer je PODMNOŽINA toho, co vyžaduje parser (pravidlo z CLAUDE.md).
+ * Do 23. 8. 2026 tu navíc stálo `aclass` a `balance`, která parser NIKDY nečte
+ * (všechny tři výskyty byly ve snifferu). Soubor bez nich se dal přečíst
+ * — 1 transakce, 0 chyb — ale sniffer ho odmítl a protože Kraken má sloupec
+ * doslova `type`, propadl až na univerzální šablonu (nález K7b-01).
  */
 export function sniffKrakenCsv(text: string): boolean {
   if (text.trim() === '') return false;
   const headers = new Set(parseCsv(firstLine(text)).headers.map(normalizeHeader));
-  const ledgers =
-    headers.has('txid') && headers.has('refid') && headers.has('aclass') && headers.has('balance');
+  const ledgers = REQUIRED_HEADERS.every((column) => headers.has(column));
   const trades = headers.has('txid') && headers.has('ordertxid') && headers.has('pair');
   return ledgers || trades;
 }
@@ -100,8 +108,6 @@ interface TradeLeg {
   feeRaw: string;
   raw: string;
 }
-
-const REQUIRED_HEADERS = ['txid', 'refid', 'time', 'type', 'asset', 'amount'] as const;
 
 export function parseKrakenCsv(text: string): ImportResult {
   const result = emptyResult(KRAKEN_BROKER);

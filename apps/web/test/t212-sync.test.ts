@@ -452,3 +452,47 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
     },
   );
 });
+
+/**
+ * K6a-12: příznak „nepoznaný export už jsme si schovali“ se nastavoval bez
+ * ohledu na to, jestli se uschování povedlo.
+ *
+ * Naměřeno v auditu: export 2026 o 10,3 MB odmítne strop velikosti
+ * (`failed_import.too_large`), neuloží se nic — ale příznak se nastavil, takže
+ * malý nepoznaný export za 2025 se už nezkusil a běh skončil s nulou vzorků.
+ * Přitom je to přesně situace, kvůli které se ta záchrana stavěla: přejmenovaný
+ * sloupec propadne u KAŽDÉHO roku a u aktivního obchodníka je ten největší
+ * export vždycky ten letošní.
+ */
+describe('nepoznaný export ze syncu: neúspěšné uschování nespálí pokus (K6a-12)', () => {
+  it(
+    'obří rok se neuschová, menší rok ano',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u-keep', name: 'Test', email: 'keep@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc-keep',
+        userId: 'u-keep',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      // 2026 přes strop 8 MB, 2025 malý — obojí s hlavičkou, kterou neznáme
+      const mock = makeMockFetch({
+        unrecognizedYears: { 2026: 9 * 1024 * 1024, 2025: 10 },
+      });
+      await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+
+      const { listOpenCases } = await import('@/lib/failed-imports');
+      const cases = await listOpenCases(db);
+      expect(cases).toHaveLength(1);
+      expect(cases[0]!.filename).toBe('t212-api-2025.csv');
+    },
+  );
+});
