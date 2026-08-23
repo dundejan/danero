@@ -122,7 +122,8 @@ export default function PrivacyPage() {
           <strong>Zálohy databáze uchováváme nejvýš 8 týdnů</strong> — při každé nové
           záloze se ty starší než 56 dní automaticky mažou, takže smazaná data mizí
           i ze záloh do dvou měsíců. Databázi navíc provozuje Neon, který drží krátkou
-          historii pro obnovu do bodu v čase (v řádu dnů). Když se odhlásíš z e-mailových
+          historii pro obnovu do bodu v čase — v tarifu, který používáme, je to
+          6 hodin. Když se odhlásíš z e-mailových
           upozornění, přestaneme ti posílat hlídací e-maily. Nepřestanou tím chodit
           zprávy, bez kterých by služba nefungovala nebo bys přišel o peníze:
           potvrzení objednávky, upomínka před automatickou obnovou předplatného

@@ -88,11 +88,13 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   s diakritikou rozešla s TypeScriptem (`ČEZ`: SQL fd99…, TS 289d…) — a `isin`
   je v modelu obyčejný string, takže si ho uživatel přes univerzální šablonu
   zapíše, jak chce.
-- **Ostrý Postgres i bez Dockeru**: v téhle WSL distribuci `docker` není, ale
-  jsou nainstalované klastry (`/usr/lib/postgresql/16/bin`). Vlastní instance:
-  `initdb -D <dir> -U postgres --auth=trust` a `pg_ctl -D <dir> -o "-p 55433 -k
-  /tmp/nejaky-kratky-adresar"` (socket delší než 107 znaků server odmítne, takže
-  scratchpad na `-k` nestačí).
+- **Ostrý Postgres: docker na tomhle stroji JE** (ověřeno 23. 8. 2026 — `docker ps`
+  i `docker images` běží; dřívější poznámka „docker tu není" byla zastaralá
+  a `scripts/db.sh backup` si bez něj kontejner s `pg_dump` nepůjčí).
+  Když se přesto hodí instance bez Dockeru, jsou nainstalované i klastry
+  (`/usr/lib/postgresql/16/bin`): `initdb -D <dir> -U postgres --auth=trust`
+  a `pg_ctl -D <dir> -o "-p 55433 -k /tmp/nejaky-kratky-adresar"` (socket delší
+  než 107 znaků server odmítne, takže scratchpad na `-k` nestačí).
 - **Migrace s víc příkazy se musí dělit `--> statement-breakpoint`.** Bez toho
   je drizzle pošle jako jeden prepared statement a driver odmítne
   (`cannot insert multiple commands into a prepared statement`) — spadne

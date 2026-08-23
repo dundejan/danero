@@ -227,6 +227,12 @@ describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)',
     expect(soukromi).toMatch(/obnova hesla/);
   });
 
+  it('K4-02b: soukromí neslibuje obnovu „v řádu dnů“ — Neon Free drží 6 hodin', async () => {
+    const soukromi = await read('app/soukromi/page.tsx');
+    expect(soukromi).not.toMatch(/v řádu dnů/);
+    expect(soukromi).toMatch(/6 hodin/);
+  });
+
   it('E-3-12: kalkulačka netvrdí, že překročení 50k vyhazuje z paušálního režimu', async () => {
     const kalkulacka = await read('app/kalkulacka/page.tsx');
     expect(kalkulacka).not.toMatch(/smí mít max\. 50 000/);
