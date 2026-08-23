@@ -222,7 +222,29 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
 
   **Mez významnosti (proč 100 Kč).** Šum má tvrdý strop: obecná varianta zaokrouhluje na sta dolů jediný základ (§ 16 odst. 2), varianta § 16a **dva** základy odděleně, takže § 16a může vyjít nanejvýš o 100 Kč základu levněji — při horní sazbě 23 % je to **max. 23 Kč** čistě zaokrouhlovacího rozdílu. Doložený případ (nález A1-04): základ 1 676 100 Kč, tedy 48 Kč nad hranicí 2025 → obecná daň 251 418,84 Kč, § 16a 251 400 Kč, rozdíl **18,84 Kč**, z toho 15 Kč zaokrouhlení a jen 3,84 Kč skutečné progrese. Mez 100 Kč šum bezpečně přesahuje (odpovídá ~1 250 Kč příjmu § 8 skutečně v pásmu 23 %) a zároveň zůstává tak nízko, aby nezakryla reálnou úsporu. Obě varianty jsou v UI vidět vždy — mez řídí jen doporučení, nic neschovává.
 
-  Práh **nemá smysl posouvat až za slevy na dani**: slevy ani nezdanitelné části engine nezná (závisí na § 7 a na osobní situaci mimo evidovaná data), takže by se porovnávalo s vymyšleným číslem. Uživatel s obecným základem nad 1,68 mil. Kč má navíc slevu na poplatníka spotřebovanou už příjmy § 7.
+  Práh **nemá smysl posouvat až za slevy na dani**: slevy ani nezdanitelné části engine nezná (závisí na § 7 a na osobní situaci mimo evidovaná data), takže by se porovnávalo s vymyšleným číslem. Doporučení ale musí ztrátu slevy **pojmenovat** — viz R-07i.
+- **R-07i Doporučení § 16a musí počítat se ztrátou slevy na poplatníka.** Přesun
+  dividend a úroků do samostatného základu sníží daň podle § 16 — a slevu podle
+  § 35ba lze uplatnit **jen proti ní** (R-14b). Kdo kromě investic jiné příjmy
+  nemá, může tím o nevyčerpaný zbytek slevy přijít, a § 16a ho pak vyjde dráž,
+  než kolik ukazuje prosté porovnání dvou daní.
+
+  Doložený případ: základ § 10 nulový, zahraniční dividendy 1,8 mil. Kč.
+  Obecná varianta: daň § 16 ≈ 297 000 Kč − sleva 30 840 Kč. Varianta § 16a:
+  daň § 16 = 0 (sleva propadá celá) + daň § 16a 270 000 Kč. Rozdíl proti
+  porovnání bez slevy je celých 30 840 Kč.
+
+  **Danero doporučení nemění, ale varuje s čísly** (`SEPARATE_16A_CREDIT_LOSS`,
+  úroveň WARNING) vždy, když je § 16a doporučeno a daň podle § 16 ve variantě
+  § 16a je nižší než sleva na poplatníka. Proč jen varování a ne změna
+  doporučení: jestli se sleva spotřebuje na § 6 nebo § 7, Danero **nevidí**
+  — rozhodnout to umí jen poplatník. Předstírat, že o tom víme, by znamenalo
+  poradit špatně zaměstnanci i OSVČ.
+
+  ⚠️ Do 23. 8. 2026 tuhle ztrátu **maskoval vadný ř. 91** v generátoru XML
+  (počítal nevyčerpaný zbytek slevy proti dani § 16a, viz R-14). Opravit se to
+  proto muselo naráz — samotná oprava ř. 91 by ztrátu poprvé zviditelnila
+  v odevzdaném přiznání, aniž by o ní kdokoli uživatele varoval.
 - **R-07e** Prokazování: výpisy brokera FS v praxi akceptuje, není nárokové — dokumentační upozornění.
 - **R-07g České úroky**: úrok ze zdroje v ČR bývá vypořádaný srážkou u zdroje
   (§ 36 odst. 2 — mimo jiné úrok z účtu, který není určen k podnikání), a pak se
@@ -270,7 +292,7 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   1. **Přebytek nad nabývací cenu** se zdaní jako dividenda podle R-07b
      (WARNING `RETURN_OF_CAPITAL_EXCESS`). Věcně by šlo o příjem podle § 10,
      ale ten by vyžadoval fiktivní prodej bez protiplnění; § 8 je jednodušší
-     a nikdy nevyjde nižší.
+     a nikdy nevyjde nižší. **Přebytek se měří NA KUS, ne na pozici — R-07j.**
   2. **Bez otevřené pozice** (kusy už jsou prodané nebo výplata nemá ISIN) se
      daní celá částka podle R-07b (WARNING `RETURN_OF_CAPITAL_NO_POSITION`) —
      nabývací cena, kterou by měla snížit, už neexistuje.
@@ -286,6 +308,39 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   Snížení nabývací ceny se propisuje do reportu jako každá jiná úprava lotu
   (INFO `RETURN_OF_CAPITAL_REDUCED_BASIS` s částkou), takže je průkazné, proč
   má pozice jinou nabývací cenu než nákupní doklad.
+
+- **R-07j Přebytek vratky se měří NA KUS, ne na celou pozici.** Vratka kapitálu
+  se vyplácí na jeden kus (`per share`), takže se i porovnává s tím, co ten kus
+  stál: sníží nabývací cenu každého otevřeného lotu **až na nulu** a část, která
+  cenu lotu přesáhne, se zdaní podle mantinelu 1. Kusy z jiných, dražších lotů
+  do toho nevstupují.
+
+  Rozdíl je vidět na dvou pozicích se **stejnou** nabývací cenou 100 100 Kč
+  a vratkou 20 000 Kč: rozřezaná na lot 100 ks à 1 Kč a lot 100 ks à 1 000 Kč
+  dá základ § 8 = 9 900 Kč, kdežto jediný lot 200 ks à 500,50 Kč dá nulu.
+
+  **Proč na kus, a proč z toho nebude přepínač:**
+  - Měření na pozici by uvnitř jedné pozice **skrytě průměrovalo nabývací ceny
+    napříč loty**, což je přesně to, co R-05c (párování FIFO/LIFO) zakazuje —
+    každý lot má vlastní pořizovací cenu a vlastní datum nabytí.
+  - Na kus je vždy ≥ na pozici, takže daň **nikdy nepodhodnotí**. A není to jen
+    posun v čase: kdyby se přebytek nezdanil teď a kusy se prodaly po splnění
+    časového testu, nezdanil by se **nikdy**. To odporuje deklarovanému
+    „mantinely všechny konzervativním směrem".
+  - Analogie v ZDP: § 36 odst. 3 věta druhá u snížení základního kapitálu
+    porovnává výplatu s nabývací cenou **podílu**, ne s úhrnem majetku
+    poplatníka. Zahraniční prameny, které tenhle institut popisují podrobněji,
+    počítají stejně: IRC § 301(c) a Treas. Reg. § 1.1012-1(c) měří základ
+    **per share** (a per lot, existuje-li adekvátní identifikace),
+    *Johnson v. United States* 435 F.2d 1257 (5th Cir. 1971) totéž.
+
+  Sporný výklad, u kterého by přepínač dával smysl, to není: mírnější čtení
+  by bylo věcně chybné, ne jen odvážnější. **Jistota střední** (analogie, ne
+  přímá úprava).
+
+  ⚠️ Hláška `RETURN_OF_CAPITAL_EXCESS` proto musí mluvit o **kusu**, ne o pozici.
+  Do 23. 8. 2026 tvrdila „přesáhla nabývací cenu pozice o 9 900 Kč" u pozice
+  s nabývací cenou 100 100 Kč — číslo, které v ní nemá oporu (nález K6b-03).
 
   ⚠️ **Přepínač působí jen na výplaty, které jsou jako vratka OZNAČENÉ.**
   Příznak zavádějí parsery (Trading 212 `Dividend (Return of capital)`, IBKR
@@ -703,6 +758,33 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   kde nemusí mít proti čemu jít, a podle § 10/4 propadá. To je legitimní
   bezpečný default, ale aplikace na něj musí upozornit **před koncem roku**,
   ne až v březnu u přiznání (obdoba `DERIVATIVE_BUYBACK_WITHOUT_INCOME`, R-12j).
+- **R-13k Short čerpá limity 50k a 20k, ale ne dřív, než přestane být
+  osvobozený**: je-li příjem ze shortu příjmem z úplatného převodu CP (R-13a),
+  vstupuje do všech úhrnů, které se počítají z **hrubých zdanitelných příjmů**:
+  50 000 Kč pro daň rovnou paušální dani (§ 7a odst. 1 písm. b bod 4),
+  20 000 Kč u zaměstnance (§ 38g odst. 2) i 50 000 Kč obecné povinnosti podat
+  přiznání (§ 38g odst. 1). Plyne to přímo z R-08d („neosvobozené **tržby**
+  z prodeje CP") a z R-13a („týž druh").
+
+  ⚠️ **Podmínkou je, že příjem OSVOBOZENÝ NENÍ.** Padne-li celý úhrn prodejů CP
+  pod 100 000 Kč (R-13e), je osvobozený i short — a osvobozený příjem se do
+  limitů nepočítá vůbec (R-08c, § 4/1 t). Měřák proto musí sáhnout na
+  `exemptUnder100k`, ne na hrubou tržbu: jinak by u drobného investora
+  s prodejem za 30 000 Kč hlásil „prolomený limit", který ve skutečnosti nenastal.
+
+  **Do limitu jde `shortSales.incomeCzk`, ne `proceedsCzk`.** Při výchozím
+  nastavení jsou obě čísla stejná; jenže `proceedsCzk` je hrubá tržba prodeje,
+  kdežto `incomeCzk` je částka, kterou druh v daném roce skutečně zdaňuje.
+  Použít tržbu by limit nadhodnotilo. **Jistota vysoká** (§ 7a, § 38g,
+  § 4/1 t) v návaznosti na R-13a).
+
+  ⚠️ Do 23. 8. 2026 engine tržby ze shortu do žádného z těch tří limitů
+  nepočítal — a odporoval si sám: u téhož portfolia vyčíslil daň z § 10 na
+  6 000 Kč a zároveň tvrdil, že limit 50 000 Kč je nevyčerpaný. Měřák stejně
+  jako simulátor (funkce, jejímž jediným smyslem je ukázat dopad **před**
+  obchodem) hlásil bezpečný stav u účtu, který limit prolomil. Naměřeno na
+  2 000 náhodných portfoliích: **462× podhodnocený měřák, 4× překlopený
+  verdikt**.
 
 **Implementační poznámky:**
 - Výpočet je v `packages/engine/src/basis/shortSales.ts`; do inventáře lotů
@@ -731,6 +813,52 @@ Zdroje: § 3/4, § 4/1 t) a u), § 5/1, § 10/1 b), § 10/3 a), § 10/4, § 10/5
 § 2390 ObčZ (zápůjčka zastupitelné věci); tiskopis 5405-P2 vzor 21 (číselník);
 pokyn GFŘ D-59 ke § 10/4 (jednotlivý druh příjmu). Negativní zjištění: žádné
 stanovisko GFŘ, KOOV ani judikát NSS ke spot shortu; Taxomat ho nepodporuje.
+
+---
+
+## R-14 Výpočet daně, slevy a hranice pro doplatek (§ 16ab, § 35ba, § 35, § 38b)
+
+Pravidlo, které do 23. 8. 2026 žilo jen v komentáři v `apps/web/lib/epo.ts` — a žilo
+tam špatně. Řetězec „daň § 16 → slevy → daň § 16a → kolik zbývá doplatit" rozhoduje
+o čísle, které poplatník odevzdá finančnímu úřadu, takže patří sem.
+
+- **R-14a Součet dvou daní (§ 16ab odst. 1).** Daň poplatníka = **daň podle § 16
+  snížená o slevy na dani** + **daň podle § 16a**. Pořadí je závazné: slevy se
+  odečítají od daně podle § 16, teprve pak se přičítá daň ze samostatného základu.
+- **R-14b Sleva se na § 16a NEUPLATNÍ (§ 35ba odst. 1).** Slevy podle § 35ba se
+  odečítají „od daně vypočtené **podle § 16**", ne od celkové daně. Nevyčerpaný
+  zbytek slevy na poplatníka (2025 i 2026: **30 840 Kč**) se tedy do daně ze
+  samostatného základu **nepřelévá**.
+- **R-14c Sleva daň nesnižuje pod nulu (§ 35 odst. 5).** „Daň … lze snížit … nejvýše
+  do nuly." Sleva na poplatníka není daňový bonus, přeplatek z ní nevzniká.
+  Mezikrok se proto zaokrouhluje na nulu **hned**, ne až na konci řetězce.
+- **R-14d Vzorec.** `daň = max(0, daň§16 − slevy) + daň§16a`. V tiskopisu DPFDP7:
+  ř. 71 = `max(0, ř.60 − 30 840)`, ř. 74a = daň § 16a (ř. 414 Přílohy 4),
+  ř. 75 = ř. 74 + ř. 74a, ř. 77 = ř. 75 (bez daňového bonusu).
+- **R-14e Hranice 200 Kč (§ 38b).** „Daň … se nepředepíše a neplatí, **nepřesáhne-li
+  200 Kč**." Do řádku „zbývá doplatit" (ř. 91) jde proto `ř.77 ≤ 200 ? 0 : ř.77`.
+  Změřeno sondou na zkušební podatelně EPO: ř. 77 = 60 / 195 / 199 / **200** → čeká 0;
+  ř. 77 = **201** / 210 / 300 → čeká plnou hodnotu.
+- **R-14f Druhou větev § 38b NEIMPLEMENTUJEME.** Táž věta osvobozuje od placení
+  i poplatníka, jehož **roční příjmy nepřesáhnou 15 000 Kč** (resp. 50 000 Kč
+  ve znění od 2023). Podatelna ji na ř. 91 neuplatňuje — podání s příjmy 40 000 Kč
+  a daní 6 000 Kč prošlo bez výhrad. Podmínka se navíc váže na **veškeré** příjmy
+  poplatníka, které Danero nevidí (§ 6, § 7 mimo evidovaná data). Uplatnit ji sami
+  by znamenalo doplnit poplatníkovi nulu tam, kde má platit.
+
+⚠️ **Proč to sem muselo přijít.** Kód počítal ř. 91 jako
+`max(0, ř.60 − 30 840 + ř.74a)`, tedy s nevyčerpaným zbytkem slevy proti dani § 16a.
+Podatelna takové XML **odmítá** (`[N] kc_zbyvpred :: Oddíl 7/ř.91 — hodnota položky
+se nerovná hodnotě příslušného vzorce`) a je to i věcně proti § 35ba. Vzorec se do
+kódu dostal z **jediného** pokusu, jehož ř. 77 = 30 Kč — tedy uvnitř okna § 38b, kde
+oba vzorce shodně dávají nulu. Testy i kontrola podatelnou to minuly ze stejného
+důvodu: vzorek `validate-epo.mjs` měl ř. 60 = 52 845 > 30 840 (obě formule splynou)
+a fixtura `epo.test.ts` ř. 77 = 30 ≤ 200. **Vzorek, který vadu pozná, musí mít
+zároveň `ř.60 < 30 840` a `ř.414 > 200 Kč`.**
+
+Zdroje: § 16ab odst. 1, § 35ba odst. 1, § 35 odst. 5, § 38b ZDP; tiskopis DPFDP7
+vzor 7 (kontrolní vzorce oddílu 7); 77 podání na zkušební podatelnu EPO
+(`adisspr.mfcr.cz`) z 23. 8. 2026.
 
 ---
 
