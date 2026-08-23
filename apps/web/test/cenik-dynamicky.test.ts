@@ -148,6 +148,53 @@ describe('omezení XML pro EPO je vidět před platbou (E-3-04)', () => {
       expect(source).not.toContain(`roky ${rok} a`); // roky se skládají z konstanty
     }
   });
+
+  /**
+   * K3-13: tarif hlídání psal „Všechno z podkladů — za všechny daňové roky",
+   * což omezení nejen neopakovalo, ale POPÍRALO — a stálo to v checkoutu,
+   * o řádek pod tarifem, který roky vyjmenovává.
+   */
+  it('tarif hlídání omezení XML neopírá, ale opakuje', async () => {
+    const { PLANS } = await import('@/lib/plans');
+    const { yearList } = await import('@/lib/format');
+    const { EPO_SUPPORTED_YEARS } = await import('@/lib/epo');
+    const hlidani = PLANS.find((plan) => plan.id === 'subscription')!;
+    const vsechnyRoky = hlidani.features.filter((f) => f.includes('všechny daňové roky'));
+    expect(vsechnyRoky).toHaveLength(1);
+    expect(vsechnyRoky[0]).toContain(yearList(EPO_SUPPORTED_YEARS));
+  });
+
+  /**
+   * K1-02: hlídací e-maily byly jediné místo, kde se XML slibovalo natvrdo —
+   * lednové shrnutí i obě upomínky ho nabízely i za rok, který EPO neumí.
+   */
+  it('kalendářní upozornění slibují XML jen za podporované roky', async () => {
+    const { calendarCandidates } = await import('@/lib/notifications');
+    const { EPO_SUPPORTED_YEARS } = await import('@/lib/epo');
+    const podporovany = Math.max(...EPO_SUPPORTED_YEARS);
+    const nepodporovany = podporovany + 1;
+
+    const textyZaRok = (taxYear: number): string =>
+      [
+        ...calendarCandidates({
+          today: `${taxYear + 1}-01-05`,
+          hadActivityLastYear: true,
+          selfEmployed: false,
+          deadlineLeadDays: 30,
+        }),
+        ...calendarCandidates({
+          today: `${taxYear + 1}-04-10`,
+          hadActivityLastYear: true,
+          selfEmployed: false,
+          deadlineLeadDays: 30,
+        }),
+      ]
+        .map((n) => `${n.title} ${n.body}`)
+        .join(' ');
+
+    expect(textyZaRok(podporovany)).toContain('XML');
+    expect(textyZaRok(nepodporovany)).not.toContain('XML');
+  });
 });
 
 /**

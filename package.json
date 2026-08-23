@@ -12,7 +12,7 @@
     "test:e2e": "pnpm --filter @danero/web test:e2e",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "validate:epo": "tsx scripts/validate-epo.mjs",
+    "validate:epo": "tsx --tsconfig apps/web/tsconfig.json scripts/validate-epo.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

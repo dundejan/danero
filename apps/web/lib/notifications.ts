@@ -3,6 +3,7 @@ import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } 
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
 import {
   DEFAULT_NOTIFICATION_RULES,
@@ -130,7 +131,10 @@ export function computeNotificationCandidates(args: {
     },
     {
       key: '100k',
-      applicable: true,
+      // K6b-02: `true` natvrdo posílalo měřák „X ze 100 000" i poplatníkovi
+      // s obchodním majetkem, který na osvobození podle § 4/1 t) nárok nemá
+      // (R-02f) — v přehledu se přitom správně nezobrazoval.
+      applicable: result.limits.limit100k.applicable,
       status: result.limits.limit100k,
       label: 'limit 100 000 Kč pro osvobození prodejů',
       // fakt bez imperativu: individualizovaný pokyn („zvaž, počkej“) je za
@@ -248,6 +252,14 @@ export function calendarCandidates(args: {
   const year = Number(today.slice(0, 4));
   const taxYear = year - 1;
   const { paper, electronic, advisor } = filingDeadlines(taxYear);
+  // K1-02: XML se smí slibovat jen za roky, pro které oficiální struktura DPFDP7
+  // existuje. Ceník, /podminky i report si to odvozují z EPO_SUPPORTED_YEARS —
+  // e-maily byly jediné místo, kde to stálo natvrdo, takže lednové shrnutí za
+  // rok 2026 slibovalo XML, které `/api/epo` odmítne vygenerovat.
+  const xmlDostupne = EPO_SUPPORTED_YEARS.includes(taxYear);
+  const xmlSlib = xmlDostupne ? ' i XML pro mojedane.cz' : '';
+  const xmlOdkaz = xmlDostupne ? ' — XML export najdeš v reportu' : '';
+  const xmlVeta = xmlDostupne ? ' XML pro mojedane.cz vygeneruješ v reportu.' : '';
   const out: NotificationCandidate[] = [];
   if (hadActivityLastYear && today >= `${year}-01-01` && today <= `${year}-01-31`) {
     const deadlineNote = selfEmployed
@@ -257,7 +269,7 @@ export function calendarCandidates(args: {
       dedupeKey: `rocni|${taxYear}`,
       type: 'YEAR_SUMMARY',
       title: `Podklady za rok ${taxYear} jsou připravené`,
-      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu i XML pro mojedane.cz. ${deadlineNote}`,
+      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu${xmlSlib}. ${deadlineNote}`,
     });
   }
   // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
@@ -273,7 +285,7 @@ export function calendarCandidates(args: {
       type: 'DEADLINE',
       urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín přiznání: ${czDate(paper)}`,
-      body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)} — XML export najdeš v reportu.`,
+      body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)}${xmlOdkaz}.`,
     });
   }
   if (
@@ -289,7 +301,7 @@ export function calendarCandidates(args: {
       type: 'DEADLINE',
       urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín elektronického přiznání: ${czDate(electronic)}`,
-      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}. XML pro mojedane.cz vygeneruješ v reportu.${extra}`,
+      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}.${xmlVeta}${extra}`,
     });
   }
   return out;

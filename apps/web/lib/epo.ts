@@ -1,5 +1,6 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import type { EngineOptions, TaxYearResult } from '@danero/engine';
+import { TAXPAYER_CREDIT_CZK, type EngineOptions, type TaxYearResult } from '@danero/engine';
+import { base10Values, priloha2, wholeCzkParts } from '@/lib/priloha2';
 
 /**
  * Generátor XML písemnosti DPFDP7 (přiznání k dani z příjmů fyzických osob)
@@ -29,11 +30,44 @@ export interface EpoPersonalData {
   email?: string;
 }
 
+/**
+ * Typ přiznání (položka `dap_typ`, číselník tiskopisu DPFDP7):
+ * `B` řádné · `O` opravné (před uplynutím lhůty) · `D` dodatečné ·
+ * `E` opravné dodatečné. XSD připouští všechny čtyři.
+ */
+export type EpoDapTyp = 'B' | 'O' | 'D' | 'E';
+
+/** Typy, u kterých podatelna vyžaduje 6. oddíl (dodatečné přiznání). */
+export const DODATECNE_DAP_TYPY: readonly EpoDapTyp[] = ['D', 'E'];
+
+/**
+ * 6. oddíl tiskopisu — vyplňuje se JEN u dodatečného přiznání.
+ *
+ * ⚠️ Změřeno na zkušební podatelně 23. 8. 2026: `dap_typ="D"` bez tohohle
+ * oddílu podání neprojde (`[N] Oddíl 6/ř.79`, `[N] Oddíl 6/ř.82`). Backlog
+ * počítal jen s datem zjištění — podatelna ale kontroluje i vzorce
+ * ř. 80 = ř. 79 − ř. 78 a ř. 83 = ř. 82 − ř. 81, takže poslední známou daň
+ * a ztrátu musí zadat uživatel: pocházejí z dřív podaného přiznání, které
+ * Danero nevidí (mohlo obsahovat i § 6 a § 7).
+ */
+export interface EpoDodatecne {
+  /** Den zjištění důvodů pro podání (ISO `YYYY-MM-DD`) — § 141 odst. 1 DŘ. */
+  zjistenoDne: string;
+  /** ř. 78 — poslední známá daň z dříve podaného přiznání. */
+  posledniZnamaDanCzk?: string;
+  /** ř. 81 — poslední známá daňová ztráta. */
+  posledniZnamaZtrataCzk?: string;
+}
+
 export interface EpoInput {
   year: number;
   result: TaxYearResult;
   personal: EpoPersonalData;
   varianta?: 'GENERAL' | 'SEPARATE_16A';
+  /** Typ přiznání; výchozí `B` (řádné). */
+  dapTyp?: EpoDapTyp;
+  /** 6. oddíl — povinný u `D` i `E`. */
+  dodatecne?: EpoDodatecne;
 }
 
 /** Roky, pro které oficiální struktura DPFDP7 existuje (kritická kontrola EPO na položce rok). */
@@ -49,8 +83,45 @@ export const PROGRESSIVE_THRESHOLD: Record<number, string> = {
   2025: '1676052',
 };
 
-/** Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO na ř. 64 vyžaduje přesně 30 840 Kč. */
-const SLEVA_POPLATNIK = d('30840');
+/**
+ * Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO na ř. 64 vyžaduje
+ * přesně 30 840 Kč. Jediná definice je v enginu, ať se dvě kopie nerozejdou.
+ */
+const SLEVA_POPLATNIK = d(TAXPAYER_CREDIT_CZK);
+
+/** Nepovinná částka z formuláře — prázdné pole znamená nulu, ne chybu. */
+function castka(value: string | undefined, popis: string): Money {
+  if (value === undefined || value.trim() === '') return ZERO;
+  const parsed = new Decimal(value.replace(/\s/g, '').replace(',', '.'));
+  if (!parsed.isFinite()) throw new EpoInputError(`Zadej ${popis} jako číslo v korunách.`);
+  return parsed;
+}
+
+/** ISO datum → tvar, ve kterém ho čekají písemnosti EPO („5.8.2026"). */
+function epoDate(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) throw new EpoInputError(`Datum ${iso} není ve tvaru RRRR-MM-DD.`);
+  return `${Number(match[3])}.${Number(match[2])}.${match[1]}`;
+}
+
+/** § 38b: daň se nepředepíše a neplatí, nepřesáhne-li 200 Kč (R-14e). */
+const HRANICE_38B = d('200');
+
+/**
+ * Vada VSTUPU, kterou uživatel umí odstranit — nepodporovaný rok, kód státu
+ * mimo číselník. Hláška je psaná pro něj a smí se mu ukázat.
+ *
+ * Vlastní typ existuje proto, že `/api/epo` do 23. 8. 2026 každou výjimku
+ * zabalil do „Export se nepodařil. Zkus to prosím znovu." — u deterministické
+ * vady je „zkus to znovu" nesmyslná rada a uživatel přišel i o jedinou větu,
+ * která mu říkala, CO má opravit (nález K3-06).
+ */
+export class EpoInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EpoInputError';
+  }
+}
 
 // ---------- zaokrouhlování (výhradně Decimal, žádné number) ----------
 
@@ -182,97 +253,48 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     // dva různé důvody: rok NAD podporované (struktura teprve vyjde) × rok POD
     // nejstarší podporovaný (starší struktury záměrně nepodporujeme)
     const minYear = Math.min(...EPO_SUPPORTED_YEARS);
-    throw new Error(
+    throw new EpoInputError(
       year < minYear
         ? `Roky před ${minYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře jsou v reportu.`
         : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
     );
   }
   const varianta = input.varianta ?? result.tax.recommended;
+  const dapTyp: EpoDapTyp = input.dapTyp ?? 'B';
+  const jeDodatecne = DODATECNE_DAP_TYPY.includes(dapTyp);
+  // Dodatečné přiznání se podává do konce měsíce následujícího po měsíci, kdy
+  // poplatník důvody zjistil (§ 141 odst. 1 daňového řádu) — bez toho data
+  // nejde lhůtu posoudit a podatelna položku vyžaduje.
+  if (jeDodatecne && !input.dodatecne?.zjistenoDne) {
+    throw new EpoInputError(
+      'U dodatečného přiznání musíš vyplnit den, kdy jsi zjistil důvody pro jeho podání — bez něj ho podatelna nepřijme.',
+    );
+  }
+  const dZjist = jeDodatecne ? epoDate(input.dodatecne!.zjistenoDne) : undefined;
+  const poslednDan = castka(input.dodatecne?.posledniZnamaDanCzk, 'poslední známou daň');
+  const poslednZtrata = castka(
+    input.dodatecne?.posledniZnamaZtrataCzk,
+    'poslední známou daňovou ztrátu',
+  );
   const threshold = d(PROGRESSIVE_THRESHOLD[year]!);
 
-  /**
-   * Rozdělení nezaokrouhlených dílčích základů do celých korun formuláře.
-   *
-   * Formulář nese jen celé koruny, jenže § 16 zaokrouhluje ZÁKLAD DANĚ jedinkrát —
-   * a to na celá sta **dolů**. Když se každý dílčí základ zaokrouhlí zvlášť
-   * matematicky, jejich úhrn může stovku přeskočit nahoru a daň se pak počítá
-   * ze základu, který § 16 zaokrouhluje pryč (report ukazoval 52 092 Kč, XML
-   * 52 107 Kč — nález A3-08; jiné zaokrouhlení základu než na sta dolů žádný
-   * předpis neukládá, § 146 odst. 1 daňového řádu zaokrouhluje až daň).
-   *
-   * Celé koruny proto přidělujeme průběžně: i-tá položka dostane tolik, aby
-   * součet prvních i položek byl celá koruna **dolů** z jejich nezaokrouhleného
-   * součtu. Úhrn na ř. 41 pak odpovídá celé koruně dolů z nezaokrouhleného
-   * základu a `roundBaseDownTo100` nad ním dá do haléře tentýž základ jako
-   * engine v reportu i v simulátoru.
-   */
-  const celeKorunyPodleUhrnu = (values: Money[]): Money[] => {
-    let exact = ZERO;
-    let allocated = ZERO;
-    return values.map((value) => {
-      exact = exact.plus(value);
-      const cil = exact.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
-      const part = cil.sub(allocated);
-      allocated = cil;
-      return part;
-    });
-  };
-
   // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
-  // Druhy se posuzují samostatně (R-10c/R-12l, pokyn D-59 k § 10/4): výdaje
-  // každého druhu max. do výše jeho příjmů, úhrn = součet kladných rozdílů.
-  // pořadí řádků VetaJ v XML = pořadí tady (D → C → F)
-  // `kod10 = 'Z'` znamená příjem ZE ZDROJŮ V ZAHRANIČÍ. Bylo natvrdo u všech
-  // druhů, takže i prodej českých akcií za koruny se hlásil jako zahraniční
-  // (nález A3-05). Rozhoduje původ instrumentu: ISIN začínající `CZ` je tuzemský.
-  // Míchá-li druh tuzemské i zahraniční, označí se `Z` — přiznat zahraniční
-  // zdroj je bezpečnější směr než ho zamlčet.
-  const jeTuzemsky = (isin: string): boolean => isin.toUpperCase().startsWith('CZ');
-  const zahranicniZdroj = (isins: string[]): boolean =>
-    isins.length === 0 || isins.some((isin) => !jeTuzemsky(isin));
-  const zdroje10 = [
-    {
-      kod: 'D',
-      popis: 'Prodej cenných papírů',
-      zdroj: result.securities,
-      isins: result.securities.disposals.map((d) => d.isin),
-    },
-    {
-      kod: 'C',
-      popis: 'Prodej kryptoaktiv (movitá věc)',
-      zdroj: result.crypto,
-      isins: result.crypto.disposals.map((d) => d.isin),
-    }, // R-10c
-    {
-      kod: 'F',
-      popis: 'Deriváty (opce, futures, CFD)',
-      zdroj: result.derivatives,
-      isins: result.derivatives.items.map((i) => i.isin),
-    }, // R-12n
-  ];
-  // Pořadí dílčích základů pro rozdělení celých korun: nejdřív druhy § 10
-  // (v pořadí řádků Přílohy 2), pak § 8 — ten nemá vlastní přílohu s vlastními
-  // součty, takže zbytek do celé koruny unese bez dalších dopadů.
-  const casti = celeKorunyPodleUhrnu([
-    ...zdroje10.map((z) => z.zdroj.base10Czk),
-    ...(varianta === 'GENERAL' ? [result.dividends.base8Czk] : []),
-  ]);
-  const druhy10 = zdroje10.map(({ kod, popis, zdroj, isins }, i) => {
-    const zd = casti[i]!;
-    // Výdaje druhu se uplatní nejvýš do výše jeho příjmů (§ 10 odst. 4) a do
-    // celých korun je zaokrouhlujeme DOLŮ — uplatněný výdaj nikdy nenadhodnotíme.
-    // Příjmy pak dopočteme, aby řádek seděl (P − V = rozdíl): podatelna kontroluje
-    // jak jednotlivé řádky, tak úhrny sloupců.
-    const vyd = Decimal.min(zdroj.expensesCzk, zdroj.taxableIncomeCzk).toDecimalPlaces(
-      0,
-      Decimal.ROUND_FLOOR,
-    );
-    return { kod, popis, prij: vyd.plus(zd), vyd, zd, zahranicni: zahranicniZdroj(isins) };
-  });
-  const prij10 = druhy10.reduce((sum, d) => sum.plus(d.prij), ZERO); // ř. 207
-  const vyd10 = druhy10.reduce((sum, d) => sum.plus(d.vyd), ZERO); // ř. 208
-  const zd10 = druhy10.reduce((sum, d) => sum.plus(d.zd), ZERO); // ř. 209
+  // Jediný zdroj čísel, sdílený s průvodcem v reportu (lib/priloha2.ts): vlastní
+  // kopie tady vedla k tomu, že report radil zapsat NEzastropované výdaje,
+  // zatímco XML neslo min(výdaje, příjmy) podle § 10 odst. 4 — nález K3-03.
+  // Pořadí řádků VetaJ v XML = pořadí v `priloha2` (D → C → F).
+  const p2 = priloha2(result);
+  const druhy10 = p2.rows.map((row) => ({
+    kod: row.kod,
+    popis: row.popis,
+    prij: row.prijmyCzk,
+    vyd: row.vydajeCzk,
+    zd: row.rozdilCzk,
+    zahranicni: row.zahranicniZdroj,
+  }));
+  const prij10 = p2.prijmyCzk; // ř. 207
+  const vyd10 = p2.vydajeCzk; // ř. 208
+  const zd10 = p2.rozdilCzk; // ř. 209
   const hasPriloha2 = prij10.gt(0);
 
   // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
@@ -280,9 +302,11 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // základu § 16a jde do Přílohy 4 s vlastním zaokrouhlením na sta dolů
   // (ř. 409) — i tam zaokrouhlujeme na celé koruny dolů, aby ř. 409 vyšel
   // stejně jako `roundBaseDownTo100` v enginu.
+  // § 8 je posledním dílem TÉHOŽ rozdělení celých korun jako druhy § 10 — běžící
+  // součet zaručí, že se řádky Přílohy 2 přidáním § 8 na konec nepohnou.
   const base8 =
     varianta === 'GENERAL'
-      ? casti[casti.length - 1]!
+      ? wholeCzkParts([...base10Values(result), result.dividends.base8Czk]).at(-1)!
       : result.dividends.base8Czk.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
@@ -316,7 +340,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     ...new Set(staty.filter((s) => s.creditable.gt(0) && !KODY_ZEMI.has(s.country)).map((s) => s.country)),
   ];
   if (hasPriloha3 && neznameZeme.length > 0) {
-    throw new Error(
+    throw new EpoInputError(
       `Kód státu ${neznameZeme.join(', ')} není zemí podle číselníku finanční správy — vznikl z prefixu ISIN (např. XS u eurobondů). Doplň u těchhle dividend zemi zdroje v importu, jinak podatelna podání odmítne.`,
     );
   }
@@ -369,16 +393,18 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const r74a = p4?.r414;
   const r75 = r74.plus(r74a ?? ZERO); // daň celkem
   const r77 = r75; // bez daňového bonusu
-  // ř. 91 „zbývá doplatit“: EPO řetězec ř. 71 → 75 → 77 přepočítává BEZ mezikroku
-  // „záporné = 0“ (ověřeno testovací podatelnou) — nevyčerpaný zbytek slevy na
-  // poplatníka tak sníží i daň ze samostatného základu § 16a; nula až na konci.
-  // ř. 91: oficiální kontrola EPO počítá vzorec ř.91 = ř.77 − zálohy, přičemž
-  // ve SVÉM přepočtu nechává ř.71 jít do záporu — nevyčerpaný zbytek slevy na
-  // poplatníka tak v pojetí EPO umořuje i daň § 16a. Právně diskutabilní
-  // (§ 35ba se váže k dani dle § 16), ale závazná je aritmetika podatelny:
-  // varianta r91 = r77 byla podatelnou ZAMÍTNUTA (ověřeno testovacím režimem),
-  // tato varianta prochází bez věcných chyb.
-  const r91 = Decimal.max(ZERO, r60.sub(SLEVA_POPLATNIK).plus(r74a ?? ZERO));
+  // ř. 91 „zbývá doplatit“ (R-14d, R-14e): kontrolní vzorec EPO je ř.91 = ř.77
+  // (mínus zálohy a zápočty, které Danero nevyplňuje), a § 38b daň do 200 Kč
+  // včetně nepředepisuje. Změřeno sondou na zkušební podatelně: ř.77 = 200 → 0,
+  // ř.77 = 201 → 201.
+  //
+  // ⚠️ Do 23. 8. 2026 tu stálo `max(0, ř.60 − sleva + ř.74a)`, tedy nevyčerpaný
+  // zbytek slevy proti dani § 16a. Podatelna takové XML ODMÍTÁ
+  // (`[N] kc_zbyvpred :: Oddíl 7/ř.91`) a je to i proti § 35ba odst. 1. Vzorec
+  // se sem dostal z jediného pokusu s ř.77 = 30 Kč — uvnitř okna § 38b, kde
+  // oba vzorce shodně dávají nulu. Vzorek, který rozdíl pozná, musí mít
+  // zároveň ř.60 < 30 840 a ř.414 > 200 Kč.
+  const r91 = r77.lte(HRANICE_38B) ? ZERO : r77;
 
   // ---------- sestavení XML (pořadí vět dle XSD sekvence) ----------
   const lines: string[] = [];
@@ -389,7 +415,11 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   lines.push(
     veta('VetaD', {
       c_ufo_cil: clean(personal.ufoCil), // bez FÚ: uživatel doplní po načtení v EPO
-      dap_typ: 'B',
+      // K3-07: typ přiznání byl natvrdo „řádné", ačkoli UI navádí i na
+      // dodatečné. V EPO jde po načtení přepnout, ale kdo to neudělá, podá
+      // řádné přiznání za období, které už jednou přiznal.
+      dap_typ: dapTyp,
+      d_zjist: dZjist,
       dokument: 'DP7',
       k_uladis: 'DPF',
       rok: String(year),
@@ -408,6 +438,16 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       kc_dan_celk: kc(r75),
       kc_dan_po_db: kc(r77),
       kc_db_po_odpd: '0',
+      // ---------- 6. oddíl — jen u dodatečného přiznání ----------
+      // Vzorce ř. 80 = ř. 79 − ř. 78 a ř. 83 = ř. 82 − ř. 81 podatelna
+      // KONTROLUJE (změřeno 23. 8. 2026), takže se posílají všechny řádky
+      // naráz, nebo žádný.
+      kc_pzdp: jeDodatecne ? kc(poslednDan) : undefined,
+      kc_zjidp: jeDodatecne ? kc(r77) : undefined,
+      kc_rozdil_dp: jeDodatecne ? kc(r77.sub(poslednDan)) : undefined,
+      kc_pzzt: jeDodatecne ? kc(poslednZtrata) : undefined,
+      kc_zjizt: jeDodatecne ? '0' : undefined, // naše ř. 61 je vždy 0
+      kc_rozdil_zt: jeDodatecne ? kc(ZERO.sub(poslednZtrata)) : undefined,
       kc_zbyvpred: kc(r91),
     }),
   );

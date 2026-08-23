@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
+import { priloha2 } from '@/lib/priloha2';
 import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
 import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
 import {
@@ -170,6 +171,13 @@ export function ReportView({
   const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
     .filter((y) => UNIFIED_RATES[y] !== undefined);
   const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
+  // Čísla pro Přílohu č. 2 bere průvodce ze STEJNÉHO zdroje jako generátor XML
+  // (K3-03) — dokud měl každý svoje, radila jedna stránka zapsat nezastropované
+  // výdaje, které podatelna odmítá.
+  const p2 = priloha2(result);
+  const vydajeBezStropu = result.securities.expensesCzk
+    .plus(result.crypto.expensesCzk)
+    .plus(result.derivatives.expensesCzk);
   // § 16a je reálná alternativa jen se zahraničními dividendami/úroky v § 8
   const hasDividendBase = result.dividends.base8Czk.gt(0);
   const deadlines = filingDeadlines(year);
@@ -833,6 +841,61 @@ export function ReportView({
                   <Input id="epo-ufoCil" name="ufoCil" placeholder="např. 451 (Praha)" />
                 </div>
               </div>
+              {/* K3-07: typ přiznání chodil natvrdo jako „řádné", ačkoli
+                  aplikace jinde navádí i na dodatečné — kdo to po načtení v EPO
+                  nepřepnul, podal řádné přiznání za období, které už přiznal. */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="epo-typ">Typ přiznání</Label>
+                  <Select id="epo-typ" name="typ-priznani" defaultValue="B">
+                    <option value="B">Řádné — podávám ho za tenhle rok poprvé</option>
+                    <option value="O">Opravné — opravuji přiznání, lhůta ještě neuplynula</option>
+                    <option value="D">Dodatečné — opravuji přiznání po uplynutí lhůty</option>
+                    <option value="E">Opravné dodatečné — opravuji dodatečné přiznání</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="epo-zjisteni">
+                    Den zjištění důvodů{' '}
+                    <span className="font-normal text-inkoust-tlumeny">
+                      (jen u dodatečného)
+                    </span>
+                  </Label>
+                  <Input id="epo-zjisteni" name="datum-zjisteni" type="date" />
+                </div>
+                <div>
+                  <Label htmlFor="epo-posledni-dan">
+                    Poslední známá daň{' '}
+                    <span className="font-normal text-inkoust-tlumeny">(jen u dodatečného)</span>
+                  </Label>
+                  <Input
+                    id="epo-posledni-dan"
+                    name="posledni-dan"
+                    inputMode="numeric"
+                    placeholder="v Kč, z dřív podaného přiznání"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="epo-posledni-ztrata">
+                    Poslední známá daňová ztráta{' '}
+                    <span className="font-normal text-inkoust-tlumeny">(jen u dodatečného)</span>
+                  </Label>
+                  <Input
+                    id="epo-posledni-ztrata"
+                    name="posledni-ztrata"
+                    inputMode="numeric"
+                    placeholder="v Kč, obvykle 0"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-inkoust-tlumeny">
+                Dodatečné přiznání se podává do konce měsíce následujícího po měsíci, ve
+                kterém jsi důvody zjistil (§ 141 odst. 1 daňového řádu) — proto ten den
+                podatelna vyžaduje. Poslední známou daň a ztrátu opiš z přiznání, které jsi
+                za tenhle rok podal naposledy: podatelna z nich počítá rozdíl a bez nich
+                dodatečné přiznání odmítne. Danero je z transakcí zjistit nedokáže — dřívější
+                přiznání mohlo obsahovat i příjmy ze zaměstnání nebo podnikání.
+              </p>
               <p className="text-xs text-inkoust-tlumeny">
                 Kód svého finančního úřadu najdeš v{' '}
                 <a
@@ -869,13 +932,18 @@ export function ReportView({
 
       <Card className="space-y-2">
         <CardTitle>Průvodce: co kam zapsat v přiznání</CardTitle>
-        {EPO_SUPPORTED_YEARS.includes(year) ? (
-          <ul className="space-y-2 text-sm">
+        {/* K3-05: čísla se ukazují VŽDY, i pro roky bez XML — u devíti z jedenácti
+            prodejných let se do XML nedostaneš a průvodce byl jediný zdroj. Do
+            23. 8. 2026 se u nich vykreslil odstavec bez jediné částky, ačkoli
+            karta exportu slibovala „zatím poslouží čísla níže". Rok od roku se
+            mění jen ČÍSLA ŘÁDKŮ tiskopisu, ne částky — proto se přepíná jen
+            poznámka pod seznamem. */}
+        <ul className="space-y-2 text-sm">
             <li>
               <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, řádek tabulky s druhem{' '}
               <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
-              <span className="font-mono">{czk(result.securities.taxableIncomeCzk)}</span>,
-              výdaje <span className="font-mono">{czk(result.securities.expensesCzk)}</span>.
+              <span className="font-mono">{czk(p2.rows[0]!.prijmyCzk)}</span>,
+              výdaje <span className="font-mono">{czk(p2.rows[0]!.vydajeCzk)}</span>.
               Řádek u zahraničního brokera nese kód „Z“ (příjem ze zdrojů v zahraničí).
             </li>
             {result.crypto.disposals.length > 0 && (
@@ -883,8 +951,8 @@ export function ReportView({
                 <strong>Prodeje a směny krypta (§ 10):</strong> samostatný řádek téže tabulky
                 s druhem <span className="font-mono">C — prodej movitých věcí</span> (kryptoaktiva
                 se daní jako movitá věc): příjmy{' '}
-                <span className="font-mono">{czk(result.crypto.taxableIncomeCzk)}</span>, výdaje{' '}
-                <span className="font-mono">{czk(result.crypto.expensesCzk)}</span>. S řádkem CP
+                <span className="font-mono">{czk(p2.rows[1]!.prijmyCzk)}</span>, výdaje{' '}
+                <span className="font-mono">{czk(p2.rows[1]!.vydajeCzk)}</span>. S řádkem CP
                 se nekompenzují — ztráta z jednoho druhu nesnižuje zisk druhého.
               </li>
             )}
@@ -892,14 +960,25 @@ export function ReportView({
               <li>
                 <strong>Deriváty — opce, futures, CFD (§ 10):</strong> samostatný řádek téže
                 tabulky s druhem <span className="font-mono">F — jiné ostatní příjmy</span>:
-                příjmy <span className="font-mono">{czk(result.derivatives.taxableIncomeCzk)}</span>,
-                výdaje <span className="font-mono">{czk(result.derivatives.expensesCzk)}</span>.
+                příjmy <span className="font-mono">{czk(p2.rows[2]!.prijmyCzk)}</span>,
+                výdaje <span className="font-mono">{czk(p2.rows[2]!.vydajeCzk)}</span>.
                 Deriváty nemají žádné osvobození a s ostatními druhy se nekompenzují.
               </li>
             )}
+            {p2.vydajeCzk.lt(vydajeBezStropu) && (
+              <li className="text-inkoust-tlumeny">
+                Výdaje jsou u každého druhu uvedené jen do výše jeho příjmů — tak to žádá
+                § 10 odst. 4 a tak je kontroluje i podatelna (ř. 208 nesmí být vyšší než
+                ř. 207). Ztrátu {czk(vydajeBezStropu.sub(p2.vydajeCzk))} nad rámec příjmů
+                do přiznání zapsat nejde a do dalšího roku se nepřevádí.
+              </li>
+            )}
             <li>
-              <strong>Součty Přílohy č. 2:</strong> ř. 207 a 208 = součet příjmů a výdajů za
-              všechny druhy, rozdíl (ř. 209) → <strong>ř. 40</strong> přiznání.
+              <strong>Součty Přílohy č. 2:</strong> ř. 207 ={' '}
+              <span className="font-mono">{czk(p2.prijmyCzk)}</span>, ř. 208 ={' '}
+              <span className="font-mono">{czk(p2.vydajeCzk)}</span>, rozdíl (ř. 209) ={' '}
+              <span className="font-mono">{czk(p2.rozdilCzk)}</span> → <strong>ř. 40</strong>{' '}
+              přiznání.
             </li>
             <li>
               {/* E-27: obě cesty popsané vedle sebe, bez „výhodnější je“ — variantu
@@ -956,22 +1035,22 @@ export function ReportView({
               )}
             </li>
             <li className="text-inkoust-tlumeny">
-              Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období
-              2024–2025; papírový tiskopis 25 5405) — všechno výše předvyplní export XML
-              o kousek výš.
+              {EPO_SUPPORTED_YEARS.includes(year) ? (
+                <>
+                  Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období
+                  2024–2025; papírový tiskopis 25 5405) — všechno výše předvyplní export XML
+                  o kousek výš.
+                </>
+              ) : (
+                <>
+                  Částky výše platí pro rok {year}, <strong>čísla řádků</strong> jsou
+                  z tiskopisu 2024/2025 (DPFDP7; papírově 25 5405). Přesná čísla řádků pro
+                  období {year} ověříme, až finanční správa zveřejní strukturu — struktura
+                  přílohy se ale mezi lety mění jen výjimečně.
+                </>
+              )}
             </li>
           </ul>
-        ) : (
-          <p className="text-sm text-inkoust-tlumeny">
-            Dílčí základ § 10 patří do Přílohy č. 2 — každý druh na vlastní řádek tabulky
-            (D — cenné papíry{result.crypto.disposals.length > 0 && ', C — kryptoaktiva'}
-            {result.derivatives.items.length > 0 && ', F — deriváty'}; druhy se nekompenzují)
-            — a součet rozdílů na ř. 40,
-            zahraniční dividendy do § 8 (ř. 38, zápočet přes Přílohu č. 3), varianta § 16a přes
-            Přílohu č. 4. Přesná čísla řádků pro období {year} ověříme, až finanční správa
-            zveřejní strukturu — čísla výše platí pro tiskopis 2024/2025.
-          </p>
-        )}
         <p className="text-xs text-inkoust-tlumeny">
           Konfigurace výpočtu: párování{' '}
           {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}

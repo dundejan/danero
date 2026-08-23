@@ -71,7 +71,10 @@ export const PLANS: readonly Plan[] = [
     price: `${priceLabel(PRICE_SUBSCRIPTION_CZK)} / rok`,
     priceNote: `necelých ${priceLabel(SUBSCRIPTION_PER_MONTH_CZK)} měsíčně — méně než jedna chyba v přiznání`,
     features: [
-      'Všechno z podkladů — za všechny daňové roky',
+      // K3-13: „za všechny daňové roky" četl kupující i na XML, které existuje
+      // jen pro roky z EPO_SUPPORTED_YEARS — a omezení stojí o řádek výš
+      // v tarifu Podklady. Věta ho teď opakuje, ne popírá.
+      `Všechno z podkladů za všechny daňové roky (XML pro elektronické podání jen za roky ${yearList(EPO_SUPPORTED_YEARS)})`,
       'Živé napojení na Trading 212, IBKR i Lynx',
       'Automatický denní sync a přepočet',
       'E-mailová upozornění na limity a termíny',

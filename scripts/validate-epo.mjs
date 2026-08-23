@@ -5,13 +5,17 @@
  * nikdy nepřijme — podatelna jen vrátí seznam kontrol (<Chyby>). Úspěch =
  * jediná „chyba“ typu I se zkratkou TEST_REZIM, případně propustné P.
  *
- * V CI běží jako NEPOVINNÝ krok (`continue-on-error`) — závisí na cizí službě
- * a na síti, takže výpadek ADIS nesmí shodit build. Ručně: `pnpm validate:epo
+ * V CI se rozlišuje návratovým kódem (2 = služba nedostupná, tolerujeme;
+ * 1 = podatelna XML odmítla, padáme) — `continue-on-error` se NEPOUŽÍVÁ, tím by
+ * se ztratilo i odmítnutí obsahu. Ručně: `pnpm validate:epo
  * [soubor.xml]`. Bez argumentu si skript vygeneruje vzorová podání pokrývající
  * i struktury, na kterých se to v auditu lámalo (prázdný rok, tuzemský prodej,
  * rok jen se ztrátou, ztrátový druh vedle ziskového a zápočet daně z úroku)
  * přes engine a apps/web/lib/epo.ts — proto se pouští přes tsx (viz root
  * package.json), který zvládne extensionless TS importy workspace balíčků.
+ * ⚠️ A s `--tsconfig apps/web/tsconfig.json`: `lib/epo.ts` importuje přes alias
+ * `@/`, který se bez toho z kořene repozitáře nerozliší (`Cannot find module
+ * '@/lib/priloha2'`) a skript spadne dřív, než pošle první vzorek.
  */
 
 const PODATELNA_URL = 'https://adisspr.mfcr.cz/dpr/epo_podani?test=1';
@@ -166,9 +170,30 @@ async function buildSamples() {
     config: TAX_YEAR_2025,
   });
 
-  const gen = (label, res, varianta = 'GENERAL') => [
+  // K3-01: § 16a u poplatníka, kterému zůstala nevyčerpaná sleva na poplatníka.
+  // Vzorky výš to nepoznají — mají ř. 60 nad slevou (obě formule ř. 91 splynou).
+  // Tenhle má ř. 60 = 0 a ř. 414 = 3 270 Kč, tedy zároveň pod slevou a nad
+  // hranicí § 38b.
+  const dividendaBezSrazky = analyzeTaxYear({
+    transactions: parseTransactions([
+      { type: 'DIVIDEND', id: 'k3d', isin: 'IE00B4L5Y983', gross: '1000', withholdingTax: '0', currency: 'USD', sourceCountry: 'IE', date: '2025-05-10' },
+    ]),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+  // K3-02: daň 195 Kč, tedy uvnitř okna § 38b — ř. 91 musí být 0.
+  const drobnaDan = analyzeTaxYear({
+    transactions: parseTransactions([
+      { type: 'BUY', id: 'k2b', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1000', currency: 'CZK', tradeDate: '2024-01-10', settlementDate: '2024-01-12' },
+      { type: 'SELL', id: 'k2s', isin: 'CZ0005112300', quantity: '100', pricePerShare: '3069', currency: 'CZK', tradeDate: '2025-03-05', settlementDate: '2025-03-06' },
+    ]),
+    profile,
+    config: TAX_YEAR_2025,
+  });
+
+  const gen = (label, res, varianta = 'GENERAL', extra = {}) => [
     label,
-    generateDpfdp7({ year: 2025, result: res, personal, varianta }).xml,
+    generateDpfdp7({ year: 2025, result: res, personal, varianta, ...extra }).xml,
   ];
   return [
     gen('vzorek GENERAL (P2 + P3 zápočet)', result),
@@ -177,6 +202,19 @@ async function buildSamples() {
     gen('čistě tuzemský prodej — kod10 bez „Z“ (A3-05)', tuzemsky),
     gen('rok jen se ztrátovým prodejem (A3-13)', ztrata),
     gen('ztrátový druh vedle ziskového — nulový rozdíl v tabulce (A3-13)', smisene),
+    gen('§ 16a s NEVYČERPANOU slevou na poplatníka (K3-01)', dividendaBezSrazky, 'SEPARATE_16A'),
+    gen('daň 195 Kč — uvnitř okna § 38b (K3-02)', drobnaDan),
+    // K3-07: samotný `dap_typ="D"` podatelna odmítne — kontroluje i vzorce
+    // 6. oddílu (ř. 80 = ř. 79 − ř. 78, ř. 83 = ř. 82 − ř. 81).
+    gen('opravné přiznání (K3-07)', result, 'GENERAL', { dapTyp: 'O' }),
+    gen('dodatečné přiznání s 6. oddílem (K3-07)', result, 'GENERAL', {
+      dapTyp: 'D',
+      dodatecne: {
+        zjistenoDne: '2026-08-05',
+        posledniZnamaDanCzk: '100',
+        posledniZnamaZtrataCzk: '0',
+      },
+    }),
   ];
 }
 
@@ -190,10 +228,10 @@ if (fileArg) {
 }
 
 /**
- * E-3-14: krok v CI má `continue-on-error`, protože závisí na cizí službě —
- * jenže tím se ztratilo i ODMÍTNUTÍ podatelnou, zatímco landing i FAQ nesou
- * odznak „XML ověřená zkušební podatelnou“. Výpadek sítě a odmítnutí obsahu
- * jsou dvě různé věci: první se toleruje, druhá musí být vidět.
+ * E-3-14: kdyby měl krok v CI `continue-on-error`, ztratilo by se s výpadkem
+ * sítě i ODMÍTNUTÍ podatelnou — zatímco landing i FAQ nesou odznak „XML ověřená
+ * zkušební podatelnou“. Výpadek sítě a odmítnutí obsahu jsou dvě různé věci:
+ * první se toleruje, druhá musí být vidět.
  *
  * Rozlišujeme je návratovým kódem (2 = síť/služba nedostupná, 1 = podatelna
  * XML odmítla) a zápisem do souhrnu běhu, aby se odmítnutí nedalo přehlédnout

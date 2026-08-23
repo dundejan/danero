@@ -3,7 +3,12 @@ import { getDb } from '@/db';
 import { getAuth } from '@/lib/auth';
 import { OPERATOR } from '@/lib/contact';
 import { canGenerateReport } from '@/lib/entitlements';
-import { generateDpfdp7, type EpoPersonalData } from '@/lib/epo';
+import {
+  EpoInputError,
+  generateDpfdp7,
+  type EpoDapTyp,
+  type EpoPersonalData,
+} from '@/lib/epo';
 import { errorText, logEvent } from '@/lib/log';
 import {
   engineInputForUser,
@@ -17,6 +22,9 @@ const field = (form: FormData, name: string): string | undefined => {
   const value = form.get(name);
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 };
+
+/** Číselník typů přiznání — jediný seznam pro validaci vstupu. */
+const DAP_TYPY: readonly EpoDapTyp[] = ['B', 'O', 'D', 'E'];
 
 const chyba = (message: string, status = 400): Response =>
   new Response(message, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
@@ -74,8 +82,24 @@ export async function POST(request: Request): Promise<Response> {
     email: field(form, 'email'),
   };
 
+  // K3-07: typ přiznání (řádné / opravné / dodatečné) — neznámou hodnotu
+  // nedosazujeme tiše na „řádné", to je právě ta záměna, kterou nález popisuje.
+  const typRaw = field(form, 'typ-priznani');
+  if (typRaw !== undefined && !DAP_TYPY.includes(typRaw as EpoDapTyp)) {
+    return chyba('Neznámý typ přiznání.');
+  }
+  const dapTyp = (typRaw as EpoDapTyp | undefined) ?? 'B';
+  const zjistenoDne = field(form, 'datum-zjisteni');
+  const dodatecne = zjistenoDne
+    ? {
+        zjistenoDne,
+        posledniZnamaDanCzk: field(form, 'posledni-dan'),
+        posledniZnamaZtrataCzk: field(form, 'posledni-ztrata'),
+      }
+    : undefined;
+
   try {
-    const { xml } = generateDpfdp7({ year, result, personal, varianta });
+    const { xml } = generateDpfdp7({ year, result, personal, varianta, dapTyp, dodatecne });
     return new Response(xml, {
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
@@ -83,6 +107,15 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
+    // K3-06: vadu VSTUPU generátor popisuje větou psanou pro uživatele („Doplň
+    // u těchhle dividend zemi zdroje v importu") — a ta se sem musí dostat celá.
+    // Do 23. 8. 2026 ji přebilo obecné „Export se nepodařil. Zkus to prosím
+    // znovu", což je u deterministické vady rada, po které uživatel klikne
+    // podesáté a dostane totéž.
+    if (error instanceof EpoInputError) {
+      logEvent('info', 'epo.export_rejected', { userId: session.user.id, year, error: error.message });
+      return chyba(error.message, 400);
+    }
     // Interní hláška uživateli nepomůže a může nést obsah dotazu i s parametry
     // (Drizzle je dává do message) — do odpovědi jde jen česká věta, detail do logu.
     logEvent('error', 'epo.export_failed', { userId: session.user.id, year, error: errorText(error) });

@@ -208,9 +208,9 @@ describe('generateDpfdp7: varianta SEPARATE_16A (§ 16a, Příloha 4)', () => {
     expect(vetaD.da_slezap).toBe('14220'); // 15 % z 94 800 (jen § 10)
     expect(vetaD.da_slevy35ba).toBe('0');
     expect(vetaD.kc_dan_celk).toBe('30'); // ř. 75 = ř. 74 + ř. 74a
-    // ř. 91: dle aritmetiky oficiální kontroly EPO (zbytek slevy na poplatníka
-    // v jejím přepočtu umořuje i § 16a — empiricky vynuceno testovací podatelnou,
-    // viz komentář v lib/epo.ts)
+    // ř. 91 = 0, protože ř. 77 = 30 Kč nepřesáhne hranici 200 Kč (§ 38b, R-14e).
+    // ⚠️ Právě tahle fixtura vadu K3-01 MASKOVALA: v okně § 38b dá starý
+    // i opravený vzorec shodně nulu. Rozdíl pozná až fixtura níž.
     expect(vetaD.kc_zbyvpred).toBe('0');
     expect(dp.VetaW).toBeUndefined();
     expect(dp.VetaL).toBeUndefined();
@@ -395,5 +395,243 @@ describe('generateDpfdp7: deriváty v Příloze 2 (R-12n)', () => {
     expect(vetaV.kc_vyd10).toBe('242800'); // 232 800 + 10 000
     expect(vetaV.kc_zd10p).toBe('99800'); // 94 800 + 5 000
     expect((dp.VetaO as Attrs).kc_zd10).toBe('99800');
+  });
+});
+
+/**
+ * K3-01 + K3-02 (R-14d, R-14e): ř. 91 „zbývá doplatit".
+ *
+ * Do 23. 8. 2026 se počítalo `max(0, ř.60 − sleva + ř.74a)` — nevyčerpaný
+ * zbytek slevy na poplatníka tedy umořoval i daň ze samostatného základu.
+ * Zkušební podatelna takové XML ODMÍTÁ (`[N] kc_zbyvpred :: Oddíl 7/ř.91`)
+ * a § 35ba odst. 1 to nedovoluje (sleva se váže k dani podle § 16).
+ *
+ * Fixtura MUSÍ mít zároveň `ř.60 < 30 840` (aby zbytek slevy vůbec existoval)
+ * a `ř.414 > 200 Kč` (aby výsledek vypadl z okna § 38b) — jinak oba vzorce
+ * dají shodně nulu a vada zůstane neviditelná. Přesně tak přežila dvě revize.
+ */
+describe('ř. 91: sleva se do § 16a nepřelévá (K3-01, R-14b)', () => {
+  // jediná zahraniční dividenda BEZ srážky, žádný prodej:
+  // 1 000 USD × 21,84 = 21 840 Kč → ř. 409 = 21 800, ř. 410 = ř. 414 = 3 270 Kč
+  const dividendOnly = parseTransactions([
+    {
+      type: 'DIVIDEND',
+      id: 'd-only',
+      isin: 'IE00B4L5Y983',
+      gross: '1000',
+      withholdingTax: '0',
+      currency: 'USD',
+      sourceCountry: 'IE',
+      date: '2025-05-10',
+    },
+  ]);
+  const onlyResult = analyzeTaxYear(engineInputForUser(dividendOnly, PROFILE, 2025));
+  const dp = (() => {
+    const { xml } = generateDpfdp7({
+      year: 2025,
+      result: onlyResult,
+      personal: {},
+      varianta: 'SEPARATE_16A',
+    });
+    return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
+      .DPFDP7;
+  })();
+
+  it('daň § 16a se do ř. 91 propíše celá, i když sleva zůstala nevyčerpaná', () => {
+    const vetaD = dp.VetaD as Attrs;
+    expect(vetaD.da_celod13).toBe('0'); // ř. 60 — žádný prodej, daň § 16 nulová
+    expect(vetaD.uhrn_slevy35ba).toBe('30840'); // sleva zůstává celá nevyužitá
+    expect((dp.VetaZ as Attrs).da_samzakl4).toBe('3270'); // ř. 414 > 200 Kč
+    expect(vetaD.da_samzakl).toBe('3270'); // ř. 74a
+    expect(vetaD.kc_dan_celk).toBe('3270'); // ř. 77
+    // starý vzorec `max(0, 0 − 30 840 + 3 270)` tu dával 0 → podatelna [N]
+    expect(vetaD.kc_zbyvpred).toBe('3270');
+  });
+});
+
+/**
+ * K3-02 (R-14e): hranice § 38b se týká i běžné varianty GENERAL. Změřeno
+ * sondou na podatelně: ř. 77 = 195/199/**200** → ř. 91 = 0; ř. 77 = 201 a výš
+ * → ř. 91 = ř. 77.
+ */
+describe('ř. 91: daň do 200 Kč se nepředepisuje (K3-02, § 38b)', () => {
+  /** Prodej českých akcií se ziskem `gainCzk` — základ i daň vyjdou v celých Kč. */
+  const czechSale = (gainCzk: number) =>
+    analyzeTaxYear(
+      engineInputForUser(
+        parseTransactions([
+          {
+            type: 'BUY',
+            id: 'cz-b',
+            isin: 'CZ0005112300',
+            ticker: 'CEZ',
+            quantity: '100',
+            pricePerShare: '1000',
+            currency: 'CZK',
+            tradeDate: '2024-01-10',
+            settlementDate: '2024-01-12',
+          },
+          {
+            type: 'SELL',
+            id: 'cz-s',
+            isin: 'CZ0005112300',
+            quantity: '100',
+            pricePerShare: String(1000 + gainCzk / 100),
+            currency: 'CZK',
+            tradeDate: '2025-03-05',
+            settlementDate: '2025-03-06',
+          },
+        ]),
+        PROFILE,
+        2025,
+      ),
+    );
+
+  const vetaDFor = (gainCzk: number): Attrs => {
+    const { xml } = generateDpfdp7({
+      year: 2025,
+      result: czechSale(gainCzk),
+      personal: {},
+      varianta: 'GENERAL',
+    });
+    const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } };
+    return parsed.Pisemnost.DPFDP7.VetaD as Attrs;
+  };
+
+  it('ř. 77 = 195 Kč → ř. 91 = 0', () => {
+    const vetaD = vetaDFor(206_900);
+    expect(vetaD.da_celod13).toBe('31035'); // ř. 60 = 15 % z 206 900
+    expect(vetaD.kc_dan_celk).toBe('195'); // ř. 77 = 31 035 − 30 840
+    expect(vetaD.kc_zbyvpred).toBe('0');
+  });
+
+  it('ř. 77 = 210 Kč → ř. 91 = 210', () => {
+    const vetaD = vetaDFor(207_000);
+    expect(vetaD.kc_dan_celk).toBe('210');
+    expect(vetaD.kc_zbyvpred).toBe('210');
+  });
+});
+
+/**
+ * K3-06: `/api/epo` zabalilo KAŽDOU výjimku generátoru do „Export se nepodařil.
+ * Zkus to prosím znovu." — jenže u kódu státu mimo číselník (`XS` u eurobondů)
+ * je to vada deterministická: uživatel klikne podesáté a dostane totéž.
+ * Generátor přitom umí říct přesně, co má opravit.
+ */
+describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
+  const eurobond = parseTransactions([
+    {
+      type: 'DIVIDEND',
+      id: 'xs1',
+      isin: 'XS0000000001',
+      gross: '10000',
+      withholdingTax: '1500',
+      currency: 'USD',
+      date: '2025-05-10',
+    },
+  ]);
+  const xsResult = analyzeTaxYear(engineInputForUser(eurobond, PROFILE, 2025));
+
+  it('neznámý kód státu vyhodí EpoInputError s návodem, co doplnit', async () => {
+    const { EpoInputError } = await import('@/lib/epo');
+    let caught: unknown;
+    try {
+      generateDpfdp7({ year: 2025, result: xsResult, personal: {}, varianta: 'GENERAL' });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EpoInputError);
+    expect((caught as Error).message).toContain('XS');
+    expect((caught as Error).message).toContain('zemi zdroje v importu');
+  });
+
+  it('nepodporovaný rok je taky vada vstupu, ne selhání serveru', async () => {
+    const { EpoInputError } = await import('@/lib/epo');
+    expect(() =>
+      generateDpfdp7({ year: 2026, result, personal: {}, varianta: 'GENERAL' }),
+    ).toThrow(EpoInputError);
+  });
+
+  it('API tuhle hlášku předá dál, místo aby ji přebilo „zkus to znovu“', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const route = readFileSync(
+      join(import.meta.dirname, '..', 'app', 'api', 'epo', 'route.ts'),
+      'utf8',
+    );
+    expect(route).toContain('error instanceof EpoInputError');
+    expect(route).toContain('chyba(error.message, 400)');
+  });
+});
+
+/**
+ * K3-07: typ přiznání chodil natvrdo jako `B` (řádné), přestože aplikace jinde
+ * navádí i na dodatečné přiznání. XSD připouští `B|O|D|E`; `D` a `E` navíc
+ * vyžadují datum zjištění důvodů (§ 141 odst. 1 daňového řádu).
+ */
+describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
+  const dp = (
+    dapTyp?: 'B' | 'O' | 'D' | 'E',
+    dodatecne?: {
+      zjistenoDne: string;
+      posledniZnamaDanCzk?: string;
+      posledniZnamaZtrataCzk?: string;
+    },
+  ) => {
+    const { xml } = generateDpfdp7({
+      year: 2025,
+      result,
+      personal: {},
+      varianta: 'GENERAL',
+      ...(dapTyp ? { dapTyp } : {}),
+      ...(dodatecne ? { dodatecne } : {}),
+    });
+    const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } };
+    return parsed.Pisemnost.DPFDP7.VetaD as Attrs;
+  };
+
+  it('bez volby zůstává řádné přiznání a 6. oddíl se nevyplňuje', () => {
+    expect(dp().dap_typ).toBe('B');
+    expect(dp().d_zjist).toBeUndefined();
+    expect(dp().kc_zjidp).toBeUndefined();
+  });
+
+  it('opravné přiznání se propíše a 6. oddíl nevyžaduje', () => {
+    expect(dp('O').dap_typ).toBe('O');
+    expect(dp('O').d_zjist).toBeUndefined();
+    expect(dp('O').kc_zjidp).toBeUndefined();
+  });
+
+  /**
+   * ⚠️ Změřeno na zkušební podatelně: samotný `dap_typ="D"` nestačí, podatelna
+   * kontroluje i vzorce 6. oddílu (ř. 80 = ř. 79 − ř. 78, ř. 83 = ř. 82 − ř. 81).
+   * Backlog počítal jen s datem zjištění.
+   */
+  it('dodatečné přiznání nese datum i celý 6. oddíl', () => {
+    const vetaD = dp('D', {
+      zjistenoDne: '2026-08-05',
+      posledniZnamaDanCzk: '100',
+      posledniZnamaZtrataCzk: '5000',
+    });
+    expect(vetaD.dap_typ).toBe('D');
+    expect(vetaD.d_zjist).toBe('5.8.2026');
+    expect(vetaD.kc_pzdp).toBe('100'); // ř. 78
+    expect(vetaD.kc_zjidp).toBe(vetaD.kc_dan_po_db); // ř. 79 = nově zjištěná daň (ř. 77)
+    expect(vetaD.kc_rozdil_dp).toBe('-100'); // ř. 80 = ř. 79 (0) − ř. 78 (100)
+    expect(vetaD.kc_pzzt).toBe('5000'); // ř. 81
+    expect(vetaD.kc_zjizt).toBe('0'); // ř. 82 = naše ř. 61
+    expect(vetaD.kc_rozdil_zt).toBe('-5000'); // ř. 83 = ř. 82 − ř. 81
+  });
+
+  it('nevyplněná poslední daň znamená nulu, ne chybu', () => {
+    const vetaD = dp('D', { zjistenoDne: '2026-08-05' });
+    expect(vetaD.kc_pzdp).toBe('0');
+    expect(vetaD.kc_rozdil_dp).toBe(vetaD.kc_dan_po_db); // ř. 79 − 0
+  });
+
+  it('dodatečné bez data zjištění se negeneruje — podatelna by ho odmítla', async () => {
+    const { EpoInputError } = await import('@/lib/epo');
+    expect(() => dp('D')).toThrow(EpoInputError);
+    expect(() => dp('E')).toThrow(EpoInputError);
   });
 });
