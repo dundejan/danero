@@ -144,7 +144,8 @@ export function computeNotificationCandidates(args: {
     },
     {
       key: 'krypto100k',
-      applicable: true,
+      // totéž pro krypto: v roce bez osvobození (ZO ≤ 2024, R-10b) měřák lže
+      applicable: result.limits.cryptoLimit100k.applicable,
       status: result.limits.cryptoLimit100k,
       label: 'limit 100 000 Kč pro osvobození krypta',
       consequence:
@@ -333,8 +334,14 @@ export function summaryCandidate(args: {
     ...(result.limits.employee20k.applicable
       ? [{ label: 'limit 20 000 Kč vedlejších příjmů', status: result.limits.employee20k.status }]
       : []),
-    { label: 'limit 100 000 Kč pro osvobození prodejů', status: result.limits.limit100k },
-    ...(result.limits.cryptoLimit100k.usedCzk.gt(0)
+    // K6b-02b: měřák limitu, na který poplatník nárok NEMÁ, v přehledu být
+    // nesmí — s cennými papíry v obchodním majetku osvobození podle § 4/1 t)
+    // neexistuje (R-02f) a řádek „0 ze 100 000" tvrdí klid tam, kde se daní
+    // každá koruna. V aplikaci se správně nezobrazuje už dřív.
+    ...(result.limits.limit100k.applicable
+      ? [{ label: 'limit 100 000 Kč pro osvobození prodejů', status: result.limits.limit100k }]
+      : []),
+    ...(result.limits.cryptoLimit100k.applicable && result.limits.cryptoLimit100k.usedCzk.gt(0)
       ? [{ label: 'limit 100 000 Kč pro osvobození krypta', status: result.limits.cryptoLimit100k }]
       : []),
   ];

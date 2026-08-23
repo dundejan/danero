@@ -68,6 +68,17 @@ export interface TaxYearConfig {
   flatTaxAdvance?: { monthlyTotalCzk: string; monthlyTaxCzk: string } | null;
 }
 
+/**
+ * Základní sleva na poplatníka podle § 35ba odst. 1 písm. a) — od ZO 2022 do
+ * dnešního dne **30 840 Kč** (zák. č. 609/2020 Sb. ji zvedl z 27 840 Kč a od té
+ * doby se nezměnila; tiskopis DPFDP7 ji na ř. 64 vyžaduje přesně).
+ *
+ * Není součástí `TaxYearConfig` schválně: engine z ní nic nepočítá, používá ji
+ * jen text varování `SEPARATE_16A_CREDIT_LOSS` (R-07i) a generátor XML na ř. 64.
+ * Až se změní, patří sem — a runbook (R-14) na ni pak musí ukázat.
+ */
+export const TAXPAYER_CREDIT_CZK = '30840';
+
 export const TAX_YEAR_2025: TaxYearConfig = {
   year: 2025,
   // ověřené kurzy z pokynů GFŘ D-49…D-75 (viz unifiedRates.ts s citacemi);

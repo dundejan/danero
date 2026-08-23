@@ -46,6 +46,13 @@ export interface FlatTax50kComponents {
   nonExemptCryptoProceedsCzk: Money;
   /** R-12q: úhrn hrubých kladných plnění z derivátů (deriváty osvobození nemají). */
   derivativesIncomeCzk: Money;
+  /**
+   * R-13k: zdanitelný příjem z prodejů nakrátko. Vlastní položka schválně —
+   * v `disposals` shorty nejsou (mají vlastní tabulku), takže se do limitů
+   * nedostávaly vůbec: engine u téhož portfolia vyčíslil daň 6 000 Kč z § 10
+   * a zároveň hlásil, že limit 50 000 Kč je nevyčerpaný (nález K6b-01).
+   */
+  shortSalesIncomeCzk: Money;
   foreignDividendsGrossCzk: Money;
   taxableInterestCzk: Money;
   otherManualCzk: Money;
@@ -177,9 +184,16 @@ export function computeLimits(
   const nonExemptCryptoProceeds = sum(
     crypto.disposals.map((disposal) => disposal.taxableProceedsCzk),
   );
+  // R-13k: shorty mají vlastní tabulku a do `disposals` nevstupují — proto
+  // vlastní sčítanec. Osvobozený druh sem přispěje nulou (rozhoduje se to
+  // v `basis/securities.ts`, kde je `exemptUnder100k` známé).
+  const shortSalesIncome = securities.taxableShortIncomeCzk.plus(
+    crypto.taxableShortIncomeCzk,
+  );
   const components: FlatTax50kComponents = {
     nonExemptSecuritiesProceedsCzk: nonExemptProceeds,
     nonExemptCryptoProceedsCzk: nonExemptCryptoProceeds,
+    shortSalesIncomeCzk: shortSalesIncome,
     derivativesIncomeCzk: derivatives.taxableIncomeCzk,
     foreignDividendsGrossCzk: dividends.foreignGrossCzk,
     taxableInterestCzk: dividends.taxableInterestCzk,
@@ -187,6 +201,7 @@ export function computeLimits(
   };
   const sideIncome = nonExemptProceeds
     .plus(nonExemptCryptoProceeds)
+    .plus(shortSalesIncome)
     .plus(derivatives.taxableIncomeCzk)
     .plus(dividends.foreignGrossCzk)
     .plus(dividends.taxableInterestCzk)

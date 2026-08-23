@@ -200,7 +200,7 @@ export default async function SettingsPage({
                 defaultValue={(profile?.returnOfCapitalReducesBasis ?? false) ? 'lenient' : 'safe'}
               >
                 <option value="safe">Bezpečný výklad — zdanit jako dividendu (doporučeno)</option>
-                <option value="lenient">Mírnější výklad — snížit nabývací cenu pozice (sporné)</option>
+                <option value="lenient">Mírnější výklad — snížit nabývací cenu držených kusů (sporné)</option>
               </Select>
               <p className="mt-1 text-xs text-inkoust-tlumeny">
                 Některé fondy a REITy vracejí část vloženého kapitálu (broker to hlásí jako

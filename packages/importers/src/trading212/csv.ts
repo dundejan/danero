@@ -218,7 +218,7 @@ export function parseTrading212Csv(text: string): ImportResult {
           if (returnOfCapital) {
             result.warnings.push({
               line,
-              message: `${action}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu pozice (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`,
+              message: `${action}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu držených kusů (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`,
             });
           }
           // B-3-10: náhrada za dividendu u zapůjčených akcií (T212 půjčuje kusy

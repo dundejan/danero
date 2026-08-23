@@ -268,7 +268,7 @@ describe('Trading212 CSV parser', () => {
     expect(result.transactions[0]!.type).toBe('DIVIDEND');
     expect(result.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(true);
     // varování musí říct, co je věcně správně A že to jde přepnout (R-07h)
-    expect(result.warnings.some((w) => w.message.includes('nabývací cenu pozice'))).toBe(true);
+    expect(result.warnings.some((w) => w.message.includes('nabývací cenu držených kusů'))).toBe(true);
     expect(result.warnings.some((w) => w.message.includes('Nastavení'))).toBe(true);
 
     // běžná dividenda varování nedostane

@@ -136,7 +136,7 @@ export function computeDividends(
       warnings.add(
         'RETURN_OF_CAPITAL_TAXED_AS_DIVIDEND',
         'INFO',
-        `${dividendLabel(tx)}: broker označil výplatu za vrácení vloženého kapitálu. Daníme ji jako dividendu (§ 8) a čerpá limity — je to bezpečnější výklad. Mírnější výklad (R-07h) by jí snížil nabývací cenu pozice a daň odložil na prodej; přepnout jde v nastavení.`,
+        `${dividendLabel(tx)}: broker označil výplatu za vrácení vloženého kapitálu. Daníme ji jako dividendu (§ 8) a čerpá limity — je to bezpečnější výklad. Mírnější výklad (R-07h) by jí snížil nabývací cenu držených kusů a daň odložil na prodej; přepnout jde v nastavení.`,
         { txId: tx.id, isin: tx.isin },
       );
     } else if (tx.returnOfCapital) {

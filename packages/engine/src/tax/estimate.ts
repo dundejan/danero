@@ -1,8 +1,9 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import type { TaxYearConfig } from '../config/taxYear';
+import { TAXPAYER_CREDIT_CZK, type TaxYearConfig } from '../config/taxYear';
 import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
+import { czkText } from '../format';
 import { WarningCollector } from '../warnings';
 
 export interface TaxVariant {
@@ -111,19 +112,45 @@ export function estimateTax(
     taxCzk: taxB.plus(separateTax).sub(creditB),
   };
 
+  // § 16a doporučujeme jen když obecný základ skutečně překračuje ZNÁMOU
+  // hranici progrese A úspora přesáhne mez významnosti — jinak je rozdíl jen
+  // zaokrouhlovací šum (sta dolů se zaokrouhlují u variant odděleně); § 16a
+  // navíc znamená ztrátu slev na dani a nezdanitelných částí.
+  const saving = general.taxCzk.sub(separate16a.taxCzk);
+  const recommended: 'GENERAL' | 'SEPARATE_16A' =
+    threshold !== null && baseA.gt(threshold) && saving.gte(SEPARATE_16A_MIN_SAVING_CZK)
+      ? 'SEPARATE_16A'
+      : 'GENERAL';
+
+  // R-07i: porovnání dvou daní ztrátu slevy na poplatníka nevidí — sleva se
+  // podle § 35ba odst. 1 uplatní JEN proti dani podle § 16, a ta ve variantě
+  // § 16a klesá. Kdo jiné příjmy nemá, může o nevyčerpaný zbytek přijít.
+  // Doporučení se tím nemění (spotřebu slevy na § 6/§ 7 engine nevidí), ale
+  // musí se říct nahlas i s čísly.
+  const credit = d(TAXPAYER_CREDIT_CZK);
+  if (recommended === 'SEPARATE_16A' && taxB.lt(credit)) {
+    const lost = credit.sub(taxB);
+    warnings.add(
+      'SEPARATE_16A_CREDIT_LOSS',
+      'WARNING',
+      `Samostatný základ § 16a ti podle našeho propočtu ušetří ${czkText(saving)}. ` +
+        `Než ho zvolíš: slevu na poplatníka (${czkText(credit)}) jde uplatnit jen proti dani ` +
+        `počítané podle § 16 — a přesunem dividend do § 16a ti tahle daň klesne na ${czkText(taxB)}. ` +
+        `Pokud kromě investic nemáš další příjmy (zaměstnání, podnikání), zbylých ${czkText(lost)} ` +
+        `ze slevy propadne a § 16a tě vyjde dráž. Máš-li příjmy z § 6 nebo § 7, spotřebuje se sleva ` +
+        `tam a propočet platí — to už ale Danero nevidí.`,
+      {
+        savingCzk: saving.toFixed(2),
+        taxUnderSection16Czk: taxB.toFixed(2),
+        unusedCreditCzk: lost.toFixed(2),
+      },
+    );
+  }
+
   return {
     general,
     separate16a,
-    // § 16a doporučujeme jen když obecný základ skutečně překračuje ZNÁMOU
-    // hranici progrese A úspora přesáhne mez významnosti — jinak je rozdíl jen
-    // zaokrouhlovací šum (sta dolů se zaokrouhlují u variant odděleně); § 16a
-    // navíc znamená ztrátu slev na dani a nezdanitelných částí.
-    recommended:
-      threshold !== null &&
-      baseA.gt(threshold) &&
-      general.taxCzk.sub(separate16a.taxCzk).gte(SEPARATE_16A_MIN_SAVING_CZK)
-        ? 'SEPARATE_16A'
-        : 'GENERAL',
+    recommended,
     note: 'Orientační výpočet pouze z investičních příjmů — skutečná progrese (23 %) závisí na celkovém základu daně včetně § 7. Ve variantě § 16a nelze uplatnit slevy na dani ani nezdanitelné části základu.',
   };
 }

@@ -140,6 +140,136 @@ describe('krypto limit 100k v hlídači (R-10a)', () => {
   });
 });
 
+/**
+ * K6b-02b: `applicable: true` bylo u obou stovek natvrdo, takže poplatník
+ * s cennými papíry v obchodním majetku dostával e-mailem i v měsíčním přehledu
+ * měřák „limit 100 000 Kč pro osvobození prodejů: X ze 100 000" — limit, na
+ * který podle R-02f nemá nárok. Na přehledu v aplikaci se přitom správně
+ * nezobrazoval a nahrazovala ho karta „Obchodní majetek: osvobození neexistuje".
+ */
+describe('měřák limitu, na který není nárok, se hlídačem neposílá (K6b-02b)', () => {
+  const profil = (over: Record<string, unknown>) => ({
+    userId: 'u1',
+    regime: 'PAUSAL' as const,
+    hasBusinessAssets: false,
+    w8benFiled: true,
+    otherIncomeCzk: '0',
+    matchingMethod: 'FIFO' as const,
+    fxMethod: 'UNIFIED' as const,
+    limit100kStrict: true,
+    derivativesExpensesPerType: false,
+    emtTimeTestExempt: false,
+    returnOfCapitalReducesBasis: false,
+    shortSaleIncomeOnSale: true,
+    timeTestBasis: 'settlement' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...over,
+  });
+
+  const kandidati = async (hasBusinessAssets: boolean, year = 2026) => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'b', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1000', currency: 'CZK', tradeDate: `${year - 1}-01-10` },
+      { type: 'SELL', id: 's', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1500', currency: 'CZK', tradeDate: `${year}-04-01` },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, profil({ hasBusinessAssets }), year),
+    );
+    return computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: `${year}-07-20`,
+    });
+  };
+
+  it('bez obchodního majetku měřák stovky chodí', async () => {
+    const candidates = await kandidati(false);
+    expect(candidates.some((c) => c.dedupeKey.startsWith('limit|100k|'))).toBe(true);
+  });
+
+  /**
+   * Obchodní majetek + short: pool 100k je nenulový (samostatný nález K6b-02,
+   * kde docs/02 zatím nerozhodly), takže by se měřák bez příznaku rozjel
+   * a poslal „Prolomen limit 100 000 Kč" člověku, který na osvobození nemá nárok.
+   */
+  it('s obchodním majetkem se měřák stovky neposílá ani při nenulovém poolu', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const txs = parseTransactions([
+      { type: 'SELL', id: 'so', isin: 'CZ0005112300', positionEffect: 'OPEN', quantity: '200', pricePerShare: '1000', currency: 'CZK', tradeDate: '2026-03-03' },
+      { type: 'BUY', id: 'sc', isin: 'CZ0005112300', positionEffect: 'CLOSE', quantity: '200', pricePerShare: '800', currency: 'CZK', tradeDate: '2026-05-05' },
+    ]);
+    const result = analyzeTaxYear(
+      engineInputForUser(txs, profil({ hasBusinessAssets: true }), 2026),
+    );
+    expect(result.limits.limit100k.applicable).toBe(false);
+    expect(result.limits.limit100k.usedCzk.gt(0)).toBe(true); // K6b-02, řeší docs/02
+
+    const candidates = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+    });
+    expect(candidates.some((c) => c.dedupeKey.startsWith('limit|100k|'))).toBe(false);
+  });
+
+  it('měsíční přehled řádek se stovkou u obchodního majetku nemá', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { summaryCandidate } = await import('@/lib/notifications');
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'b', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1000', currency: 'CZK', tradeDate: '2025-01-10' },
+      { type: 'SELL', id: 's', isin: 'CZ0005112300', quantity: '100', pricePerShare: '1500', currency: 'CZK', tradeDate: '2026-04-01' },
+    ]);
+    const bez = summaryCandidate({
+      result: analyzeTaxYear(engineInputForUser(txs, profil({}), 2026)),
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+      period: '2026-07',
+    });
+    expect(bez.body).toContain('limit 100 000 Kč pro osvobození prodejů');
+
+    const sMajetkem = summaryCandidate({
+      result: analyzeTaxYear(engineInputForUser(txs, profil({ hasBusinessAssets: true }), 2026)),
+      positions: [],
+      labels: new Map(),
+      today: '2026-07-20',
+      period: '2026-07',
+    });
+    expect(sMajetkem.body).not.toContain('limit 100 000 Kč pro osvobození prodejů');
+  });
+
+  it('v roce bez krypto osvobození (2024) se neposílá ani krypto stovka', async () => {
+    const { parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'cb', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '100000', currency: 'CZK', tradeDate: '2024-01-10' },
+      { type: 'SELL', id: 'cs', isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '150000', currency: 'CZK', tradeDate: '2024-04-01' },
+    ]);
+    const result = analyzeTaxYear(engineInputForUser(txs, profil({}), 2024));
+    expect(result.limits.cryptoLimit100k.applicable).toBe(false);
+    const candidates = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: '2024-07-20',
+    });
+    expect(candidates.some((c) => c.dedupeKey.startsWith('limit|krypto100k|'))).toBe(false);
+  });
+});
+
 describe('60% pásmo hlídače (LIMIT_WARNING)', () => {
   it('čerpání přes 60 % limitu 100k vytvoří LIMIT_WARNING — web slibuje e-mail při 60/85/100 %', async () => {
     const { parseTransactions } = await import('@danero/shared');

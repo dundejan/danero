@@ -121,6 +121,35 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     expect(last.value).toBeCloseTo(series!.usedCzk, 6);
   });
 
+  /**
+   * K6b-01: shorty mají v enginu vlastní tabulku a v `disposals` nejsou, takže
+   * z křivek vypadly. U portfolia long 60k + short 60k končila křivka stovky
+   * na 60 000, zatímco měřák nad ní hlásil 120 000. Existující test to nechytal,
+   * protože fixtura žádný short nemá.
+   */
+  it('short se propíše do OBOU křivek stejně jako do odměrek', () => {
+    const shortTxs = parseTransactions([
+      { type: 'BUY', id: 'lb', isin: 'CZ0005112300', quantity: '10', pricePerShare: '1000', currency: 'CZK', tradeDate: '2025-01-10' },
+      { type: 'SELL', id: 'ls', isin: 'CZ0005112300', quantity: '10', pricePerShare: '6000', currency: 'CZK', tradeDate: '2026-03-05' },
+      { type: 'SELL', id: 'so', isin: 'US0378331005', positionEffect: 'OPEN', quantity: '60', pricePerShare: '1000', currency: 'CZK', tradeDate: '2026-04-03' },
+      { type: 'BUY', id: 'sc', isin: 'US0378331005', positionEffect: 'CLOSE', quantity: '60', pricePerShare: '900', currency: 'CZK', tradeDate: '2026-05-05' },
+    ]);
+    const shortResult = analyzeTaxYear(
+      engineInputForUser(shortTxs, { ...PROFILE, otherIncomeCzk: '0' }, 2026),
+    );
+
+    const stovka = limit100kSeries(shortResult);
+    expect(stovka.usedCzk).toBeCloseTo(120_000, 6); // 60k long + 60k short
+    expect(stovka.points[stovka.points.length - 1]!.value).toBeCloseTo(stovka.usedCzk, 6);
+
+    const padesatka = flatTax50kSeries(shortResult)!;
+    expect(padesatka.usedCzk).toBeCloseTo(120_000, 6);
+    expect(padesatka.points[padesatka.points.length - 1]!.value).toBeCloseTo(
+      padesatka.usedCzk,
+      6,
+    );
+  });
+
   it('flatTax50kSeries: zdanitelné krypto tržby čerpají řadu (konzistence s odměrkou)', () => {
     const cryptoTxs = parseTransactions([
       {

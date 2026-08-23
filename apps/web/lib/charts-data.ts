@@ -46,15 +46,34 @@ function toRunningSeries(
  * (limit100kContributionCzk dle R-02c), tady se jen kumulují.
  */
 export function limit100kSeries(result: TaxYearResult): LimitSeries {
-  const contributions = result.securities.disposals.map((disposal) => ({
-    date: disposal.saleDate,
-    amountCzk: disposal.limit100kContributionCzk,
-  }));
+  const contributions = [
+    ...result.securities.disposals.map((disposal) => ({
+      date: disposal.saleDate,
+      amountCzk: disposal.limit100kContributionCzk,
+    })),
+    // R-13e/K6b-01: shorty mají vlastní tabulku a v `disposals` nejsou — bez
+    // nich končila křivka u portfolia long 60k + short 60k na 60 000, zatímco
+    // měřák nad ní hlásil 120 000.
+    ...shortOpenContributions(result),
+  ];
   return {
     points: toRunningSeries(result.year, contributions),
     limitCzk: num(result.limits.limit100k.limitCzk),
     usedCzk: num(result.limits.limit100k.usedCzk),
   };
+}
+
+/**
+ * Body křivky za prodeje NAKRÁTKO. `incomeCzk` nese jen událost, která plnění
+ * přinesla (otevření shortu, případně uzavření při opačném výkladu R-13b),
+ * takže se z položek dá poskládat průběh stejně jako z prodejů.
+ */
+function shortOpenContributions(
+  result: TaxYearResult,
+): Array<{ date: string; amountCzk: Money }> {
+  return result.shortSales.items
+    .filter((item) => item.incomeCzk.gt(0))
+    .map((item) => ({ date: item.date, amountCzk: item.incomeCzk }));
 }
 
 /** Čerpání limitu 50k (paušální daň) — prodeje mimo osvobození + dividendy + úroky. */
@@ -65,6 +84,9 @@ export function flatTax50kSeries(result: TaxYearResult): LimitSeries | null {
       date: disposal.saleDate,
       amountCzk: disposal.taxableProceedsCzk,
     })),
+    // R-13k: shorty čerpají limit svým zdanitelným příjmem — a jen tehdy, když
+    // druh není osvobozený stovkou (rozhoduje se v enginu, kde je to známé)
+    ...(result.securities.taxableShortIncomeCzk.gt(0) ? shortOpenContributions(result) : []),
     // R-12q: deriváty čerpají limit hrubými kladnými plněními
     ...result.derivatives.items.map((item) => ({ date: item.date, amountCzk: item.incomeCzk })),
     ...result.dividends.items

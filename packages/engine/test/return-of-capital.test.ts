@@ -251,4 +251,82 @@ describe('R-07h vratka kapitálu', () => {
     expect(result.ledger.lots.map((lot) => lot.costPerShare.toString())).toEqual(['90', '40']);
     expect(result.dividends.foreignGrossCzk.toString()).toBe('0');
   });
+
+  /**
+   * R-07j (nález K6b-03): přebytek se měří NA KUS, ne na celou pozici.
+   *
+   * Golden test — zamyká ROZHODNUTÍ, ne jen chování. Dosavadní testy ho
+   * nezamykaly: mantinel-1 měl jediný lot a test „rozdělí mezi víc lotů" měl
+   * loty, které svůj podíl unesly oba. Kdyby se kód přepsal na měření na
+   * pozici, nespadl by ani jeden.
+   *
+   * Pozice: 100 ks à 1 Kč + 100 ks à 1 000 Kč = nabývací cena 100 100 Kč.
+   * Vratka 20 000 Kč = 100 Kč na kus. Levný lot z ní unese jen 1 Kč na kus,
+   * takže 99 Kč × 100 ks = 9 900 Kč se zdaní — přestože „pozice" jako celek
+   * by 20 000 Kč unesla hravě.
+   */
+  it('R-07j: přebytek se počítá na kus, ne na pozici (golden)', () => {
+    const result = run(
+      [
+        buy({
+          isin: 'CZ0000000001',
+          quantity: '100',
+          pricePerShare: '1',
+          currency: 'CZK',
+          tradeDate: '2024-01-10',
+          settlementDate: '2024-01-10',
+        }),
+        buy({
+          isin: 'CZ0000000001',
+          quantity: '100',
+          pricePerShare: '1000',
+          currency: 'CZK',
+          tradeDate: '2024-02-10',
+          settlementDate: '2024-02-10',
+        }),
+        vratka({ gross: '20000' }),
+      ],
+      MIRNEJSI,
+    );
+
+    // levný lot je vyčerpaný na nulu, drahý si 100 Kč na kus odečte
+    expect(result.ledger.lots.map((lot) => lot.costPerShare.toString())).toEqual(['0', '900']);
+    // ⚠️ měřeno na pozici by tu byla NULA — a částka by se nezdanila NIKDY,
+    // protože po splnění časového testu je prodej osvobozený
+    expect(result.dividends.foreignGrossCzk.toString()).toBe('9900');
+
+    const varovani = result.warnings.find((w) => w.code === 'RETURN_OF_CAPITAL_EXCESS');
+    expect(varovani?.message).toContain('na kus');
+    expect(varovani?.message).toContain('100 ks');
+    expect(varovani?.message).toContain('ne na celou pozici');
+    // stará hláška o „nabývací ceně pozice" se vrátit nesmí — u pozice za
+    // 100 100 Kč tvrdila, že ji vratka 20 000 Kč přesáhla
+    expect(varovani?.message).not.toContain('nabývací cenu pozice');
+  });
+
+  /**
+   * Kontrolní protipól: jediný lot se stejnou celkovou nabývací cenou přebytek
+   * NEvyrobí. Rozdíl mezi oběma testy je jen v rozřezání na loty — přesně to
+   * dělá z „na kus vs. na pozici" rozhodnutí, které je potřeba zamknout.
+   */
+  it('R-07j: táž pozice v jediném lotu přebytek nevyrobí', () => {
+    const result = run(
+      [
+        buy({
+          isin: 'CZ0000000001',
+          quantity: '200',
+          pricePerShare: '500.5',
+          currency: 'CZK',
+          tradeDate: '2024-01-10',
+          settlementDate: '2024-01-10',
+        }),
+        vratka({ gross: '20000' }),
+      ],
+      MIRNEJSI,
+    );
+
+    expect(result.ledger.lots.map((lot) => lot.costPerShare.toString())).toEqual(['400.5']);
+    expect(result.dividends.foreignGrossCzk.toString()).toBe('0');
+    expect(hasWarning(result, 'RETURN_OF_CAPITAL_EXCESS')).toBe(false);
+  });
 });

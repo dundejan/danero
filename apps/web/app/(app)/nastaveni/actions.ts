@@ -10,6 +10,10 @@ import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
 import { unpinTaxYear } from '@/lib/portfolio';
+import {
+  dropStaleLimitNotifications,
+  profileAffectsCalculations,
+} from '@/lib/profile-changes';
 import { authApi, requireUser } from '@/lib/session';
 
 /**
@@ -93,8 +97,8 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   };
 
   const db = await getDb();
-  const existed = await db
-    .select({ userId: taxpayerProfiles.userId })
+  const [previous] = await db
+    .select()
     .from(taxpayerProfiles)
     .where(eq(taxpayerProfiles.userId, user.id));
   await db
@@ -103,11 +107,18 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: values });
   await logAudit(db, user.id, 'PROFILE_CHANGE');
 
+  // K2-02: změna profilu přepočítá všechny nezafixované roky, takže uložená
+  // upozornění hlídače za ně přestala platit — a jejich dedupe klíč by hlídač
+  // na ten rok umlčel natrvalo (detail a testy v lib/profile-changes.ts).
+  if (profileAffectsCalculations(previous, values)) {
+    await dropStaleLimitNotifications(db, user.id);
+  }
+
   revalidatePath('/prehled');
   revalidatePath('/nastaveni');
   // první uložení = onboarding pokračuje na přehled; další změny se ukládají
   // samy (auto-save) a uživatel zůstává u formuláře s potvrzením
-  redirect(existed.length === 0 ? '/prehled' : '/nastaveni?ok=profil#dan');
+  redirect(previous === undefined ? '/prehled' : '/nastaveni?ok=profil#dan');
 }
 
 /**
@@ -259,7 +270,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
     const { authApi } = await import('@/lib/session');
     const { api } = await authApi();
     await api.sendVerificationEmail({
-      body: { email: parsed.data['novy-email'].toLowerCase(), callbackURL: '/overeni-emailu' },
+      body: { email: parsed.data['novy-email'].toLowerCase(), callbackURL: '/overeni-emailu/hotovo' },
     });
   } catch (error) {
     logEvent('error', 'account.change_email_verification_failed', {

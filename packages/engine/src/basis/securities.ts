@@ -60,6 +60,14 @@ export interface SecuritiesResult {
   timeTestExemptProceedsCzk: Money;
   /** Z toho to, co pod strop 40M skutečně vstupuje (R-03a — per prodej). */
   capExposedProceedsCzk: Money;
+  /**
+   * R-13k: zdanitelný příjem z prodejů NAKRÁTKO — vstup do limitů 50k / 20k /
+   * 50k. Je nula, když celý druh padne pod stovku (osvobozený příjem limity
+   * nečerpá, R-08c), a schválně se bere z `incomeCzk`, ne z hrubé tržby:
+   * při `shortSaleIncomeOnSale=false` je `proceedsCzk` tržba prodeje, kdežto
+   * zdaňuje se až kladný rozdíl při uzavření — limit by se nadhodnotil.
+   */
+  taxableShortIncomeCzk: Money;
   disposals: DisposalReport[];
 }
 
@@ -346,6 +354,10 @@ export function computeSecurities(
   // Osvobozený druh nepřináší ANI příjem, ANI výdaj: uplatnit zpětný nákup
   // proti nezdaněné tržbě by vyrobilo ztrátu z osvobozeného příjmu (u dlouhých
   // prodejů to `isTaxable` v alokacích řeší stejně).
+  // R-13k: do limitů čerpá jen NEosvobozený příjem ze shortů — počítá se tam,
+  // kde je `exemptUnder100k` známé, ne až v limits.ts (jinak by měřák hlásil
+  // prolomení i drobnému investorovi s prodejem za 30 000 Kč).
+  let taxableShortIncome = ZERO;
   if (shortSales) {
     if (exemptUnder100k) {
       // letošní tržby jsou osvobozené → jejich výdaje se neuplatní; výdaj
@@ -354,6 +366,7 @@ export function computeSecurities(
     } else {
       taxableIncome = taxableIncome.plus(shortSales.incomeCzk);
       expenses = expenses.plus(shortSales.expensesCzk);
+      taxableShortIncome = shortSales.incomeCzk;
     }
   }
 
@@ -382,6 +395,7 @@ export function computeSecurities(
       includesTimeTestExempt: params.includesTimeTestExempt,
       extraPoolCzk: shortSales?.proceedsCzk,
     }),
+    taxableShortIncomeCzk: taxableShortIncome,
     disposals: reports,
   };
 }

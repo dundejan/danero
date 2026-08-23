@@ -647,7 +647,7 @@ function processCashTransactions(
         });
         result.warnings.push({
           line,
-          message: `Return of Capital ${row.symbol ?? row.isin ?? ''}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu pozice (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč; přepnout to jde v Nastavení u „Vratka kapitálu" (R-07h).`,
+          message: `Return of Capital ${row.symbol ?? row.isin ?? ''}: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu držených kusů (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč; přepnout to jde v Nastavení u „Vratka kapitálu" (R-07h).`,
         });
         break;
       }

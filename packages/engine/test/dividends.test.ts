@@ -326,6 +326,47 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.tax.recommended).toBe('SEPARATE_16A');
   });
 
+  /**
+   * R-07i (nález R1-N1): porovnání dvou daní ztrátu slevy na poplatníka NEVIDÍ.
+   * Sleva podle § 35ba odst. 1 se uplatní jen proti dani podle § 16 — a ta
+   * ve variantě § 16a klesá. Kdo jiné příjmy nemá, o nevyčerpaný zbytek přijde
+   * a § 16a ho vyjde dráž, než kolik ukazuje prosté porovnání.
+   *
+   * Do 23. 8. 2026 to maskoval vadný ř. 91 v generátoru XML (K3-01), který
+   * zbytek slevy počítal proti dani § 16a — proto se obojí opravovalo naráz.
+   */
+  it('R-07i: doporučené § 16a varuje, když tím propadne sleva na poplatníka', () => {
+    // veškerý základ jsou dividendy: ve variantě § 16a klesne daň podle § 16
+    // na nulu a celá sleva 30 840 Kč propadne. Základ musí přesáhnout hranici
+    // progrese, jinak se § 16a nedoporučuje vůbec (R-07d).
+    const result = run([dividend({ gross: '1800000', withholdingTax: '0' })]);
+    expect(result.tax.recommended).toBe('SEPARATE_16A');
+    const varovani = result.warnings.find((w) => w.code === 'SEPARATE_16A_CREDIT_LOSS');
+    expect(varovani?.level).toBe('WARNING');
+    // částky formátuje engine s nezlomitelnou mezerou (format.ts)
+    expect(varovani?.message).toContain('30\u00a0840\u00a0Kč');
+    expect(varovani?.message).toContain('propadne a § 16a tě vyjde dráž');
+    expect(varovani?.context?.unusedCreditCzk).toBe('30840.00');
+    expect(varovani?.context?.taxUnderSection16Czk).toBe('0.00');
+  });
+
+  it('R-07i: se základem § 10 nad slevou se nevaruje — sleva se vyčerpá tak jako tak', () => {
+    // base10 = 2 000 000 − 100 000 = 1 900 000 → daň § 16 hluboko nad slevou
+    const result = run([
+      buy({ quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10', settlementDate: '2024-01-10' }),
+      sell({ quantity: '100', pricePerShare: '20000', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      dividend({ gross: '90000', withholdingTax: '0' }),
+    ]);
+    expect(result.tax.recommended).toBe('SEPARATE_16A');
+    expect(hasWarning(result, 'SEPARATE_16A_CREDIT_LOSS')).toBe(false);
+  });
+
+  it('R-07i: u doporučeného obecného základu se nevaruje vůbec', () => {
+    const result = run([dividend({ gross: '10050', withholdingTax: '0' })]);
+    expect(result.tax.recommended).toBe('GENERAL');
+    expect(hasWarning(result, 'SEPARATE_16A_CREDIT_LOSS')).toBe(false);
+  });
+
   it('R-07d: pod známou hranicí progrese se § 16a nedoporučuje ani při šumově nižší dani', () => {
     // CFG_2025 má reálnou hranici (základ 20 100 je hluboko pod ní) — obě
     // varianty počítají 15 % a rozdíl dělá jen oddělené zaokrouhlení na sta dolů

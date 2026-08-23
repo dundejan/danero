@@ -516,6 +516,8 @@ export function buildLedger(
     let otherCurrency = ZERO;
     /** Část, kterou nabývací cena neunesla (mantinel 1) — vlastní varování s částkou. */
     let overBasis = ZERO;
+    /** Kolik kusů přebytek vyrobilo — hláška o nich mluví (R-07j). */
+    let overBasisShares = ZERO;
     for (const lot of candidates) {
       if (lot.currency !== tx.currency) {
         otherCurrency = otherCurrency.plus(perShare.mul(lot.remaining));
@@ -525,7 +527,10 @@ export function buildLedger(
       lot.costPerShare = lot.costPerShare.sub(reduction);
       reduced = reduced.plus(reduction.mul(lot.remaining));
       const excess = perShare.sub(reduction);
-      if (excess.gt(0)) overBasis = overBasis.plus(excess.mul(lot.remaining));
+      if (excess.gt(0)) {
+        overBasis = overBasis.plus(excess.mul(lot.remaining));
+        overBasisShares = overBasisShares.plus(lot.remaining);
+      }
     }
     // nabývací ceny se změnily → pořadí kandidátů pro MAX_PROFIT/MAX_LOSS taky
     invalidateOrder(tx.isin!);
@@ -542,15 +547,18 @@ export function buildLedger(
       warnings.add(
         'RETURN_OF_CAPITAL_REDUCED_BASIS',
         'INFO',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} snížila nabývací cenu pozice o ${moneyText(reduced, tx.currency)} (R-07h) — daň z ní přijde až s prodejem.`,
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} snížila nabývací cenu držených kusů o ${moneyText(reduced, tx.currency)} (R-07h) — daň z ní přijde až s prodejem.`,
         { txId: tx.id },
       );
     }
     if (overBasis.gt(0)) {
+      // R-07j: přebytek se měří NA KUS, ne na celou pozici — hláška o pozici
+      // u pozice za 100 100 Kč s vratkou 20 000 Kč tvrdila „přesáhla nabývací
+      // cenu pozice o 9 900 Kč", což je číslo, které v ní nemá oporu (K6b-03).
       warnings.add(
         'RETURN_OF_CAPITAL_EXCESS',
         'WARNING',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} přesáhla nabývací cenu pozice o ${moneyText(overBasis, tx.currency)} — přebytek se daní jako dividenda (§ 8).`,
+        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} vyšla na ${moneyText(perShare, tx.currency)} na kus. U ${qtyText(overBasisShares)} ks je to víc, než kolik ten kus stál, takže se přebytek ${moneyText(overBasis, tx.currency)} daní jako dividenda (§ 8) — nabývací cenu už není z čeho snižovat. Ostatních kusů se to netýká: vratka se počítá na kus, ne na celou pozici.`,
         { txId: tx.id },
       );
     }
