@@ -210,6 +210,18 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   obsahem) uloží diakritiku jako literální `č` escapy — v komentářích je to
   nečitelné, v šablonových řetězcích to projde testy a nikdo si toho nevšimne.
   Na české texty používej editační nástroj.
+- **`apps/web` importuje POSTAVENÝ engine, ne zdroje.** Po změně v
+  `packages/engine` pusť `pnpm --filter @danero/engine build`, jinak webové testy
+  běží proti starému `dist` a padají na nesmyslech („Cannot read properties of
+  undefined") u polí, která jsi právě přidal. Vypadá to jako chyba v testu,
+  a přitom stačí přeložit.
+- **`pnpm validate:epo` potřebuje `--tsconfig apps/web/tsconfig.json`** (je to
+  v root `package.json`). `lib/epo.ts` importuje přes alias `@/`, a ten se
+  z kořene repozitáře nerozliší — skript spadne na `Cannot find module`
+  dřív, než pošle první vzorek.
+- **Po zabitém E2E zůstane viset mock server na 3211.** Další běh pak skončí
+  na „`http://localhost:3211/health` is already used" a vypadá to jako vada
+  konfigurace. Úklid: `fuser -k 3211/tcp; fuser -k 3210/tcp`.
 
 ## Stav a plán
 
