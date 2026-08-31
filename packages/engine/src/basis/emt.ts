@@ -23,14 +23,22 @@ export const EMT_TICKERS: ReadonlySet<string> = new Set([
 /**
  * Tokeny, které se běžně řadí ke stablecoinům, ale **fiat za sebou nemají**:
  * DAI je krytý nadkolateralizovanými kryptoaktivy (MakerDAO), USDD je
- * algoritmický (Tron). Definice EMT v MiCA čl. 3 odst. 1 bodu 7 chce vazbu na
- * jednu úřední měnu krytou peněžními prostředky — tyhle dva jsou nanejvýš ART
- * (asset-referenced token), a § 4/1 zj) vylučuje z osvobození jen EMT.
+ * algoritmický (Tron). Část výkladu je proto mezi EMT neřadí — a § 4/1 zj)
+ * vylučuje z hodnotového osvobození jen EMT.
  *
- * Do vyloučení je proto pouštíme dál jako **bezpečný default** (R-10g): kdyby
- * je správce daně za EMT považoval, znamenalo by opačné rozhodnutí doměrek.
- * Držíme je ale zvlášť, aby engine mohl poctivě říct, kolik na tomhle sporném
- * výkladu visí, a nechal rozhodnutí na uživateli (nález A2-3-13).
+ * **Primární pramen ale svědčí pro opak** (nález K7a-05): definice EMT v MiCA
+ * čl. 3 odst. 1 bodu 7 chce jen to, aby token udržoval stabilní hodnotu odkazem
+ * na hodnotu JEDNÉ ÚŘEDNÍ MĚNY — o krytí peněžními prostředky v ní není nic.
+ * Bod odůvodnění 41 navíc výslovně říká, že se režim použije „bez ohledu na …
+ * mechanismus pro udržování jejich stabilní hodnoty“ a že „totéž platí pro tzv.
+ * algoritmické stablecoiny“; ART je v bodě 6 vymezen negativně jako token, který
+ * EMT NENÍ. Dřívější odůvodnění („jsou nanejvýš ART“) stálo na kritériu, které
+ * v nařízení není.
+ *
+ * Do vyloučení je tedy pouštíme dál — nejen jako bezpečný default (opačné
+ * rozhodnutí = doměrek), ale i jako výkladově pravděpodobnější variantu.
+ * Držíme je zvlášť, aby engine mohl poctivě říct, kolik na tomhle sporu visí,
+ * a nechal rozhodnutí na uživateli (R-10a, nálezy A2-3-13 a K7a-05).
  */
 export const EMT_DISPUTED_TICKERS: ReadonlySet<string> = new Set([
   'DAI', // Dai (MakerDAO) — nadkolateralizovaný kryptoaktivy, ne fiat

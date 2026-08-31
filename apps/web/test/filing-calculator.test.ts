@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateCalculator,
   INCOME_QUESTION,
+  OZNAMENI_5M,
   type CalculatorAnswers,
 } from '@/components/filing-calculator';
 
@@ -140,5 +143,29 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
 
     expect(outcome.verdict).toBe('priznani');
     expect(outcome.reason).toContain('20 000 Kč');
+  });
+
+  it('R-09d/K7a-03: oznámení § 38v netvrdí, že lhůta je stejná jako u přiznání', () => {
+    // Text patří k verdiktu „přiznání řešit nemusíš“ — a právě u toho, kdo
+    // přiznání nepodává, se lhůty rozcházejí: prodloužení na čtyři měsíce dává
+    // § 136 odst. 2 písm. a) daňového řádu jen tomu, kdo přiznání „následně"
+    // podá elektronicky (pokyn GFŘ D-59, str. 45). Rozdíl je až měsíc a sankce
+    // podle § 38w je 0,1–15 % z neoznámeného příjmu.
+    expect(OZNAMENI_5M).not.toContain('lhůta je ale stejná');
+    expect(OZNAMENI_5M).toContain('§ 38v');
+    // musí říct, že lhůta je KRATŠÍ, a jednou větou proč
+    expect(OZNAMENI_5M).toContain('tři měsíce');
+    expect(OZNAMENI_5M).toContain('kdo přiznání opravdu podá');
+  });
+
+  it('R-09d/K7a-03: totéž vysvětluje i metodika /jak-pocitame', () => {
+    // zalomení řádků ve zdroji je věc formátování, ne obsahu
+    const text = readFileSync(
+      join(import.meta.dirname, '..', 'app', 'jak-pocitame', 'page.tsx'),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    expect(text).not.toContain('ve stejné lhůtě jako přiznání. Pokuta');
+    expect(text).toContain('Lhůta na oznámení je kratší');
+    expect(text).toContain('jen tři měsíce po konci roku');
   });
 });

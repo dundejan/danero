@@ -599,6 +599,26 @@ describe('R-10a: sporné stablecoiny DAI a USDD (A2-3-13)', () => {
     expect(w!.message).not.toMatch(/R-\d/);
   });
 
+  it('R-10a: sporné EMT — hláška se opírá o MiCA, netvrdí opak a přizná nemonotónnost', () => {
+    // K7a-05: dřívější text tvrdil jako FAKT, že tyhle tokeny „podle evropské
+    // definice mezi ně nepatří“ — primární pramen to vyvrací (čl. 3 odst. 1
+    // bod 7 krytí nezmiňuje, bod odůvodnění 41 řeší i algoritmické stablecoiny)
+    const result = run([
+      buy(dai({ quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' })),
+      sell(dai({ quantity: '1', pricePerShare: '50000', tradeDate: '2025-05-01', settlementDate: '2025-05-01' })),
+    ]);
+    const message = result.warnings.find((x) => x.code === 'CRYPTO_EMT_DISPUTED')!.message;
+
+    expect(message).toContain('čl. 3 odst. 1 bod 7');
+    expect(message).toContain('bod odůvodnění 41');
+    expect(message).toContain('podle textu nařízení i pravděpodobnější');
+    // nesmí uživatele tlačit k rizikovějšímu výkladu argumentem, který pramen vyvrací
+    expect(message).not.toContain('mezi ně nepatří');
+    expect(message).not.toContain('nekryjí skutečné peníze');
+    // nemonotónnost: opačný výklad může úhrn 100k přetáhnout a shodit ostatní osvobození
+    expect(message).toContain('přetlačit');
+  });
+
   it('u jistých EMT (USDT) se sporné varování nevydá', () => {
     const result = run([
       buy({ isin: 'USDT', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '40000', tradeDate: '2024-06-01', settlementDate: '2024-06-01' }),

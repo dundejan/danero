@@ -355,10 +355,14 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
     );
   }
 
-  // R-10g / A2-3-13: DAI a USDD za sebou nemají fiat (nadkolateralizovaný,
-  // resp. algoritmický), takže podle MiCA nejsou EMT a § 4/1 zj) je vylučovat
-  // nemusí. Držíme je ve vyloučení jako bezpečný default, ale uživatel má
-  // právo vědět, kolik na tom sporném výkladu visí.
+  // R-10a/R-10g: DAI a USDD za sebou nemají fiat (nadkolateralizovaný, resp.
+  // algoritmický) a část výkladu je proto mezi EMT neřadí. Primární pramen ale
+  // svědčí opačně: MiCA čl. 3 odst. 1 bod 7 krytí vůbec nezmiňuje a bod
+  // odůvodnění 41 výslovně říká, že na mechanismu udržování hodnoty nezáleží
+  // a že totéž platí pro algoritmické stablecoiny (nález K7a-05). Držíme je tedy
+  // ve vyloučení nejen jako bezpečný, ale i jako pravděpodobnější výklad —
+  // a uživatel má právo vědět, kolik na tom sporu visí a že opačný výklad není
+  // jednoznačně výhodnější (nemonotónnost úhrnu 100k).
   if (config.cryptoRules.exemptionsAvailable) {
     const disputed = crypto.disposals.filter((report) => isDisputedEmtIdentifier(report.isin));
     if (disputed.length > 0) {
@@ -367,7 +371,7 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
       warnings.add(
         'CRYPTO_EMT_DISPUTED',
         'INFO',
-        `Prodeje ${tickers.join(', ')} za ${czkText(disputedProceedsCzk)} počítáme jako stablecoiny, tedy bez osvobození do 100 000 Kč — je to bezpečnější varianta. Sporné na tom je, že tyhle tokeny nekryjí skutečné peníze (DAI stojí na kryptozástavě, USDD na algoritmu), takže podle evropské definice elektronických peněžních tokenů mezi ně nepatří a § 4/1 zj) je vylučovat nemusí. Kdyby se braly jako běžné kryptoaktivum, vstoupily by jejich tržby do úhrnu 100 000 Kč. Výklad zatím nikdo nepotvrdil; opačné rozhodnutí by znamenalo doměrek daně s příslušenstvím.`,
+        `Prodeje ${tickers.join(', ')} za ${czkText(disputedProceedsCzk)} počítáme jako elektronické peněžní tokeny (stablecoiny), tedy bez osvobození do 100 000 Kč. Vede se o to spor: DAI stojí na kryptozástavě a USDD na algoritmu, ne na penězích v bance, a část výkladu je proto mezi elektronické peněžní tokeny neřadí. Evropská definice ale krytí vůbec nezmiňuje — rozhoduje podle ní jedině to, že token drží hodnotu jedné úřední měny (nařízení MiCA, čl. 3 odst. 1 bod 7), a bod odůvodnění 41 výslovně dodává, že na mechanismu udržování hodnoty nezáleží a že totéž platí pro algoritmické stablecoiny. Naše zařazení je tedy nejen bezpečnější, ale podle textu nařízení i pravděpodobnější. Druhý výklad navíc není jednoznačně výhodnější: tržby z těchhle tokenů by sice mohly být osvobozené do 100 000 Kč, ale zároveň by se do toho úhrnu počítaly — a mohly by přes něj přetlačit i ostatní krypto prodeje, které jsou dnes osvobozené. Rozhodnutí je na tobě; opačný výklad znamená riziko doměrku daně s příslušenstvím.`,
         {
           disputedProceedsCzk: disputedProceedsCzk.toFixed(2),
           tickers: tickers.join(','),

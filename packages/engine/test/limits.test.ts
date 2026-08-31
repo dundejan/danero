@@ -168,6 +168,55 @@ describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
     expect(zones('50000')).toBe('CRITICAL'); // přesně 100 % — ještě neprolomen
     expect(zones('8000', '45000')).toBe('EXCEEDED'); // 8k dividendy + 45k nájem = 53k
   });
+
+  it('R-08b: paušalista pod limitem se dozví, že zápočet stojí paušální daň (§ 7a odst. 5)', () => {
+    // limit NEprolomen (2 000 Kč z 50 000) + nenulová zahraniční srážka
+    const result = run([dividend({ sourceCountry: 'US', gross: '2000', withholdingTax: '300' })]);
+    expect(result.limits.flatTax50k.applicable).toBe(true);
+    expect(result.limits.flatTax50k.status.exceeded).toBe(false);
+    expect(result.dividends.foreignWithholdingCzk.toString()).toBe('300');
+
+    const warning = result.warnings.find(
+      (w) => w.code === 'FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE',
+    )!;
+    expect(warning).toBeDefined();
+    expect(warning.level).toBe('INFO');
+    expect(warning.context).toMatchObject({ foreignWithholdingCzk: '300.00' });
+    // spouštěčem odst. 5 je UPLATNĚNÍ zápočtu v přiznání, ne samotné podání
+    expect(warning.message).toContain('v přiznání uplatnil');
+    expect(warning.message).toContain('§ 7a odst. 5');
+    // částka se doplňuje stejně jako u sousedních varování (czkText — pevná mezera)
+    expect(warning.message).toMatch(/^Sraženou daň ze zahraničí \(300\s?Kč\)/u);
+    // paušální REŽIM tím nekončí (§ 2a odst. 8) — to musí zaznít
+    expect(warning.message).toContain('V paušálním režimu bys přitom zůstal');
+    // v textu nesmí být interní kód pravidla (pravidlo 3 CLAUDE.md)
+    expect(warning.message).not.toMatch(/R-\d/);
+  });
+
+  it('R-08b: kdo limit 50k prolomil, tuhle výhradu vidět nesmí — zápočet mu patří celý', () => {
+    // odst. 5 dopadá jen na „poplatníka podle odstavce 1 nebo 2“; prolomivší
+    // odst. 1 nesplňuje, daň mu paušální dani rovna není už proto a zápočet
+    // uplatní v plné výši
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '60000', withholdingTax: '9000' }),
+    ]);
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+    expect(result.dividends.foreignWithholdingCzk.gt(0)).toBe(true);
+    expect(hasWarning(result, 'FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE')).toBe(false);
+    expect(hasWarning(result, 'FLAT_TAX_BROKEN')).toBe(true);
+  });
+
+  it('R-08b: mimo paušál a bez zahraniční srážky se výhrada nevydá', () => {
+    const zamestnanec = run(
+      [dividend({ sourceCountry: 'US', gross: '2000', withholdingTax: '300' })],
+      { profile: { regime: 'ZAMESTNANEC' } },
+    );
+    expect(hasWarning(zamestnanec, 'FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE')).toBe(false);
+
+    const bezSrazky = run([dividend({ sourceCountry: 'US', gross: '2000', withholdingTax: '0' })]);
+    expect(bezSrazky.limits.flatTax50k.applicable).toBe(true);
+    expect(hasWarning(bezSrazky, 'FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE')).toBe(false);
+  });
 });
 
 describe('R-10a/R-10b limit 100k pro kryptoaktiva', () => {

@@ -248,6 +248,21 @@ export function computeLimits(
     );
   }
 
+  // R-08b / K7a-02: § 7a odst. 5 — uplatnění zápočtu zahraniční daně v přiznání
+  // ruší rovnost daně paušální dani za CELÝ rok. Dopadá jen na „poplatníka podle
+  // odstavce 1 nebo 2“, tedy na toho, kdo limit 50k NEPROLOMIL: kdo ho prolomil,
+  // odst. 1 už nesplňuje, výhrada na něj nedopadá a zápočet má uplatnit v plné
+  // výši (proto podmínka na `!flatStatus.exceeded` — jinak by ho hláška zbytečně
+  // odrazovala od nároku, který mu patří).
+  if (flatTaxApplicable && !flatStatus.exceeded && dividends.foreignWithholdingCzk.gt(0)) {
+    warnings.add(
+      'FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE',
+      'INFO',
+      `Sraženou daň ze zahraničí (${czkText(dividends.foreignWithholdingCzk)}) si letos v Česku nezapočteš — a je to tak v pořádku. V paušálním režimu je tvoje daň rovna paušální dani (§ 7a), takže z těchhle dividend a úroků tu žádnou daň neplatíš. Není proti čemu srážku započítat. Kdybys ji v přiznání uplatnil, přestala by ti daň být rovna paušální dani za celý rok (§ 7a odst. 5). Kromě přiznání by přišly přehledy pro ČSSZ i zdravotní pojišťovnu a doplatek pojistného ze skutečných příjmů. V paušálním režimu bys přitom zůstal a zálohy platil dál. Co dává smysl místo toho: hlídat, ať ti v zahraničí nesrazí víc, než dovoluje smlouva — u amerických dividend bez formuláře W-8BEN je to 30 % místo 15 %. Rozdíl se žádá zpět ve státě zdroje, ne v českém přiznání.`,
+      { foreignWithholdingCzk: dividends.foreignWithholdingCzk.toFixed(2) },
+    );
+  }
+
   const employeeStatus = limitStatus(sideIncome, d(config.limits.employeeSideIncome));
   const generalStatus = limitStatus(sideIncome, d(config.limits.generalFiling));
 

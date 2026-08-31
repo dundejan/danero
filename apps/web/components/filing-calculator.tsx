@@ -116,9 +116,17 @@ export const CRYPTO_QUESTION = {
  * „přiznání řešit nemusíš“: kdo prodal za 6 milionů akcie držené pět let,
  * přiznání opravdu nepodává — ale oznámení podat musí a pokuta je 0,1–15 %
  * z částky (§ 38w). Zamlčet to je horší než zamlčet daň.
+ *
+ * K7a-03: do 23. 8. 2026 tu stálo „lhůta je ale stejná“ — pro toho, komu tenhle
+ * text patří (tedy pro NEPODÁVAJÍCÍHO), to byla nepravda. Prodloužení lhůty na
+ * čtyři měsíce je podle § 136 odst. 2 písm. a) daňového řádu podmíněné tím, že
+ * „následně bylo daňové přiznání podáno elektronicky“, takže kdo přiznání
+ * nepodává, žádné prodloužení nezíská a platí základní tříměsíční lhůta
+ * (pokyn GFŘ D-59 ke § 38v). Rozdíl je až měsíc a sankce 0,1–15 % se počítá
+ * z NEOZNÁMENÉHO PŘÍJMU, ne z daně.
  */
 export const OZNAMENI_5M =
-  'Pozor na jednu výjimku: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů). Přiznání to není, lhůta je ale stejná.';
+  'Pozor na jednu výjimku: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů). Přiznání to není, a proto máš kratší lhůtu — tři měsíce po konci roku: měsíc navíc, který patří k elektronickému přiznání, dostane jen ten, kdo přiznání opravdu podá.';
 
 /**
  * Znění otázek na jednom místě — hláška „chybí odpověď“ (H-24) musí uživateli

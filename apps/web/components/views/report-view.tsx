@@ -94,6 +94,37 @@ export const DERIVATIVE_KIND_LABEL: Record<DerivativeItem['kind'], string> = {
 };
 
 /**
+ * K7a-02 (§ 7a odst. 5): paušalistovi, který limit 50 000 Kč NEPROLOMIL, se
+ * zápočet zahraniční srážky nesmí nabízet bez výhrady — uplatněním v přiznání
+ * mu za celý rok přestane být daň rovna paušální dani. Kdo limit prolomil,
+ * přiznání podává tak jako tak, odst. 5 na něj nedopadá a zápočet uplatní
+ * v plné výši, takže tomu se výhrada neukazuje.
+ *
+ * Jedna komponenta pro obě místa reportu (karta zápočtu i průvodce „co kam
+ * zapsat"), aby se schválené znění nerozešlo. Totéž nese hláška enginu
+ * `FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE` a stránka `/jak-pocitame`.
+ */
+export function PausalCreditCaveat({ amount }: { amount: string }) {
+  return (
+    <p className="text-xs text-inkoust-tlumeny">
+      <strong className="text-inkoust">
+        Sraženou daň ze zahraničí ({amount}) si letos v Česku nezapočteš — a je to tak
+        v pořádku.
+      </strong>{' '}
+      V paušálním režimu je tvoje daň rovna paušální dani (§ 7a), takže z těchhle dividend
+      a úroků tu žádnou daň neplatíš. Není proti čemu srážku započítat. Kdybys ji{' '}
+      <strong className="text-inkoust">v přiznání uplatnil</strong>, přestala by ti daň být
+      rovna paušální dani za celý rok (§ 7a odst. 5). Kromě přiznání by přišly přehledy pro
+      ČSSZ i zdravotní pojišťovnu a doplatek pojistného ze skutečných příjmů. V paušálním
+      režimu bys přitom zůstal a zálohy platil dál. Co dává smysl místo toho: hlídat, ať ti
+      v zahraničí nesrazí víc, než dovoluje smlouva — u amerických dividend bez formuláře
+      W-8BEN je to 30 % místo 15 %. Rozdíl se žádá zpět ve státě zdroje, ne v českém
+      přiznání.
+    </p>
+  );
+}
+
+/**
  * Věta o zafixované konfiguraci roku — laicky, proč se rok nepřepočítá podle
  * aktuálního nastavení. Fixuje se celá trojice, která mění už podaný rok
  * zpětně: párování (R-05c), kurzová soustava (R-06c) i výklad limitu 100k
@@ -188,6 +219,18 @@ export function ReportView({
    * poslat ji do pokuty a zbytečně jí zkrátit lhůtu o měsíc (nález E-23).
    */
   const filesElectronicallyOnly = profile.regime === 'PAUSAL' || profile.regime === 'OSVC';
+
+  /**
+   * K7a-02 (§ 7a odst. 5): paušalistovi, který limit 50 000 Kč NEPROLOMIL, se
+   * zápočet zahraniční srážky nabízet nesmí bez výhrady — uplatnění zápočtu
+   * v přiznání mu za celý rok ruší rovnost daně paušální dani. Kdo limit
+   * prolomil, přiznání podává tak jako tak a zápočet mu patří celý, takže tomu
+   * se výhrada neukazuje. Stejná podmínka jako u varování enginu.
+   */
+  const flatTaxCreditCaveat =
+    result.limits.flatTax50k.applicable &&
+    !result.limits.flatTax50k.status.exceeded &&
+    result.dividends.foreignWithholdingCzk.gt(0);
 
   return (
     <div className="space-y-6">
@@ -713,6 +756,9 @@ export function ReportView({
               nevstupuje a případnou srážku vrací zahraniční správce daně.
             </p>
           )}
+          {flatTaxCreditCaveat && (
+            <PausalCreditCaveat amount={czk(result.dividends.foreignWithholdingCzk)} />
+          )}
           {result.dividends.czechGrossCzk.gt(0) && (
             <p className="text-xs text-inkoust-tlumeny">
               České dividendy {czk(result.dividends.czechGrossCzk)} jsou zdaněny srážkou u
@@ -1002,6 +1048,11 @@ export function ReportView({
                   nezdanitelné části základu v něm uplatnit nelze.
                 </li>
               </ul>
+              {flatTaxCreditCaveat && (
+                <div className="mt-2">
+                  <PausalCreditCaveat amount={czk(result.dividends.foreignWithholdingCzk)} />
+                </div>
+              )}
             </li>
             <li>
               <strong>Sleva na poplatníka:</strong> ř. 64 přesně{' '}

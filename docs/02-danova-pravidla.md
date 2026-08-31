@@ -19,6 +19,17 @@ Klíč k písmenům § 4 odst. 1 ZDP (po přečíslování od 1. 1. 2024; starš
 
 Příjem z úplatného převodu CP je osvobozen, **přesáhne-li** doba mezi nabytím a převodem 3 roky (tj. 3 roky + aspoň 1 den). Platí i pro zahraniční CP.
 
+**Osvobození podle § 4 je obligatorní — nejde se ho vzdát.** Splní-li příjem
+podmínky, do základu daně nepatří; poplatník nemá volbu ho „neuplatnit“ (a tím si
+třeba ponechat ztrátu). Doloženo judikaturou: [NSS 7 Afs 229/2022-32 ze dne
+11. 3. 2024](https://vyhledavac.nssoud.cz/DokumentOriginal/Html/719421) — správce
+daně z dílčího základu vyloučil částku, kterou poplatník do přiznání zahrnul,
+protože šlo o příjem osvobozený podle § 4 odst. 1 písm. b). Rozsudek sám je
+o prodeji nemovitosti, ale závěr o obligatornosti osvobození podle § 4 platí
+stejně pro písmena t) i u). Praktický dopad na engine: osvobozená tržba se do
+přiznání neuvádí a ztráta z ní se neuplatní (R-02a, R-05d), a hodnotové osvobození
+podle t) nelze „vypnout“, aby vyšla nižší daň.
+
 - **R-01a Okamžik nabytí**: u zaknihovaných CP den zápisu na majetkový účet = **settlement date** (D-59 k § 4/1, bod 1 písm. e). US akcie T+1 (od 5/2024), EU typicky T+2. ⚠️ Část praxe počítá trade date → přepínač `timeTestDateBasis` (default `settlement`), evidujeme obě data.
 
   **Burzovní svátky.** Když broker datum vypořádání neuvádí, engine ho dopočte —
@@ -43,6 +54,24 @@ Příjem z úplatného převodu CP je osvobozen, **přesáhne-li** doba mezi nab
 - **R-01b Konec lhůty**: den úplatného převodu — konzistentně stejná báze jako nabytí.
 - **R-01c Obchodní majetek**: osvobození neplatí pro CP v obchodním majetku a do 3 let od ukončení samostatné činnosti. OSVČ v paušálu obchodní majetek nemá → CP vždy soukromé. Flag na profilu poplatníka.
 - **R-01d Smlouva o budoucím převodu** uzavřená do 3 let od nabytí ruší osvobození, i když se převod uskuteční po testu. (Jen dokumentace/upozornění, nedetekovatelné z dat.)
+- **R-01e Kmenový list: test je 5 let, ne 3.** Poslední věty § 4 odst. 1 písm. u):
+  „jedná-li se o kmenový list, činí doba místo 3 let 5 let“. Kmenový list je cenný
+  papír představující podíl ve společnosti s ručením omezeným — u brokerů se
+  neobchoduje, takže z importovaných dat nikdy nepřijde; do modelu se může dostat
+  jen ručním zadáním. **Engine ho neodlišuje** (v datech není příznak druhu CP),
+  a tříletý test by u něj osvobodil dřív, než smí. Dokumentační upozornění; pokud
+  by se kmenový list měl evidovat, musí přijít i příznak instrumentu a delší test.
+  Totéž pětileté prodloužení má i písmeno t), tam ale pro **výluku obchodního
+  majetku** („jedná-li se o kmenový list, činí doba 5 let“ místo 3 let od ukončení
+  činnosti — R-02f), ne pro hodnotový limit 100k.
+- **R-01f Výluka kvalifikované zaměstnanecké opce (§ 6a).** Poslední věta § 4
+  odst. 1 písm. u) ve znění zák. č. 360/2025 Sb. (novelizační body 3 a 4, účinnost
+  1. 1. 2026): „osvobození se neuplatní pro cenné papíry nabyté uplatněním
+  kvalifikované zaměstnanecké opce podle § 6a“. Časový test se na takové akcie
+  nevztahuje bez ohledu na dobu držby (příjem z uplatnění opce je navíc vlastním
+  druhem ostatního příjmu — § 10 odst. 1 písm. q). **Relevance nízká
+  a nedetekovatelná**: jde o opce od českého zaměstnavatele a výpis brokera způsob
+  nabytí neuvádí. Dokumentační upozornění (nález K7a-04).
 
 ## R-02 Hodnotový limit 100 000 Kč (§ 4/1 t)
 
@@ -62,6 +91,20 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   40M dle R-03 nemají co přinést, nic osvobozeného nevzniká). Flag se týká
   **jen CP** — kryptoaktiva mají vlastní vyloučení obchodního majetku přímo
   v textu zj)/zk) (R-10a) a flagem CP se jim osvobození nevypíná.
+
+  **Lhůta výluky je 3 roky od ukončení činnosti, u kmenového listu 5** („jedná-li
+  se o kmenový list, činí doba 5 let“ — týž závěr jako R-01e, jen pro výluku
+  obchodního majetku). Engine drží flag jako prostý příznak profilu bez data
+  ukončení činnosti, takže délku lhůty nepočítá — vypnutí osvobození je tak vždy
+  konzervativní (nikdy nepodhodnotí daň).
+
+  **Shorty (R-13a) flag vypíná taky, a je to správně.** Prodej nakrátko je podle
+  R-13a týž druh příjmu z úplatného převodu CP, takže mu s vypnutým hodnotovým
+  osvobozením padá i krytí stovkou (R-13e): `valueExemptionAvailable = false`
+  zhasne `exemptUnder100k`, a shortu se pak uplatní jak zdanitelný příjem, tak
+  jeho výdaje, a jeho příjem čerpá limity podle R-13k. Konzervativní směr: opačné
+  řešení (nechat shortu osvobození, protože zapůjčené kusy poplatník v obchodním
+  majetku nemá) by daň **snížilo** — a kdyby bylo špatně, znamenalo by doměrek.
 
 ## R-03 Strop 40 mil. Kč (§ 4 odst. 3)
 
@@ -95,7 +138,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   sdílený s cennými papíry. Delší držba nikdy nesmí vyjít dráž —
   `cap40m.test.ts` to hlídá vlastnostním testem.
 - Krácení poměrné: osvobozená část = příjem × (40M / úhrn); výdaje se krátí stejným poměrem. Rozhodný je moment přijetí peněz.
-- Step-up: u CP nabytých do 31. 12. 2024 lze jako výdaj uplatnit tržní hodnotu k 31. 12. 2024. (Engine: volitelný `costBasisOverride` na lotu.)
+- Step-up: u CP nabytých do 31. 12. 2024 lze jako výdaj uplatnit tržní hodnotu k 31. 12. 2024 — **§ 10 odst. 9 ve znění účinném do 31. 12. 2025**, zavedený zák. č. 349/2023 Sb. čl. XV bodem 32 a zrušený od 1. 1. 2026 (pro ZO 2025 platí dál; podrobně a s prameny u R-10d). (Engine: volitelný `costBasisOverride` na lotu.)
 - **Implementováno (G5, zobecněno v G6)**: exemptRatio = strop / kombinovaný úhrn
   časově osvobozených příjmů **všech druhů pod stropem** (2025: CP + krypto, R-10d;
   od 2026 jen krypto, R-10e) počítá `engine.ts` a předává oběma výpočtům; dodaněná
@@ -109,7 +152,20 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 
 - **R-04a Split / reverse split** (výměna při zachování celkové jmenovité hodnoty): test **nepřerušuje**; lot se transformuje (množství × poměr, cena / poměr), datum nabytí zůstává.
 - **R-04b Fúze/rozdělení** dle § 23b/§ 23c: nepřerušuje. ⚠️ U zahraničních emitentů a ETF výkladové — přepínač na úrovni akce `preservesAcquisitionDate` (default true pro merger se zachováním hodnoty, s upozorněním).
-- **R-04c Výměna akcií se změnou celkové jmenovité hodnoty**: test **přerušuje** (NSS 7 Afs 229/2022).
+- **R-04c Výměna akcií se změnou celkové jmenovité hodnoty**: test **přerušuje** —
+  a contrario z litery § 4 odst. 1 písm. u): „při výměně akcie emitentem za jinou
+  akcii **o celkové stejné jmenovité hodnotě** se doba 3 let mezi nabytím
+  a úplatným převodem cenného papíru u téhož poplatníka nepřerušuje“. Výslovná
+  výjimka pro shodnou jmenovitou hodnotu by neměla smysl, kdyby se test
+  nepřerušoval i při hodnotě změněné. **Jistota střední** (výklad litery,
+  judikatura k tomu není).
+
+  ⚠️ Do 23. 8. 2026 tu jako opora stála citace NSS 7 Afs 229/2022 — a byla
+  **falešná**: ten rozsudek řeší obligatornost osvobození při prodeji nemovitosti
+  (chalupy) podle § 4 odst. 1 písm. b), slova „jmenovitá hodnota“ ani „výměna“
+  v jeho textu nejsou (nález K7a-16). Použitelná právní věta z něj patří k R-01
+  a R-02, ne sem. Falešná citace v závazné specifikaci je horší než žádná: působí
+  důvěryhodně a při kontrole se rozpadne.
 - **R-04d Sloučení/splynutí podílových fondů, přeměna uzavřeného fondu na otevřený**: nepřerušuje (výslovně § 4/1 u).
 - **R-04e Změna ISIN/tickeru bez výměny nástroje**: nepřerušuje (⚠️ výkladová shoda). Lot pokračuje pod novým ISIN.
 - **R-04f Spin-off**: původní loty běží dál; nové akcie = nový lot s datem nabytí = den spin-offu. ⚠️ Alokace nabývací ceny neřešena zákonem — default: cost basis nové pozice 0 Kč (konzervativní), volitelně poměrná alokace.
@@ -199,6 +255,26 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   | ostatní | default 15 % | neověřeno — engine přidá varování `TREATY_RATE_UNVERIFIED` (jednou per země); skutečná smluvní sazba může být nižší → riziko nadhodnoceného zápočtu |
 
   Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč **dolů** (nárokovanou částku konzervativně nenadhodnocujeme); souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
+
+  **Koeficient zápočtu se počítá na DVĚ desetinná místa.** § 146 odst. 3 DŘ:
+  „Výpočet na základě daňové sazby, koeficientů, ukazatelů a výsledek přepočtu měny
+  se provádí s přesností na dvě platná desetinná místa.“ Tiskopis Přílohy 3
+  (25 5405/P3, vzor č. 22) to na ř. 324 (koeficient = podíl příjmů ze státu na
+  základu daně) vynucuje a podatelna přesnější hodnotu odmítne. Engine dnes strop
+  zápočtu počítá **přesným** podílem, takže se od tiskopisu liší až o jednotky Kč
+  (nález K3-09); zaokrouhlit se má **koeficient**, ne až výsledek.
+
+  ⚠️ **Není to zakázané postupné zaokrouhlování — nikdo to nesmí „opravit“ zpět.**
+  Druhá věta § 146 odst. 3 („Postupné zaokrouhlování ve dvou nebo více stupních je
+  nepřípustné“) zakazuje zaokrouhlit MEZIVÝSLEDEK a z už zaokrouhleného čísla
+  zaokrouhlovat podruhé. Tady jde o dvě různé veličiny: koeficient (ř. 324) se
+  zaokrouhlí na dvě desetinná místa podle věty první, hodnota zápočtu za stát
+  (ř. 326) se zaokrouhlí **jednou** na celé Kč a souhrn (ř. 328) je prostý SOUČET
+  těch zaokrouhlených částek — přesně jak tiskopis předepisuje („úhrn řádků 326
+  i ze samostatných listů“) a jak přikazuje § 38f odst. 8 („vyloučení dvojího
+  zdanění metodou prostého zápočtu se provede samostatně za každý stát“). Nález
+  K7a-11, který v tom viděl porušení § 146 odst. 3, byl proti tiskopisu
+  **vyvrácen**.
 - **R-07f Zápočet ze zahraničních ÚROKŮ**: úrok je stejný dílčí základ § 8 jako dividenda a § 38f zápočet po státech nerozlišuje — sražená daň z úroku se tedy započítává **stejným postupem jako u dividend** (strop smlouvou, zaokrouhlení po státech dolů, souhrn = součet zaokrouhlených). ⚠️ **Strop je ale jiný**: dividendy řeší čl. 10 SZDZ, úroky **čl. 11**, a ten ve smlouvách ČR skoro vždy dává právo zdanit úrok **jen státu rezidenta** — tj. strop **0 %**.
 
   Ověřené smluvní stropy srážkové daně z úroků (čl. 11 SZDZ; smlouvy jsou v tomhle recipročně formulované — strop platí bez ohledu na směr platby):
@@ -278,6 +354,20 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   k němu není. Je to tedy sporný výklad, a proto **konfigurační přepínač
   `returnOfCapitalReducesBasis` s bezpečným defaultem `false`**:
 
+  ⚠️ **Mírnější výklad nemá ocitovanou kotvu — a je poctivé to napsat.** V českém
+  právu není ustanovení, které by u zahraničního fondu řeklo „vrácení vloženého
+  kapitálu snižuje nabývací cenu a daní se až přebytek“. Nejblíž je **§ 10 odst. 1
+  písm. g)**, který mezi ostatní příjmy řadí „vrácení emisního ážia, příplatku mimo
+  základní kapitál nebo těmto plněním obdobná plnění“ — tedy míří **opačným
+  směrem**: takové plnění zdaňuje, byť s výdajem v podobě nabývací ceny podílu
+  podle **§ 10 odst. 6**. Vymezení nabývací ceny v **§ 24 odst. 7** její snižování
+  o přijaté výplaty nepředepisuje. **ČR nemá obdobu IRC § 301(c)(3)** — americké
+  úpravy, kde nontaxable return of capital výslovně snižuje basis a přebytek je
+  capital gain. Analogie použitá v R-07j proto podpírá jen **mechaniku „na kus“**
+  (jak měřit, když už se výklad zvolí), ne samotný nárok na snížení nabývací ceny.
+  `false` (zdanit jako dividendu) tedy není opatrnost navíc, ale jediná varianta
+  s oporou v českém textu; `true` je vědomé riziko, ne opomenutí zákonodárce.
+
   - **`false` (default, bezpečný)** — vratka se daní jako dividenda podle
     R-07b: brutto do dílčího základu § 8, čerpá limity R-08. Nikdy nepodhodnotí
     daň; jen ji vybere dřív, než by musela být. Engine na to upozorní (INFO
@@ -356,7 +446,44 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
 Dvě oddělené roviny:
 
 - **R-08a Paušální REŽIM (§ 2a)**: překročení 50k limitu jej **neukončuje** (končí až např. obratem § 7 nad 2 mil., plátcovstvím DPH…). Poplatník v režimu zůstává a platí zálohy i další rok.
-- **R-08b Daň rovna paušální dani (§ 7a)**: podmínka — kromě § 7 jen příjmy osvobozené / mimo předmět / srážkové, a příjmy § 8 + § 9 + § 10 **v úhrnu ≤ 50 000 Kč**.
+- **R-08b Daň rovna paušální dani (§ 7a)**: podmínka — kromě § 7 jen příjmy osvobozené / mimo předmět / srážkové, a příjmy § 8 + § 9 + § 10 **v úhrnu ≤ 50 000 Kč** (§ 7a odst. 1 písm. b bod 4).
+
+  ⚠️ **Druhá podmínka, o které se do 23. 8. 2026 mlčelo: zápočet zahraniční daně
+  (§ 7a odst. 5).** Text: „Daň se nerovná paušální dani, pokud poplatník podle
+  odstavce 1 nebo 2, který je daňovým rezidentem České republiky, **vyloučí dvojí
+  zdanění příjmů plynoucích ze zdrojů v zahraničí v daňovém přiznání**.“ Není to
+  zákaz, je to **volba** — a spouští ji teprve UPLATNĚNÍ zápočtu v přiznání, ne
+  samotné podání přiznání.
+
+  **Dopadá jen na toho, kdo limit 50 000 Kč NEPROLOMIL.** Odstavec 5 mluví
+  o „poplatníkovi podle odstavce 1 nebo 2“ — kdo limit prolomil, podmínku odst. 1
+  písm. b) nesplňuje, jeho daň paušální dani není rovna už z toho důvodu a zápočet
+  má uplatnit **v plné výši**. Vyčíslení dopadu prolomení (R-08f, varování
+  `FLAT_TAX_BROKEN`) se tímhle pravidlem tedy **nemění** a počítá daň po zápočtu
+  správně.
+
+  **Pro paušalistu pod limitem je ta volba skoro vždy nevýhodná.** V paušálním
+  režimu se zahraniční dividenda ani úrok v ČR samostatně nedaní, takže není proti
+  čemu srážku započítávat — a cenou za zápočet je ztráta paušální daně za celý rok:
+  přiznání, přehledy ČSSZ i zdravotní pojišťovně a doplatek pojistného ze skutečných
+  příjmů. **Paušální REŽIM tím nekončí** — § 2a odst. 8 vypočítává důvody zániku
+  taxativně a uplatnění zápočtu mezi nimi není (R-08a), zálohy se platí dál.
+  Sraženou daň nad smluvní strop je správné žádat zpět **ve státě zdroje**, ne
+  v českém přiznání.
+
+  Danero na to upozorní varováním `FLAT_TAX_FOREIGN_CREDIT_UNAVAILABLE` (INFO) —
+  právě a jen když je režim `PAUSAL`, limit 50k **není** prolomený a zahraniční
+  srážka je nenulová. Prolomivší ho vidět nesmí (nález K7a-02).
+
+  Povinnost podat přiznání v roce, kdy daň paušální dani rovna není, plyne z § 38g
+  odst. 7 („Daňové přiznání je povinen podat poplatník, který byl alespoň část
+  zdaňovacího období poplatníkem v paušálním režimu a jehož daň za toto zdaňovací
+  období není rovna paušální dani.“) — nezávisle na limitech R-09a/R-09b.
+
+  ⚠️ **Od ZO 2027 bude tenhle výčet neúplný**: zák. č. 360/2025 Sb. (novelizační
+  body 17 a 18) doplňuje do § 7a odst. 1 písm. b) nový **bod 5** — příjmy podle § 6
+  odst. 4 — s účinností 1. 1. 2027. Do konfigurace roku 2027 to patří dřív, než se
+  za 2027 začne počítat.
 - **R-08c Co se do 50k NEPOČÍTÁ**: osvobozené příjmy (časový test splněn — R-01; úhrn prodejů CP ≤ 100k — R-02; krypto analogicky), české dividendy (R-07a) a české úroky **se sraženou daní** (R-07g — bez srážky se počítají). Objem osvobozených příjmů je neomezený.
 - **R-08d Co se POČÍTÁ (hrubé příjmy, ne zisk!)**: zahraniční dividendy **brutto**, neosvobozené **tržby** z prodeje CP/krypta, zdanitelné úroky, nájmy. Příklad: prodej za 120 000 Kč, držba < 3 roky, zisk 5 000 Kč → do limitu vstupuje 120 000 Kč → prolomeno.
 - **R-08e Důsledky prolomení**: daň není rovna paušální dani → povinnost podat přiznání (vše standardně vč. § 7) + přehledy ČSSZ a ZP + pojistné standardně; zaplacené paušální zálohy se započtou.
@@ -392,6 +519,23 @@ Dvě oddělené roviny:
 - **R-09b** Zaměstnanec: vedlejší příjmy § 7–10 > **20 000 Kč** (hrubé zdanitelné) → přiznání. Danero hlídá pro profil „zaměstnanec".
 - **R-09c** Paušální OSVČ: viz R-08.
 - **R-09d § 38v**: oznámení osvobozeného příjmu > **5 mil. Kč** (jednotlivý příjem = „v jednom čase z jednoho titulu od jednoho subjektu", D-59) — týká se i prodejů osvobozených časovým testem; pokuty 0,1–15 % (§ 38w). Danero: detekce jednotlivých prodejů > 5M a upozornění.
+
+  **Lhůta: „do konce lhůty pro podání daňového přiznání“ (§ 38v odst. 1) — jenže
+  pro toho, kdo přiznání nepodává, je to 1. 4., ne 1. 5.** Pokyn GFŘ D-59, str. 45,
+  „K § 38v“: „I poplatník, kterému za dané zdaňovací období nevznikne povinnost
+  podat daňové přiznání …, je povinen učinit oznámení o osvobozených příjmech,
+  a to ve lhůtě podle ust. § 136 odst. 1 daňového řádu.“ Prodloužení na 4 měsíce
+  totiž podle § 136 odst. 2 písm. a) DŘ nastane, jen „pokud … **následně bylo
+  daňové přiznání podáno elektronicky**“ — a kdo přiznání nepodává vůbec, žádné
+  prodloužení nezíská. Totéž platí pro šestiměsíční lhůtu poradce (§ 136 odst. 2
+  písm. b bod 2: „následně daňové přiznání podal poradce“).
+
+  ⚠️ **Kdo přiznání podává, má obě lhůty totožné** (3 / 4 / 6 měsíců podle R-09e);
+  rozcházejí se jen u nepodávajícího — a to až o měsíc (za ZO 2025: **1. 4. 2026**
+  místo elektronických 4. 5. 2026). Právě u něj to bolí nejvíc: daň žádná není,
+  ale sankce podle § 38w se počítá z **neoznámeného příjmu**, tedy u prodeje za
+  5 mil. Kč 5 000 Kč (0,1 %) až 750 000 Kč (15 %). Do 23. 8. 2026 kalkulačka
+  tvrdila opak — „Přiznání to není, lhůta je ale stejná“ (nález K7a-03).
 - **R-09e Lhůty pro podání** (§ 136 daňového řádu, zák. č. 280/2009 Sb.): lhůta
   běží od konce zdaňovacího období (§ 33 odst. 1 DŘ — počítá se ode dne
   následujícího a končí dnem téhož označení), takže za ZO `R` vychází:
@@ -412,6 +556,11 @@ Dvě oddělené roviny:
   elektronicky 1. 5. 2026 je **pátek a státní svátek** → 2. 5. sobota → 3. 5.
   neděle → **pondělí 4. 5. 2026**; poradcem **1. 7. 2026** (středa).
   Zdroj: [Finanční správa — Vyplňujete daňové přiznání za rok 2025](https://financnisprava.gov.cz/cs/financni-sprava/media-a-verejnost/tiskove-zpravy-gfr/tiskove-zpravy-2026/vyplnujete-danove-priznani-za-rok-2025).
+
+  **Tahle tabulka platí pro oznámení podle § 38v jen u toho, kdo přiznání
+  skutečně podá.** Prodloužení podle § 136 odst. 2 je v obou písmenech podmíněné
+  tím, že přiznání „následně bylo podáno“ (elektronicky, resp. poradcem) — bez
+  podaného přiznání zůstává lhůta tříměsíční (R-09d).
 
   ⚠️ Natvrdo zapsané datum je chyba, která se **sama neprojeví** — jen jednou
   za rok ukáže jiný den, než platí (za ZO 2024 vycházel elektronický termín
@@ -441,16 +590,32 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   rozšiřitelný); seznam nemůže být úplný — exotický stablecoin mimo seznam zachytí
   stávající varování `CRYPTO_EMT_ASSUMPTION` (R-10g).
 
-  ⚠️ **Ne každý stablecoin je EMT.** Definice v MiCA čl. 3 odst. 1 bodu 7 chce
-  kryptoaktivum, které drží stabilní hodnotu odkazem na **jednu úřední měnu**
-  a je kryté peněžními prostředky. `DAI` (nadkolateralizovaný kryptoaktivy)
-  a `USDD` (algoritmický) tuhle podmínku nesplňují — jsou nanejvýš ART
-  (asset-referenced token), a § 4/1 zj) vylučuje z osvobození **jen EMT**.
-  Jejich zařazení mezi EMT proto poplatníka **přetěžuje bez opory v zákoně**
-  (nález A2-3-13). Engine je drží ve vyloučení jako **bezpečný default**
-  (opačné rozhodnutí = doměrek), ale eviduje je zvlášť v `EMT_DISPUTED_TICKERS`
-  a vydává INFO `CRYPTO_EMT_DISPUTED` s vyčíslením dotčených tržeb, aby
-  rozhodnutí zůstalo na poplatníkovi. **Samostatný limit vedle
+  ⚠️ **Je DAI a USDD elektronický peněžní token? Sporné — ale primární text
+  svědčí spíš pro ANO.** Definice v MiCA čl. 3 odst. 1 bodu 7 chce kryptoaktivum,
+  „jehož cílem je udržovat stabilní hodnotu tím, že odkazuje na hodnotu **jedné
+  úřední měny**“ — o krytí peněžními prostředky v ní **není nic**. Bod odůvodnění
+  **41** téhož nařízení navíc výslovně říká, že se hlava III nebo IV použije „bez
+  ohledu na to, jak vydavatel zamýšlí kryptoaktiva koncipovat, **včetně mechanismu
+  pro udržování jejich stabilní hodnoty**“, a že „totéž platí pro tzv. algoritmické
+  ‚stablecoiny‘“. ART je přitom v čl. 3 odst. 1 bodu 6 vymezen *negativně* — jako
+  token, který **není** elektronickým peněžním tokenem. `DAI` (nadkolateralizovaný
+  kryptoaktivy) i `USDD` (algoritmický) odkazují na hodnotu **jediné** úřední měny,
+  takže literou bodu 7 EMT jsou; dřívější odůvodnění („nejsou kryté peněžními
+  prostředky, jsou nanejvýš ART“) stálo na kritériu, které v nařízení není
+  (nález K7a-05).
+
+  Engine je proto drží ve vyloučení — a nově ne jen jako bezpečný default, ale jako
+  **výkladově pravděpodobnější variantu**. Eviduje je zvlášť
+  v `EMT_DISPUTED_TICKERS` a vydává INFO `CRYPTO_EMT_DISPUTED` s vyčíslením
+  dotčených tržeb, aby rozhodnutí zůstalo na poplatníkovi.
+
+  ⚠️ **Opačný výklad není jednoznačně výhodnější — je NEMONOTÓNNÍ.** Kdyby se DAI
+  a USDD braly jako běžné kryptoaktivum, jejich tržby by sice mohly být osvobozené
+  do 100 000 Kč, ale zároveň by do toho úhrnu **vstupovaly** — a mohly by ho
+  přetáhnout. Cliff podle R-02a by pak shodil osvobození i ostatním krypto prodejům,
+  které jsou dnes osvobozené, takže „mírnější výklad = míň daně“ tady neplatí.
+  Hláška to musí říct: kdo se rozhoduje, potřebuje vědět, že rizikovější varianta
+  může vyjít i dráž. **Samostatný limit vedle
   limitu CP** (R-02d) — oba se čerpají nezávisle. Cliff jako R-02a (překročení =
   osvobození padá celé). Neplatí pro krypto v obchodním majetku (a 3 roky po
   ukončení činnosti).
@@ -478,9 +643,28 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   zk) sdílí **jeden** strop 40 mil. Kč (§ 4/3); poměrné krácení jako R-03 (osvobozeno
   zůstává příjem × strop/úhrn, výdaje týmž poměrem). Do úhrnu vstupují jen krypto
   příjmy osvobozené od účinnosti (KOOV 625, závěr 2.2.1.6.1); limit se za rok 2025
-  **nekrátí** na dny/měsíce (závěr 2.2.1.6.2). **Bez step-upu pro krypto**: § 10/9
-  (tržní hodnota k 31. 12. 2024 jako výdaj) nebyl novelou na krypto rozšířen
-  (závěr 2.2.1.4) — jen standardní výdaje.
+  **nekrátí** na dny/měsíce (závěr 2.2.1.6.2).
+
+  **Bez step-upu pro krypto.** Step-up (tržní hodnota k 31. 12. 2024 jako výdaj
+  namísto pořizovací ceny) zavedl zák. č. 349/2023 Sb., **čl. XV bod 32** (ČÁST
+  DESÁTÁ — Změna zákona o daních z příjmů) jako **§ 10 odst. 9 ve znění účinném do
+  31. 12. 2025**; byl textově vázaný na krácení podle stropu § 4 odst. 3 a platil
+  jen pro cenné papíry a podíly v obchodní korporaci. Na kryptoaktiva rozšířen
+  nebyl (KOOV 625, závěr 2.2.1.4) — u krypta se uplatní jen standardní výdaje.
+
+  ⚠️ **Vždy psát „§ 10 odst. 9 ve znění účinném do 31. 12. 2025“.** Step-up zrušil
+  zák. č. 360/2025 Sb., čl. VI bod 22 („V § 10 se odstavec 9 zrušuje“) s účinností
+  **1. 1. 2026** (bod 22 není v žádném odloženém výčtu čl. XXXIV); podle čl. VII
+  bodu 1 (přechodné ustanovení) pro ZO 2025 step-up i strop 40M pro CP dál platí.
+  Dnešní § 10 odst. 9 je **úplně jiné ustanovení** — samostatný základ podle § 16a
+  pro zahraniční příjmy podle § 10 odst. 8 — takže holý odkaz „§ 10/9“ vede toho,
+  kdo si pravidlo ověřuje, na nesmysl (nález K7a-01).
+
+  ⚠️ Nesrovnalost v podkladech auditu, vyřešená měřením: nález K7a-01 uváděl
+  „349/2023 Sb. **čl. I** bod 32“. Ověřeno proti textu novely — ČÁST PRVNÍ zákona
+  349/2023 Sb. je *Změna trestního řádu* (Čl. I), zákon o daních z příjmů mění až
+  ČÁST DESÁTÁ, a to **Čl. XV**, jehož bod 32 zní „V § 10 odstavec 9 zní: …“. Platí
+  tedy **čl. XV**.
 - **R-10e Strop od 2026 jen pro krypto**: zák. č. 360/2025 Sb. strop 40M pro CP
   a podíly od 1. 1. 2026 zrušil; **pro krypto (zk) trvá**. Config: `timeTestCap.appliesTo`
   (2025: `['SECURITIES','CRYPTO']`; 2026+: `['CRYPTO']`).
@@ -703,10 +887,28 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   prodej akcií (kód D), ne zbytková kategorie. Písmeno b) neváže kvalifikaci na
   délku držby ani na způsob nabytí a short prodávající vlastnictví skutečně
   převádí: zápůjčka zastupitelné věci (§ 2390 ObčZ) převádí vlastnictví na
-  vydlužitele, takže v okamžiku prodeje akcie vlastní. Zbytkové písmeno pro
-  „jiný ostatní příjem“ v zákoně neexistuje (výčet a–q končí zaměstnaneckou
-  opcí; „F“ je kolonka tiskopisu, ne zákonné písmeno). **Jistota střední**
+  vydlužitele, takže v okamžiku prodeje akcie vlastní. **Jistota střední**
   (text zákona jednoznačný, autorita chybí).
+
+  ⚠️ **Oprava z 23. 8. 2026: zbytkové písmeno EXISTUJE.** Do té doby tu stálo
+  „zbytkové písmeno pro jiný ostatní příjem v zákoně neexistuje (výčet a–q končí
+  zaměstnaneckou opcí)“ — to je nepravda. § 10 odst. 1 písm. **r)** zní „ostatní
+  příjem, který není příjmem uvedeným v písmenech a) až q)“; zaměstnanecká opce je
+  písmeno q) a r) je zbytek. („F“ je pořád jen kolonka tiskopisu, ne zákonné
+  písmeno.) Závěr R-13a to **nemění, ale opírá se jinak**: r) je výslovně
+  **subsidiární** — použije se, jen když příjem nespadá pod a) až q) — a short
+  prodávající vlastnictví cenného papíru skutečně převádí, takže pod b) bod 2
+  spadá. Kvalifikace podle b) tedy platí dál.
+
+  **Co by se změnilo, kdyby byl short přesto písmenem r):** osvobození 50 000 Kč
+  podle § 10 odst. 3 písm. a) by na něj **dopadlo**. Jeho výluka vyjmenovává druhy
+  podle odstavce 1 písm. b) nebo c), písm. f) bodu 2, písm. h) bodů 2 až 6 a písm.
+  m), n) nebo p) — **písmeno r) mezi nimi není**. Kvalifikace pod r) by tedy byla
+  pro poplatníka výhodnější hned dvakrát: úhrn druhu do 50 000 Kč osvobozený
+  (opak R-13f) a zároveň by short nečerpal stovku podle § 4 odst. 1 písm. t)
+  (opak R-13e). Právě proto je zařazení pod b) **bezpečný default** — nikdy
+  nepodhodnotí daň. Přepínač z toho neděláme: litera b) je jednoznačná
+  a subsidiarita r) ji nepřebíjí.
 - **R-13b Okamžik příjmu**: hotovostní princip § 5/1 — příjem plyne
   **připsáním výnosu z prodeje**, ne uzavřením pozice. Pro § 10/1 b) není
   „stanoveno jinak“ a zákonodárce mezidobí přes přelom roku řeší výslovně tam,
@@ -736,7 +938,10 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   Vyloučit ho z úhrnu a zároveň mu přiznat osvobození je nekonzistentní.
   **Jistota střední.**
 - **R-13f Osvobození 50k neplatí**: § 10/3 a) osvobozuje jen druhy **jiné než
-  podle odstavce 1 písm. b) nebo c)**. **Jistota vysoká.**
+  podle odstavce 1 písm. b) nebo c)**. **Jistota vysoká — ale podmíněně na
+  R-13a**: platí, dokud je short příjmem podle písm. b). Pod zbytkovým písmenem
+  r), které ve výluce § 10/3 a) uvedeno není, by osvobození 50 000 Kč naopak
+  dopadlo. Ta dvě pravidla proto nikdo nesmí měnit odděleně.
 - **R-13g Poplatek za půjčení a náhrada dividendy — NEDOLOŽENO**: borrow fee
   Fio sám popisuje jako „úrok z tržní hodnoty půjčených akcií“; úrok do výčtu
   v § 10/5 nespadá a § 10 nezná obdobu § 24, takže **default je neuplatnit**.

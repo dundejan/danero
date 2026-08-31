@@ -133,10 +133,33 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
           neuvádějí a do žádných limitů nevstupují. Úroky od brokera se daní celé,
           bez výdajů.
         </p>
+        {/* K7a-02: § 7a odst. 5 — uplatnění zápočtu v přiznání ruší rovnost daně
+            paušální dani za celý rok. Bez téhle výhrady tvrdila stránka
+            paušalistovi zápočet bez omezení. Text schválený 23. 8. 2026. */}
+        <p>
+          <strong>
+            Jsi OSVČ v paušálním režimu a limit 50 000 Kč jsi nepřekročil? Pak si
+            sraženou daň ze zahraničí v Česku nezapočteš — a je to tak v pořádku.
+          </strong>{' '}
+          V paušálním režimu je tvoje daň rovna paušální dani (§ 7a), takže
+          z těchhle dividend a úroků tu žádnou daň neplatíš. Není proti čemu
+          srážku započítat.
+        </p>
+        <p>
+          Kdybys ji <strong>v přiznání uplatnil</strong>, přestala by ti daň být
+          rovna paušální dani za celý rok (§ 7a odst. 5). Kromě přiznání by přišly
+          přehledy pro ČSSZ i zdravotní pojišťovnu a doplatek pojistného ze
+          skutečných příjmů. V paušálním režimu bys přitom zůstal a zálohy platil
+          dál. Co dává smysl místo toho: hlídat, ať ti v zahraničí nesrazí víc, než
+          dovoluje smlouva — u amerických dividend bez formuláře W-8BEN je to 30 %
+          místo 15 %. Rozdíl se žádá zpět ve státě zdroje, ne v českém přiznání.
+          (Kdo limit 50 000 Kč překročil, přiznání podává tak jako tak a zápočet
+          uplatní v plné výši.)
+        </p>
       </>
     ),
     zdroj:
-      '§ 8 a § 38f zákona o daních z příjmů (metoda prostého zápočtu); smlouvy o zamezení dvojího zdanění, čl. 10 — USA č. 32/1994 Sb., Německo č. 18/1984 Sb., Nizozemsko č. 138/1974 Sb.',
+      '§ 8 a § 38f zákona o daních z příjmů (metoda prostého zápočtu); § 7a odst. 5 (uplatnění zápočtu v přiznání ruší rovnost daně paušální dani); smlouvy o zamezení dvojího zdanění, čl. 10 — USA č. 32/1994 Sb., Německo č. 18/1984 Sb., Nizozemsko č. 138/1974 Sb.',
   },
   {
     id: 'derivaty',
@@ -200,14 +223,25 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
           Zvlášť stojí <strong>oznámení osvobozeného příjmu nad 5 000 000 Kč</strong>.
           Týká se i příjmu, který danit nemusíš — třeba prodeje akcií po třech
           letech držby. Přiznání kvůli němu nevzniká, ale finanční správě se ta
-          jediná částka musí oznámit, a to ve stejné lhůtě jako přiznání. Pokuta
-          za neoznámení jde do procent z neoznámené částky, takže se to vyplatí
-          nepřehlédnout. Danero takové příjmy označí samo.
+          jediná částka musí oznámit. Pokuta za neoznámení jde do procent
+          z neoznámené částky, takže se to vyplatí nepřehlédnout. Danero takové
+          příjmy označí samo.
+        </p>
+        {/* K7a-03: „ve stejné lhůtě jako přiznání“ platilo jen pro toho, kdo
+            přiznání podává. Měsíc navíc dává § 136 odst. 2 písm. a) daňového
+            řádu výslovně jen tomu, kdo „následně“ přiznání podá elektronicky —
+            kdo ho nepodává vůbec, zůstává na základních třech měsících. */}
+        <p>
+          <strong>Lhůta na oznámení je kratší, než čekáš.</strong> Kdo přiznání
+          podává, oznamuje ve stejné lhůtě jako přiznání. Kdo ho nepodává, má na
+          oznámení jen tři měsíce po konci roku — měsíc navíc totiž zákon dává
+          jen tomu, kdo přiznání skutečně podá elektronicky, a půl roku jen
+          tomu, komu ho podá poradce.
         </p>
       </>
     ),
     zdroj:
-      '§ 7a, § 38g a § 38v zákona o daních z příjmů; FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
+      '§ 7a, § 38g a § 38v zákona o daních z příjmů; § 136 odst. 1 a 2 daňového řádu a pokyn GFŘ D-59, str. 45 („K § 38v“ — lhůta oznámení u toho, kdo přiznání nepodává); FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
   },
   {
     id: 'kurzy',
