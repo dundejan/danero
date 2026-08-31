@@ -17,6 +17,12 @@ export function makeMockFetch(
     emptyExports?: boolean;
     /** Účet u brokera nedrží žádnou pozici (nově založený účet). */
     emptyPortfolio?: boolean;
+    /**
+     * Broker vrátí pozice v jiném tvaru, než čekáme (obalené do objektu).
+     * Naměřený následek: `TypeError: positions is not iterable` doputoval
+     * uživateli do UI jako text chyby syncu (K5-09).
+     */
+    malformedPortfolio?: boolean;
     /** Data vydá jen za tyhle roky (neúplná historie — ostatní roky prázdné). */
     onlyYears?: number[];
     /**
@@ -92,6 +98,7 @@ export function makeMockFetch(
       return new Response(hidden ? '' : (CSV_BY_YEAR[year] ?? ''), { status: 200 });
     }
     if (url.endsWith('/equity/portfolio')) {
+      if (options.malformedPortfolio) return json({ items: [] });
       return json(options.emptyPortfolio ? [] : PORTFOLIO);
     }
     if (url.endsWith('/equity/metadata/instruments')) {

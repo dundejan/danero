@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSyncStatus, syncStatusLabel, type StoredReconciliation } from '@/lib/broker-sync';
+import {
+  deriveSyncStatus,
+  syncErrorText,
+  syncStatusLabel,
+  type StoredReconciliation,
+} from '@/lib/broker-sync';
 
 /**
  * Díra v historii není nesoulad pozic. Tvrdit „pozice nesedí" tam, kde sedí,
@@ -76,5 +81,50 @@ describe('stav synchronizace účtu', () => {
   it('chybové řádky importu mají přednost před vším', () => {
     expect(deriveSyncStatus(2, reconciliation())).toBe('errors');
     expect(deriveSyncStatus(0, null)).toBe('errors');
+  });
+});
+
+/**
+ * K5-09 + K5-10: `catch` kolem rekonciliace i kolem celého jobu chytá i chyby
+ * runtime, takže se do `lastSyncError` (a odtud na /import) dostávaly surové
+ * anglické hlášky — naměřeno `positions is not iterable` a `fetch failed`.
+ * Uživatel z nich nepozná, jestli má něco udělat, počkat, nebo napsat nám.
+ */
+describe('text chyby syncu pro uživatele', () => {
+  it('síťové selhání se přeloží do češtiny', () => {
+    const text = syncErrorText(new TypeError('fetch failed'));
+    expect(text).not.toContain('fetch failed');
+    expect(text).toContain('spojit se serverem brokera');
+
+    expect(syncErrorText(new Error('connect ECONNREFUSED 1.2.3.4:443'))).toContain(
+      'spojit se serverem brokera',
+    );
+    expect(syncErrorText(new Error('getaddrinfo ENOTFOUND live.trading212.com'))).toContain(
+      'spojit se serverem brokera',
+    );
+  });
+
+  it('změněný tvar odpovědi brokera se přeloží do češtiny', () => {
+    const text = syncErrorText(new TypeError('positions is not iterable'));
+    expect(text).not.toContain('is not iterable');
+    expect(text).toContain('v jiném tvaru');
+
+    expect(syncErrorText(new TypeError("Cannot read properties of undefined (reading 'map')"))).toContain(
+      'v jiném tvaru',
+    );
+  });
+
+  it('vypršené spojení má vlastní větu', () => {
+    expect(syncErrorText(new Error('The operation was aborted due to timeout'))).toContain(
+      'odpovídal příliš dlouho',
+    );
+  });
+
+  it('naše vlastní české hlášky projdou beze změny', () => {
+    const nase = 'Trading212 API 403 na /equity/portfolio';
+    expect(syncErrorText(new Error(nase))).toBe(nase);
+    expect(syncErrorText(new Error('Účet u brokera už neexistuje.'))).toBe(
+      'Účet u brokera už neexistuje.',
+    );
   });
 });

@@ -435,4 +435,20 @@ describe('R-13: prodej nakrátko z Flex Query', () => {
     expect(effectOf('buySell="SELL" quantity="-10" openCloseIndicator="C;O"')).toBeUndefined();
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('otevírá opačnou');
   });
+
+  /**
+   * K6a-05: rada u „C;O“ nesmí vyznít jako pobídka dopsat si short přes
+   * univerzální šablonu — řádek už naimportovaný je a šablona je jiný jmenný
+   * prostor dedupe, takže se dopisek přičte. Naměřeno: 40 dopsaných kusů ke
+   * stokusovému fillu = 140 prodaných kusů ze 100, bez jediného varování.
+   */
+  it('rada u „C;O“ nesmí vést k tichému zdvojení kusů', () => {
+    const result = parseIbkrFlexXml(trade('buySell="SELL" quantity="-10" openCloseIndicator="C;O"'));
+    const message = result.warnings.map((w) => w.message).join(' ');
+    expect(message).toContain('Nedoplňuj');
+    expect(message).not.toMatch(/doplň ho ručně přes univerzální šablonu/);
+    // a musí říct, co udělat s původním řádkem, ne jen co nedělat
+    expect(message).toContain('Vrátit import zpět');
+    expect(message).toContain('position_effect');
+  });
 });

@@ -194,9 +194,14 @@ export function isAmbiguousThousands(value: string): boolean {
  * Zápis `1.000` / `1,234` — jedna skupina přesně tří číslic, tedy neodlišitelně
  * tisíce nebo tři desetinná místa. Sám o sobě nerozhodnutelný; rozhodne až
  * `detectDecimalSeparator` nad celým souborem.
+ *
+ * ⚠️ Celá část s vedoucí nulou (`0,125`, `0.125`, `01,234`) nerozhodnutelná
+ * NENÍ — tisíce se takhle nepíšou, takže oddělovač je jistě desetinný. Než se
+ * to rozlišilo, četl se `0,125` v anglicky lokalizovaném výpisu jako `0125`,
+ * tedy 125: tisícinásobek na množství, tiše a bez varování.
  */
 export function isAmbiguousThousandGroup(value: string): boolean {
-  return /^-?\d{1,3}[.,]\d{3}$/.test(value.replace(/[\s\u00a0\u202f]/g, ''));
+  return /^-?[1-9]\d{0,2}[.,]\d{3}$/.test(value.replace(/[\s\u00a0\u202f]/g, ''));
 }
 
 /**

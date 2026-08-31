@@ -73,6 +73,25 @@ export const REVOLUT_CRYPTO_NEW_CSV = [
   'DOGE,Buy,100,0.50 SEK,50.00 SEK,0.00 SEK,"May 5, 2021, 1:00:00 PM"',
 ].join('\n');
 
+/**
+ * K7b-14: evropsky lokalizovaný výpis — desetinná ČÁRKA je z cen jednoznačná
+ * („€0,25“), takže `1.000` u množství je tisíc kusů, ne jedna celá nula.
+ */
+export const REVOLUT_CRYPTO_EU_LOCALE_CSV = [
+  REVOLUT_CRYPTO_NEW_HEADER,
+  'DOGE,Buy,1.000,"€0,25","€250,00","€0,00","May 5, 2021, 1:00:00 PM"',
+].join('\n');
+
+/**
+ * R2-N1: výpis, ze kterého lokalizaci poznat nejde (jediná čísla se separátorem
+ * jsou trojčíslí). Množství `0,125` přesto nerozhodnutelné NENÍ — vedoucí nula
+ * tisícové oddělování vylučuje.
+ */
+export const REVOLUT_CRYPTO_LEADING_ZERO_CSV = [
+  REVOLUT_CRYPTO_NEW_HEADER,
+  'BTC,Buy,"0,125","€8000","€1000",,"Jun 12, 2018, 4:16:32 PM"',
+].join('\n');
+
 /** Krypto↔krypto směna: pár Sell+Buy se stejným časem, oba oceněné fiat hodnotou. */
 export const REVOLUT_CRYPTO_EXCHANGE_PAIR_CSV = [
   REVOLUT_CRYPTO_NEW_HEADER,

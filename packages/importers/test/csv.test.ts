@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cleanNumber, firstLine, isAmbiguousThousands, isValidIsoDate, parseCsv } from '../src/csv';
+import {
+  cleanNumber,
+  firstLine,
+  isAmbiguousThousandGroup,
+  isAmbiguousThousands,
+  isValidIsoDate,
+  parseCsv,
+} from '../src/csv';
 
 describe('RFC 4180 CSV parser', () => {
   it('parsuje uvozovky, čárky a nové řádky uvnitř polí', () => {
@@ -82,6 +89,26 @@ describe('isAmbiguousThousands (B-3-12)', () => {
     expect(isAmbiguousThousands('7848')).toBe(false);
     // čtyři číslice za čárkou nejsou tisícové trojčíslí
     expect(isAmbiguousThousands('7,8480')).toBe(false);
+  });
+});
+
+describe('isAmbiguousThousandGroup (B-3-12)', () => {
+  it('jedno trojčíslí za tečkou i za čárkou je nerozhodnutelné', () => {
+    expect(isAmbiguousThousandGroup('1,000')).toBe(true);
+    expect(isAmbiguousThousandGroup('1.000')).toBe(true);
+    expect(isAmbiguousThousandGroup('-999,000')).toBe(true);
+  });
+
+  /**
+   * R2-N1: tisíce se s vedoucí nulou nepíšou, takže oddělovač je jistě
+   * desetinný. Dokud to bylo „nerozhodnutelné“, četl Revolut `0,125`
+   * v anglicky lokalizovaném výpisu jako `0125`, tedy 125 kusů.
+   */
+  it('vedoucí nula v celé části tisícové oddělování vylučuje', () => {
+    expect(isAmbiguousThousandGroup('0,125')).toBe(false);
+    expect(isAmbiguousThousandGroup('0.125')).toBe(false);
+    expect(isAmbiguousThousandGroup('-0,125')).toBe(false);
+    expect(isAmbiguousThousandGroup('01,234')).toBe(false);
   });
 });
 

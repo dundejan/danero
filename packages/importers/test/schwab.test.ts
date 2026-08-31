@@ -452,4 +452,20 @@ describe('opce uplatněním a prodej nakrátko', () => {
     expect(result.warnings[0]!.message).toContain('nakrátko');
     expect(result.warnings[0]!.message).toContain('univerzální šablonu');
   });
+
+  /**
+   * K6a-06: skip je vědomý a zůstává, ale zdůvodnění bylo nepravdivé —
+   * hláška tvrdila, že pravidlo pro shorty zatím nemáme, ačkoli R-13 v docs/02
+   * existuje a engine ho počítá. Skutečný důvod je nerozpoznatelnost z dat:
+   * Schwab uzavírá short obyčejným „Buy“.
+   */
+  it('důvodem skipu je nerozpoznatelnost z dat, ne chybějící daňové pravidlo', () => {
+    const csv = rows('"05/02/2024","Sell Short","AAPL","APPLE INC","10","$180.00","$1.00","$1799.00"');
+    const result = parseSchwabCsv(csv, { AAPL: { isin: 'US0378331005' } });
+    const message = result.warnings[0]!.message;
+    expect(message).toContain('počítat umíme');
+    expect(message).toContain('Buy');
+    expect(message).toContain('position_effect');
+    expect(message).not.toMatch(/bez pravidla|zatím neumíme/);
+  });
 });

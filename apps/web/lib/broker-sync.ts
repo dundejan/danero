@@ -3,6 +3,7 @@ import { buildLedger, positionsAt, resolveOptions, WarningCollector } from '@dan
 import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { brokerAccounts } from '@/db/schema';
+import { errorText } from '@/lib/log';
 import { loadTransactions } from '@/lib/portfolio';
 import { ts } from '@/lib/sql';
 
@@ -136,6 +137,44 @@ export const isSyncBatchFilename = (filename: string): boolean =>
 /** Rekonciliace „nedoběhla“ — jediný tvar pro všechna chybová místa. */
 export function emptyReconciliation(error: string): StoredReconciliation {
   return { ok: false, matchedCount: 0, unmatchedTickers: [], issues: [], error };
+}
+
+/**
+ * Hlášky runtime, které nesmí projít do UI tak, jak jsou. Klíč je fragment
+ * anglického originálu, hodnota česká náhrada.
+ *
+ * Dvě třídy, obě naměřené v `lastSyncError` (K5-09, K5-10):
+ * síťové selhání (`fetch failed`) a změněný tvar odpovědi brokera
+ * (`positions is not iterable`). Obojí je pro uživatele jen technický šum —
+ * nepozná z toho, jestli má něco udělat, počkat, nebo nám napsat.
+ */
+const RUNTIME_ERROR_TRANSLATIONS: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|socket hang up|network error|terminated/i,
+    'Nepodařilo se spojit se serverem brokera, synchronizace proto neproběhla. Bývá to krátký výpadek sítě nebo brokera — zkus ji za chvíli spustit znovu, nic se nezdvojí.',
+  ],
+  [
+    /aborted|AbortError|TimeoutError|The operation was aborted/i,
+    'Broker odpovídal příliš dlouho a spojení jsme museli ukončit. Zkus synchronizaci za chvíli znovu — co už se stáhlo, zůstává.',
+  ],
+  [
+    /is not iterable|is not a function|Cannot read properties|undefined is not an object|JSON|Unexpected token/i,
+    'Broker vrátil odpověď v jiném tvaru, než čekáme, takže synchronizace skončila předčasně. Bývá to změna na jeho straně; zkus to za chvíli znovu, a jestli to bude trvat, dej nám vědět.',
+  ],
+];
+
+/**
+ * Text chyby syncu určený UŽIVATELI (sloupec `lastSyncError`, stránka /import).
+ *
+ * Vlastní hlášky i hlášky brokera jsou české a projdou beze změny; přeloží se
+ * jen surové anglické hlášky runtime, které se do UI dostaly nedopatřením —
+ * `catch` kolem rekonciliace i kolem celého jobu chytá totiž i `TypeError`.
+ * Původní text zůstává v logu (`errorText`), aby se příčina neztratila.
+ */
+export function syncErrorText(error: unknown): string {
+  const message = errorText(error);
+  const match = RUNTIME_ERROR_TRANSLATIONS.find(([pattern]) => pattern.test(message));
+  return match ? match[1] : message;
 }
 
 /**

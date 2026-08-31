@@ -16,6 +16,7 @@ import {
   type SyncStatus,
   type SyncYearProgress,
   previouslyVerifiedYears,
+  syncErrorText,
   syncBatchFilename,
 } from '@/lib/broker-sync';
 import { decryptSecret } from '@/lib/crypto';
@@ -25,7 +26,7 @@ import {
   loadImportState,
   type ImportSummary,
 } from '@/lib/import-service';
-import { errorText } from '@/lib/log';
+import { errorText, logEvent } from '@/lib/log';
 import { upsertInstrumentPrices } from '@/lib/prices';
 
 export interface SyncOutcome {
@@ -110,6 +111,23 @@ function defaultPollIntervalMs(): number {
   // GET /history/exports snese ~1 dotaz/min — pomalejší poll je nutnost, ne opatrnost
   return 65_000;
 }
+
+/**
+ * Kolikrát se za JEDEN rok zeptáme, jestli je export hotový (K5-16).
+ *
+ * Rozpočet: `maxDuration` cronu je 800 s a jeden tick jobů si z něj bere
+ * `DEFAULT_JOB_BUDGET_MS` = 600 s. Devět dotazů po 65 s = 585 s, což je
+ * největší strop, který se do rozpočtu ticku ještě vejde, a zároveň sedí na
+ * dokumentovaný předpoklad „nejdelší tichý úsek je čekání na export jednoho
+ * roku, max 10 minut“ (lib/jobs.ts, `STALE_AFTER_MS`).
+ *
+ * Dřív tu byl časový rozpočet 600 s. Ten se ale v klientovi kontroloval PŘED
+ * uspáním, takže reálné čekání bylo 10 dotazů a 671 s (naměřeno) — o interval
+ * víc, než kolik měl celý tick na všechny joby dohromady. Rok, jehož export se
+ * nikdy neobjevil, tak spolykal 84 % `maxDuration` a zbytek běhu utnul Vercel.
+ * Čekání na export, který se opravdu generuje, se tím zkracuje o jediný dotaz.
+ */
+const EXPORT_POLL_ATTEMPTS = 9;
 
 async function resolveClient(
   credentials: StoredCredentials,
@@ -265,8 +283,7 @@ export async function syncTrading212(
           includeInterest: true,
         },
       },
-      pollIntervalMs,
-      600_000,
+      { pollIntervalMs, maxAttempts: EXPORT_POLL_ATTEMPTS },
     );
     // Ochrana před ne-CSV odpovědí (např. XML chyba expirovaného odkazu) —
     // autodetekce by ji jinak poslala do IBKR parseru a smetí by dostalo cizí broker
@@ -384,8 +401,15 @@ export async function syncTrading212(
     );
   } catch (error) {
     // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí
-    // přepsat poslední platný „pozice sedí“ — chyba se uloží vedle
-    reconciliationError = errorText(error);
+    // přepsat poslední platný „pozice sedí“ — chyba se uloží vedle.
+    // Do UI jde česky (`syncErrorText`), do logu původní text: bez něj by se
+    // příčina ztratila, protože sync sám doběhl a job skončí jako úspěšný.
+    reconciliationError = syncErrorText(error);
+    logEvent('warn', 'sync.reconciliation_failed', {
+      accountId: account.id,
+      broker: account.broker,
+      error: errorText(error),
+    });
   }
 
   const added = batches.reduce((sum, batch) => sum + batch.added, 0);

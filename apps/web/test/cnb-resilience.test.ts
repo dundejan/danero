@@ -24,7 +24,7 @@ const odpoved = (text: string): typeof fetch =>
 
 describe('odolnost stahování kurzů ČNB', () => {
   it('G-4: nevalidní buňka (N/A, pomlčka) neshodí kurzy celého roku', () => {
-    const rows = parseCnbYearText(S_NA_BUNKOU);
+    const { rows } = parseCnbYearText(S_NA_BUNKOU);
     // vypadnou jen ty dvě vadné buňky, zbytek roku zůstává
     expect(rows).toHaveLength(4);
     expect(rows.find((r) => r.currency === 'USD' && r.day === '2026-01-02')).toBeUndefined();
@@ -39,6 +39,38 @@ describe('odolnost stahování kurzů ČNB', () => {
     await expect(fetchCnbYear(db, 2026, odpoved(HTML_CHYBOVKA))).rejects.toThrow(
       /není kurzovní lístek/,
     );
+  }, 30_000);
+
+  /**
+   * K5-06: hlavička zůstane, ale řádky pod ní změní formát (tady datum na ISO).
+   * `looksLikeCnbYearText` stojí na hlavičce, takže tohle propustí — a cron by
+   * odpověděl HTTP 200 s nulou uložených kurzů. Naměřeno před opravou:
+   * `{ vratilo: 0, datovychRadku: 2, rozparsovano: 0 }`, bez jediné výjimky.
+   */
+  it('K5-06: změna formátu řádků pod nezměněnou hlavičkou musí spadnout nahlas', async () => {
+    const zmenaFormatu = [
+      'Datum|1 EUR|1 USD',
+      '2026-01-02|25,120|22,430',
+      '2026-01-05|25,080|22,410',
+    ].join('\n');
+    expect(looksLikeCnbYearText(zmenaFormatu)).toBe(true); // hlavička je v pořádku
+    expect(parseCnbYearText(zmenaFormatu)).toEqual({ rows: [], dataLines: 2 });
+    const db = await createPgliteDb();
+    await expect(fetchCnbYear(db, 2026, odpoved(zmenaFormatu))).rejects.toThrow(
+      /ani z jednoho jsme nepřečetli kurz/,
+    );
+  }, 30_000);
+
+  /**
+   * Protipól: „0 řádků = selhání“ by křičelo každý Nový rok. 1. ledna je
+   * svátek, ČNB nevyhlašuje a roční soubor je legitimně jen hlavička — cron
+   * stahuje běžný rok, takže by tenhle stav nastal vždycky.
+   */
+  it('K5-06: prázdný rok (jen hlavička) selhat NESMÍ', async () => {
+    const prazdnyRok = 'Datum|1 EUR|1 USD';
+    expect(parseCnbYearText(prazdnyRok)).toEqual({ rows: [], dataLines: 0 });
+    const db = await createPgliteDb();
+    await expect(fetchCnbYear(db, 2026, odpoved(prazdnyRok))).resolves.toBe(0);
   }, 30_000);
 
   it('G-5: duplicitní měna v hlavičce se před uložením deduplikuje', async () => {

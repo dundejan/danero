@@ -6,6 +6,7 @@ import { brokerAccounts, jobs } from '@/db/schema';
 import type { SyncJobView } from '@/components/sync-job-progress';
 import {
   markAccountSyncError,
+  syncErrorText,
   type SyncProgress,
   type SyncStatus,
   type SyncYearProgress,
@@ -265,11 +266,14 @@ async function withSyncAccount<T>(
   try {
     return await run(account, onProgress);
   } catch (error) {
+    // do UI jde česky (K5-09/K5-10: `catch` chytá i TypeError a surová
+    // anglická hláška runtime končila v lastSyncError); do logu níž jde
+    // původní text, ať se příčina neztratí
     await markAccountSyncError(
       db,
       account.id,
       job.userId,
-      explainError(errorText(error)),
+      explainError(syncErrorText(error)),
     );
     throw error;
   }

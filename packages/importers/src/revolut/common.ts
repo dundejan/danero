@@ -11,15 +11,16 @@ export const detectRevolutDecimal = (rows: string[][]): ',' | '.' | null =>
   detectDecimalSeparator(rows.flat().map(digitsOf));
 
 /**
- * Věta k nerozhodnutelnému zápisu (jedna čárka a přesně tři číslice za ní),
- * když soubor lokalizaci nijak neprozradil. `null` = hodnota je jednoznačná.
+ * Věta k nerozhodnutelnému zápisu (jeden oddělovač a přesně tři číslice za ním,
+ * `1,000` i `1.000`), když soubor lokalizaci nijak neprozradil.
+ * `null` = hodnota je jednoznačná.
  */
 export function revolutAmbiguityNote(field: string, raw: string, used: string): string | null {
   if (!isAmbiguousThousandGroup(digitsOf(raw))) return null;
   return (
-    `${field} „${raw.trim()}“ jsme přečetli jako ${used}. Tenhle výpis nikde neprozrazuje, jestli čárka ` +
-    'odděluje tisíce, nebo desetinná místa — zkontroluj si ten řádek ve výpisu; kdyby to bylo naopak, ' +
-    'lišila by se hodnota tisíckrát.'
+    `${field} „${raw.trim()}“ jsme přečetli jako ${used}. Tenhle výpis nikde neprozrazuje, jestli tečka ` +
+    'a čárka oddělují tisíce, nebo desetinná místa — zkontroluj si ten řádek ve výpisu; kdyby to bylo ' +
+    'naopak, lišila by se hodnota tisíckrát.'
   );
 }
 
@@ -43,11 +44,15 @@ export interface RevolutMoney {
  * („5,837.33“) a ojediněle desetinná ČÁRKA („0,76672417“).
  * Vrací null, pokud hodnota není číslo.
  *
- * `decimal` je desetinný oddělovač CELÉHO souboru (`detectDecimalSeparator`).
- * Rozhoduje jediný nerozhodnutelný případ — jedna čárka a přesně tři číslice
- * za ní: `0,125` je v evropsky lokalizovaném výpisu 0,125 kusu, v anglickém
- * 125 kusů. Do 12. 8. 2026 vyhrávaly vždycky tisíce, takže množství 0,125 BTC
- * se uložilo jako 125 BTC — bez chyby i bez varování.
+ * `decimal` je desetinný oddělovač CELÉHO souboru (`detectDecimalSeparator`)
+ * a rozhoduje OBA nerozhodnutelné zápisy, čárkový i tečkový: `1,000` a `1.000`
+ * jsou v anglickém výpisu tisíc a jedna celá nula, v evropském přesně naopak.
+ * Rozhoduje se to jednou za soubor, nikdy per hodnota — jinak si tisícinásobek
+ * najde cestu do nabývací ceny i do limitů.
+ *
+ * `0,125` mezi ně NEPATŘÍ: vedoucí nula vylučuje tisíce, takže je to vždycky
+ * 0,125 kusu (viz `isAmbiguousThousandGroup`). Do 31. 8. 2026 se právě tenhle
+ * zápis v anglicky lokalizovaném výpisu četl jako 125 kusů.
  */
 export function parseRevolutMoney(
   value: string,
@@ -81,11 +86,19 @@ export function parseRevolutMoney(
     }
   } else if (hasComma) {
     const parts = digits.split(',');
-    // jediná čárka + skupina jiná než 3 číslice = desetinná čárka („0,76672417“);
-    // u trojčíslí rozhoduje lokalizace souboru, výchozí je americký zápis
-    const decimalComma =
-      parts.length === 2 && (parts[1]!.length !== 3 || decimal === ',');
-    digits = decimalComma ? parts.join('.') : parts.join('');
+    // víc čárek = jistě tisíce; jedna čárka + trojčíslí („1,000“) je
+    // nerozhodnutelná a rozhodne lokalizace souboru — výchozí je americký
+    // zápis, protože Revolut posílá výpisy povětšinou anglicky
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(digits) && decimal !== ',');
+    digits = thousands ? parts.join('') : parts.join('.');
+  } else if (hasDot) {
+    const parts = digits.split('.');
+    // Zrcadlově k čárce: „1.000“ je v evropsky lokalizovaném výpisu TISÍC.
+    // Tahle větev do 31. 8. 2026 chyběla úplně, takže parametr `decimal` se
+    // u samotné tečky vůbec nekonzultoval a 1 000 kusů se uložilo jako 1 —
+    // tiše, bez chyby i bez varování (táž třída jako Degiro 12. 8. 2026).
+    const thousands = parts.length > 2 || (isAmbiguousThousandGroup(digits) && decimal === ',');
+    digits = thousands ? parts.join('') : digits;
   }
   if (!/^\d+(\.\d+)?$/.test(digits)) return null;
 

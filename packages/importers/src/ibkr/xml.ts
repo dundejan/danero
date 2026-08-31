@@ -149,6 +149,14 @@ const ISIN_RE = /\b([A-Z]{2}[A-Z0-9]{9}\d)\b/g;
  * Rozdělit ho na dvě transakce z dat nejde (Flex neuvádí, kolik kusů připadá
  * na kterou stranu), takže se raději neoznačí vůbec — spočítá se jako dosud
  * a uživatel dostane varování. Tiše ho označit za short by bylo horší.
+ *
+ * ⚠️ Varování ale nesmí vyznít jako pobídka „doplň si tu short část přes
+ * univerzální šablonu“ (tak znělo do 31. 8. 2026). Řádek je totiž už
+ * naimportovaný a šablona je jiný jmenný prostor dedupe, takže se ruční
+ * dopisek nenahradí — přičte se. Naměřeno: 40 dopsaných kusů ke stokusovému
+ * fillu dalo v ledgeru 140 prodaných kusů ze skutečných 100, cross-broker
+ * hlášení duplicitu nenašlo (`cross: []`) a uživatel nedostal ani varování.
+ * Jediná cesta k přesnému rozdělení je vrátit import a zapsat obě nohy ručně.
  */
 function shortPositionEffect(
   trade: Attrs,
@@ -161,7 +169,7 @@ function shortPositionEffect(
   if (indicator.includes(';')) {
     result.warnings.push({
       line,
-      message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''} zároveň zavírá jednu pozici a otevírá opačnou (openCloseIndicator „${trade.openCloseIndicator}“) — kolik kusů patří na kterou stranu, výpis neuvádí. Zpracovali jsme ho jako běžný obchod; jestli šlo o prodej nakrátko, doplň ho ručně přes univerzální šablonu.`,
+      message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''} zároveň zavírá jednu pozici a otevírá opačnou (openCloseIndicator „${trade.openCloseIndicator}“) — kolik kusů patří na kterou stranu, výpis neuvádí. Zpracovali jsme ho jako jeden běžný obchod, takže počet kusů i částka sedí; rozdělené na prodej nakrátko a běžnou pozici není. Nedoplňuj ho proto přes univerzální šablonu — obchod už naimportovaný je a druhý záznam by kusy přičetl podruhé. Jestli na tom rozdělení záleží, vrať celý tenhle import zpět (tlačítko „Vrátit import zpět“ v historii importů) a zapiš obě nohy ručně přes univerzální šablonu se sloupcem position_effect.`,
     });
     return undefined;
   }

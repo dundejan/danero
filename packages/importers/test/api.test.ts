@@ -155,6 +155,97 @@ describe('downloadCsv: kontrola úplnosti přenosu', () => {
   });
 });
 
+const EXPORT_REQUEST = {
+  timeFrom: '2026-01-01T00:00:00Z',
+  timeTo: '2026-12-31T23:59:59Z',
+  dataIncluded: {
+    includeOrders: true,
+    includeDividends: true,
+    includeTransactions: true,
+    includeInterest: true,
+  },
+};
+
+describe('čekání na export (K5-16)', () => {
+  /**
+   * Rozpočet čekání byl časový a kontroloval se PŘED uspáním, takže se
+   * o celý interval překračoval. Naměřeno v poměru 1:1000 k produkci
+   * (poll 65 ms, rozpočet 600 ms): 10 dotazů a 671 ms — tedy 671 s tam, kde
+   * měl volající 600 s, což je víc, než kolik má celý tick cronu na všechny
+   * joby. Strop na POČTU dotazů dá pevnou horní mez.
+   */
+  it('export, který se v seznamu nikdy neobjeví, se vzdá po zadaném počtu dotazů', async () => {
+    let listCalls = 0;
+    const fetchImpl = (async (_url: string | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ reportId: 42 }), { status: 200 });
+      }
+      listCalls += 1;
+      // reportId 42 se v seznamu neobjeví nikdy
+      return new Response(JSON.stringify([{ reportId: 7, status: 'Finished' }]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const client = new Trading212Client({ apiKey: 'k', fetchImpl });
+    const startedAt = Date.now();
+    await expect(
+      client.fetchHistoryCsv(EXPORT_REQUEST, { pollIntervalMs: 65, maxAttempts: 9 }),
+    ).rejects.toThrow(/ani po 9 dotazech/);
+    const elapsed = Date.now() - startedAt;
+
+    expect(listCalls).toBe(9);
+    // horní mez je součin, ne součin plus jeden interval navíc
+    expect(elapsed).toBeLessThan(9 * 65 + 120);
+  }, 30_000);
+
+  it('hotový export se stáhne hned, jakmile se objeví — strop čekání nezkracuje', async () => {
+    let listCalls = 0;
+    const fetchImpl = (async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      if (String(url).includes('downloads')) return new Response('Action,Time\n', { status: 200 });
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ reportId: 42 }), { status: 200 });
+      }
+      listCalls += 1;
+      // první dva dotazy: export se teprve generuje
+      const status = listCalls < 3 ? 'Processing' : 'Finished';
+      return new Response(
+        JSON.stringify([
+          {
+            reportId: 42,
+            status,
+            ...(status === 'Finished' ? { downloadLink: 'https://downloads.t212.test/42.csv' } : {}),
+          },
+        ]),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const client = new Trading212Client({ apiKey: 'k', fetchImpl });
+    await expect(
+      client.fetchHistoryCsv(EXPORT_REQUEST, { pollIntervalMs: 5, maxAttempts: 9 }),
+    ).resolves.toBe('Action,Time\n');
+    expect(listCalls).toBe(3);
+  }, 30_000);
+});
+
+describe('mapPositionsToIsin — tvar odpovědi brokera (K5-09)', () => {
+  /**
+   * `request()` vrací, co přijde, takže obalení pozic do objektu skončí uvnitř
+   * `for…of` jako `TypeError`. Naměřeno: uživatel četl v UI surové anglické
+   * „positions is not iterable“ jako text chyby synchronizace.
+   */
+  it('pozice v jiném tvaru než pole vyhodí českou chybu, ne TypeError', () => {
+    const jinyTvar = { items: [] } as unknown as Trading212Position[];
+    expect(() => mapPositionsToIsin(jinyTvar, [])).toThrow(Trading212ApiError);
+    expect(() => mapPositionsToIsin(jinyTvar, [])).toThrow(/v jiném tvaru/);
+    expect(() => mapPositionsToIsin(jinyTvar, [])).not.toThrow(/is not iterable/);
+  });
+
+  it('číselník instrumentů v jiném tvaru než pole taky', () => {
+    const jinyTvar = null as unknown as Trading212Instrument[];
+    expect(() => mapPositionsToIsin([], jinyTvar)).toThrow(/v jiném tvaru/);
+  });
+});
+
 describe('cesta exportních endpointů (T212 ji v dokumentaci přesunul pod /equity)', () => {
   it('na 404 zkusí dokumentovanou cestu a tu úspěšnou si zapamatuje', async () => {
     const calls: string[] = [];

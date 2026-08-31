@@ -67,8 +67,8 @@ describe.skipIf(!apiKey)('živé Trading212 API (T212_API_KEY)', () => {
             includeInterest: true,
           },
         },
-        65_000, // GET /history/exports snese ~1 dotaz/min
-        600_000,
+        // GET /history/exports snese ~1 dotaz/min; 9 dotazů = 585 s čekání
+        { pollIntervalMs: 65_000, maxAttempts: 9 },
       );
       const imported = parseTrading212Csv(csv);
       console.info(

@@ -4,6 +4,7 @@ import { d, type Money } from '@danero/shared';
 import type { DailyRateProvider } from '@danero/engine';
 import type { Db } from '@/db';
 import { fxRates } from '@/db/schema';
+import { plural } from '@/lib/format';
 import { logEvent } from '@/lib/log';
 
 /**
@@ -24,13 +25,22 @@ export function looksLikeCnbYearText(text: string): boolean {
   return /^Datum\s*\|/.test(text.trimStart());
 }
 
+export interface CnbYearParse {
+  rows: Array<{ day: string; currency: string; rate: string }>;
+  /**
+   * Kolik řádků pod hlavičkou soubor vůbec nabídl — bez ohledu na to, jestli
+   * z nich něco vypadlo. Prázdný rok (1. ledna, svátek) má nulu legitimně;
+   * `dataLines > 0` a přitom žádný kurz znamená, že se změnil formát.
+   */
+  dataLines: number;
+}
+
 /** Parsuje roční export ČNB: 1. řádek hlavička „Datum|1 AUD|100 JPY|…“, pak dny. */
-export function parseCnbYearText(
-  text: string,
-): Array<{ day: string; currency: string; rate: string }> {
+export function parseCnbYearText(text: string): CnbYearParse {
   const lines = text.trim().split('\n');
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], dataLines: 0 };
   let invalidCells = 0;
+  let dataLines = 0;
 
   // ČNB při změně kurzovního lístku uprostřed roku vloží NOVOU hlavičku
   // (ověřeno na roce 2022 — vypadl RUB) — mapování sloupců se musí přepočítat,
@@ -57,6 +67,8 @@ export function parseCnbYearText(
       columns = parseHeader(line);
       continue;
     }
+    if (line.trim() === '') continue;
+    dataLines += 1;
     const cells = line.split('|');
     const dateCz = cells[0]?.trim();
     if (!dateCz || !/^\d{2}\.\d{2}\.\d{4}$/.test(dateCz)) continue;
@@ -79,7 +91,7 @@ export function parseCnbYearText(
   if (invalidCells > 0) {
     logEvent('warn', 'cnb.cells_skipped', { invalidCells, rows: rows.length });
   }
-  return rows;
+  return { rows, dataLines };
 }
 
 /** Stáhne a uloží kurzy jednoho roku (idempotentně). Vrací počet uložených dní×měn. */
@@ -103,7 +115,19 @@ export async function fetchCnbYear(
       `ČNB kurzy pro rok ${year}: odpověď není kurzovní lístek (chybí hlavička „Datum|“) — služba nejspíš hlásí výpadek. Zkus to později.`,
     );
   }
-  const rows = parseCnbYearText(text);
+  const { rows, dataLines } = parseCnbYearText(text);
+  // K5-06: hlavička se nezměnila, ale řádky pod ní ano (jiný formát data,
+  // jiný oddělovač) — `looksLikeCnbYearText` to nechytí a cron by odpověděl
+  // HTTP 200 s nulou uložených kurzů, takže by kurzy tiše zamrzly.
+  // Selhat se smí VÝHRADNĚ takhle: „0 řádků = chyba“ by křičelo každý Nový
+  // rok, protože 1. ledna ČNB nevyhlašuje a roční soubor je legitimně jen
+  // hlavička. Rozhoduje proto totéž co u importu výpisů: parser se rozeběhl
+  // a nevydal ani jeden záznam.
+  if (dataLines > 0 && rows.length === 0) {
+    throw new Error(
+      `ČNB kurzy pro rok ${year}: soubor má ${dataLines} ${plural(dataLines, 'datový řádek', 'datové řádky', 'datových řádků')}, ale ani z jednoho jsme nepřečetli kurz — nejspíš se změnil formát souboru. Kurzy jsme raději nechali být, ať se nepřepíšou nesmyslem.`,
+    );
+  }
   if (rows.length === 0) {
     logEvent('warn', 'cnb.year_empty', { year });
   }

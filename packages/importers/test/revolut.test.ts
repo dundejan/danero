@@ -7,12 +7,15 @@ import {
   parseRevolutCryptoCsv,
   parseRevolutInvestCsv,
   parseRevolutMoney,
+  revolutAmbiguityNote,
   REVOLUT_BROKER,
   sniffRevolutCryptoCsv,
   sniffRevolutInvestCsv,
 } from '../src/revolut/csv';
 import {
   REVOLUT_CRYPTO_EXCHANGE_PAIR_CSV,
+  REVOLUT_CRYPTO_EU_LOCALE_CSV,
+  REVOLUT_CRYPTO_LEADING_ZERO_CSV,
   REVOLUT_CRYPTO_NEW_CSV,
   REVOLUT_CRYPTO_NEW_NO_CURRENCY_CSV,
   REVOLUT_CRYPTO_NEW_HEADER,
@@ -51,6 +54,33 @@ describe('parseRevolutMoney', () => {
     expect(parseRevolutMoney('')).toBeNull();
     expect(parseRevolutMoney('   ')).toBeNull();
     expect(parseRevolutMoney('N/A')).toBeNull();
+  });
+
+  /**
+   * K7b-14: větev pro samotnou tečku se na lokalizaci souboru vůbec neptala,
+   * takže `1.000` zůstalo jednou i ve výpisu, který desetinnou čárku prokazuje.
+   * Tisícinásobek na množství i na ceně — tiše.
+   */
+  it('K7b-14: samotná tečka respektuje desetinný oddělovač celého souboru', () => {
+    expect(parseRevolutMoney('1.000', ',')).toEqual({ amount: '1000', currency: null });
+    expect(parseRevolutMoney('1.000', '.')).toEqual({ amount: '1.000', currency: null });
+    // bez důkazu ze souboru zůstává americký zápis (a volající přidá varování)
+    expect(parseRevolutMoney('1.000', null)).toEqual({ amount: '1.000', currency: null });
+    // víc teček je jistě tisícové oddělování — dřív hodnota propadla jako nečíslo
+    expect(parseRevolutMoney('1.234.567', ',')).toEqual({ amount: '1234567', currency: null });
+    // opačný směr zůstává, jak byl
+    expect(parseRevolutMoney('1,000', ',')).toEqual({ amount: '1.000', currency: null });
+    expect(parseRevolutMoney('1,000', '.')).toEqual({ amount: '1000', currency: null });
+  });
+
+  /** R2-N1: vedoucí nula tisícové oddělování vylučuje — „0,125“ je osmina. */
+  it('R2-N1: „0,125“ je 0,125 i v anglicky lokalizovaném výpisu, ne 125', () => {
+    expect(parseRevolutMoney('0,125', '.')).toEqual({ amount: '0.125', currency: null });
+    expect(parseRevolutMoney('0,125', null)).toEqual({ amount: '0.125', currency: null });
+    expect(parseRevolutMoney('0,125', ',')).toEqual({ amount: '0.125', currency: null });
+    expect(parseRevolutMoney('0.125', ',')).toEqual({ amount: '0.125', currency: null });
+    // a protože nerozhodnutelná není, nemá se na ni ani upozorňovat
+    expect(revolutAmbiguityNote('Množství', '0,125', '0.125')).toBeNull();
   });
 });
 
@@ -526,6 +556,34 @@ describe('lokalizovaná čísla: tisíce vs. desetinná místa (B-3-12)', () => 
     const result = parseRevolutInvestCsv(csv, { MSFT: { isin: 'US5949181045' } });
     expect(result.errors).toEqual([]);
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('tisíckrát');
+  });
+
+  /**
+   * K7b-14: druhý směr téže třídy. Ceny „€0,25“ desetinnou čárku prokazují,
+   * takže `1.000` u množství je tisíc kusů — dokud se větev pro samotnou tečku
+   * na lokalizaci neptala, uložil se jeden kus.
+   */
+  it('evropský výpis: „1.000“ kusů je tisíc kusů, ne jedna celá nula', () => {
+    const result = parseRevolutCryptoCsv(REVOLUT_CRYPTO_EU_LOCALE_CSV);
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.quantity.toString()).toBe('1000');
+    expect(buy.pricePerShare.toString()).toBe('0.25');
+  });
+
+  /**
+   * R2-N1: soubor lokalizaci neprozradí (jediná čísla s oddělovačem jsou
+   * trojčíslí), ale `0,125` nerozhodnutelné není — vedoucí nula tisíce
+   * vylučuje. Dřív z osminy bitcoinu vyšlo 125 BTC, a to jen s varováním.
+   */
+  it('vedoucí nula rozhoduje sama: „0,125“ je osmina i bez důkazu ze souboru', () => {
+    const result = parseRevolutCryptoCsv(REVOLUT_CRYPTO_LEADING_ZERO_CSV);
+    expect(result.errors).toEqual([]);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+    expect(buy.quantity.toString()).toBe('0.125');
+    expect(result.warnings).toEqual([]);
   });
 });
 

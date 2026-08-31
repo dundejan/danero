@@ -49,9 +49,15 @@ const SELL_ACTIONS = new Set(['Sell', 'Sell to Open', 'Sell to Close']);
  * Prodej nakrátko na spotu. NEIMPORTUJEME ho jako běžný obchod, i když by to
  * bylo snadné: prodej bez předchozího nákupu engine ocení nulou (ERROR
  * NEGATIVE_POSITION v ledger.ts) a zdanil by se CELÝ výnos shortu, zpětný
- * nákup by pak zůstal jako lot, který se nikdy neprodá. Daňové pravidlo pro
- * shorty v docs/02 zatím není, a vymýšlet ho v parseru se nesmí (pravidlo 2
- * v CLAUDE.md) — dokud nebude, je poctivější říct to nahlas.
+ * nákup by pak zůstal jako lot, který se nikdy neprodá.
+ *
+ * ⚠️ Důvod skipu NENÍ chybějící pravidlo — R-13 v docs/02 existuje a engine ho
+ * počítá (do 31. 8. 2026 tu i v hlášce uživateli stálo opačně). Skutečný důvod
+ * je, že short se podle R-13 pozná VÝHRADNĚ podle značky `positionEffect`
+ * z parseru, a Schwab ji ve svém exportu nemá: v reálných datech uzavírá short
+ * obyčejným `Buy`, který od běžného nákupu nerozeznáme. Označit jen otevírací
+ * nohu („Sell Short“) by tedy shortu nechalo v enginu navždy otevřenou pozici,
+ * což je horší než řádek přeskočit a říct to nahlas.
  */
 const SHORT_ACTIONS = new Map<string, string>([
   ['Sell Short', 'prodej nakrátko'],
@@ -357,7 +363,7 @@ export function parseSchwabCsv(
     if (shortAction !== undefined) {
       result.warnings.push({
         line,
-        message: `${symbol || 'Řádek'}: ${shortAction} („${action}“) zatím neumíme daňově zpracovat — řádek jsme přeskočili. Doplň obchod přes univerzální šablonu, nebo nám napiš; spočítat short bez pravidla by dalo špatné číslo.`,
+        message: `${symbol || 'Řádek'}: ${shortAction} („${action}“) jsme přeskočili. Prodej nakrátko počítat umíme, ale potřebujeme u obou nohou vědět, která short otevírá a která zavírá — a Schwab to ve výpisu neuvádí: zpětný nákup posílá jako obyčejný „Buy“, který od běžného nákupu nerozeznáme. Zapiš celý obchod (prodej i zpětný nákup) přes univerzální šablonu se sloupcem position_effect, nebo nám napiš; přeskočený řádek nic nezdvojí.`,
       });
       continue;
     }

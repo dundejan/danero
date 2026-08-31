@@ -451,6 +451,45 @@ describe('syncTrading212 (mock API, in-memory PGlite)', () => {
       expect(lastAuth).toBe('mock-secret-456789');
     },
   );
+
+  /**
+   * K5-09 + K5-10: `catch` kolem rekonciliace chytá i `TypeError`, takže když
+   * broker změní tvar odpovědi, doputuje do UI surová anglická hláška runtime.
+   * Naměřeno v auditu: `lastSyncError: 'positions is not iterable'` — text, ze
+   * kterého uživatel nepozná, jestli má něco udělat, počkat, nebo napsat nám.
+   * Stažení transakcí přitom proběhlo, takže sync sám je v pořádku.
+   */
+  it(
+    'změněný tvar odpovědi brokera skončí českou hláškou, ne „is not iterable“',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u9', name: 'Test', email: 'tvar@danero.cz' });
+      await db.insert(brokerAccounts).values({
+        id: 'acc9',
+        userId: 'u9',
+        broker: 'trading212',
+        credentialsEncrypted: encryptSecret(CREDENTIALS),
+      });
+      const account = (await db.select().from(brokerAccounts))[0]!;
+
+      const mock = makeMockFetch({ malformedPortfolio: true });
+      const outcome = await syncTrading212(db, account, {
+        fetchImpl: mock.fetchImpl,
+        now: new Date('2026-07-07T12:00:00Z'),
+        pollIntervalMs: 5,
+      });
+      // transakce se stáhly — vadná je jen kontrola pozic
+      expect(outcome.added).toBe(2);
+
+      const updated = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, 'acc9'))
+      )[0]!;
+      expect(updated.lastSyncError).toBeTruthy();
+      expect(updated.lastSyncError).not.toMatch(/is not iterable|is not a function|TypeError/);
+      expect(updated.lastSyncError).toContain('v jiném tvaru');
+    },
+  );
 });
 
 /**

@@ -72,6 +72,13 @@ export interface ExportStatus {
   downloadLink?: string;
 }
 
+export interface ExportPollOptions {
+  /** Prodleva mezi dotazy na stav exportu (GET /history/exports snese ~1 dotaz/min). */
+  pollIntervalMs?: number;
+  /** Kolikrát se na stav zeptáme, než čekání vzdáme. Celkem tedy `maxAttempts × pollIntervalMs`. */
+  maxAttempts?: number;
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class Trading212Client {
@@ -195,11 +202,19 @@ export class Trading212Client {
   /**
    * Vyžádá export, počká na vygenerování a vrátí CSV text (poll s limitem).
    * Pro cron sync v aplikaci; interaktivně raději requestExport + notifikace.
+   *
+   * Čekání je vedené POČTEM dotazů, ne časovým rozpočtem (K5-16). Časový
+   * rozpočet se totiž kontroloval před uspáním, takže se o celý interval
+   * překračoval: naměřeno 10 dotazů a 671 s tam, kde volající zadal 600 s.
+   * Export, který se nikdy neobjeví (`reportId` chybí v seznamu), tím spolykal
+   * víc, než kolik má celý tick cronu na VŠECHNY joby — a zbylé roky i účty
+   * se ten běh nestihly vůbec.
    */
-  async fetchHistoryCsv(request: ExportRequest, pollIntervalMs = 5_000, maxWaitMs = 300_000): Promise<string> {
+  async fetchHistoryCsv(request: ExportRequest, options: ExportPollOptions = {}): Promise<string> {
+    const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+    const maxAttempts = options.maxAttempts ?? 60;
     const { reportId } = await this.requestExport(request);
-    const deadline = Date.now() + maxWaitMs;
-    while (Date.now() < deadline) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       await sleep(pollIntervalMs);
       const exports = await this.listExports();
       const found = exports.find((e) => e.reportId === reportId);
@@ -211,7 +226,10 @@ export class Trading212Client {
         return this.downloadCsv(found.downloadLink);
       }
     }
-    throw new Trading212ApiError(408, `Export ${reportId} nebyl vygenerován do ${maxWaitMs / 1000} s.`);
+    throw new Trading212ApiError(
+      408,
+      `Export ${reportId} nebyl vygenerován ani po ${maxAttempts} dotazech (${Math.round((maxAttempts * pollIntervalMs) / 1000)} s).`,
+    );
   }
 }
 
@@ -224,11 +242,25 @@ export interface IsinPosition {
   currency?: string;
 }
 
-/** Namapuje pozice (interní tickery T212) na ISIN přes číselník instrumentů. */
+/**
+ * Namapuje pozice (interní tickery T212) na ISIN přes číselník instrumentů.
+ *
+ * Tvar odpovědi se ověřuje, i když typy slibují pole: `request()` vrací, co
+ * přijde, takže změna na straně brokera (obalení do `{ items: […] }`, chybová
+ * struktura s HTTP 200) skončí uvnitř `for…of` jako `TypeError`. Naměřeno:
+ * uživatel četl v UI „positions is not iterable“ — anglickou runtime hlášku,
+ * ze které nepozná, jestli je vada u něj, u brokera, nebo u nás.
+ */
 export function mapPositionsToIsin(
   positions: Trading212Position[],
   instruments: Trading212Instrument[],
 ): { positions: IsinPosition[]; unmatchedTickers: string[] } {
+  if (!Array.isArray(positions) || !Array.isArray(instruments)) {
+    throw new Trading212ApiError(
+      502,
+      'Trading212 vrátil pozice nebo číselník instrumentů v jiném tvaru, než čekáme — porovnání pozic proto neproběhlo. Bývá to změna na straně brokera; zkus synchronizaci za chvíli znovu, a jestli to bude trvat, dej nám vědět.',
+    );
+  }
   const byTicker = new Map(instruments.map((i) => [i.ticker, i]));
   const mapped: IsinPosition[] = [];
   const unmatched: string[] = [];

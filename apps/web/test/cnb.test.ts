@@ -27,7 +27,7 @@ const CNB_LIST_CHANGE = [
 
 describe('denní kurzy ČNB (R-06b)', () => {
   it('změna kurzovního lístku uprostřed roku přemapuje sloupce (rok 2022, RUB)', () => {
-    const rows = parseCnbYearText(CNB_LIST_CHANGE);
+    const { rows } = parseCnbYearText(CNB_LIST_CHANGE);
     const usdBefore = rows.find((r) => r.currency === 'USD' && r.day === '2022-01-02')!;
     const usdAfter = rows.find((r) => r.currency === 'USD' && r.day === '2022-03-02')!;
     expect(usdBefore.rate).toBe('21.97');
@@ -36,7 +36,7 @@ describe('denní kurzy ČNB (R-06b)', () => {
   });
 
   it('parsuje roční export a normalizuje kotace za 100 jednotek', () => {
-    const rows = parseCnbYearText(CNB_SAMPLE);
+    const { rows } = parseCnbYearText(CNB_SAMPLE);
     expect(rows).toHaveLength(6);
     const jpy = rows.find((row) => row.currency === 'JPY' && row.day === '2026-01-02')!;
     expect(jpy.rate).toBe('0.1532');
