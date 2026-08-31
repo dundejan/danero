@@ -282,7 +282,14 @@ export async function reportFailedImport(
     .returning({ id: failedImports.id, content: failedImports.content });
   if (!updated) return 'neexistuje';
 
-  await sendAlert(db, updated.id, headerSample(base64ToArrayBuffer(updated.content)), 'reported');
+  // `content` je `null` jen u uzavřeného případu, a ten sem přes filtr na
+  // `open` neprojde — prázdná hlavička je tedy nedosažitelná pojistka
+  await sendAlert(
+    db,
+    updated.id,
+    headerSample(base64ToArrayBuffer(updated.content ?? '')),
+    'reported',
+  );
   return 'ok';
 }
 
@@ -335,8 +342,15 @@ export async function listOpenCases(db: Db): Promise<Array<FailedImportCase & { 
     .orderBy(desc(failedImports.createdAt));
 }
 
-/** Jeden případ i s obsahem souboru (obsah nikam jinam nechodí). */
-export async function loadCase(
+/**
+ * Jeden OTEVŘENÝ případ i s obsahem souboru (obsah nikam jinam nechodí).
+ *
+ * Filtr na `open` je tu schválně: uzavřený případ už nemá co vydat — obsah se
+ * při uzavření maže (K4-05) a jakákoli další akce nad ním by uživateli poslala
+ * druhý e-mail o něčem, co je dávno vyřízené (K2-05). Kdo potřebuje rozlišit
+ * „neexistuje" od „je zavřený", zeptá se `caseStatus`.
+ */
+export async function loadOpenCase(
   db: Db,
   caseId: string,
 ): Promise<(FailedImportCase & { email: string; data: ArrayBuffer }) | null> {
@@ -344,17 +358,66 @@ export async function loadCase(
     .select({ ...CASE_COLUMNS, content: failedImports.content, email: user.email })
     .from(failedImports)
     .innerJoin(user, eq(user.id, failedImports.userId))
-    .where(eq(failedImports.id, caseId));
-  if (!row) return null;
+    .where(and(eq(failedImports.id, caseId), eq(failedImports.status, 'open')));
+  if (!row || row.content === null) return null;
   const { content, ...rest } = row;
   return { ...rest, data: base64ToArrayBuffer(content) };
 }
 
 /**
- * Uzavře případ a dá o tom vědět uživateli.
+ * Případ v jakémkoli stavu, ale bez obsahu souboru — pro hlášky nástroje
+ * („neexistuje" vs. „už je zavřený") a pro smazání na žádost uživatele.
+ */
+export async function caseOverview(
+  db: Db,
+  caseId: string,
+): Promise<{ status: string; filename: string; email: string } | null> {
+  const [row] = await db
+    .select({
+      status: failedImports.status,
+      filename: failedImports.filename,
+      email: user.email,
+    })
+    .from(failedImports)
+    .innerJoin(user, eq(user.id, failedImports.userId))
+    .where(eq(failedImports.id, caseId));
+  return row ?? null;
+}
+
+/**
+ * Smaže případ i s uschovaným souborem — na žádost uživatele („napiš nám
+ * a smažeme ho", /soukromi).
+ *
+ * Maže se celý řádek, ne jen `content`: metadata (název souboru, chybová
+ * hláška, hlavička v ní) jsou taky jeho údaje a k ničemu už nejsou, když
+ * soubor sám nemáme. Uživateli tím zmizí i panel „pracujeme na tom" — a to je
+ * správně, protože pracovat na tom po smazání originálu opravdu nebudeme.
+ * Funguje v každém stavu: žádost o výmaz se stavem případu neřídí.
+ */
+export async function deleteCase(db: Db, caseId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(failedImports)
+    .where(eq(failedImports.id, caseId))
+    .returning({ id: failedImports.id });
+  return deleted.length > 0;
+}
+
+/**
+ * Uzavře OTEVŘENÝ případ a dá o tom vědět uživateli.
  *
  * E-mail jde PŘÍMO, ne přes digest `api/cron/notify` — ten běží jen platícím,
  * takže uživatel zdarma by se výsledek vlastního nahrání nikdy nedozvěděl.
+ * Právě proto se uzavírá jen to, co je otevřené: bez podmínky na `status`
+ * poslal druhý `reject` (i `retry` nad případem ve stavu `fixed`) uživateli
+ * druhou zprávu o témž výpisu — naměřeno ve 4. auditu (K2-05).
+ *
+ * Obsah souboru se přitom maže. Uschovaný originál měl jediný účel — doplnit
+ * formát — a ten je uzavřením případu vyčerpaný; čekat s ním na 90denní
+ * retenci by bylo držení cizí obchodní historie bez důvodu (čl. 5 odst. 1
+ * písm. e GDPR, K4-05). Platí to i pro `rejected`: uživateli jsme právě
+ * napsali, že výpis číst neumíme a ať stáhne jiný export, takže se k souboru
+ * už nevrátíme. Kdo ho ještě potřebuje k rozboru, ať si ho napřed uloží
+ * příkazem `dump`.
  */
 export async function resolveCase(
   db: Db,
@@ -368,8 +431,9 @@ export async function resolveCase(
       resolutionNote: outcome.note ?? null,
       resolvedBatchId: outcome.batchId ?? null,
       resolvedAt: new Date(),
+      content: null,
     })
-    .where(eq(failedImports.id, caseId))
+    .where(and(eq(failedImports.id, caseId), eq(failedImports.status, 'open')))
     .returning({ id: failedImports.id, filename: failedImports.filename, userId: failedImports.userId });
   if (!row) return false;
 

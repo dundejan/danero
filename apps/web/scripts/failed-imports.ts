@@ -12,27 +12,39 @@
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts retry <id>
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts retry-all
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts reject <id> "důvod"
+ *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts delete <id>
+ *
+ * ⚠️ `retry`, `retry-all` a `reject` **posílají e-mail uživateli**, takže kromě
+ * `DATABASE_URL` potřebují i `DANERO_OPERATOR_NAME`, `DANERO_OPERATOR_ICO`,
+ * `DANERO_OPERATOR_ADDRESS`, `DANERO_CONTACT_EMAIL` a `BETTER_AUTH_URL`
+ * (a `RESEND_API_KEY`, jinak se zpráva neodešle). Bez nich se skript zastaví
+ * dřív, než cokoli udělá — do 4. auditu se místo toho odeslala zpráva
+ * podepsaná „Danero — nenastaveno" s odkazem na localhost (K2-04).
+ * `list`, `dump` a `delete` nic neposílají a jedou i bez nich: prohlídnout si
+ * případ nebo vyhovět žádosti o výmaz nemá blokovat chybějící IČO.
  *
  * ⚠️ Bez `DATABASE_URL` sáhne na lokální PGlite — ta snese **jediné připojení**,
  * takže souběžně běžící dev server skript zablokuje (a naopak).
  *
  * `retry` běží pod skutečným userId, takže dedupe i číselník aliasů fungují
  * normálně: opakované spuštění nic nezdvojí a uživateli přijde e-mail jen
- * tehdy, když se import povedl.
+ * tehdy, když se import povedl. Uzavřený případ (`fixed`/`rejected`) už žádný
+ * podpříkaz kromě `delete` nevezme — druhý pokus by uživateli poslal druhý
+ * e-mail o výpisu, který je dávno vyřízený (K2-05).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { auditLog, importBatches } from '@/db/schema';
-import { listOpenCases, loadCase, resolveCase } from '@/lib/failed-imports';
-import { importFile, type ImportSummary } from '@/lib/import-service';
+import { eraseCase, rejectCase, retryCase } from '@/lib/failed-import-review';
+import { caseOverview, listOpenCases, loadOpenCase } from '@/lib/failed-imports';
+import { emailEnvError, missingEmailEnv } from '@/lib/operator-env';
 
 const [command, ...args] = process.argv.slice(2);
 
 function usage(): never {
   console.error(
-    'Použití: failed-imports list | dump <id> [adresář] | retry <id> | retry-all | reject <id> "důvod"',
+    'Použití: failed-imports list | dump <id> [adresář] | retry <id> | retry-all |' +
+      ' reject <id> "důvod" | delete <id>',
   );
   process.exit(1);
 }
@@ -42,13 +54,32 @@ function required(index: number): string {
   return args[index] ?? usage();
 }
 
+/**
+ * Předletová kontrola: bez identifikace provozovatele a bez adresy aplikace
+ * by odchozí zpráva vypadala jako phishing. Volá se PŘED jakoukoli změnou dat,
+ * ať se běh nezastaví v půlce.
+ */
+function requireEmailEnv(): void {
+  const missing = missingEmailEnv();
+  if (missing.length === 0) return;
+  console.error(emailEnvError(missing));
+  process.exit(1);
+}
+
 /** „0 kB“ vypadá jako prázdný soubor, a to je jiná diagnóza. */
 const velikost = (bytes: number): string =>
   bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
 
-/** Detail, který k importu zapisuje `importParsed` — musí sedět DOSLOVA. */
-const auditDetail = (filename: string, summary: ImportSummary): string =>
-  `${filename} (${summary.broker}): ${summary.added} nových`;
+/** Hláška k případu, na který se nedá sáhnout. Stav v ní být musí — bez něj je rada k ničemu. */
+function reportUnavailable(caseId: string, result: { outcome: 'missing' } | { outcome: 'closed'; status: string }): never {
+  console.error(
+    result.outcome === 'missing'
+      ? `Případ ${caseId} neexistuje.`
+      : `Případ ${caseId} je už uzavřený (stav ${result.status}) — soubor k němu` +
+          ' nemáme a uživateli o něm e-mail už odešel. Otevřené případy vypíše „list“.',
+  );
+  process.exit(1);
+}
 
 async function list(): Promise<void> {
   const db = await getDb();
@@ -75,10 +106,14 @@ async function list(): Promise<void> {
 
 async function dump(caseId: string, dir = '.data/failed-imports'): Promise<void> {
   const db = await getDb();
-  const item = await loadCase(db, caseId);
+  const item = await loadOpenCase(db, caseId);
   if (!item) {
-    console.error(`Případ ${caseId} neexistuje.`);
-    process.exit(1);
+    // uzavřený případ obsah nemá (maže se při uzavření) — hláška to musí říct
+    const overview = await caseOverview(db, caseId);
+    reportUnavailable(
+      caseId,
+      overview ? { outcome: 'closed', status: overview.status } : { outcome: 'missing' },
+    );
   }
   mkdirSync(dir, { recursive: true });
   // id v názvu: dva uživatelé nahrají „transactions.csv“ a přepsaly by se
@@ -89,52 +124,21 @@ async function dump(caseId: string, dir = '.data/failed-imports'): Promise<void>
   console.log(`Hlásil:  ${item.reportedPlatform ?? '—'} ${item.reportedNote ?? ''}`);
 }
 
-/**
- * Zkusí případ naimportovat znovu (typicky po opravě parseru).
- *
- * Jde přes `importFile`, ne `importFileIsolated`: to druhé při neúspěchu
- * schová soubor ZNOVU a případ přepíše na právě vzniklou dávku — panel by
- * uživateli přeskočil na záznam, který sám nenahrál. Neúspěšný pokus tady po
- * sobě uklidí i tu prázdnou dávku, takže v historii uživatele nezůstane nic.
- */
 async function retry(caseId: string): Promise<void> {
   const db = await getDb();
-  const item = await loadCase(db, caseId);
-  if (!item) {
-    console.error(`Případ ${caseId} neexistuje.`);
-    process.exit(1);
-  }
-  const summary = await importFile(db, item.userId, item.filename, item.data);
-  const nothingImported = summary.added === 0 && summary.duplicates === 0;
-  if (summary.unrecognized || nothingImported) {
-    await db.delete(importBatches).where(eq(importBatches.id, summary.batchId));
-    // `importParsed` zapíše audit ještě před dávkou, takže po neúspěchu zbývá
-    // uživateli v Nastavení „Import výpisu“ souboru, který sám nenahrál.
-    // Maže se podle PŘESNÉHO detailu, ne podle času: `retry-all` běží dlouho
-    // a časové okno by sebralo i import, který si uživatel mezitím nahrál sám.
-    await db
-      .delete(auditLog)
-      .where(
-        and(
-          eq(auditLog.userId, item.userId),
-          eq(auditLog.type, 'IMPORT'),
-          eq(auditLog.detail, auditDetail(item.filename, summary)),
-        ),
-      );
+  const result = await retryCase(db, caseId);
+  if (result.outcome === 'missing' || result.outcome === 'closed') reportUnavailable(caseId, result);
+  if (result.outcome === 'unresolved') {
     console.log(
-      `${caseId}: ${summary.unrecognized ? 'pořád nepoznáváme' : 'projde, ale nic z něj nevypadlo'}` +
-        ` — ${summary.errors[0]?.message ?? 'bez hlášky'}`,
+      `${caseId}: ${result.unrecognized ? 'pořád nepoznáváme' : 'projde, ale nic z něj nevypadlo'}` +
+        ` — ${result.reason ?? 'bez hlášky'}`,
     );
     return;
   }
-  await resolveCase(db, caseId, {
-    status: 'fixed',
-    batchId: summary.batchId,
-    added: summary.added,
-  });
+  const { summary } = result;
   console.log(
     `${caseId}: hotovo — ${summary.added} nových, ${summary.duplicates} duplicit, ` +
-      `${summary.errors.length} chyb. Uživateli (${item.email}) odešel e-mail.`,
+      `${summary.errors.length} chyb. Uživateli (${result.email}) odešel e-mail.`,
   );
 }
 
@@ -158,13 +162,25 @@ async function retryAll(): Promise<void> {
 
 async function reject(caseId: string, note: string): Promise<void> {
   const db = await getDb();
-  const item = await loadCase(db, caseId);
-  if (!item) {
+  const result = await rejectCase(db, caseId, note);
+  if (result.outcome !== 'rejected') reportUnavailable(caseId, result);
+  console.log(
+    `${caseId}: uzavřeno jako nečitelné. Uživateli (${result.email}) odešel e-mail,` +
+      ' uschovaný soubor jsme smazali.',
+  );
+}
+
+async function erase(caseId: string): Promise<void> {
+  const db = await getDb();
+  const result = await eraseCase(db, caseId);
+  if (result.outcome === 'missing') {
     console.error(`Případ ${caseId} neexistuje.`);
     process.exit(1);
   }
-  await resolveCase(db, caseId, { status: 'rejected', note });
-  console.log(`${caseId}: uzavřeno jako nečitelné. Uživateli (${item.email}) odešel e-mail.`);
+  console.log(
+    `${caseId}: smazáno i s uschovaným souborem (${result.filename}, uživatel ${result.email}).` +
+      ' E-mail se neposílá — o výmaz požádal sám.',
+  );
 }
 
 // obal místo top-level await: apps/web není ESM balík, takže tsx tenhle
@@ -176,13 +192,18 @@ async function main(): Promise<void> {
     case 'dump':
       return dump(required(0), args[1]);
     case 'retry':
+      requireEmailEnv();
       return retry(required(0));
     case 'retry-all':
+      requireEmailEnv();
       return retryAll();
     case 'reject':
       // Bez vysvětlení případ nezavírej: uživatel dostane e-mail „číst to neumíme“
       // a jediné, co mu pomůže, je věta o tom, co má stáhnout místo toho.
+      requireEmailEnv();
       return reject(required(0), required(1));
+    case 'delete':
+      return erase(required(0));
     default:
       usage();
   }

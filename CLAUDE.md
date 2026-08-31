@@ -197,7 +197,12 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   `DANERO_ALERT_EMAIL`, a když není nastavená, na `DANERO_CONTACT_EMAIL`
   (běžný stav); uživatel v `/import` vidí, že se na to koukneme, a může doplnit
   platformu. Rozbor a doimport dělá `pnpm --filter @danero/web failed-imports`
-  (`list`/`dump`/`retry`/`reject`). Schovává se jen selhání, kde může být vada
+  (`list`/`dump`/`retry`/`retry-all`/`reject`/`delete`). Podpříkazy, které
+  posílají e-mail uživateli, si **předletově ověří prostředí** — bez
+  `DANERO_OPERATOR_*` a `BETTER_AUTH_URL` se nespustí, jinak by odešla zpráva
+  podepsaná „nenastaveno" s odkazem na localhost (`lib/operator-env.ts`).
+  Uzavřením případu se **maže uschovaný obsah** a uzavřený případ už žádný
+  podpříkaz kromě `delete` nevezme. Schovává se jen selhání, kde může být vada
   naše: nepoznaný formát **a nově i parser, který se rozeběhl a nevydal jedinou
   transakci** (přesně tak vypadal přejmenovaný sloupec T212 z 9. 8. 2026).
   Prázdný soubor, PDF ani useknutý přenos ne — to je `unrecognized: false`.

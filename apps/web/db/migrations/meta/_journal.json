@@ -281,6 +281,13 @@
       "when": 1786656138551,
       "tag": "0039_failed_import_source",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788187187380,
+      "tag": "0040_failed_import_content_erasure",
+      "breakpoints": true
     }
   ]
 }

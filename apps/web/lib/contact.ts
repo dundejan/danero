@@ -27,24 +27,58 @@ export interface OperatorContact {
   phone: string | null;
 }
 
+/**
+ * Zdroj hodnot: `process.env` i prostředí, které si podstrčí test. Schválně ne
+ * `NodeJS.ProcessEnv` — Next si v něm vynucuje `NODE_ENV`, takže by se z něj
+ * nedal poskládat holý objekt s jednou proměnnou.
+ */
+export type EnvSource = Record<string, string | undefined>;
+
 /** Zástupný text pro nenastavený povinný údaj — musí být poznat na první pohled. */
 export const OPERATOR_UNSET = 'nenastaveno';
 
 const fromEnv = (value: string | undefined): string => value?.trim() || OPERATOR_UNSET;
 
-export const OPERATOR: OperatorContact = {
-  name: fromEnv(process.env.DANERO_OPERATOR_NAME),
-  ico: fromEnv(process.env.DANERO_OPERATOR_ICO),
-  address: fromEnv(process.env.DANERO_OPERATOR_ADDRESS),
-  email: fromEnv(process.env.DANERO_CONTACT_EMAIL),
-  phone: process.env.DANERO_CONTACT_PHONE?.trim() || null,
-};
+/**
+ * Identifikace z libovolného prostředí.
+ *
+ * Parametr existuje kvůli nástrojům provozovatele: `OPERATOR` se přečte jednou
+ * při načtení modulu, ale předletová kontrola (`lib/operator-env.ts`) musí umět
+ * posoudit i prostředí, které jí někdo podstrčí — jinak by se nedala otestovat.
+ */
+export function operatorFromEnv(env: EnvSource = process.env): OperatorContact {
+  return {
+    name: fromEnv(env.DANERO_OPERATOR_NAME),
+    ico: fromEnv(env.DANERO_OPERATOR_ICO),
+    address: fromEnv(env.DANERO_OPERATOR_ADDRESS),
+    email: fromEnv(env.DANERO_CONTACT_EMAIL),
+    phone: env.DANERO_CONTACT_PHONE?.trim() || null,
+  };
+}
+
+export const OPERATOR: OperatorContact = operatorFromEnv();
+
+/**
+ * Které proměnné nesou který povinný údaj. Jediné místo, kde je ten seznam —
+ * kopie podmínky jinde je přesně to, jak se rozejde chování s hláškou.
+ */
+const OPERATOR_ENV_NAMES = {
+  name: 'DANERO_OPERATOR_NAME',
+  ico: 'DANERO_OPERATOR_ICO',
+  address: 'DANERO_OPERATOR_ADDRESS',
+  email: 'DANERO_CONTACT_EMAIL',
+} as const;
+
+/** Nenastavené povinné údaje, pojmenované proměnnou — ať je z hlášky co nastavit. */
+export function missingOperatorContactEnv(contact: OperatorContact = OPERATOR): string[] {
+  return Object.entries(OPERATOR_ENV_NAMES)
+    .filter(([field]) => contact[field as keyof typeof OPERATOR_ENV_NAMES] === OPERATOR_UNSET)
+    .map(([, name]) => name);
+}
 
 /** Je identifikace provozovatele kompletní? Čte `/api/health`. */
 export function operatorContactComplete(contact: OperatorContact = OPERATOR): boolean {
-  return [contact.name, contact.ico, contact.address, contact.email].every(
-    (value) => value !== OPERATOR_UNSET,
-  );
+  return missingOperatorContactEnv(contact).length === 0;
 }
 
 /** Řádek „Prodávající: …“ do potvrzení objednávky a dalších dokladů. */

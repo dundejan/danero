@@ -312,8 +312,13 @@ export const failedImports = pgTable(
      * Bajty souboru v base64. Schválně NE `bytea`: binární hodnoty si PGlite
      * a postgres.js podávají každý po svém a rozdíl by se ukázal až v produkci
      * (viz „známé zrady“ v CLAUDE.md). Text projde oběma stejně.
+     *
+     * `NULL` znamená **soubor už smazaný**: uzavřením případu (`fixed` i
+     * `rejected`) skončí účel, kvůli kterému jsme si cizí obchodní historii
+     * nechávali, takže obsah nečeká na 90denní retenci (čl. 5 odst. 1 písm. e
+     * GDPR, nález K4-05). Metadata případu zůstávají — z nich se nic nedozví.
      */
-    content: text('content').notNull(),
+    content: text('content'),
     /** Chybová hláška, kterou k tomu uživatel viděl. */
     reason: text('reason').notNull(),
     /**

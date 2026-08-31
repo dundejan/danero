@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import {
   casesForBatches,
   listOpenCases,
-  loadCase,
+  loadOpenCase,
   MAX_OPEN_CASES_PER_USER,
   reportFailedImport,
   resolveCase,
@@ -88,7 +88,7 @@ describe('zachycení nepřečteného výpisu', () => {
     expect(cases[0]!.batchId).toBe(summary.batchId);
 
     // originál se dá načíst zpátky bajt po bajtu — o to celé jde
-    const detail = await loadCase(db, cases[0]!.id);
+    const detail = await loadOpenCase(db, cases[0]!.id);
     expect(new TextDecoder().decode(detail!.data)).toBe(NEZNAMY_VYPIS);
 
     const alert = emails().at(-1)!;

@@ -264,7 +264,11 @@ describe('osobní údaje provozovatele nejsou v kódu', () => {
       'DANERO_CONTACT_EMAIL',
       'DANERO_CONTACT_PHONE',
     ]) {
-      expect(zdroj).toContain(`process.env.${env}`);
+      // `env.` a ne `process.env.`: identifikace se od 4. auditu skládá
+      // v `operatorFromEnv(env)`, aby ji předletová kontrola nástrojů
+      // (lib/operator-env.ts) uměla posoudit i nad podstrčeným prostředím.
+      // Hlídané zůstává to podstatné — hodnota pochází z proměnné toho jména.
+      expect(zdroj).toContain(`env.${env}`);
     }
   });
 
@@ -350,10 +354,14 @@ describe('vzhled a obsah odchozích e-mailů', () => {
     }
   });
 
-  it('všechny e-maily se identifikují jménem a IČO (proti phishingu)', () => {
+  it('všechny e-maily se identifikují jménem, IČO i kontaktem (proti phishingu)', () => {
     for (const [nazev, email] of vsechny) {
       expect(bezZalomeni(email.text), nazev).toContain(operatorContact.name);
       expect(bezZalomeni(email.text), nazev).toContain(operatorContact.ico);
+      // K2-04: kontaktní adresa se hlídala jen u služebních e-maily výš, takže
+      // zprávy o nepřečteném výpisu ji sem mohly ztratit bez povšimnutí —
+      // a `From` je notifikace@danero.cz, která poštu nepřijímá
+      expect(bezZalomeni(email.text), nazev).toContain(operatorContact.email);
     }
   });
 });
