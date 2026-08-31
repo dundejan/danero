@@ -101,13 +101,26 @@ export default function PrivacyPage() {
         <p>
           Když nahraješ výpis, jehož formát Danero nezná, <strong>necháme si ten soubor</strong>{' '}
           — jinak nemáme podle čeho jeho čtení doplnit; u takového importu uvidíš, že na
-          jeho zpracování pracujeme.
-          Používáme ho k jedinému účelu: doplnit formát a výpis ti pak naimportovat
-          (napsat nám k němu, ze které platformy je, můžeš, ale nemusíš). Provozovateli
-          o tom chodí upozornění, ve kterém je název souboru, první řádek s názvy sloupců
-          a chybová hláška — a ta může citovat jednu hodnotu z místa, kde se čtení
-          zastavilo. <strong>Samotný výpis se e-mailem neposílá</strong> a soubor nikomu
-          dalšímu nepředáváme. Mažeme ho nejpozději po 90 dnech, a hned, když
+          jeho zpracování pracujeme. Totéž platí o výpisu, který si sami stáhneme z API
+          brokera. Používáme ho k jedinému účelu: doplnit formát a výpis ti pak
+          naimportovat (napsat nám k němu, ze které platformy je, můžeš, ale nemusíš).{' '}
+          {/* K6a-04: dřív se tu slibovalo, že vzorek jsou názvy sloupců — jenže reálné
+              exporty začínají preambulí (u banky to bylo číslo účtu a jméno
+              majitele) a vzorek se bere bez ptaní. Heuristika „vypadá to jako
+              hlavička?“ by zabila právě ty případy, kvůli kterým se formát
+              doplňuje, takže se srovnává text, ne kód. Mění se naráz
+              s `failedImportAlertEmail` v lib/email.ts a s CLAUDE.md. */}
+          Provozovateli o tom chodí upozornění, ve kterém je název souboru a jeho
+          velikost, tvoje e-mailová adresa, <strong>úplně první řádek souboru</strong>{' '}
+          (nejvýš 200 znaků) a chybová hláška — a ta může citovat jednu hodnotu
+          z místa, kde se čtení zastavilo. Když k výpisu sám dopíšeš, ze které
+          platformy je, a přidáš poznámku, pošle se provozovateli i to. První řádek
+          bývá hlavička s názvy sloupců, ale slíbit ti to nemůžeme: některé exporty
+          začínají úvodem, ve kterém může být třeba číslo účtu. Bereme ho takový,
+          jaký je — soubory s neobvyklým začátkem jsou právě ty, kvůli kterým formát
+          doplňujeme. <strong>Samotný výpis se e-mailem neposílá</strong> a soubor
+          nikomu dalšímu nepředáváme. Mažeme ho, jakmile případ vyřídíme — ať už se
+          formát podařilo doplnit, nebo ne — nejpozději po 90 dnech, a hned, když
           smažeš účet. Nechceš-li ho u nás mít dřív, napiš nám a smažeme ho.
         </p>
 

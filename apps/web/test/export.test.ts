@@ -38,6 +38,8 @@ const SIFROVANY_KLIC = 'gcm:tajny-klic-t212:nikdy-do-exportu';
 const TOTP_TAJEMSTVI = 'JBSWY3DPEHPK3PXP-nikdy-do-exportu';
 const ZALOZNI_KODY = 'zalozni-kod-1,zalozni-kod-2';
 const TOKEN_RELACE = 'session-token-nikdy-do-exportu';
+/** Uschovaný nepřečtený výpis (base64) — u výpisu ze syncu ho uživatel nikdy neměl. */
+const OBSAH_VYPISU = Buffer.from('datum;castka\n2026-01-02;100').toString('base64');
 
 interface ExportPayload {
   format: string;
@@ -118,6 +120,50 @@ async function seed(): Promise<Db> {
     broker: 'trading212',
     label: 'Trading 212',
     credentialsEncrypted: SIFROVANY_KLIC,
+    lastSyncError: 'T212 vrátilo 429 — export se nestáhl',
+    lastReconciliation: { checkedAt: '2026-08-30T10:00:00Z', mismatches: [{ isin: 'US0378331005' }] },
+  });
+  const { failedImports, importBatches, instrumentPrices, jobs } = await import('@/db/schema');
+  await db.insert(importBatches).values({
+    id: 'b1',
+    userId: 'u1',
+    broker: 'trading212',
+    filename: 'vypis.csv',
+    added: 3,
+    duplicates: 0,
+    errorCount: 1,
+    skippedCount: 0,
+    warningCount: 0,
+    issues: { errors: [{ row: 7, message: 'Neznámá měna XYZ' }], skipped: [], warnings: [] },
+  });
+  await db.insert(instrumentPrices).values({
+    userId: 'u1',
+    isin: 'US0378331005',
+    price: '234.56',
+    currency: 'USD',
+    source: 'trading212',
+    asOf: new Date('2026-08-30T10:00:00Z'),
+  });
+  await db.insert(jobs).values({
+    id: 'j1',
+    userId: 'u1',
+    type: 't212-sync',
+    dedupeKey: 'acc1',
+    status: 'error',
+    payload: { accountId: 'acc1' },
+    error: 'rok 2024 se nestáhl',
+  });
+  await db.insert(failedImports).values({
+    id: 'fi1',
+    userId: 'u1',
+    batchId: 'b2',
+    filename: 'neznamy.csv',
+    byteSize: 12,
+    contentHash: 'hash1',
+    content: OBSAH_VYPISU,
+    reason: 'Formát souboru nepoznáváme',
+    source: 'sync',
+    reportedNote: 'Je to export z Portu.',
   });
   return db;
 }
@@ -287,5 +333,144 @@ describe('export a zafixované daňové roky (R-05c)', () => {
       fxMethod: 'CNB_DAILY',
       limit100kStrict: false,
     });
+  });
+});
+
+/**
+ * Strážce úplnosti (K4-01, K2-03): do 31. 8. 2026 chyběly v exportu celé
+ * tabulky — nepřečtený výpis (tedy obchodní historie, kterou uživatel u výpisu
+ * ze syncu nikdy neměl v ruce), úlohy na pozadí, ceny instrumentů, výhrady
+ * k řádkům dávky i rekonciliace pozic. Nikdo si toho nevšiml, protože testy
+ * kontrolovaly jednotlivé klíče, ne seznam tabulek.
+ *
+ * Odteď musí být každá tabulka s `user_id` buď v exportu, nebo na seznamu
+ * vědomých výjimek — a k výjimce patří důvod.
+ */
+describe('tabulka ↔ klíč v exportu (K4-01)', () => {
+  /** Tabulka ve schématu → klíč, pod kterým její data v exportu leží. */
+  const V_EXPORTU: Record<string, string> = {
+    user: 'user',
+    session: 'sessions',
+    taxpayer_profiles: 'profiles',
+    tax_year_settings: 'pinnedTaxYears',
+    audit_log: 'auditLog',
+    notification_prefs: 'notificationPrefs',
+    notifications: 'notifications',
+    broker_accounts: 'brokerAccounts',
+    import_batches: 'importBatches',
+    failed_imports: 'failedImports',
+    jobs: 'jobs',
+    instrument_aliases: 'instrumentAliases',
+    instrument_prices: 'instrumentPrices',
+    transactions: 'transactions',
+    subscriptions: 'subscriptions',
+    report_purchases: 'reportPurchases',
+  };
+
+  /** Tabulky, které do exportu vědomě NEPATŘÍ — a proč. */
+  const MIMO_EXPORT: Record<string, string> = {
+    account:
+      'otisk hesla a tokeny od poskytovatelů přihlášení — přístupová tajemství, ne údaje o uživateli (E-40)',
+    two_factor:
+      'tajemství TOTP a záložní kódy — stažený soubor ve složce Stažené by byl kopie klíčů od účtu (E-40)',
+  };
+
+  /** Tabulky ze `db/schema.ts`, které visí na uživateli. */
+  const tabulkyUzivatele = async (): Promise<string[]> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const zdroj = readFileSync(join(import.meta.dirname, '..', 'db/schema.ts'), 'utf8');
+    // `split` useká každý kus tam, kde začíná další pgTable — tělo tabulky se
+    // tedy nemíchá s tělem té následující
+    return zdroj
+      .split(/pgTable\(\s*'/)
+      .slice(1)
+      .map((kus) => ({ nazev: kus.slice(0, kus.indexOf("'")), telo: kus }))
+      // `user` sám sloupec `user_id` nemá, ale je to tabulka uživatele
+      .filter(({ nazev, telo }) => nazev === 'user' || telo.includes("text('user_id')"))
+      .map(({ nazev }) => nazev);
+  };
+
+  it('žádná tabulka s user_id nechybí v exportu ani na seznamu výjimek', async () => {
+    const tabulky = await tabulkyUzivatele();
+    // pojistka, že se parser nerozešel se schématem a nekontroluje prázdno
+    expect(tabulky.length).toBeGreaterThan(10);
+
+    for (const tabulka of tabulky) {
+      const kryta = tabulka in V_EXPORTU || tabulka in MIMO_EXPORT;
+      expect(
+        kryta,
+        `tabulka "${tabulka}" visí na user_id, ale export o ní neví — buď ji doplň do /api/export a do V_EXPORTU, nebo ji dej do MIMO_EXPORT i s důvodem`,
+      ).toBe(true);
+      expect(tabulka in V_EXPORTU && tabulka in MIMO_EXPORT).toBe(false);
+    }
+
+    // a naopak: seznam nesmí zůstat viset po tabulce, která už neexistuje
+    for (const tabulka of [...Object.keys(V_EXPORTU), ...Object.keys(MIMO_EXPORT)]) {
+      expect(tabulky, `seznam zná tabulku "${tabulka}", ale ve schématu není`).toContain(tabulka);
+    }
+  });
+
+  it('každý slíbený klíč v odpovědi opravdu je', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const payload = (await (
+      await GET(new Request('https://danero.cz/api/export'))
+    ).json()) as Record<string, unknown>;
+
+    for (const klic of Object.values(V_EXPORTU)) {
+      expect(payload, `v exportu chybí klíč "${klic}"`).toHaveProperty(klic);
+    }
+  });
+
+  it('nepřečtený výpis jde ven i s uschovaným originálem', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const payload = (await (
+      await GET(new Request('https://danero.cz/api/export'))
+    ).json()) as {
+      failedImports: Array<{
+        filename: string;
+        source: string;
+        reportedNote: string | null;
+        contentBase64: string | null;
+      }>;
+    };
+
+    expect(payload.failedImports).toHaveLength(1);
+    expect(payload.failedImports[0]).toMatchObject({
+      filename: 'neznamy.csv',
+      source: 'sync',
+      reportedNote: 'Je to export z Portu.',
+    });
+    // u výpisu staženého ze syncu je tohle JEDINÁ kopie, kterou uživatel má
+    expect(payload.failedImports[0]!.contentBase64).toBe(OBSAH_VYPISU);
+  });
+
+  it('nese úlohy na pozadí, ceny instrumentů, výhrady k řádkům i rekonciliaci', { timeout: 30_000 }, async () => {
+    stav.db = await seed();
+    stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
+
+    const { GET } = await import('@/app/api/export/route');
+    const payload = (await (
+      await GET(new Request('https://danero.cz/api/export'))
+    ).json()) as {
+      jobs: Array<{ type: string; error: string | null }>;
+      instrumentPrices: Array<{ isin: string; price: string }>;
+      importBatches: Array<{ issues: { errors: Array<{ message: string }> } }>;
+      brokerAccounts: Array<{ lastSyncError: string | null; lastReconciliation: unknown }>;
+    };
+
+    // „proč se mi rok nestáhl" — odpověď leží jen v jobu
+    expect(payload.jobs[0]).toMatchObject({ type: 't212-sync', error: 'rok 2024 se nestáhl' });
+    expect(payload.instrumentPrices[0]).toMatchObject({ isin: 'US0378331005', price: '234.56' });
+    // „proč se mi ten řádek nenaimportoval" — odpověď leží jen ve výhradách dávky
+    expect(payload.importBatches[0]!.issues.errors[0]!.message).toBe('Neznámá měna XYZ');
+    expect(payload.brokerAccounts[0]!.lastSyncError).toBe('T212 vrátilo 429 — export se nestáhl');
+    expect(payload.brokerAccounts[0]!.lastReconciliation).not.toBeNull();
   });
 });

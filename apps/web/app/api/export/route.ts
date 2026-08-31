@@ -4,8 +4,11 @@ import { getDb, type Db } from '@/db';
 import {
   auditLog,
   brokerAccounts,
+  failedImports,
   importBatches,
   instrumentAliases,
+  instrumentPrices,
+  jobs,
   notificationPrefs,
   notifications,
   reportPurchases,
@@ -39,6 +42,47 @@ async function* transactionPages(db: Db, userId: string): AsyncGenerator<object[
     yield page.map((row) => row.payload as object);
     after = page.at(-1)!.dedupeKey;
     if (page.length < TX_PAGE) return;
+  }
+}
+
+/**
+ * Nepřečtené výpisy po jednom, i s uschovaným originálem (base64).
+ *
+ * Obsah se čte zvlášť pro každý případ schválně: soubor smí mít až 8 MB
+ * a otevřených případů má uživatel až pět, takže jedním `select` by v paměti
+ * ležel celý ten balík naráz — a to je přesně to, čemu se zbytek routy vyhýbá.
+ * Uzavřený případ má `content` NULL (maže se při vyřízení).
+ *
+ * Originál patří do exportu, i když ho uživatel nahrál sám: u výpisu staženého
+ * ze syncu (`source: 'sync'`) ho v ruce nikdy neměl a existuje jen tady (K4-01).
+ */
+async function* failedImportRows(db: Db, userId: string): AsyncGenerator<string> {
+  const cases = await db
+    .select({
+      id: failedImports.id,
+      batchId: failedImports.batchId,
+      filename: failedImports.filename,
+      byteSize: failedImports.byteSize,
+      reason: failedImports.reason,
+      source: failedImports.source,
+      status: failedImports.status,
+      reportedPlatform: failedImports.reportedPlatform,
+      reportedNote: failedImports.reportedNote,
+      reportedAt: failedImports.reportedAt,
+      resolutionNote: failedImports.resolutionNote,
+      resolvedBatchId: failedImports.resolvedBatchId,
+      resolvedAt: failedImports.resolvedAt,
+      createdAt: failedImports.createdAt,
+    })
+    .from(failedImports)
+    .where(eq(failedImports.userId, userId))
+    .orderBy(asc(failedImports.createdAt));
+  for (const row of cases) {
+    const [file] = await db
+      .select({ content: failedImports.content })
+      .from(failedImports)
+      .where(and(eq(failedImports.userId, userId), eq(failedImports.id, row.id)));
+    yield JSON.stringify({ ...row, contentBase64: file?.content ?? null });
   }
 }
 
@@ -89,7 +133,9 @@ async function* exportChunks(
   }
   yield '],\n';
 
-  // šifrované API klíče se záměrně NEexportují
+  // šifrované API klíče se záměrně NEexportují; výsledek rekonciliace pozic
+  // a chyba posledního syncu ano — je to odpověď na „proč mi to nesedí"
+  // a uživatel ji vidí i v aplikaci (K4-01)
   yield line(
     'brokerAccounts',
     await db
@@ -99,6 +145,8 @@ async function* exportChunks(
         label: brokerAccounts.label,
         lastSyncedAt: brokerAccounts.lastSyncedAt,
         lastSyncStatus: brokerAccounts.lastSyncStatus,
+        lastSyncError: brokerAccounts.lastSyncError,
+        lastReconciliation: brokerAccounts.lastReconciliation,
         createdAt: brokerAccounts.createdAt,
       })
       .from(brokerAccounts)
@@ -108,10 +156,20 @@ async function* exportChunks(
     'instrumentAliases',
     await db.select().from(instrumentAliases).where(eq(instrumentAliases.userId, userId)),
   );
+  // poslední známé ceny držených instrumentů ze syncu — je to sice cena trhu,
+  // ale seznam ISINů je portfolio konkrétního člověka (řádky visí na jeho
+  // userId), takže do jeho exportu patří (K4-01)
+  yield line(
+    'instrumentPrices',
+    await db.select().from(instrumentPrices).where(eq(instrumentPrices.userId, userId)),
+  );
   yield line(
     'notifications',
     await db.select().from(notifications).where(eq(notifications.userId, userId)),
   );
+  // `issues` (chyby, přeskočené řádky a varování k jednotlivým řádkům výpisu)
+  // patří ven taky: uživatel je v aplikaci vidí a je to jediné vysvětlení,
+  // proč se z jeho souboru něco nenaimportovalo (K4-01)
   yield line(
     'importBatches',
     await db
@@ -121,11 +179,45 @@ async function* exportChunks(
         filename: importBatches.filename,
         added: importBatches.added,
         duplicates: importBatches.duplicates,
+        errorCount: importBatches.errorCount,
+        skippedCount: importBatches.skippedCount,
+        warningCount: importBatches.warningCount,
+        issues: importBatches.issues,
         createdAt: importBatches.createdAt,
       })
       .from(importBatches)
       .where(eq(importBatches.userId, userId)),
   );
+  // úlohy na pozadí (synchronizace s brokerem) — vstup, průběh, výsledek
+  // i chybová hláška. Uživatel je zná ze stavu syncu a bez nich by z exportu
+  // nešlo doložit, proč se některý rok nestáhl (K4-01)
+  yield line(
+    'jobs',
+    await db
+      .select({
+        id: jobs.id,
+        type: jobs.type,
+        status: jobs.status,
+        payload: jobs.payload,
+        progress: jobs.progress,
+        result: jobs.result,
+        error: jobs.error,
+        createdAt: jobs.createdAt,
+        startedAt: jobs.startedAt,
+        finishedAt: jobs.finishedAt,
+      })
+      .from(jobs)
+      .where(eq(jobs.userId, userId))
+      .orderBy(asc(jobs.createdAt)),
+  );
+  // výpisy, které jsme nepřečetli — i s uschovaným originálem, po jednom
+  yield '  "failedImports": [';
+  let firstCase = true;
+  for await (const row of failedImportRows(db, userId)) {
+    yield `${firstCase ? '' : ','}${row}`;
+    firstCase = false;
+  }
+  yield '],\n';
   // historie nákupů (/soukromi slibuje odnést si i ji) — stripe identifikátory
   // jsou součástí údajů o uživateli, doklad o zaplacení má Stripe
   yield line(
@@ -196,16 +288,22 @@ function toStream(chunks: AsyncGenerator<string>): ReadableStream<Uint8Array> {
 }
 
 /**
- * GDPR export (právo na přenositelnost z /soukromi): kompletní JSON všech dat
- * uživatele — transakce v kanonickém formátu, profil, nastavení upozornění,
- * broker účty (bez šifrovaných klíčů!), číselník instrumentů, notifikace,
- * importní dávky, audit log, přihlášené relace a historie nákupů
- * (předplatné + zaplacené daňové roky).
+ * GDPR export (právo na přenositelnost z /soukromi): JSON se vším, co u účtu
+ * leží — transakce v kanonickém formátu, profil, nastavení upozornění, broker
+ * účty (bez šifrovaných klíčů!) i s rekonciliací pozic, číselník instrumentů,
+ * ceny držených instrumentů, notifikace, importní dávky i s výhradami
+ * k jednotlivým řádkům, nepřečtené výpisy včetně uschovaného originálu,
+ * úlohy na pozadí, audit log, přihlášené relace, zafixované daňové roky
+ * a historie nákupů (předplatné + zaplacené daňové roky).
  *
  * Co se ven NIKDY nedostane, i když to u účtu leží: šifrované klíče
  * k brokerovi, tajemství TOTP a záložní kódy 2FA, token relace a otisk hesla.
  * Jsou to přístupová tajemství — uživateli o něm nic neřeknou a stažený soubor
  * by z nich udělal kopii klíčů od účtu (nález E-40).
+ *
+ * Úplnost hlídá test „tabulka ↔ klíč v exportu" (test/export.test.ts): jakmile
+ * do schématu přibude tabulka s `user_id`, musí se objevit tady, nebo na
+ * seznamu vědomých výjimek i s důvodem (K4-01, K2-03).
  *
  * Odpověď se **streamuje**. Nestreamovaná má na Vercelu tvrdý strop 4,5 MB
  * (`FUNCTION_PAYLOAD_TOO_LARGE`) a export stojí ~287 B na transakci — uživatel

@@ -196,9 +196,10 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   `failed_imports`): originál je jediný způsob, jak formát doplnit, a bez něj
   se informace ztratí — nepoznaná hlavička není výjimka, takže o ní neví ani
   log. **Obsah souboru se ukládá celý** (base64 v `content`) — do e-mailu jde
-  jen hlavička a chybová hláška (ta smí citovat jednu buňku; /soukromi to tak
-  říká, měň obojí naráz). Provozovateli chodí upozornění na
-  `DANERO_ALERT_EMAIL`, a když není nastavená, na `DANERO_CONTACT_EMAIL`
+  jen **první řádek** (ne nutně hlavička! reálné exporty začínají preambulí
+  s číslem účtu), chybová hláška (ta smí citovat jednu buňku), e-mail uživatele
+  a jeho hlášení; /soukromi to tak vyjmenovává, měň obojí naráz. Provozovateli
+  chodí upozornění na `DANERO_ALERT_EMAIL`, a když není nastavená, na `DANERO_CONTACT_EMAIL`
   (běžný stav); uživatel v `/import` vidí, že se na to koukneme, a může doplnit
   platformu. Rozbor a doimport dělá `pnpm --filter @danero/web failed-imports`
   (`list`/`dump`/`retry`/`retry-all`/`reject`/`delete`). Podpříkazy, které

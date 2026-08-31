@@ -394,9 +394,13 @@ const appUrl = (): string => process.env.BETTER_AUTH_URL ?? 'http://localhost:30
  * ⚠️ **Samotný soubor se sem nikdy nedává** (ani jako příloha): jsou to všechny
  * obchody jednoho člověka a e-mail je nejhorší možné úložiště. Originál leží
  * v `failed_imports` a dostane se k němu jen skript `scripts/failed-imports.ts`.
- * Ze souboru jde ven hlavička (pročištěná `printableSample`) a chybová hláška —
- * ta u parseru brokera cituje hodnotu z řádku, na kterém se zastavil, takže
- * jednu buňku ven vzít může. Přesně tak to říká i /soukromi; kdyby se to mělo
+ * Ze souboru jde ven **první řádek** (pročištěný `printableSample`) a chybová
+ * hláška — ta u parseru brokera cituje hodnotu z řádku, na kterém se zastavil,
+ * takže jednu buňku ven vzít může. Není to nutně hlavička: reálné exporty
+ * začínají preambulí a vzorek se bere bez ptaní (K6a-04). K tomu jde ven
+ * e-mailová adresa uživatele a to, co k výpisu sám dopsal (platforma
+ * a poznámka) — adresátem je provozovatel sám, ale slib na /soukromi to musí
+ * jmenovat (K4-06). Přesně tak to /soukromi říká; kdyby se měl obsah e-mailu
  * změnit, musí se změnit obojí.
  */
 export function failedImportAlertEmail(args: {

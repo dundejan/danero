@@ -247,6 +247,49 @@ describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)',
 });
 
 /**
+ * Co /soukromi slibuje o nepřečteném výpisu × co `lib/failed-imports.ts`
+ * s `lib/email.ts` opravdu dělají. Texty se sem píšou proto, že vzorek ze
+ * souboru je jediné místo, kde aplikace posílá ven kus cizí obchodní historie —
+ * slib o něm musí být přesný na slovo (nálezy K6a-04, K4-06, K4-05 4. auditu).
+ */
+describe('/soukromi × nepřečtený výpis', () => {
+  const read = async (relativni: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
+  };
+
+  it('K6a-04: neslibuje „první řádek s názvy sloupců“ — bere se první řádek, ať je v něm cokoli', async () => {
+    const soukromi = await read('app/soukromi/page.tsx');
+    // headerSample() v lib/failed-imports.ts nic nezkoumá: vezme firstLine().
+    // U výpisu z banky to bylo číslo účtu, jméno a IBAN — ne názvy sloupců.
+    expect(soukromi).not.toMatch(/první řádek s názvy sloupců/);
+    expect(soukromi).toMatch(/první řádek souboru/);
+    // a rovnou se přizná, že hlavička to být nemusí
+    expect(soukromi).toMatch(/číslo účtu/);
+  });
+
+  it('K4-06: jmenuje i e-mailovou adresu a poznámku uživatele, které e-mail veze', async () => {
+    const soukromi = await read('app/soukromi/page.tsx');
+    const email = await read('lib/email.ts');
+    // řádky, které failedImportAlertEmail skládá do tabulky upozornění
+    expect(email).toMatch(/'Uživatel', args\.userEmail/);
+    expect(email).toMatch(/'Poznámka', args\.reportedNote/);
+    expect(soukromi).toMatch(/tvoje e-mailová adresa/);
+    expect(soukromi).toMatch(/poznámku, pošle se provozovateli i to/);
+  });
+
+  it('K4-05: říká, že obsah mažeme při vyřízení případu, ne až 90denní retencí', async () => {
+    const soukromi = await read('app/soukromi/page.tsx');
+    const failedImports = await read('lib/failed-imports.ts');
+    // resolveCase() nuluje `content` u obou výsledků (fixed i rejected)
+    expect(failedImports).toMatch(/content: null/);
+    expect(soukromi).toMatch(/jakmile případ vyřídíme/);
+    expect(soukromi).toMatch(/nejpozději po 90 dnech/);
+  });
+});
+
+/**
  * Identifikace provozovatele nepatří do repozitáře — je veřejný a pod AGPL,
  * takže by si ji s sebou vozil každý, kdo si Danero rozjede sám. A hlavně:
  * jednou commitnutá adresa z historie nezmizí ani po přestěhování. Historie
