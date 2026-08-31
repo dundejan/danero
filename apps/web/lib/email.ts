@@ -29,10 +29,19 @@ export interface EmailMessage {
 }
 
 /**
- * Kam míří odpovědi. `From` je `notifikace@danero.cz` a doména **nemá MX
- * záznam**, takže odpověď na ni se nikam nedoručí — a „Odpovědět“ je přitom
- * první, co uživatel udělá, když chce zrušit předplatné. Adresa je stejná,
- * jakou už uvádí potvrzení objednávky.
+ * Kam míří odpovědi. `From` je `notifikace@danero.cz` — schránka, kterou nikdo
+ * nečte — a „Odpovědět“ je přitom první, co uživatel udělá, když chce zrušit
+ * předplatné. Bez `Reply-To` by jeho zpráva zmizela.
+ *
+ * Od 31. 8. 2026 má doména MX (přeposílání ImprovMX → schránka provozovatele)
+ * a produkce nastavuje `RESEND_REPLY_TO=odpovedi@danero.cz`. Do té doby padal
+ * fallback na `OPERATOR.email`, což byl freemail: SpamAssassin za to bere
+ * `FREEMAIL_FORGED_REPLYTO`, tedy **2,095 bodu z prahu 5,0**. Změřeno
+ * mail-testerem před i po — 2,1 bodu odpadlo, zpráva má 0,1 z 5,0.
+ *
+ * ⚠️ Fallback tu zůstává schválně: bez něj by odpovědi mizely na instanci,
+ * kde `RESEND_REPLY_TO` nastavená není (cizí self-hosting, dev). Freemail
+ * v Reply-To je horší než doménová adresa, ale nekonečně lepší než žádná.
  */
 const REPLY_TO = process.env.RESEND_REPLY_TO ?? OPERATOR.email;
 
