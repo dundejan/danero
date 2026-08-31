@@ -294,7 +294,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
   if (text.trim() === '') {
     result.errors.push({
       line: 1,
-      message: 'Soubor je prázdný — nahraj Transactions.csv z Degiro (Aktivita → Transakce).',
+      message: 'Soubor je prázdný — nahraj Transactions.csv z Degiro (Inbox → Transakce).',
     });
     return result;
   }
@@ -649,7 +649,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
   if (text.trim() === '') {
     result.errors.push({
       line: 1,
-      message: 'Soubor je prázdný — nahraj Account.csv z Degiro (Aktivita → Výpisy z účtu).',
+      message: 'Soubor je prázdný — nahraj Account.csv z Degiro (Inbox → Přehled účtu).',
     });
     return result;
   }

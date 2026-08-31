@@ -20,6 +20,19 @@ export interface IbkrFlexClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** Volby čekání na vygenerovaný výpis — obdoba `ExportPollOptions` u Trading212. */
+export interface StatementPollOptions {
+  /** Prodleva mezi dotazy na stav výpisu. */
+  pollIntervalMs?: number;
+  /**
+   * Kolikrát se celkem uspí (objednání i vyzvedávání dohromady), než čekání
+   * vzdáme. Nejdelší možné čekání je tedy `maxAttempts × pollIntervalMs`.
+   */
+  maxAttempts?: number;
+  /** Heartbeat pro nadřazený job — volá se před každým uspáním. */
+  onPoll?: () => void | Promise<void>;
+}
+
 export class IbkrFlexError extends Error {
   constructor(
     public readonly code: string,
@@ -164,8 +177,14 @@ export class IbkrFlexClient {
   /**
    * Fáze 1: objednání výpisu → referenceCode + URL pro vyzvednutí. Kód 1018
    * (throttling) je i tady dočasný — trpělivý retry, ne fatální chyba.
+   * Pokusy se berou ze SPOLEČNÉHO rozpočtu s vyzvedáváním, aby se celkové
+   * čekání nesečetlo nad strop.
    */
-  private async sendRequest(deadline: number, pollIntervalMs: number): Promise<{
+  private async sendRequest(
+    budget: { attemptsLeft: number },
+    pollIntervalMs: number,
+    onPoll?: () => void | Promise<void>,
+  ): Promise<{
     referenceCode: string;
     url: string;
   }> {
@@ -185,7 +204,9 @@ export class IbkrFlexClient {
           url: this.resolveStatementUrl(response.url),
         };
       }
-      if (response.errorCode === '1018' && Date.now() < deadline) {
+      if (response.errorCode === '1018' && budget.attemptsLeft > 0) {
+        budget.attemptsLeft -= 1;
+        await onPoll?.();
         await sleep(pollIntervalMs);
         continue;
       }
@@ -195,16 +216,21 @@ export class IbkrFlexClient {
 
   /**
    * Stáhne kompletní Flex XML výpis. Polluje GetStatement, dokud IBKR výpis
-   * generuje (kód 1019) nebo škrtí (1018) — do `maxWaitMs`. `onPoll` se volá
-   * při každém čekání (heartbeat pro nadřazený job).
+   * generuje (kód 1019) nebo škrtí (1018) — nejvýš `maxAttempts` uspání.
+   * `onPoll` se volá při každém čekání (heartbeat pro nadřazený job).
+   *
+   * ⚠️ Strop je v POČTU POKUSŮ, ne v čase. Časový rozpočet (do 31. 8. 2026
+   * `maxWaitMs = 600_000`) se kontroloval PŘED uspáním, takže reálné čekání
+   * bylo o celý interval delší než rozpočet — a ten se rovnal rozpočtu celého
+   * ticku cronu (`DEFAULT_JOB_BUDGET_MS`), takže jediný pomalý výpis ho utnul
+   * uprostřed. Stejná vada a stejná oprava jako u Trading212
+   * (`ExportPollOptions.maxAttempts`).
    */
-  async fetchStatementXml(
-    pollIntervalMs = 10_000,
-    maxWaitMs = 600_000,
-    onPoll?: () => void | Promise<void>,
-  ): Promise<string> {
-    const deadline = Date.now() + maxWaitMs;
-    const { referenceCode, url } = await this.sendRequest(deadline, pollIntervalMs);
+  async fetchStatementXml(options: StatementPollOptions = {}): Promise<string> {
+    const pollIntervalMs = options.pollIntervalMs ?? 10_000;
+    const maxAttempts = options.maxAttempts ?? 58;
+    const budget = { attemptsLeft: maxAttempts };
+    const { referenceCode, url } = await this.sendRequest(budget, pollIntervalMs, options.onPoll);
 
     for (;;) {
       const query = `t=${encodeURIComponent(this.token)}&q=${encodeURIComponent(referenceCode)}&v=3`;
@@ -216,13 +242,14 @@ export class IbkrFlexClient {
       const response = readStatementResponse(body);
       const code = response?.errorCode;
       if (code === '1019' || code === '1018' || code === '1021') {
-        if (Date.now() >= deadline) {
+        if (budget.attemptsLeft <= 0) {
           throw new IbkrFlexError(
             'timeout',
-            'IBKR generuje výpis déle, než čekáme — zkus synchronizaci za pár minut znovu.',
+            `IBKR negeneroval výpis ani po ${maxAttempts} dotazech (${Math.round((maxAttempts * pollIntervalMs) / 1000)} s) — zkus synchronizaci za pár minut znovu.`,
           );
         }
-        await onPoll?.();
+        budget.attemptsLeft -= 1;
+        await options.onPoll?.();
         await sleep(pollIntervalMs);
         continue;
       }

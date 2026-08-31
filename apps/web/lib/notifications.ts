@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
@@ -460,6 +460,9 @@ export { resolveEmailSender, type EmailMessage, type EmailSender } from '@/lib/e
  * přehled v aplikaci je úplný) → jeden digest e-mail podle preferencí
  * (typy + frekvence DAILY/WEEKLY). Idempotentní (druhý běh v den nic neposílá).
  */
+/** K5-14: jak dlouho se ještě smí zkoušet odeslat upozornění, které neprošlo. */
+const EMAIL_RETRY_LIMIT_DAYS = 14;
+
 export async function processUserNotifications(
   db: Db,
   target: { id: string; email: string },
@@ -522,10 +525,26 @@ export async function processUserNotifications(
   //    (nesmí se hromadit — po zapnutí nesmí přijít měsíce staré události),
   // 3. čekající na týdenní okno (WEEKLY, digest byl nedávno) → NEoznačovat,
   //    pošlou se v příštím týdenním souhrnu.
+  // K5-14: strop opakování. Když odeslání selže, claim se vrací (níž), takže
+  // se týž digest zkouší každý běh cronu znovu — u trvale nedoručitelné adresy
+  // donekonečna (změřeno: 4 pokusy za 4 dny a pořád ve frontě, plus chyba
+  // v logu při každém běhu). Po dvou týdnech je upozornění stejně bezcenné:
+  // v přehledu v aplikaci zůstává, e-mailem už nechodí. Dva týdny jsou
+  // dvojnásobek nejdelšího LEGITIMNÍHO čekání (týdenní digest, okno 6,5 dne),
+  // takže se nemůžou splést s řádkem, který jen čeká na souhrn.
+  const emailRetryCutoff = new Date(
+    new Date(`${today}T00:00:00Z`).getTime() - EMAIL_RETRY_LIMIT_DAYS * 24 * 60 * 60 * 1000,
+  );
   const pending = await db
     .select()
     .from(notifications)
-    .where(and(eq(notifications.userId, target.id), isNull(notifications.emailedAt)));
+    .where(
+      and(
+        eq(notifications.userId, target.id),
+        isNull(notifications.emailedAt),
+        gte(notifications.createdAt, emailRetryCutoff),
+      ),
+    );
   const emailAllowed = (type: string): boolean => {
     if (!prefs.emailEnabled) return false;
     // pravidelný přehled má vlastní vypínač (kadenci) — a musí platit i pro

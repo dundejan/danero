@@ -199,6 +199,23 @@ describe('zachycení nepřečteného výpisu', () => {
     expect(cases.get(znovu.batchId)?.filename).toBe('vypis-0-znovu.csv');
     expect(await listOpenCases(db)).toHaveLength(MAX_OPEN_CASES_PER_USER);
   });
+
+  /**
+   * K6a-07: produkční migrace se pouští ručně, takže nasazený kód může na
+   * chvíli mluvit s databází, kde tabulka ještě není. `keepFailedUpload` to
+   * ustojí, `casesForBatches` shazovalo CELOU stránku /import na 500 — a s ní
+   * i historii a formulář pro nahrání, tedy věci, které s panelem
+   * „koukneme se na to“ nemají nic společného.
+   */
+  it('bez tabulky failed_imports se /import nesmí sesypat', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const summary = await importFileIsolated(db, 'u1', 'vypis.csv', bytes(NEZNAMY_VYPIS));
+    expect((await casesForBatches(db, 'u1', [summary.batchId])).size).toBe(1);
+
+    const { sql } = await import('drizzle-orm');
+    await db.execute(sql`DROP TABLE failed_imports`);
+    await expect(casesForBatches(db, 'u1', [summary.batchId])).resolves.toEqual(new Map());
+  });
 });
 
 describe('hlášení od uživatele', () => {

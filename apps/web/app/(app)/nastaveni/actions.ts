@@ -310,6 +310,13 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
     redirect('/nastaveni/ucet?chyba=smazani-heslo');
   }
 
+  // K4-07 / K4-08: co po smazání zůstává mimo cizí klíče (odkaz na obnovu
+  // hesla ve `verification`, adresa v `waitlist`) — proč právě tyhle dvě
+  // tabulky, vysvětluje `lib/account-cleanup.ts`. Až tady: heslo ověřuje
+  // teprve `deleteUser` a špatné heslo nesmí nikomu nic mazat.
+  const { purgeAfterAccountDeletion } = await import('@/lib/account-cleanup');
+  await purgeAfterAccountDeletion(await getDb(), { userId: user.id, email: user.email });
+
   // Bez tohohle by zákazníkovi bez účtu chodila platba dál a neměl by ji jak
   // zastavit — do zákaznického portálu se vchází jen přihlášením.
   if (subscriptionId) await cancelStripeSubscription(subscriptionId, user.id);

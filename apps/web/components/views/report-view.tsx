@@ -831,8 +831,8 @@ export function ReportView({
                 Stáhni ukázkové XML (2025)
               </a>{' '}
               <span className="text-inkoust-tlumeny">
-                — přesně tohle nahraješ na podatelnu (fiktivní osobní údaje, čísla z demo
-                portfolia).
+                — takhle soubor vypadá; v EPO se načítá přes „Načtení souboru“ (osobní
+                údaje jsou v ukázce smyšlené, čísla jsou z demo portfolia).
               </span>
             </p>
           </>
@@ -907,6 +907,27 @@ export function ReportView({
                 <div>
                   <Label htmlFor="epo-ufoCil">Kód finančního úřadu</Label>
                   <Input id="epo-ufoCil" name="ufoCil" placeholder="např. 451 (Praha)" />
+                </div>
+                {/* K3-10: `pracUfo` a `email` byly v typu, v XML i v /api/epo,
+                    ale formulář pro ně neměl políčko — do souboru se tak nikdy
+                    nedostaly a kód se tvářil jako podporovaný. */}
+                <div>
+                  <Label htmlFor="epo-pracUfo">Kód územního pracoviště</Label>
+                  <Input
+                    id="epo-pracUfo"
+                    name="pracUfo"
+                    placeholder="např. 2001 (pobočka úřadu)"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="epo-email">E-mail</Label>
+                  <Input
+                    id="epo-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="kam se úřad ozve"
+                  />
                 </div>
               </div>
               {/* K3-07: typ přiznání chodil natvrdo jako „řádné", ačkoli

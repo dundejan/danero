@@ -64,6 +64,25 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(result.dividends.creditableWithholdingCzk.toString()).toBe('150');
   });
 
+  it('R-07c/R-07f: koeficient zápočtu se počítá na dvě desetinná místa jako v Příloze 3', () => {
+    // § 146 odst. 3 DŘ a ř. 324 tiskopisu: koeficient v % na dvě desetinná
+    // místa. Základ 1 676 000 → daň 251 400; US 1 000 000 dá koeficient
+    // 59,665871 % → 59,67 (strop 150 010,38 > smluvních 150 000, nezabere),
+    // DE 676 000 dá 40,334129 % → 40,33, tedy strop 251 400 × 40,33 %
+    // = 101 389,62 < smluvních 101 400 — a právě o ten rozdíl je daň vyšší.
+    // Ř. 326 zůstává na dvou desetinných místech — podatelna vzorec
+    // min(ř. 323, ř. 325) kontroluje a korunové zaokrouhlení by ho porušilo.
+    // Přesným podílem by oba stropy vyšly na 0,15 × brutto a daň by byla nula
+    // (nález K3-09: report pak ukazoval jinou daň než odevzdané XML).
+    const result = run([
+      dividend({ sourceCountry: 'US', gross: '1000000', withholdingTax: '150000' }),
+      dividend({ sourceCountry: 'DE', gross: '676000', withholdingTax: '101400' }),
+    ]);
+    expect(result.tax.general.taxBeforeCreditCzk.toString()).toBe('251400');
+    expect(result.tax.general.foreignTaxCreditCzk.toString()).toBe('251389.62');
+    expect(result.tax.general.taxCzk.toString()).toBe('10.38');
+  });
+
   it('R-07c: zaokrouhlení zápočtu vždy DOLŮ (NL 10 % z 26 = 2,6 → 2, ne 3)', () => {
     const result = run([dividend({ sourceCountry: 'NL', gross: '26', withholdingTax: '2.6' })]);
     expect(result.dividends.creditableByCountry['NL']?.creditableCzk.toString()).toBe('2');

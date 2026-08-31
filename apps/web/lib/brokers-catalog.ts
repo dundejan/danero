@@ -45,7 +45,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#00B67A',
     guide:
-      'Peníze → Peněženka a transakce → „Vaše Portu investice“ nastav na Všechny a „Časový horizont“ na Všechny transakce (zaškrtnutá políčka Vklady/Výběry/Nákupy/Prodeje/… nech být) → Stáhnout jako CSV. Dluhopisy z Portu Opportunity mají vlastní výpis (Transakce a peníze → Pokyny).',
+      'Peníze → Peněženka a transakce → „Vaše Portu investice“ nastav na Všechny a „Časový horizont“ na Všechny transakce (zaškrtnutá políčka Vklady/Výběry/Nákupy/Prodeje/… nech být) → Stáhnout jako CSV. Dluhopisy z Portu Opportunity mají vlastní výpis (Transakce a peníze → Pokyny) — ten zatím číst neumíme: nahraj ho stejně, my se na formát podíváme a ozveme se, a než ho doplníme, zapiš dluhopisy univerzální šablonou.',
   },
   {
     id: 'xtb',

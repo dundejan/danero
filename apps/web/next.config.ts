@@ -15,6 +15,17 @@ const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+  /**
+   * HSTS bez `preload` je VĚDOMÉ rozhodnutí (K8-10), ne přehlédnutí.
+   *
+   * `preload` zapíše doménu do seznamu zadrátovaného v prohlížečích — a ven
+   * z něj se dostává měsíce (jedna verze prohlížeče = jedno kolo). Kdyby
+   * kterákoli budoucí subdoména (status page, dokumentace, něco u třetí
+   * strany) neuměla HTTPS, byla by pro všechny návštěvníky nedosažitelná
+   * a zpátky by to nešlo vzít. Dvouletý `max-age` s `includeSubDomains`
+   * chrání všechny opakované návštěvníky; nechráněná zůstává jen úplně první
+   * návštěva, kterou stejně kryje přesměrování na HTTPS.
+   */
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
   {
     key: 'Content-Security-Policy',

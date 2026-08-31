@@ -311,18 +311,31 @@ const CASE_COLUMNS = {
   createdAt: failedImports.createdAt,
 } as const;
 
-/** Případy k dávkám, které stránka /import zrovna vypisuje. */
+/**
+ * Případy k dávkám, které stránka /import zrovna vypisuje.
+ *
+ * K6a-07: nikdy nevyhazuje — ze stejného důvodu jako `keepFailedUpload`.
+ * Panel „koukneme se na to“ je doplňková služba; když se dotaz nepovede
+ * (typicky nasazený kód proti databázi, kde ještě neproběhla migrace — ty se
+ * v produkci pouští ručně), nesmí to sundat CELOU stránku importu na 500,
+ * protože pak uživatel nevidí ani historii, ani formulář pro nahrání.
+ */
 export async function casesForBatches(
   db: Db,
   userId: string,
   batchIds: string[],
 ): Promise<Map<string, FailedImportCase>> {
   if (batchIds.length === 0) return new Map();
-  const rows = await db
-    .select(CASE_COLUMNS)
-    .from(failedImports)
-    .where(and(eq(failedImports.userId, userId), inArray(failedImports.batchId, batchIds)));
-  return new Map(rows.map((row) => [row.batchId, row]));
+  try {
+    const rows = await db
+      .select(CASE_COLUMNS)
+      .from(failedImports)
+      .where(and(eq(failedImports.userId, userId), inArray(failedImports.batchId, batchIds)));
+    return new Map(rows.map((row) => [row.batchId, row]));
+  } catch (error) {
+    logEvent('error', 'failed_import.cases_unavailable', { error: errorText(error) });
+    return new Map();
+  }
 }
 
 export const base64ToArrayBuffer = (value: string): ArrayBuffer => {

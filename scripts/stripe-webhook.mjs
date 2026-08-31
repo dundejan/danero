@@ -25,84 +25,84 @@ import {
   webhookApiVersionProblem,
 } from '../apps/web/lib/stripe-events.ts';
 
-const KLIC = process.env.STRIPE_SECRET_KEY;
-if (!KLIC) {
+const SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+if (!SECRET_KEY) {
   console.error('Chybí STRIPE_SECRET_KEY. Spusť:\n  STRIPE_SECRET_KEY=$(grep -m1 \'^STRIPE_SECRET_KEY=\' ~/.danero/produkce.env | cut -d= -f2-) node scripts/stripe-webhook.mjs check');
   process.exit(1);
 }
 
-const rezim = process.argv[2] ?? 'check';
-if (!['check', 'fix'].includes(rezim)) {
-  console.error(`Neznámý režim „${rezim}“ — použij check nebo fix.`);
+const mode = process.argv[2] ?? 'check';
+if (!['check', 'fix'].includes(mode)) {
+  console.error(`Neznámý režim „${mode}“ — použij check nebo fix.`);
   process.exit(1);
 }
 
-async function stripe(cesta, options = {}) {
-  const res = await fetch(`https://api.stripe.com/v1${cesta}`, {
+async function stripe(path, options = {}) {
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${KLIC}`,
+      Authorization: `Bearer ${SECRET_KEY}`,
       'Content-Type': 'application/x-www-form-urlencoded',
       ...(options.headers ?? {}),
     },
   });
-  const telo = await res.json();
-  if (!res.ok) throw new Error(`Stripe ${cesta}: ${res.status} ${telo?.error?.message ?? ''}`);
-  return telo;
+  const payload = await res.json();
+  if (!res.ok) throw new Error(`Stripe ${path}: ${res.status} ${payload?.error?.message ?? ''}`);
+  return payload;
 }
 
-const { data: endpointy } = await stripe('/webhook_endpoints?limit=100');
-if (endpointy.length === 0) {
+const { data: endpoints } = await stripe('/webhook_endpoints?limit=100');
+if (endpoints.length === 0) {
   console.error('Ve Stripe není žádný webhook endpoint.');
   process.exit(1);
 }
 
-const ocekavane = new Set(HANDLED_STRIPE_EVENTS);
-let vseSedi = true;
+const expected = new Set(HANDLED_STRIPE_EVENTS);
+let allMatch = true;
 let missingEvents = false;
 
-for (const ep of endpointy) {
-  const ma = new Set(ep.enabled_events);
-  const chybi = [...ocekavane].filter((typ) => !ma.has(typ) && !ma.has('*'));
-  const navic = [...ma].filter((typ) => typ !== '*' && !ocekavane.has(typ));
+for (const ep of endpoints) {
+  const subscribed = new Set(ep.enabled_events);
+  const missing = [...expected].filter((eventType) => !subscribed.has(eventType) && !subscribed.has('*'));
+  const extra = [...subscribed].filter((eventType) => eventType !== '*' && !expected.has(eventType));
 
   console.log(`\nEndpoint ${ep.id}  (${ep.status}, livemode=${ep.livemode})`);
   console.log(`  URL: ${ep.url}`);
-  console.log(`  přihlášeno k ${ma.size} typům, kód obsluhuje ${ocekavane.size}`);
-  if (navic.length > 0) console.log(`  navíc (neškodí, jen se ignorují): ${navic.join(', ')}`);
+  console.log(`  přihlášeno k ${subscribed.size} typům, kód obsluhuje ${expected.size}`);
+  if (extra.length > 0) console.log(`  navíc (neškodí, jen se ignorují): ${extra.join(', ')}`);
 
   // Verze API se dá nastavit JEN při zakládání endpointu, takže ji `fix`
   // neopraví — je to na smazání a založení znovu (nebo na dashboard Stripu).
   const apiVersionProblem = webhookApiVersionProblem(ep.api_version ?? null);
   if (apiVersionProblem) {
-    vseSedi = false;
+    allMatch = false;
     console.log(`  ✗ ${apiVersionProblem}`);
     console.log('    → endpoint smaž a založ znovu se správnou verzí (fix ji doplnit neumí)');
   } else {
     console.log(`  ✓ verze API ${EXPECTED_STRIPE_API_VERSION} sedí na kód`);
   }
 
-  if (chybi.length === 0) {
+  if (missing.length === 0) {
     console.log('  ✓ všechny obsluhované typy dorazí');
     continue;
   }
 
-  vseSedi = false;
+  allMatch = false;
   missingEvents = true;
-  console.log(`  ✗ CHYBÍ ${chybi.length}: ${chybi.join(', ')}`);
+  console.log(`  ✗ CHYBÍ ${missing.length}: ${missing.join(', ')}`);
   console.log('    → tyhle události kód umí zpracovat, ale nikdy je nedostane');
 
-  if (rezim === 'fix') {
-    const telo = new URLSearchParams();
-    for (const typ of [...new Set([...ma, ...ocekavane])].filter((t) => t !== '*')) {
-      telo.append('enabled_events[]', typ);
+  if (mode === 'fix') {
+    const payload = new URLSearchParams();
+    for (const eventType of [...new Set([...subscribed, ...expected])].filter((t) => t !== '*')) {
+      payload.append('enabled_events[]', eventType);
     }
-    const updated = await stripe(`/webhook_endpoints/${ep.id}`, { method: 'POST', body: telo });
+    const updated = await stripe(`/webhook_endpoints/${ep.id}`, { method: 'POST', body: payload });
     console.log(`    ✓ doplněno — endpoint je nově přihlášený k ${updated.enabled_events.length} typům`);
   }
 }
 
-if (rezim === 'check' && !vseSedi) {
+if (mode === 'check' && !allMatch) {
   if (missingEvents) {
     console.log('\nSpusť `node scripts/stripe-webhook.mjs fix` a chybějící typy se doplní.');
   }

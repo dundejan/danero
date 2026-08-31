@@ -37,6 +37,19 @@ function progressiveTax(base: Money, threshold: Money | null): Money {
  * R-07c/R-07f: prostý zápočet po státech — strop podílem příjmu státu na základu
  * daně. Příjem státu = dividendy i úroky (§ 38f počítá zápočet za stát jako
  * celek, ne za druh příjmu zvlášť).
+ *
+ * Koeficient zápočtu (ř. 324 Přílohy 3, tiskopis 25 5405/P3 vzor č. 22) se
+ * vyjadřuje **v procentech na dvě desetinná místa** — § 146 odst. 3 daňového
+ * řádu: „Výpočet na základě daňové sazby, koeficientů, ukazatelů … se provádí
+ * s přesností na dvě platná desetinná místa.“ Přesný podíl proto do stropu
+ * dosadit nejde: podatelna přesnější hodnotu ř. 325 odmítne a report by ukazoval
+ * jinou daň než odevzdané XML (nález K3-09, rozdíl až o desítky Kč — koeficient
+ * zaokrouhlený dolů udělá ze stropu skutečnou mez tam, kde přesný podíl vycházel
+ * přesně na smluvní zápočet).
+ *
+ * ⚠️ Není to zakázané postupné zaokrouhlování (věta druhá § 146 odst. 3):
+ * zaokrouhluje se koeficient podle věty první, ne mezivýsledek daně, a hodnota
+ * zápočtu za stát se pak zaokrouhlí jen jednou.
  */
 function allocateCredit(tax: Money, base: Money, dividends: DividendsResult): Money {
   if (base.lte(0) || tax.lte(0)) return ZERO;
@@ -44,7 +57,17 @@ function allocateCredit(tax: Money, base: Money, dividends: DividendsResult): Mo
   for (const { grossCzk, interestGrossCzk, creditableCzk } of Object.values(
     dividends.creditableByCountry,
   )) {
-    const maxCredit = tax.mul(grossCzk.plus(interestGrossCzk).div(base));
+    // ř. 324 — koeficient v %, dvě desetinná místa; ř. 325 — strop zápočtu
+    const coefficientPct = grossCzk
+      .plus(interestGrossCzk)
+      .div(base)
+      .mul(100)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const maxCredit = tax.mul(coefficientPct).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    // ř. 326 je min(ř. 323, ř. 325) a podatelna ten vzorec kontroluje na DVĚ
+    // desetinná místa — korunové zaokrouhlení dolů by report zase rozešlo s XML
+    // (přesně vada K3-09, jen obráceně). Na celé Kč dolů se zaokrouhluje ř. 323,
+    // tedy `creditableCzk`, a to se děje už v `basis/dividends.ts`.
     credit = credit.plus(Decimal.min(creditableCzk, maxCredit));
   }
   return Decimal.min(credit, tax);

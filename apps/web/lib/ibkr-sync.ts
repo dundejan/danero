@@ -40,6 +40,19 @@ export interface IbkrSyncOptions {
   onProgress?: (progress: SyncProgress) => void | Promise<void>;
 }
 
+/**
+ * Kolikrát se ptáme IBKR, jestli je výpis hotový. Při výchozím intervalu 10 s
+ * je nejdelší čekání 580 s — vejde se do rozpočtu jednoho ticku cronu
+ * (`DEFAULT_JOB_BUDGET_MS` = 600 s v `lib/jobs.ts`).
+ *
+ * Dřív tu stál časový rozpočet 600 000 ms, tedy PŘESNĚ rozpočet celého ticku:
+ * jediný pomalý výpis ho spolykal beze zbytku a další joby se už nezačaly.
+ * Navíc se kontroloval před uspáním, takže reálné čekání bylo o interval delší
+ * než rozpočet. Stejná vada jako u Trading212 (`EXPORT_POLL_ATTEMPTS`
+ * v `lib/t212-sync.ts`), a stejná oprava: strop v počtu pokusů.
+ */
+const STATEMENT_POLL_ATTEMPTS = 58;
+
 /** Uložené přihlašovací údaje IBKR: token + query ID (šifrovaný JSON). */
 interface IbkrCredentials {
   token: string;
@@ -78,9 +91,11 @@ export async function syncIbkr(
   await report('exporting');
   // onPoll = heartbeat: generování výpisu trvá i minuty a bez známky života
   // by recovery jobů (15 min) mohla legitimní běh falešně prohlásit za mrtvý
-  const xml = await client.fetchStatementXml(options.pollIntervalMs ?? 10_000, 600_000, () =>
-    report('exporting'),
-  );
+  const xml = await client.fetchStatementXml({
+    pollIntervalMs: options.pollIntervalMs ?? 10_000,
+    maxAttempts: STATEMENT_POLL_ATTEMPTS,
+    onPoll: () => report('exporting'),
+  });
   const parsed = parseIbkrFlexXml(xml);
 
   const hasContent =

@@ -4,8 +4,14 @@ import { base10Values, priloha2, wholeCzkParts } from '@/lib/priloha2';
 
 /**
  * Generátor XML písemnosti DPFDP7 (přiznání k dani z příjmů fyzických osob)
- * pro EPO / mojedane.cz. Čistá funkce bez I/O — tvar XML se drží empiricky
- * validovaných vzorů (prošly oficiální testovací podatelnou) a XSD dpfdp7_epo2.
+ * pro EPO / mojedane.cz. Čistá funkce bez I/O.
+ *
+ * Jediný zdroj pravdy o tvaru XML je **odpověď zkušební podatelny** — schéma
+ * `dpfdp7_epo2` v repozitáři NENÍ (publikuje ho finanční správa a s každým
+ * vzorem tiskopisu se mění, takže by tu zastaralo). Kdo tvar mění, ověří ho
+ * `pnpm validate:epo`, který sadu vzorků pošle na oficiální testovací
+ * podatelnu; pořadí vět a názvy položek proto neodvozuj z paměti, ale
+ * z vzorku, který podatelna přijala.
  *
  * Do XML se propisují VÝHRADNĚ investiční příjmy z enginu (§ 8 + § 10);
  * přiznání může obsahovat i jiné příjmy (§ 6, § 7, § 9) — ty si uživatel
@@ -241,6 +247,39 @@ export function prijmyZeStatuProZapocet(
   return stropUroku.gt(0) ? agg.grossCzk.plus(agg.interestGrossCzk) : agg.grossCzk;
 }
 
+/** Rozpočet na výčet ISIN v Seznamu — zbytek do 200 znaků nechává na dovětek. */
+const IDENT_UDAJE_BUDGET = 180;
+
+/**
+ * K3-08: identifikace zahraničních plátců pro Seznam dle § 38f odst. 10.
+ *
+ * Jména plátců Danero nezná — výpis brokera nese cenný papír, ne emitenta jako
+ * osobu. Odkaz „viz evidence Danero“, který tu stál do 31. 8. 2026, byl ale
+ * odkaz do systému, do kterého úřad nevidí. Vypisujeme proto ISIN cenných
+ * papírů, ze kterých příjem z daného státu pochází: podle nich se plátce
+ * dohledá. Když ISIN chybí (typicky úrok z hotovosti), zbývá role brokera.
+ */
+function identUdajeSeznamu(country: string, result: TaxYearResult): string {
+  const prefix = 'Výplata přes zahraničního obchodníka s cennými papíry';
+  const fallback = `${prefix}; plátci dle výpisů brokera`;
+  const isins = [
+    ...new Set(
+      result.dividends.items
+        .filter((item) => item.country === country)
+        .map((item) => item.isin)
+        .filter((isin): isin is string => isin !== undefined && isin !== ''),
+    ),
+  ].sort();
+  const shown: string[] = [];
+  for (const isin of isins) {
+    if (`${prefix}; cenné papíry ${[...shown, isin].join(', ')}`.length > IDENT_UDAJE_BUDGET) break;
+    shown.push(isin);
+  }
+  if (shown.length === 0) return fallback;
+  const zbytek = isins.length - shown.length;
+  return `${prefix}; cenné papíry ${shown.join(', ')}${zbytek > 0 ? ` a dalších ${zbytek}` : ''}`;
+}
+
 /** Daň podle § 16: 15 % do hranice, 23 % nad ní; vstupem základ zaokrouhlený na sta dolů. */
 const danPodle16 = (zdZaokrouhleny: Money, threshold: Money): Money =>
   zdZaokrouhleny.lte(threshold)
@@ -315,6 +354,9 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       country,
       gross: round0(prijmyZeStatuProZapocet(country, agg, result.options)),
       creditable: agg.creditableCzk,
+      // K3-08: skutečně sražená daň — do Seznamu podle § 38f odst. 10 patří
+      // částka z potvrzení, ne částka po smluvním stropu (viz níže u Vetad)
+      withholding: agg.withholdingCzk,
     }))
     .sort((a, b) => a.country.localeCompare(b.country));
 
@@ -354,7 +396,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     const r325 = round2(r57.mul(r324).div(100)); // maximálně lze započítat
     const r326 = round2(Decimal.min(r323, r325)); // uznaná daň (vzorec EPO)
     const r327 = round2(Decimal.max(ZERO, r323.sub(r326))); // neuznaný zbytek
-    return { country: s.country, r321, r323, r324, r325, r326, r327 };
+    return { country: s.country, r321, r323, r324, r325, r326, r327, paid: round0(s.withholding) };
   });
   const r328 = p3.reduce((acc, row) => acc.plus(row.r326), ZERO); // daň uznaná k zápočtu
   const r329 = p3.reduce((acc, row) => acc.plus(row.r327), ZERO); // daň neuznaná
@@ -406,7 +448,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // zároveň ř.60 < 30 840 a ř.414 > 200 Kč.
   const r91 = r77.lte(HRANICE_38B) ? ZERO : r77;
 
-  // ---------- sestavení XML (pořadí vět dle XSD sekvence) ----------
+  // ---------- sestavení XML (pořadí vět, jak ho přijímá podatelna) ----------
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push('<Pisemnost nazevSW="Danero" verzeSW="1.0">');
@@ -554,16 +596,23 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       );
     }
     // Seznam dle § 38f odst. 10 — identifikace zahraničních plátců po státech;
-    // podatelna vyžaduje všech 5 údajů, proto i zapl_dan (uvádíme v přepočtu na Kč)
+    // podatelna vyžaduje všech 5 údajů, proto i zapl_dan (uvádíme v přepočtu na Kč).
+    //
+    // K3-08: daň se tu uvádí tak, jak byla SKUTEČNĚ sražena — Seznam dokládá,
+    // co se v zahraničí zaplatilo (§ 38f odst. 10: „daň … zaplacená v zahraničí“),
+    // ne kolik si poplatník nárokuje. Do 31. 8. 2026 se sem psala částka po
+    // smluvním stropu (ř. 323), takže u US dividendy bez W-8BEN stálo v Seznamu
+    // 15 % z brutta, zatímco potvrzení znělo na 30 % — přesně ten údaj úřad
+    // porovnává s potvrzením plátce. Nárok zůstává zastropovaný v Příloze 3
+    // (ř. 323/326), Seznam ho nezvyšuje.
     for (const row of p3) {
       lines.push(
         veta('Vetad', {
-          ident_udaje:
-            'Zahraniční plátci dividend a úroků dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč',
+          ident_udaje: identUdajeSeznamu(row.country, result),
           k_stat_zdroj: row.country,
-          zapl_dan: kc(row.r323),
+          zapl_dan: kc(row.paid),
           prijmy_seznam: kc(row.r321),
-          dan_seznam: kc(row.r323),
+          dan_seznam: kc(row.paid),
         }),
       );
     }

@@ -12,8 +12,8 @@
 <VetaL kod_statu="DE" kc_prijzap="9864" kc_vydzap="0" da_zahr="1479" proczahr="15.03" kc_k_zapzahr="1478.95" da_uznzap="1478.95" roz_od12="0.05"/>
 <VetaL kod_statu="NL" kc_prijzap="4685" kc_vydzap="0" da_zahr="468" proczahr="7.14" kc_k_zapzahr="702.58" da_uznzap="468" roz_od12="0"/>
 <VetaL kod_statu="US" kc_prijzap="23434" kc_vydzap="0" da_zahr="3515" proczahr="35.71" kc_k_zapzahr="3513.86" da_uznzap="3513.86" roz_od12="1.14"/>
-<Vetad ident_udaje="Zahraniční plátci dividend a úroků dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="DE" zapl_dan="1479" prijmy_seznam="9864" dan_seznam="1479"/>
-<Vetad ident_udaje="Zahraniční plátci dividend a úroků dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="NL" zapl_dan="468" prijmy_seznam="4685" dan_seznam="468"/>
-<Vetad ident_udaje="Zahraniční plátci dividend a úroků dle výpisů brokera — viz evidence Danero; daň v přepočtu na Kč" k_stat_zdroj="US" zapl_dan="3515" prijmy_seznam="23434" dan_seznam="3515"/>
+<Vetad ident_udaje="Výplata přes zahraničního obchodníka s cennými papíry; cenné papíry DE0007164600, DE0008404005" k_stat_zdroj="DE" zapl_dan="2602" prijmy_seznam="9864" dan_seznam="2602"/>
+<Vetad ident_udaje="Výplata přes zahraničního obchodníka s cennými papíry; cenné papíry NL0010273215" k_stat_zdroj="NL" zapl_dan="703" prijmy_seznam="4685" dan_seznam="703"/>
+<Vetad ident_udaje="Výplata přes zahraničního obchodníka s cennými papíry; cenné papíry US02209S1033, US0378331005, US1912161007, US30231G1022, US4781601046, US7427181091, US7561091049, US92826C8394" k_stat_zdroj="US" zapl_dan="4252" prijmy_seznam="23434" dan_seznam="4252"/>
 </DPFDP7>
 </Pisemnost>

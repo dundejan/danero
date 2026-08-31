@@ -40,26 +40,26 @@ const client = (send: string, baseUrl?: string) => {
 describe('důvěra k adrese z odpovědi IBKR (D-7)', () => {
   it('cizí doména v odpovědi = chyba a token se tam neodešle', async () => {
     const { client: c, mock } = client(sendWithUrl('https://utocnik.example.com/GetStatement'));
-    await expect(c.fetchStatementXml(5, 1_000)).rejects.toThrow(/cizí adresu \(utocnik/);
+    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu \(utocnik/);
     expect(mock.urls.every((url) => !url.includes('utocnik.example.com'))).toBe(true);
     expect(mock.urls).toHaveLength(1); // jen SendRequest, žádné vyzvednutí
   });
 
   it('http varianta domény IBKR taky neprojde (token by šel v čitelné podobě)', async () => {
     const { client: c } = client(sendWithUrl('http://ndcdyn.interactivebrokers.com/GetStatement'));
-    await expect(c.fetchStatementXml(5, 1_000)).rejects.toThrow(/cizí adresu/);
+    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu/);
   });
 
   it('doména, která jen KONČÍ na jméno IBKR, neprojde', async () => {
     const { client: c } = client(sendWithUrl('https://notinteractivebrokers.com/GetStatement'));
-    await expect(c.fetchStatementXml(5, 1_000)).rejects.toThrow(/cizí adresu/);
+    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu/);
   });
 
   it('jiná subdoména IBKR projde (výpisy chodí z gdcdyn i ndcdyn)', async () => {
     const { client: c, mock } = client(
       sendWithUrl('https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement'),
     );
-    expect(await c.fetchStatementXml(5, 10_000)).toContain('<FlexQueryResponse');
+    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
     expect(mock.urls[1]).toBe(
       'https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?t=tok-abc&q=REF123&v=3',
     );
@@ -70,7 +70,7 @@ describe('důvěra k adrese z odpovědi IBKR (D-7)', () => {
       sendWithUrl('https://flex.test/GetStatement'),
       'https://flex.test',
     );
-    expect(await c.fetchStatementXml(5, 10_000)).toContain('<FlexQueryResponse');
+    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
     expect(mock.urls[1]).toBe('https://flex.test/GetStatement?t=tok-abc&q=REF123&v=3');
   });
 
@@ -78,7 +78,7 @@ describe('důvěra k adrese z odpovědi IBKR (D-7)', () => {
     const { client: c, mock } = client(
       sendWithUrl('https://ndcdyn.interactivebrokers.com/GetStatement?t=cizi-token&amp;x=1'),
     );
-    expect(await c.fetchStatementXml(5, 10_000)).toContain('<FlexQueryResponse');
+    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
     expect(mock.urls[1]).toBe(
       'https://ndcdyn.interactivebrokers.com/GetStatement?t=tok-abc&q=REF123&v=3',
     );

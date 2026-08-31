@@ -489,6 +489,47 @@ describe('nastavitelné e-maily (H3)', () => {
     expect(deadline[0]!.emailedAt).not.toBeNull();
   });
 
+  /**
+   * K5-14: při selhání odeslání se claim vrací, takže se týž řádek zkouší
+   * odeslat každý běh cronu znovu — u trvale nedoručitelné adresy donekonečna.
+   * Po dvou týdnech (dvojnásobek nejdelšího legitimního čekání na týdenní
+   * souhrn) se e-mailem už nezkouší; v přehledu v aplikaci zůstává.
+   */
+  it('nedoručené upozornění se po dvou týdnech přestane zkoušet', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u9', name: 'Test', email: 'strop@danero.cz' });
+    await db.insert(notifications).values([
+      {
+        userId: 'u9', dedupeKey: 'stare|1', type: 'LIMIT_CRITICAL',
+        title: 'Staré upozornění', body: 'nedoručitelné už dva týdny',
+        createdAt: new Date('2026-06-20T00:00:00Z'),
+      },
+      {
+        userId: 'u9', dedupeKey: 'nove|1', type: 'LIMIT_CRITICAL',
+        title: 'Nové upozornění', body: 'čerstvé',
+        createdAt: new Date('2026-07-18T00:00:00Z'),
+      },
+    ]);
+
+    const sent: EmailMessage[] = [];
+    const outcome = await processUserNotifications(
+      db,
+      { id: 'u9', email: 'strop@danero.cz' },
+      { send: async (message) => { sent.push(message); }, today: '2026-07-20' },
+    );
+
+    expect(outcome.emailed).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain('Nové upozornění');
+    expect(sent[0]!.text).not.toContain('Staré upozornění');
+    // staré zůstává nedoručené (nelžeme si do `emailedAt`), jen už se neposílá
+    const waiting = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, 'u9'), isNull(notifications.emailedAt)));
+    expect(waiting.map((n) => n.dedupeKey)).toEqual(['stare|1']);
+  });
+
   it('WEEKLY: první běh odešle, mezitím fronta čeká, po 7 dnech odejde souhrn', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await seedUser(db, 'u7', 'tyden@danero.cz');

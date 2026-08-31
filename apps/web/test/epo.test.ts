@@ -165,8 +165,23 @@ describe('generateDpfdp7: varianta GENERAL', () => {
     expect(vetad[1]!.prijmy_seznam).toBe('21840');
     expect(vetad[1]!.dan_seznam).toBe('3276');
     expect(vetad[1]!.zapl_dan).toBe('3276'); // podatelna vyžaduje všech 5 údajů seznamu
+    // K3-08: Seznam dokládá SKUTEČNĚ sraženou daň — DE dividenda nesla 30 %
+    // (739,80 Kč), smluvní strop 15 % zůstává jen v Příloze 3 na ř. 323 (369 Kč)
+    expect(vetad[0]!.zapl_dan).toBe('740');
+    expect(vetad[0]!.dan_seznam).toBe('740');
+    expect(vetad[0]!.ident_udaje).toContain('DE0007164600');
+    expect(vetad[0]!.ident_udaje).not.toContain('evidence Danero');
     expect((dp.VetaB as Attrs).pril3_samlist).toBe('2');
     expect((dp.VetaB as Attrs).seznam).toBe('1');
+  });
+
+  it('R-07c/R-07f: zápočet i daň v reportu se rovnají XML (koeficient na 2 des. místa, K3-09)', () => {
+    // Report i XML musí ukázat totéž číslo. Strop zápočtu se počítá koeficientem
+    // ř. 324 zaokrouhleným na dvě desetinná místa (§ 146 odst. 3 DŘ) — přesný
+    // podíl dával u US 3 276 Kč zápočtu proti 3 274,79 Kč v XML, tedy jinou daň
+    // na obrazovce než v odevzdaném souboru.
+    expect(result.tax.general.foreignTaxCreditCzk.toString()).toBe(vetaW.uhrn_uzndan);
+    expect(result.tax.general.taxCzk.toString()).toBe(vetaW.da_zazahr);
   });
 
   it('ř. 60 celé Kč nahoru, sleva na poplatníka přesně 30 840', () => {
@@ -560,6 +575,26 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
     );
     expect(route).toContain('error instanceof EpoInputError');
     expect(route).toContain('chyba(error.message, 400)');
+  });
+
+  /**
+   * K3-10: `pracUfo` (a stejně tak `email`) byly v typu, v XML i v /api/epo,
+   * jenže formulář pro ně políčko neměl — do staženého souboru se nemohly
+   * dostat nikdy. Zaručeně to spolu drží jen kontrola obou souborů naráz.
+   */
+  it('každý osobní údaj, který /api/epo čte, má i políčko ve formuláři', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const web = join(import.meta.dirname, '..');
+    const route = readFileSync(join(web, 'app', 'api', 'epo', 'route.ts'), 'utf8');
+    const view = readFileSync(join(web, 'components', 'views', 'report-view.tsx'), 'utf8');
+    const personal = route.slice(
+      route.indexOf('const personal: EpoPersonalData = {'),
+      route.indexOf('};', route.indexOf('const personal: EpoPersonalData = {')),
+    );
+    const fields = [...personal.matchAll(/field\(form, '([^']+)'\)/g)].map((m) => m[1]!);
+    expect(fields).toContain('pracUfo');
+    for (const name of fields) expect(view).toContain(`name="${name}"`);
   });
 });
 

@@ -82,6 +82,42 @@ describe('katalog platforem', () => {
     }
   });
 
+  /**
+   * K7b-10: parser Degira posílal uživatele do menu „Aktivita“, katalog do
+   * „Inboxu“ — dvě různá jména téhož menu v jednom produktu, takže jedno
+   * z nich muselo být špatně. Katalog je zdroj pravdy; hlášky parseru na něj
+   * musí sedět. Test je průchozí i pro další platformy, které v hlášce
+   * jmenují cestu v portálu.
+   */
+  it('hlášky Degira jmenují stejné menu jako katalog', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(
+      resolve(import.meta.dirname, '..', '..', '..', 'packages', 'importers', 'src', 'degiro', 'csv.ts'),
+      'utf8',
+    );
+    const guide = PLATFORMS.find((platform) => platform.id === 'degiro')!.guide;
+    const menu = guide.split('→')[0]!.trim(); // „Inbox“
+    expect(menu).toBeTruthy();
+    for (const message of source.matchAll(/nahraj \w+\.csv z Degiro \(([^)]+)\)/g)) {
+      expect(message[1], 'hláška parseru jmenuje jiné menu než katalog').toContain(menu);
+    }
+    // a že těch hlášek vůbec nějaké jsou (jinak by test nic nehlídal)
+    expect([...source.matchAll(/nahraj \w+\.csv z Degiro \(/g)]).toHaveLength(2);
+  });
+
+  /**
+   * K7b-07: návod sliboval, že „Dluhopisy z Portu Opportunity mají vlastní
+   * výpis“, ale parser pro ten výpis neexistuje — a katalog jinde tvrdí, že
+   * výpis přečteme automaticky. Slib, který nemáme čím splnit, musí být
+   * v návodu přiznaný.
+   */
+  it('návod nenabízí export, pro který parser nemáme (Portu Opportunity)', () => {
+    const guide = PLATFORMS.find((platform) => platform.id === 'portu')!.guide;
+    expect(guide).toContain('Opportunity');
+    expect(guide).toMatch(/číst neumíme|zatím nečteme/);
+    expect(guide).toContain('šablon');
+  });
+
   it('počty pro marketingové texty sedí na katalog', () => {
     expect(PLATFORM_COUNTS.api + PLATFORM_COUNTS.file + PLATFORM_COUNTS.template).toBe(
       PLATFORMS.length,
