@@ -14,6 +14,7 @@ import { importFileIsolated } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
+import { errorText, logEvent } from '@/lib/log';
 import { resolveEntitlements } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 
@@ -48,12 +49,29 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   }
   // každý soubor zvlášť: poškozený druhý soubor nesmí sebrat třetí ani zamlčet
   // první (F-3-7) — selhání se zapíše jako dávka s chybou a je vidět v seznamu
+  //
+  // Try/catch je poslední síť pro případ, kdy selže i ten zápis (K5-08): při
+  // výpadku databáze padne `importFileIsolated` včetně zotavovací větve a bez
+  // něj by uživatel dostal generický error boundary a ZBYLÉ SOUBORY dávky by
+  // se vůbec nezpracovaly. Do historie se v takové chvíli nemá jak zapsat nic,
+  // takže jediné, co uživateli zbývá, je hláška — proto se počítají a řekne se
+  // to na stránce.
+  let failed = 0;
   for (const file of files) {
-    await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
+    try {
+      await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
+    } catch (error) {
+      failed += 1;
+      logEvent('error', 'import.upload_failed', {
+        filename: file.name,
+        error: errorText(error),
+      });
+    }
   }
 
   revalidatePath('/prehled');
   revalidatePath('/import');
+  if (failed > 0) redirect('/import?chyba=ulozeni');
   redirect('/import');
 }
 

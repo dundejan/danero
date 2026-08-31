@@ -75,6 +75,17 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   SQL dávej data přes `ts()` z `lib/sql.ts`. Testy citlivé na driver patří do
   `test/postgres-compat.test.ts`, který v CI běží proti opravdovému Postgresu
   (`TEST_DATABASE_URL`; lokálně stačí docker kontejner).
+- **`db.transaction()` + pád spojení = výjimka, kterou nejde odchytit.**
+  postgres.js 3.4.9 pošle po pádu spojení `ROLLBACK` do už zavřeného
+  REZERVOVANÉHO spojení a spadne v `setImmediate` na `socket.write` nad `null` —
+  mimo jakýkoli náš `try/catch` i mimo promise (3/3 reprodukce na ostrém
+  Postgresu přes `pg_terminate_backend`; bez transakce se tentýž pád vrátí jako
+  obyčejné odmítnuté promise). Import proto atomicitu NEDĚLÁ transakcí, ale
+  **pořadím zápisů**: nejdřív dávka, pak transakce, nakonec oprava počtů, takže
+  transakce bez dávky nevznikne ani při pádu uprostřed (K5-08) — a hlídá to
+  cizí klíč `transactions.batch_id → import_batches.id` (migrace 0042, která
+  osiřelým řádkům dávku nejdřív dopočítá). Kde transakci opravdu potřebujeme
+  (`undoImportBatch`, uložení klíčů brokera), je to vědomý kompromis.
 - **Datovou migraci pusť dvakrát, než ji commitneš.** Migrace 0032 přečíslovala
   `dedupe_key` na `<broker>|<otisk>|<pořadí>` a při druhém běhu padala na
   primárním klíči: `ORDER BY dedupe_key` je TEXTOVÉ, takže pořadí 10 leží mezi

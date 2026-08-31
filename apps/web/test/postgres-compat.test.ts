@@ -8,6 +8,7 @@ import {
   appRateLimits,
   auditLog,
   brokerAccounts,
+  failedImports,
   fxRates,
   importBatches,
   instrumentPrices,
@@ -26,7 +27,7 @@ import {
 import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { recordReportPurchase, upsertSubscription } from '@/lib/billing';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
-import { importCsvText, loadImportState } from '@/lib/import-service';
+import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import-service';
 import {
   enqueueSyncJob,
   processPendingJobs,
@@ -83,6 +84,27 @@ popis('kompatibilita s produkčním Postgresem', () => {
     return id;
   }
 
+  /**
+   * Dávka, do které si test může uložit transakce ručně. Od migrace 0042 má
+   * `transactions.batch_id` cizí klíč (K5-08), takže řádek bez dávky databáze
+   * odmítne — a to je celý smysl té pojistky.
+   */
+  async function makeBatch(userId: string, broker: string, id = crypto.randomUUID()) {
+    await db.insert(importBatches).values({
+      id,
+      userId,
+      broker,
+      filename: 'fixture.csv',
+      added: 0,
+      duplicates: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      warningCount: 0,
+      issues: { errors: [], skipped: [], warnings: [] },
+    });
+    return id;
+  }
+
 
   /**
    * A2-3-06 + B-3-2: migrace 0031 přepisuje eToro derivátům klíč instrumentu na
@@ -112,10 +134,11 @@ popis('kompatibilita s produkčním Postgresem', () => {
       tradeDate: '2024-04-01',
       settlementDate: '2024-04-01',
     });
+    await makeBatch(userId, 'etoro', `davka-0031-${userId}`);
     await db.insert(transactions).values({
       userId,
       dedupeKey: dedupeKey('etoro', puvodni),
-      batchId: 'davka-0031',
+      batchId: `davka-0031-${userId}`,
       broker: 'etoro',
       type: 'SELL',
       txDate: '2024-04-01',
@@ -139,7 +162,7 @@ popis('kompatibilita s produkčním Postgresem', () => {
     const [radek] = await db
       .select()
       .from(transactions)
-      .where(and(eq(transactions.userId, userId), eq(transactions.batchId, 'davka-0031')));
+      .where(and(eq(transactions.userId, userId), eq(transactions.batchId, `davka-0031-${userId}`)));
 
     expect(radek!.isin).toBe('CFD:BTC');
     expect((radek!.payload as { isin: string }).isin).toBe('CFD:BTC');
@@ -217,7 +240,7 @@ popis('kompatibilita s produkčním Postgresem', () => {
     await db.insert(transactions).values({
       userId,
       dedupeKey: `etoro|${Date.now()}|1`,
-      batchId: crypto.randomUUID(),
+      batchId: await makeBatch(userId, 'etoro'),
       broker: 'etoro',
       type: 'BUY',
       txDate: '2026-01-15',
@@ -785,5 +808,264 @@ popis('kompatibilita s produkčním Postgresem', () => {
     const rows = await db.select().from(auditLog).where(eq(auditLog.userId, userId));
     expect(rows).toHaveLength(2);
     expect(rows.some((r) => r.detail === null)).toBe(true);
+  });
+
+  /* ── Atomicita importu (K5-08) ─────────────────────────────────────────── */
+
+  /**
+   * Spojení se zabíjí ZEVNITŘ Postgresu: trigger nad `import_batches` pošle
+   * vlastnímu backendu `pg_terminate_backend`. Padne tím přesně mezi zápisem
+   * transakcí a zápisem dávky, tedy v jediném okamžiku, kde tahle vada žije.
+   *
+   * Schválně to není vyhozená výjimka z mocku: ta nedokáže nic o tom, co
+   * databáze doopravdy zapsala. Rozdíl mezi „řádky jsou v tabulce“ a „řádky se
+   * vrátily rollbackem“ pozná jen skutečný pád spojení.
+   */
+  const KILL_FUNCTION =
+    'create or replace function danero_test_kill() returns trigger language plpgsql as $kill$ ' +
+    'begin perform pg_terminate_backend(pg_backend_pid()); return new; end $kill$';
+
+  async function armKill(table: 'import_batches' | 'transactions'): Promise<void> {
+    await db.execute(sql.raw(KILL_FUNCTION));
+    await db.execute(
+      sql.raw(
+        `create trigger danero_test_kill before insert on ${table} ` +
+          'for each row execute function danero_test_kill()',
+      ),
+    );
+  }
+
+  async function disarmKill(table: 'import_batches' | 'transactions'): Promise<void> {
+    await db.execute(sql.raw(`drop trigger if exists danero_test_kill on ${table}`));
+    await db.execute(sql.raw('drop function if exists danero_test_kill()'));
+  }
+
+  /** Transakce uživatele, ke kterým v historii NENÍ dávka — osiřelé řádky. */
+  async function orphanCount(userId: string): Promise<number> {
+    const rows = await db
+      .select({ dedupeKey: transactions.dedupeKey })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          sql`not exists (select 1 from import_batches b where b.id = ${transactions.batchId})`,
+        ),
+      );
+    return rows.length;
+  }
+
+  /**
+   * K5-08: výpadek databáze uprostřed importu nesmí nechat transakce bez dávky.
+   *
+   * Naměřeno v auditu na zabitém spojení: 2 transakce v databázi, 0 dávek —
+   * a protože je dedupe obsahový, opakované nahrání téhož výpisu hlásilo
+   * „0 nových, 2 duplicity“. Data tedy zůstala v daňovém výpočtu (portfolio
+   * čte `transactions` bez vazby na dávky), uživatel je neviděl v historii
+   * a vrátit je nešlo — `undoImportAction` maže podle existující dávky.
+   *
+   * Součástí je i past PGlite × Postgres: kdyby audit běžel na vnějším `db`,
+   * na produkčním poolu by se commitnul MIMO transakci a řádek „x.csv: 2 nových“
+   * by přežil rollback. Na PGlite (jedno spojení) by o tom testy mlčely.
+   */
+  it(
+    'K5-08: zabité spojení uprostřed importu nenechá osiřelé transakce ani audit',
+    { timeout: 60_000 },
+    async () => {
+      const userId = await makeUser();
+      // produkční tvar poolu podle db/index.ts (`postgres(url, { prepare: false })`)
+      const client = postgres(URL!, { prepare: false, max: 10 });
+      const pool = drizzle(client, { schema }) as unknown as Db;
+      const csv = csvRows(2);
+      const data = new TextEncoder().encode(csv).buffer as ArrayBuffer;
+
+      try {
+        await armKill('import_batches');
+        // Zotavovací větev v `runIsolated` chce zapsat dávku taky, takže padne
+        // znovu a výjimka vyleze ven — přesně jak to změřil ověřovatel.
+        await expect(importFileIsolated(pool, userId, 'vypis.csv', data)).rejects.toThrow();
+      } finally {
+        await disarmKill('import_batches');
+      }
+
+      expect(await orphanCount(userId)).toBe(0);
+      expect(
+        await db.select().from(transactions).where(eq(transactions.userId, userId)),
+      ).toHaveLength(0);
+      expect(
+        await db.select().from(importBatches).where(eq(importBatches.userId, userId)),
+      ).toHaveLength(0);
+      // audit uvnitř transakce: řádek o importu nesmí přežít jeho rollback
+      expect(await db.select().from(auditLog).where(eq(auditLog.userId, userId))).toHaveLength(0);
+      // výpadek databáze není vada souboru — nic se neschovává k rozboru
+      expect(
+        await db.select().from(failedImports).where(eq(failedImports.userId, userId)),
+      ).toHaveLength(0);
+
+      // a hlavně: opakované nahrání to musí spravit, ne hlásit duplicity
+      const znovu = await importFileIsolated(pool, userId, 'vypis.csv', data);
+      expect(znovu.added).toBe(2);
+      expect(znovu.duplicates).toBe(0);
+      await client.end({ timeout: 1 });
+    },
+  );
+
+  /**
+   * Druhé okno téhož pádu: spojení umře až při zápisu transakcí, tedy potom,
+   * co je dávka na disku. Osiřet nemá co, ale v historii nesmí zbýt prázdná
+   * dávka vedle chybové, kterou zapíše `runIsolated` — uživatel by u jednoho
+   * nahrání viděl dva řádky a jeden z nich beze slova vysvětlení.
+   */
+  it(
+    'K5-08: zabité spojení při zápisu transakcí nenechá v historii prázdnou dávku',
+    { timeout: 60_000 },
+    async () => {
+      const userId = await makeUser();
+      const client = postgres(URL!, { prepare: false, max: 10 });
+      const pool = drizzle(client, { schema }) as unknown as Db;
+      const data = new TextEncoder().encode(csvRows(2)).buffer as ArrayBuffer;
+
+      try {
+        await armKill('transactions');
+        // zotavovací větev nemá co ukládat, takže dojde až k chybové dávce
+        const summary = await importFileIsolated(pool, userId, 'vypis.csv', data);
+        expect(summary.added).toBe(0);
+        // výpadek databáze není vada souboru (K5-08, levná půlka)
+        expect(summary.errors[0]!.message).toContain('databáze');
+        expect(summary.unrecognized).not.toBe(true);
+      } finally {
+        await disarmKill('transactions');
+      }
+
+      expect(await orphanCount(userId)).toBe(0);
+      expect(
+        await db.select().from(transactions).where(eq(transactions.userId, userId)),
+      ).toHaveLength(0);
+      const batches = await db
+        .select()
+        .from(importBatches)
+        .where(eq(importBatches.userId, userId));
+      expect(batches).toHaveLength(1);
+      expect(batches[0]!.errorCount).toBe(1);
+
+      const znovu = await importFileIsolated(pool, userId, 'vypis.csv', data);
+      expect(znovu.added).toBe(2);
+      await client.end({ timeout: 1 });
+    },
+  );
+
+  /**
+   * Přeměření záporného závěru č. 2 z auditu po změně pořadí zápisů.
+   *
+   * O souběhu pořád rozhoduje `onConflictDoNothing` okamžitě (proto se import
+   * nezabaluje do transakce — ta by druhého držela až do commitu prvního).
+   * Výsledek: transakce právě jednou, dvě dávky v historii a součet přidaných
+   * přesně tolik, kolik má výpis řádků.
+   */
+  it(
+    'K5-08: dva souběžné importy téhož výpisu uloží transakce právě jednou',
+    { timeout: 60_000 },
+    async () => {
+      const userId = await makeUser();
+      const csv = csvRows(50);
+      const a = postgres(URL!, { prepare: false, max: 10 });
+      const b = postgres(URL!, { prepare: false, max: 10 });
+      const dbA = drizzle(a, { schema }) as unknown as Db;
+      const dbB = drizzle(b, { schema }) as unknown as Db;
+
+      const [first, second] = await Promise.all([
+        importCsvText(dbA, userId, 'soubeh.csv', csv),
+        importCsvText(dbB, userId, 'soubeh.csv', csv),
+      ]);
+      await Promise.all([a.end(), b.end()]);
+
+      expect(first.added + second.added).toBe(50);
+      expect(first.duplicates + second.duplicates).toBe(50);
+      expect(
+        await db.select().from(transactions).where(eq(transactions.userId, userId)),
+      ).toHaveLength(50);
+      expect(
+        await db.select().from(importBatches).where(eq(importBatches.userId, userId)),
+      ).toHaveLength(2);
+      expect(await orphanCount(userId)).toBe(0);
+    },
+  );
+
+  /**
+   * Migrace 0042 uklízí, co napáchala stará verze: transakce, kterým dávka
+   * chybí, ji dostanou dopočítanou (drží pořád `batch_id` té mrtvé), a teprve
+   * pak se stav zamkne cizím klíčem. V produkci takových řádků 43 leželo,
+   * takže migrace na nich NESMÍ spadnout — a druhý běh (obnova ze zálohy,
+   * ruční spuštění) taky ne.
+   */
+  it('migrace 0042: osiřelé transakce dostanou dávku a druhý běh nemá co (K5-08)', {
+    timeout: 60_000,
+  }, async () => {
+    const userId = await makeUser();
+    const { readFileSync } = await import('node:fs');
+    const migrace = readFileSync(
+      'db/migrations/0042_orphan_transactions_batch_fk.sql',
+      'utf8',
+    );
+    const spustit = async () => {
+      for (const prikaz of migrace.split('--> statement-breakpoint')) {
+        if (prikaz.trim() !== '') await db.execute(sql.raw(prikaz));
+      }
+    };
+    const mrtvaDavka = `mrtva-${userId}`;
+
+    try {
+      // stav před migrací: cizí klíč ještě není a v datech leží osiřelé řádky
+      await db.execute(
+        sql.raw(
+          'alter table "transactions" drop constraint "transactions_batch_id_import_batches_id_fk"',
+        ),
+      );
+      await db.insert(transactions).values(
+        [1, 2].map((i) => ({
+          userId,
+          dedupeKey: `trading212|osirely|${i}`,
+          batchId: mrtvaDavka,
+          broker: 'trading212',
+          type: 'BUY',
+          txDate: '2024-03-11',
+          isin: 'US0378331005',
+          payload: { id: `osirely-${i}`, type: 'BUY' },
+        })),
+      );
+      expect(await orphanCount(userId)).toBe(2);
+
+      await spustit();
+      const [dopoctena] = await db
+        .select()
+        .from(importBatches)
+        .where(eq(importBatches.id, mrtvaDavka));
+      expect(dopoctena!.userId).toBe(userId);
+      expect(dopoctena!.added).toBe(2);
+      expect(await orphanCount(userId)).toBe(0);
+
+      // druhý běh: žádná nová dávka a cizí klíč se nepokusí založit podruhé
+      await spustit();
+      expect(
+        await db.select().from(importBatches).where(eq(importBatches.userId, userId)),
+      ).toHaveLength(1);
+      expect(await orphanCount(userId)).toBe(0);
+    } finally {
+      // ať se cizí klíč vrátí i po případném pádu uprostřed testu
+      await spustit();
+    }
+
+    // a od téhle chvíle osiřelý řádek databáze prostě nepustí
+    await expect(
+      db.insert(transactions).values({
+        userId,
+        dedupeKey: 'trading212|osirely|3',
+        batchId: `neexistujici-${userId}`,
+        broker: 'trading212',
+        type: 'BUY',
+        txDate: '2024-03-11',
+        isin: 'US0378331005',
+        payload: { id: 'osirely-3', type: 'BUY' },
+      }),
+    ).rejects.toThrow();
   });
 });

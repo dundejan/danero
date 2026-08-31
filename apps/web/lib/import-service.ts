@@ -676,48 +676,46 @@ export async function importParsed(
   const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
 
   const batchId = crypto.randomUUID();
+  // klíče nově uložených řádků — do sdíleného stavu se propíšou až po zápisu
+  const storedKeys: Array<{ key: string; brokerId: string }> = [];
 
-  // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
-  // celou dávku na PK violation — duplicitní řádky se tiše přeskočí a reálný
-  // počet vložených jde z returning (in-memory dedupe je jen optimalizace)
-  let actuallyAdded = 0;
-  for (const part of chunk(fresh, 500)) {
-    const inserted = await db
-      .insert(transactions)
-      .values(
-        part.map(({ tx, key }) => {
-          state.keys.add(key);
-          state.brokerIds.add(brokerIdKey(parsed.broker, tx.id));
-          return {
-            userId,
-            dedupeKey: key,
-            batchId,
-            broker: parsed.broker,
-            type: tx.type,
-            txDate: txDate(tx),
-            isin: 'isin' in tx ? (tx.isin ?? null) : null,
-            // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
-            payload: JSON.parse(JSON.stringify(tx)) as unknown,
-          };
-        }),
-      )
-      .onConflictDoNothing()
-      .returning({ dedupeKey: transactions.dedupeKey });
-    actuallyAdded += inserted.length;
-  }
-
-  // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis
-  // před insertem lhal při pádu i při souběhu (in-memory dedupe vs. DB)
-  const { logAudit } = await import('@/lib/audit');
-  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${actuallyAdded} nových`);
-
+  /*
+   * Pořadí zápisů je tady BEZPEČNOSTNÍ prvek, ne libovůle (K5-08).
+   *
+   * Do 31. 8. 2026 se nejdřív ukládaly transakce a teprve pak řádek dávky.
+   * Pád spojení mezi obojím tak nechal transakce BEZ dávky: uživatel je neviděl
+   * v historii a vrátit je nešlo (`undoImportAction` maže podle existujícího
+   * řádku dávky), do daně se přesto počítaly (`lib/portfolio.ts` čte
+   * `transactions` bez vazby na dávky) — a protože je dedupe obsahový, opakované
+   * nahrání téhož výpisu hlásilo „0 nových, samé duplicity“. Nespravilo se to
+   * tedy ani samo. Naměřeno na zabitém spojení: 2 transakce, 0 dávek.
+   *
+   * Dnes je pořadí obrácené: NEJDŘÍV dávka, pak transakce, nakonec oprava počtů.
+   * Ať se import přeruší kdekoli, každá uložená transakce má svou dávku —
+   * je vidět v historii a jde vrátit. Po přerušení navíc dávka počty nadhodnotí
+   * (uloží se plán), což je bezpečný směr: uživatel ji vidí, vrátí a nahraje
+   * znovu; podhodnocený počet by naopak schoval data, která v součtu daně jsou.
+   *
+   * ⚠️ Proč ne `db.transaction()`, jak navrhoval audit: postgres.js 3.4.9 posílá
+   * po pádu spojení ROLLBACK do REZERVOVANÉHO (už zavřeného) spojení a spadne
+   * v `setImmediate` na `socket.write` nad `null` — tedy NEODCHYTITELNOU výjimkou
+   * mimo náš stack (3/3 reprodukce na ostrém Postgresu, `pg_terminate_backend`).
+   * Vyměnit osiřelé transakce za pád celého procesu při každém výpadku databáze
+   * není zlepšení. Transakce navíc mění zámkový profil: souběžné nahrání téhož
+   * výpisu dnes rozhodne `onConflictDoNothing` okamžitě, v transakci by druhý
+   * čekal na commit prvního.
+   *
+   * Mimo tuhle posloupnost zůstává `loadImportState` (čtení) a `logAudit`
+   * (až po úspěšném zápisu, viz níž) — u obojího je podstatné, že to platí
+   * stejně na PGlite (jedno spojení) i na produkčním poolu.
+   */
   await db.insert(importBatches).values({
     id: batchId,
     userId,
     broker: parsed.broker,
     filename,
-    added: actuallyAdded,
-    duplicates: duplicates + (fresh.length - actuallyAdded),
+    added: fresh.length,
+    duplicates,
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
     warningCount: warnings.length,
@@ -729,6 +727,75 @@ export async function importParsed(
       ...(crossBroker.length > 0 ? { crossBroker } : {}),
     },
   });
+
+  // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
+  // celou dávku na PK violation — duplicitní řádky se tiše přeskočí a reálný
+  // počet vložených jde z returning (in-memory dedupe je jen optimalizace)
+  let actuallyAdded = 0;
+  try {
+    for (const part of chunk(fresh, 500)) {
+      const inserted = await db
+        .insert(transactions)
+        .values(
+          part.map(({ tx, key }) => {
+            storedKeys.push({ key, brokerId: brokerIdKey(parsed.broker, tx.id) });
+            return {
+              userId,
+              dedupeKey: key,
+              batchId,
+              broker: parsed.broker,
+              type: tx.type,
+              txDate: txDate(tx),
+              isin: 'isin' in tx ? (tx.isin ?? null) : null,
+              // Decimal má toJSON → serializace na stringy; engine rehydratuje Zodem
+              payload: JSON.parse(JSON.stringify(tx)) as unknown,
+            };
+          }),
+        )
+        .onConflictDoNothing()
+        .returning({ dedupeKey: transactions.dedupeKey });
+      actuallyAdded += inserted.length;
+    }
+  } catch (error) {
+    // Nic se neuložilo → dávka nemá co dokládat a v historii by z ní zbyl jen
+    // prázdný řádek navíc vedle chybové dávky, kterou zapíše `runIsolated`.
+    // Uklidit ji smíme JEN v tomhle případě: kdyby už nějaká transakce prošla
+    // (příkaz v Postgresu je atomický, takže projdou celé dávky po 500),
+    // smazáním dávky bychom osiřelé řádky sami vyrobili.
+    if (actuallyAdded === 0) {
+      await db
+        .delete(importBatches)
+        .where(eq(importBatches.id, batchId))
+        .catch((cleanupError: unknown) => {
+          logEvent('error', 'import.batch_cleanup_failed', {
+            batchId,
+            error: errorText(cleanupError),
+          });
+        });
+    }
+    throw error;
+  }
+
+  // Skutečné počty se od plánu liší jen při souběhu (onConflictDoNothing), ale
+  // psát je musíme vždy — dávka je to jediné, co o importu uživateli zbyde.
+  if (actuallyAdded !== fresh.length) {
+    await db
+      .update(importBatches)
+      .set({ added: actuallyAdded, duplicates: duplicates + (fresh.length - actuallyAdded) })
+      .where(eq(importBatches.id, batchId));
+  }
+
+  // Až po zápisu: sdílený stav si sync nese přes celý běh, takže klíče uložené
+  // před neúspěchem by dalšímu roku vydávaly nezapsané transakce za duplicity.
+  for (const { key, brokerId } of storedKeys) {
+    state.keys.add(key);
+    state.brokerIds.add(brokerId);
+  }
+
+  // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis
+  // před insertem lhal při pádu i při souběhu (in-memory dedupe vs. DB)
+  const { logAudit } = await import('@/lib/audit');
+  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${actuallyAdded} nových`);
 
   return {
     batchId,

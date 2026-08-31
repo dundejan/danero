@@ -295,6 +295,13 @@
       "when": 1788190370476,
       "tag": "0041_drop_short_sale_income_option",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788199703202,
+      "tag": "0042_orphan_transactions_batch_fk",
+      "breakpoints": true
     }
   ]
 }

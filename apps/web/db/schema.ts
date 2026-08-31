@@ -488,7 +488,16 @@ export const transactions = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     dedupeKey: text('dedupe_key').notNull(),
-    batchId: text('batch_id').notNull(),
+    /**
+     * Dávka, která řádek poprvé uložila. Cizí klíč je tu jako POJISTKA (K5-08):
+     * transakce bez dávky nejde vrátit ani ukázat v historii, přitom se počítá
+     * do daně — a přesně takové řádky uměl vyrobit pád spojení uprostřed
+     * importu. Bez `on delete` schválně: dávka se smí smazat jen po svých
+     * transakcích (`lib/import-undo.ts`), nikdy je nesmí strhnout s sebou.
+     */
+    batchId: text('batch_id')
+      .notNull()
+      .references(() => importBatches.id),
     broker: text('broker').notNull(),
     type: text('type').notNull(),
     txDate: text('tx_date').notNull(),

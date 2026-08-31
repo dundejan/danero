@@ -416,7 +416,9 @@ export default async function ImportPage({
                           ? 'Vyber platformu nebo napiš poznámku — bez toho nám hlášení nepomůže.'
                           : chyba === 'hlaseni-neexistuje'
                             ? 'Tenhle výpis už mezitím vyřešený je — obnov stránku.'
-                            : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                            : chyba === 'ulozeni'
+                              ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
+                              : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}
@@ -722,30 +724,33 @@ export default async function ImportPage({
                   {batch.added > 0 && (
                     <form action={undoImportAction}>
                       <input type="hidden" name="davka" value={batch.id} />
-                      {/* H-3-08: vysvětlení viselo jen v `title=`, které se na
-                          dotyku nezobrazí a klávesnicí se k němu nedostaneš —
-                          u tlačítka, co něco maže, je to nejhorší možné místo */}
+                      {/* H-3-08 / K6a-15: vysvětlení viselo nejdřív v `title=`
+                          a potom v `sr-only` — obojí je u mazacího tlačítka
+                          neviditelné. Teď je to VIDĚT pod kartou a tlačítko na
+                          text jen odkazuje přes `aria-describedby`. */}
                       <button
                         type="submit"
+                        aria-describedby={`vraceni-${batch.id}`}
                         className="font-medium text-inkoust-tlumeny hover:text-cervena"
                       >
                         Vrátit import zpět
-                        {/* Poctivě: maže se podle toho, KTERÝ import obchod uložil
-                            jako první. Když týž obchod obsahuje i pozdější výpis,
-                            zmizí i z něj (v jeho kartě je počítaný jako duplicita)
-                            — proto ta věta o novém nahrání. */}
-                        <span className="sr-only">
-                          {' '}
-                          — smaže {batch.added}{' '}
-                          {plural(batch.added, 'transakci', 'transakce', 'transakcí')}, které
-                          přibyly tímhle importem, i záznam o něm. Pokud tytéž obchody obsahuje
-                          i jiný výpis, nahraj ho potom znovu — nic se nezdvojí.
-                        </span>
                       </button>
                     </form>
                   )}
                 </span>
               </div>
+              {/* Poctivě: maže se podle toho, KTERÝ import obchod uložil jako
+                  první. Když týž obchod obsahuje i pozdější výpis, zmizí i z něj
+                  (v jeho kartě je počítaný jako duplicita) — proto ta věta
+                  o novém nahrání. */}
+              {batch.added > 0 && (
+                <p id={`vraceni-${batch.id}`} className="text-xs text-inkoust-tlumeny">
+                  Vrácení smaže {batch.added}{' '}
+                  {plural(batch.added, 'transakci', 'transakce', 'transakcí')}, které přibyly
+                  tímhle importem, i záznam o něm. Pokud tytéž obchody obsahuje i jiný výpis,
+                  nahraj ho potom znovu — nic se nezdvojí.
+                </p>
+              )}
               {isEmptyPeriod ? (
                 <p className="font-mono text-xs text-inkoust-tlumeny">
                   prázdné období (žádné obchody)

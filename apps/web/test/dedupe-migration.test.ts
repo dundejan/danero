@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { dedupeTransactions, fnv1a64 } from '@danero/importers';
 import { TransactionSchema, type Transaction } from '@danero/shared';
 import { createPgliteDb } from '@/db';
-import { transactions, user } from '@/db/schema';
+import { importBatches, transactions, user } from '@/db/schema';
 
 /**
  * B-3-2: dedupe klíč stál na otisku SYROVÉHO řádku výpisu, takže změna tvaru
@@ -105,6 +105,19 @@ describe('migrace 0032: přepočet dedupe klíčů uložených transakcí (B-3-2
   it('klíče po migraci sedí na to, co spočítá importér', { timeout: 30_000 }, async () => {
     const db = await createPgliteDb();
     await db.insert(user).values({ id: 'u-dedupe', name: 'Test', email: 'dedupe@danero.cz' });
+    // dávka musí existovat: transactions.batch_id na ni má od 0042 cizí klíč (K5-08)
+    await db.insert(importBatches).values({
+      id: 'stara-davka',
+      userId: 'u-dedupe',
+      broker: BROKER,
+      filename: 'stara-davka.csv',
+      added: FIXTURE.length,
+      duplicates: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      warningCount: 0,
+      issues: { errors: [], skipped: [], warnings: [] },
+    });
     await db.insert(transactions).values(
       FIXTURE.map((tx) => ({
         userId: 'u-dedupe',

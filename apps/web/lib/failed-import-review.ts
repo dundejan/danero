@@ -80,8 +80,9 @@ export async function retryCase(db: Db, caseId: string): Promise<RetryResult> {
   const nothingImported = summary.added === 0 && summary.duplicates === 0;
   if (summary.unrecognized || nothingImported) {
     await db.delete(importBatches).where(eq(importBatches.id, summary.batchId));
-    // `importParsed` zapíše audit ještě před dávkou, takže po neúspěchu zbývá
-    // uživateli v Nastavení „Import výpisu“ souboru, který sám nenahrál.
+    // `importParsed` zapíše audit ke KAŽDÉMU importu, i k tomuhle neúspěšnému,
+    // takže by uživateli v Nastavení zbyl řádek „Import výpisu“ o souboru,
+    // který sám nenahrál.
     await removeRetryAuditEntry(db, item.userId, auditDetail(item.filename, summary));
     return {
       outcome: 'unresolved',

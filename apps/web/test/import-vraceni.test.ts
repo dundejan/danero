@@ -168,4 +168,26 @@ describe('vrácení importu', () => {
     const rows = await db.select().from(auditLog).where(eq(auditLog.userId, 'u1'));
     expect(rows[0]!.type).toBe('IMPORT_UNDONE');
   });
+
+  /**
+   * K6a-15: co vrácení importu doopravdy udělá, viselo nejdřív v `title=`
+   * a pak ve `<span className="sr-only">` — obojí je u mazacího tlačítka to
+   * nejhorší možné místo, protože to vidí jen odečítač obrazovky. Text musí
+   * být vidět; tlačítko na něj jen odkazuje přes `aria-describedby`.
+   */
+  it('vysvětlení u „Vrátit import zpět“ je vidět, ne schované pro odečítač', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const page = readFileSync(
+      join(import.meta.dirname, '..', 'app', '(app)', 'import', 'page.tsx'),
+      'utf8',
+    );
+    const form = page.slice(page.indexOf('<form action={undoImportAction}>'));
+    const button = form.slice(0, form.indexOf('</form>'));
+    expect(button).not.toContain('className="sr-only"');
+    expect(button).toContain('aria-describedby');
+    // a popisovaný odstavec v souboru opravdu existuje
+    expect(page).toContain('id={`vraceni-${batch.id}`}');
+    expect(page).toContain('nahraj ho potom znovu');
+  });
 });
