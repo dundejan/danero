@@ -91,10 +91,14 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Ostrý Postgres: docker na tomhle stroji JE** (ověřeno 23. 8. 2026 — `docker ps`
   i `docker images` běží; dřívější poznámka „docker tu není" byla zastaralá
   a `scripts/db.sh backup` si bez něj kontejner s `pg_dump` nepůjčí).
-  Když se přesto hodí instance bez Dockeru, jsou nainstalované i klastry
+  ⚠️ **Publikované porty kontejneru ale z WSL nedosáhneš** (ověřeno 31. 8. 2026:
+  `docker run -p 55433:5432 postgres:17` naběhne, `psql` na něj visí do timeoutu),
+  takže na `TEST_DATABASE_URL` je spolehlivější lokální klastr
   (`/usr/lib/postgresql/16/bin`): `initdb -D <dir> -U postgres --auth=trust`
-  a `pg_ctl -D <dir> -o "-p 55433 -k /tmp/nejaky-kratky-adresar"` (socket delší
-  než 107 znaků server odmítne, takže scratchpad na `-k` nestačí).
+  a `pg_ctl -D <dir> -o "-p 5433 -k /tmp/nejaky-kratky-adresar" -l <log> -w start`.
+  Dvě pasti naráz: socket delší než 107 znaků server odmítne (scratchpad na `-k`
+  nestačí) a **porty nad ~15000 hlásí „Address already in use", i když nikdo
+  neposlouchá** (WSL si je drží jako dynamický rozsah) — proto 5433, ne 55433.
 - **Migrace s víc příkazy se musí dělit `--> statement-breakpoint`.** Bez toho
   je drizzle pošle jako jeden prepared statement a driver odmítne
   (`cannot insert multiple commands into a prepared statement`) — spadne

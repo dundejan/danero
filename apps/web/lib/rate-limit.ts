@@ -1,4 +1,4 @@
-import { lt, sql } from 'drizzle-orm';
+import { eq, lt, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { appRateLimits } from '@/db/schema';
 import { ts } from '@/lib/sql';
@@ -28,6 +28,22 @@ export async function checkRateLimit(
     })
     .returning({ count: appRateLimits.count });
   return (row?.count ?? 1) <= max;
+}
+
+/**
+ * Vrátí klíč zabraný přes `checkRateLimit` s `max: 1` do nezabraného stavu.
+ *
+ * Limit s jedním povoleným průchodem se dá číst jako „claim": kdo dostane
+ * `true`, ten jediný smí akci udělat. Když ta akce selže (typicky se
+ * neodeslal e-mail), musí se claim vrátit — jinak by se práce nezopakovala
+ * nikdy, protože okno je dlouhé. Je to tentýž vzor jako u digestu
+ * v `lib/notifications.ts`, jen nad tabulkou limitů místo nad notifikacemi.
+ *
+ * Používej VÝHRADNĚ na klíče s `max: 1`. U skutečného rate limitu by smazání
+ * řádku vynulovalo čítač celého okna, tedy přesně to, čemu limit brání.
+ */
+export async function releaseRateLimit(db: Db, key: string): Promise<void> {
+  await db.delete(appRateLimits).where(eq(appRateLimits.key, key));
 }
 
 /**

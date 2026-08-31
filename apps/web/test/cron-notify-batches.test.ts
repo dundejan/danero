@@ -139,6 +139,28 @@ describe('dávkování notifikačního cronu (G-11)', () => {
     expect(udalosti[1]).toMatchObject({ level: 'error', status: 200, failed: 3 });
   });
 
+  /**
+   * K5-12: `fetch` na chybový stav nevyhazuje. Selhání navazující dávky (500)
+   * se aspoň zaloguje v ní samé, ale požadavek, který do aplikace nedorazí
+   * (Vercel 429/502) nebo skončí na 401, tudy prošel jako úspěšné předání —
+   * a zbytek fronty ten den nedostal nic, aniž by se to kdekoli objevilo.
+   */
+  it('odmítnutá štafeta (401/502) skončí v logu jako error', async () => {
+    vi.stubGlobal('fetch', async () => new Response('Unauthorized', { status: 401 }));
+    const chybove: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((line: unknown) => {
+      chybove.push(String(line));
+    });
+
+    const { GET } = await import('@/app/api/cron/notify/route');
+    await GET(request());
+    await dobehniStafetu();
+
+    const udalosti = chybove.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const selhani = udalosti.find((u) => u.event === 'cron.notify.handoff_failed');
+    expect(selhani).toMatchObject({ level: 'error', offset: 25, status: 401 });
+  });
+
   it('poslední dávka už štafetu nepředává', async () => {
     const predane: string[] = [];
     vi.stubGlobal('fetch', async (input: URL | string) => {

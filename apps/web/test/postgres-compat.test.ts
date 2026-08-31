@@ -36,7 +36,7 @@ import {
 import { processUserNotifications } from '@/lib/notifications';
 import { getProfile, loadTransactions, pinTaxYear } from '@/lib/portfolio';
 import { upsertInstrumentPrices } from '@/lib/prices';
-import { checkRateLimit, pruneRateLimits } from '@/lib/rate-limit';
+import { checkRateLimit, pruneRateLimits, releaseRateLimit } from '@/lib/rate-limit';
 import {
   pruneImportBatches,
   pruneNotifications,
@@ -182,6 +182,31 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(row?.count).toBe(1);
     // nové okno se posunulo do budoucnosti
     expect(row!.resetAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  /**
+   * K5-02: potvrzení objednávky si běh „zabere" limitem s `max: 1`. Dvě
+   * souběžné instance nad touž událostí ze Stripu si obě přečtou prázdný stav
+   * dřív, než ta první zapíše — řádek v databázi ochrání unikátní index, ale
+   * e-mail odešel dvakrát. Zámek proto stojí na atomickém upsertu limitu
+   * a tady se měří tak, jak to na PGlite (jediné spojení) změřit nejde.
+   */
+  it('claim potvrzení: ze dvou spojení projde právě jedno', { timeout: 30_000 }, async () => {
+    const key = `confirm:${Date.now()}:report:pi_1`;
+    const other = drizzle(postgres(URL!, { max: 1, prepare: false }), {
+      schema,
+    }) as unknown as Db;
+    const claim = { max: 1, windowMs: 30 * 24 * 60 * 60_000 };
+
+    const vysledky = await Promise.all([
+      checkRateLimit(db, key, claim),
+      checkRateLimit(other, key, claim),
+    ]);
+    expect(vysledky.filter(Boolean)).toHaveLength(1);
+
+    // neodeslaný e-mail claim vrací, ať ho doručí opakovaný webhook
+    await releaseRateLimit(db, key);
+    expect(await checkRateLimit(other, key, claim)).toBe(true);
   });
 
   it('stav importu čte id z payloadu i na ostrém Postgresu', { timeout: 30_000 }, async () => {

@@ -34,10 +34,22 @@ function handOff(request: Request, offset: number): void {
   logEvent('info', 'cron.notify.handoff', { offset });
   after(async () => {
     try {
-      await fetch(next, {
+      const response = await fetch(next, {
         headers: { authorization: `Bearer ${process.env.CRON_SECRET ?? ''}` },
         signal: AbortSignal.timeout(HANDOFF_TIMEOUT_MS),
       });
+      // K5-12: `fetch` na chybový stav NEVYHAZUJE. Selhání navazující dávky
+      // (500) se sice zaloguje v ní samé, ale požadavek, který do aplikace
+      // vůbec nedorazil (Vercel 429/502) nebo skončil na 401 (přenastavené
+      // CRON_SECRET), by tady prošel jako úspěšné předání — a zbytek fronty
+      // ten den nedostane nic, aniž by se to kdekoli objevilo jako chyba.
+      if (!response.ok) {
+        logEvent('error', 'cron.notify.handoff_failed', {
+          offset,
+          status: response.status,
+          error: `štafeta odmítnuta se stavem ${response.status}`,
+        });
+      }
     } catch (error) {
       // TimeoutError = dávka běží dál ve vlastní invokaci, jen jsme přestali
       // čekat na její odpověď; cokoli jiného je skutečné selhání předání

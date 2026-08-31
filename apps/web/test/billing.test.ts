@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Stripe from 'stripe';
@@ -1555,3 +1555,125 @@ describe('platby: dodělané drobnosti 3. auditu', () => {
     }
   });
 });
+
+/**
+ * K5-01/K5-02/K5-03 ze 4. auditu: idempotence stála čistě na logice handlerů.
+ * Pro řádky v databázi to funguje (unikátní index, `onConflictDoNothing`), ale
+ * e-mail se vzít zpět nedá — a k odeslání se dá dojít i bez nového řádku
+ * (opakovaně doručený webhook o téže platbě) nebo dvakrát naráz (dva běhy si
+ * oba přečtou stav dřív, než ten první zapíše).
+ *
+ * Zámek proto patří k ODESLÁNÍ: claim-then-send, stejně jako u digestu.
+ */
+describe('e-maily o platbách se neposílají dvakrát (K5)', () => {
+  /** Odesílatel, kterému zápis spadne — rodičem cesty je soubor, ne adresář. */
+  function brokenEmailSink(): void {
+    const soubor = join(mkdtempSync(join(tmpdir(), 'danero-rozbity-')), 'prekazka');
+    writeFileSync(soubor, '');
+    process.env.DANERO_EMAIL_LOG = join(soubor, 'emails.log');
+  }
+
+  const potvrzeni = (m: { subject: string }) => m.subject.startsWith('Potvrzení objednávky');
+
+  it('K5-01: třikrát doručený webhook o téže platbě pošle potvrzení jednou', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const emails = captureEmails();
+    const event = checkoutEvent({
+      client_reference_id: 'u1',
+      metadata: { userId: 'u1', taxYear: '2026' },
+      payment_intent: 'pi_1',
+    });
+
+    // Stripe doručuje opakovaně, dokud nedostane 200 — a rekonciliace prochází
+    // tutéž session každý den po celé sedmidenní okno
+    await applyStripeEvent(db, event);
+    await applyStripeEvent(db, event);
+    await applyStripeEvent(db, event);
+
+    expect(await db.select().from(reportPurchases)).toHaveLength(1);
+    expect(emails().filter(potvrzeni)).toHaveLength(1);
+  });
+
+  it('K5-02: dvě souběžné instance nad touž událostí pošlou potvrzení jednou', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const emails = captureEmails();
+    const event = subscriptionEvent({}, 1_786_000_000, 'customer.subscription.created');
+
+    // PGlite má jediné spojení, takže skutečný souběh na něm nezměříme — oba
+    // běhy se ale prokládají na await-ech přesně jako dvě instance funkce nad
+    // ostrým Postgresem: oba si přečtou prázdný stav dřív, než ten první zapíše
+    await Promise.all([applyStripeEvent(db, event), applyStripeEvent(db, event)]);
+
+    expect(await db.select().from(subscriptions)).toHaveLength(1);
+    expect(emails().filter(potvrzeni)).toHaveLength(1);
+  });
+
+  it('K5-03: dva souběžné běhy pošlou jednu upomínku před obnovou', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const emails = captureEmails();
+    const db = await dbWithUser();
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+      cancelAtPeriodEnd: false,
+    });
+
+    // ruční re-trigger cronu vedle plánovaného běhu
+    const now = new Date('2026-12-18T08:00:00Z');
+    const [prvni, druhy] = await Promise.all([
+      sendRenewalNotices(db, now),
+      sendRenewalNotices(db, now),
+    ]);
+
+    expect(prvni.sent + druhy.sent).toBe(1);
+    expect(emails().filter((m) => m.subject.includes('obnoví'))).toHaveLength(1);
+  });
+
+  it('neodeslané potvrzení claim vrátí — doručí ho až opakovaný webhook', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    const event = checkoutEvent({
+      client_reference_id: 'u1',
+      metadata: { userId: 'u1', taxYear: '2026' },
+      payment_intent: 'pi_1',
+    });
+
+    // výpadek odesílatele mezi zápisem a odesláním: § 1824a OZ potvrzení
+    // vyžaduje, takže zabraný claim se musí vrátit
+    brokenEmailSink();
+    await applyStripeEvent(db, event);
+
+    const emails = captureEmails();
+    await applyStripeEvent(db, event);
+
+    expect(emails().filter(potvrzeni)).toHaveLength(1);
+  });
+
+  it('neodeslaná upomínka claim vrátí — odejde při dalším běhu', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await db.insert(subscriptions).values({
+      userId: 'u1',
+      status: 'active',
+      currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+      cancelAtPeriodEnd: false,
+    });
+
+    brokenEmailSink();
+    expect(await sendRenewalNotices(db, new Date('2026-12-18T08:00:00Z'))).toEqual({
+      due: 1,
+      sent: 0,
+    });
+
+    const emails = captureEmails();
+    expect(await sendRenewalNotices(db, new Date('2026-12-19T08:00:00Z'))).toEqual({
+      due: 1,
+      sent: 1,
+    });
+    expect(emails().filter((m) => m.subject.includes('obnoví'))).toHaveLength(1);
+  });
+});
+

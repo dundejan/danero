@@ -76,6 +76,51 @@ function fileSink(path: string): EmailSender {
   };
 }
 
+/**
+ * Strop na jedno odeslání přes Resend (K5-11).
+ *
+ * Resend 4.8 volá holý `fetch(url, options)` bez `signal`, takže vlastní
+ * timeout nepřijme — jediný způsob, jak čekání ukončit, je `Promise.race`.
+ * Bez něj se čeká, dokud se neozve undici se svým `headersTimeout`, což je
+ * **300 s**: jeden zaseknutý e-mail sežere 300 z 800 s `maxDuration` cronu
+ * a dva ho zabijí. Netrpí tím jen cron — na témž volání visí i uživatelské
+ * server actions (obnova hesla, ověřovací e-mail).
+ *
+ * 15 s: odeslání jedné zprávy přes API trvá zlomek sekundy, takže je to
+ * dvacetinásobná rezerva. Zároveň se do rozpočtu jedné dávky notifikačního
+ * cronu (600 s) vejde i 25 zaseknutých odeslání a štafeta se pořád stihne
+ * předat dál. Pro člověka, který čeká na odpověď formuláře, je 15 s horní
+ * mez toho, co se dá vydržet.
+ *
+ * Vypršení je SELHÁNÍ odeslání (výjimka), ne tichý úspěch: volající na tom
+ * mají vrácení claimu u digestu i potvrzení objednávky a hlášku uživateli
+ * u obnovy hesla.
+ */
+const SEND_TIMEOUT_MS = 15_000;
+
+/**
+ * `Promise.race` s úklidem časovače. Běžící `fetch` tím nezmizí (zrušit ho
+ * bez `AbortSignal` nejde), ale přestáváme na něj čekat — a odmítnutí, které
+ * dorazí později, má race pořád obsloužené, takže z něj nevznikne
+ * unhandled rejection.
+ */
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Resend neodpověděl do ${ms / 1000} s — e-mail se neodeslal.`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resend za env klíčem; bez něj dev log (žádný setup, nic se neposílá). */
 export function resolveEmailSender(): EmailSender {
   const logPath = process.env.DANERO_EMAIL_LOG;
@@ -111,15 +156,18 @@ export function resolveEmailSender(): EmailSender {
   return async (message) => {
     const { Resend } = await import('resend');
     const resend = new Resend(apiKey);
-    const { error } = await resend.emails.send({
-      from,
-      replyTo: REPLY_TO,
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-      ...(message.html ? { html: message.html } : {}),
-      ...(message.headers ? { headers: message.headers } : {}),
-    });
+    const { error } = await withTimeout(
+      resend.emails.send({
+        from,
+        replyTo: REPLY_TO,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        ...(message.html ? { html: message.html } : {}),
+        ...(message.headers ? { headers: message.headers } : {}),
+      }),
+      SEND_TIMEOUT_MS,
+    );
     if (error) throw new Error(`Resend: ${error.message}`);
   };
 }

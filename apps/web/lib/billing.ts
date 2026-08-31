@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
@@ -14,7 +14,7 @@ import {
 } from '@/lib/entitlements';
 import { errorText, logEvent } from '@/lib/log';
 import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK } from '@/lib/pricing';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 import { stripe } from '@/lib/stripe';
 
 /**
@@ -337,6 +337,14 @@ function paidCzkFrom(
   return Number((amountTotal / 100).toFixed(2));
 }
 
+/**
+ * Jak dlouho si pamatujeme, že potvrzení k danému nákupu už odešlo. Stripe
+ * doručuje webhook tři dny a rekonciliace prochází sedmidenní okno každý den,
+ * takže měsíc je s velkou rezervou za posledním opakováním; prošlé řádky
+ * uklidí `pruneRateLimits` v denní údržbě.
+ */
+const CONFIRMATION_CLAIM_MS = 30 * 24 * 60 * 60_000;
+
 async function sendConfirmation(
   db: Db,
   userId: string,
@@ -344,14 +352,42 @@ async function sendConfirmation(
   priceCzk: number,
   consentAt: Date | null,
   kind: 'subscription' | 'report',
+  /**
+   * Co jednoznačně určuje TENHLE nákup — platba u podkladů, předplatné
+   * u hlídání. Musí se lišit u nákupu, za který zákazník zaplatil znovu
+   * (rok koupený po vrácení peněz, nové předplatné po zrušení), jinak by mu
+   * druhé potvrzení nedorazilo.
+   */
+  claimId: string,
 ): Promise<void> {
+  const key = `confirm:${userId}:${kind}:${claimId}`;
   try {
     const [row] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId));
     if (!row) return;
-    await resolveEmailSender()({
-      to: row.email,
-      ...purchaseConfirmationEmail({ what, priceCzk, consentGiven: Boolean(consentAt), kind }),
-    });
+    // K5-01/K5-02: claim-then-send. Idempotence databázových řádků stojí na
+    // `onConflictDoNothing`, jenže e-mail zpátky vzít nejde — a k odeslání se
+    // dá dojít i bez nového řádku (opakovaně doručený webhook o téže platbě)
+    // nebo dvakrát naráz (dvě instance nad touž událostí si obě přečtou
+    // prázdný stav dřív, než ta první zapíše). Zámek proto patří k ODESLÁNÍ,
+    // ne k zápisu: atomický `checkRateLimit` s `max: 1` pustí dál právě
+    // jednoho. Tentýž vzor používá digest v `lib/notifications.ts` i hlášení
+    // druhé platby o pár řádků výš (`dupreport:`).
+    const claimed = await checkRateLimit(db, key, { max: 1, windowMs: CONFIRMATION_CLAIM_MS });
+    if (!claimed) {
+      logEvent('info', 'billing.confirmation_already_sent', { userId, kind, claimId });
+      return;
+    }
+    try {
+      await resolveEmailSender()({
+        to: row.email,
+        ...purchaseConfirmationEmail({ what, priceCzk, consentGiven: Boolean(consentAt), kind }),
+      });
+    } catch (error) {
+      // Claim se vrací, ať potvrzení doručí až opakovaný webhook nebo
+      // rekonciliace — § 1824a OZ ho vyžaduje, takže tiše vynechat ho nesmíme.
+      await releaseRateLimit(db, key);
+      throw error;
+    }
   } catch (error) {
     logEvent('error', 'billing.confirmation_email_failed', {
       userId,
@@ -851,7 +887,9 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
           promoCode,
           consentAt: consentFrom(session.metadata),
         });
-        // e-mail jen při prvním doručení webhooku, ne při každém opakování
+        // e-mail jen při prvním doručení webhooku, ne při každém opakování;
+        // claim je platba (bez ní session), aby rok koupený znovu po vrácení
+        // peněz dostal potvrzení nové
         if (created) {
           await sendConfirmation(
             db,
@@ -860,6 +898,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
             paidCzkFrom(session.amount_total, session.currency, PRICE_REPORT_CZK),
             consentFrom(session.metadata),
             'report',
+            idOf(session.payment_intent) ?? session.id,
           );
         }
         return `podklady ${taxYear} pro ${userId}`;
@@ -902,6 +941,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
           await renewalPriceCzk(subscription.id, idOf(subscription.customer)),
           consentFrom(subscription.metadata),
           'subscription',
+          subscription.id,
         );
       }
       return `předplatné ${subscription.status} pro ${userId}`;
@@ -1153,6 +1193,9 @@ export async function reconcileSubscriptions(db: Db, now = new Date()): Promise<
           await renewalPriceCzk(state.stripeSubscriptionId ?? null, stripeCustomerId),
           state.consentAt ?? null,
           'subscription',
+          // stejný claim jako u webhooku: rekonciliace jen dohání, co se
+          // ztratilo, a potvrzení musí odejít právě jednou
+          state.stripeSubscriptionId ?? stripeCustomerId ?? userId,
         );
       }
       result.updated += 1;
@@ -1306,6 +1349,7 @@ async function recoverSession(
       paidCzkFrom(session.amount_total, session.currency, PRICE_REPORT_CZK),
       consentAt,
       'report',
+      paymentIntentId,
     );
     return true;
   }
@@ -1354,6 +1398,7 @@ async function recoverSession(
       await renewalPriceCzk(actual.id, customerId),
       consentAt,
       'subscription',
+      actual.id,
     );
   }
   return true;
@@ -1488,6 +1533,26 @@ export async function sendRenewalNotices(
 
   let sent = 0;
   for (const row of due) {
+    // K5-03: claim-then-send (vzor z digestu v `lib/notifications.ts`).
+    // Značka se dřív psala až PO odeslání, aby se e-mail po chybě zkusil
+    // zítra znovu — jenže dva souběžné běhy (ruční re-trigger přes plánovaný)
+    // si oba přečetly nezaškrtnutý řádek a upomínka odešla dvakrát.
+    // Podmínka v UPDATE je táž jako ve filtru výše, takže značku zabere právě
+    // jeden běh; ten druhý dostane nula řádků a mlčky pokračuje.
+    const claimed = await db
+      .update(subscriptions)
+      .set({ renewalNoticeSentFor: row.currentPeriodEnd })
+      .where(
+        and(
+          eq(subscriptions.userId, row.userId),
+          // období se mezitím mohlo obnovit — pak platí nové rozhodnutí,
+          // ne to naše
+          eq(subscriptions.currentPeriodEnd, row.currentPeriodEnd),
+          sql`${subscriptions.renewalNoticeSentFor} IS DISTINCT FROM ${subscriptions.currentPeriodEnd}`,
+        ),
+      )
+      .returning({ userId: subscriptions.userId });
+    if (claimed.length === 0) continue;
     try {
       await resolveEmailSender()({
         to: row.email,
@@ -1496,13 +1561,14 @@ export async function sendRenewalNotices(
           priceCzk: await renewalPriceCzk(row.stripeSubscriptionId, row.stripeCustomerId),
         }),
       });
-      // značka až PO odeslání: když e-mail selže, zkusí se zítra znovu
-      await db
-        .update(subscriptions)
-        .set({ renewalNoticeSentFor: row.currentPeriodEnd })
-        .where(eq(subscriptions.userId, row.userId));
       sent += 1;
     } catch (error) {
+      // claim zpátky, ať se e-mail zítra zkusí znovu — 14denní lhůta
+      // z /podminky běží dál
+      await db
+        .update(subscriptions)
+        .set({ renewalNoticeSentFor: row.noticeSentFor })
+        .where(eq(subscriptions.userId, row.userId));
       logEvent('error', 'billing.renewal_notice_failed', {
         userId: row.userId,
         error: errorText(error),
