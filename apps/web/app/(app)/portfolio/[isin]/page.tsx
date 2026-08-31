@@ -1,5 +1,6 @@
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
+import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
 import { notFound, redirect } from 'next/navigation';
 import { PositionView, positionHistory } from '@/components/views/position-view';
 import { getDb } from '@/db';
@@ -63,8 +64,10 @@ export default async function PositionDetailPage({
   if (!profile) redirect('/nastaveni');
 
   const txs = await loadTransactions(db, user.id);
-  const today = new Date().toISOString().slice(0, 10);
-  const currentYear = Number(today.slice(0, 4));
+  // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
+  const instant = now();
+  const today = todayInPrague(instant);
+  const currentYear = currentTaxYear(instant);
   const dailyRates = await dailyRatesForProfile(db, txs, profile, currentYear);
   let analysis;
   try {

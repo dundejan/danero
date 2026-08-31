@@ -3,7 +3,8 @@ import { d } from '@danero/shared';
 import { MapRateProvider, type DailyRateProvider } from '@danero/engine';
 import type { ProfileRow } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
-import { UNIFIED_RATES } from '@/lib/tax-config';
+import { now } from '@/lib/clock';
+import { LAST_CONFIGURED_TAX_YEAR, UNIFIED_RATES } from '@/lib/tax-config';
 
 /**
  * Ukázková data pro demo prohlídku (bez registrace, bez DB): fiktivní
@@ -51,13 +52,21 @@ const addMonths = (isoDate: string, months: number): string => {
 const addYears = (isoDate: string, years: number): string =>
   addMonths(isoDate, years * 12);
 
-/** Poslední rok, pro který známe jednotný kurz — demo nesmí spadnout 1. ledna
- *  (kurz nového roku se doplňuje ručně dle runbooku, R-06a). */
-const LAST_RATE_YEAR = Math.max(...Object.keys(UNIFIED_RATES).map(Number));
+/**
+ * Poslední rok, který demo umí ukázat celý: musí mít jednotný kurz (R-06a)
+ * i konfiguraci v registru (R-15a). Obojí se doplňuje ručně dle runbooku,
+ * takže bez téhle mezí by veřejné demo 1. ledna buď spadlo na chybějícím
+ * kurzu, nebo ukazovalo kartu „čísla pro nový rok ještě nejsou“ — a ta do
+ * ukázky produktu nepatří.
+ */
+const LAST_RATE_YEAR = Math.min(
+  Math.max(...Object.keys(UNIFIED_RATES).map(Number)),
+  LAST_CONFIGURED_TAX_YEAR,
+);
 
-/** „Dnešek“ dema: skutečné datum s rokem přištípnutým na poslední rok s kurzy. */
-export function demoToday(now: Date = new Date()): string {
-  const real = iso(now);
+/** „Dnešek“ dema: skutečné datum s rokem přištípnutým na poslední ukazatelný rok. */
+export function demoToday(instant: Date = now()): string {
+  const real = iso(instant);
   const year = Math.min(Number(real.slice(0, 4)), LAST_RATE_YEAR);
   const monthDay = real.slice(5) === '02-29' ? '02-28' : real.slice(5); // přestupný okraj
   return `${year}-${monthDay}`;

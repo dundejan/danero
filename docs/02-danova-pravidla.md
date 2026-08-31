@@ -211,6 +211,14 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   dodatečného přiznání; rok se pak zase počítá podle profilu. Zafixované
   hodnoty jsou i v exportu dat (`/api/export`), aby šlo doložit, čím se
   počítala už odeslaná čísla.
+
+  **Kdy rok skončí, se čte v české zóně** (`apps/web/lib/clock.ts`). Zdaňovací
+  období je kalendářní rok podle § 16b ZDP, a ten se láme půlnocí v Česku, ne
+  v UTC. Dokud se „dnešek" bral z UTC, byl 1. ledna mezi 00:00 a 01:00 pražského
+  času právě skončený rok pro aplikaci pořád běžící: report za něj šel otevřít,
+  ale fixace se nezapsala (nález K1-05). Táž zóna platí pro **všechny** vstupní
+  body, které čtou „dnes" — přehled, report, portfolio, simulátor, XML pro EPO
+  i hlídací e-maily.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
 - **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
   Pozn. k orientační dani: odhad daně v aplikaci se **nezaokrouhluje** na celé Kč
@@ -1109,6 +1117,53 @@ vzor 7 (kontrolní vzorce oddílu 7); 77 podání na zkušební podatelnu EPO
 
 ---
 
+## R-15 Registr konfigurací zdaňovacích období (přechod roku)
+
+Legislativa je verzovaná per zdaňovací období a `TaxYearConfig` je její jediný
+nositel. Rok, pro který konfiguraci **nemáme**, se nesmí odvodit recyklací roku
+posledního — daň by se spočítala podle loňských čísel a nikde by to nebylo vidět.
+
+- **R-15a Registr, ne fallback.** `TAX_YEAR_CONFIGS` v
+  `packages/engine/src/config/taxYear.ts` je výčet roků, pro které konfiguraci
+  **známe** (klíč = rok). `configForYear` vrací konfiguraci **jen** z registru;
+  mimo něj vrací šablonu s **`progressiveThreshold: null` i `flatTaxAdvance: null`**.
+  Obě hodnoty mají v enginu poctivou větev „nevím“ (`PROGRESSIVE_THRESHOLD_UNKNOWN`
+  v `tax/estimate.ts`, věta o nezapočtených zálohách u `FLAT_TAX_BROKEN`
+  v `limits/limits.ts`) — recyklace je obcházela obě.
+- **R-15b Co se přenášet SMÍ a co ne.** Přenést se smí jen **struktura právního
+  stavu**, která platí, dokud ji nezmění novela: dostupnost osvobození
+  kryptoaktiv (R-10b), rozsah stropu 40 mil. (R-03/R-10e), limity 100 000 /
+  50 000 / 20 000 / 5 mil. Kč — ty jsou v zákoně pevnou částkou, ne odkazem na
+  každoročně vyhlašovaný údaj. Přenést se **nesmí** nic, co stát každý rok
+  vyhlašuje znovu: **hranice 23 % sazby** (§ 16 odst. 1 ZDP, 36násobek průměrné
+  mzdy) a **výše paušální zálohy** (§ 38lk, R-08f).
+- **R-15c Proč hranice v lednu ještě neexistuje.** „Průměrná mzda“ podle § 21g ZDP
+  je součin **všeobecného vyměřovacího základu** za rok, který o dva roky
+  předchází, a **přepočítacího koeficientu** (§ 23b odst. 4 zák. č. 589/1992 Sb.).
+  Koeficient se počítá z údaje ČSÚ o průměrné mzdě za **1. pololetí roku R** a obojí
+  stanoví **nařízení vlády** ve lhůtě **do 30. 9. roku R** (§ 17 odst. 2 a 4 zák.
+  č. 155/1995 Sb.). Hranice pro rok **R+1** tedy vzniká teprve na podzim roku R —
+  před tím ji nemá odkud vzít ani stát, natož Danero.
+- **R-15d Kadence údržby a pojistka.** Konfigurace roku R+1 se doplňuje **po
+  vyhlášení nařízení vlády, tedy od 1. 10. roku R** (paušální zálohu FS zveřejňuje
+  „Informací k institutu paušální daně“ ve stejném období). Hlídá to runbook test
+  `apps/web/test/runbook.test.ts`: do 30. 9. vyžaduje registr pro **běžný rok**,
+  od 1. 10. i pro **rok následující** — tedy tři měsíce před tím, než by se
+  chybějící rok mohl objevit uživateli.
+- **R-15e Co uvidí uživatel.** Rok mimo registr **není chyba a nesmí ani zhasnout
+  stránku**: prodeje, limity (100k, 50k, 20k) i časové testy se počítají dál,
+  protože ty na vyhlašovaných číslech nestojí. Odpadá jen to, co bez nich spočítat
+  nejde — a přehled i report to řeknou jednou českou větou bez žargonu
+  (komponenta `TaxYearConfigNotice`): že čísla pro nový rok stát vyhlašuje až na
+  podzim, co z toho plyne (daň z velmi vysokého zisku vychází bez vyšší sazby
+  a u paušalisty se nezapočtou zaplacené zálohy) a že zbytek hlídání běží normálně.
+
+Zdroje: § 16 odst. 1 a § 21g ZDP; § 23b odst. 4 zák. č. 589/1992 Sb.;
+§ 17 odst. 2 a 4 zák. č. 155/1995 Sb. (lhůta 30. 9.); § 38lk ZDP a Informace
+Finanční správy k institutu paušální daně; nález K1-01 auditu 4.
+
+---
+
 ## Konfigurační přepínače (sporné výklady)
 
 | Klíč | Default | Pravidlo |
@@ -1130,7 +1185,20 @@ Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace
 
 ## Roční údržba (runbook)
 
-Každý leden: nový jednotný kurz (pokyn GFŘ D-xx z Finančního zpravodaje), průměrná mzda pro 23% hranici (nařízení vlády), výše paušálních záloh (`flatTaxAdvance` v `TaxYearConfig`, R-08f), **burzovní svátky nového roku** (`packages/engine/src/config/exchangeHolidays.ts` + posunout `HOLIDAY_CALENDAR_LAST_YEAR`, R-01a), kontrola novel ZDP (sledovat: KPMG danovky.cz, dReport, FS tiskové zprávy). Legislativa je verzovaná per zdaňovací období — engine přijímá `TaxYearConfig`.
+Legislativa je verzovaná per zdaňovací období — engine přijímá `TaxYearConfig` a bere
+je z registru (R-15a). Údržba má **dva termíny**, ne jeden:
+
+**Od 1. 10. roku R (nařízení vlády vychází do 30. 9., R-15c)** — zapsat do registru
+`TAX_YEAR_CONFIGS` konfiguraci roku **R+1**: průměrná mzda pro **23% hranici**
+(`progressiveThreshold`) a **výše paušální zálohy** (`flatTaxAdvance`, R-08f).
+Bez toho je rok R+1 mimo registr a aplikace u něj poctivě řekne „nevím“ (R-15e).
+
+**Každý leden** — nový **jednotný kurz** za rok R−1 (pokyn GFŘ D-xx z Finančního
+zpravodaje: doplnit do `unifiedRates.ts`, posunout `LAST_VERIFIED_RATE_YEAR`, přidat
+pokyn do `UNIFIED_RATE_SOURCES`) a **orientační kurz běžného roku** do `UNIFIED_RATES`
+(R-06a); **burzovní svátky nového roku** (`packages/engine/src/config/exchangeHolidays.ts`
++ posunout `HOLIDAY_CALENDAR_LAST_YEAR`, R-01a). Celoročně: kontrola novel ZDP
+(sledovat: KPMG danovky.cz, dReport, FS tiskové zprávy).
 
 ## Klíčové zdroje
 

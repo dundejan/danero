@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { verifiedRateSourceNote } from '@/lib/tax-config';
 
 export const metadata: Metadata = {
   title: 'Jak počítáme — Danero',
@@ -265,8 +266,9 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
         </p>
       </>
     ),
-    zdroj:
-      '§ 38 odst. 1 zákona o daních z příjmů; pokyny GFŘ D-49 až D-75 (jednotné kurzy 2020–2025, za rok 2025 pokyn GFŘ D-75).',
+    // rozsah let ani čísla pokynů se nepišou ručně — po lednové údržbě by
+    // věta zůstala pozadu za tabulkou, podle které se doopravdy počítá (K1-03)
+    zdroj: `§ 38 odst. 1 zákona o daních z příjmů; ${verifiedRateSourceNote()}.`,
   },
   {
     id: 'parovani',

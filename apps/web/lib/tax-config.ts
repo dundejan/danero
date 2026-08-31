@@ -1,8 +1,11 @@
 import {
+  isConfiguredTaxYear,
+  LAST_CONFIGURED_TAX_YEAR,
   LAST_VERIFIED_RATE_YEAR,
   TAX_YEAR_2024,
-  TAX_YEAR_2025,
   TAX_YEAR_2026_DRAFT,
+  TAX_YEAR_CONFIGS,
+  UNIFIED_RATE_SOURCES,
   UNIFIED_RATES_VERIFIED,
   type TaxYearConfig,
 } from '@danero/engine';
@@ -34,15 +37,63 @@ export const UNIFIED_RATES: Record<number, Record<string, string>> = {
 export const isRateVerified = (year: number): boolean =>
   year <= LAST_VERIFIED_RATE_YEAR && UNIFIED_RATES[year] !== undefined;
 
-/** Konfigurace zdaňovacího období pro engine (limity dle roku, kurzy viz výše). */
-export function configForYear(year: number): TaxYearConfig {
-  // 2024 a starší: bez stropu 40M (platí až pro 2025), krypto bez osvobození
-  // (cryptoRules.exemptionsAvailable: false — R-10b) a s hranicí 23 % roku 2024;
-  // pro roky < 2024 hranici neznáme → null (engine poctivě varuje).
-  // 2025: strop 40M společný pro CP + krypto, krypto osvobození od 15. 2. 2025;
-  // 2026+: strop jen pro krypto (R-10e) — vše nese TaxYearConfig daného roku.
-  const base =
-    year >= 2026 ? TAX_YEAR_2026_DRAFT : year === 2025 ? TAX_YEAR_2025 : TAX_YEAR_2024;
-  const progressiveThreshold = year < 2024 ? null : base.progressiveThreshold;
-  return { ...base, year, progressiveThreshold, unifiedRatesByYear: UNIFIED_RATES };
+/**
+ * První rok, pro který jednotný kurz vůbec máme. Starší roky se přepočítávají
+ * denními kurzy ČNB — a report to musí říct, ne kartu s kurzy schovat (K1-04).
+ */
+export const FIRST_UNIFIED_RATE_YEAR = Math.min(...Object.keys(UNIFIED_RATES).map(Number));
+
+/** Roky jednotných kurzů, které mohou do reportu za `year` vstoupit (výdaj = kurz roku nákupu). */
+export const unifiedRateYearsUpTo = (year: number): number[] =>
+  Object.keys(UNIFIED_RATES)
+    .map(Number)
+    .filter((rateYear) => rateYear <= year)
+    .sort((a, b) => a - b);
+
+/**
+ * Deklarace původu kurzů pro report (K1-03): rozsah let ani čísla pokynů se
+ * nesmí psát do textu ručně. Po lednové údržbě by věta zůstala pozadu a tištěný
+ * podklad — dokument, který má být průkazný — by tvrdil něco jiného, než čím se
+ * doopravdy počítalo.
+ */
+export function verifiedRateSourceNote(): string {
+  const years = Object.keys(UNIFIED_RATE_SOURCES)
+    .map(Number)
+    .filter((year) => year <= LAST_VERIFIED_RATE_YEAR)
+    .sort((a, b) => a - b);
+  const first = years[0];
+  const last = years.at(-1);
+  if (first === undefined || last === undefined) return 'jednotné kurzy zatím z žádného pokynu GFŘ nemáme';
+  if (first === last) return `pokyn ${UNIFIED_RATE_SOURCES[first]} (jednotný kurz ${first})`;
+  return `pokyny ${UNIFIED_RATE_SOURCES[first]} až ${UNIFIED_RATE_SOURCES[last]} (jednotné kurzy ${first}–${last})`;
 }
+
+/**
+ * Konfigurace zdaňovacího období pro engine (limity dle roku, kurzy viz výše).
+ *
+ * R-15a: rok z **registru** `TAX_YEAR_CONFIGS` dostane svá vyhlášená čísla.
+ * Rok mimo registr dostane jen **šablonu právního stavu** (limity v zákoně
+ * pevnou částkou, strop 40M, dostupnost osvobození krypta — R-15b) a obě
+ * každoročně vyhlašované hodnoty poctivě `null`: hranici 23 % sazby i výši
+ * paušální zálohy. Obojí má v enginu připravenou větev „nevím“, takže se
+ * rozsvítí místo toho, aby se tiše počítalo loňskými čísly (nález K1-01).
+ */
+export function configForYear(year: number): TaxYearConfig {
+  const known = TAX_YEAR_CONFIGS[year];
+  if (known) return { ...known, unifiedRatesByYear: UNIFIED_RATES };
+  // Šablona podle právního stavu: roky před registrem nemají strop 40M (platí
+  // až od 2025) a krypto u nich nemá žádné osvobození (R-10b); roky za
+  // registrem pokračují stavem posledního známého roku (strop jen pro krypto,
+  // R-10e) — to jsou pravidla ze zákona, ne čísla vyhlašovaná na rok.
+  const base = year > LAST_CONFIGURED_TAX_YEAR ? TAX_YEAR_2026_DRAFT : TAX_YEAR_2024;
+  return {
+    ...base,
+    year,
+    progressiveThreshold: null,
+    flatTaxAdvance: null,
+    unifiedRatesByYear: UNIFIED_RATES,
+  };
+}
+
+/** R-15e: víme pro ten rok vyhlášená čísla? UI podle toho ukáže vysvětlení. */
+export { isConfiguredTaxYear, LAST_CONFIGURED_TAX_YEAR };

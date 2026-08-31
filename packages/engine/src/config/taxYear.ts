@@ -147,3 +147,35 @@ export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
   // 9 984 Kč a rozdíl (4 932 Kč) je přeplatek — zdroj: tiskové zprávy GFŘ 2026
   flatTaxAdvance: { monthlyTotalCzk: '9162', monthlyTaxCzk: '100' },
 };
+
+/**
+ * R-15a: registr zdaňovacích období, pro která konfiguraci **známe**.
+ *
+ * Není to fallback tabulka — je to výčet. Rok, který v něm není, se nesmí
+ * spočítat recyklací posledního známého: `progressiveThreshold` (36násobek
+ * průměrné mzdy, § 16 odst. 1) i `flatTaxAdvance` (§ 38lk) stát vyhlašuje
+ * každý rok znovu a do konce září roku R pro rok R+1 **neexistují** ani
+ * u něj (R-15c). Recyklace by tichým způsobem počítala daň loňskými čísly.
+ *
+ * Roky před 2024 v registru schválně nejsou: hranici 23 % pro ně neznáme
+ * a paušální záloha byla jiná (2023 = 6 208 Kč/měsíc), takže se pro ně
+ * použije šablona s poctivými `null` stejně jako pro roky budoucí.
+ */
+export const TAX_YEAR_CONFIGS: Record<number, TaxYearConfig> = {
+  2024: TAX_YEAR_2024,
+  2025: TAX_YEAR_2025,
+  2026: TAX_YEAR_2026_DRAFT,
+};
+
+/** Poslední rok v registru — meze runbooku (R-15d) a rozsahu let v UI. */
+export const LAST_CONFIGURED_TAX_YEAR = Math.max(...Object.keys(TAX_YEAR_CONFIGS).map(Number));
+
+/**
+ * První rok v registru. Roky před ním jsou jiný případ než roky za ním:
+ * jejich čísla stát dávno vyhlásil, jen je Danero nezná — a UI to musí říct
+ * jinak než u roku, který teprve přijde (R-15e).
+ */
+export const FIRST_CONFIGURED_TAX_YEAR = Math.min(...Object.keys(TAX_YEAR_CONFIGS).map(Number));
+
+/** Známe pro ten rok vyhlášená čísla, nebo o něm poctivě říkáme „nevím"? (R-15a) */
+export const isConfiguredTaxYear = (year: number): boolean => year in TAX_YEAR_CONFIGS;

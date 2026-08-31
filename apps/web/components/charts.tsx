@@ -52,7 +52,7 @@ const czkAxis = (value: number): string => {
 const monthLabel = (isoMonth: string): string =>
   MONTH_LABELS[Number(isoMonth.slice(5, 7)) - 1] ?? isoMonth;
 
-const dateLabel = (iso: string): string =>
+export const dateLabel = (iso: string): string =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('cs-CZ', {
     day: 'numeric',
     month: 'numeric',
@@ -60,10 +60,20 @@ const dateLabel = (iso: string): string =>
   });
 
 /** ISO datum → ms (UTC) pro časovou osu — kategorická osa by zkreslila rozestupy. */
-const toMs = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
+export const toMs = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
 
-const msLabel = (ms: number): string =>
-  new Date(ms).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' });
+/**
+ * K1-06: `toMs` parsuje datum jako UTC půlnoc, takže se popisek osy musí
+ * formátovat v UTC. Bez toho ukazovala osa západně od Greenwiche den předem —
+ * a tooltip téhož grafu (přes `dateLabel`) přitom správné datum.
+ */
+export const msLabel = (ms: number): string =>
+  new Date(ms).toLocaleDateString('cs-CZ', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  });
 
 const axisProps = {
   tick: { fill: 'var(--inkoust-tlumeny)', fontSize: 11, fontFamily: 'var(--font-mono)' },

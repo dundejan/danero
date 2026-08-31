@@ -3,6 +3,7 @@ import { PaywallCard } from '@/components/paywall-card';
 import { ReportView } from '@/components/views/report-view';
 import { reportDataCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
+import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
 import { getDb } from '@/db';
 import {
   availableYears,
@@ -38,8 +39,10 @@ export default async function ReportPage({
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) redirect('/prehled');
 
-  const today = new Date().toISOString().slice(0, 10);
-  const currentYear = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
+  // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
+  const instant = now();
+  const today = todayInPrague(instant);
+  const currentYear = currentTaxYear(instant);
   const years = availableYears(txs, currentYear);
   const params = await searchParams;
   const rok = firstParam(params.rok);

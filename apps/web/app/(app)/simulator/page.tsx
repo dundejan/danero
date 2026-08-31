@@ -5,6 +5,7 @@ import { SimulatorView, type SimParams } from '@/components/views/simulator-view
 import { getDb } from '@/db';
 import { resolveEntitlements } from '@/lib/entitlements';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
+import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
 import {
   dailyRatesForProfile,
   engineInputForUser,
@@ -58,8 +59,10 @@ export default async function SimulatorPage({
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const year = Number(today.slice(0, 4)); // rok z téhož okamžiku (UTC) jako today
+  // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
+  const instant = now();
+  const today = todayInPrague(instant);
+  const year = currentTaxYear(instant);
   const dailyRates = await dailyRatesForProfile(db, txs, profile, year);
   // předvýpočet baseline: EngineError (chybějící kurz) chytáme tady — pád ve
   // view by skončil až v error boundary; výsledek se předává dál, ať se

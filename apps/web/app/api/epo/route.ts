@@ -1,6 +1,7 @@
 import { analyzeTaxYear } from '@danero/engine';
 import { getDb } from '@/db';
 import { getAuth } from '@/lib/auth';
+import { currentTaxYear } from '@/lib/clock';
 import { OPERATOR } from '@/lib/contact';
 import { canGenerateReport } from '@/lib/entitlements';
 import {
@@ -62,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
   if (txs.length === 0) return chyba('Zatím nemáš žádné transakce — nejdřív importuj data.');
 
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
-  const currentYear = Number(new Date().toISOString().slice(0, 4));
+  const currentYear = currentTaxYear();
   const dailyRates = await loadDailyRates(db, txs, currentYear);
   // R-05c: XML je podklad pro podání → konfigurace se pro ten rok zafixuje
   const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);

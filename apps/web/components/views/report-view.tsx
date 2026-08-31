@@ -15,10 +15,18 @@ import { Input, Label, Select } from '@/components/ui/field';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
+import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
+import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
 import { priloha2 } from '@/lib/priloha2';
 import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
-import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
+import {
+  FIRST_UNIFIED_RATE_YEAR,
+  isRateVerified,
+  UNIFIED_RATES,
+  unifiedRateYearsUpTo,
+  verifiedRateSourceNote,
+} from '@/lib/tax-config';
 import {
   engineInputForUser,
   instrumentLabels,
@@ -198,9 +206,9 @@ export function ReportView({
   const { totalPages, currentPage, fromRow } = disposalPage(allDisposals.length, strana);
   const disposalsOnPage = allDisposals.slice(fromRow, fromRow + DISPOSALS_PER_PAGE);
 
-  // roky jednotných kurzů pro kartu „Použité kurzy“ (výdaj = kurz roku nákupu)
-  const rateYears = Array.from({ length: Math.max(0, year - 2020 + 1) }, (_, i) => 2020 + i)
-    .filter((y) => UNIFIED_RATES[y] !== undefined);
+  // roky jednotných kurzů pro kartu „Použité kurzy“ (výdaj = kurz roku nákupu);
+  // rozsah se čte z tabulky kurzů, ne z ručně zapsaného roku (K1-03/K1-04)
+  const rateYears = unifiedRateYearsUpTo(year);
   const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
   // Čísla pro Přílohu č. 2 bere průvodce ze STEJNÉHO zdroje jako generátor XML
   // (K3-03) — dokud měl každý svoje, radila jedna stránka zapsat nezastropované
@@ -249,7 +257,7 @@ export function ReportView({
 
       {/* jen v tisku: identifikace podkladů (průkaznost výpočtu) */}
       <p className="hidden text-xs text-inkoust-tlumeny print:block">
-        Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(new Date().toISOString().slice(0, 10))}{' '}
+        Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
         párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
         {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
@@ -258,8 +266,18 @@ export function ReportView({
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
         stablecoiny (EMT): {result.options.emtTimeTestExempt ? 'časový test uplatněn (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·
         vratka kapitálu: {result.options.returnOfCapitalReducesBasis ? 'snižuje nabývací cenu (mírnější výklad)' : 'daněna jako dividenda (bezpečný výklad)'}.
-        Kurzy: pokyny GFŘ D-49…D-75 (2020–2025), viz dokumentace metodiky.
+        Kurzy: {verifiedRateSourceNote()}
+        {UNIFIED_RATES[year] !== undefined &&
+          !isRateVerified(year) &&
+          `; kurz roku ${year} je orientační do vydání pokynu`}
+        {UNIFIED_RATES[year] === undefined &&
+          `; za rok ${year} jednotný kurz nemáme, cizí měny se přepočítávají denními kurzy ČNB`}
+        , viz dokumentace metodiky.
       </p>
+
+      {/* R-15e: rok, pro který stát ještě nevyhlásil čísla — vysvětlení nahoře,
+          ať ho uživatel vidí dřív než odhad daně, který se o ně opírá */}
+      <TaxYearConfigNotice year={year} pausal={profile.regime === 'PAUSAL'} />
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
@@ -1114,19 +1132,29 @@ export function ReportView({
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
           stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·
           vratka kapitálu {result.options.returnOfCapitalReducesBasis ? 'snižuje nabývací cenu (mírnější výklad)' : 'daněna jako dividenda (bezpečný výklad)'}.
-          Jednotné kurzy 2020–2025 jsou ověřené z pokynů GFŘ řady D; kurz běžného roku je
+          Ověřené jednotné kurzy: {verifiedRateSourceNote()}; kurz běžného roku je
           orientační do vydání pokynu. Danero je výpočetní nástroj, nikoli daňové poradenství.
         </p>
       </Card>
 
-      {rateYears.length > 0 && (
-        <Card className="space-y-3">
-          <CardTitle>Použité kurzy (jednotný kurz GFŘ, Kč za jednotku)</CardTitle>
+      {/* K1-04: karta se ukazuje VŽDY — u roku před prvním jednotným kurzem je
+          její prázdnota sama o sobě informace, kterou má podklad doložit */}
+      <Card className="space-y-3">
+        <CardTitle>Použité kurzy (jednotný kurz GFŘ, Kč za jednotku)</CardTitle>
+        {rateYears.length === 0 ? (
+          <p className="text-sm text-inkoust-tlumeny">
+            Za rok {year} jednotný kurz GFŘ nemáme — ověřená tabulka pokynů řady D
+            začíná rokem {FIRST_UNIFIED_RATE_YEAR}. Částky v cizí měně se v tomhle
+            podkladu proto přepočítávají denními kurzy ČNB k datu obchodu; obchody
+            v korunách se nepřepočítávají vůbec.
+          </p>
+        ) : (
+          <>
           <p className="text-sm text-inkoust-tlumeny">
             Výdaj (nákup) se přepočítává jednotným kurzem roku nákupu, tržba (prodej)
             kurzem roku prodeje. Tabulka ukazuje hlavní měny; další měny (CHF, PLN,
-            JPY…) používáme z týchž pokynů. Nákupy před rokem 2020 se přepočítávají
-            denními kurzy ČNB.
+            JPY…) používáme z týchž pokynů. Nákupy před rokem {FIRST_UNIFIED_RATE_YEAR}{' '}
+            se přepočítávají denními kurzy ČNB.
           </p>
           <ScrollArea label="Použité jednotné kurzy GFŘ">
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
@@ -1159,8 +1187,9 @@ export function ReportView({
               </tbody>
             </table>
           </ScrollArea>
-        </Card>
-      )}
+          </>
+        )}
+      </Card>
     </div>
   );
 }

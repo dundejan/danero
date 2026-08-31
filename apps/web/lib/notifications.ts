@@ -3,6 +3,7 @@ import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } 
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
 import {
@@ -464,7 +465,7 @@ export async function processUserNotifications(
   target: { id: string; email: string },
   options: { send: EmailSender; today?: string },
 ): Promise<{ created: number; emailed: number }> {
-  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  const today = options.today ?? todayInPrague();
   const year = Number(today.slice(0, 4));
   const prefs = await getNotificationPrefs(db, target.id);
   const rules = notificationRules(prefs);

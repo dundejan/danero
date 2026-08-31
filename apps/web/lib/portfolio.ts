@@ -22,6 +22,7 @@ import type { Db } from '@/db';
 import type { CnbRateProvider } from '@/lib/cnb';
 import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
 import { errorText, logEvent } from '@/lib/log';
+import { currentTaxYear } from './clock';
 import { configForYear, UNIFIED_RATES } from './tax-config';
 
 /**
@@ -107,9 +108,6 @@ export function isPinnableTaxYear(year: number, currentYear: number): boolean {
   return year < currentYear;
 }
 
-/** UTC, konzistentně se zbytkem aplikace (`today`). */
-const utcYear = (): number => Number(new Date().toISOString().slice(0, 4));
-
 /**
  * R-05c: zafixuje konfiguraci roku, za který si uživatel právě generuje
  * podklady k přiznání, a vrátí profil s touto fixací. Idempotentní — jednou
@@ -121,7 +119,7 @@ export async function pinTaxYear(
   db: Db,
   profileRow: ProfileRow,
   year: number,
-  currentYear: number = utcYear(),
+  currentYear: number = currentTaxYear(),
 ): Promise<ProfileRow> {
   if (!isPinnableTaxYear(year, currentYear)) return profileRow;
   if (profileRow.pinnedTaxYears?.[year]) return profileRow;

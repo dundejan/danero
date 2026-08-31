@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { reportPurchases, subscriptions } from '@/db/schema';
+import { currentTaxYear, now as currentInstant } from '@/lib/clock';
 
 /**
  * Kdo na co má nárok (docs/19). Hranice vede podle automatizace, ne podle dat:
@@ -55,9 +56,9 @@ const OLDEST_SELLABLE_TAX_YEAR_OFFSET = 10;
  * (C-27). Rok, který ještě neskončil, prodáváme schválně — hlídač počítá
  * průběžně a podklady za běžný rok dávají smysl už v jeho průběhu.
  */
-export function isSellableTaxYear(year: number, now = new Date()): boolean {
+export function isSellableTaxYear(year: number, instant = currentInstant()): boolean {
   if (!isPlausibleTaxYear(year)) return false;
-  const current = now.getUTCFullYear();
+  const current = currentTaxYear(instant);
   return year >= current - OLDEST_SELLABLE_TAX_YEAR_OFFSET && year <= current;
 }
 

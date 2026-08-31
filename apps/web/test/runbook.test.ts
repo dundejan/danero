@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { LAST_VERIFIED_RATE_YEAR } from '@danero/engine';
-import { isRateVerified, UNIFIED_RATES } from '@/lib/tax-config';
+import { LAST_VERIFIED_RATE_YEAR, TAX_YEAR_CONFIGS } from '@danero/engine';
+import {
+  configForYear,
+  isConfiguredTaxYear,
+  isRateVerified,
+  LAST_CONFIGURED_TAX_YEAR,
+  UNIFIED_RATES,
+} from '@/lib/tax-config';
 
 /**
  * Pojistka na roční údržbu kurzů (runbook v docs/02, R-06a).
@@ -44,6 +50,56 @@ describe('runbook: tabulka jednotných kurzů nesmí vyexpirovat', () => {
       UNIFIED_RATES[LAST_VERIFIED_RATE_YEAR],
       `rok ${LAST_VERIFIED_RATE_YEAR} je označen za ověřený, ale kurzy pro něj chybí`,
     ).toBeDefined();
+  });
+});
+
+/**
+ * Pojistka na roční údržbu konfigurací zdaňovacích období (R-15d).
+ *
+ * Registr `TAX_YEAR_CONFIGS` nese dvě čísla, která stát vyhlašuje každý rok
+ * znovu: hranici 23% sazby (36násobek průměrné mzdy) a výši paušální zálohy.
+ * Rok mimo registr aplikace nepočítá loňskými čísly — poctivě řekne „nevím“
+ * (K1-01) — jenže ta poctivost stojí uživatele přesnost odhadu, takže se do ní
+ * nesmí spadnout omylem.
+ *
+ * Kadence je odvozená ze zákona: přepočítací koeficient a všeobecný vyměřovací
+ * základ stanoví nařízení vlády **do 30. 9.** (§ 17 odst. 2 a 4 zák.
+ * č. 155/1995 Sb.), takže od 1. října jsou čísla pro příští rok k dispozici —
+ * a test je od té chvíle vyžaduje, tedy tři měsíce před tím, než by chybějící
+ * rok mohl potkat uživatele.
+ */
+describe('runbook: registr konfigurací zdaňovacích období nesmí vyexpirovat', () => {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  // říjen a dál: nařízení vlády pro příští rok už muselo vyjít
+  const required = now.getUTCMonth() >= 9 ? year + 1 : year;
+
+  it(`registr pokrývá rok ${required}`, () => {
+    expect(
+      isConfiguredTaxYear(required),
+      `Rok ${required} není v TAX_YEAR_CONFIGS (poslední je ${LAST_CONFIGURED_TAX_YEAR}). ` +
+        'Doplň konfiguraci do packages/engine/src/config/taxYear.ts: hranici 23 % ' +
+        '(36× průměrná mzda z nařízení vlády) a výši paušální zálohy 1. pásma ' +
+        '(Informace FS k institutu paušální daně) — runbook R-15d v docs/02. ' +
+        'Bez toho aplikace u toho roku poctivě říká „nevím“ a odhad daně vychází ' +
+        'jen nižší sazbou.',
+    ).toBe(true);
+  });
+
+  it('rok za registrem nesmí nést recyklovaná čísla loňska', () => {
+    // kdyby se konfigurace odvodila recyklací, spočítala by se daň loňskou
+    // hranicí a započetly by se loňské zálohy — obojí mlčky (K1-01)
+    const config = configForYear(LAST_CONFIGURED_TAX_YEAR + 1);
+    expect(config.progressiveThreshold).toBeNull();
+    expect(config.flatTaxAdvance ?? null).toBeNull();
+  });
+
+  it('každý rok v registru nese obě vyhlašovaná čísla', () => {
+    for (const [rok, config] of Object.entries(TAX_YEAR_CONFIGS)) {
+      expect(config.progressiveThreshold, `rok ${rok} nemá hranici 23 %`).not.toBeNull();
+      expect(config.flatTaxAdvance ?? null, `rok ${rok} nemá paušální zálohu`).not.toBeNull();
+      expect(Number(rok), `konfigurace roku ${rok} nese jiný rok`).toBe(config.year);
+    }
   });
 });
 

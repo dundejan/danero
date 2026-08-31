@@ -4,6 +4,7 @@ import { PortfolioView } from '@/components/views/portfolio-view';
 import { getDb } from '@/db';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
+import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
 import {
   availableYears,
   dailyRatesForProfile,
@@ -49,8 +50,10 @@ export default async function PortfolioPage({
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const currentYear = Number(today.slice(0, 4));
+  // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
+  const instant = now();
+  const today = todayInPrague(instant);
+  const currentYear = currentTaxYear(instant);
   const years = availableYears(txs, currentYear);
   const rok = firstParam((await searchParams).rok);
   const year = resolveTaxYear(rok, years, currentYear, '/portfolio');

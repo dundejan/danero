@@ -4,6 +4,7 @@ import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
 import { Card, CardTitle } from '@/components/ui/card';
+import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { ViewSwitch } from '@/components/view-switch';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
@@ -156,6 +157,10 @@ export function OverviewView({
           </p>
         </div>
       </header>
+
+      {/* R-15e: rok, pro který stát ještě nevyhlásil čísla (typicky hned
+          1. ledna) — vysvětlení musí být nad odhadem daně, ne pod ním */}
+      <TaxYearConfigNotice year={year} pausal={result.limits.flatTax50k.applicable} />
 
       {filingLimit && (
         <Card className="border-l-4 border-l-ruzova">
