@@ -445,7 +445,11 @@ export function ReportView({
           <p className="text-sm text-inkoust-tlumeny">
             Prodej vypůjčených akcií se počítá do stejného druhu příjmu jako běžné prodeje —
             čerpá tedy i osvobození do 100 000 Kč. Tržbu daníme v roce prodeje, zpětný nákup
-            je výdaj v roce, kdy ho zaplatíš.
+            je výdaj v roce, kdy ho zaplatíš. Zpětné nákupy párujeme s otevřeními od
+            nejstaršího. Značka „prodej nakrátko“ jde jen z výpisů Interactive Brokers
+            a Tastytrade (a z univerzální šablony) — u výpisů nahraných před 13. 8. 2026
+            v datech chybí, takže je potřeba ve Zdrojích dat vrátit import zpět a nahrát
+            znovu.
           </p>
           <ScrollArea label={`Prodeje nakrátko v roce ${year}`}>
             <table aria-label="Rozpis prodejů nakrátko" className="w-full text-sm">

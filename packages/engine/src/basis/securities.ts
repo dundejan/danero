@@ -63,9 +63,8 @@ export interface SecuritiesResult {
   /**
    * R-13k: zdanitelný příjem z prodejů NAKRÁTKO — vstup do limitů 50k / 20k /
    * 50k. Je nula, když celý druh padne pod stovku (osvobozený příjem limity
-   * nečerpá, R-08c), a schválně se bere z `incomeCzk`, ne z hrubé tržby:
-   * při `shortSaleIncomeOnSale=false` je `proceedsCzk` tržba prodeje, kdežto
-   * zdaňuje se až kladný rozdíl při uzavření — limit by se nadhodnotil.
+   * nečerpá, R-08c), a bere se z `incomeCzk`, tedy z částky, kterou druh
+   * v daném roce skutečně zdaňuje.
    */
   taxableShortIncomeCzk: Money;
   disposals: DisposalReport[];

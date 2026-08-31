@@ -64,7 +64,6 @@ const ProfileFormSchema = z.object({
   'derivaty-vydaje': z.enum(['restrictive', 'perType']),
   'emt-casovy-test': z.enum(['safe', 'lenient']),
   'vratka-kapitalu': z.enum(['safe', 'lenient']),
-  'short-prijem': z.enum(['safe', 'lenient']),
 });
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
@@ -92,7 +91,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     derivativesExpensesPerType: parsed.data['derivaty-vydaje'] === 'perType',
     emtTimeTestExempt: parsed.data['emt-casovy-test'] === 'lenient',
     returnOfCapitalReducesBasis: parsed.data['vratka-kapitalu'] === 'lenient',
-    shortSaleIncomeOnSale: parsed.data['short-prijem'] === 'safe',
     updatedAt: new Date(),
   };
 

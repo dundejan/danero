@@ -290,8 +290,8 @@ export function analyzeTaxYear(input: EngineInput): TaxYearResult {
   };
   // shorty musí být spočítané dřív než poměr stropu — jejich tržby patří do
   // téhož poolu 100k jako běžné prodeje CP
-  const shortSales = computeShortSales(shortSaleTxs, year, fx, options, warnings);
-  warnOpenShorts(shortSales, year, options, warnings);
+  const shortSales = computeShortSales(shortSaleTxs, year, fx, warnings);
+  warnOpenShorts(shortSales, year, warnings);
   const capRatios = resolveSharedCapRatios(
     config,
     { SECURITIES: securitiesPrepared, CRYPTO: cryptoPrepared },

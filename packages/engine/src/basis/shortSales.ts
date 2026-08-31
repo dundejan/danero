@@ -1,5 +1,4 @@
 import { sum, ZERO, type IsoDate, type Money, type Transaction } from '@danero/shared';
-import type { EngineOptions } from '../config/options';
 import { czDateText } from '../format';
 import type { FxConverter } from '../fx/fx';
 import { inferSettlementDate } from '../ledger/ledger';
@@ -21,14 +20,15 @@ import { WarningCollector } from '../warnings';
  * v datech nerozeznatelný od neúplné historie (`NEGATIVE_POSITION`) a splést
  * si to lze oběma směry.
  *
- * Hotovostní princip (R-13b/c) ve dvou režimech podle přepínače
- * `shortSaleIncomeOnSale`:
- *  - `true` (default, bezpečný): příjem = tržba z prodeje v roce jeho
- *    vypořádání; zpětný nákup je výdaj v roce SVÉHO vypořádání. Short přes
- *    přelom roku tak zdaní hrubou tržbu bez výdaje a lednový nákup nemusí mít
- *    proti čemu jít (§ 10/4, R-13j) — na to se varuje.
- *  - `false`: příjem vzniká až uzavřením pozice a daní se jen kladný rozdíl
- *    (tržba − zpětný nákup), obdobně jako u MARGIN derivátů.
+ * Hotovostní princip (R-13b/c) má JEDINÝ režim: příjem = tržba z prodeje
+ * v roce jeho vypořádání, zpětný nákup je výdaj v roce SVÉHO vypořádání.
+ * Short přes přelom roku tak zdaní hrubou tržbu bez výdaje a lednový nákup
+ * nemusí mít proti čemu jít (§ 10/4, R-13j) — na to se varuje.
+ *
+ * Mírnější výklad („příjem až uzavřením pozice“) se do 23. 8. 2026 dal zapnout
+ * přepínačem `shortSaleIncomeOnSale`. Byl zrušen: R-13b sám říká, že se
+ * objevuje jen v diskusích, které short zaměňují s CFD, „jako oporu ho brát
+ * nelze“. Popsaný v docs/02 zůstává, nabízený není.
  */
 
 export interface ShortSaleItem {
@@ -40,7 +40,7 @@ export interface ShortSaleItem {
   quantity: Money;
   /** Část výdaje připadající na tržbu zdaněnou v dřívějším roce (R-13c). */
   priorYearExpenseCzk: Money;
-  /** Kladné přijaté plnění v CZK (u pokrytí 0, není-li zvolen výklad „příjem až uzavřením“). */
+  /** Kladné přijaté plnění v CZK (u pokrytí vždy 0 — příjem plyne prodejem, R-13b). */
   incomeCzk: Money;
   /** Výdaj druhu v CZK (zpětný nákup + poplatky). */
   expenseCzk: Money;
@@ -92,11 +92,9 @@ export const isShortSaleTrade = (tx: Transaction): tx is Trade =>
   (tx.type === 'SELL' && tx.positionEffect === 'OPEN') ||
   (tx.type === 'BUY' && tx.positionEffect === 'CLOSE');
 
+/** Otevřený prodej nakrátko čekající na pokrytí — fronta FIFO (R-13c). */
 interface OpenLot {
-  quantity: Money;
   remaining: Money;
-  /** Tržba za kus v měně obchodu (bez poplatku). */
-  proceedsPerShare: Money;
   currency: string;
   date: IsoDate;
 }
@@ -105,7 +103,6 @@ export function computeShortSales(
   transactions: Transaction[],
   year: number,
   fx: FxConverter,
-  options: EngineOptions,
   warnings: WarningCollector,
 ): ShortSalesResult {
   const trades = transactions.filter(isShortSaleTrade);
@@ -143,18 +140,11 @@ export function computeShortSales(
     if (tx.type === 'SELL') {
       const proceedsCcy = tx.quantity.mul(tx.pricePerShare);
       const queue = open.get(tx.isin) ?? [];
-      queue.push({
-        quantity: tx.quantity,
-        remaining: tx.quantity,
-        proceedsPerShare: tx.pricePerShare,
-        currency: tx.currency,
-        date,
-      });
+      queue.push({ remaining: tx.quantity, currency: tx.currency, date });
       open.set(tx.isin, queue);
       if (txYear !== year) continue;
-      // Prodejní poplatek je výdaj na dosažení příjmu (§ 10/5) — uplatní se
-      // hned, ať už se příjem daní teď, nebo až uzavřením pozice.
-      const expense = feeCzk(tx, date);
+      // Komise při OTEVŘENÍ je výdaj na dosažení příjmu (§ 10/5) a uplatní se
+      // v roce prodeje — tedy proti tržbě, kterou tentýž rok zdaňuje.
       items.push({
         isin: tx.isin,
         date,
@@ -162,10 +152,8 @@ export function computeShortSales(
         kind: 'SHORT_OPEN',
         quantity: tx.quantity,
         priorYearExpenseCzk: ZERO,
-        incomeCzk: options.shortSaleIncomeOnSale
-          ? fx.toCzk(proceedsCcy, tx.currency, date)
-          : ZERO,
-        expenseCzk: expense,
+        incomeCzk: fx.toCzk(proceedsCcy, tx.currency, date),
+        expenseCzk: feeCzk(tx, date),
       });
       continue;
     }
@@ -173,14 +161,10 @@ export function computeShortSales(
     // BUY + CLOSE: pokrytí shortu, FIFO proti otevřeným prodejům
     const queue = open.get(tx.isin) ?? [];
     let toCover = tx.quantity;
-    let coveredProceedsCzk = ZERO;
     let priorYearQuantity = ZERO;
     while (toCover.gt(0) && queue.length > 0) {
       const lot = queue[0]!;
       const take = lot.remaining.lt(toCover) ? lot.remaining : toCover;
-      coveredProceedsCzk = coveredProceedsCzk.plus(
-        fx.toCzk(take.mul(lot.proceedsPerShare), lot.currency, lot.date),
-      );
       // tržba z dřívějšího roku se už zdanila — její výdaj nesmí spadnout pod
       // letošní osvobození stovkou (viz priorYearIncomeExpensesCzk)
       if (Number(lot.date.slice(0, 4)) < year) priorYearQuantity = priorYearQuantity.plus(take);
@@ -206,30 +190,19 @@ export function computeShortSales(
 
     const costCcy = tx.quantity.mul(tx.pricePerShare);
     const costCzk = fx.toCzk(costCcy, tx.currency, date).plus(feeCzk(tx, date));
+    // R-13c: výdaj se mezi roky dělí POMĚREM KUSŮ, ne cenou. Kolik kusů
+    // tenhle zpětný nákup pokryl z loňských otevření, tolik z jeho ceny patří
+    // k tržbě, která se zdanila dřív.
     const priorShare = tx.quantity.gt(0) ? priorYearQuantity.div(tx.quantity) : ZERO;
-    // Výklad „příjem až uzavřením“ (R-12f u MARGIN derivátů dělá totéž):
-    // kladný rozdíl je příjem druhu, ZÁPORNÝ je jeho výdaj. Uříznout ztrátu
-    // na nulu už tady by zrušilo kompenzaci uvnitř druhu podle § 10/4 —
-    // ztrátový short by se pak nedal započíst proti ziskovému prodeji
-    // a „výhodnější“ výklad by vyšel dráž než bezpečný default.
-    const closeResult = coveredProceedsCzk.minus(costCzk);
     items.push({
       isin: tx.isin,
       date,
       year: txYear,
       kind: 'SHORT_COVER',
       quantity: tx.quantity,
-      priorYearExpenseCzk: options.shortSaleIncomeOnSale ? costCzk.mul(priorShare) : ZERO,
-      incomeCzk: options.shortSaleIncomeOnSale
-        ? ZERO
-        : closeResult.gt(0)
-          ? closeResult
-          : ZERO,
-      expenseCzk: options.shortSaleIncomeOnSale
-        ? costCzk
-        : closeResult.lt(0)
-          ? closeResult.abs()
-          : ZERO,
+      priorYearExpenseCzk: costCzk.mul(priorShare),
+      incomeCzk: ZERO,
+      expenseCzk: costCzk,
     });
   }
 
@@ -250,15 +223,9 @@ export function computeShortSales(
   );
   return {
     items,
-    // Do poolu 100k patří HRUBÁ tržba prodeje nakrátko bez ohledu na to, ve
-    // kterém roce se daní příjem — pool je o „úhrnu příjmů z úplatného převodu“.
-    proceedsCzk: options.shortSaleIncomeOnSale
-      ? proceedsCzk
-      : sum(
-          sorted
-            .filter((tx) => tx.type === 'SELL' && Number(dateOf(tx).slice(0, 4)) === year)
-            .map((tx) => fx.toCzk(tx.quantity.mul(tx.pricePerShare), tx.currency, dateOf(tx))),
-        ),
+    // Do poolu 100k patří HRUBÁ tržba prodeje nakrátko — pool je o „úhrnu
+    // příjmů z úplatného převodu“ (R-13e).
+    proceedsCzk,
     incomeCzk: sum(items.map((item) => item.incomeCzk)),
     expensesCzk: sum(items.map((item) => item.expenseCzk)),
     priorYearIncomeExpensesCzk: sum(items.map((item) => item.priorYearExpenseCzk)),
@@ -274,16 +241,13 @@ export function computeShortSales(
 export function warnOpenShorts(
   result: ShortSalesResult,
   year: number,
-  options: EngineOptions,
   warnings: WarningCollector,
 ): void {
   for (const position of result.openAtYearEnd) {
     warnings.add(
       'SHORT_OPEN_AT_YEAR_END',
       'WARNING',
-      options.shortSaleIncomeOnSale
-        ? `Prodej nakrátko ${position.isin} (${position.quantity.toString()} ks, otevřeno ${czDateText(position.openedAt)}) je k 31. 12. ${year} pořád otevřený. Tržbu z něj daníme už letos, ale zpětný nákup bude výdaj až v roce, kdy ho zaplatíš — a když proti němu tehdy nebudou příjmy z prodeje cenných papírů, propadne (§ 10/4). Zvaž uzavření pozice ještě letos, nebo si to prober s poradcem.`
-        : `Prodej nakrátko ${position.isin} (${position.quantity.toString()} ks, otevřeno ${czDateText(position.openedAt)}) je k 31. 12. ${year} pořád otevřený. Podle zvoleného výkladu ho zdaníme až uzavřením pozice — bezpečnější výklad ho daní už teď.`,
+      `Prodej nakrátko ${position.isin} (${position.quantity.toString()} ks, otevřeno ${czDateText(position.openedAt)}) je k 31. 12. ${year} pořád otevřený. Tržbu z něj daníme už letos, ale zpětný nákup bude výdaj až v roce, kdy ho zaplatíš — a když proti němu tehdy nebudou příjmy z prodeje cenných papírů, propadne (§ 10/4). Zvaž uzavření pozice ještě letos, nebo si to prober s poradcem.`,
       { isin: position.isin },
     );
   }

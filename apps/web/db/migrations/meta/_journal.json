@@ -288,6 +288,13 @@
       "when": 1788187187380,
       "tag": "0040_failed_import_content_erasure",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788190370476,
+      "tag": "0041_drop_short_sale_income_option",
+      "breakpoints": true
     }
   ]
 }

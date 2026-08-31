@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { EngineOptions } from '../src';
 import { buy, CFG_2025, hasWarning, run, sell } from './helpers';
 
 /**
@@ -96,13 +97,16 @@ describe('R-13j: short otevřený přes konec roku', () => {
     expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(true);
   });
 
-  it('výhodnější výklad (příjem až uzavřením) letos nedaní nic', () => {
-    const result = run(prescasovy, { options: { shortSaleIncomeOnSale: false } });
-    expect(result.securities.taxableIncomeCzk.toString()).toBe('0');
-    expect(result.securities.base10Czk.toString()).toBe('0');
-    // pool 100k ale tržba čerpá tak jako tak — je to úplatný převod CP (R-13e)
+  it('mírnější výklad se nedá vrátit ani zvenčí — přepínač je zrušený', () => {
+    // R-13b: volba `shortSaleIncomeOnSale` skončila 23. 8. 2026 (opačný výklad
+    // nemá oporu). Klíč v typu už neexistuje, ale kdyby se větev v enginu
+    // vrátila, tenhle vstup by letos zdanil 0 místo 300 000 Kč.
+    const result = run(prescasovy, {
+      options: { shortSaleIncomeOnSale: false } as Partial<EngineOptions>,
+    });
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('300000');
+    expect(result.securities.base10Czk.toString()).toBe('300000');
     expect(result.securities.pool100kCzk.toString()).toBe('300000');
-    expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(true);
   });
 
   it('rok pokrytí: výdaj bez příjmu druhu propadá (§ 10/4)', () => {
@@ -135,29 +139,17 @@ describe('R-13: pořadí uvnitř dne a kompenzace v druhu', () => {
     expect(result.securities.base10Czk.toString()).toBe('100000');
   });
 
-  it('intradenní short vychází stejně i při výkladu „příjem až uzavřením“', () => {
-    const result = run(
-      [
-        shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-03', pricePerShare: '3000' }),
-        shortCover({ tradeDate: '2025-03-03', settlementDate: '2025-03-03', pricePerShare: '2000' }),
-      ],
-      { options: { shortSaleIncomeOnSale: false } },
-    );
-    expect(result.securities.base10Czk.toString()).toBe('100000');
-  });
-
-  it('ztrátový short se započte proti ziskovému prodeji i ve výhodnějším výkladu', () => {
-    // „Výhodnější“ výklad nesmí vyjít dráž než bezpečný default: uříznutím
-    // ztráty na nulu už u jednotlivého obchodu by zmizela kompenzace § 10/4.
-    const transakce = [
+  it('ztrátový short se započte proti ziskovému prodeji uvnitř druhu', () => {
+    // Uříznout ztrátu shortu na nulu už u jednotlivého obchodu by zrušilo
+    // kompenzaci uvnitř druhu podle § 10/4 (R-13i).
+    const result = run([
       buy({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '1000', tradeDate: '2024-01-10' }),
       sell({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '2800', tradeDate: '2025-06-02', settlementDate: '2025-06-03' }),
       shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-04', pricePerShare: '2000' }),
       shortCover({ tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '3000' }),
-    ];
-    const bezpecny = run(transakce);
-    const vyhodnejsi = run(transakce, { options: { shortSaleIncomeOnSale: false } });
-    expect(vyhodnejsi.securities.base10Czk.lte(bezpecny.securities.base10Czk)).toBe(true);
+    ]);
+    // long: 280 000 − 100 000 = +180 000; short: 200 000 − 300 000 = −100 000
+    expect(result.securities.base10Czk.toString()).toBe('80000');
   });
 
   it('pokrytí z dřívějšího roku nehlásí chybu v letošním přiznání', () => {
@@ -166,6 +158,74 @@ describe('R-13: pořadí uvnitř dne a kompenzace v druhu', () => {
       shortCover({ tradeDate: '2024-05-05', settlementDate: '2024-05-06', pricePerShare: '2000' }),
     ]);
     expect(hasWarning(result, 'SHORT_COVER_WITHOUT_OPEN')).toBe(false);
+  });
+});
+
+/**
+ * R-13c mechanika, kterou dřív popisoval jen kód: párování FIFO, dělení výdaje
+ * mezi roky poměrem KUSŮ a komise při otevření.
+ */
+describe('R-13c: párování pokrytí, dělení výdaje mezi roky a komise', () => {
+  it('pokrytí spotřebuje NEJSTARŠÍ otevření (FIFO), ne to poslední', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-03', pricePerShare: '3000' }),
+      shortOpen({ tradeDate: '2025-06-03', settlementDate: '2025-06-03', pricePerShare: '1000' }),
+      shortCover({ tradeDate: '2025-09-05', settlementDate: '2025-09-05', pricePerShare: '2000' }),
+    ]);
+    // 100 ks pokryto → k 31. 12. zbývá druhé otevření; při LIFO by tu leželo první
+    expect(result.shortSales.openAtYearEnd).toHaveLength(1);
+    expect(result.shortSales.openAtYearEnd[0]!.openedAt).toBe('2025-06-03');
+    expect(result.shortSales.openAtYearEnd[0]!.quantity.toString()).toBe('100');
+  });
+
+  it('jedno pokrytí přes dva roky rozdělí výdaj poměrem kusů', () => {
+    const result = run([
+      // 60 ks otevřeno loni (jejich tržba se zdanila v 2024), 40 ks letos
+      shortOpen({ quantity: '60', tradeDate: '2024-11-20', settlementDate: '2024-11-21', pricePerShare: '3000' }),
+      shortOpen({ quantity: '40', tradeDate: '2025-02-10', settlementDate: '2025-02-11', pricePerShare: '3000' }),
+      shortCover({ quantity: '100', tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '2000' }),
+    ]);
+    expect(result.shortSales.expensesCzk.toString()).toBe('200000');
+    // 60 ze 100 ks patří k loňské tržbě → 60 % ceny zpětného nákupu
+    expect(result.shortSales.priorYearIncomeExpensesCzk.toString()).toBe('120000');
+  });
+
+  it('v osvobozeném roce zůstane jen výdaj patřící k loni zdaněné tržbě', () => {
+    const result = run([
+      shortOpen({ quantity: '60', tradeDate: '2024-11-20', settlementDate: '2024-11-21', pricePerShare: '3000' }),
+      // letošní tržba 30 000 Kč → celý druh padne pod stovku (R-13e)
+      shortOpen({ quantity: '10', tradeDate: '2025-02-10', settlementDate: '2025-02-11', pricePerShare: '3000' }),
+      shortCover({ quantity: '70', tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '2000' }),
+    ]);
+    expect(result.securities.exemptUnder100k).toBe(true);
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('0');
+    // 140 000 × 60/70 — výdaj k osvobozené letošní tržbě se neuplatní
+    expect(result.securities.expensesCzk.toString()).toBe('120000');
+  });
+
+  it('komise při otevření je výdaj roku PRODEJE, ne roku pokrytí', () => {
+    const prescasovy = [
+      shortOpen({
+        tradeDate: '2025-11-20',
+        settlementDate: '2025-11-21',
+        pricePerShare: '3000',
+        fee: { amount: '500', currency: 'CZK' },
+      }),
+      shortCover({
+        tradeDate: '2026-01-15',
+        settlementDate: '2026-01-16',
+        pricePerShare: '2000',
+        fee: { amount: '400', currency: 'CZK' },
+      }),
+    ];
+    const rokProdeje = run(prescasovy);
+    expect(rokProdeje.securities.taxableIncomeCzk.toString()).toBe('300000');
+    expect(rokProdeje.securities.expensesCzk.toString()).toBe('500');
+    expect(rokProdeje.securities.base10Czk.toString()).toBe('299500');
+
+    // rok pokrytí nese jen cenu zpětného nákupu a jeho vlastní komisi
+    const rokPokryti = run(prescasovy, { config: { ...CFG_2025, year: 2026 } });
+    expect(rokPokryti.securities.expensesCzk.toString()).toBe('200400');
   });
 });
 

@@ -917,12 +917,54 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   **Jistota nízká.** Opačný výklad (příjem až uzavřením pozice) se objevuje
   jen v diskusích, a to v takových, které short zaměňují s CFD a odvolávají se
   na osvobození, které na písmeno b) nedopadá — jako oporu ho brát nelze.
+
+  ⚠️ **Volba to není a od 23. 8. 2026 už ani není nabízená.** Do té doby šla
+  mírnější varianta zapnout přepínačem `shortSaleIncomeOnSale` (sloupec
+  `short_sale_income_on_sale`, migrace 0037). Byl zrušen — a přesně z důvodu,
+  který stojí o dva řádky výš: pravidlo samo říká, že opačný výklad **oporu
+  nemá**, takže nabízet ho vedle bezpečného defaultu znamenalo nabízet
+  variantu, kterou tentýž dokument odmítá. Její mechanika (příjem = kladný
+  rozdíl při uzavření, ztráta jako výdaj druhu) navíc žila jen v enginu:
+  neprošla žádnou referenční implementací. Sloupec zahodila migrace 0041,
+  uložená hodnota `false` se do výpočtu už nedostane. Varianta zůstává
+  **popsaná** tady v R-13b, **nabízená** není.
 - **R-13c Výdaj**: nabývací cenou je **zpětný nákup** (§ 10/5: „cena, za kterou
   poplatník věc prokazatelně nabyl“ — zákon nikde nežádá, aby nabytí předcházelo
   převodu), plus komise brokera („výdaje související s uskutečněním úplatného
   převodu“). Uplatní se v roce zaplacení (hotovostně). **Jistota střední**
   (nabývací cena) / **nízká** (rok uplatnění: § 5/1 páruje výdaje s příjmy,
   hotovostní logika § 10 svědčí pro rok platby; rozpor nikdo neřeší).
+
+  **R-13c-1 Párování pokrytí je FIFO.** Zpětný nákup se páruje s otevřenými
+  prodeji nakrátko **od nejstaršího** — fronta per ISIN, plnění po kusech,
+  částečné pokrytí ubere z prvního otevření a zbytek nechá ležet. Volba
+  `matchingMethod` (R-05c) se sem **nepropisuje**: ta určuje, které nabyté kusy
+  spotřebuje prodej, kdežto tady jde o opačný pohyb a short žádný lot
+  nespotřebovává. Uvnitř téhož dne se otevření řadí PŘED pokrytí (u shortu je
+  otevřením prodej, takže sdílená priorita událostí platí obráceně); při shodě
+  data i směru rozhoduje id transakce, kvůli determinismu. Pokrytí, na které
+  otevření nezbylo, je díra v historii, ne obchod navíc — hlásí se chybou
+  `SHORT_COVER_WITHOUT_OPEN`. Párování ovlivňuje **který** prodej zůstane
+  otevřený k 31. 12. (R-13j) a kolik výdaje připadne na dřívější rok
+  (R-13c-2); na výši letošního příjmu vliv nemá, ten plyne prodejem (R-13b).
+
+  **R-13c-2 Výdaj pokrytí přes přelom roku se dělí POMĚREM KUSŮ.** Pokryje-li
+  jeden zpětný nákup současně otevření z dřívějšího roku i z letoška, rozdělí
+  se jeho cena (nákup + komise) v poměru `kusy z dřívějších otevření / kusy
+  celého pokrytí`. Rozděluje se tedy podle množství, ne podle prodejní ceny
+  jednotlivých otevření — kusy jsou zastupitelné a zpětný nákup má jednu cenu
+  za kus. Celý výdaj pokrytí patří do roku jeho vypořádání; ta poměrná část je
+  navíc **zvlášť vedená** (`priorYearIncomeExpensesCzk`), protože rozhoduje
+  v jediné situaci: když letošní úhrn prodejů CP padne pod 100 000 Kč (R-13e),
+  letošní tržby se nedaní a jejich výdaje se neuplatní — ale výdaj k tržbě,
+  která se zdanila loni, zůstává, jeho příjem osvobozený nebyl. Že ho pak
+  nejspíš srazí § 10/4, je jiná věc; uživatel to má vidět v číslech.
+
+  **R-13c-3 Komise při otevření je výdaj roku PRODEJE.** Poplatek za otevírací
+  prodej je „výdaj související s uskutečněním úplatného převodu“ (§ 10/5)
+  a uplatní se v roce, kdy se tržba zdaňuje — ne až s pokrytím. U shortu přes
+  přelom roku je to tedy jediný výdaj proti hrubé tržbě (R-13j). Komise
+  zpětného nákupu jde naopak k jeho ceně, tedy do roku pokrytí.
 - **R-13d Osvobození — časový test NEDOPADÁ**: § 4/1 u) žádá dobu mezi nabytím
   a úplatným převodem delší než 3 roky; u shortu leží nabytí bezprostředně před
   prodejem (zápůjčka), resp. zpětný nákup až po něm. Test **nelze splnit
@@ -977,11 +1019,11 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   `exemptUnder100k`, ne na hrubou tržbu: jinak by u drobného investora
   s prodejem za 30 000 Kč hlásil „prolomený limit", který ve skutečnosti nenastal.
 
-  **Do limitu jde `shortSales.incomeCzk`, ne `proceedsCzk`.** Při výchozím
-  nastavení jsou obě čísla stejná; jenže `proceedsCzk` je hrubá tržba prodeje,
-  kdežto `incomeCzk` je částka, kterou druh v daném roce skutečně zdaňuje.
-  Použít tržbu by limit nadhodnotilo. **Jistota vysoká** (§ 7a, § 38g,
-  § 4/1 t) v návaznosti na R-13a).
+  **Do limitu jde `securities.taxableShortIncomeCzk`, ne hrubá tržba.** Je to
+  `shortSales.incomeCzk` zúžený o osvobození: v osvobozeném roce nula, jinak
+  příjem, který druh ten rok skutečně zdaňuje. Počítá se tam, kde je
+  `exemptUnder100k` známé, ne až v `limits.ts`. **Jistota vysoká** (§ 7a,
+  § 38g, § 4/1 t) v návaznosti na R-13a).
 
   ⚠️ Do 23. 8. 2026 engine tržby ze shortu do žádného z těch tří limitů
   nepočítal — a odporoval si sám: u téhož portfolia vyčíslil daň z § 10 na
@@ -1082,7 +1124,7 @@ vzor 7 (kontrolní vzorce oddílu 7); 77 podání na zkušební podatelnu EPO
 | `derivativesExpensesPerType` | `false` (restriktivní) | R-12i |
 | `emtTimeTestExempt` | `false` (EMT zdanit) | R-10g |
 | `returnOfCapitalReducesBasis` | `false` (vratku kapitálu zdanit jako dividendu) | R-07h |
-| `shortSaleIncomeOnSale` | `true` (příjem už prodejem — dřívější zdanění) | R-13b |
+| okamžik příjmu u shortu (bez přepínače) | vždy prodejem — opačný výklad podle R-13b oporu nemá, takže se nenabízí; volba `shortSaleIncomeOnSale` zrušena 23. 8. 2026 (migrace 0041) | R-13b |
 
 Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace se tiskne do reportu (průkaznost).
 

@@ -30,7 +30,6 @@ const VALUES = {
   derivativesExpensesPerType: false,
   emtTimeTestExempt: false,
   returnOfCapitalReducesBasis: false,
-  shortSaleIncomeOnSale: true,
   updatedAt: new Date(),
 };
 

@@ -85,7 +85,6 @@ function demoProfile(): ProfileRow {
     derivativesExpensesPerType: false,
     emtTimeTestExempt: false,
     returnOfCapitalReducesBasis: false,
-    shortSaleIncomeOnSale: true,
     createdAt: DEMO_PROFILE_AT,
     updatedAt: DEMO_PROFILE_AT,
   };
