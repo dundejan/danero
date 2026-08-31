@@ -567,10 +567,31 @@ export async function promoCodeFrom(session: Stripe.Checkout.Session): Promise<s
   }
 }
 
-/** Konec zaplaceného období ze Stripe předplatného (vteřiny → Date). */
+/**
+ * Konec zaplaceného období ze Stripe předplatného (vteřiny → Date).
+ *
+ * K5-04: pole se ve verzi API `2025-03-31.basil` přestěhovalo z předplatného
+ * do jeho položek. Odchozí dotazy jdou verzí ze SDK, ale webhookový endpoint
+ * si ve Stripe drží VLASTNÍ `api_version` (a založený na starší doručuje starý
+ * tvar) — přesně to se 9. 8. 2026 chytilo těsně před první ostrou platbou.
+ * Čteme proto oba tvary.
+ *
+ * A když konec období nenese ani jeden, NESMÍ z toho být `new Date(0)`: prázdné
+ * datum není mezi zaplacenými obdobími, takže by řádně platící zákazník přišel
+ * o přístup a nikde by nebylo vidět proč. Výjimka je hlasitá (webhook vrátí 500,
+ * Stripe doručí znovu, rekonciliace to zaloguje) a hlavně uložený stav
+ * nepřepíše ničím.
+ */
 function periodEnd(subscription: Stripe.Subscription): Date {
-  const item = subscription.items.data[0];
-  const seconds = item?.current_period_end ?? 0;
+  const seconds =
+    subscription.items?.data?.[0]?.current_period_end ??
+    // tvar do verze API 2025-03-31.basil
+    (subscription as unknown as { current_period_end?: number }).current_period_end;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error(
+      `Předplatné ${subscription.id} nemá konec zaplaceného období — neznámý tvar odpovědi Stripe. Zkontroluj verzi API webhookového endpointu: node scripts/stripe-webhook.mjs check`,
+    );
+  }
   return new Date(seconds * 1000);
 }
 
@@ -729,13 +750,36 @@ async function restoreReportPurchase(db: Db, paymentIntentId: string | null): Pr
       ),
     )
     .returning({ userId: reportPurchases.userId, taxYear: reportPurchases.taxYear });
-  logEvent(restored.length > 0 ? 'warn' : 'info', 'billing.report_purchase_restored', {
+  if (restored.length > 0) {
+    logEvent('warn', 'billing.report_purchase_restored', {
+      paymentIntentId,
+      restored: restored.length,
+      userId: restored[0]?.userId ?? null,
+      taxYear: restored[0]?.taxYear ?? null,
+    });
+    return restored.length;
+  }
+  // K5-05: „odemklo se 0 řádků" znamená dvě úplně jiné věci a jako `info` byly
+  // obě neviditelné. Reklamovaná platba za předplatné žádné podklady nemá
+  // (běžný stav, ticho), kdežto nákup, který tu leží zamčený z JINÉHO důvodu,
+  // je zaplacený rok, ke kterému se zákazník nedostane — to musí být vidět.
+  const [left] = await db
+    .select({
+      userId: reportPurchases.userId,
+      taxYear: reportPurchases.taxYear,
+      revokedAt: reportPurchases.revokedAt,
+      revokedReason: reportPurchases.revokedReason,
+    })
+    .from(reportPurchases)
+    .where(eq(reportPurchases.stripePaymentIntentId, paymentIntentId));
+  logEvent(left?.revokedAt ? 'warn' : 'info', 'billing.report_purchase_restored', {
     paymentIntentId,
-    restored: restored.length,
-    userId: restored[0]?.userId ?? null,
-    taxYear: restored[0]?.taxYear ?? null,
+    restored: 0,
+    userId: left?.userId ?? null,
+    taxYear: left?.taxYear ?? null,
+    revokedReason: left?.revokedReason ?? null,
   });
-  return restored.length;
+  return 0;
 }
 
 /** Ukončí zaplacené období předplatného daného zákazníka (chargeback, refundace). */
@@ -799,6 +843,45 @@ async function resyncSubscription(db: Db, customerId: string | null, at: Date): 
   } catch (error) {
     logEvent('error', 'billing.subscription_restore_failed', {
       customerId,
+      error: errorText(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Skončila reklamace v náš prospěch? `won` = banka dala za pravdu nám,
+ * `warning_closed` = dotaz banky (inquiry) se uzavřel bez chargebacku.
+ * V obou případech peníze zůstaly u nás, takže služba patří zákazníkovi.
+ */
+function endedInOurFavor(status: Stripe.Dispute.Status): boolean {
+  return status === 'won' || status === 'warning_closed';
+}
+
+/**
+ * Je reklamace ve Stripe už uzavřená v náš prospěch? (K5-05)
+ *
+ * `charge.dispute.closed` doručený PŘED `charge.dispute.created` nechal
+ * zaplacené podklady zamčené navždy: `restoreReportPurchase` neměl co odemknout
+ * (zamčeno ještě nebylo) a následné `created` nákup zamklo — a zpátky už ho
+ * nedostane ani rekonciliace (`recoverSession` vidí známou platbu,
+ * `recordReportPurchase` zamčený řádek nekřísí). U běžného chargebacku to trvá
+ * dny, ale „inquiry" (`warning_needs_response` → `warning_closed`) se vejde do
+ * hodin a Stripe doručuje tři dny — přeházet se to tedy dá.
+ *
+ * Ptáme se proto Stripu: payload události je snímek z okamžiku jejího vzniku,
+ * kdežto tohle je stav teď. Rozhoduje výsledek reklamace, ne pořadí doručení —
+ * a prohraná reklamace vrací `lost`, takže tudy nikdo přístup zadarmo
+ * nedostane. Nedovoláme-li se, zamykáme (peníze můžou být pryč).
+ */
+async function settledInOurFavor(dispute: Stripe.Dispute): Promise<boolean> {
+  if (endedInOurFavor(dispute.status)) return true;
+  try {
+    const current = await stripe().disputes.retrieve(dispute.id);
+    return endedInOurFavor(current.status);
+  } catch (error) {
+    logEvent('warn', 'billing.dispute_lookup_failed', {
+      disputeId: dispute.id,
       error: errorText(error),
     });
     return false;
@@ -979,6 +1062,17 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
 
     case 'charge.dispute.created': {
       const dispute = event.data.object;
+      // K5-05: událost o vzniku reklamace může dorazit až po jejím uzavření
+      // (Stripe doručuje tři dny a pořadí negarantuje). Zamykat kvůli sporu,
+      // který jsme mezitím vyhráli, znamená zamknout natrvalo — zpátky to
+      // nedostane nic. Rozhoduje stav reklamace ve Stripe, ne pořadí doručení.
+      if (await settledInOurFavor(dispute)) {
+        logEvent('warn', 'billing.dispute_created_after_close', {
+          disputeId: dispute.id,
+          paymentIntentId: idOf(dispute.payment_intent),
+        });
+        return `reklamace ${dispute.id} už skončila v náš prospěch: nezamykáme`;
+      }
       const removed = await revokeReportPurchase(db, idOf(dispute.payment_intent), 'dispute');
       // Reklamovaná platba za PODKLADY nesmí sebrat hlídání: `endSubscriptionPeriod`
       // hledá jen podle zákazníka, takže chargeback 490 Kč ukončil i samostatné
@@ -1001,7 +1095,7 @@ export async function applyStripeEvent(db: Db, event: Stripe.Event): Promise<str
     // (C-25). Bez tohohle by placený zákazník zůstal zamčený natrvalo.
     case 'charge.dispute.closed': {
       const dispute = event.data.object;
-      if (dispute.status !== 'won' && dispute.status !== 'warning_closed') {
+      if (!endedInOurFavor(dispute.status)) {
         logEvent('warn', 'billing.dispute_lost', { disputeId: dispute.id, status: dispute.status });
         return `reklamace ${dispute.id} skončila jako ${dispute.status}: zůstává zamčeno`;
       }

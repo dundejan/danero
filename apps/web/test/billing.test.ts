@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import StripeSdk from 'stripe';
 import type Stripe from 'stripe';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb } from '@/db';
@@ -16,7 +17,11 @@ import {
   stripeCustomerFor,
 } from '@/lib/billing';
 import { canGenerateReport, hasActiveSubscription } from '@/lib/entitlements';
-import { HANDLED_STRIPE_EVENTS } from '@/lib/stripe-events';
+import {
+  EXPECTED_STRIPE_API_VERSION,
+  HANDLED_STRIPE_EVENTS,
+  webhookApiVersionProblem,
+} from '@/lib/stripe-events';
 import { stripeSandboxInProduction } from '@/lib/stripe';
 
 /** Stripe klient je jediné, co v testech nahrazujeme — po síti nechodíme. */
@@ -26,6 +31,10 @@ const stripeState = {
   promotionCodes: new Map<string, string>(),
   /** ID platby → zákazník (dispute nese jen charge, ne zákazníka). */
   charges: new Map<string, { customer: string | null }>(),
+  /** ID reklamace → její stav ve Stripe teď (payload události je jen snímek). */
+  disputes: new Map<string, string>(),
+  /** Nedostupné Stripe při dotazu na reklamaci. */
+  disputeLookupFails: false,
   /** Skutečný stav ve Stripe pro rekonciliaci. */
   subscriptionsByCustomer: new Map<string, Stripe.Subscription[]>(),
   subscriptionsById: new Map<string, Stripe.Subscription>(),
@@ -73,6 +82,14 @@ vi.mock('@/lib/stripe', async (importOriginal) => ({
         const charge = stripeState.charges.get(id);
         if (!charge) throw new Error('No such charge');
         return charge;
+      },
+    },
+    disputes: {
+      // čerstvě vzniklá reklamace čeká na naši reakci — to je výchozí stav,
+      // ve kterém `charge.dispute.created` opravdu chodí
+      retrieve: async (id: string) => {
+        if (stripeState.disputeLookupFails) throw new Error('Stripe nedostupné');
+        return { id, status: stripeState.disputes.get(id) ?? 'needs_response' };
       },
     },
     checkout: {
@@ -179,6 +196,8 @@ afterEach(() => {
   delete process.env.DANERO_EMAIL_LOG;
   stripeState.promotionCodes.clear();
   stripeState.charges.clear();
+  stripeState.disputes.clear();
+  stripeState.disputeLookupFails = false;
   stripeState.subscriptionsByCustomer.clear();
   stripeState.subscriptionsById.clear();
   stripeState.upcomingInvoices.clear();
@@ -1674,6 +1693,140 @@ describe('e-maily o platbách se neposílají dvakrát (K5)', () => {
       sent: 1,
     });
     expect(emails().filter((m) => m.subject.includes('obnoví'))).toHaveLength(1);
+  });
+});
+
+/**
+ * K5-04: konec zaplaceného období se ve verzi API `2025-03-31.basil` přestěhoval
+ * z předplatného do jeho položek. Webhookový endpoint si svoji verzi drží ve
+ * Stripe zvlášť, takže může doručovat starší tvar — a `?? 0` z něj mlčky
+ * udělalo 1. 1. 1970, tedy zamčeného zákazníka, který řádně platí.
+ */
+describe('starší verze Stripe API nesmí zamknout platícího zákazníka (K5-04)', () => {
+  it('předplatné ve starším tvaru se přečte, ne aby zamklo přístup', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // tvar do 2025-03-31.basil: konec období na předplatném, ne na položce
+    await applyStripeEvent(
+      db,
+      subscriptionEvent({ items: { data: [{}] }, current_period_end: 1798761600 }),
+    );
+
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+  });
+
+  it('předplatné bez konce období selže nahlas a uložený stav nepřepíše', { timeout: 30_000 }, async () => {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+
+    // neznámý tvar odpovědi: prázdné datum by zamklo, a nikde by nebylo proč.
+    // Výjimka vrátí webhooku 500, Stripe doručí znovu a v databázi nezůstane nic.
+    await expect(applyStripeEvent(db, subscriptionEvent({ items: { data: [{}] } }))).rejects.toThrow(
+      /konec zaplaceného období/,
+    );
+    expect(await db.select().from(subscriptions)).toHaveLength(0);
+  });
+
+  it('očekávaná verze API sedí na verzi, kterou posílá SDK', () => {
+    // Povýšení SDK musí doprovodit srovnání `api_version` webhookového
+    // endpointu ve Stripe — jinak spolu přestanou mluvit potichu.
+    expect(EXPECTED_STRIPE_API_VERSION).toBe(StripeSdk.API_VERSION);
+  });
+
+  it('kontrola endpointu pozná starou i nepřipnutou verzi API', () => {
+    expect(webhookApiVersionProblem(EXPECTED_STRIPE_API_VERSION)).toBeNull();
+    expect(webhookApiVersionProblem('2025-10-29.clover')).toContain('current_period_end');
+    expect(webhookApiVersionProblem(null)).toContain('výchozí pro účet');
+  });
+});
+
+/**
+ * K5-05: `charge.dispute.closed` doručený PŘED `charge.dispute.created` nechal
+ * zaplacené podklady zamčené navždy — odemykat nebylo co a následné `created`
+ * nákup zamklo. Rozhodovat proto musí výsledek reklamace ve Stripe, ne pořadí
+ * doručení; prohraná reklamace zamyká dál.
+ */
+describe('přehozené pořadí událostí o reklamaci (K5-05)', () => {
+  async function dbSPodklady() {
+    process.env.DANERO_BILLING = 'stripe';
+    const db = await dbWithUser();
+    await applyStripeEvent(
+      db,
+      checkoutEvent({
+        client_reference_id: 'u1',
+        metadata: { userId: 'u1', taxYear: '2026' },
+        payment_intent: 'pi_1',
+        customer: 'cus_1',
+      }),
+    );
+    stripeState.charges.set('ch_1', { customer: 'cus_1' });
+    return db;
+  }
+
+  const disputeEvent = (type: string, status: string | undefined, created: number) =>
+    ({
+      type,
+      created,
+      data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: 'pi_1', status } },
+    }) as unknown as Stripe.Event;
+
+  it('vyhraná reklamace doručená před svým vznikem nechá podklady odemčené', { timeout: 30_000 }, async () => {
+    const db = await dbSPodklady();
+    stripeState.disputes.set('dp_1', 'won');
+
+    // u „inquiry" (warning_needs_response → warning_closed) se celý cyklus
+    // vejde do hodin, zatímco Stripe doručuje až tři dny
+    await applyStripeEvent(db, disputeEvent('charge.dispute.closed', 'won', 1_786_000_900));
+    const outcome = await applyStripeEvent(
+      db,
+      disputeEvent('charge.dispute.created', 'needs_response', 1_786_000_600),
+    );
+
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(true);
+    expect(outcome).toContain('nezamykáme');
+  });
+
+  it('vyhraná reklamace předplatného ho v přehozeném pořadí nezamkne', { timeout: 30_000 }, async () => {
+    const db = await dbSPodklady();
+    await applyStripeEvent(db, subscriptionEvent({}));
+    stripeState.subscriptionsByCustomer.set('cus_1', [stripeSubscription({})]);
+    // reklamace platby za předplatné: žádné podklady na ni navázané nejsou,
+    // takže by ji zamklo `endSubscriptionPeriod` — a to už nerozmrazí ani
+    // rekonciliace, protože přeskakuje řádky se zamčením od nás
+    stripeState.charges.set('ch_sub', { customer: 'cus_1' });
+    stripeState.disputes.set('dp_sub', 'warning_closed');
+    const subDispute = (type: string, status: string, created: number) =>
+      ({
+        type,
+        created,
+        data: { object: { id: 'dp_sub', charge: 'ch_sub', payment_intent: 'pi_sub', status } },
+      }) as unknown as Stripe.Event;
+
+    await applyStripeEvent(db, subDispute('charge.dispute.closed', 'warning_closed', 1_786_000_900));
+    await applyStripeEvent(db, subDispute('charge.dispute.created', 'warning_needs_response', 1_786_000_600));
+
+    expect(await hasActiveSubscription(db, 'u1', ROK_2026)).toBe(true);
+  });
+
+  it('prohraná reklamace zamyká, i když dorazí v přehozeném pořadí', { timeout: 30_000 }, async () => {
+    const db = await dbSPodklady();
+    stripeState.disputes.set('dp_1', 'lost');
+
+    // peníze jsou pryč — kdo reklamaci vyhrál proti nám, podklady nedostane
+    await applyStripeEvent(db, disputeEvent('charge.dispute.closed', 'lost', 1_786_000_900));
+    await applyStripeEvent(db, disputeEvent('charge.dispute.created', 'needs_response', 1_786_000_600));
+
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
+  });
+
+  it('nedostupné Stripe při vzniku reklamace zamyká — peníze můžou být pryč', { timeout: 30_000 }, async () => {
+    const db = await dbSPodklady();
+    stripeState.disputeLookupFails = true;
+
+    await applyStripeEvent(db, disputeEvent('charge.dispute.created', 'needs_response', 1_786_000_600));
+
+    expect(await canGenerateReport(db, 'u1', 2026, ROK_2026)).toBe(false);
   });
 });
 

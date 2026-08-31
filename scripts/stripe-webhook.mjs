@@ -1,5 +1,5 @@
 /**
- * Kontrola (a náprava) typů událostí na webhook endpointu ve Stripe.
+ * Kontrola (a náprava) webhook endpointu ve Stripe: typy událostí a verze API.
  *
  * Proč to existuje: endpoint byl přihlášený jen k pěti typům událostí, takže
  * `charge.refunded`, `charge.dispute.created` ani `checkout.session.async_payment_*`
@@ -7,14 +7,23 @@
  * jen jí Stripe nikdy nic neposlal. Z kódu ani z CI to nešlo poznat: rozchod byl
  * mezi repozitářem a konfigurací v cizí službě.
  *
+ * Druhá půlka téhož rozchodu je `api_version` endpointu (K5-04): drží si ji
+ * Stripe zvlášť, takže endpoint může doručovat starší tvar událostí, než jaký
+ * kód čte — a projeví se to až rozbitým předplatným platícího zákazníka.
+ *
  * Použití (z kořene repa):
  *   STRIPE_SECRET_KEY=… node scripts/stripe-webhook.mjs check
  *   STRIPE_SECRET_KEY=… node scripts/stripe-webhook.mjs fix
  *
  * `check` jen porovná a skončí nenulovým kódem při rozdílu (jde do CI i do
- * runbooku), `fix` doplní chybějící typy. Nic jiného na endpointu nemění.
+ * runbooku), `fix` doplní chybějící typy. Nic jiného na endpointu nemění —
+ * verzi API ostatně měnit ani nejde, Stripe ji bere jen při zakládání.
  */
-import { HANDLED_STRIPE_EVENTS } from '../apps/web/lib/stripe-events.ts';
+import {
+  EXPECTED_STRIPE_API_VERSION,
+  HANDLED_STRIPE_EVENTS,
+  webhookApiVersionProblem,
+} from '../apps/web/lib/stripe-events.ts';
 
 const KLIC = process.env.STRIPE_SECRET_KEY;
 if (!KLIC) {
@@ -50,6 +59,7 @@ if (endpointy.length === 0) {
 
 const ocekavane = new Set(HANDLED_STRIPE_EVENTS);
 let vseSedi = true;
+let missingEvents = false;
 
 for (const ep of endpointy) {
   const ma = new Set(ep.enabled_events);
@@ -61,12 +71,24 @@ for (const ep of endpointy) {
   console.log(`  přihlášeno k ${ma.size} typům, kód obsluhuje ${ocekavane.size}`);
   if (navic.length > 0) console.log(`  navíc (neškodí, jen se ignorují): ${navic.join(', ')}`);
 
+  // Verze API se dá nastavit JEN při zakládání endpointu, takže ji `fix`
+  // neopraví — je to na smazání a založení znovu (nebo na dashboard Stripu).
+  const apiVersionProblem = webhookApiVersionProblem(ep.api_version ?? null);
+  if (apiVersionProblem) {
+    vseSedi = false;
+    console.log(`  ✗ ${apiVersionProblem}`);
+    console.log('    → endpoint smaž a založ znovu se správnou verzí (fix ji doplnit neumí)');
+  } else {
+    console.log(`  ✓ verze API ${EXPECTED_STRIPE_API_VERSION} sedí na kód`);
+  }
+
   if (chybi.length === 0) {
     console.log('  ✓ všechny obsluhované typy dorazí');
     continue;
   }
 
   vseSedi = false;
+  missingEvents = true;
   console.log(`  ✗ CHYBÍ ${chybi.length}: ${chybi.join(', ')}`);
   console.log('    → tyhle události kód umí zpracovat, ale nikdy je nedostane');
 
@@ -81,6 +103,8 @@ for (const ep of endpointy) {
 }
 
 if (rezim === 'check' && !vseSedi) {
-  console.log('\nSpusť `node scripts/stripe-webhook.mjs fix` a chybějící typy se doplní.');
+  if (missingEvents) {
+    console.log('\nSpusť `node scripts/stripe-webhook.mjs fix` a chybějící typy se doplní.');
+  }
   process.exit(1);
 }
