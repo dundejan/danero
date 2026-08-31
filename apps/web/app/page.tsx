@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { HorizonStrip } from '@/components/horizon-strip';
+import { JsonLd } from '@/components/json-ld';
+import { organizationJsonLd } from '@/lib/json-ld';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { LimitGauge } from '@/components/limit-gauge';
@@ -297,6 +299,7 @@ export default async function LandingPage({
 
   return (
     <div className="flex min-h-screen flex-col">
+      <JsonLd data={organizationJsonLd()} />
       <MarketingHeader />
 
       <main id="obsah" className="mx-auto w-full max-w-6xl flex-1 px-6">

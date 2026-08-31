@@ -1,6 +1,6 @@
-import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Hanken_Grotesk, IBM_Plex_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
+import { SITE_METADATA } from '@/lib/site';
 import './globals.css';
 
 const bricolage = Bricolage_Grotesque({
@@ -22,11 +22,11 @@ const plexMono = IBM_Plex_Mono({
   variable: '--font-plex-mono',
 });
 
-export const metadata: Metadata = {
-  title: 'Danero — daně z investic pohlídané celý rok',
-  description:
-    'Hlídač časových testů a daňových limitů pro české investory. Limit 100 000 Kč, paušální daň, podklady k přiznání.',
-};
+/**
+ * Metadata pro celý web. Bydlí v `lib/site.ts`, protože tenhle soubor si kvůli
+ * `next/font` mimo Next nikdo nenaimportuje — ani test.
+ */
+export const metadata = SITE_METADATA;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

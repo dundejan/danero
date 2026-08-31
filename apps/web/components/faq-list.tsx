@@ -19,6 +19,11 @@ function IconPlus() {
 export interface FaqItem {
   q: string;
   a: React.ReactNode;
+  /**
+   * Prostý text odpovědi pro strukturovaná data (`faqPageJsonLd`). Povinný
+   * jen tam, kde je `a` JSX — z něj se text spolehlivě nevytáhne.
+   */
+  plain?: string;
 }
 
 export function FaqList({ items }: { items: FaqItem[] }) {
