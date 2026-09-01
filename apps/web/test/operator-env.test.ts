@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -74,6 +74,13 @@ describe('skript failed-imports se bez prostředí nerozjede (K2-04)', () => {
   const korenWebu = join(import.meta.dirname, '..');
   const script = join(korenWebu, 'scripts', 'failed-imports.ts');
   const tsx = join(korenWebu, 'node_modules', '.bin', 'tsx');
+  // `tsx` musí být závislostí apps/web, ne jen kořene: na čerstvé instalaci
+  // (CI) se do `apps/web/node_modules/.bin` jinak nedostane a nefunguje ani
+  // `pnpm --filter @danero/web failed-imports`. Bez téhle kontroly by se
+  // nespuštěný podproces tvářil jako neúspěšná kontrola prostředí.
+  if (!existsSync(tsx)) {
+    throw new Error(`Chybí ${tsx} — patří do devDependencies apps/web, ne jen do kořenového package.json.`);
+  }
 
   const spustit = (
     argumenty: string[],
