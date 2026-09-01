@@ -196,6 +196,13 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   uživatel nahraje PDF. Prázdný soubor kontroluj po dekódování — samotné BOM
   nebo nový řádek projde kontrolou na nulovou délku a skončí jako
   „0 transakcí, 0 chyb".
+  **Totéž platí o kódování** (`decodeUpload`): pozná se z bajtů, ne hádáním nad
+  hlavičkou. BOM `FF FE`/`FE FF` je UTF-16, jinak `TextDecoder('utf-8',
+  { fatal: true })` — validní UTF-8 se pozná PŘESNĚ, a když dekódování spadne,
+  je to jednobajtové kódování (CP1250). Dřívější heuristika „je v hlavičce `�`?"
+  míjela nejtišší případ: šablona v CP1250 s ASCII hlavičkou uložila `ČEZ` jako
+  `?EZ` bez jediné chyby, protože se rozbil až název v datech. A dekóduj JEDNOU,
+  ne zvlášť pro sniffer a pro parser.
 - **Nové pole v modelu transakce se do UŽ NAIMPORTOVANÝCH dat nedostane.**
   Dedupe je obsahový (B-3-2), takže opakované nahrání téhož výpisu je duplicita
   a payload zůstane starý. Vždy to napiš do nápovědy („vrať import zpět a nahraj

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cleanNumber,
+  decodeUpload,
   firstLine,
   isAmbiguousThousandGroup,
   isAmbiguousThousands,
@@ -130,5 +131,48 @@ describe('firstLine', () => {
 
   it('soubor o jediném řádku vrací celý', () => {
     expect(firstLine('a,b')).toBe('a,b');
+  });
+});
+
+/**
+ * Kódování nahraného souboru (K6a-10, K6a-11).
+ *
+ * Bajty jsou psané ručně schválně: `Buffer.from(…, 'latin1')` ani žádná
+ * knihovna windows-1250 neumí, a hlavně je na nich vidět přesně to, co doráží
+ * z Excelu — `Č` je v CP1250 jediný bajt `0xC8`, který jako UTF-8 platný není.
+ */
+describe('decodeUpload', () => {
+  /** `ČEZ a.s.` ve windows-1250 (`Č` = 0xC8). */
+  const CEZ_CP1250 = Uint8Array.from([0xc8, 0x45, 0x5a, 0x20, 0x61, 0x2e, 0x73, 0x2e]);
+
+  it('UTF-8 (i s BOM) nechá být — tak přichází drtivá většina výpisů', () => {
+    expect(decodeUpload(new TextEncoder().encode('name,qty\nČEZ a.s.,10'))).toBe(
+      'name,qty\nČEZ a.s.,10',
+    );
+    const withBom = Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('a,b')]);
+    expect(decodeUpload(withBom)).toBe('a,b');
+  });
+
+  it('windows-1250 s ASCII hlavičkou pozná podle neplatného UTF-8', () => {
+    const bytes = Uint8Array.from([...new TextEncoder().encode('name\n'), ...CEZ_CP1250]);
+    expect(decodeUpload(bytes)).toBe('name\nČEZ a.s.');
+  });
+
+  it('UTF-16 podle BOM (LE i BE) — takhle ukládá CSV Excel „Unicode text“', () => {
+    const text = 'Action,Time\nMarket buy,2026-01-02';
+    const le = Uint8Array.from([0xff, 0xfe, ...Buffer.from(text, 'utf16le')]);
+    const be = Uint8Array.from([0xfe, 0xff, ...Buffer.from(text, 'utf16le').swap16()]);
+    expect(decodeUpload(le)).toBe(text);
+    expect(decodeUpload(be)).toBe(text);
+  });
+
+  /**
+   * Náhradní znak zapsaný v UTF-8 je PLATNÁ sekvence — soubor se proto nesmí
+   * celý předekódovat na windows-1250. Přesně tohle hlídala původní podmínka
+   * „hlavička obsahuje U+FFFD“, jen za cenu tiché vady v datech (K6a-11).
+   */
+  it('legitimní U+FFFD uvnitř UTF-8 souboru nepřepne kódování', () => {
+    const text = 'name\nnějaká � firma,ČEZ';
+    expect(decodeUpload(new TextEncoder().encode(text))).toBe(text);
   });
 });

@@ -158,6 +158,51 @@ export const FIAT_CURRENCIES = new Set([
 export const decodeCp1250 = (data: ArrayBuffer | Uint8Array): string =>
   new TextDecoder('windows-1250').decode(data);
 
+/** BOM UTF-16: `FF FE` little endian, `FE FF` big endian. */
+const UTF16_BOMS = [
+  { bytes: [0xff, 0xfe], encoding: 'utf-16le' },
+  { bytes: [0xfe, 0xff], encoding: 'utf-16be' },
+] as const;
+
+/**
+ * Text nahraného souboru — kódování se poznává z OBSAHU, ne z domněnky.
+ *
+ * Stejná zásada jako u `sniffFileFormat`: přípona ani hlavička nic negarantují.
+ * Tři případy v pořadí od jistého k pravděpodobnému:
+ *
+ *  1. **BOM `FF FE` / `FE FF` = UTF-16.** Takhle uloží CSV Excel („Unicode
+ *     text“) i pár portálů. Dekódované jako UTF-8 je to nesmysl s nulovým
+ *     bajtem mezi písmeny, takže soubor propadl přes všechny sniffery na
+ *     „formát nepoznáváme“ a hláška citovala rozsypanou hlavičku
+ *     (`˙ţA c t i o n`) — uživatel viděl vadu na naší straně u exportu,
+ *     který přitom čteme (K6a-10).
+ *  2. **Validní UTF-8** — drtivá většina souborů, s BOM i bez něj (BOM
+ *     `TextDecoder` sám zahodí).
+ *  3. **Jinak jednobajtové kódování**, tedy u českých a německých exportů
+ *     windows-1250. Rozhoduje `fatal: true`, ne heuristika: platné UTF-8 se
+ *     pozná PŘESNĚ. Do 1. 9. 2026 se na kódování usuzovalo z náhradního znaku
+ *     v HLAVIČCE, takže soubor s ASCII hlavičkou a diakritikou až v datech se
+ *     tiše uložil rozbitý (`ČEZ` → `�EZ`, K6a-11) — chyba, které si
+ *     uživatel všimne až v přehledu, pokud vůbec.
+ *
+ * ⚠️ Souboru, který je z 99 % UTF-8 a nese jediný cizí bajt, se tímhle změní
+ * celý zbytek na mojibake. Je to vědomá volba: takový soubor nevyrábí žádný
+ * export (kódování je vlastnost celého souboru) a tichá polovičatá vada je
+ * horší než viditelně rozsypaný text. Legitimní U+FFFD zapsaný v UTF-8 je
+ * platná sekvence, takže ten sem nespadne.
+ */
+export function decodeUpload(data: ArrayBuffer | Uint8Array): string {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  for (const { bytes: bom, encoding } of UTF16_BOMS) {
+    if (bytes[0] === bom[0] && bytes[1] === bom[1]) return new TextDecoder(encoding).decode(bytes);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return decodeCp1250(bytes);
+  }
+}
+
 /** Odstraní diakritiku (porovnávání CZ/DE hlaviček nezávisle na kódování). */
 export const stripDiacritics = (value: string): string =>
   value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');

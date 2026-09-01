@@ -1,8 +1,8 @@
 import {
   brokerIdKey,
   dedupeTransactions,
-  decodeCp1250,
   decodeFioCsv,
+  decodeUpload,
   emptyResult,
   firstLine,
   isDegiroCsv,
@@ -139,13 +139,14 @@ const NOT_OURS = { unrecognized: false } as const;
  * uloží pár bajtů, ty propadnou do textové větve a univerzální šablona je
  * vyhodnotí jako „prázdné období“, tedy 0 transakcí a 0 chyb.
  *
- * Strop 64 B je schválně: větší soubor už nějaký obsah má a dekódovat ho tady
- * podruhé je zbytečné.
+ * ⚠️ Rozhoduje DEKÓDOVANÝ text, ne délka v bajtech. Do 1. 9. 2026 se soubor nad
+ * 64 B prohlásil za neprázdný bez ohledu na obsah, takže osmdesát mezer prošlo
+ * jako tichý import „prázdné období (žádné obchody)“ — přesně ta věta, kterou
+ * uživatel čeká u roku bez obchodů, jenže tady se ztratil celý výpis (K6a-08).
+ * Z bajtů se to poznat nedá: v UTF-16 je mezera `20 00`.
  */
-function isBlankUpload(data: ArrayBuffer): boolean {
-  if (data.byteLength === 0) return true;
-  if (data.byteLength > 64) return false;
-  return new TextDecoder().decode(data).replace(/\uFEFF/g, '').trim() === '';
+function isBlankUpload(text: string): boolean {
+  return text.replace(/\uFEFF/g, '').trim() === '';
 }
 
 /** Nepoznaný (nebo nepodporovaný) soubor → dávka s jedinou srozumitelnou chybou. */
@@ -382,23 +383,6 @@ export async function importFile(
   filename: string,
   data: ArrayBuffer,
 ): Promise<ImportSummary> {
-  // Prázdný NAHRANÝ soubor je vždycky vada stahování — na rozdíl od prázdného
-  // těla z API T212, které legitimně znamená rok bez obchodů (a tudy nechodí).
-  // Dřív ho odchytila kontrola XLSX; po přechodu na detekci podle obsahu by
-  // propadl do textové větve a skončil jako „0 transakcí, 0 chyb“.
-  if (isBlankUpload(data)) {
-    return importParsed(
-      db,
-      userId,
-      filename,
-      unknownFormat(
-        'Soubor je prázdný — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
-      ),
-      undefined,
-      NOT_OURS,
-    );
-  }
-
   // Formát určuje OBSAH, ne přípona: portály nabízejí „XLS“ a doručí XLSX,
   // prohlížeč připíše .csv k sešitu a uživatel soubory přejmenovává.
   const format = sniffFileFormat(data);
@@ -434,13 +418,32 @@ export async function importFile(
     }
   }
 
-  const utf8 = new TextDecoder().decode(data);
+  // Kódování si určí obsah (UTF-16 podle BOM, jinak UTF-8, a když ten neplatí,
+  // windows-1250) — jedno dekódování pro kontrolu prázdnoty i pro autodetekci.
+  const text = decodeUpload(data);
 
-  // Fio: hlavička je čitelná i při špatném dekódování, samotný obsah se ale
-  // musí dekódovat jako windows-1250 (proč právě takhle vysvětluje sniffFioCsv).
+  // Prázdný NAHRANÝ soubor je vždycky vada stahování — na rozdíl od prázdného
+  // těla z API T212, které legitimně znamená rok bez obchodů (a tudy nechodí).
+  // Dřív ho odchytila kontrola XLSX; po přechodu na detekci podle obsahu by
+  // propadl do textové větve a skončil jako „0 transakcí, 0 chyb“.
+  if (isBlankUpload(text)) {
+    return importParsed(
+      db,
+      userId,
+      filename,
+      unknownFormat(
+        'Soubor je prázdný — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
+      ),
+      undefined,
+      NOT_OURS,
+    );
+  }
+
+  // Fio: hlavička je ASCII, takže se pozná v každém kódování, samotný obsah se
+  // ale dekóduje jako windows-1250 (proč právě takhle vysvětluje sniffFioCsv).
   // Kontroluje se JEN první řádek — poznámka v jiném souboru nesmí import
   // přesměrovat na Fio.
-  const header = firstLine(utf8);
+  const header = firstLine(text);
   if (sniffFioCsv(header)) {
     const aliases = await loadAliases(db, userId);
     const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.isinOnly.fio });
@@ -453,11 +456,6 @@ export async function importFile(
     });
   }
 
-  // rozbitá diakritika V HLAVIČCE = soubor není UTF-8 → české/německé exporty
-  // bývají windows-1250 (Coinmate, Swissquote DE aj.). Kontroluje se JEN první
-  // řádek: legitimní UTF-8 soubor s ojedinělým U+FFFD hlouběji v datech se
-  // nesmí celý předekódovat (rozsypaly by se správné české názvy).
-  const text = header.includes('�') ? decodeCp1250(data) : utf8;
   const aliases = await loadAliases(db, userId);
   const parsed = detectAndParseText(text, aliases);
   return importParsed(db, userId, filename, parsed.outcome, undefined, {
