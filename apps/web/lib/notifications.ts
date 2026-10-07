@@ -659,10 +659,22 @@ export async function processUserNotifications(
   return { created, emailed };
 }
 
-/** Všichni uživatelé pro cron (mají e-mail; profil se ověřuje uvnitř). */
+/**
+ * Komu smí hlídač psát: účty s daňovým profilem a s OVĚŘENOU adresou.
+ *
+ * Ověření tu není formalita. Změna e-mailu v Nastavení uloží novou adresu jako
+ * nepotvrzenou — a kdyby v ní byl překlep, chodil by přehled o cizích limitech
+ * a termínech člověku, který s účtem nemá nic společného. Dokud byla rozesílka
+ * jen pro předplatitele, týkalo se to hrstky účtů; od 8. 10. 2026 ji dostává
+ * každý, takže by šlo o každou neověřenou adresu v databázi.
+ *
+ * Účet tím o nic nepřijde: upozornění se dál počítají a po potvrzení adresy
+ * mu přijdou (nic se neoznačí jako odeslané, dokud opravdu neodešlo).
+ */
 export async function listNotificationTargets(db: Db): Promise<Array<{ id: string; email: string }>> {
   return db
     .select({ id: user.id, email: user.email })
     .from(user)
-    .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id));
+    .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id))
+    .where(eq(user.emailVerified, true));
 }

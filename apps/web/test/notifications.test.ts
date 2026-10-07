@@ -7,6 +7,7 @@ import { czDate } from '@/lib/format';
 import { importCsvText } from '@/lib/import-service';
 import {
   getNotificationPrefs,
+  listNotificationTargets,
   processUserNotifications,
   type EmailMessage,
 } from '@/lib/notifications';
@@ -1177,5 +1178,33 @@ describe('naléhavost a formulace podle skutečnosti, ne podle škatulky', () =>
     expect(event!.urgent).toBe(true);
     // klíč nese hranici, která se ozvala — nižší, protože 100 % uživatel nechce
     expect(event!.dedupeKey).toBe('limit|100k|CRITICAL|2026');
+  });
+});
+
+/**
+ * Hlídač píše jen na OVĚŘENOU adresu. Změna e-mailu v Nastavení uloží novou
+ * adresu jako nepotvrzenou; s překlepem by přehled o cizích limitech a termínech
+ * chodil člověku, který s účtem nemá nic společného. Od 8. 10. 2026 dostává
+ * rozesílku každý účet, ne jen předplatitelé — o to víc na tom záleží.
+ */
+describe('hlídač píše jen na ověřenou adresu', () => {
+  it('účet s nepotvrzenou adresou do rozesílky nepatří, po potvrzení ano', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values([
+      { id: 'verified', name: 'A', email: 'a@danero.cz', emailVerified: true },
+      { id: 'changed', name: 'B', email: 'preklep@danero.cz', emailVerified: false },
+      // bez daňového profilu není co hlídat, ať je adresa ověřená nebo ne
+      { id: 'no-profile', name: 'C', email: 'c@danero.cz', emailVerified: true },
+    ]);
+    await db.insert(taxpayerProfiles).values([
+      { userId: 'verified', regime: 'PAUSAL' },
+      { userId: 'changed', regime: 'PAUSAL' },
+    ]);
+
+    expect(await listNotificationTargets(db)).toEqual([{ id: 'verified', email: 'a@danero.cz' }]);
+
+    await db.update(user).set({ emailVerified: true }).where(eq(user.id, 'changed'));
+    const targets = await listNotificationTargets(db);
+    expect(targets.map((target) => target.id).sort()).toEqual(['changed', 'verified']);
   });
 });
