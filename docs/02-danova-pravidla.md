@@ -220,7 +220,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   body, které čtou „dnes" — přehled, report, portfolio, simulátor, XML pro EPO
   i hlídací e-maily.
 - **R-05d Kompenzace**: všechny prodeje CP v roce = **jeden druh příjmu** (D-59 k § 10/4) → ztráty a zisky mezi tituly se vzájemně započtou. **Celková ztráta druhu se nevykazuje** (dílčí základ min. 0), nepřenáší se do dalších let, nekompenzuje s jinými druhy (krypto = jiný druh ⚠️) ani s § 7/8/9.
-- **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.). Z § 10 se neplatí sociální ani zdravotní pojištění.
+- **R-05e Sazba**: 15 % / 23 % nad 36násobek průměrné mzdy (2025: 1 676 052 Kč; 2026: 1 762 812 Kč = 36 × 48 967 Kč dle NV č. 365/2025 Sb.; 2027: 1 859 868 Kč = 36 × 51 663 Kč dle NV č. 177/2026 Sb. — všeobecný vyměřovací základ 48 900 Kč × koeficient 1,0565). Z § 10 se neplatí sociální ani zdravotní pojištění.
   Pozn. k orientační dani: odhad daně v aplikaci se **nezaokrouhluje** na celé Kč
   dle § 146 odst. 1 daňového řádu (základ na stovky dolů dle § 16 ZDP aplikován je) —
   jde o orientační hodnotu a UI ji tak označuje; zaokrouhlení dle DŘ přijde až
@@ -506,7 +506,11 @@ Dvě oddělené roviny:
   v konfiguraci roku (`flatTaxAdvance`; 2024 = 7 498 Kč, 2025 = 8 716 Kč,
   2026 = 9 162 Kč měsíčně, vždy 1. pásmo — zdroj: Finanční správa, Informace
   k institutu paušální daně; u 2026 po zpětném snížení odvodů OSVČ od 1. 1. 2026,
-  leden–červen se platilo 9 984 Kč a rozdíl je přeplatek). Předpokládá se
+  leden–červen se platilo 9 984 Kč a rozdíl je přeplatek; 2027 = 9 662 Kč =
+  100 + 6 074 + 3 488, **dopočteno** z průměrné mzdy 51 663 Kč podle § 38lk —
+  Finanční správa částku k 7. 10. 2026 ještě nezveřejnila, po zveřejnění
+  ověřit; do daně vstupuje jen stokorunová daňová složka, takže případná
+  odchylka pojistného výpočet nezmění). Předpokládá se
   **1. pásmo** — profil poplatníka pásmo nenese.
 
   Stejně tak se předpokládá **12 měsíců v paušálním režimu** (12 × daňová složka

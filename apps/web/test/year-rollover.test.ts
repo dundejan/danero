@@ -43,32 +43,43 @@ afterEach(() => {
 });
 
 /**
- * Prodej v roce 2027 se ziskem 2 000 000 Kč: hranice 23% sazby (loni
- * 1 762 812 Kč) by na něj dopadla, kdyby se recyklovala — na výsledku je tedy
- * hned vidět, jestli se počítá loňským číslem, nebo poctivě celou nižší sazbou.
+ * Prodej se ziskem 2 000 000 Kč: hranice 23% sazby posledního známého roku by
+ * na něj dopadla, kdyby se recyklovala — na výsledku je tedy hned vidět, jestli
+ * se počítá loňským číslem, nebo poctivě celou nižší sazbou.
+ *
+ * „Rok mimo registr“ je vždy PRVNÍ rok za ním, ne napevno 2027: ten byl do
+ * registru doplněn 7. 10. 2026 (R-15d) a s napevno zapsaným rokem by tyhle
+ * testy musel při každé roční údržbě někdo přepisovat.
  */
-const TXS_2027: Transaction[] = parseTransactions([
-  {
-    type: 'BUY',
-    id: 'b1',
-    isin: 'CZ0000000001',
-    quantity: '100',
-    pricePerShare: '10000',
-    currency: 'CZK',
-    tradeDate: '2027-01-11',
-    settlementDate: '2027-01-13',
-  },
-  {
-    type: 'SELL',
-    id: 's1',
-    isin: 'CZ0000000001',
-    quantity: '100',
-    pricePerShare: '30000',
-    currency: 'CZK',
-    tradeDate: '2027-06-10',
-    settlementDate: '2027-06-14',
-  },
-]);
+const txsForYear = (year: number): Transaction[] =>
+  parseTransactions([
+    {
+      type: 'BUY',
+      id: 'b1',
+      isin: 'CZ0000000001',
+      quantity: '100',
+      pricePerShare: '10000',
+      currency: 'CZK',
+      tradeDate: `${year}-01-11`,
+      settlementDate: `${year}-01-13`,
+    },
+    {
+      type: 'SELL',
+      id: 's1',
+      isin: 'CZ0000000001',
+      quantity: '100',
+      pricePerShare: '30000',
+      currency: 'CZK',
+      tradeDate: `${year}-06-10`,
+      settlementDate: `${year}-06-14`,
+    },
+  ]);
+
+const UNKNOWN_YEAR = LAST_CONFIGURED_TAX_YEAR + 1;
+const TXS_UNKNOWN_YEAR = txsForYear(UNKNOWN_YEAR);
+const LAST_KNOWN = configForYear(LAST_CONFIGURED_TAX_YEAR);
+const LAST_THRESHOLD = d(LAST_KNOWN.progressiveThreshold!);
+const RECYCLED_TAX = LAST_THRESHOLD.mul('0.15').plus(d('2000000').minus(LAST_THRESHOLD).mul('0.23'));
 
 const PROFILE: ProfileRow = {
   userId: 'u1',
@@ -151,6 +162,8 @@ describe('přechod roku: rok mimo registr konfigurací (R-15, K1-01)', () => {
     expect(configForYear(2025).progressiveThreshold).toBe('1676052');
     expect(configForYear(2026).progressiveThreshold).toBe('1762812');
     expect(configForYear(2026).flatTaxAdvance?.monthlyTotalCzk).toBe('9162');
+    expect(configForYear(2027).progressiveThreshold).toBe('1859868');
+    expect(configForYear(2027).flatTaxAdvance?.monthlyTotalCzk).toBe('9662');
   });
 
   it('rok před registrem taky nehádá — hranici 23 % pro něj neznáme', () => {
@@ -161,37 +174,44 @@ describe('přechod roku: rok mimo registr konfigurací (R-15, K1-01)', () => {
     expect(configForYear(2023).cryptoRules.exemptionsAvailable).toBe(false);
   });
 
-  it('daň za rok 2027 se nespočítá loňskou hranicí a engine to řekne', () => {
-    const result = analyzeTaxYear(engineInputForUser(TXS_2027, PROFILE, 2027));
+  it('daň za rok mimo registr se nespočítá loňskou hranicí a engine to řekne', () => {
+    const result = analyzeTaxYear(engineInputForUser(TXS_UNKNOWN_YEAR, PROFILE, UNKNOWN_YEAR));
 
     expect(result.securities.base10Czk.toString()).toBe('2000000');
-    // loňská hranice by z 237 188 Kč nad ní udělala 23 % → 318 975,04 Kč
+    // loňská hranice by z částky nad ní udělala 23 % (RECYCLED_TAX) — tady je
+    // to poctivě celých 15 %
     expect(result.tax.general.taxCzk.toString()).toBe('300000');
+    expect(RECYCLED_TAX.gt('300000')).toBe(true);
     const warning = result.warnings.find((w) => w.code === 'PROGRESSIVE_THRESHOLD_UNKNOWN');
-    expect(warning?.message).toContain('2027');
+    expect(warning?.message).toContain(String(UNKNOWN_YEAR));
   });
 
   it('paušalistovi se nezapočtou zálohy, které pro ten rok neznáme', () => {
-    const result = analyzeTaxYear(engineInputForUser(TXS_2027, PROFILE, 2027));
+    const result = analyzeTaxYear(engineInputForUser(TXS_UNKNOWN_YEAR, PROFILE, UNKNOWN_YEAR));
     const warning = result.warnings.find((w) => w.code === 'FLAT_TAX_BROKEN')!;
 
     expect(warning.message).toContain('Zálohy na daň za tento rok v konfiguraci nemáme');
-    // věta o započtené záloze (a s ní loňských 9 162 Kč) se objevit nesmí
+    // věta o započtené záloze (a s ní loňská částka) se objevit nesmí
     expect(warning.message).not.toMatch(/paušální zálohy/);
     expect(result.limits.flatTax50k.breachImpact?.advancesCreditCzk.toString()).toBe('0');
     expect(result.limits.flatTax50k.breachImpact?.monthlyAdvanceCzk).toBeNull();
   });
 });
 
-describe('přechod roku: co uvidí uživatel v reportu za rok 2027 (R-15e)', () => {
+describe('přechod roku: co uvidí uživatel v reportu za rok mimo registr (R-15e)', () => {
   const html = (): string =>
     renderToStaticMarkup(
-      createElement(ReportView, { txs: TXS_2027, profile: PROFILE, year: 2027, years: [2027] }),
+      createElement(ReportView, {
+        txs: TXS_UNKNOWN_YEAR,
+        profile: PROFILE,
+        year: UNKNOWN_YEAR,
+        years: [UNKNOWN_YEAR],
+      }),
     );
 
   it('report vysvětlí českou větou, že dvě čísla stát ještě nevyhlásil', () => {
     const out = html();
-    expect(out).toContain('Pro rok 2027 ještě neznáme dvě státem vyhlašovaná čísla');
+    expect(out).toContain(`Pro rok ${UNKNOWN_YEAR} ještě neznáme dvě státem vyhlašovaná čísla`);
     // a řekne, co z toho plyne — bez daňového žargonu
     expect(out).toContain('hranice, nad kterou se z výdělku platí vyšší daň');
     expect(out).toContain('výši měsíční zálohy paušálního režimu');
@@ -199,7 +219,7 @@ describe('přechod roku: co uvidí uživatel v reportu za rok 2027 (R-15e)', () 
 
   it('report není prázdný — čísla, která na vyhlášení nezávisí, ukazuje dál', () => {
     const out = html();
-    expect(out).toContain('Daňový report 2027');
+    expect(out).toContain(`Daňový report ${UNKNOWN_YEAR}`);
     expect(out).toContain('Použité kurzy');
     // dílčí základ § 10 se spočítal normálně
     expect(out).toContain(czk(d('2000000')));
@@ -208,15 +228,20 @@ describe('přechod roku: co uvidí uživatel v reportu za rok 2027 (R-15e)', () 
 
   it('report za rok bez konfigurace neukáže loňskou hranici ani loňskou zálohu', () => {
     const out = html();
-    // s recyklovanou hranicí 2026 by daň vyšla na 318 975,04 Kč
-    expect(out).not.toContain(czk(d('318975.04')));
-    expect(out).not.toContain(czk(d('9162')));
-    expect(out).not.toContain(czk(d('1762812')));
+    // s recyklovanou hranicí posledního známého roku by daň vyšla na RECYCLED_TAX
+    expect(out).not.toContain(czk(RECYCLED_TAX));
+    expect(out).not.toContain(czk(d(LAST_KNOWN.flatTaxAdvance!.monthlyTotalCzk)));
+    expect(out).not.toContain(czk(LAST_THRESHOLD));
   });
 
   it('rok v registru žádné takové vysvětlení nemá', () => {
     const out = renderToStaticMarkup(
-      createElement(ReportView, { txs: TXS_2027, profile: PROFILE, year: 2026, years: [2026] }),
+      createElement(ReportView, {
+        txs: txsForYear(LAST_CONFIGURED_TAX_YEAR),
+        profile: PROFILE,
+        year: LAST_CONFIGURED_TAX_YEAR,
+        years: [LAST_CONFIGURED_TAX_YEAR],
+      }),
     );
     expect(out).not.toContain('státem vyhlašovaná čísla');
   });

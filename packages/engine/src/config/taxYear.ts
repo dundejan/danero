@@ -149,6 +149,24 @@ export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
 };
 
 /**
+ * Rok 2027 (R-15d: doplněno po vyhlášení nařízení vlády). Právní stav se
+ * přenáší z roku 2026 (R-15b), nová jsou jen dvě vyhlašovaná čísla.
+ */
+export const TAX_YEAR_2027_DRAFT: TaxYearConfig = {
+  ...TAX_YEAR_2026_DRAFT,
+  year: 2027,
+  // Jednotný kurz za 2027 vyjde pokynem řady D začátkem roku 2028.
+  unifiedRatesByYear: {},
+  // 36 × 51 663 Kč (průměrná mzda dle NV č. 177/2026 Sb.: 48 900 Kč × 1,0565)
+  progressiveThreshold: '1859868',
+  // 1. pásmo 2027 = 9 662 Kč/měsíc (daň 100 + důchodové 6 074 + zdravotní 3 488).
+  // ⚠️ DOPOČTENO z průměrné mzdy podle § 38lk — Finanční správa částku
+  // k 7. 10. 2026 nezveřejnila; po vydání „Informace k institutu paušální daně“
+  // ověřit. Do daně vstupuje jen daňová složka (100 Kč), ta je v zákoně pevně.
+  flatTaxAdvance: { monthlyTotalCzk: '9662', monthlyTaxCzk: '100' },
+};
+
+/**
  * R-15a: registr zdaňovacích období, pro která konfiguraci **známe**.
  *
  * Není to fallback tabulka — je to výčet. Rok, který v něm není, se nesmí
@@ -165,6 +183,7 @@ export const TAX_YEAR_CONFIGS: Record<number, TaxYearConfig> = {
   2024: TAX_YEAR_2024,
   2025: TAX_YEAR_2025,
   2026: TAX_YEAR_2026_DRAFT,
+  2027: TAX_YEAR_2027_DRAFT,
 };
 
 /** Poslední rok v registru — meze runbooku (R-15d) a rozsahu let v UI. */

@@ -3,7 +3,6 @@ import {
   LAST_CONFIGURED_TAX_YEAR,
   LAST_VERIFIED_RATE_YEAR,
   TAX_YEAR_2024,
-  TAX_YEAR_2026_DRAFT,
   TAX_YEAR_CONFIGS,
   UNIFIED_RATE_SOURCES,
   UNIFIED_RATES_VERIFIED,
@@ -85,7 +84,8 @@ export function configForYear(year: number): TaxYearConfig {
   // až od 2025) a krypto u nich nemá žádné osvobození (R-10b); roky za
   // registrem pokračují stavem posledního známého roku (strop jen pro krypto,
   // R-10e) — to jsou pravidla ze zákona, ne čísla vyhlašovaná na rok.
-  const base = year > LAST_CONFIGURED_TAX_YEAR ? TAX_YEAR_2026_DRAFT : TAX_YEAR_2024;
+  const base =
+    year > LAST_CONFIGURED_TAX_YEAR ? TAX_YEAR_CONFIGS[LAST_CONFIGURED_TAX_YEAR]! : TAX_YEAR_2024;
   return {
     ...base,
     year,
