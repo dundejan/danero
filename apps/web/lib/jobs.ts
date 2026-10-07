@@ -6,10 +6,10 @@ import { brokerAccounts, jobs } from '@/db/schema';
 import type { SyncJobView } from '@/components/sync-job-progress';
 import {
   markAccountSyncError,
+  SyncPaused,
   syncErrorText,
   type SyncProgress,
   type SyncStatus,
-  type SyncYearProgress,
 } from '@/lib/broker-sync';
 import { isUniqueViolation } from '@/lib/db-errors';
 import { errorText } from '@/lib/log';
@@ -59,22 +59,36 @@ export interface SyncJobResult {
 }
 
 /** Volby běhu pro testy (mock fetch, rychlý poll, deterministický čas). */
-export type JobRunOptions = Pick<SyncOptions, 'fetchImpl' | 'pollIntervalMs' | 'now'> & {
+export type JobRunOptions = Pick<
+  SyncOptions,
+  'fetchImpl' | 'pollIntervalMs' | 'now' | 'deadlineAt'
+> & {
   /** Strop pro jeden tick cronu (G-P5) — po jeho překročení se další job už nezačíná. */
   budgetMs?: number;
 };
 
 /**
- * Rozpočet jednoho ticku. `maxDuration` cronu je 800 s; necháváme si rezervu,
- * aby se stihl dopsat výsledek a odpověď — utnutá funkce by nechala job viset
- * v `running` až do `recoverStaleJobs`.
+ * Rozpočet jednoho běhu jobů. Funkce smí běžet 300 s (strop Vercel Hobby —
+ * `maxDuration` v routách hlídá `test/hosting-limits.test.ts`); zbylých 75 s je
+ * rezerva na dotažení rozdělaného roku, rekonciliaci a zápis výsledku. Utnutá
+ * funkce by nechala job viset v `running` až do `recoverStaleJobs`.
+ *
+ * Po termínu se už nezačíná nic nového: další job zůstane `pending` a plný
+ * sync T212 se sám přeruší (`SyncPaused`) a vrátí se do fronty i s průběhem.
  */
-const DEFAULT_JOB_BUDGET_MS = 600_000;
+const DEFAULT_JOB_BUDGET_MS = 225_000;
+
+/**
+ * Kolik času musí do termínu zbývat, aby mělo smysl začít DALŠÍ job: jedno
+ * čekání na export T212 (65 s) s malou rezervou. Kratší okno by job rozjelo
+ * jen proto, aby ho vzápětí utnul limit funkce.
+ */
+const MIN_JOB_WINDOW_MS = 70_000;
 
 /**
  * Job bez známky života déle než 15 minut = mrtvý proces. Sync zapisuje heartbeat
  * s každou změnou průběhu; nejdelší tichý úsek je čekání na export jednoho roku
- * (max 10 min), 15 minut je tedy bezpečná rezerva.
+ * (tři dotazy po 65 s), 15 minut je tedy bezpečná rezerva.
  */
 const STALE_AFTER_MS = 15 * 60_000;
 
@@ -192,6 +206,7 @@ export async function processJob(
 ): Promise<JobRow | null> {
   const job = await claimJob(db, jobId, options.now ?? new Date());
   if (!job) return null;
+  const deadlineAt = options.deadlineAt ?? new Date(Date.now() + DEFAULT_JOB_BUDGET_MS);
 
   const { logEvent } = await import('@/lib/log');
   const startedAt = performance.now();
@@ -201,8 +216,9 @@ export async function processJob(
   try {
     const handler = JOB_HANDLERS[job.type];
     if (!handler) throw new Error(`Neznámý typ jobu: ${job.type}`);
-    outcome = { status: 'success', result: await handler(db, job, options) };
+    outcome = { status: 'success', result: await handler(db, job, { ...options, deadlineAt }) };
   } catch (error) {
+    if (error instanceof SyncPaused) return pauseJob(db, job);
     outcome = { status: 'error', error: errorText(error) };
   }
   logEvent(outcome.status === 'error' ? 'error' : 'info', 'job.finished', {
@@ -224,6 +240,26 @@ export async function processJob(
     .where(and(eq(jobs.id, jobId), eq(jobs.status, 'running')))
     .returning();
   return finished[0] ?? null;
+}
+
+/**
+ * Vrátí přerušený job do fronty (`running` → `pending`) i s průběhem — další
+ * běh ho převezme a naváže (`fullSyncResume`). Je to TÝŽ řádek, ne nový job:
+ * UI tak nevidí mezi částmi žádnou mezeru, ve které by se job tvářil jako
+ * skončený, a průběh po letech zůstává na obrazovce celý.
+ *
+ * `heartbeatAt` se posouvá schválně: od něj se počítá, kdy je čekající job
+ * mrtvý (`STALE_PENDING_AFTER_MS`), a přerušený job na to má mít celý den znovu.
+ */
+async function pauseJob(db: Db, job: JobRow): Promise<JobRow | null> {
+  const { logEvent } = await import('@/lib/log');
+  logEvent('info', 'job.paused', { jobId: job.id, type: job.type });
+  const paused = await db
+    .update(jobs)
+    .set({ status: 'pending', heartbeatAt: new Date() })
+    .where(and(eq(jobs.id, job.id), eq(jobs.status, 'running')))
+    .returning();
+  return paused[0] ?? null;
 }
 
 /** Společný rám sync handlerů: načtení účtu (s tenancy guardem) + progress zápis. */
@@ -266,6 +302,9 @@ async function withSyncAccount<T>(
   try {
     return await run(account, onProgress);
   } catch (error) {
+    // přerušení není chyba — účet se nesmí označit jako rozbitý, job se jen
+    // vrací do fronty (viz `pauseJob`)
+    if (error instanceof SyncPaused) throw error;
     // do UI jde česky (K5-09/K5-10: `catch` chytá i TypeError a surová
     // anglická hláška runtime končila v lastSyncError); do logu níž jde
     // původní text, ať se příčina neztratí
@@ -288,7 +327,14 @@ async function withSyncAccount<T>(
 async function fullSyncResume(
   db: Db,
   job: JobRow,
-): Promise<{ years: SyncYearProgress[]; syncedAt: Date } | undefined> {
+): Promise<NonNullable<SyncOptions['resume']> | undefined> {
+  // Job, který se sám přerušil (`pauseJob`), nese průběh své dřívější části
+  // přímo u sebe — nový job má `progress` prázdný. Má přednost před čímkoli
+  // z minulosti a dědí se z něj celý (`sameRun`).
+  const own = (job.progress ?? null) as SyncProgress | null;
+  if (own?.mode === 'full' && own.years && own.years.length > 0) {
+    return { years: own.years, syncedAt: job.createdAt, sameRun: true };
+  }
   // K6a-01: bere se poslední DOKONČENÝ běh, ne poslední spadlý. Spadlý job
   // v tabulce zůstává navždy (pruneJobs nejnovější job každého dedupeKey
   // nechává), takže se z něj po pozdějším úspěšném plném syncu stalo trvalé
@@ -340,7 +386,7 @@ async function runT212SyncJob(
       return {
         added: outcome.added,
         duplicates: outcome.duplicates,
-        errorCount: outcome.errors.length,
+        errorCount: outcome.errorCount,
         yearsCovered: outcome.yearsCovered,
         syncStatus: outcome.status,
       };
@@ -423,7 +469,13 @@ export interface ProcessedJobSummary {
 export async function processPendingJobs(
   db: Db,
   options: JobRunOptions = {},
-): Promise<{ recovered: number; results: ProcessedJobSummary[]; deferred: number }> {
+): Promise<{
+  recovered: number;
+  results: ProcessedJobSummary[];
+  deferred: number;
+  /** Joby, které se přerušily a čekají ve frontě na další část. */
+  paused: number;
+}> {
   const recovered = await recoverStaleJobs(db, options.now ?? new Date());
   const pending = await db
     .select({ id: jobs.id })
@@ -438,16 +490,22 @@ export async function processPendingJobs(
   // se doběhne rozdělaný job, zbytek zůstane `pending` na další tick a počet
   // odložených jde do výsledku, odkud ho `withCron` propíše do logu.
   const budgetMs = options.budgetMs ?? DEFAULT_JOB_BUDGET_MS;
-  const startedAt = Date.now();
+  // Termín je společný celému běhu, ne každému jobu zvlášť: funkci utne
+  // platforma podle svého startu, ať v ní běží kolikátý job chce.
+  const deadlineAt = new Date(Date.now() + budgetMs);
   const results: ProcessedJobSummary[] = [];
   let deferred = 0;
-  for (const row of pending) {
-    if (results.length > 0 && Date.now() - startedAt > budgetMs) {
-      deferred = pending.length - results.length;
+  let paused = 0;
+  for (const [index, row] of pending.entries()) {
+    // první job běží vždy (jinak by tick neudělal nic); další jen když na něj
+    // do termínu zbývá smysluplné okno
+    if (index > 0 && deadlineAt.getTime() - Date.now() < MIN_JOB_WINDOW_MS) {
+      deferred = pending.length - index;
       break;
     }
-    const finished = await processJob(db, row.id, options);
+    const finished = await processJob(db, row.id, { ...options, deadlineAt });
     if (finished) {
+      if (finished.status === 'pending') paused += 1;
       results.push({
         jobId: finished.id,
         type: finished.type,
@@ -456,7 +514,7 @@ export async function processPendingJobs(
       });
     }
   }
-  return { recovered, results, deferred };
+  return { recovered, results, deferred, paused };
 }
 
 /**
@@ -486,7 +544,7 @@ export async function forgetSyncProgressYears(
       and(
         eq(jobs.userId, userId),
         inArray(jobs.type, SYNC_JOB_TYPES),
-        eq(jobs.status, 'error'),
+        inArray(jobs.status, ['error', ...ACTIVE_STATUSES]),
       ),
     );
 

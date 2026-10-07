@@ -151,11 +151,14 @@ zůstává syslog — a ten v kontejneru nikdo neposlouchá, takže špatný
 | `jobs` | záchranná síť — dokončí běhy, které spadly nebo se nestihly |
 | `maintenance` | smaže data po retenční lhůtě (audit log, historie importů a joby po 90 dnech, prošlé přihlašovací relace a ověřovací tokeny hned, doručená upozornění po 400 dnech) |
 
-⚠️ **První plný sync trvá dlouho** — Trading 212 pouští export ~1×/min, takže
-celá historie zabere minuty až ~10. Pod serverless funkcí s krátkým časovým
-limitem to nedoběhne (proto `maxDuration = 800`); job má proto resume po
-letech a hodinová `jobs` ho dorovná. Na vlastním serveru bez časového limitu
-tenhle problém nemáš.
+⚠️ **První plný sync se stahuje po částech** — Trading 212 pouští export
+~1×/min a každý rok je jeden export. Jeden běh jobů si bere nejvýš 225 s
+(hostovaná instance běží pod limitem funkce 300 s), pak se sync přeruší,
+vrátí se do fronty i s průběhem a další část se rozjede hned voláním
+`/api/cron/jobs` na sebe sama. K tomu potřebuje `CRON_SECRET` a adresu, na
+které se aplikace sama dovolá (`BETTER_AUTH_URL`); když se nedovolá, v logu je
+`cron.jobs.handoff_failed` a zbytek dojede s hodinovou `jobs` — proto ji
+nevynechávej.
 
 ## Provoz
 

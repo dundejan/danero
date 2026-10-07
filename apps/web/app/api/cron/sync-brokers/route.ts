@@ -1,6 +1,7 @@
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { withCron } from '@/lib/cron-auth';
+import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { errorText } from '@/lib/log';
 import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs';
@@ -11,13 +12,11 @@ import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs
  * Průběh je tak vidět v UI stejně jako u ručního syncu a odpověď nese výsledek
  * per job — selhání syncu musí být z monitoringu cronu poznat. Chráněno CRON_SECRET.
  */
-// Vercel: plný sync trvá minuty (T212 ~1 req/min) — default limit by ho zabil
-// uprostřed; 800 s vyžaduje Pro plán (hobby max 300 s — viz docs/08)
-export const maxDuration = 800;
+// Strop běhu funkce: 300 s je maximum Vercel Hobby. Fronta delší než jeden běh
+// (T212 ~65 s na účet) se dojede v navazujících invokacích /api/cron/jobs.
+export const maxDuration = 300;
 
-export const GET = withCron('sync-brokers', async (_request: Request): Promise<Response> => {
-
-
+export const GET = withCron('sync-brokers', async (request: Request): Promise<Response> => {
   const db = await getDb();
   const allAccounts = await db.select().from(brokerAccounts);
 
@@ -39,13 +38,19 @@ export const GET = withCron('sync-brokers', async (_request: Request): Promise<R
       });
     }
   }
-  const { recovered, results, deferred } = await processPendingJobs(db);
+  const { recovered, results, deferred, paused } = await processPendingJobs(db);
+  // na co se nedostalo (nebo co se přerušilo), dojede hned v další invokaci —
+  // jinak by to čekalo den na příští plánované spuštění
+  if ((deferred > 0 || paused > 0) && results.length > 0) {
+    continueJobsElsewhere(new URL(request.url).origin, 0);
+  }
 
   return Response.json({
     accounts: accounts.length,
     withoutSubscription: allAccounts.length - accounts.length,
     recovered,
     deferred,
+    paused,
     // konvence pro withCron: > 0 zvedne úroveň logu běhu na error — jinak by
     // den, kdy se nesynchronizoval ani jeden účet, vypadal v logu stejně jako
     // úspěšný (detail už zalogoval processJob jako `job.finished`)

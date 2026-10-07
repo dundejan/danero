@@ -82,15 +82,15 @@ function fileSink(path: string): EmailSender {
  * Resend 4.8 volá holý `fetch(url, options)` bez `signal`, takže vlastní
  * timeout nepřijme — jediný způsob, jak čekání ukončit, je `Promise.race`.
  * Bez něj se čeká, dokud se neozve undici se svým `headersTimeout`, což je
- * **300 s**: jeden zaseknutý e-mail sežere 300 z 800 s `maxDuration` cronu
- * a dva ho zabijí. Netrpí tím jen cron — na témž volání visí i uživatelské
- * server actions (obnova hesla, ověřovací e-mail).
+ * **300 s**: jediný zaseknutý e-mail sežere celých 300 s `maxDuration` cronu.
+ * Netrpí tím jen cron — na témž volání visí i uživatelské server actions
+ * (obnova hesla, ověřovací e-mail).
  *
  * 15 s: odeslání jedné zprávy přes API trvá zlomek sekundy, takže je to
- * dvacetinásobná rezerva. Zároveň se do rozpočtu jedné dávky notifikačního
- * cronu (600 s) vejde i 25 zaseknutých odeslání a štafeta se pořád stihne
- * předat dál. Pro člověka, který čeká na odpověď formuláře, je 15 s horní
- * mez toho, co se dá vydržet.
+ * dvacetinásobná rezerva. I když se zasekne každé odeslání, dávka
+ * notifikačního cronu skončí na svém časovém stropu (225 s) a štafeta se
+ * pořád stihne předat dál. Pro člověka, který čeká na odpověď formuláře,
+ * je 15 s horní mez toho, co se dá vydržet.
  *
  * Vypršení je SELHÁNÍ odeslání (výjimka), ne tichý úspěch: volající na tom
  * mají vrácení claimu u digestu i potvrzení objednávky a hlášku uživateli

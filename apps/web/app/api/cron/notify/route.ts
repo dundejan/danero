@@ -1,6 +1,6 @@
-import { after } from 'next/server';
 import { getDb } from '@/db';
 import { withCron } from '@/lib/cron-auth';
+import { handOffCron } from '@/lib/cron-handoff';
 import { errorText, logEvent } from '@/lib/log';
 import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import {
@@ -14,50 +14,12 @@ import {
  * ho default limit funkce zabil uprostřed — a bez dávkování by timeout
  * u 50. uživatele znamenal, že zbytek ten den nedostane nic.
  */
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 /** Kolik uživatelů zpracuje jedna invokace, než předá práci další. */
 const BATCH_SIZE = 25;
 /** Časový strop dávky — pod limitem funkce, ať se stihne předat štafeta. */
-const BATCH_BUDGET_MS = 600_000;
-/**
- * Jak dlouho čekáme na odpověď navazující dávky. Není to čekání na její
- * dokončení: každá dávka je vlastní invokace s vlastním limitem, tohle je jen
- * pojistka, že požadavek opravdu odešel.
- */
-const HANDOFF_TIMEOUT_MS = 10_000;
-
-/** Předá zbytek fronty další invokaci (`?offset=`), ať se stihne celý den. */
-function handOff(request: Request, offset: number): void {
-  const next = new URL(request.url);
-  next.searchParams.set('offset', String(offset));
-  logEvent('info', 'cron.notify.handoff', { offset });
-  after(async () => {
-    try {
-      const response = await fetch(next, {
-        headers: { authorization: `Bearer ${process.env.CRON_SECRET ?? ''}` },
-        signal: AbortSignal.timeout(HANDOFF_TIMEOUT_MS),
-      });
-      // K5-12: `fetch` na chybový stav NEVYHAZUJE. Selhání navazující dávky
-      // (500) se sice zaloguje v ní samé, ale požadavek, který do aplikace
-      // vůbec nedorazil (Vercel 429/502) nebo skončil na 401 (přenastavené
-      // CRON_SECRET), by tady prošel jako úspěšné předání — a zbytek fronty
-      // ten den nedostane nic, aniž by se to kdekoli objevilo jako chyba.
-      if (!response.ok) {
-        logEvent('error', 'cron.notify.handoff_failed', {
-          offset,
-          status: response.status,
-          error: `štafeta odmítnuta se stavem ${response.status}`,
-        });
-      }
-    } catch (error) {
-      // TimeoutError = dávka běží dál ve vlastní invokaci, jen jsme přestali
-      // čekat na její odpověď; cokoli jiného je skutečné selhání předání
-      if (error instanceof Error && error.name === 'TimeoutError') return;
-      logEvent('error', 'cron.notify.handoff_failed', { offset, error: errorText(error) });
-    }
-  });
-}
+const BATCH_BUDGET_MS = 225_000;
 
 /** Denní notifikace (po ranním syncu) — chráněno CRON_SECRET. */
 export const GET = withCron('notify', async (request: Request): Promise<Response> => {
@@ -98,7 +60,11 @@ export const GET = withCron('notify', async (request: Request): Promise<Response
   const remaining = Math.max(0, targets.length - nextOffset);
   // `results.length > 0` je pojistka proti nekonečnému řetězu: bez postupu
   // se štafeta nepředává
-  if (remaining > 0 && results.length > 0) handOff(request, nextOffset);
+  if (remaining > 0 && results.length > 0) {
+    const next = new URL(request.url);
+    next.searchParams.set('offset', String(nextOffset));
+    handOffCron('notify', next, { offset: nextOffset });
+  }
 
   // G-O1: bez tohohle logu končily chyby jednotlivých uživatelů jen v těle
   // odpovědi, cron vracel 200 a výpadek Resendu se z monitoringu nedal poznat.

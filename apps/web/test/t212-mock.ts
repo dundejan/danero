@@ -37,6 +37,8 @@ export function makeMockFetch(
      * bajtů výplně — nad stropem `keepFailedUpload` se případ neuschová.
      */
     unrecognizedYears?: Record<number, number>;
+    /** Roky, jejichž export se u brokera generuje donekonečna (nikdy `Finished`). */
+    stuckYears?: number[];
   } = {},
 ) {
   const reportYears = new Map<number, number>();
@@ -70,6 +72,9 @@ export function makeMockFetch(
       return json({ reportId: lastReportId });
     }
     if (url.endsWith('/history/exports')) {
+      if (options.stuckYears?.includes(reportYears.get(lastReportId) ?? -1)) {
+        return json([{ reportId: lastReportId, status: 'Processing' }]);
+      }
       return json([
         {
           reportId: lastReportId,

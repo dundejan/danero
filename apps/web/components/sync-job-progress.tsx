@@ -65,9 +65,14 @@ export function SyncJobProgress({
   }, [active, router, accountId]);
 
   const progress = job.progress;
+  // čekající job s průběhem = plná historie, která se stahuje po částech
+  // a právě je mezi nimi (lib/jobs.ts, `pauseJob`)
+  const betweenParts = job.status === 'pending' && Boolean(progress?.years?.length);
   const phaseLabel =
     job.status === 'pending'
-      ? 'Synchronizace čeká ve frontě…'
+      ? betweenParts
+        ? 'Navazuji další částí historie…'
+        : 'Synchronizace čeká ve frontě…'
       : progress
         ? phaseText(progress.phase, broker)
         : 'Synchronizace běží…';
@@ -81,7 +86,8 @@ export function SyncJobProgress({
       {progress?.mode === 'full' && (
         <p className="text-xs text-inkoust-tlumeny">
           První synchronizace prochází všechny roky od založení účtu — kvůli limitům
-          Trading 212 může trvat i deset minut. Klidně odejdi, poběží dál.
+          Trading 212 trvá zhruba minutu na každý rok a stahuje se po částech. Klidně
+          odejdi, poběží dál.
         </p>
       )}
       {progress?.years && progress.years.length > 0 && (

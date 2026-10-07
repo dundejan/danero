@@ -5,6 +5,7 @@ import { brokerAccounts, importBatches, jobs, user } from '@/db/schema';
 import { encryptSecret } from '@/lib/crypto';
 import {
   enqueueSyncJob,
+  forgetSyncProgressYears,
   latestSyncJob,
   processJob,
   processPendingJobs,
@@ -432,4 +433,146 @@ describe('cron tick má časový rozpočet (G-P5)', () => {
     expect(results).toHaveLength(2);
     expect(deferred).toBe(0);
   });
+});
+
+/**
+ * Funkce na hostingu smí běžet nejvýš 300 s a plná historie T212 stojí ~65 s
+ * čekání za každý rok. Sync se proto před termínem sám přeruší, job se vrátí
+ * do fronty i s průběhem a další běh naváže — bez jediného roku staženého
+ * dvakrát a bez toho, aby se účet mezitím tvářil jako rozbitý.
+ */
+describe('plný sync po částech (limit běhu funkce)', () => {
+  const PO_TERMINU = new Date(0);
+
+  it(
+    'po termínu se job přeruší, vrátí do fronty a další části navážou až do konce',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupAccount(db);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const mock = makeMockFetch();
+      const run = (deadlineAt?: Date) =>
+        processJob(db, job.id, {
+          fetchImpl: mock.fetchImpl,
+          now: NOW,
+          pollIntervalMs: 5,
+          ...(deadlineAt ? { deadlineAt } : {}),
+        });
+
+      // 1. část: termín už minul, první rok se přesto stáhne (jinak by se job
+      // točil bez kroku vpřed) a před druhým se běh přeruší
+      const first = await run(PO_TERMINU);
+      expect(first?.status).toBe('pending');
+      expect(first?.error).toBeNull();
+      expect(mock.requestedYears).toEqual([2026]);
+      const firstProgress = first?.progress as SyncProgress;
+      expect(firstProgress.years).toEqual([
+        expect.objectContaining({ year: 2026, status: 'done', complete: true, added: 1 }),
+      ]);
+
+      // přerušení není chyba účtu: žádný chybový stav, žádné `lastSyncedAt`
+      const mezi = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect(mezi.lastSyncStatus).toBeNull();
+      expect(mezi.lastSyncError).toBeNull();
+      expect(mezi.lastSyncedAt).toBeNull();
+
+      // 2. část: zdědí i BĚŽNÝ rok (je z téhož běhu) a stáhne jeden další
+      const second = await run(PO_TERMINU);
+      expect(second?.status).toBe('pending');
+      expect(mock.requestedYears).toEqual([2026, 2025]);
+
+      // 3. část s běžným termínem doběhne do konce
+      const last = await run();
+      expect(last?.status).toBe('success');
+      // každý rok se u brokera vyžádal právě jednou
+      expect(mock.requestedYears).toEqual([2026, 2025, 2024, 2023, 2022]);
+
+      // výsledek mluví za celý běh, ne jen za poslední část
+      const result = last?.result as { added: number; errorCount: number; syncStatus: string };
+      expect(result.added).toBe(2);
+      expect(result.errorCount).toBe(0);
+      expect(result.syncStatus).toBe('ok');
+
+      const account = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect(account.lastSyncStatus).toBe('ok');
+      expect(account.lastSyncedAt).not.toBeNull();
+      // do ověřeného rozsahu patří i roky z dřívějších částí
+      const coverage = (account.lastReconciliation as { coverage: { syncedYears: number[] } })
+        .coverage;
+      expect(coverage.syncedYears).toEqual([2022, 2023, 2024, 2025, 2026]);
+    },
+  );
+
+  it(
+    'export, který se nestihl vygenerovat, přeruší běh jen když už část něco stáhla',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupAccount(db);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const mock = makeMockFetch({ stuckYears: [2025] });
+      const options = { fetchImpl: mock.fetchImpl, now: NOW, pollIntervalMs: 5 };
+
+      // 2026 se stáhne, 2025 se nevygeneruje → přerušení, ne chyba
+      const first = await processJob(db, job.id, options);
+      expect(first?.status).toBe('pending');
+      const progress = first?.progress as SyncProgress;
+      // rozdělaný rok v průběhu nezůstává viset jako „generuje se“
+      expect(progress.years!.map((y) => y.year)).toEqual([2026]);
+
+      // v další části je 2025 první na řadě a nevygeneruje se zas → teď už chyba,
+      // jinak by se job vracel do fronty donekonečna
+      const second = await processJob(db, job.id, options);
+      expect(second?.status).toBe('error');
+      expect(second?.error).toContain('nebyl vygenerován');
+      const account = (
+        await db.select().from(brokerAccounts).where(eq(brokerAccounts.id, accountId))
+      )[0]!;
+      expect(account.lastSyncStatus).toBe('error');
+    },
+  );
+
+  it('tick cronu přerušený job hlásí a příští tick ho převezme', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    const accountId = await setupAccount(db);
+    const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+    const mock = makeMockFetch();
+    const options = { fetchImpl: mock.fetchImpl, now: NOW, pollIntervalMs: 5 };
+
+    const tick = await processPendingJobs(db, { ...options, budgetMs: 0 });
+    expect(tick.paused).toBe(1);
+    expect(tick.results).toEqual([
+      expect.objectContaining({ jobId: job.id, status: 'pending', error: null }),
+    ]);
+
+    const next = await processPendingJobs(db, options);
+    expect(next.paused).toBe(0);
+    expect(next.results).toEqual([expect.objectContaining({ jobId: job.id, status: 'success' })]);
+  });
+
+  it(
+    'vrácení dávky mezi částmi zneplatní rok i u čekajícího jobu (K6a-01)',
+    { timeout: 30_000 },
+    async () => {
+      const db = await createPgliteDb();
+      const accountId = await setupAccount(db);
+      const job = await enqueueSyncJob(db, 'u1', accountId, 't212-sync');
+      const mock = makeMockFetch();
+      const options = { fetchImpl: mock.fetchImpl, now: NOW, pollIntervalMs: 5 };
+      await processJob(db, job.id, { ...options, deadlineAt: PO_TERMINU });
+
+      // uživatel mezi částmi vrátí import roku 2026 → průběh ho nesmí dál
+      // vydávat za hotový, jinak by rok zmizel tiše a natrvalo
+      expect(await forgetSyncProgressYears(db, 'u1', [2026])).toBe(1);
+
+      const last = await processJob(db, job.id, options);
+      expect(last?.status).toBe('success');
+      expect(mock.requestedYears).toEqual([2026, 2026, 2025, 2024, 2023, 2022]);
+    },
+  );
 });

@@ -1,0 +1,44 @@
+name: Záchrana background jobů
+
+# Hodinové zavolání /api/cron/jobs na produkci: dorovná synchronizace, které
+# utnul limit běhu funkce, a dojede frontu, na kterou se nedostalo.
+#
+# Proč odsud a ne z vercel.json: Vercel Hobby dovoluje cron nejvýš jednou denně
+# a častější výraz shodí celé nasazení. Denní pojistka ve vercel.json zůstává;
+# tohle jen zkracuje čekání z dne na hodinu. Když workflow neběží (GitHub ho ve
+# veřejném repozitáři po 60 dnech bez commitu sám vypne), aplikace funguje dál,
+# jen se zaseknutý job dorovná až s denním cronem.
+#
+# Potřebuje dvě hodnoty v nastavení repozitáře (Settings → Secrets and
+# variables → Actions): tajemství CRON_SECRET (stejné jako ve Vercelu)
+# a proměnnou PRODUCTION_URL (např. https://danero.cz). Fork bez nich nedělá nic.
+on:
+  schedule:
+    # 17. minuta: začátky hodin bývají na GitHubu přetížené a běhy se zpožďují
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: jobs-rescue
+  cancel-in-progress: false
+
+jobs:
+  rescue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: vars.PRODUCTION_URL != ''
+    steps:
+      - name: Zavolat záchranný cron
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        # --max-time: 300 s limit funkce + rezerva. Tělo odpovědi se zahazuje —
+        # log workflow ve veřejném repozitáři čte kdokoli a v těle jsou id jobů
+        # a texty chyb; co se stalo, je v logu aplikace.
+        run: |
+          curl -fsS --retry 2 --retry-delay 30 --max-time 330 -o /dev/null \
+            -w 'HTTP %{http_code} za %{time_total} s\n' \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$PRODUCTION_URL/api/cron/jobs"

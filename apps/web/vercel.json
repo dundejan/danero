@@ -3,28 +3,24 @@
   "regions": ["fra1"],
   "crons": [
     {
-      "path": "/api/cron/sync-brokers",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/notify",
-      "schedule": "30 5 * * *"
-    },
-    {
-      "path": "/api/cron/jobs",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/maintenance",
+      "schedule": "0 1 * * *"
     },
     {
       "path": "/api/cron/fx",
-      "schedule": "45 4 * * *"
+      "schedule": "0 2 * * *"
     },
     {
-      "path": "/api/cron/maintenance",
-      "schedule": "15 4 * * *"
+      "path": "/api/cron/sync-brokers",
+      "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/billing-reconcile",
-      "schedule": "40 3 * * *"
+      "path": "/api/cron/notify",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/jobs",
+      "schedule": "0 13 * * *"
     }
   ]
 }

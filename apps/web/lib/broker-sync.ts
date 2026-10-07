@@ -107,6 +107,23 @@ export interface SyncYearProgress {
   complete?: boolean;
 }
 
+/**
+ * Sync se sám přerušil, protože by další krok nestihl v čase, který má
+ * k dispozici — NENÍ to chyba. Job se vrátí do fronty i s průběhem a další běh
+ * naváže tam, kde tenhle skončil (`processJob` v `lib/jobs.ts`).
+ *
+ * Proč to existuje: funkce na hostingu má strop běhu (Vercel Hobby 300 s)
+ * a plná historie Trading 212 stojí ~65 s čekání za KAŽDÝ rok. Bez přerušení
+ * by funkci utnula platforma uprostřed roku, job by čtvrt hodiny visel
+ * v `running` a uživatel by musel synchronizaci pouštět znovu ručně.
+ */
+export class SyncPaused extends Error {
+  constructor() {
+    super('Synchronizace pokračuje po částech — další část naváže sama.');
+    this.name = 'SyncPaused';
+  }
+}
+
 /** Průběžný stav syncu (serializovatelný do jobs.progress). */
 export interface SyncProgress {
   phase: 'connecting' | 'exporting' | 'reconciling';

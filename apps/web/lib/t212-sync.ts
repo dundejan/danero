@@ -16,6 +16,7 @@ import {
   type SyncStatus,
   type SyncYearProgress,
   previouslyVerifiedYears,
+  SyncPaused,
   syncErrorText,
   syncBatchFilename,
 } from '@/lib/broker-sync';
@@ -37,6 +38,12 @@ export interface SyncOutcome {
   errors: RowIssue[];
   reconciliation: StoredReconciliation | null;
   status: SyncStatus;
+  /**
+   * Počet chybových řádků za CELÝ běh — včetně částí, které proběhly
+   * v dřívějších invokacích téhož jobu (`resume.sameRun`). `errors` nese jen
+   * řádky z téhle části, protože ty starší už v paměti nejsou.
+   */
+  errorCount: number;
 }
 
 /** U 403 doplní nápovědu k oprávněním T212 klíče (jinak vrací zprávu beze změny). */
@@ -60,7 +67,24 @@ export interface SyncOptions {
    * (65 s čekání na export ZA KAŽDÝ rok) by se jinak na serverless platformě
    * nikdy nedokončil, protože každý pokus začínal od nuly.
    */
-  resume?: { years: SyncYearProgress[]; syncedAt: Date };
+  resume?: {
+    years: SyncYearProgress[];
+    syncedAt: Date;
+    /**
+     * Průběh je z dřívější části TÉHOŽ jobu (přerušení přes `SyncPaused`), ne
+     * ze spadlého běhu. Pak se dědí každý dokončený rok — i běžný a i rok
+     * s chybovými řádky — přesně jako by běh nikdo nepřerušil. Rezerva sedmi
+     * dnů tu nemá co chránit: části dělí minuty až hodiny a ocas běžného roku
+     * dotáhne další inkrementální sync (ten si rezervu počítá z `lastSyncedAt`).
+     */
+    sameRun?: boolean;
+  };
+  /**
+   * Do kdy smí sync ZAČÍNAT další čekání na export. Po tomhle okamžiku se
+   * plný běh přeruší (`SyncPaused`) a naváže v další invokaci; bez hodnoty
+   * běží bez přerušení (testy, skripty).
+   */
+  deadlineAt?: Date;
 }
 
 /** T212 Invest existuje od ~2017 — pod tento rok nemá smysl exporty žádat. */
@@ -115,19 +139,29 @@ function defaultPollIntervalMs(): number {
 /**
  * Kolikrát se za JEDEN rok zeptáme, jestli je export hotový (K5-16).
  *
- * Rozpočet: `maxDuration` cronu je 800 s a jeden tick jobů si z něj bere
- * `DEFAULT_JOB_BUDGET_MS` = 600 s. Devět dotazů po 65 s = 585 s, což je
- * největší strop, který se do rozpočtu ticku ještě vejde, a zároveň sedí na
- * dokumentovaný předpoklad „nejdelší tichý úsek je čekání na export jednoho
- * roku, max 10 minut“ (lib/jobs.ts, `STALE_AFTER_MS`).
+ * Rozpočet: funkce smí běžet 300 s (strop Vercel Hobby, hlídá ho
+ * `test/hosting-limits.test.ts`) a jeden běh jobů si z toho bere
+ * `DEFAULT_JOB_BUDGET_MS` = 225 s. Tři dotazy po 65 s = 195 s, což je největší
+ * strop, který se do rozpočtu ještě vejde. Když má běh termín (`deadlineAt`),
+ * počet se navíc krátí podle toho, kolik času do něj zbývá.
  *
- * Dřív tu byl časový rozpočet 600 s. Ten se ale v klientovi kontroloval PŘED
- * uspáním, takže reálné čekání bylo 10 dotazů a 671 s (naměřeno) — o interval
- * víc, než kolik měl celý tick na všechny joby dohromady. Rok, jehož export se
- * nikdy neobjevil, tak spolykal 84 % `maxDuration` a zbytek běhu utnul Vercel.
- * Čekání na export, který se opravdu generuje, se tím zkracuje o jediný dotaz.
+ * Do 7. 10. 2026 tu bylo 9 dotazů (585 s) pro `maxDuration` 800 s z placeného
+ * tarifu. Ještě dřív časový rozpočet 600 s, který se ale v klientovi
+ * kontroloval PŘED uspáním, takže reálné čekání bylo 10 dotazů a 671 s
+ * (naměřeno) — o interval víc, než kolik měl celý tick na všechny joby
+ * dohromady (K5-16). Proto je strop v počtu dotazů, ne v čase.
  */
-const EXPORT_POLL_ATTEMPTS = 9;
+const EXPORT_POLL_ATTEMPTS = 3;
+
+/**
+ * Kolik dotazů na stav exportu se ještě stihne do termínu běhu. Nula znamená,
+ * že další rok už začínat nemá smysl.
+ */
+function pollAttemptsBefore(deadlineAt: Date | undefined, pollIntervalMs: number): number {
+  if (!deadlineAt) return EXPORT_POLL_ATTEMPTS;
+  const fits = Math.floor((deadlineAt.getTime() - Date.now()) / pollIntervalMs);
+  return Math.max(0, Math.min(EXPORT_POLL_ATTEMPTS, fits));
+}
 
 async function resolveClient(
   credentials: StoredCredentials,
@@ -227,6 +261,7 @@ export async function syncTrading212(
   // znovu — obchody se do exportů propisují se zpožděním (stejná 7denní
   // rezerva jako u inkrementálního syncu).
   const resumeDone = new Map<number, SyncYearProgress>();
+  const sameRun = options.resume?.sameRun === true;
   if (mode === 'full' && options.resume) {
     const resumeSafeBelowYear = new Date(
       options.resume.syncedAt.getTime() - 7 * 86_400_000,
@@ -234,19 +269,33 @@ export async function syncTrading212(
     for (const entry of options.resume.years) {
       // Dědí se JEN rok, jehož stažení i zpracování doběhlo celé bez výjimky
       // (`complete`). Status 'done' sám nestačí: sedí i na roku z běhu starší
-      // verze, kde se úplnost neznačila. Rok s chybami řádků se nedědí taky —
-      // vadný export mohl být přechodný a přeskočením by transakce chyběly navždy.
-      if (
-        entry.year < resumeSafeBelowYear &&
-        entry.year !== currentYear &&
-        entry.complete === true &&
-        entry.status !== 'running' &&
-        (entry.errors ?? 0) === 0
-      ) {
-        resumeDone.set(entry.year, entry);
-      }
+      // verze, kde se úplnost neznačila.
+      const finished = entry.complete === true && entry.status !== 'running';
+      // Ze SPADLÉHO běhu se navíc nedědí rok s chybami řádků (vadný export mohl
+      // být přechodný a přeskočením by transakce chyběly navždy) ani běžný rok
+      // a roky poblíž pádu. Z dřívější části téhož jobu se dědí všechno
+      // dokončené — viz `resume.sameRun`.
+      const inherit = sameRun
+        ? finished
+        : finished &&
+          entry.year < resumeSafeBelowYear &&
+          entry.year !== currentYear &&
+          (entry.errors ?? 0) === 0;
+      if (inherit) resumeDone.set(entry.year, entry);
     }
   }
+
+  // Roky, které tenhle běh nestahoval, protože je celé stáhla dřívější část
+  // nebo spadlý běh — u brokera jsme se na ně ptali, takže do rozsahu ověřené
+  // historie patří stejně jako ty čerstvě stažené.
+  const inheritedYears: number[] = [];
+  // Součty z dřívějších částí TÉHOŽ jobu: výsledek jobu má říct, co přinesl
+  // celý běh, ne jen jeho poslední část.
+  const carried = { added: 0, duplicates: 0, errors: 0 };
+  // kolik roků tahle část sama stáhla — přerušit se smí až po prvním, jinak
+  // by se job mohl vracet do fronty donekonečna bez jediného kroku vpřed
+  let liveYears = 0;
+  const canPause = mode === 'full' && options.deadlineAt !== undefined;
 
   const minYear = mode === 'incremental' ? incrementalMinYear : T212_MIN_YEAR;
   for (let year = currentYear; year >= minYear; year -= 1) {
@@ -255,6 +304,12 @@ export async function syncTrading212(
       // zděděný záznam v průběhu — UI vidí celou historii, další případný
       // pád ho předá dalšímu resume
       yearProgress.push({ ...alreadyDone });
+      inheritedYears.push(year);
+      if (sameRun) {
+        carried.added += alreadyDone.added ?? 0;
+        carried.duplicates += alreadyDone.duplicates ?? 0;
+        carried.errors += alreadyDone.errors ?? 0;
+      }
       // prázdnost se hodnotí stejně jako u živého běhu (počty minulého běhu):
       // rok bez jediné transakce zvyšuje počítadlo a ukončuje smyčku
       parsedTransactions += (alreadyDone.added ?? 0) + (alreadyDone.duplicates ?? 0);
@@ -266,25 +321,52 @@ export async function syncTrading212(
       }
       continue;
     }
+    // Další rok by se do termínu nestihl ani jedním dotazem → přerušit a nechat
+    // navázat další invokaci. `report` nejdřív uloží průběh: stav posledního
+    // dokončeného roku se jinak zapisuje až se začátkem toho dalšího.
+    const pollAttempts = pollAttemptsBefore(options.deadlineAt, pollIntervalMs);
+    if (canPause && liveYears > 0 && pollAttempts === 0) {
+      await report('exporting');
+      throw new SyncPaused();
+    }
     const current: SyncYearProgress = { year, status: 'running' };
     yearProgress.push(current);
     await report('exporting');
-    const rawExport = await client.fetchHistoryCsv(
-      {
-        timeFrom: `${year}-01-01T00:00:00Z`,
-        timeTo:
-          year === currentYear
-            ? `${now.toISOString().slice(0, 19)}Z`
-            : `${year}-12-31T23:59:59Z`,
-        dataIncluded: {
-          includeOrders: true,
-          includeDividends: true,
-          includeTransactions: true,
-          includeInterest: true,
+    let rawExport: string;
+    try {
+      rawExport = await client.fetchHistoryCsv(
+        {
+          timeFrom: `${year}-01-01T00:00:00Z`,
+          timeTo:
+            year === currentYear
+              ? `${now.toISOString().slice(0, 19)}Z`
+              : `${year}-12-31T23:59:59Z`,
+          dataIncluded: {
+            includeOrders: true,
+            includeDividends: true,
+            includeTransactions: true,
+            includeInterest: true,
+          },
         },
-      },
-      { pollIntervalMs, maxAttempts: EXPORT_POLL_ATTEMPTS },
-    );
+        // první rok části dostane vždy aspoň jeden dotaz, i kdyby termín už minul
+        { pollIntervalMs, maxAttempts: Math.max(1, pollAttempts) },
+      );
+    } catch (error) {
+      // 408 = export se do termínu nevygeneroval. Když už tahle část něco
+      // stáhla, není to chyba: rok dostane v další části plný počet dotazů.
+      // U prvního roku části to chyba je — jinak by se točilo bez konce.
+      if (
+        canPause &&
+        liveYears > 0 &&
+        error instanceof Trading212ApiError &&
+        error.status === 408
+      ) {
+        yearProgress.pop();
+        await report('exporting');
+        throw new SyncPaused();
+      }
+      throw error;
+    }
     // Ochrana před ne-CSV odpovědí (např. XML chyba expirovaného odkazu) —
     // autodetekce by ji jinak poslala do IBKR parseru a smetí by dostalo cizí broker
     if (rawExport.trimStart().startsWith('<')) {
@@ -353,6 +435,7 @@ export async function syncTrading212(
     // až sem se dojde jen bez výjimky (stažení, parsování i uložení) — teprve
     // takový rok smí příští resume přeskočit
     current.complete = true;
+    liveYears += 1;
 
     // Rok bez jediné transakce počítáme jako prázdný VŽDY (i kdyby parser hlásil
     // chyby — nesmí nám resetovat počítadlo a prohnat smyčku až do 2016).
@@ -383,7 +466,11 @@ export async function syncTrading212(
     );
     // roky ověřené dřívějšími běhy + tímhle během (inkrementál stahuje jen
     // běžný rok, ale co plný sync ověřil, platí dál)
-    const verifiedYears = [...previouslyVerifiedYears(account), ...yearsCovered];
+    const verifiedYears = [
+      ...previouslyVerifiedYears(account),
+      ...inheritedYears,
+      ...yearsCovered,
+    ];
     reconciliation = await reconcileBrokerPositions(
       db,
       account.userId,
@@ -412,9 +499,10 @@ export async function syncTrading212(
     });
   }
 
-  const added = batches.reduce((sum, batch) => sum + batch.added, 0);
-  const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, 0);
+  const added = batches.reduce((sum, batch) => sum + batch.added, carried.added);
+  const duplicates = batches.reduce((sum, batch) => sum + batch.duplicates, carried.duplicates);
   const errors = batches.flatMap((batch) => batch.errors);
+  const errorCount = errors.length + carried.errors;
 
   // G-1: prázdný export (výpadek generování na straně T212) vypadá stejně jako
   // prázdný rok. Plný sync, který nepřinesl ANI JEDNU transakci a zároveň nemá
@@ -425,10 +513,19 @@ export async function syncTrading212(
       ? 'Trading212 nevrátil za žádný rok jedinou transakci a zároveň se nepodařilo ověřit, že pozice sedí — synchronizaci proto nepovažujeme za dokončenou a příště se stáhne znovu celá historie. Bývá to dočasný výpadek generování výpisů na straně Trading212; zkus to za chvíli znovu.'
       : null;
 
-  const status = await finishBrokerSync(db, account, reconciliation, errors.length, now, {
+  const status = await finishBrokerSync(db, account, reconciliation, errorCount, now, {
     reconciliationError,
     incomplete,
   });
 
-  return { batches, yearsCovered, added, duplicates, errors, reconciliation, status };
+  return {
+    batches,
+    yearsCovered,
+    added,
+    duplicates,
+    errors,
+    errorCount,
+    reconciliation,
+    status,
+  };
 }

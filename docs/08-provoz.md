@@ -28,16 +28,26 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 
    | UTC | Routa | Co dělá |
    |---|---|---|
-   | 3:40 denně | `/api/cron/billing-reconcile` | srovnání předplatných proti Stripu |
-   | 4:15 denně | `/api/cron/maintenance` | úklid dat po retenční lhůtě |
-   | 4:45 denně | `/api/cron/fx` | denní kurzy ČNB |
-   | 5:00 denně | `/api/cron/sync-brokers` | sync všech napojených brokerů |
-   | 5:30 denně | `/api/cron/notify` | přepočet limitů + upozornění |
-   | každou hodinu | `/api/cron/jobs` | záchranná síť background jobů |
+   | 1:00 denně | `/api/cron/maintenance` | úklid dat po retenční lhůtě |
+   | 2:00 denně | `/api/cron/fx` | denní kurzy ČNB |
+   | 3:00 denně | `/api/cron/sync-brokers` | sync všech napojených brokerů |
+   | 5:00 denně | `/api/cron/notify` | přepočet limitů + upozornění |
+   | 13:00 denně | `/api/cron/jobs` | záchranná síť background jobů (denní pojistka) |
 
-   `Authorization: Bearer $CRON_SECRET` posílá Vercel sám. Pozor: hodinový cron
-   vyžaduje placený plán (Hobby umí jen denní); k dlouhému prvnímu syncu viz
-   „Limity Vercel funkcí" níže.
+   `Authorization: Bearer $CRON_SECRET` posílá Vercel sám.
+
+   **Proč celé hodiny a všechno jen denně:** hostovaná instance běží na
+   **Vercel Hobby**. Ten dovolí cron nejvýš jednou za den (častější výraz
+   shodí celé nasazení) a spouští ho **kdykoli během zadané hodiny**
+   (`0 3 * * *` = někdy mezi 3:00 a 3:59). Pořadí kurzy → sync → upozornění
+   proto drží jen rozestup celých hodin. Hlídá to `test/hosting-limits.test.ts`.
+
+   Záchranný cron jobů chceme častěji než denně — volá ho proto **každou
+   hodinu GitHub Actions** (`.github/workflows/jobs-rescue.yml`; potřebuje
+   v repozitáři tajemství `CRON_SECRET` a proměnnou `PRODUCTION_URL`). Když
+   workflow neběží, aplikace funguje dál, jen se zaseknutý job dorovná až
+   s denní pojistkou. Pozor: GitHub plánovaná workflow ve veřejném repozitáři
+   po 60 dnech bez commitu sám vypne a pošle o tom e-mail.
 
    Notifikační běh je dávkovaný (25 uživatelů na invokaci) a zbytek fronty si
    předává sám dál přes `?offset=` — timeout u 50. uživatele proto neznamená,
@@ -204,14 +214,39 @@ způsobem, jakým zákazník platil.
   nebo nulové počty = cron tiše nic neudělal** — přesně to se dělo, když ČNB
   vrátila HTTP 200 s HTML chybovou stránkou.
 
-## Limity Vercel funkcí (první plný sync)
+## Limity Vercel funkcí (synchronizace po částech)
 
-Plná T212 historie trvá minuty až ~10 min (rate limit exportů ~1/min). Cron routy
-`/api/cron/sync-brokers` a `/api/cron/jobs` mají `maxDuration = 800` — to vyžaduje
-**Vercel Pro** (hobby plán má strop 300 s). Na hobby plánu první plný sync
-pravděpodobně spadne uprostřed; záchranný hodinový cron ho dorovná na chybu
-a další pokus jede znovu — pro produkci proto počítej s Pro plánem, nebo první
-historickou synchronizaci proveď ručním nahráním CSV/XML exportů (idempotentní).
+Funkce smí na Vercel Hobby běžet nejvýš **300 s** — všechny routy a stránky
+proto mají `maxDuration = 300` (víc shodí nasazení; hlídá to
+`test/hosting-limits.test.ts`). Plná historie Trading 212 se do toho nevejde:
+export jde vyžádat ~1× za minutu a každý rok je jeden export.
+
+Synchronizace se proto **stahuje po částech**:
+
+- Jeden běh jobů má rozpočet 225 s (`DEFAULT_JOB_BUDGET_MS` v `lib/jobs.ts`),
+  zbytek do 300 s je rezerva na dotažení roku, rekonciliaci a zápis.
+- Když by se další rok do termínu nestihl, sync se sám přeruší (`SyncPaused`),
+  job se vrátí do fronty jako `pending` **i s průběhem** a navazující invokace
+  `/api/cron/jobs?hop=N` pokračuje tam, kde předchozí skončila. V logu je to
+  `job.paused` a `cron.jobs.handoff`.
+- Stejně se dojíždí fronta denního syncu, na kterou se v jednom běhu nedostalo
+  (`deferred` v odpovědi cronu).
+- Řetěz končí sám — každá část stáhne aspoň jeden rok — a má strop 40 invokací.
+  Když předání selže (`cron.jobs.handoff_failed`), zbytek dojede s hodinovým
+  během z GitHub Actions, nejpozději s denní pojistkou.
+
+V praxi: historie o osmi letech se stáhne na tři až čtyři části, tedy zhruba
+za stejnou dobu jako dřív v jednom běhu. Uživatel na `/import` vidí průběh po
+letech celou dobu, mezi částmi hlášku „Navazuji další částí historie…".
+
+Co se **nestihne ani tak**: export jednoho roku, který se u brokera generuje
+déle než ~3 minuty (tři dotazy po 65 s). Takový běh skončí chybou a jde pustit
+znovu; hotové roky se nestahují podruhé. Záloha je ruční nahrání CSV exportu.
+
+**Kolik účtů se dá takhle obsloužit:** jeden účet T212 stojí denně ~65 s
+čekání, řetěz tedy zvládne desítky účtů za hodinu. Čekání na síť se do limitu
+aktivního CPU na Hobby nepočítá, počítá se ale vyhrazená paměť — při stovkách
+napojených účtů je čas vrátit se k placenému tarifu nebo sync rozložit do dne.
 
 ## Region funkcí
 

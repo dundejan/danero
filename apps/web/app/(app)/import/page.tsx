@@ -39,9 +39,10 @@ import {
 
 export const metadata = { title: 'Zdroje dat — Danero' };
 
-// syncBrokerAction pouští přes after() plný sync (poll exportů T212 po 65 s) —
-// default limit server action by běh utnul v půlce (stejně jako cron routes)
-export const maxDuration = 800;
+// syncBrokerAction pouští přes after() sync (poll exportů T212 po 65 s) —
+// default limit server action by běh utnul hned. 300 s je strop Vercel Hobby;
+// plná historie se do něj nevejde, proto se sync umí přerušit a navázat.
+export const maxDuration = 300;
 
 interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;

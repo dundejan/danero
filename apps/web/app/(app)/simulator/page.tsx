@@ -21,7 +21,7 @@ import { requireUser } from '@/lib/session';
  * portfolia to je nejdražší výpočet v aplikaci. Bez `maxDuration` platí výchozí
  * limit funkce a stránka skončí timeoutem místo výsledku (nález G-P2).
  */
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export const metadata = { title: 'Simulátor prodeje — Danero' };
 

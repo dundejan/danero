@@ -13,6 +13,7 @@ import { reportFailedImport } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
+import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { errorText, logEvent } from '@/lib/log';
 import { resolveEntitlements } from '@/lib/entitlements';
@@ -270,8 +271,12 @@ export async function disconnectBrokerAction(formData: FormData): Promise<void> 
 
 /**
  * Ruční synchronizace broker účtu: zapíše background job a hned se vrátí —
- * samotný běh (klidně deset minut) startuje after() po odeslání odpovědi,
- * průběh polluje /import. Chyby běhu končí v jobs.error (viz lib/jobs.ts).
+ * samotný běh startuje after() po odeslání odpovědi, průběh polluje /import.
+ * Chyby běhu končí v jobs.error (viz lib/jobs.ts).
+ *
+ * Plná historie se do jednoho běhu funkce nevejde: job se pak sám přeruší,
+ * vrátí se do fronty (`pending`) a další část se rozjede hned v navazující
+ * invokaci /api/cron/jobs.
  */
 export async function syncBrokerAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -287,7 +292,12 @@ export async function syncBrokerAction(formData: FormData): Promise<void> {
 
   const job = await enqueueSyncJob(db, user.id, account.id, jobTypeForBroker(account.broker));
   if (job.status === 'pending') {
-    after(() => processJob(db, job.id));
+    after(async () => {
+      const finished = await processJob(db, job.id);
+      if (finished?.status === 'pending') {
+        continueJobsElsewhere(process.env.BETTER_AUTH_URL ?? 'http://localhost:3000', 0);
+      }
+    });
   }
 
   revalidatePath('/import');

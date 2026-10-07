@@ -42,16 +42,18 @@ export interface IbkrSyncOptions {
 
 /**
  * Kolikrát se ptáme IBKR, jestli je výpis hotový. Při výchozím intervalu 10 s
- * je nejdelší čekání 580 s — vejde se do rozpočtu jednoho ticku cronu
- * (`DEFAULT_JOB_BUDGET_MS` = 600 s v `lib/jobs.ts`).
+ * je nejdelší čekání 200 s — vejde se do rozpočtu jednoho běhu jobů
+ * (`DEFAULT_JOB_BUDGET_MS` = 225 s v `lib/jobs.ts`, strop funkce je 300 s).
+ * Výpis IBKR bývá hotový do minuty; do 7. 10. 2026 tu bylo 58 pokusů (580 s)
+ * pro limit funkce z placeného tarifu hostingu.
  *
- * Dřív tu stál časový rozpočet 600 000 ms, tedy PŘESNĚ rozpočet celého ticku:
+ * Ještě dřív tu stál časový rozpočet 600 000 ms, tedy PŘESNĚ rozpočet celého ticku:
  * jediný pomalý výpis ho spolykal beze zbytku a další joby se už nezačaly.
  * Navíc se kontroloval před uspáním, takže reálné čekání bylo o interval delší
  * než rozpočet. Stejná vada jako u Trading212 (`EXPORT_POLL_ATTEMPTS`
  * v `lib/t212-sync.ts`), a stejná oprava: strop v počtu pokusů.
  */
-const STATEMENT_POLL_ATTEMPTS = 58;
+const STATEMENT_POLL_ATTEMPTS = 20;
 
 /** Uložené přihlašovací údaje IBKR: token + query ID (šifrovaný JSON). */
 interface IbkrCredentials {
