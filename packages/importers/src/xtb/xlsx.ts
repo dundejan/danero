@@ -9,8 +9,8 @@ export const XTB_BROKER = 'xtb';
 
 /**
  * XTB export neobsahuje měnu instrumentu ani ISIN (docs/03) — dodává je mapování
- * symbolů. BUY/SELL bez mapování se neimportuje a symbol skončí v `unmappedSymbols`;
- * dividendy mapování nepotřebují (jsou v měně účtu, ISIN je u nich optional).
+ * symbolů. Obchod ani dividenda bez mapování se neimportuje a symbol skončí
+ * v `unmappedSymbols`; dividendě stačí ISIN (částku má v měně účtu).
  */
 export interface XtbInstrumentMap {
   /**
@@ -26,8 +26,21 @@ export interface XtbInstrumentMap {
  */
 const DEFAULT_ACCOUNT_CURRENCY = 'EUR';
 
-/** Názvy listu s peněžními operacemi (EN/CZ), porovnává se bez diakritiky. */
-const CASH_SHEET_NAMES = ['CASH OPERATION HISTORY', 'HISTORIE PENEZNICH OPERACI'];
+/**
+ * Názvy listu s peněžními operacemi, porovnává se bez diakritiky.
+ *
+ * První dva jsou „Full report“ (EN/CZ), třetí je report z tlačítka
+ * „Export (new)“. Ten XTB přestavěl celý: jiné názvy listů, sloupec `Ticker`
+ * místo `Symbol`, typy `Stock purchase` / `Stock sell`, pod tabulkou řádek
+ * `Total` a měna účtu jen na listu otevřených pozic. Do 7. 10. 2026 jsme ho
+ * podle názvu listu nepoznali vůbec a uživatel s reportem z XTB četl
+ * „XLSX nepoznáváme — podporujeme reporty XTB…“.
+ */
+const CASH_SHEET_NAMES = ['CASH OPERATION HISTORY', 'HISTORIE PENEZNICH OPERACI', 'CASH OPERATIONS'];
+
+/** Listy nového reportu, ze kterých čteme doplňující údaje. */
+const OPEN_POSITIONS_SHEET_NAMES = ['OPEN POSITIONS'];
+const CLOSED_POSITIONS_SHEET_NAMES = ['CLOSED POSITIONS'];
 
 /** Sloupce tabulky — synonyma EN/CZ hlaviček (bez diakritiky, lowercase). */
 const HEADER_SYNONYMS = {
@@ -35,7 +48,7 @@ const HEADER_SYNONYMS = {
   type: ['type', 'typ'],
   time: ['time', 'cas'],
   comment: ['comment', 'komentar'],
-  symbol: ['symbol'],
+  symbol: ['symbol', 'ticker'],
   amount: ['amount', 'castka'],
 } as const;
 
@@ -54,16 +67,20 @@ type OperationKind =
   | 'WITHDRAWAL'
   | 'UNKNOWN';
 
-/** Řádek listu: skutečné číslo řádku v Excelu (uživatel ho tam vidí) + buňky jako stringy. */
-
-/** Načte list do matice stringů; úplně prázdné řádky vynechá. */
-function findCashSheet(workbook: ExcelJS.Workbook): ExcelJS.Worksheet | undefined {
+/** List podle názvu — bez ohledu na diakritiku, velikost písmen a mezery navíc. */
+function findSheet(
+  workbook: ExcelJS.Workbook,
+  names: readonly string[],
+): ExcelJS.Worksheet | undefined {
   return workbook.worksheets.find((sheet) =>
-    CASH_SHEET_NAMES.includes(stripDiacritics(sheet.name).replace(/\s+/g, ' ').trim().toUpperCase()),
+    names.includes(stripDiacritics(sheet.name).replace(/\s+/g, ' ').trim().toUpperCase()),
   );
 }
 
-/** Autodetekce: XTB report se pozná podle listu peněžních operací (EN/CZ). */
+const findCashSheet = (workbook: ExcelJS.Workbook): ExcelJS.Worksheet | undefined =>
+  findSheet(workbook, CASH_SHEET_NAMES);
+
+/** Autodetekce: XTB report se pozná podle listu peněžních operací. */
 export function sniffXtbXlsx(workbook: ExcelJS.Workbook): boolean {
   return findCashSheet(workbook) !== undefined;
 }
@@ -107,6 +124,91 @@ function detectAccountCurrency(preambleRows: SheetRow[]): string | null {
   return null;
 }
 
+/**
+ * Měna účtu v novém reportu: nad tabulkou peněžních operací už není, najde se
+ * ve sloupci `Currency` souhrnu na listu otevřených pozic.
+ *
+ * Čte se jen řádek hned pod první hlavičkou s tím sloupcem. Hledat hlouběji
+ * nejde: pod souhrnem leží tabulka pozic a v témže sloupci má `Category` —
+ * „ETF“ jsou taky tři velká písmena.
+ */
+function detectCurrencyFromOpenPositions(workbook: ExcelJS.Workbook): string | null {
+  const sheet = findSheet(workbook, OPEN_POSITIONS_SHEET_NAMES);
+  if (!sheet) return null;
+  const rows = readSheetRows(sheet);
+  const headerIndex = rows.findIndex((row) => row.cells.map(normalizeHeader).includes('currency'));
+  if (headerIndex === -1) return null;
+  const column = rows[headerIndex]!.cells.map(normalizeHeader).indexOf('currency');
+  const value = rows[headerIndex + 1]?.cells[column] ?? '';
+  return /^[A-Z]{3}$/.test(value) ? value : null;
+}
+
+/** Jak XTB nový report pojmenuje: `CZK_1234567_2025-01-01_2025-12-31.xlsx`. */
+const REPORT_FILENAME_RE = /^([A-Z]{3})_(\d+)_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Poslední záchrana pro měnu účtu: název souboru. Uživatel si ho může přepsat,
+ * takže mu věříme jen tehdy, když číslo účtu v něm sedí s číslem v reportu.
+ */
+function detectCurrencyFromFilename(filename: string | undefined, preambleRows: SheetRow[]): string | null {
+  const match = filename ? REPORT_FILENAME_RE.exec(filename) : null;
+  if (!match) return null;
+  const account = preambleRows.find((row) => normalizeHeader(row.cells[0] ?? '') === 'account number');
+  return account?.cells[1] === match[2] ? match[1]! : null;
+}
+
+/** Pozice, kterou XTB uzavřel sám, opravou (list uzavřených pozic). */
+interface PositionCorrection {
+  line: number;
+  symbol: string;
+  date: string | null;
+  comment: string;
+  sheetName: string;
+}
+
+/**
+ * Uzavření s původem `Correction` z listu uzavřených pozic nového reportu.
+ *
+ * XTB tak vede třeba odpis bezcenného titulu (komentář „… Worthless“): pozice
+ * se uzavře za nákupní cenu, peníze se nepohnou a v peněžních operacích po tom
+ * nezůstane ani stopa. Jak s tím naložit daňově, docs/02 neřeší — proto jen
+ * upozorníme a nic neimportujeme. Jeden titul bývá rozepsaný na víc řádků
+ * (co lot, to řádek), hlásí se jednou.
+ */
+function readPositionCorrections(workbook: ExcelJS.Workbook): PositionCorrection[] {
+  const sheet = findSheet(workbook, CLOSED_POSITIONS_SHEET_NAMES);
+  if (!sheet) return [];
+  const rows = readSheetRows(sheet);
+  const headerIndex = rows.findIndex((row) => {
+    const cells = row.cells.map(normalizeHeader);
+    return cells.includes('ticker') && cells.includes('close origin');
+  });
+  if (headerIndex === -1) return [];
+  const header = rows[headerIndex]!.cells.map(normalizeHeader);
+  const ticker = header.indexOf('ticker');
+  const origin = header.indexOf('close origin');
+  const closeTime = header.findIndex((cell) => cell.startsWith('close time'));
+  const comment = header.indexOf('comment');
+
+  const seen = new Set<string>();
+  const corrections: PositionCorrection[] = [];
+  for (const row of rows.slice(headerIndex + 1)) {
+    const cell = (index: number): string => (index === -1 ? '' : (row.cells[index] ?? ''));
+    if (cell(origin).toLowerCase() !== 'correction' || cell(ticker) === '') continue;
+    const key = [cell(ticker), cell(closeTime), cell(comment)].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    corrections.push({
+      line: row.rowNumber,
+      symbol: cell(ticker),
+      date: toIsoDate(cell(closeTime)),
+      comment: cell(comment),
+      sheetName: sheet.name,
+    });
+  }
+  return corrections;
+}
+
 /** „02.01.2025 14:30:15“ (DD.MM.YYYY) i ISO → 'YYYY-MM-DD'; neexistující den → null. */
 function toIsoDate(value: string): string | null {
   const czech = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(value);
@@ -117,8 +219,14 @@ function toIsoDate(value: string): string | null {
 /** Klasifikace operace podle Type (EN/CZ synonyma, case-insensitive, bez diakritiky). */
 function classifyOperation(type: string, comment: string): OperationKind {
   const t = stripDiacritics(type).toLowerCase();
-  if (t.includes('stocks/etf purchase') || t.includes('nakup akcii/etf')) return 'BUY';
-  if (t.includes('stocks/etf sale') || t.includes('prodej akcii/etf')) return 'SELL';
+  // nový report píše „Stock purchase“ / „Stock sell“; variantu pro ETF známe
+  // jen analogií (reálný vzorek obsahoval samé akcie)
+  if (t.includes('stocks/etf purchase') || t.includes('nakup akcii/etf') || /^(stock|etf) purchase$/.test(t)) {
+    return 'BUY';
+  }
+  if (t.includes('stocks/etf sale') || t.includes('prodej akcii/etf') || /^(stock|etf) (sell|sale)$/.test(t)) {
+    return 'SELL';
+  }
   if (t.includes('withholding tax') || t.includes('srazkova dan')) return 'WITHHOLDING';
   // „Free funds interest tax“ nutně před obecným úrokem
   if ((t.includes('free funds interest') && t.includes('tax')) || t.includes('dan z uroku')) {
@@ -132,6 +240,8 @@ function classifyOperation(type: string, comment: string): OperationKind {
   if (t.includes('commission') || t.includes('provize') || c.includes('commission') || c.includes('provize')) {
     return 'FEE';
   }
+  // „SEC fee“ — poplatek americkému regulátorovi stržený po prodeji
+  if (/\bfee$/.test(t)) return 'FEE';
   if (t.includes('withdrawal') || t.includes('vyber')) return 'WITHDRAWAL';
   if (t.includes('deposit') || t.includes('vklad')) return 'DEPOSIT';
   return 'UNKNOWN';
@@ -159,15 +269,22 @@ function parseAmount(raw: string): Decimal | null {
 }
 
 /**
- * Parser XTB xStation „Full report“ XLSX (docs/03). Zpracovává list
- * CASH OPERATION HISTORY / HISTORIE PENĚŽNÍCH OPERACÍ; hlavičky i typy operací
- * mapuje EN/CZ podle názvů. Export neobsahuje ISIN ani měnu instrumentu —
- * dodává je `instrumentMap`; Amount u obchodů je dopad na hotovost v měně ÚČTU,
- * cena instrumentu se čte z komentáře („OPEN BUY 5 @ 458.65“).
+ * Parser XTB xStation XLSX (docs/03) — starý „Full report“ i nový report
+ * z tlačítka „Export (new)“. Zpracovává list peněžních operací
+ * (CASH OPERATION HISTORY / HISTORIE PENĚŽNÍCH OPERACÍ / Cash Operations);
+ * hlavičky i typy operací mapuje podle názvů. Export neobsahuje ISIN ani měnu
+ * instrumentu — dodává je `instrumentMap`; Amount u obchodů je dopad na
+ * hotovost v měně ÚČTU, cena instrumentu se čte z komentáře
+ * („OPEN BUY 5 @ 458.65“).
+ *
+ * Z nového reportu se navíc čte měna účtu (list otevřených pozic, v nouzi
+ * název souboru) a pozice, které XTB uzavřel opravou (list uzavřených pozic)
+ * — obojí v peněžních operacích chybí.
  */
 export async function parseXtbXlsx(
   data: ArrayBuffer | Buffer,
   instrumentMap: XtbInstrumentMap = {},
+  options: { filename?: string } = {},
 ): Promise<ImportResult & { unmappedSymbols: string[] }> {
   const result = { ...emptyResult(XTB_BROKER), unmappedSymbols: [] as string[] };
 
@@ -187,7 +304,7 @@ export async function parseXtbXlsx(
   if (!sheet) {
     result.errors.push({
       line: 1,
-      message: `Soubor neobsahuje list „CASH OPERATION HISTORY“ / „HISTORIE PENĚŽNÍCH OPERACÍ“ — nevypadá jako XTB Full report z xStation. Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}`,
+      message: `Soubor neobsahuje list „CASH OPERATION HISTORY“ / „HISTORIE PENĚŽNÍCH OPERACÍ“ / „Cash Operations“ — nevypadá jako XTB Full report z xStation. Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}`,
     });
     return result;
   }
@@ -213,16 +330,33 @@ export async function parseXtbXlsx(
     return result;
   }
 
-  const detectedCurrency = detectAccountCurrency(rows.slice(0, header.index));
+  // Hlásí se PŘED řádky tabulky: historie importů ukazuje jen prvních pár
+  // upozornění a tohle je jediné, které se netýká peněžní operace.
+  for (const correction of readPositionCorrections(workbook)) {
+    result.warnings.push({
+      line: correction.line,
+      message:
+        `List „${correction.sheetName}“: XTB uzavřel pozici ${correction.symbol} opravou z vlastního podnětu` +
+        (correction.date ? ` (${correction.date})` : '') +
+        (correction.comment ? `, poznámka „${correction.comment}“` : '') +
+        '. V peněžních operacích k tomu nemusí být žádný záznam — Danero pak titul dál eviduje jako držený. Zkontroluj si ho v přehledu pozic.',
+    });
+  }
+
+  const preamble = rows.slice(0, header.index);
+  const detectedCurrency =
+    detectAccountCurrency(preamble) ??
+    detectCurrencyFromOpenPositions(workbook) ??
+    detectCurrencyFromFilename(options.filename, preamble);
   let defaultCurrencyWarned = false;
-  /** Měna účtu pro INTEREST/FEE/DEPOSIT/WITHDRAWAL — detekovaná, jinak EUR + warning. */
+  /** Měna účtu pro DIVIDEND/INTEREST/FEE/DEPOSIT/WITHDRAWAL — detekovaná, jinak EUR + warning. */
   const accountCurrency = (line: number): string => {
     if (detectedCurrency) return detectedCurrency;
     if (!defaultCurrencyWarned) {
       defaultCurrencyWarned = true;
       result.warnings.push({
         line,
-        message: `Report neuvádí měnu účtu — u úroků, poplatků, vkladů a výběrů předpokládáme ${DEFAULT_ACCOUNT_CURRENCY}. Pokud je účet veden v jiné měně, transakce uprav ručně.`,
+        message: `Report neuvádí měnu účtu — u dividend, úroků, poplatků, vkladů a výběrů předpokládáme ${DEFAULT_ACCOUNT_CURRENCY}. Pokud je účet veden v jiné měně, vrať import zpět tlačítkem v historii a napiš nám — částky by jinak byly ve špatné měně.`,
       });
     }
     return DEFAULT_ACCOUNT_CURRENCY;
@@ -287,8 +421,8 @@ export async function parseXtbXlsx(
     date: string;
     id: string;
     gross: Decimal;
-    /** ISIN z mapování, pokud existuje — u dividend je optional, měnu určuje účet. */
-    isin?: string;
+    /** ISIN z mapování; null = titul čeká na číselník a dividenda se zatím neuloží. */
+    isin: string | null;
   }
   interface PendingWithholding {
     line: number;
@@ -318,6 +452,11 @@ export async function parseXtbXlsx(
     if (type === '') {
       // řádky bez typu pod tabulkou (mezisoučty reportu) — vědomě mimo import
       result.skipped.push({ line, message: 'Řádek bez typu operace (souhrn reportu) — přeskočen.', raw });
+      continue;
+    }
+    if (type.toLowerCase() === 'total' && time === '' && explicitId === '') {
+      // nový report končí součtem sloupce Amount; operace má vždy čas i ID
+      result.skipped.push({ line, message: 'Řádek „Total“ (součet reportu) — přeskočen.', raw });
       continue;
     }
 
@@ -389,17 +528,13 @@ export async function parseXtbXlsx(
           result.errors.push({ line, message: `Dividenda ${symbol}: chybí kladná částka.`, raw });
           break;
         }
-        // Amount dividendy je už přepočtený do měny ÚČTU → mapování symbolů
-        // nepotřebujeme; ISIN doplníme, jen pokud ho mapa zná (je optional)
-        pendingDividends.push({
-          line,
-          raw,
-          symbol,
-          date,
-          id: rowId,
-          gross: amount,
-          isin: instrumentMap[symbol]?.isin,
-        });
+        // Amount dividendy je už přepočtený do měny ÚČTU, takže měnu z číselníku
+        // nepotřebuje — ISIN ale ano. Bez něj se dřív uložila taky a po doplnění
+        // číselníku a novém nahrání výpisu PODRUHÉ: ISIN je součást obsahového
+        // otisku, takže táž dividenda s ISIN vypadá jako jiná událost.
+        const isin = instrumentMap[symbol]?.isin ?? null;
+        if (!isin) requireInstrument(symbol, line);
+        pendingDividends.push({ line, raw, symbol, date, id: rowId, gross: amount, isin });
         break;
       }
       case 'WITHHOLDING': {
@@ -495,7 +630,10 @@ export async function parseXtbXlsx(
   // i srážka jsou v měně ÚČTU — XTB je připisuje po přepočtu
   for (const dividend of pendingDividends) {
     const queue = pendingWithholdings.get(withholdingKey(dividend.symbol, dividend.date));
+    // srážku si z fronty bere i dividenda čekající na ISIN — jinak by ji
+    // dostala další dividenda téhož titulu, nebo by zbyla „bez párové dividendy“
     const withholding = queue?.shift();
+    if (!dividend.isin) continue;
     const currency = accountCurrency(dividend.line);
     push(dividend.line, dividend.raw, {
       type: 'DIVIDEND',

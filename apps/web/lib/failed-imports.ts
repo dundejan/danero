@@ -431,11 +431,22 @@ export async function deleteCase(db: Db, caseId: string): Promise<boolean> {
  * napsali, že výpis číst neumíme a ať stáhne jiný export, takže se k souboru
  * už nevrátíme. Kdo ho ještě potřebuje k rozboru, ať si ho napřed uloží
  * příkazem `dump`.
+ *
+ * `followUp` (co import nedotáhl sám — tituly bez ISIN, nepřečtené řádky) jde
+ * JEN do e-mailu. Na stránce importu by jako uložená poznámka visel i poté,
+ * co uživatel tituly doplní; tam ho zastupuje živý formulář číselníku a výpis
+ * chyb u dávky. `note` je vzkaz provozovatele a ukládá se.
  */
 export async function resolveCase(
   db: Db,
   caseId: string,
-  outcome: { status: 'fixed' | 'rejected'; note?: string; batchId?: string; added?: number },
+  outcome: {
+    status: 'fixed' | 'rejected';
+    note?: string;
+    batchId?: string;
+    added?: number;
+    followUp?: string | null;
+  },
 ): Promise<boolean> {
   const [row] = await db
     .update(failedImports)
@@ -459,7 +470,7 @@ export async function resolveCase(
       filename: row.filename,
       outcome: outcome.status,
       added: outcome.added,
-      note: outcome.note,
+      note: [outcome.followUp, outcome.note].filter(Boolean).join('\n\n'),
     }),
   });
   return true;

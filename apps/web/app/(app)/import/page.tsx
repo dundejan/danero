@@ -63,8 +63,11 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
     return (
       <div className="rounded-md border border-zelena/40 bg-zelena/5 p-3 text-sm">
         <p className="font-medium">Výpis jsme zpracovali a nahráli za tebe.</p>
+        {/* „Dělat nemusíš nic“ tu dřív stálo napevno — jenže výpis bez ISIN se
+            načte jen zčásti a zbytek čeká na číselník. Co zbývá, ukáže živě
+            formulář číselníku a chyby u novější dávky; tady neslibujeme. */}
         <p className="mt-1 text-inkoust-tlumeny">
-          Obchody z něj najdeš v historii jako novější import. Dělat nemusíš nic.
+          Co se z něj načíst dalo, najdeš v historii jako novější import.
           {item.resolutionNote ? ` ${item.resolutionNote}` : ''}
         </p>
       </div>

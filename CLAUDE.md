@@ -229,6 +229,14 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   naše: nepoznaný formát **a nově i parser, který se rozeběhl a nevydal jedinou
   transakci** (přesně tak vypadal přejmenovaný sloupec T212 z 9. 8. 2026).
   Prázdný soubor, PDF ani useknutý přenos ne — to je `unrecognized: false`.
+- **Z cizího výpisu se do fixtury opisuje jen ROZLOŽENÍ, nikdy čísla.**
+  7. 10. 2026 přišel první cizí výpis (nový report XTB) a fixtura z něj
+  převzala částky i časy skoro beze změny — „smyšlené“ byly jen tituly. Chytila
+  to až revize před commitem; po pushi by to znamenalo další přepis historie
+  (pravidlo 8). Opisuj názvy listů, hlavičky a tvar komentářů; účet, tituly,
+  částky, kusy, časy i období vymysli, a ani do komentářů nepiš počty z jeho
+  dat. Před commitem diff prohledej na jeho tickery a částky. Originál patří
+  jen do scratchpadu a po vyřízení případu se maže (/soukromi).
 - **Id od brokera není univerzální identifikátor události.** Jako druhá síť pod
   obsahovým dedupe (eToro a MT tutéž událost popisují dvakrát s jinak
   zaokrouhlenou cenou) se smí použít jen tam, kde je doloženě per transakce —

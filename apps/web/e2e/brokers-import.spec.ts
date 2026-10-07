@@ -8,7 +8,12 @@ import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kr
 import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
 import { REVOLUT_INVEST_CSV } from '../../../packages/importers/test/fixtures/revolut';
 import { SWISSQUOTE_EN } from '../../../packages/importers/test/fixtures/swissquote';
-import { buildXtbXlsx, XTB_ROWS_EN } from '../../../packages/importers/test/fixtures/xtb';
+import {
+  buildXtbNewReportXlsx,
+  buildXtbXlsx,
+  XTB_NEW_FILENAME,
+  XTB_ROWS_EN,
+} from '../../../packages/importers/test/fixtures/xtb';
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
 import { registerWithProfile } from './helpers';
 
@@ -88,6 +93,24 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: Buffer.from(xlsx2),
   });
+  await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
+
+  // ── XTB, report z tlačítka „Export (new)“: jiné listy, sloupce i typy ───
+  // 7. 10. 2026 ho autodetekce nepoznala a první cizí uživatel četl „XLSX
+  // nepoznáváme — podporujeme reporty XTB…“. AAPL.US už v číselníku je, takže
+  // se má načíst celý: 8 řádků, srážková daň splyne s dividendou.
+  await upload({
+    name: XTB_NEW_FILENAME,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: await buildXtbNewReportXlsx(),
+  });
+  const newReport = historie(page)
+    .locator('div')
+    .filter({ hasText: XTB_NEW_FILENAME })
+    .filter({ hasText: 'duplicit' })
+    .last();
+  await expect(newReport).toContainText('· xtb');
+  await expect(newReport).toContainText('7 nových · 0 duplicit · 0 chyb');
   await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
 
   // stažitelná šablona existuje

@@ -55,7 +55,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#E3001B',
     guide:
-      'xStation → Historie → tlačítko „Export (new)“ → Nový report → období a účty → Vygenerovat → Stáhnout: přijde ZIP, rozbal ho a nahraj XLSX zevnitř (starší tlačítko „Export“ → Full report funguje taky). XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
+      'xStation → Historie → tlačítko „Export (new)“ → Nový report → období a účty → Vygenerovat → Stáhnout: přijde ZIP, rozbal ho a nahraj XLSX zevnitř (starší tlačítko „Export“ → Full report funguje taky). Období nastav od založení účtu — u letošních prodejů potřebujeme znát i dřívější nákupy. XTB neexportuje ISIN ani měnu instrumentu — při prvním importu tě požádáme o doplnění a zapamatujeme si je.',
   },
   {
     id: 'trading212',

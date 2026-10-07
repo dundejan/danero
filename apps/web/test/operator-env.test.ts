@@ -23,6 +23,7 @@ const UPLNE: EnvSource = {
   DANERO_OPERATOR_ADDRESS: 'Zkušební 1, 100 00 Zkušebno',
   DANERO_CONTACT_EMAIL: 'kontakt@example.test',
   BETTER_AUTH_URL: 'https://priklad.test',
+  RESEND_API_KEY: 're_test',
 };
 
 const bez = (...promenne: string[]): EnvSource => {
@@ -47,13 +48,23 @@ describe('předletová kontrola prostředí (K2-04)', () => {
     ]);
   });
 
-  it('holé prostředí vypíše všech pět proměnných', () => {
+  // Bez klíče se „odeslání“ mimo produkční režim jen vypíše do konzole, ale
+  // případ se uzavře a originál smaže — uživatel se nedozví nic.
+  it('bez klíče k odesílání pošty se nástroj nerozjede; přesměrování do souboru stačí', () => {
+    expect(missingEmailEnv(bez('RESEND_API_KEY'))).toEqual(['RESEND_API_KEY']);
+    expect(
+      missingEmailEnv({ ...bez('RESEND_API_KEY'), DANERO_EMAIL_LOG: '/tmp/emails.log' }),
+    ).toEqual([]);
+  });
+
+  it('holé prostředí vypíše všech šest proměnných', () => {
     expect(missingEmailEnv({})).toEqual([
       'DANERO_OPERATOR_NAME',
       'DANERO_OPERATOR_ICO',
       'DANERO_OPERATOR_ADDRESS',
       'DANERO_CONTACT_EMAIL',
       'BETTER_AUTH_URL',
+      'RESEND_API_KEY',
     ]);
   });
 

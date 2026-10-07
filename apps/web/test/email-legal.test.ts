@@ -365,6 +365,15 @@ describe('vzhled a obsah odchozích e-mailů', () => {
       failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'fixed', added: 12 }),
     ],
     [
+      'doimport, po kterém ještě něco zbývá',
+      failedImportResolvedEmail({
+        filename: 'vypis.xlsx',
+        outcome: 'fixed',
+        added: 4,
+        note: 'Výpis ale u 2 titulů neuvádí ISIN.\n\nNahraj report za celou historii účtu.',
+      }),
+    ],
+    [
       'výpis číst neumíme',
       failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'rejected', note: 'Stáhni Historii transakcí.' }),
     ],

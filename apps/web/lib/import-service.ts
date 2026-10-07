@@ -485,7 +485,7 @@ async function importXlsxUpload(
   const workbook = await loadXlsxWorkbook(data);
   if (sniffXtbXlsx(workbook)) {
     const aliases = await loadAliases(db, userId);
-    const outcome = await parseXtbXlsx(data, aliases.xtb);
+    const outcome = await parseXtbXlsx(data, aliases.xtb, { filename });
     return importParsed(db, userId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'xtb',
@@ -669,7 +669,11 @@ export async function importParsed(
   const unmapped = extras.unmapped ?? [];
   // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak
   // rozhoduje výsledek — parser bez jediné transakce a jen s chybami.
-  const unrecognized = extras.unrecognized ?? producedNothing(parsed);
+  // Výjimka: když si parser řekl o ISIN, výpisu ROZUMĚL a čeká jen na číselník.
+  // Schovat ho jako nepřečtený by uživateli vedle formuláře číselníku tvrdilo
+  // „na zpracování pracujeme“ a doimport by na něm navždy končil bez výsledku.
+  const unrecognized =
+    extras.unrecognized ?? (producedNothing(parsed) && unmapped.length === 0);
   const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
   const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
 

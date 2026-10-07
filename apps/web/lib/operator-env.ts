@@ -24,6 +24,11 @@ export function missingEmailEnv(env: EnvSource = process.env): string[] {
   // `appUrl()` v lib/email.ts padá bez téhle proměnné na localhost — odkaz
   // v e-mailu pak vede do počítače příjemce
   if (!env.BETTER_AUTH_URL?.trim()) missing.push('BETTER_AUTH_URL');
+  // Bez klíče k Resendu se mimo produkční režim „odeslání“ jen vypíše do
+  // konzole (`resolveEmailSender`) — nástroj přitom případ uzavře, smaže
+  // uschovaný originál a ohlásí „odešel e-mail“. Uživatel se nedozví nic
+  // a druhý pokus už nejde. `DANERO_EMAIL_LOG` je vědomé přesměrování (testy).
+  if (!env.RESEND_API_KEY?.trim() && !env.DANERO_EMAIL_LOG?.trim()) missing.push('RESEND_API_KEY');
   return missing;
 }
 
@@ -32,7 +37,8 @@ export function emailEnvError(missing: string[]): string {
   return [
     `Chybí nastavení prostředí: ${missing.join(', ')}.`,
     'Bez něj by uživateli odešel e-mail bez identifikace provozovatele a s odkazem',
-    'na http://localhost:3000. Doplň proměnné (proti produkci tytéž hodnoty jako',
-    've Vercelu — vedle DATABASE_URL) a spusť příkaz znovu.',
+    'na http://localhost:3000 — nebo by neodešel vůbec, a případ by se přesto uzavřel.',
+    'Doplň proměnné (proti produkci tytéž hodnoty jako ve Vercelu — vedle',
+    'DATABASE_URL) a spusť příkaz znovu.',
   ].join('\n');
 }

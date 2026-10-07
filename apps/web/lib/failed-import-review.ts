@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { auditLog, importBatches } from '@/db/schema';
 import { caseOverview, deleteCase, loadOpenCase, resolveCase } from '@/lib/failed-imports';
+import { plural } from '@/lib/format';
 import { importFile, type ImportSummary } from '@/lib/import-service';
 
 /**
@@ -65,20 +66,62 @@ async function removeRetryAuditEntry(
 }
 
 /**
+ * Co po doimportu zbývá na uživateli — odstavec do e-mailu, nebo `null`, když
+ * je opravdu hotovo.
+ *
+ * Zpráva „je naimportovaný, dělat už nemusíš nic“ se dřív posílala vždy,
+ * jakmile se uložila jediná transakce. Jenže výpis bez ISIN (XTB, Fio…) uloží
+ * jen část a zbytek čeká na číselník — a protože se uzavřením případu maže
+ * uschovaný originál, musí ho pak uživatel nahrát sám. Totéž platí pro řádky,
+ * které skončily chybou: provozovatel je viděl až ve výpisu nástroje, PO
+ * odeslání e-mailu.
+ */
+function followUpNote(summary: ImportSummary): string | null {
+  const { unmapped, errors, warnings } = summary;
+  if (unmapped.length > 0) {
+    const missing = unmapped.some((item) => item.needsCurrency)
+      ? 'ISIN (mezinárodní kód cenného papíru) ani měnu, ve které se obchodují'
+      : 'ISIN (mezinárodní kód cenného papíru)';
+    return (
+      `Výpis ale u ${unmapped.length} ${plural(unmapped.length, 'titulu', 'titulů', 'titulů')} ` +
+      `neuvádí ${missing}, a bez toho z něj nenačteme všechno. ` +
+      'Doplň to na stránce Zdroje dat — stačí jednou, Danero si tituly zapamatuje — a nahraj výpis znovu.'
+    );
+  }
+  if (errors.length > 0) {
+    return (
+      `Nepodařilo se ale načíst ${errors.length} ${plural(errors.length, 'řádek', 'řádky', 'řádků')} výpisu — ` +
+      'které a proč, uvidíš u tohohle importu na stránce Zdroje dat.'
+    );
+  }
+  if (warnings.length > 0) {
+    return `K importu máme ${warnings.length} upozornění — přečti si je u něj na stránce Zdroje dat.`;
+  }
+  return null;
+}
+
+/**
  * Zkusí případ naimportovat znovu (typicky po opravě parseru).
  *
  * Jde přes `importFile`, ne `importFileIsolated`: to druhé při neúspěchu
  * schová soubor ZNOVU a případ přepíše na právě vzniklou dávku — panel by
  * uživateli přeskočil na záznam, který sám nenahrál. Neúspěšný pokus tady po
  * sobě uklidí i tu prázdnou dávku, takže v historii uživatele nezůstane nic.
+ *
+ * `note` je vzkaz provozovatele o tom, co má uživatel ještě udělat (třeba
+ * „nahraj report za celou historii účtu“) — přidá se za to, co si import
+ * o zbývající práci zjistí sám.
  */
-export async function retryCase(db: Db, caseId: string): Promise<RetryResult> {
+export async function retryCase(db: Db, caseId: string, note?: string): Promise<RetryResult> {
   const item = await loadOpenCase(db, caseId);
   if (!item) return closedOrMissing(db, caseId);
 
   const summary = await importFile(db, item.userId, item.filename, item.data);
   const nothingImported = summary.added === 0 && summary.duplicates === 0;
-  if (summary.unrecognized || nothingImported) {
+  // Výpis, kde VŠECHNO čeká na číselník, je přečtený: dávka nese seznam titulů
+  // k doplnění a bez ní by se o ně stránka importu uživatele nikdy nezeptala.
+  const waitingForSymbols = summary.unmapped.length > 0;
+  if (summary.unrecognized || (nothingImported && !waitingForSymbols)) {
     await db.delete(importBatches).where(eq(importBatches.id, summary.batchId));
     // `importParsed` zapíše audit ke KAŽDÉMU importu, i k tomuhle neúspěšnému,
     // takže by uživateli v Nastavení zbyl řádek „Import výpisu“ o souboru,
@@ -94,6 +137,8 @@ export async function retryCase(db: Db, caseId: string): Promise<RetryResult> {
     status: 'fixed',
     batchId: summary.batchId,
     added: summary.added,
+    followUp: followUpNote(summary),
+    ...(note?.trim() ? { note: note.trim() } : {}),
   });
   return { outcome: 'fixed', email: item.email, summary };
 }

@@ -4,10 +4,15 @@ import { join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
-import { auditLog, failedImports, user } from '@/db/schema';
+import { auditLog, failedImports, importBatches, user } from '@/db/schema';
 import { eraseCase, rejectCase, retryCase } from '@/lib/failed-import-review';
 import { listOpenCases, loadOpenCase, resolveCase } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
+import {
+  buildXtbNewReportXlsx,
+  XTB_NEW_CASH_ROWS,
+  XTB_NEW_FILENAME,
+} from '../../../packages/importers/test/fixtures/xtb';
 
 /**
  * Nástroj provozovatele nad nepřečteným výpisem (`lib/failed-import-review.ts`).
@@ -151,6 +156,135 @@ describe('uzavřený případ už žádný podpříkaz nevezme (K2-05)', () => {
 
     expect(await obsah(db, caseId)).not.toBeNull();
     expect(await loadOpenCase(db, caseId)).toBeNull();
+  });
+});
+
+/**
+ * 7. 10. 2026: první doimport reportu z XTB. Parser už soubor četl, jenže XTB
+ * do výpisu nepíše ISIN — uložily se jen vklady a úroky, zbytek čekal na
+ * číselník. Uživateli by přesto odešlo „dělat už nemusíš nic“.
+ */
+describe('doimport, po kterém na uživateli ještě něco zbývá', () => {
+  /** Případ, jehož uschovaný soubor už přečteme (jde celou cestou přes autodetekci). */
+  async function caseWithContent(db: Db, filename: string, content: Buffer): Promise<string> {
+    const caseId = await pripad(db, filename);
+    await db
+      .update(failedImports)
+      .set({ content: content.toString('base64') })
+      .where(eq(failedImports.id, caseId));
+    return caseId;
+  }
+
+  const xtbCase = async (db: Db, content?: Buffer): Promise<string> =>
+    caseWithContent(db, XTB_NEW_FILENAME, content ?? (await buildXtbNewReportXlsx()));
+
+  /** Text je v e-mailu zalomený na šířku řádku — věty se hledají v nezalomeném. */
+  const userMessage = (): { subject: string; text: string } => {
+    const message = emails().find((entry) => entry.to === 'test@danero.cz')!;
+    return { subject: message.subject, text: message.text.replace(/\s+/g, ' ') };
+  };
+
+  const storedNote = async (db: Db, caseId: string): Promise<string | null> => {
+    const [row] = await db
+      .select({ note: failedImports.resolutionNote })
+      .from(failedImports)
+      .where(eq(failedImports.id, caseId));
+    return row!.note;
+  };
+
+  it('report z XTB bez ISIN: e-mail řekne, co doplnit, a neslibuje hotovo', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const caseId = await xtbCase(db);
+
+    const result = await retryCase(db, caseId);
+    if (result.outcome !== 'fixed') throw new Error(`čekal jsem fixed, je ${result.outcome}`);
+    expect(result.summary.broker).toBe('xtb');
+    // úrok, poplatek, výběr a vklad se uloží; nákup, prodej i dividenda čekají
+    expect(result.summary.added).toBe(4);
+    expect(result.summary.unmapped.map((item) => item.symbol)).toEqual(['AAPL.US']);
+
+    const message = userMessage();
+    expect(message.subject).toContain('zbývá ho doplnit');
+    expect(message.text).toContain('nově z něj máš 4 transakce');
+    expect(message.text).toContain('u 1 titulu neuvádí ISIN');
+    expect(message.text).toContain('nahraj výpis znovu');
+    expect(message.text).not.toContain('nemusíš nic');
+
+    // Na stránce to ukazuje živý formulář číselníku. Uložená poznámka by
+    // tam visela i poté, co uživatel titul doplní.
+    expect(await storedNote(db, caseId)).toBeNull();
+  });
+
+  it('vzkaz provozovatele se připíše za to, co import zjistil sám, a uloží se', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const caseId = await xtbCase(db);
+
+    await retryCase(db, caseId, 'Nahraj prosím report za celou historii účtu.');
+
+    const { text } = userMessage();
+    expect(text).toContain('Nahraj prosím report za celou historii účtu.');
+    expect(text.indexOf('u 1 titulu neuvádí ISIN')).toBeLessThan(text.indexOf('Nahraj prosím report'));
+    expect(await storedNote(db, caseId)).toBe('Nahraj prosím report za celou historii účtu.');
+  });
+
+  // Dřív takový doimport skončil „pořád nepoznáváme“ a smazal dávku — jediné
+  // místo, odkud se stránka importu dozví, na které tituly se má zeptat.
+  it('výpis, kde všechno čeká na číselník, se uzavře a o tituly si řekne', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const tradesOnly = XTB_NEW_CASH_ROWS.filter((row) => String(row[0]).startsWith('Stock'));
+    const caseId = await xtbCase(db, await buildXtbNewReportXlsx({ cashRows: tradesOnly }));
+
+    const result = await retryCase(db, caseId);
+    if (result.outcome !== 'fixed') throw new Error(`čekal jsem fixed, je ${result.outcome}`);
+    expect(result.summary.added).toBe(0);
+
+    const message = userMessage();
+    expect(message.subject).toContain('zbývá ho doplnit');
+    expect(message.text).toContain('nic nového z něj ale zatím nepřibylo');
+    // „už jsi je měl uložené odjinud“ by tu byla nepravda
+    expect(message.text).not.toContain('uložené odjinud');
+    expect(message.text).toContain('u 1 titulu neuvádí ISIN');
+
+    const batches = await db.select().from(importBatches).where(eq(importBatches.userId, 'u1'));
+    const issues = batches.map((batch) => batch.issues as { unmapped?: Array<{ symbol: string }> });
+    expect(issues.some((entry) => entry.unmapped?.some((item) => item.symbol === 'AAPL.US'))).toBe(true);
+  });
+
+  it('řádky, které skončily chybou, zprávu „hotovo“ taky ruší', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const withUnknownRow = [
+      ...T212_VYPIS.split('\n'),
+      'Záhadná operace,2024-06-11 10:00:00,US0378331005,AAPL,Apple Inc,1,1,USD,,,,,,,,,EOF9',
+    ].join('\n');
+    const caseId = await caseWithContent(db, 't212.csv', Buffer.from(bytes(withUnknownRow)));
+
+    const result = await retryCase(db, caseId);
+    if (result.outcome !== 'fixed') throw new Error(`čekal jsem fixed, je ${result.outcome}`);
+    expect(result.summary.errors.length).toBeGreaterThan(0);
+
+    const message = userMessage();
+    expect(message.subject).toContain('zbývá ho doplnit');
+    expect(message.text).toContain('Nepodařilo se ale načíst');
+    expect(message.text).not.toContain('nemusíš nic');
+  });
+
+  it('výpis, který se načetl celý, dál končí větou „dělat už nemusíš nic“', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const caseId = await caseWithContent(db, 't212.csv', Buffer.from(bytes(T212_VYPIS)));
+
+    expect((await retryCase(db, caseId)).outcome).toBe('fixed');
+
+    const message = userMessage();
+    expect(message.subject).toContain('je naimportovaný');
+    expect(message.text).toContain('Dělat už nemusíš nic.');
   });
 });
 

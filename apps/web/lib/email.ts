@@ -477,27 +477,47 @@ export function failedImportResolvedEmail(args: {
   outcome: 'fixed' | 'rejected';
   /** Kolik transakcí přibylo (jen u `fixed`). */
   added?: number;
-  /** Co k tomu má uživatel vědět (jen u `rejected`, případně vysvětlení navíc). */
+  /**
+   * Co má uživatel ještě udělat — odstavce oddělené prázdným řádkem.
+   * U `rejected` vysvětlení, proč výpis nečteme. U `fixed` to, co import
+   * nedotáhl sám (typicky tituly bez ISIN): zpráva pak NESMÍ slibovat
+   * „dělat už nemusíš nic“.
+   */
   note?: string | null;
 }): Omit<EmailMessage, 'to'> {
   const url = `${appUrl()}/import`;
+  const notes: EmailBlock[] = (args.note ?? '')
+    .split(/\n{2,}/)
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((text) => ({ kind: 'p', text }));
   if (args.outcome === 'fixed') {
+    const pending = notes.length > 0;
+    const added = args.added ?? 0;
+    // added === 0 bez poznámky znamená, že tytéž obchody už v Daneru máš
+    // odjinud — slíbit „nově z něj máš 0 transakcí“ by znělo jako porucha.
+    // S poznámkou to tvrdit nejde: nula může být i výpis, kde všechno čeká
+    // na doplnění titulů.
+    const result =
+      added > 0
+        ? `Doplnili jsme jeho formát do Danera a nahráli ho za tebe — nově z něj máš ${added} ${plural(added, 'transakci', 'transakce', 'transakcí')}.`
+        : pending
+          ? 'Jeho formát jsme do Danera doplnili a výpis nahráli za tebe — nic nového z něj ale zatím nepřibylo.'
+          : 'Formát jsme do Danera doplnili a výpis načetli — všechny obchody z něj už jsi mezitím měl uložené odjinud, takže se ti čísla nezmění.';
     return zprava({
-      subject: 'Tvůj výpis už umíme přečíst — je naimportovaný',
-      preheader: `${args.filename}: hotovo, nic dalšího dělat nemusíš.`,
+      subject: pending
+        ? 'Tvůj výpis už umíme přečíst — zbývá ho doplnit'
+        : 'Tvůj výpis už umíme přečíst — je naimportovaný',
+      preheader: pending
+        ? `${args.filename}: formát už umíme, se zbytkem potřebujeme pomoct.`
+        : `${args.filename}: hotovo, nic dalšího dělat nemusíš.`,
       blocks: [
         {
           kind: 'p',
-          // added === 0 znamená, že tytéž obchody už v Daneru máš odjinud —
-          // slíbit „nově z něj máš 0 transakcí“ by znělo jako porucha
-          text:
-            (args.added ?? 0) > 0
-              ? `Výpis „${args.filename}“ jsme minule nepřečetli. Doplnili jsme jeho formát do Danera a nahráli ho za tebe — nově z něj máš ${args.added} ${plural(args.added ?? 0, 'transakci', 'transakce', 'transakcí')}. Dělat už nemusíš nic.`
-              : `Výpis „${args.filename}“ jsme minule nepřečetli. Formát jsme do Danera doplnili a výpis načetli — všechny obchody z něj už jsi mezitím měl uložené odjinud, takže se ti čísla nezmění. Dělat nemusíš nic.`,
+          text: `Výpis „${args.filename}“ jsme minule nepřečetli. ${result}${pending ? '' : ' Dělat už nemusíš nic.'}`,
         },
-        ...(args.note ? ([{ kind: 'p', text: args.note }] as EmailBlock[])
-          : []),
-        { kind: 'cta', label: 'Zkontrolovat import', url },
+        ...notes,
+        { kind: 'cta', label: pending ? 'Otevřít Zdroje dat' : 'Zkontrolovat import', url },
         {
           kind: 'note',
           text: 'Nic se nezdvojilo — Danero pozná obchody, které už máš uložené. Díky, že jsi nám tím pomohl vylepšit čtení výpisů.',
@@ -514,7 +534,7 @@ export function failedImportResolvedEmail(args: {
         kind: 'p',
         text: `Prošli jsme si výpis „${args.filename}“, který se nám nepodařilo naimportovat. Bohužel ho číst neumíme.`,
       },
-      ...(args.note ? ([{ kind: 'p', text: args.note }] as EmailBlock[]) : []),
+      ...notes,
       {
         kind: 'p',
         text: 'Data se do Danera dostanou i tak: stáhni od své platformy jiný typ exportu (v seznamu na stránce Zdroje dat je u každé napsané, který chceme), nebo je přepiš do univerzální šablony, kterou si tamtéž stáhneš.',

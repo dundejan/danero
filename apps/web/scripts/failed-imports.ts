@@ -9,7 +9,7 @@
  * Spuštění (z apps/web; proti produkci s DATABASE_URL v prostředí):
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts list
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts dump <id> [adresář]
- *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts retry <id>
+ *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts retry <id> ["vzkaz"]
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts retry-all
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts reject <id> "důvod"
  *   pnpm --filter @danero/web exec tsx scripts/failed-imports.ts delete <id>
@@ -31,6 +31,11 @@
  * tehdy, když se import povedl. Uzavřený případ (`fixed`/`rejected`) už žádný
  * podpříkaz kromě `delete` nevezme — druhý pokus by uživateli poslal druhý
  * e-mail o výpisu, který je dávno vyřízený (K2-05).
+ *
+ * Volitelný `"vzkaz"` u `retry` se uživateli připíše do e-mailu i do panelu
+ * na stránce importu — pro to, co z výpisu nevyčteme (třeba že pokrývá jen
+ * letošek a prodeje potřebují i starší nákupy). Že obchody čekají na doplnění
+ * ISIN, si import zjistí a napíše sám.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,7 +48,7 @@ const [command, ...args] = process.argv.slice(2);
 
 function usage(): never {
   console.error(
-    'Použití: failed-imports list | dump <id> [adresář] | retry <id> | retry-all |' +
+    'Použití: failed-imports list | dump <id> [adresář] | retry <id> ["vzkaz"] | retry-all |' +
       ' reject <id> "důvod" | delete <id>',
   );
   process.exit(1);
@@ -124,9 +129,9 @@ async function dump(caseId: string, dir = '.data/failed-imports'): Promise<void>
   console.log(`Hlásil:  ${item.reportedPlatform ?? '—'} ${item.reportedNote ?? ''}`);
 }
 
-async function retry(caseId: string): Promise<void> {
+async function retry(caseId: string, note?: string): Promise<void> {
   const db = await getDb();
-  const result = await retryCase(db, caseId);
+  const result = await retryCase(db, caseId, note);
   if (result.outcome === 'missing' || result.outcome === 'closed') reportUnavailable(caseId, result);
   if (result.outcome === 'unresolved') {
     console.log(
@@ -140,6 +145,12 @@ async function retry(caseId: string): Promise<void> {
     `${caseId}: hotovo — ${summary.added} nových, ${summary.duplicates} duplicit, ` +
       `${summary.errors.length} chyb. Uživateli (${result.email}) odešel e-mail.`,
   );
+  if (summary.unmapped.length > 0) {
+    console.log(
+      `  Titulů bez ISIN: ${summary.unmapped.length} (${summary.unmapped.map((item) => item.symbol).join(', ')})` +
+        ' — výpis se nenačetl celý; e-mail uživateli říká, ať je doplní a nahraje ho znovu.',
+    );
+  }
 }
 
 async function retryAll(): Promise<void> {
@@ -192,8 +203,12 @@ async function main(): Promise<void> {
     case 'dump':
       return dump(required(0), args[1]);
     case 'retry':
+      // Vzkaz jde uživateli e-mailem a nejde vzít zpět (případ se uzavře):
+      // neuvozovkovaná věta by se uřízla na první slovo a překlep v přepínači
+      // by odešel jako text.
+      if (args.length > 2 || args[1]?.startsWith('-')) usage();
       requireEmailEnv();
-      return retry(required(0));
+      return retry(required(0), args[1]);
     case 'retry-all':
       requireEmailEnv();
       return retryAll();
