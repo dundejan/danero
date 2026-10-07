@@ -309,6 +309,13 @@
       "when": 1791410613391,
       "tag": "0043_existing_accounts_email_opt_in",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791410673391,
+      "tag": "0044_drop_billing_tables",
+      "breakpoints": true
     }
   ]
 }
