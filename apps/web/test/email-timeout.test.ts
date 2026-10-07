@@ -5,9 +5,9 @@ import { resolveEmailSender } from '@/lib/email';
  * K5-11: odesílání e-mailu bylo jediné volání cizí služby bez časového stropu.
  * Resend 4.8 volá holý `fetch` bez `signal` (a vlastní `AbortSignal` neumí
  * přijmout), takže se čekalo, dokud se neozve undici se svým `headersTimeout`
- * — 300 s. Jeden zaseknutý e-mail sežral 300 z 800 s `maxDuration`
- * notifikačního cronu a dva ho zabily; na témž volání přitom visí i obnova
- * hesla a ověřovací e-mail, kde na odpověď čeká živý člověk.
+ * — 300 s, tedy celý `maxDuration` notifikačního cronu na jediný zaseknutý
+ * e-mail; na témž volání přitom visí i obnova hesla a ověřovací e-mail, kde
+ * na odpověď čeká živý člověk.
  *
  * Ostatní volání strop mají (ČNB 60 s, T212 30/60 s, IBKR 60 s, štafeta 10 s).
  *
@@ -55,18 +55,30 @@ describe('odesílání e-mailu má časový strop (K5-11)', () => {
       },
     );
 
-    // Strop je 15 s. Posouváme po sekundách a mezi posuny pouštíme ke slovu
-    // smyčku událostí — cesta k `fetch` vede přes dynamický import i přes
-    // vnitřní čekání knihovny, a čekat jen na průchody smyčkou (nebo naopak
-    // skočit rovnou o 20 s) je závod, který na vytíženém stroji prohrává.
+    // Nejdřív nechat odeslání dojít až k `fetch` — BEZ posunu hodin. Cesta
+    // k němu vede přes dynamický import a vnitřní čekání knihovny, tedy přes
+    // skutečné I/O, a to pod zátěží trvá. Dokud se hodiny posouvaly souběžně,
+    // šlo o závod: na vytíženém stroji (naposledy v CI 8. 10. 2026) uběhlo
+    // falešných 15 s dřív, než se `fetch` vůbec zavolal, strop zafungoval nad
+    // ničím a test hlásil nula dotazů. `advanceTimersByTimeAsync(0)` pustí jen
+    // časovače splatné hned (kdyby je knihovna po cestě potřebovala).
+    for (let i = 0; i < 20_000 && dotazu === 0 && vysledek === null; i += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+      await tik();
+    }
+    expect(dotazu).toBe(1);
+    // spojení visí a hodiny stojí → odeslání ještě nesmí být rozhodnuté
+    expect(vysledek).toBeNull();
+
+    // Teprve teď běží čas. Strop je 15 s; po sekundách, ať mezi posuny dostane
+    // slovo i smyčka událostí.
     for (let i = 0; i < 40 && vysledek === null; i += 1) {
       await vi.advanceTimersByTimeAsync(1_000);
       await tik();
     }
-    expect(dotazu).toBe(1);
 
     // vypršení se musí chovat jako SELHÁNÍ odeslání — na tom stojí vrácení
-    // claimu u digestu i u potvrzení objednávky a hláška uživateli u obnovy hesla
+    // claimu u digestu a hláška uživateli u obnovy hesla
     expect(vysledek ?? 'odeslání pořád visí').toMatch(/^chyba: Resend neodpověděl do 15 s/);
   });
 

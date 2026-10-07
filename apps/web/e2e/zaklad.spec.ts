@@ -93,9 +93,18 @@ test('registrace → profil → import → přehled → simulátor → report', 
   // pozor: tatáž věta je i v odstavci `print:block` (jen pro tisk, na obrazovce
   // skrytý) — hledá se ta viditelná, tedy bez dvojtečky
   await expect(page.getByText(/vratka kapitálu snižuje nabývací cenu/)).toBeVisible();
-  await page.goto('/nastaveni');
-  await page.getByLabel('Vratka kapitálu').selectOption('safe');
-  await ulozenoJako('Vratka kapitálu', 'safe');
+  // Volba hned po `goto` umí předběhnout hydrataci: `AutoSubmit` ještě
+  // neposlouchá, změna se neodešle a čekat na výsledek je pak marné (v CI
+  // 8. 10. 2026 takhle spadl pokus i jeho opakování). Opakuje se proto celý
+  // krok včetně volby, ne jen čtení výsledku.
+  await expect(async () => {
+    await page.goto('/nastaveni');
+    await page.getByLabel('Vratka kapitálu').selectOption('safe');
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByLabel('Vratka kapitálu')).toHaveValue('safe', { timeout: 2_000 });
+    }).toPass({ timeout: 8_000 });
+  }).toPass({ timeout: 45_000 });
 
   // upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
   await page.getByRole('link', { name: 'Upozornění' }).click();
