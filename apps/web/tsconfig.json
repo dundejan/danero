@@ -40,9 +40,7 @@
     ".next-a11y/types/**/*.ts",
     ".next-a11y/dev/types/**/*.ts",
     ".next-oprava-e/types/**/*.ts",
-    ".next-oprava-e/dev/types/**/*.ts",
-    ".next-paywall/types/**/*.ts",
-    ".next-paywall/dev/types/**/*.ts"
+    ".next-oprava-e/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

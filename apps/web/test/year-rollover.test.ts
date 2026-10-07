@@ -7,7 +7,6 @@ import { ReportView } from '@/components/views/report-view';
 import { createPgliteDb } from '@/db';
 import { taxpayerProfiles, user } from '@/db/schema';
 import { currentTaxYear, today } from '@/lib/clock';
-import { isSellableTaxYear } from '@/lib/entitlements';
 import { czk } from '@/lib/format';
 import {
   engineInputForUser,
@@ -111,13 +110,6 @@ describe('přechod roku: hodiny se čtou v české zóně (K1-05, K1-07)', () =>
     setNow(SILVESTR);
     expect(today()).toBe('2026-12-31');
     expect(currentTaxYear()).toBe(2026);
-  });
-
-  it('podklady za právě skončený rok jdou v tu hodinu koupit', () => {
-    setNow(NOVOROCNI_PULNOC);
-    expect(isSellableTaxYear(2027)).toBe(true);
-    expect(isSellableTaxYear(2026)).toBe(true);
-    expect(isSellableTaxYear(2028)).toBe(false);
   });
 
   it('nesmyslné DANERO_NOW spadne zpátky na systémový čas, ne na „Invalid Date“', () => {

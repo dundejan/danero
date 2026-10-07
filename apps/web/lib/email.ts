@@ -1,7 +1,6 @@
-import { operatorLines, operatorSignature, OPERATOR, OPERATOR_UNSET } from '@/lib/contact';
+import { operatorSignature, OPERATOR, OPERATOR_UNSET } from '@/lib/contact';
 import { renderHtml, renderText, type EmailBlock } from '@/lib/email-layout';
 import { plural } from '@/lib/format';
-import { ADR, TERMS_VERSION } from '@/lib/legal';
 
 /**
  * Odesílání e-mailů. Vytaženo z lib/notifications.ts, aby si auth vrstva
@@ -30,8 +29,8 @@ export interface EmailMessage {
 
 /**
  * Kam míří odpovědi. `From` je `notifikace@danero.cz` — schránka, kterou nikdo
- * nečte — a „Odpovědět“ je přitom první, co uživatel udělá, když chce zrušit
- * předplatné. Bez `Reply-To` by jeho zpráva zmizela.
+ * nečte — a „Odpovědět“ je přitom první, co uživatel udělá, když něčemu
+ * nerozumí nebo chce e-maily zastavit. Bez `Reply-To` by jeho zpráva zmizela.
  *
  * Od 31. 8. 2026 má doména MX (přeposílání ImprovMX → schránka provozovatele)
  * a produkce nastavuje `RESEND_REPLY_TO=odpovedi@danero.cz`. Do té doby padal
@@ -236,152 +235,6 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
   });
 }
 
-/**
- * Potvrzení o uzavření smlouvy na trvalém nosiči (§ 1824a OZ) — musí odejít
- * po každém nákupu a nést i poučení o odstoupení. Ceny jsou konečné,
- * provozovatel není plátce DPH.
- *
- * Poučení o odstoupení se pro obě věci LIŠÍ (E-3 z auditu). Podklady jsou
- * digitální obsah dodaný okamžitě — právo zaniká jejich zpřístupněním
- * (§ 1837 písm. l). Roční hlídání je průběžně poskytovaná služba — právo
- * odstoupit trvá a zaniká až úplným poskytnutím (§ 1837 písm. a); při
- * odstoupení se doplácí poměrná část za využité dny (§ 1834). Tvrdit u něj
- * zánik práva by bylo ujednání, ke kterému se nepřihlíží (§ 1812 odst. 2).
- *
- * **Proč je e-mail tak dlouhý (nález E-30):** potvrzení musí obsahovat údaje
- * podle § 1820, ne na ně jen odkázat. Podle rozsudku SDEU C-49/11 (Content
- * Services) není webová stránka trvalý nosič — může se kdykoli změnit, takže
- * odkaz na danero.cz/podminky sám o sobě povinnost nesplní. Trvalým nosičem je
- * tenhle e-mail, proto v něm musí být doba trvání a obnova, práva z vadného
- * plnění, mimosoudní řešení sporů i verze podmínek, podle které se nakupovalo.
- * Nic se nepřikládá jako soubor — všechno podstatné je přímo v textu.
- */
-export function purchaseConfirmationEmail(args: {
-  what: string;
-  priceCzk: number;
-  consentGiven: boolean;
-  kind: 'subscription' | 'report';
-}): Omit<EmailMessage, 'to'> {
-  const trvani =
-    args.kind === 'subscription'
-      ? [
-          // částka je cena z ceníku, ne fakturovaná částka ze Stripe — s promo
-          // kódem se liší, proto se tu neslibuje jako konečná (souvisí s E-25)
-          // § 1820 odst. 1 u automaticky obnovovaného závazku vyžaduje i
-          // nejkratší dobu, po kterou smlouva strany zavazuje. Stála tu jako
-          // samostatná věta i s ujištěním o poplatcích — to ujištění povinné
-          // není a znělo jako vata, tak zbyl jen ten povinný údaj na konci.
-          `Předplatné trvá jeden rok ode dneška a pak se automaticky obnovuje na další rok za cenu podle ceníku (dnes ${args.priceCzk} Kč; uplatněný slevový kód ji může snížit). Přibližně dva týdny před obnovou ti přijde e-mail; obnovu zrušíš kdykoli jedním kliknutím v aplikaci (Předplatné → Spravovat platby) a do konce zaplaceného období ti služba běží dál — zavazuje tě vždycky jen ten zaplacený rok.`,
-        ]
-      : [
-          'Jednorázový nákup, nic se neobnovuje a nic dalšího se nestrhne. Zaplacený daňový rok ti v účtu zůstává odemčený i později — včetně pozdějších oprav výpočtu za ten rok.',
-        ];
-  const odstoupeni =
-    args.kind === 'subscription'
-      ? [
-          'Právo odstoupit od smlouvy do 14 dnů ti u ročního hlídání zůstává — je to průběžně poskytovaná služba. Když odstoupíš, vrátíme ti zaplacenou částku sníženou o poměrnou část za dny, kdy ti hlídání běželo (§ 1834 občanského zákoníku). Formulář najdeš na danero.cz/odstoupeni.',
-        ]
-      : args.consentGiven
-        ? [
-            'Právo odstoupit od smlouvy do 14 dnů u digitálního obsahu dodaného okamžitě zaniká, jakmile ti ho zpřístupníme — a ty jsi při objednávce výslovně požádal, abychom začali hned, a vzal na vědomí, že tím právo odstoupit ztrácíš (§ 1837 písm. l občanského zákoníku).',
-          ]
-        : [
-            `Od smlouvy můžeš odstoupit do 14 dnů bez udání důvodu — napiš na ${OPERATOR.email} nebo použij formulář na danero.cz/odstoupeni.`,
-          ];
-
-  return zprava({
-    subject: `Potvrzení objednávky — ${args.what}`,
-    preheader: `Uzavřená smlouva a poučení o odstoupení. Cena ${args.priceCzk} Kč.`,
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Díky za objednávku. Tohle je potvrzení uzavřené smlouvy — ulož si ho, shrnuje všechno podstatné, co jsme si ujednali.',
-      },
-      {
-        kind: 'rows',
-        rows: [
-          ['Co sis pořídil', args.what],
-          ['Cena', `${args.priceCzk} Kč — konečná`],
-          ['Podmínky užití', `verze ${TERMS_VERSION}`],
-        ],
-      },
-      // § 1824a odkazuje na § 1820: potvrzení na trvalém nosiči musí nést
-      // i adresu prodávajícího. Tohle je jediný e-mail, kde adresa je —
-      // ve zbytku stačí jméno a IČO (viz `operatorSignature`).
-      { kind: 'h', text: 'Prodávající' },
-      { kind: 'p', text: operatorLines().join(' ').replace(/^Prodávající: /, '') },
-      { kind: 'h', text: 'Doba trvání' },
-      ...trvani.map((text): EmailBlock => ({ kind: 'p', text })),
-      { kind: 'h', text: 'Odstoupení od smlouvy' },
-      ...odstoupeni.map((text): EmailBlock => ({ kind: 'p', text })),
-      { kind: 'h', text: 'Co je k užívání potřeba' },
-      {
-        kind: 'p',
-        text: 'Běžný webový prohlížeč a funkční e-mailová adresa, nic se neinstaluje. Soubory, které si z Danera stáhneš (XML pro portál MOJE daně, export dat v JSON), nejsou chráněné žádným technickým opatřením ani vázané na zařízení.',
-      },
-      { kind: 'h', text: 'Když něco nefunguje' },
-      {
-        kind: 'p',
-        text: `Když Danero nedělá, co slibujeme, máš zákonná práva z vadného plnění a nijak je neomezujeme. Uplatni je na ${OPERATOR.email} — tamtéž patří i případná stížnost.`,
-      },
-      {
-        kind: 'note',
-        // Povinné to je: § 1820 odst. 1 (informace před uzavřením distanční
-        // smlouvy, čl. 6 odst. 1 písm. t) směrnice 2011/83/EU) a § 1824a chce
-        // tytéž údaje zopakovat v potvrzení na trvalém nosiči — web trvalý
-        // nosič není (SDEU C-49/11). § 14 z. 634/1992 sám o sobě e-mail
-        // nevyžaduje, ten míří na web a na trvalý nosič až po vzniku sporu.
-        // Poštovní adresa ČOI povinná NENÍ (§ 14 chce jméno a internetovou
-        // adresu), takže tady zkrácena — na /podminky zůstává celá.
-        text: `Když se nedohodneme a jsi spotřebitel, můžeš se obrátit na subjekt mimosoudního řešení spotřebitelských sporů — ${ADR.authority}, ${ADR.web}; návrh jde podat online na ${ADR.online}.`,
-      },
-      {
-        kind: 'note',
-        text: `Doklad o zaplacení a historii plateb najdeš v aplikaci v sekci Předplatné. Úplné znění podmínek je na danero.cz/podminky a na požádání ti ho pošleme e-mailem.`,
-      },
-    ],
-    footer: operatorSignature(),
-  });
-}
-
-/**
- * Oznámení před automatickou obnovou předplatného. Slibují ho /podminky,
- * /cenik i /predplatne — bez něj by šlo o tichý auto-renew, který docs/19 §5
- * výslovně zakazuje, a o nepravdivé tvrzení ve smluvních podmínkách.
- *
- * Jde o službní sdělení ke smlouvě, ne obchodní sdělení — proto bez opt-outu.
- */
-export function subscriptionRenewalEmail(args: {
-  renewsOn: string;
-  priceCzk: number;
-}): Omit<EmailMessage, 'to'> {
-  return zprava({
-    subject: `Předplatné Danera se obnoví ${args.renewsOn}`,
-    preheader: `Za ${args.priceCzk} Kč na další rok. Nechceš-li pokračovat, zruš obnovu do toho data.`,
-    blocks: [
-      {
-        kind: 'p',
-        text: `Tvoje roční hlídání daní z investic se ${args.renewsOn} automaticky obnoví na další rok a strhneme ${args.priceCzk} Kč. Cena je konečná.`,
-      },
-      {
-        kind: 'rows',
-        rows: [
-          ['Obnoví se', args.renewsOn],
-          ['Částka', `${args.priceCzk} Kč`],
-        ],
-      },
-      { kind: 'p', text: 'Chceš-li pokračovat, nemusíš dělat nic.' },
-      {
-        kind: 'p',
-        text: 'Pokud pokračovat nechceš, zruš obnovu do toho data v aplikaci — Předplatné → Spravovat platby → zrušit obnovu. Do konce zaplaceného období ti služba poběží dál.',
-      },
-      { kind: 'cta', label: 'Spravovat předplatné', url: 'https://danero.cz/predplatne' },
-      { kind: 'note', text: 'Podmínky užití: danero.cz/podminky' },
-    ],
-    footer: operatorSignature(),
-  });
-}
-
 /** Veřejná adresa aplikace pro odkazy v e-mailech (stejně jako v notifications.ts). */
 const appUrl = (): string => process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
 
@@ -466,10 +319,10 @@ export function failedImportAlertEmail(args: {
 /**
  * Zpráva uživateli, jak dopadl jeho nepřečtený výpis.
  *
- * Posílá se PŘÍMO, ne přes digest v `api/cron/notify` — ten běží jen platícím,
- * takže uživatel zdarma by se výsledek nikdy nedozvěděl. Je to služební sdělení
- * k jeho vlastnímu nahrání, ne hlídací upozornění, takže do přepínačů
- * v Nastavení nespadá.
+ * Posílá se PŘÍMO, ne přes digest v `api/cron/notify` — ten se řídí přepínači
+ * v Nastavení, takže kdo má hlídací e-maily vypnuté, výsledek by se nikdy
+ * nedozvěděl. Je to služební sdělení k jeho vlastnímu nahrání, ne hlídací
+ * upozornění, takže do přepínačů nespadá.
  */
 export function failedImportResolvedEmail(args: {
   filename: string;

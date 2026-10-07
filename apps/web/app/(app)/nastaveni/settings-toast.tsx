@@ -30,7 +30,6 @@ const CHYBA_LABELS: Record<string, string> = {
   'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
   'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
-  'hlidani-placene': 'Hlídací e-maily jsou součástí předplatného — nastavení se neuložilo.',
   prijmy:
     'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Nastavení se zatím neuložilo.',
 };

@@ -73,6 +73,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
   },
+  /**
+   * Stránky placených tarifů zanikly 8. 10. 2026, kdy se Danero stalo celé
+   * bezplatným. Odkazy na ně ale žijí dál ve starých e-mailech (potvrzení
+   * objednávky, upomínka před obnovou) a ve vyhledávačích — místo 404 proto
+   * vedou tam, kde se čtenář dozví, co platí teď.
+   */
+  async redirects() {
+    return [
+      { source: '/predplatne/:path*', destination: '/cenik', permanent: true },
+      { source: '/odstoupeni', destination: '/podminky', permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

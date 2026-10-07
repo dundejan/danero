@@ -4,9 +4,9 @@ import { expect, type Page } from '@playwright/test';
 /**
  * Sdílené jádro auditu přístupnosti (H-28).
  *
- * Vlastní modul, ne pomocníci uvnitř specu: stejný audit potřebuje i sada
- * `e2e-paywall` (objednávkové stránky existují jedině se zapnutými platbami),
- * a import ze souboru s `test(...)` by ty testy zaregistroval podruhé.
+ * Vlastní modul, ne pomocníci uvnitř specu: audit jde tak použít z víc
+ * souborů — import ze souboru s `test(...)` by jeho testy zaregistroval
+ * podruhé.
  */
 export const MOBILE = { width: 390, height: 844 };
 export const DESKTOP = { width: 1280, height: 900 };

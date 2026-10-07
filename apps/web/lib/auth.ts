@@ -106,9 +106,9 @@ function buildAuth(db: Db) {
      * na danero.cz: `POST /api/auth/delete-user` s prázdným tělem `{}` vrátilo
      * `200 {"success":true,"message":"User deleted"}` a účet zmizel i s FK
      * kaskádami (transakce, šifrované broker klíče, joby, audit log) — bez
-     * hesla, bez opsaného „SMAZAT" a bez zrušení předplatného ve Stripe, které
-     * `deleteAccountAction` dělá schválně. Mazání účtu tak jde JEN přes tu
-     * action.
+     * hesla, bez opsaného „SMAZAT" a bez úklidu, který po smazání dělá
+     * `deleteAccountAction` (`purgeAfterAccountDeletion`). Mazání účtu tak jde
+     * JEN přes tu action.
      * ⚠️ `session: { freshAge: 0 }` je past, ne oprava: nula kontrolu čerstvosti
      * vypne úplně (`update-user.mjs`: `if (!ctx.body.password && freshAge !== 0)`).
      *

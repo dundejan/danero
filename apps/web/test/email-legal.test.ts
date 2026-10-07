@@ -1,28 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { OPERATOR, OPERATOR_UNSET, OPERATOR as operatorContact } from '@/lib/contact';
-import { ADR, TERMS_VERSION } from '@/lib/legal';
 import {
   alertRecipient,
   failedImportAlertEmail,
   failedImportResolvedEmail,
-  purchaseConfirmationEmail,
   resetPasswordEmail,
-  subscriptionRenewalEmail,
   verifyEmailEmail,
 } from '@/lib/email';
-import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK } from '@/lib/pricing';
-
-/**
- * Povinný obsah odchozích e-mailů.
- *
- * Potvrzení o uzavření smlouvy je jediný **trvalý nosič**, který zákazník
- * dostane — podle rozsudku SDEU C-49/11 jím webová stránka není, takže odkaz
- * na danero.cz/podminky povinnost podle § 1824a OZ nesplní. Údaje podle § 1820
- * proto musí být v samotném e-mailu (nález E-30).
- *
- * Testuje se **podstata**, ne formulace: že tam ta informace je, ne jakou
- * větou. Doslovné znění se smí přepsat kdykoli.
- */
 
 /**
  * Textová verze se od 10. 8. 2026 zalamuje na 78 znaků, takže dlouhý název
@@ -31,79 +15,10 @@ import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK } from '@/lib/pricing';
  */
 const bezZalomeni = (text: string): string => text.replace(/\s+/g, ' ');
 
-const subscription = purchaseConfirmationEmail({
-  what: 'Celoroční hlídání daní z investic (roční předplatné)',
-  priceCzk: PRICE_SUBSCRIPTION_CZK,
-  consentGiven: true,
-  kind: 'subscription',
-});
-
-const report = purchaseConfirmationEmail({
-  what: 'Podklady k přiznání za rok 2025',
-  priceCzk: PRICE_REPORT_CZK,
-  consentGiven: true,
-  kind: 'report',
-});
-
-describe('potvrzení o uzavření smlouvy nese údaje podle § 1820 (E-30)', () => {
-  for (const [nazev, email] of [
-    ['předplatné', subscription],
-    ['podklady', report],
-  ] as const) {
-    describe(nazev, () => {
-      it('identifikuje prodávajícího včetně IČO a kontaktu', () => {
-        expect(email.text).toContain(OPERATOR.ico);
-        expect(email.text).toContain(OPERATOR.email);
-      });
-
-      it('uvádí dobu trvání závazku', () => {
-        // nadpisy se v textové verzi píšou verzálkami — hlídá se obsah, ne zápis
-        expect(email.text).toMatch(/doba trvání/i);
-      });
-
-      it('poučuje o právech z vadného plnění a kam je uplatnit', () => {
-        expect(email.text).toMatch(/vadného plnění/);
-      });
-
-      it('uvádí subjekt mimosoudního řešení sporů (§ 14 z. 634/1992)', () => {
-        expect(bezZalomeni(email.text)).toContain(ADR.online);
-        expect(bezZalomeni(email.text)).toContain(ADR.authority);
-      });
-
-      it('říká, podle které verze podmínek se nakupovalo', () => {
-        expect(email.text).toContain(TERMS_VERSION);
-      });
-
-      it('popisuje, co je k užívání technicky potřeba (§ 1820/1 r)', () => {
-        expect(email.text).toMatch(/prohlížeč/);
-      });
-    });
-  }
-
-  it('u předplatného popisuje automatickou obnovu i její zrušení', () => {
-    expect(subscription.text).toMatch(/automaticky obnov/);
-    expect(subscription.text).toMatch(/zrušíš/);
-    expect(subscription.text).toContain(String(PRICE_SUBSCRIPTION_CZK));
-  });
-
-  it('u jednorázových podkladů naopak říká, že se nic neobnovuje', () => {
-    expect(report.text).toMatch(/neobnovuje/);
-    // a nesmí u nich slíbit obnovu ani odečet dalších peněz
-    expect(report.text).not.toMatch(/automaticky obnov/);
-  });
-
-  it('nepředstírá přílohu, kterou e-mail neveze', () => {
-    // dřívější návrh zněl „podmínky jsou přílohou“ — žádný soubor se ale
-    // nepřikládá a nesplnitelný slib je horší než odkaz
-    expect(subscription.text).not.toMatch(/přílohou|v příloze/);
-  });
-});
-
 describe('služební e-maily se identifikují (E-46)', () => {
   for (const [nazev, email] of [
     ['obnova hesla', resetPasswordEmail('https://danero.cz/nove-heslo?token=x')],
     ['ověření adresy', verifyEmailEmail('https://danero.cz/overeni?token=x')],
-    ['upomínka před obnovou', subscriptionRenewalEmail({ renewsOn: '7. 8. 2027', priceCzk: PRICE_SUBSCRIPTION_CZK })],
   ] as const) {
     it(`${nazev}: nese odesílatele i kontakt, kam odpovědět`, () => {
       // From je notifikace@danero.cz a ta schránka poštu nepřijímá — bez
@@ -120,7 +35,7 @@ describe('služební e-maily se identifikují (E-46)', () => {
  * co je hlavní protiplnění. Veřejná architektura tvrdila „passkeys“ a
  * „Sentry + Vercel Analytics“ (v repozitáři nula výskytů, a tentýž soubor si
  * o pár řádků níž odporoval), zatímco podmínky mlčely o každoročních
- * aktualizacích, které README prodává jako důvod platit 990 Kč.
+ * aktualizacích, které README slibovalo.
  */
 describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
   const read = async (relativni: string): Promise<string> => {
@@ -144,7 +59,7 @@ describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
     }
   });
 
-  it('podmínky slibují každoroční aktualizace, které README prodává', async () => {
+  it('podmínky říkají, jak je to s každoročními aktualizacemi', async () => {
     const podminky = await read('app/podminky/page.tsx');
     expect(podminky).toContain('jednotný kurz');
     expect(podminky).toContain('elektronické podání');
@@ -152,52 +67,119 @@ describe('texty odpovídají skutečnosti (E-3-08, E-3-09)', () => {
 });
 
 /**
- * § 2389i odst. 2 OZ chce, aby odchylku od zákonné jakosti spotřebitel potvrdil
- * ZVLÁŠŤ. Původní tři odchylky jsou dnes nula:
+ * Danero je od 8. 10. 2026 celé zdarma (podmínky 3.0). Hlídá se, že se do
+ * textů ani do kódu nevrátí zbytek placené služby — polovičatý stav je horší
+ * než kterýkoli z obou čistých:
  *
- * - jednotný kurz běžného roku se po pokynu GFŘ dopočítá (a do té doby je
- *   viditelně označený jako orientační),
- * - u sporných výkladů aplikace počítá obě varianty a ukazuje rozdíl,
- * - dostupnost byla do verze podmínek 2.3 výhradou („negarantujeme"), od 2.4 je
- *   z ní závazek s nápravou: výpadek nad 24 hodin prodlužuje roční hlídání.
+ * - veřejný text, který by cokoli prodával, by z dobrovolného příspěvku udělal
+ *   cenu a z bezplatné služby smlouvu na dálku se vším, co k ní patří
+ *   (§ 1820 a násl. OZ: odstoupení, potvrzení na trvalém nosiči, telefon),
+ * - a je to i podmínka hostingu: Vercel Hobby dovoluje žádat o dary, ale ne
+ *   prodávat (viz `lib/support.ts`).
  *
- * Odchylka tím zmizela a s ní i druhý povinný checkbox u objednávky. Test hlídá,
- * že se výhrada nevrátí zadními vrátky — kdyby ji někdo do podmínek dopsal, musí
- * s ní vrátit i samostatné potvrzení, jinak je ujednání podle § 2389i neplatné.
+ * Do verze 2.4 tu stál test odchylek od jakosti podle § 2389i OZ (dostupnost
+ * s nápravou místo výhrady, jediný checkbox u objednávky). S objednávkou
+ * zanikl i on; poslední podoba je pod značkou `placene-tarify`.
  */
-describe('u objednávky nezůstala nepotvrzená odchylka od jakosti (§ 2389i)', () => {
+describe('bezplatná služba nenese zbytky placené (podmínky 3.0)', () => {
   const read = async (relativni: string): Promise<string> => {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
     return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
   };
 
-  it('podmínky slibují dostupnost s nápravou, ne výhradu', async () => {
+  it('podmínky říkají, že je služba zdarma a že příspěvek nic neodemyká', async () => {
     const podminky = await read('app/podminky/page.tsx');
-    expect(podminky).toContain('id="dostupnost"');
-    expect(podminky).toMatch(/nedostupné souvisle déle než 24 hodin/);
-    expect(podminky).toMatch(/prodloužíme/);
-    // stará formulace výhrady se nesmí vrátit bez samostatného potvrzení
-    expect(podminky).not.toMatch(/nemá sjednanou garantovanou dostupnost/);
+    expect(podminky).toMatch(/Danero je zdarma, a to celé/);
+    expect(podminky).toMatch(/není platbou za\s+službu/);
+    expect(podminky).toMatch(/bez tvojí výslovné objednávky/);
   });
 
-  it('objednávka nemá druhý povinný checkbox — zbyl jen souhlas dle § 1837 l', async () => {
-    // Objednávka má od 10. 8. 2026 vlastní stránky a jedno společné shrnutí;
-    // zaškrtávátko je právě jedno a je jen v něm.
-    const objednavka = await read('components/order-page.tsx');
-    expect(objednavka).not.toContain('name="dostupnost"');
-    expect((objednavka.match(/<SouhlasCheckbox /g) ?? []).length).toBe(1);
-    expect((objednavka.match(/type="checkbox"/g) ?? []).length).toBe(1);
+  it('podmínky neslibují náhradu, kterou není z čeho dát', async () => {
+    const podminky = await read('app/podminky/page.tsx');
+    // kotva zůstává — vedou na ni starší odkazy
+    expect(podminky).toContain('id="dostupnost"');
+    // „prodloužíme ti roční hlídání“ a „vrátíme ti peníze“ byly závazky placené
+    // služby; v bezplatné by byly slibem, který nejde splnit
+    expect(podminky).not.toMatch(/prodloužíme/);
+    expect(podminky).not.toMatch(/vrátíme ti/);
+  });
 
-    for (const stranka of [
-      'app/(app)/predplatne/page.tsx',
-      'app/(app)/predplatne/hlidani/page.tsx',
-      'app/(app)/predplatne/podklady/page.tsx',
-    ]) {
-      const zdroj = await read(stranka);
-      expect(zdroj, `${stranka} přidává vlastní checkbox`).not.toContain('type="checkbox"');
-      expect(zdroj).not.toContain('name="dostupnost"');
+  /**
+   * Prochází se CELÁ aplikace, ne ručně psaný seznam stránek. První verze
+   * četla šest veřejných souborů a přehlédla chybovou hlášku v `/import`
+   * („…to je ale součást placeného hlídání"), kterou uživatel uvidí při
+   * nahrání příliš velkého souboru — nový soubor se do seznamu sám nedopíše.
+   *
+   * Hledají se tvary, které jdou napsat jedině úmyslem něco prodat: cena
+   * dřívějších tarifů, výzva k objednání, odkaz na zaniklou stránku. Zmínky
+   * o historii („do října 2026 mělo placené tarify") jimi neprojdou a zůstat
+   * smějí — zamlčet ji by bylo horší.
+   */
+  it('nikde v aplikaci nezbyla cena, výzva k objednání ani odkaz na zaniklý tarif', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join, relative } = await import('node:path');
+    const root = join(import.meta.dirname, '..');
+    const sourceFiles = (dir: string): string[] =>
+      readdirSync(dir).flatMap((entry) => {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) return sourceFiles(full);
+        return /\.(ts|tsx)$/.test(entry) ? [full] : [];
+      });
+
+    const SALES_LEFTOVERS: RegExp[] = [
+      /\b[49]90\s?Kč/,
+      /hlídání za (\{|\d)/,
+      /součást\w* (placeného |ročního )?hlídání/i,
+      /placen\w+ hlídání/i,
+      /Objednat hlídání/,
+      /Koupit (podklady|další rok)/,
+      /Ceny jsou konečné/,
+      /bez předplatného/i,
+      /['"`]\/predplatne/,
+      /['"`]\/odstoupeni/,
+    ];
+
+    const found: string[] = [];
+    for (const file of ['app', 'components', 'lib'].flatMap((dir) => sourceFiles(join(root, dir)))) {
+      const source = readFileSync(file, 'utf8');
+      for (const pattern of SALES_LEFTOVERS) {
+        if (pattern.test(source)) found.push(`${relative(root, file)}: ${pattern}`);
+      }
     }
+    expect(found).toEqual([]);
+  });
+
+  it('veřejné stránky nemluví o předplatném ani v jiném tvaru', async () => {
+    // přísnější síto jen pro stránky, které čte každý návštěvník — tam nemá
+    // slovo „předplatné" co dělat ani v komentáři
+    for (const page of [
+      'app/podminky/page.tsx',
+      'app/cenik/page.tsx',
+      'app/page.tsx',
+      'app/caste-otazky/faq.tsx',
+      'app/o-projektu/page.tsx',
+      'components/platform-catalog.tsx',
+    ]) {
+      expect(/předplatn/i.test(await read(page)), `${page} mluví o předplatném`).toBe(false);
+    }
+  });
+
+  it('aplikace nemá platební bránu ani v závislostech', async () => {
+    const manifest = JSON.parse(await read('package.json')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(Object.keys(manifest.dependencies)).not.toContain('stripe');
+  });
+
+  it('stránky zaniklých tarifů přesměrovávají, nekončí na 404', async () => {
+    // odkazy na ně žijí ve starých e-mailech (potvrzení objednávky, upomínka);
+    // `:path*` bere i nula úseků, takže kryje `/predplatne` samotné
+    const { default: config } = await import('../next.config');
+    const redirects = await config.redirects!();
+    const targets = Object.fromEntries(redirects.map((r) => [r.source, r.destination]));
+    expect(targets['/predplatne/:path*']).toBe('/cenik');
+    expect(targets['/odstoupeni']).toBe('/podminky');
   });
 });
 
@@ -212,19 +194,12 @@ describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)',
     return readFileSync(join(import.meta.dirname, '..', relativni), 'utf8');
   };
 
-  it('E-3-16: tarif zdarma neslibuje limity „v reálném čase“ — sync je placený', async () => {
-    const plans = await read('lib/plans.ts');
-    const free = plans.slice(plans.indexOf("id: 'free'"), plans.indexOf("id: 'report'"));
-    expect(free).not.toMatch(/v reálném čase/);
-    expect(free).toMatch(/po každém nahrání výpisu/);
-  });
-
   it('E-3-11: soukromí neslibuje, že po odhlášení přestanou chodit VŠECHNY e-maily', async () => {
     const soukromi = await read('app/soukromi/page.tsx');
     expect(soukromi).not.toMatch(/e-maily ti přestanou chodit okamžitě/);
     // provozní zprávy musí být jmenované, jinak je slib zase příliš široký
-    expect(soukromi).toMatch(/upomínka před automatickou obnovou/);
     expect(soukromi).toMatch(/obnova hesla/);
+    expect(soukromi).toMatch(/oznámení o změně podmínek/);
   });
 
   it('K4-02b: soukromí neslibuje obnovu „v řádu dnů“ — Neon Free drží 6 hodin', async () => {
@@ -354,12 +329,6 @@ describe('vzhled a obsah odchozích e-mailů', () => {
   const vsechny = [
     ['obnova hesla', resetPasswordEmail('https://danero.cz/nove-heslo?token=x')],
     ['ověření adresy', verifyEmailEmail('https://danero.cz/overeni?token=x')],
-    ['potvrzení předplatného', subscription],
-    ['potvrzení podkladů', report],
-    [
-      'upomínka před obnovou',
-      subscriptionRenewalEmail({ renewsOn: '7. 8. 2027', priceCzk: PRICE_SUBSCRIPTION_CZK }),
-    ],
     [
       'výpis doimportován',
       failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'fixed', added: 12 }),
@@ -396,13 +365,14 @@ describe('vzhled a obsah odchozích e-mailů', () => {
     expect(html).toContain(prvniVeta);
   });
 
-  it('adresu provozovatele nese JEN potvrzení objednávky (§ 1824a)', () => {
+  it('adresu provozovatele nenese žádný e-mail', () => {
+    // nesl ji jen doklad o uzavřené smlouvě (§ 1824a OZ); bez prodeje ji
+    // není důvod rozesílat — je na /podminky
     for (const [nazev, email] of vsechny) {
       const maAdresu =
         bezZalomeni(email.text).includes(OPERATOR.address) ||
         bezZalomeni(email.html ?? '').includes(OPERATOR.address);
-      const smiMitAdresu = nazev.startsWith('potvrzení');
-      expect(maAdresu, `${nazev}: adresa ${maAdresu ? 'JE' : 'CHYBÍ'}`).toBe(smiMitAdresu);
+      expect(maAdresu, `${nazev}: nese adresu provozovatele`).toBe(false);
     }
   });
 

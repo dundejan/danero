@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { FaqItem } from '@/components/faq-list';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
-import { PRICE_REPORT_CZK, PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 
 /**
  * Obsah stránky /caste-otazky. Samostatný modul proto, že se dá otestovat:
@@ -74,8 +73,8 @@ export const FAQ: FaqItem[] = [
     a: 'Ano. Kryptoaktiva mají od 15. 2. 2025 vlastní limit 100 000 Kč i vlastní tříletý časový test — hlídáme obojí zvlášť, nezávisle na akciích. Opce a další deriváty se počítají jako samostatný druh příjmu bez osvobození. Všechno si můžeš prohlédnout v demu.',
   },
   {
-    q: 'Co je zdarma a za co se platí?',
-    a: `Zdarma je import výpisů ze všech podporovaných platforem a přehled, který z nich Danero spočítá — limity, časové testy a orientační daň. Platí se podklady k přiznání (${priceLabel(PRICE_REPORT_CZK)} za jeden daňový rok) a celoroční hlídání s napojením na brokery přes API a hlídacími e-maily (${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně). Ceny jsou konečné — nejsme plátcem DPH. Účet založíš zdarma a bez karty; podklady jsou jednorázový nákup, celoroční hlídání se po roce automaticky obnovuje — e-mail ti přijde 14 dní předem a zrušit obnovu můžeš kdykoli jedním kliknutím.`,
+    q: 'Kolik Danero stojí?',
+    a: 'Nic. Danero je zdarma celé — import výpisů, limity a časové testy, podklady k přiznání včetně XML, napojení na brokery přes API, hlídací e-maily i simulátor prodeje. Bez placené verze, bez zkušební doby a bez karty. Je to osobní projekt s otevřeným kódem; kdo chce, může na provoz dobrovolně přispět, ale nic se tím neodemyká — všechno už máš.',
   },
   {
     q: 'Co znamená „ověřeno zkušební podatelnou EPO“?',

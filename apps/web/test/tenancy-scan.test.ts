@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
  * nejdřív zjistit, KDO volá — jinak si data vezme kdokoli.
  *
  * Tenhle test vznikl ve 4. auditu a hned si vysloužil vlastní nález: první
- * verze hledala jen `export async function GET`, jenže všech šest cronů je
- * psaných jako `export const GET = withCron(…)` a **`export const` je v tomhle
+ * verze hledala jen `export async function GET`, jenže všechny crony jsou
+ * psané jako `export const GET = withCron(…)` a **`export const` je v tomhle
  * repu domácí styl** — skener je tedy neviděl a položka v allowlistu tu díru
  * ještě maskovala. Druhý slepý úhel byl seznam tří souborů `actions.ts`
  * natvrdo a stránky, které neznal vůbec.
@@ -26,8 +26,8 @@ const HTTP_METHODS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS';
 
 /**
  * Čím se dá totožnost volajícího zjistit. Není to jen „přihlášený uživatel":
- * cron se legitimuje sdíleným tajemstvím, Stripe podpisem webhooku a odkaz
- * na odhlášení z e-mailu podepsaným tokenem, ze kterého userId teprve vypadne.
+ * cron se legitimuje sdíleným tajemstvím a odkaz na odhlášení z e-mailu
+ * podepsaným tokenem, ze kterého userId teprve vypadne.
  */
 const IDENTITY_CHECKS = [
   /requireUser\s*\(/, // stránky a server actions
@@ -37,7 +37,6 @@ const IDENTITY_CHECKS = [
   /withCron\s*\(/, // cron: sdílené tajemství (lib/cron-auth.ts)
   /requireCronAuth\s*\(/,
   /verifyUnsubscribeToken\s*\(/, // HMAC token z e-mailu
-  /constructEventAsync\s*\(/, // podpis Stripe webhooku
 ];
 
 /**
@@ -145,8 +144,9 @@ describe('strážce tenancy: žádná cesta bez zjištění, kdo volá', () => {
 
   it('najde i handlery psané jako `export const GET = withCron(…)`', () => {
     const crony = cesty.filter((cesta) => cesta.file.startsWith('app/api/cron/'));
-    // šest cronů, každý s jedním GET — první verze skeneru z nich neviděla ani jeden
-    expect(crony.length).toBeGreaterThanOrEqual(6);
+    // pět cronů (šestý, srovnání plateb, zanikl s placenými tarify), každý
+    // s jedním GET — první verze skeneru z nich neviděla ani jeden
+    expect(crony.length).toBeGreaterThanOrEqual(5);
     for (const cron of crony) expect(cron.name).toBe('GET');
   });
 

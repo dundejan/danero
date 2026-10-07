@@ -3,7 +3,6 @@ import { getDb } from '@/db';
 import { getAuth } from '@/lib/auth';
 import { currentTaxYear } from '@/lib/clock';
 import { OPERATOR } from '@/lib/contact';
-import { canGenerateReport } from '@/lib/entitlements';
 import {
   EpoInputError,
   generateDpfdp7,
@@ -41,7 +40,12 @@ export async function POST(request: Request): Promise<Response> {
 
   const form = await request.formData();
   const year = Number(field(form, 'rok'));
-  if (!Number.isInteger(year)) return chyba('Chybí platný rok exportu.');
+  // Rok mimo rozumný rozsah dál nepouštíme: do tabulky fixací jde jako
+  // `integer`, takže `rok: -1e21` by místo hlášky shodil dotaz, a záporný rok
+  // by si tam zapsal fixaci nesmyslného období (C-27).
+  if (!Number.isInteger(year) || year < 1900 || year > 2999) {
+    return chyba('Chybí platný rok exportu.');
+  }
 
   const variantaRaw = field(form, 'varianta');
   const varianta =
@@ -51,11 +55,6 @@ export async function POST(request: Request): Promise<Response> {
   const { checkRateLimit } = await import('@/lib/rate-limit');
   if (!(await checkRateLimit(db, `epo:${session.user.id}`, { max: 10, windowMs: 60_000 }))) {
     return chyba('Příliš mnoho exportů za sebou — počkej minutu.', 429);
-  }
-  // XML je součást podkladů — bez zaplaceného roku (nebo předplatného) ne;
-  // stránka /report už paywall ukazuje, tohle hlídá i přímé volání endpointu
-  if (!(await canGenerateReport(db, session.user.id, year))) {
-    return chyba(`Podklady za rok ${year} nemáš odemčené — najdeš je v ceníku.`, 402);
   }
   const profile = await getProfile(db, session.user.id);
   if (!profile) return chyba('Nejdřív vyplň daňový profil v Nastavení.');

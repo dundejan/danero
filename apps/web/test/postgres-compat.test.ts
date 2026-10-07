@@ -15,9 +15,7 @@ import {
   jobs,
   notificationPrefs,
   notifications,
-  reportPurchases,
   session,
-  subscriptions,
   taxpayerProfiles,
   taxYearSettings,
   transactions,
@@ -25,7 +23,6 @@ import {
   verification,
 } from '@/db/schema';
 import { logAudit, pruneAuditLog } from '@/lib/audit';
-import { recordReportPurchase, upsertSubscription } from '@/lib/billing';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
 import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import-service';
 import {
@@ -55,8 +52,7 @@ import {
  *
  * Pokrývané produkční cesty: import výpisu, načtení transakcí, fronta jobů
  * (včetně souběhu na parciálním unikátním indexu), notifikační digest, denní
- * úklid, kurzy ČNB, předplatné a nákup podkladů, ceny instrumentů, fixace roku
- * a kaskádové smazání účtu.
+ * úklid, kurzy ČNB, ceny instrumentů, fixace roku a kaskádové smazání účtu.
  *
  * Bez `TEST_DATABASE_URL` se přeskočí (lokálně stačí:
  * `docker run -d -p 55433:5432 -e POSTGRES_PASSWORD=test postgres:17-alpine`).
@@ -602,43 +598,6 @@ popis('kompatibilita s produkčním Postgresem', () => {
     // scale 6 na to stačil přesně na doraz (IDR: 1,507/1000 = 0,001507).
     expect(provider.getRate('JPY', '1998-01-02')?.toString()).toBe('0.15987654');
     expect(provider.getRate('IDR', '1998-01-02')?.toString()).toBe('0.0015074');
-  });
-
-  it('předplatné a nákup podkladů: upsert i unikátní index (rok se neprodá dvakrát)', {
-    timeout: 60_000,
-  }, async () => {
-    const userId = await makeUser();
-    const konec = new Date('2027-01-01T00:00:00Z');
-    await upsertSubscription(db, {
-      userId,
-      status: 'active',
-      currentPeriodEnd: konec,
-      cancelAtPeriodEnd: false,
-      stripeCustomerId: 'cus_test',
-      stripeSubscriptionId: 'sub_test',
-      promoCode: 'PARTNER',
-      eventAt: new Date('2026-01-01T00:00:00Z'),
-    });
-    // obnova nenese promokód — upsert ho nesmí přepsat na null
-    await upsertSubscription(db, {
-      userId,
-      status: 'active',
-      currentPeriodEnd: new Date('2028-01-01T00:00:00Z'),
-      cancelAtPeriodEnd: false,
-      eventAt: new Date('2027-01-01T00:00:00Z'),
-    });
-    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
-    expect(sub!.promoCode).toBe('PARTNER');
-    expect(sub!.currentPeriodEnd.toISOString()).toBe('2028-01-01T00:00:00.000Z');
-
-    expect(await recordReportPurchase(db, { userId, taxYear: 2025 })).toBe(true);
-    // druhý webhook o téže platbě narazí na report_purchases_user_year_idx
-    expect(await recordReportPurchase(db, { userId, taxYear: 2025 })).toBe(false);
-    const purchases = await db
-      .select()
-      .from(reportPurchases)
-      .where(eq(reportPurchases.userId, userId));
-    expect(purchases).toHaveLength(1);
   });
 
   it('ceny instrumentů a fixace roku: upsert na složeném klíči', {

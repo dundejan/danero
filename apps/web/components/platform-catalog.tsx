@@ -7,7 +7,6 @@ import {
   UNIVERSAL_INFO,
   type PlatformInfo,
 } from '@/lib/brokers-catalog';
-import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 
 /**
  * Monogramová dlaždice platformy — jednotný vizuál místo cizích log (CSP self,
@@ -220,8 +219,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                             registraci
                           </Link>{' '}
                           na stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout.
-                          Živé napojení je součást hlídání za {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
-                          ročně; výpis z téhle platformy nahraješ ručně i zdarma.
+                          Výpis z téhle platformy můžeš místo toho nahrát i ručně.
                         </p>
                       ))}
                   </div>

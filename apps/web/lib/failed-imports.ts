@@ -418,8 +418,9 @@ export async function deleteCase(db: Db, caseId: string): Promise<boolean> {
 /**
  * Uzavře OTEVŘENÝ případ a dá o tom vědět uživateli.
  *
- * E-mail jde PŘÍMO, ne přes digest `api/cron/notify` — ten běží jen platícím,
- * takže uživatel zdarma by se výsledek vlastního nahrání nikdy nedozvěděl.
+ * E-mail jde PŘÍMO, ne přes digest `api/cron/notify` — ten se řídí přepínači
+ * v Nastavení, takže kdo má hlídací e-maily vypnuté, výsledek vlastního
+ * nahrání by se nikdy nedozvěděl.
  * Právě proto se uzavírá jen to, co je otevřené: bez podmínky na `status`
  * poslal druhý `reject` (i `retry` nad případem ve stavu `fixed`) uživateli
  * druhou zprávu o témž výpisu — naměřeno ve 4. auditu (K2-05).

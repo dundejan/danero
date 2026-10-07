@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { MarketingPage } from '@/components/marketing-page';
 import { OPERATOR } from '@/lib/contact';
 import { TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
+import { supportAvailable, supportFromEnv } from '@/lib/support';
 
 export const metadata = {
   title: 'Ochrana soukromí — Danero',
@@ -10,6 +11,7 @@ export const metadata = {
 };
 
 export default function PrivacyPage() {
+  const support = supportFromEnv();
   return (
     <MarketingPage>
       <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
@@ -24,9 +26,8 @@ export default function PrivacyPage() {
 
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
-        {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR i § 1820 odst. 1
-            písm. c) OZ chtějí totožnost a kontakt správce, a musí sedět všude
-            stejně (nálezy E-3-02 a E-3-15) */}
+        {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR chce totožnost
+            a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15) */}
         <p>
           Danero je osobní projekt {OPERATOR.name.split(' ')[0]}a {OPERATOR.name.split(' ')[1]}a
           (IČO {OPERATOR.ico}, {OPERATOR.address}) — on je i správcem tvých údajů. Kontakt:{' '}
@@ -50,19 +51,10 @@ export default function PrivacyPage() {
           u aktivních relací, záznamy o přihlášeních a synchronizacích) — kvůli
           bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
         </p>
-        <p>
-          Když si něco koupíš, přibude k účtu <strong>historie nákupů</strong>: co a kdy
-          sis koupil (celoroční hlídání, nebo podklady za konkrétní daňový rok), do kdy
-          máš zaplaceno, jestli je obnova zrušená, identifikátory, pod kterými platbu
-          vede Stripe (zákazník, předplatné, platba), případný promokód a čas, kdy jsi
-          u objednávky odsouhlasil zahájení plnění — ten musíme umět doložit kvůli
-          14denní lhůtě na odstoupení. Číslo karty ani fakturační adresu nedostáváme,
-          ty zůstávají u Stripu.
-        </p>
 
         <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
         <p>
-          Účet, daňový profil, transakce i historii nákupů zpracováváme, protože bez
+          Účet, daňový profil a transakce zpracováváme, protože bez
           nich ti službu nejde poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR).
           Bezpečnostní záznamy
           a technické logy držíme z oprávněného zájmu na ochraně tvého účtu a provozu
@@ -138,17 +130,10 @@ export default function PrivacyPage() {
           historii pro obnovu do bodu v čase — v tarifu, který používáme, je to
           6 hodin. Když se odhlásíš z e-mailových
           upozornění, přestaneme ti posílat hlídací e-maily. Nepřestanou tím chodit
-          zprávy, bez kterých by služba nefungovala nebo bys přišel o peníze:
-          potvrzení objednávky, upomínka před automatickou obnovou předplatného
-          (tu slibují i podmínky, čl. 5), obnova hesla a ověření adresy.
+          zprávy, bez kterých by služba nefungovala nebo které ti podle podmínek
+          dlužíme: obnova hesla, ověření adresy, vyrozumění o výpisu, který se
+          nepodařilo přečíst, a oznámení o změně podmínek nebo o konci služby.
           Nastavení si pamatujeme u tvého účtu, dokud ho nesmažeš.
-        </p>
-        <p>
-          Historie nákupů a stav předplatného žijí u účtu stejně jako zbytek dat:
-          smazáním účtu zmizí i ony (aktivní předplatné přitom ve Stripu zrušíme, ať
-          se nestrhne další platba). Doklad o zaplacení a údaje o samotné platbě
-          zůstávají u Stripu, který je drží podle svých pravidel a zákonných lhůt —
-          my je u sebe nemáme.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Cookies</h2>
@@ -168,19 +153,53 @@ export default function PrivacyPage() {
               o podpisech, které z kódu nikdo neověří. Tohle znění mluví o tom, co
               je pravda vždycky: podle čeho se dodavatel vybírá a čí podmínky platí. */}
           Dodavatele vybíráme tak, aby zpracovatelskou smlouvu podle čl. 28 GDPR ke
-          svým službám měli — u Vercelu, Neonu, Resendu i Stripu je součástí podmínek,
+          svým službám měli — u Vercelu, Neonu i Resendu je součástí podmínek,
           za kterých jejich službu používáme. Vercel, Neon i Resend jsou americké
           společnosti — data drží v EU,
           ale při provozu (podpora, logy) může dojít k omezenému předání do USA.
           Vercel a Resend jsou certifikované v rámci EU-U.S. Data Privacy Framework,
           který Evropská komise uznává jako odpovídající ochranu; kde certifikace
-          nestačí, kryjí předání standardní smluvní doložky EU (SCC). Platby vyřizuje{' '}
-          <strong>Stripe</strong> (Stripe Payments Europe, Irsko) — platební údaje
-          zpracovává sám, číslo tvojí karty se k nám nikdy nedostane. Předáváme mu
-          tvůj e-mail, identifikátor účtu a informaci, co si kupuješ; zpátky dostáváme
-          jen to, že platba
-          proběhla, do kdy je zaplaceno a identifikátory, pod kterými platbu vede.
+          nestačí, kryjí předání standardní smluvní doložky EU (SCC).
         </p>
+        {/*
+          Do verze 2.4 tu byl jako zpracovatel plateb Stripe a v databázi historie
+          nákupů. Placené tarify zanikly 8. 10. 2026 a tabulky s nimi (migrace
+          0044). Odstavec zůstává, dokud může mít kdokoli u Stripu z té doby
+          záznam — říct „Stripe nepoužíváme" a zamlčet, že ho tam mít může, by
+          byla pravda jen napůl.
+        */}
+        <p>
+          <strong>Platby už nezpracováváme.</strong> Do října 2026 mělo Danero
+          placené tarify a platby vyřizoval Stripe (Stripe Payments Europe, Irsko).
+          Záznamy o nákupech jsme ze své databáze smazali. Kdo tehdy zahájil
+          objednávku, může mít u Stripu dál záznam se svým e-mailem a údaji o platbě
+          — Stripe je drží jako samostatný správce podle svých pravidel a zákonných
+          lhůt. Chceš-li vědět, co o tobě z té doby u Stripu je, nebo to nechat
+          smazat, napiš nám.
+        </p>
+        {supportAvailable(support) && (
+          <p>
+            <strong>Když pošleš dobrovolný příspěvek.</strong>{' '}
+            {support.paymentCode && (
+              <>
+                U převodu na účet vidíme to, co každý příjemce platby: jméno majitele
+                účtu, číslo účtu, částku a zprávu, kterou k platbě připíšeš. S účtem
+                v Daneru to nespojujeme a nic se podle toho v aplikaci nemění.
+                Údaje o přijatých platbách držíme jako podklad k evidenci příjmů po
+                dobu, po kterou může finanční úřad daň za ten rok prověřovat —
+                zpravidla tři roky, nejdéle deset let (čl. 6 odst. 1 písm. c GDPR).{' '}
+              </>
+            )}
+            {support.url && (
+              <>
+                Příspěvek kartou vyřizuje externí služba, na kterou tě odkaz
+                zavede — ta zpracovává tvoje údaje podle vlastních podmínek jako
+                samostatný správce a my od ní dostáváme jen to, co o přispěvateli
+                sama zobrazí (typicky přezdívku a částku).
+              </>
+            )}
+          </p>
+        )}
         <p>
           Zdrojový kód Danera je veřejný na GitHubu. Když nám tam napíšeš — issue,
           pull request, diskuse — zpracovává tvoje údaje GitHub podle svých vlastních
@@ -202,8 +221,7 @@ export default function PrivacyPage() {
           rozhodování s právním nebo obdobně závažným účinkem (čl. 22 GDPR) tu neprobíhá,
           stejně jako profilování pro marketing. Co nakonec podáš v daňovém přiznání a
           jaký výklad sporných míst zvolíš, rozhoduješ ty; sporné výklady proto aplikace
-          nechává jako přepínač a obě čísla ukazuje vedle sebe. Ani cenu ti podle žádných
-          dat nepřizpůsobujeme — platí ta z ceníku, pro všechny stejná.
+          nechává jako přepínač a obě čísla ukazuje vedle sebe.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>

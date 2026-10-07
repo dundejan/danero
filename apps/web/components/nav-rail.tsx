@@ -10,10 +10,10 @@ interface NavItem {
   href: string;
   label: string;
   /**
-   * Kratší popisek pro mobilní tab bar. Sedm položek se na 360 px dělí o 51 px
-   * na položku, do kterých se „Zdroje dat“ (56 px) ani „Předplatné“ (58 px)
-   * nevejdou — uživatel viděl „Zdroje …“ a „Předpla…“ (audit H2-07). Ořezaný
-   * popisek je horší než kratší slovo, proto tady jedno slovo, které se vejde.
+   * Kratší popisek pro mobilní tab bar. Položky se na 360 px dělí o desítky
+   * pixelů a „Zdroje dat“ (56 px) se do své nevešly — uživatel viděl
+   * „Zdroje …“ (audit H2-07). Ořezaný popisek je horší než kratší slovo, proto
+   * tady jedno slovo, které se vejde.
    */
   short?: string;
 }
@@ -24,7 +24,6 @@ const ITEMS: NavItem[] = [
   { href: '/simulator', label: 'Simulátor', short: 'Simulace' },
   { href: '/report', label: 'Report' },
   { href: '/import', label: 'Zdroje dat', short: 'Data' },
-  { href: '/predplatne', label: 'Předplatné', short: 'Tarif' },
   { href: '/nastaveni', label: 'Nastavení' },
 ];
 

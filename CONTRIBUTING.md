@@ -9,20 +9,16 @@ Danero je otevřený kód, ne otevřené řízení. O směru produktu, o tom co 
 přijme a co ne, rozhoduje vlastník projektu (Jan Dunder). U větší změny si
 napřed **založ issue a domluv se** — ušetří to zbytečnou práci na obou stranách.
 
-Odměna, která platí: **kdo přispěje parserem nebo anonymizovanou fixturou,
-která povede k podpoře platformy, dostane na danero.cz celoroční hlídání
-zdarma.** Ať je jasné, co se tím slibuje:
+Odměna za příspěvek žádná není — a není ani potřeba: hostovaná služba na
+danero.cz je od října 2026 zdarma celá, pro všechny. (Do té doby tu stál slib
+celoročního hlídání zdarma za přispěnou podporu platformy; kdo ho dostal,
+nepřišel o nic, jen už ho mají všichni.) Dvě věci, které je dobré vědět předem:
 
-- **Na jak dlouho:** po celou dobu, co hostovanou službu provozujeme. Není to
-  převoditelné na jiného člověka a neplatí to pro vlastní instanci — tam nic
-  platit nemusíš tak jako tak.
-- **Kdy vzniká:** až se přispěná podpora platformy dostane do `main`. Napiš
-  do PR e-mail účtu, nebo ho pošli na dunder.jan@gmail.com.
-- **Když bychom skončili:** o ukončení služby dáme vědět e-mailem nejméně
-  3 měsíce předem a po celou tu dobu si stáhneš export všech svých dat —
-  stejně jako platícím zákazníkům (viz [podmínky užití](https://danero.cz/podminky)).
-- **Co to není:** nárok na to, že přispěný parser budeme udržovat věčně,
-  ani na konkrétní funkce. Formáty výpisů se mění a některé podpory zaniknou.
+- **Co příspěvek nezaručuje:** že přispěný parser budeme udržovat věčně, ani
+  konkrétní funkce. Formáty výpisů se mění a některé podpory zaniknou.
+- **Když by služba končila:** dáme o tom vědět e-mailem nejméně 3 měsíce
+  předem a po celou tu dobu si každý stáhne export všech svých dat (viz
+  [podmínky užití](https://danero.cz/podminky)). Kód zůstane.
 
 ## ⚠️ Nikdy neposílej reálné výpisy do issue nebo PR
 

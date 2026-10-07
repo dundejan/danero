@@ -33,7 +33,7 @@ export function profileAffectsCalculations(
  * nedotýkal vůbec — a to nebylo jen o nepravdě na přehledu. V řádku zůstal
  * i dedupe klíč `limit|…|<rok>` s vyplněným `emailedAt`, takže až limit padne
  * doopravdy, e-mail už nikdy nepřijde: v rámci téhož kalendářního roku hlídač
- * pro ten limit utichl. A hlídač je placená funkce.
+ * pro ten limit utichl. A hlídání limitů je to, kvůli čemu Danero existuje.
  *
  * Maže se jen `limit|%` — kalendářní (`termin|…`, `rocni|…`) ani souhrnné
  * (`souhrn|…`) události na profilu nezávisí. A jen u roků, které NEJSOU

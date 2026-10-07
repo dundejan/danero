@@ -1,9 +1,7 @@
 import { redirect } from 'next/navigation';
 import { analyzeTaxYear } from '@danero/engine';
-import { PaywallCard } from '@/components/paywall-card';
 import { SimulatorView, type SimParams } from '@/components/views/simulator-view';
 import { getDb } from '@/db';
-import { resolveEntitlements } from '@/lib/entitlements';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
 import {
@@ -13,7 +11,6 @@ import {
   loadTransactions,
 } from '@/lib/portfolio';
 import { loadInstrumentPrices } from '@/lib/prices';
-import { PRICE_SUBSCRIPTION_CZK, priceLabel } from '@/lib/pricing';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -37,27 +34,6 @@ export default async function SimulatorPage({
 
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) redirect('/prehled');
-
-  const entitlements = await resolveEntitlements(db, user.id);
-  if (!entitlements.simulator) {
-    return (
-      // <main> nese už layout aplikace (cíl skip-linku) — druhý by udělal
-      // dva landmarky a rozbil „Přeskočit na obsah“
-      <div className="py-12">
-        <PaywallCard
-          title="Simulátor prodeje"
-          body={
-            <>
-              Spočítá, co se stane s tvojí daní, když teď prodáš konkrétní pozici — ještě
-              než to uděláš. Ukáže i datum, kdy bude prodej osvobozený, takže poznáš,
-              jestli se vyplatí počkat.
-            </>
-          }
-          price={`Součást hlídání za ${priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně`}
-        />
-      </div>
-    );
-  }
 
   // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
   const instant = now();

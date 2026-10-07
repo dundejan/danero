@@ -41,7 +41,8 @@ test('otevřený kód: odkaz v patičce, sekce na /o-projektu i /bezpecnost', as
 
 test('podmínky oddělují službu danero.cz od softwaru pod AGPL', async ({ page }) => {
   await page.goto('/podminky');
-  // bez čísla článku — viz poznámka u „Placené objednávky a odstoupení“ níž
+  // bez čísla článku: přečíslování (nový článek výš) není změna obsahu
+  // a nesmí shodit test
   await expect(
     page.getByRole('heading', { name: /Na co se tyhle podmínky vztahují/ }),
   ).toBeVisible();
@@ -79,95 +80,68 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
 
   await page.goto('/cenik');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  // tři tarify (docs/19): zdarma · jednorázové podklady · celoroční hlídání
+  // jeden tarif a je zdarma — žádná cena, kterou by šlo zaplatit
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Danero je zdarma');
   await expect(page.getByText('0 Kč', { exact: true })).toBeVisible();
-  await expect(page.getByText('490 Kč', { exact: true })).toBeVisible();
-  await expect(page.getByText(/990 Kč/).first()).toBeVisible();
-  // free vrstva nesmí být omezená počtem platforem — limity se sčítají přes všechny
-  await expect(page.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
+  await expect(page.getByText(/\b[49]90 Kč/)).toHaveCount(0);
+  // v jediném seznamu je i to, co dřív bylo placené
+  const features = page.getByLabel('Cena a obsah');
+  await expect(features.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
+  await expect(features.getByText(/XML pro elektronické podání/)).toBeVisible();
+  await expect(features.getByText('Živé napojení na Trading 212, IBKR i Lynx')).toBeVisible();
+  await expect(features.getByText('E-mailová upozornění na limity a termíny')).toBeVisible();
+  // Sekce o příspěvku se vykreslí jen s nastaveným účtem nebo odkazem
+  // (lib/support.ts). Tahle sada je nemá — a bez nich nesmí web o peníze žádat.
+  await expect(page.getByRole('heading', { name: 'Chceš přispět na provoz?' })).toHaveCount(0);
 });
 
 /**
- * Distanční balíček (B-4 z docs/13): poučení o odstoupení, vzorový formulář
- * a povinná výslovná žádost o zahájení plnění u objednávky.
- *
- * E-3: obě věci, které jde koupit, se musí odlišit. Jednorázové podklady jsou
- * digitální obsah dodaný okamžitě (§ 1837 písm. l), roční hlídání je průběžně
- * poskytovaná služba — u ní právo odstoupit trvá a platí se jen poměrná část
- * (§ 1834, § 1837 písm. a). Text, který by ho rušil dopředu, by byl ujednáním,
- * ke kterému se nepřihlíží (§ 1812 odst. 2).
+ * Podmínky 3.0: služba je zdarma, takže z nich zmizelo všechno o objednávkách
+ * a 14denním odstoupení (do 8. 10. 2026 tu stál test distančního balíčku).
+ * Hlídá se podstata nového znění a to, že starší účty nepřišly o slíbených
+ * 30 dní — předchozí znění pro ně platí dál a je na něj odkaz.
  */
-test('poučení o odstoupení rozlišuje jednorázové podklady a roční předplatné', async ({ page }) => {
-  await page.goto('/odstoupeni');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Odstoupení od smlouvy');
-
-  // jednorázové podklady: právo zaniká dodáním
-  await expect(page.getByRole('heading', { name: /Podklady k přiznání za jeden rok/ })).toBeVisible();
-  await expect(page.getByText('§ 1837 písm. l')).toBeVisible();
-
-  // roční hlídání: právo trvá, vrací se vše kromě poměrné části
-  await expect(page.getByRole('heading', { name: /Celoroční hlídání/ })).toBeVisible();
-  await expect(page.getByText('právo odstoupit do 14 dnů trvá i po zaplacení')).toBeVisible();
-  await expect(page.getByText('§ 1834')).toBeVisible();
-  await expect(page.getByText('§ 1837 písm. a')).toBeVisible();
-
-  // vzorový formulář musí pokrýt obě situace
-  const formular = page.locator('pre');
-  await expect(formular).toContainText('Oznamuji, že tímto odstupuji od smlouvy');
-  await expect(formular).toContainText('celoroční hlídání');
-  await expect(formular).toContainText('podklady k přiznání za daňový rok');
-
+test('podmínky: zdarma, bez objednávek, se starým zněním na dosah', async ({ page }) => {
   await page.goto('/podminky');
-  // Nadpis se hledá BEZ čísla článku: přečíslování (doplnění nového článku výš)
-  // není změna obsahu a nesmí shodit test. Přesně tohle se stalo, když
-  // v podmínkách přibyl článek o funkčnosti digitálního obsahu (§ 1820/1 r).
-  await expect(
-    page.getByRole('heading', { name: /Placené objednávky a odstoupení/ }),
-  ).toBeVisible();
-  await expect(page.getByText('Ceny jsou konečné')).toBeVisible();
-  // podmínky nesmí u předplatného tvrdit zánik práva podle písm. l
-  await expect(page.getByText('poměrnou část za dny')).toBeVisible();
-  await expect(page.getByText('o právo odstoupit tě nepřipraví')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Podmínky užití');
+  await expect(page.getByText('Danero je zdarma, a to celé')).toBeVisible();
+  await expect(page.getByText(/není platbou za\s+službu/)).toBeVisible();
+  // odejít jde kdykoli — lhůta na odstoupení by byla míň než tohle
+  await expect(page.getByRole('heading', { name: /Jak dlouho to trvá a jak skončit/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Placené objednávky/ })).toHaveCount(0);
+
+  // přechodné ustanovení: verze, datum a odkaz na předchozí znění
+  await expect(page.getByText(/Verze 3\.0 · účinnost od 8\. října 2026/)).toBeVisible();
+  const previousTerms = page.getByRole('link', { name: 'předchozí znění 2.4' });
+  await expect(previousTerms).toHaveAttribute('href', /placene-tarify/);
+
+  // kdo službu provozuje, musí být vidět i u bezplatné
+  await expect(page.getByRole('heading', { name: /Provozovatel a kontakt/ })).toBeVisible();
 });
 
 /**
- * E-10 + E-13: hlídací e-maily jsou v tarifu 990 Kč — landing je nesmí slibovat
- * jako součást „zdarma navždy" (§ 5a z. 634/1992), a u cen musí zaznít, že jsou
- * konečné (Jan není plátce DPH).
+ * Hlídací e-maily i upozornění na časové testy jsou součást služby pro každého
+ * — landing je nesmí podmiňovat tarifem, který už neexistuje.
  */
-test('landing: hlídací e-maily jsou u placeného tarifu a ceny jsou konečné', async ({ page }) => {
+test('landing: hlídací e-maily nejsou podmíněné placeným tarifem', async ({ page }) => {
   await page.goto('/');
-  await expect(
-    page.getByText(/celoročním hlídáním za 990 Kč ročně ti navíc při 60, 85 a 100 % přijde e-mail/),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/s celoročním hlídáním ti navíc e-mail přijde 30 a 7 dní předem/),
-  ).toBeVisible();
-  await expect(page.getByText('Ceny jsou konečné.')).toBeVisible();
+  await expect(page.getByText(/při 60, 85 a 100 % ti přijde e-mail/)).toBeVisible();
+  await expect(page.getByText(/e-mail ti přijde 30 a 7 dní předem/)).toBeVisible();
+  await expect(page.getByText(/celoročním hlídáním/)).toHaveCount(0);
 });
 
 /**
- * C-10: horizont osvobození běží zdarma na /prehled — ceník ho nesmí prodávat
- * jako součást tarifu za 990 Kč.
- */
-test('ceník: horizont osvobození je ve zdarma, ne v placeném tarifu', async ({ page }) => {
-  await page.goto('/cenik');
-  await expect(page.getByText('Horizont osvobození: kdy je co bez daně')).toBeVisible();
-  await expect(page.getByText('Simulátor prodeje a horizont osvobození')).toHaveCount(0);
-});
-
-/**
- * E-9 + E-11: FAQ nesmí tvrdit, že se u předplatného nic nestrhne samo, ani že
+ * FAQ říká, že je Danero zdarma celé (podmínky 3.0), a E-11: netvrdí, že
  * zkušební podatelnou proženeme každé vygenerované XML.
  */
-test('FAQ: automatická obnova přiznaná, EPO popsané pravdivě', async ({ page }) => {
+test('FAQ: cena popsaná pravdivě, EPO taky', async ({ page }) => {
   await page.goto('/caste-otazky');
 
-  const cena = page.locator('details', { hasText: 'Co je zdarma a za co se platí?' });
+  const cena = page.locator('details', { hasText: 'Kolik Danero stojí?' });
   await cena.locator('summary').click();
-  await expect(cena.getByText(/automaticky obnovuje/)).toBeVisible();
-  await expect(cena.getByText(/Ceny jsou konečné/)).toBeVisible();
-  await expect(page.getByText('nic se nestrhne samo')).toHaveCount(0);
+  await expect(cena.getByText(/Danero je zdarma celé/)).toBeVisible();
+  // příspěvek nesmí vypadat jako cena za něco
+  await expect(cena.getByText(/nic se tím neodemyká/)).toBeVisible();
 
   const epo = page.locator('details', { hasText: 'ověřeno zkušební podatelnou EPO' });
   await epo.locator('summary').click();

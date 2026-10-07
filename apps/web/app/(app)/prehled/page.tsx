@@ -90,12 +90,12 @@ export default async function OverviewPage({
   const prices = await loadInstrumentPrices(db, user.id);
 
   /*
-   * Uložené události zakládá jen denní cron, a ten běží pouze platícím — bez
-   * tohohle byla karta „Poslední upozornění“ u účtu zdarma navždy prázdná,
-   * přestože předplatné slibuje jen to, že upozornění přijdou SAMA e-mailem.
+   * Uložené události zakládá jen denní cron — bez tohohle by karta „Poslední
+   * upozornění“ zůstala prázdná až do jeho prvního běhu (a u účtu, který má
+   * e-maily vypnuté, by nikdo neviděl, na co se hlídač dívá právě teď).
    * Analýzu už tady máme, takže je dopočítáme z ní; do DB je NEzapisujeme,
-   * jinak by si je cron odškrtl jako odeslané a e-mail o nich platícímu nikdy
-   * nepřijde.
+   * jinak by si je cron odškrtl jako odeslané a e-mail o nich by nikdy
+   * nepřišel.
    */
   const rules = notificationRules(await getNotificationPrefs(db, user.id));
   /*

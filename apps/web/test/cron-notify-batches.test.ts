@@ -19,10 +19,6 @@ vi.mock('next/server', () => ({
   },
 }));
 vi.mock('@/db', () => ({ getDb: async () => ({}) }));
-vi.mock('@/lib/entitlements', () => ({
-  billingEnabled: () => false,
-  usersWithActiveSubscription: async () => new Set<string>(),
-}));
 vi.mock('@/lib/notifications', () => ({
   // schválně v opačném pořadí, než v jakém se má zpracovávat — route si musí
   // frontu seřadit sám, jinak by na sebe dávky nenavázaly

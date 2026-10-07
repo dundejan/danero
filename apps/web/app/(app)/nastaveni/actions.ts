@@ -291,12 +291,6 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   if (!parsed.success) redirect('/nastaveni/ucet?chyba=smazani');
   await limitAccountAction(user.id, 'account_delete', 3, 'smazani-limit');
 
-  // ID předplatného si přečteme PŘED smazáním (kaskáda řádek zahodí), ale zrušit
-  // ho smíme až POTOM: heslo ověřuje teprve deleteUser a špatné heslo nesmí
-  // nikomu zrušit placenou službu.
-  const { pendingSubscriptionId, cancelStripeSubscription } = await import('@/lib/billing');
-  const subscriptionId = await pendingSubscriptionId(await getDb(), user.id);
-
   const { api, requestHeaders } = await authApi();
   try {
     // hard delete: Better Auth smaže user/session/account, FK kaskády zbytek
@@ -317,9 +311,6 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   const { purgeAfterAccountDeletion } = await import('@/lib/account-cleanup');
   await purgeAfterAccountDeletion(await getDb(), { userId: user.id, email: user.email });
 
-  // Bez tohohle by zákazníkovi bez účtu chodila platba dál a neměl by ji jak
-  // zastavit — do zákaznického portálu se vchází jen přihlášením.
-  if (subscriptionId) await cancelStripeSubscription(subscriptionId, user.id);
   redirect('/?smazano=1');
 }
 
@@ -337,16 +328,6 @@ export async function revokeOtherSessionsAction(): Promise<void> {
 export async function saveNotificationPrefsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const db = await getDb();
-  /*
-   * Rozesílku dělá cron jen platícím, takže stránka formulář bez předplatného
-   * vůbec nevykreslí. Server action jde ale zavolat přímo — a pravidlo z
-   * CLAUDE.md zní, že hranice se hlídá na obou místech (stránka kvůli tomu,
-   * aby uživatel nedělal práci zbytečně, action jako pojistka). Stejný vzor
-   * má napojení brokera v `import/actions.ts`.
-   */
-  const { resolveEntitlements } = await import('@/lib/entitlements');
-  const entitlements = await resolveEntitlements(db, user.id);
-  if (!entitlements.notifications) redirect('/nastaveni/upozorneni?chyba=hlidani-placene');
   const { notificationPrefs } = await import('@/db/schema');
   const {
     DEADLINE_LEAD_OPTIONS,

@@ -17,12 +17,15 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 2. **Vercel**: projekt s root directory `apps/web` (monorepo, pnpm). Funkce region `fra1`.
 3. **Env proměnné** (viz `.env.example`). Povinné — aplikace bez nich spadne při
    startu: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (produkční
-   URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Pro platby navíc:
-   `DANERO_BILLING=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_REPORT`,
-   `STRIPE_PRICE_SUBSCRIPTION`, `STRIPE_WEBHOOK_SECRET` — nastavený Stripe klíč
-   bez `DANERO_BILLING=stripe` v produkci shodí start (jinak by paywall tiše
-   rozdal všechno zdarma). Volitelně `RESEND_API_KEY`, `RESEND_FROM`,
-   `DANERO_TRUSTED_PROXIES` (viz níž).
+   URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Volitelně `RESEND_API_KEY`, `RESEND_FROM`,
+   `DANERO_TRUSTED_PROXIES` (viz níž) a `DANERO_SUPPORT_IBAN` /
+   `DANERO_SUPPORT_URL` pro dobrovolný příspěvek na `/cenik` — bez nich se
+   sekce o příspěvku nevykreslí, s překlepem to ohlásí `/api/health`
+   (`support: "invalid"`).
+
+   Platby aplikace **nemá** — od 8. 10. 2026 je Danero celé zdarma. Proměnné
+   `DANERO_BILLING` a `STRIPE_*` už nic nedělají a z prostředí je smaž; poslední
+   stav s platbami je pod značkou `placene-tarify`.
 4. **Cron**: `apps/web/vercel.json` definuje **v UTC** (Vercel Cron jiné pásmo
    neumí — v létě je to +2 h, v zimě +1 h pražského času):
 
@@ -169,35 +172,6 @@ serveru, PGlite drží zámek). Reset = smazat `.data/`.
 
 Šifrované broker klíče v dumpu jsou bez `DANERO_ENCRYPTION_KEY` bezcenné —
 klíč drž v password manageru odděleně od záloh (jinak záloha = plaintext klíče).
-
-## Odstoupení od smlouvy (runbook, E-36)
-
-`/odstoupeni` slibuje spotřebiteli u ročního hlídání vrácení částky snížené
-o poměrnou část za využité dny (§ 1834 OZ). **Aplikace na to nemá tlačítko** a
-webhook `charge.refunded` předplatné schválně neruší (refundace samo o sobě
-odstoupení neznamená — může jít o kompenzaci). Odstoupení jsou proto **dva ruční
-kroky ve Stripe a musí se udělat oba**: kdyby zůstal jen ten první, zákazník má
-po odstoupení dál běžící hlídání a za rok se mu strhne další platba — plnění
-i inkaso bez smlouvy.
-
-1. **Ověř lhůtu.** Rozhoduje datum, kdy zákazník odstoupení **odeslal**, ne kdy
-   jsi ho přečetl. Datum uzavření smlouvy je `subscriptions.created_at`
-   (u podkladů `report_purchases.created_at`); lhůta je 14 dní.
-   U jednorázových podkladů se souhlasem (`consent_at` není prázdné) právo
-   odstoupit zaniklo dodáním — viz `/odstoupeni`.
-2. **Spočítej vratku.** `cena × (1 − využité_dny / 365)`, zaokrouhli na koruny;
-   stejný vzorec počítá `refundAfterDays()` v `apps/web/lib/pricing.ts`, takže
-   číslo sedí na to, co zákazník četl na `/odstoupeni`.
-3. **Stripe → Payments** → najdi platbu → **Refund** částečnou vratkou z bodu 2.
-4. **Stripe → Subscriptions** → totéž předplatné → **Cancel subscription**,
-   volba *immediately* (ne „na konci období" — smlouva už neexistuje).
-   Webhook `customer.subscription.deleted` stav v databázi srovná sám.
-5. **Zkontroluj v aplikaci**, že uživatel nemá aktivní hlídání
-   (`scripts/db.sh status` nebo Stripe dashboard), a **odpověz e-mailem** —
-   potvrzení o vyřízení a částka.
-
-Peníze musí odejít **do 14 dnů od doručení odstoupení** (§ 1832 OZ), stejným
-způsobem, jakým zákazník platil.
 
 ## Monitoring
 

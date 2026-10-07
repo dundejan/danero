@@ -16,12 +16,6 @@ import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { computeNotificationCandidates } from '@/lib/notifications';
 import { engineInputForUser } from '@/lib/portfolio';
-import {
-  PRICE_REPORT_CZK,
-  PRICE_SUBSCRIPTION_CZK,
-  priceLabel,
-  SUBSCRIPTION_PER_MONTH_CZK,
-} from '@/lib/pricing';
 
 // „dnešek“ dema se odvíjí od skutečného data (horizont, upozornění) —
 // žádný prerender při buildu; engine výsledek drží sdílená cache s /demo
@@ -337,7 +331,7 @@ export default async function LandingPage({
             <SignupCta className={CTA_SECONDARY} signedIn={signedIn} />
           </div>
           <p className="mt-3 text-sm text-inkoust-tlumeny">
-            Přehled o limitech máš zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
+            Celé Danero je zdarma. Nevíš, jestli se tě přiznání vůbec týká?{' '}
             <Link
               href="/kalkulacka"
               className="font-medium text-ruzova-text underline underline-offset-2"
@@ -452,9 +446,7 @@ export default async function LandingPage({
               <p className="mt-4 text-inkoust-tlumeny">
                 Limit 100 000 Kč z prodejů i limit 50 000 Kč pro paušální daň, do kterého
                 se počítají i zahraniční dividendy, na které se zapomíná. Čerpání vidíš
-                celý rok zdarma; s celoročním hlídáním za {priceLabel(PRICE_SUBSCRIPTION_CZK)}{' '}
-                ročně ti navíc při
-                60, 85 a 100 % přijde e-mail.{' '}
+                celý rok a při 60, 85 a 100 % ti přijde e-mail.{' '}
                 <strong className="text-inkoust">
                   Ozveme se, dokud se s tím dá něco dělat
                 </strong>{' '}
@@ -505,9 +497,8 @@ export default async function LandingPage({
             </h2>
             <p className="mt-4 text-inkoust-tlumeny">
               Po třech letech držení je prodej osvobozený. Každý tvůj nákup putuje po časové
-              ose k vlastnímu datu osvobození — časovou osu máš zdarma, s celoročním
-              hlídáním ti navíc e-mail přijde 30 a 7 dní předem. Vyzkoušej: tečky níže
-              jsou živé.
+              ose k vlastnímu datu osvobození a e-mail ti přijde 30 a 7 dní předem.
+              Vyzkoušej: tečky níže jsou živé.
             </p>
           </div>
           <div className="mt-8 rounded-lg border border-linka bg-plocha p-5">
@@ -679,37 +670,26 @@ export default async function LandingPage({
                   id="cenik-nadpis"
                   className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
                 >
-                  Zjistit, jak na tom jsi, je zdarma
+                  Danero je zdarma. Celé.
                 </h2>
-                {/* částky v běžném textu proporcionálně (tabular-nums), mono jen štítky */}
                 <p className="mt-3 text-inkoust-tlumeny">
-                  Import výpisů, limity i časové testy zdarma navždy. Podklady k přiznání
-                  za jeden rok{' '}
-                  <strong className="text-inkoust tabular-nums">
-                    {priceLabel(PRICE_REPORT_CZK)}
-                  </strong>
-                  , celoroční hlídání s napojením na brokery a hlídacími e-maily{' '}
-                  <strong className="text-lg text-inkoust tabular-nums">
-                    {priceLabel(PRICE_SUBSCRIPTION_CZK)} ročně
-                  </strong>{' '}
-                  — necelých{' '}
-                  <span className="tabular-nums">{priceLabel(SUBSCRIPTION_PER_MONTH_CZK)}</span>{' '}
-                  měsíčně.{' '}
-                  <span className="whitespace-nowrap">Ceny jsou konečné.</span>
+                  Import výpisů, limity a časové testy, podklady k přiznání včetně XML,
+                  napojení na brokery i hlídací e-maily — bez placené verze, bez zkušební
+                  doby a bez karty. Je to osobní projekt s otevřeným kódem.
                 </p>
                 <p className="mt-4">
                   <Link
                     href="/cenik"
                     className="font-medium text-ruzova-text underline underline-offset-2"
                   >
-                    Co všechno je v ceně →
+                    Co všechno dostaneš a proč je to zdarma →
                   </Link>
                 </p>
               </div>
               <div className="flex flex-col items-start gap-3 lg:items-end">
                 <SignupCta className={CTA_PRIMARY} signedIn={signedIn} />
                 <p className="text-xs text-inkoust-tlumeny">
-                  Účet zdarma a bez karty — platíš, až když budeš chtít.
+                  Stačí e-mail. Kartu po tobě nikdy chtít nebudeme.
                 </p>
               </div>
             </div>

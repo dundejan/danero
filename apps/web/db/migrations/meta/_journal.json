@@ -302,6 +302,13 @@
       "when": 1788199703202,
       "tag": "0042_orphan_transactions_batch_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791410613391,
+      "tag": "0043_existing_accounts_email_opt_in",
+      "breakpoints": true
     }
   ]
 }

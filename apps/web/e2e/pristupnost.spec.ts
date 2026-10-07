@@ -37,10 +37,6 @@ const APP_PAGES = [
   '/nastaveni',
   '/nastaveni/upozorneni',
   '/nastaveni/ucet',
-  '/predplatne',
-  // objednávkové stránky (`/predplatne/hlidani`, `/predplatne/podklady`) tady
-  // být nemůžou: bez `DANERO_BILLING=stripe` se neprodává nic a obě
-  // přesměrují zpátky. Auditují se v `e2e-paywall/pristupnost-objednavky`.
 ];
 
 /**
@@ -90,7 +86,6 @@ const MARKETING_PAGES = [
   '/kalkulacka',
   '/podminky',
   '/soukromi',
-  '/odstoupeni',
 ];
 
 test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení (light i dark)', async ({

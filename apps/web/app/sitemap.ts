@@ -19,7 +19,7 @@ interface Page {
 }
 
 const PAGES: Page[] = [
-  { path: '/', lastModified: '2026-08-09', changeFrequency: 'weekly', priority: 1 },
+  { path: '/', lastModified: '2026-10-07', changeFrequency: 'weekly', priority: 1 },
   { path: '/kalkulacka', lastModified: '2026-08-10', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/platformy', lastModified: '2026-07-12', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/pruvodce', lastModified: '2026-07-12', changeFrequency: 'monthly', priority: 0.7 },
@@ -36,15 +36,13 @@ const PAGES: Page[] = [
     priority: 0.8,
   },
   { path: '/bezpecnost', lastModified: '2026-08-10', changeFrequency: 'yearly', priority: 0.5 },
-  { path: '/cenik', lastModified: '2026-08-09', changeFrequency: 'monthly', priority: 0.9 },
+  { path: '/cenik', lastModified: '2026-10-07', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/demo/prehled', lastModified: '2026-08-10', changeFrequency: 'weekly', priority: 0.8 },
-  { path: '/caste-otazky', lastModified: '2026-08-31', changeFrequency: 'monthly', priority: 0.7 },
+  { path: '/caste-otazky', lastModified: '2026-10-07', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/jak-pocitame', lastModified: '2026-08-31', changeFrequency: 'monthly', priority: 0.7 },
-  { path: '/o-projektu', lastModified: '2026-08-10', changeFrequency: 'yearly', priority: 0.5 },
-  { path: '/podminky', lastModified: '2026-08-10', changeFrequency: 'yearly', priority: 0.2 },
-  { path: '/soukromi', lastModified: '2026-08-31', changeFrequency: 'yearly', priority: 0.2 },
-  // povinné poučení o odstoupení (§ 1820 odst. 1 písm. i OZ) — patří do indexu
-  { path: '/odstoupeni', lastModified: '2026-08-09', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/o-projektu', lastModified: '2026-10-07', changeFrequency: 'yearly', priority: 0.5 },
+  { path: '/podminky', lastModified: '2026-10-07', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/soukromi', lastModified: '2026-10-07', changeFrequency: 'yearly', priority: 0.2 },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

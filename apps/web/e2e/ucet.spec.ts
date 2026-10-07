@@ -95,31 +95,31 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 });
 
 /**
- * Předplatné (docs/19) na instanci BEZ plateb — tak jede tahle sada
- * (`DANERO_BILLING` není nastavené) a tak běží každý self-host.
- *
- * Stránka musí být v navigaci a ukazovat ceník, ale nesmí nic nabízet:
- * kupovat není co a objednávka by spadla až v server action na chybějícím
- * Stripe klíči. Samotnou objednávku hlídá `e2e-paywall`, kde platby běží.
+ * Danero je celé zdarma (podmínky 3.0): přihlášený uživatel má všechno
+ * odemčené a nikde v aplikaci po něm nikdo nechce peníze. Do 8. 10. 2026 tu
+ * stál test stránky Předplatné na instanci bez plateb.
  */
-test('předplatné: v navigaci, ale bez plateb neprodává', async ({ page }) => {
-  await registerWithProfile(page, { name: 'E2E Platby', email: 'platby@danero.cz' });
+test('zdarma: nic není zamčené a staré stránky tarifů přesměrují', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Zdarma', email: 'zdarma@danero.cz' });
 
-  await page.getByRole('link', { name: 'Předplatné' }).click();
-  await page.waitForURL('**/predplatne');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Předplatné');
-  await expect(page.getByLabel('Tarify').getByText(/990 Kč\s*\/ rok/)).toBeVisible();
+  // v navigaci aplikace už položka Předplatné není
+  await expect(page.getByRole('link', { name: 'Předplatné' })).toHaveCount(0);
 
-  await expect(page.getByText(/Tahle instance běží bez plateb/)).toBeVisible();
+  // napojení brokera nabízí rovnou formulář na klíč, ne výzvu k objednání
+  await page.goto('/import');
+  await expect(page.getByRole('heading', { name: /Trading 212 — automatická synchronizace/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Objednat hlídání' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Koupit podklady' })).toHaveCount(0);
-  // ani přímý odkaz na objednávku formulář neotevře
-  await page.goto('/predplatne/hlidani');
-  await expect(page).toHaveURL(/\/predplatne$/);
-  await page.goto('/predplatne/podklady');
-  await expect(page).toHaveURL(/\/predplatne$/);
 
-  // ceny jsou konečné a je vidět, kdo prodává
-  await expect(page.getByText(/Ceny jsou konečné/)).toBeVisible();
-  await expect(page.getByRole('link', { name: 'poučení o odstoupení' })).toBeVisible();
+  // hlídací e-maily jdou nastavit
+  await page.goto('/nastaveni/upozorneni');
+  await expect(page.getByText('Co ti teď chodí')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Objednat hlídání' })).toHaveCount(0);
+
+  // odkazy ze starých e-mailů (potvrzení objednávky, upomínka) nekončí na 404
+  await page.goto('/predplatne');
+  await expect(page).toHaveURL(/\/cenik$/);
+  await page.goto('/predplatne/podklady');
+  await expect(page).toHaveURL(/\/cenik$/);
+  await page.goto('/odstoupeni');
+  await expect(page).toHaveURL(/\/podminky$/);
 });

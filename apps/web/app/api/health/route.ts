@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { operatorContactComplete } from '@/lib/contact';
+import { invalidSupportEnv, supportAvailable, supportFromEnv } from '@/lib/support';
 import journal from '@/db/migrations/meta/_journal.json';
 import { errorText, logEvent } from '@/lib/log';
 
@@ -66,15 +67,35 @@ export async function GET(): Promise<Response> {
       // ale je to stav, o kterém chceme vědět
       logEvent('warn', 'health.migrations_ahead', { ...migrations });
     }
-    // Chybějící identifikace provozovatele je u placené služby porušení § 435
-    // OZ a čl. 13 GDPR. Údaje jdou z prostředí (aby nebyly v public repozitáři),
-    // takže je zapomenutelná — health je jediné místo, kde se to pozná dřív než
-    // od ČOI. Nevalí to 503: služba běží, jen má díru v povinných údajích.
+    // Chybějící identifikace provozovatele je porušení čl. 13 GDPR (a u
+    // podnikatele § 435 OZ). Údaje jdou z prostředí (aby nebyly v public
+    // repozitáři), takže je zapomenutelná — health je jediné místo, kde se to
+    // pozná dřív než od úřadu. Nevalí to 503: služba běží, jen má díru
+    // v povinných údajích.
     const operatorContact = operatorContactComplete() ? 'ok' : 'incomplete';
     if (operatorContact === 'incomplete') {
       logEvent('error', 'health.operator_contact_incomplete', {});
     }
-    return Response.json({ status: 'ok', db: 'ok', dbLatencyMs, migrations, operatorContact });
+    // Překlep v čísle účtu pro dobrovolný příspěvek se na webu neprojeví
+    // chybou — sekce prostě zmizí. Tady je vidět, která proměnná je vadná.
+    const invalidSupport = invalidSupportEnv();
+    const support =
+      invalidSupport.length > 0
+        ? 'invalid'
+        : supportAvailable(supportFromEnv())
+          ? 'ok'
+          : 'off';
+    if (support === 'invalid') {
+      logEvent('error', 'health.support_env_invalid', { error: invalidSupport.join(', ') });
+    }
+    return Response.json({
+      status: 'ok',
+      db: 'ok',
+      dbLatencyMs,
+      migrations,
+      operatorContact,
+      support,
+    });
   } catch (error) {
     const timedOut = error instanceof HealthTimeoutError;
     logEvent('error', 'health.db_failed', {

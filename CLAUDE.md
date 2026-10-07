@@ -142,15 +142,23 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   (3) nepoznaný soubor musí vypsat, **co v hlavičce našel**, ne hlášku cizího
   parseru — jinak je příčina z chyby neuhodnutelná. Fixtura pro nový formát
   patří i do `test/import-detect.test.ts` (routing) a do E2E uploadu.
-- **Placenou hranici musí být vidět DŘÍV, než do ní uživatel investuje práci.**
-  Formulář pro napojení brokera se do 9. 8. 2026 zobrazoval i bez předplatného
-  a odmítnutí přišlo až po odeslání — uživatel si mezitím u brokera vygeneroval
-  klíč. Nastavení hlídacích e-mailů bylo horší: přepínače fungovaly, ale
-  rozesílku dělá `api/cron/notify` jen platícím, takže e-mail prostě nikdy
-  nepřišel a nikde nebylo proč. Stránka si proto musí `resolveEntitlements`
-  načíst sama; server action zůstává jako backstop, ne jako jediná obrana.
-  Hlídá to `pnpm --filter @danero/web test:e2e:paywall` (vlastní konfigurace,
-  protože `DANERO_BILLING=stripe` by zbytku E2E zamkl funkce).
+- **Danero je od 8. 10. 2026 celé zdarma — nic neprodávej, ani omylem.**
+  Platby, paywall i obchodní podmínky pro prodej na dálku jsou pryč (poslední
+  stav s nimi: značka `placene-tarify`). Není to jen produktové rozhodnutí,
+  drží na tom dvě věci naráz: hostovaná instance běží na **Vercel Hobby**,
+  který dovoluje žádat o dary, ale ne cokoli prodávat, a podmínky 3.0 slibují,
+  že se nic neúčtuje bez výslovné objednávky. Dobrovolný příspěvek
+  (`lib/support.ts`, údaje jen z `DANERO_SUPPORT_*`) proto **nesmí nic
+  odemykat** — hlídá to `test/support.test.ts` (kdo smí modul importovat)
+  a `test/email-legal.test.ts` (veřejné texty bez cen a tarifů).
+- **Vercel Hobby shodí celé nasazení, ne jen jednu funkci.** Cron častěji než
+  jednou denně a `maxDuration` nad 300 s neskončí chybou za běhu, ale
+  neúspěšným deployem — tedy až po pushi do main. Chytá to
+  `test/hosting-limits.test.ts`. Cron se navíc spouští **kdykoli během zadané
+  hodiny**, takže pořadí kurzy → sync → e-maily drží jen rozestup celých
+  hodin. Co se do 300 s nevejde (plná historie T212, dlouhá fronta syncu), se
+  samo přeruší a naváže v další invokaci — `SyncPaused` a `lib/cron-handoff.ts`;
+  podrobnosti v `docs/08-provoz.md`, sekce „Limity Vercel funkcí".
 - **Zod v4**: `.default()` bere OUTPUT hodnotu (u Decimal polí `.default(ZERO)`).
 - **Better Auth**: drizzle schéma musí přesně sedět na plugin (twoFactor vyžaduje
   i `verified`, `failedVerificationCount`, `lockedUntil` — při přidávání pluginů
@@ -262,9 +270,11 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 ## Stav a plán
 
 Aplikace je funkčně kompletní (fáze F, G i H), ověřená na reálném účtu.
-Od 3. 8. 2026 je kód open source (AGPL-3.0) a hostovaná služba běží na danero.cz
-— pravidla přispívání v `CONTRIBUTING.md`, hranice zdarma/placené a harmonogram
-spuštění v interním repozitáři `danero-interni` (`docs/15-open-source.md`).
+Od 3. 8. 2026 je kód open source (AGPL-3.0) a hostovaná služba běží na danero.cz;
+od 8. 10. 2026 je **celá zdarma** jako osobní projekt (dřívější placené tarify
+a jejich zdůvodnění jsou v interním repozitáři `danero-interni`,
+`docs/15-open-source.md` a `docs/19-tarify.md`). Pravidla přispívání
+v `CONTRIBUTING.md`.
 
 **Plány, marketing, audity a deník žijí v privátním repozitáři `danero-interni`**
 — průběh a poznámky zapisuj tam, ne sem. Rozcestník je jeho `README.md`;

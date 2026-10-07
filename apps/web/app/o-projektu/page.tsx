@@ -104,8 +104,8 @@ export default function OProjektuPage() {
             Danero někdy skončilo, kód zůstane a data si vyvezeš.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">
-            Provozovat si ho můžeš i sám — tady na danero.cz platíš za to, že ho
-            provozovat nemusíš.
+            Provozovat si ho můžeš i sám. Nemusíš — danero.cz je zdarma celé, bez
+            placené verze.
           </p>
         </div>
       </section>

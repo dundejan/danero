@@ -2,7 +2,6 @@ import { getDb } from '@/db';
 import { withCron } from '@/lib/cron-auth';
 import { handOffCron } from '@/lib/cron-handoff';
 import { errorText, logEvent } from '@/lib/log';
-import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import {
   listNotificationTargets,
   processUserNotifications,
@@ -30,15 +29,7 @@ export const GET = withCron('notify', async (request: Request): Promise<Response
   const send = resolveEmailSender();
   // stabilní pořadí: navazující dávka musí navázat přesně tam, kde ta předchozí
   // skončila — bez seřazení by se fronta mezi invokacemi zamíchala
-  const allTargets = (await listNotificationTargets(db)).sort((a, b) => a.id.localeCompare(b.id));
-
-  // Celoroční hlídání je placené (docs/19). Neplatícím se denní běh nedělá vůbec —
-  // ne kvůli e-mailu, ale protože ten přepočet je ta drahá část. Svůj stav uvidí
-  // kdykoli v aplikaci, počítá se jim on-demand při otevření.
-  const paying = await usersWithActiveSubscription(db);
-  const targets = billingEnabled()
-    ? allTargets.filter((target) => paying.has(target.id))
-    : allTargets;
+  const targets = (await listNotificationTargets(db)).sort((a, b) => a.id.localeCompare(b.id));
 
   const startedAt = Date.now();
   const results: Array<{ userId: string; created?: number; emailed?: number; error?: string }> =
@@ -81,7 +72,6 @@ export const GET = withCron('notify', async (request: Request): Promise<Response
 
   return Response.json({
     users: targets.length,
-    withoutSubscription: allTargets.length - targets.length,
     offset,
     processed: results.length,
     // konvence pro withCron: > 0 zvedne úroveň logu běhu na error

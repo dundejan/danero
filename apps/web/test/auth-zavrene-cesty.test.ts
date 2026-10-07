@@ -8,7 +8,7 @@ import { signUpVerified } from './auth-helpers';
  * `/delete-user` — heslo je v Better Authu volitelné, stačí relace mladší
  * 24 h. Ověřeno naostro na danero.cz: prázdné tělo `{}` vrátilo
  * `200 {"success":true,"message":"User deleted"}` a účet zmizel včetně FK
- * kaskád, bez hesla i bez opsaného „SMAZAT“ a bez zrušení předplatného.
+ * kaskád, bez hesla i bez opsaného „SMAZAT“.
  *
  * `/list-sessions` — vrací syrové `token` všech relací uživatele, tedy přímo
  * hodnoty session cookies ostatních zařízení.

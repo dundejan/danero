@@ -1,18 +1,35 @@
 /**
- * Údaje, které se musí shodovat napříč právními texty a potvrzením objednávky.
+ * Údaje, které se musí shodovat napříč právními texty.
  *
- * Verze podmínek se do 7. 8. 2026 psala ručně na `/podminky` i `/soukromi`
- * a potvrzení o uzavření smlouvy (§ 1824a OZ) ji neuvádělo vůbec — kupující
- * tedy nedokázal doložit, které znění pro něj platí (nález E-30).
+ * Verze podmínek se do 7. 8. 2026 psala ručně na `/podminky` i `/soukromi`,
+ * takže se stránky rozcházely v tom, které znění platí (nález E-30).
  *
  * ⚠️ Změna verze je změnou podmínek: podle `/podminky` čl. 10 se oznamuje
  * e-mailem **nejméně 30 dní předem**. Číslo se tu proto nepřepisuje spolu
  * s opravou překlepu, ale až s věcnou změnou závazku.
+ *
+ * Verze 3.0 (8. 10. 2026): Danero je celé zdarma, placené tarify a všechno
+ * kolem nich (ceny, objednávky, odstoupení, Stripe) z textů zmizelo. Účtům
+ * založeným dřív platí po 30 dní vedle ní i znění 2.4 — viz konstanty níž.
  */
-export const TERMS_VERSION = '2.4';
+export const TERMS_VERSION = '3.0';
 
 /** Datum účinnosti aktuálního znění, česky (vypisuje se v patičce právních stránek). */
-export const TERMS_EFFECTIVE_FROM = '9. srpna 2026';
+export const TERMS_EFFECTIVE_FROM = '8. října 2026';
+
+/**
+ * Do kdy platí starším účtům vedle nového znění i to předchozí (30 dní od
+ * účinnosti). Po tomhle datu jde přechodný odstavec z `/podminky` vypustit.
+ */
+export const TERMS_OVERLAP_UNTIL = '7. listopadu 2026';
+
+/**
+ * Předchozí znění podmínek (2.4) — poslední s placenými tarify. Je to pevná
+ * adresa upstream repozitáře, ne `SOURCE_URL`: odkazuje na konkrétní dokument,
+ * kterým se řídila služba na danero.cz, ne na zdroják běžící instance.
+ */
+export const PREVIOUS_TERMS_URL =
+  'https://github.com/dundejan/danero/blob/placene-tarify/apps/web/app/podminky/page.tsx';
 
 /**
  * Mimosoudní řešení spotřebitelských sporů (§ 14 zákona 634/1992 Sb.).

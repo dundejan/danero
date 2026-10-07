@@ -29,7 +29,8 @@ describe('yearList: výčet roků česky (podmínky a ceník o XML pro EPO)', ()
   });
 
   it('podmínky i ceník tak píší roky, za které XML pro EPO opravdu existuje', () => {
-    // E-29: kupující 490Kč tarifu se rozsah nesmí dozvědět až po zaplacení
+    // E-29: za které roky XML existuje, se má uživatel dozvědět předem, ne
+    // až ve chvíli, kdy ho chce stáhnout
     expect(yearList(EPO_SUPPORTED_YEARS)).toBe('2024 a 2025');
   });
 });

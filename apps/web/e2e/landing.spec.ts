@@ -34,13 +34,12 @@ test('landing: hero, živé komponenty a ceník', async ({ page }) => {
   // odkaz v hlavičce (menu: Platformy · Ceník · Časté otázky · O projektu)
   await expect(page.locator('header').getByRole('link', { name: 'Ceník' })).toBeVisible();
 
-  // ceník přímo na stránce — free vrstva + obě placené ceny s měsíční kotvou
-  await expect(
-    page.getByRole('heading', { name: 'Zjistit, jak na tom jsi, je zdarma' }),
-  ).toBeVisible();
-  await expect(page.getByText('490 Kč', { exact: true })).toBeVisible();
-  await expect(page.getByText('990 Kč ročně', { exact: true })).toBeVisible();
-  await expect(page.getByText(/necelých 83 Kč měsíčně/)).toBeVisible();
+  // ceník přímo na stránce — jedna věta: zdarma celé, žádná cena k zaplacení
+  // Hledá se jen v sekci ceníku: zbytek stránky ukazuje živé částky z dema
+  // a „12 490 Kč" v odměrce by test shodilo, i když se nic neprodává.
+  const pricing = page.locator('section#cenik');
+  await expect(pricing.getByRole('heading', { name: 'Danero je zdarma. Celé.' })).toBeVisible();
+  await expect(pricing.getByText(/\d Kč/)).toHaveCount(0);
 
   // FAQ a autor už na landingu nejsou — vedou na ně odkazy u závěrečného CTA
   // (exact: true — jinak se název case-insensitivně sveze i s odkazy v hlavičce a patičce)
@@ -58,12 +57,10 @@ test('podstránka /caste-otazky: akordeon s odpověďmi', async ({ page }) => {
   await faq.locator('summary').click();
   await expect(faq.getByText(/OSVČ v paušálním režimu/)).toBeVisible();
 
-  // FAQ: přechod na placené — účet je bez karty, ale předplatné se obnovuje
-  // samo (E-11: dřív tu stálo „nic se nestrhne samo" hned vedle ceny 990 Kč)
-  const cena = page.locator('details', { hasText: 'Co je zdarma a za co se platí?' });
+  // FAQ: cena — zdarma celé, bez karty
+  const cena = page.locator('details', { hasText: 'Kolik Danero stojí?' });
   await cena.locator('summary').click();
-  await expect(cena.getByText(/Účet založíš zdarma a bez karty/)).toBeVisible();
-  await expect(cena.getByText(/automaticky obnovuje/)).toBeVisible();
+  await expect(cena.getByText(/bez karty/)).toBeVisible();
 });
 
 test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }) => {

@@ -11,9 +11,7 @@ import {
   jobs,
   notificationPrefs,
   notifications,
-  reportPurchases,
   session,
-  subscriptions,
   taxpayerProfiles,
   taxYearSettings,
   transactions,
@@ -218,12 +216,6 @@ async function* exportChunks(
     firstCase = false;
   }
   yield '],\n';
-  // historie nákupů (/soukromi slibuje odnést si i ji) — stripe identifikátory
-  // jsou součástí údajů o uživateli, doklad o zaplacení má Stripe
-  yield line(
-    'subscriptions',
-    await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)),
-  );
   // /soukromi jmenuje mezi drženými údaji i „záznamy o přihlášeních a
   // synchronizacích" a „IP adresu a typ prohlížeče u aktivních relací" —
   // právo na přístup (čl. 15 GDPR) se týká i jich. Token relace se
@@ -256,16 +248,9 @@ async function* exportChunks(
   // R-05c: konfigurace zafixovaná za roky, které už uživatel použil pro přiznání
   // (párování, kurzová soustava, výklad limitu 100k) — bez ní by z exportu nešlo
   // doložit, čím se jeho podaná čísla počítala
-  yield line(
-    'pinnedTaxYears',
-    await db.select().from(taxYearSettings).where(eq(taxYearSettings.userId, userId)),
-  );
   // poslední klíč je bez čárky
-  const purchases = await db
-    .select()
-    .from(reportPurchases)
-    .where(eq(reportPurchases.userId, userId));
-  yield `  "reportPurchases": ${JSON.stringify(purchases)}\n}\n`;
+  const pinned = await db.select().from(taxYearSettings).where(eq(taxYearSettings.userId, userId));
+  yield `  "pinnedTaxYears": ${JSON.stringify(pinned)}\n}\n`;
 }
 
 /**
@@ -293,8 +278,7 @@ function toStream(chunks: AsyncGenerator<string>): ReadableStream<Uint8Array> {
  * účty (bez šifrovaných klíčů!) i s rekonciliací pozic, číselník instrumentů,
  * ceny držených instrumentů, notifikace, importní dávky i s výhradami
  * k jednotlivým řádkům, nepřečtené výpisy včetně uschovaného originálu,
- * úlohy na pozadí, audit log, přihlášené relace, zafixované daňové roky
- * a historie nákupů (předplatné + zaplacené daňové roky).
+ * úlohy na pozadí, audit log, přihlášené relace a zafixované daňové roky.
  *
  * Co se ven NIKDY nedostane, i když to u účtu leží: šifrované klíče
  * k brokerovi, tajemství TOTP a záložní kódy 2FA, token relace a otisk hesla.

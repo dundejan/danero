@@ -126,11 +126,11 @@ export async function MarketingCta({
 }
 
 /**
- * Patička vypisuje telefon provozovatele z `DANERO_CONTACT_PHONE` (§ 1820 odst.
- * 1 písm. c OZ). Ta proměnná při `next build` k dispozici NENÍ — ověřeno čtyřmi
- * nasazeními, na kterých nepomohlo ani odebrání příznaku Sensitive, ani build
- * bez cache. Staticky předrenderovaná stránka si tedy zapekla `phone = null`
- * a telefon na ní nebyl vidět, i když byl ve Vercelu nastavený.
+ * Patička vypisuje kontakt provozovatele z prostředí (`DANERO_CONTACT_EMAIL`).
+ * Proměnné označené ve Vercelu jako citlivé při `next build` k dispozici
+ * NEJSOU — ověřeno čtyřmi nasazeními, na kterých nepomohlo ani odebrání
+ * příznaku Sensitive, ani build bez cache. Staticky předrenderovaná stránka si
+ * tak zapekla prázdnou hodnotu a údaj na ní nebyl vidět, i když byl nastavený.
  *
  * `connection()` zastaví předrenderování, takže se patička vykreslí až při
  * požadavku, kdy proměnná existuje. Je schválně TADY a ne jako
@@ -285,12 +285,6 @@ export async function MarketingFooter() {
             ·{' '}
             <Link href="/soukromi" className="font-medium hover:text-inkoust">
               Ochrana soukromí
-            </Link>{' '}
-            ·{' '}
-            {/* povinné poučení dle § 1820 odst. 1 písm. i) OZ musí být dohledatelné
-                odjinud než z podmínek a z objednávky (nález E-39) */}
-            <Link href="/odstoupeni" className="font-medium hover:text-inkoust">
-              Odstoupení od smlouvy
             </Link>
           </p>
         </div>

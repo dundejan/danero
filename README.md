@@ -18,23 +18,23 @@ sepsaná s odkazy na paragrafy zákona a pokyny GFŘ.
 Danero si můžeš **rozjet sám** — pod [AGPL-3.0](LICENSE), se vším všudy a zdarma
 (viz [self-hosting](docs/16-selfhosting.md)).
 
-Nebo použij **hostovanou verzi na [danero.cz](https://danero.cz)**, kde neplatíš
-za software, ale za to, že ho nemusíš provozovat: běží to každý den samo, klíče
-k brokerům jsou šifrované a zálohované, a každý leden se do toho promítne nový
-jednotný kurz, nové hranice a nová struktura formuláře EPO.
+Nebo použij **hostovanou verzi na [danero.cz](https://danero.cz)** — je
+**zdarma celá**, bez placené verze, bez zkušební doby a bez karty:
 
-| | Zdarma | Podklady — 490 Kč jednorázově | Plné — 990 Kč/rok |
-|---|---|---|---|
-| Import výpisů, neomezeně platforem | ✅ | ✅ | ✅ |
-| Limity, časové testy, orientační daň | ✅ | ✅ | ✅ |
-| Horizont osvobození: kdy je co bez daně | ✅ | ✅ | ✅ |
-| Podklady k přiznání + XML pro EPO | — | ✅ (jeden rok) | ✅ (všechny roky) |
-| Napojení platformy přes API a denní sync | — | — | ✅ |
-| Hlídací e-maily na limity a termíny | — | — | ✅ |
-| Simulátor prodeje | — | — | ✅ |
+- import výpisů z neomezeného počtu platforem,
+- limity, časové testy, horizont osvobození a orientační daň,
+- podklady k přiznání včetně XML pro EPO,
+- napojení platformy přes API s denní synchronizací,
+- hlídací e-maily na limity a termíny,
+- simulátor prodeje.
 
-Vrstva zdarma je **trvalá**, ne zkušební období — import a přehled zůstávají
-zdarma bez časového omezení. Ceny jsou konečné, provozovatel není plátcem DPH.
+Danero je osobní projekt, ne firma. Na provoz jde dobrovolně přispět (odkaz je
+na [danero.cz/cenik](https://danero.cz/cenik)), ale nic se tím neodemyká.
+
+> **Historie:** do října 2026 měla hostovaná verze placené tarify (Stripe,
+> paywall, obchodní podmínky pro prodej na dálku). Poslední nasazený stav s nimi je pod
+> značkou [`placene-tarify`](https://github.com/dundejan/danero/tree/placene-tarify)
+> — kdo by na platbách chtěl stavět, najde tam celou implementaci včetně testů.
 
 ## Co umí
 
@@ -92,9 +92,7 @@ od nuly.** Engine nikdy nevidí formát brokera.
 
 ## Přispívání
 
-Nejcennější příspěvek je **podpora dalšího brokera** — a je za ni celoroční
-hlídání na danero.cz zdarma po celou dobu, co službu provozujeme (co přesně se
-tím slibuje, včetně toho, co to není, stojí v CONTRIBUTING). Pravidla
+Nejcennější příspěvek je **podpora dalšího brokera**. Pravidla
 v [CONTRIBUTING.md](CONTRIBUTING.md), zejména:
 **do veřejného repozitáře nikdy neposílej reálné výpisy** (jsou to osobní údaje).
 

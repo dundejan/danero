@@ -3,7 +3,6 @@ import { brokerAccounts } from '@/db/schema';
 import { withCron } from '@/lib/cron-auth';
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { errorText } from '@/lib/log';
-import { billingEnabled, usersWithActiveSubscription } from '@/lib/entitlements';
 import { enqueueSyncJob, jobTypeForBroker, processPendingJobs } from '@/lib/jobs';
 
 /**
@@ -18,13 +17,7 @@ export const maxDuration = 300;
 
 export const GET = withCron('sync-brokers', async (request: Request): Promise<Response> => {
   const db = await getDb();
-  const allAccounts = await db.select().from(brokerAccounts);
-
-  // automatický sync je placený (docs/19) — neplatícím účtům se broker nesahá
-  const paying = await usersWithActiveSubscription(db);
-  const accounts = billingEnabled()
-    ? allAccounts.filter((account) => paying.has(account.userId))
-    : allAccounts;
+  const accounts = await db.select().from(brokerAccounts);
 
   // per-účet izolace: jeden vadný/neznámý broker nesmí shodit denní sync všem
   const skipped: Array<{ accountId: string; error: string }> = [];
@@ -47,7 +40,6 @@ export const GET = withCron('sync-brokers', async (request: Request): Promise<Re
 
   return Response.json({
     accounts: accounts.length,
-    withoutSubscription: allAccounts.length - accounts.length,
     recovered,
     deferred,
     paused,

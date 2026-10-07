@@ -1,7 +1,9 @@
 /**
- * Kontaktní údaje provozovatele, které vyžaduje § 435 OZ (identifikace na webu)
- * a § 1820 odst. 1 písm. c) OZ u smluv na dálku: jméno, IČO, **adresa sídla**,
- * telefon a e-mail.
+ * Kontaktní údaje provozovatele: jméno, IČO, **adresa sídla** a e-mail —
+ * identifikace podnikatele na webu (§ 435 OZ) a totožnost správce osobních
+ * údajů (čl. 13 GDPR). Telefon je volitelný: povinný byl jen u prodeje na
+ * dálku (§ 1820 odst. 1 písm. c OZ) a ten skončil 8. 10. 2026, kdy se Danero
+ * stalo celé bezplatným.
  *
  * ⚠️ **Žádný z těch údajů nepatří do repozitáře.** Repozitář je veřejný a pod
  * AGPL, takže by si každý, kdo si Danero rozjede sám, vozil s sebou identifikaci
@@ -14,9 +16,9 @@
  * `DANERO_CONTACT_EMAIL`, `DANERO_CONTACT_PHONE`.
  *
  * Bez nich se vypíše zástupný text. To je schválně vidět na první pohled:
- * chybějící identifikace provozovatele je u placené služby porušení § 435,
- * takže je lepší mít na stránce nápadné „nenastaveno" než tiše nic. Hlídá to
- * i `/api/health` (`operatorContact: 'incomplete'`).
+ * uživatel svěřuje službě svoje obchody a klíče k brokerovi a má právo vědět
+ * komu, takže je lepší mít na stránce nápadné „nenastaveno" než tiše nic.
+ * Hlídá to i `/api/health` (`operatorContact: 'incomplete'`).
  */
 export interface OperatorContact {
   name: string;
@@ -81,14 +83,6 @@ export function operatorContactComplete(contact: OperatorContact = OPERATOR): bo
   return missingOperatorContactEnv(contact).length === 0;
 }
 
-/** Řádek „Prodávající: …“ do potvrzení objednávky a dalších dokladů. */
-export function operatorLines(contact: OperatorContact = OPERATOR): string[] {
-  return [
-    `Prodávající: ${contact.name}, IČO ${contact.ico}, ${contact.address}.`,
-    `Není plátcem DPH. Kontakt: ${contact.email}${contact.phone ? `, ${contact.phone}` : ''}`,
-  ];
-}
-
 /**
  * Patička služebních e-mailů (obnova hesla, ověření adresy, digest, upomínka).
  *
@@ -99,9 +93,8 @@ export function operatorLines(contact: OperatorContact = OPERATOR): string[] {
  * poštu nepřijímá.
  *
  * **Poštovní adresa tu ale NENÍ.** Identifikaci proti phishingu obstará jméno
- * a IČO (podle nějž si kdokoli dohledá zbytek v rejstříku) a povinné plnění
- * podle § 1824a nese potvrzení objednávky, kde adresa zůstává. Rozesílat
- * bydliště provozovatele v každé zprávě o obnově hesla je zbytečné.
+ * a IČO (podle nějž si kdokoli dohledá zbytek v rejstříku); adresa je na
+ * `/podminky`. Rozesílat ji v každé zprávě o obnově hesla je zbytečné.
  */
 export function operatorSignature(contact: OperatorContact = OPERATOR): string[] {
   return [

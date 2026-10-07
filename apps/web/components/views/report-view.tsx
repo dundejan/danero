@@ -40,8 +40,8 @@ export const DISPOSALS_PER_PAGE = 200;
 
 /**
  * Stránkování tabulky prodejů. Vytaženo jako čistá funkce, aby šlo otestovat
- * bez renderu — na tom totiž záleží: rozpad na jednotlivé nákupy je součást
- * placeného tarifu, takže se řádky smí rozdělit, ale nikdy ztratit.
+ * bez renderu — na tom totiž záleží: rozpad na jednotlivé nákupy je podklad
+ * k přiznání, takže se řádky smí rozdělit, ale nikdy ztratit.
  * Strana mimo rozsah se ořízne, ne aby vyšla prázdná tabulka.
  */
 export function disposalPage(
@@ -201,7 +201,7 @@ export function ReportView({
 
   // Tabulka prodejů se stránkuje: u day-tradera je to desetitisíce řádků i s
   // alokacemi a stránka se nevykreslila vůbec (proces vyrostl na 3,9 GB).
-  // Rozpad na jednotlivé nákupy je součást placeného tarifu, takže se nesmí
+  // Rozpad na jednotlivé nákupy je podklad k přiznání, takže se nesmí
   // oříznout — jen rozdělit. Tisk i XML zůstávají úplné.
   const { totalPages, currentPage, fromRow } = disposalPage(allDisposals.length, strana);
   const disposalsOnPage = allDisposals.slice(fromRow, fromRow + DISPOSALS_PER_PAGE);

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { getDb, type Db } from '@/db';
+import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
@@ -16,7 +16,6 @@ import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrumen
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { errorText, logEvent } from '@/lib/log';
-import { resolveEntitlements } from '@/lib/entitlements';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -188,16 +187,6 @@ export async function reportFailedImportAction(formData: FormData): Promise<void
 /* ── Napojení na brokery (Zdroje dat) ────────────────────────────────────── */
 
 /** Uloží T212 API přístup (ID klíče + tajný klíč, šifrovaně) — jeden účet na uživatele. */
-/**
- * Napojení brokera přes API je placené (docs/19) — import výpisů zůstává zdarma,
- * aby data zůstala úplná a limity se počítaly správně. Hlídá se i tady, ne jen
- * v UI: server action jde zavolat přímo.
- */
-async function requireBrokerSync(db: Db, userId: string): Promise<void> {
-  const entitlements = await resolveEntitlements(db, userId);
-  if (!entitlements.brokerSync) redirect('/import?chyba=api-placene');
-}
-
 export async function saveTrading212KeyAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const keyId = String(formData.get('id-klice') ?? '').trim();
@@ -205,7 +194,6 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
   if (secret.length < 10) redirect('/import?chyba=api-klic');
 
   const db = await getDb();
-  await requireBrokerSync(db, user.id);
   // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
   await db.transaction(async (tx) => {
     await tx
@@ -233,7 +221,6 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
   if (token.length < 10 || !/^\d+$/.test(queryId)) redirect('/import?chyba=ibkr');
 
   const db = await getDb();
-  await requireBrokerSync(db, user.id);
   // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
   await db.transaction(async (tx) => {
     await tx
@@ -282,7 +269,6 @@ export async function syncBrokerAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const accountId = String(formData.get('ucet') ?? '');
   const db = await getDb();
-  await requireBrokerSync(db, user.id);
   const accounts = await db
     .select()
     .from(brokerAccounts)

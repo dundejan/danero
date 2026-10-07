@@ -26,8 +26,8 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
   await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
   // upozornění se v aplikaci počítají při otevření přehledu — bez tohohle by
-  // je uživatel viděl až po nočním běhu hlídače (a bez předplatného nikdy),
-  // přestože to nastavení upozornění slibuje
+  // je uživatel viděl až po nočním běhu hlídače, přestože to nastavení
+  // upozornění slibuje
   await expect(page.getByText('Poslední upozornění')).toBeVisible();
   await expect(
     page.getByText('Prolomen limit 100 000 Kč pro osvobození prodejů').first(),

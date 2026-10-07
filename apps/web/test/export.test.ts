@@ -5,9 +5,7 @@ import {
   auditLog,
   brokerAccounts,
   notificationPrefs,
-  reportPurchases,
   session,
-  subscriptions,
   taxpayerProfiles,
   twoFactor,
   user,
@@ -15,8 +13,9 @@ import {
 
 /**
  * GDPR export (/api/export). Slib na /soukromi zní „odnést si data ve strojově
- * čitelném formátu" — musí v nich tedy být i historie nákupů (nález E-15
- * auditu), a naopak nikdy šifrované klíče k brokerovi.
+ * čitelném formátu" — musí v nich tedy být všechno, co u účtu leží (úplnost
+ * hlídá strážce „tabulka ↔ klíč v exportu" níž), a naopak nikdy šifrované
+ * klíče k brokerovi.
  */
 
 const stav = vi.hoisted(() => ({
@@ -47,8 +46,6 @@ interface ExportPayload {
   notificationPrefs: Array<{ emailEnabled: boolean; emailFrequency: string; limitEvents: boolean }>;
   auditLog: Array<{ type: string; detail: string | null }>;
   sessions: Array<{ id: string; ipAddress: string | null; userAgent: string | null }>;
-  subscriptions: Array<{ status: string; stripeCustomerId: string | null; consentAt: string | null }>;
-  reportPurchases: Array<{ taxYear: number; stripePaymentIntentId: string | null }>;
   brokerAccounts: Array<Record<string, unknown>>;
   pinnedTaxYears: Array<{
     taxYear: number;
@@ -97,22 +94,6 @@ async function seed(): Promise<Db> {
     matchingMethod: 'LIFO',
     fxMethod: 'CNB_DAILY',
     limit100kStrict: false,
-  });
-  await db.insert(subscriptions).values({
-    userId: 'u1',
-    status: 'active',
-    currentPeriodEnd: new Date('2027-08-07T00:00:00Z'),
-    stripeCustomerId: 'cus_test',
-    stripeSubscriptionId: 'sub_test',
-    promoCode: 'PARTNER20',
-    consentAt: new Date('2026-08-07T10:00:00Z'),
-  });
-  await db.insert(reportPurchases).values({
-    userId: 'u1',
-    taxYear: 2025,
-    stripePaymentIntentId: 'pi_test',
-    stripeCustomerId: 'cus_test',
-    consentAt: new Date('2026-08-07T10:05:00Z'),
   });
   await db.insert(brokerAccounts).values({
     id: 'acc1',
@@ -169,7 +150,7 @@ async function seed(): Promise<Db> {
 }
 
 describe('GDPR export dat (/api/export)', () => {
-  it('obsahuje předplatné i zaplacené daňové roky (E-15)', { timeout: 30_000 }, async () => {
+  it('přihlášenému vydá export v aktuálním formátu i se zafixovanými roky', { timeout: 30_000 }, async () => {
     stav.db = await seed();
     stav.session = { user: { id: 'u1', email: 'export@danero.cz', name: 'Test' } };
 
@@ -179,14 +160,10 @@ describe('GDPR export dat (/api/export)', () => {
     const payload = (await response.json()) as ExportPayload;
 
     expect(payload.format).toBe('danero-export-v1');
-    expect(payload.subscriptions).toHaveLength(1);
-    expect(payload.subscriptions[0]!.status).toBe('active');
-    expect(payload.subscriptions[0]!.stripeCustomerId).toBe('cus_test');
-    // souhlas se zahájením plnění je důkaz k 14denní lhůtě — patří uživateli taky
-    expect(payload.subscriptions[0]!.consentAt).not.toBeNull();
-    expect(payload.reportPurchases).toHaveLength(1);
-    expect(payload.reportPurchases[0]!.taxYear).toBe(2025);
-    expect(payload.reportPurchases[0]!.stripePaymentIntentId).toBe('pi_test');
+    // zafixované roky jsou poslední klíč dokumentu — když se u něj splete
+    // čárka nebo závorka, není export platný JSON vůbec
+    expect(payload.pinnedTaxYears).toHaveLength(1);
+    expect(payload.pinnedTaxYears[0]!.taxYear).toBe(2025);
   });
 
   it('nikdy nevydá šifrované klíče k brokerovi', { timeout: 30_000 }, async () => {
@@ -310,8 +287,6 @@ describe('export velké historie se streamuje (G-P4)', () => {
       expect(payload.format).toBe('danero-export-v1');
       expect(payload.transactions).toHaveLength(5000);
       expect(payload.transactions.at(-1)!.note).toBe('radek 5000');
-      expect(payload.subscriptions).toHaveLength(1);
-      expect(payload.reportPurchases).toHaveLength(1);
     },
   );
 });
@@ -363,8 +338,6 @@ describe('tabulka ↔ klíč v exportu (K4-01)', () => {
     instrument_aliases: 'instrumentAliases',
     instrument_prices: 'instrumentPrices',
     transactions: 'transactions',
-    subscriptions: 'subscriptions',
-    report_purchases: 'reportPurchases',
   };
 
   /** Tabulky, které do exportu vědomě NEPATŘÍ — a proč. */

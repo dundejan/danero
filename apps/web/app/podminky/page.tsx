@@ -3,12 +3,18 @@ import { MarketingPage } from '@/components/marketing-page';
 import { OPERATOR } from '@/lib/contact';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
-import { ADR, TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
+import {
+  ADR,
+  PREVIOUS_TERMS_URL,
+  TERMS_EFFECTIVE_FROM,
+  TERMS_OVERLAP_UNTIL,
+  TERMS_VERSION,
+} from '@/lib/legal';
 
 export const metadata = {
   title: 'Podmínky užití — Danero',
   description:
-    'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, cena a odpovědnost — srozumitelně a bez kliček.',
+    'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, že je zdarma, a jak je to s odpovědností — srozumitelně a bez kliček.',
 };
 
 export default function TermsPage() {
@@ -71,48 +77,44 @@ export default function TermsPage() {
         </p>
 
         <h2 className="font-display text-lg font-semibold">3. Cena a rozsah služby</h2>
+        {/*
+          Verze 3.0 (8. 10. 2026): placené tarify zanikly. Do verze 2.4 tu byla
+          cena, závazek aktualizací jako protiplnění ročního hlídání (E-3-09)
+          a náhrada za výpadek. Poslední znění s placenou službou je
+          v repozitáři pod značkou `placene-tarify`.
+        */}
         <p>
-          Základní použití je zdarma a bez časového omezení: import výpisů ze všech
-          podporovaných platforem a přehled limitů, časových testů a orientační daně.
-          Placené jsou podklady k přiznání za konkrétní daňový rok a celoroční hlídání —
-          tedy automatické napojení na brokery, hlídací e-maily a simulátor prodeje.
-          Aktuální ceny najdeš vždy na stránce{' '}
+          <strong>Danero je zdarma, a to celé</strong> — všechny funkce, bez časového
+          omezení a bez platební karty. Placená verze neexistuje. Co všechno služba
+          umí, popisuje stránka{' '}
           <Link href="/cenik" className="font-medium text-ruzova-text">
             Ceník
-          </Link>{' '}
-          a případnou změnu ti oznámíme předem podle článku 10.
+          </Link>
+          .
         </p>
-        {/*
-          E-3-09: aktualizace za nový daňový rok jsou hlavní protiplnění ročního
-          hlídání (README je slibuje výslovně), takže musí být i v podmínkách —
-          § 1820 odst. 1 písm. d) a § 2389g odst. 2 písm. a) OZ nás k tomu
-          zavazují tak jako tak, aby zákazník věděl, co za 990 Kč dostává.
-        */}
         <p>
-          U ročního hlídání je součástí služby i to, že aplikaci držíme aktuální: každý
-          leden do ní doplníme jednotný kurz vyhlášený GFŘ, nové hranice a limity pro
-          uplynulý daňový rok a strukturu formuláře pro elektronické podání, jakmile ji
-          finanční správa zveřejní. Do té doby počítáme s orientačními hodnotami a je to
-          v aplikaci vidět. Aktualizace dostáváš po celou dobu, na kterou máš zaplaceno.
+          Na provoz jde dobrovolně přispět. Příspěvek <strong>není platbou za
+          službu</strong>: nic se jím neodemyká, nevzniká ti jím žádný nárok a nic se
+          jím nemění na tom, co ti Danero poskytuje.
         </p>
-        {/*
-          Do verze 2.3 tu stála výhrada „nemáme sjednanou garantovanou dostupnost",
-          kterou musel kupující podle § 2389i odst. 2 OZ potvrzovat zvlášť dalším
-          checkboxem u objednávky. Od verze 2.4 je místo ní závazek s nápravou:
-          odchylka od zákonné jakosti tím zmizela, a s ní i ten checkbox.
-          Kotva `dostupnost` zůstává, aby na tenhle odstavec šlo odkázat adresně.
-        */}
+        <p>
+          Kdyby se někdy cokoli mělo zpoplatnit, dozvíš se to předem podle článku 10
+          a <strong>nic ti nikdy nezačneme účtovat bez tvojí výslovné objednávky</strong>{' '}
+          — žádné údaje o platební kartě ani nemáme.
+        </p>
+        <p>
+          <strong>Aktuálnost.</strong> Aplikaci držíme aktuální, jak nejlíp umíme:
+          doplňujeme jednotný kurz vyhlášený GFŘ, nové hranice a limity pro uplynulý
+          daňový rok a strukturu formuláře pro elektronické podání, jakmile ji finanční
+          správa zveřejní. Do té doby počítáme s orientačními hodnotami a je to
+          v aplikaci vidět. Je to ale projekt jednoho člověka — termín, do kdy bude
+          která změna hotová, slíbit nemůžeme.
+        </p>
         <p id="dostupnost">
-          <strong>Dostupnost.</strong> Usilujeme o nepřetržitý provoz, ale krátké
-          odstávky kvůli údržbě nebo výpadku dodavatele nastat můžou. Když je Danero
-          nedostupné souvisle déle než 24 hodin, prodloužíme ti roční hlídání o každý
-          započatý den výpadku. Pokud o výpadku víme, uděláme to sami; jinak nám stačí
-          napsat na{' '}
-          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
-            {OPERATOR.email}
-          </a>
-          . U jednorázových podkladů za daňový rok se prodlužovat nedá nic — ty
-          dostaneš jednou; když ti je kvůli výpadku nedodáme, vrátíme ti peníze.
+          <strong>Dostupnost.</strong> Usilujeme o nepřetržitý provoz, ale
+          negarantujeme ho: odstávky kvůli údržbě nebo výpadku dodavatele nastat
+          můžou. O data při nich nepřijdeš a export všech svých dat si můžeš stáhnout
+          kdykoli, kdy služba běží.
         </p>
         <p>
           Dvě věci, které se jako výhrada číst daly, výhradou nejsou: jednotný kurz pro
@@ -125,17 +127,14 @@ export default function TermsPage() {
         <h2 className="font-display text-lg font-semibold">
           4. Co Danero potřebuje k provozu a co z něj vypadne
         </h2>
-        <p>
-          Povinný údaj o funkčnosti digitálního obsahu a o tom, s jakým hardwarem a
-          softwarem spolupracuje (§ 1820 odst. 1 písm. r občanského zákoníku).
-        </p>
+        <p>Ať víš předem, s čím Danero funguje a co si z něj odneseš:</p>
         <ul className="list-disc space-y-2 pl-5">
           <li>
             <strong>Co potřebuješ:</strong> běžný webový prohlížeč v aktuální verzi
             (Chrome, Firefox, Safari, Edge) a připojení k internetu. Nic se neinstaluje —
             Danero běží celé v prohlížeči, na počítači i na telefonu. Dál potřebuješ{' '}
             <strong>funkční e-mailovou adresu</strong>: registraci potvrzuješ odkazem
-            z e-mailu a na tutéž adresu chodí potvrzení objednávek i upozornění. Data do
+            z e-mailu a na tutéž adresu chodí upozornění. Data do
             aplikace dostaneš buď nahráním výpisu (CSV, XLSX, XML nebo HTML podle
             platformy), nebo API klíčem k účtu u brokera, který to umí.
           </li>
@@ -155,57 +154,17 @@ export default function TermsPage() {
           </li>
         </ul>
 
-        <h2 className="font-display text-lg font-semibold">5. Placené objednávky a odstoupení</h2>
+        <h2 className="font-display text-lg font-semibold">5. Jak dlouho to trvá a jak skončit</h2>
+        {/*
+          Do verze 2.4 tu byly placené objednávky a 14denní odstoupení (§ 1829
+          a násl. OZ) se samostatnou stránkou /odstoupeni. Bez plateb není od
+          čeho odstupovat se lhůtou — odejít jde kdykoli a hned, což je víc.
+        */}
         <p>
-          Ceny jsou konečné — nejsme plátcem DPH, takže se k nim nic nepřipočítává.
-          Platby vyřizuje Stripe; číslo tvojí karty se k nám nikdy nedostane. Po každé
-          objednávce ti přijde e-mailem potvrzení uzavřené smlouvy, které si ulož.
-          Roční předplatné se obnovuje automaticky, ale nikdy potichu: 14 dní předem
-          ti přijde e-mail a zrušit obnovu můžeš kdykoli jedním kliknutím —
-          do konce zaplaceného období ti služba běží dál.
-        </p>
-        <p>
-          Jsi-li spotřebitel, máš právo odstoupit od smlouvy do 14 dnů od jejího
-          uzavření. Jak dlouho to právo trvá, se liší podle toho, co sis koupil:
-        </p>
-        <ul className="list-disc space-y-2 pl-5">
-          {/*
-            § 1837 písm. l) OZ má TŘI kumulativní podmínky, ne dvě: výslovná
-            žádost, poučení o ztrátě práva a poskytnuté potvrzení podle § 1824a.
-            Potvrzovací e-mail posíláme „best effort" (selhání se jen zaloguje
-            a podklady se odemknou tak jako tak), takže třetí podmínka splněná
-            být nemusí — a pak právo odstoupit trvá. Text, který by ho spotřebiteli
-            upřel nad rámec zákona, by byl ujednáním, ke kterému se nepřihlíží
-            (§ 1812 odst. 2, § 1814 písm. a) — nález E-3-05.
-          */}
-          <li>
-            <strong>Podklady k přiznání za jeden rok</strong> jsou digitální obsah,
-            který dodáváme okamžitě. Právo odstoupit u nich zaniká, ale jen když jsou
-            splněné všechny <strong>tři</strong> podmínky § 1837 písm. l občanského
-            zákoníku: začali jsme plnit na tvou výslovnou žádost, vzal jsi na vědomí,
-            že tím právo odstoupit ztrácíš (obojí potvrzuješ zaškrtnutím u objednávky)
-            — a my ti poskytli <strong>potvrzení o uzavřené smlouvě</strong> na trvalém
-            nosiči, tedy e-mailem podle § 1824a. Třetí podmínka je na nás: dokud ti
-            takové potvrzení nedorazí, <strong>právo odstoupit ti zůstává</strong>,
-            i kdyby sis podklady mezitím stáhl.
-          </li>
-          <li>
-            <strong>Celoroční hlídání</strong> je naopak služba, kterou ti poskytujeme
-            průběžně celý rok. Od té můžeš odstoupit do 14 dnů i poté, co ti začne
-            běžet: vrátíme ti zaplacenou částku sníženou o poměrnou část za dny, kdy
-            už jsi hlídání měl (§ 1834 občanského zákoníku). Právo odstoupit u ní
-            zaniká až tím, že službu poskytneme úplně, tedy po uplynutí celého
-            předplaceného roku (§ 1837 písm. a). Zaškrtnutí u objednávky u ní
-            znamená jen to, že si přeješ začít hned — o právo odstoupit tě
-            nepřipraví.
-          </li>
-        </ul>
-        <p>
-          Podrobnosti i vzorový formulář pro obě situace najdeš v{' '}
-          <Link href="/odstoupeni" className="font-medium text-ruzova-text">
-            poučení o odstoupení
-          </Link>
-          .
+          Danero užíváš, dokud chceš. Skončit můžeš <strong>kdykoli, hned a bez udání
+          důvodu</strong>: účet zrušíš v Nastavení a tím smažeš i všechna svoje data.
+          Žádná výpovědní lhůta, žádné závazky, které by tě přežily — nic neplatíš,
+          takže není co vracet ani doplácet.
         </p>
 
         <h2 className="font-display text-lg font-semibold">6. Tvůj účet a data</h2>
@@ -214,8 +173,8 @@ export default function TermsPage() {
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
           smí být pouze pro čtení; Danero nikdy nezadává obchodní příkazy. Data můžeš
           kdykoli smazat zrušením účtu. A kdyby Danero někdy končilo, dozvíš se to
-          e-mailem nejméně 3 měsíce předem, po celou tu dobu si můžeš stáhnout export
-          všech svých dat a případné nevyužité předplacené období ti vrátíme.
+          e-mailem nejméně 3 měsíce předem a po celou tu dobu si můžeš stáhnout export
+          všech svých dat.
         </p>
 
         <h2 className="font-display text-lg font-semibold">7. Odpovědnost</h2>
@@ -233,16 +192,15 @@ export default function TermsPage() {
         <h2 id="kontakt" className="font-display text-lg font-semibold">
           8. Provozovatel a kontakt
         </h2>
-        {/* § 1820 odst. 1 písm. c) OZ chce adresu, telefon i e-mail sdělit PŘED
-            uzavřením smlouvy. Do 8. 8. 2026 se telefon vypisoval jen v e-mailech,
-            tedy až potom (nález E-3-02). Údaje se berou z lib/contact.ts, ať se
-            jednotlivé stránky nerozejdou (E-3-15).
+        {/* § 435 OZ: podnikatel uvádí na webu jméno, sídlo a IČO. Danero je sice
+            zdarma, ale provozuje ho člověk se živností v oboru a přijímá na něj
+            dobrovolné příspěvky — tvrdit, že to s podnikáním nesouvisí, by bylo
+            na hraně, a údaje jsou stejně veřejné v živnostenském rejstříku.
+            Berou se z lib/contact.ts, ať se stránky nerozejdou (E-3-15).
 
-            Tohle je JEDINÁ stránka, kde se telefon vypisuje — proto ta kotva
-            `#kontakt`, na kterou míří objednávkový formulář. Ve zbytku webu
-            (patička, /soukromi) je záměrně jen e-mail: povinnost plní tenhle
-            odstavec plus potvrzení objednávky na trvalém nosiči a preferovaný
-            kanál je psaní, ne volání. */}
+            Telefon se vypíše jen tehdy, když je nastavený. Povinný byl kvůli
+            prodeji na dálku (§ 1820 odst. 1 písm. c OZ); bez prodeje stačí
+            e-mail a `DANERO_CONTACT_PHONE` jde nechat prázdné. */}
         <p>
           Danero je osobní projekt — provozuje ho {OPERATOR.name}, IČO {OPERATOR.ico}, se
           sídlem {OPERATOR.address} (fyzická osoba podnikající dle živnostenského zákona,
@@ -297,10 +255,32 @@ export default function TermsPage() {
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
           Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo
           přidáme funkce. O každé změně ti dáme vědět e-mailem nejméně 30 dní předem.
-          Pokud s novým zněním nesouhlasíš, můžeš účet do dne účinnosti zdarma zrušit
-          (a máš-li předplacené období, vrátíme ti poměrnou část); jinak platí, že se
-          službou pokračuješ podle nových podmínek. Aktuální verzi s datem účinnosti
-          najdeš vždy na této stránce.
+          Pokud s novým zněním nesouhlasíš, můžeš účet do dne účinnosti zrušit; jinak
+          platí, že se službou pokračuješ podle nových podmínek. Aktuální verzi
+          s datem účinnosti najdeš vždy na této stránce.
+        </p>
+        {/*
+          Přechod z 2.4 na 3.0. Znění 2.4 slibovalo oznámit změnu 30 dní předem;
+          zrušení plateb ale nemělo smysl o měsíc odkládat (nikomu by neprospělo,
+          že si funkce ještě měsíc musí kupovat). Účtům založeným dřív proto
+          vedle nového znění platí po tu dobu i to staré — slib je dodržen
+          v tom, na čem záleží: nic se jim nezhorší dřív než za 30 dní.
+        */}
+        <p>
+          <strong>Co se změnilo ve verzi {TERMS_VERSION}.</strong> Danero přestalo
+          cokoli prodávat. Z podmínek proto zmizelo všechno o cenách, objednávkách
+          a odstoupení od smlouvy; žádnou novou povinnost ti tohle znění nepřidává.
+          Máš-li účet z dřívějška, platí pro tebe do {TERMS_OVERLAP_UNTIL} vedle
+          něj i{' '}
+          <a
+            href={PREVIOUS_TERMS_URL}
+            className="font-medium text-ruzova-text"
+            target="_blank"
+            rel="noreferrer"
+          >
+            předchozí znění 2.4
+          </a>{' '}
+          — kde by pro tebe bylo výhodnější, použije se ono.
         </p>
       </section>
 
