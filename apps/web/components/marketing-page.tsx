@@ -267,17 +267,10 @@ export async function MarketingFooter() {
             Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
             č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
           </p>
-          {/* Katalog platforem i mřížka na landingu ukazují 29 cizích log. Bez
-              téhle věty se to čte jako „naši partneři" — vyvolání dojmu
-              obchodního spojení je klamavá praktika (§ 5 odst. 1 písm. e)
-              zák. č. 634/1992 Sb.) a odkazové užití známky je přípustné jen
-              v souladu s poctivými zvyklostmi (§ 10 odst. 1 zák. č. 441/2003 Sb.).
-              Nález E-3-06. */}
-          <p>
-            Názvy a loga brokerů, bank a burz jsou ochranné známky jejich vlastníků.
-            Uvádíme je jen proto, aby ses poznal — Danero s nimi není nijak propojené
-            a žádná z těch firem ho neschvaluje ani nesponzoruje.
-          </p>
+          {/* Do 8. 10. 2026 tu stálo upozornění, že loga brokerů jsou známky
+              jejich vlastníků a Danero s nimi není propojené (nález E-3-06).
+              Zákon ho nevyžaduje, byla to pojistka — provozovatel ji vědomě
+              vypustil. Nevracej ji jen proto, že ji další audit navrhne znovu. */}
           <p>
             <Link href="/podminky" className="font-medium hover:text-inkoust">
               Podmínky užití
