@@ -178,6 +178,8 @@ const PRODUCT_HEADERS = ['produkt', 'product', 'produit'];
 const QUANTITY_HEADERS = ['počet', 'quantity', 'aantal', 'anzahl', 'nombre', 'quantité'];
 const PRICE_HEADERS = ['kurz', 'price', 'koers', 'kurs', 'cours', 'prix'];
 const TOTAL_HEADERS = ['celkem', 'total', 'totaal', 'gesamt'];
+/** Hodnota obchodu v měně účtu — nečte se, jen její název může nést měnu účtu. */
+const VALUE_HEADERS = ['hodnota', 'value', 'waarde', 'wert', 'valeur'];
 const ORDER_ID_HEADERS = [
   'id objednávky',
   'order id',
@@ -190,8 +192,15 @@ const ORDER_ID_HEADERS = [
 const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving', 'beschreibung'];
 const CHANGE_HEADERS = ['změna', 'change', 'mutatie', 'änderung', 'anderung', 'variation'];
 
+/**
+ * AutoFX = poplatek Degira za automatický převod měny u obchodu v cizí měně.
+ * Samostatný sloupec má až rozložení od prosince 2025 („AutoFX Kosten“).
+ */
+const isAutoFxHeader = (lower: string): boolean => /auto\s?fx/.test(lower);
+
 /** Poplatkový sloupec má dlouhý lokalizovaný název → fuzzy shoda. */
 const isFeeHeader = (lower: string): boolean =>
+  !isAutoFxHeader(lower) &&
   (lower.includes('transak') || lower.includes('transact')) &&
   (lower.includes('poplatek') ||
     lower.includes('fee') ||
@@ -223,6 +232,22 @@ const cell = (row: string[], index: number): string =>
   index >= 0 ? (row[index] ?? '').trim() : '';
 
 const isCurrency = (value: string): boolean => /^[A-Z]{3}$/.test(value);
+
+/*
+ * Od prosince 2025 nosí Transactions.csv měnu účtu v NÁZVU sloupce („Waarde
+ * EUR“, „Totaal EUR“) místo v bezejmenném sloupci za částkou. Sufix je
+ * třípísmenný kód velkými písmeny oddělený mezerou — „Order ID“ ani „ISIN“
+ * mu neodpovídají.
+ */
+const HEADER_CURRENCY_SUFFIX = /\s+([A-Z]{3})$/;
+
+/** Měna ze sufixu názvu sloupce („Totaal EUR“ → EUR), jinak `undefined`. */
+const headerCurrency = (header: string | undefined): string | undefined =>
+  HEADER_CURRENCY_SUFFIX.exec(header ?? '')?.[1];
+
+/** Název sloupce bez sufixu měny („Totaal EUR“ → „Totaal“) — pro hledání podle synonym. */
+const withoutCurrencySuffix = (header: string): string =>
+  header.replace(HEADER_CURRENCY_SUFFIX, '');
 
 type AmountCurrencyPair =
   | { kind: 'ok'; amount: string; currency: string; raw: string }
@@ -300,16 +325,20 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
   }
 
   const { headers, rows } = parseDelimited(text, detectDelimiter(text));
+  // sloupce se hledají podle názvu BEZ sufixu měny: „Totaal EUR“ je „Totaal“
+  const bare = headers.map(withoutCurrencySuffix);
   const col = {
-    date: findColumn(headers, DATE_HEADERS),
-    time: findColumn(headers, TIME_HEADERS),
-    product: findColumn(headers, PRODUCT_HEADERS),
-    isin: findColumn(headers, ['isin']),
-    quantity: findColumn(headers, QUANTITY_HEADERS),
-    price: findColumn(headers, PRICE_HEADERS),
-    fee: findColumn(headers, [], isFeeHeader),
-    total: findColumn(headers, TOTAL_HEADERS),
-    orderId: findColumn(headers, ORDER_ID_HEADERS),
+    date: findColumn(bare, DATE_HEADERS),
+    time: findColumn(bare, TIME_HEADERS),
+    product: findColumn(bare, PRODUCT_HEADERS),
+    isin: findColumn(bare, ['isin']),
+    quantity: findColumn(bare, QUANTITY_HEADERS),
+    price: findColumn(bare, PRICE_HEADERS),
+    fee: findColumn(bare, [], isFeeHeader),
+    autoFx: findColumn(bare, [], isAutoFxHeader),
+    total: findColumn(bare, TOTAL_HEADERS),
+    value: findColumn(bare, VALUE_HEADERS),
+    orderId: findColumn(bare, ORDER_ID_HEADERS),
   };
   if (col.date < 0 || col.isin < 0 || col.quantity < 0 || col.price < 0) {
     result.errors.push({
@@ -321,6 +350,22 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
 
   // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (viz csv.ts)
   const decimal = detectDecimalSeparator(rows.flat());
+
+  const isUnnamed = (index: number): boolean => (headers[index] ?? '') === '';
+  // měna účtu, pokud ji nese název některého sloupce (rozložení od prosince 2025)
+  const accountCurrency =
+    headerCurrency(headers[col.fee]) ??
+    headerCurrency(headers[col.total]) ??
+    headerCurrency(headers[col.value]);
+  /**
+   * Měna částky ve sloupci: starší rozložení ji má v bezejmenném sloupci hned
+   * za částkou, novější v názvu sloupce. AutoFX nemá ani jedno a je v měně účtu.
+   */
+  const columnCurrency = (row: string[], index: number): string | undefined => {
+    const next = cell(row, index + 1);
+    if (isUnnamed(index + 1) && isCurrency(next)) return next;
+    return headerCurrency(headers[index]) ?? accountCurrency;
+  };
 
   const nextId = uniqueIdFactory();
 
@@ -383,13 +428,15 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       return;
     }
 
-    // poplatek: záporná částka, měna hned za ním; může být prázdný
+    // R-05b: výdajem k obchodu jsou i poplatky. Transakční poplatek i AutoFX
+    // jsou záporné částky v měně účtu a můžou být prázdné; sčítají se do
+    // jednoho poplatku obchodu.
     let fee: { amount: string; currency: string } | undefined;
     if (col.fee >= 0) {
       const feeRaw = parseDegiroNumber(cell(row, col.fee), decimal);
       if (feeRaw !== null && !d(feeRaw).eq(0)) {
-        const feeCurrency = cell(row, col.fee + 1);
-        if (isCurrency(feeCurrency)) {
+        const feeCurrency = columnCurrency(row, col.fee);
+        if (feeCurrency !== undefined) {
           fee = { amount: d(feeRaw).abs().toString(), currency: feeCurrency };
         } else {
           result.warnings.push({
@@ -399,8 +446,36 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
         }
       }
     }
+    if (col.autoFx >= 0) {
+      const autoFxRaw = parseDegiroNumber(cell(row, col.autoFx), decimal);
+      if (autoFxRaw !== null && !d(autoFxRaw).eq(0)) {
+        const autoFxCurrency = columnCurrency(row, col.autoFx);
+        if (
+          autoFxCurrency !== undefined &&
+          (fee === undefined || fee.currency === autoFxCurrency)
+        ) {
+          fee = {
+            amount: d(fee?.amount ?? '0')
+              .plus(d(autoFxRaw).abs())
+              .toString(),
+            currency: autoFxCurrency,
+          };
+        } else {
+          result.warnings.push({
+            line,
+            message:
+              `Poplatek za převod měny (AutoFX) ${autoFxRaw} nemá ve výpisu měnu, kterou bychom ` +
+              'poznali — do výdajů k obchodu jsme ho nezapočítali. Daň tím vyjde nanejvýš o něco vyšší.',
+          });
+        }
+      }
+    }
 
-    const orderId = cell(row, col.orderId);
+    // Nové rozložení má pod „Order ID“ prázdnou buňku a samotné ID až
+    // v bezejmenném sloupci za ní.
+    const orderId =
+      cell(row, col.orderId) ||
+      (col.orderId >= 0 && isUnnamed(col.orderId + 1) ? cell(row, col.orderId + 1) : '');
     const contentHash = fnv1a64(
       [isoDate, cell(row, col.time), isin, quantityRaw, priceRaw, cell(row, col.total)].join('|'),
     );

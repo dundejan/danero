@@ -23,6 +23,39 @@ export const DEGIRO_TRANSACTIONS_EN = [
   '10-01-2024,14:30,APPLE INC,US0378331005,NSY,XNAS,10,185.50,USD,"-1,855.00",USD,"-1,721.63",EUR,1.0775,-2.50,EUR,"-1,724.13",EUR,en-order-1',
 ].join('\n');
 
+/**
+ * Rozložení, které Degiro posílá od prosince 2025 (18 sloupců místo 19): měna
+ * účtu se přestěhovala do NÁZVU sloupce („Waarde EUR“, „Totaal EUR“), za
+ * poplatkem už není bezejmenný sloupec s měnou a přibyl sloupec AutoFX
+ * (poplatek za automatický převod měny). Kurz a místní hodnota mají měnu dál
+ * v bezejmenném sloupci za sebou.
+ *
+ * Z veřejných zdrojů je opsané jen rozložení (názvy a pořadí sloupců); tituly,
+ * čísla, časy i ID objednávek jsou smyšlené.
+ *
+ * Nizozemská varianta drží tvar veřejného vzorku: buňka pod „Order ID“ je
+ * prázdná a ID leží až v bezejmenném sloupci za ní.
+ */
+export const DEGIRO_TRANSACTIONS_2026_HEADER_NL =
+  'Datum,Tijd,Product,ISIN,Beurs,Uitvoeringsplaats,Aantal,Koers,,Lokale waarde,,Waarde EUR,Wisselkoers,AutoFX Kosten,Transactiekosten en/of kosten van derden EUR,Totaal EUR,Order ID,,';
+
+export const DEGIRO_TRANSACTIONS_2026_NL = [
+  DEGIRO_TRANSACTIONS_2026_HEADER_NL,
+  // obchod v cizí měně: poplatek 2,00 + AutoFX 0,88
+  '09-02-2026,15:42,NORDWIND CORP,US0000000001,NDQ,XNAS,12,"31,5000",USD,"-378,00",USD,"-350,00","1,0800","-0,88","-2,00","-352,88",,7b1e0c52-0000-4000-8000-00000000a001,',
+  '17-03-2026,16:05,NORDWIND CORP,US0000000001,NDQ,XNAS,-12,"36,0000",USD,"432,00",USD,"400,00","1,0800","-1,00","-2,00","397,00",,7b1e0c52-0000-4000-8000-00000000a002,',
+  // obchod v měně účtu: AutoFX nulový, kurz prázdný
+  '20-03-2026,11:20,MERIDIAN ETF,IE0000000002,TDG,XGAT,5,"80,0000",EUR,"-400,00",EUR,"-400,00",,"0,00","-1,00","-401,00",,7b1e0c52-0000-4000-8000-00000000a003,',
+  // jen AutoFX, transakční poplatek prázdný
+  '24-03-2026,17:10,NORDWIND CORP,US0000000001,NDQ,XNAS,4,"35,0000",USD,"-140,00",USD,"-130,00","1,0769","-0,33",,"-130,33",,7b1e0c52-0000-4000-8000-00000000a004,',
+].join('\n');
+
+/** Totéž rozložení anglicky; ID objednávky tady leží přímo pod „Order ID“. */
+export const DEGIRO_TRANSACTIONS_2026_EN = [
+  'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Total EUR,Order ID,',
+  '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-1,',
+].join('\n');
+
 export const DEGIRO_ACCOUNT_HEADER_CZ =
   'Datum;Čas;Datum valuty;Produkt;ISIN;Popis;Kurz;Změna;;Saldo;;ID objednávky';
 
