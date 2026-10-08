@@ -254,6 +254,26 @@ describe('parseTastytradeCsv — edge cases', () => {
     expect(result.errors[0]!.message).toContain('Neznámý směr obchodu „SWAP“');
   });
 
+  it('směr se čte jen z celého slova BUY/SELL — BUYX ani SELLOUT obchod nezaloží', () => {
+    // Prefix má hranici (konec hodnoty nebo podtržítko). Bez ní by se neznámá
+    // hodnota Action tiše uložila jako nákup nebo prodej.
+    const csv = [
+      TASTY_V2_HEADER,
+      '2024-05-09T15:00:00+0200,Trade,Sell,SELLOUT,SCHG,Equity,Sold 2 SCHG @ 101.00,202.00,2,101.00,--,-0.03,,,,,,,123462,USD',
+      '2024-05-02T15:00:00+0200,Trade,Buy,BUYX,SCHG,Equity,Bought 2 SCHG @ 99.00,-198.00,2,-99.00,--,-0.02,,,,,,,123461,USD',
+    ].join('\n');
+    const result = parseTastytradeCsv(csv, TASTY_INSTRUMENT_MAP);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors.find((e) => e.line === 2)?.message).toContain(
+      'Neznámý směr obchodu „SELLOUT“',
+    );
+    expect(result.errors.find((e) => e.line === 3)?.message).toContain(
+      'Neznámý směr obchodu „BUYX“',
+    );
+  });
+
   it('neznámý podtyp Money Movement → error s doslovným zněním a číslem řádku', () => {
     const result = parseTastytradeCsv(TASTY_V2_UNKNOWN_MOVEMENT);
     expect(result.errors).toHaveLength(1);
