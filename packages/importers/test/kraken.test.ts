@@ -13,6 +13,7 @@ import {
   KRAKEN_CRYPTO_CRYPTO,
   KRAKEN_CRYPTO_FEE,
   KRAKEN_FIAT_FIAT,
+  KRAKEN_FIAT_TRANSFERS,
   KRAKEN_INTERNAL_CODES_NEW,
   KRAKEN_INTERNAL_CODES_OLD,
   KRAKEN_INTERNAL_FIAT_CODES,
@@ -22,8 +23,13 @@ import {
   KRAKEN_LEDGERS_OLD,
   KRAKEN_MARGIN,
   KRAKEN_MISC_TYPES,
+  KRAKEN_STAKING_NO_SUBTYPE_COLUMN,
+  KRAKEN_TINY_AMOUNTS,
   KRAKEN_TRADES_CSV,
+  KRAKEN_TRANSFERS_NOT_CANCELLING,
   KRAKEN_UNPAIRED,
+  KRAKEN_WALLET_TRANSFERS,
+  KRAKEN_ZERO_LEG_WITHOUT_FEE,
   T212_HEADER_SAMPLE,
 } from './fixtures/kraken';
 
@@ -290,6 +296,105 @@ describe('airdrop a fork nejsou interní přesun (L2d-02)', () => {
     expect(result.warnings.map((w) => w.line)).toEqual([2, 3, 4, 5, 6, 11]);
     expect(result.skipped.map((s) => s.line)).toEqual([7, 8, 9, 10, 12]);
   });
+
+  it('každý ze šesti vyjmenovaných přesunů mezi peněženkami je tichý i sám o sobě (A06-R1-03)', () => {
+    const transfers = parseKrakenCsv(KRAKEN_WALLET_TRANSFERS);
+
+    expect(transfers.errors).toEqual([]);
+    expect(transfers.warnings).toEqual([]);
+    expect(transfers.skipped.map((s) => s.line)).toEqual([2, 3, 4, 5, 6, 7]);
+  });
+});
+
+/**
+ * A06-R1-01: varování „připsání bez protistrany“ musí platit. Kdo stakoval
+ * a nahrál export bez sloupce `subtype` (nebo s prázdným subtypem), četl u kusů,
+ * které řádně nakoupil, že jim hrozí nulová nabývací cena — a kdo radu poslechl
+ * a doplnil je šablonou, zdvojil si pozici. Protistrana přitom ležela o řádek
+ * výš: stejný refid, stejně velký úbytek téhož aktiva.
+ */
+describe('přesun, který se ve stejném refid vyruší, není připsání bez protistrany (A06-R1-01)', () => {
+  it('export bez sloupce subtype: přesun do stakingu i zpět je tichý', () => {
+    expect(sniffKrakenCsv(KRAKEN_STAKING_NO_SUBTYPE_COLUMN)).toBe(true);
+    const result = parseKrakenCsv(KRAKEN_STAKING_NO_SUBTYPE_COLUMN);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3, 4, 5]);
+    expect(result.skipped[1]!.message).toContain('Interní přesun');
+    expect(result.skipped[1]!.message).toContain('DOT');
+  });
+
+  it('totéž s prázdným subtypem v plné hlavičce', () => {
+    const [, ...rows] = KRAKEN_STAKING_NO_SUBTYPE_COLUMN.split('\n');
+    const withEmptySubtype = [
+      '"txid","refid","time","type","subtype","aclass","asset","amount","fee","balance"',
+      ...rows.map((row) => row.replace('"transfer",', '"transfer","",')),
+    ].join('\n');
+    const result = parseKrakenCsv(withEmptySubtype);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('co se nevyruší, varuje dál: jiná velikost, jiné aktivum, prázdný refid, nečitelná částka, osamocený řádek', () => {
+    const result = parseKrakenCsv(KRAKEN_TRANSFERS_NOT_CANCELLING);
+
+    expect(result.errors).toEqual([]);
+    // úbytky bez subtypu jsou tiché jako dřív, přírůstky protistranu nemají
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 4, 6, 10]);
+    expect(result.warnings.map((w) => w.line)).toEqual([3, 5, 7, 8, 9, 11]);
+    expect(result.warnings[0]!.message).toContain('Připsání 120 ADA bez protistrany');
+    expect(result.warnings[1]!.message).toContain('Připsání 5 KSM bez protistrany');
+    expect(result.warnings[2]!.message).toContain('Připsání 8 XTZ bez protistrany');
+    expect(result.warnings[4]!.message).toContain('Připsání 30 ALGO bez protistrany');
+  });
+});
+
+/**
+ * A06-R1-02: příchozí převod eur dostal varování o airdropu a „prodeji těchto
+ * kusů“. Fiat měna airdrop ani fork být nemůže a evidenci kusů pro ni nevedeme —
+ * vklad eur končí tiše mezi přeskočenými a fiat přesun má skončit stejně.
+ */
+describe('přesun ve fiat měně není airdrop (A06-R1-02)', () => {
+  const result = parseKrakenCsv(KRAKEN_FIAT_TRANSFERS);
+
+  it('transfer ve fiat měně je tichý bez ohledu na subtyp a znaménko', () => {
+    expect(result.errors).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3, 4]);
+    expect(result.skipped[0]!.message).toContain('EUR');
+    expect(result.skipped[0]!.message).toContain('ne zdanitelná událost');
+    expect(result.warnings.map((w) => w.message).join('\n')).not.toContain('airdrop nebo fork');
+  });
+
+  it('delistingconversion ve fiat měně varuje dál — částka je výnos z nuceného převodu pozice', () => {
+    expect(result.warnings.map((w) => w.line)).toEqual([5]);
+    expect(result.warnings[0]!.message).toContain('42 EUR');
+    expect(result.warnings[0]!.message).toContain('stažení aktiva z nabídky');
+  });
+});
+
+/**
+ * A06-R1-04: množství má uživatel podle rady opsat do univerzální šablony —
+ * „2e-7 BTC“ tam neopíše nikdo.
+ */
+describe('množství v hláškách je v desetinném zápisu (A06-R1-04)', () => {
+  const messages = parseKrakenCsv(KRAKEN_TINY_AMOUNTS)
+    .warnings.map((w) => w.message)
+    .join('\n');
+
+  it('airdrop pod 0,000001 kusu', () => {
+    expect(messages).toContain('Připsání 0.0000002 BTC');
+  });
+
+  it('poplatek na samostatném řádku pod 0,000001 kusu', () => {
+    expect(messages).toContain('poplatek 0.0000005 ETH');
+  });
+
+  it('žádná hláška neobsahuje vědecký zápis', () => {
+    expect(messages).not.toMatch(/\de-\d/);
+  });
 });
 
 /**
@@ -393,6 +498,15 @@ describe('obchod s poplatkem na samostatném řádku (L2d-06)', () => {
     expect(result.errors[0]!.line).toBe(2);
     expect(result.errors[0]!.message).toContain('párový řádek');
     expect(result.warnings).toHaveLength(1);
+  });
+
+  it('řádek s nulovou částkou BEZ poplatku nohou zůstává — tři nohy nespárujeme (A06-R1-03)', () => {
+    const result = parseKrakenCsv(KRAKEN_ZERO_LEG_WITHOUT_FEE);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.errors.map((e) => e.line)).toEqual([2, 3, 4]);
+    expect(result.errors[2]!.message).toContain('párový řádek');
   });
 });
 

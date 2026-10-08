@@ -109,6 +109,81 @@ export const KRAKEN_AIRDROPS = [
 ].join('\n');
 
 /**
+ * A06-R1-03: všech šest vyjmenovaných přesunů mezi peněženkami. Každý řádek má
+ * VLASTNÍ refid a krypto aktivum — jinak by ho umlčelo párování podle refid
+ * (A06-R1-01) nebo fiat měna (A06-R1-02) a zkrácení výčtu by test nepoznal.
+ */
+export const KRAKEN_WALLET_TRANSFERS = [
+  KRAKEN_HEADERS_NEW,
+  '"LWT111-AAAAA-BBBBB1","RWT001-XYZKQ-CCCCC1","2023-07-03 09:00:00","transfer","spottostaking","currency","ATOM","spot / main",-20.0000000000,0,0.0000000000',
+  '"LWT112-AAAAA-BBBBB2","RWT002-XYZKQ-CCCCC2","2023-07-03 09:00:00","transfer","stakingfromspot","currency","ATOM.S","spot / main",20.0000000000,0,20.0000000000',
+  '"LWT113-AAAAA-BBBBB3","RWT003-XYZKQ-CCCCC3","2023-08-14 09:00:00","transfer","stakingtospot","currency","ATOM.S","spot / main",-20.0000000000,0,0.0000000000',
+  '"LWT114-AAAAA-BBBBB4","RWT004-XYZKQ-CCCCC4","2023-08-14 09:00:00","transfer","spotfromstaking","currency","ATOM","spot / main",20.0000000000,0,20.0000000000',
+  '"LWT115-AAAAA-BBBBB5","RWT005-XYZKQ-CCCCC5","2023-09-05 09:00:00","transfer","spottofutures","currency","XXBT","spot / main",-0.0500000000,0,0.0000000000',
+  '"LWT116-AAAAA-BBBBB6","RWT006-XYZKQ-CCCCC6","2023-09-19 09:00:00","transfer","spotfromfutures","currency","XXBT","spot / main",0.0500000000,0,0.0500000000',
+].join('\n');
+
+/**
+ * A06-R1-01: přesun do stakingu a zpět v exportu BEZ sloupce `subtype` (Kraken
+ * pole při exportu nabízí k výběru) — dvojice řádků se společným refid, úbytek
+ * a stejně velký přírůstek téhož aktiva (`.S` je tentýž titul).
+ */
+export const KRAKEN_STAKING_NO_SUBTYPE_COLUMN = [
+  '"txid","refid","time","type","aclass","asset","amount","fee","balance"',
+  '"LSN111-AAAAA-BBBBB1","RSN001-XYZKQ-CCCCC1","2022-03-04 10:00:00","transfer","currency","DOT",-10.0000000000,0,0.0000000000',
+  '"LSN112-AAAAA-BBBBB2","RSN001-XYZKQ-CCCCC1","2022-03-04 10:00:00","transfer","currency","DOT.S",10.0000000000,0,10.0000000000',
+  // zpět: přírůstek stojí ve výpisu PŘED úbytkem — na pořadí nesmí záležet
+  '"LSN113-AAAAA-BBBBB3","RSN002-XYZKQ-CCCCC2","2022-05-09 10:00:00","transfer","currency","DOT",10.0000000000,0,10.0000000000',
+  '"LSN114-AAAAA-BBBBB4","RSN002-XYZKQ-CCCCC2","2022-05-09 10:00:00","transfer","currency","DOT.S",-10.0000000000,0,0.0000000000',
+].join('\n');
+
+/**
+ * A06-R1-01: řádky `transfer` bez subtypu, které se NEVYRUŠÍ — varování
+ * u přírůstku musí zůstat: ř. 2–3 jiná velikost, ř. 4–5 jiné aktivum,
+ * ř. 6–7 prázdný refid (ten nic nespojuje), ř. 8–10 skupina s nečitelnou částkou
+ * (zbylé dva řádky by se vyrušily, ale o třetím nevíme nic), ř. 11 osamocený
+ * řádek s nulovou částkou (jeden řádek není dvojice).
+ */
+export const KRAKEN_TRANSFERS_NOT_CANCELLING = [
+  KRAKEN_HEADERS_NEW,
+  '"LNC111-AAAAA-BBBBB1","RNC001-XYZKQ-CCCCC1","2022-06-01 10:00:00","transfer","","currency","ADA","spot / main",-100.0000000000,0,0.0000000000',
+  '"LNC112-AAAAA-BBBBB2","RNC001-XYZKQ-CCCCC1","2022-06-01 10:00:00","transfer","","currency","ADA.S","spot / main",120.0000000000,0,120.0000000000',
+  '"LNC113-AAAAA-BBBBB3","RNC002-XYZKQ-CCCCC2","2022-06-02 10:00:00","transfer","","currency","SOL","spot / main",-5.0000000000,0,0.0000000000',
+  '"LNC114-AAAAA-BBBBB4","RNC002-XYZKQ-CCCCC2","2022-06-02 10:00:00","transfer","","currency","KSM","spot / main",5.0000000000,0,5.0000000000',
+  '"LNC115-AAAAA-BBBBB5","","2022-06-03 10:00:00","transfer","","currency","XTZ","spot / main",-8.0000000000,0,0.0000000000',
+  '"LNC116-AAAAA-BBBBB6","","2022-07-21 10:00:00","transfer","","currency","XTZ","spot / main",8.0000000000,0,8.0000000000',
+  '"LNC117-AAAAA-BBBBB7","RNC004-XYZKQ-CCCCC4","2022-06-04 10:00:00","transfer","","currency","ALGO","spot / main",n/a,0,0.0000000000',
+  '"LNC118-AAAAA-BBBBB8","RNC004-XYZKQ-CCCCC4","2022-06-04 10:00:00","transfer","","currency","ALGO","spot / main",30.0000000000,0,30.0000000000',
+  '"LNC120-AAAAA-BBBBC1","RNC004-XYZKQ-CCCCC4","2022-06-04 10:00:00","transfer","","currency","ALGO","spot / main",-30.0000000000,0,0.0000000000',
+  '"LNC119-AAAAA-BBBBB9","RNC005-XYZKQ-CCCCC5","2022-06-05 10:00:00","transfer","vaultmove","currency","NEAR","spot / main",0.0000000000,0,0.0000000000',
+].join('\n');
+
+/**
+ * A06-R1-02: přesuny ve fiat měně. Peníze airdrop ani fork být nemůžou
+ * a evidenci kusů pro ně nevedeme → tiché jako vklad a výběr. Výjimka je
+ * `delistingconversion` (ř. 5): tam je částka výnos z nuceného převodu pozice.
+ */
+export const KRAKEN_FIAT_TRANSFERS = [
+  KRAKEN_HEADERS_NEW,
+  '"LFT111-AAAAA-BBBBB1","RFT001-XYZKQ-CCCCC1","2022-03-04 10:00:00","transfer","","currency","ZEUR","spot / main",250.0000,0,250.0000',
+  '"LFT112-AAAAA-BBBBB2","RFT002-XYZKQ-CCCCC2","2022-03-05 10:00:00","transfer","airdrop","currency","USD","spot / main",5.0000,0,5.0000',
+  '"LFT113-AAAAA-BBBBB3","RFT003-XYZKQ-CCCCC3","2022-03-06 10:00:00","transfer","vaultmove","currency","ZCZK","spot / main",-900.0000,0,0.0000',
+  '"LFT114-AAAAA-BBBBB4","RFT004-XYZKQ-CCCCC4","2022-03-07 10:00:00","transfer","delistingconversion","currency","ZEUR","spot / main",42.0000,0,292.0000',
+].join('\n');
+
+/**
+ * A06-R1-04: množství pod 0,000001 (Kraken píše krypto na deset desetinných
+ * míst) — airdrop a poplatek na samostatném řádku.
+ */
+export const KRAKEN_TINY_AMOUNTS = [
+  KRAKEN_HEADERS_NEW,
+  '"LTA111-AAAAA-BBBBB1","RTA001-XYZKQ-CCCCC1","2022-03-04 10:00:00","transfer","airdrop","currency","XXBT","spot / main",0.0000002000,0,0.0000002000',
+  '"LTA112-AAAAA-BBBBB2","TTA002-XYZKQ-CCCCC2","2022-03-04 10:00:00","trade","","currency","ZEUR","spot / main",-600.0000,0,400.0000',
+  '"LTA113-AAAAA-BBBBB3","TTA002-XYZKQ-CCCCC2","2022-03-04 10:00:00","trade","","currency","XXBT","spot / main",0.0300000000,0,0.0300002000',
+  '"LTA114-AAAAA-BBBBB4","TTA002-XYZKQ-CCCCC2","2022-03-04 10:00:00","trade","","currency","XETH","spot / main",0.0000000000,0.0000005000,0.0000000000',
+].join('\n');
+
+/**
  * L2d-06: obchod s poplatkem z kreditů KFEE — třetí řádek se stejným refid,
  * částka 0 a poplatek v jiném aktivu. Řádek není noha směny.
  */
@@ -124,6 +199,15 @@ export const KRAKEN_KFEE_TRADE_FEE_FIRST = (() => {
   const [header, fiat, crypto, fee] = KRAKEN_KFEE_TRADE.split('\n');
   return [header, fee, fiat, crypto].join('\n');
 })();
+
+/**
+ * A06-R1-03: třetí řádek má nulovou částku, ale poplatek ŽÁDNÝ — to není řádek
+ * poplatku, ale třetí noha, a se třemi nohami si obchod nespárujeme.
+ */
+export const KRAKEN_ZERO_LEG_WITHOUT_FEE = KRAKEN_KFEE_TRADE.replace(
+  '"KFEE","spot / main",0.00,156.00,844.00',
+  '"KFEE","spot / main",0.00,0.00,844.00',
+);
 
 /**
  * L2d-04: tytéž obchody ve starším zápisu s interními kódy Krakenu (XETC, XREP,
