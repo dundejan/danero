@@ -93,6 +93,16 @@ export const SAXO_HEADERS_UNKNOWN_LANG = [
   'Taux de conversion',
 ];
 
+/**
+ * Datové řádky k hlavičce v jazyce mimo slovník — smyšlený titul, ISIN i částky.
+ * Drží jen TVAR exportu: datum DD-MMM-YYYY s cizí zkratkou měsíce ve druhém
+ * a třetím sloupci, ISIN v šestém, text „… @ …“ v desátém.
+ */
+export const SAXO_ROWS_UNKNOWN_LANG: SaxoCellValue[][] = [
+  ['', '11-mars-2026', '13-mars-2026', 'Transaction', 'Nordwind SA', 'FR0000000001', 'EUR', 'Euronext Paris', 'NDWD:xpar', 'Achat 7 @ 61,40 EUR', -431.8, '', 1],
+  ['', '02-avr.-2026', '02-avr.-2026', 'Montant en espèces', '', '', 'EUR', '', '', 'Frais de garde', -1.2, '', 1],
+];
+
 export interface SaxoWorkbookSpec {
   sheetName?: string;
   /** null = list úplně bez hlavičky (test prázdného listu). */
@@ -116,6 +126,22 @@ export async function buildSaxoWorkbook(spec: SaxoWorkbookSpec = {}): Promise<Ex
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
   return workbook;
+}
+
+/**
+ * Libovolný sešit „název listu → řádky“ — pro testy autodetekce nad sešity,
+ * které žádný sniffer nepozná (web `exceljs` mezi závislostmi nemá, proto tady).
+ */
+export async function buildSheetsXlsx(
+  sheets: Record<string, SaxoCellValue[][]>,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  for (const [name, rows] of Object.entries(sheets)) {
+    const sheet = workbook.addWorksheet(name);
+    for (const row of rows) sheet.addRow(row);
+  }
+  const raw = await workbook.xlsx.writeBuffer();
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
 }
 
 /** Cizí XLSX (formát à la XTB) — sniff musí vrátit false. */

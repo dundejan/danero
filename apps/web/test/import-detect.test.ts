@@ -3,7 +3,11 @@ import { UNIVERSAL_TEMPLATE_CSV } from '@danero/importers';
 import { ANYCOIN_BASIC } from '../../../packages/importers/test/fixtures/anycoin';
 import { COINBASE_V1_EUR, COINBASE_V4 } from '../../../packages/importers/test/fixtures/coinbase';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
-import { DEGIRO_TRANSACTIONS_CZ } from '../../../packages/importers/test/fixtures/degiro';
+import {
+  DEGIRO_TRANSACTIONS_2026_EN,
+  DEGIRO_TRANSACTIONS_2026_NL,
+  DEGIRO_TRANSACTIONS_CZ,
+} from '../../../packages/importers/test/fixtures/degiro';
 import {
   KRAKEN_LEDGERS_NEW,
   KRAKEN_TRADES_CSV,
@@ -18,6 +22,8 @@ import {
 import {
   SWISSQUOTE_DE,
   SWISSQUOTE_EN,
+  SWISSQUOTE_EN_NO_ORDER,
+  SWISSQUOTE_EN_ORDER_RENAMED,
 } from '../../../packages/importers/test/fixtures/swissquote';
 import {
   T212_FIXTURE,
@@ -41,11 +47,17 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Revolut krypto (starý formát)', REVOLUT_CRYPTO_OLD_CSV, 'revolut'],
   ['Swissquote EN (13 sloupců)', SWISSQUOTE_EN, 'swissquote'],
   ['Swissquote DE (15 sloupců)', SWISSQUOTE_DE, 'swissquote'],
+  // L2b-06: sloupec „Order #“ parser nečte, takže ho nesmí chtít ani sniffer
+  ['Swissquote EN bez sloupce „Order #“', SWISSQUOTE_EN_NO_ORDER, 'swissquote'],
+  ['Swissquote EN s přejmenovaným sloupcem objednávky', SWISSQUOTE_EN_ORDER_RENAMED, 'swissquote'],
   ['Portu', PORTU_FIXTURE, 'portu'],
   ['Anycoin orders.csv', ANYCOIN_BASIC, 'anycoin'],
   ['Coinbase V4', COINBASE_V4, 'coinbase'],
   ['Coinbase V1 (EUR prefix)', COINBASE_V1_EUR, 'coinbase'],
   ['Degiro CZ Transactions (regrese)', DEGIRO_TRANSACTIONS_CZ, 'degiro'],
+  // L2a-01: rozložení 2026 má 18 sloupců a měnu poplatku v názvu sloupce
+  ['Degiro Transactions 2026 NL (18 sloupců)', DEGIRO_TRANSACTIONS_2026_NL, 'degiro'],
+  ['Degiro Transactions 2026 EN (18 sloupců)', DEGIRO_TRANSACTIONS_2026_EN, 'degiro'],
   ['Trading212 (sloupec „Time“)', T212_FIXTURE, 'trading212'],
   // regrese ze srpna 2026: přejmenovaný sloupec poslal celý export do
   // univerzální šablony a import se rozbil naostro, přestože testy svítily

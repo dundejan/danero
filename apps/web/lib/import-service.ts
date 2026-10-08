@@ -1,7 +1,6 @@
 import {
   brokerIdKey,
   dedupeTransactions,
-  decodeFioCsv,
   decodeUpload,
   emptyResult,
   firstLine,
@@ -10,6 +9,7 @@ import {
   sniffFioCsv,
   sniffDelimiter,
   loadXlsxWorkbook,
+  outlineWorkbook,
   parseAnycoinCsv,
   parseCoinbaseCsv,
   parseCoinmateCsv,
@@ -56,12 +56,14 @@ import {
   sniffRevolutInvestCsv,
   sniffRevolutXlsx,
   sniffSaxoXlsx,
+  sniffSaxoXlsxShape,
   sniffSchwabCsv,
   sniffSwissquoteCsv,
   sniffTastytradeCsv,
   sniffXtbXlsx,
   type ImportResult,
   type RowIssue,
+  type WorkbookOutline,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
 import { eq, sql } from 'drizzle-orm';
@@ -372,8 +374,8 @@ export async function importCsvText(
 
 /**
  * Import nahraného souboru s autodetekcí formátu: XLSX podle obsahu listů
- * (XTB / eToro / Saxo / MT5 — jedno načtení workbooku pro všechny sniffy),
- * Fio podle CZ hlavičky (windows-1250!), jinak textová cesta
+ * (XTB / eToro / Saxo / MT5 / Revolut — jedno načtení workbooku pro všechny
+ * sniffy), Fio podle CZ hlavičky, jinak textová cesta
  * (`detectAndParseText`). Brokeři bez ISIN v exportu dostávají uživatelský
  * číselník; nenamapované symboly se vrací v `unmapped`, ať UI nabídne doplnění.
  */
@@ -439,14 +441,15 @@ export async function importFile(
     );
   }
 
-  // Fio: hlavička je ASCII, takže se pozná v každém kódování, samotný obsah se
-  // ale dekóduje jako windows-1250 (proč právě takhle vysvětluje sniffFioCsv).
+  // Fio: parser dostává TENTÝŽ text jako sniffer — kódování už jednou určil
+  // `decodeUpload`. Druhé dekódování natvrdo jako windows-1250 rozbilo výpis
+  // přeuložený v UTF-8: sniffer ho poznal, parser pak četl „SmÄ›r“ (L2c-04).
   // Kontroluje se JEN první řádek — poznámka v jiném souboru nesmí import
   // přesměrovat na Fio.
   const header = firstLine(text);
   if (sniffFioCsv(header)) {
     const aliases = await loadAliases(db, userId);
-    const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.isinOnly.fio });
+    const outcome = parseFioCsv(text, { symbolMap: aliases.isinOnly.fio });
     return importParsed(db, userId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'fio',
@@ -516,15 +519,43 @@ async function importXlsxUpload(
       unmapped: parsed.unmapped,
     });
   }
-  return importParsed(
-    db,
-    userId,
-    filename,
-    unknownFormat(
-      'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
-    ),
-    undefined,
-    { unrecognized: true },
+  // Saxo v jazyce mimo slovník, poznaný jen podle tvaru (L2b-03). Parser z něj
+  // nic nepřečte a řekne proč: stačí přepnout jazyk platformy. Náprava je známá
+  // a je na uživateli, takže se soubor neschovává. Volnější sniffer patří až
+  // SEM, za všechny ostatní — jinak by jim sešit ukradl.
+  if (sniffSaxoXlsxShape(workbook)) {
+    return importParsed(db, userId, filename, await parseSaxoXlsx(data), undefined, NOT_OURS);
+  }
+  const unknown = unknownFormat(unknownXlsxMessage(outlineWorkbook(workbook)));
+  return importParsed(db, userId, filename, unknown, undefined, { unrecognized: true });
+}
+
+/** Kolik názvů listů vypsat do hlášky, ať zůstane čitelná. */
+const MAX_LISTED_SHEETS = 8;
+
+/**
+ * Hláška pro sešit, který nepoznal žádný sniffer — s tím, co v něm je.
+ *
+ * Do 9. 10. 2026 to byla pevná věta. Sniffery XLSX se přitom rozhodují hlavně
+ * podle názvů listů, takže bez nich nešlo poznat, proč soubor propadl: uživatel
+ * s reportem z podporované platformy četl jen, že ji podporujeme, a provozovateli
+ * přišlo upozornění, ve kterém byl z celého souboru podpis archivu „PK“ (L2a-02).
+ * Hláška jde jako důvod i do toho upozornění, takže se tím spraví obojí.
+ *
+ * První řádek prvního listu je obdoba prvního řádku CSV, se stejným stropem
+ * 200 znaků, jaký má vzorek v upozornění (`lib/failed-imports.ts`).
+ */
+function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline): string {
+  const sheets = printableSample(sheetNames.slice(0, MAX_LISTED_SHEETS).join(', '), 200);
+  const row = printableSample(firstRow.slice(0, MAX_LISTED_COLUMNS).join(', '), 200);
+  const found = [
+    sheets ? `listy: ${sheets}${sheetNames.length > MAX_LISTED_SHEETS ? ' …' : ''}` : '',
+    row ? `první řádek prvního listu: ${row}${firstRow.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : '',
+  ].filter(Boolean);
+  return (
+    `XLSX nepoznáváme${found.length > 0 ? ` — v sešitu jsme našli ${found.join('; ')}` : ''}. ` +
+    'Podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu ' +
+    'platforem níž, který export stáhnout, nebo použij univerzální šablonu.'
   );
 }
 

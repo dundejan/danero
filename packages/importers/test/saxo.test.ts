@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { dedupeTransactions } from '../src';
-import { parseSaxoXlsx, SAXO_BROKER, sniffSaxoXlsx } from '../src/saxo/xlsx';
+import {
+  parseSaxoXlsx,
+  SAXO_BROKER,
+  sniffSaxoXlsx,
+  sniffSaxoXlsxShape,
+} from '../src/saxo/xlsx';
 import {
   buildForeignWorkbook,
   buildSaxoWorkbook,
@@ -10,6 +15,7 @@ import {
   SAXO_HEADERS_UNKNOWN_LANG,
   SAXO_ROWS_DA,
   SAXO_ROWS_EN,
+  SAXO_ROWS_UNKNOWN_LANG,
   SAXO_SHEET_DA,
 } from './fixtures/saxo';
 
@@ -161,7 +167,7 @@ describe('Saxo XLSX parser', () => {
     expect(result.transactions).toEqual([]);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.message).toBe(
-      'Export ze Saxo má hlavičky v jazyce, který zatím neumíme — přepni si v SaxoTraderGO jazyk na angličtinu a stáhni export znovu.',
+      'Export ze Saxo má hlavičky v jazyce, který zatím neumíme — přepni si jazyk platformy na angličtinu a stáhni export znovu.',
     );
   });
 
@@ -311,6 +317,64 @@ describe('sniffSaxoXlsx (autodetekce)', () => {
     expect(sniffSaxoXlsx(await buildForeignWorkbook())).toBe(false);
     expect(sniffSaxoXlsx(await buildSaxoWorkbook({ headers: SAXO_HEADERS_UNKNOWN_LANG }))).toBe(false);
     expect(sniffSaxoXlsx(await buildSaxoWorkbook({ headers: null }))).toBe(false);
+  });
+});
+
+/**
+ * L2b-03: sniffer i parser se ptají téže `detectLanguage`, takže export
+ * v jazyce mimo slovník neprošel už snifferem a rada parseru „přepni jazyk na
+ * angličtinu“ byla z nahrání nedosažitelná — uživatel četl obecné „XLSX
+ * nepoznáváme“. Tvar exportu se přitom pozná i bez slovníku.
+ */
+describe('sniffSaxoXlsxShape (export v jazyce mimo slovník)', () => {
+  it('pozná tvar exportu: 13 sloupců, datum DD-MMM-YYYY a ISIN', async () => {
+    const workbook = await buildSaxoWorkbook({
+      headers: SAXO_HEADERS_UNKNOWN_LANG,
+      rows: SAXO_ROWS_UNKNOWN_LANG,
+    });
+    expect(sniffSaxoXlsx(workbook)).toBe(false);
+    expect(sniffSaxoXlsxShape(workbook)).toBe(true);
+  });
+
+  it('export ve známém jazyce nechává běžnému snifferu', async () => {
+    expect(sniffSaxoXlsxShape(await buildSaxoWorkbook({ rows: SAXO_ROWS_EN }))).toBe(false);
+  });
+
+  it('cizí sešit, samotnou hlavičku ani 13 sloupců bez data a ISIN nebere', async () => {
+    expect(sniffSaxoXlsxShape(await buildForeignWorkbook())).toBe(false);
+    expect(sniffSaxoXlsxShape(await buildSaxoWorkbook({ headers: null }))).toBe(false);
+    // jen hlavička: bez jediného datového řádku není podle čeho tvar poznat
+    expect(
+      sniffSaxoXlsxShape(await buildSaxoWorkbook({ headers: SAXO_HEADERS_UNKNOWN_LANG })),
+    ).toBe(false);
+    // 13 sloupců, ale číselné datum a žádný ISIN — to není Saxo
+    expect(
+      sniffSaxoXlsxShape(
+        await buildSaxoWorkbook({
+          headers: SAXO_HEADERS_UNKNOWN_LANG,
+          rows: [['', '11-03-2026', '13-03-2026', 'x', 'Nordwind SA', 'NDWD', 'EUR', '', '', 'Achat 7', -431.8, '', 1]],
+        }),
+      ),
+    ).toBe(false);
+    // dvanáct sloupců: jiný export, i kdyby v něm datum a ISIN seděly
+    expect(
+      sniffSaxoXlsxShape(
+        await buildSaxoWorkbook({
+          headers: SAXO_HEADERS_UNKNOWN_LANG.slice(0, 12),
+          rows: SAXO_ROWS_UNKNOWN_LANG.map((row) => row.slice(0, 12)),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('parser nad takovým sešitem poradí přepnout jazyk', async () => {
+    const result = await parseSaxoXlsx(
+      await buildSaxoXlsx({ headers: SAXO_HEADERS_UNKNOWN_LANG, rows: SAXO_ROWS_UNKNOWN_LANG }),
+    );
+    expect(result.broker).toBe(SAXO_BROKER);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('jazyk platformy na angličtinu');
   });
 });
 

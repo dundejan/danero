@@ -57,6 +57,30 @@ export function readSheetRows(sheet: ExcelJS.Worksheet): SheetRow[] {
   return rows;
 }
 
+/** Co je v sešitu vidět na první pohled — podklad pro hlášku „nepoznáváme“. */
+export interface WorkbookOutline {
+  /** Názvy listů v pořadí, v jakém jsou v sešitu. */
+  sheetNames: string[];
+  /** První neprázdný řádek prvního listu (prázdné pole, když list nic nenese). */
+  firstRow: string[];
+}
+
+/**
+ * Obdoba prvního řádku CSV pro sešit: názvy listů a první řádek prvního listu.
+ *
+ * Sniffery XLSX se rozhodují hlavně podle názvů listů, takže bez nich se
+ * z hlášky „nepoznáváme“ nedá poznat, proč soubor propadl — ani kterému
+ * brokerovi patří. Vrací syrový text; ořezání a očištění od řídicích znaků
+ * (`printableSample`) je na volajícím, stejně jako u CSV.
+ */
+export function outlineWorkbook(workbook: ExcelJS.Workbook): WorkbookOutline {
+  const first = workbook.worksheets[0];
+  return {
+    sheetNames: workbook.worksheets.map((sheet) => sheet.name),
+    firstRow: first ? (readSheetRows(first)[0]?.cells ?? []) : [],
+  };
+}
+
 /** Najde konec centrálního adresáře (EOCD) — od konce, kvůli komentáři. */
 function findEocd(view: DataView): number | null {
   const from = Math.max(0, view.byteLength - MAX_EOCD_SEARCH);

@@ -213,6 +213,43 @@ export function sniffSaxoXlsx(workbook: ExcelJS.Workbook): boolean {
   return detectLanguage(header.cells) !== null;
 }
 
+/** Datum Saxa bez ohledu na jazyk: „02-Jan-2025“, „11-mars-2026“ — měsíc slovem, ne číslem. */
+const SAXO_DATE_SHAPE_RE = /^\d{1,2}-(?!\d+-)[^\s-]+-\d{4}$/;
+/** ISIN: dvě písmena země, devět znaků a kontrolní číslice. */
+const ISIN_SHAPE_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
+/** Pozice sloupců v exportu — stejné ve všech jazycích slovníku. */
+const SAXO_SHAPE_COLUMNS = { tradeDate: 1, valueDate: 2, isin: 5 } as const;
+
+/**
+ * Export Saxa v jazyce, který ve slovníku NENÍ, poznaný podle tvaru: právě
+ * třináct sloupců a aspoň jeden řádek s datem DD-MMM-YYYY ve druhém i třetím
+ * sloupci a s ISIN v šestém.
+ *
+ * Slouží jedinému účelu — dostat k uživateli radu parseru „přepni jazyk na
+ * angličtinu“. Běžný sniffer i parser se ptají téže `detectLanguage`, takže
+ * bez téhle funkce soubor neprošel detekcí a rada byla nedosažitelná: klient
+ * s platformou v jiném jazyce četl obecné „XLSX nepoznáváme“ (L2b-03).
+ * Transakce z takového souboru nevzniknou nikdy, sloupce se podle pozic nečtou.
+ *
+ * ⚠️ Je to volnější podmínka než u ostatních snifferů, proto ji autodetekce
+ * volá až po všech ostatních — sešit, který pozná jiný parser, mu nesmí ukrást.
+ */
+export function sniffSaxoXlsxShape(workbook: ExcelJS.Workbook): boolean {
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return false;
+  const [header, ...dataRows] = readSheetRows(sheet);
+  if (!header || detectLanguage(header.cells) !== null) return false;
+  const columnCount = header.cells.filter((cell) => cell.trim() !== '').length;
+  if (columnCount !== SAXO_LANGUAGES[0]!.headers.length) return false;
+  const cellAt = (row: { cells: string[] }, index: number): string => (row.cells[index] ?? '').trim();
+  return dataRows.some(
+    (row) =>
+      SAXO_DATE_SHAPE_RE.test(cellAt(row, SAXO_SHAPE_COLUMNS.tradeDate)) &&
+      SAXO_DATE_SHAPE_RE.test(cellAt(row, SAXO_SHAPE_COLUMNS.valueDate)) &&
+      ISIN_SHAPE_RE.test(cellAt(row, SAXO_SHAPE_COLUMNS.isin)),
+  );
+}
+
 /**
  * Parser Saxo „Transactions“ XLSX. Obchody čte z Eventu („Buy 3 @ 134.85 USD“),
  * poplatek dopočítává z rozdilu Amount vs. kusy×cena; dividendy z Corporate
@@ -254,7 +291,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
     result.errors.push({
       line: header.rowNumber,
       message:
-        'Export ze Saxo má hlavičky v jazyce, který zatím neumíme — přepni si v SaxoTraderGO jazyk na angličtinu a stáhni export znovu.',
+        'Export ze Saxo má hlavičky v jazyce, který zatím neumíme — přepni si jazyk platformy na angličtinu a stáhni export znovu.',
     });
     return result;
   }
