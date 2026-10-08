@@ -45,6 +45,10 @@ const MAX_KEPT_BYTES = 8 * 1024 * 1024;
 /** Kolik znaků hlavičky posíláme do upozornění (obsah souboru NIKDY). */
 const HEADER_SAMPLE_CHARS = 200;
 
+/** Čím v upozornění začíná důvod u znovu otevřeného případu (jen e-mail, do DB nejde). */
+const REOPENED_NOTICE =
+  'Opakované selhání: tenhle soubor už jsme jednou přečetli a případ uzavřeli jako opravený.';
+
 /**
  * Limity e-mailů per uživatel a den. Automatické upozornění a hlášení od
  * uživatele mají VLASTNÍ kbelík schválně: kdyby sdílely jeden, uživatel s pěti
@@ -120,16 +124,26 @@ export async function keepFailedUpload(
     }
     const contentHash = sha256(args.data);
     // Strop platí jen pro NOVÝ případ. Kdyby se počítal i u souboru, který už
-    // svůj případ má, pátý otevřený případ by zablokoval i pouhé přepnutí
+    // svůj OTEVŘENÝ případ má, pátý otevřený případ by zablokoval i pouhé přepnutí
     // existujícího případu na čerstvou dávku — a panel „pracujeme na tom“ by
     // uživateli visel u staršího importu než toho, který má před očima.
     const [known] = await db
-      .select({ id: failedImports.id })
+      .select({ id: failedImports.id, status: failedImports.status })
       .from(failedImports)
       .where(
         and(eq(failedImports.userId, args.userId), eq(failedImports.contentHash, contentHash)),
       );
-    if (!known) {
+    // Zamítnutý případ zůstává zavřený a TICHÝ (L14-07). Provozovatel už
+    // rozhodl, že tenhle soubor nečteme, a uživateli to napsal — druhé
+    // upozornění by neřeklo nic nového a panel „pracujeme na tom“ u nové dávky
+    // by lhal. Vysvětlení dál visí u původního importu; stopa zůstane v logu.
+    if (known?.status === 'rejected') {
+      logEvent('info', 'failed_import.rejected_again', { caseId: known.id });
+      return null;
+    }
+    // Znovuotevření opraveného případu (níž) soubor ukládá stejně jako nový
+    // případ, takže se do stropu počítá taky.
+    if (known?.status !== 'open') {
       const open = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(failedImports)
@@ -143,7 +157,8 @@ export async function keepFailedUpload(
     // Týž soubor podruhé je pořád JEDEN případ (klíč je otisk obsahu) — jinak
     // by opakované nahrání nasbíralo pět kopií a strop by padl na jediný výpis.
     // Případ se ale přepne na novou dávku, ať panel visí u toho importu, který
-    // má uživatel před očima; uzavřeného případu se to netýká.
+    // má uživatel před očima; uzavřený případ tudy neprojde (`setWhere`) a řeší
+    // se zvlášť pod tím.
     const [saved] = await db
       .insert(failedImports)
       .values({
@@ -164,11 +179,51 @@ export async function keepFailedUpload(
         setWhere: eq(failedImports.status, 'open'),
       })
       .returning({ id: failedImports.id, notifiedAt: failedImports.notifiedAt });
-    if (!saved) return null;
+    if (saved) {
+      // upozornění na týž soubor podruhé provozovateli neposílej — ví o něm
+      if (saved.notifiedAt === null) await sendAlert(db, saved.id, headerSample(args.data), 'auto');
+      return saved.id;
+    }
 
-    // upozornění na týž soubor podruhé provozovateli neposílej — ví o něm
-    if (saved.notifiedAt === null) await sendAlert(db, saved.id, headerSample(args.data), 'auto');
-    return saved.id;
+    // Konflikt s UZAVŘENÝM případem (L14-07). Stav `fixed` říká, že jsme tenhle
+    // soubor už jednou přečetli — když se teď nepřečte znovu, parser se rozbil
+    // (nebo oprava ještě není nasazená) a přesně o tom se provozovatel musí
+    // dozvědět. Případ se proto otevře znovu: obsah se uzavřením smazal, takže
+    // se ukládá čerstvý, panel se stěhuje k nové dávce a upozornění jde podruhé.
+    // `createdAt` se posouvá s ním — retence počítá 90 dní od něj a právě
+    // uschovaný soubor by jinak mohla smazat dřív, než se na něj kdo podívá.
+    // Co uživatel o výpisu dopsal, zůstává: platí to dál a ptát se podruhé
+    // nemáme proč. Podmínka na `fixed` drží zamítnutý případ zavřený i tehdy,
+    // když se stav změnil mezi čtením nahoře a tímhle zápisem.
+    const [reopened] = await db
+      .update(failedImports)
+      .set({
+        batchId: args.batchId,
+        filename: args.filename,
+        content: Buffer.from(args.data).toString('base64'),
+        reason: args.reason,
+        source: args.source ?? 'upload',
+        ...(args.platform ? { reportedPlatform: args.platform } : {}),
+        status: 'open',
+        resolutionNote: null,
+        resolvedAt: null,
+        resolvedBatchId: null,
+        notifiedAt: null,
+        createdAt: new Date(),
+      })
+      .where(
+        and(
+          eq(failedImports.userId, args.userId),
+          eq(failedImports.contentHash, contentHash),
+          eq(failedImports.status, 'fixed'),
+        ),
+      )
+      .returning({ id: failedImports.id });
+    if (!reopened) return null;
+
+    logEvent('warn', 'failed_import.reopened', { caseId: reopened.id });
+    await sendAlert(db, reopened.id, headerSample(args.data), 'auto', { reopened: true });
+    return reopened.id;
   } catch (error) {
     logEvent('error', 'failed_import.keep_failed', {
       filename: args.filename,
@@ -181,12 +236,17 @@ export async function keepFailedUpload(
 /**
  * Upozornění provozovateli. Vlastní try/catch: nedoručený e-mail nesmí shodit
  * import ani hlášení uživatele, ale musí být vidět v logu.
+ *
+ * `reopened` = znovu otevřený případ (L14-07). Je to čerstvý nález, ne hlášení
+ * od uživatele, i když u případu jeho dřívější hlášení zůstalo — a důvod
+ * dostane větu navíc, ať je regrese v e-mailu poznat od prvního selhání.
  */
 async function sendAlert(
   db: Db,
   caseId: string,
   sample: string,
   kind: keyof typeof ALERT_LIMITS,
+  options: { reopened?: boolean } = {},
 ): Promise<void> {
   try {
     const to = alertRecipient();
@@ -223,12 +283,12 @@ async function sendAlert(
         caseId: row.id,
         filename: row.filename,
         byteSize: row.byteSize,
-        reason: row.reason,
+        reason: options.reopened ? `${REOPENED_NOTICE} ${row.reason}` : row.reason,
         headerSample: sample,
         userEmail: row.email,
         reportedPlatform: row.reportedPlatform,
         reportedNote: row.reportedNote,
-        reported: row.reportedAt !== null,
+        reported: !options.reopened && row.reportedAt !== null,
       }),
     });
     await db

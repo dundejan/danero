@@ -329,6 +329,123 @@ describe('uzavření případu', () => {
   });
 });
 
+/**
+ * L14-07: týž soubor nahraný po uzavření případu. Do 9. 10. 2026 skončil
+ * naprázdno v obou stavech — `ON CONFLICT … WHERE status = 'open'` uzavřený
+ * řádek nezměnil, funkce vrátila `null` a po druhém selhání nezůstal případ,
+ * panel, upozornění ani řádek v logu.
+ */
+describe('týž soubor po uzavření případu (L14-07)', () => {
+  const provozovateli = (): Array<{ subject: string; text: string }> =>
+    emails().filter((m) => m.to === 'provoz@example.test');
+  const uzivateli = (): Array<{ subject: string }> =>
+    emails().filter((m) => m.to === 'test@danero.cz');
+  const radek = async (db: Db, caseId: string) => {
+    const [row] = await db.select().from(failedImports).where(eq(failedImports.id, caseId));
+    return row!;
+  };
+
+  it('fixed: opakované selhání případ znovu otevře a provozovatel dostane druhé upozornění', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    await importFileIsolated(db, 'u1', 'vypis.csv', bytes(NEZNAMY_VYPIS));
+    const [item] = await listOpenCases(db);
+    await reportFailedImport(db, 'u1', item!.id, { platform: 'Fio e-Broker', note: '' });
+    await resolveCase(db, item!.id, { status: 'fixed', note: 'Formát doplněn.' });
+    // případ vznikl dávno — retence (90 dní od `createdAt`) by čerstvě
+    // uschovaný soubor smazala dřív, než se na něj kdo podívá
+    await db
+      .update(failedImports)
+      .set({ createdAt: new Date(Date.now() - 80 * 24 * 60 * 60_000) })
+      .where(eq(failedImports.id, item!.id));
+    const upozorneniPred = provozovateli().length;
+    const zpravPred = uzivateli().length;
+
+    const druhy = await importFileIsolated(db, 'u1', 'vypis-znovu.csv', bytes(NEZNAMY_VYPIS));
+
+    // pořád JEDEN případ (klíč je otisk obsahu), ale zase otevřený a u nové dávky
+    const cases = await listOpenCases(db);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.id).toBe(item!.id);
+    expect(cases[0]!.batchId).toBe(druhy.batchId);
+    expect(cases[0]!.filename).toBe('vypis-znovu.csv');
+    expect(cases[0]!.resolutionNote).toBeNull();
+    expect(cases[0]!.resolvedBatchId).toBeNull();
+    // co nám uživatel o výpisu řekl, platí dál — neptáme se podruhé
+    expect(cases[0]!.reportedPlatform).toBe('Fio e-Broker');
+
+    // panel „pracujeme na tom“ visí u importu, který má uživatel před očima
+    const panel = await casesForBatches(db, 'u1', [druhy.batchId]);
+    expect(panel.get(druhy.batchId)?.status).toBe('open');
+
+    // originál je zpátky — uzavřením se smazal a bez něj není co rozebírat
+    const detail = await loadOpenCase(db, item!.id);
+    expect(new TextDecoder().decode(detail!.data)).toBe(NEZNAMY_VYPIS);
+
+    const row = await radek(db, item!.id);
+    expect(row.resolvedAt).toBeNull();
+    expect(row.notifiedAt).not.toBeNull();
+    expect(row.createdAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+
+    // druhé upozornění: čerstvý nález, ne hlášení od uživatele, a je z něj
+    // poznat, že jde o formát, který už jsme jednou opravili
+    expect(provozovateli()).toHaveLength(upozorneniPred + 1);
+    const alert = provozovateli().at(-1)!;
+    expect(alert.subject).toContain('nepřečetli jsme výpis (vypis-znovu.csv)');
+    expect(alert.text).toContain('Opakované selhání');
+    expect(alert.text).toContain('Fio e-Broker');
+    expect(alert.text).toContain('Obchodni den');
+    expect(alert.text).not.toContain('1050,50');
+    // uživateli o znovuotevření nic nechodí
+    expect(uzivateli()).toHaveLength(zpravPred);
+  });
+
+  it('rejected: případ zůstává zavřený — bez panelu, bez souboru a bez upozornění', {
+    timeout: 30_000,
+  }, async () => {
+    const db = await freshDb();
+    const prvni = await importFileIsolated(db, 'u1', 'vypis.csv', bytes(NEZNAMY_VYPIS));
+    const [item] = await listOpenCases(db);
+    await resolveCase(db, item!.id, { status: 'rejected', note: 'Tohle je potvrzení, ne výpis.' });
+    const pred = await radek(db, item!.id);
+    const upozorneniPred = provozovateli().length;
+
+    const druhy = await importFileIsolated(db, 'u1', 'vypis-znovu.csv', bytes(NEZNAMY_VYPIS));
+
+    expect(druhy.unrecognized).toBe(true);
+    expect(await listOpenCases(db)).toHaveLength(0);
+    expect(await radek(db, item!.id)).toEqual(pred);
+    expect(pred.status).toBe('rejected');
+    expect(pred.content).toBeNull();
+    // vysvětlení dál visí u původní dávky, u nové nic neslibujeme
+    const panel = await casesForBatches(db, 'u1', [prvni.batchId, druhy.batchId]);
+    expect(panel.get(prvni.batchId)?.status).toBe('rejected');
+    expect(panel.has(druhy.batchId)).toBe(false);
+    expect(provozovateli()).toHaveLength(upozorneniPred);
+  });
+
+  it('znovuotevření ukládá soubor, takže se na něj vztahuje strop otevřených případů', {
+    timeout: 60_000,
+  }, async () => {
+    const db = await freshDb();
+    const opraveny = bytes(`${NEZNAMY_VYPIS}\n;;;opraveny;;`);
+    await importFileIsolated(db, 'u1', 'opraveny.csv', opraveny);
+    const [item] = await listOpenCases(db);
+    await resolveCase(db, item!.id, { status: 'fixed' });
+    for (let i = 0; i < MAX_OPEN_CASES_PER_USER; i += 1) {
+      await importFileIsolated(db, 'u1', `vypis-${i}.csv`, bytes(`${NEZNAMY_VYPIS}\n;;;${i};;`));
+    }
+
+    await importFileIsolated(db, 'u1', 'opraveny-znovu.csv', opraveny);
+
+    expect(await listOpenCases(db)).toHaveLength(MAX_OPEN_CASES_PER_USER);
+    const row = await radek(db, item!.id);
+    expect(row.status).toBe('fixed');
+    expect(row.content).toBeNull();
+  });
+});
+
 describe('výpis stažený z API brokera', () => {
   it('nese původ i platformu, takže se uživatele nemáme nač ptát', { timeout: 30_000 }, async () => {
     const db = await freshDb();
