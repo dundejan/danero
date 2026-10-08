@@ -1,18 +1,17 @@
 import Link from 'next/link';
-import { DemoChecklist } from '@/components/demo-checklist';
 import { DemoNavRail, DemoNavTabBar } from '@/components/nav-rail';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 /**
  * Demo prohlídka (bez přihlášení, bez DB): stejný layout jako aplikace —
- * nav-rail + obsah — navrch výrazný banner s naváděcím checklistem a dole
- * mini patička (návrat na úvod, právní odkazy, přepínač vzhledu).
+ * nav-rail + obsah — navrch výrazný banner a dole mini patička (návrat na
+ * úvod, právní odkazy, přepínač vzhledu).
  * Žádný requireUser; všechno uvnitř počítá čistý engine nad demo datasetem.
  */
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
-      {/* a11y: skip-link jako v aplikaci — demo má navíc banner a checklist */}
+      {/* a11y: skip-link jako v aplikaci — demo má navíc banner */}
       <a
         href="#obsah"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-plocha focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-inkoust focus:shadow-sm"
@@ -34,7 +33,6 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
           Založit účet zdarma
         </Link>
       </header>
-      <DemoChecklist />
       <div className="flex flex-1">
         <DemoNavRail />
         <div className="flex min-w-0 flex-1 flex-col">

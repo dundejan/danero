@@ -19,9 +19,8 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await page.waitForURL('**/demo/prehled');
   await expectDemoBanner(page);
 
-  // naváděcí checklist prohlídky pod bannerem + mini patička s právními odkazy
-  await expect(page.getByRole('navigation', { name: 'Prohlídka dema' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Simulátor — prodej nanečisto/ })).toBeVisible();
+  // mini patička s právními odkazy; pruh „Vyzkoušej si“ pod bannerem je pryč
+  await expect(page.getByRole('navigation', { name: 'Prohlídka dema' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Podmínky užití' })).toBeVisible();
 
   // verdikt-box: prolomený limit 50k → „podáš přiznání“ + orientační daň
@@ -153,9 +152,6 @@ test('demo report: čísla k přiznání + teaser místo EPO exportu', async ({ 
     'href',
     '/marketing/ukazka-dpfdp7-2025.xml',
   );
-
-  // na reportu (konec prohlídky) vede poslední krok checklistu na registraci
-  await expect(page.getByRole('link', { name: 'Hotovo? Založ si účet' })).toBeVisible();
 
   // CTA z banneru vede na registraci
   await page.getByRole('link', { name: 'Založit účet zdarma' }).first().click();
