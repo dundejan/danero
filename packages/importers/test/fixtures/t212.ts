@@ -35,3 +35,27 @@ export const T212_FIXTURE_2026 = [
   'Market sell,2026-03-05 15:01:10+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000002,10,210.00,USD,0.0448,1000.00,CZK,46800.00,CZK,,,,,,,3.00,CZK,,',
   'Dividend (Dividends paid by us corporations),2026-04-01 09:00:00+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000003,10,0.25,USD,,,,50.00,CZK,0.38,USD,,,,,,,,',
 ].join('\n');
+
+/**
+ * Hodnoty sloupce Action, které v Janově exportu nejsou, ale dokládají je cizí
+ * parsery exportu T212: vratka platby kartou, připsání a převody kusů,
+ * jednořádkový split a oprava dividendy. Rozložení je z léta 2026, **tituly,
+ * částky i časy jsou smyšlené**.
+ *
+ * Tři řádky (Stop limit buy, Dividend (Interest), Lending interest) jsou tu
+ * jako kontrola, že se o ně nová pravidla neotřou.
+ */
+export const T212_FIXTURE_ACTIONS_2026 = [
+  T212_HEADER_2026,
+  'Market buy,2026-02-10 14:30:02+00:00,US0000000001,AAA,Alfa Inc,,id-1,10,20.00,USD,0.045,,,4400.00,CZK,,,,,,,1.10,CZK,,',
+  'Stop limit buy,2026-02-11 14:30:02+00:00,US0000000001,AAA,Alfa Inc,,id-2,5,21.00,USD,0.045,,,2300.00,CZK,,,,,,,0.60,CZK,,',
+  'Card refund,2026-03-01 10:00:00+00:00,,,,,id-3,,,,,,,150.00,CZK,,,,,,,,,Obchod Test,SHOPPING',
+  'Stock distribution,2026-03-05 10:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-4,1.5,0.00,USD,,,,0.00,CZK,,,,,,,,,,',
+  'Custom stock distribution,2026-03-06 10:00:00+00:00,US0000000002,BBB,Beta Inc,,id-5,2,0.00,USD,,,,0.00,CZK,,,,,,,,,,',
+  'Transfer in,2026-03-07 10:00:00+00:00,US0000000003,CCC,Gama Inc,,id-6,3,30.00,USD,0.045,,,2000.00,CZK,,,,,,,,,,',
+  'Transfer out,2026-03-08 10:00:00+00:00,US0000000003,CCC,Gama Inc,,id-7,3,31.00,USD,0.045,,,2050.00,CZK,,,,,,,,,,',
+  'Stock Split,2026-03-09 10:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-8,33,10.00,USD,,,,0.00,CZK,,,,,,,,,,',
+  'Dividend adjustment,2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-9,,,,,,,-12.00,CZK,,,,,,,,,,',
+  'Dividend (Interest),2026-04-02 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-10,10,0.10,USD,,,,20.00,CZK,0.15,USD,,,,,,,,',
+  'Lending interest,2026-04-03 09:00:00+00:00,,,,,id-11,,,,,,,0.40,CZK,,,,,,,,,,',
+].join('\n');

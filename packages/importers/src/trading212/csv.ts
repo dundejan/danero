@@ -39,7 +39,31 @@ type RowKind =
   | { kind: 'SPLIT_CLOSE' | 'SPLIT_OPEN' }
   | { kind: 'SPINOFF' }
   | { kind: 'SKIP'; reason: string }
+  | { kind: 'SHARE_MOVEMENT'; guidance: string }
   | { kind: 'UNKNOWN' };
+
+/**
+ * Pohyby kusů, které z řádku T212 zaúčtovat neumíme (L2a-03): řádek nenese
+ * datum ani cenu původního pořízení, u jednořádkového splitu ani poměr. Chyba
+ * je správný směr — tiše přeskočený řádek by rozhodil počty kusů a prodej by
+ * pak neseděl bez jediného slova. Hláška ale musí říct, co se s kusy stalo
+ * a kudy je doplnit; „neznámý typ, nahlaš nám ho“ u běžné hodnoty exportu
+ * nepomůže.
+ *
+ * ⚠️ U připsaných kusů (Stock distribution) text schválně neříká, jakou cenu
+ * a datum pořízení zadat: záleží na tom, o jakou událost šlo, a z řádku se to
+ * nepozná.
+ */
+const SHARE_MOVEMENT_GUIDANCE = {
+  distribution:
+    'Trading 212 ti tímhle řádkem připsal kusy bez nákupu. Je to pohyb kusů, který sami nezaúčtujeme — z řádku se nepozná, o jakou událost šlo. Kusy proto v evidenci chybí a jejich pozdější prodej nebude sedět. Zjisti si u brokera, proč ti je připsal, a doplň je přes univerzální šablonu.',
+  transferIn:
+    'převod kusů na tenhle účet. Je to pohyb kusů, který sami nezaúčtujeme — řádek nenese datum ani cenu, za kterou jsi je původně pořídil. Kusy proto v evidenci chybí a jejich pozdější prodej nebude sedět. Doplň je přes univerzální šablonu řádkem TRANSFER_IN s datem a cenou původního pořízení.',
+  transferOut:
+    'převod kusů z tohohle účtu jinam (není to prodej). Je to pohyb kusů, který sami nezaúčtujeme, takže v evidenci dál zůstávají kusy, které tu už nemáš. Doplň ho přes univerzální šablonu řádkem TRANSFER_OUT.',
+  singleLineSplit:
+    'změna počtu kusů (split) zapsaná jedním řádkem — umíme ji jen jako dvojici řádků „Stock split close“ a „Stock split open“. Je to pohyb kusů, který sami nezaúčtujeme, takže počet kusů v evidenci po téhle události nesedí. Doplň ji přes univerzální šablonu řádkem CORPORATE_ACTION se subtypem SPLIT a poměrem starých a nových kusů.',
+} as const;
 
 /** Klasifikace řádku podle sloupce Action (hodnoty typu "Market buy", "Dividend (Ordinary)"…). */
 function classifyAction(action: string): RowKind {
@@ -47,9 +71,24 @@ function classifyAction(action: string): RowKind {
   // korporátní akce dřív než obecné buy/sell — T212 je reportuje párem close/open řádků
   if (normalized.includes('stock split close')) return { kind: 'SPLIT_CLOSE' };
   if (normalized.includes('stock split open')) return { kind: 'SPLIT_OPEN' };
+  // až ZA párem close/open: jednořádkový „Stock Split“ poměr nenese
+  if (normalized.includes('stock split'))
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.singleLineSplit };
+  // „Stock distribution“ i „Custom stock distribution“
+  if (normalized.includes('stock distribution'))
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.distribution };
+  if (normalized === 'transfer in')
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.transferIn };
+  if (normalized === 'transfer out')
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.transferOut };
   if (normalized.includes('spin off') || normalized.includes('spin-off'))
     return { kind: 'SPINOFF' };
-  if (normalized.includes('card debit') || normalized.includes('card credit'))
+  // vratka („Card refund“) je tentýž pohyb peněz jako platba, jen opačným směrem
+  if (
+    normalized.includes('card debit') ||
+    normalized.includes('card credit') ||
+    normalized.includes('card refund')
+  )
     return { kind: 'SKIP', reason: 'platba kartou — pohyb peněz mimo daňový výpočet CP' };
   if (normalized.includes('spending cashback'))
     return { kind: 'SKIP', reason: 'cashback za platby kartou — mimo daňový výpočet CP' };
@@ -211,6 +250,21 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'DIVIDEND': {
+          // L2a-05: záporná částka je oprava dříve vyplacené dividendy („Dividend
+          // adjustment“), ne příjem. Chytá se podle znaménka Total a DŘÍV než
+          // cokoli dalšího: brutto se níž počítá z kusů × ceny a znaménko Total
+          // nečte, takže by z opravy vznikla druhá kladná dividenda, a bez kusů
+          // by řádek spadl až na schématu se syrovým výpisem validace. Oprava
+          // se nezapočítá (příjem zůstane vyšší — bezpečný směr), stejně jako
+          // u Degira.
+          const dividendTotal = cleanNumber(map.get(row, 'Total'));
+          if (dividendTotal.startsWith('-')) {
+            result.warnings.push({
+              line,
+              message: `${action}: záporná dividenda ${dividendTotal} ${map.get(row, 'Currency (Total)')} — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+            });
+            return;
+          }
           // R-07h: vratka kapitálu není podíl na zisku, ale vrácení části vkladu.
           // Označí se v modelu a zbytek řeší engine podle přepínače — parser
           // sám nerozhoduje, co je daňově správně.
@@ -420,6 +474,14 @@ export function parseTrading212Csv(text: string): ImportResult {
           result.skipped.push({ line, message: `${action}: ${classified.reason}` });
           return;
         }
+        case 'SHARE_MOVEMENT': {
+          result.errors.push({
+            line,
+            message: `${action}: ${classified.guidance}`,
+            raw: row.join(','),
+          });
+          return;
+        }
         case 'UNKNOWN': {
           result.errors.push({
             line,
@@ -432,7 +494,7 @@ export function parseTrading212Csv(text: string): ImportResult {
     } catch (err) {
       result.errors.push({
         line,
-        message: `Řádek se nepodařilo zpracovat: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Řádek se nepodařilo zpracovat: ${describeRowError(err)}`,
         raw: row.join(','),
       });
     }
@@ -471,6 +533,22 @@ export function parseTrading212Csv(text: string): ImportResult {
   }
 
   return result;
+}
+
+/**
+ * Text chyby řádku pro uživatele. Selhání validace modelu nese `message`
+ * v podobě JSON pole se všemi nálezy (`[{ "code": …, "path": … }]`) a ten
+ * šel beze změny až do přehledu importu (L2a-05). Bereme z něj jen věty.
+ */
+function describeRowError(err: unknown): string {
+  const issues = (err as { issues?: unknown } | null)?.issues;
+  if (Array.isArray(issues)) {
+    const messages = issues
+      .map((issue: unknown) => (issue as { message?: unknown } | null)?.message)
+      .filter((message): message is string => typeof message === 'string' && message !== '');
+    if (messages.length > 0) return [...new Set(messages)].join('; ');
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Sečte poplatkové sloupce řádku; při míchání měn vezme první měnu a zbytek nahlásí.

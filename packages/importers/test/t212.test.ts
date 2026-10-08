@@ -11,6 +11,7 @@ import {
 import {
   T212_FIXTURE as FIXTURE,
   T212_FIXTURE_2026 as FIXTURE_2026,
+  T212_FIXTURE_ACTIONS_2026 as ACTIONS_2026,
   T212_HEADER as HEADER,
   T212_HEADER_2026 as HEADER_2026,
 } from './fixtures/t212';
@@ -547,5 +548,142 @@ describe('detekce nedostaženého exportu nesmí odmítat celé soubory', () => 
       'Market buy,2025-01-03 10:00:00,US0378331005,AAPL,Apple,"pozn. 1',
     ].join('\n');
     expect(isTruncatedTrading212Export(csv)).toBe(true);
+  });
+});
+
+/** Jeden řádek v rozložení 2026 za hlavičkou — zkratka pro varianty téhož případu. */
+const parseRow2026 = (row: string) => parseTrading212Csv(`${HEADER_2026}\n${row}`);
+
+describe('Trading 212: vratka kartou a pohyby kusů (L2a-03)', () => {
+  const actionOf = (line: number): string => ACTIONS_2026.split('\n')[line - 1]!.split(',')[0]!;
+
+  it('zkušební řádky mají stejný počet polí jako hlavička', () => {
+    const lines = ACTIONS_2026.split('\n');
+    const columns = lines[0]!.split(',').length;
+    expect(lines).toHaveLength(12);
+    for (const line of lines.slice(1)) {
+      expect(parseCsv(`${lines[0]}\n${line}`).rows[0]).toHaveLength(columns);
+    }
+  });
+
+  it('Card refund se přeskočí stejně jako Card debit a Card credit', () => {
+    const result = parseTrading212Csv(ACTIONS_2026);
+    expect(result.skipped.map((s) => s.message)).toEqual([
+      'Card refund: platba kartou — pohyb peněz mimo daňový výpočet CP',
+    ]);
+    expect(result.errors.map((e) => actionOf(e.line))).not.toContain('Card refund');
+  });
+
+  it('soubor jen s vratkou kartou neskončí chybou (jinak by vypadal jako nepoznaný výpis)', () => {
+    const result = parseRow2026(
+      'Card refund,2026-03-01 10:00:00+00:00,,,,,id-3,,,,,,,150.00,CZK,,,,,,,,,Obchod Test,SHOPPING',
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+  });
+
+  it('připsání, převod a jednořádkový split zůstanou chybou, ale řeknou, co s kusy', () => {
+    const result = parseTrading212Csv(ACTIONS_2026);
+    expect(result.errors.map((e) => actionOf(e.line))).toEqual([
+      'Stock distribution',
+      'Custom stock distribution',
+      'Transfer in',
+      'Transfer out',
+      'Stock Split',
+    ]);
+    for (const error of result.errors) {
+      expect(error.message).toContain('pohyb kusů');
+      expect(error.message).toContain('univerzální šablon');
+      expect(error.message).not.toContain('Neznámý typ transakce');
+      // hláška začíná hodnotou z exportu, ať ji uživatel ve výpisu najde
+      expect(error.message.startsWith(`${actionOf(error.line)}:`)).toBe(true);
+    }
+    // z pohybu kusů nesmí vzniknout obchod ani pozice
+    expect(result.transactions.map((t) => t.type)).toEqual(['BUY', 'BUY', 'DIVIDEND', 'INTEREST']);
+  });
+
+  it('hláška u převodu a splitu jmenuje řádek šablony, kterým se doplní', () => {
+    const result = parseTrading212Csv(ACTIONS_2026);
+    const messageOf = (action: string): string =>
+      result.errors.find((e) => actionOf(e.line) === action)?.message ?? '';
+    expect(messageOf('Transfer in')).toContain('TRANSFER_IN');
+    expect(messageOf('Transfer out')).toContain('TRANSFER_OUT');
+    expect(messageOf('Stock Split')).toContain('SPLIT');
+  });
+
+  it('pár Stock split close/open se dál skládá do splitu (jednořádkové pravidlo ho nepřebije)', () => {
+    const result = parseTrading212Csv(
+      [
+        HEADER_2026,
+        'Stock split close,2026-03-09 10:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-20,10,40.00,USD,,,,0.00,CZK,,,,,,,,,,',
+        'Stock split open,2026-03-09 10:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-21,40,10.00,USD,,,,0.00,CZK,,,,,,,,,,',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['CORPORATE_ACTION']);
+  });
+
+  it('opravdu neznámá hodnota Action dál žádá o nahlášení', () => {
+    const result = parseRow2026(
+      'Lending fee,2026-03-01 10:00:00+00:00,,,,,id-30,,,,,,,1.00,CZK,,,,,,,,,,',
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neznámý typ transakce');
+  });
+});
+
+describe('Trading 212: záporná dividenda je korekce, ne chyba validace (L2a-05)', () => {
+  const START = 'Dividend adjustment,2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-9';
+  const TAIL = ',CZK,,,,,,,,,,';
+  const VARIANTS: Record<string, string> = {
+    'bez kusů a ceny': `${START},,,,,,,-12.00${TAIL}`,
+    'kusy a cena kladné, srážka prázdná': `${START},10,0.85,USD,0.045,,,-180.00${TAIL}`,
+    'kusy a cena kladné, srážka záporná': `${START},10,0.85,USD,0.045,,,-180.00,CZK,-1.50,USD,,,,,,,,`,
+    'kusy záporné': `${START},-10,0.85,USD,0.045,,,-180.00${TAIL}`,
+    'běžná dividenda se záporným Total': `Dividend (Ordinary),2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-9,,,,,,,-12.00${TAIL}`,
+  };
+
+  it.each(Object.entries(VARIANTS))('%s → varování o korekci, žádná transakce', (_name, row) => {
+    const result = parseRow2026(row);
+    expect(result.errors).toEqual([]);
+    // oprava se nezapočte (bezpečný směr) — hlavně z ní nesmí vzniknout DRUHÁ kladná dividenda
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(2);
+    expect(result.warnings[0]!.message).toContain('vypadá jako korekce, nezaúčtováno');
+    expect(result.warnings[0]!.message).toContain('CZK');
+  });
+
+  it('do hlášek se nedostane syrový výstup validace', () => {
+    const result = parseTrading212Csv(ACTIONS_2026);
+    const messages = [...result.errors, ...result.warnings, ...result.skipped].map((i) => i.message);
+    expect(messages.length).toBeGreaterThan(0);
+    for (const message of messages) {
+      expect(message).not.toContain('"code"');
+      expect(message).not.toContain('"path"');
+    }
+    // u opravy nedává smysl ani věta o odhadu brutta z čisté částky
+    expect(messages.some((m) => m.includes('brutto odhadnuto'))).toBe(false);
+    expect(messages.filter((m) => m.includes('vypadá jako korekce'))).toHaveLength(1);
+  });
+
+  it('kladný doplatek dividendy se zaúčtuje jako dřív', () => {
+    const result = parseRow2026(`${START},,,,,,,12.00${TAIL}`);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['DIVIDEND']);
+    expect(result.warnings.some((w) => w.message.includes('vypadá jako korekce'))).toBe(false);
+  });
+
+  it('selhání validace jinde na řádku se vypíše větou, ne jako JSON', () => {
+    // záporná srážka u kladné dividendy: na znaménko Total se nechytí a spadne až na schématu
+    const result = parseRow2026(
+      'Dividend (Ordinary),2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-9,10,0.85,USD,0.045,,,180.00,CZK,-1.50,USD,,,,,,,,',
+    );
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Řádek se nepodařilo zpracovat');
+    expect(result.errors[0]!.message).not.toContain('"code"');
+    expect(result.errors[0]!.message).not.toContain('[');
   });
 });
