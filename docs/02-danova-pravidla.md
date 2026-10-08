@@ -1190,19 +1190,60 @@ Každý přepínač má v UI vysvětlení a odkaz na zdroj; zvolená konfigurace
 ## Roční údržba (runbook)
 
 Legislativa je verzovaná per zdaňovací období — engine přijímá `TaxYearConfig` a bere
-je z registru (R-15a). Údržba má **dva termíny**, ne jeden:
+je z registru (R-15a). Tenhle seznam je **jediný**; `docs/08-provoz.md` na něj jen
+odkazuje. Kroky jdou podle kalendáře a **R** je rok, ve kterém se údržba dělá. Kde je
+termín pevný, hlídá ho runbook test, který po něm začne padat — zapomenutý krok se
+tak ozve v CI, ne rozbitou aplikací.
 
-**Od 1. 10. roku R (nařízení vlády vychází do 30. 9., R-15c)** — zapsat do registru
-`TAX_YEAR_CONFIGS` konfiguraci roku **R+1**: průměrná mzda pro **23% hranici**
-(`progressiveThreshold`) a **výše paušální zálohy** (`flatTaxAdvance`, R-08f).
-Bez toho je rok R+1 mimo registr a aplikace u něj poctivě řekne „nevím“ (R-15e).
+1. **Leden roku R — jednotný kurz za rok R−1** (R-06a). Pokyn GFŘ řady D z Finančního
+   zpravodaje: kurzy doplnit do `packages/engine/src/config/unifiedRates.ts`, posunout
+   `LAST_VERIFIED_RATE_YEAR` a přidat pokyn do `UNIFIED_RATE_SOURCES`. Orientační odhad
+   téhož roku z `UNIFIED_RATES` v `apps/web/lib/tax-config.ts` zároveň **smazat** —
+   zapisuje se až za ověřenou tabulku, takže by ji přebil. Pevný termín tu není (pokyn
+   nemá dané datum vydání); do té doby aplikace kurz označuje jako orientační.
+2. **Nejpozději 1. 2. roku R — XML pro elektronické podání za rok R−1** (R-14d).
+   Strukturu písemnosti pro nové zdaňovací období zveřejňuje finanční správa začátkem
+   roku. Postup: (a) zkontrolovat, jestli se nezměnil název a verze písemnosti (dnes
+   `DPFDP7`, `verzePis="01.01"`) ani čísla řádků, na která odkazuje průvodce v reportu;
+   (b) přidat rok do `EPO_SUPPORTED_YEARS` v `apps/web/lib/epo.ts` — hranici 23 % si
+   generátor bere z registru a výčet roků v hláškách, reportu, ceníku, podmínkách
+   i e-mailech se skládá z téhož seznamu, nic dalšího se neopisuje; (c) poslat vzorky
+   za nový rok na zkušební podatelnu (`pnpm validate:epo`, sériově a šetrně) — tvar XML
+   se neodvozuje z paměti, ale z toho, co podatelna přijala. Hlídá
+   `apps/web/test/runbook.test.ts`: od 1. 2. chce rok R−1 v seznamu. Datum vydání
+   struktury zákon nestanoví, takže když do té doby nevyšla (nebo ji generátor ještě
+   neumí), zapíše se důvod do `EPO_YEAR_DEFERRED` v témže testu — odložit jde jen
+   vědomě, ne zapomenutím.
+3. **Od 1. 10. roku R — registr pro rok R+1** (R-15c, R-15d). Nařízení vlády vychází
+   do 30. 9.: do `TAX_YEAR_CONFIGS` (`packages/engine/src/config/taxYear.ts`) zapsat
+   konfiguraci roku **R+1** — průměrnou mzdu pro **23% hranici** (`progressiveThreshold`)
+   a **výši paušální zálohy** (`flatTaxAdvance`, R-08f). Když finanční správa zálohu do
+   té doby nezveřejnila, zapíše se dopočet podle § 38lk ZDP s poznámkou v komentáři
+   a po vydání „Informace k institutu paušální daně“ se ověří. Bez tohohle kroku je rok
+   R+1 mimo registr a aplikace u něj poctivě řekne „nevím“ (R-15e). Hlídá
+   `apps/web/test/runbook.test.ts`. Při téže příležitosti se **přepočítá orientační
+   kurz roku R** (viz níž).
+4. **Od 1. 11. roku R — kurz a svátky dopředu.** Orientační kurz roku **R+1** do
+   `UNIFIED_RATES` (R-06a; výchozí hodnotou je čerstvě přepočtený odhad roku R)
+   a burzovní svátky roku **R+2** do `packages/engine/src/config/exchangeHolidays.ts`
+   včetně posunu `HOLIDAY_CALENDAR_LAST_YEAR` (R-01a; lhůty za zdaňovací období R+1
+   padají do roku R+2, R-09e). Hlídají `apps/web/test/runbook.test.ts` (kurz)
+   a `packages/engine/test/runbook.test.ts` (svátky).
+5. **Celoročně — novely.** Sledovat změny ZDP a souvisejících předpisů (Sbírka zákonů,
+   KPMG danovky.cz, dReport, tiskové zprávy FS). Novela, která mění částku nebo
+   pravidlo, znamená nejdřív úpravu příslušného R-xx v tomhle dokumentu, teprve pak
+   konfiguraci roku a kód. V roce 2026 takhle vyšel zák. č. 180/2026 Sb. (o evidenci
+   tržeb, ve Sbírce od 7. 10. 2026), který od zdaňovacího období 2027 mění limity
+   § 38g a zavádí přirážku k paušální dani.
 
-**Každý leden** — nový **jednotný kurz** za rok R−1 (pokyn GFŘ D-xx z Finančního
-zpravodaje: doplnit do `unifiedRates.ts`, posunout `LAST_VERIFIED_RATE_YEAR`, přidat
-pokyn do `UNIFIED_RATE_SOURCES`) a **orientační kurz běžného roku** do `UNIFIED_RATES`
-(R-06a); **burzovní svátky nového roku** (`packages/engine/src/config/exchangeHolidays.ts`
-+ posunout `HOLIDAY_CALENDAR_LAST_YEAR`, R-01a). Celoročně: kontrola novel ZDP
-(sledovat: KPMG danovky.cz, dReport, FS tiskové zprávy).
+**Orientační kurz běžného roku není jednorázový odhad** (R-06a). Zakládá se
+v listopadu předchozího roku (krok 4) a během roku se **přepočítává nejméně při
+říjnovém a listopadovém termínu** (kroky 3 a 4) na průměr kurzů ČNB k posledním dnům
+dosud uplynulých měsíců. Je to metoda, kterou jednotný kurz stanoví GFŘ (§ 38 odst. 1
+ZDP), takže se odhad ke konci roku blíží číslu z lednového pokynu. Hlídání limitů ve
+variantě jednotného kurzu tím odhadem počítá až do vydání pokynu — hodnota ponechaná
+z předchozího podzimu se u měny, která se mezitím pohnula, rozejde se skutečností
+o jednotky procent.
 
 ## Klíčové zdroje
 

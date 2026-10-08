@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LAST_VERIFIED_RATE_YEAR, TAX_YEAR_CONFIGS } from '@danero/engine';
+import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import {
   configForYear,
   isConfiguredTaxYear,
@@ -99,6 +100,97 @@ describe('runbook: registr konfigurací zdaňovacích období nesmí vyexpirovat
       expect(config.progressiveThreshold, `rok ${rok} nemá hranici 23 %`).not.toBeNull();
       expect(config.flatTaxAdvance ?? null, `rok ${rok} nemá paušální zálohu`).not.toBeNull();
       expect(Number(rok), `konfigurace roku ${rok} nese jiný rok`).toBe(config.year);
+    }
+  });
+});
+
+/**
+ * Pojistka na XML pro nový rok (docs/02, Roční údržba, krok „XML pro EPO“; L5-03).
+ *
+ * Web slibuje, že v březnu uživatel stáhne podklady včetně XML, a karta exportu
+ * u roku bez struktury říká „export tu bude, jakmile vyjde“. Do revize 5 ten
+ * slib nekryl žádný krok runbooku ani test: `EPO_SUPPORTED_YEARS` se mohl
+ * přestat rozšiřovat a nic by se neozvalo.
+ *
+ * Kadence: finanční správa strukturu písemnosti zveřejňuje začátkem roku, lhůta
+ * pro přiznání běží do začátku dubna. Od 1. února proto test chce XML za loňský
+ * rok. Termín vydání struktury ale zákon nestanoví — když do té doby nevyjde
+ * (nebo se změnila tak, že ji generátor ještě neumí), zapíše se důvod do
+ * `EPO_YEAR_DEFERRED` a test projde. Mlčky zapomenout tedy nejde, vědomě
+ * odložit ano.
+ */
+describe('runbook: XML pro EPO za loňský rok', () => {
+  /** Rok, za který XML vědomě ještě nevydáváme → proč (s datem zápisu). */
+  const EPO_YEAR_DEFERRED: Record<number, string> = {};
+
+  /** Zdaňovací období, za které má XML k danému dni existovat. */
+  const epoYearDue = (now: Date): number =>
+    now.getUTCFullYear() - (now.getUTCMonth() >= 1 ? 1 : 2);
+
+  const due = epoYearDue(new Date());
+
+  it('termín: do 31. 1. stačí předloňský rok, od 1. 2. loňský', () => {
+    expect(epoYearDue(new Date('2027-01-31T12:00:00Z'))).toBe(2025);
+    expect(epoYearDue(new Date('2027-02-01T12:00:00Z'))).toBe(2026);
+    expect(epoYearDue(new Date('2027-12-31T12:00:00Z'))).toBe(2026);
+  });
+
+  it(`XML existuje za rok ${due}, nebo je zapsaný důvod, proč ještě ne`, () => {
+    const reason = (EPO_YEAR_DEFERRED[due] ?? '').trim();
+    expect(
+      EPO_SUPPORTED_YEARS.includes(due) || reason.length > 0,
+      `Rok ${due} není v EPO_SUPPORTED_YEARS (apps/web/lib/epo.ts) a od 1. 2. ${due + 1} už ` +
+        'ho uživatelé potřebují k podání. Postup je v docs/02, Roční údržba, krok „XML pro ' +
+        'EPO“: zkontroluj zveřejněnou strukturu písemnosti, přidej rok do seznamu a pošli ' +
+        'vzorky na zkušební podatelnu (pnpm validate:epo). Když struktura ještě nevyšla, ' +
+        'zapiš důvod do EPO_YEAR_DEFERRED v tomhle testu.',
+    ).toBe(true);
+  });
+
+  it('odklad nezůstává zapsaný u roku, který už XML má', () => {
+    for (const year of Object.keys(EPO_YEAR_DEFERRED).map(Number)) {
+      expect(EPO_SUPPORTED_YEARS, `rok ${year} už XML má — smaž jeho odklad`).not.toContain(year);
+    }
+  });
+});
+
+/**
+ * L3-04: runbook byl na dvou místech a každé říkalo něco jiného — docs/08 mělo
+ * jen leden a kurzy posílalo do souboru, kde už neleží, docs/02 nevědělo o XML.
+ * Seznam kroků je proto JEDEN (docs/02) a docs/08 na něj jen odkazuje.
+ */
+describe('runbook: jeden seznam kroků přelomu roku', () => {
+  // konstanty, které se s přelomem roku ručně posouvají
+  const STEPS = [
+    'TAX_YEAR_CONFIGS',
+    'UNIFIED_RATES',
+    'LAST_VERIFIED_RATE_YEAR',
+    'UNIFIED_RATE_SOURCES',
+    'HOLIDAY_CALENDAR_LAST_YEAR',
+    'EPO_SUPPORTED_YEARS',
+  ];
+
+  const section = async (file: string, heading: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const text = readFileSync(join(import.meta.dirname, '..', '..', '..', 'docs', file), 'utf8');
+    const start = text.indexOf(`\n## ${heading}`);
+    expect(start, `${file} nemá oddíl „${heading}“`).toBeGreaterThan(-1);
+    const end = text.indexOf('\n## ', start + 1);
+    return text.slice(start, end === -1 ? undefined : end);
+  };
+
+  it('docs/02 jmenuje každou konstantu, kterou je potřeba posunout, i zkušební podatelnu', async () => {
+    const runbook = await section('02-danova-pravidla.md', 'Roční údržba');
+    for (const step of STEPS) expect(runbook, `v runbooku chybí ${step}`).toContain(step);
+    expect(runbook).toContain('validate:epo');
+  });
+
+  it('docs/08 na docs/02 jen odkazuje a vlastní seznam nevede', async () => {
+    const pointer = await section('08-provoz.md', 'Roční runbook');
+    expect(pointer).toContain('docs/02');
+    for (const step of [...STEPS, 'tax-config.ts', 'taxYear.ts']) {
+      expect(pointer, `docs/08 opakuje krok „${step}“ — patří jen do docs/02`).not.toContain(step);
     }
   });
 });

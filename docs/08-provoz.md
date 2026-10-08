@@ -112,18 +112,16 @@ z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
 `chmod 600`) a nikdy ho nevypisuje. `prune` databázi nepotřebuje — maže jen staré
 soubory záloh.
 
-## Roční runbook (leden)
+## Roční runbook
 
-Viz docs/02 (sekce Roční údržba): nový jednotný kurz (pokyn řady D) →
-`apps/web/lib/tax-config.ts` + `packages/engine/src/config/taxYear.ts`; hranice 23 %
-sazby; výše paušálních záloh; kontrola novel ZDP.
+Jediný seznam kroků přelomu roku i s termíny je v docs/02, sekce „Roční údržba
+(runbook)“: lednový pokyn o jednotných kurzech, XML pro nový rok, říjnový registr,
+listopadové kurzy a svátky, celoroční kontrola novel. Tady se neopakuje — dvě kopie
+se už jednou rozešly (tahle znala jen leden).
 
-Jednotné kurzy za roky 2020–2025 jsou **ověřené** z pokynů GFŘ řady D —
-leží v `packages/engine/src/config/unifiedRates.ts` i s číslem pokynu u každého
-roku. Orientační je jen běžný rok v `apps/web/lib/tax-config.ts` (pokyn za něj
-vyjde až v lednu) a aplikace ho tak v UI označuje. V lednu se proto ověřený kurz
-doplní do `unifiedRates.ts`, posune se `LAST_VERIFIED_RATE_YEAR` a do
-`tax-config.ts` přijde odhad na nový rok.
+Kroky s pevným termínem hlídají runbook testy (`apps/web/test/runbook.test.ts`
+a `packages/engine/test/runbook.test.ts`): po termínu začnou padat, takže zapomenutou
+údržbu ohlásí CI dřív než uživatel.
 
 ## Zálohy a monitoring (stav)
 

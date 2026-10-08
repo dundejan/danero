@@ -19,7 +19,15 @@ import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
 import { priloha2 } from '@/lib/priloha2';
-import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
+import {
+  czDate,
+  czk,
+  FX_METHOD_LABEL,
+  limit100kLabel,
+  METHOD_LABEL,
+  plural,
+  yearList,
+} from '@/lib/format';
 import {
   FIRST_UNIFIED_RATE_YEAR,
   isRateVerified,
@@ -1131,16 +1139,16 @@ export function ReportView({
             <li className="text-inkoust-tlumeny">
               {EPO_SUPPORTED_YEARS.includes(year) ? (
                 <>
-                  Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období
-                  2024–2025; papírový tiskopis 25 5405) — všechno výše předvyplní export XML
-                  o kousek výš.
+                  Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období{' '}
+                  {yearList(EPO_SUPPORTED_YEARS)}; papírový tiskopis 25 5405) — všechno výše
+                  předvyplní export XML o kousek výš.
                 </>
               ) : (
                 <>
                   Částky výše platí pro rok {year}, <strong>čísla řádků</strong> jsou
-                  z tiskopisu 2024/2025 (DPFDP7; papírově 25 5405). Přesná čísla řádků pro
-                  období {year} ověříme, až finanční správa zveřejní strukturu — struktura
-                  přílohy se ale mezi lety mění jen výjimečně.
+                  z tiskopisu {yearList(EPO_SUPPORTED_YEARS)} (DPFDP7; papírově 25 5405). Přesná
+                  čísla řádků pro období {year} ověříme, až finanční správa zveřejní strukturu
+                  — struktura přílohy se ale mezi lety mění jen výjimečně.
                 </>
               )}
             </li>

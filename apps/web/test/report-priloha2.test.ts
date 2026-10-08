@@ -5,8 +5,8 @@ import { parseTransactions } from '@danero/shared';
 import { analyzeTaxYear } from '@danero/engine';
 import { XMLParser } from 'fast-xml-parser';
 import { ReportView } from '@/components/views/report-view';
-import { generateDpfdp7 } from '@/lib/epo';
-import { czk } from '@/lib/format';
+import { EPO_SUPPORTED_YEARS, generateDpfdp7 } from '@/lib/epo';
+import { czk, yearList } from '@/lib/format';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 import { priloha2 } from '@/lib/priloha2';
 
@@ -124,7 +124,8 @@ describe('Průvodce ukazuje čísla i pro rok bez XML (K3-05)', () => {
     const pruvodce = guide(render(txs, 2026));
     expect(pruvodce).toContain(czk(p2.prijmyCzk));
     expect(pruvodce).toContain(czk(p2.vydajeCzk));
-    // a musí přiznat, že čísla ŘÁDKŮ jsou z tiskopisu 2024/2025
-    expect(pruvodce).toContain('z tiskopisu 2024/2025');
+    // a musí přiznat, ze kterých let čísla ŘÁDKŮ jsou — výčet jde ze seznamu
+    // podporovaných roků, v textu se neopisuje (L5-03)
+    expect(pruvodce).toContain(`z tiskopisu ${yearList(EPO_SUPPORTED_YEARS)}`);
   });
 });

@@ -1,5 +1,11 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import { TAXPAYER_CREDIT_CZK, type EngineOptions, type TaxYearResult } from '@danero/engine';
+import {
+  TAX_YEAR_CONFIGS,
+  TAXPAYER_CREDIT_CZK,
+  type EngineOptions,
+  type TaxYearResult,
+} from '@danero/engine';
+import { yearList } from '@/lib/format';
 import { base10Values, priloha2, wholeCzkParts } from '@/lib/priloha2';
 
 /**
@@ -76,18 +82,35 @@ export interface EpoInput {
   dodatecne?: EpoDodatecne;
 }
 
-/** Roky, pro které oficiální struktura DPFDP7 existuje (kritická kontrola EPO na položce rok). */
+/**
+ * Roky, pro které oficiální struktura DPFDP7 existuje (kritická kontrola EPO na položce rok).
+ *
+ * Přidání roku sem je celá změna v kódu: hranici 23 % si generátor bere
+ * z registru enginu a texty (hlášky, report, ceník, podmínky, e-maily) skládají
+ * výčet roků z tohohle seznamu. Co k tomu patří mimo kód — kontrola nové
+ * struktury a vzorky na zkušební podatelně — je v docs/02, Roční údržba, a od
+ * 1. února to připomíná `test/runbook.test.ts`.
+ */
 export const EPO_SUPPORTED_YEARS = [2024, 2025];
 
 /**
- * Hranice 23% sazby (§ 16 ZDP) = 36násobek průměrné mzdy dle nařízení vlády:
- * 2024: 43 967 Kč (NV č. 286/2023 Sb.), 2025: 46 557 Kč (NV č. 282/2024 Sb.).
- * Pro formulář držíme přesnou hodnotu daného roku (EPO ř. 57 kontroluje).
+ * Hranice 23% sazby (§ 16 ZDP) = 36násobek průměrné mzdy podle nařízení vlády,
+ * přesná hodnota daného roku (EPO ř. 57 kontroluje). Jediná definice je
+ * v registru enginu (R-15a): vlastní tabulka tady byla druhou kopií a rok
+ * přidaný jen do `EPO_SUPPORTED_YEARS` na ní spadl na `DecimalError` (L5-03).
+ *
+ * Chybějící hranice je vada údržby, ne vstupu — proto obyčejná výjimka: uživatel
+ * dostane obecnou větu a do logu jde text, podle kterého se dá chyba najít.
  */
-export const PROGRESSIVE_THRESHOLD: Record<number, string> = {
-  2024: '1582812',
-  2025: '1676052',
-};
+function progressiveThresholdFor(year: number): Money {
+  const threshold = TAX_YEAR_CONFIGS[year]?.progressiveThreshold;
+  if (!threshold) {
+    throw new Error(
+      `Rok ${year} je v EPO_SUPPORTED_YEARS, ale registr TAX_YEAR_CONFIGS pro něj nemá hranici 23% sazby.`,
+    );
+  }
+  return d(threshold);
+}
 
 /**
  * Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO na ř. 64 vyžaduje
@@ -295,9 +318,10 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     throw new EpoInputError(
       year < minYear
         ? `Roky před ${minYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře jsou v reportu.`
-        : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
+        : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky ${yearList(EPO_SUPPORTED_YEARS)}. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
     );
   }
+  const threshold = progressiveThresholdFor(year);
   const varianta = input.varianta ?? result.tax.recommended;
   const dapTyp: EpoDapTyp = input.dapTyp ?? 'B';
   const jeDodatecne = DODATECNE_DAP_TYPY.includes(dapTyp);
@@ -315,7 +339,6 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     input.dodatecne?.posledniZnamaZtrataCzk,
     'poslední známou daňovou ztrátu',
   );
-  const threshold = d(PROGRESSIVE_THRESHOLD[year]!);
 
   // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
   // Jediný zdroj čísel, sdílený s průvodcem v reportu (lib/priloha2.ts): vlastní
