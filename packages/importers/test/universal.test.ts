@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseCsv } from '../src/csv';
 import { TaxpayerProfileSchema } from '@danero/shared';
@@ -241,13 +244,62 @@ describe('univerzální CSV šablona', () => {
          `BUY,2025-03-01,BTC,CRYPTO,${quantity},${price},EUR`].join('\n'),
       );
 
-    it('„0,001“ se nenaimportuje jako 1 kus, ale skončí chybou s návodem', () => {
+    // L2c-03: vedoucí nula tisíce vylučuje (tisíce se takhle nepíšou), takže
+    // čárka je jistě desetinná — původní vada B-3 byl výklad „1 kus“, ne 0,001
+    it('„0,001“ se nenaimportuje jako 1 kus — vedoucí nula znamená desetinnou čárku', () => {
       const result = buy('"0,001"');
-      expect(result.transactions).toEqual([]);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]!.message).toContain('0,001');
-      expect(result.errors[0]!.message).toContain('quantity');
-      expect(result.errors[0]!.message).toContain('TEČKOU');
+      expect(result.errors).toEqual([]);
+      const tx = result.transactions[0]!;
+      if (tx.type !== 'BUY') throw new Error('unreachable');
+      expect(tx.quantity.toString()).toBe('0.001');
+    });
+
+    it('L2c-03: „0,125“ i „-0,125“ jsou jednoznačné, „185,125“ zůstává chybou s návodem', () => {
+      const crypto = buy('"0,125"');
+      expect(crypto.errors).toEqual([]);
+      const tx = crypto.transactions[0]!;
+      if (tx.type !== 'BUY') throw new Error('unreachable');
+      expect(tx.quantity.toString()).toBe('0.125');
+
+      // čtyři a víc číslic před čárkou tisíce být nemůžou (skupina má nejvýš tři)
+      const wide = buy('1', '"61250,500"').transactions[0]!;
+      if (wide.type !== 'BUY') throw new Error('unreachable');
+      expect(wide.pricePerShare.toString()).toBe('61250.5');
+
+      const price = buy('1', '"185,125"');
+      expect(price.transactions).toEqual([]);
+      expect(price.errors).toHaveLength(1);
+      expect(price.errors[0]!.message).toContain('185,125');
+      expect(price.errors[0]!.message).toContain('price');
+      expect(price.errors[0]!.message).toContain('TEČKOU');
+    });
+
+    it('L2c-03: „1.500“ v souboru s desetinnými čárkami se čte dál jako 1,5, ale s varováním', () => {
+      const head = 'type;date;isin;quantity;price;currency;fee';
+      const mixed = parseUniversalCsv(
+        [head, 'BUY;2026-02-01;US0000000001;10;61250,50;USD;1,25', 'BUY;2026-02-02;US0000000001;1.500;10;USD;'].join('\n'),
+      );
+      expect(mixed.errors).toEqual([]);
+      const tx = mixed.transactions[1]!;
+      if (tx.type !== 'BUY') throw new Error('unreachable');
+      // výklad tečky se nemění — tečka je v šabloně vždy desetinná
+      expect(tx.quantity.toString()).toBe('1.5');
+      expect(mixed.warnings).toHaveLength(1);
+      expect(mixed.warnings[0]!.line).toBe(3);
+      expect(mixed.warnings[0]!.message).toContain('1.500');
+      expect(mixed.warnings[0]!.message).toContain('quantity');
+      expect(mixed.warnings[0]!.message).toContain('1500');
+
+      // soubor psaný podle šablony (samé tečky) ani soubor bez rozhodujícího čísla nevaruje
+      const dots = parseUniversalCsv(
+        [head, 'BUY;2026-02-01;US0000000001;10;185.50;USD;1.25', 'BUY;2026-02-02;US0000000001;1.500;10;USD;'].join('\n'),
+      );
+      expect(dots.errors).toEqual([]);
+      expect(dots.warnings).toEqual([]);
+      const undecided = parseUniversalCsv(
+        [head, 'BUY;2026-02-02;US0000000001;1.500;10;USD;'].join('\n'),
+      );
+      expect(undecided.warnings).toEqual([]);
     });
 
     it('nejednoznačná cena „1,500“ → chyba, ne 1500 ani 1,5', () => {
@@ -356,6 +408,174 @@ describe('vzorová šablona je konzistentní tabulka', () => {
     rows.forEach((row, index) => {
       expect(row.length, `řádek ${index + 2} (${row[0]})`).toBe(headers.length);
     });
+  });
+});
+
+/**
+ * L2c-01: šablonu si uživatel vyplní v českém Excelu a ten datum zapíše
+ * podle místního nastavení (10.06.2024). Středník a desetinnou čárku parser
+ * kvůli téže cestě bere už dřív — datum bylo jediný krok, který chyběl,
+ * a hláška radila ISO tvar, který Excel při uložení zase přepíše.
+ */
+describe('L2c-01: šablona uložená v českém Excelu', () => {
+  const toCzechExcel = (csv: string): string => {
+    const { headers, rows } = parseCsv(csv);
+    const date = (v: string): string => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : v;
+    };
+    const number = (v: string): string => (/^-?\d+\.\d+$/.test(v) ? v.replace('.', ',') : v);
+    const quote = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return [headers, ...rows]
+      .map((row) => row.map((cell) => quote(number(date(cell)))).join(';'))
+      .join('\r\n');
+  };
+
+  it('středník, tečková data a desetinná čárka: 17 transakcí a 0 chyb, stejné jako originál', () => {
+    const excel = toCzechExcel(UNIVERSAL_TEMPLATE_CSV);
+    expect(excel.split('\r\n')[1]).toContain('BUY;10.06.2024;12.06.2024;');
+    const result = parseUniversalCsv(excel);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(17);
+
+    const original = parseUniversalCsv(UNIVERSAL_TEMPLATE_CSV);
+    // id je otisk syrového řádku (liší se oddělovačem), obsah musí být totožný
+    const strip = (txs: typeof result.transactions): unknown[] =>
+      JSON.parse(JSON.stringify(txs.map((tx) => ({ ...tx, id: '' })))) as unknown[];
+    expect(strip(result.transactions)).toEqual(strip(original.transactions));
+  });
+
+  it('ručně psané české datum se uloží jako ISO ve všech třech datumových sloupcích', () => {
+    const head = 'type,date,settlement_date,isin,quantity,price,currency,acquisition_date,acquisition_price,acquisition_currency';
+    const result = parseUniversalCsv(
+      [
+        head,
+        'BUY,1.2.2026,3. 2. 2026,US0000000001,10,100,USD,,,',
+        'TRANSFER_IN,05.05.2025,,US0000000002,4,,,1.3.2021,240,USD',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    const [buy, transfer] = result.transactions;
+    if (buy?.type !== 'BUY' || transfer?.type !== 'TRANSFER_IN') throw new Error('unreachable');
+    expect(buy.tradeDate).toBe('2026-02-01');
+    expect(buy.settlementDate).toBe('2026-02-03');
+    expect(transfer.date).toBe('2025-05-05');
+    expect(transfer.acquisition?.date).toBe('2021-03-01');
+  });
+
+  it('neexistující den, lomítka a neúplný ISO tvar dál končí chybou, která jmenuje oba tvary', () => {
+    for (const value of ['30.02.2026', '1/2/2026', '2026-2-1', '1.2.26', '1.2.2026 10:00']) {
+      const result = parseUniversalCsv(
+        ['type,date,isin,quantity,price,currency', `BUY,${value},US0000000001,10,100,USD`].join('\n'),
+      );
+      expect(result.transactions, value).toEqual([]);
+      expect(result.errors, value).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain(value);
+      expect(result.errors[0]!.message).toContain('RRRR-MM-DD');
+      expect(result.errors[0]!.message).toContain('D.M.RRRR');
+    }
+  });
+});
+
+/**
+ * L2c-05: co člověk do šablony opíše z výpisu („1 250 Kč“, „$185.50“, „czk“).
+ * Hláška má být česká věta se jménem sloupce a hodnotou — ne výpis knihovny.
+ */
+describe('L2c-05: lidské hlášky u čísel a měn', () => {
+  const head = 'type,date,isin,quantity,price,currency,fee,fee_currency,amount';
+  const parseRow = (line: string): ReturnType<typeof parseUniversalCsv> =>
+    parseUniversalCsv(`${head}\n${line}`);
+
+  it('měna malými písmeny je táž měna (currency, fee_currency, acquisition_currency)', () => {
+    const buy = parseRow('BUY,2026-02-01,CZ0000000001,10,100,czk,2,eur,');
+    expect(buy.errors).toEqual([]);
+    const tx = buy.transactions[0]!;
+    if (tx.type !== 'BUY') throw new Error('unreachable');
+    expect(tx.currency).toBe('CZK');
+    expect(tx.fee?.currency).toBe('EUR');
+
+    const transfer = parseUniversalCsv(
+      ['type,date,isin,quantity,acquisition_date,acquisition_price,acquisition_currency',
+       'TRANSFER_IN,2025-05-05,US0000000002,4,2021-03-01,240,usd'].join('\n'),
+    );
+    expect(transfer.errors).toEqual([]);
+    const moved = transfer.transactions[0]!;
+    if (moved.type !== 'TRANSFER_IN') throw new Error('unreachable');
+    expect(moved.acquisition?.currency).toBe('USD');
+  });
+
+  const cases: Array<[label: string, line: string, column: string, value: string]> = [
+    ['cena se značkou měny', 'BUY,2026-02-01,CZ0000000001,10,1 250 Kč,CZK,,,', 'price', '1 250 Kč'],
+    ['cena s dolarem', 'BUY,2026-02-01,US0000000001,10,$185.50,USD,,,', 'price', '$185.50'],
+    ['poplatek s textem', 'BUY,2026-02-01,US0000000001,10,100,USD,2 USD,,', 'fee', '2 USD'],
+    ['měna značkou', 'BUY,2026-02-01,CZ0000000001,10,100,Kč,,,', 'currency', 'Kč'],
+    ['měna poplatku značkou', 'BUY,2026-02-01,US0000000001,10,100,USD,1,$,', 'fee_currency', '$'],
+    ['částka úroku s měnou', 'INTEREST,2026-02-01,,,,CZK,,,12 Kč', 'amount', '12 Kč'],
+  ];
+  it.each(cases)('%s → česká věta se sloupcem a hodnotou', (_label, line, column, value) => {
+    const result = parseRow(line);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    const message = result.errors[0]!.message;
+    expect(message).toContain(column);
+    expect(message).toContain(`„${value}“`);
+    expect(message).not.toContain('DecimalError');
+    expect(message).not.toContain('"code"');
+  });
+
+  it('selhání validace vypíše sloupec šablony a českou zprávu, ne JSON knihovny', () => {
+    const negative = parseRow('SELL,2026-02-01,US0000000001,-10,100,USD,,,');
+    expect(negative.transactions).toEqual([]);
+    expect(negative.errors[0]!.message).toContain('quantity');
+    expect(negative.errors[0]!.message).toContain('musí být kladná');
+
+    // prázdné povinné pole: chybějící množství, cena, měna i ISIN
+    const empty = parseRow('BUY,2026-02-01,,,,,,,');
+    expect(empty.transactions).toEqual([]);
+    for (const column of ['isin', 'quantity', 'price', 'currency']) {
+      expect(empty.errors[0]!.message).toContain(column);
+    }
+    const dividend = parseRow('DIVIDEND,2026-02-01,US0000000001,,,USD,,,');
+    expect(dividend.errors[0]!.message).toContain('amount');
+
+    // výčet má v knihovně jen anglickou zprávu — nahrazuje ji věta s povolenými hodnotami
+    const assetClass = parseUniversalCsv(
+      ['type,date,isin,asset_class,quantity,price,currency', 'BUY,2026-02-01,US0000000001,akcie,1,10,USD'].join('\n'),
+    );
+    expect(assetClass.transactions).toEqual([]);
+    expect(assetClass.errors[0]!.message).toContain('asset_class');
+    expect(assetClass.errors[0]!.message).toContain('povolené: STOCK, ETF');
+
+    for (const result of [negative, empty, dividend, assetClass]) {
+      const message = result.errors[0]!.message;
+      expect(message).not.toContain('DecimalError');
+      expect(message).not.toContain('"code"');
+      expect(message).not.toMatch(/Invalid|expected|received/);
+    }
+  });
+});
+
+/**
+ * L2c-08: docs/06 se označuje za popis formátu a sadu nadepisuje „Úplná sada
+ * sloupců“ — hlavička v dokumentu proto musí být táž jako ve stažitelné šabloně.
+ */
+describe('L2c-08: docs/06 popisuje tutéž sadu sloupců jako šablona', () => {
+  const doc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs', '06-import.md'),
+    'utf8',
+  );
+
+  it('hlavička v docs/06 je shodná s hlavičkou šablony', () => {
+    const header = UNIVERSAL_TEMPLATE_CSV.split('\n')[0]!;
+    expect(doc).toContain(`\`\`\`csv\n${header}\n\`\`\``);
+  });
+
+  it('každý sloupec šablony má v docs/06 výklad', () => {
+    const section = doc.slice(doc.indexOf('## Univerzální šablona'), doc.indexOf('## Ověření na reálných datech'));
+    const explained = section.slice(section.indexOf('```', section.indexOf('```csv') + 6));
+    for (const column of UNIVERSAL_TEMPLATE_CSV.split('\n')[0]!.split(',')) {
+      expect(explained, column).toContain(column);
+    }
   });
 });
 

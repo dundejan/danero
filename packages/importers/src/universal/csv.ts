@@ -1,12 +1,28 @@
 import { TransactionSchema } from '@danero/shared';
-import { firstLine, HeaderMap, isValidIsoDate, parseCsv, sniffDelimiter } from '../csv';
+import {
+  detectDecimalSeparator,
+  firstLine,
+  HeaderMap,
+  isAmbiguousThousandGroup,
+  isValidIsoDate,
+  parseCsv,
+  parseEuroDate,
+  sniffDelimiter,
+} from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
 
 export const UNIVERSAL_BROKER = 'universal';
 
-/** Nejednoznačný číselný zápis v šabloně — chytá se u řádku a hlásí uživateli. */
-class AmbiguousNumberError extends Error {}
+/**
+ * Hodnota buňky, které v šabloně nerozumíme (nejednoznačné číslo, text místo
+ * čísla, značka místo kódu měny) — chytá se u řádku a hlásí uživateli českou
+ * větou se jménem sloupce a hodnotou.
+ */
+class CellError extends Error {}
+
+/** Co po očištění smí zbýt z čísla: číslice, desetinná tečka, případně exponent. */
+const PLAIN_NUMBER = /^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
 
 /**
  * Číslo z univerzální šablony. Šablona předepisuje desetinnou TEČKU, ale
@@ -15,8 +31,26 @@ class AmbiguousNumberError extends Error {}
  * se naimportovalo jako 1 kus — tisícinásobek). Ostatní čárky bereme jako
  * desetinné: „1,25“ → 1.25. Dvě a víc čárek jednoznačně oddělují tisíce
  * („1,234,567“), stejně jako čárka následovaná tečkou („1,234.56“).
+ *
+ * Co je nejednoznačné, říká sdílená `isAmbiguousThousandGroup`: celá část
+ * s vedoucí nulou („0,125“) tisíce být nemůže, takže projde jako desetinná
+ * čárka (L2c-03) — odmítat ji znamenalo, že krypto na tři desetinná místa
+ * z českého Excelu nahrát nešlo.
+ *
+ * Text, který číslem není („1 250 Kč“, „$185.50“), končí vlastní větou —
+ * jinak by se uživateli vypsala anglická hláška knihovny (L2c-05).
  */
 function universalNumber(value: string, column: string): string {
+  const number = canonicalNumber(value, column);
+  if (number !== '' && !PLAIN_NUMBER.test(number)) {
+    throw new CellError(
+      `Hodnotě „${value.trim()}“ ve sloupci ${column} nerozumíme jako číslu — napiš jen číslo, bez značky měny a dalšího textu (např. 1250.50). Měna má vlastní sloupec.`,
+    );
+  }
+  return number;
+}
+
+function canonicalNumber(value: string, column: string): string {
   const trimmed = value.replace(/[\s\u00a0\u202f]/g, '');
   if (!trimmed.includes(',')) return trimmed;
   if (trimmed.includes('.')) {
@@ -27,12 +61,118 @@ function universalNumber(value: string, column: string): string {
   }
   // dvě a víc čárek nemůže být desetinná čárka → oddělovač tisíců
   if (trimmed.split(',').length > 2) return trimmed.replace(/,/g, '');
-  if (/^-?\d+,\d{3}$/.test(trimmed)) {
-    throw new AmbiguousNumberError(
+  if (isAmbiguousThousandGroup(trimmed)) {
+    throw new CellError(
       `Hodnota „${value.trim()}“ ve sloupci ${column} je nejednoznačná — čárka může být desetinná čárka (${trimmed.replace(',', '.')}) i oddělovač tisíců (${trimmed.replace(',', '')}). Piš čísla s desetinnou TEČKOU, bez oddělovačů tisíců.`,
     );
   }
   return trimmed.replace(',', '.');
+}
+
+/**
+ * Kód měny ze šablony. Malá písmena jsou táž měna (stejně se převádí `type`
+ * a `asset_class`); značka („Kč“, „$“) kódem není a dostane vlastní větu —
+ * validace modelu by na ni odpověděla výpisem z knihovny (L2c-05).
+ */
+function universalCurrency(value: string, column: string): string {
+  const code = value.trim().toUpperCase();
+  if (code === '' || /^[A-Z]{3}$/.test(code)) return code;
+  throw new CellError(
+    `Měně „${value.trim()}“ ve sloupci ${column} nerozumíme — napiš třípísmenný kód měny (např. CZK, USD, EUR).`,
+  );
+}
+
+/**
+ * Datum ze šablony → ISO. Vedle předepsaného RRRR-MM-DD bereme český zápis
+ * s tečkami („10.06.2024“, „1.2.2026“, „1. 2. 2026“): český Excel tak datum
+ * uloží, i když ho uživatel napíše v ISO tvaru (L2c-01). Lomítka NEbereme —
+ * „1/2/2026“ je v českém prostředí 1. února a v americkém 2. ledna a z jedné
+ * buňky to nerozhodneš; špatné datum nabytí by tiše posunulo časový test.
+ * Neexistující den (30.02.) vrací null stejně jako dřív.
+ */
+function universalDate(value: string): string | null {
+  if (isValidIsoDate(value)) return value;
+  return /^\d{1,2}\.\s?\d{1,2}\.\s?\d{4}$/.test(value) ? parseEuroDate(value) : null;
+}
+
+const DATE_COLUMNS = ['date', 'settlement_date', 'acquisition_date'] as const;
+
+/** Sloupce s čísly — z nich se pozná, jestli soubor píše desetinnou čárku. */
+const NUMERIC_COLUMNS = [
+  'quantity',
+  'price',
+  'fee',
+  'amount',
+  'withholding_tax',
+  'ratio_from',
+  'ratio_to',
+  'acquisition_price',
+] as const;
+
+/** Pole kanonického modelu → sloupec šablony (kde se jméno liší). */
+const COLUMN_BY_FIELD: Record<string, string> = {
+  pricePerShare: 'price',
+  tradeDate: 'date',
+  settlementDate: 'settlement_date',
+  assetClass: 'asset_class',
+  settlementStyle: 'settlement_style',
+  positionEffect: 'position_effect',
+  gross: 'amount',
+  withholdingTax: 'withholding_tax',
+  sourceCountry: 'source_country',
+  returnOfCapital: 'return_of_capital',
+  newIsin: 'new_isin',
+  'fee.amount': 'fee',
+  'fee.currency': 'fee_currency',
+  'ratio.from': 'ratio_from',
+  'ratio.to': 'ratio_to',
+  'acquisition.date': 'acquisition_date',
+  'acquisition.costPerShare': 'acquisition_price',
+  'acquisition.currency': 'acquisition_currency',
+};
+
+/** Tvar chyby validace modelu (Zod) — importéry na knihovně přímo nezávisí. */
+interface ValidationIssue {
+  code?: string;
+  path: PropertyKey[];
+  message: string;
+  values?: unknown[];
+}
+
+const validationIssues = (err: unknown): ValidationIssue[] | null => {
+  const issues = (err as { issues?: unknown } | null)?.issues;
+  return Array.isArray(issues) ? (issues as ValidationIssue[]) : null;
+};
+
+/**
+ * Chyba validace modelu řečená sloupci šablony (L2c-05). Knihovna vrací seznam
+ * objektů a `err.message` je jejich JSON — uživateli z něj patří jen to, který
+ * sloupec opravit a proč. Vlastní české zprávy modelu („Hodnota musí být
+ * kladná“) nesou kódy `custom` a `invalid_format`; ostatní kódy mají anglický
+ * text knihovny, takže je nahrazuje obecná věta.
+ */
+function describeIssues(issues: ValidationIssue[], cell: (column: string) => string): string {
+  const missing = new Set<string>();
+  const invalid = new Set<string>();
+  for (const issue of issues) {
+    const field = issue.path.map(String).join('.');
+    const column = COLUMN_BY_FIELD[field] ?? field;
+    const value = cell(column);
+    if (value === '') missing.add(column);
+    else if (issue.code === 'custom' || issue.code === 'invalid_format') {
+      invalid.add(`sloupec ${column} („${value}“): ${issue.message}`);
+    } else {
+      const allowed = Array.isArray(issue.values) ? ` (povolené: ${issue.values.join(', ')})` : '';
+      invalid.add(`hodnota „${value}“ ve sloupci ${column} není platná${allowed}`);
+    }
+  }
+  const parts = [...invalid];
+  if (missing.size > 0) {
+    parts.unshift(
+      `${missing.size === 1 ? 'chybí hodnota ve sloupci' : 'chybí hodnoty ve sloupcích'} ${[...missing].join(', ')}`,
+    );
+  }
+  return parts.join('; ');
 }
 
 /** Hodnoty, které v šabloně znamenají „ano“ — česky i anglicky, jak kdo napíše. */
@@ -48,7 +188,7 @@ function universalFlag(value: string, column: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (TRUTHY.has(normalized)) return true;
   if (FALSY.has(normalized)) return false;
-  throw new AmbiguousNumberError(
+  throw new CellError(
     `Hodnotě „${value.trim()}“ ve sloupci ${column} nerozumíme — napiš „ano“, nebo pole nech prázdné.`,
   );
 }
@@ -126,43 +266,72 @@ export function parseUniversalCsv(text: string): ImportResult {
   // R-12f/R-12r: derivát bez settlement_style se počítá prémiovým stylem —
   // upozornit jednou per instrument, ne u každého řádku (CFD exporty mají stovky řádků)
   const warnedMissingStyle = new Set<string>();
+  // L2c-03: tečka je v šabloně VŽDY desetinná a ten výklad se nemění. Když ale
+  // zbytek souboru prokazatelně píše desetinnou čárku, je „1.500“ nejspíš
+  // patnáct set zapsaných s oddělovačem tisíců — čteme dál 1,5, jen nahlas.
+  const fileWritesDecimalComma =
+    detectDecimalSeparator(
+      rows.flatMap((row) => NUMERIC_COLUMNS.map((column) => map.get(row, column))),
+    ) === ',';
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2;
     if (row.every((cell) => cell.trim() === '')) return;
 
     const type = map.get(row, 'type').toUpperCase();
-    const date = map.get(row, 'date');
     if (!TYPES.has(type)) {
       result.errors.push({ line, message: `Neznámý typ "${type}" (povolené: ${[...TYPES].join(', ')})` });
       return;
     }
     // Ručně psaná data: regex schématu pustí i neexistující den (2026-02-30)
     // a datumová aritmetika by ho tiše přetekla — řádek se odmítne s chybou
-    for (const [column, value] of [
-      ['date', date],
-      ['settlement_date', map.get(row, 'settlement_date')],
-      ['acquisition_date', map.get(row, 'acquisition_date')],
-    ] as const) {
-      if ((value || column === 'date') && !isValidIsoDate(value)) {
+    const dates: Record<(typeof DATE_COLUMNS)[number], string> = {
+      date: '',
+      settlement_date: '',
+      acquisition_date: '',
+    };
+    for (const column of DATE_COLUMNS) {
+      const value = map.get(row, column);
+      if (value === '' && column !== 'date') continue;
+      const iso = universalDate(value);
+      if (iso === null) {
         result.errors.push({
           line,
-          message: `Neplatné datum "${value}" ve sloupci ${column} — očekáváme existující den ve formátu RRRR-MM-DD (např. 2026-03-05).`,
+          message: `Neplatné datum "${value}" ve sloupci ${column} — očekáváme existující den ve tvaru RRRR-MM-DD (např. 2026-03-05) nebo D.M.RRRR (např. 5.3.2026).`,
           raw: row.join(','),
         });
         return;
       }
+      dates[column] = iso;
     }
+    const date = dates.date;
 
     // identické legitimní řádky (dva stejné obchody v týž den) nesmí tiše
     // splynout — pořadový suffix drží klíče stabilní i napříč exporty
     const id = uniqueId(`uni-${fnv1a64(row.join('|'))}`);
 
+    const number = (column: (typeof NUMERIC_COLUMNS)[number]): string => {
+      const raw = map.get(row, column);
+      if (fileWritesDecimalComma && raw.includes('.') && isAmbiguousThousandGroup(raw)) {
+        const asDecimal = raw.replace(/\.?0+$/, '').replace('.', ',');
+        result.warnings.push({
+          line,
+          message: `Hodnotu „${raw}“ ve sloupci ${column} čteme jako ${asDecimal} — tečka je v šabloně vždy desetinná. Ostatní čísla v souboru ale píšeš s desetinnou čárkou; jestli má jít o ${raw.replace('.', '')}, napiš číslo bez tečky.`,
+        });
+      }
+      return universalNumber(raw, column);
+    };
+    const currency = (column: 'currency' | 'fee_currency' | 'acquisition_currency'): string =>
+      universalCurrency(map.get(row, column), column);
+
     try {
-      // uvnitř try: nejednoznačný číselný zápis (desetinná čárka vs. tisíce)
-      // vyhodí AmbiguousNumberError a musí skončit chybou řádku, ne pádem
-      const feeAmount = universalNumber(map.get(row, 'fee'), 'fee');
+      // uvnitř try: buňka, které nerozumíme (nejednoznačné číslo, text místo
+      // čísla, značka místo kódu měny), vyhodí CellError a musí skončit chybou
+      // řádku, ne pádem. Prázdné POVINNÉ číslo jde do modelu jako undefined —
+      // validace pak vyjmenuje všechny chybějící sloupce naráz, kdežto prázdný
+      // řetězec by shodil převod na Decimal anglickou hláškou knihovny.
+      const feeAmount = number('fee');
       const fee = feeAmount
-        ? { amount: feeAmount, currency: map.get(row, 'fee_currency') || map.get(row, 'currency') }
+        ? { amount: feeAmount, currency: currency('fee_currency') || currency('currency') }
         : undefined;
       switch (type) {
         case 'BUY':
@@ -220,12 +389,12 @@ export function parseUniversalCsv(text: string): ImportResult {
               name: map.get(row, 'name') || undefined,
               assetClass,
               positionEffect: shortEffect,
-              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
-              pricePerShare: universalNumber(map.get(row, 'price'), 'price'),
-              currency: map.get(row, 'currency'),
+              quantity: number('quantity') || undefined,
+              pricePerShare: number('price') || undefined,
+              currency: currency('currency'),
               fee,
               tradeDate: date,
-              settlementDate: map.get(row, 'settlement_date') || undefined,
+              settlementDate: dates.settlement_date || undefined,
               settlementStyle: settlementStyle || undefined,
               note: map.get(row, 'note') || undefined,
             }),
@@ -245,9 +414,9 @@ export function parseUniversalCsv(text: string): ImportResult {
               // ticker i poznámku šablona nabízí a uživatel je vyplňuje —
               // zahazovat je bylo tiché mrhání tím, co si dal práci vypsat
               ticker: map.get(row, 'ticker') || undefined,
-              gross: universalNumber(map.get(row, 'amount'), 'amount'),
-              currency: map.get(row, 'currency'),
-              withholdingTax: universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
+              gross: number('amount') || undefined,
+              currency: currency('currency'),
+              withholdingTax: number('withholding_tax') || '0',
               sourceCountry: map.get(row, 'source_country') || undefined,
               // R-07h/K6a-14: bez tohohle sloupce neměl uživatel Schwabu nebo
               // Degira jak přepínač „vratka kapitálu“ vůbec využít — příznak
@@ -267,15 +436,15 @@ export function parseUniversalCsv(text: string): ImportResult {
             TransactionSchema.parse({
               type,
               id,
-              amount: universalNumber(map.get(row, 'amount'), 'amount'),
-              currency: map.get(row, 'currency'),
+              amount: number('amount') || undefined,
+              currency: currency('currency'),
               note: map.get(row, 'note') || undefined,
               // R-07f: u úroku má smysl i sražená daň — bez ní zápočet propadá
               ...(type === 'INTEREST'
                 ? {
                     sourceCountry: map.get(row, 'source_country') || undefined,
                     withholdingTax:
-                      universalNumber(map.get(row, 'withholding_tax'), 'withholding_tax') || '0',
+                      number('withholding_tax') || '0',
                   }
                 : {}),
               date,
@@ -292,8 +461,8 @@ export function parseUniversalCsv(text: string): ImportResult {
             });
             return;
           }
-          const ratioFrom = universalNumber(map.get(row, 'ratio_from'), 'ratio_from');
-          const ratioTo = universalNumber(map.get(row, 'ratio_to'), 'ratio_to');
+          const ratioFrom = number('ratio_from');
+          const ratioTo = number('ratio_to');
           if (subtype === 'SPLIT' && (!ratioFrom || !ratioTo)) {
             result.errors.push({
               line,
@@ -326,7 +495,7 @@ export function parseUniversalCsv(text: string): ImportResult {
           return;
         }
         case 'TRANSFER_IN': {
-          const acquisitionDate = map.get(row, 'acquisition_date');
+          const acquisitionDate = dates.acquisition_date;
           if (!acquisitionDate) {
             // R-04i: bez původního nabytí počítáme cenu 0 a test od převodu
             result.warnings.push({
@@ -343,14 +512,14 @@ export function parseUniversalCsv(text: string): ImportResult {
               ticker: map.get(row, 'ticker') || undefined,
               name: map.get(row, 'name') || undefined,
               assetClass: map.get(row, 'asset_class').toUpperCase() || undefined,
-              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
+              quantity: number('quantity') || undefined,
               date,
               ...(acquisitionDate
                 ? {
                     acquisition: {
                       date: acquisitionDate,
-                      costPerShare: universalNumber(map.get(row, 'acquisition_price'), 'acquisition_price') || undefined,
-                      currency: map.get(row, 'acquisition_currency') || undefined,
+                      costPerShare: number('acquisition_price') || undefined,
+                      currency: currency('acquisition_currency') || undefined,
                     },
                   }
                 : {}),
@@ -365,7 +534,7 @@ export function parseUniversalCsv(text: string): ImportResult {
               type,
               id,
               isin: map.get(row, 'isin'),
-              quantity: universalNumber(map.get(row, 'quantity'), 'quantity'),
+              quantity: number('quantity') || undefined,
               date,
               note: map.get(row, 'note') || undefined,
             }),
@@ -375,7 +544,7 @@ export function parseUniversalCsv(text: string): ImportResult {
     } catch (err) {
       // nejednoznačné číslo má vlastní srozumitelnou hlášku — technický kontext
       // Zodu by ji jen zamlžil
-      if (err instanceof AmbiguousNumberError) {
+      if (err instanceof CellError) {
         result.errors.push({ line, message: err.message, raw: row.join(',') });
         return;
       }
@@ -384,9 +553,17 @@ export function parseUniversalCsv(text: string): ImportResult {
         .filter((cell) => cell.trim() !== '')
         .slice(0, 4)
         .join(' · ');
+      // L2c-05: z chyby validace jen sloupec a zpráva — `err.message` je u ní
+      // JSON se všemi vnitřnostmi knihovny a stránka importu ho tiskne beze změny
+      const issues = validationIssues(err);
+      const reason = issues
+        ? describeIssues(issues, (column) => map.get(row, column))
+        : err instanceof Error
+          ? err.message
+          : String(err);
       result.errors.push({
         line,
-        message: `Řádek (${context}) se nepodařilo zpracovat: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Řádek (${context}) se nepodařilo zpracovat: ${reason}`,
         raw: row.join(','),
       });
     }
