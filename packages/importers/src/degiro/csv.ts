@@ -450,23 +450,29 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       const autoFxRaw = parseDegiroNumber(cell(row, col.autoFx), decimal);
       if (autoFxRaw !== null && !d(autoFxRaw).eq(0)) {
         const autoFxCurrency = columnCurrency(row, col.autoFx);
-        if (
-          autoFxCurrency !== undefined &&
-          (fee === undefined || fee.currency === autoFxCurrency)
-        ) {
-          fee = {
-            amount: d(fee?.amount ?? '0')
-              .plus(d(autoFxRaw).abs())
-              .toString(),
-            currency: autoFxCurrency,
-          };
-        } else {
+        if (autoFxCurrency === undefined) {
           result.warnings.push({
             line,
             message:
               `Poplatek za převod měny (AutoFX) ${autoFxRaw} nemá ve výpisu měnu, kterou bychom ` +
               'poznali — do výdajů k obchodu jsme ho nezapočítali. Daň tím vyjde nanejvýš o něco vyšší.',
           });
+        } else if (fee !== undefined && fee.currency !== autoFxCurrency) {
+          // měnu známe, jen se liší od transakčního poplatku — obchod nese jediný poplatek v jedné měně
+          result.warnings.push({
+            line,
+            message:
+              `Poplatek za převod měny (AutoFX) ${autoFxRaw} ${autoFxCurrency} je v jiné měně než ` +
+              `transakční poplatek (${fee.currency}) a k obchodu umíme uložit poplatek jen v jedné — ` +
+              'do výdajů k obchodu jsme ho nezapočítali. Daň tím vyjde nanejvýš o něco vyšší.',
+          });
+        } else {
+          fee = {
+            amount: d(fee?.amount ?? '0')
+              .plus(d(autoFxRaw).abs())
+              .toString(),
+            currency: autoFxCurrency,
+          };
         }
       }
     }

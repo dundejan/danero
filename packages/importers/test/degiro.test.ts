@@ -874,6 +874,101 @@ describe('Transactions.csv v rozložení od prosince 2025: měna v názvu sloupc
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]!.message).toContain('AutoFX');
     expect(result.warnings[0]!.message).toContain('-0.84');
+    expect(result.warnings[0]!.message).toContain('nemá ve výpisu měnu');
+  });
+
+  // A05-R1-01: větve, které oprava L2a-01 přidala a žádná fixtura jimi nešla.
+  // Obě fixtury nového rozložení nesou měnu i v názvu sloupce poplatku, takže
+  // se měna účtu nikdy nebrala z Total ani z Value. Řádky níže mají sufix
+  // vždy jen na JEDNOM sloupci; bez příslušné větve zůstane obchod bez poplatku.
+  const HEAD_2026 = 'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,';
+  const ROW_2026 =
+    '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,';
+
+  it('měna účtu jen v názvu sloupce Total: poplatek i AutoFX ji převezmou', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value,Exchange rate,AutoFX Fee,Transaction and/or third party fees,Total EUR,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-2,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('měna účtu jen v názvu sloupce Value: poplatek i AutoFX ji převezmou', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees,Total,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-3,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('název sloupce poplatku má přednost před Total a Value', () => {
+    // pořadí v řetězci `??` — kdyby se měna účtu brala nejdřív z Total, vyšel by AutoFX v CZK
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value CZK,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Total CZK,Order ID,`,
+        `${ROW_2026}-8140.00,1.0806,-0.84,-2.00,-8210.00,en-2026-4,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('AutoFX v jiné měně než transakční poplatek se nesečte a varování říká pravý důvod', () => {
+    // transakční poplatek má měnu v bezejmenném sloupci za částkou (USD), AutoFX
+    // dědí měnu účtu z názvu sloupce Total (EUR) — obchod unese jen jednu měnu poplatku
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees,,Total EUR,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,USD,-337.84,en-2026-5,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2 USD');
+    expect(result.warnings).toHaveLength(1);
+    const message = result.warnings[0]!.message;
+    expect(message).toContain('AutoFX');
+    expect(message).toContain('-0.84 EUR');
+    expect(message).toContain('USD');
+    expect(message).toContain('v jiné měně');
+    // měnu jsme poznali — tvrdit opak by uživatele poslalo hledat chybu ve výpisu
+    expect(message).not.toContain('nemá ve výpisu měnu');
+  });
+
+  it('pojmenovaný sloupec za poplatkem není měna, ani když jeho hodnota vypadá jako kód měny', () => {
+    // sloupce se mapují podle názvů, takže burza („NDQ“) může stát hned za
+    // poplatkem; měnu smí dodat jen BEZEJMENNÝ sloupec
+    const result = parseDegiroTransactionsCsv(
+      [
+        'Date,Time,Product,ISIN,Quantity,Price,,Local value,,Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Reference exchange,Venue,Total EUR,Order ID,',
+        '11-02-2026,15:48,NORDWIND CORP,US0000000001,8,45.2500,USD,-362.00,USD,-335.00,1.0806,-0.84,-2.00,NDQ,XNAS,-337.84,en-2026-6,',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('prázdné „Order ID“ si ID nepůjčí z pojmenovaného sloupce vedle', () => {
+    // řádek bez ID objednávky dostane otisk obsahu; částka Total ze sousedního
+    // sloupce by z něj udělala „degiro--337.84“
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Order ID,Total EUR,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,,-337.84,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+    expect(result.transactions[0]!.id).toMatch(/^degiro-[0-9a-f]{16}$/);
   });
 });
 
