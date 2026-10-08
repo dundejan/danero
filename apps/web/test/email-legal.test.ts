@@ -440,3 +440,30 @@ describe('upozornění na nepřečtený výpis (provozovateli)', () => {
     if (puvodni !== undefined) process.env.DANERO_ALERT_EMAIL = puvodni;
   });
 });
+
+/**
+ * L8a-01: ověřovací e-mail chodí i člověku, na jehož adresu si účet založil
+ * někdo cizí. „Nemusíš dělat nic“ mu neřeklo to podstatné — že kliknutím
+ * potvrdí účet, který nezaložil. A komu při druhé registraci přestalo platit
+ * heslo (`lib/auth-signup.ts`), musí se z téže zprávy dozvědět, kudy dál.
+ */
+describe('ověřovací e-mail (L8a-01)', () => {
+  const email = verifyEmailEmail('https://danero.cz/overeni?token=x');
+  const text = bezZalomeni(email.text);
+
+  it('kdo si účet nezakládal, ten na odkaz klikat nemá', () => {
+    expect(text).toContain('Pokud sis účet nezakládal, na odkaz neklikej.');
+    expect(text).not.toContain('nemusíš dělat nic');
+  });
+
+  it('říká, co dělat, když po potvrzení nejde přihlásit heslem', () => {
+    expect(text).toContain('Zapomenuté heslo');
+    // HTML verze se skládá z týchž bloků — nesmí se rozejít
+    expect(email.html).toContain('Zapomenuté heslo');
+  });
+
+  it('první odkaz ve zprávě je ten ověřovací', () => {
+    // testy i E2E berou z e-mailu první URL; věta o hesle proto odkaz nenese
+    expect(email.text.match(/https?:\/\/\S+/)?.[0]).toBe('https://danero.cz/overeni?token=x');
+  });
+});

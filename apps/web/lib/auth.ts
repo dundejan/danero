@@ -12,6 +12,7 @@ import {
   beforeHooks,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
+import { handleExistingUserSignUp } from '@/lib/auth-signup';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -148,6 +149,10 @@ function buildAuth(db: Db) {
         hash: (password) => import('@/lib/password').then((m) => m.hashPassword(password)),
         verify: (data) => import('@/lib/password').then((m) => m.verifyPassword(data)),
       },
+      // L8a-01: registrace na adresu, která už účet má. Heslo z cizí
+      // předregistrace nesmí přežít potvrzení adresy majitelem — proč a jak
+      // je v lib/auth-signup.ts.
+      onExistingUserSignUp: ({ user }, request) => handleExistingUserSignUp(db, user, request),
       resetPasswordTokenExpiresIn: 60 * 60,
       // ukradená session nepřežije obnovu hesla
       revokeSessionsOnPasswordReset: true,

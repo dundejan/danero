@@ -229,7 +229,16 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
       { kind: 'p', text: 'Vítej v Daneru. Potvrď prosím, že ti tahle adresa patří.' },
       { kind: 'cta', label: 'Potvrdit e-mail', url },
       { kind: 'p', text: 'Odkaz platí 24 hodin.' },
-      { kind: 'note', text: 'Pokud sis účet nezakládal, nemusíš dělat nic.' },
+      // L8a-01: přijde-li na nepotvrzený účet registrace s jiným heslem, heslo
+      // přestane platit (lib/auth-signup.ts). Věta je tu obecně, ať na to
+      // nemusí být druhá šablona — tutéž zprávu dostane i ten, komu heslo platí.
+      {
+        kind: 'p',
+        text: 'Kdyby ti po potvrzení nešlo přihlásit se heslem, nastav si nové přes „Zapomenuté heslo“ na přihlašovací stránce.',
+      },
+      // „Nemusíš dělat nic“ tu nestačilo: kdo na odkaz klikne, potvrdí účet,
+      // který na jeho adresu založil někdo jiný.
+      { kind: 'note', text: 'Pokud sis účet nezakládal, na odkaz neklikej.' },
     ],
     footer: operatorSignature(),
   });
