@@ -158,12 +158,45 @@ describe('R-13: pořadí uvnitř dne a kompenzace v druhu', () => {
       shortCover({ tradeDate: '2024-05-05', settlementDate: '2024-05-06', pricePerShare: '2000' }),
     ]);
     expect(hasWarning(result, 'SHORT_COVER_WITHOUT_OPEN')).toBe(false);
+    // R-13c-2: výdaj pokrytí patří do roku JEHO vypořádání — loňský zpětný
+    // nákup letos nesmí snížit základ ani o korunu
+    expect(result.shortSales.expensesCzk.toString()).toBe('0');
+    expect(result.securities.expensesCzk.toString()).toBe('0');
+  });
+});
+
+/**
+ * R-13b: rozhodné je datum VYPOŘÁDÁNÍ (shodně s R-05a) a hrana roku je
+ * 31. 12. včetně. Nález L4-02: posun hranice o den nechytal žádný test.
+ */
+describe('R-13b: hrana roku se řídí vypořádáním', () => {
+  it('short vypořádaný přesně 31. 12. patří do roku', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2025-12-30', settlementDate: '2025-12-31', pricePerShare: '3000' }),
+    ]);
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('300000');
+    expect(result.securities.base10Czk.toString()).toBe('300000');
+    expect(result.shortSales.openAtYearEnd).toHaveLength(1);
+    expect(result.shortSales.openAtYearEnd[0]!.openedAt).toBe('2025-12-31');
+    expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(true);
+  });
+
+  it('short zobchodovaný 31. 12. a vypořádaný 2. 1. do roku nepatří', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2025-12-31', settlementDate: '2026-01-02', pricePerShare: '3000' }),
+    ]);
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('0');
+    expect(result.shortSales.proceedsCzk.toString()).toBe('0');
+    expect(result.shortSales.openAtYearEnd).toHaveLength(0);
+    expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(false);
   });
 });
 
 /**
  * R-13c mechanika, kterou dřív popisoval jen kód: párování FIFO, dělení výdaje
- * mezi roky poměrem KUSŮ a komise při otevření.
+ * mezi roky poměrem KUSŮ a komise při otevření. Částečné pokrytí a pokrytí
+ * z jiného roku doplnil nález L4-02 (do té doby mělo každé otevření právě
+ * jedno stejně velké pokrytí a mutace fronty i hranice roku procházely).
  */
 describe('R-13c: párování pokrytí, dělení výdaje mezi roky a komise', () => {
   it('pokrytí spotřebuje NEJSTARŠÍ otevření (FIFO), ne to poslední', () => {
@@ -176,6 +209,66 @@ describe('R-13c: párování pokrytí, dělení výdaje mezi roky a komise', () 
     expect(result.shortSales.openAtYearEnd).toHaveLength(1);
     expect(result.shortSales.openAtYearEnd[0]!.openedAt).toBe('2025-06-03');
     expect(result.shortSales.openAtYearEnd[0]!.quantity.toString()).toBe('100');
+  });
+
+  it('částečné pokrytí nechá zbytek otevření ležet (R-13c-1)', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-04', pricePerShare: '3000' }),
+      shortCover({ quantity: '40', tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '2000' }),
+    ]);
+    // tržba za všech 100 ks, výdaj jen za 40 pokrytých
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('300000');
+    expect(result.shortSales.expensesCzk.toString()).toBe('80000');
+    // zbylých 60 ks je k 31. 12. dál otevřených a uživatel o nich ví (R-13j)
+    expect(result.shortSales.openAtYearEnd).toHaveLength(1);
+    expect(result.shortSales.openAtYearEnd[0]!.quantity.toString()).toBe('60');
+    expect(result.shortSales.openAtYearEnd[0]!.openedAt).toBe('2025-03-04');
+    expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(true);
+  });
+
+  it('druhé pokrytí dobere zbytek téhož otevření a nehlásí díru v historii (R-13c-1)', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-04', pricePerShare: '3000' }),
+      shortCover({ quantity: '40', tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '2000' }),
+      shortCover({ quantity: '60', tradeDate: '2025-07-07', settlementDate: '2025-07-08', pricePerShare: '2500' }),
+    ]);
+    expect(hasWarning(result, 'SHORT_COVER_WITHOUT_OPEN')).toBe(false);
+    expect(hasWarning(result, 'SHORT_OPEN_AT_YEAR_END')).toBe(false);
+    expect(result.shortSales.openAtYearEnd).toHaveLength(0);
+    // 40 × 2 000 + 60 × 2 500
+    expect(result.shortSales.expensesCzk.toString()).toBe('230000');
+    expect(result.securities.base10Czk.toString()).toBe('70000');
+  });
+
+  it('short otevřený i pokrytý loni nedá letos žádný výdaj (R-13c-2)', () => {
+    const result = run([
+      shortOpen({ tradeDate: '2024-03-04', settlementDate: '2024-03-05', pricePerShare: '3000' }),
+      shortCover({ tradeDate: '2024-06-03', settlementDate: '2024-06-04', pricePerShare: '2000' }),
+      shortOpen({ tradeDate: '2025-03-03', settlementDate: '2025-03-04', pricePerShare: '3000' }),
+    ]);
+    // loňský zpětný nákup za 200 000 Kč se uplatnil loni; letos je jen tržba
+    expect(result.shortSales.expensesCzk.toString()).toBe('0');
+    expect(result.shortSales.priorYearIncomeExpensesCzk.toString()).toBe('0');
+    expect(result.securities.expensesCzk.toString()).toBe('0');
+    expect(result.securities.base10Czk.toString()).toBe('300000');
+    // loňské otevření je pokryté, k 31. 12. leží jen to letošní
+    expect(result.shortSales.openAtYearEnd).toHaveLength(1);
+    expect(result.shortSales.openAtYearEnd[0]!.openedAt).toBe('2025-03-04');
+  });
+
+  it('po částečném pokrytí loni nese letošní pokrytí zbytku jen svůj díl výdaje (R-13c-2)', () => {
+    const result = run([
+      shortOpen({ quantity: '60', tradeDate: '2024-11-20', settlementDate: '2024-11-21', pricePerShare: '3000' }),
+      shortCover({ quantity: '20', tradeDate: '2024-12-02', settlementDate: '2024-12-03', pricePerShare: '2000' }),
+      // letos jen zpětný nákup zbylých 40 ks → letošní úhrn tržeb 0, rok je pod stovkou
+      shortCover({ quantity: '40', tradeDate: '2025-05-05', settlementDate: '2025-05-06', pricePerShare: '2000' }),
+    ]);
+    expect(hasWarning(result, 'SHORT_COVER_WITHOUT_OPEN')).toBe(false);
+    // 40 × 2 000; loňských 20 ks (40 000 Kč) do letoška nepatří
+    expect(result.shortSales.expensesCzk.toString()).toBe('80000');
+    expect(result.shortSales.priorYearIncomeExpensesCzk.toString()).toBe('80000');
+    expect(result.securities.expensesCzk.toString()).toBe('80000');
+    expect(result.shortSales.openAtYearEnd).toHaveLength(0);
   });
 
   it('jedno pokrytí přes dva roky rozdělí výdaj poměrem kusů', () => {
