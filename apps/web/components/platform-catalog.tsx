@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   PLATFORM_GROUPS,
   PLATFORMS,
+  TEMPLATE_RULES,
   UNIVERSAL_INFO,
   type PlatformInfo,
 } from '@/lib/brokers-catalog';
@@ -188,7 +189,11 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                         <a href="/api/sablona" className="font-medium text-ruzova-text underline underline-offset-2" download>
                           univerzální šablony
                         </a>{' '}
-                        (formát je popsaný přímo v souboru) a{' '}
+                        (
+                        <a href="#sablona" className="font-medium text-ruzova-text underline underline-offset-2">
+                          jak ji vyplnit
+                        </a>
+                        , čti pod seznamem platforem) a{' '}
                         {variant === 'app'
                           ? 'nahraj ji tady'
                           : 'nahraj ji v aplikaci na stránce Zdroje dat'}
@@ -230,14 +235,25 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
         </div>
         );
       })}
-      <p className="text-sm text-inkoust-tlumeny">
-        <strong className="text-inkoust">{UNIVERSAL_INFO.name}:</strong> {UNIVERSAL_INFO.guide}{' '}
-        <a href="/api/sablona" className="font-medium text-ruzova-text underline underline-offset-2" download>
-          Stáhnout šablonu
-        </a>
-        . Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje i napříč
-        soubory.
-      </p>
+      {/* kotva #sablona: odkazují na ni karty platforem s vedeným importem */}
+      <div id="sablona" className="scroll-mt-24 space-y-2 text-sm text-inkoust-tlumeny">
+        <p>
+          <strong className="text-inkoust">{UNIVERSAL_INFO.name}:</strong> {UNIVERSAL_INFO.guide}{' '}
+          <a href="/api/sablona" className="font-medium text-ruzova-text underline underline-offset-2" download>
+            Stáhnout šablonu
+          </a>
+          . Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje i napříč
+          soubory.
+        </p>
+        <p>Při vyplňování šablony se drž těchhle pravidel:</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {TEMPLATE_RULES.map((rule) => (
+            <li key={rule.label}>
+              <strong className="text-inkoust">{rule.label}:</strong> {rule.text}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

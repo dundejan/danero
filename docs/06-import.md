@@ -99,8 +99,11 @@ straně brokera trvale uřízl historii).
 ## Univerzální šablona (`parseUniversalCsv`)
 
 Fallback pro nepodporované brokery. Hlavičky (malými písmeny, pořadí libovolné);
-předvyplněná šablona s ukázkovými řádky ke stažení: `/api/sablona`
-(`UNIVERSAL_TEMPLATE_CSV`). Úplná sada sloupců:
+předvyplněná šablona s ukázkovými řádky ke stažení: `/api/sablona`. Zdrojem je
+čárková `UNIVERSAL_TEMPLATE_CSV`; ke stažení jde tatáž data ve tvaru pro český
+Excel (`UNIVERSAL_TEMPLATE_EXCEL_CSV`: BOM, středník, desetinná čárka), protože
+čárkové CSV bez BOM se po dvojkliku nasype do jediného sloupce s rozbitou
+diakritikou. Parser čte oba tvary stejně. Úplná sada sloupců:
 
 ```csv
 type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,return_of_capital,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note

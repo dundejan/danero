@@ -1,8 +1,14 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as importers from '@danero/importers';
-import { PLATFORMS, PLATFORM_COUNTS } from '@/lib/brokers-catalog';
+import { AssetClassSchema } from '@danero/shared';
+import {
+  PLATFORMS,
+  PLATFORM_COUNTS,
+  TEMPLATE_RULES,
+  UNIVERSAL_INFO,
+} from '@/lib/brokers-catalog';
 
 /**
  * Strážný test katalogu platforem.
@@ -89,8 +95,7 @@ describe('katalog platforem', () => {
    * musí sedět. Test je průchozí i pro další platformy, které v hlášce
    * jmenují cestu v portálu.
    */
-  it('hlášky Degira jmenují stejné menu jako katalog', async () => {
-    const { readFileSync } = await import('node:fs');
+  it('hlášky Degira jmenují stejné menu jako katalog', () => {
     const source = readFileSync(
       resolve(import.meta.dirname, '..', '..', '..', 'packages', 'importers', 'src', 'degiro', 'csv.ts'),
       'utf8',
@@ -122,5 +127,100 @@ describe('katalog platforem', () => {
     expect(PLATFORM_COUNTS.api + PLATFORM_COUNTS.file + PLATFORM_COUNTS.template).toBe(
       PLATFORMS.length,
     );
+  });
+});
+
+/**
+ * Návod je cesta, kterou uživatel proklikává. Kde platforma nabízí vedle
+ * správného exportu i jiný (nebo jinou volbu v témže průvodci), musí návod
+ * říct, který z nich čteme — jinak skončí u hlášky „formát nepoznáváme“
+ * a u nás přibude falešný případ k rozboru.
+ */
+describe('návody jmenují export, který čteme, i ten, který ne', () => {
+  const guide = (id: string): string => PLATFORMS.find((platform) => platform.id === id)!.guide;
+
+  it('L2c-07: Revolut varuje před výpisem „Profit and loss statement“', () => {
+    expect(guide('revolut')).toContain('Profit and loss statement');
+    expect(guide('revolut')).toMatch(/nečteme/);
+    // a pořád jmenuje ten správný
+    expect(guide('revolut').match(/Account statement/g)!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('L2d-07: Anycoin chce export všech měn (vyfiltrovaná měna rozbije každý obchod)', () => {
+    expect(guide('anycoin')).toContain('všechny měny');
+    expect(guide('anycoin')).toContain('Sekci „Daně“ nepoužívej');
+  });
+
+  it('L2d-09: Kraken říká zvolit CSV, počkat na vygenerování a ZIP jen podmíněně', () => {
+    expect(guide('kraken')).toMatch(/formát\S* (zvol )?CSV/);
+    expect(guide('kraken')).toContain('PDF');
+    expect(guide('kraken')).toMatch(/generuje/);
+    expect(guide('kraken')).toContain('ze seznamu exportů');
+    expect(guide('kraken')).toMatch(/Pokud přijde ZIP/);
+    expect(guide('kraken')).not.toMatch(/\. Přijde ZIP/);
+    expect(guide('kraken')).toContain('ledgers.csv');
+  });
+
+  it('L2b-05: Schwab říká, že výpis Equity Awards zatím nečteme a co s ním', () => {
+    expect(guide('schwab')).toContain('Transaction History');
+    expect(guide('schwab')).toContain('Equity Awards');
+    expect(guide('schwab')).toMatch(/zatím (ne|nečteme)/);
+    expect(guide('schwab')).toContain('šablon');
+  });
+});
+
+/**
+ * L2c-02: katalog sliboval, že „formát je popsaný přímo v souboru“, a v šabloně
+ * přitom o tvaru data, desetinném oddělovači ani o povolených hodnotách nebylo
+ * slovo — uživatel se je dozvěděl až z chyb po nahrání. Pravidla proto stojí
+ * tam, kde se šablona stahuje, a hlídá se, že sedí na parser.
+ */
+describe('univerzální šablona: pravidla jsou tam, kde se stahuje', () => {
+  const source = (...path: string[]): string =>
+    readFileSync(resolve(import.meta.dirname, '..', ...path), 'utf8');
+  const rules = TEMPLATE_RULES.map((rule) => `${rule.label}: ${rule.text}`).join('\n');
+
+  it('nikde už neslibujeme popis „přímo v souboru“', () => {
+    expect(UNIVERSAL_INFO.guide).not.toContain('popsaný přímo v souboru');
+    expect(source('lib', 'brokers-catalog.ts')).not.toContain('popsaný přímo v souboru');
+    expect(source('components', 'platform-catalog.tsx')).not.toContain('popsaný přímo v souboru');
+  });
+
+  it('pravidla říkají tvar data i desetinný oddělovač — a příklady z nich parser přečte', () => {
+    expect(rules).toContain('2026-03-05');
+    expect(rules).toContain('5.3.2026');
+    expect(rules).toMatch(/[Dd]esetinn/);
+    expect(rules).toContain('1250,50');
+    expect(rules).toContain('1250.50');
+    for (const [date, price] of [
+      ['2026-03-05', '1250,50'],
+      ['5.3.2026', '1250.50'],
+    ]) {
+      const result = importers.parseUniversalCsv(
+        `type;date;isin;quantity;price;currency\nBUY;${date};US0000000001;2;${price};USD`,
+      );
+      expect(result.errors, `${date} · ${price}`).toEqual([]);
+      const tx = result.transactions[0] as { tradeDate: string; pricePerShare: { toString(): string } };
+      expect(tx.tradeDate).toBe('2026-03-05');
+      expect(tx.pricePerShare.toString()).toBe('1250.5');
+    }
+  });
+
+  it('pravidla vyjmenují všechny hodnoty, které parser ve sloupcích type a asset_class bere', () => {
+    expect(rules).toContain('type');
+    expect(rules).toContain('asset_class');
+    for (const type of importers.UNIVERSAL_TEMPLATE_TYPES) {
+      expect(rules, `chybí typ ${type}`).toContain(type);
+    }
+    for (const assetClass of AssetClassSchema.options) {
+      expect(rules, `chybí druh aktiva ${assetClass}`).toContain(assetClass);
+    }
+  });
+
+  it('stránka pravidla vykresluje a karty platforem na ně odkazují', () => {
+    const component = source('components', 'platform-catalog.tsx');
+    expect(component).toContain('TEMPLATE_RULES.map');
+    expect(component).toContain('id="sablona"');
+    expect(component).toContain('href="#sablona"');
   });
 });

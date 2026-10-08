@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { parseCsv } from '../src/csv';
 import { TaxpayerProfileSchema } from '@danero/shared';
 import { analyzeTaxYear, type TaxYearConfig } from '@danero/engine';
-import { parseUniversalCsv, UNIVERSAL_TEMPLATE_CSV } from '../src';
+import {
+  parseUniversalCsv,
+  UNIVERSAL_TEMPLATE_CSV,
+  UNIVERSAL_TEMPLATE_EXCEL_CSV,
+  UNIVERSAL_TEMPLATE_TYPES,
+} from '../src';
 
 const SAMPLE = [
   'type,date,settlement_date,isin,ticker,name,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,note',
@@ -629,5 +634,88 @@ describe('R-07h: vratka kapitálu v univerzální šabloně', () => {
       (tx) => (tx as { returnOfCapital?: boolean }).returnOfCapital === true,
     );
     expect(vratky).toHaveLength(1);
+  });
+});
+
+/**
+ * L2c-02: šablonu si uživatel otevře dvojklikem v českém Excelu. Čárkové CSV
+ * bez BOM se tam celé nasype do sloupce A a čeština v poznámkách se rozbije
+ * (změřeno ve skutečném Excelu; samotný BOM spraví jen diakritiku). Ke stažení
+ * proto jde tvar se středníkem, BOM a desetinnou čárkou — a musí to být pořád
+ * TATÁŽ šablona, jen jinak zapsaná.
+ */
+describe('L2c-02: šablona ke stažení se otevře v českém Excelu', () => {
+  const BOM = '\uFEFF';
+  const strip = (txs: unknown[]): unknown[] =>
+    JSON.parse(JSON.stringify(txs.map((tx) => ({ ...(tx as object), id: '' })))) as unknown[];
+  const original = parseUniversalCsv(UNIVERSAL_TEMPLATE_CSV);
+
+  it('začíná BOM a sloupce dělí středník (jinak Excel všechno nasype do sloupce A)', () => {
+    expect(UNIVERSAL_TEMPLATE_EXCEL_CSV.startsWith(BOM)).toBe(true);
+    const header = UNIVERSAL_TEMPLATE_EXCEL_CSV.slice(1).split('\n')[0]!;
+    expect(header.split(';')).toEqual(UNIVERSAL_TEMPLATE_CSV.split('\n')[0]!.split(','));
+    // řádek „sep=“ by Excel sice poslechl, ale naše autodetekce by ho četla jako hlavičku
+    expect(UNIVERSAL_TEMPLATE_EXCEL_CSV).not.toMatch(/sep=/i);
+  });
+
+  it('každý řádek má tolik polí jako hlavička (středník v poznámce je v uvozovkách)', () => {
+    const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV, ';');
+    expect(rows).toHaveLength(17);
+    rows.forEach((row, index) => {
+      expect(row.length, `řádek ${index + 2} (${row[0]})`).toBe(headers.length);
+    });
+  });
+
+  it('čísla píše s desetinnou čárkou — tu český Excel načte jako číslo, tečku ne', () => {
+    const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV, ';');
+    const numeric = ['quantity', 'price', 'fee', 'amount', 'withholding_tax', 'ratio_from', 'ratio_to', 'acquisition_price'];
+    let withComma = 0;
+    for (const row of rows) {
+      for (const column of numeric) {
+        const cell = row[headers.indexOf(column)]!;
+        expect(cell, `${row[0]} · ${column}`).toMatch(/^(\d+(,\d+)?)?$/);
+        // „1,500“ parser odmítá jako nejednoznačné — v šabloně takové číslo být nesmí
+        expect(cell, `${row[0]} · ${column}`).not.toMatch(/,\d{3}$/);
+        if (cell.includes(',')) withComma += 1;
+      }
+    }
+    expect(withComma).toBeGreaterThan(5);
+  });
+
+  it('parser ji přečte beze změny: 17 transakcí, 0 chyb, 0 varování a stejný obsah jako čárková šablona', () => {
+    const result = parseUniversalCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions).toHaveLength(17);
+    expect(strip(result.transactions)).toEqual(strip(original.transactions));
+  });
+
+  it('a přečte ji i po uložení z českého Excelu (tečková data, čísla bez koncových nul, bez BOM)', () => {
+    const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV, ';');
+    const date = (v: string): string => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : v;
+    };
+    const number = (v: string): string => (/^\d+,\d+$/.test(v) ? v.replace(/,?0+$/, '') : v);
+    const quote = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const saved = [headers, ...rows]
+      .map((row) => row.map((cell) => quote(number(date(cell)))).join(';'))
+      .join('\r\n');
+    expect(saved).toContain('BUY;10.06.2024;12.06.2024;US0378331005;AAPL;Apple Inc;;;;10;185,5;USD;1;USD;');
+
+    const result = parseUniversalCsv(saved);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(17);
+    expect(strip(result.transactions)).toEqual(strip(original.transactions));
+  });
+
+  it('seznam povolených typů je ten, který parser opravdu bere', () => {
+    expect(UNIVERSAL_TEMPLATE_TYPES.length).toBeGreaterThanOrEqual(10);
+    for (const type of UNIVERSAL_TEMPLATE_TYPES) {
+      const result = parseUniversalCsv(`type,date\n${type},2026-01-05`);
+      const messages = result.errors.map((error) => error.message).join(' ');
+      expect(messages, type).not.toContain('Neznámý typ');
+    }
+    expect(parseUniversalCsv('type,date\nGIFT,2026-01-05').errors[0]!.message).toContain('Neznámý typ');
   });
 });

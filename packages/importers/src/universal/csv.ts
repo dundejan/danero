@@ -242,6 +242,42 @@ export const UNIVERSAL_TEMPLATE_CSV = [
   'TRANSFER_IN,2025-05-05,,US5949181045,MSFT,Microsoft,,,,10,,,,,,,,,,,,,2021-03-01,240.00,USD,převod od jiného brokera — datum a cena PŮVODNÍHO nabytí',
 ].join('\n');
 
+/**
+ * Povolené hodnoty sloupce `type` — aby je text u stahování šablony mohl
+ * vyjmenovat a strážný test katalogu ohlídal, že žádná nechybí.
+ */
+export const UNIVERSAL_TEMPLATE_TYPES: readonly string[] = [...TYPES];
+
+/**
+ * Táž šablona ve tvaru, který se dvojklikem otevře v českém Excelu (L2c-02) —
+ * tohle posílá `/api/sablona`. Změřeno ve skutečném Excelu s českým prostředím:
+ * čárkové CSV bez BOM skončí celé ve sloupci A s rozbitou diakritikou a samotný
+ * BOM spraví jen tu diakritiku. Proto tři změny proti konstantě výš:
+ *
+ *  - **BOM**, podle kterého Excel pozná UTF-8,
+ *  - **středník** jako oddělovač sloupců (český Excel se řídí oddělovačem
+ *    seznamu z místního nastavení; řádek `sep=` nepoužíváme, autodetekce by ho
+ *    četla jako hlavičku),
+ *  - **desetinná čárka** v číslech — tečka v českém prostředí desetinným
+ *    oddělovačem není, kdežto „185,50“ Excel načte jako číslo.
+ *
+ * Data zůstávají v ISO tvaru: Excel je pozná jako datum a uloží česky
+ * (10.06.2024), což parser čte taky. Tenhle tvar je taky změřený ve skutečném
+ * Excelu (9. 10. 2026): 26 sloupců, 18 řádků, čísla i data jako hodnoty,
+ * diakritika v poznámkách celá. Čárková `UNIVERSAL_TEMPLATE_CSV` zůstává
+ * zdrojem pravdy — odvozuje se z ní slovník sloupců pro autodetekci.
+ */
+export const UNIVERSAL_TEMPLATE_EXCEL_CSV = ((): string => {
+  const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_CSV);
+  const numeric = new Set(NUMERIC_COLUMNS.map((column) => headers.indexOf(column)));
+  const quote = (cell: string): string =>
+    /[;"\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
+  const lines = rows.map((row) =>
+    row.map((cell, index) => quote(numeric.has(index) ? cell.replace('.', ',') : cell)).join(';'),
+  );
+  return `\uFEFF${[headers.join(';'), ...lines].join('\n')}`;
+})();
+
 export function parseUniversalCsv(text: string): ImportResult {
   const result = emptyResult(UNIVERSAL_BROKER);
   // středník: šablona vyplněná a uložená v českém Excelu (viz sniffDelimiter)

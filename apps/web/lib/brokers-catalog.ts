@@ -191,7 +191,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#009DDC',
     guide:
-      'Accounts → Transaction History → období (jde i „All“) → Export vpravo nahoře → v dialogu zvol CSV. Web drží jen 4 roky historie a u velkých objemů vrací prázdný soubor — pak stahuj po čtvrtletích; starší roky jsou ve Statements & Tax Forms.',
+      'Accounts → Transaction History → období (jde i „All“) → Export vpravo nahoře → v dialogu zvol CSV. Web drží jen 4 roky historie a u velkých objemů vrací prázdný soubor — pak stahuj po čtvrtletích; starší roky jsou ve Statements & Tax Forms. Čteme Transaction History z brokerage účtu; výpis z účtu Equity Awards (akcie od zaměstnavatele) zatím ne — připsané akcie doplň univerzální šablonou.',
   },
   // ── banky a investiční společnosti (dtto) ──
   {
@@ -295,7 +295,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#191C1F',
     guide:
-      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát Excel a celé období. Krypto: Accounts → Documents & statements → Crypto → Account statement. Nahraj oba — přečteme CSV i sešit .xlsx.',
+      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát Excel a celé období. Krypto: Accounts → Documents & statements → Crypto → Account statement. Nahraj oba — přečteme CSV i sešit .xlsx. „Profit and loss statement“ z téže nabídky nepoužívej: ten nečteme, patří sem „Account statement“.',
   },
   {
     id: 'anycoin',
@@ -305,7 +305,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#00BBE0',
     guide:
-      'Profil (vpravo nahoře) → Nastavení → Transakce → Export (CSV). Sekci „Daně“ nepoužívej — generuje jiný soubor po jednotlivých letech.',
+      'Profil (vpravo nahoře) → Nastavení → Transakce → ve filtru měny zvol všechny měny → Export (CSV). Export jen jedné měny nepřečteme: každý obchod má v souboru dva řádky, platbu a připsání, každý v jiné měně. Sekci „Daně“ nepoužívej — generuje jiný soubor po jednotlivých letech.',
   },
   {
     id: 'coinmate',
@@ -335,7 +335,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#7132F5',
     guide:
-      'Profil → Documents → Exports → Create Export → typ „Ledgers“, produkt Spot (a Futures, pokud je obchoduješ), pole nech všechna a nastav období od založení účtu. Přijde ZIP — rozbal ho a nahraj ledgers.csv. Trades.csv nenahrávej, Ledgers obsahuje vše.',
+      'Profil → Documents → Exports → Create Export → typ „Ledgers“, produkt Spot (a Futures, pokud je obchoduješ), pole nech všechna, období nastav od založení účtu a jako formát zvol CSV (ne PDF). Export se chvíli generuje (většinou minuty, podle Krakenu to ale může trvat i dny) a e-mail o něm nepřijde: stáhneš ho ze seznamu exportů na téže stránce. Pokud přijde ZIP, rozbal ho a nahraj ledgers.csv. Trades.csv nenahrávej, Ledgers obsahuje vše.',
   },
 ];
 
@@ -343,8 +343,36 @@ export const PLATFORMS: PlatformInfo[] = [
 export const UNIVERSAL_INFO = {
   name: 'Kterýkoli jiný broker',
   guide:
-    'Stáhni si předvyplněnou univerzální CSV šablonu, přepiš ji daty z výpisu a nahraj — formát je popsaný přímo v souboru.',
+    'Stáhni si předvyplněnou univerzální šablonu (soubor CSV, otevřeš ho v Excelu), ukázkové řádky přepiš daty ze svého výpisu a soubor nahraj. Každý ukázkový řádek má v posledním sloupci poznámku, k čemu slouží.',
 } as const;
+
+/**
+ * Pravidla pro vyplnění šablony — stojí tam, kde se šablona stahuje (L2c-02).
+ * Dřív katalog sliboval, že formát popisuje sám soubor, a v něm byly jen
+ * ukázkové řádky: tvar data, desetinný oddělovač a povolené hodnoty se
+ * uživatel dozvěděl až z chyb po nahrání.
+ *
+ * Musí sedět na parser (`packages/importers/src/universal/csv.ts`): výčet typů
+ * i druhů aktiv a oba příklady hlídá `test/platformy-katalog.test.ts`.
+ */
+export const TEMPLATE_RULES: { label: string; text: string }[] = [
+  {
+    label: 'Datum',
+    text: 'piš jako 2026-03-05 (rok-měsíc-den) nebo česky 5.3.2026. Když ho Excel sám přepíše do českého tvaru, nevadí to. Lomítka (5/3/2026) nebereme — nepozná se z nich, co je den a co měsíc.',
+  },
+  {
+    label: 'Čísla',
+    text: 'jen číslo, bez značky měny a bez oddělovače tisíců. Desetinná čárka i tečka fungují stejně (1250,50 nebo 1250.50). Měna má vlastní sloupec a píše se třípísmenným kódem: CZK, USD, EUR.',
+  },
+  {
+    label: 'Druh pohybu (sloupec type)',
+    text: 'BUY nákup, SELL prodej, DIVIDEND dividenda, INTEREST úrok, FEE poplatek, DEPOSIT vklad peněz, WITHDRAWAL výběr peněz, TRANSFER_IN a TRANSFER_OUT převod cenných papírů od jiného brokera a k němu, CORPORATE_ACTION změna u titulu, kterou neprovádíš ty — o kterou jde, říká sloupec subtype: SPLIT (štěpení akcií), ISIN_CHANGE (nový ISIN), MERGER (fúze), SPINOFF (oddělení části firmy), DELISTING (stažení z burzy).',
+  },
+  {
+    label: 'Druh aktiva (sloupec asset_class)',
+    text: 'STOCK akcie — platí i pro prázdné pole, ETF fond obchodovaný na burze, BOND dluhopis, CRYPTO kryptoměna, DERIVATIVE opce, futures a CFD, OTHER cokoli jiného. U krypta a derivátů ho vyplň vždy, daní se jinak než akcie.',
+  },
+];
 
 export const PLATFORM_GROUPS: { key: PlatformInfo['group']; label: string }[] = [
   { key: 'brokeri', label: 'Brokeři a platformy' },
