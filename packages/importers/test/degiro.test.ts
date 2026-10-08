@@ -8,8 +8,14 @@ import {
 } from '../src/degiro/csv';
 import {
   DEGIRO_ACCOUNT_CZ,
+  DEGIRO_ACCOUNT_DE_CONNECTION_FEE,
+  DEGIRO_ACCOUNT_FR,
   DEGIRO_ACCOUNT_HEADER_CZ,
+  DEGIRO_ACCOUNT_HEADER_NL,
   DEGIRO_ACCOUNT_NL,
+  DEGIRO_ACCOUNT_NL_CASH_TRANSFER,
+  DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY,
+  DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS,
   DEGIRO_TRANSACTIONS_2026_EN,
   DEGIRO_TRANSACTIONS_2026_HEADER_NL,
   DEGIRO_TRANSACTIONS_2026_NL,
@@ -643,6 +649,146 @@ describe('výpis v jazyce rozhraní: DE a FR (klasifikace popisů je uměla, hla
     if (trade.type !== 'BUY') throw new Error('čekáme nákup');
     expect(trade.quantity.toString()).toBe('10');
     expect(trade.fee?.amount.toString()).toBe('2.5');
+  });
+});
+
+describe('Account.csv: popisy doložené veřejným vzorkem — FR, NL a DE (L2a-04)', () => {
+  // R-07b + R-07c: dividenda jde do základu brutto a daň sražená v zahraničí se
+  // započítává — když parser srážku nepozná, uživatel o zápočet přijde.
+  it('FR „Dividende“ + „Impôts sur dividende“ → dividenda se sraženou daní 1,5', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_FR);
+    expect(isDegiroCsv(DEGIRO_ACCOUNT_FR)).toBe('account');
+    const dividends = result.transactions.filter((t) => t.type === 'DIVIDEND');
+    expect(dividends).toHaveLength(1);
+    const dividend = dividends[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBe('US0000000001');
+    expect(dividend.gross.toString()).toBe('10');
+    expect(dividend.withholdingTax.toString()).toBe('1.5');
+    expect(dividend.currency).toBe('USD');
+    expect(dividend.date).toBe('2026-03-12');
+    // dřív: „Záporná dividenda -1.50 USD … vypadá jako korekce, nezaúčtováno“
+    expect(result.warnings).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('FR „Frais DEGIRO de courtage et/ou de parties tierces“ → poplatek, echo „Achat“ přeskočené', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_FR);
+    const fees = result.transactions.filter((t) => t.type === 'FEE');
+    expect(fees).toHaveLength(1);
+    const fee = fees[0]!;
+    if (fee.type !== 'FEE') throw new Error('unreachable');
+    expect(fee.amount.toString()).toBe('3.9');
+    expect(fee.currency).toBe('EUR');
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.message).toContain('Achat 7');
+  });
+
+  it('NL „Overboeking van/naar uw geldrekening bij flatexDEGIRO Bank“ je interní převod — přeskočí se, není to chyba', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_CASH_TRANSFER);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    // vklad ani výběr z toho nevzniká — peníze neopouštějí Degiro
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3, 4]);
+    expect(result.skipped[0]!.message).toContain('Overboeking van uw geldrekening');
+    expect(result.skipped[0]!.message).toContain('převod');
+    expect(result.skipped[2]!.message).toContain('Overboeking naar uw geldrekening');
+  });
+
+  it('převod na peněžní účet se přeskočí i s vyplněnou částkou', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '03-02-2026,18:20,03-02-2026,,,"Overboeking van uw geldrekening bij flatexDEGIRO Bank 40,00 EUR",,EUR,"40,00",EUR,"52,10",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+  });
+
+  it('NL „DEGIRO Corporate Action Kosten“ → poplatek', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const fee = result.transactions[0]!;
+    if (fee.type !== 'FEE') throw new Error('čekáme poplatek');
+    expect(fee.amount.toString()).toBe('0.05');
+    expect(fee.currency).toBe('USD');
+    expect(fee.note).toBe('DEGIRO Corporate Action Kosten');
+  });
+
+  it('„DEGIRO courtesy“ není neznámý popis: varování s částkou, transakce z něj nevzniká', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['FEE']);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(3);
+    expect(result.warnings[0]!.message).toContain('DEGIRO courtesy');
+    expect(result.warnings[0]!.message).toContain('0.75 EUR');
+    expect(result.warnings[0]!.message).toContain('do výpočtu');
+  });
+
+  it('DE „DEGIRO Verbindungskosten“ → poplatek (starší „Anschlusskosten“ platí dál)', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_DE_CONNECTION_FEE);
+    expect(result.errors).toEqual([]);
+    const fee = result.transactions[0]!;
+    if (fee.type !== 'FEE') throw new Error('čekáme poplatek');
+    expect(fee.amount.toString()).toBe('2.5');
+
+    const older = parseDegiroAccountCsv(
+      DEGIRO_ACCOUNT_DE_CONNECTION_FEE.replace('Verbindungskosten', 'Anschlusskosten'),
+    );
+    expect(older.errors).toEqual([]);
+    expect(older.transactions.map((t) => t.type)).toEqual(['FEE']);
+  });
+
+  it('„PRODUCTWIJZIGING : Koop/Verkoop N @ …“ s částkou 0 je pohyb kusů — chyba o kusech, ne „neznámý popis“', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS);
+    const productChange = result.errors.filter((e) => e.message.includes('PRODUCTWIJZIGING'));
+    expect(productChange.map((e) => e.line)).toEqual([2, 3]);
+    for (const error of productChange) {
+      expect(error.message).toContain('kusy');
+      expect(error.message).not.toContain('Neznámý popis');
+    }
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('„STOCK DIVIDEND: Koop N @ 0 EUR“ s částkou 0,00 je pohyb kusů — chyba o kusech, ne „záporná dividenda“', () => {
+    // pojistka B4-0 chytala jen PRÁZDNOU částku; Degiro tu píše nulu
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS);
+    expect(result.warnings).toEqual([]);
+    const stockDividend = result.errors.filter((e) => e.message.includes('STOCK DIVIDEND'));
+    expect(stockDividend).toHaveLength(1);
+    expect(stockDividend[0]!.line).toBe(4);
+    expect(stockDividend[0]!.message).toContain('kusy');
+    expect(result.errors).toHaveLength(3);
+  });
+
+  it('kontrola opačným směrem: skutečná záporná dividenda (korekce) má dál varování, ne chybu o kusech', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '05-03-2026,10:00,05-03-2026,NORDWIND CORP,US0000000001,Dividend,,EUR,"-4,00",EUR,"87,65",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('Záporná dividenda');
+  });
+
+  it('kontrola opačným směrem: změna produktu, která NESE peníze, zůstává neznámým popisem k nahlášení', () => {
+    // hláška „nehýbe penězi, ale kusy“ by tu lhala — rozhoduje nulová nebo prázdná částka
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '17-02-2026,04:10,17-02-2026,TALLOW LTD,AU0000000004,"PRODUCTWIJZIGING : Koop 300 @ 0,05 EUR",,EUR,"-15,00",EUR,"76,65",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neznámý popis');
+    expect(result.errors[0]!.message).toContain('nahlaš');
   });
 });
 

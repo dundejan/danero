@@ -516,6 +516,7 @@ type AccountKind =
   | { kind: 'DIVIDEND_TAX' }
   | { kind: 'INTEREST' }
   | { kind: 'FEE' }
+  | { kind: 'COURTESY' }
   | { kind: 'DEPOSIT' }
   | { kind: 'WITHDRAWAL' }
   | { kind: 'CORPORATE'; subtype: CorporateSubtype }
@@ -593,7 +594,21 @@ const TRADE_ECHO =
 const SHARE_MOVEMENT =
   /(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+\d/iu;
 
-/** Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive. */
+/** Změna produktu („PRODUCTWIJZIGING : Koop 500 @ …“) — kusy se odepíšou a znovu připíšou. */
+const PRODUCT_CHANGE = /productwijziging/i;
+
+/**
+ * Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive.
+ *
+ * Slovníky DE a FR vznikly původně PŘEKLADEM, ne z výpisu, a francouzskou
+ * srážku z dividendy ani poplatek za obchod nepoznaly: „Impôts sur dividende“
+ * skončilo jako záporná dividenda a dividenda se uložila se sraženou daní 0
+ * (L2a-04). Znění doložená veřejným vzorkem Account.csv a slovníkem převodníku
+ * Export-To-Ghostfolio: „Impôts sur dividende“, „Frais DEGIRO de courtage
+ * et/ou de parties tierces“, „DEGIRO Corporate Action Kosten“, „Overboeking
+ * van/naar uw geldrekening bij flatexDEGIRO Bank“, „DEGIRO courtesy“
+ * a „DEGIRO Verbindungskosten“. Nové znění sem patří jen s dokladem.
+ */
 function classifyDescription(description: string): AccountKind {
   const lower = description.toLowerCase();
   // Echo obchodu dřív než korporátní akce: rozhoduje TVAR řádku (sloveso +
@@ -616,6 +631,8 @@ function classifyDescription(description: string): AccountKind {
       'quellensteuer',
       'retenue à la source',
       'retenue a la source',
+      'impôts sur dividende',
+      'impots sur dividende',
     ])
   )
     return { kind: 'DIVIDEND_TAX' };
@@ -623,6 +640,13 @@ function classifyDescription(description: string): AccountKind {
   // sweep/peněžní trh dřív než úrok („Flatex Interest“ obsahuje „interest“)
   if (containsAny(lower, ['cash sweep', 'flatex interest', 'geldmarktfonds', 'money market']))
     return { kind: 'SKIP', reason: 'převod peněžního trhu / cash sweep — pro daň z CP nepodstatné' };
+  // Protějšek cash sweepu: částku nese jen popis, sloupec Změna bývá prázdný.
+  if (containsAny(lower, ['overboeking van uw geldrekening', 'overboeking naar uw geldrekening']))
+    return {
+      kind: 'SKIP',
+      reason:
+        'převod mezi Degirem a tvým peněžním účtem u flatexDEGIRO Bank — peníze zůstávají u brokera, vklad ani výběr to není',
+    };
   if (
     containsAny(lower, [
       'konverze měny',
@@ -653,9 +677,13 @@ function classifyDescription(description: string): AccountKind {
       'gebuhren',
       'frais de connexion',
       'frais de transaction',
+      'verbindungskosten',
+      'corporate action kosten',
+      'courtage et/ou',
     ])
   )
     return { kind: 'FEE' };
+  if (lower.includes('degiro courtesy')) return { kind: 'COURTESY' };
   // výběr dřív než vklad („Terugstorting“ obsahuje „storting“)
   if (containsAny(lower, ['výběr', 'withdrawal', 'terugstorting', 'auszahlung', 'retrait']))
     return { kind: 'WITHDRAWAL' };
@@ -838,6 +866,30 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
+    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
+    const pair = readAmountCurrencyPair(row, col.change, decimal);
+
+    // Řádek, který nehýbe penězi, zato HÝBE KUSY: `STOCK DIVIDEND: Verkoop 35 …`
+    // se kvůli slovu „dividend“ klasifikuje jako dividenda a bez částky by
+    // zmizel beze stopy i s pohybem 35 kusů (nález B4-0). Skutečné avízo
+    // dividendy počet kusů v popisu nemá.
+    //
+    // „Bez peněz“ je prázdná částka I NULA: Degiro u `STOCK DIVIDEND: Koop 9
+    // @ 0 EUR` píše do Změny `0,00` a u změny produktu `0`. S kontrolou jen na
+    // prázdnou dvojici dostal první řádek varování „Záporná dividenda 0.00“
+    // a druhý „Neznámý popis“ (L2a-04) — proto se ptáme dřív než na neznámý popis.
+    const carriesNoMoney = pair.kind === 'empty' || (pair.kind === 'ok' && d(pair.amount).eq(0));
+    if (carriesNoMoney && SHARE_MOVEMENT.test(description)) {
+      result.errors.push({
+        line,
+        message: PRODUCT_CHANGE.test(description)
+          ? `„${description}“ je změna produktu: Degiro při ní kusy odepíše a znovu připíše, peníze se nehýbou. Takový pohyb z výpisu neumíme zpracovat — když se změnil ISIN nebo počet kusů, doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů. Když ISIN i počet zůstaly stejné, nic doplňovat nemusíš.`
+          : `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
+        raw: row.join(';'),
+      });
+      return;
+    }
+
     // POŘADÍ JE ZÁVAZNÉ: neznámý popis musí skončit chybou i BEZ peněžního
     // pohybu. Degiro takhle reportuje korporátní akce (prázdná Změna) — dřívější
     // kontrola na prázdnou dvojici je zahazovala úplně beze stopy.
@@ -850,29 +902,16 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
-    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
-    const pair = readAmountCurrencyPair(row, col.change, decimal);
     if (decimal === null && pair.kind === 'ok' && isAmbiguousThousandGroup(pair.raw)) {
       result.warnings.push({ line, message: ambiguousNote('Částka', pair.raw, pair.amount) });
     }
     // prázdná dvojice u ROZPOZNANÉHO popisu = informativní řádek bez peněžního
     // pohybu → bez záznamu (např. avízo dividendy před připsáním)
     if (pair.kind === 'empty') {
-      // ...ale pozor na řádky, které nehýbou penězi, zato HÝBOU KUSY.
-      // `STOCK DIVIDEND: Verkoop 35 …` se kvůli slovu „dividend“ klasifikuje
-      // jako dividenda a bez částky by zmizel beze stopy i s pohybem 35 kusů
-      // (nález B4-0). Skutečné avízo dividendy počet kusů v popisu nemá.
-      if (SHARE_MOVEMENT.test(description)) {
-        result.errors.push({
-          line,
-          message: `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
-          raw: row.join(';'),
-        });
-        return;
-      }
-      // Zbytek (avízo dividendy, řádek daně či poplatku s prázdnou částkou)
-      // peněžní pohyb opravdu nenese, takže transakce nevzniká — ale nesmí
-      // zmizet beze stopy. Do 8. 8. 2026 se takový řádek zahodil úplně:
+      // Pohyb kusů bez peněz už skončil chybou výš. Zbytek (avízo dividendy,
+      // řádek daně či poplatku s prázdnou částkou) peněžní pohyb opravdu
+      // nenese, takže transakce nevzniká — ale nesmí zmizet beze stopy.
+      // Do 8. 8. 2026 se takový řádek zahodil úplně:
       // nešel do transakcí, do chyb, do varování ani do přeskočených, takže
       // import hlásil „0 chyb, 0 přeskočeno“ a řádek nebylo jak dohledat
       // (nález B-3-6, dřív hlášeno úžeji jako B1-1 „mizí dividenda“).
@@ -968,6 +1007,16 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           currency,
           date: isoDate,
           note: description,
+        });
+        return;
+      }
+      case 'COURTESY': {
+        // Částka, kterou Degiro připíše z vlastní vůle. Jaký je to příjem,
+        // z výpisu nepoznáme (docs/02 na to pravidlo nemá) — nezařazujeme ji,
+        // ale řekneme to, stejně jako u „Promotional Award“ ve výpisu Schwabu.
+        result.warnings.push({
+          line,
+          message: `Kompenzace od Degira ${changeRaw} ${currency} („${description}“) — tenhle pohyb neumíme automaticky zařadit, do výpočtu nevstupuje. Pokud je daňově relevantní, doplň ho přes univerzální šablonu.`,
         });
         return;
       }
