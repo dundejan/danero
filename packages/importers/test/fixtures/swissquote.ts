@@ -85,6 +85,25 @@ export const SWISSQUOTE_BAD_DATE = [
   '31-13-2022 10:00:00;113947121;Buy;ORFN;CONSTRAINED CAPITAL;US8863645383;200.0;19.85;5.96;0.00;-3975.96;168660.08;USD',
 ].join('\n');
 
+/**
+ * Dnešní EN hlavička BEZ sloupce „Order #“ — parser ho nikde nečte, takže
+ * soubor bez něj (nebo s přejmenovaným) umíme a sniffer ho musí pustit
+ * (L2b-06). Titul, ISIN, čísla i čas jsou smyšlené.
+ */
+export const SWISSQUOTE_HEADER_EN_NO_ORDER =
+  'Date;Transaction;Symbol;Name;ISIN;Quantity;Unit price;Costs;Accrued Interest;Net Amount;Balance;Currency';
+
+export const SWISSQUOTE_EN_NO_ORDER = [
+  SWISSQUOTE_HEADER_EN_NO_ORDER,
+  '14-04-2025 10:12:40;Buy;NDWD;NORDWIND HOLDING;CH0000000001;8.0;52.30;6.40;0.00;-424.80;1310.20;CHF',
+].join('\n');
+
+/** Tentýž řádek, sloupec objednávky přejmenovaný na „Order ID“ (smyšlená změna brokera). */
+export const SWISSQUOTE_EN_ORDER_RENAMED = [
+  'Date;Order ID;Transaction;Symbol;Name;ISIN;Quantity;Unit price;Costs;Accrued Interest;Net Amount;Balance;Currency',
+  '14-04-2025 10:12:40;990000001;Buy;NDWD;NORDWIND HOLDING;CH0000000001;8.0;52.30;6.40;0.00;-424.80;1310.20;CHF',
+].join('\n');
+
 /** Dva identické řádky (legitimní duplicitní operace) — id musí dostat suffix. */
 export const SWISSQUOTE_IDENTICAL_ROWS = [
   SWISSQUOTE_HEADER_EN,

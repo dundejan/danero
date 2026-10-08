@@ -31,7 +31,6 @@ interface FieldSpec {
 
 const FIELDS = {
   date: { names: ['date', 'datum'] },
-  order: { names: ['order #', 'auftrag #'] },
   transaction: { names: ['transaction', 'transaktionen'] },
   symbol: { names: ['symbol'] },
   name: { names: ['name'] },
@@ -61,6 +60,26 @@ function findColumn(normalizedHeaders: string[], spec: FieldSpec): number {
     if (i >= 0) return i;
   }
   return -1;
+}
+
+/**
+ * Sloupce, bez kterých parser nepozná ani typ, den, částku a měnu řádku.
+ * JEDINÁ definice pro sniffer i pro kontrolu hlavičky v parseru: sniffer tak
+ * nemůže chtít víc než parser (dřív vyžadoval „Order #“, který parser nečte).
+ */
+const REQUIRED_FIELDS = ['date', 'transaction', 'netAmount', 'currency'] as const;
+
+/** Pozice všech známých sloupců v hlavičce (−1 = chybí). */
+function resolveColumns(headers: string[]): Record<Field, number> {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  return Object.fromEntries(
+    (Object.keys(FIELDS) as Field[]).map((field) => [field, findColumn(normalizedHeaders, FIELDS[field])]),
+  ) as Record<Field, number>;
+}
+
+/** Které povinné sloupce v hlavičce chybí — prázdné pole = soubor umíme číst. */
+function missingRequiredFields(col: Record<Field, number>): Array<(typeof REQUIRED_FIELDS)[number]> {
+  return REQUIRED_FIELDS.filter((field) => col[field] < 0);
 }
 
 /* ── Čísla a datumy ──────────────────────────────────────────────────────── */
@@ -146,22 +165,21 @@ function classify(normalized: string): SqKind {
 /* ── Autodetekce ─────────────────────────────────────────────────────────── */
 
 /**
- * Detekce Swissquote CSV: první řádek se středníky obsahuje sloupec
- * „Order #“/„Auftrag #“, „ISIN“ a „Unit price“/„Stückpreis“. Kombinace je
- * dost specifická — Degiro má „ID objednávky“/„Order ID“ (bez „#“), takže
- * jeho středníkové exporty neprojdou.
+ * Detekce Swissquote CSV: první řádek se středníky nese právě ty sloupce,
+ * které parser vyžaduje (`REQUIRED_FIELDS` — den, typ transakce, čistá částka
+ * a měna). Sniffer je tím podmnožina parseru: co pustí, to parser neodmítne
+ * kvůli hlavičce, a co parser přečte, to sem projde i bez „Order #“.
+ *
+ * Od středníkového Degira ho odliší táž čtveřice — Degiro nemá sloupec
+ * „Transaction“/„Transaktionen“ ani „Net Amount“/„Nettobetrag“ (jeho
+ * „Transaktionsgebühren“ je jiný název) a v autodetekci se navíc ptá dřív.
  */
 export function sniffSwissquoteCsv(text: string): boolean {
   if (text.trim() === '') return false;
   const newline = text.indexOf('\n');
   const firstLine = newline === -1 ? text : text.slice(0, newline);
   if (!firstLine.includes(';')) return false;
-  const headers = parseCsv(firstLine, ';').headers.map(normalizeHeader);
-  return (
-    findColumn(headers, FIELDS.order) >= 0 &&
-    findColumn(headers, FIELDS.isin) >= 0 &&
-    findColumn(headers, FIELDS.unitPrice) >= 0
-  );
+  return missingRequiredFields(resolveColumns(parseCsv(firstLine, ';').headers)).length === 0;
 }
 
 /* ── Parser ──────────────────────────────────────────────────────────────── */
@@ -172,12 +190,9 @@ export function parseSwissquoteCsv(text: string): ImportResult {
   if (text.trim() === '') return result;
 
   const { headers, rows } = parseCsv(text, ';');
-  const normalizedHeaders = headers.map(normalizeHeader);
-  const col = Object.fromEntries(
-    (Object.keys(FIELDS) as Field[]).map((field) => [field, findColumn(normalizedHeaders, FIELDS[field])]),
-  ) as Record<Field, number>;
+  const col = resolveColumns(headers);
 
-  const missing = (['date', 'transaction', 'netAmount', 'currency'] as const).filter((f) => col[f] < 0);
+  const missing = missingRequiredFields(col);
   if (missing.length > 0) {
     result.errors.push({
       line: 1,

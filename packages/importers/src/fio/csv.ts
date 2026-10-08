@@ -1,5 +1,5 @@
 import { Decimal, d, TransactionSchema, ZERO } from '@danero/shared';
-import { HeaderMap, isValidIsoDate } from '../csv';
+import { decodeUpload, HeaderMap, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import type { ImportResult } from '../types';
 
@@ -19,24 +19,30 @@ export interface FioImportResult extends ImportResult {
 }
 
 /**
- * Fio exportuje CSV v kódování windows-1250 — dekódování drž mimo parsování,
- * string vstup parseru už musí být dekódovaný.
- */
-/**
  * Poznává Fio export z hlavičky — jediná definice pro autodetekci i parser.
  *
- * ⚠️ Ptá se JEN na „Datum obchodu“, ne na „Směr“, a schválně: autodetekce běží
- * nad textem dekódovaným jako UTF-8, ale Fio posílá windows-1250. „Datum
- * obchodu“ je čisté ASCII, takže je čitelné i při špatném dekódování — „Směr“
- * by se rozsypalo na „Sm?r“ a soubor by se nepoznal. Parser si obě hlavičky
- * ověřuje znovu, už nad správně dekódovaným textem.
+ * Ptá se JEN na „Datum obchodu“, ne na „Směr“: je to podmnožina toho, co
+ * vyžaduje parser, a čisté ASCII, takže se soubor pozná, i kdyby se kódování
+ * určilo špatně. Chybějící „Směr“ pak ohlásí parser Fia vlastní hláškou,
+ * ne cizí parser.
  */
 export function sniffFioCsv(header: string): boolean {
   return header.includes('Datum obchodu');
 }
 
+/**
+ * Bajty výpisu → text. Fio exportuje ve windows-1250, ale soubor přeuložený
+ * v Excelu („CSV UTF-8“), LibreOffice nebo Numbers přijde v UTF-8 či UTF-16.
+ * Kódování proto pozná `decodeUpload` z bajtů — stejné rozhodnutí, jaké dělá
+ * autodetekce (BOM → UTF-16, platné UTF-8, jinak CP1250). Do 9. 10. 2026 se
+ * tu dekódovalo natvrdo jako windows-1250: sniffer soubor v UTF-8 poznal,
+ * parser pak četl „SmÄ›r“ a tvrdil, že výpis není z Fia (L2c-04).
+ *
+ * Pravý export z e-Brokeru tím neutrpí: „Směr“ v hlavičce je ve windows-1250
+ * bajt 0xEC před ASCII písmenem, a to platné UTF-8 není.
+ */
 export function decodeFioCsv(data: ArrayBuffer | Uint8Array): string {
-  return new TextDecoder('windows-1250').decode(data);
+  return decodeUpload(data);
 }
 
 /**
@@ -205,9 +211,10 @@ interface TaxEntry {
 }
 
 /**
- * Parser CSV exportu Fio e-Brokeru (docs/03). Kódování windows-1250 (binární
- * vstup dekóduje TextDecoder, string bere jako už dekódovaný), oddělovač
- * středník, CZ hlavičky, čísla s desetinnou čárkou, datum dd.MM.yyyy.
+ * Parser CSV exportu Fio e-Brokeru (docs/03). Export je ve windows-1250;
+ * binární vstup dekóduje `decodeFioCsv` (kódování pozná z bajtů), string bere
+ * jako už dekódovaný. Oddělovač středník, CZ hlavičky, čísla s desetinnou
+ * čárkou, datum dd.MM.yyyy.
  * Mapuje výhradně podle NÁZVŮ sloupců — varianty exportu mají různé sady
  * měnových sloupců (Objem/Poplatky v CZK/USD/EUR).
  *

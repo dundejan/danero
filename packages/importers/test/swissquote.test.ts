@@ -5,7 +5,13 @@ import {
   sniffSwissquoteCsv,
   SWISSQUOTE_BROKER,
 } from '../src/swissquote/csv';
-import { DEGIRO_TRANSACTIONS_HEADER_CZ } from './fixtures/degiro';
+import {
+  DEGIRO_ACCOUNT_CZ,
+  DEGIRO_ACCOUNT_HEADER_CZ,
+  DEGIRO_TRANSACTIONS_CZ,
+  DEGIRO_TRANSACTIONS_HEADER_CZ,
+} from './fixtures/degiro';
+import { FIO_FIXTURE } from './fixtures/fio';
 import {
   SWISSQUOTE_BAD_DATE,
   SWISSQUOTE_DE,
@@ -13,8 +19,12 @@ import {
   SWISSQUOTE_DE_BROKEN_UMLAUTS,
   SWISSQUOTE_DIVIDEND_MISMATCH,
   SWISSQUOTE_EN,
+  SWISSQUOTE_EN_NO_ORDER,
+  SWISSQUOTE_EN_ORDER_RENAMED,
   SWISSQUOTE_HEADER_DE,
+  SWISSQUOTE_HEADER_DE_ALT,
   SWISSQUOTE_HEADER_EN,
+  SWISSQUOTE_HEADER_EN_NO_ORDER,
   SWISSQUOTE_IDENTICAL_ROWS,
   SWISSQUOTE_UNKNOWN_TYPE,
 } from './fixtures/swissquote';
@@ -285,6 +295,62 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
     expect(sniffSwissquoteCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);
     expect(sniffSwissquoteCsv('')).toBe(false);
     expect(sniffSwissquoteCsv('foo;bar\n1;2')).toBe(false);
+  });
+
+  it('pustí hlavičku bez „Order #“ i s přejmenovaným sloupcem — parser ho nečte (L2b-06)', () => {
+    expect(sniffSwissquoteCsv(SWISSQUOTE_HEADER_EN_NO_ORDER)).toBe(true);
+    expect(sniffSwissquoteCsv(SWISSQUOTE_EN_NO_ORDER)).toBe(true);
+    expect(sniffSwissquoteCsv(SWISSQUOTE_EN_ORDER_RENAMED)).toBe(true);
+    expect(sniffSwissquoteCsv(SWISSQUOTE_HEADER_DE.replace('Auftrag #;', ''))).toBe(true);
+    expect(sniffSwissquoteCsv(SWISSQUOTE_HEADER_DE_ALT)).toBe(true);
+
+    // a parser tentýž soubor opravdu přečte: jeden nákup, žádná chyba
+    for (const csv of [SWISSQUOTE_EN_NO_ORDER, SWISSQUOTE_EN_ORDER_RENAMED]) {
+      const result = parseSwissquoteCsv(csv);
+      expect(result.errors).toEqual([]);
+      expect(result.transactions).toHaveLength(1);
+      const buy = result.transactions[0]!;
+      if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+      expect(buy.isin).toBe('CH0000000001');
+      expect(buy.quantity.toString()).toBe('8');
+      expect(buy.pricePerShare.toString()).toBe('52.3');
+      expect(buy.currency).toBe('CHF');
+    }
+  });
+
+  it('sniffer je podmnožina parseru: co pustí, tomu parser nevyčte chybějící sloupce (L2b-06)', () => {
+    const columns = SWISSQUOTE_HEADER_EN.split(';');
+    const missingColumns = (csv: string): boolean =>
+      parseSwissquoteCsv(csv).errors.some((e) => e.message.includes('nevypadá jako Swissquote export'));
+
+    // vypuštění kteréhokoli sloupce: sniffer a kontrola hlavičky v parseru se
+    // musí shodnout (jedna sdílená funkce), ať je sloupec povinný, nebo ne
+    for (const dropped of columns) {
+      const header = columns.filter((column) => column !== dropped).join(';');
+      const csv = `${header}\n`;
+      expect(sniffSwissquoteCsv(csv), `bez sloupce ${dropped}`).toBe(!missingColumns(csv));
+    }
+    // povinné jsou právě čtyři — bez nich soubor nebereme
+    for (const required of ['Date', 'Transaction', 'Net Amount', 'Currency']) {
+      const header = columns.filter((column) => column !== required).join(';');
+      expect(sniffSwissquoteCsv(header), `bez sloupce ${required}`).toBe(false);
+    }
+  });
+
+  it('volnější sniffer nebere cizí středníkové exporty (Degiro, Fio)', () => {
+    for (const foreign of [
+      DEGIRO_TRANSACTIONS_HEADER_CZ,
+      DEGIRO_TRANSACTIONS_CZ,
+      DEGIRO_ACCOUNT_HEADER_CZ,
+      DEGIRO_ACCOUNT_CZ,
+      FIO_FIXTURE,
+      // německé Degiro: „Datum“ má, „Transaktionen“ ani „Nettobetrag“ ne
+      'Datum;Uhrzeit;Produkt;ISIN;Referenzbörse;Ausführungsort;Anzahl;Kurs;;Wert in Lokalwährung;;Wert;;Wechselkurs;Transaktionsgebühren;;Gesamt;;Order-ID',
+      // čárkový soubor se stejnými názvy sloupců není středníkový export Swissquote
+      SWISSQUOTE_HEADER_EN.replaceAll(';', ','),
+    ]) {
+      expect(sniffSwissquoteCsv(foreign)).toBe(false);
+    }
   });
 });
 
