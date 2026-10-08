@@ -149,7 +149,36 @@ export async function fetchCnbYear(
         set: { rate: sql`excluded.rate` },
       });
   }
+
+  // L11-01: soubor dorazil v pořádku — má v něm ČNB za tenhle rok vůbec něco?
+  // Nestačí se ptát na prázdný soubor: na dotaz po roce bez jediného fixingu
+  // umí ČNB vrátit i řádky roku předchozího. Rozhoduje datum řádků.
+  if (values.some((row) => row.day.startsWith(`${year}-`))) yearsWithoutAnnouncedRate.delete(year);
+  else yearsWithoutAnnouncedRate.add(year);
   return values.length;
+}
+
+/**
+ * Roky, za které ČNB podle posledního DOKONČENÉHO stažení v tomhle procesu
+ * nevyhlásila ani jeden kurz (L11-01): soubor přišel a dal se přečíst, jen
+ * v něm není řádek s datem toho roku. Tak vypadá běžný rok od půlnoci 1. ledna
+ * do prvního novoročního fixingu (1. 1. 2027 je pátek, první kurz vyjde až
+ * v pondělí 4. 1. kolem 14:30).
+ *
+ * Zapisuje se výhradně z výsledku stažení, nikdy z kalendáře: úspěch rok přidá
+ * nebo odebere (`fetchCnbYear`), neúspěch ho odebere (`ensureCnbYear`) — po
+ * výpadku nevíme, co ČNB vyhlásila, a starší odpověď to nerozhodne. Rok bez
+ * řádků se přitom stahuje při každém volání `ensureCnbYears`, takže ten, kdo
+ * se ptá hned po něm, čte čerstvý výsledek.
+ */
+const yearsWithoutAnnouncedRate = new Set<number>();
+
+/**
+ * Stáhli jsme právě roční soubor ČNB a za tenhle rok v něm není ani jeden kurz?
+ * `false` znamená i „nevíme“ (nestahovalo se, stažení selhalo).
+ */
+export function cnbYearHasNoAnnouncedRate(year: number): boolean {
+  return yearsWithoutAnnouncedRate.has(year);
 }
 
 /**
@@ -244,6 +273,7 @@ export function resetCnbBackfillState(): void {
   refetchedClosedYears.clear();
   inFlightYears.clear();
   failedYearAt.clear();
+  yearsWithoutAnnouncedRate.clear();
 }
 
 async function ensureCnbYear(db: Db, year: number, fetchImpl: typeof fetch): Promise<void> {
@@ -267,6 +297,7 @@ async function ensureCnbYear(db: Db, year: number, fetchImpl: typeof fetch): Pro
       failedYearAt.delete(year);
     } catch (error) {
       failedYearAt.set(year, Date.now());
+      yearsWithoutAnnouncedRate.delete(year);
       throw error;
     }
   })().finally(() => inFlightYears.delete(year));

@@ -280,7 +280,7 @@ export async function loadDailyRates(
   txs: Transaction[],
   currentYear: number,
 ): Promise<CnbRateProvider | undefined> {
-  const { ensureCnbYears, loadCnbRateProvider } = await import('@/lib/cnb');
+  const cnb = await import('@/lib/cnb');
   const years = availableYears(txs, currentYear);
   // rok−1 kvůli transakcím z 1.–2. ledna: fallback bere poslední vyhlášený
   // kurz PŘEDCHOZÍHO roku (Silvestr)
@@ -292,7 +292,7 @@ export async function loadDailyRates(
   const needed = Array.from({ length: toYear - fromYear + 1 }, (_, i) => fromYear + i);
 
   try {
-    await ensureCnbYears(db, needed);
+    await cnb.ensureCnbYears(db, needed);
   } catch (error) {
     // Dřív tu byl `catch {}` — výpadek ČNB, timeout i 404 vypadaly
     // v monitoringu úplně stejně jako úspěch (F-3-10).
@@ -303,7 +303,7 @@ export async function loadDailyRates(
     });
   }
 
-  const provider = await loadCnbRateProvider(db, fromYear, toYear);
+  const provider = await cnb.loadCnbRateProvider(db, fromYear, toYear);
   if (provider.isEmpty) return undefined;
 
   // Bez pokrytí VŠECH potřebných let se denní varianta nesmí nabídnout.
@@ -313,8 +313,21 @@ export async function loadDailyRates(
   // Na doloženém případu to byl rozdíl 2 340 Kč vyrobený z kurzů, které
   // v databázi vůbec nejsou. `isEmpty` se ptá na CELOU tabulku, takže díru
   // uprostřed rozsahu nepoznalo (F-3-2).
-  if (provider.missingYears?.length) {
-    logEvent('warn', 'cnb.years_missing', { missing: provider.missingYears.join(',') });
+  //
+  // Jediná výjimka (L11-01): běžný rok, za který ČNB ještě nevyhlásila ani
+  // jeden kurz — od půlnoci 1. ledna do prvního novoročního fixingu. To není
+  // díra v datech: žádný kurz toho roku neexistuje a pro první dny ledna platí
+  // poslední vyhlášený kurz ze Silvestra (engine ho dohledá sám, proto rok−1
+  // výš). Dřív se kvůli němu zahodily denní kurzy CELÉHO rozsahu a uzavřené
+  // roky se na pár dní přepočítaly jednotným kurzem (na doloženém případu
+  // základ o 7 770 Kč jinde než den předtím). Rozhoduje výsledek stažení, ne
+  // kalendář: po výpadku ČNB zůstává i běžný rok chybějící.
+  const missing =
+    provider.missingYears?.filter(
+      (year) => !(year === currentYear && cnb.cnbYearHasNoAnnouncedRate(year)),
+    ) ?? [];
+  if (missing.length > 0) {
+    logEvent('warn', 'cnb.years_missing', { missing: missing.join(',') });
     return undefined;
   }
   return provider;
