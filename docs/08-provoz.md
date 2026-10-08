@@ -222,6 +222,26 @@ znovu; hotové roky se nestahují podruhé. Záloha je ruční nahrání CSV exp
 aktivního CPU na Hobby nepočítá, počítá se ale vyhrazená paměť — při stovkách
 napojených účtů je čas vrátit se k placenému tarifu nebo sync rozložit do dne.
 
+## Přenos projektu mezi týmy Vercelu
+
+Přenos (dashboard → Settings → Transfer, nebo API `POST
+/v9/projects/<projekt>/transfer-request` na zdrojovém týmu a `PUT
+/v9/projects/transfer-request/<kód>` na cílovém) proběhne bez výpadku a vezme
+s sebou proměnné prostředí, nasazení i napojení na Git. Dvě věci ale samy
+nepřejdou — ověřeno 8. 10. 2026 při stěhování z placeného týmu na Hobby:
+
+- **Crony se zaregistrují až dalším produkčním nasazením.** Hned po přenosu
+  je jejich seznam u projektu prázdný; dokud neproběhne nový deploy, neběží
+  denní sync, kurzy ani upozornění.
+- **Záznam kořenové domény zůstane ve zdrojovém týmu.** Projekt ji dál
+  obsluhuje, takže to není vidět — až do chvíle, kdy starý tým zrušíš. Přesuň
+  ji předem: `PATCH /v3/domains/<doména>` s `{"op":"move-out","destination":"<id
+  cílového týmu>"}` na zdrojovém týmu, a zkontroluj, že je v seznamu domén
+  cílového.
+
+Po přenosu vždy: nové produkční nasazení, `/api/health`, seznam cronů
+u projektu a jeden běžný push, ať je jisté, že Git nasazuje i na novém místě.
+
 ## Region funkcí
 
 `apps/web/vercel.json` má `"regions": ["fra1"]` (Frankfurt). Dva důvody:
