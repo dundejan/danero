@@ -19,9 +19,16 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (produkční URL),
    `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Každá ale chybí jinak hlasitě:
 
-   - bez `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` nebo `DANERO_ENCRYPTION_KEY`
-     aplikace v produkci spadne s chybou, která proměnnou jmenuje
-     (`lib/auth.ts`, `lib/crypto.ts`),
+   - bez `BETTER_AUTH_SECRET` nebo `BETTER_AUTH_URL` aplikace naběhne
+     a `/api/health` je zelený, ale přihlášení, registrace i každá stránka za
+     přihlášením končí chybou, která proměnnou jmenuje (`lib/auth.ts`) —
+     ozve se to tedy hned při prvním pokusu o přihlášení,
+   - bez `DANERO_ENCRYPTION_KEY` aplikace běží a `/api/health` je zelený.
+     Chyba, která proměnnou jmenuje (`lib/crypto.ts`), přijde až ve chvíli,
+     kdy se ukládá nebo čte klíč brokera — typicky když první uživatel
+     napojuje účet; ten uvidí jen obecnou chybu, jméno proměnné je v logu
+     serveru. Běžící aplikace a zelený health tedy nejsou důkaz, že klíč
+     nastavený je,
    - bez `CRON_SECRET` aplikace běží a `/api/health` je zelený, jenže všechny
      `/api/cron/*` vracejí 401 — nejede tedy sync, kurzy, hlídací e-maily ani
      úklid, a poznat je to jen z logu podle `cron.<job>.unauthorized`,

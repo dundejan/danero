@@ -67,9 +67,9 @@ openssl rand -hex 32      # CRON_SECRET
 |---|---|---|
 | `POSTGRES_PASSWORD` | ano (compose) | heslo databáze, kterou zakládá `docker compose`; jde i do `DATABASE_URL` služby `web` |
 | `DATABASE_URL` | ano | připojení k Postgresu. Bez ní běží lokální PGlite v `apps/web/.data/` — to je vývojový režim, ne produkce |
-| `BETTER_AUTH_SECRET` | ano | podpis session a odhlašovacích tokenů; v produkci bez ní aplikace spadne při startu |
+| `BETTER_AUTH_SECRET` | ano | podpis session a odhlašovacích tokenů. Compose bez ní nenastartuje. Mimo compose aplikace v produkci naběhne a `/api/health` je zelený, ale přihlášení, registrace i každá stránka za přihlášením končí chybou, která proměnnou jmenuje |
 | `BETTER_AUTH_URL` | ano | veřejná URL instance, např. `https://dane.example.cz`. **Musí být https** — z ní si Better Auth odvozuje příznak `Secure` u session cookie. Compose bez ní nenastartuje (schválně: tichý `http://localhost` default by vydával cookie bez `Secure`) |
-| `DANERO_ENCRYPTION_KEY` | ano | AES-256-GCM klíč pro API klíče brokerů; v produkci bez ní aplikace spadne při startu |
+| `DANERO_ENCRYPTION_KEY` | ano | AES-256-GCM klíč pro API klíče brokerů. Compose bez ní nenastartuje. Mimo compose aplikace v produkci běží a `/api/health` je zelený — chyba, která proměnnou jmenuje, přijde až ve chvíli, kdy se ukládá nebo čte klíč brokera (napojení účtu, sync). Běžící instance tedy není důkaz, že klíč nastavený je |
 | `DANERO_ENCRYPTION_KEYS_OLD` | ne | klíče vyřazené při výměně `DANERO_ENCRYPTION_KEY` (hex oddělené čárkou). Šifruje se vždy tím aktuálním, ale data od těch starých se dál čtou — viz „Výměna šifrovacího klíče" níž |
 | `CRON_SECRET` | ano | bez ní všechny `/api/cron/*` odmítají vše (401) — tedy žádné syncy ani e-maily |
 | `PORT` | ne | na kterém portu hostitele instance poslouchá (výchozí `3000`); uvnitř kontejneru je to vždy 3000 |
@@ -102,11 +102,18 @@ Každý zašifrovaný údaj v databázi nese osmiznakový otisk klíče, kterým
 4. přešifrování udělá sám denní job `maintenance`: každý uložený klíč brokera,
    který ještě nese otisk vyřazeného klíče, přepíše tím aktuálním a počet vrátí
    v odpovědi i v logu jako `credentialsRotated`,
-5. starý klíč smíš z `DANERO_ENCRYPTION_KEYS_OLD` vyhodit po prvním běhu
-   `maintenance`, který v logu nenechal `maintenance.reencrypt_failed` — ta
+5. starý klíč smíš z `DANERO_ENCRYPTION_KEYS_OLD` vyhodit až po běhu
+   `maintenance`, který **doběhl** a žádný záznam nevynechal. V logu po něm
+   musí být obojí: `cron.maintenance.finished` se stavem 200 (ta událost nese
+   i `credentialsRotated`) a zároveň žádné `maintenance.reencrypt_failed` — ta
    událost říká, že některý záznam přečíst nešel a na starém klíči zůstal.
-   Že nic nezbylo, potvrdí další běh s `credentialsRotated: 0` a znovu bez
-   té události.
+   Sama nepřítomnost `maintenance.reencrypt_failed` nestačí: běh, který spadl
+   dřív, než se k přešifrování dostal (výpadek databáze, timeout), ji nezapíše
+   taky. Pozná se podle toho, že po něm `cron.maintenance.finished` chybí
+   (bývá tam `cron.maintenance.failed`) — a klíče brokerů jsou pořád na
+   starém klíči.
+   Že nic nezbylo, potvrdí další doběhnutý běh s `credentialsRotated: 0`
+   a znovu bez té události.
 
 Bez kroku 2 (starý klíč nikde) se uložené broker klíče po výměně nepřečtou —
 aplikace to řekne nahlas a uživatel je zadá znovu, ale je to zbytečná otrava.
