@@ -1,5 +1,12 @@
 import { d, TransactionSchema } from '@danero/shared';
-import { cleanNumber, HeaderMap, isValidIsoDate, normalizeHeader, parseCsv } from '../csv';
+import {
+  cleanNumber,
+  FIAT_CURRENCIES,
+  HeaderMap,
+  isValidIsoDate,
+  normalizeHeader,
+  parseCsv,
+} from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult, type RowIssue } from '../types';
 
@@ -21,6 +28,16 @@ export const COINBASE_BROKER = 'coinbase';
 
 const BUY_TYPES = new Set(['buy', 'advanced trade buy', 'advance trade buy']);
 const SELL_TYPES = new Set(['sell', 'advanced trade sell', 'advance trade sell']);
+/**
+ * Advanced Trade obchoduje i páry, kde na druhé straně není měna účtu, ale jiné
+ * kryptoaktivum (BTC-USDC, ETH-BTC) — viz `TRADE_NOTES`.
+ */
+const ADVANCED_TRADE_TYPES = new Set([
+  'advanced trade buy',
+  'advance trade buy',
+  'advanced trade sell',
+  'advance trade sell',
+]);
 
 /** Převody a interní pohyby — vědomě přeskočeno bez varování. */
 const SILENT_SKIP_TYPES = new Set([
@@ -39,7 +56,6 @@ const SILENT_SKIP_TYPES = new Set([
   'vault withdrawal',
   'cash to savings',
   'savings to cash',
-  'asset migration',
 ]);
 
 /** Odměny (staking, earn, úroky…) — zatím daňově nezařazujeme → warning + skip. */
@@ -52,6 +68,22 @@ const REWARD_TYPES = new Set([
   'staking income',
   'interest payout',
 ]);
+
+/**
+ * Starší exporty zapisují tytéž odměny jako obyčejný „Receive“ a prozradí je
+ * jen poznámka („Received 12.5 GRT from Coinbase Earn“). Bez nahlédnutí do
+ * Notes by skončily mezi tichými převody, přestože převodem nejsou.
+ */
+const REWARD_RECEIVE_NOTES = /\bCoinbase (?:Earn|Rewards|Referral)\b/i;
+
+/**
+ * Výměna aktiva za nový symbol (dvojice řádků: úbytek starého, přírůstek
+ * nového). Není to převod mezi peněženkami — bez zápisu výměny zůstane pozice
+ * pod starým symbolem a prodej nového nemá z čeho vzít cenu nákupu. Řádky
+ * nepárujeme a změnu symbolu sami nevydáváme (čeká na rozhodnutí), ale mlčet
+ * o ní nesmíme → vlastní varování s návodem.
+ */
+const ASSET_MIGRATION_TYPE = 'asset migration';
 
 /** Ostatní známé, ale nepodporované typy → warning + skip s názvem typu. */
 const WARN_SKIP_TYPES = new Set([
@@ -86,6 +118,14 @@ function toIsoDate(timestamp: string): string | null {
 
 /** Notes u Convert: „Converted 0.05413984 BTC to 451.212148 USDC“. */
 const CONVERT_NOTES = /^Converted [\d.,]+ \S+ to ([\d.,]+) (\S+)$/;
+
+/**
+ * Notes u Buy/Sell — zajímá nás protistrana za slovem „for“ (množství, aktivum):
+ *  - Advanced Trade: „Sold 0.02 BTC for 1300.00 USDC on BTC-USDC at 65000 USDC/BTC“
+ *    (novější exporty i bez „at …“),
+ *  - starší Buy/Sell: „Bought 0.5 ETH for €912.50 EUR“, „… for € 300.00 EUR“.
+ */
+const TRADE_NOTES = /^(?:Bought|Sold) [\d.,]+ \S+ for \D{0,3}?([\d.,]+) ([A-Za-z0-9]+)\b/;
 
 /* ── Sniff ───────────────────────────────────────────────────────────────── */
 
@@ -204,7 +244,19 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     const typeRaw = get(col.type);
     const type = typeRaw.trim().toLowerCase();
     const asset = get(col.asset).trim().toUpperCase();
+    const notes = get(col.notes).trim();
 
+    // odměna doručená jako „Receive“ patří k odměnám, ne k tichým převodům —
+    // proto se ptáme dřív, než přijde na řadu SILENT_SKIP_TYPES
+    const isRewardReceive = type === 'receive' && REWARD_RECEIVE_NOTES.test(notes);
+    if (REWARD_TYPES.has(type) || isRewardReceive) {
+      result.warnings.push({
+        line,
+        message: `${typeRaw} (${asset}) — odměny zatím daňově nezařazujeme, řádek přeskočen.`,
+        raw,
+      });
+      return;
+    }
     if (SILENT_SKIP_TYPES.has(type)) {
       result.skipped.push({
         line,
@@ -212,10 +264,11 @@ export function parseCoinbaseCsv(text: string): ImportResult {
       });
       return;
     }
-    if (REWARD_TYPES.has(type)) {
+    if (type === ASSET_MIGRATION_TYPE) {
+      const movedQuantity = get(col.quantity).trim();
       result.warnings.push({
         line,
-        message: `${typeRaw} (${asset}) — odměny zatím daňově nezařazujeme, řádek přeskočen.`,
+        message: `${typeRaw} (${[asset, movedQuantity].filter((part) => part !== '').join(' ')}) — Coinbase vyměnil aktivum za nový symbol a tenhle řádek jsme přeskočili. Dokud výměnu nezapíšeš, zůstává pozice pod starým symbolem a prodej nového nemá z čeho vzít cenu nákupu. Doplň ji přes univerzální šablonu: řádek typu CORPORATE_ACTION se subtype ISIN_CHANGE, starý symbol do sloupce isin, nový do sloupce new_isin.`,
         raw,
       });
       return;
@@ -315,7 +368,6 @@ export function parseCoinbaseCsv(text: string): ImportResult {
 
     if (isConvert) {
       // Convert = jeden řádek: prodej Assetu + nákup cílového aktiva z Notes
-      const notes = get(col.notes).trim();
       const match = CONVERT_NOTES.exec(notes);
       const targetQuantityRaw = match ? cleanCoinbaseNumber(match[1]!) : null;
       if (!match || targetQuantityRaw === null || d(targetQuantityRaw).eq(0)) {
@@ -353,6 +405,46 @@ export function parseCoinbaseCsv(text: string): ImportResult {
       return;
     }
 
+    // R-10c: Buy/Sell na páru mimo měnu účtu (BTC-USDC, ETH-BTC) je směna
+    // krypto–krypto. `Price Currency` i `Subtotal` nesou měnu účtu a protistrana
+    // je jen v Notes — vydáme ji jako druhou nohu oceněnou týmž Subtotalem,
+    // stejně jako Convert. Původní noha se nemění (id ani obsah), takže už
+    // nahraný výpis je při novém nahrání duplicita a doplní se jen chybějící noha.
+    // Kotace v jiné fiat měně (BTC-EUR na účtu v CZK) druhou nohu nemá: na druhé
+    // straně jsou peníze, ne kryptoaktivum.
+    let counterLeg: Record<string, unknown> | null = null;
+    if (isBuy || isSell) {
+      const match = TRADE_NOTES.exec(notes);
+      const counterQuantityRaw = match ? cleanCoinbaseNumber(match[1]!) : null;
+      const counterQuantity = counterQuantityRaw === null ? null : d(counterQuantityRaw);
+      if (!match || counterQuantity === null || counterQuantity.eq(0)) {
+        // Protistranu neznáme. Obyčejný Buy/Sell se platí měnou účtu, tam není
+        // co doplňovat; u Advanced Trade by ale chybějící noha zmizela potichu.
+        if (ADVANCED_TRADE_TYPES.has(type)) {
+          result.warnings.push({
+            line,
+            message: `${typeRaw} (${asset}): z poznámky${notes === '' ? '' : ` („${notes}“)`} nejde poznat, za co se obchodovalo. Řádek jsme uložili oceněný v ${currency}. Pokud ale šlo o směnu krypto–krypto (pár jako BTC-USDC nebo ETH-BTC), její druhá strana tu chybí — oceň ji a doplň přes univerzální šablonu jako ${isBuy ? 'prodej' : 'nákup'} druhého aktiva.`,
+            raw,
+          });
+        }
+      } else {
+        const counterAsset = match[2]!.toUpperCase();
+        if (counterAsset !== currency && !FIAT_CURRENCIES.has(counterAsset)) {
+          counterLeg = {
+            type: isBuy ? 'SELL' : 'BUY',
+            id: `${baseId}-${isBuy ? 'sell' : 'buy'}`,
+            isin: counterAsset,
+            assetClass: 'CRYPTO',
+            quantity: counterQuantity.toString(),
+            pricePerShare: subtotal.div(counterQuantity).toString(),
+            currency,
+            tradeDate: date,
+            note: notes,
+          };
+        }
+      }
+    }
+
     push({
       type: isBuy ? 'BUY' : 'SELL', // Card Spend = prodej (úplatný převod)
       id: baseId,
@@ -365,6 +457,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
       tradeDate: date,
       ...(isCardSpend ? { note: 'platba kartou = úplatný převod' } : {}),
     });
+    if (counterLeg !== null) push(counterLeg);
   });
 
   return result;

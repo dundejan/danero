@@ -1,15 +1,20 @@
-import { d } from '@danero/shared';
+import { d, type Transaction } from '@danero/shared';
 import { describe, expect, it } from 'vitest';
 import { dedupeTransactions } from '../src';
 import { COINBASE_BROKER, parseCoinbaseCsv, sniffCoinbaseCsv } from '../src/coinbase/csv';
 import {
   COINBASE_CONVERT_BAD_NOTES,
   COINBASE_DUPLICATE_ROWS,
+  COINBASE_RECEIVE_REWARDS,
   COINBASE_UNKNOWN_TYPE,
   COINBASE_V1_EUR,
   COINBASE_V2,
   COINBASE_V3,
   COINBASE_V4,
+  COINBASE_V4_ASSET_MIGRATION,
+  COINBASE_V4_CRYPTO_PAIRS,
+  COINBASE_V4_FOREIGN_FIAT_PAIR,
+  COINBASE_V4_TRADE_BAD_NOTES,
   T212_HEADER_SAMPLE,
 } from './fixtures/coinbase';
 import { KRAKEN_LEDGERS_NEW } from './fixtures/kraken';
@@ -156,6 +161,154 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(result.errors[0]!.line).toBe(2);
     expect(result.errors[0]!.message).toContain('Mystery Payout');
   });
+
+  describe('R-10c: Advanced Trade na páru mimo měnu účtu je směna krypto–krypto (L2d-01)', () => {
+    type Trade = Extract<Transaction, { type: 'BUY' | 'SELL' }>;
+    const tradesOn = (transactions: Transaction[], date: string): Trade[] =>
+      transactions.filter(
+        (t): t is Trade => (t.type === 'BUY' || t.type === 'SELL') && t.tradeDate === date,
+      );
+
+    it('prodej BTC za USDC vydá SELL BTC i BUY 1300 USDC, obojí oceněné Subtotalem', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_CRYPTO_PAIRS);
+
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      const [sell, buy] = tradesOn(result.transactions, '2025-06-03');
+      if (sell?.type !== 'SELL' || buy?.type !== 'BUY') throw new Error('unreachable');
+
+      // původní noha se nemění (id, cena, poplatek) — už nahraný výpis zůstane duplicitou
+      expect(sell.id).toBe('coinbase-6790aa000000000000000001');
+      expect(sell.isin).toBe('BTC');
+      expect(sell.quantity.toString()).toBe('0.02');
+      expect(sell.pricePerShare.toString()).toBe('60000');
+      expect(sell.currency).toBe('EUR');
+      expect(sell.fee?.amount.toString()).toBe('4.8');
+
+      // druhá noha: aktivum a množství z Notes, hodnota = Subtotal v měně účtu
+      expect(buy.id).toBe('coinbase-6790aa000000000000000001-buy');
+      expect(buy.isin).toBe('USDC');
+      expect(buy.assetClass).toBe('CRYPTO');
+      expect(buy.quantity.toString()).toBe('1300');
+      expect(buy.pricePerShare.eq(d('1200').div(d('1300')))).toBe(true);
+      expect(buy.currency).toBe('EUR');
+      expect(buy.fee).toBeUndefined(); // poplatek nese jen původní noha
+    });
+
+    it('nákup ETH za BTC vydá i SELL BTC — pozbytí druhého aktiva se neztratí', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_CRYPTO_PAIRS);
+
+      const legs = tradesOn(result.transactions, '2025-06-04');
+      const buy = legs.find((t) => t.type === 'BUY');
+      const sell = legs.find((t) => t.type === 'SELL');
+      if (buy === undefined || sell === undefined) throw new Error('unreachable');
+
+      expect(buy.id).toBe('coinbase-6790aa000000000000000002');
+      expect(buy.isin).toBe('ETH');
+      expect(buy.quantity.toString()).toBe('0.5');
+      expect(buy.pricePerShare.toString()).toBe('2000');
+      expect(buy.fee?.amount.toString()).toBe('4');
+
+      expect(sell.id).toBe('coinbase-6790aa000000000000000002-sell');
+      expect(sell.isin).toBe('BTC');
+      expect(sell.assetClass).toBe('CRYPTO');
+      expect(sell.quantity.toString()).toBe('0.0201');
+      expect(sell.pricePerShare.eq(d('1000').div(d('0.0201')))).toBe(true);
+      expect(sell.currency).toBe('EUR');
+      expect(sell.fee).toBeUndefined();
+    });
+
+    it('novější poznámka bez „at …“ se čte stejně; pár s měnou účtu zůstává jednou nohou', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_CRYPTO_PAIRS);
+
+      // 3 směny po dvou nohách + 1 prodej SOL za EUR
+      expect(result.transactions).toHaveLength(7);
+      const withoutRate = tradesOn(result.transactions, '2025-06-05');
+      expect(withoutRate.map((t) => `${t.type} ${t.isin}`)).toEqual(['SELL BTC', 'BUY USDC']);
+      expect(withoutRate[1]!.quantity.toString()).toBe('650');
+      expect(withoutRate[1]!.pricePerShare.eq(d('610').div(d('650')))).toBe(true);
+
+      const sol = tradesOn(result.transactions, '2025-06-06');
+      expect(sol.map((t) => t.id)).toEqual(['coinbase-6790aa000000000000000004']);
+    });
+
+    it('pár s jinou fiat měnou než měnou účtu (BTC-EUR na účtu v CZK) druhou nohu nemá', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_FOREIGN_FIAT_PAIR);
+
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      expect(result.transactions).toHaveLength(1);
+      const sell = result.transactions[0]!;
+      if (sell.type !== 'SELL') throw new Error('unreachable');
+      expect(sell.isin).toBe('BTC');
+      expect(sell.currency).toBe('CZK');
+      expect(sell.pricePerShare.toString()).toBe('1500000');
+    });
+
+    it('nečitelná poznámka: řádek se uloží, ale varování řekne, že druhá strana může chybět', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_TRADE_BAD_NOTES);
+
+      expect(result.errors).toEqual([]);
+      expect(result.transactions.map((t) => t.type)).toEqual(['SELL', 'BUY']);
+      expect(result.warnings.map((w) => w.line)).toEqual([2, 3]);
+      for (const warning of result.warnings) {
+        expect(warning.message).toContain('směnu krypto–krypto');
+        expect(warning.message).toContain('univerzální šablonu');
+      }
+      // radí doplnit OPAČNOU nohu, než jaká se uložila
+      expect(result.warnings[0]!.message).toContain('jako nákup druhého aktiva');
+      expect(result.warnings[1]!.message).toContain('jako prodej druhého aktiva');
+
+      // obyčejný Buy/Sell se platí měnou účtu — nečitelná poznámka tam varování nedělá
+      const plain = parseCoinbaseCsv(COINBASE_V4_TRADE_BAD_NOTES.replaceAll('Advanced Trade ', ''));
+      expect(plain.errors).toEqual([]);
+      expect(plain.transactions.map((t) => t.type)).toEqual(['SELL', 'BUY']);
+      expect(plain.warnings).toEqual([]);
+    });
+
+    it('obyčejný Buy/Sell za měnu účtu zůstává jednou nohou a bez varování (V4, V2, V1)', () => {
+      for (const fixture of [COINBASE_V4, COINBASE_V2, COINBASE_V1_EUR]) {
+        const result = parseCoinbaseCsv(fixture);
+        expect(result.warnings).toEqual([]);
+        expect(result.transactions.every((t) => !/-(buy|sell)$/.test(t.id))).toBe(true);
+      }
+    });
+  });
+
+  it('Asset Migration (L2d-03): dvojice řádků dá 2 varování s návodem, ne 2 tichá přeskočení', () => {
+    const result = parseCoinbaseCsv(COINBASE_V4_ASSET_MIGRATION);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    expect(result.warnings.map((w) => w.line)).toEqual([2, 3]);
+    // počet kusů se znaménkem prozradí, který symbol je starý (úbytek) a který nový
+    expect(result.warnings[0]!.message).toContain('(MATIC -800)');
+    expect(result.warnings[1]!.message).toContain('(POL 800)');
+    for (const warning of result.warnings) {
+      expect(warning.message).toContain('nový symbol');
+      expect(warning.message).toContain('ISIN_CHANGE');
+      expect(warning.message).toContain('new_isin');
+    }
+  });
+
+  it.each(['V4', 'V3', 'V2'] as const)(
+    'Receive s odměnou z Coinbase Earn / Rewards / Referral (L2d-08) dostane varování — hlavička %s',
+    (generation) => {
+      const result = parseCoinbaseCsv(COINBASE_RECEIVE_REWARDS[generation]);
+
+      expect(result.errors).toEqual([]);
+      expect(result.transactions).toEqual([]);
+      // tři odměny = stejné varování jako u typů „Coinbase Earn“ či „Rewards Income“
+      expect(result.warnings.map((w) => w.line)).toEqual([2, 3, 4]);
+      for (const warning of result.warnings) {
+        expect(warning.message).toContain('Receive');
+        expect(warning.message).toContain('nezařazujeme');
+      }
+      // obyčejný příjem z cizí peněženky zůstává tichým převodem
+      expect(result.skipped.map((s) => s.line)).toEqual([5]);
+    },
+  );
 
   it('prázdný soubor = prázdný výsledek, ne chyba', () => {
     const result = parseCoinbaseCsv('');
