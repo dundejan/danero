@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -50,6 +50,22 @@ const T212_VYPIS = [
   'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
   'Market buy,2024-06-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,,,,,,,,,EOF1',
 ].join('\n');
+
+/**
+ * Export T212, ve kterém jsou jen převody kusů z jiného účtu: parser je pozná,
+ * vědomě nezaúčtuje a v hlášce radí, kudy je doplnit. Tituly, kusy, částky
+ * i časy jsou smyšlené.
+ */
+const T212_HEADER_2026 =
+  'Action,Time (UTC),ISIN,Ticker,Name,Notes,ID,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Currency conversion from amount,Currency (Currency conversion from amount),Currency conversion to amount,Currency (Currency conversion to amount),Currency conversion fee,Currency (Currency conversion fee),Merchant name,Merchant category';
+const T212_ONLY_TRANSFERS = [
+  T212_HEADER_2026,
+  'Transfer in,2026-12-07 10:00:00+00:00,US0000000003,CCC,Gama Inc,,id-6,3,30.00,USD,0.045,,,2000.00,CZK,,,,,,,,,,',
+  'Transfer in,2026-12-07 10:00:01+00:00,US0000000001,AAA,Alfa Inc,,id-7,5,20.00,USD,0.045,,,2200.00,CZK,,,,,,,,,,',
+].join('\n');
+/** Hodnota Action, kterou parser nezná vůbec — „nahlaš nám ji“. */
+const T212_UNKNOWN_ROW =
+  'Lending fee,2026-12-08 10:00:00+00:00,,,,,id-8,,,,,,,1.00,CZK,,,,,,,,,,';
 
 let emailLog: string;
 
@@ -111,6 +127,32 @@ describe('zachycení nepřečteného výpisu', () => {
     const summary = await importFileIsolated(db, 'u1', 't212.csv', bytes(T212_S_ROZBITYM_RADKEM));
     expect(summary.added).toBe(0);
     expect(summary.errors.length).toBeGreaterThan(0);
+    expect(summary.unrecognized).toBe(true);
+    expect(await listOpenCases(db)).toHaveLength(1);
+  });
+
+  it('výpis jen s pohyby kusů, které vědomě nezaúčtujeme, se neschovává (A04-R1-01)', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    // konec roku: uživatel si převedl portfolio odjinud a v exportu za ten rok
+    // nic jiného není. Hláška mu říká, ať kusy doplní šablonou — panel „na
+    // zpracování pracujeme“ vedle ní by tvrdil opak.
+    const summary = await importFileIsolated(db, 'u1', 't212-2026.csv', bytes(T212_ONLY_TRANSFERS));
+    expect(summary.added).toBe(0);
+    expect(summary.errors).toHaveLength(2);
+    expect(summary.errors[0]!.message).toContain('sami nezaúčtujeme');
+    expect(summary.unrecognized).toBeUndefined();
+    expect(await db.select().from(failedImports)).toHaveLength(0);
+    // provozovateli nechodí upozornění na případ, který nemá jak vyřídit
+    expect(existsSync(emailLog)).toBe(false);
+  });
+
+  it('stačí jediný řádek, kterému nerozumíme, a výpis si necháme dál (A04-R1-01)', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    // vedle převodu je tu typ, který neznáme — to už vada na naší straně být může
+    const withUnknownRow = `${T212_ONLY_TRANSFERS}\n${T212_UNKNOWN_ROW}`;
+    const summary = await importFileIsolated(db, 'u1', 't212-2026.csv', bytes(withUnknownRow));
+    expect(summary.added).toBe(0);
+    expect(summary.errors).toHaveLength(3);
     expect(summary.unrecognized).toBe(true);
     expect(await listOpenCases(db)).toHaveLength(1);
   });

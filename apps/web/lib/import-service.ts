@@ -474,9 +474,15 @@ export async function importFile(
  * broker, který přejmenoval sloupec (9. 8. 2026: T212 `Time` → `Time (UTC)`).
  * Takový soubor je pro opravu ještě cennější než úplně neznámý formát, protože
  * jde o platformu, kterou už podporujeme.
+ *
+ * Nepočítají se chyby, u kterých parser sám řekl, že řádek poznal a vědomě ho
+ * nezaúčtuje (`knownUnsupported` — převody a připsání kusů u T212). Výpis jen
+ * s nimi není vada na naší straně: hláška radí uživateli, ať si kusy doplní
+ * šablonou, a úschova by k ní přidala opak — „na zpracování pracujeme, dáme ti
+ * vědět“ (A04-R1-01). Stačí ale jediná jiná chyba a soubor si necháme dál.
  */
 const producedNothing = (parsed: ImportResult): boolean =>
-  parsed.transactions.length === 0 && parsed.errors.length > 0;
+  parsed.transactions.length === 0 && parsed.errors.some((error) => !error.knownUnsupported);
 
 /** XLSX větev importu: jedno načtení workbooku pro všechny sniffy. */
 async function importXlsxUpload(

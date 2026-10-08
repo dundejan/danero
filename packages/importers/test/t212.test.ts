@@ -612,6 +612,76 @@ describe('Trading 212: vratka kartou a pohyby kusů (L2a-03)', () => {
     expect(messageOf('Stock Split')).toContain('SPLIT');
   });
 
+  it('připsané kusy nedostanou radu s cenou a datem pořízení ani popis splitu (A04-R1-03)', () => {
+    // jediná daňově citlivá věta dávky: z řádku se nepozná, o jakou událost šlo,
+    // takže předepsat TRANSFER_IN s původní cenou by bylo hádání za uživatele
+    const result = parseTrading212Csv(ACTIONS_2026);
+    const distributions = result.errors.filter((e) =>
+      actionOf(e.line).toLowerCase().includes('stock distribution'),
+    );
+    expect(distributions.map((e) => actionOf(e.line))).toEqual([
+      'Stock distribution',
+      'Custom stock distribution',
+    ]);
+    for (const { message } of distributions) {
+      expect(message).toContain('připsal kusy bez nákupu');
+      expect(message).toContain('z řádku se nepozná, o jakou událost šlo');
+      expect(message).not.toContain('TRANSFER_IN');
+      expect(message).not.toContain('TRANSFER_OUT');
+      expect(message).not.toContain('CORPORATE_ACTION');
+      expect(message).not.toContain('původního pořízení');
+      expect(message).not.toMatch(/cen[uoy]|dat(um|em)|převod|split/i);
+    }
+  });
+
+  it('každý pohyb kusů má vlastní text — převod ven není převod dovnitř ani split (A04-R1-03)', () => {
+    const result = parseTrading212Csv(ACTIONS_2026);
+    const messageOf = (action: string): string =>
+      result.errors.find((e) => actionOf(e.line) === action)?.message ?? '';
+    expect(messageOf('Transfer in')).toContain('původního pořízení');
+    expect(messageOf('Transfer in')).not.toMatch(/TRANSFER_OUT|CORPORATE_ACTION/);
+    expect(messageOf('Transfer out')).toContain('není to prodej');
+    expect(messageOf('Transfer out')).not.toMatch(/TRANSFER_IN|CORPORATE_ACTION/);
+    expect(messageOf('Stock Split')).toContain('CORPORATE_ACTION');
+    expect(messageOf('Stock Split')).not.toMatch(/TRANSFER_(IN|OUT)/);
+  });
+
+  it('pohyb kusů se označí jako vědomě nepodporovaný řádek, neznámý typ ne (A04-R1-01)', () => {
+    // podle příznaku (ne podle textu hlášky) import pozná, že výpis jen
+    // s takovými chybami není „nepřečtený výpis“ a nemá se schovávat
+    const lines = [
+      ...ACTIONS_2026.split('\n'),
+      'Lending fee,2026-04-04 10:00:00+00:00,,,,,id-30,,,,,,,1.00,CZK,,,,,,,,,,',
+    ];
+    const result = parseTrading212Csv(lines.join('\n'));
+    expect(
+      result.errors.map((e) => [lines[e.line - 1]!.split(',')[0], e.knownUnsupported === true]),
+    ).toEqual([
+      ['Stock distribution', true],
+      ['Custom stock distribution', true],
+      ['Transfer in', true],
+      ['Transfer out', true],
+      ['Stock Split', true],
+      ['Lending fee', false],
+    ]);
+  });
+
+  it('chyba, za kterou může být vada parseru, příznak vědomě nepodporovaného řádku nenese (A04-R1-01)', () => {
+    const invalidRow = parseRow2026(
+      'Market buy,2026-02-10 14:30:02+00:00,US0000000001,AAA,Alfa Inc,,id-60,-10,20.00,USD,0.045,,,4400.00,CZK,,,,,,,1.10,CZK,,',
+    );
+    const missingCells = parseRow2026(
+      'Market buy,2026-02-10 14:30:02+00:00,,AAA,Alfa Inc,,id-61,10,20.00,USD,0.045,,,4400.00,CZK,,,,,,,1.10,CZK,,',
+    );
+    const brokenTime = parseRow2026(
+      'Market buy,neni-datum,US0000000001,AAA,Alfa Inc,,id-62,10,20.00,USD,0.045,,,4400.00,CZK,,,,,,,1.10,CZK,,',
+    );
+    for (const result of [invalidRow, missingCells, brokenTime]) {
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.knownUnsupported).toBeUndefined();
+    }
+  });
+
   it('pár Stock split close/open se dál skládá do splitu (jednořádkové pravidlo ho nepřebije)', () => {
     const result = parseTrading212Csv(
       [
@@ -685,5 +755,63 @@ describe('Trading 212: záporná dividenda je korekce, ne chyba validace (L2a-05
     expect(result.errors[0]!.message).toContain('Řádek se nepodařilo zpracovat');
     expect(result.errors[0]!.message).not.toContain('"code"');
     expect(result.errors[0]!.message).not.toContain('[');
+  });
+
+  // A04-R1-02: řádek má 25 sloupců — věta bez sloupce a hodnoty neřekne, co opravit
+  const BUY = (shares: string, price: string, feeCurrency = 'CZK'): string =>
+    `Market buy,2026-02-10 14:30:02+00:00,US0000000001,AAA,Alfa Inc,,id-60,${shares},${price},USD,0.045,,,4400.00,CZK,,,,,,,1.10,${feeCurrency},,`;
+  const DIVIDEND = (price: string, withholding: string): string =>
+    `Dividend (Ordinary),2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-67,10,${price},USD,0.045,,,180.00,CZK,${withholding},USD,,,,,,,,`;
+  const INVALID_ROWS: Array<[string, string, string]> = [
+    [
+      'nákup se zápornými kusy',
+      BUY('-10', '20.00'),
+      'Řádek se nepodařilo zpracovat: sloupec „No. of shares“ („-10“): Hodnota musí být kladná',
+    ],
+    [
+      'nákup s nulovými kusy',
+      BUY('0', '20.00'),
+      'Řádek se nepodařilo zpracovat: sloupec „No. of shares“ („0“): Hodnota musí být kladná',
+    ],
+    [
+      'nákup se zápornou cenou',
+      BUY('10', '-20.00'),
+      'Řádek se nepodařilo zpracovat: sloupec „Price / share“ („-20.00“): Hodnota nesmí být záporná',
+    ],
+    [
+      'nákup s měnou poplatku, která není ISO kód',
+      BUY('10', '20.00', 'Kc'),
+      'Řádek se nepodařilo zpracovat: sloupec „Currency (Currency conversion fee)“ („Kc“): Měna musí být třípísmenný ISO kód',
+    ],
+    [
+      'dividenda se zápornou srážkou',
+      DIVIDEND('0.85', '-1.50'),
+      'Řádek se nepodařilo zpracovat: sloupec „Withholding tax“ („-1.50“): Hodnota nesmí být záporná',
+    ],
+    [
+      // brutto se skládá z víc sloupců — jmenujeme všechny vyplněné, vadný je mezi nimi
+      'dividenda se zápornou částkou na kus',
+      DIVIDEND('-0.85', '1.50'),
+      'Řádek se nepodařilo zpracovat: sloupce „No. of shares“ („10“), „Price / share“ („-0.85“), „Total“ („180.00“): Hodnota nesmí být záporná',
+    ],
+    [
+      'úrok se zápornou srážkou',
+      'Interest on cash,2026-08-01 01:12:23+00:00,,,,,id-70,,,,,,,0.32,CZK,-0.05,CZK,,,,,,,,',
+      'Řádek se nepodařilo zpracovat: sloupec „Withholding tax“ („-0.05“): Hodnota nesmí být záporná',
+    ],
+  ];
+
+  it.each(INVALID_ROWS)('%s: hláška jmenuje sloupec exportu a hodnotu (A04-R1-02)', (_name, row, message) => {
+    const result = parseRow2026(row);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors.map((e) => e.message)).toEqual([message]);
+  });
+
+  it('dvě vady na jednom řádku se vypíšou obě, každá se svým sloupcem (A04-R1-02)', () => {
+    const result = parseRow2026(BUY('-10', '-20.00'));
+    expect(result.errors.map((e) => e.message)).toEqual([
+      'Řádek se nepodařilo zpracovat: sloupec „No. of shares“ („-10“): Hodnota musí být kladná; ' +
+        'sloupec „Price / share“ („-20.00“): Hodnota nesmí být záporná',
+    ]);
   });
 });

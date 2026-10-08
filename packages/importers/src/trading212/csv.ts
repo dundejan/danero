@@ -475,10 +475,14 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'SHARE_MOVEMENT': {
+          // A04-R1-01: příznak říká importu, že tohle není „nepřečtený výpis“ —
+          // jinak by soubor jen s převody dostal vedle rady „doplň si to
+          // šablonou“ ještě panel „na zpracování pracujeme“
           result.errors.push({
             line,
             message: `${action}: ${classified.guidance}`,
             raw: row.join(','),
+            knownUnsupported: true,
           });
           return;
         }
@@ -494,7 +498,7 @@ export function parseTrading212Csv(text: string): ImportResult {
     } catch (err) {
       result.errors.push({
         line,
-        message: `Řádek se nepodařilo zpracovat: ${describeRowError(err)}`,
+        message: `Řádek se nepodařilo zpracovat: ${describeRowError(err, classified.kind, (column) => map.get(row, column))}`,
         raw: row.join(','),
       });
     }
@@ -536,17 +540,92 @@ export function parseTrading212Csv(text: string): ImportResult {
 }
 
 /**
+ * Pole modelu → sloupce exportu, ze kterých se plní (A04-R1-02). Podle druhu
+ * řádku, protože totéž pole bere každý druh odjinud (`currency` je u obchodu
+ * měna ceny, u úroku měna částky).
+ *
+ * Kde se pole skládá z víc sloupců (brutto dividendy = kusy × částka na kus,
+ * ve starším exportu Total), jsou tu všechny — hláška jmenuje ty vyplněné
+ * a vadný je mezi nimi. Schválně se tu neopakuje podmínka, podle které si
+ * parser mezi nimi vybírá: dvě kopie téhož rozhodnutí by se rozešly.
+ */
+const FEE_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  'fee.amount': FEE_COLUMNS,
+  'fee.currency': FEE_COLUMNS.map((column) => `Currency (${column})`),
+};
+const TRADE_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  isin: ['ISIN'],
+  quantity: ['No. of shares'],
+  pricePerShare: ['Price / share'],
+  currency: ['Currency (Price / share)'],
+  ...FEE_SOURCE_COLUMNS,
+};
+const DIVIDEND_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  isin: ['ISIN'],
+  gross: ['No. of shares', 'Price / share', 'Total'],
+  currency: ['Currency (Price / share)', 'Currency (Total)'],
+  withholdingTax: ['Withholding tax'],
+};
+const CASH_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  amount: ['Total'],
+  currency: ['Currency (Total)'],
+  withholdingTax: ['Withholding tax'],
+};
+const SOURCE_COLUMNS: Partial<Record<RowKind['kind'], Record<string, readonly string[]>>> = {
+  BUY: TRADE_SOURCE_COLUMNS,
+  SELL: TRADE_SOURCE_COLUMNS,
+  SPINOFF: TRADE_SOURCE_COLUMNS,
+  DIVIDEND: DIVIDEND_SOURCE_COLUMNS,
+  INTEREST: CASH_SOURCE_COLUMNS,
+  DEPOSIT: CASH_SOURCE_COLUMNS,
+  WITHDRAWAL: CASH_SOURCE_COLUMNS,
+};
+
+/** Tvar nálezu validace modelu (Zod) — importéry na knihovně přímo nezávisí. */
+interface ValidationIssue {
+  code?: unknown;
+  path?: unknown;
+  message?: unknown;
+}
+
+/**
  * Text chyby řádku pro uživatele. Selhání validace modelu nese `message`
  * v podobě JSON pole se všemi nálezy (`[{ "code": …, "path": … }]`) a ten
- * šel beze změny až do přehledu importu (L2a-05). Bereme z něj jen věty.
+ * šel beze změny až do přehledu importu (L2a-05).
+ *
+ * Z nálezu se bere věta a k ní sloupec exportu s hodnotou buňky (A04-R1-02):
+ * řádek má 25 sloupců a samotné „Hodnota nesmí být záporná“ neřekne, který
+ * z nich opravit. Česky píše model jen vlastní pravidla (kódy `custom`
+ * a `invalid_format`); ostatní kódy mají anglický text knihovny, takže je
+ * u známého sloupce nahradí obecná věta — stejně jako v univerzální šabloně.
  */
-function describeRowError(err: unknown): string {
+function describeRowError(
+  err: unknown,
+  kind: RowKind['kind'],
+  cell: (column: string) => string,
+): string {
   const issues = (err as { issues?: unknown } | null)?.issues;
   if (Array.isArray(issues)) {
-    const messages = issues
-      .map((issue: unknown) => (issue as { message?: unknown } | null)?.message)
-      .filter((message): message is string => typeof message === 'string' && message !== '');
-    if (messages.length > 0) return [...new Set(messages)].join('; ');
+    const parts = new Set<string>();
+    for (const issue of issues as Array<ValidationIssue | null>) {
+      const message = typeof issue?.message === 'string' ? issue.message : '';
+      const field = Array.isArray(issue?.path) ? issue.path.map(String).join('.') : '';
+      const filled = (SOURCE_COLUMNS[kind]?.[field] ?? [])
+        .map((column) => ({ column, value: cell(column) }))
+        .filter(({ value }) => value !== '');
+      if (filled.length === 0) {
+        // pole, ke kterému sloupec neznáme (nebo je prázdný): aspoň věta
+        if (message !== '') parts.add(message);
+        continue;
+      }
+      const sentence =
+        issue?.code === 'custom' || issue?.code === 'invalid_format'
+          ? message
+          : 'hodnota není platná';
+      const columns = filled.map(({ column, value }) => `„${column}“ („${value}“)`).join(', ');
+      parts.add(`${filled.length === 1 ? 'sloupec' : 'sloupce'} ${columns}: ${sentence}`);
+    }
+    if (parts.size > 0) return [...parts].join('; ');
   }
   return err instanceof Error ? err.message : String(err);
 }
