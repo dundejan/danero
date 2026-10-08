@@ -8,8 +8,13 @@
  * kdyby padal na chybějící `drizzle.__drizzle_migrations`, workflow by skončil
  * dřív, než se k migraci dostane — a nová databáze by se přes CI nikdy
  * nezmigrovala (audit G-M1).
+ *
+ * Mimo GitHub Actions vypíše i počet účtů. V Actions ne: log veřejného
+ * repozitáře čte každý přihlášený a kolik má služba účtů, se jinde
+ * nezveřejňuje (L9-08).
  */
 import postgres from 'postgres';
+import { isPublicLog } from './error-report.mjs';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -41,11 +46,14 @@ try {
     console.log('aplikovaných migrací: 0 (databáze ještě nebyla migrovaná)');
   }
 
-  if (await tableExists('public."user"')) {
-    const [users] = await sql`SELECT count(*)::int AS count FROM "user"`;
-    console.log(`účtů:                 ${users.count}`);
-  } else {
-    console.log('účtů:                 — (schéma ještě nevzniklo)');
+  // počet účtů do veřejného logu nepatří — v Actions se na něj ani neptáme
+  if (!isPublicLog()) {
+    if (await tableExists('public."user"')) {
+      const [users] = await sql`SELECT count(*)::int AS count FROM "user"`;
+      console.log(`účtů:                 ${users.count}`);
+    } else {
+      console.log('účtů:                 — (schéma ještě nevzniklo)');
+    }
   }
 } catch (error) {
   // hláška i SQLSTATE, ale bez stack trace — ten je v CI logu jen šum
