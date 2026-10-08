@@ -2,30 +2,31 @@
 
 Stav rešerše: červenec 2026. MVP = **Trading212**; architektura rozšiřitelná o další brokery (pořadí: IBKR → XTB → Degiro → Fio).
 
-> Dokument je **dobový snímek rešerše**, ne přehled toho, co aplikace umí dnes. Které platformy a jakým způsobem čteme, říká výhradně katalog `apps/web/lib/brokers-catalog.ts`; jak se přidává nový formát, popisuje [docs/06](06-import.md). Kanonický model níže platí dál.
+> Dokument je **dobový snímek rešerše**, ne přehled toho, co aplikace umí dnes. Které platformy a jakým způsobem čteme, říká výhradně katalog `apps/web/lib/brokers-catalog.ts`. Postup, jak přidat nový formát, je v [CONTRIBUTING.md](../CONTRIBUTING.md#přidání-brokera) (oddíl „Přidání brokera“); zásady a chování importní vrstvy popisuje [docs/06](06-import.md). Oddíl o kanonickém modelu níže je s kódem srovnaný (říjen 2026), ale je to jen přehled — závazná definice modelu je `packages/shared/src/model.ts`.
 
 ## Kanonický model transakcí
 
 Každý importér (parser) převádí data brokera na jednotný kanonický model — engine nikdy nevidí formát brokera. Po vzoru Portfolio Performance a Export-To-Ghostfolio (Apache-2.0, TypeScript — referenční implementace converterů pro 26 brokerů).
 
-Typy kanonických transakcí:
+Typy kanonických transakcí (úplný výčet polí je v `packages/shared/src/model.ts`):
 
 | Typ | Poznámka |
 |---|---|
-| `BUY` / `SELL` | množství, cena/ks, měna, poplatky, FX kurz brokera, trade date + **settlement date** (klíčové pro časový test — pokud broker neuvádí, dopočítat T+1 US od 5/2024, T+2 EU, konfigurovatelně) |
+| `BUY` / `SELL` | množství, cena/ks, měna, poplatek, datum obchodu + volitelné **datum vypořádání** (klíčové pro časový test — když ho broker neuvádí, dopočítá ho engine: T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2 v obchodních dnech burzy; krypto a deriváty mají vlastní pravidla). Kurz brokera se neukládá — na koruny se přepočítává jednotným kurzem GFŘ nebo denním kurzem ČNB (R-06 v docs/02). |
 | `DIVIDEND` | brutto částka, měna, srážková daň, země zdroje (z ISIN) |
 | `INTEREST` | úroky z hotovosti (§ 8) |
 | `FEE` | samostatné poplatky (konektivita, výpisy…) |
 | `FX_CONVERSION` | směna měn na účtu |
 | `DEPOSIT` / `WITHDRAWAL` | pro úplnost a rekonciliaci |
-| `CORPORATE_ACTION` | podtypy: `SPLIT`, `ISIN_CHANGE`, `MERGER`, `SPINOFF`, `DELISTING` — **první-třídní entita**, transformuje loty **bez resetu data nabytí** (dle pravidel R4 v docs/02) |
+| `CORPORATE_ACTION` | podtypy: `SPLIT`, `ISIN_CHANGE`, `MERGER`, `SPINOFF`, `DELISTING` — **první-třídní entita**, transformuje loty; kdy zůstává datum nabytí, určují pravidla R-04 v docs/02 (split a změna ISIN ho zachovávají, nové kusy ze spin-offu ne) |
+| `TRANSFER_IN` / `TRANSFER_OUT` | převod kusů mezi brokery — není to nákup ani prodej a časový test nepřerušuje (R-04i v docs/02). `TRANSFER_IN` může nést původní datum a cenu nabytí; bez nich má lot nulovou nabývací cenu a test běží až od převodu. |
 
 Zásady:
 - **Mapování dle hlaviček, ne pozic sloupců** (T212 mění sadu sloupců podle zvolených kategorií exportu).
-- **Deduplikace**: hash (broker, typ, čas, ISIN, množství, cena, měna) — exporty mají roční limity, uživatel nahrává překrývající se soubory; import je idempotentní.
-- **Kompletní historie od prvního nákupu je povinná** — bez ní nelze FIFO ani časový test. Onboarding to musí vynutit a zvalidovat (viz rekonciliace).
-- Uchovávat **surová data** importu (raw řádek) pro audit a re-parsování při opravě parseru.
-- Import batch: stav, chyby per řádek, náhled před potvrzením.
+- **Deduplikace**: klíč má tvar `<broker>|<otisk obsahu>|<pořadí>` (`packages/importers/src/dedupe.ts`). Otisk se počítá jen z polí, která popisují událost — u obchodu typ, ISIN, **den** obchodu, množství, cena za kus a měna — ne z času ani z id řádku; obsahově shodné události z jednoho výpisu odlišuje pořadí. Exporty mají roční limity, uživatel nahrává překrývající se soubory; import je idempotentní.
+- **Kompletní historie od prvního nákupu je povinná** — bez ní nelze FIFO ani časový test. Prodej bez evidované pozice hlásí engine jako chybu `NEGATIVE_POSITION`, počty kusů proti brokerovi hlídá rekonciliace.
+- **Surový řádek výpisu se neukládá** — v tabulce `transactions` je jen kanonická transakce (`payload`). Oprava parseru ani nové pole modelu se proto do už naimportovaných dat samy nedostanou: import je třeba vrátit zpět a výpis nahrát znovu. Originál si necháváme jen u výpisu, který se nepodařilo přečíst (`failed_imports`).
+- **Dávka importu** (`import_batches`) drží počty přidaných a duplicitních transakcí a hlášení k řádkům (chyby, přeskočené, varování). Zapisuje se rovnou, bez náhledu a potvrzení; dávku jde vrátit zpět i s jejími transakcemi.
 
 ## Trading212 (MVP)
 
@@ -38,11 +39,11 @@ Zásady:
   `Spin off` (příjem kusů s cenou 0). Změny ISIN/fúze nepozorovány → rekonciliace
   přes API zůstává jako pojistka. Původní rešerše (i praxe Taxomatu) tvrdila opak.
 - Referenční parsery: `pkpio/trading212-csv` (Python), converter v Export-To-Ghostfolio (TS).
-- ⚠️ Známá omezení dedupe: řádek se sloupcem `ID` dostává klíč `t212-<ID>`,
-  bez něj hash obsahu — týž obchod ve starém exportu bez `ID` a v novém s `ID`
-  se tedy nespáruje (dvojí import při míchání épochálně různých exportů; dnešní
-  exporty i API `ID` mají vždy). Identické řádky bez `ID` naopak záměrně
-  splývají (nelze odlišit echo od skutečného duplikátu) — parser varuje.
+- Dedupe (původní omezení už neplatí): sloupec `ID` do klíče nevstupuje — klíč
+  je otisk obsahu, viz zásady výše. Týž obchod ve starém exportu bez `ID`
+  a v novém s `ID` se proto spáruje. Dva řádky se stejným `ID` a stejným obsahem
+  splynou v jednu transakci, obsahově shodné řádky bez `ID` se importují každý
+  zvlášť; na obojí parser upozorní.
 - ⚠️ Plný sync končí po 2 po sobě prázdných letech (API nezná datum založení
   účtu) — účet s ≥2letou pauzou v obchodování si starší historii doplní ručním
   CSV; nesoulad odhalí rekonciliace pozic.
@@ -61,7 +62,7 @@ Zásady:
 
 ## Další brokeři (historická rešerše z července 2026)
 
-Tabulka zachycuje, co jsme o formátech věděli před implementací, a původní pořadí priorit. **Není to seznam podporovaných platforem** — parserů mezitím přibylo víc, než kolik jich tu je, a aktuální stav (platforma, způsob importu, návod ke stažení výpisu) vede jen katalog `apps/web/lib/brokers-catalog.ts`. Než začneš psát nový parser, podívej se do něj a do `packages/importers/src/`; postup je v [docs/06](06-import.md).
+Tabulka zachycuje, co jsme o formátech věděli před implementací, a původní pořadí priorit. **Není to seznam podporovaných platforem** — parserů mezitím přibylo víc, než kolik jich tu je, a aktuální stav (platforma, způsob importu, návod ke stažení výpisu) vede jen katalog `apps/web/lib/brokers-catalog.ts`. Než začneš psát nový parser, podívej se do něj a do `packages/importers/src/`. Postup je v [CONTRIBUTING.md](../CONTRIBUTING.md#přidání-brokera) (oddíl „Přidání brokera“: parser, fixtura, registrace v autodetekci a v katalogu); zásady, které parser musí splnit, shrnuje [docs/06](06-import.md).
 
 | Broker | Formát | Klíčové poznámky |
 |---|---|---|
