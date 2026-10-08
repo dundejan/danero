@@ -82,6 +82,13 @@ const REWARD_RECEIVE_NOTES = /\bCoinbase (?:Earn|Rewards|Referral)\b/i;
  * pod starým symbolem a prodej nového nemá z čeho vzít cenu nákupu. Řádky
  * nepárujeme a změnu symbolu sami nevydáváme (čeká na rozhodnutí), ale mlčet
  * o ní nesmíme → vlastní varování s návodem.
+ *
+ * Návod musí pokrýt i výměnu v jiném poměru než kus za kus (R-10b: výměna
+ * kryptoaktiva vydavatelem časový test nepřerušuje, ať je poměr jakýkoli):
+ * `ISIN_CHANGE` stěhuje lot beze změny počtu kusů a poměr nečte, takže by celá
+ * nabývací cena zůstala na původním počtu kusů a částečný prodej nového symbolu
+ * by ji odečetl celou. Poměr nese `MERGER` (`ratio_from`/`ratio_to`). Protože
+ * řádky nepárujeme, nevíme, o který případ jde — varování proto popisuje oba.
  */
 const ASSET_MIGRATION_TYPE = 'asset migration';
 
@@ -268,7 +275,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
       const movedQuantity = get(col.quantity).trim();
       result.warnings.push({
         line,
-        message: `${typeRaw} (${[asset, movedQuantity].filter((part) => part !== '').join(' ')}) — Coinbase vyměnil aktivum za nový symbol a tenhle řádek jsme přeskočili. Dokud výměnu nezapíšeš, zůstává pozice pod starým symbolem a prodej nového nemá z čeho vzít cenu nákupu. Doplň ji přes univerzální šablonu: řádek typu CORPORATE_ACTION se subtype ISIN_CHANGE, starý symbol do sloupce isin, nový do sloupce new_isin.`,
+        message: `${typeRaw} (${[asset, movedQuantity].filter((part) => part !== '').join(' ')}) — Coinbase vyměnil aktivum za nový symbol a tenhle řádek jsme přeskočili. Dokud výměnu nezapíšeš, zůstává pozice pod starým symbolem a prodej nového nemá z čeho vzít cenu nákupu. Doplň ji přes univerzální šablonu jedním řádkem typu CORPORATE_ACTION: starý symbol do sloupce isin, nový do sloupce new_isin. Do sloupce subtype napiš ISIN_CHANGE jen při výměně kus za kus, tedy když ti přibylo stejně kusů nového symbolu, kolik ubylo starého (počty jsou na dvojici řádků „Asset Migration“). Liší-li se počty, napiš subtype MERGER a poměr výměny: počet starých kusů do ratio_from, počet nových do ratio_to. ISIN_CHANGE poměr nečte — cena nákupu by zůstala rozpočítaná na starý počet kusů a daň z prodeje by vyšla špatně.`,
         raw,
       });
       return;

@@ -1,6 +1,7 @@
-import { d, type Transaction } from '@danero/shared';
+import { analyzeTaxYear, type TaxYearConfig } from '@danero/engine';
+import { d, TaxpayerProfileSchema, type Transaction } from '@danero/shared';
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions } from '../src';
+import { dedupeTransactions, parseUniversalCsv } from '../src';
 import { COINBASE_BROKER, parseCoinbaseCsv, sniffCoinbaseCsv } from '../src/coinbase/csv';
 import {
   COINBASE_CONVERT_BAD_NOTES,
@@ -12,9 +13,13 @@ import {
   COINBASE_V3,
   COINBASE_V4,
   COINBASE_V4_ASSET_MIGRATION,
+  COINBASE_V4_ASSET_MIGRATION_RATIO,
   COINBASE_V4_CRYPTO_PAIRS,
   COINBASE_V4_FOREIGN_FIAT_PAIR,
+  COINBASE_V4_SEND_WITH_REWARD_NOTE,
   COINBASE_V4_TRADE_BAD_NOTES,
+  COINBASE_V4_TRADE_EDGE_NOTES,
+  COINBASE_V4_UNLISTED_FIAT_ACCOUNT,
   T212_HEADER_SAMPLE,
 } from './fixtures/coinbase';
 import { KRAKEN_LEDGERS_NEW } from './fixtures/kraken';
@@ -273,6 +278,71 @@ describe('Coinbase transaction history CSV parser', () => {
         expect(result.transactions.every((t) => !/-(buy|sell)$/.test(t.id))).toBe(true);
       }
     });
+
+    it('účet v měně mimo seznam fiat měn (BRL): nákup placený měnou účtu zůstává jednou nohou', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_UNLISTED_FIAT_ACCOUNT);
+
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      // měna účtu není kryptoaktivum, ani když ji `FIAT_CURRENCIES` nezná —
+      // „prodej BRL“ by byl smyšlený zdanitelný příjem u každého nákupu
+      expect(result.transactions.map((t) => `${t.type} ${t.id}`)).toEqual([
+        'BUY coinbase-6790ab000000000000000001',
+      ]);
+      const buy = result.transactions[0]!;
+      if (buy.type !== 'BUY') throw new Error('unreachable');
+      expect(buy.isin).toBe('ETH');
+      expect(buy.currency).toBe('BRL');
+      expect(buy.pricePerShare.toString()).toBe('12000');
+    });
+
+    it('nulové množství protistrany („for 0 USDC“) je nečitelná poznámka: varování, ne chyba řádku', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_TRADE_EDGE_NOTES);
+
+      expect(result.errors).toEqual([]);
+      // nohu s nulovým počtem kusů nevydáme (cena za kus by byla dělení nulou)
+      expect(tradesOn(result.transactions, '2025-09-02').map((t) => `${t.type} ${t.isin}`)).toEqual(
+        ['SELL BTC'],
+      );
+      expect(result.warnings.map((w) => w.line)).toEqual([2]);
+      expect(result.warnings[0]!.message).toContain('směnu krypto–krypto');
+      expect(result.warnings[0]!.message).toContain('for 0 USDC');
+    });
+
+    it('symbol měny v poznámce („for €318.08 EUR“) se čte: pár s měnou účtu nevaruje a druhou nohu nemá', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_TRADE_EDGE_NOTES);
+
+      // jediné varování souboru patří řádku s nulovým množstvím, ne tomuhle
+      expect(result.warnings.filter((w) => w.line === 3)).toEqual([]);
+      expect(tradesOn(result.transactions, '2025-09-03').map((t) => t.id)).toEqual([
+        'coinbase-6790ac000000000000000002',
+      ]);
+    });
+
+    it('symbol protistrany malými písmeny („usdc“) končí pod stejnou pozicí jako USDC', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_TRADE_EDGE_NOTES);
+
+      const legs = tradesOn(result.transactions, '2025-09-04');
+      expect(legs.map((t) => `${t.type} ${t.isin}`)).toEqual(['SELL BTC', 'BUY USDC']);
+      expect(legs[1]!.quantity.toString()).toBe('1400');
+      expect(legs[1]!.pricePerShare.eq(d('1280').div(d('1400')))).toBe(true);
+    });
+
+    it('překlepový typ „Advance Trade Buy/Sell“ s nečitelnou poznámkou varuje stejně jako „Advanced“', () => {
+      const result = parseCoinbaseCsv(
+        COINBASE_V4_TRADE_BAD_NOTES.replaceAll('Advanced Trade ', 'Advance Trade '),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(result.transactions.map((t) => t.type)).toEqual(['SELL', 'BUY']);
+      // bez varování by druhá strana směny zmizela potichu
+      expect(result.warnings.map((w) => w.line)).toEqual([2, 3]);
+      expect(result.warnings[0]!.message).toContain('Advance Trade Sell (BTC)');
+      expect(result.warnings[1]!.message).toContain('Advance Trade Buy (ETH)');
+      for (const warning of result.warnings) {
+        expect(warning.message).toContain('směnu krypto–krypto');
+      }
+    });
   });
 
   it('Asset Migration (L2d-03): dvojice řádků dá 2 varování s návodem, ne 2 tichá přeskočení', () => {
@@ -290,6 +360,79 @@ describe('Coinbase transaction history CSV parser', () => {
       expect(warning.message).toContain('ISIN_CHANGE');
       expect(warning.message).toContain('new_isin');
     }
+  });
+
+  describe('Asset Migration v jiném poměru než kus za kus (A07-R1-01, R-10b)', () => {
+    /** Testovací kurzy (kulaté, NE skutečné). */
+    const CFG: TaxYearConfig = {
+      year: 2025,
+      unifiedRatesByYear: { 2024: { EUR: '25' }, 2025: { EUR: '25' } },
+      limits: {
+        securitiesProceedsExemption: '100000',
+        cryptoProceedsExemption: '100000',
+        flatTaxOtherIncome: '50000',
+        employeeSideIncome: '20000',
+        generalFiling: '50000',
+        exemptIncomeReporting: '5000000',
+        timeTestCap: { amountCzk: '40000000', appliesTo: ['SECURITIES', 'CRYPTO'] },
+      },
+      cryptoRules: { exemptionsAvailable: true, effectiveFrom: '2025-02-15' },
+      progressiveThreshold: '1676052',
+    };
+
+    it('varování neslibuje ISIN_CHANGE plošně: pro jiný počet kusů posílá na MERGER s poměrem', () => {
+      const result = parseCoinbaseCsv(COINBASE_V4_ASSET_MIGRATION_RATIO);
+
+      expect(result.errors).toEqual([]);
+      expect(result.warnings.map((w) => w.line)).toEqual([3, 4]);
+      expect(result.warnings[0]!.message).toContain('(ZZA -20)');
+      expect(result.warnings[1]!.message).toContain('(ZZB 2000)');
+      // řádky se nepárují, takže obě cesty musí stát v každém z obou varování
+      for (const warning of result.warnings) {
+        expect(warning.message).toContain('ISIN_CHANGE');
+        expect(warning.message).toContain('kus za kus');
+        expect(warning.message).toContain('MERGER');
+        expect(warning.message).toContain('ratio_from');
+        expect(warning.message).toContain('ratio_to');
+        expect(warning.message).toContain('new_isin');
+      }
+    });
+
+    it('zápis, který varování radí (MERGER 20 : 2000), dá u částečného prodeje správné výdaje', () => {
+      const coinbase = parseCoinbaseCsv(COINBASE_V4_ASSET_MIGRATION_RATIO);
+      // doslova podle varování: starý symbol do isin, nový do new_isin, počet
+      // starých kusů do ratio_from a nových do ratio_to
+      const template = parseUniversalCsv(
+        [
+          'type,date,isin,subtype,ratio_from,ratio_to,new_isin',
+          'CORPORATE_ACTION,2024-10-15,ZZA,MERGER,20,2000,ZZB',
+        ].join('\n'),
+      );
+      expect(template.errors).toEqual([]);
+      expect(template.transactions).toHaveLength(1);
+
+      const result = analyzeTaxYear({
+        transactions: [...coinbase.transactions, ...template.transactions],
+        profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
+        config: CFG,
+      });
+
+      // nákup 20 ZZA za 8 000 EUR → po výměně 2000 ZZB po 4 EUR; prodej 500 ZZB
+      // za 5 000 EUR (kurz 25): tržba 125 000, výdaj 500 × 4 × 25 = 50 000
+      expect(result.crypto.totalGrossProceedsCzk.toString()).toBe('125000');
+      expect(result.crypto.expensesCzk.toString()).toBe('50000');
+      expect(result.crypto.base10Czk.toString()).toBe('75000');
+      expect(result.warnings.filter((w) => w.level === 'ERROR')).toEqual([]);
+    });
+  });
+
+  it('Send s poznámkou o Coinbase Earn zůstává tichým převodem — odměnou je jen Receive', () => {
+    const result = parseCoinbaseCsv(COINBASE_V4_SEND_WITH_REWARD_NOTE);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2]);
   });
 
   it.each(['V4', 'V3', 'V2'] as const)(

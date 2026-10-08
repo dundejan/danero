@@ -103,6 +103,47 @@ export const COINBASE_V4_ASSET_MIGRATION = [
 ].join('\n');
 
 /**
+ * Výměna v JINÉM poměru než kus za kus (A07-R1-01): za 20 starých kusů 2000
+ * nových, kolem ní nákup starého a částečný prodej nového symbolu. Symboly
+ * i čísla smyšlené.
+ */
+export const COINBASE_V4_ASSET_MIGRATION_RATIO = [
+  V4_HEADER,
+  '6790ff000000000000000001,2024-03-01 09:00:00 UTC,Buy,ZZA,20,EUR,€400.00,"€8,000.00","€8,000.00",€0.00,Bought 20 ZZA for €8000.00 EUR',
+  '6790ff000000000000000002,2024-10-15 09:00:00 UTC,Asset Migration,ZZA,-20,EUR,€300.00,"€6,000.00","€6,000.00",€0.00,',
+  '6790ff000000000000000003,2024-10-15 09:00:00 UTC,Asset Migration,ZZB,2000,EUR,€3.00,"€6,000.00","€6,000.00",€0.00,',
+  '6790ff000000000000000004,2025-05-15 09:00:00 UTC,Sell,ZZB,-500,EUR,€10.00,"€5,000.00","€5,000.00",€0.00,Sold 500 ZZB for €5000.00 EUR',
+].join('\n');
+
+/**
+ * Účet vedený v měně, kterou seznam `FIAT_CURRENCIES` nezná (BRL): obyčejný
+ * nákup placený měnou účtu. Protistrana jsou peníze, druhá noha nevzniká.
+ */
+export const COINBASE_V4_UNLISTED_FIAT_ACCOUNT = [
+  V4_HEADER,
+  '6790ab000000000000000001,2025-09-01 09:00:00 UTC,Buy,ETH,0.5,BRL,"R$12,000.00","R$6,000.00","R$6,090.00",R$90.00,Bought 0.5 ETH for R$6090.00 BRL',
+].join('\n');
+
+/**
+ * Okrajové tvary poznámky u Advanced Trade (A07-R1-02), každý řádek jiný den:
+ *  - 2025-09-02: nulové množství protistrany („for 0 USDC“),
+ *  - 2025-09-03: pár s měnou účtu a symbolem měny v poznámce („for €318.08 EUR“),
+ *  - 2025-09-04: symbol protistrany malými písmeny („usdc“).
+ */
+export const COINBASE_V4_TRADE_EDGE_NOTES = [
+  V4_HEADER,
+  '6790ac000000000000000001,2025-09-02 09:00:00 UTC,Advanced Trade Sell,BTC,-0.01,EUR,"€63,000.00",€630.00,€627.48,€2.52,Sold 0.01 BTC for 0 USDC on BTC-USDC',
+  '6790ac000000000000000002,2025-09-03 09:00:00 UTC,Advanced Trade Sell,SOL,-2,EUR,€160.00,€320.00,€318.08,€1.92,Sold 2 SOL for €318.08 EUR on SOL-EUR',
+  '6790ac000000000000000003,2025-09-04 09:00:00 UTC,Advanced Trade Sell,BTC,-0.02,EUR,"€64,000.00","€1,280.00","€1,274.88",€5.12,Sold 0.02 BTC for 1400.00 usdc on BTC-USDC',
+].join('\n');
+
+/** Odeslání s poznámkou, která zmiňuje Coinbase Earn — převod, ne odměna (tou je jen „Receive“). */
+export const COINBASE_V4_SEND_WITH_REWARD_NOTE = [
+  V4_HEADER,
+  '6790ad000000000000000001,2025-09-05 09:00:00 UTC,Send,GRT,5,EUR,€0.10,€0.50,€0.50,€0.00,Sent 5 GRT to Coinbase Earn',
+].join('\n');
+
+/**
  * Odměny doručené jako „Receive“ (L2d-08): tři odměny (Earn, Rewards, Referral)
  * a jeden obyčejný příjem z cizí peněženky, který zůstává tichým převodem.
  */
