@@ -318,23 +318,163 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
     }
   });
 
-  it('sniffer je podmnožina parseru: co pustí, tomu parser nevyčte chybějící sloupce (L2b-06)', () => {
-    const columns = SWISSQUOTE_HEADER_EN.split(';');
-    const missingColumns = (csv: string): boolean =>
-      parseSwissquoteCsv(csv).errors.some((e) => e.message.includes('nevypadá jako Swissquote export'));
+  /** Hláška, kterou parser odmítá hlavičku (undefined = hlavičku vzal). */
+  const headerError = (csv: string): string | undefined =>
+    parseSwissquoteCsv(csv).errors.find((e) => e.message.includes('nevypadá jako Swissquote export'))
+      ?.message;
+  const without = (header: string, ...dropped: string[]): string =>
+    header
+      .split(';')
+      .filter((column) => !dropped.includes(column))
+      .join(';');
 
-    // vypuštění kteréhokoli sloupce: sniffer a kontrola hlavičky v parseru se
-    // musí shodnout (jedna sdílená funkce), ať je sloupec povinný, nebo ne
-    for (const dropped of columns) {
-      const header = columns.filter((column) => column !== dropped).join(';');
-      const csv = `${header}\n`;
-      expect(sniffSwissquoteCsv(csv), `bez sloupce ${dropped}`).toBe(!missingColumns(csv));
+  it('povinné jsou právě čtyři sloupce a žádný další; jeden chybějící sniffer nezastaví (L2b-06, A09-R1-03)', () => {
+    const shapes: Array<[header: string, required: Record<string, string>]> = [
+      [
+        SWISSQUOTE_HEADER_EN,
+        {
+          Date: 'date/datum',
+          Transaction: 'transaction/transaktionen',
+          'Net Amount': 'net amount/nettobetrag',
+          Currency: 'wahrung nettobetrag/currency',
+        },
+      ],
+      [
+        SWISSQUOTE_HEADER_DE,
+        {
+          Datum: 'date/datum',
+          Transaktionen: 'transaction/transaktionen',
+          Nettobetrag: 'net amount/nettobetrag',
+          'Währung Nettobetrag': 'wahrung nettobetrag/currency',
+        },
+      ],
+    ];
+    for (const [header, required] of shapes) {
+      expect(sniffSwissquoteCsv(header)).toBe(true);
+      expect(headerError(header)).toBeUndefined();
+
+      for (const dropped of header.split(';')) {
+        const csv = `${without(header, dropped)}\n`;
+        // sniffer nesmí chtít víc než parser: bez JEDNOHO sloupce (ať je
+        // jakýkoli) soubor pořád patří parseru Swissquote
+        expect(sniffSwissquoteCsv(csv), `sniffer bez sloupce ${dropped}`).toBe(true);
+        const expectedName = required[dropped];
+        if (expectedName === undefined) {
+          // nepovinný sloupec: parser hlavičku vezme (chybu případně hlásí u řádku)
+          expect(headerError(csv), `parser bez sloupce ${dropped}`).toBeUndefined();
+        } else {
+          expect(headerError(csv), `parser bez sloupce ${dropped}`).toContain(
+            `chybí sloupce ${expectedName}.`,
+          );
+        }
+      }
     }
-    // povinné jsou právě čtyři — bez nich soubor nebereme
-    for (const required of ['Date', 'Transaction', 'Net Amount', 'Currency']) {
-      const header = columns.filter((column) => column !== required).join(';');
-      expect(sniffSwissquoteCsv(header), `bez sloupce ${required}`).toBe(false);
+  });
+
+  it('přejmenovaný povinný sloupec: sniffer soubor pustí a parser řekne, který chybí (A09-R1-02)', () => {
+    const renamed: Array<[csv: string, missing: string, newName: string]> = [
+      [SWISSQUOTE_EN.replace(';Currency', ';Ccy'), 'wahrung nettobetrag/currency', 'Ccy'],
+      [
+        SWISSQUOTE_EN.replace('Net Amount', 'Net amount (CHF)'),
+        'net amount/nettobetrag',
+        'Net amount (CHF)',
+      ],
+      [SWISSQUOTE_EN.replace('Date;', 'Booking day;'), 'date/datum', 'Booking day'],
+      [SWISSQUOTE_EN.replace(';Transaction;', ';Type;'), 'transaction/transaktionen', 'Type'],
+      [
+        SWISSQUOTE_DE.replace(';Währung Nettobetrag;', ';Handelswährung;'),
+        'wahrung nettobetrag/currency',
+        'Handelswährung',
+      ],
+    ];
+    for (const [csv, missing, newName] of renamed) {
+      expect(sniffSwissquoteCsv(csv), newName).toBe(true);
+      const result = parseSwissquoteCsv(csv);
+      expect(result.transactions).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.line).toBe(1);
+      // hláška jmenuje chybějící sloupec a v nalezených ukáže ten přejmenovaný
+      expect(result.errors[0]!.message).toContain(`chybí sloupce ${missing}.`);
+      expect(result.errors[0]!.message).toContain(newName);
     }
+
+    // dva povinné sloupce pryč už není přejmenování, ale jiný soubor
+    const twoRenamed = SWISSQUOTE_EN.replace(';Currency', ';Ccy').replace('Net Amount', 'Amount');
+    expect(sniffSwissquoteCsv(twoRenamed)).toBe(false);
+    expect(headerError(twoRenamed)).toContain('chybí sloupce net amount/nettobetrag, wahrung');
+  });
+
+  it('cizí středníkový výpis s obecnými sloupci není Swissquote — ani pro sniffer, ani pro parser (A09-R1-01)', () => {
+    // smyšlené výpisy platforem, které nečteme; čtveřice Date/Transaction/
+    // Net Amount/Currency je to nejobecnější, co účetní výpis může mít
+    const foreign: Record<string, string> = {
+      'peněžní pohyby': [
+        'Date;Transaction;Description;Net Amount;Currency',
+        '03-02-2025;Payment;Incoming transfer;1500.00;EUR',
+        '04-02-2025;Debit;Card payment;-42.10;EUR',
+        '05-02-2025;Credit;Refund;12.00;EUR',
+      ].join('\n'),
+      'obchody s ISO datem': [
+        'Date;Transaction;Instrument;Units;Net Amount;Currency',
+        '2025-02-03;Buy;NORDWIND HOLDING;8;-424.80;CHF',
+        '2025-03-03;Dividend;NORDWIND HOLDING;;12.00;CHF',
+      ].join('\n'),
+      'německé peněžní pohyby': [
+        'Datum;Transaktionen;Beschreibung;Nettobetrag;Währung Nettobetrag',
+        '03-02-2025;Zahlung;Eingang;1500.00;EUR',
+        '04-02-2025;Auszahlung;Ausgang;-300.00;EUR',
+      ].join('\n'),
+      // jediný sloupec, který má i Swissquote („Costs“), z cizího výpisu Swissquote nedělá
+      'pohyby se sloupcem Costs': [
+        'Date;Transaction;Description;Costs;Net Amount;Currency',
+        '03-02-2025;Payment;Incoming transfer;0.00;1500.00;EUR',
+      ].join('\n'),
+      'německé pohyby se sloupcem Kosten': [
+        'Datum;Transaktionen;Beschreibung;Kosten;Nettobetrag;Währung Nettobetrag',
+        '03-02-2025;Zahlung;Eingang;0.00;1500.00;EUR',
+      ].join('\n'),
+    };
+    for (const [label, csv] of Object.entries(foreign)) {
+      expect(sniffSwissquoteCsv(csv), label).toBe(false);
+      // a parser, kdyby se k souboru přece dostal, z něj nesmí udělat
+      // „Swissquote, 0 transakcí, 0 chyb“ (přeskočené Payment/Debit/Credit)
+      const result = parseSwissquoteCsv(csv);
+      expect(result.transactions, label).toEqual([]);
+      expect(result.skipped, label).toEqual([]);
+      expect(result.errors, label).toHaveLength(1);
+      expect(result.errors[0]!.message, label).toContain('nevypadá jako Swissquote export');
+      expect(result.errors[0]!.message, label).toContain('Nalezené sloupce: ');
+    }
+  });
+
+  it('z vlastních sloupců Swissquote stačí kterékoli dva ze čtyř, jeden už ne (A09-R1-01)', () => {
+    const shapes: Array<[header: string, own: string[]]> = [
+      [SWISSQUOTE_HEADER_EN, ['Order #', 'Unit price', 'Costs', 'Accrued Interest']],
+      [SWISSQUOTE_HEADER_DE, ['Auftrag #', 'Stückpreis', 'Kosten', 'Aufgelaufene Zinsen']],
+    ];
+    for (const [header, own] of shapes) {
+      for (const first of own) {
+        for (const second of own) {
+          if (first >= second) continue;
+          // zůstaly právě dva vlastní sloupce: sniffer i parser soubor berou
+          const kept = `${without(header, ...own.filter((c) => c !== first && c !== second))}\n`;
+          expect(sniffSwissquoteCsv(kept), `zůstaly ${first} + ${second}`).toBe(true);
+          expect(headerError(kept), `zůstaly ${first} + ${second}`).toBeUndefined();
+        }
+        // zůstal jediný: to už je hlavička, jakou může mít kdokoli
+        const single = `${without(header, ...own.filter((c) => c !== first))}\n`;
+        expect(sniffSwissquoteCsv(single), `zůstal jen ${first}`).toBe(false);
+        expect(headerError(single), `zůstal jen ${first}`).toContain('vlastních sloupců');
+      }
+      expect(sniffSwissquoteCsv(without(header, ...own))).toBe(false);
+    }
+
+    // rozbité přehlásky: „StÃ¼ckpreis“ se jako vlastní sloupec počítá taky
+    const brokenHeader = SWISSQUOTE_DE_BROKEN_UMLAUTS.split('\n')[0]!;
+    expect(sniffSwissquoteCsv(without(brokenHeader, 'Auftrag #', 'Aufgelaufene Zinsen'))).toBe(true);
+    expect(sniffSwissquoteCsv(without(brokenHeader, 'Auftrag #', 'Aufgelaufene Zinsen', 'Kosten'))).toBe(
+      false,
+    );
   });
 
   it('volnější sniffer nebere cizí středníkové exporty (Degiro, Fio)', () => {
