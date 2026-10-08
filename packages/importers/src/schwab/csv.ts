@@ -687,20 +687,30 @@ export function parseSchwabCsv(
   };
 
   // L2b-07: srážka z úroku patří k úroku téhož dne; při víc úrocích v jednom
-  // dni rozhodne shodný popis (období, za které se úrok připsal).
+  // dni rozhodne shodný popis (období, za které se úrok připsal). Mezi stejně
+  // dobrými má přednost úrok, který srážku ještě nemá — dva shodné úroky se
+  // dvěma srážkami tak dostanou každý svou (A03-R1-01).
   const interestOfDay = (tax: PendingTax, accept: (interest: PendingInterest) => boolean) => {
     const sameDay = interests.filter((interest) => interest.date === tax.date && accept(interest));
-    return sameDay.find((interest) => interest.description === tax.description) ?? sameDay[0] ?? null;
+    const sameText = sameDay.filter((interest) => interest.description === tax.description);
+    const candidates = sameText.length > 0 ? sameText : sameDay;
+    return candidates.find((interest) => interest.withholding === undefined) ?? candidates[0] ?? null;
   };
 
   /**
    * Přiřazení srážek k příjmům, společné pro dividendy i úroky. Nejdřív
    * skutečné srážky, teprve pak vratky — vratka musí mít co snižovat (B-3-11:
    * vratka přeplatku snižuje už zaúčtovanou srážku, nezakládá novou).
+   *
+   * `stacking` říká, jestli smí jeden příjem nést víc srážkových řádků
+   * (A03-R1-01). U úroku ano: cíl je jednoznačný dnem a popisem, takže se
+   * srážka a její doúčtování sečtou. U dividendy ne — cíl se hledá v okně
+   * několika dní a druhý řádek může patřit jiné výplatě téhož titulu.
    */
   const settleTaxes = <T extends { withholding?: string }>(
     pending: PendingTax[],
     target: (tax: PendingTax, accept: (item: T) => boolean) => T | null,
+    stacking: boolean,
     texts: {
       orphanTax: (tax: PendingTax) => string;
       orphanRefund: (tax: PendingTax, refund: string) => string;
@@ -708,12 +718,12 @@ export function parseSchwabCsv(
     },
   ): void => {
     for (const tax of pending.filter((t) => d(t.amount).gt(0))) {
-      const best = target(tax, (item) => item.withholding === undefined);
+      const best = target(tax, (item) => stacking || item.withholding === undefined);
       if (!best) {
         result.warnings.push({ line: tax.line, message: texts.orphanTax(tax) });
         continue;
       }
-      best.withholding = tax.amount;
+      best.withholding = d(best.withholding ?? '0').plus(tax.amount).toString();
     }
     for (const tax of pending.filter((t) => d(t.amount).lt(0))) {
       const refund = d(tax.amount).abs();
@@ -733,7 +743,7 @@ export function parseSchwabCsv(
     }
   };
 
-  settleTaxes(taxes, nearest, {
+  settleTaxes(taxes, nearest, false, {
     orphanTax: (tax) =>
       `Srážková daň ${tax.amount} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá dohledatelnou dividendu — přiřaď ji přes univerzální šablonu.`,
     orphanRefund: (tax, refund) =>
@@ -744,7 +754,7 @@ export function parseSchwabCsv(
   // Rada „doplň šablonou“ tu záměrně není: úrok doplněný ručně by se s týmž
   // úrokem z pozdějšího výpisu Schwabu nespojil (klíč nese brokera) a uložil
   // by se dvakrát.
-  settleTaxes(interestTaxes, interestOfDay, {
+  settleTaxes(interestTaxes, interestOfDay, true, {
     orphanTax: (tax) =>
       `Srážková daň z úroku ${tax.amount} USD (${tax.date}) nemá ve výpisu úrok ze stejného dne, ke kterému by patřila — nezaúčtováno. Zkontroluj, jestli výpis pokrývá období toho úroku.`,
     orphanRefund: (tax, refund) =>

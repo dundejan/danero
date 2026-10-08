@@ -537,6 +537,178 @@ describe('Schwab: srážka z úroku se páruje na úrok téhož dne (L2b-07, R-0
   });
 });
 
+/**
+ * A03-R1-01: k jednomu úroku může přijít víc srážkových řádků (srážka a její
+ * doúčtování, opravná trojice srážka + vratka + nová srážka). Druhý řádek se
+ * zahazoval s hláškou, že úrok toho dne ve výpisu chybí — a přitom stál hned
+ * vedle. Sražená daň z úroku se eviduje celá (R-07f).
+ */
+describe('Schwab: víc srážek k úroku a víc úroků v jednom dni (A03-R1-01, R-07f)', () => {
+  const PERIOD = 'SCHWAB1 INT 05/16-06/15';
+  const taxRow = (amount: string, description = PERIOD, action = 'NRA Tax Adj') =>
+    `"06/16/2026","${action}","","${description}","","","","${amount}"`;
+  const creditInterest = (amount: string, description = PERIOD) =>
+    `"06/16/2026","Credit Interest","","${description}","","","","${amount}"`;
+  const bankInterest = (amount: string) =>
+    `"06/16/2026","Bank Interest","","BANK INT 051626-061526","","","","${amount}"`;
+  const parse = (rows: string[]) => parseSchwabCsv([SCHWAB_HEADER, ...rows].join('\n'));
+  /** Úroky v pořadí výpisu jako „částka:srážka“. */
+  const withheld = (result: ReturnType<typeof parseSchwabCsv>): string[] =>
+    result.transactions.map((t) =>
+      t.type === 'INTEREST' ? `${t.amount.toString()}:${t.withholdingTax.toString()}` : t.type,
+    );
+
+  it('dvě srážky k jednomu úroku se sečtou a žádná nezůstane osiřelá', () => {
+    const result = parse([
+      taxRow('-$0.23'),
+      taxRow('-$1.00', PERIOD, 'NRA Withholding'),
+      creditInterest('$4.10'),
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['4.1:1.23']);
+  });
+
+  it('opravná trojice srážka + vratka + nová srážka dá čistou srážku bez varování', () => {
+    // 0,61 + 1,23 sraženo − 1,23 vráceno = 0,61
+    const result = parse([taxRow('-$0.61'), taxRow('$1.23'), taxRow('-$1.23'), creditInterest('$4.10')]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['4.1:0.61']);
+  });
+
+  it('dva shodné úroky téhož dne se dvěma srážkami — každý dostane svou', () => {
+    const result = parse([
+      taxRow('-$1.23'),
+      creditInterest('$4.10'),
+      taxRow('-$1.23'),
+      creditInterest('$4.10'),
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['4.1:1.23', '4.1:1.23']);
+  });
+
+  it('u dvou úroků téhož dne dostane srážku ten se shodným popisem', () => {
+    const result = parse([bankInterest('$0.50'), creditInterest('$4.10'), taxRow('-$1.23')]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['0.5:0', '4.1:1.23']);
+  });
+
+  it('druhá srážka se shodným popisem se přičte k témuž úroku, ne k jinému úroku toho dne', () => {
+    const result = parse([
+      bankInterest('$0.50'),
+      creditInterest('$4.10'),
+      taxRow('-$0.23'),
+      taxRow('-$1.00'),
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['0.5:0', '4.1:1.23']);
+  });
+
+  it('jediný úrok dne dostane srážku, i když se popis období liší', () => {
+    const result = parse([taxRow('-$1.23', 'SCHWAB1 INT 05/16-06/15 ADJ'), creditInterest('$4.10')]);
+    expect(result.warnings).toEqual([]);
+    expect(withheld(result)).toEqual(['4.1:1.23']);
+  });
+
+  it('varování o chybějícím úroku padne jen tehdy, když úrok toho dne ve výpisu opravdu není', () => {
+    const result = parse([
+      taxRow('-$1.23'),
+      creditInterest('$4.10'),
+      '"05/18/2026","NRA Tax Adj","","SCHWAB1 INT 04/16-05/15","","","","-$0.87"',
+      '"05/18/2026","NRA Tax Adj","","SCHWAB1 INT 04/16-05/15","","","","-$0.13"',
+    ]);
+    expect(result.warnings.map((w) => w.line)).toEqual([4, 5]);
+    for (const warning of result.warnings) {
+      expect(warning.message).toContain('nemá ve výpisu úrok ze stejného dne');
+    }
+    expect(withheld(result)).toEqual(['4.1:1.23']);
+  });
+
+  it('vratka bez srážky u úroku se nezaúčtuje a mluví o úroku, ne o dividendě (A03-R1-02)', () => {
+    const result = parse([taxRow('$0.23'), creditInterest('$4.10')]);
+    expect(withheld(result)).toEqual(['4.1:0']);
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0]!;
+    expect(warning.line).toBe(2);
+    expect(warning.message).toContain('Vratka srážkové daně z úroku 0.23 USD (2026-06-16)');
+    expect(warning.message).toContain('u úroku ze stejného dne žádnou sraženou daň neevidujeme');
+    expect(warning.message).not.toContain('dividend');
+  });
+
+  it('vratka vyšší než srážka u úroku končí na nule a řekne obě částky (A03-R1-02)', () => {
+    const result = parse([taxRow('$0.50'), taxRow('-$0.20'), creditInterest('$4.10')]);
+    expect(withheld(result)).toEqual(['4.1:0']);
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0]!;
+    expect(warning.line).toBe(2);
+    expect(warning.message).toContain('Vratka srážkové daně z úroku 0.5 USD (2026-06-16)');
+    expect(warning.message).toContain('vyšší než sražená daň 0.2 USD u úroku ze stejného dne');
+    expect(warning.message).not.toContain('dividend');
+  });
+});
+
+/**
+ * A03-R1-02: větve z oprav L2b-02 a L2b-07, které neměly test — jejich změna
+ * prošla celou sadou.
+ */
+describe('Schwab: hranice větví srážky z úroku a připsání kusů (A03-R1-02)', () => {
+  it('srážkový řádek SE symbolem patří k dividendě, i když popis zní jako úrok', () => {
+    const result = parseSchwabCsv(
+      [
+        SCHWAB_HEADER,
+        '"06/16/2026","NRA Tax Adj","QXLT","QUELLTAL SCHWAB1 INT FUND","","","","-$6.30"',
+        '"06/16/2026","Cash Dividend","QXLT","QUELLTAL SCHWAB1 INT FUND","","","","$42.00"',
+        '"06/16/2026","Credit Interest","","SCHWAB1 INT 05/16-06/15","","","","$4.10"',
+      ].join('\n'),
+      SCHWAB_FICTIONAL_MAP,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const summary = result.transactions.map((t) =>
+      t.type === 'DIVIDEND' || t.type === 'INTEREST' ? `${t.type}:${t.withholdingTax.toString()}` : t.type,
+    );
+    expect(summary).toEqual(['INTEREST:0', 'DIVIDEND:6.3']);
+  });
+
+  it('u dividend se srážky nesčítají: dvě výplaty téhož titulu v okně dostanou každá svou', () => {
+    // obě srážky jsou zaúčtované v den druhé výplaty; sečtené by skončily u ní
+    // a první výplata by zůstala bez zápočtu
+    const result = parseSchwabCsv(
+      [
+        SCHWAB_HEADER,
+        '"09/17/2026","NRA Withhold","QXLT","QUELLTAL HOLDINGS INC","","","","-$4.50"',
+        '"09/17/2026","NRA Withhold","QXLT","QUELLTAL HOLDINGS INC","","","","-$6.30"',
+        '"09/17/2026","Cash Dividend","QXLT","QUELLTAL HOLDINGS INC","","","","$30.00"',
+        '"09/15/2026","Cash Dividend","QXLT","QUELLTAL HOLDINGS INC","","","","$42.00"',
+      ].join('\n'),
+      SCHWAB_FICTIONAL_MAP,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const summary = result.transactions.map((t) =>
+      t.type === 'DIVIDEND' ? `${t.date}:${t.gross.toString()}:${t.withholdingTax.toString()}` : t.type,
+    );
+    expect(summary).toEqual(['2026-09-17:30:4.5', '2026-09-15:42:6.3']);
+  });
+
+  it('„Stock Plan Activity“ se zápornými kusy není připsání — zůstane obecné varování', () => {
+    const result = parseSchwabCsv(
+      [
+        SCHWAB_HEADER,
+        '"03/11/2026","Stock Plan Activity","QXLT","QUELLTAL HOLDINGS INC","-4","","",""',
+      ].join('\n'),
+      SCHWAB_FICTIONAL_MAP,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0]!.message;
+    expect(warning).toContain('zatím neumíme automaticky zařadit');
+    expect(warning).not.toContain('připsání');
+    expect(warning).not.toContain(' ks');
+  });
+});
+
 describe('opce uplatněním a prodej nakrátko', () => {
   const rows = (...lines: string[]): string => [SCHWAB_HEADER, ...lines].join('\n');
 
