@@ -165,8 +165,9 @@ export default function BezpecnostPage() {
             >
               {OPERATOR.email}
             </a>{' '}
-            — odpovídá autor osobně, zpravidla do 24 hodin. Nahlášené chyby
-            opravujeme přednostně a nálezce rádi (se souhlasem) uvedeme.
+            — odpovídá autor osobně: přijetí potvrdí do 72 hodin, v sezóně daňových
+            přiznání (únor–duben) to může trvat déle. Nahlášené chyby opravujeme přednostně
+            a nálezce rádi (se souhlasem) uvedeme.
           </p>
         </div>
       </section>

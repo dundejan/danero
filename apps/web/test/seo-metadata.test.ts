@@ -115,7 +115,12 @@ describe('robots a sitemapa (K8-09)', () => {
   });
 
   it('každá adresa v sitemapě nese datum poslední změny', () => {
-    const dnes = new Date().toISOString().slice(0, 10);
+    // Datum píše člověk podle pražského kalendáře; `toISOString()` je UTC, takže
+    // by dnešní datum zapsané krátce po půlnoci vyšlo až do dvou do rána jako
+    // „z budoucnosti" (na CI, které běží v UTC, stejně tak).
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Prague' }).format(
+      new Date(),
+    );
     const entries = sitemap();
     expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
@@ -124,8 +129,39 @@ describe('robots a sitemapa (K8-09)', () => {
       expect(typeof lastModified, `bez lastmod: ${entry.url}`).toBe('string');
       expect(String(lastModified)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       // datum z budoucnosti je pro vyhledávač signál, že `lastmod` nemá věřit
-      expect(String(lastModified) <= dnes, `datum v budoucnu: ${entry.url}`).toBe(true);
+      expect(String(lastModified) <= today, `datum v budoucnu: ${entry.url}`).toBe(true);
     }
+  });
+
+  it('lastmod není starší než doložená změna obsahu stránky (L1-11)', () => {
+    // Datum se drží ručně (viz komentář v `app/sitemap.ts`) a zastará potichu:
+    // /platformy tvrdily 12. 7. 2026, přestože se návody v `lib/brokers-catalog.ts`
+    // — ze kterých stránka bere skoro celý obsah — od té doby měnily pětkrát.
+    // Tabulka drží poslední DOLOŽENOU změnu viditelného obsahu; kdo obsah
+    // veřejné stránky změní, přepíše datum v sitemapě a řádek tady.
+    const lastContentChange: Record<string, string> = {
+      '/': '2026-10-08', // úvodní stránka bez tarifů
+      '/platformy': '2026-10-08', // věta o ručním nahrání výpisu bez zmínky o ceně
+      '/bezpecnost': '2026-10-09', // lhůta odpovědi podle SECURITY.md (L1-04)
+      '/cenik': '2026-10-08', // služba celá zdarma
+      '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
+      '/caste-otazky': '2026-10-08',
+      '/o-projektu': '2026-10-08',
+      '/podminky': '2026-10-08', // podmínky 3.0
+      '/soukromi': '2026-10-08',
+    };
+    const byPath = new Map(
+      sitemap().map((entry) => [
+        entry.url.replace(SITE_URL, '') || '/',
+        String(entry.lastModified),
+      ]),
+    );
+    const stale = Object.entries(lastContentChange)
+      .filter(([path, changed]) => (byPath.get(path) ?? '') < changed)
+      .map(
+        ([path, changed]) => `${path}: sitemapa ${byPath.get(path) ?? 'chybí'}, obsah ${changed}`,
+      );
+    expect(stale).toEqual([]);
   });
 
   it('sitemapa nemá žádnou adresu dvakrát', () => {
@@ -184,6 +220,27 @@ describe('strukturovaná data (K8-04)', () => {
     expect(landing).toContain('organizationJsonLd()');
     const faq = readFileSync(join(APP_DIR, 'caste-otazky', 'page.tsx'), 'utf8');
     expect(faq).toContain('faqPageJsonLd(FAQ)');
+  });
+});
+
+describe('/bezpecnost a SECURITY.md slibují totéž (L1-04)', () => {
+  // Stránka nálezce sama posílá hlásit „podle SECURITY.md" — kdo odkaz rozklikne,
+  // nesmí vedle sebe vidět dvě různé lhůty. Do 9. 10. 2026 stálo na webu
+  // „zpravidla do 24 hodin", v SECURITY.md 72 hodin a v sezóně pomaleji.
+  const policy = readFileSync(join(import.meta.dirname, '..', '..', '..', 'SECURITY.md'), 'utf8');
+  const page = readFileSync(join(APP_DIR, 'bezpecnost', 'page.tsx'), 'utf8').replace(/\s+/g, ' ');
+
+  it('lhůta na potvrzení hlášení je na stránce stejná jako v SECURITY.md', () => {
+    const hours = /Potvrzení přijetí do (\d+) hodin/.exec(policy)?.[1];
+    expect(hours, 'SECURITY.md už lhůtu na potvrzení neuvádí — srovnej i stránku').toBeDefined();
+    const promised = [...page.matchAll(/do (\d+) hodin/g)].map((match) => match[1]);
+    expect(promised).toEqual([hours]);
+  });
+
+  it('stránka nezamlčí, že v sezóně přiznání trvá odpověď déle', () => {
+    // `includes` místo `toContain`: při pádu by se jinak vypsal celý zdroj stránky
+    expect(policy.includes('únor–duben'), 'SECURITY.md už sezónu nezmiňuje').toBe(true);
+    expect(page.includes('únor–duben'), 'na /bezpecnost chybí zmínka o sezóně').toBe(true);
   });
 });
 
