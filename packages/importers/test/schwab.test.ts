@@ -4,13 +4,17 @@ import { parseSchwabCsv, parseUsDate, SCHWAB_BROKER, sniffSchwabCsv } from '../s
 import {
   SCHWAB_BANK,
   SCHWAB_EMPTY_EXPORT,
+  SCHWAB_FICTIONAL_MAP,
   SCHWAB_HEADER,
   SCHWAB_INSTRUMENT_MAP,
+  SCHWAB_INTEREST_TAX,
   SCHWAB_JOURNALED,
   SCHWAB_LEGACY,
   SCHWAB_MODERN,
+  SCHWAB_NRA_WITHHOLD,
   SCHWAB_OPTIONS,
   SCHWAB_REORDERED,
+  SCHWAB_STOCK_PLAN,
   SCHWAB_UNMAPPED,
 } from './fixtures/schwab';
 
@@ -412,6 +416,124 @@ describe('Schwab: vratka srážkové daně snižuje srážku, nezakládá novou'
     if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
     expect(dividend.withholdingTax.toString()).toBe('0');
     expect(result.warnings.some((w) => w.message.includes('vyšší než sražená daň'))).toBe(true);
+  });
+});
+
+/**
+ * L2b-01: Schwab vede tutéž srážku z dividendy i pod akcí „NRA Withhold“.
+ * Slovník ji neznal, takže řádek skončil „neznámým typem“ a dividenda se
+ * uložila se srážkou 0 — zápočet podle R-07c pak chyběl celý.
+ */
+describe('Schwab: srážka pod akcí „NRA Withhold“ (L2b-01, R-07c)', () => {
+  const result = parseSchwabCsv(SCHWAB_NRA_WITHHOLD, SCHWAB_FICTIONAL_MAP);
+  const dividendOn = (date: string) => {
+    const dividend = result.transactions.find((t) => t.type === 'DIVIDEND' && t.date === date);
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    return dividend;
+  };
+
+  it('spáruje se s dividendou stejně jako „NRA Withholding“, bez chyby řádku', () => {
+    expect(result.errors).toEqual([]);
+    const dividend = dividendOn('2026-06-17');
+    expect(dividend.gross.toString()).toBe('42');
+    expect(dividend.withholdingTax.toString()).toBe('6.3');
+  });
+
+  it('kladná částka pod touž akcí je vratka a srážku snižuje (B-3-11)', () => {
+    // 4,50 sraženo − 0,90 vráceno = 3,60
+    expect(dividendOn('2026-09-15').withholdingTax.toString()).toBe('3.6');
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+/**
+ * L2b-02: „Stock Plan Activity“ s kusy je nabytí akcií ze zaměstnaneckého
+ * plánu. Obecné „řádek neumíme zařadit — pokud je daňově relevantní…“
+ * nechávalo na uživateli, aby si domyslel, že právě kvůli němu se pozdější
+ * prodej spočítá s nulovou nabývací cenou.
+ */
+describe('Schwab: „Stock Plan Activity“ s kusy (L2b-02)', () => {
+  const result = parseSchwabCsv(SCHWAB_STOCK_PLAN, SCHWAB_FICTIONAL_MAP);
+  const warningAt = (line: number): string =>
+    result.warnings.find((w) => w.line === line)?.message ?? '';
+
+  it('řekne, kolik kusů čeho bylo připsáno, co se stane bez doplnění a kde je doplnit', () => {
+    expect(result.errors).toEqual([]);
+    const warning = warningAt(3);
+    expect(warning).toContain('Stock Plan Activity');
+    expect(warning).toContain('QXLT');
+    expect(warning).toContain('11 ks');
+    expect(warning).toContain('nulovou nabývací cenou');
+    expect(warning).toContain('bez časového testu');
+    expect(warning).toContain('univerzální šablonu');
+    expect(warning).not.toContain('pokud je daňově relevantní');
+  });
+
+  it('nepředepisuje, jakou nabývací cenu zadat — pravidlo pro ni v docs/02 není', () => {
+    const warning = warningAt(3);
+    expect(warning).not.toBe('');
+    expect(warning).not.toMatch(/tržní|kurz|cenou nákupu|\$|USD|73/);
+  });
+
+  it('prodej se uloží dál, řádek bez kusů si nechá obecné varování', () => {
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]!.type).toBe('SELL');
+    expect(result.warnings).toHaveLength(2);
+    expect(warningAt(4)).toContain('zatím neumíme automaticky zařadit');
+    expect(warningAt(4)).not.toContain(' ks');
+  });
+});
+
+/**
+ * L2b-07: daň sražená z úroku chodí jako srážkový řádek BEZ symbolu s popisem
+ * „SCHWAB1 INT …“. Párovala se jen na dividendy, takže vždy skončila radou
+ * hledat dividendu, která ve výpisu není, a úrok se uložil bez srážky (R-07f).
+ */
+describe('Schwab: srážka z úroku se páruje na úrok téhož dne (L2b-07, R-07f)', () => {
+  const result = parseSchwabCsv(SCHWAB_INTEREST_TAX);
+
+  it('úrok nese sraženou daň v poli withholdingTax, částka zůstává hrubá', () => {
+    expect(result.errors).toEqual([]);
+    const interests = result.transactions.filter((t) => t.type === 'INTEREST');
+    expect(interests).toHaveLength(1);
+    const interest = interests[0]!;
+    if (interest.type !== 'INTEREST') throw new Error('unreachable');
+    expect(interest.date).toBe('2026-06-16');
+    expect(interest.amount.toString()).toBe('4.1');
+    expect(interest.withholdingTax.toString()).toBe('1.23');
+  });
+
+  it('srážka bez úroku téhož dne dostane varování o dani z úroku, ne o dividendě', () => {
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0]!;
+    expect(warning.line).toBe(4);
+    expect(warning.message).toContain('z úroku');
+    expect(warning.message).toContain('0.87');
+    expect(warning.message).not.toContain('dividend');
+  });
+
+  it('vratka snižuje srážku u úroku a otisk pro dedupe se srážkou nemění', () => {
+    const rows = [
+      SCHWAB_HEADER,
+      '"06/16/2026","NRA Tax Adj","","SCHWAB1 INT 05/16-06/15","","","","$0.23"',
+      '"06/16/2026","NRA Tax Adj","","SCHWAB1 INT 05/16-06/15","","","","-$1.23"',
+      '"06/16/2026","Credit Interest","","SCHWAB1 INT 05/16-06/15","","","","$4.10"',
+    ];
+    const refunded = parseSchwabCsv(rows.join('\n'));
+    expect(refunded.errors).toEqual([]);
+    expect(refunded.warnings).toEqual([]);
+    const interest = refunded.transactions[0]!;
+    if (interest.type !== 'INTEREST') throw new Error('unreachable');
+    expect(interest.withholdingTax.toString()).toBe('1');
+
+    // úrok uložený dřív bez srážky a tentýž úrok se srážkou jsou jedna transakce
+    const plain = parseSchwabCsv([rows[0]!, rows[3]!].join('\n'));
+    const known = new Set(
+      dedupeTransactions(SCHWAB_BROKER, plain.transactions, new Set()).fresh.map((row) => row.key),
+    );
+    const again = dedupeTransactions(SCHWAB_BROKER, refunded.transactions, known);
+    expect(again.fresh).toHaveLength(0);
+    expect(again.duplicates).toBe(1);
   });
 });
 

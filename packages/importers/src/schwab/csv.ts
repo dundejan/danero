@@ -93,15 +93,36 @@ const DIVIDEND_ACTIONS = new Set([
   'Div Adjustment',
 ]);
 
-/** Srážková daň = samostatné záporné řádky — k dividendám se párují druhým průchodem. */
+/**
+ * Srážková daň = samostatné záporné řádky — k dividendám (a k úrokům, viz
+ * `INTEREST_TAX_MARK`) se párují druhým průchodem.
+ *
+ * „NRA Withhold“ je novější zápis téže události jako „NRA Withholding“
+ * (L2b-01): bez něj řádek skončil „neznámým typem“ a dividenda se uložila se
+ * srážkou 0, takže zápočet podle R-07c chyběl celý.
+ */
 const WITHHOLDING_ACTIONS = new Set([
   'NRA Tax Adj',
+  'NRA Withhold',
   'NRA Withholding',
   'Foreign Tax Paid',
   'IRS Withhold Adj',
 ]);
 
 const INTEREST_ACTIONS = new Set(['Bank Interest', 'Credit Interest', 'Bond Interest', 'Interest Adj']);
+
+/**
+ * L2b-07: daň sražená z ÚROKU chodí pod stejnými akcemi jako srážka
+ * z dividendy, jen bez symbolu a s popisem úroku z hotovosti („SCHWAB1 INT
+ * 05/16-06/15“). Patří k úroku téhož dne (R-07f), ne k dividendě.
+ */
+const INTEREST_TAX_MARK = 'SCHWAB1 INT';
+
+/**
+ * L2b-02: připsání akcií ze zaměstnaneckého plánu (RSU/ESPP) na brokerage
+ * účet. S kusy je to nabytí, které výpočtu chybí — viz větev v parseru.
+ */
+const STOCK_PLAN_ACTION = 'Stock Plan Activity';
 
 const FEE_ACTIONS = new Set(['Advisor Fee', 'Service Fee', 'ADR Mgmt Fee']);
 
@@ -129,7 +150,7 @@ const WARN_SKIP_ACTIONS: Record<string, string> = {
   'Long Term Cap Gain Reinvest': CAPGAIN_WARNING,
   'Short Term Cap Gain Reinvest': CAPGAIN_WARNING,
   'Promotional Award': OTHER_WARNING,
-  'Stock Plan Activity': OTHER_WARNING,
+  [STOCK_PLAN_ACTION]: OTHER_WARNING,
   Adjustment: OTHER_WARNING,
   'Misc Cash Entry': OTHER_WARNING,
   'Full Redemption': OTHER_WARNING,
@@ -192,7 +213,7 @@ export function sniffSchwabCsv(text: string): boolean {
  * hlavičkou, koncovou čárku (prázdný 9. sloupec) a footer „Transactions
  * Total“ — vše se toleruje/přeskakuje. Srážková daň z dividend jsou
  * samostatné záporné řádky → párují se druhým průchodem (symbol + nejbližší
- * datum do ±5 dní).
+ * datum do ±5 dní); srážka z úroku se páruje na úrok téhož dne.
  */
 export function parseSchwabCsv(
   text: string,
@@ -292,14 +313,29 @@ export function parseSchwabCsv(
     isin?: string;
     withholding?: string;
   }
+  /** Úrok čeká na konec souboru ze stejného důvodu: jeho srážka je jiný řádek (L2b-07). */
+  interface PendingInterest {
+    line: number;
+    raw: string;
+    id: string;
+    date: string;
+    amount: string;
+    description: string;
+    note: string;
+    withholding?: string;
+  }
   interface PendingTax {
     line: number;
     symbol: string;
     date: string;
+    description: string;
+    /** Kladná = sražená daň, záporná = vratka (B-3-11). */
     amount: string;
   }
   const dividends: PendingDividend[] = [];
+  const interests: PendingInterest[] = [];
   const taxes: PendingTax[] = [];
+  const interestTaxes: PendingTax[] = [];
 
   for (let i = headerIndex + 1; i < allRows.length; i += 1) {
     const row = allRows[i]!;
@@ -339,6 +375,21 @@ export function parseSchwabCsv(
     const warnSkip = WARN_SKIP_ACTIONS[action];
     if (warnSkip !== undefined) {
       const symbol = map.get(row, 'Symbol');
+      // L2b-02: s kusy je to nabytí akcií, ne řádek „možná daňově relevantní“.
+      // Bez něj narazí pozdější prodej na nulovou nabývací cenu stejně jako
+      // u převodu kusů výš (B-3-9). Text ZÁMĚRNĚ neříká, jakou cenu zadat:
+      // pravidlo pro akcie ze zaměstnaneckého plánu v docs/02 není.
+      const granted =
+        action === STOCK_PLAN_ACTION ? parseSchwabNumber(map.get(row, 'Quantity')) : null;
+      if (granted !== null && d(granted).gt(0)) {
+        result.warnings.push({
+          line,
+          message:
+            `„${action}“${symbol ? ` (${symbol})` : ''}: připsání ${granted} ks ze zaměstnaneckého akciového plánu jsme do evidence nezařadili. ` +
+            'Doplň jejich nabytí přes univerzální šablonu, jinak se prodej těchto kusů spočítá s nulovou nabývací cenou a bez časového testu.',
+        });
+        continue;
+      }
       result.warnings.push({
         line,
         message: `„${action}“${symbol ? ` (${symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
@@ -520,7 +571,14 @@ export function parseSchwabCsv(
         });
         continue;
       }
-      taxes.push({ line, symbol, date, amount: signed.neg().toString() });
+      const ofInterest = symbol === '' && description.includes(INTEREST_TAX_MARK);
+      (ofInterest ? interestTaxes : taxes).push({
+        line,
+        symbol,
+        date,
+        description,
+        amount: signed.neg().toString(),
+      });
       continue;
     }
 
@@ -545,12 +603,13 @@ export function parseSchwabCsv(
         });
         continue;
       }
-      push(line, raw, {
-        type: 'INTEREST',
+      interests.push({
+        line,
+        raw,
         id: nextId(row),
-        amount: amountRaw,
-        currency: USD,
         date,
+        amount: amountRaw,
+        description,
         note: description || action,
       });
       continue;
@@ -627,37 +686,84 @@ export function parseSchwabCsv(
     return bestDistance > TAX_MATCH_MAX_DAYS ? null : best;
   };
 
-  // Nejdřív skutečné srážky, teprve pak vratky — vratka musí mít co snižovat.
-  for (const tax of taxes.filter((t) => d(t.amount).gt(0))) {
-    const best = nearest(tax, (dividend) => dividend.withholding === undefined);
-    if (!best) {
-      result.warnings.push({
-        line: tax.line,
-        message: `Srážková daň ${tax.amount} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá dohledatelnou dividendu — přiřaď ji přes univerzální šablonu.`,
-      });
-      continue;
+  // L2b-07: srážka z úroku patří k úroku téhož dne; při víc úrocích v jednom
+  // dni rozhodne shodný popis (období, za které se úrok připsal).
+  const interestOfDay = (tax: PendingTax, accept: (interest: PendingInterest) => boolean) => {
+    const sameDay = interests.filter((interest) => interest.date === tax.date && accept(interest));
+    return sameDay.find((interest) => interest.description === tax.description) ?? sameDay[0] ?? null;
+  };
+
+  /**
+   * Přiřazení srážek k příjmům, společné pro dividendy i úroky. Nejdřív
+   * skutečné srážky, teprve pak vratky — vratka musí mít co snižovat (B-3-11:
+   * vratka přeplatku snižuje už zaúčtovanou srážku, nezakládá novou).
+   */
+  const settleTaxes = <T extends { withholding?: string }>(
+    pending: PendingTax[],
+    target: (tax: PendingTax, accept: (item: T) => boolean) => T | null,
+    texts: {
+      orphanTax: (tax: PendingTax) => string;
+      orphanRefund: (tax: PendingTax, refund: string) => string;
+      excessRefund: (tax: PendingTax, refund: string, item: T) => string;
+    },
+  ): void => {
+    for (const tax of pending.filter((t) => d(t.amount).gt(0))) {
+      const best = target(tax, (item) => item.withholding === undefined);
+      if (!best) {
+        result.warnings.push({ line: tax.line, message: texts.orphanTax(tax) });
+        continue;
+      }
+      best.withholding = tax.amount;
     }
-    best.withholding = tax.amount;
-  }
-  // B-3-11: vratka přeplatku snižuje už zaúčtovanou srážku téhož symbolu.
-  for (const tax of taxes.filter((t) => d(t.amount).lt(0))) {
-    const refund = d(tax.amount).abs();
-    const best = nearest(tax, (dividend) => d(dividend.withholding ?? '0').gt(0));
-    if (!best) {
-      result.warnings.push({
-        line: tax.line,
-        message: `Vratka srážkové daně ${refund.toString()} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá k čemu se přiřadit — u téhle dividendy žádnou sraženou daň neevidujeme. Zkontroluj výpis, jinak bude zápočet nadhodnocený.`,
-      });
-      continue;
+    for (const tax of pending.filter((t) => d(t.amount).lt(0))) {
+      const refund = d(tax.amount).abs();
+      const best = target(tax, (item) => d(item.withholding ?? '0').gt(0));
+      if (!best) {
+        result.warnings.push({ line: tax.line, message: texts.orphanRefund(tax, refund.toString()) });
+        continue;
+      }
+      const remaining = d(best.withholding ?? '0').minus(refund);
+      if (remaining.isNegative()) {
+        result.warnings.push({
+          line: tax.line,
+          message: texts.excessRefund(tax, refund.toString(), best),
+        });
+      }
+      best.withholding = Decimal.max(remaining, d('0')).toString();
     }
-    const zbytek = d(best.withholding ?? '0').minus(refund);
-    if (zbytek.isNegative()) {
-      result.warnings.push({
-        line: tax.line,
-        message: `Vratka srážkové daně ${refund.toString()} USD (${tax.symbol}, ${tax.date}) je vyšší než sražená daň ${best.withholding} USD u dividendy z ${best.date} — započítali jsme ji jen do nuly. Zkontroluj výpis.`,
-      });
-    }
-    best.withholding = Decimal.max(zbytek, d('0')).toString();
+  };
+
+  settleTaxes(taxes, nearest, {
+    orphanTax: (tax) =>
+      `Srážková daň ${tax.amount} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá dohledatelnou dividendu — přiřaď ji přes univerzální šablonu.`,
+    orphanRefund: (tax, refund) =>
+      `Vratka srážkové daně ${refund} USD (${tax.symbol || 'bez symbolu'}, ${tax.date}) nemá k čemu se přiřadit — u téhle dividendy žádnou sraženou daň neevidujeme. Zkontroluj výpis, jinak bude zápočet nadhodnocený.`,
+    excessRefund: (tax, refund, dividend) =>
+      `Vratka srážkové daně ${refund} USD (${tax.symbol}, ${tax.date}) je vyšší než sražená daň ${dividend.withholding} USD u dividendy z ${dividend.date} — započítali jsme ji jen do nuly. Zkontroluj výpis.`,
+  });
+  // Rada „doplň šablonou“ tu záměrně není: úrok doplněný ručně by se s týmž
+  // úrokem z pozdějšího výpisu Schwabu nespojil (klíč nese brokera) a uložil
+  // by se dvakrát.
+  settleTaxes(interestTaxes, interestOfDay, {
+    orphanTax: (tax) =>
+      `Srážková daň z úroku ${tax.amount} USD (${tax.date}) nemá ve výpisu úrok ze stejného dne, ke kterému by patřila — nezaúčtováno. Zkontroluj, jestli výpis pokrývá období toho úroku.`,
+    orphanRefund: (tax, refund) =>
+      `Vratka srážkové daně z úroku ${refund} USD (${tax.date}) nemá k čemu se přiřadit — u úroku ze stejného dne žádnou sraženou daň neevidujeme. Zkontroluj výpis.`,
+    excessRefund: (tax, refund, interest) =>
+      `Vratka srážkové daně z úroku ${refund} USD (${tax.date}) je vyšší než sražená daň ${interest.withholding} USD u úroku ze stejného dne — započítali jsme ji jen do nuly. Zkontroluj výpis.`,
+  });
+
+  for (const interest of interests) {
+    push(interest.line, interest.raw, {
+      type: 'INTEREST',
+      id: interest.id,
+      amount: interest.amount,
+      currency: USD,
+      // R-07f: částka je hrubý úrok, srážka jde zvlášť (strop podle čl. 11 smlouvy)
+      withholdingTax: interest.withholding ?? '0',
+      date: interest.date,
+      note: interest.note,
+    });
   }
   for (const dividend of dividends) {
     push(dividend.line, dividend.raw, {
