@@ -7,7 +7,7 @@ v paušálním režimu, obchoduje přes Trading212 — je zároveň první testo
 
 - `packages/shared` — kanonický model transakcí (Zod v4), Decimal peníze, ISO datumy
 - `packages/engine` — **čistý daňový engine bez I/O**; implementuje pravidla
-  **R-01…R-11 z `docs/02-danova-pravidla.md`** (závazná specifikace! testy na ně odkazují)
+  **R-01…R-15 z `docs/02-danova-pravidla.md`** (závazná specifikace! testy na ně odkazují)
 - `packages/importers` — parsery brokerů → kanonický model, dedupe (FNV obsahu),
   T212 API klient, rekonciliace pozic
 - `apps/web` — Next.js 16 App Router, Tailwind v4, Better Auth (+2FA), Drizzle;
@@ -173,8 +173,10 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **E2E e-maily**: `DANERO_EMAIL_LOG=cesta` přesměruje odesílání do souboru
   (nastavuje jen Playwright) — testy pak klikají na skutečný odkaz z e-mailu
   místo obcházení ověření. Stejný mechanismus mají unit testy (`test/auth-helpers.ts`).
-- **Kurzy**: jednotné kurzy v `apps/web/lib/tax-config.ts` jsou zatím ORIENTAČNÍ
-  (přesný jen 2025 dle D-75) — výdaj se přepočítává kurzem roku nákupu!
+- **Kurzy**: jednotné kurzy za roky 2020–2025 jsou OVĚŘENÉ z pokynů GFŘ řady D
+  (`packages/engine/src/config/unifiedRates.ts`, mez drží `LAST_VERIFIED_RATE_YEAR`).
+  ORIENTAČNÍ je jen běžný rok doplněný v `apps/web/lib/tax-config.ts` — pokyn za
+  něj vyjde až v lednu. Výdaj se přepočítává kurzem roku nákupu!
 - `pkill` nezabije `next start` — použij `fuser -k PORT/tcp`.
 - Next 16 odmítne druhý `next dev` nad stejným adresářem (zámek v `distDir/dev/lock`,
   i na jiném portu) — když už dev server běží (třeba jiná session), E2E pusť

@@ -2,6 +2,8 @@
 
 Stav rešerše: červenec 2026. MVP = **Trading212**; architektura rozšiřitelná o další brokery (pořadí: IBKR → XTB → Degiro → Fio).
 
+> Dokument je **dobový snímek rešerše**, ne přehled toho, co aplikace umí dnes. Které platformy a jakým způsobem čteme, říká výhradně katalog `apps/web/lib/brokers-catalog.ts`; jak se přidává nový formát, popisuje [docs/06](06-import.md). Kanonický model níže platí dál.
+
 ## Kanonický model transakcí
 
 Každý importér (parser) převádí data brokera na jednotný kanonický model — engine nikdy nevidí formát brokera. Po vzoru Portfolio Performance a Export-To-Ghostfolio (Apache-2.0, TypeScript — referenční implementace converterů pro 26 brokerů).
@@ -57,7 +59,9 @@ Zásady:
 3. Nesedí-li počet kusů → upozornění + průvodce ručním zadáním korporátní akce (split/ISIN change) s předvyplněným poměrem odhadnutým z rozdílu.
 4. Volitelně později: externí databáze splitů (EOD API) pro automatický návrh.
 
-## Další brokeři (post-MVP, priorita sestupně)
+## Další brokeři (historická rešerše z července 2026)
+
+Tabulka zachycuje, co jsme o formátech věděli před implementací, a původní pořadí priorit. **Není to seznam podporovaných platforem** — parserů mezitím přibylo víc, než kolik jich tu je, a aktuální stav (platforma, způsob importu, návod ke stažení výpisu) vede jen katalog `apps/web/lib/brokers-catalog.ts`. Než začneš psát nový parser, podívej se do něj a do `packages/importers/src/`; postup je v [docs/06](06-import.md).
 
 | Broker | Formát | Klíčové poznámky |
 |---|---|---|
@@ -65,12 +69,12 @@ Zásady:
 | **XTB** | jen **XLSX** z xStation — starý „Full report" i nový report z tlačítka „Export (new)" | API pro klienty vypnuto 3/2025. Neexportuje měnu instrumentu ani hrubé dividendy v původní měně → nutná vlastní DB instrumentů. Hlavičky CZ/EN. Corporate actions bez explicitních záznamů. **Nový report (ověřeno na reálném souboru 10/2026) má jiné rozložení:** listy `Closed Positions` / `Cash Operations` / `Open Positions`, sloupec `Ticker` místo `Symbol`, typy `Stock purchase` / `Stock sell` / `SEC fee`, časy jako excelová data v UTC, pod tabulkou řádek `Total`. Měna účtu je jen v souhrnu na listu otevřených pozic (a v názvu souboru). Pozice, kterou XTB uzavřel sám (`Close Origin` = `Correction`, např. odpis bezcenného titulu s komentářem „… Worthless"), je pouze v `Closed Positions` a nemá peněžní operaci → parser na ni jen **upozorní** a nic neimportuje; daňové zacházení zatím docs/02 neřeší. Obchod ani dividenda titulu bez ISIN se neukládá, dokud ho uživatel nedoplní v číselníku (dividenda uložená bez ISIN se po jeho doplnění a novém nahrání zdvojila — ISIN je součást obsahového otisku). `Cash Operations` pokrývá jen zvolené období — nákupy starších lotů v něm nejsou, uživatel musí exportovat od založení účtu. Českou jazykovou verzi nového reportu jsme zatím neviděli. |
 | **Degiro** | Account.csv + Transactions.csv | Středník, `dd-MM-yyyy`, desetinná čárka, **lokalizované popisy** (CZ/EN/NL/DE/FR slovníky). Corporate actions jako textové párové řádky (`WIJZIGING ISIN`, `FUSIE`, `AANDELENSPLITSING`, `STOCK SPLIT`, `Štěpení akcií`, `Aktiensplit`, `Division d'actions`, reverse split) — parser je nesmí interpretovat jako zdanitelný prodej/nákup. Split (i reverzní) = `SPLIT` s poměrem z počtů kusů v obou popisech; spin-off (`SPIN-OFF`, `Afsplitsing`, `Abspaltung`, `Scission`) skončí **chybou k ručnímu doplnění** — alokaci nabývací ceny výpis neuvádí. **Nerozpoznaný popis je vždy chyba, i když řádek nemá peněžní pohyb** (přesně tak Degiro reportuje korporátní akce — dřív takový řádek mizel beze stopy). Známý defekt: popis rozdělený do 2 řádků (Taxomat neumí → my ano). Dekódování typů: folioinsights.app/guides/degiro-csv-transaction-types. |
 | **Fio e-Broker** | CSV **windows-1250**, CZ hlavičky | Sloupce: `Datum obchodu; Směr; Symbol; Cena; Počet; Měna; Objem v CZK; Poplatky v CZK; Objem v USD; …; Text FIO`. Max 1 rok/export. Žádné API pro obchody (Fio API = jen platební účty). Žádný existující open-source parser — mezera. |
-| Revolut | PDF/XLSX statements | Bez API; parsery jedou z PDF (`bogdanghervan/revolut-statement`). Nízká priorita. |
+| Revolut | „Account statement“ jako CSV nebo XLSX (akcie i krypto) | Bez API. Rešerše počítala s PDF (`bogdanghervan/revolut-statement`) a nízkou prioritou; **dnes je parser hotový** (`packages/importers/src/revolut/`) a čte CSV i sešit XLSX, PDF ne. |
 | eToro | XLSX (Closed Positions, Account Activity, Dividends) | Max 1 rok/export. |
 | Lightyear | CSV (`Date, Type, Ticker, ISIN, Quantity, Price, Currency, Total, Fee, FX Rate`) | Údajně vč. corporate actions — ověřit na vzorku. |
-| Portu | PDF/CSV daňové podklady | Fondee generuje hotový daňový výpis → import zbytečný. |
+| Portu | CSV export transakcí | Rešerše import pokládala za zbytečný (počítala s hotovými daňovými podklady od platformy); **dnes je parser hotový** (`packages/importers/src/portu/`) a čte CSV export transakcí. |
 
-**Fallback pro nepodporované brokery:** univerzální CSV/XLSX šablona (pattern Koinly/Taxomat) — dokumentovaný formát, který si uživatel vyplní sám.
+**Fallback pro nepodporované brokery:** univerzální CSV šablona (pattern Koinly/Taxomat) — dokumentovaný formát, který si uživatel vyplní sám. Šablona je jen v CSV (`/api/sablona`, popis sloupců v [docs/06](06-import.md)); XLSX čteme pouze u reportů, které mají vlastní parser.
 
 ## Tržní data
 

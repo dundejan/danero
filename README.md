@@ -75,7 +75,7 @@ od nuly.** Engine nikdy nevidí formát brokera.
 | Balíček | Obsah |
 |---|---|
 | `packages/shared` | kanonický model transakcí (Zod), Decimal peníze, ISO datumy |
-| `packages/engine` | čistý daňový engine bez I/O — pravidla R-01…R-12 |
+| `packages/engine` | čistý daňový engine bez I/O — pravidla R-01…R-15 |
 | `packages/importers` | parsery brokerů, dedupe, API klienti, rekonciliace pozic |
 | `apps/web` | Next.js 16 App Router, Tailwind v4, Better Auth (+2FA), Drizzle |
 

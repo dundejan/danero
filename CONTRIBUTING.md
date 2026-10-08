@@ -45,7 +45,7 @@ dunder.jan@gmail.com** — po převedení na anonymní fixturu se maže.
 
 ## Změny v daňové logice
 
-Engine je čistá funkce bez I/O a implementuje **pravidla R-01…R-12
+Engine je čistá funkce bez I/O a implementuje **pravidla R-01…R-15
 z [docs/02](docs/02-danova-pravidla.md)** — to je závazná specifikace.
 
 Pořadí je vždy stejné: **nejdřív pravidlo do docs/02 se zdrojem** (paragraf
