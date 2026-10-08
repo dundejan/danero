@@ -62,10 +62,15 @@ export const TASTY_V2_ORPHAN_EXPIRATION = [
   '2021-06-18T23:00:00+0200,Receive Deliver,Expiration,,CLNE  210618C00014000,Equity Option,Removal of 1.0 CLNE 06/18/21 Call 14.00 due to expiration.,0.00,1,0.00,--,0.00,100,CLNE,CLNE,6/18/21,14,CALL,,USD',
 ].join('\n');
 
-/** Nepodporovaný instrument (Future) → warning + skip. */
+/**
+ * Nepodporovaný instrument (Future) → warning + skip. Futures nemají záměr
+ * „to Open/Close“ — Sub Type je holé „Buy“/„Sell“ a Action holé BUY/SELL
+ * (slovník podle open-source parseru tastyworks-pnl; čísla smyšlená).
+ */
 export const TASTY_V2_FUTURE = [
   TASTY_V2_HEADER,
-  '2024-03-01T10:00:00+0100,Trade,Buy to Open,BUY_TO_OPEN,/ESM4,Future,Bought 1 /ESM4,-100.00,1,-100.00,--,-1.25,50,/ES,/ES,6/21/24,,,123456,USD',
+  '2024-03-04T15:31:02+0100,Trade,Sell,SELL,/ESM4,Future,Sold 1 /ESM4 @ 5111.25,0.00,1,0.00,-0.75,-0.52,50,/ES,/ES,6/21/24,,,123457,USD',
+  '2024-03-01T10:00:00+0100,Trade,Buy,BUY,/ESM4,Future,Bought 1 /ESM4 @ 5100.25,0.00,1,0.00,-0.75,-0.52,50,/ES,/ES,6/21/24,,,123456,USD',
 ].join('\n');
 
 /** Neznámý podtyp peněžního pohybu → error s doslovným zněním. */

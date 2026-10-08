@@ -214,12 +214,44 @@ describe('parseTastytradeCsv — edge cases', () => {
     expect(result.warnings[0]!.message).toContain('směr uzavření neumíme určit');
   });
 
-  it('nepodporovaný instrument (Future) → warning + skip', () => {
+  it('nepodporovaný instrument (Future, holé BUY/SELL) → warning + skip, žádná chyba', () => {
     const result = parseTastytradeCsv(TASTY_V2_FUTURE);
     expect(result.transactions).toEqual([]);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toContain('Future');
-    expect(result.warnings[0]!.message).toContain('nepodporujeme');
+    // dřív „Neznámý směr obchodu „BUY““ — k varování o instrumentu řádek nedošel
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toHaveLength(2);
+    for (const warning of result.warnings) {
+      expect(warning.message).toContain('Instrument „Future“ (/ESM4) zatím nepodporujeme');
+      expect(warning.message).toContain('univerzální šablon');
+    }
+  });
+
+  it('holé BUY/SELL u akcie → obyčejný nákup a prodej bez značky shortu (R-13)', () => {
+    const csv = [
+      TASTY_V2_HEADER,
+      '2024-05-09T15:00:00+0200,Trade,Sell,SELL,SCHG,Equity,Sold 2 SCHG @ 101.00,202.00,2,101.00,--,-0.03,,,,,,,123459,USD',
+      '2024-05-02T15:00:00+0200,Trade,Buy,BUY,SCHG,Equity,Bought 2 SCHG @ 99.00,-198.00,2,-99.00,--,-0.02,,,,,,,123458,USD',
+    ].join('\n');
+    const result = parseTastytradeCsv(csv, TASTY_INSTRUMENT_MAP);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['BUY', 'SELL']);
+    for (const tx of result.transactions) {
+      if (tx.type !== 'BUY' && tx.type !== 'SELL') throw new Error('čekáme obchod');
+      expect(tx.positionEffect).toBeUndefined();
+    }
+  });
+
+  it('Action, která směr nenese, zůstává chybou s doslovným zněním', () => {
+    const csv = [
+      TASTY_V2_HEADER,
+      '2024-05-02T15:00:00+0200,Trade,Swap,SWAP,SCHG,Equity,Swap 2 SCHG,0.00,2,0.00,--,0.00,,,,,,,123460,USD',
+    ].join('\n');
+    const result = parseTastytradeCsv(csv, TASTY_INSTRUMENT_MAP);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neznámý směr obchodu „SWAP“');
   });
 
   it('neznámý podtyp Money Movement → error s doslovným zněním a číslem řádku', () => {

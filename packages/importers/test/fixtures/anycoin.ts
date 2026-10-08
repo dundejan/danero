@@ -45,3 +45,37 @@ export const ANYCOIN_MISC = [
   '2022-07-04T10:05:00.000Z,unstake,1.43092234,ATOM,',
   '2022-07-05T10:00:00.000Z,airdrop,5,XRP,',
 ].join('\n');
+
+/**
+ * Tentýž účet dvakrát: jednou export všech měn, podruhé s filtrem na BTC —
+ * z každého obchodu pak zbude jen krypto noha (u nákupu `trade fill`,
+ * u prodeje `trade payment`). Čísla jsou smyšlená.
+ */
+const ANYCOIN_TWO_TRADES = [
+  '2025-03-10T18:16:50.367Z,trade payment,-2000,CZK,910001',
+  '2025-03-10T18:16:52.885Z,trade fill,0.00101,BTC,910001',
+  '2025-06-11T08:46:44.616Z,trade payment,-0.00101,BTC,910002',
+  '2025-06-11T08:46:47.763Z,trade fill,2300,CZK,910002',
+];
+
+export const ANYCOIN_ALL_CURRENCIES = [ANYCOIN_HEADER, ...ANYCOIN_TWO_TRADES].join('\n');
+
+export const ANYCOIN_ONLY_BTC = [
+  ANYCOIN_HEADER,
+  ...ANYCOIN_TWO_TRADES.filter((row) => row.includes(',BTC,')),
+].join('\n');
+
+export const ANYCOIN_ONLY_CZK = [
+  ANYCOIN_HEADER,
+  ...ANYCOIN_TWO_TRADES.filter((row) => row.includes(',CZK,')),
+].join('\n');
+
+/**
+ * Useknuté období, ne filtr měny: na začátku zbylo plnění v BTC, na konci
+ * platba v CZK. Nohy nejsou v téže měně, takže souhrnná rada o filtru neplatí.
+ */
+export const ANYCOIN_CUT_PERIOD = [
+  ANYCOIN_HEADER,
+  '2025-01-01T00:00:02.885Z,trade fill,0.00101,BTC,920001',
+  '2025-12-31T23:59:58.367Z,trade payment,-1500,CZK,920002',
+].join('\n');

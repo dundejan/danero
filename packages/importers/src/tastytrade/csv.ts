@@ -196,12 +196,16 @@ export function parseTastytradeCsv(
     const instrumentRaw = map.get(row, 'Instrument Type');
     const isOption = instrumentRaw === 'Equity Option';
     const actionRaw = map.get(row, 'Action');
-    const direction =
-      actionRaw === 'BUY_TO_OPEN' || actionRaw === 'BUY_TO_CLOSE'
-        ? 'BUY'
-        : actionRaw === 'SELL_TO_OPEN' || actionRaw === 'SELL_TO_CLOSE'
-          ? 'SELL'
-          : null;
+    // Směr nese PREFIX hodnoty Action: vedle BUY_TO_OPEN/SELL_TO_CLOSE… existuje
+    // i holé BUY/SELL (futures záměr „to Open/Close“ nemají). Dřív se četly jen
+    // čtyři plné hodnoty, takže futures skončily na „Neznámý směr obchodu“ dřív,
+    // než došly k varování o nepodporovaném instrumentu. Záměr (short u akcií,
+    // R-13) se dál čte z plné hodnoty v `shortEffect`.
+    const direction = /^BUY(_|$)/.test(actionRaw)
+      ? 'BUY'
+      : /^SELL(_|$)/.test(actionRaw)
+        ? 'SELL'
+        : null;
     // Datum je ISO čas s offsetem bez dvojtečky (+0200); offset se mění podle
     // časové zóny prohlížeče při exportu, takže jediné stabilní je DATUM
     // lokálního času (prvních 10 znaků) — den, jak ho uživatel viděl v aplikaci.

@@ -174,6 +174,31 @@ export function parseAnycoinCsv(text: string): ImportResult {
     orders.set(orderId, legs);
   });
 
+  /* ── export omezený filtrem měny ── */
+
+  // Přehled transakcí v Anycoinu má filtr měny (cizí návody k exportu výslovně
+  // říkají zvolit všechny měny; bez účtu ověřeno jen nepřímo). Z výpisu jedné
+  // měny zbude z každého obchodu jediná noha — u nákupu plnění, u prodeje platba,
+  // s filtrem na korunách naopak. Poznávací znamení: ŽÁDNÝ obchod nemá
+  // protistranu a všechny obchodní řádky jsou v jedné měně. Useknuté období tak
+  // nevypadá — zasáhne nejvýš obchody na krajích a jejich nohy jsou v různých
+  // měnách. Místo chyby u každého obchodu s radou hlídat období, která nepomůže,
+  // proto jedna hláška, která jako první jmenuje filtr.
+  const orderLegs = [...orders.values()];
+  const tradeCurrencies = new Set(orderLegs.flat().map((leg) => leg.currency));
+  const noCounterpart = orderLegs.every((legs) => legs.every((leg) => leg.role === legs[0]!.role));
+  if (orders.size > 0 && noCounterpart && tradeCurrencies.size === 1) {
+    const [onlyCurrency] = tradeCurrencies;
+    const orderIds = [...orders.keys()];
+    const listed = orderIds.slice(0, 3).join(', ');
+    const more = orderIds.length > 3 ? ` a ${orderIds.length - 3} dalších` : '';
+    result.errors.push({
+      line: orderLegs[0]![0]!.line,
+      message: `Ve výpisu chybí protistrana obchodů — všechny obchodní řádky jsou v měně ${onlyCurrency}, takže žádný pár platba + plnění není kompletní (Order ID ${listed}${more}). Výpis je nejspíš omezený filtrem měny: v přehledu transakcí Anycoinu filtr zruš, exportuj všechny měny a nahraj výpis znovu. Když filtr zapnutý nebyl, zkontroluj, že export pokrývá celé období, případně obchody doplň přes univerzální šablonu.`,
+    });
+    return result;
+  }
+
   /* ── párování obchodů: 1× payment + 1× fill na Order ID ── */
 
   for (const [orderId, legs] of orders) {
