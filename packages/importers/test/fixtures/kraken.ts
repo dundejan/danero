@@ -80,6 +80,99 @@ export const KRAKEN_MISC_TYPES = [
   '"LAD111-AAAAA-BBBBB4","ADJST1-AAAAA-CCCCC4","2024-03-04 00:00:00","adjustment","","currency","XXDG","spot / main",1.0000000000,0,1.0000000000',
 ].join('\n');
 
+/**
+ * L2d-02: přírůstky a úbytky bez protistrany vedle skutečných přesunů.
+ * Podle nápovědy Krakenu je `transfer` na prvním místě airdrop nebo fork;
+ * tiché smí zůstat jen vyjmenované přesuny mezi peněženkami (spot ↔ staking,
+ * spot ↔ futures). Aktiva i částky jsou smyšlené.
+ */
+export const KRAKEN_AIRDROPS = [
+  KRAKEN_HEADERS_NEW,
+  // ř. 2: transfer bez subtypu s kladnou částkou = airdrop nebo fork → varování
+  '"LAR111-AAAAA-BBBBB1","RAR001-XYZKQ-CCCCC1","2023-02-06 08:00:00","transfer","","currency","FLR","spot / main",150.0000000000,0,150.0000000000',
+  // ř. 3 a 4: subtyp airdrop u transfer i earn → varování
+  '"LAR112-AAAAA-BBBBB2","RAR002-XYZKQ-CCCCC2","2023-02-07 08:00:00","transfer","airdrop","currency","SGB","spot / main",40.0000000000,0,40.0000000000',
+  '"LAR113-AAAAA-BBBBB3","RAR003-XYZKQ-CCCCC3","2023-02-08 08:00:00","earn","airdrop","currency","SGB","earn / flexible",12.0000000000,0,52.0000000000',
+  // ř. 5 a 6: převod pozice při stažení aktiva z nabídky (obě znaménka) → varování
+  '"LAR114-AAAAA-BBBBB4","RAR004-XYZKQ-CCCCC4","2023-05-02 08:00:00","transfer","delistingconversion","currency","NANO","spot / main",-30.0000000000,0,0.0000000000',
+  '"LAR115-AAAAA-BBBBB5","RAR005-XYZKQ-CCCCC5","2023-05-02 08:00:00","earn","delistingconversion","currency","XXBT","earn / flexible",0.0004000000,0,0.0004000000',
+  // ř. 7–9: vyjmenované interní přesuny → tiše přeskočeno
+  '"LAR116-AAAAA-BBBBB6","RAR006-XYZKQ-CCCCC6","2023-06-01 08:00:00","transfer","spottostaking","currency","ADA","spot / main",-100.0000000000,0,0.0000000000',
+  '"LAR117-AAAAA-BBBBB7","RAR006-XYZKQ-CCCCC6","2023-06-01 08:00:00","transfer","stakingfromspot","currency","ADA.S","spot / main",100.0000000000,0,100.0000000000',
+  '"LAR118-AAAAA-BBBBB8","RAR007-XYZKQ-CCCCC7","2023-06-02 08:00:00","transfer","spottofutures","currency","ZEUR","spot / main",-250.0000,0,0.0000',
+  // ř. 10: transfer bez subtypu se zápornou částkou (odchod na jiný účet Krakenu) → tiše přeskočeno
+  '"LAR119-AAAAA-BBBBB9","RAR008-XYZKQ-CCCCC8","2023-06-03 08:00:00","transfer","","currency","XXBT","spot / main",-0.0100000000,0,0.0000000000',
+  // ř. 11: subtyp, který neznáme → varování (ticho je jen pro vyjmenované)
+  '"LAR120-AAAAA-BBBBC1","RAR009-XYZKQ-CCCCC9","2023-06-04 08:00:00","transfer","vaultmove","currency","DOT","spot / main",7.0000000000,0,7.0000000000',
+  // ř. 12: přesun uvnitř Kraken Earn → tiše přeskočeno
+  '"LAR121-AAAAA-BBBBC2","RAR010-XYZKQ-CCCCD1","2023-06-05 08:00:00","earn","allocation","currency","DOT","earn / flexible",7.0000000000,0,7.0000000000',
+].join('\n');
+
+/**
+ * L2d-06: obchod s poplatkem z kreditů KFEE — třetí řádek se stejným refid,
+ * částka 0 a poplatek v jiném aktivu. Řádek není noha směny.
+ */
+export const KRAKEN_KFEE_TRADE = [
+  KRAKEN_HEADERS_NEW,
+  '"LKF111-AAAAA-BBBBB1","TKF001-XYZKQ-CCCCC1","2022-09-12 10:00:00","trade","","currency","ZEUR","spot / main",-600.0000,0,400.0000',
+  '"LKF112-AAAAA-BBBBB2","TKF001-XYZKQ-CCCCC1","2022-09-12 10:00:00","trade","","currency","XXBT","spot / main",0.0300000000,0,0.0300000000',
+  '"LKF113-AAAAA-BBBBB3","TKF001-XYZKQ-CCCCC1","2022-09-12 10:00:00","trade","","currency","KFEE","spot / main",0.00,156.00,844.00',
+].join('\n');
+
+/** Tentýž obchod, řádek poplatku je ve skupině první — na pořadí nesmí záležet. */
+export const KRAKEN_KFEE_TRADE_FEE_FIRST = (() => {
+  const [header, fiat, crypto, fee] = KRAKEN_KFEE_TRADE.split('\n');
+  return [header, fee, fiat, crypto].join('\n');
+})();
+
+/**
+ * L2d-04: tytéž obchody ve starším zápisu s interními kódy Krakenu (XETC, XREP,
+ * XMLN, ZEUR) a v novějším s běžnými symboly — txid, časy i částky shodné.
+ */
+const internalCodeTrades = (codes: {
+  etc: string;
+  rep: string;
+  mln: string;
+  eur: string;
+}): string =>
+  [
+    KRAKEN_HEADERS_OLD,
+    // BUY 20 ETC za 200 EUR
+    `"LIC111-AAAAA-BBBBB1","TIC001-XYZKQ-CCCCC1","2021-02-01 10:00:00","trade","","currency","${codes.eur}",-200.0000,0.5200,800.0000`,
+    `"LIC112-AAAAA-BBBBB2","TIC001-XYZKQ-CCCCC1","2021-02-01 10:00:00","trade","","currency","${codes.etc}",20.0000000000,0,20.0000000000`,
+    // SELL 5 REP za 90 EUR
+    `"LIC113-AAAAA-BBBBB3","TIC002-XYZKQ-CCCCC2","2021-03-01 10:00:00","trade","","currency","${codes.rep}",-5.0000000000,0,0.0000000000`,
+    `"LIC114-AAAAA-BBBBB4","TIC002-XYZKQ-CCCCC2","2021-03-01 10:00:00","trade","","currency","${codes.eur}",90.0000,0.2300,889.7700`,
+    // BUY 2 MLN za 70 EUR
+    `"LIC115-AAAAA-BBBBB5","TIC003-XYZKQ-CCCCC3","2021-04-01 10:00:00","trade","","currency","${codes.eur}",-70.0000,0.1800,819.5900`,
+    `"LIC116-AAAAA-BBBBB6","TIC003-XYZKQ-CCCCC3","2021-04-01 10:00:00","trade","","currency","${codes.mln}",2.0000000000,0,2.0000000000`,
+  ].join('\n');
+
+export const KRAKEN_INTERNAL_CODES_OLD = internalCodeTrades({
+  etc: 'XETC',
+  rep: 'XREP',
+  mln: 'XMLN',
+  eur: 'ZEUR',
+});
+
+export const KRAKEN_INTERNAL_CODES_NEW = internalCodeTrades({
+  etc: 'ETC',
+  rep: 'REP',
+  mln: 'MLN',
+  eur: 'EUR',
+});
+
+/** L2d-04: nákupy BTC za zloté, švédské a dánské koruny s interním kódem fiat měny. */
+export const KRAKEN_INTERNAL_FIAT_CODES = [
+  KRAKEN_HEADERS_NEW,
+  '"LIF111-AAAAA-BBBBB1","TIF001-XYZKQ-CCCCC1","2022-02-01 10:00:00","trade","","currency","ZPLN","spot / main",-2000.0000,5.2000,3000.0000',
+  '"LIF112-AAAAA-BBBBB2","TIF001-XYZKQ-CCCCC1","2022-02-01 10:00:00","trade","","currency","XXBT","spot / main",0.0100000000,0,0.0100000000',
+  '"LIF113-AAAAA-BBBBB3","TIF002-XYZKQ-CCCCC2","2022-02-02 10:00:00","trade","","currency","ZSEK","spot / main",-3000.0000,7.8000,1000.0000',
+  '"LIF114-AAAAA-BBBBB4","TIF002-XYZKQ-CCCCC2","2022-02-02 10:00:00","trade","","currency","XXBT","spot / main",0.0100000000,0,0.0200000000',
+  '"LIF115-AAAAA-BBBBB5","TIF003-XYZKQ-CCCCC3","2022-02-03 10:00:00","trade","","currency","ZDKK","spot / main",-2500.0000,6.5000,500.0000',
+  '"LIF116-AAAAA-BBBBB6","TIF003-XYZKQ-CCCCC3","2022-02-03 10:00:00","trade","","currency","XXBT","spot / main",0.0100000000,0,0.0300000000',
+].join('\n');
+
 /** Pár s nesmyslným kalendářním datem → error, ne tichý posun. */
 export const KRAKEN_BAD_DATE = [
   KRAKEN_HEADERS_NEW,

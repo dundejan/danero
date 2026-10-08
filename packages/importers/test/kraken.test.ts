@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeTransactions } from '../src';
+import { dedupeKey, dedupeTransactions } from '../src';
 import {
   KRAKEN_BROKER,
   normalizeKrakenAsset,
@@ -8,10 +8,16 @@ import {
 } from '../src/kraken/csv';
 import { COINBASE_V4 } from './fixtures/coinbase';
 import {
+  KRAKEN_AIRDROPS,
   KRAKEN_BAD_DATE,
   KRAKEN_CRYPTO_CRYPTO,
   KRAKEN_CRYPTO_FEE,
   KRAKEN_FIAT_FIAT,
+  KRAKEN_INTERNAL_CODES_NEW,
+  KRAKEN_INTERNAL_CODES_OLD,
+  KRAKEN_INTERNAL_FIAT_CODES,
+  KRAKEN_KFEE_TRADE,
+  KRAKEN_KFEE_TRADE_FEE_FIRST,
   KRAKEN_LEDGERS_NEW,
   KRAKEN_LEDGERS_OLD,
   KRAKEN_MARGIN,
@@ -239,6 +245,154 @@ describe('Kraken ledgers.csv parser', () => {
     ]);
     expect(combined.fresh).toHaveLength(3);
     expect(combined.duplicates).toBe(3);
+  });
+});
+
+/**
+ * L2d-02: přírůstek aktiva bez protistrany není „interní přesun“. Kdo dostal
+ * airdrop a kusy později prodal, viděl jen chybu o neúplné historii — řádek
+ * skončil mezi přeskočenými, u kterých UI ukazuje jen počet.
+ */
+describe('airdrop a fork nejsou interní přesun (L2d-02)', () => {
+  const result = parseKrakenCsv(KRAKEN_AIRDROPS);
+  const warningAt = (line: number): string =>
+    result.warnings.find((w) => w.line === line)?.message ?? '';
+
+  it('transfer bez subtypu s kladnou částkou → podmíněné varování s návodem', () => {
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(warningAt(2)).toContain('150 FLR');
+    expect(warningAt(2)).toContain('Pokud jde o airdrop nebo fork');
+    expect(warningAt(2)).toContain('univerzální šablonu');
+    expect(warningAt(2)).not.toContain('ne daňová událost');
+  });
+
+  it('subtyp airdrop varuje u transfer i u earn', () => {
+    expect(warningAt(3)).toContain('40 SGB');
+    expect(warningAt(3)).toContain('airdrop');
+    expect(warningAt(4)).toContain('12 SGB');
+    expect(warningAt(4)).toContain('univerzální šablonu');
+  });
+
+  it('delistingconversion varuje u přírůstku i úbytku', () => {
+    expect(warningAt(5)).toContain('-30 NANO');
+    expect(warningAt(5)).toContain('stažení aktiva z nabídky');
+    expect(warningAt(6)).toContain('0.0004 BTC');
+    expect(warningAt(6)).toContain('univerzální šablonu');
+  });
+
+  it('neznámý subtyp přesunu varuje — ticho je jen pro vyjmenované', () => {
+    expect(warningAt(11)).toContain('vaultmove');
+    expect(warningAt(11)).toContain('univerzální šablonu');
+  });
+
+  it('skutečné přesuny (spot ↔ staking, spot ↔ futures, Earn) zůstávají tiché', () => {
+    expect(result.warnings.map((w) => w.line)).toEqual([2, 3, 4, 5, 6, 11]);
+    expect(result.skipped.map((s) => s.line)).toEqual([7, 8, 9, 10, 12]);
+  });
+});
+
+/**
+ * L2d-04: mapa aliasů neznala XETC, XREP, XMLN, ZPLN, ZSEK a ZDKK. Tentýž
+ * obchod měl podle generace exportu jiný symbol i dedupe klíč (zdvojení při
+ * nahrání staršího a novějšího exportu) a nákup za zloté vypadal jako směna
+ * krypto–krypto.
+ */
+describe('interní kódy aktiv Krakenu (L2d-04)', () => {
+  it('doložené interní kódy se přeloží na běžný symbol', () => {
+    expect(normalizeKrakenAsset('XETC')).toBe('ETC');
+    expect(normalizeKrakenAsset('XREP')).toBe('REP');
+    expect(normalizeKrakenAsset('XMLN')).toBe('MLN');
+    expect(normalizeKrakenAsset('ZPLN')).toBe('PLN');
+    expect(normalizeKrakenAsset('ZSEK')).toBe('SEK');
+    expect(normalizeKrakenAsset('ZDKK')).toBe('DKK');
+  });
+
+  it('prefix se neodřezává: ZCHF je jiné aktivum než CHF', () => {
+    expect(normalizeKrakenAsset('ZCHF')).toBe('ZCHF');
+    expect(normalizeKrakenAsset('XTZ')).toBe('XTZ');
+    expect(normalizeKrakenAsset('ZRX')).toBe('ZRX');
+  });
+
+  it('starý i nový zápis téhož obchodu dá stejný symbol i dedupe klíč', () => {
+    const oldCodes = parseKrakenCsv(KRAKEN_INTERNAL_CODES_OLD);
+    const newCodes = parseKrakenCsv(KRAKEN_INTERNAL_CODES_NEW);
+
+    expect(oldCodes.errors).toEqual([]);
+    expect(oldCodes.transactions.map((t) => ('isin' in t ? t.isin : ''))).toEqual([
+      'ETC',
+      'REP',
+      'MLN',
+    ]);
+    expect(oldCodes.transactions.map((t) => dedupeKey(KRAKEN_BROKER, t))).toEqual(
+      newCodes.transactions.map((t) => dedupeKey(KRAKEN_BROKER, t)),
+    );
+
+    // starší export a po něm novější: druhé nahrání jsou samé duplicity
+    const combined = dedupeTransactions(KRAKEN_BROKER, [
+      ...oldCodes.transactions,
+      ...newCodes.transactions,
+    ]);
+    expect(combined.fresh).toHaveLength(3);
+    expect(combined.duplicates).toBe(3);
+  });
+
+  it('nákup za ZPLN, ZSEK a ZDKK je obyčejný BUY, ne směna krypto–krypto', () => {
+    const result = parseKrakenCsv(KRAKEN_INTERNAL_FIAT_CODES);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['BUY', 'BUY', 'BUY']);
+    expect(result.transactions.map((t) => ('currency' in t ? t.currency : ''))).toEqual([
+      'PLN',
+      'SEK',
+      'DKK',
+    ]);
+    const first = result.transactions[0]!;
+    if (first.type !== 'BUY') throw new Error('unreachable');
+    expect(first.pricePerShare.toString()).toBe('200000'); // 2000 PLN / 0.01 BTC
+    expect(first.fee?.currency).toBe('PLN');
+  });
+});
+
+/**
+ * L2d-06: poplatek z kreditů KFEE je třetí řádek se stejným refid a nulovou
+ * částkou. Kontrola „právě dvě nohy“ kvůli němu odmítla celý obchod s radou
+ * stáhnout kompletní export — který kompletní byl.
+ */
+describe('obchod s poplatkem na samostatném řádku (L2d-06)', () => {
+  it.each([
+    ['řádek poplatku na konci', KRAKEN_KFEE_TRADE, 4],
+    ['řádek poplatku jako první', KRAKEN_KFEE_TRADE_FEE_FIRST, 2],
+  ])('%s → 1 obchod a 1 varování', (_label, csv, feeLine) => {
+    const result = parseKrakenCsv(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.isin).toBe('BTC');
+    expect(buy.quantity.toString()).toBe('0.03');
+    expect(buy.pricePerShare.toString()).toBe('20000'); // 600 EUR / 0.03 BTC
+    expect(buy.fee).toBeUndefined();
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(feeLine);
+    expect(result.warnings[0]!.message).toContain('156 KFEE');
+    expect(result.warnings[0]!.message).toContain('nebyl odečten');
+  });
+
+  it('řádek poplatku nenahradí chybějící nohu — osamocená noha je dál chyba', () => {
+    const withoutCryptoLeg = KRAKEN_KFEE_TRADE.split('\n')
+      .filter((line) => !line.includes('"XXBT"'))
+      .join('\n');
+    const result = parseKrakenCsv(withoutCryptoLeg);
+
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.line).toBe(2);
+    expect(result.errors[0]!.message).toContain('párový řádek');
+    expect(result.warnings).toHaveLength(1);
   });
 });
 
