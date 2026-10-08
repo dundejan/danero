@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exemptFromDate, type TaxYearConfig } from '../src';
+import { exemptFromDate, positionsAt, type TaxYearConfig } from '../src';
 import { buy, CFG_2025, run, sell } from './helpers';
 
 describe('R-01 časový test 3 roky', () => {
@@ -38,6 +38,44 @@ describe('R-01 časový test 3 roky', () => {
     const byTrade = run(txs, { options: { timeTestDateBasis: 'trade' } });
     expect(byTrade.securities.base10Czk.toString()).toBe('0');
     expect(byTrade.securities.timeTestExemptProceedsCzk.toString()).toBe('110000');
+  });
+
+  // Test výše rozlišuje báze jen datem NABYTÍ: prodej 2. 6./3. 6. leží před dnem
+  // osvobození při obou datech prodeje, takže by prošel, i kdyby engine u prodeje
+  // bral vždy den obchodu. Tady rozhoduje právě datum prodeje (L4-03).
+  describe('R-01a: výchozí báze vypořádání platí i na straně PRODEJE', () => {
+    // nabytí vypořádané 3. 6. 2022 → osvobozeno od 4. 6. 2025
+    const purchase = (isin: string) =>
+      buy({ isin, quantity: '100', pricePerShare: '1000', tradeDate: '2022-06-01', settlementDate: '2022-06-03' });
+
+    it('prodej obchodovaný den před osvobozením a vypořádaný v den osvobození je osvobozený', () => {
+      const isin = 'CZ0000000001';
+      const txs = [
+        purchase(isin),
+        sell({ isin, quantity: '100', pricePerShare: '1100', tradeDate: '2025-06-03', settlementDate: '2025-06-04' }),
+      ];
+
+      const result = run(txs);
+      expect(result.securities.disposals[0]!.saleDate).toBe('2025-06-04');
+      expect(result.securities.timeTestExemptProceedsCzk.toString()).toBe('110000');
+      expect(result.securities.base10Czk.toString()).toBe('0');
+
+      // kontrola přepínače: s bází trade je datem prodeje den obchodu
+      const byTrade = run(txs, { options: { timeTestDateBasis: 'trade' } });
+      expect(byTrade.securities.disposals[0]!.saleDate).toBe('2025-06-03');
+    });
+
+    it('totéž, když broker datum vypořádání neuvádí a engine ho dopočte (T+1)', () => {
+      // US titul, úterý 3. 6. 2025 → dopočtené vypořádání středa 4. 6. 2025
+      const isin = 'US0000000001';
+      const result = run([
+        purchase(isin),
+        sell({ isin, quantity: '100', pricePerShare: '1100', tradeDate: '2025-06-03', settlementDate: undefined }),
+      ]);
+      expect(result.securities.disposals[0]!.saleDate).toBe('2025-06-04');
+      expect(result.securities.timeTestExemptProceedsCzk.toString()).toBe('110000');
+      expect(result.securities.base10Czk.toString()).toBe('0');
+    });
   });
 
   it('R-01a × R-05a/R-06a: báze trade mění JEN časový test — rok příjmu a kurz jdou po vypořádání', () => {
@@ -96,6 +134,37 @@ describe('R-01 časový test 3 roky', () => {
     expect(lot.exemptFrom).toBe('2027-03-02');
     expect(lot.isExempt).toBe(false);
     expect(lot.daysToExempt).toBe(426); // od 2025-12-31 do 2027-03-02
+  });
+
+  // Hlídač musí mít stejnou hranici jako výpočet daně (`classifyTimeTest`, test
+  // R-01 nahoře) — jinak uživatel prodá podle hlídače a daň vyjde jinak (L4-09).
+  describe('R-01: přehled pozic na hraně osvobození', () => {
+    // nabytí vypořádané 3. 6. 2022 → osvobozeno od 4. 6. 2025
+    const { ledger } = run([
+      buy({ quantity: '10', pricePerShare: '100', tradeDate: '2022-06-01', settlementDate: '2022-06-03' }),
+    ]);
+    const lotAt = (atDate: string) => positionsAt(ledger, atDate)[0]!.lots[0]!;
+
+    it('v den 3. výročí nabytí lot osvobozený ještě není a zbývá mu jeden den', () => {
+      const lot = lotAt('2025-06-03');
+      expect(lot.exemptFrom).toBe('2025-06-04');
+      expect(lot.isExempt).toBe(false);
+      expect(lot.daysToExempt).toBe(1);
+    });
+
+    it('den po 3. výročí už osvobozený je', () => {
+      const lot = lotAt('2025-06-04');
+      expect(lot.isExempt).toBe(true);
+      expect(lot.daysToExempt).toBe(0);
+    });
+
+    it('lot je v pozicích už v den nabytí, před nákupem ne', () => {
+      // dny mezi obchodem a vypořádáním (1.–2. 6.) test schválně nezamyká
+      expect(positionsAt(ledger, '2022-05-31')).toHaveLength(0);
+      const positions = positionsAt(ledger, '2022-06-03');
+      expect(positions).toHaveLength(1);
+      expect(positions[0]!.lots[0]!.acquisitionDate).toBe('2022-06-03');
+    });
   });
 });
 
