@@ -50,8 +50,18 @@ function universalNumber(value: string, column: string): string {
   return number;
 }
 
+/**
+ * Úvodní plus je táž hodnota bez něj — banky a brokeři tak tisknou připsané
+ * částky („+5000.00“) a uživatel je opíše i se znaménkem (A10-R1-02). Odkládá
+ * se DŘÍV, než se zápis posuzuje: sdílené `isAmbiguousThousandGroup`
+ * i `detectDecimalSeparator` plus neznají, takže „+1,500“ by jinak tiše prošlo
+ * jako 1,5. Bere se jen plus těsně před číslem — „+-5“ ani samotné „+“ číslem
+ * nejsou.
+ */
+const withoutPlusSign = (value: string): string => value.replace(/^\+(?=[\d.,])/, '');
+
 function canonicalNumber(value: string, column: string): string {
-  const trimmed = value.replace(/[\s\u00a0\u202f]/g, '');
+  const trimmed = withoutPlusSign(value.replace(/[\s\u00a0\u202f]/g, ''));
   if (!trimmed.includes(',')) return trimmed;
   if (trimmed.includes('.')) {
     // tečka i čárka = jednoznačné: poslední oddělovač je desetinný, ten druhý dělí tisíce
@@ -307,7 +317,7 @@ export function parseUniversalCsv(text: string): ImportResult {
   // patnáct set zapsaných s oddělovačem tisíců — čteme dál 1,5, jen nahlas.
   const fileWritesDecimalComma =
     detectDecimalSeparator(
-      rows.flatMap((row) => NUMERIC_COLUMNS.map((column) => map.get(row, column))),
+      rows.flatMap((row) => NUMERIC_COLUMNS.map((column) => withoutPlusSign(map.get(row, column)))),
     ) === ',';
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2;
@@ -347,7 +357,7 @@ export function parseUniversalCsv(text: string): ImportResult {
 
     const number = (column: (typeof NUMERIC_COLUMNS)[number]): string => {
       const raw = map.get(row, column);
-      if (fileWritesDecimalComma && raw.includes('.') && isAmbiguousThousandGroup(raw)) {
+      if (fileWritesDecimalComma && raw.includes('.') && isAmbiguousThousandGroup(withoutPlusSign(raw))) {
         const asDecimal = raw.replace(/\.?0+$/, '').replace('.', ',');
         result.warnings.push({
           line,
@@ -365,13 +375,16 @@ export function parseUniversalCsv(text: string): ImportResult {
       // řádku, ne pádem. Prázdné POVINNÉ číslo jde do modelu jako undefined —
       // validace pak vyjmenuje všechny chybějící sloupce naráz, kdežto prázdný
       // řetězec by shodil převod na Decimal anglickou hláškou knihovny.
-      const feeAmount = number('fee');
-      const fee = feeAmount
-        ? { amount: feeAmount, currency: currency('fee_currency') || currency('currency') }
-        : undefined;
       switch (type) {
         case 'BUY':
         case 'SELL': {
+          // Poplatek nese jen nákup a prodej, proto se čte až tady (A10-R1-01):
+          // u dividendy, úroku, vkladu nebo převodu se `fee` do transakce
+          // nedostane, takže pomlčka nebo „0 Kč“ v něm nesmí řádek shodit.
+          const feeAmount = number('fee');
+          const fee = feeAmount
+            ? { amount: feeAmount, currency: currency('fee_currency') || currency('currency') }
+            : undefined;
           const isin = map.get(row, 'isin');
           const assetClass = map.get(row, 'asset_class').toUpperCase() || undefined;
           // R-12f/R-12g: settlement_style určuje, zda je cash tokem cena (premium),

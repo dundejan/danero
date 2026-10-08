@@ -719,3 +719,257 @@ describe('L2c-02: šablona ke stažení se otevře v českém Excelu', () => {
     expect(parseUniversalCsv('type,date\nGIFT,2026-01-05').errors[0]!.message).toContain('Neznámý typ');
   });
 });
+
+/**
+ * Revize opravy A10 (kolo 1). Řádek se staví z dvojic sloupec → hodnota, ať je
+ * z testu vidět, který sloupec se zkouší, a ne jen počet čárek.
+ */
+const WIDE_HEAD = [
+  'type', 'date', 'isin', 'asset_class', 'quantity', 'price', 'currency', 'fee', 'fee_currency',
+  'amount', 'withholding_tax', 'source_country', 'subtype', 'ratio_from', 'ratio_to',
+  'acquisition_date', 'acquisition_price', 'acquisition_currency',
+] as const;
+type WideRow = Partial<Record<(typeof WIDE_HEAD)[number], string>>;
+const wideLine = (cells: WideRow, delimiter: string): string =>
+  WIDE_HEAD.map((column) => {
+    const cell = cells[column] ?? '';
+    return cell.includes(delimiter) ? `"${cell}"` : cell;
+  }).join(delimiter);
+const parseWide = (rows: WideRow[], delimiter = ','): ReturnType<typeof parseUniversalCsv> =>
+  parseUniversalCsv(
+    [WIDE_HEAD.join(delimiter), ...rows.map((cells) => wideLine(cells, delimiter))].join('\n'),
+  );
+const messagesOf = (result: ReturnType<typeof parseUniversalCsv>): string[] =>
+  result.errors.map((error) => error.message);
+
+/**
+ * A10-R1-01: poplatek čte jen nákup a prodej. Co má uživatel ve sloupci `fee`
+ * u dividendy, úroku, vkladu nebo převodu, se do transakce nedostane — a proto
+ * to řádek nesmí shodit (účetnický formát Excelu píše nulu jako pomlčku).
+ */
+describe('A10-R1-01: sloupec fee u řádku, který poplatek nepoužívá', () => {
+  const cases: Array<[label: string, row: WideRow]> = [
+    ['dividenda s pomlčkou místo nuly', { type: 'DIVIDEND', date: '2026-05-10', isin: 'US0000000001', currency: 'USD', fee: '-', amount: '25.00', withholding_tax: '3.75', source_country: 'US' }],
+    ['vklad s „0 Kč“', { type: 'DEPOSIT', date: '2026-05-10', currency: 'CZK', fee: '0 Kč', amount: '5000' }],
+    ['úrok s „n/a“', { type: 'INTEREST', date: '2026-05-10', currency: 'USD', fee: 'n/a', amount: '1.23', source_country: 'US' }],
+    ['převod ven s pomlčkou', { type: 'TRANSFER_OUT', date: '2026-05-10', isin: 'US0000000001', quantity: '3', fee: '-' }],
+    ['vklad s poplatkem a značkou měny poplatku', { type: 'DEPOSIT', date: '2026-05-10', currency: 'CZK', fee: '1', fee_currency: 'Kč', amount: '5000' }],
+    ['výběr s nejednoznačným poplatkem „1,500“', { type: 'WITHDRAWAL', date: '2026-05-10', currency: 'CZK', fee: '1,500', amount: '5000' }],
+    ['korporátní akce s textem v poplatku', { type: 'CORPORATE_ACTION', date: '2026-05-10', isin: 'US0000000001', subtype: 'SPLIT', ratio_from: '1', ratio_to: '4', fee: 'zdarma' }],
+    ['převod dovnitř s textem v poplatku', { type: 'TRANSFER_IN', date: '2026-05-10', isin: 'US0000000001', quantity: '3', fee: '-', acquisition_date: '2024-01-10', acquisition_price: '50', acquisition_currency: 'USD' }],
+  ];
+  it.each(cases)('%s se naimportuje', (_label, row) => {
+    const result = parseWide([row]);
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]).not.toHaveProperty('fee');
+  });
+
+  it('u nákupu a prodeje se poplatek čte dál: text i značka měny končí chybou se jménem sloupce', () => {
+    for (const type of ['BUY', 'SELL']) {
+      const trade: WideRow = { type, date: '2026-05-10', isin: 'US0000000001', quantity: '3', price: '10', currency: 'USD' };
+      const dash = parseWide([{ ...trade, fee: '-' }]);
+      expect(dash.transactions).toEqual([]);
+      expect(messagesOf(dash)[0]).toContain('„-“ ve sloupci fee nerozumíme jako číslu');
+      const symbol = parseWide([{ ...trade, fee: '1', fee_currency: 'Kč' }]);
+      expect(symbol.transactions).toEqual([]);
+      expect(messagesOf(symbol)[0]).toContain('„Kč“ ve sloupci fee_currency nerozumíme');
+    }
+  });
+
+  it('nepoužitý poplatek ani nevaruje — „1.500“ u dividendy v čárkovém souboru se nikam nepropíše', () => {
+    const result = parseWide(
+      [
+        { type: 'BUY', date: '2026-02-01', isin: 'US0000000001', quantity: '10', price: '61250,50', currency: 'USD' },
+        { type: 'DIVIDEND', date: '2026-05-10', isin: 'US0000000001', currency: 'USD', fee: '1.500', amount: '25,5' },
+      ],
+      ';',
+    );
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.transactions).toHaveLength(2);
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+/**
+ * A10-R1-02: banky a brokeři tisknou připsané částky se znaménkem plus
+ * („+5000.00“). Je to platné číslo a před opravou L2c-05 prošlo.
+ */
+describe('A10-R1-02: číslo se znaménkem plus', () => {
+  it('množství „+5“ a částka „+5000.00“ projdou jako 5 a 5000', () => {
+    const result = parseWide([
+      { type: 'BUY', date: '2026-02-01', isin: 'US0000000001', quantity: '+5', price: '+10.50', currency: 'USD', fee: '+1' },
+      { type: 'DEPOSIT', date: '2026-02-01', currency: 'CZK', amount: '+5000.00' },
+    ]);
+    expect(messagesOf(result)).toEqual([]);
+    const [buy, deposit] = result.transactions;
+    if (buy?.type !== 'BUY' || deposit?.type !== 'DEPOSIT') throw new Error('unreachable');
+    expect(buy.quantity.toString()).toBe('5');
+    expect(buy.pricePerShare.toString()).toBe('10.5');
+    expect(buy.fee?.amount.toString()).toBe('1');
+    expect(deposit.amount.toString()).toBe('5000');
+  });
+
+  it('plus nemění výklad čárky: „+0,125“ je 0,125 a „+1,500“ zůstává nejednoznačné', () => {
+    const buy = (quantity: string): ReturnType<typeof parseUniversalCsv> =>
+      parseWide([{ type: 'BUY', date: '2026-02-01', isin: 'BTC', asset_class: 'CRYPTO', quantity, price: '60000', currency: 'EUR' }]);
+    const small = buy('+0,125');
+    expect(messagesOf(small)).toEqual([]);
+    const tx = small.transactions[0]!;
+    if (tx.type !== 'BUY') throw new Error('unreachable');
+    expect(tx.quantity.toString()).toBe('0.125');
+
+    const ambiguous = buy('+1,500');
+    expect(ambiguous.transactions).toEqual([]);
+    expect(messagesOf(ambiguous)[0]).toContain('„+1,500“ ve sloupci quantity je nejednoznačná');
+    expect(messagesOf(ambiguous)[0]).toContain('(1.500)');
+    expect(messagesOf(ambiguous)[0]).toContain('(1500)');
+  });
+
+  it.each(['+', '+-5', '-+5', '++5', '5+', '+ Kč'])('„%s“ číslem není a končí českou větou', (quantity) => {
+    const result = parseWide([{ type: 'BUY', date: '2026-02-01', isin: 'US0000000001', quantity, price: '10', currency: 'USD' }]);
+    expect(result.transactions).toEqual([]);
+    expect(messagesOf(result)).toHaveLength(1);
+    expect(messagesOf(result)[0]).toContain(`„${quantity}“ ve sloupci quantity nerozumíme jako číslu`);
+    expect(messagesOf(result)[0]).not.toContain('DecimalError');
+  });
+
+  it('číslo s plusem se počítá i do rozpoznání desetinné čárky a „+1.500“ varuje stejně jako „1.500“', () => {
+    const result = parseWide(
+      [
+        { type: 'DEPOSIT', date: '2026-02-01', currency: 'CZK', amount: '+5000,50' },
+        { type: 'BUY', date: '2026-02-02', isin: 'US0000000001', quantity: '+1.500', price: '10', currency: 'USD' },
+      ],
+      ';',
+    );
+    expect(messagesOf(result)).toEqual([]);
+    const tx = result.transactions[1]!;
+    if (tx.type !== 'BUY') throw new Error('unreachable');
+    expect(tx.quantity.toString()).toBe('1.5');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('„+1.500“ ve sloupci quantity');
+  });
+});
+
+/**
+ * A10-R1-03: mutační sonda ukázala, že testy L2c-05 hlídaly jen BUY a DIVIDEND.
+ * Tady má test každá větev: jméno sloupce v hlášce validace, prázdné povinné
+ * číslo u všech typů řádku a přesné znění varování u „2.000“.
+ */
+describe('A10-R1-03: hlášky validace jmenují sloupec šablony u každého pole', () => {
+  const buy: WideRow = { type: 'BUY', date: '2026-02-01', isin: 'US0000000001', quantity: '3', price: '10', currency: 'USD' };
+  const dividend: WideRow = { type: 'DIVIDEND', date: '2026-05-10', isin: 'US0000000001', currency: 'USD', amount: '25' };
+  const interest: WideRow = { type: 'INTEREST', date: '2026-05-10', currency: 'USD', amount: '1.23' };
+  const split: WideRow = { type: 'CORPORATE_ACTION', date: '2026-05-10', isin: 'US0000000001', subtype: 'SPLIT', ratio_from: '1', ratio_to: '4' };
+  const transferIn: WideRow = { type: 'TRANSFER_IN', date: '2026-05-10', isin: 'US0000000001', quantity: '3', acquisition_date: '2024-01-10', acquisition_price: '50', acquisition_currency: 'USD' };
+
+  // pole modelu → sloupec šablony: hláška smí obsahovat jen to druhé
+  const invalid: Array<[field: string, row: WideRow, expected: string]> = [
+    ['pricePerShare', { ...buy, price: '-10' }, 'sloupec price („-10“): Hodnota nesmí být záporná'],
+    ['assetClass', { ...buy, asset_class: 'akcie' }, 'hodnota „akcie“ ve sloupci asset_class není platná (povolené: STOCK, ETF, BOND, CRYPTO, DERIVATIVE, OTHER)'],
+    ['fee.amount', { ...buy, fee: '-1' }, 'sloupec fee („-1“): Hodnota nesmí být záporná'],
+    ['gross', { ...dividend, amount: '-25' }, 'sloupec amount („-25“): Hodnota nesmí být záporná'],
+    ['withholdingTax', { ...dividend, withholding_tax: '-3' }, 'sloupec withholding_tax („-3“): Hodnota nesmí být záporná'],
+    ['withholdingTax', { ...interest, withholding_tax: '-3' }, 'sloupec withholding_tax („-3“): Hodnota nesmí být záporná'],
+    ['sourceCountry', { ...dividend, source_country: 'USA' }, 'sloupec source_country („USA“): Země musí být dvoupísmenný ISO kód'],
+    ['sourceCountry', { ...interest, source_country: 'USA' }, 'sloupec source_country („USA“): Země musí být dvoupísmenný ISO kód'],
+    ['ratio.from', { ...split, ratio_from: '0' }, 'sloupec ratio_from („0“): Hodnota musí být kladná'],
+    ['ratio.to', { ...split, ratio_to: '0' }, 'sloupec ratio_to („0“): Hodnota musí být kladná'],
+    ['acquisition.costPerShare', { ...transferIn, acquisition_price: '-50' }, 'sloupec acquisition_price („-50“): Hodnota nesmí být záporná'],
+  ];
+  it.each(invalid)('%s: neplatná hodnota se hlásí pod sloupcem šablony', (field, row, expected) => {
+    const result = parseWide([row]);
+    expect(result.transactions).toEqual([]);
+    expect(messagesOf(result)).toHaveLength(1);
+    const message = messagesOf(result)[0]!;
+    expect(message.endsWith(`se nepodařilo zpracovat: ${expected}`), message).toBe(true);
+    // vyplněná hodnota není „chybějící“ a jméno pole z modelu uživateli nic neřekne
+    expect(message).not.toContain('chybí');
+    expect(message).not.toContain(field);
+  });
+
+  it('fee.currency: poplatek bez měny obchodu i bez měny poplatku hlásí oba sloupce šablony', () => {
+    const result = parseWide([{ ...buy, currency: '', fee: '1' }]);
+    expect(result.transactions).toEqual([]);
+    const message = messagesOf(result)[0]!;
+    expect(message.endsWith('chybí hodnoty ve sloupcích currency, fee_currency'), message).toBe(true);
+    expect(message).not.toContain('fee.currency');
+  });
+
+  // prázdné povinné číslo musí do modelu dojít jako „chybí“, ne jako prázdný
+  // řetězec — ten shodí převod na Decimal anglickou hláškou knihovny (L2c-05)
+  const empty: Array<[type: string, row: WideRow, expected: string]> = [
+    ['BUY', { ...buy, quantity: '', price: '' }, 'chybí hodnoty ve sloupcích quantity, price'],
+    ['SELL', { ...buy, type: 'SELL', quantity: '', price: '' }, 'chybí hodnoty ve sloupcích quantity, price'],
+    ['DIVIDEND', { ...dividend, amount: '' }, 'chybí hodnota ve sloupci amount'],
+    ['INTEREST', { ...interest, amount: '' }, 'chybí hodnota ve sloupci amount'],
+    ['FEE', { type: 'FEE', date: '2026-05-10', currency: 'EUR' }, 'chybí hodnota ve sloupci amount'],
+    ['DEPOSIT', { type: 'DEPOSIT', date: '2026-05-10', currency: 'CZK' }, 'chybí hodnota ve sloupci amount'],
+    ['WITHDRAWAL', { type: 'WITHDRAWAL', date: '2026-05-10', currency: 'CZK' }, 'chybí hodnota ve sloupci amount'],
+    ['TRANSFER_IN', { ...transferIn, quantity: '' }, 'chybí hodnota ve sloupci quantity'],
+    ['TRANSFER_OUT', { type: 'TRANSFER_OUT', date: '2026-05-10', isin: 'US0000000001' }, 'chybí hodnota ve sloupci quantity'],
+  ];
+  it.each(empty)('%s: prázdné povinné číslo se hlásí jako chybějící sloupec', (_type, row, expected) => {
+    const result = parseWide([row]);
+    expect(result.transactions).toEqual([]);
+    expect(messagesOf(result)).toHaveLength(1);
+    const message = messagesOf(result)[0]!;
+    expect(message.endsWith(`se nepodařilo zpracovat: ${expected}`), message).toBe(true);
+    expect(message).not.toMatch(/DecimalError|Invalid|expected|received|"code"/);
+  });
+
+  it('prázdné NEPOVINNÉ číslo chybou není: srážka je nula a převod zůstane bez nabývací ceny', () => {
+    const result = parseWide([
+      dividend,
+      interest,
+      { ...transferIn, acquisition_price: '', acquisition_currency: '' },
+    ]);
+    expect(messagesOf(result)).toEqual([]);
+    const [paid, accrued, moved] = result.transactions;
+    if (paid?.type !== 'DIVIDEND' || accrued?.type !== 'INTEREST' || moved?.type !== 'TRANSFER_IN') {
+      throw new Error('unreachable');
+    }
+    expect(paid.withholdingTax.toString()).toBe('0');
+    expect(accrued.withholdingTax.toString()).toBe('0');
+    expect(moved.acquisition).toEqual({ date: '2024-01-10' });
+  });
+});
+
+describe('A10-R1-03: varování u tečky v souboru s desetinnými čárkami', () => {
+  const comma: WideRow = { type: 'DIVIDEND', date: '2026-05-10', isin: 'US0000000001', currency: 'USD', amount: '25,5', withholding_tax: '3,75' };
+  const buy = (quantity: string, price = '10'): WideRow => ({
+    type: 'BUY', date: '2026-02-02', isin: 'US0000000001', quantity, price, currency: 'USD',
+  });
+
+  it('přesné znění: „2.000“ čteme jako 2 a nabízíme 2000, „1.050“ jako 1,05', () => {
+    const result = parseWide([comma, buy('2.000'), buy('1.050')], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.warnings).toEqual([
+      {
+        line: 3,
+        message:
+          'Hodnotu „2.000“ ve sloupci quantity čteme jako 2 — tečka je v šabloně vždy desetinná. Ostatní čísla v souboru ale píšeš s desetinnou čárkou; jestli má jít o 2000, napiš číslo bez tečky.',
+      },
+      {
+        line: 4,
+        message:
+          'Hodnotu „1.050“ ve sloupci quantity čteme jako 1,05 — tečka je v šabloně vždy desetinná. Ostatní čísla v souboru ale píšeš s desetinnou čárkou; jestli má jít o 1050, napiš číslo bez tečky.',
+      },
+    ]);
+  });
+
+  it('desetinnou čárku pozná z kteréhokoli číselného sloupce, ne jen z ceny', () => {
+    // čárka je jen v amount a withholding_tax dividendy — ceny jsou celá čísla
+    const result = parseWide([comma, buy('1.500')], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(3);
+  });
+
+  it('tečka, která tisíce být nemůže („2.5“, „1500.000“, „0.125“), nevaruje', () => {
+    const result = parseWide([comma, buy('2.5'), buy('1500.000'), buy('0.125'), buy('1.500')], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.transactions).toHaveLength(5);
+    expect(result.warnings.map((warning) => warning.line)).toEqual([6]);
+  });
+});
