@@ -99,9 +99,14 @@ Každý zašifrovaný údaj v databázi nese osmiznakový otisk klíče, kterým
 2. nový dej do `DANERO_ENCRYPTION_KEY`, ten dosavadní přesuň do
    `DANERO_ENCRYPTION_KEYS_OLD` a restartuj,
 3. od té chvíle se šifruje novým klíčem a stará data se čtou tím vyřazeným,
-4. starý klíč smíš zahodit, až žádný záznam nemá jeho otisk. Překlopení
-   jednotlivého údaje umí `reencryptSecret()` z `apps/web/lib/crypto.ts`;
-   automatický přešifrovací průchod v aplikaci zatím není.
+4. přešifrování udělá sám denní job `maintenance`: každý uložený klíč brokera,
+   který ještě nese otisk vyřazeného klíče, přepíše tím aktuálním a počet vrátí
+   v odpovědi i v logu jako `credentialsRotated`,
+5. starý klíč smíš z `DANERO_ENCRYPTION_KEYS_OLD` vyhodit po prvním běhu
+   `maintenance`, který v logu nenechal `maintenance.reencrypt_failed` — ta
+   událost říká, že některý záznam přečíst nešel a na starém klíči zůstal.
+   Že nic nezbylo, potvrdí další běh s `credentialsRotated: 0` a znovu bez
+   té události.
 
 Bez kroku 2 (starý klíč nikde) se uložené broker klíče po výměně nepřečtou —
 aplikace to řekne nahlas a uživatel je zadá znovu, ale je to zbytečná otrava.
@@ -154,7 +159,7 @@ zůstává syslog — a ten v kontejneru nikdo neposlouchá, takže špatný
 | `sync-brokers` | stáhne nové transakce ze všech napojených platforem |
 | `notify` | přepočítá limity a časové testy a rozešle upozornění |
 | `jobs` | záchranná síť — dokončí běhy, které spadly nebo se nestihly |
-| `maintenance` | smaže data po retenční lhůtě (audit log, historie importů a joby po 90 dnech, prošlé přihlašovací relace a ověřovací tokeny hned, doručená upozornění po 400 dnech) |
+| `maintenance` | smaže data po retenční lhůtě: audit log po 90 dnech; joby po 90 dnech, jen poslední job každého napojeného účtu zůstává (nese stav rozdělaného stahování); historii importů po 90 dnech jen u dávek, na kterých nevisí žádná transakce — dávky s transakcemi zůstávají, jinak by nešel „Vrátit import zpět“; nepřečtené výpisy uschované k rozboru po 90 dnech; prošlé přihlašovací relace a ověřovací tokeny hned; prošlá okna aplikačních rate limitů a záznamy rate limitu přihlašování starší hodiny; doručená upozornění po 400 dnech. Při témže běhu přešifruje klíče brokerů po výměně šifrovacího klíče (viz výše) |
 
 ⚠️ **První plný sync se stahuje po částech** — Trading 212 pouští export
 ~1×/min a každý rok je jeden export. Jeden běh jobů si bere nejvýš 225 s

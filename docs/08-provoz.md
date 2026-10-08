@@ -15,9 +15,20 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    **pooled** řetězec (proto `prepare: false`), migrace přes **přímý** —
    transakční pooler si s DDL nerozumí.
 2. **Vercel**: projekt s root directory `apps/web` (monorepo, pnpm). Funkce region `fra1`.
-3. **Env proměnné** (viz `.env.example`). Povinné — aplikace bez nich spadne při
-   startu: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (produkční
-   URL), `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Volitelně `RESEND_API_KEY`, `RESEND_FROM`,
+3. **Env proměnné** (viz `.env.example`). Povinné: `DATABASE_URL`,
+   `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (produkční URL),
+   `DANERO_ENCRYPTION_KEY`, `CRON_SECRET`. Každá ale chybí jinak hlasitě:
+
+   - bez `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` nebo `DANERO_ENCRYPTION_KEY`
+     aplikace v produkci spadne s chybou, která proměnnou jmenuje
+     (`lib/auth.ts`, `lib/crypto.ts`),
+   - bez `CRON_SECRET` aplikace běží a `/api/health` je zelený, jenže všechny
+     `/api/cron/*` vracejí 401 — nejede tedy sync, kurzy, hlídací e-maily ani
+     úklid, a poznat je to jen z logu podle `cron.<job>.unauthorized`,
+   - bez `DATABASE_URL` aplikace nespadne, ale sáhne po lokálním PGlite — to
+     je vývojový režim, ne produkce.
+
+   Volitelně `RESEND_API_KEY`, `RESEND_FROM`,
    `DANERO_TRUSTED_PROXIES` (viz níž) a `DANERO_SUPPORT_IBAN` /
    `DANERO_SUPPORT_URL` pro dobrovolný příspěvek na `/cenik` — bez nich se
    sekce o příspěvku nevykreslí, s překlepem to ohlásí `/api/health`
@@ -107,14 +118,23 @@ Viz docs/02 (sekce Roční údržba): nový jednotný kurz (pokyn řady D) →
 `apps/web/lib/tax-config.ts` + `packages/engine/src/config/taxYear.ts`; hranice 23 %
 sazby; výše paušálních záloh; kontrola novel ZDP.
 
-⚠️ Historické jednotné kurzy v `lib/tax-config.ts` jsou zatím ORIENTAČNÍ — před
-generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ řady D.
+Jednotné kurzy za roky 2020–2025 jsou **ověřené** z pokynů GFŘ řady D —
+leží v `packages/engine/src/config/unifiedRates.ts` i s číslem pokynu u každého
+roku. Orientační je jen běžný rok v `apps/web/lib/tax-config.ts` (pokyn za něj
+vyjde až v lednu) a aplikace ho tak v UI označuje. V lednu se proto ověřený kurz
+doplní do `unifiedRates.ts`, posune se `LAST_VERIFIED_RATE_YEAR` a do
+`tax-config.ts` přijde odhad na nový rok.
 
-## Zálohy a monitoring (TODO před veřejným provozem)
+## Zálohy a monitoring (stav)
 
-- Neon: point-in-time restore je součástí; otestovat obnovu.
-- Sentry (`SENTRY_DSN`) — zatím nezapojeno.
-- E-mail notifikace (Resend, `RESEND_API_KEY`) — zatím nezapojeno.
+- Neon: obnova do bodu v čase je součástí, ale sahá jen 6 hodin zpět — na
+  cokoli staršího je ruční dump (runbook níž).
+- Sentry (`SENTRY_DSN`) — nezapojeno; chyby jsou ve strukturovaných lozích
+  a stav hlídá `/api/health` (sekce „Monitoring“ níž).
+- E-maily (Resend, `RESEND_API_KEY`) — zapojeno (`apps/web/lib/email.ts`):
+  hlídací upozornění, ověření adresy i obnova hesla. V produkci bez klíče
+  odeslání skončí chybou, jen ve vývoji se zpráva vypíše do konzole.
+  Nastavení domény je v sekci o DNS níž.
 
 ## Zálohy a obnova (runbook, G10c)
 
@@ -123,7 +143,11 @@ generováním podkladů k přiznání doplnit přesné hodnoty z pokynů GFŘ ř
 
 ### Produkce (Neon)
 
-- **PITR**: Neon drží point-in-time recovery (dle plánu 7–30 dní). Obnova:
+- **PITR**: Neon drží historii pro obnovu do bodu v čase **jen 6 hodin** —
+  v tarifu, na kterém hostovaná instance běží; totéž říká `/soukromi`, měň
+  obojí naráz. Po šesti hodinách zbývá jen dump níž, takže o obnově z historie
+  se rozhoduje hned, ne druhý den. (Na vlastní instanci platí okno tvého
+  tarifu — ověř si ho v Neon Console.) Obnova:
   Neon Console → Branches → „Restore from history" → nový branch k času T →
   přepnout `DATABASE_URL` (nebo `neon branches create --parent main@<timestamp>`).
 - **Týdenní logický dump navíc** (nezávislý na Neonu): `scripts/db.sh backup`
