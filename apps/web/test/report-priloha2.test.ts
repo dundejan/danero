@@ -8,7 +8,7 @@ import { ReportView } from '@/components/views/report-view';
 import { EPO_SUPPORTED_YEARS, generateDpfdp7 } from '@/lib/epo';
 import { czk, yearList } from '@/lib/format';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
-import { priloha2 } from '@/lib/priloha2';
+import { base8WholeCzk, priloha2 } from '@/lib/priloha2';
 
 /**
  * K3-03 a K3-05 — čísla pro Přílohu č. 2.
@@ -111,6 +111,63 @@ describe('Příloha č. 2: report a XML berou čísla z jednoho zdroje (K3-03)',
     expect(pruvodce).toContain(czk(p2.vydajeCzk));
     // nezastropovaný výdaj z enginu se do průvodce dostat NESMÍ
     expect(pruvodce).not.toContain(czk(result.securities.expensesCzk));
+  });
+});
+
+/**
+ * L5-05 a L5-01 — dílčí základ § 8 a příjmy po státech.
+ *
+ * Průvodce tiskl nezaokrouhlený základ § 8 matematicky, XML ho nese v celých
+ * korunách dolů (rozdělení celých korun, resp. ř. 401a dolů): nad týmiž daty
+ * radil průvodce na ř. 38 a ř. 401a o korunu jinou částku, než nese XML.
+ * Tabulka po státech měla tutéž vadu proti ř. 321.
+ *
+ * Sonda: jediná US dividenda 300,03 USD × 21,84 = 6 552,6552 Kč — matematicky
+ * 6 553, v XML 6 552.
+ */
+describe('§ 8: průvodce a XML nesou stejnou korunu (L5-05, L5-01)', () => {
+  const txs = parseTransactions([
+    {
+      type: 'DIVIDEND',
+      id: 'l5-us',
+      isin: 'US0378331005',
+      gross: '300.03',
+      withholdingTax: '45',
+      currency: 'USD',
+      date: '2025-05-15',
+    },
+  ]);
+  const result = analyzeTaxYear(engineInputForUser(txs, PROFILE, 2025));
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
+  const dpFor = (varianta: 'GENERAL' | 'SEPARATE_16A') => {
+    const { xml } = generateDpfdp7({ year: 2025, result, personal: {}, varianta });
+    return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, Record<string, string>> } })
+      .Pisemnost.DPFDP7;
+  };
+  const html = render(txs, 2025);
+  const guideHtml = guide(html);
+
+  it('ř. 38 v průvodci je částka z XML', () => {
+    const r38 = dpFor('GENERAL').VetaO!.kc_zakldan8!;
+    expect(r38).toBe('6552');
+    expect(base8WholeCzk(result).generalCzk.toFixed(0)).toBe(r38);
+    expect(guideHtml).toContain(`${czk(Number(r38))}</span> → <strong>ř. 38</strong>`);
+  });
+
+  it('ř. 401a v průvodci je částka z XML', () => {
+    const r401a = dpFor('SEPARATE_16A').VetaZ!.kc_prij48!;
+    expect(r401a).toBe('6552');
+    expect(base8WholeCzk(result).separate16aCzk.toFixed(0)).toBe(r401a);
+    expect(guideHtml).toContain(`ř. 401a <span class="font-mono">${czk(Number(r401a))}</span>`);
+  });
+
+  it('tabulka po státech ukazuje příjem, který jde na ř. 321', () => {
+    const r321 = dpFor('GENERAL').VetaL!.kc_prijzap!;
+    const from = html.indexOf('aria-label="Zahraniční příjmy a sražená daň po státech"');
+    expect(from).toBeGreaterThan(-1);
+    const table = html.slice(from, html.indexOf('</table>', from));
+    expect(table).toContain(czk(Number(r321)));
+    expect(table).not.toContain(czk(6553));
   });
 });
 

@@ -17,8 +17,12 @@ import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { today as todayInPrague } from '@/lib/clock';
-import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
-import { priloha2 } from '@/lib/priloha2';
+import {
+  creditIncomeByCountry,
+  EPO_SUPPORTED_YEARS,
+  prijmyZeStatuProZapocet,
+} from '@/lib/epo';
+import { base8WholeCzk, priloha2 } from '@/lib/priloha2';
 import {
   czDate,
   czk,
@@ -222,6 +226,10 @@ export function ReportView({
   // (K3-03) — dokud měl každý svoje, radila jedna stránka zapsat nezastropované
   // výdaje, které podatelna odmítá.
   const p2 = priloha2(result);
+  // Totéž platí pro § 8: ř. 38 a ř. 401a v celých korunách (L5-05) a příjmy po
+  // státech pro ř. 321 (L5-01) — průvodce i tabulka je opisují z generátoru XML.
+  const base8Whole = base8WholeCzk(result);
+  const creditIncome = creditIncomeByCountry(result);
   const vydajeBezStropu = result.securities.expensesCzk
     .plus(result.crypto.expensesCzk)
     .plus(result.derivatives.expensesCzk);
@@ -761,9 +769,13 @@ export function ReportView({
                 {Object.entries(result.dividends.creditableByCountry).map(([country, data]) => (
                   <tr key={country} className="border-b border-linka/60">
                     <td className="py-2 pr-4 font-sans font-medium">{country}</td>
-                    {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda */}
+                    {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda;
+                        stát bez započitatelné srážky v příloze není, tam zůstává příjem tak, jak je */}
                     <td className="whitespace-nowrap py-2 pr-4 text-right">
-                      {czk(prijmyZeStatuProZapocet(country, data, result.options))}
+                      {czk(
+                        creditIncome.get(country) ??
+                          prijmyZeStatuProZapocet(country, data, result.options),
+                      )}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.withholdingCzk)}</td>
                     <td className="whitespace-nowrap py-2 text-right">{czk(data.creditableCzk)}</td>
@@ -1085,7 +1097,7 @@ export function ReportView({
               <ul className="mt-1 list-disc space-y-1 pl-5">
                 <li>
                   <strong>Obecný základ:</strong> brutto{' '}
-                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span> →{' '}
+                  <span className="font-mono">{czk(base8Whole.generalCzk)}</span> →{' '}
                   <strong>ř. 38</strong> přiznání; zápočet sražené daně po státech přes
                   Přílohu č. 3 (ř. 321–330; uznatelný zápočet{' '}
                   <span className="font-mono">{czk(result.dividends.creditableWithholdingCzk)}</span>
@@ -1093,7 +1105,7 @@ export function ReportView({
                 </li>
                 <li>
                   <strong>Samostatný základ § 16a:</strong> Příloha č. 4, ř. 401a{' '}
-                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
+                  <span className="font-mono">{czk(base8Whole.separate16aCzk)}</span>, daň 15 %
                   ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
                   <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). Slevy na dani ani
                   nezdanitelné části základu v něm uplatnit nelze.

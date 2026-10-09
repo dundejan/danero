@@ -100,13 +100,37 @@ function kinds(result: TaxYearResult) {
 /**
  * NEZAOKROUHLENÉ dílčí základy § 10 v pořadí řádků Přílohy 2.
  *
- * Generátor XML si k nim připojí ještě § 8 a rozdělí celé koruny přes celý
+ * `base8WholeCzk` si k nim připojí ještě § 8 a rozdělí celé koruny přes celý
  * seznam naráz — proto musí dostat surové hodnoty, ne už rozdělené díly.
  * (S rozdělenými by poslední díl vyšel jako `floor(§8)` místo správného
  * `floor(zbytek + §8)`.)
  */
-export const base10Values = (result: TaxYearResult): Money[] =>
+const base10Values = (result: TaxYearResult): Money[] =>
   kinds(result).map((k) => k.zdroj.base10Czk);
+
+/**
+ * Dílčí základ § 8 v celých korunách — JEDINÝ zdroj pro XML i pro průvodce
+ * v reportu, stejně jako `priloha2()` pro § 10.
+ *
+ * Průvodce do revize 5 tiskl nezaokrouhlený `base8Czk` matematicky, kdežto XML
+ * neslo celé koruny dolů: nad týmiž daty radil zapsat na ř. 38 a ř. 401a
+ * 59 136 Kč, zatímco XML mělo 59 135 (nález L5-05).
+ *
+ * - `generalCzk` → ř. 38 přiznání: § 8 je posledním dílem TÉHOŽ rozdělení celých
+ *   korun jako druhy § 10 — běžící součet zaručí, že se řádky Přílohy 2
+ *   přidáním § 8 na konec nepohnou a ř. 42 sedí na základ z enginu (A3-08).
+ * - `separate16aCzk` → ř. 401a Přílohy 4: samostatný základ má vlastní
+ *   zaokrouhlení na sta dolů (ř. 409), proto celé koruny dolů samostatně.
+ */
+export function base8WholeCzk(result: TaxYearResult): {
+  generalCzk: Money;
+  separate16aCzk: Money;
+} {
+  return {
+    generalCzk: wholeCzkParts([...base10Values(result), result.dividends.base8Czk]).at(-1)!,
+    separate16aCzk: result.dividends.base8Czk.toDecimalPlaces(0, Decimal.ROUND_FLOOR),
+  };
+}
 
 export function priloha2(result: TaxYearResult): Priloha2 {
   const parts = wholeCzkParts(base10Values(result));

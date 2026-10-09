@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 import { analyzeTaxYear, TAX_YEAR_CONFIGS } from '@danero/engine';
@@ -141,6 +143,36 @@ describe('EPO: dvě pravdy o téže hodnotě (A3-10, A3-11)', () => {
     expect(isRateVerified(2019)).toBe(false); // tabulka začíná rokem 2020
     expect(isRateVerified(2025)).toBe(true);
     expect(isRateVerified(2026)).toBe(false); // orientační odhad, ne pokyn
+  });
+});
+
+/**
+ * L1-05: odznak „XML ověřená zkušební podatelnou“ kryje každý rok ze seznamu
+ * `EPO_SUPPORTED_YEARS`, jenže `scripts/validate-epo.mjs` posílal jen vzorky za
+ * 2025 (`TAX_YEAR_2025` a `year: 2025` natvrdo). Regresi jen ve větvi roku 2024
+ * by CI nevidělo. Do skriptu žádný test nedosáhne (odesílá po síti hned při
+ * načtení), proto strážce nad zdrojem.
+ */
+describe('EPO: vzorky pro zkušební podatelnu (L1-05, L5-01)', () => {
+  const script = readFileSync(
+    join(import.meta.dirname, '..', '..', '..', 'scripts', 'validate-epo.mjs'),
+    'utf8',
+  );
+  const code = script.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('L1-05: vzorky se generují za každý rok ze seznamu, žádný rok není natvrdo', () => {
+    expect(code).toContain('for (const year of EPO_SUPPORTED_YEARS)');
+    expect(code).toContain('TAX_YEAR_CONFIGS[year]');
+    expect(/TAX_YEAR_20\d\d/.exec(code)?.[0]).toBeUndefined();
+    expect(/year:\s*20\d\d/.exec(code)?.[0]).toBeUndefined();
+    // ani data transakcí nesmí rok opisovat — jinak by vzorek za jiný rok vyšel prázdný
+    expect(/'20\d\d-\d\d-\d\d'/.exec(code)?.[0]).toBeUndefined();
+  });
+
+  it('L5-01: mezi vzorky je jediný stát se zápočtem v obou variantách', () => {
+    expect(code).toContain('const singleCountry = analyze(');
+    expect(code).toMatch(/gen\('[^']*', singleCountry\)/);
+    expect(code).toMatch(/gen\('[^']*', singleCountry, 'SEPARATE_16A'\)/);
   });
 });
 

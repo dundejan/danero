@@ -737,3 +737,77 @@ describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
     expect(() => dp('E')).toThrow(EpoInputError);
   });
 });
+
+/**
+ * L5-01: příjmy ze státu (ř. 321 Přílohy 3, ř. 411 Přílohy 4) se zaokrouhlovaly
+ * matematicky, kdežto základ, ke kterému se vztahují (ř. 42, ř. 406), jde na
+ * celé koruny DOLŮ. Dividenda s haléřovou částí od 0,50 tak dala příjem ze
+ * státu o korunu VYŠŠÍ než celý základ a podatelna XML odmítla:
+ * `[N] proczahr — Příloha 3/ř.324 hodnota položky nesmí být větší než 100`
+ * a `[N] kc_uh415 — Příloha 4/ř.411 hodnota je větší než úhrn dílčích ZD`.
+ *
+ * Sonda: 300,03 USD × 21,84 = 6 552,6552 Kč, srážka 45 USD = 982,80 Kč.
+ */
+describe('příjmy po státech nepřesáhnou základ (L5-01)', () => {
+  const us = {
+    type: 'DIVIDEND',
+    id: 'l5-us',
+    isin: 'US0378331005',
+    gross: '300.03',
+    withholdingTax: '45',
+    currency: 'USD',
+    date: '2025-05-15',
+  };
+  // druhý stát se stejnou haléřovou částí: 100,03 USD × 21,84 = 2 184,6552 Kč;
+  // úhrn 8 737,3104 Kč → základ 8 737, ale 6 553 + 2 185 = 8 738
+  const de = {
+    type: 'DIVIDEND',
+    id: 'l5-de',
+    isin: 'DE0007164600',
+    gross: '100.03',
+    withholdingTax: '15',
+    currency: 'USD',
+    date: '2025-06-02',
+  };
+  const dpFor = (txs: unknown[], varianta: 'GENERAL' | 'SEPARATE_16A') => {
+    const res = analyzeTaxYear(engineInputForUser(parseTransactions(txs), PROFILE, 2025));
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta });
+    return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
+      .DPFDP7;
+  };
+
+  it('jediný stát, obecný základ: ř. 321 ≤ ř. 42, koeficient ř. 324 ≤ 100, zápočet ≤ ř. 57', () => {
+    const dp = dpFor([us], 'GENERAL');
+    const vetaO = dp.VetaO as Attrs;
+    const vetaL = dp.VetaL as Attrs;
+    expect(vetaO.kc_zakldan8).toBe('6552');
+    expect(vetaL.kc_prijzap).toBe('6552'); // bez opravy 6553
+    expect(Number(vetaL.kc_prijzap)).toBeLessThanOrEqual(Number(vetaO.kc_zakldan23));
+    expect(vetaL.proczahr).toBe('100'); // bez opravy 100.02
+    expect(vetaL.da_uznzap).toBe('975'); // bez opravy 975.2 při dani 975
+    expect(Number(vetaL.da_uznzap)).toBeLessThanOrEqual(Number((dp.VetaS as Attrs).da_dan16));
+    // Seznam dle § 38f odst. 10 nese tentýž příjem jako ř. 321
+    expect((dp.Vetad as Attrs).prijmy_seznam).toBe(vetaL.kc_prijzap);
+  });
+
+  it('jediný stát, § 16a: ř. 411 ≤ ř. 406', () => {
+    const vetaZ = dpFor([us], 'SEPARATE_16A').VetaZ as Attrs;
+    expect(vetaZ.kc_zd48).toBe('6552');
+    expect(vetaZ.kc_uh415).toBe('6552'); // bez opravy 6553
+    expect(Number(vetaZ.kc_uh415)).toBeLessThanOrEqual(Number(vetaZ.kc_zd48));
+  });
+
+  it('dva státy: součet příjmů po státech nepřesáhne základ v žádné variantě', () => {
+    const general = dpFor([us, de], 'GENERAL');
+    const rows = toArray(general.VetaL);
+    expect(rows.map((row) => row.kod_statu)).toEqual(['DE', 'US']);
+    const total = rows.reduce((sum, row) => sum + Number(row.kc_prijzap), 0);
+    expect(total).toBe(8737); // bez opravy 8738
+    expect(total).toBeLessThanOrEqual(Number((general.VetaO as Attrs).kc_zakldan23));
+    for (const row of rows) expect(Number(row.proczahr)).toBeLessThanOrEqual(100);
+
+    const vetaZ = dpFor([us, de], 'SEPARATE_16A').VetaZ as Attrs;
+    expect(vetaZ.kc_zd48).toBe('8737');
+    expect(vetaZ.kc_uh415).toBe('8737'); // bez opravy 8738
+  });
+});
