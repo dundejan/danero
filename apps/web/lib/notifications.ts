@@ -14,6 +14,7 @@ import {
   type NotificationRules,
 } from '@/lib/notification-rules';
 import { czDate, czk, pct, plural, qty } from '@/lib/format';
+import { recommendedTaxCzk, unpaidUnderLimitCzk } from '@/lib/payable-tax';
 import {
   analyzeForUser,
   dailyRatesForProfile,
@@ -394,15 +395,20 @@ export function summaryCandidate(args: {
     ? `Nejbližší osvobození: ${qty(next.remaining)} ks ${labels.get(next.isin) ?? next.isin} ${czDate(next.exemptFrom)}.`
     : 'Žádná pozice zatím na tříletý časový test nečeká.';
 
-  const taxCzk =
-    result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
+  const taxCzk = recommendedTaxCzk(result);
+  // R-09f: pod limitem režimu se orientační daň neplatí — částka bez výhrady
+  // by v e-mailu vypadala jako dluh
+  const underLimit =
+    unpaidUnderLimitCzk(result) && taxCzk.gt(0)
+      ? ' — platí se jen při podání přiznání, a ta povinnost ti zatím nevzniká'
+      : '';
 
   return {
     dedupeKey: `souhrn|${period}`,
     type: 'SUMMARY',
     title: `Přehled k ${czDate(today)}`,
     // fakt a čísla, žádný pokyn (V-4) — stejná pravidla jako u ostatních e-mailů
-    body: `Stav k ${czDate(today)} za rok ${result.year}. ${limitLines.join('. ')}. ${nextLine} Orientační daň z investic zatím ${czk(taxCzk)}.`,
+    body: `Stav k ${czDate(today)} za rok ${result.year}. ${limitLines.join('. ')}. ${nextLine} Orientační daň z investic zatím ${czk(taxCzk)}${underLimit}.`,
   };
 }
 

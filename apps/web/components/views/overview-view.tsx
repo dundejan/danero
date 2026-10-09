@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { LimitDrawdownChart } from '@/components/charts';
 import { filingLimitFor, filingVerdictHeadline } from '@/components/filing-verdict';
+import { unpaidUnderLimitCzk } from '@/lib/payable-tax';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
@@ -101,6 +102,8 @@ export function OverviewView({
   const nearestLimit = watchedLimits.reduce((a, b) => (b.status.ratio > a.status.ratio ? b : a));
   const estimatedTaxCzk =
     result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
+  // R-09f: pod limitem režimu se orientační daň neplatí — karta to musí říct
+  const unpaidUnderLimit = unpaidUnderLimitCzk(result);
   // R-08f: vyčíslení dopadu prolomení limitu 50k (jen paušál a jen při prolomení)
   const breachImpact = result.limits.flatTax50k.breachImpact;
 
@@ -351,6 +354,16 @@ export function OverviewView({
                   ` · daň v obecném základu ${czk(result.tax.general.taxCzk)}, v samostatném základu § 16a ${czk(result.tax.separate16a.taxCzk)} (před slevami — variantu volíš v přiznání)`}
               </p>
               <p>{result.tax.note}</p>
+              {/* R-09f (L24-02): pod limitem režimu se tahle daň neplatí — bez
+                  téhle věty stála částka hned pod verdiktem „povinnost
+                  nevzniká“ a vypadala jako dluh */}
+              {unpaidUnderLimit && (
+                <p className="font-medium text-inkoust">
+                  Platí se jen při podání přiznání. Dokud jsi pod limitem{' '}
+                  {czk(unpaidUnderLimit)}, přiznání nepodáváš a tuhle daň neplatíš — počítáme
+                  jen s příjmy, o kterých Danero ví.
+                </p>
+              )}
             </div>
           </div>
         </Card>

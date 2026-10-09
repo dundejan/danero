@@ -688,6 +688,22 @@ Dvě oddělené roviny:
   na 2. 5. 2025, za ZO 2025 už na 4. 5. 2026). Testy proto nesmí očekávanou
   hodnotu zapsat konstantou, ale odvodit ji z pravidla.
 
+- **R-09f Daň k zaplacení pod limitem režimu.** „Orientační daň z investic“
+  (R-14) je daň, **kdyby se podávalo přiznání**. Poplatník, jehož příjmy
+  § 8–10 nepřekročily limit jeho režimu (R-08b paušál, R-09b zaměstnanec,
+  R-09a ostatní), přiznání nepodává a daň z těchto příjmů neplatí — daň
+  k zaplacení je **0**. Překročením limitu se zdaní **všechny** zdanitelné
+  příjmy roku, ne jen ten, který limit prolomil: daň k zaplacení skočí z nuly
+  rovnou na celou orientační daň. OSVČ mimo paušál podává přiznání vždy,
+  u ní se obě čísla rovnají. Engine počítá orientační daň beze změny; daň
+  k zaplacení z ní odvozuje aplikace (`apps/web/lib/payable-tax.ts`)
+  a ukazuje ji simulátor prodeje, přehled a měsíční e-mail jen větou — verdikt
+  o podání zůstává u R-09a–c. ⚠️ Limit vidí jen příjmy, o kterých aplikace
+  ví (ruční pole „Další zdanitelné příjmy“ a naimportované transakce), takže
+  nula není slib; každý výstup, který ji ukazuje, to říká. U paušalisty po
+  prolomení limitu je skutečný doplatek jiný příběh (R-08f: daň z podnikání
+  a pojistné aplikace nevidí).
+
 ## R-10 Kryptoaktiva (zák. č. 32/2025 Sb., účinnost 15. 2. 2025) — implementováno (G6)
 
 Vymezení: kryptoaktivum dle nařízení MiCA (EU) 2023/1114 — digitální zachycení hodnoty

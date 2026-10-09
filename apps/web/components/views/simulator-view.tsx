@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardTitle, keepCurrencyCase } from '@/components/ui/card';
 import { describedByError, FieldError, Input, Label, Select } from '@/components/ui/field';
 import { czk, METHOD_LABEL, qty } from '@/lib/format';
+import { payableTaxCzk } from '@/lib/payable-tax';
 import {
   engineInputForUser,
   instrumentLabels,
@@ -110,6 +111,7 @@ export function SimulatorView({
   const regimeLimitLabel = regimeLimit
     ? `${regimeLimit.label} (${czk(regimeLimit.limitCzk)})`
     : null;
+  const regimeLimitCzk = regimeLimit?.limitCzk ?? null;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
   // chyba nese i pole, kterého se týká — jen tak ji jde svázat s inputem přes
@@ -336,12 +338,31 @@ export function SimulatorView({
                 limitCzk={baseline.limits.limit100k.limitCzk}
               />
             )}
+            {/* R-09f: pod limitem režimu se daň neplatí, takže karta ukazuje daň
+                k zaplacení — prodej, který limit prolomí, ji zvedne z nuly na
+                daň ze VŠECH letošních příjmů, ne jen o tenhle prodej */}
             <DeltaCard
-              label="Orientační daň"
-              beforeCzk={simulation.baseline.taxCzk}
-              afterCzk={simulation.simulated.taxCzk}
+              label={regimeLimit ? 'Daň k zaplacení' : 'Orientační daň'}
+              beforeCzk={payableTaxCzk(
+                simulation.baseline.taxCzk,
+                simulation.baseline.flatTax50kUsedCzk,
+                regimeLimitCzk,
+              )}
+              afterCzk={payableTaxCzk(
+                simulation.simulated.taxCzk,
+                simulation.simulated.flatTax50kUsedCzk,
+                regimeLimitCzk,
+              )}
             />
           </section>
+          {regimeLimit && (
+            <PayableTaxNote
+              limitCzk={regimeLimit.limitCzk}
+              incomeBeforeCzk={simulation.baseline.flatTax50kUsedCzk}
+              incomeAfterCzk={simulation.simulated.flatTax50kUsedCzk}
+              hypotheticalTaxCzk={simulation.simulated.taxCzk}
+            />
+          )}
 
           <p className="text-xs text-inkoust-tlumeny">
             Simulace počítá s prodejem k dnešnímu dni za zadanou cenu.{' '}
@@ -412,6 +433,46 @@ function regimeLimitPhrase(limit: RegimeLimit): string {
     case 'GENERAL_FILING':
       return `limit ${amount} pro podání přiznání`;
   }
+}
+
+/**
+ * Věta pod kartami pro poplatníka s režimovým limitem (R-09f): proč je daň
+ * k zaplacení nula, nebo proč po prodeji skočí o víc než o tenhle prodej.
+ * Nad limitem před prodejem i po něm nic nového neříká, tak se nevykreslí.
+ */
+function PayableTaxNote({
+  limitCzk,
+  incomeBeforeCzk,
+  incomeAfterCzk,
+  hypotheticalTaxCzk,
+}: {
+  limitCzk: Money;
+  incomeBeforeCzk: Money;
+  incomeAfterCzk: Money;
+  /** Daň po prodeji, kdyby se přiznání podávalo. */
+  hypotheticalTaxCzk: Money;
+}) {
+  if (incomeBeforeCzk.gt(limitCzk)) return null;
+  const breaks = incomeAfterCzk.gt(limitCzk);
+  return (
+    <p className="text-sm text-inkoust-tlumeny">
+      {breaks ? (
+        <>
+          Dnes jsi pod limitem {czk(limitCzk)}, přiznání nepodáváš a z investic neplatíš nic.
+          Tímhle prodejem limit překročíš: přiznání podáš a zdaní se v něm{' '}
+          <strong>všechny letošní zdanitelné příjmy z investic</strong>, ne jen tenhle prodej —
+          proto daň skočí rovnou na {czk(hypotheticalTaxCzk)}.
+        </>
+      ) : (
+        <>
+          I po tomhle prodeji zůstaneš pod limitem {czk(limitCzk)}, takže přiznání nepodáváš
+          a z investic neplatíš nic. Kdybys ho podával, vyšla by daň na{' '}
+          {czk(hypotheticalTaxCzk)}.
+        </>
+      )}{' '}
+      Počítáme jen s příjmy, o kterých Danero ví.
+    </p>
+  );
 }
 
 /**
