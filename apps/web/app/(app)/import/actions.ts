@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
+import { isValidIsin } from '@danero/shared';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
@@ -86,6 +87,8 @@ const CURRENCY_RE = /^[A-Z]{3}$/;
 // XTB (ISIN+měna) + brokeři s ISIN-only mapou (lib/instrument-aliases)
 const ALIAS_BROKERS = new Set(['xtb', ...ISIN_ONLY_BROKERS]);
 const MAX_ALIAS_ROWS = 200;
+/** Kolik symbolů s vadným ISIN se vejde do adresy s hláškou (zbylé zůstanou ve formuláři). */
+const MAX_REPORTED_SYMBOLS = 5;
 
 export async function saveAliasesAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -93,6 +96,10 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   const rawCount = Number(formData.get('pocet') ?? 0);
   const count = Number.isInteger(rawCount) ? Math.min(Math.max(rawCount, 0), MAX_ALIAS_ROWS) : 0;
   const rows: AliasInput[] = [];
+  // ISIN se správným tvarem, ale nesedící kontrolní číslicí (ISO 6166) — skoro
+  // jistě překlep při opisování. Uložit se nesmí: ISIN je součást dedupe klíče
+  // i identity pozice, takže by se dal opravit jen vrácením importu.
+  const badCheckDigit: string[] = [];
   for (let i = 0; i < count; i += 1) {
     const broker = String(formData.get(`broker-${i}`) ?? '');
     const symbol = String(formData.get(`symbol-${i}`) ?? '');
@@ -104,13 +111,27 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
     if (currency !== '' && !CURRENCY_RE.test(currency)) redirect('/import?chyba=mena');
     // XTB bez měny by se v číselníku ignoroval — vynutit i na serveru
     if (broker === 'xtb' && currency === '') redirect('/import?chyba=mena');
+    if (!isValidIsin(isin)) {
+      badCheckDigit.push(symbol);
+      continue;
+    }
     rows.push({ broker, symbol, isin, ...(currency ? { currency } : {}) });
   }
+  // Řádky bez vady se uloží i tehdy, když jiný neprošel: formulář se po
+  // přesměrování vykreslí znovu prázdný a kvůli jednomu překlepu by uživatel
+  // opisoval i těch jedenáct ISIN, které napsal správně.
   if (rows.length > 0) {
     const db = await getDb();
     await saveAliases(db, user.id, rows);
   }
   revalidatePath('/import');
+  if (badCheckDigit.length > 0) {
+    const query = new URLSearchParams({ chyba: 'isin-kontrola' });
+    for (const symbol of badCheckDigit.slice(0, MAX_REPORTED_SYMBOLS)) {
+      query.append('symbol', symbol);
+    }
+    redirect(`/import?${query.toString()}`);
+  }
   redirect('/import?ulozeno=ciselnik');
 }
 

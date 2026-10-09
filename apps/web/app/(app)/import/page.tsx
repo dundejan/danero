@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import { XTB_BROKER, xtbCurrencyFromTicker } from '@danero/importers';
 import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -280,7 +281,11 @@ function ConnectedBroker({
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string | string[]; ulozeno?: string | string[] }>;
+  searchParams: Promise<{
+    chyba?: string | string[];
+    ulozeno?: string | string[];
+    symbol?: string | string[];
+  }>;
 }) {
   const user = await requireUser();
   const db = await getDb();
@@ -322,6 +327,24 @@ export default async function ImportPage({
     }
   }
   const unmappedSymbols = [...unmappedMap.values()];
+  // Měnu u XTB jen navrhujeme (L14-05): pole zůstává k přepsání a ukládá se až
+  // to, co uživatel odešle. ISIN z reportu zjistit nejde, ten se nenavrhuje.
+  const suggestedCurrency = (item: UnmappedSymbol): string | undefined =>
+    item.broker === XTB_BROKER ? xtbCurrencyFromTicker(item.symbol) : undefined;
+  const anyCurrencySuggested = unmappedSymbols.some(
+    (item) => item.needsCurrency && suggestedCurrency(item) !== undefined,
+  );
+  // Symboly, u kterých server odmítl ISIN kvůli kontrolní číslici (L14-06).
+  // Z adresy se berou jen ty, které ve formuláři opravdu jsou — cizí text
+  // z odkazu se do hlášky neopisuje.
+  const rejectedSymbols = [params.symbol]
+    .flat()
+    .filter((symbol) => unmappedSymbols.some((item) => item.symbol === symbol));
+  const checkDigitMessage =
+    (rejectedSymbols.length === 0
+      ? 'ISIN nesedí'
+      : `${rejectedSymbols.length === 1 ? 'U symbolu' : 'U symbolů'} ${rejectedSymbols.join(', ')} ISIN nesedí`) +
+    ': jeho poslední číslice je kontrolní a ke zbytku kódu nepasuje — nejspíš překlep při opisování (zaměněný nebo přehozený znak). Zkontroluj ho znak po znaku a ulož znovu; správně vyplněné řádky jsou uložené.';
 
   // aktivní job per účet → místo tlačítka a rekonciliace živý průběh
   // (jeden dotaz; cestou se samoléčí zaseknuté joby vč. odpojených účtů)
@@ -371,7 +394,9 @@ export default async function ImportPage({
                           ? 'Tenhle výpis už mezitím vyřešený je — obnov stránku.'
                           : chyba === 'ulozeni'
                             ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
-                            : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                            : chyba === 'isin-kontrola'
+                              ? checkDigitMessage
+                              : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}
@@ -398,6 +423,8 @@ export default async function ImportPage({
             {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
             na výpisu brokera nebo vyhledáním „[symbol] ISIN“. Po uložení nahraj soubor znovu —
             obchody těchto symbolů se bez doplnění neimportují.
+            {anyCurrencySuggested &&
+              ' Měnu jsme u tickerů s příponou .US předvyplnili (USD) — zkontroluj ji a případně přepiš.'}
           </p>
           <form action={saveAliasesAction} className="space-y-2">
             <input type="hidden" name="pocet" value={unmappedSymbols.length} />
@@ -425,6 +452,7 @@ export default async function ImportPage({
                     name={`currency-${index}`}
                     placeholder="Měna (USD)"
                     aria-label={`Měna pro ${item.symbol}`}
+                    defaultValue={suggestedCurrency(item)}
                     required
                     pattern="[A-Za-z]{3}"
                     className="w-28 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
