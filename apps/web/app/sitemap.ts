@@ -48,8 +48,8 @@ const PAGES: Page[] = [
   { path: '/caste-otazky', lastModified: '2026-10-09', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/jak-pocitame', lastModified: '2026-10-09', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/o-projektu', lastModified: '2026-10-08', changeFrequency: 'yearly', priority: 0.5 },
-  { path: '/podminky', lastModified: '2026-10-08', changeFrequency: 'yearly', priority: 0.2 },
-  { path: '/soukromi', lastModified: '2026-10-08', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/podminky', lastModified: '2026-10-09', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/soukromi', lastModified: '2026-10-09', changeFrequency: 'yearly', priority: 0.2 },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
