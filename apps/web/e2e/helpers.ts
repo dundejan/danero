@@ -52,7 +52,8 @@ export async function registerWithProfile(
   // registrace nepřihlašuje — účet čeká na potvrzení adresy
   await page.waitForURL('**/overeni-emailu**');
 
-  // odkaz z e-mailu ověří adresu, přihlásí (autoSignInAfterVerification)
+  // odkaz z e-mailu ověří adresu a přihlásí — tenhle prohlížeč o něj požádal
+  // registrací, takže nese cookie, podle které ho server pozná (R1) —
   // a skončí v onboarding průvodci (G9a)
   await page.goto(await linkFromEmail(page, email));
   await page.waitForURL('**/vitejte');

@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from 'better-auth/api';
+import { expireCookie, setSessionCookie } from 'better-auth/cookies';
 import { and, eq, like } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { verification } from '@/db/schema';
+import { user, verification } from '@/db/schema';
 import { checkRateLimit } from '@/lib/rate-limit';
 
 /**
@@ -258,6 +260,107 @@ export function logTwoFactorChanges(db: Db) {
 }
 
 /**
+ * L8a-01 (rozhodnutí R1): potvrzení adresy přihlásí jen prohlížeč, který
+ * o ověřovací odkaz sám požádal.
+ *
+ * Better Auth umí po kliknutí na odkaz přihlásit kohokoli, kdo klikl
+ * (`autoSignInAfterVerification`). Kdo si cizí adresu předregistroval se svým
+ * heslem, tím dostal majitele adresy do účtu, ke kterému sám znal heslo —
+ * stačilo, aby majitel klikl na nevyžádaný e-mail. Vypnout přihlášení úplně
+ * by ale každému novému uživateli přidalo jedno zadání hesla navíc.
+ *
+ * Proto dva háčky:
+ *  - registrace a žádost o nový odkaz nechají v prohlížeči podepsanou cookie
+ *    s otiskem adresy (`rememberVerificationBrowser`),
+ *  - po úspěšném potvrzení se relace otevře jen tomu, kdo tu cookie pro
+ *    potvrzenou adresu nese (`signInVerificationBrowser`).
+ * Kdo klikne jinde (majitel adresy z cizí předregistrace, jiný počítač,
+ * skener pošty), skončí na stránce „Adresu máme potvrzenou, přihlas se“.
+ * Heslo z cizí předregistrace nezná, takže jde přes „Zapomenuté heslo“ — a to
+ * cizí heslo i relace zruší.
+ *
+ * Selhání je bezpečným směrem: když háček cookie nepozná nebo spadne,
+ * uživatel se přihlásí heslem, nikdo se nedostane dovnitř navíc.
+ *
+ * Účet s druhým faktorem se takhle nepřihlašuje nikdy (týká se jen potvrzení
+ * po změně e-mailu) — odkaz v poště nemá kód z telefonu obcházet.
+ *
+ * Co cookie NEdokládá: kdo ji má, jen z tohohle prohlížeče o odkaz požádal.
+ * Bez platného tokenu z e-mailu je k ničemu.
+ */
+type HookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
+const VERIFICATION_BROWSER_COOKIE = 'verification_browser';
+/** Stejně dlouho, jako platí ověřovací odkaz (`emailVerification.expiresIn`). */
+const VERIFICATION_BROWSER_MAX_AGE_S = 60 * 60 * 24;
+const VERIFICATION_REQUEST_PATHS = new Set(['/sign-up/email', '/send-verification-email']);
+
+/** Otisk adresy do cookie — adresa sama v ní čitelně ležet nemá. */
+export const verificationBrowserFingerprint = (email: string): string =>
+  createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+
+export async function rememberVerificationBrowser(ctx: HookContext): Promise<void> {
+  if (!ctx.path || !VERIFICATION_REQUEST_PATHS.has(ctx.path)) return;
+  if (isAPIError(ctx.context.returned)) return;
+  const email = (ctx.body as { email?: unknown } | undefined)?.email;
+  if (typeof email !== 'string' || !email) return;
+  const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE, {
+    maxAge: VERIFICATION_BROWSER_MAX_AGE_S,
+  });
+  await ctx.setSignedCookie(
+    cookie.name,
+    verificationBrowserFingerprint(email),
+    ctx.context.secret,
+    cookie.attributes,
+  );
+}
+
+/**
+ * Kdo byl v tomhle požadavku právě potvrzen. Plní to `afterEmailVerification`
+ * (běží jen po úspěšném potvrzení a dostane týž objekt požadavku), čte háček
+ * níž. Z návratové hodnoty endpointu se úspěch poznat nedá: s `callbackURL`
+ * končí přesměrováním úspěch i vypršelý odkaz.
+ */
+interface VerifiedUser {
+  id: string;
+  email: string;
+}
+const verifiedInRequest = new WeakMap<Request, VerifiedUser>();
+
+export function noteVerifiedUser(user: VerifiedUser, request: Request | undefined): void {
+  if (request) verifiedInRequest.set(request, { id: user.id, email: user.email });
+}
+
+export async function signInVerificationBrowser(db: Db, ctx: HookContext): Promise<void> {
+  if (ctx.path !== '/verify-email' || !ctx.request) return;
+  const verified = verifiedInRequest.get(ctx.request);
+  if (!verified) return;
+  verifiedInRequest.delete(ctx.request);
+
+  const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE);
+  const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
+  if (!fingerprint || fingerprint !== verificationBrowserFingerprint(verified.email)) return;
+
+  const [row] = await db
+    .select({ twoFactorEnabled: user.twoFactorEnabled })
+    .from(user)
+    .where(eq(user.id, verified.id));
+  if (!row || row.twoFactorEnabled) return;
+
+  // kdo už je v tomhle prohlížeči přihlášený jako tentýž účet, novou relaci nepotřebuje
+  const current = await getSessionFromCtx(ctx);
+  if (current?.user.id === verified.id) return;
+
+  const account = await ctx.context.internalAdapter.findUserById(verified.id);
+  if (!account) return;
+  const session = await ctx.context.internalAdapter.createSession(verified.id);
+  if (!session) return;
+  await setSessionCookie(ctx, { session, user: account });
+  // jednorázová: další odkaz chce novou žádost z tohohle prohlížeče
+  expireCookie(ctx, cookie);
+}
+
+/**
  * `hooks.after` bere jediný middleware — stejně jako u `beforeHooks` je jejich
  * pořadí a soupiska na jednom místě.
  */
@@ -269,5 +372,10 @@ export function afterHooks(db: Db) {
   ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
+    // Tyhle dva zapisují cookies, proto běží přímo v kontextu tohohle
+    // middleware: háček zabalený do vlastního `createAuthMiddleware` má
+    // vlastní hlavičky odpovědi a ty by se tady zahodily.
+    await rememberVerificationBrowser(ctx);
+    await signInVerificationBrowser(db, ctx);
   });
 }

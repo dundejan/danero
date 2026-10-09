@@ -82,15 +82,31 @@ async function signInCookie(auth: Auth, email: string, password: string): Promis
     .join('; ');
 }
 
-/** Klikne na poslední ověřovací odkaz, který na danou adresu přišel. */
-async function confirmAddress(auth: Auth, logPath: string, address: string): Promise<void> {
+/** Hodnota hlavičky `cookie`, jakou by prohlížeč poslal po téhle odpovědi. */
+const browserCookie = (response: Response): string =>
+  response.headers
+    .getSetCookie()
+    .map((entry) => entry.split(';')[0])
+    .join('; ');
+
+/**
+ * Klikne na poslední ověřovací odkaz, který na danou adresu přišel. S `cookie`
+ * kliká prohlížeč, který o odkaz sám požádal — jen toho potvrzení přihlásí
+ * (R1, test/auth-verify-browser.test.ts); bez ní kdokoli jiný.
+ */
+async function confirmAddress(
+  auth: Auth,
+  logPath: string,
+  address: string,
+  cookie = '',
+): Promise<void> {
   const link = emailsTo(logPath, address)
     .map((message) => message.text.match(/https?:\/\/\S*verify-email\S*/)?.[0])
     .filter((found): found is string => Boolean(found))
     .at(-1);
   if (!link) throw new Error(`Na ${address} nepřišel ověřovací odkaz`);
-  const token = new URL(link).searchParams.get('token');
-  await auth.api.verifyEmail({ query: { token: token! } });
+  const response = await auth.handler(new Request(link, { headers: cookie ? { cookie } : {} }));
+  expect(response.status).toBe(302);
 }
 
 /** Kam server action přesměrovala (každá z Nastavení končí redirectem). */
@@ -193,7 +209,7 @@ describe('druhá registrace téže adresy (L8a-01)', () => {
       expect(contested.passwordAudits).toHaveLength(0);
 
       // a klikne na odkaz, který má ve schránce (poslední, ať je z kterékoli registrace)
-      await confirmAddress(auth, log, email);
+      await confirmAddress(auth, log, email, browserCookie(second));
 
       // jádro nálezu: první registrující se svým heslem do potvrzeného účtu nesmí
       expect(await signInStatus(auth, email, FIRST_PASSWORD)).toBe(401);
@@ -512,13 +528,14 @@ describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-
       );
 
       // majitel adresy se později registruje sám, vlastním heslem
-      expect((await signUp(auth, ownerEmail, ownerPassword, 'Majitel')).status).toBe(200);
+      const ownerSignUp = await signUp(auth, ownerEmail, ownerPassword, 'Majitel');
+      expect(ownerSignUp.status).toBe(200);
       // do potvrzení se držiteli nic nestalo: relace žije
       expect(
         (await auth.api.getSession({ headers: new Headers({ cookie: holderCookie }) }))?.user.email,
       ).toBe(ownerEmail);
 
-      await confirmAddress(auth, log, ownerEmail);
+      await confirmAddress(auth, log, ownerEmail, browserCookie(ownerSignUp));
 
       // heslo držitele neplatí a heslo z registrace se nevnutilo
       expect(await signInStatus(auth, ownerEmail, holderPassword)).toBe(401);

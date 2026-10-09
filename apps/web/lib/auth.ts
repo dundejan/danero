@@ -10,6 +10,7 @@ import * as schema from '@/db/schema';
 import {
   afterHooks,
   beforeHooks,
+  noteVerifiedUser,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
 import {
@@ -186,9 +187,13 @@ function buildAuth(db: Db) {
       // (do těla přihlášení ho předat nejde, klient by na něj skočil i po
       // úspěšném loginu). Nový odkaz posílá po nezdařeném přihlášení samo UI
       // přes sendVerificationEmail — viz components/auth-form.tsx.
-      // po kliknutí na odkaz je uživatel rovnou přihlášený — jinak by hned
-      // po potvrzení musel zadávat heslo znovu
-      autoSignInAfterVerification: true,
+      // L8a-01 (R1): Better Auth by po kliknutí přihlásil KOHOKOLI, kdo klikl —
+      // i majitele adresy, kterou si se svým heslem předregistroval někdo
+      // cizí. Přihlašujeme proto sami a jen prohlížeč, který o odkaz požádal
+      // (`signInVerificationBrowser` v lib/auth-hooks.ts); kdo se registroval
+      // sám, heslo po potvrzení znovu nezadává.
+      autoSignInAfterVerification: false,
+      afterEmailVerification: async (user, request) => noteVerifiedUser(user, request),
       // L8a-01 / D01-R1-01: kdo potvrdí adresu, o kterou se přihlásil někdo
       // s jiným heslem, dostane účet bez cizího hesla a bez cizích relací.
       // Schválně háček PŘED potvrzením — selhání potvrzení zastaví

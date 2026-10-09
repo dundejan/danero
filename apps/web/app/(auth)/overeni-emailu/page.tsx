@@ -10,8 +10,9 @@ export const metadata = { title: 'Potvrzení e-mailu — Danero' };
 
 /**
  * Dvě role naráz: rozcestník po registraci a cíl odkazu z ověřovacího e-mailu.
- * Po úspěšném ověření je uživatel díky autoSignInAfterVerification přihlášený,
- * takže ho rovnou pošleme do onboardingu; při chybě nabídneme nový odkaz.
+ * Po úspěšném ověření je přihlášený ten, kdo klikl v prohlížeči, ze kterého
+ * o odkaz požádal (`signInVerificationBrowser` v lib/auth-hooks.ts) — toho
+ * rovnou pošleme do onboardingu; při chybě nabídneme nový odkaz.
  */
 export default async function VerifyEmailPage({
   searchParams,

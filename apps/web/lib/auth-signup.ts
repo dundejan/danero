@@ -25,8 +25,8 @@ import { hashPassword, verifyPassword } from '@/lib/password';
  *    (`settleSignupContest`, háček `beforeEmailVerification`): uložený otisk
  *    nahradí otisk náhodného tajemství, které nikdo nezná, a zruší se všechny
  *    relace účtu. Heslo si nastaví přes „Zapomenuté heslo“ — odkaz chodí jen do
- *    jeho schránky. Přihlášený zůstane: Better Auth mu po potvrzení otevře
- *    novou relaci.
+ *    jeho schránky. Přihlášený zůstane, pokud klikl v prohlížeči, ze kterého
+ *    se registroval (lib/auth-hooks.ts, `signInVerificationBrowser`).
  *
  * Proč až při potvrzení a proč i relace (D01-R1-01, R1-02): nepotvrzený není
  * jen účet z předregistrace, ale i ZAVEDENÝ účet po změně e-mailu
@@ -224,8 +224,10 @@ export async function closeSignupContestAfterPasswordReset(
  * selhání nechalo potvrzený účet s cizím heslem i relací. Spor se proto maže až
  * jako poslední zápis.
  *
- * Relace se ruší dřív, než Better Auth otevře novou tomu, kdo na odkaz klikl
- * (`autoSignInAfterVerification`), takže ten přihlášený zůstane.
+ * Relace se ruší dřív, než se otevře nová tomu, kdo na odkaz klikl
+ * v prohlížeči, ze kterého o něj požádal (`signInVerificationBrowser`
+ * v lib/auth-hooks.ts) — ten přihlášený zůstane. Kdo klikl jinde, přihlásí se
+ * až heslem, které si nastaví přes „Zapomenuté heslo“.
  */
 export async function settleSignupContest(
   db: Db,
