@@ -50,7 +50,10 @@ describe('nadpis skupiny', () => {
     const title = groupTitle(group);
     expect(title).not.toContain('ruční');
     expect(title).not.toContain('Delisting');
-    expect(title).toBe('Tituly stažené z burzy — pozice zůstávají beze změny');
+    // Nadpis je společný všem výskytům, takže nesmí tvrdit nic o stavu pozic:
+    // titul mohl být mezitím prodán nebo se nikdy nedržel (A26-R1-01).
+    expect(title).not.toMatch(/pozic|držen|zůstáv/);
+    expect(title).toBe('Tituly stažené z burzy');
   });
 
   it('neznámý kód: nadpisem je první věta prvního výskytu', () => {

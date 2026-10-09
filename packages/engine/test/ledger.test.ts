@@ -200,8 +200,10 @@ describe('R-04 korporátní akce', () => {
     // proto nesmí posílat k „ručnímu posouzení“, na které aplikace nemá
     // nástroj, ani vynášet právní závěr o odpisu — popíše jen chování.
     const holding = buy({ isin: 'US0000000002', quantity: '100', pricePerShare: '50', currency: 'USD' });
-    const otherBuy = buy({ quantity: '10', pricePerShare: '1000' });
-    const otherSell = sell({ quantity: '10', pricePerShare: '1500' });
+    // Jiný titul musí být NAD limitem osvobození 100 000 Kč (příjem 300 000),
+    // jinak je základ § 10 v obou bězích nula a shoda nic nehlídá (A26-R1-02).
+    const otherBuy = buy({ quantity: '200', pricePerShare: '1000' });
+    const otherSell = sell({ quantity: '200', pricePerShare: '1500' });
     const without = run([holding, otherBuy, otherSell]);
     const result = run([
       holding,
@@ -213,7 +215,10 @@ describe('R-04 korporátní akce', () => {
     // chování enginu: pozice dál držená, do daně nic
     const position = result.positions.find((p) => p.isin === 'US0000000002');
     expect(position?.totalRemaining.toString()).toBe('100');
-    expect(result.securities.base10Czk.toString()).toBe(without.securities.base10Czk.toString());
+    expect(without.securities.base10Czk.toString()).toBe('100000');
+    expect(result.securities.base10Czk.toString()).toBe('100000');
+    expect(result.securities.taxableIncomeCzk.toString()).toBe('300000');
+    expect(result.securities.expensesCzk.toString()).toBe('200000');
 
     const warning = result.warnings.find((w) => w.code === 'DELISTING_MANUAL');
     expect(warning?.level).toBe('WARNING');
@@ -226,6 +231,104 @@ describe('R-04 korporátní akce', () => {
     expect(warning?.message).toContain('do daně se z této události nic nezapočítá');
     // žádný právní závěr o odpisu ani o ztrátě
     expect(warning?.message).not.toMatch(/odpis|ztrát/i);
+  });
+
+  describe('stažení z burzy bez držené pozice: varování netvrdí, že titul zůstává držený (A26-R1-01)', () => {
+    // Varování se vydává u každé události DELISTING. Větu o stavu pozice smí
+    // nést jen tehdy, když titul na konci historie opravdu držíme — jinak by
+    // stála vedle výpočtu, který říká opak (prodej za 0, pozdější prodej).
+    const ISIN = 'US0000000002';
+    const delisting = corpAction({ subtype: 'DELISTING', isin: ISIN, date: '2025-02-03' });
+    const delistingWarnings = (result: ReturnType<typeof run>) =>
+      result.warnings.filter((w) => w.code === 'DELISTING_MANUAL');
+    const held = (result: ReturnType<typeof run>) =>
+      result.positions.find((p) => p.isin === ISIN && p.totalRemaining.gt(0));
+    const expectEventOnly = (result: ReturnType<typeof run>) => {
+      expect(held(result)).toBeUndefined();
+      const warnings = delistingWarnings(result);
+      expect(warnings).toHaveLength(1);
+      const [warning] = warnings;
+      expect(warning!.level).toBe('WARNING');
+      expect(warning!.message).toContain(ISIN);
+      expect(warning!.message).toContain('stažení z burzy');
+      expect(warning!.message).not.toMatch(/držen|zůstává/);
+      expect(warning!.message).toContain('do daně nic nezapočítá');
+      expect(warning!.message).not.toMatch(/odpis|ztrát|ruční posouzení|engine/i);
+    };
+
+    it('nákup → DELISTING → prodej za 0: ztráta je v základu, text o držení mlčí', () => {
+      const other = [
+        buy({ quantity: '200', pricePerShare: '1000', date: '2025-01-10' }),
+        sell({ quantity: '200', pricePerShare: '1500', date: '2025-06-10' }),
+      ];
+      const closed = [
+        buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2024-03-01' }),
+        sell({ isin: ISIN, quantity: '100', pricePerShare: '0', currency: 'USD', date: '2025-03-03' }),
+      ];
+      const result = run([closed[0]!, delisting, closed[1]!, ...other]);
+      const withoutEvent = run([...closed, ...other]);
+      expectEventOnly(result);
+      // daňové číslo určuje prodej, ne událost — s DELISTING i bez něj stejné
+      expect(run(other).securities.base10Czk.toString()).toBe('100000');
+      expect(withoutEvent.securities.base10Czk.toString()).toBe('0');
+      expect(result.securities.base10Czk.toString()).toBe('0');
+    });
+
+    it('DELISTING a pozdější skutečný prodej se ziskem', () => {
+      const result = run([
+        buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2025-01-10' }),
+        delisting,
+        sell({ isin: ISIN, quantity: '100', pricePerShare: '80', currency: 'USD', date: '2025-05-05' }),
+      ]);
+      expectEventOnly(result);
+      expect(result.securities.base10Czk.toString()).toBe('45000');
+    });
+
+    it('titul, který se nikdy nekoupil, nebo byl prodán před událostí', () => {
+      expectEventOnly(run([delisting]));
+      expectEventOnly(
+        run([
+          buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2025-01-10' }),
+          sell({ isin: ISIN, quantity: '100', pricePerShare: '60', currency: 'USD', date: '2025-01-20' }),
+          delisting,
+        ]),
+      );
+    });
+
+    it('DELISTING i prodej v minulém roce: ve výpočtu dalšího roku text o držení mlčí', () => {
+      expectEventOnly(
+        run([
+          buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2023-01-10' }),
+          corpAction({ subtype: 'DELISTING', isin: ISIN, date: '2024-02-05' }),
+          sell({ isin: ISIN, quantity: '100', pricePerShare: '0', currency: 'USD', date: '2024-03-04' }),
+        ]),
+      );
+    });
+
+    it('částečný prodej po události: zbytek se drží, text o držení platí a zůstává', () => {
+      const result = run([
+        buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2025-01-10' }),
+        delisting,
+        sell({ isin: ISIN, quantity: '40', pricePerShare: '80', currency: 'USD', date: '2025-05-05' }),
+      ]);
+      expect(held(result)?.totalRemaining.toString()).toBe('60');
+      const warnings = delistingWarnings(result);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.message).toContain('zůstává v přehledu jako držený');
+    });
+
+    it('každá událost má jedno varování se svou transakcí, i když jich je víc', () => {
+      const second = corpAction({ subtype: 'DELISTING', isin: 'US0000000003', date: '2025-02-04' });
+      const result = run([
+        buy({ isin: ISIN, quantity: '100', pricePerShare: '50', currency: 'USD', date: '2025-01-10' }),
+        delisting,
+        second,
+      ]);
+      const warnings = delistingWarnings(result);
+      expect(warnings.map((w) => w.context?.txId)).toEqual([delisting.id, second.id]);
+      expect(warnings[0]!.message).toContain('zůstává v přehledu jako držený');
+      expect(warnings[1]!.message).not.toMatch(/držen|zůstává/);
+    });
   });
 });
 
