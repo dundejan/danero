@@ -117,6 +117,8 @@ const KNOWN_PASSWORDS = new Set([
 ]);
 
 const MIN_WORD_SEQUENCE = 5;
+/** Nejdelší heslo, které Better Auth přijme (`maxPasswordLength`, výchozí). */
+const MAX_CHECKED_LENGTH = 128;
 
 /** Nejkratší kus, jehož opakováním řetězec vznikl (aspoň dvakrát); jinak `null`. */
 function repeatedBlock(text: string): string | null {
@@ -150,12 +152,27 @@ function isSequence(text: string): boolean {
   return true;
 }
 
-/** Heslo bez číslic a znamének na začátku a na konci: `2024heslo123!` → `heslo`. */
-const stripDecoration = (text: string): string =>
-  text.replace(/^[\d\s!?.,_*#@$%&+=-]+/, '').replace(/[\d\s!?.,_*#@$%&+=-]+$/, '');
+const DECORATION = new Set('0123456789 !?.,_*#@$%&+=-');
+
+/**
+ * Heslo bez číslic a znamének na začátku a na konci: `2024heslo123!` →
+ * `heslo`. Schválně smyčkou, ne regulárním výrazem — `[…]+$` bez kotvy na
+ * začátku umí na dlouhém vstupu kvadraticky couvat.
+ */
+function stripDecoration(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && DECORATION.has(text[start]!)) start += 1;
+  while (end > start && DECORATION.has(text[end - 1]!)) end -= 1;
+  return text.slice(start, end);
+}
 
 /** Je heslo z těch, která útočník zkusí jako první? */
 export function isCommonPassword(password: string): boolean {
+  // Delší vstup odmítne pravidlo o délce (Better Auth, 128 znaků) — a tahle
+  // kontrola běží před ním, takže by jinak megabajtové „heslo“ procházela
+  // kvadratickým hledáním opakování.
+  if (password.length > MAX_CHECKED_LENGTH) return false;
   const text = password.trim().toLowerCase();
   if (!text) return false;
   if (repeatedBlock(text) !== null) return true;

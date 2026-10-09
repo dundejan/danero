@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { like } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { getAuth as GetAuth } from '@/lib/auth';
-import { emailsIn, postAuth, signUpVerified } from './auth-helpers';
+import { emailsIn, signUpVerified } from './auth-helpers';
 
 /**
  * L8a-03 (rozhodnutí R14): strop neúspěšných přihlášení na jednu adresu.
@@ -13,16 +13,32 @@ import { emailsIn, postAuth, signUpVerified } from './auth-helpers';
  * střídá, hádal heslo jednoho účtu bez brzdy (naměřeno 68 špatných pokusů
  * a pak úspěšné přihlášení). Strop je klíčovaný adresou, ne účtem — pro
  * adresu bez účtu se chová stejně, takže neprozradí, jestli účet existuje.
+ * Prohlížeč, ze kterého se majitel už přihlásil, má vlastní počítadlo, aby mu
+ * cizí člověk nemohl přihlášení zamykat dokola.
  */
 type Auth = Awaited<ReturnType<typeof GetAuth>>;
 
 const PASSWORD = 'spravne-heslo-uctu-01';
 const WRONG = 'spatne-heslo-utocnika-99';
-/** Musí sedět s `SIGN_IN_FAILURE_MAX` v lib/auth-hooks.ts. */
+/** Musí sedět s `SIGN_IN_ATTEMPT_MAX` v lib/auth-hooks.ts. */
 const MAX_FAILURES = 10;
 
-const signIn = (auth: Auth, email: string, password: string): Promise<Response> =>
-  postAuth(auth, '/sign-in/email', { email, password });
+/** Přihlášení přes HTTP router; `cookie` = co by poslal prohlížeč, který tu už byl. */
+const signIn = (auth: Auth, email: string, password: string, cookie = ''): Promise<Response> =>
+  auth.handler(
+    new Request('http://localhost:3000/api/auth/sign-in/email', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ email, password }),
+    }),
+  );
+
+/** Hodnota hlavičky `cookie`, jakou by prohlížeč poslal po téhle odpovědi. */
+const cookieFrom = (response: Response): string =>
+  response.headers
+    .getSetCookie()
+    .map((entry) => entry.split(';')[0])
+    .join('; ');
 
 async function failTimes(auth: Auth, email: string, times: number): Promise<number[]> {
   const statuses: number[] = [];
@@ -112,6 +128,63 @@ describe('strop neúspěšných přihlášení na adresu (L8a-03, R14)', () => {
       await auth.api.resetPassword({ body: { newPassword, token } });
 
       expect((await signIn(auth, email, newPassword)).status).toBe(200);
+    },
+  );
+
+  it(
+    'cizí pokusy nezamknou prohlížeč, ze kterého se majitel už přihlásil',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-znamy-prohlizec@priklad.test';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      const known = cookieFrom(await signIn(auth, email, PASSWORD));
+      expect(known).not.toBe('');
+      expect(decodeURIComponent(known)).not.toContain(email);
+
+      // cizí člověk vyčerpá strop adresy
+      await failTimes(auth, email, MAX_FAILURES);
+      expect((await signIn(auth, email, PASSWORD)).status).toBe(429);
+
+      // majitel ve svém prohlížeči se přihlásí dál
+      expect((await signIn(auth, email, PASSWORD, known)).status).toBe(200);
+    },
+  );
+
+  it(
+    'cookie známého prohlížeče není volná vstupenka — má vlastní strop',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-strop-znameho@priklad.test';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      const known = cookieFrom(await signIn(auth, email, PASSWORD));
+
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+        statuses.push((await signIn(auth, email, WRONG, known)).status);
+      }
+      expect(statuses).toEqual(Array(MAX_FAILURES).fill(401));
+      expect((await signIn(auth, email, PASSWORD, known)).status).toBe(429);
+      // a cookie pro jinou adresu se nepočítá vůbec
+      const other = 'zamek-jina-cookie@priklad.test';
+      await failTimes(auth, other, MAX_FAILURES);
+      expect((await signIn(auth, other, WRONG, known)).status).toBe(429);
+    },
+  );
+
+  it(
+    'souběžné pokusy strop nepřestřelí',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-soubeh@priklad.test';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+
+      const responses = await Promise.all(
+        Array.from({ length: MAX_FAILURES * 3 }, () => signIn(auth, email, WRONG)),
+      );
+      const statuses = responses.map((response) => response.status);
+      // k ověření hesla se jich dostane nejvýš deset, zbytek skončí na stropu
+      expect(statuses.filter((status) => status === 401)).toHaveLength(MAX_FAILURES);
+      expect(statuses.filter((status) => status === 429)).toHaveLength(MAX_FAILURES * 2);
     },
   );
 

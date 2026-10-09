@@ -3,13 +3,16 @@ import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from 'b
 import { expireCookie, setSessionCookie } from 'better-auth/cookies';
 import { and, eq, like } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { appRateLimits, user, verification } from '@/db/schema';
+import { user, verification } from '@/db/schema';
 import {
   COMMON_PASSWORD_CODE,
   COMMON_PASSWORD_MESSAGE,
   isCommonPassword,
 } from '@/lib/password-strength';
 import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
+
+/** Kontext, který dostává háček — ať jdou háčky psát i jako obyčejné funkce. */
+type HookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
 
 /**
  * Otisk adresy tam, kde adresa sama čitelně ležet nemá: v cookie prohlížeče
@@ -162,52 +165,70 @@ export function withoutTrustDevice(
 }
 
 /**
- * L8a-03 (rozhodnutí R14): strop neúspěšných přihlášení na jednu ADRESU.
+ * L8a-03 (rozhodnutí R14): strop pokusů o přihlášení na jednu ADRESU.
  *
  * Vestavěný limit `/sign-in/email` (5 za minutu) se počítá podle IP, takže kdo
  * adresy střídá, hádá heslo jednoho účtu bez brzdy — naměřeno 68 špatných
- * pokusů a pak úspěšné přihlášení. Tady se počítají jen NEÚSPĚŠNÉ pokusy:
- * deset v okně čtvrt hodiny, pak se adresa do konce okna odmítá, i se
- * správným heslem.
+ * pokusů a pak úspěšné přihlášení. Tady je strop na adresu: deset pokusů
+ * v okně čtvrt hodiny, další se do konce okna odmítají.
  *
- * - Klíč je otisk adresy, ne id účtu, a počítá se i pro adresu, která účet
- *   nemá — odpověď tak neprozradí, jestli účet existuje.
- * - Úspěšné přihlášení a dokončená obnova hesla počítadlo mažou
- *   (`clearSignInFailures`): kdo se překlepl devětkrát, nezačíná příště od
- *   devítky, a zamčený majitel se přes „Zapomenuté heslo“ dostane dovnitř hned.
- * - Kontrola je PŘED ověřením hesla a čte jen stav; počítá až háček po
- *   odpovědi. Dva souběžné pokusy tak můžou strop přestřelit o jeden, což
- *   proti hádání hesla nevadí.
+ * - **Počítá se PŘED ověřením hesla a atomicky** (`checkRateLimit`), ne až po
+ *   neúspěchu: čtení stavu a pozdější zápis by šlo předběhnout souběžnými
+ *   pokusy a z deseti by jich byly stovky. Správné heslo počítadlo smaže
+ *   (`settleSignInAttempt`), takže běžné přihlašování se do stropu nesčítá.
+ * - Klíč je otisk adresy, ne id účtu, a počítá se i pro adresu bez účtu —
+ *   odpověď tak neprozradí, jestli účet existuje.
+ * - **Známý prohlížeč má vlastní počítadlo.** Kdo se z prohlížeče už jednou
+ *   přihlásil správným heslem, nese podepsanou cookie s otiskem adresy a jeho
+ *   pokusy se počítají zvlášť. Bez toho by kdokoli, kdo adresu zná, uměl
+ *   majiteli přihlášení zamykat dokola (deset pokusů každou čtvrthodinu);
+ *   takhle si cizí člověk vyčerpá jen počítadlo neznámých prohlížečů.
+ *   Hádat heslo cookie nepomůže: i její počítadlo má strop a bez správného
+ *   hesla ji nikdo nedostane.
+ * - Dokončená obnova hesla maže obě počítadla (`clearSignInFailures`): kdo je
+ *   na novém zařízení zrovna zamčený, dostane se dovnitř hned.
  *
- * Vědomá cena: kdo zná cizí adresu, umí jí deseti pokusy na čtvrt hodiny
- * zavřít přihlášení heslem. Obnova hesla e-mailem funguje dál a zámek ruší.
+ * Vědomá cena, která zbývá: na zařízení, ze kterého se majitel ještě
+ * nepřihlásil, mu cizí člověk umí přihlášení heslem na čtvrt hodiny zavřít.
+ * Obnova hesla e-mailem funguje dál a zámek ruší.
  */
-const SIGN_IN_FAILURE_MAX = 10;
-const SIGN_IN_FAILURE_WINDOW_MS = 15 * 60_000;
+const SIGN_IN_ATTEMPT_MAX = 10;
+const SIGN_IN_ATTEMPT_WINDOW_MS = 15 * 60_000;
 const SIGN_IN_PATH = '/sign-in/email';
+const KNOWN_BROWSER_COOKIE = 'known_browser';
+const KNOWN_BROWSER_MAX_AGE_S = 60 * 60 * 24 * 180;
 
-const signInFailureKey = (email: string): string => `signin_fail:${emailFingerprint(email)}`;
+const signInAttemptKey = (email: string, knownBrowser: boolean): string =>
+  `signin_fail:${emailFingerprint(email)}${knownBrowser ? ':known' : ''}`;
 
 const signInEmail = (body: unknown): string | null => {
   const email = (body as { email?: unknown } | undefined)?.email;
   return typeof email === 'string' && email ? email : null;
 };
 
-export async function clearSignInFailures(db: Db, email: string): Promise<void> {
-  await releaseRateLimit(db, signInFailureKey(email));
+/** Přihlásil se už někdy tenhle prohlížeč na tuhle adresu správným heslem? */
+async function isKnownBrowser(ctx: HookContext, email: string): Promise<boolean> {
+  const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE);
+  const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
+  return Boolean(fingerprint) && fingerprint === emailFingerprint(email);
 }
 
-export function rejectLockedSignIn(db: Db) {
+export async function clearSignInFailures(db: Db, email: string): Promise<void> {
+  await releaseRateLimit(db, signInAttemptKey(email, false));
+  await releaseRateLimit(db, signInAttemptKey(email, true));
+}
+
+export function limitSignInAttempts(db: Db) {
   return createAuthMiddleware(async (ctx) => {
     if (ctx.path !== SIGN_IN_PATH) return;
     const email = signInEmail(ctx.body);
     if (!email) return;
-    const [bucket] = await db
-      .select({ count: appRateLimits.count, resetAt: appRateLimits.resetAt })
-      .from(appRateLimits)
-      .where(eq(appRateLimits.key, signInFailureKey(email)));
-    if (!bucket || bucket.resetAt.getTime() <= Date.now()) return;
-    if (bucket.count < SIGN_IN_FAILURE_MAX) return;
+    const allowed = await checkRateLimit(
+      db,
+      signInAttemptKey(email, await isKnownBrowser(ctx, email)),
+      { max: SIGN_IN_ATTEMPT_MAX, windowMs: SIGN_IN_ATTEMPT_WINDOW_MS },
+    );
+    if (allowed) return;
     throw new APIError('TOO_MANY_REQUESTS', {
       message:
         'Na tuhle adresu bylo moc neúspěšných pokusů o přihlášení. Zkus to za čtvrt hodiny, nebo si nastav nové heslo přes „Zapomenuté heslo“.',
@@ -216,24 +237,35 @@ export function rejectLockedSignIn(db: Db) {
   });
 }
 
-export function countFailedSignIn(db: Db) {
-  return createAuthMiddleware(async (ctx) => {
-    if (ctx.path !== SIGN_IN_PATH) return;
-    const email = signInEmail(ctx.body);
-    if (!email) return;
-    const returned = ctx.context.returned;
-    if (!isAPIError(returned)) {
-      await clearSignInFailures(db, email);
-      return;
-    }
-    // 401 = špatné heslo nebo adresa bez účtu. Nepotvrzená adresa (403), chyba
-    // serveru ani limit podle IP (429) nejsou hádání hesla.
-    if (returned.statusCode !== 401) return;
-    await checkRateLimit(db, signInFailureKey(email), {
-      max: SIGN_IN_FAILURE_MAX,
-      windowMs: SIGN_IN_FAILURE_WINDOW_MS,
-    });
+/**
+ * Po odpovědi přihlášení: správné heslo smaže počítadlo tohohle prohlížeče
+ * a prohlížeč si odnese cookie „známý“. Správné heslo poznáme podle toho, že
+ * endpoint neskončil chybou, nebo skončil na nepotvrzené adrese — tu Better
+ * Auth kontroluje až PO hesle. Všechno ostatní (401, chyba serveru) nechává
+ * pokus započítaný.
+ *
+ * Běží přímo v kontextu `afterHooks`, protože zapisuje cookie.
+ */
+export async function settleSignInAttempt(db: Db, ctx: HookContext): Promise<void> {
+  if (ctx.path !== SIGN_IN_PATH) return;
+  const email = signInEmail(ctx.body);
+  if (!email) return;
+  const returned = ctx.context.returned;
+  const passwordCorrect =
+    !isAPIError(returned) ||
+    (returned.statusCode === 403 && returned.body?.code === 'EMAIL_NOT_VERIFIED');
+  if (!passwordCorrect) return;
+
+  await releaseRateLimit(db, signInAttemptKey(email, await isKnownBrowser(ctx, email)));
+  const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE, {
+    maxAge: KNOWN_BROWSER_MAX_AGE_S,
   });
+  await ctx.setSignedCookie(
+    cookie.name,
+    emailFingerprint(email),
+    ctx.context.secret,
+    cookie.attributes,
+  );
 }
 
 /**
@@ -275,7 +307,7 @@ export function beforeHooks(db: Db) {
   const hooks = [
     rejectReusedTotpCode(db),
     limitSensitiveAccountOperations(db),
-    rejectLockedSignIn(db),
+    limitSignInAttempts(db),
     rejectCommonPassword(),
   ];
   return createAuthMiddleware(async (ctx) => {
@@ -411,8 +443,6 @@ export function logTwoFactorChanges(db: Db) {
  * Co cookie NEdokládá: kdo ji má, jen z tohohle prohlížeče o odkaz požádal.
  * Bez platného tokenu z e-mailu je k ničemu.
  */
-type HookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
-
 const VERIFICATION_BROWSER_COOKIE = 'verification_browser';
 /** Stejně dlouho, jako platí ověřovací odkaz (`emailVerification.expiresIn`). */
 const VERIFICATION_BROWSER_MAX_AGE_S = 60 * 60 * 24;
@@ -489,13 +519,13 @@ export function afterHooks(db: Db) {
     revokeResetTokensAfterPasswordChange(db),
     revokeTrustedDevicesAfterTwoFactorDisable(db),
     logTwoFactorChanges(db),
-    countFailedSignIn(db),
   ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
     // Tyhle dva zapisují cookies, proto běží přímo v kontextu tohohle
     // middleware: háček zabalený do vlastního `createAuthMiddleware` má
     // vlastní hlavičky odpovědi a ty by se tady zahodily.
+    await settleSignInAttempt(db, ctx);
     await rememberVerificationBrowser(ctx);
     await signInVerificationBrowser(db, ctx);
   });

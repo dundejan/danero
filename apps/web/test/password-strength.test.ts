@@ -69,6 +69,13 @@ describe('nejběžnější hesla (L8a-04, R21)', () => {
     expect(isCommonPassword('  QWERTYUIOP  ')).toBe(true);
   });
 
+  it('obří vstup neprochází hledáním opakování — odmítne ho pravidlo o délce', () => {
+    const started = performance.now();
+    expect(isCommonPassword('a'.repeat(2_000_000))).toBe(false);
+    expect(isCommonPassword(`${'1'.repeat(1_000_000)}x${'1'.repeat(1_000_000)}`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it('prázdný vstup není „běžné heslo“ — o něm rozhoduje pravidlo o délce', () => {
     expect(isCommonPassword('')).toBe(false);
   });
