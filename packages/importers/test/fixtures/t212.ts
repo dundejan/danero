@@ -8,7 +8,8 @@ export const T212_FIXTURE = [
   'Currency conversion,2024-01-06 08:00:00,,,,,,,,,,5000.00,CZK,,,,,,',
   'Market buy,2024-01-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,0.0435,,,428000.00,CZK,,,,EOF1001,2.10,CZK',
   'Market sell,2025-03-05 15:01:10,US0378331005,AAPL,Apple Inc,100,210.00,USD,0.0448,1000.00,CZK,468000.00,CZK,,,,EOF1002,3.00,CZK',
-  'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.25,USD,,,,500.00,CZK,3.75,USD,,,,',
+  // „Price / share“ je u dividendy ČISTÁ částka na kus (0,25 vyhlášeno, po 15% srážce 0,2125)
+  'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.2125,USD,,,,500.00,CZK,3.75,USD,,,,',
   'Interest on cash,2025-05-01 00:00:00,,,,,,,,,,12.34,CZK,,,,,,',
   'Withdrawal,2025-06-01 08:00:00,,,,,,,,,,2000.00,CZK,,,,,,',
 ].join('\n');
@@ -33,7 +34,7 @@ export const T212_FIXTURE_2026 = [
   'Spending cashback,2026-08-02 01:02:39+00:00,,,,,019fbffe-91ba-7da1-9203-4ddd1b5013ac,,,,,,,0.06,"EUR",,,,,,,,,,',
   'Market buy,2026-02-10 14:30:02+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000001,10,185.50,USD,0.0435,,,42800.00,CZK,,,,,,,2.10,CZK,,',
   'Market sell,2026-03-05 15:01:10+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000002,10,210.00,USD,0.0448,1000.00,CZK,46800.00,CZK,,,,,,,3.00,CZK,,',
-  'Dividend (Dividends paid by us corporations),2026-04-01 09:00:00+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000003,10,0.25,USD,,,,50.00,CZK,0.38,USD,,,,,,,,',
+  'Dividend (Dividends paid by us corporations),2026-04-01 09:00:00+00:00,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-000000000003,10,0.212,USD,,,,50.00,CZK,0.38,USD,,,,,,,,',
 ].join('\n');
 
 /**
@@ -56,6 +57,6 @@ export const T212_FIXTURE_ACTIONS_2026 = [
   'Transfer out,2026-03-08 10:00:00+00:00,US0000000003,CCC,Gama Inc,,id-7,3,31.00,USD,0.045,,,2050.00,CZK,,,,,,,,,,',
   'Stock Split,2026-03-09 10:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-8,33,10.00,USD,,,,0.00,CZK,,,,,,,,,,',
   'Dividend adjustment,2026-04-01 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-9,,,,,,,-12.00,CZK,,,,,,,,,,',
-  'Dividend (Interest),2026-04-02 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-10,10,0.10,USD,,,,20.00,CZK,0.15,USD,,,,,,,,',
+  'Dividend (Interest),2026-04-02 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-10,10,0.085,USD,,,,20.00,CZK,0.15,USD,,,,,,,,',
   'Lending interest,2026-04-03 09:00:00+00:00,,,,,id-11,,,,,,,0.40,CZK,,,,,,,,,,',
 ].join('\n');

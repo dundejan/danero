@@ -42,11 +42,11 @@ describe('Trading212 CSV parser', () => {
     expect(buy.settlementDate).toBeUndefined(); // dopočítá engine
   });
 
-  it('DIVIDEND: brutto = kusy × dividenda/kus v měně instrumentu + srážková daň', () => {
+  it('DIVIDEND: brutto = kusy × čistá částka na kus v měně instrumentu + srážková daň (R-07b)', () => {
     const result = parseTrading212Csv(FIXTURE);
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND')!;
     if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
-    expect(dividend.gross.toString()).toBe('25'); // 100 × 0.25 USD
+    expect(dividend.gross.toString()).toBe('25'); // 100 × 0,2125 USD čistého + srážka 3,75 USD
     expect(dividend.currency).toBe('USD');
     expect(dividend.withholdingTax.toString()).toBe('3.75');
     expect(dividend.date).toBe('2025-04-01');
@@ -276,18 +276,20 @@ describe('Trading212 CSV parser', () => {
     const plain = parseTrading212Csv(
       [
         HEADER,
-        'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.25,USD,,,,500.00,CZK,3.75,USD,,,,',
+        'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,100,0.2125,USD,,,,500.00,CZK,3.75,USD,,,,',
       ].join('\n'),
     );
     expect(plain.warnings.some((w) => w.message.includes('vratka kapitálu'))).toBe(false);
   });
 
-  // B-11: nulové brutto s nenulovou srážkou = zápočet daně bez příjmu; dřív
-  // vzniklo DIVIDEND s gross "0" úplně beze slova
+  // B-11: nulová částka s nenulovou srážkou = sražená daň bez příjmu; dřív
+  // vzniklo DIVIDEND s gross "0" úplně beze slova. Od L14-01 je brutto čistá
+  // částka + srážka (R-07b), takže tu vyjde aspoň na sraženou daň — varování
+  // se proto řídí částkou PŘED přičtením srážky a zůstává.
   it.each([
     ['nulová cena za kus', '100', '0'],
     ['nulový počet kusů', '0', '0.25'],
-  ])('dividenda s nulovým brutto (%s) → varování', (_label, shares, price) => {
+  ])('dividenda s nulovou částkou a srážkou (%s) → varování', (_label, shares, price) => {
     const csv = [
       HEADER,
       `Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0378331005,AAPL,Apple Inc,${shares},${price},USD,,,,0.00,USD,1.88,USD,,,,`,
@@ -296,10 +298,12 @@ describe('Trading212 CSV parser', () => {
     expect(result.errors).toEqual([]);
     const dividend = result.transactions[0]!;
     if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
-    expect(dividend.gross.toString()).toBe('0');
-    const warning = result.warnings.find((w) => w.message.includes('nulové brutto'));
+    expect(dividend.gross.toString()).toBe('1.88');
+    expect(dividend.withholdingTax.toString()).toBe('1.88');
+    const warning = result.warnings.find((w) => w.message.includes('vychází na nulu'));
     expect(warning).toBeDefined();
     expect(warning!.message).toContain('1.88');
+    expect(warning!.message).toContain('Zkontroluj řádek');
   });
 
   it('dividenda s nulovým brutto a bez srážky → varování o chybějící částce', () => {
@@ -458,12 +462,12 @@ describe('Trading 212: sporné řádky se nezpracují potichu', () => {
   it('Dividend manufactured payment se daní jako dividenda, ale s upozorněním', () => {
     const csv = [
       HEADER,
-      'Dividend (manufactured payment),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+      'Dividend (manufactured payment),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.207,USD,,,,12.07,USD,2.13,USD,,,,',
     ].join('\n');
     const result = parseTrading212Csv(csv);
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
     if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
-    // číslo se nemění (bezpečný směr), jen se o něm ví
+    // číslo se nemění (bezpečný směr), jen se o něm ví: 10 × 1,207 čistého + srážka 2,13
     expect(dividend.gross.toString()).toBe('14.2');
     expect(result.warnings.some((w) => w.message.includes('půjčil'))).toBe(true);
   });
@@ -485,7 +489,7 @@ describe('Trading 212: sporné řádky se nezpracují potichu', () => {
   it('běžná dividenda příznak vratky nemá', () => {
     const csv = [
       HEADER,
-      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.207,USD,,,,12.07,USD,2.13,USD,,,,',
     ].join('\n');
     const result = parseTrading212Csv(csv);
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
@@ -496,7 +500,7 @@ describe('Trading 212: sporné řádky se nezpracují potichu', () => {
   it('běžná dividenda upozornění nedostane', () => {
     const csv = [
       HEADER,
-      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.42,USD,,,,14.20,USD,2.13,USD,,,,',
+      'Dividend (Ordinary),2025-09-30 12:00:00,US7134481081,PEP,PepsiCo,10,1.207,USD,,,,12.07,USD,2.13,USD,,,,',
     ].join('\n');
     const result = parseTrading212Csv(csv);
     expect(result.warnings.some((w) => w.message.includes('půjčil'))).toBe(false);
@@ -813,5 +817,113 @@ describe('Trading 212: záporná dividenda je korekce, ne chyba validace (L2a-05
       'Řádek se nepodařilo zpracovat: sloupec „No. of shares“ („-10“): Hodnota musí být kladná; ' +
         'sloupec „Price / share“ („-20.00“): Hodnota nesmí být záporná',
     ]);
+  });
+});
+
+/**
+ * L14-01, R-07b: do § 8 jde dividenda BRUTTO, před zahraniční srážkou. Sloupec
+ * „Price / share“ ale u dividendy nese ČISTOU částku na kus (vyhlášená
+ * dividenda po srážce) — brutto je tedy kusy × cena + „Withholding tax“.
+ * Dokud parser bral cenu jako brutto, vycházel příjem nižší o srážku a poměr
+ * srážka / brutto 15/85 = 17,65 % místo 15 %.
+ *
+ * Tituly, kusy i časy jsou smyšlené; tvar čísel (čistá cena = vyhlášená
+ * dividenda × (1 − sazba), srážka zaokrouhlená na centy) odpovídá exportu.
+ */
+describe('Trading 212: brutto dividendy = kusy × čistá částka na kus + srážka (R-07b, L14-01)', () => {
+  const DIVIDEND_ROW = (
+    isin: string,
+    shares: string,
+    price: string,
+    withholding: string,
+    currency = 'USD',
+    withholdingCurrency = currency,
+  ): string =>
+    `Dividend (Dividend),2026-05-14 09:00:00+00:00,${isin},AAA,Alfa Inc,,id-d1,${shares},${price},${currency},0.045,,,600.00,CZK,${withholding},${withholdingCurrency},,,,,,,,`;
+  const dividendOf = (row: string) => {
+    const result = parseRow2026(row);
+    expect(result.errors).toEqual([]);
+    const dividend = result.transactions[0];
+    if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    return { dividend, warnings: result.warnings.map((w) => w.message) };
+  };
+
+  it('srážka 15 %: brutto je vyhlášená dividenda × kusy a srážka z něj dělá přesně 15 %', () => {
+    // vyhlášeno 0,83 na kus, po 15% srážce 0,7055; 40 kusů → srážka 4,98
+    const { dividend, warnings } = dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', '4.98'));
+    expect(dividend.gross.toString()).toBe('33.2'); // 40 × 0,83
+    expect(dividend.withholdingTax.toString()).toBe('4.98');
+    expect(dividend.withholdingTax.div(dividend.gross).toString()).toBe('0.15');
+    expect(dividend.currency).toBe('USD');
+    expect(warnings).toEqual([]);
+  });
+
+  it('německá srážka 26,375 %: brutto je vyhlášená dividenda × kusy', () => {
+    // vyhlášeno 4,00 na kus, po srážce 2,945; 10 kusů → srážka 10,55
+    const { dividend } = dividendOf(DIVIDEND_ROW('DE0000000001', '10', '2.945', '10.55', 'EUR'));
+    expect(dividend.gross.toString()).toBe('40');
+    expect(dividend.withholdingTax.div(dividend.gross).toString()).toBe('0.26375');
+    expect(dividend.currency).toBe('EUR');
+  });
+
+  it.each([
+    ['prázdná', ''],
+    ['nulová', '0.00'],
+  ])('srážka %s: brutto = kusy × cena', (_label, withholding) => {
+    const { dividend } = dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', withholding));
+    expect(dividend.gross.toString()).toBe('28.22');
+    expect(dividend.withholdingTax.toString()).toBe('0');
+  });
+
+  it('srážka bez uvedené měny se bere jako srážka v měně instrumentu', () => {
+    const { dividend } = dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', '4.98', 'USD', ''));
+    expect(dividend.gross.toString()).toBe('33.2');
+    expect(dividend.withholdingTax.toString()).toBe('4.98');
+  });
+
+  it('srážka v jiné měně se k brutto nepřičítá (nuluje se a hlásí jako dřív)', () => {
+    const { dividend, warnings } = dividendOf(
+      DIVIDEND_ROW('US0000000001', '40', '0.7055', '110.00', 'USD', 'CZK'),
+    );
+    expect(dividend.gross.toString()).toBe('28.22');
+    expect(dividend.withholdingTax.toString()).toBe('0');
+    expect(dividend.grossFromNet).toBeUndefined();
+    expect(warnings.some((m) => m.includes('srážková daň v jiné měně'))).toBe(true);
+  });
+
+  it('starý formát bez kusů a ceny se nemění: brutto odhadnuté z čisté částky, bez příznaku', () => {
+    const { dividend, warnings } = dividendOf(
+      'Dividend (Dividend),2026-05-14 09:00:00+00:00,US0000000001,AAA,Alfa Inc,,id-d1,,,,,,,600.00,CZK,90.00,CZK,,,,,,,,',
+    );
+    expect(dividend.gross.toString()).toBe('600');
+    expect(dividend.currency).toBe('CZK');
+    expect(dividend.withholdingTax.toString()).toBe('90');
+    expect(dividend.grossFromNet).toBeUndefined();
+    expect(warnings.some((m) => m.includes('brutto odhadnuto'))).toBe(true);
+  });
+
+  it('dividenda spočtená z čisté ceny nese příznak grossFromNet — i bez srážky', () => {
+    expect(dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', '4.98')).dividend.grossFromNet).toBe(true);
+    expect(dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', '')).dividend.grossFromNet).toBe(true);
+    for (const fixture of [FIXTURE, FIXTURE_2026]) {
+      const dividend = parseTrading212Csv(fixture).transactions.find((t) => t.type === 'DIVIDEND');
+      if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+      expect(dividend.grossFromNet).toBe(true);
+    }
+  });
+
+  it('příznak grossFromNet nevstupuje do dedupe klíče', () => {
+    const { dividend } = dividendOf(DIVIDEND_ROW('US0000000001', '40', '0.7055', '4.98'));
+    const { grossFromNet, ...withoutFlag } = dividend;
+    expect(grossFromNet).toBe(true);
+    expect(dedupeKey(TRADING212_BROKER, withoutFlag, 1)).toBe(dedupeKey(TRADING212_BROKER, dividend, 1));
+  });
+
+  it('záporná cena na kus se srážkou nezmizí: řádek dál spadne na validaci', () => {
+    // −0,10 × 10 + 1,50 by dalo kladné brutto 0,50 — srážka se smí přičíst jen k platné čisté částce
+    const result = parseRow2026(DIVIDEND_ROW('US0000000001', '10', '-0.10', '1.50'));
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('„Price / share“ („-0.10“)');
   });
 });

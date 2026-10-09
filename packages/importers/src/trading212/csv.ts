@@ -301,22 +301,44 @@ export function parseTrading212Csv(text: string): ImportResult {
 
           let gross: string;
           let currency: string;
+          // částka z výpisu PŘED přičtením srážky — podle ní se níž pozná
+          // řádek, kterému v exportu chybí kusy nebo částka na kus
+          let paid: string;
+          // příznak modelu: brutto je složené z čisté částky a srážky (viz níž)
+          let grossFromNet: true | undefined;
           if (shares && price && instrumentCurrency) {
-            // brutto v měně instrumentu = kusy × dividenda/kus (srážka bývá v téže měně)
-            gross = new Decimal(shares).mul(price).toString();
+            // R-07b, L14-01: „Price / share“ je u dividendy ČISTÁ částka na kus,
+            // tedy vyhlášená dividenda už po zahraniční srážce (ověřeno na
+            // reálných exportech: kusy × cena sedí na připsané Total, nikdy na
+            // částku před srážkou). Do § 8 jde brutto, takže
+            //   brutto = kusy × cena + Withholding tax,
+            // obojí v měně instrumentu. Dokud se cena brala jako brutto, byl
+            // příjem nižší o srážku a ta vycházela na 15/85 = 17,65 % místo 15 %.
+            const net = new Decimal(shares).mul(price);
+            paid = net.toString();
+            gross = paid;
             currency = instrumentCurrency;
             if (withholdingCurrency && withholdingCurrency !== instrumentCurrency) {
               // číslo v cizí měně by se tiše přepočetlo špatným kurzem —
-              // bezpečněji: zápočet nezapočíst (vyšší daň) a říct si o doplnění
+              // bezpečněji: zápočet nezapočíst (vyšší daň) a říct si o doplnění.
+              // K brutto se taková srážka nepřičítá ze stejného důvodu.
               withholding = '0';
               result.warnings.push({
                 line,
                 message: `Dividenda: srážková daň v jiné měně (${withholdingCurrency}) než brutto (${instrumentCurrency}) — do zápočtu nebyla započtena, doplň ji ručně.`,
               });
+            } else {
+              // Srážka se přičítá jen k platné čisté částce: záporná cena nebo
+              // záporná srážka mají spadnout na validaci modelu, ne se navzájem
+              // vyrušit do kladného brutta.
+              const tax = new Decimal(withholding);
+              if (tax.gt(0) && !net.isNegative()) gross = net.plus(tax).toString();
+              grossFromNet = true;
             }
           } else {
             // starší formát bez kusů/ceny: k dispozici jen čistá částka Total
             gross = cleanNumber(map.get(row, 'Total'));
+            paid = gross;
             currency = map.get(row, 'Currency (Total)');
             if (!gross || !currency) {
               result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.' });
@@ -328,14 +350,14 @@ export function parseTrading212Csv(text: string): ImportResult {
                 'Dividenda: brutto odhadnuto z čisté připsané částky (export neobsahuje kusy × dividenda/kus) — základ § 8 může být podhodnocen o srážkovou daň.',
             });
           }
-          // nulové brutto s nenulovou srážkou = zápočet daně bez příjmu; nulová
+          // nulová částka s nenulovou srážkou = sražená daň bez příjmu; nulová
           // dividenda vůbec je podezřelá vždy (chybějící kusy/cena v exportu)
-          if (new Decimal(gross || '0').eq(0)) {
+          if (new Decimal(paid).eq(0)) {
             const tax = new Decimal(withholding || '0');
             result.warnings.push({
               line,
               message: tax.gt(0)
-                ? `${action}: dividenda má nulové brutto (kusy „${shares || '—'}“ × cena „${price || '—'}“), ale sraženou daň ${tax.toString()} ${currency} — zápočet daně bez příjmu je podezřelý. Zkontroluj řádek ve výpisu brokera a částku případně doplň ručně.`
+                ? `${action}: dividenda vychází na nulu (kusy „${shares || '—'}“ × částka na kus „${price || '—'}“), ale sražená daň je ${tax.toString()} ${currency} — sražená daň bez vyplacené částky je podezřelá. Zkontroluj řádek ve výpisu brokera a částku případně doplň ručně.`
                 : `${action}: dividenda s nulovou částkou — v exportu chybí počet kusů nebo dividenda na kus. Zkontroluj řádek ve výpisu brokera.`,
             });
           }
@@ -349,6 +371,7 @@ export function parseTrading212Csv(text: string): ImportResult {
               currency,
               withholdingTax: withholding,
               returnOfCapital,
+              ...(grossFromNet ? { grossFromNet } : {}),
               date,
             }),
           );
@@ -544,8 +567,10 @@ export function parseTrading212Csv(text: string): ImportResult {
  * řádku, protože totéž pole bere každý druh odjinud (`currency` je u obchodu
  * měna ceny, u úroku měna částky).
  *
- * Kde se pole skládá z víc sloupců (brutto dividendy = kusy × částka na kus,
- * ve starším exportu Total), jsou tu všechny — hláška jmenuje ty vyplněné
+ * Kde se pole skládá z víc sloupců (brutto dividendy = kusy × čistá částka na
+ * kus + srážka, ve starším exportu Total), jsou tu všechny kromě srážky — ta
+ * má vlastní pole a k brutto se přičítá, jen když je sama platná, takže vadné
+ * brutto nezpůsobí. Hláška jmenuje ty vyplněné
  * a vadný je mezi nimi. Schválně se tu neopakuje podmínka, podle které si
  * parser mezi nimi vybírá: dvě kopie téhož rozhodnutí by se rozešly.
  */

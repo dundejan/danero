@@ -94,6 +94,20 @@ export const DividendTxSchema = z.object({
    * klíče už uloženým transakcím a tentýž výpis by se naimportoval podruhé.
    */
   returnOfCapital: z.boolean().default(false),
+  /**
+   * R-07b: brutto je složené z ČISTÉ částky a srážky (čistá částka na kus ×
+   * kusy + sražená daň). Plní ho parser Trading 212 u každé dividendy, kterou
+   * tak spočítal — jeho export u dividendy uvádí částku na kus až po srážce.
+   *
+   * Na výpočet nemá vliv; je to značka pro přepočet dřív uložených dat: do
+   * opravy parseru se jako brutto ukládala čistá částka a z payloadu samotného
+   * se nepozná, jestli už srážku obsahuje. U dividendy z Trading 212 bez značky
+   * tedy brutto srážku neobsahuje; u ostatních brokerů značka nic neříká.
+   *
+   * Do deduplikačního otisku nevstupuje (`contentFingerprint`), stejně jako
+   * `returnOfCapital`: není to údaj o události, ale o tom, jak vzniklo číslo.
+   */
+  grossFromNet: z.boolean().optional(),
   date: IsoDateSchema,
 });
 

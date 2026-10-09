@@ -10,7 +10,8 @@ const T212_CSV = [
   'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
   'Market buy,2024-06-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,,,,,,,,,EOF1',
   'Market sell,2026-03-05 15:01:10,US0378331005,AAPL,Apple Inc,50,210.00,USD,,,,,,,,,EOF2',
-  'Dividend (Dividend),2026-04-01 09:00:00,US0378331005,AAPL,Apple Inc,50,0.25,USD,,,,10.80,EUR,1.88,USD,,',
+  // „Price / share“ je u dividendy čistá částka na kus: 50 × 0,2124 + srážka 1,88 = brutto 12,50 USD
+  'Dividend (Dividend),2026-04-01 09:00:00,US0378331005,AAPL,Apple Inc,50,0.2124,USD,,,,10.80,EUR,1.88,USD,,',
 ].join('\n');
 
 describe('import pipeline nad PGlite (in-memory)', () => {
@@ -33,6 +34,13 @@ describe('import pipeline nad PGlite (in-memory)', () => {
     const buy = txs.find((t) => t.type === 'BUY')!;
     if (buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.quantity.toString()).toBe('100'); // Decimal přežil round-trip přes JSONB
+    // R-07b, L14-01: brutto dividendy je čistá částka + srážka a značka, že tak
+    // vzniklo, přežije uložení — stojí na ní přepočet dřív uložených dividend
+    const dividend = txs.find((t) => t.type === 'DIVIDEND')!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.gross.toString()).toBe('12.5');
+    expect(dividend.withholdingTax.toString()).toBe('1.88');
+    expect(dividend.grossFromNet).toBe(true);
 
     // profil + engine nad rehydratovanými daty
     await db.insert(taxpayerProfiles).values({ userId: 'u1', regime: 'PAUSAL' });

@@ -13,7 +13,7 @@ Typy kanonických transakcí (úplný výčet polí je v `packages/shared/src/mo
 | Typ | Poznámka |
 |---|---|
 | `BUY` / `SELL` | množství, cena/ks, měna, poplatek, datum obchodu + volitelné **datum vypořádání** (klíčové pro časový test — když ho broker neuvádí, dopočítá ho engine: T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2 v obchodních dnech burzy; krypto a deriváty mají vlastní pravidla). Kurz brokera se neukládá — na koruny se přepočítává jednotným kurzem GFŘ nebo denním kurzem ČNB (R-06 v docs/02). |
-| `DIVIDEND` | brutto částka, měna, srážková daň, země zdroje (z ISIN) |
+| `DIVIDEND` | brutto částka (před zahraniční srážkou, R-07b v docs/02), měna, srážková daň, země zdroje (z ISIN). Kde výpis uvádí jen čistou částku, složí brutto parser — viz Trading212 níže. |
 | `INTEREST` | úroky z hotovosti (§ 8) |
 | `FEE` | samostatné poplatky (konektivita, výpisy…) |
 | `FX_CONVERSION` | směna měn na účtu |
@@ -33,6 +33,14 @@ Zásady:
 **CSV export** (Menu → History → Export, web i mobil):
 - Kategorie: Orders, Dividends, Transactions, Interest — sada sloupců se mění dle výběru.
 - Známé sloupce: `Action`, `Time` (UTC), `ISIN`, `Ticker`, `Name`, `No. of shares`, `Price / share`, `Currency (Price / share)`, `Exchange rate`, `Result`, `Total`, `Withholding tax`.
+- ⚠️ **U dividendy je `Price / share` ČISTÁ částka na kus** — vyhlášená dividenda už po
+  zahraniční srážce (ověřeno na reálných exportech 10/2026: kusy × cena sedí na připsané
+  `Total`, na částku před srážkou ani jednou). Brutto pro § 8 (R-07b v docs/02) je proto
+  **kusy × `Price / share` + `Withholding tax`**, obojí v měně instrumentu. Srážka v jiné
+  měně se nezapočítá ani k brutto nepřičte a parser na ni upozorní; starší řádky bez kusů
+  a ceny mají brutto odhadnuté z čisté `Total` s varováním. Takto složená dividenda nese
+  v modelu značku `grossFromNet` — do dedupe klíče nevstupuje a slouží jen k rozlišení
+  od dividend uložených dřív, kdy se cena brala jako brutto a příjem vycházel nižší o srážku.
 - Limity: max 1 kalendářní rok na export → dedupe nutná; UTF-8; časy UTC.
 - ✅ **Oprava (ověřeno na reálném exportu 7/2026):** korporátní akce v exportu JSOU —
   splity jako pár řádků `Stock split close`/`Stock split open`, spin-off jako řádek
