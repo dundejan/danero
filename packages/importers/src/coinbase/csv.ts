@@ -9,6 +9,7 @@ import {
 } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult, type RowIssue } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const COINBASE_BROKER = 'coinbase';
 
@@ -242,6 +243,8 @@ export function parseCoinbaseCsv(text: string): ImportResult {
 
   const nextId = uniqueIdFactory();
 
+  // R-05d: časy jsou ve světovém čase, den i rok se berou z nich
+  const yearBoundary = new YearBoundaryWatch(result);
   rows.forEach((row, rowIndex) => {
     const line = headerLine + rowIndex + 1;
     if (row.every((cell) => cell.trim() === '')) return;
@@ -250,6 +253,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     const raw = row.join(',');
     const typeRaw = get(col.type);
     const type = typeRaw.trim().toLowerCase();
+    yearBoundary.row(line, get(col.timestamp));
     const asset = get(col.asset).trim().toUpperCase();
     const notes = get(col.notes).trim();
 
@@ -466,6 +470,7 @@ export function parseCoinbaseCsv(text: string): ImportResult {
     });
     if (counterLeg !== null) push(counterLeg);
   });
+  yearBoundary.flush();
 
   return result;
 }

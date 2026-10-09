@@ -2,6 +2,7 @@ import { d, type Decimal, TransactionSchema } from '@danero/shared';
 import { FIAT_CURRENCIES, HeaderMap, isValidIsoDate, normalizeHeader, parseCsv } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const KRAKEN_BROKER = 'kraken';
 
@@ -483,7 +484,11 @@ export function parseKrakenCsv(text: string): ImportResult {
   }
 
   // druhý průchod: párování obchodů podle refid
+  // R-05d: sloupec `time` je ve světovém čase, den i rok se berou z něj
+  const yearBoundary = new YearBoundaryWatch(result);
   for (const [refid, allLegs] of tradeGroups) {
+    const firstLeg = allLegs[0];
+    if (firstLeg) yearBoundary.row(firstLeg.line, firstLeg.time);
     // L2d-06: řádek s nulovou částkou a poplatkem není noha směny, ale poplatek
     // účtovaný zvlášť v jiném aktivu (typicky kredity KFEE). Dokud se počítal
     // mezi nohy, kontrola „právě dvě“ odmítla celý obchod s radou stáhnout
@@ -648,6 +653,7 @@ export function parseKrakenCsv(text: string): ImportResult {
       });
     }
   }
+  yearBoundary.flush();
 
   return result;
 }

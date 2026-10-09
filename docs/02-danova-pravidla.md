@@ -188,6 +188,24 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 
 - **R-05a Cash princip**: příjem patří do roku **připsání peněz** (na brokerský účet), ne roku obchodu.
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
+- **R-05d Den transakce = den uvedený ve výpisu brokera.** Zákon časové pásmo
+  neřeší a broker je jediný doklad, který poplatník má; přepočet do jiného
+  pásma by vyrobil datum, které na žádném dokladu nestojí. Důsledek, o kterém
+  je třeba vědět: brokeři píšou čas různě. Trading 212, Kraken a Coinbase
+  uvádějí světový čas (UTC), jiní místní čas burzy nebo účtu, takže tentýž
+  okamžik z noci 31. 12. → 1. 1. může u různých brokerů skončit v různých
+  zdaňovacích obdobích. Aplikace proto u transakce z poslední hodiny roku
+  UTC (v Česku už 1. 1.) **varuje při importu** — rok nemění
+  (`packages/importers/src/year-boundary.ts`; dnes Trading 212, Kraken
+  a Coinbase). Jediná výjimka z „dne podle výpisu“ je Tastytrade: jeho export
+  nese místní čas prohlížeče, ve kterém byl stažen, takže by tentýž řádek
+  dostal jiný den podle toho, kde ho uživatel stáhl — den se proto odvozuje
+  z okamžiku v pásmu Europe/Prague. Totéž platí pro časové testy (R-01, krypto):
+  počítají se týmž dnem, takže nákup v poslední hodině dne UTC má v Česku
+  datum o den pozdější a osvobození může vyjít o jeden den dřív. Engine hodinu
+  nezná (pracuje s daty), odchylka je nejvýš jeden den u tříleté lhůty a kryje
+  ji obecná opatrnost — neprodávat přesně v den výročí. Jistota střední:
+  výslovný výklad k pásmu neexistuje.
 - **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné. Zdroj: § 10 odst. 4 a 5 ZDP o metodě mlčí a žádný jiný předpis ji neúčtujícím FO neukládá; FIFO je ustálená praxe. Konkrétní stanovisko GFŘ, na které se tu dřív odkazovalo, se dohledat nepodařilo (9. 10. 2026), proto tu není. Podmínka: průkaznost a konzistence — jinou metodu než FIFO musí poplatník umět doložit. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS`; zvolená metoda se per rok zafixuje a dokumentuje. Individuální identifikaci (`MANUAL`) zákon připouští, ale **engine ji neumí** a tenhle dokument ji dřív omylem sliboval (nález A1-3-10) — typ `MatchingMethod` má čtyři hodnoty a ruční párování lotů nemá ani UI. Až přibude, patří sem zpátky. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
 
   **Fixace konfigurace per rok (implementace).** Podmínku konzistence nese

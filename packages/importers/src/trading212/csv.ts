@@ -2,6 +2,7 @@ import { Decimal, TransactionSchema } from '@danero/shared';
 import { cleanNumber, firstLine, HeaderMap, isAmbiguousThousands, parseCsv } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const TRADING212_BROKER = 'trading212';
 
@@ -165,12 +166,15 @@ export function parseTrading212Csv(text: string): ImportResult {
   const seenNoIdBases = new Set<string>();
   const splitCloses: SplitLeg[] = [];
   const splitOpens: SplitLeg[] = [];
+  // R-05d: sloupec je ve světovém čase, den i rok se berou z něj
+  const yearBoundary = new YearBoundaryWatch(result);
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
     const action = map.get(row, 'Action');
     const time = map.getAny(row, TRADING212_TIME_COLUMNS);
     const date = time.slice(0, 10);
+    yearBoundary.row(line, time);
 
     if (action === '' && row.every((cell) => cell.trim() === '')) return;
 
@@ -526,6 +530,7 @@ export function parseTrading212Csv(text: string): ImportResult {
       });
     }
   });
+  yearBoundary.flush();
 
   // Párování Stock split close/open (stejný ISIN a den) → CORPORATE_ACTION SPLIT.
   // Poměr = nové kusy / staré kusy celé pozice — ledger jím proporcionálně
