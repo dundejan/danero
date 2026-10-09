@@ -183,6 +183,28 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   2 400 testy, pokrytím a mutačními testy) a seznam se pak má vyprázdnit.
   Jiné hlášení do něj nepřidávej bez stejného zdůvodnění.
 
+## Nastavení repozitáře na GitHubu
+
+Tohle v repozitáři vidět není, a přitom na tom stojí část bezpečnosti. Stav od
+9. 10. 2026:
+
+- **Ruleset `main`** (Settings → Rules): větev nejde smazat ani přepsat (force
+  push) a pull request se sloučí jen se zelenými kontrolami `ci`, `e2e`, `dco`
+  a `guards`. Správce repozitáře pravidla obejít smí — commit rovnou na `main`
+  proto funguje dál a push o tom vypíše „Bypassed rule violations“. Kdo job
+  v `ci.yml` přejmenuje, musí ho přejmenovat i v rulesetu, jinak pull requesty
+  zůstanou viset na kontrole, která nikdy nepřijde.
+- **Dependabot alerts a security updates:** upozornění na zranitelnou závislost
+  a automatický pull request s opravou. Umí jen PŘÍMÉ závislosti; u nepřímé jeho
+  běh skončí neúspěchem (je vidět v Actions jako „Dependabot Updates“) a oprava
+  je přepis v `pnpm.overrides`. Hlídá i vývojové závislosti, které
+  `pnpm audit --prod` v CI nevidí.
+- **Secret scanning a push protection:** GitHub odmítne push, ve kterém pozná
+  klíč nebo token známého poskytovatele. Připojovací řetězec k databázi nepozná
+  — ten kryje jen gitleaks v jobu `guards`.
+- **Private vulnerability reporting:** formulář, na který odkazuje `SECURITY.md`.
+- **Discussions jsou vypnuté** schválně; dotazy patří do issue.
+
 ## Zálohy a monitoring (stav)
 
 - Neon: obnova do bodu v čase je součástí, ale sahá jen 6 hodin zpět — na
