@@ -297,7 +297,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
       </>
     ),
     zdroj:
-      '§ 10 odst. 4 a 5 zákona o daních z příjmů; stanovisko GFŘ (metoda párování pro neúčtující fyzické osoby není předepsána).',
+      '§ 10 odst. 4 a 5 zákona o daních z příjmů — o metodě párování mlčí, pro neúčtující fyzické osoby ji nepředepisuje žádný předpis. FIFO je ustálená praxe; jinou metodu je třeba umět průkazně doložit.',
   },
 ];
 

@@ -65,6 +65,11 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
    přestěhování. Kvůli tomu se 10. 8. 2026 přepisovala historie (148 commitů,
    force push) — podruhé už to nepůjde levně, až budou forky. Hlídá to strážný
    test v `test/email-legal.test.ts` a `/api/health` (`operatorContact`).
+   **Vědomá výjimka (9. 10. 2026):** kontakt původního projektu a vlastník
+   značky v dokumentech repozitáře (`SECURITY.md`, `CONTRIBUTING.md`,
+   `TRADEMARK.md`, příjemce DMARC v `docs/08`, šablona issue) zůstávají — patří
+   k projektu, ne k instanci, a strážný test proto soubory `.md` neprochází.
+   Do kódu aplikace (`app`, `lib`, `components`), fixtur a testů výjimka neplatí.
 
 ## Známé zrady (ověřeno provozem — neobjevuj znovu)
 

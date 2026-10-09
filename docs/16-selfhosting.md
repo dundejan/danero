@@ -10,8 +10,9 @@ stačí, aby to prostě běželo, je tu [danero.cz](https://danero.cz).
 > sazeb, struktura formuláře EPO). Bez aktualizace ti instance po Novém roce
 > počítá podle loňska.
 >
-> Podpora self-hostingu je best effort, bez záruky — dotazy do
-> [Discussions](https://github.com/dundejan/danero/discussions), ne do issue.
+> Podpora self-hostingu je best effort, bez záruky — dotazy piš jako
+> [issue](https://github.com/dundejan/danero/issues) (bezpečnostní chyby ne,
+> ty patří do soukromého hlášení podle `SECURITY.md`).
 
 ## Co budeš potřebovat
 
@@ -105,7 +106,8 @@ openssl rand -hex 32      # CRON_SECRET
 | `DANERO_CONTACT_EMAIL` | ano | kontaktní e-mail provozovatele; bez ní „nenastaveno“. Slouží i jako výchozí adresa pro odpovědi (`RESEND_REPLY_TO`) a pro provozní upozornění (`DANERO_ALERT_EMAIL`) |
 | `DANERO_CONTACT_PHONE` | ne | telefon provozovatele; na `/podminky` se vypíše, jen když je vyplněný |
 | `DANERO_ALERT_EMAIL` | ne | kam chodí provozní upozornění (dnes: výpis, který se nepodařilo přečíst). Bez ní jdou na `DANERO_CONTACT_EMAIL`; není-li ani ta, upozornění se jen zapíše do logu |
-| `RESEND_API_KEY` | ne | bez ní se e-maily jen zapisují do logu (na jedno-uživatelské instanci to může stačit) |
+| `RESEND_API_KEY` | ne | klíč služby Resend, přes kterou instance posílá e-maily. Bez ní se v produkčním režimu **neodešle ani nikam nezapíše nic** — ani ověřovací odkaz po registraci, ani obnova hesla (obrazovka po registraci to řekne) |
+| `DANERO_EMAIL_LOG` | ne | cesta k souboru uvnitř kontejneru, kam se e-maily zapisují místo odeslání (jeden JSON na řádek). Cesta k prvnímu účtu na instanci bez Resendu: nastav třeba `/tmp/danero-emaily.jsonl`, zaregistruj se a odkaz si přečti přes `docker compose exec web cat /tmp/danero-emaily.jsonl`. V souboru leží i odkazy na obnovu hesla, takže ho nenechávej nikde, kam vidí někdo další. Nenastavuj ji spolu s `RESEND_API_KEY` — odeslání e-mailu pak skončí chybou, aby odkazy neležely v souboru na instanci, která umí doručovat |
 | `RESEND_FROM` | ne | odesílatel, např. `"Danero <notifikace@example.cz>"` |
 | `RESEND_REPLY_TO` | ne | adresa, na kterou míří „Odpovědět“ u e-mailů z instance. Bez ní se použije `DANERO_CONTACT_EMAIL` |
 | `DANERO_MIGRATE_ON_START` | ne | `1` = zmigruj Postgres při startu (compose to nastavuje sám). Jen pro jednu instanci. |

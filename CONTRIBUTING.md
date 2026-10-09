@@ -89,5 +89,5 @@ Bezpečnostní chyby patří jinam: [SECURITY.md](SECURITY.md).
 ## Self-hosting
 
 Provozování vlastní instance je licencí výslovně dovolené a rádi ho vidíme.
-Podpora k němu je ale **best effort, bez záruky** — dotazy do Discussions, ne
-do issue. Název „Danero" a logo zůstávají chráněné, viz [TRADEMARK.md](TRADEMARK.md).
+Podpora k němu je ale **best effort, bez záruky** — dotazy piš jako issue.
+Název „Danero" a logo zůstávají chráněné, viz [TRADEMARK.md](TRADEMARK.md).

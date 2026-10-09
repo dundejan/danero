@@ -54,7 +54,9 @@ export default function PrivacyPage() {
           <strong>transakční historii</strong>, kterou nahraješ nebo kterou stáhneme
           z brokera. K tomu technické údaje o přihlášení (IP adresa a typ prohlížeče
           u aktivních relací, záznamy o přihlášeních a synchronizacích) — kvůli
-          bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
+          bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo; uložíme jen
+          oslovení, pokud ho při registraci vyplníš (jinak si ho odvodíme
+          z e-mailové adresy).
         </p>
 
         <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
