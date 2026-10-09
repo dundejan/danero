@@ -69,7 +69,18 @@ const AUTH_PAGES = ['/prihlaseni', '/registrace', '/zapomenute-heslo', '/nove-he
  * přihlášená) se místo chybové větve auditoval podruhé onboarding — a nikdo
  * o tom nevěděl, dokud `auditPage` nezačala hlídat, kde skutečně skončila.
  */
-const LOGGED_OUT_PAGES = ['/overeni-emailu?error=1'];
+const LOGGED_OUT_PAGES = [
+  '/overeni-emailu?error=1',
+  // čekání na potvrzení a stránka po kliknutí na odkaz — bez chyby
+  '/overeni-emailu',
+  '/overeni-emailu/hotovo',
+  // formulář nového hesla (bez tokenu se auditovala jen chybová větev)
+  '/nove-heslo?token=neplatny-token',
+  // kořenová 404 mimo aplikaci i demo
+  '/tahle-stranka-neexistuje',
+  // potvrzení po nevratném smazání účtu
+  '/?smazano=1',
+];
 
 /** Marketing a právní texty — první, co návštěvník uvidí. */
 const MARKETING_PAGES = [
