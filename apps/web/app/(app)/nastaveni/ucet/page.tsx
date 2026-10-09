@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -145,7 +146,15 @@ export default async function AccountSettingsPage({
               </div>
               <div>
                 <Label htmlFor="potvrzeni">Napiš SMAZAT</Label>
-                <Input id="potvrzeni" name="potvrzeni" required placeholder="SMAZAT" autoComplete="off" />
+                {/* L7-06: bez autoCapitalize napíše iOS „Smazat“ */}
+                <Input
+                  id="potvrzeni"
+                  name="potvrzeni"
+                  required
+                  placeholder="SMAZAT"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                />
               </div>
             </div>
             <SubmitButton variant="danger" pendingLabel="Mažu…">
@@ -185,6 +194,16 @@ export default async function AccountSettingsPage({
               </li>
             ))}
           </ul>
+          {/* L7-01: pod md není rail, a tedy ani jeho „Odhlásit se“ — bez
+              tohohle tlačítka se na telefonu odhlásit nedalo vůbec. Od md výš
+              je schované, ať na stránce nejsou dvě tlačítka téhož jména
+              (hranice musí sedět s `md:flex` railu). */}
+          <div className="space-y-2 md:hidden">
+            <SignOutButton
+              className={buttonVariants({ variant: 'secondary' })}
+              errorClassName="text-sm text-cervena"
+            />
+          </div>
           {sessions.length > 1 && (
             <form action={revokeOtherSessionsAction}>
               <SubmitButton variant="danger" pendingLabel="Odhlašuji…">

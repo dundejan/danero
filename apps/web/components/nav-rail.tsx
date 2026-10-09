@@ -1,11 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { authClient } from '@/lib/auth-client';
+import { usePathname } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { attemptSignOut } from '@/lib/sign-out';
+import { SignOutButton } from '@/components/sign-out-button';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -36,31 +34,6 @@ const DEMO_ITEMS: NavItem[] = [
   { href: '/demo/simulator', label: 'Simulátor' },
   { href: '/demo/report', label: 'Report' },
 ];
-
-/**
- * Odhlášení s ošetřeným neúspěchem (L12-04): na přihlášení se jde až po
- * potvrzeném odhlášení. Když server odpoví chybou nebo spadne síť, zůstane
- * uživatel na stránce a `error` nese hlášku, že přihlášení trvá — kdo tlačítko
- * vykresluje, musí ji ukázat hned u něj.
- */
-function useSignOut(): { signOut: () => void; error: string | null } {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const signOut = () => {
-    setError(null);
-    // attemptSignOut nevyhazuje (výjimku sítě vrací jako neúspěch), takže
-    // tenhle řetěz nemůže skončit neošetřeným odmítnutím
-    void attemptSignOut(() => authClient.signOut()).then((outcome) => {
-      if (!outcome.ok) {
-        setError(outcome.message);
-        return;
-      }
-      router.push(outcome.redirectTo);
-      router.refresh();
-    });
-  };
-  return { signOut, error };
-}
 
 /** Sdílený levý rail (desktop): logo, položky; patička jen když je co ukázat. */
 function Rail({
@@ -149,9 +122,9 @@ function TabBar({ items }: { items: NavItem[] }) {
 }
 
 /** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07).
- *  Patička jen účet (e-mail + odhlášení) — přepínač vzhledu žije v Nastavení. */
+ *  Patička jen účet (e-mail + odhlášení) — přepínač vzhledu žije v Nastavení.
+ *  Tab bar patičku nemá: pod md je totéž odhlášení v Nastavení → Účet (L7-01). */
 export function NavRail({ userEmail }: { userEmail: string }) {
-  const { signOut, error: signOutError } = useSignOut();
   return (
     <Rail
       items={ITEMS}
@@ -161,20 +134,10 @@ export function NavRail({ userEmail }: { userEmail: string }) {
           <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
             {userEmail}
           </p>
-          <button
-            type="button"
+          <SignOutButton
             className="text-xs font-medium text-inkoust-tlumeny hover:text-cervena"
-            onClick={signOut}
-          >
-            Odhlásit se
-          </button>
-          {/* zůstává, dokud další pokus nedopadne jinak — neúspěšné odhlášení
-              nesmí zmizet samo, uživatel by od počítače odešel přihlášený */}
-          {signOutError && (
-            <p role="alert" className="text-xs text-cervena">
-              {signOutError}
-            </p>
-          )}
+            errorClassName="text-xs text-cervena"
+          />
         </>
       }
     />

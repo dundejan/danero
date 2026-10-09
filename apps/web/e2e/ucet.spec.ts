@@ -131,6 +131,32 @@ test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s h
 });
 
 /**
+ * L7-01: na telefonu se nedalo odhlásit vůbec — jediné „Odhlásit se“ žilo
+ * v patičce railu a ten se pod 768 px nevykresluje. Relace přitom platí 7 dní,
+ * takže na půjčeném zařízení zůstala daňová data přístupná. Tlačítko je proto
+ * i v Nastavení → Účet, ale jen na šířkách, kde rail chybí.
+ */
+test('odhlášení na telefonu: tlačítko v Nastavení → Účet ukončí relaci', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Telefon', email: 'odhlaseni-telefon@danero.cz' });
+  await page.goto('/nastaveni/ucet');
+  const signOut = page.getByRole('button', { name: 'Odhlásit se' });
+
+  // desktop: jediné tlačítko je to v railu — druhé by shodilo strict režim
+  // v ostatních testech, které na téhle stránce klikají na „Odhlásit se“
+  await expect(signOut).toHaveCount(1);
+
+  // šířka telefonu: rail zmizel, odhlášení nabízí stránka účtu
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await expect(signOut).toHaveCount(1);
+  await expect(signOut).toBeVisible();
+
+  await signOut.click();
+  await page.waitForURL('**/prihlaseni');
+  expect((await page.request.get('/api/export')).status()).toBe(401);
+});
+
+/**
  * Danero je celé zdarma (podmínky 3.0): přihlášený uživatel má všechno
  * odemčené a nikde v aplikaci po něm nikdo nechce peníze. Do 8. 10. 2026 tu
  * stál test stránky Předplatné na instanci bez plateb.
