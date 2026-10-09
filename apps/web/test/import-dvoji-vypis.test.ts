@@ -12,6 +12,11 @@ import {
   ETORO_CLOSED_ROWS,
   ETORO_DIVIDEND_ROWS,
 } from '../../../packages/importers/test/fixtures/etoro';
+import {
+  REVOLUT_INSTRUMENT_MAP,
+  REVOLUT_INVEST_CSV,
+} from '../../../packages/importers/test/fixtures/revolut';
+import { TASTY_V2 } from '../../../packages/importers/test/fixtures/tastytrade';
 
 /**
  * Táž událost ve dvou po sobě jdoucích výpisech.
@@ -523,6 +528,157 @@ describe('shodná dividenda JINÉHO titulu v jiném souboru se uloží (A25-R1-0
       });
       // řádek zůstal jeden, s ISIN — velikost písmen tickeru shodu nekazí
       expect(tickers(await dividendRows(db))).toEqual(['beta:US0000000026']);
+    },
+  );
+});
+
+/**
+ * L23-01: totéž co L14-02, jen celou cestou importu (autodetekce → parser →
+ * číselník → dedupe → zápis) i u brokerů, které A25 ověřila jen nad čistou
+ * funkcí — a u navazujícího výpisu, který se s prvním jen překrývá.
+ */
+describe('výpis → číselník → výpis znovu přes import-service (L23-01)', () => {
+  const withUser = async (): Promise<Db> => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'test@danero.cz' });
+    return db;
+  };
+
+  const uploadText = (db: Db, filename: string, text: string) =>
+    importFileIsolated(db, 'u1', filename, new TextEncoder().encode(text).buffer as ArrayBuffer);
+
+  const rowsOf = async (db: Db) =>
+    db.select().from(transactions).where(eq(transactions.userId, 'u1'));
+
+  const dividendsOf = async (db: Db) =>
+    (await rowsOf(db))
+      .filter((row) => row.type === 'DIVIDEND')
+      .sort((a, b) => a.txDate.localeCompare(b.txDate));
+
+  const CASES = [
+    {
+      broker: 'revolut',
+      statement: REVOLUT_INVEST_CSV,
+      aliases: Object.entries(REVOLUT_INSTRUMENT_MAP).map(([symbol, { isin }]) => ({
+        symbol,
+        isin,
+      })),
+      dividendIsin: REVOLUT_INSTRUMENT_MAP.MSFT.isin,
+    },
+    {
+      broker: 'tastytrade',
+      statement: TASTY_V2,
+      aliases: [
+        { symbol: 'SCHG', isin: 'US0000000042' },
+        { symbol: 'ICSH', isin: 'US0000000034' },
+        { symbol: 'CLNE', isin: 'US0000000059' },
+      ],
+      dividendIsin: 'US0000000034',
+    },
+  ];
+
+  for (const { broker, statement, aliases, dividendIsin } of CASES) {
+    it(
+      `${broker}: po doplnění číselníku přibudou jen čekající obchody, dividenda zůstane jedna a nese ISIN`,
+      { timeout: 60_000 },
+      async () => {
+        const db = await withUser();
+
+        const first = await uploadText(db, `${broker}.csv`, statement);
+        expect(first.broker).toBe(broker);
+        const before = await dividendsOf(db);
+        expect(before).toHaveLength(1);
+        expect(before[0]!.isin).toBeNull();
+        const storedFirst = (await rowsOf(db)).length;
+
+        await saveAliases(
+          db,
+          'u1',
+          aliases.map((alias) => ({ broker, ...alias })),
+        );
+
+        const second = await uploadText(db, `${broker}.csv`, statement);
+        // číselník odemkl obchody, které na ISIN čekaly
+        expect(second.added).toBeGreaterThan(0);
+        expect((await rowsOf(db)).length).toBe(storedFirst + second.added);
+        const after = await dividendsOf(db);
+        expect(after).toHaveLength(1);
+        expect(after[0]!.isin).toBe(dividendIsin);
+        expect((after[0]!.payload as { isin?: string }).isin).toBe(dividendIsin);
+        // tentýž řádek z prvního nahrání, jen s doplněným ISIN — částky se nezměnily
+        expect(after[0]!.batchId).toBe(before[0]!.batchId);
+        expect((after[0]!.payload as { gross: string }).gross).toBe(
+          (before[0]!.payload as { gross: string }).gross,
+        );
+        expect((after[0]!.payload as { withholdingTax: string }).withholdingTax).toBe(
+          (before[0]!.payload as { withholdingTax: string }).withholdingTax,
+        );
+
+        const third = await uploadText(db, `${broker}.csv`, statement);
+        expect(third.added).toBe(0);
+        expect(await dividendsOf(db)).toHaveLength(1);
+      },
+    );
+  }
+
+  it(
+    'Schwab: navazující výpis s překryvem po doplnění číselníku přidá jen novou dividendu (2, ne 3)',
+    { timeout: 60_000 },
+    async () => {
+      const ISIN = 'US0000000018';
+      const HEADER =
+        '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"';
+      const FIRST = [
+        HEADER,
+        '"05/02/2025","Qualified Dividend","ZZTA","ZETA TEST CORP","","","","$20.00"',
+        '"05/02/2025","NRA Tax Adj","ZZTA","ZETA TEST CORP","","","","-$3.00"',
+        '"03/03/2025","Buy","ZZTA","ZETA TEST CORP","40","$70.00","","-$2800.00"',
+      ].join('\n');
+      // další export: začíná dřív, než první skončil, takže květnovou dividendu nese znovu
+      const FOLLOWING = [
+        HEADER,
+        '"08/01/2025","Qualified Dividend","ZZTA","ZETA TEST CORP","","","","$21.00"',
+        '"08/01/2025","NRA Tax Adj","ZZTA","ZETA TEST CORP","","","","-$3.15"',
+        '"06/16/2025","Sell","ZZTA","ZETA TEST CORP","10","$75.00","","$750.00"',
+        '"05/02/2025","Qualified Dividend","ZZTA","ZETA TEST CORP","","","","$20.00"',
+        '"05/02/2025","NRA Tax Adj","ZZTA","ZETA TEST CORP","","","","-$3.00"',
+      ].join('\n');
+      const db = await withUser();
+
+      const first = await uploadText(db, 'schwab-jaro.csv', FIRST);
+      expect(first.broker).toBe('schwab');
+      expect(first.added).toBe(1);
+      expect((await dividendsOf(db)).map((row) => row.isin)).toEqual([null]);
+
+      await saveAliases(db, 'u1', [{ broker: 'schwab', symbol: 'ZZTA', isin: ISIN }]);
+
+      const following = await uploadText(db, 'schwab-leto.csv', FOLLOWING);
+      expect(following.errors).toEqual([]);
+      // nová je srpnová dividenda a prodej; květnová už uložená je
+      expect({ added: following.added, duplicates: following.duplicates }).toEqual({
+        added: 2,
+        duplicates: 1,
+      });
+      const dividends = await dividendsOf(db);
+      expect(
+        dividends.map((row) => [
+          row.txDate,
+          row.isin,
+          (row.payload as { gross: string }).gross,
+          (row.payload as { withholdingTax: string }).withholdingTax,
+        ]),
+      ).toEqual([
+        ['2025-05-02', ISIN, '20', '3'],
+        ['2025-08-01', ISIN, '21', '3.15'],
+      ]);
+
+      // první výpis nahraný dodatečně znovu: přibude jen nákup, který čekal na ISIN
+      const again = await uploadText(db, 'schwab-jaro.csv', FIRST);
+      expect({ added: again.added, duplicates: again.duplicates }).toEqual({
+        added: 1,
+        duplicates: 1,
+      });
+      expect(await dividendsOf(db)).toHaveLength(2);
     },
   );
 });
