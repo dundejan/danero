@@ -1,0 +1,66 @@
+name: Runbook pojistky
+
+# Jednou za měsíc pustí dva testy, které hlídají roční údržbu tabulek s koncem
+# platnosti (runbook v docs/02): `packages/engine/test/runbook.test.ts`
+# (kalendáře burzovních svátků) a `apps/web/test/runbook.test.ts` (jednotné
+# kurzy, registr zdaňovacích období, podporované roky XML).
+#
+# Proč zvlášť, když je pouští i ci.yml: oba testy čtou skutečný dnešek a od
+# 1. listopadu chtějí mít nachystaný další rok. CI ale běží jen při pushi
+# a pull requestu — když v listopadu a prosinci nikdo nepushne, neozve se nic
+# a chybějící kurz roku se 1. ledna ukáže uživatelům jako karta „Výpočet teď
+# nejde dokončit“ místo čísel. Tenhle běh žádný commit nepotřebuje.
+#
+# Jak se ozve: červeným během na kartě Actions a (podle nastavení oznámení)
+# e-mailem od GitHubu tomu, kdo naposledy měnil řádek `cron` níže — tak GitHub
+# oznamuje pády plánovaných běhů. Hláška testu říká, kterou tabulku doplnit
+# a ve kterém souboru.
+#
+# Mez, se kterou je potřeba počítat: plánované běhy GitHub ve veřejném
+# repozitáři po 60 dnech bez commitu sám vypne (stejně jako jobs-rescue.yml).
+# Pojistka tak kryje ticho kratší než dva měsíce, delší už ne — tedy jen
+# zčásti tu situaci, kvůli které vznikla. Plánovač navíc běhy zpožďuje a může
+# některý vynechat. Zapnout zpět jde na kartě Actions; tamtéž se dá workflow
+# pustit ručně.
+#
+# Nepotřebuje žádné tajemství ani proměnnou repozitáře a nesahá na produkci,
+# takže ve forku běží stejně.
+on:
+  schedule:
+    # 2. den v měsíci: testy posouvají požadovaný rok 1. listopadu (UTC), takže
+    # listopadový běh nechá na doplnění skoro dva měsíce. Čas je v UTC;
+    # 23. minuta, protože začátky hodin bývají na GitHubu přetížené.
+    - cron: '23 5 2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runbook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Plánovaný běh bere vždy poslední commit výchozí větve (main); ruční
+      # spuštění větev, kterou si vybereš.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      # Bez `cache: pnpm`: mezipaměť nepoužitá týden zmizí, měsíční běh by z ní
+      # nikdy nečerpal.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Instalace závislostí
+        id: install
+        run: pnpm install --frozen-lockfile
+      # Build není potřeba: balíčky workspace se ve vitestu čtou ze zdrojů
+      # (`exports` míří na `src/index.ts`).
+      - name: Engine — kalendáře burzovních svátků
+        run: pnpm --filter @danero/engine exec vitest run test/runbook.test.ts
+      # Druhá pojistka běží, i když první spadla — jeden běh má ukázat všechno,
+      # co je potřeba doplnit, ne jen první nález.
+      - name: Web — jednotné kurzy, registr období, roky XML
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @danero/web exec vitest run --no-file-parallelism test/runbook.test.ts
