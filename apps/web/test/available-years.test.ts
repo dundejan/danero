@@ -53,6 +53,25 @@ describe('availableYears: roky v přepínači zdaňovacího období (L7i-08)', (
     expect(resolveTaxYear('2024', years, 2026, '/prehled')).toBe(2024);
   });
 
+  it('nesmyslný rok řadu nenatáhne — ať přišel kterýmkoli parserem', () => {
+    // platný tvar, nesmyslný rok: překlep 0202, podvržený soubor s rokem 9999
+    const txs = [
+      buy('b1', '2024-04-02', '5', '80'),
+      buy('b2', '0202-05-01', '1', '100'),
+      buy('b3', '9999-12-31', '1', '100'),
+      buy('b4', '1850-01-01', '1', '100'),
+    ];
+    expect(availableYears(txs, 2026)).toEqual([2026, 2025, 2024]);
+  });
+
+  it('stará, ale věrohodná historie a příští rok v řadě zůstávají', () => {
+    const txs = [buy('b1', '1993-06-01', '10', '70'), buy('b2', '2027-01-04', '1', '100')];
+    const years = availableYears(txs, 2026);
+    expect(years[0]).toBe(2027);
+    expect(years.at(-1)).toBe(1993);
+    expect(years).toHaveLength(35);
+  });
+
   it('rok bez transakcí uprostřed historie v řadě nechybí', () => {
     const txs = [
       buy('b1', '2022-03-01', '10', '70'),

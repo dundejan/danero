@@ -243,6 +243,12 @@ export function instrumentLabels(txs: Transaction[]): Map<string, string> {
 }
 
 /**
+ * Nejstarší rok, který ještě bereme jako rok transakce při stavbě řady let
+ * (denní kurzy ČNB starší nejsou a české cenné papíry před ním nevznikaly).
+ */
+const EARLIEST_PLAUSIBLE_YEAR = 1990;
+
+/**
  * Roky pro přepínač zdaňovacího období (sestupně): SOUVISLÁ řada od nejstarší
  * transakce po běžný rok, ne jen roky, ve kterých se něco stalo (L7i-08).
  *
@@ -259,6 +265,12 @@ export function availableYears(txs: Transaction[], currentYear: number): number[
   for (const tx of txs) {
     const date = tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
     const year = Number(date.slice(0, 4));
+    // Mez na JEDINÉM místě, ze kterého se řada let staví: datum s platným
+    // tvarem, ale nesmyslným rokem (překlep 0202, podvržený soubor s rokem
+    // 9999) by jinak roztáhl přepínač i stahování kurzů ČNB na staletí —
+    // a nezáleží na tom, kterým parserem nebo synchronizací řádek přišel.
+    // Transakce sama zůstává v datech; jen podle ní řadu nenatahujeme.
+    if (year < EARLIEST_PLAUSIBLE_YEAR || year > currentYear + 1) continue;
     if (year < first) first = year;
     if (year > last) last = year;
   }
