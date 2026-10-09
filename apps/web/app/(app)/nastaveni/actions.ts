@@ -261,6 +261,15 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       isUniqueViolation(error) ? '/nastaveni/ucet?chyba=email-obsazeny' : '/nastaveni/ucet?chyba=email-ulozeni',
     );
   }
+  // L21-01: odkazy na obnovu hesla vydané na starou adresu padají se změnou
+  // e-mailu, stejně jako po změně hesla (D-02 v lib/auth-hooks.ts). E-mail se
+  // mění i proto, že starou schránku už uživatel neovládá — a kdo ji má, by
+  // jinak ještě hodinu od vydání odkazu přepsal heslo a vlastníka odhlásil.
+  // Až po úspěšném UPDATE: špatné heslo ani obsazená adresa nesmí nikomu
+  // zavřít záchrannou cestu. A mimo `try` výš, protože selhání tady není
+  // „e-mail se nepodařilo změnit“ — ten už změněný je.
+  const { revokePasswordResetTokens } = await import('@/lib/auth-hooks');
+  await revokePasswordResetTokens(await getDb(), user.id);
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
   // ověřovací odkaz na novou adresu; selhání odeslání nesmí shodit už provedenou
   // změnu — uživatel si odkaz vyžádá znovu na /overeni-emailu
