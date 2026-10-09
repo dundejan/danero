@@ -95,6 +95,20 @@ export interface DedupeOutcome {
    * výpisu pochází. Neukládá se (jinak by vznikl duplikát), ale hlásí se.
    */
   restated: Transaction[];
+  /**
+   * Dividendy, které už uložené JSOU, jen bez ISIN: klíč uloženého řádku
+   * (`from`) se má přepsat na klíč s ISIN (`to`) a řádku se ISIN doplní.
+   * Neukládají se znovu a počítají se mezi `duplicates`. Zápis je na volajícím
+   * — dokud ho neprovede, další nahrání téhož výpisu vrátí totéž povýšení.
+   */
+  promoted: KeyPromotion[];
+}
+
+/** Přepis klíče uloženého řádku, kterému příchozí transakce doplnila ISIN. */
+export interface KeyPromotion {
+  from: string;
+  to: string;
+  isin: string;
 }
 
 /** Jmenný prostor id přiděleného brokerem — id samo o sobě není unikátní napříč brokery. */
@@ -184,7 +198,63 @@ export function dedupeTransactions(
     seen.add(key);
     fresh.push({ tx, key });
   }
-  return { fresh, duplicates, restated };
+  const promoted = promoteStoredDividends(broker, fresh, seen, occurrences);
+  if (promoted.length === 0) return { fresh, duplicates, restated, promoted };
+  const promotedKeys = new Set(promoted.map((item) => item.to));
+  return {
+    fresh: fresh.filter((item) => !promotedKeys.has(item.key)),
+    duplicates: duplicates + promoted.length,
+    restated,
+    promoted,
+  };
+}
+
+/**
+ * TŘETÍ síť: dividenda, která je uložená bez ISIN a teď přišla s ním (L14-02).
+ *
+ * Fio, Schwab, Tastytrade ani Revolut ISIN neexportují — bere se z číselníku
+ * uživatele. Obchod bez něj skončí chybou „doplň ISIN“, dividenda se ale uloží
+ * hned, bez ISIN. Uživatel číselník doplní a nahraje výpis znovu (radí mu to
+ * sama stránka importu), jenže ISIN je součást otisku dividendy: klíč vyjde
+ * jiný a tatáž výplata se uložila PODRUHÉ — dvojnásobný příjem i sražená daň
+ * v § 8 a dvojnásobné čerpání hranice 50 000 Kč u paušálu. Stejně dopadne
+ * navazující výpis, který se s prvním jen překrývá.
+ *
+ * Nová dividenda s ISIN se proto zkusí spárovat s uloženou, která se liší JEN
+ * chybějícím ISIN (týž den, brutto, srážka i měna). Když taková je, nic se
+ * neukládá a volající uloženému řádku ISIN doplní a přepíše klíč.
+ *
+ * Páruje se počtem, ne naslepo: uložené klíče bez ISIN s pořadím 1…m patří
+ * dividendám, které i v TÉTO dávce přišly bez ISIN (jiný titul se shodnou
+ * částkou, který na číselník teprve čeká) — ty jsou obyčejné duplicity
+ * a nesmí se spotřebovat podruhé. Povyšuje se až od pořadí m + 1, v pořadí
+ * výpisu, každý uložený řádek nejvýš jednou. Dvě legitimně shodné dividendy
+ * téhož dne tak zůstanou dvě a třetí, která uložená není, se uloží jako nová.
+ *
+ * Opačný směr (uložená s ISIN, příchozí bez něj) se nepáruje: číselník se
+ * jen doplňuje, takže takový stav z opakovaného nahrání nevznikne.
+ */
+function promoteStoredDividends(
+  broker: string,
+  fresh: DedupeOutcome['fresh'],
+  seen: Set<string>,
+  occurrences: Map<string, Map<string, number>>,
+): KeyPromotion[] {
+  const promoted: KeyPromotion[] = [];
+  // otisk bez ISIN → pořadí uloženého řádku, které je na řadě k povýšení
+  const nextStored = new Map<string, number>();
+  for (const { tx, key } of fresh) {
+    if (tx.type !== 'DIVIDEND' || !tx.isin) continue;
+    const bare = contentFingerprint({ ...tx, isin: undefined });
+    const occurrence = nextStored.get(bare) ?? (occurrences.get(bare)?.size ?? 0) + 1;
+    const from = `${broker}|${bare}|${occurrence}`;
+    // Pořadí nad m v této dávce nikdo nedostal, takže klíč v `seen` může
+    // pocházet jedině z už uložených řádků.
+    if (!seen.has(from)) continue;
+    nextStored.set(bare, occurrence + 1);
+    promoted.push({ from, to: key, isin: tx.isin });
+  }
+  return promoted;
 }
 
 /**

@@ -11,6 +11,10 @@
   pořadový suffix (`uniqueIdFactory`) a NEsplynou; duplicitní explicitní ID parser
   ohlásí varováním a dedupe je sloučí. Limita: tentýž obchod v souboru s ID
   a bez ID se nesloučí.
+  Dividenda uložená bez ISIN (Fio, Schwab, Tastytrade a Revolut ho neexportují
+  a číselník ještě nebyl vyplněný) se po doplnění číselníku a novém nahrání pozná
+  podle shodného dne, brutta, srážky a měny: neuloží se podruhé a uloženému řádku
+  se ISIN doplní (`promoted` v `dedupeTransactions`, zápis v `importParsed`).
 - Datum obchodu = datum z exportu (UTC); datum vypořádání engine dopočítává
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.

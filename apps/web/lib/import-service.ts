@@ -62,11 +62,12 @@ import {
   sniffTastytradeCsv,
   sniffXtbXlsx,
   type ImportResult,
+  type KeyPromotion,
   type RowIssue,
   type WorkbookOutline,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { plural } from '@/lib/format';
@@ -684,6 +685,53 @@ const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
   }));
 
 /**
+ * Doplní ISIN dividendám, které už uložené jsou, jen bez něj (L14-02; párování
+ * viz `dedupeTransactions`, pole `promoted`).
+ *
+ * Jeden UPDATE na řádek přepíše klíč, sloupec `isin` i `payload.isin` NARÁZ.
+ * Příkaz je v Postgresu atomický, takže přerušení uprostřed nenechá řádek
+ * s novým ISIN pod starým klíčem — ten by další nahrání výpisu už nespárovalo
+ * a dividenda by se uložila podruhé. Co se nestihne, zůstane ve starém tvaru
+ * a povýší se při příštím nahrání; `db.transaction()` proto není potřeba
+ * (a být tu nemá, viz komentář v `importParsed`).
+ *
+ * Podmínky navíc jsou pojistka, ne běžná cesta: `isin IS NULL` a typ drží
+ * přepis jen na řádcích, kterým ISIN opravdu chybí, a `NOT EXISTS` nenechá
+ * UPDATE spadnout na primárním klíči, kdyby cílový klíč mezitím vložil souběžný
+ * import. Řádek, který souběžný import stihl povýšit dřív, už starý klíč nemá
+ * a UPDATE ho prostě nenajde.
+ */
+async function promoteStoredDividends(
+  db: Db,
+  userId: string,
+  promoted: KeyPromotion[],
+  state: ImportState,
+): Promise<void> {
+  for (const { from, to, isin } of promoted) {
+    await db
+      .update(transactions)
+      .set({
+        dedupeKey: to,
+        isin,
+        payload: sql`jsonb_set(${transactions.payload}, '{isin}', to_jsonb(${isin}::text))`,
+      })
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.dedupeKey, from),
+          eq(transactions.type, 'DIVIDEND'),
+          isNull(transactions.isin),
+          sql`not exists (select 1 from ${transactions} as taken where taken.user_id = ${userId} and taken.dedupe_key = ${to})`,
+        ),
+      );
+    // Sdílený stav (sync ho nese přes celý běh) musí odpovídat databázi hned:
+    // starý klíč už neexistuje a nový je obsazený.
+    state.keys.delete(from);
+    state.keys.add(to);
+  }
+}
+
+/**
  * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
  * `existing` (volitelné) ušetří opakovaný select při dávkových importech —
  * funkce do předaného stavu DOPLŇUJE klíče i id nově uložených transakcí.
@@ -697,7 +745,7 @@ export async function importParsed(
   extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
-  const { fresh, duplicates, restated } = dedupeTransactions(
+  const { fresh, duplicates, restated, promoted } = dedupeTransactions(
     parsed.broker,
     parsed.transactions,
     state.keys,
@@ -772,6 +820,7 @@ export async function importParsed(
   // počet vložených jde z returning (in-memory dedupe je jen optimalizace)
   let actuallyAdded = 0;
   try {
+    await promoteStoredDividends(db, userId, promoted, state);
     for (const part of chunk(fresh, 500)) {
       const inserted = await db
         .insert(transactions)
@@ -834,7 +883,15 @@ export async function importParsed(
   // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis
   // před insertem lhal při pádu i při souběhu (in-memory dedupe vs. DB)
   const { logAudit } = await import('@/lib/audit');
-  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${actuallyAdded} nových`);
+  // přepis už uložených řádků (doplněný ISIN dividendy) musí být dohledatelný
+  const promotedNote =
+    promoted.length > 0 ? `, ISIN doplněn u uložených dividend: ${promoted.length}` : '';
+  await logAudit(
+    db,
+    userId,
+    'IMPORT',
+    `${filename} (${parsed.broker}): ${actuallyAdded} nových${promotedNote}`,
+  );
 
   return {
     batchId,
