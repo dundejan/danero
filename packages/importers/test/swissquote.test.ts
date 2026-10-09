@@ -328,7 +328,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
       .filter((column) => !dropped.includes(column))
       .join(';');
 
-  it('povinné jsou právě čtyři sloupce a žádný další; jeden chybějící sniffer nezastaví (L2b-06, A09-R1-03)', () => {
+  it('povinných je právě pět sloupců (čtyři základní a „Costs“) a žádný další; jeden chybějící sniffer nezastaví (L2b-06, A09-R1-03, A09-R2-01)', () => {
     const shapes: Array<[header: string, required: Record<string, string>]> = [
       [
         SWISSQUOTE_HEADER_EN,
@@ -337,6 +337,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
           Transaction: 'transaction/transaktionen',
           'Net Amount': 'net amount/nettobetrag',
           Currency: 'wahrung nettobetrag/currency',
+          Costs: 'costs/kosten',
         },
       ],
       [
@@ -346,6 +347,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
           Transaktionen: 'transaction/transaktionen',
           Nettobetrag: 'net amount/nettobetrag',
           'Währung Nettobetrag': 'wahrung nettobetrag/currency',
+          Kosten: 'costs/kosten',
         },
       ],
     ];
@@ -360,7 +362,9 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
         expect(sniffSwissquoteCsv(csv), `sniffer bez sloupce ${dropped}`).toBe(true);
         const expectedName = required[dropped];
         if (expectedName === undefined) {
-          // nepovinný sloupec: parser hlavičku vezme (chybu případně hlásí u řádku)
+          // nepovinný sloupec: parser hlavičku vezme, protože chybu pak hlásí
+          // u každého řádku, který sloupec potřebuje („Costs“ takový není —
+          // prázdná buňka je platné „nic se neúčtovalo“, proto je povinný)
           expect(headerError(csv), `parser bez sloupce ${dropped}`).toBeUndefined();
         } else {
           expect(headerError(csv), `parser bez sloupce ${dropped}`).toContain(
@@ -402,6 +406,92 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
     const twoRenamed = SWISSQUOTE_EN.replace(';Currency', ';Ccy').replace('Net Amount', 'Amount');
     expect(sniffSwissquoteCsv(twoRenamed)).toBe(false);
     expect(headerError(twoRenamed)).toContain('chybí sloupce net amount/nettobetrag, wahrung');
+  });
+
+  it('přejmenovaný „Costs“/„Kosten“: parser výpis odmítne, poplatky ani sražená daň se neztratí potichu (A09-R2-01, R-05b, R-07f)', () => {
+    // smyšlená data: nákup s poplatkem 6.40, úrok 100 se srážkou 35,
+    // dividenda 40 se srážkou 6
+    const rowsEn = [
+      '14-04-2025 10:12:40;990000001;Buy;NDWD;NORDWIND HOLDING;CH0000000001;8.0;52.30;6.40;0.00;-424.80;1310.20;CHF',
+      '30-06-2025 23:59:59;00000000;Interests;;;;1.0;100.00;35.00;0.00;65.00;1375.20;CHF',
+      '15-07-2025 09:00:00;00000000;Dividend;NDWD;NORDWIND HOLDING;CH0000000001;1.0;40.00;6.00;0.00;34.00;1409.20;CHF',
+    ];
+    const rowsDe = [
+      '14-04-2025 10:12:40;990000001;Kauf;NDWD;NORDWIND HOLDING;CH0000000001;8.0;52.30;6.40;0.00;-424.80;CHF;-424.80;1310.20;CHF',
+      '30-06-2025 23:59:59;00000000;Zins;;;;1.0;100.00;35.00;0.00;65.00;CHF;65.00;1375.20;CHF',
+      '15-07-2025 09:00:00;00000000;Dividende;NDWD;NORDWIND HOLDING;CH0000000001;1.0;40.00;6.00;0.00;34.00;CHF;34.00;1409.20;CHF',
+    ];
+    /** Vypustí buňku číslo `index` z každého řádku (výpis bez sloupce objednávky). */
+    const dropCell = (rows: string[], index: number): string[] =>
+      rows.map((row) =>
+        row
+          .split(';')
+          .filter((_, i) => i !== index)
+          .join(';'),
+      );
+
+    // kontrola: s původní hlavičkou tytéž řádky nesou poplatek i srážku —
+    // přesně tahle čísla by bez sloupce zmizela
+    for (const csv of [
+      [SWISSQUOTE_HEADER_EN, ...rowsEn].join('\n'),
+      [SWISSQUOTE_HEADER_DE, ...rowsDe].join('\n'),
+    ]) {
+      const result = parseSwissquoteCsv(csv);
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      const [buy, interest, dividend] = result.transactions;
+      if (buy?.type !== 'BUY' || interest?.type !== 'INTEREST' || dividend?.type !== 'DIVIDEND') {
+        throw new Error('čekáme nákup, úrok a dividendu');
+      }
+      expect(buy.fee?.amount.toString()).toBe('6.4');
+      expect(interest.amount.toString()).toBe('100');
+      expect(interest.withholdingTax.toString()).toBe('35');
+      expect(dividend.gross.toString()).toBe('40');
+      expect(dividend.withholdingTax.toString()).toBe('6');
+    }
+
+    const renamed: Array<[label: string, csv: string, newName: string]> = [
+      [
+        'EN: Costs → Fees',
+        [SWISSQUOTE_HEADER_EN.replace(';Costs;', ';Fees;'), ...rowsEn].join('\n'),
+        'Fees',
+      ],
+      [
+        // na tomhle tvaru prošel import bez jediné chyby: „Unit price“
+        // a „Accrued Interest“ stačily na dva vlastní sloupce
+        'EN: bez „Order #“ a Costs → Fees',
+        [
+          SWISSQUOTE_HEADER_EN_NO_ORDER.replace(';Costs;', ';Fees;'),
+          ...dropCell(rowsEn, 1),
+        ].join('\n'),
+        'Fees',
+      ],
+      [
+        'DE: Kosten → Gebühren',
+        [SWISSQUOTE_HEADER_DE.replace(';Kosten;', ';Gebühren;'), ...rowsDe].join('\n'),
+        'Gebühren',
+      ],
+      [
+        'DE: bez „Auftrag #“ a Kosten → Gebühren',
+        [
+          SWISSQUOTE_HEADER_DE.replace('Auftrag #;', '').replace(';Kosten;', ';Gebühren;'),
+          ...dropCell(rowsDe, 1),
+        ].join('\n'),
+        'Gebühren',
+      ],
+    ];
+    for (const [label, csv, newName] of renamed) {
+      // sniffer soubor pustí, aby uživatel četl větu parseru, KTERÝ sloupec chybí
+      expect(sniffSwissquoteCsv(csv), label).toBe(true);
+      const result = parseSwissquoteCsv(csv);
+      // žádná transakce: nákup bez poplatku ani čistý úrok bez sražené daně
+      // se nesmí uložit — a prázdný výsledek znamená, že se výpis uschová
+      expect(result.transactions, label).toEqual([]);
+      expect(result.errors, label).toHaveLength(1);
+      expect(result.errors[0]!.line, label).toBe(1);
+      expect(result.errors[0]!.message, label).toContain('chybí sloupce costs/kosten.');
+      expect(result.errors[0]!.message, label).toContain(newName);
+    }
   });
 
   it('cizí středníkový výpis s obecnými sloupci není Swissquote — ani pro sniffer, ani pro parser (A09-R1-01)', () => {
@@ -447,24 +537,36 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
     }
   });
 
-  it('z vlastních sloupců Swissquote stačí kterékoli dva ze čtyř, jeden už ne (A09-R1-01)', () => {
-    const shapes: Array<[header: string, own: string[]]> = [
-      [SWISSQUOTE_HEADER_EN, ['Order #', 'Unit price', 'Costs', 'Accrued Interest']],
-      [SWISSQUOTE_HEADER_DE, ['Auftrag #', 'Stückpreis', 'Kosten', 'Aufgelaufene Zinsen']],
+  it('snifferu stačí kterékoli dva ze čtyř vlastních sloupců Swissquote, jeden už ne; parser mezi nimi chce „Costs“ (A09-R1-01, A09-R2-01)', () => {
+    const shapes: Array<[header: string, own: string[], costs: string]> = [
+      [SWISSQUOTE_HEADER_EN, ['Order #', 'Unit price', 'Costs', 'Accrued Interest'], 'Costs'],
+      [SWISSQUOTE_HEADER_DE, ['Auftrag #', 'Stückpreis', 'Kosten', 'Aufgelaufene Zinsen'], 'Kosten'],
     ];
-    for (const [header, own] of shapes) {
+    const missingCosts = 'chybí sloupce costs/kosten.';
+    for (const [header, own, costs] of shapes) {
       for (const first of own) {
         for (const second of own) {
           if (first >= second) continue;
-          // zůstaly právě dva vlastní sloupce: sniffer i parser soubor berou
+          // zůstaly právě dva vlastní sloupce: sniffer soubor bere vždycky
           const kept = `${without(header, ...own.filter((c) => c !== first && c !== second))}\n`;
-          expect(sniffSwissquoteCsv(kept), `zůstaly ${first} + ${second}`).toBe(true);
-          expect(headerError(kept), `zůstaly ${first} + ${second}`).toBeUndefined();
+          const label = `zůstaly ${first} + ${second}`;
+          expect(sniffSwissquoteCsv(kept), label).toBe(true);
+          if (first === costs || second === costs) {
+            // a parser taky
+            expect(headerError(kept), label).toBeUndefined();
+          } else {
+            // bez „Costs“ parser řekne, co chybí — poplatky a sraženou daň
+            // nemá odkud vzít a potichu je vynechat nesmí
+            expect(headerError(kept), label).toContain(missingCosts);
+          }
         }
         // zůstal jediný: to už je hlavička, jakou může mít kdokoli
         const single = `${without(header, ...own.filter((c) => c !== first))}\n`;
         expect(sniffSwissquoteCsv(single), `zůstal jen ${first}`).toBe(false);
-        expect(headerError(single), `zůstal jen ${first}`).toContain('vlastních sloupců');
+        // chybějící povinný sloupec je konkrétnější důvod, proto má přednost
+        expect(headerError(single), `zůstal jen ${first}`).toContain(
+          first === costs ? 'vlastních sloupců' : missingCosts,
+        );
       }
       expect(sniffSwissquoteCsv(without(header, ...own))).toBe(false);
     }

@@ -66,17 +66,29 @@ function findColumn(normalizedHeaders: string[], spec: FieldSpec): number {
   return -1;
 }
 
-/** Sloupce, bez kterých parser nepozná ani typ, den, částku a měnu řádku. */
-const REQUIRED_FIELDS = ['date', 'transaction', 'netAmount', 'currency'] as const;
+/**
+ * Sloupce, bez kterých parser výpis nepřečte: den, typ transakce, čistá částka
+ * a měna řádku — a „Costs“. Ten jako jediný z ostatních chybí POTICHU: nese
+ * poplatek obchodu (součást výdajů, R-05b) a sraženou daň u dividend a úroků
+ * (R-07f), a prázdná buňka je u obojího platná hodnota „nic se neúčtovalo“.
+ * Výpis s přejmenovaným sloupcem by se tak uložil bez jediné chyby s nákupy
+ * bez poplatků a s čistým úrokem bez sražené daně. Bez „Unit price“, „ISIN“
+ * nebo „Quantity“ naproti tomu spadne každý řádek, který je potřebuje.
+ */
+const REQUIRED_FIELDS = ['date', 'transaction', 'netAmount', 'currency', 'costs'] as const;
 
 /**
- * Sloupce vlastní výpisu Swissquote. Čtveřice povinných je to nejobecnější,
- * co účetní výpis může mít („Date“, „Transaction“, „Net Amount“, „Currency“),
- * takže sama o sobě Swissquote od cizího středníkového výpisu neodliší — ten
- * by prošel jako „Swissquote, 0 chyb“ a nikdo by se o novém formátu nedozvěděl.
- * Doložené exporty (EN i DE) mají všechny čtyři; chceme `MIN_OWN_FIELDS`
- * z nich, aby jeden přejmenovaný nebo vypuštěný sloupec („Order #“, L2b-06)
- * import neshodil, a jediný takový sloupec („Costs“ má kdekdo) nestačil.
+ * Sloupce vlastní výpisu Swissquote. Povinné sloupce jsou to nejobecnější,
+ * co účetní výpis může mít („Date“, „Transaction“, „Net Amount“, „Currency“,
+ * „Costs“), takže samy o sobě Swissquote od cizího středníkového výpisu
+ * neodliší — ten by prošel jako „Swissquote, 0 chyb“ a nikdo by se o novém
+ * formátu nedozvěděl. Doložené exporty (EN i DE) mají všechny čtyři vlastní;
+ * chceme `MIN_OWN_FIELDS` z nich, aby jeden přejmenovaný nebo vypuštěný
+ * sloupec, který parser nečte („Order #“, L2b-06), import neshodil, a jediný
+ * takový sloupec („Costs“ má kdekdo) nestačil.
+ *
+ * „Costs“ je tu i mezi povinnými záměrně: poznávací pravidlo o tom, jestli se
+ * sloupec smí ztratit, nerozhoduje — to říká jen `REQUIRED_FIELDS`.
  */
 const OWN_FIELDS = ['order', 'unitPrice', 'costs', 'accruedInterest'] as const;
 const MIN_OWN_FIELDS = 2;
@@ -193,9 +205,10 @@ function classify(normalized: string): SqKind {
 
 /**
  * Kolik povinných sloupců smí hlavičce chybět, aby ji sniffer ještě poslal
- * parseru. Jeden: přejmenuje-li Swissquote „Currency“ nebo „Net Amount“, má
- * uživatel číst větu parseru, KTERÝ sloupec chybí — obecné „formát nepoznáváme“
- * vypíše jen prvních pár sloupců a viníka na konci hlavičky ani neukáže.
+ * parseru. Jeden: přejmenuje-li Swissquote „Currency“, „Net Amount“ nebo
+ * „Costs“, má uživatel číst větu parseru, KTERÝ sloupec chybí — obecné
+ * „formát nepoznáváme“ vypíše jen prvních pár sloupců a viníka na konci
+ * hlavičky ani neukáže.
  * Dva chybějící už nejsou přejmenování, ale jiný soubor.
  */
 const SNIFF_MISSING_REQUIRED_TOLERANCE = 1;
@@ -203,13 +216,13 @@ const SNIFF_MISSING_REQUIRED_TOLERANCE = 1;
 /**
  * Detekce Swissquote CSV: první řádek se středníky nese aspoň dva sloupce
  * vlastní Swissquote (`OWN_FIELDS`) a z povinných (`REQUIRED_FIELDS` — den, typ
- * transakce, čistá částka, měna) chybí nejvýš jeden.
+ * transakce, čistá částka, měna, náklady) chybí nejvýš jeden.
  *
  * Sniffer je podmnožina parseru: obojí počítá `inspectHeader` a parser chce
  * totéž, jen bez tolerance. Co parser přečte, to sem projde (i bez „Order #“);
  * co sem projde a parser nepřečte, tomu parser řekne, který sloupec chybí.
  *
- * Cizí středníkový výpis se čtyřmi obecnými sloupci sem neprojde — skončí jako
+ * Cizí středníkový výpis jen s obecnými sloupci sem neprojde — skončí jako
  * nepoznaný formát s vypsanou hlavičkou a uschová se (failed_imports), místo
  * aby se tiše připsal Swissquote. Středníkové Degiro nemá „Transaction“ ani
  * „Net Amount“ a v autodetekci se navíc ptá dřív.
