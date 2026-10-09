@@ -268,6 +268,39 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Po zabitém E2E zůstane viset mock server na 3211.** Další běh pak skončí
   na „`http://localhost:3211/health` is already used" a vypadá to jako vada
   konfigurace. Úklid: `fuser -k 3211/tcp; fuser -k 3210/tcp`.
+  ⚠️ Na 3000 i 3210 může běžet dev server jiného projektu — před zabitím ověř
+  `readlink /proc/<pid>/cwd` a zabíjej jen proces z tohohle repozitáře. `pkill -f`
+  podle jména (chrome, playwright, next) vezme i cizí procesy; 9. 10. 2026 takhle
+  dostal SIGTERM cizí prohlížeč.
+- **Produkční build ignoruje `T212_API_BASE_URL` i `IBKR_FLEX_BASE_URL`.**
+  `testEnvBaseUrl` v `lib/broker-sync.ts` je při `NODE_ENV=production` schválně
+  nečte (klíče nesmí odejít na cizí host), takže lokální `next start`
+  s mockem brokera mluví se SKUTEČNÝM brokerem. 8. 10. 2026 tak z lokální
+  instance odešlo pár dotazů se smyšleným klíčem na ostré API. Připojení brokera
+  a sync zkoušej jen v dev režimu (`next dev`, E2E), nikdy na `next start`.
+- **Očekávání testu neopisuj z hodnoty, kterou mění roční data.** Test kurzů ČNB
+  měl natvrdo částku spočítanou orientačním kurzem běžného roku; jiná oprava
+  téže noci kurz zpřesnila a test spadl, přestože obě změny byly správně.
+  Očekávání odvoď z konfigurace (`tax-config.ts`, `unifiedRates.ts`) — jinak
+  spadne znovu v lednu, až vyjde pokyn GFŘ.
+- **Dedupe: ztracený řádek je horší než zdvojený.** Povýšení uloženého klíče
+  (dividenda uložená bez ISIN, po doplnění číselníku s ISIN) první verze dělala
+  jen podle data a částky — a spolkla tak shodnou výplatu JINÉHO titulu z téhož
+  dne. Duplicitu uživatel vidí a opraví, chybějící dividendu ne. Kde shoda není
+  jistá (chybí ticker), nech obě a napiš varování.
+- **„Price / share“ u dividendy Trading 212 je ČISTÁ částka na kus**, tedy už
+  po zahraniční srážce; brutto = kusy × cena + „Withholding tax“ (R-07b). Do
+  8. 10. 2026 ji parser bral jako brutto a příjem z dividend vycházel nižší
+  o srážku (15 % u amerických titulů). Uložená data dorovnává migrace 0045 —
+  parser a migrace patří k sobě, protože brutto vstupuje do dedupe otisku.
+- **`waitForLoadState('networkidle')` umí viset do limitu testu.** Test
+  přístupnosti má limit 30 minut (prochází desítky stránek) a 9. 10. 2026 se
+  jednou zasekl na `/portfolio` bez jediného běžícího dotazu — celá E2E sada
+  pak trvala 34 minut místo 8. Opakování prošlo. Když E2E běží podezřele
+  dlouho, podívej se do logu dřív, než doběhne limit.
+- **`pnpm --filter @danero/engine test` běží s pokrytím a prahem.** Nový kód
+  enginu bez testu shodí sadu na prahu pokrytí, ne na padajícím testu — hláška
+  je na konci výpisu. Práh je v `packages/engine/vitest.config.ts`.
 
 ## Stav a plán
 
