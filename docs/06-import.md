@@ -22,6 +22,10 @@
   v tomtéž výpisu vzala shodná dividenda jiného titulu bez ISIN, se nepáruje:
   dividenda se uloží jako nová a uživatel dostane varování, že ji možná má
   dvakrát (`ambiguous`). Zdvojená dividenda je vidět a jde vrátit, ztracená ne.
+  Dividenda se sraženou daní, která je už uložená se srážkou 0 (starší verze
+  parseru srážku u Schwabu a Degira nepřečetla), se podruhé neuloží a uživatel
+  dostane varování s radou vrátit starší import a nahrát výpis znovu (`untaxed`);
+  uložená srážka se sama nepřepisuje, protože vstupuje do zápočtu.
 - Datum obchodu = datum z exportu (UTC); datum vypořádání engine dopočítává
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.

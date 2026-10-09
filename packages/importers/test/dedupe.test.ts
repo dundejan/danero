@@ -394,3 +394,83 @@ describe('výpis → číselník → týž výpis: dividenda nepřibude (parsery
     expect(third.duplicates).toBe(after.transactions.length);
   });
 });
+
+/**
+ * Dividenda uložená se srážkou 0 a tatáž dividenda po opravě parseru (A29).
+ *
+ * Schwab („NRA Withhold“) a Degiro („Impôts sur dividende“) dřív srážku
+ * nepřečetly, takže se dividenda uložila se srážkou 0. Srážka je v otisku:
+ * překrývající se export nahraný po opravě dal jiný klíč a výplata se uložila
+ * podruhé.
+ */
+describe('dedupeTransactions: dividenda uložená bez srážky po opravě parseru (A29)', () => {
+  const untaxed = dividend('d1', { isin: ISIN_A, gross: d('42'), withholdingTax: d('0') });
+  const TAXED = { isin: ISIN_A, gross: d('42'), withholdingTax: d('6.30') };
+  const taxed = dividend('d1', TAXED);
+
+  it('příchozí se srážkou se neuloží a ohlásí se, uložený klíč zůstává', () => {
+    const stored = store(BROKER, [untaxed]);
+    const outcome = run(BROKER, [taxed], stored);
+    expect(outcome.fresh).toEqual([]);
+    expect(outcome.untaxed).toEqual([taxed]);
+    expect(outcome.promoted).toEqual([]);
+    expect(outcome.duplicates).toBe(0);
+  });
+
+  it('bez uložené dvojnice se dividenda se srážkou uloží normálně', () => {
+    const outcome = run(BROKER, [taxed]);
+    expect(outcome.fresh.map((item) => item.tx)).toEqual([taxed]);
+    expect(outcome.untaxed).toEqual([]);
+  });
+
+  it('jiné brutto téhož dne se nedotkne', () => {
+    const stored = store(BROKER, [untaxed]);
+    const other = dividend('d2', { isin: ISIN_A, gross: d('43'), withholdingTax: d('6.30') });
+    const outcome = run(BROKER, [other], stored);
+    expect(outcome.fresh.map((item) => item.tx)).toEqual([other]);
+    expect(outcome.untaxed).toEqual([]);
+  });
+
+  it('jiný titul, jiný den ani jiný broker se nedotkne', () => {
+    const stored = store(BROKER, [untaxed]);
+    const otherIsin = dividend('d2', { ...TAXED, isin: ISIN_B });
+    const otherDay = dividend('d3', { ...TAXED, date: '2025-05-05' });
+    const outcome = run(BROKER, [otherIsin, otherDay], stored);
+    expect(outcome.fresh).toHaveLength(2);
+    expect(outcome.untaxed).toEqual([]);
+    expect(run('degiro', [taxed], stored).fresh).toHaveLength(1);
+  });
+
+  it('příchozí se srážkou 0 je dál obyčejná duplicita', () => {
+    const stored = store(BROKER, [untaxed]);
+    const outcome = run(BROKER, [untaxed], stored);
+    expect(outcome.fresh).toEqual([]);
+    expect(outcome.untaxed).toEqual([]);
+    expect(outcome.duplicates).toBe(1);
+  });
+
+  it('uložená dvojnice kryje jen jednu výplatu: druhá shodná se srážkou se uloží', () => {
+    const stored = store(BROKER, [untaxed]);
+    const second = dividend('d2', TAXED);
+    const outcome = run(BROKER, [taxed, second], stored);
+    expect(outcome.untaxed).toEqual([taxed]);
+    expect(outcome.fresh.map((item) => item.tx)).toEqual([second]);
+  });
+
+  it('dividenda bez srážky v téže dávce si uložený klíč vezme sama, ta se srážkou se uloží', () => {
+    const stored = store(BROKER, [untaxed]);
+    const second = dividend('d2', TAXED);
+    const outcome = run(BROKER, [second, untaxed], stored);
+    expect(outcome.duplicates).toBe(1);
+    expect(outcome.untaxed).toEqual([]);
+    expect(outcome.fresh.map((item) => item.tx)).toEqual([second]);
+  });
+
+  it('týž řádek dvakrát v jedné dávce se ohlásí jednou a neuloží se', () => {
+    const stored = store(BROKER, [untaxed]);
+    const outcome = run(BROKER, [taxed, taxed], stored);
+    expect(outcome.fresh).toEqual([]);
+    expect(outcome.untaxed).toEqual([taxed]);
+    expect(outcome.duplicates).toBe(1);
+  });
+});

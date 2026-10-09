@@ -2,8 +2,9 @@ import { dedupeKey, parseSchwabCsv } from '@danero/importers';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
-import { auditLog, instrumentAliases, transactions, user } from '@/db/schema';
+import { auditLog, importBatches, instrumentAliases, transactions, user } from '@/db/schema';
 import { importFileIsolated, importParsed, loadImportState } from '@/lib/import-service';
+import { undoImportBatch } from '@/lib/import-undo';
 import { saveAliases } from '@/lib/instrument-aliases';
 import { loadTransactions } from '@/lib/portfolio';
 import {
@@ -679,6 +680,97 @@ describe('výpis → číselník → výpis znovu přes import-service (L23-01)'
         duplicates: 1,
       });
       expect(await dividendsOf(db)).toHaveLength(2);
+    },
+  );
+});
+
+/**
+ * Dividenda uložená se srážkou 0 a tatáž dividenda se srážkou (A29).
+ *
+ * Schwab („NRA Withhold“) a Degiro („Impôts sur dividende“) dřív srážku
+ * nepřečetly. Srážka je v otisku, takže překrývající se export nahraný po
+ * opravě parseru uložil tutéž výplatu podruhé — dvojnásobný příjem v § 8.
+ * Šablona tu zastupuje „starý“ a „nový“ výsledek parseru: stejný řádek jednou
+ * bez srážky, jednou s ní.
+ */
+describe('dividenda uložená bez srážky → týž řádek se srážkou (A29)', () => {
+  const TEMPLATE_HEADER =
+    'type,date,isin,ticker,name,quantity,price,currency,amount,withholding_tax,source_country,note';
+  const UNTAXED = 'bez srážkové daně';
+  const OLD = [
+    TEMPLATE_HEADER,
+    'DIVIDEND,2025-05-02,US0000000026,BETA,Beta Test,,,USD,42.00,0,US,',
+    'DIVIDEND,2025-05-02,US0000000026,BETA,Beta Test,,,USD,17.00,0,US,',
+  ];
+  const NEW = [
+    TEMPLATE_HEADER,
+    'DIVIDEND,2025-05-02,US0000000026,BETA,Beta Test,,,USD,42.00,6.30,US,',
+    // jiná výplata téhož dne (jiné brutto) — té se síť nesmí dotknout
+    'DIVIDEND,2025-05-02,US0000000026,BETA,Beta Test,,,USD,55.00,8.25,US,',
+  ];
+
+  const withUser = async (): Promise<Db> => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'test@danero.cz' });
+    return db;
+  };
+  const uploadText = (db: Db, filename: string, lines: string[]) =>
+    importFileIsolated(
+      db,
+      'u1',
+      filename,
+      new TextEncoder().encode(lines.join('\n')).buffer as ArrayBuffer,
+    );
+  const amounts = async (db: Db) =>
+    (await db.select().from(transactions).where(eq(transactions.userId, 'u1')))
+      .filter((row) => row.type === 'DIVIDEND')
+      .map((row) => {
+        const payload = row.payload as { gross: string; withholdingTax: string };
+        return `${payload.gross}/${payload.withholdingTax}`;
+      })
+      .sort();
+
+  it(
+    'neuloží se podruhé, uživatel dostane varování a uložená srážka se nepřepíše; po vrácení staršího importu se uloží se srážkou',
+    { timeout: 60_000 },
+    async () => {
+      const db = await withUser();
+      expect((await uploadText(db, 'stary.csv', OLD)).added).toBe(2);
+
+      const second = await uploadText(db, 'novy.csv', NEW);
+      expect(second.errors).toEqual([]);
+      expect({ added: second.added, duplicates: second.duplicates }).toEqual({
+        added: 1,
+        duplicates: 0,
+      });
+      const warned = second.warnings.filter((w) => w.message.includes(UNTAXED));
+      expect(warned).toHaveLength(1);
+      expect(warned[0]!.message).toContain('Dividenda 42 USD z 2. 5. 2025 (BETA)');
+      expect(warned[0]!.message).toContain('6,3 USD');
+      expect(warned[0]!.message).toContain('vrať starší import zpět');
+      // uložená dividenda 42 zůstala jedna a se srážkou 0 — nic se potichu nepřepsalo
+      expect(await amounts(db)).toEqual(['17/0', '42/0', '55/8.25']);
+
+      // starý soubor znovu: obyčejné duplicity, bez varování
+      const oldAgain = await uploadText(db, 'stary.csv', OLD);
+      expect({ added: oldAgain.added, duplicates: oldAgain.duplicates }).toEqual({
+        added: 0,
+        duplicates: 2,
+      });
+      expect(oldAgain.warnings.filter((w) => w.message.includes(UNTAXED))).toEqual([]);
+
+      // uživatel poslechne radu: vrátí starší import a nahraje výpis znovu
+      const [oldBatch] = (await db.select().from(importBatches)).filter(
+        (batch) => batch.filename === 'stary.csv' && batch.added === 2,
+      );
+      expect(await undoImportBatch(db, 'u1', oldBatch!.id)).toMatchObject({ count: 2 });
+      const third = await uploadText(db, 'novy.csv', NEW);
+      expect({ added: third.added, duplicates: third.duplicates }).toEqual({
+        added: 1,
+        duplicates: 1,
+      });
+      expect(third.warnings.filter((w) => w.message.includes(UNTAXED))).toEqual([]);
+      expect(await amounts(db)).toEqual(['42/6.3', '55/8.25']);
     },
   );
 });

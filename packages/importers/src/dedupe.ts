@@ -1,4 +1,4 @@
-import type { Transaction } from '@danero/shared';
+import { ZERO, type Transaction } from '@danero/shared';
 
 /** FNV-1a 64bit — deterministický otisk obsahu (nekryptografický, pro dedupe stačí). */
 export function fnv1a64(input: string): string {
@@ -108,6 +108,16 @@ export interface DedupeOutcome {
    * výplata (A25-R1-01). Volající na ně má uživatele upozornit.
    */
   ambiguous: Transaction[];
+  /**
+   * Dividendy s nenulovou srážkou, které už uložené JSOU, jen se srážkou 0
+   * (A29): starší verze parseru srážku nepřečetla (Schwab „NRA Withhold“,
+   * Degiro „Impôts sur dividende“) a srážka je součást otisku, takže by se
+   * tatáž výplata po opravě uložila podruhé. Neukládají se (nejsou ve `fresh`)
+   * a mezi `duplicates` se nepočítají — volající je má ohlásit. Uložený řádek
+   * se NEPŘEPISUJE: sražená daň vstupuje do zápočtu a změnit ji má jen vědomý
+   * krok uživatele (vrácení staršího importu a nové nahrání).
+   */
+  untaxed: Transaction[];
 }
 
 /** Přepis klíče uloženého řádku, kterému příchozí transakce doplnila ISIN. */
@@ -166,9 +176,25 @@ export function dedupeTransactions(
   existingIds: Iterable<string> = [],
   storedBareDividends: Iterable<readonly [string, string | null | undefined]> = [],
 ): DedupeOutcome {
-  const seen = new Set(existingKeys);
+  const stored = new Set(existingKeys);
+  const seen = new Set(stored);
   const storedIds = new Set(existingIds);
   const restated: Transaction[] = [];
+  const untaxed: Transaction[] = [];
+  // ČTVRTÁ síť (A29): dividenda se srážkou proti UŽ ULOŽENÉ dvojnici se
+  // srážkou 0. Porovnává se jen s tím, co bylo uložené před touto dávkou
+  // (`stored`), nikdy s jejími vlastními řádky — dvě výplaty z jednoho výpisu,
+  // jedna se srážkou a druhá bez, jsou dvě. Dividendy, které i v této dávce
+  // přišly se srážkou 0, si uložené klíče 1…m berou samy jako obyčejné
+  // duplicity; dividenda se srážkou proto hledá dvojnici až nad nimi a každý
+  // uložený řádek kryje nejvýš jednu.
+  const untaxedInBatch = new Map<string, Set<string>>();
+  for (const tx of incoming) {
+    if (tx.type !== 'DIVIDEND' || !tx.withholdingTax.isZero()) continue;
+    const fingerprint = contentFingerprint(tx);
+    untaxedInBatch.set(fingerprint, (untaxedInBatch.get(fingerprint) ?? new Set()).add(tx.id));
+  }
+  const untaxedTaken = new Map<string, number>();
   // id, které se v dávce opakuje, není spolehlivý identifikátor události
   const idCounts = new Map<string, number>();
   for (const tx of incoming) idCounts.set(tx.id, (idCounts.get(tx.id) ?? 0) + 1);
@@ -206,6 +232,18 @@ export function dedupeTransactions(
       restated.push(tx);
       continue;
     }
+    if (tx.type === 'DIVIDEND' && !tx.withholdingTax.isZero()) {
+      const bare = contentFingerprint({ ...tx, withholdingTax: ZERO });
+      const taken = untaxedTaken.get(bare) ?? 0;
+      const occupied = untaxedInBatch.get(bare)?.size ?? 0;
+      if (stored.has(`${broker}|${bare}|${occupied + taken + 1}`)) {
+        untaxedTaken.set(bare, taken + 1);
+        untaxed.push(tx);
+        // týž řádek podruhé v jedné dávce je už jen duplicita, ne druhé hlášení
+        seen.add(key);
+        continue;
+      }
+    }
     seen.add(key);
     fresh.push({ tx, key });
   }
@@ -216,7 +254,9 @@ export function dedupeTransactions(
     occurrences,
     storedBareDividends,
   );
-  if (promoted.length === 0) return { fresh, duplicates, restated, promoted, ambiguous };
+  if (promoted.length === 0) {
+    return { fresh, duplicates, restated, promoted, ambiguous, untaxed };
+  }
   const promotedKeys = new Set(promoted.map((item) => item.to));
   return {
     fresh: fresh.filter((item) => !promotedKeys.has(item.key)),
@@ -224,6 +264,7 @@ export function dedupeTransactions(
     restated,
     promoted,
     ambiguous,
+    untaxed,
   };
 }
 

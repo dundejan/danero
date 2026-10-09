@@ -699,6 +699,33 @@ const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
   }));
 
 /**
+ * Dividenda se sraženou daní, kterou už máme uloženou se srážkou 0 (A29; viz
+ * `dedupeTransactions`, pole `untaxed`).
+ *
+ * Starší verze parseru srážku u některých výpisů nepřečetla. Uložit dividendu
+ * podruhé by zdvojilo příjem, přepsat uložený řádek potichu taky nejde —
+ * sražená daň vstupuje do zápočtu a změnit ji má jen vědomý krok uživatele.
+ * Proto se neukládá a uživatel dostane návod, jak srážku k dividendě dostat.
+ */
+const untaxedDividendWarnings = (untaxed: Transaction[]): RowIssue[] =>
+  untaxed.flatMap((tx) =>
+    tx.type !== 'DIVIDEND'
+      ? []
+      : [
+          {
+            line: 1,
+            message:
+              `Dividenda ${qty(tx.gross)} ${tx.currency} z ${czDate(tx.date)}` +
+              `${tx.ticker ? ` (${tx.ticker})` : ''} je už uložená bez srážkové daně ze staršího ` +
+              `importu, tenhle výpis u ní uvádí sraženou daň ${qty(tx.withholdingTax)} ${tx.currency}. ` +
+              'Neukládáme ji podruhé (počítala by se dvakrát) a uložená čísla sami nepřepisujeme. ' +
+              'Aby se sražená daň započítala, vrať starší import zpět tlačítkem v historii níž ' +
+              '(smaže se i s transakcemi) a nahraj výpis znovu.',
+          },
+        ],
+  );
+
+/**
  * Dividenda s ISIN uložená jako nová, přestože uložená dvojnice bez ISIN
  * existuje (A25-R1-01; kdy to nastane, viz `dedupeTransactions`, pole
  * `ambiguous`).
@@ -789,7 +816,7 @@ export async function importParsed(
   extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
-  const { fresh, duplicates, restated, promoted, ambiguous } = dedupeTransactions(
+  const { fresh, duplicates, restated, promoted, ambiguous, untaxed } = dedupeTransactions(
     parsed.broker,
     parsed.transactions,
     state.keys,
@@ -809,6 +836,7 @@ export async function importParsed(
     ...parsed.warnings,
     ...restatedWarnings(restated),
     ...ambiguousDividendWarnings(ambiguous),
+    ...untaxedDividendWarnings(untaxed),
   ];
 
   const batchId = crypto.randomUUID();
