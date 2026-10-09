@@ -509,6 +509,43 @@ describe('shodná dividenda JINÉHO titulu v jiném souboru se uloží (A25-R1-0
   );
 
   it(
+    'rada ve varování vede ke stavu bez duplicity: starší soubor se znovu nahrává až s doplněným ISIN (A25-R2-01)',
+    { timeout: 60_000 },
+    async () => {
+      const db = await withUser();
+      const BARE = 'DIVIDEND,2025-05-02,,,,,,USD,12.00,1.80,US,';
+      await uploadText(db, 'sablona-1.csv', [TEMPLATE_HEADER, BARE]);
+      const second = await uploadText(db, 'sablona-2.csv', [
+        TEMPLATE_HEADER,
+        'DIVIDEND,2025-05-02,US0000000026,BETA,Beta Test,,,USD,12.00,1.80,US,',
+      ]);
+      const [warning] = second.warnings.filter((w) => w.message.includes(LOOKALIKE));
+      // starší soubor ISIN nemá a nahraný beze změny by dividendu uložil podruhé,
+      // tentokrát bez varování — rada to musí říct, ne k tomu navádět
+      expect(warning!.message).toContain('vrať starší import zpět');
+      expect(warning!.message).not.toContain('a jeho výpis nahraj znovu');
+      expect(warning!.message).toContain('Než jeho soubor nahraješ znovu');
+      expect(warning!.message).toContain('ISIN doplň');
+
+      // uživatel poslechne: vrátí starší import, do souboru dopíše ISIN a nahraje ho
+      const [oldBatch] = (await db.select().from(importBatches)).filter(
+        (batch) => batch.filename === 'sablona-1.csv',
+      );
+      expect(await undoImportBatch(db, 'u1', oldBatch!.id)).toMatchObject({ count: 1 });
+      expect(await dividendRows(db)).toHaveLength(1);
+      const fixed = await uploadText(db, 'sablona-1.csv', [
+        TEMPLATE_HEADER,
+        'DIVIDEND,2025-05-02,US0000000026,,,,,USD,12.00,1.80,US,',
+      ]);
+      expect({ added: fixed.added, duplicates: fixed.duplicates }).toEqual({
+        added: 0,
+        duplicates: 1,
+      });
+      expect(tickers(await dividendRows(db))).toEqual(['BETA:US0000000026']);
+    },
+  );
+
+  it(
     'týž titul, týž soubor po doplnění ISIN v šabloně: dividenda se nezdvojí',
     {
       timeout: 60_000,

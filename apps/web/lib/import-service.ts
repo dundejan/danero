@@ -734,6 +734,11 @@ const untaxedDividendWarnings = (untaxed: Transaction[]): RowIssue[] =>
  * jednu z nich potichu smazalo z příjmů i ze sražené daně. Uložit ji mlčky
  * ale taky ne: je-li to opravdu tatáž výplata, počítá se teď dvakrát, a to
  * uživatel bez upozornění nenajde.
+ *
+ * Rada nesmí končit u „nahraj starší výpis znovu“ (A25-R2-01): soubor, ve
+ * kterém dividenda ISIN nemá (vlastní tabulka), by ji po vrácení importu
+ * uložil podruhé — uložená s ISIN a příchozí bez něj se nepárují ani nehlásí.
+ * Výpis od brokera si ISIN bere z číselníku, takže ten znovu nahrát jde.
  */
 const ambiguousDividendWarnings = (ambiguous: Transaction[]): RowIssue[] =>
   ambiguous.flatMap((tx) =>
@@ -749,7 +754,9 @@ const ambiguousDividendWarnings = (ambiguous: Transaction[]): RowIssue[] =>
               'Jestli je to tatáž výplata, s jistotou nepoznáme, takže jsme ji uložili jako novou: ' +
               'přijít o dividendu by bylo horší než ji mít dvakrát. Když jde opravdu o jednu ' +
               'a tutéž výplatu, vrať starší import zpět tlačítkem v historii níž (smaže se ' +
-              'i s transakcemi) a jeho výpis nahraj znovu.',
+              'i s transakcemi). Než jeho soubor nahraješ znovu, zkontroluj, že u té dividendy ' +
+              'uvádí ISIN: ve vlastní tabulce ISIN doplň, u výpisu od brokera ho bereme z číselníku ' +
+              'a měnit nic nemusíš. Bez ISIN by se dividenda uložila podruhé, a to už bez upozornění.',
           },
         ],
   );
