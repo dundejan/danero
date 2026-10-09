@@ -38,6 +38,14 @@ jobs:
           languages: javascript-typescript
           build-mode: none
           queries: security-extended
+          # Testy a E2E se nenasazují. Bez téhle výjimky první běh nad pull
+          # requestem spadl na pěti „high" nálezech v testech, které z vykresleného
+          # HTML odstraňují značky regulárním výrazem, aby porovnaly text —
+          # pro sanitizaci by to nestačilo, pro porovnání textu ano.
+          config: |
+            paths-ignore:
+              - '**/test/**'
+              - 'apps/web/e2e/**'
 
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
