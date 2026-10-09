@@ -102,6 +102,12 @@ export interface DedupeOutcome {
    * — dokud ho neprovede, další nahrání téhož výpisu vrátí totéž povýšení.
    */
   promoted: KeyPromotion[];
+  /**
+   * Dividendy s ISIN uložené jako NOVÉ (jsou i ve `fresh`), ke kterým existuje
+   * uložená dvojnice bez ISIN, jenže nejde bezpečně říct, že je to tatáž
+   * výplata (A25-R1-01). Volající na ně má uživatele upozornit.
+   */
+  ambiguous: Transaction[];
 }
 
 /** Přepis klíče uloženého řádku, kterému příchozí transakce doplnila ISIN. */
@@ -148,12 +154,17 @@ const TRANSACTION_ID_BROKERS = new Set(['etoro', 'mt4', 'mt5']);
  * Porovnává se VÝHRADNĚ proti už uloženým id, nikdy v rámci jedné dávky, a jen
  * u id, které je v dávce jedinečné: starší exporty (a formáty bez ID sloupce)
  * umí poslat dva různé řádky pod týmž id, a ty se zahodit nesmí.
+ *
+ * `storedBareDividends` (klíč uložené dividendy BEZ ISIN → její ticker) je
+ * podklad třetí sítě, viz `promoteStoredDividends`. Bez něj se nic nepovyšuje:
+ * co o uložených řádcích nevíme, to nepárujeme.
  */
 export function dedupeTransactions(
   broker: string,
   incoming: Transaction[],
   existingKeys: Iterable<string> = [],
   existingIds: Iterable<string> = [],
+  storedBareDividends: Iterable<readonly [string, string | null | undefined]> = [],
 ): DedupeOutcome {
   const seen = new Set(existingKeys);
   const storedIds = new Set(existingIds);
@@ -198,15 +209,33 @@ export function dedupeTransactions(
     seen.add(key);
     fresh.push({ tx, key });
   }
-  const promoted = promoteStoredDividends(broker, fresh, seen, occurrences);
-  if (promoted.length === 0) return { fresh, duplicates, restated, promoted };
+  const { promoted, ambiguous } = promoteStoredDividends(
+    broker,
+    incoming,
+    fresh,
+    occurrences,
+    storedBareDividends,
+  );
+  if (promoted.length === 0) return { fresh, duplicates, restated, promoted, ambiguous };
   const promotedKeys = new Set(promoted.map((item) => item.to));
   return {
     fresh: fresh.filter((item) => !promotedKeys.has(item.key)),
     duplicates: duplicates + promoted.length,
     restated,
     promoted,
+    ambiguous,
   };
+}
+
+/** Ticker k porovnání: bez okrajových mezer a bez ohledu na velikost písmen. */
+const normalizeTicker = (ticker: string | null | undefined): string | undefined =>
+  ticker?.trim().toUpperCase() || undefined;
+
+interface StoredBareDividend {
+  key: string;
+  occurrence: number;
+  ticker: string | undefined;
+  promoted: boolean;
 }
 
 /**
@@ -221,40 +250,104 @@ export function dedupeTransactions(
  * navazující výpis, který se s prvním jen překrývá.
  *
  * Nová dividenda s ISIN se proto zkusí spárovat s uloženou, která se liší JEN
- * chybějícím ISIN (týž den, brutto, srážka i měna). Když taková je, nic se
- * neukládá a volající uloženému řádku ISIN doplní a přepíše klíč.
+ * chybějícím ISIN: týž den, brutto, srážka i měna A TÝŽ TICKER. Když taková
+ * je, nic se neukládá a volající uloženému řádku ISIN doplní a přepíše klíč.
  *
- * Páruje se počtem, ne naslepo: uložené klíče bez ISIN s pořadím 1…m patří
- * dividendám, které i v TÉTO dávce přišly bez ISIN (jiný titul se shodnou
- * částkou, který na číselník teprve čeká) — ty jsou obyčejné duplicity
- * a nesmí se spotřebovat podruhé. Povyšuje se až od pořadí m + 1, v pořadí
- * výpisu, každý uložený řádek nejvýš jednou. Dvě legitimně shodné dividendy
- * téhož dne tak zůstanou dvě a třetí, která uložená není, se uloží jako nová.
+ * Ticker je tu podmínka, ne nápověda (A25-R1-01). Bez něj síť spojila i dvě
+ * RŮZNÉ výplaty: uložená dividenda bez ISIN v příchozím souboru vůbec nebyla
+ * (druhý účet u Schwabu, druhý soubor šablony) a shodná dividenda jiného
+ * titulu se místo uložení „spárovala“ — zmizela z příjmů i ze sražené daně
+ * a cizí řádek dostal její ISIN. Ztracená dividenda je horší než zdvojená,
+ * takže kde titul porovnat nejde (ticker chybí na jedné straně), nepáruje se
+ * a dividenda se uloží. S tickerem je shoda stejně jistá jako u obsahového
+ * klíče samotného: ticker jen zastupuje ISIN, který uloženému řádku chybí.
+ *
+ * Kandidáti jsou jen uložené řádky s pořadím NAD m, kde m je počet dividend
+ * téhož otisku, které i v TÉTO dávce přišly bez ISIN (jiný titul se shodnou
+ * částkou, který na číselník teprve čeká): ty si klíče 1…m vzaly jako obyčejné
+ * duplicity a podruhé se spotřebovat nesmí. Každý uložený řádek se povýší
+ * nejvýš jednou — dvě legitimně shodné dividendy téhož dne zůstanou dvě
+ * a třetí, která uložená není, se uloží jako nová.
+ *
+ * `ambiguous` jsou dividendy, které se uložily jako nové, přestože uložená
+ * dvojnice bez ISIN existuje a vyloučit ji neumíme:
+ * - titul nejde porovnat (ticker chybí příchozí dividendě nebo volnému
+ *   uloženému řádku),
+ * - uložený řádek téhož titulu leží v pořadí 1…m, kde si jeho klíč vzala
+ *   dividenda JINÉHO titulu z této dávky (obsahový klíč titul nezná). Přepsat
+ *   ho bezpečně nejde — klíč by se musel uvolnit a jiný řádek přečíslovat
+ *   dvěma zápisy, mezi kterými by přerušení nechalo díru, a ta by příště
+ *   zdvojila druhý titul potichu.
+ * Volající je má uživateli ukázat; tichý by byl jen případ, kdy jsou oba
+ * tituly známé a různé — a to dvojnice není.
  *
  * Opačný směr (uložená s ISIN, příchozí bez něj) se nepáruje: číselník se
  * jen doplňuje, takže takový stav z opakovaného nahrání nevznikne.
  */
 function promoteStoredDividends(
   broker: string,
+  incoming: Transaction[],
   fresh: DedupeOutcome['fresh'],
-  seen: Set<string>,
   occurrences: Map<string, Map<string, number>>,
-): KeyPromotion[] {
+  storedBareDividends: Iterable<readonly [string, string | null | undefined]>,
+): Pick<DedupeOutcome, 'promoted' | 'ambiguous'> {
   const promoted: KeyPromotion[] = [];
-  // otisk bez ISIN → pořadí uloženého řádku, které je na řadě k povýšení
-  const nextStored = new Map<string, number>();
+  const ambiguous: Transaction[] = [];
+
+  // otisk bez ISIN → uložené řádky bez ISIN téhož brokera, vzestupně podle pořadí
+  const stored = new Map<string, StoredBareDividend[]>();
+  const prefix = `${broker}|`;
+  for (const [key, ticker] of storedBareDividends) {
+    if (!key.startsWith(prefix)) continue;
+    const at = key.lastIndexOf('|');
+    const occurrence = Number(key.slice(at + 1));
+    if (at < prefix.length || !Number.isInteger(occurrence)) continue;
+    const fingerprint = key.slice(prefix.length, at);
+    const rows = stored.get(fingerprint) ?? [];
+    rows.push({ key, occurrence, ticker: normalizeTicker(ticker), promoted: false });
+    stored.set(fingerprint, rows);
+  }
+  if (stored.size === 0) return { promoted, ambiguous };
+  for (const rows of stored.values()) rows.sort((a, b) => a.occurrence - b.occurrence);
+
+  // otisk → pořadí → ticker dividendy, která v TÉTO dávce přišla bez ISIN
+  const batchBare = new Map<string, Map<number, string | undefined>>();
+  for (const tx of incoming) {
+    if (tx.type !== 'DIVIDEND' || tx.isin) continue;
+    const fingerprint = contentFingerprint(tx);
+    const occurrence = occurrences.get(fingerprint)?.get(tx.id);
+    if (occurrence === undefined) continue;
+    const tickers = batchBare.get(fingerprint) ?? new Map<number, string | undefined>();
+    tickers.set(occurrence, normalizeTicker(tx.ticker));
+    batchBare.set(fingerprint, tickers);
+  }
+
   for (const { tx, key } of fresh) {
     if (tx.type !== 'DIVIDEND' || !tx.isin) continue;
     const bare = contentFingerprint({ ...tx, isin: undefined });
-    const occurrence = nextStored.get(bare) ?? (occurrences.get(bare)?.size ?? 0) + 1;
-    const from = `${broker}|${bare}|${occurrence}`;
-    // Pořadí nad m v této dávce nikdo nedostal, takže klíč v `seen` může
-    // pocházet jedině z už uložených řádků.
-    if (!seen.has(from)) continue;
-    nextStored.set(bare, occurrence + 1);
-    promoted.push({ from, to: key, isin: tx.isin });
+    const rows = stored.get(bare);
+    if (!rows) continue;
+    const claimed = occurrences.get(bare)?.size ?? 0;
+    const ticker = normalizeTicker(tx.ticker);
+    const free = rows.filter((row) => row.occurrence > claimed && !row.promoted);
+    const match = ticker ? free.find((row) => row.ticker === ticker) : undefined;
+    if (match) {
+      match.promoted = true;
+      promoted.push({ from: match.key, to: key, isin: tx.isin });
+      continue;
+    }
+    const incomparable = free.some((row) => !ticker || !row.ticker);
+    const displaced =
+      ticker !== undefined &&
+      rows.some(
+        (row) =>
+          row.occurrence <= claimed &&
+          row.ticker === ticker &&
+          batchBare.get(bare)?.get(row.occurrence) !== ticker,
+      );
+    if (incomparable || displaced) ambiguous.push(tx);
   }
-  return promoted;
+  return { promoted, ambiguous };
 }
 
 /**

@@ -70,7 +70,7 @@ import type { Transaction } from '@danero/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
-import { plural } from '@/lib/format';
+import { czDate, plural, qty } from '@/lib/format';
 import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
 import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
@@ -577,6 +577,12 @@ function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline): string {
 export interface ImportState {
   keys: Set<string>;
   brokerIds: Set<string>;
+  /**
+   * Klíč uložené dividendy BEZ ISIN → její ticker (`null`, když ho řádek
+   * nenese). Podle tickeru se pozná, že dividenda, která teď přišla s ISIN,
+   * je tatáž výplata, a ne shodná částka jiného titulu (A25-R1-01).
+   */
+  bareDividends: Map<string, string | null>;
 }
 
 export async function loadImportState(db: Db, userId: string): Promise<ImportState> {
@@ -587,6 +593,9 @@ export async function loadImportState(db: Db, userId: string): Promise<ImportSta
       // id přiděluje parser a je uložené v payloadu; sloupec navíc kvůli němu
       // nezavádíme — tenhle select stejně čte všechny řádky uživatele
       id: sql<string | null>`${transactions.payload} ->> 'id'`,
+      type: transactions.type,
+      isin: transactions.isin,
+      ticker: sql<string | null>`${transactions.payload} ->> 'ticker'`,
     })
     .from(transactions)
     .where(eq(transactions.userId, userId));
@@ -594,6 +603,11 @@ export async function loadImportState(db: Db, userId: string): Promise<ImportSta
     keys: new Set(rows.map((row) => row.key)),
     brokerIds: new Set(
       rows.filter((row) => row.id !== null).map((row) => brokerIdKey(row.broker, row.id!)),
+    ),
+    bareDividends: new Map(
+      rows
+        .filter((row) => row.type === 'DIVIDEND' && row.isin === null)
+        .map((row) => [row.key, row.ticker]),
     ),
   };
 }
@@ -685,6 +699,35 @@ const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
   }));
 
 /**
+ * Dividenda s ISIN uložená jako nová, přestože uložená dvojnice bez ISIN
+ * existuje (A25-R1-01; kdy to nastane, viz `dedupeTransactions`, pole
+ * `ambiguous`).
+ *
+ * Spárovat je nesmíme — titul nejde ověřit a sloučení dvou různých výplat by
+ * jednu z nich potichu smazalo z příjmů i ze sražené daně. Uložit ji mlčky
+ * ale taky ne: je-li to opravdu tatáž výplata, počítá se teď dvakrát, a to
+ * uživatel bez upozornění nenajde.
+ */
+const ambiguousDividendWarnings = (ambiguous: Transaction[]): RowIssue[] =>
+  ambiguous.flatMap((tx) =>
+    tx.type !== 'DIVIDEND'
+      ? []
+      : [
+          {
+            line: 1,
+            message:
+              `Dividenda ${qty(tx.gross)} ${tx.currency} z ${czDate(tx.date)}` +
+              `${tx.ticker ? ` (${tx.ticker})` : ''} vypadá stejně jako dividenda, kterou už máš ` +
+              'uloženou bez ISIN (kódu cenného papíru) — sedí den, částka, sražená daň i měna. ' +
+              'Jestli je to tatáž výplata, s jistotou nepoznáme, takže jsme ji uložili jako novou: ' +
+              'přijít o dividendu by bylo horší než ji mít dvakrát. Když jde opravdu o jednu ' +
+              'a tutéž výplatu, vrať starší import zpět tlačítkem v historii níž (smaže se ' +
+              'i s transakcemi) a jeho výpis nahraj znovu.',
+          },
+        ],
+  );
+
+/**
  * Doplní ISIN dividendám, které už uložené jsou, jen bez něj (L14-02; párování
  * viz `dedupeTransactions`, pole `promoted`).
  *
@@ -728,6 +771,7 @@ async function promoteStoredDividends(
     // starý klíč už neexistuje a nový je obsazený.
     state.keys.delete(from);
     state.keys.add(to);
+    state.bareDividends.delete(from);
   }
 }
 
@@ -745,11 +789,12 @@ export async function importParsed(
   extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
-  const { fresh, duplicates, restated, promoted } = dedupeTransactions(
+  const { fresh, duplicates, restated, promoted, ambiguous } = dedupeTransactions(
     parsed.broker,
     parsed.transactions,
     state.keys,
     state.brokerIds,
+    state.bareDividends,
   );
   const unmapped = extras.unmapped ?? [];
   // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak
@@ -760,11 +805,15 @@ export async function importParsed(
   const unrecognized =
     extras.unrecognized ?? (producedNothing(parsed) && unmapped.length === 0);
   const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
-  const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
+  const warnings = [
+    ...parsed.warnings,
+    ...restatedWarnings(restated),
+    ...ambiguousDividendWarnings(ambiguous),
+  ];
 
   const batchId = crypto.randomUUID();
   // klíče nově uložených řádků — do sdíleného stavu se propíšou až po zápisu
-  const storedKeys: Array<{ key: string; brokerId: string }> = [];
+  const storedKeys: Array<{ key: string; brokerId: string; bareTicker?: string | null }> = [];
 
   /*
    * Pořadí zápisů je tady BEZPEČNOSTNÍ prvek, ne libovůle (K5-08).
@@ -826,7 +875,11 @@ export async function importParsed(
         .insert(transactions)
         .values(
           part.map(({ tx, key }) => {
-            storedKeys.push({ key, brokerId: brokerIdKey(parsed.broker, tx.id) });
+            storedKeys.push({
+              key,
+              brokerId: brokerIdKey(parsed.broker, tx.id),
+              ...(tx.type === 'DIVIDEND' && !tx.isin ? { bareTicker: tx.ticker ?? null } : {}),
+            });
             return {
               userId,
               dedupeKey: key,
@@ -875,9 +928,10 @@ export async function importParsed(
 
   // Až po zápisu: sdílený stav si sync nese přes celý běh, takže klíče uložené
   // před neúspěchem by dalšímu roku vydávaly nezapsané transakce za duplicity.
-  for (const { key, brokerId } of storedKeys) {
+  for (const { key, brokerId, bareTicker } of storedKeys) {
     state.keys.add(key);
     state.brokerIds.add(brokerId);
+    if (bareTicker !== undefined) state.bareDividends.set(key, bareTicker);
   }
 
   // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis

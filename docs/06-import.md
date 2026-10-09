@@ -13,8 +13,15 @@
   a bez ID se nesloučí.
   Dividenda uložená bez ISIN (Fio, Schwab, Tastytrade a Revolut ho neexportují
   a číselník ještě nebyl vyplněný) se po doplnění číselníku a novém nahrání pozná
-  podle shodného dne, brutta, srážky a měny: neuloží se podruhé a uloženému řádku
-  se ISIN doplní (`promoted` v `dedupeTransactions`, zápis v `importParsed`).
+  podle shodného dne, brutta, srážky, měny **a tickeru**: neuloží se podruhé
+  a uloženému řádku se ISIN doplní (`promoted` v `dedupeTransactions`, zápis
+  v `importParsed`). Ticker je podmínka — shodnou částku ve společný výplatní den
+  mívají i dva různé tituly a jejich sloučení by jednu výplatu potichu smazalo.
+  Kde titul porovnat nejde (ticker chybí uložené nebo příchozí dividendě, typicky
+  u univerzální šablony), nebo kde řádek téhož titulu leží pod pořadím, které si
+  v tomtéž výpisu vzala shodná dividenda jiného titulu bez ISIN, se nepáruje:
+  dividenda se uloží jako nová a uživatel dostane varování, že ji možná má
+  dvakrát (`ambiguous`). Zdvojená dividenda je vidět a jde vrátit, ztracená ne.
 - Datum obchodu = datum z exportu (UTC); datum vypořádání engine dopočítává
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.
