@@ -279,6 +279,15 @@ function ConnectedBroker({
   );
 }
 
+/**
+ * Kolik hlášek jedné dávky historie vypíše. Zbytek shrne řádek „a dalších N“
+ * z úplných počtů ve sloupcích dávky — bez něj seznam deseti chyb vypadal
+ * jako celý, i když jich soubor měl stovky (a uložených je nejvýš
+ * `MAX_STORED_ISSUES`, viz lib/import-issues.ts).
+ */
+const SHOWN_ERRORS = 10;
+const SHOWN_WARNINGS = 5;
+
 export default async function ImportPage({
   searchParams,
 }: {
@@ -750,17 +759,31 @@ export default async function ImportPage({
                     </span>{' '}
                     · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
                   </p>
-                  {(issues.errors ?? []).slice(0, 10).map((issue, i) => (
+                  {(issues.errors ?? []).slice(0, SHOWN_ERRORS).map((issue, i) => (
                     // index v klíči: na jednom řádku souboru může být víc chyb
                     <p key={`e-${issue.line}-${i}`} className="text-xs text-cervena">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
-                  {(issues.warnings ?? []).slice(0, 5).map((issue, i) => (
+                  {batch.errorCount > SHOWN_ERRORS && (
+                    <p className="text-xs text-cervena">
+                      … a {plural(batch.errorCount - SHOWN_ERRORS, 'další', 'další', 'dalších')}{' '}
+                      {batch.errorCount - SHOWN_ERRORS}{' '}
+                      {plural(batch.errorCount - SHOWN_ERRORS, 'chyba', 'chyby', 'chyb')}. Bývají
+                      stejného druhu — oprav první a nahraj soubor znovu.
+                    </p>
+                  )}
+                  {(issues.warnings ?? []).slice(0, SHOWN_WARNINGS).map((issue, i) => (
                     <p key={`w-${issue.line}-${i}`} className="text-xs text-jantar-text">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
+                  {batch.warningCount > SHOWN_WARNINGS && (
+                    <p className="text-xs text-jantar-text">
+                      … a {plural(batch.warningCount - SHOWN_WARNINGS, 'další', 'další', 'dalších')}{' '}
+                      {batch.warningCount - SHOWN_WARNINGS} varování.
+                    </p>
+                  )}
                   {failedCase && <FailedImportPanel item={failedCase} />}
                   {/* nevztahuje se k řádku souboru, ale k celé dávce */}
                   {(issues.crossBroker ?? []).map((message, i) => (

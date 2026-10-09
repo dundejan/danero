@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isValidIsin } from '@danero/shared';
 import type { Db } from '@/db';
-import { instrumentAliases, user } from '@/db/schema';
+import { importBatches, instrumentAliases, user } from '@/db/schema';
 import { importFileIsolated } from '@/lib/import-service';
 import { loadTransactions } from '@/lib/portfolio';
 import { ETORO_INSTRUMENT_MAP } from '../../../packages/importers/test/fixtures/etoro';
@@ -313,5 +313,56 @@ describe('číselník: přepis ISIN u symbolu s uloženými transakcemi (L23-02)
     const aliases = await savedAliases();
     expect(aliases['xtb|AAPL.US']).toBe(ORIGINAL.isin);
     expect(aliases['xtb|MSFT.US']).toBe(OTHER_ISIN);
+  });
+});
+
+/**
+ * Historie importů vypíše jen pár prvních hlášek dávky. Bez řádku „a dalších N“
+ * vypadal seznam deseti chyb jako celý (rozhodnutí z oprav č. 15, dávka D05).
+ */
+describe('historie importů: zkrácený seznam hlášek to říká', () => {
+  const issue = (line: number) => ({ line, message: `Neplatná částka na řádku ${line}` });
+  const batch = (over: Partial<typeof importBatches.$inferInsert>) => ({
+    id: 'davka-1',
+    userId: 'u1',
+    broker: 'universal',
+    filename: 'vypis.csv',
+    added: 3,
+    duplicates: 0,
+    errorCount: 0,
+    skippedCount: 0,
+    warningCount: 0,
+    issues: { errors: [], skipped: [], warnings: [] },
+    ...over,
+  });
+
+  it('nad deset chyb a pět varování přidá řádek s počtem zbylých', { timeout: 60_000 }, async () => {
+    await stav.db.insert(importBatches).values(
+      batch({
+        errorCount: 37,
+        warningCount: 6,
+        issues: {
+          errors: Array.from({ length: 12 }, (_, i) => issue(i + 2)),
+          skipped: [],
+          warnings: Array.from({ length: 6 }, (_, i) => issue(i + 50)),
+        },
+      }),
+    );
+    const html = (await renderImportPage()).replaceAll('<!-- -->', '');
+    expect(html).toContain('a dalších 27 chyb');
+    expect(html).toContain('a další 1 varování');
+    // vypsaných je pořád jen prvních deset a pět
+    expect(html).toContain('Neplatná částka na řádku 11');
+    expect(html).not.toContain('Neplatná částka na řádku 12');
+    expect(html).not.toContain('Neplatná částka na řádku 55');
+  });
+
+  it('když se vejdou všechny, žádný řádek navíc není', { timeout: 60_000 }, async () => {
+    await stav.db.insert(importBatches).values(
+      batch({ errorCount: 2, issues: { errors: [issue(2), issue(3)], skipped: [], warnings: [] } }),
+    );
+    const html = (await renderImportPage()).replaceAll('<!-- -->', '');
+    expect(html).toContain('Neplatná částka na řádku 3');
+    expect(html).not.toMatch(/… a další/);
   });
 });
