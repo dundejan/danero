@@ -3,12 +3,17 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { LAST_VERIFIED_RATE_YEAR, UNIFIED_RATE_SOURCES } from '@danero/engine';
-import { parseTransactions, type Transaction } from '@danero/shared';
+import { analyzeTaxYear, LAST_VERIFIED_RATE_YEAR, UNIFIED_RATE_SOURCES } from '@danero/engine';
+import { d, parseTransactions, type Transaction } from '@danero/shared';
 import { ReportView } from '@/components/views/report-view';
 import { dateLabel, msLabel, toMs } from '@/components/charts';
-import { type ProfileRow } from '@/lib/portfolio';
-import { FIRST_UNIFIED_RATE_YEAR, verifiedRateSourceNote } from '@/lib/tax-config';
+import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
+import {
+  FIRST_UNIFIED_RATE_YEAR,
+  isRateVerified,
+  UNIFIED_RATES,
+  verifiedRateSourceNote,
+} from '@/lib/tax-config';
 
 /**
  * K1-03 a K1-04: deklarace původu kurzů v podkladu k přiznání.
@@ -112,6 +117,90 @@ describe('karta „Použité kurzy“ u roku bez jednotného kurzu (K1-04)', () 
   it('report za rok s kurzy pořád nese důkazní tabulku', () => {
     const out = render(TXS_2019, 2025);
     expect(out).toContain('pokyn GFŘ D-75');
+    expect(out).not.toContain('jednotný kurz GFŘ nemáme');
+  });
+});
+
+/**
+ * Kurzy ČNB k poslední kotaci každého měsíce leden–září 2026 (30. 1., 27. 2.,
+ * 31. 3., 30. 4., 29. 5., 30. 6., 31. 7., 31. 8., 30. 9.), tak jak je ČNB
+ * kotuje — za `unit` jednotek měny. Veřejný roční kurzovní lístek ČNB.
+ */
+const CNB_MONTH_ENDS_2026: Record<string, { unit: number; rates: string[] }> = {
+  USD: { unit: 1, rates: ['20.413', '20.541', '21.333', '20.813', '20.851', '21.287', '21.076', '20.800', '21.522'] },
+  EUR: { unit: 1, rates: ['24.330', '24.245', '24.515', '24.360', '24.285', '24.260', '24.210', '24.125', '24.440'] },
+  GBP: { unit: 1, rates: ['28.093', '27.667', '28.232', '28.116', '28.000', '28.153', '28.286', '28.171', '28.596'] },
+  PLN: { unit: 1, rates: ['5.783', '5.739', '5.712', '5.719', '5.744', '5.647', '5.613', '5.575', '5.593'] },
+  CHF: { unit: 1, rates: ['26.572', '26.631', '26.666', '26.519', '26.667', '26.302', '26.015', '25.732', '25.790'] },
+  AUD: { unit: 1, rates: ['14.318', '14.592', '14.670', '14.881', '14.958', '14.662', '14.791', '14.900', '15.000'] },
+  CAD: { unit: 1, rates: ['15.091', '15.025', '15.311', '15.229', '15.107', '14.954', '15.012', '14.981', '15.172'] },
+  JPY: { unit: 100, rates: ['13.251', '13.164', '13.372', '13.307', '13.092', '13.106', '13.152', '13.024', '13.707'] },
+  NOK: { unit: 1, rates: ['2.137', '2.163', '2.186', '2.232', '2.254', '2.145', '2.212', '2.226', '2.242'] },
+  SEK: { unit: 1, rates: ['2.313', '2.273', '2.237', '2.245', '2.254', '2.187', '2.203', '2.171', '2.157'] },
+  DKK: { unit: 1, rates: ['3.258', '3.245', '3.280', '3.260', '3.250', '3.246', '3.239', '3.227', '3.269'] },
+};
+
+/** Dividenda v dolarech z ledna 2027 — první transakce, kterou nový rok potká. */
+const TXS_2027: Transaction[] = parseTransactions([
+  {
+    type: 'DIVIDEND',
+    id: 'd2027',
+    isin: 'US0378331005',
+    gross: '100',
+    withholdingTax: '15',
+    currency: 'USD',
+    date: '2027-01-15',
+  },
+]);
+
+describe('orientační kurzy běžného a příštího roku (R-06a)', () => {
+  it.skipIf(isRateVerified(2026))(
+    'odhad 2026 je průměr kurzů ČNB ke koncům měsíců leden–září (L3-05)',
+    () => {
+      // metoda, kterou jednotný kurz počítá GFŘ (§ 38 odst. 1 ZDP) — nad lístkem
+      // ČNB za rok 2025 dává vyhlášený pokyn D-75 s odchylkou do 0,21 %. Do
+      // 9. 10. 2026 tu byl lednový spot: AUD a NOK ležely na ročním minimu
+      // a JPY nad ročním maximem, hlídač limitu tak byl o 6–7 % vedle.
+      // Po lednovém pokynu rok 2026 přejde mezi ověřené a test se sám vypne.
+      expect(Object.keys(UNIFIED_RATES[2026]!).sort()).toEqual(
+        Object.keys(CNB_MONTH_ENDS_2026).sort(),
+      );
+      for (const [currency, { unit, rates }] of Object.entries(CNB_MONTH_ENDS_2026)) {
+        const average = rates
+          .reduce((sum, rate) => sum.plus(rate), d('0'))
+          .div(rates.length)
+          .div(unit);
+        // pokyny GFŘ kotují na dvě desetinná místa za jednotku z lístku (JPY za 100)
+        const places = unit === 100 ? 4 : 2;
+        expect(
+          d(UNIFIED_RATES[2026]![currency]!).toFixed(places),
+          `orientační kurz ${currency} 2026`,
+        ).toBe(average.toFixed(places));
+      }
+    },
+  );
+
+  it('rok 2027 má orientační kurz pro každou měnu roku 2026 (L3-03)', () => {
+    expect(Object.keys(UNIFIED_RATES[2027] ?? {}).sort()).toEqual(
+      Object.keys(UNIFIED_RATES[2026]!).sort(),
+    );
+    // odhad, ne pokyn — UI ho musí umět označit
+    expect(isRateVerified(2027)).toBe(LAST_VERIFIED_RATE_YEAR >= 2027);
+  });
+
+  it('dolarová dividenda z ledna 2027 se spočítá a report kurz označí za orientační', () => {
+    // bez kurzu 2027 končil výpočet výjimkou FX_RATE_MISSING a uživatel s cizí
+    // měnou viděl 1. ledna místo čísel kartu „Výpočet teď nejde dokončit“
+    const result = analyzeTaxYear(engineInputForUser(TXS_2027, PROFILE, 2027));
+    expect(result.dividends.foreignGrossCzk.toString()).toBe(
+      d('100').mul(UNIFIED_RATES[2027]!.USD!).toString(),
+    );
+
+    const out = render(TXS_2027, 2027);
+    expect(out).toContain('Použité kurzy');
+    if (!isRateVerified(2027)) {
+      expect(out).toContain('kurz roku 2027 je orientační do vydání pokynu');
+    }
     expect(out).not.toContain('jednotný kurz GFŘ nemáme');
   });
 });

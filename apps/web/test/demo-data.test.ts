@@ -15,12 +15,16 @@ import { UNIFIED_RATES } from '@/lib/tax-config';
  * osvobození, dividendy z několika států, 50+ otevřených pozic a aktivita
  * (prodeje, dividendy, poplatky) v KAŽDÉM roce Y−5…Y. Kontroluje se ve třech
  * okamžicích roku (začátek, střed, konec), protože datumy jsou relativní
- * k „dnešku“.
+ * k „dnešku“ — a navíc v roce 2027: od doplnění jeho orientačních kurzů
+ * (nález L3-03) do něj demo 1. ledna přejde, místo aby zůstalo přištípnuté
+ * na roce 2026.
  */
 const TODAYS = [
   demoToday(new Date('2026-01-02T10:00:00Z')),
   demoToday(new Date('2026-07-10T10:00:00Z')),
   demoToday(new Date('2026-12-31T10:00:00Z')),
+  demoToday(new Date('2027-01-02T10:00:00Z')),
+  demoToday(new Date('2027-07-10T10:00:00Z')),
 ];
 
 describe.each(TODAYS)('demo dataset k %s', (today) => {
@@ -222,6 +226,8 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
 
 it('demoToday drží rok s dostupnými kurzy a zvládá přestupný den', () => {
   expect(demoToday(new Date('2026-05-04T10:00:00Z'))).toBe('2026-05-04');
+  // rok 2027 má orientační kurzy i konfiguraci v registru → demo do něj přejde
+  expect(demoToday(new Date('2027-01-02T10:00:00Z'))).toBe('2027-01-02');
   // rok bez kurzů se přiskřípne na poslední známý
   expect(demoToday(new Date('2099-02-28T10:00:00Z')).slice(5)).toBe('02-28');
   expect(Number(demoToday(new Date('2099-06-01T00:00:00Z')).slice(0, 4))).toBeLessThan(2099);

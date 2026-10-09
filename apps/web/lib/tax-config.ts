@@ -10,6 +10,19 @@ import {
 } from '@danero/engine';
 
 /**
+ * Orientační odhad pro rok 2026, spočtený stejně jako jednotný kurz GFŘ
+ * (§ 38 odst. 1 ZDP): průměr kurzů ČNB k poslední kotaci každého měsíce,
+ * zaokrouhlený jako v pokynech (JPY z kotace za 100 jednotek). Nad lístkem
+ * ČNB za rok 2025 dává tahle metoda vyhlášený pokyn D-75 s odchylkou do
+ * 0,21 %. Vstupní kurzy i výpočet drží `test/report-rates.test.ts`.
+ */
+const ESTIMATED_RATES_2026: Record<string, string> = {
+  // průměr měsíčních konců leden–září 2026 (stav k 9. 10. 2026)
+  USD: '20.96', EUR: '24.31', GBP: '28.15', PLN: '5.68', CHF: '26.32',
+  AUD: '14.75', CAD: '15.10', JPY: '0.1324', NOK: '2.20', SEK: '2.23', DKK: '3.25',
+};
+
+/**
  * Jednotné kurzy: roky ≤ LAST_VERIFIED_RATE_YEAR jsou OVĚŘENÉ z pokynů GFŘ
  * řady D (packages/engine/src/config/unifiedRates.ts — s citacemi zdrojů).
  * Běžný rok je ⚠️ ORIENTAČNÍ odhad pro celoroční hlídání — pokyn za něj GFŘ
@@ -20,10 +33,11 @@ import {
  */
 export const UNIFIED_RATES: Record<number, Record<string, string>> = {
   ...UNIFIED_RATES_VERIFIED,
-  2026: {
-    USD: '20.80', EUR: '24.40', GBP: '28.00', PLN: '5.75', CHF: '26.00',
-    AUD: '13.80', CAD: '15.20', JPY: '0.142', NOK: '2.05', SEK: '2.20', DKK: '3.27',
-  },
+  2026: ESTIMATED_RATES_2026,
+  // Rok 2027 vlastní měsíční konce ještě nemá — do první údržby přebírá odhad
+  // 2026, aby výpočet 1. ledna neskončil chybou FX_RATE_MISSING (pojistka
+  // v test/runbook.test.ts ho vyžaduje od 1. listopadu).
+  2027: { ...ESTIMATED_RATES_2026 },
 };
 
 /**

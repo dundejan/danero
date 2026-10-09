@@ -14,7 +14,14 @@ import {
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
+import { UNIFIED_RATES } from '@/lib/tax-config';
 import { d } from '@danero/shared';
+
+/**
+ * Kurz dolaru roku 2026 se čte z tabulky, ne opisuje: dokud je rok orientační,
+ * odhad se během roku obnovuje (nález L3-05), a v lednu ho nahradí pokyn GFŘ.
+ */
+const USD_RATE_2026 = UNIFIED_RATES[2026]!.USD!;
 
 const PROFILE: ProfileRow = {
   userId: 'u1',
@@ -369,7 +376,7 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     // 50 × 220 = 11000 USD vs. 50 × 100 = 5000 USD (kurz se v podílu krátí)
     expect(allocation.slices[0]!.share).toBeCloseTo(68.75, 2);
     expect(allocation.slices[1]!.share).toBeCloseTo(31.25, 2);
-    expect(allocation.totalCzk).toBeCloseTo((11000 + 5000) * 20.8, 0);
+    expect(allocation.totalCzk).toBeCloseTo((11000 + 5000) * Number(USD_RATE_2026), 0);
 
     // bez cen poctivě null — graf má prázdný stav
     expect(
@@ -393,11 +400,12 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const aapl = valuation.rows.find((row) => row.isin === 'US0378331005')!;
     // 100 − 30 − 20 = 50 ks × 220 USD
     expect(aapl.value!.toString()).toBe('11000');
-    // × jednotný kurz 2026 (20.80)
-    expect(aapl.valueCzk!.toString()).toBe('228800');
+    // × jednotný kurz 2026
+    const valueCzk = d('11000').mul(USD_RATE_2026).toString();
+    expect(aapl.valueCzk!.toString()).toBe(valueCzk);
     // cost 50 × 100 (+ poměrná část poplatku nevstupuje do costPerShare lotu)
     expect(aapl.unrealized!.toNumber()).toBeCloseTo(11000 - 5000, 0);
-    expect(valuation.totalCzk.toString()).toBe('228800');
+    expect(valuation.totalCzk.toString()).toBe(valueCzk);
 
     const iwda = valuation.rows.find((row) => row.isin === 'IE00B4L5Y983')!;
     expect(iwda.value).toBeUndefined();
