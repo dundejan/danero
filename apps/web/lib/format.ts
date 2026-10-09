@@ -6,7 +6,11 @@ const czkFormat = new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 0,
 });
 
-const numberFormat = new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 4 });
+// 8 desetinných míst, protože tolik jich mají výpisy kryptoburz: se čtyřmi se
+// 0,00075667 BTC ukázalo jako 0,0008 a 0,00004321 jako 0 — a simulátor pak
+// číslo, které sám zobrazil, odmítl jako víc, než uživatel drží (L6a-08).
+// Koncové nuly formát nepřidává, takže celé kusy zůstávají „10“.
+const numberFormat = new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 8 });
 
 export const czk = (value: Money | number): string =>
   czkFormat.format(typeof value === 'number' ? value : value.toNumber());

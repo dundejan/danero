@@ -242,14 +242,27 @@ export function instrumentLabels(txs: Transaction[]): Map<string, string> {
   return labels;
 }
 
-/** Roky, ve kterých má uživatel transakce (sestupně), vždy včetně aktuálního. */
+/**
+ * Roky pro přepínač zdaňovacího období (sestupně): SOUVISLÁ řada od nejstarší
+ * transakce po běžný rok, ne jen roky, ve kterých se něco stalo (L7i-08).
+ *
+ * Datum tu čteme podle OBCHODU, kdežto engine řadí příjem z prodeje do roku
+ * VYPOŘÁDÁNÍ (R-05a). Prodej z posledních obchodních dnů prosince tak patří do
+ * roku, ve kterém uživatel nemusí mít jedinou transakci — a ten rok v řadě dřív
+ * chyběl, takže ho nešlo otevřít (`resolveTaxYear` adresu s ním přesměruje na
+ * letošek) a příjem z něj nebyl vidět nikde. Rok bez transakcí navíc může
+ * znamenat i zapomenutý výpis, a to se z díry v řadě poznat nedalo.
+ */
 export function availableYears(txs: Transaction[], currentYear: number): number[] {
-  const years = new Set<number>([currentYear]);
+  let first = currentYear;
+  let last = currentYear;
   for (const tx of txs) {
     const date = tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
-    years.add(Number(date.slice(0, 4)));
+    const year = Number(date.slice(0, 4));
+    if (year < first) first = year;
+    if (year > last) last = year;
   }
-  return [...years].sort((a, b) => b - a);
+  return Array.from({ length: last - first + 1 }, (_, i) => last - i);
 }
 
 export function engineInputForUser(
@@ -286,9 +299,9 @@ export async function loadDailyRates(
   // kurz PŘEDCHOZÍHO roku (Silvestr)
   const fromYear = Math.min(...years) - 1;
   const toYear = Math.max(...years, currentYear);
-  // SOUVISLÝ rozsah, ne jen roky s transakcemi. `availableYears` vrací množinu,
-  // takže portfolio s obchody v 2023, 2024 a 2026 nikdy nestáhlo rok 2025 —
-  // a přesto se z něj počítalo (F-3-2).
+  // SOUVISLÝ rozsah, ne jen roky s transakcemi. `availableYears` dřív vracela
+  // množinu, takže portfolio s obchody v 2023, 2024 a 2026 nikdy nestáhlo rok
+  // 2025 — a přesto se z něj počítalo (F-3-2).
   const needed = Array.from({ length: toYear - fromYear + 1 }, (_, i) => fromYear + i);
 
   try {
