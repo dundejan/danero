@@ -157,14 +157,21 @@ export function mtDateToIso(value: string): string | null {
  * Měna účtu z hlavičky reportu: „Currency: GBP“ v jedné buňce, „Currency:“
  * + kód v následující buňce (MT5 XLSX), fallback „Account: 123 (USD, …)“
  * — některé MT5 buildy měnu uvádí jen v závorce u čísla účtu.
+ *
+ * Kód napravo od popisku se v řádku hledá nejvýš jednou: když ho nenašel
+ * první popisek, nenajde ho ani žádný další — napravo od něj leží jen část
+ * týchž buněk. Řádek samých „Currency:“ by se jinak procházel znovu od
+ * každé buňky (D02-R1-01).
  */
 export function findAccountCurrency(rows: Array<{ cells: string[] }>): string | null {
   for (const row of rows) {
+    let codeSearched = false;
     for (let i = 0; i < row.cells.length; i += 1) {
       const cell = row.cells[i]!;
       const inline = /currency\s*:\s*([A-Za-z]{3})(?![A-Za-z])/i.exec(cell);
       if (inline) return inline[1]!.toUpperCase();
-      if (/^currency\s*:?$/i.test(cell.trim())) {
+      if (!codeSearched && /^currency\s*:?$/i.test(cell.trim())) {
+        codeSearched = true;
         for (let j = i + 1; j < row.cells.length; j += 1) {
           const next = /^([A-Za-z]{3})(?![A-Za-z])/.exec(row.cells[j]!.trim());
           if (next) return next[1]!.toUpperCase();

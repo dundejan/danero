@@ -519,6 +519,53 @@ describe('nezavřené závorky a značky (L8a-02): čas roste se souborem lineá
     expect(value).toBeNull();
   });
 
+  it('mnoho „Account:“ a jediná „)“ až na konci → závorka se zkouší jednou, ne u každého výskytu', () => {
+    // Bez paměti na už zkoušenou závorku se od každého „Account:“ čte až na
+    // konec buňky: 400 000 výskytů pak trvá kolem minuty místo desítek ms.
+    const rows = [{ cells: [`${'Account: '.repeat(REPEATS * 2)})`] }];
+    const { ms, value } = timed(() => findAccountCurrency(rows));
+    expect(ms).toBeLessThan(CEILING_MS);
+    expect(value).toBeNull();
+  });
+
+  // Řádek samých popisků měny bez jediného kódu (D02-R1-01). Počet je volený
+  // tak, aby hledání kódu znovu od každého popisku trvalo desítky sekund,
+  // a přitom rozbitá sada nevisela desítky minut.
+  const LABEL_CELLS = 60_000;
+  const LABEL_ROW = `<table><tr>${'<td>Currency:</td>'.repeat(LABEL_CELLS)}</tr></table>`;
+
+  it.each([
+    ['s dvojtečkou', 'Currency:'],
+    ['bez dvojtečky', 'currency'],
+  ])('řádek s 60 000 buňkami popisku měny %s a žádným kódem → měna se nenajde', (_name, label) => {
+    const rows = [{ cells: Array.from({ length: LABEL_CELLS }, () => label) }];
+    const { ms, value } = timed(() => findAccountCurrency(rows));
+    expect(ms).toBeLessThan(CEILING_MS);
+    expect(value).toBeNull();
+  });
+
+  it('kód měny až za 60 000 popisky se najde stejně rychle', () => {
+    const cells = Array.from({ length: LABEL_CELLS }, () => 'Currency:');
+    const { ms, value } = timed(() => findAccountCurrency([{ cells: [...cells, 'czk'] }]));
+    expect(ms).toBeLessThan(CEILING_MS);
+    expect(value).toBe('CZK');
+  });
+
+  it('MT5 i MT4 report bez měny s takovým řádkem skončí chybou „chybí měna účtu“ hned', () => {
+    const mt5Html = LABEL_ROW + buildMt5Html({ currency: null });
+    const mt4Html = buildMt4Html({ currency: null }).replace('<table', `${LABEL_ROW}<table`);
+    expect(sniffMt5Html(mt5Html)).toBe(true);
+    expect(sniffMt4Html(mt4Html)).toBe(true);
+    const mt5 = timed(() => parseMt5Html(mt5Html));
+    const mt4 = timed(() => parseMt4Html(mt4Html));
+    expect(mt5.ms).toBeLessThan(CEILING_MS);
+    expect(mt4.ms).toBeLessThan(CEILING_MS);
+    expect(mt5.value.transactions).toEqual([]);
+    expect(mt4.value.transactions).toEqual([]);
+    expect(mt5.value.errors[0]!.message).toContain('chybí měna účtu');
+    expect(mt4.value.errors[0]!.message).toContain('chybí měna účtu');
+  });
+
   it('MT5 i MT4 report s takovou buňkou navíc se zpracuje stejně jako bez ní', () => {
     const extraRow = `<table><tr><td>${UNCLOSED}</td></tr></table>`;
     const mt5 = timed(() => parseMt5Html(extraRow + MT5_HTML));
@@ -620,5 +667,63 @@ describe('ruční průchod HTML dává totéž co dřívější regulární výr
     }
     // ať test neporovnává jen samá „nenalezeno“
     expect(found).toBeGreaterThan(300);
+  });
+
+  // Původní hledání měny v řádku (D02-R1-01), opsané doslova: od každého
+  // popisku „Currency:“ se znovu prošly všechny buňky napravo.
+  function referenceRowCurrency(cells: readonly string[]): string | null {
+    for (let i = 0; i < cells.length; i += 1) {
+      const cell = cells[i]!;
+      const inline = /currency\s*:\s*([A-Za-z]{3})(?![A-Za-z])/i.exec(cell);
+      if (inline) return inline[1]!.toUpperCase();
+      if (/^currency\s*:?$/i.test(cell.trim())) {
+        for (let j = i + 1; j < cells.length; j += 1) {
+          const next = /^([A-Za-z]{3})(?![A-Za-z])/.exec(cells[j]!.trim());
+          if (next) return next[1]!.toUpperCase();
+        }
+      }
+    }
+    return null;
+  }
+
+  it.each([
+    ['kód hned za popiskem', ['Currency:', 'usd'], 'USD'],
+    ['kód ob několik buněk', ['Currency', '', '555001', 'eur, hedged'], 'EUR'],
+    ['popisek až za jinou buňkou', ['Name:', 'Currency:', 'usd'], 'USD'],
+    ['kód před popiskem se nepočítá',['GBP', 'Currency:', '555001'], null],
+    ['delší slovo není kód', ['Currency:', 'Euro', 'czk'], 'CZK'],
+    ['popisek bez kódu nezastaví čtení zbytku řádku', ['Currency:', '555001', 'Currency: pln'], 'PLN'],
+    ['dva popisky bez kódu, měna v jedné buňce až za nimi',['Currency:', 'x', 'Currency', 'Currency: chf'], 'CHF'],
+    ['měna v jedné buňce má přednost před kódem napravo', ['Currency: usd', 'Currency:', 'eur'], 'USD'],
+    ['dřívější popisek má přednost před pozdější měnou v jedné buňce', ['Currency:', 'eur', 'Currency: usd'], 'EUR'],
+  ] as const)('měna u popisku „Currency:“ — %s', (_name, cells, expected) => {
+    expect(referenceRowCurrency(cells)).toBe(expected);
+    expect(findAccountCurrency([{ cells: [...cells] }])).toBe(expected);
+  });
+
+  it('popisek bez kódu v jednom řádku neovlivní řádek další', () => {
+    const rows = [{ cells: ['Currency:', '555001'] }, { cells: ['Currency:', 'usd'] }];
+    expect(findAccountCurrency(rows)).toBe('USD');
+  });
+
+  it('náhodně poskládané buňky hlavičky: stejná měna u popisku „Currency:“', () => {
+    const tokens = [
+      'Currency:', 'currency', ' CURRENCY : ', 'Currency: usd', 'currency:eur', 'Currency: Euro',
+      'gbp', ' czk ', 'USD, hedged', 'Euro', 'Kc', '555001', '', 'x', 'Name:',
+    ] as const;
+    const sample = sampler(20261011);
+    let found = 0;
+    let missing = 0;
+    for (let i = 0; i < 20_000; i += 1) {
+      // jedna až devět buněk; délku určí tatáž opakovatelná „náhoda“
+      const cells = Array.from({ length: sample(['.'], 9).length }, () => sample(tokens, 1));
+      const expected = referenceRowCurrency(cells);
+      if (expected === null) missing += 1;
+      else found += 1;
+      expect(findAccountCurrency([{ cells }]), JSON.stringify(cells)).toBe(expected);
+    }
+    // ať test neporovnává jen jednu z obou odpovědí
+    expect(found).toBeGreaterThan(300);
+    expect(missing).toBeGreaterThan(300);
   });
 });
