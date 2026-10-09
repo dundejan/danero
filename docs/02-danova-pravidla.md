@@ -488,10 +488,16 @@ Dvě oddělené roviny:
   zdaňovacího období poplatníkem v paušálním režimu a jehož daň za toto zdaňovací
   období není rovna paušální dani.“) — nezávisle na limitech R-09a/R-09b.
 
-  ⚠️ **Od ZO 2027 bude tenhle výčet neúplný**: zák. č. 360/2025 Sb. (novelizační
-  body 17 a 18) doplňuje do § 7a odst. 1 písm. b) nový **bod 5** — příjmy podle § 6
-  odst. 4 — s účinností 1. 1. 2027. Do konfigurace roku 2027 to patří dřív, než se
-  za 2027 začne počítat.
+  **Od ZO 2027 má výčet v § 7a odst. 1 písm. b) pátý bod**: zák. č. 360/2025 Sb.
+  (novelizační body 17 a 18) do něj s účinností 1. 1. 2027 doplnil **bod 5 —
+  příjmy podle § 6 odst. 4** (příjmy ze závislé činnosti, ze kterých plátce
+  sráží daň zvláštní sazbou — typicky drobná dohoda o provedení práce). Bod 5
+  výčet povolených příjmů jen **rozšiřuje** a stojí vedle bodu 4: úhrn
+  50 000 Kč se podle bodu 4 dál počítá jen z příjmů z kapitálového majetku,
+  z nájmu a ostatních (§ 8–10) a jeho výše se nemění. Danero příjmy podle § 6
+  neeviduje a ruční pole ostatních příjmů je výslovně jen pro § 8–10, takže
+  konfigurace roku 2027 kvůli bodu 5 žádnou hodnotu nenese a R-08c/R-08d platí
+  beze změny (uzavřeno 9. 10. 2026, nález L3-02 revize 5).
 - **R-08c Co se do 50k NEPOČÍTÁ**: osvobozené příjmy (časový test splněn — R-01; úhrn prodejů CP ≤ 100k — R-02; krypto analogicky), české dividendy (R-07a) a české úroky **se sraženou daní** (R-07g — bez srážky se počítají). Objem osvobozených příjmů je neomezený.
 - **R-08d Co se POČÍTÁ (hrubé příjmy, ne zisk!)**: zahraniční dividendy **brutto**, neosvobozené **tržby** z prodeje CP/krypta, zdanitelné úroky, nájmy. Příklad: prodej za 120 000 Kč, držba < 3 roky, zisk 5 000 Kč → do limitu vstupuje 120 000 Kč → prolomeno.
 - **R-08e Důsledky prolomení**: daň není rovna paušální dani → povinnost podat přiznání (vše standardně vč. § 7) + přehledy ČSSZ a ZP + pojistné standardně; zaplacené paušální zálohy se započtou.
@@ -501,7 +507,7 @@ Dvě oddělené roviny:
   **doplatek daně** = orientační daň z § 8 + § 10 (varianta obecného základu
   po zápočtu zahraniční srážky, R-07c) **minus zaplacené zálohy na daň**
   z paušálních záloh. Započítává se jen **daňová složka** paušální zálohy
-  (§ 38lk odst. 1: 100 Kč/měsíc v 1. pásmu, tj. 1 200 Kč/rok) — pojistné složky
+  (§ 38lk odst. 7 písm. a): 100 Kč/měsíc v 1. pásmu, tj. 1 200 Kč/rok) — pojistné složky
   se započítávají v přehledech ČSSZ a ZP, ne v přiznání. Výše zálohy je
   v konfiguraci roku (`flatTaxAdvance`; 2024 = 7 498 Kč, 2025 = 8 716 Kč,
   2026 = 9 162 Kč měsíčně, vždy 1. pásmo — zdroj: Finanční správa, Informace
@@ -520,6 +526,41 @@ Dvě oddělené roviny:
   a tak ten předpoklad **říká nahlas** ve varování `FLAT_TAX_BROKEN` (nález A1-05).
   Chyba jde jen jedním směrem — doplatek je podhodnocený, nikdy nadhodnocený.
 
+  **Přirážka k paušální záloze od ZO 2027** (zák. č. 180/2026 Sb., část druhá,
+  účinnost 1. 1. 2027). Poplatník v 1. pásmu se může přihlásit k přirážce, která
+  ho zprošťuje povinnosti evidovat tržby (§ 2b ZDP; jen pokud jeho příjmy ze
+  samostatné činnosti v předchozím období nepřesáhly 1 000 000 Kč). Přirážka
+  činí **1 400 Kč měsíčně** (§ 38lk odst. 8) a zvyšuje **daňovou složku** zálohy
+  — § 38lk odst. 7 písm. a): „100 Kč pro první pásmo paušálního režimu; jde-li
+  o poplatníka přihlášeného k přirážce, tato záloha se zvyšuje o přirážku“.
+  Takový poplatník tedy v roce 2027 platí 9 662 + 1 400 = **11 062 Kč** měsíčně,
+  z toho na daň **1 500 Kč**. O součin počtu měsíců s přirážkou a přirážky se
+  zvyšuje paušální daň (nový § 7a odst. 7; dosavadní odst. 7 a 8 jsou nově 8
+  a 9, odst. 5 o zápočtu zůstává) a stejně tak **daň v přiznání**, když daň
+  paušální dani rovna není (§ 16ab odst. 4).
+
+  **Doplatek se přirážkou nemění — důkaz.** Označme *D* daň z přiznání bez
+  přirážky, *m* počet měsíců s přirážkou a *P* = 1 400 Kč.
+
+  - Bez přirážky: doplatek = *D* − 12 × 100.
+  - S přirážkou: daň = *D* + *m* × *P* (§ 16ab odst. 4), zaplacené zálohy na daň
+    = 12 × 100 + *m* × *P* (§ 38lk odst. 7 písm. a)), doplatek
+    = (*D* + *m* × *P*) − (12 × 100 + *m* × *P*) = *D* − 12 × 100.
+
+  Engine proto přirážku do výpočtu **nezahrnuje na žádné straně** — ani do daně,
+  ani do započtených záloh — a `breachImpact` vychází stejně, ať je poplatník
+  k přirážce přihlášený, nebo ne. ⚠️ Kdo by v budoucnu započetl skutečnou
+  daňovou složku 1 500 Kč a daň podle § 16ab odst. 4 nezvýšil, **podhodnotil by
+  doplatek o 16 800 Kč** (12 × 1 400). § 16ab odst. 5 a 6 řeší tutéž částku
+  u daňového bonusu; ten Danero nepočítá.
+
+  Přihlášení k přirážce profil poplatníka nenese (stejně jako pásmo) a z dat se
+  zjistit nedá. Varování `FLAT_TAX_BROKEN` proto za rok, jehož konfigurace
+  přirážku zná (`flatTaxAdvance.monthlySurchargeCzk`, od 2027), uvádí základní
+  částky 1. pásma a **dovětkem říká**, kolik platí poplatník s přirážkou a že
+  doplatek vychází stejně — do 9. 10. 2026 věta jmenovala jen 9 662 Kč a 100 Kč,
+  tedy částky, které takový poplatník neplatí (nález L3-02 revize 5).
+
   **Pojistné engine nepočítá** (chybí základ § 7, který je mimo evidovaná data) —
   varování ho zmiňuje slovně: prolomením vzniká povinnost podat přehledy ČSSZ
   a ZP a doplatit pojistné ze skutečných příjmů. Doplatek daně z § 7 taky není
@@ -527,8 +568,35 @@ Dvě oddělené roviny:
 
 ## R-09 Povinnost podat přiznání (§ 38g) a oznámení (§ 38v)
 
-- **R-09a** Obecný limit: zdanitelné příjmy > 50 000 Kč/rok (mimo osvobozené a srážkové).
-- **R-09b** Zaměstnanec: vedlejší příjmy § 7–10 > **20 000 Kč** (hrubé zdanitelné) → přiznání. Danero hlídá pro profil „zaměstnanec".
+- **R-09a** Obecný limit (§ 38g odst. 1): roční zdanitelné příjmy (mimo osvobozené a srážkové) nad částku platnou pro dané zdaňovací období → přiznání. **Do ZO 2026 včetně 50 000 Kč, od ZO 2027 100 000 Kč.**
+- **R-09b** Zaměstnanec (§ 38g odst. 2): vedlejší příjmy § 7–10 (hrubé zdanitelné) nad částku platnou pro dané zdaňovací období → přiznání. **Do ZO 2026 včetně 20 000 Kč, od ZO 2027 40 000 Kč.** Danero hlídá pro profil „zaměstnanec".
+
+  **Částky § 38g po letech** (v konfiguraci roku `limits.generalFiling`
+  a `limits.employeeSideIncome`):
+
+  | Zdaňovací období | R-09a (§ 38g odst. 1) | R-09b (§ 38g odst. 2) |
+  |---|---|---|
+  | do 2026 včetně | 50 000 Kč | 20 000 Kč |
+  | od 2027 | 100 000 Kč | 40 000 Kč |
+
+  Zdroj: zák. č. 180/2026 Sb. (o evidenci tržeb a o změně některých dalších
+  zákonů, ve Sbírce od 7. 10. 2026), část druhá, § 30, novelizační body 21
+  („V § 38g odst. 1 se částka ‚50 000 Kč‘ nahrazuje částkou ‚100 000 Kč‘“) a 22
+  („… částka ‚20 000 Kč‘ se nahrazuje částkou ‚40 000 Kč‘“). Účinnost
+  1. 1. 2027 (§ 36). Přechodné ustanovení § 31 bod 1: pro daňové povinnosti za
+  zdaňovací období **započaté před účinností** se použije dosavadní znění —
+  přiznání za rok 2026, které se podává na jaře 2027, se tedy ještě řídí
+  částkami 50 000 / 20 000 Kč, nové platí až pro příjmy roku 2027.
+
+  **Limit 50 000 Kč pro daň rovnou paušální dani se nemění** (§ 7a odst. 1
+  písm. b) bod 4, R-08b) — novela se dotkla jen § 38g. Od roku 2027 tak
+  paušalista hlídá poloviční částku než poplatník bez zaměstnání.
+
+  Klíče `employee20k` a `generalFiling50k` ve výsledku enginu jsou historické
+  identifikátory; platnou částku nese vždy `status.limitCzk`. Do 9. 10. 2026
+  měl rok 2027 v registru částky roku 2026 a zaměstnanci s vedlejšími příjmy
+  20–40 tisíc Kč by od 1. 1. 2027 tvrdil, že přiznání podává (nález L3-01
+  revize 5).
 - **R-09c** Paušální OSVČ: viz R-08.
 - **R-09d § 38v**: oznámení osvobozeného příjmu > **5 mil. Kč** (jednotlivý příjem = „v jednom čase z jednoho titulu od jednoho subjektu", D-59) — týká se i prodejů osvobozených časovým testem; pokuty 0,1–15 % (§ 38w). Danero: detekce jednotlivých prodejů > 5M a upozornění.
 
@@ -682,7 +750,8 @@ poznámka GFŘ v KOOV 625); po vydání pravidla zrevidovat.
   (2025: `['SECURITIES','CRYPTO']`; 2026+: `['CRYPTO']`).
 - **R-10f Limity 50k/20k a § 38v**: **neosvobozené** krypto tržby (**hrubé**, ne zisk)
   se počítají do limitu 50k pro daň rovnou paušální dani (§ 7a, R-08d), do limitu
-  20k zaměstnance (R-09b) i obecného 50k (R-09a) — včetně tržeb 1. 1.–14. 2. 2025
+  zaměstnance (R-09b; 20k, od ZO 2027 40k) i obecného limitu pro přiznání (R-09a;
+  50k, od ZO 2027 100k) — včetně tržeb 1. 1.–14. 2. 2025
   (R-10b). Jednotlivý **osvobozený** krypto příjem > 5 mil. Kč podléhá oznámení
   dle § 38v (R-09d).
 - **R-10g Sporné body (⚠️, bezpečné defaulty)**:
@@ -1022,7 +1091,8 @@ CFD) a Lynx, Fio ani Patria k jeho zdanění nic neuvádějí. Pravidlo proto st
   vstupuje do všech úhrnů, které se počítají z **hrubých zdanitelných příjmů**:
   50 000 Kč pro daň rovnou paušální dani (§ 7a odst. 1 písm. b bod 4),
   20 000 Kč u zaměstnance (§ 38g odst. 2) i 50 000 Kč obecné povinnosti podat
-  přiznání (§ 38g odst. 1). Plyne to přímo z R-08d („neosvobozené **tržby**
+  přiznání (§ 38g odst. 1) — od ZO 2027 40 000 Kč a 100 000 Kč (R-09a, R-09b).
+  Plyne to přímo z R-08d („neosvobozené **tržby**
   z prodeje CP") a z R-13a („týž druh").
 
   ⚠️ **Podmínkou je, že příjem OSVOBOZENÝ NENÍ.** Padne-li celý úhrn prodejů CP
@@ -1136,11 +1206,23 @@ posledního — daň by se spočítala podle loňských čísel a nikde by to ne
   v `limits/limits.ts`) — recyklace je obcházela obě.
 - **R-15b Co se přenášet SMÍ a co ne.** Přenést se smí jen **struktura právního
   stavu**, která platí, dokud ji nezmění novela: dostupnost osvobození
-  kryptoaktiv (R-10b), rozsah stropu 40 mil. (R-03/R-10e), limity 100 000 /
-  50 000 / 20 000 / 5 mil. Kč — ty jsou v zákoně pevnou částkou, ne odkazem na
-  každoročně vyhlašovaný údaj. Přenést se **nesmí** nic, co stát každý rok
-  vyhlašuje znovu: **hranice 23 % sazby** (§ 16 odst. 1 ZDP, 36násobek průměrné
-  mzdy) a **výše paušální zálohy** (§ 38lk, R-08f).
+  kryptoaktiv (R-10b), rozsah stropu 40 mil. (R-03/R-10e) a zákonné částky —
+  osvobození 100 000 Kč (R-02, R-10a), 50 000 Kč paušální daně (R-08b), limity
+  § 38g (R-09a, R-09b), 5 mil. Kč pro oznámení (R-09d) a přirážka k paušální
+  záloze (R-08f). V zákoně stojí číslem, ne odkazem na každoročně vyhlašovaný
+  údaj. Přenést se **nesmí** nic, co stát každý rok vyhlašuje znovu: **hranice
+  23 % sazby** (§ 16 odst. 1 ZDP, 36násobek průměrné mzdy) a **výše paušální
+  zálohy** (§ 38lk, R-08f).
+
+  ⚠️ **„Stojí v zákoně číslem“ neznamená „nemění se“.** Přenos platí jen do
+  účinnosti novely, která částku přepíše — a stalo se to hned u prvního roku
+  doplněného do registru: rok 2027 zdědil z roku 2026 limity § 38g 50 000 /
+  20 000 Kč, přestože je zák. č. 180/2026 Sb. od ZO 2027 zvedl na 100 000 /
+  40 000 Kč (R-09a, R-09b; nález L3-01 revize 5). Při doplňování roku R+1 se
+  proto **každá zděděná částka ověřuje proti Sbírce** (runbook, kroky 3 a 5)
+  a rok, který se liší, ji v konfiguraci **přepíše výslovně** — jako rok 2027
+  u `generalFiling` a `employeeSideIncome`. Částky po letech drží test
+  (`packages/engine/test/limits.test.ts`, `tax-year-registry.test.ts`).
 - **R-15c Proč hranice v lednu ještě neexistuje.** „Průměrná mzda“ podle § 21g ZDP
   je součin **všeobecného vyměřovacího základu** za rok, který o dva roky
   předchází, a **přepočítacího koeficientu** (§ 23b odst. 4 zák. č. 589/1992 Sb.).
@@ -1155,8 +1237,9 @@ posledního — daň by se spočítala podle loňských čísel a nikde by to ne
   od 1. 10. i pro **rok následující** — tedy tři měsíce před tím, než by se
   chybějící rok mohl objevit uživateli.
 - **R-15e Co uvidí uživatel.** Rok mimo registr **není chyba a nesmí ani zhasnout
-  stránku**: prodeje, limity (100k, 50k, 20k) i časové testy se počítají dál,
-  protože ty na vyhlašovaných číslech nestojí. Odpadá jen to, co bez nich spočítat
+  stránku**: prodeje, limity (osvobození 100 000 Kč, 50 000 Kč paušální daně
+  i limity § 38g v částkách posledního roku v registru — R-15b) i časové testy
+  se počítají dál, protože ty na vyhlašovaných číslech nestojí. Odpadá jen to, co bez nich spočítat
   nejde — a přehled i report to řeknou jednou českou větou bez žargonu
   (komponenta `TaxYearConfigNotice`): že čísla pro nový rok stát vyhlašuje až na
   podzim, co z toho plyne (daň z velmi vysokého zisku vychází bez vyšší sazby
@@ -1219,7 +1302,10 @@ tak ozve v CI, ne rozbitou aplikací.
    konfiguraci roku **R+1** — průměrnou mzdu pro **23% hranici** (`progressiveThreshold`)
    a **výši paušální zálohy** (`flatTaxAdvance`, R-08f). Když finanční správa zálohu do
    té doby nezveřejnila, zapíše se dopočet podle § 38lk ZDP s poznámkou v komentáři
-   a po vydání „Informace k institutu paušální daně“ se ověří. Bez tohohle kroku je rok
+   a po vydání „Informace k institutu paušální daně“ se ověří. Zákonné částky, které
+   nový rok z předchozího dědí (limity, přirážka k záloze), se při tom **ověří proti
+   novelám účinným od 1. 1. roku R+1** a změněné se v konfiguraci přepíšou výslovně
+   (R-15b). Bez tohohle kroku je rok
    R+1 mimo registr a aplikace u něj poctivě řekne „nevím“ (R-15e). Hlídá
    `apps/web/test/runbook.test.ts`. Při téže příležitosti se **přepočítá orientační
    kurz roku R** (viz níž).
@@ -1251,7 +1337,7 @@ o jednotky procent.
 - [Pokyn GFŘ D-59](https://financnisprava.gov.cz/assets/cs/prilohy/d-sprava-dani-a-poplatku/Pokyn_GFR-D-59.pdf) (okamžik nabytí, druh příjmu, § 38v)
 - [Pokyn GFŘ D-75 — jednotný kurz 2025](https://financnisprava.gov.cz/cs/dane/legislativa-a-metodika/pokyny-d/cleneni-podle-dani/dane-z-prijmu/2026/pokyn-gfr-d-75)
 - [FS — FAQ paušální daň](https://financnisprava.gov.cz/cs/dane/dane/dan-z-prijmu/pausalni-dan/dotazy-a-odpovedi/dotazy-a-odpovedi-k-pausalni-dani) (ot. 61: 50k limit)
-- Novely: 349/2023 Sb. (40M + step-up), 32/2025 Sb. (krypto — § 4/1 zj, zk; účinnost 15. 2. 2025), 360/2025 Sb. (zrušení 40M pro CP od 2026; pro krypto trvá)
+- Novely: 349/2023 Sb. (40M + step-up), 32/2025 Sb. (krypto — § 4/1 zj, zk; účinnost 15. 2. 2025), 360/2025 Sb. (zrušení 40M pro CP od 2026; pro krypto trvá), 180/2026 Sb. (od ZO 2027 limity § 38g 100 000 / 40 000 Kč a přirážka 1 400 Kč k paušální záloze 1. pásma)
 - KOOV **625/30.04.25** (Nesrovnal, Nešleha) — osvobození příjmů z úplatného převodu kryptoaktiv, **souhlas GFŘ** se všemi závěry (MiCA vymezení; časové dopady účinnosti; limit 100k jen od 15. 2. 2025; 40M bez krácení; bez step-upu)
 - [GFŘ Informace č. j. 18809/22/7100-40050-205680](https://financnisprava.gov.cz/cs/dane/dane/dan-z-prijmu/informace-stanoviska-a-sdeleni/informace-k-danovemu-posouzeni-transakci-s-kryptomenami) — daňové posouzení transakcí s kryptoměnami (nehmotná movitá věc, § 10; směna krypto-krypto zdanitelná)
 - NSS 7 Afs 229/2022 (přerušení testu při výměně akcií se změnou jmenovité hodnoty)

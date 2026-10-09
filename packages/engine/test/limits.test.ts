@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TAX_YEAR_CONFIGS, type TaxYearConfig } from '../src';
 import { buy, CFG_2025, dividend, hasWarning, run, sell } from './helpers';
 
 describe('R-02 hodnotový test 100 000 Kč', () => {
@@ -367,5 +368,171 @@ describe('R-09: limity podání říkají, že o příjmech z § 7 nevědí (A1-
       profile: { regime: 'PAUSAL' },
     });
     expect(hasWarning(result, 'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT')).toBe(false);
+  });
+});
+
+/** Konfigurace roku přímo z registru — test má držet čísla, která uvidí uživatel. */
+const registryConfig = (year: number): TaxYearConfig => {
+  const config = TAX_YEAR_CONFIGS[year];
+  if (!config) throw new Error(`rok ${year} v registru chybí`);
+  return config;
+};
+
+/** Zahraniční dividenda v korunách v daném roce — hrubý zdanitelný příjem bez kurzu. */
+const dividendIn = (year: number, gross: string) =>
+  dividend({ gross, sourceCountry: 'US', date: `${year}-03-10` });
+
+/**
+ * R-09a/R-09b: zák. č. 180/2026 Sb. (část druhá, body 21 a 22) zvedl od
+ * zdaňovacího období 2027 obě částky § 38g na dvojnásobek. Rok 2027 přitom
+ * do registru přišel s limity roku 2026 a zaměstnanci s vedlejšími příjmy
+ * 20–40 tisíc by tvrdil, že přiznání podává (nález L3-01 revize 5).
+ */
+describe('R-09a/R-09b: limity § 38g po letech (zák. č. 180/2026 Sb.)', () => {
+  it('R-09b: zaměstnanec s 30 000 Kč vedle mzdy podává přiznání za 2026, za 2027 už ne', () => {
+    const before = run([dividendIn(2026, '30000')], {
+      profile: { regime: 'ZAMESTNANEC' },
+      config: registryConfig(2026),
+    });
+    expect(before.limits.employee20k.status.limitCzk.toString()).toBe('20000');
+    expect(before.limits.employee20k.status.zone).toBe('EXCEEDED');
+
+    const after = run([dividendIn(2027, '30000')], {
+      profile: { regime: 'ZAMESTNANEC' },
+      config: registryConfig(2027),
+    });
+    expect(after.limits.employee20k.applicable).toBe(true);
+    expect(after.limits.employee20k.status.limitCzk.toString()).toBe('40000');
+    expect(after.limits.employee20k.status.zone).toBe('WARNING');
+    expect(after.limits.employee20k.status.exceeded).toBe(false);
+  });
+
+  it('R-09b: hrana 2027 — přesně 40 000 Kč ještě vyhovuje, koruna navíc už ne', () => {
+    const at = run([dividendIn(2027, '40000')], {
+      profile: { regime: 'ZAMESTNANEC' },
+      config: registryConfig(2027),
+    });
+    expect(at.limits.employee20k.status.exceeded).toBe(false);
+
+    const over = run([dividendIn(2027, '40001')], {
+      profile: { regime: 'ZAMESTNANEC' },
+      config: registryConfig(2027),
+    });
+    expect(over.limits.employee20k.status.exceeded).toBe(true);
+  });
+
+  it('R-09a: bez zaměstnání 70 000 Kč — za 2026 přiznání ano, za 2027 ne', () => {
+    const before = run([dividendIn(2026, '70000')], {
+      profile: { regime: 'JINE' },
+      config: registryConfig(2026),
+    });
+    expect(before.limits.generalFiling50k.status.limitCzk.toString()).toBe('50000');
+    expect(before.limits.generalFiling50k.status.zone).toBe('EXCEEDED');
+
+    const after = run([dividendIn(2027, '70000')], {
+      profile: { regime: 'JINE' },
+      config: registryConfig(2027),
+    });
+    expect(after.limits.generalFiling50k.applicable).toBe(true);
+    expect(after.limits.generalFiling50k.status.limitCzk.toString()).toBe('100000');
+    expect(after.limits.generalFiling50k.status.exceeded).toBe(false);
+
+    const over = run([dividendIn(2027, '100001')], {
+      profile: { regime: 'JINE' },
+      config: registryConfig(2027),
+    });
+    expect(over.limits.generalFiling50k.status.exceeded).toBe(true);
+  });
+
+  it('R-09: hláška o příjmech z § 7 jmenuje limit toho roku, ne loňský', () => {
+    const result = run([dividendIn(2027, '30000')], {
+      profile: { regime: 'ZAMESTNANEC' },
+      config: registryConfig(2027),
+    });
+    const warning = result.warnings.find((w) => w.code === 'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT');
+    expect(warning?.context).toMatchObject({ limitCzk: '40000.00' });
+  });
+
+  it('R-08b: limit 50 000 Kč pro daň rovnou paušální dani novela nemění', () => {
+    // § 7a odst. 1 písm. b) bod 4 zůstal — mění se jen § 38g
+    expect(registryConfig(2027).limits.flatTaxOtherIncome).toBe('50000');
+    const result = run([dividendIn(2027, '60000')], {
+      profile: { regime: 'PAUSAL' },
+      config: registryConfig(2027),
+    });
+    expect(result.limits.flatTax50k.status.limitCzk.toString()).toBe('50000');
+    expect(result.limits.flatTax50k.status.exceeded).toBe(true);
+  });
+
+  it('R-15b: registr nese částky § 38g po letech — do 2026 staré, od 2027 nové', () => {
+    for (const year of [2024, 2025, 2026]) {
+      expect(registryConfig(year).limits.generalFiling, `rok ${year}`).toBe('50000');
+      expect(registryConfig(year).limits.employeeSideIncome, `rok ${year}`).toBe('20000');
+    }
+    expect(registryConfig(2027).limits.generalFiling).toBe('100000');
+    expect(registryConfig(2027).limits.employeeSideIncome).toBe('40000');
+    // ostatní zákonné částky rok 2027 dědí beze změny
+    expect(registryConfig(2027).limits.securitiesProceedsExemption).toBe('100000');
+    expect(registryConfig(2027).limits.cryptoProceedsExemption).toBe('100000');
+    expect(registryConfig(2027).limits.exemptIncomeReporting).toBe('5000000');
+    expect(registryConfig(2027).limits.timeTestCap).toEqual(registryConfig(2026).limits.timeTestCap);
+  });
+});
+
+/**
+ * R-08f: od ZO 2027 se paušalista v 1. pásmu může přihlásit k přirážce
+ * 1 400 Kč měsíčně, která ho zprošťuje evidence tržeb (§ 2b, § 38lk odst. 7
+ * písm. a) a odst. 8 ZDP ve znění zák. č. 180/2026 Sb.). Věta o zálohách
+ * uváděla jen 9 662 Kč a 100 Kč — částky, které takový poplatník neplatí
+ * (nález L3-02 revize 5). Doplatek se přitom nemění: o přirážku roste daň
+ * v přiznání (§ 16ab odst. 4) i zaplacené zálohy na daň.
+ */
+describe('R-08f: přirážka k paušální záloze od ZO 2027', () => {
+  const plain = (text: string): string => text.replaceAll(String.fromCharCode(160), ' ');
+  const breach = (year: number) =>
+    run([dividendIn(year, '80000')], {
+      profile: { regime: 'PAUSAL' },
+      config: registryConfig(year),
+    });
+
+  it('věta o zálohách za 2027 řekne, kolik platí poplatník s přirážkou', () => {
+    const warning = breach(2027).warnings.find((w) => w.code === 'FLAT_TAX_BROKEN')!;
+    const message = plain(warning.message);
+
+    // základní částky 1. pásma zůstávají
+    expect(message).toContain('100 Kč měsíčně z paušální zálohy 9 662 Kč, 1. pásmo');
+    // dovětek: přirážka, záloha s ní a její daňová složka
+    expect(message).toContain('přirážce 1 400 Kč měsíčně');
+    expect(message).toContain('11 062 Kč');
+    expect(message).toContain('1 500 Kč');
+    // a hlavně: doplatek je stejný, ať přirážku platí, nebo ne
+    expect(message).toContain('doplatek se tím nemění');
+  });
+
+  it('doplatek se přirážkou nemění — zálohy se započítávají bez ní na obou stranách', () => {
+    const impact = breach(2027).limits.flatTax50k.breachImpact!;
+    // dividenda 80 000 Kč × 15 % = 12 000 Kč; zálohy na daň 12 × 100 Kč
+    expect(impact.taxCzk.toString()).toBe('12000');
+    expect(impact.advancesCreditCzk.toString()).toBe('1200');
+    expect(impact.additionalTaxCzk.toString()).toBe('10800');
+    expect(impact.monthlyAdvanceCzk!.toString()).toBe('9662');
+  });
+
+  it('za rok 2026 a starší o přirážce nepadne ani slovo', () => {
+    for (const year of [2025, 2026]) {
+      const warning = breach(year).warnings.find((w) => w.code === 'FLAT_TAX_BROKEN')!;
+      expect(warning.message, `rok ${year}`).not.toContain('přirážc');
+    }
+  });
+
+  it('registr: přirážka 1 400 Kč je jen u roku 2027', () => {
+    expect(registryConfig(2027).flatTaxAdvance).toEqual({
+      monthlyTotalCzk: '9662',
+      monthlyTaxCzk: '100',
+      monthlySurchargeCzk: '1400',
+    });
+    for (const year of [2024, 2025, 2026]) {
+      expect(registryConfig(year).flatTaxAdvance?.monthlySurchargeCzk, `rok ${year}`).toBeUndefined();
+    }
   });
 });

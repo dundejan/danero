@@ -147,6 +147,47 @@ describe('přechod roku: rok mimo registr konfigurací (R-15, K1-01)', () => {
     expect(config.limits.securitiesProceedsExemption).toBe('100000');
     expect(config.limits.flatTaxOtherIncome).toBe('50000');
     expect(config.cryptoRules.exemptionsAvailable).toBe(true);
+    // limity § 38g dědí z POSLEDNÍHO roku v registru, tedy už po novele
+    // (R-09a, R-09b) — ne z roku 2026
+    expect(config.limits.generalFiling).toBe(LAST_KNOWN.limits.generalFiling);
+    expect(config.limits.employeeSideIncome).toBe(LAST_KNOWN.limits.employeeSideIncome);
+    expect(config.limits.generalFiling).toBe('100000');
+    expect(config.limits.employeeSideIncome).toBe('40000');
+  });
+
+  it('R-09a, R-09b: limity § 38g jsou za rok 2026 staré, od roku 2027 dvojnásobné', () => {
+    // zák. č. 180/2026 Sb. platí až pro zdaňovací období 2027 — přiznání za rok
+    // 2026 (jaro 2027) se ještě řídí 50 000 / 20 000 Kč (nález L3-01 revize 5)
+    expect(configForYear(2026).limits.generalFiling).toBe('50000');
+    expect(configForYear(2026).limits.employeeSideIncome).toBe('20000');
+    expect(configForYear(2027).limits.generalFiling).toBe('100000');
+    expect(configForYear(2027).limits.employeeSideIncome).toBe('40000');
+    // limit paušální daně (§ 7a) se nemění
+    expect(configForYear(2027).limits.flatTaxOtherIncome).toBe('50000');
+  });
+
+  it('R-09b: zaměstnanec s 30 000 Kč vedle mzdy je za 2026 nad limitem, za 2027 pod ním', () => {
+    const dividendIn = (year: number): Transaction[] =>
+      parseTransactions([
+        {
+          type: 'DIVIDEND',
+          id: `d-${year}`,
+          sourceCountry: 'US',
+          gross: '30000',
+          currency: 'CZK',
+          withholdingTax: '0',
+          date: `${year}-03-10`,
+        },
+      ]);
+    const employee: ProfileRow = { ...PROFILE, regime: 'ZAMESTNANEC' };
+
+    const before = analyzeTaxYear(engineInputForUser(dividendIn(2026), employee, 2026));
+    expect(before.limits.employee20k.status.limitCzk.toString()).toBe('20000');
+    expect(before.limits.employee20k.status.zone).toBe('EXCEEDED');
+
+    const after = analyzeTaxYear(engineInputForUser(dividendIn(2027), employee, 2027));
+    expect(after.limits.employee20k.status.limitCzk.toString()).toBe('40000');
+    expect(after.limits.employee20k.status.exceeded).toBe(false);
   });
 
   it('roky v registru si drží svá vyhlášená čísla beze změny', () => {
@@ -156,6 +197,9 @@ describe('přechod roku: rok mimo registr konfigurací (R-15, K1-01)', () => {
     expect(configForYear(2026).flatTaxAdvance?.monthlyTotalCzk).toBe('9162');
     expect(configForYear(2027).progressiveThreshold).toBe('1859868');
     expect(configForYear(2027).flatTaxAdvance?.monthlyTotalCzk).toBe('9662');
+    // R-08f: přirážku k záloze zná až rok 2027 (§ 38lk odst. 8)
+    expect(configForYear(2026).flatTaxAdvance?.monthlySurchargeCzk).toBeUndefined();
+    expect(configForYear(2027).flatTaxAdvance?.monthlySurchargeCzk).toBe('1400');
   });
 
   it('rok před registrem taky nehádá — hranici 23 % pro něj neznáme', () => {
