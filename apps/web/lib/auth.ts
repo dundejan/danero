@@ -12,7 +12,11 @@ import {
   beforeHooks,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
-import { handleExistingUserSignUp, settleSignupContest } from '@/lib/auth-signup';
+import {
+  closeSignupContestAfterPasswordReset,
+  handleExistingUserSignUp,
+  settleSignupContest,
+} from '@/lib/auth-signup';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -167,6 +171,7 @@ function buildAuth(db: Db) {
       // projde „zapomenuté heslo" a majitel účtu nesmí zůstat bez stopy.
       onPasswordReset: async ({ user }) => {
         await revokePasswordResetTokens(db, user.id);
+        await closeSignupContestAfterPasswordReset(db, user);
         const { logAudit } = await import('@/lib/audit');
         await logAudit(db, user.id, 'PASSWORD_CHANGE', 'obnova přes odkaz v e-mailu');
       },

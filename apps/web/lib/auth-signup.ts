@@ -48,8 +48,10 @@ import { hashPassword, verifyPassword } from '@/lib/password';
  * takže platí i pro účet, který na ní vznikl později: kdyby spor visel na id
  * účtu, držitel by ho shodil tím, že účet smaže a adresu si předregistruje
  * znovu (a stejně tak změnou e-mailu jinam a zpátky). Ze stejného důvodu spor
- * neruší registrace stejným heslem ani zrušení účtu — končí jen potvrzením
- * adresy nebo vypršením.
+ * neruší registrace stejným heslem, zrušení účtu ani jeho odchod z adresy —
+ * končí potvrzením adresy, vypršením, nebo tím, že předregistrovaný účet na ní
+ * projde obnovou hesla (`closeSignupContestAfterPasswordReset`, D01-R2-01): ta
+ * dokládá schránku stejně jako potvrzení a udělá s účtem totéž.
  *
  * Potvrzeného účtu se tohle netýká vůbec — tam o hesle rozhoduje jen majitel.
  *
@@ -78,6 +80,14 @@ const CONTEST_PREFIX = 'signup-contest:';
  * obnoví.
  */
 const CONTEST_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * O kolik se smí lišit `updatedAt` od `createdAt` u účtu, který od založení
+ * nikdo nezměnil: Better Auth obě hodnoty bere dvěma voláními `new Date()` po
+ * sobě. Změna e-mailu se do toho nevejde — mezi založením účtu a ní leží
+ * potvrzení adresy, přihlášení a dvojí ověření hesla (scrypt).
+ */
+const UNTOUCHED_TOLERANCE_MS = 50;
 
 interface ExistingUser {
   id: string;
@@ -158,6 +168,50 @@ export async function handleExistingUserSignUp(
   } catch (error) {
     logEvent('error', 'auth.existing_signup_failed', { userId: user.id, error: errorText(error) });
   }
+}
+
+/**
+ * Háček `emailAndPassword.onPasswordReset` (D01-R2-01): dokončená obnova hesla
+ * spor adresy účtu uzavře.
+ *
+ * Spor říká „v účtu může být heslo a relace někoho, kdo schránku nevlastní“.
+ * Po obnově to neplatí: odkaz přišel jen do schránky, heslo zná jen ten, kdo
+ * ho otevřel, a relace jsou pryč. Bez tohohle by potvrzení adresy zrušilo
+ * heslo, které si majitel před chvílí sám nastavil — přesně to se stane tomu,
+ * kdo ověřovací e-mail přehlédne, přihlášení mu ohlásí „špatné heslo“ (v účtu
+ * je ještě to z předregistrace) a on jde na „Zapomenuté heslo“.
+ *
+ * ⚠️ Relace se ruší TADY a dřív než spor, i když je Better Auth ruší taky
+ * (`revokeSessionsOnPasswordReset`): ten to dělá až PO tomhle háčku, takže
+ * kdyby jeho mazání selhalo, zůstal by účet bez sporu a s cizí relací. Když
+ * selže cokoli tady, spor zůstane a rozhodne se až při potvrzení adresy.
+ *
+ * ⚠️ Jen u účtu, který od založení NIKDO NEZMĚNIL (`updatedAt` = `createdAt`),
+ * tedy u předregistrace. Obnova dokládá schránku, do které odkaz ODEŠEL, a ta
+ * nemusí být ta dnešní: Better Auth odkaz spotřebuje, pak stovky milisekund
+ * počítá otisk hesla a účet si přečte až potom. Kdo má zavedený účet, nechal
+ * by si odkaz poslat na vlastní adresu a souběžně s obnovou přešel změnou
+ * e-mailu na spornou cizí — spor by zavřel heslem, které zná on, a majitel by
+ * pak svým odkazem potvrdil účet s cizím heslem (D01-R1-01). `changeEmailAction`
+ * zapisuje `updatedAt` týmž příkazem jako novou adresu, takže účet, který kdy
+ * adresu změnil, touhle podmínkou neprojde ani při souběhu; účet, který ji
+ * nezměnil, má adresu od založení stejnou a odkaz jinam odejít nemohl.
+ * U zavedeného účtu tedy spor zůstává a rozhodne potvrzení adresy.
+ */
+export async function closeSignupContestAfterPasswordReset(
+  db: Db,
+  user: { id: string; email: string; createdAt: Date; updatedAt: Date },
+): Promise<void> {
+  if (user.updatedAt.getTime() - user.createdAt.getTime() > UNTOUCHED_TOLERANCE_MS) return;
+  const identifier = contestIdentifier(user.email);
+  const [contest] = await db
+    .select({ id: verification.id })
+    .from(verification)
+    .where(eq(verification.identifier, identifier))
+    .limit(1);
+  if (!contest) return;
+  await db.delete(session).where(eq(session.userId, user.id));
+  await db.delete(verification).where(eq(verification.identifier, identifier));
 }
 
 /**

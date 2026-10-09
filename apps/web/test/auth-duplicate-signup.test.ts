@@ -82,11 +82,12 @@ async function signInCookie(auth: Auth, email: string, password: string): Promis
     .join('; ');
 }
 
-/** Klikne na ověřovací odkaz z posledního e-mailu na danou adresu. */
+/** Klikne na poslední ověřovací odkaz, který na danou adresu přišel. */
 async function confirmAddress(auth: Auth, logPath: string, address: string): Promise<void> {
   const link = emailsTo(logPath, address)
-    .at(-1)
-    ?.text.match(/https?:\/\/\S*verify-email\S*/)?.[0];
+    .map((message) => message.text.match(/https?:\/\/\S*verify-email\S*/)?.[0])
+    .filter((found): found is string => Boolean(found))
+    .at(-1);
   if (!link) throw new Error(`Na ${address} nepřišel ověřovací odkaz`);
   const token = new URL(link).searchParams.get('token');
   await auth.api.verifyEmail({ query: { token: token! } });
@@ -365,6 +366,117 @@ describe('druhá registrace téže adresy (L8a-01)', () => {
       expect((await accountState(email)).passwordAudits).toHaveLength(1);
     },
   );
+
+  it(
+    'D01-R2-01: heslo z dokončené obnovy potvrzení sporné adresy přežije, heslo z předregistrace ne',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'majitel-obnova@priklad.test';
+      const resetPassword = 'heslo-z-obnovy-2026-03';
+      const contestsBefore = (await contestRows()).length;
+      const log = startEmailLog();
+
+      // cizí předregistrace, pak registrace majitele vlastním heslem → adresa je sporná
+      await signUp(auth, email, FIRST_PASSWORD, 'Cizí');
+      await signUp(auth, email, SECOND_PASSWORD, 'Majitel');
+      expect((await contestRows()).length).toBe(contestsBefore + 1);
+
+      // majitel odkaz přehlédne a zkusí se přihlásit: v účtu je pořád heslo
+      // z předregistrace, takže čte „špatné heslo“ a jde na „Zapomenuté heslo“
+      expect(await signInStatus(auth, email, SECOND_PASSWORD)).toBe(401);
+      await auth.api.requestPasswordReset({ body: { email } });
+      const resetToken = emailsTo(log, email)
+        .at(-1)
+        ?.text.match(/\/reset-password\/([^?\s]+)/)?.[1];
+      expect(resetToken).toBeTruthy();
+      await auth.api.resetPassword({ body: { newPassword: resetPassword, token: resetToken! } });
+
+      // obnova udělala totéž, co by udělalo potvrzení sporné adresy: heslo zná
+      // jen ten, kdo otevřel odkaz ze schránky, a relace v účtu nejsou — spor
+      // tedy nemá co hlídat
+      const afterReset = await accountState(email);
+      expect(afterReset.sessionCount).toBe(0);
+      expect((await contestRows()).length).toBe(contestsBefore);
+      expect(await signInStatus(auth, email, resetPassword)).toBe(403);
+
+      await confirmAddress(auth, log, email);
+
+      const after = await accountState(email);
+      expect(after.emailVerified).toBe(true);
+      expect(after.hash).toBe(afterReset.hash);
+      expect(await signInStatus(auth, email, resetPassword)).toBe(200);
+      // heslo z předregistrace neplatí — přepsala ho už obnova
+      expect(await signInStatus(auth, email, FIRST_PASSWORD)).toBe(401);
+      // v historii je jen obnova, žádné „zrušeno“
+      expect(after.passwordAudits.map((entry) => entry.detail)).toEqual([
+        'obnova přes odkaz v e-mailu',
+      ]);
+    },
+  );
+
+  it(
+    'D01-R2-01: obnova hesla uzavře jen spor adresy vlastního účtu, cizí nechá být',
+    { timeout: 60_000 },
+    async () => {
+      const contestedEmail = 'cizi-spor@priklad.test';
+      const otherEmail = 'jiny-ucet-obnova@priklad.test';
+      const log = startEmailLog();
+
+      await signUp(auth, contestedEmail, FIRST_PASSWORD, 'Cizí');
+      await signUp(auth, contestedEmail, SECOND_PASSWORD, 'Majitel');
+      const contests = (await contestRows()).length;
+
+      // obnova hesla na jiném účtu se sporu o tuhle adresu netýká
+      await signUp(auth, otherEmail, FIRST_PASSWORD, 'Jiný');
+      await auth.api.requestPasswordReset({ body: { email: otherEmail } });
+      const resetToken = emailsTo(log, otherEmail)
+        .at(-1)
+        ?.text.match(/\/reset-password\/([^?\s]+)/)?.[1];
+      await auth.api.resetPassword({
+        body: { newPassword: 'heslo-jineho-uctu-2026-04', token: resetToken! },
+      });
+      expect((await contestRows()).length).toBe(contests);
+
+      // potvrzení sporné adresy heslo z předregistrace dál ruší
+      await confirmAddress(auth, log, contestedEmail);
+      expect(await signInStatus(auth, contestedEmail, FIRST_PASSWORD)).toBe(401);
+      expect(await signInStatus(auth, contestedEmail, SECOND_PASSWORD)).toBe(401);
+    },
+  );
+
+  it(
+    'D01-R2-03: další neshodná registrace lhůtu sporu obnoví',
+    { timeout: 30_000 },
+    async () => {
+      const email = 'obnovena-lhuta@priklad.test';
+      const known = new Set((await contestRows()).map((row) => row.identifier));
+      startEmailLog();
+
+      await signUp(auth, email, FIRST_PASSWORD, 'Majitel');
+      await signUp(auth, email, SECOND_PASSWORD, 'Cizí');
+      const [contest] = (await contestRows()).filter((row) => !known.has(row.identifier));
+      expect(contest).toBeDefined();
+
+      // spor těsně před vypršením…
+      const { getDb } = await import('@/db');
+      const { verification } = await import('@/db/schema');
+      const db = await getDb();
+      await db
+        .update(verification)
+        .set({ expiresAt: new Date(Date.now() + 60 * 1000) })
+        .where(eq(verification.identifier, contest!.identifier));
+
+      // …a další neshodná registrace: lhůta běží znovu od začátku
+      await signUp(auth, email, 'uplne-jine-heslo-05', 'Cizí');
+      const refreshed = (await contestRows()).filter(
+        (row) => row.identifier === contest!.identifier,
+      );
+      expect(refreshed).toHaveLength(1);
+      expect(refreshed[0]!.expiresAt.getTime()).toBeGreaterThan(
+        Date.now() + 24 * 60 * 60 * 1000,
+      );
+    },
+  );
 });
 
 describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-03)', () => {
@@ -438,6 +550,40 @@ describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-
       });
       expect(await signInStatus(auth, ownerEmail, 'heslo-po-obnove-2026')).toBe(200);
       expect(await signInStatus(auth, ownerEmail, holderPassword)).toBe(401);
+    },
+  );
+
+  it(
+    'D01-R2-01 × R1-01: obnova hesla na účtu, který na spornou adresu přešel změnou e-mailu, spor neuzavře',
+    { timeout: 60_000 },
+    async () => {
+      const ownEmail = 'zabral-obnova@priklad.test';
+      const takenEmail = 'majitel-zabrane-obnova@priklad.test';
+      const password = 'heslo-toho-kdo-zabral-01';
+      const resetPassword = 'heslo-z-obnovy-2026-06';
+
+      await signUpVerified(auth, { email: ownEmail, password, name: 'Cizí' });
+      const cookie = await signInCookie(auth, ownEmail, password);
+      const log = startEmailLog();
+      expect(await changeEmail(cookie, takenEmail, password)).toBe('/nastaveni/ucet?ok=email');
+      const contestsBefore = (await contestRows()).length;
+      await signUp(auth, takenEmail, SECOND_PASSWORD, 'Majitel');
+      expect((await contestRows()).length).toBe(contestsBefore + 1);
+
+      // Obnova na účtu, který adresu kdy změnil, nedokládá dnešní schránku:
+      // odkaz mohl odejít na tu předchozí a adresa se změnit až během obnovy.
+      // Spor proto zůstává a rozhodne potvrzení adresy.
+      await auth.api.requestPasswordReset({ body: { email: takenEmail } });
+      const resetToken = emailsTo(log, takenEmail)
+        .at(-1)
+        ?.text.match(/\/reset-password\/([^?\s]+)/)?.[1];
+      await auth.api.resetPassword({ body: { newPassword: resetPassword, token: resetToken! } });
+      expect((await contestRows()).length).toBe(contestsBefore + 1);
+
+      await confirmAddress(auth, log, takenEmail);
+      expect(await signInStatus(auth, takenEmail, resetPassword)).toBe(401);
+      expect(await signInStatus(auth, takenEmail, password)).toBe(401);
+      expect((await contestRows()).length).toBe(contestsBefore);
     },
   );
 
