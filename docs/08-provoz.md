@@ -167,8 +167,17 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   `packages/engine` a `packages/shared`, týdně a ručně. Nic neblokuje, report je
   v artefaktu běhu; běh trvá desítky minut.
 
-`pnpm audit --prod` v pipeline zatím není: padá na zranitelnostech, které
-odstraní až povýšení Next.js a Vitestu.
+- **Známé zranitelnosti** (`pnpm audit --prod` v jobu `guards`): padne, když
+  má některá produkční závislost hlášení v databázi GitHubu. Opravuje se
+  povýšením balíčku, u nepřímé závislosti přepisem v `pnpm.overrides`
+  v kořenovém `package.json`.
+  ⚠️ Tři hlášení jsou tam **vědomě ignorovaná** (`pnpm.auditConfig.ignoreGhsas`):
+  týkají se Vitestu 3 a jeho `tinypool`, tedy testovacího nástroje, který se do
+  nasazené aplikace nedostane. Audit je do „produkčních“ počítá jen proto, že
+  si Better Auth Vitest deklaruje jako volitelnou partnerskou závislost.
+  Zmizí povýšením na Vitest 4 — to je vlastní práce (jiná hlavní verze pod
+  2 400 testy, pokrytím a mutačními testy) a seznam se pak má vyprázdnit.
+  Jiné hlášení do něj nepřidávej bez stejného zdůvodnění.
 
 ## Zálohy a monitoring (stav)
 

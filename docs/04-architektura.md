@@ -86,7 +86,7 @@ Držíme citlivá finanční data → bezpečnost je marketingová výhoda proti
 1. **Minimalizace dat**: k ničemu nepotřebujeme jméno, adresu ani rodné číslo — jen e-mail. Žádná napojení vyžadující hesla k brokerům; T212 API klíč je **read-only**.
 2. **Šifrování**: API klíče brokerů šifrované na aplikační úrovni (AES-256-GCM, klíč v env, nikdy v DB); DB šifrovaná at-rest (Neon); TLS všude. Zálohy jsou `pg_dump -Fc` **bez vlastní šifrovací vrstvy** — leží na disku provozovatele, ne v cloudu.
 3. **Auth**: scrypt (N=2^16, r=8 — 64 MiB, nativní `node:crypto`), TOTP 2FA se zálohovými kódy, rate limiting na login i per účet, session revokace při změně hesla.
-4. **Aplikační**: Zod validace všech vstupů; parsování CSV s limity velikosti a řádků (ochrana proti CSV bombám), bez `eval`/formula injection při exportech; CSP a security headers; CSRF ochrana (Server Actions origin-check); závislosti hlídané přes `pnpm audit` + Renovate.
+4. **Aplikační**: Zod validace všech vstupů; parsování CSV s limity velikosti a řádků (ochrana proti CSV bombám), bez `eval`/formula injection při exportech; CSP a security headers; CSRF ochrana (Server Actions origin-check); závislosti hlídá `pnpm audit --prod` v CI.
 5. **Tenancy**: repository vrstva s povinným `user_id`; testy na izolaci.
 6. **GDPR**: data v EU (Frankfurt), zpracovatelé vypsaní v `/soukromi` (Neon, Vercel, Resend), právo na export (JSON) a smazání účtu (hard delete + purge záloh dle retence), privacy policy bez právního ptydepe.
 7. **Provoz**: audit log (přihlášení, importy, změny dat) s retencí 90 dní; zálohy ručním `scripts/db.sh backup` s ověřenou obnovou. Externí sběr chyb (Sentry apod.) **nasazený není** — logy jsou ve Vercelu.
