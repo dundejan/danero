@@ -176,6 +176,11 @@ test('onboarding: registrace → průvodce → profil → výzva k datům', asyn
   // vyplnění profilu → krok 2 (data)
   await page.getByRole('link', { name: 'Vyplnit daňový profil' }).click();
   await page.waitForURL('**/nastaveni');
+  // bez vybraného režimu formulář neodejde (R8): pole je povinné a prázdné
+  await expect(page.getByLabel('Daňový režim')).toHaveValue('');
+  await page.getByRole('button', { name: 'Uložit profil' }).click();
+  await expect(page).toHaveURL(/\/nastaveni$/);
+  await page.getByLabel('Daňový režim').selectOption('ZAMESTNANEC');
   await page.getByRole('button', { name: 'Uložit profil' }).click();
   await page.waitForURL('**/prehled');
   await page.goto('/vitejte');

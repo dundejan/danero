@@ -77,7 +77,11 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
       (issue) => (issue as { params?: { kod?: string } }).params?.kod === 'prijmy',
     )
       ? 'prijmy'
-      : 'formular';
+      : // L7i-01 (R8): režim nemá předvolbu, takže první uložení bez výběru je
+        // běžný pohyb, ne podvržený formulář — chce vlastní větu
+        parsed.error.issues.some((issue) => issue.path[0] === 'rezim')
+        ? 'rezim'
+        : 'formular';
     redirect(`/nastaveni?chyba=${kod}`);
   }
 

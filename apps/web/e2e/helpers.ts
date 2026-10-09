@@ -59,6 +59,8 @@ export async function registerWithProfile(
   await page.waitForURL('**/vitejte');
 
   await page.goto('/nastaveni');
+  // režim nemá předvolbu (R8) — nový uživatel ho musí vybrat
+  await page.getByLabel('Daňový režim').selectOption('PAUSAL');
   await page.getByRole('button', { name: 'Uložit profil' }).click();
   await page.waitForURL('**/prehled');
 }

@@ -65,7 +65,23 @@ export default async function SettingsPage({
           <div className="grid items-end gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="rezim">Daňový režim</Label>
-              <Select id="rezim" name="rezim" defaultValue={profile?.regime ?? 'PAUSAL'}>
+              {/* L7i-01 (R8): bez předvolby. Režim z dat zjistit nejde a rozhoduje
+                  o verdiktu — předvolený paušál hlídal zaměstnanci limit
+                  50 000 Kč místo 20 000 Kč a tvrdil mu, že přiznání nepodává.
+                  Prázdná položka je jen u nového profilu; uložený režim se
+                  na ni vrátit nedá. */}
+              <Select
+                id="rezim"
+                name="rezim"
+                defaultValue={profile?.regime ?? ''}
+                required
+                aria-describedby="rezim-napoveda"
+              >
+                {!profile && (
+                  <option value="" disabled>
+                    Vyber, co na tebe sedí…
+                  </option>
+                )}
                 <option value="PAUSAL">OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)</option>
                 <option value="ZAMESTNANEC">
                   {`Zaměstnanec (hlídá se limit ${filingLimits.employee})`}
@@ -97,6 +113,10 @@ export default async function SettingsPage({
               vysvětlení přepsal verdikt loňského roku. Věta stojí POD dvojicí
               polí, ne pod tím svým: mřížka má `items-end` a text pod jedním
               polem by ho vystrčil o řádek výš než sousední. */}
+          <p id="rezim-napoveda" className="text-xs text-inkoust-tlumeny">
+            Podle režimu Danero pozná, který limit ti hlídat a kdy ti říct, že přiznání podávat
+            nemusíš. Z výpisů se zjistit nedá, proto se na něj ptáme.
+          </p>
           <p id="ostatni-prijmy-napoveda" className="text-xs text-inkoust-tlumeny">
             Částka dalších příjmů platí pro všechny roky naráz — Danero ji přičte ke každému
             roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za
