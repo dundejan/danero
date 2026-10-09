@@ -86,9 +86,22 @@ export default async function SettingsPage({
                 inputMode="decimal"
                 // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
                 defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
+                aria-describedby="ostatni-prijmy-napoveda"
               />
             </div>
           </div>
+          {/* R-08f, R-09a, R-09b: profil má tuhle částku jen jednu a engine ji
+              přičte ke každému roku — i ke skončenému a zafixovanému (fixace
+              R-05c drží párování, kurzy a výklad limitu 100 000 Kč, tohle pole
+              ne). „Kč/rok“ v popisku to neřeklo a letošní nájem tak bez
+              vysvětlení přepsal verdikt loňského roku. Věta stojí POD dvojicí
+              polí, ne pod tím svým: mřížka má `items-end` a text pod jedním
+              polem by ho vystrčil o řádek výš než sousední. */}
+          <p id="ostatni-prijmy-napoveda" className="text-xs text-inkoust-tlumeny">
+            Částka dalších příjmů platí pro všechny roky naráz — Danero ji přičte ke každému
+            roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za
+            minulé roky (třeba jestli za ně podáváš přiznání).
+          </p>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
