@@ -171,6 +171,167 @@ export const KRAKEN_FIAT_TRANSFERS = [
   '"LFT114-AAAAA-BBBBB4","RFT004-XYZKQ-CCCCC4","2022-03-07 10:00:00","transfer","delistingconversion","currency","ZEUR","spot / main",42.0000,0,292.0000',
 ].join('\n');
 
+/** Hlavička exportu, ve kterém uživatel sloupec `subtype` při stahování odškrtl. */
+export const KRAKEN_HEADERS_NO_SUBTYPE =
+  '"txid","refid","time","type","aclass","asset","amount","fee","balance"';
+
+/** Řádek `transfer` v exportu bez sloupce `subtype` (A06-R2-01, A06-R2-02). */
+const transferWithoutSubtype = (
+  txid: string,
+  refid: string,
+  asset: string,
+  amount: string,
+): string =>
+  `"${txid}","${refid}","2022-10-11 10:00:00","transfer","currency","${asset}",${amount},0,0.0000000000`;
+
+/** Tentýž řádek v plné hlavičce — subtyp je vyplněný, nebo prázdný. */
+const transferWithSubtype = (
+  txid: string,
+  refid: string,
+  subtype: string,
+  asset: string,
+  amount: string,
+): string =>
+  `"${txid}","${refid}","2022-10-11 10:00:00","transfer","${subtype}","currency","${asset}","spot / main",${amount},0,0.0000000000`;
+
+/**
+ * A06-R2-01: nucený převod pozice při stažení aktiva z nabídky v exportu BEZ
+ * sloupce `subtype`, každá noha pod vlastním refid. Bez subtypu to parser od
+ * přesunu peněz a odchodu kusů na jiný účet nerozezná — nesmí ale mlčet.
+ */
+export const KRAKEN_DELISTING_NO_SUBTYPE_COLUMN = [
+  KRAKEN_HEADERS_NO_SUBTYPE,
+  transferWithoutSubtype('LDN111-AAAAA-BBBBB1', 'RDN001-XYZKQ-CCCCC1', 'NANO', '-30.0000000000'),
+  transferWithoutSubtype('LDN112-AAAAA-BBBBB2', 'RDN002-XYZKQ-CCCCC2', 'ZEUR', '42.0000'),
+].join('\n');
+
+/**
+ * A06-R2-01: tentýž převod se SPOLEČNÝM refid — přírůstek peněz, vedle kterého
+ * ve stejné operaci ubylo kryptoaktivum, není „převod peněz“. Jednou bez
+ * sloupce `subtype`, jednou s prázdným subtypem v plné hlavičce.
+ */
+export const KRAKEN_CONVERSION_SAME_REFID_NO_SUBTYPE_COLUMN = [
+  KRAKEN_HEADERS_NO_SUBTYPE,
+  transferWithoutSubtype('LCS111-AAAAA-BBBBB1', 'RCS001-XYZKQ-CCCCC1', 'NANO', '-30.0000000000'),
+  transferWithoutSubtype('LCS112-AAAAA-BBBBB2', 'RCS001-XYZKQ-CCCCC1', 'ZEUR', '42.0000'),
+].join('\n');
+
+export const KRAKEN_CONVERSION_SAME_REFID = [
+  KRAKEN_HEADERS_NEW,
+  transferWithSubtype('LCS111-AAAAA-BBBBB1', 'RCS001-XYZKQ-CCCCC1', '', 'NANO', '-30.0000000000'),
+  transferWithSubtype('LCS112-AAAAA-BBBBB2', 'RCS001-XYZKQ-CCCCC1', '', 'ZEUR', '42.0000'),
+].join('\n');
+
+/**
+ * A06-R2-01: co protistranou přírůstku peněz NENÍ a musí zůstat tiché —
+ * ř. 2–3 úbytek jiné fiat měny (směna měn), ř. 4–5 kryptoaktivum, které ve
+ * stejné operaci taky PŘIBYLO, ř. 6–7 úbytek kryptoaktiva s prázdným refid
+ * (ten nic nespojuje), ř. 8–9 peníze, které při úbytku kryptoaktiva ubyly taky.
+ */
+export const KRAKEN_FIAT_INFLOW_WITHOUT_COUNTERPART = [
+  KRAKEN_HEADERS_NEW,
+  transferWithSubtype('LFC111-AAAAA-BBBBB1', 'RFC001-XYZKQ-CCCCC1', '', 'ZUSD', '-108.0000'),
+  transferWithSubtype('LFC112-AAAAA-BBBBB2', 'RFC001-XYZKQ-CCCCC1', '', 'ZEUR', '100.0000'),
+  transferWithSubtype(
+    'LFC113-AAAAA-BBBBB3',
+    'RFC002-XYZKQ-CCCCC2',
+    'airdrop',
+    'SGB',
+    '9.0000000000',
+  ),
+  transferWithSubtype('LFC114-AAAAA-BBBBB4', 'RFC002-XYZKQ-CCCCC2', '', 'ZEUR', '15.0000'),
+  transferWithSubtype('LFC115-AAAAA-BBBBB5', '', '', 'XTZ', '-8.0000000000'),
+  transferWithSubtype('LFC116-AAAAA-BBBBB6', '', '', 'ZEUR', '20.0000'),
+  transferWithSubtype('LFC117-AAAAA-BBBBB7', 'RFC004-XYZKQ-CCCCC4', '', 'KSM', '-2.0000000000'),
+  transferWithSubtype('LFC118-AAAAA-BBBBB8', 'RFC004-XYZKQ-CCCCC4', '', 'ZEUR', '-60.0000'),
+].join('\n');
+
+/**
+ * A06-R2-01: řádek `earn` v exportu bez sloupce `subtype` — odměnu od přesunu
+ * uvnitř Earn odliší jen subtyp.
+ */
+export const KRAKEN_EARN_NO_SUBTYPE_COLUMN = [
+  KRAKEN_HEADERS_NO_SUBTYPE,
+  '"LEN111-AAAAA-BBBBB1","REN001-XYZKQ-CCCCC1","2022-10-12 10:00:00","earn","currency","ETH",0.0030000000,0,0.0030000000',
+].join('\n');
+
+/** A06-R2-01: export bez sloupce `subtype`, ve kterém na subtypu nic nezávisí. */
+export const KRAKEN_TRADE_NO_SUBTYPE_COLUMN = [
+  KRAKEN_HEADERS_NO_SUBTYPE,
+  '"LTN111-AAAAA-BBBBB1","FTN000-XYZKQ-CCCCC0","2022-10-10 10:00:00","deposit","currency","ZEUR",500.0000,0,500.0000',
+  '"LTN112-AAAAA-BBBBB2","TTN001-XYZKQ-CCCCC1","2022-10-13 10:00:00","trade","currency","ZEUR",-300.0000,0.7800,199.2200',
+  '"LTN113-AAAAA-BBBBB3","TTN001-XYZKQ-CCCCC1","2022-10-13 10:00:00","trade","currency","XXBT",0.0150000000,0,0.0150000000',
+].join('\n');
+
+/**
+ * A06-R2-02: přípony, kterými Kraken odlišuje variantu téhož aktiva (staking,
+ * vázaný staking s počtem dní, opt-in odměny, ochranná lhůta vkladu…).
+ */
+export const KRAKEN_ASSET_VARIANT_SUFFIXES = [
+  '.S',
+  '28.S',
+  '.M',
+  '.P',
+  '.HOLD',
+  '.CORE',
+  '.INK',
+] as const;
+
+/** A06-R2-02: přesun do varianty aktiva a zpět v exportu bez sloupce `subtype`. */
+export const krakenVariantTransfer = (suffix: string): string =>
+  [
+    KRAKEN_HEADERS_NO_SUBTYPE,
+    transferWithoutSubtype('LVT111-AAAAA-BBBBB1', 'RVT001-XYZKQ-CCCCC1', 'DOT', '-10.0000000000'),
+    transferWithoutSubtype(
+      'LVT112-AAAAA-BBBBB2',
+      'RVT001-XYZKQ-CCCCC1',
+      `DOT${suffix}`,
+      '10.0000000000',
+    ),
+    // interní kód na jedné straně, přípona na druhé
+    transferWithoutSubtype(
+      'LVT113-AAAAA-BBBBB3',
+      'RVT002-XYZKQ-CCCCC2',
+      `XBT${suffix}`,
+      '-0.5000000000',
+    ),
+    transferWithoutSubtype('LVT114-AAAAA-BBBBB4', 'RVT002-XYZKQ-CCCCC2', 'XXBT', '0.5000000000'),
+  ].join('\n');
+
+/**
+ * A06-R2-02: peníze vedené s příponou — ř. 2 osamocený přírůstek (vklad
+ * v ochranné lhůtě), ř. 3–4 přesun mezi peněženkami, ř. 5 interní kód s příponou.
+ */
+export const KRAKEN_FIAT_VARIANT_TRANSFERS = [
+  KRAKEN_HEADERS_NEW,
+  transferWithSubtype('LFV111-AAAAA-BBBBB1', 'RFV001-XYZKQ-CCCCC1', '', 'EUR.HOLD', '250.0000'),
+  transferWithSubtype('LFV112-AAAAA-BBBBB2', 'RFV002-XYZKQ-CCCCC2', '', 'ZUSD', '-100.0000'),
+  transferWithSubtype('LFV113-AAAAA-BBBBB3', 'RFV002-XYZKQ-CCCCC2', '', 'USD.M', '100.0000'),
+  transferWithSubtype('LFV114-AAAAA-BBBBB4', 'RFV003-XYZKQ-CCCCC3', '', 'ZEUR.HOLD', '75.0000'),
+].join('\n');
+
+/**
+ * A06-R2-03: dvojice se společným refid a subtypem, který neznáme — vyruší se,
+ * takže je to přesun mezi peněženkami, ať ve sloupci subtypu stojí cokoli.
+ */
+export const KRAKEN_UNKNOWN_SUBTYPE_PAIR = [
+  KRAKEN_HEADERS_NEW,
+  transferWithSubtype(
+    'LUS111-AAAAA-BBBBB1',
+    'RUS001-XYZKQ-CCCCC1',
+    'vaultmove',
+    'NEAR',
+    '-7.0000000000',
+  ),
+  transferWithSubtype(
+    'LUS112-AAAAA-BBBBB2',
+    'RUS001-XYZKQ-CCCCC1',
+    'vaultmove',
+    'NEAR',
+    '7.0000000000',
+  ),
+].join('\n');
+
 /**
  * A06-R1-04: množství pod 0,000001 (Kraken píše krypto na deset desetinných
  * míst) — airdrop a poplatek na samostatném řádku.
