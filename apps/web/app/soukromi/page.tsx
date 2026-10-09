@@ -27,10 +27,15 @@ export default function PrivacyPage() {
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
         {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR chce totožnost
-            a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15) */}
+            a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15).
+
+            Jméno stojí v 1. pádě a přesně tak, jak je v `DANERO_OPERATOR_NAME`.
+            Strojové skloňování (přilepené „a“ ke dvěma slovům) sedělo na jediné
+            jméno; ženě, titulu, firmě i výchozímu „nenastaveno“ totožnost
+            správce zkomolilo (L7s-09). Věta proto nesmí předpokládat ani rod. */}
         <p>
-          Danero je osobní projekt {OPERATOR.name.split(' ')[0]}a {OPERATOR.name.split(' ')[1]}a
-          (IČO {OPERATOR.ico}, {OPERATOR.address}) — on je i správcem tvých údajů. Kontakt:{' '}
+          Danero je osobní projekt. Jeho provozovatelem a správcem tvých údajů
+          je {OPERATOR.name} (IČO {OPERATOR.ico}, {OPERATOR.address}). Kontakt:{' '}
           <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
             {OPERATOR.email}
           </a>
