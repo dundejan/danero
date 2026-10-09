@@ -304,6 +304,25 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   jednou zasekl na `/portfolio` bez jediného běžícího dotazu — celá E2E sada
   pak trvala 34 minut místo 8. Opakování prošlo. Když E2E běží podezřele
   dlouho, podívej se do logu dřív, než doběhne limit.
+- **Háček Better Authu, který zapisuje cookie, musí běžet přímo ve vnějším
+  middleware.** `hooks.before`/`hooks.after` berou jediný middleware, takže je
+  v `lib/auth-hooks.ts` skládáme z menších. Menší háček zabalený do vlastního
+  `createAuthMiddleware` má ale vlastní hlavičky odpovědi a `ctx.setSignedCookie`
+  v něm se potichu zahodí — test prošel všude, kde na cookie nezáleželo.
+  Háčky s cookies jsou proto obyčejné funkce volané z `afterHooks`, každá
+  v `try/catch` (výjimka po hotovém přihlášení by z něj udělala chybu 500).
+  Úspěch `/verify-email` navíc z návratové hodnoty nepoznáš (s `callbackURL`
+  končí přesměrováním úspěch i vypršelý odkaz) — nese ho
+  `afterEmailVerification` přes `WeakMap` nad objektem požadavku.
+- **Cookie „tenhle prohlížeč o odkaz požádal“ smí vzniknout jen tam, kde
+  prohlížeč doložil heslo.** První verze přihlášení po ověření e-mailu ji
+  vydala i formuláři „Poslat odkaz znovu“, který je bez hesla — majitel adresy,
+  kterému na cizí předregistraci vypršel odkaz, si poslal nový a byl přihlášený
+  do účtu s cizím heslem. Našla to až nezávislá recenze; vlastní testy chování
+  zafixovaly jako záměr.
+- **Během běžícího E2E nesahej do zdrojáků.** Sada jede proti `next dev`, který
+  si rozpracovaný soubor hned načte: 9. 10. 2026 tak dva testy veřejných
+  stránek spadly na dočasné značce v souboru, který s nimi neměl nic společného.
 - **`pnpm --filter @danero/engine test` běží s pokrytím a prahem.** Nový kód
   enginu bez testu shodí sadu na prahu pokrytí, ne na padajícím testu — hláška
   je na konci výpisu. Práh je v `packages/engine/vitest.config.ts`.
