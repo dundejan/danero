@@ -43,6 +43,55 @@ jobs:
             exit 1
           fi
 
+  # Lehké strážní kontroly, které nepotřebují build: tajemství v historii,
+  # zápis a práva workflow, mrtvé soubory a závislosti. Zvlášť od jobu `ci`,
+  # aby běžely souběžně a pád jedné neschoval výsledek testů. Nástroje jedou
+  # z obrazů připnutých na digest a repozitář vidí jen ke čtení; žádný krok
+  # nepotřebuje tajemství, takže nad pull requestem z forku běží stejně.
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # fetch-depth 0: gitleaks čte celou historii včetně značek, ne jen
+      # poslední commit — tajemství smazané o commit později v ní zůstává
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Falešné poplachy jsou doložené v .gitleaks.toml a .gitleaksignore.
+      # Identitu provozovatele tohle NEHLEDÁ (pravidlo 8 v CLAUDE.md) — tu
+      # hlídá apps/web/test/email-legal.test.ts.
+      - name: Tajemství v historii (gitleaks)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            -v "$PWD:/src:ro" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /src --log-opts="--all" --redact --no-banner \
+            --config /src/.gitleaks.toml --gitleaks-ignore-path /src/.gitleaksignore
+      - name: Zápis workflow (actionlint)
+        run: |
+          docker run --rm -v "$PWD":/repo:ro -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -color
+      # Práva tokenu, nepřipnuté akce, nedůvěryhodné hodnoty vkládané do
+      # skriptů. --offline: bez dotazů na GitHub API, výsledek nezávisí na síti.
+      - name: Bezpečnost workflow (zizmor)
+        run: |
+          docker run --rm -v "$PWD":/src:ro -w /src \
+            ghcr.io/zizmorcore/zizmor:1.30.1@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101 \
+            --offline --no-progress --min-severity medium .github/workflows
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Nepoužité soubory a závislosti, nevyřešené importy (knip.json).
+      # Nepoužité exporty zatím nehlídá — viz docs/08-provoz.md.
+      - name: Mrtvé soubory a závislosti (knip)
+        run: pnpm knip
+
   ci:
     runs-on: ubuntu-latest
     # Produkce jede na Postgresu, testy jinak na PGlite — a PGlite je

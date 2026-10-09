@@ -130,6 +130,40 @@ Kroky s pevným termínem hlídají runbook testy (`apps/web/test/runbook.test.t
 a `packages/engine/test/runbook.test.ts`): po termínu začnou padat, takže zapomenutou
 údržbu ohlásí CI dřív než uživatel.
 
+## Kontroly v CI nad rámec testů
+
+Vedle buildu, typů, lintu a testů hlídá pipeline pár věcí, které test nenapíšeš.
+Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
+
+- **Job `guards` v `ci.yml`** (bez buildu, jednotky minut, žádná tajemství — běží
+  i nad pull requestem z forku):
+  - **gitleaks** nad celou historií včetně značek. Doložené falešné poplachy jsou
+    v `.gitleaks.toml` (obecné pravidlo v testech) a `.gitleaksignore` (jednotlivé
+    otisky). Identitu provozovatele nehledá — tu hlídá `test/email-legal.test.ts`.
+  - **actionlint** a **zizmor** nad `.github/workflows/` (zápis workflow, práva
+    tokenu, nepřipnuté akce). Obrazy nástrojů jsou připnuté na digest.
+  - **knip** (`pnpm knip`, nastavení v `knip.json`): nepoužité soubory
+    a závislosti, nevyřešené importy. Nepoužité exporty zatím nehlídá — plná
+    kontrola dnes hlásí desítky exportů, které stačí zbavit slova `export`.
+- **Fuzz importu** (`packages/importers/test/fuzz.test.ts`, součást `pnpm test`):
+  2 000 poškozených variant fixtur s pevným seedem do `decodeUpload`, snifferů
+  a všech parserů. Padá na neošetřené výjimce a na volání delším než 2 s
+  procesoru. Hlášený případ pustíš znovu přes `FUZZ_ONLY_CASE=<číslo>`, širší
+  průzkum přes `FUZZ_CASES=30000` (asi minuta).
+- **Práh pokrytí enginu** (`packages/engine/vitest.config.ts`): `pnpm test`
+  v enginu měří pokrytí a spadne, když klesne pod práh nastavený o 1–2 body pod
+  skutečným stavem. Ostatní balíčky práh nemají.
+- **CodeQL** (`codeql.yml`): pull request, push do `main` a týdně. Nálezy se
+  objeví na kartě Security → Code scanning; kontrola pull requestu hlásí jen nové.
+  Vyžaduje, aby v nastavení repozitáře nebyl zapnutý CodeQL „default setup“ —
+  jinak nahrání výsledků z vlastního workflow selže.
+- **Mutační testy** (`mutation.yml`, lokálně `pnpm test:mutation`): Stryker nad
+  `packages/engine` a `packages/shared`, týdně a ručně. Nic neblokuje, report je
+  v artefaktu běhu; běh trvá desítky minut.
+
+`pnpm audit --prod` v pipeline zatím není: padá na zranitelnostech, které
+odstraní až povýšení Next.js a Vitestu.
+
 ## Zálohy a monitoring (stav)
 
 - Neon: obnova do bodu v čase je součástí, ale sahá jen 6 hodin zpět — na

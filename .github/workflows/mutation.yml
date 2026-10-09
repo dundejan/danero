@@ -1,0 +1,52 @@
+name: Mutační testy
+
+# Stryker nad daňovým jádrem (`packages/engine`) a sdíleným modelem
+# (`packages/shared`): do kódu vkládá drobné chyby a dívá se, jestli je testy
+# poznají. Pokrytí řekne, které řádky test spustil; tohle řekne, jestli by si
+# všiml, že počítají špatně.
+#
+# Samostatně od ci.yml, protože běh trvá desítky minut. Nic neblokuje — práh
+# nastavený není, výsledek je report v artefaktu běhu (`mutation.json`
+# a přehled přeživších mutantů ve výpisu kroku).
+#
+# Nepotřebuje žádné tajemství ani proměnnou repozitáře a nesahá na produkci,
+# takže ve forku běží stejně. Plánované běhy GitHub ve veřejném repozitáři po
+# 60 dnech bez commitu sám vypne; zapnout zpět jde na kartě Actions.
+on:
+  schedule:
+    # Pondělí 03:37 UTC — mimo celou hodinu, kdy bývají runnery přetížené.
+    - cron: '37 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stryker:
+    name: Stryker (engine a shared)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Build balíčků není potřeba: testy čtou zdroje (alias ve
+      # vitest.stryker.config.ts), ne `dist`.
+      - run: pnpm test:mutation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30
+          if-no-files-found: warn
