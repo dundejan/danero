@@ -300,7 +300,17 @@ export function ReportView({
 
       {/* L5-02: tentýž verdikt jako na přehledu, na obrazovce i v tisku — bez něj
           report ukazoval termín podání a export i tomu, komu povinnost nevznikla */}
-      {filingLimit && <ReportFilingVerdict year={year} limit={filingLimit} />}
+      {filingLimit && (
+        <ReportFilingVerdict
+          year={year}
+          limit={filingLimit}
+          // R-09d: oznámení dle § 38v má nepodávající do tří měsíců po konci roku
+          // (stejné datum jako písemné podání), ne do lhůty elektronického přiznání
+          exemptReportingDeadline={
+            result.limits.reporting38v.length > 0 ? deadlines.paper : null
+          }
+        />
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">

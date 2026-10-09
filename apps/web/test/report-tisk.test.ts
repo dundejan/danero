@@ -201,4 +201,81 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
       expect(reportHtml(gross)).toContain(headline);
     }
   });
+
+  /** Text karty verdiktu bez značek — od nadpisu po první kartu s čísly. */
+  const verdictCard = (html: string, headline: string): string => {
+    const text = html.replace(/<[^>]+>/g, '');
+    const from = text.indexOf(headline);
+    expect(from, headline).toBeGreaterThan(-1);
+    return text.slice(from, text.indexOf('Dílčí základ § 10'));
+  };
+  const DEADLINE_ONLY_IF_FILING = /Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy/;
+
+  it('A24-R1-02: každý nadpis má pod sebou větu své větve, ne té druhé', { timeout: 30_000 }, () => {
+    const under = verdictCard(reportHtml('20000'), UNDER_LIMIT);
+    expect(under).toMatch(/je čerpaný z 40\s%/);
+    expect(under).toMatch(DEADLINE_ONLY_IF_FILING);
+    expect(under).not.toContain('překročený');
+
+    const over = verdictCard(reportHtml('60000'), OVER_LIMIT);
+    expect(over).toMatch(/je překročený, čerpáno 60\s000\sKč/);
+    expect(over).toContain('termín podání najdeš níž na stránce');
+    expect(over).not.toContain('čerpaný z');
+    expect(over).not.toMatch(DEADLINE_ONLY_IF_FILING);
+  });
+
+  it('R-08b: paušalista se soudí limitem 50 000 Kč, ne limitem zaměstnance', { timeout: 30_000 }, () => {
+    // 30 000 Kč leží mezi oběma limity: nad 20 000 Kč zaměstnance (R-09b),
+    // pod 50 000 Kč paušální daně — verdikt se podle nich liší
+    for (const html of [reportHtml('30000'), overviewHtml('30000')]) {
+      expect(html).toContain(UNDER_LIMIT);
+      expect(html).not.toContain(OVER_LIMIT);
+    }
+    const card = verdictCard(reportHtml('30000'), UNDER_LIMIT);
+    expect(card).toMatch(/limit 50\s000\sKč pro paušální daň je čerpaný z 60\s%/);
+    // tatáž částka zaměstnanci povinnost zakládá
+    expect(reportHtml('30000', 'ZAMESTNANEC')).toContain(OVER_LIMIT);
+  });
+
+  /**
+   * A24-R1-01 — oznámení osvobozeného příjmu nad 5 mil. Kč (§ 38v ZDP, R-09d).
+   *
+   * Prodej za 6 mil. Kč osvobozený časovým testem nechá limit čerpaný z 0 %,
+   * takže verdikt vyjde „nevzniká“ — a věta pod ním tvrdila, že termín potřebuje
+   * jen ten, kdo přiznání podává. Oznámení se přitom podává právě tehdy, a kdo
+   * přiznání nepodává, má na ně jen tři měsíce po konci roku (sankce § 38w se
+   * počítá z neoznámeného příjmu).
+   */
+  const exemptSaleOver5m = parseTransactions([
+    { type: 'BUY', id: 'o1', isin: 'CZ0005112300', ticker: 'CEZ', quantity: '1000', pricePerShare: '1000', currency: 'CZK', tradeDate: '2020-02-03', settlementDate: '2020-02-05' },
+    { type: 'SELL', id: 'o2', isin: 'CZ0005112300', quantity: '1000', pricePerShare: '6000', currency: 'CZK', tradeDate: `${YEAR}-04-01`, settlementDate: `${YEAR}-04-03` },
+  ]);
+
+  for (const regime of ['PAUSAL', 'ZAMESTNANEC', 'JINE']) {
+    it(`R-09d: ${regime} pod limitem s osvobozeným prodejem nad 5 mil. Kč čte ve verdiktu lhůtu pro oznámení`, { timeout: 30_000 }, () => {
+      const profile = { ...PROFILE, regime };
+      // předpoklad sondy: engine oznamovací povinnost pro tenhle rok vrací
+      expect(analyzeForUser(exemptSaleOver5m, profile, YEAR, TODAY).result.limits.reporting38v).toHaveLength(1);
+
+      const card = verdictCard(
+        renderToStaticMarkup(
+          createElement(ReportView, { txs: exemptSaleOver5m, profile, year: YEAR, years: [YEAR] }),
+        ),
+        UNDER_LIMIT,
+      );
+      expect(card).toContain('§ 38v');
+      expect(card).toMatch(/oznam/i);
+      // tři měsíce po konci roku, ne čtyřměsíční lhůta elektronického přiznání
+      expect(card).toMatch(new RegExp(`1\\.\\s4\\.\\s${YEAR + 1}`));
+      expect(card).not.toMatch(DEADLINE_ONLY_IF_FILING);
+    });
+  }
+
+  it('R-09d: bez osvobozeného prodeje nad 5 mil. Kč verdikt o oznámení mlčí', { timeout: 30_000 }, () => {
+    for (const gross of ['20000', '60000']) {
+      const html = reportHtml(gross);
+      const card = verdictCard(html, gross === '20000' ? UNDER_LIMIT : OVER_LIMIT);
+      expect(card).not.toMatch(/38v|oznam/i);
+    }
+  });
 });

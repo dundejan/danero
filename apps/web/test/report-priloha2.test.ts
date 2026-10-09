@@ -234,6 +234,19 @@ describe('Věta o ztrátě nad rámec příjmů jen při skutečné ztrátě (L5
     expect(guide(render(txs, 2025))).toContain(`Ztrátu ${czk(5_000)} ${SENTENCE}`);
   });
 
+  it('R-12b: ztráta pod půl koruny se nehlásí — věta by zněla „Ztrátu 0 Kč“ (A24-R1-02)', () => {
+    const txs = parseTransactions(derivative('10000.30', '10000'));
+    // předpoklad sondy: ztráta je skutečná, jen se v celých korunách ztratí
+    expect(lossBeyondIncomeCzk(resultOf(txs)).toFixed(2)).toBe('0.30');
+    expect(guide(render(txs, 2025))).not.toContain(SENTENCE);
+  });
+
+  it('R-12b: ztráta od půl koruny se zaokrouhlí nahoru a vypíše (A24-R1-02)', () => {
+    const txs = parseTransactions(derivative('10000.50', '10000'));
+    expect(lossBeyondIncomeCzk(resultOf(txs)).toFixed(2)).toBe('0.50');
+    expect(guide(render(txs, 2025))).toContain(`Ztrátu ${czk(1)} ${SENTENCE}`);
+  });
+
   it('ztráta jednoho druhu se sčítá jen z druhů ve ztrátě, zisk druhého ji nesnižuje', () => {
     const txs = parseTransactions([...lossyTxs(2025), ...profitableCrypto]);
     expect(lossBeyondIncomeCzk(resultOf(txs)).toFixed(2)).toBe('800000.00');

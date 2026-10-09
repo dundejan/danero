@@ -1,6 +1,6 @@
 import type { LimitStatus, TaxYearResult } from '@danero/engine';
 import { Card } from '@/components/ui/card';
-import { czk, pct } from '@/lib/format';
+import { czDate, czk, pct } from '@/lib/format';
 
 /**
  * Verdikt o povinnosti podat přiznání — JEDINÝ zdroj pro přehled i report.
@@ -68,8 +68,22 @@ export function filingVerdictHeadline({
  * Výhrada je nutná: Danero vidí jen příjmy z výpisů a z Nastavení. O podnikání,
  * nájmu ani jiném důvodu k podání neví — proto termín podání, průvodce i export
  * pod verdiktem zůstávají pro každého (skrývat je je produktové rozhodnutí).
+ *
+ * `exemptReportingDeadline` (ISO datum) se předává jen tehdy, když engine pro
+ * rok vrací oznamovací povinnost podle § 38v (R-09d). Verdikt „nevzniká“ pak
+ * termín nesmí odmávnout: kdo přiznání nepodává, má na oznámení jen základní
+ * tříměsíční lhůtu a sankce podle § 38w se počítá z neoznámeného příjmu — právě
+ * u něj to bolí nejvíc (A24-R1-01; znění drží krok s `OZNAMENI_5M` kalkulačky).
  */
-export function ReportFilingVerdict({ year, limit }: { year: number; limit: FilingLimit }) {
+export function ReportFilingVerdict({
+  year,
+  limit,
+  exemptReportingDeadline = null,
+}: {
+  year: number;
+  limit: FilingLimit;
+  exemptReportingDeadline?: string | null;
+}) {
   const { status, label } = limit;
   return (
     <Card className="space-y-1 border-l-4 border-l-ruzova">
@@ -87,8 +101,22 @@ export function ReportFilingVerdict({ year, limit }: { year: number; limit: Fili
           <>
             Soudíme jen podle příjmů, které Danero eviduje (nahrané výpisy a údaje
             z Nastavení): {label} je čerpaný z {pct(status.ratio * 100)}. O jiných příjmech
-            nevíme. Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy, když
-            přiznání podáváš z jiného důvodu.
+            nevíme.{' '}
+            {exemptReportingDeadline ? (
+              <>
+                Pozor na jednu výjimku: máš osvobozený příjem nad 5 milionů Kč a ten se
+                finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů) — nejpozději{' '}
+                <strong>{czDate(exemptReportingDeadline)}</strong>, tedy do tří měsíců po konci
+                roku. Měsíc navíc, který patří k elektronickému přiznání, dostane jen ten, kdo
+                přiznání opravdu podá. Čísla k opsání níž na stránce potřebuješ jen tehdy, když
+                přiznání podáváš z jiného důvodu.
+              </>
+            ) : (
+              <>
+                Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy, když
+                přiznání podáváš z jiného důvodu.
+              </>
+            )}
           </>
         )}
       </p>
