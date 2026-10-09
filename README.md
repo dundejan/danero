@@ -48,7 +48,7 @@ na [danero.cz/cenik](https://danero.cz/cenik)), ale nic se tím neodemyká.
 - **Sporné výklady jako přepínač** — default vždy bezpečný, ale aplikace
   spočítá a ukáže, co by výhodnější výklad znamenal, i s poctivě popsaným rizikem.
 - Zápočet zahraniční daně po státech dle smluv o zamezení dvojího zdanění,
-  FIFO/LIFO, jednotný vs. denní kurz, spliity, spin-offy, GBX.
+  FIFO/LIFO, jednotný vs. denní kurz, splity, spin-offy, GBX.
 
 ## Rychlý start (vývoj)
 
@@ -58,6 +58,9 @@ pnpm install && pnpm dev     # → http://localhost:3000
 
 Bez konfigurace: databáze je PGlite v `apps/web/.data/` (migrace při startu),
 klíče se vygenerují samy. Reset = smazat `.data/`.
+
+E-maily se při vývoji neodesílají. Ověřovací odkaz po registraci proto hledej
+v terminálu, kde běží `pnpm dev` — vypíše se tam jako řádek `[email:dev]`.
 
 ```bash
 pnpm build && pnpm typecheck && pnpm test && pnpm lint   # musí být zelené
