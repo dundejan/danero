@@ -707,6 +707,15 @@ describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-
       const log = startEmailLog();
       await changeEmail(cookie, newEmail, password);
 
+      // L6b-05 (R19): původní adresa se o změně dozví — a nová v té zprávě
+      // nestojí celá (původní schránku už uživatel nemusí ovládat)
+      const notices = emailsTo(log, ownEmail);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]!.subject).toContain('se změnil');
+      expect(notices[0]!.text).toContain('h***@priklad.test');
+      expect(notices[0]!.text).not.toContain(newEmail);
+      expect(notices[0]!.text).not.toMatch(/https?:\/\/\S*(token|verify)/);
+
       const { getDb } = await import('@/db');
       const { recentAuditEvents } = await import('@/lib/audit');
       const db = await getDb();

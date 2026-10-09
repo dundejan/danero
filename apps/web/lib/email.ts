@@ -252,6 +252,45 @@ export function resetPasswordEmail(url: string): Omit<EmailMessage, 'to'> {
   });
 }
 
+/** `jan.novak@priklad.cz` → `j***@priklad.cz`; co není adresa, vrátí beze změny. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return email;
+  return `${email[0]}***${email.slice(at)}`;
+}
+
+/**
+ * Oznámení na PŮVODNÍ adresu, že se e-mail účtu změnil (L6b-05, R19).
+ *
+ * Kdo zná heslo, změní e-mail v Nastavení — a majitel bez téhle zprávy potichu
+ * přijde o přihlášení i o obnovu hesla, protože ta už chodí jinam. Nová adresa
+ * je schválně zakrytá: původní schránku už uživatel nemusí ovládat (často
+ * právě proto e-mail mění) a celá adresa by jejímu držiteli řekla, kam se
+ * účet přestěhoval. Žádný odkaz na vrácení — ten by z původní schránky udělal
+ * klíč k účtu.
+ */
+export function emailChangedEmail(newEmail: string): Omit<EmailMessage, 'to'> {
+  return zprava({
+    subject: 'E-mail tvého účtu v Daneru se změnil',
+    preheader: 'Upozornění a obnova hesla teď chodí na novou adresu.',
+    blocks: [
+      {
+        kind: 'p',
+        text: `U účtu v Daneru vedeného na tuhle adresu někdo se znalostí hesla změnil přihlašovací e-mail na ${maskEmail(newEmail)}.`,
+      },
+      {
+        kind: 'p',
+        text: 'Na tuhle adresu už od nás nic dalšího nepřijde — upozornění i obnova hesla chodí na novou.',
+      },
+      {
+        kind: 'note',
+        text: 'Pokud jsi to byl ty, nemusíš dělat nic. Pokud ne, odpověz na tuhle zprávu a domluvíme se, jak ti účet vrátit.',
+      },
+    ],
+    footer: operatorSignature(),
+  });
+}
+
 /** Potvrzení adresy po registraci — vysvětluje, proč to po uživateli chceme. */
 export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
   return zprava({

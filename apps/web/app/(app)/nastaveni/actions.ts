@@ -275,6 +275,21 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
   const { revokePasswordResetTokens } = await import('@/lib/auth-hooks');
   await revokePasswordResetTokens(await getDb(), user.id);
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
+  // L6b-05 (R19): původní adresa se o změně dozví. Bez toho majitel účtu, jehož
+  // heslo zná někdo další, potichu přijde o přihlášení i o obnovu hesla.
+  // Selhání odeslání nesmí shodit už provedenou změnu.
+  const newEmail = parsed.data['novy-email'].toLowerCase();
+  if (user.email.toLowerCase() !== newEmail) {
+    try {
+      const { emailChangedEmail, resolveEmailSender } = await import('@/lib/email');
+      await resolveEmailSender()({ to: user.email, ...emailChangedEmail(newEmail) });
+    } catch (error) {
+      logEvent('error', 'account.change_email_notice_failed', {
+        userId: user.id,
+        error: errorText(error),
+      });
+    }
+  }
   // ověřovací odkaz na novou adresu; selhání odeslání nesmí shodit už provedenou
   // změnu — uživatel si odkaz vyžádá znovu na /overeni-emailu
   try {

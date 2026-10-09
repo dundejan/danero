@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OPERATOR, OPERATOR_UNSET, OPERATOR as operatorContact } from '@/lib/contact';
 import {
   alertRecipient,
+  emailChangedEmail,
   failedImportAlertEmail,
   failedImportResolvedEmail,
   resetPasswordEmail,
@@ -19,6 +20,7 @@ describe('služební e-maily se identifikují (E-46)', () => {
   for (const [nazev, email] of [
     ['obnova hesla', resetPasswordEmail('https://danero.cz/nove-heslo?token=x')],
     ['ověření adresy', verifyEmailEmail('https://danero.cz/overeni?token=x')],
+    ['změna e-mailu účtu', emailChangedEmail('nova.adresa@priklad.test')],
   ] as const) {
     it(`${nazev}: nese odesílatele i kontakt, kam odpovědět`, () => {
       // From je notifikace@danero.cz a ta schránka poštu nepřijímá — bez
@@ -201,6 +203,7 @@ describe('veřejné texty nesmí slibovat víc, než aplikace dělá (audit 3)',
     expect(soukromi).not.toMatch(/e-maily ti přestanou chodit okamžitě/);
     // provozní zprávy musí být jmenované, jinak je slib zase příliš široký
     expect(soukromi).toMatch(/obnova hesla/);
+    expect(soukromi).toMatch(/oznámení o změně e-mailu účtu/);
     expect(soukromi).toMatch(/oznámení o změně podmínek/);
   });
 
