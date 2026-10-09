@@ -1,0 +1,17 @@
+-- L21-04: „důvěryhodné zařízení“ (30 dní bez druhého faktoru) server od revize 5
+-- nevydává — formulář o něj nikdy nežádal, šlo ho vyrazit jen přímým voláním
+-- API, a Nastavení takové zařízení neukázalo ani neodvolalo. Háček
+-- `withoutTrustDevice` (lib/auth-hooks.ts) brání vzniku nových záznamů; tahle
+-- migrace maže ty, které mohly vzniknout dřív, aby žádný účet se zapnutým 2FA
+-- neměl prohlížeč, který druhý faktor přeskakuje.
+--
+-- Záznam je řádek ve `verification` s identifikátorem `trust-device-<náhodný
+-- řetězec>` a hodnotou = id uživatele; nic jiného ten tvar nepoužívá (obnova
+-- hesla je `reset-password:…`, spor o adresu `signup-contest:…`).
+--
+-- Dopad na uživatele: kdo by takový záznam měl, zadá při příštím přihlášení
+-- kód z aplikace — tedy to, co mu 2FA slibuje. Kdo se přihlašuje formulářem,
+-- záznam nemá a nepozná nic.
+--
+-- Idempotentní: druhý běh (obnova ze zálohy, ruční spuštění) nemá co smazat.
+DELETE FROM "verification" WHERE "identifier" LIKE 'trust-device-%';

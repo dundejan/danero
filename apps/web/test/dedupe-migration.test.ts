@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { dedupeTransactions, fnv1a64, parseTrading212Csv } from '@danero/importers';
 import { TransactionSchema, type Transaction } from '@danero/shared';
 import { createPgliteDb } from '@/db';
-import { importBatches, transactions, user } from '@/db/schema';
+import { importBatches, transactions, user, verification } from '@/db/schema';
 import { importCsvText } from '@/lib/import-service';
 
 /**
@@ -355,4 +355,37 @@ describe('migrace 0045: brutto uložených dividend Trading 212 (L14-01, R-07b)'
       expect(await storedRows(db, 'u-dvojice')).toEqual(before);
     },
   );
+});
+
+/**
+ * Migrace 0046 (L21-04): smaže dřív vydaná „důvěryhodná zařízení“ — a nic
+ * jiného z tabulky `verification`, kde leží i odkazy na obnovu hesla, výzvy
+ * druhého faktoru a spory o adresu.
+ */
+describe('migrace 0046: dřív vydaná důvěryhodná zařízení (L21-04)', () => {
+  const TRUST_MIGRATION = '0046_revoke_trusted_devices.sql';
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const identifiers = async (db: TestDb): Promise<string[]> =>
+    (await db.select({ identifier: verification.identifier }).from(verification))
+      .map((row) => row.identifier)
+      .sort();
+
+  it('maže jen záznamy důvěryhodných zařízení a druhý běh nemění nic', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(verification).values([
+      { id: 'v1', identifier: 'trust-device-abc123', value: 'u1', expiresAt },
+      { id: 'v2', identifier: 'trust-device-def456', value: 'u2', expiresAt },
+      { id: 'v3', identifier: 'reset-password:token', value: 'u1', expiresAt },
+      { id: 'v4', identifier: 'signup-contest:otisk', value: 'x', expiresAt },
+      // podobný začátek, ale jiný tvar — pomlčka za „device“ je součást vzoru
+      { id: 'v5', identifier: 'trust-deviceless', value: 'u1', expiresAt },
+    ]);
+
+    await runMigration(db, TRUST_MIGRATION);
+    const kept = ['reset-password:token', 'signup-contest:otisk', 'trust-deviceless'];
+    expect(await identifiers(db)).toEqual(kept);
+
+    await runMigration(db, TRUST_MIGRATION);
+    expect(await identifiers(db)).toEqual(kept);
+  });
 });
