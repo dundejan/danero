@@ -28,16 +28,9 @@
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.24.0",
-    "vitest": "3.2.7"
+    "vitest": "4.1.11"
   },
   "pnpm": {
-    "auditConfig": {
-      "ignoreGhsas": [
-        "GHSA-82fw-gwwq-j7x9",
-        "GHSA-5gmw-xhrv-c9v3",
-        "GHSA-85c8-ppgw-ccpr"
-      ]
-    },
     "overrides": {
       "postcss@<8.5.23": ">=8.5.23 <9",
       "js-yaml@>=4.0.0 <4.3.2": ">=4.3.2 <5",
