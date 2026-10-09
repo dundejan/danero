@@ -5,6 +5,8 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
+import { currentTaxYear } from '@/lib/clock';
+import { filingLimitTexts } from '@/lib/filing-limits';
 import { getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { buttonVariants } from '@/components/ui/button';
@@ -32,6 +34,10 @@ export default async function WelcomePage() {
   const hasData = txs.length > 0;
   const hasBroker = accounts.length > 0;
   if (hasProfile && hasData) redirect('/prehled');
+
+  // R-09b: limit vedlejších příjmů se rok od roku liší (do ZO 2026 20 000 Kč,
+  // od ZO 2027 40 000 Kč) — průvodce rok nezná, jmenuje tedy limit běžného roku
+  const employeeLimit = filingLimitTexts(currentTaxYear()).employee;
 
   const steps = [
     { done: true, label: 'Účet vytvořen' },
@@ -72,7 +78,7 @@ export default async function WelcomePage() {
           <CardTitle>Krok 1: Řekni nám, kdo jsi vůči dani</CardTitle>
           <p className="text-sm text-inkoust-tlumeny">
             Od toho se odvíjí, které limity hlídáme (paušální daň 50 000 Kč, vedlejší
-            příjmy 20 000 Kč…). Vše jde kdykoli změnit, výpočty se přepočítají od nuly.
+            příjmy {employeeLimit}…). Vše jde kdykoli změnit, výpočty se přepočítají od nuly.
           </p>
           <Link
             href="/nastaveni"

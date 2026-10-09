@@ -1208,3 +1208,85 @@ describe('hlídač píše jen na ověřenou adresu', () => {
     expect(targets.map((target) => target.id).sort()).toEqual(['changed', 'verified']);
   });
 });
+
+/**
+ * R-09b: limit vedlejších příjmů zaměstnance (§ 38g odst. 2) je do ZO 2026
+ * 20 000 Kč a od ZO 2027 40 000 Kč (zák. č. 180/2026 Sb.). Název limitu
+ * v e-mailu měl částku natvrdo, takže by v roce 2027 titulek hlásil „limit
+ * 20 000 Kč“ a věta hned pod ním „z 40 000 Kč“ (nález L3-01 revize 5).
+ * Očekávání se proto bere z konfigurace roku, ne z literálu.
+ */
+describe('název limitu vedlejších příjmů nese částku z konfigurace roku (R-09b, L3-01)', () => {
+  const employee = {
+    userId: 'u-zam',
+    regime: 'ZAMESTNANEC' as const,
+    hasBusinessAssets: false,
+    w8benFiled: true,
+    otherIncomeCzk: '0',
+    matchingMethod: 'FIFO' as const,
+    fxMethod: 'UNIFIED' as const,
+    limit100kStrict: true,
+    derivativesExpensesPerType: false,
+    emtTimeTestExempt: false,
+    returnOfCapitalReducesBasis: false,
+    timeTestBasis: 'settlement' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  /** Zahraniční dividenda ve výši 90 % limitu toho roku — hlídač se ozve, limit drží. */
+  const analyzed = async (year: number) => {
+    const { d, parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { configForYear } = await import('@/lib/tax-config');
+    const limit = d(configForYear(year).limits.employeeSideIncome);
+    const txs = parseTransactions([
+      {
+        type: 'DIVIDEND',
+        id: `d-${year}`,
+        sourceCountry: 'US',
+        gross: limit.mul('0.9').toFixed(0),
+        currency: 'CZK',
+        withholdingTax: '0',
+        date: `${year}-03-10`,
+      },
+    ]);
+    return { limit, result: analyzeTaxYear(engineInputForUser(txs, employee, year)) };
+  };
+
+  for (const year of [2026, 2027]) {
+    it(`událost hlídače za rok ${year}`, async () => {
+      const { computeNotificationCandidates } = await import('@/lib/notifications');
+      const { czk } = await import('@/lib/format');
+      const { limit, result } = await analyzed(year);
+
+      const event = computeNotificationCandidates({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: `${year}-07-20`,
+      }).find((candidate) => candidate.dedupeKey.startsWith('limit|20k|'));
+
+      expect(event?.title).toBe(`Blížíš se: limit ${czk(limit)} vedlejších příjmů`);
+      // titulek a věta o čerpání nesmí jmenovat dvě různé částky
+      expect(event?.body).toContain(`z ${czk(limit)} (${year})`);
+    });
+
+    it(`pravidelný přehled za rok ${year}`, async () => {
+      const { summaryCandidate } = await import('@/lib/notifications');
+      const { czk } = await import('@/lib/format');
+      const { limit, result } = await analyzed(year);
+
+      const summary = summaryCandidate({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: `${year}-07-20`,
+        period: `${year}-07`,
+      });
+
+      expect(summary.body).toContain(`limit ${czk(limit)} vedlejších příjmů: `);
+    });
+  }
+});

@@ -70,15 +70,23 @@ export function OverviewView({
     result.dividends.creditableWithholdingCzk,
   );
 
+  // Částky limitů § 38g se rok od roku liší (R-09a, R-09b: do ZO 2026
+  // 50 000 / 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč), takže je popisky
+  // berou z téhož stavu jako odměrka — tedy z konfigurace počítaného roku.
+  // S částkou natvrdo by nadpis a čerpání pod ním jmenovaly dvě různá čísla.
+  const employeeLimit = czk(result.limits.employee20k.status.limitCzk);
+  const generalLimit = czk(result.limits.generalFiling50k.status.limitCzk);
+
   // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — dle
-  // režimu (PAUSAL → 50k § 7a, ZAMESTNANEC → 20k, JINE → obecných 50k);
+  // režimu (PAUSAL → 50k § 7a, ZAMESTNANEC → vedlejší příjmy § 38g odst. 2,
+  // JINE → obecný limit § 38g odst. 1);
   // OSVČ mimo paušál podává přiznání tak jako tak, verdikt-box tam nedává smysl.
   const filingLimit = result.limits.flatTax50k.applicable
     ? { status: result.limits.flatTax50k.status, label: 'limit 50 000 Kč pro paušální daň' }
     : result.limits.employee20k.applicable
-      ? { status: result.limits.employee20k.status, label: 'limit 20 000 Kč vedlejších příjmů' }
+      ? { status: result.limits.employee20k.status, label: `limit ${employeeLimit} vedlejších příjmů` }
       : result.limits.generalFiling50k.applicable
-        ? { status: result.limits.generalFiling50k.status, label: 'limit 50 000 Kč pro podání přiznání' }
+        ? { status: result.limits.generalFiling50k.status, label: `limit ${generalLimit} pro podání přiznání` }
         : null;
   const deadlines = filingDeadlines(year);
   /**
@@ -253,7 +261,7 @@ export function OverviewView({
         )}
         {result.limits.employee20k.applicable && (
           <LimitGauge
-            label="Vedlejší příjmy — 20 000 Kč"
+            label={`Vedlejší příjmy — ${employeeLimit}`}
             hint="Zdanitelné příjmy vedle zaměstnání — investice, nájmy i vlastní výdělek ze samostatné činnosti (§ 7 až 10). Odměrka ukazuje jen to, co Danero vidí z výpisů a z tvého nastavení; příjmy z podnikání do limitu patří taky, ale my o nich nevíme. Při překročení podáváš přiznání."
             status={result.limits.employee20k.status}
           />
@@ -262,8 +270,8 @@ export function OverviewView({
             mu do teď chyběla (parita s paušálem/zaměstnancem) */}
         {result.limits.generalFiling50k.applicable && (
           <LimitGauge
-            label="Podání přiznání — 50 000 Kč"
-            hint="Obecný limit (§ 38g): zdanitelné příjmy do 50 000 Kč za rok bez povinnosti podat přiznání. Při překročení přiznání podáváš."
+            label={`Podání přiznání — ${generalLimit}`}
+            hint={`Obecný limit (§ 38g): zdanitelné příjmy do ${generalLimit} za rok bez povinnosti podat přiznání. Při překročení přiznání podáváš.`}
             status={result.limits.generalFiling50k.status}
           />
         )}

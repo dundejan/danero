@@ -6,6 +6,8 @@ import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
+import { currentTaxYear } from '@/lib/clock';
+import { filingLimitTexts } from '@/lib/filing-limits';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
 import { SettingsNav } from './settings-nav';
@@ -25,6 +27,10 @@ export default async function SettingsPage({
   const params = await searchParams;
   // R-05c: roky, které si drží konfiguraci z doby, kdy se za ně generovaly podklady
   const pinnedYears = await listPinnedTaxYears(db, user.id);
+  // R-09a, R-09b: limity § 38g se rok od roku liší (do ZO 2026 50 000 /
+  // 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč). Profil platí pro všechny roky,
+  // takže volba režimu jmenuje limit běžného roku.
+  const filingLimits = filingLimitTexts(currentTaxYear());
 
   return (
     // jeden sloupec s šířkou pro formulář — nastavení se nečte přes celou
@@ -61,9 +67,13 @@ export default async function SettingsPage({
               <Label htmlFor="rezim">Daňový režim</Label>
               <Select id="rezim" name="rezim" defaultValue={profile?.regime ?? 'PAUSAL'}>
                 <option value="PAUSAL">OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)</option>
-                <option value="ZAMESTNANEC">Zaměstnanec (hlídá se limit 20 000 Kč)</option>
+                <option value="ZAMESTNANEC">
+                  {`Zaměstnanec (hlídá se limit ${filingLimits.employee})`}
+                </option>
                 <option value="OSVC">OSVČ mimo paušál (přiznání podávám tak jako tak)</option>
-                <option value="JINE">Jiné (hlídá se obecný limit 50 000 Kč)</option>
+                <option value="JINE">
+                  {`Jiné (hlídá se obecný limit ${filingLimits.general})`}
+                </option>
               </Select>
             </div>
             <div>

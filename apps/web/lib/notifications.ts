@@ -127,7 +127,9 @@ export function computeNotificationCandidates(args: {
       key: '20k',
       applicable: result.limits.employee20k.applicable,
       status: result.limits.employee20k.status,
-      label: 'limit 20 000 Kč vedlejších příjmů',
+      // R-09b: částka se rok od roku liší (do ZO 2026 20 000 Kč, od ZO 2027
+      // 40 000 Kč) — z téhož stavu ji bere i věta o čerpání pod titulkem
+      label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
@@ -333,7 +335,13 @@ export function summaryCandidate(args: {
       ? [{ label: 'limit 50 000 Kč pro paušální daň', status: result.limits.flatTax50k.status }]
       : []),
     ...(result.limits.employee20k.applicable
-      ? [{ label: 'limit 20 000 Kč vedlejších příjmů', status: result.limits.employee20k.status }]
+      ? [
+          {
+            // R-09b: částka z konfigurace roku, ne natvrdo (od ZO 2027 je 40 000 Kč)
+            label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
+            status: result.limits.employee20k.status,
+          },
+        ]
       : []),
     // K6b-02b: měřák limitu, na který poplatník nárok NEMÁ, v přehledu být
     // nesmí — s cennými papíry v obchodním majetku osvobození podle § 4/1 t)

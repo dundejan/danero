@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { KalkulackaPriznani } from '@/components/filing-calculator';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { currentTaxYear } from '@/lib/clock';
+import { filingLimitTexts } from '@/lib/filing-limits';
 
 export const metadata: Metadata = {
   title: 'Musím podat daňové přiznání kvůli investicím? Kalkulačka zdarma — Danero',
@@ -25,6 +27,7 @@ const PRAVIDLA = [
 ] as const;
 
 export default function KalkulackaPage() {
+  const year = currentTaxYear();
   return (
     <MarketingPage>
       <PageHero
@@ -34,7 +37,12 @@ export default function KalkulackaPage() {
       />
 
       <div className="mt-12">
-        <KalkulackaPriznani showHeader={false} />
+        {/* stránka je statická: kalkulačka dostane limity § 38g roku sestavení
+            i roku následujícího a podle hodin návštěvníka si vybere (R-09a, R-09b) */}
+        <KalkulackaPriznani
+          showHeader={false}
+          filingLimits={[filingLimitTexts(year), filingLimitTexts(year + 1)]}
+        />
       </div>
 
       <section aria-labelledby="pravidla-nadpis" className="mt-24 lg:mt-32">
