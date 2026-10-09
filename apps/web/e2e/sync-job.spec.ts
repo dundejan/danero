@@ -15,6 +15,9 @@ test('T212 sync jako job: připojení klíče → průběh po letech → výsled
   await page.getByLabel('ID klíče API').fill('e2e-key-id');
   await page.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
   await page.locator('#trading212').getByRole('button', { name: 'Připojit' }).click();
+  // uložení klíče se potvrdí hláškou a stránka zůstane u karty brokera (L6b-01)
+  await expect(page.getByRole('status').filter({ hasText: 'Klíč je uložený' })).toBeVisible();
+  await expect(page).toHaveURL(/\/import#trading212$/);
 
   // ── spuštění plné synchronizace — akce se vrátí hned, job běží na pozadí ─
   await page.getByRole('button', { name: 'Stáhnout kompletní historii' }).click();

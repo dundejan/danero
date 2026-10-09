@@ -13,6 +13,7 @@ import {
   type BrokerAccountRow,
   type StoredReconciliation,
 } from '@/lib/broker-sync';
+import { IMPORT_HISTORY_ANCHOR, importFeedback } from '@/lib/import-feedback';
 import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
@@ -281,17 +282,14 @@ function ConnectedBroker({
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    chyba?: string | string[];
-    ulozeno?: string | string[];
-    symbol?: string | string[];
-  }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireUser();
   const db = await getDb();
   const params = await searchParams;
   const chyba = firstParam(params.chyba);
   const ulozeno = firstParam(params.ulozeno);
+  const feedback = importFeedback(params);
   const [batches, unmappedSource, accounts, aliases] = await Promise.all([
     db
       .select()
@@ -392,13 +390,21 @@ export default async function ImportPage({
                         ? 'Vyber platformu nebo napiš poznámku — bez toho nám hlášení nepomůže.'
                         : chyba === 'hlaseni-neexistuje'
                           ? 'Tenhle výpis už mezitím vyřešený je — obnov stránku.'
-                          : chyba === 'ulozeni'
-                            ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
-                            : chyba === 'isin-kontrola'
-                              ? checkDigitMessage
-                              : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                          : chyba === 'vraceni'
+                            ? 'Tenhle import už vrácený je — obnov stránku.'
+                            : chyba === 'ulozeni'
+                              ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
+                              : chyba === 'isin-kontrola'
+                                ? checkDigitMessage
+                                : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
+      )}
+      {/* Výsledek nahrání, vrácení, připojení, odpojení a spuštění synchronizace.
+          Plave, protože akce končí na kotvě (historie, karta brokera) a hláška
+          nahoře na stránce by zůstala mimo obrazovku (L7d-01). */}
+      {feedback && (
+        <Toast key={crypto.randomUUID()} kind={feedback.kind} floating text={feedback.text} />
       )}
       {ulozeno === 'ciselnik' && (
         <Toast
@@ -659,7 +665,7 @@ export default async function ImportPage({
         </Card>
       </section>
 
-      <section className="space-y-3">
+      <section id={IMPORT_HISTORY_ANCHOR} className="scroll-mt-4 space-y-3">
         <CardTitle>Historie importů</CardTitle>
         {batches.length === 0 && (
           <p className="text-sm text-inkoust-tlumeny">
@@ -686,7 +692,7 @@ export default async function ImportPage({
                 {/* H-3-17: IBKR názvy („U1234567_20240101_20241231.xml") přetečou
                     kartu od 30 znaků a rozjedou vodorovně celou stránku */}
                 <span className="min-w-0 break-all font-mono text-sm">{batch.filename}</span>
-                <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
+                <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-inkoust-tlumeny">
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   {/* Vracet je co jen u dávky, která něco přidala. U nepřečteného
                       výpisu by tlačítko navíc zahodilo případ, který čeká na rozbor. */}
@@ -697,13 +703,21 @@ export default async function ImportPage({
                           a potom v `sr-only` — obojí je u mazacího tlačítka
                           neviditelné. Teď je to VIDĚT pod kartou a tlačítko na
                           text jen odkazuje přes `aria-describedby`. */}
-                      <button
-                        type="submit"
+                      {/* L7d-04: bývalo to 95 × 16 px textu v barvě sousedního
+                          popisku, bez stavu „probíhá“ — maže to transakce, tak ať
+                          to vypadá jako tlačítko a řekne, že pracuje. Potvrzovací
+                          dialog schválně není: stačí věta pod kartou a hláška po
+                          akci, vrácení jde napravit novým nahráním nebo další
+                          synchronizací. */}
+                      <SubmitButton
+                        variant="secondary"
+                        size="sm"
+                        pendingLabel="Vracím…"
                         aria-describedby={`vraceni-${batch.id}`}
-                        className="font-medium text-inkoust-tlumeny hover:text-cervena"
+                        className="whitespace-nowrap"
                       >
                         Vrátit import zpět
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                 </span>

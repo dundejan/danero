@@ -64,6 +64,12 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
   await page.locator('input[name="soubory"]').setInputFiles(csv('t212-2026.csv', T212_FIXTURE_2026));
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
   await expect(historie.getByText('t212-2026.csv')).toHaveCount(1, { timeout: 20_000 });
+  // odezva je vidět tam, kde uživatel zrovna je (L7d-01) — historie leží na
+  // mobilu tři obrazovky pod formulářem; hláška plave a adresa po ní zůstane čistá
+  await expect(
+    page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/import#historie$/);
 
   // počty ber z exportu dat, ne z tabulky pozic: prodané pozice se v portfoliu
   // nezobrazují a test by pak měřil něco jiného, než o co jde
@@ -75,6 +81,10 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
   expect(await pocetTransakci()).toBeGreaterThan(0);
 
   await page.getByRole('button', { name: 'Vrátit import zpět' }).first().click();
+  // vrácení dřív proběhlo beze slova (L6a-04, L7d-04)
+  await expect(
+    page.getByRole('status').filter({ hasText: /Import vrácen, smazán[ayo] \d+ transakc/ }),
+  ).toBeVisible({ timeout: 20_000 });
   await expect(historie.getByText('t212-2026.csv')).toHaveCount(0, { timeout: 20_000 });
 
   // transakce jsou opravdu pryč, ne jen záznam v historii

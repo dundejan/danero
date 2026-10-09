@@ -11,6 +11,11 @@ import { logAudit } from '@/lib/audit';
 import { encryptSecret } from '@/lib/crypto';
 import { invalidateUserCache } from '@/lib/engine-cache';
 import { reportFailedImport } from '@/lib/failed-imports';
+import {
+  brokerCardAnchor,
+  IMPORT_HISTORY_ANCHOR,
+  importFeedbackUrl,
+} from '@/lib/import-feedback';
 import { importFileIsolated } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
@@ -36,9 +41,15 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export async function uploadImportAction(formData: FormData): Promise<void> {
   const user = await requireUser();
+  // Nevyplněné pole pošle prohlížeč jako soubor BEZ JMÉNA a s nulovou délkou —
+  // jen ten se zahazuje. Vybraný soubor o 0 bajtech (nedokončené stahování) má
+  // jméno a musí doběhnout do importu, který pro něj má vlastní hlášku („Soubor
+  // je prázdný — stahování nejspíš selhalo“) a kartu v historii. Dřív se
+  // filtrovalo podle délky, takže skončil výzvou „Vyber aspoň jeden soubor“
+  // a ve skupině zmizel beze stopy (L6a-06).
   const files = formData
     .getAll('soubory')
-    .filter((f): f is File => f instanceof File && f.size > 0);
+    .filter((f): f is File => f instanceof File && (f.size > 0 || f.name !== ''));
 
   if (files.length === 0) redirect('/import?chyba=zadny-soubor');
   if (files.some((f) => f.size > MAX_FILE_BYTES)) redirect('/import?chyba=velikost');
@@ -58,9 +69,15 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   // takže jediné, co uživateli zbývá, je hláška — proto se počítají a řekne se
   // to na stránce.
   let failed = 0;
+  let added = 0;
+  let filesWithErrors = 0;
+  let lastBatchId: string | undefined;
   for (const file of files) {
     try {
-      await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
+      const summary = await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
+      added += summary.added;
+      if (summary.errors.length > 0) filesWithErrors += 1;
+      lastBatchId = summary.batchId;
     } catch (error) {
       failed += 1;
       logEvent('error', 'import.upload_failed', {
@@ -73,7 +90,19 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   revalidatePath('/prehled');
   revalidatePath('/import');
   if (failed > 0) redirect('/import?chyba=ulozeni');
-  redirect('/import');
+  // Cíl se MUSÍ lišit od právě otevřené adresy: akce končící na holém /import
+  // se v produkčním buildu v prohlížeči často nedokončila a tlačítko viselo na
+  // „Nahrávám a počítám…“ (L6a-02; platí pro všechny akce v tomhle souboru —
+  // hlídá to test/import-feedback.test.ts). Adresa zároveň nese souhrn pro
+  // plovoucí hlášku a kotvu historie, která na mobilu leží tři obrazovky pod
+  // formulářem (L7d-01).
+  redirect(
+    importFeedbackUrl(
+      'nahrano',
+      { files: files.length, added, filesWithErrors, batchId: lastBatchId },
+      IMPORT_HISTORY_ANCHOR,
+    ),
+  );
 }
 
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
@@ -158,6 +187,7 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
 export async function undoImportAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const batchId = String(formData.get('davka') ?? '');
+  let removedCount: number | undefined;
   if (batchId) {
     const db = await getDb();
     const removed = await undoImportBatch(db, user.id, batchId);
@@ -166,6 +196,7 @@ export async function undoImportAction(formData: FormData): Promise<void> {
     // (dokumentovaný postup u nového pole v modelu) vyjde klíč identický s tím
     // z doby před vrácením a uživatel by deset minut viděl stará čísla.
     if (removed) {
+      removedCount = removed.count;
       invalidateUserCache(user.id);
       const { plural } = await import('@/lib/format');
       await logAudit(
@@ -179,6 +210,13 @@ export async function undoImportAction(formData: FormData): Promise<void> {
   revalidatePath('/prehled');
   revalidatePath('/portfolio');
   revalidatePath('/import');
+  // Vrácení dřív končilo jen revalidací: žádná hláška a karta v prohlížeči často
+  // ani nezmizela (L6a-04, L7d-04). Dávka, která už neexistuje (druhý klik,
+  // formulář ze staré karty), nesmí vypadat jako úspěch.
+  if (removedCount === undefined) redirect('/import?chyba=vraceni');
+  redirect(
+    importFeedbackUrl('vraceno', { removed: removedCount, batchId }, IMPORT_HISTORY_ANCHOR),
+  );
 }
 
 /**
@@ -216,12 +254,13 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
 
   const db = await getDb();
   // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
+  const accountId = crypto.randomUUID();
   await db.transaction(async (tx) => {
     await tx
       .delete(brokerAccounts)
       .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'trading212')));
     await tx.insert(brokerAccounts).values({
-      id: crypto.randomUUID(),
+      id: accountId,
       userId: user.id,
       broker: 'trading212',
       label: 'Trading 212',
@@ -231,7 +270,7 @@ export async function saveTrading212KeyAction(formData: FormData): Promise<void>
 
   await logAudit(db, user.id, 'BROKER_CONNECTED', 'Trading 212');
   revalidatePath('/import');
-  redirect('/import');
+  redirect(importFeedbackUrl('pripojeno', { accountId }, brokerCardAnchor('trading212')));
 }
 
 /** Uloží IBKR Flex přístup (token + query ID, šifrovaně) — jeden IBKR účet na uživatele. */
@@ -243,12 +282,13 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
 
   const db = await getDb();
   // transakce: pád mezi delete a insert nesmí nechat uživatele bez účtu
+  const accountId = crypto.randomUUID();
   await db.transaction(async (tx) => {
     await tx
       .delete(brokerAccounts)
       .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.broker, 'ibkr')));
     await tx.insert(brokerAccounts).values({
-      id: crypto.randomUUID(),
+      id: accountId,
       userId: user.id,
       broker: 'ibkr',
       label: 'Interactive Brokers',
@@ -258,7 +298,7 @@ export async function saveIbkrKeyAction(formData: FormData): Promise<void> {
 
   await logAudit(db, user.id, 'BROKER_CONNECTED', 'Interactive Brokers');
   revalidatePath('/import');
-  redirect('/import');
+  redirect(importFeedbackUrl('pripojeno', { accountId }, brokerCardAnchor('ibkr')));
 }
 
 /** Odpojí jeden broker účet (multi-broker: každá karta má vlastní tlačítko). */
@@ -269,12 +309,19 @@ export async function disconnectBrokerAction(formData: FormData): Promise<void> 
   const deleted = await db
     .delete(brokerAccounts)
     .where(and(eq(brokerAccounts.userId, user.id), eq(brokerAccounts.id, accountId)))
-    .returning({ id: brokerAccounts.id });
+    .returning({ id: brokerAccounts.id, broker: brokerAccounts.broker });
   // tiché „nic se nesmazalo“ nesmí vypadat jako úspěch (stale formulář apod.)
   if (deleted.length === 0) redirect('/import?chyba=zadny-ucet');
   await logAudit(db, user.id, 'BROKER_DISCONNECTED');
   revalidatePath('/import');
-  redirect('/import');
+  const removedAccount = deleted[0]!;
+  redirect(
+    importFeedbackUrl(
+      'odpojeno',
+      { accountId: removedAccount.id },
+      brokerCardAnchor(removedAccount.broker),
+    ),
+  );
 }
 
 /**
@@ -308,5 +355,5 @@ export async function syncBrokerAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath('/import');
-  redirect('/import');
+  redirect(importFeedbackUrl('spusteno', { jobId: job.id }, brokerCardAnchor(account.broker)));
 }
