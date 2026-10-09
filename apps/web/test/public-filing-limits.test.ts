@@ -43,6 +43,18 @@ function pageParagraphs(relativePath: string): string[] {
     .map((paragraph) => paragraph.replace(/\s+/g, ' '));
 }
 
+/**
+ * Karty „Tři pravidla, která rozhodují“ pod kalkulačkou: text každé karty je
+ * jeden řádek `body: '…'` v poli nad komponentou, ne odstavec v JSX. Čte se po
+ * kartách — vcelku by rok ze sousední karty o časovém testu zakryl, že v kartě
+ * o limitech žádný není (A20-R1-01: karta radila „20 000 Kč“ bez roku).
+ */
+function ruleCards(relativePath: string): string[] {
+  return readFileSync(join(import.meta.dirname, '..', relativePath), 'utf8')
+    .split('\n')
+    .filter((line) => /^\s*body:/.test(line));
+}
+
 const faqAnswers = (): string[] =>
   FAQ.map((item) => (typeof item.a === 'string' ? item.a : (item.plain ?? '')));
 
@@ -68,6 +80,7 @@ const SOURCES: Array<[string, () => string[]]> = [
   ['/jak-pocitame', () => pageParagraphs('app/jak-pocitame/page.tsx')],
   ['/pruvodce/limit-100-000-kc', () => pageParagraphs('app/pruvodce/limit-100-000-kc/page.tsx')],
   ['/caste-otazky', faqAnswers],
+  ['/kalkulacka', () => ruleCards('app/kalkulacka/page.tsx')],
 ];
 
 describe('veřejné texty: limity pro podání přiznání od roku 2027 (L3-01, R-09a, R-09b)', () => {

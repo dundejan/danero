@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,8 +32,12 @@ vi.mock('@/db', async () => {
 // kalkulačka sama částku v prvním vykreslení neukazuje (otázka přijde až po
 // první odpovědi) — místo ní proto zástupce, který vypíše, co jí stránka předala
 vi.mock('@/components/filing-calculator', () => ({
-  KalkulackaPriznani: ({ filingLimits }: { filingLimits: unknown }) =>
-    createElement('pre', { 'data-filing-limits': '' }, JSON.stringify(filingLimits)),
+  KalkulackaPriznani: (props: { filingLimits: unknown; previousFilingLimits: unknown }) =>
+    createElement(
+      'pre',
+      { 'data-filing-limits': '' },
+      JSON.stringify({ current: props.filingLimits, previous: props.previousFilingLimits }),
+    ),
 }));
 // rám marketingové stránky čte přihlášení (asynchronní komponenta) — k věci nepatří
 vi.mock('@/components/marketing-page', () => ({
@@ -157,17 +163,47 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
     });
   }
 
-  it('veřejná kalkulačka dostane limity běžného i následujícího roku', { timeout: 30_000 }, async () => {
-    // stránka je statická — který z obou roků je „letos“, rozhodnou až hodiny
-    // návštěvníka (`pickFilingLimits`), proto mu musí přijít oba
-    process.env.DANERO_NOW = midYear(2026);
-    const { default: KalkulackaPage } = await import('@/app/kalkulacka/page');
-    const html = renderToStaticMarkup(createElement(KalkulackaPage));
+  /**
+   * Běžný rok určuje server při požadavku (viz test níž), kalkulačka žádné
+   * hodiny nečte. S limity běžného roku dostane i limity roku předchozího —
+   * v sezóně přiznání se rozhoduje o něm (A20-R1-02).
+   */
+  it.each([
+    ['v červenci 2026', midYear(2026), 2026],
+    ['na Silvestra 2026 večer', '2026-12-31T18:00:00Z', 2026],
+    // pražská 00:30 na Nový rok — v UTC je pořád Silvestr
+    ['půl hodiny po novoroční půlnoci', '2026-12-31T23:30:00Z', 2027],
+    ['v únoru 2027', '2027-02-15T10:00:00Z', 2027],
+  ])(
+    'veřejná kalkulačka %s dostane limity běžného a předchozího roku',
+    { timeout: 30_000 },
+    async (_, now, year) => {
+      process.env.DANERO_NOW = now;
+      const { default: KalkulackaPage } = await import('@/app/kalkulacka/page');
+      const html = renderToStaticMarkup(createElement(KalkulackaPage));
 
-    const passed = /<pre data-filing-limits="">(.*?)<\/pre>/.exec(html)?.[1] ?? '';
-    expect(JSON.parse(passed.replaceAll('&quot;', '"'))).toEqual([
-      filingLimitTexts(2026),
-      filingLimitTexts(2027),
-    ]);
+      const passed = /<pre data-filing-limits="">(.*?)<\/pre>/.exec(html)?.[1] ?? '';
+      expect(JSON.parse(passed.replaceAll('&quot;', '"'))).toEqual({
+        current: filingLimitTexts(year),
+        previous: filingLimitTexts(year - 1),
+      });
+    },
+  );
+
+  it('/kalkulacka čte běžný rok při požadavku, ne při sestavení (A20-R1-03)', () => {
+    // Předrenderovaná stránka by si rok sestavení nesla přes Nový rok až do
+    // dalšího nasazení. Předrenderování ruší patička marketingového rámu
+    // (`connection()`, hlídá i `test/request-time-config.test.ts`); stránka
+    // proto musí jít přes rám a rok číst až uvnitř komponenty.
+    const webDir = join(import.meta.dirname, '..');
+    const page = readFileSync(join(webDir, 'app', 'kalkulacka', 'page.tsx'), 'utf8');
+    const shell = readFileSync(join(webDir, 'components', 'marketing-page.tsx'), 'utf8');
+
+    expect(page).toMatch(/^\s*<MarketingPage>/m);
+    expect(page).toMatch(/^ {2}const year = currentTaxYear\(\);/m);
+    expect(shell).toMatch(/^\s*await connection\(\);/m);
+    // kalkulačka je klientská komponenta — hodiny zařízení do výběru limitu nemluví
+    const calculator = readFileSync(join(webDir, 'components', 'filing-calculator.tsx'), 'utf8');
+    expect(calculator).not.toMatch(/from '@\/lib\/clock'/);
   });
 });

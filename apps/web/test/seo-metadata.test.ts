@@ -147,6 +147,7 @@ describe('robots a sitemapa (K8-09)', () => {
       '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
       '/caste-otazky': '2026-10-09', // limity § 38g s rokem (L3-01)
       '/jak-pocitame': '2026-10-09', // limity § 38g s rokem (L3-01)
+      '/kalkulacka': '2026-10-09', // karta o limitech § 38g s rokem (A20-R1-01)
       '/pruvodce/limit-100-000-kc': '2026-10-09', // limity § 38g s rokem (L3-01)
       '/o-projektu': '2026-10-08',
       '/podminky': '2026-10-08', // podmínky 3.0

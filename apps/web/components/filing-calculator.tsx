@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { currentTaxYear } from '@/lib/clock';
 import type { FilingLimitTexts } from '@/lib/filing-limits';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
@@ -23,7 +22,8 @@ import { buttonVariants } from '@/components/ui/button';
  * – jiné situation + zdanitelné příjmy nad limit § 38g/1 celkem → přiznání
  *   (R-09a: do ZO 2026 50 000 Kč, od ZO 2027 100 000 Kč),
  * – částky obou limitů § 38g připraví server z konfigurace roku
- *   (`lib/filing-limits.ts`) a kalkulačka si vybere ty pro běžný rok,
+ *   (`lib/filing-limits.ts`) pro běžný rok — a s nimi i limity roku
+ *   předchozího, aby nápověda v roce změny řekla obě částky (`limitYearNote`),
  * – neosvobozené prodeje → přiznání,
  * – do těchhle limitů patří i kladná plnění z derivátů (R-08d/R-10f) —
  *   nápověda je musí jmenovat, jinak na ně tazatel odpoví „Ne“,
@@ -77,37 +77,45 @@ function Question<T extends string | boolean>({
 }
 
 /**
- * Limity § 38g pro rok `year` z tabulky, kterou stránka kalkulačce předala.
+ * Věta do nápovědy, která limitu § 38g přiřadí rok — jen když se proti
+ * předchozímu roku změnil (R-09a, R-09b: od ZO 2027 100 000 / 40 000 Kč místo
+ * 50 000 / 20 000 Kč).
  *
- * Kalkulačka se ptá na „letos“ a limity se rok od roku liší (R-09a, R-09b:
- * od ZO 2027 100 000 / 40 000 Kč místo 50 000 / 20 000 Kč), jenže /kalkulacka
- * je statická stránka — rok jejího sestavení by si nesla přes Nový rok až do
- * dalšího nasazení a radila by podle zrušeného limitu (nález L3-01 revize 5).
- * Server proto pošle limity roku sestavení i roku následujícího a rozhodnou
- * hodiny návštěvníka. Rok, který tabulka nezná (hodiny mimo, stránka sestavená
- * dávno), dostane první řádek, tedy rok sestavení. Export kvůli testu.
+ * Otázka se ptá na „letos“, jenže v lednu až květnu se na kalkulačku chodí
+ * hlavně kvůli přiznání za rok PŘEDCHOZÍ. Kdo měl v roce 2026 vedle zaměstnání
+ * 30 000 Kč dividend, odpověděl by v únoru 2027 na „nad 40 000 Kč?“ po pravdě
+ * „Ne“ a četl by, že přiznání řešit nemusí — přitom za rok 2026 platí 20 000 Kč
+ * a přiznání podává (A20-R1-02). Když se limit nezměnil, na roce nezáleží
+ * a nápověda zůstává krátká.
  */
-export function pickFilingLimits(
-  byYear: readonly [FilingLimitTexts, ...FilingLimitTexts[]],
+function limitYearNote(
   year: number,
-): FilingLimitTexts {
-  return byYear.find((limits) => limits.year === year) ?? byYear[0];
+  limit: string,
+  previousYear: number,
+  previousLimit: string,
+): string {
+  return limit === previousLimit
+    ? ''
+    : `Limit ${limit} platí pro příjmy za rok ${year} — za rok ${previousYear} to bylo ještě ${previousLimit}. `;
 }
 
 /**
  * Text otázky na ostatní zdanitelné příjmy podle situation (limit paušální
  * daně / vedlejších příjmů zaměstnance / obecný). Limit 50 000 Kč paušální
- * daně (§ 7a) se rokem nemění, limity § 38g přicházejí v `limits`.
+ * daně (§ 7a) se rokem nemění, limity § 38g přicházejí v `limits`; s limity
+ * roku předchozího (`previous`) nápověda řekne, kterého roku se částka týká
+ * (`limitYearNote`) — bez nich se na znění otázky nic nemění.
  * Nápověda musí vyjmenovat i **deriváty**: do limitů vstupují kladná plnění
  * z opcí, futures a CFD (R-08d/R-10f, `limits.ts` je sčítá jako
  * `derivatives.taxableIncomeCzk`). Bez nich odpověděl obchodník s CFD „Ne“
  * a kalkulačka mu řekla, že přiznání řešit nemusí, i když limit prolomil.
  * Export kvůli testu znění.
  */
-export function incomeQuestions({
-  employee,
-  general,
-}: FilingLimitTexts): Record<Situation, { question: string; hint: string }> {
+export function incomeQuestions(
+  limits: FilingLimitTexts,
+  previous: FilingLimitTexts = limits,
+): Record<Situation, { question: string; hint: string }> {
+  const { employee, general } = limits;
   return {
     pausal: {
       question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
@@ -116,13 +124,11 @@ export function incomeQuestions({
     },
     zamestnanec: {
       question: `Máš letos vedle zaměstnání jiné zdanitelné příjmy nad ${employee}?`,
-      hint:
-        'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje se nepočítají.',
+      hint: `${limitYearNote(limits.year, employee, previous.year, previous.employee)}Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje se nepočítají.`,
     },
     jine: {
       question: `Máš letos zdanitelné příjmy nad ${general} celkem?`,
-      hint:
-        'Včetně zahraničních dividend, úroků, nájmu, kladných plnění z derivátů (CFD, opce, futures) i prodejů a směn stablecoinů — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
+      hint: `${limitYearNote(limits.year, general, previous.year, previous.general)}Včetně zahraničních dividend, úroků, nájmu, kladných plnění z derivátů (CFD, opce, futures) i prodejů a směn stablecoinů — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.`,
     },
   };
 }
@@ -205,7 +211,8 @@ export interface CalculatorOutcome {
 
 /**
  * Verdikt kalkulačky z odpovědí. Čistá funkce bez JSX — export kvůli testům.
- * `limits` říkají, kterými částkami § 38g se zdůvodnění řídí (viz `pickFilingLimits`).
+ * `limits` říkají, kterými částkami § 38g se zdůvodnění řídí — limity běžného
+ * roku, které stránka připravila na serveru.
  */
 export function evaluateCalculator(
   {
@@ -288,9 +295,11 @@ export function evaluateCalculator(
 export function KalkulackaPriznani({
   showHeader = true,
   filingLimits,
+  previousFilingLimits,
 }: {
   showHeader?: boolean;
-  filingLimits: readonly [FilingLimitTexts, ...FilingLimitTexts[]];
+  filingLimits: FilingLimitTexts;
+  previousFilingLimits: FilingLimitTexts;
 }) {
   const [situation, setSituace] = useState<Situation | null>(null);
   const [salesOver100k, setProdejeNad100k] = useState<boolean | null>(null);
@@ -298,11 +307,6 @@ export function KalkulackaPriznani({
   const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
   const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
   const [prijmy, setPrijmy] = useState<IncomeAnswer | null>(null);
-  // „Letos“ = běžný rok podle hodin návštěvníka, ne rok sestavení stránky
-  // (viz `pickFilingLimits`). Otázka s částkou se vykreslí až po první
-  // odpovědi, takže se serverová a klientská podoba nemají kde rozejít.
-  const [limits] = useState(() => pickFilingLimits(filingLimits, currentTaxYear()));
-
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10) —
   // řídí, kdy se ukáže poslední otázka
   const kryptoOsvobozene =
@@ -310,9 +314,11 @@ export function KalkulackaPriznani({
 
   const { verdict, reason, skippedQuestion } = evaluateCalculator(
     { situation, salesOver100k, allHeldThreeYears, kryptoNad100k, kryptoDrzeno3Roky, prijmy },
-    limits,
+    filingLimits,
   );
-  const incomeQuestion = situation === null ? null : incomeQuestions(limits)[situation];
+  // otázka i verdikt jmenují limit běžného roku; loňský jde jen do nápovědy
+  const incomeQuestion =
+    situation === null ? null : incomeQuestions(filingLimits, previousFilingLimits)[situation];
 
   return (
     <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6 sm:p-8">

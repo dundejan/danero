@@ -1,18 +1,38 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
 import { d } from '@danero/shared';
 import {
   evaluateCalculator as evaluateWithLimits,
   incomeQuestions,
-  pickFilingLimits,
+  KalkulackaPriznani,
   OZNAMENI_5M,
   type CalculatorAnswers,
 } from '@/components/filing-calculator';
-import { currentTaxYear } from '@/lib/clock';
-import { filingLimitTexts } from '@/lib/filing-limits';
+import { filingLimitTexts, type FilingLimitTexts } from '@/lib/filing-limits';
 import { czk } from '@/lib/format';
 import { configForYear } from '@/lib/tax-config';
+
+/**
+ * Kalkulačka drží odpovědi v `useState` a otázku s částkou ukáže až po několika
+ * kliknutích — a klikat tu není čím (testy běží bez DOM). `useState` si proto
+ * první hodnoty vezme z téhle fronty: komponenta se vykreslí rovnou v rozehraném
+ * stavu a je vidět, co z předaných limitů opravdu doteče do otázky, nápovědy
+ * a verdiktu. Prázdná fronta = obyčejný `useState`.
+ */
+const seededState = vi.hoisted(() => ({ queue: [] as unknown[] }));
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    useState: (initial: unknown) =>
+      seededState.queue.length > 0
+        ? [seededState.queue.shift(), () => {}]
+        : actual.useState(initial),
+  };
+});
 
 /** Nic nezodpovězeno — základ, na kterém se skládají jednotlivé scénáře. */
 const nothingAnswered: CalculatorAnswers = {
@@ -192,10 +212,6 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
  * L3-01 revize 5). Očekávání je proto z konfigurace roku, ne literál.
  */
 describe('kalkulačka: limity § 38g z konfigurace roku (R-09a, R-09b, L3-01)', () => {
-  afterEach(() => {
-    delete process.env.DANERO_NOW;
-  });
-
   const withIncome = (situation: 'zamestnanec' | 'jine'): CalculatorAnswers =>
     answers({ situation, salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' });
 
@@ -228,27 +244,105 @@ describe('kalkulačka: limity § 38g z konfigurace roku (R-09a, R-09b, L3-01)', 
     }
   });
 
-  /**
-   * /kalkulacka je statická stránka: dostane limity roku sestavení i roku
-   * následujícího a „letos“ určí až hodiny návštěvníka. Bez toho by si přes
-   * Nový rok nesla loňský limit až do dalšího nasazení.
-   */
-  it('na Nový rok 2027 platí nový limit i na stránce sestavené v roce 2026', () => {
-    const built2026 = [filingLimitTexts(2026), filingLimitTexts(2027)] as const;
+  it('nápověda je bez roku, dokud se limit proti loňsku nezměnil', () => {
+    // rok 2026 má stejné limity jako 2025 — věta o roce by jen překážela
+    const plain = incomeQuestions(filingLimitTexts(2026));
+    const withPrevious = incomeQuestions(filingLimitTexts(2026), filingLimitTexts(2025));
+    expect(filingLimitTexts(2025).employee).toBe(filingLimitTexts(2026).employee);
+    expect(withPrevious).toEqual(plain);
+    expect(plain.zamestnanec.hint).not.toMatch(/20\d\d/);
+  });
+});
 
-    process.env.DANERO_NOW = '2026-12-31T18:00:00Z';
-    expect(pickFilingLimits(built2026, currentTaxYear()).employee).toBe(
-      czk(d(configForYear(2026).limits.employeeSideIncome)),
+/**
+ * A20-R1-02: od 1. 1. 2027 se kalkulačka ptá na limit roku 2027 („letos“), jenže
+ * v lednu až květnu na ni lidé chodí kvůli přiznání za rok 2026, kde platí
+ * limit poloviční. Nápověda proto v roce změny řekne, kterého roku se částka
+ * týká a kolik to bylo loni (R-09a, R-09b).
+ */
+describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', () => {
+  const current = filingLimitTexts(2027);
+  const previous = filingLimitTexts(2026);
+
+  /** Kalkulačka vykreslená s hotovými odpověďmi (viz `seededState`), jako text bez značek. */
+  const renderAnswered = (
+    given: CalculatorAnswers,
+    limits: FilingLimitTexts = current,
+    previousLimits: FilingLimitTexts = previous,
+  ): string => {
+    // pořadí = pořadí `useState` v komponentě
+    seededState.queue = [
+      given.situation,
+      given.salesOver100k,
+      given.allHeldThreeYears,
+      given.kryptoNad100k,
+      given.kryptoDrzeno3Roky,
+      given.prijmy,
+    ];
+    const html = renderToStaticMarkup(
+      createElement(KalkulackaPriznani, {
+        filingLimits: limits,
+        previousFilingLimits: previousLimits,
+      }),
     );
-    // pražská 00:30 na Nový rok — v UTC je pořád Silvestr
-    process.env.DANERO_NOW = '2026-12-31T23:30:00Z';
-    expect(pickFilingLimits(built2026, currentTaxYear()).employee).toBe(
-      czk(d(configForYear(2027).limits.employeeSideIncome)),
-    );
+    // kdyby komponenta přibrala další stav, fronta by se rozešla s pořadím
+    expect(seededState.queue).toEqual([]);
+    return html.replace(/<[^>]+>/g, ' ');
+  };
+
+  const employeeNote = `Limit ${current.employee} platí pro příjmy za rok 2027 — za rok 2026 to bylo ještě ${previous.employee}.`;
+  const generalNote = `Limit ${current.general} platí pro příjmy za rok 2027 — za rok 2026 to bylo ještě ${previous.general}.`;
+
+  it('konfigurace: limity roku 2027 se od roku 2026 liší', () => {
+    // bez rozdílu by testy níž neměly co hlídat
+    expect(current.employee).not.toBe(previous.employee);
+    expect(current.general).not.toBe(previous.general);
   });
 
-  it('rok, který tabulka nezná, dostane limity roku sestavení', () => {
-    const built2026 = [filingLimitTexts(2026), filingLimitTexts(2027)] as const;
-    expect(pickFilingLimits(built2026, 2031).year).toBe(2026);
+  it('nápověda řekne rok limitu i loňskou částku — zaměstnanci i ostatním', () => {
+    const questions = incomeQuestions(current, previous);
+    expect(questions.zamestnanec.hint.startsWith(`${employeeNote} Třeba `)).toBe(true);
+    expect(questions.jine.hint.startsWith(`${generalNote} Včetně `)).toBe(true);
+    // limit paušální daně (§ 7a) se nezměnil, rok k němu nepatří
+    expect(questions.pausal.hint).not.toMatch(/20\d\d/);
+    // samotná otázka zůstává stejná — podle ní se pozná přeskočená odpověď
+    expect(questions.zamestnanec.question).toBe(incomeQuestions(current).zamestnanec.question);
+  });
+
+  it('zaměstnanec, který odpoví „Ne“, vidí vedle verdiktu i limit za rok 2026', () => {
+    // scénář z nálezu: 30 000 Kč dividend za rok 2026, únor 2027
+    const text = renderAnswered(
+      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ne' }),
+    );
+    expect(text).toContain(`Máš letos vedle zaměstnání jiné zdanitelné příjmy nad ${current.employee}?`);
+    expect(text).toContain(employeeNote);
+    expect(text).toContain('Vypadá to, že přiznání kvůli investicím řešit nemusíš.');
+  });
+
+  it('otázka i zdůvodnění verdiktu jmenují limit běžného roku, ne loňský', () => {
+    const employee = renderAnswered(
+      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' }),
+    );
+    expect(employee).toContain(`nad ${current.employee}?`);
+    expect(employee).toContain(`Vedlejší zdanitelné příjmy nad ${current.employee} vedle zaměstnání`);
+    expect(employee).not.toContain(`nad ${previous.employee}`);
+
+    const other = renderAnswered(
+      answers({ situation: 'jine', salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' }),
+    );
+    expect(other).toContain(`Máš letos zdanitelné příjmy nad ${current.general} celkem?`);
+    expect(other).toContain(generalNote);
+    expect(other).toContain(`Zdanitelné příjmy nad ${current.general} za rok`);
+    expect(other).not.toContain(`nad ${previous.general}`);
+  });
+
+  it('v roce beze změny kalkulačka žádný rok nejmenuje', () => {
+    const text = renderAnswered(
+      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ne' }),
+      filingLimitTexts(2026),
+      filingLimitTexts(2025),
+    );
+    expect(text).toContain(`nad ${previous.employee}?`);
+    expect(text).not.toMatch(/za rok 20\d\d/);
   });
 });

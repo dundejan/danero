@@ -27,7 +27,7 @@ interface Page {
 
 const PAGES: Page[] = [
   { path: '/', lastModified: '2026-10-08', changeFrequency: 'weekly', priority: 1 },
-  { path: '/kalkulacka', lastModified: '2026-08-10', changeFrequency: 'monthly', priority: 0.9 },
+  { path: '/kalkulacka', lastModified: '2026-10-09', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/platformy', lastModified: '2026-10-08', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/pruvodce', lastModified: '2026-07-12', changeFrequency: 'monthly', priority: 0.7 },
   {

@@ -11,6 +11,10 @@ export const metadata: Metadata = {
     'Odpověz na pár otázek a zjisti orientačně, jestli se tě kvůli akciím, ETF či kryptu týká daňové přiznání. Zlaté pravidlo 100 000 Kč, tříletý časový test i limit 50 000 Kč pro paušální daň.',
 };
 
+/**
+ * Karty pod kalkulačkou. Na rok vázané nejsou, takže limity § 38g jmenují
+ * s oběma roky i částkami (R-09a, R-09b) — hlídá `test/public-filing-limits.test.ts`.
+ */
 const PRAVIDLA = [
   {
     title: 'Zlaté pravidlo 100 000 Kč',
@@ -22,7 +26,7 @@ const PRAVIDLA = [
   },
   {
     title: 'Limity pro podání přiznání',
-    body: 'OSVČ v paušálním režimu má hranici 50 000 Kč zdanitelných příjmů mimo podnikání. Překročení z režimu nevyhazuje — jen daň přestane být rovna paušální dani, takže vzniká povinnost podat přiznání a přehledy. Do hranice patří neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnancům stačí hlídat 20 000 Kč vedlejších příjmů. Osvobozené prodeje se do limitů nepočítají. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
+    body: 'OSVČ v paušálním režimu má hranici 50 000 Kč zdanitelných příjmů mimo podnikání. Překročení z režimu nevyhazuje — jen daň přestane být rovna paušální dani, takže vzniká povinnost podat přiznání a přehledy. Do hranice patří neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnanci hlídají vedlejší příjmy — za rok 2026 do 20 000 Kč, od roku 2027 do 40 000 Kč; pro ostatní platí obecný limit 50 000 Kč za rok 2026 a 100 000 Kč od roku 2027. Osvobozené prodeje se do limitů nepočítají. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
   },
 ] as const;
 
@@ -37,11 +41,14 @@ export default function KalkulackaPage() {
       />
 
       <div className="mt-12">
-        {/* stránka je statická: kalkulačka dostane limity § 38g roku sestavení
-            i roku následujícího a podle hodin návštěvníka si vybere (R-09a, R-09b) */}
+        {/* Stránka se vykresluje při každém požadavku (patička marketingového
+            rámu volá `connection()`), takže běžný rok zná server a kalkulačce
+            stačí poslat limity § 38g toho roku. Limity roku předchozího jdou
+            s nimi: v sezóně přiznání se rozhoduje o něm (R-09a, R-09b). */}
         <KalkulackaPriznani
           showHeader={false}
-          filingLimits={[filingLimitTexts(year), filingLimitTexts(year + 1)]}
+          filingLimits={filingLimitTexts(year)}
+          previousFilingLimits={filingLimitTexts(year - 1)}
         />
       </div>
 
