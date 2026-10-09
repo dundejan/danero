@@ -87,8 +87,9 @@ export default function Limit100000KcPage() {
           <p>
             A pozor: povinnost podat přiznání se posuzuje z <strong>hrubých</strong>{' '}
             příjmů, ne ze zisku. Neosvobozené prodeje za 101 000 Kč jsou nad obecnou
-            hranicí 50 000 Kč zdanitelných příjmů (u zaměstnance stačí 20 000 Kč
-            vedlejších příjmů) — přiznání tak může vyjít i s nulovou daní, třeba když jsi
+            hranicí zdanitelných příjmů — za rok 2026 je to 50 000 Kč, od roku 2027
+            100 000 Kč (u zaměstnance stačí 20 000 Kč vedlejších příjmů, od roku 2027
+            40 000 Kč). Přiznání tak může vyjít i s nulovou daní, třeba když jsi
             prodával se ztrátou. A platí to i naruby: když jsou prodeje osvobozené,
             ztráty z nich nikam neuplatníš.
           </p>

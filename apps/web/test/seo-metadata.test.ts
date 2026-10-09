@@ -145,7 +145,9 @@ describe('robots a sitemapa (K8-09)', () => {
       '/bezpecnost': '2026-10-09', // lhůta odpovědi podle SECURITY.md (L1-04)
       '/cenik': '2026-10-08', // služba celá zdarma
       '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
-      '/caste-otazky': '2026-10-08',
+      '/caste-otazky': '2026-10-09', // limity § 38g s rokem (L3-01)
+      '/jak-pocitame': '2026-10-09', // limity § 38g s rokem (L3-01)
+      '/pruvodce/limit-100-000-kc': '2026-10-09', // limity § 38g s rokem (L3-01)
       '/o-projektu': '2026-10-08',
       '/podminky': '2026-10-08', // podmínky 3.0
       '/soukromi': '2026-10-08',
