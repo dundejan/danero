@@ -172,6 +172,67 @@ describe('strop neúspěšných přihlášení na adresu (L8a-03, R14)', () => {
   );
 
   it(
+    'jedno známé zařízení nevyčerpá počítadlo druhému',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-dve-zarizeni@priklad.test';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      const first = cookieFrom(await signIn(auth, email, PASSWORD));
+      const second = cookieFrom(await signIn(auth, email, PASSWORD));
+      // každé zařízení má vlastní id, hodnota cookie není pro adresu jedna
+      expect(first).not.toBe(second);
+
+      for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+        await signIn(auth, email, WRONG, first);
+      }
+      expect((await signIn(auth, email, PASSWORD, first)).status).toBe(429);
+      expect((await signIn(auth, email, PASSWORD, second)).status).toBe(200);
+    },
+  );
+
+  it(
+    'změna hesla dřív vydané cookies zneplatní — kdo heslo znal, je zase neznámý prohlížeč',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-stara-cookie@priklad.test';
+      const newPassword = 'uplne-nove-heslo-uctu-03';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      const signedIn = await signIn(auth, email, PASSWORD);
+      const stale = cookieFrom(signedIn);
+
+      const changed = await auth.handler(
+        new Request('http://localhost:3000/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: stale },
+          body: JSON.stringify({ currentPassword: PASSWORD, newPassword }),
+        }),
+      );
+      expect(changed.status).toBe(200);
+
+      // strop neznámých prohlížečů vyčerpaný → stará cookie už výjimku nedává
+      await failTimes(auth, email, MAX_FAILURES);
+      expect((await signIn(auth, email, newPassword, stale)).status).toBe(429);
+    },
+  );
+
+  it(
+    'nepotvrzený účet cookie známého prohlížeče nedostane',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-nepotvrzeny@priklad.test';
+      const logPath = join(mkdtempSync(join(tmpdir(), 'danero-test-')), 'emails.log');
+      process.env.DANERO_EMAIL_LOG = logPath;
+      await auth.api.signUpEmail({ body: { email, password: PASSWORD, name: 'Test' } });
+
+      const response = await signIn(auth, email, PASSWORD);
+      expect(response.status).toBe(403);
+      expect(response.headers.getSetCookie().some((entry) => entry.includes('known_browser'))).toBe(
+        false,
+      );
+    },
+  );
+
+  it(
     'souběžné pokusy strop nepřestřelí',
     { timeout: 60_000 },
     async () => {

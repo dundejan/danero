@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from 'better-auth/api';
 import { expireCookie, setSessionCookie } from 'better-auth/cookies';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, or } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { user, verification } from '@/db/schema';
+import { account, appRateLimits, user, verification } from '@/db/schema';
 import {
   COMMON_PASSWORD_CODE,
   COMMON_PASSWORD_MESSAGE,
@@ -178,15 +178,20 @@ export function withoutTrustDevice(
  *   (`settleSignInAttempt`), takže běžné přihlašování se do stropu nesčítá.
  * - Klíč je otisk adresy, ne id účtu, a počítá se i pro adresu bez účtu —
  *   odpověď tak neprozradí, jestli účet existuje.
- * - **Známý prohlížeč má vlastní počítadlo.** Kdo se z prohlížeče už jednou
- *   přihlásil správným heslem, nese podepsanou cookie s otiskem adresy a jeho
- *   pokusy se počítají zvlášť. Bez toho by kdokoli, kdo adresu zná, uměl
- *   majiteli přihlášení zamykat dokola (deset pokusů každou čtvrthodinu);
- *   takhle si cizí člověk vyčerpá jen počítadlo neznámých prohlížečů.
- *   Hádat heslo cookie nepomůže: i její počítadlo má strop a bez správného
- *   hesla ji nikdo nedostane.
- * - Dokončená obnova hesla maže obě počítadla (`clearSignInFailures`): kdo je
- *   na novém zařízení zrovna zamčený, dostane se dovnitř hned.
+ * - **Známý prohlížeč má vlastní počítadlo.** Kdo se z prohlížeče přihlásil
+ *   správným heslem, odnese si podepsanou cookie a jeho pokusy se počítají
+ *   zvlášť. Bez toho by kdokoli, kdo adresu zná, uměl majiteli přihlášení
+ *   zamykat dokola (deset pokusů každou čtvrthodinu); takhle si cizí člověk
+ *   vyčerpá jen počítadlo neznámých prohlížečů.
+ *   Cookie nese náhodné id zařízení a otisk svázaný s AKTUÁLNÍM heslem účtu
+ *   (`knownBrowserBinding`): každé zařízení má vlastní počítadlo, takže ho
+ *   nevyčerpá ani jiný známý prohlížeč, a změna nebo obnova hesla všechny
+ *   dřív vydané cookies zneplatní — kdo heslo znal včera, je dnes zase
+ *   neznámý prohlížeč. Hádat heslo cookie nepomůže: bez správného
+ *   současného hesla ji nikdo nedostane a i její počítadlo má strop.
+ * - Dokončená obnova hesla maže všechna počítadla adresy
+ *   (`clearSignInFailures`): kdo je na novém zařízení zrovna zamčený,
+ *   dostane se dovnitř hned.
  *
  * Vědomá cena, která zbývá: na zařízení, ze kterého se majitel ještě
  * nepřihlásil, mu cizí člověk umí přihlášení heslem na čtvrt hodiny zavřít.
@@ -198,24 +203,62 @@ const SIGN_IN_PATH = '/sign-in/email';
 const KNOWN_BROWSER_COOKIE = 'known_browser';
 const KNOWN_BROWSER_MAX_AGE_S = 60 * 60 * 24 * 180;
 
-const signInAttemptKey = (email: string, knownBrowser: boolean): string =>
-  `signin_fail:${emailFingerprint(email)}${knownBrowser ? ':known' : ''}`;
+const signInAttemptPrefix = (email: string): string => `signin_fail:${emailFingerprint(email)}`;
+
+/** Počítadlo neznámých prohlížečů (`deviceId` null), nebo jednoho známého zařízení. */
+const signInAttemptKey = (email: string, deviceId: string | null): string =>
+  deviceId ? `${signInAttemptPrefix(email)}:known:${deviceId}` : signInAttemptPrefix(email);
 
 const signInEmail = (body: unknown): string | null => {
   const email = (body as { email?: unknown } | undefined)?.email;
   return typeof email === 'string' && email ? email : null;
 };
 
-/** Přihlásil se už někdy tenhle prohlížeč na tuhle adresu správným heslem? */
-async function isKnownBrowser(ctx: HookContext, email: string): Promise<boolean> {
-  const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE);
-  const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
-  return Boolean(fingerprint) && fingerprint === emailFingerprint(email);
+/** Otisk hesla účtu na dané adrese; `null`, když adresa účet s heslem nemá. */
+async function credentialHash(db: Db, email: string): Promise<string | null> {
+  const [row] = await db
+    .select({ hash: account.password })
+    .from(account)
+    .innerJoin(user, eq(account.userId, user.id))
+    .where(and(eq(user.email, email.trim().toLowerCase()), eq(account.providerId, 'credential')));
+  return row?.hash ?? null;
 }
 
+/**
+ * Čím je cookie známého prohlížeče svázaná s účtem: HMAC z otisku adresy
+ * a uloženého otisku hesla. Změní-li se heslo, změní se i tohle a cookie
+ * přestane platit; z hodnoty samotné se o hesle nedá zjistit nic.
+ */
+const knownBrowserBinding = (secret: string, email: string, passwordHash: string): string =>
+  createHmac('sha256', secret).update(`${emailFingerprint(email)}|${passwordHash}`).digest('hex');
+
+const DEVICE_ID_RE = /^[0-9a-f]{32}$/;
+
+/**
+ * Id zařízení z cookie, pokud tenhle prohlížeč na tuhle adresu už prošel se
+ * SOUČASNÝM heslem; jinak `null`. Do databáze se dívá jen s podepsanou cookie
+ * správného tvaru — dotaz bez ní neprozradí časem odpovědi, jestli účet existuje.
+ */
+async function knownDeviceId(db: Db, ctx: HookContext, email: string): Promise<string | null> {
+  const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE);
+  const value = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
+  if (!value) return null;
+  const [deviceId, binding] = value.split(':');
+  if (!deviceId || !binding || !DEVICE_ID_RE.test(deviceId)) return null;
+  const hash = await credentialHash(db, email);
+  if (!hash) return null;
+  const expected = Buffer.from(knownBrowserBinding(ctx.context.secret, email, hash));
+  const given = Buffer.from(binding);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+  return deviceId;
+}
+
+/** Smaže počítadla adresy: neznámých prohlížečů i všech známých zařízení. */
 export async function clearSignInFailures(db: Db, email: string): Promise<void> {
-  await releaseRateLimit(db, signInAttemptKey(email, false));
-  await releaseRateLimit(db, signInAttemptKey(email, true));
+  const prefix = signInAttemptPrefix(email);
+  await db
+    .delete(appRateLimits)
+    .where(or(eq(appRateLimits.key, prefix), like(appRateLimits.key, `${prefix}:known:%`)));
 }
 
 export function limitSignInAttempts(db: Db) {
@@ -225,7 +268,7 @@ export function limitSignInAttempts(db: Db) {
     if (!email) return;
     const allowed = await checkRateLimit(
       db,
-      signInAttemptKey(email, await isKnownBrowser(ctx, email)),
+      signInAttemptKey(email, await knownDeviceId(db, ctx, email)),
       { max: SIGN_IN_ATTEMPT_MAX, windowMs: SIGN_IN_ATTEMPT_WINDOW_MS },
     );
     if (allowed) return;
@@ -238,11 +281,13 @@ export function limitSignInAttempts(db: Db) {
 }
 
 /**
- * Po odpovědi přihlášení: správné heslo smaže počítadlo tohohle prohlížeče
- * a prohlížeč si odnese cookie „známý“. Správné heslo poznáme podle toho, že
- * endpoint neskončil chybou, nebo skončil na nepotvrzené adrese — tu Better
- * Auth kontroluje až PO hesle. Všechno ostatní (401, chyba serveru) nechává
- * pokus započítaný.
+ * Po odpovědi přihlášení: správné heslo smaže počítadlo tohohle prohlížeče.
+ * Správné heslo poznáme podle toho, že endpoint neskončil chybou, nebo skončil
+ * na nepotvrzené adrese — tu Better Auth kontroluje až PO hesle. Všechno
+ * ostatní (401, chyba serveru) nechává pokus započítaný.
+ *
+ * Cookie „známý prohlížeč“ dostane jen přihlášení k POTVRZENÉMU účtu: heslo
+ * nepotvrzeného účtu může znát ten, kdo si cizí adresu předregistroval.
  *
  * Běží přímo v kontextu `afterHooks`, protože zapisuje cookie.
  */
@@ -251,18 +296,24 @@ export async function settleSignInAttempt(db: Db, ctx: HookContext): Promise<voi
   const email = signInEmail(ctx.body);
   if (!email) return;
   const returned = ctx.context.returned;
-  const passwordCorrect =
-    !isAPIError(returned) ||
-    (returned.statusCode === 403 && returned.body?.code === 'EMAIL_NOT_VERIFIED');
-  if (!passwordCorrect) return;
+  const unverified =
+    isAPIError(returned) &&
+    returned.statusCode === 403 &&
+    returned.body?.code === 'EMAIL_NOT_VERIFIED';
+  if (isAPIError(returned) && !unverified) return;
 
-  await releaseRateLimit(db, signInAttemptKey(email, await isKnownBrowser(ctx, email)));
+  const deviceId = await knownDeviceId(db, ctx, email);
+  await releaseRateLimit(db, signInAttemptKey(email, deviceId));
+  if (unverified) return;
+
+  const hash = await credentialHash(db, email);
+  if (!hash) return;
   const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE, {
     maxAge: KNOWN_BROWSER_MAX_AGE_S,
   });
   await ctx.setSignedCookie(
     cookie.name,
-    emailFingerprint(email),
+    `${deviceId ?? randomBytes(16).toString('hex')}:${knownBrowserBinding(ctx.context.secret, email, hash)}`,
     ctx.context.secret,
     cookie.attributes,
   );
@@ -501,11 +552,11 @@ export async function signInVerificationBrowser(db: Db, ctx: HookContext): Promi
   const current = await getSessionFromCtx(ctx);
   if (current?.user.id === verified.id) return;
 
-  const account = await ctx.context.internalAdapter.findUserById(verified.id);
-  if (!account) return;
+  const verifiedUser = await ctx.context.internalAdapter.findUserById(verified.id);
+  if (!verifiedUser) return;
   const session = await ctx.context.internalAdapter.createSession(verified.id);
   if (!session) return;
-  await setSessionCookie(ctx, { session, user: account });
+  await setSessionCookie(ctx, { session, user: verifiedUser });
   // jednorázová: další odkaz chce novou žádost z tohohle prohlížeče
   expireCookie(ctx, cookie);
 }
