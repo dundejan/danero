@@ -241,6 +241,28 @@ describe('univerzální CSV šablona', () => {
     expect(result.errors[0]!.message).toContain('2026-02-30');
     expect(result.errors[1]!.message).toContain('settlement_date');
   });
+
+  it('překlep v roce (0202, 3025) se odmítne — jinak roztáhne přepínač roku na staletí (L7i-08)', () => {
+    const csv = [
+      'type,date,settlement_date,isin,quantity,price,currency',
+      'BUY,0202-05-01,,US0378331005,10,185.50,USD',
+      'BUY,1.5.3025,,US0378331005,10,185.50,USD',
+      'SELL,2026-03-05,0026-03-07,US0378331005,5,210.00,USD',
+      // kupónová privatizace i příští rok jsou v pořádku
+      'BUY,1993-06-01,,CZ0005112300,10,1000,CZK',
+      'BUY,2026-03-05,,US0378331005,1,200.00,USD',
+    ].join('\n');
+    const result = parseUniversalCsv(csv);
+    expect(result.transactions.map((tx) => ('tradeDate' in tx ? tx.tradeDate : ''))).toEqual([
+      '1993-06-01',
+      '2026-03-05',
+    ]);
+    expect(result.errors.map((error) => error.line)).toEqual([2, 3, 4]);
+    expect(result.errors[0]!.message).toContain('Rok 0202');
+    expect(result.errors[0]!.message).toContain('překlep');
+    expect(result.errors[1]!.message).toContain('Rok 3025');
+    expect(result.errors[2]!.message).toContain('settlement_date');
+  });
   // B-3: „1,500“ je v českém Excelu 1,5 i 1500 — dřív se čárka VŽDY brala jako
   // oddělovač tisíců, takže „0,001“ BTC skončilo jako 1 kus (tisícinásobek)
   describe('desetinná čárka v šabloně (B-3)', () => {

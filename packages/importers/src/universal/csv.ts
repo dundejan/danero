@@ -120,6 +120,15 @@ function universalDate(value: string): string | null {
 
 const DATE_COLUMNS = ['date', 'settlement_date', 'acquisition_date'] as const;
 
+/**
+ * Meze roku u ručně psaného data (L7i-08). Tvar `0202-05-01` je platné datum,
+ * ale ne rok transakce — a jediný takový překlep roztáhl přepínač roku
+ * i stahování kurzů ČNB na stovky let. Meze jsou schválně široké: chytají
+ * překlep, nerozhodují o tom, co je ještě věrohodná historie.
+ */
+const MIN_YEAR = 1900;
+const MAX_YEAR = 2100;
+
 /** Sloupce s čísly — z nich se pozná, jestli soubor píše desetinnou čárku. */
 const NUMERIC_COLUMNS = [
   'quantity',
@@ -367,6 +376,15 @@ export function parseUniversalCsv(text: string): ImportResult {
         result.errors.push({
           line,
           message: `Neplatné datum "${value}" ve sloupci ${column} — očekáváme existující den ve tvaru RRRR-MM-DD (např. 2026-03-05) nebo D.M.RRRR (např. 5.3.2026).`,
+          raw: row.join(','),
+        });
+        return;
+      }
+      const year = Number(iso.slice(0, 4));
+      if (year < MIN_YEAR || year > MAX_YEAR) {
+        result.errors.push({
+          line,
+          message: `Rok ${iso.slice(0, 4)} ve sloupci ${column} nevypadá jako rok transakce — nejspíš překlep v datu "${value}" (čekáme rok mezi ${MIN_YEAR} a ${MAX_YEAR}).`,
           raw: row.join(','),
         });
         return;
