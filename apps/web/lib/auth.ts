@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -20,6 +19,7 @@ import {
   handleExistingUserSignUp,
   settleSignupContest,
 } from '@/lib/auth-signup';
+import { readOrCreateDevSecret } from '@/lib/dev-secret';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -32,12 +32,9 @@ export function resolveSecret(): string {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('BETTER_AUTH_SECRET musí být v produkci nastaven (openssl rand -hex 32).');
   }
-  const file = join('.data', 'dev-auth-secret');
-  if (existsSync(file)) return readFileSync(file, 'utf8').trim();
-  mkdirSync('.data', { recursive: true });
-  const secret = randomBytes(32).toString('hex');
-  writeFileSync(file, secret, { mode: 0o600 });
-  return secret;
+  return readOrCreateDevSecret(join('.data', 'dev-auth-secret'), () =>
+    randomBytes(32).toString('hex'),
+  );
 }
 
 /**
