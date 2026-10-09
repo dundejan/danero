@@ -20,13 +20,20 @@ import type { ProfileRow } from '@/lib/portfolio';
 
 const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'PLN', 'HUF', 'SEK', 'NOK', 'DKK'];
 
-/** Roční sada, kterou `cnbYearCoverage` uzná za kompletní (≥ 1000 řádků). */
-function fullYear(year: number): Array<{ day: string; currency: string; rate: string }> {
+/**
+ * Roční sada, kterou `cnbYearCoverage` uzná za kompletní (≥ 1000 řádků).
+ * S `lastDay` končí dřív — tak vypadá rok stažený naposledy ranním cronem.
+ */
+function fullYear(
+  year: number,
+  lastDay = `${year}-12-31`,
+): Array<{ day: string; currency: string; rate: string }> {
   const rows: Array<{ day: string; currency: string; rate: string }> = [];
   const day = new Date(Date.UTC(year, 0, 1));
   while (day.getUTCFullYear() === year) {
+    const iso = day.toISOString().slice(0, 10);
+    if (iso > lastDay) break;
     if (day.getUTCDay() !== 0 && day.getUTCDay() !== 6) {
-      const iso = day.toISOString().slice(0, 10);
       for (const currency of CURRENCIES) rows.push({ day: iso, currency, rate: '25' });
     }
     day.setUTCDate(day.getUTCDate() + 1);
@@ -182,6 +189,21 @@ describe('první dny ledna před prvním fixingem ČNB (L11-01, L11-02)', () => 
   ];
 
   /**
+   * Týž obchod jednotným kurzem: zisk 10 000 USD × jednotný kurz dolaru 2026.
+   * Čte se z konfigurace — kurz běžného roku je do lednového pokynu GFŘ jen
+   * orientační odhad a mění se (naposledy 9. 10. 2026 z 20,80 na 20,96), takže
+   * opsané číslo by test shodilo při každé údržbě.
+   */
+  async function unifiedBaseCzk(): Promise<string> {
+    const { UNIFIED_RATES } = await import('@/lib/tax-config');
+    const { d } = await import('@danero/shared');
+    const base = d(UNIFIED_RATES[2026]!.USD!).mul(10_000).toString();
+    // kdyby se jednotný kurz někdy trefil do 25, test by obě soustavy nerozlišil
+    expect(base).not.toBe('250000');
+    return base;
+  }
+
+  /**
    * Vlastní databáze pro každý test: `getDb()` drží jedinou instanci přes celý
    * soubor, takže by kurz roku 2027 z jednoho testu rozhodl o výsledku dalšího.
    */
@@ -244,7 +266,7 @@ describe('první dny ledna před prvním fixingem ČNB (L11-01, L11-02)', () => 
 
       // 1. 1. 2027 v 0:30 pražského času (v UTC je ještě Silvestr): soubor roku
       // 2027 je jen hlavička — přesně stav, který `fetchCnbYear` popisuje jako
-      // legitimní. Dřív: základ 208 000 Kč jednotným kurzem a FX_DAILY_RATE_MISSING.
+      // legitimní. Dřív: základ jednotným kurzem a FX_DAILY_RATE_MISSING.
       expect(await closedYearAt(db, '2026-12-31T23:30:00Z', { 2027: cnbFile() })).toEqual({
         ...daily,
         currentYear: 2027,
@@ -286,8 +308,53 @@ describe('první dny ledna před prvním fixingem ČNB (L11-01, L11-02)', () => 
       expect(await closedYearAt(db, '2027-01-03T11:00:00Z', { 2027: 503 })).toEqual({
         currentYear: 2027,
         dailyRates: false,
-        base10Czk: '208000',
+        base10Czk: await unifiedBaseCzk(),
         fxWarnings: expect.arrayContaining(['FX_DAILY_RATE_MISSING']),
+        requested: [2027],
+      });
+    },
+  );
+
+  it(
+    'výpadek ČNB na dřívějším roce nenechá běžný rok omluvený starším stažením (B01-R1-01)',
+    { timeout: 60_000 },
+    async () => {
+      // stav o půlnoci: ranní cron stáhl 31. 12. rok 2026 jen do 30. 12.
+      const db = await seedYears(2025);
+      const { fxRates } = await import('@/db/schema');
+      await db.insert(fxRates).values(fullYear(2026, '2026-12-30'));
+
+      // 1. 1. 2027 v 0:30 pražského času: ČNB odpovídá, rok 2027 je jen
+      // hlavička. Rok 2026 je podle UTC ještě běžný, takže se nedotahuje.
+      expect(await closedYearAt(db, '2026-12-31T23:30:00Z', { 2027: cnbFile() })).toEqual({
+        currentYear: 2027,
+        dailyRates: true,
+        base10Czk: '250000',
+        fxWarnings: [],
+        requested: [2027],
+      });
+
+      // 1. 1. 2027 v 9:00: ČNB má výpadek na všech letech. Rok 2026 je teď
+      // uzavřený a nedotažený, stahuje se první, spadne — a na rok 2027 se už
+      // nikdo nezeptá. Osm hodin starý výsledek „bez kurzu“ ho omluvit nesmí:
+      // studený proces by v tu chvíli počítal jednotným kurzem a dvě instance
+      // by při témž výpadku ukázaly jiný základ.
+      expect(await closedYearAt(db, '2027-01-01T08:00:00Z', {})).toEqual({
+        currentYear: 2027,
+        dailyRates: false,
+        base10Czk: await unifiedBaseCzk(),
+        fxWarnings: expect.arrayContaining(['FX_DAILY_RATE_MISSING']),
+        requested: [2026],
+      });
+
+      // Jakmile ČNB zase odpovídá, rok 2027 je znovu ČERSTVĚ bez kurzu a počítá
+      // se zase denními kurzy. (Rok 2026 se v témž procesu podruhé nedotahuje —
+      // uzavřený rok se zkouší jednou za život procesu, to je starší chování.)
+      expect(await closedYearAt(db, '2027-01-01T08:02:00Z', { 2027: cnbFile() })).toEqual({
+        currentYear: 2027,
+        dailyRates: true,
+        base10Czk: '250000',
+        fxWarnings: [],
         requested: [2027],
       });
     },

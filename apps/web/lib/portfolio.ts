@@ -334,7 +334,9 @@ export async function loadDailyRates(
   // výš). Dřív se kvůli němu zahodily denní kurzy CELÉHO rozsahu a uzavřené
   // roky se na pár dní přepočítaly jednotným kurzem (na doloženém případu
   // základ o 7 770 Kč jinde než den předtím). Rozhoduje výsledek stažení, ne
-  // kalendář: po výpadku ČNB zůstává i běžný rok chybějící.
+  // kalendář: po výpadku ČNB zůstává i běžný rok chybějící — a to i tehdy, když
+  // stahování spadlo na dřívějším roce a na běžný se vůbec nedošlo
+  // (`ensureCnbYears` pak jeho starší zápis smaže, B01-R1-01).
   const missing =
     provider.missingYears?.filter(
       (year) => !(year === currentYear && cnb.cnbYearHasNoAnnouncedRate(year)),

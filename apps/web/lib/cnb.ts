@@ -167,15 +167,21 @@ export async function fetchCnbYear(
  *
  * Zapisuje se výhradně z výsledku stažení, nikdy z kalendáře: úspěch rok přidá
  * nebo odebere (`fetchCnbYear`), neúspěch ho odebere (`ensureCnbYear`) — po
- * výpadku nevíme, co ČNB vyhlásila, a starší odpověď to nerozhodne. Rok bez
- * řádků se přitom stahuje při každém volání `ensureCnbYears`, takže ten, kdo
- * se ptá hned po něm, čte čerstvý výsledek.
+ * výpadku nevíme, co ČNB vyhlásila, a starší odpověď to nerozhodne.
+ *
+ * Zápis žije v paměti procesu, takže sám o sobě může být libovolně starý.
+ * Čerstvý je jen pro toho, komu `ensureCnbYears` s tím rokem právě doběhla bez
+ * výjimky: rok bez řádků se při každém takovém volání stahuje znovu. Když řada
+ * skončí výjimkou dřív, než na rok dojde, `ensureCnbYears` jeho zápis smaže
+ * (B01-R1-01) — jinak by ho omluvilo stažení staré třeba osm hodin.
  */
 const yearsWithoutAnnouncedRate = new Set<number>();
 
 /**
  * Stáhli jsme právě roční soubor ČNB a za tenhle rok v něm není ani jeden kurz?
- * `false` znamená i „nevíme“ (nestahovalo se, stažení selhalo).
+ * `false` znamená i „nevíme“ (nestahovalo se, stažení selhalo, nebo na rok
+ * nedošlo, protože stahování spadlo na dřívějším). Ptej se hned po
+ * `ensureCnbYears`, která ten rok měla v seznamu — viz zápis výš.
  */
 export function cnbYearHasNoAnnouncedRate(year: number): boolean {
   return yearsWithoutAnnouncedRate.has(year);
@@ -312,8 +318,19 @@ export async function ensureCnbYears(
   years: number[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  for (const year of [...new Set(years)]) {
-    await ensureCnbYear(db, year, fetchImpl);
+  const unique = [...new Set(years)];
+  for (const [index, year] of unique.entries()) {
+    try {
+      await ensureCnbYear(db, year, fetchImpl);
+    } catch (error) {
+      // B01-R1-01: řada končí první výjimkou, na další roky se už nikdo
+      // nezeptá. O nich tedy z tohohle volání nevíme nic — zápis „bez
+      // vyhlášeného kurzu“ z dřívějšího stažení se nesmí tvářit jako čerstvý.
+      // (Přesně takhle 1. ledna ráno přežil půlnoční zápis běžného roku výpadek
+      // ČNB: spadl nedotažený loňský rok a na běžný se nedošlo.)
+      for (const skipped of unique.slice(index)) yearsWithoutAnnouncedRate.delete(skipped);
+      throw error;
+    }
   }
 }
 
