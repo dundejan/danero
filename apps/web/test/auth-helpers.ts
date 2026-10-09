@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { getAuth } from '@/lib/auth';
@@ -25,13 +25,43 @@ export async function signUpVerified(
   }
 }
 
-/** Token z posledního e-mailu v testovacím výstupu. */
-export function verificationTokenFrom(logPath: string): string {
-  const messages = readFileSync(logPath, 'utf8')
+export interface LoggedEmail {
+  to: string;
+  subject: string;
+  text: string;
+}
+
+/** Zprávy z testovacího výstupu; dokud nic neodešlo, soubor neexistuje. */
+export function emailsIn(logPath: string): LoggedEmail[] {
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath, 'utf8')
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as { text: string });
-  const url = messages.at(-1)?.text.match(/https?:\/\/\S+/)?.[0];
+    .map((line) => JSON.parse(line) as LoggedEmail);
+}
+
+/**
+ * Požadavek přes HTTP router, tedy stejnou cestou jako formulář v prohlížeči.
+ * Serverové `auth.api.*` požadavek nemá (`ctx.request` je `undefined`), takže
+ * háčky, které čtou tělo, by přes něj dostaly něco jiného než v provozu.
+ */
+export function postAuth(
+  auth: Auth,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return auth.handler(
+    new Request(`http://localhost:3000/api/auth${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** Token z posledního e-mailu v testovacím výstupu. */
+export function verificationTokenFrom(logPath: string): string {
+  const url = emailsIn(logPath).at(-1)?.text.match(/https?:\/\/\S+/)?.[0];
   if (!url) throw new Error('E-mail neobsahuje odkaz');
   const token = new URL(url).searchParams.get('token');
   if (!token) throw new Error(`Odkaz neobsahuje token: ${url}`);

@@ -219,7 +219,9 @@ const HOLDINGS: Holding[] = [
   { tag: 'shop', ticker: 'SHOP', isin: 'CA82509L1076', name: 'Shopify', currency: 'USD', price: '103', buys: [{ y: -3, md: '05-08', qty: '80', price: '40', fee: '1' }, { y: -2, md: '04-14', qty: '80', price: '65', fee: '1' }], sells: [{ y: -1, md: '08-20', qty: '80', price: '48', fee: '1' }] },
   // ── mimo USA ──────────────────────────────────────────────────────────
   { tag: 'ulvr', ticker: 'ULVR', isin: 'GB00B10RZP78', name: 'Unilever', currency: 'GBP', price: '44.1', buys: [{ y: -2, md: '11-03', qty: '25', price: '38.2', fee: '1' }] },
-  { tag: 'tm', ticker: '7203', isin: 'JP3633400001', name: 'Toyota Motor', currency: 'USD', price: '178', buys: [{ y: -1, md: '10-02', qty: '8', price: '168', fee: '1' }] },
+  // Toyota jako americké ADR (NYSE: TM) — proto dolary a americký ISIN; tokijská
+  // linka (7203, JP3633400001) se obchoduje v jenech v řádu tisíců za kus
+  { tag: 'tm', ticker: 'TM', isin: 'US8923313071', name: 'Toyota Motor', currency: 'USD', price: '178', buys: [{ y: -1, md: '10-02', qty: '8', price: '168', fee: '1' }] },
   { tag: 'asml', ticker: 'ASML', isin: 'NL0010273215', name: 'ASML Holding', currency: 'EUR', price: '810', buys: [{ y: -2, md: '09-08', qty: '3', price: '620', fee: '1' }] },
   { tag: 'sap', ticker: 'SAP', isin: 'DE0007164600', name: 'SAP', currency: 'EUR', price: '205', buys: [{ y: -3, md: '03-20', qty: '6', price: '110', fee: '1' }] },
   { tag: 'mc', ticker: 'MC', isin: 'FR0000121014', name: 'LVMH', currency: 'EUR', price: '640', buys: [{ y: -3, md: '04-18', qty: '1', price: '820', fee: '1' }] },
@@ -277,8 +279,9 @@ const DIVIDEND_PLANS: DividendPlan[] = [
   { tag: 'alv', isin: 'DE0008404005', currency: 'EUR', country: 'DE', gross: '240', wht: '63.30', day: '08', byYear: { [-1]: ['05'], 0: ['05'] } },
   // NL 15 % nad smluvních 10 %
   { tag: 'asml', isin: 'NL0010273215', currency: 'EUR', country: 'NL', gross: '95', wht: '14.25', day: '15', byYear: { [-1]: ['02', '08'], 0: ['02', '08'] } },
-  // JP 15 % (v rámci smlouvy)
-  { tag: 'tm', isin: 'JP3633400001', currency: 'USD', country: 'JP', gross: '110', wht: '16.50', day: '27', byYear: { 0: ['05', '11'] } },
+  // JP 15 % (v rámci smlouvy) — ADR je jen obal, plátcem zůstává japonská
+  // společnost, takže zdrojem dividendy je Japonsko i při americkém ISIN
+  { tag: 'tm', isin: 'US8923313071', currency: 'USD', country: 'JP', gross: '110', wht: '16.50', day: '27', byYear: { 0: ['05', '11'] } },
   // GB 0 % srážka
   { tag: 'ulvr', isin: 'GB00B10RZP78', currency: 'GBP', country: 'GB', gross: '55', wht: '0', day: '25', byYear: { [-1]: ['03', '09'], 0: ['03', '09'] } },
 ];

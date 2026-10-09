@@ -1,4 +1,5 @@
 import { Toast } from '@/components/toast';
+import { COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
 
 /**
  * Potvrzení a chyby obou stránek nastavení na jednom místě — akce v
@@ -18,6 +19,7 @@ const OK_LABELS: Record<string, string> = {
 
 const CHYBA_LABELS: Record<string, string> = {
   heslo: 'Nové heslo musí mít aspoň 10 znaků.',
+  'heslo-bezne': `${COMMON_PASSWORD_MESSAGE} Heslo se nezměnilo.`,
   'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
   email: 'Zadej platný e-mail.',
   'email-obsazeny': 'E-mail se nepodařilo změnit (nejspíš už ho používá jiný účet).',
@@ -30,6 +32,7 @@ const CHYBA_LABELS: Record<string, string> = {
   'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
   'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
+  rezim: 'Vyber svůj daňový režim — podle něj Danero pozná, který limit ti má hlídat.',
   prijmy:
     'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Nastavení se zatím neuložilo.',
 };

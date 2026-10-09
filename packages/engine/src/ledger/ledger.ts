@@ -194,6 +194,8 @@ export function buildLedger(
   const disposals: Disposal[] = [];
   /** R-07h: zdanitelný zbytek vratky kapitálu per transakce (v její měně). */
   const returnOfCapitalTaxable = new Map<string, Money>();
+  /** Události stažení z burzy — varování k nim se píše až podle konečného stavu pozice. */
+  const delistings: { txId: string; isin: string; date: string }[] = [];
   let syntheticCounter = 0;
 
   const events = transactions
@@ -732,12 +734,13 @@ export function buildLedger(
         break;
       }
       case 'DELISTING': {
-        warnings.add(
-          'DELISTING_MANUAL',
-          'WARNING',
-          `Delisting ${tx.isin} (${czDateText(tx.date)}) vyžaduje ruční posouzení — engine pozici nemění.`,
-          { txId: tx.id },
-        );
+        // Text popisuje jen to, co Danero dělá. Pravidlo pro zánik titulu bez
+        // náhrady v docs/02 není (L14-04, čeká na rozhodnutí), takže tu nesmí
+        // stát ani právní závěr o odpisu, ani výzva k „ručnímu posouzení“ —
+        // aplikace na ně nemá nástroj a uživatel by ji neměl čím splnit.
+        // Varování se vydá až po průchodu celou historií (viz níže): teprve
+        // tam je známo, jestli titul opravdu zůstal držený (A26-R1-01).
+        delistings.push({ txId: tx.id, isin: tx.isin, date: tx.date });
         break;
       }
     }
@@ -773,6 +776,21 @@ export function buildLedger(
         // DIVIDEND / INTEREST / FEE / FX_CONVERSION / DEPOSIT / WITHDRAWAL loty neovlivňují
         break;
     }
+  }
+
+  // Stažení z burzy: věta o stavu pozice smí zaznít jen tehdy, když ten stav
+  // platí. Titul, který se nikdy nedržel nebo byl mezitím prodán (i za 0),
+  // v přehledu pozic není — tam varování popíše jen událost (A26-R1-01).
+  for (const { txId, isin, date } of delistings) {
+    const event = `Titul ${isin}: výpis k ${czDateText(date)} uvádí jeho stažení z burzy.`;
+    warnings.add(
+      'DELISTING_MANUAL',
+      'WARNING',
+      openLots(isin).length > 0
+        ? `${event} Danero kvůli tomu pozici nemění — titul zůstává v přehledu jako držený a do daně se z této události nic nezapočítá, příjem ani výdaj.`
+        : `${event} Danero kvůli této události pozici nemění a do daně nic nezapočítá, příjem ani výdaj.`,
+      { txId },
+    );
   }
 
   return { lots, disposals, returnOfCapitalTaxable };

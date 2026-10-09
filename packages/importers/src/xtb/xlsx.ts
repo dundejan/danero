@@ -21,6 +21,20 @@ export interface XtbInstrumentMap {
 }
 
 /**
+ * Měna instrumentu, pokud ji jde poznat z tickeru — jen NÁVRH pro formulář
+ * číselníku, parser ji sám nepoužívá (obchod se dál ukládá až s tím, co
+ * uživatel v číselníku potvrdil).
+ *
+ * Jediná jednoznačná přípona je `.US` (americké burzy, USD). Jiné se nehádají:
+ * `.UK` může být v librách, v pencích i v dolarech — `IWDA.UK` se obchoduje
+ * v USD — a špatně předvyplněná měna je horší než prázdné pole, protože projde
+ * bez jediného varování a přepočítá nabývací cenu jiným kurzem.
+ */
+export function xtbCurrencyFromTicker(symbol: string): string | undefined {
+  return /^.+\.US$/.test(symbol.trim().toUpperCase()) ? 'USD' : undefined;
+}
+
+/**
  * Fallback měny účtu, když ji report neuvádí — EXPLICITNĚ EUR (nejčastější měna
  * XTB účtů českých klientů po přechodu na EUR onboarding); použití vždy doprovází warning.
  */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TaxpayerProfileSchema } from '@danero/shared';
 import { analyzeTaxYear, type TaxYearConfig } from '@danero/engine';
 import { parseTrading212Csv } from '../src';
-import { T212_FIXTURE as FIXTURE } from './fixtures/t212';
+import { T212_FIXTURE as FIXTURE, T212_HEADER as HEADER } from './fixtures/t212';
 
 /** Testovací kurzy (kulaté, NE skutečné) — stejné jako engine fixtures. */
 const CFG: TaxYearConfig = {
@@ -56,5 +56,32 @@ describe('e2e: T212 CSV → kanonický model → daňový engine', () => {
     const disposal = result.ledger.disposals[0]!;
     expect(disposal.settlementDate).toBe('2025-03-06');
     expect(disposal.allocations[0]!.expenseDate).toBe('2024-01-12');
+  });
+
+  it('R-07b, L14-01: dividenda se smluvní srážkou 15 % jde do § 8 brutto a varování o nadměrné srážce nedostane', () => {
+    // „Price / share“ je čistá částka na kus: vyhlášeno 0,83, po 15% srážce 0,7055.
+    // 40 kusů → čistých 28,22 USD + srážka 4,98 USD = brutto 33,20 USD.
+    const imported = parseTrading212Csv(
+      [
+        HEADER,
+        'Dividend (Dividends paid by us corporations),2025-04-01 09:00:00,US0000000001,AAA,Alfa Inc,40,0.7055,USD,,,,560.00,CZK,4.98,USD,,,,',
+      ].join('\n'),
+    );
+    expect(imported.errors).toEqual([]);
+
+    const result = analyzeTaxYear({
+      transactions: imported.transactions,
+      profile: TaxpayerProfileSchema.parse({ regime: 'PAUSAL' }),
+      config: CFG,
+    });
+
+    // 33,20 USD × 20 = 664 Kč (ne 564,40 Kč z čisté částky)
+    expect(result.dividends.foreignGrossCzk.toString()).toBe('664');
+    // srážka 4,98 × 20 = 99,60 Kč se vejde pod strop 15 % z 664 Kč celá; zápočet
+    // se zaokrouhluje na celé Kč dolů (R-07c). Z čisté částky by strop byl 84,66 Kč.
+    expect(result.dividends.creditableWithholdingCzk.toString()).toBe('99');
+    expect(result.limits.flatTax50k.status.usedCzk.toString()).toBe('664');
+    // srážka je přesně na smluvním stropu — nic nepropadá a není na co upozorňovat
+    expect(result.warnings.filter((w) => w.code === 'WITHHOLDING_ABOVE_TREATY')).toEqual([]);
   });
 });

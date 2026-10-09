@@ -1,6 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
+
+/**
+ * Parametry, které nesou hlášku: kód výsledku a u /import i údaje k němu
+ * (počty, id dávky…). Mažou se všechny naráz — samotný kód nestačí, zbytek by
+ * v adrese zůstal viset.
+ */
+const FEEDBACK_PARAMS = ['ok', 'chyba', 'ulozeno', ...IMPORT_FEEDBACK_PARAMS];
+
+/**
+ * Adresa bez parametrů hlášky; `null`, když v ní žádný není (pak se historie
+ * prohlížeče nepřepisuje vůbec). Kotva a ostatní parametry zůstávají.
+ */
+export function urlWithoutFeedback(href: string): string | null {
+  const url = new URL(href);
+  if (!FEEDBACK_PARAMS.some((name) => url.searchParams.has(name))) return null;
+  for (const name of FEEDBACK_PARAMS) url.searchParams.delete(name);
+  return url.toString();
+}
 
 /**
  * Toast po akcích (G9b): vykresluje hlášku z query parametrů (?ok= / ?chyba=),
@@ -21,13 +40,8 @@ export function Toast({
   useEffect(() => {
     // hláška patří k právě provedené akci — z URL ji smaž, ať ji reload
     // ani tlačítko zpět neukáže znovu (bez RSC refetche)
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('ok') || url.searchParams.has('chyba') || url.searchParams.has('ulozeno')) {
-      url.searchParams.delete('ok');
-      url.searchParams.delete('chyba');
-      url.searchParams.delete('ulozeno');
-      window.history.replaceState(null, '', url);
-    }
+    const cleaned = urlWithoutFeedback(window.location.href);
+    if (cleaned !== null) window.history.replaceState(null, '', cleaned);
     // H-3-06: chybový toast se dřív sám nikdy neschoval — jediná cesta ven byl
     // křížek o velikosti 8 × 20 px, který navíc na mobilu ležel přes tab bar.
     // Chyba má být vidět déle než potvrzení, ale ne napořád.

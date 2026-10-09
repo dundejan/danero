@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
-import { analyzeTaxYear } from '@danero/engine';
+import { analyzeTaxYear, TAX_YEAR_CONFIGS } from '@danero/engine';
 import { parseTransactions } from '@danero/shared';
-import { generateDpfdp7, PROGRESSIVE_THRESHOLD } from '@/lib/epo';
-import { configForYear, isRateVerified } from '@/lib/tax-config';
+import { EPO_SUPPORTED_YEARS, generateDpfdp7 } from '@/lib/epo';
+import { isRateVerified } from '@/lib/tax-config';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 
 const PROFILE: ProfileRow = {
@@ -126,18 +128,51 @@ describe('EPO: co odmítla zkušební podatelna (A3-01, A3-07)', () => {
 });
 
 describe('EPO: dvě pravdy o téže hodnotě (A3-10, A3-11)', () => {
-  it('A3-11: hranice progrese v EPO sedí na TaxYearConfig enginu', () => {
-    // Hodnota je v repu podruhé. Runbook ji každý leden posouvá — tenhle test
-    // spadne, kdyby se posunula jen jedna z nich.
-    for (const [year, threshold] of Object.entries(PROGRESSIVE_THRESHOLD)) {
-      expect(configForYear(Number(year)).progressiveThreshold, `rok ${year}`).toBe(threshold);
+  it('A3-11: hranici progrese bere EPO z registru enginu a má ji každý rok s XML', async () => {
+    // Do revize 5 byla hodnota v repu podruhé (tabulka v epo.ts) a tenhle test
+    // jen hlídal, že se obě kopie nerozešly. Druhá kopie je pryč (L5-03):
+    // generátor čte `TAX_YEAR_CONFIGS`, takže zbývá ohlídat, že registr zná
+    // každý rok, za který XML vydáváme (R-15a) — a že se kopie nevrátí.
+    for (const year of EPO_SUPPORTED_YEARS) {
+      expect(TAX_YEAR_CONFIGS[year]?.progressiveThreshold ?? null, `rok ${year}`).not.toBeNull();
     }
+    expect(Object.keys(await import('@/lib/epo'))).not.toContain('PROGRESSIVE_THRESHOLD');
   });
 
   it('A3-10: rok bez kurzů v tabulce se nesmí tvářit jako ověřený pokynem GFŘ', () => {
     expect(isRateVerified(2019)).toBe(false); // tabulka začíná rokem 2020
     expect(isRateVerified(2025)).toBe(true);
     expect(isRateVerified(2026)).toBe(false); // orientační odhad, ne pokyn
+  });
+});
+
+/**
+ * L1-05: odznak „XML ověřená zkušební podatelnou“ kryje každý rok ze seznamu
+ * `EPO_SUPPORTED_YEARS`, jenže `scripts/validate-epo.mjs` posílal jen vzorky za
+ * 2025 (`TAX_YEAR_2025` a `year: 2025` natvrdo). Regresi jen ve větvi roku 2024
+ * by CI nevidělo. Do skriptu žádný test nedosáhne (odesílá po síti hned při
+ * načtení), proto strážce nad zdrojem.
+ */
+describe('EPO: vzorky pro zkušební podatelnu (L1-05, L5-01)', () => {
+  const script = readFileSync(
+    join(import.meta.dirname, '..', '..', '..', 'scripts', 'validate-epo.mjs'),
+    'utf8',
+  );
+  const code = script.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('L1-05: vzorky se generují za každý rok ze seznamu, žádný rok není natvrdo', () => {
+    expect(code).toContain('for (const year of EPO_SUPPORTED_YEARS)');
+    expect(code).toContain('TAX_YEAR_CONFIGS[year]');
+    expect(/TAX_YEAR_20\d\d/.exec(code)?.[0]).toBeUndefined();
+    expect(/year:\s*20\d\d/.exec(code)?.[0]).toBeUndefined();
+    // ani data transakcí nesmí rok opisovat — jinak by vzorek za jiný rok vyšel prázdný
+    expect(/'20\d\d-\d\d-\d\d'/.exec(code)?.[0]).toBeUndefined();
+  });
+
+  it('L5-01: mezi vzorky je jediný stát se zápočtem v obou variantách', () => {
+    expect(code).toContain('const singleCountry = analyze(');
+    expect(code).toMatch(/gen\('[^']*', singleCountry\)/);
+    expect(code).toMatch(/gen\('[^']*', singleCountry, 'SEPARATE_16A'\)/);
   });
 });
 

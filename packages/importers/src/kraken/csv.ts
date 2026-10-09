@@ -1,7 +1,8 @@
-import { d, TransactionSchema } from '@danero/shared';
+import { d, type Decimal, TransactionSchema } from '@danero/shared';
 import { FIAT_CURRENCIES, HeaderMap, isValidIsoDate, normalizeHeader, parseCsv } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const KRAKEN_BROKER = 'kraken';
 
@@ -20,16 +21,25 @@ export const KRAKEN_BROKER = 'kraken';
  * Kraken interní kódy: fiat s prefixem `Z` (ZEUR), krypto s prefixem `X`
  * (XXBT = BTC!), staked se sufixem `.S` (ADA.S). Novější exporty píší kódy
  * rovnou (BTC, EUR) — mapa proto obsahuje jen známé aliasy, ostatní projdou beze změny.
+ *
+ * ⚠️ Mapa je VÝČET, prefix se neodřezává: ZCHF vede Kraken jako jiné aktivum
+ * než fiat CHF a XTZ nebo ZRX jsou běžné symboly. Kód, který tu chybí, dá
+ * témuž obchodu podle generace exportu jiný symbol i dedupe klíč (obchod se
+ * při nahrání staršího a novějšího exportu uloží dvakrát) a u fiat měny udělá
+ * z nákupu „směnu krypto–krypto“ (L2d-04: XETC, XREP, XMLN, ZPLN, ZSEK, ZDKK).
  */
 const ASSET_ALIASES: Record<string, string> = {
   XXBT: 'BTC',
   XBT: 'BTC',
   XETH: 'ETH',
+  XETC: 'ETC',
   XXRP: 'XRP',
   XLTC: 'LTC',
   XXLM: 'XLM',
   XZEC: 'ZEC',
   XXMR: 'XMR',
+  XREP: 'REP',
+  XMLN: 'MLN',
   XXDG: 'DOGE',
   XDG: 'DOGE',
   ZEUR: 'EUR',
@@ -39,12 +49,36 @@ const ASSET_ALIASES: Record<string, string> = {
   ZJPY: 'JPY',
   ZAUD: 'AUD',
   ZCZK: 'CZK',
+  ZPLN: 'PLN',
+  ZSEK: 'SEK',
+  ZDKK: 'DKK',
 };
 
 export function normalizeKrakenAsset(asset: string): string {
   let code = asset.trim().toUpperCase();
   // staked varianta (ADA.S) je pro daňové účely tentýž asset
   if (code.endsWith('.S')) code = code.slice(0, -2);
+  return ASSET_ALIASES[code] ?? code;
+}
+
+/**
+ * Přípony, kterými Kraken odlišuje variantu TÉHOŽ aktiva: `.S` a `NN.S`
+ * (staking, vázaný s počtem dní — DOT28.S), `.M` a `.P` (opt-in odměny),
+ * `.HOLD` (vklad v ochranné lhůtě), `.CORE`, `.INK`. Doloženo veřejným seznamem
+ * aktiv Krakenu (`/0/public/Assets`).
+ */
+const ASSET_VARIANT_SUFFIX = /(?:(?:\d\d)?\.S|\.M|\.P|\.HOLD|\.CORE|\.INK)$/;
+
+/**
+ * Aktivum bez přípony varianty — JEN pro otázky „je to tentýž titul?“ a „jsou
+ * to peníze?“ u řádků `transfer` (A06-R2-02). Symbol transakce dál dává
+ * `normalizeKrakenAsset`: vstupuje do dedupe klíče a nesmí se pohnout.
+ *
+ * Dvojice číslic se odřezává jen před `.S` a jen celá — ETH2.S je staking
+ * aktiva ETH2, ne ETH.
+ */
+function krakenBaseAsset(asset: string): string {
+  const code = asset.trim().toUpperCase().replace(ASSET_VARIANT_SUFFIX, '');
   return ASSET_ALIASES[code] ?? code;
 }
 
@@ -59,6 +93,13 @@ function parseKrakenNumber(value: string): string | null {
   if (v === '') return null;
   return /^-?\d+(\.\d+)?$/.test(v) ? v : null;
 }
+
+/**
+ * Množství do hlášky: desetinný zápis bez koncových nul. `toString()` píše
+ * hodnoty pod 0,000001 vědecky („2e-7 BTC“) a Kraken vede krypto na deset
+ * desetinných míst — uživatel má přitom číslo opsat do šablony (A06-R1-04).
+ */
+const plainNumber = (value: string): string => d(value).toFixed();
 
 /** Čas `YYYY-MM-DD HH:MM:SS` (+ volitelné zlomky), UTC → ISO datum. */
 function toIsoDate(time: string): string | null {
@@ -97,6 +138,149 @@ export function sniffKrakenCsv(text: string): boolean {
 }
 
 /* ── Parser ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Přesuny mezi peněženkami téhož účtu (spot ↔ staking, spot ↔ futures) — jediné
+ * subtypy řádku `transfer`, které smí zmizet beze slova. Výčet podle nápovědy
+ * Krakenu („Explanation of Ledger Fields“).
+ */
+const INTERNAL_TRANSFER_SUBTYPES = new Set([
+  'spottostaking',
+  'stakingfromspot',
+  'stakingtospot',
+  'spotfromstaking',
+  'spottofutures',
+  'spotfromfutures',
+]);
+
+/**
+ * Varování k pohybu kusů bez protistrany (L2d-02). Podle nápovědy Krakenu je
+ * `transfer` na prvním místě připsání airdropu nebo forku; do 9. 10. 2026 tu
+ * takový řádek končil jako „interní přesun — ne daňová událost“ mezi
+ * přeskočenými, u kterých UI ukazuje jen počet. Pozdější prodej pak narazil na
+ * „prodáno víc, než je evidováno“ s radou nahrát kompletní historii — která
+ * kompletní byla.
+ *
+ * Text je PODMÍNĚNÝ (stejně vypadá i převod z jiného účtu u Krakenu) a ZÁMĚRNĚ
+ * neříká, jakou cenu zadat: pravidlo pro airdropy v docs/02 není.
+ */
+function unmatchedMovementWarning(
+  type: string,
+  subtype: string,
+  asset: string,
+  amount: string | null,
+): string {
+  const label = subtype === '' ? type : `${type} / ${subtype}`;
+  const movement = `${amount === null ? '' : `${plainNumber(amount)} `}${asset}`;
+  if (subtype === 'delistingconversion') {
+    return (
+      `Řádek „${label}“ (${movement}): převod pozice při stažení aktiva z nabídky Krakenu jsme do evidence nezařadili — řádek přeskočen. ` +
+      'Pohyb kusů doplň přes univerzální šablonu, jinak nebude sedět počet kusů ani nabývací cena při pozdějším prodeji.'
+    );
+  }
+  if ((subtype === '' || subtype === 'airdrop') && amount !== null && d(amount).gt(0)) {
+    return (
+      `Připsání ${movement} bez protistrany („${label}“) jsme do evidence nezařadili — řádek přeskočen. ` +
+      'Pokud jde o airdrop nebo fork, je to nabytí bez úplaty (kusy jsi dostal zdarma): doplň ho přes univerzální šablonu, ' +
+      'jinak se prodej těchto kusů spočítá s nulovou nabývací cenou a bez časového testu.'
+    );
+  }
+  return (
+    `Řádek „${label}“ (${movement}) neumíme zařadit — řádek přeskočen. ` +
+    'Pokud jím kusy přibyly nebo ubyly, doplň to přes univerzální šablonu.'
+  );
+}
+
+/**
+ * Varování k přírůstku peněz, vedle kterého ve stejné operaci ubylo
+ * kryptoaktivum (A06-R2-01). Takhle vypadá nucený převod pozice při stažení
+ * aktiva z nabídky v exportu bez subtypu — a částka je pak výnos, ne převod
+ * peněz. Text je podmíněný ze stejného důvodu jako výš: tvar řádků nemáme
+ * doložený skutečným výpisem.
+ */
+function fiatForCryptoWarning(
+  type: string,
+  subtype: string,
+  asset: string,
+  amount: string,
+  outflows: string[],
+): string {
+  const label = subtype === '' ? type : `${type} / ${subtype}`;
+  return (
+    `Řádek „${label}“ (${plainNumber(amount)} ${asset}): ve stejné operaci ubylo ${outflows.join(' a ')}, takže to nevypadá jako převod peněz, ` +
+    'ale jako převod pozice na peníze (například při stažení aktiva z nabídky Krakenu). Do evidence jsme ho nezařadili — řádek přeskočen. ' +
+    'Pohyb kusů i přijatou částku doplň přes univerzální šablonu, jinak nebude sedět počet kusů a přijatá částka bude v přehledu chybět.'
+  );
+}
+
+/**
+ * Varování k celému souboru bez sloupce `subtype` (A06-R2-01). Kraken ho při
+ * exportu nabízí k odškrtnutí a parser soubor bez něj přijímá — jenže právě
+ * subtyp odlišuje airdrop, odměnu a nucený převod pozice od přesunu mezi
+ * peněženkami. Když soubor důkaz nedá, říkáme to; nehádáme potichu.
+ */
+function missingSubtypeWarning(ambiguousRows: number): string {
+  return (
+    `Export nemá sloupec „subtype“ — u ${ambiguousRows === 1 ? '1 řádku' : `${ambiguousRows} řádků`} („transfer“, „earn“) bez něj nepoznáme, ` +
+    'jestli jde o přesun mezi peněženkami, airdrop, odměnu, nebo převod pozice při stažení aktiva z nabídky Krakenu. ' +
+    'Rozhodli jsme o nich jen podle typu řádku a znaménka částky. Stáhni si prosím u Krakenu ledgers.csv znovu se všemi poli a nahraj ho — pak je zařadíme správně.'
+  );
+}
+
+/** Klíč skupiny řádků `transfer`: stejný refid a stejné aktivum bez přípony varianty. */
+const transferGroupKey = (refid: string, baseAsset: string): string => `${refid}|${baseAsset}`;
+
+interface TransferIndex {
+  /** Skupiny (refid + aktivum), které se vyruší na nulu — klíče z `transferGroupKey`. */
+  cancelling: Set<string>;
+  /** Úbytky kryptoaktiv podle refid, už jako text do hlášky („30 NANO“). */
+  cryptoOutflows: Map<string, string[]>;
+}
+
+/**
+ * Jeden průchod řádky `transfer` předem — o řádku rozhoduje i to, co stojí
+ * vedle něj ve stejném refid.
+ *
+ * `cancelling` (A06-R1-01): skupiny, které se uvnitř téhož aktiva vyruší na
+ * nulu — stejný refid, aspoň dva řádky, všechny částky čitelné a součet 0.
+ * To je přesun mezi peněženkami bez ohledu na to, co stojí ve sloupci `subtype`
+ * — ten jde při exportu odškrtnout a parser soubor bez něj přijímá. Varianta
+ * s příponou je tentýž titul, takže −10 DOT a +10 DOT.S (i DOT28.S) se vyruší.
+ *
+ * `cryptoOutflows` (A06-R2-01): úbytky kryptoaktiv — protistrana k přírůstku
+ * peněz ve stejném refid.
+ *
+ * Prázdný refid nic nespojuje (stejná opatrnost jako u noh obchodu níž):
+ * slepil by nesouvisející řádky z různých měsíců.
+ */
+function indexTransfers(rows: string[][], map: HeaderMap): TransferIndex {
+  const groups = new Map<string, { count: number; sum: Decimal | null }>();
+  const cryptoOutflows = new Map<string, string[]>();
+  for (const row of rows) {
+    if (map.get(row, 'type').toLowerCase() !== 'transfer') continue;
+    const refid = map.get(row, 'refid');
+    if (refid === '') continue;
+    const baseAsset = krakenBaseAsset(map.get(row, 'asset'));
+    const key = transferGroupKey(refid, baseAsset);
+    const group = groups.get(key) ?? { count: 0, sum: d(0) };
+    const amount = parseKrakenNumber(map.get(row, 'amount'));
+    group.count += 1;
+    // nečitelná částka = o skupině nevíme nic → rozhodne se po řádcích jako dřív
+    group.sum = amount === null || group.sum === null ? null : group.sum.plus(amount);
+    groups.set(key, group);
+
+    if (amount !== null && d(amount).lt(0) && !FIAT_CURRENCIES.has(baseAsset)) {
+      const outflows = cryptoOutflows.get(refid) ?? [];
+      outflows.push(`${d(amount).abs().toFixed()} ${normalizeKrakenAsset(map.get(row, 'asset'))}`);
+      cryptoOutflows.set(refid, outflows);
+    }
+  }
+  const cancelling = new Set<string>();
+  for (const [key, group] of groups) {
+    if (group.count >= 2 && group.sum !== null && group.sum.eq(0)) cancelling.add(key);
+  }
+  return { cancelling, cryptoOutflows };
+}
 
 /** Jedna noha obchodu (řádek type=trade / spend / receive) čekající na spárování. */
 interface TradeLeg {
@@ -141,6 +325,10 @@ export function parseKrakenCsv(text: string): ImportResult {
 
   // obchodní páry sbíráme podle refid, ostatní typy vyřizujeme rovnou
   const tradeGroups = new Map<string, TradeLeg[]>();
+  const transfers = indexTransfers(rows, map);
+  // A06-R2-01: řádky, o kterých bez sloupce `subtype` rozhodujeme naslepo
+  const hasSubtype = map.has('subtype');
+  let ambiguousRows = 0;
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
@@ -184,10 +372,24 @@ export function parseKrakenCsv(text: string): ImportResult {
         });
         return;
       case 'earn':
+        // odměnu od přesunu uvnitř Earn odliší jen subtyp
+        if (!hasSubtype) ambiguousRows += 1;
         if (subtype === 'reward') {
           result.warnings.push({
             line,
             message: `Odměna z Kraken Earn (${asset}) — odměny ze stakingu zatím daňově nezařazujeme, řádek přeskočen.`,
+            raw,
+          });
+        } else if (subtype === 'airdrop' || subtype === 'delistingconversion') {
+          // L2d-02: kusy přibyly (nebo ubyly) bez protistrany — to není přesun
+          result.warnings.push({
+            line,
+            message: unmatchedMovementWarning(
+              type,
+              subtype,
+              asset,
+              parseKrakenNumber(map.get(row, 'amount')),
+            ),
             raw,
           });
         } else {
@@ -198,12 +400,64 @@ export function parseKrakenCsv(text: string): ImportResult {
           });
         }
         return;
-      case 'transfer':
-        result.skipped.push({
-          line,
-          message: `Interní přesun (${subtype || 'transfer'}, ${asset}) — ne daňová událost.`,
-        });
+      case 'transfer': {
+        const amount = parseKrakenNumber(map.get(row, 'amount'));
+        const refid = map.get(row, 'refid');
+        // Varianta s příponou (DOT28.S, EUR.HOLD) je pro párování i pro otázku
+        // „jsou to peníze?“ tentýž titul (A06-R2-02); do hlášek jde `asset`.
+        const baseAsset = krakenBaseAsset(map.get(row, 'asset'));
+        const cancelsWithinRefid = transfers.cancelling.has(transferGroupKey(refid, baseAsset));
+        // Dvojice, která se vyruší, je důkaz sama o sobě; u ostatních řádků
+        // bez sloupce `subtype` nevíme, na co se díváme (A06-R2-01).
+        if (!hasSubtype && !cancelsWithinRefid) ambiguousRows += 1;
+
+        // A06-R1-02: peníze airdrop ani fork být nemůžou a evidenci kusů pro ně
+        // nevedeme → tiše jako vklad a výběr. Dvě výjimky, kde je částka výnos
+        // z převodu pozice a varování je jediné místo, kde ji uživatel uvidí:
+        // subtyp `delistingconversion` a přírůstek peněz, vedle kterého ve
+        // stejném refid ubylo kryptoaktivum (A06-R2-01 — tentýž převod
+        // v exportu bez subtypu).
+        if (FIAT_CURRENCIES.has(baseAsset) && subtype !== 'delistingconversion') {
+          const outflows =
+            amount !== null && d(amount).gt(0) ? (transfers.cryptoOutflows.get(refid) ?? []) : [];
+          if (outflows.length > 0) {
+            result.warnings.push({
+              line,
+              message: fiatForCryptoWarning(type, subtype, asset, amount!, outflows),
+              raw,
+            });
+          } else {
+            result.skipped.push({
+              line,
+              message: `Přesun ${asset} (${subtype || 'transfer'}) — převod peněz, ne zdanitelná událost.`,
+            });
+          }
+          return;
+        }
+        // Tiché jsou jen vyjmenované přesuny mezi peněženkami, dvojice, která
+        // se ve stejném refid vyruší (A06-R1-01), a úbytek bez subtypu (odchod
+        // na jiný účet u Krakenu). Přírůstek bez subtypu, který protějšek
+        // opravdu nemá, je podle nápovědy Krakenu nejspíš airdrop nebo fork
+        // → varování (L2d-02).
+        const outgoingWithoutSubtype = subtype === '' && amount !== null && !d(amount).gt(0);
+        if (
+          INTERNAL_TRANSFER_SUBTYPES.has(subtype) ||
+          cancelsWithinRefid ||
+          outgoingWithoutSubtype
+        ) {
+          result.skipped.push({
+            line,
+            message: `Interní přesun (${subtype || 'transfer'}, ${asset}) — ne daňová událost.`,
+          });
+        } else {
+          result.warnings.push({
+            line,
+            message: unmatchedMovementWarning(type, subtype, asset, amount),
+            raw,
+          });
+        }
         return;
+      }
       case 'margin':
       case 'margin trade':
       case 'rollover':
@@ -224,8 +478,39 @@ export function parseKrakenCsv(text: string): ImportResult {
     }
   });
 
+  // varování k souboru patří před varování k jeho řádkům
+  if (ambiguousRows > 0) {
+    result.warnings.unshift({ line: 1, message: missingSubtypeWarning(ambiguousRows) });
+  }
+
   // druhý průchod: párování obchodů podle refid
-  for (const [refid, legs] of tradeGroups) {
+  // R-05d: sloupec `time` je ve světovém čase, den i rok se berou z něj
+  const yearBoundary = new YearBoundaryWatch(result);
+  for (const [refid, allLegs] of tradeGroups) {
+    const firstLeg = allLegs[0];
+    if (firstLeg) yearBoundary.row(firstLeg.line, firstLeg.time);
+    // L2d-06: řádek s nulovou částkou a poplatkem není noha směny, ale poplatek
+    // účtovaný zvlášť v jiném aktivu (typicky kredity KFEE). Dokud se počítal
+    // mezi nohy, kontrola „právě dvě“ odmítla celý obchod s radou stáhnout
+    // kompletní export — který kompletní byl. Do výpočtu ho nezahrnujeme
+    // (kredity ocenit neumíme) → varování, stejně jako u poplatku na krypto
+    // noze níž. Řádek s nulovou částkou BEZ poplatku nohou zůstává.
+    const legs: TradeLeg[] = [];
+    for (const leg of allLegs) {
+      const amount = parseKrakenNumber(leg.amountRaw);
+      const fee = parseKrakenNumber(leg.feeRaw);
+      if (amount === null || fee === null || !d(amount).eq(0) || d(fee).eq(0)) {
+        legs.push(leg);
+        continue;
+      }
+      const feeAsset = normalizeKrakenAsset(leg.asset);
+      result.warnings.push({
+        line: leg.line,
+        message: `Obchod ${refid || '(bez refid)'}: poplatek ${plainNumber(fee)} ${feeAsset}${feeAsset === 'KFEE' ? ' (poplatkové kredity Krakenu)' : ''} je účtovaný na samostatném řádku — do výpočtu nebyl odečten.`,
+        raw: leg.raw,
+      });
+    }
+
     if (legs.length !== 2) {
       for (const leg of legs) {
         result.errors.push({
@@ -368,6 +653,7 @@ export function parseKrakenCsv(text: string): ImportResult {
       });
     }
   }
+  yearBoundary.flush();
 
   return result;
 }

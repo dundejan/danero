@@ -200,13 +200,25 @@ export default function TermsPage() {
 
             Telefon se vypíše jen tehdy, když je nastavený. Povinný byl kvůli
             prodeji na dálku (§ 1820 odst. 1 písm. c OZ); bez prodeje stačí
-            e-mail a `DANERO_CONTACT_PHONE` jde nechat prázdné. */}
+            e-mail a `DANERO_CONTACT_PHONE` jde nechat prázdné. Stejnou
+            podmínku má i věta, která e-mail s telefonem srovnává — bez čísla
+            by čtenáře posílala hledat údaj, který na webu není (L7s-05). */}
         <p>
           Danero je osobní projekt — provozuje ho {OPERATOR.name}, IČO {OPERATOR.ico}, se
           sídlem {OPERATOR.address} (fyzická osoba podnikající dle živnostenského zákona,
-          zapsaná v živnostenském rejstříku). <strong>Piš radši e-mailem</strong> — na
-          telefon se nedovoláš vždycky, kdežto na zprávu odpovím a zůstane z ní stopa
-          pro obě strany. Připomínky a chyby posílej na{' '}
+          zapsaná v živnostenském rejstříku).{' '}
+          {OPERATOR.phone ? (
+            <>
+              <strong>Piš radši e-mailem</strong> — na telefon se nedovoláš vždycky, kdežto
+              na zprávu odpovím a zůstane z ní stopa pro obě strany.
+            </>
+          ) : (
+            <>
+              <strong>Piš e-mailem</strong> — na zprávu odpovím a zůstane z ní stopa pro obě
+              strany.
+            </>
+          )}{' '}
+          Připomínky a chyby posílej na{' '}
           <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
             {OPERATOR.email}
           </a>

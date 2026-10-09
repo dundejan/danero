@@ -24,6 +24,8 @@ import {
   REVOLUT_CRYPTO_OLD_UNSUPPORTED_TYPE_CSV,
   REVOLUT_INSTRUMENT_MAP,
   REVOLUT_INVEST_CSV,
+  REVOLUT_INVEST_DIVIDEND_ONLY_CSV,
+  REVOLUT_INVEST_DIVIDEND_THEN_BUY_CSV,
   REVOLUT_INVEST_EXTRAS_CSV,
   REVOLUT_INVEST_HEADER,
   REVOLUT_INVEST_UNKNOWN_TYPE_CSV,
@@ -221,6 +223,54 @@ describe('Revolut akcie (Account statement CSV)', () => {
     expect(dividend.isin).toBeUndefined();
     expect(dividend.ticker).toBe('NVDA');
     expect(dividend.gross.toString()).toBe('0.04');
+    // ticker už nabídla chyba u nákupu — dividenda k němu druhé hlášení nepřidává
+    expect(result.warnings.filter((w) => w.message.includes('doplň ISIN'))).toEqual([]);
+  });
+
+  // L23-03: `unmappedSymbols` se plnily jen ve větvi BUY/SELL, takže titul,
+  // který má výpis jen s dividendou, se k doplnění ISIN nikdy nenabídl —
+  // dividenda zůstala bez státu zdroje a uživatel neměl jak ho doplnit.
+  it('L23-03: ticker jen s dividendou se nabídne k doplnění ISIN (varování, ne chyba)', () => {
+    const result = parseRevolutInvestCsv(REVOLUT_INVEST_DIVIDEND_ONLY_CSV);
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSymbols).toEqual(['PEP']);
+    const isinWarnings = result.warnings.filter((w) => w.message.includes('doplň ISIN'));
+    expect(isinWarnings).toHaveLength(1);
+    expect(isinWarnings[0]!.line).toBe(2);
+    expect(isinWarnings[0]!.message).toContain('Symbol PEP: doplň ISIN — Revolut ho neexportuje.');
+    expect(isinWarnings[0]!.message).toContain('nahraj výpis znovu');
+
+    // dividenda se dál ukládá (ISIN u ní není povinný)
+    expect(result.transactions).toHaveLength(1);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBeUndefined();
+    expect(dividend.ticker).toBe('PEP');
+    expect(dividend.gross.toString()).toBe('1.37');
+  });
+
+  it('L23-03: ticker s ISIN v číselníku se nenabízí a dividenda ISIN dostane', () => {
+    const result = parseRevolutInvestCsv(REVOLUT_INVEST_DIVIDEND_ONLY_CSV, {
+      PEP: { isin: 'US7134481081' },
+    });
+
+    expect(result.unmappedSymbols).toEqual([]);
+    expect(result.warnings.filter((w) => w.message.includes('doplň ISIN'))).toEqual([]);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBe('US7134481081');
+  });
+
+  it('L23-03: dividenda před nákupem téhož tickeru — v seznamu jednou, nákup pořád hlásí chybu', () => {
+    const result = parseRevolutInvestCsv(REVOLUT_INVEST_DIVIDEND_THEN_BUY_CSV);
+
+    expect(result.unmappedSymbols).toEqual(['PEP']);
+    // nákup bez ISIN se zahazuje — bez chyby by zmizel tiše
+    expect(result.errors.map((e) => e.message)).toEqual([
+      'Symbol PEP: doplň ISIN instrumentu (Revolut ho neexportuje).',
+    ]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['DIVIDEND']);
   });
 
   it('neznámý typ řádku → error s číslem řádku a výzvou „nahlaš nám ho“', () => {

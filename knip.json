@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs!", "vitest.stryker.config.ts"],
+      "project": ["scripts/**/*.{mjs,ts}!", "*.{mjs,ts}"]
+    },
+    "apps/web": {
+      "entry": ["scripts/*.{ts,mjs}!", "db/*.mjs!", "e2e/t212-mock-server.mjs"],
+      "project": [
+        "{app,components,db,lib,scripts}/**/*.{ts,tsx,mjs,css}!",
+        "{test,e2e}/**/*.{ts,tsx,mjs}",
+        "*.{ts,mjs}"
+      ],
+      "ignoreDependencies": ["postcss"]
+    },
+    "packages/*": {
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
+    }
+  }
+}

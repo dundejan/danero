@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import journal from '@/db/migrations/meta/_journal.json';
@@ -59,4 +59,82 @@ describe('health endpoint (G-7)', () => {
     expect(await response.json()).toMatchObject({ db: 'timeout' });
     expect(Date.now() - startedAt).toBeLessThan(10_000);
   }, 20_000);
+});
+
+/**
+ * L10-09: vlastní instance spuštěná bez `DATABASE_URL` běží nad PGlite v souboru
+ * vedle aplikace, zmigrovaný Postgres zůstane prázdný — a health vracel v obou
+ * případech tutéž odpověď. Pole jen přibývá, ostatní klíče se nemění.
+ */
+describe('health endpoint — nad jakou databází instance běží (L10-09)', () => {
+  beforeEach(async () => {
+    const { createPgliteDb } = await vi.importActual<typeof import('@/db')>('@/db');
+    stav.db = await createPgliteDb();
+  }, 30_000);
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('bez DATABASE_URL hlásí pglite a dosavadní klíče zůstávají', { timeout: 30_000 }, async () => {
+    vi.stubEnv('DATABASE_URL', '');
+    const { GET } = await import('@/app/api/health/route');
+    const body = await (await GET()).json();
+    expect(body.dbDriver).toBe('pglite');
+    expect(Object.keys(body).sort()).toEqual([
+      'db',
+      'dbDriver',
+      'dbLatencyMs',
+      'migrations',
+      'operatorContact',
+      'status',
+      'support',
+    ]);
+    expect(body).toMatchObject({ status: 'ok', db: 'ok', operatorContact: 'ok', support: 'off' });
+  });
+
+  it('s DATABASE_URL hlásí postgres', { timeout: 30_000 }, async () => {
+    // `getDb` je v tomhle souboru podvržený, na adresu se nikdo nepřipojí
+    vi.stubEnv('DATABASE_URL', 'postgres://nikdo:nic@127.0.0.1:1/neexistuje');
+    const { GET } = await import('@/app/api/health/route');
+    const body = await (await GET()).json();
+    expect(body.dbDriver).toBe('postgres');
+  });
+});
+
+/**
+ * L10-10: healthcheck v compose běží po 15 s a každý zapsal řádek úrovně error
+ * o chybějící identifikaci provozovatele — tisíce stejných řádků denně, ve
+ * kterých se skutečná chyba ztratí. Stačí to říct jednou za běh procesu;
+ * odpověď sama nese `operatorContact` dál při každém volání.
+ */
+describe('health endpoint — chybějící identifikace se loguje jednou (L10-10)', () => {
+  beforeEach(async () => {
+    const { createPgliteDb } = await vi.importActual<typeof import('@/db')>('@/db');
+    stav.db = await createPgliteDb();
+  }, 30_000);
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it('dvě sondy → jeden záznam, pole v odpovědi pokaždé', { timeout: 30_000 }, async () => {
+    // identifikace se čte při načtení modulu — proto čerstvé moduly
+    vi.stubEnv('DANERO_OPERATOR_ICO', '');
+    vi.resetModules();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { GET } = await import('@/app/api/health/route');
+
+    const first = await (await GET()).json();
+    const second = await (await GET()).json();
+
+    expect(first.operatorContact).toBe('incomplete');
+    expect(second.operatorContact).toBe('incomplete');
+    const logged = errors.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as { event?: string })
+      .filter((entry) => entry.event === 'health.operator_contact_incomplete');
+    expect(logged).toHaveLength(1);
+  });
 });

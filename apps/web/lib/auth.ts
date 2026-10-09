@@ -10,8 +10,16 @@ import * as schema from '@/db/schema';
 import {
   afterHooks,
   beforeHooks,
+  clearSignInFailures,
+  notePasswordReset,
+  noteVerifiedUser,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
+import {
+  closeSignupContestAfterPasswordReset,
+  handleExistingUserSignUp,
+  settleSignupContest,
+} from '@/lib/auth-signup';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -68,10 +76,16 @@ function resolveBaseUrl(): string {
  *
  * Kdo má před sebou CDN s veřejnými adresami (Cloudflare) nebo chce seznam
  * zúžit na konkrétní adresu své proxy, vyjmenuje rozsahy v
- * `DANERO_TRUSTED_PROXIES` (IP nebo CIDR, oddělené čárkou; prázdná hodnota
- * = žádná důvěryhodná proxy). Zúžení dává smysl tam, kde do aplikace chodí
- * klienti PŘÍMO z privátního rozsahu (instance v LAN) — ti by jinak sdíleli
- * kbelík s ostatními v téže síti.
+ * `DANERO_TRUSTED_PROXIES` (IP nebo CIDR, oddělené čárkou). Zúžení dává smysl
+ * tam, kde do aplikace chodí klienti PŘÍMO z privátního rozsahu (instance
+ * v LAN) — ti by jinak sdíleli kbelík s ostatními v téže síti.
+ *
+ * Prázdná hodnota (i samé mezery a čárky) znamená totéž co nenastavená, tedy
+ * výchozí seznam — tak to slibuje `.env.example` i docs/16. `env_file`
+ * v compose totiž prázdný řádek šablony `DANERO_TRUSTED_PROXIES=` předá
+ * kontejneru jako prázdný řetězec; dokud se četl jako „žádná důvěryhodná
+ * proxy“, sdíleli jeden kbelík všichni, kdo přišli s víc hodnotami v hlavičce,
+ * a pět špatných pokusů jednoho z nich zablokovalo přihlášení ostatním.
  */
 const DEFAULT_TRUSTED_PROXIES = [
   '127.0.0.0/8',
@@ -84,12 +98,11 @@ const DEFAULT_TRUSTED_PROXIES = [
 ];
 
 export function resolveTrustedProxies(): string[] {
-  const fromEnv = process.env.DANERO_TRUSTED_PROXIES;
-  if (fromEnv === undefined) return DEFAULT_TRUSTED_PROXIES;
-  return fromEnv
+  const listed = (process.env.DANERO_TRUSTED_PROXIES ?? '')
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+  return listed.length > 0 ? listed : DEFAULT_TRUSTED_PROXIES;
 }
 
 function buildAuth(db: Db) {
@@ -148,6 +161,10 @@ function buildAuth(db: Db) {
         hash: (password) => import('@/lib/password').then((m) => m.hashPassword(password)),
         verify: (data) => import('@/lib/password').then((m) => m.verifyPassword(data)),
       },
+      // L8a-01: registrace na adresu, která už účet má. Heslo z cizí
+      // předregistrace nesmí přežít potvrzení adresy majitelem — proč a jak
+      // je v lib/auth-signup.ts.
+      onExistingUserSignUp: ({ user }, request) => handleExistingUserSignUp(db, user, request),
       resetPasswordTokenExpiresIn: 60 * 60,
       // ukradená session nepřežije obnovu hesla
       revokeSessionsOnPasswordReset: true,
@@ -155,8 +172,13 @@ function buildAuth(db: Db) {
       // starý odkaz ve schránce ještě hodinu živý (detail v lib/auth-hooks.ts).
       // K4-04: a musí být vidět v auditu — kdo se dostane do cizí schránky,
       // projde „zapomenuté heslo" a majitel účtu nesmí zůstat bez stopy.
-      onPasswordReset: async ({ user }) => {
+      onPasswordReset: async ({ user }, request) => {
         await revokePasswordResetTokens(db, user.id);
+        await closeSignupContestAfterPasswordReset(db, user);
+        // R14: kdo doložil schránku, nečeká na konec zámku přihlášení
+        await clearSignInFailures(db, user.email);
+        // …a prohlížeč, který obnovu dokončil, je od té chvíle známý
+        notePasswordReset(user.email, request);
         const { logAudit } = await import('@/lib/audit');
         await logAudit(db, user.id, 'PASSWORD_CHANGE', 'obnova přes odkaz v e-mailu');
       },
@@ -171,9 +193,18 @@ function buildAuth(db: Db) {
       // (do těla přihlášení ho předat nejde, klient by na něj skočil i po
       // úspěšném loginu). Nový odkaz posílá po nezdařeném přihlášení samo UI
       // přes sendVerificationEmail — viz components/auth-form.tsx.
-      // po kliknutí na odkaz je uživatel rovnou přihlášený — jinak by hned
-      // po potvrzení musel zadávat heslo znovu
-      autoSignInAfterVerification: true,
+      // L8a-01 (R1): Better Auth by po kliknutí přihlásil KOHOKOLI, kdo klikl —
+      // i majitele adresy, kterou si se svým heslem předregistroval někdo
+      // cizí. Přihlašujeme proto sami a jen prohlížeč, který o odkaz požádal
+      // (`signInVerificationBrowser` v lib/auth-hooks.ts); kdo se registroval
+      // sám, heslo po potvrzení znovu nezadává.
+      autoSignInAfterVerification: false,
+      afterEmailVerification: async (user, request) => noteVerifiedUser(user, request),
+      // L8a-01 / D01-R1-01: kdo potvrdí adresu, o kterou se přihlásil někdo
+      // s jiným heslem, dostane účet bez cizího hesla a bez cizích relací.
+      // Schválně háček PŘED potvrzením — selhání potvrzení zastaví
+      // (lib/auth-signup.ts).
+      beforeEmailVerification: (user) => settleSignupContest(db, user),
       sendVerificationEmail: async ({ user, url }) => {
         const { resolveEmailSender, verifyEmailEmail } = await import('@/lib/email');
         await resolveEmailSender()({ to: user.email, ...verifyEmailEmail(url) });
@@ -216,9 +247,10 @@ function buildAuth(db: Db) {
         '/send-verification-email': { window: 300, max: 3 },
       },
     },
-    // D-01 (jednorázový TOTP kód), D-3-02 (per-účet strop citlivých operací)
-    // a D-02 (zneplatnění reset odkazů po změně hesla) — proč a jak je
-    // v lib/auth-hooks.ts
+    // D-01 (jednorázový TOTP kód), D-3-02 (per-účet strop citlivých operací),
+    // D-02 (zneplatnění reset odkazů po změně hesla) a L21-04 (server
+    // nevydá „důvěryhodné zařízení" a vypnutí 2FA odvolá ta dřívější) — proč
+    // a jak je v lib/auth-hooks.ts
     hooks: {
       before: beforeHooks(db),
       after: afterHooks(db),

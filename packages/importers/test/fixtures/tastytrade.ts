@@ -56,16 +56,67 @@ export const TASTY_LEGACY = [
   '01/02/2021 9:00 AM,Money Movement,Deposit,,,,0,,,,,0.00,"1,200.00",ACH DEPOSIT,Individual XXX39',
 ].join('\n');
 
+/**
+ * L26-03: tytéž tři události tak, jak je zapíše export stažený v různých
+ * časových zónách — Tastytrade píše místní čas zařízení i s jeho offsetem,
+ * takže se mezi exporty liší číslice, a ne okamžik. Řádky od nejnovějšího:
+ * dividenda (31. 12. 2025 22:00 UTC, tedy 17:00 newyorského času), úrok
+ * (30. 6. 2025 22:30 UTC — v Česku už 1. 7., letní čas) a opční obchod
+ * (15. 1. 2025 20:30 UTC). Čísla smyšlená.
+ */
+const tastyZoneExport = (dividendAt: string, interestAt: string, tradeAt: string): string =>
+  [
+    TASTY_V2_HEADER,
+    `${dividendAt},Money Movement,Dividend,,ICSH,Equity,ISHARES TRUST,17.40,0,,--,0.00,,,,,,,,USD`,
+    `${interestAt},Money Movement,Credit Interest,,,,INTEREST ON CREDIT BALANCE,0.37,0,,--,0.00,,,,,,,,USD`,
+    `${tradeAt},Trade,Sell to Open,SELL_TO_OPEN,SCHG  250221C00027000,Equity Option,Sold 1 SCHG 02/21/25 Call 27.00 @ 1.25,125.00,1,125.00,-1.00,-0.13,100,SCHG,SCHG,2/21/25,27,CALL,351200417,USD`,
+  ].join('\n');
+
+export const TASTY_V2_ZONE_EXPORTS = {
+  prague: tastyZoneExport(
+    '2025-12-31T23:00:00+0100',
+    '2025-07-01T00:30:00+0200',
+    '2025-01-15T21:30:00+0100',
+  ),
+  newYork: tastyZoneExport(
+    '2025-12-31T17:00:00-0500',
+    '2025-06-30T18:30:00-0400',
+    '2025-01-15T15:30:00-0500',
+  ),
+  dubai: tastyZoneExport(
+    '2026-01-01T02:00:00+0400',
+    '2025-07-01T02:30:00+0400',
+    '2025-01-16T00:30:00+0400',
+  ),
+  tokyo: tastyZoneExport(
+    '2026-01-01T07:00:00+0900',
+    '2025-07-01T07:30:00+0900',
+    '2025-01-16T05:30:00+0900',
+  ),
+};
+
+/** Jediný úrok s daným zápisem času — na hraniční tvary hodnoty ve sloupci Date. */
+export const tastyInterestAt = (stamp: string): string =>
+  [
+    TASTY_V2_HEADER,
+    `${stamp},Money Movement,Credit Interest,,,,INTEREST ON CREDIT BALANCE,0.37,0,,--,0.00,,,,,,,,USD`,
+  ].join('\n');
+
 /** Expirace bez otevření pozice ve výpisu → směr nejde určit → warning + skip. */
 export const TASTY_V2_ORPHAN_EXPIRATION = [
   TASTY_V2_HEADER,
   '2021-06-18T23:00:00+0200,Receive Deliver,Expiration,,CLNE  210618C00014000,Equity Option,Removal of 1.0 CLNE 06/18/21 Call 14.00 due to expiration.,0.00,1,0.00,--,0.00,100,CLNE,CLNE,6/18/21,14,CALL,,USD',
 ].join('\n');
 
-/** Nepodporovaný instrument (Future) → warning + skip. */
+/**
+ * Nepodporovaný instrument (Future) → warning + skip. Futures nemají záměr
+ * „to Open/Close“ — Sub Type je holé „Buy“/„Sell“ a Action holé BUY/SELL
+ * (slovník podle open-source parseru tastyworks-pnl; čísla smyšlená).
+ */
 export const TASTY_V2_FUTURE = [
   TASTY_V2_HEADER,
-  '2024-03-01T10:00:00+0100,Trade,Buy to Open,BUY_TO_OPEN,/ESM4,Future,Bought 1 /ESM4,-100.00,1,-100.00,--,-1.25,50,/ES,/ES,6/21/24,,,123456,USD',
+  '2024-03-04T15:31:02+0100,Trade,Sell,SELL,/ESM4,Future,Sold 1 /ESM4 @ 5111.25,0.00,1,0.00,-0.75,-0.52,50,/ES,/ES,6/21/24,,,123457,USD',
+  '2024-03-01T10:00:00+0100,Trade,Buy,BUY,/ESM4,Future,Bought 1 /ESM4 @ 5100.25,0.00,1,0.00,-0.75,-0.52,50,/ES,/ES,6/21/24,,,123456,USD',
 ].join('\n');
 
 /** Neznámý podtyp peněžního pohybu → error s doslovným zněním. */
@@ -84,6 +135,26 @@ export const TASTY_V2_UNMATCHED_TAX = [
 export const TASTY_V2_UNMAPPED = [
   TASTY_V2_HEADER,
   '2024-05-02T15:00:00+0200,Trade,Buy to Open,BUY_TO_OPEN,TSLA,Equity,Buy to Open 2 TSLA @ 180.00,-360.00,2,-180.00,--,-0.16,,,,,,,,USD',
+].join('\n');
+
+/**
+ * L23-03: titul, který má ve výpisu jen dividendu se srážkou, žádný obchod
+ * (koupený dřív, v roce výpisu jen držený). Čísla smyšlená.
+ */
+export const TASTY_V2_DIVIDEND_ONLY = [
+  TASTY_V2_HEADER,
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,-1.83,0,,--,0.00,,,,,,,,USD',
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,12.20,0,,--,0.00,,,,,,,,USD',
+].join('\n');
+
+/**
+ * L23-03: dividenda PŘED nákupem téhož nezmapovaného symbolu (řádky jsou od
+ * nejnovějšího, parser je čte odspodu) — chyba u nákupu nesmí zmizet.
+ */
+export const TASTY_V2_DIVIDEND_THEN_BUY = [
+  TASTY_V2_HEADER,
+  '2025-06-03T15:00:00+0200,Trade,Buy to Open,BUY_TO_OPEN,PEP,Equity,Bought 3 PEP @ 131.00,-393.00,3,-131.00,--,-0.02,,,,,,,,USD',
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,12.20,0,,--,0.00,,,,,,,,USD',
 ].join('\n');
 
 /** YTD daňový export z Tax Center — jiný soubor, odmítá se s návodem. */

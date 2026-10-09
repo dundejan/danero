@@ -31,7 +31,7 @@ const GROUP_TITLES: Record<string, string> = {
   MERGER_INTERPRETIVE: 'Fúze s výkladovým předpokladem',
   SPINOFF_COST_BASIS: 'Spin-off — alokace nabývací ceny dle volby',
   SPINOFF_NO_POSITION: 'Spin-off bez otevřené pozice',
-  DELISTING_MANUAL: 'Delisting vyžaduje ruční posouzení',
+  DELISTING_MANUAL: 'Tituly stažené z burzy',
   DERIVATIVE_ACTION_UNSUPPORTED: 'Korporátní akce na derivátovém instrumentu',
   SHORT_OPEN_AT_YEAR_END: 'Prodej nakrátko otevřený přes konec roku',
   SHORT_COVER_WITHOUT_OPEN: 'Zpětný nákup bez otevřeného prodeje nakrátko',
@@ -78,8 +78,11 @@ export function groupByCode(warnings: EngineWarning[]): WarningGroup[] {
   );
 }
 
-/** Nadpis skupiny: lidský název kódu, jinak první věta prvního výskytu. */
-function groupTitle(group: WarningGroup): string {
+/**
+ * Nadpis skupiny: lidský název kódu, jinak první věta prvního výskytu.
+ * Export kvůli unit testům — čistá funkce bez JSX.
+ */
+export function groupTitle(group: WarningGroup): string {
   const known = GROUP_TITLES[group.code];
   if (known) return known;
   const message = group.items[0]!.message;

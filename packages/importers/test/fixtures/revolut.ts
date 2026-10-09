@@ -44,6 +44,22 @@ export const REVOLUT_INVEST_UNMAPPED_CSV = [
   '2024-06-28T13:30:00.000Z,NVDA,DIVIDEND,,,$0.04,USD,1.0700',
 ].join('\n');
 
+/**
+ * L23-03: titul, který uživatel koupil dřív a v roce výpisu jen držel — výpis
+ * k němu nese jen dividendu, žádný obchod. Čísla smyšlená.
+ */
+export const REVOLUT_INVEST_DIVIDEND_ONLY_CSV = [
+  REVOLUT_INVEST_HEADER,
+  '2025-03-14T13:30:00.000Z,PEP,DIVIDEND,,,$1.37,USD,1.0900',
+].join('\n');
+
+/** L23-03: dividenda PŘED nákupem téhož nezmapovaného tickeru — chyba u nákupu nesmí zmizet. */
+export const REVOLUT_INVEST_DIVIDEND_THEN_BUY_CSV = [
+  REVOLUT_INVEST_HEADER,
+  '2025-03-14T13:30:00.000Z,PEP,DIVIDEND,,,$1.37,USD,1.0900',
+  '2025-04-02T13:30:00.000Z,PEP,BUY - MARKET,2,$61.50,$123.00,USD,1.0800',
+].join('\n');
+
 export const REVOLUT_INVEST_UNKNOWN_TYPE_CSV = [
   REVOLUT_INVEST_HEADER,
   '2024-01-02T10:00:00.000Z,AAPL,LENDING INCOME,,,$0.55,USD,1.1000',

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { getDb } from '@/db';
+import { databaseKind, getDb } from '@/db';
 import { operatorContactComplete } from '@/lib/contact';
 import { invalidSupportEnv, supportAvailable, supportFromEnv } from '@/lib/support';
 import journal from '@/db/migrations/meta/_journal.json';
@@ -15,6 +15,9 @@ const EXPECTED_MIGRATIONS = journal.entries.length;
 
 /** Nad tímhle už je databáze „nedostupná“, i kdyby nakrásně jen přemýšlela. */
 const DB_TIMEOUT_MS = 5_000;
+
+/** Chybějící identifikace provozovatele už v tomhle procesu v logu je. */
+let operatorContactLogged = false;
 
 class HealthTimeoutError extends Error {}
 
@@ -72,8 +75,12 @@ export async function GET(): Promise<Response> {
     // repozitáři), takže je zapomenutelná — health je jediné místo, kde se to
     // pozná dřív než od úřadu. Nevalí to 503: služba běží, jen má díru
     // v povinných údajích.
+    // Do logu jen jednou za běh procesu: sonda chodí po 15 s a tisíce stejných
+    // chybových řádků denně by přehlušily skutečné chyby (L10-10). Odpověď
+    // sama nese `operatorContact` při každém volání.
     const operatorContact = operatorContactComplete() ? 'ok' : 'incomplete';
-    if (operatorContact === 'incomplete') {
+    if (operatorContact === 'incomplete' && !operatorContactLogged) {
+      operatorContactLogged = true;
       logEvent('error', 'health.operator_contact_incomplete', {});
     }
     // Překlep v čísle účtu pro dobrovolný příspěvek se na webu neprojeví
@@ -91,6 +98,9 @@ export async function GET(): Promise<Response> {
     return Response.json({
       status: 'ok',
       db: 'ok',
+      // `postgres` × `pglite`: vlastní instance spuštěná bez DATABASE_URL jede
+      // nad souborem vedle aplikace a jinak by vypadala stejně (L10-09)
+      dbDriver: databaseKind(),
       dbLatencyMs,
       migrations,
       operatorContact,

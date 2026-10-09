@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import type { FilingLimitTexts } from '@/lib/filing-limits';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
@@ -16,10 +17,15 @@ import { buttonVariants } from '@/components/ui/button';
  * – krypto má VLASTNÍ limit 100 000 Kč a od 15. 2. 2025 i vlastní tříletý test
  *   (R-10; test neplatí pro stablecoiny — hlídá nápověda),
  * – paušál + jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč → přiznání,
- * – zaměstnanec + vedlejší zdanitelné příjmy nad 20 000 Kč → přiznání (§ 38g/2),
- * – jiné situation + zdanitelné příjmy nad 50 000 Kč celkem → přiznání (§ 38g/1),
+ * – zaměstnanec + vedlejší zdanitelné příjmy nad limit § 38g/2 → přiznání
+ *   (R-09b: do ZO 2026 20 000 Kč, od ZO 2027 40 000 Kč),
+ * – jiné situation + zdanitelné příjmy nad limit § 38g/1 celkem → přiznání
+ *   (R-09a: do ZO 2026 50 000 Kč, od ZO 2027 100 000 Kč),
+ * – částky obou limitů § 38g připraví server z konfigurace roku
+ *   (`lib/filing-limits.ts`) pro běžný rok — a s nimi i limity roku
+ *   předchozího, aby nápověda v roce změny řekla obě částky (`limitYearNote`),
  * – neosvobozené prodeje → přiznání,
- * – do limitů 50k/20k patří i kladná plnění z derivátů (R-08d/R-10f) —
+ * – do těchhle limitů patří i kladná plnění z derivátů (R-08d/R-10f) —
  *   nápověda je musí jmenovat, jinak na ně tazatel odpoví „Ne“,
  * – „Nevím“ u dividend/úroků → poctivé „bez dat to nejde říct“ (neptáme se
  *   na nic, co aplikace zjistí sama — sem patří CTA na napojení dat).
@@ -71,30 +77,61 @@ function Question<T extends string | boolean>({
 }
 
 /**
- * Text otázky na ostatní zdanitelné příjmy podle situation (limit 50k / 20k / 50k).
+ * Věta do nápovědy, která limitu § 38g přiřadí rok — jen když se proti
+ * předchozímu roku změnil (R-09a, R-09b: od ZO 2027 100 000 / 40 000 Kč místo
+ * 50 000 / 20 000 Kč).
+ *
+ * Otázka se ptá na „letos“, jenže v lednu až květnu se na kalkulačku chodí
+ * hlavně kvůli přiznání za rok PŘEDCHOZÍ. Kdo měl v roce 2026 vedle zaměstnání
+ * 30 000 Kč dividend, odpověděl by v únoru 2027 na „nad 40 000 Kč?“ po pravdě
+ * „Ne“ a četl by, že přiznání řešit nemusí — přitom za rok 2026 platí 20 000 Kč
+ * a přiznání podává (A20-R1-02). Když se limit nezměnil, na roce nezáleží
+ * a nápověda zůstává krátká.
+ */
+function limitYearNote(
+  year: number,
+  limit: string,
+  previousYear: number,
+  previousLimit: string,
+): string {
+  return limit === previousLimit
+    ? ''
+    : `Limit ${limit} platí pro příjmy za rok ${year} — za rok ${previousYear} to bylo ještě ${previousLimit}. `;
+}
+
+/**
+ * Text otázky na ostatní zdanitelné příjmy podle situation (limit paušální
+ * daně / vedlejších příjmů zaměstnance / obecný). Limit 50 000 Kč paušální
+ * daně (§ 7a) se rokem nemění, limity § 38g přicházejí v `limits`; s limity
+ * roku předchozího (`previous`) nápověda řekne, kterého roku se částka týká
+ * (`limitYearNote`) — bez nich se na znění otázky nic nemění.
  * Nápověda musí vyjmenovat i **deriváty**: do limitů vstupují kladná plnění
  * z opcí, futures a CFD (R-08d/R-10f, `limits.ts` je sčítá jako
  * `derivatives.taxableIncomeCzk`). Bez nich odpověděl obchodník s CFD „Ne“
  * a kalkulačka mu řekla, že přiznání řešit nemusí, i když limit prolomil.
  * Export kvůli testu znění.
  */
-export const INCOME_QUESTION: Record<Situation, { question: string; hint: string }> = {
-  pausal: {
-    question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
-    hint:
-      'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
-  },
-  zamestnanec: {
-    question: 'Máš letos vedle zaměstnání jiné zdanitelné příjmy nad 20 000 Kč?',
-    hint:
-      'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje se nepočítají.',
-  },
-  jine: {
-    question: 'Máš letos zdanitelné příjmy nad 50 000 Kč celkem?',
-    hint:
-      'Včetně zahraničních dividend, úroků, nájmu, kladných plnění z derivátů (CFD, opce, futures) i prodejů a směn stablecoinů — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.',
-  },
-};
+export function incomeQuestions(
+  limits: FilingLimitTexts,
+  previous: FilingLimitTexts = limits,
+): Record<Situation, { question: string; hint: string }> {
+  const { employee, general } = limits;
+  return {
+    pausal: {
+      question: 'Máš letos jiné zdanitelné příjmy mimo podnikání nad 50 000 Kč?',
+      hint:
+        'Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje a české dividendy se srážkou se nepočítají.',
+    },
+    zamestnanec: {
+      question: `Máš letos vedle zaměstnání jiné zdanitelné příjmy nad ${employee}?`,
+      hint: `${limitYearNote(limits.year, employee, previous.year, previous.employee)}Třeba zahraniční dividendy, úroky, nájem, kladná plnění z derivátů (CFD, opce, futures) nebo prodeje a směny stablecoinů — osvobozené prodeje se nepočítají.`,
+    },
+    jine: {
+      question: `Máš letos zdanitelné příjmy nad ${general} celkem?`,
+      hint: `${limitYearNote(limits.year, general, previous.year, previous.general)}Včetně zahraničních dividend, úroků, nájmu, kladných plnění z derivátů (CFD, opce, futures) i prodejů a směn stablecoinů — osvobozené prodeje a příjmy zdaněné srážkou se nepočítají.`,
+    },
+  };
+}
 
 /**
  * Otázka na krypto. Nápověda **musí** vyjmenovat stablecoiny: § 4 odst. 1
@@ -140,13 +177,15 @@ const QUESTIONS = {
   cryptoHolding: 'Držel jsi všechno prodané krypto déle než 3 roky?',
 } as const;
 
-const PRIJMY_DUVOD: Record<Situation, string> = {
-  pausal:
-    'Jiné zdanitelné příjmy nad 50 000 Kč znamenají, že daň za ten rok není rovna paušální dani — podáš přiznání a přehledy, v paušálním režimu ale zůstáváš.',
-  zamestnanec:
-    'Vedlejší zdanitelné příjmy nad 20 000 Kč vedle zaměstnání znamenají přiznání — i bez jediného prodeje.',
-  jine: 'Zdanitelné příjmy nad 50 000 Kč za rok znamenají povinnost podat přiznání.',
-};
+/** Zdůvodnění verdiktu „přiznání“ — jmenuje tentýž limit jako otázka (`incomeQuestions`). */
+function incomeReasons({ employee, general }: FilingLimitTexts): Record<Situation, string> {
+  return {
+    pausal:
+      'Jiné zdanitelné příjmy nad 50 000 Kč znamenají, že daň za ten rok není rovna paušální dani — podáš přiznání a přehledy, v paušálním režimu ale zůstáváš.',
+    zamestnanec: `Vedlejší zdanitelné příjmy nad ${employee} vedle zaměstnání znamenají přiznání — i bez jediného prodeje.`,
+    jine: `Zdanitelné příjmy nad ${general} za rok znamenají povinnost podat přiznání.`,
+  };
+}
 
 /** Odpovědi kalkulačky; `null` = uživatel na otázku zatím neodpověděl. */
 export interface CalculatorAnswers {
@@ -172,15 +211,20 @@ export interface CalculatorOutcome {
 
 /**
  * Verdikt kalkulačky z odpovědí. Čistá funkce bez JSX — export kvůli testům.
+ * `limits` říkají, kterými částkami § 38g se zdůvodnění řídí — limity běžného
+ * roku, které stránka připravila na serveru.
  */
-export function evaluateCalculator({
-  situation,
-  salesOver100k,
-  allHeldThreeYears,
-  kryptoNad100k,
-  kryptoDrzeno3Roky,
-  prijmy,
-}: CalculatorAnswers): CalculatorOutcome {
+export function evaluateCalculator(
+  {
+    situation,
+    salesOver100k,
+    allHeldThreeYears,
+    kryptoNad100k,
+    kryptoDrzeno3Roky,
+    prijmy,
+  }: CalculatorAnswers,
+  limits: FilingLimitTexts,
+): CalculatorOutcome {
   // prodeje CP jsou osvobozené limitem 100k, nebo splněným časovým testem;
   // null = na verdict zatím chybí odpověď
   const salesExempt =
@@ -197,7 +241,7 @@ export function evaluateCalculator({
       'Prodeje a směny kryptoaktiv nad 100 000 Kč ročně bez tří let držení jsou zdanitelný příjem.';
   } else if (situation !== null && prijmy === 'ano') {
     verdict = 'priznani';
-    reason = PRIJMY_DUVOD[situation];
+    reason = incomeReasons(limits)[situation];
   } else if (salesExempt === false) {
     verdict = 'priznani';
     reason = 'Prodeje nad 100 000 Kč bez tří let držení jsou zdanitelný příjem.';
@@ -233,7 +277,7 @@ export function evaluateCalculator({
       ? [{ label: QUESTIONS.cryptoHolding, answered: kryptoDrzeno3Roky !== null }]
       : []),
     ...(situation !== null && kryptoOsvobozene !== null
-      ? [{ label: INCOME_QUESTION[situation].question, answered: prijmy !== null }]
+      ? [{ label: incomeQuestions(limits)[situation].question, answered: prijmy !== null }]
       : []),
   ];
   const firstUnanswered = questions.findIndex((question) => !question.answered);
@@ -248,27 +292,33 @@ export function evaluateCalculator({
   return { verdict, reason, skippedQuestion };
 }
 
-export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean }) {
+export function KalkulackaPriznani({
+  showHeader = true,
+  filingLimits,
+  previousFilingLimits,
+}: {
+  showHeader?: boolean;
+  filingLimits: FilingLimitTexts;
+  previousFilingLimits: FilingLimitTexts;
+}) {
   const [situation, setSituace] = useState<Situation | null>(null);
   const [salesOver100k, setProdejeNad100k] = useState<boolean | null>(null);
   const [allHeldThreeYears, setVseDrzeno3Roky] = useState<boolean | null>(null);
   const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
   const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
   const [prijmy, setPrijmy] = useState<IncomeAnswer | null>(null);
-
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10) —
   // řídí, kdy se ukáže poslední otázka
   const kryptoOsvobozene =
     kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
 
-  const { verdict, reason, skippedQuestion } = evaluateCalculator({
-    situation,
-    salesOver100k,
-    allHeldThreeYears,
-    kryptoNad100k,
-    kryptoDrzeno3Roky,
-    prijmy,
-  });
+  const { verdict, reason, skippedQuestion } = evaluateCalculator(
+    { situation, salesOver100k, allHeldThreeYears, kryptoNad100k, kryptoDrzeno3Roky, prijmy },
+    filingLimits,
+  );
+  // otázka i verdikt jmenují limit běžného roku; loňský jde jen do nápovědy
+  const incomeQuestion =
+    situation === null ? null : incomeQuestions(filingLimits, previousFilingLimits)[situation];
 
   return (
     <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6 sm:p-8">
@@ -356,10 +406,10 @@ export function KalkulackaPriznani({ showHeader = true }: { showHeader?: boolean
             onChange={setKryptoDrzeno3Roky}
           />
         )}
-        {situation !== null && kryptoOsvobozene !== null && (
+        {incomeQuestion !== null && kryptoOsvobozene !== null && (
           <Question<IncomeAnswer>
-            question={INCOME_QUESTION[situation].question}
-            hint={INCOME_QUESTION[situation].hint}
+            question={incomeQuestion.question}
+            hint={incomeQuestion.hint}
             options={[
               { value: 'ne', label: 'Ne' },
               { value: 'ano', label: 'Ano' },

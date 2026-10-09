@@ -48,9 +48,10 @@ export default async function EmailVerifiedPage({
             <>Ověřovací odkaz vypršel nebo už byl použitý. Nech si poslat nový.</>
           ) : (
             <>
-              Stačí se přihlásit a jsi uvnitř. Že tě odkaz rovnou nepustil dál, dělá obvykle
-              firemní ochrana pošty — otevře si odkazy ve zprávě dřív než ty a ověření tím
-              spotřebuje.
+              Stačí se přihlásit a jsi uvnitř. Rovnou tě odkaz pustí dál jen v prohlížeči, ve
+              kterém ses registroval — jinde (jiný počítač, telefon) chceme kvůli bezpečnosti
+              účtu heslo. Stejně to dopadne, když si odkaz dřív než ty otevře firemní ochrana
+              pošty.
             </>
           )}
         </p>

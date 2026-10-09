@@ -9,6 +9,7 @@ import {
   type EpoDapTyp,
   type EpoPersonalData,
 } from '@/lib/epo';
+import { xmlBlockedByFxMix } from '@/lib/fx-method';
 import { errorText, logEvent } from '@/lib/log';
 import {
   engineInputForUser,
@@ -64,6 +65,13 @@ export async function POST(request: Request): Promise<Response> {
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
   const currentYear = currentTaxYear();
   const dailyRates = await loadDailyRates(db, txs, currentYear);
+  // R-06b: soubor varování nenese — čísla ze dvou kurzových soustav by odešla
+  // beze stopy. Kontrola je PŘED fixací roku: odmítnutý export nemá rok
+  // zamknout na nastavení, které uživateli právě radíme změnit.
+  const fxMix = xmlBlockedByFxMix(
+    analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates)),
+  );
+  if (fxMix) return chyba(fxMix, 409);
   // R-05c: XML je podklad pro podání → konfigurace se pro ten rok zafixuje
   const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
   const result = analyzeTaxYear(engineInputForUser(txs, pinnedProfile, year, dailyRates));

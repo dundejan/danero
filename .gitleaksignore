@@ -1,0 +1,3 @@
+# Otisky falešných poplachů gitleaks (commit:soubor:pravidlo:řádek).
+# Porovnání délky pole v parseru MT4 — pravidlo generic-api-key ho čte jako klíč.
+cd7391aa4dee93e210ac9f818d4c1fb8549753c9:packages/importers/src/metatrader/mt4-html.ts:generic-api-key:132

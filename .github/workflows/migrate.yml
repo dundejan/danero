@@ -37,9 +37,17 @@ jobs:
           echo "Migrace produkce se smí pouštět jen z main (teď: $GITHUB_REF)."
           exit 1
 
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # Stažený kód akcí běží ve stejném jobu, kde níž čeká připojení
+      # k produkční databázi — proto plné SHA commitu, ne značka `v4`, kterou
+      # jde přesunout. Smí tu být jen SHA, která má i ci.yml: tenhle workflow
+      # se před sloučením nikde nespustí a překlep by ho shodil už při přípravě
+      # jobu, tedy kód nasazený nad starým schématem. CI nad pull requestem je
+      # stáhne dřív (hlídá apps/web/test/workflow-pins.test.ts).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -49,6 +57,35 @@ jobs:
       - name: Kontrola pořadí migrací
         working-directory: apps/web
         run: node db/check-journal.mjs
+
+      # Tytéž migrace nejdřív proti prázdné zkušební databázi: do té doby byl
+      # první běh migrace proti opravdovému Postgresu ten produkční (L9-01).
+      # Chytí chybu syntaxe, chybějící `--> statement-breakpoint` a rozbité
+      # pořadí — tedy pád, po kterém by nový kód zůstal nad starým schématem.
+      # NEchytí chybu závislou na produkčních datech (vzor migrace 0032); na
+      # tu platí „datovou migraci pusť dvakrát“ v `test/postgres-compat.test.ts`.
+      #
+      # Zkušební databáze je Postgres předinstalovaný na runneru, ne kontejner:
+      # stahování obrazu by z produkční migrace udělalo rukojmí cizí služby.
+      # Ze stejného důvodu je příprava měkká — když se databáze nerozběhne nebo
+      # se k ní nejde připojit, krok varuje a migraci NEZDRŽÍ. Tvrdě spadne jen
+      # tehdy, když do připravené databáze neprojdou samy migrace. Schválně
+      # nečeká na job `ci`: nestabilní test by zadržel bezvadnou migraci,
+      # zatímco Vercel kód nasadí.
+      - name: Zkouška nanečisto
+        if: inputs.action != 'status'
+        working-directory: apps/web
+        env:
+          DRY_RUN_URL: postgres://postgres:zkouska@localhost:5432/danero_zkouska
+        run: |
+          if ! { sudo systemctl start postgresql.service \
+                 && sudo -u postgres psql -qc "ALTER USER postgres PASSWORD 'zkouska'" \
+                 && sudo -u postgres createdb danero_zkouska \
+                 && psql "$DRY_RUN_URL" -qc 'select 1' >/dev/null; }; then
+            echo "::warning::Zkušební Postgres se na runneru nepodařilo připravit — zkouška nanečisto se přeskočila."
+            exit 0
+          fi
+          DATABASE_URL="$DRY_RUN_URL" node db/migrate.mjs
 
       # POZOR: tenhle krok běží PŘED migrací, takže db/status.mjs MUSÍ projít
       # i nad čerstvou, ještě nezmigrovanou databází. Dokud padal na chybějící

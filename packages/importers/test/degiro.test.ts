@@ -8,8 +8,17 @@ import {
 } from '../src/degiro/csv';
 import {
   DEGIRO_ACCOUNT_CZ,
+  DEGIRO_ACCOUNT_DE_CONNECTION_FEE,
+  DEGIRO_ACCOUNT_FR,
   DEGIRO_ACCOUNT_HEADER_CZ,
+  DEGIRO_ACCOUNT_HEADER_NL,
   DEGIRO_ACCOUNT_NL,
+  DEGIRO_ACCOUNT_NL_CASH_TRANSFER,
+  DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY,
+  DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS,
+  DEGIRO_TRANSACTIONS_2026_EN,
+  DEGIRO_TRANSACTIONS_2026_HEADER_NL,
+  DEGIRO_TRANSACTIONS_2026_NL,
   DEGIRO_TRANSACTIONS_CZ,
   DEGIRO_TRANSACTIONS_EN,
   DEGIRO_TRANSACTIONS_HEADER_CZ,
@@ -640,6 +649,326 @@ describe('výpis v jazyce rozhraní: DE a FR (klasifikace popisů je uměla, hla
     if (trade.type !== 'BUY') throw new Error('čekáme nákup');
     expect(trade.quantity.toString()).toBe('10');
     expect(trade.fee?.amount.toString()).toBe('2.5');
+  });
+});
+
+describe('Account.csv: popisy doložené veřejným vzorkem — FR, NL a DE (L2a-04)', () => {
+  // R-07b + R-07c: dividenda jde do základu brutto a daň sražená v zahraničí se
+  // započítává — když parser srážku nepozná, uživatel o zápočet přijde.
+  it('FR „Dividende“ + „Impôts sur dividende“ → dividenda se sraženou daní 1,5', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_FR);
+    expect(isDegiroCsv(DEGIRO_ACCOUNT_FR)).toBe('account');
+    const dividends = result.transactions.filter((t) => t.type === 'DIVIDEND');
+    expect(dividends).toHaveLength(1);
+    const dividend = dividends[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBe('US0000000001');
+    expect(dividend.gross.toString()).toBe('10');
+    expect(dividend.withholdingTax.toString()).toBe('1.5');
+    expect(dividend.currency).toBe('USD');
+    expect(dividend.date).toBe('2026-03-12');
+    // dřív: „Záporná dividenda -1.50 USD … vypadá jako korekce, nezaúčtováno“
+    expect(result.warnings).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('FR „Frais DEGIRO de courtage et/ou de parties tierces“ → poplatek, echo „Achat“ přeskočené', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_FR);
+    const fees = result.transactions.filter((t) => t.type === 'FEE');
+    expect(fees).toHaveLength(1);
+    const fee = fees[0]!;
+    if (fee.type !== 'FEE') throw new Error('unreachable');
+    expect(fee.amount.toString()).toBe('3.9');
+    expect(fee.currency).toBe('EUR');
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.message).toContain('Achat 7');
+  });
+
+  it('NL „Overboeking van/naar uw geldrekening bij flatexDEGIRO Bank“ je interní převod — přeskočí se, není to chyba', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_CASH_TRANSFER);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    // vklad ani výběr z toho nevzniká — peníze neopouštějí Degiro
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3, 4]);
+    expect(result.skipped[0]!.message).toContain('Overboeking van uw geldrekening');
+    expect(result.skipped[0]!.message).toContain('převod');
+    expect(result.skipped[2]!.message).toContain('Overboeking naar uw geldrekening');
+  });
+
+  it('převod na peněžní účet se přeskočí i s vyplněnou částkou', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '03-02-2026,18:20,03-02-2026,,,"Overboeking van uw geldrekening bij flatexDEGIRO Bank 40,00 EUR",,EUR,"40,00",EUR,"52,10",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+  });
+
+  it('NL „DEGIRO Corporate Action Kosten“ → poplatek', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    const fee = result.transactions[0]!;
+    if (fee.type !== 'FEE') throw new Error('čekáme poplatek');
+    expect(fee.amount.toString()).toBe('0.05');
+    expect(fee.currency).toBe('USD');
+    expect(fee.note).toBe('DEGIRO Corporate Action Kosten');
+  });
+
+  it('„DEGIRO courtesy“ není neznámý popis: varování s částkou, transakce z něj nevzniká', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['FEE']);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(3);
+    expect(result.warnings[0]!.message).toContain('DEGIRO courtesy');
+    expect(result.warnings[0]!.message).toContain('0.75 EUR');
+    expect(result.warnings[0]!.message).toContain('do výpočtu');
+  });
+
+  it('DE „DEGIRO Verbindungskosten“ → poplatek (starší „Anschlusskosten“ platí dál)', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_DE_CONNECTION_FEE);
+    expect(result.errors).toEqual([]);
+    const fee = result.transactions[0]!;
+    if (fee.type !== 'FEE') throw new Error('čekáme poplatek');
+    expect(fee.amount.toString()).toBe('2.5');
+
+    const older = parseDegiroAccountCsv(
+      DEGIRO_ACCOUNT_DE_CONNECTION_FEE.replace('Verbindungskosten', 'Anschlusskosten'),
+    );
+    expect(older.errors).toEqual([]);
+    expect(older.transactions.map((t) => t.type)).toEqual(['FEE']);
+  });
+
+  it('„PRODUCTWIJZIGING : Koop/Verkoop N @ …“ s částkou 0 je pohyb kusů — chyba o kusech, ne „neznámý popis“', () => {
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS);
+    const productChange = result.errors.filter((e) => e.message.includes('PRODUCTWIJZIGING'));
+    expect(productChange.map((e) => e.line)).toEqual([2, 3]);
+    for (const error of productChange) {
+      expect(error.message).toContain('kusy');
+      expect(error.message).not.toContain('Neznámý popis');
+    }
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('„STOCK DIVIDEND: Koop N @ 0 EUR“ s částkou 0,00 je pohyb kusů — chyba o kusech, ne „záporná dividenda“', () => {
+    // pojistka B4-0 chytala jen PRÁZDNOU částku; Degiro tu píše nulu
+    const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS);
+    expect(result.warnings).toEqual([]);
+    const stockDividend = result.errors.filter((e) => e.message.includes('STOCK DIVIDEND'));
+    expect(stockDividend).toHaveLength(1);
+    expect(stockDividend[0]!.line).toBe(4);
+    expect(stockDividend[0]!.message).toContain('kusy');
+    expect(result.errors).toHaveLength(3);
+  });
+
+  it('kontrola opačným směrem: skutečná záporná dividenda (korekce) má dál varování, ne chybu o kusech', () => {
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '05-03-2026,10:00,05-03-2026,NORDWIND CORP,US0000000001,Dividend,,EUR,"-4,00",EUR,"87,65",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('Záporná dividenda');
+  });
+
+  it('kontrola opačným směrem: změna produktu, která NESE peníze, zůstává neznámým popisem k nahlášení', () => {
+    // hláška „nehýbe penězi, ale kusy“ by tu lhala — rozhoduje nulová nebo prázdná částka
+    const csv = [
+      DEGIRO_ACCOUNT_HEADER_NL,
+      '17-02-2026,04:10,17-02-2026,TALLOW LTD,AU0000000004,"PRODUCTWIJZIGING : Koop 300 @ 0,05 EUR",,EUR,"-15,00",EUR,"76,65",',
+    ].join('\n');
+    const result = parseDegiroAccountCsv(csv);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('Neznámý popis');
+    expect(result.errors[0]!.message).toContain('nahlaš');
+  });
+});
+
+describe('Transactions.csv v rozložení od prosince 2025: měna v názvu sloupce, AutoFX (L2a-01)', () => {
+  // R-05b: výdajem k obchodu jsou i související poplatky — parser je nesmí zahodit.
+  const feeOf = (tx: { type: string }): string | undefined => {
+    if (tx.type !== 'BUY' && tx.type !== 'SELL') throw new Error('čekáme obchod');
+    const fee = (tx as { fee?: { amount: { toString(): string }; currency: string } }).fee;
+    return fee === undefined ? undefined : `${fee.amount.toString()} ${fee.currency}`;
+  };
+
+  it('nizozemský export: poplatek včetně AutoFX, měna ze sufixu hlavičky, žádné varování', () => {
+    expect(isDegiroCsv(DEGIRO_TRANSACTIONS_2026_NL)).toBe('transactions');
+    const result = parseDegiroTransactionsCsv(DEGIRO_TRANSACTIONS_2026_NL);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions.map((t) => t.type)).toEqual(['BUY', 'SELL', 'BUY', 'BUY']);
+    expect(result.transactions.map(feeOf)).toEqual([
+      '2.88 EUR', // 2,00 poplatek + 0,88 AutoFX
+      '3 EUR', // 2,00 + 1,00
+      '1 EUR', // obchod v měně účtu, AutoFX nulový
+      '0.33 EUR', // jen AutoFX
+    ]);
+  });
+
+  it('ID objednávky se přečte i z bezejmenného sloupce za prázdným „Order ID“', () => {
+    const result = parseDegiroTransactionsCsv(DEGIRO_TRANSACTIONS_2026_NL);
+    expect(result.transactions.map((t) => t.id)).toEqual([
+      'degiro-7b1e0c52-0000-4000-8000-00000000a001',
+      'degiro-7b1e0c52-0000-4000-8000-00000000a002',
+      'degiro-7b1e0c52-0000-4000-8000-00000000a003',
+      'degiro-7b1e0c52-0000-4000-8000-00000000a004',
+    ]);
+  });
+
+  it('anglický export: totéž, ID přímo pod „Order ID“', () => {
+    expect(isDegiroCsv(DEGIRO_TRANSACTIONS_2026_EN)).toBe('transactions');
+    const result = parseDegiroTransactionsCsv(DEGIRO_TRANSACTIONS_2026_EN);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+    expect(result.transactions[0]!.id).toBe('degiro-en-2026-1');
+  });
+
+  it('starší 19sloupcové rozložení dává dál poplatek z bezejmenného sloupce', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value,,Exchange rate,Transaction and/or third party fees,,Total,,Order ID',
+        '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,-335.00,EUR,1.0806,-2.00,EUR,-337.00,EUR,en-2025-1',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2 EUR');
+    expect(result.transactions[0]!.id).toBe('degiro-en-2025-1');
+  });
+
+  it('sloupec „Totaal EUR“ se najde: řádky bez ID lišící se jen částkou Total mají různý otisk', () => {
+    const row = (autoFx: string, total: string): string =>
+      `09-02-2026,15:42,NORDWIND CORP,US0000000001,NDQ,XNAS,12,"31,5000",USD,"-378,00",USD,"-350,00","1,0800","${autoFx}","-2,00","${total}",,,`;
+    const result = parseDegiroTransactionsCsv(
+      [DEGIRO_TRANSACTIONS_2026_HEADER_NL, row('-0,88', '-352,88'), row('-0,90', '-352,90')].join(
+        '\n',
+      ),
+    );
+    expect(result.errors).toEqual([]);
+    const [first, second] = result.transactions.map((t) => t.id);
+    expect(first).toMatch(/^degiro-[0-9a-f]{16}$/);
+    expect(second).toMatch(/^degiro-[0-9a-f]{16}$/);
+    expect(second).not.toBe(first);
+  });
+
+  it('AutoFX bez zjistitelné měny se nezahodí potichu — varování, transakční poplatek zůstane', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value,,Exchange rate,AutoFX Fee,Transaction and/or third party fees,,Total,,Order ID',
+        '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,-335.00,EUR,1.0806,-0.84,-2.00,EUR,-337.84,EUR,en-2025-2',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2 EUR');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('AutoFX');
+    expect(result.warnings[0]!.message).toContain('-0.84');
+    expect(result.warnings[0]!.message).toContain('nemá ve výpisu měnu');
+  });
+
+  // A05-R1-01: větve, které oprava L2a-01 přidala a žádná fixtura jimi nešla.
+  // Obě fixtury nového rozložení nesou měnu i v názvu sloupce poplatku, takže
+  // se měna účtu nikdy nebrala z Total ani z Value. Řádky níže mají sufix
+  // vždy jen na JEDNOM sloupci; bez příslušné větve zůstane obchod bez poplatku.
+  const HEAD_2026 = 'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,';
+  const ROW_2026 =
+    '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,';
+
+  it('měna účtu jen v názvu sloupce Total: poplatek i AutoFX ji převezmou', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value,Exchange rate,AutoFX Fee,Transaction and/or third party fees,Total EUR,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-2,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('měna účtu jen v názvu sloupce Value: poplatek i AutoFX ji převezmou', () => {
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees,Total,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-3,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('název sloupce poplatku má přednost před Total a Value', () => {
+    // pořadí v řetězci `??` — kdyby se měna účtu brala nejdřív z Total, vyšel by AutoFX v CZK
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value CZK,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Total CZK,Order ID,`,
+        `${ROW_2026}-8140.00,1.0806,-0.84,-2.00,-8210.00,en-2026-4,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('AutoFX v jiné měně než transakční poplatek se nesečte a varování říká pravý důvod', () => {
+    // transakční poplatek má měnu v bezejmenném sloupci za částkou (USD), AutoFX
+    // dědí měnu účtu z názvu sloupce Total (EUR) — obchod unese jen jednu měnu poplatku
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees,,Total EUR,Order ID,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,USD,-337.84,en-2026-5,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2 USD');
+    expect(result.warnings).toHaveLength(1);
+    const message = result.warnings[0]!.message;
+    expect(message).toContain('AutoFX');
+    expect(message).toContain('-0.84 EUR');
+    expect(message).toContain('USD');
+    expect(message).toContain('v jiné měně');
+    // měnu jsme poznali — tvrdit opak by uživatele poslalo hledat chybu ve výpisu
+    expect(message).not.toContain('nemá ve výpisu měnu');
+  });
+
+  it('pojmenovaný sloupec za poplatkem není měna, ani když jeho hodnota vypadá jako kód měny', () => {
+    // sloupce se mapují podle názvů, takže burza („NDQ“) může stát hned za
+    // poplatkem; měnu smí dodat jen BEZEJMENNÝ sloupec
+    const result = parseDegiroTransactionsCsv(
+      [
+        'Date,Time,Product,ISIN,Quantity,Price,,Local value,,Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Reference exchange,Venue,Total EUR,Order ID,',
+        '11-02-2026,15:48,NORDWIND CORP,US0000000001,8,45.2500,USD,-362.00,USD,-335.00,1.0806,-0.84,-2.00,NDQ,XNAS,-337.84,en-2026-6,',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+  });
+
+  it('prázdné „Order ID“ si ID nepůjčí z pojmenovaného sloupce vedle', () => {
+    // řádek bez ID objednávky dostane otisk obsahu; částka Total ze sousedního
+    // sloupce by z něj udělala „degiro--337.84“
+    const result = parseDegiroTransactionsCsv(
+      [
+        `${HEAD_2026}Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Order ID,Total EUR,`,
+        `${ROW_2026}-335.00,1.0806,-0.84,-2.00,,-337.84,`,
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(feeOf(result.transactions[0]!)).toBe('2.84 EUR');
+    expect(result.transactions[0]!.id).toMatch(/^degiro-[0-9a-f]{16}$/);
   });
 });
 

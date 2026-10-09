@@ -9,6 +9,7 @@ import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
+import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
 import {
   dropStaleLimitNotifications,
@@ -76,7 +77,11 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
       (issue) => (issue as { params?: { kod?: string } }).params?.kod === 'prijmy',
     )
       ? 'prijmy'
-      : 'formular';
+      : // L7i-01 (R8): režim nemá předvolbu, takže první uložení bez výběru je
+        // běžný pohyb, ne podvržený formulář — chce vlastní větu
+        parsed.error.issues.some((issue) => issue.path[0] === 'rezim')
+        ? 'rezim'
+        : 'formular';
     redirect(`/nastaveni?chyba=${kod}`);
   }
 
@@ -185,6 +190,9 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangePasswordSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni/ucet?chyba=heslo');
+  // R21: totéž odmítne i server (háček v lib/auth-hooks.ts); tady kvůli vlastní
+  // hlášce — z chyby `changePassword` níž se „heslo nesedí“ od tohohle nepozná
+  if (isCommonPassword(parsed.data['nove-heslo'])) redirect('/nastaveni/ucet?chyba=heslo-bezne');
   await limitAccountAction(user.id, 'password_change', 5, 'heslo-limit');
 
   const { api, requestHeaders } = await authApi();
@@ -243,9 +251,18 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
 
   // endpoint /change-email je vypnutý (obcházel kontrolu hesla) — e-mail se
   // mění přímo tady, unikátnost hlídá DB constraint
+  // L6b-05: oznámení o změně má dvě znění podle toho, jestli původní adresu kdy
+  // někdo potvrdil — nepotvrzená může být překlep, tedy cizí schránka, a té
+  // se „vrácení účtu“ nenabízí (lib/email.ts, `emailChangedEmail`).
+  let previousEmailVerified = false;
   try {
     const db = await getDb();
     const { user: userTable } = await import('@/db/schema');
+    const [current] = await db
+      .select({ emailVerified: userTable.emailVerified })
+      .from(userTable)
+      .where(eq(userTable.id, user.id));
+    previousEmailVerified = current?.emailVerified ?? false;
     await db
       .update(userTable)
       // nová adresa je nepotvrzená: kdyby v ní byl překlep, uživatel by jinak
@@ -261,7 +278,34 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
       isUniqueViolation(error) ? '/nastaveni/ucet?chyba=email-obsazeny' : '/nastaveni/ucet?chyba=email-ulozeni',
     );
   }
+  // L21-01: odkazy na obnovu hesla vydané na starou adresu padají se změnou
+  // e-mailu, stejně jako po změně hesla (D-02 v lib/auth-hooks.ts). E-mail se
+  // mění i proto, že starou schránku už uživatel neovládá — a kdo ji má, by
+  // jinak ještě hodinu od vydání odkazu přepsal heslo a vlastníka odhlásil.
+  // Až po úspěšném UPDATE: špatné heslo ani obsazená adresa nesmí nikomu
+  // zavřít záchrannou cestu. A mimo `try` výš, protože selhání tady není
+  // „e-mail se nepodařilo změnit“ — ten už změněný je.
+  const { revokePasswordResetTokens } = await import('@/lib/auth-hooks');
+  await revokePasswordResetTokens(await getDb(), user.id);
   await logAudit(await getDb(), user.id, 'EMAIL_CHANGE');
+  // L6b-05 (R19): původní adresa se o změně dozví. Bez toho majitel účtu, jehož
+  // heslo zná někdo další, potichu přijde o přihlášení i o obnovu hesla.
+  // Selhání odeslání nesmí shodit už provedenou změnu.
+  const newEmail = parsed.data['novy-email'].toLowerCase();
+  if (user.email.toLowerCase() !== newEmail) {
+    try {
+      const { emailChangedEmail, resolveEmailSender } = await import('@/lib/email');
+      await resolveEmailSender()({
+        to: user.email,
+        ...emailChangedEmail(newEmail, { previousVerified: previousEmailVerified }),
+      });
+    } catch (error) {
+      logEvent('error', 'account.change_email_notice_failed', {
+        userId: user.id,
+        error: errorText(error),
+      });
+    }
+  }
   // ověřovací odkaz na novou adresu; selhání odeslání nesmí shodit už provedenou
   // změnu — uživatel si odkaz vyžádá znovu na /overeni-emailu
   try {

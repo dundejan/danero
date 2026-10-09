@@ -28,6 +28,17 @@ describe('R-09e lhůty pro podání přiznání', () => {
     });
   });
 
+  it('za ZO 2027 vychází elektronická lhůta na úterý 2. 5. 2028, ne na svátek 1. 5.', () => {
+    // 1. 5. 2028 je pondělí a státní svátek → 2. 5.; bez roku 2028 v kalendáři
+    // svátků vycházelo 1. 5., tedy den, kdy lhůta podle § 33 odst. 4 DŘ končit
+    // nemůže (nález L3-03). 1. 4. a 1. 7. 2028 jsou soboty → pondělí 3. 4. a 3. 7.
+    expect(filingDeadlines(2027)).toEqual({
+      paper: '2028-04-03',
+      electronic: '2028-05-02',
+      advisor: '2028-07-03',
+    });
+  });
+
   it('papírová lhůta se posouvá, když 1. 4. připadne na Velikonoční pondělí', () => {
     // 1. 4. 2024 byl Velikonoční pondělí → papírové podání až 2. 4. 2024
     expect(filingDeadlines(2023).paper).toBe('2024-04-02');

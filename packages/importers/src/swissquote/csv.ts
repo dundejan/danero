@@ -31,7 +31,6 @@ interface FieldSpec {
 
 const FIELDS = {
   date: { names: ['date', 'datum'] },
-  order: { names: ['order #', 'auftrag #'] },
   transaction: { names: ['transaction', 'transaktionen'] },
   symbol: { names: ['symbol'] },
   name: { names: ['name'] },
@@ -46,6 +45,10 @@ const FIELDS = {
     names: ['wahrung nettobetrag', 'currency'],
     fuzzy: (h) => /^w.{0,2}hrung nettobetrag$/.test(h),
   },
+  // hodnoty těchhle dvou sloupců parser nečte — slouží jen k poznání výpisu
+  // (OWN_FIELDS); ID řádku se z čísla objednávky záměrně neskládá
+  order: { names: ['order #', 'auftrag #'] },
+  accruedInterest: { names: ['accrued interest', 'aufgelaufene zinsen'] },
 } as const satisfies Record<string, FieldSpec>;
 
 type Field = keyof typeof FIELDS;
@@ -61,6 +64,61 @@ function findColumn(normalizedHeaders: string[], spec: FieldSpec): number {
     if (i >= 0) return i;
   }
   return -1;
+}
+
+/**
+ * Sloupce, bez kterých parser výpis nepřečte: den, typ transakce, čistá částka
+ * a měna řádku — a „Costs“. Ten jako jediný z ostatních chybí POTICHU: nese
+ * poplatek obchodu (součást výdajů, R-05b) a sraženou daň u dividend a úroků
+ * (R-07f), a prázdná buňka je u obojího platná hodnota „nic se neúčtovalo“.
+ * Výpis s přejmenovaným sloupcem by se tak uložil bez jediné chyby s nákupy
+ * bez poplatků a s čistým úrokem bez sražené daně. Bez „Unit price“, „ISIN“
+ * nebo „Quantity“ naproti tomu spadne každý řádek, který je potřebuje.
+ */
+const REQUIRED_FIELDS = ['date', 'transaction', 'netAmount', 'currency', 'costs'] as const;
+
+/**
+ * Sloupce vlastní výpisu Swissquote. Povinné sloupce jsou to nejobecnější,
+ * co účetní výpis může mít („Date“, „Transaction“, „Net Amount“, „Currency“,
+ * „Costs“), takže samy o sobě Swissquote od cizího středníkového výpisu
+ * neodliší — ten by prošel jako „Swissquote, 0 chyb“ a nikdo by se o novém
+ * formátu nedozvěděl. Doložené exporty (EN i DE) mají všechny čtyři vlastní;
+ * chceme `MIN_OWN_FIELDS` z nich, aby jeden přejmenovaný nebo vypuštěný
+ * sloupec, který parser nečte („Order #“, L2b-06), import neshodil, a jediný
+ * takový sloupec („Costs“ má kdekdo) nestačil.
+ *
+ * „Costs“ je tu i mezi povinnými záměrně: poznávací pravidlo o tom, jestli se
+ * sloupec smí ztratit, nerozhoduje — to říká jen `REQUIRED_FIELDS`.
+ */
+const OWN_FIELDS = ['order', 'unitPrice', 'costs', 'accruedInterest'] as const;
+const MIN_OWN_FIELDS = 2;
+
+/** Pozice všech známých sloupců v hlavičce (−1 = chybí). */
+function resolveColumns(headers: string[]): Record<Field, number> {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  return Object.fromEntries(
+    (Object.keys(FIELDS) as Field[]).map((field) => [field, findColumn(normalizedHeaders, FIELDS[field])]),
+  ) as Record<Field, number>;
+}
+
+/**
+ * Co o hlavičce víme — JEDINÝ výpočet pro sniffer i pro kontrolu hlavičky
+ * v parseru. Obě místa se liší jen tím, kolik chybějících povinných sloupců
+ * snesou (parser žádný, sniffer jeden), takže sniffer nemůže chtít víc než parser.
+ */
+function inspectHeader(headers: string[]): {
+  col: Record<Field, number>;
+  /** Které povinné sloupce chybí — prázdné pole = parser řádky přečte. */
+  missingRequired: Array<(typeof REQUIRED_FIELDS)[number]>;
+  /** Nese hlavička dost sloupců vlastních Swissquote? */
+  looksOwn: boolean;
+} {
+  const col = resolveColumns(headers);
+  return {
+    col,
+    missingRequired: REQUIRED_FIELDS.filter((field) => col[field] < 0),
+    looksOwn: OWN_FIELDS.filter((field) => col[field] >= 0).length >= MIN_OWN_FIELDS,
+  };
 }
 
 /* ── Čísla a datumy ──────────────────────────────────────────────────────── */
@@ -146,22 +204,36 @@ function classify(normalized: string): SqKind {
 /* ── Autodetekce ─────────────────────────────────────────────────────────── */
 
 /**
- * Detekce Swissquote CSV: první řádek se středníky obsahuje sloupec
- * „Order #“/„Auftrag #“, „ISIN“ a „Unit price“/„Stückpreis“. Kombinace je
- * dost specifická — Degiro má „ID objednávky“/„Order ID“ (bez „#“), takže
- * jeho středníkové exporty neprojdou.
+ * Kolik povinných sloupců smí hlavičce chybět, aby ji sniffer ještě poslal
+ * parseru. Jeden: přejmenuje-li Swissquote „Currency“, „Net Amount“ nebo
+ * „Costs“, má uživatel číst větu parseru, KTERÝ sloupec chybí — obecné
+ * „formát nepoznáváme“ vypíše jen prvních pár sloupců a viníka na konci
+ * hlavičky ani neukáže.
+ * Dva chybějící už nejsou přejmenování, ale jiný soubor.
+ */
+const SNIFF_MISSING_REQUIRED_TOLERANCE = 1;
+
+/**
+ * Detekce Swissquote CSV: první řádek se středníky nese aspoň dva sloupce
+ * vlastní Swissquote (`OWN_FIELDS`) a z povinných (`REQUIRED_FIELDS` — den, typ
+ * transakce, čistá částka, měna, náklady) chybí nejvýš jeden.
+ *
+ * Sniffer je podmnožina parseru: obojí počítá `inspectHeader` a parser chce
+ * totéž, jen bez tolerance. Co parser přečte, to sem projde (i bez „Order #“);
+ * co sem projde a parser nepřečte, tomu parser řekne, který sloupec chybí.
+ *
+ * Cizí středníkový výpis jen s obecnými sloupci sem neprojde — skončí jako
+ * nepoznaný formát s vypsanou hlavičkou a uschová se (failed_imports), místo
+ * aby se tiše připsal Swissquote. Středníkové Degiro nemá „Transaction“ ani
+ * „Net Amount“ a v autodetekci se navíc ptá dřív.
  */
 export function sniffSwissquoteCsv(text: string): boolean {
   if (text.trim() === '') return false;
   const newline = text.indexOf('\n');
   const firstLine = newline === -1 ? text : text.slice(0, newline);
   if (!firstLine.includes(';')) return false;
-  const headers = parseCsv(firstLine, ';').headers.map(normalizeHeader);
-  return (
-    findColumn(headers, FIELDS.order) >= 0 &&
-    findColumn(headers, FIELDS.isin) >= 0 &&
-    findColumn(headers, FIELDS.unitPrice) >= 0
-  );
+  const { looksOwn, missingRequired } = inspectHeader(parseCsv(firstLine, ';').headers);
+  return looksOwn && missingRequired.length <= SNIFF_MISSING_REQUIRED_TOLERANCE;
 }
 
 /* ── Parser ──────────────────────────────────────────────────────────────── */
@@ -172,18 +244,21 @@ export function parseSwissquoteCsv(text: string): ImportResult {
   if (text.trim() === '') return result;
 
   const { headers, rows } = parseCsv(text, ';');
-  const normalizedHeaders = headers.map(normalizeHeader);
-  const col = Object.fromEntries(
-    (Object.keys(FIELDS) as Field[]).map((field) => [field, findColumn(normalizedHeaders, FIELDS[field])]),
-  ) as Record<Field, number>;
+  const { col, missingRequired, looksOwn } = inspectHeader(headers);
 
-  const missing = (['date', 'transaction', 'netAmount', 'currency'] as const).filter((f) => col[f] < 0);
-  if (missing.length > 0) {
+  if (missingRequired.length > 0 || !looksOwn) {
+    const namesOf = (fields: readonly Field[]): string =>
+      fields.map((f) => FIELDS[f].names.join('/')).join(', ');
+    // chybějící povinný sloupec je konkrétnější zpráva, proto má přednost
+    const reason =
+      missingRequired.length > 0
+        ? `chybí sloupce ${namesOf(missingRequired)}`
+        : `z vlastních sloupců Swissquote (${namesOf(OWN_FIELDS)}) v něm nejsou aspoň dva`;
     result.errors.push({
       line: 1,
-      message: `Soubor nevypadá jako Swissquote export — chybí sloupce ${missing
-        .map((f) => FIELDS[f].names.join('/'))
-        .join(', ')}. Nalezené sloupce: ${headers.filter((h) => h !== '').join(', ')}`,
+      message: `Soubor nevypadá jako Swissquote export — ${reason}. Nalezené sloupce: ${headers
+        .filter((h) => h !== '')
+        .join(', ')}`,
     });
     return result;
   }

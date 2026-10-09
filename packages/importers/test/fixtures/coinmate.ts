@@ -62,3 +62,15 @@ export const COINMATE_BAD_ROWS = [
   '77003;nesmysl;BUY;0.1;BTC;500000;CZK;0;CZK;-50000;CZK;;OK',
   '77004;2021-01-04 10:00:00;BUY;abc;BTC;500000;CZK;0;CZK;-50000;CZK;;OK',
 ].join('\n');
+
+/**
+ * Pár krypto–krypto (ETH_BTC): cena i poplatek jsou v BTC, ne ve fiat měně.
+ * Rozložení řádků odpovídá fiat párům, čísla jsou smyšlená. Kolem dvou směn
+ * je obyčejný nákup za koruny — ten se uložit musí.
+ */
+export const COINMATE_CRYPTO_PAIR = [
+  'ID;Date;Type;Amount;Amount Currency;Price;Price Currency;Fee;Fee Currency;Total;Total Currency;Description;Status',
+  '88101;2025-04-01 09:15:00;BUY;0.04;BTC;2150000;CZK;215;CZK;-86215;CZK;;OK',
+  '88102;2025-04-02 10:11:12;BUY;0.5;ETH;0.031;BTC;0.0000542;BTC;-0.0155542;BTC;;OK',
+  '88103;2025-04-03 10:11:12;SELL;-0.25;ETH;0.032;BTC;0.000028;BTC;0.007972;BTC;;OK',
+].join('\n');

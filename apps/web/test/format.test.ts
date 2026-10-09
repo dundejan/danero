@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { money, plural, yearList } from '@/lib/format';
+import { d } from '@danero/shared';
+import { money, plural, qty, yearList } from '@/lib/format';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 
 describe('plural: český tvar slova k číslu', () => {
@@ -17,6 +18,33 @@ describe('money: částky v historii transakcí', () => {
   it('zaokrouhluje na 2 desetinná místa s čárkou a jednotkou', () => {
     expect(money(0.73383905457, 'USD')).toBe('0,73 USD');
     expect(money(0.13, 'USD')).toBe('0,13 USD');
+  });
+});
+
+describe('qty: počet kusů (L6a-08)', () => {
+  it('drobná kryptopozice se ukáže přesně, ne zaokrouhlená na 4 místa nebo na nulu', () => {
+    expect(qty(d('0.00075667'))).toBe('0,00075667');
+    expect(qty(d('0.00004321'))).toBe('0,00004321');
+    expect(qty(0.00000001)).toBe('0,00000001');
+  });
+
+  it('koncové nuly nepřidává a celé kusy zůstávají bez desetin', () => {
+    expect(qty(d('10'))).toBe('10');
+    expect(qty(d('2.5'))).toBe('2,5');
+    expect(qty(d('2.12500000'))).toBe('2,125');
+    expect(qty(d('1234.5'))).toBe('1 234,5');
+  });
+
+  it('devátým místem počínaje zaokrouhluje', () => {
+    expect(qty(d('0.123456789'))).toBe('0,12345679');
+  });
+
+  it('číslo z hlášky simulátoru „Držíš jen … ks“ jde zadat zpátky a pozici nepřekročí', () => {
+    // dřív hláška ukázala 0,0008 ks a totéž číslo vzápětí odmítla jako víc, než držíš
+    for (const held of [d('0.00075667'), d('0.00004321'), d('12.5'), d('3')]) {
+      const typed = qty(held).replace(/\s/g, '').replace(',', '.');
+      expect(d(typed).eq(held), `${held.toString()} → „${qty(held)}“`).toBe(true);
+    }
   });
 });
 

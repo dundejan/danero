@@ -1,6 +1,7 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { FIAT_CURRENCIES, HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const ANYCOIN_BROKER = 'anycoin';
 
@@ -65,6 +66,8 @@ export function sniffAnycoinCsv(text: string): boolean {
 interface TradeLeg {
   line: number;
   date: string;
+  /** Celý čas z exportu (UTC) — kvůli varování na hranici roku (R-05d). */
+  time: string;
   /** Absolutní hodnota množství (směr určuje role payment/fill). */
   amount: string;
   currency: string;
@@ -90,6 +93,11 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
   // obchody = páry řádků přes Order ID; sbíráme a párujeme až po průchodu souborem
   const orders = new Map<string, TradeLeg[]>();
+  // Podklad pro rozpoznání exportu omezeného filtrem měny (níž): měny VŠECH
+  // řádků souboru, i přeskočených a odmítnutých, a to, zda některý obchodní
+  // řádek vypadl na validaci.
+  const fileCurrencies = new Set<string>();
+  let tradeRowRejected = false;
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
@@ -98,6 +106,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     const type = map.get(row, 'type').toLowerCase();
     const amountRaw = map.get(row, 'amount');
     const currency = normalizeSymbol(map.get(row, 'currency'));
+    if (currency !== '') fileCurrencies.add(currency);
 
     const skipReason = SKIP_TYPES.get(type);
     if (skipReason !== undefined) {
@@ -134,6 +143,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
     const isoDate = map.get(row, 'date').slice(0, 10);
     if (!isValidIsoDate(isoDate)) {
+      tradeRowRejected = true;
       result.errors.push({
         line,
         message: `Neplatné datum „${map.get(row, 'date')}“ (očekáváme ISO formát, např. 2021-04-10T18:16:50.367Z).`,
@@ -144,6 +154,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
     const amount = parseNumber(amountRaw);
     if (amount === null || d(amount).eq(0) || currency === '') {
+      tradeRowRejected = true;
       result.errors.push({
         line,
         message: 'Obchodnímu řádku chybí platná částka nebo měna — řádek nelze zpracovat.',
@@ -154,6 +165,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
     const orderId = map.get(row, 'order id');
     if (orderId === '') {
+      tradeRowRejected = true;
       result.errors.push({
         line,
         message:
@@ -167,6 +179,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     legs.push({
       line,
       date: isoDate,
+      time: map.get(row, 'date'),
       amount: d(amount).abs().toString(),
       currency,
       role: type === 'trade payment' ? 'payment' : 'fill',
@@ -174,9 +187,45 @@ export function parseAnycoinCsv(text: string): ImportResult {
     orders.set(orderId, legs);
   });
 
+  /* ── export omezený filtrem měny ── */
+
+  // Přehled transakcí v Anycoinu má filtr měny (cizí návody k exportu výslovně
+  // říkají zvolit všechny měny; bez účtu ověřeno jen nepřímo). Z výpisu jedné
+  // měny zbude z každého obchodu jediná noha — u nákupu plnění, u prodeje platba,
+  // s filtrem na korunách naopak. Poznávací znamení: ŽÁDNÝ obchod nemá
+  // protistranu a CELÝ soubor je v jedné měně. Useknuté období tak nevypadá —
+  // zasáhne nejvýš obchody na krajích a jejich nohy jsou v různých měnách.
+  // Místo chyby u každého obchodu s radou hlídat období, která nepomůže, proto
+  // jedna hláška, která jako první jmenuje filtr.
+  //
+  // Měny se počítají ze všech řádků, ne jen z obchodních noh, které prošly až
+  // sem: vklad, výběr, vrácení nebo odmítnutý řádek v jiné měně dokládá, že
+  // filtr zapnutý nebyl, a věta „všechny obchodní řádky jsou v měně X“ by pak
+  // nebyla pravda. A když některý obchodní řádek vypadl na validaci (bez Order
+  // ID, nečitelná částka), protistrana v souboru nejspíš je a příčinou je ta
+  // řádková chyba — souhrn by ji přehlušil radou, která nepomůže.
+  const orderLegs = [...orders.values()];
+  const noCounterpart = orderLegs.every((legs) => legs.every((leg) => leg.role === legs[0]!.role));
+  if (orders.size > 0 && noCounterpart && !tradeRowRejected && fileCurrencies.size === 1) {
+    const [onlyCurrency] = fileCurrencies;
+    const orderIds = [...orders.keys()];
+    const listed = orderIds.slice(0, 3).join(', ');
+    const rest = orderIds.length - 3;
+    const more = rest <= 0 ? '' : ` a ${rest} ${rest < 5 ? 'další' : 'dalších'}`;
+    result.errors.push({
+      line: orderLegs[0]![0]!.line,
+      message: `Ve výpisu chybí protistrana obchodů — všechny obchodní řádky jsou v měně ${onlyCurrency}, takže žádný pár platba + plnění není kompletní (Order ID ${listed}${more}). Výpis je nejspíš omezený filtrem měny: v přehledu transakcí Anycoinu filtr zruš, exportuj všechny měny a nahraj výpis znovu. Když filtr zapnutý nebyl, zkontroluj, že export pokrývá celé období, případně obchody doplň přes univerzální šablonu.`,
+    });
+    return result;
+  }
+
   /* ── párování obchodů: 1× payment + 1× fill na Order ID ── */
 
+  // R-05d: časy jsou ve světovém čase, den i rok se berou z nich
+  const yearBoundary = new YearBoundaryWatch(result);
   for (const [orderId, legs] of orders) {
+    const firstLeg = legs[0];
+    if (firstLeg) yearBoundary.row(firstLeg.line, firstLeg.time);
     const payments = legs.filter((leg) => leg.role === 'payment');
     const fills = legs.filter((leg) => leg.role === 'fill');
     if (payments.length !== 1 || fills.length !== 1) {
@@ -235,6 +284,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
       });
     }
   }
+  yearBoundary.flush();
 
   return result;
 }

@@ -1,0 +1,18 @@
+# Hledání tajemství v historii repozitáře (gitleaks, job `guards` v ci.yml).
+# Výchozí pravidla gitleaks + výjimky pro doložené falešné poplachy.
+# Jednotlivé otisky (commit:soubor:pravidlo:řádek) jsou v .gitleaksignore.
+title = "Danero — tajemství"
+
+[extend]
+useDefault = true
+
+# Hesla smyšlených uživatelů v unit testech a jednorázový secret lokálního
+# E2E běhu v produkčním režimu. Umlčuje se JEN obecné pravidlo — pravidla pro
+# konkrétní poskytovatele (Resend, Vercel, GitHub, AWS…) platí i v testech.
+[[allowlists]]
+description = "testovací hesla a secrety lokálního E2E"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^apps/web/test/.*\.test\.ts$''',
+  '''^apps/web/playwright\.prod\.config\.ts$''',
+]

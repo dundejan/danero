@@ -7,7 +7,7 @@ v paušálním režimu, obchoduje přes Trading212 — je zároveň první testo
 
 - `packages/shared` — kanonický model transakcí (Zod v4), Decimal peníze, ISO datumy
 - `packages/engine` — **čistý daňový engine bez I/O**; implementuje pravidla
-  **R-01…R-11 z `docs/02-danova-pravidla.md`** (závazná specifikace! testy na ně odkazují)
+  **R-01…R-15 z `docs/02-danova-pravidla.md`** (závazná specifikace! testy na ně odkazují)
 - `packages/importers` — parsery brokerů → kanonický model, dedupe (FNV obsahu),
   T212 API klient, rekonciliace pozic
 - `apps/web` — Next.js 16 App Router, Tailwind v4, Better Auth (+2FA), Drizzle;
@@ -65,6 +65,11 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
    přestěhování. Kvůli tomu se 10. 8. 2026 přepisovala historie (148 commitů,
    force push) — podruhé už to nepůjde levně, až budou forky. Hlídá to strážný
    test v `test/email-legal.test.ts` a `/api/health` (`operatorContact`).
+   **Vědomá výjimka (9. 10. 2026):** kontakt původního projektu a vlastník
+   značky v dokumentech repozitáře (`SECURITY.md`, `CONTRIBUTING.md`,
+   `TRADEMARK.md`, příjemce DMARC v `docs/08`, šablona issue) zůstávají — patří
+   k projektu, ne k instanci, a strážný test proto soubory `.md` neprochází.
+   Do kódu aplikace (`app`, `lib`, `components`), fixtur a testů výjimka neplatí.
 
 ## Známé zrady (ověřeno provozem — neobjevuj znovu)
 
@@ -173,8 +178,10 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **E2E e-maily**: `DANERO_EMAIL_LOG=cesta` přesměruje odesílání do souboru
   (nastavuje jen Playwright) — testy pak klikají na skutečný odkaz z e-mailu
   místo obcházení ověření. Stejný mechanismus mají unit testy (`test/auth-helpers.ts`).
-- **Kurzy**: jednotné kurzy v `apps/web/lib/tax-config.ts` jsou zatím ORIENTAČNÍ
-  (přesný jen 2025 dle D-75) — výdaj se přepočítává kurzem roku nákupu!
+- **Kurzy**: jednotné kurzy za roky 2020–2025 jsou OVĚŘENÉ z pokynů GFŘ řady D
+  (`packages/engine/src/config/unifiedRates.ts`, mez drží `LAST_VERIFIED_RATE_YEAR`).
+  ORIENTAČNÍ je jen běžný rok doplněný v `apps/web/lib/tax-config.ts` — pokyn za
+  něj vyjde až v lednu. Výdaj se přepočítává kurzem roku nákupu!
 - `pkill` nezabije `next start` — použij `fuser -k PORT/tcp`.
 - Next 16 odmítne druhý `next dev` nad stejným adresářem (zámek v `distDir/dev/lock`,
   i na jiném portu) — když už dev server běží (třeba jiná session), E2E pusť
@@ -223,7 +230,8 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   se informace ztratí — nepoznaná hlavička není výjimka, takže o ní neví ani
   log. **Obsah souboru se ukládá celý** (base64 v `content`) — do e-mailu jde
   jen **první řádek** (ne nutně hlavička! reálné exporty začínají preambulí
-  s číslem účtu), chybová hláška (ta smí citovat jednu buňku), e-mail uživatele
+  s číslem účtu), u sešitu i názvy listů, chybová hláška (ta smí citovat pár hodnot z jednoho
+  řádku), e-mail uživatele
   a jeho hlášení; /soukromi to tak vyjmenovává, měň obojí naráz. Provozovateli
   chodí upozornění na `DANERO_ALERT_EMAIL`, a když není nastavená, na `DANERO_CONTACT_EMAIL`
   (běžný stav); uživatel v `/import` vidí, že se na to koukneme, a může doplnit
@@ -266,6 +274,58 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Po zabitém E2E zůstane viset mock server na 3211.** Další běh pak skončí
   na „`http://localhost:3211/health` is already used" a vypadá to jako vada
   konfigurace. Úklid: `fuser -k 3211/tcp; fuser -k 3210/tcp`.
+  ⚠️ Na 3000 i 3210 může běžet dev server jiného projektu — před zabitím ověř
+  `readlink /proc/<pid>/cwd` a zabíjej jen proces z tohohle repozitáře. `pkill -f`
+  podle jména (chrome, playwright, next) vezme i cizí procesy; 9. 10. 2026 takhle
+  dostal SIGTERM cizí prohlížeč.
+- **Produkční build ignoruje `T212_API_BASE_URL` i `IBKR_FLEX_BASE_URL`.**
+  `testEnvBaseUrl` v `lib/broker-sync.ts` je při `NODE_ENV=production` schválně
+  nečte (klíče nesmí odejít na cizí host), takže lokální `next start`
+  s mockem brokera mluví se SKUTEČNÝM brokerem. 8. 10. 2026 tak z lokální
+  instance odešlo pár dotazů se smyšleným klíčem na ostré API. Připojení brokera
+  a sync zkoušej jen v dev režimu (`next dev`, E2E), nikdy na `next start`.
+- **Očekávání testu neopisuj z hodnoty, kterou mění roční data.** Test kurzů ČNB
+  měl natvrdo částku spočítanou orientačním kurzem běžného roku; jiná oprava
+  téže noci kurz zpřesnila a test spadl, přestože obě změny byly správně.
+  Očekávání odvoď z konfigurace (`tax-config.ts`, `unifiedRates.ts`) — jinak
+  spadne znovu v lednu, až vyjde pokyn GFŘ.
+- **Dedupe: ztracený řádek je horší než zdvojený.** Povýšení uloženého klíče
+  (dividenda uložená bez ISIN, po doplnění číselníku s ISIN) první verze dělala
+  jen podle data a částky — a spolkla tak shodnou výplatu JINÉHO titulu z téhož
+  dne. Duplicitu uživatel vidí a opraví, chybějící dividendu ne. Kde shoda není
+  jistá (chybí ticker), nech obě a napiš varování.
+- **„Price / share“ u dividendy Trading 212 je ČISTÁ částka na kus**, tedy už
+  po zahraniční srážce; brutto = kusy × cena + „Withholding tax“ (R-07b). Do
+  8. 10. 2026 ji parser bral jako brutto a příjem z dividend vycházel nižší
+  o srážku (15 % u amerických titulů). Uložená data dorovnává migrace 0045 —
+  parser a migrace patří k sobě, protože brutto vstupuje do dedupe otisku.
+- **`waitForLoadState('networkidle')` umí viset do limitu testu.** Test
+  přístupnosti má limit 30 minut (prochází desítky stránek) a 9. 10. 2026 se
+  jednou zasekl na `/portfolio` bez jediného běžícího dotazu — celá E2E sada
+  pak trvala 34 minut místo 8. Opakování prošlo. Když E2E běží podezřele
+  dlouho, podívej se do logu dřív, než doběhne limit.
+- **Háček Better Authu, který zapisuje cookie, musí běžet přímo ve vnějším
+  middleware.** `hooks.before`/`hooks.after` berou jediný middleware, takže je
+  v `lib/auth-hooks.ts` skládáme z menších. Menší háček zabalený do vlastního
+  `createAuthMiddleware` má ale vlastní hlavičky odpovědi a `ctx.setSignedCookie`
+  v něm se potichu zahodí — test prošel všude, kde na cookie nezáleželo.
+  Háčky s cookies jsou proto obyčejné funkce volané z `afterHooks`, každá
+  v `try/catch` (výjimka po hotovém přihlášení by z něj udělala chybu 500).
+  Úspěch `/verify-email` navíc z návratové hodnoty nepoznáš (s `callbackURL`
+  končí přesměrováním úspěch i vypršelý odkaz) — nese ho
+  `afterEmailVerification` přes `WeakMap` nad objektem požadavku.
+- **Cookie „tenhle prohlížeč o odkaz požádal“ smí vzniknout jen tam, kde
+  prohlížeč doložil heslo.** První verze přihlášení po ověření e-mailu ji
+  vydala i formuláři „Poslat odkaz znovu“, který je bez hesla — majitel adresy,
+  kterému na cizí předregistraci vypršel odkaz, si poslal nový a byl přihlášený
+  do účtu s cizím heslem. Našla to až nezávislá recenze; vlastní testy chování
+  zafixovaly jako záměr.
+- **Během běžícího E2E nesahej do zdrojáků.** Sada jede proti `next dev`, který
+  si rozpracovaný soubor hned načte: 9. 10. 2026 tak dva testy veřejných
+  stránek spadly na dočasné značce v souboru, který s nimi neměl nic společného.
+- **`pnpm --filter @danero/engine test` běží s pokrytím a prahem.** Nový kód
+  enginu bez testu shodí sadu na prahu pokrytí, ne na padajícím testu — hláška
+  je na konci výpisu. Práh je v `packages/engine/vitest.config.ts`.
 
 ## Stav a plán
 

@@ -161,6 +161,39 @@ describe('R-03 strop 40M — poměrné krácení osvobození', () => {
     expect(kratka.crypto.base10Czk.toString()).toBe('0');
     expect(dlouha.tax.general.taxCzk.lte(kratka.tax.general.taxCzk)).toBe(true);
   });
+
+  it('uvnitř JEDNOHO druhu strop nekrátí prodej osvobozený stovkou (R-03a × R-02c, nález L4-04)', () => {
+    // Mírnější výklad R-02c: časově osvobozené tržby do úhrnu 100 000 Kč
+    // nevstupují. Tentýž druh pak nese obojí naráz — 60 mil. Kč po časovém
+    // testu (krátí se poměrem 40/60) a 50 000 Kč bez testu, osvobozených
+    // hodnotově. Strop § 4 odst. 3 dopadá jen na první část; kdyby se podíl
+    // (1 − 40/60) vzal i z druhé, přibylo by 16 666,67 Kč příjmu a 8 333,33 Kč
+    // výdaje. Při výchozích přepínačích tahle kombinace nastat nemůže, proto
+    // ji mezidruhový test A2-9 výše nepokrývá.
+    const result = run(
+      [
+        ...txs,
+        buy({ isin: 'CZ0000000002', quantity: '50', pricePerShare: '500', tradeDate: '2025-01-05' }),
+        sell({ isin: 'CZ0000000002', quantity: '50', pricePerShare: '1000', tradeDate: '2025-06-01' }),
+      ],
+      { options: { limit100kIncludesTimeTestExempt: false } },
+    );
+    const securities = result.securities;
+
+    expect(securities.exemptUnder100k).toBe(true);
+    expect(securities.pool100kCzk.toString()).toBe('50000');
+    expect(result.limits.cap40M?.exceeded).toBe(true);
+
+    // dodaňuje se přesně třetina z 60 mil. Kč a nic z hodnotově osvobozeného prodeje
+    expect(securities.taxableIncomeCzk.toDecimalPlaces(2).toString()).toBe('20000000');
+    expect(securities.expensesCzk.toDecimalPlaces(2).toString()).toBe('10000000');
+    expect(securities.base10Czk.toDecimalPlaces(2).toString()).toBe('10000000');
+
+    const small = securities.disposals.find((disposal) => disposal.isin === 'CZ0000000002')!;
+    expect(small.taxableProceedsCzk.toString()).toBe('0');
+    expect(small.exemptProceedsCzk.toString()).toBe('50000');
+    expect(small.allocations.map((alloc) => alloc.expenseCzk.toString())).toEqual(['0']);
+  });
 });
 
 /**
@@ -208,6 +241,36 @@ describe('R-03a: strop 40M se počítá per PRODEJ, ne per druh (A2-3-01)', () =
     // a měřák v UI ukazuje totéž číslo, ne vlastní kopii zkratky
     expect(result.limits.cap40M!.exemptProceedsCzk.toString()).toBe('50000000');
     expect(result.limits.cap40M!.exceeded).toBe(true);
+  });
+
+  it('krácený stablecoin nestrhne pod strop krypto osvobozené stovkou (R-03a × R-10g, nález L4-04)', () => {
+    // Mírnější výklad R-10g: stablecoin za 50 mil. Kč je osvobozený časovým
+    // testem a krátí se poměrem 40/50. Vedle něj prodej BTC za 50 000 Kč bez
+    // časového testu — do úhrnu 100 000 Kč vstupuje jen on (EMT ne, R-10a),
+    // takže je osvobozený hodnotově a strop na něj nedopadá. S podílem
+    // (1 − 40/50) i z něj by přibylo 10 000 Kč příjmu a 4 000 Kč výdaje.
+    const result = run(
+      [
+        ...emtProdej,
+        buy({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '20000', tradeDate: '2024-06-01' }),
+        sell({ isin: 'BTC', assetClass: 'CRYPTO', quantity: '1', pricePerShare: '50000', tradeDate: '2025-06-01' }),
+      ],
+      { options: { emtTimeTestExempt: true } },
+    );
+    const crypto = result.crypto;
+
+    expect(crypto.exemptUnder100k).toBe(true);
+    expect(crypto.pool100kCzk.toString()).toBe('50000');
+    expect(result.limits.cap40M?.exceeded).toBe(true);
+
+    // dodaňuje se přesně pětina stablecoinu a nic z hodnotově osvobozeného BTC
+    expect(crypto.taxableIncomeCzk.toString()).toBe('10000000');
+    expect(crypto.expensesCzk.toString()).toBe('2000000');
+    expect(crypto.base10Czk.toString()).toBe('8000000');
+
+    const btc = crypto.disposals.find((disposal) => disposal.isin === 'BTC')!;
+    expect(btc.taxableProceedsCzk.toString()).toBe('0');
+    expect(btc.allocations.map((alloc) => alloc.expenseCzk.toString())).toEqual(['0']);
   });
 
   it('bez mírnějšího výkladu je stablecoin zdanitelný celý — strop nemá co krátit', () => {

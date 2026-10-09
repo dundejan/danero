@@ -2,6 +2,7 @@ import { Decimal, TransactionSchema } from '@danero/shared';
 import { cleanNumber, firstLine, HeaderMap, isAmbiguousThousands, parseCsv } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const TRADING212_BROKER = 'trading212';
 
@@ -39,7 +40,31 @@ type RowKind =
   | { kind: 'SPLIT_CLOSE' | 'SPLIT_OPEN' }
   | { kind: 'SPINOFF' }
   | { kind: 'SKIP'; reason: string }
+  | { kind: 'SHARE_MOVEMENT'; guidance: string }
   | { kind: 'UNKNOWN' };
+
+/**
+ * Pohyby kusů, které z řádku T212 zaúčtovat neumíme (L2a-03): řádek nenese
+ * datum ani cenu původního pořízení, u jednořádkového splitu ani poměr. Chyba
+ * je správný směr — tiše přeskočený řádek by rozhodil počty kusů a prodej by
+ * pak neseděl bez jediného slova. Hláška ale musí říct, co se s kusy stalo
+ * a kudy je doplnit; „neznámý typ, nahlaš nám ho“ u běžné hodnoty exportu
+ * nepomůže.
+ *
+ * ⚠️ U připsaných kusů (Stock distribution) text schválně neříká, jakou cenu
+ * a datum pořízení zadat: záleží na tom, o jakou událost šlo, a z řádku se to
+ * nepozná.
+ */
+const SHARE_MOVEMENT_GUIDANCE = {
+  distribution:
+    'Trading 212 ti tímhle řádkem připsal kusy bez nákupu. Je to pohyb kusů, který sami nezaúčtujeme — z řádku se nepozná, o jakou událost šlo. Kusy proto v evidenci chybí a jejich pozdější prodej nebude sedět. Zjisti si u brokera, proč ti je připsal, a doplň je přes univerzální šablonu.',
+  transferIn:
+    'převod kusů na tenhle účet. Je to pohyb kusů, který sami nezaúčtujeme — řádek nenese datum ani cenu, za kterou jsi je původně pořídil. Kusy proto v evidenci chybí a jejich pozdější prodej nebude sedět. Doplň je přes univerzální šablonu řádkem TRANSFER_IN s datem a cenou původního pořízení.',
+  transferOut:
+    'převod kusů z tohohle účtu jinam (není to prodej). Je to pohyb kusů, který sami nezaúčtujeme, takže v evidenci dál zůstávají kusy, které tu už nemáš. Doplň ho přes univerzální šablonu řádkem TRANSFER_OUT.',
+  singleLineSplit:
+    'změna počtu kusů (split) zapsaná jedním řádkem — umíme ji jen jako dvojici řádků „Stock split close“ a „Stock split open“. Je to pohyb kusů, který sami nezaúčtujeme, takže počet kusů v evidenci po téhle události nesedí. Doplň ji přes univerzální šablonu řádkem CORPORATE_ACTION se subtypem SPLIT a poměrem starých a nových kusů.',
+} as const;
 
 /** Klasifikace řádku podle sloupce Action (hodnoty typu "Market buy", "Dividend (Ordinary)"…). */
 function classifyAction(action: string): RowKind {
@@ -47,9 +72,24 @@ function classifyAction(action: string): RowKind {
   // korporátní akce dřív než obecné buy/sell — T212 je reportuje párem close/open řádků
   if (normalized.includes('stock split close')) return { kind: 'SPLIT_CLOSE' };
   if (normalized.includes('stock split open')) return { kind: 'SPLIT_OPEN' };
+  // až ZA párem close/open: jednořádkový „Stock Split“ poměr nenese
+  if (normalized.includes('stock split'))
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.singleLineSplit };
+  // „Stock distribution“ i „Custom stock distribution“
+  if (normalized.includes('stock distribution'))
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.distribution };
+  if (normalized === 'transfer in')
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.transferIn };
+  if (normalized === 'transfer out')
+    return { kind: 'SHARE_MOVEMENT', guidance: SHARE_MOVEMENT_GUIDANCE.transferOut };
   if (normalized.includes('spin off') || normalized.includes('spin-off'))
     return { kind: 'SPINOFF' };
-  if (normalized.includes('card debit') || normalized.includes('card credit'))
+  // vratka („Card refund“) je tentýž pohyb peněz jako platba, jen opačným směrem
+  if (
+    normalized.includes('card debit') ||
+    normalized.includes('card credit') ||
+    normalized.includes('card refund')
+  )
     return { kind: 'SKIP', reason: 'platba kartou — pohyb peněz mimo daňový výpočet CP' };
   if (normalized.includes('spending cashback'))
     return { kind: 'SKIP', reason: 'cashback za platby kartou — mimo daňový výpočet CP' };
@@ -126,12 +166,15 @@ export function parseTrading212Csv(text: string): ImportResult {
   const seenNoIdBases = new Set<string>();
   const splitCloses: SplitLeg[] = [];
   const splitOpens: SplitLeg[] = [];
+  // R-05d: sloupec je ve světovém čase, den i rok se berou z něj
+  const yearBoundary = new YearBoundaryWatch(result);
 
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
     const action = map.get(row, 'Action');
     const time = map.getAny(row, TRADING212_TIME_COLUMNS);
     const date = time.slice(0, 10);
+    yearBoundary.row(line, time);
 
     if (action === '' && row.every((cell) => cell.trim() === '')) return;
 
@@ -211,6 +254,21 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'DIVIDEND': {
+          // L2a-05: záporná částka je oprava dříve vyplacené dividendy („Dividend
+          // adjustment“), ne příjem. Chytá se podle znaménka Total a DŘÍV než
+          // cokoli dalšího: brutto se níž počítá z kusů × ceny a znaménko Total
+          // nečte, takže by z opravy vznikla druhá kladná dividenda, a bez kusů
+          // by řádek spadl až na schématu se syrovým výpisem validace. Oprava
+          // se nezapočítá (příjem zůstane vyšší — bezpečný směr), stejně jako
+          // u Degira.
+          const dividendTotal = cleanNumber(map.get(row, 'Total'));
+          if (dividendTotal.startsWith('-')) {
+            result.warnings.push({
+              line,
+              message: `${action}: záporná dividenda ${dividendTotal} ${map.get(row, 'Currency (Total)')} — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+            });
+            return;
+          }
           // R-07h: vratka kapitálu není podíl na zisku, ale vrácení části vkladu.
           // Označí se v modelu a zbytek řeší engine podle přepínače — parser
           // sám nerozhoduje, co je daňově správně.
@@ -247,22 +305,44 @@ export function parseTrading212Csv(text: string): ImportResult {
 
           let gross: string;
           let currency: string;
+          // částka z výpisu PŘED přičtením srážky — podle ní se níž pozná
+          // řádek, kterému v exportu chybí kusy nebo částka na kus
+          let paid: string;
+          // příznak modelu: brutto je složené z čisté částky a srážky (viz níž)
+          let grossFromNet: true | undefined;
           if (shares && price && instrumentCurrency) {
-            // brutto v měně instrumentu = kusy × dividenda/kus (srážka bývá v téže měně)
-            gross = new Decimal(shares).mul(price).toString();
+            // R-07b, L14-01: „Price / share“ je u dividendy ČISTÁ částka na kus,
+            // tedy vyhlášená dividenda už po zahraniční srážce (ověřeno na
+            // reálných exportech: kusy × cena sedí na připsané Total, nikdy na
+            // částku před srážkou). Do § 8 jde brutto, takže
+            //   brutto = kusy × cena + Withholding tax,
+            // obojí v měně instrumentu. Dokud se cena brala jako brutto, byl
+            // příjem nižší o srážku a ta vycházela na 15/85 = 17,65 % místo 15 %.
+            const net = new Decimal(shares).mul(price);
+            paid = net.toString();
+            gross = paid;
             currency = instrumentCurrency;
             if (withholdingCurrency && withholdingCurrency !== instrumentCurrency) {
               // číslo v cizí měně by se tiše přepočetlo špatným kurzem —
-              // bezpečněji: zápočet nezapočíst (vyšší daň) a říct si o doplnění
+              // bezpečněji: zápočet nezapočíst (vyšší daň) a říct si o doplnění.
+              // K brutto se taková srážka nepřičítá ze stejného důvodu.
               withholding = '0';
               result.warnings.push({
                 line,
                 message: `Dividenda: srážková daň v jiné měně (${withholdingCurrency}) než brutto (${instrumentCurrency}) — do zápočtu nebyla započtena, doplň ji ručně.`,
               });
+            } else {
+              // Srážka se přičítá jen k platné čisté částce: záporná cena nebo
+              // záporná srážka mají spadnout na validaci modelu, ne se navzájem
+              // vyrušit do kladného brutta.
+              const tax = new Decimal(withholding);
+              if (tax.gt(0) && !net.isNegative()) gross = net.plus(tax).toString();
+              grossFromNet = true;
             }
           } else {
             // starší formát bez kusů/ceny: k dispozici jen čistá částka Total
             gross = cleanNumber(map.get(row, 'Total'));
+            paid = gross;
             currency = map.get(row, 'Currency (Total)');
             if (!gross || !currency) {
               result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.' });
@@ -274,14 +354,14 @@ export function parseTrading212Csv(text: string): ImportResult {
                 'Dividenda: brutto odhadnuto z čisté připsané částky (export neobsahuje kusy × dividenda/kus) — základ § 8 může být podhodnocen o srážkovou daň.',
             });
           }
-          // nulové brutto s nenulovou srážkou = zápočet daně bez příjmu; nulová
+          // nulová částka s nenulovou srážkou = sražená daň bez příjmu; nulová
           // dividenda vůbec je podezřelá vždy (chybějící kusy/cena v exportu)
-          if (new Decimal(gross || '0').eq(0)) {
+          if (new Decimal(paid).eq(0)) {
             const tax = new Decimal(withholding || '0');
             result.warnings.push({
               line,
               message: tax.gt(0)
-                ? `${action}: dividenda má nulové brutto (kusy „${shares || '—'}“ × cena „${price || '—'}“), ale sraženou daň ${tax.toString()} ${currency} — zápočet daně bez příjmu je podezřelý. Zkontroluj řádek ve výpisu brokera a částku případně doplň ručně.`
+                ? `${action}: dividenda vychází na nulu (kusy „${shares || '—'}“ × částka na kus „${price || '—'}“), ale sražená daň je ${tax.toString()} ${currency} — sražená daň bez vyplacené částky je podezřelá. Zkontroluj řádek ve výpisu brokera a částku případně doplň ručně.`
                 : `${action}: dividenda s nulovou částkou — v exportu chybí počet kusů nebo dividenda na kus. Zkontroluj řádek ve výpisu brokera.`,
             });
           }
@@ -295,6 +375,7 @@ export function parseTrading212Csv(text: string): ImportResult {
               currency,
               withholdingTax: withholding,
               returnOfCapital,
+              ...(grossFromNet ? { grossFromNet } : {}),
               date,
             }),
           );
@@ -420,6 +501,18 @@ export function parseTrading212Csv(text: string): ImportResult {
           result.skipped.push({ line, message: `${action}: ${classified.reason}` });
           return;
         }
+        case 'SHARE_MOVEMENT': {
+          // A04-R1-01: příznak říká importu, že tohle není „nepřečtený výpis“ —
+          // jinak by soubor jen s převody dostal vedle rady „doplň si to
+          // šablonou“ ještě panel „na zpracování pracujeme“
+          result.errors.push({
+            line,
+            message: `${action}: ${classified.guidance}`,
+            raw: row.join(','),
+            knownUnsupported: true,
+          });
+          return;
+        }
         case 'UNKNOWN': {
           result.errors.push({
             line,
@@ -432,11 +525,12 @@ export function parseTrading212Csv(text: string): ImportResult {
     } catch (err) {
       result.errors.push({
         line,
-        message: `Řádek se nepodařilo zpracovat: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Řádek se nepodařilo zpracovat: ${describeRowError(err, classified.kind, (column) => map.get(row, column))}`,
         raw: row.join(','),
       });
     }
   });
+  yearBoundary.flush();
 
   // Párování Stock split close/open (stejný ISIN a den) → CORPORATE_ACTION SPLIT.
   // Poměr = nové kusy / staré kusy celé pozice — ledger jím proporcionálně
@@ -471,6 +565,99 @@ export function parseTrading212Csv(text: string): ImportResult {
   }
 
   return result;
+}
+
+/**
+ * Pole modelu → sloupce exportu, ze kterých se plní (A04-R1-02). Podle druhu
+ * řádku, protože totéž pole bere každý druh odjinud (`currency` je u obchodu
+ * měna ceny, u úroku měna částky).
+ *
+ * Kde se pole skládá z víc sloupců (brutto dividendy = kusy × čistá částka na
+ * kus + srážka, ve starším exportu Total), jsou tu všechny kromě srážky — ta
+ * má vlastní pole a k brutto se přičítá, jen když je sama platná, takže vadné
+ * brutto nezpůsobí. Hláška jmenuje ty vyplněné
+ * a vadný je mezi nimi. Schválně se tu neopakuje podmínka, podle které si
+ * parser mezi nimi vybírá: dvě kopie téhož rozhodnutí by se rozešly.
+ */
+const FEE_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  'fee.amount': FEE_COLUMNS,
+  'fee.currency': FEE_COLUMNS.map((column) => `Currency (${column})`),
+};
+const TRADE_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  isin: ['ISIN'],
+  quantity: ['No. of shares'],
+  pricePerShare: ['Price / share'],
+  currency: ['Currency (Price / share)'],
+  ...FEE_SOURCE_COLUMNS,
+};
+const DIVIDEND_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  isin: ['ISIN'],
+  gross: ['No. of shares', 'Price / share', 'Total'],
+  currency: ['Currency (Price / share)', 'Currency (Total)'],
+  withholdingTax: ['Withholding tax'],
+};
+const CASH_SOURCE_COLUMNS: Record<string, readonly string[]> = {
+  amount: ['Total'],
+  currency: ['Currency (Total)'],
+  withholdingTax: ['Withholding tax'],
+};
+const SOURCE_COLUMNS: Partial<Record<RowKind['kind'], Record<string, readonly string[]>>> = {
+  BUY: TRADE_SOURCE_COLUMNS,
+  SELL: TRADE_SOURCE_COLUMNS,
+  SPINOFF: TRADE_SOURCE_COLUMNS,
+  DIVIDEND: DIVIDEND_SOURCE_COLUMNS,
+  INTEREST: CASH_SOURCE_COLUMNS,
+  DEPOSIT: CASH_SOURCE_COLUMNS,
+  WITHDRAWAL: CASH_SOURCE_COLUMNS,
+};
+
+/** Tvar nálezu validace modelu (Zod) — importéry na knihovně přímo nezávisí. */
+interface ValidationIssue {
+  code?: unknown;
+  path?: unknown;
+  message?: unknown;
+}
+
+/**
+ * Text chyby řádku pro uživatele. Selhání validace modelu nese `message`
+ * v podobě JSON pole se všemi nálezy (`[{ "code": …, "path": … }]`) a ten
+ * šel beze změny až do přehledu importu (L2a-05).
+ *
+ * Z nálezu se bere věta a k ní sloupec exportu s hodnotou buňky (A04-R1-02):
+ * řádek má 25 sloupců a samotné „Hodnota nesmí být záporná“ neřekne, který
+ * z nich opravit. Česky píše model jen vlastní pravidla (kódy `custom`
+ * a `invalid_format`); ostatní kódy mají anglický text knihovny, takže je
+ * u známého sloupce nahradí obecná věta — stejně jako v univerzální šabloně.
+ */
+function describeRowError(
+  err: unknown,
+  kind: RowKind['kind'],
+  cell: (column: string) => string,
+): string {
+  const issues = (err as { issues?: unknown } | null)?.issues;
+  if (Array.isArray(issues)) {
+    const parts = new Set<string>();
+    for (const issue of issues as Array<ValidationIssue | null>) {
+      const message = typeof issue?.message === 'string' ? issue.message : '';
+      const field = Array.isArray(issue?.path) ? issue.path.map(String).join('.') : '';
+      const filled = (SOURCE_COLUMNS[kind]?.[field] ?? [])
+        .map((column) => ({ column, value: cell(column) }))
+        .filter(({ value }) => value !== '');
+      if (filled.length === 0) {
+        // pole, ke kterému sloupec neznáme (nebo je prázdný): aspoň věta
+        if (message !== '') parts.add(message);
+        continue;
+      }
+      const sentence =
+        issue?.code === 'custom' || issue?.code === 'invalid_format'
+          ? message
+          : 'hodnota není platná';
+      const columns = filled.map(({ column, value }) => `„${column}“ („${value}“)`).join(', ');
+      parts.add(`${filled.length === 1 ? 'sloupec' : 'sloupce'} ${columns}: ${sentence}`);
+    }
+    if (parts.size > 0) return [...parts].join('; ');
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Sečte poplatkové sloupce řádku; při míchání měn vezme první měnu a zbytek nahlásí.

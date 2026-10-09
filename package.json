@@ -12,23 +12,42 @@
     "test:e2e": "pnpm --filter @danero/web test:e2e",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "knip": "knip --no-progress --include files,dependencies,unlisted,binaries,unresolved,duplicates",
+    "test:mutation": "stryker run",
     "validate:epo": "tsx --tsconfig apps/web/tsconfig.json scripts/validate-epo.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "eslint": "^9.20.0",
+    "knip": "5.88.1",
     "prettier": "^3.5.0",
     "tsx": "^4.23.0",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
-    "typescript-eslint": "^8.24.0"
+    "typescript-eslint": "^8.24.0",
+    "vitest": "3.2.7"
   },
   "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-82fw-gwwq-j7x9",
+        "GHSA-5gmw-xhrv-c9v3",
+        "GHSA-85c8-ppgw-ccpr"
+      ]
+    },
     "overrides": {
       "postcss@<8.5.10": ">=8.5.10",
       "uuid@<11.1.1": ">=11.1.1 <12",
-      "esbuild@<0.25.0": ">=0.25.0"
+      "esbuild@<0.25.0": ">=0.25.0",
+      "brace-expansion@<1.1.21": ">=1.1.21 <2",
+      "brace-expansion@>=2.0.0 <2.1.7": ">=2.1.7 <3",
+      "nanoid@<3.3.18": ">=3.3.18 <4",
+      "source-map-js@<1.2.2": ">=1.2.2 <2",
+      "sharp@<0.35.5": ">=0.35.5 <0.36",
+      "baseline-browser-mapping@<2.11.0": ">=2.11.0 <3"
     }
   }
 }

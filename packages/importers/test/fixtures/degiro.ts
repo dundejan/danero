@@ -23,6 +23,39 @@ export const DEGIRO_TRANSACTIONS_EN = [
   '10-01-2024,14:30,APPLE INC,US0378331005,NSY,XNAS,10,185.50,USD,"-1,855.00",USD,"-1,721.63",EUR,1.0775,-2.50,EUR,"-1,724.13",EUR,en-order-1',
 ].join('\n');
 
+/**
+ * Rozložení, které Degiro posílá od prosince 2025 (18 sloupců místo 19): měna
+ * účtu se přestěhovala do NÁZVU sloupce („Waarde EUR“, „Totaal EUR“), za
+ * poplatkem už není bezejmenný sloupec s měnou a přibyl sloupec AutoFX
+ * (poplatek za automatický převod měny). Kurz a místní hodnota mají měnu dál
+ * v bezejmenném sloupci za sebou.
+ *
+ * Z veřejných zdrojů je opsané jen rozložení (názvy a pořadí sloupců); tituly,
+ * čísla, časy i ID objednávek jsou smyšlené.
+ *
+ * Nizozemská varianta drží tvar veřejného vzorku: buňka pod „Order ID“ je
+ * prázdná a ID leží až v bezejmenném sloupci za ní.
+ */
+export const DEGIRO_TRANSACTIONS_2026_HEADER_NL =
+  'Datum,Tijd,Product,ISIN,Beurs,Uitvoeringsplaats,Aantal,Koers,,Lokale waarde,,Waarde EUR,Wisselkoers,AutoFX Kosten,Transactiekosten en/of kosten van derden EUR,Totaal EUR,Order ID,,';
+
+export const DEGIRO_TRANSACTIONS_2026_NL = [
+  DEGIRO_TRANSACTIONS_2026_HEADER_NL,
+  // obchod v cizí měně: poplatek 2,00 + AutoFX 0,88
+  '09-02-2026,15:42,NORDWIND CORP,US0000000001,NDQ,XNAS,12,"31,5000",USD,"-378,00",USD,"-350,00","1,0800","-0,88","-2,00","-352,88",,7b1e0c52-0000-4000-8000-00000000a001,',
+  '17-03-2026,16:05,NORDWIND CORP,US0000000001,NDQ,XNAS,-12,"36,0000",USD,"432,00",USD,"400,00","1,0800","-1,00","-2,00","397,00",,7b1e0c52-0000-4000-8000-00000000a002,',
+  // obchod v měně účtu: AutoFX nulový, kurz prázdný
+  '20-03-2026,11:20,MERIDIAN ETF,IE0000000002,TDG,XGAT,5,"80,0000",EUR,"-400,00",EUR,"-400,00",,"0,00","-1,00","-401,00",,7b1e0c52-0000-4000-8000-00000000a003,',
+  // jen AutoFX, transakční poplatek prázdný
+  '24-03-2026,17:10,NORDWIND CORP,US0000000001,NDQ,XNAS,4,"35,0000",USD,"-140,00",USD,"-130,00","1,0769","-0,33",,"-130,33",,7b1e0c52-0000-4000-8000-00000000a004,',
+].join('\n');
+
+/** Totéž rozložení anglicky; ID objednávky tady leží přímo pod „Order ID“. */
+export const DEGIRO_TRANSACTIONS_2026_EN = [
+  'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Total EUR,Order ID,',
+  '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-1,',
+].join('\n');
+
 export const DEGIRO_ACCOUNT_HEADER_CZ =
   'Datum;Čas;Datum valuty;Produkt;ISIN;Popis;Kurz;Změna;;Saldo;;ID objednávky';
 
@@ -58,4 +91,61 @@ export const DEGIRO_ACCOUNT_NL = [
   // fúze: párové řádky s počty kusů v popisu → ratio 10:5
   '10-02-2024,12:00,10-02-2024,OLD CORP,US1111111117,FUSIE: Uitboeking 10 aandelen OLD CORP,,,,EUR,"-392,15",',
   '10-02-2024,12:00,10-02-2024,NEW CORP,US2222222226,FUSIE: Inboeking 5 aandelen NEW CORP,,,,EUR,"-392,15",',
+].join('\n');
+
+/**
+ * Popisy pohybů, které dokládá veřejný vzorek Account.csv (projekt
+ * Export-To-Ghostfolio, `samples/degiro-export.csv`) a slovník jeho převodníku.
+ * Dřívější slovníky FR a DE vznikly překladem, ne z výpisu — a francouzskou
+ * srážku z dividendy ani poplatek za obchod nepoznaly (L2a-04).
+ *
+ * Ze vzorku je opsané jen ZNĚNÍ popisů a tvar řádku (prázdná částka u převodu
+ * na peněžní účet, nula u pohybu kusů, čísla s desetinnou tečkou ve francouzské
+ * části); tituly, ISINy, částky, kusy, časy i ID objednávek jsou smyšlené.
+ */
+export const DEGIRO_ACCOUNT_HEADER_FR =
+  "Date,Heure,Date de valeur,Produit,ISIN,Description,FX,Variation,,Solde,,ID de l'ordre";
+
+export const DEGIRO_ACCOUNT_FR = [
+  DEGIRO_ACCOUNT_HEADER_FR,
+  '12-03-2026,09:14,11-03-2026,NORDWIND CORP,US0000000001,Dividende,,USD,10.00,USD,10.00,',
+  '12-03-2026,09:14,11-03-2026,NORDWIND CORP,US0000000001,Impôts sur dividende,,USD,-1.50,USD,8.50,',
+  // echo obchodu a jeho poplatek sdílejí ID objednávky
+  '16-03-2026,10:41,16-03-2026,MERIDIAN OYJ,FI0000000003,"Achat 7 MERIDIAN OYJ@40,5 EUR (FI0000000003)",,EUR,-283.50,EUR,516.50,7b1e0c52-0000-4000-8000-00000000b001',
+  '16-03-2026,10:41,16-03-2026,MERIDIAN OYJ,FI0000000003,Frais DEGIRO de courtage et/ou de parties tierces,,EUR,-3.90,EUR,512.60,7b1e0c52-0000-4000-8000-00000000b001',
+].join('\n');
+
+export const DEGIRO_ACCOUNT_HEADER_NL =
+  'Datum,Tijd,Valutadatum,Product,ISIN,Omschrijving,FX,Mutatie,,Saldo,,Order Id';
+
+/** Převod mezi Degirem a peněžním účtem u flatexDEGIRO Bank — částka je jen v popisu, Mutatie prázdná. */
+export const DEGIRO_ACCOUNT_NL_CASH_TRANSFER = [
+  DEGIRO_ACCOUNT_HEADER_NL,
+  '03-02-2026,18:20,03-02-2026,,,"Overboeking van uw geldrekening bij flatexDEGIRO Bank 40,00 EUR",,,,EUR,"52,10",',
+  '03-02-2026,18:20,03-02-2026,FLATEX EURO BANKACCOUNT,NLFLATEXACNT,Degiro Cash Sweep Transfer,,EUR,"40,00",EUR,"92,10",',
+  '04-02-2026,17:05,04-02-2026,,,"Overboeking naar uw geldrekening bij flatexDEGIRO Bank: 1,20 EUR",,,,EUR,"90,90",',
+].join('\n');
+
+/** Poplatek za korporátní akci a kompenzace od brokera. */
+export const DEGIRO_ACCOUNT_NL_FEE_AND_COURTESY = [
+  DEGIRO_ACCOUNT_HEADER_NL,
+  '10-02-2026,07:30,09-02-2026,,,DEGIRO Corporate Action Kosten,,USD,"-0,05",USD,"3,15",',
+  '12-02-2026,12:00,12-02-2026,,,DEGIRO courtesy,,EUR,"0,75",EUR,"91,65",',
+].join('\n');
+
+/**
+ * Pohyby KUSŮ s nulovou částkou: změna produktu (odpis a připis téhož počtu)
+ * a dividenda vyplacená akciemi. Částka není prázdná, ale `0` / `0,00`.
+ */
+export const DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS = [
+  DEGIRO_ACCOUNT_HEADER_NL,
+  '17-02-2026,04:10,17-02-2026,TALLOW LTD,AU0000000004,"PRODUCTWIJZIGING : Koop 300 @ 0,05 EUR",,EUR,0,EUR,"91,65",',
+  '17-02-2026,02:30,17-02-2026,TALLOW LTD.,AU0000000004,"PRODUCTWIJZIGING : Verkoop 300 @ 0,05 EUR",,EUR,0,EUR,"91,65",',
+  '24-02-2026,08:45,24-02-2026,NORDWIND CORP,US0000000001,STOCK DIVIDEND: Koop 6 @ 0 EUR,,EUR,"0,00",EUR,"91,65",',
+].join('\n');
+
+/** Německý poplatek za připojení na burzu — znění dokládá jen slovník převodníku. */
+export const DEGIRO_ACCOUNT_DE_CONNECTION_FEE = [
+  'Datum,Uhrzeit,Valutadatum,Produkt,ISIN,Beschreibung,FX,Änderung,,Saldo,,Order-ID',
+  '02-02-2026,08:00,31-01-2026,,,DEGIRO Verbindungskosten 2026 (Xetra - XET),,EUR,"-2,50",EUR,"88,40",',
 ].join('\n');

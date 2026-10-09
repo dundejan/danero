@@ -29,6 +29,11 @@ import type { IsoDate } from '@danero/shared';
  *   Velikonoční pondělí, 1. 5., 25. a 26. 12. Default pro ISIN bez vlastního
  *   kalendáře (konzervativní: méně obchodních dnů = pozdější nabytí).
  *
+ * Rok 2028 je u všech sedmi kalendářů DOPOČTENÝ pravidly výše (9. 10. 2026,
+ * s předstihem kvůli lhůtám za ZO 2027 — R-09e), proti vyhlášeným kalendářům
+ * burz ověřený není. Při roční údržbě ho s nimi porovnej; mimořádná uzavření
+ * se dopředu dopočítat nedají.
+ *
  * Poctivě k aproximacím (docs/02 R-01a): vypořádací systémy (T2S) bývají otevřené
  * i v den, kdy burza neobchoduje. Obojí posouvá dopočet spíš později = pozdější
  * osvobození = bezpečný směr. Datum z výpisu brokera má vždy přednost.
@@ -38,7 +43,7 @@ export type ExchangeCalendar = 'US' | 'CA' | 'DE' | 'UK' | 'IE' | 'CZ' | 'TARGET
 /** První pokrytý rok — starší nákupy mají časový test dávno splněný. */
 export const HOLIDAY_CALENDAR_FIRST_YEAR = 2019;
 /** Poslední pokrytý rok. Runbook: každý leden doplnit nový rok (docs/02, R-01a). */
-export const HOLIDAY_CALENDAR_LAST_YEAR = 2027;
+export const HOLIDAY_CALENDAR_LAST_YEAR = 2028;
 
 /** NYSE/Nasdaq — plná uzavření (zkrácené obchodní dny vypořádání neovlivňují). */
 const US_HOLIDAYS: readonly IsoDate[] = [
@@ -70,6 +75,9 @@ const US_HOLIDAYS: readonly IsoDate[] = [
   // 2027 (Juneteenth v sobotu → 18. 6.; 4. 7. v neděli → 5. 7.; Vánoce v sobotu → 24. 12.)
   '2027-01-01', '2027-01-18', '2027-02-15', '2027-03-26', '2027-05-31',
   '2027-06-18', '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24',
+  // 2028 (1. 1. v sobotu se neposouvá — stejně jako 2022)
+  '2028-01-17', '2028-02-21', '2028-04-14', '2028-05-29', '2028-06-19',
+  '2028-07-04', '2028-09-04', '2028-11-23', '2028-12-25',
 ];
 
 /** Xetra / Frankfurtská burza — pevná sada, jen se posouvají Velikonoce. */
@@ -97,6 +105,8 @@ const DE_HOLIDAYS: readonly IsoDate[] = [
   '2026-12-24', '2026-12-25', '2026-12-31',
   // 2027 (1. 5., 25. a 26. 12. o víkendu)
   '2027-01-01', '2027-03-26', '2027-03-29', '2027-12-24', '2027-12-31',
+  // 2028 (1. 1., 24. a 31. 12. o víkendu)
+  '2028-04-14', '2028-04-17', '2028-05-01', '2028-12-25', '2028-12-26',
 ];
 
 /** LSE — bank holidays Anglie a Walesu (vč. náhradních pondělí) + mimořádné dny. */
@@ -128,6 +138,9 @@ const UK_HOLIDAYS: readonly IsoDate[] = [
   // 2027 (25. a 26. 12. o víkendu → 27. a 28. 12.)
   '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03', '2027-05-31',
   '2027-08-30', '2027-12-27', '2027-12-28',
+  // 2028 (1. 1. v sobotu → 3. 1.)
+  '2028-01-03', '2028-04-14', '2028-04-17', '2028-05-01', '2028-05-29',
+  '2028-08-28', '2028-12-25', '2028-12-26',
 ];
 
 /** Euronext Dublin — kalendář Euronextu + irský May Bank Holiday a náhradní dny. */
@@ -159,6 +172,9 @@ const IE_HOLIDAYS: readonly IsoDate[] = [
   // 2027 (1. 5. v sobotu; Vánoce o víkendu → 27. a 28. 12.)
   '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03',
   '2027-12-27', '2027-12-28',
+  // 2028 (1. 1. v sobotu → 3. 1. jako 2022; 1. 5. je zároveň May Bank Holiday)
+  '2028-01-03', '2028-04-14', '2028-04-17', '2028-05-01',
+  '2028-12-25', '2028-12-26',
 ];
 
 /** BCPP — státní svátky a ostatní svátky ČR (zák. č. 245/2000 Sb.). */
@@ -192,6 +208,9 @@ const CZ_HOLIDAYS: readonly IsoDate[] = [
   // 2027 (1. 5., 8. 5., 25. a 26. 12. o víkendu)
   '2027-01-01', '2027-03-26', '2027-03-29', '2027-07-05', '2027-07-06',
   '2027-09-28', '2027-10-28', '2027-11-17', '2027-12-24',
+  // 2028 (1. 1., 28. 10. a 24. 12. o víkendu)
+  '2028-04-14', '2028-04-17', '2028-05-01', '2028-05-08', '2028-07-05',
+  '2028-07-06', '2028-09-28', '2028-11-17', '2028-12-25', '2028-12-26',
 ];
 
 /** TARGET2 — vypořádací kalendář eurozóny; default pro ISIN bez vlastní burzy. */
@@ -214,6 +233,8 @@ const TARGET2_HOLIDAYS: readonly IsoDate[] = [
   '2026-01-01', '2026-04-03', '2026-04-06', '2026-05-01', '2026-12-25',
   // 2027 (1. 5., 25. a 26. 12. o víkendu)
   '2027-01-01', '2027-03-26', '2027-03-29',
+  // 2028 (1. 1. v sobotu)
+  '2028-04-14', '2028-04-17', '2028-05-01', '2028-12-25', '2028-12-26',
 ];
 
 /**
@@ -244,6 +265,8 @@ const CA_HOLIDAYS: readonly IsoDate[] = [
   '2026-01-01', '2026-02-16', '2026-04-03', '2026-05-18', '2026-07-01', '2026-08-03', '2026-09-07', '2026-10-12', '2026-12-25', '2026-12-28',
   // 2027
   '2027-01-01', '2027-02-15', '2027-03-26', '2027-05-24', '2027-07-01', '2027-08-02', '2027-09-06', '2027-10-11', '2027-12-27', '2027-12-28',
+  // 2028 (1. 1. a Canada Day v sobotu → pondělí 3. 1. a 3. 7.)
+  '2028-01-03', '2028-02-21', '2028-04-14', '2028-05-22', '2028-07-03', '2028-08-07', '2028-09-04', '2028-10-09', '2028-12-25', '2028-12-26',
 ];
 
 const CALENDARS: Record<ExchangeCalendar, ReadonlySet<IsoDate>> = {

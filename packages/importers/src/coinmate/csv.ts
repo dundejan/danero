@@ -20,7 +20,10 @@ export const COINMATE_BROKER = 'coinmate';
  *
  * Čísla jsou vždy s desetinnou tečkou (i v CZ exportu), prázdné hodnoty bývají
  * jediná mezera. Datum `yyyy-MM-dd HH:mm:ss` nebo česky `16.08.2021 9:42`.
- * Obchoduje se výhradně pár krypto–fiat: Částka = krypto, Cena = fiat za kus.
+ * Částka = krypto, Cena = protihodnota za kus. Skoro všechny páry jsou
+ * krypto–fiat (CZK, EUR), burza ale vede i pár krypto–krypto (ETH_BTC) — tam je
+ * cena v BTC a obchod je směna, kterou importér sám neocení (R-10c): řádek se
+ * přeskočí s varováním, jak ji doplnit.
  */
 
 /* ── Hlavičky (CZ/EN/V2 synonyma, přes normalizeHeader) ─────────────────── */
@@ -90,6 +93,9 @@ const parseNumber = (value: string, decimal: ',' | '.' | null = '.'): string | n
  * na chybějícím kurzu, což neshodí jeden řádek, ale CELÝ výpočet daně.
  */
 const isFiatCode = (value: string): boolean => FIAT_CURRENCIES.has(value);
+
+/** Tvar symbolu měny nebo kryptoměny (BTC, USDT, DASH…) — odliší ho od rozbité buňky. */
+const looksLikeSymbol = (value: string): boolean => /^[A-Z][A-Z0-9]{1,9}$/.test(value);
 
 /** Typy transakcí podle směru; ostatní se přeskakují nebo hlásí. */
 const BUY_TYPES = new Set(['BUY', 'QUICK_BUY', 'MARKET_BUY']);
@@ -243,9 +249,26 @@ export function parseCoinmateCsv(text: string): ImportResult {
       return;
     }
     if (!isFiatCode(currency)) {
+      // Cena v kryptoměně = pár krypto–krypto (ETH_BTC). Směna je úplatný převod
+      // na obou stranách (R-10c), jenže korunovou hodnotu výpis nenese — stejně
+      // jako Kraken a Anycoin ji proto neodhadujeme a řekneme, jak ji doplnit.
+      if (looksLikeSymbol(currency)) {
+        const isBuy = BUY_TYPES.has(type);
+        const sold = isBuy ? currency : symbol;
+        const bought = isBuy ? symbol : currency;
+        result.warnings.push({
+          line,
+          message: `Směna krypto–krypto ${sold} → ${bought} (${d(amountRaw).abs().toString()} ${symbol} po ${d(priceRaw).abs().toString()} ${currency} za kus) bez fiat protihodnoty — oceň ji a doplň přes univerzální šablonu (prodej ${sold} + nákup ${bought}). Řádek přeskočen.`,
+          raw: row.join(';'),
+        });
+        return;
+      }
       result.errors.push({
         line,
-        message: `Měna ceny „${currency || 'prázdno'}“ není třípísmenný kód — řádek nelze zpracovat.`,
+        message:
+          currency === ''
+            ? 'Měna ceny chybí — bez ní nejde obchod ocenit, řádek nelze zpracovat.'
+            : `Měna ceny „${currency}“ nevypadá jako kód měny (čekáme např. CZK, EUR nebo BTC) — řádek nelze zpracovat.`,
         raw: row.join(';'),
       });
       return;

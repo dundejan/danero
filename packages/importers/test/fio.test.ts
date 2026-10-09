@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { dedupeTransactions } from '../src';
+import { decodeUpload } from '../src/csv';
 import { decodeFioCsv, FIO_BROKER, parseFioCsv } from '../src/fio/csv';
-import { encodeCp1250, FIO_FIXTURE, FIO_HEADER, FIO_SYMBOL_MAP } from './fixtures/fio';
+import {
+  encodeCp1250,
+  encodeUtf16,
+  encodeUtf8,
+  FIO_FIXTURE,
+  FIO_HEADER,
+  FIO_SINGLE_BUY,
+  FIO_SYMBOL_MAP,
+} from './fixtures/fio';
 
 describe('Fio e-Broker CSV parser', () => {
   it('namapuje všechny podporované typy z fixture bez chyb', () => {
@@ -39,6 +48,36 @@ describe('Fio e-Broker CSV parser', () => {
     expect(fromBytes.transactions).toHaveLength(8);
     const fromBuffer = parseFioCsv(bytes.buffer as ArrayBuffer, { symbolMap: FIO_SYMBOL_MAP });
     expect(fromBuffer.transactions).toHaveLength(8);
+  });
+
+  it('tentýž výpis v CP1250, UTF-8, UTF-8 s BOM i UTF-16 dá 1 transakci a 0 chyb (L2c-04)', () => {
+    // Přeuložení v Excelu („CSV UTF-8“), LibreOffice nebo Numbers kódování
+    // změní; natvrdo dekódované windows-1250 pak rozsypalo „Směr“ a parser
+    // tvrdil, že soubor není z Fia.
+    const variants: Array<[string, Uint8Array]> = [
+      ['windows-1250', encodeCp1250(FIO_SINGLE_BUY)],
+      ['UTF-8', encodeUtf8(FIO_SINGLE_BUY)],
+      ['UTF-8 s BOM', encodeUtf8(FIO_SINGLE_BUY, true)],
+      ['UTF-16 LE', encodeUtf16(FIO_SINGLE_BUY, 'le')],
+      ['UTF-16 BE', encodeUtf16(FIO_SINGLE_BUY, 'be')],
+    ];
+    for (const [encoding, bytes] of variants) {
+      expect(decodeFioCsv(bytes), encoding).toBe(FIO_SINGLE_BUY);
+      // stejné rozhodnutí jako autodetekce — jedno dekódování, ne dvě různá
+      expect(decodeFioCsv(bytes), encoding).toBe(decodeUpload(bytes));
+
+      const result = parseFioCsv(bytes, { symbolMap: FIO_SYMBOL_MAP });
+      expect(result.errors, encoding).toEqual([]);
+      expect(result.warnings, encoding).toEqual([]);
+      expect(result.transactions, encoding).toHaveLength(1);
+      const buy = result.transactions[0]!;
+      if (buy.type !== 'BUY') throw new Error('čekáme nákup');
+      expect(buy.isin).toBe('US0378331005');
+      expect(buy.quantity.toString()).toBe('15');
+      expect(buy.pricePerShare.toString()).toBe('41.2');
+      expect(buy.fee?.amount.toString()).toBe('1.95');
+      expect(buy.tradeDate).toBe('2025-02-12');
+    }
   });
 
   it('BUY: ISIN z mapy, čísla s čárkou, datum s časem → ISO, poplatek v měně obchodu', () => {

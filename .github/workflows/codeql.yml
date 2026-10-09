@@ -1,0 +1,52 @@
+name: CodeQL
+
+# Statická bezpečnostní analýza (sada security-extended). Samostatně od ci.yml:
+# nepotřebuje závislosti ani build, takže pipeline nezdržuje, a týdenní běh
+# zachytí nová pravidla i u kódu, na který nikdo nesáhl.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Pondělí 04:23 UTC — mimo celou hodinu, kdy bývají runnery přetížené.
+    - cron: '23 4 * * 1'
+
+# Výchozí práva žádná; job si bere jen to, co potřebuje.
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+          # Testy a E2E se nenasazují. Bez téhle výjimky první běh nad pull
+          # requestem spadl na pěti „high" nálezech v testech, které z vykresleného
+          # HTML odstraňují značky regulárním výrazem, aby porovnaly text —
+          # pro sanitizaci by to nestačilo, pro porovnání textu ano.
+          config: |
+            paths-ignore:
+              - '**/test/**'
+              - 'apps/web/e2e/**'
+
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:javascript-typescript

@@ -242,14 +242,39 @@ export function instrumentLabels(txs: Transaction[]): Map<string, string> {
   return labels;
 }
 
-/** Roky, ve kterých má uživatel transakce (sestupně), vždy včetně aktuálního. */
+/**
+ * Nejstarší rok, který ještě bereme jako rok transakce při stavbě řady let
+ * (denní kurzy ČNB starší nejsou a české cenné papíry před ním nevznikaly).
+ */
+const EARLIEST_PLAUSIBLE_YEAR = 1990;
+
+/**
+ * Roky pro přepínač zdaňovacího období (sestupně): SOUVISLÁ řada od nejstarší
+ * transakce po běžný rok, ne jen roky, ve kterých se něco stalo (L7i-08).
+ *
+ * Datum tu čteme podle OBCHODU, kdežto engine řadí příjem z prodeje do roku
+ * VYPOŘÁDÁNÍ (R-05a). Prodej z posledních obchodních dnů prosince tak patří do
+ * roku, ve kterém uživatel nemusí mít jedinou transakci — a ten rok v řadě dřív
+ * chyběl, takže ho nešlo otevřít (`resolveTaxYear` adresu s ním přesměruje na
+ * letošek) a příjem z něj nebyl vidět nikde. Rok bez transakcí navíc může
+ * znamenat i zapomenutý výpis, a to se z díry v řadě poznat nedalo.
+ */
 export function availableYears(txs: Transaction[], currentYear: number): number[] {
-  const years = new Set<number>([currentYear]);
+  let first = currentYear;
+  let last = currentYear;
   for (const tx of txs) {
     const date = tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date;
-    years.add(Number(date.slice(0, 4)));
+    const year = Number(date.slice(0, 4));
+    // Mez na JEDINÉM místě, ze kterého se řada let staví: datum s platným
+    // tvarem, ale nesmyslným rokem (překlep 0202, podvržený soubor s rokem
+    // 9999) by jinak roztáhl přepínač i stahování kurzů ČNB na staletí —
+    // a nezáleží na tom, kterým parserem nebo synchronizací řádek přišel.
+    // Transakce sama zůstává v datech; jen podle ní řadu nenatahujeme.
+    if (year < EARLIEST_PLAUSIBLE_YEAR || year > currentYear + 1) continue;
+    if (year < first) first = year;
+    if (year > last) last = year;
   }
-  return [...years].sort((a, b) => b - a);
+  return Array.from({ length: last - first + 1 }, (_, i) => last - i);
 }
 
 export function engineInputForUser(
@@ -280,19 +305,19 @@ export async function loadDailyRates(
   txs: Transaction[],
   currentYear: number,
 ): Promise<CnbRateProvider | undefined> {
-  const { ensureCnbYears, loadCnbRateProvider } = await import('@/lib/cnb');
+  const cnb = await import('@/lib/cnb');
   const years = availableYears(txs, currentYear);
   // rok−1 kvůli transakcím z 1.–2. ledna: fallback bere poslední vyhlášený
   // kurz PŘEDCHOZÍHO roku (Silvestr)
   const fromYear = Math.min(...years) - 1;
   const toYear = Math.max(...years, currentYear);
-  // SOUVISLÝ rozsah, ne jen roky s transakcemi. `availableYears` vrací množinu,
-  // takže portfolio s obchody v 2023, 2024 a 2026 nikdy nestáhlo rok 2025 —
-  // a přesto se z něj počítalo (F-3-2).
+  // SOUVISLÝ rozsah, ne jen roky s transakcemi. `availableYears` dřív vracela
+  // množinu, takže portfolio s obchody v 2023, 2024 a 2026 nikdy nestáhlo rok
+  // 2025 — a přesto se z něj počítalo (F-3-2).
   const needed = Array.from({ length: toYear - fromYear + 1 }, (_, i) => fromYear + i);
 
   try {
-    await ensureCnbYears(db, needed);
+    await cnb.ensureCnbYears(db, needed);
   } catch (error) {
     // Dřív tu byl `catch {}` — výpadek ČNB, timeout i 404 vypadaly
     // v monitoringu úplně stejně jako úspěch (F-3-10).
@@ -303,7 +328,7 @@ export async function loadDailyRates(
     });
   }
 
-  const provider = await loadCnbRateProvider(db, fromYear, toYear);
+  const provider = await cnb.loadCnbRateProvider(db, fromYear, toYear);
   if (provider.isEmpty) return undefined;
 
   // Bez pokrytí VŠECH potřebných let se denní varianta nesmí nabídnout.
@@ -313,8 +338,23 @@ export async function loadDailyRates(
   // Na doloženém případu to byl rozdíl 2 340 Kč vyrobený z kurzů, které
   // v databázi vůbec nejsou. `isEmpty` se ptá na CELOU tabulku, takže díru
   // uprostřed rozsahu nepoznalo (F-3-2).
-  if (provider.missingYears?.length) {
-    logEvent('warn', 'cnb.years_missing', { missing: provider.missingYears.join(',') });
+  //
+  // Jediná výjimka (L11-01): běžný rok, za který ČNB ještě nevyhlásila ani
+  // jeden kurz — od půlnoci 1. ledna do prvního novoročního fixingu. To není
+  // díra v datech: žádný kurz toho roku neexistuje a pro první dny ledna platí
+  // poslední vyhlášený kurz ze Silvestra (engine ho dohledá sám, proto rok−1
+  // výš). Dřív se kvůli němu zahodily denní kurzy CELÉHO rozsahu a uzavřené
+  // roky se na pár dní přepočítaly jednotným kurzem (na doloženém případu
+  // základ o 7 770 Kč jinde než den předtím). Rozhoduje výsledek stažení, ne
+  // kalendář: po výpadku ČNB zůstává i běžný rok chybějící — a to i tehdy, když
+  // stahování spadlo na dřívějším roce a na běžný se vůbec nedošlo
+  // (`ensureCnbYears` pak jeho starší zápis smaže, B01-R1-01).
+  const missing =
+    provider.missingYears?.filter(
+      (year) => !(year === currentYear && cnb.cnbYearHasNoAnnouncedRate(year)),
+    ) ?? [];
+  if (missing.length > 0) {
+    logEvent('warn', 'cnb.years_missing', { missing: missing.join(',') });
     return undefined;
   }
   return provider;

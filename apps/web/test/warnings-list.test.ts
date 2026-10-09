@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { d } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
-import { groupByCode, warningCaseLine, withholdingSummary } from '@/components/warnings-list';
+import {
+  groupByCode,
+  groupTitle,
+  warningCaseLine,
+  withholdingSummary,
+} from '@/components/warnings-list';
 
 const w = (over: Partial<EngineWarning>): EngineWarning => ({
   code: 'WITHHOLDING_ABOVE_TREATY',
@@ -31,6 +36,32 @@ describe('seskupení kontrol výpočtu podle kódu', () => {
       w({ code: 'E', level: 'ERROR' }),
     ]);
     expect(groups.map((g) => g.code)).toEqual(['E', 'W2', 'W1', 'I']);
+  });
+});
+
+describe('nadpis skupiny', () => {
+  it('DELISTING_MANUAL: popisuje, co Danero dělá — neposílá k ručnímu posouzení (L14-04)', () => {
+    // Aplikace nemá nástroj, kterým by šla jednotlivá pozice „ručně posoudit“;
+    // nadpis proto říká jen to, co se s pozicí děje.
+    const group = groupByCode([
+      w({ code: 'DELISTING_MANUAL', message: 'a' }),
+      w({ code: 'DELISTING_MANUAL', message: 'b' }),
+    ])[0]!;
+    const title = groupTitle(group);
+    expect(title).not.toContain('ruční');
+    expect(title).not.toContain('Delisting');
+    // Nadpis je společný všem výskytům, takže nesmí tvrdit nic o stavu pozic:
+    // titul mohl být mezitím prodán nebo se nikdy nedržel (A26-R1-01).
+    expect(title).not.toMatch(/pozic|držen|zůstáv/);
+    expect(title).toBe('Tituly stažené z burzy');
+  });
+
+  it('neznámý kód: nadpisem je první věta prvního výskytu', () => {
+    const group = groupByCode([
+      w({ code: 'X', message: 'Něco se stalo: podrobnosti.' }),
+      w({ code: 'X', message: 'Něco se stalo: jiné podrobnosti.' }),
+    ])[0]!;
+    expect(groupTitle(group)).toBe('Něco se stalo');
   });
 });
 

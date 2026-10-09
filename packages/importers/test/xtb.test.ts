@@ -1,7 +1,12 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import { dedupeTransactions } from '../src';
-import { parseXtbXlsx, sniffXtbXlsx, XTB_BROKER } from '../src/xtb/xlsx';
+import {
+  parseXtbXlsx,
+  sniffXtbXlsx,
+  XTB_BROKER,
+  xtbCurrencyFromTicker,
+} from '../src/xtb/xlsx';
 import {
   buildXtbNewReportXlsx,
   buildXtbXlsx,
@@ -479,5 +484,59 @@ describe('XTB nový report („Export (new)“)', () => {
     ]);
     expect(combined.fresh).toHaveLength(XTB_NEW_CASH_ROWS.length - 1);
     expect(combined.duplicates).toBe(XTB_NEW_CASH_ROWS.length - 1);
+  });
+});
+
+/**
+ * L14-05: report s tuctem amerických titulů chtěl po uživateli 24 ručně
+ * vyplněných polí, a přitom měnu u přípony `.US` z dat zjistit jde. Funkce je
+ * jen NÁVRH pro formulář číselníku — parser sám z ní nic nedoplňuje.
+ */
+describe('XTB: měna instrumentu z přípony tickeru', () => {
+  /** Smyšlené tickery; z fixtury se bere jen tvar řádku nákupu. */
+  const usTickers = Array.from(
+    { length: 12 },
+    (_, index) => `T${String(index + 1).padStart(2, '0')}.US`,
+  );
+
+  it('přípona .US → USD', () => {
+    expect(usTickers.map(xtbCurrencyFromTicker)).toEqual(usTickers.map(() => 'USD'));
+    expect(xtbCurrencyFromTicker('AAPL.US')).toBe('USD');
+    expect(xtbCurrencyFromTicker('BRK.B.US')).toBe('USD');
+  });
+
+  it('jiné přípony se nehádají — IWDA.UK je ve fixtuře v USD, ne v GBP', () => {
+    expect(XTB_INSTRUMENT_MAP['IWDA.UK'].currency).toBe('USD');
+    for (const ticker of ['IWDA.UK', 'SAP.DE', 'CEZ.CZ', 'CDR.PL', 'ASML.NL', 'MC.FR', 'NESN.CH']) {
+      expect(xtbCurrencyFromTicker(ticker)).toBeUndefined();
+    }
+  });
+
+  it('přípona musí být na konci a mít před sebou ticker', () => {
+    expect(xtbCurrencyFromTicker('US.DE')).toBeUndefined();
+    expect(xtbCurrencyFromTicker('AAPL.USA')).toBeUndefined();
+    expect(xtbCurrencyFromTicker('AAPLUS')).toBeUndefined();
+    expect(xtbCurrencyFromTicker('.US')).toBeUndefined();
+    expect(xtbCurrencyFromTicker('')).toBeUndefined();
+  });
+
+  it('report s 12 tituly .US: všech 12 symbolů k doplnění má měnu z přípony, parser ji sám nepoužije', async () => {
+    const template = XTB_NEW_CASH_ROWS.find((row) => row.includes('Stock purchase'));
+    if (!template) throw new Error('fixtura nemá řádek Stock purchase');
+    const cashRows = usTickers.map((ticker, index) =>
+      template.map((cell) =>
+        cell === 'AAPL.US' ? ticker : cell === 700003 ? 710001 + index : cell,
+      ),
+    );
+    const result = await parseXtbXlsx(
+      await buildXtbNewReportXlsx({ cashRows, closedRows: [] }),
+      {},
+    );
+
+    expect(result.unmappedSymbols).toEqual(usTickers);
+    expect(result.unmappedSymbols.map(xtbCurrencyFromTicker)).toEqual(usTickers.map(() => 'USD'));
+    // nic se nedoplňuje potichu: bez číselníku se neuloží jediný obchod
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(12);
   });
 });

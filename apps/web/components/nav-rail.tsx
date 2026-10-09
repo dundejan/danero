@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { usePathname } from 'next/navigation';
 import { Logo } from '@/components/logo';
+import { SignOutButton } from '@/components/sign-out-button';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -34,15 +34,6 @@ const DEMO_ITEMS: NavItem[] = [
   { href: '/demo/simulator', label: 'Simulátor' },
   { href: '/demo/report', label: 'Report' },
 ];
-
-function useSignOut() {
-  const router = useRouter();
-  return async () => {
-    await authClient.signOut();
-    router.push('/prihlaseni');
-    router.refresh();
-  };
-}
 
 /** Sdílený levý rail (desktop): logo, položky; patička jen když je co ukázat. */
 function Rail({
@@ -131,9 +122,9 @@ function TabBar({ items }: { items: NavItem[] }) {
 }
 
 /** Desktop: levý rail. Mobil (<md): spodní tab bar (docs/07).
- *  Patička jen účet (e-mail + odhlášení) — přepínač vzhledu žije v Nastavení. */
+ *  Patička jen účet (e-mail + odhlášení) — přepínač vzhledu žije v Nastavení.
+ *  Tab bar patičku nemá: pod md je totéž odhlášení v Nastavení → Účet (L7-01). */
 export function NavRail({ userEmail }: { userEmail: string }) {
-  const signOut = useSignOut();
   return (
     <Rail
       items={ITEMS}
@@ -143,13 +134,10 @@ export function NavRail({ userEmail }: { userEmail: string }) {
           <p className="truncate text-xs text-inkoust-tlumeny" title={userEmail}>
             {userEmail}
           </p>
-          <button
-            type="button"
+          <SignOutButton
             className="text-xs font-medium text-inkoust-tlumeny hover:text-cervena"
-            onClick={signOut}
-          >
-            Odhlásit se
-          </button>
+            errorClassName="text-xs text-cervena"
+          />
         </>
       }
     />

@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import { XTB_BROKER, xtbCurrencyFromTicker } from '@danero/importers';
 import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
 import { Card, CardTitle } from '@/components/ui/card';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -12,6 +13,7 @@ import {
   type BrokerAccountRow,
   type StoredReconciliation,
 } from '@/lib/broker-sync';
+import { IMPORT_HISTORY_ANCHOR, importFeedback } from '@/lib/import-feedback';
 import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
@@ -277,16 +279,26 @@ function ConnectedBroker({
   );
 }
 
+/**
+ * Kolik hlášek jedné dávky historie vypíše. Zbytek shrne řádek „a dalších N“
+ * z úplných počtů ve sloupcích dávky — bez něj seznam deseti chyb vypadal
+ * jako celý, i když jich soubor měl stovky (a uložených je nejvýš
+ * `MAX_STORED_ISSUES`, viz lib/import-issues.ts).
+ */
+const SHOWN_ERRORS = 10;
+const SHOWN_WARNINGS = 5;
+
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chyba?: string | string[]; ulozeno?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireUser();
   const db = await getDb();
   const params = await searchParams;
   const chyba = firstParam(params.chyba);
   const ulozeno = firstParam(params.ulozeno);
+  const feedback = importFeedback(params);
   const [batches, unmappedSource, accounts, aliases] = await Promise.all([
     db
       .select()
@@ -322,6 +334,24 @@ export default async function ImportPage({
     }
   }
   const unmappedSymbols = [...unmappedMap.values()];
+  // Měnu u XTB jen navrhujeme (L14-05): pole zůstává k přepsání a ukládá se až
+  // to, co uživatel odešle. ISIN z reportu zjistit nejde, ten se nenavrhuje.
+  const suggestedCurrency = (item: UnmappedSymbol): string | undefined =>
+    item.broker === XTB_BROKER ? xtbCurrencyFromTicker(item.symbol) : undefined;
+  const anyCurrencySuggested = unmappedSymbols.some(
+    (item) => item.needsCurrency && suggestedCurrency(item) !== undefined,
+  );
+  // Symboly, u kterých server odmítl ISIN kvůli kontrolní číslici (L14-06).
+  // Z adresy se berou jen ty, které ve formuláři opravdu jsou — cizí text
+  // z odkazu se do hlášky neopisuje.
+  const rejectedSymbols = [params.symbol]
+    .flat()
+    .filter((symbol) => unmappedSymbols.some((item) => item.symbol === symbol));
+  const checkDigitMessage =
+    (rejectedSymbols.length === 0
+      ? 'ISIN nesedí'
+      : `${rejectedSymbols.length === 1 ? 'U symbolu' : 'U symbolů'} ${rejectedSymbols.join(', ')} ISIN nesedí`) +
+    ': jeho poslední číslice je kontrolní a ke zbytku kódu nepasuje — nejspíš překlep při opisování (zaměněný nebo přehozený znak). Zkontroluj ho znak po znaku a ulož znovu; správně vyplněné řádky jsou uložené.';
 
   // aktivní job per účet → místo tlačítka a rekonciliace živý průběh
   // (jeden dotaz; cestou se samoléčí zaseknuté joby vč. odpojených účtů)
@@ -369,11 +399,23 @@ export default async function ImportPage({
                         ? 'Vyber platformu nebo napiš poznámku — bez toho nám hlášení nepomůže.'
                         : chyba === 'hlaseni-neexistuje'
                           ? 'Tenhle výpis už mezitím vyřešený je — obnov stránku.'
-                          : chyba === 'ulozeni'
-                            ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
-                            : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                          : chyba === 'vraceni'
+                            ? 'Tenhle import už vrácený je — obnov stránku.'
+                            : chyba === 'ulozeni'
+                              ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
+                              : chyba === 'isin-kontrola'
+                                ? checkDigitMessage
+                                : chyba === 'isin-pouzity'
+                                  ? 'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív vrať import zpět (v historii níž), pak údaj ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.'
+                                  : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
+      )}
+      {/* Výsledek nahrání, vrácení, připojení, odpojení a spuštění synchronizace.
+          Plave, protože akce končí na kotvě (historie, karta brokera) a hláška
+          nahoře na stránce by zůstala mimo obrazovku (L7d-01). */}
+      {feedback && (
+        <Toast key={crypto.randomUUID()} kind={feedback.kind} floating text={feedback.text} />
       )}
       {ulozeno === 'ciselnik' && (
         <Toast
@@ -398,6 +440,8 @@ export default async function ImportPage({
             {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
             na výpisu brokera nebo vyhledáním „[symbol] ISIN“. Po uložení nahraj soubor znovu —
             obchody těchto symbolů se bez doplnění neimportují.
+            {anyCurrencySuggested &&
+              ' Měnu jsme u tickerů s příponou .US předvyplnili (USD) — zkontroluj ji a případně přepiš.'}
           </p>
           <form action={saveAliasesAction} className="space-y-2">
             <input type="hidden" name="pocet" value={unmappedSymbols.length} />
@@ -425,6 +469,7 @@ export default async function ImportPage({
                     name={`currency-${index}`}
                     placeholder="Měna (USD)"
                     aria-label={`Měna pro ${item.symbol}`}
+                    defaultValue={suggestedCurrency(item)}
                     required
                     pattern="[A-Za-z]{3}"
                     className="w-28 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
@@ -631,7 +676,7 @@ export default async function ImportPage({
         </Card>
       </section>
 
-      <section className="space-y-3">
+      <section id={IMPORT_HISTORY_ANCHOR} className="scroll-mt-4 space-y-3">
         <CardTitle>Historie importů</CardTitle>
         {batches.length === 0 && (
           <p className="text-sm text-inkoust-tlumeny">
@@ -658,7 +703,7 @@ export default async function ImportPage({
                 {/* H-3-17: IBKR názvy („U1234567_20240101_20241231.xml") přetečou
                     kartu od 30 znaků a rozjedou vodorovně celou stránku */}
                 <span className="min-w-0 break-all font-mono text-sm">{batch.filename}</span>
-                <span className="flex items-baseline gap-3 text-xs text-inkoust-tlumeny">
+                <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-inkoust-tlumeny">
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   {/* Vracet je co jen u dávky, která něco přidala. U nepřečteného
                       výpisu by tlačítko navíc zahodilo případ, který čeká na rozbor. */}
@@ -669,13 +714,21 @@ export default async function ImportPage({
                           a potom v `sr-only` — obojí je u mazacího tlačítka
                           neviditelné. Teď je to VIDĚT pod kartou a tlačítko na
                           text jen odkazuje přes `aria-describedby`. */}
-                      <button
-                        type="submit"
+                      {/* L7d-04: bývalo to 95 × 16 px textu v barvě sousedního
+                          popisku, bez stavu „probíhá“ — maže to transakce, tak ať
+                          to vypadá jako tlačítko a řekne, že pracuje. Potvrzovací
+                          dialog schválně není: stačí věta pod kartou a hláška po
+                          akci, vrácení jde napravit novým nahráním nebo další
+                          synchronizací. */}
+                      <SubmitButton
+                        variant="secondary"
+                        size="sm"
+                        pendingLabel="Vracím…"
                         aria-describedby={`vraceni-${batch.id}`}
-                        className="font-medium text-inkoust-tlumeny hover:text-cervena"
+                        className="whitespace-nowrap"
                       >
                         Vrátit import zpět
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                 </span>
@@ -706,17 +759,31 @@ export default async function ImportPage({
                     </span>{' '}
                     · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
                   </p>
-                  {(issues.errors ?? []).slice(0, 10).map((issue, i) => (
+                  {(issues.errors ?? []).slice(0, SHOWN_ERRORS).map((issue, i) => (
                     // index v klíči: na jednom řádku souboru může být víc chyb
                     <p key={`e-${issue.line}-${i}`} className="text-xs text-cervena">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
-                  {(issues.warnings ?? []).slice(0, 5).map((issue, i) => (
+                  {batch.errorCount > SHOWN_ERRORS && (
+                    <p className="text-xs text-cervena">
+                      … a {plural(batch.errorCount - SHOWN_ERRORS, 'další', 'další', 'dalších')}{' '}
+                      {batch.errorCount - SHOWN_ERRORS}{' '}
+                      {plural(batch.errorCount - SHOWN_ERRORS, 'chyba', 'chyby', 'chyb')}. Bývají
+                      stejného druhu — oprav první a nahraj soubor znovu.
+                    </p>
+                  )}
+                  {(issues.warnings ?? []).slice(0, SHOWN_WARNINGS).map((issue, i) => (
                     <p key={`w-${issue.line}-${i}`} className="text-xs text-jantar-text">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
+                  {batch.warningCount > SHOWN_WARNINGS && (
+                    <p className="text-xs text-jantar-text">
+                      … a {plural(batch.warningCount - SHOWN_WARNINGS, 'další', 'další', 'dalších')}{' '}
+                      {batch.warningCount - SHOWN_WARNINGS} varování.
+                    </p>
+                  )}
                   {failedCase && <FailedImportPanel item={failedCase} />}
                   {/* nevztahuje se k řádku souboru, ale k celé dávce */}
                   {(issues.crossBroker ?? []).map((message, i) => (

@@ -45,7 +45,7 @@ dunder.jan@gmail.com** — po převedení na anonymní fixturu se maže.
 
 ## Změny v daňové logice
 
-Engine je čistá funkce bez I/O a implementuje **pravidla R-01…R-12
+Engine je čistá funkce bez I/O a implementuje **pravidla R-01…R-15
 z [docs/02](docs/02-danova-pravidla.md)** — to je závazná specifikace.
 
 Pořadí je vždy stejné: **nejdřív pravidlo do docs/02 se zdrojem** (paragraf
@@ -89,5 +89,5 @@ Bezpečnostní chyby patří jinam: [SECURITY.md](SECURITY.md).
 ## Self-hosting
 
 Provozování vlastní instance je licencí výslovně dovolené a rádi ho vidíme.
-Podpora k němu je ale **best effort, bez záruky** — dotazy do Discussions, ne
-do issue. Název „Danero" a logo zůstávají chráněné, viz [TRADEMARK.md](TRADEMARK.md).
+Podpora k němu je ale **best effort, bez záruky** — dotazy piš jako issue.
+Název „Danero" a logo zůstávají chráněné, viz [TRADEMARK.md](TRADEMARK.md).

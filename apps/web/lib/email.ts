@@ -1,4 +1,4 @@
-import { operatorSignature, OPERATOR, OPERATOR_UNSET } from '@/lib/contact';
+import { type EnvSource, operatorSignature, OPERATOR, OPERATOR_UNSET } from '@/lib/contact';
 import { renderHtml, renderText, type EmailBlock } from '@/lib/email-layout';
 import { plural } from '@/lib/format';
 
@@ -41,8 +41,21 @@ export interface EmailMessage {
  * ⚠️ Fallback tu zůstává schválně: bez něj by odpovědi mizely na instanci,
  * kde `RESEND_REPLY_TO` nastavená není (cizí self-hosting, dev). Freemail
  * v Reply-To je horší než doménová adresa, ale nekonečně lepší než žádná.
+ *
+ * Dvě pojistky pro vlastní instanci (L10-08): prázdná `RESEND_REPLY_TO` je
+ * nenastavená (`.env` s řádkem `RESEND_REPLY_TO=` nebo compose ji předají jako
+ * `""` a `??` by u ní zůstalo stát), a když chybí i kontakt provozovatele,
+ * hlavička se **vynechá** — dřív odcházelo `reply_to: "nenastaveno"`, tedy
+ * zástupný text z `lib/contact.ts` místo adresy, a Resend zprávu odmítl.
  */
-const REPLY_TO = process.env.RESEND_REPLY_TO ?? OPERATOR.email;
+function replyToAddress(): string | undefined {
+  const explicit = process.env.RESEND_REPLY_TO?.trim();
+  if (explicit) return explicit;
+  return OPERATOR.email === OPERATOR_UNSET ? undefined : OPERATOR.email;
+}
+
+/** Odesílatel, když `RESEND_FROM` není nastavená. */
+const DEFAULT_FROM = 'Danero <notifikace@danero.cz>';
 
 /**
  * Kam chodí provozní upozornění (dnes: „výpis jsme nepřečetli"). Není to zpráva
@@ -120,6 +133,22 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+/**
+ * Má instance čím e-mail doručit — nebo aspoň ukázat tomu, kdo ji spouští?
+ *
+ * Ne = produkční režim bez `RESEND_API_KEY` i bez `DANERO_EMAIL_LOG`, což je
+ * přesně vlastní instance z compose bez Resendu (L10-01): `resolveEmailSender`
+ * tam každé odeslání shodí. Stránka `/overeni-emailu` se ptá tady, aby
+ * netvrdila „poslali jsme ti odkaz“ o zprávě, která neodešla. Mimo produkci
+ * se zpráva vypíše do konzole, takže se k odkazu vývojář dostane.
+ *
+ * Podmínku má odesílač i stránka z jednoho místa — kopie by se rozešla.
+ */
+export function emailDeliveryConfigured(env: EnvSource = process.env): boolean {
+  if (env.DANERO_EMAIL_LOG || env.RESEND_API_KEY) return true;
+  return env.NODE_ENV !== 'production';
+}
+
 /** Resend za env klíčem; bez něj dev log (žádný setup, nic se neposílá). */
 export function resolveEmailSender(): EmailSender {
   const logPath = process.env.DANERO_EMAIL_LOG;
@@ -142,7 +171,7 @@ export function resolveEmailSender(): EmailSender {
     // produkce bez klíče nesmí e-mail tiše „odeslat“ do console — u notifikací
     // by to označilo frontu za doručenou, u obnovy hesla by uživatel čekal
     // na zprávu, která nikdy nepřijde
-    if (process.env.NODE_ENV === 'production') {
+    if (!emailDeliveryConfigured()) {
       return async () => {
         throw new Error('RESEND_API_KEY není nastaven — e-mail se neodeslal.');
       };
@@ -151,14 +180,17 @@ export function resolveEmailSender(): EmailSender {
       console.info(`[email:dev] to=${message.to} | ${message.subject}\n${message.text}`);
     };
   }
-  const from = process.env.RESEND_FROM ?? 'Danero <notifikace@danero.cz>';
+  // `||`, ne `??`: compose (`${RESEND_FROM:-}`) i řádek `RESEND_FROM=` v .env
+  // dají prázdný řetězec a zpráva by odešla s odesílatelem "" (L10-08).
+  const from = process.env.RESEND_FROM?.trim() || DEFAULT_FROM;
+  const replyTo = replyToAddress();
   return async (message) => {
     const { Resend } = await import('resend');
     const resend = new Resend(apiKey);
     const { error } = await withTimeout(
       resend.emails.send({
         from,
-        replyTo: REPLY_TO,
+        ...(replyTo ? { replyTo } : {}),
         to: message.to,
         subject: message.subject,
         text: message.text,
@@ -220,6 +252,66 @@ export function resetPasswordEmail(url: string): Omit<EmailMessage, 'to'> {
   });
 }
 
+/** `jan.novak@priklad.cz` → `j***@priklad.cz`; co není adresa, vrátí beze změny. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return email;
+  return `${email[0]}***${email.slice(at)}`;
+}
+
+/**
+ * Oznámení na PŮVODNÍ adresu, že se e-mail účtu změnil (L6b-05, R19).
+ *
+ * Kdo zná heslo, změní e-mail v Nastavení — a majitel bez téhle zprávy potichu
+ * přijde o přihlášení i o obnovu hesla, protože ta už chodí jinam. Nová adresa
+ * je schválně zakrytá: původní schránku už uživatel nemusí ovládat (často
+ * právě proto e-mail mění) a celá adresa by jejímu držiteli řekla, kam se
+ * účet přestěhoval. Žádný odkaz na vrácení — ten by z původní schránky udělal
+ * klíč k účtu.
+ *
+ * Dvě znění podle toho, jestli původní adresu kdy někdo potvrdil. Nepotvrzená
+ * může být překlep, tedy schránka cizího člověka — tomu zpráva nesmí nabízet
+ * „vrácení účtu“. Vynechat ji ale nejde: nepotvrzená je i adresa, na kterou
+ * majitel právě přešel a ještě neklikl na odkaz, a ten se o další změně
+ * dozvědět musí.
+ */
+export function emailChangedEmail(
+  newEmail: string,
+  { previousVerified }: { previousVerified: boolean } = { previousVerified: true },
+): Omit<EmailMessage, 'to'> {
+  const masked = maskEmail(newEmail);
+  return zprava({
+    subject: 'E-mail tvého účtu v Daneru se změnil',
+    preheader: 'Upozornění a obnova hesla teď chodí na novou adresu.',
+    blocks: previousVerified
+      ? [
+          {
+            kind: 'p',
+            text: `U účtu v Daneru vedeného na tuhle adresu někdo se znalostí hesla změnil přihlašovací e-mail na ${masked}.`,
+          },
+          {
+            kind: 'p',
+            text: 'Na tuhle adresu už od nás nic dalšího nepřijde — upozornění i obnova hesla chodí na novou.',
+          },
+          {
+            kind: 'note',
+            text: 'Pokud jsi to byl ty, nemusíš dělat nic. Pokud ne, odpověz na tuhle zprávu a domluvíme se, jak ti účet vrátit.',
+          },
+        ]
+      : [
+          {
+            kind: 'p',
+            text: `Tahle adresa byla uvedená u účtu v Daneru, ale nikdo ji nepotvrdil. Někdo se znalostí hesla ji teď nahradil jinou (${masked}), takže na ni od nás už nic nepřijde.`,
+          },
+          {
+            kind: 'note',
+            text: 'Pokud o žádném účtu v Daneru nevíš, šlo nejspíš o překlep a nemusíš dělat nic. Pokud je účet tvůj a změnu jsi neudělal ty, odpověz na tuhle zprávu.',
+          },
+        ],
+    footer: operatorSignature(),
+  });
+}
+
 /** Potvrzení adresy po registraci — vysvětluje, proč to po uživateli chceme. */
 export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
   return zprava({
@@ -229,7 +321,16 @@ export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
       { kind: 'p', text: 'Vítej v Daneru. Potvrď prosím, že ti tahle adresa patří.' },
       { kind: 'cta', label: 'Potvrdit e-mail', url },
       { kind: 'p', text: 'Odkaz platí 24 hodin.' },
-      { kind: 'note', text: 'Pokud sis účet nezakládal, nemusíš dělat nic.' },
+      // L8a-01: přijde-li na nepotvrzený účet registrace s jiným heslem, heslo
+      // přestane platit (lib/auth-signup.ts). Věta je tu obecně, ať na to
+      // nemusí být druhá šablona — tutéž zprávu dostane i ten, komu heslo platí.
+      {
+        kind: 'p',
+        text: 'Kdyby ti po potvrzení nešlo přihlásit se heslem, nastav si nové přes „Zapomenuté heslo“ na přihlašovací stránce.',
+      },
+      // „Nemusíš dělat nic“ tu nestačilo: kdo na odkaz klikne, potvrdí účet,
+      // který na jeho adresu založil někdo jiný.
+      { kind: 'note', text: 'Pokud sis účet nezakládal, na odkaz neklikej.' },
     ],
     footer: operatorSignature(),
   });

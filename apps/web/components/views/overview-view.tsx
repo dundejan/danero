@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { LimitDrawdownChart } from '@/components/charts';
+import { filingLimitFor, filingVerdictHeadline } from '@/components/filing-verdict';
+import { unpaidUnderLimitCzk } from '@/lib/payable-tax';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
@@ -70,16 +72,17 @@ export function OverviewView({
     result.dividends.creditableWithholdingCzk,
   );
 
-  // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — dle
-  // režimu (PAUSAL → 50k § 7a, ZAMESTNANEC → 20k, JINE → obecných 50k);
+  // Částky limitů § 38g se rok od roku liší (R-09a, R-09b: do ZO 2026
+  // 50 000 / 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč), takže je popisky
+  // berou z téhož stavu jako odměrka — tedy z konfigurace počítaného roku.
+  // S částkou natvrdo by nadpis a čerpání pod ním jmenovaly dvě různá čísla.
+  const employeeLimit = czk(result.limits.employee20k.status.limitCzk);
+  const generalLimit = czk(result.limits.generalFiling50k.status.limitCzk);
+
+  // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — výběr
+  // podle režimu i znění nadpisu sdílí přehled s reportem (L5-02);
   // OSVČ mimo paušál podává přiznání tak jako tak, verdikt-box tam nedává smysl.
-  const filingLimit = result.limits.flatTax50k.applicable
-    ? { status: result.limits.flatTax50k.status, label: 'limit 50 000 Kč pro paušální daň' }
-    : result.limits.employee20k.applicable
-      ? { status: result.limits.employee20k.status, label: 'limit 20 000 Kč vedlejších příjmů' }
-      : result.limits.generalFiling50k.applicable
-        ? { status: result.limits.generalFiling50k.status, label: 'limit 50 000 Kč pro podání přiznání' }
-        : null;
+  const filingLimit = filingLimitFor(result);
   const deadlines = filingDeadlines(year);
   /**
    * Limit 50k pro paušální daň je aplikovatelný právě u režimu PAUSAL
@@ -99,6 +102,8 @@ export function OverviewView({
   const nearestLimit = watchedLimits.reduce((a, b) => (b.status.ratio > a.status.ratio ? b : a));
   const estimatedTaxCzk =
     result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
+  // R-09f: pod limitem režimu se orientační daň neplatí — karta to musí říct
+  const unpaidUnderLimit = unpaidUnderLimitCzk(result);
   // R-08f: vyčíslení dopadu prolomení limitu 50k (jen paušál a jen při prolomení)
   const breachImpact = result.limits.flatTax50k.breachImpact;
 
@@ -169,7 +174,7 @@ export function OverviewView({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
                   <p className="font-display text-xl font-bold">
-                    Za rok {year} podáš daňové přiznání
+                    {filingVerdictHeadline({ year, exceeded: true })}
                   </p>
                   <p className="text-sm text-inkoust-tlumeny">
                     Orientační daň z investic:{' '}
@@ -232,7 +237,7 @@ export function OverviewView({
           ) : (
             <div className="space-y-1">
               <p className="font-display text-xl font-bold">
-                Zatím ti povinnost podat přiznání nevzniká
+                {filingVerdictHeadline({ year, exceeded: false })}
               </p>
               <p className="text-sm text-inkoust-tlumeny">
                 Limity hlídáme denně. Nejblíž je {nearestLimit.label} — čerpáno{' '}
@@ -253,7 +258,7 @@ export function OverviewView({
         )}
         {result.limits.employee20k.applicable && (
           <LimitGauge
-            label="Vedlejší příjmy — 20 000 Kč"
+            label={`Vedlejší příjmy — ${employeeLimit}`}
             hint="Zdanitelné příjmy vedle zaměstnání — investice, nájmy i vlastní výdělek ze samostatné činnosti (§ 7 až 10). Odměrka ukazuje jen to, co Danero vidí z výpisů a z tvého nastavení; příjmy z podnikání do limitu patří taky, ale my o nich nevíme. Při překročení podáváš přiznání."
             status={result.limits.employee20k.status}
           />
@@ -262,8 +267,8 @@ export function OverviewView({
             mu do teď chyběla (parita s paušálem/zaměstnancem) */}
         {result.limits.generalFiling50k.applicable && (
           <LimitGauge
-            label="Podání přiznání — 50 000 Kč"
-            hint="Obecný limit (§ 38g): zdanitelné příjmy do 50 000 Kč za rok bez povinnosti podat přiznání. Při překročení přiznání podáváš."
+            label={`Podání přiznání — ${generalLimit}`}
+            hint={`Obecný limit (§ 38g): zdanitelné příjmy do ${generalLimit} za rok bez povinnosti podat přiznání. Při překročení přiznání podáváš.`}
             status={result.limits.generalFiling50k.status}
           />
         )}
@@ -349,6 +354,16 @@ export function OverviewView({
                   ` · daň v obecném základu ${czk(result.tax.general.taxCzk)}, v samostatném základu § 16a ${czk(result.tax.separate16a.taxCzk)} (před slevami — variantu volíš v přiznání)`}
               </p>
               <p>{result.tax.note}</p>
+              {/* R-09f (L24-02): pod limitem režimu se tahle daň neplatí — bez
+                  téhle věty stála částka hned pod verdiktem „povinnost
+                  nevzniká“ a vypadala jako dluh */}
+              {unpaidUnderLimit && estimatedTaxCzk.gt(0) && (
+                <p className="font-medium text-inkoust">
+                  Platí se jen při podání přiznání. Dokud jsi pod limitem{' '}
+                  {czk(unpaidUnderLimit)}, přiznání nepodáváš a tuhle daň neplatíš — počítáme
+                  jen s příjmy, o kterých Danero ví.
+                </p>
+              )}
             </div>
           </div>
         </Card>

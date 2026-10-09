@@ -9,6 +9,7 @@ import {
   type EngineInput,
 } from '@danero/engine';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { filingLimitFor, ReportFilingVerdict } from '@/components/filing-verdict';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
@@ -17,9 +18,22 @@ import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { today as todayInPrague } from '@/lib/clock';
-import { EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
-import { priloha2 } from '@/lib/priloha2';
-import { czDate, czk, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL, plural } from '@/lib/format';
+import {
+  creditIncomeByCountry,
+  EPO_SUPPORTED_YEARS,
+  prijmyZeStatuProZapocet,
+} from '@/lib/epo';
+import { fxMethodLabel } from '@/lib/fx-method';
+import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
+import {
+  czDate,
+  czk,
+  FX_METHOD_LABEL,
+  limit100kLabel,
+  METHOD_LABEL,
+  plural,
+  yearList,
+} from '@/lib/format';
 import {
   FIRST_UNIFIED_RATE_YEAR,
   isRateVerified,
@@ -214,12 +228,18 @@ export function ReportView({
   // (K3-03) — dokud měl každý svoje, radila jedna stránka zapsat nezastropované
   // výdaje, které podatelna odmítá.
   const p2 = priloha2(result);
-  const vydajeBezStropu = result.securities.expensesCzk
-    .plus(result.crypto.expensesCzk)
-    .plus(result.derivatives.expensesCzk);
+  // Totéž platí pro § 8: ř. 38 a ř. 401a v celých korunách (L5-05) a příjmy po
+  // státech pro ř. 321 (L5-01) — průvodce i tabulka je opisují z generátoru XML.
+  const base8Whole = base8WholeCzk(result);
+  const creditIncome = creditIncomeByCountry(result);
+  // Ztráta nad rámec příjmů v celých korunách, jak ji věta v průvodci vypíše —
+  // z nezaokrouhlených rozdílů po druzích, ne z haléřů odříznutých řádkům
+  // přílohy (L5-06). Ztráta pod půl koruny se nehlásí: věta by zněla „0 Kč“.
+  const lossBeyondIncome = lossBeyondIncomeCzk(result).toDecimalPlaces(0);
   // § 16a je reálná alternativa jen se zahraničními dividendami/úroky v § 8
   const hasDividendBase = result.dividends.base8Czk.gt(0);
   const deadlines = filingDeadlines(year);
+  const filingLimit = filingLimitFor(result);
   /**
    * OSVČ (paušál i běžná) má od 1. 1. 2023 datovou schránku zřízenou ze zákona,
    * takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání jen elektronicky;
@@ -260,7 +280,7 @@ export function ReportView({
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
         párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
-        {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
+        {fxMethodLabel(result)} ·
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
         {pinned && ' (všechny tři zafixovány pro tento rok)'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
@@ -278,6 +298,20 @@ export function ReportView({
       {/* R-15e: rok, pro který stát ještě nevyhlásil čísla — vysvětlení nahoře,
           ať ho uživatel vidí dřív než odhad daně, který se o ně opírá */}
       <TaxYearConfigNotice year={year} pausal={profile.regime === 'PAUSAL'} />
+
+      {/* L5-02: tentýž verdikt jako na přehledu, na obrazovce i v tisku — bez něj
+          report ukazoval termín podání a export i tomu, komu povinnost nevznikla */}
+      {filingLimit && (
+        <ReportFilingVerdict
+          year={year}
+          limit={filingLimit}
+          // R-09d: oznámení dle § 38v má nepodávající do tří měsíců po konci roku
+          // (stejné datum jako písemné podání), ne do lhůty elektronického přiznání
+          exemptReportingDeadline={
+            result.limits.reporting38v.length > 0 ? deadlines.paper : null
+          }
+        />
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
@@ -753,9 +787,13 @@ export function ReportView({
                 {Object.entries(result.dividends.creditableByCountry).map(([country, data]) => (
                   <tr key={country} className="border-b border-linka/60">
                     <td className="py-2 pr-4 font-sans font-medium">{country}</td>
-                    {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda */}
+                    {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda;
+                        stát bez započitatelné srážky v příloze není, tam zůstává příjem tak, jak je */}
                     <td className="whitespace-nowrap py-2 pr-4 text-right">
-                      {czk(prijmyZeStatuProZapocet(country, data, result.options))}
+                      {czk(
+                        creditIncome.get(country) ??
+                          prijmyZeStatuProZapocet(country, data, result.options),
+                      )}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(data.withholdingCzk)}</td>
                     <td className="whitespace-nowrap py-2 text-right">{czk(data.creditableCzk)}</td>
@@ -1054,11 +1092,11 @@ export function ReportView({
                 Deriváty nemají žádné osvobození a s ostatními druhy se nekompenzují.
               </li>
             )}
-            {p2.vydajeCzk.lt(vydajeBezStropu) && (
+            {lossBeyondIncome.gt(0) && (
               <li className="text-inkoust-tlumeny">
                 Výdaje jsou u každého druhu uvedené jen do výše jeho příjmů — tak to žádá
                 § 10 odst. 4 a tak je kontroluje i podatelna (ř. 208 nesmí být vyšší než
-                ř. 207). Ztrátu {czk(vydajeBezStropu.sub(p2.vydajeCzk))} nad rámec příjmů
+                ř. 207). Ztrátu {czk(lossBeyondIncome)} nad rámec příjmů
                 do přiznání zapsat nejde a do dalšího roku se nepřevádí.
               </li>
             )}
@@ -1077,7 +1115,7 @@ export function ReportView({
               <ul className="mt-1 list-disc space-y-1 pl-5">
                 <li>
                   <strong>Obecný základ:</strong> brutto{' '}
-                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span> →{' '}
+                  <span className="font-mono">{czk(base8Whole.generalCzk)}</span> →{' '}
                   <strong>ř. 38</strong> přiznání; zápočet sražené daně po státech přes
                   Přílohu č. 3 (ř. 321–330; uznatelný zápočet{' '}
                   <span className="font-mono">{czk(result.dividends.creditableWithholdingCzk)}</span>
@@ -1085,7 +1123,7 @@ export function ReportView({
                 </li>
                 <li>
                   <strong>Samostatný základ § 16a:</strong> Příloha č. 4, ř. 401a{' '}
-                  <span className="font-mono">{czk(result.dividends.base8Czk)}</span>, daň 15 %
+                  <span className="font-mono">{czk(base8Whole.separate16aCzk)}</span>, daň 15 %
                   ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
                   <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). Slevy na dani ani
                   nezdanitelné části základu v něm uplatnit nelze.
@@ -1131,16 +1169,16 @@ export function ReportView({
             <li className="text-inkoust-tlumeny">
               {EPO_SUPPORTED_YEARS.includes(year) ? (
                 <>
-                  Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období
-                  2024–2025; papírový tiskopis 25 5405) — všechno výše předvyplní export XML
-                  o kousek výš.
+                  Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období{' '}
+                  {yearList(EPO_SUPPORTED_YEARS)}; papírový tiskopis 25 5405) — všechno výše
+                  předvyplní export XML o kousek výš.
                 </>
               ) : (
                 <>
                   Částky výše platí pro rok {year}, <strong>čísla řádků</strong> jsou
-                  z tiskopisu 2024/2025 (DPFDP7; papírově 25 5405). Přesná čísla řádků pro
-                  období {year} ověříme, až finanční správa zveřejní strukturu — struktura
-                  přílohy se ale mezi lety mění jen výjimečně.
+                  z tiskopisu {yearList(EPO_SUPPORTED_YEARS)} (DPFDP7; papírově 25 5405). Přesná
+                  čísla řádků pro období {year} ověříme, až finanční správa zveřejní strukturu
+                  — struktura přílohy se ale mezi lety mění jen výjimečně.
                 </>
               )}
             </li>
@@ -1148,7 +1186,7 @@ export function ReportView({
         <p className="text-xs text-inkoust-tlumeny">
           Konfigurace výpočtu: párování{' '}
           {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
-          {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
+          {fxMethodLabel(result)} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
           stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·

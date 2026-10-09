@@ -2,8 +2,9 @@ node_modules
 **/node_modules
 .next
 **/.next
-.next-e2e
-**/.next-e2e
+# vedlejší distDiry (NEXT_DIST_DIR: .next-e2e, .next-a11y…) — stovky MB kontextu
+.next-*
+**/.next-*
 .turbo
 **/.turbo
 .data
@@ -14,9 +15,20 @@ coverage
 **/test-results
 **/playwright-report
 *.log
+**/*.log
+.vercel
+**/.vercel
+# Vzor bez lomítka platí JEN pro kořen kontextu, proto má každý dvojníka `**/`.
+# `apps/web/.env` (šablona leží v apps/web/.env.example, takže tam vznikne
+# snadno) by jinak prošel do builder stage a Next ho při `output: 'standalone'`
+# zabalí do výsledného obrazu — s BETTER_AUTH_SECRET i DANERO_ENCRYPTION_KEY.
+# Výjimka pro .env.example musí zůstat až ZA vzory, které ruší.
 .env
+**/.env
 .env.*
+**/.env.*
 !.env.example
+!**/.env.example
 Dockerfile
 docker-compose.yml
 # .dockerignore se .gitignorem NEŘÍDÍ a Dockerfile dělá `COPY . .` — bez těchhle

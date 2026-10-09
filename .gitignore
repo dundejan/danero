@@ -9,6 +9,9 @@ dist/
 next-env.d.ts
 .turbo/
 coverage/
+# mutační testy (Stryker): report a pískoviště
+reports/
+.stryker-tmp/
 *.log
 .env
 .env.*

@@ -91,7 +91,10 @@ const FLAT_TAX_ADVANCE_MONTHS = 12;
 export interface FlatTaxBreachImpact {
   /** Orientační daň z investičních příjmů (§ 8 + § 10) po zápočtu zahraniční srážky. */
   taxCzk: Money;
-  /** Zálohy na daň zaplacené v paušálním režimu — jen daňová složka paušální zálohy. */
+  /**
+   * Zálohy na daň zaplacené v paušálním režimu — jen daňová složka paušální
+   * zálohy, bez přirážky: ta zvyšuje zálohu i daň stejně a doplatek nemění (R-08f).
+   */
   advancesCreditCzk: Money;
   /** Počet měsíců, za který jsme zálohy započetli (vždy 12 — viz FLAT_TAX_ADVANCE_MONTHS). */
   advanceMonths: number;
@@ -231,8 +234,17 @@ export function computeLimits(
         })()
       : null;
   if (breachImpact) {
+    // R-08f: přirážka (od ZO 2027, § 38lk odst. 7 písm. a) a odst. 8) zvyšuje
+    // daňovou složku zálohy a o stejnou částku i daň v přiznání (§ 16ab
+    // odst. 4) — doplatek se jí nemění, proto do `breachImpact` nevstupuje
+    // a tady jen říkáme, že poplatník s přirážkou platí jiné částky.
+    const surcharge = advance?.monthlySurchargeCzk ? d(advance.monthlySurchargeCzk) : null;
+    const surchargePart =
+      advance && surcharge
+        ? ` Pokud ses přihlásil k přirážce ${czkText(surcharge)} měsíčně, která tě zprošťuje evidence tržeb, platíš zálohu ${czkText(d(advance.monthlyTotalCzk).plus(surcharge))} a na daň z ní jde ${czkText(d(advance.monthlyTaxCzk).plus(surcharge))} měsíčně. O přirážku se ale zvýší i daň v přiznání (§ 16ab odst. 4), takže doplatek se tím nemění.`
+        : '';
     const advancesPart = advance
-      ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}. Počítáme s ${FLAT_TAX_ADVANCE_MONTHS} měsíci v paušálním režimu — pokud jsi do něj vstoupil nebo z něj vystoupil během roku, zaplatil jsi záloh míň a doplatek bude vyšší o ${czkText(d(advance.monthlyTaxCzk))} za každý měsíc mimo režim.`
+      ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}. Počítáme s ${FLAT_TAX_ADVANCE_MONTHS} měsíci v paušálním režimu — pokud jsi do něj vstoupil nebo z něj vystoupil během roku, zaplatil jsi záloh míň a doplatek bude vyšší o ${czkText(d(advance.monthlyTaxCzk))} za každý měsíc mimo režim.${surchargePart}`
       : `Zálohy na daň za tento rok v konfiguraci nemáme, doplatek daně proto vyčíslujeme bez jejich započtení.`;
     warnings.add(
       'FLAT_TAX_BROKEN',

@@ -15,6 +15,15 @@ export const FIO_FIXTURE = [
   '15.03.2025;;AAPL;;;USD;;;-5,00;;;;ADR Fee',
 ].join('\n');
 
+/**
+ * Jediný nákup (smyšlená čísla) — tentýž text se v testu kódování zapíše jako
+ * windows-1250, UTF-8, UTF-8 s BOM a UTF-16 a pokaždé musí dát totéž (L2c-04).
+ */
+export const FIO_SINGLE_BUY = [
+  FIO_HEADER,
+  '12.02.2025 10:15;Nákup;AAPL;41,20;15;USD;;;-618,00;-1,95;;;Nákup: AAPL 15 ks',
+].join('\n');
+
 /** Mapování symbol → ISIN (Fio ISIN neexportuje, dodává ho uživatel/DB). */
 export const FIO_SYMBOL_MAP = { AAPL: { isin: 'US0378331005' } };
 
@@ -36,6 +45,24 @@ const CP1250: Record<string, number> = {
   Ý: 0xdd, ý: 0xfd,
   Ž: 0x8e, ž: 0x9e,
 };
+
+/** UTF-8 bajty; s `bom` před nimi značka EF BB BF (tak ukládá Excel „CSV UTF-8“). */
+export function encodeUtf8(text: string, bom = false): Uint8Array {
+  const body = new TextEncoder().encode(text);
+  return bom ? Uint8Array.from([0xef, 0xbb, 0xbf, ...body]) : body;
+}
+
+/** UTF-16 bajty se značkou pořadí bajtů (FF FE = little endian, FE FF = big endian). */
+export function encodeUtf16(text: string, endianness: 'le' | 'be'): Uint8Array {
+  const bytes: number[] = endianness === 'le' ? [0xff, 0xfe] : [0xfe, 0xff];
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    const high = unit >> 8;
+    const low = unit & 0xff;
+    bytes.push(...(endianness === 'le' ? [low, high] : [high, low]));
+  }
+  return Uint8Array.from(bytes);
+}
 
 /** Zakóduje string do windows-1250 bajtů — simulace reálného Fio exportu. */
 export function encodeCp1250(text: string): Uint8Array {

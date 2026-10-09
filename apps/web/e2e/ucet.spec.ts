@@ -95,6 +95,68 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 });
 
 /**
+ * L12-04: odhlášení, které server nepotvrdil, nesmí ukázat přihlašovací
+ * stránku. Dřív se po chybě 500 (výpadek databáze, strop požadavků) rovnou
+ * přesměrovalo na /prihlaseni, ač relace platila dál — na sdíleném počítači
+ * by si další člověk otevřel cizí data napsáním adresy.
+ */
+test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s hláškou', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Odhlášení', email: 'odhlaseni@danero.cz' });
+  const failureMessage = page.getByText('Odhlásit se nepodařilo — tvoje přihlášení dál platí.');
+
+  // ── server odpoví 500 ────────────────────────────────────────────────────
+  await page.route('**/api/auth/sign-out', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }),
+  );
+  await page.getByRole('button', { name: 'Odhlásit se' }).click();
+  await expect(failureMessage).toBeVisible();
+  await expect(page).toHaveURL(/\/prehled$/);
+  // relace opravdu trvá — chráněný export ji pořád pustí
+  expect((await page.request.get('/api/export')).status()).toBe(200);
+  await page.unroute('**/api/auth/sign-out');
+
+  // ── požadavek se vůbec nedoručí ──────────────────────────────────────────
+  await page.reload();
+  await expect(failureMessage).toHaveCount(0);
+  await page.route('**/api/auth/sign-out', (route) => route.abort('failed'));
+  await page.getByRole('button', { name: 'Odhlásit se' }).click();
+  await expect(failureMessage).toBeVisible();
+  await expect(page).toHaveURL(/\/prehled$/);
+  await page.unroute('**/api/auth/sign-out');
+
+  // ── další pokus už projde: hláška zmizí a relace končí ───────────────────
+  await page.getByRole('button', { name: 'Odhlásit se' }).click();
+  await page.waitForURL('**/prihlaseni');
+  expect((await page.request.get('/api/export')).status()).toBe(401);
+});
+
+/**
+ * L7-01: na telefonu se nedalo odhlásit vůbec — jediné „Odhlásit se“ žilo
+ * v patičce railu a ten se pod 768 px nevykresluje. Relace přitom platí 7 dní,
+ * takže na půjčeném zařízení zůstala daňová data přístupná. Tlačítko je proto
+ * i v Nastavení → Účet, ale jen na šířkách, kde rail chybí.
+ */
+test('odhlášení na telefonu: tlačítko v Nastavení → Účet ukončí relaci', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Telefon', email: 'odhlaseni-telefon@danero.cz' });
+  await page.goto('/nastaveni/ucet');
+  const signOut = page.getByRole('button', { name: 'Odhlásit se' });
+
+  // desktop: jediné tlačítko je to v railu — druhé by shodilo strict režim
+  // v ostatních testech, které na téhle stránce klikají na „Odhlásit se“
+  await expect(signOut).toHaveCount(1);
+
+  // šířka telefonu: rail zmizel, odhlášení nabízí stránka účtu
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await expect(signOut).toHaveCount(1);
+  await expect(signOut).toBeVisible();
+
+  await signOut.click();
+  await page.waitForURL('**/prihlaseni');
+  expect((await page.request.get('/api/export')).status()).toBe(401);
+});
+
+/**
  * Danero je celé zdarma (podmínky 3.0): přihlášený uživatel má všechno
  * odemčené a nikde v aplikaci po něm nikdo nechce peníze. Do 8. 10. 2026 tu
  * stál test stránky Předplatné na instanci bez plateb.

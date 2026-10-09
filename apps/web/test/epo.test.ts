@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 import { parseTransactions, roundBaseDownTo100 } from '@danero/shared';
 import { analyzeTaxYear } from '@danero/engine';
-import { generateDpfdp7 } from '@/lib/epo';
+import { EPO_SUPPORTED_YEARS, generateDpfdp7 } from '@/lib/epo';
+import { yearList } from '@/lib/format';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 
 const PROFILE: ProfileRow = {
@@ -258,9 +259,12 @@ describe('generateDpfdp7: osobní údaje a chyby', () => {
     expect((dp.VetaD as Attrs).c_ufo_cil).toBeUndefined();
   });
 
-  it('pro rok mimo 2024/2025 vyhodí srozumitelnou chybu', () => {
-    expect(() => generateDpfdp7({ year: 2026, result, personal: {} })).toThrow(
-      /rok 2026.*2024 a 2025/i,
+  it('pro rok za podporovanými vyhodí srozumitelnou chybu s výčtem roků', () => {
+    // rok i výčet se berou ze seznamu — po přidání dalšího roku se test nepřepisuje
+    const unsupported = Math.max(...EPO_SUPPORTED_YEARS) + 1;
+    expect(() => generateDpfdp7({ year: unsupported, result, personal: {} })).toThrow(
+      `Pro rok ${unsupported} oficiální struktura písemnosti DPFDP7 zatím neexistuje — ` +
+        `EPO přijímá jen roky ${yearList(EPO_SUPPORTED_YEARS)}.`,
     );
   });
 
@@ -561,8 +565,9 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
 
   it('nepodporovaný rok je taky vada vstupu, ne selhání serveru', async () => {
     const { EpoInputError } = await import('@/lib/epo');
+    const unsupported = Math.max(...EPO_SUPPORTED_YEARS) + 1;
     expect(() =>
-      generateDpfdp7({ year: 2026, result, personal: {}, varianta: 'GENERAL' }),
+      generateDpfdp7({ year: unsupported, result, personal: {}, varianta: 'GENERAL' }),
     ).toThrow(EpoInputError);
   });
 
@@ -595,6 +600,69 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
     const fields = [...personal.matchAll(/field\(form, '([^']+)'\)/g)].map((m) => m[1]!);
     expect(fields).toContain('pracUfo');
     for (const name of fields) expect(view).toContain(`name="${name}"`);
+  });
+});
+
+/**
+ * L5-03: přidání roku do `EPO_SUPPORTED_YEARS` má být celá změna v kódu.
+ *
+ * Do revize 5 měl generátor vlastní tabulku hranice 23 % (druhá kopie vedle
+ * registru enginu) a roky opsané v hláškách: rok přidaný jen do seznamu skončil
+ * na `[DecimalError] Invalid argument: undefined` a hláška pro další rok dál
+ * tvrdila „jen roky 2024 a 2025“. Totéž stálo natvrdo ve dvou větách reportu.
+ *
+ * Seznam se tu rozšiřuje jen v paměti a vždy se vrací zpět.
+ */
+describe('roky EPO z jediného zdroje (L5-03)', () => {
+  const withSupportedYear = <T>(year: number, run: () => T): T => {
+    EPO_SUPPORTED_YEARS.push(year);
+    try {
+      return run();
+    } finally {
+      EPO_SUPPORTED_YEARS.pop();
+    }
+  };
+  // první rok za seznamem; registr enginu ho pokrývá s předstihem (R-15d)
+  const added = Math.max(...EPO_SUPPORTED_YEARS) + 1;
+
+  it('rok přidaný jen do seznamu vygeneruje XML — hranice 23 % jde z registru enginu (R-15a)', () => {
+    const addedResult = analyzeTaxYear(engineInputForUser(TXS, PROFILE, added));
+    const xml = withSupportedYear(
+      added,
+      () =>
+        generateDpfdp7({ year: added, result: addedResult, personal: {}, varianta: 'GENERAL' }).xml,
+    );
+    const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: { VetaD: Attrs } } };
+    expect(parsed.Pisemnost.DPFDP7.VetaD.rok).toBe(String(added));
+  });
+
+  it('hláška pro další rok uvádí i právě přidaný rok', () => {
+    const expected = yearList([...EPO_SUPPORTED_YEARS, added]);
+    expect(() =>
+      withSupportedYear(added, () => generateDpfdp7({ year: added + 1, result, personal: {} })),
+    ).toThrow(`EPO přijímá jen roky ${expected}.`);
+  });
+
+  it('rok v seznamu, který registr enginu nezná, řekne, co chybí', () => {
+    // vada údržby, ne vstupu: do logu má jít věta, podle které jde chybu najít
+    expect(() =>
+      withSupportedYear(2099, () => generateDpfdp7({ year: 2099, result, personal: {} })),
+    ).toThrow(/2099.*TAX_YEAR_CONFIGS/);
+  });
+
+  it('generátor ani report roky neopisují ručně', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const web = join(import.meta.dirname, '..');
+    const opsaneRoky = /20\d\d\s*(?:–|\/|a)\s*20\d\d/;
+    for (const file of [join('lib', 'epo.ts'), join('components', 'views', 'report-view.tsx')]) {
+      const source = readFileSync(join(web, file), 'utf8')
+        // komentáře smějí historii citovat; hlídá se text, který uvidí uživatel
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      expect(opsaneRoky.exec(source)?.[0], `${file} opisuje roky ručně`).toBeUndefined();
+      expect(source, file).toContain('yearList(EPO_SUPPORTED_YEARS)');
+    }
   });
 });
 
@@ -667,5 +735,79 @@ describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
     const { EpoInputError } = await import('@/lib/epo');
     expect(() => dp('D')).toThrow(EpoInputError);
     expect(() => dp('E')).toThrow(EpoInputError);
+  });
+});
+
+/**
+ * L5-01: příjmy ze státu (ř. 321 Přílohy 3, ř. 411 Přílohy 4) se zaokrouhlovaly
+ * matematicky, kdežto základ, ke kterému se vztahují (ř. 42, ř. 406), jde na
+ * celé koruny DOLŮ. Dividenda s haléřovou částí od 0,50 tak dala příjem ze
+ * státu o korunu VYŠŠÍ než celý základ a podatelna XML odmítla:
+ * `[N] proczahr — Příloha 3/ř.324 hodnota položky nesmí být větší než 100`
+ * a `[N] kc_uh415 — Příloha 4/ř.411 hodnota je větší než úhrn dílčích ZD`.
+ *
+ * Sonda: 300,03 USD × 21,84 = 6 552,6552 Kč, srážka 45 USD = 982,80 Kč.
+ */
+describe('příjmy po státech nepřesáhnou základ (L5-01)', () => {
+  const us = {
+    type: 'DIVIDEND',
+    id: 'l5-us',
+    isin: 'US0378331005',
+    gross: '300.03',
+    withholdingTax: '45',
+    currency: 'USD',
+    date: '2025-05-15',
+  };
+  // druhý stát se stejnou haléřovou částí: 100,03 USD × 21,84 = 2 184,6552 Kč;
+  // úhrn 8 737,3104 Kč → základ 8 737, ale 6 553 + 2 185 = 8 738
+  const de = {
+    type: 'DIVIDEND',
+    id: 'l5-de',
+    isin: 'DE0007164600',
+    gross: '100.03',
+    withholdingTax: '15',
+    currency: 'USD',
+    date: '2025-06-02',
+  };
+  const dpFor = (txs: unknown[], varianta: 'GENERAL' | 'SEPARATE_16A') => {
+    const res = analyzeTaxYear(engineInputForUser(parseTransactions(txs), PROFILE, 2025));
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta });
+    return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
+      .DPFDP7;
+  };
+
+  it('jediný stát, obecný základ: ř. 321 ≤ ř. 42, koeficient ř. 324 ≤ 100, zápočet ≤ ř. 57', () => {
+    const dp = dpFor([us], 'GENERAL');
+    const vetaO = dp.VetaO as Attrs;
+    const vetaL = dp.VetaL as Attrs;
+    expect(vetaO.kc_zakldan8).toBe('6552');
+    expect(vetaL.kc_prijzap).toBe('6552'); // bez opravy 6553
+    expect(Number(vetaL.kc_prijzap)).toBeLessThanOrEqual(Number(vetaO.kc_zakldan23));
+    expect(vetaL.proczahr).toBe('100'); // bez opravy 100.02
+    expect(vetaL.da_uznzap).toBe('975'); // bez opravy 975.2 při dani 975
+    expect(Number(vetaL.da_uznzap)).toBeLessThanOrEqual(Number((dp.VetaS as Attrs).da_dan16));
+    // Seznam dle § 38f odst. 10 nese tentýž příjem jako ř. 321
+    expect((dp.Vetad as Attrs).prijmy_seznam).toBe(vetaL.kc_prijzap);
+  });
+
+  it('jediný stát, § 16a: ř. 411 ≤ ř. 406', () => {
+    const vetaZ = dpFor([us], 'SEPARATE_16A').VetaZ as Attrs;
+    expect(vetaZ.kc_zd48).toBe('6552');
+    expect(vetaZ.kc_uh415).toBe('6552'); // bez opravy 6553
+    expect(Number(vetaZ.kc_uh415)).toBeLessThanOrEqual(Number(vetaZ.kc_zd48));
+  });
+
+  it('dva státy: součet příjmů po státech nepřesáhne základ v žádné variantě', () => {
+    const general = dpFor([us, de], 'GENERAL');
+    const rows = toArray(general.VetaL);
+    expect(rows.map((row) => row.kod_statu)).toEqual(['DE', 'US']);
+    const total = rows.reduce((sum, row) => sum + Number(row.kc_prijzap), 0);
+    expect(total).toBe(8737); // bez opravy 8738
+    expect(total).toBeLessThanOrEqual(Number((general.VetaO as Attrs).kc_zakldan23));
+    for (const row of rows) expect(Number(row.proczahr)).toBeLessThanOrEqual(100);
+
+    const vetaZ = dpFor([us, de], 'SEPARATE_16A').VetaZ as Attrs;
+    expect(vetaZ.kc_zd48).toBe('8737');
+    expect(vetaZ.kc_uh415).toBe('8737'); // bez opravy 8738
   });
 });

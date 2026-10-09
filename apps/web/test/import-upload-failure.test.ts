@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '@/db';
 import { importBatches, user } from '@/db/schema';
@@ -92,5 +93,62 @@ describe('nahrání víc souborů při výpadku databáze (K5-08)', () => {
     expect(txs).toHaveLength(2);
     // a uživatel nesmí skončit na generickém error boundary
     expect(cil).toBe('/import?chyba=ulozeni');
+  });
+});
+
+/**
+ * L6a-06: soubor o 0 bajtech (nedokončené stahování) akce zahodila dřív, než
+ * se dostal k importu — sám skončil hláškou „Vyber aspoň jeden … soubor“,
+ * ve skupině zmizel beze stopy. Uživatel přitom soubor vybral; vada je
+ * v souboru a import-service pro ni má vlastní větev i text.
+ */
+describe('soubor o nulové délce (L6a-06)', () => {
+  const batchesOf = async (db: Db) =>
+    db.select().from(importBatches).where(eq(importBatches.userId, 'u1'));
+
+  async function freshDb(): Promise<Db> {
+    const { createPgliteDb } = await import('@/db');
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'test@danero.cz' });
+    stav.db = db;
+    return db;
+  }
+
+  it('dostane kartu v historii s radou stáhnout výpis znovu', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+
+    const cil = await upload(form([['prazdny.csv', '']]));
+
+    expect(cil).not.toContain('chyba=zadny-soubor');
+    expect(cil).toContain('ulozeno=nahrano');
+    const batches = await batchesOf(db);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.filename).toBe('prazdny.csv');
+    expect(JSON.stringify(batches[0]!.issues)).toContain('Soubor je prázdný — stahování nejspíš selhalo');
+  });
+
+  it('ve skupině se neztratí vedle souboru, který se načetl', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+
+    await upload(
+      form([
+        ['prazdny.csv', ''],
+        ['dobry.csv', csv('US0378331005')],
+      ]),
+    );
+
+    const batches = await batchesOf(db);
+    expect(batches.map((batch) => batch.filename).sort()).toEqual(['dobry.csv', 'prazdny.csv']);
+    expect(await loadTransactions(db, 'u1')).toHaveLength(1);
+  });
+
+  it('formulář bez vybraného souboru dál končí výzvou k výběru', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+
+    // přesně tohle pošle prohlížeč za nevyplněné pole typu file
+    const cil = await upload(form([['', '']]));
+
+    expect(cil).toBe('/import?chyba=zadny-soubor');
+    expect(await batchesOf(db)).toHaveLength(0);
   });
 });

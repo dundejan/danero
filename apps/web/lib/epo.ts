@@ -1,6 +1,12 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import { TAXPAYER_CREDIT_CZK, type EngineOptions, type TaxYearResult } from '@danero/engine';
-import { base10Values, priloha2, wholeCzkParts } from '@/lib/priloha2';
+import {
+  TAX_YEAR_CONFIGS,
+  TAXPAYER_CREDIT_CZK,
+  type EngineOptions,
+  type TaxYearResult,
+} from '@danero/engine';
+import { yearList } from '@/lib/format';
+import { base8WholeCzk, priloha2, wholeCzkParts } from '@/lib/priloha2';
 
 /**
  * Generátor XML písemnosti DPFDP7 (přiznání k dani z příjmů fyzických osob)
@@ -76,18 +82,35 @@ export interface EpoInput {
   dodatecne?: EpoDodatecne;
 }
 
-/** Roky, pro které oficiální struktura DPFDP7 existuje (kritická kontrola EPO na položce rok). */
+/**
+ * Roky, pro které oficiální struktura DPFDP7 existuje (kritická kontrola EPO na položce rok).
+ *
+ * Přidání roku sem je celá změna v kódu: hranici 23 % si generátor bere
+ * z registru enginu a texty (hlášky, report, ceník, podmínky, e-maily) skládají
+ * výčet roků z tohohle seznamu. Co k tomu patří mimo kód — kontrola nové
+ * struktury a vzorky na zkušební podatelně — je v docs/02, Roční údržba, a od
+ * 1. února to připomíná `test/runbook.test.ts`.
+ */
 export const EPO_SUPPORTED_YEARS = [2024, 2025];
 
 /**
- * Hranice 23% sazby (§ 16 ZDP) = 36násobek průměrné mzdy dle nařízení vlády:
- * 2024: 43 967 Kč (NV č. 286/2023 Sb.), 2025: 46 557 Kč (NV č. 282/2024 Sb.).
- * Pro formulář držíme přesnou hodnotu daného roku (EPO ř. 57 kontroluje).
+ * Hranice 23% sazby (§ 16 ZDP) = 36násobek průměrné mzdy podle nařízení vlády,
+ * přesná hodnota daného roku (EPO ř. 57 kontroluje). Jediná definice je
+ * v registru enginu (R-15a): vlastní tabulka tady byla druhou kopií a rok
+ * přidaný jen do `EPO_SUPPORTED_YEARS` na ní spadl na `DecimalError` (L5-03).
+ *
+ * Chybějící hranice je vada údržby, ne vstupu — proto obyčejná výjimka: uživatel
+ * dostane obecnou větu a do logu jde text, podle kterého se dá chyba najít.
  */
-export const PROGRESSIVE_THRESHOLD: Record<number, string> = {
-  2024: '1582812',
-  2025: '1676052',
-};
+function progressiveThresholdFor(year: number): Money {
+  const threshold = TAX_YEAR_CONFIGS[year]?.progressiveThreshold;
+  if (!threshold) {
+    throw new Error(
+      `Rok ${year} je v EPO_SUPPORTED_YEARS, ale registr TAX_YEAR_CONFIGS pro něj nemá hranici 23% sazby.`,
+    );
+  }
+  return d(threshold);
+}
 
 /**
  * Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO na ř. 64 vyžaduje
@@ -247,6 +270,35 @@ export function prijmyZeStatuProZapocet(
   return stropUroku.gt(0) ? agg.grossCzk.plus(agg.interestGrossCzk) : agg.grossCzk;
 }
 
+/**
+ * Příjmy po státech v CELÝCH korunách — ř. 321 Přílohy 3, sčítance ř. 411
+ * Přílohy 4, Seznam dle § 38f odst. 10 i tabulka po státech v reportu.
+ *
+ * Do revize 5 se každý stát zaokrouhlil matematicky, kdežto základ, ke kterému
+ * se příjmy vztahují (ř. 42, resp. ř. 406), jde na celé koruny DOLŮ. Dividenda
+ * 6 552,66 Kč z jediného státu tak dala ř. 321 = 6 553 proti ř. 42 = 6 552
+ * a podatelna XML odmítla: koeficient ř. 324 vyšel 100,02 („nesmí být větší
+ * než 100“) a ř. 411 byl „větší než úhrn dílčích ZD“ (nález L5-01; v § 16a to
+ * padalo u poloviny podání bez ohledu na výši příjmů).
+ *
+ * Celé koruny se proto přidělují stejně jako dílčím základům (`wholeCzkParts`):
+ * součet příjmů po státech je celá koruna DOLŮ z jejich nezaokrouhleného úhrnu,
+ * a ten nikdy nepřevýší základ § 8, jehož jsou příjmy součástí. Pořadí států je
+ * abecední — stejné jako pořadí vět v XML —, aby rozdělení nezáviselo na pořadí
+ * transakcí.
+ *
+ * Vrací jen státy se započitatelnou srážkou; jiné se v Příloze 3 ani 4 neuvádějí.
+ */
+export function creditIncomeByCountry(result: TaxYearResult): Map<string, Money> {
+  const countries = Object.entries(result.dividends.creditableByCountry)
+    .filter(([, agg]) => agg.creditableCzk.gt(0))
+    .sort(([a], [b]) => a.localeCompare(b));
+  const parts = wholeCzkParts(
+    countries.map(([country, agg]) => prijmyZeStatuProZapocet(country, agg, result.options)),
+  );
+  return new Map(countries.map(([country], i) => [country, parts[i]!]));
+}
+
 /** Rozpočet na výčet ISIN v Seznamu — zbytek do 200 znaků nechává na dovětek. */
 const IDENT_UDAJE_BUDGET = 180;
 
@@ -295,9 +347,10 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     throw new EpoInputError(
       year < minYear
         ? `Roky před ${minYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře jsou v reportu.`
-        : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky 2024 a 2025. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
+        : `Pro rok ${year} oficiální struktura písemnosti DPFDP7 zatím neexistuje — EPO přijímá jen roky ${yearList(EPO_SUPPORTED_YEARS)}. Strukturu pro další rok zveřejňuje finanční správa až začátkem následujícího roku.`,
     );
   }
+  const threshold = progressiveThresholdFor(year);
   const varianta = input.varianta ?? result.tax.recommended;
   const dapTyp: EpoDapTyp = input.dapTyp ?? 'B';
   const jeDodatecne = DODATECNE_DAP_TYPY.includes(dapTyp);
@@ -315,7 +368,6 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     input.dodatecne?.posledniZnamaZtrataCzk,
     'poslední známou daňovou ztrátu',
   );
-  const threshold = d(PROGRESSIVE_THRESHOLD[year]!);
 
   // ---------- Příloha 2 (§ 10) — druhy: CP (kód D), krypto (kód C), deriváty (kód F) ----------
   // Jediný zdroj čísel, sdílený s průvodcem v reportu (lib/priloha2.ts): vlastní
@@ -340,19 +392,18 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // V obecném základu je § 8 posledním dílem rozdělení výše. V samostatném
   // základu § 16a jde do Přílohy 4 s vlastním zaokrouhlením na sta dolů
   // (ř. 409) — i tam zaokrouhlujeme na celé koruny dolů, aby ř. 409 vyšel
-  // stejně jako `roundBaseDownTo100` v enginu.
-  // § 8 je posledním dílem TÉHOŽ rozdělení celých korun jako druhy § 10 — běžící
-  // součet zaručí, že se řádky Přílohy 2 přidáním § 8 na konec nepohnou.
-  const base8 =
-    varianta === 'GENERAL'
-      ? wholeCzkParts([...base10Values(result), result.dividends.base8Czk]).at(-1)!
-      : result.dividends.base8Czk.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
+  // stejně jako `roundBaseDownTo100` v enginu. Obě hodnoty dává
+  // `base8WholeCzk`, ze kterého je opisuje i průvodce v reportu (L5-05).
+  const base8Whole = base8WholeCzk(result);
+  const base8 = varianta === 'GENERAL' ? base8Whole.generalCzk : base8Whole.separate16aCzk;
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
+  const creditIncome = creditIncomeByCountry(result);
   const staty = Object.entries(result.dividends.creditableByCountry)
     .map(([country, agg]) => ({
       country,
-      gross: round0(prijmyZeStatuProZapocet(country, agg, result.options)),
+      // jen státy se započitatelnou srážkou mají ř. 321; ostatní se níž odfiltrují
+      gross: creditIncome.get(country) ?? ZERO,
       creditable: agg.creditableCzk,
       // K3-08: skutečně sražená daň — do Seznamu podle § 38f odst. 10 patří
       // částka z potvrzení, ne částka po smluvním stropu (viz níže u Vetad)
@@ -392,8 +443,13 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     // (např. US 30 % bez W-8BEN) se do přiznání nedostane vůbec; testovací
     // podatelna vynucuje ř. 326 = min(ř. 323, ř. 325) bez dalších stropů
     const r323 = round0(s.creditable);
-    const r324 = round2(r321.div(r42).mul(100)); // koeficient zápočtu v %
-    const r325 = round2(r57.mul(r324).div(100)); // maximálně lze započítat
+    // ř. 324: koeficient zápočtu v %, nejvýš 100 — podatelna vyšší hodnotu
+    // odmítá (L5-01). Strop je pojistka: příjmy po státech jsou rozdělené tak,
+    // aby jejich součet ř. 42 nepřesáhl (`creditIncomeByCountry`).
+    const r324 = Decimal.min(d('100'), round2(r321.div(r42).mul(100)));
+    // ř. 325: maximálně lze započítat — díky stropu koeficientu nejvýš daň ř. 57,
+    // takže ani uznaný zápočet státu (ř. 326) ji nepřevýší
+    const r325 = round2(r57.mul(r324).div(100));
     const r326 = round2(Decimal.min(r323, r325)); // uznaná daň (vzorec EPO)
     const r327 = round2(Decimal.max(ZERO, r323.sub(r326))); // neuznaný zbytek
     return { country: s.country, r321, r323, r324, r325, r326, r327, paid: round0(s.withholding) };
@@ -414,7 +470,12 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     const r409 = roundBaseDownTo100(r406); // součet dílčích základů, celá sta dolů
     const r410 = r409.mul('0.15'); // daň 15 % (násobek 100 → celé Kč)
     const zapocetStaty = staty.filter((s) => s.creditable.gt(0));
-    const r411 = zapocetStaty.reduce((acc, s) => acc.plus(s.gross), ZERO);
+    // ř. 411: úhrn příjmů po státech, nejvýš ř. 406 — podatelna vyšší hodnotu
+    // odmítá („větší než úhrn dílčích ZD“, L5-01). Strop je opět jen pojistka.
+    const r411 = Decimal.min(
+      r406,
+      zapocetStaty.reduce((acc, s) => acc.plus(s.gross), ZERO),
+    );
     // ř. 412: daň zaplacená v zahraničí jen do výše dle smluv (R-07c, jako ř. 323)
     const r412 = round0(zapocetStaty.reduce((acc, s) => acc.plus(s.creditable), ZERO));
     // ř. 413: přesně vzorec EPO — ř. 412, max. 15 % z ř. 411

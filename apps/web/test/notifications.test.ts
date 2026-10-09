@@ -1208,3 +1208,254 @@ describe('hlídač píše jen na ověřenou adresu', () => {
     expect(targets.map((target) => target.id).sort()).toEqual(['changed', 'verified']);
   });
 });
+
+/**
+ * R-09b: limit vedlejších příjmů zaměstnance (§ 38g odst. 2) je do ZO 2026
+ * 20 000 Kč a od ZO 2027 40 000 Kč (zák. č. 180/2026 Sb.). Název limitu
+ * v e-mailu měl částku natvrdo, takže by v roce 2027 titulek hlásil „limit
+ * 20 000 Kč“ a věta hned pod ním „z 40 000 Kč“ (nález L3-01 revize 5).
+ * Očekávání se proto bere z konfigurace roku, ne z literálu.
+ */
+describe('název limitu vedlejších příjmů nese částku z konfigurace roku (R-09b, L3-01)', () => {
+  const employee = {
+    userId: 'u-zam',
+    regime: 'ZAMESTNANEC' as const,
+    hasBusinessAssets: false,
+    w8benFiled: true,
+    otherIncomeCzk: '0',
+    matchingMethod: 'FIFO' as const,
+    fxMethod: 'UNIFIED' as const,
+    limit100kStrict: true,
+    derivativesExpensesPerType: false,
+    emtTimeTestExempt: false,
+    returnOfCapitalReducesBasis: false,
+    timeTestBasis: 'settlement' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  /** Zahraniční dividenda ve výši 90 % limitu toho roku — hlídač se ozve, limit drží. */
+  const analyzed = async (year: number) => {
+    const { d, parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { configForYear } = await import('@/lib/tax-config');
+    const limit = d(configForYear(year).limits.employeeSideIncome);
+    const txs = parseTransactions([
+      {
+        type: 'DIVIDEND',
+        id: `d-${year}`,
+        sourceCountry: 'US',
+        gross: limit.mul('0.9').toFixed(0),
+        currency: 'CZK',
+        withholdingTax: '0',
+        date: `${year}-03-10`,
+      },
+    ]);
+    return { limit, result: analyzeTaxYear(engineInputForUser(txs, employee, year)) };
+  };
+
+  for (const year of [2026, 2027]) {
+    it(`událost hlídače za rok ${year}`, async () => {
+      const { computeNotificationCandidates } = await import('@/lib/notifications');
+      const { czk } = await import('@/lib/format');
+      const { limit, result } = await analyzed(year);
+
+      const event = computeNotificationCandidates({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: `${year}-07-20`,
+      }).find((candidate) => candidate.dedupeKey.startsWith('limit|20k|'));
+
+      expect(event?.title).toBe(`Blížíš se: limit ${czk(limit)} vedlejších příjmů`);
+      // titulek a věta o čerpání nesmí jmenovat dvě různé částky
+      expect(event?.body).toContain(`z ${czk(limit)} (${year})`);
+    });
+
+    it(`pravidelný přehled za rok ${year}`, async () => {
+      const { summaryCandidate } = await import('@/lib/notifications');
+      const { czk } = await import('@/lib/format');
+      const { limit, result } = await analyzed(year);
+
+      const summary = summaryCandidate({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: `${year}-07-20`,
+        period: `${year}-07`,
+      });
+
+      expect(summary.body).toContain(`limit ${czk(limit)} vedlejších příjmů: `);
+    });
+  }
+});
+
+/**
+ * Nastavení profilu slibuje „Jiné (hlídá se obecný limit 50 000 Kč)“ a stránka
+ * upozornění „hranice pro podání přiznání“ — jenže obě místa hlídače, kde se
+ * limity vyjmenovávají (události i pravidelný přehled), obecný limit podle
+ * R-09a (§ 38g odst. 1) neznala. Student nebo důchodce s dividendami přes limit
+ * tak nedostal nic a přehled mu ukázal jen nečerpanou stovku (nález L12-02
+ * revize 5). Částka se bere z konfigurace roku: od ZO 2027 je to 100 000 Kč.
+ */
+describe('hlídač vede i limit pro podání přiznání v režimu „Jiné“ (R-09a, L12-02)', () => {
+  type Regime = 'JINE' | 'ZAMESTNANEC' | 'PAUSAL';
+  const profileFor = (regime: Regime) => ({
+    userId: 'u-rezim',
+    regime,
+    hasBusinessAssets: false,
+    w8benFiled: true,
+    otherIncomeCzk: '0',
+    matchingMethod: 'FIFO' as const,
+    fxMethod: 'UNIFIED' as const,
+    limit100kStrict: true,
+    derivativesExpensesPerType: false,
+    emtTimeTestExempt: false,
+    returnOfCapitalReducesBasis: false,
+    timeTestBasis: 'settlement' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  /** Zahraniční dividenda v daném poměru k obecnému limitu toho roku. */
+  const analyzed = async (regime: Regime, year: number, ratio: string) => {
+    const { d, parseTransactions } = await import('@danero/shared');
+    const { analyzeTaxYear } = await import('@danero/engine');
+    const { engineInputForUser } = await import('@/lib/portfolio');
+    const { configForYear } = await import('@/lib/tax-config');
+    const limit = d(configForYear(year).limits.generalFiling);
+    const txs = parseTransactions([
+      {
+        type: 'DIVIDEND',
+        id: `d-${regime}-${year}`,
+        sourceCountry: 'US',
+        gross: limit.mul(ratio).toFixed(0),
+        currency: 'CZK',
+        withholdingTax: '0',
+        date: `${year}-03-10`,
+      },
+    ]);
+    return { limit, result: analyzeTaxYear(engineInputForUser(txs, profileFor(regime), year)) };
+  };
+
+  const limitEvents = async (regime: Regime, year: number, ratio: string) => {
+    const { computeNotificationCandidates } = await import('@/lib/notifications');
+    const { limit, result } = await analyzed(regime, year, ratio);
+    const events = computeNotificationCandidates({
+      result,
+      positions: [],
+      labels: new Map(),
+      today: `${year}-07-20`,
+    }).filter((candidate) => candidate.dedupeKey.startsWith('limit|'));
+    return { limit, events };
+  };
+
+  for (const year of [2026, 2027]) {
+    it(`prolomení za rok ${year} dá naléhavou událost s částkou z konfigurace roku`, async () => {
+      const { czk } = await import('@/lib/format');
+      const { limit, events } = await limitEvents('JINE', year, '1.31');
+
+      const event = events.find((candidate) => candidate.dedupeKey.startsWith('limit|filing50k|'));
+      expect(event).toMatchObject({
+        dedupeKey: `limit|filing50k|EXCEEDED|${year}`,
+        type: 'LIMIT_EXCEEDED',
+        urgent: true,
+        title: `Prolomen limit ${czk(limit)} pro podání přiznání`,
+      });
+      // titulek a věta o čerpání nesmí jmenovat dvě různé částky
+      expect(event?.body).toContain(`z ${czk(limit)} (${year})`);
+      // fakt bez pokynu (V-4)
+      expect(event?.body).toContain('Při překročení za rok podáváš daňové přiznání.');
+    });
+
+    it(`pravidelný přehled za rok ${year} nese řádek o limitu pro podání přiznání`, async () => {
+      const { summaryCandidate } = await import('@/lib/notifications');
+      const { czk, pct } = await import('@/lib/format');
+      const { limit, result } = await analyzed('JINE', year, '1.31');
+
+      const summary = summaryCandidate({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: `${year}-07-20`,
+        period: `${year}-07`,
+      });
+
+      expect(summary.body).toContain(`limit ${czk(limit)} pro podání přiznání: `);
+      expect(summary.body).toContain(`z ${czk(limit)} (${pct(131)})`);
+    });
+  }
+
+  it('pásma čerpání fungují jako u paušálu: 60 % a 85 % dají předstih', async () => {
+    const { czk } = await import('@/lib/format');
+
+    const warning = await limitEvents('JINE', 2026, '0.66');
+    expect(warning.events.map((event) => [event.dedupeKey, event.type, event.urgent])).toEqual([
+      ['limit|filing50k|WARNING|2026', 'LIMIT_WARNING', false],
+    ]);
+    expect(warning.events[0]!.title).toBe(`Za polovinou: limit ${czk(warning.limit)} pro podání přiznání`);
+
+    const critical = await limitEvents('JINE', 2026, '0.87');
+    expect(critical.events.map((event) => [event.dedupeKey, event.type, event.urgent])).toEqual([
+      ['limit|filing50k|CRITICAL|2026', 'LIMIT_CRITICAL', false],
+    ]);
+    expect(critical.events[0]!.title).toBe(`Blížíš se: limit ${czk(critical.limit)} pro podání přiznání`);
+    expect(critical.events[0]!.body).toContain('přes 85 %');
+
+    // pod nejnižší hranicí hlídač mlčí
+    expect((await limitEvents('JINE', 2026, '0.5')).events).toEqual([]);
+  });
+
+  it('paušál a zaměstnanec beze změny: vlastní limit ano, obecný ne', async () => {
+    const { summaryCandidate } = await import('@/lib/notifications');
+    const expectedKeys = { PAUSAL: 'limit|50k|EXCEEDED|2026', ZAMESTNANEC: 'limit|20k|EXCEEDED|2026' } as const;
+
+    for (const regime of ['PAUSAL', 'ZAMESTNANEC'] as const) {
+      const { events } = await limitEvents(regime, 2026, '1.31');
+      expect(events.map((event) => event.dedupeKey)).toEqual([expectedKeys[regime]]);
+
+      const { result } = await analyzed(regime, 2026, '1.31');
+      const summary = summaryCandidate({
+        result,
+        positions: [],
+        labels: new Map(),
+        today: '2026-07-20',
+        period: '2026-07',
+      });
+      expect(summary.body).not.toContain('pro podání přiznání');
+    }
+  });
+});
+
+/**
+ * Digest je nejčastěji odesílaný e-mail a `From` poštu nepřijímá — bez jména,
+ * IČO a kontaktu vypadá zpráva o daních jako phishing a není na ni kam
+ * odpovědět (E-46). Patičku z `operatorSignature()` digest ořezával o první
+ * řádek z doby, kdy jím byl oddělovač „—“; od jeho vypuštění z pole tím mizelo
+ * jméno a IČO a žádný test se na ně v digestu neptal (nález L13-06 revize 5).
+ * Hodnoty jsou zkušební z `vitest.config.ts`.
+ */
+describe('digest hlídače se identifikuje jménem, IČO i kontaktem provozovatele (L13-06)', () => {
+  it('odeslaný digest nese celou patičku z lib/contact.ts', { timeout: 30_000 }, async () => {
+    const { OPERATOR, operatorSignature } = await import('@/lib/contact');
+    const db = await createPgliteDb();
+    await seedUser(db, 'u-podpis', 'podpis@danero.cz');
+
+    const sent: EmailMessage[] = [];
+    await processUserNotifications(db, { id: 'u-podpis', email: 'podpis@danero.cz' }, {
+      send: async (message) => {
+        sent.push(message);
+      },
+      today: '2026-07-20',
+    });
+
+    expect(sent).toHaveLength(1);
+    const text = sent[0]!.text;
+    expect(text).toContain(OPERATOR.name);
+    expect(text).toContain(`IČO ${OPERATOR.ico}`);
+    expect(text).toContain(OPERATOR.email);
+    // celá patička, ne její výřez — zkrácení o řádek by jinak prošlo znovu
+    expect(text.endsWith(`\n\n${operatorSignature().join('\n')}`)).toBe(true);
+  });
+});

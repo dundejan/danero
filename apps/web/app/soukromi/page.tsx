@@ -27,10 +27,15 @@ export default function PrivacyPage() {
       <section className="space-y-3 text-sm leading-relaxed">
         <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
         {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR chce totožnost
-            a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15) */}
+            a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15).
+
+            Jméno stojí v 1. pádě a přesně tak, jak je v `DANERO_OPERATOR_NAME`.
+            Strojové skloňování (přilepené „a“ ke dvěma slovům) sedělo na jediné
+            jméno; ženě, titulu, firmě i výchozímu „nenastaveno“ totožnost
+            správce zkomolilo (L7s-09). Věta proto nesmí předpokládat ani rod. */}
         <p>
-          Danero je osobní projekt {OPERATOR.name.split(' ')[0]}a {OPERATOR.name.split(' ')[1]}a
-          (IČO {OPERATOR.ico}, {OPERATOR.address}) — on je i správcem tvých údajů. Kontakt:{' '}
+          Danero je osobní projekt. Jeho provozovatelem a správcem tvých údajů
+          je {OPERATOR.name} (IČO {OPERATOR.ico}, {OPERATOR.address}). Kontakt:{' '}
           <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
             {OPERATOR.email}
           </a>
@@ -49,7 +54,9 @@ export default function PrivacyPage() {
           <strong>transakční historii</strong>, kterou nahraješ nebo kterou stáhneme
           z brokera. K tomu technické údaje o přihlášení (IP adresa a typ prohlížeče
           u aktivních relací, záznamy o přihlášeních a synchronizacích) — kvůli
-          bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo.
+          bezpečnosti účtu. Nepotřebujeme jméno, adresu ani rodné číslo; uložíme jen
+          oslovení, pokud ho při registraci vyplníš (jinak si ho odvodíme
+          z e-mailové adresy).
         </p>
 
         <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
@@ -104,22 +111,27 @@ export default function PrivacyPage() {
               s `failedImportAlertEmail` v lib/email.ts a s CLAUDE.md. */}
           Provozovateli o tom chodí upozornění, ve kterém je název souboru a jeho
           velikost, tvoje e-mailová adresa, <strong>úplně první řádek souboru</strong>{' '}
-          (nejvýš 200 znaků) a chybová hláška — a ta může citovat jednu hodnotu
-          z místa, kde se čtení zastavilo. Když k výpisu sám dopíšeš, ze které
+          (nejvýš 200 znaků; u sešitu Excelu první řádek prvního listu a názvy
+          listů) a chybová hláška — a ta může citovat pár hodnot z řádku, na
+          kterém se čtení zastavilo. Když k výpisu sám dopíšeš, ze které
           platformy je, a přidáš poznámku, pošle se provozovateli i to. První řádek
           bývá hlavička s názvy sloupců, ale slíbit ti to nemůžeme: některé exporty
           začínají úvodem, ve kterém může být třeba číslo účtu. Bereme ho takový,
           jaký je — soubory s neobvyklým začátkem jsou právě ty, kvůli kterým formát
           doplňujeme. <strong>Samotný výpis se e-mailem neposílá</strong> a soubor
           nikomu dalšímu nepředáváme. Mažeme ho, jakmile případ vyřídíme — ať už se
-          formát podařilo doplnit, nebo ne — nejpozději po 90 dnech, a hned, když
-          smažeš účet. Nechceš-li ho u nás mít dřív, napiš nám a smažeme ho.
+          formát podařilo doplnit, nebo ne — nejpozději po 90 dnech od posledního
+          nahrání téhož souboru, a hned, když smažeš účet. Nechceš-li ho u nás mít dřív, napiš nám a smažeme ho.
         </p>
 
         <h2 className="font-display text-lg font-semibold">Jak dlouho data držíme</h2>
         <p>
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
-          všechno odstraníme. Technický audit log (záznamy o přihlášeních a synchronizacích)
+          všechno odstraníme. Jediné, co může smazání účtu přežít, je nečitelný
+          otisk e-mailové adresy, a to jen tehdy, když se na ni před potvrzením
+          zkusil zaregistrovat ještě někdo s jiným heslem: otisk držíme 90 dní od
+          posledního takového pokusu, aby spor o adresu nešel obejít smazáním
+          a novým založením účtu. Samotnou adresu v něm neukládáme. Technický audit log (záznamy o přihlášeních a synchronizacích)
           držíme 90 dní a starší se každý den automaticky mažou.{' '}
           {/* E-32: dřív tu stálo „nejdéle po dvou měsících“, ale zálohovací skript
               nikdy nic nemazal. Retenci teď drží scripts/db.sh (56 dní) — text říká
@@ -131,8 +143,9 @@ export default function PrivacyPage() {
           6 hodin. Když se odhlásíš z e-mailových
           upozornění, přestaneme ti posílat hlídací e-maily. Nepřestanou tím chodit
           zprávy, bez kterých by služba nefungovala nebo které ti podle podmínek
-          dlužíme: obnova hesla, ověření adresy, vyrozumění o výpisu, který se
-          nepodařilo přečíst, a oznámení o změně podmínek nebo o konci služby.
+          dlužíme: obnova hesla, ověření adresy, oznámení o změně e-mailu účtu (na
+          původní adresu), vyrozumění o výpisu, který se nepodařilo přečíst,
+          a oznámení o změně podmínek nebo o konci služby.
           Nastavení si pamatujeme u tvého účtu, dokud ho nesmažeš.
         </p>
 

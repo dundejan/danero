@@ -1,7 +1,6 @@
 import {
   brokerIdKey,
   dedupeTransactions,
-  decodeFioCsv,
   decodeUpload,
   emptyResult,
   firstLine,
@@ -10,6 +9,7 @@ import {
   sniffFioCsv,
   sniffDelimiter,
   loadXlsxWorkbook,
+  outlineWorkbook,
   parseAnycoinCsv,
   parseCoinbaseCsv,
   parseCoinmateCsv,
@@ -56,18 +56,22 @@ import {
   sniffRevolutInvestCsv,
   sniffRevolutXlsx,
   sniffSaxoXlsx,
+  sniffSaxoXlsxShape,
   sniffSchwabCsv,
   sniffSwissquoteCsv,
   sniffTastytradeCsv,
   sniffXtbXlsx,
   type ImportResult,
+  type KeyPromotion,
   type RowIssue,
+  type WorkbookOutline,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
-import { plural } from '@/lib/format';
+import { czDate, plural, qty } from '@/lib/format';
+import { capStoredIssues } from '@/lib/import-issues';
 import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
 import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
@@ -372,8 +376,8 @@ export async function importCsvText(
 
 /**
  * Import nahraného souboru s autodetekcí formátu: XLSX podle obsahu listů
- * (XTB / eToro / Saxo / MT5 — jedno načtení workbooku pro všechny sniffy),
- * Fio podle CZ hlavičky (windows-1250!), jinak textová cesta
+ * (XTB / eToro / Saxo / MT5 / Revolut — jedno načtení workbooku pro všechny
+ * sniffy), Fio podle CZ hlavičky, jinak textová cesta
  * (`detectAndParseText`). Brokeři bez ISIN v exportu dostávají uživatelský
  * číselník; nenamapované symboly se vrací v `unmapped`, ať UI nabídne doplnění.
  */
@@ -439,14 +443,15 @@ export async function importFile(
     );
   }
 
-  // Fio: hlavička je ASCII, takže se pozná v každém kódování, samotný obsah se
-  // ale dekóduje jako windows-1250 (proč právě takhle vysvětluje sniffFioCsv).
+  // Fio: parser dostává TENTÝŽ text jako sniffer — kódování už jednou určil
+  // `decodeUpload`. Druhé dekódování natvrdo jako windows-1250 rozbilo výpis
+  // přeuložený v UTF-8: sniffer ho poznal, parser pak četl „SmÄ›r“ (L2c-04).
   // Kontroluje se JEN první řádek — poznámka v jiném souboru nesmí import
   // přesměrovat na Fio.
   const header = firstLine(text);
   if (sniffFioCsv(header)) {
     const aliases = await loadAliases(db, userId);
-    const outcome = parseFioCsv(decodeFioCsv(data), { symbolMap: aliases.isinOnly.fio });
+    const outcome = parseFioCsv(text, { symbolMap: aliases.isinOnly.fio });
     return importParsed(db, userId, filename, outcome, undefined, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'fio',
@@ -471,9 +476,15 @@ export async function importFile(
  * broker, který přejmenoval sloupec (9. 8. 2026: T212 `Time` → `Time (UTC)`).
  * Takový soubor je pro opravu ještě cennější než úplně neznámý formát, protože
  * jde o platformu, kterou už podporujeme.
+ *
+ * Nepočítají se chyby, u kterých parser sám řekl, že řádek poznal a vědomě ho
+ * nezaúčtuje (`knownUnsupported` — převody a připsání kusů u T212). Výpis jen
+ * s nimi není vada na naší straně: hláška radí uživateli, ať si kusy doplní
+ * šablonou, a úschova by k ní přidala opak — „na zpracování pracujeme, dáme ti
+ * vědět“ (A04-R1-01). Stačí ale jediná jiná chyba a soubor si necháme dál.
  */
 const producedNothing = (parsed: ImportResult): boolean =>
-  parsed.transactions.length === 0 && parsed.errors.length > 0;
+  parsed.transactions.length === 0 && parsed.errors.some((error) => !error.knownUnsupported);
 
 /** XLSX větev importu: jedno načtení workbooku pro všechny sniffy. */
 async function importXlsxUpload(
@@ -516,15 +527,43 @@ async function importXlsxUpload(
       unmapped: parsed.unmapped,
     });
   }
-  return importParsed(
-    db,
-    userId,
-    filename,
-    unknownFormat(
-      'XLSX nepoznáváme — podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu platforem níž, který export stáhnout, nebo použij univerzální šablonu.',
-    ),
-    undefined,
-    { unrecognized: true },
+  // Saxo v jazyce mimo slovník, poznaný jen podle tvaru (L2b-03). Parser z něj
+  // nic nepřečte a řekne proč: stačí přepnout jazyk platformy. Náprava je známá
+  // a je na uživateli, takže se soubor neschovává. Volnější sniffer patří až
+  // SEM, za všechny ostatní — jinak by jim sešit ukradl.
+  if (sniffSaxoXlsxShape(workbook)) {
+    return importParsed(db, userId, filename, await parseSaxoXlsx(data), undefined, NOT_OURS);
+  }
+  const unknown = unknownFormat(unknownXlsxMessage(outlineWorkbook(workbook)));
+  return importParsed(db, userId, filename, unknown, undefined, { unrecognized: true });
+}
+
+/** Kolik názvů listů vypsat do hlášky, ať zůstane čitelná. */
+const MAX_LISTED_SHEETS = 8;
+
+/**
+ * Hláška pro sešit, který nepoznal žádný sniffer — s tím, co v něm je.
+ *
+ * Do 9. 10. 2026 to byla pevná věta. Sniffery XLSX se přitom rozhodují hlavně
+ * podle názvů listů, takže bez nich nešlo poznat, proč soubor propadl: uživatel
+ * s reportem z podporované platformy četl jen, že ji podporujeme, a provozovateli
+ * přišlo upozornění, ve kterém byl z celého souboru podpis archivu „PK“ (L2a-02).
+ * Hláška jde jako důvod i do toho upozornění, takže se tím spraví obojí.
+ *
+ * První řádek prvního listu je obdoba prvního řádku CSV, se stejným stropem
+ * 200 znaků, jaký má vzorek v upozornění (`lib/failed-imports.ts`).
+ */
+function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline): string {
+  const sheets = printableSample(sheetNames.slice(0, MAX_LISTED_SHEETS).join(', '), 200);
+  const row = printableSample(firstRow.slice(0, MAX_LISTED_COLUMNS).join(', '), 200);
+  const found = [
+    sheets ? `listy: ${sheets}${sheetNames.length > MAX_LISTED_SHEETS ? ' …' : ''}` : '',
+    row ? `první řádek prvního listu: ${row}${firstRow.length > MAX_LISTED_COLUMNS ? ' …' : ''}` : '',
+  ].filter(Boolean);
+  return (
+    `XLSX nepoznáváme${found.length > 0 ? ` — v sešitu jsme našli ${found.join('; ')}` : ''}. ` +
+    'Podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. Zkontroluj v seznamu ' +
+    'platforem níž, který export stáhnout, nebo použij univerzální šablonu.'
   );
 }
 
@@ -539,6 +578,12 @@ async function importXlsxUpload(
 export interface ImportState {
   keys: Set<string>;
   brokerIds: Set<string>;
+  /**
+   * Klíč uložené dividendy BEZ ISIN → její ticker (`null`, když ho řádek
+   * nenese). Podle tickeru se pozná, že dividenda, která teď přišla s ISIN,
+   * je tatáž výplata, a ne shodná částka jiného titulu (A25-R1-01).
+   */
+  bareDividends: Map<string, string | null>;
 }
 
 export async function loadImportState(db: Db, userId: string): Promise<ImportState> {
@@ -549,6 +594,9 @@ export async function loadImportState(db: Db, userId: string): Promise<ImportSta
       // id přiděluje parser a je uložené v payloadu; sloupec navíc kvůli němu
       // nezavádíme — tenhle select stejně čte všechny řádky uživatele
       id: sql<string | null>`${transactions.payload} ->> 'id'`,
+      type: transactions.type,
+      isin: transactions.isin,
+      ticker: sql<string | null>`${transactions.payload} ->> 'ticker'`,
     })
     .from(transactions)
     .where(eq(transactions.userId, userId));
@@ -556,6 +604,11 @@ export async function loadImportState(db: Db, userId: string): Promise<ImportSta
     keys: new Set(rows.map((row) => row.key)),
     brokerIds: new Set(
       rows.filter((row) => row.id !== null).map((row) => brokerIdKey(row.broker, row.id!)),
+    ),
+    bareDividends: new Map(
+      rows
+        .filter((row) => row.type === 'DIVIDEND' && row.isin === null)
+        .map((row) => [row.key, row.ticker]),
     ),
   };
 }
@@ -647,6 +700,117 @@ const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
   }));
 
 /**
+ * Dividenda se sraženou daní, kterou už máme uloženou se srážkou 0 (A29; viz
+ * `dedupeTransactions`, pole `untaxed`).
+ *
+ * Starší verze parseru srážku u některých výpisů nepřečetla. Uložit dividendu
+ * podruhé by zdvojilo příjem, přepsat uložený řádek potichu taky nejde —
+ * sražená daň vstupuje do zápočtu a změnit ji má jen vědomý krok uživatele.
+ * Proto se neukládá a uživatel dostane návod, jak srážku k dividendě dostat.
+ */
+const untaxedDividendWarnings = (untaxed: Transaction[]): RowIssue[] =>
+  untaxed.flatMap((tx) =>
+    tx.type !== 'DIVIDEND'
+      ? []
+      : [
+          {
+            line: 1,
+            message:
+              `Dividenda ${qty(tx.gross)} ${tx.currency} z ${czDate(tx.date)}` +
+              `${tx.ticker ? ` (${tx.ticker})` : ''} je už uložená bez srážkové daně ze staršího ` +
+              `importu, tenhle výpis u ní uvádí sraženou daň ${qty(tx.withholdingTax)} ${tx.currency}. ` +
+              'Neukládáme ji podruhé (počítala by se dvakrát) a uložená čísla sami nepřepisujeme. ' +
+              'Aby se sražená daň započítala, vrať starší import zpět tlačítkem v historii níž ' +
+              '(smaže se i s transakcemi) a nahraj výpis znovu.',
+          },
+        ],
+  );
+
+/**
+ * Dividenda s ISIN uložená jako nová, přestože uložená dvojnice bez ISIN
+ * existuje (A25-R1-01; kdy to nastane, viz `dedupeTransactions`, pole
+ * `ambiguous`).
+ *
+ * Spárovat je nesmíme — titul nejde ověřit a sloučení dvou různých výplat by
+ * jednu z nich potichu smazalo z příjmů i ze sražené daně. Uložit ji mlčky
+ * ale taky ne: je-li to opravdu tatáž výplata, počítá se teď dvakrát, a to
+ * uživatel bez upozornění nenajde.
+ *
+ * Rada nesmí končit u „nahraj starší výpis znovu“ (A25-R2-01): soubor, ve
+ * kterém dividenda ISIN nemá (vlastní tabulka), by ji po vrácení importu
+ * uložil podruhé — uložená s ISIN a příchozí bez něj se nepárují ani nehlásí.
+ * Výpis od brokera si ISIN bere z číselníku, takže ten znovu nahrát jde.
+ */
+const ambiguousDividendWarnings = (ambiguous: Transaction[]): RowIssue[] =>
+  ambiguous.flatMap((tx) =>
+    tx.type !== 'DIVIDEND'
+      ? []
+      : [
+          {
+            line: 1,
+            message:
+              `Dividenda ${qty(tx.gross)} ${tx.currency} z ${czDate(tx.date)}` +
+              `${tx.ticker ? ` (${tx.ticker})` : ''} vypadá stejně jako dividenda, kterou už máš ` +
+              'uloženou bez ISIN (kódu cenného papíru) — sedí den, částka, sražená daň i měna. ' +
+              'Jestli je to tatáž výplata, s jistotou nepoznáme, takže jsme ji uložili jako novou: ' +
+              'přijít o dividendu by bylo horší než ji mít dvakrát. Když jde opravdu o jednu ' +
+              'a tutéž výplatu, vrať starší import zpět tlačítkem v historii níž (smaže se ' +
+              'i s transakcemi). Než jeho soubor nahraješ znovu, zkontroluj, že u té dividendy ' +
+              'uvádí ISIN: ve vlastní tabulce ISIN doplň, u výpisu od brokera ho bereme z číselníku ' +
+              'a měnit nic nemusíš. Bez ISIN by se dividenda uložila podruhé, a to už bez upozornění.',
+          },
+        ],
+  );
+
+/**
+ * Doplní ISIN dividendám, které už uložené jsou, jen bez něj (L14-02; párování
+ * viz `dedupeTransactions`, pole `promoted`).
+ *
+ * Jeden UPDATE na řádek přepíše klíč, sloupec `isin` i `payload.isin` NARÁZ.
+ * Příkaz je v Postgresu atomický, takže přerušení uprostřed nenechá řádek
+ * s novým ISIN pod starým klíčem — ten by další nahrání výpisu už nespárovalo
+ * a dividenda by se uložila podruhé. Co se nestihne, zůstane ve starém tvaru
+ * a povýší se při příštím nahrání; `db.transaction()` proto není potřeba
+ * (a být tu nemá, viz komentář v `importParsed`).
+ *
+ * Podmínky navíc jsou pojistka, ne běžná cesta: `isin IS NULL` a typ drží
+ * přepis jen na řádcích, kterým ISIN opravdu chybí, a `NOT EXISTS` nenechá
+ * UPDATE spadnout na primárním klíči, kdyby cílový klíč mezitím vložil souběžný
+ * import. Řádek, který souběžný import stihl povýšit dřív, už starý klíč nemá
+ * a UPDATE ho prostě nenajde.
+ */
+async function promoteStoredDividends(
+  db: Db,
+  userId: string,
+  promoted: KeyPromotion[],
+  state: ImportState,
+): Promise<void> {
+  for (const { from, to, isin } of promoted) {
+    await db
+      .update(transactions)
+      .set({
+        dedupeKey: to,
+        isin,
+        payload: sql`jsonb_set(${transactions.payload}, '{isin}', to_jsonb(${isin}::text))`,
+      })
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.dedupeKey, from),
+          eq(transactions.type, 'DIVIDEND'),
+          isNull(transactions.isin),
+          sql`not exists (select 1 from ${transactions} as taken where taken.user_id = ${userId} and taken.dedupe_key = ${to})`,
+        ),
+      );
+    // Sdílený stav (sync ho nese přes celý běh) musí odpovídat databázi hned:
+    // starý klíč už neexistuje a nový je obsazený.
+    state.keys.delete(from);
+    state.keys.add(to);
+    state.bareDividends.delete(from);
+  }
+}
+
+/**
  * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
  * `existing` (volitelné) ušetří opakovaný select při dávkových importech —
  * funkce do předaného stavu DOPLŇUJE klíče i id nově uložených transakcí.
@@ -660,11 +824,12 @@ export async function importParsed(
   extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
-  const { fresh, duplicates, restated } = dedupeTransactions(
+  const { fresh, duplicates, restated, promoted, ambiguous, untaxed } = dedupeTransactions(
     parsed.broker,
     parsed.transactions,
     state.keys,
     state.brokerIds,
+    state.bareDividends,
   );
   const unmapped = extras.unmapped ?? [];
   // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak
@@ -675,11 +840,16 @@ export async function importParsed(
   const unrecognized =
     extras.unrecognized ?? (producedNothing(parsed) && unmapped.length === 0);
   const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
-  const warnings = [...parsed.warnings, ...restatedWarnings(restated)];
+  const warnings = [
+    ...parsed.warnings,
+    ...restatedWarnings(restated),
+    ...ambiguousDividendWarnings(ambiguous),
+    ...untaxedDividendWarnings(untaxed),
+  ];
 
   const batchId = crypto.randomUUID();
   // klíče nově uložených řádků — do sdíleného stavu se propíšou až po zápisu
-  const storedKeys: Array<{ key: string; brokerId: string }> = [];
+  const storedKeys: Array<{ key: string; brokerId: string; bareTicker?: string | null }> = [];
 
   /*
    * Pořadí zápisů je tady BEZPEČNOSTNÍ prvek, ne libovůle (K5-08).
@@ -721,13 +891,13 @@ export async function importParsed(
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
     warningCount: warnings.length,
-    issues: {
+    issues: capStoredIssues({
       errors: parsed.errors,
       skipped: parsed.skipped,
       warnings,
-      ...(unmapped.length > 0 ? { unmapped } : {}),
-      ...(crossBroker.length > 0 ? { crossBroker } : {}),
-    },
+      unmapped,
+      crossBroker,
+    }),
   });
 
   // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
@@ -735,12 +905,17 @@ export async function importParsed(
   // počet vložených jde z returning (in-memory dedupe je jen optimalizace)
   let actuallyAdded = 0;
   try {
+    await promoteStoredDividends(db, userId, promoted, state);
     for (const part of chunk(fresh, 500)) {
       const inserted = await db
         .insert(transactions)
         .values(
           part.map(({ tx, key }) => {
-            storedKeys.push({ key, brokerId: brokerIdKey(parsed.broker, tx.id) });
+            storedKeys.push({
+              key,
+              brokerId: brokerIdKey(parsed.broker, tx.id),
+              ...(tx.type === 'DIVIDEND' && !tx.isin ? { bareTicker: tx.ticker ?? null } : {}),
+            });
             return {
               userId,
               dedupeKey: key,
@@ -789,15 +964,24 @@ export async function importParsed(
 
   // Až po zápisu: sdílený stav si sync nese přes celý běh, takže klíče uložené
   // před neúspěchem by dalšímu roku vydávaly nezapsané transakce za duplicity.
-  for (const { key, brokerId } of storedKeys) {
+  for (const { key, brokerId, bareTicker } of storedKeys) {
     state.keys.add(key);
     state.brokerIds.add(brokerId);
+    if (bareTicker !== undefined) state.bareDividends.set(key, bareTicker);
   }
 
   // audit až PO úspěšném insertu a se skutečně přidaným počtem — dřívější zápis
   // před insertem lhal při pádu i při souběhu (in-memory dedupe vs. DB)
   const { logAudit } = await import('@/lib/audit');
-  await logAudit(db, userId, 'IMPORT', `${filename} (${parsed.broker}): ${actuallyAdded} nových`);
+  // přepis už uložených řádků (doplněný ISIN dividendy) musí být dohledatelný
+  const promotedNote =
+    promoted.length > 0 ? `, ISIN doplněn u uložených dividend: ${promoted.length}` : '';
+  await logAudit(
+    db,
+    userId,
+    'IMPORT',
+    `${filename} (${parsed.broker}): ${actuallyAdded} nových${promotedNote}`,
+  );
 
   return {
     batchId,

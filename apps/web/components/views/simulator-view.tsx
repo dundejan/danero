@@ -14,7 +14,12 @@ import {
   type ProfileRow,
 } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
-import { simulatorVerdict, type SimulatorVerdict } from '@/lib/simulator-verdict';
+import {
+  regimeLimitFor,
+  simulatorVerdict,
+  type RegimeLimit,
+  type SimulatorVerdict,
+} from '@/lib/simulator-verdict';
 import { cn, firstParam } from '@/lib/utils';
 
 /** Opakovaný query parametr přijde jako pole — normalizuje se přes firstParam. */
@@ -96,19 +101,14 @@ export function SimulatorView({
       ? lastKnown.price
       : undefined;
 
-  // karta limitu podle režimu (jako v přehledu) — čerpání (příjmy § 8–10) je
-  // pro všechny režimy stejné, liší se jen strop a název; zaměstnanec nesmí
-  // vidět nerelevantní paušální limit a OSVČ mimo paušál (podává přiznání
-  // vždy) žádnou režimovou kartu — stejně jako přehled
-  const regimeLimit = baseline.limits.flatTax50k.applicable
-    ? { label: 'Paušální daň', status: baseline.limits.flatTax50k.status }
-    : baseline.limits.employee20k.applicable
-      ? { label: 'Vedlejší příjmy', status: baseline.limits.employee20k.status }
-      : baseline.limits.generalFiling50k.applicable
-        ? { label: 'Podání přiznání', status: baseline.limits.generalFiling50k.status }
-        : null;
+  // limit podle režimu (jako v přehledu) — čerpání (příjmy § 8–10) je pro
+  // všechny režimy stejné, liší se jen strop a název; zaměstnanec nesmí vidět
+  // nerelevantní paušální limit a OSVČ mimo paušál (podává přiznání vždy)
+  // žádnou režimovou kartu — stejně jako přehled. Z téhož výběru bere limit
+  // karta i věta verdiktu, aby si neprotiřečily.
+  const regimeLimit = regimeLimitFor(baseline.limits);
   const regimeLimitLabel = regimeLimit
-    ? `${regimeLimit.label} (${czk(regimeLimit.status.limitCzk)})`
+    ? `${regimeLimit.label} (${czk(regimeLimit.limitCzk)})`
     : null;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
@@ -269,7 +269,7 @@ export function SimulatorView({
         <>
           <Card className="space-y-2">
             <CardTitle>Verdikt</CardTitle>
-            <VerdictLine verdict={simulatorVerdict(simulation)} />
+            <VerdictLine verdict={simulatorVerdict(simulation, regimeLimit)} />
             <p className="text-sm text-inkoust-tlumeny">
               Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
               <span className="font-mono text-zelena-text">
@@ -300,8 +300,8 @@ export function SimulatorView({
                 label={regimeLimitLabel}
                 beforeCzk={simulation.baseline.flatTax50kUsedCzk}
                 afterCzk={simulation.simulated.flatTax50kUsedCzk}
-                exceeded={simulation.simulated.flatTax50kUsedCzk.gt(regimeLimit.status.limitCzk)}
-                limitCzk={regimeLimit.status.limitCzk}
+                exceeded={simulation.simulated.flatTax50kUsedCzk.gt(regimeLimit.limitCzk)}
+                limitCzk={regimeLimit.limitCzk}
               />
             )}
             {/* exceeded = STAV po prodeji přes limit — konzistentně s kartou 50k */}
@@ -342,6 +342,18 @@ export function SimulatorView({
               afterCzk={simulation.simulated.taxCzk}
             />
           </section>
+          {/* R-09f: karta výš je daň, KDYBY se podávalo přiznání. Pod limitem
+              režimu se neplatí a prodej, který limit prolomí, spustí daň ze
+              všech letošních příjmů — obojí říká věta, ne druhé číslo vedle
+              odhadu doplatku z přehledu. */}
+          {regimeLimit && (
+            <PayableTaxNote
+              limit={regimeLimit}
+              incomeBeforeCzk={simulation.baseline.flatTax50kUsedCzk}
+              incomeAfterCzk={simulation.simulated.flatTax50kUsedCzk}
+              hypotheticalTaxCzk={simulation.simulated.taxCzk}
+            />
+          )}
 
           <p className="text-xs text-inkoust-tlumeny">
             Simulace počítá s prodejem k dnešnímu dni za zadanou cenu.{' '}
@@ -385,15 +397,84 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
             : `Prodej je osvobozený a daň nezvýší, ale čerpá roční limit 100 000 Kč${verdict.crypto ? ' pro kryptoaktiva' : ''} — hlídej zbývající prostor níže.`}
         </p>
       );
-    case 'BREAKS_50K':
+    case 'BREAKS_REGIME_LIMIT':
       return (
         <p className="text-lg font-semibold text-cervena">
-          Tento prodej prolomí limit 50 000 Kč pro paušální daň.
+          Tento prodej prolomí {regimeLimitPhrase(verdict.limit)}.
         </p>
       );
     case 'TAXABLE':
       return <p className="text-lg font-semibold">Prodej je zdanitelný — dopad níže.</p>;
   }
+}
+
+/**
+ * Jak větě verdiktu říct, který limit padl — stejnými slovy jako přehled
+ * a e-maily hlídače. Částka jde ze stavu limitu, ne z pevného textu (částky
+ * § 38g se od roku 2027 mění). U vedlejších příjmů přidáváme důsledek: název
+ * limitu sám neříká, co jeho prolomení znamená.
+ */
+function regimeLimitPhrase(limit: RegimeLimit): string {
+  const amount = czk(limit.limitCzk);
+  switch (limit.kind) {
+    case 'FLAT_TAX':
+      return `limit ${amount} pro paušální daň`;
+    case 'EMPLOYEE_SIDE_INCOME':
+      return `limit ${amount} vedlejších příjmů — při překročení za rok podáváš daňové přiznání`;
+    case 'GENERAL_FILING':
+      return `limit ${amount} pro podání přiznání`;
+  }
+}
+
+/**
+ * Věta pod kartami pro poplatníka s režimovým limitem (R-09f): „Orientační
+ * daň“ je daň, kdyby se podávalo přiznání. Pod limitem se neplatí; prodej,
+ * který limit prolomí, spustí daň ze všech letošních příjmů — a u paušalisty
+ * mnohem víc než daň z investic (R-08f), proto tam věta žádné „zaplatíš X“
+ * neslibuje. Kdo je nad limitem už před prodejem, nic nového by nečetl.
+ */
+function PayableTaxNote({
+  limit,
+  incomeBeforeCzk,
+  incomeAfterCzk,
+  hypotheticalTaxCzk,
+}: {
+  limit: RegimeLimit;
+  incomeBeforeCzk: Money;
+  incomeAfterCzk: Money;
+  /** Orientační daň po prodeji — daň, kdyby se přiznání podávalo. */
+  hypotheticalTaxCzk: Money;
+}) {
+  if (incomeBeforeCzk.gt(limit.limitCzk)) return null;
+  const breaks = incomeAfterCzk.gt(limit.limitCzk);
+  const taxClause = hypotheticalTaxCzk.gt(0)
+    ? `orientačně ${czk(hypotheticalTaxCzk)}`
+    : 'i když z nich daň vyjde nulová';
+  return (
+    <p className="text-sm text-inkoust-tlumeny">
+      {!breaks ? (
+        <>
+          Pod limitem {czk(limit.limitCzk)} přiznání nepodáváš, takže orientační daň výš
+          neplatíš — ani po tomhle prodeji.
+        </>
+      ) : limit.kind === 'FLAT_TAX' ? (
+        <>
+          Tímhle prodejem překročíš limit {czk(limit.limitCzk)} pro paušální daň. Za celý rok pak
+          podáš běžné přiznání: zdaní se v něm{' '}
+          <strong>všechny letošní zdanitelné příjmy z investic</strong> ({taxClause}), ne jen
+          tenhle prodej, a k tomu podnikání — doplatíš i pojistné a zaplacené paušální zálohy se
+          započtou. Tu část Danero spočítat neumí.
+        </>
+      ) : (
+        <>
+          Tímhle prodejem překročíš limit {czk(limit.limitCzk)}, pod kterým přiznání nepodáváš.
+          Zdaní se v něm <strong>všechny letošní zdanitelné příjmy z investic</strong> (
+          {taxClause}), ne jen tenhle prodej.
+        </>
+      )}{' '}
+      Počítáme jen s příjmy, o kterých Danero ví.
+    </p>
+  );
 }
 
 /**

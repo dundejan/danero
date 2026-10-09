@@ -25,6 +25,7 @@ import {
 import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
 import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import-service';
+import { saveAliases } from '@/lib/instrument-aliases';
 import {
   enqueueSyncJob,
   processPendingJobs,
@@ -54,11 +55,32 @@ import {
  * (včetně souběhu na parciálním unikátním indexu), notifikační digest, denní
  * úklid, kurzy ČNB, ceny instrumentů, fixace roku a kaskádové smazání účtu.
  *
- * Bez `TEST_DATABASE_URL` se přeskočí (lokálně stačí:
+ * Bez `TEST_DATABASE_URL` se LOKÁLNĚ přeskočí (stačí:
  * `docker run -d -p 55433:5432 -e POSTGRES_PASSWORD=test postgres:17-alpine`).
+ * V CI se přeskočit nesmí: kdyby proměnná z workflow nebo z `passThroughEnv`
+ * v `turbo.json` vypadla, zůstala by pipeline zelená bez jediného testu na
+ * ostrém Postgresu — a řádek „skipped" by si mezi ostatními nikdo nevšiml.
+ * Proto tam soubor bez ní spadne jedním testem, který říká proč.
  */
 const URL = process.env.TEST_DATABASE_URL;
 const popis = URL ? describe : describe.skip;
+
+/** `CI` nastavuje GitHub Actions (i většina ostatních) na „true"; „false" a „0" bereme jako vypnuto. */
+const CI_FLAG = (process.env.CI ?? '').trim().toLowerCase();
+const RUNS_IN_CI = CI_FLAG !== '' && CI_FLAG !== 'false' && CI_FLAG !== '0';
+
+if (!URL && RUNS_IN_CI) {
+  describe('pojistka: postgres-compat se v CI nesmí přeskočit', () => {
+    it('TEST_DATABASE_URL je v CI nastavená', () => {
+      expect.fail(
+        'V CI chybí TEST_DATABASE_URL, takže by se testy proti opravdovému Postgresu ' +
+          'potichu přeskočily. Zkontroluj službu postgres a proměnnou v .github/workflows/ci.yml ' +
+          'a `passThroughEnv` úlohy test v turbo.json. Workflow, které Postgres mít nemá, ' +
+          'musí tenhle soubor z běhu vyloučit.',
+      );
+    });
+  });
+}
 
 popis('kompatibilita s produkčním Postgresem', () => {
   let db: Db;
@@ -247,6 +269,36 @@ popis('kompatibilita s produkčním Postgresem', () => {
     const state = await loadImportState(db, userId);
     expect(state.keys.size).toBe(1);
     expect(state.brokerIds.has('etoro|etoro-42-open')).toBe(true);
+  });
+
+  it('dividendě uložené bez ISIN se po doplnění číselníku ISIN doplní i přes postgres.js (L14-02)', {
+    timeout: 30_000,
+  }, async () => {
+    // UPDATE s `jsonb_set(…, to_jsonb($1::text))` a poddotazem `NOT EXISTS` je
+    // syrový fragment s parametry — PGlite ho bere, o driveru to nic neříká.
+    const userId = await makeUser();
+    const statement = [
+      '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+      '"05/02/2025","Qualified Dividend","ZZTA","ZETA TEST CORP","","","","$20.00"',
+      '"03/03/2025","Buy","ZZTA","ZETA TEST CORP","40","$70.00","","-$2800.00"',
+    ].join('\n');
+    const upload = () =>
+      importFileIsolated(db, userId, 'schwab.csv', new TextEncoder().encode(statement).buffer as ArrayBuffer);
+
+    expect((await upload()).added).toBe(1);
+    await saveAliases(db, userId, [{ broker: 'schwab', symbol: 'ZZTA', isin: 'US0000000018' }]);
+    const second = await upload();
+    expect(second.added).toBe(1);
+    expect(second.duplicates).toBe(1);
+
+    const dividends = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), eq(transactions.type, 'DIVIDEND')));
+    expect(dividends).toHaveLength(1);
+    expect(dividends[0]!.isin).toBe('US0000000018');
+    expect(dividends[0]!.payload).toMatchObject({ isin: 'US0000000018', gross: '20' });
+    expect((await upload()).added).toBe(0);
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {
@@ -1026,5 +1078,91 @@ popis('kompatibilita s produkčním Postgresem', () => {
         payload: { id: 'osirely-3', type: 'BUY' },
       }),
     ).rejects.toThrow();
+  });
+
+  /**
+   * L14-01, R-07b: migrace 0045 přičítá uloženým dividendám Trading 212 srážku
+   * k brutto a přepočítává `dedupe_key`. Sem patří kvůli tomu, co PGlite
+   * neprověří: `trim_scale`, regulární výraz nad klíčem a ruční port hashe
+   * běží na opravdovém serveru přes postgres.js, a DRUHÝ běh jede nad daty
+   * z prvního (bez značky `grossFromNet` by srážku přičetl znovu).
+   */
+  it('migrace 0045: brutto dividend T212 se zvedne o srážku jednou, klíče sedí na parser (L14-01)', {
+    timeout: 60_000,
+  }, async () => {
+    const userId = await makeUser();
+    const batchId = await makeBatch(userId, 'trading212');
+    const { dedupeTransactions, parseTrading212Csv } = await import('@danero/importers');
+    const { TransactionSchema } = await import('@danero/shared');
+    const { readFileSync } = await import('node:fs');
+
+    // smyšlený výpis: součet s koncovou nulou (33,20), celé číslo (10) dvakrát
+    // v témže dni, zlomkové kusy a dividenda bez srážky
+    const statement = [
+      'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
+      'Dividend (Dividend),2025-03-14 09:00:00,US0000000001,ZZTA,Zeta Test Corp,40,0.7055,USD,,,,25.90,EUR,4.98,USD,,',
+      'Dividend (Dividend),2025-06-02 09:00:00,US0000000003,ZZTC,Gamma Test Inc,10,0.85,USD,,,,7.80,EUR,1.5,USD,,',
+      'Dividend (Dividend),2025-06-02 09:00:00,US0000000003,ZZTC,Gamma Test Inc,10,0.85,USD,,,,7.80,EUR,1.5,USD,,',
+      'Dividend (Dividend),2025-07-01 09:00:00,IE0000000004,ZZTD,Delta Test ETF,5,0.3,EUR,,,,1.50,EUR,,,,',
+      'Dividend (Dividend),2025-09-15 09:00:00,US0000000001,ZZTA,Zeta Test Corp,0.1234567,0.44625,USD,,,,0.05,EUR,0.01,USD,,',
+    ].join('\n');
+    const parsedNow = parseTrading212Csv(statement).transactions;
+    const expected = dedupeTransactions('trading212', parsedNow).fresh;
+    // stav před opravou parseru: brutto bez srážky, žádná značka
+    const legacy = dedupeTransactions(
+      'trading212',
+      parsedNow.map((tx) => {
+        if (tx.type !== 'DIVIDEND') return tx;
+        const raw = JSON.parse(JSON.stringify(tx)) as Record<string, unknown>;
+        delete raw.grossFromNet;
+        raw.gross = tx.gross.minus(tx.withholdingTax).toString();
+        return TransactionSchema.parse(raw);
+      }),
+    ).fresh;
+    await db.insert(transactions).values(
+      legacy.map(({ tx, key }) => ({
+        userId,
+        dedupeKey: key,
+        batchId,
+        broker: 'trading212',
+        type: tx.type,
+        txDate: tx.type === 'DIVIDEND' ? tx.date : '',
+        isin: tx.type === 'DIVIDEND' ? (tx.isin ?? null) : null,
+        payload: JSON.parse(JSON.stringify(tx)) as unknown,
+      })),
+    );
+
+    const migration = readFileSync(
+      'db/migrations/0045_t212_dividend_gross_from_net.sql',
+      'utf8',
+    );
+    const run = async () => {
+      for (const statementSql of migration.split('--> statement-breakpoint')) {
+        if (statementSql.trim() !== '') await db.execute(sql.raw(statementSql));
+      }
+    };
+    const stored = async () =>
+      (await db.select().from(transactions).where(eq(transactions.userId, userId))).sort((a, b) =>
+        a.dedupeKey.localeCompare(b.dedupeKey),
+      );
+
+    await run();
+    const afterFirst = await stored();
+    expect(afterFirst.map((r) => r.dedupeKey)).toEqual(expected.map((row) => row.key).sort());
+    const byKey = new Map(afterFirst.map((r) => [r.dedupeKey, r.payload as Record<string, unknown>]));
+    for (const { tx, key } of expected) {
+      if (tx.type !== 'DIVIDEND') continue;
+      expect(byKey.get(key)!.gross).toBe(tx.gross.toString());
+      expect(byKey.get(key)!.grossFromNet).toBe(tx.withholdingTax.gt(0) ? true : undefined);
+    }
+
+    // druhý běh nad daty z prvního: nic se nepohne
+    await run();
+    expect(await stored()).toEqual(afterFirst);
+
+    // a opakované nahrání téhož výpisu po migraci nepřidá ani jednu dividendu
+    const again = await importCsvText(db, userId, 't212-znovu.csv', statement);
+    expect(again.added).toBe(0);
+    expect(again.duplicates).toBe(parsedNow.length);
   });
 });

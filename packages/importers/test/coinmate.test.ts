@@ -3,6 +3,7 @@ import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import { COINMATE_BROKER, parseCoinmateCsv, sniffCoinmateCsv } from '../src/coinmate/csv';
 import {
   COINMATE_BAD_ROWS,
+  COINMATE_CRYPTO_PAIR,
   COINMATE_CZ,
   COINMATE_EN_LONG,
   COINMATE_EN_SHORT,
@@ -240,5 +241,58 @@ describe('výpis přeuložený v českém Excelu (desetinná čárka)', () => {
     expect(buy.quantity.toString()).toBe('0.005');
     expect(buy.pricePerShare.toString()).toBe('982000.5');
     expect(buy.fee?.amount.toString()).toBe('24.55');
+  });
+});
+
+describe('pár krypto–krypto (ETH_BTC) — R-10c, směnu importér sám neocení', () => {
+  it('obě směny skončí varováním s návodem, nákup za koruny se uloží', () => {
+    const result = parseCoinmateCsv(COINMATE_CRYPTO_PAIR);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((t) => t.id)).toEqual(['coinmate-88101']);
+    expect(result.warnings.map((w) => w.line)).toEqual([3, 4]);
+
+    // nákup ETH za BTC = pozbytí BTC, prodej ETH za BTC = pozbytí ETH
+    const [buy, sell] = result.warnings.map((w) => w.message);
+    expect(buy).toContain('krypto–krypto');
+    expect(buy).toContain('BTC → ETH');
+    expect(buy).toContain('univerzální šablon');
+    expect(sell).toContain('ETH → BTC');
+    // poplatek v BTC nemá vlastní varování — řádek se přeskakuje celý
+    expect(result.warnings).toHaveLength(2);
+  });
+
+  it('platí i pro „account statement“ V2 (směr v Type detail)', () => {
+    const csv = [
+      'Transaction id;Date;Email;Name;Type;Type detail;Currency amount;Amount;Currency price;Price;Currency fee;Fee;Currency total;Total;Description;Status',
+      '88201;2025-05-06 08:00:00;mail;N;Trade;BUY;ETH;0.4;BTC;0.03;BTC;0.00003;BTC;-0.01203;;OK',
+    ].join('\n');
+    const result = parseCoinmateCsv(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('BTC → ETH');
+  });
+
+  it('prázdná nebo nečitelná měna ceny zůstává chybou — a hláška neříká nepravdu', () => {
+    const header =
+      'ID;Date;Type;Amount;Amount Currency;Price;Price Currency;Fee;Fee Currency;Total;Total Currency;Description;Status';
+    const empty = parseCoinmateCsv(
+      [header, '88301;2025-05-07 08:00:00;BUY;0.01;BTC;2100000; ;0;CZK;-21000;CZK;;OK'].join('\n'),
+    );
+    const garbled = parseCoinmateCsv(
+      [header, '88302;2025-05-08 08:00:00;BUY;0.01;BTC;2100000;21 000;0;CZK;-21000;CZK;;OK'].join('\n'),
+    );
+
+    for (const result of [empty, garbled]) {
+      expect(result.transactions).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('Měna ceny');
+      expect(result.errors[0]!.message).not.toContain('třípísmenný');
+    }
+    expect(empty.errors[0]!.message).toContain('chybí');
+    expect(garbled.errors[0]!.message).toContain('21 000');
   });
 });

@@ -4,6 +4,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import {
+  type AuthErrorMessage,
+  credentialsErrorMessage,
+  normalizeBackupCode,
+  normalizeTotpCode,
+  type SecondFactorFailure,
+  secondFactorErrorMessage,
+  TOTP_CODE_PATTERN,
+  TOTP_CODE_TITLE,
+} from '@/lib/auth-errors';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
@@ -14,7 +24,7 @@ const CREDENTIALS_ERROR_ID = 'prihlaseni-error';
 
 export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuthErrorMessage | null>(null);
   const [unverified, setUnverified] = useState<{ email: string; resent: boolean } | null>(null);
   const [pending, setPending] = useState(false);
   const [totpStep, setTotpStep] = useState(false);
@@ -30,19 +40,29 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     router.refresh();
   };
 
+  // Vyčerpaná nebo propadlá výzva už nepřijme žádný kód (L21-02): formulář se
+  // vrací na e-mail a heslo a hlášku ukáže tam, místo aby nechal uživatele
+  // opisovat kódy do kroku, ze kterého nevede cesta dál.
+  const failSecondFactor = (failure: SecondFactorFailure) => {
+    if (failure.restart) {
+      setTotpStep(false);
+      setBackupStep(false);
+    }
+    setError({ text: failure.text });
+  };
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
-
       if (backupStep) {
         const result = await authClient.twoFactor.verifyBackupCode({
-          code: String(form.get('zalozni-kod') ?? '').trim(),
+          code: normalizeBackupCode(String(form.get('zalozni-kod') ?? '')),
         });
         if (result.error) {
-          setError('Záložní kód nesedí. Zkontroluj, že jsi ho opsal celý včetně pomlčky.');
+          failSecondFactor(secondFactorErrorMessage('backup', result.error));
           return;
         }
         finish();
@@ -51,16 +71,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
 
       if (totpStep) {
         const result = await authClient.twoFactor.verifyTotp({
-          code: String(form.get('kod') ?? ''),
+          code: normalizeTotpCode(String(form.get('kod') ?? '')),
         });
         if (result.error) {
-          // Použitý kód se podruhé neuzná (D-01). Bez rozlišení by uživatel
-          // opisoval týž kód znovu a zase neuspěl — musí počkat na další.
-          setError(
-            result.error.code === 'TOTP_CODE_ALREADY_USED'
-              ? 'Tenhle kód už byl použitý. Počkej v aplikaci autentikátoru na další a zadej ten.'
-              : 'Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.',
-          );
+          failSecondFactor(secondFactorErrorMessage('totp', result.error));
           return;
         }
         finish();
@@ -99,10 +113,16 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           setUnverified({ email, resent: !resend.error });
           return;
         }
+        // Moc pokusů (429), chyba serveru (5xx) a cizí adresa (INVALID_ORIGIN)
+        // nejsou vada e-mailu ani hesla — každá má vlastní větu (L15-01, L15-02).
+        // Adresa pro odkaz jde jen z výslovného nastavení (při buildu se sem
+        // zapeče), ne ze SITE_URL: to padá na hostovanou službu a vlastní
+        // instance by návštěvníka poslala na cizí web (L10-03).
         setError(
-          mode === 'registrace'
-            ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo o délce aspoň 10 znaků.'
-            : 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.',
+          credentialsErrorMessage(mode, result.error, {
+            siteUrl: process.env.NEXT_PUBLIC_APP_URL,
+            currentOrigin: window.location.origin,
+          }),
         );
         return;
       }
@@ -120,7 +140,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
       // bloku promise rejectla, `setPending(false)` se neprovedlo a formulář
       // zůstal zamčený NAVŽDY, aniž by cokoli řekl — jediné východisko byl
       // reload stránky (nález H2-01).
-      setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.');
+      setError({ text: 'Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.' });
     } finally {
       setPending(false);
     }
@@ -156,6 +176,8 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             id="zalozni-kod"
             name="zalozni-kod"
             autoComplete="one-time-code"
+            // kódy rozlišují velká a malá písmena — telefon nesmí první zvětšit sám
+            autoCapitalize="none"
             required
             autoFocus
             placeholder="xxxxx-xxxxx"
@@ -166,7 +188,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             Kódy sis uložil při zapínání dvoufaktorového ověření. Každý funguje jen jednou.
           </p>
         </div>
-        {error && <FieldError id={BACKUP_ERROR_ID}>{error}</FieldError>}
+        {error && <FieldError id={BACKUP_ERROR_ID}>{error.text}</FieldError>}
         <Button type="submit" disabled={pending} className="w-full">
           {pending ? 'Ověřuji…' : 'Přihlásit záložním kódem'}
         </Button>
@@ -194,14 +216,15 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             name="kod"
             inputMode="numeric"
             autoComplete="one-time-code"
-            pattern="\d{6}"
+            pattern={TOTP_CODE_PATTERN}
+            title={TOTP_CODE_TITLE}
             required
             autoFocus
             className="font-mono tracking-widest"
             {...describedByError(error !== null, TOTP_ERROR_ID)}
           />
         </div>
-        {error && <FieldError id={TOTP_ERROR_ID}>{error}</FieldError>}
+        {error && <FieldError id={TOTP_ERROR_ID}>{error.text}</FieldError>}
         <Button type="submit" disabled={pending} className="w-full">
           {pending ? 'Ověřuji…' : 'Ověřit kód'}
         </Button>
@@ -259,7 +282,19 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
         />
       </div>
-      {error && <FieldError id={CREDENTIALS_ERROR_ID}>{error}</FieldError>}
+      {error && (
+        <FieldError id={CREDENTIALS_ERROR_ID}>
+          {error.text}
+          {error.link && (
+            <>
+              {' '}
+              <a href={error.link.href} className="font-medium underline underline-offset-2">
+                {error.link.label}
+              </a>
+            </>
+          )}
+        </FieldError>
+      )}
       <Button type="submit" disabled={pending} className="w-full">
         {pending
           ? mode === 'registrace'

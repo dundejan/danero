@@ -206,10 +206,17 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
           Prolomení limitu paušální režim neukončuje — jen za ten rok podáš běžné
           přiznání a přehledy pojistného; zaplacené paušální zálohy se započtou.
         </p>
+        {/* L3-01 (revize 5): zák. č. 180/2026 Sb. zvedl limity § 38g od
+            zdaňovacího období 2027 (R-09a, R-09b). Stránka není vázaná na rok
+            jako přehled v aplikaci, takže částka bez roku by od ledna 2027
+            neplatila — a v sezóně přiznání za rok 2026 zase platit musí. */}
         <p>
           Zaměstnanec podává přiznání, přesáhnou-li jeho zdanitelné příjmy mimo
-          zaměstnání 20 000 Kč za rok. Pro ostatní platí obecný limit 50 000 Kč
-          zdanitelných příjmů. Jestli se tě to týká, zjistíš za minutu v{' '}
+          zaměstnání 20 000 Kč za rok; od roku 2027 je to 40 000 Kč. Pro ostatní
+          platí obecný limit 50 000 Kč zdanitelných příjmů, od roku 2027
+          100 000 Kč. Vyšší částky platí až pro příjmy roku 2027 — přiznání za
+          rok 2026, které se podává na jaře 2027, se řídí ještě těmi nižšími.
+          Jestli se tě to týká, zjistíš za minutu v{' '}
           <Link
             href="/kalkulacka"
             className="font-medium text-ruzova-text underline underline-offset-2"
@@ -242,7 +249,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
       </>
     ),
     zdroj:
-      '§ 7a, § 38g a § 38v zákona o daních z příjmů; § 136 odst. 1 a 2 daňového řádu a pokyn GFŘ D-59, str. 45 („K § 38v“ — lhůta oznámení u toho, kdo přiznání nepodává); FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
+      '§ 7a, § 38g a § 38v zákona o daních z příjmů (limity § 38g od roku 2027 podle zákona č. 180/2026 Sb.); § 136 odst. 1 a 2 daňového řádu a pokyn GFŘ D-59, str. 45 („K § 38v“ — lhůta oznámení u toho, kdo přiznání nepodává); FAQ Finanční správy k paušální dani (otázka 61 — limit 50 000 Kč).',
   },
   {
     id: 'kurzy',
@@ -290,7 +297,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
       </>
     ),
     zdroj:
-      '§ 10 odst. 4 a 5 zákona o daních z příjmů; stanovisko GFŘ (metoda párování pro neúčtující fyzické osoby není předepsána).',
+      '§ 10 odst. 4 a 5 zákona o daních z příjmů — o metodě párování mlčí, pro neúčtující fyzické osoby ji nepředepisuje žádný předpis. FIFO je ustálená praxe; jinou metodu je třeba umět průkazně doložit.',
   },
 ];
 

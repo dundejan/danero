@@ -11,7 +11,25 @@
   pořadový suffix (`uniqueIdFactory`) a NEsplynou; duplicitní explicitní ID parser
   ohlásí varováním a dedupe je sloučí. Limita: tentýž obchod v souboru s ID
   a bez ID se nesloučí.
-- Datum obchodu = datum z exportu (UTC); datum vypořádání engine dopočítává
+  Dividenda uložená bez ISIN (Fio, Schwab, Tastytrade a Revolut ho neexportují
+  a číselník ještě nebyl vyplněný) se po doplnění číselníku a novém nahrání pozná
+  podle shodného dne, brutta, srážky, měny **a tickeru**: neuloží se podruhé
+  a uloženému řádku se ISIN doplní (`promoted` v `dedupeTransactions`, zápis
+  v `importParsed`). Ticker je podmínka — shodnou částku ve společný výplatní den
+  mívají i dva různé tituly a jejich sloučení by jednu výplatu potichu smazalo.
+  Kde titul porovnat nejde (ticker chybí uložené nebo příchozí dividendě, typicky
+  u univerzální šablony), nebo kde řádek téhož titulu leží pod pořadím, které si
+  v tomtéž výpisu vzala shodná dividenda jiného titulu bez ISIN, se nepáruje:
+  dividenda se uloží jako nová a uživatel dostane varování, že ji možná má
+  dvakrát (`ambiguous`). Zdvojená dividenda je vidět a jde vrátit, ztracená ne.
+  Dividenda se sraženou daní, která je už uložená se srážkou 0 (starší verze
+  parseru srážku u Schwabu a Degira nepřečetla), se podruhé neuloží a uživatel
+  dostane varování s radou vrátit starší import a nahrát výpis znovu (`untaxed`);
+  uložená srážka se sama nepřepisuje, protože vstupuje do zápočtu.
+- Datum obchodu = datum z exportu, tak jak ho broker píše (u Trading 212
+  světový čas, UTC; pravidlo R-05d v `docs/02`). Dividenda, úrok nebo obchod
+  s kryptem z poslední hodiny roku UTC, kdy je v Česku už 1. 1., dostane při
+  importu varování — rok se jim nemění. Datum vypořádání engine dopočítává
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.
 
@@ -99,17 +117,28 @@ straně brokera trvale uřízl historii).
 ## Univerzální šablona (`parseUniversalCsv`)
 
 Fallback pro nepodporované brokery. Hlavičky (malými písmeny, pořadí libovolné);
-předvyplněná šablona s ukázkovými řádky ke stažení: `/api/sablona`
-(`UNIVERSAL_TEMPLATE_CSV`). Úplná sada sloupců:
+předvyplněná šablona s ukázkovými řádky ke stažení: `/api/sablona`. Zdrojem je
+čárková `UNIVERSAL_TEMPLATE_CSV`; ke stažení jde tatáž data ve tvaru pro český
+Excel (`UNIVERSAL_TEMPLATE_EXCEL_CSV`: BOM, středník, desetinná čárka), protože
+čárkové CSV bez BOM se po dvojkliku nasype do jediného sloupce s rozbitou
+diakritikou. Parser čte oba tvary stejně. Úplná sada sloupců:
 
 ```csv
-type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note
+type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,return_of_capital,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note
 ```
 
 - `type`: BUY, SELL, DIVIDEND, INTEREST, FEE, DEPOSIT, WITHDRAWAL,
   CORPORATE_ACTION, TRANSFER_IN, TRANSFER_OUT
 - BUY/SELL: povinné `isin, quantity, price, currency`; `settlement_date` důrazně
   doporučeno (přesnost časového testu)
+- `ticker`, `name`, `note`: volitelné popisky (zkratka, název titulu, vlastní
+  poznámka) — do výpočtu nevstupují, jen se podle nich řádky v přehledech
+  líp hledají
+- `fee` + `fee_currency`: poplatek za obchod; když `fee_currency` chybí, bere
+  se měna obchodu (`currency`)
+- `currency`, `fee_currency`, `acquisition_currency`: třípísmenný kód měny
+  (`CZK`, `USD`, `EUR`), na velikosti písmen nezáleží; značku (`Kč`, `$`)
+  parser odmítne chybou řádku se jménem sloupce
 - `asset_class`: STOCK (default), ETF, BOND, CRYPTO, DERIVATIVE, OTHER —
   u kryptoaktiv a derivátů povinně vyplnit (určuje druh příjmu § 10)
 - `settlement_style` (jen deriváty; case-insensitive): `premium` = cena obchodu
@@ -117,8 +146,20 @@ type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity
   uzavření** pozice, nominál není příjem (futures, CFD — R-12f). Derivát bez
   vyplněného stylu se počítá premium stylem a parser přidá varování (jednou
   per instrument); jiná hodnota než premium/margin je chyba řádku
+- `position_effect` (jen BUY/SELL; case-insensitive): značka **prodeje
+  nakrátko** podle R-13. `open` u SELL = otevření krátké pozice, `close` u BUY
+  = zpětný nákup, kterým se zavírá. Bez značky je prodej bez pozice
+  k nerozeznání od neúplné historie (`NEGATIVE_POSITION`). U běžného obchodu
+  (BUY + `open`, SELL + `close`) se značka ignoruje s varováním; jiná hodnota
+  než open/close je chyba řádku
 - DIVIDEND: `amount` = **brutto**, `withholding_tax` v téže měně, `source_country`
   (jinak se odvodí z ISIN)
+- `return_of_capital` (jen DIVIDEND): `ano` (i `yes`, `true`, `1`) označí
+  výplatu jako **vratku kapitálu** podle R-07h — fondy a REITy jí vracejí část
+  vloženého kapitálu. Prázdné pole nebo `ne` = běžná dividenda; jiná hodnota je
+  chyba řádku, ne tiché „ne“. Samotný příznak daň nemění: vratka se daní jako
+  dividenda, dokud si uživatel v nastavení nezapne mírnější výklad
+  (`returnOfCapitalReducesBasis`, výchozí `false`)
 - INTEREST: `amount` + `currency`; volitelně `source_country` (`CZ` = srážka
   u zdroje, do § 8 nevstupuje) a `withholding_tax` v téže měně — daň sraženou
   v zahraničí bez ní nelze započíst (R-07f; strop dle čl. 11 smlouvy, u většiny
@@ -126,16 +167,33 @@ type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,quantity
 - FEE/DEPOSIT/WITHDRAWAL: `amount` + `currency`
 - CORPORATE_ACTION: `subtype` (SPLIT — s `ratio_from`/`ratio_to`; ISIN_CHANGE /
   MERGER — s `new_isin`; SPINOFF; DELISTING)
-- TRANSFER_IN: `acquisition_date/price/currency` = PŮVODNÍ nabytí (bez nich
-  cena 0 a časový test od převodu — parser varuje)
+- TRANSFER_IN: `acquisition_date`, `acquisition_price`, `acquisition_currency`
+  = PŮVODNÍ nabytí (bez nich cena 0 a časový test od převodu — parser varuje)
 - Desetinná tečka; datum `YYYY-MM-DD`; kódování UTF-8
-- **Čísla s čárkou**: čárka se bere jako desetinná (`1,25` = 1.25). Zápis
-  „čárka + přesně tři číslice“ (`0,001`, `1,500`) je ale nejednoznačný —
-  může jít o 0.001 i o 1 a o 1.5 i o 1500 — a parser ho **odmítne chybou**
-  s výzvou napsat desetinnou tečku. Jednoznačné tvary projdou: `1,234.56`
-  i `1.234,56` = 1234.56, `1,234,567` = 1234567.
+- **Datum po česku**: ve sloupcích `date`, `settlement_date`
+  a `acquisition_date` projde vedle `YYYY-MM-DD` i zápis s tečkami
+  (`10.06.2024`, `1.2.2026`, `1. 2. 2026`) — český Excel tak datum uloží,
+  i když ho uživatel napíše v ISO tvaru. Do modelu jde vždy ISO. Lomítka
+  (`1/2/2026`) se **odmítají**: den/měsíc a měsíc/den z jedné buňky nerozlišíš
+  a špatné datum nabytí by tiše posunulo časový test. Neexistující den
+  (`30.02.2026`) je chyba řádku
+- **Čísla s čárkou**: čárka se bere jako desetinná (`1,25` = 1.25, `0,001`
+  = 0.001 — celá část s vedoucí nulou tisíce být nemůže). Zápis „jedna až tři
+  číslice bez vedoucí nuly + čárka + přesně tři číslice“ (`1,500`, `185,125`)
+  je ale nejednoznačný — může jít o 1.5 i o 1500 — a parser ho **odmítne
+  chybou** s výzvou napsat desetinnou tečku. Jednoznačné tvary projdou:
+  `1,234.56` i `1.234,56` = 1234.56, `1,234,567` = 1234567. Rozhoduje sdílená
+  `isAmbiguousThousandGroup`.
   (Dřív se čárka vždy brala jako oddělovač tisíců, takže `0,001` BTC se tiše
   naimportovalo jako 1 kus — tisícinásobek.)
+- **Tečka je vždy desetinná** (`1.500` = 1.5) a ten výklad se podle zbytku
+  souboru nemění — kdo po chybě na `1,500` opraví jedinou buňku na `1.500`,
+  musí dostat 1,5. Když ale ostatní čísla v souboru prokazatelně píšou
+  desetinnou čárku (`detectDecimalSeparator` nad číselnými sloupci), dostane
+  taková buňka **varování**, že mohlo jít o oddělovač tisíců
+- **Text místo čísla** (`1 250 Kč`, `$185.50`) je chyba řádku s českou větou,
+  jménem sloupce a hodnotou. Chyby validace modelu se vypisují stejně: sloupec
+  šablony a zpráva, u prázdných povinných polí seznam chybějících sloupců
 
 ## Ověření na reálných datech (akceptace F2)
 

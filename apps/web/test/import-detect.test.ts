@@ -1,29 +1,49 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { UNIVERSAL_TEMPLATE_CSV } from '@danero/importers';
 import { ANYCOIN_BASIC } from '../../../packages/importers/test/fixtures/anycoin';
 import { COINBASE_V1_EUR, COINBASE_V4 } from '../../../packages/importers/test/fixtures/coinbase';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
-import { DEGIRO_TRANSACTIONS_CZ } from '../../../packages/importers/test/fixtures/degiro';
+import {
+  DEGIRO_ACCOUNT_CZ,
+  DEGIRO_TRANSACTIONS_2026_EN,
+  DEGIRO_TRANSACTIONS_2026_NL,
+  DEGIRO_TRANSACTIONS_CZ,
+} from '../../../packages/importers/test/fixtures/degiro';
 import {
   KRAKEN_LEDGERS_NEW,
   KRAKEN_TRADES_CSV,
 } from '../../../packages/importers/test/fixtures/kraken';
-import { MT4_HTML, MT5_HTML } from '../../../packages/importers/test/fixtures/metatrader';
+import {
+  buildMt5Xlsx,
+  MT4_HTML,
+  MT5_HTML,
+} from '../../../packages/importers/test/fixtures/metatrader';
 import { PORTU_FIXTURE } from '../../../packages/importers/test/fixtures/portu';
 import {
   REVOLUT_CRYPTO_NEW_CSV,
   REVOLUT_CRYPTO_OLD_CSV,
   REVOLUT_INVEST_CSV,
 } from '../../../packages/importers/test/fixtures/revolut';
+import { buildSaxoXlsx, SAXO_ROWS_EN } from '../../../packages/importers/test/fixtures/saxo';
 import {
   SWISSQUOTE_DE,
   SWISSQUOTE_EN,
+  SWISSQUOTE_EN_NO_ORDER,
+  SWISSQUOTE_EN_ORDER_RENAMED,
 } from '../../../packages/importers/test/fixtures/swissquote';
 import {
   T212_FIXTURE,
   T212_FIXTURE_2026,
 } from '../../../packages/importers/test/fixtures/t212';
-import { detectAndParse } from '@/lib/import-service';
+import {
+  buildXtbNewReportXlsx,
+  buildXtbXlsx,
+  XTB_NEW_FILENAME,
+  XTB_ROWS_EN,
+} from '../../../packages/importers/test/fixtures/xtb';
+import { createPgliteDb, type Db } from '@/db';
+import { user } from '@/db/schema';
+import { detectAndParse, importFileIsolated } from '@/lib/import-service';
 
 /**
  * Routing autodetekce: pořadí snifferů v detectAndParseText je závazné —
@@ -41,11 +61,19 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Revolut krypto (starý formát)', REVOLUT_CRYPTO_OLD_CSV, 'revolut'],
   ['Swissquote EN (13 sloupců)', SWISSQUOTE_EN, 'swissquote'],
   ['Swissquote DE (15 sloupců)', SWISSQUOTE_DE, 'swissquote'],
+  // L2b-06: sloupec „Order #“ parser nečte, takže ho nesmí chtít ani sniffer
+  ['Swissquote EN bez sloupce „Order #“', SWISSQUOTE_EN_NO_ORDER, 'swissquote'],
+  ['Swissquote EN s přejmenovaným sloupcem objednávky', SWISSQUOTE_EN_ORDER_RENAMED, 'swissquote'],
   ['Portu', PORTU_FIXTURE, 'portu'],
   ['Anycoin orders.csv', ANYCOIN_BASIC, 'anycoin'],
   ['Coinbase V4', COINBASE_V4, 'coinbase'],
   ['Coinbase V1 (EUR prefix)', COINBASE_V1_EUR, 'coinbase'],
   ['Degiro CZ Transactions (regrese)', DEGIRO_TRANSACTIONS_CZ, 'degiro'],
+  // L2a-01: rozložení 2026 má 18 sloupců a měnu poplatku v názvu sloupce
+  ['Degiro Transactions 2026 NL (18 sloupců)', DEGIRO_TRANSACTIONS_2026_NL, 'degiro'],
+  ['Degiro Transactions 2026 EN (18 sloupců)', DEGIRO_TRANSACTIONS_2026_EN, 'degiro'],
+  // L23-04: druhý soubor Degira (hotovostní pohyby) má v autodetekci vlastní větev
+  ['Degiro Account.csv CZ', DEGIRO_ACCOUNT_CZ, 'degiro'],
   ['Trading212 (sloupec „Time“)', T212_FIXTURE, 'trading212'],
   // regrese ze srpna 2026: přejmenovaný sloupec poslal celý export do
   // univerzální šablony a import se rozbil naostro, přestože testy svítily
@@ -97,6 +125,48 @@ describe('autodetekce textových formátů (detectAndParse)', () => {
       'Date,Type,Sub Type,Action,Symbol,Instrument Type,Description,Value,Quantity,Average Price,Commissions,Fees,Multiplier,Root Symbol,Underlying Symbol,Expiration Date,Strike Price,Call or Put,Order #,Currency\n2024-01-03T14:00:00+0200,Money Movement,Deposit,,,,Wire Funds Received,"1,000.00",0,,--,0.00,,,,,,,,USD';
     expect(detectAndParse(tasty).broker).toBe('tastytrade');
   });
+});
+
+/**
+ * L23-04: routing celou cestou ručního nahrání (`importFileIsolated`), ne jen
+ * přes `detectAndParse`. Sešity XLSX mají v import-service vlastní řetěz
+ * snifferů, na který tabulka nahoře nedosáhne, a strážný test katalogu
+ * (`platformy-katalog.test.ts`) ověřuje jen to, že sniffer existuje — ne že na
+ * něj nahrání vede. Vypnutá větev Saxa nebo souboru Degiro Account.csv tak
+ * do 9. 10. 2026 prošla celou sadou zeleně. Nový formát v sešitu přidávej sem.
+ */
+describe('routing ručního nahrání (importFileIsolated)', () => {
+  const UPLOADS: Array<
+    [label: string, filename: string, build: () => Buffer | Promise<Buffer>, broker: string]
+  > = [
+    // anglický export pozná slovníkový sniffer; záložní (podle tvaru) ho nevezme
+    ['Saxo XLSX EN', 'Transactions.xlsx', () => buildSaxoXlsx({ rows: SAXO_ROWS_EN }), 'saxo'],
+    ['MetaTrader 5 XLSX', 'ReportHistory.xlsx', () => buildMt5Xlsx(), 'mt5'],
+    ['XTB XLSX (starý report)', 'xtb.xlsx', () => buildXtbXlsx({ rows: XTB_ROWS_EN }), 'xtb'],
+    ['XTB XLSX (nový report)', XTB_NEW_FILENAME, () => buildXtbNewReportXlsx(), 'xtb'],
+    ['Degiro Account.csv CZ', 'Account.csv', () => Buffer.from(DEGIRO_ACCOUNT_CZ, 'utf8'), 'degiro'],
+  ];
+
+  const toArrayBuffer = (buffer: Buffer): ArrayBuffer =>
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+
+  let db: Db;
+  beforeAll(async () => {
+    db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'test@example.com' });
+  }, 60_000);
+
+  it.each(UPLOADS)(
+    '%s → dávka u správného brokera',
+    { timeout: 30_000 },
+    async (_label, filename, build, broker) => {
+      const summary = await importFileIsolated(db, 'u1', filename, toArrayBuffer(await build()));
+      expect(summary.broker).toBe(broker);
+      // nestačí jméno brokera na dávce — soubor se musí opravdu přečíst
+      expect(summary.unrecognized).toBeFalsy();
+      expect(summary.added).toBeGreaterThan(0);
+    },
+  );
 });
 
 /**

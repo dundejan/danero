@@ -26,9 +26,9 @@ export interface TaxYearConfig {
     cryptoProceedsExemption: string;
     /** R-08: úhrn příjmů § 8–10 pro daň rovnou paušální dani (§ 7a). */
     flatTaxOtherIncome: string;
-    /** R-09b: vedlejší příjmy zaměstnance (§ 38g odst. 2). */
+    /** R-09b: vedlejší příjmy zaměstnance (§ 38g odst. 2) — do ZO 2026 20 000 Kč, od 2027 40 000 Kč. */
     employeeSideIncome: string;
-    /** R-09a: obecný limit pro povinnost podat přiznání (§ 38g odst. 1). */
+    /** R-09a: obecný limit pro povinnost podat přiznání (§ 38g odst. 1) — do ZO 2026 50 000 Kč, od 2027 100 000 Kč. */
     generalFiling: string;
     /** R-09d: oznámení osvobozeného příjmu (§ 38v). */
     exemptIncomeReporting: string;
@@ -64,8 +64,19 @@ export interface TaxYearConfig {
    * konfigurace (a testovací fixtury) zůstaly platné.
    * Hodnota patří ke konkrétnímu roku — kdo konfiguraci recykluje na jiný rok,
    * musí ji přenastavit (stejně jako `progressiveThreshold`).
+   *
+   * `monthlySurchargeCzk`: přirážka, ke které se poplatník v 1. pásmu může od
+   * ZO 2027 přihlásit a která ho zprošťuje evidence tržeb (§ 2b, § 38lk odst. 7
+   * písm. a) a odst. 8). Zvyšuje daňovou složku zálohy a o stejnou částku i daň
+   * v přiznání (§ 16ab odst. 4), takže **do výpočtu doplatku nevstupuje** —
+   * engine z ní skládá jen dovětek varování `FLAT_TAX_BROKEN`. Roky před 2027
+   * ji nemají. `monthlyTotalCzk` ani `monthlyTaxCzk` přirážku NEOBSAHUJÍ.
    */
-  flatTaxAdvance?: { monthlyTotalCzk: string; monthlyTaxCzk: string } | null;
+  flatTaxAdvance?: {
+    monthlyTotalCzk: string;
+    monthlyTaxCzk: string;
+    monthlySurchargeCzk?: string;
+  } | null;
 }
 
 /**
@@ -150,20 +161,32 @@ export const TAX_YEAR_2026_DRAFT: TaxYearConfig = {
 
 /**
  * Rok 2027 (R-15d: doplněno po vyhlášení nařízení vlády). Právní stav se
- * přenáší z roku 2026 (R-15b), nová jsou jen dvě vyhlašovaná čísla.
+ * přenáší z roku 2026 (R-15b) až na to, co od 1. 1. 2027 změnil zák.
+ * č. 180/2026 Sb.: limity § 38g (R-09a, R-09b) a přirážku k paušální záloze
+ * (R-08f). Nová jsou k tomu dvě vyhlašovaná čísla.
  */
 export const TAX_YEAR_2027_DRAFT: TaxYearConfig = {
   ...TAX_YEAR_2026_DRAFT,
   year: 2027,
   // Jednotný kurz za 2027 vyjde pokynem řady D začátkem roku 2028.
   unifiedRatesByYear: {},
+  limits: {
+    ...TAX_YEAR_2026_DRAFT.limits,
+    // Zák. č. 180/2026 Sb., část druhá, body 21 a 22: § 38g odst. 1 nově
+    // 100 000 Kč, odst. 2 nově 40 000 Kč. Platí až pro ZO 2027 (přechodné
+    // ustanovení § 31 bod 1) — rok 2026 zůstává na 50 000 / 20 000 Kč.
+    // Limit 50 000 Kč paušální daně (§ 7a) se nemění.
+    generalFiling: '100000',
+    employeeSideIncome: '40000',
+  },
   // 36 × 51 663 Kč (průměrná mzda dle NV č. 177/2026 Sb.: 48 900 Kč × 1,0565)
   progressiveThreshold: '1859868',
   // 1. pásmo 2027 = 9 662 Kč/měsíc (daň 100 + důchodové 6 074 + zdravotní 3 488).
   // ⚠️ DOPOČTENO z průměrné mzdy podle § 38lk — Finanční správa částku
   // k 7. 10. 2026 nezveřejnila; po vydání „Informace k institutu paušální daně“
   // ověřit. Do daně vstupuje jen daňová složka (100 Kč), ta je v zákoně pevně.
-  flatTaxAdvance: { monthlyTotalCzk: '9662', monthlyTaxCzk: '100' },
+  // Přirážka 1 400 Kč: § 38lk odst. 8 ve znění zák. č. 180/2026 Sb.
+  flatTaxAdvance: { monthlyTotalCzk: '9662', monthlyTaxCzk: '100', monthlySurchargeCzk: '1400' },
 };
 
 /**

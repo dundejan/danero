@@ -10,12 +10,14 @@ stačí, aby to prostě běželo, je tu [danero.cz](https://danero.cz).
 > sazeb, struktura formuláře EPO). Bez aktualizace ti instance po Novém roce
 > počítá podle loňska.
 >
-> Podpora self-hostingu je best effort, bez záruky — dotazy do
-> [Discussions](https://github.com/dundejan/danero/discussions), ne do issue.
+> Podpora self-hostingu je best effort, bez záruky — dotazy piš jako
+> [issue](https://github.com/dundejan/danero/issues) (bezpečnostní chyby ne,
+> ty patří do soukromého hlášení podle `SECURITY.md`).
 
 ## Co budeš potřebovat
 
-- **Docker** (doporučeno), nebo **Node.js 22+** a **pnpm**
+- **Docker** s **Docker Compose 2.24** nebo novějším (doporučeno; verzi ukáže
+  `docker compose version`), nebo **Node.js 22+** a **pnpm**
 - **PostgreSQL 16+** — s Dockerem ho rozjede `docker compose` sám
 - Doménu s HTTPS (aplikace posílá cookies s `Secure` a nastavuje HSTS)
 - *Volitelně* účet u [Resendu](https://resend.com) na odesílání e-mailů
@@ -44,13 +46,37 @@ počítá, když se přihlásíš).
 - **Migrace** se dotáhnou samy při startu (`DANERO_MIGRATE_ON_START=1`
   v compose). Platí to pro **jednu** instanci; při více současně běžících
   by si migrace lezly do zelí — tam patří `drizzle-kit migrate` do deploye.
-- **Aktualizace:** `git pull && docker compose up -d --build`.
+- **Konfigurace:** soubor `.env` jde do kontejneru `web` **celý** (`env_file`
+  v compose). Kteroukoli proměnnou z tabulky níž tedy stačí zapsat do `.env`
+  a pustit `docker compose up -d` — samotné `docker compose restart` prostředí
+  znovu nenačte. Tři hodnoty si compose drží sám a z `.env` je nepřevezme:
+  `DATABASE_URL` (skládá ji z `POSTGRES_PASSWORD`), `DANERO_MIGRATE_ON_START`
+  a port uvnitř kontejneru (vždy 3000).
+- **Aktualizace:** `git pull && docker compose up -d --build`. Pozor při
+  přechodu ze starší verze: port aplikace dřív poslouchal na všech rozhraních,
+  teď jen na `127.0.0.1`. Kdo má reverzní proxy na jiném stroji (nebo
+  v kontejneru, který na aplikaci chodí přes síťové rozhraní hostitele), se po
+  aktualizaci na aplikaci nedovolá, dokud v `.env` nenastaví
+  `DANERO_BIND_ADDRESS` — viz odstavec o proxy níž. A druhá změna: compose
+  soubor teď potřebuje Docker Compose 2.24 nebo novější. Starší ho odmítne
+  ještě před spuštěním hláškou `services.web.env_file.0 must be a string`
+  a aktualizace neproběhne — nejdřív tedy aktualizuj Docker Compose.
 - **Záloha:** `docker compose exec db pg_dump -U danero danero > zaloha.sql`
   (a odděleně `DANERO_ENCRYPTION_KEY`, viz varování níže).
-- Port změníš přes `PORT=8080` v `.env`.
+- Port na hostiteli změníš přes `PORT=8080` v `.env`.
 
 Před aplikaci ještě patří reverzní proxy s TLS. Aplikace si nastavuje vlastní
 bezpečnostní hlavičky včetně CSP — **v proxy je neduplikuj**, přebily by se.
+
+Port aplikace proto compose publikuje **jen na `127.0.0.1`**: proxy na témže
+stroji se na něj dostane, nikdo zvenku ne. Běží-li proxy jinde, nastav v `.env`
+`DANERO_BIND_ADDRESS` na adresu rozhraní, přes které k aplikaci chodí (nejlépe
+adresu v privátní síti; `0.0.0.0` znamená všechna rozhraní), a přístup odjinud
+zavři firewallem — s tím, že porty publikované Dockerem pravidla `ufw`
+obcházejí. Kdo se na port aplikace dostane mimo proxy, mluví s ní po
+nešifrovaném http a **limit pokusů o přihlášení podle IP adresy na něj
+neplatí**: hlavičku `X-Forwarded-For`, ze které se adresa klienta určuje, si
+v tu chvíli píše sám.
 
 ## Konfigurace
 
@@ -67,14 +93,23 @@ openssl rand -hex 32      # CRON_SECRET
 |---|---|---|
 | `POSTGRES_PASSWORD` | ano (compose) | heslo databáze, kterou zakládá `docker compose`; jde i do `DATABASE_URL` služby `web` |
 | `DATABASE_URL` | ano | připojení k Postgresu. Bez ní běží lokální PGlite v `apps/web/.data/` — to je vývojový režim, ne produkce |
-| `BETTER_AUTH_SECRET` | ano | podpis session a odhlašovacích tokenů; v produkci bez ní aplikace spadne při startu |
+| `BETTER_AUTH_SECRET` | ano | podpis session a odhlašovacích tokenů. Compose bez ní nenastartuje. Mimo compose aplikace v produkci naběhne a `/api/health` je zelený, ale přihlášení, registrace i každá stránka za přihlášením končí chybou, která proměnnou jmenuje |
 | `BETTER_AUTH_URL` | ano | veřejná URL instance, např. `https://dane.example.cz`. **Musí být https** — z ní si Better Auth odvozuje příznak `Secure` u session cookie. Compose bez ní nenastartuje (schválně: tichý `http://localhost` default by vydával cookie bez `Secure`) |
-| `DANERO_ENCRYPTION_KEY` | ano | AES-256-GCM klíč pro API klíče brokerů; v produkci bez ní aplikace spadne při startu |
+| `DANERO_ENCRYPTION_KEY` | ano | AES-256-GCM klíč pro API klíče brokerů. Compose bez ní nenastartuje. Mimo compose aplikace v produkci běží a `/api/health` je zelený — chyba, která proměnnou jmenuje, přijde až ve chvíli, kdy se ukládá nebo čte klíč brokera (napojení účtu, sync). Běžící instance tedy není důkaz, že klíč nastavený je |
 | `DANERO_ENCRYPTION_KEYS_OLD` | ne | klíče vyřazené při výměně `DANERO_ENCRYPTION_KEY` (hex oddělené čárkou). Šifruje se vždy tím aktuálním, ale data od těch starých se dál čtou — viz „Výměna šifrovacího klíče" níž |
 | `CRON_SECRET` | ano | bez ní všechny `/api/cron/*` odmítají vše (401) — tedy žádné syncy ani e-maily |
 | `PORT` | ne | na kterém portu hostitele instance poslouchá (výchozí `3000`); uvnitř kontejneru je to vždy 3000 |
-| `RESEND_API_KEY` | ne | bez ní se e-maily jen zapisují do logu (na jedno-uživatelské instanci to může stačit) |
+| `DANERO_BIND_ADDRESS` | ne | jen compose: adresa hostitele, na které se port aplikace publikuje (výchozí `127.0.0.1`, tedy jen pro proxy na témže stroji). Měň jen tehdy, když proxy běží jinde — port aplikace nemá být dosažitelný mimo ni (viz odstavec o proxy výš) |
+| `DANERO_OPERATOR_NAME` | ano | jméno provozovatele instance. Spolu s dalšími třemi údaji níž se vypisuje na veřejných stránkách (mj. `/podminky` a `/soukromi`) a v podpisu služebních e-mailů — uživatel má vědět, komu svoje data svěřuje. Aplikace bez nich běží, ale na jejich místě stojí nápadné „nenastaveno“ a `/api/health` hlásí `operatorContact: "incomplete"` |
+| `DANERO_OPERATOR_ICO` | ano | IČO provozovatele; bez ní „nenastaveno“ |
+| `DANERO_OPERATOR_ADDRESS` | ano | adresa sídla provozovatele; bez ní „nenastaveno“ |
+| `DANERO_CONTACT_EMAIL` | ano | kontaktní e-mail provozovatele; bez ní „nenastaveno“. Slouží i jako výchozí adresa pro odpovědi (`RESEND_REPLY_TO`) a pro provozní upozornění (`DANERO_ALERT_EMAIL`) |
+| `DANERO_CONTACT_PHONE` | ne | telefon provozovatele; na `/podminky` se vypíše, jen když je vyplněný |
+| `DANERO_ALERT_EMAIL` | ne | kam chodí provozní upozornění (dnes: výpis, který se nepodařilo přečíst). Bez ní jdou na `DANERO_CONTACT_EMAIL`; není-li ani ta, upozornění se jen zapíše do logu |
+| `RESEND_API_KEY` | ne | klíč služby Resend, přes kterou instance posílá e-maily. Bez ní se v produkčním režimu **neodešle ani nikam nezapíše nic** — ani ověřovací odkaz po registraci, ani obnova hesla (obrazovka po registraci to řekne) |
+| `DANERO_EMAIL_LOG` | ne | cesta k souboru uvnitř kontejneru, kam se e-maily zapisují místo odeslání (jeden JSON na řádek). Cesta k prvnímu účtu na instanci bez Resendu: nastav třeba `/tmp/danero-emaily.jsonl`, zaregistruj se a odkaz si přečti přes `docker compose exec web cat /tmp/danero-emaily.jsonl`. V souboru leží i odkazy na obnovu hesla, takže ho nenechávej nikde, kam vidí někdo další. Nenastavuj ji spolu s `RESEND_API_KEY` — odeslání e-mailu pak skončí chybou, aby odkazy neležely v souboru na instanci, která umí doručovat |
 | `RESEND_FROM` | ne | odesílatel, např. `"Danero <notifikace@example.cz>"` |
+| `RESEND_REPLY_TO` | ne | adresa, na kterou míří „Odpovědět“ u e-mailů z instance. Bez ní se použije `DANERO_CONTACT_EMAIL` |
 | `DANERO_MIGRATE_ON_START` | ne | `1` = zmigruj Postgres při startu (compose to nastavuje sám). Jen pro jednu instanci. |
 | `DANERO_TRUSTED_PROXIES` | ne | IP/CIDR tvých reverzních proxy oddělené čárkou. Podle nich se z `X-Forwarded-For` hledá skutečná IP klienta (klíč rate limitu přihlašování). Nevyplněno = privátní rozsahy (loopback, RFC1918, docker), což sedí na běžnou proxy na témž stroji. Vyplň, když máš před sebou CDN s veřejnými adresami — jinak by se limity počítaly na adresu CDN a sdíleli by je všichni. |
 | `NEXT_PUBLIC_SOURCE_URL` | **ano, pokud kód měníš** | adresa repozitáře **s tvými úpravami**. Aplikace ji ukazuje přihlášeným uživatelům v patičce, protože § 13 licence AGPL-3.0 ukládá nabídnout zdrojový kód každému, komu instanci nabízíš po síti. Bez ní ukazuje upstream — a ten tvoje změny neobsahuje, takže bys licenci porušoval. |
@@ -97,11 +132,24 @@ Každý zašifrovaný údaj v databázi nese osmiznakový otisk klíče, kterým
 
 1. vygeneruj nový klíč (`openssl rand -hex 32`),
 2. nový dej do `DANERO_ENCRYPTION_KEY`, ten dosavadní přesuň do
-   `DANERO_ENCRYPTION_KEYS_OLD` a restartuj,
+   `DANERO_ENCRYPTION_KEYS_OLD` a restartuj (v compose `docker compose up -d`
+   — `restart` změněné `.env` nenačte),
 3. od té chvíle se šifruje novým klíčem a stará data se čtou tím vyřazeným,
-4. starý klíč smíš zahodit, až žádný záznam nemá jeho otisk. Překlopení
-   jednotlivého údaje umí `reencryptSecret()` z `apps/web/lib/crypto.ts`;
-   automatický přešifrovací průchod v aplikaci zatím není.
+4. přešifrování udělá sám denní job `maintenance`: každý uložený klíč brokera,
+   který ještě nese otisk vyřazeného klíče, přepíše tím aktuálním a počet vrátí
+   v odpovědi i v logu jako `credentialsRotated`,
+5. starý klíč smíš z `DANERO_ENCRYPTION_KEYS_OLD` vyhodit až po běhu
+   `maintenance`, který **doběhl** a žádný záznam nevynechal. V logu po něm
+   musí být obojí: `cron.maintenance.finished` se stavem 200 (ta událost nese
+   i `credentialsRotated`) a zároveň žádné `maintenance.reencrypt_failed` — ta
+   událost říká, že některý záznam přečíst nešel a na starém klíči zůstal.
+   Sama nepřítomnost `maintenance.reencrypt_failed` nestačí: běh, který spadl
+   dřív, než se k přešifrování dostal (výpadek databáze, timeout), ji nezapíše
+   taky. Pozná se podle toho, že po něm `cron.maintenance.finished` chybí
+   (bývá tam `cron.maintenance.failed`) — a klíče brokerů jsou pořád na
+   starém klíči.
+   Že nic nezbylo, potvrdí další doběhnutý běh s `credentialsRotated: 0`
+   a znovu bez té události.
 
 Bez kroku 2 (starý klíč nikde) se uložené broker klíče po výměně nepřečtou —
 aplikace to řekne nahlas a uživatel je zadá znovu, ale je to zbytečná otrava.
@@ -154,7 +202,7 @@ zůstává syslog — a ten v kontejneru nikdo neposlouchá, takže špatný
 | `sync-brokers` | stáhne nové transakce ze všech napojených platforem |
 | `notify` | přepočítá limity a časové testy a rozešle upozornění |
 | `jobs` | záchranná síť — dokončí běhy, které spadly nebo se nestihly |
-| `maintenance` | smaže data po retenční lhůtě (audit log, historie importů a joby po 90 dnech, prošlé přihlašovací relace a ověřovací tokeny hned, doručená upozornění po 400 dnech) |
+| `maintenance` | smaže data po retenční lhůtě: audit log po 90 dnech; joby po 90 dnech, jen poslední job každého napojeného účtu zůstává (nese stav rozdělaného stahování); historii importů po 90 dnech jen u dávek, na kterých nevisí žádná transakce — dávky s transakcemi zůstávají, jinak by nešel „Vrátit import zpět“; nepřečtené výpisy uschované k rozboru po 90 dnech; prošlé přihlašovací relace a ověřovací tokeny hned; prošlá okna aplikačních rate limitů a záznamy rate limitu přihlašování starší hodiny; doručená upozornění po 400 dnech. Při témže běhu přešifruje klíče brokerů po výměně šifrovacího klíče (viz výše) |
 
 ⚠️ **První plný sync se stahuje po částech** — Trading 212 pouští export
 ~1×/min a každý rok je jeden export. Jeden běh jobů si bere nejvýš 225 s

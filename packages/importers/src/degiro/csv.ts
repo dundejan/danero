@@ -178,6 +178,8 @@ const PRODUCT_HEADERS = ['produkt', 'product', 'produit'];
 const QUANTITY_HEADERS = ['počet', 'quantity', 'aantal', 'anzahl', 'nombre', 'quantité'];
 const PRICE_HEADERS = ['kurz', 'price', 'koers', 'kurs', 'cours', 'prix'];
 const TOTAL_HEADERS = ['celkem', 'total', 'totaal', 'gesamt'];
+/** Hodnota obchodu v měně účtu — nečte se, jen její název může nést měnu účtu. */
+const VALUE_HEADERS = ['hodnota', 'value', 'waarde', 'wert', 'valeur'];
 const ORDER_ID_HEADERS = [
   'id objednávky',
   'order id',
@@ -190,8 +192,15 @@ const ORDER_ID_HEADERS = [
 const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving', 'beschreibung'];
 const CHANGE_HEADERS = ['změna', 'change', 'mutatie', 'änderung', 'anderung', 'variation'];
 
+/**
+ * AutoFX = poplatek Degira za automatický převod měny u obchodu v cizí měně.
+ * Samostatný sloupec má až rozložení od prosince 2025 („AutoFX Kosten“).
+ */
+const isAutoFxHeader = (lower: string): boolean => /auto\s?fx/.test(lower);
+
 /** Poplatkový sloupec má dlouhý lokalizovaný název → fuzzy shoda. */
 const isFeeHeader = (lower: string): boolean =>
+  !isAutoFxHeader(lower) &&
   (lower.includes('transak') || lower.includes('transact')) &&
   (lower.includes('poplatek') ||
     lower.includes('fee') ||
@@ -223,6 +232,22 @@ const cell = (row: string[], index: number): string =>
   index >= 0 ? (row[index] ?? '').trim() : '';
 
 const isCurrency = (value: string): boolean => /^[A-Z]{3}$/.test(value);
+
+/*
+ * Od prosince 2025 nosí Transactions.csv měnu účtu v NÁZVU sloupce („Waarde
+ * EUR“, „Totaal EUR“) místo v bezejmenném sloupci za částkou. Sufix je
+ * třípísmenný kód velkými písmeny oddělený mezerou — „Order ID“ ani „ISIN“
+ * mu neodpovídají.
+ */
+const HEADER_CURRENCY_SUFFIX = /\s+([A-Z]{3})$/;
+
+/** Měna ze sufixu názvu sloupce („Totaal EUR“ → EUR), jinak `undefined`. */
+const headerCurrency = (header: string | undefined): string | undefined =>
+  HEADER_CURRENCY_SUFFIX.exec(header ?? '')?.[1];
+
+/** Název sloupce bez sufixu měny („Totaal EUR“ → „Totaal“) — pro hledání podle synonym. */
+const withoutCurrencySuffix = (header: string): string =>
+  header.replace(HEADER_CURRENCY_SUFFIX, '');
 
 type AmountCurrencyPair =
   | { kind: 'ok'; amount: string; currency: string; raw: string }
@@ -300,16 +325,20 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
   }
 
   const { headers, rows } = parseDelimited(text, detectDelimiter(text));
+  // sloupce se hledají podle názvu BEZ sufixu měny: „Totaal EUR“ je „Totaal“
+  const bare = headers.map(withoutCurrencySuffix);
   const col = {
-    date: findColumn(headers, DATE_HEADERS),
-    time: findColumn(headers, TIME_HEADERS),
-    product: findColumn(headers, PRODUCT_HEADERS),
-    isin: findColumn(headers, ['isin']),
-    quantity: findColumn(headers, QUANTITY_HEADERS),
-    price: findColumn(headers, PRICE_HEADERS),
-    fee: findColumn(headers, [], isFeeHeader),
-    total: findColumn(headers, TOTAL_HEADERS),
-    orderId: findColumn(headers, ORDER_ID_HEADERS),
+    date: findColumn(bare, DATE_HEADERS),
+    time: findColumn(bare, TIME_HEADERS),
+    product: findColumn(bare, PRODUCT_HEADERS),
+    isin: findColumn(bare, ['isin']),
+    quantity: findColumn(bare, QUANTITY_HEADERS),
+    price: findColumn(bare, PRICE_HEADERS),
+    fee: findColumn(bare, [], isFeeHeader),
+    autoFx: findColumn(bare, [], isAutoFxHeader),
+    total: findColumn(bare, TOTAL_HEADERS),
+    value: findColumn(bare, VALUE_HEADERS),
+    orderId: findColumn(bare, ORDER_ID_HEADERS),
   };
   if (col.date < 0 || col.isin < 0 || col.quantity < 0 || col.price < 0) {
     result.errors.push({
@@ -321,6 +350,22 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
 
   // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (viz csv.ts)
   const decimal = detectDecimalSeparator(rows.flat());
+
+  const isUnnamed = (index: number): boolean => (headers[index] ?? '') === '';
+  // měna účtu, pokud ji nese název některého sloupce (rozložení od prosince 2025)
+  const accountCurrency =
+    headerCurrency(headers[col.fee]) ??
+    headerCurrency(headers[col.total]) ??
+    headerCurrency(headers[col.value]);
+  /**
+   * Měna částky ve sloupci: starší rozložení ji má v bezejmenném sloupci hned
+   * za částkou, novější v názvu sloupce. AutoFX nemá ani jedno a je v měně účtu.
+   */
+  const columnCurrency = (row: string[], index: number): string | undefined => {
+    const next = cell(row, index + 1);
+    if (isUnnamed(index + 1) && isCurrency(next)) return next;
+    return headerCurrency(headers[index]) ?? accountCurrency;
+  };
 
   const nextId = uniqueIdFactory();
 
@@ -383,13 +428,15 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       return;
     }
 
-    // poplatek: záporná částka, měna hned za ním; může být prázdný
+    // R-05b: výdajem k obchodu jsou i poplatky. Transakční poplatek i AutoFX
+    // jsou záporné částky v měně účtu a můžou být prázdné; sčítají se do
+    // jednoho poplatku obchodu.
     let fee: { amount: string; currency: string } | undefined;
     if (col.fee >= 0) {
       const feeRaw = parseDegiroNumber(cell(row, col.fee), decimal);
       if (feeRaw !== null && !d(feeRaw).eq(0)) {
-        const feeCurrency = cell(row, col.fee + 1);
-        if (isCurrency(feeCurrency)) {
+        const feeCurrency = columnCurrency(row, col.fee);
+        if (feeCurrency !== undefined) {
           fee = { amount: d(feeRaw).abs().toString(), currency: feeCurrency };
         } else {
           result.warnings.push({
@@ -399,8 +446,42 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
         }
       }
     }
+    if (col.autoFx >= 0) {
+      const autoFxRaw = parseDegiroNumber(cell(row, col.autoFx), decimal);
+      if (autoFxRaw !== null && !d(autoFxRaw).eq(0)) {
+        const autoFxCurrency = columnCurrency(row, col.autoFx);
+        if (autoFxCurrency === undefined) {
+          result.warnings.push({
+            line,
+            message:
+              `Poplatek za převod měny (AutoFX) ${autoFxRaw} nemá ve výpisu měnu, kterou bychom ` +
+              'poznali — do výdajů k obchodu jsme ho nezapočítali. Daň tím vyjde nanejvýš o něco vyšší.',
+          });
+        } else if (fee !== undefined && fee.currency !== autoFxCurrency) {
+          // měnu známe, jen se liší od transakčního poplatku — obchod nese jediný poplatek v jedné měně
+          result.warnings.push({
+            line,
+            message:
+              `Poplatek za převod měny (AutoFX) ${autoFxRaw} ${autoFxCurrency} je v jiné měně než ` +
+              `transakční poplatek (${fee.currency}) a k obchodu umíme uložit poplatek jen v jedné — ` +
+              'do výdajů k obchodu jsme ho nezapočítali. Daň tím vyjde nanejvýš o něco vyšší.',
+          });
+        } else {
+          fee = {
+            amount: d(fee?.amount ?? '0')
+              .plus(d(autoFxRaw).abs())
+              .toString(),
+            currency: autoFxCurrency,
+          };
+        }
+      }
+    }
 
-    const orderId = cell(row, col.orderId);
+    // Nové rozložení má pod „Order ID“ prázdnou buňku a samotné ID až
+    // v bezejmenném sloupci za ní.
+    const orderId =
+      cell(row, col.orderId) ||
+      (col.orderId >= 0 && isUnnamed(col.orderId + 1) ? cell(row, col.orderId + 1) : '');
     const contentHash = fnv1a64(
       [isoDate, cell(row, col.time), isin, quantityRaw, priceRaw, cell(row, col.total)].join('|'),
     );
@@ -441,6 +522,7 @@ type AccountKind =
   | { kind: 'DIVIDEND_TAX' }
   | { kind: 'INTEREST' }
   | { kind: 'FEE' }
+  | { kind: 'COURTESY' }
   | { kind: 'DEPOSIT' }
   | { kind: 'WITHDRAWAL' }
   | { kind: 'CORPORATE'; subtype: CorporateSubtype }
@@ -518,7 +600,21 @@ const TRADE_ECHO =
 const SHARE_MOVEMENT =
   /(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+\d/iu;
 
-/** Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive. */
+/** Změna produktu („PRODUCTWIJZIGING : Koop 500 @ …“) — kusy se odepíšou a znovu připíšou. */
+const PRODUCT_CHANGE = /productwijziging/i;
+
+/**
+ * Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive.
+ *
+ * Slovníky DE a FR vznikly původně PŘEKLADEM, ne z výpisu, a francouzskou
+ * srážku z dividendy ani poplatek za obchod nepoznaly: „Impôts sur dividende“
+ * skončilo jako záporná dividenda a dividenda se uložila se sraženou daní 0
+ * (L2a-04). Znění doložená veřejným vzorkem Account.csv a slovníkem převodníku
+ * Export-To-Ghostfolio: „Impôts sur dividende“, „Frais DEGIRO de courtage
+ * et/ou de parties tierces“, „DEGIRO Corporate Action Kosten“, „Overboeking
+ * van/naar uw geldrekening bij flatexDEGIRO Bank“, „DEGIRO courtesy“
+ * a „DEGIRO Verbindungskosten“. Nové znění sem patří jen s dokladem.
+ */
 function classifyDescription(description: string): AccountKind {
   const lower = description.toLowerCase();
   // Echo obchodu dřív než korporátní akce: rozhoduje TVAR řádku (sloveso +
@@ -541,6 +637,8 @@ function classifyDescription(description: string): AccountKind {
       'quellensteuer',
       'retenue à la source',
       'retenue a la source',
+      'impôts sur dividende',
+      'impots sur dividende',
     ])
   )
     return { kind: 'DIVIDEND_TAX' };
@@ -548,6 +646,13 @@ function classifyDescription(description: string): AccountKind {
   // sweep/peněžní trh dřív než úrok („Flatex Interest“ obsahuje „interest“)
   if (containsAny(lower, ['cash sweep', 'flatex interest', 'geldmarktfonds', 'money market']))
     return { kind: 'SKIP', reason: 'převod peněžního trhu / cash sweep — pro daň z CP nepodstatné' };
+  // Protějšek cash sweepu: částku nese jen popis, sloupec Změna bývá prázdný.
+  if (containsAny(lower, ['overboeking van uw geldrekening', 'overboeking naar uw geldrekening']))
+    return {
+      kind: 'SKIP',
+      reason:
+        'převod mezi Degirem a tvým peněžním účtem u flatexDEGIRO Bank — peníze zůstávají u brokera, vklad ani výběr to není',
+    };
   if (
     containsAny(lower, [
       'konverze měny',
@@ -578,9 +683,13 @@ function classifyDescription(description: string): AccountKind {
       'gebuhren',
       'frais de connexion',
       'frais de transaction',
+      'verbindungskosten',
+      'corporate action kosten',
+      'courtage et/ou',
     ])
   )
     return { kind: 'FEE' };
+  if (lower.includes('degiro courtesy')) return { kind: 'COURTESY' };
   // výběr dřív než vklad („Terugstorting“ obsahuje „storting“)
   if (containsAny(lower, ['výběr', 'withdrawal', 'terugstorting', 'auszahlung', 'retrait']))
     return { kind: 'WITHDRAWAL' };
@@ -763,6 +872,30 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
+    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
+    const pair = readAmountCurrencyPair(row, col.change, decimal);
+
+    // Řádek, který nehýbe penězi, zato HÝBE KUSY: `STOCK DIVIDEND: Verkoop 35 …`
+    // se kvůli slovu „dividend“ klasifikuje jako dividenda a bez částky by
+    // zmizel beze stopy i s pohybem 35 kusů (nález B4-0). Skutečné avízo
+    // dividendy počet kusů v popisu nemá.
+    //
+    // „Bez peněz“ je prázdná částka I NULA: Degiro u `STOCK DIVIDEND: Koop 9
+    // @ 0 EUR` píše do Změny `0,00` a u změny produktu `0`. S kontrolou jen na
+    // prázdnou dvojici dostal první řádek varování „Záporná dividenda 0.00“
+    // a druhý „Neznámý popis“ (L2a-04) — proto se ptáme dřív než na neznámý popis.
+    const carriesNoMoney = pair.kind === 'empty' || (pair.kind === 'ok' && d(pair.amount).eq(0));
+    if (carriesNoMoney && SHARE_MOVEMENT.test(description)) {
+      result.errors.push({
+        line,
+        message: PRODUCT_CHANGE.test(description)
+          ? `„${description}“ je změna produktu: Degiro při ní kusy odepíše a znovu připíše, peníze se nehýbou. Takový pohyb z výpisu neumíme zpracovat — když se změnil ISIN nebo počet kusů, doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů. Když ISIN i počet zůstaly stejné, nic doplňovat nemusíš.`
+          : `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
+        raw: row.join(';'),
+      });
+      return;
+    }
+
     // POŘADÍ JE ZÁVAZNÉ: neznámý popis musí skončit chybou i BEZ peněžního
     // pohybu. Degiro takhle reportuje korporátní akce (prázdná Změna) — dřívější
     // kontrola na prázdnou dvojici je zahazovala úplně beze stopy.
@@ -775,29 +908,16 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       return;
     }
 
-    // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
-    const pair = readAmountCurrencyPair(row, col.change, decimal);
     if (decimal === null && pair.kind === 'ok' && isAmbiguousThousandGroup(pair.raw)) {
       result.warnings.push({ line, message: ambiguousNote('Částka', pair.raw, pair.amount) });
     }
     // prázdná dvojice u ROZPOZNANÉHO popisu = informativní řádek bez peněžního
     // pohybu → bez záznamu (např. avízo dividendy před připsáním)
     if (pair.kind === 'empty') {
-      // ...ale pozor na řádky, které nehýbou penězi, zato HÝBOU KUSY.
-      // `STOCK DIVIDEND: Verkoop 35 …` se kvůli slovu „dividend“ klasifikuje
-      // jako dividenda a bez částky by zmizel beze stopy i s pohybem 35 kusů
-      // (nález B4-0). Skutečné avízo dividendy počet kusů v popisu nemá.
-      if (SHARE_MOVEMENT.test(description)) {
-        result.errors.push({
-          line,
-          message: `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
-          raw: row.join(';'),
-        });
-        return;
-      }
-      // Zbytek (avízo dividendy, řádek daně či poplatku s prázdnou částkou)
-      // peněžní pohyb opravdu nenese, takže transakce nevzniká — ale nesmí
-      // zmizet beze stopy. Do 8. 8. 2026 se takový řádek zahodil úplně:
+      // Pohyb kusů bez peněz už skončil chybou výš. Zbytek (avízo dividendy,
+      // řádek daně či poplatku s prázdnou částkou) peněžní pohyb opravdu
+      // nenese, takže transakce nevzniká — ale nesmí zmizet beze stopy.
+      // Do 8. 8. 2026 se takový řádek zahodil úplně:
       // nešel do transakcí, do chyb, do varování ani do přeskočených, takže
       // import hlásil „0 chyb, 0 přeskočeno“ a řádek nebylo jak dohledat
       // (nález B-3-6, dřív hlášeno úžeji jako B1-1 „mizí dividenda“).
@@ -893,6 +1013,16 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           currency,
           date: isoDate,
           note: description,
+        });
+        return;
+      }
+      case 'COURTESY': {
+        // Částka, kterou Degiro připíše z vlastní vůle. Jaký je to příjem,
+        // z výpisu nepoznáme (docs/02 na to pravidlo nemá) — nezařazujeme ji,
+        // ale řekneme to, stejně jako u „Promotional Award“ ve výpisu Schwabu.
+        result.warnings.push({
+          line,
+          message: `Kompenzace od Degira ${changeRaw} ${currency} („${description}“) — tenhle pohyb neumíme automaticky zařadit, do výpočtu nevstupuje. Pokud je daňově relevantní, doplň ho přes univerzální šablonu.`,
         });
         return;
       }

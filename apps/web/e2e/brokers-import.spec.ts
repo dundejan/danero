@@ -113,10 +113,17 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   await expect(newReport).toContainText('7 nových · 0 duplicit · 0 chyb');
   await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
 
-  // stažitelná šablona existuje
+  // stažitelná šablona existuje — ve tvaru pro český Excel (BOM + středník),
+  // jinak se po dvojkliku nasype do jednoho sloupce s rozbitou diakritikou
   const response = await page.request.get('/api/sablona');
   expect(response.ok()).toBe(true);
-  expect(await response.text()).toContain('CORPORATE_ACTION');
+  const template = await response.body();
+  expect([...template.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  expect(template.toString('utf8')).toContain('CORPORATE_ACTION;2024-08-31;');
+
+  // a pravidla pro vyplnění stojí tam, kde se šablona stahuje
+  await expect(page.locator('#sablona')).toContainText('5.3.2026');
+  await expect(page.locator('#sablona')).toContainText('TRANSFER_OUT');
 });
 
 /**

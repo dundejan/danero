@@ -45,6 +45,104 @@ describe('R-12h/b: uzavřené derivátové obchody — příjem, párovaný výd
   });
 });
 
+/**
+ * Nález L4-05: všechny testy výše i níže uzavírají přesně tolik kusů, kolik
+ * otevřely, takže záměna „vezmi menší z lotu a zbytku“ za „vezmi větší“
+ * v párování procházela. Výdajem smí být jen cena skutečně uzavřených kusů
+ * (R-12h, § 10/4 a /5).
+ *
+ * Schválně JEN na jediném otevřeném lotu, ať očekávané hodnoty nezávisí na
+ * pořadí párování — to má vlastní pravidlo R-12s a testy pod ním.
+ */
+describe('R-12h/j: částečné uzavření bere jen uzavřené kusy (jediný lot)', () => {
+  const nakup = () =>
+    optBuy({ quantity: '10', pricePerShare: '100', tradeDate: '2025-02-03', settlementDate: '2025-02-03' });
+
+  it('prodej 4 z 10 nakoupených opcí: příjem 600, výdaj 400, zbytek lotu zůstává', () => {
+    const result = run([
+      nakup(),
+      optSell({ quantity: '4', pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('600');
+    // 4 × 100 — prémie za 6 neprodaných kusů do výdajů nepatří
+    expect(result.derivatives.expensesCzk.toString()).toBe('400');
+    expect(result.derivatives.base10Czk.toString()).toBe('200');
+    expect(result.limits.flatTax50k.components.derivativesIncomeCzk.toString()).toBe('600');
+    expect(result.derivatives.openPositions).toHaveLength(1);
+    expect(result.derivatives.openPositions[0]!.quantity.toString()).toBe('6');
+    expect(result.derivatives.openPositions[0]!.openedAt).toBe('2025-02-03');
+  });
+
+  it('otevírací poplatek se dělí poměrem uzavřených kusů', () => {
+    const result = run([
+      optBuy({
+        quantity: '10',
+        pricePerShare: '100',
+        tradeDate: '2025-02-03',
+        settlementDate: '2025-02-03',
+        fee: { amount: '50', currency: 'CZK' },
+      }),
+      optSell({ quantity: '4', pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    // 4 × 100 + 50 × 4/10
+    expect(result.derivatives.expensesCzk.toString()).toBe('420');
+    expect(result.derivatives.base10Czk.toString()).toBe('180');
+  });
+
+  it('doprodej zbytku téhož lotu dá v úhrnu celou prémii, ani korunu navíc', () => {
+    const result = run([
+      nakup(),
+      optSell({ quantity: '4', pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      optSell({ quantity: '6', pricePerShare: '150', tradeDate: '2025-04-07', settlementDate: '2025-04-07' }),
+    ]);
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('1500');
+    expect(result.derivatives.expensesCzk.toString()).toBe('1000');
+    expect(result.derivatives.items.map((item) => item.kind)).toEqual(['LONG_CLOSE', 'LONG_CLOSE']);
+    // druhý prodej nesmí vyrobit výpis (short) ze „zmizelého“ zbytku
+    expect(result.derivatives.openPositions).toHaveLength(0);
+  });
+
+  it('částečný odkup vypsané opce: výdajem je jen cena odkoupených kusů (R-12j)', () => {
+    const result = run([
+      optSell({ isin: 'OPT:Y', quantity: '10', pricePerShare: '100', tradeDate: '2025-02-03', settlementDate: '2025-02-03' }),
+      optBuy({ isin: 'OPT:Y', quantity: '4', pricePerShare: '60', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    // prémie za všech 10 kusů je příjmem přijetím; odkup 4 × 60
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('1000');
+    expect(result.derivatives.expensesCzk.toString()).toBe('240');
+    expect(result.derivatives.openPositions).toHaveLength(1);
+    expect(result.derivatives.openPositions[0]!.quantity.toString()).toBe('-6');
+  });
+});
+
+/**
+ * R-12s: přes víc otevíracích obchodů se páruje vždy FIFO a volba metody
+ * z R-05c na deriváty nedosáhne. Při záměně pořadí by výdaj vyšel 1 000
+ * (LIFO: 5 × 200), ne 700.
+ */
+describe('R-12s: částečné uzavření přes víc otevíracích obchodů páruje FIFO', () => {
+  const pozice = () => [
+    optBuy({ quantity: '3', pricePerShare: '100', tradeDate: '2025-02-03', settlementDate: '2025-02-03' }),
+    optBuy({ quantity: '7', pricePerShare: '200', tradeDate: '2025-02-10', settlementDate: '2025-02-10' }),
+    optSell({ quantity: '5', pricePerShare: '300', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+  ];
+
+  it('prodej 5 z 3 + 7 kusů: příjem 1 500, výdaj 3 × 100 + 2 × 200 = 700', () => {
+    const result = run(pozice());
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('1500');
+    expect(result.derivatives.expensesCzk.toString()).toBe('700');
+    expect(result.derivatives.openPositions.map((p) => p.quantity.toString())).toEqual(['5']);
+  });
+
+  it.each(['LIFO', 'MAX_PROFIT', 'MAX_LOSS'] as const)(
+    'metoda párování cenných papírů %s výdaj derivátů nemění',
+    (matchingMethod) => {
+      const result = run(pozice(), { options: { matchingMethod } });
+      expect(result.derivatives.expensesCzk.toString()).toBe('700');
+    },
+  );
+});
+
 describe('R-12c: deriváty nemají ŽÁDNÉ osvobození', () => {
   it('tržba pod 100k i držení přes 3 roky je plně zdanitelné, pooly 100k nečerpá', () => {
     const result = run([
@@ -359,6 +457,58 @@ describe('R-12f/g MARGIN vypořádání (futures, CFD): nominál není příjem'
     expect(result.derivatives.rawGainLossCzk.toString()).toBe('-1000');
     expect(result.derivatives.base10Czk.toString()).toBe('0');
     expect(result.limits.flatTax50k.components.derivativesIncomeCzk.toString()).toBe('0');
+  });
+
+  /**
+   * Nález L4-05: otevírací poplatek měl test jen u LONG marže (výše). Větev
+   * short si ho ukládá zvlášť — a kdyby ho zahodila, výdaj tiše zmizí a daň
+   * vyjde vyšší. Jediný lot, viz poznámka u částečného uzavření opcí.
+   */
+  const shortCfd = [
+    cfdSell({
+      pricePerShare: '200',
+      tradeDate: '2025-02-03',
+      settlementDate: '2025-02-03',
+      fee: { amount: '500', currency: 'CZK' },
+    }),
+  ];
+
+  it('poplatek při otevření SHORT pozice je výdajem při uzavření (R-12f)', () => {
+    const result = run([
+      ...shortCfd,
+      cfdBuy({ pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    // rozdíl (200 − 150) × 100 = 5 000 Kč; nominál 20 000 Kč příjmem není
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('5000');
+    expect(result.derivatives.expensesCzk.toString()).toBe('500');
+    expect(result.derivatives.base10Czk.toString()).toBe('4500');
+    expect(result.derivatives.openPositions).toHaveLength(0);
+  });
+
+  it('částečné uzavření shortu: rozdíl i poplatek jen za uzavřené kusy (R-12f)', () => {
+    const result = run([
+      ...shortCfd,
+      cfdBuy({ quantity: '40', pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+    ]);
+    // (200 − 150) × 40 = 2 000 Kč; z poplatku 500 Kč připadá na 40 ze 100 kusů 200 Kč
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('2000');
+    expect(result.derivatives.expensesCzk.toString()).toBe('200');
+    expect(result.derivatives.base10Czk.toString()).toBe('1800');
+    expect(result.limits.flatTax50k.components.derivativesIncomeCzk.toString()).toBe('2000');
+    expect(result.derivatives.openPositions).toHaveLength(1);
+    expect(result.derivatives.openPositions[0]!.quantity.toString()).toBe('-60');
+  });
+
+  it('uzavření shortu po částech dá v úhrnu celý rozdíl a celý poplatek (R-12f)', () => {
+    const result = run([
+      ...shortCfd,
+      cfdBuy({ quantity: '40', pricePerShare: '150', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+      cfdBuy({ quantity: '60', pricePerShare: '150', tradeDate: '2025-04-07', settlementDate: '2025-04-07' }),
+    ]);
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('5000');
+    expect(result.derivatives.expensesCzk.toString()).toBe('500');
+    // druhý nákup nesmí ze „zmizelého“ zbytku otevřít long
+    expect(result.derivatives.openPositions).toHaveLength(0);
   });
 });
 

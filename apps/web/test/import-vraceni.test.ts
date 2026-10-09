@@ -190,4 +190,27 @@ describe('vrácení importu', () => {
     expect(page).toContain('id={`vraceni-${batch.id}`}');
     expect(page).toContain('nahraj ho potom znovu');
   });
+
+  /**
+   * L7d-04 / L6a-04: tlačítko mělo 95 × 16 px, barvu sousedního popisku
+   * a žádný stav „probíhá“ — vypadalo jako text a po klepnutí se nedělo nic
+   * vidět. Je to ovládací prvek, který maže transakce: má tak vypadat a má
+   * říct, že pracuje.
+   */
+  it('„Vrátit import zpět“ je obrysové tlačítko se stavem „Vracím…“', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const page = readFileSync(
+      join(import.meta.dirname, '..', 'app', '(app)', 'import', 'page.tsx'),
+      'utf8',
+    );
+    const form = page.slice(page.indexOf('<form action={undoImportAction}>'));
+    const button = form.slice(0, form.indexOf('</form>'));
+    expect(button).toContain('<SubmitButton');
+    expect(button).toContain('variant="secondary"');
+    expect(button).toContain('pendingLabel="Vracím…"');
+    expect(button).not.toContain('<button');
+    // potvrzení po akci má kam doskočit
+    expect(page).toContain('<section id={IMPORT_HISTORY_ANCHOR}');
+  });
 });

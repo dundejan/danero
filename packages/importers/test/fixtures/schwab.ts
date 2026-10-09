@@ -67,6 +67,53 @@ export const SCHWAB_JOURNALED = [
   '"01/04/2021","Journal","","TDA TO CS&CO TRANSFER","","","","$1000.00"',
 ].join('\n');
 
+/**
+ * Smyšlený titul pro fixtury níž (symbol, název i ISIN vymyšlené — žádný
+ * skutečný instrument). Vlastní mapa, aby se `SCHWAB_INSTRUMENT_MAP` ostatních
+ * testů neměnila.
+ */
+export const SCHWAB_FICTIONAL_MAP = {
+  QXLT: { isin: 'US00000QXLT9' },
+};
+
+/**
+ * L2b-01: srážka z dividendy pod akcí „NRA Withhold“ (novější zápis téže
+ * události jako „NRA Withholding“). První řádek je vratka pod stejnou akcí —
+ * kladná částka, znaménko se musí ctít jako u ostatních srážek (B-3-11).
+ */
+export const SCHWAB_NRA_WITHHOLD = [
+  SCHWAB_HEADER,
+  '"09/16/2026","NRA Withhold","QXLT","QUELLTAL HOLDINGS INC","","","","$0.90"',
+  '"09/15/2026","NRA Withhold","QXLT","QUELLTAL HOLDINGS INC","","","","-$4.50"',
+  '"09/15/2026","Cash Dividend","QXLT","QUELLTAL HOLDINGS INC","","","","$30.00"',
+  '"06/17/2026","NRA Withhold","QXLT","QUELLTAL HOLDINGS INC","","","","-$6.30"',
+  '"06/17/2026","Cash Dividend","QXLT","QUELLTAL HOLDINGS INC","","","","$42.00"',
+].join('\n');
+
+/**
+ * L2b-02: „Stock Plan Activity“ připisuje KUSY ze zaměstnaneckého plánu bez
+ * ceny; o čtvrt roku později se prodávají. Poslední řádek je tatáž akce bez
+ * kusů — u té zůstává obecné varování.
+ */
+export const SCHWAB_STOCK_PLAN = [
+  SCHWAB_HEADER,
+  '"05/20/2026","Sell","QXLT","QUELLTAL HOLDINGS INC","11","$73.10","$0.02","$804.08"',
+  '"02/18/2026 as of 02/15/2026","Stock Plan Activity","QXLT","QUELLTAL HOLDINGS INC","11","","",""',
+  '"01/09/2026","Stock Plan Activity","QXLT","QUELLTAL HOLDINGS INC","","","",""',
+].join('\n');
+
+/**
+ * L2b-07: daň sražená z kreditního úroku — řádek srážky bez symbolu, popis
+ * „SCHWAB1 INT …“ stejný jako u úroku téhož dne. Srážka z 18. 5. svůj úrok ve
+ * výpisu nemá (useknuté období).
+ */
+export const SCHWAB_INTEREST_TAX = [
+  SCHWAB_HEADER,
+  '"06/16/2026","NRA Tax Adj","","SCHWAB1 INT 05/16-06/15","","","","-$1.23"',
+  '"06/16/2026","Credit Interest","","SCHWAB1 INT 05/16-06/15","","","","$4.10"',
+  '"05/18/2026","NRA Tax Adj","","SCHWAB1 INT 04/16-05/15","","","","-$0.87"',
+].join('\n');
+
 /** Jiné pořadí sloupců — mapování musí jít podle názvů, ne indexů. */
 export const SCHWAB_REORDERED = [
   '"Action","Date","Amount","Symbol","Description","Quantity","Price","Fees & Comm"',
@@ -79,6 +126,16 @@ export const SCHWAB_UNMAPPED = [
   '"03/15/2023","Cash Dividend","XYZ","XYZ CORP","","","","$1.00"',
   '"03/02/2023","Buy","XYZ","XYZ CORP","5","$5.10","","-$25.50"',
   '"03/01/2023","Buy","XYZ","XYZ CORP","10","$5.00","","-$50.00"',
+].join('\n');
+
+/**
+ * L23-03: titul, který má ve výpisu jen dividendu se srážkou, žádný obchod
+ * (koupený dřív, v roce výpisu jen držený). Čísla smyšlená.
+ */
+export const SCHWAB_DIVIDEND_ONLY = [
+  SCHWAB_HEADER,
+  '"05/09/2025","Qualified Dividend","PEP","PEPSICO INC","","","","$13.60"',
+  '"05/09/2025","NRA Tax Adj","PEP","PEPSICO INC","","","","-$2.04"',
 ].join('\n');
 
 /** Prázdný export: titulní řádek + hlavička + řádek `""`. */

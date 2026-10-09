@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import { ANYCOIN_BROKER, parseAnycoinCsv, sniffAnycoinCsv } from '../src/anycoin/csv';
 import {
+  ANYCOIN_ALL_CURRENCIES,
   ANYCOIN_BASIC,
   ANYCOIN_CRYPTO_SWAP,
+  ANYCOIN_CUT_PERIOD,
   ANYCOIN_HEADER,
   ANYCOIN_MISC,
+  ANYCOIN_ONLY_BTC,
+  ANYCOIN_ONLY_CZK,
   ANYCOIN_UNPAIRED,
 } from './fixtures/anycoin';
 import { COINMATE_EN_LONG } from './fixtures/coinmate';
@@ -75,10 +79,198 @@ describe('Anycoin CSV parser', () => {
     const noOrderId = result.errors.find((e) => e.line === 3);
     expect(noOrderId?.message).toContain('bez Order ID');
 
-    // payment bez protistrany (fill chybí)
+    // payment bez protistrany (fill chybí) → hláška za tenhle obchod. Souhrn
+    // o filtru měny sem nepatří: plnění v BTC v souboru je, jen nemá Order ID,
+    // takže věta „všechny obchodní řádky jsou v měně CZK“ by nebyla pravda.
     const unpaired = result.errors.find((e) => e.line === 2);
-    expect(unpaired?.message).toContain('400001');
-    expect(unpaired?.message).toContain('pár');
+    expect(unpaired?.message).toContain(
+      'Obchod 400001 nemá kompletní pár platba + plnění (1× trade payment, 0× trade fill)',
+    );
+    expect(unpaired?.message).not.toContain('filtr');
+  });
+
+  describe('export omezený filtrem měny', () => {
+    it('kontrola: export všech měn dá oba obchody bez chyb', () => {
+      const result = parseAnycoinCsv(ANYCOIN_ALL_CURRENCIES);
+      expect(result.errors).toEqual([]);
+      expect(result.transactions.map((t) => t.type)).toEqual(['BUY', 'SELL']);
+    });
+
+    it('export jen BTC → jedna souhrnná hláška, která jako první jmenuje filtr měny', () => {
+      const result = parseAnycoinCsv(ANYCOIN_ONLY_BTC);
+
+      expect(result.transactions).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      // jedna hláška za celý soubor, ne jedna za každý obchod
+      expect(result.errors).toHaveLength(1);
+      const { line, message } = result.errors[0]!;
+      expect(line).toBe(2);
+      expect(message).toContain('BTC');
+      expect(message).toContain('910001');
+      expect(message).toContain('910002');
+      expect(message).toContain('exportuj všechny měny');
+      // filtr měny je první příčina, období až druhá
+      expect(message.indexOf('filtr')).toBeGreaterThan(-1);
+      expect(message.indexOf('filtr')).toBeLessThan(message.indexOf('období'));
+    });
+
+    it('export jen CZK → totéž, jen s korunami', () => {
+      const result = parseAnycoinCsv(ANYCOIN_ONLY_CZK);
+
+      expect(result.transactions).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('CZK');
+      expect(result.errors[0]!.message).toContain('exportuj všechny měny');
+    });
+
+    it('useknuté období (nohy v různých měnách) → dál hláška za každý obchod, o filtru mlčí', () => {
+      const result = parseAnycoinCsv(ANYCOIN_CUT_PERIOD);
+
+      expect(result.transactions).toEqual([]);
+      expect(result.errors.map((e) => e.line)).toEqual([2, 3]);
+      for (const error of result.errors) {
+        expect(error.message).toContain('celé období');
+        expect(error.message).not.toContain('filtr');
+      }
+    });
+
+    it('když aspoň jeden obchod pár má, filtr to není → hláška jen u neúplného', () => {
+      const csv = [
+        ANYCOIN_ALL_CURRENCIES,
+        '2025-12-31T23:59:58.367Z,trade payment,-1500,CZK,910003',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.transactions).toHaveLength(2);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('910003');
+      expect(result.errors[0]!.message).not.toContain('filtr');
+    });
+
+    it('obchod s oběma nohama v téže měně protistranu má → hláška za obchod, o filtru mlčí', () => {
+      // Celý soubor je v jediné měně, takže počet měn souhrn nevypne — rozhoduje
+      // jen to, že obchod pár platba + plnění má.
+      const csv = [
+        ANYCOIN_HEADER,
+        '2025-03-10T18:16:50.367Z,trade payment,-2000,CZK,950001',
+        '2025-03-10T18:16:52.885Z,trade fill,1990,CZK,950001',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.transactions).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('Obchod 950001 vypadá jako směna peněz');
+      expect(result.errors[0]!.message).not.toContain('filtr');
+    });
+
+    it('soubor bez obchodních řádků v jediné měně → žádná chyba', () => {
+      const csv = [
+        ANYCOIN_HEADER,
+        '2025-03-01T10:00:00.000Z,deposit,5000,CZK,',
+        '2025-03-05T10:00:00.000Z,withdrawal,-1000,CZK,',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.errors).toEqual([]);
+      expect(result.skipped).toHaveLength(2);
+    });
+
+    it('protistrana odmítnutá validací řádku → příčinou je ta řádková chyba, ne filtr', () => {
+      const csv = [
+        ANYCOIN_HEADER,
+        '2025-03-10T18:16:50.367Z,trade payment,-2000,CZK,930001',
+        '2025-03-10T18:16:52.885Z,trade fill,"0,00101",BTC,930001',
+        '2025-06-11T08:46:44.616Z,trade payment,-3000,CZK,930002',
+        '2025-06-11T08:46:47.763Z,trade fill,"0,00149",BTC,930002',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.transactions).toEqual([]);
+      expect(result.errors.map((e) => e.line)).toEqual([3, 5, 2, 4]);
+      expect(result.errors[0]!.message).toContain('chybí platná částka nebo měna');
+      expect(result.errors[2]!.message).toContain('Obchod 930001 nemá kompletní pár');
+      expect(result.errors.some((e) => e.message.includes('filtr'))).toBe(false);
+    });
+
+    // Soubor zůstává celý v CZK, takže počet měn souhrn nevypne — a přesto to
+    // filtr není: protistrana v něm je, jen ji parser odmítl.
+    it.each([
+      [
+        'bez měny',
+        '2025-03-10T18:16:52.885Z,trade fill,0.00101,,930003',
+        'platná částka nebo měna',
+      ],
+      ['s rozbitým datem', 'nesmysl,trade fill,1990,CZK,930003', 'Neplatné datum'],
+      ['bez Order ID', '2025-03-10T18:16:52.885Z,trade fill,1990,CZK,', 'bez Order ID'],
+    ])(
+      'odmítnutý obchodní řádek (%s) souhrn vypne, i když je soubor v jediné měně',
+      (_label, rejectedRow, rowError) => {
+        const csv = [
+          ANYCOIN_HEADER,
+          '2025-03-10T18:16:50.367Z,trade payment,-2000,CZK,930003',
+          rejectedRow,
+        ].join('\n');
+        const result = parseAnycoinCsv(csv);
+
+        expect(result.errors.map((e) => e.line)).toEqual([3, 2]);
+        expect(result.errors[0]!.message).toContain(rowError);
+        expect(result.errors[1]!.message).toContain('Obchod 930003 nemá kompletní pár');
+        expect(result.errors.some((e) => e.message.includes('filtr'))).toBe(false);
+      },
+    );
+
+    it('vrácený nákup vedle vkladu v CZK a výběru v BTC → soubor má obě měny, filtr to není', () => {
+      const csv = [
+        ANYCOIN_HEADER,
+        '2025-03-01T10:00:00.000Z,deposit,5000,CZK,',
+        '2025-03-10T18:16:50.367Z,trade payment,-2000,CZK,940001',
+        '2025-03-10T18:20:50.367Z,trade refund,2000,CZK,940001',
+        '2025-04-01T10:00:00.000Z,withdrawal,-0.01,BTC,',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.warnings.map((w) => w.line)).toEqual([4]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain('Obchod 940001 nemá kompletní pár');
+      expect(result.errors[0]!.message).not.toContain('filtr');
+    });
+
+    it('filtr na jednu měnu nechá i její vklady a staking (SOL i SOL.S) → souhrn platí dál', () => {
+      const csv = [
+        ANYCOIN_HEADER,
+        '2025-02-01T10:00:00.000Z,deposit,1.5,SOL,',
+        '2025-03-10T18:16:52.885Z,trade fill,2.25,SOL,960001',
+        '2025-04-01T10:00:00.000Z,stake,-2.25,SOL,',
+        '2025-04-01T10:00:05.000Z,stake,2.25,SOL.S,',
+      ].join('\n');
+      const result = parseAnycoinCsv(csv);
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.line).toBe(3);
+      expect(result.errors[0]!.message).toContain('v měně SOL,');
+      expect(result.errors[0]!.message).toContain('exportuj všechny měny');
+    });
+
+    it('výčet Order ID v souhrnu: tři vypíše, zbytek spočítá česky (1 další, 5 dalších)', () => {
+      const fills = (count: number): string =>
+        [
+          ANYCOIN_HEADER,
+          ...Array.from(
+            { length: count },
+            (_, i) => `2025-03-1${i}T18:16:52.885Z,trade fill,0.001,BTC,97000${i + 1}`,
+          ),
+        ].join('\n');
+
+      expect(parseAnycoinCsv(fills(3)).errors[0]!.message).toContain(
+        '(Order ID 970001, 970002, 970003)',
+      );
+      expect(parseAnycoinCsv(fills(4)).errors[0]!.message).toContain(
+        '(Order ID 970001, 970002, 970003 a 1 další)',
+      );
+      expect(parseAnycoinCsv(fills(8)).errors[0]!.message).toContain(
+        '(Order ID 970001, 970002, 970003 a 5 dalších)',
+      );
+    });
   });
 
   it('trade refund → warning; blokace výběru a unstake → skipped; neznámý typ → error', () => {

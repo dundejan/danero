@@ -42,10 +42,10 @@ async function cil(run: () => Promise<void>): Promise<string> {
   return 'BEZ REDIRECTU';
 }
 
-const form = (castka: string): FormData => {
+const form = (castka: string, rezim = 'PAUSAL'): FormData => {
   const data = new FormData();
   for (const [key, value] of Object.entries({
-    rezim: 'PAUSAL',
+    rezim,
     'ostatni-prijmy': castka,
     parovani: 'FIFO',
     kurzy: 'UNIFIED',
@@ -97,5 +97,52 @@ describe('částka v nastavení se čte tak, jak ji lidé píšou', () => {
       const kam = await cil(() => saveProfileAction(form(vstup)));
       expect(kam, `„${vstup}" nesmí spadnout`).toBe('/nastaveni?chyba=prijmy');
     }
+  });
+});
+
+/**
+ * L7i-01 (rozhodnutí R8): daňový režim nemá předvolbu. Do revize 5 byl
+ * předvolený „OSVČ v paušálu“, takže zaměstnanec, který profil jen odklikl,
+ * četl při 21 382 Kč „povinnost podat přiznání nevzniká“ — hlídal se mu limit
+ * 50 000 Kč místo 20 000 Kč. Režim z dat zjistit nejde, tak se na něj ptáme.
+ */
+describe('daňový režim se při prvním uložení musí vybrat (L7i-01, R8)', () => {
+  beforeAll(async () => {
+    const { createPgliteDb } = await vi.importActual<typeof import('@/db')>('@/db');
+    stav.db = await createPgliteDb();
+    const { user } = await import('@/db/schema');
+    await stav.db.insert(user).values({ id: 'u-castka', name: 'Jan', email: 'jan@danero.cz' });
+  }, 30_000);
+
+  it('bez vybraného režimu se profil neuloží a hláška říká, co chybí', { timeout: 30_000 }, async () => {
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    expect(await cil(() => saveProfileAction(form('0', '')))).toBe('/nastaveni?chyba=rezim');
+
+    const { taxpayerProfiles } = await import('@/db/schema');
+    expect(await stav.db.select().from(taxpayerProfiles)).toHaveLength(0);
+  });
+
+  it('formulář nového uživatele žádný režim nepředvybírá a pole je povinné', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const page = readFileSync(
+      join(import.meta.dirname, '..', 'app', '(app)', 'nastaveni', 'page.tsx'),
+      'utf8',
+    );
+    const select = page.slice(page.indexOf('id="rezim"'), page.indexOf('<option value="PAUSAL">'));
+    expect(select).toContain("defaultValue={profile?.regime ?? ''}");
+    expect(select).toContain('required');
+    expect(select).toContain('<option value="" disabled>');
+    expect(page).not.toMatch(/regime \?\? 'PAUSAL'/);
+  });
+
+  it('hláška pro chybějící režim existuje', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const toast = readFileSync(
+      join(import.meta.dirname, '..', 'app', '(app)', 'nastaveni', 'settings-toast.tsx'),
+      'utf8',
+    );
+    expect(toast).toMatch(/rezim: 'Vyber svůj daňový režim/);
   });
 });

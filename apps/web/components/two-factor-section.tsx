@@ -4,6 +4,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import { authClient } from '@/lib/auth-client';
+import { normalizeTotpCode, TOTP_CODE_PATTERN, TOTP_CODE_TITLE } from '@/lib/auth-errors';
+import { CONNECTION_ERROR_MESSAGE, settleAuthRequest } from '@/lib/auth-request';
+import {
+  backupCodesClipboardText,
+  twoFactorView,
+  type TwoFactorSetup,
+} from '@/lib/two-factor-view';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
@@ -12,16 +19,52 @@ const DISABLE_ERROR_ID = 'heslo-2fa-off-error';
 const VERIFY_ERROR_ID = 'kod-2fa-error';
 const ENABLE_ERROR_ID = 'heslo-2fa-error';
 
-interface SetupData {
-  totpURI: string;
-  backupCodes: string[];
+/**
+ * Záložní kódy s tlačítkem na zkopírování — stejný blok před potvrzením i po něm.
+ *
+ * Kódy zůstávají v prvcích `span`: E2E (`e2e/dvoufaktor.spec.ts`) je sbírá přes
+ * `locator('span')`. Schránka nemusí být k dispozici (stránka mimo HTTPS, zákaz
+ * v prohlížeči) — pak to karta řekne a kódy jdou označit ručně.
+ */
+function BackupCodes({ codes }: { codes: string[] }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(backupCodesClipboardText(codes));
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold">Záložní kódy</p>
+      <div className="grid max-w-xs grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm">
+        {codes.map((code) => (
+          <span key={code}>{code}</span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void onCopy()}>
+          Zkopírovat
+        </Button>
+        <p role="status" className="text-xs text-inkoust-tlumeny">
+          {copyState === 'copied' && 'Zkopírováno — vlož si je do správce hesel nebo do poznámek.'}
+          {copyState === 'failed' &&
+            'Zkopírovat se nepovedlo — označ kódy myší a zkopíruj je ručně.'}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export function TwoFactorSection({ enabled }: { enabled: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [setup, setSetup] = useState<SetupData | null>(null);
+  const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
 
@@ -31,54 +74,86 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     }
   }, [setup]);
 
-  async function onEnable(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /**
+   * Společná kostra tří formulářů sekce: zamkne tlačítko, pošle požadavek
+   * a tlačítko VŽDY zase odemkne.
+   *
+   * L12-03: handlery dřív na klienta jen čekaly. Při výpadku sítě slib skončil
+   * odmítnutím, `setPending(false)` za ním se neprovedlo a tlačítko zůstalo
+   * v „Připravuji…“ bez jediné hlášky. U potvrzení prvním kódem to navíc nutilo
+   * načíst stránku znovu uprostřed nastavování — a tím vydat nové tajemství,
+   * takže už naskenovaný záznam v autentikátoru přestal platit.
+   */
+  async function submit<T>(request: () => Promise<T>, onResponse: (result: T) => void) {
     setPending(true);
     setError(null);
+    try {
+      const outcome = await settleAuthRequest(request);
+      if (!outcome.connected) {
+        setError(CONNECTION_ERROR_MESSAGE);
+        return;
+      }
+      onResponse(outcome.result);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function onEnable(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
-    const result = await authClient.twoFactor.enable({ password });
-    setPending(false);
-    if (result.error || !result.data) {
-      setError('Nepodařilo se spustit nastavení — zkontroluj heslo.');
-      return;
-    }
-    setSetup(result.data);
+    void submit(
+      () => authClient.twoFactor.enable({ password }),
+      (result) => {
+        if (result.error || !result.data) {
+          setError('Nepodařilo se spustit nastavení — zkontroluj heslo.');
+          return;
+        }
+        setSetup(result.data);
+      },
+    );
   }
 
-  async function onVerify(event: React.FormEvent<HTMLFormElement>) {
+  function onVerify(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    const code = String(new FormData(event.currentTarget).get('kod') ?? '');
-    const result = await authClient.twoFactor.verifyTotp({ code });
-    setPending(false);
-    if (result.error) {
-      setError(
-        result.error.code === 'TOTP_CODE_ALREADY_USED'
-          ? 'Tenhle kód už byl použitý. Počkej na další a zadej ten.'
-          : 'Kód nesedí — zkontroluj aplikaci a zkus to znovu.',
-      );
-      return;
-    }
-    setVerified(true);
-    router.refresh();
+    const rawCode = String(new FormData(event.currentTarget).get('kod') ?? '');
+    void submit(
+      // L6b-06: autentikátor kód ukazuje jako „123 456“ — server chce jen číslice
+      () => authClient.twoFactor.verifyTotp({ code: normalizeTotpCode(rawCode) }),
+      (result) => {
+        if (result.error) {
+          setError(
+            result.error.code === 'TOTP_CODE_ALREADY_USED'
+              ? 'Tenhle kód už byl použitý. Počkej na další a zadej ten.'
+              : 'Kód nesedí — zkontroluj aplikaci a zkus to znovu.',
+          );
+          return;
+        }
+        setVerified(true);
+        router.refresh();
+      },
+    );
   }
 
-  async function onDisable(event: React.FormEvent<HTMLFormElement>) {
+  function onDisable(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
     const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
-    const result = await authClient.twoFactor.disable({ password });
-    setPending(false);
-    if (result.error) {
-      setError('Vypnutí se nepodařilo — zkontroluj heslo.');
-      return;
-    }
-    router.refresh();
+    void submit(
+      () => authClient.twoFactor.disable({ password }),
+      (result) => {
+        if (result.error) {
+          setError('Vypnutí se nepodařilo — zkontroluj heslo.');
+          return;
+        }
+        router.refresh();
+      },
+    );
   }
 
-  if (enabled && !setup) {
+  // L6b-03: co se ukáže, rozhoduje jedna čistá funkce (test/two-factor-view.test.ts)
+  const view = twoFactorView({ enabled, setup, verified });
+
+  if (view.kind === 'enabled') {
     return (
       <form onSubmit={onDisable} className="space-y-3">
         <p className="text-sm">
@@ -86,6 +161,10 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
           <span className="text-inkoust-tlumeny">
             Při přihlášení se vyžaduje kód z autentikátoru.
           </span>
+        </p>
+        <p className="text-sm text-inkoust-tlumeny">
+          Záložní kódy už znovu neukážeme. Když je nemáš uložené, dvoufaktorové ověření vypni a
+          zapni znovu — vzniknou nové a v aplikaci si naskenuješ nový QR kód.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
@@ -108,26 +187,38 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     );
   }
 
-  if (setup && !verified) {
+  if (view.kind === 'setup') {
     return (
       <div className="space-y-4">
         <p className="text-sm text-inkoust-tlumeny">
-          Naskenuj QR kód v aplikaci (Aegis, Google Authenticator, 1Password…) a potvrď
-          prvním kódem. Záložní kódy si ulož — každý funguje jednou, když přijdeš o telefon.
+          Naskenuj QR kód v aplikaci (Aegis, Google Authenticator, 1Password…) a ulož si záložní
+          kódy — každý funguje jednou, když přijdeš o telefon. Teprve pak zapnutí potvrď prvním
+          kódem z aplikace.
         </p>
         <div className="flex flex-wrap items-start gap-6">
           {qrDataUrl && (
             <img src={qrDataUrl} alt="QR kód pro autentikátor" className="rounded-md border border-linka" />
           )}
-          <div className="min-w-0 space-y-2">
-            <p className="break-all font-mono text-xs text-inkoust-tlumeny">{setup.totpURI}</p>
-            <div className="grid grid-cols-2 gap-x-6 font-mono text-xs">
-              {setup.backupCodes.map((code) => (
-                <span key={code}>{code}</span>
-              ))}
+          <div className="min-w-0 space-y-3">
+            {view.manualKey && (
+              <div className="space-y-1">
+                <p className="text-xs text-inkoust-tlumeny">
+                  Nejde QR kód naskenovat? Zadej do aplikace ručně tenhle klíč:
+                </p>
+                <code className="block select-all break-all font-mono text-sm">
+                  {view.manualKey}
+                </code>
+              </div>
+            )}
+            <div className="space-y-1">
+              <p className="text-xs text-inkoust-tlumeny">
+                Celá adresa pro aplikace, které ji umějí vložit:
+              </p>
+              <p className="break-all font-mono text-xs text-inkoust-tlumeny">{view.totpURI}</p>
             </div>
           </div>
         </div>
+        <BackupCodes codes={view.backupCodes} />
         <form onSubmit={onVerify} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div>
             <Label htmlFor="kod-2fa">První kód z aplikace</Label>
@@ -135,7 +226,9 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
               id="kod-2fa"
               name="kod"
               inputMode="numeric"
-              pattern="\d{6}"
+              autoComplete="one-time-code"
+              pattern={TOTP_CODE_PATTERN}
+              title={TOTP_CODE_TITLE}
               required
               className="font-mono tracking-widest"
               {...describedByError(error !== null, VERIFY_ERROR_ID)}
@@ -150,11 +243,16 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     );
   }
 
-  if (verified) {
+  if (view.kind === 'confirmed') {
     return (
-      <p className="text-sm font-semibold text-zelena-text">
-        Dvoufaktorové ověření je aktivní. Záložní kódy máš uložené?
-      </p>
+      <div className="space-y-4">
+        <p className="text-sm font-semibold text-zelena-text">Dvoufaktorové ověření je aktivní.</p>
+        <p className="text-sm text-inkoust-tlumeny">
+          Záložní kódy tu zůstanou, dokud z téhle stránky neodejdeš — potom už je znovu neukážeme.
+          Jestli je ještě nemáš uložené, udělej to teď.
+        </p>
+        <BackupCodes codes={view.backupCodes} />
+      </div>
     );
   }
 

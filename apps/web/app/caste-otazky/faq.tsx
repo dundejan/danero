@@ -58,7 +58,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: 'Pro koho je Danero?',
-    a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Hlídáme ale i limit 20 000 Kč vedlejších příjmů pro zaměstnance a limit 50 000 Kč pro podání přiznání — automaticky, včetně zahraničních dividend, na které se zapomíná.',
+    a: 'Pro české investory — a speciálně pro OSVČ v paušálním režimu, kterým neosvobozené příjmy z investic nad 50 000 Kč ročně prolomí paušální daň. Hlídáme ale i limit vedlejších příjmů pro zaměstnance (za rok 2026 20 000 Kč, od roku 2027 40 000 Kč) a obecný limit pro podání přiznání (za rok 2026 50 000 Kč, od roku 2027 100 000 Kč) — automaticky, včetně zahraničních dividend, na které se zapomíná.',
   },
   {
     q: 'Jak je to s bezpečností?',

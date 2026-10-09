@@ -6,6 +6,8 @@ import { Input, Label, Select } from '@/components/ui/field';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
+import { currentTaxYear } from '@/lib/clock';
+import { filingLimitTexts } from '@/lib/filing-limits';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
 import { SettingsNav } from './settings-nav';
@@ -25,6 +27,10 @@ export default async function SettingsPage({
   const params = await searchParams;
   // R-05c: roky, které si drží konfiguraci z doby, kdy se za ně generovaly podklady
   const pinnedYears = await listPinnedTaxYears(db, user.id);
+  // R-09a, R-09b: limity § 38g se rok od roku liší (do ZO 2026 50 000 /
+  // 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč). Profil platí pro všechny roky,
+  // takže volba režimu jmenuje limit běžného roku.
+  const filingLimits = filingLimitTexts(currentTaxYear());
 
   return (
     // jeden sloupec s šířkou pro formulář — nastavení se nečte přes celou
@@ -59,11 +65,31 @@ export default async function SettingsPage({
           <div className="grid items-end gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="rezim">Daňový režim</Label>
-              <Select id="rezim" name="rezim" defaultValue={profile?.regime ?? 'PAUSAL'}>
+              {/* L7i-01 (R8): bez předvolby. Režim z dat zjistit nejde a rozhoduje
+                  o verdiktu — předvolený paušál hlídal zaměstnanci limit
+                  50 000 Kč místo 20 000 Kč a tvrdil mu, že přiznání nepodává.
+                  Prázdná položka je jen u nového profilu; uložený režim se
+                  na ni vrátit nedá. */}
+              <Select
+                id="rezim"
+                name="rezim"
+                defaultValue={profile?.regime ?? ''}
+                required
+                aria-describedby="rezim-napoveda"
+              >
+                {!profile && (
+                  <option value="" disabled>
+                    Vyber, co na tebe sedí…
+                  </option>
+                )}
                 <option value="PAUSAL">OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)</option>
-                <option value="ZAMESTNANEC">Zaměstnanec (hlídá se limit 20 000 Kč)</option>
+                <option value="ZAMESTNANEC">
+                  {`Zaměstnanec (hlídá se limit ${filingLimits.employee})`}
+                </option>
                 <option value="OSVC">OSVČ mimo paušál (přiznání podávám tak jako tak)</option>
-                <option value="JINE">Jiné (hlídá se obecný limit 50 000 Kč)</option>
+                <option value="JINE">
+                  {`Jiné (hlídá se obecný limit ${filingLimits.general})`}
+                </option>
               </Select>
             </div>
             <div>
@@ -76,9 +102,26 @@ export default async function SettingsPage({
                 inputMode="decimal"
                 // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
                 defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
+                aria-describedby="ostatni-prijmy-napoveda"
               />
             </div>
           </div>
+          {/* R-08f, R-09a, R-09b: profil má tuhle částku jen jednu a engine ji
+              přičte ke každému roku — i ke skončenému a zafixovanému (fixace
+              R-05c drží párování, kurzy a výklad limitu 100 000 Kč, tohle pole
+              ne). „Kč/rok“ v popisku to neřeklo a letošní nájem tak bez
+              vysvětlení přepsal verdikt loňského roku. Věta stojí POD dvojicí
+              polí, ne pod tím svým: mřížka má `items-end` a text pod jedním
+              polem by ho vystrčil o řádek výš než sousední. */}
+          <p id="rezim-napoveda" className="text-xs text-inkoust-tlumeny">
+            Podle režimu Danero pozná, který limit ti hlídat a kdy ti říct, že přiznání podávat
+            nemusíš. Z výpisů se zjistit nedá, proto se na něj ptáme.
+          </p>
+          <p id="ostatni-prijmy-napoveda" className="text-xs text-inkoust-tlumeny">
+            Částka dalších příjmů platí pro všechny roky naráz — Danero ji přičte ke každému
+            roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za
+            minulé roky (třeba jestli za ně podáváš přiznání).
+          </p>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
