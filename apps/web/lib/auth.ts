@@ -221,9 +221,10 @@ function buildAuth(db: Db) {
         '/send-verification-email': { window: 300, max: 3 },
       },
     },
-    // D-01 (jednorázový TOTP kód), D-3-02 (per-účet strop citlivých operací)
-    // a D-02 (zneplatnění reset odkazů po změně hesla) — proč a jak je
-    // v lib/auth-hooks.ts
+    // D-01 (jednorázový TOTP kód), D-3-02 (per-účet strop citlivých operací),
+    // D-02 (zneplatnění reset odkazů po změně hesla) a L21-04 (server
+    // nevydá „důvěryhodné zařízení" a vypnutí 2FA odvolá ta dřívější) — proč
+    // a jak je v lib/auth-hooks.ts
     hooks: {
       before: beforeHooks(db),
       after: afterHooks(db),

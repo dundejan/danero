@@ -43,11 +43,18 @@ async function userWithTwoFactor(auth: Auth, email: string) {
   const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)?.[1];
   expect(secret).toBeTruthy();
 
-  await auth.api.verifyTOTP({
+  // aktivace relaci vymění — dál platí až cookie z téhle odpovědi
+  const activation = await auth.api.verifyTOTP({
     body: { code: codeForStep(secret!, currentStep()) },
     headers: new Headers({ cookie: sessionCookies }),
+    asResponse: true,
   });
-  return { secret: secret!, sessionCookies };
+  expect(activation.status).toBe(200);
+  return {
+    secret: secret!,
+    sessionCookies: cookiesFrom(activation),
+    backupCodes: enable.backupCodes,
+  };
 }
 
 /** Přihlášení heslem u účtu s 2FA — vrací cookie přihlašovací výzvy. */
@@ -182,4 +189,166 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
     });
     expect(bOvereni.status).toBe(200);
   });
+
+  /**
+   * L21-04: Better Auth umí „důvěryhodné zařízení" — ověření s příznakem
+   * `trustDevice` vydá cookie, se kterou dalších 30 dní stačí samotné heslo.
+   * Formulář ten příznak neposílá a Nastavení takové zařízení neukáže ani
+   * neodvolá, takže ho server nesmí přijmout ani při přímém volání API.
+   */
+  it(
+    'příznak trustDevice server zahodí: cookie důvěryhodného zařízení nevznikne a další přihlášení chce kód (L21-04)',
+    { timeout: 60_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'duvera@test.cz';
+      const { secret, backupCodes } = await userWithTwoFactor(auth, email);
+
+      // kód z autentikátoru — přes HTTP router, tedy cestou, kudy by příznak přišel zvenčí
+      const vyzva = await startSignIn(auth, email);
+      const overeniKodem = await auth.handler(
+        new Request('http://localhost:3000/api/auth/two-factor/verify-totp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: 'http://localhost:3000',
+            cookie: vyzva,
+          },
+          body: JSON.stringify({ code: codeForStep(secret, currentStep() + 1), trustDevice: true }),
+        }),
+      );
+      expect(overeniKodem.status).toBe(200);
+      expect(cookiesFrom(overeniKodem)).toContain('session_token');
+      expect(cookiesFrom(overeniKodem)).not.toContain('trust_device');
+      expect(await trustedDeviceCount(email)).toBe(0);
+
+      // týž prohlížeč se přihlašuje znovu: heslo samo nestačí
+      const dalsiVyzva = await signInWithCookies(auth, email, cookiesFrom(overeniKodem));
+      expect(dalsiVyzva.twoFactorRedirect).toBe(true);
+
+      // záložní kód je druhá cesta k téže cookie
+      const overeniZalohou = await auth.api.verifyBackupCode({
+        body: { code: backupCodes[0]!, trustDevice: true },
+        headers: new Headers({ cookie: dalsiVyzva.cookies }),
+        asResponse: true,
+      });
+      expect(overeniZalohou.status).toBe(200);
+      expect(cookiesFrom(overeniZalohou)).toContain('session_token');
+      expect(cookiesFrom(overeniZalohou)).not.toContain('trust_device');
+      expect(await trustedDeviceCount(email)).toBe(0);
+
+      const potreti = await signInWithCookies(auth, email, cookiesFrom(overeniZalohou));
+      expect(potreti.twoFactorRedirect).toBe(true);
+    },
+  );
+
+  /**
+   * L21-04, druhá půlka: Better Auth při vypnutí 2FA odvolá jen to zařízení,
+   * ze kterého se vypíná. Důvěra vyražená jinde (než server příznak přestal
+   * brát) by tak přežila vypnutí i nové zapnutí s novým tajemstvím. Záznam má
+   * ve `verification` tvar `trust-device-<náhodný řetězec>` s hodnotou userId
+   * (`better-auth/dist/plugins/two-factor/verify-two-factor.mjs`).
+   */
+  it(
+    'vypnutí 2FA smaže důvěryhodná zařízení účtu i z jiných prohlížečů a po novém zapnutí žádné nezbude (L21-04)',
+    { timeout: 60_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'odvolani@test.cz';
+      const jinyEmail = 'odvolani-jiny@test.cz';
+      const { sessionCookies } = await userWithTwoFactor(auth, email);
+      await signUpVerified(auth, { email: jinyEmail, password: HESLO, name: 'Jiný účet' });
+
+      const { getDb } = await import('@/db');
+      const { verification } = await import('@/db/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      const userId = await userIdOf(email);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+      await db.insert(verification).values([
+        // dvě zařízení téhož účtu — ani jedno není prohlížeč, který 2FA vypíná
+        { id: 'duvera-1', identifier: 'trust-device-prvniZarizeni', value: userId, expiresAt },
+        { id: 'duvera-2', identifier: 'trust-device-druheZarizeni', value: userId, expiresAt },
+        // cizí účet a jiný druh záznamu téhož účtu se mazat nesmí
+        {
+          id: 'duvera-3',
+          identifier: 'trust-device-ciziZarizeni',
+          value: await userIdOf(jinyEmail),
+          expiresAt,
+        },
+        { id: 'duvera-4', identifier: 'reset-password:nesouvisejici', value: userId, expiresAt },
+      ]);
+      expect(await trustedDeviceCount(email)).toBe(2);
+
+      const vypnuti = await auth.api.disableTwoFactor({
+        body: { password: HESLO },
+        headers: new Headers({ cookie: sessionCookies }),
+        asResponse: true,
+      });
+      expect(vypnuti.status).toBe(200);
+      expect(await trustedDeviceCount(email)).toBe(0);
+      expect(await trustedDeviceCount(jinyEmail)).toBe(1);
+      expect(
+        await db
+          .select()
+          .from(verification)
+          .where(eq(verification.identifier, 'reset-password:nesouvisejici')),
+      ).toHaveLength(1);
+
+      // nové zapnutí s novým tajemstvím: žádná stará důvěra se nevrátí
+      const noveCookies = cookiesFrom(vypnuti);
+      const zapnuti = await auth.api.enableTwoFactor({
+        body: { password: HESLO },
+        headers: new Headers({ cookie: noveCookies }),
+      });
+      const noveTajemstvi = /[?&]secret=([^&]+)/.exec(zapnuti.totpURI)![1]!;
+      const aktivace = await auth.api.verifyTOTP({
+        body: { code: codeForStep(noveTajemstvi, currentStep()) },
+        headers: new Headers({ cookie: noveCookies }),
+        asResponse: true,
+      });
+      expect(aktivace.status).toBe(200);
+      expect(await trustedDeviceCount(email)).toBe(0);
+      expect((await signInWithCookies(auth, email, '')).twoFactorRedirect).toBe(true);
+    },
+  );
 });
+
+/** Přihlášení heslem z prohlížeče, který už nese cookies z dřívějška. */
+async function signInWithCookies(auth: Auth, email: string, cookies: string) {
+  const response = await auth.api.signInEmail({
+    body: { email, password: HESLO },
+    headers: new Headers(cookies ? { cookie: cookies } : {}),
+    asResponse: true,
+  });
+  const body = (await response.json()) as { twoFactorRedirect?: boolean };
+  return { twoFactorRedirect: body.twoFactorRedirect === true, cookies: cookiesFrom(response) };
+}
+
+async function userIdOf(email: string): Promise<string> {
+  const { getDb } = await import('@/db');
+  const { user } = await import('@/db/schema');
+  const { eq } = await import('drizzle-orm');
+  const db = await getDb();
+  return (await db.select().from(user).where(eq(user.email, email)))[0]!.id;
+}
+
+/** Kolik důvěryhodných zařízení má účet uložených ve `verification`. */
+async function trustedDeviceCount(email: string): Promise<number> {
+  const { getDb } = await import('@/db');
+  const { verification } = await import('@/db/schema');
+  const { and, eq, like } = await import('drizzle-orm');
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(verification)
+    .where(
+      and(
+        eq(verification.value, await userIdOf(email)),
+        like(verification.identifier, 'trust-device-%'),
+      ),
+    );
+  return rows.length;
+}

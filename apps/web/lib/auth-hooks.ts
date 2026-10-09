@@ -113,13 +113,49 @@ export function limitSensitiveAccountOperations(db: Db) {
 }
 
 /**
+ * L21-04: „důvěryhodné zařízení" server nesmí vydat.
+ *
+ * Better Auth při ověření druhého faktoru s `trustDevice: true` vyrazí cookie
+ * `trust_device` a záznam `trust-device-<náhodný řetězec>` ve `verification`
+ * (hodnota = userId). S nimi dalších 30 dní stačí samotné heslo a platnost se
+ * každým přihlášením posouvá. Formulář ten příznak neposílá a Nastavení
+ * takové zařízení neukáže ani neodvolá — šlo ho vyrazit jen přímým voláním
+ * API a přežilo pak odhlášení ostatních zařízení, změnu hesla i vypnutí
+ * a nové zapnutí 2FA z jiného prohlížeče.
+ *
+ * Příznak proto přepisujeme na `false` dřív, než se k němu endpoint dostane.
+ * Nevracíme chybu: tělo je jinak platné a kód z autentikátoru by se zbytečně
+ * spálil (D-01). Cesta `/two-factor/verify-otp` je tu pro úplnost — kódy
+ * e-mailem nemáme zapnuté, ale endpoint týž příznak přijímá.
+ *
+ * Vrácený `context` Better Auth sloučí s požadavkem (`runBeforeHooks`
+ * v `better-auth/dist/api/dispatch.mjs`); hodnota z háčku má přednost.
+ */
+const TRUST_DEVICE_PATHS = new Set([
+  '/two-factor/verify-totp',
+  '/two-factor/verify-backup-code',
+  '/two-factor/verify-otp',
+]);
+
+export function withoutTrustDevice(
+  path: string | undefined,
+  body: unknown,
+): { context: { body: { trustDevice: false } } } | undefined {
+  if (!path || !TRUST_DEVICE_PATHS.has(path)) return undefined;
+  if (!body || typeof body !== 'object' || !('trustDevice' in body)) return undefined;
+  return { context: { body: { trustDevice: false } } };
+}
+
+/**
  * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
- * a drží jejich pořadí na jednom místě.
+ * a drží jejich pořadí na jednom místě. Úprava požadavku se vrací návratovou
+ * hodnotou, proto jde `withoutTrustDevice` až za háčky, které jen odmítají.
  */
 export function beforeHooks(db: Db) {
   const hooks = [rejectReusedTotpCode(db), limitSensitiveAccountOperations(db)];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
+    return withoutTrustDevice(ctx.path, ctx.body);
   });
 }
 
@@ -148,6 +184,32 @@ export function revokeResetTokensAfterPasswordChange(db: Db) {
     if (isAPIError(ctx.context.returned)) return;
     const userId = ctx.context.session?.user.id;
     if (userId) await revokePasswordResetTokens(db, userId);
+  });
+}
+
+/**
+ * L21-04: vypnutí 2FA odvolá důvěryhodná zařízení CELÉHO účtu.
+ *
+ * Better Auth při `/two-factor/disable` smaže jen záznam, jehož cookie nese
+ * prohlížeč, který 2FA vypíná. Důvěra vyražená jinde by tak přežila vypnutí
+ * i nové zapnutí s novým tajemstvím a druhý faktor by dál přeskakovala.
+ * Nové záznamy už nevznikají (`withoutTrustDevice`), tohle uklízí ty, které
+ * vznikly dřív — a drží slib z Nastavení, že po zapnutí se při přihlášení
+ * vyžaduje kód.
+ */
+export async function revokeTrustedDevices(db: Db, userId: string): Promise<void> {
+  await db
+    .delete(verification)
+    .where(and(eq(verification.value, userId), like(verification.identifier, 'trust-device-%')));
+}
+
+export function revokeTrustedDevicesAfterTwoFactorDisable(db: Db) {
+  return createAuthMiddleware(async (ctx) => {
+    if (ctx.path !== '/two-factor/disable') return;
+    // after hook běží i po chybě endpointu (špatné heslo) — pak se nic nevypnulo
+    if (isAPIError(ctx.context.returned)) return;
+    const userId = ctx.context.session?.user.id;
+    if (userId) await revokeTrustedDevices(db, userId);
   });
 }
 
@@ -196,7 +258,11 @@ export function logTwoFactorChanges(db: Db) {
  * pořadí a soupiska na jednom místě.
  */
 export function afterHooks(db: Db) {
-  const hooks = [revokeResetTokensAfterPasswordChange(db), logTwoFactorChanges(db)];
+  const hooks = [
+    revokeResetTokensAfterPasswordChange(db),
+    revokeTrustedDevicesAfterTwoFactorDisable(db),
+    logTwoFactorChanges(db),
+  ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
   });
