@@ -188,7 +188,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 
 - **R-05a Cash princip**: příjem patří do roku **připsání peněz** (na brokerský účet), ne roku obchodu.
 - **R-05b Výdaje** (§ 10 odst. 4, 5): nabývací cena + související výdaje (poplatky, provize). Výdaje k osvobozeným příjmům uplatnit nelze.
-- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné (stanovisko GFŘ, potvrzuje i praxe Taxomatu). Podmínka: průkaznost a konzistence. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS`; zvolená metoda se per rok zafixuje a dokumentuje. Individuální identifikaci (`MANUAL`) zákon připouští, ale **engine ji neumí** a tenhle dokument ji dřív omylem sliboval (nález A1-3-10) — typ `MatchingMethod` má čtyři hodnoty a ruční párování lotů nemá ani UI. Až přibude, patří sem zpátky. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
+- **R-05c Párování — metoda NENÍ předepsána** pro neúčtující FO: FIFO, LIFO i individuální identifikace jsou přípustné. Zdroj: § 10 odst. 4 a 5 ZDP o metodě mlčí a žádný jiný předpis ji neúčtujícím FO neukládá; FIFO je ustálená praxe. Konkrétní stanovisko GFŘ, na které se tu dřív odkazovalo, se dohledat nepodařilo (9. 10. 2026), proto tu není. Podmínka: průkaznost a konzistence — jinou metodu než FIFO musí poplatník umět doložit. Engine: strategie `FIFO` (default) | `LIFO` | `MAX_PROFIT` | `MAX_LOSS`; zvolená metoda se per rok zafixuje a dokumentuje. Individuální identifikaci (`MANUAL`) zákon připouští, ale **engine ji neumí** a tenhle dokument ji dřív omylem sliboval (nález A1-3-10) — typ `MatchingMethod` má čtyři hodnoty a ruční párování lotů nemá ani UI. Až přibude, patří sem zpátky. `MAX_PROFIT`/`MAX_LOSS` porovnávají nabývací ceny lotů **v CZK kurzem roku nákupu** (konvence výdajů R-06a) — loty téhož ISIN mohou být v různých měnách (duální listing, GBX/GBP) a nominály napříč měnami porovnat nelze.
 
   **Fixace konfigurace per rok (implementace).** Podmínku konzistence nese
   tabulka `tax_year_settings` (uživatel + daňový rok + čas fixace + zafixované
@@ -946,6 +946,16 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   přiznává, že příjmy/výdaje z hodnot podkladu z dat získat nelze). Do limitu
   50k (R-12q) vstupuje úhrn kladných čistých výsledků — užší než teoretická
   hrubá plnění, ale jediné z dat zjistitelné. Jistota střední.
+- **R-12s Párování při částečném uzavření**: uzavírá-li se jen část pozice
+  otevřené víc obchody, párují se otevírací obchody **vždy FIFO** (nejstarší
+  první). Volba metody z R-05c se na deriváty **nevztahuje** — nastavení
+  `matchingMethod` se týká jen cenných papírů. Zdroj: zákon metodu
+  neúčtujícím FO nepředepisuje (§ 10 odst. 4 a 5 o ní mlčí, stejně jako
+  u R-05c); FIFO je obvyklá a deterministická. Výslovný výklad k derivátům
+  neexistuje, jistota střední. Součet výdajů za celou pozici na metodě
+  nezávisí, liší se jen jeho rozložení mezi roky. Příklad: nákup 3 ks po 100
+  a 7 ks po 200, prodej 5 ks po 300 → příjem 1 500, výdaj 3 × 100 + 2 × 200
+  = 700.
 
 Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
 tiskopis 5405-P2 vzor 21 (číselník A–H); XTB „Informace o zdaňování příjmů

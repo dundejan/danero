@@ -51,9 +51,8 @@ describe('R-12h/b: uzavřené derivátové obchody — příjem, párovaný výd
  * v párování procházela. Výdajem smí být jen cena skutečně uzavřených kusů
  * (R-12h, § 10/4 a /5).
  *
- * Schválně JEN na jediném otevřeném lotu: metodu párování při částečném
- * uzavření přes víc lotů docs/02 u derivátů neuvádí, takže očekávané hodnoty
- * tady na žádné metodě nesmí záviset.
+ * Schválně JEN na jediném otevřeném lotu, ať očekávané hodnoty nezávisí na
+ * pořadí párování — to má vlastní pravidlo R-12s a testy pod ním.
  */
 describe('R-12h/j: částečné uzavření bere jen uzavřené kusy (jediný lot)', () => {
   const nakup = () =>
@@ -114,6 +113,34 @@ describe('R-12h/j: částečné uzavření bere jen uzavřené kusy (jediný lot
     expect(result.derivatives.openPositions).toHaveLength(1);
     expect(result.derivatives.openPositions[0]!.quantity.toString()).toBe('-6');
   });
+});
+
+/**
+ * R-12s: přes víc otevíracích obchodů se páruje vždy FIFO a volba metody
+ * z R-05c na deriváty nedosáhne. Při záměně pořadí by výdaj vyšel 1 000
+ * (LIFO: 5 × 200), ne 700.
+ */
+describe('R-12s: částečné uzavření přes víc otevíracích obchodů páruje FIFO', () => {
+  const pozice = () => [
+    optBuy({ quantity: '3', pricePerShare: '100', tradeDate: '2025-02-03', settlementDate: '2025-02-03' }),
+    optBuy({ quantity: '7', pricePerShare: '200', tradeDate: '2025-02-10', settlementDate: '2025-02-10' }),
+    optSell({ quantity: '5', pricePerShare: '300', tradeDate: '2025-03-05', settlementDate: '2025-03-05' }),
+  ];
+
+  it('prodej 5 z 3 + 7 kusů: příjem 1 500, výdaj 3 × 100 + 2 × 200 = 700', () => {
+    const result = run(pozice());
+    expect(result.derivatives.taxableIncomeCzk.toString()).toBe('1500');
+    expect(result.derivatives.expensesCzk.toString()).toBe('700');
+    expect(result.derivatives.openPositions.map((p) => p.quantity.toString())).toEqual(['5']);
+  });
+
+  it.each(['LIFO', 'MAX_PROFIT', 'MAX_LOSS'] as const)(
+    'metoda párování cenných papírů %s výdaj derivátů nemění',
+    (matchingMethod) => {
+      const result = run(pozice(), { options: { matchingMethod } });
+      expect(result.derivatives.expensesCzk.toString()).toBe('700');
+    },
+  );
 });
 
 describe('R-12c: deriváty nemají ŽÁDNÉ osvobození', () => {
