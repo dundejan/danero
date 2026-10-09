@@ -132,6 +132,24 @@ export function base8WholeCzk(result: TaxYearResult): {
   };
 }
 
+/**
+ * Ztráta, kterou do Přílohy 2 zapsat nejde: součet toho, oč výdaje každého
+ * druhu převýšily jeho příjmy (§ 10 odst. 4; R-05d, R-10c, R-12b). Druhy se
+ * nekompenzují, takže zisk jednoho ztrátu druhého nesnižuje.
+ *
+ * Počítá se z NEZAOKROUHLENÉHO rozdílu příjmů a výdajů druhu, ne z rozdílu
+ * mezi řádky přílohy a výdaji z enginu: řádky jsou v celých korunách dolů,
+ * takže odříznuté haléře vypadaly jako „ztráta 1 Kč“ i v roce, kdy žádný druh
+ * ve ztrátě nebyl (nález L5-06). Výdaje derivátů navíc engine vrací už
+ * zastropované — jejich ztrátu nese jen `rawGainLossCzk`.
+ */
+export function lossBeyondIncomeCzk(result: TaxYearResult): Money {
+  return kinds(result).reduce(
+    (sum, k) => sum.plus(Decimal.max(ZERO, k.zdroj.rawGainLossCzk.neg())),
+    ZERO,
+  );
+}
+
 export function priloha2(result: TaxYearResult): Priloha2 {
   const parts = wholeCzkParts(base10Values(result));
   const rows: Priloha2Row[] = kinds(result).map(({ kod, popis, zdroj, isins }, i) => {

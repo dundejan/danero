@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { LimitDrawdownChart } from '@/components/charts';
+import { filingLimitFor, filingVerdictHeadline } from '@/components/filing-verdict';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { LimitGauge } from '@/components/limit-gauge';
 import { PositionsTable } from '@/components/positions-table';
@@ -77,17 +78,10 @@ export function OverviewView({
   const employeeLimit = czk(result.limits.employee20k.status.limitCzk);
   const generalLimit = czk(result.limits.generalFiling50k.status.limitCzk);
 
-  // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — dle
-  // režimu (PAUSAL → 50k § 7a, ZAMESTNANEC → vedlejší příjmy § 38g odst. 2,
-  // JINE → obecný limit § 38g odst. 1);
+  // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — výběr
+  // podle režimu i znění nadpisu sdílí přehled s reportem (L5-02);
   // OSVČ mimo paušál podává přiznání tak jako tak, verdikt-box tam nedává smysl.
-  const filingLimit = result.limits.flatTax50k.applicable
-    ? { status: result.limits.flatTax50k.status, label: 'limit 50 000 Kč pro paušální daň' }
-    : result.limits.employee20k.applicable
-      ? { status: result.limits.employee20k.status, label: `limit ${employeeLimit} vedlejších příjmů` }
-      : result.limits.generalFiling50k.applicable
-        ? { status: result.limits.generalFiling50k.status, label: `limit ${generalLimit} pro podání přiznání` }
-        : null;
+  const filingLimit = filingLimitFor(result);
   const deadlines = filingDeadlines(year);
   /**
    * Limit 50k pro paušální daň je aplikovatelný právě u režimu PAUSAL
@@ -177,7 +171,7 @@ export function OverviewView({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
                   <p className="font-display text-xl font-bold">
-                    Za rok {year} podáš daňové přiznání
+                    {filingVerdictHeadline({ year, exceeded: true })}
                   </p>
                   <p className="text-sm text-inkoust-tlumeny">
                     Orientační daň z investic:{' '}
@@ -240,7 +234,7 @@ export function OverviewView({
           ) : (
             <div className="space-y-1">
               <p className="font-display text-xl font-bold">
-                Zatím ti povinnost podat přiznání nevzniká
+                {filingVerdictHeadline({ year, exceeded: false })}
               </p>
               <p className="text-sm text-inkoust-tlumeny">
                 Limity hlídáme denně. Nejblíž je {nearestLimit.label} — čerpáno{' '}

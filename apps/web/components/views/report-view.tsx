@@ -9,6 +9,7 @@ import {
   type EngineInput,
 } from '@danero/engine';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { filingLimitFor, ReportFilingVerdict } from '@/components/filing-verdict';
 import { PrintButton } from '@/components/print-button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Input, Label, Select } from '@/components/ui/field';
@@ -22,7 +23,7 @@ import {
   EPO_SUPPORTED_YEARS,
   prijmyZeStatuProZapocet,
 } from '@/lib/epo';
-import { base8WholeCzk, priloha2 } from '@/lib/priloha2';
+import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
 import {
   czDate,
   czk,
@@ -230,12 +231,14 @@ export function ReportView({
   // státech pro ř. 321 (L5-01) — průvodce i tabulka je opisují z generátoru XML.
   const base8Whole = base8WholeCzk(result);
   const creditIncome = creditIncomeByCountry(result);
-  const vydajeBezStropu = result.securities.expensesCzk
-    .plus(result.crypto.expensesCzk)
-    .plus(result.derivatives.expensesCzk);
+  // Ztráta nad rámec příjmů v celých korunách, jak ji věta v průvodci vypíše —
+  // z nezaokrouhlených rozdílů po druzích, ne z haléřů odříznutých řádkům
+  // přílohy (L5-06). Ztráta pod půl koruny se nehlásí: věta by zněla „0 Kč“.
+  const lossBeyondIncome = lossBeyondIncomeCzk(result).toDecimalPlaces(0);
   // § 16a je reálná alternativa jen se zahraničními dividendami/úroky v § 8
   const hasDividendBase = result.dividends.base8Czk.gt(0);
   const deadlines = filingDeadlines(year);
+  const filingLimit = filingLimitFor(result);
   /**
    * OSVČ (paušál i běžná) má od 1. 1. 2023 datovou schránku zřízenou ze zákona,
    * takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání jen elektronicky;
@@ -294,6 +297,10 @@ export function ReportView({
       {/* R-15e: rok, pro který stát ještě nevyhlásil čísla — vysvětlení nahoře,
           ať ho uživatel vidí dřív než odhad daně, který se o ně opírá */}
       <TaxYearConfigNotice year={year} pausal={profile.regime === 'PAUSAL'} />
+
+      {/* L5-02: tentýž verdikt jako na přehledu, na obrazovce i v tisku — bez něj
+          report ukazoval termín podání a export i tomu, komu povinnost nevznikla */}
+      {filingLimit && <ReportFilingVerdict year={year} limit={filingLimit} />}
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
@@ -1074,11 +1081,11 @@ export function ReportView({
                 Deriváty nemají žádné osvobození a s ostatními druhy se nekompenzují.
               </li>
             )}
-            {p2.vydajeCzk.lt(vydajeBezStropu) && (
+            {lossBeyondIncome.gt(0) && (
               <li className="text-inkoust-tlumeny">
                 Výdaje jsou u každého druhu uvedené jen do výše jeho příjmů — tak to žádá
                 § 10 odst. 4 a tak je kontroluje i podatelna (ř. 208 nesmí být vyšší než
-                ř. 207). Ztrátu {czk(vydajeBezStropu.sub(p2.vydajeCzk))} nad rámec příjmů
+                ř. 207). Ztrátu {czk(lossBeyondIncome)} nad rámec příjmů
                 do přiznání zapsat nejde a do dalšího roku se nepřevádí.
               </li>
             )}
