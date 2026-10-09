@@ -10,17 +10,64 @@ import type { Money } from '@danero/shared';
  * daň ani čerpání žádného limitu.
  */
 
+/**
+ * Limit, jehož prolomení mění povinnosti poplatníka — podle režimu:
+ * paušál 50 000 Kč (R-08b, § 7a), zaměstnanec vedlejší příjmy (R-09b, § 38g
+ * odst. 2), „jiné“ obecný limit pro podání přiznání (R-09a, § 38g odst. 1).
+ */
+export interface RegimeLimit {
+  kind: 'FLAT_TAX' | 'EMPLOYEE_SIDE_INCOME' | 'GENERAL_FILING';
+  /** Název karty limitu v simulátoru. */
+  label: string;
+  /** Strop ze stavu limitu — částky § 38g se od roku 2027 mění, proto ne pevný text. */
+  limitCzk: Money;
+}
+
+/** Strukturální podmnožina limitů z enginu — jen co výběr limitu potřebuje. */
+export interface RegimeLimitsInput {
+  flatTax50k: { applicable: boolean; status: { limitCzk: Money } };
+  employee20k: { applicable: boolean; status: { limitCzk: Money } };
+  generalFiling50k: { applicable: boolean; status: { limitCzk: Money } };
+}
+
+/**
+ * Limit platný pro režim uživatele — jedno místo pro kartu limitu i verdikt.
+ * Čerpání (příjmy § 8–10) je pro všechny režimy stejné, liší se jen strop
+ * a název. OSVČ mimo paušál podává přiznání vždy, režimový limit nemá (`null`).
+ */
+export function regimeLimitFor(limits: RegimeLimitsInput): RegimeLimit | null {
+  if (limits.flatTax50k.applicable) {
+    return { kind: 'FLAT_TAX', label: 'Paušální daň', limitCzk: limits.flatTax50k.status.limitCzk };
+  }
+  if (limits.employee20k.applicable) {
+    return {
+      kind: 'EMPLOYEE_SIDE_INCOME',
+      label: 'Vedlejší příjmy',
+      limitCzk: limits.employee20k.status.limitCzk,
+    };
+  }
+  if (limits.generalFiling50k.applicable) {
+    return {
+      kind: 'GENERAL_FILING',
+      label: 'Podání přiznání',
+      limitCzk: limits.generalFiling50k.status.limitCzk,
+    };
+  }
+  return null;
+}
+
 /** Strukturální podmnožina SaleSimulationResult z enginu — jen co verdikt potřebuje. */
 export interface VerdictInput {
   baseline: {
     exemptUnder100k: boolean;
     cryptoExemptUnder100k: boolean;
-    flatTax50kExceeded: boolean;
+    /** Úhrn příjmů § 8–10 — engine ho vede pod názvem paušálního limitu, platí pro každý režim. */
+    flatTax50kUsedCzk: Money;
   };
   simulated: {
     exemptUnder100k: boolean;
     cryptoExemptUnder100k: boolean;
-    flatTax50kExceeded: boolean;
+    flatTax50kUsedCzk: Money;
   };
   deltas: {
     taxCzk: Money;
@@ -38,11 +85,20 @@ export type SimulatorVerdict =
   | { kind: 'EXEMPT_BREAKS_100K'; crypto: boolean; taxDeltaCzk: Money }
   /** Osvobozený, nic neprolomí, ale zhorší čerpání limitu (příp. i daň). */
   | { kind: 'EXEMPT_DRAWS_LIMIT'; crypto: boolean; taxDeltaCzk: Money }
-  /** Zdanitelný prodej, který nově prolomí limit 50k paušální daně. */
-  | { kind: 'BREAKS_50K' }
+  /** Zdanitelný prodej, který nově prolomí limit platný pro režim uživatele. */
+  | { kind: 'BREAKS_REGIME_LIMIT'; limit: RegimeLimit }
   | { kind: 'TAXABLE' };
 
-export function simulatorVerdict(simulation: VerdictInput): SimulatorVerdict {
+/**
+ * @param regimeLimit limit platný pro režim (`regimeLimitFor`); `null` = režim
+ *   žádný nemá. Prolomení se počítá proti JEHO stropu — stav paušálního limitu
+ *   engine vede pro každý režim, takže by zaměstnanci hlásil hranici, která se
+ *   ho netýká, a o té jeho mlčel.
+ */
+export function simulatorVerdict(
+  simulation: VerdictInput,
+  regimeLimit: RegimeLimit | null,
+): SimulatorVerdict {
   const { baseline, simulated, deltas, simulatedDisposal } = simulation;
   const fullyExempt =
     simulatedDisposal !== undefined && simulatedDisposal.taxableProceedsCzk.lte(0);
@@ -71,8 +127,13 @@ export function simulatorVerdict(simulation: VerdictInput): SimulatorVerdict {
     return { kind: 'EXEMPT_CLEAN' };
   }
 
-  if (simulated.flatTax50kExceeded && !baseline.flatTax50kExceeded) {
-    return { kind: 'BREAKS_50K' };
+  // limity jsou „do částky včetně“ (jako v enginu) — přesně na stropu ještě vyhovuje
+  if (
+    regimeLimit &&
+    simulated.flatTax50kUsedCzk.gt(regimeLimit.limitCzk) &&
+    !baseline.flatTax50kUsedCzk.gt(regimeLimit.limitCzk)
+  ) {
+    return { kind: 'BREAKS_REGIME_LIMIT', limit: regimeLimit };
   }
   return { kind: 'TAXABLE' };
 }
