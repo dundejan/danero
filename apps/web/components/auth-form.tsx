@@ -13,7 +13,6 @@ import {
   TOTP_CODE_PATTERN,
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
-import { SITE_URL } from '@/lib/site';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
@@ -111,9 +110,12 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         }
         // Moc pokusů (429), chyba serveru (5xx) a cizí adresa (INVALID_ORIGIN)
         // nejsou vada e-mailu ani hesla — každá má vlastní větu (L15-01, L15-02).
+        // Adresa pro odkaz jde jen z výslovného nastavení (při buildu se sem
+        // zapeče), ne ze SITE_URL: to padá na hostovanou službu a vlastní
+        // instance by návštěvníka poslala na cizí web (L10-03).
         setError(
           credentialsErrorMessage(mode, result.error, {
-            siteUrl: SITE_URL,
+            siteUrl: process.env.NEXT_PUBLIC_APP_URL,
             currentOrigin: window.location.origin,
           }),
         );

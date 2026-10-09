@@ -2,12 +2,25 @@
 
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { resendVerificationErrorMessage } from '@/lib/auth-errors';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
 const ERROR_ID = 'overeni-emailu-error';
 
-export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string }) {
+export function ResendVerificationForm({
+  defaultEmail,
+  deliveryConfigured = true,
+}: {
+  defaultEmail?: string | undefined;
+  /**
+   * Má instance čím e-mail odeslat (`emailDeliveryConfigured`, zjišťuje stránka
+   * na serveru)? Když ne, neúspěšné odeslání neradí „zkus to za chvíli“ (L10-01).
+   * Výchozí hodnota platí pro `/overeni-emailu/hotovo`: tam vede jen odkaz
+   * z e-mailu, takže odesílání fungovat muselo.
+   */
+  deliveryConfigured?: boolean;
+}) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -24,11 +37,7 @@ export function ResendVerificationForm({ defaultEmail }: { defaultEmail?: string
         callbackURL: '/overeni-emailu/hotovo',
       });
       if (result.error) {
-        setError(
-          result.error.status === 429
-            ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
-            : 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
-        );
+        setError(resendVerificationErrorMessage(result.error, deliveryConfigured));
         return;
       }
       setSent(true);

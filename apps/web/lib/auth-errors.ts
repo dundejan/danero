@@ -30,6 +30,16 @@ const TOO_MANY_REQUESTS = 'Zkoušel jsi to příliš často. Zkus to prosím za 
 const SERVER_FAILURE =
   'Tentokrát je chyba na naší straně, ne v tvých údajích. Zkus to prosím za chvíli znovu.';
 
+/**
+ * Co formulář ví o adrese instance: `siteUrl` je výslovně nastavená veřejná
+ * adresa (nebo nic, když nastavená není), `currentOrigin` ta, na které
+ * uživatel právě stojí.
+ */
+export interface SiteAddress {
+  siteUrl: string | undefined;
+  currentOrigin?: string | undefined;
+}
+
 /** Origin adresy, nebo `null`, když adresa nejde přečíst (pak ji neporovnáváme). */
 function originOf(url: string): string | null {
   try {
@@ -45,24 +55,33 @@ function originOf(url: string): string | null {
  * `127.0.0.1` místo `localhost` (L15-02). S údaji uživatele to nemá nic
  * společného, pomůže jen otevřít aplikaci jinde.
  *
- * Adresa jde z nastavení instance (`SITE_URL`), žádná tu není natvrdo. Když
- * na ní uživatel už je, odkaz by ho poslal tam, kde stojí — pak je vada
- * v nastavení (`NEXT_PUBLIC_APP_URL` se rozchází s `BETTER_AUTH_URL`) a říkáme to.
+ * Adresa jde z výslovného nastavení instance (`NEXT_PUBLIC_APP_URL`), žádná
+ * tu není natvrdo — a formulář ji schválně nebere ze `SITE_URL`, které padá na
+ * adresu hostované služby: vlastní instance postavená podle návodu proměnnou
+ * nemá a self-hoster na `localhost:3000` by četl „aplikace běží jinde“
+ * s odkazem na cizí web (L10-03). Prohlížeč `BETTER_AUTH_URL` nezná, takže bez
+ * nastavené adresy odkaz nenabízíme vůbec.
+ *
+ * Odkaz chybí i tehdy, když na nastavené adrese uživatel už je — poslal by ho
+ * tam, kde stojí (`NEXT_PUBLIC_APP_URL` se rozchází s `BETTER_AUTH_URL`).
+ * V obou případech je vada v nastavení a hláška jmenuje proměnnou: přečte ji
+ * hlavně ten, kdo instanci provozuje, a jinde než v logu serveru vodítko nemá.
  */
 function invalidOriginMessage(
   mode: 'prihlaseni' | 'registrace',
-  site: { siteUrl: string; currentOrigin?: string | undefined },
+  site: SiteAddress,
 ): AuthErrorMessage {
   const action = mode === 'registrace' ? 'Registrace' : 'Přihlášení';
-  const siteOrigin = originOf(site.siteUrl);
+  const siteUrl = site.siteUrl?.trim() ?? '';
+  const siteOrigin = originOf(siteUrl);
   if (siteOrigin === null || siteOrigin === site.currentOrigin) {
     return {
-      text: `${action} z téhle adresy server odmítá. Chyba je v nastavení aplikace, ne v tvých údajích.`,
+      text: `${action} z téhle adresy server odmítá. Chyba je v nastavení aplikace, ne v tvých údajích — funguje jen na adrese, kterou má aplikace nastavenou v BETTER_AUTH_URL.`,
     };
   }
   return {
     text: `${action} z téhle adresy nefunguje — aplikace běží jinde. Otevři ji tam a zkus to znovu:`,
-    link: { href: site.siteUrl, label: new URL(site.siteUrl).host },
+    link: { href: siteUrl, label: new URL(siteUrl).host },
   };
 }
 
@@ -78,7 +97,7 @@ function invalidOriginMessage(
 export function credentialsErrorMessage(
   mode: 'prihlaseni' | 'registrace',
   error: AuthClientError,
-  site: { siteUrl: string; currentOrigin?: string | undefined },
+  site: SiteAddress,
 ): AuthErrorMessage {
   if (error.code === 'INVALID_ORIGIN') return invalidOriginMessage(mode, site);
   if (error.status === 429) return { text: TOO_MANY_REQUESTS };
@@ -89,6 +108,25 @@ export function credentialsErrorMessage(
         ? 'Registrace se nepodařila. Zkontroluj e-mail a zvol heslo o délce aspoň 10 znaků.'
         : 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.',
   };
+}
+
+/**
+ * Chyba po „Poslat odkaz znovu“ na `/overeni-emailu`.
+ *
+ * `deliveryConfigured` posílá stránka ze serveru (`emailDeliveryConfigured`
+ * v `lib/email.ts`). Na instanci, která nemá čím odeslat, končí každé odeslání
+ * stavem 500 a rada „zkus to za chvíli“ by uživatele nechala zkoušet dokola
+ * něco, co bez zásahu provozovatele projít nemůže (L10-01).
+ */
+export function resendVerificationErrorMessage(
+  error: AuthClientError,
+  deliveryConfigured: boolean,
+): string {
+  if (error.status === 429) return 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.';
+  if (!deliveryConfigured) {
+    return 'Odkaz se neodeslal — tahle instance Danera nemá nastavené odesílání e-mailů. Zkoušet to znovu nepomůže, musí ho nastavit ten, kdo ji provozuje.';
+  }
+  return 'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.';
 }
 
 /**

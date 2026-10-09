@@ -6,6 +6,7 @@ import {
   credentialsErrorMessage,
   normalizeBackupCode,
   normalizeTotpCode,
+  resendVerificationErrorMessage,
   TOTP_CODE_PATTERN,
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
@@ -108,6 +109,66 @@ describe('credentialsErrorMessage — přihlášení a registrace', () => {
     const message = credentialsErrorMessage('prihlaseni', { status: 403, code: 'JINY_KOD' }, SITE);
     expect(message).toEqual({ text: 'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.' });
   });
+
+  // L10-03: vlastní instance postavená podle návodu `NEXT_PUBLIC_APP_URL` nemá.
+  // Formulář do dávky D10 bral adresu z `SITE_URL`, tedy s výchozí hodnotou
+  // hostované služby — self-hoster na localhostu četl „aplikace běží jinde“
+  // s odkazem na cizí web.
+  it.each([
+    ['chybí', undefined],
+    ['je prázdná', ''],
+    ['jsou v ní jen mezery', '  '],
+    ['nejde přečíst jako adresa', 'tvoje.domena'],
+  ])(
+    'L10-03: když nastavená adresa instance %s, hláška nikam neodkazuje a řekne, kde je vada',
+    (_label, siteUrl) => {
+      for (const mode of ['prihlaseni', 'registrace'] as const) {
+        const message = credentialsErrorMessage(
+          mode,
+          { status: 403, code: 'INVALID_ORIGIN' },
+          { siteUrl, currentOrigin: 'http://localhost:3000' },
+        );
+        expect(message.link).toBeUndefined();
+        expect(message.text).toContain('z téhle adresy');
+        expect(message.text).toContain('nastavení aplikace');
+        // vodítko pro toho, kdo instanci provozuje — jinde než v logu ho nenajde
+        expect(message.text).toContain('BETTER_AUTH_URL');
+        expect(message.text).not.toMatch(BLAMES_CREDENTIALS);
+      }
+    },
+  );
+
+  it('L10-03: nastavená adresa se před použitím ořízne', () => {
+    const message = credentialsErrorMessage(
+      'prihlaseni',
+      { status: 403, code: 'INVALID_ORIGIN' },
+      { siteUrl: ' https://dane.priklad.test ', currentOrigin: 'http://localhost:3000' },
+    );
+    expect(message.link).toEqual({ href: 'https://dane.priklad.test', label: 'dane.priklad.test' });
+  });
+});
+
+describe('resendVerificationErrorMessage — „Poslat odkaz znovu“ (L10-01)', () => {
+  it('instance bez odesílání e-mailů to řekne a neradí zkoušet to znovu', () => {
+    const message = resendVerificationErrorMessage({ status: 500 }, false);
+    expect(message).toContain('nemá nastavené odesílání e-mailů');
+    expect(message).not.toContain('za chvíli');
+  });
+
+  it('instance s odesíláním má dál dosavadní větu', () => {
+    expect(resendVerificationErrorMessage({ status: 500 }, true)).toBe(
+      'E-mail se nepodařilo odeslat. Zkus to prosím za chvíli znovu.',
+    );
+  });
+
+  it.each([true, false])(
+    'limit pokusů (429) má přednost i na instanci bez odesílání (deliveryConfigured=%s)',
+    (deliveryConfigured) => {
+      expect(resendVerificationErrorMessage({ status: 429 }, deliveryConfigured)).toBe(
+        'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.',
+      );
+    },
+  );
 });
 
 describe('normalizeTotpCode — kód z autentikátoru (L6b-06)', () => {
@@ -203,11 +264,26 @@ describe('auth-form.tsx hlášky a úpravu kódů bere z lib/auth-errors', () =>
     'utf8',
   );
 
-  it('chybu přihlášení i registrace překládá credentialsErrorMessage s adresou z SITE_URL', () => {
+  it('chybu přihlášení i registrace překládá credentialsErrorMessage', () => {
     expect(source).toContain('credentialsErrorMessage(mode, result.error');
-    expect(source).toContain('siteUrl: SITE_URL');
     // větve nesmí zůstat ve formuláři podruhé
     expect(source).not.toContain('Zkontroluj e-mail a heslo');
+  });
+
+  it('L10-03: adresu pro odkaz bere jen z výslovného nastavení, ne ze SITE_URL s výchozí hodnotou', () => {
+    // `SITE_URL` padá na adresu hostované služby — vlastní instance bez
+    // `NEXT_PUBLIC_APP_URL` by návštěvníka poslala na cizí web.
+    expect(source).toContain('siteUrl: process.env.NEXT_PUBLIC_APP_URL,');
+    expect(source).not.toContain('siteUrl: SITE_URL');
+    expect(source).not.toContain("from '@/lib/site'");
+  });
+
+  it('formulář předává adresu, na které uživatel stojí, a odkaz z hlášky vykreslí', () => {
+    // Obojí šlo smazat a sada zůstala zelená (revize oprav C03-R1-01).
+    expect(source).toContain('currentOrigin: window.location.origin,');
+    expect(source).toMatch(/\{error\.link && \(/);
+    expect(source).toContain('<a href={error.link.href}');
+    expect(source).toContain('{error.link.label}');
   });
 
   it('nepotvrzený účet se dál pozná podle kódu, ne podle stavu', () => {
