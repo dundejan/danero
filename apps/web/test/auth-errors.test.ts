@@ -43,6 +43,18 @@ describe('credentialsErrorMessage — přihlášení a registrace', () => {
     });
   });
 
+  it('R14: zámek adresy po deseti špatných heslech má vlastní větu a cestu ven', () => {
+    const message = credentialsErrorMessage(
+      'prihlaseni',
+      { status: 429, code: 'SIGN_IN_LOCKED' },
+      SITE,
+    );
+    // čtvrt hodiny, ne „za minutu“ jako u limitu podle IP
+    expect(message.text).toContain('čtvrt hodiny');
+    expect(message.text).not.toContain('za minutu');
+    expect(message.link).toEqual({ href: '/zapomenute-heslo', label: 'Zapomenuté heslo' });
+  });
+
   it.each(['prihlaseni', 'registrace'] as const)(
     'L15-01: stav 429 u „%s“ řekne, že pokusů bylo moc, a neposílá opravovat heslo',
     (mode) => {

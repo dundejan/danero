@@ -9,6 +9,7 @@ import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
+import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
 import {
   dropStaleLimitNotifications,
@@ -185,6 +186,9 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = ChangePasswordSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect('/nastaveni/ucet?chyba=heslo');
+  // R21: totéž odmítne i server (háček v lib/auth-hooks.ts); tady kvůli vlastní
+  // hlášce — z chyby `changePassword` níž se „heslo nesedí“ od tohohle nepozná
+  if (isCommonPassword(parsed.data['nove-heslo'])) redirect('/nastaveni/ucet?chyba=heslo-bezne');
   await limitAccountAction(user.id, 'password_change', 5, 'heslo-limit');
 
   const { api, requestHeaders } = await authApi();

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { COMMON_PASSWORD_CODE, COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
@@ -30,7 +31,9 @@ export function NewPasswordForm({ token }: { token: string }) {
         setError(
           result.error.status === 429
             ? 'Zkoušel jsi to příliš často. Zkus to prosím za pár minut.'
-            : 'Heslo se nepodařilo změnit — odkaz už nejspíš neplatí. Nech si poslat nový.',
+            : result.error.code === COMMON_PASSWORD_CODE
+              ? COMMON_PASSWORD_MESSAGE
+              : 'Heslo se nepodařilo změnit — odkaz už nejspíš neplatí. Nech si poslat nový.',
         );
         return;
       }

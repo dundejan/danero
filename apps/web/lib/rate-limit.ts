@@ -39,8 +39,11 @@ export async function checkRateLimit(
  * nikdy, protože okno je dlouhé. Je to tentýž vzor jako u digestu
  * v `lib/notifications.ts`, jen nad tabulkou limitů místo nad notifikacemi.
  *
- * Používej VÝHRADNĚ na klíče s `max: 1`. U skutečného rate limitu by smazání
- * řádku vynulovalo čítač celého okna, tedy přesně to, čemu limit brání.
+ * Používej na klíče s `max: 1`. U skutečného rate limitu by smazání řádku
+ * vynulovalo čítač celého okna, tedy přesně to, čemu limit brání. Jediná
+ * vědomá výjimka je počítadlo neúspěšných přihlášení (`clearSignInFailures`
+ * v `lib/auth-hooks.ts`): to se nuluje úspěšným přihlášením a obnovou hesla,
+ * tedy něčím, co hádající útočník neumí.
  */
 export async function releaseRateLimit(db: Db, key: string): Promise<void> {
   await db.delete(appRateLimits).where(eq(appRateLimits.key, key));
@@ -52,8 +55,10 @@ export async function releaseRateLimit(db: Db, key: string): Promise<void> {
  *
  * Dokud existoval waitlist, držely jeho klíče navíc syrovou IP adresu; ta je
  * po jeho zrušení (9. 8. 2026) pryč a všechny klíče jsou dnes odvozené od
- * userId. Kdyby sem někdy přibyl anonymní limit klíčovaný IP adresou, tenhle
- * úklid je jediné, co ji zase přestane uchovávat — počítej s tím.
+ * userId — s výjimkou počítadla neúspěšných přihlášení (`signin_fail:<otisk
+ * adresy>`), které nese jen sha256 adresy a žije čtvrt hodiny. Kdyby sem někdy
+ * přibyl anonymní limit klíčovaný IP adresou, tenhle úklid je jediné, co ji
+ * zase přestane uchovávat — počítej s tím.
  */
 export async function pruneRateLimits(db: Db, now = new Date()): Promise<number> {
   const deleted = await db

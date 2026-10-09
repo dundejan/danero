@@ -10,6 +10,7 @@ import * as schema from '@/db/schema';
 import {
   afterHooks,
   beforeHooks,
+  clearSignInFailures,
   noteVerifiedUser,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
@@ -173,6 +174,8 @@ function buildAuth(db: Db) {
       onPasswordReset: async ({ user }) => {
         await revokePasswordResetTokens(db, user.id);
         await closeSignupContestAfterPasswordReset(db, user);
+        // R14: kdo doložil schránku, nečeká na konec zámku přihlášení
+        await clearSignInFailures(db, user.email);
         const { logAudit } = await import('@/lib/audit');
         await logAudit(db, user.id, 'PASSWORD_CHANGE', 'obnova přes odkaz v e-mailu');
       },

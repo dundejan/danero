@@ -8,6 +8,8 @@
  * Odpověď serveru má tři různé příčiny a každá chce jinou radu.
  */
 
+import { COMMON_PASSWORD_CODE, COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
+
 /** Z chyby klienta Better Auth nás zajímá jen stav odpovědi a kód chyby. */
 export interface AuthClientError {
   status?: number | undefined;
@@ -26,6 +28,16 @@ export interface AuthErrorMessage {
  * povoleném (`rateLimit.customRules` v `lib/auth.ts`).
  */
 const TOO_MANY_REQUESTS = 'Zkoušel jsi to příliš často. Zkus to prosím za minutu.';
+
+/**
+ * Strop neúspěšných přihlášení na adresu (R14, `rejectLockedSignIn`
+ * v `lib/auth-hooks.ts`): čtvrt hodiny, ne minuta, a s cestou ven — obnova
+ * hesla zámek ruší hned.
+ */
+const SIGN_IN_LOCKED: AuthErrorMessage = {
+  text: 'Na tuhle adresu bylo moc neúspěšných pokusů o přihlášení, tak jsme ho kvůli bezpečnosti na čtvrt hodiny pozastavili. Nechceš čekat? Nastav si nové heslo:',
+  link: { href: '/zapomenute-heslo', label: 'Zapomenuté heslo' },
+};
 
 const SERVER_FAILURE =
   'Tentokrát je chyba na naší straně, ne v tvých údajích. Zkus to prosím za chvíli znovu.';
@@ -100,6 +112,8 @@ export function credentialsErrorMessage(
   site: SiteAddress,
 ): AuthErrorMessage {
   if (error.code === 'INVALID_ORIGIN') return invalidOriginMessage(mode, site);
+  if (error.code === 'SIGN_IN_LOCKED') return SIGN_IN_LOCKED;
+  if (error.code === COMMON_PASSWORD_CODE) return { text: COMMON_PASSWORD_MESSAGE };
   if (error.status === 429) return { text: TOO_MANY_REQUESTS };
   if (error.status !== undefined && error.status >= 500) return { text: SERVER_FAILURE };
   return {

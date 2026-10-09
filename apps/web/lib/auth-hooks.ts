@@ -3,8 +3,21 @@ import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from 'b
 import { expireCookie, setSessionCookie } from 'better-auth/cookies';
 import { and, eq, like } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { user, verification } from '@/db/schema';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { appRateLimits, user, verification } from '@/db/schema';
+import {
+  COMMON_PASSWORD_CODE,
+  COMMON_PASSWORD_MESSAGE,
+  isCommonPassword,
+} from '@/lib/password-strength';
+import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
+
+/**
+ * Otisk adresy tam, kde adresa sama čitelně ležet nemá: v cookie prohlížeče
+ * a v klíči tabulky limitů (ta nemá cizí klíč na účet a řádek v ní přežije
+ * i jeho smazání).
+ */
+export const emailFingerprint = (email: string): string =>
+  createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 
 /**
  * D-01: TOTP kód musí být jednorázový.
@@ -149,12 +162,122 @@ export function withoutTrustDevice(
 }
 
 /**
+ * L8a-03 (rozhodnutí R14): strop neúspěšných přihlášení na jednu ADRESU.
+ *
+ * Vestavěný limit `/sign-in/email` (5 za minutu) se počítá podle IP, takže kdo
+ * adresy střídá, hádá heslo jednoho účtu bez brzdy — naměřeno 68 špatných
+ * pokusů a pak úspěšné přihlášení. Tady se počítají jen NEÚSPĚŠNÉ pokusy:
+ * deset v okně čtvrt hodiny, pak se adresa do konce okna odmítá, i se
+ * správným heslem.
+ *
+ * - Klíč je otisk adresy, ne id účtu, a počítá se i pro adresu, která účet
+ *   nemá — odpověď tak neprozradí, jestli účet existuje.
+ * - Úspěšné přihlášení a dokončená obnova hesla počítadlo mažou
+ *   (`clearSignInFailures`): kdo se překlepl devětkrát, nezačíná příště od
+ *   devítky, a zamčený majitel se přes „Zapomenuté heslo“ dostane dovnitř hned.
+ * - Kontrola je PŘED ověřením hesla a čte jen stav; počítá až háček po
+ *   odpovědi. Dva souběžné pokusy tak můžou strop přestřelit o jeden, což
+ *   proti hádání hesla nevadí.
+ *
+ * Vědomá cena: kdo zná cizí adresu, umí jí deseti pokusy na čtvrt hodiny
+ * zavřít přihlášení heslem. Obnova hesla e-mailem funguje dál a zámek ruší.
+ */
+const SIGN_IN_FAILURE_MAX = 10;
+const SIGN_IN_FAILURE_WINDOW_MS = 15 * 60_000;
+const SIGN_IN_PATH = '/sign-in/email';
+
+const signInFailureKey = (email: string): string => `signin_fail:${emailFingerprint(email)}`;
+
+const signInEmail = (body: unknown): string | null => {
+  const email = (body as { email?: unknown } | undefined)?.email;
+  return typeof email === 'string' && email ? email : null;
+};
+
+export async function clearSignInFailures(db: Db, email: string): Promise<void> {
+  await releaseRateLimit(db, signInFailureKey(email));
+}
+
+export function rejectLockedSignIn(db: Db) {
+  return createAuthMiddleware(async (ctx) => {
+    if (ctx.path !== SIGN_IN_PATH) return;
+    const email = signInEmail(ctx.body);
+    if (!email) return;
+    const [bucket] = await db
+      .select({ count: appRateLimits.count, resetAt: appRateLimits.resetAt })
+      .from(appRateLimits)
+      .where(eq(appRateLimits.key, signInFailureKey(email)));
+    if (!bucket || bucket.resetAt.getTime() <= Date.now()) return;
+    if (bucket.count < SIGN_IN_FAILURE_MAX) return;
+    throw new APIError('TOO_MANY_REQUESTS', {
+      message:
+        'Na tuhle adresu bylo moc neúspěšných pokusů o přihlášení. Zkus to za čtvrt hodiny, nebo si nastav nové heslo přes „Zapomenuté heslo“.',
+      code: 'SIGN_IN_LOCKED',
+    });
+  });
+}
+
+export function countFailedSignIn(db: Db) {
+  return createAuthMiddleware(async (ctx) => {
+    if (ctx.path !== SIGN_IN_PATH) return;
+    const email = signInEmail(ctx.body);
+    if (!email) return;
+    const returned = ctx.context.returned;
+    if (!isAPIError(returned)) {
+      await clearSignInFailures(db, email);
+      return;
+    }
+    // 401 = špatné heslo nebo adresa bez účtu. Nepotvrzená adresa (403), chyba
+    // serveru ani limit podle IP (429) nejsou hádání hesla.
+    if (returned.statusCode !== 401) return;
+    await checkRateLimit(db, signInFailureKey(email), {
+      max: SIGN_IN_FAILURE_MAX,
+      windowMs: SIGN_IN_FAILURE_WINDOW_MS,
+    });
+  });
+}
+
+/**
+ * L8a-04 (rozhodnutí R21): nejběžnější hesla se nepřijímají — všude, kde se
+ * heslo nastavuje (registrace, obnova, změna). Co je „běžné“, říká
+ * `lib/password-strength.ts`. Kratší heslo než 10 znaků necháváme pravidlu
+ * o délce, ať uživatel čte tu hlášku, která sedí.
+ */
+const MIN_PASSWORD_LENGTH = 10;
+const NEW_PASSWORD_FIELDS: Record<string, string> = {
+  '/sign-up/email': 'password',
+  '/reset-password': 'newPassword',
+  '/change-password': 'newPassword',
+};
+
+export function rejectCommonPassword() {
+  return createAuthMiddleware(async (ctx) => {
+    const field = ctx.path ? NEW_PASSWORD_FIELDS[ctx.path] : undefined;
+    if (!field) return;
+    const password = (ctx.body as Record<string, unknown> | undefined)?.[field];
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return;
+    if (!isCommonPassword(password)) return;
+    throw new APIError('BAD_REQUEST', {
+      message: COMMON_PASSWORD_MESSAGE,
+      code: COMMON_PASSWORD_CODE,
+    });
+  });
+}
+
+/**
+ * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
+
+/**
  * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
  * a drží jejich pořadí na jednom místě. Úprava požadavku se vrací návratovou
  * hodnotou, proto jde `withoutTrustDevice` až za háčky, které jen odmítají.
  */
 export function beforeHooks(db: Db) {
-  const hooks = [rejectReusedTotpCode(db), limitSensitiveAccountOperations(db)];
+  const hooks = [
+    rejectReusedTotpCode(db),
+    limitSensitiveAccountOperations(db),
+    rejectLockedSignIn(db),
+    rejectCommonPassword(),
+  ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
     return withoutTrustDevice(ctx.path, ctx.body);
@@ -295,9 +418,6 @@ const VERIFICATION_BROWSER_COOKIE = 'verification_browser';
 const VERIFICATION_BROWSER_MAX_AGE_S = 60 * 60 * 24;
 const VERIFICATION_REQUEST_PATHS = new Set(['/sign-up/email', '/send-verification-email']);
 
-/** Otisk adresy do cookie — adresa sama v ní čitelně ležet nemá. */
-export const verificationBrowserFingerprint = (email: string): string =>
-  createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 
 export async function rememberVerificationBrowser(ctx: HookContext): Promise<void> {
   if (!ctx.path || !VERIFICATION_REQUEST_PATHS.has(ctx.path)) return;
@@ -309,7 +429,7 @@ export async function rememberVerificationBrowser(ctx: HookContext): Promise<voi
   });
   await ctx.setSignedCookie(
     cookie.name,
-    verificationBrowserFingerprint(email),
+    emailFingerprint(email),
     ctx.context.secret,
     cookie.attributes,
   );
@@ -339,7 +459,7 @@ export async function signInVerificationBrowser(db: Db, ctx: HookContext): Promi
 
   const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE);
   const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
-  if (!fingerprint || fingerprint !== verificationBrowserFingerprint(verified.email)) return;
+  if (!fingerprint || fingerprint !== emailFingerprint(verified.email)) return;
 
   const [row] = await db
     .select({ twoFactorEnabled: user.twoFactorEnabled })
@@ -369,6 +489,7 @@ export function afterHooks(db: Db) {
     revokeResetTokensAfterPasswordChange(db),
     revokeTrustedDevicesAfterTwoFactorDisable(db),
     logTwoFactorChanges(db),
+    countFailedSignIn(db),
   ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
