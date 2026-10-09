@@ -396,7 +396,9 @@ export default async function ImportPage({
                               ? 'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v seznamu níž si zkontroluj, co se stihlo uložit.'
                               : chyba === 'isin-kontrola'
                                 ? checkDigitMessage
-                                : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
+                                : chyba === 'isin-pouzity'
+                                  ? 'ISIN nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš ISIN opravit? Nejdřív vrať import zpět (v historii níž), pak ISIN ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.'
+                                  : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />
       )}

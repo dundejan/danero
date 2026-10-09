@@ -18,7 +18,12 @@ import {
 } from '@/lib/import-feedback';
 import { importFileIsolated } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
-import { ISIN_ONLY_BROKERS, saveAliases, type AliasInput } from '@/lib/instrument-aliases';
+import {
+  aliasesBlockedByTransactions,
+  ISIN_ONLY_BROKERS,
+  saveAliases,
+  type AliasInput,
+} from '@/lib/instrument-aliases';
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { errorText, logEvent } from '@/lib/log';
@@ -149,11 +154,22 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   // Řádky bez vady se uloží i tehdy, když jiný neprošel: formulář se po
   // přesměrování vykreslí znovu prázdný a kvůli jednomu překlepu by uživatel
   // opisoval i těch jedenáct ISIN, které napsal správně.
+  let isinInUse = false;
   if (rows.length > 0) {
     const db = await getDb();
-    await saveAliases(db, user.id, rows);
+    // L23-02: ISIN u symbolu, pod kterým už leží transakce, se nepřepisuje —
+    // další nahrání téhož výpisu by všechno uložilo podruhé. Ostatní řádky
+    // se uloží (stejně jako u kontrolní číslice níž).
+    const blocked = new Set(await aliasesBlockedByTransactions(db, user.id, rows));
+    isinInUse = blocked.size > 0;
+    await saveAliases(
+      db,
+      user.id,
+      rows.filter((row) => !blocked.has(row)),
+    );
   }
   revalidatePath('/import');
+  if (isinInUse) redirect('/import?chyba=isin-pouzity');
   if (badCheckDigit.length > 0) {
     const query = new URLSearchParams({ chyba: 'isin-kontrola' });
     for (const symbol of badCheckDigit.slice(0, MAX_REPORTED_SYMBOLS)) {

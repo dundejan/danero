@@ -256,3 +256,62 @@ describe('číselník XTB: měna předvyplněná z přípony tickeru (L14-05)', 
     expect(html).not.toContain('podvržený text z adresy');
   });
 });
+
+/**
+ * L23-02 (rozhodnutí R13, varianta B): ISIN je součást dedupe klíče. Kdyby šel
+ * v číselníku přepsat u symbolu, pod kterým už leží transakce, další nahrání
+ * téhož výpisu by obchody i dividendy uložilo podruhé pod novým ISIN. Server
+ * proto přepis odmítne s radou — uložené řádky se nepřepisují.
+ */
+describe('číselník: přepis ISIN u symbolu s uloženými transakcemi (L23-02)', () => {
+  const report = async (): Promise<ArrayBuffer> => toArrayBuffer(await buildXtbNewReportXlsx());
+  const ORIGINAL = XTB_NEW_INSTRUMENT_MAP['AAPL.US'];
+  // jiný platný ISIN — „oprava překlepu“ na jinou třídu akcií
+  const OTHER_ISIN = 'US5949181045';
+
+  it('odmítne přepis, nic nezdvojí a poradí vrátit import', { timeout: 60_000 }, async () => {
+    expect(isValidIsin(OTHER_ISIN)).toBe(true);
+    expect(await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }])).toBe(
+      '/import?ulozeno=ciselnik',
+    );
+    await importFileIsolated(stav.db, 'u1', XTB_NEW_FILENAME, await report());
+    const stored = await loadTransactions(stav.db, 'u1');
+    expect(stored.length).toBeGreaterThan(0);
+
+    const target = await save([
+      { broker: 'xtb', symbol: 'AAPL.US', isin: OTHER_ISIN, currency: 'USD' },
+    ]);
+    expect(target).toBe('/import?chyba=isin-pouzity');
+    expect((await savedAliases())['xtb|AAPL.US']).toBe(ORIGINAL.isin);
+
+    // jádro nálezu: nové nahrání téhož výpisu nepřidá nic
+    await importFileIsolated(stav.db, 'u1', XTB_NEW_FILENAME, await report());
+    expect(await loadTransactions(stav.db, 'u1')).toHaveLength(stored.length);
+
+    const html = await renderImportPage({ chyba: 'isin-pouzity' });
+    expect(html).toContain('vrať import zpět');
+  });
+
+  it('stejný ISIN (jen jiná měna) a symbol bez transakcí přepsat jde', { timeout: 60_000 }, async () => {
+    await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }]);
+    // bez nahraného výpisu není co zdvojit
+    expect(
+      await save([{ broker: 'xtb', symbol: 'AAPL.US', isin: OTHER_ISIN, currency: 'USD' }]),
+    ).toBe('/import?ulozeno=ciselnik');
+    expect((await savedAliases())['xtb|AAPL.US']).toBe(OTHER_ISIN);
+  });
+
+  it('ostatní řádky téhož formuláře se uloží', { timeout: 60_000 }, async () => {
+    await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }]);
+    await importFileIsolated(stav.db, 'u1', XTB_NEW_FILENAME, await report());
+
+    const target = await save([
+      { broker: 'xtb', symbol: 'AAPL.US', isin: OTHER_ISIN, currency: 'USD' },
+      { broker: 'xtb', symbol: 'MSFT.US', isin: OTHER_ISIN, currency: 'USD' },
+    ]);
+    expect(target).toBe('/import?chyba=isin-pouzity');
+    const aliases = await savedAliases();
+    expect(aliases['xtb|AAPL.US']).toBe(ORIGINAL.isin);
+    expect(aliases['xtb|MSFT.US']).toBe(OTHER_ISIN);
+  });
+});
