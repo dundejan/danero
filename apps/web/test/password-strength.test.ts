@@ -36,7 +36,20 @@ describe('nejběžnější hesla (L8a-04, R21)', () => {
     'danero2026',
     'hesloheslo12',
     'abcdefghijk123',
+    // číselné řady se znaménkem na kraji a řady, které začínají znovu
+    '1234567890!',
+    '!1234567890',
+    '0123456789!',
+    '1234567890-=',
+    '12345678910',
+    '1234567891',
+    '123456789123',
+    '12345678900',
+    '1231231231',
+    '112233445566',
+    'password123/',
     // klávesnicové vzory z žebříčků
+    '1234qwerasdf',
     '1q2w3e4r5t',
     '1qaz2wsx3edc',
     '1234554321',
@@ -52,6 +65,9 @@ describe('nejběžnější hesla (L8a-04, R21)', () => {
     // náhodné řetězce
     'x7#Lq92mVb',
     'T9fk2LpQ8zXw',
+    // fráze s číslicí na kraji není „běžné slovo s číslicemi“
+    '7 kocek leze dirou',
+    'kocka-leze-dirou-7',
     // číslice, které nejsou řada ani opakování
     '8305914726',
     '2718281828459',

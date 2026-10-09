@@ -11,6 +11,7 @@ import {
   afterHooks,
   beforeHooks,
   clearSignInFailures,
+  notePasswordReset,
   noteVerifiedUser,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
@@ -171,11 +172,13 @@ function buildAuth(db: Db) {
       // starý odkaz ve schránce ještě hodinu živý (detail v lib/auth-hooks.ts).
       // K4-04: a musí být vidět v auditu — kdo se dostane do cizí schránky,
       // projde „zapomenuté heslo" a majitel účtu nesmí zůstat bez stopy.
-      onPasswordReset: async ({ user }) => {
+      onPasswordReset: async ({ user }, request) => {
         await revokePasswordResetTokens(db, user.id);
         await closeSignupContestAfterPasswordReset(db, user);
         // R14: kdo doložil schránku, nečeká na konec zámku přihlášení
         await clearSignInFailures(db, user.email);
+        // …a prohlížeč, který obnovu dokončil, je od té chvíle známý
+        notePasswordReset(user.email, request);
         const { logAudit } = await import('@/lib/audit');
         await logAudit(db, user.id, 'PASSWORD_CHANGE', 'obnova přes odkaz v e-mailu');
       },

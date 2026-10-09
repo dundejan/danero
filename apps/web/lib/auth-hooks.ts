@@ -9,6 +9,7 @@ import {
   COMMON_PASSWORD_MESSAGE,
   isCommonPassword,
 } from '@/lib/password-strength';
+import { errorText, logEvent } from '@/lib/log';
 import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 
 /** Kontext, který dostává háček — ať jdou háčky psát i jako obyčejné funkce. */
@@ -304,8 +305,29 @@ export async function settleSignInAttempt(db: Db, ctx: HookContext): Promise<voi
 
   const deviceId = await knownDeviceId(db, ctx, email);
   await releaseRateLimit(db, signInAttemptKey(email, deviceId));
-  if (unverified) return;
+  if (unverified) {
+    // Správné heslo k nepotvrzenému účtu: prohlížeč doložil, že je toho, kdo
+    // se registroval, takže ho odkaz z e-mailu smí přihlásit (formulář si po
+    // téhle odpovědi nechá poslat nový). Viz `rememberVerificationBrowser`.
+    await setVerificationBrowserCookie(ctx, email);
+    return;
+  }
+  await issueKnownBrowserCookie(db, ctx, email, deviceId);
+}
 
+/**
+ * Vydá prohlížeči cookie „známý“ svázanou s AKTUÁLNÍM heslem účtu. Volá se
+ * jen tam, kde prohlížeč heslo právě doložil nebo nastavil: úspěšné
+ * přihlášení, dokončená obnova, změna hesla a přihlášení odkazem po vlastní
+ * registraci. Bez toho by obnova hesla — rada, kterou zamčený uživatel čte —
+ * zneplatnila cookie na všech jeho zařízeních a žádnou novou nevydala.
+ */
+async function issueKnownBrowserCookie(
+  db: Db,
+  ctx: HookContext,
+  email: string,
+  deviceId: string | null,
+): Promise<void> {
   const hash = await credentialHash(db, email);
   if (!hash) return;
   const cookie = ctx.context.createAuthCookie(KNOWN_BROWSER_COOKIE, {
@@ -317,6 +339,32 @@ export async function settleSignInAttempt(db: Db, ctx: HookContext): Promise<voi
     ctx.context.secret,
     cookie.attributes,
   );
+}
+
+/**
+ * Kdo v tomhle požadavku dokončil obnovu hesla — plní `onPasswordReset`
+ * (dostane týž objekt požadavku), čte `rememberBrowserAfterPasswordChange`.
+ */
+const passwordResetInRequest = new WeakMap<Request, string>();
+
+export function notePasswordReset(email: string, request: Request | undefined): void {
+  if (request) passwordResetInRequest.set(request, email);
+}
+
+/** Po dokončené obnově a po změně hesla je prohlížeč, který to udělal, známý. */
+export async function rememberBrowserAfterPasswordChange(
+  db: Db,
+  ctx: HookContext,
+): Promise<void> {
+  if (isAPIError(ctx.context.returned)) return;
+  let email: string | undefined;
+  if (ctx.path === '/reset-password' && ctx.request) {
+    email = passwordResetInRequest.get(ctx.request);
+    passwordResetInRequest.delete(ctx.request);
+  } else if (ctx.path === '/change-password') {
+    email = ctx.context.session?.user.email;
+  }
+  if (email) await issueKnownBrowserCookie(db, ctx, email, null);
 }
 
 /**
@@ -345,9 +393,6 @@ export function rejectCommonPassword() {
     });
   });
 }
-
-/**
- * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
 
 /**
  * `hooks.before` bere jediný middleware — tenhle spojuje všechny dohromady
@@ -476,8 +521,9 @@ export function logTwoFactorChanges(db: Db) {
  * by ale každému novému uživateli přidalo jedno zadání hesla navíc.
  *
  * Proto dva háčky:
- *  - registrace a žádost o nový odkaz nechají v prohlížeči podepsanou cookie
- *    s otiskem adresy (`rememberVerificationBrowser`),
+ *  - prohlížeč, který doložil heslo registrujícího (registrací, nebo
+ *    přihlášením k nepotvrzenému účtu), si nese podepsanou cookie s otiskem
+ *    adresy (`rememberVerificationBrowser`, `settleSignInAttempt`),
  *  - po úspěšném potvrzení se relace otevře jen tomu, kdo tu cookie pro
  *    potvrzenou adresu nese (`signInVerificationBrowser`).
  * Kdo klikne jinde (majitel adresy z cizí předregistrace, jiný počítač,
@@ -497,14 +543,10 @@ export function logTwoFactorChanges(db: Db) {
 const VERIFICATION_BROWSER_COOKIE = 'verification_browser';
 /** Stejně dlouho, jako platí ověřovací odkaz (`emailVerification.expiresIn`). */
 const VERIFICATION_BROWSER_MAX_AGE_S = 60 * 60 * 24;
-const VERIFICATION_REQUEST_PATHS = new Set(['/sign-up/email', '/send-verification-email']);
+const SIGN_UP_PATH = '/sign-up/email';
+const RESEND_VERIFICATION_PATH = '/send-verification-email';
 
-
-export async function rememberVerificationBrowser(ctx: HookContext): Promise<void> {
-  if (!ctx.path || !VERIFICATION_REQUEST_PATHS.has(ctx.path)) return;
-  if (isAPIError(ctx.context.returned)) return;
-  const email = (ctx.body as { email?: unknown } | undefined)?.email;
-  if (typeof email !== 'string' || !email) return;
+async function setVerificationBrowserCookie(ctx: HookContext, email: string): Promise<void> {
   const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE, {
     maxAge: VERIFICATION_BROWSER_MAX_AGE_S,
   });
@@ -514,6 +556,36 @@ export async function rememberVerificationBrowser(ctx: HookContext): Promise<voi
     ctx.context.secret,
     cookie.attributes,
   );
+}
+
+/** Nese prohlížeč platnou cookie právě pro tuhle adresu? */
+async function hasVerificationBrowserCookie(ctx: HookContext, email: string): Promise<boolean> {
+  const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE);
+  const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
+  return Boolean(fingerprint) && fingerprint === emailFingerprint(email);
+}
+
+/**
+ * Cookie dostane jen prohlížeč, který DOLOŽIL HESLO registrujícího:
+ *  - registrace (kdyby na adrese už visel cizí nepotvrzený účet s jiným
+ *    heslem, registrace ji označí za spornou a potvrzení cizí heslo zruší —
+ *    lib/auth-signup.ts),
+ *  - přihlášení k nepotvrzenému účtu správným heslem (`settleSignInAttempt`).
+ * Žádost o nový odkaz ji jen OBNOVÍ tomu, kdo ji už nese. Sama ji nevydá:
+ * formulář „Poslat odkaz znovu“ je bez hesla a vyplní ho i majitel adresy,
+ * kterému na cizí předregistraci vypršel odkaz — po kliknutí na nový by byl
+ * přihlášený do účtu s cizím heslem, tedy přesně v díře, kterou tohle zavírá
+ * (recenze opravy R1, nález N1).
+ */
+export async function rememberVerificationBrowser(ctx: HookContext): Promise<void> {
+  if (ctx.path !== SIGN_UP_PATH && ctx.path !== RESEND_VERIFICATION_PATH) return;
+  if (isAPIError(ctx.context.returned)) return;
+  const email = (ctx.body as { email?: unknown } | undefined)?.email;
+  if (typeof email !== 'string' || !email) return;
+  if (ctx.path === RESEND_VERIFICATION_PATH && !(await hasVerificationBrowserCookie(ctx, email))) {
+    return;
+  }
+  await setVerificationBrowserCookie(ctx, email);
 }
 
 /**
@@ -538,9 +610,7 @@ export async function signInVerificationBrowser(db: Db, ctx: HookContext): Promi
   if (!verified) return;
   verifiedInRequest.delete(ctx.request);
 
-  const cookie = ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE);
-  const fingerprint = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
-  if (!fingerprint || fingerprint !== emailFingerprint(verified.email)) return;
+  if (!(await hasVerificationBrowserCookie(ctx, verified.email))) return;
 
   const [row] = await db
     .select({ twoFactorEnabled: user.twoFactorEnabled })
@@ -558,7 +628,9 @@ export async function signInVerificationBrowser(db: Db, ctx: HookContext): Promi
   if (!session) return;
   await setSessionCookie(ctx, { session, user: verifiedUser });
   // jednorázová: další odkaz chce novou žádost z tohohle prohlížeče
-  expireCookie(ctx, cookie);
+  expireCookie(ctx, ctx.context.createAuthCookie(VERIFICATION_BROWSER_COOKIE));
+  // prohlížeč, který se tu registroval heslem, je pro strop přihlášení známý
+  await issueKnownBrowserCookie(db, ctx, verified.email, null);
 }
 
 /**
@@ -573,11 +645,24 @@ export function afterHooks(db: Db) {
   ];
   return createAuthMiddleware(async (ctx) => {
     for (const hook of hooks) await hook(ctx);
-    // Tyhle dva zapisují cookies, proto běží přímo v kontextu tohohle
+    // Háčky níž zapisují cookies, proto běží přímo v kontextu tohohle
     // middleware: háček zabalený do vlastního `createAuthMiddleware` má
     // vlastní hlavičky odpovědi a ty by se tady zahodily.
-    await settleSignInAttempt(db, ctx);
-    await rememberVerificationBrowser(ctx);
-    await signInVerificationBrowser(db, ctx);
+    // Po hotové operaci jen uklízejí počítadla a vydávají cookies. Když některý spadne (výpadek databáze), nesmí z úspěšného
+    // přihlášení nebo potvrzení adresy udělat chybu 500 s relací, o které
+    // prohlížeč neví — selhání se zapíše a odpověď endpointu zůstane.
+    const cookieHooks: Array<[string, () => Promise<void>]> = [
+      ['settleSignInAttempt', () => settleSignInAttempt(db, ctx)],
+      ['rememberBrowserAfterPasswordChange', () => rememberBrowserAfterPasswordChange(db, ctx)],
+      ['rememberVerificationBrowser', () => rememberVerificationBrowser(ctx)],
+      ['signInVerificationBrowser', () => signInVerificationBrowser(db, ctx)],
+    ];
+    for (const [hook, run] of cookieHooks) {
+      try {
+        await run();
+      } catch (error) {
+        logEvent('error', 'auth.after_hook_failed', { hook, path: ctx.path, error: errorText(error) });
+      }
+    }
   });
 }

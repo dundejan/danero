@@ -716,6 +716,15 @@ describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-
       expect(notices[0]!.text).not.toContain(newEmail);
       expect(notices[0]!.text).not.toMatch(/https?:\/\/\S*(token|verify)/);
 
+      // adresa, kterou nikdo nepotvrdil, oznámení nedostane: oprava překlepu
+      // nesmí psát cizímu člověku „odpověz a vrátíme ti účet“
+      const typoEmail = 'historie-preklep@priklad.test';
+      // relace držitele změnu e-mailu přežívá, cookie je pořád táž
+      await changeEmail(cookie, typoEmail, password);
+      expect(emailsTo(log, newEmail).filter((m) => m.subject.includes('se změnil'))).toHaveLength(0);
+      await changeEmail(cookie, newEmail, password);
+      expect(emailsTo(log, typoEmail).filter((m) => m.subject.includes('se změnil'))).toHaveLength(0);
+
       const { getDb } = await import('@/db');
       const { recentAuditEvents } = await import('@/lib/audit');
       const db = await getDb();

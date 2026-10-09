@@ -251,9 +251,18 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
 
   // endpoint /change-email je vypnutý (obcházel kontrolu hesla) — e-mail se
   // mění přímo tady, unikátnost hlídá DB constraint
+  // L6b-05: oznámení o změně smí dostat jen adresa, kterou kdy někdo potvrdil.
+  // Jinak by řetěz změn A → překlep → oprava poslal zprávu „odpověz a vrátíme
+  // ti účet“ cizímu člověku na adrese s překlepem.
+  let previousEmailVerified = false;
   try {
     const db = await getDb();
     const { user: userTable } = await import('@/db/schema');
+    const [current] = await db
+      .select({ emailVerified: userTable.emailVerified })
+      .from(userTable)
+      .where(eq(userTable.id, user.id));
+    previousEmailVerified = current?.emailVerified ?? false;
     await db
       .update(userTable)
       // nová adresa je nepotvrzená: kdyby v ní byl překlep, uživatel by jinak
@@ -283,7 +292,7 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
   // heslo zná někdo další, potichu přijde o přihlášení i o obnovu hesla.
   // Selhání odeslání nesmí shodit už provedenou změnu.
   const newEmail = parsed.data['novy-email'].toLowerCase();
-  if (user.email.toLowerCase() !== newEmail) {
+  if (previousEmailVerified && user.email.toLowerCase() !== newEmail) {
     try {
       const { emailChangedEmail, resolveEmailSender } = await import('@/lib/email');
       await resolveEmailSender()({ to: user.email, ...emailChangedEmail(newEmail) });

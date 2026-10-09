@@ -30,7 +30,7 @@ export interface AuthErrorMessage {
 const TOO_MANY_REQUESTS = 'Zkoušel jsi to příliš často. Zkus to prosím za minutu.';
 
 /**
- * Strop neúspěšných přihlášení na adresu (R14, `rejectLockedSignIn`
+ * Strop neúspěšných přihlášení na adresu (R14, `limitSignInAttempts`
  * v `lib/auth-hooks.ts`): čtvrt hodiny, ne minuta, a s cestou ven — obnova
  * hesla zámek ruší hned.
  */

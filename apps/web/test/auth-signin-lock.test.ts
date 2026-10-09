@@ -216,6 +216,64 @@ describe('strop neúspěšných přihlášení na adresu (L8a-03, R14)', () => {
   );
 
   it(
+    'obnova hesla pod útokem: prohlížeč, který ji dokončil, se přihlásí, i když útočník strop zase vyčerpá',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-obnova-pod-utokem@priklad.test';
+      const newPassword = 'nove-heslo-pod-utokem-04';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      await failTimes(auth, email, MAX_FAILURES);
+
+      const logPath = join(mkdtempSync(join(tmpdir(), 'danero-test-')), 'emails.log');
+      process.env.DANERO_EMAIL_LOG = logPath;
+      await auth.api.requestPasswordReset({ body: { email } });
+      const token = emailsIn(logPath).at(-1)?.text.match(/\/reset-password\/([^?\s]+)/)?.[1];
+      if (!token) throw new Error('E-mail neobsahuje odkaz na obnovu hesla');
+      // obnovu dokončí prohlížeč majitele — přes HTTP, ať dostane cookie
+      const reset = await auth.handler(
+        new Request('http://localhost:3000/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ newPassword, token }),
+        }),
+      );
+      expect(reset.status).toBe(200);
+      const owner = cookieFrom(reset);
+      expect(owner).toContain('known_browser');
+
+      // útočník strop neznámých prohlížečů hned zase vyčerpá
+      await failTimes(auth, email, MAX_FAILURES);
+      expect((await signIn(auth, email, newPassword)).status).toBe(429);
+      // majitel v prohlížeči, kde obnovu dokončil, se přihlásí
+      expect((await signIn(auth, email, newPassword, owner)).status).toBe(200);
+    },
+  );
+
+  it(
+    'změna hesla v Nastavení nechá prohlížeč, který ji provedl, známý',
+    { timeout: 60_000 },
+    async () => {
+      const email = 'zamek-zmena-znamy@priklad.test';
+      const newPassword = 'heslo-po-zmene-v-nastaveni-05';
+      await signUpVerified(auth, { email, password: PASSWORD, name: 'Test' });
+      const session = cookieFrom(await signIn(auth, email, PASSWORD));
+      const changed = await auth.handler(
+        new Request('http://localhost:3000/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: session },
+          body: JSON.stringify({ currentPassword: PASSWORD, newPassword }),
+        }),
+      );
+      expect(changed.status).toBe(200);
+      const fresh = cookieFrom(changed);
+      expect(fresh).toContain('known_browser');
+
+      await failTimes(auth, email, MAX_FAILURES);
+      expect((await signIn(auth, email, newPassword, fresh)).status).toBe(200);
+    },
+  );
+
+  it(
     'nepotvrzený účet cookie známého prohlížeče nedostane',
     { timeout: 60_000 },
     async () => {

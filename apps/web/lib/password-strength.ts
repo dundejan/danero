@@ -111,6 +111,18 @@ const KNOWN_PASSWORDS = new Set([
   '123456789a',
   '123456789q',
   'q123456789',
+  // číselné řady, které po devítce začínají znovu nebo se zadrhnou
+  '12345678910',
+  '1234567891',
+  '1234567899',
+  '12345678900',
+  '123456789123',
+  '1231231231',
+  '112233445566',
+  '1234567890q',
+  'q1234567890',
+  '1234qwerasdf',
+  '1234qwer1234',
   'asdfghjkl;',
   "asdfghjkl;'",
   'trustno1trustno1',
@@ -152,7 +164,8 @@ function isSequence(text: string): boolean {
   return true;
 }
 
-const DECORATION = new Set('0123456789 !?.,_*#@$%&+=-');
+const PUNCTUATION = new Set(' !?.,_*#@$%&+=-/\\\'"()[]{}<>:;~^|`');
+const DECORATION = new Set([...'0123456789', ...PUNCTUATION]);
 
 /**
  * Heslo bez číslic a znamének na začátku a na konci: `2024heslo123!` →
@@ -167,6 +180,15 @@ function stripDecoration(text: string): string {
   return text.slice(start, end);
 }
 
+/** Totéž jen pro znaménka: číslice zůstávají (`!1234567890-=` → `1234567890`). */
+function stripPunctuation(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && PUNCTUATION.has(text[start]!)) start += 1;
+  while (end > start && PUNCTUATION.has(text[end - 1]!)) end -= 1;
+  return text.slice(start, end);
+}
+
 /** Je heslo z těch, která útočník zkusí jako první? */
 export function isCommonPassword(password: string): boolean {
   // Delší vstup odmítne pravidlo o délce (Better Auth, 128 znaků) — a tahle
@@ -175,9 +197,14 @@ export function isCommonPassword(password: string): boolean {
   if (password.length > MAX_CHECKED_LENGTH) return false;
   const text = password.trim().toLowerCase();
   if (!text) return false;
-  if (repeatedBlock(text) !== null) return true;
-  if (isSequence(text)) return true;
-  if (KNOWN_PASSWORDS.has(text)) return true;
+  // pravidla 1, 2 a 4 platí i pro jádro bez znamének na krajích:
+  // `1234567890!` je pořád táž řada, vykřičník ji nezachrání
+  for (const candidate of new Set([text, stripPunctuation(text)])) {
+    if (!candidate) continue;
+    if (repeatedBlock(candidate) !== null) return true;
+    if (isSequence(candidate)) return true;
+    if (KNOWN_PASSWORDS.has(candidate)) return true;
+  }
   // samé číslice a znaménka: o těch rozhodla pravidla výš, dál jde o slovo
   const word = stripDecoration(text);
   if (!word) return false;

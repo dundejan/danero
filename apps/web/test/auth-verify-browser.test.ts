@@ -16,7 +16,7 @@ import { emailsIn, postAuth } from './auth-helpers';
  * a nic ho nevarovalo. Teď po kliknutí přihlášený není: stránka mu řekne, ať
  * se přihlásí, heslo nezná, a „Zapomenuté heslo“ cizí heslo i relace zruší.
  *
- * Kdo se registroval sám (nebo si nechal poslat nový odkaz) a kliká ve stejném
+ * Kdo se registroval sám (nebo se k nepotvrzenému účtu přihlásil heslem) a kliká ve stejném
  * prohlížeči, nepozná rozdíl: prohlížeč si z registrace nese podepsanou cookie
  * s otiskem adresy a potvrzení ho přihlásí jako dřív.
  */
@@ -138,22 +138,71 @@ describe('potvrzení adresy přihlásí jen prohlížeč, který o odkaz požád
   );
 
   it(
-    'nový odkaz vyžádaný z jiného prohlížeče přihlásí ten prohlížeč',
+    'odkaz vyžádaný znovu BEZ hesla nepřihlásí — formulář „poslat znovu“ nic nedokládá',
     { timeout: 30_000 },
     async () => {
-      const email = 'novy-odkaz@priklad.test';
+      const email = 'znovu-bez-hesla@priklad.test';
       const log = startEmailLog();
+      // cizí člověk založí účet na adresu budoucího uživatele
       expect((await signUp(auth, email)).status).toBe(200);
-      // uživatel si na telefonu nechá poslat odkaz znovu
+      // majiteli vypršel odkaz, na stránce „Odkaz už neplatí“ si nechá poslat nový
       const resend = await postAuth(auth, '/send-verification-email', {
         email,
         callbackURL: CALLBACK_URL,
       });
       expect(resend.status).toBe(200);
+      expect(cookieFrom(resend)).toBe('');
 
       const response = await clickLink(auth, log, email, cookieFrom(resend));
 
+      // jinak by byl přihlášený do účtu, jehož heslo zná ten, kdo ho založil
+      expect(setsSessionCookie(response)).toBe(false);
+      expect((await accountState(email)).sessionCount).toBe(0);
+    },
+  );
+
+  it(
+    'kdo se k nepotvrzenému účtu přihlásí správným heslem, toho nový odkaz přihlásí',
+    { timeout: 30_000 },
+    async () => {
+      const email = 'jiny-prohlizec-heslem@priklad.test';
+      const log = startEmailLog();
+      expect((await signUp(auth, email)).status).toBe(200);
+      // jiný prohlížeč (telefon): přihlášení skončí na nepotvrzené adrese,
+      // ale heslo bylo správné — tím prohlížeč doložil, že je registrujícího
+      const signIn = await postAuth(auth, '/sign-in/email', { email, password: PASSWORD });
+      expect(signIn.status).toBe(403);
+      const phone = cookieFrom(signIn);
+      expect(phone).not.toBe('');
+      // formulář si po takovém přihlášení nechá poslat nový odkaz sám
+      const resend = await auth.handler(
+        new Request('http://localhost:3000/api/auth/send-verification-email', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: phone },
+          body: JSON.stringify({ email, callbackURL: CALLBACK_URL }),
+        }),
+      );
+      expect(resend.status).toBe(200);
+
+      const response = await clickLink(auth, log, email, phone);
+
       expect(setsSessionCookie(response)).toBe(true);
+    },
+  );
+
+  it(
+    'špatné heslo k nepotvrzenému účtu cookie nevydá',
+    { timeout: 30_000 },
+    async () => {
+      const email = 'spatne-heslo-nepotvrzeny@priklad.test';
+      startEmailLog();
+      expect((await signUp(auth, email)).status).toBe(200);
+      const signIn = await postAuth(auth, '/sign-in/email', {
+        email,
+        password: 'uplne-jine-heslo-nez-pri-registraci',
+      });
+      expect(signIn.status).toBe(401);
+      expect(cookieFrom(signIn)).toBe('');
     },
   );
 
