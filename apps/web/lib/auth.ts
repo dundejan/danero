@@ -69,10 +69,16 @@ function resolveBaseUrl(): string {
  *
  * Kdo má před sebou CDN s veřejnými adresami (Cloudflare) nebo chce seznam
  * zúžit na konkrétní adresu své proxy, vyjmenuje rozsahy v
- * `DANERO_TRUSTED_PROXIES` (IP nebo CIDR, oddělené čárkou; prázdná hodnota
- * = žádná důvěryhodná proxy). Zúžení dává smysl tam, kde do aplikace chodí
- * klienti PŘÍMO z privátního rozsahu (instance v LAN) — ti by jinak sdíleli
- * kbelík s ostatními v téže síti.
+ * `DANERO_TRUSTED_PROXIES` (IP nebo CIDR, oddělené čárkou). Zúžení dává smysl
+ * tam, kde do aplikace chodí klienti PŘÍMO z privátního rozsahu (instance
+ * v LAN) — ti by jinak sdíleli kbelík s ostatními v téže síti.
+ *
+ * Prázdná hodnota (i samé mezery a čárky) znamená totéž co nenastavená, tedy
+ * výchozí seznam — tak to slibuje `.env.example` i docs/16. `env_file`
+ * v compose totiž prázdný řádek šablony `DANERO_TRUSTED_PROXIES=` předá
+ * kontejneru jako prázdný řetězec; dokud se četl jako „žádná důvěryhodná
+ * proxy“, sdíleli jeden kbelík všichni, kdo přišli s víc hodnotami v hlavičce,
+ * a pět špatných pokusů jednoho z nich zablokovalo přihlášení ostatním.
  */
 const DEFAULT_TRUSTED_PROXIES = [
   '127.0.0.0/8',
@@ -85,12 +91,11 @@ const DEFAULT_TRUSTED_PROXIES = [
 ];
 
 export function resolveTrustedProxies(): string[] {
-  const fromEnv = process.env.DANERO_TRUSTED_PROXIES;
-  if (fromEnv === undefined) return DEFAULT_TRUSTED_PROXIES;
-  return fromEnv
+  const listed = (process.env.DANERO_TRUSTED_PROXIES ?? '')
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+  return listed.length > 0 ? listed : DEFAULT_TRUSTED_PROXIES;
 }
 
 function buildAuth(db: Db) {

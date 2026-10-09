@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -27,6 +27,17 @@ const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
 const COMPOSE = read('docker-compose.yml');
 const DOCKERIGNORE = read('.dockerignore');
 const GUIDE = read('docs/16-selfhosting.md');
+/** Jediná šablona `.env` v repozitáři — z ní si self-hoster zakládá svoje. */
+const TEMPLATE = read('apps/web/.env.example');
+
+/** Produkční zdrojáky aplikace (bez testů a závislostí) — cesta od `directory` a obsah. */
+function productionSources(directory: string): { path: string; text: string }[] {
+  const SKIPPED = new Set(['node_modules', 'test', 'e2e', 'public']);
+  return readdirSync(directory, { recursive: true, encoding: 'utf8' })
+    .filter((path) => /\.(?:ts|tsx|mjs)$/.test(path))
+    .filter((path) => !path.split(sep).some((part) => SKIPPED.has(part) || part.startsWith('.')))
+    .map((path) => ({ path, text: readFileSync(join(directory, path), 'utf8') }));
+}
 
 /** Řádky bloku pod klíčem `key` v odsazení `indent` — do dalšího klíče téže nebo vyšší úrovně. */
 function yamlBlock(source: string, key: string, indent: number): string[] {
@@ -85,9 +96,10 @@ describe('vlastní instance: docker-compose.yml', () => {
     }
   });
 
-  it('nepovinná proměnná se nepředává jako prázdný řetězec', () => {
+  it('blok environment nepřebíjí RESEND_FROM prázdným řetězcem', () => {
     // `RESEND_FROM: ${RESEND_FROM:-}` dá aplikaci '' místo „nenastaveno“ a výchozí
     // odesílatel (`??`) se neuplatní — nepovinné proměnné nese jen env_file.
+    // Že prázdný řetězec dorazí i přes env_file, hlídá blok o šabloně níž.
     expect(WEB_ENVIRONMENT.join('\n')).not.toContain('RESEND_FROM');
   });
 
@@ -101,6 +113,87 @@ describe('vlastní instance: docker-compose.yml', () => {
     );
     expect(referenced.size).toBeGreaterThan(5);
     expect([...referenced].filter((name) => !DOCUMENTED.has(name))).toEqual([]);
+  });
+});
+
+/**
+ * D07-R1-01: `env_file` předá kontejneru i řádky šablony, které self-hoster
+ * nechal prázdné (`DANERO_TRUSTED_PROXIES=`) — jako prázdný řetězec, ne jako
+ * chybějící proměnnou. Kód, který se ptá „je to `undefined`?“, pak u prázdného
+ * řádku vynechá výchozí hodnotu, kterou šablona i návod slibují. Takhle
+ * prázdná `DANERO_TRUSTED_PROXIES` vypnula důvěryhodné proxy a klienti za další
+ * proxy sdíleli jeden kbelík limitu přihlášení.
+ *
+ * Hlídá se zdroják, ne běh: u každé proměnné, kterou šablona nabízí prázdnou,
+ * nesmí produkční kód rozlišovat `''` od nenastavené (`=== undefined`, `??`
+ * s jinou náhradou než `''`). Chování samotné ověřuje `test/auth-ip.test.ts`.
+ */
+describe('vlastní instance: prázdný řádek šablony .env.example', () => {
+  const EMPTY_IN_TEMPLATE = [...TEMPLATE.matchAll(/^([A-Z][A-Z0-9_]*)=[ \t]*$/gm)].map(
+    (match) => match[1] as string,
+  );
+  const SOURCES = productionSources(join(ROOT, 'apps', 'web'));
+
+  /**
+   * Výraz hned za čtením, který prázdný řetězec od nenastavené rozliší:
+   * porovnání s `undefined`/`null`, nebo `??` s jinou náhradou než `''`.
+   */
+  const STRICT = String.raw`\s*(?:\?\?(?!\s*(?:''|""))|[!=]==?\s*(?:undefined|null)\b)`;
+
+  /** Místa, kde kód čte `name` způsobem, který `''` a `undefined` rozliší. */
+  function strictReads(name: string): string[] {
+    const found: string[] = [];
+    for (const { path, text } of SOURCES) {
+      if (new RegExp(String.raw`\benv\.${name}\b` + STRICT).test(text)) {
+        found.push(`${path}: env.${name}`);
+      }
+      // přes pomocnou proměnnou: `const fromEnv = process.env.X;` … `fromEnv === undefined`
+      const alias = new RegExp(
+        String.raw`\b(?:const|let)\s+(\w+)\s*=\s*(?:process\.)?env\.${name}\s*;`,
+        'g',
+      );
+      for (const match of text.matchAll(alias)) {
+        // jen do konce funkce — stejné jméno si o kus níž bere jiná proměnná
+        const rest = text.slice(match.index + match[0].length);
+        const end = rest.search(/^\}/m);
+        const scope = end === -1 ? rest : rest.slice(0, end);
+        if (new RegExp(String.raw`\b${match[1]}\b` + STRICT).test(scope)) {
+          found.push(`${path}: ${match[1]} (= env.${name})`);
+        }
+      }
+    }
+    return found;
+  }
+
+  it('šablona nabízí prázdné řádky a každou takovou proměnnou kód opravdu čte', () => {
+    // jinak by hledání níž prošlo jen proto, že čtení má tvar, který nevidí
+    expect(EMPTY_IN_TEMPLATE).toContain('DANERO_TRUSTED_PROXIES');
+    expect(EMPTY_IN_TEMPLATE.length).toBeGreaterThan(10);
+    const unread = EMPTY_IN_TEMPLATE.filter(
+      (name) => !SOURCES.some(({ text }) => new RegExp(String.raw`\benv\.${name}\b`).test(text)),
+    );
+    expect(unread).toEqual([]);
+  });
+
+  it('hledání přísného čtení pozná oba tvary, které hlídá', () => {
+    const probe = (text: string): boolean => new RegExp(String.raw`\bvalue\b` + STRICT).test(text);
+    expect(probe('if (value === undefined) return DEFAULTS;')).toBe(true);
+    expect(probe("const from = value ?? 'Danero';")).toBe(true);
+    expect(probe("const list = (value ?? '').split(',');")).toBe(false);
+    expect(probe('if (!value) return null;')).toBe(false);
+    expect(probe('return value?.trim() || null;')).toBe(false);
+  });
+
+  it('žádná proměnná ze šablony neznamená prázdná něco jiného než nevyplněná', () => {
+    expect(EMPTY_IN_TEMPLATE.flatMap(strictReads)).toEqual([]);
+  });
+
+  it('šablona i návod slibují u nevyplněné DANERO_TRUSTED_PROXIES výchozí rozsahy', () => {
+    expect(TEMPLATE).toMatch(
+      /Nevyplněno = výchozí seznam privátních rozsahů[^\n]*\nDANERO_TRUSTED_PROXIES=$/m,
+    );
+    const row = GUIDE.split('\n').find((line) => line.startsWith('| `DANERO_TRUSTED_PROXIES` |'));
+    expect(row).toContain('Nevyplněno = privátní rozsahy');
   });
 });
 
@@ -165,5 +258,24 @@ describe('vlastní instance: docs/16-selfhosting.md', () => {
     expect(GUIDE).toContain('env_file');
     expect(GUIDE).toContain('DANERO_BIND_ADDRESS');
     expect(GUIDE).toContain('127.0.0.1');
+  });
+
+  it('jmenuje nejnižší verzi Docker Compose, která zápis env_file s required přečte', () => {
+    // D07-R1-02: `env_file` s `path`/`required` umí Compose až od 2.24. Starší
+    // soubor odmítne anglickou hláškou validátoru („env_file.0 must be a
+    // string“), která na příčinu neukáže — a aktualizace podle návodu neproběhne.
+    expect(yamlBlock(WEB, 'env_file', 4).join('\n')).toContain('required: false');
+    const section = (heading: string): string =>
+      GUIDE.split(/^## /m).find((part) => part.startsWith(heading)) ?? '';
+    const MINIMUM = /Docker Compose 2\.24/;
+    // v požadavcích — čte je ten, kdo instaluje poprvé
+    expect(section('Co budeš potřebovat')).toMatch(MINIMUM);
+    // a u aktualizace — tam na to narazí ten, kdo má starší instalaci
+    const update = section('Nejrychlejší cesta: Docker')
+      .split(/^- /m)
+      .find((item) => item.startsWith('**Aktualizace:**'));
+    expect(update).toMatch(MINIMUM);
+    // hlavička compose souboru je první místo, kam se člověk po chybě podívá
+    expect(COMPOSE.split('\nservices:')[0]).toMatch(MINIMUM);
   });
 });

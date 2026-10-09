@@ -3,6 +3,10 @@
 #   2) docker compose up -d --build
 #   3) http://localhost:3000
 #
+# Potřebuje Docker Compose 2.24 nebo novější (`docker compose version`): starší
+# nepřečte zápis env_file s `required` u služby web a soubor odmítne hláškou
+# „services.web.env_file.0 must be a string“.
+#
 # Za tímhle ještě potřebuješ reverzní proxy s TLS. Aplikace si nastavuje vlastní
 # bezpečnostní hlavičky včetně CSP — v proxy je neduplikuj.
 

@@ -52,13 +52,52 @@ describe('rozřešení IP klienta pro rate limit (D-1)', () => {
   });
 
   it('DANERO_TRUSTED_PROXIES přepíše výchozí seznam', () => {
-    const before = process.env.DANERO_TRUSTED_PROXIES;
-    process.env.DANERO_TRUSTED_PROXIES = '192.0.2.10, 10.0.0.0/24';
-    try {
+    withTrustedProxiesEnv('192.0.2.10, 10.0.0.0/24', () => {
       expect(resolveTrustedProxies()).toEqual(['192.0.2.10', '10.0.0.0/24']);
-    } finally {
-      if (before === undefined) delete process.env.DANERO_TRUSTED_PROXIES;
-      else process.env.DANERO_TRUSTED_PROXIES = before;
-    }
+    });
   });
 });
+
+/**
+ * D07-R1-01: `env_file` v compose předá kontejneru i řádek `DANERO_TRUSTED_PROXIES=`
+ * ze šablony `.env.example` — jako prázdný řetězec, ne jako chybějící proměnnou.
+ * Šablona i návod u něj slibují „nevyplněno = výchozí privátní rozsahy“. Dokud
+ * se prázdná hodnota četla jako „žádná důvěryhodná proxy“, vyšla IP u hlavičky
+ * se dvěma hodnotami `null` a všichni takoví klienti sdíleli jeden kbelík:
+ * pět špatných pokusů jednoho z nich na minutu zablokovalo přihlášení ostatním.
+ */
+describe('prázdná DANERO_TRUSTED_PROXIES se čte jako nevyplněná (D07-R1-01)', () => {
+  const unset = withTrustedProxiesEnv(undefined, () => resolveTrustedProxies());
+
+  it('kontrola: nenastavená proměnná dává neprázdný výchozí seznam', () => {
+    expect(unset.length).toBeGreaterThan(0);
+  });
+
+  // prázdný řádek šablony, mezery po smazané hodnotě, samé oddělovače
+  for (const value of ['', '   ', ' , ,']) {
+    it(`hodnota ${JSON.stringify(value)}: platí výchozí seznam a klienti mají každý svůj kbelík`, () => {
+      withTrustedProxiesEnv(value, () => {
+        expect(resolveTrustedProxies()).toEqual(unset);
+        const opts = options(resolveTrustedProxies());
+        // dvě hodnoty v hlavičce: klient za další proxy, CDN před proxy, podvrh
+        const first = getIp(new Headers({ 'x-forwarded-for': '203.0.113.7, 198.51.100.9' }), opts);
+        const second = getIp(new Headers({ 'x-forwarded-for': '192.0.2.44, 198.51.100.77' }), opts);
+        expect(first).toBe('198.51.100.9');
+        expect(second).toBe('198.51.100.77');
+      });
+    });
+  }
+});
+
+/** Pustí `run` s danou hodnotou proměnné (`undefined` = nenastavená) a prostředí vrátí. */
+function withTrustedProxiesEnv<T>(value: string | undefined, run: () => T): T {
+  const before = process.env.DANERO_TRUSTED_PROXIES;
+  if (value === undefined) delete process.env.DANERO_TRUSTED_PROXIES;
+  else process.env.DANERO_TRUSTED_PROXIES = value;
+  try {
+    return run();
+  } finally {
+    if (before === undefined) delete process.env.DANERO_TRUSTED_PROXIES;
+    else process.env.DANERO_TRUSTED_PROXIES = before;
+  }
+}

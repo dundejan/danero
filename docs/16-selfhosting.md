@@ -15,7 +15,8 @@ stačí, aby to prostě běželo, je tu [danero.cz](https://danero.cz).
 
 ## Co budeš potřebovat
 
-- **Docker** (doporučeno), nebo **Node.js 22+** a **pnpm**
+- **Docker** s **Docker Compose 2.24** nebo novějším (doporučeno; verzi ukáže
+  `docker compose version`), nebo **Node.js 22+** a **pnpm**
 - **PostgreSQL 16+** — s Dockerem ho rozjede `docker compose` sám
 - Doménu s HTTPS (aplikace posílá cookies s `Secure` a nastavuje HSTS)
 - *Volitelně* účet u [Resendu](https://resend.com) na odesílání e-mailů
@@ -55,7 +56,10 @@ počítá, když se přihlásíš).
   teď jen na `127.0.0.1`. Kdo má reverzní proxy na jiném stroji (nebo
   v kontejneru, který na aplikaci chodí přes síťové rozhraní hostitele), se po
   aktualizaci na aplikaci nedovolá, dokud v `.env` nenastaví
-  `DANERO_BIND_ADDRESS` — viz odstavec o proxy níž.
+  `DANERO_BIND_ADDRESS` — viz odstavec o proxy níž. A druhá změna: compose
+  soubor teď potřebuje Docker Compose 2.24 nebo novější. Starší ho odmítne
+  ještě před spuštěním hláškou `services.web.env_file.0 must be a string`
+  a aktualizace neproběhne — nejdřív tedy aktualizuj Docker Compose.
 - **Záloha:** `docker compose exec db pg_dump -U danero danero > zaloha.sql`
   (a odděleně `DANERO_ENCRYPTION_KEY`, viz varování níže).
 - Port na hostiteli změníš přes `PORT=8080` v `.env`.
