@@ -133,6 +133,18 @@ export function computeNotificationCandidates(args: {
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
+      // L12-02: obecný limit podle R-09a (§ 38g odst. 1) pro režim „Jiné“.
+      // Nastavení ho slibuje hlídat a přehled ho vede jako měřák, hlídač o něm
+      // ale mlčel — student nebo důchodce s dividendami přes limit nedostal
+      // nic. Klíč nese jen druh limitu, částku ne: ta se od ZO 2027 mění
+      // (100 000 Kč) a bere se ze stavu limitu stejně jako u zaměstnance.
+      key: 'filing50k',
+      applicable: result.limits.generalFiling50k.applicable,
+      status: result.limits.generalFiling50k.status,
+      label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
+      consequence: 'Při překročení za rok podáváš daňové přiznání.',
+    },
+    {
       key: '100k',
       // K6b-02: `true` natvrdo posílalo měřák „X ze 100 000" i poplatníkovi
       // s obchodním majetkem, který na osvobození podle § 4/1 t) nárok nemá
@@ -340,6 +352,16 @@ export function summaryCandidate(args: {
             // R-09b: částka z konfigurace roku, ne natvrdo (od ZO 2027 je 40 000 Kč)
             label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
             status: result.limits.employee20k.status,
+          },
+        ]
+      : []),
+    // L12-02: bez tohoto řádku přehled v režimu „Jiné“ ukázal jen nečerpanou
+    // stovku a působil klidně i při prolomeném limitu pro přiznání (R-09a)
+    ...(result.limits.generalFiling50k.applicable
+      ? [
+          {
+            label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
+            status: result.limits.generalFiling50k.status,
           },
         ]
       : []),
@@ -616,8 +638,10 @@ export async function processUserNotifications(
                 ? 'Danero: souhrn upozornění za týden'
                 : `Danero: ${toSend.length} ${plural(toSend.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`,
           // patička jde z lib/contact.ts — identifikace i kontakt na jednom místě,
-          // ať se digest nerozejde s potvrzením objednávky (nález E-46)
-          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\n${operatorSignature().slice(1).join('\n')}`,
+          // ať se digest nerozejde s ostatními e-maily (nález E-46). Bere se
+          // CELÁ: dřívější `.slice(1)` odřezával oddělovač „—“, a když ho
+          // contact.ts z pole vypustil, odřezával jméno a IČO (L13-06).
+          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\n${operatorSignature().join('\n')}`,
           // RFC 8058: jednoklikové odhlášení. `/api/odhlasit` na to je připravené —
           // GET jen ptá (mail scannery nic nezmění), stav mění až POST, přesně
           // jak to jednoklik vyžaduje.
