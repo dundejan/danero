@@ -73,6 +73,48 @@ const TAX_MATCH_MAX_DAYS = 5;
 const dayDistance = (a: string, b: string): number =>
   Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
+/**
+ * Pevná zóna, ve které se z okamžiku ve sloupci Date určuje DEN transakce.
+ *
+ * Export píše místní čas zařízení, na kterém se stahoval, i s jeho offsetem
+ * (`2024-08-16T15:57:13+0200`). Číslice se tedy mezi exporty liší, okamžik ne —
+ * a den vstupuje do dedupe klíče, takže se musí odvodit z okamžiku (L26-03).
+ * Česká zóna proto, že exportu staženému v Česku nemění den ani klíč, a už
+ * uložená data tak zůstávají platná.
+ */
+const TASTYTRADE_DAY_TIME_ZONE = 'Europe/Prague';
+
+const DAY_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TASTYTRADE_DAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** ISO čas s offsetem: `+0200` (tvar exportu), `+02:00` i `Z`; sekundy a jejich zlomky volitelné. */
+const OFFSET_TIMESTAMP =
+  /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2})(?:\.\d+)?)?(?:(Z)|([+-])(\d{2}):?(\d{2}))$/;
+
+/**
+ * Den okamžiku v zóně `TASTYTRADE_DAY_TIME_ZONE` jako `YYYY-MM-DD`. Letní čas
+ * řeší `Intl` — ruční posun o hodinu by půl roku počítal špatně. `null` = hodnota
+ * offset nenese (nebo to není platný čas) a den se čte z číslic jako dřív.
+ */
+function dayOfInstant(value: string): string | null {
+  const match = OFFSET_TIMESTAMP.exec(value.trim());
+  if (!match) return null;
+  const [, localDate, time, seconds = '00', utc, sign, offsetHours, offsetMinutes] = match;
+  if (!isValidIsoDate(localDate!)) return null;
+  const local = Date.parse(`${localDate}T${time}:${seconds}Z`);
+  if (Number.isNaN(local)) return null;
+  const offsetMagnitude = utc ? 0 : Number(offsetHours) * 60 + Number(offsetMinutes);
+  const offset = sign === '-' ? -offsetMagnitude : offsetMagnitude;
+  const parts = DAY_PARTS.formatToParts(new Date(local - offset * 60_000));
+  const part = (type: 'year' | 'month' | 'day'): string =>
+    parts.find((item) => item.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
 /** Poznávací sloupce exportu z Tax Center (Year-to-Date Data Export). */
 const YTD_MARKERS = ['SEC_SUBTYPE', '8949_CODE'];
 
@@ -191,6 +233,9 @@ export function parseTastytradeCsv(
 
   const abs = (raw: string | null): Decimal => (raw === null ? ZERO : d(raw).abs());
 
+  /** Řádky, kterým den v pevné zóně vyšel jinak, než jaký stojí ve výpisu (L26-03). */
+  const shiftedDays: Array<{ line: number; dateRaw: string; day: string }> = [];
+
   const normalizeV2 = (row: string[], line: number): NormalizedRow => {
     const symbol = map.get(row, 'Symbol');
     const instrumentRaw = map.get(row, 'Instrument Type');
@@ -206,18 +251,24 @@ export function parseTastytradeCsv(
       : /^SELL(_|$)/.test(actionRaw)
         ? 'SELL'
         : null;
-    // Datum je ISO čas s offsetem bez dvojtečky (+0200); offset se mění podle
-    // časové zóny prohlížeče při exportu, takže jediné stabilní je DATUM
-    // lokálního času (prvních 10 znaků) — den, jak ho uživatel viděl v aplikaci.
+    // Datum je ISO čas s offsetem bez dvojtečky (+0200) a offset se mění podle
+    // časové zóny zařízení při exportu. Stabilní je proto jen OKAMŽIK, ne
+    // číslice místního času: tatáž dividenda je v exportu z Prahy 31. 12.
+    // a v exportu z Dubaje 1. 1. Den se bere z okamžiku v pevné zóně; jen
+    // hodnota bez offsetu se čte z prvních 10 znaků jako dřív.
     const dateRaw = map.get(row, 'Date');
     const localDate = dateRaw.slice(0, 10);
+    const instantDay = dayOfInstant(dateRaw);
+    if (instantDay !== null && instantDay !== localDate) {
+      shiftedDays.push({ line, dateRaw, day: instantDay });
+    }
     const currencyRaw = map.get(row, 'Currency');
     return {
       line,
       cells: row,
       raw: row.join(','),
       dateRaw,
-      date: isValidIsoDate(localDate) ? localDate : null,
+      date: instantDay ?? (isValidIsoDate(localDate) ? localDate : null),
       code: map.get(row, 'Type'),
       subType: map.get(row, 'Sub Type'),
       actionRaw,
@@ -689,6 +740,18 @@ export function parseTastytradeCsv(
       currency: dividend.currency,
       withholdingTax: dividend.withholding ?? '0',
       date: dividend.date,
+    });
+  }
+
+  // L26-03: export stažený mimo český čas. Řádky čteme správně, ale kdo totéž
+  // období nahrál už dřív z exportu staženého jinde, má je uložené pod dnem
+  // z číslic — a ten přepočítat nejde, původní offset v databázi není.
+  if (shiftedDays.length > 0) {
+    // řádky se zpracovávají odspodu, takže první v souboru je poslední v poli
+    const example = shiftedDays[shiftedDays.length - 1]!;
+    result.warnings.push({
+      line: example.line,
+      message: `Časy ve výpisu nejsou v českém čase — export byl nejspíš stažený na zařízení nastaveném na jinou časovou zónu. Den transakce proto bereme z okamžiku převedeného na český čas a u některých řádků vychází jiný než ve výpisu (například „${example.dateRaw}“ počítáme jako ${example.day}). Počet takových řádků: ${shiftedDays.length}. Pokud už máš stejné období nahrané z dřívějšího exportu staženého mimo Česko, mohly se tyhle řádky uložit podruhé: starší import vrať zpět (tlačítko „Vrátit import zpět“ v historii importů) a ten výpis nahraj znovu.`,
     });
   }
 

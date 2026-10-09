@@ -1,3 +1,4 @@
+import type { Transaction } from '@danero/shared';
 import { describe, expect, it } from 'vitest';
 import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import {
@@ -18,7 +19,9 @@ import {
   TASTY_V2_UNKNOWN_MOVEMENT,
   TASTY_V2_UNMAPPED,
   TASTY_V2_UNMATCHED_TAX,
+  TASTY_V2_ZONE_EXPORTS,
   TASTY_YTD,
+  tastyInterestAt,
 } from './fixtures/tastytrade';
 
 describe('sniffTastytradeCsv (autodetekce)', () => {
@@ -355,6 +358,141 @@ describe('parseTastytradeCsv — edge cases', () => {
 
     expect(ulozeno).toBe(1);
     expect(duplicit).toBe(1);
+  });
+});
+
+/**
+ * L26-03: sloupec Date nese místní čas zařízení, na kterém se export stahoval,
+ * i s offsetem. Dokud se den četl z číslic, dostala tatáž událost z exportu
+ * staženého jinde jiný den, a tím i jiný dedupe klíč — uložila se podruhé,
+ * na přelomu roku dokonce do jiného zdaňovacího období. Den se proto bere
+ * z OKAMŽIKU převedeného do jedné pevné zóny (Europe/Prague).
+ */
+describe('L26-03: den transakce z okamžiku, ne z číslic místního času', () => {
+  const dayOf = (tx: Transaction): string =>
+    tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : (tx as { date: string }).date;
+  const describeRows = (csv: string): string[] =>
+    dedupeTransactions(TASTYTRADE_BROKER, parseTastytradeCsv(csv, TASTY_INSTRUMENT_MAP).transactions)
+      .fresh.map(({ tx, key }) => `${tx.type} ${dayOf(tx)} ${key}`)
+      .sort();
+
+  it('tentýž okamžik s offsetem +0100, -0500, +0400 i +0900 dá stejný den a stejný dedupe klíč', () => {
+    const prague = describeRows(TASTY_V2_ZONE_EXPORTS.prague);
+    // den podle českého času: úrok z 30. 6. 22:30 UTC patří v létě už na 1. 7.
+    expect(prague.map((row) => row.split(' ').slice(0, 2).join(' '))).toEqual([
+      'DIVIDEND 2025-12-31',
+      'INTEREST 2025-07-01',
+      'SELL 2025-01-15',
+    ]);
+    expect(describeRows(TASTY_V2_ZONE_EXPORTS.newYork)).toEqual(prague);
+    expect(describeRows(TASTY_V2_ZONE_EXPORTS.dubai)).toEqual(prague);
+    expect(describeRows(TASTY_V2_ZONE_EXPORTS.tokyo)).toEqual(prague);
+  });
+
+  it('export téhož období stažený v jiné zóně je při dalším importu duplicita (B-3-2)', () => {
+    const stored = new Set<string>();
+    const first = dedupeTransactions(
+      TASTYTRADE_BROKER,
+      parseTastytradeCsv(TASTY_V2_ZONE_EXPORTS.prague, TASTY_INSTRUMENT_MAP).transactions,
+      stored,
+    );
+    expect(first.fresh).toHaveLength(3);
+    for (const row of first.fresh) stored.add(row.key);
+
+    for (const zone of ['newYork', 'dubai', 'tokyo'] as const) {
+      const next = dedupeTransactions(
+        TASTYTRADE_BROKER,
+        parseTastytradeCsv(TASTY_V2_ZONE_EXPORTS[zone], TASTY_INSTRUMENT_MAP).transactions,
+        stored,
+      );
+      expect({ zone, added: next.fresh.length, duplicates: next.duplicates }).toEqual({
+        zone,
+        added: 0,
+        duplicates: 3,
+      });
+    }
+  });
+
+  it('exportům staženým v Česku se den ani dedupe klíč nemění (uložená data zůstávají platná)', () => {
+    // hodnoty změřené PŘED opravou — kdyby se pohnuly, už nahrané řádky by se
+    // při dalším importu téhož výpisu uložily podruhé
+    expect(describeRows(TASTY_V2)).toEqual(
+      [
+        'SELL 2021-05-20 tastytrade|6d21106d2de8942c|1',
+        'BUY 2021-06-18 tastytrade|306250cc92914fc4|1',
+        'INTEREST 2023-11-01 tastytrade|fd510dc32b44d43d|1',
+        'FEE 2023-12-01 tastytrade|9aa9ae77982370d3|1',
+        'SELL 2024-07-19 tastytrade|8b149aedf0f5e6a6|1',
+        'BUY 2024-08-05 tastytrade|708c40cccfd736cf|1',
+        'BUY 2024-08-05 tastytrade|7d0a29063cda928f|1',
+        'SELL 2024-08-16 tastytrade|8845775d2f1ef622|1',
+        'DIVIDEND 2023-10-04 tastytrade|7bfb0aade1ab523b|1',
+      ].sort(),
+    );
+    expect(describeRows(TASTY_V2_TOTAL)).toEqual(['SELL 2024-08-16 tastytrade|1c58ddf2f65fe04f|1']);
+    expect(parseTastytradeCsv(TASTY_V2_ZONE_EXPORTS.prague, TASTY_INSTRUMENT_MAP).warnings).toEqual([]);
+  });
+
+  it('když se den v českém čase liší od data ve výpisu, řekne to jedním varováním s radou', () => {
+    const tokyo = parseTastytradeCsv(TASTY_V2_ZONE_EXPORTS.tokyo, TASTY_INSTRUMENT_MAP);
+    expect(tokyo.errors).toEqual([]);
+    expect(tokyo.warnings).toHaveLength(1);
+    const warning = tokyo.warnings[0]!;
+    // dividenda (řádek 2) a obchod (řádek 4); úrok vychází na stejný den
+    expect(warning.line).toBe(2);
+    expect(warning.message).toContain('Počet takových řádků: 2');
+    expect(warning.message).toContain('„2026-01-01T07:00:00+0900“');
+    expect(warning.message).toContain('2025-12-31');
+    expect(warning.message).toContain('vrať zpět');
+    expect(warning.message).toContain('nahraj znovu');
+
+    // z New Yorku se liší jen úrok krátce před půlnocí UTC
+    const newYork = parseTastytradeCsv(TASTY_V2_ZONE_EXPORTS.newYork, TASTY_INSTRUMENT_MAP);
+    expect(newYork.warnings).toHaveLength(1);
+    expect(newYork.warnings[0]!.line).toBe(3);
+    expect(newYork.warnings[0]!.message).toContain('Počet takových řádků: 1');
+  });
+
+  it('letní čas řeší zóna, ne pevný posun: 22:30 UTC je v létě už další den, v zimě ne', () => {
+    const dayAt = (stamp: string): string[] =>
+      parseTastytradeCsv(tastyInterestAt(stamp)).transactions.map(dayOf);
+    expect(dayAt('2025-07-15T22:30:00+0000')).toEqual(['2025-07-16']);
+    expect(dayAt('2025-01-15T22:30:00+0000')).toEqual(['2025-01-15']);
+    // noc přechodu na letní čas (30. 3. 2025 v 01:00 UTC)
+    expect(dayAt('2025-03-29T22:59:59+0000')).toEqual(['2025-03-29']);
+    expect(dayAt('2025-03-29T23:00:00+0000')).toEqual(['2025-03-30']);
+  });
+
+  it('offset čte i s dvojtečkou, jako Z a za zlomky sekund', () => {
+    for (const stamp of [
+      '2025-12-31T23:30:00+0000',
+      '2025-12-31T23:30:00+00:00',
+      '2025-12-31T23:30:00Z',
+      '2025-12-31T23:30:00.250+0000',
+      '2025-12-31T18:30:00-05:00',
+    ]) {
+      const result = parseTastytradeCsv(tastyInterestAt(stamp));
+      expect(result.errors).toEqual([]);
+      expect({ stamp, days: result.transactions.map(dayOf) }).toEqual({ stamp, days: ['2026-01-01'] });
+    }
+  });
+
+  it('hodnota bez offsetu se čte jako dosud — den z číslic, bez varování', () => {
+    for (const stamp of ['2025-12-31T23:30:00', '2025-12-31']) {
+      const result = parseTastytradeCsv(tastyInterestAt(stamp));
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
+      expect(result.transactions.map(dayOf)).toEqual(['2025-12-31']);
+    }
+  });
+
+  it('neexistující den nebo měsíc zůstávají chybou, ne tichým posunem', () => {
+    for (const stamp of ['2025-02-30T10:00:00+0100', '2025-13-01T10:00:00+0100']) {
+      const result = parseTastytradeCsv(tastyInterestAt(stamp));
+      expect(result.transactions).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.message).toContain(`Neplatné datum „${stamp}“`);
+    }
   });
 });
 

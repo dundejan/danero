@@ -56,6 +56,52 @@ export const TASTY_LEGACY = [
   '01/02/2021 9:00 AM,Money Movement,Deposit,,,,0,,,,,0.00,"1,200.00",ACH DEPOSIT,Individual XXX39',
 ].join('\n');
 
+/**
+ * L26-03: tytéž tři události tak, jak je zapíše export stažený v různých
+ * časových zónách — Tastytrade píše místní čas zařízení i s jeho offsetem,
+ * takže se mezi exporty liší číslice, a ne okamžik. Řádky od nejnovějšího:
+ * dividenda (31. 12. 2025 22:00 UTC, tedy 17:00 newyorského času), úrok
+ * (30. 6. 2025 22:30 UTC — v Česku už 1. 7., letní čas) a opční obchod
+ * (15. 1. 2025 20:30 UTC). Čísla smyšlená.
+ */
+const tastyZoneExport = (dividendAt: string, interestAt: string, tradeAt: string): string =>
+  [
+    TASTY_V2_HEADER,
+    `${dividendAt},Money Movement,Dividend,,ICSH,Equity,ISHARES TRUST,17.40,0,,--,0.00,,,,,,,,USD`,
+    `${interestAt},Money Movement,Credit Interest,,,,INTEREST ON CREDIT BALANCE,0.37,0,,--,0.00,,,,,,,,USD`,
+    `${tradeAt},Trade,Sell to Open,SELL_TO_OPEN,SCHG  250221C00027000,Equity Option,Sold 1 SCHG 02/21/25 Call 27.00 @ 1.25,125.00,1,125.00,-1.00,-0.13,100,SCHG,SCHG,2/21/25,27,CALL,351200417,USD`,
+  ].join('\n');
+
+export const TASTY_V2_ZONE_EXPORTS = {
+  prague: tastyZoneExport(
+    '2025-12-31T23:00:00+0100',
+    '2025-07-01T00:30:00+0200',
+    '2025-01-15T21:30:00+0100',
+  ),
+  newYork: tastyZoneExport(
+    '2025-12-31T17:00:00-0500',
+    '2025-06-30T18:30:00-0400',
+    '2025-01-15T15:30:00-0500',
+  ),
+  dubai: tastyZoneExport(
+    '2026-01-01T02:00:00+0400',
+    '2025-07-01T02:30:00+0400',
+    '2025-01-16T00:30:00+0400',
+  ),
+  tokyo: tastyZoneExport(
+    '2026-01-01T07:00:00+0900',
+    '2025-07-01T07:30:00+0900',
+    '2025-01-16T05:30:00+0900',
+  ),
+};
+
+/** Jediný úrok s daným zápisem času — na hraniční tvary hodnoty ve sloupci Date. */
+export const tastyInterestAt = (stamp: string): string =>
+  [
+    TASTY_V2_HEADER,
+    `${stamp},Money Movement,Credit Interest,,,,INTEREST ON CREDIT BALANCE,0.37,0,,--,0.00,,,,,,,,USD`,
+  ].join('\n');
+
 /** Expirace bez otevření pozice ve výpisu → směr nejde určit → warning + skip. */
 export const TASTY_V2_ORPHAN_EXPIRATION = [
   TASTY_V2_HEADER,
