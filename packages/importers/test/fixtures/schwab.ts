@@ -128,6 +128,16 @@ export const SCHWAB_UNMAPPED = [
   '"03/01/2023","Buy","XYZ","XYZ CORP","10","$5.00","","-$50.00"',
 ].join('\n');
 
+/**
+ * L23-03: titul, který má ve výpisu jen dividendu se srážkou, žádný obchod
+ * (koupený dřív, v roce výpisu jen držený). Čísla smyšlená.
+ */
+export const SCHWAB_DIVIDEND_ONLY = [
+  SCHWAB_HEADER,
+  '"05/09/2025","Qualified Dividend","PEP","PEPSICO INC","","","","$13.60"',
+  '"05/09/2025","NRA Tax Adj","PEP","PEPSICO INC","","","","-$2.04"',
+].join('\n');
+
 /** Prázdný export: titulní řádek + hlavička + řádek `""`. */
 export const SCHWAB_EMPTY_EXPORT = [
   '"Transactions  for account Individual XXXX-1234 as of 01/05/2021 10:00:00 ET"',

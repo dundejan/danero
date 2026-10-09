@@ -13,7 +13,9 @@ import {
 /**
  * Parser akciového „Account statement“ CSV z Revolutu. Výpis neobsahuje ISIN
  * (jen ticker) — dodává ho mapování symbolů; BUY/SELL bez mapování se
- * neimportuje a ticker skončí v `unmappedSymbols` (vzor XTB). Měna obchodu
+ * neimportuje a ticker skončí v `unmappedSymbols` (vzor XTB). Dividenda se
+ * uloží i bez mapování, ale ticker se k doplnění nabídne taky — bez ISIN
+ * u ní nejde určit stát zdroje (L23-03). Měna obchodu
  * je ve sloupci Currency, sloupec FX Rate ignorujeme — kurzy počítá engine
  * z kurzů ČNB.
  */
@@ -114,20 +116,40 @@ export function parseRevolutInvestTable(
   }
 
   const nextId = revolutIdFactory();
+  // dvě evidence (vzor Fio): `unmapped` hlídá, ať se ticker dostane do seznamu
+  // k doplnění jen jednou; `unmappedErrored` hlídá chybu u obchodů — varování
+  // u dividendy ji nesmí umlčet (obchod bez ISIN se zahazuje a bez chyby by
+  // zmizel tiše)
   const unmapped = new Set<string>();
+  const unmappedErrored = new Set<string>();
 
   /** ISIN z mapování pro BUY/SELL; bez něj obchod neemitujeme — JEDEN error per ticker. */
   const requireIsin = (ticker: string, line: number): string | null => {
     const instrument = instrumentMap[ticker];
     if (instrument) return instrument.isin;
-    if (!unmapped.has(ticker)) {
-      unmapped.add(ticker);
+    unmapped.add(ticker);
+    if (!unmappedErrored.has(ticker)) {
+      unmappedErrored.add(ticker);
       result.errors.push({
         line,
         message: `Symbol ${ticker}: doplň ISIN instrumentu (Revolut ho neexportuje).`,
       });
     }
     return null;
+  };
+
+  /**
+   * L23-03: ticker, ke kterému má výpis JEN dividendu (titul koupený dřív),
+   * se k doplnění ISIN nenabídl vůbec — seznam se plnil jen u obchodů.
+   * Dividenda se ukládá dál, ale bez ISIN u ní nejde určit stát zdroje.
+   */
+  const offerDividendIsin = (ticker: string, line: number): void => {
+    if (ticker === '' || instrumentMap[ticker] || unmapped.has(ticker)) return;
+    unmapped.add(ticker);
+    result.warnings.push({
+      line,
+      message: `Symbol ${ticker}: doplň ISIN — Revolut ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+    });
   };
 
   const push = (line: number, raw: string, candidate: Record<string, unknown>): void => {
@@ -249,6 +271,8 @@ export function parseRevolutInvestTable(
           return;
         }
         // ISIN je u dividendy optional — bez mapování ji importujeme jen s tickerem
+        // a ticker nabídneme k doplnění (L23-03)
+        offerDividendIsin(ticker, line);
         push(line, raw, {
           type: 'DIVIDEND',
           id,

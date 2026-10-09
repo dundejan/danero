@@ -14,9 +14,10 @@ const USD = 'USD';
 /**
  * Výpis Charles Schwab neobsahuje ISIN (jen Symbol) — dodává ho mapování
  * symbolů (vzor XTB/Revolut). BUY/SELL akcií bez mapování se neimportuje
- * a symbol skončí v `unmappedSymbols`; dividendy mapování nepotřebují
- * (ISIN je u nich optional) a opce mají vlastní stabilní identifikátor
- * `OPT:…` — mapování se na ně nevztahuje.
+ * a symbol skončí v `unmappedSymbols`. Dividenda se uloží i bez mapování
+ * (ISIN je u ní optional), ale symbol se k doplnění nabídne taky — bez ISIN
+ * u ní nejde určit stát zdroje (L23-03). Opce mají vlastní stabilní
+ * identifikátor `OPT:…` — mapování se na ně nevztahuje.
  */
 export type SchwabInstrumentMap = IsinInstrumentMap;
 
@@ -280,19 +281,39 @@ export function parseSchwabCsv(
     }
   };
 
+  // dvě evidence (vzor Fio): `unmapped` hlídá, ať se symbol dostane do seznamu
+  // k doplnění jen jednou; `unmappedErrored` hlídá chybu u obchodů — varování
+  // u dividendy ji nesmí umlčet (obchod bez ISIN se zahazuje a bez chyby by
+  // zmizel tiše)
   const unmapped = new Set<string>();
+  const unmappedErrored = new Set<string>();
   /** ISIN z mapování pro BUY/SELL akcií; bez něj obchod neemitujeme — JEDEN error per symbol. */
   const requireIsin = (symbol: string, line: number): string | null => {
     const instrument = instrumentMap[symbol];
     if (instrument) return instrument.isin;
-    if (!unmapped.has(symbol)) {
-      unmapped.add(symbol);
+    unmapped.add(symbol);
+    if (!unmappedErrored.has(symbol)) {
+      unmappedErrored.add(symbol);
       result.errors.push({
         line,
         message: `Symbol ${symbol}: doplň ISIN instrumentu (Schwab ho neexportuje).`,
       });
     }
     return null;
+  };
+
+  /**
+   * L23-03: symbol, ke kterému má výpis JEN dividendu (titul koupený dřív),
+   * se k doplnění ISIN nenabídl vůbec — seznam se plnil jen u obchodů.
+   * Dividenda se ukládá dál, ale bez ISIN u ní nejde určit stát zdroje.
+   */
+  const offerDividendIsin = (symbol: string, line: number): void => {
+    if (symbol === '' || instrumentMap[symbol] || unmapped.has(symbol)) return;
+    unmapped.add(symbol);
+    result.warnings.push({
+      line,
+      message: `Symbol ${symbol}: doplň ISIN — Schwab ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+    });
   };
 
   const feeOf = (row: string[]): { amount: string; currency: string } | undefined => {
@@ -537,6 +558,7 @@ export function parseSchwabCsv(
         });
         continue;
       }
+      offerDividendIsin(symbol, line);
       dividends.push({
         line,
         raw,

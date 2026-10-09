@@ -12,8 +12,10 @@ const USD = 'USD';
 /**
  * Výpis Tastytrade neobsahuje ISIN (jen Symbol) — u akcií ho dodává mapování
  * symbolů (vzor XTB/Revolut). BUY/SELL akcií bez mapování se neimportuje
- * a symbol skončí v `unmappedSymbols`; dividendy mapování nepotřebují
- * (ISIN je u nich optional) a opce mají stabilní identifikátor `OPT:…`.
+ * a symbol skončí v `unmappedSymbols`. Dividenda se uloží i bez mapování
+ * (ISIN je u ní optional), ale symbol se k doplnění nabídne taky — bez ISIN
+ * u ní nejde určit stát zdroje (L23-03). Opce mají stabilní identifikátor
+ * `OPT:…`.
  */
 export type TastytradeInstrumentMap = IsinInstrumentMap;
 
@@ -179,6 +181,12 @@ interface NormalizedRow {
   /** Value (nový) / Amount (legacy). */
   valueRaw: string;
   fee: Decimal;
+  /**
+   * Volný popis řádku. U obchodů a zániku opcí je to věta o události („Bought
+   * 10 AAPL @ 120.50“, „Removal of option due to assignment“), ne název
+   * titulu — jako `name` transakce se proto nepoužívá (L23-05); slouží jen
+   * jako poznámka u úroku a poplatku.
+   */
   description: string;
   currency: string;
   generation: 'v2' | 'legacy';
@@ -351,19 +359,39 @@ export function parseTastytradeCsv(
     }
   };
 
+  // dvě evidence (vzor Fio): `unmapped` hlídá, ať se symbol dostane do seznamu
+  // k doplnění jen jednou; `unmappedErrored` hlídá chybu u obchodů — varování
+  // u dividendy ji nesmí umlčet (obchod bez ISIN se zahazuje a bez chyby by
+  // zmizel tiše)
   const unmapped = new Set<string>();
+  const unmappedErrored = new Set<string>();
   /** ISIN z mapování pro BUY/SELL akcií; bez něj obchod neemitujeme — JEDEN error per symbol. */
   const requireIsin = (symbol: string, line: number): string | null => {
     const instrument = instrumentMap[symbol];
     if (instrument) return instrument.isin;
-    if (!unmapped.has(symbol)) {
-      unmapped.add(symbol);
+    unmapped.add(symbol);
+    if (!unmappedErrored.has(symbol)) {
+      unmappedErrored.add(symbol);
       result.errors.push({
         line,
         message: `Symbol ${symbol}: doplň ISIN instrumentu (Tastytrade ho neexportuje).`,
       });
     }
     return null;
+  };
+
+  /**
+   * L23-03: symbol, ke kterému má výpis JEN dividendu (titul koupený dřív),
+   * se k doplnění ISIN nenabídl vůbec — seznam se plnil jen u obchodů.
+   * Dividenda se ukládá dál, ale bez ISIN u ní nejde určit stát zdroje.
+   */
+  const offerDividendIsin = (symbol: string, line: number): void => {
+    if (symbol === '' || instrumentMap[symbol] || unmapped.has(symbol)) return;
+    unmapped.add(symbol);
+    result.warnings.push({
+      line,
+      message: `Symbol ${symbol}: doplň ISIN — Tastytrade ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+    });
   };
 
   /** Čistá pozice v kontraktech per opce (klíč = optionIsin), plněná chronologicky. */
@@ -445,7 +473,6 @@ export function parseTastytradeCsv(
         id: nextId(norm.cells),
         isin: norm.optionIsin,
         ticker: norm.underlying || undefined,
-        name: norm.description || undefined,
         assetClass: 'DERIVATIVE',
         settlementStyle: 'PREMIUM',
         quantity: quantity.toString(),
@@ -488,7 +515,6 @@ export function parseTastytradeCsv(
       id: nextId(norm.cells),
       isin,
       ticker: norm.symbol,
-      name: norm.description || undefined,
       quantity: quantity.toString(),
       pricePerShare: d(price).abs().toString(),
       currency: norm.currency,
@@ -533,7 +559,6 @@ export function parseTastytradeCsv(
         id: nextId(norm.cells),
         isin: norm.optionIsin,
         ticker: norm.underlying || undefined,
-        name: norm.description || undefined,
         assetClass: 'DERIVATIVE',
         settlementStyle: 'PREMIUM',
         quantity: quantity.toString(),
@@ -583,6 +608,7 @@ export function parseTastytradeCsv(
       }
       const amount = d(amountRaw);
       if (amount.gt(0)) {
+        offerDividendIsin(norm.symbol, line);
         dividends.push({
           line,
           raw,

@@ -137,6 +137,26 @@ export const TASTY_V2_UNMAPPED = [
   '2024-05-02T15:00:00+0200,Trade,Buy to Open,BUY_TO_OPEN,TSLA,Equity,Buy to Open 2 TSLA @ 180.00,-360.00,2,-180.00,--,-0.16,,,,,,,,USD',
 ].join('\n');
 
+/**
+ * L23-03: titul, který má ve výpisu jen dividendu se srážkou, žádný obchod
+ * (koupený dřív, v roce výpisu jen držený). Čísla smyšlená.
+ */
+export const TASTY_V2_DIVIDEND_ONLY = [
+  TASTY_V2_HEADER,
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,-1.83,0,,--,0.00,,,,,,,,USD',
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,12.20,0,,--,0.00,,,,,,,,USD',
+].join('\n');
+
+/**
+ * L23-03: dividenda PŘED nákupem téhož nezmapovaného symbolu (řádky jsou od
+ * nejnovějšího, parser je čte odspodu) — chyba u nákupu nesmí zmizet.
+ */
+export const TASTY_V2_DIVIDEND_THEN_BUY = [
+  TASTY_V2_HEADER,
+  '2025-06-03T15:00:00+0200,Trade,Buy to Open,BUY_TO_OPEN,PEP,Equity,Bought 3 PEP @ 131.00,-393.00,3,-131.00,--,-0.02,,,,,,,,USD',
+  '2025-05-16T23:00:00+0200,Money Movement,Dividend,,PEP,Equity,PEPSICO INC,12.20,0,,--,0.00,,,,,,,,USD',
+].join('\n');
+
 /** YTD daňový export z Tax Center — jiný soubor, odmítá se s návodem. */
 export const TASTY_YTD = [
   'ACCOUNT_NR,SEC_TYPE,SEC_SUBTYPE,SYMBOL,SEC_DESCRIPTION,8949_CODE,OPEN_DATE,CLOSE_DATE,QUANTITY,COST,PROCEEDS,GAIN_LOSS',

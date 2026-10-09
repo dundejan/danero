@@ -3,6 +3,7 @@ import { dedupeTransactions, UNIVERSAL_TEMPLATE_CSV } from '../src';
 import { parseSchwabCsv, parseUsDate, SCHWAB_BROKER, sniffSchwabCsv } from '../src/schwab/csv';
 import {
   SCHWAB_BANK,
+  SCHWAB_DIVIDEND_ONLY,
   SCHWAB_EMPTY_EXPORT,
   SCHWAB_FICTIONAL_MAP,
   SCHWAB_HEADER,
@@ -57,7 +58,8 @@ describe('parseSchwabCsv — moderní export', () => {
   it('happy path: 9 transakcí, bez chyb; převody a margin vědomě přeskočené', () => {
     expect(result.broker).toBe(SCHWAB_BROKER);
     expect(result.errors).toEqual([]);
-    expect(result.unmappedSymbols).toEqual([]);
+    // L23-03: GIS má ve výpisu jen dividendy a v číselníku chybí — nabídne se
+    expect(result.unmappedSymbols).toEqual(['GIS']);
     expect(result.transactions).toHaveLength(9);
     expect(result.skipped).toHaveLength(2); // Margin Interest + Journal
     expect(result.skipped.some((s) => s.message.includes('Margin Interest'))).toBe(true);
@@ -120,9 +122,13 @@ describe('parseSchwabCsv — moderní export', () => {
   });
 
   it('nespárovaná srážka (Foreign Tax Paid bez dividendy) → warning, ne tiché zahození', () => {
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toContain('nemá dohledatelnou dividendu');
-    expect(result.warnings[0]!.message).toContain('NOVN');
+    const unpaired = result.warnings.filter((w) => w.message.includes('nemá dohledatelnou dividendu'));
+    expect(unpaired).toHaveLength(1);
+    expect(unpaired[0]!.message).toContain('NOVN');
+    // druhé varování je nabídka GIS k doplnění ISIN (L23-03) — jedno, i když má
+    // GIS ve výpisu dvě dividendy; NOVN má jen srážku, ten se nenabízí
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.filter((w) => w.message.includes('doplň ISIN'))).toHaveLength(1);
   });
 
   it('Bank Interest → INTEREST, Service Fee → FEE (abs), oba v USD', () => {
@@ -159,10 +165,12 @@ describe('parseSchwabCsv — starší export (titulní řádek, koncová čárka
   });
 
   it('Stock Split → warning s vysvětlením (poměr splitu výpis neuvádí)', () => {
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toContain('Stock Split');
-    expect(result.warnings[0]!.message).toContain('poměr splitu');
-    expect(result.warnings[0]!.line).toBe(3);
+    const splits = result.warnings.filter((w) => w.message.includes('Stock Split'));
+    expect(splits).toHaveLength(1);
+    expect(splits[0]!.message).toContain('poměr splitu');
+    expect(splits[0]!.line).toBe(3);
+    // druhé varování je nabídka ARKK k doplnění ISIN (L23-03)
+    expect(result.warnings).toHaveLength(2);
   });
 
   it('Expired se záporným počtem → SELL |q| @ 0, datum z „as of“ (druhé)', () => {
@@ -193,6 +201,9 @@ describe('parseSchwabCsv — starší export (titulní řádek, koncová čárka
     expect(dividend.isin).toBeUndefined();
     expect(dividend.ticker).toBe('ARKK');
     expect(dividend.gross.toString()).toBe('0.09');
+    // L23-03: uloží se, ale symbol se nabídne k doplnění
+    expect(result.unmappedSymbols).toEqual(['ARKK']);
+    expect(result.warnings.some((w) => w.message.includes('Symbol ARKK: doplň ISIN'))).toBe(true);
   });
 });
 
@@ -247,6 +258,42 @@ describe('parseSchwabCsv — edge cases', () => {
     expect(result.errors[0]!.message).toBe('Symbol XYZ: doplň ISIN instrumentu (Schwab ho neexportuje).');
     expect(result.transactions).toHaveLength(1);
     expect(result.transactions[0]!.type).toBe('DIVIDEND');
+    // L23-03: dividenda je v souboru PŘED nákupy a symbol nabídne jako první —
+    // chybu u zahozeného nákupu to umlčet nesmí, a v seznamu je symbol jednou
+    expect(result.warnings.filter((w) => w.message.includes('doplň ISIN'))).toHaveLength(1);
+  });
+
+  // L23-03: `unmappedSymbols` se plnily jen ve větvi BUY/SELL, takže titul,
+  // který má výpis jen s dividendou, se k doplnění ISIN nikdy nenabídl —
+  // dividenda zůstala bez státu zdroje a uživatel neměl jak ho doplnit.
+  it('L23-03: symbol jen s dividendou se nabídne k doplnění ISIN (varování, ne chyba)', () => {
+    const result = parseSchwabCsv(SCHWAB_DIVIDEND_ONLY);
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSymbols).toEqual(['PEP']);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.line).toBe(2);
+    expect(result.warnings[0]!.message).toContain('Symbol PEP: doplň ISIN — Schwab ho neexportuje.');
+    expect(result.warnings[0]!.message).toContain('nahraj výpis znovu');
+
+    // dividenda se dál ukládá i se srážkou (ISIN u ní není povinný)
+    expect(result.transactions).toHaveLength(1);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBeUndefined();
+    expect(dividend.ticker).toBe('PEP');
+    expect(dividend.gross.toString()).toBe('13.6');
+    expect(dividend.withholdingTax.toString()).toBe('2.04');
+  });
+
+  it('L23-03: symbol s ISIN v číselníku se nenabízí a dividenda ISIN dostane', () => {
+    const result = parseSchwabCsv(SCHWAB_DIVIDEND_ONLY, { PEP: { isin: 'US7134481081' } });
+
+    expect(result.unmappedSymbols).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const dividend = result.transactions[0]!;
+    if (dividend.type !== 'DIVIDEND') throw new Error('unreachable');
+    expect(dividend.isin).toBe('US7134481081');
   });
 
   it('neznámá Action → error s doslovným zněním a číslem řádku', () => {
