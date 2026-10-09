@@ -6,10 +6,11 @@ import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import {
   type AuthErrorMessage,
-  backupCodeErrorMessage,
   credentialsErrorMessage,
   normalizeBackupCode,
   normalizeTotpCode,
+  type SecondFactorFailure,
+  secondFactorErrorMessage,
   TOTP_CODE_PATTERN,
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
@@ -39,6 +40,17 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     router.refresh();
   };
 
+  // Vyčerpaná nebo propadlá výzva už nepřijme žádný kód (L21-02): formulář se
+  // vrací na e-mail a heslo a hlášku ukáže tam, místo aby nechal uživatele
+  // opisovat kódy do kroku, ze kterého nevede cesta dál.
+  const failSecondFactor = (failure: SecondFactorFailure) => {
+    if (failure.restart) {
+      setTotpStep(false);
+      setBackupStep(false);
+    }
+    setError({ text: failure.text });
+  };
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -50,7 +62,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           code: normalizeBackupCode(String(form.get('zalozni-kod') ?? '')),
         });
         if (result.error) {
-          setError({ text: backupCodeErrorMessage(result.error) });
+          failSecondFactor(secondFactorErrorMessage('backup', result.error));
           return;
         }
         finish();
@@ -62,14 +74,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           code: normalizeTotpCode(String(form.get('kod') ?? '')),
         });
         if (result.error) {
-          // Použitý kód se podruhé neuzná (D-01). Bez rozlišení by uživatel
-          // opisoval týž kód znovu a zase neuspěl — musí počkat na další.
-          setError({
-            text:
-              result.error.code === 'TOTP_CODE_ALREADY_USED'
-                ? 'Tenhle kód už byl použitý. Počkej v aplikaci autentikátoru na další a zadej ten.'
-                : 'Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.',
-          });
+          failSecondFactor(secondFactorErrorMessage('totp', result.error));
           return;
         }
         finish();

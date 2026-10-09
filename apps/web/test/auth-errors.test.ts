@@ -2,11 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  backupCodeErrorMessage,
   credentialsErrorMessage,
   normalizeBackupCode,
   normalizeTotpCode,
   resendVerificationErrorMessage,
+  secondFactorErrorMessage,
   TOTP_CODE_PATTERN,
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
@@ -238,23 +238,86 @@ describe('normalizeBackupCode — záložní kód (L6b-10)', () => {
   });
 });
 
-describe('backupCodeErrorMessage — záložní kód (L6b-10)', () => {
-  it('špatný kód: hláška zmíní pomlčku i velká a malá písmena', () => {
-    const message = backupCodeErrorMessage({ status: 401, code: 'INVALID_BACKUP_CODE' });
+describe('secondFactorErrorMessage — kód z autentikátoru i záložní kód', () => {
+  const steps = ['totp', 'backup'] as const;
+
+  it('špatný záložní kód: hláška zmíní pomlčku i velká a malá písmena (L6b-10)', () => {
+    const result = secondFactorErrorMessage('backup', { status: 401, code: 'INVALID_BACKUP_CODE' });
     // začátek hledá e2e/dvoufaktor.spec.ts doslova
-    expect(message).toContain('Záložní kód nesedí');
-    expect(message).toContain('pomlčky');
-    expect(message).toContain('velká a malá písmena');
+    expect(result.text).toContain('Záložní kód nesedí');
+    expect(result.text).toContain('pomlčky');
+    expect(result.text).toContain('velká a malá písmena');
+    expect(result.restart).toBe(false);
   });
 
-  it('vyčerpaná výzva netvrdí, že kód nesedí — odmítla by i správný', () => {
-    const message = backupCodeErrorMessage({
+  it('špatný a už použitý kód z autentikátoru zůstávají v kroku kódu', () => {
+    const invalid = secondFactorErrorMessage('totp', { status: 401, code: 'INVALID_CODE' });
+    expect(invalid.text).toBe('Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.');
+    expect(invalid.restart).toBe(false);
+
+    const used = secondFactorErrorMessage('totp', { status: 401, code: 'TOTP_CODE_ALREADY_USED' });
+    expect(used.text).toContain('už byl použitý');
+    expect(used.restart).toBe(false);
+  });
+
+  it.each(steps)(
+    'L21-02 (%s): vyčerpaná výzva netvrdí „nesedí“ a vrací na e-mail + heslo',
+    (step) => {
+      const result = secondFactorErrorMessage(step, {
+        status: 400,
+        code: 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE',
+      });
+      expect(result.restart).toBe(true);
+      expect(result.text).not.toContain('nesedí');
+      expect(result.text).toMatch(/přihlas se znovu heslem/i);
+      // formulář se vrací sám — rada načíst stránku by byla navíc
+      expect(result.text).not.toMatch(/načti stránku/i);
+    },
+  );
+
+  it('L21-02: u vyčerpané výzvy záložní kód nepropadá a hláška to řekne', () => {
+    const result = secondFactorErrorMessage('backup', {
       status: 400,
       code: 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE',
     });
-    expect(message).not.toContain('nesedí');
-    expect(message).toMatch(/přihlas se znovu heslem/i);
-    expect(message).toContain('zkus to ještě jednou');
+    expect(result.text).toContain('záložní kód ti zůstává');
+  });
+
+  it.each(steps)(
+    'L21-02 (%s): výzva vypršela (INVALID_TWO_FACTOR_COOKIE) — zpět na e-mail + heslo',
+    (step) => {
+      const result = secondFactorErrorMessage(step, {
+        status: 401,
+        code: 'INVALID_TWO_FACTOR_COOKIE',
+      });
+      expect(result.restart).toBe(true);
+      expect(result.text).not.toContain('nesedí');
+      expect(result.text).toContain('vypršel');
+      expect(result.text).toMatch(/přihlas se znovu heslem/i);
+    },
+  );
+
+  it.each(steps)('L21-03 (%s): zamčené ověření řekne 15 minut a zůstává v kroku kódu', (step) => {
+    const result = secondFactorErrorMessage(step, {
+      status: 429,
+      code: 'ACCOUNT_TEMPORARILY_LOCKED',
+    });
+    expect(result.restart).toBe(false);
+    expect(result.text).not.toContain('nesedí');
+    expect(result.text).toContain('15 minut');
+    expect(result.text).toContain('zamčené');
+  });
+
+  it.each(steps)('L21-03 (%s): rozhoduje kód chyby, ne stav 429', (step) => {
+    // 429 bez kódu zámku je strop požadavků — o čtvrthodinovém zámku nic neví
+    const rateLimited = secondFactorErrorMessage(step, { status: 429 });
+    expect(rateLimited.text).not.toContain('15 minut');
+    // a zámek se pozná i tehdy, kdyby ho server poslal s jiným stavem
+    const locked = secondFactorErrorMessage(step, {
+      status: 403,
+      code: 'ACCOUNT_TEMPORARILY_LOCKED',
+    });
+    expect(locked.text).toContain('15 minut');
   });
 });
 
@@ -293,7 +356,23 @@ describe('auth-form.tsx hlášky a úpravu kódů bere z lib/auth-errors', () =>
   it('záložní kód i kód z autentikátoru se před odesláním upraví', () => {
     expect(source).toMatch(/verifyBackupCode\(\{\s*code: normalizeBackupCode\(/);
     expect(source).toMatch(/verifyTotp\(\{\s*code: normalizeTotpCode\(/);
-    expect(source).toContain('backupCodeErrorMessage(result.error)');
+  });
+
+  it('L21-02, L21-03: obě větve druhého kroku jdou přes secondFactorErrorMessage', () => {
+    expect(source).toContain("failSecondFactor(secondFactorErrorMessage('backup', result.error))");
+    expect(source).toContain("failSecondFactor(secondFactorErrorMessage('totp', result.error))");
+    // větve nesmí zůstat ve formuláři podruhé
+    expect(source).not.toContain('Kód nesedí');
+    expect(source).not.toContain('TOTP_CODE_ALREADY_USED');
+  });
+
+  it('L21-02: mrtvá výzva vrátí formulář na krok e-mail + heslo', () => {
+    const body = source.slice(source.indexOf('const failSecondFactor'));
+    const handler = body.slice(0, body.indexOf('};'));
+    expect(handler).toContain('if (failure.restart)');
+    expect(handler).toContain('setTotpStep(false);');
+    expect(handler).toContain('setBackupStep(false);');
+    expect(handler).toContain('setError({ text: failure.text });');
   });
 
   it('pole na kód z autentikátoru má tolerantní pattern a český title', () => {

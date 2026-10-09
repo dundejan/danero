@@ -130,16 +130,69 @@ export function resendVerificationErrorMessage(
 }
 
 /**
- * Chyba ověření záložního kódu. Po pěti špatných opisech v jedné výzvě vrací
- * plugin `TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE` i na SPRÁVNÝ kód — „kód nesedí“
- * by pak uživatele nechalo opisovat dokola kód, který je v pořádku (L6b-10).
- * Kód tím nepropadne, po novém přihlášení heslem projde.
+ * Hláška druhého kroku přihlášení. `restart` říká, že výzva je mrtvá a další
+ * pokus v ní projít nemůže — formulář se má vrátit na e-mail a heslo.
  */
-export function backupCodeErrorMessage(error: AuthClientError): string {
+export interface SecondFactorFailure {
+  text: string;
+  restart: boolean;
+}
+
+/**
+ * Chyba ověření druhého kroku — kódu z autentikátoru (`totp`) i záložního
+ * kódu (`backup`). Rozhoduje KÓD chyby, ne stav odpovědi: na 429 končí zámek
+ * účtu i strop požadavků a na 401 špatný kód i propadlá výzva.
+ *
+ * - `TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE`: po pěti špatných kódech plugin výzvu
+ *   zahodí a odmítne i SPRÁVNÝ kód — „kód nesedí“ by uživatele nechalo
+ *   opisovat dokola kód, který je v pořádku (L6b-10, L21-02). Záložní kód tím
+ *   nepropadne, po novém přihlášení heslem projde.
+ * - `INVALID_TWO_FACTOR_COOKIE`: výzva platí 10 minut; po nich (a po každém
+ *   dalším pokusu ve vyčerpané výzvě) server neví, koho ověřuje (L21-02).
+ * - `ACCOUNT_TEMPORARILY_LOCKED`: po deseti špatných kódech je druhý krok na
+ *   15 minut zamčený a nové přihlášení heslem to neobejde — proto formulář
+ *   zůstává v kroku kódu a radí počkat (L21-03).
+ */
+export function secondFactorErrorMessage(
+  step: 'totp' | 'backup',
+  error: AuthClientError,
+): SecondFactorFailure {
   if (error.code === 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE') {
-    return 'Pokusů bylo moc a tahle výzva už nepřijme ani správný kód. Načti stránku, přihlas se znovu heslem a zkus to ještě jednou — záložní kód ti zůstává.';
+    return {
+      text:
+        step === 'backup'
+          ? 'Špatných pokusů bylo moc a tohle přihlášení už nepřijme ani správný kód. Přihlas se znovu heslem a zkus to ještě jednou — záložní kód ti zůstává.'
+          : 'Špatných pokusů bylo moc a tohle přihlášení už nepřijme ani správný kód. Přihlas se znovu heslem a zkus to ještě jednou.',
+      restart: true,
+    };
   }
-  return 'Záložní kód nesedí. Zkontroluj, že jsi ho opsal celý včetně pomlčky a že sedí velká a malá písmena.';
+  if (error.code === 'INVALID_TWO_FACTOR_COOKIE') {
+    return {
+      text: 'Platnost tohohle přihlášení vypršela — na zadání kódu je po heslu 10 minut. Přihlas se znovu heslem.',
+      restart: true,
+    };
+  }
+  if (error.code === 'ACCOUNT_TEMPORARILY_LOCKED') {
+    return {
+      text: 'Špatných kódů bylo moc, a tak je dvoufaktorové ověření na 15 minut zamčené — do té doby neprojde ani správný kód. Zkus to prosím později.',
+      restart: false,
+    };
+  }
+  if (step === 'backup') {
+    return {
+      text: 'Záložní kód nesedí. Zkontroluj, že jsi ho opsal celý včetně pomlčky a že sedí velká a malá písmena.',
+      restart: false,
+    };
+  }
+  // Použitý kód se podruhé neuzná (D-01). Bez rozlišení by uživatel opisoval
+  // týž kód znovu a zase neuspěl — musí počkat na další.
+  return {
+    text:
+      error.code === 'TOTP_CODE_ALREADY_USED'
+        ? 'Tenhle kód už byl použitý. Počkej v aplikaci autentikátoru na další a zadej ten.'
+        : 'Kód nesedí. Zkontroluj aplikaci autentikátoru a zkus to znovu.',
+    restart: false,
+  };
 }
 
 /**
