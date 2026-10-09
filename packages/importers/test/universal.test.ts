@@ -9,6 +9,7 @@ import {
   parseUniversalCsv,
   UNIVERSAL_TEMPLATE_CSV,
   UNIVERSAL_TEMPLATE_EXCEL_CSV,
+  UNIVERSAL_TEMPLATE_SUBTYPES,
   UNIVERSAL_TEMPLATE_TYPES,
 } from '../src';
 
@@ -276,7 +277,8 @@ describe('univerzální CSV šablona', () => {
       expect(price.errors).toHaveLength(1);
       expect(price.errors[0]!.message).toContain('185,125');
       expect(price.errors[0]!.message).toContain('price');
-      expect(price.errors[0]!.message).toContain('TEČKOU');
+      // soubor s jediným číslem desetinnou čárku nedokládá — hláška nabídne oba zápisy (A13-R1-01)
+      expect(price.errors[0]!.message).toContain('Napiš 185.125 s desetinnou tečkou, nebo 185125 bez čárky.');
     });
 
     it('L2c-03: „1.500“ v souboru s desetinnými čárkami se čte dál jako 1,5, ale s varováním', () => {
@@ -674,7 +676,7 @@ describe('L2c-02: šablona ke stažení se otevře v českém Excelu', () => {
       for (const column of numeric) {
         const cell = row[headers.indexOf(column)]!;
         expect(cell, `${row[0]} · ${column}`).toMatch(/^(\d+(,\d+)?)?$/);
-        // „1,500“ parser odmítá jako nejednoznačné — v šabloně takové číslo být nesmí
+        // „1,500“ je nejednoznačné a parser by k němu přidal varování — šablona má projít čistě
         expect(cell, `${row[0]} · ${column}`).not.toMatch(/,\d{3}$/);
         if (cell.includes(',')) withComma += 1;
       }
@@ -971,5 +973,161 @@ describe('A10-R1-03: varování u tečky v souboru s desetinnými čárkami', ()
     expect(messagesOf(result)).toEqual([]);
     expect(result.transactions).toHaveLength(5);
     expect(result.warnings.map((warning) => warning.line)).toEqual([6]);
+  });
+});
+
+/**
+ * Revize opravy A13 (kolo 1). Šablona ke stažení píše čísla s desetinnou čárkou
+ * a v českém Excelu ani jinak psát nejdou (tečku Excel mění na datum). Počet
+ * kusů na tři desetinná místa („2,125“ podílového listu) proto musí projít
+ * všude, kde zbytek souboru desetinnou čárku dokládá — rozhoduje
+ * `detectDecimalSeparator` nad celým souborem, ne tvar jedné buňky.
+ */
+describe('A13-R1-01: číslo na tři desetinná místa v souboru s desetinnými čárkami', () => {
+  /** Stažená šablona, v níž uživatel přepíše jednu buňku prvního řádku (BUY AAPL). */
+  const downloadedWith = (column: string, value: string): string => {
+    const { headers, rows } = parseCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV.slice(1), ';');
+    const index = headers.indexOf(column);
+    const quote = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const edited = rows.map((row, i) => (i === 0 ? row.map((cell, c) => (c === index ? value : cell)) : row));
+    return [headers, ...edited].map((row) => row.map(quote).join(';')).join('\r\n');
+  };
+  const comma: WideRow = { type: 'DIVIDEND', date: '2026-05-10', isin: 'US0000000001', currency: 'USD', amount: '25,5', withholding_tax: '3,75' };
+  const buy = (quantity: string, price = '10'): WideRow => ({
+    type: 'BUY', date: '2026-02-02', isin: 'US0000000001', quantity, price, currency: 'USD',
+  });
+  const firstBuy = (result: ReturnType<typeof parseUniversalCsv>): { quantity: string; price: string } => {
+    const tx = result.transactions.find((candidate) => candidate.type === 'BUY');
+    if (tx?.type !== 'BUY') throw new Error('unreachable');
+    return { quantity: tx.quantity.toString(), price: tx.pricePerShare.toString() };
+  };
+
+  it.each([
+    ['quantity', '2,125', '2.125'],
+    ['price', '185,125', '185.125'],
+    ['quantity', '12,345', '12.345'],
+    ['price', '999,999', '999.999'],
+  ] as const)('ve stažené šabloně dá %s „%s“ totéž co „%s“', (column, withComma, withDot) => {
+    for (const value of [withDot, withComma]) {
+      const result = parseUniversalCsv(downloadedWith(column, value));
+      expect(messagesOf(result), value).toEqual([]);
+      expect(result.transactions, value).toHaveLength(17);
+      expect(firstBuy(result)[column], value).toBe(withDot);
+    }
+  });
+
+  it('řekne to nahlas, ale jedním varováním na soubor — ne u každé buňky', () => {
+    const one = parseUniversalCsv(downloadedWith('quantity', '2,125'));
+    expect(one.warnings).toEqual([
+      {
+        line: 2,
+        message:
+          'Čárku v hodnotě „2,125“ ve sloupci quantity čteme jako desetinnou — stejně píšeš ostatní čísla v souboru. Jestli má jít o 2125, napiš číslo bez čárky.',
+      },
+    ]);
+
+    const many = parseWide([comma, buy('2,125'), buy('152,317')], ';');
+    expect(messagesOf(many)).toEqual([]);
+    expect(many.transactions).toHaveLength(3);
+    expect(many.warnings).toEqual([
+      {
+        line: 3,
+        message:
+          'Čárku v hodnotě „2,125“ ve sloupci quantity čteme jako desetinnou — stejně píšeš ostatní čísla v souboru. Jestli má jít o 2125, napiš číslo bez čárky. Stejně čteme i ostatní čísla tohoto tvaru (v souboru jich je 2).',
+      },
+    ]);
+  });
+
+  it('číslo, které tisíce být nemůže („0,125“, „61250,500“, „2,5“), se do varování nepočítá', () => {
+    const result = parseWide([comma, buy('0,125'), buy('1', '61250,500'), buy('2,5')], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('znaménko plus výklad nemění: „+2,125“ je v čárkovém souboru 2,125', () => {
+    const result = parseWide([comma, buy('+2,125')], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(firstBuy(result).quantity).toBe('2.125');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('„+2,125“');
+    expect(result.warnings[0]!.message).toContain('Jestli má jít o 2125, napiš číslo bez čárky.');
+  });
+
+  it('poplatek, který se u řádku nečte, nevaruje ani v čárkovém souboru', () => {
+    const result = parseWide([{ ...comma, fee: '1,500' }], ';');
+    expect(messagesOf(result)).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('bez dokladu o desetinné čárce zůstává „2,125“ chybou a hláška nabízí oba výklady', () => {
+    const undecided = parseWide([buy('2,125')], ';');
+    expect(undecided.transactions).toEqual([]);
+    expect(undecided.warnings).toEqual([]);
+    expect(messagesOf(undecided)).toEqual([
+      'Hodnota „2,125“ ve sloupci quantity je nejednoznačná — čárka může být desetinná (2.125) i oddělovač tisíců (2125) a ostatní čísla v souboru desetinnou čárku nedokládají. Napiš 2.125 s desetinnou tečkou, nebo 2125 bez čárky.',
+    ]);
+
+    // soubor psaný s tečkami: čárka je tu spíš oddělovač tisíců — nehádáme ani jedním směrem
+    const dots = parseWide([buy('3', '185.50'), buy('2,125')], ';');
+    expect(dots.transactions).toHaveLength(1);
+    expect(messagesOf(dots)).toHaveLength(1);
+    expect(messagesOf(dots)[0]).toContain('„2,125“ ve sloupci quantity je nejednoznačná');
+
+    // jedna čárka proti jedné tečce = soubor nerozhodl
+    const tie = parseWide([buy('3', '185.50'), buy('3', '185,50'), buy('2,125')], ';');
+    expect(tie.transactions).toHaveLength(2);
+    expect(messagesOf(tie)).toHaveLength(1);
+  });
+
+  it('hláška u textu místo čísla dává příklad, který projde v Excelu i mimo něj', () => {
+    // „01.V“ je to, co český Excel uloží, když do buňky napíšeš 1.5
+    const mangled = parseWide([comma, buy('01.V')], ';');
+    expect(messagesOf(mangled)).toHaveLength(1);
+    expect(messagesOf(mangled)[0]).toContain('„01.V“ ve sloupci quantity');
+    expect(messagesOf(mangled)[0]).toContain('např. 1250,50');
+    expect(messagesOf(mangled)[0]).not.toContain('1250.50');
+
+    // a příklad z hlášky parser vezme, ať zbytek souboru píše čárku, nebo tečku
+    for (const other of ['185,50', '185.50']) {
+      const result = parseWide([buy('3', other), buy('1', '1250,50')], ';');
+      expect(messagesOf(result), other).toEqual([]);
+      const second = result.transactions[1]!;
+      if (second.type !== 'BUY') throw new Error('unreachable');
+      expect(second.pricePerShare.toString(), other).toBe('1250.5');
+    }
+  });
+});
+
+describe('A13-R1-02: výčet podtypů korporátní akce', () => {
+  const action = (subtype: string): ReturnType<typeof parseUniversalCsv> =>
+    parseWide([{ type: 'CORPORATE_ACTION', date: '2026-01-05', isin: 'US0000000001', subtype }]);
+
+  it('vyvezený seznam je ten, který parser opravdu bere', () => {
+    expect(UNIVERSAL_TEMPLATE_SUBTYPES.length).toBeGreaterThanOrEqual(5);
+    for (const subtype of UNIVERSAL_TEMPLATE_SUBTYPES) {
+      expect(messagesOf(action(subtype)).join(' '), subtype).not.toContain('potřebuje sloupec subtype');
+    }
+    const unknown = messagesOf(action('BONUS'));
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]).toContain('potřebuje sloupec subtype');
+    for (const subtype of UNIVERSAL_TEMPLATE_SUBTYPES) {
+      expect(unknown[0], subtype).toContain(subtype);
+    }
+  });
+});
+
+describe('A13-R1-03: poznámka u ukázkových řádků', () => {
+  it('každý ukázkový řádek říká v posledním sloupci, k čemu slouží — čárková šablona i ta ke stažení', () => {
+    const templates = [
+      parseCsv(UNIVERSAL_TEMPLATE_CSV),
+      parseCsv(UNIVERSAL_TEMPLATE_EXCEL_CSV.slice(1), ';'),
+    ];
+    for (const { headers, rows } of templates) {
+      expect(headers.at(-1)).toBe('note');
+      expect(rows).toHaveLength(17);
+      for (const row of rows) {
+        expect(row.at(-1)!.trim(), row.slice(0, 5).join(',')).not.toBe('');
+      }
+    }
   });
 });

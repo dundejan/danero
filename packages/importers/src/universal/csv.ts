@@ -25,12 +25,21 @@ class CellError extends Error {}
 const PLAIN_NUMBER = /^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
 
 /**
- * Číslo z univerzální šablony. Šablona předepisuje desetinnou TEČKU, ale
- * v českém Excelu vzniká čárka — a „1,500“ může znamenat 1,5 i 1500. Takový
- * zápis ODMÍTÁME (dřív se tiše bral jako tisícový oddělovač, takže „0,001“ BTC
- * se naimportovalo jako 1 kus — tisícinásobek). Ostatní čárky bereme jako
- * desetinné: „1,25“ → 1.25. Dvě a víc čárek jednoznačně oddělují tisíce
- * („1,234,567“), stejně jako čárka následovaná tečkou („1,234.56“).
+ * Číslo z univerzální šablony. Čárková šablona píše desetinnou TEČKU, ale
+ * v českém Excelu vzniká čárka — a „1,500“ může znamenat 1,5 i 1500. Z jedné
+ * buňky to rozhodnout nejde, ze souboru ano (`detectDecimalSeparator` nad
+ * všemi číselnými sloupci, příznak `fileWritesDecimalComma`):
+ *
+ *  - soubor desetinnou čárku DOKLÁDÁ → „2,125“ je 2,125 (A13-R1-01). Šablona
+ *    ke stažení čísla s čárkou sama píše a v českém Excelu jinak psát nejdou,
+ *    takže odmítat je znamenalo, že podílové listy na tři desetinná místa
+ *    nahrát nešlo;
+ *  - soubor ji nedokládá → zápis ODMÍTÁME (dřív se tiše bral jako tisícový
+ *    oddělovač, takže „0,001“ BTC se naimportovalo jako 1 kus — tisícinásobek).
+ *
+ * Ostatní čárky bereme jako desetinné vždy: „1,25“ → 1.25. Dvě a víc čárek
+ * jednoznačně oddělují tisíce („1,234,567“), stejně jako čárka následovaná
+ * tečkou („1,234.56“).
  *
  * Co je nejednoznačné, říká sdílená `isAmbiguousThousandGroup`: celá část
  * s vedoucí nulou („0,125“) tisíce být nemůže, takže projde jako desetinná
@@ -38,13 +47,15 @@ const PLAIN_NUMBER = /^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
  * z českého Excelu nahrát nešlo.
  *
  * Text, který číslem není („1 250 Kč“, „$185.50“), končí vlastní větou —
- * jinak by se uživateli vypsala anglická hláška knihovny (L2c-05).
+ * jinak by se uživateli vypsala anglická hláška knihovny (L2c-05). Příklad
+ * v ní je s čárkou: ta projde v každém souboru, kdežto tečku český Excel
+ * přepíše na datum (z „1.5“ uloží „01.V“).
  */
-function universalNumber(value: string, column: string): string {
-  const number = canonicalNumber(value, column);
+function universalNumber(value: string, column: string, fileWritesDecimalComma: boolean): string {
+  const number = canonicalNumber(value, column, fileWritesDecimalComma);
   if (number !== '' && !PLAIN_NUMBER.test(number)) {
     throw new CellError(
-      `Hodnotě „${value.trim()}“ ve sloupci ${column} nerozumíme jako číslu — napiš jen číslo, bez značky měny a dalšího textu (např. 1250.50). Měna má vlastní sloupec.`,
+      `Hodnotě „${value.trim()}“ ve sloupci ${column} nerozumíme jako číslu — napiš jen číslo, bez značky měny a dalšího textu (např. 1250,50). Měna má vlastní sloupec.`,
     );
   }
   return number;
@@ -60,7 +71,7 @@ function universalNumber(value: string, column: string): string {
  */
 const withoutPlusSign = (value: string): string => value.replace(/^\+(?=[\d.,])/, '');
 
-function canonicalNumber(value: string, column: string): string {
+function canonicalNumber(value: string, column: string, fileWritesDecimalComma: boolean): string {
   const trimmed = withoutPlusSign(value.replace(/[\s\u00a0\u202f]/g, ''));
   if (!trimmed.includes(',')) return trimmed;
   if (trimmed.includes('.')) {
@@ -71,9 +82,11 @@ function canonicalNumber(value: string, column: string): string {
   }
   // dvě a víc čárek nemůže být desetinná čárka → oddělovač tisíců
   if (trimmed.split(',').length > 2) return trimmed.replace(/,/g, '');
-  if (isAmbiguousThousandGroup(trimmed)) {
+  if (isAmbiguousThousandGroup(trimmed) && !fileWritesDecimalComma) {
+    const asDecimal = trimmed.replace(',', '.');
+    const asThousands = trimmed.replace(',', '');
     throw new CellError(
-      `Hodnota „${value.trim()}“ ve sloupci ${column} je nejednoznačná — čárka může být desetinná čárka (${trimmed.replace(',', '.')}) i oddělovač tisíců (${trimmed.replace(',', '')}). Piš čísla s desetinnou TEČKOU, bez oddělovačů tisíců.`,
+      `Hodnota „${value.trim()}“ ve sloupci ${column} je nejednoznačná — čárka může být desetinná (${asDecimal}) i oddělovač tisíců (${asThousands}) a ostatní čísla v souboru desetinnou čárku nedokládají. Napiš ${asDecimal} s desetinnou tečkou, nebo ${asThousands} bez čárky.`,
     );
   }
   return trimmed.replace(',', '.');
@@ -234,7 +247,7 @@ const CA_SUBTYPES = new Set(['SPLIT', 'ISIN_CHANGE', 'MERGER', 'SPINOFF', 'DELIS
 export const UNIVERSAL_TEMPLATE_CSV = [
   'type,date,settlement_date,isin,ticker,name,asset_class,settlement_style,position_effect,quantity,price,currency,fee,fee_currency,amount,withholding_tax,source_country,return_of_capital,subtype,ratio_from,ratio_to,new_isin,acquisition_date,acquisition_price,acquisition_currency,note',
   'BUY,2024-06-10,2024-06-12,US0378331005,AAPL,Apple Inc,,,,10,185.50,USD,1.00,USD,,,,,,,,,,,,nákup přes brokera XY',
-  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,,5,210.00,USD,1.00,USD,,,,,,,,,,,,',
+  'SELL,2026-03-05,2026-03-06,US0378331005,AAPL,Apple Inc,,,,5,210.00,USD,1.00,USD,,,,,,,,,,,,prodej části nakoupených kusů',
   'BUY,2025-03-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.5,60000,EUR,,,,,,,,,,,,,,nákup kryptoaktiva — isin = symbol',
   'SELL,2026-04-01,,BTC,BTC,Bitcoin,CRYPTO,,,0.2,75000,EUR,,,,,,,,,,,,,,prodej (i krypto-krypto směna = prodej oceněný protiplněním)',
   'BUY,2026-01-15,,OPT:AAPL-2026-06-C200,,AAPL call 200 6/2026,DERIVATIVE,premium,,1,1250,USD,,,,,,,,,,,,,,nákup opce — cena za KONTRAKT (prémie × multiplikátor); isin = libovolný stálý identifikátor',
@@ -257,6 +270,13 @@ export const UNIVERSAL_TEMPLATE_CSV = [
  * vyjmenovat a strážný test katalogu ohlídal, že žádná nechybí.
  */
 export const UNIVERSAL_TEMPLATE_TYPES: readonly string[] = [...TYPES];
+
+/**
+ * Povolené hodnoty sloupce `subtype` u korporátní akce — pravidla u šablony je
+ * vyjmenovávají taky a strážný test katalogu je hlídá stejně jako typy
+ * (A13-R1-02).
+ */
+export const UNIVERSAL_TEMPLATE_SUBTYPES: readonly string[] = [...CA_SUBTYPES];
 
 /**
  * Táž šablona ve tvaru, který se dvojklikem otevře v českém Excelu (L2c-02) —
@@ -319,6 +339,10 @@ export function parseUniversalCsv(text: string): ImportResult {
     detectDecimalSeparator(
       rows.flatMap((row) => NUMERIC_COLUMNS.map((column) => withoutPlusSign(map.get(row, column)))),
     ) === ',';
+  // A13-R1-01: v takovém souboru je i „2,125“ desetinná čárka. Říkáme to
+  // nahlas, ale jednou na soubor — fond vedený na tři desetinná místa má
+  // takové číslo na každém řádku a stránka importu ukazuje jen pár varování.
+  const commaGroups: { line: number; column: string; raw: string }[] = [];
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2;
     if (row.every((cell) => cell.trim() === '')) return;
@@ -357,14 +381,18 @@ export function parseUniversalCsv(text: string): ImportResult {
 
     const number = (column: (typeof NUMERIC_COLUMNS)[number]): string => {
       const raw = map.get(row, column);
-      if (fileWritesDecimalComma && raw.includes('.') && isAmbiguousThousandGroup(withoutPlusSign(raw))) {
-        const asDecimal = raw.replace(/\.?0+$/, '').replace('.', ',');
-        result.warnings.push({
-          line,
-          message: `Hodnotu „${raw}“ ve sloupci ${column} čteme jako ${asDecimal} — tečka je v šabloně vždy desetinná. Ostatní čísla v souboru ale píšeš s desetinnou čárkou; jestli má jít o ${raw.replace('.', '')}, napiš číslo bez tečky.`,
-        });
+      if (fileWritesDecimalComma && isAmbiguousThousandGroup(withoutPlusSign(raw))) {
+        if (raw.includes('.')) {
+          const asDecimal = raw.replace(/\.?0+$/, '').replace('.', ',');
+          result.warnings.push({
+            line,
+            message: `Hodnotu „${raw}“ ve sloupci ${column} čteme jako ${asDecimal} — tečka je v šabloně vždy desetinná. Ostatní čísla v souboru ale píšeš s desetinnou čárkou; jestli má jít o ${raw.replace('.', '')}, napiš číslo bez tečky.`,
+          });
+        } else {
+          commaGroups.push({ line, column, raw });
+        }
       }
-      return universalNumber(raw, column);
+      return universalNumber(raw, column, fileWritesDecimalComma);
     };
     const currency = (column: 'currency' | 'fee_currency' | 'acquisition_currency'): string =>
       universalCurrency(map.get(row, column), column);
@@ -617,6 +645,19 @@ export function parseUniversalCsv(text: string): ImportResult {
       });
     }
   });
+
+  const firstCommaGroup = commaGroups[0];
+  if (firstCommaGroup) {
+    const asThousands = withoutPlusSign(firstCommaGroup.raw.replace(/\s/g, '')).replace(',', '');
+    const others =
+      commaGroups.length > 1
+        ? ` Stejně čteme i ostatní čísla tohoto tvaru (v souboru jich je ${commaGroups.length}).`
+        : '';
+    result.warnings.push({
+      line: firstCommaGroup.line,
+      message: `Čárku v hodnotě „${firstCommaGroup.raw}“ ve sloupci ${firstCommaGroup.column} čteme jako desetinnou — stejně píšeš ostatní čísla v souboru. Jestli má jít o ${asThousands}, napiš číslo bez čárky.${others}`,
+    });
+  }
 
   return result;
 }

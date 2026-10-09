@@ -352,8 +352,11 @@ export const UNIVERSAL_INFO = {
  * ukázkové řádky: tvar data, desetinný oddělovač a povolené hodnoty se
  * uživatel dozvěděl až z chyb po nahrání.
  *
- * Musí sedět na parser (`packages/importers/src/universal/csv.ts`): výčet typů
- * i druhů aktiv a oba příklady hlídá `test/platformy-katalog.test.ts`.
+ * Musí sedět na parser (`packages/importers/src/universal/csv.ts`): výčet typů,
+ * podtypů korporátní akce i druhů aktiv a příklady čísel hlídá
+ * `test/platformy-katalog.test.ts`. Pravidlo o číslech je psané pro Excel,
+ * protože šablona ke stažení se otevírá v něm (A13-R1-01): desetinnou tečku
+ * tam uživatel napsat nemůže, Excel z „1.5“ udělá datum.
  */
 export const TEMPLATE_RULES: { label: string; text: string }[] = [
   {
@@ -362,7 +365,7 @@ export const TEMPLATE_RULES: { label: string; text: string }[] = [
   },
   {
     label: 'Čísla',
-    text: 'jen číslo, bez značky měny a bez oddělovače tisíců. Desetinná čárka i tečka fungují stejně (1250,50 nebo 1250.50). Měna má vlastní sloupec a píše se třípísmenným kódem: CZK, USD, EUR.',
+    text: 'jen číslo, bez značky měny a bez oddělovače tisíců. V Excelu piš desetinnou čárku (1250,50) — tečku umí Excel sám přepsat na datum. Kdo soubor píše jinde, může i desetinnou tečku (1250.50). Číslo na tři desetinná místa (2,125) bereme jako desetinné, když desetinnou čárku píšou i jiná čísla v souboru; jinak ho nejde odlišit od 2125 a import ho vrátí s chybou. Měna má vlastní sloupec a píše se třípísmenným kódem: CZK, USD, EUR.',
   },
   {
     label: 'Druh pohybu (sloupec type)',
