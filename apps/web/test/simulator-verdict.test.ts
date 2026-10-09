@@ -347,6 +347,63 @@ describe('věta verdiktu jmenuje limit, který pro režim platí (L12-01, L24-05
       'prolomí limit 100 000 Kč pro podání přiznání',
     );
   });
+
+  /** Celý text vykreslené stránky simulátoru, bez značek a pevných mezer. */
+  const pageText = (regime: ProfileRow['regime'], quantity: number): string =>
+    renderToStaticMarkup(
+      createElement(SimulatorView, {
+        txs: portfolio(2025),
+        profile: profileFor(regime),
+        today: '2025-10-08',
+        params: { isin: NEW_LOT, kusy: String(quantity), cena: '520' },
+      }),
+    )
+      .replace(/<!-- -->/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ');
+
+  /**
+   * R-09f (L24-02): „Orientační daň“ je daň, kdyby se podávalo přiznání. Pod
+   * limitem režimu se neplatí a prodej, který limit prolomí, spustí daň ze
+   * všech letošních příjmů. Simulátor to říká větou — druhé číslo „k zaplacení“
+   * by se u paušalisty hádalo s odhadem doplatku z přehledu (recenze oprav).
+   */
+  it('R-09f: zaměstnanec pod limitem čte, že orientační daň neplatí', () => {
+    const text = pageText('ZAMESTNANEC', 10); // 5 200 Kč, limit 20 000 Kč
+    expect(text).toContain('Pod limitem 20 000 Kč přiznání nepodáváš');
+    expect(text).toContain('orientační daň výš neplatíš');
+    expect(text).toContain('Počítáme jen s příjmy, o kterých Danero ví.');
+  });
+
+  it('R-09f: prodej přes limit vedlejších příjmů řekne, že se zdaní všechno letošní', () => {
+    const text = pageText('ZAMESTNANEC', 40); // 20 800 Kč
+    expect(text).toContain('překročíš limit 20 000 Kč');
+    expect(text).toContain('všechny letošní zdanitelné příjmy z investic');
+    expect(text).not.toContain('paušální zálohy');
+  });
+
+  it('R-09f × R-08f: paušalistovi prolomení neslibuje částku — přibude podnikání a pojistné', () => {
+    const text = pageText('PAUSAL', 100); // 52 000 Kč, limit 50 000 Kč
+    expect(text).toContain('překročíš limit 50 000 Kč pro paušální daň');
+    expect(text).toContain('doplatíš i pojistné');
+    expect(text).toContain('Tu část Danero spočítat neumí.');
+    expect(text).not.toContain('proto daň skočí');
+  });
+
+  it('R-09f: karta daně zůstává „Orientační daň“, žádné druhé číslo k zaplacení', () => {
+    for (const regime of ['PAUSAL', 'ZAMESTNANEC', 'OSVC'] as const) {
+      const text = pageText(regime, 40);
+      expect(text).toContain('Orientační daň');
+      expect(text).not.toContain('Daň k zaplacení');
+    }
+  });
+
+  it('R-09f: OSVČ mimo paušál podává vždy — věta o limitu se jí netýká', () => {
+    const text = pageText('OSVC', 40);
+    expect(text).not.toContain('přiznání nepodáváš');
+    expect(text).not.toContain('překročíš limit');
+  });
 });
 
 describe('regresní scénář z panelu: demo VWCE 5 ks @ 140 EUR', () => {

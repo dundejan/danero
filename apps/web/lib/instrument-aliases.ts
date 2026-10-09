@@ -60,8 +60,8 @@ export interface AliasInput {
 }
 
 /**
- * Řádky, které by přepsaly ISIN u symbolu, pod jehož dosavadním ISIN už má
- * uživatel u téhož brokera uložené transakce (L23-02).
+ * Řádky, které by přepsaly ISIN nebo měnu u symbolu, pod jehož dosavadním ISIN
+ * už má uživatel u téhož brokera uložené transakce (L23-02).
  *
  * ISIN je součást dedupe klíče i identity pozice. Po přepisu by další nahrání
  * téhož výpisu uložilo obchody i dividendy podruhé — pod novým ISIN je
@@ -77,7 +77,7 @@ export async function aliasesBlockedByTransactions(
   const blocked: AliasInput[] = [];
   for (const row of rows) {
     const [existing] = await db
-      .select({ isin: instrumentAliases.isin })
+      .select({ isin: instrumentAliases.isin, currency: instrumentAliases.currency })
       .from(instrumentAliases)
       .where(
         and(
@@ -86,7 +86,10 @@ export async function aliasesBlockedByTransactions(
           eq(instrumentAliases.symbol, row.symbol),
         ),
       );
-    if (!existing || existing.isin === row.isin) continue;
+    // měna z číselníku jde u XTB do obchodu a tím do dedupe otisku stejně jako
+    // ISIN — její přepis by výpis zdvojil úplně stejně
+    const sameCurrency = (existing?.currency ?? null) === (row.currency ?? null);
+    if (!existing || (existing.isin === row.isin && sameCurrency)) continue;
     const [used] = await db
       .select({ key: transactions.dedupeKey })
       .from(transactions)

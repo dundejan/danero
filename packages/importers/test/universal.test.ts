@@ -246,7 +246,8 @@ describe('univerzální CSV šablona', () => {
     const csv = [
       'type,date,settlement_date,isin,quantity,price,currency',
       'BUY,0202-05-01,,US0378331005,10,185.50,USD',
-      'BUY,1.5.3025,,US0378331005,10,185.50,USD',
+      // 2062 místo 2026: žádný rok v aplikaci by takovou transakci neukázal
+      `BUY,1.5.${new Date().getUTCFullYear() + 36},,US0378331005,10,185.50,USD`,
       'SELL,2026-03-05,0026-03-07,US0378331005,5,210.00,USD',
       // kupónová privatizace i příští rok jsou v pořádku
       'BUY,1993-06-01,,CZ0005112300,10,1000,CZK',
@@ -260,7 +261,7 @@ describe('univerzální CSV šablona', () => {
     expect(result.errors.map((error) => error.line)).toEqual([2, 3, 4]);
     expect(result.errors[0]!.message).toContain('Rok 0202');
     expect(result.errors[0]!.message).toContain('překlep');
-    expect(result.errors[1]!.message).toContain('Rok 3025');
+    expect(result.errors[1]!.message).toContain(`Rok ${new Date().getUTCFullYear() + 36}`);
     expect(result.errors[2]!.message).toContain('settlement_date');
   });
   // B-3: „1,500“ je v českém Excelu 1,5 i 1500 — dřív se čárka VŽDY brala jako

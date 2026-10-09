@@ -1,6 +1,7 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { FIAT_CURRENCIES, HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { emptyResult, type ImportResult } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 
 export const ANYCOIN_BROKER = 'anycoin';
 
@@ -65,6 +66,8 @@ export function sniffAnycoinCsv(text: string): boolean {
 interface TradeLeg {
   line: number;
   date: string;
+  /** Celý čas z exportu (UTC) — kvůli varování na hranici roku (R-05d). */
+  time: string;
   /** Absolutní hodnota množství (směr určuje role payment/fill). */
   amount: string;
   currency: string;
@@ -176,6 +179,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     legs.push({
       line,
       date: isoDate,
+      time: map.get(row, 'date'),
       amount: d(amount).abs().toString(),
       currency,
       role: type === 'trade payment' ? 'payment' : 'fill',
@@ -217,7 +221,11 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
   /* ── párování obchodů: 1× payment + 1× fill na Order ID ── */
 
+  // R-05d: časy jsou ve světovém čase, den i rok se berou z nich
+  const yearBoundary = new YearBoundaryWatch(result);
   for (const [orderId, legs] of orders) {
+    const firstLeg = legs[0];
+    if (firstLeg) yearBoundary.row(firstLeg.line, firstLeg.time);
     const payments = legs.filter((leg) => leg.role === 'payment');
     const fills = legs.filter((leg) => leg.role === 'fill');
     if (payments.length !== 1 || fills.length !== 1) {
@@ -276,6 +284,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
       });
     }
   }
+  yearBoundary.flush();
 
   return result;
 }

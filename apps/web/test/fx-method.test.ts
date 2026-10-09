@@ -43,10 +43,17 @@ describe('označení kurzové soustavy říká, co čísla opravdu nesou (R-06b)
     expect(reason).toContain('jednotný kurz');
   });
 
-  it('obráceně: jednotný kurz doplněný denním je taky směs', () => {
+  it('rada počítá se zafixovaným rokem — přepnutí kurzů se na něj samo nepropíše', () => {
+    expect(xmlBlockedByFxMix(result('CNB_DAILY', ['FX_DAILY_RATE_MISSING']))).toContain('fixaci');
+  });
+
+  it('obráceně: jednotný kurz doplněný denním označení přizná, ale XML neblokuje', () => {
+    // tabulka jednotných kurzů začíná rokem 2020; u nákupu ze starších let
+    // engine po denním kurzu sahá vědomě a uživatel s tím nic nenadělá —
+    // blokace by mu XML vzala natrvalo
     const mixed = result('UNIFIED', ['FX_UNIFIED_RATE_MISSING']);
     expect(fxMethodLabel(mixed)).toContain('denní kurz ČNB');
-    expect(xmlBlockedByFxMix(mixed)).toContain('XML teď nevydáme');
+    expect(xmlBlockedByFxMix(mixed)).toBeNull();
   });
 
   it('varování druhé soustavy se k té zvolené nepočítá', () => {
@@ -71,9 +78,11 @@ describe('výstupy berou označení z jednoho místa', () => {
 
   it('export XML se před vydáním ptá, jestli výsledek nemíchá soustavy', () => {
     const route = source('app', 'api', 'epo', 'route.ts');
-    const check = route.indexOf('xmlBlockedByFxMix(result)');
+    const check = route.indexOf('xmlBlockedByFxMix(');
     expect(check).toBeGreaterThan(-1);
     expect(check).toBeLessThan(route.indexOf('generateDpfdp7('));
+    // a dřív, než rok zafixuje — odmítnutý export nemá nic zamykat
+    expect(check).toBeLessThan(route.indexOf('pinTaxYear(db'));
   });
 
   it('věty odpovídají textům varování enginu (kódy se nepřejmenovaly)', () => {

@@ -406,7 +406,7 @@ export default async function ImportPage({
                               : chyba === 'isin-kontrola'
                                 ? checkDigitMessage
                                 : chyba === 'isin-pouzity'
-                                  ? 'ISIN nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš ISIN opravit? Nejdřív vrať import zpět (v historii níž), pak ISIN ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.'
+                                  ? 'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív vrať import zpět (v historii níž), pak údaj ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.'
                                   : 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.'
           }
         />

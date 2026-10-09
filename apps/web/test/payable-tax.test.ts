@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -136,20 +134,23 @@ describe('měsíční přehled e-mailem (L24-02)', () => {
   });
 });
 
-describe('simulátor ukazuje daň k zaplacení, ne hypotetickou (L24-02)', () => {
-  const view = readFileSync(
-    join(import.meta.dirname, '..', 'components', 'views', 'simulator-view.tsx'),
-    'utf8',
-  );
-
-  it('karta daně počítá před i po přes payableTaxCzk a u režimu s limitem se tak jmenuje', () => {
-    expect(view.match(/payableTaxCzk\(/g)).toHaveLength(2);
-    expect(view).toContain("label={regimeLimit ? 'Daň k zaplacení' : 'Orientační daň'}");
-    expect(view).not.toContain('beforeCzk={simulation.baseline.taxCzk}');
-  });
-
-  it('prolomení limitu vysvětlí, že se zdaní všechny letošní příjmy', () => {
-    expect(view).toContain('všechny letošní zdanitelné příjmy z investic');
-    expect(view).toContain('Počítáme jen s příjmy, o kterých Danero ví.');
+describe('přehled: věta se nevypisuje k nulové dani', () => {
+  it('pod limitem bez zdanitelného příjmu není co vysvětlovat', () => {
+    // prázdný rok: orientační daň 0 Kč — „tuhle daň neplatíš“ by mluvilo o ničem
+    const html = renderToStaticMarkup(
+      createElement(OverviewView, {
+        txs: [],
+        analysis: analyzeForUser([], { ...PROFILE, regime: 'PAUSAL' }, YEAR, TODAY),
+        prices: new Map(),
+        years: [YEAR],
+        year: YEAR,
+        today: TODAY,
+        notifications: [],
+      }),
+    );
+    expect(html).not.toContain(SENTENCE);
   });
 });
+
+// Simulátor (věta podle režimu, karta „Orientační daň“) testuje
+// test/simulator-verdict.test.ts — tam je portfolio, nad kterým jde vykreslit.

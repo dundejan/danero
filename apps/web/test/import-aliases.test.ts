@@ -292,7 +292,24 @@ describe('číselník: přepis ISIN u symbolu s uloženými transakcemi (L23-02)
     expect(html).toContain('vrať import zpět');
   });
 
-  it('stejný ISIN (jen jiná měna) a symbol bez transakcí přepsat jde', { timeout: 60_000 }, async () => {
+  it('změna jen měny u titulu s transakcemi neprojde — i měna je v otisku obchodu', { timeout: 60_000 }, async () => {
+    await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }]);
+    await importFileIsolated(stav.db, 'u1', XTB_NEW_FILENAME, await report());
+    const stored = await loadTransactions(stav.db, 'u1');
+
+    expect(
+      await save([{ broker: 'xtb', symbol: 'AAPL.US', isin: ORIGINAL.isin, currency: 'EUR' }]),
+    ).toBe('/import?chyba=isin-pouzity');
+    await importFileIsolated(stav.db, 'u1', XTB_NEW_FILENAME, await report());
+    expect(await loadTransactions(stav.db, 'u1')).toHaveLength(stored.length);
+
+    // tytéž údaje znovu (uživatel formulář jen odeslal) nejsou přepis
+    expect(await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }])).toBe(
+      '/import?ulozeno=ciselnik',
+    );
+  });
+
+  it('symbol bez transakcí přepsat jde', { timeout: 60_000 }, async () => {
     await save([{ broker: 'xtb', symbol: 'AAPL.US', ...ORIGINAL }]);
     // bez nahraného výpisu není co zdvojit
     expect(

@@ -357,7 +357,7 @@ export function OverviewView({
               {/* R-09f (L24-02): pod limitem režimu se tahle daň neplatí — bez
                   téhle věty stála částka hned pod verdiktem „povinnost
                   nevzniká“ a vypadala jako dluh */}
-              {unpaidUnderLimit && (
+              {unpaidUnderLimit && estimatedTaxCzk.gt(0) && (
                 <p className="font-medium text-inkoust">
                   Platí se jen při podání přiznání. Dokud jsi pod limitem{' '}
                   {czk(unpaidUnderLimit)}, přiznání nepodáváš a tuhle daň neplatíš — počítáme

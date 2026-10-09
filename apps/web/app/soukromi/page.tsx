@@ -129,9 +129,9 @@ export default function PrivacyPage() {
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
           všechno odstraníme. Jediné, co může smazání účtu přežít, je nečitelný
           otisk e-mailové adresy, a to jen tehdy, když se na ni před potvrzením
-          zkusil zaregistrovat ještě někdo s jiným heslem: otisk držíme nejdéle
-          90 dní, aby takový spor o adresu nešel obejít smazáním a novým založením
-          účtu. Adresu z něj přečíst nejde. Technický audit log (záznamy o přihlášeních a synchronizacích)
+          zkusil zaregistrovat ještě někdo s jiným heslem: otisk držíme 90 dní od
+          posledního takového pokusu, aby spor o adresu nešel obejít smazáním
+          a novým založením účtu. Samotnou adresu v něm neukládáme. Technický audit log (záznamy o přihlášeních a synchronizacích)
           držíme 90 dní a starší se každý den automaticky mažou.{' '}
           {/* E-32: dřív tu stálo „nejdéle po dvou měsících“, ale zálohovací skript
               nikdy nic nemazal. Retenci teď drží scripts/db.sh (56 dní) — text říká

@@ -191,16 +191,19 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 - **R-05d Den transakce = den uvedený ve výpisu brokera.** Zákon časové pásmo
   neřeší a broker je jediný doklad, který poplatník má; přepočet do jiného
   pásma by vyrobil datum, které na žádném dokladu nestojí. Důsledek, o kterém
-  je třeba vědět: brokeři píšou čas různě. Trading 212, Kraken a Coinbase
-  uvádějí světový čas (UTC), jiní místní čas burzy nebo účtu, takže tentýž
-  okamžik z noci 31. 12. → 1. 1. může u různých brokerů skončit v různých
-  zdaňovacích obdobích. Aplikace proto u transakce z poslední hodiny roku
-  UTC (v Česku už 1. 1.) **varuje při importu** — rok nemění
-  (`packages/importers/src/year-boundary.ts`; dnes Trading 212, Kraken
-  a Coinbase). Jediná výjimka z „dne podle výpisu“ je Tastytrade: jeho export
+  je třeba vědět: brokeři píšou čas různě. Trading 212, Kraken, Coinbase,
+  Anycoin a Revolut uvádějí světový čas (UTC), jiní místní čas burzy nebo
+  účtu, takže tentýž okamžik z noci 31. 12. → 1. 1. může u různých brokerů
+  skončit v různých zdaňovacích obdobích. Aplikace proto u těchto pěti
+  **varuje při importu** u transakce z poslední hodiny roku UTC (v Česku už
+  1. 1.) — rok nemění (`packages/importers/src/year-boundary.ts`). Varování
+  dostane jen transakce, u které o roce příjmu rozhoduje den: dividenda, úrok
+  a obchod s kryptem. Nákup a prodej cenných papírů ne — jeho rok určuje
+  vypořádání (R-05a), ne den obchodu. Jediná výjimka z „dne podle výpisu“ je Tastytrade: jeho export
   nese místní čas prohlížeče, ve kterém byl stažen, takže by tentýž řádek
   dostal jiný den podle toho, kde ho uživatel stáhl — den se proto odvozuje
-  z okamžiku v pásmu Europe/Prague. Totéž platí pro časové testy (R-01, krypto):
+  z okamžiku v pásmu Europe/Prague (hlavní export; starší export z Tax Center
+  okamžik nenese a čte se z něj den tak, jak je napsaný). Totéž platí pro časové testy (R-01, krypto):
   počítají se týmž dnem, takže nákup v poslední hodině dne UTC má v Česku
   datum o den pozdější a osvobození může vyjít o jeden den dřív. Engine hodinu
   nezná (pracuje s daty), odchylka je nejvýš jeden den u tříleté lhůty a kryje
@@ -264,9 +267,13 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   nahradí denní (`FX_UNIFIED_RATE_MISSING`). Je to nouzové řešení, ne výklad:
   R-06 chce jednu soustavu pro celé období (§ 38 odst. 1). Výstupy proto
   musí říkat pravdu — report a tisk u takového výsledku netvrdí jen zvolenou
-  metodu a **XML pro finanční úřad se nevydá**, dokud se soustavy míchají
-  (`apps/web/lib/fx-method.ts`). Výpočet sám nepadá: výpadek kurzů by jinak
-  shodil přehled i hlídače každému, kdo si denní kurzy zvolil.
+  metodu (`apps/web/lib/fx-method.ts`). **XML pro finanční úřad se nevydá**
+  u zvolených denních kurzů s chybějícím kurzem: tam má uživatel cestu ven
+  (počkat na kurzy, nebo přepnout na jednotný). U zvoleného jednotného kurzu
+  se XML vydává dál — tabulka jednotných kurzů začíná rokem 2020, u nákupu ze
+  starších let je denní kurz jediný dostupný a blokace by XML vzala natrvalo.
+  Výpočet sám nepadá: výpadek kurzů by jinak shodil přehled i hlídače
+  každému, kdo si denní kurzy zvolil.
 - Engine počítá **obě varianty** a reportuje rozdíl (recenze Taxomatu: rozdíl až desítky tisíc Kč).
 - **R-06c Volba soustavy se per rok fixuje** — stejným mechanismem jako metoda
   párování (viz R-05c, „Fixace konfigurace per rok"). Požadavek jedné soustavy
@@ -695,9 +702,10 @@ Dvě oddělené roviny:
   k zaplacení je **0**. Překročením limitu se zdaní **všechny** zdanitelné
   příjmy roku, ne jen ten, který limit prolomil: daň k zaplacení skočí z nuly
   rovnou na celou orientační daň. OSVČ mimo paušál podává přiznání vždy,
-  u ní se obě čísla rovnají. Engine počítá orientační daň beze změny; daň
-  k zaplacení z ní odvozuje aplikace (`apps/web/lib/payable-tax.ts`)
-  a ukazuje ji simulátor prodeje, přehled a měsíční e-mail jen větou — verdikt
+  u ní se obě čísla rovnají. Engine počítá orientační daň beze změny; to, že
+  se pod limitem neplatí, odvozuje aplikace (`apps/web/lib/payable-tax.ts`)
+  a říká to **větou** u orientační daně na přehledu, v simulátoru prodeje
+  a v měsíčním e-mailu. Druhé číslo „k zaplacení“ se neukazuje — verdikt
   o podání zůstává u R-09a–c. ⚠️ Limit vidí jen příjmy, o kterých aplikace
   ví (ruční pole „Další zdanitelné příjmy“ a naimportované transakce), takže
   nula není slib; každý výstup, který ji ukazuje, to říká. U paušalisty po
@@ -993,11 +1001,13 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
 - **R-12s Párování při částečném uzavření**: uzavírá-li se jen část pozice
   otevřené víc obchody, párují se otevírací obchody **vždy FIFO** (nejstarší
   první). Volba metody z R-05c se na deriváty **nevztahuje** — nastavení
-  `matchingMethod` se týká jen cenných papírů. Zdroj: zákon metodu
+  `matchingMethod` se týká jen cenných papírů a krypta. Zdroj: zákon metodu
   neúčtujícím FO nepředepisuje (§ 10 odst. 4 a 5 o ní mlčí, stejně jako
   u R-05c); FIFO je obvyklá a deterministická. Výslovný výklad k derivátům
-  neexistuje, jistota střední. Součet výdajů za celou pozici na metodě
-  nezávisí, liší se jen jeho rozložení mezi roky. Příklad: nákup 3 ks po 100
+  neexistuje, jistota střední. Uzavře-li se celá pozice prodejem, součet
+  výdajů na metodě nezávisí a liší se jen jeho rozložení mezi roky; skončí-li
+  zbytek bezcennou expirací při výchozím R-12i (prémie se neuzná), rozhoduje
+  metoda i o tom, která prémie propadne. Příklad: nákup 3 ks po 100
   a 7 ks po 200, prodej 5 ks po 300 → příjem 1 500, výdaj 3 × 100 + 2 × 200
   = 700.
 

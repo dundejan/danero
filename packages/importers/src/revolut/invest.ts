@@ -1,6 +1,7 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import { YearBoundaryWatch } from '../year-boundary';
 import {
   detectRevolutDecimal,
   isIsoCurrency,
@@ -164,6 +165,8 @@ export function parseRevolutInvestTable(
     }
   };
 
+  // R-05d: časy jsou ve světovém čase, den i rok se berou z nich
+  const yearBoundary = new YearBoundaryWatch(result);
   rows.forEach((row, rowIndex) => {
     const line = rowIndex + 2; // 1 = hlavička
     if (row.every((cell) => cell.trim() === '')) return;
@@ -172,6 +175,7 @@ export function parseRevolutInvestTable(
     // ISO 8601 UTC s proměnným počtem desetinných sekund → prvních 10 znaků
     const dateRaw = map.get(row, 'Date');
     const isoDate = dateRaw.slice(0, 10);
+    yearBoundary.row(line, dateRaw);
     if (!isValidIsoDate(isoDate)) {
       result.errors.push({
         line,
@@ -339,6 +343,7 @@ export function parseRevolutInvestTable(
       }
     }
   });
+  yearBoundary.flush();
 
   result.unmappedSymbols = [...unmapped];
   return result;

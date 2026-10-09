@@ -251,9 +251,9 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
 
   // endpoint /change-email je vypnutý (obcházel kontrolu hesla) — e-mail se
   // mění přímo tady, unikátnost hlídá DB constraint
-  // L6b-05: oznámení o změně smí dostat jen adresa, kterou kdy někdo potvrdil.
-  // Jinak by řetěz změn A → překlep → oprava poslal zprávu „odpověz a vrátíme
-  // ti účet“ cizímu člověku na adrese s překlepem.
+  // L6b-05: oznámení o změně má dvě znění podle toho, jestli původní adresu kdy
+  // někdo potvrdil — nepotvrzená může být překlep, tedy cizí schránka, a té
+  // se „vrácení účtu“ nenabízí (lib/email.ts, `emailChangedEmail`).
   let previousEmailVerified = false;
   try {
     const db = await getDb();
@@ -292,10 +292,13 @@ export async function changeEmailAction(formData: FormData): Promise<void> {
   // heslo zná někdo další, potichu přijde o přihlášení i o obnovu hesla.
   // Selhání odeslání nesmí shodit už provedenou změnu.
   const newEmail = parsed.data['novy-email'].toLowerCase();
-  if (previousEmailVerified && user.email.toLowerCase() !== newEmail) {
+  if (user.email.toLowerCase() !== newEmail) {
     try {
       const { emailChangedEmail, resolveEmailSender } = await import('@/lib/email');
-      await resolveEmailSender()({ to: user.email, ...emailChangedEmail(newEmail) });
+      await resolveEmailSender()({
+        to: user.email,
+        ...emailChangedEmail(newEmail, { previousVerified: previousEmailVerified }),
+      });
     } catch (error) {
       logEvent('error', 'account.change_email_notice_failed', {
         userId: user.id,

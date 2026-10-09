@@ -123,11 +123,13 @@ const DATE_COLUMNS = ['date', 'settlement_date', 'acquisition_date'] as const;
 /**
  * Meze roku u ručně psaného data (L7i-08). Tvar `0202-05-01` je platné datum,
  * ale ne rok transakce — a jediný takový překlep roztáhl přepínač roku
- * i stahování kurzů ČNB na stovky let. Meze jsou schválně široké: chytají
- * překlep, nerozhodují o tom, co je ještě věrohodná historie.
+ * i stahování kurzů ČNB na stovky let. Dolní mez je schválně široká (chytá
+ * překlep, nerozhoduje o tom, co je ještě věrohodná historie). Horní je příští
+ * rok: transakce z roku 2062 místo 2026 by se uložila, ale žádný rok
+ * v aplikaci by ji neukázal.
  */
 const MIN_YEAR = 1900;
-const MAX_YEAR = 2100;
+const maxYear = (): number => new Date().getUTCFullYear() + 1;
 
 /** Sloupce s čísly — z nich se pozná, jestli soubor píše desetinnou čárku. */
 const NUMERIC_COLUMNS = [
@@ -381,10 +383,10 @@ export function parseUniversalCsv(text: string): ImportResult {
         return;
       }
       const year = Number(iso.slice(0, 4));
-      if (year < MIN_YEAR || year > MAX_YEAR) {
+      if (year < MIN_YEAR || year > maxYear()) {
         result.errors.push({
           line,
-          message: `Rok ${iso.slice(0, 4)} ve sloupci ${column} nevypadá jako rok transakce — nejspíš překlep v datu "${value}" (čekáme rok mezi ${MIN_YEAR} a ${MAX_YEAR}).`,
+          message: `Rok ${iso.slice(0, 4)} ve sloupci ${column} nevypadá jako rok transakce — nejspíš překlep v datu "${value}" (čekáme rok mezi ${MIN_YEAR} a ${maxYear()}).`,
           raw: row.join(','),
         });
         return;

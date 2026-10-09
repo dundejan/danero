@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { parseCoinbaseCsv, parseKrakenCsv, parseTrading212Csv } from '../src';
+import {
+  parseAnycoinCsv,
+  parseCoinbaseCsv,
+  parseKrakenCsv,
+  parseRevolutInvestCsv,
+  parseTrading212Csv,
+} from '../src';
 import { utcYearBoundaryNote } from '../src/year-boundary';
+import { ANYCOIN_BASIC } from './fixtures/anycoin';
 import { COINBASE_V4 } from './fixtures/coinbase';
 import { KRAKEN_LEDGERS_NEW } from './fixtures/kraken';
+import { REVOLUT_INSTRUMENT_MAP, REVOLUT_INVEST_CSV } from './fixtures/revolut';
 import { T212_FIXTURE } from './fixtures/t212';
 
 /**
@@ -45,18 +53,43 @@ describe('věta o hranici roku (R-05d)', () => {
 });
 
 describe('parsery se světovým časem varují na hranici roku (L26-01)', () => {
-  it('Trading 212: varování má každá vydaná transakce, přeskočený řádek ne', () => {
+  it('Trading 212: varuje u dividendy a úroku, ne u obchodu s akciemi, vkladu a přeskočeného řádku', () => {
     const result = parseTrading212Csv(atBoundary(T212_FIXTURE));
     expect(result.errors).toEqual([]);
-    expect(result.transactions.length).toBeGreaterThan(0);
     expect(result.skipped.length).toBeGreaterThan(0);
+    const types = result.transactions.map((tx) => tx.type);
+    expect(types).toEqual(['DEPOSIT', 'BUY', 'SELL', 'DIVIDEND', 'INTEREST', 'WITHDRAWAL']);
 
+    // Jen tam, kde den rozhoduje o roce příjmu: prodej akcií patří do roku
+    // VYPOŘÁDÁNÍ (R-05a), takže věta „řadí ji do roku 2025“ by u něj lhala;
+    // vklad a výběr do přiznání nevstupují vůbec.
     const warned = boundaryWarnings(result);
-    expect(warned).toHaveLength(result.transactions.length);
-    const skippedLines = new Set(result.skipped.map((row) => row.line));
-    expect(warned.some((warning) => skippedLines.has(warning.line))).toBe(false);
+    expect(warned).toHaveLength(2);
     // den i rok zůstávají podle výpisu
     expect(JSON.stringify(result.transactions)).not.toContain('2026-01-01');
+  });
+
+  it('varování o hranici roku stojí v seznamu první — historie importů jich ukáže jen pár', () => {
+    const result = parseTrading212Csv(atBoundary(T212_FIXTURE));
+    const first = result.warnings.slice(0, 2).map((warning) => warning.message);
+    expect(first.every((message) => message.includes('světového času'))).toBe(true);
+    // mezi sebou v pořadí řádků souboru
+    expect(result.warnings[0]!.line).toBeLessThan(result.warnings[1]!.line);
+  });
+
+  it('Anycoin: krypto se připisuje hned, varování má každý obchod z poslední hodiny roku', () => {
+    const result = parseAnycoinCsv(atBoundary(ANYCOIN_BASIC));
+    expect(result.transactions.length).toBeGreaterThan(0);
+    expect(boundaryWarnings(result)).toHaveLength(result.transactions.length);
+    expect(boundaryWarnings(parseAnycoinCsv(ANYCOIN_BASIC))).toEqual([]);
+  });
+
+  it('Revolut (akcie): varuje jen u dividend, obchody s akciemi rozhoduje vypořádání', () => {
+    const result = parseRevolutInvestCsv(atBoundary(REVOLUT_INVEST_CSV), REVOLUT_INSTRUMENT_MAP);
+    const dividends = result.transactions.filter((tx) => tx.type === 'DIVIDEND');
+    expect(dividends.length).toBeGreaterThan(0);
+    expect(result.transactions.length).toBeGreaterThan(dividends.length);
+    expect(boundaryWarnings(result)).toHaveLength(dividends.length);
   });
 
   it('Trading 212: běžný export žádné takové varování nemá', () => {

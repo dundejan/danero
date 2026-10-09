@@ -716,14 +716,22 @@ describe('účet čekající na potvrzení po změně e-mailu (D01-R1-01 až R1-
       expect(notices[0]!.text).not.toContain(newEmail);
       expect(notices[0]!.text).not.toMatch(/https?:\/\/\S*(token|verify)/);
 
-      // adresa, kterou nikdo nepotvrdil, oznámení nedostane: oprava překlepu
-      // nesmí psát cizímu člověku „odpověz a vrátíme ti účet“
+      // Adresa, kterou nikdo nepotvrdil, dostane jiné znění: může to být
+      // překlep (cizí schránka — té se „vrácení účtu“ nenabízí), ale i adresa,
+      // na kterou majitel právě přešel, a ten se o další změně dozvědět musí.
       const typoEmail = 'historie-preklep@priklad.test';
+      const changeNotices = (address: string) =>
+        emailsTo(log, address).filter((message) => message.subject.includes('se změnil'));
       // relace držitele změnu e-mailu přežívá, cookie je pořád táž
       await changeEmail(cookie, typoEmail, password);
-      expect(emailsTo(log, newEmail).filter((m) => m.subject.includes('se změnil'))).toHaveLength(0);
+      expect(changeNotices(newEmail)).toHaveLength(1);
+      expect(changeNotices(newEmail)[0]!.text).toContain('nikdo ji nepotvrdil');
+      expect(changeNotices(newEmail)[0]!.text).not.toContain('jak ti účet vrátit');
       await changeEmail(cookie, newEmail, password);
-      expect(emailsTo(log, typoEmail).filter((m) => m.subject.includes('se změnil'))).toHaveLength(0);
+      expect(changeNotices(typoEmail)).toHaveLength(1);
+      expect(changeNotices(typoEmail)[0]!.text).toContain('šlo nejspíš o překlep');
+      // potvrzená původní adresa má plné znění
+      expect(notices[0]!.text).toContain('jak ti účet vrátit');
 
       const { getDb } = await import('@/db');
       const { recentAuditEvents } = await import('@/lib/audit');

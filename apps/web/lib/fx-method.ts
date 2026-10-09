@@ -35,13 +35,21 @@ export function fxMethodLabel(result: FxResult): string {
 /**
  * Proč teď nejde vydat XML pro finanční úřad — nebo `null`, když jde.
  *
- * Přiznání má stát na jedné kurzové soustavě (R-06, § 38 odst. 1). Soubor
- * varování nenese, takže by smíšená čísla odešla bez jediné poznámky; raději
- * ho nevydáme a řekneme, co s tím.
+ * Blokuje se JEN zvolená metoda denních kurzů s chybějícím kurzem: přiznání
+ * má stát na jedné kurzové soustavě (R-06, § 38 odst. 1), soubor varování
+ * nenese a uživatel má cestu ven (počkat na kurzy, nebo přepnout na jednotný).
+ *
+ * U zvoleného JEDNOTNÉHO kurzu se neblokuje. Tabulka jednotných kurzů začíná
+ * rokem 2020 a u nákupu ze starších let engine vědomě sahá po denním kurzu
+ * (K1-04) — to není výpadek a uživatel s tím nic nenadělá; blokace by mu XML
+ * vzala natrvalo. Označení v reportu a tisku druhou soustavu přizná i tam.
+ *
+ * Známá nepřesnost: varování o chybějícím denním kurzu vznikne i u derivátu
+ * uzavřeného v JINÉM roce (engine převádí dřív, než položku podle roku
+ * vyřadí). Je to vzácné — chce zvolené denní kurzy a měnu, kterou denní
+ * lístek ČNB nevede — a rada z hlášky funguje i tehdy.
  */
 export function xmlBlockedByFxMix(result: FxResult): string | null {
-  if (!mixesFxSystems(result)) return null;
-  return result.options.fxMethod === 'UNIFIED'
-    ? 'XML teď nevydáme: pro část transakcí chybí jednotný kurz a výpočet u nich použil denní kurz ČNB, takže by soubor nesl čísla ze dvou kurzových soustav. Podrobnosti jsou ve varováních v reportu.'
-    : 'XML teď nevydáme: pro část transakcí chyběl denní kurz ČNB a výpočet u nich použil jednotný kurz, takže by soubor nesl čísla ze dvou kurzových soustav. Kurzy se stahují každý den — zkus to zítra, nebo si v Nastavení přepni na jednotný kurz, který je k dispozici vždy.';
+  if (result.options.fxMethod !== 'CNB_DAILY' || !mixesFxSystems(result)) return null;
+  return 'XML teď nevydáme: pro část transakcí chyběl denní kurz ČNB a výpočet u nich použil jednotný kurz, takže by soubor nesl čísla ze dvou kurzových soustav. Kurzy se stahují každý den — zkus to zítra. Nebo přepni v Nastavení kurzy na jednotný kurz; má-li tenhle rok zafixovanou konfiguraci, zruš tam nejdřív jeho fixaci.';
 }

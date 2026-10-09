@@ -93,11 +93,14 @@ Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
 `permissions: contents: read` a **pouští se jen z větve `main`** — `gh workflow
 run migrate.yml --ref moje-vetev` skončí hned na prvním kroku.
 
-Před produkcí si workflow tytéž migrace pustí **nanečisto proti prázdnému
-jednorázovému Postgresu** v témže běhu (krok „Zkouška nanečisto“). Když spadne,
-produkce se nedotkne. Chytí to chybu syntaxe, chybějící oddělovač příkazů
-a rozbité pořadí; chybu, která závisí na produkčních datech, ne — tu hlídá
-jen test datové migrace nad daty z předchozího běhu.
+Před produkcí si workflow tytéž migrace pustí **nanečisto proti prázdné
+zkušební databázi** v témže běhu (krok „Zkouška nanečisto“; Postgres
+předinstalovaný na runneru, žádný stahovaný obraz). Když migrace do ní
+neprojdou, produkce se nedotkne. Chytí to chybu syntaxe, chybějící oddělovač
+příkazů a rozbité pořadí; chybu, která závisí na produkčních datech, ne — tu
+hlídá jen test datové migrace nad daty z předchozího běhu. Když se zkušební
+databázi nepodaří připravit, krok jen varuje a migrace pokračuje: zkouška
+nesmí zdržet produkční migraci kvůli něčemu, co s migracemi nesouvisí.
 
 Migruje `apps/web/db/migrate.mjs` (ne `drizzle-kit migrate`): při selhání vypíše
 celou chybu včetně SQLSTATE, hlášky a dotazu, na kterém to spadlo. `drizzle-kit`
@@ -171,7 +174,8 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   má některá produkční závislost hlášení v databázi GitHubu. Opravuje se
   povýšením balíčku, u nepřímé závislosti přepisem v `pnpm.overrides`
   v kořenovém `package.json`.
-  ⚠️ Tři hlášení jsou tam **vědomě ignorovaná** (`pnpm.auditConfig.ignoreGhsas`):
+  ⚠️ Tři hlášení (audit je vypíše jako čtyři nálezy — jedno zasahuje dva
+  balíčky) jsou tam **vědomě ignorovaná** (`pnpm.auditConfig.ignoreGhsas`):
   týkají se Vitestu 3 a jeho `tinypool`, tedy testovacího nástroje, který se do
   nasazené aplikace nedostane. Audit je do „produkčních“ počítá jen proto, že
   si Better Auth Vitest deklaruje jako volitelnou partnerskou závislost.

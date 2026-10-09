@@ -27,9 +27,9 @@
   dostane varování s radou vrátit starší import a nahrát výpis znovu (`untaxed`);
   uložená srážka se sama nepřepisuje, protože vstupuje do zápočtu.
 - Datum obchodu = datum z exportu, tak jak ho broker píše (u Trading 212
-  světový čas, UTC; pravidlo R-05d v `docs/02`). Transakce z poslední hodiny
-  roku UTC, která je v Česku už 1. 1., dostane při importu varování — rok se
-  jí nemění. Datum vypořádání engine dopočítává
+  světový čas, UTC; pravidlo R-05d v `docs/02`). Dividenda, úrok nebo obchod
+  s kryptem z poslední hodiny roku UTC, kdy je v Česku už 1. 1., dostane při
+  importu varování — rok se jim nemění. Datum vypořádání engine dopočítává
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.
 

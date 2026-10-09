@@ -268,25 +268,46 @@ export function maskEmail(email: string): string {
  * právě proto e-mail mění) a celá adresa by jejímu držiteli řekla, kam se
  * účet přestěhoval. Žádný odkaz na vrácení — ten by z původní schránky udělal
  * klíč k účtu.
+ *
+ * Dvě znění podle toho, jestli původní adresu kdy někdo potvrdil. Nepotvrzená
+ * může být překlep, tedy schránka cizího člověka — tomu zpráva nesmí nabízet
+ * „vrácení účtu“. Vynechat ji ale nejde: nepotvrzená je i adresa, na kterou
+ * majitel právě přešel a ještě neklikl na odkaz, a ten se o další změně
+ * dozvědět musí.
  */
-export function emailChangedEmail(newEmail: string): Omit<EmailMessage, 'to'> {
+export function emailChangedEmail(
+  newEmail: string,
+  { previousVerified }: { previousVerified: boolean } = { previousVerified: true },
+): Omit<EmailMessage, 'to'> {
+  const masked = maskEmail(newEmail);
   return zprava({
     subject: 'E-mail tvého účtu v Daneru se změnil',
     preheader: 'Upozornění a obnova hesla teď chodí na novou adresu.',
-    blocks: [
-      {
-        kind: 'p',
-        text: `U účtu v Daneru vedeného na tuhle adresu někdo se znalostí hesla změnil přihlašovací e-mail na ${maskEmail(newEmail)}.`,
-      },
-      {
-        kind: 'p',
-        text: 'Na tuhle adresu už od nás nic dalšího nepřijde — upozornění i obnova hesla chodí na novou.',
-      },
-      {
-        kind: 'note',
-        text: 'Pokud jsi to byl ty, nemusíš dělat nic. Pokud ne, odpověz na tuhle zprávu a domluvíme se, jak ti účet vrátit.',
-      },
-    ],
+    blocks: previousVerified
+      ? [
+          {
+            kind: 'p',
+            text: `U účtu v Daneru vedeného na tuhle adresu někdo se znalostí hesla změnil přihlašovací e-mail na ${masked}.`,
+          },
+          {
+            kind: 'p',
+            text: 'Na tuhle adresu už od nás nic dalšího nepřijde — upozornění i obnova hesla chodí na novou.',
+          },
+          {
+            kind: 'note',
+            text: 'Pokud jsi to byl ty, nemusíš dělat nic. Pokud ne, odpověz na tuhle zprávu a domluvíme se, jak ti účet vrátit.',
+          },
+        ]
+      : [
+          {
+            kind: 'p',
+            text: `Tahle adresa byla uvedená u účtu v Daneru, ale nikdo ji nepotvrdil. Někdo se znalostí hesla ji teď nahradil jinou (${masked}), takže na ni od nás už nic nepřijde.`,
+          },
+          {
+            kind: 'note',
+            text: 'Pokud o žádném účtu v Daneru nevíš, šlo nejspíš o překlep a nemusíš dělat nic. Pokud je účet tvůj a změnu jsi neudělal ty, odpověz na tuhle zprávu.',
+          },
+        ],
     footer: operatorSignature(),
   });
 }

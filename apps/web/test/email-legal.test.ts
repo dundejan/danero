@@ -21,6 +21,10 @@ describe('služební e-maily se identifikují (E-46)', () => {
     ['obnova hesla', resetPasswordEmail('https://danero.cz/nove-heslo?token=x')],
     ['ověření adresy', verifyEmailEmail('https://danero.cz/overeni?token=x')],
     ['změna e-mailu účtu', emailChangedEmail('nova.adresa@priklad.test')],
+    [
+      'změna e-mailu účtu, původní adresa nepotvrzená',
+      emailChangedEmail('nova.adresa@priklad.test', { previousVerified: false }),
+    ],
   ] as const) {
     it(`${nazev}: nese odesílatele i kontakt, kam odpovědět`, () => {
       // From je notifikace@danero.cz a ta schránka poštu nepřijímá — bez
