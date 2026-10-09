@@ -87,6 +87,36 @@ const countryFromIsin = (isin?: string): string | undefined => {
   return /^[A-Z]{2}$/.test(prefix) ? prefix : undefined;
 };
 
+/**
+ * Měny bez drobných podle ISO 4217 (nula desetinných míst) — jejich nejmenší
+ * jednotkou je celá jednotka měny. Všechny ostatní bereme po setinách.
+ */
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  'BIF',
+  'CLP',
+  'DJF',
+  'GNF',
+  'ISK',
+  'JPY',
+  'KMF',
+  'KRW',
+  'PYG',
+  'RWF',
+  'UGX',
+  'VND',
+  'VUV',
+  'XAF',
+  'XOF',
+  'XPF',
+]);
+
+/**
+ * R-07c: nejvíc, o kolik srážku posune zaokrouhlení na nejbližší — polovina
+ * nejmenší jednotky měny. Slouží JEN prahu varování, zápočet se stropuje přesně.
+ */
+const withholdingRoundingTolerance = (currency: string): Money =>
+  d(ZERO_DECIMAL_CURRENCIES.has(currency) ? '0.5' : '0.005');
+
 /** Lidské označení dividendy do textu varování — ticker/ISIN a datum, ne technické ID. */
 const dividendLabel = (tx: DividendTransaction): string => {
   const instrument = tx.ticker ?? tx.isin;
@@ -214,7 +244,15 @@ export function computeDividends(
       );
     }
     const creditableCzk = Decimal.min(withholdingCzk, grossCzk.mul(cap));
-    if (withholdingCzk.gt(grossCzk.mul(cap))) {
+    // R-07c: zápočet se stropuje přesně (řádek výš), ale VAROVAT má smysl až
+    // nad rámec zaokrouhlení. Broker uvádí srážku na centy, takže poctivých
+    // 15 % vyjde u poloviny dividend o zlomek centu nad strop — a věta
+    // „30 % odpovídá účtu bez W-8BEN“ pak strašila i toho, kdo formulář má
+    // (L14-03). Porovnává se v měně srážky, kde zaokrouhlení vzniklo.
+    const overBeyondRounding = tx.withholdingTax
+      .sub(tx.gross.mul(cap))
+      .gt(withholdingRoundingTolerance(tx.currency));
+    if (withholdingCzk.gt(grossCzk.mul(cap)) && overBeyondRounding) {
       // overCzk = částka sražená NAD smluvní strop — web z contextů skládá souhrn
       warnings.add(
         'WITHHOLDING_ABOVE_TREATY',

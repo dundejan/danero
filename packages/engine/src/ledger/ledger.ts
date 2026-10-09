@@ -732,10 +732,14 @@ export function buildLedger(
         break;
       }
       case 'DELISTING': {
+        // Text popisuje jen to, co Danero dělá. Pravidlo pro zánik titulu bez
+        // náhrady v docs/02 není (L14-04, čeká na rozhodnutí), takže tu nesmí
+        // stát ani právní závěr o odpisu, ani výzva k „ručnímu posouzení“ —
+        // aplikace na ně nemá nástroj a uživatel by ji neměl čím splnit.
         warnings.add(
           'DELISTING_MANUAL',
           'WARNING',
-          `Delisting ${tx.isin} (${czDateText(tx.date)}) vyžaduje ruční posouzení — engine pozici nemění.`,
+          `Titul ${tx.isin}: výpis k ${czDateText(tx.date)} uvádí jeho stažení z burzy. Danero kvůli tomu pozici nemění — titul zůstává v přehledu jako držený a do daně se z této události nic nezapočítá, příjem ani výdaj.`,
           { txId: tx.id },
         );
         break;

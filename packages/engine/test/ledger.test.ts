@@ -194,6 +194,39 @@ describe('R-04 korporátní akce', () => {
     // bez měny se výdaj scvrkne na 5 000 Kč → základ o 105 000 Kč vyšší
     expect(bezMeny.securities.base10Czk.toString()).toBe('155000');
   });
+
+  it('stažení titulu z burzy (DELISTING): pozice se nemění a varování říká, co Danero dělá (L14-04)', () => {
+    // Pravidlo pro zánik titulu bez náhrady v docs/02 zatím není. Varování
+    // proto nesmí posílat k „ručnímu posouzení“, na které aplikace nemá
+    // nástroj, ani vynášet právní závěr o odpisu — popíše jen chování.
+    const holding = buy({ isin: 'US0000000002', quantity: '100', pricePerShare: '50', currency: 'USD' });
+    const otherBuy = buy({ quantity: '10', pricePerShare: '1000' });
+    const otherSell = sell({ quantity: '10', pricePerShare: '1500' });
+    const without = run([holding, otherBuy, otherSell]);
+    const result = run([
+      holding,
+      corpAction({ subtype: 'DELISTING', isin: 'US0000000002', date: '2025-02-03' }),
+      otherBuy,
+      otherSell,
+    ]);
+
+    // chování enginu: pozice dál držená, do daně nic
+    const position = result.positions.find((p) => p.isin === 'US0000000002');
+    expect(position?.totalRemaining.toString()).toBe('100');
+    expect(result.securities.base10Czk.toString()).toBe(without.securities.base10Czk.toString());
+
+    const warning = result.warnings.find((w) => w.code === 'DELISTING_MANUAL');
+    expect(warning?.level).toBe('WARNING');
+    expect(warning?.message).not.toContain('ruční posouzení');
+    expect(warning?.message).not.toContain('engine');
+    expect(warning?.message).toContain('US0000000002');
+    // datum nese nezlomitelné mezery — pro čitelnost testu je normalizujeme
+    expect(warning?.message.replace(/\s/g, ' ')).toContain('k 3. 2. 2025');
+    expect(warning?.message).toContain('zůstává v přehledu jako držený');
+    expect(warning?.message).toContain('do daně se z této události nic nezapočítá');
+    // žádný právní závěr o odpisu ani o ztrátě
+    expect(warning?.message).not.toMatch(/odpis|ztrát/i);
+  });
 });
 
 describe('R-05 párování a dílčí základ § 10', () => {

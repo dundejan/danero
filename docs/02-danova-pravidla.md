@@ -264,6 +264,19 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
 
   Zaokrouhlení: zápočet po státech zaokrouhlujeme na celé Kč **dolů** (nárokovanou částku konzervativně nenadhodnocujeme); souhrn = součet zaokrouhlených (tabulka po státech tak vždy sedí na součet).
 
+  **Varování o srážce nad strop má toleranci na zaokrouhlení, zápočet ne.** Broker
+  uvádí srážku zaokrouhlenou na nejmenší jednotku měny (cent; u měn bez drobných
+  podle ISO 4217, např. JPY, celou jednotku), takže poctivých 15 % vyjde zhruba
+  u poloviny dividend o zlomek centu nad smluvní strop. Varování
+  `WITHHOLDING_ABOVE_TREATY` proto engine vydá až tehdy, když srážka převýší strop
+  o **víc než polovinu nejmenší jednotky měny, ve které je srážka uvedená** — víc
+  zaokrouhlení na nejbližší udělat nemůže. Tolerance se týká **jen varování**:
+  zápočet se dál stropuje přesně (`min(srážka, brutto × strop)`, § 38f odst. 1
+  a čl. 10 příslušné smlouvy), takže daňové číslo se jí nemění a haléře nad strop
+  propadají jako dosud. Práh varování není výklad zákona, ale provozní pravidlo:
+  varování má říct, že broker sráží nad smlouvu (typicky 30 % bez W-8BEN), a to
+  haléřový rozdíl ze zaokrouhlení není (nález L14-03).
+
   **Koeficient zápočtu se počítá na DVĚ desetinná místa.** § 146 odst. 3 DŘ:
   „Výpočet na základě daňové sazby, koeficientů, ukazatelů a výsledek přepočtu měny
   se provádí s přesností na dvě platná desetinná místa.“ Tiskopis Přílohy 3

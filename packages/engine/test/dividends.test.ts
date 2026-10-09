@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { d, Decimal } from '@danero/shared';
 import { TAX_YEAR_2026_DRAFT } from '../src';
 import { buy, dividend, hasWarning, interest, run, sell, CFG_2025 } from './helpers';
 
@@ -423,5 +424,74 @@ describe('R-07f: nezapočitatelná srážka z úroku nekazí rozpis po státech 
     const result = run([interest({ amount: '5000', sourceCountry: undefined, withholdingTax: '1500' })]);
     expect(result.dividends.creditableByCountry['XX']).toBeUndefined();
     expect(result.dividends.foreignWithholdingCzk.toString()).toBe('1500');
+  });
+});
+
+/**
+ * L14-03: broker uvádí srážku na centy. Poctivých 15 % se u poloviny dividend
+ * zaokrouhlí nahoru, a srážka je pak o zlomek centu nad smluvním stropem —
+ * varování „srazili ti víc, než dovoluje smlouva… 30 % odpovídá účtu bez
+ * W-8BEN“ tak četl i uživatel, který má formulář v pořádku. Tolerance platí
+ * JEN pro varování; zápočet se stropuje dál přesně.
+ */
+describe('R-07c: varování o srážce nad strop snese zaokrouhlení srážky na nejmenší jednotku měny', () => {
+  /** 400 dividend 0,01–4,00 USD se srážkou danou sazbou, zaokrouhlenou na centy. */
+  const roundedToCents = (rate: string) =>
+    Array.from({ length: 400 }, (_, i) => {
+      const gross = d(i + 1).div(100);
+      return dividend({
+        gross: gross.toString(),
+        currency: 'USD',
+        withholdingTax: gross.mul(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toString(),
+      });
+    });
+  const aboveTreaty = (result: ReturnType<typeof run>) =>
+    result.warnings.filter((w) => w.code === 'WITHHOLDING_ABOVE_TREATY');
+
+  it('400 dividend s 15 % zaokrouhlenými na centy → žádné varování', () => {
+    expect(aboveTreaty(run(roundedToCents('0.15')))).toHaveLength(0);
+  });
+
+  it('400 dividend s 30 % zaokrouhlenými na centy → varování zůstává', () => {
+    // Dvě nejmenší (0,01 a 0,04 USD) se od poctivých 15 % na centech rozeznat
+    // nedají: srážka 0,00 resp. 0,01 je i zaokrouhlených 15 %.
+    expect(aboveTreaty(run(roundedToCents('0.30')))).toHaveLength(398);
+  });
+
+  it('zápočet se stropuje přesně dál — tolerance nezvedá započitatelnou částku', () => {
+    // 1,19 USD brutto, sraženo 0,18 (15 % = 0,1785); fixture kurz 2025 USD 20
+    const result = run([dividend({ gross: '1.19', currency: 'USD', withholdingTax: '0.18' })]);
+    expect(aboveTreaty(result)).toHaveLength(0);
+    expect(result.dividends.items[0]!.withholdingCzk.toString()).toBe('3.6');
+    expect(result.dividends.items[0]!.creditableCzk.toString()).toBe('3.57');
+  });
+
+  it('hranice: přesně půl centu nad strop ještě mlčí, celý cent už varuje', () => {
+    // 0,10 USD × 15 % = 0,015 → na centy 0,02, tedy přesně půl centu nad strop
+    expect(
+      aboveTreaty(run([dividend({ gross: '0.10', currency: 'USD', withholdingTax: '0.02' })])),
+    ).toHaveLength(0);
+    // 1,00 USD se srážkou 0,16 (16 %) zaokrouhlením 15 % vzniknout nemůže
+    const sixteen = aboveTreaty(
+      run([dividend({ gross: '1.00', currency: 'USD', withholdingTax: '0.16' })]),
+    );
+    expect(sixteen).toHaveLength(1);
+    expect(sixteen[0]!.context).toMatchObject({ overCzk: '0.20' });
+  });
+
+  it('měna bez haléřů (JPY): krok zaokrouhlení je celá jednotka, ne setina', () => {
+    const config = {
+      ...CFG_2025,
+      unifiedRatesByYear: { ...CFG_2025.unifiedRatesByYear, 2025: { USD: '20', JPY: '0.15' } },
+    };
+    const jpy = (withholdingTax: string) =>
+      aboveTreaty(
+        run([dividend({ gross: '1010', currency: 'JPY', sourceCountry: 'JP', withholdingTax })], {
+          config,
+        }),
+      );
+    // 1010 JPY × 15 % = 151,5 → na celé jeny 152
+    expect(jpy('152')).toHaveLength(0);
+    expect(jpy('153')).toHaveLength(1);
   });
 });
