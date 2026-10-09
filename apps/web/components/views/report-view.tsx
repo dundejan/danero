@@ -23,6 +23,7 @@ import {
   EPO_SUPPORTED_YEARS,
   prijmyZeStatuProZapocet,
 } from '@/lib/epo';
+import { fxMethodLabel } from '@/lib/fx-method';
 import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
 import {
   czDate,
@@ -279,7 +280,7 @@ export function ReportView({
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
         párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
-        {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
+        {fxMethodLabel(result)} ·
         výklad limitu 100k: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
         {pinned && ' (všechny tři zafixovány pro tento rok)'} ·
         časový test od {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
@@ -1185,7 +1186,7 @@ export function ReportView({
         <p className="text-xs text-inkoust-tlumeny">
           Konfigurace výpočtu: párování{' '}
           {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
-          {result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz GFŘ' : 'denní kurzy ČNB'} ·
+          {fxMethodLabel(result)} ·
           limit 100k {result.options.limit100kIncludesTimeTestExempt ? 'striktně' : 'mírněji'} ·
           časový test od data {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
           stablecoiny (EMT) {result.options.emtTimeTestExempt ? 's časovým testem (mírnější výklad)' : 'bez osvobození (bezpečný výklad)'} ·

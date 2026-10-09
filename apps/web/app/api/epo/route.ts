@@ -9,6 +9,7 @@ import {
   type EpoDapTyp,
   type EpoPersonalData,
 } from '@/lib/epo';
+import { xmlBlockedByFxMix } from '@/lib/fx-method';
 import { errorText, logEvent } from '@/lib/log';
 import {
   engineInputForUser,
@@ -67,6 +68,9 @@ export async function POST(request: Request): Promise<Response> {
   // R-05c: XML je podklad pro podání → konfigurace se pro ten rok zafixuje
   const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
   const result = analyzeTaxYear(engineInputForUser(txs, pinnedProfile, year, dailyRates));
+  // R-06b: soubor varování nenese — smíšené kurzové soustavy by odešly beze stopy
+  const fxMix = xmlBlockedByFxMix(result);
+  if (fxMix) return chyba(fxMix, 409);
 
   const personal: EpoPersonalData = {
     dic: field(form, 'dic'),

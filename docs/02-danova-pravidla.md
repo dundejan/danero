@@ -239,6 +239,16 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   (apps/web/lib/tax-config.ts, `isRateVerified`) a UI ho tak musí označovat;
   runbook: každý leden doplnit nový pokyn a posunout LAST_VERIFIED_RATE_YEAR.
 - **R-06b Denní kurzy ČNB** (dle zákona o účetnictví; příp. pevný kurz).
+  O víkendu a svátku platí poslední vyhlášený kurz (hledá se nejvýš 10 dní
+  zpět). **Chybí-li denní kurz i tak** (výpadek stahování, měna mimo denní
+  lístek), použije se pro tu transakci jednotný kurz téhož roku a výsledek
+  nese varování `FX_DAILY_RATE_MISSING`; obdobně chybějící jednotný kurz
+  nahradí denní (`FX_UNIFIED_RATE_MISSING`). Je to nouzové řešení, ne výklad:
+  R-06 chce jednu soustavu pro celé období (§ 38 odst. 1). Výstupy proto
+  musí říkat pravdu — report a tisk u takového výsledku netvrdí jen zvolenou
+  metodu a **XML pro finanční úřad se nevydá**, dokud se soustavy míchají
+  (`apps/web/lib/fx-method.ts`). Výpočet sám nepadá: výpadek kurzů by jinak
+  shodil přehled i hlídače každému, kdo si denní kurzy zvolil.
 - Engine počítá **obě varianty** a reportuje rozdíl (recenze Taxomatu: rozdíl až desítky tisíc Kč).
 - **R-06c Volba soustavy se per rok fixuje** — stejným mechanismem jako metoda
   párování (viz R-05c, „Fixace konfigurace per rok"). Požadavek jedné soustavy
