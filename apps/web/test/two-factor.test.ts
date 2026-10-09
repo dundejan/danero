@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { createHmac } from 'node:crypto';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { getAuth } from '@/lib/auth';
 import { signUpVerified } from './auth-helpers';
 import { totp } from './totp-util';
@@ -314,6 +315,116 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
       expect((await signInWithCookies(auth, email, '')).twoFactorRedirect).toBe(true);
     },
   );
+
+  /**
+   * L21-04, pojistka úklidu: after hook běží i po chybě endpointu. Vypnutí,
+   * které skončilo na špatném hesle, nic nevypnulo — a nesmí tedy ani mazat.
+   */
+  it(
+    'vypnutí 2FA se špatným heslem důvěryhodná zařízení nechá (L21-04)',
+    { timeout: 60_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'spatne-heslo@test.cz';
+      const { sessionCookies } = await userWithTwoFactor(auth, email);
+      await mintTrustedDevice(auth, email, 'wrongPassword');
+
+      const refused = await auth.api.disableTwoFactor({
+        body: { password: 'tohle-neni-heslo-1' },
+        headers: new Headers({ cookie: sessionCookies }),
+        asResponse: true,
+      });
+      expect(refused.status).not.toBe(200);
+      expect(await trustedDeviceCount(email)).toBe(1);
+    },
+  );
+
+  /**
+   * E18-R1-01: „vypnutí 2FA" má druhou cestu — provozovatelský skript pro
+   * toho, kdo přišel o telefon i o záložní kódy a do Nastavení se nedostane.
+   * Je to přesně případ, kdy může být důvěryhodné zařízení v cizích rukou,
+   * takže skript musí uklidit totéž co vypnutí z Nastavení. Test pouští
+   * skutečný skript a měří to, o co jde: stará cookie, která před vypnutím
+   * druhý faktor přeskočila, ho po novém zapnutí přeskočit nesmí.
+   */
+  it(
+    'vypnutí 2FA provozovatelským skriptem odvolá důvěryhodná zařízení: stará cookie po novém zapnutí kód nepřeskočí (E18-R1-01)',
+    { timeout: 90_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'skript@test.cz';
+      const otherEmail = 'skript-jiny@test.cz';
+      await userWithTwoFactor(auth, email);
+      await userWithTwoFactor(auth, otherEmail);
+      await mintTrustedDevice(auth, otherEmail, 'operatorScriptOther');
+      const minted = await mintTrustedDevice(auth, email, 'operatorScript');
+
+      // kontrola, že test měří skutečnou věc: s cookie stačí samotné heslo
+      // (přihlášení záznam otočí — dál platí cookie z téhle odpovědi)
+      const trusted = await signInWithCookies(auth, email, minted);
+      expect(trusted.twoFactorRedirect).toBe(false);
+      expect(trusted.cookies).toContain('session_token');
+      const trustCookie = trusted.cookies
+        .split('; ')
+        .filter((pair) => pair.includes('trust_device'))
+        .join('; ');
+      expect(trustCookie).toContain('trust_device');
+      expect(await trustedDeviceCount(email)).toBe(1);
+
+      await runOperatorScript(['disable', email, '--potvrzuji']);
+      expect(await trustedDeviceCount(email)).toBe(0);
+      // cizí účet skript nechá na pokoji
+      expect(await trustedDeviceCount(otherEmail)).toBe(1);
+
+      // skript načetl moduly znovu — instanci si vezmeme čerstvou (databáze je táž)
+      const { getAuth: getAuthAfterScript } = await import('@/lib/auth');
+      const authAfterScript = await getAuthAfterScript();
+
+      // 2FA je opravdu vypnuté: heslo stačí, vlastník si faktor zapne znovu
+      const plain = await signInWithCookies(authAfterScript, email, '');
+      expect(plain.twoFactorRedirect).toBe(false);
+      expect(plain.cookies).toContain('session_token');
+      const enable = await authAfterScript.api.enableTwoFactor({
+        body: { password: HESLO },
+        headers: new Headers({ cookie: plain.cookies }),
+      });
+      const newSecret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
+      const activation = await authAfterScript.api.verifyTOTP({
+        body: { code: codeForStep(newSecret, currentStep()) },
+        headers: new Headers({ cookie: plain.cookies }),
+        asResponse: true,
+      });
+      expect(activation.status).toBe(200);
+
+      const afterReenable = await signInWithCookies(authAfterScript, email, trustCookie);
+      expect(afterReenable.twoFactorRedirect).toBe(true);
+      expect(afterReenable.cookies).not.toContain('session_token');
+    },
+  );
+
+  /**
+   * E18-R1-01, druhé spuštění: běh přerušený po vypnutí faktoru (nebo běh
+   * starší verze skriptu) nechá účet „bez 2FA, se záznamem". Další spuštění
+   * skončí na „není co vypínat" — záznam ale uklidit musí, jinak by čekal na
+   * nové zapnutí.
+   */
+  it(
+    'provozovatelský skript odvolá důvěryhodná zařízení i u účtu, kde už je 2FA vypnuté (E18-R1-01)',
+    { timeout: 60_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'skript-vypnuto@test.cz';
+      await signUpVerified(auth, { email, password: HESLO, name: 'Bez faktoru' });
+      await mintTrustedDevice(auth, email, 'alreadyDisabled');
+      expect(await trustedDeviceCount(email)).toBe(1);
+
+      await runOperatorScript(['disable', email, '--potvrzuji']);
+      expect(await trustedDeviceCount(email)).toBe(0);
+    },
+  );
 });
 
 /** Přihlášení heslem z prohlížeče, který už nese cookies z dřívějška. */
@@ -351,4 +462,59 @@ async function trustedDeviceCount(email: string): Promise<number> {
       ),
     );
   return rows.length;
+}
+
+/**
+ * Důvěryhodné zařízení v tom tvaru, v jakém ho Better Auth vyrazil, než server
+ * přestal brát `trustDevice` (`plugins/two-factor/verify-two-factor.mjs`):
+ * řádek ve `verification` + podepsaná cookie `<HMAC(userId!identifier)>!<identifier>`.
+ * Vrací cookie k poslání při přihlášení. Kdyby se tvar s novou verzí změnil,
+ * pozná se to — test skriptu si nejdřív ověří, že cookie druhý faktor přeskočí.
+ */
+async function mintTrustedDevice(auth: Auth, email: string, label: string): Promise<string> {
+  const { getDb } = await import('@/db');
+  const { verification } = await import('@/db/schema');
+  const db = await getDb();
+  const context = await auth.$context;
+  const userId = await userIdOf(email);
+  const identifier = `trust-device-${label}`;
+  await db.insert(verification).values({
+    id: `minted-${label}`,
+    identifier,
+    value: userId,
+    expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+  });
+  const token = createHmac('sha256', context.secret)
+    .update(`${userId}!${identifier}`)
+    .digest('base64url');
+  const value = `${token}!${identifier}`;
+  const signature = createHmac('sha256', context.secret).update(value).digest('base64');
+  const name = context.createAuthCookie('trust_device').name;
+  return `${name}=${encodeURIComponent(`${value}.${signature}`)}`;
+}
+
+/**
+ * Pustí skutečný provozovatelský skript `scripts/two-factor.ts` v procesu testu
+ * — PGlite v paměti je jediné připojení držené na `globalThis`, takže samostatný
+ * proces by viděl prázdnou databázi. Skript končí přes `process.exit`, proto ho
+ * tu zachytáváme a čekáme na jeho návratový kód.
+ */
+async function runOperatorScript(args: string[]): Promise<void> {
+  const originalArgv = process.argv;
+  let finished!: (code: number) => void;
+  const exitCode = new Promise<number>((resolve) => (finished = resolve));
+  const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+    finished(code ?? 0);
+    return undefined as never;
+  }) as never);
+  process.argv = ['node', 'two-factor.ts', ...args];
+  try {
+    // skript běží při importu — bez vyprázdnění registru by se podruhé nespustil
+    vi.resetModules();
+    await import('../scripts/two-factor');
+    expect(await exitCode).toBe(0);
+  } finally {
+    process.argv = originalArgv;
+    exit.mockRestore();
+  }
 }

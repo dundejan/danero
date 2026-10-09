@@ -196,6 +196,10 @@ export function revokeResetTokensAfterPasswordChange(db: Db) {
  * Nové záznamy už nevznikají (`withoutTrustDevice`), tohle uklízí ty, které
  * vznikly dřív — a drží slib z Nastavení, že po zapnutí se při přihlášení
  * vyžaduje kód.
+ *
+ * Vypnutí má DVĚ cesty a úklid musí být v obou (E18-R1-01): háček níž pro
+ * vypnutí z Nastavení a `scripts/two-factor.ts` pro vypnutí provozovatelem —
+ * to jde mimo Better Auth, takže se k němu žádný háček nedostane.
  */
 export async function revokeTrustedDevices(db: Db, userId: string): Promise<void> {
   await db

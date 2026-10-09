@@ -22,6 +22,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { session, twoFactor, user } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
+import { revokeTrustedDevices } from '@/lib/auth-hooks';
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -74,6 +75,11 @@ async function disable(email: string): Promise<void> {
     process.exit(1);
   }
   const { db, found } = await findUser(email);
+  // E18-R1-01: důvěryhodné zařízení je přihlášení bez druhého faktoru — kdo má
+  // heslo a jeho cookie, přeskočil by kód i po novém zapnutí s novým tajemstvím.
+  // Odvoláváme ho jako první a i u účtu, kde už je 2FA vypnuté: přerušený nebo
+  // dřívější běh tak nenechá záznam, ke kterému by se další spuštění nedostalo.
+  await revokeTrustedDevices(db, found.id);
   if (!found.twoFactorEnabled) {
     console.log(`${found.email}: 2FA není zapnuté, není co vypínat.`);
     return;
@@ -88,8 +94,8 @@ async function disable(email: string): Promise<void> {
     .returning({ id: session.id });
   await logAudit(db, found.id, 'TWO_FACTOR_DISABLED', 'vypnul provozovatel na žádost uživatele');
   console.log(
-    `${found.email}: 2FA vypnuté, zahozeno relací: ${revoked.length}. ` +
-      'Uživatel se přihlásí heslem a může si faktor zapnout znovu.',
+    `${found.email}: 2FA vypnuté, zahozeno relací: ${revoked.length}, ` +
+      'důvěryhodná zařízení odvolána. Uživatel se přihlásí heslem a může si faktor zapnout znovu.',
   );
 }
 
