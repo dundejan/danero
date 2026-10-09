@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toDataURL } from 'qrcode';
 import { authClient } from '@/lib/auth-client';
+import { CONNECTION_ERROR_MESSAGE, settleAuthRequest } from '@/lib/auth-request';
 import { Button } from '@/components/ui/button';
 import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
 
@@ -31,51 +32,79 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     }
   }, [setup]);
 
-  async function onEnable(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /**
+   * Společná kostra tří formulářů sekce: zamkne tlačítko, pošle požadavek
+   * a tlačítko VŽDY zase odemkne.
+   *
+   * L12-03: handlery dřív na klienta jen čekaly. Při výpadku sítě slib skončil
+   * odmítnutím, `setPending(false)` za ním se neprovedlo a tlačítko zůstalo
+   * v „Připravuji…“ bez jediné hlášky. U potvrzení prvním kódem to navíc nutilo
+   * načíst stránku znovu uprostřed nastavování — a tím vydat nové tajemství,
+   * takže už naskenovaný záznam v autentikátoru přestal platit.
+   */
+  async function submit<T>(request: () => Promise<T>, onResponse: (result: T) => void) {
     setPending(true);
     setError(null);
-    const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
-    const result = await authClient.twoFactor.enable({ password });
-    setPending(false);
-    if (result.error || !result.data) {
-      setError('Nepodařilo se spustit nastavení — zkontroluj heslo.');
-      return;
+    try {
+      const outcome = await settleAuthRequest(request);
+      if (!outcome.connected) {
+        setError(CONNECTION_ERROR_MESSAGE);
+        return;
+      }
+      onResponse(outcome.result);
+    } finally {
+      setPending(false);
     }
-    setSetup(result.data);
   }
 
-  async function onVerify(event: React.FormEvent<HTMLFormElement>) {
+  function onEnable(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
+    const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
+    void submit(
+      () => authClient.twoFactor.enable({ password }),
+      (result) => {
+        if (result.error || !result.data) {
+          setError('Nepodařilo se spustit nastavení — zkontroluj heslo.');
+          return;
+        }
+        setSetup(result.data);
+      },
+    );
+  }
+
+  function onVerify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     const code = String(new FormData(event.currentTarget).get('kod') ?? '');
-    const result = await authClient.twoFactor.verifyTotp({ code });
-    setPending(false);
-    if (result.error) {
-      setError(
-        result.error.code === 'TOTP_CODE_ALREADY_USED'
-          ? 'Tenhle kód už byl použitý. Počkej na další a zadej ten.'
-          : 'Kód nesedí — zkontroluj aplikaci a zkus to znovu.',
-      );
-      return;
-    }
-    setVerified(true);
-    router.refresh();
+    void submit(
+      () => authClient.twoFactor.verifyTotp({ code }),
+      (result) => {
+        if (result.error) {
+          setError(
+            result.error.code === 'TOTP_CODE_ALREADY_USED'
+              ? 'Tenhle kód už byl použitý. Počkej na další a zadej ten.'
+              : 'Kód nesedí — zkontroluj aplikaci a zkus to znovu.',
+          );
+          return;
+        }
+        setVerified(true);
+        router.refresh();
+      },
+    );
   }
 
-  async function onDisable(event: React.FormEvent<HTMLFormElement>) {
+  function onDisable(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
     const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
-    const result = await authClient.twoFactor.disable({ password });
-    setPending(false);
-    if (result.error) {
-      setError('Vypnutí se nepodařilo — zkontroluj heslo.');
-      return;
-    }
-    router.refresh();
+    void submit(
+      () => authClient.twoFactor.disable({ password }),
+      (result) => {
+        if (result.error) {
+          setError('Vypnutí se nepodařilo — zkontroluj heslo.');
+          return;
+        }
+        router.refresh();
+      },
+    );
   }
 
   if (enabled && !setup) {
