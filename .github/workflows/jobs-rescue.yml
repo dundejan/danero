@@ -1,11 +1,15 @@
 name: Záchrana background jobů
 
-# Hodinové zavolání /api/cron/jobs na produkci: dorovná synchronizace, které
-# utnul limit běhu funkce, a dojede frontu, na kterou se nedostalo.
+# Zavolání /api/cron/jobs na produkci, naplánované na každou hodinu: dorovná
+# synchronizace, které utnul limit běhu funkce, a dojede frontu, na kterou se
+# nedostalo.
 #
 # Proč odsud a ne z vercel.json: Vercel Hobby dovoluje cron nejvýš jednou denně
 # a častější výraz shodí celé nasazení. Denní pojistka ve vercel.json zůstává;
-# tohle jen zkracuje čekání z dne na hodinu. Když workflow neběží (GitHub ho ve
+# tohle čekání zkracuje, ale hodinu nezaručí. Plánovač GitHubu běhy nejen
+# zpožďuje, ale i vynechává: za prvních 23 hodin (měřeno 8. 10. 2026) proběhly
+# 3 z 23 naplánovaných, s rozestupy 7 až 8 hodin. Počítej tedy s několika běhy
+# denně, ne s každou hodinou. Když workflow neběží vůbec (GitHub ho ve
 # veřejném repozitáři po 60 dnech bez commitu sám vypne), aplikace funguje dál,
 # jen se zaseknutý job dorovná až s denním cronem.
 #

@@ -37,9 +37,17 @@ jobs:
           echo "Migrace produkce se smí pouštět jen z main (teď: $GITHUB_REF)."
           exit 1
 
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # Stažený kód akcí běží ve stejném jobu, kde níž čeká připojení
+      # k produkční databázi — proto plné SHA commitu, ne značka `v4`, kterou
+      # jde přesunout. Smí tu být jen SHA, která má i ci.yml: tenhle workflow
+      # se před sloučením nikde nespustí a překlep by ho shodil už při přípravě
+      # jobu, tedy kód nasazený nad starým schématem. CI nad pull requestem je
+      # stáhne dřív (hlídá apps/web/test/workflow-pins.test.ts).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
