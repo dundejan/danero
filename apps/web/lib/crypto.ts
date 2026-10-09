@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readOrCreateDevSecret } from '@/lib/dev-secret';
 
 /**
  * Šifrování broker API klíčů na aplikační úrovni (docs/04): AES-256-GCM,
@@ -32,11 +32,10 @@ function primaryKey(): Buffer {
     throw new Error('DANERO_ENCRYPTION_KEY musí být v produkci nastaven (openssl rand -hex 32).');
   }
   const file = join('.data', 'dev-encryption-key');
-  if (existsSync(file)) return parseKey(readFileSync(file, 'utf8').trim(), file);
-  mkdirSync('.data', { recursive: true });
-  const key = randomBytes(KEY_BYTES);
-  writeFileSync(file, key.toString('hex'), { mode: 0o600 });
-  return key;
+  return parseKey(
+    readOrCreateDevSecret(file, () => randomBytes(KEY_BYTES).toString('hex')),
+    file,
+  );
 }
 
 /**
