@@ -141,7 +141,9 @@ describe('bezplatná služba nenese zbytky placené (podmínky 3.0)', () => {
     ];
 
     const found: string[] = [];
-    for (const file of ['app', 'components', 'lib'].flatMap((dir) => sourceFiles(join(root, dir)))) {
+    for (const file of ['app', 'components', 'lib'].flatMap((dir) =>
+      sourceFiles(join(root, dir)),
+    )) {
       const source = readFileSync(file, 'utf8');
       for (const pattern of SALES_LEFTOVERS) {
         if (pattern.test(source)) found.push(`${relative(root, file)}: ${pattern}`);
@@ -290,33 +292,204 @@ describe('osobní údaje provozovatele nejsou v kódu', () => {
     }
   });
 
-  it('aplikace nemá adresu ani e-mail provozovatele natvrdo', async () => {
-    const { readdirSync, readFileSync, statSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const korene = ['app', 'lib', 'components'].map((d) => join(import.meta.dirname, '..', d));
-    const soubory = (dir: string): string[] =>
-      readdirSync(dir).flatMap((e) => {
-        const full = join(dir, e);
-        if (statSync(full).isDirectory()) return soubory(full);
-        return /\.(ts|tsx)$/.test(e) ? [full] : [];
-      });
+  /**
+   * Tvary, kterými se identifikace dostane do zdrojáku ručním vepsáním.
+   * Schválně nezávisí na konkrétní hodnotě (žádná skutečná tu stát nesmí) ani
+   * na obci: vzor vázaný na slovo „Praha“ by po přestěhování oslepl, a právě
+   * přestěhováním pravidlo 8 argumentuje (L13-02). Jméno takhle poznat nejde —
+   * u něj zůstává jen test výš, že ho `contact.ts` čte z prostředí.
+   *
+   * Ukázky u každého vzoru jsou smyšlené; test níž na nich ověřuje, že vzor
+   * svůj tvar opravdu pozná a nehlídá prázdno.
+   */
+  type IdentityKind = 'address' | 'ico' | 'phone' | 'iban' | 'freemail';
+  const IDENTITY_PATTERNS: Array<{
+    kind: IdentityKind;
+    label: string;
+    pattern: RegExp;
+    samples: string[];
+  }> = [
+    {
+      kind: 'address',
+      label: 'adresa (PSČ a obec)',
+      // PSČ s mezerou, s pevnou mezerou i bez ní; obec = slovo s velkým písmenem
+      pattern: /(?<!\d)\d{3}[ \u00a0]?\d{2}[ \t\u00a0]+\p{Lu}\p{Ll}{2,}/u,
+      samples: ['Vymyšlená 5, 602 00 Brno', '60200 Brno', '602\u00a000 Brno'],
+    },
+    {
+      kind: 'address',
+      label: 'adresa (obec a PSČ)',
+      pattern:
+        /\p{Lu}\p{Ll}{2,}(?: \d{1,2})?,?[ \t\u00a0]+(?:PSČ[ \t\u00a0]+)?\d{3}[ \u00a0]?\d{2}(?!\d)/u,
+      samples: ['Vymyšlená 5, Brno, 602 00', 'Brno 2 60200', 'Brno 2, PSČ 602 00'],
+    },
+    {
+      kind: 'ico',
+      label: 'IČO',
+      // i za podtržítkem: `DANERO_OPERATOR_ICO=<číslo>` v ukázkové konfiguraci
+      // je nejpravděpodobnější cesta, kudy by skutečné IČO do repozitáře přišlo
+      pattern: /(?<!\p{L})(?:IČO?|ICO)(?!\p{L})[^\n\d]{0,12}(?:\d[ \u00a0]?){7}\d(?!\d)/iu,
+      samples: ['IČO 12345678', 'IČ: 123 45 678', "DANERO_OPERATOR_ICO: '12345678'"],
+    },
+    {
+      kind: 'phone',
+      label: 'telefon',
+      pattern: /\+420|(?<![\d.,])00420(?!\d)/,
+      samples: ['tel. +420 600 000 000', '00420 600 000 000'],
+    },
+    {
+      kind: 'iban',
+      label: 'český IBAN',
+      // CZ + 22 číslic; ISIN (CZ + 10 číslic) je kratší a neprojde
+      pattern: /\bCZ\d{2}(?:[ \u00a0]?\d{4}){5}(?!\d)/,
+      samples: ['CZ0012345678901234567890', 'CZ00 1234 5678 9012 3456 7890'],
+    },
+    {
+      kind: 'freemail',
+      label: 'e-mail na freemailu',
+      pattern:
+        /[\w.+-]+@(?:gmail|googlemail|seznam|email|post|centrum|volny|atlas|tiscali|outlook|hotmail|live|msn|yahoo|icloud|proton|protonmail|tutanota|gmx)\.(?:cz|com|sk|me|net|de)\b/i,
+      samples: ['nekdo.smysleny@gmail.com', 'nekdo@seznam.cz', 'nekdo@proton.me'],
+    },
+  ];
 
-    // PSČ v české adrese („101 00") a zavináč v doméně poskytovatele pošty —
-    // obojí je tvar, který se do zdrojáku dostane jedině ručním vepsáním
-    const vzory: [RegExp, string][] = [
-      [/\b\d{3} \d{2}\b\s+Praha/i, 'adresa provozovatele'],
-      [/[\w.]+@gmail\.com/i, 'osobní e-mail'],
-    ];
-    // `lib/legal.ts` schválně nese adresu České obchodní inspekce (mimosoudní
-    // řešení sporů, § 14 z. 634/1992) — veřejná instituce, ne provozovatel.
-    const VYJIMKY = [join('lib', 'legal.ts')];
-    for (const soubor of korene.flatMap(soubory)) {
-      if (VYJIMKY.some((vyjimka) => soubor.endsWith(vyjimka))) continue;
-      const zdroj = readFileSync(soubor, 'utf8');
-      for (const [vzor, co] of vzory) {
-        expect(vzor.test(zdroj), `${soubor} nese ${co} natvrdo`).toBe(false);
+  /** Co se vzorům podobá, a identita to není — ať je nikdo „nezpřesní“ do falešných poplachů. */
+  const HARMLESS_SAMPLES = [
+    'Limit 100 000 Kč',
+    '10000 Kč',
+    'ISIN CZ0005112300',
+    'zák. č. 586/1992 Sb.',
+    'IČO je osmimístné číslo',
+    'DANERO_OPERATOR_ICO',
+    'notifikace@danero.cz',
+    'uzivatel@example.com',
+  ];
+
+  /**
+   * Výjimky jmenovitě: soubor, druh údaje a důvod. Platí jen pro uvedený druh,
+   * takže třeba e-mail na freemailu se ohlásí i v souboru, který smí nést adresu.
+   * Nový falešný poplach řeš další výjimkou s důvodem, ne zúžením vzoru.
+   */
+  const IDENTITY_EXCEPTIONS: Array<{ file: string; kinds: IdentityKind[]; reason: string }> = [
+    {
+      file: 'apps/web/lib/legal.ts',
+      kinds: ['address'],
+      reason:
+        'adresa České obchodní inspekce (mimosoudní řešení sporů, § 14 z. 634/1992) — veřejná instituce, ne provozovatel',
+    },
+    {
+      file: 'apps/web/vitest.config.ts',
+      kinds: ['address', 'ico', 'phone'],
+      reason: 'zjevně smyšlená zkušební identita, kterou dostávají unit testy z prostředí',
+    },
+    {
+      file: 'apps/web/e2e/operator.ts',
+      kinds: ['address', 'ico'],
+      reason: 'tatáž zkušební identita pro E2E',
+    },
+    {
+      file: 'apps/web/test/operator-env.test.ts',
+      kinds: ['address', 'ico'],
+      reason: 'smyšlené prostředí, které se podstrkuje předletové kontrole',
+    },
+    {
+      file: 'apps/web/test/support.test.ts',
+      kinds: ['iban'],
+      reason: 'veřejný vzorový IBAN z dokumentace ČNB a jeho obměny pro kontrolní součet',
+    },
+    {
+      file: 'packages/engine/test/crypto.test.ts',
+      kinds: ['address'],
+      reason: 'číslo jednací „Informace 18809/22“ (GFŘ) má tvar slova a pětimístného čísla',
+    },
+    {
+      file: 'apps/web/test/email-legal.test.ts',
+      kinds: ['address', 'ico', 'phone', 'iban', 'freemail'],
+      reason: 'smyšlené ukázky výš, na kterých se vzory zkoušejí',
+    },
+  ];
+
+  /**
+   * Dokumenty `.md` se neprocházejí: část z nich nese kontakt provozovatele
+   * vědomě (SECURITY.md, TRADEMARK.md) a rozhoduje se o nich zvlášť. Lockfile
+   * nikdo ručně nepíše a jeho otisky jsou náhodný base64 — „+420“ v nich dřív
+   * nebo později vyjde samo. Zbytek seznamu jsou binární soubory. Všechno
+   * ostatní se čte — tedy i přípony, které dnes v repozitáři nejsou.
+   */
+  const NOT_SCANNED =
+    /(?:^|\/)pnpm-lock\.yaml$|\.(md|png|jpe?g|ico|gif|webp|woff2?|pdf|xlsx?|zip)$/i;
+
+  it('vzory identity poznají každý hlídaný tvar a nechají být, co identita není', () => {
+    for (const { label, pattern, samples } of IDENTITY_PATTERNS) {
+      for (const sample of samples) {
+        expect(pattern.test(sample), `${label}: „${sample}“ má vzor poznat`).toBe(true);
       }
     }
+    for (const sample of HARMLESS_SAMPLES) {
+      const matched = IDENTITY_PATTERNS.filter(({ pattern }) => pattern.test(sample));
+      expect(
+        matched.map(({ label }) => label),
+        `„${sample}“ identita není`,
+      ).toEqual([]);
+    }
+  });
+
+  it('sledovaný kód nemá identifikaci provozovatele natvrdo', { timeout: 30_000 }, async (ctx) => {
+    const { execFileSync } = await import('node:child_process');
+    const { existsSync, readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const repoRoot = join(import.meta.dirname, '..', '..', '..');
+
+    // Celý repozitář, ne jen `apps/web/{app,lib,components}`: sledované soubory
+    // a k nim nové, které ještě nikdo nepřidal — tedy všechno, co se může dostat
+    // do commitu. Co git ignoruje (`.env.*`, `.data/`, reálné fixtury), se
+    // nečte; tam skutečné údaje být smějí.
+    let listed: string | null = null;
+    try {
+      listed = execFileSync(
+        'git',
+        ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+        {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      );
+    } catch (error) {
+      // V CI git být musí — přeskočení by tam znamenalo strážce, který nehlídá nic.
+      if (process.env.CI) throw error;
+    }
+    // Strom bez gitu (stažený archiv) nemá co commitnout, takže není co hlídat.
+    if (listed === null) return ctx.skip('strom není repozitář gitu');
+
+    const files = listed
+      .split('\0')
+      // `--cached` vrací i soubor smazaný v pracovním stromu před commitem
+      .filter((file) => file && !NOT_SCANNED.test(file) && existsSync(join(repoRoot, file)));
+    // kdyby výpis z gitu přestal vracet, co čekáme, test by tiše hlídal prázdno
+    expect(files.length).toBeGreaterThan(300);
+
+    const hits: string[] = [];
+    const usedExceptions = new Set<string>();
+    for (const file of files) {
+      const allowed = IDENTITY_EXCEPTIONS.find((exception) => exception.file === file)?.kinds ?? [];
+      const lines = readFileSync(join(repoRoot, file), 'utf8').split('\n');
+      lines.forEach((line, index) => {
+        for (const { kind, label, pattern } of IDENTITY_PATTERNS) {
+          if (!pattern.test(line)) continue;
+          if (allowed.includes(kind)) usedExceptions.add(`${file} · ${kind}`);
+          // nalezenou hodnotu do hlášky nedáváme — výstup testu končí ve veřejném logu CI
+          else hits.push(`${file}:${index + 1} — ${label}`);
+        }
+      });
+    }
+    expect(hits).toEqual([]);
+
+    const unused = IDENTITY_EXCEPTIONS.flatMap(({ file, kinds }) =>
+      kinds.map((kind) => `${file} · ${kind}`),
+    ).filter((key) => !usedExceptions.has(key));
+    expect(unused, 'výjimka, která už nic nekryje, patří smazat').toEqual([]);
   });
 });
 
@@ -344,7 +517,11 @@ describe('vzhled a obsah odchozích e-mailů', () => {
     ],
     [
       'výpis číst neumíme',
-      failedImportResolvedEmail({ filename: 'vypis.csv', outcome: 'rejected', note: 'Stáhni Historii transakcí.' }),
+      failedImportResolvedEmail({
+        filename: 'vypis.csv',
+        outcome: 'rejected',
+        note: 'Stáhni Historii transakcí.',
+      }),
     ],
   ] as const;
 

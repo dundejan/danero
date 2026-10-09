@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
  *
  * - cron smí běžet nejvýš jednou denně — častější výraz skončí hláškou
  *   „Hobby accounts are limited to daily cron jobs“,
- * - `maxDuration` funkce smí být nejvýš 300 s.
+ * - `maxDuration` funkce smí být nejvýš 300 s — ať je zapsaná exportem
+ *   v routě, nebo klíčem `functions` ve `vercel.json`.
  *
  * Obojí se pozná až při deployi, tedy po pushi do main. Tenhle test to chytí
  * dřív. Kdo provozuje vlastní instanci na placeném tarifu nebo v Dockeru, může
@@ -40,6 +41,25 @@ describe('limity hostingu (Vercel Hobby)', () => {
     // kdyby regulár přestal sedět na zápis v kódu, test by tiše hlídal prázdno
     expect(found.length).toBeGreaterThan(5);
     expect(found.filter((entry) => entry.seconds > MAX_DURATION_S)).toEqual([]);
+  });
+
+  it(`vercel.json nezvedá maxDuration žádné funkci nad ${MAX_DURATION_S} s`, () => {
+    // Klíč `functions` je druhá cesta k témuž limitu (L13-07). Export v routě
+    // má před ním přednost, takže škodí hlavně glob typu `app/**/*`: dosedne
+    // na všechny routy a stránky BEZ vlastního exportu, a ty předchozí test
+    // nevidí.
+    const config = JSON.parse(readFileSync(VERCEL_JSON, 'utf8')) as {
+      functions?: Record<string, { maxDuration?: unknown }>;
+    };
+    const overLimit = Object.entries(config.functions ?? {})
+      .filter(([, settings]) => settings.maxDuration !== undefined)
+      // cokoli jiného než číslo do limitu — i hodnotu zapsanou jako text Vercel odmítne
+      .filter(
+        ([, settings]) =>
+          typeof settings.maxDuration !== 'number' || settings.maxDuration > MAX_DURATION_S,
+      )
+      .map(([glob, settings]) => ({ glob, maxDuration: settings.maxDuration }));
+    expect(overLimit).toEqual([]);
   });
 
   it('každý cron ve vercel.json běží nejvýš jednou denně', () => {
