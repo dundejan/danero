@@ -12,7 +12,7 @@ import {
   beforeHooks,
   revokePasswordResetTokens,
 } from '@/lib/auth-hooks';
-import { handleExistingUserSignUp } from '@/lib/auth-signup';
+import { handleExistingUserSignUp, settleSignupContest } from '@/lib/auth-signup';
 
 /**
  * Žádný secret natvrdo v kódu: produkce vyžaduje BETTER_AUTH_SECRET (jinak pád),
@@ -179,6 +179,11 @@ function buildAuth(db: Db) {
       // po kliknutí na odkaz je uživatel rovnou přihlášený — jinak by hned
       // po potvrzení musel zadávat heslo znovu
       autoSignInAfterVerification: true,
+      // L8a-01 / D01-R1-01: kdo potvrdí adresu, o kterou se přihlásil někdo
+      // s jiným heslem, dostane účet bez cizího hesla a bez cizích relací.
+      // Schválně háček PŘED potvrzením — selhání potvrzení zastaví
+      // (lib/auth-signup.ts).
+      beforeEmailVerification: (user) => settleSignupContest(db, user),
       sendVerificationEmail: async ({ user, url }) => {
         const { resolveEmailSender, verifyEmailEmail } = await import('@/lib/email');
         await resolveEmailSender()({ to: user.email, ...verifyEmailEmail(url) });

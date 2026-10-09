@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { and, eq, gt } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { account, user as userTable } from '@/db/schema';
+import { account, session, verification } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
 import { hashPassword, verifyPassword } from '@/lib/password';
@@ -17,33 +17,76 @@ import { hashPassword, verifyPassword } from '@/lib/password';
  * nefunkční vlastní heslo narazil až po vypršení relace, a do té doby nahrával
  * výpisy do účtu, kam se první registrující mohl kdykoli přihlásit.
  *
- * Pravidlo: heslo k nepotvrzenému účtu platí jen do chvíle, než na tutéž adresu
- * přijde registrace s JINÝM heslem. Pak neplatí heslo z žádného pokusu — uložený
- * otisk nahradí otisk náhodného tajemství, které nikdo nezná — a kdo adresu
- * potvrdí, nastaví si heslo přes „Zapomenuté heslo“ (odkaz chodí jen do jeho
- * schránky a zruší i všechny relace).
+ * Pravidlo má dva kroky:
+ *
+ * 1. **Registrace s jiným heslem adresu označí za spornou** (`markContested`)
+ *    a pošle na ni nový ověřovací odkaz. Na účtu se v tu chvíli NIC nemění.
+ * 2. **Kdo spornou adresu potvrdí, dostane účet bez hesla a bez relací**
+ *    (`settleSignupContest`, háček `beforeEmailVerification`): uložený otisk
+ *    nahradí otisk náhodného tajemství, které nikdo nezná, a zruší se všechny
+ *    relace účtu. Heslo si nastaví přes „Zapomenuté heslo“ — odkaz chodí jen do
+ *    jeho schránky. Přihlášený zůstane: Better Auth mu po potvrzení otevře
+ *    novou relaci.
+ *
+ * Proč až při potvrzení a proč i relace (D01-R1-01, R1-02): nepotvrzený není
+ * jen účet z předregistrace, ale i ZAVEDENÝ účet po změně e-mailu
+ * (`changeEmailAction` nastavuje `emailVerified = false`). Ten má data, heslo,
+ * které jeho držitel zná, a živou relaci.
+ *  - Kdyby heslo padlo už při cizí registraci, uživatel, který v nové adrese
+ *    udělal překlep, by ji už neopravil, heslo nezměnil a účet nesmazal — to
+ *    všechno chce stávající heslo a obnova chodí na adresu s překlepem.
+ *  - Kdyby padlo jen heslo, zůstal by v účtu ten, kdo si cizí adresu „zabral“
+ *    změnou e-mailu: jeho relace by přežila potvrzení adresy majitelem.
+ * Do potvrzení tedy držitel o nic nepřijde; po potvrzení patří účet tomu, kdo
+ * doložil schránku.
  *
  * ⚠️ Heslo se schválně NEPŘEPISUJE tím z nového pokusu. Vyhrával by poslední
  * zapisující, takže útočníkovi by stačilo zaregistrovat se jako druhý. A odkaz
  * nejde svázat s konkrétním pokusem: ověřovací token je JWT jen s adresou.
  *
+ * ⚠️ Spor patří k ADRESE, ne k účtu. Ověřovací odkaz taky nese jen adresu,
+ * takže platí i pro účet, který na ní vznikl později: kdyby spor visel na id
+ * účtu, držitel by ho shodil tím, že účet smaže a adresu si předregistruje
+ * znovu (a stejně tak změnou e-mailu jinam a zpátky). Ze stejného důvodu spor
+ * neruší registrace stejným heslem ani zrušení účtu — končí jen potvrzením
+ * adresy nebo vypršením.
+ *
  * Potvrzeného účtu se tohle netýká vůbec — tam o hesle rozhoduje jen majitel.
  *
- * Vědomá cena: kdo zná adresu nepotvrzeného účtu, umí jeho heslo zneplatnit
- * a vyvolat další ověřovací e-mail (strop registrace je 5 za minutu na IP).
- * Totéž platí pro účet, který čeká na potvrzení po změně e-mailu
- * (`changeEmailAction` nastavuje `emailVerified = false`): relace mu zůstane,
- * heslo si vrátí obnovou. Proti převzetí účtu je to přijatelná výměna.
+ * Vědomá cena: kdo zná adresu nepotvrzeného účtu, umí způsobit, že po jejím
+ * potvrzení přestane platit heslo a skončí otevřené relace, a umí vyvolat další
+ * ověřovací e-mail (strop registrace je 5 za minutu na IP). Proti převzetí účtu
+ * je to přijatelná výměna.
  */
 
 /** Kam vede odkaz z ověřovacího e-mailu — totéž, co posílá registrační formulář. */
 const VERIFICATION_CALLBACK_URL = '/overeni-emailu/hotovo';
+
+/**
+ * Spor se drží v tabulce `verification` (obecné úložiště Better Authu pro
+ * „čeká na ověření“) — prošlé řádky z ní maže noční úklid (`pruneVerifications`).
+ * Identifikátor je otisk adresy, ne adresa: řádek přežije i zrušení účtu
+ * a nemá nést nic, z čeho jde adresa přečíst.
+ */
+const CONTEST_PREFIX = 'signup-contest:';
+
+/**
+ * Jak dlouho spor platí. Musí přežít každý odkaz, který si na adresu může
+ * nechat poslat držitel nepotvrzeného účtu — jinak by stačilo počkat a poslat
+ * majiteli odkaz nový. Zároveň to není navždy: adresa, kterou nikdo nepotvrdí,
+ * po sobě nemá nechávat stopu bez konce. Každá další neshodná registrace lhůtu
+ * obnoví.
+ */
+const CONTEST_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface ExistingUser {
   id: string;
   email: string;
   emailVerified: boolean;
 }
+
+const contestIdentifier = (email: string): string =>
+  `${CONTEST_PREFIX}${createHash('sha256').update(email.trim().toLowerCase()).digest('hex')}`;
 
 /**
  * Heslo z těla registrace. `null` = nejde zjistit (serverové volání bez
@@ -61,32 +104,19 @@ async function passwordFrom(request: Request | undefined): Promise<string | null
 }
 
 /**
- * Nahradí uložený otisk otiskem tajemství, které nikdo nezná. Vrací, jestli se
- * něco změnilo.
- *
- * Podmínky zápisu hlídají dva souběhy: účet mezitím někdo potvrdil (pak už se
- * hesla nedotýkáme), nebo heslo mezitím změnil majitel obnovou (pak v databázi
- * není otisk, který jsme posuzovali, a jeho nové heslo nesmíme zahodit).
+ * Označí adresu za spornou. Jeden řádek na adresu, ať přijde pokusů kolik chce
+ * (D01-R1-03: dřív každý pokus přepsal otisk a zapsal audit, takže dvacet
+ * registrací vytlačilo z historie účtu všechno ostatní).
  */
-async function invalidatePassword(db: Db, userId: string, judgedHash: string): Promise<boolean> {
-  const unknowable = await hashPassword(randomBytes(32).toString('base64url'));
-  const stillUnverified = db
-    .select({ id: userTable.id })
-    .from(userTable)
-    .where(and(eq(userTable.id, userId), eq(userTable.emailVerified, false)));
-  const replaced = await db
-    .update(account)
-    .set({ password: unknowable, updatedAt: new Date() })
-    .where(
-      and(
-        eq(account.userId, userId),
-        eq(account.providerId, 'credential'),
-        eq(account.password, judgedHash),
-        inArray(account.userId, stillUnverified),
-      ),
-    )
-    .returning({ id: account.id });
-  return replaced.length > 0;
+async function markContested(db: Db, email: string): Promise<void> {
+  const identifier = contestIdentifier(email);
+  await db.delete(verification).where(eq(verification.identifier, identifier));
+  await db.insert(verification).values({
+    id: randomUUID(),
+    identifier,
+    value: 'contested',
+    expiresAt: new Date(Date.now() + CONTEST_LIFETIME_MS),
+  });
 }
 
 /**
@@ -98,7 +128,9 @@ export async function handleExistingUserSignUp(
   user: ExistingUser,
   request: Request | undefined,
 ): Promise<void> {
-  // potvrzený účet se nemění a nic se na něj neposílá
+  // potvrzený účet se nemění, nic se na něj neposílá a jeho adresa se
+  // neoznačuje — jinak by ji cizí člověk „otrávil“ pro případ, že se na ni
+  // majitel někdy vrátí změnou e-mailu
   if (user.emailVerified) return;
   try {
     const password = await passwordFrom(request);
@@ -112,14 +144,7 @@ export async function handleExistingUserSignUp(
       password !== null &&
       storedHash !== null &&
       (await verifyPassword({ hash: storedHash, password }));
-    if (!samePerson && storedHash !== null && (await invalidatePassword(db, user.id, storedHash))) {
-      await logAudit(
-        db,
-        user.id,
-        'PASSWORD_CHANGE',
-        'zrušeno — na účet s nepotvrzeným e-mailem přišla registrace s jiným heslem',
-      );
-    }
+    if (!samePerson) await markContested(db, user.email);
 
     // Odkaz dostane i ten, kdo se registruje podruhé stejným heslem (první
     // e-mail mohl zapadnout). Skládá ho Better Auth sám, ne my — a potvrzený
@@ -133,4 +158,44 @@ export async function handleExistingUserSignUp(
   } catch (error) {
     logEvent('error', 'auth.existing_signup_failed', { userId: user.id, error: errorText(error) });
   }
+}
+
+/**
+ * Háček `emailVerification.beforeEmailVerification`: potvrzuje-li se sporná
+ * adresa, účet přijde o heslo i o všechny relace dřív, než se stane potvrzeným.
+ *
+ * ⚠️ Schválně PŘED potvrzením a schválně bez `try/catch`: když se heslo nebo
+ * relace zrušit nepodaří, výjimka potvrzení zastaví a adresa zůstane
+ * nepotvrzená i sporná — kliknutí jde zopakovat. V háčku „po potvrzení“ by
+ * selhání nechalo potvrzený účet s cizím heslem i relací. Spor se proto maže až
+ * jako poslední zápis.
+ *
+ * Relace se ruší dřív, než Better Auth otevře novou tomu, kdo na odkaz klikl
+ * (`autoSignInAfterVerification`), takže ten přihlášený zůstane.
+ */
+export async function settleSignupContest(
+  db: Db,
+  user: { id: string; email: string },
+): Promise<void> {
+  const identifier = contestIdentifier(user.email);
+  const [contest] = await db
+    .select({ id: verification.id })
+    .from(verification)
+    .where(and(eq(verification.identifier, identifier), gt(verification.expiresAt, new Date())))
+    .limit(1);
+  if (!contest) return;
+
+  const unknowable = await hashPassword(randomBytes(32).toString('base64url'));
+  await db
+    .update(account)
+    .set({ password: unknowable, updatedAt: new Date() })
+    .where(and(eq(account.userId, user.id), eq(account.providerId, 'credential')));
+  await db.delete(session).where(eq(session.userId, user.id));
+  await db.delete(verification).where(eq(verification.identifier, identifier));
+  await logAudit(
+    db,
+    user.id,
+    'PASSWORD_CHANGE',
+    'zrušeno — na tuhle adresu přišla před jejím potvrzením registrace s jiným heslem; ostatní přihlášení ukončena',
+  );
 }
