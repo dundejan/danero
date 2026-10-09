@@ -55,11 +55,32 @@ import {
  * (včetně souběhu na parciálním unikátním indexu), notifikační digest, denní
  * úklid, kurzy ČNB, ceny instrumentů, fixace roku a kaskádové smazání účtu.
  *
- * Bez `TEST_DATABASE_URL` se přeskočí (lokálně stačí:
+ * Bez `TEST_DATABASE_URL` se LOKÁLNĚ přeskočí (stačí:
  * `docker run -d -p 55433:5432 -e POSTGRES_PASSWORD=test postgres:17-alpine`).
+ * V CI se přeskočit nesmí: kdyby proměnná z workflow nebo z `passThroughEnv`
+ * v `turbo.json` vypadla, zůstala by pipeline zelená bez jediného testu na
+ * ostrém Postgresu — a řádek „skipped" by si mezi ostatními nikdo nevšiml.
+ * Proto tam soubor bez ní spadne jedním testem, který říká proč.
  */
 const URL = process.env.TEST_DATABASE_URL;
 const popis = URL ? describe : describe.skip;
+
+/** `CI` nastavuje GitHub Actions (i většina ostatních) na „true"; „false" a „0" bereme jako vypnuto. */
+const CI_FLAG = (process.env.CI ?? '').trim().toLowerCase();
+const RUNS_IN_CI = CI_FLAG !== '' && CI_FLAG !== 'false' && CI_FLAG !== '0';
+
+if (!URL && RUNS_IN_CI) {
+  describe('pojistka: postgres-compat se v CI nesmí přeskočit', () => {
+    it('TEST_DATABASE_URL je v CI nastavená', () => {
+      expect.fail(
+        'V CI chybí TEST_DATABASE_URL, takže by se testy proti opravdovému Postgresu ' +
+          'potichu přeskočily. Zkontroluj službu postgres a proměnnou v .github/workflows/ci.yml ' +
+          'a `passThroughEnv` úlohy test v turbo.json. Workflow, které Postgres mít nemá, ' +
+          'musí tenhle soubor z běhu vyloučit.',
+      );
+    });
+  });
+}
 
 popis('kompatibilita s produkčním Postgresem', () => {
   let db: Db;
