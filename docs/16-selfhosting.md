@@ -44,13 +44,34 @@ počítá, když se přihlásíš).
 - **Migrace** se dotáhnou samy při startu (`DANERO_MIGRATE_ON_START=1`
   v compose). Platí to pro **jednu** instanci; při více současně běžících
   by si migrace lezly do zelí — tam patří `drizzle-kit migrate` do deploye.
-- **Aktualizace:** `git pull && docker compose up -d --build`.
+- **Konfigurace:** soubor `.env` jde do kontejneru `web` **celý** (`env_file`
+  v compose). Kteroukoli proměnnou z tabulky níž tedy stačí zapsat do `.env`
+  a pustit `docker compose up -d` — samotné `docker compose restart` prostředí
+  znovu nenačte. Tři hodnoty si compose drží sám a z `.env` je nepřevezme:
+  `DATABASE_URL` (skládá ji z `POSTGRES_PASSWORD`), `DANERO_MIGRATE_ON_START`
+  a port uvnitř kontejneru (vždy 3000).
+- **Aktualizace:** `git pull && docker compose up -d --build`. Pozor při
+  přechodu ze starší verze: port aplikace dřív poslouchal na všech rozhraních,
+  teď jen na `127.0.0.1`. Kdo má reverzní proxy na jiném stroji (nebo
+  v kontejneru, který na aplikaci chodí přes síťové rozhraní hostitele), se po
+  aktualizaci na aplikaci nedovolá, dokud v `.env` nenastaví
+  `DANERO_BIND_ADDRESS` — viz odstavec o proxy níž.
 - **Záloha:** `docker compose exec db pg_dump -U danero danero > zaloha.sql`
   (a odděleně `DANERO_ENCRYPTION_KEY`, viz varování níže).
-- Port změníš přes `PORT=8080` v `.env`.
+- Port na hostiteli změníš přes `PORT=8080` v `.env`.
 
 Před aplikaci ještě patří reverzní proxy s TLS. Aplikace si nastavuje vlastní
 bezpečnostní hlavičky včetně CSP — **v proxy je neduplikuj**, přebily by se.
+
+Port aplikace proto compose publikuje **jen na `127.0.0.1`**: proxy na témže
+stroji se na něj dostane, nikdo zvenku ne. Běží-li proxy jinde, nastav v `.env`
+`DANERO_BIND_ADDRESS` na adresu rozhraní, přes které k aplikaci chodí (nejlépe
+adresu v privátní síti; `0.0.0.0` znamená všechna rozhraní), a přístup odjinud
+zavři firewallem — s tím, že porty publikované Dockerem pravidla `ufw`
+obcházejí. Kdo se na port aplikace dostane mimo proxy, mluví s ní po
+nešifrovaném http a **limit pokusů o přihlášení podle IP adresy na něj
+neplatí**: hlavičku `X-Forwarded-For`, ze které se adresa klienta určuje, si
+v tu chvíli píše sám.
 
 ## Konfigurace
 
@@ -73,8 +94,16 @@ openssl rand -hex 32      # CRON_SECRET
 | `DANERO_ENCRYPTION_KEYS_OLD` | ne | klíče vyřazené při výměně `DANERO_ENCRYPTION_KEY` (hex oddělené čárkou). Šifruje se vždy tím aktuálním, ale data od těch starých se dál čtou — viz „Výměna šifrovacího klíče" níž |
 | `CRON_SECRET` | ano | bez ní všechny `/api/cron/*` odmítají vše (401) — tedy žádné syncy ani e-maily |
 | `PORT` | ne | na kterém portu hostitele instance poslouchá (výchozí `3000`); uvnitř kontejneru je to vždy 3000 |
+| `DANERO_BIND_ADDRESS` | ne | jen compose: adresa hostitele, na které se port aplikace publikuje (výchozí `127.0.0.1`, tedy jen pro proxy na témže stroji). Měň jen tehdy, když proxy běží jinde — port aplikace nemá být dosažitelný mimo ni (viz odstavec o proxy výš) |
+| `DANERO_OPERATOR_NAME` | ano | jméno provozovatele instance. Spolu s dalšími třemi údaji níž se vypisuje na veřejných stránkách (mj. `/podminky` a `/soukromi`) a v podpisu služebních e-mailů — uživatel má vědět, komu svoje data svěřuje. Aplikace bez nich běží, ale na jejich místě stojí nápadné „nenastaveno“ a `/api/health` hlásí `operatorContact: "incomplete"` |
+| `DANERO_OPERATOR_ICO` | ano | IČO provozovatele; bez ní „nenastaveno“ |
+| `DANERO_OPERATOR_ADDRESS` | ano | adresa sídla provozovatele; bez ní „nenastaveno“ |
+| `DANERO_CONTACT_EMAIL` | ano | kontaktní e-mail provozovatele; bez ní „nenastaveno“. Slouží i jako výchozí adresa pro odpovědi (`RESEND_REPLY_TO`) a pro provozní upozornění (`DANERO_ALERT_EMAIL`) |
+| `DANERO_CONTACT_PHONE` | ne | telefon provozovatele; na `/podminky` se vypíše, jen když je vyplněný |
+| `DANERO_ALERT_EMAIL` | ne | kam chodí provozní upozornění (dnes: výpis, který se nepodařilo přečíst). Bez ní jdou na `DANERO_CONTACT_EMAIL`; není-li ani ta, upozornění se jen zapíše do logu |
 | `RESEND_API_KEY` | ne | bez ní se e-maily jen zapisují do logu (na jedno-uživatelské instanci to může stačit) |
 | `RESEND_FROM` | ne | odesílatel, např. `"Danero <notifikace@example.cz>"` |
+| `RESEND_REPLY_TO` | ne | adresa, na kterou míří „Odpovědět“ u e-mailů z instance. Bez ní se použije `DANERO_CONTACT_EMAIL` |
 | `DANERO_MIGRATE_ON_START` | ne | `1` = zmigruj Postgres při startu (compose to nastavuje sám). Jen pro jednu instanci. |
 | `DANERO_TRUSTED_PROXIES` | ne | IP/CIDR tvých reverzních proxy oddělené čárkou. Podle nich se z `X-Forwarded-For` hledá skutečná IP klienta (klíč rate limitu přihlašování). Nevyplněno = privátní rozsahy (loopback, RFC1918, docker), což sedí na běžnou proxy na témž stroji. Vyplň, když máš před sebou CDN s veřejnými adresami — jinak by se limity počítaly na adresu CDN a sdíleli by je všichni. |
 | `NEXT_PUBLIC_SOURCE_URL` | **ano, pokud kód měníš** | adresa repozitáře **s tvými úpravami**. Aplikace ji ukazuje přihlášeným uživatelům v patičce, protože § 13 licence AGPL-3.0 ukládá nabídnout zdrojový kód každému, komu instanci nabízíš po síti. Bez ní ukazuje upstream — a ten tvoje změny neobsahuje, takže bys licenci porušoval. |
@@ -97,7 +126,8 @@ Každý zašifrovaný údaj v databázi nese osmiznakový otisk klíče, kterým
 
 1. vygeneruj nový klíč (`openssl rand -hex 32`),
 2. nový dej do `DANERO_ENCRYPTION_KEY`, ten dosavadní přesuň do
-   `DANERO_ENCRYPTION_KEYS_OLD` a restartuj,
+   `DANERO_ENCRYPTION_KEYS_OLD` a restartuj (v compose `docker compose up -d`
+   — `restart` změněné `.env` nenačte),
 3. od té chvíle se šifruje novým klíčem a stará data se čtou tím vyřazeným,
 4. přešifrování udělá sám denní job `maintenance`: každý uložený klíč brokera,
    který ještě nese otisk vyřazeného klíče, přepíše tím aktuálním a počet vrátí

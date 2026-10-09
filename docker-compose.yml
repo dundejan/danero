@@ -28,6 +28,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Celé .env jde do kontejneru — tedy každá proměnná z tabulky v docs/16
+    # (vyřazené šifrovací klíče, identifikace provozovatele, adresa upraveného
+    # repozitáře…), ne jen ty vyjmenované níž. Samotné .env v kořeni slouží
+    # compose jen k dosazování do tohohle souboru; bez env_file by se nic dalšího
+    # do aplikace nedostalo a nic by to neohlásilo.
+    # `required: false`: když .env chybí, ať to řeknou česky kontroly níž.
+    env_file:
+      - path: .env
+        required: false
+    # environment má před env_file přednost: povinné kontroly, složená
+    # DATABASE_URL a pevný PORT proto zůstávají tady.
     environment:
       DATABASE_URL: postgres://danero:${POSTGRES_PASSWORD:?nastav POSTGRES_PASSWORD v .env}@db:5432/danero
       # migrace se dotáhnou při startu — platí pro JEDNU instanci (viz docs/16)
@@ -40,9 +51,15 @@ services:
       DANERO_ENCRYPTION_KEY: ${DANERO_ENCRYPTION_KEY:?nastav DANERO_ENCRYPTION_KEY v .env}
       CRON_SECRET: ${CRON_SECRET:?nastav CRON_SECRET v .env}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      RESEND_FROM: ${RESEND_FROM:-}
+      # PORT v .env určuje port na HOSTITELI. Přes env_file by se dostal i dovnitř
+      # a server by poslouchal jinde, než kam míří mapování portu a healthcheck.
+      PORT: '3000'
+    # Jen na loopbacku: před aplikaci patří reverzní proxy s TLS a mimo ni nemá být
+    # dosažitelná (šlo by to po nešifrovaném http a limit přihlášení podle IP by
+    # neplatil — hlavičku X-Forwarded-For si pak klient píše sám). Běží-li proxy
+    # na jiném stroji, nastav v .env DANERO_BIND_ADDRESS (viz docs/16).
     ports:
-      - '${PORT:-3000}:3000'
+      - '${DANERO_BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000'
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://localhost:3000/api/health || exit 1']
       interval: 15s
