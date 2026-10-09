@@ -28,6 +28,18 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    # jednorázový Postgres pro krok „Zkouška nanečisto“; s produkcí nemá nic
+    # společného a s jobem zanikne
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: danero
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       # bez tohohle pustí `gh workflow run migrate.yml --ref moje-vetev`
       # migrace z libovolné větve proti PRODUKČNÍ databázi
@@ -57,6 +69,21 @@ jobs:
       - name: Kontrola pořadí migrací
         working-directory: apps/web
         run: node db/check-journal.mjs
+
+      # Tytéž migrace nejdřív proti prázdnému jednorázovému Postgresu: do té doby
+      # byl první běh migrace proti opravdovému Postgresu ten produkční
+      # (L9-01). Chytí chybu syntaxe, chybějící `--> statement-breakpoint`
+      # a rozbité pořadí — tedy pád, po kterém by nový kód zůstal nad starým
+      # schématem. NEchytí chybu závislou na produkčních datech (vzor migrace
+      # 0032); na tu platí „datovou migraci pusť dvakrát“ nad daty z předchozího
+      # běhu v `test/postgres-compat.test.ts`. Schválně nečeká na job `ci`:
+      # nestabilní test by zadržel bezvadnou migraci, zatímco Vercel kód nasadí.
+      - name: Zkouška nanečisto
+        if: inputs.action != 'status'
+        working-directory: apps/web
+        env:
+          DATABASE_URL: postgres://postgres:test@localhost:5432/danero
+        run: node db/migrate.mjs
 
       # POZOR: tenhle krok běží PŘED migrací, takže db/status.mjs MUSÍ projít
       # i nad čerstvou, ještě nezmigrovanou databází. Dokud padal na chybějící

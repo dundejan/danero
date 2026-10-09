@@ -93,6 +93,12 @@ Do logu se nedostane a nikdo ho nemusí mít v terminálu. Workflow běží pod
 `permissions: contents: read` a **pouští se jen z větve `main`** — `gh workflow
 run migrate.yml --ref moje-vetev` skončí hned na prvním kroku.
 
+Před produkcí si workflow tytéž migrace pustí **nanečisto proti prázdnému
+jednorázovému Postgresu** v témže běhu (krok „Zkouška nanečisto“). Když spadne,
+produkce se nedotkne. Chytí to chybu syntaxe, chybějící oddělovač příkazů
+a rozbité pořadí; chybu, která závisí na produkčních datech, ne — tu hlídá
+jen test datové migrace nad daty z předchozího běhu.
+
 Migruje `apps/web/db/migrate.mjs` (ne `drizzle-kit migrate`): při selhání vypíše
 celou chybu včetně SQLSTATE, hlášky a dotazu, na kterém to spadlo. `drizzle-kit`
 po sobě nechával ~250 B logu bez jediného vodítka.
