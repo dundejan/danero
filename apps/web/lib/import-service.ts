@@ -71,6 +71,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { czDate, plural, qty } from '@/lib/format';
+import { capStoredIssues } from '@/lib/import-issues';
 import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
 import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
@@ -890,13 +891,13 @@ export async function importParsed(
     errorCount: parsed.errors.length,
     skippedCount: parsed.skipped.length,
     warningCount: warnings.length,
-    issues: {
+    issues: capStoredIssues({
       errors: parsed.errors,
       skipped: parsed.skipped,
       warnings,
-      ...(unmapped.length > 0 ? { unmapped } : {}),
-      ...(crossBroker.length > 0 ? { crossBroker } : {}),
-    },
+      unmapped,
+      crossBroker,
+    }),
   });
 
   // onConflictDoNothing: souběžný sync/upload se stejnými klíči nesmí shodit
