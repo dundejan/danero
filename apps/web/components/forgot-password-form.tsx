@@ -2,10 +2,14 @@
 
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { FormPage } from '@/components/form-page';
 import { Button } from '@/components/ui/button';
-import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+import { describedByError, Field, Input } from '@/components/ui/field';
+import { TextLink } from '@/components/ui/link';
 
 const ERROR_ID = 'zapomenute-heslo-error';
+
+const BACK_TO_SIGN_IN = <TextLink href="/prihlaseni">Zpátky na přihlášení</TextLink>;
 
 export function ForgotPasswordForm() {
   const [sent, setSent] = useState(false);
@@ -46,33 +50,41 @@ export function ForgotPasswordForm() {
   // formulář prozrazoval, kdo Danero používá.
   if (sent) {
     return (
-      <div className="rounded-lg border border-line bg-surface p-4 text-sm">
-        <p className="font-medium">Pokud u nás účet s touhle adresou je, poslali jsme na ni odkaz.</p>
-        <p className="mt-2 text-ink-muted">
-          Zkontroluj schránku i spam. Odkaz platí hodinu a použít ho jde jednou.
-        </p>
-      </div>
+      <FormPage title="Zkontroluj schránku" footer={BACK_TO_SIGN_IN}>
+        <div role="status" className="space-y-2 text-pretty">
+          <p>Pokud u nás účet s touhle adresou je, poslali jsme na ni odkaz.</p>
+          <p className="type-callout text-ink-muted">
+            Platí hodinu a použít ho jde jednou. Podívej se i do spamu.
+          </p>
+        </div>
+      </FormPage>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="email">E-mail</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          required
-          autoFocus
-          autoComplete="email"
-          {...describedByError(error !== null, ERROR_ID)}
-        />
-      </div>
-      {error && <FieldError id={ERROR_ID}>{error}</FieldError>}
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? 'Odesílám…' : 'Poslat odkaz'}
-      </Button>
-    </form>
+    <FormPage
+      title="Zapomenuté heslo"
+      lede="Pošleme ti odkaz na nastavení nového hesla."
+      footer={BACK_TO_SIGN_IN}
+    >
+      <form onSubmit={onSubmit} className="space-y-5">
+        <Field label="E-mail" htmlFor="email" error={error} errorId={ERROR_ID}>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoFocus
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            {...describedByError(error !== null, ERROR_ID)}
+          />
+        </Field>
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending ? 'Odesílám…' : 'Poslat odkaz'}
+        </Button>
+      </form>
+    </FormPage>
   );
 }

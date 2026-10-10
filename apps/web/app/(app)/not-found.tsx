@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import { AppState } from '@/components/app-state';
+import { buttonVariants } from '@/components/ui/button';
+import { TextLink } from '@/components/ui/link';
 
 /**
  * 404 uvnitř přihlášené části (audit H2-03).
@@ -8,60 +11,36 @@ import Link from 'next/link';
  * vykresluje marketingovým shellem — a ten se vložil DOVNITŘ aplikačního
  * layoutu. Výsledek: dva `<main>`, dvakrát `id="obsah"` (neplatné HTML,
  * skip-link mířil na dvojznačnou kotvu) a přihlášený uživatel dostal vedle
- * svého navigačního railu marketingová CTA „Přihlásit se“ a „Vyzkoušet demo“.
+ * svého postranního panelu marketingová CTA „Přihlásit se“ a „Vyzkoušet demo“.
  *
  * Vnořený `not-found.tsx` se vykresluje uvnitř layoutu svého segmentu, takže
- * tenhle obsah sedí do `<main id="obsah">` z `(app)/layout.tsx` — rail zůstane,
- * landmarky jsou po jednom a rozcestník míří do aplikace, ne na marketing.
+ * tenhle obsah sedí do `<main id="obsah">` z `(app)/layout.tsx` — panel
+ * zůstane, landmarky jsou po jednom a cesta ven míří do aplikace.
+ *
+ * Žádný `<title>`: `not-found.tsx` nemá `generateMetadata` a `<title>`
+ * v JSX se do hlavičky sice vloží, ale AŽ ZA titulek z `generateMetadata`
+ * stránky, která `notFound()` vyhodila — prohlížeč bere ten první, takže by
+ * tu jen přibyl třetí neplatný `<title>`. Titulek 404 musí vzniknout
+ * v `generateMetadata` té stránky (audit H2-06).
  */
 export default function AppNotFound() {
   return (
-    <div className="max-w-xl pt-12">
-      {/* Žádný `<title>`: `not-found.tsx` nemá `generateMetadata` a `<title>`
-          v JSX se do hlavičky sice vloží, ale AŽ ZA titulek z `generateMetadata`
-          stránky, která `notFound()` vyhodila — prohlížeč bere ten první,
-          takže by tu jen přibyl třetí neplatný `<title>`. Titulek 404 musí
-          vzniknout v `generateMetadata` té stránky (audit H2-06). */}
-      <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
-        Chyba 404
-      </p>
-      <h1 className="mt-3 text-balance text-3xl font-bold leading-tight tracking-tight">
-        Tahle stránka neexistuje
-      </h1>
-      <p className="mt-4 text-ink-muted">
-        Buď se odkaz změnil, nebo v adrese něco přebývá. Pokud jsi mířil na detail pozice,
-        kterou v evidenci nemáš, může chybět import — historie se do Danera dostane až
-        z výpisu nebo z napojeného účtu.
-      </p>
-      <ul className="mt-6 space-y-2 text-ink-muted">
-        <li>
-          <Link
-            href="/prehled"
-            className="font-medium text-accent-text underline underline-offset-2"
-          >
-            Přehled
-          </Link>{' '}
-          — limity, termíny a co tě letos čeká
-        </li>
-        <li>
-          <Link
-            href="/portfolio"
-            className="font-medium text-accent-text underline underline-offset-2"
-          >
-            Portfolio
-          </Link>{' '}
-          — všechny pozice, které Danero eviduje
-        </li>
-        <li>
-          <Link
-            href="/import"
-            className="font-medium text-accent-text underline underline-offset-2"
-          >
+    <AppState
+      title="Tahle stránka neexistuje"
+      actions={
+        <>
+          <Link href="/prehled" className={buttonVariants()}>
+            Přejít na přehled
+          </Link>
+          {/* nejčastější příčina: detail pozice, kterou evidence nezná */}
+          <TextLink href="/import" chevron>
             Zdroje dat
-          </Link>{' '}
-          — nahrát výpis nebo napojit účet u brokera
-        </li>
-      </ul>
-    </div>
+          </TextLink>
+        </>
+      }
+    >
+      Odkaz se změnil, nebo pozice v evidenci chybí — historie se sem dostane až z výpisu nebo
+      z napojeného účtu.
+    </AppState>
   );
 }

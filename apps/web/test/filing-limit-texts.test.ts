@@ -149,10 +149,17 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
       const { default: SettingsPage } = await import('@/app/(app)/nastaveni/page');
       const html = renderToStaticMarkup(await SettingsPage({ searchParams: Promise.resolve({}) }));
 
-      expect(html).toContain(`Zaměstnanec (hlídá se limit ${employeeLimit})`);
-      expect(html).toContain(`Jiné (hlídá se obecný limit ${generalLimit})`);
+      // Limit už nestojí v textu položky nabídky, ale ve větě pod popiskem,
+      // která se přepíná podle vybraného režimu (`:has()` nad položkou) —
+      // každý režim má svou a hlídá se, že jmenuje limit běžného roku.
+      const hintFor = (regime: string): string =>
+        (new RegExp(`option\\[value=${regime}\\]:checked[^>]*>([^<]*)<`).exec(html)?.[1] ?? '')
+          .replace(/\s/g, ' ');
+      const spaced = (text: string): string => text.replace(/\s/g, ' ');
+      expect(hintFor('ZAMESTNANEC')).toBe(spaced(`Hlídá se limit ${employeeLimit}.`));
+      expect(hintFor('JINE')).toBe(spaced(`Hlídá se obecný limit ${generalLimit}.`));
       // limit paušální daně (§ 7a) se nemění
-      expect(html).toContain('OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)');
+      expect(hintFor('PAUSAL')).toBe('Hlídá se limit 50 000 Kč.');
     });
 
     it(`první krok uvítání v roce ${year}`, { timeout: 30_000 }, async () => {

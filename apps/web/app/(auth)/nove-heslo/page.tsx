@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { Logo } from '@/components/logo';
+import { FormPage } from '@/components/form-page';
 import { NewPasswordForm } from '@/components/new-password-form';
+import { buttonVariants } from '@/components/ui/button';
 
 export const metadata = { title: 'Nové heslo — Danero' };
 
@@ -15,33 +16,16 @@ export default async function NewPasswordPage({
 }) {
   const { token, error } = await searchParams;
 
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
-      <div>
-        <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
-          <Logo className="text-lg" />
-        </Link>
-        <h1 className="text-3xl font-bold">Nové heslo</h1>
-      </div>
+  if (token && !error) return <NewPasswordForm token={token} />;
 
-      {token && !error ? (
-        <NewPasswordForm token={token} />
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-line bg-surface p-4 text-sm">
-            <p className="font-medium">Odkaz už neplatí.</p>
-            <p className="mt-2 text-ink-muted">
-              Odkaz na obnovu hesla platí hodinu a použít ho jde jen jednou. Nech si poslat nový.
-            </p>
-          </div>
-          <Link
-            href="/zapomenute-heslo"
-            className="font-medium text-accent-text underline underline-offset-2"
-          >
-            Poslat nový odkaz
-          </Link>
-        </div>
-      )}
-    </main>
+  return (
+    <FormPage
+      title="Odkaz už neplatí"
+      lede="Odkaz na obnovu hesla platí hodinu a použít ho jde jen jednou."
+    >
+      <Link href="/zapomenute-heslo" className={buttonVariants({ className: 'w-full' })}>
+        Poslat nový odkaz
+      </Link>
+    </FormPage>
   );
 }

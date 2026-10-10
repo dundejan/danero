@@ -37,17 +37,31 @@ const CHYBA_LABELS: Record<string, string> = {
     'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Nastavení se zatím neuložilo.',
 };
 
-export function SettingsToast({ ok, chyba }: { ok?: string; chyba?: string }) {
+/** Text chyby podle kódu z adresy — pro hlášku přímo u pole (stránka účtu). */
+export function settingsErrorText(code: string): string {
+  return CHYBA_LABELS[code] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.';
+}
+
+export function SettingsToast({
+  ok,
+  chyba,
+  inline = false,
+}: {
+  ok?: string;
+  chyba?: string;
+  /** Chybu stránka ukazuje u pole, kterého se týká — toast ji neopakuje. */
+  inline?: boolean;
+}) {
   return (
     <>
-      {chyba && (
+      {chyba && !inline && (
         <Toast
           // klíč per render: po dalším uložení se toast musí remountnout,
           // jinak by visible=false z minula potvrzení skrylo
           key={crypto.randomUUID()}
           kind="chyba"
           floating
-          text={CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
+          text={settingsErrorText(chyba)}
         />
       )}
       {ok && OK_LABELS[ok] && (
