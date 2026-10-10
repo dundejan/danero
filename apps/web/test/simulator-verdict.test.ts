@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { d, parseTransactions, ZERO, type Money, type Transaction } from '@danero/shared';
 import { simulateSale } from '@danero/engine';
 import { SimulatorView } from '@/components/views/simulator-view';
@@ -12,6 +12,17 @@ import {
   type RegimeLimit,
   type VerdictInput,
 } from '@/lib/simulator-verdict';
+
+/**
+ * Výklad k orientační dani (kdy se neplatí) je v simulátoru ve vysvětlivce,
+ * která se vykreslí až po otevření; u čísla stojí jen krátká výhrada. Test
+ * proto vysvětlivku nahrazuje obyčejným obalem, aby šlo ověřit i její obsah —
+ * hlídá, CO simulátor říká, ne v jaké vrstvě (vzor: `payable-tax.test.ts`).
+ */
+vi.mock('@/components/ui/info-popover', () => ({
+  InfoPopover: ({ children }: { children: React.ReactNode }) =>
+    createElement('span', { 'data-info': '' }, children),
+}));
 
 /**
  * Verdikt simulátoru (nález z panelového testování): prodej osvobozený
@@ -270,7 +281,10 @@ describe('věta verdiktu jmenuje limit, který pro režim platí (L12-01, L24-05
         : []),
     ]);
 
-  /** Věta verdiktu z vykreslené stránky (první odstavec karty „Verdikt“), bez pevných mezer. */
+  /**
+   * Verdikt z vykreslené stránky: nadpis a případná věta pod ním (oblast
+   * pojmenovaná „Verdikt“), spojené do jednoho textu bez pevných mezer.
+   */
   const verdictSentence = (
     regime: ProfileRow['regime'],
     quantity: number,
@@ -285,16 +299,20 @@ describe('věta verdiktu jmenuje limit, který pro režim platí (L12-01, L24-05
         params: { isin: NEW_LOT, kusy: String(quantity), cena: '520' },
       }),
     );
-    const block = /Verdikt<\/[a-z0-9]+>\s*<p[^>]*>(.*?)<\/p>/s.exec(html);
-    if (!block) throw new Error('Stránka simulátoru nevykreslila kartu Verdikt.');
-    return block[1]!
-      .replace(/<[^>]+>/g, '')
-      .replace(/ /g, ' ')
+    const block = /aria-label="Verdikt"[^>]*>.*?<h2[^>]*>(.*?)<\/h2>(?:<p[^>]*>(.*?)<\/p>)?<\/section>/s.exec(
+      html,
+    );
+    if (!block) throw new Error('Stránka simulátoru nevykreslila verdikt.');
+    return [block[1], block[2]]
+      .filter((part): part is string => part !== undefined)
+      .map((part) => part.replace(/<[^>]+>/g, ''))
+      .join(' ')
+      .replace(/\u00a0/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   };
 
-  const NEUTRAL = 'Prodej je zdanitelný — dopad níže.';
+  const NEUTRAL = 'Prodej je zdanitelný';
 
   it('R-09b: zaměstnanec při přechodu přes 20 000 Kč čte o limitu vedlejších příjmů a o přiznání', () => {
     // 40 ks = 20 800 Kč a 50 ks = 26 000 Kč — obojí pod 50 000 Kč (L24-05)
@@ -325,9 +343,7 @@ describe('věta verdiktu jmenuje limit, který pro režim platí (L12-01, L24-05
   });
 
   it('R-08b: paušalista čte totéž co dřív', () => {
-    expect(verdictSentence('PAUSAL', 98)).toBe(
-      'Tento prodej prolomí limit 50 000 Kč pro paušální daň.',
-    );
+    expect(verdictSentence('PAUSAL', 98)).toBe('Prodej prolomí limit 50 000 Kč pro paušální daň');
     expect(verdictSentence('PAUSAL', 96)).toBe(NEUTRAL); // 49 920 Kč
   });
 
@@ -371,8 +387,10 @@ describe('věta verdiktu jmenuje limit, který pro režim platí (L12-01, L24-05
    */
   it('R-09f: zaměstnanec pod limitem čte, že orientační daň neplatí', () => {
     const text = pageText('ZAMESTNANEC', 10); // 5 200 Kč, limit 20 000 Kč
+    // krátká výhrada stojí přímo u čísla, zbytek ve vysvětlivce
+    expect(text).toContain('platí se jen při podání přiznání');
     expect(text).toContain('Pod limitem 20 000 Kč přiznání nepodáváš');
-    expect(text).toContain('orientační daň výš neplatíš');
+    expect(text).toContain('orientační daň neplatíš');
     expect(text).toContain('Počítáme jen s příjmy, o kterých Danero ví.');
   });
 

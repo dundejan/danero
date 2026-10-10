@@ -94,6 +94,8 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
   const UNDER_LIMIT = 'Zatím ti povinnost podat přiznání nevzniká';
   const OVER_LIMIT = `Za rok ${YEAR} podáš daňové přiznání`;
   const CAVEAT = 'příjmů, které Danero eviduje';
+  /** Nadpis první sekce pod verdiktem — po redesignu „řádek formuláře → částka“. */
+  const FIRST_SECTION = 'Co zapsat do přiznání';
 
   /** Jediný zdanitelný příjem roku: zahraniční dividenda v dané hrubé výši. */
   const dividend = (grossCzk: string) =>
@@ -164,9 +166,9 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
     expect(classes).not.toContain('print:hidden');
     expect(classes).not.toContain('hidden');
 
-    // verdikt stojí nahoře — dřív než první karta s čísly i než termín podání
-    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Dílčí základ § 10'));
-    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Termín podání za rok'));
+    // verdikt stojí nahoře — dřív než řádky přiznání i než termín podání
+    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf(FIRST_SECTION));
+    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Termín podání'));
   });
 
   it('verdikt nese výhradu, že platí jen pro příjmy, které Danero eviduje', { timeout: 30_000 }, () => {
@@ -202,12 +204,19 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
     }
   });
 
-  /** Text karty verdiktu bez značek — od nadpisu po první kartu s čísly. */
+  /**
+   * Text verdiktu bez značek — od nadpisu po první sekci s čísly. Celé znění
+   * výhrady je na obrazovce ve vysvětlivce (ta se vykreslí až po otevření),
+   * v HTML ho nese odstavec určený pro tisk; krátká výhrada a případné
+   * sdělení o oznámení stojí vedle něj.
+   */
   const verdictCard = (html: string, headline: string): string => {
     const text = html.replace(/<[^>]+>/g, '');
     const from = text.indexOf(headline);
     expect(from, headline).toBeGreaterThan(-1);
-    return text.slice(from, text.indexOf('Dílčí základ § 10'));
+    const to = text.indexOf(FIRST_SECTION, from);
+    expect(to, FIRST_SECTION).toBeGreaterThan(from);
+    return text.slice(from, to);
   };
   const DEADLINE_ONLY_IF_FILING = /Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy/;
 
