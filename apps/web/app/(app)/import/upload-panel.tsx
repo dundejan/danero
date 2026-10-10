@@ -47,7 +47,7 @@ const GUIDE_GROUPS: GuideGroup[] = PLATFORM_GROUPS.map((group) => ({
 export function UploadPanel() {
   return (
     <Section
-      title="Nahrát výpis"
+      title="Nahrát výpisy"
       info={
         <InfoPopover label="Nahrání výpisu" title="Co se s výpisem stane" align="start">
           <p>

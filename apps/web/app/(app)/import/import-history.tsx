@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
+import { TextLink } from '@/components/ui/link';
 import { Group, Row } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import type { importBatches } from '@/db/schema';
@@ -192,18 +193,22 @@ function BatchDetails({ batch }: { batch: ImportBatchRow }) {
  * (počty), rozbalení ukáže hlášky k souboru a vrácení importu — to je vzácná
  * a nevratná akce, proto je o úroveň hlouběji a za potvrzením.
  *
- * `highlightedBatchId` je dávka, kterou uživatel právě nahrál: má-li chyby
- * nebo varování, řádek se otevře sám, aby se o nich dozvěděl bez hledání.
+ * `highlightedBatchIds` jsou dávky, které uživatel právě nahrál: každá, která
+ * má chyby nebo varování, se otevře sama, aby se o nich dozvěděl bez hledání
+ * (při nahrání víc souborů naráz ne jen ta poslední — R5-05).
+ *
+ * `olderHref` vede na delší seznam. Bez něj starší import nešel vrátit zpět
+ * vůbec — tlačítko je jen v jeho řádku (R2-05).
  */
 export function ImportHistory({
   batches,
-  limit,
-  highlightedBatchId,
+  olderHref,
+  highlightedBatchIds,
 }: {
   batches: ImportBatchRow[];
-  /** Kolik dávek stránka načítá — při plném seznamu to řekne patička. */
-  limit: number;
-  highlightedBatchId?: string;
+  /** Odkaz „Zobrazit starší“; chybí, když už starší importy nejsou. */
+  olderHref?: string;
+  highlightedBatchIds: ReadonlySet<string>;
 }) {
   if (batches.length === 0) {
     return (
@@ -216,10 +221,7 @@ export function ImportHistory({
   }
   return (
     <Section title="Historie importů">
-      <Group
-        footer={batches.length >= limit ? `Posledních ${limit} importů.` : undefined}
-        aria-label="Historie importů"
-      >
+      <Group aria-label="Historie importů">
         {batches.map((batch) => {
           const issues = batch.issues as BatchIssues;
           const hasIssues =
@@ -252,13 +254,18 @@ export function ImportHistory({
               key={batch.id}
               title={title}
               meta={wideDate}
-              open={(hasIssues && batch.id === highlightedBatchId) || undefined}
+              open={(hasIssues && highlightedBatchIds.has(batch.id)) || undefined}
             >
               <BatchDetails batch={batch} />
             </DisclosureRow>
           );
         })}
       </Group>
+      {olderHref && (
+        <TextLink href={olderHref} chevron className="type-footnote mt-2">
+          Zobrazit starší
+        </TextLink>
+      )}
     </Section>
   );
 }

@@ -4,14 +4,23 @@ import { Toast } from '@/components/toast';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { OpenOnHash } from '@/components/ui/open-on-hash';
 import { Group } from '@/components/ui/list';
+import { Notice } from '@/components/ui/notice';
 import { Section } from '@/components/ui/section';
 import { getDb } from '@/db';
 import { brokerAccounts, importBatches } from '@/db/schema';
 import { casesForBatches } from '@/lib/failed-imports';
-import { IMPORT_HISTORY_ANCHOR, importFeedback } from '@/lib/import-feedback';
+import {
+  HISTORY_MAX,
+  HISTORY_PAGE,
+  historyLimit,
+  IMPORT_HISTORY_ANCHOR,
+  importFeedback,
+  uploadedBatchIds,
+} from '@/lib/import-feedback';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
+import { getProfile } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 import { AliasForm } from './alias-form';
@@ -27,9 +36,6 @@ export const metadata = { title: 'Zdroje dat — Danero' };
 // default limit server action by běh utnul hned. 300 s je strop Vercel Hobby;
 // plná historie se do něj nevejde, proto se sync umí přerušit a navázat.
 export const maxDuration = 300;
-
-/** Kolik posledních importů historie ukazuje. */
-const HISTORY_LIMIT = 20;
 
 /**
  * Chybové hlášky podle kódu v adrese (`?chyba=`). Chyba říká, co se stalo
@@ -48,7 +54,7 @@ const ERROR_TEXTS: Record<string, string> = {
   ulozeni:
     'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v historii importů si zkontroluj, co se stihlo uložit.',
   'isin-pouzity':
-    'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív vrať import zpět (v historii importů), pak údaj ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.',
+    'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív v historii importů rozbal ten import a vrať ho zpět, pak údaj ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.',
 };
 
 const DEFAULT_ERROR_TEXT = 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.';
@@ -78,32 +84,39 @@ export default async function ImportPage({
   const chyba = firstParam(params.chyba);
   const ulozeno = firstParam(params.ulozeno);
   const feedback = importFeedback(params);
-  // dávka, kterou akce právě uložila — v historii se sama rozbalí, má-li hlášky
-  const uploadedBatchId = ulozeno === 'nahrano' ? firstParam(params.davka) : undefined;
-  const [batches, unmappedSource, accounts, aliases] = await Promise.all([
+  // Jeden dotaz pro historii, číselník i nepřečtené výpisy. Historie z něj
+  // ukazuje prvních `limit` (20, odkazem „Zobrazit starší“ po dvaceti dál);
+  // číselník a nepřečtené výpisy se dívají na všechno načtené — výzva nesmí
+  // zmizet jen proto, že uživatel mezitím importoval další soubory (R2-05).
+  const limit = historyLimit(params);
+  const [recentBatches, accounts, aliases] = await Promise.all([
     db
       .select()
       .from(importBatches)
       .where(eq(importBatches.userId, user.id))
       .orderBy(desc(importBatches.createdAt))
-      .limit(HISTORY_LIMIT),
-    // pro číselník se díváme hlouběji než historie (20) — výzva nesmí zmizet
-    // jen proto, že uživatel mezitím importoval další soubory
-    db
-      .select({ issues: importBatches.issues })
-      .from(importBatches)
-      .where(eq(importBatches.userId, user.id))
-      .orderBy(desc(importBatches.createdAt))
-      .limit(200),
+      .limit(HISTORY_MAX),
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
     loadAliases(db, user.id),
   ]);
+  const batches = recentBatches.slice(0, limit);
+  // kotva, která na stránce není, nechá polohu být — seznam se jen prodlouží
+  const olderHref =
+    recentBatches.length > limit
+      ? `/import?historie=${Math.min(limit + HISTORY_PAGE, HISTORY_MAX)}#starsi`
+      : undefined;
+  // Krok 2 cesty nového uživatele: profil má, data ještě ne. Stav se
+  // neukládá, odvozuje se z účtu (stejně jako na /vitejte).
+  const awaitingFirstData =
+    recentBatches.length === 0 &&
+    accounts.length === 0 &&
+    (await getProfile(db, user.id)) !== null;
   const t212 = accounts.find((account) => account.broker === 'trading212');
   const ibkr = accounts.find((account) => account.broker === 'ibkr');
 
   // nenamapované symboly z importů (bez těch, které už uživatel doplnil)
   const unmappedMap = new Map<string, UnmappedSymbol>();
-  for (const batch of unmappedSource) {
+  for (const batch of recentBatches) {
     for (const item of ((batch.issues as BatchIssues).unmapped ?? [])) {
       const known =
         item.broker === 'xtb'
@@ -131,14 +144,20 @@ export default async function ImportPage({
   // (jeden dotaz; cestou se samoléčí zaseknuté joby vč. odpojených účtů)
   const activeJobs = await activeSyncJobsByAccount(db, user.id);
 
-  // nepřečtené výpisy k vypsaným dávkám (originál si necháváme k rozboru)
+  // Nepřečtené výpisy (originál si necháváme k rozboru). Otevřený případ po
+  // uživateli něco chce, takže je vidět, i když jeho dávka z historie vypadla;
+  // vyřízený zůstává jen po dobu, co je jeho dávka na očích.
   const failedCases = await casesForBatches(
     db,
     user.id,
-    batches.map((batch) => batch.id),
+    recentBatches.map((batch) => batch.id),
   );
+  const shownBatchIds = new Set(batches.map((batch) => batch.id));
   // v pořadí historie, tedy od nejnovějšího
-  const unreadCases = batches.flatMap((batch) => failedCases.get(batch.id) ?? []);
+  const unreadCases = recentBatches.flatMap((batch) => {
+    const item = failedCases.get(batch.id);
+    return item && (item.status === 'open' || shownBatchIds.has(batch.id)) ? [item] : [];
+  });
 
   // chyby formulářů připojení mají hlášku přímo u pole
   const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr';
@@ -155,6 +174,12 @@ export default async function ImportPage({
       <AppToolbar title="Zdroje dat" />
       <OpenOnHash />
       <div className="max-w-[72rem] space-y-14 pt-2 md:pt-4">
+        {awaitingFirstData && (
+          <Notice title="Krok 2 ze 2 — přidej svoje obchody">
+            Nahraj výpis, nebo napoj brokera. Hned potom se otevře přehled, portfolio i podklady
+            k přiznání.
+          </Notice>
+        )}
         {chyba && !inlineOnly && (
           <Toast key={crypto.randomUUID()} kind="chyba" text={errorText} />
         )}
@@ -242,8 +267,8 @@ export default async function ImportPage({
               <UnreadStatements cases={unreadCases} />
               <ImportHistory
                 batches={batches}
-                limit={HISTORY_LIMIT}
-                highlightedBatchId={uploadedBatchId}
+                olderHref={olderHref}
+                highlightedBatchIds={uploadedBatchIds(params)}
               />
             </div>
           </div>
