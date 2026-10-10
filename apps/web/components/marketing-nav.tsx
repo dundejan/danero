@@ -9,13 +9,15 @@ import { cn } from '@/lib/utils';
 
 export type MarketingNavKey = 'platformy' | 'cenik' | 'caste-otazky' | 'o-projektu';
 
-// Kalkulačka v menu není (Janovo rozhodnutí 12. 7.) — žije v patičce
-// a v odkazech z hero/textů
+// Tři odkazy, každý odpovídá na jednu otázku návštěvníka: načte to mého
+// brokera, v čem je háček, a co dalšího se lidé ptají. Kalkulačka (Janovo
+// rozhodnutí 12. 7.) a stránka o autorovi žijí v patičce a v odkazech z textů;
+// klíč `o-projektu` v typu zůstává, aby ho stránka dál směla předat.
+// `/cenik` nese popisek „Proč zdarma“ — ceník bez cen by byl prázdné slovo.
 const LINKS: { key: MarketingNavKey; href: string; label: string }[] = [
   { key: 'platformy', href: '/platformy', label: 'Platformy' },
-  { key: 'cenik', href: '/cenik', label: 'Ceník' },
+  { key: 'cenik', href: '/cenik', label: 'Proč zdarma' },
   { key: 'caste-otazky', href: '/caste-otazky', label: 'Časté otázky' },
-  { key: 'o-projektu', href: '/o-projektu', label: 'O projektu' },
 ];
 
 /**
@@ -51,8 +53,8 @@ export function MarketingNav({
 
   return (
     <>
-      {/* pět odkazů se na tablet (md) nevejde — plná navigace až od lg */}
-      <nav className="hidden items-center gap-7 lg:flex" aria-label="Hlavní navigace">
+      {/* tři odkazy a dvě akce se vejdou už na tablet — menu pod tlačítkem jen na telefonu */}
+      <nav className="hidden items-center gap-7 md:flex" aria-label="Hlavní navigace">
         {LINKS.map((link) => (
           <Link
             key={link.key}
@@ -86,8 +88,8 @@ export function MarketingNav({
         )}
       </nav>
 
-      {/* mobil a tablet: hlavní výzva zůstává viditelná, zbytek pod tlačítkem menu */}
-      <div className="flex items-center gap-1 lg:hidden">
+      {/* telefon: hlavní výzva zůstává viditelná, zbytek pod tlačítkem menu */}
+      <div className="flex items-center gap-1 md:hidden">
         <Link
           href={signedIn ? '/prehled' : '/demo/prehled'}
           // viditelná výška 32 px, klikací plocha natažená na 44 px
@@ -134,7 +136,7 @@ export function MarketingNav({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               style={{ backgroundColor: 'var(--scrim)' }}
-              className="fixed inset-0 top-12 z-40 lg:hidden"
+              className="fixed inset-0 top-12 z-40 md:hidden"
             />
             <motion.div
               key="panel"
@@ -143,9 +145,9 @@ export function MarketingNav({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={SPRING_DEFAULT}
-              className="material-sheet absolute inset-x-0 top-full z-50 origin-top rounded-b-2xl shadow-floating lg:hidden"
+              className="material-sheet absolute inset-x-0 top-full z-50 origin-top rounded-b-2xl shadow-floating md:hidden"
             >
-              <nav className="px-5 pb-5 pt-2 md:px-8" aria-label="Mobilní navigace">
+              <nav className="px-5 pb-5 pt-2" aria-label="Mobilní navigace">
                 <ul className="divide-y divide-line/70">
                   {LINKS.map((link) => (
                     <li key={link.key}>

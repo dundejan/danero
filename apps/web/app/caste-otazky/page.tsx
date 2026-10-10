@@ -1,11 +1,13 @@
 import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { FAQ } from './faq';
+import { FAQ, FAQ_SECTIONS } from './faq';
 import { FaqList } from '@/components/faq-list';
 import { JsonLd } from '@/components/json-ld';
+import { DemoCta } from '@/components/marketing-blocks';
+import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { TextLink } from '@/components/ui/link';
 import { faqPageJsonLd } from '@/lib/json-ld';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
   title: 'Časté otázky — Danero',
@@ -13,35 +15,39 @@ export const metadata: Metadata = {
     'Musím kvůli investicím podávat přiznání? Které brokery Danero načte? Jak je to s bezpečností, kryptem a deriváty? Odpovědi na nejčastější otázky k hlídání daní z investic.',
 };
 
+/** Název oddílu vlevo, otázky vpravo — stejné sloupce drží i řádek s kontaktem. */
+const COLUMNS =
+  'grid gap-x-(--column-gap) gap-y-4 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)]';
+
 export default function CasteOtazkyPage() {
   return (
     <MarketingPage active="caste-otazky">
       <JsonLd data={faqPageJsonLd(FAQ)} />
-      <PageHero
-        eyebrow="FAQ"
-        title="Časté otázky"
-        lede={`Co lidi nejčastěji zajímá, než pustí Danero ke svým daním. Nenašel jsi odpověď? Napiš na ${OPERATOR.email} — odpovídám osobně.`}
-      />
+      <PageHero eyebrow="Časté otázky" title="Než Danero pustíš k daním" />
 
-      <div className="mt-12">
-        <FaqList items={FAQ} />
+      {/* oddíl = název vlevo, otázky vpravo; na telefonu název nad otázkami */}
+      <div className="mt-12 space-y-12 md:mt-16 md:space-y-16">
+        {FAQ_SECTIONS.map((section) => (
+          <section
+            key={section.title}
+            aria-label={section.title}
+            className={COLUMNS}
+          >
+            <h2 className="type-title-2 lg:pt-4">{section.title}</h2>
+            <FaqList items={section.items} />
+          </section>
+        ))}
       </div>
 
-      <p className="mt-8 max-w-3xl text-sm text-ink-muted">
-        Otázky přímo k ceně najdeš na stránce{' '}
-        <Link
-          href="/cenik"
-          className="font-medium text-accent-text underline underline-offset-2"
-        >
-          Ceník
-        </Link>
-        .
-      </p>
+      <div className={cn(COLUMNS, 'mt-10')}>
+        <p className="type-body text-ink-muted lg:col-start-2">
+          Nenašel jsi odpověď? Napiš na{' '}
+          <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — odpovídám
+          osobně.
+        </p>
+      </div>
 
-      <MarketingCta
-        title="Nejrychlejší odpověď: prostě si to vyzkoušej"
-        lede="Plné demo běží nad vzorovým portfoliem — ukazatele limitů, horizont osvobození i report. Bez registrace, nic se neukládá."
-      />
+      <DemoCta />
     </MarketingPage>
   );
 }

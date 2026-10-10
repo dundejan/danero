@@ -281,18 +281,14 @@ export async function MarketingFooter() {
         <div className="grid grid-cols-2 gap-x-8 gap-y-8 md:grid-cols-[minmax(0,5fr)_repeat(3,minmax(0,3fr))]">
           <div className="col-span-2 max-w-xs md:col-span-1">
             <Logo className="text-[1.0625rem] text-ink" />
-            <p className="mt-4">
-              Danero hlídá českým investorům daně z investic — limity, časové testy
-              i podklady k přiznání.
-            </p>
+            <p className="mt-4">Hlídač daní z investic. Je zdarma a má otevřený kód.</p>
           </div>
           <FooterColumn
             title="Danero"
             links={[
               { href: '/platformy', label: 'Platformy' },
               { href: '/kalkulacka', label: 'Kalkulačka' },
-              { href: '/cenik', label: 'Ceník' },
-              { href: '/demo/prehled', label: 'Demo' },
+              { href: '/cenik', label: 'Proč zdarma' },
             ]}
           />
           <FooterColumn
@@ -311,17 +307,13 @@ export async function MarketingFooter() {
               o řádek níž) a potvrzení objednávky na trvalém nosiči. Vypisovat
               ho na všech dvanácti veřejných stránkách povinnost nepřidává, jen
               zve k volání, které nikdo nezvedne. Preferovaný kanál je e-mail. */}
+          {/* Osobní odkazy autora (web, LinkedIn) jsou na `/o-projektu`; demo je
+              v liště každé stránky — patička je neopakuje. */}
           <FooterColumn
-            title="Autor"
+            title="Projekt"
             links={[
               { href: '/o-projektu', label: 'O projektu' },
-              { href: 'https://jandunder.dev', label: 'jandunder.dev', external: true },
               { href: SOURCE_URL, label: 'Zdrojový kód', external: true },
-              {
-                href: 'https://www.linkedin.com/in/jan-dunder',
-                label: 'LinkedIn',
-                external: true,
-              },
               { href: `mailto:${OPERATOR.email}`, label: OPERATOR.email, external: true },
             ]}
           />
