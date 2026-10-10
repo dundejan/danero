@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { toDataURL } from 'qrcode';
 import { SpecList, SpecRow, Split } from '@/components/marketing-blocks';
 import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
-import { typesetText } from '@/components/typeset';
 import { buttonVariants } from '@/components/ui/button';
 import { Chevron } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -205,7 +204,7 @@ export default async function CenikPage() {
             key={fact.text}
             className="grid gap-x-(--column-gap) py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-baseline md:py-5"
           >
-            <p className="type-reading measure text-pretty">{typesetText(fact.text)}</p>
+            <p className="type-reading measure text-pretty">{tidy(fact.text)}</p>
             <TextLink
               href={fact.link.href}
               chevron

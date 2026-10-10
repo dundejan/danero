@@ -129,6 +129,7 @@ export function LimitsInspector({
         <Sheet
           open={sheetOpen && !wide}
           onClose={() => setSheetOpen(false)}
+          onReopen={() => setSheetOpen(true)}
           label={current.title}
           title={current.title}
         >

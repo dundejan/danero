@@ -7,7 +7,7 @@ import { d, parseTransactions, type Money, type Transaction } from '@danero/shar
 import { OverviewView } from '@/components/views/overview-view';
 import { filingLimitTexts } from '@/lib/filing-limits';
 import { czk } from '@/lib/format';
-import { LIMIT_NAME } from '@/lib/limit-names';
+import { LIMIT_NAME, limitWithAmount } from '@/lib/limit-names';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
 import { configForYear } from '@/lib/tax-config';
 
@@ -156,12 +156,16 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
         (new RegExp(`option\\[value=${regime}\\]:checked[^>]*>([^<]*)<`).exec(html)?.[1] ?? '')
           .replace(/\s/g, ' ');
       const spaced = (text: string): string => text.replace(/\s/g, ' ');
-      expect(hintFor('ZAMESTNANEC')).toBe(
-        spaced(`Hlídá se limit vedlejších příjmů (${employeeLimit}).`),
-      );
-      expect(hintFor('JINE')).toBe(spaced(`Hlídá se limit pro podání přiznání (${generalLimit}).`));
+      // Limity se jmenují stejně jako na přehledu (R1B-10): jméno i částka jdou
+      // z `lib/limit-names.ts` a z konfigurace roku, ne z literálu ve stránce.
+      const watched = (kind: Parameters<typeof limitWithAmount>[0], amountCzk: string): string =>
+        spaced(`Hlídá se ${limitWithAmount(kind, d(amountCzk))}.`);
+      expect(hintFor('ZAMESTNANEC')).toBe(watched('EMPLOYEE_SIDE_INCOME', limits.employeeSideIncome));
+      expect(hintFor('ZAMESTNANEC')).toContain(`limit vedlejších příjmů (${spaced(employeeLimit)})`);
+      expect(hintFor('JINE')).toBe(watched('GENERAL_FILING', limits.generalFiling));
+      expect(hintFor('JINE')).toContain(`limit pro podání přiznání (${spaced(generalLimit)})`);
       // limit paušální daně (§ 7a) se nemění
-      // limity se jmenují stejně jako na přehledu (R1B-10)
+      expect(hintFor('PAUSAL')).toBe(watched('FLAT_TAX', limits.flatTaxOtherIncome));
       expect(hintFor('PAUSAL')).toBe('Hlídá se limit paušální daně (50 000 Kč).');
     });
 

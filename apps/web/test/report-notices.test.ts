@@ -288,20 +288,12 @@ describe('zafixovaný rok (R4-02, R1B-12)', () => {
   });
 });
 
-describe('výhrada „není daňové poradenství“ je i na obrazovce (R5-01)', () => {
-  // Zadání majitele: tyhle texty co nejkratší. Na obrazovce pár slov s odkazem
-  // na podmínky (závazné znění, čl. 1), celá věta jen v tisku.
+describe('výhrada „není daňové poradenství“ (R5-01)', () => {
+  // Zadání majitele: tyhle texty co nejkratší. Na obrazovce ji nese patička
+  // aplikace i dema na každé stránce (krátký odkaz na čl. 1 podmínek, hlídá
+  // `test/app-shell.test.ts`); report vlastní řádek nemá, jinak by na jedné
+  // obrazovce stála dvakrát. Celá věta je jen v tisku.
   const PRINTED = 'Danero je výpočetní nástroj, nikoli daňové poradenství.';
-  const ON_SCREEN = 'Výpočetní nástroj, ne daňové poradenství.';
-
-  it('report ji má jednou, krátce, na konci stránky a s odkazem na podmínky', () => {
-    const html = render(100);
-    const lastSection = html.lastIndexOf('Použité kurzy');
-    expect(lastSection).toBeGreaterThan(-1);
-    expect(html.match(new RegExp(ON_SCREEN.replace(/\./g, '\\.'), 'g'))).toHaveLength(1);
-    expect(html.indexOf(ON_SCREEN)).toBeGreaterThan(lastSection);
-    expect(html).toMatch(new RegExp(`<a[^>]*href="/podminky"[^>]*>${ON_SCREEN.replace(/\./g, '\\.')}</a>`));
-  });
 
   it('celá věta zůstává jen v tiskové hlavičce', () => {
     const html = render(100);
@@ -309,8 +301,12 @@ describe('výhrada „není daňové poradenství“ je i na obrazovce (R5-01)',
     expect(html.indexOf(PRINTED)).toBeLessThan(html.indexOf('Co zapsat do přiznání'));
   });
 
-  it('v demu vlastní řádek není — demo má výhradu v patičce', () => {
-    expect(render(100, {}, { demo: true }).includes(ON_SCREEN)).toBe(false);
+  it.each([
+    ['aplikace', false],
+    ['demo', true],
+  ])('report (%s) na obrazovce vlastní řádek výhrady nemá — je v patičce', (_, demo) => {
+    const html = render(100, {}, { demo });
+    expect(html.match(/daňové poradenství/g)).toHaveLength(1);
   });
 });
 

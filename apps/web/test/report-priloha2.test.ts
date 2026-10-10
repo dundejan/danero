@@ -243,7 +243,9 @@ describe('Řádky tiskopisu v reportu mají vždy hodnotu (R1B-01)', () => {
         // číslo řádku tiskopisu stojí v prvním sloupci řádku seznamu (`LineRow`)
         const line = />(ř\. [^<]+)<\/span><span class="min-w-0">/.exec(chunk)?.[1];
         if (!line) return [];
-        const value = /<span class="text-right[^"]*">(.*?)<\/span><\/div>/s.exec(chunk)?.[1] ?? '';
+        // hodnota je v `Row` zabalená ještě jednou (drží pohromadě se šipkou odkazu)
+        const value =
+          /<span class="[^"]*\btext-right\b[^"]*">(.*?)<\/span><\/span><\/div>/s.exec(chunk)?.[1] ?? '';
         return [{ line, value: value.replace(/<[^>]+>/g, '').trim() }];
       });
 

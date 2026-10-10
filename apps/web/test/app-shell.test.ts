@@ -41,7 +41,11 @@ describe('navigace aplikace', () => {
   });
 
   it('zavíraný sheet jde hodem vrátit a rodič se o tom dozví', () => {
-    for (const file of ['components/nav-rail.tsx', 'components/ui/info-popover.tsx']) {
+    for (const file of [
+      'components/nav-rail.tsx',
+      'components/ui/info-popover.tsx',
+      'components/limits-inspector.tsx',
+    ]) {
       expect(read(file), file).toContain('onReopen=');
     }
   });
@@ -50,8 +54,16 @@ describe('navigace aplikace', () => {
 describe('skořápka aplikace', () => {
   it('výhradu „není daňové poradenství“ má aplikace i demo — krátce a odkazem na podmínky (R1B-23, R5-01)', () => {
     // přihlášený uživatel ji dřív neměl vůbec; demo mělo celou větu
-    expect(NOT_TAX_ADVICE).toEqual({ href: '/podminky', label: 'Není daňové poradenství' });
-    for (const file of ['app/(app)/layout.tsx', 'app/demo/layout.tsx']) {
+    expect(NOT_TAX_ADVICE).toEqual({
+      href: '/podminky#co-danero-je',
+      label: 'Není daňové poradenství',
+    });
+    // veřejná patička bere znění i cíl z téže konstanty
+    for (const file of [
+      'app/(app)/layout.tsx',
+      'app/demo/layout.tsx',
+      'components/marketing-page.tsx',
+    ]) {
       const source = read(file);
       expect(source, file).toContain('NOT_TAX_ADVICE');
       // dlouhé znění patří do podmínek užití, ne do patičky každé stránky

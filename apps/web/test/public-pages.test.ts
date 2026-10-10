@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 
 /**
  * Tón veřejných stránek po revizi redesignu (10. 10. 2026).
@@ -214,7 +215,7 @@ describe('„zdarma“ jednou v úvodu a jednou v pásu (R1A-06)', () => {
     // patička: věta pod logem je táž jako první věta úvodu; „Zdrojový kód“
     // v ní zůstává jen jako odkaz ve sloupci Projekt
     const footer = read('components/marketing-page.tsx');
-    expect(footer).toContain('{typesetText(SITE_TAGLINE)}');
+    expect(footer).toContain('{tidy(SITE_TAGLINE)}');
     expect(withoutComments(footer)).not.toMatch(/otevřen\S* kód|open[ -]?source|osobní\S* projekt/i);
   });
 
@@ -313,8 +314,12 @@ describe('patička: vymezení odkazem, ne odstavcem', () => {
   it('místo věty o daňovém poradenství je odkaz na článek 1 podmínek', () => {
     const shell = withoutComments(read('components/marketing-page.tsx'));
     const footer = shell.slice(shell.indexOf('export async function MarketingFooter'));
-    expect(footer).toMatch(/href=\{DISCLAIMER_HREF\}[\s\S]{0,160}Není daňové poradenství/);
-    expect(shell).toContain("const DISCLAIMER_HREF = '/podminky#co-danero-je';");
+    // znění i cíl jsou z jedné konstanty, společné s patičkou aplikace a dema
+    expect(footer).toMatch(/href=\{NOT_TAX_ADVICE\.href\}[\s\S]{0,160}\{NOT_TAX_ADVICE\.label\}/);
+    expect(NOT_TAX_ADVICE).toEqual({
+      href: '/podminky#co-danero-je',
+      label: 'Není daňové poradenství',
+    });
     // dlouhé znění do patičky nepatří…
     expect(footer).not.toMatch(/523\/1992|odpovídá poplatník/);
   });

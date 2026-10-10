@@ -56,16 +56,7 @@ export function MarketingNav({
       }
     };
     document.addEventListener('keydown', onKeyDown);
-    // Otevřené menu je modální: stránka pod ním se nesmí dát odrolovat (menu
-    // by zůstalo viset nad jiným místem). Lišta je na telefonu bez posuvníku,
-    // takže zámek stránkou nepohne.
-    const root = document.documentElement;
-    const previousOverflow = root.style.overflow;
-    root.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      root.style.overflow = previousOverflow;
-    };
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
   return (
@@ -116,7 +107,7 @@ export function MarketingNav({
           // viditelná výška 32 px, klikací plocha natažená na 44 px
           className={cn(
             buttonVariants({ variant: 'primary', size: 'sm' }),
-            'relative pointer-coarse:h-8 after:absolute after:inset-x-0 after:-inset-y-1.5',
+            'relative pointer-coarse:min-h-8 after:absolute after:inset-x-0 after:-inset-y-1.5',
           )}
         >
           {signedIn ? 'Do aplikace' : 'Demo'}
@@ -147,10 +138,14 @@ export function MarketingNav({
       <AnimatePresence>
         {open && (
           <>
-            {/* scrim: ztmaví stránku a klepnutí mimo panel menu zavře */}
+            {/* Závoj: ztmaví stránku a klepnutí mimo panel menu zavře. Otevřené
+                menu je modální — `data-scroll-lock` zamkne rolování stránky pod
+                ním (pravidlo v globals.css, stejné jako pod sheetem), `touch-none`
+                brání tahu prstem. */}
             <motion.div
               key="scrim"
               aria-hidden
+              data-scroll-lock
               onClick={() => setOpen(false)}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

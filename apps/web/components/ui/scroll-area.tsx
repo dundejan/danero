@@ -10,6 +10,10 @@ import { cn } from '@/lib/utils';
  * obyčejném divu zakázaný atribut.
  *
  * Stínovou affordanci na hranách nese třída `.scroll-shadows` z globals.css.
+ *
+ * `relative`: skrytý text pro čtečku uvnitř (`sr-only` v hlavičce tabulky,
+ * `caption`) je absolutně umístěný — bez umístěného předka ho posuvná oblast
+ * neořízne a roztáhne celou stránku o to, oč tabulka přesahuje.
  */
 export function ScrollArea({
   label,
@@ -26,7 +30,7 @@ export function ScrollArea({
       role="region"
       aria-label={label}
       tabIndex={0}
-      className={cn('scroll-shadows overflow-x-auto', className)}
+      className={cn('scroll-shadows relative overflow-x-auto', className)}
     >
       {children}
     </div>

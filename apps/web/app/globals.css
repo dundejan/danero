@@ -630,11 +630,13 @@
 /* Vodorovně rolovatelné tabulky (mobil): stínová affordance na hranách —
    bez ní vypadá oříznutý poslední sloupec jako rozbitý layout. Čistě CSS
    (Lea Verou scroll shadows): krycí přechody rolují s obsahem
-   (attachment: local), stínové drží na hranách. Předpoklad: plocha --surface. */
+   (attachment: local), stínové drží na hranách. Krycí přechod musí mít barvu
+   plochy pod tabulkou: výchozí je --surface, na jiné ploše (pás `canvas` na
+   veřejné stránce) ji volající předá v `--scroll-shadows-surface`. */
 .scroll-shadows {
   background:
-    linear-gradient(to right, var(--surface) 30%, transparent) 0 0,
-    linear-gradient(to left, var(--surface) 30%, transparent) 100% 0,
+    linear-gradient(to right, var(--scroll-shadows-surface, var(--surface)) 30%, transparent) 0 0,
+    linear-gradient(to left, var(--scroll-shadows-surface, var(--surface)) 30%, transparent) 100% 0,
     linear-gradient(to right, color-mix(in srgb, var(--ink) 14%, transparent), transparent) 0 0,
     linear-gradient(to left, color-mix(in srgb, var(--ink) 14%, transparent), transparent) 100% 0;
   background-size:

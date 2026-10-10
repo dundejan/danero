@@ -36,7 +36,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
             href="/registrace"
             className="-my-3 inline-flex min-h-11 items-center font-medium text-accent-text hover:underline active:opacity-60"
           >
-            Založit účet zdarma
+            Založit účet
             <span aria-hidden className="ml-1">
               ›
             </span>

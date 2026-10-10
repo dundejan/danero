@@ -102,11 +102,8 @@ export default async function AccountSettingsPage({
             <DisclosureRow
               key={`email-${renderKey}`}
               title="E-mail"
-              meta={
-                <span className="block max-w-[11rem] truncate @lg:max-w-[22rem]" title={user.email}>
-                  {user.email}
-                </span>
-              }
+              // dlouhou adresu složí řádek sám (tichý údaj má nejvýš 40 % šířky)
+              meta={user.email}
               open={emailError !== null}
             >
               <form action={changeEmailAction} className="max-w-[20rem] space-y-4 pt-1 text-ink">
@@ -276,10 +273,11 @@ export default async function AccountSettingsPage({
               </Group>
             </Disclosure>
           )}
-          {/* L7-01: pod md není postranní panel, a tedy ani jeho „Odhlásit se“ —
-              bez tohohle tlačítka se na telefonu odhlásit nedalo vůbec. Od md
-              výš je schované, ať na stránce nejsou dvě tlačítka téhož jména
-              (hranice musí sedět s `md:flex` panelu). */}
+          {/* L7-01: pod md není postranní panel, a tedy ani jeho „Odhlásit se“.
+              Na telefonu je odhlášení i v sheetu „Více“ (R1B-08); tady zůstává,
+              protože se hledá u přihlášených zařízení. Od md výš je schované, ať
+              na stránce nejsou dvě tlačítka téhož jména (hranice musí sedět
+              s `md:flex` panelu). */}
           <div className="mt-5 space-y-2 md:hidden">
             <SignOutButton
               className={buttonVariants({ variant: 'secondary', className: 'w-full' })}
@@ -299,7 +297,7 @@ export default async function AccountSettingsPage({
             </InfoPopover>
           }
         >
-          <ThemeToggle withLabels />
+          <ThemeToggle />
         </Section>
 
         <Section title="Tvoje data">

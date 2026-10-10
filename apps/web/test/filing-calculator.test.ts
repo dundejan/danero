@@ -291,7 +291,7 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
     );
     // kdyby komponenta přibrala další stav, fronta by se rozešla s pořadím
     expect(seededState.queue).toEqual([]);
-    // sazba (`typesetText`) v textu vymění obyčejné mezery za pevné — tady jde o znění
+    // sazba (`tidy`) v textu vymění obyčejné mezery za pevné — tady jde o znění
     return html.replace(/<[^>]+>/g, ' ').replaceAll('\u00a0', ' ').replaceAll('\u2011', '-');
   };
 

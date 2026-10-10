@@ -1854,26 +1854,18 @@ export function ReportView({
             </Section>
           </div>
         </div>
+      </div>
+      {/* Konec stránky: tisk na telefonu. V liště se tam vedle exportu nevejde
+          a pod verdiktem zabíral nejcennější místo pro akci, kterou tam skoro
+          nikdo neudělá (R1B-27). Stojí mimo sloupec sekcí — skrytý poslední
+          prvek by pod poslední sekcí nechal na širokém okně prázdný odstup.
 
-        {/* Konec stránky: tisk na telefonu a výhrada.
-            - Tisk: v liště se na telefonu vedle exportu nevejde; pod verdiktem
-              zabíral nejcennější místo pro akci, kterou tam skoro nikdo
-              neudělá (R1B-27).
-            - Výhrada: do redesignu stála pod průvodcem, pak zůstala jen na
-              papíře (R5-01). Na obrazovce pár slov s odkazem na podmínky,
-              kde je závazné znění (čl. 1) — jednou, na konci; celá věta je
-              jen v tisku, který z aplikace odchází jako dokument. Demo má
-              výhradu v patičce, proto tu podruhé není. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 print:hidden">
-          {!demo && (
-            <p className="type-caption text-ink-muted">
-              <TextLink href="/podminky" className="font-normal text-ink-muted">
-                Výpočetní nástroj, ne daňové poradenství.
-              </TextLink>
-            </p>
-          )}
-          <PrintButton long className="sm:hidden" />
-        </div>
+          Výhradu „není daňové poradenství“ report na obrazovce vlastní nemá:
+          nese ji patička aplikace i dema na každé stránce (`NOT_TAX_ADVICE`,
+          R5-01). Celá věta zůstává v tiskové hlavičce — tisk z aplikace
+          odchází jako dokument a patička se netiskne. */}
+      <div className="mt-10 print:hidden sm:hidden">
+        <PrintButton long />
       </div>
     </>
   );

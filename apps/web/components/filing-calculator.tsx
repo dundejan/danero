@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { FilingLimitTexts } from '@/lib/filing-limits';
 import { cn } from '@/lib/utils';
-import { typesetText } from '@/components/typeset';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { StatusLabel, type Tone } from '@/components/ui/status';
+import { tidy } from '@/lib/typography';
 
 /**
  * Mini kalkulačka „Musím podat přiznání?“: pár segmentovaných otázek →
@@ -76,17 +76,17 @@ function Question<T extends string | boolean>({
   return (
     <div className="py-6 first:pt-0 last:pb-0">
       <div className="flex items-start gap-1.5">
-        <p className="type-title-3 text-pretty">{typesetText(question)}</p>
+        <p className="type-title-3 text-pretty">{tidy(question)}</p>
         {info && (
           <InfoPopover label={info.label} align="start">
             {info.body.map((paragraph) => (
-              <p key={paragraph}>{typesetText(paragraph)}</p>
+              <p key={paragraph}>{tidy(paragraph)}</p>
             ))}
           </InfoPopover>
         )}
       </div>
       {hint && (
-        <p className="type-footnote mt-1.5 text-pretty text-ink-muted">{typesetText(hint)}</p>
+        <p className="type-footnote mt-1.5 text-pretty text-ink-muted">{tidy(hint)}</p>
       )}
       <SegmentedControl
         ariaLabel={question}
@@ -536,13 +536,13 @@ export function KalkulackaPriznani({
           {shown ? (
             <>
               <StatusLabel tone={shown.tone}>{shown.status}</StatusLabel>
-              <h2 className="type-title-1 mt-3 text-balance">{typesetText(shown.title)}</h2>
+              <h2 className="type-title-1 mt-3 text-balance">{tidy(shown.title)}</h2>
               <p className="type-body mt-3 text-pretty text-ink-muted">
-                {reason && typesetText(reason)}
+                {reason && tidy(reason)}
               </p>
               <ul className="type-footnote mt-5 space-y-2 text-pretty text-ink-muted">
                 {verdict !== 'nejasne' && (
-                  <li>{typesetText('Orientačně — přesně to spočítá aplikace z tvých dat.')}</li>
+                  <li>{tidy('Orientačně — přesně to spočítá aplikace z tvých dat.')}</li>
                 )}
                 {/* R-09d: osvobozeno ≠ bez povinností — oznámení nad 5 mil. Kč má
                   vlastní pokutu 0,1–15 % (§ 38w), takže se o něm musí dozvědět
@@ -550,17 +550,17 @@ export function KalkulackaPriznani({
                   vidět, paragraf a důvod kratší lhůty jsou ve vysvětlivce. */}
                 {verdict === 'osvobozeno' && (
                   <li>
-                    {typesetText(
+                    {tidy(
                       'Výjimka: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu oznamuje — do tří měsíců po konci roku.',
                     )}{' '}
                     <InfoPopover label="Oznámení osvobozeného příjmu" align="end" className="-my-1">
-                      <p>{typesetText(OZNAMENI_5M)}</p>
+                      <p>{tidy(OZNAMENI_5M)}</p>
                     </InfoPopover>
                   </li>
                 )}
               </ul>
               <div className="mt-6 border-t border-line/70 pt-5">
-                <p className="type-callout text-pretty">{typesetText(shown.next)}</p>
+                <p className="type-callout text-pretty">{tidy(shown.next)}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
                   <Link href="/demo/prehled" className={buttonVariants({ variant: 'tinted' })}>
                     Vyzkoušet demo
@@ -575,7 +575,7 @@ export function KalkulackaPriznani({
             <>
               <h2 className="type-title-3">Ještě jedna odpověď a verdikt je hotový</h2>
               <p className="type-callout mt-2 text-pretty text-ink-muted">
-                {typesetText(`Chybí odpověď na otázku „${skippedQuestion}“.`)}
+                {tidy(`Chybí odpověď na otázku „${skippedQuestion}“.`)}
               </p>
             </>
           ) : (

@@ -2,15 +2,16 @@ import Link from 'next/link';
 import { connection } from 'next/server';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
+import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { currentUser } from '@/lib/session';
 import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
 import { SITE_TAGLINE } from '@/lib/site';
-import { typesetText } from '@/components/typeset';
 import { buttonVariants } from '@/components/ui/button';
 import { TextLink } from '@/components/ui/link';
 import { cn } from '@/lib/utils';
+import { tidy } from '@/lib/typography';
 
 /**
  * Skořápka veřejných stránek v redakčním jazyce: přilepená průsvitná lišta,
@@ -130,11 +131,11 @@ export function BandHeading({
           centered ? 'max-w-[20ch]' : 'max-w-[18ch]',
         )}
       >
-        {typesetText(title)}
+        {tidy(title)}
       </Heading>
       {lede && (
         <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">
-          {typeof lede === 'string' ? typesetText(lede) : lede}
+          {typeof lede === 'string' ? tidy(lede) : lede}
         </p>
       )}
     </div>
@@ -158,9 +159,9 @@ export function PageHero({
   return (
     <div className="pt-14 md:pt-24">
       {eyebrow && <p className="type-callout mb-3 font-semibold text-ink-muted">{eyebrow}</p>}
-      <h1 className="type-headline max-w-[20ch] text-balance">{typesetText(title)}</h1>
+      <h1 className="type-headline max-w-[20ch] text-balance">{tidy(title)}</h1>
       {lede && (
-        <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">{typesetText(lede)}</p>
+        <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">{tidy(lede)}</p>
       )}
     </div>
   );
@@ -199,7 +200,7 @@ export async function PageClosing() {
       <div className="wrap-wide">
         <div className="flex flex-col gap-x-10 gap-y-4 border-b border-line py-10 md:flex-row md:items-center md:justify-between md:py-12">
           <p className="type-reading measure text-pretty">
-            {typesetText(user ? 'Účet už máš — stačí se do něj vrátit.' : CLOSING_SENTENCE)}
+            {tidy(user ? 'Účet už máš — stačí se do něj vrátit.' : CLOSING_SENTENCE)}
           </p>
           <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2">
             {user ? (
@@ -222,12 +223,6 @@ export async function PageClosing() {
     </section>
   );
 }
-
-/**
- * Kam vede odkaz „Není daňové poradenství“ z patičky: článek 1 podmínek užití
- * („Co Danero je (a co není)“), kde je vymezení napsané celé a závazně.
- */
-const DISCLAIMER_HREF = '/podminky#co-danero-je';
 
 interface FooterLink {
   href: string;
@@ -294,7 +289,7 @@ export async function MarketingFooter() {
             {/* jen co Danero je: že je zdarma, říká titulek úvodu a stránka
                 „Proč zdarma“ (odkaz vedle), a o kódu mluví až odkaz „Zdrojový
                 kód“ — patička na každé stránce neopakuje ani jedno */}
-            <p className="mt-4">{typesetText(SITE_TAGLINE)}</p>
+            <p className="mt-4">{tidy(SITE_TAGLINE)}</p>
           </div>
           <FooterColumn
             title="Danero"
@@ -358,10 +353,10 @@ export async function MarketingFooter() {
                 Ochrana soukromí
               </Link>
               <Link
-                href={DISCLAIMER_HREF}
+                href={NOT_TAX_ADVICE.href}
                 className="flex min-h-11 items-center hover:text-ink active:opacity-60"
               >
-                Není daňové poradenství
+                {NOT_TAX_ADVICE.label}
               </Link>
             </p>
             <ThemeToggle />

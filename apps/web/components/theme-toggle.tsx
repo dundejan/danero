@@ -18,7 +18,7 @@ const MODES = [
  *
  * Popisky jsou všude stejné („Podle systému / Světlý / Tmavý“) — dřív měl
  * přepínač v patičce dema zkrácené „Auto“ a tentýž prvek se na dvou místech
- * jmenoval jinak. Vlastnost `withLabels`, která je rozlišovala, je bez účinku.
+ * jmenoval jinak.
  *
  * Změna vzhledu stránku prolne (150 ms, `::view-transition` v globals.css):
  * skok z bílé do černé je náraz jasu. S omezeným pohybem a v prohlížeči, který
@@ -27,8 +27,6 @@ const MODES = [
 export function ThemeToggle({
   className,
 }: {
-  /** @deprecated Bez účinku — popisky jsou plné vždy. */
-  withLabels?: boolean;
   className?: string;
 }) {
   const { theme, setTheme } = useTheme();

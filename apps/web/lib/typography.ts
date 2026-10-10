@@ -1,19 +1,36 @@
 /**
  * Česká sazba pro texty skládané z řetězců — jediný pomocník pro celý web
- * (titulky, perexy, popisky, texty vysvětlivek).
+ * (titulky, perexy, popisky, texty vysvětlivek, dlouhé texty veřejných stránek).
  *
  * Jednopísmenná předložka nebo spojka nesmí zůstat viset na konci řádku
  * („v / březnu“), číslo se nesmí odtrhnout od jednotky („100 / %“,
- * „50 000 / Kč“), paragraf od svého čísla („§ / 72“) a „e-mail“ se nesmí
- * zlomit ve spojovníku. U velkého titulku, kde má řádek tři slova, je každá
- * taková chyba vidět na první pohled.
+ * „50 000 / Kč“, „3 / roky“), paragraf ani zkratka od toho, co uvádí
+ * („§ / 72“, „čl. / 10“), datum se nesmí rozlomit uvnitř („15. 2. / 2025“),
+ * řádek nesmí začínat pomlčkou a „e-mail“ se nesmí zlomit ve spojovníku.
+ * U velkého titulku, kde má řádek tři slova, je každá taková chyba vidět na
+ * první pohled; v dlouhých textech jich recenze redesignu našla desítky.
  *
  * Čistá funkce nad řetězcem — vkládá jen nezlomitelné mezery (U+00A0)
- * a nezlomitelný spojovník (U+2011), znění textu nemění. Do dat ani do textů,
- * které se s něčím porovnávají (klíče, hodnoty polí), nepatří.
+ * a nezlomitelný spojovník (U+2011), znění textu nemění (u právních textů to
+ * hlídá `test/typeset.test.ts`). Do dat ani do textů, které se s něčím
+ * porovnávají (klíče, hodnoty polí), nepatří.
+ *
+ * Text psaný v JSX (odstavec s odkazy a tučnými místy) prochází
+ * `typeset()` z `components/typeset.tsx`, který tuhle funkci pustí na každý
+ * textový list. Pravidla jsou jen tady — jedno místo pravdy.
  */
-const NBSP = ' ';
-const NB_HYPHEN = '‑';
+const NBSP = '\u00a0';
+const NB_HYPHEN = '\u2011';
+
+/**
+ * Jednotky a počítaná slova, která se nesmí odtrhnout od čísla. Za slovem
+ * nesmí pokračovat písmeno („5 letadel“ jednotka není).
+ */
+const UNITS =
+  'Kč|ks|let|letech|roky|rok|roku|měsíce|měsíců|měsíc|dní|dnech|dnů|dny|dnem|hodin|hodiny|minutu|minut|milionů|milionu|miliony|mil\\.|tis\\.|Sb\\.';
+
+const MONTHS =
+  'ledna|února|března|dubna|května|června|července|srpna|září|října|listopadu|prosince';
 
 export function tidy(text: string): string {
   return (
@@ -24,10 +41,24 @@ export function tidy(text: string): string {
       .replace(new RegExp(`(?<=^|[\\s${NBSP}(„])([ksvzouaiKSVZOUAI]) (?=\\S)`, 'g'), `$1${NBSP}`)
       // skupiny číslic v částce („100 000“)
       .replace(/(\d) (?=\d{3}(?!\d))/g, `$1${NBSP}`)
-      // číslo a jednotka
-      .replace(/(\d) (?=(%|Kč|ks|let|dní|mil\.|tis\.))/g, `$1${NBSP}`)
-      // značka paragrafu a zkratky před číslem („§ 72“, „odst. 6“, „č. 3“)
+      // číslo a jednotka („100 %“, „50 000 Kč“, „3 roky“, „72 hodin“, „40 mil. Kč“)
+      .replace(/(\d) (?=%)/g, `$1${NBSP}`)
+      .replace(new RegExp(`(\\d) (?=(?:${UNITS})(?![\\p{L}]))`, 'gu'), `$1${NBSP}`)
+      .replace(/(mil\.|tis\.) (?=Kč)/g, `$1${NBSP}`)
+      // značka paragrafu a zkratky před tím, co uvádějí („§ 72“, „odst. 6“,
+      // „č. 3“, „čl. 10“, „ř. 86“, „tzv. elektronické“)
       .replace(/(§|odst\.|písm\.|č\.) (?=\S)/g, `$1${NBSP}`)
+      .replace(/(?<![\p{L}])(čl\.|str\.|ř\.|tzv\.|např\.) (?=\S)/gu, `$1${NBSP}`)
+      // den a měsíc číslem, případně i rok: „15. 2.“, „15. 2. 2025“
+      .replace(/(?<!\d)(\d{1,2}\.) (?=\d{1,2}\.)/g, `$1${NBSP}`)
+      .replace(
+        new RegExp(`(?<!\\d)(\\d{1,2}\\.[ ${NBSP}]\\d{1,2}\\.) (?=\\d{4}(?!\\d))`, 'g'),
+        `$1${NBSP}`,
+      )
+      // den a měsíc slovem: „10. ledna“
+      .replace(new RegExp(`(?<!\\d)(\\d{1,2}\\.) (?=(?:${MONTHS})(?![\\p{L}]))`, 'gu'), `$1${NBSP}`)
+      // pomlčka zůstává na konci řádku u slova, za kterým stojí
+      .replace(/ ([—–])(?= |$)/g, `${NBSP}$1`)
       .replace(/\b([eE])-mail/g, `$1${NB_HYPHEN}mail`)
   );
 }

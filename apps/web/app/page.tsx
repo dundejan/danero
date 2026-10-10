@@ -12,6 +12,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
 import { Notice } from '@/components/ui/notice';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { OverviewView } from '@/components/views/overview-view';
 import { PLATFORM_COUNTS, PLATFORMS, type PlatformInfo } from '@/lib/brokers-catalog';
@@ -126,37 +127,45 @@ function VariantTable({
   defaults: MethodChoice;
 }) {
   return (
-    <Table>
-      <caption className="sr-only">Daň z investic podle metody párování a kurzu</caption>
-      <thead>
-        <tr>
-          <Th>Metoda</Th>
-          <Th>Kurz</Th>
-          <Th align="right">Daň z investic</Th>
-          <Th>
-            <span className="sr-only">Poznámka</span>
-          </Th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <Tr key={variantKey(row)}>
-            <Td className="font-medium">{METHOD_LABEL[row.matchingMethod]}</Td>
-            <Td className="text-ink-muted">{FX_LABEL[row.fxMethod]}</Td>
-            <Td align="right" className="whitespace-nowrap">
-              {czk(row.taxCzk)}
-            </Td>
-            <Td className="type-caption whitespace-nowrap">
-              {isRecommended(row, recommended) && (
-                <span className="font-semibold text-accent-text">nejvýhodnější</span>
-              )}
-              {isRecommended(row, recommended) && isDefault(row, defaults) && ' · '}
-              {isDefault(row, defaults) && <span className="text-ink-muted">výchozí</span>}
-            </Td>
-          </Tr>
-        ))}
-      </tbody>
-    </Table>
+    // Při zvětšeném písmu se čtyři sloupce do telefonu nevejdou — posouvá se
+    // tabulka uvnitř, ne celá úvodní stránka (při 200 % přetékala o 90 px).
+    // Název nese `aria-label`: skrytý `caption` v posuvné oblasti sám přetéká.
+    <ScrollArea
+      label="Daň z investic podle metody párování a kurzu"
+      // tabulka stojí v pásu `canvas` — krycí přechod stínů musí mít jeho barvu
+      className="[--scroll-shadows-surface:var(--canvas)]"
+    >
+      <Table aria-label="Daň z investic podle metody párování a kurzu">
+        <thead>
+          <tr>
+            <Th>Metoda</Th>
+            <Th>Kurz</Th>
+            <Th align="right">Daň z investic</Th>
+            <Th>
+              <span className="sr-only">Poznámka</span>
+            </Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <Tr key={variantKey(row)}>
+              <Td className="font-medium">{METHOD_LABEL[row.matchingMethod]}</Td>
+              <Td className="text-ink-muted">{FX_LABEL[row.fxMethod]}</Td>
+              <Td align="right" className="whitespace-nowrap">
+                {czk(row.taxCzk)}
+              </Td>
+              <Td className="type-caption whitespace-nowrap">
+                {isRecommended(row, recommended) && (
+                  <span className="font-semibold text-accent-text">nejvýhodnější</span>
+                )}
+                {isRecommended(row, recommended) && isDefault(row, defaults) && ' · '}
+                {isDefault(row, defaults) && <span className="text-ink-muted">výchozí</span>}
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </ScrollArea>
   );
 }
 
@@ -326,7 +335,9 @@ export default async function LandingPage({
 
       {/* ── podklady k přiznání: živý výtah z porovnání variant ─────────────── */}
       <Band tone="canvas" aria-label="Podklady k přiznání">
-        <div className="grid items-start gap-x-(--column-gap) gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        {/* `grid-cols-1` = sloupec smí být užší než obsah: tabulka variant se pak
+            při zvětšeném písmu posouvá uvnitř, místo aby roztáhla stránku */}
+        <div className="grid grid-cols-1 items-start gap-x-(--column-gap) gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <BandHeading
             title="Podklady k přiznání"
             lede="Průvodce, co kam zapsat po řádcích formuláře, a XML pro elektronické podání. Daň je spočítaná pro každou metodu zvlášť, takže vidíš, kolik která stojí."

@@ -15,8 +15,9 @@ import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
-import { filingLimitTexts } from '@/lib/filing-limits';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
+import { configForYear } from '@/lib/tax-config';
 import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
 import { DisputedHint } from './disputed-hint';
@@ -42,8 +43,12 @@ export default async function SettingsPage({
   const pinnedYears = await listPinnedTaxYears(db, user.id);
   // R-09a, R-09b: limity § 38g se rok od roku liší (do ZO 2026 50 000 /
   // 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč). Profil platí pro všechny roky,
-  // takže volba režimu jmenuje limit běžného roku.
-  const filingLimits = filingLimitTexts(currentTaxYear());
+  // takže volba režimu jmenuje limit běžného roku. Jméno limitu je z
+  // `lib/limit-names.ts` — stejné jako na přehledu, v reportu i v simulátoru
+  // (R1B-10).
+  const { limits } = configForYear(currentTaxYear());
+  const watchedLimit = (kind: LimitKind, amountCzk: string): string =>
+    tidy(`Hlídá se ${limitWithAmount(kind, d(amountCzk))}.`);
 
   const taxProfile = (
     <Section title="Daňový profil">
@@ -71,16 +76,16 @@ export default async function SettingsPage({
                 Z výpisů se zjistit nedá.
               </span>
               <span className="hidden group-has-[option[value=PAUSAL]:checked]/field-row:inline">
-                {tidy('Hlídá se limit paušální daně (50 000 Kč).')}
+                {watchedLimit('FLAT_TAX', limits.flatTaxOtherIncome)}
               </span>
               <span className="hidden group-has-[option[value=ZAMESTNANEC]:checked]/field-row:inline">
-                {tidy(`Hlídá se limit vedlejších příjmů (${filingLimits.employee}).`)}
+                {watchedLimit('EMPLOYEE_SIDE_INCOME', limits.employeeSideIncome)}
               </span>
               <span className="hidden group-has-[option[value=OSVC]:checked]/field-row:inline">
                 Přiznání podáváš tak jako tak.
               </span>
               <span className="hidden group-has-[option[value=JINE]:checked]/field-row:inline">
-                {tidy(`Hlídá se limit pro podání přiznání (${filingLimits.general}).`)}
+                {watchedLimit('GENERAL_FILING', limits.generalFiling)}
               </span>
             </>
           }
@@ -258,7 +263,7 @@ export default async function SettingsPage({
       >
         <Group variant="inset">
           <FieldRow
-            // jméno limitu drží přehled: „Osvobození prodejů cenných papírů“
+            // popisek pole je krátký; celé jméno limitu nese titulek vysvětlivky
             label={tidy('Co čerpá osvobození prodejů (100 000 Kč)')}
             htmlFor="limit-100k"
             hintId="limit-100k-napoveda"
@@ -271,7 +276,7 @@ export default async function SettingsPage({
             info={
               <InfoPopover
                 label="co čerpá osvobození prodejů"
-                title="Osvobození prodejů cenných papírů"
+                title={LIMIT_NAME.SECURITIES}
               >
                 <p>
                   {tidy(

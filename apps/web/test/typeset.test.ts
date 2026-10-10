@@ -1,14 +1,16 @@
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { typeset, typesetText } from '@/components/typeset';
+import { typeset } from '@/components/typeset';
+import { tidy } from '@/lib/typography';
 
 /**
  * Česká sazba dlouhých textů (nálezy R1A-04 a R1A-09).
  *
  * Recenze redesignu našla v článcích, odpovědích, návodech a právních textech
  * 51 chyb zalomení na 1440 px a 91 na telefonu („od 15. 2. / 2025“, „15 / %“,
- * „e- / mailem“): `tidy()` bere řetězec a texty v JSX ho nikde nevolaly.
+ * „e- / mailem“): `tidy()` bere řetězec a texty v JSX ho nikde nevolaly,
+ * a pravidla pro datum, pomlčku, další jednotky a zkratky neuměl vůbec.
  * `typeset()` proto prochází strom Reactu — a tenhle test hlídá dvě věci:
  * že pravidla drží, a že sazba NIKDY nezmění znění (u právních textů
  * podmínka, ne zdvořilost).
@@ -28,51 +30,51 @@ const plain = (text: string): string => text.replaceAll(NBSP, ' ').replaceAll(NB
 const html = (node: ReactNode): string =>
   renderToStaticMarkup(createElement('div', null, typeset(node))).replace(/^<div>|<\/div>$/g, '');
 
-describe('typesetText: co tidy() neumí', () => {
+describe('tidy: pravidla, která přibyla s dlouhými texty', () => {
   it('datum se nerozlomí uvnitř', () => {
-    expect(typesetText('Kryptoaktiva: od 15. 2. 2025 vlastní pravidla')).toBe(
+    expect(tidy('Kryptoaktiva: od 15. 2. 2025 vlastní pravidla')).toBe(
       `Kryptoaktiva: od 15.${NBSP}2.${NBSP}2025 vlastní pravidla`,
     );
-    expect(typesetText('Prodeje z 1. 1. až 14. 2. 2025')).toBe(
+    expect(tidy('Prodeje z 1. 1. až 14. 2. 2025')).toBe(
       `Prodeje z${NBSP}1.${NBSP}1. až 14.${NBSP}2.${NBSP}2025`,
     );
-    expect(typesetText('oznamuje se do 10. ledna')).toBe(`oznamuje se do 10.${NBSP}ledna`);
+    expect(tidy('oznamuje se do 10. ledna')).toBe(`oznamuje se do 10.${NBSP}ledna`);
   });
 
   it('řádek nezačne pomlčkou', () => {
-    expect(typesetText('vývojář z Prahy — a Danero jsem napsal pro sebe')).toBe(
+    expect(tidy('vývojář z Prahy — a Danero jsem napsal pro sebe')).toBe(
       `vývojář z${NBSP}Prahy${NBSP}— a${NBSP}Danero jsem napsal pro sebe`,
     );
     // pomlčka v rozsahu bez mezer zůstává, jak je
-    expect(typesetText('v sezóně (únor–duben)')).toBe(`v${NBSP}sezóně (únor–duben)`);
+    expect(tidy('v sezóně (únor–duben)')).toBe(`v${NBSP}sezóně (únor–duben)`);
   });
 
   it('číslo drží s jednotkou, kterou tidy() nezná', () => {
-    expect(typesetText('držené déle než 3 roky')).toBe(`držené déle než 3${NBSP}roky`);
-    expect(typesetText('potvrdí do 72 hodin')).toBe(`potvrdí do 72${NBSP}hodin`);
-    expect(typesetText('do úhrnu 40 mil. Kč ročně')).toBe(
+    expect(tidy('držené déle než 3 roky')).toBe(`držené déle než 3${NBSP}roky`);
+    expect(tidy('potvrdí do 72 hodin')).toBe(`potvrdí do 72${NBSP}hodin`);
+    expect(tidy('do úhrnu 40 mil. Kč ročně')).toBe(
       `do úhrnu 40${NBSP}mil.${NBSP}Kč ročně`,
     );
-    expect(typesetText('nad 5 milionů Kč')).toBe(`nad 5${NBSP}milionů Kč`);
-    expect(typesetText('zákon č. 586/1992 Sb., o daních')).toBe(
+    expect(tidy('nad 5 milionů Kč')).toBe(`nad 5${NBSP}milionů Kč`);
+    expect(tidy('zákon č. 586/1992 Sb., o daních')).toBe(
       `zákon č.${NBSP}586/1992${NBSP}Sb., o${NBSP}daních`,
     );
   });
 
   it('zkratka drží s tím, co uvádí', () => {
-    expect(typesetText('podle čl. 28 GDPR')).toBe(`podle čl.${NBSP}28 GDPR`);
-    expect(typesetText('tzv. elektronické peněžní tokeny')).toBe(
+    expect(tidy('podle čl. 28 GDPR')).toBe(`podle čl.${NBSP}28 GDPR`);
+    expect(tidy('tzv. elektronické peněžní tokeny')).toBe(
       `tzv.${NBSP}elektronické peněžní tokeny`,
     );
     // „ř.“ jen jako samostatná zkratka řádku, ne konec slova
-    expect(typesetText('patří na ř. 86')).toBe(`patří na ř.${NBSP}86`);
-    expect(typesetText('nikdo ho nepotř. dál')).toBe('nikdo ho nepotř. dál');
+    expect(tidy('patří na ř. 86')).toBe(`patří na ř.${NBSP}86`);
+    expect(tidy('nikdo ho nepotř. dál')).toBe('nikdo ho nepotř. dál');
   });
 
   it('letopočet, běžná slova a hotová sazba zůstávají', () => {
-    expect(typesetText('Za rok 2026 podáš přiznání')).toBe('Za rok 2026 podáš přiznání');
-    const once = typesetText('od 15. 2. 2025 do 100 000 Kč — a pak e-mailem');
-    expect(typesetText(once)).toBe(once);
+    expect(tidy('Za rok 2026 podáš přiznání')).toBe('Za rok 2026 podáš přiznání');
+    const once = tidy('od 15. 2. 2025 do 100 000 Kč — a pak e-mailem');
+    expect(tidy(once)).toBe(once);
   });
 
   it.each([
@@ -80,7 +82,7 @@ describe('typesetText: co tidy() neumí', () => {
     'Dozvíš se to e-mailem nejméně 30 dní předem (čl. 6 odst. 1 písm. b GDPR).',
     'USA, Německo či Japonsko 15 %, Nizozemsko jen 10 %; strop 40 mil. Kč trvá.',
   ])('mění jen druh mezer a spojovník: %s', (text) => {
-    const set = typesetText(text);
+    const set = tidy(text);
     expect(set).not.toBe(text);
     expect(plain(set)).toBe(text);
   });
@@ -145,12 +147,13 @@ describe('typeset: strom Reactu', () => {
  * Právní texty: sazba smí změnit jen druh mezer (a spojovník v „e-mail“).
  * Stránka se vykreslí dvakrát — se sazbou a s vypnutou — a po převodu zpět
  * na obyčejné znaky musí vyjít tentýž text. Kdyby kdokoli přidal do
- * `typesetText` pravidlo, které přepíše slovo, číslo nebo interpunkci
+ * `tidy()` pravidlo, které přepíše slovo, číslo nebo interpunkci
  * podmínek, spadne to tady.
  */
 describe('/podminky a /soukromi: sazba nemění znění', () => {
   afterEach(() => {
     vi.doUnmock('@/components/typeset');
+    vi.doUnmock('@/lib/typography');
     vi.resetModules();
   });
 
@@ -165,10 +168,14 @@ describe('/podminky a /soukromi: sazba nemění znění', () => {
     vi.resetModules();
     if (typesetting) {
       vi.doUnmock('@/components/typeset');
+      vi.doUnmock('@/lib/typography');
     } else {
-      vi.doMock('@/components/typeset', () => ({
-        typeset: (node: ReactNode) => node,
-        typesetText: (text: string) => text,
+      // vypnout je potřeba obojí: průchod stromem i `tidy()`, které obaly
+      // stránky volají na řetězce (titulek, perex) přímo
+      vi.doMock('@/components/typeset', () => ({ typeset: (node: ReactNode) => node }));
+      vi.doMock('@/lib/typography', async () => ({
+        ...(await vi.importActual<typeof import('@/lib/typography')>('@/lib/typography')),
+        tidy: (text: string) => text,
       }));
     }
     const { default: Page } =

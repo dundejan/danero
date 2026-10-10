@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { typeset, typesetText } from '@/components/typeset';
+import { typeset } from '@/components/typeset';
 import { cn } from '@/lib/utils';
+import { tidy } from '@/lib/typography';
 
 /**
  * Stavební kameny obsahu veřejných stránek — to, co se skládá DO pásů a pod
@@ -50,7 +51,7 @@ export function Split({
           'max-w-[16ch] text-balance',
         )}
       >
-        {typesetText(title)}
+        {tidy(title)}
       </h2>
       <div className="type-reading measure space-y-4 text-pretty text-ink-muted">
         {typeset(children)}
@@ -110,7 +111,7 @@ export function LinkList({
           >
             <span className="min-w-0 flex-1">
               <span className={cn(titleClass, 'block group-hover:underline')}>
-                {typesetText(item.title)}
+                {tidy(item.title)}
               </span>
               <span
                 className={cn(
@@ -118,7 +119,7 @@ export function LinkList({
                   large ? 'type-body mt-2' : 'type-callout mt-0.5',
                 )}
               >
-                {typesetText(item.summary)}
+                {tidy(item.summary)}
               </span>
             </span>
             <span aria-hidden className={cn(titleClass, 'text-ink-muted')}>

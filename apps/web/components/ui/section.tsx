@@ -8,9 +8,7 @@ import { cn } from '@/lib/utils';
  *
  * Akce se nikdy neroztáhne přes šířku sekce: když se vedle titulku nevejde,
  * spadne pod něj, a přepínač, který se nevejde ani tam (hodně let), se
- * posouvá sám uvnitř (`SegmentedControl`). Dřív to zapínal `scrollActions`;
- * dnes je to výchozí chování a vlastnost zůstává jen proto, aby se stránky,
- * které ji předávají, nemusely měnit naráz.
+ * posouvá sám uvnitř (`SegmentedControl`).
  */
 export function SectionHeader({
   title,
@@ -25,8 +23,6 @@ export function SectionHeader({
   /** Tiché číslo za titulkem (počet položek). */
   count?: React.ReactNode;
   actions?: React.ReactNode;
-  /** @deprecated Bez účinku — akce se vejde nebo posouvá vždy. */
-  scrollActions?: boolean;
   as?: 'h2' | 'h3';
   className?: string;
 }) {
@@ -60,7 +56,6 @@ export function Section({
   info,
   count,
   actions,
-  scrollActions,
   className,
   children,
   ...props
@@ -69,17 +64,10 @@ export function Section({
   info?: React.ReactNode;
   count?: React.ReactNode;
   actions?: React.ReactNode;
-  scrollActions?: boolean;
 }) {
   return (
     <section className={className} {...props}>
-      <SectionHeader
-        title={title}
-        info={info}
-        count={count}
-        actions={actions}
-        scrollActions={scrollActions}
-      />
+      <SectionHeader title={title} info={info} count={count} actions={actions} />
       <div className="mt-4">{children}</div>
     </section>
   );

@@ -1,6 +1,6 @@
 import { OPERATOR } from '@/lib/contact';
 import { PlatformSearch, type PlatformSearchGroup } from '@/components/platform-search';
-import { typeset, typesetText } from '@/components/typeset';
+import { typeset } from '@/components/typeset';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { TextLink } from '@/components/ui/link';
 import {
@@ -10,6 +10,7 @@ import {
   UNIVERSAL_INFO,
   type PlatformInfo,
 } from '@/lib/brokers-catalog';
+import { tidy } from '@/lib/typography';
 
 /**
  * Jak se platforma načítá — jedním obyčejným slovem vpravo v řádku. Odpovídá
@@ -75,7 +76,7 @@ export function PlatformCatalog() {
           meta={<span className="type-footnote">{METHOD_WORD[platform.method]}</span>}
         >
           <div className="space-y-2">
-            <p>{typesetText(platform.guide)}</p>
+            <p>{tidy(platform.guide)}</p>
             <MethodNote platform={platform} />
           </div>
         </DisclosureRow>
@@ -96,7 +97,7 @@ export function PlatformCatalog() {
             {UNIVERSAL_INFO.name}
           </h2>
           <p className="type-body mt-2 text-pretty text-ink-muted">
-            {typesetText(UNIVERSAL_INFO.guide)}{' '}
+            {tidy(UNIVERSAL_INFO.guide)}{' '}
             <TextLink href="/api/sablona" download>
               Stáhnout šablonu
             </TextLink>
@@ -106,7 +107,7 @@ export function PlatformCatalog() {
           <div role="list" className="mt-4 divide-y divide-line/70 border-y border-line/70">
             {TEMPLATE_RULES.map((rule) => (
               <DisclosureRow key={rule.label} title={rule.label}>
-                <p>{typesetText(rule.text)}</p>
+                <p>{tidy(rule.text)}</p>
               </DisclosureRow>
             ))}
           </div>
@@ -120,7 +121,7 @@ export function PlatformCatalog() {
             Víc brokerů najednou
           </h2>
           <p className="type-body mt-2 text-pretty text-ink-muted">
-            {typesetText(
+            {tidy(
               'Účty a výpisy se skládají vedle sebe. Danero všechno převede do jednoho formátu a limity hlídá přes všechny účty dohromady — tak, jak se posuzují v daňovém přiznání. Opakované nahrání nic nezdvojí.',
             )}
           </p>

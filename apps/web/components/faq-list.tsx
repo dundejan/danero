@@ -1,5 +1,6 @@
-import { typeset, typesetText } from '@/components/typeset';
+import { typeset } from '@/components/typeset';
 import { Chevron } from '@/components/ui/disclosure';
+import { tidy } from '@/lib/typography';
 
 /**
  * Seznam otázek a odpovědí nad nativním `<details>`: otázka je řádek s šipkou,
@@ -25,7 +26,7 @@ export function FaqList({ items }: { items: FaqItem[] }) {
       {items.map((item) => (
         <details key={item.q} className="disclosure">
           <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-4 rounded-lg px-2 py-4">
-            <span className="type-title-3 min-w-0 flex-1 text-pretty">{typesetText(item.q)}</span>
+            <span className="type-title-3 min-w-0 flex-1 text-pretty">{tidy(item.q)}</span>
             <Chevron className="h-3 text-ink-muted" />
           </summary>
           <p className="type-body measure pb-5 text-pretty text-ink-muted">{typeset(item.a)}</p>

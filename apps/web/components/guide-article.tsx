@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { ANCHOR_OFFSET, LongRead, type ContentsItem } from '@/components/long-read';
-import { typeset, typesetText } from '@/components/typeset';
+import { typeset } from '@/components/typeset';
 import { TextLink } from '@/components/ui/link';
 import { cn } from '@/lib/utils';
+import { tidy } from '@/lib/typography';
 
 /**
  * Stavební bloky článků průvodce (/pruvodce/<slug>): dlouhý text skládáme
@@ -70,7 +71,7 @@ export function ArticleSection({
 }) {
   return (
     <section id={id} className={cn('mt-14', id && ANCHOR_OFFSET, className)}>
-      <h2 className="type-title-2 text-balance">{typesetText(title)}</h2>
+      <h2 className="type-title-2 text-balance">{tidy(title)}</h2>
       <div
         className={cn(
           'type-reading mt-4 space-y-4 text-pretty [&_strong]:font-semibold',
@@ -101,7 +102,7 @@ export function Example({ title, children }: { title?: string; children: React.R
   return (
     <div className="rounded-xl bg-canvas p-5">
       <p className="type-footnote font-semibold text-ink-muted">Příklad</p>
-      {title && <p className="type-body mt-1 font-semibold">{typesetText(title)}</p>}
+      {title && <p className="type-body mt-1 font-semibold">{tidy(title)}</p>}
       <div className="type-body mt-2 space-y-2 [&_strong]:font-semibold">{typeset(children)}</div>
     </div>
   );
@@ -139,7 +140,7 @@ export function ArticleFooter({ next }: { next: { href: string; title: string }[
   return (
     <footer className="mt-14 border-t border-line/70 pt-6">
       <p className="type-caption text-pretty text-ink-muted">
-        {typesetText(
+        {tidy(
           'Článek vychází z pravidel pro zdaňovací období 2025 a 2026 (zákon č. 586/1992 Sb., o daních z příjmů); sporné výklady poctivě označujeme. Danero je výpočetní a evidenční nástroj, ne daňové poradenství — za přiznání odpovídá poplatník.',
         )}
       </p>
@@ -148,7 +149,7 @@ export function ArticleFooter({ next }: { next: { href: string; title: string }[
         {links.map((link) => (
           <li key={link.href}>
             <TextLink href={link.href} chevron>
-              {typesetText(link.title)}
+              {tidy(link.title)}
             </TextLink>
           </li>
         ))}

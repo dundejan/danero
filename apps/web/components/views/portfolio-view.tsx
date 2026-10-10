@@ -495,8 +495,6 @@ export function PortfolioView({
                       </p>
                     </InfoPopover>
                   }
-                  // hodně let se na úzký displej nevejde — posouvá se jen přepínač
-                  scrollActions
                   actions={
                     <YearSwitcher years={years} active={year} hrefBase={`${basePath}/portfolio`} />
                   }

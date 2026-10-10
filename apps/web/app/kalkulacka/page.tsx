@@ -6,7 +6,7 @@ import { TextLink } from '@/components/ui/link';
 import { Group } from '@/components/ui/list';
 import { currentTaxYear } from '@/lib/clock';
 import { filingLimitTexts } from '@/lib/filing-limits';
-import { typesetText } from '@/components/typeset';
+import { tidy } from '@/lib/typography';
 
 export const metadata: Metadata = {
   title: 'Musím podat daňové přiznání kvůli investicím? Kalkulačka zdarma — Danero',
@@ -60,8 +60,8 @@ export default function KalkulackaPage() {
             </h2>
             <Group className="mt-3">
               {RULES.map((rule) => (
-                <DisclosureRow key={rule.title} title={typesetText(rule.title)}>
-                  <p>{typesetText(rule.body)}</p>
+                <DisclosureRow key={rule.title} title={tidy(rule.title)}>
+                  <p>{tidy(rule.body)}</p>
                 </DisclosureRow>
               ))}
             </Group>

@@ -48,19 +48,24 @@ export default async function OverviewPage({
 
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
-    // stejná podoba jako prázdné portfolio: lišta s titulkem a pozvánka uprostřed
+    // Stejná podoba jako prázdné portfolio: lišta s titulkem a pozvánka uprostřed.
+    // Tlačítko vede rovnou na Zdroje dat, kde je krok 2 uvítání (R1B-05) —
+    // dřív vedlo přes „Otevřít průvodce“ na mezistránku, která jen řekla
+    // „pokračuj“. Poznámka pod ním říká, proč tu skončil i ten, kdo klikl na
+    // Report nebo Simulátor: obě stránky sem bez dat přesměrují (R1B-06).
     return (
       <>
         <AppToolbar title="Přehled" />
         <EmptyState
           title="Zatím žádná data"
           action={
-            <Link href="/vitejte" className={buttonVariants()}>
-              Otevřít průvodce
+            <Link href="/import" className={buttonVariants()}>
+              Nahrát výpisy
             </Link>
           }
+          note="Report a Simulátor se otevřou s prvním výpisem — bez dat vedou sem."
         >
-          Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity i podklady
+          Nahraj výpis nebo připoj brokera a Danero pohlídá zbytek — časové testy, limity i podklady
           k přiznání.
         </EmptyState>
       </>
