@@ -44,9 +44,15 @@ třídu bez tokenu a hlídá kontrasty.
 - `-text` odstíny jsou pro text (AA na `surface` i `canvas`), `-fill` pro výplň s bílým
   textem, holý název pro grafiku (odměrka, tečka).
 - **Materiály** (`material-bar`, `material-tabbar`, `material-sidebar`, `material-sheet`):
-  průsvitnost jen na chromu, pod kterým něco roluje — lišty, postranní panel, sheet. Obsah
-  je vždy plná plocha. Spodní lišta telefonu má vlastní, hustší materiál: nese nejdrobnější
-  text a roluje pod ní cokoli, takže s krytím horní lišty klesly popisky pod AA.
+  průsvitnost jen na chromu, pod kterým něco roluje — tedy na **lištách**. Postranní panel
+  a sheet jsou plné plochy: panel stojí vedle obsahu (pod ním neroluje nic a rozostření
+  se platilo za prázdno přes celou výšku stránky), sheet měl krytí 97 %, pod kterým
+  rozostření nebylo vidět. Obsah je vždy plná plocha. Spodní lišta telefonu má vlastní,
+  hustší materiál: nese nejdrobnější text a roluje pod ní cokoli, takže s krytím horní
+  lišty klesly popisky pod AA.
+- **Hrana lišty** (`scroll-edge`) se objeví, až pod lištu něco zajede. Kde nad lištou
+  stojí pruh (demo), dostane pruh třídu `page-banner` a obal stránky
+  `scroll-edge-after-banner` — hrana pak počká, až pruh odroluje.
 - **Zvýrazněný řádek** (`row-hover` pod myší, `row-pressable` při stisku) přepíná tichý text
   na plnou barvu — `ink-muted` má na zvýrazněné ploše 4,06–4,45:1. Klikací řádek proto
   ber přes tyhle dvě třídy (nebo rovnou `Row href` / `DisclosureRow`), ne přes
@@ -83,6 +89,8 @@ font-bold`**, vyber stupeň.
 | `type-caption` | 12 px | záhlaví tabulek, datum v řádku |
 | `type-figure` / `-lg` / `-xl` | 22 / 28–34 / 56–120 px | čísla jako sdělení (`-xl` jen veřejné stránky) |
 
+- `type-figure-lg` má strop `9vw`: při zvětšeném písmu prohlížeče velké číslo nevyjede
+  z telefonu (nezalomí se, drží ho pevné mezery). Při výchozím písmu strop nezasáhne.
 - Věty začínají velkým písmenem a tím to končí — žádné verzálky, žádné prostrkané štítky.
 - Titulky dostávají `text-balance`, odstavce `text-pretty`.
 - Text složený z řetězce protáhni přes **`tidy()` z `lib/typography.ts`** (nebo `<Tidy>`):
@@ -99,31 +107,35 @@ font-bold`**, vyber stupeň.
 | `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). Smí stát i uvnitř `DisclosureRow`. |
 | `ui/disclosure.tsx` → `Chevron` | Šipka rozbalovátka pro vlastní `<details class="disclosure">` (řádek tabulky, FAQ). Patří do `<summary>`. |
 | `ui/open-on-hash.tsx` → `OpenOnHash` | Rozbalí `<details>`, na který míří kotva v adrese. Jednou na stránku, která na rozbalovací řádky odkazuje. |
-| `ui/list.tsx` → `Group`, `Row` | Seskupený seznam: popisek vlevo, hodnota nebo ovládací prvek vpravo. `variant="inset"` = šedá skupina (nastavení, sheet). `Row wrap` = hodnota je věta a smí se zalomit. |
+| `ui/list.tsx` → `Group`, `Row` | Seskupený seznam: popisek vlevo, hodnota nebo ovládací prvek vpravo. `variant="inset"` = šedá skupina (nastavení, sheet). `Row wrap` = hodnota je věta a smí se zalomit. Hodnotu, která se vedle popisku nevejde, řádek složí pod něj (nezkracuje ji). |
 | `ui/list.tsx` → `FieldRow` | Řádek skupiny s polem nebo nabídkou; v úzkém okně se pole složí pod popisek. Stránka kolem potřebuje `@container`. |
 | `ui/list.tsx` → `GroupItem` | Položka skupiny s volným obsahem (soubor s formulářem, limit s odměrkou). |
-| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. `scrollActions` = akce se na úzkém displeji posouvá vodorovně (přepínač roku). |
+| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. Akce, která se vedle nadpisu nevejde, spadne pod něj; přepínač se posouvá sám (`scrollActions` už není potřeba, je bez účinku). |
 | `ui/stat.tsx` → `Stat` | Klíčové číslo s popiskem a nejvýš pár slovy pod ním. `size="lg"` nejvýš dvakrát na stránku. |
 | `ui/status.tsx` → `StatusLabel`, `TONE_TEXT` | Stav jednou větou: barevná tečka + text téže barvy. |
 | `ui/notice.tsx` → `Notice` | Sdělení k celé stránce/sekci (něco chybí, něco se stalo). Místo obarvené karty. |
 | `ui/empty-state.tsx` → `EmptyState` | Sekce nebo stránka nemá co ukázat. `compact` do sekce. Stejná podoba i pro stav celé stránky (chyba, nenalezeno): `headingAs="h1"`, v `action` tlačítko a nejvýš jeden odkaz, `note` pro kód chyby. |
-| `ui/button.tsx` → `Button`, `buttonVariants` | Tlačítko. `primary` jednou na stránku; `tinted` (druhá akce — drží kontrast i na šedém panelu), `secondary`, `ghost`, `danger`; velikosti `sm`/`md`/`lg`/`icon`. |
+| `ui/button.tsx` → `Button`, `buttonVariants` | Tlačítko. `primary` jednou na stránku; `tinted` (druhá akce — drží kontrast i na šedém panelu), `secondary`, `ghost`, `danger`; velikosti `sm`/`md`/`lg`/`icon`. Popisek delší než rodič se zalomí a tlačítko povyroste — výška je `min-h`, ne `h` (kdo ji přebíjí, píše `min-h-…`). |
 | `ui/submit-button.tsx` → `SubmitButton` | Odesílací tlačítko formuláře se stavem „odesílám“. |
 | `ui/link.tsx` → `TextLink` | Textový odkaz. `chevron` = samostatný odkaz se šipkou; bez něj odkaz ve větě (podtržený). Umí i kotvu (`#…`), stažení (`download`) a cizí web (`external`) — vlastní `<a>` s třídami odkazu nepiš. |
 | `ui/field.tsx` → `Field`, `Label`, `Input`, `Select`, `Textarea`, `Checkbox`, `FieldHint`, `FieldError`, `describedByError` | Formulářová pole. Chybu zapíná `aria-invalid` přes `describedByError`. |
 | `ui/switch.tsx` → `Switch` | Přepínač pro nastavení, které platí hned. |
 | `ui/file-field.tsx` → `FileField` | Výběr souborů s českými texty. |
 | `ui/auto-submit.tsx` | Formulář, který se odešle při změně pole. |
-| `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami. `size="md"` když je přepínač hlavní ovládání (odpověď v kalkulačce); `fit="content"` pro různě dlouhé popisky. Výšku ani mřížku nepřebíjej třídou. |
-| `ui/sheet.tsx` → `Sheet` | Spodní sheet na telefonu: detail řádku, další sekce, vysvětlivka. S `title` má hlavičku a „Hotovo“. |
+| `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami (roků smí být víc). `size="md"` když je přepínač hlavní ovládání (odpověď v kalkulačce); `fit="content"` pro různě dlouhé popisky. U `nav` se palec pohne hned při klepnutí, na odpověď serveru nečeká. Když se nevejde, posouvá se sám uvnitř a vybraný segment si srovná do zorného pole — vlastní posuvný obal kolem něj nepiš. Výšku ani mřížku nepřebíjej třídou. |
+| `ui/sheet.tsx` → `Sheet` | Spodní sheet na telefonu: detail řádku, další sekce, vysvětlivka. S `title` má hlavičku a „Hotovo“. Vedle `onClose` předej i `onReopen` (zavíraný sheet jde hodem nahoru vrátit a rodič má vědět, že je zase otevřený). Stav drží automat v `ui/sheet-machine.ts`. |
 | `ui/confirm-dialog.tsx` → `ConfirmDialog` | Potvrzení nevratné akce. Jen pro nevratné. S `action` nese formulář sám (skrytá pole `fields`, viditelná jako `children`), během akce ukazuje `pendingLabel` a nejde odeslat dvakrát. |
-| `components/toast.tsx` → `Toast` | Výsledek akce z adresy (`?ok=` / `?chyba=`); `floating` = plovoucí. |
+| `components/toast.tsx` → `Toast` | Výsledek akce z adresy (`?ok=` / `?chyba=`); `floating` = plovoucí (odchází tam, odkud přijela; dlouhý text roluje uvnitř, nezakryje telefon). |
 | `ui/table.tsx` → `Table`, `Th`, `Tr`, `Td` | Tabulka dat: vlásové linky, tiché záhlaví, čísla vpravo. |
 | `ui/scroll-area.tsx` → `ScrollArea` | Obal široké tabulky na úzkém displeji (roluje jen tabulka). |
 | `ui/card.tsx` → `Card`, `CardTitle` | Šedý panel kolem kusu FORMULÁŘE. Ne kolem obsahu ke čtení. |
 | `components/app-toolbar.tsx` → `AppToolbar` | Hlavička stránky aplikace: titulek (jediné `h1`), přepínač, jedna akce. Podstránka má vlevo od titulku cestu zpět (`back`). |
 | `components/view-switch.tsx` → `ViewSwitch` | Sekce se dvěma pohledy na tatáž data (graf / tabulka) nebo variantami téhož výpočtu. V tisku ukáže všechny pod sebou. |
 | `components/year-switcher.tsx` → `YearSwitcher` | Přepínač zdaňovacího období do lišty. |
+| `components/nav-items.ts` → `APP_NAV_ITEMS`, `DEMO_NAV_ITEMS`, `activeNavHref` | Sekce aplikace a která je pro adresu aktivní. Sekce má **jedno jméno** — stejné v panelu, ve spodní liště i v titulku stránky („Simulátor“, ne „Simulace“). |
+| `components/app-skeleton.tsx` → `AppSkeleton`, `toolbarShape` | Kostra načítání skořápky. Stránka s přepínačem nebo akcí v liště se zapíše do `TOOLBAR_SHAPES`, jinak jí kostra na telefonu neposedí. |
+| `components/shell-disclaimer.ts` → `NOT_TAX_ADVICE` | Krátký odkaz „Není daňové poradenství“ → podmínky; jedno znění pro patičku aplikace i dema. |
+| `components/theme-toggle.tsx` → `ThemeToggle` | Přepínač vzhledu, všude se stejnými popisky; změnu prolne. Barvu lišty prohlížeče po ruční volbě srovnává `ThemeProvider` (`components/theme-color.ts`). |
 | `components/limits-inspector.tsx` → `LimitsInspector` | Seznam + detail vybraného řádku (inspektor; na telefonu sheet). |
 | `lib/use-container-wide.ts` → `useContainerWide` | „Je okno s obsahem dost široké na inspektor?“ — pro rozvržení, kde šířka mění i chování (výběr řádku × odkaz). |
 | `components/limit-gauge.tsx` → `LimitBar`, `ZONE_TEXT`, `ZONE_LABEL` | Odměrka čerpání limitu a slovní stav. |
@@ -225,6 +237,20 @@ Pravidla, která z kódu nejsou vidět:
   `hashchange`. Míří-li kotva na zavřený `DisclosureRow`, stránka potřebuje `OpenOnHash`.
   Cíl kotvy pod přilepenou lištou potřebuje odstup (`ANCHOR_OFFSET`, v aplikaci
   `scroll-mt-24`).
+- **Dlouhý obsah je starost primitiva, ne stránky.** `Row`, `Button`, `SegmentedControl`,
+  `AppToolbar`, `DisclosureRow`, `EmptyState`, `Notice` a `Sheet` unesou e-mail o sto
+  znacích, název fondu bez tickeru i dvojnásobné písmo bez přetečení stránky: hodnota
+  řádku spadne pod popisek, popisek tlačítka se zalomí, přepínač roluje uvnitř, titulek
+  lišty se zkrátí (celé znění nese `title`). Místní `max-w-…`, `truncate` nebo vlastní
+  `overflow-x-auto` kolem primitiva proto nepiš — a zkracování třemi tečkami nech jen
+  titulku lišty: useknutou částku nebo adresu na dotyku nejde přečíst nikde. Nejhorší
+  vstupy má galerie v sekci „Dlouhý obsah“.
+- **Sheet a překryvy zamykají rolování stránky samy** (`html:has(dialog:modal)` v
+  globals.css). Překryv, který nativním dialogem není (rozbalené menu veřejných stránek),
+  dostane po dobu otevření atribut `data-scroll-lock` na kterýkoli svůj prvek.
+- Odkaz, který je ovládacím prvkem navigace aplikace (spodní lišta, postranní panel,
+  segment přepínače), nese třídu `control-link` — dlouhý stisk mu neoznačí popisek ani
+  nevyvolá nabídku odkazu. Odkazy v textu a na veřejných stránkách ji nedostávají.
 - Tabulku na úzkém displeji obal do `ScrollArea`; první sloupec text, čísla `align="right"`.
 - Když primitivum chybí, **nepiš si vlastní do stránky**. Slož ho z existujících, nebo ho
   navrhni zvlášť (viz Sdílené soubory). Dialogy, popovery a menu staví na Base UI
@@ -332,7 +358,9 @@ schovaný v info ikonkách.“* Závazná pravidla:
    nikdy v hlavním textu** — jen ve vysvětlivce, v rozbaleném detailu a v článcích.
 3. **Výhrada, která chrání před špatným závěrem, nesmí zmizet** — zkrať ji na pár slov
    u čísla („orientačně, jen z investic“, „Platí se jen při podání přiznání“) a zbytek dej
-   do vysvětlivky. Patří sem i „nástroj není daňové poradenství“ v patičce.
+   do vysvětlivky. Patří sem i výhrada v patičce: krátký odkaz **„Není daňové
+   poradenství“** → `/podminky` (závazné znění je v čl. 1 podmínek), stejný v aplikaci,
+   v demu i na veřejných stránkách. Celou větu do patičky nevracej.
 4. **Žádný úvodní odstavec pod nadpisem**, který nadpis jen opakuje. Žádná vysvětlivka
    ke grafu, který je srozumitelný sám; legenda ano, návod ne.
 5. **Žargon nahraď obyčejným slovem;** kde to nejde, jednověté vysvětlení je ve vysvětlivce
@@ -360,12 +388,26 @@ a základu z § 7. Je: `Termín podání 3. 5. 2027 · jen elektronicky ⓘ` a `
   (Tailwind ho omezuje na zařízení s myší).
 - **Co se dělá stokrát denně, se neanimuje:** navigace, přepnutí vybraného řádku, rozbalení
   `details`, otevření klávesnicí. Čísla a odměrky se při načtení neplní.
-- **Co se objevuje, vyrůstá ze svého spouštěče:** bublina z tlačítka (`--transform-origin`),
-  sheet zdola a tamtéž zpět, dialog ze středu. Začátek `scale(0.95)` + průhlednost, nikdy
-  `scale(0)`. Délka do 250 ms, křivka `--ease-out`; nikdy `ease-in`, nikdy `transition-all`.
-- **Pružiny jen v `lib/motion.ts`:** `SPRING_DEFAULT` (bez překmitu) pro přesun a objevení,
-  `SPRING_MOMENTUM` (lehký překmit) jen po gestu, které neslo hybnost. Tažený sheet sleduje
-  prst 1 : 1, o zavření rozhoduje rychlost promítnutá dopředu, animaci jde kdykoli chytit.
+- **Odezva hned, ne po odpovědi serveru.** Palec přepínače roku se pohne při klepnutí
+  (optimisticky) a vrátí se jen tehdy, když navigace nedopadne.
+- **Co se objevuje, vyrůstá ze svého spouštěče:** bublina z tlačítka (i když je ukotvená
+  k celému bloku), sheet zdola a tamtéž zpět, dialog ze středu, toast odkud přijel.
+  Začátek `scale(0.95)` + průhlednost, nikdy `scale(0)`. Přechody v CSS do 250 ms, křivka
+  `--ease-out`; nikdy `ease-in`, nikdy `transition-all`. **Odchod je kratší než příchod**
+  (bublina 150/100 ms, dialog 200/150 ms, sheet odezva 0,35/0,25 s).
+- **Past Tailwindu v4:** `scale-*`, `translate-*` a `rotate-*` se píšou do vlastností
+  `scale`/`translate`/`rotate`, ne do `transform`. Přechod `transition-[transform,opacity]`
+  je proto neanimuje — měřítko skočí. Piš `transition-[opacity,scale]`.
+- **Pružiny jen v `lib/motion.ts`** a **zadané fyzikou** (`spring(tlumení, odezva)`):
+  `SPRING_DEFAULT` (bez překmitu, odezva 0,35 s) pro přesun a objevení, `SPRING_QUICK`
+  (bez překmitu, 0,25 s) pro malý častý pohyb a odchod, `SPRING_MOMENTUM` (lehký překmit)
+  jen po gestu, které neslo hybnost. Zápis `duration` + `bounce` nepoužívej: takové
+  pružině `motion` 14 počáteční rychlost zahazuje a puštěný sheet „narazí do zdi“.
+- **Sheet:** sleduje prst 1 : 1, o zavření rozhoduje rychlost promítnutá dopředu
+  a měřená k okamžiku puštění (prst, který zastavil, nic neodhazuje), pružina rychlost
+  prstu přebírá. Chytit jde kdykoli — i při zavírání; puštění ho pošle tam, kam ho prst
+  hodil. Žádná cesta nesmí skončit sheetem, který stojí a nereaguje: hlídá to čistý
+  automat `ui/sheet-machine.ts` a jeho test.
 - **Animuj jen `transform` a `opacity`.**
 - **Omezený pohyb** (`prefers-reduced-motion`): posuny a změny měřítka mizí, prolnutí
   zůstává. `prefers-reduced-transparency` a `prefers-contrast` mění materiály v plné plochy.
@@ -376,6 +418,8 @@ a základu z § 7. Je: `Termín podání 3. 5. 2027 · jen elektronicky ⓘ` a `
   s myší nejmíň 24 px.
 - Pevné lišty počítají s `env(safe-area-inset-*)`; výška okna je `dvh`/`svh`, ne `vh`.
 - Pole mají na dotyku písmo 16 px (jinak iOS přiblíží stránku); zoom se nezakazuje.
+  Pravidlo je v globals.css **mimo vrstvy** — ve vrstvě `base` ho přebila každá utilita
+  velikosti písma (`text-sm`) a pole měla 14 px.
 - Detail, který by na telefonu odsunul zbytek stránky, patří do `Sheet`.
 - Fokus je vždy vidět (akcentní obrys). Stav nikdy nenese jen barva. Kontrast AA; hranice
   ovládacích prvků ≥ 3:1. Každá stránka projde axe (WCAG 2 A/AA) ve světlém i tmavém
@@ -406,7 +450,9 @@ stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
 - **Skořápka aplikace:** `app/(app)/layout.tsx`, `app/demo/layout.tsx`,
   `components/nav-rail.tsx`, `components/nav-items.ts`, `components/nav-icons.tsx`,
   `components/app-toolbar.tsx`, `components/view-switch.tsx`, `components/year-switcher.tsx`,
-  `components/toast.tsx`, `components/theme-toggle.tsx`.
+  `components/toast.tsx`, `components/theme-toggle.tsx`, `components/theme-provider.tsx`,
+  `components/theme-color.ts`, `components/app-skeleton.tsx`,
+  `components/shell-disclaimer.ts`.
 - **Skořápka a bloky veřejných stránek:** `components/marketing-page.tsx`,
   `components/marketing-nav.tsx`, `components/marketing-blocks.tsx`,
   `components/guide-article.tsx`, `components/long-read.tsx`, `components/faq-list.tsx`,
