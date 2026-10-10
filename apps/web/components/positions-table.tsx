@@ -18,9 +18,6 @@ interface Row {
   neverExempt: boolean;
 }
 
-/** Délka 3letého časového testu ve dnech — pro mini progress „Zbývá dní“. */
-const TEST_DAYS = 3 * 365;
-
 /** Zelený checkmark: časový test celé pozice splněn. */
 function CheckIcon() {
   return (
@@ -39,22 +36,6 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
-  );
-}
-
-/** Mini progress uplynulé části časového testu (uplynulo / 1095 dní). */
-function TestProgress({ daysToExempt }: { daysToExempt: number }) {
-  const elapsed = Math.min(1, Math.max(0, (TEST_DAYS - daysToExempt) / TEST_DAYS));
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-line/60">
-        <span
-          className="block h-full rounded-full bg-accent"
-          style={{ width: `${elapsed * 100}%` }}
-        />
-      </span>
-      {daysToExempt.toLocaleString('cs-CZ')}
-    </span>
   );
 }
 
@@ -78,6 +59,7 @@ export function PositionsTable({
       // A2-3-04: pozice bez nároku na osvobození (obchodní majetek, stablecoiny,
       // deriváty, období bez krypto osvobození) nesmí ukazovat odpočet ani
       // „vše bez daně“ — čeká se u nich na něco, co nikdy nepřijde
+      const label = labels.get(position.isin) ?? position.isin;
       const neverExempt = position.lots.every((lot) => !lot.exemptionPossible);
       const pending = position.lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
       const nearest = pending.length
@@ -85,8 +67,9 @@ export function PositionsTable({
         : null;
       return {
         isin: position.isin,
-        label: labels.get(position.isin) ?? position.isin,
-        name: names.get(position.isin),
+        label,
+        // název shodný se zkratkou by se v řádku jen opakoval
+        name: names.get(position.isin) === label ? undefined : names.get(position.isin),
         total: position.totalRemaining.toNumber(),
         exemptQty: position.lots
           .filter((lot) => lot.isExempt)
@@ -105,27 +88,29 @@ export function PositionsTable({
   const content = (
     <>
       {/* mobil: karty místo tabulky (H4) */}
-      <div className="divide-y divide-line/70 md:hidden">
+      <ul className="divide-y divide-line/70 md:hidden">
         {rows.map((row) => (
-          <PositionCard
-            key={row.isin}
-            isin={row.isin}
-            basePath={basePath}
-            label={row.label}
-            name={row.name}
-            primaryText={`${qty(row.total)} ks`}
-            secondaryText={row.exemptQty > 0 ? `${qty(row.exemptQty)} ks bez daně` : undefined}
-            exemptText={
-              row.neverExempt
-                ? 'časový test se nevztahuje'
-                : row.nearestExemptFrom
-                  ? `bez daně od ${czDate(row.nearestExemptFrom)}`
-                  : 'vše bez daně'
-            }
-            exemptDone={!row.neverExempt && row.nearestExemptFrom === null}
-          />
+          <li key={row.isin}>
+            <PositionCard
+              isin={row.isin}
+              basePath={basePath}
+              label={row.label}
+              name={row.name}
+              primaryText={`${qty(row.total)} ks`}
+              exemptText={
+                row.neverExempt
+                  ? 'časový test se nevztahuje'
+                  : row.nearestExemptFrom === null
+                    ? 'vše bez daně'
+                    : row.exemptQty > 0
+                      ? `${qty(row.exemptQty)} ks bez daně`
+                      : `bez daně od ${czDate(row.nearestExemptFrom)}`
+              }
+              exemptDone={!row.neverExempt && (row.nearestExemptFrom === null || row.exemptQty > 0)}
+            />
+          </li>
         ))}
-      </div>
+      </ul>
 
       <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
         <Table>
@@ -162,7 +147,9 @@ export function PositionsTable({
                 {anyExempt && (
                   <Td
                     align="right"
-                    className={row.exemptQty > 0 ? 'font-medium text-success-text' : 'text-ink-muted'}
+                    className={
+                      row.exemptQty > 0 ? 'font-medium text-success-text' : 'text-ink-muted'
+                    }
                   >
                     {qty(row.exemptQty)}
                   </Td>
@@ -182,7 +169,7 @@ export function PositionsTable({
                   ) : row.daysToExempt === null ? (
                     <CheckIcon />
                   ) : (
-                    <TestProgress daysToExempt={row.daysToExempt} />
+                    row.daysToExempt.toLocaleString('cs-CZ')
                   )}
                 </Td>
               </Tr>
