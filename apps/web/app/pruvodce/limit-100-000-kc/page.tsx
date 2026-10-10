@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import {
   ArticleLink,
   ArticleFooter,
@@ -10,12 +10,22 @@ import {
   Example,
   DisputedReading,
 } from '@/components/guide-article';
+import type { ContentsItem } from '@/components/long-read';
 
 export const metadata: Metadata = {
   title: 'Limit 100 000 Kč z prodeje akcií: počítá se objem, ne zisk — Danero',
   description:
     'Osvobození prodejů cenných papírů do 100 000 Kč ročně se počítá z hrubých tržeb, ne ze zisku — nejčastější omyl českých investorů. Jak funguje překročení limitu, vztah k tříletému testu a proč má krypto vlastní stovku.',
 };
+
+const CONTENTS: ContentsItem[] = [
+  { id: 'jak-limit-funguje', title: 'Jak limit funguje' },
+  { id: 'koruna-navic', title: 'Koruna navíc a osvobození padá celé' },
+  { id: 'nulova-dan', title: 'Přiznání může vyjít i s nulovou daní' },
+  { id: 'trilety-test', title: 'Vztah k tříletému testu' },
+  { id: 'krypto', title: 'Krypto má vlastní stovku' },
+  { id: 'v-praxi', title: 'Jak limit uhlídat v praxi' },
+];
 
 /**
  * Článek průvodce. Skladba: krátká odpověď → pravidlo s příklady → co se
@@ -27,7 +37,7 @@ export default function Limit100000KcPage() {
     <MarketingPage>
       <PageHero eyebrow="Průvodce" title="Limit 100 000 Kč: počítá se objem prodejů, ne zisk" />
 
-      <ArticleBody>
+      <ArticleBody contents={CONTENTS}>
         <ArticleIntro>
           <strong>
             Do limitu 100 000 Kč se počítá, za kolik jsi za rok prodal — úhrn hrubých
@@ -37,7 +47,7 @@ export default function Limit100000KcPage() {
           Přesně 100 000 Kč ještě vyhovuje; první koruna navíc shazuje osvobození celé.
         </ArticleIntro>
 
-        <ArticleSection title="Jak limit funguje">
+        <ArticleSection id="jak-limit-funguje" title="Jak limit funguje">
           <p>
             Zákon o daních z příjmů (§ 4 odst. 1 písm. t) osvobozuje příjmy z prodeje
             cenných papírů, pokud jejich <strong>úhrn za kalendářní rok nepřesáhne
@@ -66,7 +76,7 @@ export default function Limit100000KcPage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Koruna navíc a osvobození padá celé">
+        <ArticleSection id="koruna-navic" title="Koruna navíc a osvobození padá celé">
           <p>
             Limit funguje jako práh, ne jako odpočet: při překročení se nedaní jen částka
             nad 100 000 Kč, ale <strong>osvobození padá pro všechny prodeje</strong>.
@@ -88,7 +98,7 @@ export default function Limit100000KcPage() {
           </Example>
         </ArticleSection>
 
-        <ArticleSection title="Přiznání může vyjít i s nulovou daní">
+        <ArticleSection id="nulova-dan" title="Přiznání může vyjít i s nulovou daní">
           <p>
             Povinnost podat přiznání se posuzuje z <strong>hrubých</strong>{' '}
             příjmů, ne ze zisku. Neosvobozené prodeje za 101 000 Kč jsou nad obecnou
@@ -103,7 +113,7 @@ export default function Limit100000KcPage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Vztah k tříletému testu">
+        <ArticleSection id="trilety-test" title="Vztah k tříletému testu">
           <p>
             Limit 100 000 Kč a tříletý časový test jsou <strong>dvě nezávislá
             osvobození</strong>. Kusy držené déle než 3 roky jsou osvobozené bez ohledu na
@@ -130,7 +140,7 @@ export default function Limit100000KcPage() {
           </DisputedReading>
         </ArticleSection>
 
-        <ArticleSection title="Krypto má vlastní stovku">
+        <ArticleSection id="krypto" title="Krypto má vlastní stovku">
           <p>
             Od 15. 2. 2025 mají kryptoaktiva <strong>vlastní limit 100 000 Kč</strong>{' '}
             a vlastní tříletý test — oddělené od cenných papírů, oba limity se čerpají
@@ -156,7 +166,7 @@ export default function Limit100000KcPage() {
           </ArticleList>
         </ArticleSection>
 
-        <ArticleSection title="Jak limit uhlídat v praxi">
+        <ArticleSection id="v-praxi" title="Jak limit uhlídat v praxi">
           <p>
             O limitu rozhoduje součet za celý rok přes všechny účty — a v prosinci už
             bývá pozdě. Danero průběžně sčítá tržby ze všech napojených platforem, vede
@@ -182,11 +192,7 @@ export default function Limit100000KcPage() {
         />
       </ArticleBody>
 
-      <MarketingCta
-        title="Kolik ze stovky máš letos vyčerpáno?"
-        lede="Napoj brokera nebo nahraj výpis. Danero sečte tržby přes všechny platformy a při 60, 85 a 100 % čerpání ti napíše."
-        primary="registrace"
-      />
+      <PageClosing />
     </MarketingPage>
   );
 }

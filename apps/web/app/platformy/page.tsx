@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { DemoCta } from '@/components/marketing-blocks';
-import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import { PlatformCatalog } from '@/components/platform-catalog';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { plural } from '@/lib/format';
@@ -27,7 +26,7 @@ export default function PlatformyPage() {
         <PlatformCatalog />
       </div>
 
-      <DemoCta />
+      <PageClosing />
     </MarketingPage>
   );
 }

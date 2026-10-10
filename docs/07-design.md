@@ -139,9 +139,10 @@ font-bold`**, vyber stupeň.
 | `components/limits-inspector.tsx` → `LimitsInspector` | Seznam + detail vybraného řádku (inspektor; na telefonu sheet). |
 | `lib/use-container-wide.ts` → `useContainerWide` | „Je okno s obsahem dost široké na inspektor?“ — pro rozvržení, kde šířka mění i chování (výběr řádku × odkaz). |
 | `components/limit-gauge.tsx` → `LimitBar`, `ZONE_TEXT`, `ZONE_LABEL` | Odměrka čerpání limitu a slovní stav. |
-| `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `MarketingCta` | Skořápka veřejné stránky: lišta, titulek, pásy, závěrečná výzva, patička. |
-| `components/marketing-blocks.tsx` → `Split`, `SpecList`, `SpecRow`, `LinkList`, `DemoCta` | Obsah pásů: titulek vlevo + text vpravo; list „pojem — co k němu patří“; seznam odkazů „titulek + věta + šipka“; jednotná závěrečná výzva podstránek. |
-| `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. `ArticleSection` umí kotvu (`id`), mezititulky `h3`, `lead` a `footnote`. |
+| `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `PageClosing` | Skořápka veřejné stránky: lišta, titulek, pásy, závěr stránky, patička. `PageClosing` nemá parametry — je všude stejný. |
+| `components/marketing-blocks.tsx` → `Split`, `SpecList`, `SpecRow`, `LinkList`, `SECTION_TITLE` | Obsah pásů: titulek vlevo + text vpravo; list „pojem — co k němu patří“; seznam odkazů „titulek + věta + šipka“; třídy nadpisu oddílu na podstránce. |
+| `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. `ArticleBody contents` přidá obsah stránky; `ArticleSection` umí kotvu (`id`), mezititulky `h3` a `footnote`. |
+| `components/typeset.tsx` → `typeset`, `typesetText` | Česká sazba textu psaného v JSX (odstavce s odkazy a tučnými místy): projde strom a pustí `tidy()` na textové listy. Volají ho obaly dlouhých textů, ne stránky. |
 | `components/long-read.tsx` → `LongRead`, `PROSE_ANCHORS`, `ANCHOR_OFFSET` | Dlouhý text s obsahem stránky (metodika, podmínky, soukromí): obsah vpravo zůstává na očích, na telefonu nad textem. |
 | `components/faq-list.tsx` → `FaqList` | Otázky a odpovědi nad `<details>`. |
 | `components/form-page.tsx` → `FormPage` | Stránka s jediným formulářem mimo aplikaci (přihlášení, registrace…). |
@@ -295,20 +296,31 @@ Pravidla, která z kódu nejsou vidět:
     <Split title="Proč se neplatí"><p>…</p></Split>
     <Split divided title="Kde je háček"><p>…</p></Split>
   </Band>
-  <DemoCta />
+  <PageClosing />
 </MarketingPage>
 ```
 
-- Stránka je sled pásů; sousední pásy střídají `surface` a `canvas`, `black` nejvýš jednou
-  až dvakrát (silný moment, závěrečná výzva). Jeden pás = jedna myšlenka.
+- Stránka je sled pásů; sousední pásy střídají `surface` a `canvas`. Jeden pás = jedna
+  myšlenka. Černý pás neexistuje: v tmavém režimu měl stejnou plochu jako stránka.
 - V pásu je titulek (`type-headline`), nejvýš jeden perex a obsah. Žádné karty s rámečkem,
   žádné verzálkové štítky, žádné ikony v kroužku. Seznam výhod je seznam, ne mřížka dlaždic.
 - Sloupec je jeden (`wrap-wide`): titulek stránky, obsah pásů i patička lícují s logem
   v liště. Text drž v `measure` (≈ 62 znaků); živé kusy rozhraní smí přes celý sloupec.
 - `eyebrow` u `PageHero` je volitelný — říká, kde čtenář je, když to neříká titulek sám.
-- Závěrečná výzva je na podstránkách `<DemoCta />` (všude stejná věta); vlastní
-  `<MarketingCta title lede />` jen tam, kde výzva navazuje na obsah stránky (článek,
-  kalkulačka). Na předchozí pás doléhá, od článku si drží odstup sama.
+- Závěr stránky je `<PageClosing />` — na všech stránkách tentýž: jedna věcná věta a dvě
+  akce (demo, založení účtu) na ploše `canvas`, bez titulku a bez vlastního textu podle
+  stránky. Žádné slogany. Pás před ním je proto `surface`. Kde závěr nic nepřidává
+  (právní texty, 404, kalkulačka — tam akce nese verdikt), stránka ho nemá.
+- Že je Danero zdarma, říká úvod jednou v titulku a jednou v pásu „Proč je zdarma“;
+  tlačítka příponu „zdarma“ nenesou. Hlídá `test/public-pages.test.ts`.
+- **Čtenář je kdokoli, kdo investuje, ne vývojář.** Úvod se rámuje „Bezpečně a zdarma“
+  a obě slova hned dokládá faktem (připojení jen pro čtení s odkazem na `/bezpecnost`,
+  žádná placená verze). „Otevřený kód“, „open source“ ani „osobní projekt“ na úvod, do
+  patičky, titulků a obrázku pro sdílení nepatří. Veřejný kód je důkaz, ne heslo: stojí na
+  `/bezpecnost`, `/o-projektu` a „Proč zdarma“ obyčejnými slovy („kdokoli se může podívat,
+  co Danero s daty dělá“). Výjimka je „Proč zdarma“, kde mluví autor sám za sebe.
+- Nadpis oddílu na podstránce je `SECTION_TITLE` (na telefonu o stupeň menší než titulek
+  stránky), ne holé `type-title-1`.
 - Úvodní stránka má `type-display` a `type-figure-xl`; podstránky `type-headline`.
 - Hlas: veřejné stránky mluví za Danero ve třetí osobě nebo v množném čísle („čteme“,
   „Danero spočítá“). První osoba autora patří jen na `/o-projektu` a `/cenik` („Proč
@@ -324,17 +336,24 @@ Pravidla, která z kódu nejsou vidět:
     <ArticleSection title="…"><p>…</p><Example title="…">…</Example></ArticleSection>
     <ArticleFooter next={[…]} />
   </ArticleBody>
-  <MarketingCta title="…" lede="…" />
+  <PageClosing />
 </MarketingPage>
 ```
 
-Dlouhý text, ve kterém se hledá (metodika, podmínky, soukromí), má obsah stránky:
-`<LongRead contents={[{ id, title }]}>` kolem `ArticleSection id="…"` nebo kolem
-`<Prose className={PROSE_ANCHORS}>` s obyčejnými `h2 id="…"`.
+Dlouhý text má obsah stránky: článek přes `<ArticleBody contents={[{ id, title }]}>`,
+metodika a právní texty přes `<LongRead contents={…}>` kolem `ArticleSection id="…"` nebo
+kolem `<Prose className={PROSE_ANCHORS}>` s obyčejnými `h2 id="…"`.
 
 Právní a metodické texty s vlastní strukturou: `<Prose>` kolem obyčejných `h2`/`p`/`ul`.
 Tady text zůstává — dieta se týká rozhraní, ne článku, který si člověk přišel přečíst.
 Odkaz uprostřed věty je vždy podtržený.
+
+- **Text ke čtení je `ink`.** Tělo článku, metodiky i právního textu se sází barvou textu;
+  `ink-muted` patří perexu, popisku („Příklad“), zdroji a poznámce pod čarou.
+- **Sazbu dělá obal.** `Prose`, `ArticleSection`, `FaqList`, `SpecRow`, `Split` a `LinkList`
+  protáhnou obsah přes `typeset()` — odstavec ve stránce se píše obyčejně, bez `tidy()`
+  a bez `&nbsp;`. U právních textů smí sazba změnit jen druh mezer, nikdy znění
+  (`test/typeset.test.ts`).
 
 ### Formulář
 
@@ -359,8 +378,9 @@ schovaný v info ikonkách.“* Závazná pravidla:
 3. **Výhrada, která chrání před špatným závěrem, nesmí zmizet** — zkrať ji na pár slov
    u čísla („orientačně, jen z investic“, „Platí se jen při podání přiznání“) a zbytek dej
    do vysvětlivky. Patří sem i výhrada v patičce: krátký odkaz **„Není daňové
-   poradenství“** → `/podminky` (závazné znění je v čl. 1 podmínek), stejný v aplikaci,
-   v demu i na veřejných stránkách. Celou větu do patičky nevracej.
+   poradenství“** → `/podminky#co-danero-je` (článek 1 podmínek, kde je závazné znění),
+   stejný v aplikaci, v demu i na veřejných stránkách. Celou větu do patičky nevracej —
+   na každé stránce se neopakuje.
 4. **Žádný úvodní odstavec pod nadpisem**, který nadpis jen opakuje. Žádná vysvětlivka
    ke grafu, který je srozumitelný sám; legenda ano, návod ne.
 5. **Žargon nahraď obyčejným slovem;** kde to nejde, jednověté vysvětlení je ve vysvětlivce

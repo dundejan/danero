@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
-import { SpecList, SpecRow } from '@/components/marketing-blocks';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { SECTION_TITLE, SpecList, SpecRow } from '@/components/marketing-blocks';
+import { Band, MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
 import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
+import { tidy } from '@/lib/typography';
+import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
   title: 'Bezpečnost — Danero',
@@ -88,7 +91,7 @@ const SECTIONS: { title: string; facts: Fact[] }[] = [
     facts: [
       {
         term: 'Dvoufaktorové ověření',
-        detail: 'Volitelné, kódem z aplikace (TOTP). Zapneš ho v Nastavení.',
+        detail: 'Volitelné, kódem z ověřovací aplikace. Zapneš ho v Nastavení.',
       },
       {
         term: 'Přihlášená zařízení',
@@ -97,7 +100,7 @@ const SECTIONS: { title: string; facts: Fact[] }[] = [
       },
       {
         term: 'Export dat',
-        detail: 'Kdykoli si stáhneš JSON se všemi transakcemi a nastavením.',
+        detail: 'Kdykoli si stáhneš soubor se všemi transakcemi a nastavením.',
       },
       {
         term: 'Smazání účtu',
@@ -112,27 +115,41 @@ const SECTIONS: { title: string; facts: Fact[] }[] = [
         term: 'Nemusíš nám věřit — můžeš si to přečíst',
         detail: (
           <>
-            Celý zdrojový kód Danera je veřejný na{' '}
+            Celý kód Danera je veřejný na{' '}
             <TextLink href={SOURCE_URL} external>
               GitHubu
-            </TextLink>{' '}
-            pod licencí AGPL-3.0 — včetně toho, jak nakládáme s klíči a hesly.
+            </TextLink>
+            . Kdokoli se může podívat, co Danero s daty dělá — včetně toho, jak nakládáme s klíči
+            a hesly.
           </>
         ),
       },
       {
-        term: 'Hlavičky prohlížeče',
+        term: 'Cizí obsah ve stránce',
+        // co to znamená, je vidět; názvy hlaviček jsou pro toho, kdo si je
+        // chce ověřit, a patří za „i“
         detail: (
-          <>
-            Web posílá Content Security Policy, HSTS a zákaz vkládání do cizích stránek. Prohlížeč
-            nesmí načíst skript, styl, font ani obrázek odjinud než z Danera; vlastní skripty, které
-            Next.js potřebuje ke svému běhu přímo ve stránce, povolené jsou.
-          </>
+          // `div`, ne `span`: vysvětlivka na telefonu vykreslí vedle tlačítka <dialog>
+          <div className="flex items-start gap-1.5">
+            <div>Prohlížeč nesmí načíst skript, styl, písmo ani obrázek odjinud než z Danera.</div>
+            <InfoPopover label="Cizí obsah ve stránce" title="Jak je to zařízené" align="end">
+              <p>
+                {tidy(
+                  'Web posílá hlavičky Content Security Policy, HSTS a zákaz vkládání do cizích stránek.',
+                )}
+              </p>
+              <p>
+                {tidy(
+                  'Vlastní skripty, které Next.js potřebuje ke svému běhu přímo ve stránce, povolené jsou.',
+                )}
+              </p>
+            </InfoPopover>
+          </div>
         ),
       },
       {
         term: 'Omezení počtu pokusů',
-        detail: 'Citlivé operace chrání rate limit proti skriptovanému zneužití.',
+        detail: 'Počet pokusů u citlivých operací je omezený — proti skriptovanému zneužití.',
       },
       {
         term: 'Nahlášení zranitelnosti',
@@ -143,7 +160,7 @@ const SECTIONS: { title: string; facts: Fact[] }[] = [
             <TextLink href={`${SOURCE_URL}/blob/main/SECURITY.md`} external>
               SECURITY.md
             </TextLink>
-            , ne do veřejného issue. Odpovídá autor osobně: přijetí potvrdí do 72 hodin, v sezóně
+            , ne do veřejného hlášení na GitHubu. Odpovídá autor osobně: přijetí potvrdí do 72 hodin, v sezóně
             daňových přiznání (únor–duben) to může trvat déle. Nahlášené chyby opravujeme přednostně
             a nálezce rádi (se souhlasem) uvedeme.
           </>
@@ -156,18 +173,26 @@ const SECTIONS: { title: string; facts: Fact[] }[] = [
 export default function BezpecnostPage() {
   return (
     <MarketingPage>
-      {/* bez perexu: nadpisy oddílů říkají totéž a jsou hned pod titulkem */}
-      <PageHero eyebrow="Bezpečnost" title="Co se děje s tvými daty" />
+      {/* jedna věta, co stránka pokrývá — bez ní stál titulek stránky hned nad
+          nadpisem prvního oddílu a na telefonu vypadaly jako dva titulky */}
+      <PageHero
+        eyebrow="Bezpečnost"
+        title="Co se děje s tvými daty"
+        lede="Od klíčů k brokerovi po smazání účtu."
+      />
 
       {/* list se specifikacemi: pojem vlevo, co k němu platí, vpravo — stejný
-          jako „Co všechno dostaneš“ na /cenik */}
+          jako „Co Danero umí“ na /cenik. Oddíly střídají plochu (šedá, bílá),
+          ať to nejsou čtyři stejné seznamy pod sebou; poslední je bílý, protože
+          závěr stránky je šedý. */}
       {SECTIONS.map((section, index) => (
-        <section
+        <Band
           key={section.title}
+          tone={index % 2 === 0 ? 'canvas' : 'surface'}
           aria-labelledby={`oddil-${index}`}
-          className="mt-14 md:mt-20"
+          className={index === 0 ? 'mt-14 md:mt-20' : undefined}
         >
-          <h2 id={`oddil-${index}`} className="type-title-1 text-balance">
+          <h2 id={`oddil-${index}`} className={cn(SECTION_TITLE, 'text-balance')}>
             {section.title}
           </h2>
           <SpecList className="mt-8">
@@ -177,13 +202,10 @@ export default function BezpecnostPage() {
               </SpecRow>
             ))}
           </SpecList>
-        </section>
+        </Band>
       ))}
 
-      <MarketingCta
-        title="Vyzkoušej to na vymyšlených datech"
-        lede="Demo po tobě nic nechce. K účtu pak stačí e-mail a u brokera klíč jen pro čtení."
-      />
+      <PageClosing />
     </MarketingPage>
   );
 }

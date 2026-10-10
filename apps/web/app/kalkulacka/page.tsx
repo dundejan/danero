@@ -1,16 +1,17 @@
 import type { Metadata } from 'next';
 import { KalkulackaPriznani } from '@/components/filing-calculator';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageHero } from '@/components/marketing-page';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { TextLink } from '@/components/ui/link';
 import { Group } from '@/components/ui/list';
 import { currentTaxYear } from '@/lib/clock';
 import { filingLimitTexts } from '@/lib/filing-limits';
+import { typesetText } from '@/components/typeset';
 
 export const metadata: Metadata = {
   title: 'Musím podat daňové přiznání kvůli investicím? Kalkulačka zdarma — Danero',
   description:
-    'Odpověz na pár otázek a zjisti orientačně, jestli se tě kvůli akciím, ETF či kryptu týká daňové přiznání. Zlaté pravidlo 100 000 Kč, tříletý časový test i limit 50 000 Kč pro paušální daň.',
+    'Odpověz na pár otázek a zjisti orientačně, jestli se tě kvůli akciím, ETF či kryptu týká daňové přiznání. Limit 100 000 Kč, tříletý časový test i limit 50 000 Kč pro paušální daň.',
 };
 
 /**
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
  */
 const RULES = [
   {
-    title: 'Zlaté pravidlo 100 000 Kč',
+    title: 'Limit 100 000 Kč',
     body: 'Jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou všechny osvobozené — bez ohledu na zisk a bez tříletého čekání. Počítá se, kolik ti z prodejů přiteklo, ne kolik jsi vydělal. Kryptoaktiva mají od 15. 2. 2025 stejný limit zvlášť.',
   },
   {
@@ -37,7 +38,7 @@ const RULES = [
 export default function KalkulackaPage() {
   const year = currentTaxYear();
   return (
-    <MarketingPage>
+    <MarketingPage active="kalkulacka">
       <PageHero
         eyebrow="Kalkulačka"
         title="Musím kvůli investicím podat daňové přiznání?"
@@ -59,8 +60,8 @@ export default function KalkulackaPage() {
             </h2>
             <Group className="mt-3">
               {RULES.map((rule) => (
-                <DisclosureRow key={rule.title} title={rule.title}>
-                  <p>{rule.body}</p>
+                <DisclosureRow key={rule.title} title={typesetText(rule.title)}>
+                  <p>{typesetText(rule.body)}</p>
                 </DisclosureRow>
               ))}
             </Group>
@@ -72,12 +73,8 @@ export default function KalkulackaPage() {
           </section>
         </KalkulackaPriznani>
       </div>
-
-      <MarketingCta
-        title="Ať to za tebe hlídá Danero — celý rok"
-        lede="Napoj brokera nebo nahraj výpis. Danero se ozve dřív, než nějaký limit překročíš."
-        primary="registrace"
-      />
+      {/* bez závěru stránky: obě akce (demo, založení účtu) nese verdikt, kde
+          dávají smysl — druhá výzva o obrazovku níž je jen opakovala */}
     </MarketingPage>
   );
 }

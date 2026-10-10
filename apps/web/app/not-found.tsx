@@ -1,5 +1,10 @@
+import type { Metadata } from 'next';
 import { LinkList } from '@/components/marketing-blocks';
 import { MarketingPage, PageHero } from '@/components/marketing-page';
+
+// Titulek přes `metadata`, ne značkou <title> ve stránce: ta se vykreslila
+// vedle výchozího titulku webu a v liště prohlížeče vyhrál ten výchozí.
+export const metadata: Metadata = { title: 'Stránka nenalezena — Danero' };
 
 /** Nejčastější cíle toho, kdo zabloudil — stejné tři, co tu byly vždycky. */
 const EXITS: { href: string; title: string; summary: string }[] = [
@@ -17,7 +22,6 @@ const EXITS: { href: string; title: string; summary: string }[] = [
 export default function NotFound() {
   return (
     <MarketingPage>
-      <title>Stránka nenalezena — Danero</title>
       <PageHero
         eyebrow="Chyba 404"
         title="Tahle stránka neexistuje"

@@ -5,7 +5,7 @@ import { HorizonStrip } from '@/components/horizon-strip';
 import { JsonLd } from '@/components/json-ld';
 import { Logo } from '@/components/logo';
 import { SpecList, SpecRow, Split } from '@/components/marketing-blocks';
-import { Band, BandHeading, MarketingPage } from '@/components/marketing-page';
+import { Band, BandHeading, MarketingPage, PageClosing } from '@/components/marketing-page';
 import { DEMO_NAV_ITEMS } from '@/components/nav-items';
 import { SidebarNav } from '@/components/nav-rail';
 import { buttonVariants } from '@/components/ui/button';
@@ -20,9 +20,10 @@ import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { organizationJsonLd } from '@/lib/json-ld';
-import { SOURCE_URL } from '@/lib/legal';
 import { availableYears, engineInputForUser } from '@/lib/portfolio';
 import { currentUser } from '@/lib/session';
+import { typeset } from '@/components/typeset';
+import { SITE_TAGLINE, SITE_TAGLINE_HOW } from '@/lib/site';
 import { tidy } from '@/lib/typography';
 
 // „dnešek“ dema se odvíjí od skutečného data (horizont, limity) —
@@ -30,9 +31,9 @@ import { tidy } from '@/lib/typography';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Danero — hlídač daní z investic, zdarma a s otevřeným kódem',
+  title: 'Danero — hlídač daní z investic, bezpečně a zdarma',
   description:
-    'Danero z tvých obchodů počítá, jestli a kolik máš z investic danit: limit 100 000 Kč, limit paušální daně i tříleté časové testy. Připraví podklady k přiznání včetně XML. Celé zdarma, bez karty; demo bez registrace.',
+    'Danero z tvých obchodů počítá, jestli z investic platíš daň a kolik: limit 100 000 Kč, limit paušální daně i tříleté časové testy. Připraví podklady k přiznání včetně XML. K brokerovi se připojuje jen pro čtení; celé zdarma, bez karty.',
 };
 
 /* ── stavební prvky ───────────────────────────────────────────────────────── */
@@ -40,21 +41,17 @@ export const metadata: Metadata = {
 /**
  * Okno aplikace na úvodní stránce. Uvnitř není obrázek, ale tytéž komponenty,
  * které vykreslují přehled v aplikaci — postranní panel se skutečnými odkazy
- * do dema a pracovní plocha nad ukázkovými daty, na kterou se dá klikat.
+ * do dema a pracovní plocha nad ukázkovými daty.
  * Stín má jen tohle okno: je to jediná věc na stránce, která se vznáší.
+ * Falešné ovládání okna (tři tečky) tu není — je to rekvizita šablonových
+ * úvodních stránek, ne část rozhraní.
  */
 function AppWindow({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl bg-surface text-left shadow-window">
       <div className="flex">
-        <div className="material-sidebar hidden w-52 shrink-0 flex-col border-r border-(--material-edge) px-3 pb-5 pt-4 lg:flex">
-          {/* ovládání okna v klidové (šedé) podobě — okno je ukázka, ne cíl kliknutí */}
-          <div aria-hidden className="flex gap-2 px-2">
-            <span className="size-3 rounded-full bg-line" />
-            <span className="size-3 rounded-full bg-line" />
-            <span className="size-3 rounded-full bg-line" />
-          </div>
-          <div className="mb-5 mt-6 px-2">
+        <div className="material-sidebar hidden w-52 shrink-0 flex-col border-r border-(--material-edge) px-3 pb-5 pt-5 lg:flex">
+          <div className="mb-5 px-2">
             <Logo className="text-[1.0625rem]" />
           </div>
           <SidebarNav
@@ -97,27 +94,47 @@ const variantKey = (row: Variant): string => `${row.matchingMethod}-${row.fxMeth
 const isRecommended = (row: Variant, recommended: Variant): boolean =>
   row.matchingMethod === recommended.matchingMethod && row.fxMethod === recommended.fxMethod;
 
+/** Metoda a kurz, se kterými počítá profil (v databázi obyčejné řetězce). */
+interface MethodChoice {
+  matchingMethod: string;
+  fxMethod: string;
+}
+
+/** Totéž pro výchozí kombinaci — tu, kterou má nastavenou ukázkový profil. */
+const isDefault = (row: Variant, profile: MethodChoice): boolean =>
+  row.matchingMethod === profile.matchingMethod && row.fxMethod === profile.fxMethod;
+
 /**
  * Výtah z porovnání variant: výchozí metoda v obou kurzech a nejvýhodnější
  * řádek. Celou tabulku (4 metody × 2 kurzy) má demo report — tady stačí
- * ukázat, že tatáž data dají podle metody jinou daň. Stav řádku je text,
- * ne barevný štítek.
+ * ukázat, že tatáž data dají podle metody jinou daň.
+ *
+ * Tabulka musí být srozumitelná sama: tři sloupce (metoda, kurz, daň) a nic,
+ * co by si čtenář musel dopočítat. Sloupec „Základ daně“ tu býval a mátl —
+ * nesl jen základ z prodejů, kdežto daň obsahuje i dividendy, takže řádek
+ * „základ 0 Kč, daň 920 Kč“ vypadal jako chyba v počtech (nález R1A-03).
+ * „Výchozí“ je jediný řádek: kombinace, se kterou Danero počítá, dokud ji
+ * člověk nezmění. Stav řádku je text, ne barevný štítek.
  */
-function VariantTable({ rows, recommended }: { rows: Variant[]; recommended: Variant }) {
+function VariantTable({
+  rows,
+  recommended,
+  defaults,
+}: {
+  rows: Variant[];
+  recommended: Variant;
+  defaults: MethodChoice;
+}) {
   return (
     <Table>
-      <caption className="sr-only">Daň podle metody párování a kurzu</caption>
+      <caption className="sr-only">Daň z investic podle metody párování a kurzu</caption>
       <thead>
         <tr>
           <Th>Metoda</Th>
           <Th>Kurz</Th>
-          {/* „základ daně“ místo paragrafu — úvodní stránka nesmí chtít znalost zákona */}
-          <Th align="right" className="hidden sm:table-cell">
-            Základ daně
-          </Th>
-          <Th align="right">Daň</Th>
+          <Th align="right">Daň z investic</Th>
           <Th>
-            <span className="sr-only">Stav</span>
+            <span className="sr-only">Poznámka</span>
           </Th>
         </tr>
       </thead>
@@ -126,20 +143,15 @@ function VariantTable({ rows, recommended }: { rows: Variant[]; recommended: Var
           <Tr key={variantKey(row)}>
             <Td className="font-medium">{METHOD_LABEL[row.matchingMethod]}</Td>
             <Td className="text-ink-muted">{FX_LABEL[row.fxMethod]}</Td>
-            <Td align="right" className="hidden whitespace-nowrap sm:table-cell">
-              {czk(row.base10Czk)}
-            </Td>
             <Td align="right" className="whitespace-nowrap">
               {czk(row.taxCzk)}
             </Td>
             <Td className="type-caption whitespace-nowrap">
-              {/* oba stavy nezávisle (jako v reportu) — „výchozí“ je vlastnost
-                  řádku (FIFO), ne stav vylučující doporučení */}
               {isRecommended(row, recommended) && (
                 <span className="font-semibold text-accent-text">nejvýhodnější</span>
               )}
-              {isRecommended(row, recommended) && row.matchingMethod === 'FIFO' && ' · '}
-              {row.matchingMethod === 'FIFO' && <span className="text-ink-muted">výchozí</span>}
+              {isRecommended(row, recommended) && isDefault(row, defaults) && ' · '}
+              {isDefault(row, defaults) && <span className="text-ink-muted">výchozí</span>}
             </Td>
           </Tr>
         ))}
@@ -159,7 +171,8 @@ const platformNames = (method: PlatformInfo['method']): string =>
 const STEPS = [
   {
     title: 'Projdi si demo',
-    body: 'Celá aplikace nad ukázkovým portfoliem. Bez registrace, nic se v něm neukládá.',
+    // co demo je, říká závěr stránky hned pod kroky — tady stačí, že nic nechce
+    body: 'Bez registrace.',
   },
   {
     title: 'Založ si účet a načti obchody',
@@ -167,7 +180,7 @@ const STEPS = [
   },
   {
     title: 'Dál hlídá Danero',
-    body: 'Limity a časové testy přepočítává denně. E-mail pošle při 60, 85 a 100 % limitu a 30 a 7 dní před osvobozením.',
+    body: 'Limity a tříleté lhůty přepočítává denně. E-mail pošle při 60, 85 a 100 % limitu a 30 a 7 dní před osvobozením.',
   },
 ] as const;
 
@@ -218,21 +231,44 @@ export default async function LandingPage({
         </Notice>
       )}
 
-      {/* ── úvod: co to je, že je to zdarma, a pod tím samotná aplikace ────── */}
-      <section aria-labelledby="hero-nadpis" className="pt-14 text-center md:pt-24">
-        {/* dvě věty, dva řádky (na telefonu dva a dva): druhá je tišší */}
+      {/* ── úvod: co to je, bezpečně a zdarma, a pod tím samotná aplikace ────
+          Čtenář je kdokoli, kdo investuje, ne vývojář: titulek slibuje dvě věci
+          obyčejnými slovy a perex obě hned doloží faktem („jen pro čtení“
+          s odkazem na /bezpecnost, „placenou verzi nemá“). Výrazy jako
+          „otevřený kód“ nebo „osobní projekt“ sem nepatří — majitel je
+          10. 10. 2026 vyřadil jako nesrozumitelné.
+          Slovo „zdarma“ říká stránka dvakrát a víc ne: tady v titulku a v pásu
+          „Proč je zdarma“ (hlídá `test/public-pages.test.ts`). Dřív tu stálo
+          sedmkrát, včetně přípony každého tlačítka — to je prodejní vzorec,
+          ne informace (nález R1A-06). */}
+      <section
+        aria-labelledby="hero-nadpis"
+        // spodní odsazení nese stín okna: pás pod úvodem má vlastní plochu
+        // a stín by jinak uřízl rovnou hranou
+        className="pb-(--band-y) pt-14 text-center md:pt-24"
+      >
+        {/* dvě věty, dva řádky (na telefonu dva a dva): druhá je tišší. Tytéž
+            dvě věty nese obrázek pro sdílení, proto jsou v `lib/site.ts`. */}
         <h1 id="hero-nadpis" className="type-display text-balance">
-          {tidy('Hlídač daní z investic.')}{' '}
-          <span className="block text-ink-muted">{tidy('Je zdarma a má otevřený kód.')}</span>
+          {tidy(SITE_TAGLINE)}{' '}
+          <span className="block text-ink-muted">{tidy(SITE_TAGLINE_HOW)}</span>
         </h1>
         <p className="type-lede measure mx-auto mt-6 text-pretty text-ink-muted">
-          {tidy(
-            'Danero z tvých obchodů průběžně počítá, jestli a kolik máš z investic danit, a připraví podklady k přiznání. Je to osobní projekt: bez placené verze, bez zkušební doby a bez karty.',
+          {typeset(
+            <>
+              Danero z tvých obchodů průběžně počítá, jestli z investic platíš daň a kolik,
+              a připraví podklady k přiznání. K brokerovi se připojuje{' '}
+              <TextLink href="/bezpecnost" className="whitespace-nowrap">
+                jen pro čtení
+              </TextLink>{' '}
+              a tvoje data nikomu neprodává.
+              Placenou verzi nemá a kartu po tobě nechce.
+            </>,
           )}
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
           <Link href="/demo/prehled" className={primaryButton}>
-            Vyzkoušet demo — bez registrace
+            Vyzkoušet demo
           </Link>
           {signedIn ? (
             <TextLink href="/prehled" chevron>
@@ -240,13 +276,19 @@ export default async function LandingPage({
             </TextLink>
           ) : (
             <TextLink href="/registrace" chevron>
-              Založit účet zdarma
+              Založit účet
             </TextLink>
           )}
         </div>
+        {/* kalkulačka odpoví bez účtu i bez dema — patří do první obrazovky,
+            ne do poznámky na konci stránky (nález R1A-11) */}
+        <p className="type-callout mt-5 text-pretty text-ink-muted md:mt-4">
+          Nevíš, jestli se tě přiznání vůbec týká?{' '}
+          <TextLink href="/kalkulacka">Kalkulačka to řekne za minutu</TextLink>.
+        </p>
 
         {/* skutečný přehled nad ukázkovými daty — žádný snímek obrazovky */}
-        <div className="mt-14 md:mt-20">
+        <div className="mt-12 md:mt-16">
           <AppWindow>
             <OverviewView
               txs={txs}
@@ -261,13 +303,13 @@ export default async function LandingPage({
             />
           </AppWindow>
           <p className="type-footnote mx-auto mt-6 text-balance text-ink-muted">
-            {tidy('Přehled z dema nad ukázkovým portfoliem. Není to obrázek — dá se na něj klikat.')}
+            {tidy('Přehled z dema nad ukázkovým portfoliem.')}
           </p>
         </div>
       </section>
 
       {/* ── časové testy: živý horizont ─────────────────────────────────────── */}
-      <Band aria-label="Časové testy">
+      <Band aria-label="Časové testy" className="pt-0">
         <BandHeading
           title="Kdy bude prodej bez daně"
           lede="Po třech letech držení se z prodeje daň neplatí. Tečka je den, kdy ta lhůta doběhne dalším kusům z ukázkového portfolia."
@@ -312,7 +354,11 @@ export default async function LandingPage({
               </InfoPopover>
             </div>
             <div className="mt-2">
-              <VariantTable rows={variantRows} recommended={comparison.recommended} />
+              <VariantTable
+                rows={variantRows}
+                recommended={comparison.recommended}
+                defaults={profile}
+              />
             </div>
             <p className="mt-3">
               <TextLink href={`/demo/report?rok=${variantYear}`} chevron>
@@ -348,40 +394,38 @@ export default async function LandingPage({
         </p>
       </Band>
 
-      {/* ── proč zdarma: odpověď a tři odkazy, kde ji ověřit ────────────────── */}
+      {/* ── proč zdarma: jedna odpověď a dva odkazy, kde ji ověřit ────────────
+          Zbytek (kde je háček, co s daty, kdo za tím stojí) říkají stránky,
+          na které se odkazuje — tady se neopakuje (nález R1A-08). Odkaz na
+          zdrojový kód je v patičce; veřejný kód je důkaz pro toho, kdo ho
+          hledá, ne argument pro každého. */}
       <Band tone="canvas" aria-label="Proč je zdarma">
         <Split title="Proč je zdarma" size="headline">
           <p>
-            {tidy(
-              'Danero je osobní projekt jednoho vývojáře, ne firma. Vzniklo pro vlastní daně a dodnes se ladí na vlastním portfoliu.',
-            )}
-          </p>
-          <p>
-            {tidy(
-              'Nejsou v něm reklamy ani sledovací skripty a data nikomu neprodává. Kód je veřejný, takže si to můžeš ověřit — nebo si Danero rozjet na vlastním serveru.',
-            )}
+            Danero dělá jeden člověk, ne firma. Vzniklo pro vlastní daně, dodnes se ladí na
+            vlastním portfoliu a nic neprodává.
           </p>
           <p className="type-body flex flex-wrap gap-x-6 text-ink">
             <TextLink href="/cenik" chevron>
-              Co všechno dostaneš
+              Podrobněji
             </TextLink>
             <TextLink href="/o-projektu" chevron>
               Kdo za tím stojí
-            </TextLink>
-            <TextLink href={SOURCE_URL} chevron external>
-              Zdrojový kód
             </TextLink>
           </p>
         </Split>
       </Band>
 
-      {/* ── jak začít: tři kroky a dvě akce ─────────────────────────────────── */}
-      <Band tone="black" size="lg" aria-label="Jak začít">
-        {/* v kódu titulek → kroky → akce (tak se čte na telefonu); na širokém
-            okně stojí akce hned pod titulkem a kroky vedle nich */}
-        <div className="grid gap-x-(--column-gap) gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr]">
-          <h2 className="type-headline lg:col-start-1 lg:row-start-1">Jak začít</h2>
-          <ol className="divide-y divide-line/70 border-y border-line/70 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+      {/* ── jak začít: tři kroky ───────────────────────────────────────────────
+          Akce (demo, založení účtu) nese závěr stránky hned pod kroky — stejný
+          jako na všech ostatních stránkách. Do 10. 10. 2026 tu byl černý pás
+          s vlastními tlačítky přes šestinu stránky. */}
+      <Band aria-labelledby="jak-zacit-nadpis">
+        <div className="grid gap-x-(--column-gap) gap-y-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <h2 id="jak-zacit-nadpis" className="type-headline">
+            Jak začít
+          </h2>
+          <ol className="divide-y divide-line/70 border-y border-line/70">
             {STEPS.map((step, index) => (
               <li key={step.title} className="flex gap-5 py-5">
                 <span aria-hidden className="type-title-3 w-4 shrink-0 tabular-nums text-ink-muted">
@@ -394,25 +438,10 @@ export default async function LandingPage({
               </li>
             ))}
           </ol>
-          <div className="lg:col-start-1 lg:row-start-2">
-            <div className="flex flex-wrap gap-3">
-              <Link href="/demo/prehled" className={primaryButton}>
-                Vyzkoušet demo
-              </Link>
-              <Link
-                href={signedIn ? '/prehled' : '/registrace'}
-                className={buttonVariants({ variant: 'secondary', size: 'lg' })}
-              >
-                {signedIn ? 'Přejít do aplikace' : 'Založit účet zdarma'}
-              </Link>
-            </div>
-            <p className="type-footnote mt-5 text-pretty text-ink-muted">
-              Nevíš, jestli se tě přiznání vůbec týká?{' '}
-              <TextLink href="/kalkulacka">Kalkulačka to řekne za minutu</TextLink>.
-            </p>
-          </div>
         </div>
       </Band>
+
+      <PageClosing />
     </MarketingPage>
   );
 }

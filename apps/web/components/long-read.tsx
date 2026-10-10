@@ -1,3 +1,4 @@
+import { typesetText } from '@/components/typeset';
 import { Disclosure } from '@/components/ui/disclosure';
 import { cn } from '@/lib/utils';
 
@@ -41,7 +42,7 @@ function ContentsLinks({ items, columns = false }: { items: ContentsItem[]; colu
             href={`#${item.id}`}
             className="type-footnote flex min-h-11 items-center text-pretty text-accent-text active:opacity-60 lg:min-h-0 lg:py-1.5 lg:text-ink-muted lg:hover:text-ink"
           >
-            {item.title}
+            {typesetText(item.title)}
           </a>
         </li>
       ))}

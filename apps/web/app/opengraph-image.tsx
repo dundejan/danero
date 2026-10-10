@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { SITE_NAME, SITE_URL } from '@/lib/site';
+import { SITE_NAME, SITE_TAGLINE, SITE_TAGLINE_HOW, SITE_TITLE, SITE_URL } from '@/lib/site';
 
 /**
  * Náhledový obrázek sdíleného odkazu (K8-04) — jeden pro celý web.
@@ -14,7 +14,7 @@ import { SITE_NAME, SITE_URL } from '@/lib/site';
  * (viz komentář u `SITE_METADATA` v `lib/site.ts`).
  */
 
-export const alt = 'Danero — daně z investic pohlídané celý rok';
+export const alt = SITE_TITLE;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -57,13 +57,20 @@ export default function OpengraphImage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 78, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.03em' }}>
-          Daně z investic hlídáme za tebe.
-        </div>
-        <div style={{ marginTop: 28, fontSize: 34, color: INK_MUTED }}>
-          Limit 100 000 Kč, tříleté časové testy i paušální daň — a v březnu podklady k přiznání.
-        </div>
+      {/* tytéž dvě věty jako titulek úvodní stránky, druhá tišší — obrázek
+          nemá říkat nic, co web neříká (do 10. 10. 2026 nesl starý slogan) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          fontSize: 70,
+          lineHeight: 1.15,
+          // bez záporného prostrkání: satori ho nerozloží rovnoměrně a mezery
+          // mezi slovy pak vyjdou každá jinak
+        }}
+      >
+        <div>{SITE_TAGLINE}</div>
+        <div style={{ color: INK_MUTED }}>{SITE_TAGLINE_HOW}</div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', fontSize: 30, color: INK_MUTED }}>

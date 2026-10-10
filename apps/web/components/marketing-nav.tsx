@@ -7,15 +7,23 @@ import { buttonVariants } from '@/components/ui/button';
 import { SPRING_DEFAULT } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
-export type MarketingNavKey = 'platformy' | 'cenik' | 'caste-otazky' | 'o-projektu';
+export type MarketingNavKey =
+  | 'platformy'
+  | 'kalkulacka'
+  | 'cenik'
+  | 'caste-otazky'
+  | 'o-projektu';
 
-// Tři odkazy, každý odpovídá na jednu otázku návštěvníka: načte to mého
-// brokera, v čem je háček, a co dalšího se lidé ptají. Kalkulačka (Janovo
-// rozhodnutí 12. 7.) a stránka o autorovi žijí v patičce a v odkazech z textů;
-// klíč `o-projektu` v typu zůstává, aby ho stránka dál směla předat.
+// Čtyři odkazy a víc ne — každý odpovídá na jednu otázku návštěvníka: načte to
+// mého brokera, týká se mě to vůbec, v čem je háček, a co dalšího se lidé
+// ptají. Kalkulačka je v liště od 10. 10. 2026 (do té doby jen v patičce): je
+// to jediná věc na webu, která odpoví bez účtu i bez dema. Stránka o autorovi
+// žije v patičce a v odkazech z textů; klíč `o-projektu` v typu zůstává, aby
+// ho stránka dál směla předat.
 // `/cenik` nese popisek „Proč zdarma“ — ceník bez cen by byl prázdné slovo.
 const LINKS: { key: MarketingNavKey; href: string; label: string }[] = [
   { key: 'platformy', href: '/platformy', label: 'Platformy' },
+  { key: 'kalkulacka', href: '/kalkulacka', label: 'Kalkulačka' },
   { key: 'cenik', href: '/cenik', label: 'Proč zdarma' },
   { key: 'caste-otazky', href: '/caste-otazky', label: 'Časté otázky' },
 ];
@@ -48,20 +56,30 @@ export function MarketingNav({
       }
     };
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    // Otevřené menu je modální: stránka pod ním se nesmí dát odrolovat (menu
+    // by zůstalo viset nad jiným místem). Lišta je na telefonu bez posuvníku,
+    // takže zámek stránkou nepohne.
+    const root = document.documentElement;
+    const previousOverflow = root.style.overflow;
+    root.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      root.style.overflow = previousOverflow;
+    };
   }, [open]);
 
   return (
     <>
-      {/* tři odkazy a dvě akce se vejdou už na tablet — menu pod tlačítkem jen na telefonu */}
-      <nav className="hidden items-center gap-7 md:flex" aria-label="Hlavní navigace">
+      {/* čtyři odkazy a dvě akce se vejdou už na tablet (s užší mezerou) —
+          menu pod tlačítkem jen na telefonu */}
+      <nav className="hidden items-center gap-5 md:flex lg:gap-7" aria-label="Hlavní navigace">
         {LINKS.map((link) => (
           <Link
             key={link.key}
             href={link.href}
             aria-current={active === link.key ? 'page' : undefined}
             className={cn(
-              'type-footnote',
+              'type-footnote active:opacity-60',
               active === link.key ? 'font-semibold text-ink' : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -75,7 +93,10 @@ export function MarketingNav({
           </Link>
         ) : (
           <>
-            <Link href="/prihlaseni" className="type-footnote text-ink-muted hover:text-ink">
+            <Link
+              href="/prihlaseni"
+              className="type-footnote text-ink-muted hover:text-ink active:opacity-60"
+            >
               Přihlásit se
             </Link>
             <Link
@@ -136,14 +157,15 @@ export function MarketingNav({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               style={{ backgroundColor: 'var(--scrim)' }}
-              className="fixed inset-0 top-12 z-40 md:hidden"
+              className="fixed inset-0 top-12 z-40 touch-none md:hidden"
             />
             <motion.div
               key="panel"
               id="mobilni-menu"
               initial={{ opacity: 0, y: -12 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
+              // zavírá se rychleji, než se otevírá: odchod nemá na co čekat
+              exit={{ opacity: 0, y: -12, transition: { duration: 0.15, ease: 'easeOut' } }}
               transition={SPRING_DEFAULT}
               className="material-sheet absolute inset-x-0 top-full z-50 origin-top rounded-b-2xl shadow-floating md:hidden"
             >
@@ -181,7 +203,7 @@ export function MarketingNav({
                     onClick={() => setOpen(false)}
                     className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'mt-4 w-full')}
                   >
-                    Založit účet zdarma
+                    Založit účet
                   </Link>
                 )}
               </nav>

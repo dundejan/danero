@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { toDataURL } from 'qrcode';
-import { DemoCta, SpecList, SpecRow, Split } from '@/components/marketing-blocks';
-import { Band, MarketingPage, PageHero } from '@/components/marketing-page';
+import { SpecList, SpecRow, Split } from '@/components/marketing-blocks';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
+import { typesetText } from '@/components/typeset';
 import { buttonVariants } from '@/components/ui/button';
+import { Chevron } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
-import { OPERATOR } from '@/lib/contact';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
 import { SOURCE_URL } from '@/lib/legal';
@@ -24,17 +25,65 @@ export const dynamic = 'force-dynamic';
 
 // Adresa `/cenik` zůstává (vedou na ni staré odkazy a přesměrování zaniklých
 // tarifů), ale ceník bez cen by byl prázdné slovo: stránka odpovídá na otázku
-// „proč je to zdarma a v čem je háček“ a tak se i jmenuje v navigaci.
+// „proč je to zdarma“ a tak se i jmenuje v navigaci.
+//
+// Slovo „Ceník“ nese titulek dokumentu: podmínky užití (čl. 3) na stránku
+// odkazují jménem „Ceník“ („Co všechno služba umí, popisuje stránka Ceník“)
+// a právní text se kvůli přejmenování nepřepisoval. Z téhož důvodu tu musí
+// zůstat výčet toho, co Danero umí — viz `FEATURES` níž.
 export const metadata: Metadata = {
-  title: 'Proč je Danero zdarma',
+  title: 'Ceník: Danero je zdarma',
   description:
-    'Danero je zdarma celé: import výpisů, limity a časové testy, podklady k přiznání včetně XML, napojení na brokery i hlídací e-maily. Bez placené verze a bez karty — je to osobní projekt s otevřeným kódem.',
+    'Danero je zdarma celé: import výpisů, limity a časové testy, podklady k přiznání včetně XML, napojení na brokery i hlídací e-maily. Bez placené verze a bez karty — dělá ho jeden člověk a nic neprodává.',
 };
 
+interface Fact {
+  text: string;
+  link: { href: string; label: string; external?: boolean };
+}
+
 /**
- * Co všechno Danero umí — JEDEN výčet, protože žádné stupně nejsou. Do
- * 8. 10. 2026 tu byly tři karty (zdarma / podklady / hlídání); jejich obsah je
- * tady celý, jen seřazený podle toho, k čemu slouží.
+ * Proč je Danero zdarma — krátký seznam, jeden řádek = jedna věc a proklik,
+ * kde si ji čtenář ověří. Do 10. 10. 2026 tu byly čtyři dvojice titulek +
+ * odstavce („Proč se neplatí“, „Kde je háček“…) a stránka měla tři obrazovky;
+ * majitel ji chtěl na jednu.
+ *
+ * Mluví tu autor sám za sebe, proto první osoba. „Osobní projekt“ i „open-source“
+ * sem patří (jinde na webu ne — úvod mluví obyčejnými slovy pro každého);
+ * u „open-source“ stojí hned vedle, co to znamená pro toho, kdo není vývojář.
+ * Fakta jsou jen ta, která dokládá stránka, na kterou řádek vede.
+ */
+const FACTS: Fact[] = [
+  {
+    text: 'Je to můj osobní projekt: dělám ho sám a vznikl pro moje vlastní daně.',
+    link: { href: '/o-projektu', label: 'O mně' },
+  },
+  {
+    text: 'Je open-source — kód je veřejný a kdokoli se může podívat, jak počítá a co dělá s daty.',
+    link: { href: SOURCE_URL, label: 'Zdrojový kód', external: true },
+  },
+  {
+    text: 'Je bez reklam a sledovacích skriptů a data nikomu neprodávám.',
+    link: { href: '/bezpecnost', label: 'Bezpečnost' },
+  },
+  {
+    text: 'Klíč k brokerovi je jen pro čtení a ukládá se šifrovaný.',
+    link: { href: '/bezpecnost', label: 'Bezpečnost' },
+  },
+  {
+    text: 'Měnit to v plánu není; kdyby se někdy cokoli mělo zpoplatnit, dozvíš se to e-mailem nejméně 30 dní předem a nic ti nezačnu účtovat bez tvojí výslovné objednávky.',
+    link: { href: '/podminky', label: 'Podmínky užití' },
+  },
+];
+
+/**
+ * Co Danero umí — JEDEN výčet, protože žádné stupně nejsou. Do 8. 10. 2026 tu
+ * byly tři karty (zdarma / podklady / hlídání); jejich obsah je tady celý, jen
+ * seřazený podle toho, k čemu slouží.
+ *
+ * Výčet nesmí zmizet (odkazují na něj podmínky užití), ale stránku nemá
+ * natahovat: stojí na jejím konci sbalený a rozbalí se na místě. Sbalený
+ * `<details>` je ve stránce celý — hledání i vyhledávače ho vidí.
  */
 const WATCHING: readonly string[] = [
   'Limity 100 000 Kč i 50 000 Kč průběžně celý rok',
@@ -83,19 +132,20 @@ async function paymentQr(code: string): Promise<string | null> {
  * Dobrovolný příspěvek. Vykreslí se jen na instanci, která ho má nastavený
  * (`lib/support.ts`) — cizí vlastní instance tak nesbírá peníze pro někoho,
  * kdo ji neprovozuje. Nic neodemyká a text to říká dřív než cokoli jiného.
+ * Stojí hned pod seznamem faktů, ať ho nikdo nemusí hledat.
  */
 async function SupportSplit({ support }: { support: SupportOptions }) {
   const qr = support.paymentCode ? await paymentQr(support.paymentCode) : null;
   return (
-    <Split divided title="Příspěvek na provoz">
+    <Split title="Příspěvek na provoz" className="mt-12 md:mt-16">
       <p>
         Nemusíš. Příspěvkem si <strong className="font-semibold text-ink">nic neodemkneš</strong>{' '}
         — všechno už máš. Pomůže zaplatit doménu, provoz a čas na další brokery.
       </p>
       <p className="type-footnote">
-        {tidy(
-          'Je to dobrovolný příspěvek, ne platba za službu: nevzniká ti jím žádný nárok a nic se jím nemění na tom, co ti Danero poskytuje. Není to ani dar na veřejně prospěšný účel, takže si ho z daní neodečteš.',
-        )}
+        Je to dobrovolný příspěvek, ne platba za službu: nevzniká ti jím žádný nárok a nic se jím
+        nemění na tom, co ti Danero poskytuje. Není to ani dar na veřejně prospěšný účel, takže si
+        ho z daní neodečteš.
       </p>
       {support.paymentCode && (
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4 pt-2">
@@ -143,14 +193,39 @@ export default async function CenikPage() {
       <PageHero
         eyebrow="Proč zdarma"
         title="Danero je zdarma. Celé."
-        lede="Bez placené verze, bez zkušební doby a bez karty. Všechno, co umí, máš od první minuty."
+        lede="Bez placené verze, bez zkušební doby a bez karty."
       />
 
-      <Band tone="canvas" className="mt-14 md:mt-20" aria-labelledby="obsah-nadpis">
-        <h2 id="obsah-nadpis" className="type-title-1">
-          Co všechno dostaneš
-        </h2>
-        <SpecList className="mt-8">
+      <ul
+        aria-label="Proč je Danero zdarma"
+        className="mt-10 divide-y divide-line/70 border-y border-line/70 md:mt-14"
+      >
+        {FACTS.map((fact) => (
+          <li
+            key={fact.text}
+            className="grid gap-x-(--column-gap) py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-baseline md:py-5"
+          >
+            <p className="type-reading measure text-pretty">{typesetText(fact.text)}</p>
+            <TextLink
+              href={fact.link.href}
+              chevron
+              external={fact.link.external}
+              className="type-body justify-self-start"
+            >
+              {fact.link.label}
+            </TextLink>
+          </li>
+        ))}
+      </ul>
+
+      {supportAvailable(support) && <SupportSplit support={support} />}
+
+      <details className="disclosure mt-12 border-y border-line/70 md:mt-16">
+        <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-4 rounded-lg px-2 py-4">
+          <h2 className="type-title-3 min-w-0 flex-1">Co všechno Danero umí</h2>
+          <Chevron className="h-3 text-ink-muted" />
+        </summary>
+        <SpecList className="border-b-0">
           <SpecRow label="Hlídání">
             <FeatureList items={WATCHING} />
           </SpecRow>
@@ -179,70 +254,9 @@ export default async function CenikPage() {
             </FeatureList>
           </SpecRow>
         </SpecList>
-      </Band>
+      </details>
 
-      <Band>
-        <Split title="Proč se neplatí">
-          <p>
-            {tidy(
-              'Danero je osobní projekt jednoho člověka, ne firma. Vzniklo proto, že jsem sám potřeboval hlídat limity a časové testy přes několik platforem — a pořád ho ladím na vlastním portfoliu.',
-            )}
-          </p>
-          <p>
-            {tidy(
-              'Do října 2026 mělo placené tarify. Zrušil jsem je: kód je otevřený a chci, aby Danero mohl celé používat každý, komu se hodí.',
-            )}
-          </p>
-        </Split>
-
-        <Split divided title="Kde je háček">
-          <p>
-            {tidy(
-              'V datech ne. Nikomu je neprodávám, nejsou tu reklamy ani sledovací skripty a tvoje transakce slouží jen k výpočtům pro tebe.',
-            )}{' '}
-            <TextLink href={SOURCE_URL} external>
-              Kód je veřejný
-            </TextLink>{' '}
-            {tidy(
-              'pod licencí AGPL-3.0 — můžeš si ho přečíst, nebo si Danero rozjet na vlastním serveru.',
-            )}
-          </p>
-          <p>
-            {tidy(
-              'Háček je jinde: není tu podpora po telefonu ani garantovaná dostupnost. Odpovídám e-mailem a osobně. Jak je to s odpovědností a co platí, kdyby projekt někdy končil, je',
-            )}{' '}
-            v&nbsp;<TextLink href="/podminky">podmínkách užití</TextLink>.
-          </p>
-        </Split>
-
-        <Split divided title="Zůstane to zdarma?">
-          <p>
-            {tidy(
-              'Měnit to v plánu není. Slíbit „navždy“ ale poctivě nejde, tak aspoň to, co slíbit jde: kdyby se někdy cokoli mělo zpoplatnit, dozvíš se to e-mailem nejméně 30 dní předem, nic ti nikdy nezačnu účtovat bez tvojí výslovné objednávky a svoje data si kdykoli vyvezeš.',
-            )}
-          </p>
-          <p>
-            {tidy('A protože je kód otevřený, verzi, kterou používáš dnes, ti nikdo nevezme.')}
-          </p>
-        </Split>
-
-        <Split divided title="Jak můžeš pomoct">
-          <p>
-            {tidy('Dej vědět o chybě nebo o výpisu, který Danero nepřečetlo — na')}{' '}
-            <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink>.{' '}
-            {tidy('Každý takový případ zlepší čtení pro všechny.')}
-          </p>
-          <p>
-            {tidy(
-              'Umíš programovat? Nejcennější příspěvek do kódu je podpora dalšího brokera. A řekni o Daneru někomu, komu by se hodilo.',
-            )}
-          </p>
-        </Split>
-
-        {supportAvailable(support) && <SupportSplit support={support} />}
-      </Band>
-
-      <DemoCta />
+      <PageClosing />
     </MarketingPage>
   );
 }

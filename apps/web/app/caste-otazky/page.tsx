@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import { FAQ, FAQ_SECTIONS } from './faq';
 import { FaqList } from '@/components/faq-list';
 import { JsonLd } from '@/components/json-ld';
-import { DemoCta } from '@/components/marketing-blocks';
-import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
 import { TextLink } from '@/components/ui/link';
 import { faqPageJsonLd } from '@/lib/json-ld';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,8 @@ export default function CasteOtazkyPage() {
   return (
     <MarketingPage active="caste-otazky">
       <JsonLd data={faqPageJsonLd(FAQ)} />
-      <PageHero eyebrow="Časté otázky" title="Než Danero pustíš k daním" />
+      {/* titulek říká, kde čtenář je; tichý řádek nad ním by ho jen opakoval */}
+      <PageHero title="Časté otázky" />
 
       {/* oddíl = název vlevo, otázky vpravo; na telefonu název nad otázkami */}
       <div className="mt-12 space-y-12 md:mt-16 md:space-y-16">
@@ -40,14 +41,18 @@ export default function CasteOtazkyPage() {
       </div>
 
       <div className={cn(COLUMNS, 'mt-10')}>
-        <p className="type-body text-ink-muted lg:col-start-2">
-          Nenašel jsi odpověď? Napiš na{' '}
-          <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — autor
-          odpovídá osobně.
+        <p className="type-body text-pretty text-ink-muted lg:col-start-2">
+          {typeset(
+            <>
+              Nenašel jsi odpověď? Napiš na{' '}
+              <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — autor
+              odpovídá osobně.
+            </>,
+          )}
         </p>
       </div>
 
-      <DemoCta />
+      <PageClosing />
     </MarketingPage>
   );
 }

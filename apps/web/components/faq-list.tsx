@@ -1,10 +1,12 @@
+import { typeset, typesetText } from '@/components/typeset';
 import { Chevron } from '@/components/ui/disclosure';
 
 /**
  * Seznam otázek a odpovědí nad nativním `<details>`: otázka je řádek s šipkou,
  * odpověď se rozbalí pod ní. Řádky dělí vlásová linka — žádné karty. Stejný
  * jazyk jako `DisclosureRow` v aplikaci, jen s větším písmem: odpověď je text
- * ke čtení, ne poznámka pod čarou.
+ * ke čtení, ne poznámka pod čarou. Českou sazbu otázek i odpovědí dělá
+ * seznam sám (`typeset`).
  */
 
 export interface FaqItem {
@@ -23,10 +25,10 @@ export function FaqList({ items }: { items: FaqItem[] }) {
       {items.map((item) => (
         <details key={item.q} className="disclosure">
           <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-4 rounded-lg px-2 py-4">
-            <span className="type-title-3 min-w-0 flex-1 text-pretty">{item.q}</span>
+            <span className="type-title-3 min-w-0 flex-1 text-pretty">{typesetText(item.q)}</span>
             <Chevron className="h-3 text-ink-muted" />
           </summary>
-          <p className="type-body measure pb-5 text-pretty text-ink-muted">{item.a}</p>
+          <p className="type-body measure pb-5 text-pretty text-ink-muted">{typeset(item.a)}</p>
         </details>
       ))}
     </div>

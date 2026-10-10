@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { LinkList } from '@/components/marketing-blocks';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import { TextLink } from '@/components/ui/link';
 
 export const metadata: Metadata = {
@@ -28,8 +28,8 @@ const ARTICLES: { slug: string; title: string; summary: string }[] = [
 export default function PruvodcePage() {
   return (
     <MarketingPage>
+      {/* bez tichého řádku nad titulkem: „Průvodce“ by stálo dvakrát pod sebou */}
       <PageHero
-        eyebrow="Průvodce"
         title="Průvodce daněmi z investic"
         lede="Každý článek začíná krátkou odpovědí a pokračuje příklady s čísly."
       />
@@ -58,10 +58,7 @@ export default function PruvodcePage() {
         </li>
       </ul>
 
-      <MarketingCta
-        title="Číst je fajn, počítat je lepší"
-        lede="Všechno z průvodce Danero počítá nad tvými daty. Prohlédni si to v demu nad vzorovým portfoliem."
-      />
+      <PageClosing />
     </MarketingPage>
   );
 }
