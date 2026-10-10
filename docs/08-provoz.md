@@ -174,14 +174,14 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   má některá produkční závislost hlášení v databázi GitHubu. Opravuje se
   povýšením balíčku, u nepřímé závislosti přepisem v `pnpm.overrides`
   v kořenovém `package.json`.
-  ⚠️ Tři hlášení (audit je vypíše jako čtyři nálezy — jedno zasahuje dva
-  balíčky) jsou tam **vědomě ignorovaná** (`pnpm.auditConfig.ignoreGhsas`):
-  týkají se Vitestu 3 a jeho `tinypool`, tedy testovacího nástroje, který se do
-  nasazené aplikace nedostane. Audit je do „produkčních“ počítá jen proto, že
-  si Better Auth Vitest deklaruje jako volitelnou partnerskou závislost.
-  Zmizí povýšením na Vitest 4 — to je vlastní práce (jiná hlavní verze pod
-  2 400 testy, pokrytím a mutačními testy) a seznam se pak má vyprázdnit.
-  Jiné hlášení do něj nepřidávej bez stejného zdůvodnění.
+  Seznam výjimek (`pnpm.auditConfig.ignoreGhsas`) **neexistuje a nemá
+  vzniknout**: do 10. 10. 2026 v něm byla tři hlášení k Vitestu 3, která
+  zmizela povýšením na Vitest 4. Pozor na jednu past: audit počítá Vitest mezi
+  „produkční“ závislosti, protože si ho Better Auth deklaruje jako volitelnou
+  partnerskou závislost — hlášení k testovacímu nástroji tak umí shodit job,
+  i když se do nasazené aplikace nedostane. Řešením je povýšit, ne ignorovat.
+  Úplný `pnpm audit` (včetně vývojových závislostí) má jediný zbylý nález,
+  `braces` přes knip, ke kterému záplata neexistuje.
 
 ## Nastavení repozitáře na GitHubu
 

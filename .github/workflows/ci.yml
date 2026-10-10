@@ -91,9 +91,8 @@ jobs:
       # Nepoužité exporty zatím nehlídá — viz docs/08-provoz.md.
       - name: Mrtvé soubory a závislosti (knip)
         run: pnpm knip
-      # Hlášení v databázi GitHubu k produkčním závislostem. Tři hlášení
-      # k Vitestu 3 jsou vědomě ignorovaná v `pnpm.auditConfig` kořenového
-      # package.json — proč a dokdy, je v docs/08-provoz.md.
+      # Hlášení v databázi GitHubu k produkčním závislostem. Bez výjimek —
+      # proč mezi „produkční“ patří i Vitest, je v docs/08-provoz.md.
       - name: Známé zranitelnosti v produkčních závislostech (pnpm audit)
         run: pnpm audit --prod
 
