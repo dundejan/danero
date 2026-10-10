@@ -72,15 +72,29 @@ const render = (txs: ReturnType<typeof parseTransactions>, year: number): string
   );
 
 /**
- * Jen karta „Průvodce: co kam zapsat v přiznání". Skutečný výdaj se jinde
- * v reportu objevit MUSÍ (rozpis prodejů, rozpad na loty) — vadné bylo, že se
- * dostal do čísel opisovaných do formuláře.
+ * Jen část „Co zapsat do přiznání" — řádky formuláře s částkami, od jejího
+ * nadpisu po další sekci. Skutečný výdaj se jinde v reportu objevit MUSÍ
+ * (rozpis prodejů, rozpad na loty) — vadné bylo, že se dostal do čísel
+ * opisovaných do formuláře.
  */
 const guide = (html: string): string => {
-  const from = html.indexOf('Průvodce: co kam zapsat v přiznání');
+  const from = html.indexOf('Co zapsat do přiznání');
   expect(from).toBeGreaterThan(-1);
-  const to = html.indexOf('Konfigurace výpočtu:', from);
-  return html.slice(from, to === -1 ? undefined : to);
+  const ends = ['Kontroly výpočtu', 'Export pro mojedane.cz']
+    .map((heading) => html.indexOf(heading, from))
+    .filter((index) => index > from);
+  expect(ends.length).toBeGreaterThan(0);
+  return html.slice(from, Math.min(...ends));
+};
+
+/**
+ * Text řádku „řádek formuláře → částka" podle čísla řádku (např. „ř. 38").
+ * Hlídá, že částka stojí u SVÉHO řádku, ne jen někde v části.
+ */
+const formLine = (html: string, line: string): string => {
+  const row = html.split('role="listitem"').find((chunk) => chunk.includes(`>${line}<`));
+  expect(row, `řádek ${line}`).toBeDefined();
+  return row!.replace(/<[^>]+>/g, ' ');
 };
 
 describe('Příloha č. 2: report a XML berou čísla z jednoho zdroje (K3-03)', () => {
@@ -151,14 +165,14 @@ describe('§ 8: průvodce a XML nesou stejnou korunu (L5-05, L5-01)', () => {
     const r38 = dpFor('GENERAL').VetaO!.kc_zakldan8!;
     expect(r38).toBe('6552');
     expect(base8WholeCzk(result).generalCzk.toFixed(0)).toBe(r38);
-    expect(guideHtml).toContain(`${czk(Number(r38))}</span> → <strong>ř. 38</strong>`);
+    expect(formLine(guideHtml, 'ř. 38')).toContain(czk(Number(r38)));
   });
 
   it('ř. 401a v průvodci je částka z XML', () => {
     const r401a = dpFor('SEPARATE_16A').VetaZ!.kc_prij48!;
     expect(r401a).toBe('6552');
     expect(base8WholeCzk(result).separate16aCzk.toFixed(0)).toBe(r401a);
-    expect(guideHtml).toContain(`ř. 401a <span class="tabular-nums">${czk(Number(r401a))}</span>`);
+    expect(formLine(guideHtml, 'ř. 401a')).toContain(czk(Number(r401a)));
   });
 
   it('tabulka po státech ukazuje příjem, který jde na ř. 321', () => {

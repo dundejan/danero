@@ -1,6 +1,11 @@
 import type { LimitStatus, TaxYearResult } from '@danero/engine';
-import { Card } from '@/components/ui/card';
+import { ZONE_LABEL } from '@/components/limit-gauge';
+import { Disclosure } from '@/components/ui/disclosure';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { Notice } from '@/components/ui/notice';
+import { StatusLabel, type Tone } from '@/components/ui/status';
 import { czDate, czk, pct } from '@/lib/format';
+import { tidy } from '@/lib/typography';
 
 /**
  * Verdikt o povinnosti podat přiznání — JEDINÝ zdroj pro přehled i report.
@@ -61,65 +66,106 @@ export function filingVerdictHeadline({
     : 'Zatím ti povinnost podat přiznání nevzniká';
 }
 
+/** Barva stavu podle pásma čerpání limitu — stejná jako na přehledu. */
+const ZONE_TONE: Record<LimitStatus['zone'], Tone> = {
+  OK: 'success',
+  WARNING: 'caution',
+  CRITICAL: 'warning',
+  EXCEEDED: 'danger',
+};
+
+const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
 /**
- * Verdikt v reportu, na obrazovce i v tisku (žádné `print:hidden`): výtisk
- * odnáší uživatel poradci a z papíru musí být poznat, jestli povinnost vznikla.
+ * Verdikt v reportu, na obrazovce i v tisku: výtisk odnáší uživatel poradci
+ * a z papíru musí být poznat, jestli povinnost vznikla.
+ *
+ * Na obrazovce je stav limitu, nadpis a krátká výhrada; celé znění výhrady je
+ * ve vysvětlivce a v tisku stojí rozepsané pod nadpisem (vysvětlivka se na
+ * papír nedostane).
  *
  * Výhrada je nutná: Danero vidí jen příjmy z výpisů a z Nastavení. O podnikání,
- * nájmu ani jiném důvodu k podání neví — proto termín podání, průvodce i export
- * pod verdiktem zůstávají pro každého (skrývat je je produktové rozhodnutí).
+ * nájmu ani jiném důvodu k podání neví — proto termín podání, řádky přiznání
+ * i export pod verdiktem zůstávají pro každého (skrývat je je produktové
+ * rozhodnutí).
  *
- * `exemptReportingDeadline` (ISO datum) se předává jen tehdy, když engine pro
- * rok vrací oznamovací povinnost podle § 38v (R-09d). Verdikt „nevzniká“ pak
- * termín nesmí odmávnout: kdo přiznání nepodává, má na oznámení jen základní
- * tříměsíční lhůtu a sankce podle § 38w se počítá z neoznámeného příjmu — právě
- * u něj to bolí nejvíc (A24-R1-01; znění drží krok s `OZNAMENI_5M` kalkulačky).
+ * `reportsExemptIncome` říká, že pro rok platí oznamovací povinnost podle
+ * § 38v (R-09d). Věta „termín potřebuješ jen tehdy, když přiznání podáváš“ by
+ * ji odmávla, takže se v tom případě mění; samotnou lhůtu nese
+ * `ExemptIncomeReportingNotice` hned pod verdiktem.
  */
 export function ReportFilingVerdict({
   year,
   limit,
-  exemptReportingDeadline = null,
+  reportsExemptIncome = false,
 }: {
   year: number;
   limit: FilingLimit;
-  exemptReportingDeadline?: string | null;
+  reportsExemptIncome?: boolean;
 }) {
   const { status, label } = limit;
+  const explanation = status.exceeded ? (
+    <>
+      Soudíme podle příjmů, které Danero eviduje (nahrané výpisy a údaje z Nastavení): {label} je
+      překročený, čerpáno {czk(status.usedCzk)}. Čísla k opsání do přiznání a termín podání najdeš
+      níž na stránce.
+    </>
+  ) : (
+    <>
+      Soudíme jen podle příjmů, které Danero eviduje (nahrané výpisy a údaje z Nastavení): {label}{' '}
+      je čerpaný z {pct(status.ratio * 100)}. O jiných příjmech nevíme.{' '}
+      {reportsExemptIncome
+        ? 'Čísla k opsání níž na stránce potřebuješ jen tehdy, když přiznání podáváš z jiného důvodu.'
+        : 'Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy, když přiznání podáváš z jiného důvodu.'}
+    </>
+  );
   return (
-    <Card className="space-y-1 border-l-4 border-l-accent">
-      <p className="text-xl font-bold">
-        {filingVerdictHeadline({ year, exceeded: status.exceeded })}
+    <div>
+      <StatusLabel tone={ZONE_TONE[status.zone]}>
+        {`${capitalize(label)} — ${ZONE_LABEL[status.zone]}`}
+      </StatusLabel>
+      <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
+        {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded }))}
+      </h2>
+      <p className="type-footnote mt-3 flex items-center gap-1 text-ink-muted print:hidden">
+        {status.exceeded
+          ? 'Podle příjmů, které Danero eviduje.'
+          : 'Jen podle příjmů, které Danero eviduje.'}
+        <InfoPopover label="Z čeho verdikt vychází" align="start">
+          <p>{explanation}</p>
+        </InfoPopover>
       </p>
-      <p className="text-sm text-ink-muted">
-        {status.exceeded ? (
-          <>
-            Soudíme podle příjmů, které Danero eviduje (nahrané výpisy a údaje z Nastavení):{' '}
-            {label} je překročený, čerpáno {czk(status.usedCzk)}. Čísla k opsání do přiznání
-            a termín podání najdeš níž na stránce.
-          </>
-        ) : (
-          <>
-            Soudíme jen podle příjmů, které Danero eviduje (nahrané výpisy a údaje
-            z Nastavení): {label} je čerpaný z {pct(status.ratio * 100)}. O jiných příjmech
-            nevíme.{' '}
-            {exemptReportingDeadline ? (
-              <>
-                Pozor na jednu výjimku: máš osvobozený příjem nad 5 milionů Kč a ten se
-                finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů) — nejpozději{' '}
-                <strong>{czDate(exemptReportingDeadline)}</strong>, tedy do tří měsíců po konci
-                roku. Měsíc navíc, který patří k elektronickému přiznání, dostane jen ten, kdo
-                přiznání opravdu podá. Čísla k opsání níž na stránce potřebuješ jen tehdy, když
-                přiznání podáváš z jiného důvodu.
-              </>
-            ) : (
-              <>
-                Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy, když
-                přiznání podáváš z jiného důvodu.
-              </>
-            )}
-          </>
-        )}
+      <p className="type-footnote mt-3 hidden max-w-[70ch] text-ink-muted print:block">
+        {explanation}
       </p>
-    </Card>
+    </div>
+  );
+}
+
+/**
+ * Oznámení osvobozeného příjmu nad 5 milionů Kč (§ 38v, R-09d) pro toho, komu
+ * povinnost podat přiznání nevznikla. Termín je vidět hned; proč se liší od
+ * lhůty přiznání, je pod ním. Kdo přiznání nepodává, má na oznámení jen
+ * základní tříměsíční lhůtu a sankce podle § 38w se počítá z neoznámeného
+ * příjmu — právě u něj to bolí nejvíc (A24-R1-01; znění drží krok
+ * s `OZNAMENI_5M` kalkulačky).
+ */
+export function ExemptIncomeReportingNotice({ deadline }: { deadline: string }) {
+  return (
+    <Notice
+      tone="caution"
+      title={tidy(
+        `Osvobozený příjem nad 5 milionů Kč oznam finančnímu úřadu do ${czDate(deadline)}`,
+      )}
+    >
+      <Disclosure summary="Proč, když přiznání nepodávám">
+        <p>
+          Osvobozený příjem nad 5 milionů Kč se finančnímu úřadu oznamuje, i když se nedaní (§ 38v
+          zákona o daních z příjmů) — nejpozději <strong>{czDate(deadline)}</strong>, tedy do tří
+          měsíců po konci roku. Měsíc navíc, který patří k elektronickému přiznání, dostane jen ten,
+          kdo přiznání opravdu podá.
+        </p>
+      </Disclosure>
+    </Notice>
   );
 }

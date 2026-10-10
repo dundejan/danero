@@ -64,23 +64,23 @@ const render = (txs: Transaction[]): string =>
 const VYHRADA = 'si letos v Česku nezapočteš';
 
 describe('R-08b: paušalista a zápočet zahraniční daně v reportu (K7a-02)', () => {
-  it('pod limitem 50k report u zápočtu i v průvodci řekne, že zápočet stojí paušální daň', () => {
+  it('pod limitem 50k report u řádků zápočtu řekne, že zápočet stojí paušální daň', () => {
     // 20 000 Kč brutto → limit 50 000 Kč zůstává nevyčerpaný, srážka 3 000 Kč
     const html = render(dividendTxs('20000', '3000'));
 
-    // obě místa zvlášť: karta zápočtu („Příjmy podle států") i průvodce
-    // „co kam zapsat". Ve výpisu kontrol výpočtu je navíc táž hláška z enginu —
-    // proto se hledá po sekcích, ne prostým počtem výskytů.
+    // Výhrada stojí přímo u řádků, kterými se zápočet do přiznání zapisuje
+    // (oddíl o dividendách v části „Co zapsat do přiznání“), a to dřív než
+    // tabulka států pro Přílohu č. 3. Ve výpisu kontrol výpočtu je navíc táž
+    // hláška z enginu — proto se hledá po sekcích, ne prostým počtem výskytů.
     const sekce = (od: string, do_: string): string => {
       const from = html.indexOf(od);
       expect(from, od).toBeGreaterThan(-1);
       const to = html.indexOf(do_, from);
-      return html.slice(from, to === -1 ? undefined : to);
+      expect(to, do_).toBeGreaterThan(from);
+      return html.slice(from, to);
     };
-    expect(sekce('Příjmy podle států', 'Kontroly výpočtu')).toContain(VYHRADA);
-    expect(sekce('Průvodce: co kam zapsat v přiznání', 'Konfigurace výpočtu')).toContain(
-      VYHRADA,
-    );
+    expect(sekce('Co zapsat do přiznání', 'Kontroly výpočtu')).toContain(VYHRADA);
+    expect(sekce('Dividendy a úroky ze zahraničí', 'Příjmy podle států')).toContain(VYHRADA);
 
     // spouštěčem odst. 5 je UPLATNĚNÍ zápočtu v přiznání, ne samotné podání
     expect(html).toContain('v přiznání uplatnil');
@@ -100,7 +100,7 @@ describe('R-08b: paušalista a zápočet zahraniční daně v reportu (K7a-02)',
     const html = render(dividendTxs('60000', '9000'));
 
     expect(html).not.toContain(VYHRADA);
-    // a zápočet se mu dál nabízí (karta Přílohy č. 3 zůstává)
+    // a zápočet se mu dál nabízí (tabulka pro Přílohu č. 3 zůstává)
     expect(html).toContain('Příjmy podle států');
   });
 
