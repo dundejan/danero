@@ -82,7 +82,10 @@ describe('částka v nastavení se čte tak, jak ji lidé píšou', () => {
     it(`„${vstup}" se uloží jako ${ulozeno}`, { timeout: 30_000 }, async () => {
       const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
       const kam = await cil(() => saveProfileAction(form(vstup)));
-      expect(kam, `„${vstup}" mělo projít, skončilo na ${kam}`).toMatch(/^\/(prehled|nastaveni\?ok=)/);
+      expect(kam, `„${vstup}" mělo projít, skončilo na ${kam}`).toMatch(
+        // první uložení účtu bez dat vede ke kroku 2 (Zdroje dat), další zůstávají v nastavení
+        /^\/(import\?ulozeno=profil|prehled|nastaveni\?ok=)/,
+      );
 
       const { taxpayerProfiles } = await import('@/db/schema');
       const [row] = await stav.db.select().from(taxpayerProfiles);

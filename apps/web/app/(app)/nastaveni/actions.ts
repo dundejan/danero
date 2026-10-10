@@ -9,6 +9,7 @@ import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
+import { afterProfileSaveUrl, hasAnyTransaction } from '@/lib/onboarding';
 import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
 import {
@@ -119,9 +120,17 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
 
   revalidatePath('/prehled');
   revalidatePath('/nastaveni');
-  // první uložení = onboarding pokračuje na přehled; další změny se ukládají
-  // samy (auto-save) a uživatel zůstává u formuláře s potvrzením
-  redirect(previous === undefined ? '/prehled' : '/nastaveni?ok=profil#dan');
+  // první uložení = cesta nového uživatele pokračuje krokem 2 (přidat data),
+  // případně přehledem, když už data má; další změny se ukládají samy
+  // (auto-save) a uživatel zůstává u formuláře s potvrzením
+  revalidatePath('/import');
+  redirect(
+    afterProfileSaveUrl({
+      firstSave: previous === undefined,
+      // na data se ptáme jen při prvním uložení — auto-save je nepotřebuje
+      hasData: previous === undefined && (await hasAnyTransaction(db, user.id)),
+    }),
+  );
 }
 
 /**

@@ -156,10 +156,13 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
         (new RegExp(`option\\[value=${regime}\\]:checked[^>]*>([^<]*)<`).exec(html)?.[1] ?? '')
           .replace(/\s/g, ' ');
       const spaced = (text: string): string => text.replace(/\s/g, ' ');
-      expect(hintFor('ZAMESTNANEC')).toBe(spaced(`Hlídá se limit ${employeeLimit}.`));
-      expect(hintFor('JINE')).toBe(spaced(`Hlídá se obecný limit ${generalLimit}.`));
+      expect(hintFor('ZAMESTNANEC')).toBe(
+        spaced(`Hlídá se limit vedlejších příjmů (${employeeLimit}).`),
+      );
+      expect(hintFor('JINE')).toBe(spaced(`Hlídá se limit pro podání přiznání (${generalLimit}).`));
       // limit paušální daně (§ 7a) se nemění
-      expect(hintFor('PAUSAL')).toBe('Hlídá se limit 50 000 Kč.');
+      // limity se jmenují stejně jako na přehledu (R1B-10)
+      expect(hintFor('PAUSAL')).toBe('Hlídá se limit paušální daně (50 000 Kč).');
     });
 
     it(`první krok uvítání v roce ${year}`, { timeout: 30_000 }, async () => {
