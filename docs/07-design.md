@@ -94,8 +94,13 @@ font-bold`**, vyber stupeň.
 - Věty začínají velkým písmenem a tím to končí — žádné verzálky, žádné prostrkané štítky.
 - Titulky dostávají `text-balance`, odstavce `text-pretty`.
 - Text složený z řetězce protáhni přes **`tidy()` z `lib/typography.ts`** (nebo `<Tidy>`):
-  neodtrhne předložku, částku od „Kč“ ani „§“ od čísla. Ve stejném souboru je `plainTitle()`
-  (titulek upozornění bez obrázkového znaku) a `withoutLawRefs()` (titulek bez „(§ …)“).
+  neodtrhne předložku, číslo od jednotky („Kč“, „%“, „roky“, „hodin“), „§“ ani zkratku od
+  čísla, nerozlomí datum a nenechá řádek začínat pomlčkou. Pravidla sazby jsou **jen tam**
+  — `typeset()` pro text v JSX je jen průchod stromem, který `tidy()` volá. Ve stejném
+  souboru je `plainTitle()` (titulek upozornění bez obrázkového znaku) a `withoutLawRefs()`
+  (titulek bez „(§ …)“).
+- Částku v cizí měně píše `money()` z `lib/format.ts`: pevná mezera před kódem měny a pod
+  haléř tři platné číslice („0,00031 CZK“, ne „0,00 CZK“).
 
 ## 3. Primitiva (`apps/web/components/ui/*` a skořápky)
 
@@ -110,7 +115,7 @@ font-bold`**, vyber stupeň.
 | `ui/list.tsx` → `Group`, `Row` | Seskupený seznam: popisek vlevo, hodnota nebo ovládací prvek vpravo. `variant="inset"` = šedá skupina (nastavení, sheet). `Row wrap` = hodnota je věta a smí se zalomit. Hodnotu, která se vedle popisku nevejde, řádek složí pod něj (nezkracuje ji). |
 | `ui/list.tsx` → `FieldRow` | Řádek skupiny s polem nebo nabídkou; v úzkém okně se pole složí pod popisek. Stránka kolem potřebuje `@container`. |
 | `ui/list.tsx` → `GroupItem` | Položka skupiny s volným obsahem (soubor s formulářem, limit s odměrkou). |
-| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. Akce, která se vedle nadpisu nevejde, spadne pod něj; přepínač se posouvá sám (`scrollActions` už není potřeba, je bez účinku). |
+| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. Akce, která se vedle nadpisu nevejde, spadne pod něj; přepínač se posouvá sám. |
 | `ui/stat.tsx` → `Stat` | Klíčové číslo s popiskem a nejvýš pár slovy pod ním. `size="lg"` nejvýš dvakrát na stránku. |
 | `ui/status.tsx` → `StatusLabel`, `TONE_TEXT` | Stav jednou větou: barevná tečka + text téže barvy. |
 | `ui/notice.tsx` → `Notice` | Sdělení k celé stránce/sekci (něco chybí, něco se stalo). Místo obarvené karty. |
@@ -134,15 +139,18 @@ font-bold`**, vyber stupeň.
 | `components/year-switcher.tsx` → `YearSwitcher` | Přepínač zdaňovacího období do lišty. |
 | `components/nav-items.ts` → `APP_NAV_ITEMS`, `DEMO_NAV_ITEMS`, `activeNavHref` | Sekce aplikace a která je pro adresu aktivní. Sekce má **jedno jméno** — stejné v panelu, ve spodní liště i v titulku stránky („Simulátor“, ne „Simulace“). |
 | `components/app-skeleton.tsx` → `AppSkeleton`, `toolbarShape` | Kostra načítání skořápky. Stránka s přepínačem nebo akcí v liště se zapíše do `TOOLBAR_SHAPES`, jinak jí kostra na telefonu neposedí. |
-| `components/shell-disclaimer.ts` → `NOT_TAX_ADVICE` | Krátký odkaz „Není daňové poradenství“ → podmínky; jedno znění pro patičku aplikace i dema. |
+| `components/shell-disclaimer.ts` → `NOT_TAX_ADVICE` | Krátký odkaz „Není daňové poradenství“ → článek 1 podmínek; jedno znění a jeden cíl pro patičku aplikace, dema i veřejných stránek. Stránka vlastní výhradu na obrazovce nenese (report ji má celou jen v tisku). |
 | `components/theme-toggle.tsx` → `ThemeToggle` | Přepínač vzhledu, všude se stejnými popisky; změnu prolne. Barvu lišty prohlížeče po ruční volbě srovnává `ThemeProvider` (`components/theme-color.ts`). |
 | `components/limits-inspector.tsx` → `LimitsInspector` | Seznam + detail vybraného řádku (inspektor; na telefonu sheet). |
 | `lib/use-container-wide.ts` → `useContainerWide` | „Je okno s obsahem dost široké na inspektor?“ — pro rozvržení, kde šířka mění i chování (výběr řádku × odkaz). |
 | `components/limit-gauge.tsx` → `LimitBar`, `ZONE_TEXT`, `ZONE_LABEL` | Odměrka čerpání limitu a slovní stav. |
+| `lib/limit-names.ts` → `LIMIT_NAME`, `limitWithAmount`, `limitTitle` | Jména limitů — jedno pro každý limit na přehledu, v reportu, v simulátoru i v Nastavení („Limit paušální daně“, „Osvobození prodejů cenných papírů“…). Jméno je bez částky; tu připojí `limitWithAmount` (ve větě) nebo `limitTitle` (titulek) ze stavu limitu nebo z konfigurace roku. Limit nikdy nepojmenovávej ve stránce znovu. |
+| `components/tax-figure.tsx` → `TaxFigure`, `TaxFigureInfo`, `DividendTaxationRow`, `TaxResultRows`, `TAX_NAME`, `DUE_NAME` | Hlavní číslo daně vedle verdiktu a jeho rozpad — jediný zdroj pro přehled, report i simulátor. Jména jsou dvě: „Orientační daň z investic“ a „Doplatek daně“ (po odečtení záloh z paušálního režimu); která z nich je hlavní, rozhoduje `taxSummary()` z `lib/payable-tax.ts`. Varianty zdanění dividend jsou volba, ne sčítance (`DividendTaxationRow`). |
+| `components/epo-export-form.tsx` → `EpoExportForm` | Formulář exportu XML v reportu: osobní údaje a pole dodatečného přiznání za rozbalením, chyba pole sekci otevře a zaměří. Odesílá ho i tlačítko „Stáhnout XML“ v liště (`EPO_FORM_ID` z `lib/epo-form.ts`). |
 | `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `PageClosing` | Skořápka veřejné stránky: lišta, titulek, pásy, závěr stránky, patička. `PageClosing` nemá parametry — je všude stejný. |
 | `components/marketing-blocks.tsx` → `Split`, `SpecList`, `SpecRow`, `LinkList`, `SECTION_TITLE` | Obsah pásů: titulek vlevo + text vpravo; list „pojem — co k němu patří“; seznam odkazů „titulek + věta + šipka“; třídy nadpisu oddílu na podstránce. |
 | `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. `ArticleBody contents` přidá obsah stránky; `ArticleSection` umí kotvu (`id`), mezititulky `h3` a `footnote`. |
-| `components/typeset.tsx` → `typeset`, `typesetText` | Česká sazba textu psaného v JSX (odstavce s odkazy a tučnými místy): projde strom a pustí `tidy()` na textové listy. Volají ho obaly dlouhých textů, ne stránky. |
+| `components/typeset.tsx` → `typeset` | Česká sazba textu psaného v JSX (odstavce s odkazy a tučnými místy): projde strom a pustí `tidy()` na textové listy. Volají ho obaly dlouhých textů, ne stránky. Pravidla sama jsou v `tidy()`. |
 | `components/long-read.tsx` → `LongRead`, `PROSE_ANCHORS`, `ANCHOR_OFFSET` | Dlouhý text s obsahem stránky (metodika, podmínky, soukromí): obsah vpravo zůstává na očích, na telefonu nad textem. |
 | `components/faq-list.tsx` → `FaqList` | Otázky a odpovědi nad `<details>`. |
 | `components/form-page.tsx` → `FormPage` | Stránka s jediným formulářem mimo aplikaci (přihlášení, registrace…). |
@@ -397,7 +405,8 @@ Zkouška: zakryj odstavec. Rozhodne se člověk hůř? Když ne, odstavec patř�
 
 Příklad z přehledu — bylo pod verdiktem: dva odstavce o datové schránce, lhůtě, ČSSZ
 a základu z § 7. Je: `Termín podání 3. 5. 2027 · jen elektronicky ⓘ` a `Doplatek daně
-980 Kč · orientačně, jen z investic ⓘ`.
+980 Kč ⓘ` se dvěma tichými řádky pod číslem: `daň 2 180 Kč − zálohy 1 200 Kč` (odkud
+doplatek je) a `orientačně, jen z investic · navíc pojistné a přehledy` (výhrada).
 
 **Grafy limitů mají jedinou vodicí čáru: limit.** Pásma 60 a 85 % se nekreslí nikde.
 
@@ -480,6 +489,7 @@ stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
 - **Doménové komponenty sdílené mezi stránkami:** `components/warnings-list.tsx`,
   `components/horizon-strip.tsx`, `components/charts.tsx`, `components/limit-gauge.tsx`,
   `components/limits-inspector.tsx`, `components/filing-verdict.tsx`,
+  `components/tax-figure.tsx`, `components/epo-export-form.tsx`,
   `components/tax-year-config-notice.tsx`, `components/positions-table.tsx`,
   `components/positions-explorer.tsx`, `components/position-card.tsx`. Verdikt o povinnosti
   podat přiznání kreslí na přehledu i v reportu týž `FilingVerdict` — neopisuj ho.
@@ -487,7 +497,8 @@ stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
   simulátor, report — sdílí je aplikace a demo) a soubory vedle `page.tsx`
   (`app/(app)/import/*`, `app/(app)/nastaveni/*`). Místní komponenta je v pořádku, dokud
   ji používá jedna stránka; s druhým použitím se stěhuje výš.
-- **Texty a typografie:** `lib/typography.ts`, `lib/format.ts`; pružiny `lib/motion.ts`;
-  názvy platforem `platformName()` v `lib/brokers-catalog.ts`.
+- **Texty a typografie:** `lib/typography.ts`, `lib/format.ts`; jména limitů
+  `lib/limit-names.ts`; pružiny `lib/motion.ts`; názvy platforem `platformName()`
+  v `lib/brokers-catalog.ts`.
 
 Tahle reference se mění zároveň s primitivem — nový prop bez řádku tady neexistuje.
