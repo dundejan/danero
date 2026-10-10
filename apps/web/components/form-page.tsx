@@ -40,9 +40,19 @@ export function FormPage({
         <Logo className="text-[1.0625rem]" />
       </Link>
       <h1 className="type-title-1 text-balance">{title}</h1>
-      {lede && <p className="type-callout mt-2 text-ink-muted">{lede}</p>}
+      {/* Odkaz ve větě si na dotyku bere neviditelnou plochu 44 px (řádek textu
+          se nehýbe); samostatný odkaz pod formulářem je 44 px vysoký celý —
+          bez toho měl cíl 16 px (R1A-16). Odkazy ve větě v patičce (souhlas
+          s podmínkami při registraci) zůstávají řádkové. */}
+      {lede && (
+        <p className="type-callout mt-2 text-ink-muted pointer-coarse:[&_a]:hit-area">{lede}</p>
+      )}
       <div className="mt-8">{children}</div>
-      {footer && <div className="type-callout mt-6 text-ink-muted">{footer}</div>}
+      {footer && (
+        <div className="type-callout mt-6 text-ink-muted pointer-coarse:[&>a]:inline-flex pointer-coarse:[&>a]:min-h-11 pointer-coarse:[&>a]:items-center">
+          {footer}
+        </div>
+      )}
     </main>
   );
 }
