@@ -52,6 +52,8 @@ const FALLBACK_WIDTH = 1000;
 const PILE_SLOT = 38;
 /** Jak velký kus pásu smí zabrat minulost (podíl z délky výhledu). */
 const PAST_SHARE = 0.18;
+/** Popisek měsíce blíž než tolik pixelů k čáře „dnes“ se nekreslí. */
+const TODAY_CLEARANCE = 18;
 /** Dosah prstu a myši: tečka se chytí, i když ukazatel míří těsně vedle. */
 const REACH_PX = 22;
 
@@ -76,18 +78,40 @@ const dotLabel = (dot: HorizonDot): string =>
       ? monthLabel(dot.exemptFrom)
       : czDate(dot.exemptFrom);
 
-/** Celková váha tečky jako text: CZK, nebo počet kusů (weight = součet kusů). */
-const totalText = (dot: HorizonDot): string =>
-  dot.weightBasis === 'value' ? czkCompact(dot.weight) : `${qty(dot.weight)} ks`;
+/**
+ * Rozpětí sloučených termínů: „úno – kvě 2027“, „lis 2026 – úno 2027“, u dnů
+ * „3. 10. 2026 – 25. 10. 2026“.
+ */
+const rangeLabel = (first: HorizonDot, last: HorizonDot): string => {
+  if (
+    isMonthDot(first) &&
+    isMonthDot(last) &&
+    first.exemptFrom.slice(0, 4) === last.exemptFrom.slice(0, 4)
+  ) {
+    return `${MONTH_LABELS[Number(first.exemptFrom.slice(5, 7)) - 1]} – ${monthLabel(last.exemptFrom)}`;
+  }
+  return `${dotLabel(first)} – ${dotLabel(last)}`;
+};
+
+/**
+ * Celková váha tečky jako text: částka v Kč, nebo počet kusů (když cenu nemá
+ * žádná pozice portfolia). Pozice bez ceny v tečce vážené hodnotou do částky
+ * nevstupuje — text to přizná, aby „0 Kč“ nevypadalo jako bezcenná pozice.
+ */
+const totalText = (dot: HorizonDot): string => {
+  if (dot.weightBasis !== 'value') return `celkem ${qty(dot.weight)} ks`;
+  const unpriced = dot.items.filter((item) => item.unpriced).length;
+  if (unpriced === dot.items.length) return 'bez ceny';
+  return `celkem ${czkCompact(dot.weight)}${unpriced > 0 ? ' + bez ceny' : ''}`;
+};
 
 /** Max řádků rozpadu v bublině — víc pozic shrne „+ dalších N“. */
 const TIP_MAX_ITEMS = 8;
 
 const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
 
-/** Sloučí starší osvobozené tečky do jedné souhrnné (jen pro vykreslení). */
-function pileOf(dots: HorizonDot[]): HorizonDot | null {
-  if (dots.length === 0) return null;
+/** Sloučí tečky do jedné: váhy se sečtou, pozice téhož titulu taky (jen pro vykreslení). */
+function mergeDots(dots: HorizonDot[], exemptFrom: string): HorizonDot {
   const items = new Map<string, HorizonDot['items'][number]>();
   for (const dot of dots) {
     for (const item of dot.items) {
@@ -101,12 +125,17 @@ function pileOf(dots: HorizonDot[]): HorizonDot | null {
     }
   }
   return {
-    exemptFrom: PILE_KEY,
+    exemptFrom,
     weight: dots.reduce((sum, dot) => sum + dot.weight, 0),
     weightBasis: dots[0]!.weightBasis,
-    isExempt: true,
+    isExempt: dots.every((dot) => dot.isExempt),
     items: [...items.values()].sort((a, b) => b.weight - a.weight),
   };
+}
+
+/** Sloučí starší osvobozené tečky do jedné souhrnné (jen pro vykreslení). */
+function pileOf(dots: HorizonDot[]): HorizonDot | null {
+  return dots.length === 0 ? null : { ...mergeDots(dots, PILE_KEY), isExempt: true };
 }
 
 /**
@@ -115,6 +144,8 @@ function pileOf(dots: HorizonDot[]): HorizonDot | null {
  * horizont si ji k nadpisu přidá sám.
  */
 export function HorizonInfo({ byValue }: { byValue: boolean }) {
+  // Legenda, ne návod (R1B-24): co tečka, barva a velikost znamenají. Jak se
+  // pás ovládá, pozná člověk najetím nebo klepnutím.
   return (
     <InfoPopover label="Horizont osvobození" align="start">
       <p>
@@ -122,11 +153,9 @@ export function HorizonInfo({ byValue }: { byValue: boolean }) {
         bez daně. Zelené už ho mají za sebou; první tečka vlevo shrnuje všechny starší.
       </p>
       <p>
-        Velikost tečky odpovídá {byValue ? 'celkové hodnotě' : 'celkovému počtu kusů'}. V pohledu na
-        3 roky je tečka měsíc (aktuální měsíc po dnech), v ročním den. Najetím, klepnutím nebo
-        tažením po pásu zobrazíš rozpad.
+        Velikost tečky odpovídá {byValue ? 'celkové hodnotě' : 'celkovému počtu kusů'}; termíny
+        blízko sebe se slučují do jedné. Spodní křivka je podíl portfolia, který už bude bez daně.
       </p>
-      <p>Spodní křivka ukazuje, jaký podíl portfolia už bude bez daně.</p>
     </InfoPopover>
   );
 }
@@ -135,6 +164,98 @@ interface PlacedDot {
   dot: HorizonDot;
   cx: number;
   r: number;
+  /** Popisek do bubliny a pro čtečku: den, měsíc, nebo rozpětí sloučených termínů. */
+  label: string;
+}
+
+/** Nejmenší poloměr, na který se sousední tečky různého stavu smí zmenšit. */
+const MIN_RADIUS = 3;
+
+/**
+ * Tečky, které by se překryly, sloučí do jedné (R1A-13). Ve tříletém pohledu
+ * připadá na telefonu na měsíc šest pixelů a přes dvacet teček se slilo do tří
+ * šedých hroud — jednotlivou nešlo rozeznat ani trefit prstem. Sloučená tečka
+ * stojí uprostřed svého rozpětí, nese součet vah a rozpad všech pozic; bublina
+ * řekne, které období shrnuje.
+ *
+ * - Slučují se jen tečky téhož stavu: zelená (už bez daně) a čekající nikdy
+ *   nesplynou, hranici mezi nimi drží čára „dnes“. Když se přes ni přece
+ *   dotknou, obě se zmenší, aby jedna nezakryla druhou (R1B-25).
+ * - V úzkém pásu stačí ke sloučení dotyk; v širokém až výrazný překryv (střed
+ *   jedné tečky uvnitř druhé) — tam je místa dost a lehký přesah nevadí.
+ * - Sloučená tečka je větší, takže může dosáhnout na další souseda — proto
+ *   se prochází opakovaně, dokud se něco mění.
+ */
+function separateDots(
+  dots: PlacedDot[],
+  radius: (weight: number, maxWeight: number, monthDot: boolean) => number,
+  narrow: boolean,
+): PlacedDot[] {
+  // člen shluku si pamatuje první a poslední původní tečku kvůli popisku a poloze
+  type Cluster = PlacedDot & { first: PlacedDot; last: PlacedDot; members: HorizonDot[] };
+  let clusters: Cluster[] = [...dots]
+    .sort((a, b) => a.cx - b.cx)
+    .map((dot) => ({ ...dot, first: dot, last: dot, members: [dot.dot] }));
+
+  const collide = (a: Cluster, b: Cluster): boolean => {
+    const distance = Math.abs(b.cx - a.cx);
+    return narrow ? distance < a.r + b.r + 1 : distance < Math.max(a.r, b.r);
+  };
+
+  for (let pass = 0; pass < 12; pass += 1) {
+    const maxWeight = Math.max(...clusters.map((cluster) => cluster.dot.weight), 1);
+    const next: Cluster[] = [];
+    let merged = false;
+    for (const cluster of clusters) {
+      const previous = next.at(-1);
+      if (
+        previous &&
+        previous.dot.isExempt === cluster.dot.isExempt &&
+        collide(previous, cluster)
+      ) {
+        const members = [...previous.members, ...cluster.members];
+        const dot = mergeDots(
+          members,
+          `${previous.first.dot.exemptFrom}…${cluster.last.dot.exemptFrom}`,
+        );
+        next[next.length - 1] = {
+          dot,
+          cx: (previous.first.cx + cluster.last.cx) / 2,
+          r: radius(dot.weight, Math.max(maxWeight, dot.weight), isMonthDot(previous.first.dot)),
+          label: rangeLabel(previous.first.dot, cluster.last.dot),
+          first: previous.first,
+          last: cluster.last,
+          members,
+        };
+        merged = true;
+      } else {
+        next.push(cluster);
+      }
+    }
+    clusters = next;
+    if (!merged) break;
+  }
+
+  // po sloučení se poloměry přepočítají proti největší tečce v pásu
+  const maxWeight = Math.max(...clusters.map((cluster) => cluster.dot.weight), 1);
+  const placed: PlacedDot[] = clusters.map(({ dot, cx, label, first }) => ({
+    dot,
+    cx,
+    label,
+    r: radius(dot.weight, maxWeight, isMonthDot(first.dot)),
+  }));
+
+  // sousedé různého stavu (kolem čáry „dnes“) se neslučují — jen si ustoupí
+  for (let i = 1; i < placed.length; i += 1) {
+    const a = placed[i - 1]!;
+    const b = placed[i]!;
+    const distance = b.cx - a.cx;
+    if (a.dot.isExempt === b.dot.isExempt || distance >= a.r + b.r) continue;
+    const shrink = Math.max(distance - 1, 0) / (a.r + b.r);
+    a.r = Math.max(MIN_RADIUS, a.r * shrink);
+    b.r = Math.max(MIN_RADIUS, b.r * shrink);
+  }
+  return placed;
 }
 
 export function HorizonStrip({
@@ -224,16 +345,20 @@ export function HorizonStrip({
     const maxWeight = Math.max(...timed.map((dot) => dot.weight), 1);
     const scale = narrow ? 0.8 : 1;
 
-    const placed: PlacedDot[] = timed.map((dot) => ({
-      dot,
-      cx: x(dayNumber(dotIso(dot))),
-      // denní tečky menší — v ročním pohledu jich je vedle sebe víc
-      r:
-        (isMonthDot(dot)
-          ? 4 + Math.sqrt(dot.weight / maxWeight) * 8
-          : 3 + Math.sqrt(dot.weight / maxWeight) * 6) * scale,
-    }));
-    if (pile) placed.unshift({ dot: pile, cx: EDGE, r: 12 * scale });
+    // denní tečky menší — v ročním pohledu jich je vedle sebe víc
+    const radius = (weight: number, max: number, monthDot: boolean): number =>
+      (monthDot ? 4 + Math.sqrt(weight / max) * 8 : 3 + Math.sqrt(weight / max) * 6) * scale;
+    const placed = separateDots(
+      timed.map((dot) => ({
+        dot,
+        cx: x(dayNumber(dotIso(dot))),
+        r: radius(dot.weight, maxWeight, isMonthDot(dot)),
+        label: dotLabel(dot),
+      })),
+      radius,
+      narrow,
+    );
+    if (pile) placed.unshift({ dot: pile, cx: EDGE, r: 12 * scale, label: dotLabel(pile) });
 
     // ── popisky měsíců/roků na ose ────────────────────────────────────────
     const first = new Date(startDay * 86_400_000);
@@ -261,8 +386,14 @@ export function HorizonStrip({
         label: m.month === 1 ? String(m.year) : MONTH_LABELS[m.month - 1]!,
         isYear: m.month === 1,
       }))
-      // popisek u kraje by přetekl ven z pásu
-      .filter((tick) => tick.x >= xStart + 12 && tick.x <= xMax - 12);
+      // popisek u kraje by přetekl ven z pásu; popisek pod čarou „dnes“ by
+      // čára přeškrtla (R1B-25)
+      .filter(
+        (tick) =>
+          tick.x >= xStart + 12 &&
+          tick.x <= xMax - 12 &&
+          Math.abs(tick.x - x(todayDay)) > TODAY_CLEARANCE,
+      );
 
     // ── kumulativní plocha osvobozování (stepAfter) ───────────────────────
     let outlookPath: { line: string; area: string; endShare: number } | null = null;
@@ -358,7 +489,7 @@ export function HorizonStrip({
       )}
       {hasPending && (
         <span className="flex items-center gap-1.5">
-          <span className="inline-block size-2 rounded-full bg-ink-muted dark:bg-ink" /> čekající
+          <span className="inline-block size-2 rounded-full bg-ink-muted" /> čekající
         </span>
       )}
       {view.outlookPath && (
@@ -412,6 +543,7 @@ export function HorizonStrip({
               y={TICK_LABEL_Y}
               textAnchor="middle"
               fontSize="11"
+              letterSpacing="0.01em"
               fill="var(--ink-muted)"
               fontWeight={tick.isYear ? 600 : 400}
               className="tabular-nums"
@@ -421,7 +553,13 @@ export function HorizonStrip({
           </g>
         ))}
         {view.pile && (
-          <text x={EDGE - 12} y={TICK_LABEL_Y} fontSize="11" fill="var(--ink-muted)">
+          <text
+            x={EDGE - 12}
+            y={TICK_LABEL_Y}
+            fontSize="11"
+            letterSpacing="0.01em"
+            fill="var(--ink-muted)"
+          >
             dřív
           </text>
         )}
@@ -458,13 +596,23 @@ export function HorizonStrip({
               strokeWidth="1.5"
               strokeOpacity="0.8"
             />
+            {/* Popisek podílu stojí UVNITŘ plochy pod křivkou, jakmile se tam
+                vejde — nad ní se u horního okraje tlačil na popisky měsíců
+                (R1B-25). U nízkého podílu zůstává nad křivkou. */}
             <text
               x={view.xMax - 4}
               y={
-                OUTLOOK_BASE - (view.outlookPath.endShare / 100) * (OUTLOOK_BASE - OUTLOOK_TOP) - 5
+                view.outlookPath.endShare >= 45
+                  ? OUTLOOK_BASE -
+                    (view.outlookPath.endShare / 100) * (OUTLOOK_BASE - OUTLOOK_TOP) +
+                    13
+                  : OUTLOOK_BASE -
+                    (view.outlookPath.endShare / 100) * (OUTLOOK_BASE - OUTLOOK_TOP) -
+                    5
               }
               textAnchor="end"
               fontSize="11"
+              letterSpacing="0.01em"
               fill="var(--ink-muted)"
               className="tabular-nums"
             >
@@ -475,9 +623,9 @@ export function HorizonStrip({
 
         {/* tečky dnů/měsíců — víc pozic v jedné tečce, proto žádný odkaz na
             detail; rozpad po pozicích nese bublina */}
-        {view.placed.map(({ dot, cx, r }) => {
+        {view.placed.map(({ dot, cx, r, label: placedLabel }) => {
           const isActive = activeItem?.dot.exemptFrom === dot.exemptFrom;
-          const label = `${dotLabel(dot)} — celkem ${totalText(dot)}, ${dot.items.length} ${plural(
+          const label = `${placedLabel} — ${totalText(dot)}, ${dot.items.length} ${plural(
             dot.items.length,
             'pozice',
             'pozice',
@@ -497,8 +645,10 @@ export function HorizonStrip({
               className={cn(
                 // vybraná tečka dostane akcentní obrys (barva ovládání); barvu stavu si nechává
                 isActive ? 'stroke-accent' : 'stroke-surface',
-                // v tmavém režimu čekající tečky světlejší, ať nesplývají s plochou
-                dot.isExempt ? 'fill-success' : 'fill-ink-muted dark:fill-ink',
+                // Čekající tečky jsou tiché v obou režimech (R1B-07): v tmavém byly
+                // čistě bílé, tedy nejjasnější prvek stránky — důraz ale patří
+                // zeleným. `ink-muted` má na černé kontrast přes 7 : 1.
+                dot.isExempt ? 'fill-success' : 'fill-ink-muted',
               )}
               onFocus={() => setActive({ key: dot.exemptFrom, by: 'focus' })}
               onBlur={() => setActive((current) => (current?.by === 'focus' ? null : current))}
@@ -517,13 +667,13 @@ export function HorizonStrip({
           }}
         >
           <p className="font-semibold text-ink">
-            {dotLabel(activeItem.dot)} — celkem {totalText(activeItem.dot)}
+            {activeItem.label} — {totalText(activeItem.dot)}
           </p>
           {activeItem.dot.items.slice(0, TIP_MAX_ITEMS).map((item) => (
             <p key={item.isin} className="flex items-center gap-2 tabular-nums text-ink-muted">
               <span className="truncate">{item.label}</span>
               <span className="ml-auto whitespace-nowrap pl-2 text-ink">
-                {activeItem.dot.weightBasis === 'value'
+                {activeItem.dot.weightBasis === 'value' && !item.unpriced
                   ? czkCompact(item.weight)
                   : `${qty(item.quantity)} ks`}
               </span>

@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import type { Position } from '@danero/engine';
-import { czDate, qty } from '@/lib/format';
+import { czDate, plural, qty } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { PositionCard } from '@/components/position-card';
+import { TextLink } from '@/components/ui/link';
 
 interface Row {
   isin: string;
@@ -17,6 +19,9 @@ interface Row {
   /** Osvobození časovým testem u téhle pozice nikdy nepřijde (A2-3-04). */
   neverExempt: boolean;
 }
+
+/** Od kolika pozic výš tabulka ukazuje jen nejbližší čekající (a kolik jich). */
+const MAX_ROWS = 10;
 
 /** Zelený checkmark: časový test celé pozice splněn. */
 function CheckIcon() {
@@ -81,15 +86,38 @@ export function PositionsTable({
     })
     .sort((a, b) => (a.nearestExemptFrom ?? '0').localeCompare(b.nearestExemptFrom ?? '0'));
 
+  // Horizont se ptá „co se osvobodí nejdřív“ — u většího portfolia proto
+  // tabulka ukáže jen nejbližší čekající pozice a zbytek shrne jednou větou
+  // s odkazem na portfolio. Dřív vypsala všechno (demo: 52 řádků) a zbytek
+  // přehledu odjel o dvě obrazovky níž, přitom úplný seznam s hledáním
+  // a řazením už portfolio má (R1B-18). Malé portfolio se vypíše celé.
+  const pendingRows = rows.filter((row) => row.nearestExemptFrom !== null);
+  const condensed = rows.length > MAX_ROWS;
+  const shown = condensed ? pendingRows.slice(0, MAX_ROWS) : rows;
+  const morePending = condensed ? pendingRows.length - shown.length : 0;
+  const allExempt = rows.filter((row) => !row.neverExempt && row.nearestExemptFrom === null);
+  const never = rows.filter((row) => row.neverExempt);
+  const rest = condensed
+    ? [
+        morePending > 0
+          ? `${morePending} ${plural(morePending, 'další čeká', 'další čekají', 'dalších čeká')}`
+          : null,
+        allExempt.length > 0
+          ? `${allExempt.length} ${plural(allExempt.length, 'pozice je už celá', 'pozice jsou už celé', 'pozic je už celých')} bez daně`
+          : null,
+        never.length > 0 ? `u ${never.length} se časový test nevztahuje` : null,
+      ].filter((part): part is string => part !== null)
+    : [];
+
   // E2: sloupec „Z toho bez daně“ jen když má co říct — samé nuly nese
   // už KPI „Bez daně už dnes“ (0 %)
-  const anyExempt = rows.some((row) => row.exemptQty > 0);
+  const anyExempt = shown.some((row) => row.exemptQty > 0);
 
   const content = (
     <>
       {/* mobil: karty místo tabulky (H4) */}
-      <ul className="divide-y divide-line/70 md:hidden">
-        {rows.map((row) => (
+      <ul className={cn('divide-y divide-line/70 md:hidden', shown.length === 0 && 'hidden')}>
+        {shown.map((row) => (
           <li key={row.isin}>
             <PositionCard
               isin={row.isin}
@@ -112,7 +140,10 @@ export function PositionsTable({
         ))}
       </ul>
 
-      <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
+      <ScrollArea
+        label="Pozice a jejich časové testy"
+        className={shown.length === 0 ? 'hidden' : 'hidden md:block'}
+      >
         <Table>
           {/* caption = název tabulky pro čtečku (audit H2-12); vizuálně ho nese
               nadpis sekce nad ní, proto sr-only. `scope="col"` (dává ho `Th`)
@@ -128,7 +159,7 @@ export function PositionsTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {shown.map((row) => (
               <Tr key={row.isin}>
                 <Td>
                   {/* klikací konzistentně s tabulkou na /portfolio */}
@@ -177,6 +208,15 @@ export function PositionsTable({
           </tbody>
         </Table>
       </ScrollArea>
+      {condensed && (
+        <div className="type-footnote flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-ink-muted">
+          {/* věta začíná velkým písmenem, ať je první kterákoli část */}
+          <p>{rest.length > 0 && `${rest.join(' · ').replace(/^./, (c) => c.toUpperCase())}.`}</p>
+          <TextLink href={`${basePath}/portfolio`} chevron>
+            Všechny pozice v portfoliu
+          </TextLink>
+        </div>
+      )}
     </>
   );
 
