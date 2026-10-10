@@ -326,6 +326,26 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **`pnpm --filter @danero/engine test` běží s pokrytím a prahem.** Nový kód
   enginu bez testu shodí sadu na prahu pokrytí, ne na padajícím testu — hláška
   je na konci výpisu. Práh je v `packages/engine/vitest.config.ts`.
+- **Limit Better Authu na přihlášení se nuluje až po minutě BEZ pokusu.**
+  `/sign-in/email` má strop 5 požadavků z jedné IP adresy a okno se počítá od
+  posledního puštěného pokusu, ne od prvního. Test, který zkouší heslo
+  v pravidelném rozestupu pod minutu (9. 10. 2026: po 13 s), tak po pátém
+  pokusu dostává 429 dokola a ke stropu na adresu (10 pokusů za čtvrt hodiny,
+  `lib/auth-hooks.ts`) se nedostane nikdy — vypadá to jako rozbitý zámek.
+  Pokusy pouštěj po čtyřech s pauzou přes minutu.
+- **`main` chrání ruleset na GitHubu** (od 9. 10. 2026; co přesně je nastavené,
+  je v `docs/08-provoz.md`). Pull request se sloučí jen se zelenými joby `ci`,
+  `e2e`, `dco` a `guards` — kdo job přejmenuje, musí ho přejmenovat i v rulesetu.
+  Správce smí pravidla obejít, takže commit rovnou na `main` (pravidlo 5)
+  funguje dál.
+- **Dependabot u hlavní verze povýší jen balíček z hlášení, ne jeho sourozence.**
+  Jeho pull request na Vitest 4 nechal `@vitest/coverage-v8` na trojce, CI na
+  něm padala a vypadalo to jako těžká migrace — stačily dva balíčky a typy Node
+  v enginu. Nepřímou závislost neopraví vůbec (běh „Dependabot Updates“ skončí
+  neúspěchem); ta se řeší přepisem v `pnpm.overrides`.
+- **Mutační testy měř v čisté kopii** (`git worktree add`). V pracovním
+  adresáři si Stryker do pískoviště kopíruje i neverzované soubory a start pak
+  trvá deset minut místo vteřiny — 10. 10. 2026 se to málem přičetlo Vitestu 4.
 
 ## Stav a plán
 
