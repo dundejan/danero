@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { SpecList, SpecRow } from '@/components/marketing-blocks';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import { TextLink } from '@/components/ui/link';
 import { OPERATOR } from '@/lib/contact';
@@ -158,25 +159,26 @@ export default function BezpecnostPage() {
       {/* bez perexu: nadpisy oddílů říkají totéž a jsou hned pod titulkem */}
       <PageHero eyebrow="Bezpečnost" title="Co se děje s tvými daty" />
 
-      <div className="mt-10 md:mt-16">
-        {SECTIONS.map((section) => (
-          <section
-            key={section.title}
-            aria-label={section.title}
-            className="grid gap-x-16 gap-y-4 border-t border-line/70 py-10 md:py-12 lg:grid-cols-[minmax(0,15rem)_minmax(0,38rem)]"
-          >
-            <h2 className="type-title-2 text-balance">{section.title}</h2>
-            <dl className="space-y-6">
-              {section.facts.map((fact) => (
-                <div key={fact.term}>
-                  <dt className="type-body font-semibold text-ink">{fact.term}</dt>
-                  <dd className="type-body mt-1 text-pretty text-ink-muted">{fact.detail}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </div>
+      {/* list se specifikacemi: pojem vlevo, co k němu platí, vpravo — stejný
+          jako „Co všechno dostaneš“ na /cenik */}
+      {SECTIONS.map((section, index) => (
+        <section
+          key={section.title}
+          aria-labelledby={`oddil-${index}`}
+          className="mt-14 md:mt-20"
+        >
+          <h2 id={`oddil-${index}`} className="type-title-1 text-balance">
+            {section.title}
+          </h2>
+          <SpecList className="mt-8">
+            {section.facts.map((fact) => (
+              <SpecRow key={fact.term} label={fact.term}>
+                {fact.detail}
+              </SpecRow>
+            ))}
+          </SpecList>
+        </section>
+      ))}
 
       <MarketingCta
         title="Vyzkoušej to na vymyšlených datech"

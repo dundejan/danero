@@ -1,10 +1,12 @@
+import Link from 'next/link';
 import { MarketingCta } from '@/components/marketing-page';
 import { tidy } from '@/lib/typography';
 import { cn } from '@/lib/utils';
 
 /**
- * Stavební kameny veřejných stránek, které ve sdílené skořápce
- * (`marketing-page.tsx`) chybí. Skládají se jen z tokenů a tříd `type-*`.
+ * Stavební kameny obsahu veřejných stránek — to, co se skládá DO pásů a pod
+ * titulek stránky (skořápku, pásy a závěrečnou výzvu nese `marketing-page.tsx`).
+ * Skládají se jen z tokenů a tříd `type-*`.
  */
 
 /**
@@ -70,6 +72,51 @@ export function SpecRow({ label, children }: { label: React.ReactNode; children:
       <dt className="type-title-3">{label}</dt>
       <dd className="type-body text-pretty text-ink-muted">{children}</dd>
     </div>
+  );
+}
+
+/**
+ * Seznam odkazů „titulek + jedna věta + šipka“: rozcestník (články průvodce)
+ * nebo cesty ven (404). Řádek je celý klikací; je to seznam, ne mřížka dlaždic.
+ * `size="lg"` je pro seznam, který je hlavním obsahem stránky.
+ */
+export function LinkList({
+  items,
+  size = 'md',
+  className,
+}: {
+  items: { href: string; title: string; summary: string }[];
+  size?: 'md' | 'lg';
+  className?: string;
+}) {
+  const large = size === 'lg';
+  const titleClass = large ? 'type-title-2 text-balance' : 'type-title-3';
+  return (
+    <ul className={cn('measure divide-y divide-line/70 border-y border-line/70', className)}>
+      {items.map((item) => (
+        <li key={item.href}>
+          <Link
+            href={item.href}
+            className={cn('group flex items-center gap-4 active:opacity-60', large ? 'py-6' : 'py-4')}
+          >
+            <span className="min-w-0 flex-1">
+              <span className={cn(titleClass, 'block group-hover:underline')}>{item.title}</span>
+              <span
+                className={cn(
+                  'block text-pretty text-ink-muted',
+                  large ? 'type-body mt-2' : 'type-callout mt-0.5',
+                )}
+              >
+                {item.summary}
+              </span>
+            </span>
+            <span aria-hidden className={cn(titleClass, 'text-ink-muted')}>
+              ›
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

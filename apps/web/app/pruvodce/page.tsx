@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { LinkList } from '@/components/marketing-blocks';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import { TextLink } from '@/components/ui/link';
 
@@ -35,28 +35,15 @@ export default function PruvodcePage() {
       />
 
       {/* Rozcestník je seznam, ne mřížka dlaždic: řádek = článek, celý klikací. */}
-      <ul className="measure mt-10 divide-y divide-line/70 border-y border-line/70 md:mt-14">
-        {ARTICLES.map((article) => (
-          <li key={article.slug}>
-            <Link
-              href={`/pruvodce/${article.slug}`}
-              className="group flex items-center gap-4 py-6 active:opacity-60"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="type-title-2 block text-balance group-hover:underline">
-                  {article.title}
-                </span>
-                <span className="type-body mt-2 block text-pretty text-ink-muted">
-                  {article.summary}
-                </span>
-              </span>
-              <span aria-hidden className="type-title-2 text-ink-muted">
-                ›
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <LinkList
+        size="lg"
+        className="mt-10 md:mt-14"
+        items={ARTICLES.map((article) => ({
+          href: `/pruvodce/${article.slug}`,
+          title: article.title,
+          summary: article.summary,
+        }))}
+      />
 
       <ul className="type-callout measure mt-8 md:mt-10">
         <li>

@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { LinkList } from '@/components/marketing-blocks';
 import { MarketingPage, PageHero } from '@/components/marketing-page';
 
 /** Nejčastější cíle toho, kdo zabloudil — stejné tři, co tu byly vždycky. */
@@ -23,27 +23,8 @@ export default function NotFound() {
         title="Tahle stránka neexistuje"
         lede="Odkaz se změnil, nebo v adrese něco přebývá."
       />
-      <nav aria-label="Kam dál" className="measure mt-10 md:mt-14">
-        <ul className="divide-y divide-line/70 border-y border-line/70">
-          {EXITS.map((exit) => (
-            <li key={exit.href}>
-              <Link
-                href={exit.href}
-                className="group flex items-center gap-4 py-4 active:opacity-60"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="type-title-3 block group-hover:underline">{exit.title}</span>
-                  <span className="type-callout mt-0.5 block text-pretty text-ink-muted">
-                    {exit.summary}
-                  </span>
-                </span>
-                <span aria-hidden className="type-title-3 text-ink-muted">
-                  ›
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      <nav aria-label="Kam dál" className="mt-10 md:mt-14">
+        <LinkList items={EXITS} />
       </nav>
     </MarketingPage>
   );

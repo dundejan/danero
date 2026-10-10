@@ -42,8 +42,8 @@ export default function CasteOtazkyPage() {
       <div className={cn(COLUMNS, 'mt-10')}>
         <p className="type-body text-ink-muted lg:col-start-2">
           Nenašel jsi odpověď? Napiš na{' '}
-          <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — odpovídám
-          osobně.
+          <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — autor
+          odpovídá osobně.
         </p>
       </div>
 
