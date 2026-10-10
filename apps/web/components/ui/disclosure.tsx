@@ -81,13 +81,19 @@ export function DisclosureRow({
     // `listitem` nese obal: <details> má vlastní roli a do seznamu sám nepatří
     <div role="listitem" className={className}>
       <details className="disclosure" {...props}>
-        <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5">
-          <span className="min-w-0 flex-1">
+        {/* v tisku bez přesahu do okrajů — zvýraznění řádku tam nemá smysl
+            a přesah vyčníval z tiskové plochy */}
+        <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5 print:mx-0 print:px-0">
+          <span className="min-w-0 flex-1 wrap-anywhere">
             {eyebrow}
             <span className="type-callout block font-medium text-pretty">{title}</span>
           </span>
+          {/* tichý údaj si bere nejvýš 40 % řádku: dlouhý se zalomí, místo aby
+              titulek složil po slově na řádek */}
           {meta && (
-            <span className="type-caption shrink-0 tabular-nums text-ink-muted">{meta}</span>
+            <span className="type-caption max-w-[40%] min-w-0 shrink-0 text-right tabular-nums text-ink-muted wrap-anywhere">
+              {meta}
+            </span>
           )}
           <Chevron className="self-center text-ink-muted" />
         </summary>

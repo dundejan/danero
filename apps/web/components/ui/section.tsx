@@ -6,15 +6,17 @@ import { cn } from '@/lib/utils';
  * nebo přepínač pohledu. Pod titulkem NENÍ úvodní odstavec — co sekce
  * ukazuje, má být poznat z ní samé; „jak se to počítá“ patří do `info`.
  *
- * `scrollActions` je pro akci, která se na úzký displej nemusí vejít
- * (přepínač roku s mnoha lety): posouvá se vodorovně jen ona, ne stránka.
+ * Akce se nikdy neroztáhne přes šířku sekce: když se vedle titulku nevejde,
+ * spadne pod něj, a přepínač, který se nevejde ani tam (hodně let), se
+ * posouvá sám uvnitř (`SegmentedControl`). Dřív to zapínal `scrollActions`;
+ * dnes je to výchozí chování a vlastnost zůstává jen proto, aby se stránky,
+ * které ji předávají, nemusely měnit naráz.
  */
 export function SectionHeader({
   title,
   info,
   count,
   actions,
-  scrollActions = false,
   as: Heading = 'h2',
   className,
 }: {
@@ -23,6 +25,7 @@ export function SectionHeader({
   /** Tiché číslo za titulkem (počet položek). */
   count?: React.ReactNode;
   actions?: React.ReactNode;
+  /** @deprecated Bez účinku — akce se vejde nebo posouvá vždy. */
   scrollActions?: boolean;
   as?: 'h2' | 'h3';
   className?: string;
@@ -30,7 +33,11 @@ export function SectionHeader({
   return (
     <div className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
-        <Heading className={Heading === 'h2' ? 'type-title-2' : 'type-title-3'}>
+        {/* `wrap-anywhere`: nadpis s nezlomitelným údajem (částka za titulkem při
+            zvětšeném písmu) se zalomí, místo aby roztáhl sloupec stránky */}
+        <Heading
+          className={cn('min-w-0 wrap-anywhere', Heading === 'h2' ? 'type-title-2' : 'type-title-3')}
+        >
           {title}
           {count != null && (
             <span className="ml-2 font-normal tabular-nums text-ink-muted">{count}</span>
@@ -38,19 +45,7 @@ export function SectionHeader({
         </Heading>
         {info}
       </div>
-      {actions && (
-        <div
-          className={
-            scrollActions
-              ? // svislé odsazení nechává místo klikacím plochám segmentů, které
-                // dráhu přepínače přesahují (stejně jako v nástrojové liště)
-                '-my-2 flex max-w-full min-w-0 overflow-x-auto py-2 [scrollbar-width:none]'
-              : 'flex shrink-0 items-center gap-2'
-          }
-        >
-          {actions}
-        </div>
-      )}
+      {actions && <div className="flex max-w-full min-w-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }

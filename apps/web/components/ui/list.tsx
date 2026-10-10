@@ -77,6 +77,11 @@ export function Group({
  * - `wrap` dovolí hodnotě zalomit se — pro hodnotu, která je věta („daněna
  *   jako dividenda (bezpečný výklad)“); částky a krátké údaje ji nepotřebují,
  * - `children` jdou vpravo místo `value` (přepínač, tlačítko, select).
+ *
+ * Hodnotu, která se vedle popisku nevejde (dlouhý e-mail, název souboru,
+ * částka při zvětšeném písmu), řádek složí pod popisek — nezkracuje ji ani
+ * nenechá vytéct ze stránky. Místní `max-w-…` a `truncate` na hodnotě proto
+ * nepiš.
  */
 export function Row({
   label,
@@ -99,37 +104,59 @@ export function Row({
   className?: string;
   children?: React.ReactNode;
 }) {
+  // Pojistky proti dlouhému obsahu (hodnota je e-mail o sto znacích, částka
+  // při dvojnásobném písmu, popisek jedno nekonečné slovo):
+  // - popisek si drží aspoň 30 % řádku a hodnota se mu nikdy nevykreslí přes
+  //   text — když se vedle něj nevejde, spadne na vlastní řádek (zarovnaná
+  //   vpravo) a nic se neusekne;
+  // - co se nevejde ani tam, se zalomí kdekoli (`wrap-anywhere`), takže řádek
+  //   nikdy neroztáhne stránku. Zkracování třemi tečkami tu schválně není:
+  //   useknutou částku nebo adresu by na dotyku nešlo přečíst nikde.
   const body = (
     <>
-      <span className={wrap ? 'max-w-[45%] shrink-0' : 'min-w-0 flex-1'}>
+      <span
+        className={
+          wrap ? 'max-w-[45%] min-w-0 shrink-0 wrap-anywhere' : 'min-w-[30%] flex-1 wrap-anywhere'
+        }
+      >
         <span className={cn('inline-flex items-center gap-1', strong && 'font-semibold')}>
           {label}
           {info}
         </span>
         {hint && <span className="type-footnote block text-ink-muted">{hint}</span>}
       </span>
-      {(value != null || children) && (
+      {(value != null || children || href) && (
+        // hodnota a šipka odkazu drží pohromadě — šipka nesmí spadnout sama
         <span
           className={cn(
-            'text-right tabular-nums',
-            wrap ? 'min-w-0 flex-1 text-pretty' : 'shrink-0',
-            strong ? 'font-semibold text-ink' : href ? 'text-ink-muted' : 'text-ink',
+            'flex min-w-0 items-baseline gap-4',
+            wrap ? 'flex-1' : 'ml-auto max-w-full',
           )}
         >
-          {value}
-          {children}
-        </span>
-      )}
-      {href && (
-        <span aria-hidden className="text-ink-muted">
-          ›
+          {(value != null || children) && (
+            <span
+              className={cn(
+                'min-w-0 flex-1 text-right tabular-nums wrap-anywhere',
+                wrap && 'text-pretty',
+                strong ? 'font-semibold text-ink' : href ? 'text-ink-muted' : 'text-ink',
+              )}
+            >
+              {value}
+              {children}
+            </span>
+          )}
+          {href && (
+            <span aria-hidden className="shrink-0 text-ink-muted">
+              ›
+            </span>
+          )}
         </span>
       )}
     </>
   );
   const classes = cn(
-    'flex min-h-11 gap-4 py-2.5',
-    wrap ? 'items-baseline' : 'items-center',
+    'flex min-h-11 gap-x-4 gap-y-0.5 py-2.5',
+    wrap ? 'items-baseline' : 'flex-wrap items-center',
     className,
   );
   if (href) {
@@ -223,7 +250,9 @@ export function FieldRow({
           </div>
         )}
       </div>
-      <div className={cn('shrink-0', !fit && '@lg:w-64')}>{children}</div>
+      {/* pevný sloupec se smí zúžit: v úzkém sloupci (dvě skupiny vedle sebe)
+          by pole s plnou šířkou vyjelo ze skupiny */}
+      <div className={cn('max-w-full min-w-0', fit ? 'shrink-0' : '@lg:w-64')}>{children}</div>
     </div>
   );
 }

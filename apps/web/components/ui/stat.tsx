@@ -31,7 +31,9 @@ export function Stat({
   return (
     // `data-info-anchor`: vysvětlivka se otevře pod celým blokem, ne přes číslo
     <div data-info-anchor className={className}>
-      <dt className="type-footnote flex items-center gap-1 text-ink-muted">
+      {/* `min-h-6` = výška tlačítka vysvětlivky: popisek s „i“ a bez něj jsou
+          stejně vysoké, takže čísla vedle sebe stojí na jedné lince */}
+      <dt className="type-footnote flex min-h-6 items-center gap-1 text-ink-muted">
         {label}
         {info}
       </dt>
