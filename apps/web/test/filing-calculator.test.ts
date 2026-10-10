@@ -345,4 +345,43 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
     expect(text).toContain(`nad ${previous.employee}?`);
     expect(text).not.toMatch(/za rok 20\d\d/);
   });
+
+  /**
+   * Textová dieta (docs/07): výklad se z kalkulačky přestěhoval do vysvětlivek
+   * a ty se vykreslí až po otevření. Výhrada, bez které člověk odpoví nebo
+   * dopadne špatně, proto musí zůstat VIDITELNÁ — tady se hlídá, že je
+   * v prvním vykreslení, ne jen v konstantě.
+   */
+  it('E-3-03: výjimka stablecoinů je vidět u otázky na krypto, ne až ve vysvětlivce', () => {
+    const text = renderAnswered(
+      answers({ situation: 'zamestnanec', salesOver100k: false }),
+      filingLimitTexts(2026),
+      filingLimitTexts(2025),
+    );
+    expect(text).toContain('Prodal jsi nebo směnil letos kryptoměny za víc než 100 000 Kč?');
+    expect(text).toMatch(/Stablecoiny \(USDT, USDC…\) nepočítej/);
+    expect(text).toContain('ostatním zdanitelným příjmům');
+  });
+
+  it('R-09d: verdikt „bez přiznání“ ukazuje oznámení nad 5 milionů Kč i tříměsíční lhůtu', () => {
+    const exempt = renderAnswered(
+      answers({ situation: 'jine', salesOver100k: true, allHeldThreeYears: true, kryptoNad100k: false, prijmy: 'ne' }),
+      filingLimitTexts(2026),
+      filingLimitTexts(2025),
+    );
+    expect(exempt).toContain('Vypadá to, že přiznání kvůli investicím řešit nemusíš.');
+    expect(exempt).toContain('osvobozený prodej nad 5 milionů Kč');
+    expect(exempt).toContain('do tří měsíců po konci roku');
+    // výhrada „orientačně“ stojí u verdiktu vždy
+    expect(exempt).toContain('Orientačně — přesně to spočítá aplikace z tvých dat.');
+
+    // kdo přiznání podává, oznamuje v jeho lhůtě — tříměsíční lhůta mu nepatří
+    const filing = renderAnswered(
+      answers({ situation: 'jine', salesOver100k: true, allHeldThreeYears: false }),
+      filingLimitTexts(2026),
+      filingLimitTexts(2025),
+    );
+    expect(filing).toContain('Nejspíš podáš přiznání.');
+    expect(filing).not.toContain('5 milionů Kč');
+  });
 });

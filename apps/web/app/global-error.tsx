@@ -11,6 +11,8 @@ import './globals.css';
  *
  * Styly proto nejedou z layoutu, ale z vlastního importu globals.css; žádné
  * další komponenty se sem netahají, ať tahle obrazovka nemůže spadnout taky.
+ * Tlačítko a odkaz jsou proto psané třídami, ne přes `Button` a `TextLink`
+ * (vzhled drží stejný: kapsle s odezvou při stisku, odkaz se šipkou).
  */
 export default function GlobalError({
   error,
@@ -25,27 +27,38 @@ export default function GlobalError({
 
   return (
     <html lang="cs">
-      <body>
-        <main className="mx-auto flex max-w-xl flex-col items-start gap-4 px-6 pt-24">
-          <h1 className="text-3xl font-bold">Danero se teď nepodařilo načíst</h1>
-          <p className="text-ink-muted">
-            Chyba je na naší straně a tvoje data jsou v pořádku — každý výpočet se dělá znovu
-            z uložených transakcí. Zkus to prosím ještě jednou.
-          </p>
-          {error.digest && (
-            <p className="tabular-nums text-xs text-ink-muted">Kód chyby: {error.digest}</p>
-          )}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={reset}
-              className="inline-flex items-center justify-center rounded-md bg-accent-fill px-4 py-2 text-sm font-semibold text-white"
-            >
-              Zkusit znovu
-            </button>
-            <a href="/" className="font-medium text-accent-text underline underline-offset-2">
-              Zpět na úvodní stránku
-            </a>
+      <body className="bg-surface text-ink antialiased">
+        <main className="wrap flex min-h-svh flex-col justify-center py-16">
+          <div className="measure">
+            <h1 className="type-title-1 text-balance">Danero se teď nepodařilo načíst</h1>
+            <p className="type-body mt-3 text-pretty text-ink-muted">
+              Chyba je na naší straně. Tvoje data jsou v pořádku — každý výpočet se dělá znovu z
+              uložených transakcí.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2">
+              <button
+                type="button"
+                onClick={reset}
+                className="pressable inline-flex h-9 items-center justify-center rounded-full bg-accent-fill px-4 text-sm font-medium text-white hover:brightness-95 pointer-coarse:h-11 pointer-coarse:px-5"
+              >
+                Zkusit znovu
+              </button>
+              {/* obyčejný odkaz, ne `next/link`: router po pádu layoutu nemusí žít */}
+              <a
+                href="/"
+                className="inline-flex min-h-11 items-center font-medium text-accent-text hover:underline md:min-h-0"
+              >
+                Úvodní stránka
+                <span aria-hidden className="ml-1">
+                  ›
+                </span>
+              </a>
+            </div>
+            {error.digest && (
+              <p className="type-caption mt-10 tabular-nums text-ink-muted">
+                Kód chyby: {error.digest}
+              </p>
+            )}
           </div>
         </main>
       </body>

@@ -16,13 +16,17 @@ export const metadata: Metadata = {
     'Paušální daň snese nejvýš 50 000 Kč zdanitelných příjmů mimo podnikání — a z investic se do něj počítají hrubé částky: zahraniční dividendy před srážkou, tržby z neosvobozených prodejů i úroky. Co znamená prolomení a termín 10. ledna.',
 };
 
+/**
+ * Článek průvodce. Skladba: krátká odpověď → co se počítá / nepočítá (seznamy
+ * s příklady) → co prolomení znamená a co ne → termín. Titulek stránky nemá
+ * perex: první odstavec článku je odpověď sama.
+ */
 export default function PausalniRezimAInvesticePage() {
   return (
     <MarketingPage>
       <PageHero
         eyebrow="Průvodce"
         title="OSVČ v paušálu: jak ti investice můžou vrátit přiznání"
-        lede="Paušální režim tě zbavil přiznání i přehledů. Investice ti je můžou vrátit — limit je 50 000 Kč ročně a počítá se z hrubých částek. Co do něj patří, co ne a co se při prolomení opravdu stane."
       />
 
       <ArticleBody>
@@ -33,8 +37,8 @@ export default function PausalniRezimAInvesticePage() {
             rok. Počítají se hrubé částky: zahraniční dividendy před srážkou, tržby (ne
             zisk!) z neosvobozených prodejů i úroky od brokera.
           </strong>{' '}
-          Prolomení přitom není konec světa ani konec paušálu: za daný rok podáš přiznání
-          a přehledy, v paušálním režimu ale zůstáváš.
+          Prolomení není konec paušálu: za daný rok podáš přiznání a přehledy,
+          v paušálním režimu ale zůstáváš.
         </ArticleIntro>
 
         <ArticleSection title="Proč se to týká zrovna investorů">
@@ -42,10 +46,12 @@ export default function PausalniRezimAInvesticePage() {
             Paušální daň znamená jednu platbu měsíčně a žádné přiznání ani přehledy pro
             ČSSZ a zdravotní pojišťovnu — dokud plníš podmínky. Jednou z nich je, že vedle
             příjmů z podnikání máš nejvýš 50 000 Kč zdanitelných příjmů z kapitálového
-            majetku, z nájmu a ostatních příjmů dohromady. A právě tuhle podmínku plní
-            investoři nejsnáz: stačí pár zahraničních dividend a úroků — úplně bez
-            prodávání. Limit se navíc počítá z hrubých příjmů, takže nepomůže ani to, že
-            jsi na obchodu skoro nic nevydělal.
+            majetku, z nájmu a ostatních příjmů dohromady.
+          </p>
+          <p>
+            Investoři ji naplní nejsnáz: stačí pár zahraničních dividend a úroků — úplně
+            bez prodávání. Limit se navíc počítá z hrubých příjmů, takže nepomůže ani to,
+            že jsi na obchodu skoro nic nevydělal.
           </p>
         </ArticleSection>
 
@@ -113,34 +119,47 @@ export default function PausalniRezimAInvesticePage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Co se při prolomení opravdu stane">
+        <ArticleSection title="Co se při prolomení stane">
           <p>
             Překročíš-li 50 000 Kč, tvoje daň za ten rok <strong>není rovna paušální
-            dani</strong>. Znamená to: podáváš daňové přiznání (včetně příjmů z podnikání,
-            standardně), přehledy pro ČSSZ a zdravotní pojišťovnu, a daň i pojistné se
-            dopočítají běžným způsobem — zaplacené paušální zálohy se započtou. Přesně to
-            papírování, kvůli kterému sis paušál platil.
+            dani</strong>. Znamená to:
+          </p>
+          <ArticleList>
+            <li>podáváš daňové přiznání — včetně příjmů z podnikání, standardně,</li>
+            <li>podáváš přehledy pro ČSSZ a zdravotní pojišťovnu,</li>
+            <li>
+              daň i pojistné se dopočítají běžným způsobem a zaplacené paušální zálohy se
+              započtou.
+            </li>
+          </ArticleList>
+        </ArticleSection>
+
+        <ArticleSection title="Co se nestane">
+          <p>
+            Z paušálního režimu <strong>nevypadáváš</strong>. V režimu zůstáváš, dál
+            platíš zálohy a od dalšího roku — při dodržení limitu — zase jedeš bez
+            přiznání.
           </p>
           <p>
-            Co se <strong>nestane</strong>: z paušálního režimu nevypadáváš. V režimu
-            zůstáváš, dál platíš zálohy a od dalšího roku — při dodržení limitu — zase
-            jedeš bez přiznání. Termín k zapamatování: <strong>do 10. ledna</strong> se
-            finančnímu úřadu oznamuje vstup do paušálního režimu nebo jeho změna
-            (připadne-li na víkend, platí nejbližší pracovní den). Leden je tedy moment,
-            kdy se stav za loňský rok hodí znát přesně.
+            Termín k zapamatování: <strong>do 10. ledna</strong> se finančnímu úřadu
+            oznamuje vstup do paušálního režimu nebo jeho změna (připadne-li na víkend,
+            platí nejbližší pracovní den). Leden je tedy moment, kdy se stav za loňský
+            rok hodí znát přesně.
           </p>
         </ArticleSection>
 
         <ArticleSection title="Jak to hlídá Danero">
           <p>
-            Orientační odpověď dá zdarma a bez registrace{' '}
+            Orientační odpověď dá bez registrace{' '}
             <ArticleLink href="/kalkulacka">kalkulačka „Musím podat přiznání?“</ArticleLink>.
-            V aplikaci pak běží průběžný součet nad skutečnou historií účtů: každá dividenda přepočtená
-            kurzem podle zvolené soustavy (jednotný kurz běžného roku je do lednového
-            vyhlášení orientační — aplikace to viditelně označuje), osvobozené prodeje
-            vyřazené, úroky započtené — a e-mail při 60, 85 a 100 % limitu. Prodej si
-            nasimuluješ předem a uvidíš jeho dopad na limit 50 000 Kč ještě dřív, než ho
-            zadáš brokerovi. Podporované platformy najdeš na stránce{' '}
+            V aplikaci pak běží průběžný součet nad skutečnou historií účtů: dividendy
+            přepočtené kurzem, osvobozené prodeje vyřazené, úroky započtené — a e-mail
+            při 60, 85 a 100 % limitu. Prodej si nasimuluješ předem a uvidíš jeho dopad
+            na limit 50 000 Kč dřív, než ho zadáš brokerovi.
+          </p>
+          <p>
+            Jednotný kurz běžného roku je do lednového vyhlášení orientační — aplikace
+            to viditelně označuje. Podporované platformy najdeš na stránce{' '}
             <ArticleLink href="/platformy">Platformy</ArticleLink>.
           </p>
         </ArticleSection>

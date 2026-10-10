@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { KalkulackaPriznani } from '@/components/filing-calculator';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { DisclosureRow } from '@/components/ui/disclosure';
+import { TextLink } from '@/components/ui/link';
+import { Group } from '@/components/ui/list';
 import { currentTaxYear } from '@/lib/clock';
 import { filingLimitTexts } from '@/lib/filing-limits';
 
@@ -12,10 +14,12 @@ export const metadata: Metadata = {
 };
 
 /**
- * Karty pod kalkulačkou. Na rok vázané nejsou, takže limity § 38g jmenují
- * s oběma roky i částkami (R-09a, R-09b) — hlídá `test/public-filing-limits.test.ts`.
+ * Pravidla pod kalkulačkou — sbalené řádky, celé znění po rozbalení (nástroj
+ * má na obrazovce otázky a verdikt, výklad je na požádání). Na rok vázaná
+ * nejsou, takže limity § 38g jmenují s oběma roky i částkami (R-09a, R-09b) —
+ * hlídá `test/public-filing-limits.test.ts`, který čte řádky `body:`.
  */
-const PRAVIDLA = [
+const RULES = [
   {
     title: 'Zlaté pravidlo 100 000 Kč',
     body: 'Jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou všechny osvobozené — bez ohledu na zisk a bez tříletého čekání. Počítá se, kolik ti z prodejů přiteklo, ne kolik jsi vydělal. Kryptoaktiva mají od 15. 2. 2025 stejný limit zvlášť.',
@@ -37,58 +41,41 @@ export default function KalkulackaPage() {
       <PageHero
         eyebrow="Kalkulačka"
         title="Musím kvůli investicím podat daňové přiznání?"
-        lede="Pár otázek, okamžitá orientační odpověď. Nic se neukládá a nikam se neregistruješ — kalkulačka počítá jen z toho, co zaškrtneš."
+        lede="Pár otázek, orientační odpověď. Nic se neukládá."
       />
 
-      <div className="mt-12">
+      <div className="mt-10 md:mt-14">
         {/* Stránka se vykresluje při každém požadavku (patička marketingového
             rámu volá `connection()`), takže běžný rok zná server a kalkulačce
             stačí poslat limity § 38g toho roku. Limity roku předchozího jdou
             s nimi: v sezóně přiznání se rozhoduje o něm (R-09a, R-09b). */}
         <KalkulackaPriznani
-          showHeader={false}
           filingLimits={filingLimitTexts(year)}
           previousFilingLimits={filingLimitTexts(year - 1)}
-        />
-      </div>
-
-      <section aria-labelledby="pravidla-nadpis" className="mt-24 lg:mt-32">
-        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
-          Jak to počítáme
-        </p>
-        <h2
-          id="pravidla-nadpis"
-          className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl"
         >
-          Tři pravidla, která rozhodují
-        </h2>
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {PRAVIDLA.map((pravidlo) => (
-            <div key={pravidlo.title} className="rounded-lg border border-line bg-surface p-6">
-              <h3 className="font-semibold">{pravidlo.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-muted">{pravidlo.body}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-4 max-w-3xl text-xs text-ink-muted">
-          Kalkulačka je orientační — nezná tvoje data. Přesný výpočet nad skutečnou historií
-          účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech) dělá až aplikace.
-        </p>
-        <p className="mt-3 max-w-3xl text-sm text-ink-muted">
-          Jak přesně Danero počítá — pravidlo po pravidlu, s paragrafy — popisuje stránka{' '}
-          <Link
-            href="/jak-pocitame"
-            className="font-medium text-accent-text underline underline-offset-2"
-          >
-            Jak počítáme
-          </Link>
-          .
-        </p>
-      </section>
+          <section aria-labelledby="pravidla-nadpis" className="pt-6 lg:pt-10">
+            <h2 id="pravidla-nadpis" className="type-title-2 text-balance">
+              Tři pravidla, která rozhodují
+            </h2>
+            <Group className="mt-3">
+              {RULES.map((rule) => (
+                <DisclosureRow key={rule.title} title={rule.title}>
+                  <p>{rule.body}</p>
+                </DisclosureRow>
+              ))}
+            </Group>
+            <p className="type-callout mt-4">
+              <TextLink href="/jak-pocitame" chevron>
+                Celá metodika s paragrafy
+              </TextLink>
+            </p>
+          </section>
+        </KalkulackaPriznani>
+      </div>
 
       <MarketingCta
         title="Ať to za tebe hlídá Danero — celý rok"
-        lede="Napoj brokera nebo nahraj výpis a Danero ti limity, časové testy i podklady k přiznání pohlídá automaticky. Ozve se dřív, než nějaký limit překročíš."
+        lede="Napoj brokera nebo nahraj výpis. Danero se ozve dřív, než nějaký limit překročíš."
         primary="registrace"
       />
     </MarketingPage>
