@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 /**
  * Stavební bloky článků průvodce (/pruvodce/<slug>): dlouhý text skládáme
@@ -8,13 +9,13 @@ import Link from 'next/link';
 
 /** Tělo článku: čitelná šířka pod hero blokem. */
 export function ArticleBody({ children }: { children: React.ReactNode }) {
-  return <article className="mt-10 max-w-3xl">{children}</article>;
+  return <article className="measure mt-10 md:mt-14">{children}</article>;
 }
 
 /** Úvodní odstavec — krátká odpověď článku; tučnou část označí článek přes <strong>. */
 export function ArticleIntro({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-lg leading-relaxed text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
+    <p className="type-lede text-pretty text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
       {children}
     </p>
   );
@@ -23,9 +24,9 @@ export function ArticleIntro({ children }: { children: React.ReactNode }) {
 /** Sekce článku: nadpis + odstavce a bloky s jednotnými mezerami. */
 export function ArticleSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-12">
-      <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
-      <div className="mt-4 space-y-4 leading-relaxed text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
+    <section className="mt-14">
+      <h2 className="type-title-2 text-balance">{title}</h2>
+      <div className="type-reading mt-4 space-y-4 text-pretty text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
         {children}
       </div>
     </section>
@@ -37,26 +38,25 @@ export function ArticleList({ children }: { children: React.ReactNode }) {
   return <ul className="list-disc space-y-2 pl-5">{children}</ul>;
 }
 
-/** Rámeček s konkrétním příkladem — čísla řeknou víc než poučky. */
+/** Tichý panel s konkrétním příkladem — čísla řeknou víc než poučky. */
 export function Example({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-line bg-surface p-5">
-      <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
-        Příklad
-      </p>
-      {title && <p className="mt-2 font-semibold">{title}</p>}
-      <div className="mt-2 space-y-2 text-sm leading-relaxed text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
+    <div className="rounded-xl bg-canvas p-5">
+      <p className="type-footnote font-semibold text-ink-muted">Příklad</p>
+      {title && <p className="type-callout mt-1 font-semibold text-ink">{title}</p>}
+      <div className="type-callout mt-2 space-y-2 text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
         {children}
       </div>
     </div>
   );
 }
 
-/** Rámeček pro poctivě označený sporný výklad (stejně jako v metodice aplikace). */
+/** Tichý panel pro poctivě označený sporný výklad (stejně jako v metodice aplikace). */
 export function DisputedReading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-accent/30 bg-accent/5 p-5 text-sm leading-relaxed text-ink-muted">
-      <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
+    <div className="type-callout rounded-xl bg-canvas p-5 text-ink-muted">
+      <p className="type-footnote flex items-center gap-2 font-semibold text-caution-text">
+        <span aria-hidden className="size-2 rounded-full bg-current" />
         Sporný výklad
       </p>
       <div className="mt-2 space-y-2">{children}</div>
@@ -76,16 +76,16 @@ export function ArticleLink({ href, children }: { href: string; children: React.
 /** Pata článku: platnost pravidel, další čtení a cesta zpět na rozcestník. */
 export function ArticleFooter({ next }: { next: { href: string; title: string }[] }) {
   return (
-    <footer className="mt-12 border-t border-line pt-6">
-      <p className="text-xs text-ink-muted">
+    <footer className="mt-14 border-t border-line/70 pt-6">
+      <p className="type-caption text-ink-muted">
         Článek vychází z pravidel pro zdaňovací období 2025 a 2026 (zákon č. 586/1992 Sb.,
         o daních z příjmů); sporné výklady poctivě označujeme. Danero je výpočetní
         a evidenční nástroj, ne daňové poradenství — za přiznání odpovídá poplatník.
       </p>
-      <p className="mt-4 tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
+      <p className="type-footnote mt-5 font-semibold text-ink">
         Další čtení
       </p>
-      <ul className="mt-2 space-y-1 text-sm">
+      <ul className="type-callout mt-2 space-y-1">
         {next.map((odkaz) => (
           <li key={odkaz.href}>
             <ArticleLink href={odkaz.href}>{odkaz.title}</ArticleLink>
@@ -96,5 +96,34 @@ export function ArticleFooter({ next }: { next: { href: string; title: string }[
         </li>
       </ul>
     </footer>
+  );
+}
+
+/**
+ * Dlouhý text psaný obyčejnými značkami (`h2`, `h3`, `p`, `ul`, `ol`, `a`,
+ * `strong`, `table`) — podmínky, ochrana soukromí, metodika. Typografii
+ * dodává obal, takže stránka nepíše třídy ke každému odstavci a všechny
+ * dlouhé texty vypadají stejně. Odkazy v textu jsou podtržené (musí být
+ * poznat i bez barvy).
+ *
+ * Články průvodce se dál skládají z `ArticleSection` a spol. — tam nadpisy
+ * a mezery hlídá komponenta; `Prose` je pro texty, které mají vlastní
+ * strukturu (číslované oddíly právních textů).
+ */
+export function Prose({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      className={cn(
+        'measure type-reading text-pretty text-ink-muted',
+        '[&_h2]:type-title-2 [&_h2]:mb-3 [&_h2]:mt-12 [&_h2]:text-balance [&_h2]:text-ink',
+        '[&_h3]:type-title-3 [&_h3]:mb-2 [&_h3]:mt-8 [&_h3]:text-ink',
+        '[&_p+p]:mt-4 [&_p+ul]:mt-3 [&_ul+p]:mt-4 [&_p+ol]:mt-3 [&_ol+p]:mt-4',
+        '[&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5',
+        '[&_a]:font-medium [&_a]:text-accent-text [&_a]:underline [&_a]:underline-offset-2',
+        '[&_strong]:font-semibold [&_strong]:text-ink',
+        className,
+      )}
+      {...props}
+    />
   );
 }

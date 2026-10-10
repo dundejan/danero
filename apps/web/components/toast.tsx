@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
+import { cn } from '@/lib/utils';
 
 /**
  * Parametry, které nesou hlášku: kód výsledku a u /import i údaje k němu
@@ -23,8 +24,16 @@ export function urlWithoutFeedback(href: string): string | null {
 
 /**
  * Toast po akcích (G9b): vykresluje hlášku z query parametrů (?ok= / ?chyba=),
- * po 6 s se sám schová (chybové zůstávají). Server actions dál fungují bez JS —
- * toast je jen progressive enhancement nad stávajícími bannery.
+ * po 6 s se sám schová (chybový po 15 s). Server actions dál fungují bez JS —
+ * hláška se vykreslí už na serveru, JavaScript ji jen uklidí.
+ *
+ * Proto to není knihovní toast volaný z klienta: výsledek akce přichází
+ * přesměrováním, ne událostí v prohlížeči.
+ *
+ * Stav nese barevná tečka a role (`status` / `alert`), text je běžným
+ * inkoustem — dlouhá chybová hláška se má dát přečíst. Plovoucí varianta je
+ * neprůsvitná plocha se stínem (jedna z mála věcí, které se opravdu vznášejí),
+ * řádková varianta tichý panel v toku stránky.
  */
 export function Toast({
   kind,
@@ -50,32 +59,44 @@ export function Toast({
   }, [kind]);
   if (!visible) return null;
   return (
-    <p
+    <div
       role={kind === 'chyba' ? 'alert' : 'status'}
-      className={`rounded-md border px-4 py-3 text-sm ${
-        kind === 'ok' ? 'border-success text-success-text' : 'border-danger text-danger'
-      }${
+      className={cn(
+        'type-callout flex items-start gap-2.5 rounded-xl py-3 pl-4 pr-2 text-ink',
         floating
-          ? // H-3-06: nad mobilním tab barem (40 px + bezpečná zóna gesta), ne přes
+          ? // H-3-06: nad mobilním tab barem (lišta + bezpečná zóna gesta), ne přes
             // něj — plovoucí toast dřív zakrýval 24 ze 40 px navigace včetně popisků
-            ' fixed inset-x-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-50 max-w-sm' +
-            ' bg-surface shadow-lg sm:inset-x-auto sm:right-4 md:bottom-4'
-          : ''
-      }`}
+            'toast-enter fixed inset-x-4 bottom-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+0.75rem)] z-50 bg-surface shadow-floating sm:inset-x-auto sm:right-4 sm:max-w-sm md:bottom-4 dark:bg-control'
+          : 'bg-canvas',
+      )}
     >
-      {text}
+      <span
+        aria-hidden
+        className={cn(
+          'mt-[0.45em] size-2 shrink-0 rounded-full',
+          kind === 'ok' ? 'bg-success' : 'bg-danger',
+        )}
+      />
+      <p className="min-w-0 flex-1 text-pretty">{text}</p>
       <button
         type="button"
         onClick={() => setVisible(false)}
-        // bez opacity: průhlednost srazí kontrast pod AA (text-danger/60 dá na
-        // --surface jen 2,8:1) a tohle je ovládací prvek, ne dekorace
         // SC 2.5.8: cíl aspoň 24 × 24 px — křížek měl 8 × 20 px a u chybového
-        // toastu to byla jediná cesta ven (H-3-22)
-        className="float-right -mr-1 -mt-1 ml-3 inline-flex h-6 w-6 items-center justify-center font-bold"
+        // toastu to byla jediná cesta ven (H-3-22); na dotyku 44 px
+        className="-my-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-(--highlight) hover:text-ink active:bg-(--highlight-pressed) pointer-coarse:hit-area"
         aria-label="Zavřít"
       >
-        ×
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden
+          className="size-3 fill-none stroke-current"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        >
+          <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+        </svg>
       </button>
-    </p>
+    </div>
   );
 }
+

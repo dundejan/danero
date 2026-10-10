@@ -8,14 +8,19 @@ interface SwitchProps extends Omit<React.ComponentProps<'input'>, 'type'> {
 /**
  * Přepínač (vizuální pilulka) nad nativním checkboxem — funguje bez JS uvnitř
  * formuláře (odesílá se jako běžný checkbox „on“). Stavy řeší Tailwind přes
- * `peer-checked`, fokus kreslí ring kolem pilulky (input samotný je sr-only).
+ * `peer-checked`, fokus kreslí obrys kolem pilulky (input samotný je sr-only).
+ *
+ * Vypnutá dráha je šedá `line-control` (3,6:1 proti ploše — WCAG 1.4.11),
+ * zapnutá akcentní; palec je v obou stavech bílý a mezi polohami přejede
+ * krátkým přechodem. Použij pro nastavení, které platí HNED (bez tlačítka
+ * Uložit); volbu, která se odesílá formulářem, nese `Checkbox`.
  */
 export function Switch({ label, className, ...props }: SwitchProps) {
   return (
     <label
       className={cn(
-        'flex cursor-pointer items-center gap-3 text-sm',
-        props.disabled && 'cursor-not-allowed opacity-50',
+        'flex min-h-9 items-center gap-3 text-sm pointer-coarse:min-h-11',
+        props.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         className,
       )}
     >
@@ -23,11 +28,11 @@ export function Switch({ label, className, ...props }: SwitchProps) {
       <span
         aria-hidden="true"
         className={cn(
-          'relative h-6 w-11 shrink-0 rounded-full border border-line-control bg-surface transition-colors',
-          'after:absolute after:left-0.5 after:top-1/2 after:h-4.5 after:w-4.5 after:-translate-y-1/2',
-          'after:rounded-full after:bg-ink-muted after:transition-transform',
-          'peer-checked:border-accent-fill peer-checked:bg-accent-fill',
-          'peer-checked:after:translate-x-5 peer-checked:after:bg-white',
+          'relative h-6 w-10 shrink-0 rounded-full bg-line-control transition-colors duration-200',
+          'after:absolute after:left-0.5 after:top-0.5 after:size-5 after:rounded-full after:bg-white',
+          'after:shadow-thumb after:transition-transform after:duration-200 after:ease-(--ease-out)',
+          'peer-checked:bg-accent-fill peer-checked:after:translate-x-4',
+          'peer-active:after:scale-95',
           'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
         )}
       />

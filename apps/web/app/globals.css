@@ -37,14 +37,12 @@
      uživatel čte jako „tohle je aktivní / sem se kliká“; s červenou, oranžovou
      ani zelenou stavů si neplete (dřívější růžová stála těsně vedle červené).
      `accent` = výplně a indikátory, `accent-fill` = výplň s bílým textem
-     (4,70:1), `accent-text` = odkazy a drobný text (5,57:1 na bílé). */
+     (4,70:1), `accent-text` = odkazy a drobný text (5,57:1 na bílé).
+     Akcent je zároveň barva značky: tečka loga je `accent`, žádný zvláštní
+     token značky neexistuje (růžový `brand` zrušen 10. 10. 2026). */
   --accent: #0071e3;
   --accent-fill: #0071e3;
   --accent-text: #0066cc;
-
-  /* Značka: růžová tečka loga. Logo se chová jako ikona aplikace — nese barvu
-     značky, zatímco ovládání používá systémový akcent. Jinde se nepoužívá. */
-  --brand: #d6336c;
 
   /* Stavy — systémová zelená / žlutá / oranžová / červená v odstínech, které
      ve světlém režimu drží kontrast: výplň odměrky ≥ 3:1 proti dráze,
@@ -74,10 +72,12 @@
      pro utility třídy, používají je jen třídy .material-* níž.
      Sheet je skoro neprůhledný schválně: spodní sheet žije v nativním
      <dialog> (horní vrstva prohlížeče) a tam rozostření na stránku pod ním
-     nedosáhne — s nižším krytím by přes něj ostře prosvítala spodní lišta. */
+     nedosáhne — s nižším krytím by přes něj ostře prosvítala spodní lišta.
+     Krytí 0,97 navíc drží druhotný text na sheetu nad 4,5:1 i v nejhorším
+     případě (černý obsah pod ním): 4,61:1. */
   --material-bar: rgba(255, 255, 255, 0.8);
   --material-sidebar: rgba(245, 245, 247, 0.78);
-  --material-sheet: rgba(246, 246, 248, 0.92);
+  --material-sheet: rgba(252, 252, 253, 0.97);
   --material-edge: rgba(0, 0, 0, 0.1);
   /* Zvýraznění řádku (výběr v postranním panelu, stisk řádku tabulky). */
   --highlight: rgba(0, 0, 0, 0.06);
@@ -108,12 +108,22 @@
   /* Dvousloupcová pracovní plocha: šířka inspektoru a mezera mezi sloupci. */
   --inspector-width: 22rem;
   --column-gap: 2.5rem;
+
+  /* Veřejné (redakční) stránky: okraj sloupce obsahu a svislý rytmus pásů.
+     Okraj počítá s výřezem telefonu na šířku. */
+  --wrap-gutter: 1.25rem;
+  --wrap-gutter-left: max(var(--wrap-gutter), env(safe-area-inset-left, 0px));
+  --wrap-gutter-right: max(var(--wrap-gutter), env(safe-area-inset-right, 0px));
+  --band-y: clamp(3.5rem, 2.25rem + 5vw, 6.5rem);
+  --band-y-lg: clamp(5rem, 3rem + 8vw, 9rem);
+  --nav-height: 3rem;
 }
 
 @media (min-width: 48rem) {
   :root {
     --page-gutter: 2rem;
     --page-top: 1.75rem;
+    --wrap-gutter: 2rem;
   }
 }
 @media (min-width: 80rem) {
@@ -138,7 +148,6 @@
   --accent-fill: #0071e3;
   /* 6,96:1 na --surface, 5,64:1 na --canvas */
   --accent-text: #2997ff;
-  --brand: #f06e9b;
   --success: #30d158;
   --success-text: #30d158;
   --success-fill: #1d7a34;
@@ -180,7 +189,6 @@
   --color-accent: var(--accent);
   --color-accent-fill: var(--accent-fill);
   --color-accent-text: var(--accent-text);
-  --color-brand: var(--brand);
   --color-success: var(--success);
   --color-success-text: var(--success-text);
   --color-success-fill: var(--success-fill);
@@ -206,6 +214,11 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, system-ui, sans-serif;
+  /* Velké titulky a čísla: tentýž zásobník, jen s optickým řezem pro velké
+     stupně tam, kde ho systém nabízí jako samostatnou rodinu (Windows). */
+  --font-display:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   --radius-sm: 6px;
@@ -223,13 +236,25 @@
    prostrkáním, text kolem nuly, drobné popisky lehce kladně. Hierarchie je
    vždy trojice velikost + váha + proklad. Velikosti jsou v rem, takže se
    škála řídí nastavením velikosti písma v prohlížeči. */
+/* Úvodní titulek veřejné stránky (jen jeden na stránku). */
 @utility type-display {
-  font-size: clamp(2.5rem, 1.55rem + 4.2vw, 4.5rem);
-  line-height: 1.04;
-  letter-spacing: -0.03em;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 1.4rem + 4.9vw, 5rem);
+  line-height: 1.05;
+  letter-spacing: -0.028em;
+  font-weight: 600;
 }
+/* Titulek pásu veřejné stránky a titulek podstránky. */
+@utility type-headline {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.3rem + 3vw, 3.5rem);
+  line-height: 1.07;
+  letter-spacing: -0.024em;
+  font-weight: 600;
+}
+/* Hlavní sdělení stránky aplikace (verdikt) a titulek článku. */
 @utility type-title-1 {
+  font-family: var(--font-display);
   font-size: clamp(1.75rem, 1.35rem + 1.7vw, 2.5rem);
   line-height: 1.1;
   letter-spacing: -0.025em;
@@ -258,6 +283,13 @@
   line-height: 1.47;
   letter-spacing: -0.005em;
 }
+/* Dlouhý text ke čtení (články průvodce, podmínky): větší stupeň a volnější
+   proklad než text rozhraní. */
+@utility type-reading {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  letter-spacing: -0.008em;
+}
 @utility type-callout {
   font-size: 0.875rem;
   line-height: 1.43;
@@ -282,11 +314,65 @@
   font-variant-numeric: tabular-nums;
 }
 @utility type-figure-lg {
+  font-family: var(--font-display);
   font-size: clamp(1.75rem, 1.5rem + 1vw, 2.125rem);
   line-height: 1.1;
   letter-spacing: -0.025em;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+/* Jediné číslo jako hrdina pásu veřejné stránky („13 dní“, „980 Kč“). */
+@utility type-figure-xl {
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 2rem + 7.5vw, 7.5rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Rozvržení veřejných stránek ────────────────────────────────────────────
+   `wrap` je čtecí sloupec (980 px jako na apple.com), `wrap-wide` širší
+   sloupec pro navigaci, patičku a živé kusy rozhraní. `full-bleed` roztáhne
+   pás přes celou šířku okna, i když stojí uvnitř sloupce: `100vw` počítá
+   i se svislým posuvníkem, takže přesah o jeho šířku ořízne obal stránky
+   (`overflow-x: clip` — na rozdíl od `hidden` nerozbije `sticky`). */
+@utility wrap {
+  width: 100%;
+  max-width: calc(61.25rem + var(--wrap-gutter-left) + var(--wrap-gutter-right));
+  margin-inline: auto;
+  padding-left: var(--wrap-gutter-left);
+  padding-right: var(--wrap-gutter-right);
+}
+@utility wrap-wide {
+  width: 100%;
+  max-width: calc(66rem + var(--wrap-gutter-left) + var(--wrap-gutter-right));
+  margin-inline: auto;
+  padding-left: var(--wrap-gutter-left);
+  padding-right: var(--wrap-gutter-right);
+}
+@utility full-bleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+/* Čtecí šířka odstavce — kolem 62 znaků na řádek. */
+@utility measure {
+  max-width: 38rem;
+}
+
+/* Dotykový cíl 44 × 44 px i u prvku, který je na pohled menší (tlačítko „i“,
+   křížek): neviditelná plocha kolem středu prvku. */
+@utility hit-area {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 2.75rem);
+    height: max(100%, 2.75rem);
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* ── Materiály ──────────────────────────────────────────────────────────────
@@ -339,6 +425,49 @@
 @utility row-pressable {
   &:active {
     background-color: var(--highlight-pressed);
+  }
+}
+
+/* ── Ovládací prvky ─────────────────────────────────────────────────────────
+   Šipka nativního <select>: obrázek na pozadí nevidí `currentColor`, proto
+   má každý režim vlastní barvu tahu (= --ink-muted). */
+.select-chevron {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%236e6e73' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.75rem;
+}
+.dark .select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2398989d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
+}
+
+/* Rozbalovací detail (<details>): bez výchozího trojúhelníku prohlížeče —
+   šipku si kreslí komponenta (components/ui/disclosure.tsx). */
+.disclosure > summary {
+  list-style: none;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Toast přijede zdola z místa, kde stojí, a tamtéž zmizí. Přechod (ne
+   keyframes), aby šel přerušit; s omezeným pohybem zůstane jen prolnutí. */
+.toast-enter {
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter {
+    transition: opacity 200ms ease;
+    @starting-style {
+      transform: none;
+    }
   }
 }
 

@@ -36,11 +36,17 @@ const VELOCITY_WINDOW_MS = 100;
  *
  * Staví na nativním `<dialog>`: past na fokus, Escape i návrat fokusu na
  * spouštěč dělá prohlížeč.
+ *
+ * S `title` dostane sheet hlavičku s titulkem a tlačítkem „Hotovo“ (zavřít
+ * jde vždy i klepnutím mimo a klávesou Escape). Obsah vyšší než okno roluje
+ * uvnitř; sheet se pak stahuje za úchyt a hlavičku.
  */
 export function Sheet({
   open,
   onClose,
   label,
+  title,
+  doneLabel = 'Hotovo',
   children,
   className,
 }: {
@@ -48,11 +54,16 @@ export function Sheet({
   onClose: () => void;
   /** Přístupný název dialogu. */
   label: string;
+  /** Viditelný titulek; s ním sheet dostane i tlačítko pro zavření. */
+  title?: string;
+  /** Popisek zavíracího tlačítka vedle titulku. */
+  doneLabel?: string;
   children: React.ReactNode;
   className?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion() ?? false;
 
   // Po zavření zůstává sheet ve stromu, dokud nedojede — stav „dojíždí“ se
@@ -85,6 +96,13 @@ export function Sheet({
       const fresh = !dialog.open;
       if (fresh) dialog.showModal();
       height.current = panel.offsetHeight || 1;
+      // Obsah vyšší než okno roluje uvnitř sheetu a tah za něj pak patří
+      // rolování; kratší obsah slouží jako úchyt celý. `touch-action` musí
+      // být nastavené dřív, než gesto začne — proto tady, ne v obsluze dotyku.
+      const body = bodyRef.current;
+      if (body) {
+        body.style.touchAction = body.scrollHeight > body.clientHeight + 1 ? 'pan-y' : 'none';
+      }
       if (reducedMotion) {
         y.set(0);
         const controls = animate(fade, 1, { duration: 0.2, ease: 'easeOut' });
@@ -167,6 +185,17 @@ export function Sheet({
         onPointerDown={(event) => {
           if (reducedMotion || drag.current) return;
           if (event.pointerType === 'mouse' && event.button !== 0) return;
+          // rolovatelný obsah si tah nechává pro sebe; sheet se pak stahuje
+          // za úchyt a titulek
+          const body = bodyRef.current;
+          if (
+            body &&
+            body.style.touchAction === 'pan-y' &&
+            event.target instanceof Node &&
+            body.contains(event.target)
+          ) {
+            return;
+          }
           y.stop();
           drag.current = {
             pointerId: event.pointerId,
@@ -201,16 +230,32 @@ export function Sheet({
           event.stopPropagation();
         }}
         className={cn(
-          'material-sheet absolute inset-x-0 bottom-0 touch-none rounded-t-2xl shadow-floating',
-          'px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]',
+          'material-sheet absolute inset-x-0 bottom-0 mx-auto flex max-h-[calc(100dvh-2.5rem)] max-w-[40rem] flex-col rounded-t-2xl shadow-floating',
           className,
         )}
       >
         {/* úchyt: říká, že plochu jde stáhnout */}
-        <div aria-hidden className="flex h-6 items-center justify-center">
+        <div aria-hidden className="flex h-6 shrink-0 touch-none items-center justify-center">
           <span className="h-1 w-9 rounded-full bg-ink-muted/50" />
         </div>
-        {children}
+        {title && (
+          <div className="flex shrink-0 touch-none items-center justify-between gap-4 px-5 pb-3">
+            <h2 className="type-title-3 min-w-0 text-balance">{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="type-body -my-2 -mr-2 inline-flex min-h-11 shrink-0 items-center rounded-full px-2 font-semibold text-accent-text active:opacity-50"
+            >
+              {doneLabel}
+            </button>
+          </div>
+        )}
+        <div
+          ref={bodyRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+        >
+          {children}
+        </div>
       </motion.div>
     </dialog>
   );

@@ -16,6 +16,7 @@
     "two-factor": "tsx scripts/two-factor.ts"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@danero/engine": "workspace:*",
     "@danero/importers": "workspace:*",
     "@danero/shared": "workspace:*",

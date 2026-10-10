@@ -10,7 +10,7 @@ import { SidebarNav } from '@/components/nav-rail';
 import { PlatformGrid } from '@/components/platform-catalog';
 import { buttonVariants } from '@/components/ui/button';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
-import { OverviewView, plainTitle } from '@/components/views/overview-view';
+import { OverviewView } from '@/components/views/overview-view';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
 import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
@@ -20,7 +20,7 @@ import { organizationJsonLd } from '@/lib/json-ld';
 import { computeNotificationCandidates } from '@/lib/notifications';
 import { availableYears, engineInputForUser } from '@/lib/portfolio';
 import { currentUser } from '@/lib/session';
-import { tidy } from '@/lib/typography';
+import { plainTitle, tidy } from '@/lib/typography';
 import { cn } from '@/lib/utils';
 
 // „dnešek“ dema se odvíjí od skutečného data (horizont, upozornění) —
@@ -264,7 +264,7 @@ export default async function LandingPage({
       <JsonLd data={organizationJsonLd()} />
       <MarketingHeader />
 
-      <main id="obsah" className={cn(CONTAINER, 'flex-1')}>
+      <main id="obsah" className={cn(CONTAINER, 'flex-1 pb-(--band-y-lg)')}>
         {smazano === '1' && (
           <p role="status" className="type-callout mt-6 rounded-xl bg-canvas px-5 py-4">
             <span className="font-semibold">Účet byl smazán.</span> Všechna tvoje data —
