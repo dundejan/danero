@@ -12,12 +12,19 @@ import {
   type TwoFactorSetup,
 } from '@/lib/two-factor-view';
 import { Button } from '@/components/ui/button';
-import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+import { Disclosure } from '@/components/ui/disclosure';
+import { describedByError, Field, Input } from '@/components/ui/field';
+import { StatusLabel } from '@/components/ui/status';
 
 /** Cíle `aria-describedby` — každý formulář sekce má vlastní pole i hlášku. */
 const DISABLE_ERROR_ID = 'heslo-2fa-off-error';
 const VERIFY_ERROR_ID = 'kod-2fa-error';
 const ENABLE_ERROR_ID = 'heslo-2fa-error';
+
+/** Pole a tlačítko vedle sebe; v úzkém okně pod sebou. */
+const FIELD_WITH_ACTION = 'flex flex-col gap-3 @lg:flex-row @lg:items-start';
+/** Tlačítko vedle pole stojí ve výšce pole, ne popisku nad ním. */
+const BESIDE_FIELD = '@lg:mt-[1.875rem]';
 
 /**
  * Záložní kódy s tlačítkem na zkopírování — stejný blok před potvrzením i po něm.
@@ -39,9 +46,8 @@ function BackupCodes({ codes }: { codes: string[] }) {
   }
 
   return (
-    <div className="space-y-2">
-      <p className="text-sm font-semibold">Záložní kódy</p>
-      <div className="grid max-w-xs grid-cols-2 gap-x-6 gap-y-1 tabular-nums text-sm">
+    <div className="space-y-3">
+      <div className="grid max-w-[18rem] grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg bg-surface px-4 py-3 tabular-nums text-ink">
         {codes.map((code) => (
           <span key={code}>{code}</span>
         ))}
@@ -50,13 +56,23 @@ function BackupCodes({ codes }: { codes: string[] }) {
         <Button type="button" variant="secondary" size="sm" onClick={() => void onCopy()}>
           Zkopírovat
         </Button>
-        <p role="status" className="text-xs text-ink-muted">
+        <p role="status" className="type-footnote text-ink-muted">
           {copyState === 'copied' && 'Zkopírováno — vlož si je do správce hesel nebo do poznámek.'}
           {copyState === 'failed' &&
             'Zkopírovat se nepovedlo — označ kódy myší a zkopíruj je ručně.'}
         </p>
       </div>
     </div>
+  );
+}
+
+/** Krok zapínání: číslovaný titulek a pod ním to, co se v kroku dělá. */
+function Step({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <li className="space-y-3">
+      <p className="font-medium text-ink">{title}</p>
+      {children}
+    </li>
   );
 }
 
@@ -155,20 +171,19 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
 
   if (view.kind === 'enabled') {
     return (
-      <form onSubmit={onDisable} className="space-y-3">
-        <p className="text-sm">
-          <span className="font-semibold text-success-text">Dvoufaktorové ověření je zapnuté.</span>{' '}
-          <span className="text-ink-muted">
-            Při přihlášení se vyžaduje kód z autentikátoru.
-          </span>
+      <form onSubmit={onDisable} className="space-y-4">
+        <p className="text-pretty">
+          Při přihlášení se vyžaduje kód z autentikátoru. Záložní kódy už znovu neukážeme — když
+          je nemáš uložené, ověření vypni a zapni znovu a vzniknou nové.
         </p>
-        <p className="text-sm text-ink-muted">
-          Záložní kódy už znovu neukážeme. Když je nemáš uložené, dvoufaktorové ověření vypni a
-          zapni znovu — vzniknou nové a v aplikaci si naskenuješ nový QR kód.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <Label htmlFor="heslo-2fa-off">Heslo (pro vypnutí)</Label>
+        <div className={FIELD_WITH_ACTION}>
+          <Field
+            label="Heslo (pro vypnutí)"
+            htmlFor="heslo-2fa-off"
+            error={error}
+            errorId={DISABLE_ERROR_ID}
+            className="max-w-[20rem] flex-1 text-ink"
+          >
             <Input
               id="heslo-2fa-off"
               name="heslo"
@@ -177,79 +192,89 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
               autoComplete="current-password"
               {...describedByError(error !== null, DISABLE_ERROR_ID)}
             />
-          </div>
-          <Button type="submit" variant="danger" disabled={pending}>
+          </Field>
+          <Button type="submit" variant="danger" disabled={pending} className={BESIDE_FIELD}>
             {pending ? 'Vypínám…' : 'Vypnout 2FA'}
           </Button>
         </div>
-        {error && <FieldError id={DISABLE_ERROR_ID}>{error}</FieldError>}
       </form>
     );
   }
 
   if (view.kind === 'setup') {
     return (
-      <div className="space-y-4">
-        <p className="text-sm text-ink-muted">
-          Naskenuj QR kód v aplikaci (Aegis, Google Authenticator, 1Password…) a ulož si záložní
-          kódy — každý funguje jednou, když přijdeš o telefon. Teprve pak zapnutí potvrď prvním
-          kódem z aplikace.
-        </p>
-        <div className="flex flex-wrap items-start gap-6">
+      // Pořadí kroků je záměr (L6b-03): kódy se ukládají DŘÍV, než se zapnutí
+      // potvrdí — kdo postupoval „naskenuj → potvrď“, o ně dřív přišel.
+      <ol className="space-y-7">
+        <Step title="1. Naskenuj QR kód v aplikaci">
+          <p className="text-pretty">Třeba Aegis, Google Authenticator nebo 1Password.</p>
           {qrDataUrl && (
-            <img src={qrDataUrl} alt="QR kód pro autentikátor" className="rounded-md border border-line" />
-          )}
-          <div className="min-w-0 space-y-3">
-            {view.manualKey && (
-              <div className="space-y-1">
-                <p className="text-xs text-ink-muted">
-                  Nejde QR kód naskenovat? Zadej do aplikace ručně tenhle klíč:
-                </p>
-                <code className="block select-all break-all tabular-nums text-sm">
-                  {view.manualKey}
-                </code>
-              </div>
-            )}
-            <div className="space-y-1">
-              <p className="text-xs text-ink-muted">
-                Celá adresa pro aplikace, které ji umějí vložit:
-              </p>
-              <p className="break-all tabular-nums text-xs text-ink-muted">{view.totpURI}</p>
-            </div>
-          </div>
-        </div>
-        <BackupCodes codes={view.backupCodes} />
-        <form onSubmit={onVerify} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div>
-            <Label htmlFor="kod-2fa">První kód z aplikace</Label>
-            <Input
-              id="kod-2fa"
-              name="kod"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern={TOTP_CODE_PATTERN}
-              title={TOTP_CODE_TITLE}
-              required
-              className="tabular-nums tracking-widest"
-              {...describedByError(error !== null, VERIFY_ERROR_ID)}
+            // QR kód je vždy tmavý na bílé — v tmavém režimu potřebuje vlastní podklad
+            <img
+              src={qrDataUrl}
+              alt="QR kód pro autentikátor"
+              width={192}
+              height={192}
+              className="rounded-lg bg-white p-2"
             />
-          </div>
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Ověřuji…' : 'Dokončit zapnutí'}
-          </Button>
-        </form>
-        {error && <FieldError id={VERIFY_ERROR_ID}>{error}</FieldError>}
-      </div>
+          )}
+          <Disclosure summary="Nejde naskenovat?">
+            <div className="space-y-3">
+              {view.manualKey && (
+                <div className="space-y-1">
+                  <p>Zadej do aplikace ručně tenhle klíč:</p>
+                  <code className="type-callout block select-all break-all tabular-nums text-ink">
+                    {view.manualKey}
+                  </code>
+                </div>
+              )}
+              <div className="space-y-1">
+                <p>Celá adresa pro aplikace, které ji umějí vložit:</p>
+                <p className="break-all tabular-nums">{view.totpURI}</p>
+              </div>
+            </div>
+          </Disclosure>
+        </Step>
+        <Step title="2. Ulož si záložní kódy">
+          <p className="text-pretty">Každý funguje jednou — pro případ, že přijdeš o telefon.</p>
+          <BackupCodes codes={view.backupCodes} />
+        </Step>
+        <Step title="3. Potvrď prvním kódem z aplikace">
+          <form onSubmit={onVerify} className={FIELD_WITH_ACTION}>
+            <Field
+              label="První kód z aplikace"
+              htmlFor="kod-2fa"
+              error={error}
+              errorId={VERIFY_ERROR_ID}
+              className="max-w-[12rem] flex-1 text-ink"
+            >
+              <Input
+                id="kod-2fa"
+                name="kod"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern={TOTP_CODE_PATTERN}
+                title={TOTP_CODE_TITLE}
+                required
+                className="tabular-nums tracking-widest"
+                {...describedByError(error !== null, VERIFY_ERROR_ID)}
+              />
+            </Field>
+            <Button type="submit" disabled={pending} className={BESIDE_FIELD}>
+              {pending ? 'Ověřuji…' : 'Dokončit zapnutí'}
+            </Button>
+          </form>
+        </Step>
+      </ol>
     );
   }
 
   if (view.kind === 'confirmed') {
     return (
-      <div className="space-y-4">
-        <p className="text-sm font-semibold text-success-text">Dvoufaktorové ověření je aktivní.</p>
-        <p className="text-sm text-ink-muted">
+      <div className="space-y-3">
+        <StatusLabel tone="success">Dvoufaktorové ověření je aktivní.</StatusLabel>
+        <p className="text-pretty">
           Záložní kódy tu zůstanou, dokud z téhle stránky neodejdeš — potom už je znovu neukážeme.
-          Jestli je ještě nemáš uložené, udělej to teď.
         </p>
         <BackupCodes codes={view.backupCodes} />
       </div>
@@ -257,13 +282,19 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <form onSubmit={onEnable} className="space-y-3">
-      <p className="text-sm text-ink-muted">
-        Druhý faktor (TOTP) chrání tvoje daňová data, i kdyby heslo uniklo. Doporučujeme.
+    <form onSubmit={onEnable} className="space-y-4">
+      <p className="text-pretty">
+        Při přihlášení navíc zadáš kód z aplikace v telefonu. Chrání tvoje daňová data, i kdyby
+        heslo uniklo.
       </p>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1">
-          <Label htmlFor="heslo-2fa">Heslo (pro potvrzení)</Label>
+      <div className={FIELD_WITH_ACTION}>
+        <Field
+          label="Heslo (pro potvrzení)"
+          htmlFor="heslo-2fa"
+          error={error}
+          errorId={ENABLE_ERROR_ID}
+          className="max-w-[20rem] flex-1 text-ink"
+        >
           <Input
             id="heslo-2fa"
             name="heslo"
@@ -272,12 +303,11 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
             autoComplete="current-password"
             {...describedByError(error !== null, ENABLE_ERROR_ID)}
           />
-        </div>
-        <Button type="submit" disabled={pending}>
+        </Field>
+        <Button type="submit" disabled={pending} className={BESIDE_FIELD}>
           {pending ? 'Připravuji…' : 'Zapnout 2FA'}
         </Button>
       </div>
-      {error && <FieldError id={ENABLE_ERROR_ID}>{error}</FieldError>}
     </form>
   );
 }

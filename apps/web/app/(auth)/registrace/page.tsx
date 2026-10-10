@@ -1,47 +1,7 @@
-import Link from 'next/link';
 import { AuthForm } from '@/components/auth-form';
-import { Logo } from '@/components/logo';
 
 export const metadata = { title: 'Registrace — Danero' };
 
 export default function SignUpPage() {
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
-      <div>
-        <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
-          <Logo className="text-lg" />
-        </Link>
-        <h1 className="text-3xl font-bold">Registrace</h1>
-        <p className="mt-2 text-sm text-ink-muted">
-          Účet je zdarma a bez karty. Stačí e-mail.
-        </p>
-        <p className="mt-1 text-sm text-ink-muted">
-          Už máš účet?{' '}
-          <Link href="/prihlaseni" className="font-medium text-accent-text">
-            Přihlas se
-          </Link>
-        </p>
-      </div>
-      <div>
-        <AuthForm mode="registrace" />
-        <p className="mt-3 text-center text-sm text-ink-muted">
-          Za 2 minuty připojíš brokera a uvidíš svoje limity.
-        </p>
-        {/* B-1 právního auditu: podmínky se do smlouvy včleňují odkazem při
-            registraci (§ 1751 OZ) a GDPR informace patří ke sběru údajů (čl. 13) */}
-        <p className="mt-4 text-center text-xs leading-relaxed text-ink-muted">
-          Vytvořením účtu souhlasíš s{' '}
-          <Link href="/podminky" className="font-medium text-accent-text">
-            podmínkami užití
-          </Link>{' '}
-          a potvrzuješ, že víš,{' '}
-          <Link href="/soukromi" className="font-medium text-accent-text">
-            jak nakládáme s tvými daty
-          </Link>
-          . Výpočty si vždy můžeš zkontrolovat proti podkladům, které ti u každého
-          čísla ukážeme.
-        </p>
-      </div>
-    </main>
-  );
+  return <AuthForm mode="registrace" />;
 }
