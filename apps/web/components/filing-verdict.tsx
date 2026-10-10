@@ -2,6 +2,7 @@ import type { LimitStatus, TaxYearResult } from '@danero/engine';
 import { ZONE_LABEL } from '@/components/limit-gauge';
 import { Disclosure } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { InfoPrint } from '@/components/ui/info-print';
 import { Notice } from '@/components/ui/notice';
 import { StatusLabel, type Tone } from '@/components/ui/status';
 import { czDate, czk, pct } from '@/lib/format';
@@ -127,17 +128,17 @@ export function ReportFilingVerdict({
       <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
         {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded }))}
       </h2>
-      <p className="type-footnote mt-3 flex items-center gap-1 text-ink-muted print:hidden">
+      <div className="type-footnote mt-3 flex items-center gap-1 text-ink-muted print:hidden">
         {status.exceeded
           ? 'Podle příjmů, které Danero eviduje.'
           : 'Jen podle příjmů, které Danero eviduje.'}
         <InfoPopover label="Z čeho verdikt vychází" align="start">
           <p>{explanation}</p>
         </InfoPopover>
-      </p>
-      <p className="type-footnote mt-3 hidden max-w-[70ch] text-ink-muted print:block">
-        {explanation}
-      </p>
+      </div>
+      <InfoPrint className="max-w-[70ch]">
+        <p>{explanation}</p>
+      </InfoPrint>
     </div>
   );
 }

@@ -16,12 +16,18 @@ import { StatusLabel } from '@/components/ui/status';
 import { Switch } from '@/components/ui/switch';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { TextLink } from '@/components/ui/link';
+import { EngineErrorCard } from '@/lib/fx-error';
 import { SegmentedDemo, SheetDemo } from './sheet-demo';
 
 export const metadata = {
   title: 'Primitiva — Danero',
   robots: { index: false, follow: false },
 };
+
+/** Stav „výpočet nejde dokončit“ s ukázkovou hláškou enginu. */
+function EngineErrorSample() {
+  return <EngineErrorCard message="Pro měnu HUF a rok 2026 chybí jednotný i denní kurz." />;
+}
 
 /**
  * Galerie sdílených primitiv (docs/07-design.md) — jen pro vývoj: všechna
@@ -246,6 +252,33 @@ export default function PrimitivesPage() {
             description="Smažeme účet i všechna nahraná data. Tohle nejde vrátit."
             confirmLabel="Smazat účet"
           />
+        </div>
+      </Section>
+
+      <Section title="Stav celé stránky">
+        {/* stránka v tomhle stavu nemá lištu, titulek je proto její h1 — tady,
+            v galerii s vlastním h1, je to jen ukázka podoby */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="rounded-xl bg-canvas px-4">
+            <EmptyState
+              headingAs="p"
+              title="Něco se pokazilo"
+              action={
+                <>
+                  <Button>Zkusit znovu</Button>
+                  <TextLink href="/demo/prehled" chevron>
+                    Přehled
+                  </TextLink>
+                </>
+              }
+              note="Kód chyby: 1234567890"
+            >
+              Stránku se nepodařilo načíst. Tvoje data jsou v pořádku.
+            </EmptyState>
+          </div>
+          <div className="rounded-xl bg-canvas px-4">
+            <EngineErrorSample />
+          </div>
         </div>
       </Section>
 

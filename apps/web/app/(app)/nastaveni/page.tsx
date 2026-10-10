@@ -426,11 +426,11 @@ export default async function SettingsPage({
       <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
 
       {/* jeden sloupec s šířkou pro seznam — nastavení se nečte přes celou obrazovku */}
-      <div className="@container max-w-[44rem] space-y-12 pt-2 md:pt-4">
+      <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
         {/* Formulář schválně NEMÁ `id="dan"`: akce po uložení přesměruje na
             `#dan` a kotva, která neexistuje, nechá stránku stát tam, kde je.
             S kotvou by každá změna dole odrolovala zpátky nahoru. */}
-        <form action={saveProfileAction} className="space-y-12">
+        <form action={saveProfileAction} className="space-y-14">
           {taxProfile}
           {profile ? (
             <>
@@ -447,7 +447,7 @@ export default async function SettingsPage({
             <div className="space-y-4">
               <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
               <Disclosure summary="Výpočet a sporné výklady — přednastaveno bezpečně">
-                <div className="type-body space-y-12 pt-6 text-ink">{calculation}</div>
+                <div className="type-body space-y-14 pt-6 text-ink">{calculation}</div>
               </Disclosure>
             </div>
           )}

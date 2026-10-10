@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Sheet } from '@/components/ui/sheet';
+import { useContainerWide } from '@/lib/use-container-wide';
 import { cn } from '@/lib/utils';
 
 export interface LimitEntry {
@@ -54,20 +55,7 @@ export function LimitsInspector({
   const [sheetOpen, setSheetOpen] = useState(false);
   // výchozí „široké“ odpovídá tomu, co server vykreslí pro stolní okno;
   // telefon si to opraví hned po připojení
-  const [wide, setWide] = useState(true);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const measure = () => {
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setWide(root.clientWidth >= WIDE_REM * rem);
-    };
-    // pozorovatel ohlásí první měření sám hned po připojení
-    const observer = new ResizeObserver(measure);
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
+  const wide = useContainerWide(rootRef, WIDE_REM, true);
 
   const current = entries.find((entry) => entry.key === selected) ?? entries[0];
   const regionId = `${baseId}-detail`;

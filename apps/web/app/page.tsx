@@ -324,8 +324,8 @@ export default async function LandingPage({
       </Band>
 
       {/* ── odkud data: výčet podle způsobu načtení, jména z katalogu ───────── */}
-      <Band aria-label="Podporované platformy">
-        <BandHeading title="Odkud načte obchody" />
+      <Band aria-labelledby="platformy-nadpis">
+        <BandHeading id="platformy-nadpis" title="Odkud načte obchody" />
         <SpecList className="mt-10">
           <SpecRow label="Živě přes API">
             {tidy(

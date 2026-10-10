@@ -547,8 +547,7 @@ export function KalkulackaPriznani({
               <div className="mt-6 border-t border-line/70 pt-5">
                 <p className="type-callout text-pretty">{shown.next}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-                  {/* `secondary`, ne `tinted`: akcentní text na tónu nemá na šedém panelu kontrast AA */}
-                  <Link href="/demo/prehled" className={buttonVariants({ variant: 'secondary' })}>
+                  <Link href="/demo/prehled" className={buttonVariants({ variant: 'tinted' })}>
                     Vyzkoušet demo
                   </Link>
                   <TextLink href="/registrace" chevron>

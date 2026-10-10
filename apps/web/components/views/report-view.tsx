@@ -22,7 +22,8 @@ import { Card } from '@/components/ui/card';
 import { Chevron, Disclosure } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, FieldHint, Input, Select } from '@/components/ui/field';
-import { InfoPopover, InfoPrint } from '@/components/ui/info-popover';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { InfoPrint } from '@/components/ui/info-print';
 import { TextLink } from '@/components/ui/link';
 import { Group, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
@@ -1265,7 +1266,7 @@ export function ReportView({
                   <Button type="submit" variant="secondary">
                     Stáhnout XML pro EPO
                   </Button>
-                  <p className="type-footnote flex items-center gap-1 text-ink-muted">
+                  <div className="type-footnote flex items-center gap-1 text-ink-muted">
                     Podklad, ne hotové přiznání — jen investiční příjmy.
                     <InfoPopover label="Co XML obsahuje">
                       <p>
@@ -1281,7 +1282,7 @@ export function ReportView({
                         daně přepočítá až po jejich zadání.
                       </p>
                     </InfoPopover>
-                  </p>
+                  </div>
                 </div>
               </form>
             </Card>
@@ -1407,7 +1408,7 @@ export function ReportView({
                     to pravda ani v jedné půlce (nález H-3-01). `window.print()`
                     tiskne DOM, a v něm je jen tahle strana; XML pro podatelnu
                     nese úhrny do řádků přiznání, ne rozpis jednotlivých prodejů. */}
-                <p className="type-footnote flex items-center gap-1 text-ink-muted">
+                <div className="type-footnote flex items-center gap-1 text-ink-muted">
                   <span className="tabular-nums">
                     {fromRow + 1}–{fromRow + disposalsOnPage.length} z {allDisposals.length}
                   </span>
@@ -1417,7 +1418,7 @@ export function ReportView({
                       podatelnu jsou spočítané ze všech prodejů.
                     </p>
                   </InfoPopover>
-                </p>
+                </div>
                 {/* H-3-21: dřív tu bylo jen „Předchozí/Další“, takže na stranu
                     100 ze 125 vedlo 99 kliknutí — a každé je celý render reportu.
                     Skok na první a poslední stranu plus přímé zadání čísla to

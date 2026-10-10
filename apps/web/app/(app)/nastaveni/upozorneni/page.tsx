@@ -152,7 +152,7 @@ export default async function NotificationSettingsPage({
       <SettingsToolbar active="notifications" />
       <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
 
-      <div className="@container max-w-[44rem] space-y-12 pt-2 md:pt-4">
+      <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
         {/* odpověď na otázku, kvůli které člověk stránku otevřel — až pod ní volby */}
         <Section
           title="Co ti teď chodí"
@@ -191,7 +191,7 @@ export default async function NotificationSettingsPage({
           )}
         </Section>
 
-        <form action={saveInPlace} className={cn('space-y-12', HIDE_WITHOUT_EMAIL)}>
+        <form action={saveInPlace} className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}>
           <Section title="Odesílání">
             <Group variant="inset" className={LONE_EMAIL_SWITCH}>
               <Row

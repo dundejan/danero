@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { PositionCard } from '@/components/position-card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
@@ -11,6 +11,7 @@ import { Group, Row } from '@/components/ui/list';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Table, Th } from '@/components/ui/table';
 import { plural } from '@/lib/format';
+import { useContainerWide } from '@/lib/use-container-wide';
 import { cn } from '@/lib/utils';
 
 /**
@@ -314,20 +315,7 @@ export function PositionsExplorer({
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   // server neví, jak je okno široké: do připojení je název pozice odkaz
-  const [wide, setWide] = useState(false);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const measure = () => {
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setWide(root.clientWidth >= WIDE_REM * rem);
-    };
-    // pozorovatel ohlásí první měření sám hned po připojení
-    const observer = new ResizeObserver(measure);
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
+  const wide = useContainerWide(rootRef, WIDE_REM, false);
 
   const sortBy = (key: SortKey, dir?: SortDir) => {
     setSortDir(dir ?? (key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : defaultDir(key)));

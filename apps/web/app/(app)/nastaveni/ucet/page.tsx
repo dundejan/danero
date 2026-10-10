@@ -96,7 +96,7 @@ export default async function AccountSettingsPage({
       <SettingsToast ok={firstParam(params.ok)} chyba={errorCode} inline={shownInline} />
       {shownInline && <ClearFeedbackUrl />}
 
-      <div className="@container max-w-[44rem] space-y-12 pt-2 md:pt-4">
+      <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
         <Section title="Přihlášení a zabezpečení" id="ucet">
           <Group variant="inset">
             <DisclosureRow
