@@ -241,7 +241,7 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
       expect(html).not.toContain(OVER_LIMIT);
     }
     const card = verdictCard(reportHtml('30000'), UNDER_LIMIT);
-    expect(card).toMatch(/limit 50\s000\sKč pro paušální daň je čerpaný z 60\s%/);
+    expect(card).toMatch(/limit paušální daně \(50\s000\sKč\) je čerpaný z 60\s%/);
     // tatáž částka zaměstnanci povinnost zakládá
     expect(reportHtml('30000', 'ZAMESTNANEC')).toContain(OVER_LIMIT);
   });
