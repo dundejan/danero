@@ -4,11 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { parseTransactions } from '@danero/shared';
 import { analyzeTaxYear } from '@danero/engine';
 import { XMLParser } from 'fast-xml-parser';
-import { ReportView } from '@/components/views/report-view';
-import { EPO_SUPPORTED_YEARS, generateDpfdp7 } from '@/lib/epo';
+import { formLinesNote, ReportView } from '@/components/views/report-view';
+import { EPO_SUPPORTED_YEARS, generateDpfdp7, attachment4Lines } from '@/lib/epo';
 import { czk, yearList } from '@/lib/format';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
 import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
+import { configForYear } from '@/lib/tax-config';
 
 /**
  * K3-03 a K3-05 — čísla pro Přílohu č. 2.
@@ -183,6 +184,162 @@ describe('§ 8: průvodce a XML nesou stejnou korunu (L5-05, L5-01)', () => {
     expect(table).toContain(czk(Number(r321)));
     expect(table).not.toContain(czk(6553));
   });
+
+  /**
+   * R1B-01 — řádky Přílohy č. 4 stály v reportu bez částky, přestože je XML
+   * nese. Čísla teď dává `attachment4Lines()` oběma; tady se hlídá, že se nerozejdou.
+   */
+  it('ř. 410, 412, 413 a 414 v průvodci jsou částky z XML', () => {
+    const vetaZ = dpFor('SEPARATE_16A').VetaZ!;
+    const p4 = attachment4Lines(result)!;
+    // předpoklad sondy: příloha má co počítat
+    expect(p4.r410.gt(0)).toBe(true);
+    expect(p4.r412.gt(0)).toBe(true);
+
+    expect(vetaZ.kc_dan415).toBe(p4.r410.toFixed(0));
+    expect(vetaZ.kc_zahr415).toBe(p4.r412.toFixed(0));
+    expect(Number(vetaZ.kc_uznzap415)).toBe(p4.r413.toNumber());
+    expect(vetaZ.da_samzakl4).toBe(p4.r414.toFixed(0));
+
+    expect(formLine(guideHtml, 'ř. 410')).toContain(czk(p4.r410));
+    expect(formLine(guideHtml, 'ř. 412')).toContain(czk(p4.r412));
+    expect(formLine(guideHtml, 'ř. 414')).toContain(czk(p4.r414));
+    // ř. 413 se vyplňuje na haléře — report je nesmí zaokrouhlit pryč
+    const r413 = formLine(guideHtml, 'ř. 413');
+    expect(r413).toContain(
+      p4.r413.isInteger() ? czk(p4.r413) : p4.r413.toFixed(2).replace('.', ','),
+    );
+  });
+});
+
+/**
+ * R1B-01 — „Co zapsat do přiznání“ nesmí mít řádek tiskopisu bez hodnoty.
+ *
+ * Pět řádků (ř. 58, ř. 86, ř. 410, ř. 412–413, ř. 414) mělo vpravo prázdno —
+ * ani pomlčku, ani slovo. Na stránce, ze které se opisuje do formuláře, není
+ * z prázdné buňky poznat, jestli se má zapsat nula, nic, nebo je to vada.
+ */
+describe('Řádky tiskopisu v reportu mají vždy hodnotu (R1B-01)', () => {
+  /** Paušalista s dividendou nad limitem 50 000 Kč — vidí i ř. 86. */
+  const dividend = (grossCzk: string, year: number) =>
+    parseTransactions([
+      {
+        type: 'DIVIDEND',
+        id: 'r1b-us',
+        isin: 'US0378331005',
+        sourceCountry: 'US',
+        gross: grossCzk,
+        withholdingTax: '0',
+        currency: 'CZK',
+        date: `${year}-04-01`,
+      },
+    ]);
+
+  /** Řádky „ř. N → hodnota“ části „Co zapsat do přiznání“ a text jejich pravé strany. */
+  const lineValues = (html: string): Array<{ line: string; value: string }> =>
+    guide(html)
+      .split('role="listitem"')
+      .flatMap((chunk) => {
+        // číslo řádku tiskopisu stojí v prvním sloupci řádku seznamu (`LineRow`)
+        const line = />(ř\. [^<]+)<\/span><span class="min-w-0">/.exec(chunk)?.[1];
+        if (!line) return [];
+        const value = /<span class="text-right[^"]*">(.*?)<\/span><\/div>/s.exec(chunk)?.[1] ?? '';
+        return [{ line, value: value.replace(/<[^>]+>/g, '').trim() }];
+      });
+
+  it.each([
+    ['PAUSAL', '60000'],
+    ['PAUSAL', '20000'],
+    ['ZAMESTNANEC', '60000'],
+  ])('%s s dividendou %s Kč: žádný řádek není prázdný', (regime, gross) => {
+    const html = renderToStaticMarkup(
+      createElement(ReportView, {
+        txs: dividend(gross, 2025),
+        profile: { ...PROFILE, regime },
+        year: 2025,
+        years: [2025],
+      }),
+    );
+    const lines = lineValues(html);
+    // obě cesty zdanění dividend jsou v HTML (druhá je jen skrytá přepínačem)
+    for (const expected of ['ř. 40', 'ř. 64', 'ř. 38', 'ř. 58', 'ř. 401a', 'ř. 410', 'ř. 412', 'ř. 413', 'ř. 414']) {
+      expect(lines.map((row) => row.line), expected).toContain(expected);
+    }
+    for (const { line, value } of lines) expect(value, `${line} je prázdný`).not.toBe('');
+  });
+
+  it('ř. 58 říká, že ho spočítá formulář — z investic samotných ho určit nejde', () => {
+    const html = render(dividend('60000', 2025), 2025);
+    expect(formLine(guide(html), 'ř. 58')).toContain('spočítá formulář');
+  });
+
+  it('ř. 86 po prolomení limitu nese zálohy z konfigurace roku — tytéž, které odečítá doplatek', () => {
+    const txs = dividend('60000', 2025);
+    const result = analyzeTaxYear(engineInputForUser(txs, PROFILE, 2025));
+    const impact = result.limits.flatTax50k.breachImpact!;
+    // předpoklad sondy: limit je prolomený a zálohy jsou nenulové
+    expect(impact.advancesCreditCzk.gt(0)).toBe(true);
+    // částku odvozujeme z konfigurace roku, ne z čísla opsaného do testu
+    const monthly = configForYear(2025).flatTaxAdvance!.monthlyTaxCzk;
+    expect(impact.advancesCreditCzk.toFixed(0)).toBe(String(Number(monthly) * impact.advanceMonths));
+    expect(formLine(guide(render(txs, 2025)), 'ř. 86')).toContain(czk(impact.advancesCreditCzk));
+  });
+
+  it('ř. 86 pod limitem částku neslibuje (počet měsíců v režimu Danero nezná) a říká pravidlo', () => {
+    const row = formLine(guide(render(dividend('20000', 2025), 2025)), 'ř. 86');
+    expect(row).toContain('doplníš podle zaplacených záloh');
+    expect(row).toContain(czk(Number(configForYear(2025).flatTaxAdvance!.monthlyTaxCzk)));
+  });
+
+  it('zaměstnanec ř. 86 nevidí — zálohy z paušálního režimu se ho netýkají', () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportView, {
+        txs: dividend('60000', 2025),
+        profile: { ...PROFILE, regime: 'ZAMESTNANEC' },
+        year: 2025,
+        years: [2025],
+      }),
+    );
+    expect(html).not.toContain('>ř. 86<');
+  });
+});
+
+/**
+ * R2-04 — tichá věta pod nadpisem „Co zapsat do přiznání“ u roku bez známého
+ * tiskopisu. U dávno uzavřeného roku tvrdila, že čísla řádků „finanční správa
+ * ještě nezveřejnila“.
+ */
+describe('Věta o číslech řádků rozlišuje rok minulý a budoucí (R2-04)', () => {
+  // roky se odvozují ze seznamu podporovaných, ať test přežije jeho rozšíření
+  const past = Math.min(...EPO_SUPPORTED_YEARS) - 1;
+  const future = Math.max(...EPO_SUPPORTED_YEARS) + 1;
+
+  it('rok se známým tiskopisem větu nemá', () => {
+    for (const year of EPO_SUPPORTED_YEARS) expect(formLinesNote(year)).toBeNull();
+  });
+
+  it('budoucí rok: čísla ještě nejsou zveřejněná', () => {
+    const note = formLinesNote(future)!;
+    expect(note.short).toContain('ještě nezveřejnila');
+    expect(note.full).toContain('až finanční správa zveřejní strukturu');
+  });
+
+  it('minulý rok: tiskopis dávno vyšel, jen se čísla mohou lišit', () => {
+    const note = formLinesNote(past)!;
+    for (const text of [note.short, note.full]) {
+      expect(text).not.toContain('nezveřejnila');
+      expect(text).not.toContain('zveřejní');
+      expect(text).toContain(String(past));
+      expect(text).toContain(yearList(EPO_SUPPORTED_YEARS));
+    }
+    expect(note.short).toContain('mohou lišit');
+  });
+
+  it('report minulého roku tu větu opravdu vykreslí', () => {
+    const html = render(lossyTxs(past), past).replace(/ /g, ' ');
+    expect(html).toContain(formLinesNote(past)!.short);
+    expect(html).not.toContain('ještě nezveřejnila');
+  });
 });
 
 /**
@@ -274,9 +431,9 @@ describe('Průvodce ukazuje čísla i pro rok bez XML (K3-05)', () => {
     const p2 = priloha2(result);
     expect(p2.prijmyCzk.gt(0)).toBe(true);
 
-    const pruvodce = guide(render(txs, 2026));
-    expect(pruvodce).toContain(czk(p2.prijmyCzk));
-    expect(pruvodce).toContain(czk(p2.vydajeCzk));
+    const pruvodce = guide(render(txs, 2026)).replace(/\u00a0/g, ' ');
+    expect(pruvodce).toContain(czk(p2.prijmyCzk).replace(/\u00a0/g, ' '));
+    expect(pruvodce).toContain(czk(p2.vydajeCzk).replace(/\u00a0/g, ' '));
     // a musí přiznat, ze kterých let čísla ŘÁDKŮ jsou — výčet jde ze seznamu
     // podporovaných roků, v textu se neopisuje (L5-03)
     expect(pruvodce).toContain(`z tiskopisu ${yearList(EPO_SUPPORTED_YEARS)}`);

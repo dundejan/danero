@@ -7,6 +7,7 @@ import { d, parseTransactions, type Money, type Transaction } from '@danero/shar
 import { OverviewView } from '@/components/views/overview-view';
 import { filingLimitTexts } from '@/lib/filing-limits';
 import { czk } from '@/lib/format';
+import { LIMIT_NAME } from '@/lib/limit-names';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
 import { configForYear } from '@/lib/tax-config';
 
@@ -110,18 +111,18 @@ describe('přehled: částka limitu § 38g v popiscích je z konfigurace roku (L
       const limit = d(limits.employeeSideIncome);
       const html = overviewHtml(year, 'ZAMESTNANEC', limit);
 
-      expect(html).toContain(`Vedlejší příjmy — ${czk(limit)}`);
-      // klíčové číslo „Nejbližší limit“ jmenuje limit částkou téhož roku
-      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%limit ${czk(limit)} vedlejších příjmů`));
+      expect(html).toContain(`${LIMIT_NAME.EMPLOYEE_SIDE_INCOME} — ${czk(limit)}`);
+      // klíčové číslo „Nejbližší limit“ jmenuje limit stejně jako seznam pod ním (R1B-10)
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%${LIMIT_NAME.EMPLOYEE_SIDE_INCOME}`));
     });
 
     it(`R-09a: režim „jiné“ v roce ${year}`, { timeout: 30_000 }, () => {
       const limit = d(limits.generalFiling);
       const html = overviewHtml(year, 'JINE', limit);
 
-      expect(html).toContain(`Podání přiznání — ${czk(limit)}`);
+      expect(html).toContain(`${LIMIT_NAME.GENERAL_FILING} — ${czk(limit)}`);
       expect(html).toContain(`zdanitelné příjmy do ${czk(limit)} za rok`);
-      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%limit ${czk(limit)} pro podání přiznání`));
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%${LIMIT_NAME.GENERAL_FILING}`));
     });
   }
 });

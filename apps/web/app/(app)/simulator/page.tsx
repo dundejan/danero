@@ -20,7 +20,7 @@ import { requireUser } from '@/lib/session';
  */
 export const maxDuration = 300;
 
-export const metadata = { title: 'Simulátor prodeje — Danero' };
+export const metadata = { title: 'Simulátor — Danero' };
 
 export default async function SimulatorPage({
   searchParams,

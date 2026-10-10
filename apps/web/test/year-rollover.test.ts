@@ -256,7 +256,7 @@ describe('přechod roku: co uvidí uživatel v reportu za rok mimo registr (R-15
   it('report není prázdný — čísla, která na vyhlášení nezávisí, ukazuje dál', () => {
     const out = html();
     // rok v nadpisu nese skrytý doplněk titulku lišty (vidět je v přepínači)
-    expect(out.replace(/<[^>]+>/g, '')).toContain(`Daňový report ${UNKNOWN_YEAR}`);
+    expect(out.replace(/<[^>]+>/g, '')).toContain(`Report ${UNKNOWN_YEAR}`);
     expect(out).toContain('Použité kurzy');
     // dílčí základ § 10 se spočítal normálně
     expect(out).toContain(czk(d('2000000')));

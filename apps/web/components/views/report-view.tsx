@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ZERO, type Transaction } from '@danero/shared';
+import { d, ZERO, type Money, type Transaction } from '@danero/shared';
 import {
   analyzeTaxYear,
   compareVariants,
@@ -9,19 +9,30 @@ import {
   type EngineInput,
 } from '@danero/engine';
 import { AppToolbar } from '@/components/app-toolbar';
+import { EpoExportForm } from '@/components/epo-export-form';
 import {
   ExemptIncomeReportingNotice,
+  FilingDeadlineInfo,
+  FilingDeadlineStat,
   filingLimitFor,
   ReportFilingVerdict,
 } from '@/components/filing-verdict';
 import { PrintButton } from '@/components/print-button';
+import {
+  DIVIDEND_TAXATION_LABEL,
+  DividendTaxationInfo,
+  DividendTaxationRow,
+  DUE_NAME,
+  TAX_NAME,
+  TaxFigure,
+  TaxFigureInfo,
+  TaxResultRows,
+} from '@/components/tax-figure';
 import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { ViewSwitch } from '@/components/view-switch';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Chevron, Disclosure } from '@/components/ui/disclosure';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Field, FieldHint, Input, Select } from '@/components/ui/field';
+import { Input } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { InfoPrint } from '@/components/ui/info-print';
 import { TextLink } from '@/components/ui/link';
@@ -29,15 +40,23 @@ import { Group, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section, SectionHeader } from '@/components/ui/section';
-import { Stat } from '@/components/ui/stat';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { today as todayInPrague } from '@/lib/clock';
-import { creditIncomeByCountry, EPO_SUPPORTED_YEARS, prijmyZeStatuProZapocet } from '@/lib/epo';
+import {
+  creditIncomeByCountry,
+  EPO_SUPPORTED_YEARS,
+  prijmyZeStatuProZapocet,
+  attachment4Lines,
+} from '@/lib/epo';
+import { EPO_FORM_ID } from '@/lib/epo-form';
 import { fxMethodLabel } from '@/lib/fx-method';
-import { unpaidUnderLimitCzk } from '@/lib/payable-tax';
+import { LIMIT_NAME } from '@/lib/limit-names';
+import { taxSummary } from '@/lib/payable-tax';
 import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
+import { regimeLimitFor } from '@/lib/simulator-verdict';
+import { variantDifference, variantHint, variantHintTitle } from '@/lib/variant-hint';
 import {
   czDate,
   czk,
@@ -48,6 +67,7 @@ import {
   yearList,
 } from '@/lib/format';
 import {
+  configForYear,
   FIRST_UNIFIED_RATE_YEAR,
   isRateVerified,
   UNIFIED_RATES,
@@ -179,25 +199,96 @@ export function pinnedMethodNote(year: number, pinned: PinnedTaxYearOptions): st
   return (
     `Rok ${year} se počítá takhle: párování ${method}, ${fx}, ` +
     `${limit100kLabel(pinned.limit100kIncludesTimeTestExempt)}. Zafixovali jsme to, ` +
-    'když sis za tenhle rok poprvé vygeneroval podklady, aby se ti čísla v už podaném ' +
-    'přiznání zpětně nezměnila — změna v Nastavení se proto do tohohle roku nepromítne. ' +
-    'Kvůli dodatečnému přiznání jde fixace zrušit v Nastavení.'
+    'když jsi report za tenhle skončený rok poprvé otevřel (nebo za něj stáhl XML), aby se ' +
+    'ti čísla v už podaném přiznání zpětně nezměnila — změna v Nastavení se proto do ' +
+    'tohohle roku nepromítne. Kvůli dodatečnému přiznání jde fixace zrušit v Nastavení.'
   );
 }
 
 /**
- * Od jakého rozdílu v dani stojí za to upozornit na výhodnější variantu
- * výpočtu. Menší rozdíly vznikají jen zaokrouhlením mezi kurzovými soustavami.
+ * Pár slov o fixaci hned u verdiktu: které volby rok drží. Celé znění
+ * (`pinnedMethodNote`) je ve vysvětlivce vedle a v tisku.
  */
-const NOTABLE_TAX_SAVING_CZK = 100;
+export function pinnedSummary(pinned: PinnedTaxYearOptions): string {
+  const method = METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod;
+  const fx = FX_METHOD_LABEL[pinned.fxMethod] ?? pinned.fxMethod;
+  return `párování ${method}, ${fx}`;
+}
 
-/** Formulář exportu XML — tlačítko v liště ho odesílá přes atribut `form`. */
-const EPO_FORM_ID = 'epo-export';
+/**
+ * Tichá věta pod nadpisem „Co zapsat do přiznání“ pro rok, jehož tiskopis
+ * Danero nezná — čísla řádků jsou z nejbližšího známého (částky platí vždy).
+ *
+ * Do 10. 10. 2026 měla jedno znění pro všechny takové roky: „pro rok 2022 je
+ * finanční správa ještě nezveřejnila“. To platí jen pro rok, který teprve
+ * přijde; u dávno uzavřeného roku je to nepravda v dokumentu, který má být
+ * průkazný (nález R2-04). Starší rok má svůj tiskopis dávno vydaný — jen ho
+ * Danero nemá, a čísla řádků se v něm mohou lišit.
+ *
+ * Vrací `null` pro rok, jehož strukturu známe.
+ */
+export function formLinesNote(year: number): { short: string; full: string } | null {
+  if (EPO_SUPPORTED_YEARS.includes(year)) return null;
+  const known = yearList(EPO_SUPPORTED_YEARS);
+  const base = `Částky platí pro rok ${year}, čísla řádků jsou z tiskopisu ${known} (DPFDP7; papírově 25 5405).`;
+  return year > Math.max(...EPO_SUPPORTED_YEARS)
+    ? {
+        short: `Čísla řádků jsou z tiskopisu ${known} — pro rok ${year} je finanční správa ještě nezveřejnila.`,
+        full: `${base} Přesná čísla řádků pro období ${year} ověříme, až finanční správa zveřejní strukturu — struktura přílohy se ale mezi lety mění jen výjimečně.`,
+      }
+    : {
+        short: `Čísla řádků jsou z tiskopisu ${known} — v tiskopisu pro rok ${year} se mohou lišit.`,
+        full: `${base} Tiskopis pro rok ${year} je starší vzor a jeho čísla řádků Danero nezná; při vyplňování se řiď názvem řádku, ne jeho číslem.`,
+      };
+}
+
+/**
+ * Částka pro řádek tiskopisu, který se vyplňuje na haléře (ř. 413): celé
+ * koruny jako všude jinde, s haléři jen když nějaké jsou.
+ */
+const czkExact = (value: Money): string =>
+  value.isInteger()
+    ? czk(value)
+    : new Intl.NumberFormat('cs-CZ', {
+        style: 'currency',
+        currency: 'CZK',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value.toNumber());
+
+/**
+ * Místo částky u řádku tiskopisu, který z dat nejde vyplnit: tichá slova, kdo
+ * číslo doplní („spočítá formulář“). Prázdná buňka vypadala jako chybějící
+ * data — na stránce, ze které se opisuje do formuláře, nesmí být řádek,
+ * u kterého není jasné, jestli tam patří nula, nic, nebo je to vada (R1B-01).
+ */
+function NoAmount({ children }: { children: string }) {
+  return <span className="type-footnote font-normal text-ink-muted">{children}</span>;
+}
+
+/**
+ * První dvě buňky řádku dokladu: instrument a událost. V širokém okně dva
+ * sloupce; v úzkém se událost složí pod název, aby se tabulka vešla bez
+ * vodorovného rolování — „Derivátové obchody“ na telefonu přetékaly o 41 px
+ * a sloupec Výdaj byl vidět jako „5“ (R1B-13). Text je v obou podobách, vidět
+ * je vždy jedna.
+ */
+function InstrumentCell({ name, event }: { name: string; event: string }) {
+  return (
+    <>
+      <Td>
+        <span className="font-medium">{name}</span>
+        <span className="type-footnote block text-ink-muted sm:hidden">{event}</span>
+      </Td>
+      <Td className="text-ink-muted max-sm:hidden">{event}</Td>
+    </>
+  );
+}
 
 /**
  * Řádek „řádek formuláře → částka“: vlevo tiché číslo řádku přiznání, vedle něj
- * co se na něj píše, vpravo částka. Řádky bez částky (počítá ji formulář sám)
- * jen říkají, kudy číslo dál putuje.
+ * co se na něj píše, vpravo částka. Řádek, jehož částku Danero nezná, říká
+ * místo ní, kdo ji doplní (`NoAmount`) — prázdný nezůstává žádný.
  */
 function LineRow({
   line,
@@ -212,7 +303,8 @@ function LineRow({
   label: React.ReactNode;
   hint?: React.ReactNode;
   info?: React.ReactNode;
-  value?: React.ReactNode;
+  /** Částka, nebo `NoAmount` — povinná, řádek bez hodnoty se nekreslí. */
+  value: React.ReactNode;
   strong?: boolean;
 }) {
   return (
@@ -265,6 +357,7 @@ export function ReportView({
   demo = false,
   precomputed,
   strana = 1,
+  justPinned = false,
 }: {
   txs: Transaction[];
   profile: ProfileRow;
@@ -275,6 +368,11 @@ export function ReportView({
   demo?: boolean;
   /** Stránka tabulky prodejů (od 1) — velké portfolio se jinak nevykreslí. */
   strana?: number;
+  /**
+   * Rok se zafixoval právě tímhle otevřením reportu (R-05c). Uživatel se to má
+   * dozvědět ve chvíli, kdy se to stane, ne z poznámky na konci stránky.
+   */
+  justPinned?: boolean;
   /** Výsledky z page-guardu (EngineError) — bez nich by se engine počítal 2×. */
   precomputed?: {
     result: ReturnType<typeof analyzeTaxYear>;
@@ -288,8 +386,12 @@ export function ReportView({
   const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
   const labels = instrumentLabels(txs);
 
-  const activeTax =
-    result.tax.recommended === 'GENERAL' ? result.tax.general : result.tax.separate16a;
+  // Jedno pojetí daně pro přehled, report i simulátor (`taxSummary`): hlavní
+  // číslo je doplatek, kde se odečítají zálohy z paušálního režimu, jinak daň.
+  const tax = taxSummary(result);
+  const activeTax = tax.variant === 'GENERAL' ? result.tax.general : result.tax.separate16a;
+  // daňová část měsíční paušální zálohy z konfigurace roku (R-08f) — pro ř. 86
+  const monthlyAdvanceTaxCzk = configForYear(year).flatTaxAdvance?.monthlyTaxCzk ?? null;
 
   // rozpis prodejů: CP + krypto v jedné tabulce (druh u řádku), řazeno dle data
   const allDisposals = [
@@ -307,6 +409,8 @@ export function ReportView({
   // roky jednotných kurzů pro tabulku „Použité kurzy“ (výdaj = kurz roku nákupu);
   // rozsah se čte z tabulky kurzů, ne z ručně zapsaného roku (K1-03/K1-04)
   const rateYears = unifiedRateYearsUpTo(year);
+  // roky, jejichž kurz je zatím odhad (pokyn GFŘ vyjde až v lednu)
+  const estimatedRateYears = rateYears.filter((rateYear) => !isRateVerified(rateYear));
   const epoMinYear = Math.min(...EPO_SUPPORTED_YEARS);
   const epoYear = EPO_SUPPORTED_YEARS.includes(year);
   // Čísla pro Přílohu č. 2 bere report ze STEJNÉHO zdroje jako generátor XML
@@ -317,6 +421,8 @@ export function ReportView({
   // státech pro ř. 321 (L5-01) — řádky i tabulka je opisují z generátoru XML.
   const base8Whole = base8WholeCzk(result);
   const creditIncome = creditIncomeByCountry(result);
+  // … a Příloha č. 4 (ř. 410–414): tytéž řádky, které generátor píše do XML
+  const p4 = attachment4Lines(result);
   // Ztráta nad rámec příjmů v celých korunách, jak ji věta pod tabulkou vypíše —
   // z nezaokrouhlených rozdílů po druzích, ne z haléřů odříznutých řádkům
   // přílohy (L5-06). Ztráta pod půl koruny se nehlásí: věta by zněla „0 Kč“.
@@ -333,14 +439,7 @@ export function ReportView({
   // R-09d: oznámení dle § 38v má nepodávající do tří měsíců po konci roku
   // (stejné datum jako písemné podání), ne do lhůty elektronického přiznání
   const reportsExemptIncome = result.limits.reporting38v.length > 0;
-  // R-09f: pod limitem režimu se orientační daň neplatí
-  const unpaidUnderLimit = unpaidUnderLimitCzk(result);
-  /**
-   * OSVČ (paušál i běžná) má od 1. 1. 2023 datovou schránku zřízenou ze zákona,
-   * takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání jen elektronicky;
-   * písemné podání je vada podání (§ 74 DŘ). Nabízet jí papírový termín znamená
-   * poslat ji do pokuty a zbytečně jí zkrátit lhůtu o měsíc (nález E-23).
-   */
+  /** OSVČ (paušál i běžná) podává jen elektronicky — viz `FilingDeadlineInfo`. */
   const filesElectronicallyOnly = profile.regime === 'PAUSAL' || profile.regime === 'OSVC';
 
   /**
@@ -356,6 +455,7 @@ export function ReportView({
     result.dividends.foreignWithholdingCzk.gt(0);
 
   const methodLabel = METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod;
+  const fxLabel = FX_METHOD_LABEL[result.options.fxMethod] ?? result.options.fxMethod;
   const base10Total = result.securities.base10Czk
     .plus(result.crypto.base10Czk)
     .plus(result.derivatives.base10Czk);
@@ -364,71 +464,22 @@ export function ReportView({
   const appliedCreditCzk = activeTax.taxBeforeCreditCzk
     .toDecimalPlaces(0)
     .sub(activeTax.taxCzk.toDecimalPlaces(0));
-  const taxVariantLabel =
-    result.tax.recommended === 'SEPARATE_16A'
-      ? 'samostatného základu (§ 16a)'
-      : 'obecného základu (15/23 %)';
 
   /* ── texty vysvětlivek ──────────────────────────────────────────────────
      Každý stojí dvakrát: na obrazovce za „i“, v tisku rozepsaný (InfoPrint).
-     Jeden zdroj, ať se obě podoby nerozejdou. */
+     Jeden zdroj, ať se obě podoby nerozejdou. Termín podání a hlavní číslo
+     daně mají výklad společný s přehledem (`FilingDeadlineInfo`,
+     `TaxFigureInfo`). */
 
-  const deadlineInfo = filesElectronicallyOnly ? (
-    <>
-      OSVČ má od 1. 1. 2023 datovou schránku zřízenou ze zákona, a přiznání se proto podává jen
-      elektronicky (§ 72 odst. 6 daňového řádu) — platí pro ni čtyřměsíční lhůta, ne tříměsíční
-      lhůta pro písemné podání. S daňovým poradcem {czDate(deadlines.advisor)}.
-    </>
+  const linesNote = formLinesNote(year);
+  const rowNumbersInfo = linesNote ? (
+    <p>{tidy(linesNote.full)}</p>
   ) : (
-    <>
-      Písemně do {czDate(deadlines.paper)}, elektronicky do {czDate(deadlines.electronic)} (3 a 4
-      měsíce od konce roku dle § 136 daňového řádu; svátek a víkend termín posouvají na nejbližší
-      pracovní den). S daňovým poradcem {czDate(deadlines.advisor)}.
-    </>
-  );
-
-  const taxInfo = (
-    <>
-      <p>
-        Daň před zápočtem {czk(activeTax.taxBeforeCreditCzk)} − uplatněný zápočet zahraniční daně{' '}
-        {czk(appliedCreditCzk)}. {hasDividendBase && `Číslo je z varianty ${taxVariantLabel}.`}
-      </p>
-      <p>{tidy(result.tax.note)}</p>
-      {unpaidUnderLimit && (
-        <p>
-          Dokud jsi pod limitem {czk(unpaidUnderLimit)}, přiznání nepodáváš a tuhle daň neplatíš —
-          počítáme jen s příjmy, o kterých Danero ví.
-        </p>
-      )}
-    </>
-  );
-
-  const rowNumbersInfo = epoYear ? (
     <p>
       Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období{' '}
       {yearList(EPO_SUPPORTED_YEARS)}; papírový tiskopis 25 5405).
       {!demo && ' Všechno, co je tady, předvyplní export XML.'}
     </p>
-  ) : (
-    <p>
-      Částky platí pro rok {year}, čísla řádků jsou z tiskopisu {yearList(EPO_SUPPORTED_YEARS)}{' '}
-      (DPFDP7; papírově 25 5405). Přesná čísla řádků pro období {year} ověříme, až finanční správa
-      zveřejní strukturu — struktura přílohy se ale mezi lety mění jen výjimečně.
-    </p>
-  );
-
-  const dividendChoiceInfo = (
-    <>
-      <p>
-        Zahraniční dividendy a úroky lze zdanit dvěma způsoby a volba je na tobě: spolu s ostatními
-        příjmy (obecný základ), nebo zvlášť sazbou 15 % (samostatný základ, § 16a).
-      </p>
-      <p>
-        Obě částky daně jsou před slevami. V samostatném základu nelze uplatnit slevy na dani ani
-        nezdanitelné části základu, takže o výsledné dani rozhoduje i tvůj zbytek přiznání, který
-        Danero nevidí.
-      </p>
-    </>
   );
 
   const interestInfo = (
@@ -440,13 +491,41 @@ export function ReportView({
     </p>
   );
 
+  // Paragraf seznamu k Příloze č. 3 patří do vysvětlivky, ne do řádku pod
+  // skupinou (docs/07 §5.2, nález R1B-19) — a řádek říká, kde seznam je.
+  const statesInfo = (
+    <>
+      <p>
+        {tidy(
+          'Tabulka je zároveň podklad pro povinný Seznam k Příloze č. 3 (§ 38f odst. 10): za každý stát příjem a daň sraženou v zahraničí.',
+        )}
+      </p>
+      {result.dividends.taxableInterestCzk.gt(0) && interestInfo}
+    </>
+  );
+
+  const xmlContentInfo = (
+    <>
+      <p>
+        Stáhneš XML písemnosti DPFDP7 s investičními čísly z tohoto reportu a na mojedane.cz ho v
+        přiznání nahraješ přes „Načtení souboru“.
+      </p>
+      <p>
+        XML obsahuje jen investiční příjmy (dividendy, úroky a prodeje
+        {hasDividendBase ? '; při zdanění dividend zvlášť navíc Přílohu č. 4' : ''}); ostatní příjmy
+        (zaměstnání, podnikání, nájem) v něm nejsou a EPO výpočet daně přepočítá až po jejich
+        zadání.
+      </p>
+    </>
+  );
+
   const expenseRateNote = 'Výdaj je přepočten kurzem roku nákupu.';
 
   const shortSalesInfo = (
     <>
       <p>
         Prodej vypůjčených akcií se počítá do stejného druhu příjmu jako běžné prodeje — čerpá tedy
-        i osvobození do 100 000 Kč. Tržbu daníme v roce prodeje, zpětný nákup je výdaj v roce, kdy
+        i osvobození prodejů cenných papírů (100 000 Kč). Tržbu daníme v roce prodeje, zpětný nákup je výdaj v roce, kdy
         ho zaplatíš. Zpětné nákupy párujeme s otevřeními od nejstaršího.
       </p>
       <p>
@@ -463,7 +542,7 @@ export function ReportView({
         Zvolená metoda párování se drží konzistentně celý rok — kombinovat nelze.{' '}
         {demo ? (
           <>
-            V plné verzi metodu přepneš v Nastavení — <Link href="/registrace">založ si účet</Link>.
+            S účtem metodu přepneš v Nastavení — <Link href="/registrace">založ si ho</Link>.
           </>
         ) : pinned ? (
           pinnedMethodNote(year, pinned)
@@ -495,8 +574,13 @@ export function ReportView({
         Nákupy před rokem {FIRST_UNIFIED_RATE_YEAR} se přepočítávají denními kurzy ČNB.
       </p>
       <p>
-        Ověřené jednotné kurzy: {verifiedRateSourceNote()}; kurz běžného roku je orientační do
-        vydání pokynu.
+        Ověřené jednotné kurzy: {verifiedRateSourceNote()}
+        {/* Orientační kurz se zmiňuje jen tam, kde do podkladu opravdu vstupuje:
+            v reportu za rok 2022 věta „kurz běžného roku je orientační“ tvrdila
+            něco o roce, který se v něm vůbec nepoužil (k nálezu R2-04). */}
+        {estimatedRateYears.length > 0
+          ? `; kurz za rok ${yearList(estimatedRateYears)} je orientační do vydání pokynu.`
+          : '.'}
       </p>
     </>
   );
@@ -504,15 +588,29 @@ export function ReportView({
   /* ── varianty výpočtu: jedna tabulka na kurzovou soustavu ──────────────── */
 
   const pausal = result.limits.flatTax50k.applicable;
+  // „nejvýhodnější“ má smysl jen tam, kde se varianty liší: u roku, kde vyjdou
+  // všechny stejně (i u roku bez jediného prodeje), by štítek u první z nich
+  // tvrdil rozdíl, který není (k nálezu R2-14)
+  const variantsDiffer = variants.some(
+    (variant) =>
+      !variant.taxCzk.eq(variants[0]!.taxCzk) ||
+      !variant.flatTax50kUsedCzk.eq(variants[0]!.flatTax50kUsedCzk),
+  );
   const variantsTable = (fx: string) => (
     <ScrollArea label={`Varianty párování, ${FX_METHOD_LABEL[fx] ?? fx}`}>
       <Table aria-label={`Srovnání variant výpočtu daně, ${FX_METHOD_LABEL[fx] ?? fx}`}>
         <thead>
           <tr>
             <Th>Metoda</Th>
-            <Th align="right">Základ z prodejů</Th>
+            {/* dvouslovná záhlaví se smí zalomit: na 390 px jinak tabulka
+                přetekla o pár pixelů a vypadalo to jako chyba (R1B-13) */}
+            <Th align="right" className="whitespace-normal">
+              Základ z prodejů
+            </Th>
             <Th align="right">Daň</Th>
-            <Th align="right">{pausal ? 'Paušální limit' : 'Zdanitelné příjmy'}</Th>
+            <Th align="right" className="whitespace-normal">
+              {pausal ? LIMIT_NAME.FLAT_TAX : 'Zdanitelné příjmy'}
+            </Th>
           </tr>
         </thead>
         <tbody>
@@ -527,7 +625,7 @@ export function ReportView({
                 variant.fxMethod === result.options.fxMethod;
               const marks = [
                 isActive ? 'používáš' : null,
-                isRecommended ? 'nejvýhodnější' : null,
+                isRecommended && variantsDiffer ? 'nejvýhodnější' : null,
               ].filter((mark): mark is string => mark !== null);
               return (
                 <Tr key={variant.matchingMethod}>
@@ -566,42 +664,24 @@ export function ReportView({
   const fxMethods = [...new Set(variants.map((variant) => variant.fxMethod))];
 
   // Pravidlo 2: počítáme zvolenou (bezpečnou) variantou, ale když jiná vychází
-  // znatelně líp, řekneme to hned pod verdiktem — i s tím, co obnáší. Rozdíl
-  // pod hranicí je šum mezi kurzovými soustavami, ne důvod něco měnit.
+  // znatelně líp, řekneme to hned pod verdiktem — i s tím, co obnáší. Co je
+  // „líp“ (zůstat pod limitem režimu × nižší daň, která se opravdu platí),
+  // rozhoduje čistá funkce `variantHint`.
   const activeVariant = variants.find(
     (variant) =>
       variant.matchingMethod === result.options.matchingMethod &&
       variant.fxMethod === result.options.fxMethod,
   );
-  const otherMethod =
-    activeVariant !== undefined && recommended.matchingMethod !== activeVariant.matchingMethod;
-  const otherFx = activeVariant !== undefined && recommended.fxMethod !== activeVariant.fxMethod;
-  const betterVariant =
-    activeVariant &&
-    (otherMethod || otherFx) &&
-    (activeVariant.taxCzk.sub(recommended.taxCzk).gte(NOTABLE_TAX_SAVING_CZK) ||
-      (pausal && activeVariant.flatTax50kExceeded && !recommended.flatTax50kExceeded))
-      ? recommended
-      : null;
-  const betterVariantName = [
-    otherMethod
-      ? `párováním ${METHOD_LABEL[recommended.matchingMethod] ?? recommended.matchingMethod}`
-      : null,
-    otherFx
-      ? recommended.fxMethod === 'UNIFIED'
-        ? 'jednotným kurzem GFŘ'
-        : 'denními kurzy ČNB'
-      : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(' a ');
+  const hint = variantHint(activeVariant, recommended, regimeLimitFor(result.limits));
 
-  /* ── zápis dividend: dvě cesty, mezi kterými volí uživatel (E-27) ──────── */
+  /* ── zápis dividend: dvě cesty, mezi kterými volí uživatel (E-27) ────────
+     Řádek bez částky tu není žádný (R1B-01): co Danero zná, ukáže; co počítá
+     až tiskopis z celého přiznání (ř. 58), řekne slovy. */
 
   const generalVariant = (
     <Group
-      aria-label="Dividendy a úroky v obecném základu"
-      footer="K Příloze č. 3 patří povinný Seznam podle § 38f odst. 10."
+      aria-label="Dividendy a úroky zdaněné s ostatními příjmy"
+      footer="K Příloze č. 3 patří seznam příjmů a sražené daně podle států — tabulka níž."
     >
       <LineRow
         line="ř. 38"
@@ -614,18 +694,19 @@ export function ReportView({
         hint="Příloha č. 3, za každý stát zvlášť"
         value={czk(result.dividends.creditableWithholdingCzk)}
       />
-      <LineRow line="ř. 58" label="Výsledek zápočtu z Přílohy č. 3" />
-      <Row
-        label="Orientační daň z investic"
-        hint="před slevami na dani"
-        value={czk(result.tax.general.taxCzk)}
+      <LineRow
+        line="ř. 58"
+        label="Výsledek zápočtu z Přílohy č. 3"
+        hint="vychází z daně ze všech tvých příjmů"
+        value={<NoAmount>spočítá formulář</NoAmount>}
       />
+      <Row label={TAX_NAME} hint="před slevami na dani" value={czk(result.tax.general.taxCzk)} />
     </Group>
   );
   const separateVariant = (
     <Group
-      aria-label="Dividendy a úroky v samostatném základu"
-      footer="Slevy na dani ani nezdanitelné části základu v samostatném základu uplatnit nelze."
+      aria-label="Dividendy a úroky zdaněné zvlášť sazbou 15 %"
+      footer="Při zdanění zvlášť nejdou uplatnit slevy na dani ani nezdanitelné části základu."
     >
       <LineRow
         line="ř. 401a"
@@ -633,15 +714,27 @@ export function ReportView({
         hint="Příloha č. 4"
         value={<span className="tabular-nums">{czk(base8Whole.separate16aCzk)}</span>}
       />
-      <LineRow line="ř. 410" label="Daň 15 %" />
-      <LineRow line="ř. 412–413" label="Zápočet zahraniční srážky" />
+      <LineRow line="ř. 410" label="Daň 15 %" value={czk(p4?.r410 ?? ZERO)} />
+      <LineRow
+        line="ř. 412"
+        label="Daň sražená v zahraničí"
+        hint="nejvýš do výše podle smluv"
+        value={czk(p4?.r412 ?? ZERO)}
+      />
+      <LineRow
+        line="ř. 413"
+        label="Z toho lze započíst"
+        hint="nejvýš 15 % z příjmů"
+        value={czkExact(p4?.r413 ?? ZERO)}
+      />
       <LineRow
         line="ř. 414"
         label="Výsledek, přenáší se na ř. 74a přiznání"
         hint="ř. 38 zůstává prázdný"
+        value={czk(p4?.r414 ?? ZERO)}
       />
       <Row
-        label="Orientační daň z investic"
+        label={TAX_NAME}
         hint="před slevami na dani"
         value={czk(result.tax.separate16a.taxCzk)}
       />
@@ -649,11 +742,12 @@ export function ReportView({
   );
 
   const xmlAvailable = !demo && epoYear;
+  const mainFigureName = tax.dueCzk !== null ? DUE_NAME : TAX_NAME;
 
   return (
     <>
       <AppToolbar
-        title="Daňový report"
+        title="Report"
         titleContext={String(year)}
         actions={
           <>
@@ -677,8 +771,8 @@ export function ReportView({
             Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
             aplikací Danero · {txs.length}{' '}
             {plural(txs.length, 'transakce', 'transakce', 'transakcí')} · párování {methodLabel} ·{' '}
-            {fxMethodLabel(result)} · výklad limitu 100k:{' '}
-            {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
+            {fxMethodLabel(result)} · výklad limitu 100 000 Kč pro osvobození prodejů cenných
+            papírů: {result.options.limit100kIncludesTimeTestExempt ? 'striktní' : 'mírnější'}
             {pinned && ' (všechny tři zafixovány pro tento rok)'} · časový test od{' '}
             {result.options.timeTestDateBasis === 'settlement' ? 'vypořádání' : 'obchodu'} ·
             stablecoiny (EMT):{' '}
@@ -706,80 +800,111 @@ export function ReportView({
         {/* ── 1. verdikt ────────────────────────────────────────────────────
             L5-02: tentýž verdikt jako na přehledu, na obrazovce i v tisku — bez
             něj report ukazoval termín podání a export i tomu, komu povinnost
-            nevznikla. Vedle něj termín a částka; výklad je ve vysvětlivkách. */}
+            nevznikla. Vedle něj termín a částka — stejné číslo pod stejným
+            jménem jako na přehledu (`TaxFigure`, R1B-03) a na stejné mřížce
+            jako dvojice sekcí níž (R1B-26); výklad je ve vysvětlivkách. */}
         <div className="space-y-6">
-          <div className="flex flex-wrap items-end gap-x-16 gap-y-7">
-            {filingLimit ? (
-              <ReportFilingVerdict
-                year={year}
-                limit={filingLimit}
-                reportsExemptIncome={reportsExemptIncome}
-              />
-            ) : (
-              <h2 className="type-title-1 max-w-[22ch] text-balance">
-                {tidy(`Podklady k přiznání za rok ${year}`)}
-              </h2>
-            )}
-            <dl className="flex flex-wrap gap-x-12 gap-y-6 md:gap-x-16">
-              <Stat
-                size="lg"
-                label="Termín podání"
-                value={czDate(deadlines.electronic)}
-                note={
-                  filingLimit && !exceeded
-                    ? 'pokud přiznání podáváš'
-                    : filesElectronicallyOnly
-                      ? 'jen elektronicky'
-                      : `písemně do ${czDate(deadlines.paper)}`
-                }
-                info={
-                  <InfoPopover label="Termín podání">
-                    <p>{deadlineInfo}</p>
-                  </InfoPopover>
-                }
-              />
-              <Stat
-                size="lg"
-                label="Orientační daň z investic"
-                value={czk(activeTax.taxCzk)}
-                note={
-                  unpaidUnderLimit && activeTax.taxCzk.gt(0)
-                    ? 'Platí se jen při podání přiznání'
-                    : 'orientačně, jen z investic'
-                }
-                info={
-                  <InfoPopover label="Orientační daň z investic" title="Jak daň vznikla">
-                    {taxInfo}
-                  </InfoPopover>
-                }
-              />
-            </dl>
+          <div className="@container">
+            <div className="grid gap-x-(--column-gap) gap-y-7 @3xl:grid-cols-2 @3xl:items-end">
+              {filingLimit ? (
+                <ReportFilingVerdict
+                  year={year}
+                  limit={filingLimit}
+                  reportsExemptIncome={reportsExemptIncome}
+                />
+              ) : (
+                <h2 className="type-title-1 max-w-[22ch] text-balance">
+                  {tidy(`Podklady k přiznání za rok ${year}`)}
+                </h2>
+              )}
+              <dl className="flex flex-wrap items-start gap-x-12 gap-y-6">
+                <FilingDeadlineStat
+                  year={year}
+                  electronicOnly={filesElectronicallyOnly}
+                  onlyIfFiling={filingLimit !== null && !exceeded}
+                />
+                <TaxFigure result={result} />
+              </dl>
+            </div>
           </div>
           <InfoPrint className="mt-0">
             <p>
-              <strong>Termín podání.</strong> {deadlineInfo}
+              <strong>Termín podání.</strong>{' '}
+              <FilingDeadlineInfo year={year} electronicOnly={filesElectronicallyOnly} />
             </p>
             <p>
-              <strong>Orientační daň z investic.</strong>
+              <strong>{mainFigureName}.</strong>
             </p>
-            {taxInfo}
+            <TaxFigureInfo result={result} />
           </InfoPrint>
-          {/* na telefonu se tlačítko do lišty vedle exportu nevejde */}
-          <PrintButton className="sm:hidden" />
           {filingLimit && !exceeded && reportsExemptIncome && (
             <ExemptIncomeReportingNotice deadline={deadlines.paper} />
           )}
-          {betterVariant && (
+          {/* R1B-12: skončený rok se zafixuje prvním otevřením reportu (R-05c).
+              Ve chvíli, kdy se to stane, to stojí nahoře jako sdělení; při
+              dalších návštěvách zbydou tři slova a vysvětlivka. Dřív o tom
+              mluvila jen poznámka na konci stránky. */}
+          {pinned && !demo && justPinned && (
             <Notice
-              title={tidy(
-                `S ${betterVariantName} by daň z investic vyšla ${czk(betterVariant.taxCzk)}`,
+              role="status"
+              title={tidy(`Rok ${year} jsme právě zafixovali: ${pinnedSummary(pinned)}`)}
+              action={
+                <TextLink href="/nastaveni#fixace" chevron>
+                  Zrušit fixaci
+                </TextLink>
+              }
+            >
+              {tidy(
+                'Stalo se to otevřením reportu za skončený rok — čísla v podaném přiznání se tak zpětně nezmění. Změna v Nastavení už tenhle rok nepřepočítá.',
               )}
+            </Notice>
+          )}
+          {pinned && !demo && !justPinned && (
+            <div className="type-footnote flex items-center gap-1 text-ink-muted print:hidden">
+              {tidy(`Rok ${year} je zafixovaný: ${pinnedSummary(pinned)}.`)}
+              <InfoPopover label="Zafixovaný rok" align="start">
+                <p>{tidy(pinnedMethodNote(year, pinned))}</p>
+                <p>
+                  <TextLink href="/nastaveni#fixace" chevron>
+                    Zafixované roky v Nastavení
+                  </TextLink>
+                </p>
+              </InfoPopover>
+            </div>
+          )}
+          {hint && activeVariant && (
+            <Notice
+              title={tidy(variantHintTitle(hint, activeVariant))}
+              action={
+                // v demu Nastavení není — odkaz by vedl na přihlášení
+                demo ? undefined : pinned ? (
+                  <TextLink href="/nastaveni#fixace" chevron>
+                    Zafixované roky
+                  </TextLink>
+                ) : (
+                  <TextLink href="/nastaveni" chevron>
+                    Nastavení
+                  </TextLink>
+                )
+              }
             >
               <Disclosure summary="Proč to tak nepočítáme">
                 <p>
-                  Počítáme tak, jak máš zvoleno: párování {methodLabel},{' '}
-                  {FX_METHOD_LABEL[result.options.fxMethod] ?? result.options.fxMethod}.{' '}
-                  {otherMethod &&
+                  {/* R4-02: v zafixovaném roce „jak máš zvoleno“ neplatí — volba
+                      v Nastavení může být dávno jiná a rada vedla do slepé uličky */}
+                  {pinned
+                    ? tidy(
+                        `Rok ${year} je zafixovaný a počítá se s tím, co platilo při prvním otevření reportu: párování ${methodLabel}, ${fxLabel}. Změna v Nastavení se do něj promítne, až fixaci zrušíš (Nastavení › Zafixované roky).`,
+                      )
+                    : tidy(`Počítáme tak, jak máš zvoleno: párování ${methodLabel}, ${fxLabel}.`)}{' '}
+                  {hint.reason === 'STAYS_UNDER_LIMIT'
+                    ? tidy(
+                        `S ${variantDifference(activeVariant, hint.variant)} vycházejí zdanitelné příjmy na ${czk(hint.variant.flatTax50kUsedCzk)} místo ${czk(activeVariant.flatTax50kUsedCzk)}. Pod limitem přiznání kvůli investicím nepodáváš a daň z nich neplatíš — limit ale vidí jen příjmy, o kterých Danero ví.`,
+                      )
+                    : tidy(
+                        `S ${variantDifference(activeVariant, hint.variant)} vychází daň z investic na ${czk(hint.variant.taxCzk)} místo ${czk(activeVariant.taxCzk)}.`,
+                      )}{' '}
+                  {hint.variant.matchingMethod !== activeVariant.matchingMethod &&
                     'FIFO je bezpečný standard; jinou metodu párování lze obhájit jen průkaznou identifikací konkrétních prodávaných kusů. '}
                   Zvolená metoda i kurzy se drží konzistentně celý rok. Rozhodnutí (a riziko) je na
                   tobě; všechny varianty jsou vedle sebe v porovnání níž.
@@ -803,10 +928,9 @@ export function ReportView({
               </InfoPopover>
             }
           />
-          {!epoYear && (
-            <p className="type-footnote mt-1 text-ink-muted">
-              Čísla řádků jsou z tiskopisu {yearList(EPO_SUPPORTED_YEARS)} — pro rok {year} je
-              finanční správa ještě nezveřejnila.
+          {linesNote && (
+            <p className="type-footnote mt-1 text-ink-muted print:hidden">
+              {tidy(linesNote.short)}
             </p>
           )}
           <InfoPrint className="mt-1">{rowNumbersInfo}</InfoPrint>
@@ -944,15 +1068,35 @@ export function ReportView({
                   <SectionHeader as="h3" title="Další řádky" />
                   <Group className="mt-2" aria-label="Další řádky přiznání">
                     <LineRow line="ř. 64" label="Sleva na poplatníka" value="30 840 Kč" />
-                    {profile.regime === 'PAUSAL' && (
-                      <LineRow line="ř. 86" label="Zaplacené zálohy z paušálního režimu" />
-                    )}
+                    {/* ř. 86: po prolomení limitu zálohy známe (R-08f, tytéž, které
+                        odečítá doplatek nahoře); jinak záleží na počtu měsíců
+                        v režimu, a ten Danero nezná — řekne aspoň pravidlo */}
+                    {profile.regime === 'PAUSAL' &&
+                      (tax.advances ? (
+                        <LineRow
+                          line="ř. 86"
+                          label="Zaplacené zálohy z paušálního režimu"
+                          hint={`${tax.advances.months} × ${czk(tax.advances.monthlyCzk)}, celý rok v 1. pásmu`}
+                          value={czk(tax.advances.totalCzk)}
+                        />
+                      ) : (
+                        <LineRow
+                          line="ř. 86"
+                          label="Zaplacené zálohy z paušálního režimu"
+                          hint={
+                            monthlyAdvanceTaxCzk
+                              ? `${czk(d(monthlyAdvanceTaxCzk))} za každý měsíc v paušálním režimu (1. pásmo)`
+                              : undefined
+                          }
+                          value={<NoAmount>doplníš podle zaplacených záloh</NoAmount>}
+                        />
+                      ))}
                     <Row
                       label="Osvobozené příjmy"
                       hint={
                         reportsExemptIncome
-                          ? 'časový test, úhrn do 100 000 Kč — jednotlivé příjmy nad 5 mil. Kč ale máš povinnost oznámit (§ 38v)'
-                          : 'časový test, úhrn do 100 000 Kč'
+                          ? 'časový test nebo prodeje do 100 000 Kč za rok — jednotlivé příjmy nad 5 mil. Kč ale máš povinnost oznámit (§ 38v)'
+                          : 'časový test nebo prodeje do 100 000 Kč za rok'
                       }
                       value="neuvádějí se"
                     />
@@ -968,18 +1112,28 @@ export function ReportView({
                     headingAs="h3"
                     title="Dividendy a úroky ze zahraničí"
                     info={
-                      <InfoPopover label="Dvě varianty zdanění dividend" align="start">
-                        {dividendChoiceInfo}
+                      <InfoPopover label="Dva způsoby zdanění dividend" align="start">
+                        <DividendTaxationInfo />
                       </InfoPopover>
                     }
-                    ariaLabel="Varianta zdanění dividend a úroků"
-                    defaultKey={result.tax.recommended}
+                    ariaLabel="Způsob zdanění dividend a úroků"
+                    defaultKey={tax.variant}
                     views={[
-                      { key: 'GENERAL', label: 'Obecný základ', content: generalVariant },
-                      { key: 'SEPARATE_16A', label: 'Samostatný základ', content: separateVariant },
+                      {
+                        key: 'GENERAL',
+                        label: DIVIDEND_TAXATION_LABEL.GENERAL,
+                        content: generalVariant,
+                      },
+                      {
+                        key: 'SEPARATE_16A',
+                        label: DIVIDEND_TAXATION_LABEL.SEPARATE_16A,
+                        content: separateVariant,
+                      },
                     ]}
                   />
-                  <InfoPrint>{dividendChoiceInfo}</InfoPrint>
+                  <InfoPrint>
+                    <DividendTaxationInfo />
+                  </InfoPrint>
                   {flatTaxCreditCaveat && (
                     <div className="mt-5">
                       <PausalCreditCaveat amount={czk(result.dividends.foreignWithholdingCzk)} />
@@ -992,11 +1146,9 @@ export function ReportView({
                         as="h3"
                         title="Příjmy podle států — Příloha č. 3"
                         info={
-                          result.dividends.taxableInterestCzk.gt(0) && (
-                            <InfoPopover label="Úroky v zápočtu" align="start">
-                              {interestInfo}
-                            </InfoPopover>
-                          )
+                          <InfoPopover label="Příjmy podle států" align="start">
+                            {statesInfo}
+                          </InfoPopover>
                         }
                       />
                       <div className="mt-3">
@@ -1005,9 +1157,13 @@ export function ReportView({
                             <thead>
                               <tr>
                                 <Th>Stát</Th>
-                                <Th align="right">Příjem do zápočtu</Th>
+                                <Th align="right" className="whitespace-normal">
+                                  Příjem do zápočtu
+                                </Th>
                                 <Th align="right">Sraženo</Th>
-                                <Th align="right">Započitatelná srážka</Th>
+                                <Th align="right" className="whitespace-normal">
+                                  Započitatelná srážka
+                                </Th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1059,9 +1215,7 @@ export function ReportView({
                           )}
                         </Group>
                       )}
-                      {result.dividends.taxableInterestCzk.gt(0) && (
-                        <InfoPrint>{interestInfo}</InfoPrint>
-                      )}
+                      <InfoPrint>{statesInfo}</InfoPrint>
                     </div>
                   )}
                 </div>
@@ -1084,208 +1238,48 @@ export function ReportView({
           </Section>
         )}
 
-        {/* ── 4. export XML ─────────────────────────────────────────────────── */}
-        <Section title="Export pro mojedane.cz" className="print:hidden">
+        {/* ── 4. export XML ─────────────────────────────────────────────────
+            Formulář na papír nepatří, ale sdělení o exportu ano (R5-12): že za
+            tenhle rok XML není, nebo co XML obsahuje a co ne. V původní verzi
+            se tiskla celá karta; tady se tiskne jen text. Pozvánka z dema se
+            netiskne. */}
+        <Section title="Export pro mojedane.cz" className={cn(demo && 'print:hidden')}>
           {demo ? (
             // XML s vlastními čísly až s účtem — ukázkový soubor ale ukáže
-            // přesně, co z Danera padá na podatelnu
-            <EmptyState
-              compact
-              headingAs="p"
-              title="V demu nedostupné"
-              action={
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                  <Link href="/registrace" className={buttonVariants({ variant: 'primary' })}>
-                    Založit účet zdarma
-                  </Link>
-                  <a
-                    href="/marketing/ukazka-dpfdp7-2025.xml"
-                    download
-                    className="type-callout inline-flex min-h-11 items-center font-medium text-accent-text hover:underline md:min-h-0"
-                  >
-                    Stáhni ukázkové XML (2025)
-                  </a>
-                </div>
-              }
-            >
-              S účtem stáhneš XML přiznání (DPFDP7) s vlastními čísly a na mojedane.cz ho nahraješ
-              přes „Načtení souboru“. V ukázce jsou osobní údaje smyšlené, čísla jsou z demo
-              portfolia.
-            </EmptyState>
+            // přesně, co z Danera padá na podatelnu. Jeden řádek, žádná karta
+            // s druhou výzvou k registraci: tu už nese pruh nahoře (R1B-22).
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <TextLink href="/marketing/ukazka-dpfdp7-2025.xml" download chevron>
+                Stáhnout ukázkové XML (2025)
+              </TextLink>
+              <p className="type-footnote text-ink-muted">
+                S účtem stáhneš XML s vlastními čísly.
+              </p>
+            </div>
           ) : epoYear ? (
-            <Card>
-              <form id={EPO_FORM_ID} method="post" action="/api/epo" className="space-y-5">
-                <input type="hidden" name="rok" value={year} />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {/* E-27: variantu zdanění § 8 nevybíráme za uživatele — ukážeme obě
-                      čísla a rozhodnutí necháme na něm, stejně jako u metod párování.
-                      Endpoint /api/epo pole `varianta` přijímal už dřív. */}
-                  {hasDividendBase && (
-                    <Field
-                      label="Zdanění zahraničních dividend a úroků"
-                      htmlFor="epo-varianta"
-                      info={
-                        <InfoPopover label="Dvě varianty zdanění dividend" align="start">
-                          {dividendChoiceInfo}
-                        </InfoPopover>
+            <>
+              <EpoExportForm
+                year={year}
+                dividendChoice={
+                  hasDividendBase
+                    ? {
+                        // E-27: variantu zdanění § 8 nevybíráme za uživatele —
+                        // popisky nesou obě částky a rozhodnutí je na něm
+                        defaultValue: result.tax.recommended,
+                        general: `${DIVIDEND_TAXATION_LABEL.GENERAL} (ř. 38) — daň ${czk(result.tax.general.taxCzk)}`,
+                        separate: `${DIVIDEND_TAXATION_LABEL.SEPARATE_16A} (Příloha č. 4) — daň ${czk(result.tax.separate16a.taxCzk)}`,
                       }
-                    >
-                      <Select
-                        id="epo-varianta"
-                        name="varianta"
-                        defaultValue={result.tax.recommended}
-                      >
-                        <option value="GENERAL">
-                          Obecný základ (ř. 38) — daň {czk(result.tax.general.taxCzk)}
-                        </option>
-                        <option value="SEPARATE_16A">
-                          Samostatný základ (Příloha č. 4) — daň{' '}
-                          {czk(result.tax.separate16a.taxCzk)}
-                        </option>
-                      </Select>
-                    </Field>
-                  )}
-                  {/* K3-07: typ přiznání chodil natvrdo jako „řádné", ačkoli
-                      aplikace jinde navádí i na dodatečné — kdo to po načtení v EPO
-                      nepřepnul, podal řádné přiznání za období, které už přiznal. */}
-                  <Field label="Typ přiznání" htmlFor="epo-typ">
-                    <Select id="epo-typ" name="typ-priznani" defaultValue="B">
-                      <option value="B">Řádné — podávám ho za tenhle rok poprvé</option>
-                      <option value="O">Opravné — opravuji přiznání, lhůta ještě neuplynula</option>
-                      <option value="D">Dodatečné — opravuji přiznání po uplynutí lhůty</option>
-                      <option value="E">Opravné dodatečné — opravuji dodatečné přiznání</option>
-                    </Select>
-                  </Field>
-                </div>
-
-                <div>
-                  <Disclosure
-                    summary="Předvyplnit osobní údaje"
-                    className="[&>div]:pt-3 [&>div]:text-ink"
-                  >
-                    <p className="type-footnote text-ink-muted">
-                      Všechna pole jsou volitelná — co nevyplníš, doplníš po načtení v EPO. Nic z
-                      nich neukládáme, jen protečou do staženého souboru.
-                    </p>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <Field label="Jméno" htmlFor="epo-jmeno">
-                        <Input id="epo-jmeno" name="jmeno" autoComplete="given-name" />
-                      </Field>
-                      <Field label="Příjmení" htmlFor="epo-prijmeni">
-                        <Input id="epo-prijmeni" name="prijmeni" autoComplete="family-name" />
-                      </Field>
-                      <Field label="Rodné číslo" htmlFor="epo-rodneCislo">
-                        <Input id="epo-rodneCislo" name="rodneCislo" placeholder="bez lomítka" />
-                      </Field>
-                      <Field label="DIČ" htmlFor="epo-dic">
-                        <Input id="epo-dic" name="dic" placeholder="jen číslo, bez „CZ“" />
-                      </Field>
-                      <Field label="Obec" htmlFor="epo-obec">
-                        <Input id="epo-obec" name="obec" autoComplete="address-level2" />
-                      </Field>
-                      <Field label="Ulice" htmlFor="epo-ulice">
-                        <Input id="epo-ulice" name="ulice" />
-                      </Field>
-                      <Field label="Číslo popisné" htmlFor="epo-cisloPopisne">
-                        <Input id="epo-cisloPopisne" name="cisloPopisne" />
-                      </Field>
-                      <Field label="PSČ" htmlFor="epo-psc">
-                        <Input id="epo-psc" name="psc" autoComplete="postal-code" />
-                      </Field>
-                      <Field label="Kód finančního úřadu" htmlFor="epo-ufoCil">
-                        <Input id="epo-ufoCil" name="ufoCil" placeholder="např. 451 (Praha)" />
-                        <FieldHint>
-                          Najdeš ho v{' '}
-                          <TextLink
-                            href="https://mojedane.gov.cz/pmd/dokumentace/ciselniky/ukazka/ufo"
-                            external
-                          >
-                            číselníku územních finančních orgánů
-                          </TextLink>
-                          .
-                        </FieldHint>
-                      </Field>
-                      {/* K3-10: `pracUfo` a `email` byly v typu, v XML i v /api/epo,
-                          ale formulář pro ně neměl políčko — do souboru se tak nikdy
-                          nedostaly a kód se tvářil jako podporovaný. */}
-                      <Field label="Kód územního pracoviště" htmlFor="epo-pracUfo">
-                        <Input
-                          id="epo-pracUfo"
-                          name="pracUfo"
-                          placeholder="např. 2001 (pobočka úřadu)"
-                        />
-                      </Field>
-                      <Field label="E-mail" htmlFor="epo-email">
-                        <Input
-                          id="epo-email"
-                          name="email"
-                          type="email"
-                          autoComplete="email"
-                          placeholder="kam se úřad ozve"
-                        />
-                      </Field>
-                    </div>
-                  </Disclosure>
-                  <Disclosure
-                    summary="Údaje pro dodatečné přiznání"
-                    className="[&>div]:pt-3 [&>div]:text-ink"
-                  >
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <Field label="Den zjištění důvodů" htmlFor="epo-zjisteni">
-                        <Input id="epo-zjisteni" name="datum-zjisteni" type="date" />
-                      </Field>
-                      <Field label="Poslední známá daň" htmlFor="epo-posledni-dan">
-                        <Input
-                          id="epo-posledni-dan"
-                          name="posledni-dan"
-                          inputMode="numeric"
-                          placeholder="v Kč, z dřív podaného přiznání"
-                        />
-                      </Field>
-                      <Field label="Poslední známá daňová ztráta" htmlFor="epo-posledni-ztrata">
-                        <Input
-                          id="epo-posledni-ztrata"
-                          name="posledni-ztrata"
-                          inputMode="numeric"
-                          placeholder="v Kč, obvykle 0"
-                        />
-                      </Field>
-                    </div>
-                    <p className="type-footnote mt-3 text-pretty text-ink-muted">
-                      Dodatečné přiznání se podává do konce měsíce následujícího po měsíci, ve
-                      kterém jsi důvody zjistil (§ 141 odst. 1 daňového řádu) — proto ten den
-                      podatelna vyžaduje. Poslední známou daň a ztrátu opiš z přiznání, které jsi za
-                      tenhle rok podal naposledy: podatelna z nich počítá rozdíl a bez nich
-                      dodatečné přiznání odmítne. Danero je z transakcí zjistit nedokáže — dřívější
-                      přiznání mohlo obsahovat i příjmy ze zaměstnání nebo podnikání.
-                    </p>
-                  </Disclosure>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <Button type="submit" variant="secondary">
-                    Stáhnout XML pro EPO
-                  </Button>
-                  <div className="type-footnote flex items-center gap-1 text-ink-muted">
-                    Podklad, ne hotové přiznání — jen investiční příjmy.
-                    <InfoPopover label="Co XML obsahuje">
-                      <p>
-                        Stáhneš XML písemnosti DPFDP7 s investičními čísly z tohoto reportu a na
-                        mojedane.cz ho v přiznání nahraješ přes „Načtení souboru“.
-                      </p>
-                      <p>
-                        XML obsahuje jen investiční příjmy (dividendy, úroky a prodeje
-                        {hasDividendBase
-                          ? '; ve variantě samostatného základu navíc Přílohu č. 4'
-                          : ''}
-                        ); ostatní příjmy (zaměstnání, podnikání, nájem) v něm nejsou a EPO výpočet
-                        daně přepočítá až po jejich zadání.
-                      </p>
-                    </InfoPopover>
-                  </div>
-                </div>
-              </form>
-            </Card>
+                    : null
+                }
+                dividendInfo={
+                  <InfoPopover label="Dva způsoby zdanění dividend" align="start">
+                    <DividendTaxationInfo />
+                  </InfoPopover>
+                }
+                contentInfo={<InfoPopover label="Co XML obsahuje">{xmlContentInfo}</InfoPopover>}
+              />
+              <InfoPrint className="mt-0">{xmlContentInfo}</InfoPrint>
+            </>
           ) : year < epoMinYear ? (
             <Notice title={`Roky před ${epoMinYear} v XML nepodporujeme`}>
               Formulář vyplníš ručně z čísel výš.
@@ -1337,12 +1331,20 @@ export function ReportView({
                     );
                     return (
                       <Tr key={disposal.sellTxId}>
-                        <Td>
-                          {/* nativní <details> — server component bez JS; rozpad = auditní stopa párování */}
+                        {/* Sloupec má nejmenší šířku: bez tickeru je popiskem celý
+                            název fondu a v úzkém okně se lámal na deset řádků po
+                            slově (R2-13) — tabulka kvůli tomu smí rolovat. */}
+                        <Td className="min-w-44">
+                          {/* nativní <details> — server component bez JS; rozpad = auditní stopa párování.
+                              Rozbaluje celá buňka, ne jen ticker: „KO“ byl cíl
+                              30 × 24 px (R1B-14, R2-24). */}
                           <details className="disclosure">
-                            <summary className="inline-flex min-h-6 cursor-pointer items-center gap-1.5 active:opacity-60 pointer-coarse:min-h-11">
+                            <summary className="flex min-h-6 w-full cursor-pointer items-center gap-1.5 active:opacity-60 pointer-coarse:min-h-11">
                               <Chevron className="text-ink-muted print:hidden" />
-                              <span className="font-medium">
+                              <span
+                                className="line-clamp-2 font-medium print:line-clamp-none"
+                                title={labels.get(disposal.isin) ?? disposal.isin}
+                              >
                                 {labels.get(disposal.isin) ?? disposal.isin}
                               </span>
                               {isCrypto && <span className="text-ink-muted">krypto</span>}
@@ -1355,7 +1357,7 @@ export function ReportView({
                                   {alloc.timeTestExempt
                                     ? 'osvobozeno 3letým testem (výdaj se neuplatňuje)'
                                     : under100k
-                                      ? 'osvobozeno úhrnem do 100 000 Kč (výdaj se neuplatňuje)'
+                                      ? 'osvobozeno, prodeje do 100 000 Kč za rok (výdaj se neuplatňuje)'
                                       : `výdaj ${czk(alloc.expenseCzk)}`}
                                 </li>
                               ))}
@@ -1506,7 +1508,7 @@ export function ReportView({
                 <thead>
                   <tr>
                     <Th>Instrument</Th>
-                    <Th>Událost</Th>
+                    <Th className="max-sm:hidden">Událost</Th>
                     <Th align="right">Datum</Th>
                     <Th align="right">Kusů</Th>
                     <Th align="right">Příjem</Th>
@@ -1516,8 +1518,10 @@ export function ReportView({
                 <tbody>
                   {result.shortSales.items.map((item, index) => (
                     <Tr key={`${item.isin}-${item.date}-${index}`}>
-                      <Td className="font-medium">{labels.get(item.isin) ?? item.isin}</Td>
-                      <Td>{item.kind === 'SHORT_OPEN' ? 'Prodej nakrátko' : 'Zpětný nákup'}</Td>
+                      <InstrumentCell
+                        name={labels.get(item.isin) ?? item.isin}
+                        event={item.kind === 'SHORT_OPEN' ? 'Prodej nakrátko' : 'Zpětný nákup'}
+                      />
                       <Td align="right" className="whitespace-nowrap">
                         {czDate(item.date)}
                       </Td>
@@ -1547,8 +1551,8 @@ export function ReportView({
                 <thead>
                   <tr>
                     <Th>Instrument</Th>
+                    <Th className="max-sm:hidden">Událost</Th>
                     <Th align="right">Datum</Th>
-                    <Th>Událost</Th>
                     <Th align="right">Příjem</Th>
                     <Th align="right">Výdaj</Th>
                   </tr>
@@ -1556,11 +1560,13 @@ export function ReportView({
                 <tbody>
                   {result.derivatives.items.map((item) => (
                     <Tr key={`${item.txId}-${item.kind}`}>
-                      <Td className="font-medium">{labels.get(item.isin) ?? item.isin}</Td>
+                      <InstrumentCell
+                        name={labels.get(item.isin) ?? item.isin}
+                        event={DERIVATIVE_KIND_LABEL[item.kind]}
+                      />
                       <Td align="right" className="whitespace-nowrap">
                         {czDate(item.date)}
                       </Td>
-                      <Td className="text-ink-muted">{DERIVATIVE_KIND_LABEL[item.kind]}</Td>
                       <Td align="right" className="whitespace-nowrap">
                         {czk(item.incomeCzk)}
                       </Td>
@@ -1639,7 +1645,8 @@ export function ReportView({
                   hint={
                     <>
                       tržby {czk(result.securities.totalGrossProceedsCzk)}
-                      {result.securities.exemptUnder100k && ' · vše osvobozeno, úhrn do 100 000 Kč'}
+                      {result.securities.exemptUnder100k &&
+                        ' · vše osvobozeno, prodeje do 100 000 Kč za rok'}
                     </>
                   }
                   value={czk(result.securities.base10Czk)}
@@ -1673,24 +1680,16 @@ export function ReportView({
                   }
                   value={czk(result.dividends.base8Czk)}
                 />
+                {/* E-27: variantu zdanění dividend nedoporučujeme — řádek říká, se
+                    kterou se počítá dál, a kolik by vyšla ta druhá. Dva řádky
+                    „Daň v obecném / samostatném základu“ nad tučným výsledkem
+                    se četly jako sčítance a součet (R1B-02). */}
+                <DividendTaxationRow summary={tax} />
                 <Row label="Daň před zápočtem" value={czk(activeTax.taxBeforeCreditCzk)} />
-                <Row label="Uplatněný zápočet zahraniční daně" value={czk(appliedCreditCzk)} />
-                {/* E-27: obě varianty zdanění dividend vedle sebe, volba je na uživateli */}
-                {hasDividendBase && (
-                  <Row label="Daň v obecném základu" value={czk(result.tax.general.taxCzk)} />
-                )}
-                {hasDividendBase && (
-                  <Row
-                    label="Daň v samostatném základu"
-                    value={czk(result.tax.separate16a.taxCzk)}
-                  />
-                )}
-                <Row
-                  strong
-                  label="Orientační daň z investic"
-                  hint={hasDividendBase && `varianta ${taxVariantLabel}`}
-                  value={czk(activeTax.taxCzk)}
-                />
+                <Row label="− Uplatněný zápočet zahraniční daně" value={czk(appliedCreditCzk)} />
+                {/* výsledek: orientační daň, po prolomení paušálního limitu
+                    i zálohy a doplatek — stejné řádky jako na přehledu */}
+                <TaxResultRows summary={tax} />
               </Group>
               <InfoPrint>
                 <p>{tidy(result.tax.note)}</p>
@@ -1722,6 +1721,11 @@ export function ReportView({
               <p className="type-footnote mt-3 text-pretty text-ink-muted">
                 FIFO je bezpečný standard; jinou metodu párování lze obhájit jen průkaznou
                 identifikací konkrétních prodávaných kusů.
+                {/* R4-02: fixace stojí hned pod tabulkou variant, jako na `main` —
+                    kdo si tu vybírá jinou metodu, musí vědět, že ji rok nepřevezme */}
+                {pinned &&
+                  !demo &&
+                  ` ${tidy(`Rok ${year} je zafixovaný (${pinnedSummary(pinned)}) — jinou variantu převezme, až fixaci v Nastavení zrušíš.`)}`}
               </p>
               <InfoPrint>{variantsInfo}</InfoPrint>
               {!demo && !dailyRates && (
@@ -1741,7 +1745,7 @@ export function ReportView({
                   ['Párování prodejů', methodLabel],
                   ['Kurzy', fxMethodLabel(result)],
                   [
-                    'Limit 100 000 Kč',
+                    LIMIT_NAME.SECURITIES,
                     limit100kLabel(result.options.limit100kIncludesTimeTestExempt),
                   ],
                   [
@@ -1767,10 +1771,19 @@ export function ReportView({
                   <Row key={term} wrap label={term} value={value} />
                 ))}
               </Group>
+              {/* Celé znění fixace je nahoře u verdiktu (vysvětlivka); sem patří
+                  jen to, kde se metoda mění. Na papír jde znění celé. */}
               {!demo && (
-                <p className="type-caption pt-2 text-pretty text-ink-muted">
-                  {pinned ? pinnedMethodNote(year, pinned) : 'Metodu a výklady změníš v Nastavení.'}
+                <p className="type-caption pt-2 text-pretty text-ink-muted print:hidden">
+                  {pinned
+                    ? tidy(`Rok ${year} je zafixovaný — fixaci zrušíš v Nastavení.`)
+                    : 'Metodu a výklady změníš v Nastavení.'}
                 </p>
+              )}
+              {!demo && pinned && (
+                <InfoPrint>
+                  <p>{tidy(pinnedMethodNote(year, pinned))}</p>
+                </InfoPrint>
               )}
             </Section>
 
@@ -1815,10 +1828,17 @@ export function ReportView({
                                 {(UNIFIED_RATES[rateYear]?.[ccy] ?? '—').replace('.', ',')}
                               </Td>
                             ))}
-                            <Td className="type-footnote whitespace-nowrap text-ink-muted">
-                              {isRateVerified(rateYear) && UNIFIED_RATE_SOURCES[rateYear]
-                                ? `pokyn ${UNIFIED_RATE_SOURCES[rateYear]}`
-                                : 'orientační (do vydání pokynu)'}
+                            {/* zdroj se smí zalomit („orientační / do vydání pokynu“),
+                                číslo pokynu ne — na 390 px tabulka jinak
+                                přetékala o 37 px (R1B-13) */}
+                            <Td className="type-footnote text-ink-muted">
+                              {isRateVerified(rateYear) && UNIFIED_RATE_SOURCES[rateYear] ? (
+                                <span className="whitespace-nowrap">
+                                  pokyn {UNIFIED_RATE_SOURCES[rateYear]}
+                                </span>
+                              ) : (
+                                'orientační (do vydání pokynu)'
+                              )}
                             </Td>
                           </Tr>
                         ))}
@@ -1833,6 +1853,26 @@ export function ReportView({
               )}
             </Section>
           </div>
+        </div>
+
+        {/* Konec stránky: tisk na telefonu a výhrada.
+            - Tisk: v liště se na telefonu vedle exportu nevejde; pod verdiktem
+              zabíral nejcennější místo pro akci, kterou tam skoro nikdo
+              neudělá (R1B-27).
+            - Výhrada: do redesignu stála pod průvodcem, pak zůstala jen na
+              papíře (R5-01). Na obrazovce pár slov s odkazem na podmínky,
+              kde je závazné znění (čl. 1) — jednou, na konci; celá věta je
+              jen v tisku, který z aplikace odchází jako dokument. Demo má
+              výhradu v patičce, proto tu podruhé není. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 print:hidden">
+          {!demo && (
+            <p className="type-caption text-ink-muted">
+              <TextLink href="/podminky" className="font-normal text-ink-muted">
+                Výpočetní nástroj, ne daňové poradenství.
+              </TextLink>
+            </p>
+          )}
+          <PrintButton long className="sm:hidden" />
         </div>
       </div>
     </>

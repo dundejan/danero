@@ -6,7 +6,7 @@ import { firstParam, resolveTaxYear } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Demo: Daňový report — Danero' };
+export const metadata = { title: 'Demo: Report — Danero' };
 
 export default async function DemoReportPage({
   searchParams,

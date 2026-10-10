@@ -1,14 +1,18 @@
 import Link from 'next/link';
 import type { LimitStatus } from '@danero/engine';
-import { filingDeadlines } from '@danero/engine';
 import type { Transaction } from '@danero/shared';
 import { AppToolbar } from '@/components/app-toolbar';
 import { LimitDrawdownChart } from '@/components/charts';
-import { filingLimitFor, filingVerdictHeadline } from '@/components/filing-verdict';
+import {
+  FilingDeadlineStat,
+  filingLimitFor,
+  FilingVerdictHeading,
+} from '@/components/filing-verdict';
 import { HorizonInfo, HorizonStrip } from '@/components/horizon-strip';
 import { LimitBar, ZONE_LABEL, ZONE_TEXT } from '@/components/limit-gauge';
 import { LimitsInspector, type LimitEntry } from '@/components/limits-inspector';
 import { PositionsTable } from '@/components/positions-table';
+import { DividendTaxationRow, TaxFigure, TaxResultRows } from '@/components/tax-figure';
 import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { buttonVariants } from '@/components/ui/button';
 import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
@@ -18,7 +22,6 @@ import { Group, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
 import { Section, SectionHeader } from '@/components/ui/section';
 import { Stat } from '@/components/ui/stat';
-import { StatusLabel, type Tone } from '@/components/ui/status';
 import { TextLink } from '@/components/ui/link';
 import { ViewSwitch } from '@/components/view-switch';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
@@ -30,7 +33,8 @@ import {
   limit100kSeries,
 } from '@/lib/charts-data';
 import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
-import { unpaidUnderLimitCzk } from '@/lib/payable-tax';
+import { LIMIT_NAME, limitTitle } from '@/lib/limit-names';
+import { taxSummary } from '@/lib/payable-tax';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import { plainTitle, tidy } from '@/lib/typography';
@@ -43,16 +47,6 @@ export interface PrehledNotification {
   body: string;
   createdAt: Date;
 }
-
-const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
-
-/** Barva stavu podle pásma čerpání limitu. */
-const ZONE_TONE: Record<LimitStatus['zone'], Tone> = {
-  OK: 'success',
-  WARNING: 'caution',
-  CRITICAL: 'warning',
-  EXCEEDED: 'danger',
-};
 
 /**
  * Řádek seznamu limitů: název a procento, pod nimi odměrka a čerpání.
@@ -107,21 +101,42 @@ function NoExemptionRow({ name, proceeds }: { name: string; proceeds: string }) 
  * limitu a výklad se schová za „i“; v sheetu (telefon) název nese titulek
  * sheetu a výklad stojí pod obsahem rovnou — sheet sám je ta vrstva „na
  * požádání“ a bublina v dialogu by byla dialog v dialogu.
+ *
+ * Detail bez grafu (limit, který se letos ještě nehýbal) má výklad vidět
+ * i v inspektoru: inspektor drží stálou výšku, aby se při přepínání řádků
+ * nehýbala stránka pod ním (R1B-17), a prázdné místo po grafu je lepší
+ * zaplnit tím, co by si člověk stejně rozklikl.
  */
-function DetailHeading({ label, explanation }: { label: string; explanation: string }) {
+function DetailHeading({
+  label,
+  explanation,
+  inline,
+}: {
+  label: string;
+  explanation: string;
+  /** Výklad stojí pod číslem rovnou — vysvětlivka by ho jen opakovala. */
+  inline: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5 in-[.material-sheet]:hidden">
-      <h3 className="type-title-3">{label}</h3>
-      <InfoPopover label={label} title="Co se do limitu počítá" align="end">
-        <p>{tidy(explanation)}</p>
-      </InfoPopover>
+      <h3 className="type-title-3 text-balance">{label}</h3>
+      {!inline && (
+        <InfoPopover label={label} title="Co se do limitu počítá" align="end">
+          <p>{tidy(explanation)}</p>
+        </InfoPopover>
+      )}
     </div>
   );
 }
 
-function DetailExplanation({ children }: { children: string }) {
+function DetailExplanation({ children, inline }: { children: string; inline: boolean }) {
   return (
-    <p className="type-footnote mt-5 hidden px-1 text-pretty text-ink-muted in-[.material-sheet]:block">
+    <p
+      className={cn(
+        'type-footnote mt-5 px-1 text-pretty text-ink-muted @3xl:px-0',
+        !inline && 'hidden in-[.material-sheet]:block',
+      )}
+    >
       {tidy(children)}
     </p>
   );
@@ -143,9 +158,10 @@ function LimitDetail({
   chart?: React.ReactNode;
 }) {
   const difference = status.limitCzk.sub(status.usedCzk).abs();
+  const inline = !chart;
   return (
     <div>
-      <DetailHeading label={label} explanation={explanation} />
+      <DetailHeading label={label} explanation={explanation} inline={inline} />
       <p className="mt-3 px-1 in-[.material-sheet]:mt-0 @3xl:px-0">
         <span className={cn('type-figure', status.exceeded && 'text-danger')}>
           {czk(difference)}
@@ -155,7 +171,7 @@ function LimitDetail({
         </span>
       </p>
       {chart && <div className="mt-5">{chart}</div>}
-      <DetailExplanation>{explanation}</DetailExplanation>
+      <DetailExplanation inline={inline}>{explanation}</DetailExplanation>
     </div>
   );
 }
@@ -220,6 +236,9 @@ export function OverviewView({
   const showFlatTax50kChart = (flatTax50kChart?.points.length ?? 0) > 1;
 
   const importantWarnings = result.warnings.filter((w) => w.level !== 'INFO');
+  // kontroly úrovně „informace“ má jen report — kolik jich tam je navíc
+  const infoGroups =
+    groupByCode(result.warnings).length - groupByCode(importantWarnings).length;
   const hasCrypto =
     result.crypto.disposals.length > 0 ||
     positions.some((p) => p.assetClass === 'CRYPTO' && p.totalRemaining.gt(0));
@@ -231,14 +250,12 @@ export function OverviewView({
   // 50 000 / 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč), takže je popisky
   // berou z téhož stavu jako odměrka — tedy z konfigurace počítaného roku.
   // S částkou natvrdo by nadpis a čerpání pod ním jmenovaly dvě různá čísla.
-  const employeeLimit = czk(result.limits.employee20k.status.limitCzk);
   const generalLimit = czk(result.limits.generalFiling50k.status.limitCzk);
 
   // Verdikt: limit, jehož prolomení znamená povinnost podat přiznání — výběr
   // podle režimu i znění nadpisu sdílí přehled s reportem (L5-02);
   // OSVČ mimo paušál podává přiznání tak jako tak, verdikt tam nedává smysl.
   const filingLimit = filingLimitFor(result);
-  const deadlines = filingDeadlines(year);
   /**
    * Limit 50k pro paušální daň je aplikovatelný právě u režimu PAUSAL
    * (`limits.ts`), takže tenhle příznak = „uživatel je OSVČ“. OSVČ má od
@@ -252,15 +269,12 @@ export function OverviewView({
   // „nejblíž prolomení“ = nejvyšší čerpání ze sledovaných limitů
   const watchedLimits = [
     ...(filingLimit ? [filingLimit] : []),
-    { status: result.limits.limit100k, label: 'limit 100 000 Kč pro osvobození prodejů CP' },
+    { status: result.limits.limit100k, name: LIMIT_NAME.SECURITIES },
   ];
   const nearestLimit = watchedLimits.reduce((a, b) => (b.status.ratio > a.status.ratio ? b : a));
-  const estimatedTaxCzk =
-    result.tax.recommended === 'GENERAL' ? result.tax.general.taxCzk : result.tax.separate16a.taxCzk;
-  // R-09f: pod limitem režimu se orientační daň neplatí — přehled to musí říct
-  const unpaidUnderLimit = unpaidUnderLimitCzk(result);
-  // R-08f: vyčíslení dopadu prolomení limitu 50k (jen paušál a jen při prolomení)
-  const breachImpact = result.limits.flatTax50k.breachImpact;
+  // Jedno pojetí daně pro přehled, report i simulátor: orientační daň, a kde se
+  // odečítají zálohy z paušálního režimu (R-08f), tak doplatek (`taxSummary`)
+  const tax = taxSummary(result);
   const exceeded = filingLimit?.status.exceeded ?? false;
 
   // Rozpad základu § 10 po druzích — souhrnné „(prodeje)“ mátlo: daň může být
@@ -293,16 +307,16 @@ export function OverviewView({
   const limitEntries: LimitEntry[] = [];
   if (result.limits.flatTax50k.applicable) {
     const { status } = result.limits.flatTax50k;
-    const title = 'Limit paušální daně — 50 000 Kč';
+    const title = limitTitle('FLAT_TAX', status.limitCzk);
     limitEntries.push({
       key: 'flat-tax',
       title,
-      row: <LimitRow name="Limit paušální daně" status={status} />,
+      row: <LimitRow name={LIMIT_NAME.FLAT_TAX} status={status} />,
       detail: (
         <LimitDetail
           label={title}
           status={status}
-          explanation="Platí jen pro paušální daň (§ 7a): úhrn ZDANITELNÝCH příjmů mimo samostatnou činnost (podnikání) — neosvobozené tržby z prodejů CP i kryptoaktiv, plnění z derivátů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
+          explanation="Platí jen pro paušální daň (§ 7a): úhrn zdanitelných příjmů mimo samostatnou činnost (podnikání) — neosvobozené tržby z prodejů cenných papírů i kryptoaktiv, plnění z derivátů, zahraniční dividendy (brutto), úroky, nájem. Osvobozené prodeje se nepočítají. Při překročení podáváš přiznání a přehledy — v paušálním režimu ale zůstáváš."
           chart={
             flatTax50kChart && showFlatTax50kChart ? (
               <LimitDrawdownChart series={flatTax50kChart} name="Zdanitelné příjmy" />
@@ -314,11 +328,11 @@ export function OverviewView({
   }
   if (result.limits.employee20k.applicable) {
     const { status } = result.limits.employee20k;
-    const title = `Vedlejší příjmy — ${employeeLimit}`;
+    const title = limitTitle('EMPLOYEE_SIDE_INCOME', status.limitCzk);
     limitEntries.push({
       key: 'employee',
       title,
-      row: <LimitRow name="Vedlejší příjmy" status={status} />,
+      row: <LimitRow name={LIMIT_NAME.EMPLOYEE_SIDE_INCOME} status={status} />,
       detail: (
         <LimitDetail
           label={title}
@@ -331,11 +345,11 @@ export function OverviewView({
   // režim „jiné“: obecný limit § 38g — verdikt s ním počítá, takže má i řádek
   if (result.limits.generalFiling50k.applicable) {
     const { status } = result.limits.generalFiling50k;
-    const title = `Podání přiznání — ${generalLimit}`;
+    const title = limitTitle('GENERAL_FILING', status.limitCzk);
     limitEntries.push({
       key: 'general',
       title,
-      row: <LimitRow name="Podání přiznání" status={status} />,
+      row: <LimitRow name={LIMIT_NAME.GENERAL_FILING} status={status} />,
       detail: (
         <LimitDetail
           label={title}
@@ -347,16 +361,16 @@ export function OverviewView({
   }
   if (result.limits.limit100k.applicable) {
     const status = result.limits.limit100k;
-    const title = 'Osvobození prodejů cenných papírů — 100 000 Kč';
+    const title = limitTitle('SECURITIES', status.limitCzk);
     limitEntries.push({
       key: 'securities',
       title,
-      row: <LimitRow name="Osvobození prodejů cenných papírů" status={status} />,
+      row: <LimitRow name={LIMIT_NAME.SECURITIES} status={status} />,
       detail: (
         <LimitDetail
           label={title}
           status={status}
-          explanation="Do 100 000 Kč tržeb z prodeje cenných papírů za rok (§ 4 odst. 1 písm. t) jsou VŠECHNY osvobozené, i bez 3 let držení. Nad limit se daní prodeje bez splněného časového testu. Neplatí pro cenné papíry zahrnuté v obchodním majetku."
+          explanation="Do 100 000 Kč tržeb z prodeje cenných papírů za rok (§ 4 odst. 1 písm. t) jsou osvobozené všechny prodeje, i bez 3 let držení. Nad limit se daní prodeje bez splněného časového testu. Neplatí pro cenné papíry zahrnuté v obchodním majetku."
           chart={
             showLimit100kChart ? (
               <LimitDrawdownChart series={limit100kChart} name="Tržby z prodejů" />
@@ -390,11 +404,11 @@ export function OverviewView({
   if (hasCrypto) {
     if (result.limits.cryptoLimit100k.applicable) {
       const status = result.limits.cryptoLimit100k;
-      const title = 'Osvobození krypta — 100 000 Kč';
+      const title = limitTitle('CRYPTO', status.limitCzk);
       limitEntries.push({
         key: 'crypto',
         title,
-        row: <LimitRow name="Osvobození krypta" status={status} />,
+        row: <LimitRow name={LIMIT_NAME.CRYPTO} status={status} />,
         detail: (
           <LimitDetail
             label={title}
@@ -428,127 +442,43 @@ export function OverviewView({
 
   /* ── verdikt ────────────────────────────────────────────────────────────
      Jedna věta o stavu, jedna odpověď a vedle ní nejvýš dvě čísla. Žádný
-     odstavec: termín je číslo, výhrada u částky jsou tři slova a zbytek
-     (proč elektronicky, co do doplatku nepatří) je ve vysvětlivkách. */
+     odstavec: termín je číslo, výhrada u částky je pár slov a zbytek
+     (proč elektronicky, co do doplatku nepatří) je ve vysvětlivkách.
 
-  const taxFigure = breachImpact ? (
-    /* R-08f: „kolik mě to bude stát“ je hlavní otázka za prolomením limitu
-       50k — engine ji vyčíslí, tohle je její místo v UI */
-    <Stat
-      size="lg"
-      label="Doplatek daně"
-      value={czk(breachImpact.additionalTaxCzk)}
-      note="orientačně, jen z investic"
-      info={
-        <InfoPopover label="Doplatek daně" title="Jak doplatek vznikl">
-          <dl className="space-y-1 tabular-nums">
-            <div className="flex justify-between gap-4">
-              <dt>Daň z investic</dt>
-              <dd>{czk(breachImpact.taxCzk)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>
-                − zaplacené zálohy na daň
-                {breachImpact.monthlyAdvanceCzk &&
-                  ` (z paušální zálohy ${czk(breachImpact.monthlyAdvanceCzk)}/měs.)`}
-              </dt>
-              <dd>{czk(breachImpact.advancesCreditCzk)}</dd>
-            </div>
-          </dl>
-          <p>
-            {tidy(
-              'Doplatek je orientační a jen z investic — daň z podnikání (§ 7) Danero nevidí. K tomu přibude přehled ČSSZ a zdravotní pojišťovně a doplatek pojistného ze skutečných příjmů; ten spočítat neumíme, protože neznáme tvůj základ z § 7.',
-            )}
-          </p>
-        </InfoPopover>
-      }
-    />
-  ) : unpaidUnderLimit && estimatedTaxCzk.gt(0) ? (
-    /* R-09f (L24-02): pod limitem režimu se tahle daň neplatí — bez téhle
-       výhrady stála částka hned vedle verdiktu „povinnost nevzniká“
-       a vypadala jako dluh */
-    <Stat
-      size="lg"
-      label="Orientační daň z investic"
-      value={czk(estimatedTaxCzk)}
-      note="Platí se jen při podání přiznání"
-      info={
-        <InfoPopover label="Orientační daň z investic" title="Kdy se tahle daň platí">
-          <p>
-            Dokud jsi pod limitem {czk(unpaidUnderLimit)}, přiznání nepodáváš a tuhle daň
-            neplatíš — počítáme jen s příjmy, o kterých Danero ví.
-          </p>
-        </InfoPopover>
-      }
-    />
-  ) : (
-    <Stat
-      size="lg"
-      label="Orientační daň z investic"
-      value={czk(estimatedTaxCzk)}
-      note="orientačně, jen z investic"
-      info={
-        <InfoPopover label="Orientační daň z investic">
-          <p>{tidy(result.tax.note)}</p>
-        </InfoPopover>
-      }
-    />
-  );
+     Verdikt stojí v levém sloupci, čísla v pravém — na stejné mřížce jako
+     dvojice sekcí níž, takže čísla lícují s pravým sloupcem pod sebou
+     (R1B-26). V užším okně se čísla zalomí pod odpověď.
 
-  // Verdikt a čísla tvoří jeden řádek čtený zleva: odpověď, termín, částka.
-  // V užším okně se čísla zalomí pod odpověď.
+     Číslo daně kreslí `TaxFigure` — tentýž prvek jako v reportu, takže pod
+     stejným verdiktem stojí na obou stránkách stejná částka pod stejným
+     jménem (R1B-03). */
   const verdict = (
-    <div className="flex flex-wrap items-end gap-x-16 gap-y-7">
-      <div>
-        {filingLimit ? (
-          <>
-            <StatusLabel tone={ZONE_TONE[filingLimit.status.zone]}>
-              {`${capitalize(filingLimit.label)} — ${ZONE_LABEL[filingLimit.status.zone]}`}
-            </StatusLabel>
-            <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
-              {tidy(filingVerdictHeadline({ year, exceeded }))}
+    <div className="@container">
+      <div className="grid gap-x-(--column-gap) gap-y-7 @3xl:grid-cols-2 @3xl:items-end">
+        <div>
+          {filingLimit ? (
+            <FilingVerdictHeading year={year} limit={filingLimit} />
+          ) : (
+            <h2 className="type-title-1 max-w-[22ch] text-balance">
+              {tidy(`Daně z investic za rok ${year}`)}
             </h2>
-          </>
-        ) : (
-          <h2 className="type-title-1 max-w-[22ch] text-balance">
-            {tidy(`Daně z investic za rok ${year}`)}
-          </h2>
-        )}
-      </div>
-      <dl className="flex flex-wrap gap-x-12 gap-y-6 md:gap-x-16">
-          {filingLimit && exceeded && (
-            <Stat
-              size="lg"
-              label="Termín podání"
-              value={czDate(deadlines.electronic)}
-              note={
-                filesElectronicallyOnly
-                  ? 'jen elektronicky'
-                  : `písemně do ${czDate(deadlines.paper)}`
-              }
-              info={
-                <InfoPopover label="Termín podání">
-                  <p>
-                    {filesElectronicallyOnly
-                      ? tidy(
-                          'Jako OSVČ máš datovou schránku zřízenou ze zákona, takže se přiznání podává jen elektronicky (§ 72 odst. 6 daňového řádu) a platí pro tebe čtyřměsíční lhůta.',
-                        )
-                      : `Přiznání podáš písemně do ${czDate(deadlines.paper)}, elektronicky do ${czDate(deadlines.electronic)}.`}
-                  </p>
-                </InfoPopover>
-              }
-            />
           )}
-          {taxFigure}
+        </div>
+        <dl className="flex flex-wrap items-start gap-x-12 gap-y-6">
+          {filingLimit && exceeded && (
+            <FilingDeadlineStat year={year} electronicOnly={filesElectronicallyOnly} />
+          )}
+          <TaxFigure result={result} />
           {filingLimit && !exceeded && (
             <Stat
               size="lg"
               label="Nejbližší limit"
               value={pct(nearestLimit.status.ratio * 100)}
-              note={nearestLimit.label}
+              note={nearestLimit.name}
             />
           )}
-      </dl>
+        </dl>
+      </div>
     </div>
   );
 
@@ -563,7 +493,7 @@ export function OverviewView({
             href={`${basePath}/report`}
             className={buttonVariants({ variant: 'primary', size: 'sm' })}
           >
-            Připravit podklady
+            Otevřít report
           </Link>
         )
       }
@@ -631,8 +561,9 @@ export function OverviewView({
           >
             <Disclosure summary="Proč to tak nepočítáme">
               <p>
-                Počítáme bezpečným výkladem: do limitu 100k vstupují i prodeje osvobozené
-                časovým testem. Podle mírnějšího (sporného) výkladu by tvůj úhrn byl jen{' '}
+                Počítáme bezpečným výkladem: do limitu 100 000 Kč pro osvobození prodejů cenných
+                papírů se počítají i prodeje osvobozené časovým testem. Podle mírnějšího (sporného)
+                výkladu by se do něj počítalo jen{' '}
                 <span className="tabular-nums text-ink">{czk(lenientProceeds)}</span> a všechny
                 letošní prodeje by byly osvobozené. Výklad si můžeš přepnout v Nastavení —
                 rozhodnutí (a riziko) je na tobě.
@@ -727,31 +658,12 @@ export function OverviewView({
                   label="Základ daně z dividend a úroků"
                   value={czk(result.dividends.base8Czk)}
                 />
-                {/* E-27: nedoporučujeme variantu zdanění dividend — ukážeme obě
-                    čísla a volbu necháme na uživateli (docs/13 V-4) */}
-                {result.dividends.base8Czk.gt(0) && (
-                  <>
-                    <Row
-                      label="Daň v obecném základu"
-                      info={
-                        <InfoPopover label="Dvě varianty zdanění dividend">
-                          <p>
-                            {tidy(
-                              'Zahraniční dividendy a úroky můžeš zdanit spolu s ostatními příjmy (obecný základ), nebo zvlášť sazbou 15 % (samostatný základ, § 16a).',
-                            )}
-                          </p>
-                          <p>Obě částky jsou před slevami — variantu zdanění volíš v přiznání.</p>
-                        </InfoPopover>
-                      }
-                      value={czk(result.tax.general.taxCzk)}
-                    />
-                    <Row
-                      label="Daň v samostatném základu"
-                      value={czk(result.tax.separate16a.taxCzk)}
-                    />
-                  </>
-                )}
-                <Row strong label="Orientační daň z investic" value={czk(estimatedTaxCzk)} />
+                {/* E-27: variantu zdanění dividend nedoporučujeme (docs/13 V-4) —
+                    řádek říká, se kterou počítáme, a kolik by vyšla ta druhá.
+                    Dvě varianty jako dva řádky nad tučným výsledkem se četly
+                    jako sčítance a součet (R1B-02). */}
+                <DividendTaxationRow summary={tax} />
+                <TaxResultRows summary={tax} />
               </Group>
             </Section>
 
@@ -766,7 +678,9 @@ export function OverviewView({
                           title={plainTitle(notification.title)}
                           meta={czDate(notification.createdAt)}
                         >
-                          <p>{notification.body}</p>
+                          {/* text upozornění je i tělo e-mailu — zdroj se nemění,
+                              jen se při zobrazení neláme uprostřed částky (R2-12) */}
+                          <p>{tidy(notification.body)}</p>
                         </DisclosureRow>
                       ))}
                     </Group>
@@ -784,6 +698,16 @@ export function OverviewView({
                       warnings={importantWarnings}
                       labels={labels}
                       forfeitedWithholdingCzk={forfeitedWithholdingCzk}
+                      // přehled ukazuje jen to, co chce pozornost; report všechno —
+                      // odkaz říká, proč tam je kontrol víc (R1B-20)
+                      more={
+                        infoGroups > 0
+                          ? {
+                              label: `${infoGroups} ${plural(infoGroups, 'další informace', 'další informace', 'dalších informací')} v reportu`,
+                              href: `${basePath}/report?rok=${year}`,
+                            }
+                          : undefined
+                      }
                     />
                   </Section>
                 )}

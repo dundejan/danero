@@ -1,4 +1,5 @@
 import type { Money } from '@danero/shared';
+import { LIMIT_NAME } from '@/lib/limit-names';
 
 /**
  * Verdikt simulátoru prodeje jako čistá funkce (testovatelná bez JSX).
@@ -17,7 +18,7 @@ import type { Money } from '@danero/shared';
  */
 export interface RegimeLimit {
   kind: 'FLAT_TAX' | 'EMPLOYEE_SIDE_INCOME' | 'GENERAL_FILING';
-  /** Název karty limitu v simulátoru. */
+  /** Jméno limitu — stejné jako na přehledu a v reportu (`LIMIT_NAME`). */
   label: string;
   /** Strop ze stavu limitu — částky § 38g se od roku 2027 mění, proto ne pevný text. */
   limitCzk: Money;
@@ -37,19 +38,23 @@ export interface RegimeLimitsInput {
  */
 export function regimeLimitFor(limits: RegimeLimitsInput): RegimeLimit | null {
   if (limits.flatTax50k.applicable) {
-    return { kind: 'FLAT_TAX', label: 'Paušální daň', limitCzk: limits.flatTax50k.status.limitCzk };
+    return {
+      kind: 'FLAT_TAX',
+      label: LIMIT_NAME.FLAT_TAX,
+      limitCzk: limits.flatTax50k.status.limitCzk,
+    };
   }
   if (limits.employee20k.applicable) {
     return {
       kind: 'EMPLOYEE_SIDE_INCOME',
-      label: 'Vedlejší příjmy',
+      label: LIMIT_NAME.EMPLOYEE_SIDE_INCOME,
       limitCzk: limits.employee20k.status.limitCzk,
     };
   }
   if (limits.generalFiling50k.applicable) {
     return {
       kind: 'GENERAL_FILING',
-      label: 'Podání přiznání',
+      label: LIMIT_NAME.GENERAL_FILING,
       limitCzk: limits.generalFiling50k.status.limitCzk,
     };
   }
@@ -78,6 +83,19 @@ export interface VerdictInput {
   simulatedDisposal: { taxableProceedsCzk: Money } | undefined;
 }
 
+/**
+ * Zdanitelný prodej, který zároveň zruší osvobození úhrnem do 100 000 Kč:
+ * před ním byly letošní prodeje osvobozené celé, po něm se zdaní zpětně i ty
+ * dřívější. Daň pak roste o víc, než kolik připadá na tenhle prodej — bez
+ * téhle informace čísla na obrazovce neseděla (základ 340 Kč, daň +866 Kč;
+ * nález R1B-04).
+ */
+export interface BrokenExemption {
+  crypto: boolean;
+  /** Změna celkové orientační daně — za všechny letošní prodeje, ne jen za tenhle. */
+  taxDeltaCzk: Money;
+}
+
 export type SimulatorVerdict =
   /** Celý osvobozený, daň se nezvýší a žádný limit se nezhorší. */
   | { kind: 'EXEMPT_CLEAN' }
@@ -86,8 +104,8 @@ export type SimulatorVerdict =
   /** Osvobozený, nic neprolomí, ale zhorší čerpání limitu (příp. i daň). */
   | { kind: 'EXEMPT_DRAWS_LIMIT'; crypto: boolean; taxDeltaCzk: Money }
   /** Zdanitelný prodej, který nově prolomí limit platný pro režim uživatele. */
-  | { kind: 'BREAKS_REGIME_LIMIT'; limit: RegimeLimit }
-  | { kind: 'TAXABLE' };
+  | { kind: 'BREAKS_REGIME_LIMIT'; limit: RegimeLimit; brokenExemption: BrokenExemption | null }
+  | { kind: 'TAXABLE'; brokenExemption: BrokenExemption | null };
 
 /**
  * @param regimeLimit limit platný pro režim (`regimeLimitFor`); `null` = režim
@@ -102,11 +120,11 @@ export function simulatorVerdict(
   const { baseline, simulated, deltas, simulatedDisposal } = simulation;
   const fullyExempt =
     simulatedDisposal !== undefined && simulatedDisposal.taxableProceedsCzk.lte(0);
+  // prolomení úhrnu 100k: před prodejem osvobozeno úhrnem, po prodeji už ne
+  const breaksSecurities = baseline.exemptUnder100k && !simulated.exemptUnder100k;
+  const breaksCrypto = baseline.cryptoExemptUnder100k && !simulated.cryptoExemptUnder100k;
 
   if (fullyExempt) {
-    // prolomení úhrnu 100k: před prodejem osvobozeno úhrnem, po prodeji už ne
-    const breaksSecurities = baseline.exemptUnder100k && !simulated.exemptUnder100k;
-    const breaksCrypto = baseline.cryptoExemptUnder100k && !simulated.cryptoExemptUnder100k;
     if (breaksSecurities || breaksCrypto) {
       return {
         kind: 'EXEMPT_BREAKS_100K',
@@ -127,13 +145,18 @@ export function simulatorVerdict(
     return { kind: 'EXEMPT_CLEAN' };
   }
 
+  const brokenExemption: BrokenExemption | null =
+    breaksSecurities || breaksCrypto
+      ? { crypto: breaksCrypto && !breaksSecurities, taxDeltaCzk: deltas.taxCzk }
+      : null;
+
   // limity jsou „do částky včetně“ (jako v enginu) — přesně na stropu ještě vyhovuje
   if (
     regimeLimit &&
     simulated.flatTax50kUsedCzk.gt(regimeLimit.limitCzk) &&
     !baseline.flatTax50kUsedCzk.gt(regimeLimit.limitCzk)
   ) {
-    return { kind: 'BREAKS_REGIME_LIMIT', limit: regimeLimit };
+    return { kind: 'BREAKS_REGIME_LIMIT', limit: regimeLimit, brokenExemption };
   }
-  return { kind: 'TAXABLE' };
+  return { kind: 'TAXABLE', brokenExemption };
 }

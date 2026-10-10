@@ -592,7 +592,18 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
     const { join } = await import('node:path');
     const web = join(import.meta.dirname, '..');
     const route = readFileSync(join(web, 'app', 'api', 'epo', 'route.ts'), 'utf8');
-    const view = readFileSync(join(web, 'components', 'views', 'report-view.tsx'), 'utf8');
+    // formulář exportu je samostatná komponenta — hlídá se to, co opravdu vykreslí
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { EpoExportForm } = await import('@/components/epo-export-form');
+    const view = renderToStaticMarkup(
+      createElement(EpoExportForm, {
+        year: 2025,
+        dividendChoice: null,
+        dividendInfo: null,
+        contentInfo: null,
+      }),
+    );
     const personal = route.slice(
       route.indexOf('const personal: EpoPersonalData = {'),
       route.indexOf('};', route.indexOf('const personal: EpoPersonalData = {')),

@@ -3,7 +3,7 @@ import { demoDataset, demoToday } from '@/lib/demo-data';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Demo: Simulátor prodeje — Danero' };
+export const metadata = { title: 'Demo: Simulátor — Danero' };
 
 export default async function DemoSimulatorPage({
   searchParams,

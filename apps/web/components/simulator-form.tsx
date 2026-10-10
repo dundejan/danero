@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { describedByError, Field, FieldError, Input, Select } from '@/components/ui/field';
-import { simulationKey } from '@/lib/simulator-input';
+import { answeredSubmissions, simulationKey } from '@/lib/simulator-input';
 import { cn } from '@/lib/utils';
 
 /** Pozice, kterou jde v simulátoru prodat — jen to, co formulář potřebuje. */
@@ -38,6 +38,9 @@ const TYPING_PAUSE_MS = 250;
  * - Psaní se odešle po krátké pauze; Enter hned.
  * - Než server odpoví, výsledek zešedne — je vidět, že k novému zadání ještě
  *   nepatří (`resultKey` je zadání, pro které server výsledek spočítal).
+ * - Neplatné zadání (víc kusů, než držíš; písmeno) výsledek nezahodí: poslední
+ *   platný zůstane stát zešedlý a chyba je u pole. Dřív ho nahradila krátká
+ *   hláška a sloupec při psaní skákal mezi 757 a 248 px (R3-09).
  * - Je to obyčejný formulář metodou GET: adresa nese zadání (jde sdílet
  *   a obnovit) a bez JavaScriptu ho odešle tlačítko v `<noscript>`.
  */
@@ -49,6 +52,7 @@ export function SimulatorWorkbench({
   price: initialPrice,
   resultKey,
   error,
+  hasResult,
   children,
 }: {
   /** Adresa stránky simulátoru (ostrá, nebo demo). */
@@ -59,6 +63,8 @@ export function SimulatorWorkbench({
   price: string;
   resultKey: string;
   error: { field: SimulatorField; message: string } | null;
+  /** `children` je spočítaný výsledek simulace, ne prázdný nebo chybový stav. */
+  hasResult: boolean;
   /** Výsledek simulace vykreslený na serveru. */
   children: React.ReactNode;
 }) {
@@ -67,10 +73,39 @@ export function SimulatorWorkbench({
   const [isin, setIsin] = useState(selectedIsin);
   const [quantity, setQuantity] = useState(initialQuantity);
   const [price, setPrice] = useState(initialPrice);
-  // zadání, které jsme naposledy poslali serveru; dokud se neshoduje s tím,
-  // pro které přišel výsledek, je výsledek zastaralý
-  const [submittedKey, setSubmittedKey] = useState<string | null>(null);
-  const stale = submittedKey !== null && submittedKey !== resultKey;
+  // zadání odeslaná serveru, na která ještě nepřišla odpověď (od nejstaršího);
+  // dokud nějaké čeká, je výsledek na obrazovce zastaralý
+  const [pending, setPending] = useState<string[]>([]);
+  // naposledy viděná odpověď serveru: nový výsledek = nové `children`
+  const [seen, setSeen] = useState({ key: resultKey, children });
+  // poslední platný výsledek a pozice, ke které patří
+  const [lastResult, setLastResult] = useState<{ isin: string; node: React.ReactNode } | null>(
+    hasResult ? { isin: selectedIsin, node: children } : null,
+  );
+
+  // Ze serveru přišel nový výsledek. Buď je to odpověď na něco, co odeslal
+  // tenhle formulář — pak formulář nechávám být, uživatel mezitím mohl psát
+  // dál —, nebo navigace odjinud (klik na „Simulátor“ v navigaci, odkaz
+  // z detailu pozice, tlačítko zpět). Tu formulář převezme: dřív zůstal
+  // vyplněný vedle výsledku „Vyber pozici“ a oblast zůstala zešedlá (R4-06).
+  if (seen.children !== children) {
+    setSeen({ key: resultKey, children });
+    const remaining = answeredSubmissions(pending, resultKey);
+    if (remaining !== null) {
+      setPending(remaining);
+    } else if (seen.key !== resultKey) {
+      setIsin(selectedIsin);
+      setQuantity(initialQuantity);
+      setPrice(initialPrice);
+      setPending([]);
+    }
+    if (hasResult) setLastResult({ isin: selectedIsin, node: children });
+  }
+
+  const stale = pending.length > 0;
+  // po chybě zadání stojí dál poslední platný výsledek téže pozice
+  const keptResult =
+    !hasResult && error !== null && lastResult?.isin === selectedIsin ? lastResult.node : null;
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -79,6 +114,16 @@ export function SimulatorWorkbench({
   const submitAfter = (delay: number) => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => formRef.current?.requestSubmit(), delay);
+  };
+
+  // Enter odešle hned: formulář má dvě textová pole a žádné odesílací tlačítko,
+  // takže prohlížeč sám Enterem neodešle nic — odeslal to až časovač (R4-08).
+  const submitOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!isin) return;
+    window.clearTimeout(timer.current);
+    formRef.current?.requestSubmit();
   };
 
   return (
@@ -93,7 +138,12 @@ export function SimulatorWorkbench({
             className="space-y-4"
             onSubmit={() => {
               window.clearTimeout(timer.current);
-              setSubmittedKey(simulationKey(isin, quantity, price));
+              const key = simulationKey(isin, quantity, price);
+              // totéž zadání podruhé (Enter bez změny) novou odpověď přinést
+              // nemusí — čekat na ni by nechalo výsledek zešedlý napořád
+              setPending((keys) =>
+                key === resultKey && keys.length === 0 ? keys : [...keys, key],
+              );
             }}
           >
             <Field label="Pozice" htmlFor="isin">
@@ -134,6 +184,7 @@ export function SimulatorWorkbench({
                     setQuantity(event.target.value);
                     if (isin) submitAfter(TYPING_PAUSE_MS);
                   }}
+                  onKeyDown={submitOnEnter}
                   {...describedByError(error?.field === 'quantity', ERROR_ID)}
                 />
               </Field>
@@ -156,6 +207,7 @@ export function SimulatorWorkbench({
                     setPrice(event.target.value);
                     if (isin) submitAfter(TYPING_PAUSE_MS);
                   }}
+                  onKeyDown={submitOnEnter}
                   {...describedByError(error?.field === 'price', ERROR_ID)}
                 />
               </Field>
@@ -176,7 +228,16 @@ export function SimulatorWorkbench({
             stale && 'opacity-50 delay-150',
           )}
         >
-          {children}
+          {keptResult ? (
+            // Výsledek k dřívějšímu zadání: zešedlý a mimo dosah klávesnice
+            // i čtečky (`inert`) — čísla v něm k tomu, co je teď v polích,
+            // nepatří, a říká to hláška u pole.
+            <div inert className="opacity-50">
+              {keptResult}
+            </div>
+          ) : (
+            children
+          )}
         </div>
       </div>
     </div>

@@ -1,11 +1,13 @@
-import type { LimitStatus, TaxYearResult } from '@danero/engine';
+import { filingDeadlines, type LimitStatus, type TaxYearResult } from '@danero/engine';
 import { ZONE_LABEL } from '@/components/limit-gauge';
 import { Disclosure } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { InfoPrint } from '@/components/ui/info-print';
 import { Notice } from '@/components/ui/notice';
+import { Stat } from '@/components/ui/stat';
 import { StatusLabel, type Tone } from '@/components/ui/status';
 import { czDate, czk, pct } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
 import { tidy } from '@/lib/typography';
 
 /**
@@ -19,7 +21,9 @@ import { tidy } from '@/lib/typography';
  */
 interface FilingLimit {
   status: LimitStatus;
-  /** Jméno limitu do věty, ve 4. pádě shodné s 1. („limit 50 000 Kč pro…“). */
+  /** Jméno limitu — stejné jako v seznamu limitů na přehledu (`LIMIT_NAME`). */
+  name: string;
+  /** Jméno do věty i s částkou („limit paušální daně (50 000 Kč)“). */
   label: string;
 }
 
@@ -36,21 +40,14 @@ interface FilingLimit {
  */
 export function filingLimitFor(result: TaxYearResult): FilingLimit | null {
   const { flatTax50k, employee20k, generalFiling50k } = result.limits;
-  if (flatTax50k.applicable) {
-    return { status: flatTax50k.status, label: 'limit 50 000 Kč pro paušální daň' };
-  }
-  if (employee20k.applicable) {
-    return {
-      status: employee20k.status,
-      label: `limit ${czk(employee20k.status.limitCzk)} vedlejších příjmů`,
-    };
-  }
-  if (generalFiling50k.applicable) {
-    return {
-      status: generalFiling50k.status,
-      label: `limit ${czk(generalFiling50k.status.limitCzk)} pro podání přiznání`,
-    };
-  }
+  const limit = (kind: LimitKind, status: LimitStatus): FilingLimit => ({
+    status,
+    name: LIMIT_NAME[kind],
+    label: limitWithAmount(kind, status.limitCzk),
+  });
+  if (flatTax50k.applicable) return limit('FLAT_TAX', flatTax50k.status);
+  if (employee20k.applicable) return limit('EMPLOYEE_SIDE_INCOME', employee20k.status);
+  if (generalFiling50k.applicable) return limit('GENERAL_FILING', generalFiling50k.status);
   return null;
 }
 
@@ -75,7 +72,93 @@ const ZONE_TONE: Record<LimitStatus['zone'], Tone> = {
   EXCEEDED: 'danger',
 };
 
-const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+/**
+ * Stav limitu a nadpis verdiktu — společný začátek přehledu i reportu. Limit
+ * se jmenuje stejně jako v seznamu limitů pod ním („Limit paušální daně“).
+ */
+export function FilingVerdictHeading({ year, limit }: { year: number; limit: FilingLimit }) {
+  const { status, name } = limit;
+  return (
+    <>
+      <StatusLabel tone={ZONE_TONE[status.zone]}>
+        {`${name} — ${ZONE_LABEL[status.zone]}`}
+      </StatusLabel>
+      <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
+        {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded }))}
+      </h2>
+    </>
+  );
+}
+
+/**
+ * Výklad k termínu podání — jeden pro přehled i report (R1B-32: přehled měl
+ * kratší znění bez lhůty s poradcem). V reportu se tiskne i na papír.
+ *
+ * OSVČ (paušál i běžná) má od 1. 1. 2023 datovou schránku zřízenou ze zákona,
+ * takže § 72 odst. 6 daňového řádu jí ukládá podat přiznání jen elektronicky;
+ * písemné podání je vada podání (§ 74 DŘ). Nabízet jí papírový termín znamená
+ * poslat ji do pokuty a zbytečně jí zkrátit lhůtu o měsíc (nález E-23).
+ */
+export function FilingDeadlineInfo({
+  year,
+  electronicOnly,
+}: {
+  year: number;
+  electronicOnly: boolean;
+}) {
+  const deadlines = filingDeadlines(year);
+  return electronicOnly ? (
+    <>
+      OSVČ má od 1. 1. 2023 datovou schránku zřízenou ze zákona, a přiznání se proto podává jen
+      elektronicky (§ 72 odst. 6 daňového řádu) — platí pro ni čtyřměsíční lhůta, ne tříměsíční
+      lhůta pro písemné podání. S daňovým poradcem {czDate(deadlines.advisor)}.
+    </>
+  ) : (
+    <>
+      Písemně do {czDate(deadlines.paper)}, elektronicky do {czDate(deadlines.electronic)} (3 a 4
+      měsíce od konce roku dle § 136 daňového řádu; svátek a víkend termín posouvají na nejbližší
+      pracovní den). S daňovým poradcem {czDate(deadlines.advisor)}.
+    </>
+  );
+}
+
+/**
+ * Termín podání jako velké číslo vedle verdiktu. `onlyIfFiling` je pro toho,
+ * komu povinnost podle evidovaných příjmů nevznikla: termín se ho týká jen
+ * tehdy, když podává z jiného důvodu.
+ */
+export function FilingDeadlineStat({
+  year,
+  electronicOnly,
+  onlyIfFiling = false,
+}: {
+  year: number;
+  electronicOnly: boolean;
+  onlyIfFiling?: boolean;
+}) {
+  const deadlines = filingDeadlines(year);
+  return (
+    <Stat
+      size="lg"
+      label="Termín podání"
+      value={czDate(deadlines.electronic)}
+      note={
+        onlyIfFiling
+          ? 'pokud přiznání podáváš'
+          : electronicOnly
+            ? 'jen elektronicky'
+            : `písemně do ${czDate(deadlines.paper)}`
+      }
+      info={
+        <InfoPopover label="Termín podání">
+          <p>
+            <FilingDeadlineInfo year={year} electronicOnly={electronicOnly} />
+          </p>
+        </InfoPopover>
+      }
+    />
+  );
+}
 
 /**
  * Verdikt v reportu, na obrazovce i v tisku: výtisk odnáší uživatel poradci
@@ -122,12 +205,7 @@ export function ReportFilingVerdict({
   );
   return (
     <div>
-      <StatusLabel tone={ZONE_TONE[status.zone]}>
-        {`${capitalize(label)} — ${ZONE_LABEL[status.zone]}`}
-      </StatusLabel>
-      <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
-        {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded }))}
-      </h2>
+      <FilingVerdictHeading year={year} limit={limit} />
       <div className="type-footnote mt-3 flex items-center gap-1 text-ink-muted print:hidden">
         {status.exceeded
           ? 'Podle příjmů, které Danero eviduje.'

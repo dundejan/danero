@@ -57,26 +57,49 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
     expect(hlavicky[0]).toContain('scope="col"');
   });
 
+  /**
+   * Hlavičky bez obsahu: samouzavírací značka i prázdná dvojice, nativní `<th>`
+   * i primitivum `<Th>`. Po redesignu jsou všechny hlavičky `<Th>` a původní
+   * výraz hledal jen malé `<th` — test tak prošel, i kdyby byla prázdná každá
+   * (nález R4-05).
+   */
+  const emptyHeaders = (source: string): string[] => [
+    ...(source.match(/<(?:th|Th)\b[^>]*\/>/g) ?? []),
+    ...(source.match(/<(?:th|Th)\b[^>]*>\s*<\/(?:th|Th)>/g) ?? []),
+  ];
+
+  it('prázdnou hlavičku pozná v obou podobách značky', () => {
+    expect(emptyHeaders('<Th />')).toHaveLength(1);
+    expect(emptyHeaders('<th scope="col" />')).toHaveLength(1);
+    expect(emptyHeaders('<Th align="right"></Th>')).toHaveLength(1);
+    expect(emptyHeaders('<Th align="right">\n  </Th>')).toHaveLength(1);
+    expect(emptyHeaders('<Th>Metoda</Th><Th align="right">Daň</Th>')).toHaveLength(0);
+    // jiná komponenta se stejným začátkem jména hlavička není
+    expect(emptyHeaders('<Thumb />')).toHaveLength(0);
+    expect(emptyHeaders('<Thead />')).toHaveLength(0);
+  });
+
   it('žádná hlavičková buňka nezůstane prázdná', () => {
-    for (const { path, source } of soubory) {
+    // hlavičky jsou i ve stránkách (`app`), nejen v komponentách
+    const sources = [
+      ...soubory,
+      ...tsxFiles(join(import.meta.dirname, '..', 'app')).map((path) => ({
+        path,
+        source: readFileSync(path, 'utf8'),
+      })),
+    ];
+    let headerCount = 0;
+    for (const { path, source } of sources) {
       // primitivum obsah buňky nezná — dostává ho od volajícího přes `props`
       if (path.endsWith(join('ui', 'table.tsx'))) continue;
-      // Prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku. Počítá
-      // se i `<Th />` primitiva: po redesignu jsou jím všechny hlavičky a výraz
-      // jen na malé `<th` nehlídal nic (R4-05).
-      for (const tag of source.match(/<(?:th|Th)\b[^>]*\/>/g) ?? []) {
+      headerCount += (source.match(/<(?:th|Th)\b/g) ?? []).length;
+      // prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku
+      for (const tag of emptyHeaders(source)) {
         expect(tag, `${path}: prázdná hlavička bez názvu`).toMatch(/aria-label=/);
       }
     }
-  });
-
-  it('výraz na prázdnou hlavičku pozná primitivum i nativní značku', () => {
-    const empty = /<(?:th|Th)\b[^>]*\/>/g;
-    expect('<Th />'.match(empty)).toHaveLength(1);
-    expect('<th scope="col" />'.match(empty)).toHaveLength(1);
-    expect('<Th align="right">Daň</Th>'.match(empty)).toBeNull();
-    // `<Thead>` ani jiná značka začínající na Th hlavička není
-    expect('<Thead />'.match(empty)).toBeNull();
+    // pojistka proti testu, který nehlídá nic: hlavičky se musí vůbec najít
+    expect(headerCount).toBeGreaterThan(20);
   });
 });
 
