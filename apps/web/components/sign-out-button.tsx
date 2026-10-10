@@ -35,10 +35,12 @@ function useSignOut(): { signOut: () => void; error: string | null } {
  *
  * Do revize 5 žilo jen v patičce desktopového railu, takže na telefonu se
  * odhlásit nedalo vůbec (L7-01): relace platí 7 dní a na půjčeném zařízení ji
- * nešlo ukončit jinak než smazáním dat prohlížeče. Rail i stránka účtu teď
- * vykreslují tuhle komponentu, ať se ošetření neúspěchu nekopíruje.
+ * nešlo ukončit jinak než smazáním dat prohlížeče. Rail, sheet „Více“ na
+ * telefonu i stránka účtu teď vykreslují tuhle komponentu, ať se ošetření
+ * neúspěchu nekopíruje.
  *
- * Vzhled si určuje volající (v railu nenápadný text, v nastavení tlačítko).
+ * Vzhled si určuje volající (v railu nenápadný text, v sheetu řádek seznamu,
+ * v nastavení tlačítko).
  * Vrací fragment — rozestup mezi tlačítkem a hláškou drží obal volajícího.
  */
 export function SignOutButton({

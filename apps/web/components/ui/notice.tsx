@@ -47,7 +47,9 @@ export function Notice({
           <div className="type-footnote mt-1 pl-4 text-pretty text-ink-muted">{children}</div>
         )}
       </div>
-      {action && <div className="shrink-0 pl-4 sm:pl-0">{action}</div>}
+      {/* akce si vedle textu bere nejvýš polovinu — tlačítko s dlouhým popiskem
+          se v ní zalomí, místo aby ze sdělení vyjelo */}
+      {action && <div className="min-w-0 shrink-0 pl-4 sm:max-w-[50%] sm:pl-0">{action}</div>}
     </div>
   );
 }

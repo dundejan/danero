@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +45,14 @@ export function Toast({
   /** Plovoucí varianta (pravý dolní roh) — vidět i po skoku na kotvu sekce. */
   floating?: boolean;
 }) {
-  const [visible, setVisible] = useState(true);
+  // Plovoucí hláška neodchází skokem: nejdřív `leaving` (přechod v CSS ji
+  // pošle tam, odkud přijela), odmontuje se až po jeho doběhu. Řádková
+  // varianta leží v toku stránky a mizí rovnou.
+  const [phase, setPhase] = useState<'visible' | 'leaving' | 'gone'>('visible');
+  const dismiss = useCallback(
+    () => setPhase((current) => (current === 'visible' && floating ? 'leaving' : 'gone')),
+    [floating],
+  );
   useEffect(() => {
     // hláška patří k právě provedené akci — z URL ji smaž, ať ji reload
     // ani tlačítko zpět neukáže znovu (bez RSC refetche)
@@ -54,13 +61,24 @@ export function Toast({
     // H-3-06: chybový toast se dřív sám nikdy neschoval — jediná cesta ven byl
     // křížek o velikosti 8 × 20 px, který navíc na mobilu ležel přes tab bar.
     // Chyba má být vidět déle než potvrzení, ale ne napořád.
-    const timer = setTimeout(() => setVisible(false), kind === 'ok' ? 6000 : 15000);
+    const timer = setTimeout(dismiss, kind === 'ok' ? 6000 : 15000);
     return () => clearTimeout(timer);
-  }, [kind]);
-  if (!visible) return null;
+  }, [kind, dismiss]);
+  useEffect(() => {
+    if (phase !== 'leaving') return;
+    // pojistka: `transitionend` nepřijde, když přechod neproběhne (skrytá
+    // záložka) — hláška nesmí zůstat viset neviditelná
+    const timer = setTimeout(() => setPhase('gone'), 300);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  if (phase === 'gone') return null;
   return (
     <div
       role={kind === 'chyba' ? 'alert' : 'status'}
+      data-leaving={phase === 'leaving' ? '' : undefined}
+      onTransitionEnd={(event) => {
+        if (phase === 'leaving' && event.target === event.currentTarget) setPhase('gone');
+      }}
       className={cn(
         'type-callout flex items-start gap-2.5 rounded-xl py-3 pl-4 pr-2 text-ink',
         floating
@@ -77,10 +95,20 @@ export function Toast({
           kind === 'ok' ? 'bg-success' : 'bg-danger',
         )}
       />
-      <p className="min-w-0 flex-1 text-pretty">{text}</p>
+      {/* Dlouhá hláška nesmí zakrýt telefon: nad 40 % výšky okna roluje text
+          uvnitř (roluje odstavec, ne celá hláška — ta by ořízla klikací plochu
+          křížku). `wrap-anywhere` zalomí i název souboru bez mezer. */}
+      <p
+        className={cn(
+          'min-w-0 flex-1 text-pretty wrap-anywhere',
+          floating && 'max-h-[40dvh] overflow-y-auto overscroll-contain',
+        )}
+      >
+        {text}
+      </p>
       <button
         type="button"
-        onClick={() => setVisible(false)}
+        onClick={dismiss}
         // SC 2.5.8: cíl aspoň 24 × 24 px — křížek měl 8 × 20 px a u chybového
         // toastu to byla jediná cesta ven (H-3-22); na dotyku 44 px
         className="-my-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-(--highlight) hover:text-ink active:bg-(--highlight-pressed) pointer-coarse:hit-area"

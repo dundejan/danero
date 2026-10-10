@@ -1,7 +1,7 @@
 'use client';
 
 import { Popover } from '@base-ui/react/popover';
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
@@ -105,6 +105,22 @@ export function InfoPopover({
     triggerRef.current?.closest('[data-info-anchor]') ?? null;
   const heading = title === undefined ? label : title;
   const ariaLabel = `Vysvětlení: ${label}`;
+  // Bublina má růst ze svého tlačítka. Knihovna počátek měřítka počítá vůči
+  // kotvě — a tou je u blokové kotvy celý blok, takže počátek ležel i sto
+  // pixelů vedle tlačítka. Dopočítá se proto z polohy tlačítka, jakmile bublina
+  // stojí na místě (o snímek později; dřív ji knihovna ještě neumístila).
+  const growFromTrigger = useCallback((popup: HTMLDivElement | null) => {
+    if (!popup) return;
+    requestAnimationFrame(() => {
+      const trigger = triggerRef.current;
+      if (!trigger || !popup.isConnected) return;
+      const from = trigger.getBoundingClientRect();
+      const box = popup.getBoundingClientRect();
+      const x = from.left + from.width / 2 - box.left;
+      const y = from.top + from.height / 2 - box.top;
+      popup.style.transformOrigin = `${x}px ${y}px`;
+    });
+  }, []);
 
   if (narrow) {
     return (
@@ -122,6 +138,7 @@ export function InfoPopover({
         <Sheet
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
+          onReopen={() => setSheetOpen(true)}
           label={heading ?? label}
           title={heading ?? undefined}
         >
@@ -150,12 +167,16 @@ export function InfoPopover({
           className="z-50"
         >
           <Popover.Popup
+            ref={blockAnchored ? growFromTrigger : undefined}
             aria-label={heading ? undefined : label}
             className={cn(
               'w-[min(20rem,var(--available-width))] rounded-xl bg-surface p-4 shadow-floating outline-none dark:bg-control',
-              'origin-(--transform-origin) transition-[transform,opacity] duration-150 ease-(--ease-out)',
+              // `scale-95` píše Tailwind do vlastnosti `scale`, ne do `transform`
+              // — bez ní v seznamu přechodu by měřítko skočilo a bublina jen
+              // prolnula. Odchod je kratší než příchod.
+              'origin-(--transform-origin) transition-[opacity,scale] duration-150 ease-(--ease-out)',
               'data-starting-style:scale-95 data-starting-style:opacity-0',
-              'data-ending-style:scale-95 data-ending-style:opacity-0',
+              'data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100',
               'motion-reduce:data-starting-style:scale-100 motion-reduce:data-ending-style:scale-100',
             )}
           >

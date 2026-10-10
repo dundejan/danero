@@ -14,7 +14,13 @@ export function SheetDemo() {
       <Button variant="secondary" onClick={() => setOpen(true)}>
         Otevřít sheet
       </Button>
-      <Sheet open={open} onClose={() => setOpen(false)} label="Ukázkový sheet" title="Limit paušální daně">
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        onReopen={() => setOpen(true)}
+        label="Ukázkový sheet"
+        title="Limit paušální daně"
+      >
         <Group variant="inset">
           <Row label="Čerpáno" value="64 285 Kč" />
           <Row label="Limit" value="50 000 Kč" />

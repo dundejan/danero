@@ -64,20 +64,28 @@ export function AppToolbar({
       )}
     >
       {back && (
-        <nav aria-label="Drobečková navigace" className="-mr-1 shrink-0">
+        // Dlouhý název nadřazené stránky nesmí titulek smáčknout na písmeno:
+        // cesta zpět si bere nejvýš 40 % lišty a zbytek se zkrátí.
+        <nav aria-label="Drobečková navigace" className="-mr-1 max-w-[40%] shrink-0">
           <Link
             href={back.href}
-            className="type-callout -my-2 -ml-1.5 inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 font-medium text-accent-text hover:underline active:opacity-60"
+            className="type-callout -my-2 -ml-1.5 flex min-h-11 items-center gap-1 rounded-md px-1.5 font-medium text-accent-text hover:underline active:opacity-60"
           >
             <span aria-hidden>‹</span>
-            {back.label}
+            <span className="truncate">{back.label}</span>
           </Link>
         </nav>
       )}
-      <div className="min-w-0 flex-1 md:flex-none">
+      {/* Titulek se smí zkrátit (`min-w-0`), ale ne zmizet: na telefonu drží
+          aspoň 6rem — při velkém písmu tak akce spadne na další řádek dřív, než
+          z titulku zbude jedno písmeno. Od `md` má šířku podle textu a SMÍ se
+          smrštit (`flex-initial`); s `flex-none` neměl `truncate` proti čemu
+          zabrat a dlouhý název pozice vyjel ze stránky. */}
+      <div className="min-w-24 flex-1 md:min-w-0 md:flex-initial">
         {/* v náhledu na úvodní stránce nesmí vzniknout druhý nadpis první úrovně */}
         {pinned ? (
-          <h1 className="type-title-3 truncate">
+          // `title`: zkrácený titulek jde přečíst celý aspoň najetím myší
+          <h1 className="type-title-3 truncate" title={title}>
             {title}
             {titleContext && (
               <span className={children ? 'sr-only' : 'font-normal text-ink-muted'}>
@@ -91,10 +99,9 @@ export function AppToolbar({
         )}
       </div>
       {children && (
-        // Hodně let se na úzký displej nevejde — posouvá se jen tenhle řádek,
-        // ne stránka. Svislé odsazení nechává místo klikacím plochám segmentů
-        // (přesahují dráhu) a záporný okraj ho v rozvržení zase ruší.
-        <div className="order-last -my-2 flex w-full min-w-0 overflow-x-auto py-2 [scrollbar-width:none] md:order-none md:ml-2 md:w-auto md:flex-1">
+        // Přepínač se na telefonu zalomí pod titulek na vlastní řádek. Když se
+        // nevejde (hodně let), posouvá se sám uvnitř — ne lišta ani stránka.
+        <div className="order-last flex w-full min-w-0 md:order-none md:ml-2 md:w-auto md:flex-1">
           {children}
         </div>
       )}

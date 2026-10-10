@@ -43,13 +43,19 @@ export function EmptyState({
         className,
       )}
     >
-      <Heading className={compact ? 'type-callout font-medium' : 'type-title-2 text-balance'}>
+      <Heading
+        className={cn(
+          // dlouhé nezlomitelné slovo se zalomí, místo aby vyjelo z okna
+          'max-w-full wrap-anywhere',
+          compact ? 'type-callout font-medium' : 'type-title-2 text-balance',
+        )}
+      >
         {title}
       </Heading>
       {children && (
         <div
           className={cn(
-            'text-pretty text-ink-muted [&>*+*]:mt-2',
+            'max-w-full text-pretty text-ink-muted wrap-anywhere [&>*+*]:mt-2',
             compact ? 'type-footnote mt-1' : 'type-body mt-2',
           )}
         >
@@ -59,7 +65,7 @@ export function EmptyState({
       {action && (
         <div
           className={cn(
-            'flex flex-wrap items-center gap-x-5 gap-y-2',
+            'flex max-w-full flex-wrap items-center gap-x-5 gap-y-2',
             compact ? 'mt-3' : 'mt-6 justify-center',
           )}
         >

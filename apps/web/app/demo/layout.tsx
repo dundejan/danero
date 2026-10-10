@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { DemoNavRail, DemoNavTabBar } from '@/components/nav-rail';
+import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 /**
@@ -11,7 +12,8 @@ import { ThemeToggle } from '@/components/theme-toggle';
  */
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-dvh bg-surface">
+    // `scroll-edge-after-banner`: hrana lišty se objeví, až pruh nad ní odroluje
+    <div className="scroll-edge-after-banner flex min-h-dvh bg-surface">
       {/* a11y: skip-link jako v aplikaci */}
       <a
         href="#obsah"
@@ -23,15 +25,16 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* <header>, ne <div>: text pruhu jinak leží mimo jakýkoli landmark
             a čtečka ho v režimu procházení oblastí přeskočí (axe `region`).
-            Pruh neroluje s lištou — po odrolování zmizí a uvolní místo datům. */}
-        <header className="type-footnote flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 bg-canvas px-(--page-gutter) py-2.5 text-center">
+            Pruh neroluje s lištou — po odrolování zmizí a uvolní místo datům.
+            Na papír nepatří: tištěný report z dema jím nemá začínat. */}
+        <header className="page-banner type-footnote flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 bg-canvas px-(--page-gutter) py-2.5 text-center print:hidden">
           <p>
             <span className="font-semibold">Prohlížíš demo s ukázkovými daty</span>
             <span className="text-ink-muted"> — nic se neukládá.</span>
           </p>
           <Link
             href="/registrace"
-            className="-my-3 inline-flex min-h-11 items-center font-medium text-accent-text hover:underline"
+            className="-my-3 inline-flex min-h-11 items-center font-medium text-accent-text hover:underline active:opacity-60"
           >
             Založit účet zdarma
             <span aria-hidden className="ml-1">
@@ -51,11 +54,14 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
                 { href: '/', label: 'Zpět na úvod' },
                 { href: '/podminky', label: 'Podmínky užití' },
                 { href: '/soukromi', label: 'Ochrana soukromí' },
+                // výhrada jen pár slovy; závazné znění je v podmínkách (čl. 1)
+                NOT_TAX_ADVICE,
               ].map((link) => (
                 <Link
-                  key={link.href}
+                  // dva odkazy míří na podmínky — klíčem je popisek
+                  key={link.label}
                   href={link.href}
-                  className="inline-flex min-h-11 items-center hover:text-ink md:min-h-0"
+                  className="inline-flex min-h-11 items-center hover:text-ink active:opacity-60 md:min-h-0"
                 >
                   {link.label}
                 </Link>
@@ -64,10 +70,6 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
             {/* jediné místo přepínače vzhledu v demu — panel je jen navigace */}
             <ThemeToggle />
           </div>
-          <p className="mt-3 max-w-2xl">
-            Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství — za
-            daňové přiznání odpovídá poplatník.
-          </p>
         </footer>
       </div>
       <DemoNavTabBar />

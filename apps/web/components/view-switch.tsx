@@ -46,14 +46,16 @@ export function ViewSwitch({
   const current = views.find((view) => view.key === active) ?? views[0];
   const several = views.length > 1;
   const control = several && (
-    <span className="print:hidden">
+    // `min-w-0 max-w-full`: přepínač s dlouhými popisky se v úzké sekci smí
+    // smrštit a posouvat uvnitř, místo aby sekci roztáhl
+    <div className="flex max-w-full min-w-0 print:hidden">
       <SegmentedControl
         ariaLabel={ariaLabel ?? 'Přepínač zobrazení'}
         value={current?.key ?? defaultKey}
         onChange={setActive}
         segments={views.map((view) => ({ key: view.key, label: view.label }))}
       />
-    </span>
+    </div>
   );
 
   return (

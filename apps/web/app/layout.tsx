@@ -1,4 +1,5 @@
 import type { Viewport } from 'next';
+import { THEME_COLOR } from '@/components/theme-color';
 import { ThemeProvider } from '@/components/theme-provider';
 import { SITE_METADATA } from '@/lib/site';
 import './globals.css';
@@ -26,9 +27,10 @@ export const viewport: Viewport = {
   // softwarová klávesnice zmenší rozložení (ne jen překryje stránku), takže
   // `dvh` a spodní lišta na Androidu reagují stejně jako na iOS
   interactiveWidget: 'resizes-content',
+  // výchozí podle systému; po ruční volbě vzhledu je přepíše `ThemeProvider`
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: light)', color: THEME_COLOR.light },
+    { media: '(prefers-color-scheme: dark)', color: THEME_COLOR.dark },
   ],
 };
 

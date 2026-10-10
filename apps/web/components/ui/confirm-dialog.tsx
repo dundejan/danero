@@ -121,7 +121,7 @@ export function ConfirmDialog({
         <AlertDialog.Backdrop
           className={cn(
             'fixed inset-0 z-50 bg-(--scrim) transition-opacity duration-200 ease-(--ease-out)',
-            'data-starting-style:opacity-0 data-ending-style:opacity-0',
+            'data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:duration-150',
           )}
         />
         <AlertDialog.Popup
@@ -130,9 +130,11 @@ export function ConfirmDialog({
             // V tmavém režimu `canvas`, ne `control`: na světlejší ploše by
             // červená chybová hláška pod polem neměla kontrast AA (4,09:1).
             'rounded-2xl bg-surface p-6 text-left shadow-floating outline-none dark:bg-canvas',
-            'transition-[transform,opacity] duration-200 ease-(--ease-out)',
+            // měřítko je v Tailwindu vlastnost `scale` (ne `transform`) — musí
+            // být v seznamu přechodu, jinak skočí; odchod je kratší než příchod
+            'transition-[opacity,scale] duration-200 ease-(--ease-out)',
             'data-starting-style:scale-95 data-starting-style:opacity-0',
-            'data-ending-style:scale-95 data-ending-style:opacity-0',
+            'data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-150',
             'motion-reduce:data-starting-style:scale-100 motion-reduce:data-ending-style:scale-100',
           )}
         >

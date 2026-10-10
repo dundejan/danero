@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation';
+import { AppToolbar } from '@/components/app-toolbar';
 import { Toast } from '@/components/toast';
+import { YearSwitcher } from '@/components/year-switcher';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -23,6 +25,13 @@ export const metadata = {
   title: 'Primitiva — Danero',
   robots: { index: false, follow: false },
 };
+
+/** Vstupy pro sekci „Dlouhý obsah“ — smyšlené, jen dlouhé. */
+const LONG_WORD = 'nejneobhospodařovávatelnějšími';
+const LONG_NAME =
+  'Ukázkový fond akcií celého světa s velmi dlouhým názvem (dříve Jiný ukázkový fond) – třída pro drobné investory';
+const LONG_EMAIL =
+  'velmi.dlouhe-jmeno-a-prijmeni+danero-investice-osobni-ucet@investicni-klub-ukazkove-mesto.priklad.test';
 
 /** Stav „výpočet nejde dokončit“ s ukázkovou hláškou enginu. */
 function EngineErrorSample() {
@@ -312,6 +321,48 @@ export default function PrimitivesPage() {
             </tbody>
           </Table>
         </ScrollArea>
+      </Section>
+
+      {/* Nejhorší vstupy, které primitiva musí unést bez přetečení stránky:
+          zkus zúžit okno na 320 px a zvětšit písmo prohlížeče na 200 %. */}
+      <Section title="Dlouhý obsah" count="pojistky">
+        <div className="max-w-[22rem] space-y-8">
+          <AppToolbar
+            pinned={false}
+            title={LONG_NAME}
+            back={{ href: '/dev/primitiva', label: 'Zpět na velmi dlouhý název nadřazené stránky' }}
+            className="mx-0 mt-0 mb-0 px-0"
+          />
+          <YearSwitcher
+            years={Array.from({ length: 12 }, (_, index) => 2026 - index)}
+            active={2017}
+            hrefBase="/dev/primitiva"
+          />
+          <Group>
+            <Row label="E-mail" value={LONG_EMAIL} />
+            <Row label="Částka při velkém písmu" value="−12 345 678 901,23 Kč" />
+            <Row label={LONG_WORD} value="ano" />
+            <Row wrap label={`Vratka kapitálu u ${LONG_WORD}`} value="daněna jako dividenda (bezpečný výklad)" />
+            <Row href="/dev/primitiva" label="Účet" value={LONG_EMAIL} />
+          </Group>
+          <Group>
+            <DisclosureRow title={LONG_NAME} meta={`${LONG_WORD} · 10. 10. 2026`}>
+              <p>Tichý údaj vpravo si bere nejvýš 40 % řádku.</p>
+            </DisclosureRow>
+          </Group>
+          <StatusLabel tone="danger">
+            Limit 50 000 Kč pro paušální daň — přes limit o částku, která se na jeden řádek nevejde
+          </StatusLabel>
+          <Notice
+            tone="caution"
+            title="Výpis se nepodařilo přečíst"
+            action={<Button size="sm">Nahrát jiný výpis s {LONG_WORD} sloupci</Button>}
+          />
+          <Button>Stáhnout podklady s {LONG_WORD} přílohami k přiznání</Button>
+          <EmptyState compact title={`${LONG_WORD}pozemkovýmifondy nenalezeny`}>
+            Nezlomitelné slovo v titulku se zalomí.
+          </EmptyState>
+        </div>
       </Section>
     </main>
   );

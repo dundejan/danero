@@ -61,11 +61,22 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
     for (const { path, source } of soubory) {
       // primitivum obsah buňky nezná — dostává ho od volajícího přes `props`
       if (path.endsWith(join('ui', 'table.tsx'))) continue;
-      // prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku
-      for (const tag of source.match(/<th\b[^>]*\/>/g) ?? []) {
-        expect(tag, `${path}: prázdný <th> bez názvu`).toMatch(/aria-label=/);
+      // Prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku. Počítá
+      // se i `<Th />` primitiva: po redesignu jsou jím všechny hlavičky a výraz
+      // jen na malé `<th` nehlídal nic (R4-05).
+      for (const tag of source.match(/<(?:th|Th)\b[^>]*\/>/g) ?? []) {
+        expect(tag, `${path}: prázdná hlavička bez názvu`).toMatch(/aria-label=/);
       }
     }
+  });
+
+  it('výraz na prázdnou hlavičku pozná primitivum i nativní značku', () => {
+    const empty = /<(?:th|Th)\b[^>]*\/>/g;
+    expect('<Th />'.match(empty)).toHaveLength(1);
+    expect('<th scope="col" />'.match(empty)).toHaveLength(1);
+    expect('<Th align="right">Daň</Th>'.match(empty)).toBeNull();
+    // `<Thead>` ani jiná značka začínající na Th hlavička není
+    expect('<Thead />'.match(empty)).toBeNull();
   });
 });
 

@@ -33,12 +33,17 @@ export function StatusLabel({
   return (
     <span
       className={cn(
-        'type-callout inline-flex items-center gap-2 font-medium',
+        'type-callout inline-flex items-start gap-2 font-medium',
         TONE_TEXT[tone],
         className,
       )}
     >
-      <span aria-hidden className="size-2 shrink-0 rounded-full bg-current" />
+      {/* tečka patří k PRVNÍMU řádku (svisle na jeho střed), ne doprostřed
+          bloku — u textu na dva řádky jinak visela mezi nimi */}
+      <span
+        aria-hidden
+        className="mt-[calc((1lh-0.5rem)/2)] size-2 shrink-0 rounded-full bg-current"
+      />
       <span>{children}</span>
     </span>
   );

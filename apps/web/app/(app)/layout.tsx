@@ -1,10 +1,11 @@
 import { NavRail, NavTabBar } from '@/components/nav-rail';
+import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { TextLink } from '@/components/ui/link';
 import { SOURCE_URL } from '@/lib/legal';
 import { requireUser } from '@/lib/session';
 
 /**
- * Skořápka aplikace: vlevo průsvitný postranní panel se sekcemi, vedle něj
+ * Skořápka aplikace: vlevo postranní panel se sekcemi, vedle něj
  * obsahové okno. Stránka si nahoru do okna dává vlastní nástrojovou lištu
  * (`AppToolbar`). Na telefonu panel nahrazuje spodní lišta.
  */
@@ -33,6 +34,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           Spodní okraj na telefonu kryje spodní lištu i s bezpečnou zónou gesta.
         */}
         <footer className="type-caption px-(--page-gutter) pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+1.5rem)] pt-12 text-ink-muted md:pb-8">
+          {/* Výhrada „není daňové poradenství“ jen pár slovy a odkazem na
+              podmínky, kde je závazné znění — stejně jako v demu a na webu.
+              Přihlášený uživatel ji dřív neměl vůbec (jen v tisku reportu). */}
+          <TextLink href={NOT_TAX_ADVICE.href}>{NOT_TAX_ADVICE.label}</TextLink>
+          {' · '}
           Danero je otevřený software pod licencí{' '}
           {/* odkazy ve větě jsou podtržené — jen barvou by se od textu neodlišily
               (WCAG 1.4.1; axe to hlásil na každé stránce aplikace) */}

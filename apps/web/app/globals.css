@@ -72,21 +72,21 @@
   --chart-7: #5c940d;
   --chart-8: #7c7c80;
 
-  /* Materiály (průsvitný chrom). Hodnoty jsou rgba, ne hex — nejsou to barvy
-     pro utility třídy, používají je jen třídy .material-* níž.
-     Sheet je skoro neprůhledný schválně: spodní sheet žije v nativním
-     <dialog> (horní vrstva prohlížeče) a tam rozostření na stránku pod ním
-     nedosáhne — s nižším krytím by přes něj ostře prosvítala spodní lišta.
-     Krytí 0,97 navíc drží druhotný text na sheetu nad 4,5:1 i v nejhorším
-     případě (černý obsah pod ním): 4,61:1. */
+  /* Materiály (chrom). Hodnoty jsou rgb(a), ne hex — nejsou to barvy pro
+     utility třídy, používají je jen třídy .material-* níž.
+     Průsvitné jsou jen lišty: pod nimi obsah opravdu roluje. Sheet a postranní
+     panel jsou PLNÉ plochy: sheet měl krytí 97 %, pod kterým rozostření
+     nebylo vidět a jen zdražovalo každý snímek tahu; pod panelem neroluje nic
+     (stojí vedle obsahu, ne nad ním), takže rozostřoval prázdno přes celou
+     výšku stránky. Plná plocha navíc drží druhotný text na sheetu nad 4,5:1
+     bez ohledu na to, co leží pod ním. */
   --material-bar: rgba(255, 255, 255, 0.8);
   /* Spodní lišta na telefonu nese nejdrobnější text aplikace (popisky záložek)
      a roluje pod ní cokoli — modré tlačítko i černý text. S krytím 0,8 klesl
      tichý popisek na 3,84:1 nad `primary` a na 3,35:1 nad textem; 0,94 drží
      ≥ 4,5:1 v obou případech (tmavý režim 0,86). */
   --material-tabbar: rgba(255, 255, 255, 0.94);
-  --material-sidebar: rgba(245, 245, 247, 0.78);
-  --material-sheet: rgba(252, 252, 253, 0.97);
+  --material-sheet: rgb(252, 252, 253);
   --material-edge: rgba(0, 0, 0, 0.1);
   /* Zvýraznění řádku (výběr v postranním panelu, stisk řádku tabulky). */
   --highlight: rgba(0, 0, 0, 0.06);
@@ -102,8 +102,9 @@
     0 8px 20px -8px rgba(0, 0, 0, 0.1);
   --elevation-thumb: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.14);
 
-  /* Pohyb. Pružiny (motion) jsou v lib/motion.ts; tohle jsou jen časy pro CSS:
-     odezva na stisk je okamžitá a krátká, nic v rozhraní netrvá přes 250 ms. */
+  /* Pohyb. Pružiny (motion) jsou v lib/motion.ts — ty délku nemají, jen odezvu
+     0,25–0,35 s. Tohle jsou časy pro CSS: odezva na stisk je okamžitá a krátká
+     a žádný přechod v CSS netrvá přes 250 ms. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --press-duration: 100ms;
 
@@ -178,8 +179,7 @@
   --chart-8: #aeaeb2;
   --material-bar: rgba(0, 0, 0, 0.78);
   --material-tabbar: rgba(0, 0, 0, 0.86);
-  --material-sidebar: rgba(28, 28, 30, 0.78);
-  --material-sheet: rgba(36, 36, 38, 0.92);
+  --material-sheet: rgb(36, 36, 38);
   --material-edge: rgba(255, 255, 255, 0.14);
   --highlight: rgba(255, 255, 255, 0.08);
   --highlight-pressed: rgba(255, 255, 255, 0.14);
@@ -325,9 +325,12 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* Strop `9vw`: při zvětšeném písmu prohlížeče (200 %) by číslo o deseti
+   číslicích na telefonu vyjelo ze stránky — nezalomí se, drží ho pevné mezery.
+   Při výchozím písmu strop nezasáhne na žádné šířce od 320 px. */
 @utility type-figure-lg {
   font-family: var(--font-display);
-  font-size: clamp(1.75rem, 1.5rem + 1vw, 2.125rem);
+  font-size: min(clamp(1.75rem, 1.5rem + 1vw, 2.125rem), 9vw);
   line-height: 1.1;
   letter-spacing: -0.025em;
   font-weight: 600;
@@ -383,9 +386,9 @@
 }
 
 /* ── Materiály ──────────────────────────────────────────────────────────────
-   Průsvitnost patří jen chromu, pod kterým něco je nebo roluje. Silnější
-   plocha = silnější rozostření. Spodní hranu lišty kreslí .scroll-edge,
-   ne plný rámeček. */
+   Průsvitnost patří jen chromu, pod kterým něco roluje — tedy lištám.
+   Postranní panel a sheet jsou plné plochy (proč, je u tokenů nahoře).
+   Spodní hranu lišty kreslí .scroll-edge, ne plný rámeček. */
 @utility material-bar {
   background-color: var(--material-bar);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -397,27 +400,37 @@
   backdrop-filter: saturate(180%) blur(20px);
 }
 @utility material-sidebar {
-  background-color: var(--material-sidebar);
-  -webkit-backdrop-filter: saturate(180%) blur(30px);
-  backdrop-filter: saturate(180%) blur(30px);
+  background-color: var(--canvas);
 }
 @utility material-sheet {
   background-color: var(--material-sheet);
-  -webkit-backdrop-filter: saturate(180%) blur(40px);
-  backdrop-filter: saturate(180%) blur(40px);
 }
 
 /* Hrana lišty tam, kde pod ní roluje obsah: vlásová linka, která se objeví až
    po odrolování (lišta nahoře na stránce žádnou čáru nemá). Kde prohlížeč
-   neumí animace řízené rolováním, zůstává linka viditelná stále. */
+   neumí animace řízené rolováním, zůstává linka viditelná stále.
+
+   Kde lišta nestojí úplně nahoře (demo má nad ní pruh), se hrana nesmí
+   objevit o výšku pruhu dřív, než se lišta přilepí a něco pod ni zajede.
+   Stránka proto dá pruhu `page-banner` a obalu `scroll-edge-after-banner`:
+   hrana se pak řídí tím, kdy pruh odroluje — ať je jakkoli vysoký (na telefonu
+   se láme na dva řádky). */
 @utility scroll-edge {
   box-shadow: 0 0.5px 0 var(--material-edge);
   @supports (animation-timeline: scroll()) {
     box-shadow: 0 0.5px 0 transparent;
     animation: scroll-edge-in linear both;
-    animation-timeline: scroll(root block);
-    animation-range: 0 24px;
+    animation-timeline: var(--scroll-edge-timeline, scroll(root block));
+    animation-range: var(--scroll-edge-range, 0 24px);
   }
+}
+.page-banner {
+  view-timeline: --page-banner block;
+}
+.scroll-edge-after-banner {
+  timeline-scope: --page-banner;
+  --scroll-edge-timeline: --page-banner;
+  --scroll-edge-range: exit 100% exit calc(100% + 24px);
 }
 @keyframes scroll-edge-in {
   to {
@@ -477,8 +490,10 @@
   display: none;
 }
 
-/* Toast přijede zdola z místa, kde stojí, a tamtéž zmizí. Přechod (ne
-   keyframes), aby šel přerušit; s omezeným pohybem zůstane jen prolnutí. */
+/* Toast přijede zdola z místa, kde stojí, a tamtéž zmizí (`data-leaving`
+   nastaví komponenta a odmontuje se až po doběhu). Přechod (ne keyframes),
+   aby šel přerušit; odchod je kratší než příchod a s omezeným pohybem zůstane
+   jen prolnutí. */
 .toast-enter {
   transition:
     opacity 200ms var(--ease-out),
@@ -487,6 +502,11 @@
     opacity: 0;
     transform: translateY(0.75rem);
   }
+  &[data-leaving] {
+    opacity: 0;
+    transform: translateY(0.75rem);
+    transition-duration: 150ms;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .toast-enter {
@@ -494,7 +514,62 @@
     @starting-style {
       transform: none;
     }
+    &[data-leaving] {
+      transform: none;
+    }
   }
+}
+
+/* Vodorovně posuvný pruh (segmentový přepínač s mnoha lety): okraj, za kterým
+   obsah pokračuje, se rozplyne — ostrá hrana vypadala jako konec. Délka
+   rozplynutí je navázaná na polohu rolování, takže na začátku mizí levá a na
+   konci pravá; pruh, který nepřetéká, časovou osu nemá a zůstane celý.
+   Kde prohlížeč animace řízené rolováním neumí, nerozplývá se nic. */
+@property --fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@utility scroll-fade-x {
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade-start),
+      #000 calc(100% - var(--fade-end)),
+      transparent
+    );
+    animation: scroll-fade-x linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+@keyframes scroll-fade-x {
+  0% {
+    --fade-start: 0px;
+    --fade-end: 1.5rem;
+  }
+  8%,
+  92% {
+    --fade-start: 1.5rem;
+    --fade-end: 1.5rem;
+  }
+  100% {
+    --fade-start: 1.5rem;
+    --fade-end: 0px;
+  }
+}
+
+/* Přepnutí vzhledu prolne celou stránku (`theme-toggle.tsx`) — skok z bílé do
+   černé je náraz jasu. Krátce a jen prolnutím. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+  animation-timing-function: var(--ease-out);
 }
 
 /* Tisk podkladů k přiznání (/report): bílé pozadí, černý text, bez navigace
@@ -549,13 +624,6 @@
   }
   details > summary {
     list-style: none;
-  }
-}
-
-/* Tečky horizontu osvobození naskočí při prvním vykreslení (horizon-strip). */
-@keyframes dot-in {
-  from {
-    opacity: 0;
   }
 }
 
@@ -628,41 +696,61 @@
   [role='button'] {
     touch-action: manipulation;
   }
+  /* Platí i pro odkaz, který je ovládacím prvkem: odkaz v podobě tlačítka
+     (`pressable` z `buttonVariants`) a položky navigace aplikace
+     (`control-link`: spodní lišta, postranní panel, segment přepínače).
+     Dlouhý stisk by na nich označil popisek a vyvolal nabídku odkazu. */
   button,
   summary,
-  [role='button'] {
+  [role='button'],
+  a.pressable,
+  a.control-link {
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
   }
 
-  /* iOS Safari přiblíží stránku při fokusu pole s písmem pod 16 px a zpátky
-     ji nevrátí. Zákaz zoomu je chyba přístupnosti — opravuje se velikost. */
-  @media (pointer: coarse) {
-    input,
-    textarea,
-    select {
-      font-size: 1rem;
-    }
+  /* Pod otevřeným modálním dialogem (sheet) stránka neroluje — závoj brání
+     jen dotyku, kolečko a trackpad by ji posouvaly dál. Vyhrazený žlábek drží
+     šířku stránky, když posuvník zmizí. `data-scroll-lock` je totéž pro
+     překryv, který dialogem není (rozbalené menu veřejných stránek). */
+  html:has(dialog:modal),
+  html:has([data-scroll-lock]) {
+    overflow: hidden;
+    scrollbar-gutter: stable;
   }
 }
 
-/* Mimo @layer: pravidla níž musí přebít utility třídy (.pressable, .material-*),
-   a nevrstvené CSS má před vrstvami přednost. */
+/* Mimo @layer: pravidla níž musí přebít utility třídy (.pressable, `text-sm`
+   na poli), a nevrstvené CSS má před vrstvami přednost.
+
+   iOS Safari přiblíží stránku při fokusu pole s písmem pod 16 px a zpátky ji
+   nevrátí. Zákaz zoomu je chyba přístupnosti — opravuje se velikost. Pravidlo
+   bylo ve vrstvě `base`, kde ho každá utilita velikosti písma přebila, takže
+   všechna pole měla na dotyku 14 px (hlídá `test/ui-primitives.test.ts`). */
+@media (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  textarea,
+  select {
+    font-size: 1rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
-    /* i delay — stagger teček horizontu (index × 25 ms) by jinak nechal
-       prvky až sekundu neviditelné (fill-mode both drží opacity 0) */
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
   /* Omezený pohyb neznamená žádnou odezvu: barvy a průhlednost se mění dál,
-     mizí jen posuny a změny měřítka. */
+     mizí jen posuny a změny měřítka. Přechod na pseudo-prvku (palec přepínače
+     `Switch`) potřebuje vlastní selektor — třída je na prvku, pohyb na `::after`. */
   .pressable,
   [class*='transition-transform'],
+  [class*='after:transition-transform']::after,
   [class*='transition-all'] {
     transition-duration: 0.01ms !important;
   }
@@ -671,23 +759,15 @@
   }
 }
 
-/* Omezená průhlednost / vyšší kontrast: materiál ztuhne v plnou plochu
-   a tam, kde ho nesla jen průsvitnost, dostane zřetelnou hranu. */
+/* Omezená průhlednost / vyšší kontrast: materiál lišt ztuhne v plnou plochu
+   a tam, kde ho nesla jen průsvitnost, dostane zřetelnou hranu. (Postranní
+   panel a sheet plné jsou vždy.) */
 @media (prefers-reduced-transparency: reduce) {
   .material-bar,
-  .material-tabbar,
-  .material-sidebar,
-  .material-sheet {
+  .material-tabbar {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-  .material-bar,
-  .material-tabbar {
     background-color: var(--surface);
-  }
-  .material-sidebar,
-  .material-sheet {
-    background-color: var(--canvas);
   }
 }
 @media (prefers-contrast: more) {
