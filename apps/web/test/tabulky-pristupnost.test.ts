@@ -57,15 +57,48 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
     expect(hlavicky[0]).toContain('scope="col"');
   });
 
+  /**
+   * Hlavičky bez obsahu: samouzavírací značka i prázdná dvojice, nativní `<th>`
+   * i primitivum `<Th>`. Po redesignu jsou všechny hlavičky `<Th>` a původní
+   * výraz hledal jen malé `<th` — test tak prošel, i kdyby byla prázdná každá
+   * (nález R4-05).
+   */
+  const prazdneHlavicky = (source: string): string[] => [
+    ...(source.match(/<(?:th|Th)\b[^>]*\/>/g) ?? []),
+    ...(source.match(/<(?:th|Th)\b[^>]*>\s*<\/(?:th|Th)>/g) ?? []),
+  ];
+
+  it('prázdnou hlavičku pozná v obou podobách značky', () => {
+    expect(prazdneHlavicky('<Th />')).toHaveLength(1);
+    expect(prazdneHlavicky('<th scope="col" />')).toHaveLength(1);
+    expect(prazdneHlavicky('<Th align="right"></Th>')).toHaveLength(1);
+    expect(prazdneHlavicky('<Th align="right">\n  </Th>')).toHaveLength(1);
+    expect(prazdneHlavicky('<Th>Metoda</Th><Th align="right">Daň</Th>')).toHaveLength(0);
+    // jiná komponenta se stejným začátkem jména hlavička není
+    expect(prazdneHlavicky('<Thumb />')).toHaveLength(0);
+  });
+
   it('žádná hlavičková buňka nezůstane prázdná', () => {
-    for (const { path, source } of soubory) {
+    // hlavičky jsou i ve stránkách (`app`), nejen v komponentách
+    const zdroje = [
+      ...soubory,
+      ...tsxFiles(join(import.meta.dirname, '..', 'app')).map((path) => ({
+        path,
+        source: readFileSync(path, 'utf8'),
+      })),
+    ];
+    let hlavicek = 0;
+    for (const { path, source } of zdroje) {
       // primitivum obsah buňky nezná — dostává ho od volajícího přes `props`
       if (path.endsWith(join('ui', 'table.tsx'))) continue;
+      hlavicek += (source.match(/<(?:th|Th)\b/g) ?? []).length;
       // prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku
-      for (const tag of source.match(/<th\b[^>]*\/>/g) ?? []) {
-        expect(tag, `${path}: prázdný <th> bez názvu`).toMatch(/aria-label=/);
+      for (const tag of prazdneHlavicky(source)) {
+        expect(tag, `${path}: prázdná hlavička bez názvu`).toMatch(/aria-label=/);
       }
     }
+    // pojistka proti testu, který nehlídá nic: hlavičky se musí vůbec najít
+    expect(hlavicek).toBeGreaterThan(20);
   });
 });
 
