@@ -83,7 +83,8 @@ const dividend = (year: number, gross: Money): Transaction[] =>
 
 /**
  * Text přehledu roku pro daný režim s dividendou ve výši 90 % jeho limitu.
- * Bez značek: nadpis karty obaluje „Kč“ do vlastního `<span>` (`keepCurrencyCase`).
+ * Bez značek, takže sousední prvky na sebe navazují bez mezery („Nejbližší
+ * limit90 %limit …“ = popisek, hodnota a poznámka klíčového čísla).
  */
 function overviewHtml(year: number, regime: 'ZAMESTNANEC' | 'JINE', limit: Money): string {
   const today = `${year}-07-20`;
@@ -111,7 +112,8 @@ describe('přehled: částka limitu § 38g v popiscích je z konfigurace roku (L
       const html = overviewHtml(year, 'ZAMESTNANEC', limit);
 
       expect(html).toContain(`Vedlejší příjmy — ${czk(limit)}`);
-      expect(html).toContain(`Nejblíž je limit ${czk(limit)} vedlejších příjmů`);
+      // klíčové číslo „Nejbližší limit“ jmenuje limit částkou téhož roku
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%limit ${czk(limit)} vedlejších příjmů`));
     });
 
     it(`R-09a: režim „jiné“ v roce ${year}`, { timeout: 30_000 }, () => {
@@ -120,7 +122,7 @@ describe('přehled: částka limitu § 38g v popiscích je z konfigurace roku (L
 
       expect(html).toContain(`Podání přiznání — ${czk(limit)}`);
       expect(html).toContain(`zdanitelné příjmy do ${czk(limit)} za rok`);
-      expect(html).toContain(`Nejblíž je limit ${czk(limit)} pro podání přiznání`);
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%limit ${czk(limit)} pro podání přiznání`));
     });
   }
 });

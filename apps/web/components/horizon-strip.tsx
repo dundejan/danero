@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
 import { czDate, czkCompact, MONTH_LABELS, pct, plural, qty } from '@/lib/format';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { cn } from '@/lib/utils';
 
@@ -61,6 +62,28 @@ const totalText = (dot: HorizonDot): string =>
 const TIP_MAX_ITEMS = 8;
 
 const dayNumber = (iso: string): number => new Date(`${iso}T00:00:00`).getTime() / 86_400_000;
+
+/**
+ * Výklad horizontu — do vysvětlivky u nadpisu, ne do odstavce nad grafem.
+ * Přehled ji dává k nadpisu sekce (nadpis tam kreslí `ViewSwitch`), samostatný
+ * horizont si ji k nadpisu přidá sám.
+ */
+export function HorizonInfo({ byValue }: { byValue: boolean }) {
+  return (
+    <InfoPopover label="Horizont osvobození" align="start">
+      <p>
+        Tečka je chvíle, kdy dalším kusům doběhne tříletý časový test — od té doby je jejich
+        prodej bez daně. Zelené už ho mají za sebou.
+      </p>
+      <p>
+        Velikost tečky odpovídá {byValue ? 'celkové hodnotě' : 'celkovému počtu kusů'}. V pohledu
+        na 3 roky je tečka měsíc (aktuální měsíc po dnech), v ročním den. Najetím nebo
+        klepnutím na tečku zobrazíš rozpad.
+      </p>
+      <p>Spodní křivka ukazuje, jaký podíl portfolia už bude bez daně.</p>
+    </InfoPopover>
+  );
+}
 
 interface Tip {
   /** Pozice v pixelech vůči vnějšímu wrapperu (mimo overflow kontejner). */
@@ -186,18 +209,13 @@ export function HorizonStrip({
   }, [todayX, syncFade]);
 
   if (!view) return null;
-  const basis = dots[0]?.weightBasis === 'value' ? 'celkové hodnoty' : 'celkového počtu kusů';
 
-  const description = (
-    <p className="type-footnote max-w-[62ch] text-ink-muted">
-      {range === '1r'
-        ? 'Každá tečka = den, kdy doběhne 3letý test dalším kusům'
-        : 'Každá tečka = měsíc (aktuální měsíc po dnech), kdy doběhne 3letý test dalším kusům'}
-      ; velikost podle {basis}. Najetím či klepnutím zobrazíš rozpad.
-      {view.hidden > 0 &&
-        ` Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`}
-    </p>
-  );
+  // Výklad grafu není pod nadpisem, ale ve vysvětlivce (`HorizonInfo`); tady
+  // zůstává jen údaj, který se mění s daty a jinde vidět není.
+  const hiddenNote =
+    view.hidden > 0
+      ? `Mimo zobrazené období: ${view.hidden} ${plural(view.hidden, 'tečka', 'tečky', 'teček')}.`
+      : null;
 
   const rangeButtons = (
     <SegmentedControl
@@ -225,6 +243,28 @@ export function HorizonStrip({
   // bez jediné zelené tečky)
   const hasExempt = view.visible.some((dot) => dot.isExempt);
   const hasPending = view.visible.some((dot) => !dot.isExempt);
+
+  const legend = (
+    <div className="type-caption flex flex-wrap gap-x-5 gap-y-1 text-ink-muted">
+      {hasExempt && (
+        <span className="flex items-center gap-1">
+          <span className="inline-block size-2 rounded-full bg-success" /> osvobozené
+        </span>
+      )}
+      {hasPending && (
+        <span className="flex items-center gap-1">
+          <span className="inline-block size-2 rounded-full bg-ink-muted dark:bg-ink" />{' '}
+          čekající
+        </span>
+      )}
+      {view.outlookPath && (
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-0.5 w-4 rounded bg-chart-1" /> podíl bez daně
+        </span>
+      )}
+      {hiddenNote && <span>{hiddenNote}</span>}
+    </div>
+  );
 
   const strip = (
     <>
@@ -410,49 +450,34 @@ export function HorizonStrip({
           </div>
         )}
       </div>
-
-      <div className="type-caption flex flex-wrap gap-x-5 gap-y-1 text-ink-muted">
-        {hasExempt && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-full bg-success" /> osvobozené
-          </span>
-        )}
-        {hasPending && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-full bg-ink-muted dark:bg-ink" />{' '}
-            čekající
-          </span>
-        )}
-        {view.outlookPath && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4 rounded bg-chart-1" /> kumulativně bez daně
-            (spodní křivka)
-          </span>
-        )}
-      </div>
     </>
   );
+
+  const byValue = dots[0]?.weightBasis === 'value';
 
   if (embedded) {
     return (
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          {description}
+        {strip}
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          {legend}
           {rangeButtons}
         </div>
-        {strip}
       </div>
     );
   }
 
   return (
     <section>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="type-title-2">Horizont osvobození</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h2 className="type-title-2">Horizont osvobození</h2>
+          <HorizonInfo byValue={byValue} />
+        </div>
         {rangeButtons}
       </div>
-      <div className="mt-1">{description}</div>
       {strip}
+      {legend}
     </section>
   );
 }

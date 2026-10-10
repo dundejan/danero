@@ -1,58 +1,76 @@
 'use client';
 
-import { Fragment, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
 export interface LimitEntry {
   key: string;
+  /** Celý název limitu — titulek sheetu na telefonu. */
+  title: string;
   /** Obsah řádku seznamu (název, odměrka, čerpání) — vykreslený na serveru. */
   row: React.ReactNode;
-  /** Detail limitu (graf, vysvětlení) — vykreslený na serveru. */
+  /** Detail limitu (kolik zbývá, graf, vysvětlení) — vykreslený na serveru. */
   detail: React.ReactNode;
 }
 
+/** Od téhle šířky OKNA S OBSAHEM stojí detail vedle seznamu (= `@3xl`). */
+const WIDE_REM = 48;
+
 /**
- * Pracovní plocha přehledu: vlevo odpověď a seznam limitů, vpravo inspektor —
- * nahoře klíčová čísla, pod nimi detail vybraného limitu. Stejné rozdělení
- * jako seznam a inspektor v aplikacích Macu, takže vysvětlení limitu nemusí
- * do modálního okna ani pod každý řádek zvlášť.
+ * Limity: seznam a detail vybraného limitu.
  *
- * V úzkém okně (telefon) je všechno pod sebou a detail se rozbalí přímo pod
- * svým řádkem. Kvůli tomu jsou řádky a detaily ve zdroji proložené a široké
- * okno je mřížkou jen přeskládá: řádky do levého sloupce, detail přes zbytek
- * výšky pravého. Poslední, pružný řádek mřížky (`1fr`) pobere výšku detailu,
- * takže dlouhý detail řádky seznamu neroztahuje.
+ * - Široké okno: vlevo seznam, vpravo inspektor s detailem vybraného řádku —
+ *   stejné rozdělení jako seznam a inspektor v aplikacích Macu. Vybraný je
+ *   vždy právě jeden řádek; přepnutí je okamžité, bez animace (pracovní úkon,
+ *   který člověk opakuje, ne přechod mezi místy). Šipky nahoru/dolů přecházejí
+ *   mezi řádky.
+ * - Úzké okno (telefon): jen seznam. Klepnutí na řádek otevře detail ve
+ *   spodním sheetu, takže seznam zůstává krátký a všechny limity jsou vidět
+ *   naráz — dřív se detail rozbaloval pod řádkem a ostatní limity odsunul
+ *   o obrazovku níž.
  *
  * Rozhoduje šířka OKNA S OBSAHEM (`@container`), ne šířka prohlížeče: stejná
  * komponenta stojí v aplikaci vedle postranního panelu i v náhledu na úvodní
- * stránce.
+ * stránce. Rozvržení přepíná CSS; JavaScript se jen ptá, která podoba platí,
+ * aby věděl, jestli má klepnutí otevřít sheet.
  *
- * Vybraný je vždy právě jeden řádek. Přepnutí je okamžité, bez animace —
- * je to pracovní úkon, který člověk opakuje, ne přechod mezi místy.
- * Bez JavaScriptu zůstane otevřený výchozí detail; ostatní jsou ve zdroji
- * stránky skryté, ne vynechané.
+ * Bez JavaScriptu ukazuje široké okno detail prvního limitu; na telefonu
+ * zůstává seznam (čerpání, odměrka a stav jsou v řádku).
  */
 export function LimitsInspector({
-  lead,
-  aside,
-  heading,
   entries,
   defaultKey,
   className,
 }: {
-  /** Levý sloupec nahoře: odpověď na „musím letos něco řešit?“. */
-  lead?: React.ReactNode;
-  /** Pravý sloupec nahoře: klíčová čísla. */
-  aside?: React.ReactNode;
-  /** Nadpis seznamu. */
-  heading: React.ReactNode;
   entries: LimitEntry[];
   defaultKey?: string;
   className?: string;
 }) {
   const baseId = useId();
-  const [selected, setSelected] = useState(defaultKey ?? entries[0]?.key);
+  const rootRef = useRef<HTMLDivElement>(null);
   const rows = useRef<Array<HTMLButtonElement | null>>([]);
+  const [selected, setSelected] = useState(defaultKey ?? entries[0]?.key);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // výchozí „široké“ odpovídá tomu, co server vykreslí pro stolní okno;
+  // telefon si to opraví hned po připojení
+  const [wide, setWide] = useState(true);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      setWide(root.clientWidth >= WIDE_REM * rem);
+    };
+    // pozorovatel ohlásí první měření sám hned po připojení
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
+  const current = entries.find((entry) => entry.key === selected) ?? entries[0];
+  const regionId = `${baseId}-detail`;
 
   const move = (index: number, step: number) => {
     const next = entries[index + step];
@@ -61,63 +79,71 @@ export function LimitsInspector({
     rows.current[index + step]?.focus();
   };
 
-  const asideColumn =
-    '@3xl:col-start-2 @3xl:border-l @3xl:border-line/70 @3xl:pl-(--column-gap)';
-
   return (
-    <div className={cn('@container', className)}>
-      <div
-        className="@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(0,var(--inspector-width))] @3xl:gap-x-(--column-gap)"
-        style={{ gridTemplateRows: `auto auto repeat(${entries.length}, auto) 1fr` }}
-      >
-        <div className="@3xl:col-start-1 @3xl:row-start-1">{lead}</div>
-        <div className={cn('@3xl:row-start-1', asideColumn)}>{aside}</div>
-        <div className="@3xl:col-start-1 @3xl:row-start-2">{heading}</div>
-        {entries.map((entry, index) => {
-          const active = entry.key === selected;
-          return (
-            <Fragment key={entry.key}>
-              <button
-                ref={(node) => {
-                  rows.current[index] = node;
-                }}
-                type="button"
-                id={`${baseId}-row-${entry.key}`}
-                aria-expanded={active}
-                aria-controls={`${baseId}-detail-${entry.key}`}
-                onClick={() => setSelected(entry.key)}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    move(index, 1);
-                  } else if (event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    move(index, -1);
-                  }
-                }}
-                className={cn(
-                  // text řádku lícuje s okrajem obsahu; zvýraznění ho přesahuje
-                  'row-pressable -mx-3 block w-[calc(100%+1.5rem)] rounded-xl px-3 py-3.5 text-left @3xl:col-start-1',
-                  active ? 'bg-canvas' : 'hover:bg-canvas/60',
-                )}
-              >
-                {entry.row}
-              </button>
-              <div
-                id={`${baseId}-detail-${entry.key}`}
-                role="region"
-                aria-labelledby={`${baseId}-row-${entry.key}`}
-                hidden={!active}
-                className={cn('pb-6 pt-3 @3xl:py-0', asideColumn)}
-                // nadpis + řádky + pružný řádek na konci (ten pobere výšku detailu)
-                style={{ gridRow: `2 / span ${entries.length + 2}` }}
-              >
-                {entry.detail}
+    <div ref={rootRef} className={cn('@container', className)}>
+      <div className="@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(0,var(--inspector-width))] @3xl:items-start @3xl:gap-x-(--column-gap)">
+        <div role="list" className="divide-y divide-line/70 @3xl:divide-y-0">
+          {entries.map((entry, index) => {
+            const active = wide && entry.key === current?.key;
+            return (
+              <div key={entry.key} role="listitem">
+                <button
+                  ref={(node) => {
+                    rows.current[index] = node;
+                  }}
+                  type="button"
+                  {...(wide
+                    ? { 'aria-expanded': active, 'aria-controls': regionId }
+                    : { 'aria-haspopup': 'dialog' as const })}
+                  onClick={() => {
+                    setSelected(entry.key);
+                    if (!wide) setSheetOpen(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!wide) return;
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      move(index, 1);
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      move(index, -1);
+                    }
+                  }}
+                  className={cn(
+                    // text řádku lícuje s okrajem obsahu; zvýraznění ho přesahuje
+                    'row-pressable -mx-3 block w-[calc(100%+1.5rem)] rounded-xl px-3 py-3.5 text-left',
+                    active ? 'bg-canvas' : 'hover:bg-canvas/60',
+                  )}
+                >
+                  {entry.row}
+                </button>
               </div>
-            </Fragment>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* inspektor: jen v širokém okně; tichá plocha ho spojuje s vybraným řádkem */}
+        <div
+          id={regionId}
+          role="region"
+          aria-label={current?.title}
+          className="hidden rounded-2xl bg-canvas p-5 @3xl:block"
+        >
+          {/* graf se v neviditelném inspektoru nekreslí (měřil by nulovou šířku) */}
+          {wide && current?.detail}
+        </div>
       </div>
+
+      {current && (
+        <Sheet
+          open={sheetOpen && !wide}
+          onClose={() => setSheetOpen(false)}
+          label={current.title}
+          title={current.title}
+        >
+          {current.detail}
+        </Sheet>
+      )}
     </div>
   );
 }

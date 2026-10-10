@@ -1,15 +1,18 @@
-import Link from 'next/link';
 import { d, ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
+import { DisclosureRow } from '@/components/ui/disclosure';
+import { Group } from '@/components/ui/list';
+import { TextLink } from '@/components/ui/link';
 import { czDate, czk } from '@/lib/format';
+import { withoutLawRefs } from '@/lib/typography';
 import { cn } from '@/lib/utils';
 
 /**
  * Seskupené zobrazení kontrol výpočtu (varování enginu) — server komponenta
- * sdílená přehledem a reportem. Jeden výskyt kódu = prostý text; víc výskytů =
- * blok s lidským nadpisem, počtem a rozbalitelnými jednotlivými případy
- * (kompaktně „TICKER · datum · částka“ — vysvětlení nese souhrn, ne každý
- * řádek). Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
+ * sdílená přehledem a reportem. Každý kód je jeden řádek s titulkem; plné
+ * znění a jednotlivé případy (kompaktně „TICKER · datum · částka“ —
+ * vysvětlení nese souhrn, ne každý řádek) se rozbalují pod ním.
+ * Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
  */
 
 interface WarningGroup {
@@ -110,25 +113,6 @@ export function warningCaseLine(warning: EngineWarning, labels: Map<string, stri
     .join(' · ');
 }
 
-/** Rozbalitelný výčet jednotlivých případů skupiny (auditní stopa). */
-function GroupDetails({ group, labels }: { group: WarningGroup; labels: Map<string, string> }) {
-  return (
-    <details className="mt-2 text-ink-muted">
-      {/* žádné opacity-80: průhlednost srazí kontrast pod AA (na --surface
-          3,80:1 pro jantar-text, 4,04:1 pro inkoust-tlumeny, 4,17:1 pro
-          červenou) — plné tokeny drží 5,8–6,4:1. Drobnost nese text-xs. */}
-      <summary className="type-footnote cursor-pointer">
-        Jednotlivé případy ({group.items.length})
-      </summary>
-      <ul className="type-footnote mt-1 space-y-1 tabular-nums">
-        {group.items.map((warning, i) => (
-          <li key={i}>{warningCaseLine(warning, labels)}</li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
 /**
  * Agregovaný souhrn nadsmluvních srážek: propadlá daň + dotčené tituly.
  * `forfeitedCzk` (sraženo − započitatelné za celý rok) má přednost před součtem
@@ -170,10 +154,10 @@ export function withholdingSummary(
     .join(' ');
 }
 
+
 /**
- * Závažnost („Chyba“ / „Upozornění“ / „Info“) jako barevné slovo nad zprávou —
- * žádný štítek s výplní. Barvu nese jen tohle slovo; samotná zpráva je
- * běžným textem, aby se dlouhé vysvětlení dalo číst.
+ * Závažnost („Chyba“ / „Upozornění“ / „Info“) jako barevné slovo nad titulkem —
+ * žádný štítek s výplní. Barvu nese jen tohle slovo.
  */
 function LevelLabel({ level }: { level: EngineWarning['level'] }) {
   return (
@@ -183,6 +167,13 @@ function LevelLabel({ level }: { level: EngineWarning['level'] }) {
   );
 }
 
+/**
+ * Každá kontrola je řádek s titulkem; celé znění (a u opakovaných kontrol
+ * výčet jednotlivých případů — auditní stopa) se rozbalí pod ním. Texty
+ * z enginu se nepřepisují, jen se zkracuje to, co je vidět hned: titulek je
+ * lidský název kódu nebo první věta hlášky, bez čísla paragrafu.
+ * Při tisku se všechny detaily otevřou samy (globals.css).
+ */
 export function WarningsList({
   warnings,
   labels,
@@ -193,48 +184,67 @@ export function WarningsList({
   /** Propadlá srážka za rok (sraženo − započitatelné) — sjednocuje souhrn s kartou § 8. */
   forfeitedWithholdingCzk?: Money;
 }) {
+  const groups = groupByCode(warnings);
+  // Slovo závažnosti má smysl jen tam, kde něco rozlišuje: u chyby vždy,
+  // jinak jen když seznam míchá víc úrovní. Samá „Upozornění“ pod nadpisem
+  // „Kontroly výpočtu“ by byla tři stejná slova bez informace.
+  const mixedLevels = new Set(groups.map((group) => group.level)).size > 1;
+  const eyebrowFor = (level: EngineWarning['level']) =>
+    level === 'ERROR' || mixedLevels ? <LevelLabel level={level} /> : undefined;
   return (
     <>
-      <ul className="divide-y divide-line/70">
-        {groupByCode(warnings).map((group) => (
-          <li key={group.code} className="type-callout py-3 first:pt-0">
-            <LevelLabel level={group.level} />
-            {group.items.length === 1 ? (
-              <p className="mt-1 text-pretty">{group.items[0]!.message}</p>
-            ) : (
-              <>
-                <p className="mt-1 font-medium">
-                  {groupTitle(group)}{' '}
-                  <span className="font-normal tabular-nums text-ink-muted">
-                    ({group.items.length}×)
-                  </span>
-                </p>
-                {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
-                  <p className="mt-1 text-pretty text-ink-muted">
-                    {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
-                  </p>
-                )}
-                <GroupDetails group={group} labels={labels} />
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+      <Group>
+        {groups.map((group) => {
+          const title = withoutLawRefs(groupTitle(group));
+          const first = group.items[0]!;
+          if (group.items.length === 1) {
+            // hláška, která se vejde do titulku celá, nemá co rozbalovat
+            if (title === first.message) {
+              return (
+                <div key={group.code} role="listitem" className="py-2.5">
+                  {eyebrowFor(group.level)}
+                  <p className="type-callout font-medium text-pretty">{title}</p>
+                </div>
+              );
+            }
+            return (
+              <DisclosureRow
+                key={group.code}
+                eyebrow={eyebrowFor(group.level)}
+                title={title}
+              >
+                <p>{first.message}</p>
+              </DisclosureRow>
+            );
+          }
+          return (
+            <DisclosureRow
+              key={group.code}
+              eyebrow={eyebrowFor(group.level)}
+              title={title}
+              meta={`${group.items.length}×`}
+            >
+              {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
+                <p>{withholdingSummary(group, labels, forfeitedWithholdingCzk)}</p>
+              )}
+              <ul className="type-footnote mt-2 space-y-1 tabular-nums first:mt-0">
+                {group.items.map((warning, index) => (
+                  <li key={index}>{warningCaseLine(warning, labels)}</li>
+                ))}
+              </ul>
+            </DisclosureRow>
+          );
+        })}
+      </Group>
       {warnings.length > 0 && (
         // H-3-03: aplikace ukazovala interní kódy pravidel („R-05c"), ale
         // odkaz na jejich vysvětlení z přihlášené části nevedl NIKAM. Kódy
         // z UI zmizely (v tištěném podkladu zůstávají kvůli průkaznosti)
         // a místo nich je tu cesta k metodice.
-        <p className="type-callout pt-3">
-          <Link
-            href="/jak-pocitame"
-            className="inline-flex min-h-11 items-center font-medium text-accent-text hover:underline md:min-h-0"
-          >
+        <p className="type-callout pt-2">
+          <TextLink href="/jak-pocitame" chevron>
             Jak Danero počítá
-            <span aria-hidden className="ml-1">
-              ›
-            </span>
-          </Link>
+          </TextLink>
         </p>
       )}
     </>

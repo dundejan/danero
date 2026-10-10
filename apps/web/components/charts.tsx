@@ -29,8 +29,7 @@ import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
  * kategorické série --chart-1..4 (pevné pořadí; největší kategorie — třeba US
  * v dividendách — dostává --chart-1), semafor jen pro stav/polaritu
- * (zisk/ztráta, pásma limitů). Brand růžová v sériích není — zůstává jen
- * akcentem (dnes/limit/aktivní). Mřížka a osy ustupují datům.
+ * (zisk/ztráta, čára limitu). Mřížka a osy ustupují datům.
  *
  * Přístupnost: každý graf dostává `title` a `desc` — Recharts je vykreslí do
  * `<svg role="application" tabindex="0">`. Bez nich se na graf dá klávesnicí
@@ -107,7 +106,7 @@ function TooltipBox({
   rows: Array<{ color?: string; name: string; value: string }>;
 }) {
   return (
-    <div className="rounded-md border border-line bg-surface px-3 py-2 text-xs shadow-sm">
+    <div className="rounded-lg bg-surface px-3 py-2 text-xs shadow-floating dark:bg-control">
       <p className="mb-1 font-semibold text-ink">{title}</p>
       {rows.map((row) => (
         <p key={row.name} className="flex items-center gap-2 tabular-nums text-ink-muted">
@@ -150,7 +149,12 @@ function ChartLegend({ payload }: { payload?: ReadonlyArray<LegendPayload> }) {
   );
 }
 
-/* ── Čerpání limitu v průběhu roku ──────────────────────────────────────── */
+/* ── Čerpání limitu v průběhu roku ────────────────────────────────────────
+   V grafu je jediná vodicí čára: limit. Pásma 60 a 85 % se nekreslí (Janovo
+   rozhodnutí 10. 10. 2026) — stav limitu nese odměrka a slovní popis vedle
+   grafu, tři čáry navíc jen ubíraly čitelnost křivce. Totéž platí pro každý
+   další graf limitu. Graf nemá popisek ani legendu: osa, křivka a slovo
+   „limit“ u čáry stačí. */
 
 export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name: string }) {
   const year = Number(series.points[0]?.date.slice(0, 4));
@@ -166,16 +170,12 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
 
   return (
     <div>
-      {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit“ */}
-      <p className="mb-1 text-right tabular-nums text-xs text-ink-muted">
-        k 31. 12.: <span className="text-ink">{czkCompact(lastValue)}</span>
-      </p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart
           data={points}
           margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
           title={`Čerpání limitu ${czkCompact(series.limitCzk)} v roce ${year} — ${name.toLowerCase()}`}
-          desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušované čáry označují pásma 60, 85 a 100 % limitu.`}
+          desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušovaná čára označuje limit.`}
         >
           <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
           <XAxis
@@ -205,8 +205,6 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
               position: 'insideTopRight',
             }}
           />
-          <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--warning)" strokeDasharray="2 4" />
-          <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--caution)" strokeDasharray="2 4" />
           <Tooltip
             content={({ active, payload }) =>
               active && payload?.[0] ? (

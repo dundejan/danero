@@ -10,18 +10,27 @@ import { cn } from '@/lib/utils';
  * i horní okraj (`--page-top`); záporné okraje ji roztáhnou přes celou šířku
  * obsahového okna. Na telefonu se přepínač zalomí pod titulek na vlastní
  * řádek, aby titulek ani akce neustupovaly.
+ *
+ * Každá stránka aplikace má právě jednu lištu a ta nese její jediný nadpis
+ * první úrovně. Do lišty patří titulek, přepínač (rok, pohled) a nejvýš jedna
+ * hlavní akce; žádný podtitulek ani popis stránky — metadata výpočtu
+ * (počet transakcí, metoda) bydlí ve vysvětlivce u čísla, kterého se týkají.
  */
 export function AppToolbar({
   title,
-  subtitle,
+  titleContext,
   children,
   actions,
   pinned = true,
   className,
 }: {
   title: string;
-  /** Tichý druhý řádek pod titulkem (jen od tabletu výš). */
-  subtitle?: React.ReactNode;
+  /**
+   * Doplněk titulku, který patří k nadpisu stránky (rok: „Přehled 2026“).
+   * Když lišta nese přepínač, který totéž ukazuje, je doplněk jen pro čtečku;
+   * bez přepínače se vypíše tiše za titulkem.
+   */
+  titleContext?: string;
   /** Přepínače pohledu — typicky segmentový přepínač roku. */
   children?: React.ReactNode;
   /** Hlavní akce stránky (vpravo). */
@@ -49,12 +58,17 @@ export function AppToolbar({
       <div className="min-w-0 flex-1 md:flex-none">
         {/* v náhledu na úvodní stránce nesmí vzniknout druhý nadpis první úrovně */}
         {pinned ? (
-          <h1 className="type-title-3 truncate">{title}</h1>
+          <h1 className="type-title-3 truncate">
+            {title}
+            {titleContext && (
+              <span className={children ? 'sr-only' : 'font-normal text-ink-muted'}>
+                {' '}
+                {titleContext}
+              </span>
+            )}
+          </h1>
         ) : (
           <p className="type-title-3 truncate">{title}</p>
-        )}
-        {subtitle && (
-          <p className="type-caption hidden truncate text-ink-muted md:block">{subtitle}</p>
         )}
       </div>
       {children && (
