@@ -5,16 +5,16 @@ import { Disclosure } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Group, Row } from '@/components/ui/list';
 import { SectionHeader } from '@/components/ui/section';
-import { StatusLabel, type Tone } from '@/components/ui/status';
+import { StatusLabel } from '@/components/ui/status';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   historyScopeText,
-  syncStatusLabel,
   type BrokerAccountRow,
   type StoredReconciliation,
 } from '@/lib/broker-sync';
-import { czDateTime, plural } from '@/lib/format';
+import { czDateTime } from '@/lib/format';
 import { tidy } from '@/lib/typography';
+import { accountStates } from './account-state';
 import { disconnectBrokerAction, syncBrokerAction } from './actions';
 
 interface BrokerCopy {
@@ -54,107 +54,6 @@ const BROKER_COPY: Record<string, BrokerCopy> = {
   },
 };
 
-const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
-
-const RETRY_HINT = 'Spusť ji znovu — co už se stáhlo, zůstává a nic se nezdvojí.';
-
-interface AccountState {
-  tone: Tone;
-  /** Stav jednou větou. */
-  text: string;
-  /** Tichá věta pod stavem: co se stalo nebo co udělat. */
-  note?: React.ReactNode;
-  /** Podrobnosti na požádání (rozdíly v pozicích, výklad neúplné historie). */
-  details?: { summary: string; body: React.ReactNode };
-}
-
-/**
- * Stav účtu jednou větou a to, co k němu patří. Pořadí větví je pořadí
- * závažnosti: selhání celého běhu (pád API) žije vedle rekonciliace — ta drží
- * poslední platný stav pozic a chybou se nepřepisuje, proto se o ní při
- * selhání zmíní aspoň poznámka.
- */
-function accountState(
-  account: BrokerAccountRow,
-  reconciliation: StoredReconciliation | null,
-  copy: BrokerCopy,
-): AccountState {
-  const instruments = (count: number): string =>
-    `${count} ${plural(count, 'instrument', 'instrumenty', 'instrumentů')}`;
-
-  if (account.lastSyncError) {
-    return {
-      tone: 'danger',
-      text: 'Poslední synchronizace selhala',
-      note: (
-        <>
-          {account.lastSyncError} {RETRY_HINT}
-          {reconciliation?.ok &&
-            ` Pozice z poslední úspěšné synchronizace sedí s ${account.label} (${instruments(reconciliation.matchedCount)}).`}
-        </>
-      ),
-    };
-  }
-  if (!reconciliation) {
-    return account.lastSyncedAt
-      ? { tone: 'neutral', text: capitalize(syncStatusLabel(account.lastSyncStatus)) }
-      : { tone: 'neutral', text: 'Připojeno. Zbývá stáhnout historii.', note: copy.firstSyncHint };
-  }
-  if (reconciliation.ok) {
-    return {
-      tone: 'success',
-      text: `Pozice sedí s ${account.label} · ${instruments(reconciliation.matchedCount)}`,
-    };
-  }
-  if (reconciliation.error) {
-    return {
-      tone: 'danger',
-      text: 'Synchronizace selhala',
-      note: `${reconciliation.error} ${RETRY_HINT}`,
-    };
-  }
-  if (reconciliation.warning) {
-    // Data jsou stažená, jen kontrola pozic má výhradu (neúplná historie,
-    // broker neposlal pozice). Krátké znění stavu drží `syncStatusLabel`,
-    // celé zdůvodnění z enginu je na požádání.
-    return {
-      tone: 'caution',
-      text: capitalize(syncStatusLabel(account.lastSyncStatus)),
-      details: { summary: 'Co to znamená', body: <p>{tidy(reconciliation.warning)}</p> },
-    };
-  }
-  const differences = reconciliation.issues.length + reconciliation.unmatchedTickers.length;
-  return {
-    tone: 'caution',
-    text: `Pozice nesedí s ${account.label}`,
-    note: 'Nejspíš chybí část historie nebo korporátní akce.',
-    details: {
-      summary: `Rozdíly (${differences})`,
-      body: (
-        <>
-          <ul className="space-y-1 tabular-nums">
-            {reconciliation.issues.map((issue) => (
-              <li key={issue.isin}>
-                {issue.isin}: vypočteno {issue.expected}, broker {issue.actual}
-                {issue.suggestedSplitRatio &&
-                  ` → vypadá to na split ${issue.suggestedSplitRatio.from}:${issue.suggestedSplitRatio.to}`}
-              </li>
-            ))}
-            {reconciliation.unmatchedTickers.length > 0 && (
-              <li>Nespárované tickery: {reconciliation.unmatchedTickers.join(', ')}</li>
-            )}
-          </ul>
-          <p className="mt-2">
-            Malé rozdíly bývají dnešní obchody, které broker do exportu propíše se zpožděním —
-            další synchronizace je srovná sama. Trvalý rozdíl znamená chybějící historii nebo
-            korporátní akci.
-          </p>
-        </>
-      ),
-    },
-  };
-}
-
 /**
  * Připojený účet u brokera: stav jednou větou, kdy se naposledy
  * synchronizoval, odkud historie sahá — a dvě akce: synchronizovat a odpojit.
@@ -172,7 +71,7 @@ export function ConnectedAccount({
 }) {
   const reconciliation = (account.lastReconciliation ?? null) as StoredReconciliation | null;
   const copy = BROKER_COPY[account.broker] ?? DEFAULT_COPY;
-  const state = accountState(account, reconciliation, copy);
+  const states = accountStates(account, reconciliation, copy.firstSyncHint);
   // Odkud data vlastně jsou. Patří i pod zelené „pozice sedí“: zavřenou pozici
   // z roku, na který jsme se brokera nezeptali, kontrola pozic neodhalí (B4-3).
   const coverage = reconciliation?.coverage;
@@ -209,14 +108,18 @@ export function ConnectedAccount({
         </div>
       ) : (
         <>
-          <div className="mt-2">
-            <StatusLabel tone={state.tone}>{state.text}</StatusLabel>
-            {state.note && (
-              <p className="type-footnote mt-1 text-pretty text-ink-muted">{state.note}</p>
-            )}
-            {state.details && (
-              <Disclosure summary={state.details.summary}>{state.details.body}</Disclosure>
-            )}
+          <div className="mt-2 space-y-3">
+            {states.map((state) => (
+              <div key={state.key}>
+                <StatusLabel tone={state.tone}>{state.text}</StatusLabel>
+                {state.note && (
+                  <p className="type-footnote mt-1 text-pretty text-ink-muted">{state.note}</p>
+                )}
+                {state.details && (
+                  <Disclosure summary={state.details.summary}>{state.details.body}</Disclosure>
+                )}
+              </div>
+            ))}
           </div>
           <Group className="mt-3" aria-label={`Účet ${account.label}`}>
             {account.lastSyncedAt && (

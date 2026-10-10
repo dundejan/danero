@@ -194,7 +194,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
             />
           </Field>
           <Button type="submit" variant="danger" disabled={pending} className={BESIDE_FIELD}>
-            {pending ? 'Vypínám…' : 'Vypnout 2FA'}
+            {pending ? 'Vypínám…' : 'Vypnout ověření'}
           </Button>
         </div>
       </form>
@@ -304,8 +304,8 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
             {...describedByError(error !== null, ENABLE_ERROR_ID)}
           />
         </Field>
-        <Button type="submit" disabled={pending} className={BESIDE_FIELD}>
-          {pending ? 'Připravuji…' : 'Zapnout 2FA'}
+        <Button type="submit" variant="tinted" disabled={pending} className={BESIDE_FIELD}>
+          {pending ? 'Připravuji…' : 'Zapnout ověření'}
         </Button>
       </div>
     </form>

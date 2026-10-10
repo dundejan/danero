@@ -6,9 +6,12 @@ import { urlWithoutFeedback } from '@/components/toast';
 import type { Db } from '@/db';
 import { brokerAccounts, importBatches, jobs, transactions, user } from '@/db/schema';
 import {
+  batchesToOpen,
+  historyLimit,
   IMPORT_FEEDBACK_PARAMS,
   importFeedback,
   importFeedbackUrl,
+  uploadedBatchIds,
 } from '@/lib/import-feedback';
 import { importFileIsolated } from '@/lib/import-service';
 
@@ -111,10 +114,24 @@ describe('hláška z parametrů adresy', () => {
 
   it('chyby v souborech neschová za zelené potvrzení', () => {
     // nic se nenačetlo a soubor má chyby: to není „hotovo“
-    expect(importFeedback({ ulozeno: 'nahrano', soubory: '1', pridano: '0', chyby: '1' })).toEqual({
+    const failed = (soubory: string, chyby: string) =>
+      importFeedback({ ulozeno: 'nahrano', soubory, pridano: '0', chyby })!;
+    expect(failed('1', '1')).toEqual({
       kind: 'chyba',
-      text: 'Nahráno: 1 soubor, žádná nová transakce nepřibyla. Soubor má chyby — jaké, je napsané v historii importů.',
+      text: 'Soubor má chyby a nic nového z něj nepřibylo — jaké, je napsané v historii importů.',
     });
+    expect(failed('3', '3')).toEqual({
+      kind: 'chyba',
+      text: 'Nahrané soubory (3) mají chyby a nic nového z nich nepřibylo — jaké, je napsané v historii importů.',
+    });
+    expect(failed('3', '1')).toEqual({
+      kind: 'chyba',
+      text: 'Nahrané soubory (3) nic nového nepřinesly. Chyby má 1 z nich — jaké, je napsané v historii importů.',
+    });
+    // R1B-28: hláška s červenou tečkou nesmí začínat slovem, které říká opak
+    for (const [soubory, chyby] of [['1', '1'], ['3', '3'], ['3', '1']] as const) {
+      expect(failed(soubory, chyby).text).not.toMatch(/^Nahráno/);
+    }
     // část prošla: potvrzení, ale s upozorněním
     const partial = importFeedback({ ulozeno: 'nahrano', soubory: '3', pridano: '8', chyby: '2' })!;
     expect(partial.kind).toBe('ok');
@@ -304,5 +321,95 @@ describe('akce na /import končí na adrese s hláškou, ne na té právě otev�
     expect(url!.searchParams.get('chyby')).toBe('1');
     expect(batches.map((batch) => batch.id)).toContain(url!.searchParams.get('davka'));
     expect(url!.hash).toBe('#historie');
+  });
+});
+
+/**
+ * R5-05: v historii je vidět jen počet („1 chyba“), hlášky jsou za rozbalením.
+ * Po nahrání se proto dávka s chybou otevře sama — jenže akce posílala jen id
+ * POSLEDNÍ dávky, takže při nahrání víc souborů naráz zůstaly chyby dřívějších
+ * souborů zavřené.
+ */
+describe('které dávky se po nahrání otevřou', () => {
+  const summary = (
+    batchId: string,
+    issues: { errors?: number; warnings?: number; crossBroker?: number } = {},
+  ) => ({
+    batchId,
+    errors: Array.from({ length: issues.errors ?? 0 }),
+    warnings: Array.from({ length: issues.warnings ?? 0 }),
+    crossBroker: Array.from({ length: issues.crossBroker ?? 0 }),
+  });
+
+  it('všechny s chybou, varováním nebo shodou s jiným brokerem — ne jen poslední', () => {
+    expect(
+      batchesToOpen([
+        summary('a', { errors: 2 }),
+        summary('b'),
+        summary('c', { warnings: 1 }),
+        summary('d', { crossBroker: 1 }),
+        summary('e'),
+      ]),
+    ).toEqual(['a', 'c', 'd', 'e']);
+  });
+
+  it('poslední dávka je v adrese vždy, aby se dvě nahrání nelišila jen počty', () => {
+    expect(batchesToOpen([summary('a'), summary('b')])).toEqual(['b']);
+    expect(batchesToOpen([summary('a', { errors: 1 })])).toEqual(['a']);
+    expect(batchesToOpen([])).toEqual([]);
+  });
+
+  it('adresa unese i nahrání desítek vadných souborů', () => {
+    const many = Array.from({ length: 60 }, (_, i) => summary(`b-${i}`, { errors: 1 }));
+    const ids = batchesToOpen(many);
+    expect(ids.length).toBeLessThanOrEqual(21);
+    expect(ids).toContain('b-59');
+  });
+
+  it('stránka si id z adresy přečte zpět, jen po nahrání', () => {
+    const href = importFeedbackUrl('nahrano', { files: 3, added: 0, batchId: ['a', 'c'] }, 'historie');
+    expect(href).toBe('/import?ulozeno=nahrano&soubory=3&pridano=0&davka=a&davka=c#historie');
+    expect([...uploadedBatchIds({ ulozeno: 'nahrano', davka: ['a', 'c'] })]).toEqual(['a', 'c']);
+    expect([...uploadedBatchIds({ ulozeno: 'nahrano', davka: 'a' })]).toEqual(['a']);
+    // po vrácení importu nese adresa id dávky, která už neexistuje — nic se neotevírá
+    expect(uploadedBatchIds({ ulozeno: 'vraceno', davka: 'a' }).size).toBe(0);
+    expect(uploadedBatchIds({}).size).toBe(0);
+  });
+
+  it('akce pošle id vadného souboru, i když po něm přišel dobrý', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const { uploadImportAction } = await import('@/app/(app)/import/actions');
+    const data = new FormData();
+    data.append('soubory', new File(['%PDF-1.7 smyšlený obsah'], 'vadny.csv', { type: 'text/csv' }));
+    data.append('soubory', new File([T212_CSV], 'dobry.csv', { type: 'text/csv' }));
+
+    const url = await target(uploadImportAction, data);
+    const batches = await db.select().from(importBatches).where(eq(importBatches.userId, 'u1'));
+    const failed = batches.find((batch) => batch.errorCount > 0)!;
+    const good = batches.find((batch) => batch.added > 0)!;
+    expect(failed.filename).toBe('vadny.csv');
+    expect(url!.searchParams.getAll('davka')).toEqual([failed.id, good.id]);
+  });
+});
+
+describe('délka historie importů z adresy', () => {
+  it('výchozích dvacet, odkazem po dvaceti dál, nejvýš dvě stě', () => {
+    expect(historyLimit({})).toBe(20);
+    expect(historyLimit({ historie: '40' })).toBe(40);
+    expect(historyLimit({ historie: '9999' })).toBe(200);
+    expect(historyLimit({ historie: '5' })).toBe(20);
+  });
+
+  it('cokoli jiného než číslo se ignoruje', () => {
+    for (const value of ['-40', '4e1', 'vše', '', '40abc']) {
+      expect(historyLimit({ historie: value })).toBe(20);
+    }
+    expect(historyLimit({ historie: ['60', '80'] })).toBe(60);
+  });
+
+  it('toast parametr historie z adresy nemaže', () => {
+    expect(urlWithoutFeedback('http://danero.test/import?historie=40&ulozeno=nahrano&davka=a')).toBe(
+      'http://danero.test/import?historie=40',
+    );
   });
 });

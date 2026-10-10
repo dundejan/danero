@@ -2,6 +2,7 @@ import { AutoSubmit } from '@/components/ui/auto-submit';
 import { Select } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FieldRow, Group, Row } from '@/components/ui/list';
+import { Notice } from '@/components/ui/notice';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
@@ -15,6 +16,7 @@ import {
   TIME_TEST_LEAD_OPTIONS,
 } from '@/lib/notification-rules';
 import { plural } from '@/lib/format';
+import { runInPlace } from '@/lib/redirect-in-place';
 import { tidy } from '@/lib/typography';
 import { cn, firstParam } from '@/lib/utils';
 import { SettingsToolbar } from '../settings-nav';
@@ -50,26 +52,25 @@ const LONE_EMAIL_SWITCH = '[&:has(#emaily-zapnute:not(:checked))>*]:border-b-0';
  * začátek — přepnutí vypínače na konci dlouhé stránky by člověka pokaždé
  * vyhodilo nahoru. Kotva, která na stránce neexistuje, je pro Next „vyřízené
  * rolování“, takže poloha zůstane (stejně to má uložení profilu s `#dan`).
+ *
+ * Kotvu dostane jen úspěšný návrat na tuhle stránku; jiné přesměrování vnitřní
+ * akce (chyba, přihlášení) i opravdová výjimka jdou dál beze změny — pravidlo
+ * a jeho testy jsou v `lib/redirect-in-place.ts` (R4-10).
  */
+const PAGE_PATH = '/nastaveni/upozorneni';
+const KEEP_SCROLL_ANCHOR = 'ulozeno';
+
 async function saveInPlace(formData: FormData): Promise<void> {
   'use server';
   await requireUser();
-  try {
-    await saveNotificationPrefsAction(formData);
-  } catch (error) {
-    // úspěch končí přesměrováním (výjimka s otiskem NEXT_REDIRECT); cokoli
-    // jiného je opravdová chyba a patří chybové stránce
-    const digest = error instanceof Error ? (error as { digest?: unknown }).digest : undefined;
-    if (typeof digest !== 'string' || !digest.startsWith('NEXT_REDIRECT')) throw error;
-  }
-  redirect('/nastaveni/upozorneni?ok=notifikace#ulozeno');
+  const target = await runInPlace(
+    () => saveNotificationPrefsAction(formData),
+    PAGE_PATH,
+    KEEP_SCROLL_ANCHOR,
+  );
+  // akce bez přesměrování uložila a nic neřekla — potvrzení dodá obal
+  redirect(target ?? `${PAGE_PATH}?ok=notifikace#${KEEP_SCROLL_ANCHOR}`);
 }
-
-/** „90, 30 a 7“ — výčet čísel tak, jak se čte. */
-const numberList = (values: readonly number[]): string =>
-  values.length < 2
-    ? values.join('')
-    : `${values.slice(0, -1).join(', ')} a ${values.at(-1)}`;
 
 /**
  * Řádek s výběrem několika hodnot naráz (lhůty, hranice): popisek vlevo,
@@ -125,27 +126,16 @@ export default async function NotificationSettingsPage({
   const prefs = await getNotificationPrefs(db, user.id);
   const rules = notificationRules(prefs);
 
-  /** Co teď opravdu chodí — ať uživatel nemusí nastavení zkoušet naostro. */
-  const incoming: string[] = [];
-  if (prefs.emailEnabled) {
-    if (prefs.timeTestEvents && rules.timeTestLeadDays.length > 0) {
-      incoming.push(
-        `${numberList(rules.timeTestLeadDays)} ${plural(rules.timeTestLeadDays.at(-1) ?? 0, 'den', 'dny', 'dní')} před osvobozením pozice`,
-      );
-    }
-    if (prefs.limitEvents && rules.limitThresholdsPct.length > 0) {
-      incoming.push(`Při ${numberList(rules.limitThresholdsPct)} % čerpání limitu`);
-    }
-    if (prefs.calendarEmails) incoming.push(`${rules.deadlineLeadDays} dní před termínem přiznání`);
-    if (rules.summaryFrequency !== 'OFF') {
-      incoming.push(rules.summaryFrequency === 'MONTHLY' ? 'Měsíční přehled' : 'Čtvrtletní přehled');
-    }
-  }
-  const nothingIncoming = !prefs.emailEnabled
-    ? 'Žádné e-maily — upozornění najdeš jen v aplikaci.'
-    : incoming.length === 0
-      ? 'Odesílání je zapnuté, ale není vybraná žádná událost — nic ti nepřijde.'
-      : null;
+  // Souhrn „Co ti teď chodí“ tu býval jako sekce nad formulářem; v nové skladbě
+  // jen větami opakoval přepínače a štítky o obrazovku níž (R1B-16). Zůstává
+  // jediný stav, který z ovládání na první pohled vidět není: odesílání je
+  // zapnuté, ale nic vybraného, takže nepřijde nic.
+  const nothingSelected =
+    prefs.emailEnabled &&
+    !(prefs.timeTestEvents && (rules.timeTestLeadDays.length > 0 || rules.timeTestDone)) &&
+    !(prefs.limitEvents && rules.limitThresholdsPct.length > 0) &&
+    !prefs.calendarEmails &&
+    rules.summaryFrequency === 'OFF';
 
   return (
     <>
@@ -153,49 +143,33 @@ export default async function NotificationSettingsPage({
       <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
 
       <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
-        {/* odpověď na otázku, kvůli které člověk stránku otevřel — až pod ní volby */}
-        <Section
-          title="Co ti teď chodí"
-          info={
-            <InfoPopover label="Co ti teď chodí">
-              <p>
-                {tidy(
-                  'Danero hlídá limity a časové testy každý den. Tady si řekneš, o čem ti má dát vědět e-mailem a jak často — v aplikaci upozornění uvidíš vždycky.',
-                )}
-              </p>
-              <p>
-                {tidy(
-                  'Upozornění se počítají z dat, která máš v Daneru: po napojení brokera nebo nahrání výpisu se projeví hned další den. Každý e-mail má odhlašovací odkaz.',
-                )}
-              </p>
-            </InfoPopover>
-          }
-        >
-          {nothingIncoming ? (
-            <p className="text-pretty">{nothingIncoming}</p>
-          ) : (
-            <>
-              <ul className="space-y-1">
-                {incoming.map((line) => (
-                  <li key={line} className="text-pretty">
-                    {tidy(line)}
-                  </li>
-                ))}
-              </ul>
-              <p className="type-footnote mt-2 text-ink-muted">
-                {prefs.emailFrequency === 'WEEKLY'
-                  ? 'V souhrnu jednou týdně.'
-                  : 'V souhrnu nejvýš jednou denně.'}
-              </p>
-            </>
-          )}
-        </Section>
-
+        {nothingSelected && (
+          <Notice tone="caution" title="Odesílání je zapnuté, ale nic ti nepřijde">
+            Není vybraná žádná událost ani pravidelný přehled.
+          </Notice>
+        )}
         <form action={saveInPlace} className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}>
-          <Section title="Odesílání">
+          <Section
+            title="Odesílání"
+            info={
+              <InfoPopover label="jak fungují e-maily z Danera" title="E-maily z Danera">
+                <p>
+                  {tidy(
+                    'Danero hlídá limity a časové testy každý den. Tady si řekneš, o čem ti má dát vědět e-mailem a jak často — v aplikaci upozornění uvidíš vždycky.',
+                  )}
+                </p>
+                <p>
+                  {tidy(
+                    'Upozornění se počítají z dat, která máš v Daneru: po napojení brokera nebo nahrání výpisu se projeví hned další den. Každý e-mail má odhlašovací odkaz.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
             <Group variant="inset" className={LONE_EMAIL_SWITCH}>
               <Row
                 label={<label htmlFor="emaily-zapnute">Posílat e-maily</label>}
+                hint="V aplikaci upozornění uvidíš vždycky."
                 info={
                   <InfoPopover label="hlavní vypínač e-mailů" title="Posílat e-maily">
                     <p>
@@ -238,7 +212,7 @@ export default async function NotificationSettingsPage({
               <Row
                 className={NEEDS_EMAIL}
                 label={<label htmlFor="nalehave-hned">Naléhavé posílat hned</label>}
-                hint="I mimo týdenní souhrn."
+                hint="I mimo souhrn."
                 info={
                   <InfoPopover label="co je naléhavé" title="Naléhavé posílat hned">
                     <p>

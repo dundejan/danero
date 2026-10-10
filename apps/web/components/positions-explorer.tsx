@@ -24,12 +24,16 @@ import { cn } from '@/lib/utils';
  * - střední: tabulka, název pozice je odkaz na detail,
  * - široké: tabulka a vedle ní inspektor vybraného řádku — stejné rozdělení
  *   jako seznam a inspektor v aplikacích Macu. Vybraný je vždy právě jeden
- *   řádek, přepnutí je okamžité, šipky nahoru/dolů přecházejí mezi řádky
- *   a dvojklik otevře detail.
+ *   řádek, přepnutí je okamžité, šipky nahoru/dolů přecházejí mezi řádky,
+ *   dvojklik nebo Enter otevře detail.
+ *
+ * Název pozice je ve všech podobách skutečný odkaz na detail — jde otevřít
+ * v novém panelu (Ctrl/Cmd-klik, prostřední tlačítko, nabídka prohlížeče).
+ * V širokém okně jen obyčejný klik myší místo navigace vybere řádek.
  *
  * Rozvržení přepíná CSS; JavaScript se jen ptá, která podoba platí, aby
- * věděl, jestli název pozice vybírá řádek, nebo vede na detail. Bez
- * JavaScriptu je název vždy odkaz a inspektor ukazuje první řádek.
+ * věděl, jestli obyčejný klik na název vybírá řádek, nebo vede na detail. Bez
+ * JavaScriptu název vždy vede na detail a inspektor ukazuje první řádek.
  */
 
 /** Stav časového testu celé pozice. */
@@ -151,10 +155,49 @@ function SortGlyph({ dir }: { dir: SortDir }) {
   );
 }
 
-function SortableTh({
+function SortButton({
   label,
   sortKey,
   active,
+  dir,
+  onSort,
+  align,
+}: {
+  label: string;
+  sortKey: SortKey;
+  active: boolean;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+  align: 'left' | 'right';
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={cn(
+        // šipka stojí na vnější straně popisku, aby popisek lícoval se sloupcem
+        'inline-flex min-h-6 items-center gap-1 font-medium hover:text-ink',
+        align === 'right' && 'flex-row-reverse',
+        active && 'text-ink',
+      )}
+    >
+      {label}
+      {active && <SortGlyph dir={dir} />}
+    </button>
+  );
+}
+
+/**
+ * Záhlaví sloupce, podle kterého jde řadit. Sloupec, který nese dva údaje pod
+ * sebou (hodnota a pod ní počet kusů), má v záhlaví dvě řadicí tlačítka —
+ * `secondary` je to druhé, tišší (R5-14: řazení podle kusů se s přesunem kusů
+ * pod hodnotu ztratilo).
+ */
+function SortableTh({
+  label,
+  sortKey,
+  secondary,
+  activeKey,
   dir,
   onSort,
   align = 'left',
@@ -162,31 +205,41 @@ function SortableTh({
 }: {
   label: string;
   sortKey: SortKey;
-  active: boolean;
+  secondary?: { label: string; sortKey: SortKey };
+  /** Klíč, podle kterého se právě řadí. */
+  activeKey: SortKey;
   dir: SortDir;
   onSort: (key: SortKey) => void;
   align?: 'left' | 'right';
   className?: string;
 }) {
+  const active = activeKey === sortKey || activeKey === secondary?.sortKey;
   return (
     <Th
       align={align}
       aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       className={cn('pr-0 pl-6 first:pl-3 last:pr-3', className)}
     >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={cn(
-          // šipka stojí na vnější straně popisku, aby popisek lícoval se sloupcem
-          'inline-flex min-h-6 items-center gap-1 font-medium hover:text-ink',
-          align === 'right' && 'flex-row-reverse',
-          active && 'text-ink',
+      <span className={cn('inline-flex items-center gap-3', secondary && 'whitespace-nowrap')}>
+        {secondary && (
+          <SortButton
+            label={secondary.label}
+            sortKey={secondary.sortKey}
+            active={activeKey === secondary.sortKey}
+            dir={dir}
+            onSort={onSort}
+            align={align}
+          />
         )}
-      >
-        {label}
-        {active && <SortGlyph dir={dir} />}
-      </button>
+        <SortButton
+          label={label}
+          sortKey={sortKey}
+          active={activeKey === sortKey}
+          dir={dir}
+          onSort={onSort}
+          align={align}
+        />
+      </span>
     </Th>
   );
 }
@@ -306,7 +359,7 @@ export function PositionsExplorer({
   const router = useRouter();
   const baseId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
-  const controls = useRef(new Map<string, HTMLElement>());
+  const controls = useRef(new Map<string, HTMLAnchorElement>());
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<Scope>('all');
   // bez cen není podle čeho řadit hodnotu — nejdřív to, co se osvobodí nejdřív
@@ -353,11 +406,18 @@ export function PositionsExplorer({
     controls.current.get(next.isin)?.focus();
   };
 
-  const sortHeader = (key: SortKey, label: string, align: 'left' | 'right', className?: string) => (
+  const sortHeader = (
+    key: SortKey,
+    label: string,
+    align: 'left' | 'right',
+    className?: string,
+    secondary?: { label: string; sortKey: SortKey },
+  ) => (
     <SortableTh
       label={label}
       sortKey={key}
-      active={sortKey === key}
+      secondary={secondary}
+      activeKey={sortKey}
       dir={sortDir}
       onSort={sortBy}
       align={align}
@@ -368,14 +428,14 @@ export function PositionsExplorer({
   return (
     <div ref={rootRef} className="@container">
       <div className={cn('flex flex-wrap items-center gap-3', !showControls && 'hidden')}>
-        <div className="flex w-full items-center gap-3 @2xl:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-3 @2xl:w-auto">
           <Input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Hledat pozici…"
             aria-label="Hledat pozici (název, ticker nebo ISIN)"
-            className="min-w-0 flex-1 @2xl:w-64 @2xl:flex-none"
+            className="min-w-[10rem] flex-1 @2xl:w-64 @2xl:flex-none"
           />
           {/* telefon: řazení výběrem — záhlaví tabulky tam není */}
           <Select
@@ -390,7 +450,7 @@ export function PositionsExplorer({
             {showValue && <option value="value">Hodnota</option>}
             <option value="label">Název</option>
             {showValue && <option value="pl">Zisk</option>}
-            {!showValue && <option value="qty">Kusy</option>}
+            <option value="qty">Kusy</option>
             <option value="exempt">Bez daně</option>
             <option value="next">Osvobození</option>
           </Select>
@@ -456,7 +516,10 @@ export function PositionsExplorer({
                   <tr>
                     {sortHeader('label', 'Pozice', 'left')}
                     {showValue
-                      ? sortHeader('value', 'Hodnota', 'right')
+                      ? sortHeader('value', 'Hodnota', 'right', undefined, {
+                          label: 'Kusů',
+                          sortKey: 'qty',
+                        })
                       : sortHeader('qty', 'Kusů', 'right')}
                     {showValue && sortHeader('pl', 'Zisk/ztráta', 'right', PL_COLUMN)}
                     {sortHeader('exempt', 'Bez daně dnes', 'right')}
@@ -480,11 +543,17 @@ export function PositionsExplorer({
                     const href = `${basePath}/portfolio/${row.isin}`;
                     const name = (
                       <>
-                        <span className="block truncate font-medium text-ink group-hover/name:text-accent-text">
+                        <span
+                          title={row.label}
+                          className="block truncate font-medium text-ink group-hover/name:text-accent-text"
+                        >
                           {row.label}
                         </span>
                         {row.name && (
-                          <span className="type-footnote block truncate font-normal text-ink-muted">
+                          <span
+                            title={row.name}
+                            className="type-footnote block truncate font-normal text-ink-muted"
+                          >
                             {row.name}
                           </span>
                         )}
@@ -498,34 +567,52 @@ export function PositionsExplorer({
                         className="group/row"
                       >
                         <td className={cn(cell, 'w-full max-w-0 rounded-l-lg text-left')}>
-                          {wide ? (
-                            <button
-                              ref={(node) => {
-                                if (node) controls.current.set(row.isin, node);
-                                else controls.current.delete(row.isin);
-                              }}
-                              type="button"
-                              aria-expanded={isCurrent}
-                              aria-controls={regionId}
-                              onClick={() => setSelected(row.isin)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'ArrowDown') {
-                                  event.preventDefault();
-                                  move(index, 1);
-                                } else if (event.key === 'ArrowUp') {
-                                  event.preventDefault();
-                                  move(index, -1);
-                                }
-                              }}
-                              className="block w-full min-w-0 text-left"
-                            >
-                              {name}
-                            </button>
-                          ) : (
-                            <Link href={href} className="group/name block min-w-0">
-                              {name}
-                            </Link>
-                          )}
+                          {/* Název je vždy skutečný odkaz na detail (R5-06): klik
+                              s Ctrl/Cmd, prostřední tlačítko i „otevřít v novém
+                              panelu“ fungují nativně. V širokém okně obyčejný
+                              klik myší jen vybere řádek pro inspektor; Enter na
+                              řádku (fokus = výběr) detail otevře. */}
+                          <Link
+                            ref={(node) => {
+                              if (node) controls.current.set(row.isin, node);
+                              else controls.current.delete(row.isin);
+                            }}
+                            href={href}
+                            aria-current={wide && isCurrent ? 'true' : undefined}
+                            onFocus={wide ? () => setSelected(row.isin) : undefined}
+                            onClick={
+                              wide
+                                ? (event) => {
+                                    // `detail` 0 = aktivace klávesnicí nebo čtečkou: ta
+                                    // odkaz otevírá, jak má; ukazatel jen vybírá
+                                    const plainPointerClick =
+                                      event.detail > 0 &&
+                                      event.button === 0 &&
+                                      !event.metaKey &&
+                                      !event.ctrlKey &&
+                                      !event.shiftKey &&
+                                      !event.altKey;
+                                    if (plainPointerClick) event.preventDefault();
+                                  }
+                                : undefined
+                            }
+                            onKeyDown={
+                              wide
+                                ? (event) => {
+                                    if (event.key === 'ArrowDown') {
+                                      event.preventDefault();
+                                      move(index, 1);
+                                    } else if (event.key === 'ArrowUp') {
+                                      event.preventDefault();
+                                      move(index, -1);
+                                    }
+                                  }
+                                : undefined
+                            }
+                            className="group/name block min-w-0"
+                          >
+                            {name}
+                          </Link>
                         </td>
                         <td className={cn(cell, 'whitespace-nowrap text-right')}>
                           {showValue ? (

@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input, Select } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FieldRow, Group, Row } from '@/components/ui/list';
+import { Notice } from '@/components/ui/notice';
 import { Section } from '@/components/ui/section';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -62,23 +63,24 @@ export default async function SettingsPage({
           }
           // Důsledek volby je vidět hned pod popiskem a přepíná se s nabídkou
           // (`:has()` nad vybranou položkou) — text položek tak může zůstat
-          // krátký a limit přitom nezmizí.
+          // krátký a limit přitom nezmizí. Limity se jmenují stejně jako na
+          // přehledu (R1B-10).
           hint={
             <>
               <span className="hidden group-has-[option:disabled:checked]/field-row:inline">
                 Z výpisů se zjistit nedá.
               </span>
               <span className="hidden group-has-[option[value=PAUSAL]:checked]/field-row:inline">
-                {tidy('Hlídá se limit 50 000 Kč.')}
+                {tidy('Hlídá se limit paušální daně (50 000 Kč).')}
               </span>
               <span className="hidden group-has-[option[value=ZAMESTNANEC]:checked]/field-row:inline">
-                {tidy(`Hlídá se limit ${filingLimits.employee}.`)}
+                {tidy(`Hlídá se limit vedlejších příjmů (${filingLimits.employee}).`)}
               </span>
               <span className="hidden group-has-[option[value=OSVC]:checked]/field-row:inline">
                 Přiznání podáváš tak jako tak.
               </span>
               <span className="hidden group-has-[option[value=JINE]:checked]/field-row:inline">
-                {tidy(`Hlídá se obecný limit ${filingLimits.general}.`)}
+                {tidy(`Hlídá se limit pro podání přiznání (${filingLimits.general}).`)}
               </span>
             </>
           }
@@ -166,7 +168,7 @@ export default async function SettingsPage({
             </p>
             <p>
               {tidy(
-                'Párování prodejů, měnové kurzy a výklad limitu 100 000 Kč se u každého skončeného roku zafixují ve chvíli, kdy si za něj vygeneruješ podklady k přiznání — změna tady se pak projeví jen v letech bez fixace.',
+                'Párování prodejů, měnové kurzy a výklad osvobození prodejů (100 000 Kč) se u každého skončeného roku zafixují ve chvíli, kdy si za něj poprvé otevřeš report — změna tady se pak projeví jen v letech bez fixace.',
               )}
             </p>
           </InfoPopover>
@@ -256,7 +258,8 @@ export default async function SettingsPage({
       >
         <Group variant="inset">
           <FieldRow
-            label={tidy('Co se počítá do limitu 100 000 Kč')}
+            // jméno limitu drží přehled: „Osvobození prodejů cenných papírů“
+            label={tidy('Co čerpá osvobození prodejů (100 000 Kč)')}
             htmlFor="limit-100k"
             hintId="limit-100k-napoveda"
             hint={
@@ -266,10 +269,13 @@ export default async function SettingsPage({
               />
             }
             info={
-              <InfoPopover label="Limit 100 000 Kč">
+              <InfoPopover
+                label="co čerpá osvobození prodejů"
+                title="Osvobození prodejů cenných papírů"
+              >
                 <p>
                   {tidy(
-                    'Zákon jednoznačný není; finanční správa se kloní k přísnějšímu čtení. Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.',
+                    'Prodeje cenných papírů jsou osvobozené, dokud jejich roční úhrn nepřesáhne 100 000 Kč. Jestli se do něj počítají i prodeje po tříletém časovém testu, zákon jednoznačně neříká; finanční správa se kloní k přísnějšímu čtení. Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.',
                   )}
                 </p>
               </InfoPopover>
@@ -377,19 +383,18 @@ export default async function SettingsPage({
             }
             info={
               <InfoPopover label="jak se daní vratky kapitálu" title="Vratka kapitálu">
+                {/* R1B-24: bublina měla 108 slov. Zůstává, co rozhoduje o volbě,
+                    a pokyn pro stará data (nové pole se do už nahraných výpisů
+                    samo nedostane); jak příznak vyplnit v šabloně, říkají její
+                    pravidla ve Zdrojích dat. */}
                 <p>
                   {tidy(
-                    'Některé fondy a REITy vracejí část vloženého kapitálu (broker to hlásí jako „Return of capital“). Není to podíl na zisku, takže věcně jen snižuje nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních fondů neřeší. Bezpečný výklad daní hned a čerpá limit 50 000 Kč.',
+                    'Některé fondy a REITy vracejí část vloženého kapitálu („Return of capital“). Věcně to jen snižuje nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních fondů neřeší. Bezpečný výklad daní hned a čerpá limit paušální daně.',
                   )}
                 </p>
                 <p>
-                  Volba se týká jen výplat, které jsou ve výpisu takhle označené. Příznak čteme
-                  z výpisů Trading 212 a Interactive Brokers a jde vyplnit i ručně ve sloupci{' '}
-                  <span className="tabular-nums">return_of_capital</span> univerzální šablony.
-                </p>
-                <p>
                   {tidy(
-                    'U výpisů nahraných před 12. 8. 2026 v datech chybí, takže je potřeba ve Zdrojích dat vrátit import zpět a výpis nahrát znovu.',
+                    'Týká se jen výplat, které jsou tak ve výpisu označené. U výpisů nahraných před 12. 8. 2026 příznak chybí — ve Zdrojích dat rozbal import v historii, vrať ho zpět a výpis nahraj znovu.',
                   )}
                 </p>
               </InfoPopover>
@@ -427,6 +432,15 @@ export default async function SettingsPage({
 
       {/* jeden sloupec s šířkou pro seznam — nastavení se nečte přes celou obrazovku */}
       <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
+        {/* Bez profilu sem přesměruje přehled, portfolio, simulátor i report
+            (R1B-06). Stránka proto říká, proč tu člověk je a co má udělat —
+            jinak klik v navigaci vypadal, jako že nic neudělal. */}
+        {!profile && (
+          <Notice title="Krok 1 ze 2 — vyber daňový režim">
+            Bez něj Danero neví, který limit ti hlídat, takže přehled, portfolio, simulátor ani
+            report zatím neotevře.
+          </Notice>
+        )}
         {/* Formulář schválně NEMÁ `id="dan"`: akce po uložení přesměruje na
             `#dan` a kotva, která neexistuje, nechá stránku stát tam, kde je.
             S kotvou by každá změna dole odrolovala zpátky nahoru. */}
@@ -444,11 +458,13 @@ export default async function SettingsPage({
             // odesílají dál, takže profil vznikne úplný. První uložení
             // potvrzuje tlačítko — auto-save by nováčka po první změně
             // přesměroval na /prehled uprostřed vyplňování.
-            <div className="space-y-4">
-              <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
+            // Tlačítko stojí POD rozbalením: kdo si volby projde, má ho na
+            // konci a je zřejmé, že ukládá i je (R1B-15).
+            <div className="space-y-6">
               <Disclosure summary="Výpočet a sporné výklady — přednastaveno bezpečně">
                 <div className="type-body space-y-14 pt-6 text-ink">{calculation}</div>
               </Disclosure>
+              <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
             </div>
           )}
         </form>
@@ -463,7 +479,7 @@ export default async function SettingsPage({
               <InfoPopover label="Zafixované roky">
                 <p>
                   {tidy(
-                    'Jakmile si za skončený rok vygeneruješ podklady k přiznání, zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.',
+                    'Jakmile si za skončený rok poprvé otevřeš report, zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.',
                   )}
                 </p>
               </InfoPopover>
@@ -471,7 +487,7 @@ export default async function SettingsPage({
           >
             {pinnedYears.length === 0 ? (
               <EmptyState compact headingAs="p" title="Zatím žádný">
-                Rok se zafixuje, když si za něj vygeneruješ podklady k přiznání.
+                Skončený rok se zafixuje, když si za něj poprvé otevřeš report.
               </EmptyState>
             ) : (
               <Group>
@@ -495,7 +511,7 @@ export default async function SettingsPage({
                         </span>
                       </li>
                       <li>
-                        {tidy('Limit 100 000 Kč:')}{' '}
+                        {tidy('Osvobození prodejů (100 000 Kč):')}{' '}
                         <span className="text-ink">{limit100kLabel(pinned.limit100kStrict)}</span>
                       </li>
                     </ul>

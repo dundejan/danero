@@ -77,6 +77,22 @@ export function positionHistory(
 
 const daysText = (days: number): string => `za ${days} ${plural(days, 'den', 'dny', 'dní')}`;
 
+/** Do tolika znaků se název v širokém okně vejde do titulku lišty celý. */
+const TITLE_FITS_CHARS = 24;
+/** Tolik znaků unese titulek i na nejužším telefonu (vedle cesty zpět a akce). */
+const TITLE_FITS_NARROW_CHARS = 6;
+
+/**
+ * Kolik nákupů je vidět, než si člověk řekne o všechny. Kdo spoří měsíčně, má
+ * jich desítky a historie pod nimi končila na telefonu o osm obrazovek níž
+ * (R2-29). Rozbalení je bez JavaScriptu: zaškrtávací pole ve tvaru textového
+ * tlačítka a `:has()` nad skupinou — řádky navíc jsou v HTML vždy, takže je
+ * najde hledání v prohlížeči po rozbalení i tisk.
+ */
+const COLLAPSED_LOTS = 12;
+const EXTRA_LOT_ROW = 'hidden group-has-[input:checked]/lots:flex print:flex';
+const EXTRA_LOT_TABLE_ROW = 'hidden group-has-[input:checked]/lots:table-row print:table-row';
+
 /**
  * Stav časového testu jednoho nákupu. U pozice bez nároku (obchodní majetek,
  * stablecoin, derivát) by datum i odpočet slibovaly osvobození, které nikdy
@@ -169,9 +185,17 @@ export function PositionView({
     verdict = 'Zatím nic bez daně';
   }
 
-  const subtitle = [fullName && fullName !== label ? fullName : null, isin !== label ? isin : null]
-    .filter((part): part is string => part !== null)
-    .join(' · ');
+  // Celý název pozice musí být na detailu vždy čitelný (R2-02). Titulek
+  // v liště se zkracuje — u pozice bez tickeru (Degiro, univerzální šablona)
+  // je popiskem celý název fondu a na telefonu z něj zbylo „Amu…“, přitom pod
+  // lištou stál jen ISIN. Název proto stojí pod lištou vždy a smí se zalomit;
+  // jen krátký název, který se v širokém okně do lišty vejde celý, se tam
+  // neopakuje, a ticker (pár znaků) se do lišty vejde i na telefonu.
+  const nameCandidate = fullName ?? (label !== isin ? label : null);
+  const nameLine =
+    nameCandidate === label && label.length <= TITLE_FITS_NARROW_CHARS ? null : nameCandidate;
+  const repeatsShortTitle = nameLine === label && label.length <= TITLE_FITS_CHARS;
+  const showIsin = isin !== label;
 
   return (
     <>
@@ -192,8 +216,16 @@ export function PositionView({
       <div className="@container max-w-[72rem] pt-2 md:pt-4">
         <div className="flex flex-wrap items-end gap-x-16 gap-y-7">
           <div className="min-w-0">
-            {subtitle && (
-              <p className="type-callout break-words tabular-nums text-ink-muted">{subtitle}</p>
+            {(nameLine || showIsin) && (
+              <p className="type-callout text-pretty text-ink-muted [overflow-wrap:anywhere]">
+                {nameLine && (
+                  <span className={cn(repeatsShortTitle && '@2xl:hidden')}>
+                    {nameLine}
+                    {showIsin && ' · '}
+                  </span>
+                )}
+                {showIsin && <span className="tabular-nums">{isin}</span>}
+              </p>
             )}
             <h2
               className={cn(
@@ -206,7 +238,9 @@ export function PositionView({
           </div>
 
           {position && valuation && (
-            <dl className="flex flex-wrap gap-x-12 gap-y-6">
+            // popisek s vysvětlivkou je vyšší o ikonu — stejná výška řádku drží
+            // čísla sousedních údajů na jedné lince (R1B-26)
+            <dl className="flex flex-wrap gap-x-12 gap-y-6 [&_dt]:min-h-6">
               {valuation.valueCzk ? (
                 <Stat
                   label="Hodnota"
@@ -289,63 +323,86 @@ export function PositionView({
                 </InfoPopover>
               }
             >
-              {/* telefon: seznam — čtyři sloupce by se na 360 px nevešly */}
-              <Group className="@2xl:hidden" aria-label="Nákupy a jejich časové testy">
-                {lots.map((lot) => (
-                  <Row
-                    key={lot.lotId}
-                    label={
-                      <span className="tabular-nums">
-                        {czDate(lot.acquisitionDate)}
-                        {lot.interpretive && ' *'}
-                      </span>
-                    }
-                    hint={
-                      <span className="tabular-nums">
-                        {qty(lot.remaining)} ks · {money(lot.costPerShare, position.currency)} za
-                        kus
-                      </span>
-                    }
-                    value={<LotStatus lot={lot} stacked />}
-                  />
-                ))}
-              </Group>
-
-              <div className="hidden @2xl:block">
-                <Table aria-label="Nákupy a jejich časové testy">
-                  <thead>
-                    <tr>
-                      <Th>Nabytí</Th>
-                      <Th align="right">Kusů</Th>
-                      <Th align="right">Cena za kus</Th>
-                      <Th align="right">Bez daně od</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lots.map((lot) => (
-                      <Tr key={lot.lotId}>
-                        <Td>
+              <div className="group/lots">
+                {/* telefon: seznam — čtyři sloupce by se na 360 px nevešly */}
+                <Group className="@2xl:hidden" aria-label="Nákupy a jejich časové testy">
+                  {lots.map((lot, index) => (
+                    <Row
+                      key={lot.lotId}
+                      className={cn(index >= COLLAPSED_LOTS && EXTRA_LOT_ROW)}
+                      label={
+                        <span className="tabular-nums">
                           {czDate(lot.acquisitionDate)}
                           {lot.interpretive && ' *'}
-                        </Td>
-                        <Td align="right">{qty(lot.remaining)}</Td>
-                        <Td align="right" className="whitespace-nowrap">
-                          {money(lot.costPerShare, position.currency)}
-                        </Td>
-                        <Td align="right" className="whitespace-nowrap">
-                          <LotStatus lot={lot} />
-                        </Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </div>
+                        </span>
+                      }
+                      hint={
+                        <span className="tabular-nums">
+                          {qty(lot.remaining)} ks · {money(lot.costPerShare, position.currency)} za
+                          kus
+                        </span>
+                      }
+                      value={<LotStatus lot={lot} stacked />}
+                    />
+                  ))}
+                </Group>
 
-              {lots.some((lot) => lot.interpretive) && (
-                <p className="type-caption pt-2 text-ink-muted">
-                  * Datum nabytí vychází z výkladu korporátní akce — podrobnosti jsou v reportu.
-                </p>
-              )}
+                <div className="hidden @2xl:block">
+                  <Table aria-label="Nákupy a jejich časové testy">
+                    <thead>
+                      <tr>
+                        <Th>Nabytí</Th>
+                        <Th align="right">Kusů</Th>
+                        <Th align="right">Cena za kus</Th>
+                        <Th align="right">Bez daně od</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lots.map((lot, index) => (
+                        <Tr
+                          key={lot.lotId}
+                          className={cn(index >= COLLAPSED_LOTS && EXTRA_LOT_TABLE_ROW)}
+                        >
+                          <Td>
+                            {czDate(lot.acquisitionDate)}
+                            {lot.interpretive && ' *'}
+                          </Td>
+                          <Td align="right">{qty(lot.remaining)}</Td>
+                          <Td align="right" className="whitespace-nowrap">
+                            {money(lot.costPerShare, position.currency)}
+                          </Td>
+                          <Td align="right" className="whitespace-nowrap">
+                            <LotStatus lot={lot} />
+                          </Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+
+                {lots.length > COLLAPSED_LOTS && (
+                  <label
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                      '-ml-3 mt-3 cursor-pointer has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent print:hidden',
+                    )}
+                  >
+                    <input type="checkbox" className="sr-only" />
+                    <span className="group-has-[input:checked]/lots:hidden">
+                      Zobrazit všech {lots.length}
+                    </span>
+                    <span className="hidden group-has-[input:checked]/lots:inline">
+                      Zobrazit méně
+                    </span>
+                  </label>
+                )}
+
+                {lots.some((lot) => lot.interpretive) && (
+                  <p className="type-caption pt-2 text-ink-muted">
+                    * Datum nabytí vychází z výkladu korporátní akce — podrobnosti jsou v reportu.
+                  </p>
+                )}
+              </div>
             </Section>
           )}
 

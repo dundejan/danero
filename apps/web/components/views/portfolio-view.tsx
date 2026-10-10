@@ -108,7 +108,6 @@ export function PortfolioView({
   const outlook = exemptionOutlook(positions, prices, today, currentYear);
   const allocation = portfolioAllocation(valuation);
   const shareByIsin = new Map(allocation?.slices.map((slice) => [slice.isin, slice.share]));
-  const exemptShareToday = outlook?.points[0]?.exemptShare ?? null;
   const hasPrices = valuation.pricedCount > 0;
 
   // Otevřené deriváty počítá engine ke konci analyzovaného roku. Stránka je
@@ -123,7 +122,7 @@ export function PortfolioView({
   const byIsin = new Map(positions.map((position) => [position.isin, position]));
   // nejbližší konec časového testu napříč portfoliem — číslo nahoře na stránce
   let nextExemption: { isin: string; exemptFrom: string; days: number } | null = null;
-  // hodnota kusů po časovém testu; dává smysl, jen když jde ocenit všechno
+  // hodnota kusů po časovém testu — součet přes oceněné pozice
   let exemptValueCzk = ZERO;
 
   const explorerRows: ExplorerRow[] = valuation.rows.map((row) => {
@@ -208,14 +207,44 @@ export function PortfolioView({
 
   // TypeScript přiřazení uvnitř `map` nesleduje — po cyklu si typ vrátíme
   const next = nextExemption as { isin: string; exemptFrom: string; days: number } | null;
-  // částku ukážeme, jen když je oceněné celé portfolio (stejná podmínka jako
-  // u podílu váženého hodnotou); jinak by byla nižší, než kolik doopravdy je
-  const exemptByValue = outlook?.basis === 'value';
+
+  // „Bez daně už dnes“ (R2-10): částka a podíl z oceněných pozic. Pozice bez
+  // ceny se do nich nepočítají a číslo to říká; na počet kusů se nepřechází
+  // nikdy napříč instrumenty (jen u portfolia o jediné pozici bez ceny). Když
+  // nejde ocenit nic, zbývá poctivý počet pozic, které kusy bez daně mají.
+  const exemptPositions = explorerRows.filter((row) => row.exemptQtyText).length;
+  const exemptToday: { value: string; note: string; positive: boolean } | null =
+    explorerRows.length === 0
+      ? null
+      : outlook?.basis === 'value'
+        ? {
+            value: czk(exemptValueCzk),
+            note:
+              outlook.unpricedCount > 0
+                ? `${pct(outlook.points[0]!.exemptShare, 1)} z oceněných pozic · ${outlook.unpricedCount} bez ceny`
+                : `${pct(outlook.points[0]!.exemptShare, 1)} portfolia`,
+            positive: outlook.points[0]!.exemptShare > 0,
+          }
+        : outlook
+          ? {
+              value: pct(outlook.points[0]!.exemptShare, 1),
+              note: 'podle počtu kusů',
+              positive: outlook.points[0]!.exemptShare > 0,
+            }
+          : {
+              value: `${exemptPositions} z ${explorerRows.length} pozic`,
+              note: 'aspoň zčásti · podíl bez cen neznáme',
+              positive: exemptPositions > 0,
+            };
+  // nákup v datech vůbec není (jen dividendy), nebo je všechno prodané? (R2-19)
+  const everHeld = txs.some((tx) => tx.type === 'BUY' || tx.type === 'TRANSFER_IN');
 
   /* ── odpověď ────────────────────────────────────────────────────────── */
 
   const answer = (
-    <dl className="flex flex-wrap items-end gap-x-12 gap-y-7 md:gap-x-16">
+    // Popisky tří čísel stojí na jedné lince, i když třetí číslo je menší
+    // a jen některý popisek má vysvětlivku (R1B-26).
+    <dl className="flex flex-wrap items-start gap-x-12 gap-y-7 md:gap-x-16 [&_dt]:min-h-6">
       {hasPrices && (
         <Stat
           size="lg"
@@ -250,14 +279,14 @@ export function PortfolioView({
           }
         />
       )}
-      {exemptShareToday !== null && (
+      {exemptToday && (
         <Stat
           size="lg"
           label="Bez daně už dnes"
           // zelená jen pro skutečně pozitivní stav — nula není úspěch
-          tone={exemptShareToday > 0 ? 'success' : undefined}
-          value={exemptByValue ? czk(exemptValueCzk) : pct(exemptShareToday, 1)}
-          note={exemptByValue ? `${pct(exemptShareToday, 1)} portfolia` : 'podle počtu kusů'}
+          tone={exemptToday.positive ? 'success' : undefined}
+          value={exemptToday.value}
+          note={exemptToday.note}
           info={
             <InfoPopover label="Bez daně už dnes" title="Co jde prodat bez daně">
               <p>
@@ -265,9 +294,16 @@ export function PortfolioView({
                   'Kusy, které držíš déle než tři roky, mají splněný časový test — jejich prodej je osvobozený od daně bez ohledu na limity.',
                 )}
               </p>
+              {outlook?.basis === 'value' && outlook.unpricedCount > 0 && (
+                <p>
+                  {tidy(
+                    `Částka i podíl jsou z pozic, které umíme ocenit. Bez ceny od brokera nebo bez kurzu měny ${plural(outlook.unpricedCount, 'je', 'jsou', 'je')} ${outlook.unpricedCount} ${plural(outlook.unpricedCount, 'pozice', 'pozice', 'pozic')} — v čísle ${plural(outlook.unpricedCount, 'není', 'nejsou', 'není')}.`,
+                  )}
+                </p>
+              )}
               <p>
                 {tidy('Jak by konkrétní prodej dopadl včetně letošních limitů, spočítá simulátor.')}{' '}
-                <TextLink href={`${basePath}/simulator`}>Simulátor prodeje</TextLink>
+                <TextLink href={`${basePath}/simulator`}>Simulátor</TextLink>
               </p>
             </InfoPopover>
           }
@@ -277,7 +313,13 @@ export function PortfolioView({
         <Stat
           label="Nejbližší osvobození"
           value={czDate(next.exemptFrom)}
-          note={`${labels.get(next.isin) ?? next.isin} · ${daysText(next.days)}`}
+          // u pozice bez tickeru je popiskem celý název fondu — poznámka pod
+          // číslem ho smí zalomit na dva řádky, ne roztáhnout řadu čísel
+          note={
+            <span className="line-clamp-2 max-w-[18rem] [overflow-wrap:anywhere]">
+              {labels.get(next.isin) ?? next.isin} · {daysText(next.days)}
+            </span>
+          }
         />
       )}
     </dl>
@@ -340,8 +382,21 @@ export function PortfolioView({
           {explorerRows.length > 0 ? (
             <PositionsExplorer rows={explorerRows} showValue={hasPrices} basePath={basePath} />
           ) : (
-            <EmptyState compact title="Žádné otevřené pozice">
-              Všechny pozice jsou prodané. Historie zůstává níž.
+            <EmptyState
+              compact
+              title="Žádné otevřené pozice"
+              action={
+                // v demu /import nevede nikam
+                !everHeld && !basePath ? (
+                  <TextLink href="/import" chevron>
+                    Nahrát výpisy
+                  </TextLink>
+                ) : undefined
+              }
+            >
+              {everHeld
+                ? `Všechny pozice jsou prodané.${showDividends || showRealized || showFees ? ' Historie zůstává níž.' : ''}`
+                : 'Ve výpisech zatím není žádný nákup — nahraj výpis obchodů.'}
             </EmptyState>
           )}
         </Section>
@@ -360,25 +415,30 @@ export function PortfolioView({
               </InfoPopover>
             }
           >
-            {/* pár řádků, ne tabulka přes celou šířku; výhrada v patičce nesmí
-                zmizet — u derivátů žádné osvobození nečekej */}
-            <Group
-              className="max-w-[42rem]"
-              footer="Deriváty se daní vždy — časový test ani limity pro ně neplatí."
-              aria-label="Otevřené derivátové pozice"
-            >
-              {openDerivatives.map((position) => {
-                const contracts = position.quantity.abs();
-                return (
-                  <Row
-                    key={position.isin}
-                    label={labels.get(position.isin) ?? position.isin}
-                    hint={`${position.quantity.lt(0) ? 'vypsaná · ' : ''}otevřeno ${czDate(position.openedAt)}`}
-                    value={`${qty(contracts)} ${plural(contracts.toNumber(), 'kontrakt', 'kontrakty', 'kontraktů')}`}
-                  />
-                );
-              })}
-            </Group>
+            {/* Pár řádků na šířku tabulky pozic nad nimi (v širokém okně tedy
+                bez sloupce inspektoru) — s vlastní šířkou visel počet kontraktů
+                uprostřed a s tabulkou nelícoval (R1B-26). Výhrada v patičce
+                nesmí zmizet — u derivátů žádné osvobození nečekej. */}
+            <div className="@container">
+              <div className="gap-x-(--column-gap) @min-[60rem]:grid @min-[60rem]:grid-cols-[minmax(0,1fr)_minmax(0,var(--inspector-width))]">
+                <Group
+                  footer="Deriváty se daní vždy — časový test ani limity pro ně neplatí."
+                  aria-label="Otevřené derivátové pozice"
+                >
+                  {openDerivatives.map((position) => {
+                    const contracts = position.quantity.abs();
+                    return (
+                      <Row
+                        key={position.isin}
+                        label={labels.get(position.isin) ?? position.isin}
+                        hint={`${position.quantity.lt(0) ? 'vypsaná · ' : ''}otevřeno ${czDate(position.openedAt)}`}
+                        value={`${qty(contracts)} ${plural(contracts.toNumber(), 'kontrakt', 'kontrakty', 'kontraktů')}`}
+                      />
+                    );
+                  })}
+                </Group>
+              </div>
+            </div>
           </Section>
         )}
 
@@ -386,14 +446,27 @@ export function PortfolioView({
           <div className="@container">
             <div className="grid gap-x-(--column-gap) gap-y-14 @3xl:grid-cols-2">
               {showOutlook && (
+                // Táž křivka jako pod horizontem na přehledu — proto stejné
+                // jméno i barva (R1B-11); tečky po dnech má jen přehled.
                 <Section
-                  title="Výhled osvobození"
+                  title="Horizont osvobození"
                   info={
-                    <InfoPopover label="Výhled osvobození" align="start">
+                    <InfoPopover label="Horizont osvobození" align="start">
                       <p>
                         {tidy(
                           `Jaký podíl portfolia (podle ${outlook.basis === 'value' ? 'hodnoty' : 'počtu kusů'}) půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
                         )}
+                      </p>
+                      {outlook.unpricedCount > 0 && (
+                        <p>
+                          {tidy(
+                            `Počítá se z oceněných pozic; ${outlook.unpricedCount} bez ceny v křivce ${plural(outlook.unpricedCount, 'není', 'nejsou', 'není')}.`,
+                          )}
+                        </p>
+                      )}
+                      <p>
+                        Po dnech a pozicích ho ukazuje{' '}
+                        <TextLink href={`${basePath}/prehled`}>přehled</TextLink>.
                       </p>
                     </InfoPopover>
                   }
@@ -405,7 +478,14 @@ export function PortfolioView({
               {showDividends && (
                 <Section
                   title={years.length > 1 ? 'Dividendy' : `Dividendy ${year}`}
-                  count={dividends.totalCzk > 0 ? `${czk(dividends.totalCzk)} brutto` : undefined}
+                  count={
+                    dividends.totalCzk <= 0
+                      ? undefined
+                      : // haléřová dividenda se zaokrouhlila na „0 Kč brutto“ (R2-28)
+                        dividends.totalCzk < 1
+                        ? 'méně než 1 Kč brutto'
+                        : `${czk(dividends.totalCzk)} brutto`
+                  }
                   info={
                     <InfoPopover label="Dividendy" align="start">
                       <p>

@@ -87,7 +87,9 @@ function niceTicks(max: number, min = 0): { domain: [number, number]; ticks: num
   const hi = Math.max(max, 1);
   const rawStep = (hi - lo) / 4;
   const pow = 10 ** Math.floor(Math.log10(rawStep));
-  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= rawStep)!;
+  // Osa je v celých korunách: s krokem pod 1 Kč vycházely u haléřových
+  // částek popisky „0, 1, 1“ (R2-28).
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= rawStep)!);
   const niceMax = Math.ceil(hi / step) * step;
   const niceMin = lo < 0 ? Math.floor(lo / step) * step : 0;
   const ticks: number[] = [];
@@ -195,11 +197,15 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
             y={series.limitCzk}
             stroke="var(--danger)"
             strokeDasharray="4 4"
+            // Popisek stojí vlevo NAD čarou (u vodorovné čáry to je
+            // `insideBottomLeft`): řada tam teprve začíná od nuly. Vpravo pod
+            // čarou ho při čerpání těsně pod limitem přeškrtla křivka (R1B-25)
+            // a u limitu u dna grafu se kryl s popisky osy (R2-15).
             label={{
               value: 'limit',
               fill: 'var(--danger)',
               fontSize: 10,
-              position: 'insideTopRight',
+              position: 'insideBottomLeft',
             }}
           />
           <Tooltip
@@ -453,7 +459,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
                   {
                     name: `Bez daně (% ${basisLabel})`,
                     value: pct(Number(payload[0].value), 1),
-                    color: 'var(--success)',
+                    color: SERIES[0],
                   },
                 ]}
               />
@@ -463,7 +469,8 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         <Line
           type="stepAfter"
           dataKey="exemptShare"
-          stroke="var(--success)"
+          // stejná barva jako táž křivka pod horizontem na přehledu (R1B-11)
+          stroke={SERIES[0]}
           strokeWidth={2}
           dot={false}
           activeDot={{ r: 4 }}

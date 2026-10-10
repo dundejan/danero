@@ -289,7 +289,8 @@ describe('číselník: přepis ISIN u symbolu s uloženými transakcemi (L23-02)
     expect(await loadTransactions(stav.db, 'u1')).toHaveLength(stored.length);
 
     const html = await renderImportPage({ chyba: 'isin-pouzity' });
-    expect(html).toContain('vrať import zpět');
+    // vrácení je v historii až po rozbalení řádku — hláška to říká (R5-07)
+    expect(html).toContain('rozbal ten import a vrať ho zpět');
   });
 
   it('změna jen měny u titulu s transakcemi neprojde — i měna je v otisku obchodu', { timeout: 60_000 }, async () => {

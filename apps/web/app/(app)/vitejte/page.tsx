@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AppToolbar } from '@/components/app-toolbar';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { buttonVariants } from '@/components/ui/button';
@@ -92,20 +93,26 @@ export default async function WelcomePage() {
         };
 
   return (
-    <div className="mx-auto flex max-w-[30rem] flex-col items-center py-12 text-center md:py-24">
-      <p className="type-footnote text-ink-muted">Krok {step.number} ze 2</p>
-      <h1 className="type-title-1 mt-2 text-balance">{step.title}</h1>
-      {/* `div`, ne `p`: vysvětlivka si na telefonu vykresluje sheet a ten do odstavce nesmí */}
-      <div className="type-body mt-3 text-pretty text-ink-muted">
-        {step.lede}
-        {step.info && <> {step.info}</>}
+    <>
+      {/* Lišta s titulkem jako každá stránka aplikace — bez ní to byla jediná
+          obrazovka, kde nešlo říct „kde jsem“ (R1B-29). Nadpis kroku je proto
+          až druhé úrovně. */}
+      <AppToolbar title="Začínáme" />
+      <div className="mx-auto flex max-w-[30rem] flex-col items-center py-12 text-center md:py-24">
+        <p className="type-footnote text-ink-muted">Krok {step.number} ze 2</p>
+        <h2 className="type-title-1 mt-2 text-balance">{step.title}</h2>
+        {/* `div`, ne `p`: vysvětlivka si na telefonu vykresluje sheet a ten do odstavce nesmí */}
+        <div className="type-body mt-3 text-pretty text-ink-muted">
+          {step.lede}
+          {step.info && <> {step.info}</>}
+        </div>
+        <Link href={step.action.href} className={`${buttonVariants({ size: 'lg' })} mt-8`}>
+          {step.action.label}
+        </Link>
+        <TextLink href="/demo" chevron className="mt-3">
+          Podívat se do dema
+        </TextLink>
       </div>
-      <Link href={step.action.href} className={`${buttonVariants({ size: 'lg' })} mt-8`}>
-        {step.action.label}
-      </Link>
-      <TextLink href="/demo" chevron className="mt-3">
-        Podívat se do dema
-      </TextLink>
-    </div>
+    </>
   );
 }

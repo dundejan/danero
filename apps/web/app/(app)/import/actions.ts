@@ -12,11 +12,12 @@ import { encryptSecret } from '@/lib/crypto';
 import { invalidateUserCache } from '@/lib/engine-cache';
 import { reportFailedImport } from '@/lib/failed-imports';
 import {
+  batchesToOpen,
   brokerCardAnchor,
   IMPORT_HISTORY_ANCHOR,
   importFeedbackUrl,
 } from '@/lib/import-feedback';
-import { importFileIsolated } from '@/lib/import-service';
+import { importFileIsolated, type ImportSummary } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import {
   aliasesBlockedByTransactions,
@@ -76,13 +77,13 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   let failed = 0;
   let added = 0;
   let filesWithErrors = 0;
-  let lastBatchId: string | undefined;
+  const summaries: ImportSummary[] = [];
   for (const file of files) {
     try {
       const summary = await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
       added += summary.added;
       if (summary.errors.length > 0) filesWithErrors += 1;
-      lastBatchId = summary.batchId;
+      summaries.push(summary);
     } catch (error) {
       failed += 1;
       logEvent('error', 'import.upload_failed', {
@@ -104,7 +105,7 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   redirect(
     importFeedbackUrl(
       'nahrano',
-      { files: files.length, added, filesWithErrors, batchId: lastBatchId },
+      { files: files.length, added, filesWithErrors, batchId: batchesToOpen(summaries) },
       IMPORT_HISTORY_ANCHOR,
     ),
   );
