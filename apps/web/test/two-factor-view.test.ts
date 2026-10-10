@@ -186,7 +186,7 @@ describe('TwoFactorSection — vykreslení jednotlivých stavů', () => {
     expect(codeSpans(html)).toEqual([]);
     expect(html).toContain('Záložní kódy už znovu neukážeme');
     expect(html).toContain('vypni a zapni znovu');
-    expect(html).toContain('>Vypnout 2FA</button>');
+    expect(html).toContain('>Vypnout ověření</button>');
   });
 });
 

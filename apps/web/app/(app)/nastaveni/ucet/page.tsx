@@ -110,6 +110,11 @@ export default async function AccountSettingsPage({
               open={emailError !== null}
             >
               <form action={changeEmailAction} className="max-w-[20rem] space-y-4 pt-1 text-ink">
+                {/* V řádku je dlouhá adresa zkrácená a celou ukáže jen `title` —
+                    ten se na dotyku neobjeví. Rozbalený řádek ji proto vypíše. */}
+                <p className="type-footnote text-ink-muted">
+                  Teď: <span className="break-all text-ink">{user.email}</span>
+                </p>
                 <Field
                   label="Nový e-mail"
                   htmlFor="novy-email"
@@ -141,7 +146,9 @@ export default async function AccountSettingsPage({
                   />
                 </Field>
                 {emailError && <FieldError id={EMAIL_ERROR_ID}>{emailError}</FieldError>}
-                <SubmitButton pendingLabel="Měním…">Změnit e-mail</SubmitButton>
+                <SubmitButton variant="tinted" pendingLabel="Měním…">
+                  Změnit e-mail
+                </SubmitButton>
               </form>
             </DisclosureRow>
 
@@ -181,7 +188,9 @@ export default async function AccountSettingsPage({
                   />
                 </Field>
                 {passwordError && <FieldError id={PASSWORD_ERROR_ID}>{passwordError}</FieldError>}
-                <SubmitButton pendingLabel="Měním…">Změnit heslo</SubmitButton>
+                <SubmitButton variant="tinted" pendingLabel="Měním…">
+                  Změnit heslo
+                </SubmitButton>
               </form>
             </DisclosureRow>
 
@@ -311,7 +320,7 @@ export default async function AccountSettingsPage({
                 download
                 className={buttonVariants({ variant: 'secondary', size: 'sm' })}
               >
-                Stáhnout JSON
+                Stáhnout moje data
               </a>
             </Row>
             <Row label="Smazání účtu" hint="Nevratné — smaže účet i všechna data.">
