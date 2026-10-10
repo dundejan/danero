@@ -101,9 +101,7 @@ export default function OProjektuPage() {
             <span className="text-ink">{OPERATOR.name}</span>, IČO {OPERATOR.ico}, fyzická osoba
             podnikající
           </SpecRow>
-          <SpecRow label="Kontakt">
-            <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink>
-          </SpecRow>
+          {/* kontakt tu schválně není podruhé — e-mail stojí v příběhu výš i v patičce */}
           <SpecRow label="Pravidla služby">
             <TextLink href="/podminky">Podmínky užití</TextLink> a{' '}
             <TextLink href="/soukromi">ochrana soukromí</TextLink>
