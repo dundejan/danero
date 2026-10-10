@@ -56,10 +56,10 @@ export const IMPORT_FEEDBACK_PARAMS: readonly string[] = Object.values(PARAM_NAM
 /** Kotva sekce „Historie importů“ — tam vede odezva po nahrání a po vrácení. */
 export const IMPORT_HISTORY_ANCHOR = 'historie';
 
-/** Karty brokerů na /import mají jako `id` přímo kód brokera. */
+/** Bloky brokerů na /import (připojený účet i řádek „napojit“) mají jako `id` přímo kód brokera. */
 const BROKER_CARD_ANCHORS = new Set(['trading212', 'ibkr']);
 
-/** Kotva karty brokera, ať stránka po akci zůstane u ní; jiný broker kartu nemá. */
+/** Kotva bloku brokera, ať stránka po akci zůstane u něj; jiný broker blok nemá. */
 export const brokerCardAnchor = (broker: string): string | undefined =>
   BROKER_CARD_ANCHORS.has(broker) ? broker : undefined;
 
@@ -152,7 +152,7 @@ export function importFeedback(params: Params): ImportFeedback | null {
     case 'pripojeno':
       return {
         kind: 'ok',
-        text: 'Klíč je uložený a účet připojený. Historii stáhneš tlačítkem v kartě brokera.',
+        text: 'Klíč je uložený a účet připojený. Zbývá stáhnout historii — tlačítkem u účtu.',
       };
     case 'odpojeno':
       return {
@@ -162,7 +162,7 @@ export function importFeedback(params: Params): ImportFeedback | null {
     case 'spusteno':
       return {
         kind: 'ok',
-        text: 'Synchronizace běží na pozadí — průběh uvidíš v kartě brokera.',
+        text: 'Synchronizace běží na pozadí — průběh uvidíš u účtu.',
       };
     default:
       return null;

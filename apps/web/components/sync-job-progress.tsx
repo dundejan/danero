@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SyncProgress } from '@/lib/broker-sync';
+import { Group, Row } from '@/components/ui/list';
+import type { SyncProgress, SyncYearProgress } from '@/lib/broker-sync';
 import { plural } from '@/lib/format';
 
 /** Serializovaný stav jobu pro klienta (RSC → props i /api/jobs/latest). */
@@ -26,19 +27,68 @@ const phaseText = (phase: SyncProgress['phase'], broker?: string): string => {
 };
 
 /**
+ * Ukazatel běžící práce: tiché šedé kolečko. Barvu stavu nenese (nic se
+ * nestalo, jen se pracuje) a akcentní modrá patří ovládání. S omezeným
+ * pohybem se netočí, jen pomalu pulzuje.
+ */
+function Spinner() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden
+      className="size-4 shrink-0 animate-spin text-ink-muted motion-reduce:animate-pulse"
+    >
+      <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.25" />
+      <path d="M8 1.75a6.25 6.25 0 0 1 6.25 6.25" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Co se s jedním rokem stalo — stejná slova jako souhrn dávky v historii. */
+function YearResult({ year }: { year: SyncYearProgress }) {
+  if (year.status === 'running') {
+    return <span className="text-ink-muted">generuje se export…</span>;
+  }
+  if (year.status === 'empty') {
+    return <span className="text-ink-muted">žádné transakce</span>;
+  }
+  const added = year.added ?? 0;
+  const duplicates = year.duplicates ?? 0;
+  return (
+    <>
+      {added} {plural(added, 'nová', 'nové', 'nových')} · {duplicates}{' '}
+      {plural(duplicates, 'duplicita', 'duplicity', 'duplicit')}
+      {year.errors ? (
+        <span className="text-danger">
+          {' '}
+          · {year.errors} {plural(year.errors, 'chyba', 'chyby', 'chyb')}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Živý průběh sync jobu jednoho účtu u brokera: polluje /api/jobs/latest,
  * ukazuje stav po letech a po dokončení obnoví stránku (výsledek pak ukazuje
  * serverová část /import).
+ *
+ * Je to klidná obrazovka: jedna věta o tom, co se právě děje, jedna o tom,
+ * co čekat (`hint`), a pod nimi roky. Čtečce se hlásí jen změna fáze — seznam
+ * let se mění každých pár vteřin a předčítat ho celý by rušilo.
  */
 export function SyncJobProgress({
   initialJob,
   accountId,
   broker,
+  hint,
 }: {
   initialJob: SyncJobView;
   accountId: string;
   /** Název brokera pro texty fází (např. „Trading 212“). */
   broker?: string;
+  /** Jedna věta o tom, co čekat (jak dlouho to trvá, že jde odejít). */
+  hint?: string;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
@@ -78,41 +128,20 @@ export function SyncJobProgress({
         : 'Synchronizace běží…';
 
   return (
-    <div className="space-y-2" aria-live="polite">
-      <p className="flex items-center gap-2 text-sm font-medium text-ink">
-        <span className="inline-block size-2 animate-pulse rounded-full bg-accent" aria-hidden />
+    <div>
+      <p role="status" className="type-callout flex items-center gap-2 font-medium">
+        <Spinner />
         {phaseLabel}
       </p>
-      {progress?.mode === 'full' && (
-        <p className="text-xs text-ink-muted">
-          První synchronizace prochází všechny roky od založení účtu — kvůli limitům
-          Trading 212 trvá zhruba minutu na každý rok a stahuje se po částech. Klidně
-          odejdi, poběží dál.
-        </p>
-      )}
+      {hint && <p className="type-footnote mt-1.5 text-pretty text-ink-muted">{hint}</p>}
       {progress?.years && progress.years.length > 0 && (
-        <ul className="space-y-1 border-t border-line pt-2">
+        <Group className="mt-3" aria-label="Průběh po letech">
           {progress.years.map((year) => (
-            <li key={year.year} className="flex items-baseline gap-3 tabular-nums text-xs">
-              <span className="font-semibold text-ink">{year.year}</span>
-              {year.status === 'running' ? (
-                <span className="text-ink-muted">Trading 212 generuje export…</span>
-              ) : year.status === 'empty' ? (
-                <span className="text-ink-muted">žádné transakce</span>
-              ) : (
-                <span className="text-success-text">
-                  {year.added ?? 0} {plural(year.added ?? 0, 'nová', 'nové', 'nových')} ·{' '}
-                  {year.duplicates ?? 0} {plural(year.duplicates ?? 0, 'duplicita', 'duplicity', 'duplicit')}
-                  {year.errors ? (
-                    <span className="text-danger">
-                      {' '}· {year.errors} {plural(year.errors, 'chyba', 'chyby', 'chyb')}
-                    </span>
-                  ) : null}
-                </span>
-              )}
-            </li>
+            <Row key={year.year} label={year.year} className="type-callout">
+              <YearResult year={year} />
+            </Row>
           ))}
-        </ul>
+        </Group>
       )}
     </div>
   );

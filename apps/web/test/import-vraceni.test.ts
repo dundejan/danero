@@ -169,48 +169,57 @@ describe('vrácení importu', () => {
     expect(rows[0]!.type).toBe('IMPORT_UNDONE');
   });
 
+  /** Zdroják souboru ze stránky /import (stránka je rozdělená do komponent). */
+  const importSource = async (file: string): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(join(import.meta.dirname, '..', 'app', '(app)', 'import', file), 'utf8');
+  };
+
   /**
    * K6a-15: co vrácení importu doopravdy udělá, viselo nejdřív v `title=`
    * a pak ve `<span className="sr-only">` — obojí je u mazacího tlačítka to
    * nejhorší možné místo, protože to vidí jen odečítač obrazovky. Text musí
-   * být vidět; tlačítko na něj jen odkazuje přes `aria-describedby`.
+   * být vidět. Od redesignu ho nese potvrzovací dialog: přečte se dřív, než
+   * se cokoli smaže, a dialog ho má jako svůj popis (`aria-describedby`
+   * doplňuje Base UI).
    */
   it('vysvětlení u „Vrátit import zpět“ je vidět, ne schované pro odečítač', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const page = readFileSync(
-      join(import.meta.dirname, '..', 'app', '(app)', 'import', 'page.tsx'),
-      'utf8',
-    );
-    const form = page.slice(page.indexOf('<form action={undoImportAction}>'));
-    const button = form.slice(0, form.indexOf('</form>'));
-    expect(button).not.toContain('className="sr-only"');
-    expect(button).toContain('aria-describedby');
-    // a popisovaný odstavec v souboru opravdu existuje
-    expect(page).toContain('id={`vraceni-${batch.id}`}');
-    expect(page).toContain('nahraj ho potom znovu');
+    const history = await importSource('import-history.tsx');
+    const undo = history.slice(history.indexOf('action={undoImportAction}'));
+    const dialog = undo.slice(0, undo.indexOf('/>'));
+    expect(history).not.toContain('sr-only');
+    expect(dialog).toContain('description=');
+    expect(dialog).toContain('které přibyly tímhle importem');
+    expect(dialog).toContain('nahraj ho potom znovu');
+    // a dialog popis opravdu vykreslí jako viditelný text
+    const confirm = await importSource('confirmed-action.tsx');
+    expect(confirm).toContain('description={description}');
   });
 
   /**
    * L7d-04 / L6a-04: tlačítko mělo 95 × 16 px, barvu sousedního popisku
    * a žádný stav „probíhá“ — vypadalo jako text a po klepnutí se nedělo nic
    * vidět. Je to ovládací prvek, který maže transakce: má tak vypadat a má
-   * říct, že pracuje.
+   * říct, že pracuje (a během běhu nejít stisknout podruhé).
    */
-  it('„Vrátit import zpět“ je obrysové tlačítko se stavem „Vracím…“', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const page = readFileSync(
-      join(import.meta.dirname, '..', 'app', '(app)', 'import', 'page.tsx'),
-      'utf8',
-    );
-    const form = page.slice(page.indexOf('<form action={undoImportAction}>'));
-    const button = form.slice(0, form.indexOf('</form>'));
-    expect(button).toContain('<SubmitButton');
-    expect(button).toContain('variant="secondary"');
-    expect(button).toContain('pendingLabel="Vracím…"');
-    expect(button).not.toContain('<button');
+  it('„Vrátit import zpět“ je tlačítko se stavem „Vracím…“ a s potvrzením', async () => {
+    const history = await importSource('import-history.tsx');
+    const undo = history.slice(history.indexOf('action={undoImportAction}'));
+    const dialog = undo.slice(0, undo.indexOf('/>'));
+    expect(history).toContain('<ConfirmedAction');
+    expect(dialog).toContain('label="Vrátit import zpět"');
+    expect(dialog).toContain('pendingLabel="Vracím…"');
+    expect(dialog).toContain('confirmLabel="Vrátit import zpět"');
+
+    const confirm = await importSource('confirmed-action.tsx');
+    expect(confirm).toContain('useFormStatus');
+    expect(confirm).toContain('<Button');
+    expect(confirm).toContain('disabled={pending}');
+    expect(confirm).toContain('{pending ? pendingLabel : label}');
+    expect(confirm).toContain('<ConfirmDialog');
+
     // potvrzení po akci má kam doskočit
-    expect(page).toContain('<section id={IMPORT_HISTORY_ANCHOR}');
+    expect(await importSource('page.tsx')).toContain('id={IMPORT_HISTORY_ANCHOR}');
   });
 });
