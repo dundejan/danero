@@ -19,10 +19,10 @@ export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 /** Světlé tokeny z `app/globals.css`: `--canvas`, `--ink`, `--ink-muted`, `--accent`. */
-const BACKGROUND = '#f6f5f1';
-const INK = '#171930';
-const INK_MUTED = '#5a5d78';
-const PINK = '#d6336c';
+const BACKGROUND = '#f5f5f7';
+const INK = '#1d1d1f';
+const INK_MUTED = '#6e6e73';
+const ACCENT = '#0071e3';
 
 export default function OpengraphImage() {
   return new ImageResponse(
@@ -38,10 +38,10 @@ export default function OpengraphImage() {
         padding: '72px 80px',
       }}
     >
-      {/* značka: růžová tečka (nákup) + linie dneška = „d“, stejná geometrie jako components/logo.tsx */}
+      {/* značka: akcentní tečka (nákup) + linie dneška = „d“, stejná geometrie jako components/logo.tsx */}
       <div style={{ display: 'flex', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', height: 76 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: PINK }} />
+          <div style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: ACCENT }} />
           <div
             style={{
               width: 16,
@@ -67,7 +67,7 @@ export default function OpengraphImage() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', fontSize: 30, color: INK_MUTED }}>
-        <div style={{ width: 72, height: 6, borderRadius: 3, backgroundColor: PINK }} />
+        <div style={{ width: 72, height: 6, borderRadius: 3, backgroundColor: ACCENT }} />
         <div style={{ marginLeft: 20 }}>{new URL(SITE_URL).host}</div>
       </div>
     </div>,
