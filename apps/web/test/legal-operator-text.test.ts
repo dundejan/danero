@@ -20,7 +20,6 @@ const CONFIGURED = operatorFromEnv();
 vi.mock('@/components/marketing-page', () => ({
   MarketingPage: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   PageHero: () => null,
-  MarketingCta: () => null,
 }));
 
 afterEach(() => {
@@ -44,6 +43,7 @@ async function pageText(
     .replaceAll('&quot;', '"')
     .replaceAll('&#x27;', "'")
     .replaceAll('&amp;', '&')
+    .replaceAll('\u2011', '-')
     .replace(/\s+/g, ' ');
   return { html, text };
 }

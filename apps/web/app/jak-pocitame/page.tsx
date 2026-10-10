@@ -6,7 +6,8 @@ import {
   DisputedReading,
 } from '@/components/guide-article';
 import { LongRead, type ContentsItem } from '@/components/long-read';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import { Disclosure } from '@/components/ui/disclosure';
 import { verifiedRateSourceNote } from '@/lib/tax-config';
 
@@ -23,8 +24,9 @@ export const metadata: Metadata = {
  * Na tuhle stránku vedou odkazy z vysvětlivek v aplikaci, takže se tu musí dát
  * rychle najít jedna konkrétní věc: `id` je kotva oddílu (NEMĚNIT — odkazuje
  * se na ni), `title` jde do obsahu stránky, první odstavec oddílu je pravidlo
- * samo a je sázený výrazněji. Sporný výklad stojí v `DisputedReading`, okrajový
- * případ v `Disclosure` — text je i tak ve stránce (hledání, vyhledávače).
+ * samo (pořadím, ne barvou — celý text je sázený stejně jako články průvodce).
+ * Sporný výklad stojí v `DisputedReading`, okrajový případ v `Disclosure` —
+ * text je i tak ve stránce (hledání, vyhledávače).
  */
 const RULES: { id: string; title: string; body: React.ReactNode; source: string }[] = [
   {
@@ -41,14 +43,14 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
         <p>
           Každý nákup má vlastní lhůtu. Přikupoval jsi stejné ETF postupně? Danero
           vede každý nákup zvlášť a při prodeji přesně ví, které kusy už testem
-          prošly a které ne — na časové ose uvidíš datum osvobození každého lotu.
+          prošly a které ne — na časové ose uvidíš datum osvobození každého nákupu.
         </p>
         <DisputedReading>
           <p>
             Lhůta běží ode dne vypořádání obchodu (dne, kdy se ti kusy skutečně
             připíšou na účet — u amerických akcií den po obchodu, v Evropě typicky dva
             dny), ne ode dne kliknutí na „koupit“. Část praxe počítá den obchodu —
-            bereme to jako sporný výklad a defaultně počítáme bezpečnější den
+            bereme to jako sporný výklad a standardně počítáme bezpečnější den
             vypořádání.
           </p>
         </DisputedReading>
@@ -84,7 +86,7 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
           <p>
             Sporné je, jestli se do úhrnu počítají i prodeje osvobozené časovým
             testem. Převažující (striktní) výklad říká, že ano — a ten máme jako
-            default. Mírnější výklad je nepočítá; Danero ti vedle vyčíslí, co by pro
+            výchozí. Mírnější výklad je nepočítá; Danero ti vedle vyčíslí, co by pro
             tebe znamenal, i s poctivým popisem rizika.
           </p>
         </DisputedReading>
@@ -313,7 +315,7 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
           průkaznost a konzistence.
         </p>
         <p>
-          Default je FIFO — nejběžnější a nejsnáz obhajitelná metoda. Danero ale
+          Výchozí je FIFO — nejběžnější a nejsnáz obhajitelná metoda. Danero ale
           spočítá i ostatní varianty vedle sebe; zvolenou metodu na daný rok
           zafixuje a vytiskne do podkladů, ať je výpočet doložitelný.
         </p>
@@ -359,7 +361,6 @@ export default function JakPocitamePage() {
               key={rule.id}
               id={rule.id}
               title={rule.title}
-              lead
               footnote={<>Zdroj: {rule.source}</>}
               className="mt-0"
             >
@@ -367,24 +368,24 @@ export default function JakPocitamePage() {
             </ArticleSection>
           ))}
 
-          <ArticleSection id={DISPUTED_ID} title={DISPUTED_TITLE} lead className="mt-0">
+          <ArticleSection id={DISPUTED_ID} title={DISPUTED_TITLE} className="mt-0">
             <p>
               Kde existuje víc obhajitelných výkladů, Danero vždy počítá
-              defaultně bezpečnou (přísnější) variantu, vedle v korunách vyčíslí,
+              standardně bezpečnou (přísnější) variantu, vedle v korunách vyčíslí,
               co by znamenal výhodnější výklad, a na rovinu popíše riziko, kdyby ho
               správce daně neuznal. Rozhodnutí je pak na tobě — přepínačem.
             </p>
             <ArticleList>
               <li>
-                Limit 100 000 Kč: defaultně do něj počítáme i prodeje osvobozené
+                Limit 100 000 Kč: standardně do něj počítáme i prodeje osvobozené
                 časovým testem (striktní výklad); mírnější výklad je vynechává.
               </li>
               <li>
-                Začátek časového testu: defaultně den vypořádání obchodu; část
+                Začátek časového testu: standardně den vypořádání obchodu; část
                 praxe počítá den zadání obchodu.
               </li>
               <li>
-                Opce, která propadla bezcenná: zaplacenou prémii defaultně
+                Opce, která propadla bezcenná: zaplacenou prémii standardně
                 neuplatňujeme jako výdaj; mírnější výklad ji uplatní proti ostatním
                 derivátovým příjmům.
               </li>
@@ -402,19 +403,20 @@ export default function JakPocitamePage() {
         </div>
 
         <p className="type-footnote mt-16 border-t border-line/70 pt-6 text-pretty text-ink-muted">
-          Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve
-          smyslu zákona č. 523/1992 Sb. — za správnost přiznání odpovídá poplatník.
-          Metodika vychází ze zákona o daních z příjmů, pokynů GFŘ a závěrů
-          koordinačních výborů ve stavu k červenci 2026 (pravidla pro roky 2025
-          a 2026). U složitých situací (obchodní majetek, dědictví, velké objemy)
-          se poraď s daňovým poradcem.
+          {typeset(
+            <>
+              Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve
+              smyslu zákona č. 523/1992 Sb. — za správnost přiznání odpovídá poplatník.
+              Metodika vychází ze zákona o daních z příjmů, pokynů GFŘ a závěrů
+              koordinačních výborů ve stavu k červenci 2026 (pravidla pro roky 2025
+              a 2026). U složitých situací (obchodní majetek, dědictví, velké objemy)
+              se poraď s daňovým poradcem.
+            </>,
+          )}
         </p>
       </LongRead>
 
-      <MarketingCta
-        title="Paragrafy jsme přečetli za tebe"
-        lede="Napoj brokera nebo nahraj výpis — Danero všechna tahle pravidla aplikuje na tvoje skutečné obchody a ukáže, co z nich plyne."
-      />
+      <PageClosing />
     </MarketingPage>
   );
 }

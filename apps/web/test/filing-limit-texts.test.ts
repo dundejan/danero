@@ -43,7 +43,6 @@ vi.mock('@/components/filing-calculator', () => ({
 vi.mock('@/components/marketing-page', () => ({
   MarketingPage: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   PageHero: () => null,
-  MarketingCta: () => null,
 }));
 vi.mock('@/lib/portfolio', async () => {
   const actual = await vi.importActual<typeof import('@/lib/portfolio')>('@/lib/portfolio');
@@ -208,7 +207,7 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
     const page = readFileSync(join(webDir, 'app', 'kalkulacka', 'page.tsx'), 'utf8');
     const shell = readFileSync(join(webDir, 'components', 'marketing-page.tsx'), 'utf8');
 
-    expect(page).toMatch(/^\s*<MarketingPage>/m);
+    expect(page).toMatch(/^\s*<MarketingPage\b/m);
     expect(page).toMatch(/^ {2}const year = currentTaxYear\(\);/m);
     expect(shell).toMatch(/^\s*await connection\(\);/m);
     // kalkulačka je klientská komponenta — hodiny zařízení do výběru limitu nemluví

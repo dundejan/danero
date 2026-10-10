@@ -261,8 +261,12 @@ describe('kalkulačka: limity § 38g z konfigurace roku (R-09a, R-09b, L3-01)', 
  * týká a kolik to bylo loni (R-09a, R-09b).
  */
 describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', () => {
-  const current = filingLimitTexts(2027);
-  const previous = filingLimitTexts(2026);
+  // Limity nesou pevné mezery (`50\u00a0000\u00a0Kč`) a sazba kalkulačky je doplní
+  // i do okolního textu; porovnává se proto text s obyčejnými mezerami na obou stranách.
+  const spaced = (limits: FilingLimitTexts): FilingLimitTexts =>
+    JSON.parse(JSON.stringify(limits).replaceAll('\u00a0', ' ')) as FilingLimitTexts;
+  const current = spaced(filingLimitTexts(2027));
+  const previous = spaced(filingLimitTexts(2026));
 
   /** Kalkulačka vykreslená s hotovými odpověďmi (viz `seededState`), jako text bez značek. */
   const renderAnswered = (
@@ -287,7 +291,8 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
     );
     // kdyby komponenta přibrala další stav, fronta by se rozešla s pořadím
     expect(seededState.queue).toEqual([]);
-    return html.replace(/<[^>]+>/g, ' ');
+    // sazba (`typesetText`) v textu vymění obyčejné mezery za pevné — tady jde o znění
+    return html.replace(/<[^>]+>/g, ' ').replaceAll('\u00a0', ' ').replaceAll('\u2011', '-');
   };
 
   const employeeNote = `Limit ${current.employee} platí pro příjmy za rok 2027 — za rok 2026 to bylo ještě ${previous.employee}.`;

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { FilingLimitTexts } from '@/lib/filing-limits';
 import { cn } from '@/lib/utils';
+import { typesetText } from '@/components/typeset';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
@@ -75,16 +76,18 @@ function Question<T extends string | boolean>({
   return (
     <div className="py-6 first:pt-0 last:pb-0">
       <div className="flex items-start gap-1.5">
-        <p className="type-title-3 text-pretty">{question}</p>
+        <p className="type-title-3 text-pretty">{typesetText(question)}</p>
         {info && (
           <InfoPopover label={info.label} align="start">
             {info.body.map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
+              <p key={paragraph}>{typesetText(paragraph)}</p>
             ))}
           </InfoPopover>
         )}
       </div>
-      {hint && <p className="type-footnote mt-1.5 text-pretty text-ink-muted">{hint}</p>}
+      {hint && (
+        <p className="type-footnote mt-1.5 text-pretty text-ink-muted">{typesetText(hint)}</p>
+      )}
       <SegmentedControl
         ariaLabel={question}
         segments={options.map((option) => ({ key: String(option.value), label: option.label }))}
@@ -515,8 +518,17 @@ export function KalkulackaPriznani({
       </div>
 
       {/* Panel verdiktu je živá oblast: čtečka ohlásí verdikt i to, že na něj
-          ještě chybí odpověď (H-24 — dřív kalkulačka v tu chvíli jen mlčela). */}
-      <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          ještě chybí odpověď (H-24 — dřív kalkulačka v tu chvíli jen mlčela).
+          Na širokém okně stojí vedle otázek od začátku, takže je vidět, kde se
+          odpověď objeví. Na úzkém by prázdná karta jen oddělila otázky od
+          pravidel a nic neřekla — tam je do první odpovědi vidět jen čtečce
+          (oblast musí ve stránce zůstat, jinak by změnu neohlásila). */}
+      <div
+        className={cn(
+          'lg:col-start-2 lg:row-span-2 lg:row-start-1',
+          !shown && !skippedQuestion && 'max-lg:sr-only',
+        )}
+      >
         <div
           role="status"
           className="rounded-2xl bg-canvas p-6 sm:p-8 lg:sticky lg:top-[calc(var(--nav-height)+2rem)]"
@@ -524,11 +536,13 @@ export function KalkulackaPriznani({
           {shown ? (
             <>
               <StatusLabel tone={shown.tone}>{shown.status}</StatusLabel>
-              <h2 className="type-title-1 mt-3 text-balance">{shown.title}</h2>
-              <p className="type-body mt-3 text-pretty text-ink-muted">{reason}</p>
+              <h2 className="type-title-1 mt-3 text-balance">{typesetText(shown.title)}</h2>
+              <p className="type-body mt-3 text-pretty text-ink-muted">
+                {reason && typesetText(reason)}
+              </p>
               <ul className="type-footnote mt-5 space-y-2 text-pretty text-ink-muted">
                 {verdict !== 'nejasne' && (
-                  <li>Orientačně — přesně to spočítá aplikace z tvých dat.</li>
+                  <li>{typesetText('Orientačně — přesně to spočítá aplikace z tvých dat.')}</li>
                 )}
                 {/* R-09d: osvobozeno ≠ bez povinností — oznámení nad 5 mil. Kč má
                   vlastní pokutu 0,1–15 % (§ 38w), takže se o něm musí dozvědět
@@ -536,16 +550,17 @@ export function KalkulackaPriznani({
                   vidět, paragraf a důvod kratší lhůty jsou ve vysvětlivce. */}
                 {verdict === 'osvobozeno' && (
                   <li>
-                    Výjimka: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu
-                    oznamuje — do tří měsíců po konci roku.{' '}
+                    {typesetText(
+                      'Výjimka: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu oznamuje — do tří měsíců po konci roku.',
+                    )}{' '}
                     <InfoPopover label="Oznámení osvobozeného příjmu" align="end" className="-my-1">
-                      <p>{OZNAMENI_5M}</p>
+                      <p>{typesetText(OZNAMENI_5M)}</p>
                     </InfoPopover>
                   </li>
                 )}
               </ul>
               <div className="mt-6 border-t border-line/70 pt-5">
-                <p className="type-callout text-pretty">{shown.next}</p>
+                <p className="type-callout text-pretty">{typesetText(shown.next)}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
                   <Link href="/demo/prehled" className={buttonVariants({ variant: 'tinted' })}>
                     Vyzkoušet demo
@@ -560,7 +575,7 @@ export function KalkulackaPriznani({
             <>
               <h2 className="type-title-3">Ještě jedna odpověď a verdikt je hotový</h2>
               <p className="type-callout mt-2 text-pretty text-ink-muted">
-                Chybí odpověď na otázku „{skippedQuestion}“.
+                {typesetText(`Chybí odpověď na otázku „${skippedQuestion}“.`)}
               </p>
             </>
           ) : (

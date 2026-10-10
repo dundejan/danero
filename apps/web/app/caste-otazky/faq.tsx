@@ -63,17 +63,16 @@ export const FAQ_SECTIONS: FaqSection[] = [
         q: 'Kolik Danero stojí?',
         a: (
           <>
-            Nic. Danero je zdarma celé — bez placené verze, bez zkušební doby a bez karty.
-            Je to osobní projekt s otevřeným kódem; kdo chce, může na provoz dobrovolně
-            přispět, ale nic se tím neodemyká. Víc na stránce{' '}
-            <TextLink href="/cenik">Proč je Danero zdarma</TextLink>.
+            Nic. Danero je zdarma celé a placená verze neexistuje. Dělá ho jeden člověk
+            a nic neprodává; kdo chce, může na provoz dobrovolně přispět, ale nic se tím
+            neodemyká. Víc na stránce <TextLink href="/cenik">Proč zdarma</TextLink>.
           </>
         ),
         plain:
-          'Nic. Danero je zdarma celé — bez placené verze, bez zkušební doby a bez karty. Je to osobní projekt s otevřeným kódem; kdo chce, může na provoz dobrovolně přispět, ale nic se tím neodemyká.',
+          'Nic. Danero je zdarma celé a placená verze neexistuje. Dělá ho jeden člověk a nic neprodává; kdo chce, může na provoz dobrovolně přispět, ale nic se tím neodemyká.',
       },
       {
-        q: 'Které brokery a platformy umíte načíst?',
+        q: 'Které brokery a platformy Danero načte?',
         a: (
           <>
             Trading 212, Interactive Brokers a Lynx živě přes API klíč jen pro čtení.

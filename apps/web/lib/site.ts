@@ -17,9 +17,30 @@ export const SITE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://danero.cz';
  */
 export const SITE_NAME = 'Danero';
 
+/**
+ * Co Danero je, dvěma větami: titulek úvodní stránky a text obrázku pro
+ * sdílení (`app/opengraph-image.tsx`). Na jednom místě proto, že se už jednou
+ * rozešly — úvod dostal nové znění a sdílený odkaz dál nesl starý slogan
+ * (nález R1A-02).
+ *
+ * Druhá věta mluví ke každému, kdo investuje, ne k vývojáři: do 10. 10. 2026
+ * tu stálo „Je zdarma a má otevřený kód.“ a majitel to vyřadil — co je
+ * otevřený kód, většina čtenářů neví. Veřejný kód zůstává důkazem na
+ * stránkách `/bezpecnost`, `/cenik` a `/o-projektu`, ne heslem v titulku.
+ */
+export const SITE_TAGLINE = 'Hlídač daní z investic.';
+export const SITE_TAGLINE_HOW = 'Bezpečně a zdarma.';
+
+/**
+ * Výchozí titulek dokumentu a popis obrázku pro sdílení: jméno a první věta
+ * úvodu. Dostane ho každá stránka, která nemá vlastní `title`. Shodu s úvodem
+ * hlídá `test/seo-metadata.test.ts`.
+ */
+export const SITE_TITLE = 'Danero — hlídač daní z investic';
+
 /** Popis služby jednou větou: výchozí `description`, náhled odkazu i JSON-LD. */
 export const SITE_DESCRIPTION =
-  'Hlídač časových testů a daňových limitů pro české investory. Limit 100 000 Kč, paušální daň, podklady k přiznání.';
+  'Hlídač daní z investic pro české investory: limit 100 000 Kč, paušální daň, tříleté časové testy a podklady k přiznání. Bezpečně a zdarma.';
 
 /**
  * Metadata pro celý web (K8-04). Sdílený odkaz na Danero byl do 31. 8. 2026
@@ -45,7 +66,7 @@ export const SITE_DESCRIPTION =
  */
 export const SITE_METADATA: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: 'Danero — daně z investic pohlídané celý rok',
+  title: SITE_TITLE,
   description: SITE_DESCRIPTION,
   alternates: { canonical: new URL(SITE_URL) },
   openGraph: {

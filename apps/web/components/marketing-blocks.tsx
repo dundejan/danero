@@ -1,13 +1,20 @@
 import Link from 'next/link';
-import { MarketingCta } from '@/components/marketing-page';
-import { tidy } from '@/lib/typography';
+import { typeset, typesetText } from '@/components/typeset';
 import { cn } from '@/lib/utils';
 
 /**
  * Stavební kameny obsahu veřejných stránek — to, co se skládá DO pásů a pod
- * titulek stránky (skořápku, pásy a závěrečnou výzvu nese `marketing-page.tsx`).
- * Skládají se jen z tokenů a tříd `type-*`.
+ * titulek stránky (skořápku, pásy a závěr stránky nese `marketing-page.tsx`).
+ * Skládají se jen z tokenů a tříd `type-*`; českou sazbu textu dělají samy
+ * (`typeset`), stránka do nich píše obyčejné odstavce.
  */
+
+/**
+ * Nadpis oddílu na podstránce (skupina pod titulkem stránky). Na telefonu je
+ * o stupeň menší: titulek stránky tam má 32 px a `type-title-1` 28 px, takže
+ * by dva nadpisy pod sebou vypadaly jako dva titulky.
+ */
+export const SECTION_TITLE = 'type-title-2 md:type-title-1';
 
 /**
  * Titulek vlevo, obsah vpravo — pás, který na něco odpovídá („Proč se
@@ -39,13 +46,15 @@ export function Split({
     >
       <h2
         className={cn(
-          size === 'headline' ? 'type-headline' : 'type-title-1',
+          size === 'headline' ? 'type-headline' : SECTION_TITLE,
           'max-w-[16ch] text-balance',
         )}
       >
-        {tidy(title)}
+        {typesetText(title)}
       </h2>
-      <div className="type-reading measure space-y-4 text-pretty text-ink-muted">{children}</div>
+      <div className="type-reading measure space-y-4 text-pretty text-ink-muted">
+        {typeset(children)}
+      </div>
     </div>
   );
 }
@@ -69,8 +78,8 @@ export function SpecList({
 export function SpecRow({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="grid gap-x-(--column-gap) gap-y-1.5 py-5 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:py-6">
-      <dt className="type-title-3">{label}</dt>
-      <dd className="type-body text-pretty text-ink-muted">{children}</dd>
+      <dt className="type-title-3">{typeset(label)}</dt>
+      <dd className="type-body text-pretty text-ink-muted">{typeset(children)}</dd>
     </div>
   );
 }
@@ -100,14 +109,16 @@ export function LinkList({
             className={cn('group flex items-center gap-4 active:opacity-60', large ? 'py-6' : 'py-4')}
           >
             <span className="min-w-0 flex-1">
-              <span className={cn(titleClass, 'block group-hover:underline')}>{item.title}</span>
+              <span className={cn(titleClass, 'block group-hover:underline')}>
+                {typesetText(item.title)}
+              </span>
               <span
                 className={cn(
                   'block text-pretty text-ink-muted',
                   large ? 'type-body mt-2' : 'type-callout mt-0.5',
                 )}
               >
-                {item.summary}
+                {typesetText(item.summary)}
               </span>
             </span>
             <span aria-hidden className={cn(titleClass, 'text-ink-muted')}>
@@ -117,18 +128,5 @@ export function LinkList({
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * Závěrečná výzva podstránek — všude stejná a věcná: co demo je, nic víc.
- * Tlačítka (demo, založení účtu) nese sdílená `MarketingCta`.
- */
-export function DemoCta() {
-  return (
-    <MarketingCta
-      title="Podívej se dovnitř"
-      lede="Demo je celá aplikace nad ukázkovým portfoliem. Nic se v něm neukládá."
-    />
   );
 }

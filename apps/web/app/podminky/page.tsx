@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Prose } from '@/components/guide-article';
 import { LongRead, PROSE_ANCHORS, type ContentsItem } from '@/components/long-read';
 import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
 import { TextLink } from '@/components/ui/link';
 import { OPERATOR } from '@/lib/contact';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
@@ -309,11 +310,18 @@ export default function TermsPage() {
       </Prose>
 
       <p className="type-footnote mt-12 border-t border-line/70 pt-6 text-ink-muted">
-        Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+        {typeset(
+          <>
+            Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+          </>,
+        )}
       </p>
 
+      {/* samostatný odkaz, ne odkaz ve větě: na dotyku má 44 px na výšku */}
       <p className="type-callout mt-4">
-        <TextLink href="/">← Zpět na úvod</TextLink>
+        <TextLink href="/" className="inline-flex min-h-11 items-center md:min-h-0">
+          ← Zpět na úvod
+        </TextLink>
       </p>
       </LongRead>
     </MarketingPage>

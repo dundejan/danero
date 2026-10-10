@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import {
   ArticleLink,
   ArticleFooter,
@@ -9,12 +9,22 @@ import {
   ArticleIntro,
   Example,
 } from '@/components/guide-article';
+import type { ContentsItem } from '@/components/long-read';
 
 export const metadata: Metadata = {
   title: 'OSVČ v paušálu a investice: limit 50 000 Kč — Danero',
   description:
     'Paušální daň snese nejvýš 50 000 Kč zdanitelných příjmů mimo podnikání — a z investic se do něj počítají hrubé částky: zahraniční dividendy před srážkou, tržby z neosvobozených prodejů i úroky. Co znamená prolomení a termín 10. ledna.',
 };
+
+const CONTENTS: ContentsItem[] = [
+  { id: 'proc-investori', title: 'Proč se to týká zrovna investorů' },
+  { id: 'co-se-pocita', title: 'Co se do 50 000 Kč počítá' },
+  { id: 'co-se-nepocita', title: 'Co se nepočítá' },
+  { id: 'prolomeni', title: 'Co se při prolomení stane' },
+  { id: 'co-se-nestane', title: 'Co se nestane' },
+  { id: 'jak-to-hlida-danero', title: 'Jak to hlídá Danero' },
+];
 
 /**
  * Článek průvodce. Skladba: krátká odpověď → co se počítá / nepočítá (seznamy
@@ -29,7 +39,7 @@ export default function PausalniRezimAInvesticePage() {
         title="OSVČ v paušálu: jak ti investice můžou vrátit přiznání"
       />
 
-      <ArticleBody>
+      <ArticleBody contents={CONTENTS}>
         <ArticleIntro>
           <strong>
             Aby tvoje daň zůstala rovna paušální dani, smějí tvoje zdanitelné příjmy mimo
@@ -41,7 +51,7 @@ export default function PausalniRezimAInvesticePage() {
           v paušálním režimu ale zůstáváš.
         </ArticleIntro>
 
-        <ArticleSection title="Proč se to týká zrovna investorů">
+        <ArticleSection id="proc-investori" title="Proč se to týká zrovna investorů">
           <p>
             Paušální daň znamená jednu platbu měsíčně a žádné přiznání ani přehledy pro
             ČSSZ a zdravotní pojišťovnu — dokud plníš podmínky. Jednou z nich je, že vedle
@@ -55,7 +65,7 @@ export default function PausalniRezimAInvesticePage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Co se do 50 000 Kč počítá">
+        <ArticleSection id="co-se-pocita" title="Co se do 50 000 Kč počítá">
           <ArticleList>
             <li>
               <strong>Zahraniční dividendy v hrubé výši</strong> — před daní sraženou
@@ -95,7 +105,7 @@ export default function PausalniRezimAInvesticePage() {
           </Example>
         </ArticleSection>
 
-        <ArticleSection title="Co se nepočítá">
+        <ArticleSection id="co-se-nepocita" title="Co se nepočítá">
           <ArticleList>
             <li>
               <strong>Osvobozené prodeje</strong> — kusy držené přes 3 roky (časový
@@ -119,7 +129,7 @@ export default function PausalniRezimAInvesticePage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Co se při prolomení stane">
+        <ArticleSection id="prolomeni" title="Co se při prolomení stane">
           <p>
             Překročíš-li 50 000 Kč, tvoje daň za ten rok <strong>není rovna paušální
             dani</strong>. Znamená to:
@@ -134,7 +144,7 @@ export default function PausalniRezimAInvesticePage() {
           </ArticleList>
         </ArticleSection>
 
-        <ArticleSection title="Co se nestane">
+        <ArticleSection id="co-se-nestane" title="Co se nestane">
           <p>
             Z paušálního režimu <strong>nevypadáváš</strong>. V režimu zůstáváš, dál
             platíš zálohy a od dalšího roku — při dodržení limitu — zase jedeš bez
@@ -148,7 +158,7 @@ export default function PausalniRezimAInvesticePage() {
           </p>
         </ArticleSection>
 
-        <ArticleSection title="Jak to hlídá Danero">
+        <ArticleSection id="jak-to-hlida-danero" title="Jak to hlídá Danero">
           <p>
             Orientační odpověď dá bez registrace{' '}
             <ArticleLink href="/kalkulacka">kalkulačka „Musím podat přiznání?“</ArticleLink>.
@@ -176,11 +186,7 @@ export default function PausalniRezimAInvesticePage() {
         />
       </ArticleBody>
 
-      <MarketingCta
-        title="Paušál se hlídá celý rok, ne až v lednu"
-        lede="Napoj brokera nebo nahraj výpis. Danero dividendy přepočítá, osvobozené prodeje vyřadí a při 60, 85 a 100 % limitu ti napíše."
-        primary="registrace"
-      />
+      <PageClosing />
     </MarketingPage>
   );
 }

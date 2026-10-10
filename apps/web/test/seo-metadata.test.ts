@@ -10,7 +10,14 @@ import * as ogImage from '@/app/opengraph-image';
 import { FAQ } from '@/app/caste-otazky/faq';
 import { OPERATOR } from '@/lib/contact';
 import { faqPageJsonLd, organizationJsonLd } from '@/lib/json-ld';
-import { SITE_METADATA, SITE_NAME, SITE_URL } from '@/lib/site';
+import {
+  SITE_METADATA,
+  SITE_NAME,
+  SITE_TAGLINE,
+  SITE_TAGLINE_HOW,
+  SITE_TITLE,
+  SITE_URL,
+} from '@/lib/site';
 
 /**
  * Jak Danero vypadá, když ho někdo sdílí nebo indexuje (K8-04 a K8-09).
@@ -100,6 +107,32 @@ describe('náhledový obrázek (K8-04)', () => {
     expect(bytes.subarray(0, 4).toString('hex')).toBe('89504e47');
     expect(bytes.length).toBeGreaterThan(5_000);
   }, 30_000);
+
+  /**
+   * Nález R1A-02: úvodní stránka dostala při redesignu nové znění, ale obrázek
+   * pro sdílení a výchozí titulek dál nesly starý slogan — z webu samotného se
+   * to nepozná, rozdíl vidí až ten, komu někdo pošle odkaz. Obojí proto bere
+   * věty z `lib/site.ts` („Hlídač daní z investic. Bezpečně a zdarma.“).
+   */
+  it('obrázek říká totéž co titulek úvodní stránky', () => {
+    const image = readFileSync(join(APP_DIR, 'opengraph-image.tsx'), 'utf8');
+    const landing = readFileSync(join(APP_DIR, 'page.tsx'), 'utf8');
+    for (const source of [image, landing]) {
+      expect(source).toMatch(/[({]SITE_TAGLINE[)}]/);
+      expect(source).toMatch(/[({]SITE_TAGLINE_HOW[)}]/);
+    }
+    expect(SITE_TAGLINE).toBe('Hlídač daní z investic.');
+    expect(SITE_TAGLINE_HOW).toBe('Bezpečně a zdarma.');
+    // ve zdroji obrázku nesmí zůstat věta napsaná natvrdo vedle těch sdílených
+    expect(image).not.toMatch(/hlídáme za tebe|v březnu podklady/);
+  });
+
+  it('výchozí titulek i popis obrázku jmenují službu stejně jako úvod', () => {
+    expect(SITE_METADATA.title).toBe(SITE_TITLE);
+    expect(ogImage.alt).toBe(SITE_TITLE);
+    expect(SITE_TITLE).toBe(`${SITE_NAME} — ${SITE_TAGLINE.replace(/\.$/, '').toLowerCase()}`);
+    expect(SITE_TITLE).not.toMatch(/pohlídané/);
+  });
 });
 
 describe('robots a sitemapa (K8-09)', () => {
