@@ -1,56 +1,50 @@
 import Link from 'next/link';
-import { MarketingPage } from '@/components/marketing-page';
+import { MarketingPage, PageHero } from '@/components/marketing-page';
 
-/** Česká 404 v marketingovém shellu — žádný mrtvý konec bez navigace. */
+/** Nejčastější cíle toho, kdo zabloudil — stejné tři, co tu byly vždycky. */
+const EXITS: { href: string; title: string; summary: string }[] = [
+  { href: '/', title: 'Úvodní stránka', summary: 'Co Danero hlídá a jak funguje' },
+  { href: '/platformy', title: 'Platformy', summary: 'Podporovaní brokeři a návody k výpisům' },
+  { href: '/kalkulacka', title: 'Kalkulačka', summary: 'Musíš kvůli investicím podat přiznání?' },
+];
+
+/**
+ * Česká 404 v marketingovém shellu — žádný mrtvý konec bez navigace. Krátce:
+ * co se stalo a tři cesty ven jako klikací řádky (stejný seznam jako rozcestník
+ * průvodce). Nic se tu neprodává; kdo zabloudil, chce cestu ven, ne výzvu
+ * k registraci.
+ */
 export default function NotFound() {
   return (
     <MarketingPage>
       <title>Stránka nenalezena — Danero</title>
-      <div className="py-24 md:py-32">
-        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
-          Chyba 404
-        </p>
-        <h1 className="mt-3 max-w-2xl text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
-          Tahle stránka neexistuje
-        </h1>
-        <p className="mt-5 max-w-xl text-lg text-ink-muted">
-          Buď se odkaz změnil, nebo v adrese něco přebývá. Nejspíš hledáš jedno z tohohle:
-        </p>
-        <ul className="mt-6 space-y-2 text-ink-muted">
-          <li>
-            <Link href="/" className="font-medium text-accent-text underline underline-offset-2">
-              Úvodní stránka
-            </Link>{' '}
-            — co Danero hlídá a jak funguje
-          </li>
-          <li>
-            <Link
-              href="/platformy"
-              className="font-medium text-accent-text underline underline-offset-2"
-            >
-              Platformy
-            </Link>{' '}
-            — podporovaní brokeři a návody k výpisům
-          </li>
-          <li>
-            <Link
-              href="/kalkulacka"
-              className="font-medium text-accent-text underline underline-offset-2"
-            >
-              Kalkulačka
-            </Link>{' '}
-            — musíš kvůli investicím podat přiznání?
-          </li>
+      <PageHero
+        eyebrow="Chyba 404"
+        title="Tahle stránka neexistuje"
+        lede="Odkaz se změnil, nebo v adrese něco přebývá."
+      />
+      <nav aria-label="Kam dál" className="measure mt-10 md:mt-14">
+        <ul className="divide-y divide-line/70 border-y border-line/70">
+          {EXITS.map((exit) => (
+            <li key={exit.href}>
+              <Link
+                href={exit.href}
+                className="group flex items-center gap-4 py-4 active:opacity-60"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="type-title-3 block group-hover:underline">{exit.title}</span>
+                  <span className="type-callout mt-0.5 block text-pretty text-ink-muted">
+                    {exit.summary}
+                  </span>
+                </span>
+                <span aria-hidden className="type-title-3 text-ink-muted">
+                  ›
+                </span>
+              </Link>
+            </li>
+          ))}
         </ul>
-        <div className="mt-10">
-          <Link
-            href="/demo/prehled"
-            className="inline-block rounded-md bg-accent-fill px-6 py-3 font-semibold text-white hover:opacity-90"
-          >
-            Vyzkoušet demo — bez registrace
-          </Link>
-        </div>
-      </div>
+      </nav>
     </MarketingPage>
   );
 }

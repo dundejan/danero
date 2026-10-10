@@ -1,7 +1,7 @@
-import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { TextLink } from '@/components/ui/link';
+import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
 
 export const metadata: Metadata = {
@@ -10,171 +10,177 @@ export const metadata: Metadata = {
     'Jak Danero chrání tvoje data: API klíče jen pro čtení šifrované AES-256-GCM, volitelné dvoufaktorové přihlášení, data v EU, žádné trackery třetích stran, export a smazání dat kdykoli.',
 };
 
-/** Jedna zásada: nadpis + věcné vysvětlení bez marketingu. */
-const ZASADY: { title: string; body: React.ReactNode }[] = [
+interface Fact {
+  term: string;
+  detail: React.ReactNode;
+}
+
+/**
+ * Stránka je list faktů, ne sada dlaždic: čtyři otázky, které si člověk klade
+ * („co smíte u brokera“, „co o mně máte“, „co s tím můžu dělat“, „jak si to
+ * ověřím“), a pod každou řádky pojem → co přesně se děje. Žádná věta, která
+ * jen uklidňuje — každý řádek jde ověřit v kódu nebo v Nastavení.
+ */
+const SECTIONS: { title: string; facts: Fact[] }[] = [
   {
-    title: 'API klíče jen pro čtení',
-    body: (
-      <>
-        U brokera jenom čteme — historii obchodů a stav pozic. Danero neumí zadat
-        obchodní příkaz, převést peníze ani změnit nastavení účtu; takový kód v něm
-        není. Rozsah klíče si nastavuješ u brokera ty, a u každého napojení máme
-        návod, která práva zaškrtnout (a která ne) — vždycky jen čtení. Hesla od
-        brokera po tobě nikdy nechceme.
-      </>
-    ),
+    title: 'Přístup k brokerovi',
+    facts: [
+      {
+        term: 'API klíče jen pro čtení',
+        detail: (
+          <>
+            Čteme historii obchodů a stav pozic. Zadat obchodní příkaz, převést peníze ani změnit
+            nastavení účtu Danero neumí — takový kód v něm není. Rozsah klíče nastavuješ u brokera
+            ty; u každého napojení je návod, která práva zaškrtnout.
+          </>
+        ),
+      },
+      {
+        term: 'Heslo k brokerovi',
+        detail: 'Nikdy ho nechceme.',
+      },
+      {
+        term: 'Šifrování klíčů',
+        detail: (
+          <>
+            Uložený klíč je šifrovaný algoritmem AES-256-GCM a dešifruje se jen v okamžiku
+            synchronizace. Do exportů dat, e-mailů ani logů se nedostane — ani v zašifrované podobě.
+          </>
+        ),
+      },
+    ],
   },
   {
-    title: 'Klíče šifrujeme, nikdy je neukazujeme',
-    body: (
-      <>
-        Uložený API klíč šifrujeme algoritmem AES-256-GCM a dešifruje se jen
-        v okamžiku synchronizace. Do exportů dat, e-mailů ani logů se klíče
-        nikdy nedostanou — ani v zašifrované podobě.
-      </>
-    ),
+    title: 'Co ukládáme a kde',
+    facts: [
+      {
+        term: 'Osobní údaje',
+        detail: (
+          <>
+            K účtu stačí e-mail. Jméno, rodné číslo ani adresu nepotřebujeme. Co přesně zpracováváme
+            a proč, popisuje <TextLink href="/soukromi">ochrana soukromí</TextLink>.
+          </>
+        ),
+      },
+      {
+        term: 'Umístění dat',
+        detail: 'Aplikace běží na infrastruktuře v Evropské unii.',
+      },
+      {
+        term: 'Skripty třetích stran',
+        detail: 'Žádné. Web nenačítá reklamní síť, sledovací pixel ani cizí fonty.',
+      },
+      {
+        term: 'Oddělení účtů',
+        detail: (
+          <>
+            Každý dotaz do databáze je vázaný na tvůj účet — data různých uživatelů se nepotkají v
+            jednom výpočtu ani výpisu. Výpočty běží v odděleném enginu, který vidí jen transakce, ne
+            účet.
+          </>
+        ),
+      },
+    ],
   },
   {
-    title: 'Minimum osobních údajů',
-    body: (
-      <>
-        K účtu stačí e-mail. Nepotřebujeme jméno, rodné číslo ani adresu —
-        počítáme daně, ne identitu. Co přesně zpracováváme a proč, popisuje{' '}
-        <Link
-          href="/soukromi"
-          className="font-medium text-accent-text underline underline-offset-2"
-        >
-          ochrana soukromí
-        </Link>
-        .
-      </>
-    ),
+    title: 'Co máš pod kontrolou',
+    facts: [
+      {
+        term: 'Dvoufaktorové ověření',
+        detail: 'Volitelné, kódem z aplikace (TOTP). Zapneš ho v Nastavení.',
+      },
+      {
+        term: 'Přihlášená zařízení',
+        detail:
+          'V Nastavení vidíš přihlášená zařízení i poslední aktivitu účtu a všechna ostatní zařízení odhlásíš jedním tlačítkem.',
+      },
+      {
+        term: 'Export dat',
+        detail: 'Kdykoli si stáhneš JSON se všemi transakcemi a nastavením.',
+      },
+      {
+        term: 'Smazání účtu',
+        detail: 'Kdykoli a nevratně — včetně všech dat, šifrovaných klíčů a historie.',
+      },
+    ],
   },
   {
-    title: 'Nemusíš nám věřit — můžeš si to přečíst',
-    body: (
-      <>
-        Celý zdrojový kód Danera je veřejný na{' '}
-        <a
-          href={SOURCE_URL}
-          className="font-medium text-accent-text underline underline-offset-2"
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHubu
-        </a>{' '}
-        pod licencí AGPL-3.0 — včetně toho, jak nakládáme s klíči a hesly. Bezpečnostní
-        chybu nám nahlas soukromě podle{' '}
-        <a
-          href={`${SOURCE_URL}/blob/main/SECURITY.md`}
-          className="font-medium text-accent-text underline underline-offset-2"
-          target="_blank"
-          rel="noreferrer"
-        >
-          SECURITY.md
-        </a>
-        , ne do veřejného issue.
-      </>
-    ),
-  },
-  {
-    title: 'Přihlášení pod tvou kontrolou',
-    body: (
-      <>
-        Volitelné dvoufaktorové ověření (TOTP aplikace), přehled přihlášených
-        zařízení s možností všechna ostatní odhlásit jedním tlačítkem a záznam
-        poslední aktivity účtu — všechno v Nastavení.
-      </>
-    ),
-  },
-  {
-    title: 'Tvoje data zůstávají tvoje',
-    body: (
-      <>
-        Kdykoli si stáhneš kompletní export (JSON se všemi transakcemi a
-        nastavením) a kdykoli můžeš účet nevratně smazat — včetně všech dat,
-        šifrovaných klíčů a historie. Bez e-mailů „opravdu odcházíte?“.
-      </>
-    ),
-  },
-  {
-    title: 'Data v EU, žádné trackery',
-    body: (
-      <>
-        Aplikace běží na infrastruktuře v Evropské unii. Web nenačítá žádné
-        skripty třetích stran — žádná reklamní síť, žádný sledovací pixel,
-        žádné cizí fonty. Co vidíš, servírujeme sami.
-      </>
-    ),
-  },
-  {
-    title: 'Oddělené účty od základu',
-    body: (
-      <>
-        Každý dotaz do databáze je vázaný na tvůj účet — data různých uživatelů
-        se nikdy nepotkají v jednom výpočtu ani výpisu. Výpočty navíc jedou
-        v odděleném enginu, který vidí jen transakce, ne účet.
-      </>
-    ),
-  },
-  {
-    title: 'Zamčený prohlížeč',
-    body: (
-      <>
-        Web posílá bezpečnostní hlavičky (Content Security Policy, HSTS, zákaz
-        vkládání do cizích stránek). Politika obsahu je přísná na původ: prohlížeč
-        nesmí načíst skript, styl, font ani obrázek odjinud než z Danera — cizí kód
-        se sem tedy nemá jak dostat. Vlastní skripty, které Next.js potřebuje ke
-        svému běhu přímo ve stránce, povolené jsou. Citlivé operace navíc chrání
-        omezení počtu pokusů (rate limit) proti skriptovanému zneužití.
-      </>
-    ),
+    title: 'Jak si to ověřit',
+    facts: [
+      {
+        term: 'Nemusíš nám věřit — můžeš si to přečíst',
+        detail: (
+          <>
+            Celý zdrojový kód Danera je veřejný na{' '}
+            <TextLink href={SOURCE_URL} external>
+              GitHubu
+            </TextLink>{' '}
+            pod licencí AGPL-3.0 — včetně toho, jak nakládáme s klíči a hesly.
+          </>
+        ),
+      },
+      {
+        term: 'Hlavičky prohlížeče',
+        detail: (
+          <>
+            Web posílá Content Security Policy, HSTS a zákaz vkládání do cizích stránek. Prohlížeč
+            nesmí načíst skript, styl, font ani obrázek odjinud než z Danera; vlastní skripty, které
+            Next.js potřebuje ke svému běhu přímo ve stránce, povolené jsou.
+          </>
+        ),
+      },
+      {
+        term: 'Omezení počtu pokusů',
+        detail: 'Citlivé operace chrání rate limit proti skriptovanému zneužití.',
+      },
+      {
+        term: 'Nahlášení zranitelnosti',
+        detail: (
+          <>
+            Napiš na <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> —
+            soukromě podle{' '}
+            <TextLink href={`${SOURCE_URL}/blob/main/SECURITY.md`} external>
+              SECURITY.md
+            </TextLink>
+            , ne do veřejného issue. Odpovídá autor osobně: přijetí potvrdí do 72 hodin, v sezóně
+            daňových přiznání (únor–duben) to může trvat déle. Nahlášené chyby opravujeme přednostně
+            a nálezce rádi (se souhlasem) uvedeme.
+          </>
+        ),
+      },
+    ],
   },
 ];
 
 export default function BezpecnostPage() {
   return (
     <MarketingPage>
-      <PageHero
-        eyebrow="Bezpečnost"
-        title="Svěřuješ nám čísla o svém majetku. Bereme to vážně."
-        lede="Tady je bez marketingu popsané, jak s tvými daty zacházíme — od API klíčů po smazání účtu."
-      />
+      {/* bez perexu: nadpisy oddílů říkají totéž a jsou hned pod titulkem */}
+      <PageHero eyebrow="Bezpečnost" title="Co se děje s tvými daty" />
 
-      <section aria-label="Bezpečnostní zásady" className="mt-12">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {ZASADY.map((zasada) => (
-            <div key={zasada.title} className="rounded-lg border border-line bg-surface p-6">
-              <h2 className="text-lg font-semibold">{zasada.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-muted">{zasada.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section aria-label="Nahlášení zranitelnosti" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
-          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            Našel jsi zranitelnost?
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-            Napiš prosím rovnou na{' '}
-            <a
-              href={`mailto:${OPERATOR.email}`}
-              className="font-medium text-accent-text underline underline-offset-2"
-            >
-              {OPERATOR.email}
-            </a>{' '}
-            — odpovídá autor osobně: přijetí potvrdí do 72 hodin, v sezóně daňových
-            přiznání (únor–duben) to může trvat déle. Nahlášené chyby opravujeme přednostně
-            a nálezce rádi (se souhlasem) uvedeme.
-          </p>
-        </div>
-      </section>
+      <div className="mt-10 md:mt-16">
+        {SECTIONS.map((section) => (
+          <section
+            key={section.title}
+            aria-label={section.title}
+            className="grid gap-x-16 gap-y-4 border-t border-line/70 py-10 md:py-12 lg:grid-cols-[minmax(0,15rem)_minmax(0,38rem)]"
+          >
+            <h2 className="type-title-2 text-balance">{section.title}</h2>
+            <dl className="space-y-6">
+              {section.facts.map((fact) => (
+                <div key={fact.term}>
+                  <dt className="type-body font-semibold text-ink">{fact.term}</dt>
+                  <dd className="type-body mt-1 text-pretty text-ink-muted">{fact.detail}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
 
       <MarketingCta
-        title="Přesvědč se sám — bez rizika"
-        lede="Demo běží nad vymyšlenými daty a nic po tobě nechce. Účet pak stačí e-mail — a broker jen klíč pro čtení."
+        title="Vyzkoušej to na vymyšlených datech"
+        lede="Demo po tobě nic nechce. K účtu pak stačí e-mail a u brokera klíč jen pro čtení."
       />
     </MarketingPage>
   );

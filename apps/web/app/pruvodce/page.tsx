@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { TextLink } from '@/components/ui/link';
 
 export const metadata: Metadata = {
   title: 'Průvodce daněmi z investic — Danero',
@@ -8,20 +9,19 @@ export const metadata: Metadata = {
     'Srozumitelné články o daních z investic pro české investory: limit 100 000 Kč z objemu prodejů, tříletý časový test a OSVČ v paušálním režimu. Bez žargonu, s příklady.',
 };
 
-const CLANKY: { slug: string; stitek: string; title: string; popis: string }[] = [
+/** Články průvodce: titulek a jedna věta, kterou článek zodpovídá. */
+const ARTICLES: { slug: string; title: string; summary: string }[] = [
   {
     slug: 'limit-100-000-kc',
-    stitek: 'Limity a pravidla',
     title: 'Limit 100 000 Kč: počítá se objem prodejů, ne zisk',
-    popis:
-      'Nejrozšířenější omyl českých investorů. Kdy se prodeje akcií a ETF nedaní vůbec, co udělá jediná koruna nad limit a proč má krypto vlastní stovku.',
+    summary:
+      'Kdy se prodeje akcií a ETF nedaní vůbec, co udělá jediná koruna nad limit a proč má krypto vlastní stovku.',
   },
   {
     slug: 'pausalni-rezim-a-investice',
-    stitek: 'OSVČ v paušálu',
     title: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
-    popis:
-      'Limit 50 000 Kč jiných příjmů se počítá z hrubých částek — pár zahraničních dividend ho naplní i bez jediného prodeje. Co se počítá, co ne a co znamená prolomení.',
+    summary:
+      'Limit 50 000 Kč jiných příjmů se počítá z hrubých částek. Co do něj patří, co ne a co znamená prolomení.',
   },
 ];
 
@@ -31,52 +31,49 @@ export default function PruvodcePage() {
       <PageHero
         eyebrow="Průvodce"
         title="Průvodce daněmi z investic"
-        lede="Pravidla a limity bez žargonu. Každý článek začíná krátkou odpovědí a pokračuje konkrétními příklady s čísly — podle stejné metodiky, kterou počítá aplikace."
+        lede="Každý článek začíná krátkou odpovědí a pokračuje příklady s čísly."
       />
 
-      <ul className="mt-12 grid gap-4 sm:grid-cols-2">
-        {CLANKY.map((clanek) => (
-          <li key={clanek.slug}>
+      {/* Rozcestník je seznam, ne mřížka dlaždic: řádek = článek, celý klikací. */}
+      <ul className="measure mt-10 divide-y divide-line/70 border-y border-line/70 md:mt-14">
+        {ARTICLES.map((article) => (
+          <li key={article.slug}>
             <Link
-              href={`/pruvodce/${clanek.slug}`}
-              className="flex h-full flex-col rounded-lg border border-line bg-surface p-6 transition-colors hover:border-accent"
+              href={`/pruvodce/${article.slug}`}
+              className="group flex items-center gap-4 py-6 active:opacity-60"
             >
-              <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
-                {clanek.stitek}
-              </p>
-              <h2 className="mt-3 text-xl font-bold tracking-tight">
-                {clanek.title}
-              </h2>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">
-                {clanek.popis}
-              </p>
-              <p className="mt-4 text-sm font-medium text-accent-text">Číst článek →</p>
+              <span className="min-w-0 flex-1">
+                <span className="type-title-2 block text-balance group-hover:underline">
+                  {article.title}
+                </span>
+                <span className="type-body mt-2 block text-pretty text-ink-muted">
+                  {article.summary}
+                </span>
+              </span>
+              <span aria-hidden className="type-title-2 text-ink-muted">
+                ›
+              </span>
             </Link>
           </li>
         ))}
       </ul>
 
-      <p className="mt-8 max-w-3xl text-sm text-ink-muted">
-        Chceš rovnou odpověď na vlastní situaci? Zkus zdarma a bez registrace{' '}
-        <Link
-          href="/kalkulacka"
-          className="font-medium text-accent-text underline underline-offset-2"
-        >
-          kalkulačku „Musím podat přiznání?“
-        </Link>{' '}
-        — a jak přesně počítáme, popisuje stránka{' '}
-        <Link
-          href="/jak-pocitame"
-          className="font-medium text-accent-text underline underline-offset-2"
-        >
-          Jak počítáme
-        </Link>
-        .
-      </p>
+      <ul className="type-callout measure mt-8 md:mt-10">
+        <li>
+          <TextLink href="/kalkulacka" chevron>
+            Kalkulačka: musím podat přiznání?
+          </TextLink>
+        </li>
+        <li className="md:mt-2">
+          <TextLink href="/jak-pocitame" chevron>
+            Jak počítáme — celá metodika s paragrafy
+          </TextLink>
+        </li>
+      </ul>
 
       <MarketingCta
         title="Číst je fajn, počítat je lepší"
-        lede="Všechno z průvodce Danero počítá automaticky nad tvými daty — limity, časové testy, dividendy i kurzy. Prohlédni si to v demu nad vzorovým portfoliem."
+        lede="Všechno z průvodce Danero počítá nad tvými daty. Prohlédni si to v demu nad vzorovým portfoliem."
       />
     </MarketingPage>
   );
