@@ -338,6 +338,77 @@ const danPodle16 = (zdZaokrouhleny: Money, threshold: Money): Money =>
     ? zdZaokrouhleny.mul('0.15')
     : threshold.mul('0.15').plus(zdZaokrouhleny.sub(threshold).mul('0.23'));
 
+/** Zahraniční příjmy a srážka po státech — společný vstup Přílohy 3 i 4. */
+function creditStates(result: TaxYearResult) {
+  const creditIncome = creditIncomeByCountry(result);
+  return Object.entries(result.dividends.creditableByCountry)
+    .map(([country, agg]) => ({
+      country,
+      // jen státy se započitatelnou srážkou mají ř. 321; ostatní se níž odfiltrují
+      gross: creditIncome.get(country) ?? ZERO,
+      creditable: agg.creditableCzk,
+      // K3-08: skutečně sražená daň — do Seznamu podle § 38f odst. 10 patří
+      // částka z potvrzení, ne částka po smluvním stropu (viz níže u Vetad)
+      withholding: agg.withholdingCzk,
+    }))
+    .sort((a, b) => a.country.localeCompare(b.country));
+}
+
+/** Řádky Přílohy č. 4 (samostatný základ daně, § 16a). */
+export interface Attachment4Lines {
+  /** ř. 401a — příjmy § 8 ze zahraničí. */
+  r401a: Money;
+  r406: Money;
+  r409: Money;
+  /** ř. 410 — daň 15 % ze základu zaokrouhleného na sta dolů. */
+  r410: Money;
+  r411: Money;
+  /** ř. 412 — daň zaplacená v zahraničí, jen do výše podle smluv. */
+  r412: Money;
+  /** ř. 413 — z toho lze započíst (dvě desetinná místa). */
+  r413: Money;
+  /** ř. 414 — daň ze samostatného základu po zápočtu → ř. 74a přiznání. */
+  r414: Money;
+}
+
+/**
+ * Příloha č. 4 — JEDINÝ zdroj čísel pro XML i pro řádky „Co zapsat do
+ * přiznání“ v reportu, stejně jako `priloha2()` pro § 10.
+ *
+ * Report do 10. 10. 2026 ukazoval ř. 410, 412–413 a 414 bez částky, protože je
+ * počítal jen generátor XML uvnitř sebe (nález R1B-01): řádek bez čísla na
+ * stránce, ze které se opisuje do formuláře, vypadal jako chybějící data.
+ * Všechny tři jdou spočítat jen z investičních příjmů — na zbytku přiznání
+ * nezávisí.
+ *
+ * `null` v roce bez zahraničních dividend a úroků (příloha se nevyplňuje).
+ */
+export function attachment4Lines(result: TaxYearResult): Attachment4Lines | null {
+  // celé koruny dolů, aby ř. 409 vyšel stejně jako `roundBaseDownTo100` v enginu
+  const r401a = base8WholeCzk(result).separate16aCzk; // příjmy § 8 ze zahraničí
+  if (!r401a.gt(0)) return null;
+  const r406 = r401a; // ř. 401 + ř. 401a
+  const r409 = roundBaseDownTo100(r406); // součet dílčích základů, celá sta dolů
+  const r410 = r409.mul('0.15'); // daň 15 % (násobek 100 → celé Kč)
+  const states = creditStates(result).filter((s) => s.creditable.gt(0));
+  // ř. 411: úhrn příjmů po státech, nejvýš ř. 406 — podatelna vyšší hodnotu
+  // odmítá („větší než úhrn dílčích ZD“, L5-01). Strop je opět jen pojistka.
+  const r411 = Decimal.min(
+    r406,
+    states.reduce((acc, s) => acc.plus(s.gross), ZERO),
+  );
+  // ř. 412: daň zaplacená v zahraničí jen do výše dle smluv (R-07c, jako ř. 323)
+  const r412 = round0(states.reduce((acc, s) => acc.plus(s.creditable), ZERO));
+  // ř. 413: přesně vzorec EPO — ř. 412, max. 15 % z ř. 411
+  const r413 = round2(Decimal.min(r412, r411.mul('0.15')));
+  // ř. 414 → ř. 74a je v celých Kč; daň zaokrouhlujeme nahoru (princip ř. 60).
+  // Clamp na nulu (vzor ř. 330): r410 je 15 % ze základu zaokrouhleného na sta
+  // DOLŮ, r413 z NEzaokrouhleného úhrnu — při plné smluvní srážce může r413
+  // převýšit r410 a bez clampu by vznikla záporná daň ze samostatného základu.
+  const r414 = Decimal.max(ZERO, ceil0(r410.sub(r413)));
+  return { r401a, r406, r409, r410, r411, r412, r413, r414 };
+}
+
 export function generateDpfdp7(input: EpoInput): { xml: string } {
   const { year, result, personal } = input;
   if (!EPO_SUPPORTED_YEARS.includes(year)) {
@@ -398,18 +469,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const base8 = varianta === 'GENERAL' ? base8Whole.generalCzk : base8Whole.separate16aCzk;
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
-  const creditIncome = creditIncomeByCountry(result);
-  const staty = Object.entries(result.dividends.creditableByCountry)
-    .map(([country, agg]) => ({
-      country,
-      // jen státy se započitatelnou srážkou mají ř. 321; ostatní se níž odfiltrují
-      gross: creditIncome.get(country) ?? ZERO,
-      creditable: agg.creditableCzk,
-      // K3-08: skutečně sražená daň — do Seznamu podle § 38f odst. 10 patří
-      // částka z potvrzení, ne částka po smluvním stropu (viz níže u Vetad)
-      withholding: agg.withholdingCzk,
-    }))
-    .sort((a, b) => a.country.localeCompare(b.country));
+  const staty = creditStates(result);
 
   // ---------- 2. oddíl — dílčí základy (VetaO) ----------
   // ř. 38: § 8 jen v obecném základu (GENERAL); u § 16a jde do Přílohy 4
@@ -459,34 +519,9 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   const r330 = Decimal.max(ZERO, r57.sub(r328)); // daň po zápočtu → ř. 58
 
   // ---------- Příloha 4 — samostatný základ § 16a (varianta SEPARATE_16A) ----------
-  const has16a = varianta === 'SEPARATE_16A' && base8.gt(0);
-  let p4: {
-    r401a: Money; r406: Money; r409: Money; r410: Money;
-    r411: Money; r412: Money; r413: Money; r414: Money;
-  } | undefined;
-  if (has16a) {
-    const r401a = base8; // příjmy § 8 ze zahraničí
-    const r406 = r401a; // ř. 401 + ř. 401a
-    const r409 = roundBaseDownTo100(r406); // součet dílčích základů, celá sta dolů
-    const r410 = r409.mul('0.15'); // daň 15 % (násobek 100 → celé Kč)
-    const zapocetStaty = staty.filter((s) => s.creditable.gt(0));
-    // ř. 411: úhrn příjmů po státech, nejvýš ř. 406 — podatelna vyšší hodnotu
-    // odmítá („větší než úhrn dílčích ZD“, L5-01). Strop je opět jen pojistka.
-    const r411 = Decimal.min(
-      r406,
-      zapocetStaty.reduce((acc, s) => acc.plus(s.gross), ZERO),
-    );
-    // ř. 412: daň zaplacená v zahraničí jen do výše dle smluv (R-07c, jako ř. 323)
-    const r412 = round0(zapocetStaty.reduce((acc, s) => acc.plus(s.creditable), ZERO));
-    // ř. 413: přesně vzorec EPO — ř. 412, max. 15 % z ř. 411
-    const r413 = round2(Decimal.min(r412, r411.mul('0.15')));
-    // ř. 414 → ř. 74a je v celých Kč; daň zaokrouhlujeme nahoru (princip ř. 60).
-    // Clamp na nulu (vzor ř. 330): r410 je 15 % ze základu zaokrouhleného na sta
-    // DOLŮ, r413 z NEzaokrouhleného úhrnu — při plné smluvní srážce může r413
-    // převýšit r410 a bez clampu by vznikla záporná daň ze samostatného základu.
-    const r414 = Decimal.max(ZERO, ceil0(r410.sub(r413)));
-    p4 = { r401a, r406, r409, r410, r411, r412, r413, r414 };
-  }
+  // výpočet sdílí report (`attachment4Lines`), aby řádky na stránce a v XML byly tytéž
+  const p4 = varianta === 'SEPARATE_16A' ? (attachment4Lines(result) ?? undefined) : undefined;
+  const has16a = p4 !== undefined;
 
   // ---------- 4.–7. oddíl (VetaD) ----------
   const r58 = hasPriloha3 ? r330 : r57; // daň § 16, příp. po zápočtu z P3

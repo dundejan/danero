@@ -21,7 +21,7 @@ import { firstParam, resolveTaxYear } from '@/lib/utils';
  */
 export const maxDuration = 300;
 
-export const metadata = { title: 'Daňový report — Danero' };
+export const metadata = { title: 'Report — Danero' };
 
 export default async function ReportPage({
   searchParams,
@@ -51,6 +51,9 @@ export default async function ReportPage({
   // v nastavení vybere jiné (zákon chce konzistenci a čísla v podaném přiznání
   // se nesmí zpětně změnit)
   const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
+  const justPinned =
+    profile.pinnedTaxYears?.[year] === undefined &&
+    pinnedProfile.pinnedTaxYears?.[year] !== undefined;
 
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
   const dailyRates = await loadDailyRates(db, txs, currentYear);
@@ -77,6 +80,7 @@ export default async function ReportPage({
       dailyRates={dailyRates}
       precomputed={precomputed}
       strana={strana}
+      justPinned={justPinned}
     />
   );
 }

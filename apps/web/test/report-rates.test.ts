@@ -122,6 +122,40 @@ describe('karta „Použité kurzy“ u roku bez jednotného kurzu (K1-04)', () 
 });
 
 /**
+ * K nálezu R2-04: věta o orientačním kurzu ve vysvětlivce „Použité kurzy“ stála
+ * u každého roku („kurz běžného roku je orientační do vydání pokynu“) — i v
+ * podkladu za rok, do kterého žádný orientační kurz nevstupuje. Podklad má
+ * říkat jen to, co se ho týká.
+ */
+describe('věta o orientačním kurzu jen tam, kde orientační kurz vstupuje do podkladu', () => {
+  const ESTIMATED = 'orientační do vydání pokynu';
+  /** Text tiskové kopie vysvětlivky pod tabulkou kurzů. */
+  const ratesNote = (year: number): string => {
+    const out = render(TXS_2019, year).replace(/<[^>]+>/g, ' ').replace(/ /g, ' ');
+    const from = out.lastIndexOf('Ověřené jednotné kurzy');
+    expect(from).toBeGreaterThan(-1);
+    return out.slice(from, from + 400);
+  };
+
+  it('rok s ověřeným kurzem o orientačním kurzu nemluví', () => {
+    // poslední ověřený rok: všechny kurzy v jeho tabulce jsou z pokynů GFŘ
+    expect(isRateVerified(LAST_VERIFIED_RATE_YEAR)).toBe(true);
+    expect(ratesNote(LAST_VERIFIED_RATE_YEAR)).not.toContain(ESTIMATED);
+    expect(ratesNote(LAST_VERIFIED_RATE_YEAR)).not.toContain('běžného roku');
+  });
+
+  it('rok s odhadnutým kurzem ho jmenuje', () => {
+    const estimated = LAST_VERIFIED_RATE_YEAR + 1;
+    // předpoklad sondy: kurz za ten rok v tabulce je, jen není ověřený
+    expect(UNIFIED_RATES[estimated]).toBeDefined();
+    expect(isRateVerified(estimated)).toBe(false);
+    const note = ratesNote(estimated);
+    expect(note).toContain(ESTIMATED);
+    expect(note).toContain(String(estimated));
+  });
+});
+
+/**
  * Kurzy ČNB k poslední kotaci každého měsíce leden–září 2026 (30. 1., 27. 2.,
  * 31. 3., 30. 4., 29. 5., 30. 6., 31. 7., 31. 8., 30. 9.), tak jak je ČNB
  * kotuje — za `unit` jednotek měny. Veřejný roční kurzovní lístek ČNB.
