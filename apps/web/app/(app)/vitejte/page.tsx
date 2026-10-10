@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
-import { Card, CardTitle } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { TextLink } from '@/components/ui/link';
 import { getDb } from '@/db';
 import { brokerAccounts } from '@/db/schema';
 import { PLATFORM_COUNTS } from '@/lib/brokers-catalog';
@@ -9,14 +11,24 @@ import { currentTaxYear } from '@/lib/clock';
 import { filingLimitTexts } from '@/lib/filing-limits';
 import { getProfile, loadTransactions } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
-import { buttonVariants } from '@/components/ui/button';
 
 export const metadata = { title: 'Vítej — Danero' };
 
+interface NextStep {
+  /** Kolikátý ze dvou kroků to je. */
+  number: 1 | 2;
+  title: string;
+  lede: React.ReactNode;
+  /** Vysvětlivka za perexem — proč to chceme. */
+  info?: React.ReactNode;
+  action: { href: string; label: string };
+}
+
 /**
- * Onboarding po registraci (G9a) — žádný wizard state: kroky se odvozují
- * z dat (profil? broker/transakce?), takže průvodce jde kdykoli opustit
- * a vrátit se. Hotový uživatel je přesměrován na přehled.
+ * První obrazovka po registraci (G9a): jeden další krok a možnost podívat se
+ * do dema, nic víc. Žádný stav průvodce se neukládá — krok se odvozuje z dat
+ * (profil? broker? transakce?), takže jde kdykoli odejít a vrátit se. Hotový
+ * uživatel je přesměrován na přehled.
  */
 export default async function WelcomePage() {
   const user = await requireUser();
@@ -39,104 +51,61 @@ export default async function WelcomePage() {
   // od ZO 2027 40 000 Kč) — průvodce rok nezná, jmenuje tedy limit běžného roku
   const employeeLimit = filingLimitTexts(currentTaxYear()).employee;
 
-  const steps = [
-    { done: true, label: 'Účet vytvořen' },
-    { done: hasProfile, label: 'Daňový profil' },
-    { done: hasData || hasBroker, label: 'První data' },
-  ];
+  const step: NextStep = !hasProfile
+    ? {
+        number: 1,
+        title: 'Vítej v Daneru',
+        lede: (
+          <>
+            Nejdřív nám řekni, jak daníš. Podle toho hlídáme správné limity (paušální daň
+            50 000 Kč, vedlejší příjmy {employeeLimit}…).
+          </>
+        ),
+        action: { href: '/nastaveni', label: 'Vyplnit daňový profil' },
+      }
+    : hasBroker
+      ? {
+          number: 2,
+          title: 'Zbývá stáhnout historii',
+          lede: 'Broker je připojený. Historii z něj stáhneš jedním tlačítkem ve Zdrojích dat.',
+          action: { href: '/import', label: 'Otevřít Zdroje dat' },
+        }
+      : {
+          number: 2,
+          title: 'Přidej svoje obchody',
+          lede: 'Nahraj výpis od brokera, nebo ho napoj klíčem jen pro čtení. Potřebujeme celou historii od prvního nákupu.',
+          info: (
+            <InfoPopover label="Přidání obchodů" title="Co budeš potřebovat">
+              <p>
+                Celou historii chceme kvůli časovým testům a nabývacím cenám — bez prvního nákupu
+                nejde spočítat, co je osvobozené.
+              </p>
+              {/* počty z katalogu — natvrdo zapsané při přidání parseru zdriftují */}
+              <p>
+                Výpisy z {PLATFORM_COUNTS.file} platforem čteme sami, u {PLATFORM_COUNTS.template}{' '}
+                dalších tě provede univerzální šablona. Trading 212 a Interactive Brokers jde
+                napojit, pak se synchronizují každý den samy.
+              </p>
+            </InfoPopover>
+          ),
+          action: { href: '/import', label: 'Přidat data' },
+        };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <header>
-        <h1 className="text-3xl font-bold">Vítej v Daneru 👋</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Zbývají dva kroky a hlídáme ti daně. Kdykoli můžeš odejít a vrátit se — průvodce si
-          pamatuje, kde jsi.
-        </p>
-      </header>
-
-      <ol className="flex flex-wrap items-center gap-2 text-sm">
-        {steps.map((step, i) => (
-          <li key={step.label} className="flex items-center gap-2">
-            <span
-              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                step.done ? 'bg-success-fill text-white' : 'border border-line text-ink-muted'
-              }`}
-            >
-              {step.done ? '✓' : i + 1}
-            </span>
-            <span className={step.done ? 'text-ink' : 'text-ink-muted'}>
-              {step.label}
-            </span>
-            {i < steps.length - 1 && <span className="text-line">→</span>}
-          </li>
-        ))}
-      </ol>
-
-      {!hasProfile ? (
-        <Card className="space-y-3">
-          <CardTitle>Krok 1: Řekni nám, kdo jsi vůči dani</CardTitle>
-          <p className="text-sm text-ink-muted">
-            Od toho se odvíjí, které limity hlídáme (paušální daň 50 000 Kč, vedlejší
-            příjmy {employeeLimit}…). Vše jde kdykoli změnit, výpočty se přepočítají od nuly.
-          </p>
-          <Link
-            href="/nastaveni"
-            className={buttonVariants({ variant: 'primary' })}
-          >
-            Vyplnit daňový profil
-          </Link>
-        </Card>
-      ) : (
-        <Card className="space-y-4">
-          <CardTitle>Krok 2: Nahraj svoje obchody</CardTitle>
-          <p className="text-sm text-ink-muted">
-            Potřebujeme kompletní historii od prvního nákupu — kvůli časovým testům
-            a nabývacím cenám. Vyber cestu:
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Link
-              href="/import#trading212"
-              className="rounded-md border border-line p-3 text-sm hover:border-accent"
-            >
-              <span className="block font-semibold">Trading 212 / IBKR API</span>
-              <span className="text-ink-muted">
-                Připoj klíč jen pro čtení — synchronizace pak běží sama každý den.
-              </span>
-            </Link>
-            <Link
-              href="/import"
-              className="rounded-md border border-line p-3 text-sm hover:border-accent"
-            >
-              <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX/HTML)</span>
-              <span className="text-ink-muted">
-                {/* počty z katalogu — natvrdo zapsané při přidání parseru zdriftují */}
-                Výpisy z {PLATFORM_COUNTS.file} platforem
-                čteme automaticky — XTB, Degiro, eToro, Schwab, Portu, Coinbase i další;
-                u {PLATFORM_COUNTS.template} dalších tě
-                provedeme univerzální šablonou.
-              </span>
-            </Link>
-          </div>
-          {hasBroker && (
-            <p className="text-sm text-success-text">
-              Broker připojen — první synchronizace běží na stránce{' '}
-              <Link href="/import" className="font-medium underline">
-                Zdroje dat
-              </Link>
-              , průběh uvidíš tam.
-            </p>
-          )}
-        </Card>
-      )}
-
-      <p className="text-xs text-ink-muted">
-        Chceš se nejdřív jen rozkoukat?{' '}
-        <Link href="/demo" className="font-medium text-accent-text">
-          Mrkni na demo s ukázkovými daty
-        </Link>
-        .
-      </p>
+    <div className="mx-auto flex max-w-[30rem] flex-col items-center py-12 text-center md:py-24">
+      <p className="type-footnote text-ink-muted">Krok {step.number} ze 2</p>
+      <h1 className="type-title-1 mt-2 text-balance">{step.title}</h1>
+      {/* `div`, ne `p`: vysvětlivka si na telefonu vykresluje sheet a ten do odstavce nesmí */}
+      <div className="type-body mt-3 text-pretty text-ink-muted">
+        {step.lede}
+        {step.info && <> {step.info}</>}
+      </div>
+      <Link href={step.action.href} className={`${buttonVariants({ size: 'lg' })} mt-8`}>
+        {step.action.label}
+      </Link>
+      <TextLink href="/demo" chevron className="mt-3">
+        Podívat se do dema
+      </TextLink>
     </div>
   );
 }
