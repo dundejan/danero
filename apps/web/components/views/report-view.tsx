@@ -588,6 +588,14 @@ export function ReportView({
   /* ── varianty výpočtu: jedna tabulka na kurzovou soustavu ──────────────── */
 
   const pausal = result.limits.flatTax50k.applicable;
+  // „nejvýhodnější“ má smysl jen tam, kde se varianty liší: u roku, kde vyjdou
+  // všechny stejně (i u roku bez jediného prodeje), by štítek u první z nich
+  // tvrdil rozdíl, který není (k nálezu R2-14)
+  const variantsDiffer = variants.some(
+    (variant) =>
+      !variant.taxCzk.eq(variants[0]!.taxCzk) ||
+      !variant.flatTax50kUsedCzk.eq(variants[0]!.flatTax50kUsedCzk),
+  );
   const variantsTable = (fx: string) => (
     <ScrollArea label={`Varianty párování, ${FX_METHOD_LABEL[fx] ?? fx}`}>
       <Table aria-label={`Srovnání variant výpočtu daně, ${FX_METHOD_LABEL[fx] ?? fx}`}>
@@ -617,7 +625,7 @@ export function ReportView({
                 variant.fxMethod === result.options.fxMethod;
               const marks = [
                 isActive ? 'používáš' : null,
-                isRecommended ? 'nejvýhodnější' : null,
+                isRecommended && variantsDiffer ? 'nejvýhodnější' : null,
               ].filter((mark): mark is string => mark !== null);
               return (
                 <Tr key={variant.matchingMethod}>
@@ -1864,7 +1872,7 @@ export function ReportView({
               </TextLink>
             </p>
           )}
-          <PrintButton className="sm:hidden" />
+          <PrintButton long className="sm:hidden" />
         </div>
       </div>
     </>

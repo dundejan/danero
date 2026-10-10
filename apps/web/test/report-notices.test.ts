@@ -195,6 +195,21 @@ describe('výzva v reportu říká skutečný přínos (R4-01)', () => {
     expect(notice).toContain('FIFO je bezpečný standard');
   });
 
+  it('štítek „nejvýhodnější“ je v tabulce variant jen tehdy, když se varianty liší', () => {
+    expect(plain(render(100)).includes('nejvýhodnější')).toBe(true);
+    // bez prodeje druhého titulu vyjdou všechny metody stejně — není co vyzdvihovat
+    const same = renderToStaticMarkup(
+      createElement(ReportView, {
+        txs: portfolio(100).filter((tx) => !('isin' in tx) || tx.isin !== 'XX0000000025'),
+        profile: PROFILE,
+        year: YEAR,
+        years: [YEAR],
+      }),
+    );
+    expect(plain(same).includes('používáš')).toBe(true);
+    expect(plain(same).includes('nejvýhodnější')).toBe(false);
+  });
+
   it('OSVČ mimo paušál čte o dani — limit nemá', () => {
     const notice = between(plain(render(100, { regime: 'OSVC' })), 'S párováním FIFO', 'Co zapsat');
     expect(TAX_TITLE.test(notice)).toBe(true);

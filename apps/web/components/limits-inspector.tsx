@@ -110,12 +110,15 @@ export function LimitsInspector({
           })}
         </div>
 
-        {/* inspektor: jen v širokém okně; tichá plocha ho spojuje s vybraným řádkem */}
+        {/* Inspektor: jen v širokém okně; tichá plocha ho spojuje s vybraným
+            řádkem. Drží nejmenší výšku detailu s grafem a dvouřádkovým titulkem:
+            přepínání řádků se dělá opakovaně a zbytek stránky se při něm nesmí
+            hýbat — dřív nadpis další sekce skákal mezi 681 a 767 px (R1B-17). */}
         <div
           id={regionId}
           role="region"
           aria-label={current?.title}
-          className="hidden rounded-2xl bg-canvas p-5 @3xl:block"
+          className="hidden rounded-2xl bg-canvas p-5 @3xl:block @3xl:min-h-[22.75rem]"
         >
           {/* graf se v neviditelném inspektoru nekreslí (měřil by nulovou šířku) */}
           {wide && current?.detail}

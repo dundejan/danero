@@ -101,21 +101,42 @@ function NoExemptionRow({ name, proceeds }: { name: string; proceeds: string }) 
  * limitu a výklad se schová za „i“; v sheetu (telefon) název nese titulek
  * sheetu a výklad stojí pod obsahem rovnou — sheet sám je ta vrstva „na
  * požádání“ a bublina v dialogu by byla dialog v dialogu.
+ *
+ * Detail bez grafu (limit, který se letos ještě nehýbal) má výklad vidět
+ * i v inspektoru: inspektor drží stálou výšku, aby se při přepínání řádků
+ * nehýbala stránka pod ním (R1B-17), a prázdné místo po grafu je lepší
+ * zaplnit tím, co by si člověk stejně rozklikl.
  */
-function DetailHeading({ label, explanation }: { label: string; explanation: string }) {
+function DetailHeading({
+  label,
+  explanation,
+  inline,
+}: {
+  label: string;
+  explanation: string;
+  /** Výklad stojí pod číslem rovnou — vysvětlivka by ho jen opakovala. */
+  inline: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5 in-[.material-sheet]:hidden">
-      <h3 className="type-title-3">{label}</h3>
-      <InfoPopover label={label} title="Co se do limitu počítá" align="end">
-        <p>{tidy(explanation)}</p>
-      </InfoPopover>
+      <h3 className="type-title-3 text-balance">{label}</h3>
+      {!inline && (
+        <InfoPopover label={label} title="Co se do limitu počítá" align="end">
+          <p>{tidy(explanation)}</p>
+        </InfoPopover>
+      )}
     </div>
   );
 }
 
-function DetailExplanation({ children }: { children: string }) {
+function DetailExplanation({ children, inline }: { children: string; inline: boolean }) {
   return (
-    <p className="type-footnote mt-5 hidden px-1 text-pretty text-ink-muted in-[.material-sheet]:block">
+    <p
+      className={cn(
+        'type-footnote mt-5 px-1 text-pretty text-ink-muted @3xl:px-0',
+        !inline && 'hidden in-[.material-sheet]:block',
+      )}
+    >
       {tidy(children)}
     </p>
   );
@@ -137,9 +158,10 @@ function LimitDetail({
   chart?: React.ReactNode;
 }) {
   const difference = status.limitCzk.sub(status.usedCzk).abs();
+  const inline = !chart;
   return (
     <div>
-      <DetailHeading label={label} explanation={explanation} />
+      <DetailHeading label={label} explanation={explanation} inline={inline} />
       <p className="mt-3 px-1 in-[.material-sheet]:mt-0 @3xl:px-0">
         <span className={cn('type-figure', status.exceeded && 'text-danger')}>
           {czk(difference)}
@@ -149,7 +171,7 @@ function LimitDetail({
         </span>
       </p>
       {chart && <div className="mt-5">{chart}</div>}
-      <DetailExplanation>{explanation}</DetailExplanation>
+      <DetailExplanation inline={inline}>{explanation}</DetailExplanation>
     </div>
   );
 }
