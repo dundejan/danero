@@ -7,18 +7,18 @@ export default function NotFound() {
     <MarketingPage>
       <title>Stránka nenalezena — Danero</title>
       <div className="py-24 md:py-32">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
           Chyba 404
         </p>
-        <h1 className="mt-3 max-w-2xl text-balance font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
+        <h1 className="mt-3 max-w-2xl text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
           Tahle stránka neexistuje
         </h1>
-        <p className="mt-5 max-w-xl text-lg text-inkoust-tlumeny">
+        <p className="mt-5 max-w-xl text-lg text-ink-muted">
           Buď se odkaz změnil, nebo v adrese něco přebývá. Nejspíš hledáš jedno z tohohle:
         </p>
-        <ul className="mt-6 space-y-2 text-inkoust-tlumeny">
+        <ul className="mt-6 space-y-2 text-ink-muted">
           <li>
-            <Link href="/" className="font-medium text-ruzova-text underline underline-offset-2">
+            <Link href="/" className="font-medium text-accent-text underline underline-offset-2">
               Úvodní stránka
             </Link>{' '}
             — co Danero hlídá a jak funguje
@@ -26,7 +26,7 @@ export default function NotFound() {
           <li>
             <Link
               href="/platformy"
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               Platformy
             </Link>{' '}
@@ -35,7 +35,7 @@ export default function NotFound() {
           <li>
             <Link
               href="/kalkulacka"
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               Kalkulačka
             </Link>{' '}
@@ -45,7 +45,7 @@ export default function NotFound() {
         <div className="mt-10">
           <Link
             href="/demo/prehled"
-            className="inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:opacity-90"
+            className="inline-block rounded-md bg-accent-fill px-6 py-3 font-semibold text-white hover:opacity-90"
           >
             Vyzkoušet demo — bez registrace
           </Link>

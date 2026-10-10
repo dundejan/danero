@@ -27,7 +27,7 @@ function declaredTokens(): Set<string> {
   return new Set([...css.matchAll(/^\s*--([a-z0-9-]+):\s*#/gim)].map((m) => m[1]!));
 }
 
-/** Utility, které berou barvu z tokenu (`bg-plocha`, `text-ruzova-text`…). */
+/** Utility, které berou barvu z tokenu (`bg-surface`, `text-accent-text`…). */
 const COLOR_UTILITIES = ['bg', 'text', 'border', 'ring', 'fill', 'stroke', 'decoration', 'outline'];
 
 /**
@@ -59,7 +59,7 @@ describe('design tokeny', () => {
       sourceFiles(join(webRoot, 'components')),
     )) {
       for (const [cela, , raw] of readFileSync(file, 'utf8').matchAll(pattern)) {
-        // strana/osa před barvou: border-l-ruzova → ruzova, border-t-0 → 0
+        // strana/osa před barvou: border-l-accent → ruzova, border-t-0 → 0
         const token = raw!.replace(/^[tblrxyse]-/, '');
         if (BUILTIN.has(token) || tokens.has(token) || NOT_A_COLOR.test(token)) continue;
         // Tailwindí vestavěné palety (gray-500) i číselné varianty necháváme být
@@ -163,16 +163,16 @@ describe('nontextový kontrast ovládacích prvků (WCAG 1.4.11)', () => {
   it('parser čte oba režimy, ne dvakrát ten samý', () => {
     // pojistka proti tiché chybě v cssBlock: kdyby `.dark` spadl zpátky na
     // `:root`, oba režimy by měly stejné hodnoty a měření tmavého by bylo lež
-    expect(tokensOf(css, ':root')['plocha']).not.toEqual(tokensOf(css, '.dark')['plocha']);
+    expect(tokensOf(css, ':root')['surface']).not.toEqual(tokensOf(css, '.dark')['surface']);
   });
 
   it.each(REZIMY)('okraj polí a tlačítek drží 3:1 v obou režimech ($name)', ({ selector }) => {
     const tokens = tokensOf(css, selector);
-    const border = tokens['linka-ovladaci'];
-    expect(border, `${selector} --linka-ovladaci`).toBeDefined();
+    const border = tokens['line-control'];
+    expect(border, `${selector} --line-control`).toBeDefined();
 
-    // sousední barvy: výplň prvku (--plocha) i plocha stránky pod ním (--pozadi)
-    const slabe = (['plocha', 'pozadi'] as const)
+    // sousední barvy: výplň prvku (--surface) i plocha stránky pod ním (--canvas)
+    const slabe = (['surface', 'canvas'] as const)
       .map((surface) => ({
         surface,
         ratio: Number(contrast(border!, tokens[surface]!).toFixed(2)),
@@ -183,12 +183,12 @@ describe('nontextový kontrast ovládacích prvků (WCAG 1.4.11)', () => {
   });
 
   /**
-   * `--linka` je vlásový oddělovač (rámečky karet, čáry v tabulkách) — na tu
+   * `--line` je vlásový oddělovač (rámečky karet, čáry v tabulkách) — na tu
    * se 1.4.11 nevztahuje. Ale kdyby se jí zase orámoval ovládací prvek, byla
    * by chyba zpátky, a v prohlížeči ji nic nechytí. Proto zdrojová kontrola.
    */
-  it('žádné pole, select ani tlačítko nemá vlásový okraj --linka', () => {
-    const HAIRLINE = /border-linka(?![\w-])/;
+  it('žádné pole, select ani tlačítko nemá vlásový okraj --line', () => {
+    const HAIRLINE = /border-line(?![\w-])/;
     const nalezy: string[] = [];
 
     for (const file of sourceFiles(join(webRoot, 'app')).concat(
@@ -205,7 +205,7 @@ describe('nontextový kontrast ovládacích prvků (WCAG 1.4.11)', () => {
     // díváme celým souborem
     for (const primitive of ['components/ui/button.tsx', 'components/ui/switch.tsx']) {
       if (HAIRLINE.test(readFileSync(join(webRoot, primitive), 'utf8'))) {
-        nalezy.push(`${primitive}: border-linka na sdíleném ovládacím prvku`);
+        nalezy.push(`${primitive}: border-line na sdíleném ovládacím prvku`);
       }
     }
 
@@ -214,12 +214,12 @@ describe('nontextový kontrast ovládacích prvků (WCAG 1.4.11)', () => {
 });
 
 describe('kontrast sytých výplní', () => {
-  it('bílý text na -syta výplních drží AA 4,5:1', () => {
+  it('bílý text na -fill výplních drží AA 4,5:1', () => {
     // globals.css o nich říká „syté výplně pro CTA/danger s bílým textem" —
-    // --zelena-syta to nesplňovala (4,21:1) a nikdo si toho nevšiml, protože
+    // --success-fill to nesplňovala (4,21:1) a nikdo si toho nevšiml, protože
     // axe kontroluje jen vykreslené stránky a token byl použit na jediném místě.
     const css = readFileSync(join(webRoot, 'app', 'globals.css'), 'utf8');
-    const syte = [...css.matchAll(/--([a-z]+-syta):\s*(#[0-9a-f]{6})/gi)];
+    const syte = [...css.matchAll(/--([a-z]+-fill):\s*(#[0-9a-f]{6})/gi)];
     expect(syte.length).toBeGreaterThan(0);
 
     const slabe = syte
@@ -231,19 +231,19 @@ describe('kontrast sytých výplní', () => {
 });
 
 /**
- * H-3-04: výplň odměrky v pásmu „zvýšené čerpání“ měla proti dráze `bg-linka/40`
+ * H-3-04: výplň odměrky v pásmu „zvýšené čerpání“ měla proti dráze `bg-line/40`
  * jen 2,76:1, přestože WCAG 1.4.11 chce u grafiky nesoucí informaci 3:1 — a je
  * to nejběžnější stav (30 000–42 500 Kč z limitu 50 000 Kč).
  *
  * H-3-05: `@media print` předefinovával jen šest tokenů, takže tisk z tmavého
- * režimu dal na papír `--zelena-text` 2,30:1 a `--jantar-text` 2,10:1 (AA pro
+ * režimu dal na papír `--success-text` 2,30:1 a `--caution-text` 2,10:1 (AA pro
  * drobný text chce 4,50).
  */
 describe('kontrasty odměrky a tisku (H-3-04, H-3-05)', () => {
   const css = readFileSync(join(import.meta.dirname, '..', 'app', 'globals.css'), 'utf8');
   const svetle = tokensOf(css, ':root');
 
-  /** Průhledná dráha `bg-linka/40` na ploše — smíchané barvy, ne token. */
+  /** Průhledná dráha `bg-line/40` na ploše — smíchané barvy, ne token. */
   const smes = (a: string, b: string, alpha: number): string => {
     const kanal = (i: number) =>
       Math.round(
@@ -254,7 +254,7 @@ describe('kontrasty odměrky a tisku (H-3-04, H-3-05)', () => {
   };
 
   it('každé pásmo odměrky se od dráhy odliší aspoň 3:1', () => {
-    const draha = smes(svetle['linka']!, svetle['plocha']!, 0.4);
+    const draha = smes(svetle['line']!, svetle['surface']!, 0.4);
     const gauge = readFileSync(
       join(import.meta.dirname, '..', 'components', 'limit-gauge.tsx'),
       'utf8',
@@ -279,7 +279,7 @@ describe('kontrasty odměrky a tisku (H-3-04, H-3-05)', () => {
         hex!.toLowerCase(),
       ]),
     );
-    for (const token of ['zelena-text', 'jantar-text', 'oranz-text', 'ruzova-text', 'cervena']) {
+    for (const token of ['success-text', 'caution-text', 'warning-text', 'accent-text', 'danger']) {
       expect(tisk[token], `--${token} v @media print`).toBeDefined();
       expect(
         Number(contrast(tisk[token]!, '#ffffff').toFixed(2)),

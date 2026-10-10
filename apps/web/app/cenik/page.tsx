@@ -95,20 +95,20 @@ async function SupportSection({ support }: { support: SupportOptions }) {
   const qr = support.paymentCode ? await paymentQr(support.paymentCode) : null;
   return (
     <section id="podpora" aria-labelledby="podpora-nadpis" className="mt-24 lg:mt-32">
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+      <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
         Dobrovolně
       </p>
       <h2
         id="podpora-nadpis"
-        className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+        className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl"
       >
         Chceš přispět na provoz?
       </h2>
-      <div className="mt-6 grid items-start gap-8 rounded-lg border border-linka bg-plocha p-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="space-y-4 text-inkoust-tlumeny">
+      <div className="mt-6 grid items-start gap-8 rounded-lg border border-line bg-surface p-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="space-y-4 text-ink-muted">
           <p>
             Nemusíš. Danero je zdarma a příspěvkem si{' '}
-            <strong className="text-inkoust">nic neodemkneš</strong> — všechno už máš.
+            <strong className="text-ink">nic neodemkneš</strong> — všechno už máš.
             Když ti ale ušetřilo večer nad tabulkou nebo chybu v přiznání a chceš se
             odvděčit, pomůže to zaplatit doménu, provoz a čas na další brokery.
           </p>
@@ -121,7 +121,7 @@ async function SupportSection({ support }: { support: SupportOptions }) {
             <p>
               <a
                 href={support.url}
-                className="inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold text-inkoust shadow-sm hover:border-ruzova hover:text-ruzova"
+                className="inline-block rounded-md border border-line-control bg-surface px-6 py-3 font-semibold text-ink shadow-sm hover:border-accent hover:text-accent"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -132,7 +132,7 @@ async function SupportSection({ support }: { support: SupportOptions }) {
         </div>
         {support.paymentCode && (
           <div className="space-y-3 text-sm">
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+            <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Převodem
             </p>
             {qr && (
@@ -142,15 +142,15 @@ async function SupportSection({ support }: { support: SupportOptions }) {
                 width={224}
                 height={224}
                 alt="QR platba — dobrovolný příspěvek na provoz Danera"
-                className="rounded-md border border-linka bg-white"
+                className="rounded-md border border-line bg-white"
               />
             )}
-            <p className="text-inkoust-tlumeny">
+            <p className="text-ink-muted">
               Naskenuj v bankovní aplikaci a částku si zvol sám.
             </p>
             <p>
               Číslo účtu:{' '}
-              <strong className="font-mono text-inkoust">{support.accountNumber}</strong>
+              <strong className="tabular-nums text-ink">{support.accountNumber}</strong>
             </p>
           </div>
         )}
@@ -173,19 +173,19 @@ export default async function CenikPage() {
       />
 
       <section aria-label="Cena a obsah" className="mt-12">
-        <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 p-8 sm:p-10">
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-8 sm:p-10">
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-ruzova-text">
+              <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-accent-text">
                 Všechno v jednom
               </p>
-              <p className="mt-3 font-display text-5xl font-bold tracking-tight">0 Kč</p>
-              <p className="mt-2 text-sm text-inkoust-tlumeny">
+              <p className="mt-3 text-5xl font-bold tracking-tight">0 Kč</p>
+              <p className="mt-2 text-sm text-ink-muted">
                 bez časového omezení a bez karty
               </p>
               <Link
                 href={signedIn ? '/prehled' : '/registrace'}
-                className="mt-6 inline-block rounded-md bg-ruzova-syta px-6 py-3 text-center font-semibold text-white hover:opacity-90"
+                className="mt-6 inline-block rounded-md bg-accent-fill px-6 py-3 text-center font-semibold text-white hover:opacity-90"
               >
                 {signedIn ? 'Přejít do aplikace' : 'Založit účet'}
               </Link>
@@ -200,11 +200,11 @@ export default async function CenikPage() {
             </ul>
           </div>
         </div>
-        <p className="mt-6 text-center text-sm text-inkoust-tlumeny">
+        <p className="mt-6 text-center text-sm text-ink-muted">
           Danero si můžeš{' '}
           <a
             href={SOURCE_URL}
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -215,16 +215,16 @@ export default async function CenikPage() {
       </section>
 
       <section aria-labelledby="proc-zdarma-nadpis" className="mt-24 lg:mt-32">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
           Proč
         </p>
         <h2
           id="proc-zdarma-nadpis"
-          className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl"
         >
           Proč je to zdarma
         </h2>
-        <div className="mt-6 max-w-3xl space-y-4 leading-relaxed text-inkoust-tlumeny">
+        <div className="mt-6 max-w-3xl space-y-4 leading-relaxed text-ink-muted">
           <p>
             Danero je osobní projekt jednoho člověka, ne firma. Vzniklo proto, že jsem
             sám potřeboval hlídat limity a časové testy přes několik platforem — a
@@ -242,7 +242,7 @@ export default async function CenikPage() {
             platí, kdyby projekt někdy končil, najdeš v{' '}
             <Link
               href="/podminky"
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               podmínkách užití
             </Link>
@@ -254,12 +254,12 @@ export default async function CenikPage() {
       {supportAvailable(support) && <SupportSection support={support} />}
 
       <section aria-labelledby="cenik-faq-nadpis" className="mt-24 lg:mt-32">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
           FAQ
         </p>
         <h2
           id="cenik-faq-nadpis"
-          className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl"
         >
           Otázky k ceně
         </h2>

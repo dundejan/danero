@@ -48,8 +48,8 @@ export default async function WelcomePage() {
   return (
     <div className="max-w-2xl space-y-6">
       <header>
-        <h1 className="font-display text-3xl font-bold">Vítej v Daneru 👋</h1>
-        <p className="mt-1 text-sm text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Vítej v Daneru 👋</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Zbývají dva kroky a hlídáme ti daně. Kdykoli můžeš odejít a vrátit se — průvodce si
           pamatuje, kde jsi.
         </p>
@@ -60,15 +60,15 @@ export default async function WelcomePage() {
           <li key={step.label} className="flex items-center gap-2">
             <span
               className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                step.done ? 'bg-zelena-syta text-white' : 'border border-linka text-inkoust-tlumeny'
+                step.done ? 'bg-success-fill text-white' : 'border border-line text-ink-muted'
               }`}
             >
               {step.done ? '✓' : i + 1}
             </span>
-            <span className={step.done ? 'text-inkoust' : 'text-inkoust-tlumeny'}>
+            <span className={step.done ? 'text-ink' : 'text-ink-muted'}>
               {step.label}
             </span>
-            {i < steps.length - 1 && <span className="text-linka">→</span>}
+            {i < steps.length - 1 && <span className="text-line">→</span>}
           </li>
         ))}
       </ol>
@@ -76,7 +76,7 @@ export default async function WelcomePage() {
       {!hasProfile ? (
         <Card className="space-y-3">
           <CardTitle>Krok 1: Řekni nám, kdo jsi vůči dani</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Od toho se odvíjí, které limity hlídáme (paušální daň 50 000 Kč, vedlejší
             příjmy {employeeLimit}…). Vše jde kdykoli změnit, výpočty se přepočítají od nuly.
           </p>
@@ -90,26 +90,26 @@ export default async function WelcomePage() {
       ) : (
         <Card className="space-y-4">
           <CardTitle>Krok 2: Nahraj svoje obchody</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Potřebujeme kompletní historii od prvního nákupu — kvůli časovým testům
             a nabývacím cenám. Vyber cestu:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Link
               href="/import#trading212"
-              className="rounded-md border border-linka p-3 text-sm hover:border-ruzova"
+              className="rounded-md border border-line p-3 text-sm hover:border-accent"
             >
               <span className="block font-semibold">Trading 212 / IBKR API</span>
-              <span className="text-inkoust-tlumeny">
+              <span className="text-ink-muted">
                 Připoj klíč jen pro čtení — synchronizace pak běží sama každý den.
               </span>
             </Link>
             <Link
               href="/import"
-              className="rounded-md border border-linka p-3 text-sm hover:border-ruzova"
+              className="rounded-md border border-line p-3 text-sm hover:border-accent"
             >
               <span className="block font-semibold">Nahrát výpisy (CSV/XML/XLSX/HTML)</span>
-              <span className="text-inkoust-tlumeny">
+              <span className="text-ink-muted">
                 {/* počty z katalogu — natvrdo zapsané při přidání parseru zdriftují */}
                 Výpisy z {PLATFORM_COUNTS.file} platforem
                 čteme automaticky — XTB, Degiro, eToro, Schwab, Portu, Coinbase i další;
@@ -119,7 +119,7 @@ export default async function WelcomePage() {
             </Link>
           </div>
           {hasBroker && (
-            <p className="text-sm text-zelena-text">
+            <p className="text-sm text-success-text">
               Broker připojen — první synchronizace běží na stránce{' '}
               <Link href="/import" className="font-medium underline">
                 Zdroje dat
@@ -130,9 +130,9 @@ export default async function WelcomePage() {
         </Card>
       )}
 
-      <p className="text-xs text-inkoust-tlumeny">
+      <p className="text-xs text-ink-muted">
         Chceš se nejdřív jen rozkoukat?{' '}
-        <Link href="/demo" className="font-medium text-ruzova-text">
+        <Link href="/demo" className="font-medium text-accent-text">
           Mrkni na demo s ukázkovými daty
         </Link>
         .

@@ -60,12 +60,12 @@ interface BatchIssues {
 function FailedImportPanel({ item }: { item: FailedImportCase }) {
   if (item.status === 'fixed') {
     return (
-      <div className="rounded-md border border-zelena/40 bg-zelena/5 p-3 text-sm">
+      <div className="rounded-md border border-success/40 bg-success/5 p-3 text-sm">
         <p className="font-medium">Výpis jsme zpracovali a nahráli za tebe.</p>
         {/* „Dělat nemusíš nic“ tu dřív stálo napevno — jenže výpis bez ISIN se
             načte jen zčásti a zbytek čeká na číselník. Co zbývá, ukáže živě
             formulář číselníku a chyby u novější dávky; tady neslibujeme. */}
-        <p className="mt-1 text-inkoust-tlumeny">
+        <p className="mt-1 text-ink-muted">
           Co se z něj načíst dalo, najdeš v historii jako novější import.
           {item.resolutionNote ? ` ${item.resolutionNote}` : ''}
         </p>
@@ -74,9 +74,9 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
   }
   if (item.status === 'rejected') {
     return (
-      <div className="rounded-md border border-linka bg-pozadi p-3 text-sm">
+      <div className="rounded-md border border-line bg-canvas p-3 text-sm">
         <p className="font-medium">Tenhle výpis zpracovat neumíme.</p>
-        <p className="mt-1 text-inkoust-tlumeny">
+        <p className="mt-1 text-ink-muted">
           {item.resolutionNote ??
             'Stáhni od své platformy jiný typ exportu (u každé je v seznamu níž napsané, který chceme), nebo data přepiš do univerzální šablony.'}
         </p>
@@ -87,16 +87,16 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
   // a uživatel za to nemůže, žádný soubor nenahrával.
   const fromSync = item.source === 'sync';
   return (
-    <div className="space-y-2 rounded-md border border-jantar bg-jantar/5 p-3 text-sm">
+    <div className="space-y-2 rounded-md border border-caution bg-caution/5 p-3 text-sm">
       {/* Krátce schválně: uživateli stačí vědět, že se to řeší a že se ozveme.
           Že si soubor necháváme, říká /soukromi; jediné, co po něm chceme, je
           platforma — a ta se ptá hned pod tím. */}
       <p className="font-medium">Na zpracování tohohle výpisu pracujeme.</p>
       {/* „jakmile ho zpracujeme“, ne „jakmile půjde nahrát“ — druhé zní, jako by
           měl uživatel po e-mailu ještě něco dělat. Nahrajeme ho za něj. */}
-      <p className="text-inkoust-tlumeny">Dáme ti e-mailem vědět, jakmile ho zpracujeme.</p>
+      <p className="text-ink-muted">Dáme ti e-mailem vědět, jakmile ho zpracujeme.</p>
       {fromSync ? null : item.reportedAt ? (
-        <p className="text-inkoust-tlumeny">
+        <p className="text-ink-muted">
           Díky, máme to{item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}.
         </p>
       ) : (
@@ -124,7 +124,7 @@ function FailedImportPanel({ item }: { item: FailedImportCase }) {
               rows={2}
               maxLength={MAX_NOTE_CHARS}
               placeholder="Např. jak se export v aplikaci jmenuje nebo co v něm je."
-              className="w-full rounded-md border border-linka-ovladaci bg-plocha px-3 py-2 text-sm text-inkoust placeholder:text-inkoust-tlumeny"
+              className="w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
             />
           </div>
           <SubmitButton pendingLabel="Odesílám…">Odeslat</SubmitButton>
@@ -185,8 +185,8 @@ function ConnectedBroker({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-inkoust-tlumeny">
-          <span className="font-semibold text-zelena-text">Připojeno.</span>{' '}
+        <p className="text-sm text-ink-muted">
+          <span className="font-semibold text-success-text">Připojeno.</span>{' '}
           {account.lastSyncedAt
             ? `Naposledy ${czDateTime(account.lastSyncedAt)} (${syncStatusLabel(account.lastSyncStatus)}). ${copy.regular}`
             : copy.firstSync}{' '}
@@ -202,23 +202,23 @@ function ConnectedBroker({
       {/* selhání celého běhu (pád API, recovery) žije vedle rekonciliace —
           ta drží poslední platný stav pozic a chybou se nepřepisuje */}
       {account.lastSyncError && (
-        <div className="space-y-1 border-t border-linka pt-3">
-          <p className="text-sm font-medium text-cervena">
+        <div className="space-y-1 border-t border-line pt-3">
+          <p className="text-sm font-medium text-danger">
             Poslední synchronizace selhala: {account.lastSyncError}
           </p>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Klidně ji spusť znovu — co už se stáhlo, zůstává, a nic se nezdvojí.
           </p>
         </div>
       )}
       {reconciliation && (
-        <div className="space-y-1 border-t border-linka pt-3">
+        <div className="space-y-1 border-t border-line pt-3">
           {reconciliation.ok ? (
-            <p className="text-sm font-medium text-zelena-text">
+            <p className="text-sm font-medium text-success-text">
               Pozice sedí s {account.label} ({reconciliation.matchedCount}{' '}
               {plural(reconciliation.matchedCount, 'instrument', 'instrumenty', 'instrumentů')})
               {account.lastSyncError && (
-                <span className="font-normal text-inkoust-tlumeny">
+                <span className="font-normal text-ink-muted">
                   {' '}
                   — stav z posledního úspěšného syncu
                 </span>
@@ -227,45 +227,45 @@ function ConnectedBroker({
             </p>
           ) : reconciliation.error ? (
             <>
-              <p className="text-sm font-medium text-cervena">
+              <p className="text-sm font-medium text-danger">
                 Synchronizace selhala: {reconciliation.error}
               </p>
-              <p className="text-sm text-inkoust-tlumeny">
+              <p className="text-sm text-ink-muted">
                 Klidně ji spusť znovu — co už se stáhlo, zůstává, a nic se nezdvojí.
               </p>
             </>
           ) : reconciliation.warning ? (
-            <p className="text-sm font-medium text-jantar-text">{reconciliation.warning}</p>
+            <p className="text-sm font-medium text-caution-text">{reconciliation.warning}</p>
           ) : (
             <>
-              <p className="text-sm font-medium text-jantar-text">
+              <p className="text-sm font-medium text-caution-text">
                 Pozice nesedí s {account.label} — pravděpodobně chybí historie nebo
                 korporátní akce:
               </p>
               {reconciliation.issues.map((issue) => (
-                <p key={issue.isin} className="font-mono text-xs text-inkoust-tlumeny">
+                <p key={issue.isin} className="tabular-nums text-xs text-ink-muted">
                   {issue.isin}: vypočteno {issue.expected}, broker {issue.actual}
                   {issue.suggestedSplitRatio &&
                     ` → vypadá to na split ${issue.suggestedSplitRatio.from}:${issue.suggestedSplitRatio.to}`}
                 </p>
               ))}
               {reconciliation.unmatchedTickers.length > 0 && (
-                <p className="font-mono text-xs text-inkoust-tlumeny">
+                <p className="tabular-nums text-xs text-ink-muted">
                   Nespárované tickery: {reconciliation.unmatchedTickers.join(', ')}
                 </p>
               )}
-              <p className="text-xs text-inkoust-tlumeny">
+              <p className="text-xs text-ink-muted">
                 Malé rozdíly bývají dnešní obchody, které broker do exportu propíše se
                 zpožděním — další synchronizace je srovná sama. Trvalý rozdíl znamená
                 chybějící historii nebo korporátní akci.
               </p>
             </>
           )}
-          {historyScope && <p className="text-xs text-inkoust-tlumeny">{historyScope}</p>}
+          {historyScope && <p className="text-xs text-ink-muted">{historyScope}</p>}
         </div>
       )}
-      <div className="border-t border-linka pt-3">
-        <p className="mb-2 text-xs text-inkoust-tlumeny">
+      <div className="border-t border-line pt-3">
+        <p className="mb-2 text-xs text-ink-muted">
           Klíč je uložen šifrovaně (AES-256-GCM) a nikdy se nezobrazuje.
         </p>
         <form action={disconnectBrokerAction}>
@@ -370,8 +370,8 @@ export default async function ImportPage({
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="font-display text-3xl font-bold">Zdroje dat</h1>
-        <p className="mt-1 text-sm text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Zdroje dat</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Trading 212, Interactive Brokers a Lynx se připojí živě přes API — Danero si
           stáhne historii samo a denně ji aktualizuje. Z ostatních platforem nahraješ
           výpis; u {PLATFORM_COUNTS.file} z nich formát
@@ -433,9 +433,9 @@ export default async function ImportPage({
       )}
 
       {unmappedSymbols.length > 0 && (
-        <Card className="space-y-3 border-jantar">
+        <Card className="space-y-3 border-caution">
           <CardTitle>Doplň chybějící údaje instrumentů</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Importy obsahují symboly, ke kterým broker neexportuje ISIN
             {unmappedSymbols.some((s) => s.needsCurrency) && ' a měnu instrumentu'}. Najdeš je
             na výpisu brokera nebo vyhledáním „[symbol] ISIN“. Po uložení nahraj soubor znovu —
@@ -452,9 +452,9 @@ export default async function ImportPage({
               >
                 <input type="hidden" name={`broker-${index}`} value={item.broker} />
                 <input type="hidden" name={`symbol-${index}`} value={item.symbol} />
-                <span className="w-32 font-mono text-sm">
+                <span className="w-32 tabular-nums text-sm">
                   {item.symbol}
-                  <span className="block text-xs text-inkoust-tlumeny">{item.broker}</span>
+                  <span className="block text-xs text-ink-muted">{item.broker}</span>
                 </span>
                 <input
                   name={`isin-${index}`}
@@ -462,7 +462,7 @@ export default async function ImportPage({
                   aria-label={`ISIN pro ${item.symbol}`}
                   required
                   pattern="[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]"
-                  className="w-48 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
+                  className="w-48 rounded-md border border-line-control bg-surface px-3 py-1.5 tabular-nums text-sm"
                 />
                 {item.needsCurrency && (
                   <input
@@ -472,7 +472,7 @@ export default async function ImportPage({
                     defaultValue={suggestedCurrency(item)}
                     required
                     pattern="[A-Za-z]{3}"
-                    className="w-28 rounded-md border border-linka-ovladaci bg-plocha px-3 py-1.5 font-mono text-sm"
+                    className="w-28 rounded-md border border-line-control bg-surface px-3 py-1.5 tabular-nums text-sm"
                   />
                 )}
               </div>
@@ -496,12 +496,12 @@ export default async function ImportPage({
               />
             ) : (
               <>
-                <p className="text-sm text-inkoust-tlumeny">
+                <p className="text-sm text-ink-muted">
                   Připoj klíč jen pro čtení — Danero si stáhne historii, denně ji
                   aktualizuje a hlídá, že pozice sedí.
                 </p>
-                <details className="text-sm text-inkoust-tlumeny">
-                  <summary className="cursor-pointer font-medium text-inkoust">
+                <details className="text-sm text-ink-muted">
+                  <summary className="cursor-pointer font-medium text-ink">
                     Jak vygenerovat klíč (návod)
                   </summary>
                   <div className="mt-2 space-y-2">
@@ -511,24 +511,24 @@ export default async function ImportPage({
                     </p>
                     <ul className="space-y-1">
                       <li>
-                        <strong className="text-inkoust">Name:</strong> třeba „Danero“ (jen popisek
+                        <strong className="text-ink">Name:</strong> třeba „Danero“ (jen popisek
                         pro tebe)
                       </li>
                       <li>
-                        <strong className="text-inkoust">IP restrictions:</strong> Neomezené —
+                        <strong className="text-ink">IP restrictions:</strong> Neomezené —
                         Danero volá API ze svého serveru a adresy se mění
                       </li>
                       <li>
-                        <strong className="text-inkoust">Permissions — zaškrtni jen tyto (vše jen
+                        <strong className="text-ink">Permissions — zaškrtni jen tyto (vše jen
                         čtení):</strong>{' '}
-                        <span className="font-mono text-xs">
+                        <span className="tabular-nums text-xs">
                           Account data · History (+ dividends, orders, transactions) · Metadata ·
                           Portfolio
                         </span>
                       </li>
-                      <li className="text-cervena">
+                      <li className="text-danger">
                         <strong>Nezaškrtávej:</strong>{' '}
-                        <span className="font-mono text-xs">Orders (execute i read) · Pies</span> —
+                        <span className="tabular-nums text-xs">Orders (execute i read) · Pies</span> —
                         Danero nikdy nepotřebuje právo obchodovat ani cokoli měnit na tvém účtu.
                       </li>
                     </ul>
@@ -540,9 +540,9 @@ export default async function ImportPage({
                   </div>
                 </details>
                 {chyba === 'api-klic' && (
-                  <p className="text-sm text-cervena">Vlož platný tajný klíč (aspoň 10 znaků).</p>
+                  <p className="text-sm text-danger">Vlož platný tajný klíč (aspoň 10 znaků).</p>
                 )}
-                <p className="text-sm text-inkoust-tlumeny">
+                <p className="text-sm text-ink-muted">
                   Po vygenerování ti Trading 212 ukáže <strong>dvě hodnoty</strong> — zkopíruj
                   sem obě. Pozor: <strong>Tajný klíč se zobrazuje jen jednou</strong>; kdyby
                   zmizel, prostě vygeneruj nový.
@@ -573,44 +573,44 @@ export default async function ImportPage({
               />
             ) : (
               <>
-                <p className="text-sm text-inkoust-tlumeny">
+                <p className="text-sm text-ink-muted">
                   Potřebuješ dvě věci: <strong>Flex Query</strong> (říká, co se stahuje) a{' '}
                   <strong>token</strong> (přístup jen ke čtení výpisů). Máš účet u{' '}
                   <strong>Lynx</strong>? Běží na infrastruktuře IBKR — postup i napojení
                   jsou úplně stejné.
                 </p>
-                <details className="text-sm text-inkoust-tlumeny">
-                  <summary className="cursor-pointer font-medium text-inkoust">
+                <details className="text-sm text-ink-muted">
+                  <summary className="cursor-pointer font-medium text-ink">
                     Jak nastavit Flex Query a token (návod)
                   </summary>
                   <div className="mt-2 space-y-2">
                     <p>V IBKR Client Portal:</p>
                     <ol className="list-decimal space-y-1 pl-5">
                       <li>
-                        <strong className="text-inkoust">Performance &amp; Reports → Flex Queries
+                        <strong className="text-ink">Performance &amp; Reports → Flex Queries
                         → „+“ u Activity Flex Query.</strong>{' '}
                         Pojmenuj ji třeba „Danero“.
                       </li>
                       <li>
                         Zapni sekce a úrovně přesně takto:{' '}
-                        <span className="font-mono text-xs">
+                        <span className="tabular-nums text-xs">
                           Trades = Executions · Cash Transactions = Detail · Corporate Actions =
                           Detail · Transfers = Detail · Open Positions = Summary
                         </span>{' '}
-                        a v každé sekci zvol <strong className="text-inkoust">Select All</strong>{' '}
+                        a v každé sekci zvol <strong className="text-ink">Select All</strong>{' '}
                         sloupce (musí obsahovat ISIN).
                       </li>
                       <li>
                         V Delivery Configuration nastav{' '}
-                        <strong className="text-inkoust">Format XML</strong> a{' '}
-                        <strong className="text-inkoust">Period „Last 365 Calendar Days“</strong>.
-                        Ulož a poznamenej si <strong className="text-inkoust">Query ID</strong>{' '}
+                        <strong className="text-ink">Format XML</strong> a{' '}
+                        <strong className="text-ink">Period „Last 365 Calendar Days“</strong>.
+                        Ulož a poznamenej si <strong className="text-ink">Query ID</strong>{' '}
                         (číslo u názvu query).
                       </li>
                       <li>
-                        <strong className="text-inkoust">Settings → Account Settings → Flex Web
+                        <strong className="text-ink">Settings → Account Settings → Flex Web
                         Service</strong>{' '}
-                        → aktivuj a zkopíruj <strong className="text-inkoust">token</strong>.
+                        → aktivuj a zkopíruj <strong className="text-ink">token</strong>.
                       </li>
                     </ol>
                     <p>
@@ -621,7 +621,7 @@ export default async function ImportPage({
                   </div>
                 </details>
                 {chyba === 'ibkr' && (
-                  <p className="text-sm text-cervena">
+                  <p className="text-sm text-danger">
                     Vlož platný token (aspoň 10 znaků) a číselné Query ID.
                   </p>
                 )}
@@ -654,7 +654,7 @@ export default async function ImportPage({
       <section className="space-y-3">
         <Card className="space-y-3">
           <CardTitle>Nahrání výpisů</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Nahraj výpis z kterékoli platformy s vlastním parserem — formát poznáme
             automaticky (výpisy z ostatních přepíšeš do univerzální šablony níže).
             Opakované nahrání nic nezdvojí, deduplikace funguje i napříč soubory.
@@ -679,7 +679,7 @@ export default async function ImportPage({
       <section id={IMPORT_HISTORY_ANCHOR} className="scroll-mt-4 space-y-3">
         <CardTitle>Historie importů</CardTitle>
         {batches.length === 0 && (
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Zatím žádná data. Nahraj export od brokera a Danero pohlídá zbytek.
           </p>
         )}
@@ -702,8 +702,8 @@ export default async function ImportPage({
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 {/* H-3-17: IBKR názvy („U1234567_20240101_20241231.xml") přetečou
                     kartu od 30 znaků a rozjedou vodorovně celou stránku */}
-                <span className="min-w-0 break-all font-mono text-sm">{batch.filename}</span>
-                <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-inkoust-tlumeny">
+                <span className="min-w-0 break-all tabular-nums text-sm">{batch.filename}</span>
+                <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-ink-muted">
                   {czDateTime(batch.createdAt)} · {batch.broker}
                   {/* Vracet je co jen u dávky, která něco přidala. U nepřečteného
                       výpisu by tlačítko navíc zahodilo případ, který čeká na rozbor. */}
@@ -738,7 +738,7 @@ export default async function ImportPage({
                   (v jeho kartě je počítaný jako duplicita) — proto ta věta
                   o novém nahrání. */}
               {batch.added > 0 && (
-                <p id={`vraceni-${batch.id}`} className="text-xs text-inkoust-tlumeny">
+                <p id={`vraceni-${batch.id}`} className="text-xs text-ink-muted">
                   Vrácení smaže {batch.added}{' '}
                   {plural(batch.added, 'transakci', 'transakce', 'transakcí')}, které přibyly
                   tímhle importem, i záznam o něm. Pokud tytéž obchody obsahuje i jiný výpis,
@@ -746,27 +746,27 @@ export default async function ImportPage({
                 </p>
               )}
               {isEmptyPeriod ? (
-                <p className="font-mono text-xs text-inkoust-tlumeny">
+                <p className="tabular-nums text-xs text-ink-muted">
                   prázdné období (žádné obchody)
                 </p>
               ) : (
                 <>
-                  <p className="font-mono text-xs text-inkoust-tlumeny">
+                  <p className="tabular-nums text-xs text-ink-muted">
                     {batch.added} {plural(batch.added, 'nová', 'nové', 'nových')} ·{' '}
                     {batch.duplicates} {plural(batch.duplicates, 'duplicita', 'duplicity', 'duplicit')} ·{' '}
-                    <span className={batch.errorCount > 0 ? 'text-cervena' : undefined}>
+                    <span className={batch.errorCount > 0 ? 'text-danger' : undefined}>
                       {batch.errorCount} {plural(batch.errorCount, 'chyba', 'chyby', 'chyb')}
                     </span>{' '}
                     · {batch.warningCount} varování · {batch.skippedCount} přeskočeno
                   </p>
                   {(issues.errors ?? []).slice(0, SHOWN_ERRORS).map((issue, i) => (
                     // index v klíči: na jednom řádku souboru může být víc chyb
-                    <p key={`e-${issue.line}-${i}`} className="text-xs text-cervena">
+                    <p key={`e-${issue.line}-${i}`} className="text-xs text-danger">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
                   {batch.errorCount > SHOWN_ERRORS && (
-                    <p className="text-xs text-cervena">
+                    <p className="text-xs text-danger">
                       … a {plural(batch.errorCount - SHOWN_ERRORS, 'další', 'další', 'dalších')}{' '}
                       {batch.errorCount - SHOWN_ERRORS}{' '}
                       {plural(batch.errorCount - SHOWN_ERRORS, 'chyba', 'chyby', 'chyb')}. Bývají
@@ -774,12 +774,12 @@ export default async function ImportPage({
                     </p>
                   )}
                   {(issues.warnings ?? []).slice(0, SHOWN_WARNINGS).map((issue, i) => (
-                    <p key={`w-${issue.line}-${i}`} className="text-xs text-jantar-text">
+                    <p key={`w-${issue.line}-${i}`} className="text-xs text-caution-text">
                       Řádek {issue.line}: {issue.message}
                     </p>
                   ))}
                   {batch.warningCount > SHOWN_WARNINGS && (
-                    <p className="text-xs text-jantar-text">
+                    <p className="text-xs text-caution-text">
                       … a {plural(batch.warningCount - SHOWN_WARNINGS, 'další', 'další', 'dalších')}{' '}
                       {batch.warningCount - SHOWN_WARNINGS} varování.
                     </p>
@@ -787,7 +787,7 @@ export default async function ImportPage({
                   {failedCase && <FailedImportPanel item={failedCase} />}
                   {/* nevztahuje se k řádku souboru, ale k celé dávce */}
                   {(issues.crossBroker ?? []).map((message, i) => (
-                    <p key={`cb-${i}`} className="text-xs text-jantar-text">
+                    <p key={`cb-${i}`} className="text-xs text-caution-text">
                       {message}
                     </p>
                   ))}

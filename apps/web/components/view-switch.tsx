@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 
 /**
- * Sdílený přepínač pohledů (H4): segmented control ve stylu horizon-strip.
+ * Sdílený přepínač pohledů: nadpis sekce vlevo, segmentový přepínač vpravo.
  * Obsah pohledů přichází jako server-rendered ReactNode (sloty) — komponenta
  * drží jen malý klientský stav „který pohled“. Bez JS se vykreslí default.
  */
@@ -21,7 +22,7 @@ export function ViewSwitch({
 }: {
   views: View[];
   defaultKey: string;
-  /** Volitelný jednotný nadpis sekce (styl CardTitle) vlevo od přepínače. */
+  /** Volitelný nadpis sekce vlevo od přepínače. */
   title?: string;
   ariaLabel?: string;
 }) {
@@ -30,42 +31,19 @@ export function ViewSwitch({
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        {title ? (
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-            {title}
-          </h2>
-        ) : (
-          <span aria-hidden />
-        )}
-        <div
-          className="flex items-center gap-1"
-          role="group"
-          aria-label={ariaLabel ?? 'Přepínač zobrazení'}
-        >
-          {views.map((view) => (
-            <button
-              key={view.key}
-              type="button"
-              onClick={() => setActive(view.key)}
-              aria-pressed={view.key === current?.key}
-              // min-h-6 (24 px) = minimální dotykový cíl dle WCAG 2.2 SC 2.5.8;
-              // gap-1 mezi tlačítky na výjimku „spacing“ nestačí
-              className={`min-h-6 rounded-md px-2 py-1 font-mono text-xs ${
-                view.key === current?.key
-                  ? 'bg-ruzova-syta font-semibold text-white'
-                  : 'text-inkoust-tlumeny hover:text-inkoust'
-              }`}
-            >
-              {view.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {title ? <h2 className="type-title-2">{title}</h2> : <span aria-hidden />}
+        <SegmentedControl
+          ariaLabel={ariaLabel ?? 'Přepínač zobrazení'}
+          value={current?.key ?? defaultKey}
+          onChange={setActive}
+          segments={views.map((view) => ({ key: view.key, label: view.label }))}
+        />
       </div>
       {/* neaktivní pohledy jen skrýt (hidden), ne odmountovat — přepnutí tak
           nezahazuje klientský stav (rozsah horizontu) a nepřehrává animace */}
       {views.map((view) => (
-        <div key={view.key} className="mt-3" hidden={view.key !== current?.key}>
+        <div key={view.key} className="mt-5" hidden={view.key !== current?.key}>
           {view.content}
         </div>
       ))}

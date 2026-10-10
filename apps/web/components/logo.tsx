@@ -20,7 +20,7 @@ export function LogoMark({
   return (
     <svg viewBox="0 0 24 24" className={cn('h-6 w-6 shrink-0', className)} aria-hidden="true">
       {/* tečka (lot) — kreslí se první, linie překryje drobný přesah v místě dotyku */}
-      <circle cx="10.6" cy="15.4" r="5.6" fill={mono ? 'currentColor' : 'var(--ruzova)'} />
+      <circle cx="10.6" cy="15.4" r="5.6" fill={mono ? 'currentColor' : 'var(--brand)'} />
       {/* linie dneška */}
       <rect x="15.8" y="3" width="3.2" height="18" rx="1.6" fill="currentColor" />
     </svg>
@@ -35,7 +35,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-[0.4em]', className)}>
       <LogoMark className="h-[1.25em] w-[1.25em]" />
-      <span className="font-display font-bold leading-none tracking-tight">Danero</span>
+      <span className="font-semibold leading-none tracking-[-0.02em]">Danero</span>
     </span>
   );
 }

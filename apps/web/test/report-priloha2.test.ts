@@ -158,7 +158,7 @@ describe('§ 8: průvodce a XML nesou stejnou korunu (L5-05, L5-01)', () => {
     const r401a = dpFor('SEPARATE_16A').VetaZ!.kc_prij48!;
     expect(r401a).toBe('6552');
     expect(base8WholeCzk(result).separate16aCzk.toFixed(0)).toBe(r401a);
-    expect(guideHtml).toContain(`ř. 401a <span class="font-mono">${czk(Number(r401a))}</span>`);
+    expect(guideHtml).toContain(`ř. 401a <span class="tabular-nums">${czk(Number(r401a))}</span>`);
   });
 
   it('tabulka po státech ukazuje příjem, který jde na ř. 321', () => {

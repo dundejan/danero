@@ -53,32 +53,32 @@ export default function KalkulackaPage() {
       </div>
 
       <section aria-labelledby="pravidla-nadpis" className="mt-24 lg:mt-32">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+        <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
           Jak to počítáme
         </p>
         <h2
           id="pravidla-nadpis"
-          className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl"
         >
           Tři pravidla, která rozhodují
         </h2>
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {PRAVIDLA.map((pravidlo) => (
-            <div key={pravidlo.title} className="rounded-lg border border-linka bg-plocha p-6">
+            <div key={pravidlo.title} className="rounded-lg border border-line bg-surface p-6">
               <h3 className="font-semibold">{pravidlo.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">{pravidlo.body}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-muted">{pravidlo.body}</p>
             </div>
           ))}
         </div>
-        <p className="mt-4 max-w-3xl text-xs text-inkoust-tlumeny">
+        <p className="mt-4 max-w-3xl text-xs text-ink-muted">
           Kalkulačka je orientační — nezná tvoje data. Přesný výpočet nad skutečnou historií
           účtu (párování nákupů a prodejů, kurzy ČNB, srážkové daně po státech) dělá až aplikace.
         </p>
-        <p className="mt-3 max-w-3xl text-sm text-inkoust-tlumeny">
+        <p className="mt-3 max-w-3xl text-sm text-ink-muted">
           Jak přesně Danero počítá — pravidlo po pravidlu, s paragrafy — popisuje stránka{' '}
           <Link
             href="/jak-pocitame"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Jak počítáme
           </Link>

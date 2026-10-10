@@ -2,48 +2,43 @@
 
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 
 const MODES = [
-  { key: 'system', icon: '○', label: 'Podle systému' },
-  { key: 'light', icon: '☀', label: 'Světlý' },
-  { key: 'dark', icon: '☾', label: 'Tmavý' },
+  { key: 'system', short: 'Auto', label: 'Podle systému' },
+  { key: 'light', short: 'Světlý', label: 'Světlý' },
+  { key: 'dark', short: 'Tmavý', label: 'Tmavý' },
 ] as const;
 
 /**
- * Přepínač vzhledu (H4): tři stavy systém/světlý/tmavý přes next-themes.
+ * Přepínač vzhledu: tři stavy systém/světlý/tmavý přes next-themes.
  * mounted-guard: server nezná uložené téma, aktivní stav se ukáže až po
- * hydrataci (jinak hydration mismatch). `withLabels` ukáže vedle ikon i text
- * (v Nastavení) — samotné glyfy vysvětluje jen title/aria-label.
+ * hydrataci (jinak hydration mismatch). `withLabels` píše plné popisky
+ * (v Nastavení); bez něj stačí krátké „Auto“ — plný název nese `aria-label`.
  */
-export function ThemeToggle({ withLabels = false }: { withLabels?: boolean }) {
+export function ThemeToggle({
+  withLabels = false,
+  className,
+}: {
+  withLabels?: boolean;
+  className?: string;
+}) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const active = mounted ? (theme ?? 'system') : null;
+  const active = mounted ? (theme ?? 'system') : '';
 
   return (
-    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Vzhled aplikace">
-      {MODES.map((mode) => (
-        <button
-          key={mode.key}
-          type="button"
-          aria-label={mode.label}
-          title={mode.label}
-          aria-pressed={active === mode.key}
-          onClick={() => setTheme(mode.key)}
-          className={cn(
-            'flex items-center justify-center rounded-md text-sm',
-            withLabels ? 'gap-1.5 px-3 py-1.5' : 'h-7 w-7',
-            active === mode.key
-              ? 'bg-pozadi font-semibold text-ruzova-text'
-              : 'text-inkoust-tlumeny hover:text-inkoust',
-          )}
-        >
-          <span aria-hidden>{mode.icon}</span>
-          {withLabels && <span>{mode.label}</span>}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Vzhled aplikace"
+      value={active}
+      onChange={setTheme}
+      segments={MODES.map((mode) => ({
+        key: mode.key,
+        label: withLabels ? mode.label : mode.short,
+        ariaLabel: mode.label,
+      }))}
+      className={className}
+    />
   );
 }

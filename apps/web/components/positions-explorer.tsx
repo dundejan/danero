@@ -97,8 +97,8 @@ function SortableTh({
         type="button"
         onClick={() => onSort(sortKey)}
         className={cn(
-          'inline-flex items-center gap-1 uppercase tracking-wide hover:text-inkoust',
-          active && 'text-inkoust',
+          'inline-flex items-center gap-1 uppercase tracking-wide hover:text-ink',
+          active && 'text-ink',
         )}
       >
         {keepCurrencyCase(label)}
@@ -161,10 +161,10 @@ export function PositionsExplorer({
           }}
           placeholder="Hledat pozici…"
           aria-label="Hledat pozici (název, ticker nebo ISIN)"
-          className="h-9 w-full max-w-xs rounded-md border border-linka-ovladaci bg-plocha px-3 text-sm text-inkoust placeholder:text-inkoust-tlumeny"
+          className="h-9 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 text-sm text-ink placeholder:text-ink-muted"
         />
         {/* mobil: řazení jako select — hlavičky tabulky tam nejsou */}
-        <label className="flex items-center gap-2 text-xs text-inkoust-tlumeny md:hidden">
+        <label className="flex items-center gap-2 text-xs text-ink-muted md:hidden">
           Řadit
           <select
             value={`${sortKey}-${sortDir}`}
@@ -174,7 +174,7 @@ export function PositionsExplorer({
               setSortDir(dir);
               setPage(1);
             }}
-            className="h-8 rounded-md border border-linka-ovladaci bg-plocha px-2 text-xs text-inkoust"
+            className="h-8 rounded-md border border-line-control bg-surface px-2 text-xs text-ink"
           >
             <option value="value-desc">Hodnota ↓</option>
             <option value="value-asc">Hodnota ↑</option>
@@ -200,11 +200,11 @@ export function PositionsExplorer({
       </p>
 
       {sorted.length === 0 ? (
-        <p className="text-sm text-inkoust-tlumeny">Nic nenalezeno pro „{query.trim()}“.</p>
+        <p className="text-sm text-ink-muted">Nic nenalezeno pro „{query.trim()}“.</p>
       ) : (
         <>
           {/* mobil: karty místo tabulky (H4) — táž stránka filtrovaného výsledku */}
-          <div className="space-y-2 md:hidden">
+          <div className="divide-y divide-line/70 md:hidden">
             {pageRows.map((row) => (
               <PositionCard
                 key={row.isin}
@@ -237,7 +237,7 @@ export function PositionsExplorer({
                   nadpis sekce nad ní, proto sr-only */}
               <caption className="sr-only">Tabulka pozic</caption>
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
                   <SortableTh
                     label="Instrument"
                     sortKey="label"
@@ -291,17 +291,17 @@ export function PositionsExplorer({
                   )}
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {pageRows.map((row) => (
-                  <tr key={row.isin} className="border-t border-linka">
+                  <tr key={row.isin} className="border-t border-line">
                     <td className="py-2 pr-4">
                       <Link
                         href={`${basePath}/portfolio/${row.isin}`}
-                        className="font-medium text-inkoust hover:text-ruzova"
+                        className="font-medium text-ink hover:text-accent"
                       >
                         {row.label}
                       </Link>
-                      <span className="block text-xs text-inkoust-tlumeny">
+                      <span className="block text-xs text-ink-muted">
                         {row.name ? `${row.name} · ` : ''}
                         {row.isin}
                       </span>
@@ -316,7 +316,7 @@ export function PositionsExplorer({
                     <td
                       className={cn(
                         'whitespace-nowrap py-2 pr-4 text-right',
-                        row.plPositive !== undefined && (row.plPositive ? 'text-zelena-text' : 'text-cervena'),
+                        row.plPositive !== undefined && (row.plPositive ? 'text-success-text' : 'text-danger'),
                       )}
                     >
                       {row.plText ?? '—'}
@@ -324,7 +324,7 @@ export function PositionsExplorer({
                     {showExempt && (
                       <td className="py-2 text-right">
                         {row.exemptQtyText ? (
-                          <span className="text-zelena-text">{row.exemptQtyText}</span>
+                          <span className="text-success-text">{row.exemptQtyText}</span>
                         ) : (
                           '—'
                         )}
@@ -337,7 +337,7 @@ export function PositionsExplorer({
           </ScrollArea>
 
           {sorted.length > PAGE_SIZE && (
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-inkoust-tlumeny">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-ink-muted">
               <span>
                 {from}–{to} z {sorted.length} pozic
               </span>
@@ -347,11 +347,11 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage - 1)}
                   disabled={currentPage === 1}
                   aria-label="Předchozí stránka"
-                  className="rounded-md border border-linka-ovladaci px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-line-control px-2 py-1 font-medium text-ink hover:border-ink-muted disabled:pointer-events-none disabled:opacity-40"
                 >
                   ‹
                 </button>
-                <span className="font-mono">
+                <span className="tabular-nums">
                   {currentPage} / {pageCount}
                 </span>
                 <button
@@ -359,7 +359,7 @@ export function PositionsExplorer({
                   onClick={() => setPage(currentPage + 1)}
                   disabled={currentPage === pageCount}
                   aria-label="Další stránka"
-                  className="rounded-md border border-linka-ovladaci px-2 py-1 font-medium text-inkoust hover:border-inkoust-tlumeny disabled:pointer-events-none disabled:opacity-40"
+                  className="rounded-md border border-line-control px-2 py-1 font-medium text-ink hover:border-ink-muted disabled:pointer-events-none disabled:opacity-40"
                 >
                   ›
                 </button>

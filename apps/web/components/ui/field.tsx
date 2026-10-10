@@ -8,7 +8,7 @@ export function Input({ className, ...props }: React.ComponentProps<'input'>) {
   return (
     <input
       className={cn(
-        'h-10 w-full rounded-md border border-linka-ovladaci bg-plocha px-3 text-sm text-inkoust placeholder:text-inkoust-tlumeny',
+        'h-10 w-full rounded-md border border-line-control bg-surface px-3 text-sm text-ink placeholder:text-ink-muted',
         className,
       )}
       {...props}
@@ -31,7 +31,7 @@ export function FieldError({
   children: React.ReactNode;
 }) {
   return (
-    <p id={id} role="alert" className={cn('text-sm text-cervena', className)}>
+    <p id={id} role="alert" className={cn('text-sm text-danger', className)}>
       {children}
     </p>
   );
@@ -49,7 +49,7 @@ export function Select({ className, ...props }: React.ComponentProps<'select'>) 
   return (
     <select
       className={cn(
-        'h-10 w-full rounded-md border border-linka-ovladaci bg-plocha px-3 text-sm text-inkoust',
+        'h-10 w-full rounded-md border border-line-control bg-surface px-3 text-sm text-ink',
         className,
       )}
       {...props}

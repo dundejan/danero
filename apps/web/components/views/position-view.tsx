@@ -106,10 +106,10 @@ export function PositionView({
         <div>
           {/* drobečky patří do <nav> se seznamem — jako odstavec je čtečka
               přečte jako běžný text a nenabídne je v seznamu navigací */}
-          <nav aria-label="Drobečková navigace" className="text-sm text-inkoust-tlumeny">
+          <nav aria-label="Drobečková navigace" className="text-sm text-ink-muted">
             <ol className="flex flex-wrap items-baseline gap-1">
               <li>
-                <Link href={`${basePath}/portfolio`} className="hover:text-ruzova">
+                <Link href={`${basePath}/portfolio`} className="hover:text-accent">
                   Portfolio
                 </Link>
               </li>
@@ -117,13 +117,13 @@ export function PositionView({
               <li aria-current="page">{label}</li>
             </ol>
           </nav>
-          <h1 className="font-display text-3xl font-bold">
+          <h1 className="text-3xl font-bold">
             {label}
             {fullName && fullName !== label && (
-              <span className="ml-3 text-lg font-normal text-inkoust-tlumeny">{fullName}</span>
+              <span className="ml-3 text-lg font-normal text-ink-muted">{fullName}</span>
             )}
           </h1>
-          <p className="mt-1 font-mono text-xs text-inkoust-tlumeny">{isin}</p>
+          <p className="mt-1 tabular-nums text-xs text-ink-muted">{isin}</p>
         </div>
         {position && (
           <Link
@@ -139,9 +139,9 @@ export function PositionView({
         <section className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardTitle>Držíš</CardTitle>
-            <p className="mt-2 font-display text-2xl font-bold">{qty(position.totalRemaining)} ks</p>
+            <p className="mt-2 text-2xl font-bold">{qty(position.totalRemaining)} ks</p>
             {valuation?.valueCzk && (
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 ≈ {czk(valuation.valueCzk)} (orientačně, cena{' '}
                 {money(valuation.price!, valuation.currency!)}
                 {valuation.priceAsOf && ` k ${valuation.priceAsOf.toLocaleDateString('cs-CZ')}`})
@@ -150,27 +150,27 @@ export function PositionView({
           </Card>
           <Card>
             <CardTitle>Bez daně už dnes</CardTitle>
-            <p className="mt-2 font-display text-2xl font-bold text-zelena">
+            <p className="mt-2 text-2xl font-bold text-success">
               {qty(valuation?.exemptQuantity ?? position.totalRemaining.mul(0))} ks
             </p>
-            <p className="mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mt-1 text-xs text-ink-muted">
               Kusy po 3letém časovém testu — prodej je osvobozený bez ohledu na limity.
             </p>
           </Card>
           <Card>
             <CardTitle>Nerealizovaný zisk/ztráta</CardTitle>
             <p
-              className={`mt-2 font-display text-2xl font-bold ${
+              className={`mt-2 text-2xl font-bold ${
                 valuation?.unrealized
                   ? valuation.unrealized.gte(0)
-                    ? 'text-zelena'
-                    : 'text-cervena'
+                    ? 'text-success'
+                    : 'text-danger'
                   : ''
               }`}
             >
               {valuation?.unrealized ? money(valuation.unrealized, valuation.currency!, true) : '—'}
             </p>
-            <p className="mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mt-1 text-xs text-ink-muted">
               {valuation?.unrealizedPct !== undefined
                 ? `${signedPct(valuation.unrealizedPct, 1)} proti nabývací ceně — `
                 : ''}
@@ -180,7 +180,7 @@ export function PositionView({
         </section>
       ) : (
         <Card>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Pozice je uzavřená — níž zůstává kompletní historie.
           </p>
         </Card>
@@ -193,7 +193,7 @@ export function PositionView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Nákupy (loty) a jejich časové testy" className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4">Nabytí</th>
                   <th scope="col" className="py-2 pr-4 text-right">Kusů</th>
                   <th scope="col" className="py-2 pr-4 text-right">Cena/ks</th>
@@ -201,9 +201,9 @@ export function PositionView({
                   <th scope="col" className="py-2 text-right">Zbývá dní</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {position.lots.map((lot) => (
-                  <tr key={lot.lotId} className="border-t border-linka">
+                  <tr key={lot.lotId} className="border-t border-line">
                     <td className="py-2 pr-4">{czDate(lot.acquisitionDate)}</td>
                     <td className="py-2 pr-4 text-right">{qty(lot.remaining)}</td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">
@@ -214,9 +214,9 @@ export function PositionView({
                           derivát) by datum i odpočet slibovaly osvobození, které
                           nikdy nepřijde */}
                       {!lot.exemptionPossible ? (
-                        <span className="text-inkoust-tlumeny">nevztahuje se</span>
+                        <span className="text-ink-muted">nevztahuje se</span>
                       ) : lot.isExempt ? (
-                        <span className="font-medium text-zelena-text">už bez daně</span>
+                        <span className="font-medium text-success-text">už bez daně</span>
                       ) : (
                         czDate(lot.exemptFrom)
                       )}
@@ -233,7 +233,7 @@ export function PositionView({
             </table>
           </ScrollArea>
           {position.lots.some((lot) => lot.interpretive) && (
-            <p className="text-xs text-inkoust-tlumeny">
+            <p className="text-xs text-ink-muted">
               * datum nabytí vychází z výkladu korporátní akce (detail v reportu).
             </p>
           )}
@@ -246,9 +246,9 @@ export function PositionView({
           {history.map((item, index) => (
             <li
               key={`${item.date}-${index}`}
-              className="flex flex-wrap items-baseline gap-3 border-t border-linka py-2 text-sm first:border-t-0"
+              className="flex flex-wrap items-baseline gap-3 border-t border-line py-2 text-sm first:border-t-0"
             >
-              <span className="font-mono text-xs text-inkoust-tlumeny">{czDate(item.date)}</span>
+              <span className="tabular-nums text-xs text-ink-muted">{czDate(item.date)}</span>
               <span>{item.text}</span>
             </li>
           ))}

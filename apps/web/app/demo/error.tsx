@@ -18,13 +18,13 @@ export default function DemoError({
 
   return (
     <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
-      <h1 className="font-display text-3xl font-bold">Něco se pokazilo</h1>
-      <p className="text-inkoust-tlumeny">
+      <h1 className="text-3xl font-bold">Něco se pokazilo</h1>
+      <p className="text-ink-muted">
         Demo se nepodařilo načíst. Zkus to prosím ještě jednou — a kdyby to
         nepomohlo, vrať se za chvíli.
       </p>
       {error.digest && (
-        <p className="font-mono text-xs text-inkoust-tlumeny">Kód chyby: {error.digest}</p>
+        <p className="tabular-nums text-xs text-ink-muted">Kód chyby: {error.digest}</p>
       )}
       <button
         type="button"

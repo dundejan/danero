@@ -65,8 +65,8 @@ export default async function AccountSettingsPage({
     <div className="max-w-4xl space-y-8">
       <header className="space-y-4">
         <div>
-          <h1 className="font-display text-3xl font-bold">Účet a zabezpečení</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <h1 className="text-3xl font-bold">Účet a zabezpečení</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Přihlašovací údaje, druhý faktor a přehled zařízení, ze kterých jsi přihlášený.
           </p>
         </div>
@@ -78,8 +78,8 @@ export default async function AccountSettingsPage({
       <Card className="space-y-5" id="ucet">
         <CardTitle>Účet</CardTitle>
 
-        <p className="text-sm text-inkoust-tlumeny">
-          Přihlášený účet: <span className="break-all font-medium text-inkoust">{user.email}</span>
+        <p className="text-sm text-ink-muted">
+          Přihlášený účet: <span className="break-all font-medium text-ink">{user.email}</span>
         </p>
 
         <SettingsSection title="Změna hesla">
@@ -173,11 +173,11 @@ export default async function AccountSettingsPage({
         <CardTitle>Přihlášená zařízení a aktivita</CardTitle>
 
         <SettingsSection title={`Aktivní přihlášení (${sessions.length})`}>
-          <ul className="space-y-1 text-sm text-inkoust-tlumeny">
+          <ul className="space-y-1 text-sm text-ink-muted">
             {deviceGroups.map((group) => (
               <li key={group.label} className="flex flex-wrap items-baseline gap-2">
                 <span
-                  className="font-medium text-inkoust"
+                  className="font-medium text-ink"
                   title={group.label === 'API klient (curl)' ? API_CLIENT_HINT : undefined}
                 >
                   {group.label}
@@ -187,7 +187,7 @@ export default async function AccountSettingsPage({
                   {czDateTime(group.lastAt)}
                 </span>
                 {group.isCurrent && (
-                  <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena-text">
+                  <span className="rounded bg-success/10 px-1.5 py-0.5 text-xs font-medium text-success-text">
                     toto zařízení
                   </span>
                 )}
@@ -201,7 +201,7 @@ export default async function AccountSettingsPage({
           <div className="space-y-2 md:hidden">
             <SignOutButton
               className={buttonVariants({ variant: 'secondary' })}
-              errorClassName="text-sm text-cervena"
+              errorClassName="text-sm text-danger"
             />
           </div>
           {sessions.length > 1 && (
@@ -215,15 +215,15 @@ export default async function AccountSettingsPage({
 
         <SettingsSection title="Poslední aktivita">
           {auditEvents.length === 0 ? (
-            <p className="text-sm text-inkoust-tlumeny">Zatím žádné události.</p>
+            <p className="text-sm text-ink-muted">Zatím žádné události.</p>
           ) : (
-            <ul className="space-y-1 text-sm text-inkoust-tlumeny">
+            <ul className="space-y-1 text-sm text-ink-muted">
               {auditEvents.map((event) => (
                 <li key={event.id} className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono text-xs">
+                  <span className="tabular-nums text-xs">
                     {czDateTime(event.createdAt)}
                   </span>
-                  <span className="font-medium text-inkoust">
+                  <span className="font-medium text-ink">
                     {AUDIT_LABELS[event.type as AuditType] ?? event.type}
                   </span>
                   {event.detail && <span>{event.detail}</span>}
@@ -237,7 +237,7 @@ export default async function AccountSettingsPage({
       <Card className="space-y-3" id="vzhled">
         <CardTitle>Vzhled</CardTitle>
         <ThemeToggle withLabels />
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm text-ink-muted">
           Volba se ukládá v tomhle prohlížeči — na jiném zařízení se nastavuje zvlášť.
         </p>
       </Card>

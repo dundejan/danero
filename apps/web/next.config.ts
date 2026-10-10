@@ -8,7 +8,7 @@ import type { NextConfig } from 'next';
  * Security headers (G10a). CSP bez nonce (Next inline runtime skripty vyžadují
  * 'unsafe-inline' u script-src — vědomý kompromis; nonce režim by vynutil
  * plně dynamické renderování všech stránek). Žádné externí zdroje: aplikace
- * nenačítá nic z CDN, fonty jsou self-hosted přes next/font.
+ * nenačítá nic z CDN a písmo je systémové (žádné webové fonty).
  */
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },

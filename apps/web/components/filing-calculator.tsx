@@ -53,7 +53,7 @@ function Question<T extends string | boolean>({
   return (
     <div role="group" aria-label={question}>
       <p className="text-sm font-medium tabular-nums">{question}</p>
-      {hint && <p className="mt-0.5 text-xs text-inkoust-tlumeny">{hint}</p>}
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((volba) => (
           <button
@@ -64,8 +64,8 @@ function Question<T extends string | boolean>({
             className={cn(
               'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
               value === volba.value
-                ? 'border-ruzova-syta bg-ruzova-syta text-white'
-                : 'border-linka-ovladaci bg-plocha text-inkoust-tlumeny hover:border-ruzova hover:text-ruzova',
+                ? 'border-accent-fill bg-accent-fill text-white'
+                : 'border-line-control bg-surface text-ink-muted hover:border-accent hover:text-accent',
             )}
           >
             {volba.label}
@@ -321,20 +321,20 @@ export function KalkulackaPriznani({
     situation === null ? null : incomeQuestions(filingLimits, previousFilingLimits)[situation];
 
   return (
-    <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6 sm:p-8">
+    <div className="max-w-3xl rounded-lg border border-line bg-surface p-6 sm:p-8">
       {/* na samostatné /kalkulacka nese nadpis stránka — hlavička by se dublovala */}
       {showHeader && (
         <>
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+          <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
             Kalkulačka
           </p>
           <h2
             id="kalkulacka-nadpis"
-            className="mt-3 font-display text-2xl font-bold tracking-tight"
+            className="mt-3 text-2xl font-bold tracking-tight"
           >
             Musím podat přiznání?
           </h2>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <p className="mt-1 text-sm text-ink-muted">
             Odpověz na pár otázek — bez čísel z výpisů a bez registrace.
           </p>
         </>
@@ -424,9 +424,9 @@ export function KalkulackaPriznani({
       {/* přeskočená otázka: bez tohohle bloku by kalkulačka jen mlčela a
           uživatel by nevěděl, že na verdict něco chybí (H-24) */}
       {skippedQuestion && (
-        <div role="status" className="mt-6 rounded-md border border-linka bg-pozadi p-4">
+        <div role="status" className="mt-6 rounded-md border border-line bg-canvas p-4">
           <p className="font-semibold">Ještě jedna odpověď a verdict je hotový.</p>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <p className="mt-1 text-sm text-ink-muted">
             Chybí odpověď na otázku „{skippedQuestion}“ — doplň ji výš.
           </p>
         </div>
@@ -437,9 +437,9 @@ export function KalkulackaPriznani({
           role="status"
           className={cn(
             'mt-6 rounded-md border p-4',
-            verdict === 'osvobozeno' && 'border-zelena/40 bg-zelena/5',
-            verdict === 'priznani' && 'border-ruzova/30 bg-ruzova/5',
-            verdict === 'nejasne' && 'border-linka bg-pozadi',
+            verdict === 'osvobozeno' && 'border-success/40 bg-success/5',
+            verdict === 'priznani' && 'border-accent/30 bg-accent/5',
+            verdict === 'nejasne' && 'border-line bg-canvas',
           )}
         >
           <p className="font-semibold tabular-nums">
@@ -450,13 +450,13 @@ export function KalkulackaPriznani({
           <p
             className={cn(
               'mt-1 text-sm tabular-nums',
-              reason === GOLDEN_RULE ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
+              reason === GOLDEN_RULE ? 'font-semibold text-success-text' : 'text-ink-muted',
             )}
           >
             {reason}
           </p>
           {verdict !== 'nejasne' && (
-            <p className="mt-2 text-xs text-inkoust-tlumeny">
+            <p className="mt-2 text-xs text-ink-muted">
               Orientačně — přesně to spočítá aplikace z tvých dat.
             </p>
           )}
@@ -464,9 +464,9 @@ export function KalkulackaPriznani({
               vlastní pokutu 0,1–15 % (§ 38w), takže se o něm musí dozvědět
               i ten, komu kalkulačka řekla „nemusíš“ */}
           {verdict === 'osvobozeno' && (
-            <p className="mt-2 text-xs text-inkoust-tlumeny">{OZNAMENI_5M}</p>
+            <p className="mt-2 text-xs text-ink-muted">{OZNAMENI_5M}</p>
           )}
-          <p className="mt-3 text-sm text-inkoust-tlumeny">
+          <p className="mt-3 text-sm text-ink-muted">
             {verdict === 'osvobozeno' &&
               'Limity se počítají každý rok znovu — Danero je pohlídá, ať to tak zůstane.'}
             {verdict === 'priznani' &&
@@ -483,7 +483,7 @@ export function KalkulackaPriznani({
             </Link>
             <Link
               href="/registrace"
-              className="rounded-md border border-linka-ovladaci bg-plocha px-4 py-2 text-sm font-semibold shadow-sm hover:border-ruzova hover:text-ruzova"
+              className="rounded-md border border-line-control bg-surface px-4 py-2 text-sm font-semibold shadow-sm hover:border-accent hover:text-accent"
             >
               Založit účet
             </Link>

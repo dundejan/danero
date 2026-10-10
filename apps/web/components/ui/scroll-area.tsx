@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
  * čtečce řeknou, do čeho fokus vstoupil; bez role by byl `aria-label` na
  * obyčejném divu zakázaný atribut.
  *
- * Stínovou affordanci na hranách nese třída `.scroll-stiny` z globals.css.
+ * Stínovou affordanci na hranách nese třída `.scroll-shadows` z globals.css.
  */
 export function ScrollArea({
   label,
@@ -26,7 +26,7 @@ export function ScrollArea({
       role="region"
       aria-label={label}
       tabIndex={0}
-      className={cn('scroll-stiny overflow-x-auto', className)}
+      className={cn('scroll-shadows overflow-x-auto', className)}
     >
       {children}
     </div>

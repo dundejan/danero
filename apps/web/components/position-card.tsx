@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 /**
- * Mobilní karta pozice (H4): sdílený markup pro seznamy pozic na přehledu
- * i v portfoliu (`md:hidden` náhrada tabulky). Server component — dostává
+ * Mobilní řádek pozice: sdílený markup pro seznamy pozic na přehledu
+ * i v portfoliu (`md:hidden` náhrada tabulky). Bez rámečku — řádky dělí
+ * vlásová linka rodiče a stisk řádek zvýrazní. Server component — dostává
  * už naformátované texty, žádné Decimal v props.
  */
 export function PositionCard({
@@ -35,17 +36,17 @@ export function PositionCard({
   return (
     <Link
       href={`${basePath}/portfolio/${isin}`}
-      className="block rounded-md border border-linka p-3 hover:border-inkoust-tlumeny"
+      className="row-pressable -mx-2 block rounded-lg px-2 py-3"
     >
       <div className="flex items-baseline justify-between gap-3">
         <p className="min-w-0">
-          <span className="font-medium text-inkoust">{label}</span>
-          {name && <span className="block truncate text-xs text-inkoust-tlumeny">{name}</span>}
+          <span className="font-medium text-ink">{label}</span>
+          {name && <span className="block truncate text-xs text-ink-muted">{name}</span>}
         </p>
         <p className="shrink-0 text-right">
-          <span className="font-mono text-sm font-semibold">{primaryText}</span>
+          <span className="tabular-nums text-sm font-semibold">{primaryText}</span>
           {secondaryText && (
-            <span className="block font-mono text-xs text-inkoust-tlumeny">{secondaryText}</span>
+            <span className="block tabular-nums text-xs text-ink-muted">{secondaryText}</span>
           )}
         </p>
       </div>
@@ -53,7 +54,7 @@ export function PositionCard({
         <span
           className={cn(
             'font-medium',
-            exemptDone ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
+            exemptDone ? 'font-semibold text-success-text' : 'text-ink-muted',
           )}
         >
           {exemptText}
@@ -61,8 +62,8 @@ export function PositionCard({
         {pl && (
           <span
             className={cn(
-              'rounded-md px-1.5 py-0.5 font-mono font-semibold',
-              pl.positive ? 'bg-zelena/10 text-zelena-text' : 'bg-cervena/10 text-cervena',
+              'tabular-nums font-medium',
+              pl.positive ? 'text-success-text' : 'text-danger',
             )}
           >
             {pl.text}

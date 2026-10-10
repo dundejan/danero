@@ -219,7 +219,7 @@ const PRAVIDLA: { id: string; title: string; body: React.ReactNode; zdroj: strin
           Jestli se tě to týká, zjistíš za minutu v{' '}
           <Link
             href="/kalkulacka"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             kalkulačce přiznání
           </Link>
@@ -315,18 +315,18 @@ export default function JakPocitamePage() {
           <article
             key={pravidlo.id}
             id={pravidlo.id}
-            className="max-w-3xl scroll-mt-24 rounded-lg border border-linka bg-plocha p-6 sm:p-8"
+            className="max-w-3xl scroll-mt-24 rounded-lg border border-line bg-surface p-6 sm:p-8"
           >
-            <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+            <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
               {String(i + 1).padStart(2, '0')}
             </p>
-            <h2 className="mt-2 font-display text-xl font-semibold tracking-tight sm:text-2xl">
+            <h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">
               {pravidlo.title}
             </h2>
-            <div className="mt-3 space-y-3 text-sm leading-relaxed text-inkoust-tlumeny">
+            <div className="mt-3 space-y-3 text-sm leading-relaxed text-ink-muted">
               {pravidlo.body}
             </div>
-            <p className="mt-5 border-t border-linka pt-3 text-xs text-inkoust-tlumeny">
+            <p className="mt-5 border-t border-line pt-3 text-xs text-ink-muted">
               Zdroj: {pravidlo.zdroj}
             </p>
           </article>
@@ -334,17 +334,17 @@ export default function JakPocitamePage() {
       </section>
 
       <section aria-labelledby="sporne-vyklady" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-ruzova/30 bg-ruzova/5 p-6 sm:p-8">
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+        <div className="max-w-3xl rounded-lg border border-accent/30 bg-accent/5 p-6 sm:p-8">
+          <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
             Naše zásada
           </p>
           <h2
             id="sporne-vyklady"
-            className="mt-2 font-display text-xl font-semibold tracking-tight sm:text-2xl"
+            className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl"
           >
             Sporné výklady přiznáváme
           </h2>
-          <div className="mt-3 space-y-3 text-sm leading-relaxed text-inkoust-tlumeny">
+          <div className="mt-3 space-y-3 text-sm leading-relaxed text-ink-muted">
             <p>
               Ne všechno v zákoně je jednoznačné — a nástroj, který dělá, že ano,
               ti lže. Kde existuje víc obhajitelných výkladů, Danero vždy počítá
@@ -378,7 +378,7 @@ export default function JakPocitamePage() {
             </p>
           </div>
         </div>
-        <p className="mt-6 max-w-3xl text-xs text-inkoust-tlumeny">
+        <p className="mt-6 max-w-3xl text-xs text-ink-muted">
           Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve
           smyslu zákona č. 523/1992 Sb. — za správnost přiznání odpovídá poplatník.
           Metodika vychází ze zákona o daních z příjmů, pokynů GFŘ a závěrů

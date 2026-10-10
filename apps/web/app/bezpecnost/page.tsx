@@ -42,7 +42,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
         počítáme daně, ne identitu. Co přesně zpracováváme a proč, popisuje{' '}
         <Link
           href="/soukromi"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           ochrana soukromí
         </Link>
@@ -57,7 +57,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
         Celý zdrojový kód Danera je veřejný na{' '}
         <a
           href={SOURCE_URL}
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
           target="_blank"
           rel="noreferrer"
         >
@@ -67,7 +67,7 @@ const ZASADY: { title: string; body: React.ReactNode }[] = [
         chybu nám nahlas soukromě podle{' '}
         <a
           href={`${SOURCE_URL}/blob/main/SECURITY.md`}
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
           target="_blank"
           rel="noreferrer"
         >
@@ -144,24 +144,24 @@ export default function BezpecnostPage() {
       <section aria-label="Bezpečnostní zásady" className="mt-12">
         <div className="grid gap-4 sm:grid-cols-2">
           {ZASADY.map((zasada) => (
-            <div key={zasada.title} className="rounded-lg border border-linka bg-plocha p-6">
-              <h2 className="font-display text-lg font-semibold">{zasada.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">{zasada.body}</p>
+            <div key={zasada.title} className="rounded-lg border border-line bg-surface p-6">
+              <h2 className="text-lg font-semibold">{zasada.title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-ink-muted">{zasada.body}</p>
             </div>
           ))}
         </div>
       </section>
 
       <section aria-label="Nahlášení zranitelnosti" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
-          <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
+          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Našel jsi zranitelnost?
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
+          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
             Napiš prosím rovnou na{' '}
             <a
               href={`mailto:${OPERATOR.email}`}
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               {OPERATOR.email}
             </a>{' '}

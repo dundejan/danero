@@ -27,7 +27,11 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
 
   it('každá tabulka má caption a každá hlavička scope="col"', () => {
     for (const { path, source } of soubory) {
-      const tabulek = (source.match(/<table[\s>]/g) ?? []).length;
+      // Primitivum `Table` (components/ui/table.tsx) je jen obal nad `<table>`:
+      // název mu dodává volající a `scope="col"` nese jeho `Th`. Počítají se
+      // proto obě podoby značky a samotné primitivum se přeskakuje.
+      if (path.endsWith(join('ui', 'table.tsx'))) continue;
+      const tabulek = (source.match(/<(?:table|Table)[\s>]/g) ?? []).length;
       if (tabulek === 0) continue;
       // název tabulky: `<caption>` nebo `aria-label` — obojí čtečka ohlásí.
       // `sr-only` caption uvnitř posuvné oblasti reportu přetékal na mobilu
@@ -35,7 +39,7 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
       // atributem.
       const pojmenovanych =
         (source.match(/<caption[\s>]/g) ?? []).length +
-        (source.match(/<table aria-label=/g) ?? []).length;
+        (source.match(/<(?:table|Table) aria-label=/g) ?? []).length;
       expect(pojmenovanych, `${path}: ${tabulek} tabulek, ${pojmenovanych} s názvem`).toBe(tabulek);
 
       // atributy bývají na dalších řádcích, takže se kouká na celou značku
@@ -45,8 +49,18 @@ describe('tabulky jsou čitelné čtečkou (H-3-07)', () => {
     }
   });
 
+  it('hlavička primitiva Table nese scope="col" sama', () => {
+    // na tom stojí výjimka výš: kdo píše `<Th>`, scope neuvádí
+    const primitive = readFileSync(join(COMPONENTS, 'ui', 'table.tsx'), 'utf8');
+    const hlavicky = primitive.match(/<th\b[^>]*>/g) ?? [];
+    expect(hlavicky).toHaveLength(1);
+    expect(hlavicky[0]).toContain('scope="col"');
+  });
+
   it('žádná hlavičková buňka nezůstane prázdná', () => {
     for (const { path, source } of soubory) {
+      // primitivum obsah buňky nezná — dostává ho od volajícího přes `props`
+      if (path.endsWith(join('ui', 'table.tsx'))) continue;
       // prázdná hlavička smí zůstat jen s vlastním názvem pro čtečku
       for (const tag of source.match(/<th\b[^>]*\/>/g) ?? []) {
         expect(tag, `${path}: prázdný <th> bez názvu`).toMatch(/aria-label=/);

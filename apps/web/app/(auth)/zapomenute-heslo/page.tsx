@@ -11,15 +11,15 @@ export default function ForgotPasswordPage() {
         <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
           <Logo className="text-lg" />
         </Link>
-        <h1 className="font-display text-3xl font-bold">Zapomenuté heslo</h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Zapomenuté heslo</h1>
+        <p className="mt-2 text-sm text-ink-muted">
           Napiš e-mail, kterým se přihlašuješ. Pošleme ti odkaz na nastavení nového hesla — platí
           hodinu.
         </p>
       </div>
       <ForgotPasswordForm />
-      <p className="text-sm text-inkoust-tlumeny">
-        <Link href="/prihlaseni" className="font-medium text-ruzova-text">
+      <p className="text-sm text-ink-muted">
+        <Link href="/prihlaseni" className="font-medium text-accent-text">
           Zpátky na přihlášení
         </Link>
       </p>

@@ -55,7 +55,7 @@ describe('rozsah vytištěného podkladu (H-3-01)', () => {
     // odstavec s rozsahem musí být v tiskové větvi (`print:block`)
     const tiskovyOdstavec = zdroj
       .split('\n')
-      .findIndex((radek) => radek.includes('print:block') && radek.includes('text-inkoust-tlumeny'));
+      .findIndex((radek) => radek.includes('print:block') && radek.includes('text-ink-muted'));
     expect(tiskovyOdstavec).toBeGreaterThan(-1);
     expect(zdroj).toContain('printedRangeNote({');
     // a nesmí se vrátit tvrzení, že tisk obsahuje všechny prodeje

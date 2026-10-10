@@ -38,10 +38,10 @@ export default async function PortfolioPage({
   if (txs.length === 0) {
     return (
       <div className="max-w-3xl space-y-4">
-        <h1 className="font-display text-3xl font-bold">Portfolio</h1>
-        <p className="text-sm text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Portfolio</h1>
+        <p className="text-sm text-ink-muted">
           Zatím žádná data —{' '}
-          <Link href="/import" className="font-medium text-ruzova-text">
+          <Link href="/import" className="font-medium text-accent-text">
             naimportuj výpisy
           </Link>{' '}
           a Danero ukáže hodnotu portfolia, dividendy i výhled osvobozování.

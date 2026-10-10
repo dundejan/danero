@@ -52,9 +52,9 @@ export function ResendVerificationForm({
 
   if (sent) {
     return (
-      <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
+      <div className="rounded-lg border border-line bg-surface p-4 text-sm">
         <p className="font-medium">Odkaz je na cestě.</p>
-        <p className="mt-2 text-inkoust-tlumeny">Zkontroluj schránku i spam.</p>
+        <p className="mt-2 text-ink-muted">Zkontroluj schránku i spam.</p>
       </div>
     );
   }

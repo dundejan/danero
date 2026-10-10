@@ -42,17 +42,16 @@ const GROUP_TITLES: Record<string, string> = {
 };
 
 const LEVEL_CLASS: Record<EngineWarning['level'], string> = {
-  ERROR: 'text-cervena',
-  WARNING: 'text-jantar-text',
-  INFO: 'text-inkoust-tlumeny',
+  ERROR: 'text-danger',
+  WARNING: 'text-caution-text',
+  INFO: 'text-ink-muted',
 };
 
-/** Badge závažnosti u skupiny — barvy jen z tokenů (semafor). Bílý text smí
-    jen na syté výplně (v dark módu jsou základní akcenty zesvětlené). */
-const LEVEL_BADGE: Record<EngineWarning['level'], { text: string; tone: string }> = {
-  ERROR: { text: 'Chyba', tone: 'bg-cervena-syta text-white' },
-  WARNING: { text: 'Upozornění', tone: 'bg-jantar/15 text-jantar-text' },
-  INFO: { text: 'Info', tone: 'bg-linka/50 text-inkoust-tlumeny' },
+/** Závažnost slovem — barvu mu dává `LEVEL_CLASS`. */
+const LEVEL_TEXT: Record<EngineWarning['level'], string> = {
+  ERROR: 'Chyba',
+  WARNING: 'Upozornění',
+  INFO: 'Info',
 };
 
 const SEVERITY: Record<EngineWarning['level'], number> = { ERROR: 2, WARNING: 1, INFO: 0 };
@@ -114,14 +113,14 @@ export function warningCaseLine(warning: EngineWarning, labels: Map<string, stri
 /** Rozbalitelný výčet jednotlivých případů skupiny (auditní stopa). */
 function GroupDetails({ group, labels }: { group: WarningGroup; labels: Map<string, string> }) {
   return (
-    <details className="mt-1">
-      {/* žádné opacity-80: průhlednost srazí kontrast pod AA (na --plocha
+    <details className="mt-2 text-ink-muted">
+      {/* žádné opacity-80: průhlednost srazí kontrast pod AA (na --surface
           3,80:1 pro jantar-text, 4,04:1 pro inkoust-tlumeny, 4,17:1 pro
           červenou) — plné tokeny drží 5,8–6,4:1. Drobnost nese text-xs. */}
-      <summary className="cursor-pointer text-xs">
+      <summary className="type-footnote cursor-pointer">
         Jednotlivé případy ({group.items.length})
       </summary>
-      <ul className="mt-1 space-y-1 font-mono text-xs">
+      <ul className="type-footnote mt-1 space-y-1 tabular-nums">
         {group.items.map((warning, i) => (
           <li key={i}>{warningCaseLine(warning, labels)}</li>
         ))}
@@ -171,17 +170,15 @@ export function withholdingSummary(
     .join(' ');
 }
 
-/** Badge závažnosti („Chyba“ / „Upozornění“ / „Info“). */
-function LevelBadge({ level }: { level: EngineWarning['level'] }) {
-  const badge = LEVEL_BADGE[level];
+/**
+ * Závažnost („Chyba“ / „Upozornění“ / „Info“) jako barevné slovo nad zprávou —
+ * žádný štítek s výplní. Barvu nese jen tohle slovo; samotná zpráva je
+ * běžným textem, aby se dlouhé vysvětlení dalo číst.
+ */
+function LevelLabel({ level }: { level: EngineWarning['level'] }) {
   return (
-    <span
-      className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold leading-4',
-        badge.tone,
-      )}
-    >
-      {badge.text}
+    <span className={cn('type-caption block font-semibold', LEVEL_CLASS[level])}>
+      {LEVEL_TEXT[level]}
     </span>
   );
 }
@@ -198,42 +195,45 @@ export function WarningsList({
 }) {
   return (
     <>
-      {groupByCode(warnings).map((group) => {
-        const color = LEVEL_CLASS[group.level];
-        if (group.items.length === 1) {
-          return (
-            <p key={group.code} className={cn('flex items-start gap-2 text-sm', color)}>
-              <LevelBadge level={group.level} />
-              <span>{group.items[0]!.message}</span>
-            </p>
-          );
-        }
-        return (
-          <div key={group.code} className={color}>
-            <p className="flex items-start gap-2 text-sm font-medium">
-              <LevelBadge level={group.level} />
-              <span>
-                {groupTitle(group)}{' '}
-                <span className="font-mono text-xs">({group.items.length}×)</span>
-              </span>
-            </p>
-            {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
-              <p className="text-sm">
-                {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
-              </p>
+      <ul className="divide-y divide-line/70">
+        {groupByCode(warnings).map((group) => (
+          <li key={group.code} className="type-callout py-3 first:pt-0">
+            <LevelLabel level={group.level} />
+            {group.items.length === 1 ? (
+              <p className="mt-1 text-pretty">{group.items[0]!.message}</p>
+            ) : (
+              <>
+                <p className="mt-1 font-medium">
+                  {groupTitle(group)}{' '}
+                  <span className="font-normal tabular-nums text-ink-muted">
+                    ({group.items.length}×)
+                  </span>
+                </p>
+                {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
+                  <p className="mt-1 text-pretty text-ink-muted">
+                    {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
+                  </p>
+                )}
+                <GroupDetails group={group} labels={labels} />
+              </>
             )}
-            <GroupDetails group={group} labels={labels} />
-          </div>
-        );
-      })}
+          </li>
+        ))}
+      </ul>
       {warnings.length > 0 && (
         // H-3-03: aplikace ukazovala interní kódy pravidel („R-05c"), ale
         // odkaz na jejich vysvětlení z přihlášené části nevedl NIKAM. Kódy
         // z UI zmizely (v tištěném podkladu zůstávají kvůli průkaznosti)
         // a místo nich je tu cesta k metodice.
-        <p className="pt-1 text-sm">
-          <Link href="/jak-pocitame" className="font-medium text-ruzova-text hover:underline">
-            Jak Danero počítá →
+        <p className="type-callout pt-3">
+          <Link
+            href="/jak-pocitame"
+            className="inline-flex min-h-11 items-center font-medium text-accent-text hover:underline md:min-h-0"
+          >
+            Jak Danero počítá
+            <span aria-hidden className="ml-1">
+              ›
+            </span>
           </Link>
         </p>
       )}

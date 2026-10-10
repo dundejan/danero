@@ -153,8 +153,8 @@ export function PortfolioView({
     <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-bold">Portfolio</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <h1 className="text-3xl font-bold">Portfolio</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Hodnota z posledních cen od brokera, grafy z tvých transakcí.
           </p>
         </div>
@@ -166,8 +166,8 @@ export function PortfolioView({
           <CardTitle>Hodnota portfolia</CardTitle>
           {valuation.pricedCount > 0 ? (
             <>
-              <p className="mt-2 font-display text-3xl font-bold">{czk(valuation.totalCzk)}</p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-2 text-3xl font-bold">{czk(valuation.totalCzk)}</p>
+              <p className="mt-1 text-xs text-ink-muted">
                 Orientační přepočet jednotným kurzem {valuation.fxYear}
                 {valuation.oldestPriceAt &&
                   `, ceny k ${czDate(valuation.oldestPriceAt)}`}
@@ -177,12 +177,12 @@ export function PortfolioView({
               </p>
             </>
           ) : (
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
+            <p className="mt-2 text-sm text-ink-muted">
               Bez cen — ceny bereme jen z připojených brokerů (
               {/* v demu /import nevede nikam — pozvat k registraci */}
               <Link
                 href={basePath ? '/registrace' : '/import'}
-                className="font-medium text-ruzova-text"
+                className="font-medium text-accent-text"
               >
                 připoj API
               </Link>
@@ -195,21 +195,21 @@ export function PortfolioView({
           {/* zelená jen pro skutečně pozitivní stav — 0 % není úspěch */}
           <p
             className={cn(
-              'mt-2 font-display text-3xl font-bold',
-              exemptShareToday !== null && exemptShareToday > 0 && 'text-zelena',
+              'mt-2 text-3xl font-bold',
+              exemptShareToday !== null && exemptShareToday > 0 && 'text-success',
             )}
           >
             {exemptShareToday !== null ? pct(exemptShareToday, 1) : '—'}
           </p>
-          <p className="mt-1 text-xs text-inkoust-tlumeny">
+          <p className="mt-1 text-xs text-ink-muted">
             Podíl portfolia ({outlook?.basis === 'value' ? 'podle hodnoty' : 'podle kusů'}) po
             3letém časovém testu — prodej je osvobozený.
           </p>
         </Card>
         <Card>
           <CardTitle>Dividendy {year}</CardTitle>
-          <p className="mt-2 font-display text-3xl font-bold">{czk(dividends.totalCzk)}</p>
-          <p className="mt-1 text-xs text-inkoust-tlumeny">
+          <p className="mt-2 text-3xl font-bold">{czk(dividends.totalCzk)}</p>
+          <p className="mt-1 text-xs text-ink-muted">
             Brutto před srážkou, přepočet kurzem pro přiznání.
           </p>
         </Card>
@@ -217,10 +217,10 @@ export function PortfolioView({
           <CardTitle>Nejbližší osvobození</CardTitle>
           {nextExemption && daysToNextExemption !== null ? (
             <>
-              <p className="mt-2 font-display text-3xl font-bold">
+              <p className="mt-2 text-3xl font-bold">
                 {czDate(nextExemption.exemptFrom)}
               </p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 {labels.get(nextExemption.isin) ?? nextExemption.isin} — za {daysToNextExemption}{' '}
                 {plural(daysToNextExemption, 'den', 'dny', 'dní')} doběhne 3letý test, prodej pak
                 bude bez daně.
@@ -228,13 +228,13 @@ export function PortfolioView({
             </>
           ) : positions.length > 0 ? (
             <>
-              <p className="mt-2 font-display text-3xl font-bold text-zelena">vše bez daně</p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-2 text-3xl font-bold text-success">vše bez daně</p>
+              <p className="mt-1 text-xs text-ink-muted">
                 Všechny držené kusy už mají splněný časový test.
               </p>
             </>
           ) : (
-            <p className="mt-2 font-display text-3xl font-bold">—</p>
+            <p className="mt-2 text-3xl font-bold">—</p>
           )}
         </Card>
       </section>
@@ -253,7 +253,7 @@ export function PortfolioView({
               content: (
                 <div className="space-y-2">
                   {valuation.unpricedCount > 0 && valuation.pricedCount > 0 && (
-                    <p className="text-xs text-jantar-text">
+                    <p className="text-xs text-caution-text">
                       U {valuation.unpricedCount}{' '}
                       {plural(valuation.unpricedCount, 'pozice', 'pozic', 'pozic')} chybí cena od
                       brokera nebo kurz měny — hodnota a zisk/ztráta tam nejsou.
@@ -266,7 +266,7 @@ export function PortfolioView({
                       basePath={basePath}
                     />
                   ) : (
-                    <p className="text-sm text-inkoust-tlumeny">Žádné otevřené pozice.</p>
+                    <p className="text-sm text-ink-muted">Žádné otevřené pozice.</p>
                   )}
                 </div>
               ),
@@ -278,11 +278,11 @@ export function PortfolioView({
                 <AllocationPie allocation={allocation} />
               ) : (
                 // poctivý prázdný stav — bez cen od brokera koláč nesestavíme
-                <p className="text-sm text-inkoust-tlumeny">
+                <p className="text-sm text-ink-muted">
                   Bez cen od brokera graf nesestavíme — připoj API{' '}
                   <Link
                     href={basePath ? '/registrace' : '/import'}
-                    className="font-medium text-ruzova-text"
+                    className="font-medium text-accent-text"
                   >
                     {basePath ? 'po registraci' : 'na stránce Zdroje dat'}
                   </Link>
@@ -297,7 +297,7 @@ export function PortfolioView({
       {result.derivatives.openPositions.length > 0 && (
         <Card className="space-y-2">
           <CardTitle>Otevřené derivátové pozice</CardTitle>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy, bez
             ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
           </p>
@@ -305,20 +305,20 @@ export function PortfolioView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Pozice v portfoliu s hodnotou a časovým testem" className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4">Instrument</th>
                   <th scope="col" className="py-2 pr-4 text-right">Kontraktů</th>
                   <th scope="col" className="py-2 text-right">Otevřeno</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {result.derivatives.openPositions.map((position) => (
-                  <tr key={position.isin} className="border-t border-linka">
+                  <tr key={position.isin} className="border-t border-line">
                     <td className="py-2 pr-4 font-sans font-medium">
                       {labels.get(position.isin) ?? position.isin}
                     </td>
                     <td
-                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar-text' : ''}`}
+                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-caution-text' : ''}`}
                     >
                       {qty(position.quantity)}
                     </td>
@@ -336,7 +336,7 @@ export function PortfolioView({
         {outlook && outlook.points.length > 1 && (
           <Card>
             <CardTitle>Osvobozování portfolia v čase</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mb-2 mt-1 text-xs text-ink-muted">
               Výhled: kolik % portfolia ({outlook.basis === 'value' ? 'hodnoty' : 'kusů'}) půjde
               prodat bez daně, když nic nepřikoupíš ani neprodáš.
             </p>
@@ -346,7 +346,7 @@ export function PortfolioView({
         {dividends.totalCzk > 0 && (
           <Card>
             <CardTitle>Dividendy {year} po měsících a státech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mb-2 mt-1 text-xs text-ink-muted">
               Brutto v Kč; podle státu, kde byla dividenda zdaněna u zdroje (srážková daň).
             </p>
             <DividendsByMonthChart data={dividends} />
@@ -355,7 +355,7 @@ export function PortfolioView({
         {realized.some((bar) => bar.valueCzk !== 0) && (
           <Card>
             <CardTitle>Realizovaný zisk/ztráta po letech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mb-2 mt-1 text-xs text-ink-muted">
               Skutečný výsledek prodejů (tržby − náklady vč. poplatků) — bez ohledu na to, jestli
               byly daňově osvobozené.
             </p>
@@ -365,7 +365,7 @@ export function PortfolioView({
         {fees.bars.length > 0 && (
           <Card>
             <CardTitle>Poplatky brokerům po letech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
+            <p className="mb-2 mt-1 text-xs text-ink-muted">
               Obchodní i účetní poplatky, orientační přepočet jednotnými kurzy.
               {fees.skippedCurrencies.length > 0 &&
                 ` Bez kurzu: ${fees.skippedCurrencies.join(', ')} (nezapočteno).`}
@@ -375,10 +375,10 @@ export function PortfolioView({
         )}
       </section>
 
-      <p className="text-xs text-inkoust-tlumeny">
+      <p className="text-xs text-ink-muted">
         Popisky instrumentů: {labelsAll.size} známých. Hodnoty jsou orientační a neslouží jako
         podklad pro obchodní rozhodnutí — daňové výpočty najdeš v{' '}
-        <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
+        <Link href={`${basePath}/report`} className="font-medium text-accent-text">
           reportu
         </Link>
         .

@@ -25,7 +25,7 @@ export function PlatformTile({
   return (
     <span
       aria-hidden
-      className={`flex shrink-0 select-none items-center justify-center rounded-md font-mono font-bold ring-1 ring-inset ring-inkoust/10 dark:ring-white/20 ${
+      className={`flex shrink-0 select-none items-center justify-center rounded-md tabular-nums font-bold ring-1 ring-inset ring-ink/10 dark:ring-white/20 ${
         platform.ink === 'dark' ? 'text-black/80' : 'text-white'
       } ${className}`}
       style={{ backgroundColor: platform.color }}
@@ -63,7 +63,7 @@ export function PlatformLogo({
   if (logo.kind === 'icon') {
     return (
       <span className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-inset ring-inkoust/10">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-inset ring-ink/10">
           <Image
             src={logo.src}
             alt=""
@@ -82,7 +82,7 @@ export function PlatformLogo({
   }
   // wordmark: název nese samo logo — text by se dubloval
   return (
-    <span className="flex h-8 shrink-0 items-center rounded-md bg-white px-2.5 ring-1 ring-inset ring-inkoust/10">
+    <span className="flex h-8 shrink-0 items-center rounded-md bg-white px-2.5 ring-1 ring-inset ring-ink/10">
       {/* h-5 + w-auto: u širokých wordmarků max-w strop mírně poruší poměr
           stran (dev-only warning next/image) — h-auto by ale SVG bez
           intrinsic rozměrů zkolabovalo na nulu; object-contain to kreslí správně */}
@@ -125,10 +125,10 @@ export function PlatformGrid({ limit }: { limit?: number }) {
   const shown = limit ? ordered.slice(0, limit) : ordered;
   const rest = ordered.length - shown.length;
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       {shown.map((platform) => (
         <li key={platform.id}>
-          <div className="flex h-full items-center rounded-lg border border-linka bg-plocha px-3 py-2.5">
+          <div className="flex h-14 items-center rounded-xl bg-canvas px-3.5">
             <PlatformLogo platform={platform} />
           </div>
         </li>
@@ -137,10 +137,10 @@ export function PlatformGrid({ limit }: { limit?: number }) {
         <li>
           <Link
             href="/platformy"
-            className="flex h-full items-center gap-2.5 rounded-lg border border-dashed border-linka bg-pozadi px-3 py-2.5 hover:border-ruzova"
+            className="row-pressable flex h-14 items-center rounded-xl px-3.5 hover:bg-canvas"
           >
-            <span className="text-sm font-semibold text-ruzova-text">
-              + dalších {rest} platforem →
+            <span className="type-callout font-medium text-accent-text">
+              + dalších {rest} platforem
             </span>
           </Link>
         </li>
@@ -161,13 +161,13 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
         const GroupHeading = variant === 'public' ? 'h2' : 'h3';
         return (
         <div key={group.key}>
-          <GroupHeading className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+          <GroupHeading className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
             {group.label}
           </GroupHeading>
           <ul className="mt-3 grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {PLATFORMS.filter((platform) => platform.group === group.key).map((platform) => (
               <li key={platform.id}>
-                <details className="group rounded-lg border border-linka bg-plocha">
+                <details className="group rounded-lg border border-line bg-surface">
                   {/* jen logo a jméno — formáty a typ napojení jsou žargon,
                       detail (kde co stáhnout) říká rozbalený návod */}
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
@@ -176,21 +176,21 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                     </span>
                     <span
                       aria-hidden
-                      className="text-inkoust-tlumeny transition-transform group-open:rotate-90"
+                      className="text-ink-muted transition-transform group-open:rotate-90"
                     >
                       ›
                     </span>
                   </summary>
-                  <div className="space-y-1.5 border-t border-linka/60 p-3.5 text-sm text-inkoust-tlumeny">
+                  <div className="space-y-1.5 border-t border-line/60 p-3.5 text-sm text-ink-muted">
                     <p>{platform.guide}</p>
                     {platform.method === 'template' && (
                       <p>
                         Stažený výpis přepiš do{' '}
-                        <a href="/api/sablona" className="font-medium text-ruzova-text underline underline-offset-2" download>
+                        <a href="/api/sablona" className="font-medium text-accent-text underline underline-offset-2" download>
                           univerzální šablony
                         </a>{' '}
                         (
-                        <a href="#sablona" className="font-medium text-ruzova-text underline underline-offset-2">
+                        <a href="#sablona" className="font-medium text-accent-text underline underline-offset-2">
                           jak ji vyplnit
                         </a>
                         , čti pod seznamem platforem) a{' '}
@@ -199,7 +199,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                           : 'nahraj ji v aplikaci na stránce Zdroje dat'}
                         . Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný
                         vzorek na{' '}
-                        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text underline underline-offset-2">
+                        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-accent-text underline underline-offset-2">
                           {OPERATOR.email}
                         </a>{' '}
                         a bude to rychlejší.
@@ -211,7 +211,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                           Napojení nastavíš v{' '}
                           <Link
                             href={platform.connectAnchor ?? '#trading212'}
-                            className="font-medium text-ruzova-text underline underline-offset-2"
+                            className="font-medium text-accent-text underline underline-offset-2"
                           >
                             kartě výš na této stránce
                           </Link>
@@ -220,7 +220,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
                       ) : (
                         <p>
                           Klíč jen pro čtení připojíš po{' '}
-                          <Link href="/registrace" className="font-medium text-ruzova-text underline underline-offset-2">
+                          <Link href="/registrace" className="font-medium text-accent-text underline underline-offset-2">
                             registraci
                           </Link>{' '}
                           na stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout.
@@ -236,10 +236,10 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
         );
       })}
       {/* kotva #sablona: odkazují na ni karty platforem s vedeným importem */}
-      <div id="sablona" className="scroll-mt-24 space-y-2 text-sm text-inkoust-tlumeny">
+      <div id="sablona" className="scroll-mt-24 space-y-2 text-sm text-ink-muted">
         <p>
-          <strong className="text-inkoust">{UNIVERSAL_INFO.name}:</strong> {UNIVERSAL_INFO.guide}{' '}
-          <a href="/api/sablona" className="font-medium text-ruzova-text underline underline-offset-2" download>
+          <strong className="text-ink">{UNIVERSAL_INFO.name}:</strong> {UNIVERSAL_INFO.guide}{' '}
+          <a href="/api/sablona" className="font-medium text-accent-text underline underline-offset-2" download>
             Stáhnout šablonu
           </a>
           . Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje i napříč
@@ -249,7 +249,7 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
         <ul className="list-disc space-y-1 pl-5">
           {TEMPLATE_RULES.map((rule) => (
             <li key={rule.label}>
-              <strong className="text-inkoust">{rule.label}:</strong> {rule.text}
+              <strong className="text-ink">{rule.label}:</strong> {rule.text}
             </li>
           ))}
         </ul>

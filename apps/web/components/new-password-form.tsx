@@ -50,15 +50,15 @@ export function NewPasswordForm({ token }: { token: string }) {
   if (done) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
+        <div className="rounded-lg border border-line bg-surface p-4 text-sm">
           <p className="font-medium">Heslo je změněné.</p>
-          <p className="mt-2 text-inkoust-tlumeny">
+          <p className="mt-2 text-ink-muted">
             Pro jistotu jsme tě odhlásili ze všech zařízení — přihlas se prosím znovu.
           </p>
         </div>
         <Link
           href="/prihlaseni"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           Přihlásit se
         </Link>

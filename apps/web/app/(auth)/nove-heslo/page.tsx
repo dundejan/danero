@@ -21,22 +21,22 @@ export default async function NewPasswordPage({
         <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
           <Logo className="text-lg" />
         </Link>
-        <h1 className="font-display text-3xl font-bold">Nové heslo</h1>
+        <h1 className="text-3xl font-bold">Nové heslo</h1>
       </div>
 
       {token && !error ? (
         <NewPasswordForm token={token} />
       ) : (
         <div className="space-y-4">
-          <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
+          <div className="rounded-lg border border-line bg-surface p-4 text-sm">
             <p className="font-medium">Odkaz už neplatí.</p>
-            <p className="mt-2 text-inkoust-tlumeny">
+            <p className="mt-2 text-ink-muted">
               Odkaz na obnovu hesla platí hodinu a použít ho jde jen jednou. Nech si poslat nový.
             </p>
           </div>
           <Link
             href="/zapomenute-heslo"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Poslat nový odkaz
           </Link>

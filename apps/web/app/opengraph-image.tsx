@@ -18,7 +18,7 @@ export const alt = 'Danero — daně z investic pohlídané celý rok';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-/** Světlé tokeny z `app/globals.css`: `--pozadi`, `--inkoust`, `--inkoust-tlumeny`, `--ruzova`. */
+/** Světlé tokeny z `app/globals.css`: `--canvas`, `--ink`, `--ink-muted`, `--accent`. */
 const BACKGROUND = '#f6f5f1';
 const INK = '#171930';
 const INK_MUTED = '#5a5d78';

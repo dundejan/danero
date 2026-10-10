@@ -39,35 +39,35 @@ export default function PruvodcePage() {
           <li key={clanek.slug}>
             <Link
               href={`/pruvodce/${clanek.slug}`}
-              className="flex h-full flex-col rounded-lg border border-linka bg-plocha p-6 transition-colors hover:border-ruzova"
+              className="flex h-full flex-col rounded-lg border border-line bg-surface p-6 transition-colors hover:border-accent"
             >
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+              <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
                 {clanek.stitek}
               </p>
-              <h2 className="mt-3 font-display text-xl font-bold tracking-tight">
+              <h2 className="mt-3 text-xl font-bold tracking-tight">
                 {clanek.title}
               </h2>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-inkoust-tlumeny">
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">
                 {clanek.popis}
               </p>
-              <p className="mt-4 text-sm font-medium text-ruzova-text">Číst článek →</p>
+              <p className="mt-4 text-sm font-medium text-accent-text">Číst článek →</p>
             </Link>
           </li>
         ))}
       </ul>
 
-      <p className="mt-8 max-w-3xl text-sm text-inkoust-tlumeny">
+      <p className="mt-8 max-w-3xl text-sm text-ink-muted">
         Chceš rovnou odpověď na vlastní situaci? Zkus zdarma a bez registrace{' '}
         <Link
           href="/kalkulacka"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           kalkulačku „Musím podat přiznání?“
         </Link>{' '}
         — a jak přesně počítáme, popisuje stránka{' '}
         <Link
           href="/jak-pocitame"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           Jak počítáme
         </Link>

@@ -22,7 +22,7 @@ export default function OProjektuPage() {
 
       <section aria-label="Příběh projektu" className="mt-12">
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div className="max-w-3xl space-y-4 leading-relaxed text-inkoust-tlumeny">
+          <div className="max-w-3xl space-y-4 leading-relaxed text-ink-muted">
             <p>
               Investuju přes několik platforem najednou a jako OSVČ v paušálním režimu
               mám každý rok stejný úkol: poskládat prodeje, dividendy a úroky ze všech
@@ -43,14 +43,14 @@ export default function OProjektuPage() {
               tenhle problém opravdu štval. Když ti něco nebude sedět, napiš mi na{' '}
               <a
                 href={`mailto:${OPERATOR.email}`}
-                className="font-medium text-ruzova-text underline underline-offset-2"
+                className="font-medium text-accent-text underline underline-offset-2"
               >
                 {OPERATOR.email}
               </a>{' '}
               — odpovídám osobně. A víc o mně najdeš na{' '}
               <a
                 href="https://jandunder.dev"
-                className="font-medium text-ruzova-text underline underline-offset-2"
+                className="font-medium text-accent-text underline underline-offset-2"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -66,7 +66,7 @@ export default function OProjektuPage() {
               width={800}
               height={840}
               sizes="(min-width: 1024px) 320px, 224px"
-              className="rotate-1 rounded-lg border border-linka shadow-lg shadow-inkoust/10"
+              className="rotate-1 rounded-lg border border-line shadow-lg shadow-ink/10"
             />
           </figure>
         </div>
@@ -75,16 +75,16 @@ export default function OProjektuPage() {
       {/* otevřený kód je u daňového nástroje trust signál, ne technikálie:
           je to jediná odpověď na „proč mám věřit, že to počítáš správně“ */}
       <section aria-label="Otevřený kód" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
-          <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
+          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Otevřený kód
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
-            <strong className="text-inkoust">Danero si můžeš přečíst.</strong> Celý
+          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+            <strong className="text-ink">Danero si můžeš přečíst.</strong> Celý
             zdrojový kód i{' '}
             <a
               href={`${SOURCE_URL}/blob/main/docs/02-danova-pravidla.md`}
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
               target="_blank"
               rel="noreferrer"
             >
@@ -93,7 +93,7 @@ export default function OProjektuPage() {
             — s odkazy na paragrafy zákona a pokyny GFŘ — jsou veřejné na{' '}
             <a
               href={SOURCE_URL}
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
               target="_blank"
               rel="noreferrer"
             >
@@ -103,7 +103,7 @@ export default function OProjektuPage() {
             jediná poctivá odpověď na otázku „proč ti mám věřit". Vedlejší efekt: kdyby
             Danero někdy skončilo, kód zůstane a data si vyvezeš.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">
+          <p className="mt-3 text-sm leading-relaxed text-ink-muted">
             Provozovat si ho můžeš i sám. Nemusíš — danero.cz je zdarma celé, bez
             placené verze.
           </p>
@@ -113,24 +113,24 @@ export default function OProjektuPage() {
       {/* věcná identifikace provozovatele — u daní a API klíčů se hodí vědět,
           s kým máš tu čest; detail je v podmínkách užití */}
       <section aria-label="Provozovatel" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-linka bg-plocha p-6">
-          <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
+          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Provozovatel
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-inkoust-tlumeny">
-            Danero provozuje <strong className="text-inkoust">{OPERATOR.name}</strong>, IČO{' '}
+          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+            Danero provozuje <strong className="text-ink">{OPERATOR.name}</strong>, IČO{' '}
             {OPERATOR.ico}, fyzická osoba podnikající. Úplné údaje a pravidla
             najdeš v{' '}
             <Link
               href="/podminky"
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               podmínkách užití
             </Link>{' '}
             a v{' '}
             <Link
               href="/soukromi"
-              className="font-medium text-ruzova-text underline underline-offset-2"
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               ochraně soukromí
             </Link>

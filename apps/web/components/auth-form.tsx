@@ -149,9 +149,9 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   if (unverified) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
+        <div className="rounded-lg border border-line bg-surface p-4 text-sm">
           <p className="font-medium">Účet ještě není potvrzený.</p>
-          <p className="mt-2 text-inkoust-tlumeny">
+          <p className="mt-2 text-ink-muted">
             {unverified.resent
               ? `Poslali jsme ti na ${unverified.email} nový ověřovací odkaz. Klikni na něj a jsi uvnitř.`
               : 'Potvrď adresu odkazem, který ti přišel po registraci. Nový si můžeš nechat poslat níž.'}
@@ -159,7 +159,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         </div>
         <Link
           href={`/overeni-emailu?email=${encodeURIComponent(unverified.email)}`}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+          className="text-sm font-medium text-accent-text underline underline-offset-2"
         >
           Nepřišel? Poslat znovu
         </Link>
@@ -181,10 +181,10 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             required
             autoFocus
             placeholder="xxxxx-xxxxx"
-            className="font-mono tracking-widest"
+            className="tabular-nums tracking-widest"
             {...describedByError(error !== null, BACKUP_ERROR_ID)}
           />
-          <p className="mt-2 text-xs text-inkoust-tlumeny">
+          <p className="mt-2 text-xs text-ink-muted">
             Kódy sis uložil při zapínání dvoufaktorového ověření. Každý funguje jen jednou.
           </p>
         </div>
@@ -198,7 +198,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             setBackupStep(false);
             setError(null);
           }}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+          className="text-sm font-medium text-accent-text underline underline-offset-2"
         >
           Mám telefon po ruce — zadat kód z autentikátoru
         </button>
@@ -220,7 +220,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             title={TOTP_CODE_TITLE}
             required
             autoFocus
-            className="font-mono tracking-widest"
+            className="tabular-nums tracking-widest"
             {...describedByError(error !== null, TOTP_ERROR_ID)}
           />
         </div>
@@ -234,7 +234,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
             setBackupStep(true);
             setError(null);
           }}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+          className="text-sm font-medium text-accent-text underline underline-offset-2"
         >
           Nemáš telefon? Zadej záložní kód
         </button>
@@ -248,7 +248,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         <div>
           <Label htmlFor="jmeno">
             Jméno{' '}
-            <span className="font-normal text-inkoust-tlumeny">
+            <span className="font-normal text-ink-muted">
               (nepovinné — jak ti máme říkat)
             </span>
           </Label>

@@ -53,13 +53,13 @@ export function Toast({
     <p
       role={kind === 'chyba' ? 'alert' : 'status'}
       className={`rounded-md border px-4 py-3 text-sm ${
-        kind === 'ok' ? 'border-zelena text-zelena-text' : 'border-cervena text-cervena'
+        kind === 'ok' ? 'border-success text-success-text' : 'border-danger text-danger'
       }${
         floating
           ? // H-3-06: nad mobilním tab barem (40 px + bezpečná zóna gesta), ne přes
             // něj — plovoucí toast dřív zakrýval 24 ze 40 px navigace včetně popisků
             ' fixed inset-x-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-50 max-w-sm' +
-            ' bg-plocha shadow-lg sm:inset-x-auto sm:right-4 md:bottom-4'
+            ' bg-surface shadow-lg sm:inset-x-auto sm:right-4 md:bottom-4'
           : ''
       }`}
     >
@@ -67,8 +67,8 @@ export function Toast({
       <button
         type="button"
         onClick={() => setVisible(false)}
-        // bez opacity: průhlednost srazí kontrast pod AA (text-cervena/60 dá na
-        // --plocha jen 2,8:1) a tohle je ovládací prvek, ne dekorace
+        // bez opacity: průhlednost srazí kontrast pod AA (text-danger/60 dá na
+        // --surface jen 2,8:1) a tohle je ovládací prvek, ne dekorace
         // SC 2.5.8: cíl aspoň 24 × 24 px — křížek měl 8 × 20 px a u chybového
         // toastu to byla jediná cesta ven (H-3-22)
         className="float-right -mr-1 -mt-1 ml-3 inline-flex h-6 w-6 items-center justify-center font-bold"

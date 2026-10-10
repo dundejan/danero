@@ -24,10 +24,10 @@ export function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn('space-y-3 border-t border-linka pt-5', className)}>
+    <section className={cn('space-y-3 border-t border-line pt-5', className)}>
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-inkoust">{title}</h3>
-        {description && <p className="text-sm text-inkoust-tlumeny">{description}</p>}
+        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        {description && <p className="text-sm text-ink-muted">{description}</p>}
       </div>
       {children}
     </section>

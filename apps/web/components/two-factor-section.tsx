@@ -41,7 +41,7 @@ function BackupCodes({ codes }: { codes: string[] }) {
   return (
     <div className="space-y-2">
       <p className="text-sm font-semibold">Záložní kódy</p>
-      <div className="grid max-w-xs grid-cols-2 gap-x-6 gap-y-1 font-mono text-sm">
+      <div className="grid max-w-xs grid-cols-2 gap-x-6 gap-y-1 tabular-nums text-sm">
         {codes.map((code) => (
           <span key={code}>{code}</span>
         ))}
@@ -50,7 +50,7 @@ function BackupCodes({ codes }: { codes: string[] }) {
         <Button type="button" variant="secondary" size="sm" onClick={() => void onCopy()}>
           Zkopírovat
         </Button>
-        <p role="status" className="text-xs text-inkoust-tlumeny">
+        <p role="status" className="text-xs text-ink-muted">
           {copyState === 'copied' && 'Zkopírováno — vlož si je do správce hesel nebo do poznámek.'}
           {copyState === 'failed' &&
             'Zkopírovat se nepovedlo — označ kódy myší a zkopíruj je ručně.'}
@@ -157,12 +157,12 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     return (
       <form onSubmit={onDisable} className="space-y-3">
         <p className="text-sm">
-          <span className="font-semibold text-zelena-text">Dvoufaktorové ověření je zapnuté.</span>{' '}
-          <span className="text-inkoust-tlumeny">
+          <span className="font-semibold text-success-text">Dvoufaktorové ověření je zapnuté.</span>{' '}
+          <span className="text-ink-muted">
             Při přihlášení se vyžaduje kód z autentikátoru.
           </span>
         </p>
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm text-ink-muted">
           Záložní kódy už znovu neukážeme. Když je nemáš uložené, dvoufaktorové ověření vypni a
           zapni znovu — vzniknou nové a v aplikaci si naskenuješ nový QR kód.
         </p>
@@ -190,31 +190,31 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
   if (view.kind === 'setup') {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm text-ink-muted">
           Naskenuj QR kód v aplikaci (Aegis, Google Authenticator, 1Password…) a ulož si záložní
           kódy — každý funguje jednou, když přijdeš o telefon. Teprve pak zapnutí potvrď prvním
           kódem z aplikace.
         </p>
         <div className="flex flex-wrap items-start gap-6">
           {qrDataUrl && (
-            <img src={qrDataUrl} alt="QR kód pro autentikátor" className="rounded-md border border-linka" />
+            <img src={qrDataUrl} alt="QR kód pro autentikátor" className="rounded-md border border-line" />
           )}
           <div className="min-w-0 space-y-3">
             {view.manualKey && (
               <div className="space-y-1">
-                <p className="text-xs text-inkoust-tlumeny">
+                <p className="text-xs text-ink-muted">
                   Nejde QR kód naskenovat? Zadej do aplikace ručně tenhle klíč:
                 </p>
-                <code className="block select-all break-all font-mono text-sm">
+                <code className="block select-all break-all tabular-nums text-sm">
                   {view.manualKey}
                 </code>
               </div>
             )}
             <div className="space-y-1">
-              <p className="text-xs text-inkoust-tlumeny">
+              <p className="text-xs text-ink-muted">
                 Celá adresa pro aplikace, které ji umějí vložit:
               </p>
-              <p className="break-all font-mono text-xs text-inkoust-tlumeny">{view.totpURI}</p>
+              <p className="break-all tabular-nums text-xs text-ink-muted">{view.totpURI}</p>
             </div>
           </div>
         </div>
@@ -230,7 +230,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
               pattern={TOTP_CODE_PATTERN}
               title={TOTP_CODE_TITLE}
               required
-              className="font-mono tracking-widest"
+              className="tabular-nums tracking-widest"
               {...describedByError(error !== null, VERIFY_ERROR_ID)}
             />
           </div>
@@ -246,8 +246,8 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
   if (view.kind === 'confirmed') {
     return (
       <div className="space-y-4">
-        <p className="text-sm font-semibold text-zelena-text">Dvoufaktorové ověření je aktivní.</p>
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm font-semibold text-success-text">Dvoufaktorové ověření je aktivní.</p>
+        <p className="text-sm text-ink-muted">
           Záložní kódy tu zůstanou, dokud z téhle stránky neodejdeš — potom už je znovu neukážeme.
           Jestli je ještě nemáš uložené, udělej to teď.
         </p>
@@ -258,7 +258,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
 
   return (
     <form onSubmit={onEnable} className="space-y-3">
-      <p className="text-sm text-inkoust-tlumeny">
+      <p className="text-sm text-ink-muted">
         Druhý faktor (TOTP) chrání tvoje daňová data, i kdyby heslo uniklo. Doporučujeme.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">

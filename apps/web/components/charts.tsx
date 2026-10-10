@@ -27,8 +27,8 @@ import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
 
 /**
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
- * kategorické série --graf-1..4 (pevné pořadí; největší kategorie — třeba US
- * v dividendách — dostává --graf-1), semafor jen pro stav/polaritu
+ * kategorické série --chart-1..4 (pevné pořadí; největší kategorie — třeba US
+ * v dividendách — dostává --chart-1), semafor jen pro stav/polaritu
  * (zisk/ztráta, pásma limitů). Brand růžová v sériích není — zůstává jen
  * akcentem (dnes/limit/aktivní). Mřížka a osy ustupují datům.
  *
@@ -38,7 +38,7 @@ import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
  * čísla, ne jen popis typu grafu; jinak jsou data pro nevidomého nedostupná.
  */
 
-const SERIES = ['var(--graf-1)', 'var(--graf-2)', 'var(--graf-3)', 'var(--graf-4)'];
+const SERIES = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)'];
 
 const czkAxis = (value: number): string => {
   const abs = Math.abs(value);
@@ -76,8 +76,8 @@ export const msLabel = (ms: number): string =>
   });
 
 const axisProps = {
-  tick: { fill: 'var(--inkoust-tlumeny)', fontSize: 11, fontFamily: 'var(--font-mono)' },
-  axisLine: { stroke: 'var(--linka)' },
+  tick: { fill: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' },
+  axisLine: { stroke: 'var(--line)' },
   tickLine: false as const,
 };
 
@@ -107,15 +107,15 @@ function TooltipBox({
   rows: Array<{ color?: string; name: string; value: string }>;
 }) {
   return (
-    <div className="rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm">
-      <p className="mb-1 font-semibold text-inkoust">{title}</p>
+    <div className="rounded-md border border-line bg-surface px-3 py-2 text-xs shadow-sm">
+      <p className="mb-1 font-semibold text-ink">{title}</p>
       {rows.map((row) => (
-        <p key={row.name} className="flex items-center gap-2 font-mono text-inkoust-tlumeny">
+        <p key={row.name} className="flex items-center gap-2 tabular-nums text-ink-muted">
           {row.color && (
             <span className="inline-block size-2 rounded-full" style={{ background: row.color }} />
           )}
           <span>{row.name}</span>
-          <span className="ml-auto pl-3 text-inkoust">{row.value}</span>
+          <span className="ml-auto pl-3 text-ink">{row.value}</span>
         </p>
       ))}
     </div>
@@ -136,7 +136,7 @@ function ChartLegend({ payload }: { payload?: ReadonlyArray<LegendPayload> }) {
       {(payload ?? []).map((entry) => (
         <li
           key={String(entry.value)}
-          className="flex items-center gap-1.5 text-xs text-inkoust-tlumeny"
+          className="flex items-center gap-1.5 text-xs text-ink-muted"
         >
           <span
             aria-hidden
@@ -167,8 +167,8 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
   return (
     <div>
       {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit“ */}
-      <p className="mb-1 text-right font-mono text-xs text-inkoust-tlumeny">
-        k 31. 12.: <span className="text-inkoust">{czkCompact(lastValue)}</span>
+      <p className="mb-1 text-right tabular-nums text-xs text-ink-muted">
+        k 31. 12.: <span className="text-ink">{czkCompact(lastValue)}</span>
       </p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart
@@ -177,7 +177,7 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
           title={`Čerpání limitu ${czkCompact(series.limitCzk)} v roce ${year} — ${name.toLowerCase()}`}
           desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušované čáry označují pásma 60, 85 a 100 % limitu.`}
         >
-          <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+          <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
           <XAxis
             {...axisProps}
             type="number"
@@ -196,17 +196,17 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
           />
           <ReferenceLine
             y={series.limitCzk}
-            stroke="var(--cervena)"
+            stroke="var(--danger)"
             strokeDasharray="4 4"
             label={{
               value: 'limit',
-              fill: 'var(--cervena)',
+              fill: 'var(--danger)',
               fontSize: 10,
               position: 'insideTopRight',
             }}
           />
-          <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--oranz)" strokeDasharray="2 4" />
-          <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--jantar)" strokeDasharray="2 4" />
+          <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--warning)" strokeDasharray="2 4" />
+          <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--caution)" strokeDasharray="2 4" />
           <Tooltip
             content={({ active, payload }) =>
               active && payload?.[0] ? (
@@ -250,7 +250,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
         title="Dividendy po měsících a státech"
         desc={`Skládané sloupce: brutto dividendy v Kč po měsících, barevně podle státu (${data.countries.join(', ')}). Celkem ${czkCompact(data.totalCzk)}.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="month" tickFormatter={monthLabel} />
         <YAxis
           {...axisProps}
@@ -260,7 +260,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
           ticks={yScale.ticks}
         />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload && payload.length > 0 ? (
               <TooltipBox
@@ -283,7 +283,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
             dataKey={country}
             stackId="dividendy"
             fill={SERIES[index % SERIES.length]}
-            stroke="var(--plocha)"
+            stroke="var(--surface)"
             strokeWidth={2}
             maxBarSize={36}
             isAnimationActive={false}
@@ -300,7 +300,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
   // polarita zisk/ztráta = semaforové barvy (per-entry fill; Cell je v Recharts 3 deprecated)
   const data = bars.map((bar) => ({
     ...bar,
-    fill: bar.valueCzk >= 0 ? 'var(--zelena)' : 'var(--cervena)',
+    fill: bar.valueCzk >= 0 ? 'var(--success)' : 'var(--danger)',
   }));
   const yScale = niceTicks(
     Math.max(...bars.map((bar) => bar.valueCzk), 0),
@@ -314,7 +314,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
         title="Realizovaný zisk a ztráta po letech"
         desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}. Zelená = zisk, červená = ztráta.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
           {...axisProps}
@@ -323,9 +323,9 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
           domain={yScale.domain}
           ticks={yScale.ticks}
         />
-        <ReferenceLine y={0} stroke="var(--inkoust-tlumeny)" />
+        <ReferenceLine y={0} stroke="var(--ink-muted)" />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload?.[0] ? (
               <TooltipBox
@@ -334,7 +334,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
                   {
                     name: Number(payload[0].value) >= 0 ? 'Zisk' : 'Ztráta',
                     value: czkCompact(Number(payload[0].value)),
-                    color: Number(payload[0].value) >= 0 ? 'var(--zelena)' : 'var(--cervena)',
+                    color: Number(payload[0].value) >= 0 ? 'var(--success)' : 'var(--danger)',
                   },
                 ]}
               />
@@ -359,7 +359,7 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
         title="Poplatky brokerům po letech"
         desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
           {...axisProps}
@@ -369,7 +369,7 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
           ticks={yScale.ticks}
         />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload?.[0] ? (
               <TooltipBox
@@ -416,7 +416,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
             : `Podíl ${basisLabel} portfolia, který půjde prodat bez daně, v čase.`
         }
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis
           {...axisProps}
           type="number"
@@ -440,7 +440,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
                   {
                     name: `Bez daně (% ${basisLabel})`,
                     value: pct(Number(payload[0].value), 1),
-                    color: 'var(--zelena)',
+                    color: 'var(--success)',
                   },
                 ]}
               />
@@ -450,7 +450,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         <Line
           type="stepAfter"
           dataKey="exemptShare"
-          stroke="var(--zelena)"
+          stroke="var(--success)"
           strokeWidth={2}
           dot={false}
           activeDot={{ r: 4 }}
@@ -465,8 +465,8 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
 
 const RADIAN = Math.PI / 180;
 
-/** Rozšířená paleta pro koláč (--graf-5..8 zatím jen tady, série grafů dál 1–4). */
-const PIE_SERIES = [...SERIES, 'var(--graf-5)', 'var(--graf-6)', 'var(--graf-7)', 'var(--graf-8)'];
+/** Rozšířená paleta pro koláč (--chart-5..8 zatím jen tady, série grafů dál 1–4). */
+const PIE_SERIES = [...SERIES, 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)'];
 
 /** Přímý popisek výseče: ticker těsně za vnějším okrajem, jen pro podíl ≥ 3 %
     — inkoust na ploše karty drží kontrast v obou režimech. */
@@ -496,9 +496,9 @@ function pieSliceLabel(props: {
       y={cy + r * Math.sin(-midAngle * RADIAN)}
       textAnchor={x > cx ? 'start' : 'end'}
       dominantBaseline="central"
-      fill="var(--inkoust)"
+      fill="var(--ink)"
       fontSize={11}
-      fontFamily="var(--font-mono)"
+      fontFamily="var(--font-sans)"
     >
       {payload.label}
     </text>
@@ -506,7 +506,7 @@ function pieSliceLabel(props: {
 }
 
 export function AllocationPie({ allocation }: { allocation: PortfolioAllocation }) {
-  // Kategorické střídání --graf-1..8 podle pořadí (index mod 8) — barva jen
+  // Kategorické střídání --chart-1..8 podle pořadí (index mod 8) — barva jen
   // odděluje sousední výseče, identitu nese přímý popisek a tooltip. Paleta
   // validována dataviz skriptem vč. wrap-around páru 8↔1.
   const count = allocation.slices.length;
@@ -541,7 +541,7 @@ export function AllocationPie({ allocation }: { allocation: PortfolioAllocation 
               innerRadius="55%"
               outerRadius="85%"
               paddingAngle={0.5}
-              stroke="var(--plocha)"
+              stroke="var(--surface)"
               strokeWidth={2}
               isAnimationActive={false}
               label={pieSliceLabel}
@@ -574,13 +574,13 @@ export function AllocationPie({ allocation }: { allocation: PortfolioAllocation 
         </ResponsiveContainer>
         {/* uprostřed koláče celková hodnota — text nenese barvu série */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[10px] uppercase tracking-wide text-inkoust-tlumeny">celkem</span>
-          <span className="font-mono text-sm font-semibold text-inkoust">
+          <span className="text-[10px] uppercase tracking-wide text-ink-muted">celkem</span>
+          <span className="tabular-nums text-sm font-semibold text-ink">
             {czkCompact(allocation.totalCzk)}
           </span>
         </div>
       </div>
-      <p className="mt-2 text-xs text-inkoust-tlumeny">
+      <p className="mt-2 text-xs text-ink-muted">
         Barvy jen odlišují sousední výseče — pořadí je podle hodnoty. Pozice bez ceny od brokera v
         grafu nejsou.
       </p>

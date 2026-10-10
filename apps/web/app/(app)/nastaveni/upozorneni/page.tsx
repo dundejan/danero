@@ -39,7 +39,7 @@ function CheckOption({
         name={name}
         value={value}
         defaultChecked={defaultChecked}
-        className="h-4 w-4 accent-[var(--ruzova)]"
+        className="h-4 w-4 accent-[var(--accent)]"
       />
       {label}
     </label>
@@ -82,8 +82,8 @@ export default async function NotificationSettingsPage({
     <div className="max-w-4xl space-y-8">
       <header className="space-y-4">
         <div>
-          <h1 className="font-display text-3xl font-bold">Upozornění</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <h1 className="text-3xl font-bold">Upozornění</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Danero hlídá limity a časové testy každý den. Tady si řekneš, o čem ti má dát
             vědět e-mailem a jak často. V aplikaci upozornění uvidíš vždycky.
           </p>
@@ -102,7 +102,7 @@ export default async function NotificationSettingsPage({
             defaultChecked={prefs.emailEnabled}
             label="Posílat e-maily"
           />
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Hlavní vypínač. Vypnuté typy se po zapnutí nehromadí zpětně a každý e-mail má
             odhlašovací odkaz.
           </p>
@@ -129,7 +129,7 @@ export default async function NotificationSettingsPage({
               defaultChecked={rules.urgentImmediately}
               label="Naléhavé posílat hned, i mimo týdenní souhrn"
             />
-            <p className="text-xs text-inkoust-tlumeny">
+            <p className="text-xs text-ink-muted">
               Naléhavé = prolomený limit, osvobození do sedmi dní a blížící se termín
               přiznání. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po
               tom, co se staly.
@@ -245,8 +245,8 @@ export default async function NotificationSettingsPage({
 
         <Card className="space-y-2">
           <CardTitle>Co ti teď chodí</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">{summaryLine()}</p>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">{summaryLine()}</p>
+          <p className="text-xs text-ink-muted">
             Změny se ukládají automaticky. Upozornění se počítají z dat, která máš
             v Daneru — po napojení brokera nebo nahrání výpisu se projeví hned další den.
           </p>

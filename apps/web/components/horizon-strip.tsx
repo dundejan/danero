@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
 import { czDate, czkCompact, MONTH_LABELS, pct, plural, qty } from '@/lib/format';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { cn } from '@/lib/utils';
 
 /**
@@ -188,7 +189,7 @@ export function HorizonStrip({
   const basis = dots[0]?.weightBasis === 'value' ? 'celkové hodnoty' : 'celkového počtu kusů';
 
   const description = (
-    <p className="max-w-[62ch] text-xs text-inkoust-tlumeny">
+    <p className="type-footnote max-w-[62ch] text-ink-muted">
       {range === '1r'
         ? 'Každá tečka = den, kdy doběhne 3letý test dalším kusům'
         : 'Každá tečka = měsíc (aktuální měsíc po dnech), kdy doběhne 3letý test dalším kusům'}
@@ -199,25 +200,12 @@ export function HorizonStrip({
   );
 
   const rangeButtons = (
-    <div className="flex items-center gap-1" role="group" aria-label="Období horizontu">
-      {RANGES.map((preset) => (
-        <button
-          key={preset.key}
-          type="button"
-          onClick={() => setRange(preset.key)}
-          aria-pressed={range === preset.key}
-          // min-h-6 (24 px) = minimální dotykový cíl dle WCAG 2.2 SC 2.5.8;
-          // gap-1 mezi tlačítky na výjimku „spacing“ nestačí
-          className={`min-h-6 rounded-md px-2 py-1 font-mono text-xs ${
-            range === preset.key
-              ? 'bg-ruzova-syta font-semibold text-white'
-              : 'text-inkoust-tlumeny hover:text-inkoust'
-          }`}
-        >
-          {preset.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Období horizontu"
+      value={range}
+      onChange={(key) => setRange(key as RangeKey)}
+      segments={RANGES.map((preset) => ({ key: preset.key, label: preset.label }))}
+    />
   );
 
   // tooltip kotvíme v pixelech z geometrie tečky (bounding rect) vůči vnějšímu
@@ -258,7 +246,7 @@ export function HorizonStrip({
                 y1={AXIS_Y}
                 x2={X_MAX}
                 y2={AXIS_Y}
-                stroke="var(--linka)"
+                stroke="var(--line)"
                 strokeWidth="2"
               />
               {view.ticks.map((tick) => (
@@ -268,7 +256,7 @@ export function HorizonStrip({
                     y1={TICK_TOP}
                     x2={tick.x}
                     y2={TICK_BOTTOM}
-                    stroke="var(--linka)"
+                    stroke="var(--line)"
                     strokeWidth="1"
                   />
                   <text
@@ -276,7 +264,7 @@ export function HorizonStrip({
                     y={TICK_LABEL_Y}
                     textAnchor="middle"
                     fontSize="11"
-                    fill="var(--inkoust-tlumeny)"
+                    fill="var(--ink-muted)"
                     fontFamily="var(--font-plex-mono)"
                     fontWeight={tick.isYear ? 600 : 400}
                   >
@@ -291,14 +279,14 @@ export function HorizonStrip({
                 y1="12"
                 x2={view.todayX}
                 y2={OUTLOOK_BASE}
-                stroke="var(--ruzova)"
+                stroke="var(--accent)"
                 strokeWidth="1.5"
               />
               <text
                 x={view.todayX + 6}
                 y="22"
                 fontSize="12"
-                fill="var(--ruzova)"
+                fill="var(--accent)"
                 fontFamily="var(--font-plex-mono)"
               >
                 dnes
@@ -312,14 +300,14 @@ export function HorizonStrip({
                     y1={OUTLOOK_BASE}
                     x2={X_MAX}
                     y2={OUTLOOK_BASE}
-                    stroke="var(--linka)"
+                    stroke="var(--line)"
                     strokeWidth="1"
                   />
-                  <path d={view.outlookPath.area} fill="var(--graf-1)" fillOpacity="0.12" />
+                  <path d={view.outlookPath.area} fill="var(--chart-1)" fillOpacity="0.12" />
                   <path
                     d={view.outlookPath.line}
                     fill="none"
-                    stroke="var(--graf-1)"
+                    stroke="var(--chart-1)"
                     strokeWidth="1.5"
                     strokeOpacity="0.8"
                   />
@@ -332,7 +320,7 @@ export function HorizonStrip({
                     }
                     textAnchor="end"
                     fontSize="10"
-                    fill="var(--inkoust-tlumeny)"
+                    fill="var(--ink-muted)"
                     fontFamily="var(--font-plex-mono)"
                   >
                     {pct(view.outlookPath.endShare, 1)}
@@ -360,7 +348,7 @@ export function HorizonStrip({
                     cy={AXIS_Y}
                     r={r}
                     fillOpacity="0.9"
-                    stroke="var(--plocha)"
+                    stroke="var(--surface)"
                     strokeWidth="1.5"
                     tabIndex={0}
                     role="img"
@@ -369,9 +357,9 @@ export function HorizonStrip({
                       // dark:hover explicitně — samotný hover: by v dark prohrál s dark:fill
                       // viditelný focus ring: globální outline (:focus-visible) + růžový stroke,
                       // žádné focus:outline-none (a11y)
-                      'hover:fill-ruzova focus-visible:fill-ruzova focus-visible:stroke-ruzova dark:hover:fill-ruzova',
+                      'hover:fill-accent focus-visible:fill-accent focus-visible:stroke-accent dark:hover:fill-accent',
                       // v dark módu čekající tečky světlejší, ať nesplývají s plochou
-                      dot.isExempt ? 'fill-zelena' : 'fill-inkoust-tlumeny dark:fill-inkoust',
+                      dot.isExempt ? 'fill-success' : 'fill-ink-muted dark:fill-ink',
                     )}
                     style={{ animation: `dot-in 0.3s ease-out ${Math.min(index, 40) * 25}ms both` }}
                     onMouseEnter={showTip(dot)}
@@ -389,7 +377,7 @@ export function HorizonStrip({
         {fadeRight && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-r from-transparent to-plocha"
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-r from-transparent to-surface"
           />
         )}
 
@@ -397,16 +385,16 @@ export function HorizonStrip({
             ořízl); u krajů ho pixelový clamp drží uvnitř wrapperu */}
         {tip && (
           <div
-            className="pointer-events-none absolute z-10 max-w-[230px] -translate-x-1/2 -translate-y-full rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm"
+            className="pointer-events-none absolute z-10 max-w-[230px] -translate-x-1/2 -translate-y-full rounded-lg bg-surface px-3 py-2 text-xs shadow-floating dark:bg-control"
             style={{ left: `clamp(115px, ${tip.x}px, calc(100% - 115px))`, top: `${tip.y}px` }}
           >
-            <p className="font-semibold text-inkoust">
+            <p className="font-semibold text-ink">
               {dotLabel(tip.dot)} — celkem {totalText(tip.dot)}
             </p>
             {tip.dot.items.slice(0, TIP_MAX_ITEMS).map((item) => (
-              <p key={item.isin} className="flex items-center gap-2 font-mono text-inkoust-tlumeny">
+              <p key={item.isin} className="flex items-center gap-2 tabular-nums text-ink-muted">
                 <span className="truncate">{item.label}</span>
-                <span className="ml-auto whitespace-nowrap pl-2 text-inkoust">
+                <span className="ml-auto whitespace-nowrap pl-2 text-ink">
                   {tip.dot.weightBasis === 'value'
                     ? czkCompact(item.weight)
                     : `${qty(item.quantity)} ks`}
@@ -414,7 +402,7 @@ export function HorizonStrip({
               </p>
             ))}
             {tip.dot.items.length > TIP_MAX_ITEMS && (
-              <p className="text-inkoust-tlumeny">
+              <p className="text-ink-muted">
                 + {plural(tip.dot.items.length - TIP_MAX_ITEMS, 'další', 'další', 'dalších')}{' '}
                 {tip.dot.items.length - TIP_MAX_ITEMS}
               </p>
@@ -423,21 +411,21 @@ export function HorizonStrip({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-inkoust-tlumeny">
+      <div className="type-caption flex flex-wrap gap-x-5 gap-y-1 text-ink-muted">
         {hasExempt && (
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-full bg-zelena" /> osvobozené
+            <span className="inline-block size-2 rounded-full bg-success" /> osvobozené
           </span>
         )}
         {hasPending && (
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-full bg-inkoust-tlumeny dark:bg-inkoust" />{' '}
+            <span className="inline-block size-2 rounded-full bg-ink-muted dark:bg-ink" />{' '}
             čekající
           </span>
         )}
         {view.outlookPath && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4 rounded bg-graf-1" /> kumulativně bez daně
+            <span className="inline-block h-0.5 w-4 rounded bg-chart-1" /> kumulativně bez daně
             (spodní křivka)
           </span>
         )}
@@ -448,7 +436,7 @@ export function HorizonStrip({
   if (embedded) {
     return (
       <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           {description}
           {rangeButtons}
         </div>
@@ -458,11 +446,9 @@ export function HorizonStrip({
   }
 
   return (
-    <section className="rounded-lg border border-linka bg-plocha p-5">
+    <section>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-          Horizont osvobození
-        </h2>
+        <h2 className="type-title-2">Horizont osvobození</h2>
         {rangeButtons}
       </div>
       <div className="mt-1">{description}</div>

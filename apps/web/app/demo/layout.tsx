@@ -3,66 +3,72 @@ import { DemoNavRail, DemoNavTabBar } from '@/components/nav-rail';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 /**
- * Demo prohlídka (bez přihlášení, bez DB): stejný layout jako aplikace —
- * nav-rail + obsah — navrch výrazný banner a dole mini patička (návrat na
- * úvod, právní odkazy, přepínač vzhledu).
+ * Demo prohlídka (bez přihlášení, bez DB): stejná skořápka jako aplikace —
+ * postranní panel + obsahové okno. Navíc tichý pruh nad obsahem, který říká,
+ * že jde o ukázková data, a dole mini patička (návrat na úvod, právní odkazy,
+ * přepínač vzhledu).
  * Žádný requireUser; všechno uvnitř počítá čistý engine nad demo datasetem.
  */
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-dvh flex-col">
-      {/* a11y: skip-link jako v aplikaci — demo má navíc banner */}
+    <div className="flex min-h-dvh bg-surface">
+      {/* a11y: skip-link jako v aplikaci */}
       <a
         href="#obsah"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-plocha focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-inkoust focus:shadow-sm"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-floating"
       >
         Přeskočit na obsah
       </a>
-      {/* <header>, ne <div>: text banneru jinak leží mimo jakýkoli landmark
-          a čtečka ho v režimu procházení oblastí přeskočí (axe `region`,
-          moderate — pod prahem sady z 1. kola, viz audit H2-05a) */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ruzova/40 bg-ruzova/10 px-4 py-2.5 md:px-6">
-        <p className="text-sm">
-          <span className="font-semibold text-ruzova-text">Prohlížíš demo s ukázkovými daty</span>
-          <span className="text-inkoust-tlumeny"> — nic se neukládá.</span>
-        </p>
-        <Link
-          href="/registrace"
-          className="rounded-md bg-ruzova-syta px-4 py-1.5 text-sm font-semibold text-white hover:brightness-95"
-        >
-          Založit účet zdarma
-        </Link>
-      </header>
-      <div className="flex flex-1">
-        <DemoNavRail />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main id="obsah" className="flex-1 px-4 pt-8 md:px-6 lg:px-10">{children}</main>
-          {/* mini patička: demo je veřejná vstupní brána — návštěvník potřebuje
-              cestu zpět na ceník/FAQ i právní odkazy; pb-24 kryje mobilní tab bar */}
-          <footer className="mt-12 border-t border-linka px-4 pb-24 pt-4 text-xs text-inkoust-tlumeny md:px-6 md:pb-4 lg:px-10">
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-              <p className="flex flex-wrap gap-x-2 gap-y-1">
-                <Link href="/" className="font-medium hover:text-inkoust">
-                  ← Zpět na úvod
+      <DemoNavRail />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* <header>, ne <div>: text pruhu jinak leží mimo jakýkoli landmark
+            a čtečka ho v režimu procházení oblastí přeskočí (axe `region`).
+            Pruh neroluje s lištou — po odrolování zmizí a uvolní místo datům. */}
+        <header className="type-footnote flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 bg-canvas px-(--page-gutter) py-2.5 text-center">
+          <p>
+            <span className="font-semibold">Prohlížíš demo s ukázkovými daty</span>
+            <span className="text-ink-muted"> — nic se neukládá.</span>
+          </p>
+          <Link
+            href="/registrace"
+            className="-my-3 inline-flex min-h-11 items-center font-medium text-accent-text hover:underline"
+          >
+            Založit účet zdarma
+            <span aria-hidden className="ml-1">
+              ›
+            </span>
+          </Link>
+        </header>
+        <main id="obsah" className="min-w-0 flex-1 px-(--page-gutter) pt-(--page-top)">
+          {children}
+        </main>
+        {/* mini patička: demo je veřejná vstupní brána — návštěvník potřebuje
+            cestu zpět na úvod i právní odkazy; spodní okraj kryje spodní lištu */}
+        <footer className="type-caption mt-16 px-(--page-gutter) pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+1.5rem)] text-ink-muted md:pb-8">
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-line/70 pt-4">
+            <p className="flex flex-wrap items-center gap-x-4">
+              {[
+                { href: '/', label: 'Zpět na úvod' },
+                { href: '/podminky', label: 'Podmínky užití' },
+                { href: '/soukromi', label: 'Ochrana soukromí' },
+              ].map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="inline-flex min-h-11 items-center hover:text-ink md:min-h-0"
+                >
+                  {link.label}
                 </Link>
-                <span aria-hidden>·</span>
-                <Link href="/podminky" className="font-medium hover:text-inkoust">
-                  Podmínky užití
-                </Link>
-                <span aria-hidden>·</span>
-                <Link href="/soukromi" className="font-medium hover:text-inkoust">
-                  Ochrana soukromí
-                </Link>
-              </p>
-              {/* jediné místo přepínače vzhledu v demu — rail je jen navigace */}
-              <ThemeToggle />
-            </div>
-            <p className="mt-2">
-              Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství — za
-              daňové přiznání odpovídá poplatník.
+              ))}
             </p>
-          </footer>
-        </div>
+            {/* jediné místo přepínače vzhledu v demu — panel je jen navigace */}
+            <ThemeToggle />
+          </div>
+          <p className="mt-3 max-w-2xl">
+            Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství — za
+            daňové přiznání odpovídá poplatník.
+          </p>
+        </footer>
       </div>
       <DemoNavTabBar />
     </div>

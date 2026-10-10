@@ -42,14 +42,14 @@ export default async function VerifyEmailPage({
         <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
           <Logo className="text-lg" />
         </Link>
-        <h1 className="font-display text-3xl font-bold">
+        <h1 className="text-3xl font-bold">
           {error
             ? 'Odkaz už neplatí'
             : deliveryConfigured
               ? 'Potvrď svůj e-mail'
               : 'Ověřovací odkaz se neodeslal'}
         </h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
+        <p className="mt-2 text-sm text-ink-muted">
           {error ? (
             <>Ověřovací odkaz vypršel nebo už byl použitý. Nech si poslat nový.</>
           ) : !deliveryConfigured ? (
@@ -69,7 +69,7 @@ export default async function VerifyEmailPage({
 
       <ResendVerificationForm defaultEmail={email} deliveryConfigured={deliveryConfigured} />
 
-      <p className="text-xs leading-relaxed text-inkoust-tlumeny">
+      <p className="text-xs leading-relaxed text-ink-muted">
         {deliveryConfigured ? (
           <>
             Nepřišel? Zkontroluj spam. Potvrzení chceme proto, že na tuhle adresu ti budou chodit
@@ -83,8 +83,8 @@ export default async function VerifyEmailPage({
           </>
         )}
       </p>
-      <p className="text-sm text-inkoust-tlumeny">
-        <Link href="/prihlaseni" className="font-medium text-ruzova-text">
+      <p className="text-sm text-ink-muted">
+        <Link href="/prihlaseni" className="font-medium text-accent-text">
           Zpátky na přihlášení
         </Link>
       </p>

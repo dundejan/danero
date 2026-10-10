@@ -23,12 +23,12 @@ export function Hint({ label, children }: { label: string; children: React.React
         aria-controls={id}
         // cíl 24 × 24 px (SC 2.5.8); popisek nese, čeho se vysvětlivka týká
         aria-label={`Vysvětlení: ${label}`}
-        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-linka-ovladaci text-xs font-semibold text-inkoust-tlumeny hover:text-inkoust"
+        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line-control text-xs font-semibold text-ink-muted hover:text-ink"
       >
         ?
       </button>
       {open && (
-        <span id={id} className="mt-1 block text-xs font-normal text-inkoust-tlumeny">
+        <span id={id} className="mt-1 block text-xs font-normal text-ink-muted">
           {children}
         </span>
       )}

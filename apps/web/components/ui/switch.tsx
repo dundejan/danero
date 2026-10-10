@@ -23,12 +23,12 @@ export function Switch({ label, className, ...props }: SwitchProps) {
       <span
         aria-hidden="true"
         className={cn(
-          'relative h-6 w-11 shrink-0 rounded-full border border-linka-ovladaci bg-plocha transition-colors',
+          'relative h-6 w-11 shrink-0 rounded-full border border-line-control bg-surface transition-colors',
           'after:absolute after:left-0.5 after:top-1/2 after:h-4.5 after:w-4.5 after:-translate-y-1/2',
-          'after:rounded-full after:bg-inkoust-tlumeny after:transition-transform',
-          'peer-checked:border-ruzova-syta peer-checked:bg-ruzova-syta',
+          'after:rounded-full after:bg-ink-muted after:transition-transform',
+          'peer-checked:border-accent-fill peer-checked:bg-accent-fill',
           'peer-checked:after:translate-x-5 peer-checked:after:bg-white',
-          'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ruzova',
+          'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
         )}
       />
       {label != null && <span>{label}</span>}

@@ -41,10 +41,10 @@ export default async function SettingsPage({
           {/* nadpis pojmenovává SEKCI, ne celé nastavení: /nastaveni je první
               ze tří záložek a „Nastavení“ nahoře nad aktivní záložkou
               „Daň a výpočet“ vypadalo, že se stránka nepřepnula */}
-          <h1 className="font-display text-3xl font-bold">
+          <h1 className="text-3xl font-bold">
             {profile ? 'Daň a výpočet' : 'Nastav svůj daňový profil'}
           </h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <p className="mt-1 text-sm text-ink-muted">
             Profil určuje, které limity Danero hlídá a jak počítá. Vše jde kdykoli změnit —
             výpočty se přepočítají od nuly.
             {profile && ' Změny se ukládají automaticky.'}
@@ -113,11 +113,11 @@ export default async function SettingsPage({
               vysvětlení přepsal verdikt loňského roku. Věta stojí POD dvojicí
               polí, ne pod tím svým: mřížka má `items-end` a text pod jedním
               polem by ho vystrčil o řádek výš než sousední. */}
-          <p id="rezim-napoveda" className="text-xs text-inkoust-tlumeny">
+          <p id="rezim-napoveda" className="text-xs text-ink-muted">
             Podle režimu Danero pozná, který limit ti hlídat a kdy ti říct, že přiznání podávat
             nemusíš. Z výpisů se zjistit nedá, proto se na něj ptáme.
           </p>
-          <p id="ostatni-prijmy-napoveda" className="text-xs text-inkoust-tlumeny">
+          <p id="ostatni-prijmy-napoveda" className="text-xs text-ink-muted">
             Částka dalších příjmů platí pro všechny roky naráz — Danero ji přičte ke každému
             roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za
             minulé roky (třeba jestli za ně podáváš přiznání).
@@ -127,7 +127,7 @@ export default async function SettingsPage({
               type="checkbox"
               name="obchodni-majetek"
               defaultChecked={profile?.hasBusinessAssets ?? false}
-              className="h-4 w-4 accent-[var(--ruzova)]"
+              className="h-4 w-4 accent-[var(--accent)]"
             />
             Cenné papíry mám v obchodním majetku (ruší osvobození — netypické)
           </label>
@@ -150,7 +150,7 @@ export default async function SettingsPage({
                 <option value="MAX_PROFIT">Max. zisk — nejlevnější kusy první</option>
                 <option value="MAX_LOSS">Max. ztráta — nejdražší kusy první</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Které kusy se prodejem spotřebují dřív — mění zisk i to, jestli prodané
                 kusy splnily tříletý test.
               </p>
@@ -163,7 +163,7 @@ export default async function SettingsPage({
                 <option value="UNIFIED">Jednotný kurz GFŘ</option>
                 <option value="CNB_DAILY">Denní kurzy ČNB</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 V jednom roce platí jedna soustava — kombinovat je nelze. Rozdíl mezi
                 nimi bývají i desítky tisíc korun, report ti ukáže obě varianty.
               </p>
@@ -178,7 +178,7 @@ export default async function SettingsPage({
                 <option value="strict">Bezpečný výklad — všechny prodeje (doporučeno)</option>
                 <option value="lenient">Mírnější výklad — jen prodeje bez časového testu (sporné)</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Zákon jednoznačný není; finanční správa se kloní k přísnějšímu čtení.
                 Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.
               </p>
@@ -195,7 +195,7 @@ export default async function SettingsPage({
                 <option value="settlement">Datum vypořádání (dle pokynu D-59)</option>
                 <option value="trade">Datum obchodu</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Od kterého data se počítají 3 roky držení.
               </p>
             </div>
@@ -211,7 +211,7 @@ export default async function SettingsPage({
                 <option value="restrictive">Bezpečný výklad — neuplatnit jako výdaj (doporučeno)</option>
                 <option value="perType">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Když koupená opce vyprší bezcenná, oficiální výklad chybí. Mírnější čtení
                 (výdaje se posuzují za celý druh příjmů) prémii uplatní proti ostatním
                 derivátovým ziskům roku — sníží daň, ale neseš riziko doměrku.
@@ -229,7 +229,7 @@ export default async function SettingsPage({
                 <option value="safe">Bezpečný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
                 <option value="lenient">Mírnější výklad — po 3 letech držení bez daně i stablecoiny (sporné)</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Stablecoiny (USDT, USDC…) zákon vylučuje z osvobození do 100 000 Kč — jejich
                 prodej se daní vždy. Zda pro ně platí aspoň tříleté osvobození, jasné není;
                 mírnější čtení má oporu v textu zákona, ale neseš riziko doměrku.
@@ -245,14 +245,14 @@ export default async function SettingsPage({
                 <option value="safe">Bezpečný výklad — zdanit jako dividendu (doporučeno)</option>
                 <option value="lenient">Mírnější výklad — snížit nabývací cenu držených kusů (sporné)</option>
               </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
+              <p className="mt-1 text-xs text-ink-muted">
                 Některé fondy a REITy vracejí část vloženého kapitálu (broker to hlásí jako
                 „Return of capital“). Není to podíl na zisku, takže věcně jen snižuje
                 nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních
                 fondů neřeší. Bezpečný výklad daní hned a čerpá limit 50 000 Kč.
                 Volba se týká jen výplat, které jsou ve výpisu takhle označené. Příznak
                 čteme z výpisů Trading 212 a Interactive Brokers a jde vyplnit i ručně
-                ve sloupci <span className="font-mono">return_of_capital</span> univerzální
+                ve sloupci <span className="tabular-nums">return_of_capital</span> univerzální
                 šablony. U výpisů nahraných před 12. 8. 2026 v datech chybí, takže je
                 potřeba ve Zdrojích dat vrátit import zpět a výpis nahrát znovu.
               </p>
@@ -262,7 +262,7 @@ export default async function SettingsPage({
                 s CFD, a oporu v zákoně nemá. Vysvětlení, jak se short daní, nese
                 karta „Prodeje nakrátko“ v reportu. */}
           </div>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se
             tiskne do každého reportu. Párování prodejů, měnové kurzy a výklad limitu
             100 000 Kč se u každého skončeného roku zafixují ve chvíli, kdy si za něj
@@ -285,50 +285,50 @@ export default async function SettingsPage({
         <Card className="space-y-3" id="fixace">
           <CardTitle>Zafixované daňové roky</CardTitle>
           {pinnedYears.length === 0 ? (
-            <p className="text-sm text-inkoust-tlumeny">
+            <p className="text-sm text-ink-muted">
               Zatím žádný. Jakmile si za skončený rok vygeneruješ podklady k přiznání,
               zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho
               nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.
             </p>
           ) : (
             <>
-              <p className="text-sm text-inkoust-tlumeny">
+              <p className="text-sm text-ink-muted">
                 Za tyhle roky sis už vygeneroval podklady, takže se počítají pořád
                 stejně — i když nahoře vybereš něco jiného.
               </p>
               <ul className="space-y-3">
                 {pinnedYears.map((pinned) => (
-                  <li key={pinned.taxYear} className="border-t border-linka pt-3 first:border-0 first:pt-0">
+                  <li key={pinned.taxYear} className="border-t border-line pt-3 first:border-0 first:pt-0">
                     <p className="text-sm font-semibold">
                       {pinned.taxYear}{' '}
-                      <span className="font-normal text-inkoust-tlumeny">
+                      <span className="font-normal text-ink-muted">
                         (zafixováno {czDateTime(pinned.pinnedAt)})
                       </span>
                     </p>
-                    <ul className="mt-1 space-y-0.5 text-sm text-inkoust-tlumeny">
+                    <ul className="mt-1 space-y-0.5 text-sm text-ink-muted">
                       <li>
                         Párování prodejů:{' '}
-                        <span className="text-inkoust">
+                        <span className="text-ink">
                           {METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod}
                         </span>
                       </li>
                       <li>
                         Měnové kurzy:{' '}
-                        <span className="text-inkoust">
+                        <span className="text-ink">
                           {FX_METHOD_LABEL[pinned.fxMethod] ?? pinned.fxMethod}
                         </span>
                       </li>
                       <li>
                         Limit 100 000 Kč:{' '}
-                        <span className="text-inkoust">{limit100kLabel(pinned.limit100kStrict)}</span>
+                        <span className="text-ink">{limit100kLabel(pinned.limit100kStrict)}</span>
                       </li>
                     </ul>
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-sm text-inkoust-tlumeny hover:text-inkoust">
+                      <summary className="cursor-pointer text-sm text-ink-muted hover:text-ink">
                         Zrušit fixaci roku {pinned.taxYear}
                       </summary>
                       <div className="mt-2 space-y-2">
-                        <p className="text-xs text-inkoust-tlumeny">
+                        <p className="text-xs text-ink-muted">
                           Rok {pinned.taxYear} se pak přepočítá podle nastavení výš (
                           {METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod},{' '}
                           {FX_METHOD_LABEL[profile.fxMethod] ?? profile.fxMethod},{' '}

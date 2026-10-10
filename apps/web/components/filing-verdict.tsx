@@ -86,11 +86,11 @@ export function ReportFilingVerdict({
 }) {
   const { status, label } = limit;
   return (
-    <Card className="space-y-1 border-l-4 border-l-ruzova">
-      <p className="font-display text-xl font-bold">
+    <Card className="space-y-1 border-l-4 border-l-accent">
+      <p className="text-xl font-bold">
         {filingVerdictHeadline({ year, exceeded: status.exceeded })}
       </p>
-      <p className="text-sm text-inkoust-tlumeny">
+      <p className="text-sm text-ink-muted">
         {status.exceeded ? (
           <>
             Soudíme podle příjmů, které Danero eviduje (nahrané výpisy a údaje z Nastavení):{' '}

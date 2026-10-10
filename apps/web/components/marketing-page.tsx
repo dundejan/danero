@@ -5,6 +5,18 @@ import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
 import { currentUser } from '@/lib/session';
 import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+/**
+ * Jednotný kontejner veřejných stránek: stejná šířka i okraje pro hlavičku,
+ * obsah a patičku, takže logo, text a patička drží jednu svislou osu.
+ */
+export const CONTAINER = 'mx-auto w-full max-w-[70rem] px-5 md:px-8';
+
+/** Odkaz v patičce: na dotyku 44 px vysoký cíl, s myší běžný řádek. */
+const FOOTER_LINK =
+  'inline-flex min-h-11 items-center hover:text-ink md:min-h-0 md:py-1';
 
 /**
  * Jednotný shell veřejných (marketingových) stránek: sticky hlavička s plnou
@@ -17,19 +29,25 @@ export async function MarketingHeader({ active }: { active?: MarketingNavKey }) 
   // zůstávají přístupné oběma, mění se jen akce účtu. currentUser() sahá na DB
   // jen když je přítomná session cookie, takže anonymní provoz nic nestojí.
   const user = await currentUser();
-  // bez backdrop-blur: filter by z headeru udělal containing block pro fixed
-  // scrim mobilního menu (nulová výška) — plné pozadí je i čitelnější
+  // Materiál lišty leží ve VLASTNÍ vrstvě pod obsahem, ne na <header>:
+  // backdrop-filter dělá z prvku kontejner pro `position: fixed`, takže by
+  // scrim mobilního menu (potomek hlavičky) měl nulovou výšku.
   return (
-    <header className="sticky top-0 z-40 border-b border-linka/60 bg-pozadi">
+    <header className="sticky top-0 z-40 pt-[env(safe-area-inset-top,0px)]">
+      <div aria-hidden className="material-bar scroll-edge absolute inset-0 -z-10" />
       <a
         href="#obsah"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-plocha focus:px-4 focus:py-2 focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-floating"
       >
         Přeskočit na obsah
       </a>
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link href="/" aria-label="Danero — úvodní stránka">
-          <Logo className="text-lg" />
+      <div className={cn(CONTAINER, 'flex h-12 items-center justify-between')}>
+        <Link
+          href="/"
+          aria-label="Danero — úvodní stránka"
+          className="-my-2 flex min-h-11 items-center"
+        >
+          <Logo className="text-[1.0625rem]" />
         </Link>
         <MarketingNav active={active} signedIn={Boolean(user)} />
       </div>
@@ -37,7 +55,11 @@ export async function MarketingHeader({ active }: { active?: MarketingNavKey }) 
   );
 }
 
-/** Hlavička podstránky: jednotný vzor eyebrow → H1 → perex (landing má hero vlastní). */
+/**
+ * Hlavička podstránky: tichý řádek s názvem sekce → H1 → perex. Řádek nad
+ * titulkem je běžná věta v šedé, ne verzálkový štítek (úvodní stránka má
+ * hlavičku vlastní).
+ */
 export function PageHero({
   eyebrow,
   title,
@@ -48,19 +70,21 @@ export function PageHero({
   lede?: string;
 }) {
   return (
-    <div className="pt-12 md:pt-16">
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
-        {eyebrow}
-      </p>
-      <h1 className="mt-3 max-w-3xl text-balance font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
+    <div className="pt-14 md:pt-20">
+      <p className="type-callout font-medium text-ink-muted">{eyebrow}</p>
+      <h1 className="type-title-1 mt-2 max-w-[22ch] text-balance md:text-[3rem] md:leading-[1.07] md:tracking-[-0.028em]">
         {title}
       </h1>
-      {lede && <p className="mt-5 max-w-2xl text-lg text-inkoust-tlumeny">{lede}</p>}
+      {lede && <p className="type-lede mt-5 max-w-[54ch] text-pretty text-ink-muted">{lede}</p>}
     </div>
   );
 }
 
-/** Závěrečné CTA — stejný blok na landingu i podstránkách. */
+/**
+ * Závěrečná výzva — stejný blok na úvodní stránce i podstránkách. Bez rámečku
+ * a bez tónované plochy: odděluje ji vzduch a vlásová linka, jediná sytá
+ * barva je na hlavním tlačítku.
+ */
 export async function MarketingCta({
   title,
   lede,
@@ -75,51 +99,29 @@ export async function MarketingCta({
   // slepá ulička — registrace ho jen pošle zpátky. Demo na cizích datech taky
   // ne, když má vlastní.
   const user = await currentUser();
-  if (user) {
-    return (
-      <section className="mt-24 lg:mt-32">
-        <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
-          <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            {title}
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
-            Účet už máš — stačí se do něj vrátit.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/prehled"
-              className="inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95"
-            >
-              Přejít do aplikace
-            </Link>
-          </div>
-        </div>
-      </section>
-    );
-  }
-  const demoClass =
-    primary === 'demo'
-      ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
-  const registerClass =
-    primary === 'registrace'
-      ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
+  const filled = buttonVariants({ variant: 'primary', size: 'lg' });
+  const quiet = buttonVariants({ variant: 'secondary', size: 'lg' });
   return (
-    <section className="mt-24 lg:mt-32">
-      <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
-        <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
-          {title}
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">{lede}</p>
-        <div className="mt-8 flex flex-wrap justify-center gap-4">
-          <Link href="/demo/prehled" className={demoClass}>
-            Vyzkoušet demo — bez registrace
+    <section className="mt-28 border-t border-line/70 pt-20 text-center md:mt-36 md:pt-24">
+      <h2 className="type-title-1 mx-auto max-w-[20ch] text-balance">{title}</h2>
+      <p className="type-lede mx-auto mt-4 max-w-[46ch] text-pretty text-ink-muted">
+        {user ? 'Účet už máš — stačí se do něj vrátit.' : lede}
+      </p>
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
+        {user ? (
+          <Link href="/prehled" className={filled}>
+            Přejít do aplikace
           </Link>
-          <Link href="/registrace" className={registerClass}>
-            Založit účet zdarma
-          </Link>
-        </div>
+        ) : (
+          <>
+            <Link href="/demo/prehled" className={primary === 'demo' ? filled : quiet}>
+              Vyzkoušet demo — bez registrace
+            </Link>
+            <Link href="/registrace" className={primary === 'registrace' ? filled : quiet}>
+              Založit účet zdarma
+            </Link>
+          </>
+        )}
       </div>
     </section>
   );
@@ -142,11 +144,11 @@ export async function MarketingCta({
 export async function MarketingFooter() {
   await connection();
   return (
-    <footer className="mt-24 border-t border-linka">
-      <div className="mx-auto max-w-6xl px-6 py-10 text-sm text-inkoust-tlumeny">
-        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-md space-y-3">
-            <Logo className="text-base text-inkoust" />
+    <footer className="mt-28 bg-canvas md:mt-36">
+      <div className={cn(CONTAINER, 'type-caption py-10 text-ink-muted')}>
+        <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-xs space-y-3">
+            <Logo className="text-[0.9375rem] text-ink" />
             <p>
               Danero hlídá českým investorům daně z investic — limity, časové testy
               i podklady k přiznání.
@@ -154,66 +156,66 @@ export async function MarketingFooter() {
           </div>
           <div className="flex flex-wrap gap-x-16 gap-y-8">
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+              <p className="font-semibold text-ink">
                 Danero
               </p>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-2">
                 <li>
-                  <Link href="/platformy" className="font-medium hover:text-inkoust">
+                  <Link href="/platformy" className={FOOTER_LINK}>
                     Platformy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
+                  <Link href="/kalkulacka" className={FOOTER_LINK}>
                     Kalkulačka
                   </Link>
                 </li>
                 <li>
-                  <Link href="/pruvodce" className="font-medium hover:text-inkoust">
+                  <Link href="/pruvodce" className={FOOTER_LINK}>
                     Průvodce
                   </Link>
                 </li>
                 <li>
-                  <Link href="/cenik" className="font-medium hover:text-inkoust">
+                  <Link href="/cenik" className={FOOTER_LINK}>
                     Ceník
                   </Link>
                 </li>
                 <li>
-                  <Link href="/demo/prehled" className="font-medium hover:text-inkoust">
+                  <Link href="/demo/prehled" className={FOOTER_LINK}>
                     Demo
                   </Link>
                 </li>
                 <li>
-                  <Link href="/caste-otazky" className="font-medium hover:text-inkoust">
+                  <Link href="/caste-otazky" className={FOOTER_LINK}>
                     Časté otázky
                   </Link>
                 </li>
                 <li>
-                  <Link href="/jak-pocitame" className="font-medium hover:text-inkoust">
+                  <Link href="/jak-pocitame" className={FOOTER_LINK}>
                     Jak počítáme
                   </Link>
                 </li>
                 <li>
-                  <Link href="/bezpecnost" className="font-medium hover:text-inkoust">
+                  <Link href="/bezpecnost" className={FOOTER_LINK}>
                     Bezpečnost
                   </Link>
                 </li>
               </ul>
             </div>
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+              <p className="font-semibold text-ink">
                 Autor
               </p>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-2">
                 <li>
-                  <Link href="/o-projektu" className="font-medium hover:text-inkoust">
+                  <Link href="/o-projektu" className={FOOTER_LINK}>
                     O projektu
                   </Link>
                 </li>
                 <li>
                   <a
                     href="https://jandunder.dev"
-                    className="font-medium hover:text-inkoust"
+                    className={FOOTER_LINK}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -223,7 +225,7 @@ export async function MarketingFooter() {
                 <li>
                   <a
                     href={SOURCE_URL}
-                    className="font-medium hover:text-inkoust"
+                    className={FOOTER_LINK}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -233,7 +235,7 @@ export async function MarketingFooter() {
                 <li>
                   <a
                     href="https://www.linkedin.com/in/jan-dunder"
-                    className="font-medium hover:text-inkoust"
+                    className={FOOTER_LINK}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -247,7 +249,7 @@ export async function MarketingFooter() {
                 <li>
                   <a
                     href={`mailto:${OPERATOR.email}`}
-                    className="font-medium hover:text-inkoust"
+                    className={FOOTER_LINK}
                   >
                     {OPERATOR.email}
                   </a>
@@ -262,7 +264,7 @@ export async function MarketingFooter() {
             </div>
           </div>
         </div>
-        <div className="mt-8 space-y-3 border-t border-linka pt-6">
+        <div className="mt-8 space-y-3 border-t border-line pt-6 pb-[env(safe-area-inset-bottom,0px)]">
           <p>
             Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
             č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
@@ -272,11 +274,11 @@ export async function MarketingFooter() {
               Zákon ho nevyžaduje, byla to pojistka — provozovatel ji vědomě
               vypustil. Nevracej ji jen proto, že ji další audit navrhne znovu. */}
           <p>
-            <Link href="/podminky" className="font-medium hover:text-inkoust">
+            <Link href="/podminky" className={FOOTER_LINK}>
               Podmínky užití
             </Link>{' '}
             ·{' '}
-            <Link href="/soukromi" className="font-medium hover:text-inkoust">
+            <Link href="/soukromi" className={FOOTER_LINK}>
               Ochrana soukromí
             </Link>
           </p>
@@ -295,9 +297,11 @@ export function MarketingPage({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-svh flex-col bg-surface">
       <MarketingHeader active={active} />
-      <main id="obsah" className="mx-auto w-full max-w-6xl flex-1 px-6">{children}</main>
+      <main id="obsah" className={cn(CONTAINER, 'flex-1')}>
+        {children}
+      </main>
       <MarketingFooter />
     </div>
   );

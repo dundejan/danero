@@ -27,11 +27,11 @@ export default function CasteOtazkyPage() {
         <FaqList items={FAQ} />
       </div>
 
-      <p className="mt-8 max-w-3xl text-sm text-inkoust-tlumeny">
+      <p className="mt-8 max-w-3xl text-sm text-ink-muted">
         Otázky přímo k ceně najdeš na stránce{' '}
         <Link
           href="/cenik"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           Ceník
         </Link>

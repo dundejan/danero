@@ -153,8 +153,8 @@ export function SimulatorView({
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
-        <h1 className="font-display text-3xl font-bold">Simulátor prodeje</h1>
-        <p className="mt-1 text-sm text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Simulátor prodeje</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Co udělá zamýšlený prodej s tvými limity a daní — ještě před obchodem, rok {year}.
         </p>
       </header>
@@ -207,7 +207,7 @@ export function SimulatorView({
               />
               {/* měnu instrumentu známe z pozice — uživatel nemusí hádat */}
               {selected && (
-                <span className="shrink-0 font-mono text-sm text-inkoust-tlumeny">
+                <span className="shrink-0 tabular-nums text-sm text-ink-muted">
                   {selected.currency}
                 </span>
               )}
@@ -216,7 +216,7 @@ export function SimulatorView({
           <Button type="submit">Spočítat dopad</Button>
         </form>
         {prefillPrice && (
-          <p className="mt-3 text-xs text-inkoust-tlumeny">
+          <p className="mt-3 text-xs text-ink-muted">
             Předvyplnili jsme poslední známou cenu — uprav podle trhu a spočítej dopad.
           </p>
         )}
@@ -231,14 +231,14 @@ export function SimulatorView({
       {!simulation && (
         <Card className="space-y-3">
           <CardTitle>Co dostaneš</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Vyber pozici a zadej cenu — Danero ještě před obchodem spočítá verdikt, rozpad tržby a
             dopad na limity i orientační daň. Třeba takhle:
           </p>
           <div aria-hidden className="select-none space-y-4 pt-1">
             {/* plný token místo /60: průhlednost dávala 2,65:1 (light) a
-                3,09:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
-            <p className="text-lg font-semibold text-inkoust-tlumeny">
+                3,09:1 (dark) proti --surface, plný drží 6,42 / 6,12:1 */}
+            <p className="text-lg font-semibold text-ink-muted">
               „Prodej je celý osvobozený — limity ani daň nečerpá.“
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -248,15 +248,15 @@ export function SimulatorView({
                 'Orientační daň',
               ].map(
                 (label) => (
-                  <div key={label} className="rounded-lg border border-dashed border-linka p-4">
+                  <div key={label} className="rounded-lg border border-dashed border-line p-4">
                     {/* plný token místo /70: průhlednost dávala 3,23:1 (light)
-                        a 3,72:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
-                    <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
+                        a 3,72:1 (dark) proti --surface, plný drží 6,42 / 6,12:1 */}
+                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       {keepCurrencyCase(label)}
                     </p>
-                    <div className="mt-3 h-5 w-24 rounded bg-linka/60" />
-                    <div className="mt-2 h-3 w-16 rounded bg-linka/40" />
-                    <div className="mt-3 h-1.5 w-full rounded-full bg-linka/40" />
+                    <div className="mt-3 h-5 w-24 rounded bg-line/60" />
+                    <div className="mt-2 h-3 w-16 rounded bg-line/40" />
+                    <div className="mt-3 h-1.5 w-full rounded-full bg-line/40" />
                   </div>
                 ),
               )}
@@ -270,13 +270,13 @@ export function SimulatorView({
           <Card className="space-y-2">
             <CardTitle>Verdikt</CardTitle>
             <VerdictLine verdict={simulatorVerdict(simulation, regimeLimit)} />
-            <p className="text-sm text-inkoust-tlumeny">
+            <p className="text-sm text-ink-muted">
               Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
-              <span className="font-mono text-zelena-text">
+              <span className="tabular-nums text-success-text">
                 {czk(simulation.simulatedDisposal?.exemptProceedsCzk ?? 0)}
               </span>{' '}
               a zdanitelných{' '}
-              <span className="font-mono text-cervena">
+              <span className="tabular-nums text-danger">
                 {czk(simulation.simulatedDisposal?.taxableProceedsCzk ?? 0)}
               </span>
               . Párování metodou{' '}
@@ -319,8 +319,8 @@ export function SimulatorView({
                    „0 / 100 000“ by tvrdila, že je co čerpat */
                 <Card className="space-y-2">
                   <CardTitle>Prodeje krypta ({year})</CardTitle>
-                  <p className="text-sm font-semibold text-cervena">osvobození neexistuje</p>
-                  <p className="text-xs text-inkoust-tlumeny">
+                  <p className="text-sm font-semibold text-danger">osvobození neexistuje</p>
+                  <p className="text-xs text-ink-muted">
                     Limit 100 000 Kč ani tříletý test pro kryptoaktiva za rok {year} neplatí
                     (zavedl je až zákon č. 32/2025 Sb. od 15. 2. 2025) — tenhle prodej se zdaní
                     celý a naplno čerpá limit paušální daně.
@@ -355,9 +355,9 @@ export function SimulatorView({
             />
           )}
 
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             Simulace počítá s prodejem k dnešnímu dni za zadanou cenu.{' '}
-            <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
+            <Link href={`${basePath}/report`} className="font-medium text-accent-text">
               Detailní rozpad najdeš v reportu
             </Link>
             .
@@ -377,13 +377,13 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
   switch (verdict.kind) {
     case 'EXEMPT_CLEAN':
       return (
-        <p className="text-lg font-semibold text-zelena-text">
+        <p className="text-lg font-semibold text-success-text">
           Prodej je celý osvobozený — limity ani daň nečerpá.
         </p>
       );
     case 'EXEMPT_BREAKS_100K':
       return (
-        <p className="text-lg font-semibold text-cervena">
+        <p className="text-lg font-semibold text-danger">
           Prodej je osvobozený časovým testem, ale prolomí úhrn 100 000 Kč
           {verdict.crypto ? ' pro kryptoaktiva' : ''} — zpětně zdaní dřívější letošní prodeje
           {verdict.taxDeltaCzk.gt(0) ? ` (daň +${czk(verdict.taxDeltaCzk)})` : ''}.
@@ -391,7 +391,7 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
       );
     case 'EXEMPT_DRAWS_LIMIT':
       return (
-        <p className="text-lg font-semibold text-jantar-text">
+        <p className="text-lg font-semibold text-caution-text">
           {verdict.taxDeltaCzk.gt(0)
             ? `Prodej je osvobozený, ale celková daň se zvýší o ${czk(verdict.taxDeltaCzk)} — dopad níže.`
             : `Prodej je osvobozený a daň nezvýší, ale čerpá roční limit 100 000 Kč${verdict.crypto ? ' pro kryptoaktiva' : ''} — hlídej zbývající prostor níže.`}
@@ -399,7 +399,7 @@ function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
       );
     case 'BREAKS_REGIME_LIMIT':
       return (
-        <p className="text-lg font-semibold text-cervena">
+        <p className="text-lg font-semibold text-danger">
           Tento prodej prolomí {regimeLimitPhrase(verdict.limit)}.
         </p>
       );
@@ -451,7 +451,7 @@ function PayableTaxNote({
     ? `orientačně ${czk(hypotheticalTaxCzk)}`
     : 'i když z nich daň vyjde nulová';
   return (
-    <p className="text-sm text-inkoust-tlumeny">
+    <p className="text-sm text-ink-muted">
       {!breaks ? (
         <>
           Pod limitem {czk(limit.limitCzk)} přiznání nepodáváš, takže orientační daň výš
@@ -501,10 +501,10 @@ function DeltaCard({
 }) {
   const delta = afterCzk.minus(beforeCzk);
   const badge = delta.gt(0)
-    ? { text: `↑ +${czk(delta)}`, tone: 'bg-cervena/10 text-cervena' }
+    ? { text: `↑ +${czk(delta)}`, tone: 'bg-danger/10 text-danger' }
     : delta.lt(0)
-      ? { text: `↓ ${czk(delta)}`, tone: 'bg-zelena/10 text-zelena-text' }
-      : { text: '→ beze změny', tone: 'bg-linka/50 text-inkoust-tlumeny' };
+      ? { text: `↓ ${czk(delta)}`, tone: 'bg-success/10 text-success-text' }
+      : { text: '→ beze změny', tone: 'bg-line/50 text-ink-muted' };
   const bars =
     limitCzk?.gt(0) &&
     ([
@@ -519,37 +519,36 @@ function DeltaCard({
       <div>
         {/* H-3-02: milionová částka se do třetiny gridu na mobilu nevejde jako
             nezlomitelný token — na úzkém displeji proto o stupeň menší písmo */}
-        <p className={cn('font-mono text-base font-semibold sm:text-lg', exceeded && 'text-cervena')}>
+        <p className={cn('tabular-nums text-base font-semibold sm:text-lg', exceeded && 'text-danger')}>
           {czk(afterCzk)}
         </p>
         <span
           className={cn(
-            'mt-1 inline-block rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold',
+            'mt-1 inline-block rounded-md px-1.5 py-0.5 tabular-nums text-xs font-semibold',
             badge.tone,
           )}
         >
           {badge.text}
         </span>
       </div>
-      <p className="text-xs text-inkoust-tlumeny">
-        před prodejem: <span className="font-mono">{czk(beforeCzk)}</span>
+      <p className="text-xs text-ink-muted">
+        před prodejem: <span className="tabular-nums">{czk(beforeCzk)}</span>
       </p>
       {bars && (
         <div className="space-y-1.5 pt-1">
           {bars.map(([name, ratio]) => (
             <div key={name} className="flex items-center gap-2">
-              <span className="w-8 shrink-0 font-mono text-[10px] text-inkoust-tlumeny">
+              <span className="w-8 shrink-0 tabular-nums text-[10px] text-ink-muted">
                 {name}
               </span>
               <LimitBar
                 ratio={ratio}
                 zone={zoneForRatio(ratio)}
-                animate={false}
                 className="h-1.5"
               />
             </div>
           ))}
-          <p className="font-mono text-[10px] text-inkoust-tlumeny">
+          <p className="tabular-nums text-[10px] text-ink-muted">
             čerpání {pct(bars[0][1])} → {pct(bars[1][1])}
           </p>
         </div>
@@ -582,14 +581,14 @@ function SaleWaterfall({
   const isLoss = taxable - expense < 0;
 
   const rows: Array<{ label: string; from: number; to: number; color: string; value: number }> = [
-    { label: 'Tržba', from: 0, to: gross, color: 'var(--graf-1)', value: gross },
+    { label: 'Tržba', from: 0, to: gross, color: 'var(--chart-1)', value: gross },
     ...(exempt > 0
       ? [
           {
             label: 'Osvobozeno',
             from: gross - exempt,
             to: gross,
-            color: 'var(--zelena)',
+            color: 'var(--success)',
             value: exempt,
           },
         ]
@@ -598,14 +597,14 @@ function SaleWaterfall({
       label: 'Výdaj',
       from: base,
       to: Math.min(base + expense, Math.max(taxable, base)),
-      color: 'var(--inkoust-tlumeny)',
+      color: 'var(--ink-muted)',
       value: expense,
     },
-    { label: 'Základ', from: 0, to: base, color: 'var(--graf-2)', value: base },
+    { label: 'Základ', from: 0, to: base, color: 'var(--chart-2)', value: base },
     // strop na tržbu: delta daně zahrnuje celoroční dopad (může ovlivnit
     // i zdanění ostatních letošních prodejů) a mohla by přetéct škálu —
     // bar se zastaví na 100 %, přesnou hodnotu nese číslo vpravo
-    { label: 'Daň', from: 0, to: Math.min(tax, gross), color: 'var(--cervena)', value: tax },
+    { label: 'Daň', from: 0, to: Math.min(tax, gross), color: 'var(--danger)', value: tax },
   ];
 
   return (
@@ -615,8 +614,8 @@ function SaleWaterfall({
           key={row.label}
           className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-x-3 sm:grid-cols-[5.5rem_1fr_8rem]"
         >
-          <span className="text-xs text-inkoust-tlumeny">{row.label}</span>
-          <div className="relative h-4 overflow-hidden rounded bg-linka/30">
+          <span className="text-xs text-ink-muted">{row.label}</span>
+          <div className="relative h-4 overflow-hidden rounded bg-line/30">
             {row.value > 0 && (
               <div
                 className="absolute inset-y-0 rounded-sm"
@@ -628,10 +627,10 @@ function SaleWaterfall({
               />
             )}
           </div>
-          <span className="text-right font-mono text-xs text-inkoust">{czk(row.value)}</span>
+          <span className="text-right tabular-nums text-xs text-ink">{czk(row.value)}</span>
         </div>
       ))}
-      <p className="pt-1 text-xs text-inkoust-tlumeny">
+      <p className="pt-1 text-xs text-ink-muted">
         Výdaj = nabývací cena zdanitelné části (kurzem roku nákupu). Daň = změna orientační daně
         proti stavu bez prodeje — zahrnuje celoroční dopad, může tedy převýšit i tržbu tohoto
         prodeje (třeba když prolomí limit a zdaní ostatní letošní prodeje).

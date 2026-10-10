@@ -3,8 +3,8 @@ import type { Position } from '@danero/engine';
 import { czDate, qty } from '@/lib/format';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { PositionCard } from '@/components/position-card';
-import { cn } from '@/lib/utils';
 
 interface Row {
   isin: string;
@@ -26,7 +26,7 @@ function CheckIcon() {
   return (
     <svg
       viewBox="0 0 16 16"
-      className="inline size-4 text-zelena"
+      className="inline size-4 text-success"
       role="img"
       aria-label="časový test splněn"
     >
@@ -47,9 +47,9 @@ function TestProgress({ daysToExempt }: { daysToExempt: number }) {
   const elapsed = Math.min(1, Math.max(0, (TEST_DAYS - daysToExempt) / TEST_DAYS));
   return (
     <span className="inline-flex items-center gap-2">
-      <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-linka/60">
+      <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-line/60">
         <span
-          className="block h-full rounded-full bg-ruzova"
+          className="block h-full rounded-full bg-accent"
           style={{ width: `${elapsed * 100}%` }}
         />
       </span>
@@ -105,7 +105,7 @@ export function PositionsTable({
   const content = (
     <>
       {/* mobil: karty místo tabulky (H4) */}
-      <div className="space-y-2 md:hidden">
+      <div className="divide-y divide-line/70 md:hidden">
         {rows.map((row) => (
           <PositionCard
             key={row.isin}
@@ -128,83 +128,67 @@ export function PositionsTable({
       </div>
 
       <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
-        <table className="w-full text-sm">
+        <Table>
           {/* caption = název tabulky pro čtečku (audit H2-12); vizuálně ho nese
-              CardTitle nad ní, proto sr-only. `scope="col"` váže buňky
-              na hlavičku i tam, kde si to prohlížeč sám neodvodí. */}
+              nadpis sekce nad ní, proto sr-only. `scope="col"` (dává ho `Th`)
+              váže buňky na hlavičku i tam, kde si to prohlížeč sám neodvodí. */}
           <caption className="sr-only">Pozice a jejich časové testy</caption>
           <thead>
-            <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-              <th scope="col" className="py-2 pr-4 font-medium">
-                Instrument
-              </th>
-              <th scope="col" className="py-2 pr-4 text-right font-medium">
-                Kusů
-              </th>
-              {anyExempt && (
-                <th scope="col" className="py-2 pr-4 text-right font-medium">
-                  Z toho bez daně
-                </th>
-              )}
-              <th scope="col" className="py-2 pr-4 text-right font-medium">
-                Nejbližší osvobození
-              </th>
-              <th scope="col" className="py-2 text-right font-medium">
-                Zbývá dní
-              </th>
+            <tr>
+              <Th>Instrument</Th>
+              <Th align="right">Kusů</Th>
+              {anyExempt && <Th align="right">Z toho bez daně</Th>}
+              <Th align="right">Nejbližší osvobození</Th>
+              <Th align="right">Zbývá dní</Th>
             </tr>
           </thead>
-          <tbody className="font-mono">
+          <tbody>
             {rows.map((row) => (
-              <tr key={row.isin} className="border-b border-linka/60">
-                <td className="py-2 pr-4">
+              <Tr key={row.isin}>
+                <Td>
                   {/* klikací konzistentně s tabulkou na /portfolio */}
                   <Link
                     href={`${basePath}/portfolio/${row.isin}`}
-                    className="font-sans font-medium text-inkoust hover:text-ruzova"
+                    className="font-medium text-ink hover:text-accent-text"
                   >
                     {row.label}
                   </Link>{' '}
-                  <span className="text-xs text-inkoust-tlumeny">
+                  <span className="type-caption text-ink-muted">
                     {row.name ? `${row.name} · ` : ''}
                     {row.isin}
                   </span>
-                </td>
-                <td className="py-2 pr-4 text-right">{qty(row.total)}</td>
+                </Td>
+                <Td align="right">{qty(row.total)}</Td>
                 {anyExempt && (
-                  <td
-                    className={cn(
-                      'py-2 pr-4 text-right',
-                      row.exemptQty > 0 ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
-                    )}
+                  <Td
+                    align="right"
+                    className={row.exemptQty > 0 ? 'font-medium text-success-text' : 'text-ink-muted'}
                   >
                     {qty(row.exemptQty)}
-                  </td>
+                  </Td>
                 )}
-                <td className="py-2 pr-4 text-right">
+                <Td align="right">
                   {row.neverExempt ? (
-                    <span className="font-sans text-inkoust-tlumeny">
-                      časový test se nevztahuje
-                    </span>
+                    <span className="text-ink-muted">časový test se nevztahuje</span>
                   ) : row.nearestExemptFrom ? (
                     czDate(row.nearestExemptFrom)
                   ) : (
-                    <span className="font-sans font-semibold text-zelena-text">vše bez daně</span>
+                    <span className="font-medium text-success-text">vše bez daně</span>
                   )}
-                </td>
-                <td className="py-2 text-right">
+                </Td>
+                <Td align="right">
                   {row.neverExempt ? (
-                    <span className="text-inkoust-tlumeny">—</span>
+                    <span className="text-ink-muted">—</span>
                   ) : row.daysToExempt === null ? (
                     <CheckIcon />
                   ) : (
                     <TestProgress daysToExempt={row.daysToExempt} />
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </ScrollArea>
     </>
   );

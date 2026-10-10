@@ -79,32 +79,32 @@ export function SyncJobProgress({
 
   return (
     <div className="space-y-2" aria-live="polite">
-      <p className="flex items-center gap-2 text-sm font-medium text-inkoust">
-        <span className="inline-block size-2 animate-pulse rounded-full bg-ruzova" aria-hidden />
+      <p className="flex items-center gap-2 text-sm font-medium text-ink">
+        <span className="inline-block size-2 animate-pulse rounded-full bg-accent" aria-hidden />
         {phaseLabel}
       </p>
       {progress?.mode === 'full' && (
-        <p className="text-xs text-inkoust-tlumeny">
+        <p className="text-xs text-ink-muted">
           První synchronizace prochází všechny roky od založení účtu — kvůli limitům
           Trading 212 trvá zhruba minutu na každý rok a stahuje se po částech. Klidně
           odejdi, poběží dál.
         </p>
       )}
       {progress?.years && progress.years.length > 0 && (
-        <ul className="space-y-1 border-t border-linka pt-2">
+        <ul className="space-y-1 border-t border-line pt-2">
           {progress.years.map((year) => (
-            <li key={year.year} className="flex items-baseline gap-3 font-mono text-xs">
-              <span className="font-semibold text-inkoust">{year.year}</span>
+            <li key={year.year} className="flex items-baseline gap-3 tabular-nums text-xs">
+              <span className="font-semibold text-ink">{year.year}</span>
               {year.status === 'running' ? (
-                <span className="text-inkoust-tlumeny">Trading 212 generuje export…</span>
+                <span className="text-ink-muted">Trading 212 generuje export…</span>
               ) : year.status === 'empty' ? (
-                <span className="text-inkoust-tlumeny">žádné transakce</span>
+                <span className="text-ink-muted">žádné transakce</span>
               ) : (
-                <span className="text-zelena-text">
+                <span className="text-success-text">
                   {year.added ?? 0} {plural(year.added ?? 0, 'nová', 'nové', 'nových')} ·{' '}
                   {year.duplicates ?? 0} {plural(year.duplicates ?? 0, 'duplicita', 'duplicity', 'duplicit')}
                   {year.errors ? (
-                    <span className="text-cervena">
+                    <span className="text-danger">
                       {' '}· {year.errors} {plural(year.errors, 'chyba', 'chyby', 'chyb')}
                     </span>
                   ) : null}

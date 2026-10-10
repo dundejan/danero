@@ -40,10 +40,10 @@ export default async function EmailVerifiedPage({
         <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
           <Logo className="text-lg" />
         </Link>
-        <h1 className="font-display text-3xl font-bold">
+        <h1 className="text-3xl font-bold">
           {error ? 'Odkaz už neplatí' : 'Adresu máme potvrzenou'}
         </h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
+        <p className="mt-2 text-sm text-ink-muted">
           {error ? (
             <>Ověřovací odkaz vypršel nebo už byl použitý. Nech si poslat nový.</>
           ) : (
@@ -60,8 +60,8 @@ export default async function EmailVerifiedPage({
       {error ? (
         <>
           <ResendVerificationForm />
-          <p className="text-sm text-inkoust-tlumeny">
-            <Link href="/prihlaseni" className="font-medium text-ruzova-text">
+          <p className="text-sm text-ink-muted">
+            <Link href="/prihlaseni" className="font-medium text-accent-text">
               Zpátky na přihlášení
             </Link>
           </p>

@@ -29,17 +29,17 @@ export function TaxYearConfigNotice({
   if (isConfiguredTaxYear(year)) return null;
   const ahead = year > LAST_CONFIGURED_TAX_YEAR;
   return (
-    <Card className="space-y-2 border-jantar bg-jantar/5">
+    <Card className="space-y-2 border-caution bg-caution/5">
       <CardTitle>
         {ahead
           ? `Pro rok ${year} ještě neznáme dvě státem vyhlašovaná čísla`
           : `Pro rok ${year} nemáme dvě čísla, která se vyhlašují na každý rok zvlášť`}
       </CardTitle>
-      <p className="text-sm text-inkoust-tlumeny">
+      <p className="text-sm text-ink-muted">
         Není to chyba tvých dat a hlídání běží dál: prodeje, limit 100 000 Kč, limit
         50 000 Kč i tříletý časový test na nich nestojí a počítají se normálně.
       </p>
-      <p className="text-sm text-inkoust-tlumeny">
+      <p className="text-sm text-ink-muted">
         Chybí <strong>hranice, nad kterou se z výdělku platí vyšší daň</strong>.{' '}
         {ahead
           ? `Tu vyhlašuje vláda nařízením, a to až na podzim ${year}.`
@@ -59,13 +59,13 @@ export function TaxYearConfigNotice({
         )}
       </p>
       {ahead ? (
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm text-ink-muted">
           Jakmile obě čísla vyjdou, doplníme je a všechno se přepočítá samo — nemusíš
           dělat nic. Podklady k přiznání za rok {year} se stejně podávají až v roce{' '}
           {year + 1}.
         </p>
       ) : (
-        <p className="text-sm text-inkoust-tlumeny">
+        <p className="text-sm text-ink-muted">
           U takhle starého roku to obvykle nevadí: hranici vyšší daně překročí jen velmi
           vysoký výdělek. Pokud se tě týká, napiš nám a čísla za ten rok doplníme.
         </p>

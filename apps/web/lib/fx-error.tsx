@@ -16,16 +16,16 @@ export function engineErrorMessage(error: unknown): string | null {
 export function EngineErrorCard({ message }: { message: string }) {
   return (
     <div className="mx-auto flex max-w-xl flex-col items-start gap-4 pt-24">
-      <h1 className="font-display text-3xl font-bold">Výpočet teď nejde dokončit</h1>
-      <p className="text-sm text-inkoust-tlumeny">{message}</p>
-      <p className="text-sm text-inkoust-tlumeny">
+      <h1 className="text-3xl font-bold">Výpočet teď nejde dokončit</h1>
+      <p className="text-sm text-ink-muted">{message}</p>
+      <p className="text-sm text-ink-muted">
         Nejčastější příčina: pro některou měnu nemáme jednotný kurz (tabulku vyhlašuje finanční
         správa jen pro hlavní měny). Pomůže přepnout přepočet na denní kurzy ČNB v{' '}
-        <Link href="/nastaveni" className="font-medium text-ruzova">
+        <Link href="/nastaveni" className="font-medium text-accent">
           Nastavení
         </Link>{' '}
         — stáhnou se automaticky. Pokud potíž trvá, napiš nám na{' '}
-        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova">
+        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-accent">
           {OPERATOR.email}
         </a>
         .

@@ -9,7 +9,7 @@ export function IconCheck() {
       strokeWidth="2.2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="mt-0.5 h-4 w-4 shrink-0 text-zelena"
+      className="mt-0.5 h-4 w-4 shrink-0 text-success"
       aria-hidden
     >
       <path d="m4.5 12.5 5 5 10-11" />

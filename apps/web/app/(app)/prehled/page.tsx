@@ -48,8 +48,8 @@ export default async function OverviewPage({
   if (txs.length === 0) {
     return (
       <div className="flex max-w-xl flex-col items-start gap-4">
-        <h1 className="font-display text-3xl font-bold">Zatím žádná data</h1>
-        <p className="text-inkoust-tlumeny">
+        <h1 className="text-3xl font-bold">Zatím žádná data</h1>
+        <p className="text-ink-muted">
           Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity i podklady
           k přiznání.
         </p>

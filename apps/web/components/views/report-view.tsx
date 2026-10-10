@@ -128,14 +128,14 @@ export const DERIVATIVE_KIND_LABEL: Record<DerivativeItem['kind'], string> = {
  */
 export function PausalCreditCaveat({ amount }: { amount: string }) {
   return (
-    <p className="text-xs text-inkoust-tlumeny">
-      <strong className="text-inkoust">
+    <p className="text-xs text-ink-muted">
+      <strong className="text-ink">
         Sraženou daň ze zahraničí ({amount}) si letos v Česku nezapočteš — a je to tak
         v pořádku.
       </strong>{' '}
       V paušálním režimu je tvoje daň rovna paušální dani (§ 7a), takže z těchhle dividend
       a úroků tu žádnou daň neplatíš. Není proti čemu srážku započítat. Kdybys ji{' '}
-      <strong className="text-inkoust">v přiznání uplatnil</strong>, přestala by ti daň být
+      <strong className="text-ink">v přiznání uplatnil</strong>, přestala by ti daň být
       rovna paušální dani za celý rok (§ 7a odst. 5). Kromě přiznání by přišly přehledy pro
       ČSSZ i zdravotní pojišťovnu a doplatek pojistného ze skutečných příjmů. V paušálním
       režimu bys přitom zůstal a zálohy platil dál. Co dává smysl místo toho: hlídat, ať ti
@@ -264,19 +264,19 @@ export function ReportView({
     <div className="space-y-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-bold">Daňový report {year}</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
+          <h1 className="text-3xl font-bold">Daňový report {year}</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Podklady pro přiznání — orientační, s aktuální konfigurací profilu.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <YearSwitcher years={years} active={year} hrefBase={`${basePath}/report`} />
           <PrintButton />
         </div>
       </header>
 
       {/* jen v tisku: identifikace podkladů (průkaznost výpočtu) */}
-      <p className="hidden text-xs text-inkoust-tlumeny print:block">
+      <p className="hidden text-xs text-ink-muted print:block">
         Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
         aplikací Danero · {txs.length} {plural(txs.length, 'transakce', 'transakce', 'transakcí')} ·
         párování {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
@@ -316,14 +316,14 @@ export function ReportView({
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="space-y-1">
           <CardTitle>Dílčí základ § 10 (součet druhů)</CardTitle>
-          <p className="font-mono text-lg font-semibold sm:text-xl">
+          <p className="tabular-nums text-lg font-semibold sm:text-xl">
             {czk(
               result.securities.base10Czk
                 .plus(result.crypto.base10Czk)
                 .plus(result.derivatives.base10Czk),
             )}
           </p>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             CP: tržby {czk(result.securities.totalGrossProceedsCzk)}, základ{' '}
             {czk(result.securities.base10Czk)}
             {result.securities.exemptUnder100k && ' (vše osvobozeno, úhrn do 100k)'}
@@ -345,16 +345,16 @@ export function ReportView({
         </Card>
         <Card className="space-y-1">
           <CardTitle>Dílčí základ § 8 (dividendy, úroky)</CardTitle>
-          <p className="font-mono text-lg font-semibold sm:text-xl">{czk(result.dividends.base8Czk)}</p>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="tabular-nums text-lg font-semibold sm:text-xl">{czk(result.dividends.base8Czk)}</p>
+          <p className="text-xs text-ink-muted">
             Srážková daň v zahraničí {czk(result.dividends.foreignWithholdingCzk)}, započitatelná{' '}
             {czk(result.dividends.creditableWithholdingCzk)}
           </p>
         </Card>
         <Card className="space-y-1">
           <CardTitle>Orientační daň z investic</CardTitle>
-          <p className="font-mono text-lg font-semibold sm:text-xl">{czk(activeTax.taxCzk)}</p>
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="tabular-nums text-lg font-semibold sm:text-xl">{czk(activeTax.taxCzk)}</p>
+          <p className="text-xs text-ink-muted">
             {/* uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
                 zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout titulek) */}
             Daň před zápočtem {czk(activeTax.taxBeforeCreditCzk)} − uplatněný zápočet{' '}
@@ -375,7 +375,7 @@ export function ReportView({
       </section>
 
       {/* delší výklad k číslům v kartách — jednou pod gridem, ne v každé kartě */}
-      <p className="text-xs text-inkoust-tlumeny">
+      <p className="text-xs text-ink-muted">
         Prostý zápočet (§ 38f) je stropovaný podílem zahraničních příjmů na základu — může
         být nižší než započitatelná srážka z tabulky států. {result.tax.note}
       </p>
@@ -383,12 +383,12 @@ export function ReportView({
       {/* E-27: obě varianty vedle sebe, bez slova „výhodnější“ — kterou v přiznání
           uplatníš, je tvoje volba, stejně jako u metod párování (docs/13 V-4) */}
       {hasDividendBase && (
-        <p className="text-xs text-inkoust-tlumeny">
+        <p className="text-xs text-ink-muted">
           Zahraniční dividendy a úroky (§ 8) lze zdanit dvěma způsoby a volba je na tobě:
           orientační daň z investic v <strong>obecném základu</strong> je{' '}
-          <span className="font-mono">{czk(result.tax.general.taxCzk)}</span>, v{' '}
+          <span className="tabular-nums">{czk(result.tax.general.taxCzk)}</span>, v{' '}
           <strong>samostatném základu § 16a</strong>{' '}
-          <span className="font-mono">{czk(result.tax.separate16a.taxCzk)}</span> — obojí před
+          <span className="tabular-nums">{czk(result.tax.separate16a.taxCzk)}</span> — obojí před
           slevami na dani. V samostatném základu nelze uplatnit slevy na dani ani nezdanitelné
           části základu, takže o výsledné dani rozhoduje i tvůj zbytek přiznání, který Danero nevidí.
         </p>
@@ -400,7 +400,7 @@ export function ReportView({
           {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
           <table aria-label="Srovnání variant výpočtu daně" className="w-full text-sm">
             <thead>
-              <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                 <th scope="col" className="py-2 pr-4 font-medium">Metoda</th>
                 <th scope="col" className="py-2 pr-4 font-medium">Kurzy</th>
                 <th scope="col" className="py-2 pr-4 text-right font-medium">Základ § 10</th>
@@ -411,18 +411,18 @@ export function ReportView({
                 <th scope="col" aria-label="Doporučení" className="py-2 font-medium" />
               </tr>
             </thead>
-            <tbody className="font-mono">
+            <tbody className="tabular-nums">
               {variants.map((variant) => {
                 const isRecommended =
                   variant.matchingMethod === recommended.matchingMethod &&
                   variant.fxMethod === recommended.fxMethod;
                 const isActive = variant.matchingMethod === result.options.matchingMethod;
                 return (
-                  <tr key={`${variant.matchingMethod}-${variant.fxMethod}`} className="border-b border-linka/60">
+                  <tr key={`${variant.matchingMethod}-${variant.fxMethod}`} className="border-b border-line/60">
                     <td className="py-2 pr-4 font-sans font-medium">
                       {METHOD_LABEL[variant.matchingMethod]}
                     </td>
-                    <td className="py-2 pr-4 font-sans text-inkoust-tlumeny">
+                    <td className="py-2 pr-4 font-sans text-ink-muted">
                       {variant.fxMethod === 'UNIFIED' ? 'jednotný' : 'denní ČNB'}
                     </td>
                     <td className="py-2 pr-4 text-right">{czk(variant.base10Czk)}</td>
@@ -430,18 +430,18 @@ export function ReportView({
                     <td
                       className={cn(
                         'py-2 pr-4 text-right',
-                        variant.flatTax50kExceeded ? 'text-cervena' : 'text-zelena-text',
+                        variant.flatTax50kExceeded ? 'text-danger' : 'text-success-text',
                       )}
                     >
                       {variant.flatTax50kExceeded ? 'prolomen' : czk(variant.flatTax50kUsedCzk)}
                     </td>
                     <td className="py-2 font-sans text-xs">
                       {isRecommended && (
-                        <span className="rounded bg-ruzova/10 px-2 py-0.5 font-semibold text-ruzova-text">
+                        <span className="rounded bg-accent/10 px-2 py-0.5 font-semibold text-accent-text">
                           nejvýhodnější
                         </span>
                       )}{' '}
-                      {isActive && <span className="text-inkoust-tlumeny">aktivní</span>}
+                      {isActive && <span className="text-ink-muted">aktivní</span>}
                     </td>
                   </tr>
                 );
@@ -450,27 +450,27 @@ export function ReportView({
           </table>
         </ScrollArea>
         {demo ? (
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             Denní kurzy jsou v demu ukázkové (odvozené z jednotného kurzu roku) — s vlastním
             účtem počítáme se skutečnými denními kurzy ČNB; nejvýhodnější kombinace je
             zvýrazněná.
           </p>
         ) : dailyRates ? (
-          <p className="text-xs text-inkoust-tlumeny">
+          <p className="text-xs text-ink-muted">
             Denní kurzy ČNB jsou načtené z oficiálního zdroje — tabulka srovnává jednotný
             kurz GFŘ i denní kurzy s reálnými čísly; nejvýhodnější kombinace je zvýrazněná.
           </p>
         ) : (
-          <p className="text-xs text-jantar-text">
+          <p className="text-xs text-caution-text">
             Denní kurzy ČNB se zatím nepodařilo načíst — srovnání zahrnuje jen jednotný
             kurz. Zkus stránku otevřít později.
           </p>
         )}
-        <p className="text-xs text-inkoust-tlumeny">
+        <p className="text-xs text-ink-muted">
           {demo ? (
             <>
               V plné verzi metodu přepneš v Nastavení —{' '}
-              <Link href="/registrace" className="font-medium text-ruzova">
+              <Link href="/registrace" className="font-medium text-accent">
                 založ si účet
               </Link>
               .
@@ -494,7 +494,7 @@ export function ReportView({
           {/* R-13: shorty patří do téhož druhu jako ostatní prodeje CP (kód D),
               ale nemají loty — v rozpisu prodejů výš by neměly co ukázat, takže
               je vypisujeme zvlášť, ať jdou čísla druhu dohledat do řádku. */}
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Prodej vypůjčených akcií se počítá do stejného druhu příjmu jako běžné prodeje —
             čerpá tedy i osvobození do 100 000 Kč. Tržbu daníme v roce prodeje, zpětný nákup
             je výdaj v roce, kdy ho zaplatíš. Zpětné nákupy párujeme s otevřeními od
@@ -506,7 +506,7 @@ export function ReportView({
           <ScrollArea label={`Prodeje nakrátko v roce ${year}`}>
             <table aria-label="Rozpis prodejů nakrátko" className="w-full text-sm">
               <thead>
-                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
                   <th scope="col" className="py-2 pr-4 font-medium">Událost</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
@@ -517,7 +517,7 @@ export function ReportView({
               </thead>
               <tbody>
                 {result.shortSales.items.map((item, index) => (
-                  <tr key={`${item.isin}-${item.date}-${index}`} className="border-b border-linka/60">
+                  <tr key={`${item.isin}-${item.date}-${index}`} className="border-b border-line/60">
                     <td className="py-2 pr-4">{labels.get(item.isin) ?? item.isin}</td>
                     <td className="py-2 pr-4">
                       {item.kind === 'SHORT_OPEN' ? 'Prodej nakrátko' : 'Zpětný nákup'}
@@ -541,7 +541,7 @@ export function ReportView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Rozpis prodejů cenných papírů a kryptoaktiv" className="w-full text-sm">
               <thead>
-                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Tržba</th>
@@ -550,7 +550,7 @@ export function ReportView({
                   <th scope="col" className="py-2 text-right font-medium">Zdanitelná tržba</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {disposalsOnPage.map(({ disposal, isCrypto }) => {
                   // osvobození úhrnem do 100k platí pro celý druh — výdaje se pak
                   // daňově neuplatňují (R-05b), ale nabývací cena nulová nebyla
@@ -562,19 +562,19 @@ export function ReportView({
                     ZERO,
                   );
                   return (
-                    <tr key={disposal.sellTxId} className="border-b border-linka/60">
+                    <tr key={disposal.sellTxId} className="border-b border-line/60">
                       <td className="py-2 pr-4">
                         {/* nativní <details> — server component bez JS; rozpad = auditní stopa párování */}
                         <details>
                           <summary className="cursor-pointer">
                             <span className="font-sans">{labels.get(disposal.isin) ?? disposal.isin}</span>
                             {isCrypto && (
-                              <span className="ml-2 rounded bg-linka/60 px-1.5 py-0.5 font-sans text-xs text-inkoust-tlumeny">
+                              <span className="ml-2 rounded bg-line/60 px-1.5 py-0.5 font-sans text-xs text-ink-muted">
                                 krypto
                               </span>
                             )}
                           </summary>
-                          <ul className="mt-1 space-y-0.5 font-sans text-xs text-inkoust-tlumeny">
+                          <ul className="mt-1 space-y-0.5 font-sans text-xs text-ink-muted">
                             {disposal.allocations.map((alloc) => (
                               <li key={alloc.lotId}>
                                 {alloc.quantity.toString()} ks · nabyto {czDate(alloc.acquisitionDate)} ·{' '}
@@ -596,7 +596,7 @@ export function ReportView({
                           ? '—'
                           : czk(expensesCzk)}
                       </td>
-                      <td className="whitespace-nowrap py-2 pr-4 text-right text-zelena-text">
+                      <td className="whitespace-nowrap py-2 pr-4 text-right text-success-text">
                         {czk(disposal.exemptProceedsCzk)}
                       </td>
                       <td className="whitespace-nowrap py-2 text-right">{czk(disposal.taxableProceedsCzk)}</td>
@@ -610,7 +610,7 @@ export function ReportView({
               je `print:hidden`, takže bez téhle věty odnese uživatel na finanční
               úřad neúplný rozpis v domnění, že je kompletní (H-3-01). */}
           {totalPages > 1 && (
-            <p className="hidden border-t border-linka pt-3 text-xs text-inkoust-tlumeny print:block">
+            <p className="hidden border-t border-line pt-3 text-xs text-ink-muted print:block">
               {printedRangeNote({
                 fromRow,
                 onPage: disposalsOnPage.length,
@@ -621,14 +621,14 @@ export function ReportView({
             </p>
           )}
           {totalPages > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linka pt-3 text-sm print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm print:hidden">
               {/* Dřív tu stálo „Tisk i XML pro podatelnu obsahují všechny
                   prodeje.“ — nebyla to pravda ani v jedné půlce (nález H-3-01).
                   `window.print()` tiskne DOM, a v něm je jen tahle strana;
                   XML pro podatelnu nese úhrny do řádků přiznání, ne rozpis
                   jednotlivých prodejů. Vytištěný podklad tak vypadal úplně,
                   a přitom mu u 25 000 prodejů chybělo 24 800 řádků. */}
-              <p className="text-inkoust-tlumeny">
+              <p className="text-ink-muted">
                 Prodeje {fromRow + 1}–{fromRow + disposalsOnPage.length} z{' '}
                 {allDisposals.length} · strana {currentPage} z {totalPages}. Vytiskne
                 se vždy jen zobrazená strana; úhrny do řádků přiznání i XML pro
@@ -665,7 +665,7 @@ export function ReportView({
                     className="flex items-center gap-1.5"
                   >
                     <input type="hidden" name="rok" value={year} />
-                    <label htmlFor="strana" className="text-inkoust-tlumeny">
+                    <label htmlFor="strana" className="text-ink-muted">
                       Strana
                     </label>
                     <input
@@ -676,7 +676,7 @@ export function ReportView({
                       max={totalPages}
                       defaultValue={currentPage}
                       inputMode="numeric"
-                      className="w-16 rounded-md border border-linka-ovladaci bg-plocha px-2 py-1 text-sm"
+                      className="w-16 rounded-md border border-line-control bg-surface px-2 py-1 text-sm"
                     />
                     <button
                       type="submit"
@@ -715,7 +715,7 @@ export function ReportView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Rozpis derivátových obchodů" className="w-full text-sm">
               <thead>
-                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4 font-medium">Instrument</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Datum</th>
                   <th scope="col" className="py-2 pr-4 font-medium">Událost</th>
@@ -723,14 +723,14 @@ export function ReportView({
                   <th scope="col" className="py-2 text-right font-medium">Výdaj</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {result.derivatives.items.map((item) => (
-                  <tr key={`${item.txId}-${item.kind}`} className="border-b border-linka/60">
+                  <tr key={`${item.txId}-${item.kind}`} className="border-b border-line/60">
                     <td className="py-2 pr-4">
                       <span className="font-sans">{labels.get(item.isin) ?? item.isin}</span>
                     </td>
                     <td className="py-2 pr-4 text-right">{czDate(item.date)}</td>
-                    <td className="py-2 pr-4 font-sans text-xs text-inkoust-tlumeny">
+                    <td className="py-2 pr-4 font-sans text-xs text-ink-muted">
                       {DERIVATIVE_KIND_LABEL[item.kind]}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-4 text-right">{czk(item.incomeCzk)}</td>
@@ -741,7 +741,7 @@ export function ReportView({
             </table>
           </ScrollArea>
           {result.derivatives.deniedExpensesCzk.gt(0) && (
-            <p className="text-xs text-jantar-text">
+            <p className="text-xs text-caution-text">
               Prémie bezcenně expirovaných opcí {czk(result.derivatives.deniedExpensesCzk)} počítáme
               podle bezpečného výkladu jako neuznatelný výdaj. Mírnější výklad „výdaje za
               celý druh“ by{' '}
@@ -750,7 +750,7 @@ export function ReportView({
               {result.derivatives.deniedExpensesImpactCzk.gt(0) ? (
                 <>
                   základ daně snížil o{' '}
-                  <span className="font-mono">
+                  <span className="tabular-nums">
                     {czk(result.derivatives.deniedExpensesImpactCzk)}
                   </span>{' '}
                   (méně než celá prémie — výdaje druhu se uplatní nejvýš do výše jeho příjmů,
@@ -776,16 +776,16 @@ export function ReportView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Zahraniční příjmy a sražená daň po státech" className="w-full text-sm">
               <thead>
-                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4 font-medium">Stát</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Příjem do zápočtu</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Sraženo</th>
                   <th scope="col" className="py-2 text-right font-medium">Započitatelná srážka</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {Object.entries(result.dividends.creditableByCountry).map(([country, data]) => (
-                  <tr key={country} className="border-b border-linka/60">
+                  <tr key={country} className="border-b border-line/60">
                     <td className="py-2 pr-4 font-sans font-medium">{country}</td>
                     {/* přesně to, co půjde na ř. 321 Přílohy 3 — jedno číslo, jedna pravda;
                         stát bez započitatelné srážky v příloze není, tam zůstává příjem tak, jak je */}
@@ -804,9 +804,9 @@ export function ReportView({
           </ScrollArea>
           {/* hlavička § 8 zahrnuje i úroky — bez tohoto řádku by rozpis neseděl na souhrn */}
           {result.dividends.taxableInterestCzk.gt(0) && (
-            <p className="text-xs text-inkoust-tlumeny">
+            <p className="text-xs text-ink-muted">
               Úroky (zdanitelné):{' '}
-              <span className="font-mono text-inkoust">
+              <span className="tabular-nums text-ink">
                 {czk(result.dividends.taxableInterestCzk)}
               </span>{' '}
               — vstupují do dílčího základu § 8 vedle dividend z tabulky. Do sloupce
@@ -820,7 +820,7 @@ export function ReportView({
             <PausalCreditCaveat amount={czk(result.dividends.foreignWithholdingCzk)} />
           )}
           {result.dividends.czechGrossCzk.gt(0) && (
-            <p className="text-xs text-inkoust-tlumeny">
+            <p className="text-xs text-ink-muted">
               České dividendy {czk(result.dividends.czechGrossCzk)} jsou zdaněny srážkou u
               zdroje — do přiznání se neuvádějí.
             </p>
@@ -849,7 +849,7 @@ export function ReportView({
           // ukáže přesně, co z Danera padá na podatelnu
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-inkoust-tlumeny">
+              <p className="text-sm text-ink-muted">
                 V demu nedostupné — založ si účet a stáhni XML písemnosti DPFDP7 pro
                 podatelnu mojedane.cz s vlastními čísly z tohoto reportu.
               </p>
@@ -864,11 +864,11 @@ export function ReportView({
               <a
                 href="/marketing/ukazka-dpfdp7-2025.xml"
                 download
-                className="font-medium text-ruzova"
+                className="font-medium text-accent"
               >
                 Stáhni ukázkové XML (2025)
               </a>{' '}
-              <span className="text-inkoust-tlumeny">
+              <span className="text-ink-muted">
                 — takhle soubor vypadá; v EPO se načítá přes „Načtení souboru“ (osobní
                 údaje jsou v ukázce smyšlené, čísla jsou z demo portfolia).
               </span>
@@ -876,7 +876,7 @@ export function ReportView({
           </>
         ) : EPO_SUPPORTED_YEARS.includes(year) ? (
           <>
-            <p className="text-sm text-inkoust-tlumeny">
+            <p className="text-sm text-ink-muted">
               Stáhneš XML písemnosti DPFDP7 s investičními čísly z tohoto reportu a na
               mojedane.cz ho v přiznání nahraješ přes <strong>„Načtení souboru“</strong>.
               Osobní údaje můžeš vyplnit rovnou tady, nebo až v EPO — nic z nich
@@ -903,7 +903,7 @@ export function ReportView({
                       {czk(result.tax.separate16a.taxCzk)}
                     </option>
                   </Select>
-                  <p className="mt-1 text-xs text-inkoust-tlumeny">
+                  <p className="mt-1 text-xs text-ink-muted">
                     Obě částky jsou před slevami na dani; v samostatném základu § 16a nelze
                     uplatnit slevy na dani ani nezdanitelné části základu.
                   </p>
@@ -984,7 +984,7 @@ export function ReportView({
                 <div>
                   <Label htmlFor="epo-zjisteni">
                     Den zjištění důvodů{' '}
-                    <span className="font-normal text-inkoust-tlumeny">
+                    <span className="font-normal text-ink-muted">
                       (jen u dodatečného)
                     </span>
                   </Label>
@@ -993,7 +993,7 @@ export function ReportView({
                 <div>
                   <Label htmlFor="epo-posledni-dan">
                     Poslední známá daň{' '}
-                    <span className="font-normal text-inkoust-tlumeny">(jen u dodatečného)</span>
+                    <span className="font-normal text-ink-muted">(jen u dodatečného)</span>
                   </Label>
                   <Input
                     id="epo-posledni-dan"
@@ -1005,7 +1005,7 @@ export function ReportView({
                 <div>
                   <Label htmlFor="epo-posledni-ztrata">
                     Poslední známá daňová ztráta{' '}
-                    <span className="font-normal text-inkoust-tlumeny">(jen u dodatečného)</span>
+                    <span className="font-normal text-ink-muted">(jen u dodatečného)</span>
                   </Label>
                   <Input
                     id="epo-posledni-ztrata"
@@ -1015,7 +1015,7 @@ export function ReportView({
                   />
                 </div>
               </div>
-              <p className="text-xs text-inkoust-tlumeny">
+              <p className="text-xs text-ink-muted">
                 Dodatečné přiznání se podává do konce měsíce následujícího po měsíci, ve
                 kterém jsi důvody zjistil (§ 141 odst. 1 daňového řádu) — proto ten den
                 podatelna vyžaduje. Poslední známou daň a ztrátu opiš z přiznání, které jsi
@@ -1023,13 +1023,13 @@ export function ReportView({
                 dodatečné přiznání odmítne. Danero je z transakcí zjistit nedokáže — dřívější
                 přiznání mohlo obsahovat i příjmy ze zaměstnání nebo podnikání.
               </p>
-              <p className="text-xs text-inkoust-tlumeny">
+              <p className="text-xs text-ink-muted">
                 Kód svého finančního úřadu najdeš v{' '}
                 <a
                   href="https://mojedane.gov.cz/pmd/dokumentace/ciselniky/ukazka/ufo"
                   target="_blank"
                   rel="noreferrer"
-                  className="underline hover:text-inkoust"
+                  className="underline hover:text-ink"
                 >
                   číselníku územních finančních orgánů
                 </a>
@@ -1037,19 +1037,19 @@ export function ReportView({
               </p>
               <Button type="submit">Stáhnout XML pro EPO</Button>
             </form>
-            <p className="text-xs text-inkoust-tlumeny">
+            <p className="text-xs text-ink-muted">
               XML obsahuje jen investiční příjmy (§ 8 a § 10{hasDividendBase ? '; ve variantě § 16a navíc Přílohu č. 4' : ''}) z tohoto
               reportu; ostatní příjmy (zaměstnání, podnikání, nájem) v něm nejsou a EPO
               výpočet daně přepočítá až po jejich zadání. Je to podklad, ne hotové přiznání.
             </p>
           </>
         ) : year < epoMinYear ? (
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Roky před {epoMinYear} v XML nepodporujeme. Čísla pro ruční vyplnění formuláře
             jsou níže.
           </p>
         ) : (
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Pro rok {year} oficiální struktura XML přiznání zatím neexistuje — finanční
             správa ji zveřejňuje až začátkem následujícího roku. Export tu bude, jakmile
             vyjde; zatím poslouží čísla níže.
@@ -1068,32 +1068,32 @@ export function ReportView({
         <ul className="space-y-2 text-sm">
             <li>
               <strong>Prodeje CP (§ 10):</strong> Příloha č. 2, řádek tabulky s druhem{' '}
-              <span className="font-mono">D — prodej cenných papírů</span>: příjmy{' '}
-              <span className="font-mono">{czk(p2.rows[0]!.prijmyCzk)}</span>,
-              výdaje <span className="font-mono">{czk(p2.rows[0]!.vydajeCzk)}</span>.
+              <span className="tabular-nums">D — prodej cenných papírů</span>: příjmy{' '}
+              <span className="tabular-nums">{czk(p2.rows[0]!.prijmyCzk)}</span>,
+              výdaje <span className="tabular-nums">{czk(p2.rows[0]!.vydajeCzk)}</span>.
               Řádek u zahraničního brokera nese kód „Z“ (příjem ze zdrojů v zahraničí).
             </li>
             {result.crypto.disposals.length > 0 && (
               <li>
                 <strong>Prodeje a směny krypta (§ 10):</strong> samostatný řádek téže tabulky
-                s druhem <span className="font-mono">C — prodej movitých věcí</span> (kryptoaktiva
+                s druhem <span className="tabular-nums">C — prodej movitých věcí</span> (kryptoaktiva
                 se daní jako movitá věc): příjmy{' '}
-                <span className="font-mono">{czk(p2.rows[1]!.prijmyCzk)}</span>, výdaje{' '}
-                <span className="font-mono">{czk(p2.rows[1]!.vydajeCzk)}</span>. S řádkem CP
+                <span className="tabular-nums">{czk(p2.rows[1]!.prijmyCzk)}</span>, výdaje{' '}
+                <span className="tabular-nums">{czk(p2.rows[1]!.vydajeCzk)}</span>. S řádkem CP
                 se nekompenzují — ztráta z jednoho druhu nesnižuje zisk druhého.
               </li>
             )}
             {result.derivatives.items.length > 0 && (
               <li>
                 <strong>Deriváty — opce, futures, CFD (§ 10):</strong> samostatný řádek téže
-                tabulky s druhem <span className="font-mono">F — jiné ostatní příjmy</span>:
-                příjmy <span className="font-mono">{czk(p2.rows[2]!.prijmyCzk)}</span>,
-                výdaje <span className="font-mono">{czk(p2.rows[2]!.vydajeCzk)}</span>.
+                tabulky s druhem <span className="tabular-nums">F — jiné ostatní příjmy</span>:
+                příjmy <span className="tabular-nums">{czk(p2.rows[2]!.prijmyCzk)}</span>,
+                výdaje <span className="tabular-nums">{czk(p2.rows[2]!.vydajeCzk)}</span>.
                 Deriváty nemají žádné osvobození a s ostatními druhy se nekompenzují.
               </li>
             )}
             {lossBeyondIncome.gt(0) && (
-              <li className="text-inkoust-tlumeny">
+              <li className="text-ink-muted">
                 Výdaje jsou u každého druhu uvedené jen do výše jeho příjmů — tak to žádá
                 § 10 odst. 4 a tak je kontroluje i podatelna (ř. 208 nesmí být vyšší než
                 ř. 207). Ztrátu {czk(lossBeyondIncome)} nad rámec příjmů
@@ -1102,9 +1102,9 @@ export function ReportView({
             )}
             <li>
               <strong>Součty Přílohy č. 2:</strong> ř. 207 ={' '}
-              <span className="font-mono">{czk(p2.prijmyCzk)}</span>, ř. 208 ={' '}
-              <span className="font-mono">{czk(p2.vydajeCzk)}</span>, rozdíl (ř. 209) ={' '}
-              <span className="font-mono">{czk(p2.rozdilCzk)}</span> → <strong>ř. 40</strong>{' '}
+              <span className="tabular-nums">{czk(p2.prijmyCzk)}</span>, ř. 208 ={' '}
+              <span className="tabular-nums">{czk(p2.vydajeCzk)}</span>, rozdíl (ř. 209) ={' '}
+              <span className="tabular-nums">{czk(p2.rozdilCzk)}</span> → <strong>ř. 40</strong>{' '}
               přiznání.
             </li>
             <li>
@@ -1115,15 +1115,15 @@ export function ReportView({
               <ul className="mt-1 list-disc space-y-1 pl-5">
                 <li>
                   <strong>Obecný základ:</strong> brutto{' '}
-                  <span className="font-mono">{czk(base8Whole.generalCzk)}</span> →{' '}
+                  <span className="tabular-nums">{czk(base8Whole.generalCzk)}</span> →{' '}
                   <strong>ř. 38</strong> přiznání; zápočet sražené daně po státech přes
                   Přílohu č. 3 (ř. 321–330; uznatelný zápočet{' '}
-                  <span className="font-mono">{czk(result.dividends.creditableWithholdingCzk)}</span>
+                  <span className="tabular-nums">{czk(result.dividends.creditableWithholdingCzk)}</span>
                   ) → ř. 58 + povinný Seznam dle § 38f odst. 10.
                 </li>
                 <li>
                   <strong>Samostatný základ § 16a:</strong> Příloha č. 4, ř. 401a{' '}
-                  <span className="font-mono">{czk(base8Whole.separate16aCzk)}</span>, daň 15 %
+                  <span className="tabular-nums">{czk(base8Whole.separate16aCzk)}</span>, daň 15 %
                   ř. 410, zápočet zahraniční srážky ř. 412–413, výsledek ř. 414 →{' '}
                   <strong>ř. 74a</strong> přiznání (ř. 38 zůstává prázdný). Slevy na dani ani
                   nezdanitelné části základu v něm uplatnit nelze.
@@ -1137,7 +1137,7 @@ export function ReportView({
             </li>
             <li>
               <strong>Sleva na poplatníka:</strong> ř. 64 přesně{' '}
-              <span className="font-mono">30 840 Kč</span>. Osvobozené příjmy (časový test,
+              <span className="tabular-nums">30 840 Kč</span>. Osvobozené příjmy (časový test,
               úhrn do 100k) se do přiznání <strong>neuvádějí</strong>
               {result.limits.reporting38v.length > 0 &&
                 ' — ale jednotlivé osvobozené příjmy nad 5 mil. Kč máš povinnost oznámit (§ 38v)'}
@@ -1166,7 +1166,7 @@ export function ReportView({
                 </>
               )}
             </li>
-            <li className="text-inkoust-tlumeny">
+            <li className="text-ink-muted">
               {EPO_SUPPORTED_YEARS.includes(year) ? (
                 <>
                   Čísla řádků odpovídají struktuře elektronického podání DPFDP7 (období{' '}
@@ -1183,7 +1183,7 @@ export function ReportView({
               )}
             </li>
           </ul>
-        <p className="text-xs text-inkoust-tlumeny">
+        <p className="text-xs text-ink-muted">
           Konfigurace výpočtu: párování{' '}
           {METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod} ·{' '}
           {fxMethodLabel(result)} ·
@@ -1201,7 +1201,7 @@ export function ReportView({
       <Card className="space-y-3">
         <CardTitle>Použité kurzy (jednotný kurz GFŘ, Kč za jednotku)</CardTitle>
         {rateYears.length === 0 ? (
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Za rok {year} jednotný kurz GFŘ nemáme — ověřená tabulka pokynů řady D
             začíná rokem {FIRST_UNIFIED_RATE_YEAR}. Částky v cizí měně se v tomhle
             podkladu proto přepočítávají denními kurzy ČNB k datu obchodu; obchody
@@ -1209,7 +1209,7 @@ export function ReportView({
           </p>
         ) : (
           <>
-          <p className="text-sm text-inkoust-tlumeny">
+          <p className="text-sm text-ink-muted">
             Výdaj (nákup) se přepočítává jednotným kurzem roku nákupu, tržba (prodej)
             kurzem roku prodeje. Tabulka ukazuje hlavní měny; další měny (CHF, PLN,
             JPY…) používáme z týchž pokynů. Nákupy před rokem {FIRST_UNIFIED_RATE_YEAR}{' '}
@@ -1219,7 +1219,7 @@ export function ReportView({
             {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
             <table aria-label="Použité jednotné kurzy podle roku" className="w-full text-sm">
               <thead>
-                <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" className="py-2 pr-4 font-medium">Rok</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">USD</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">EUR</th>
@@ -1227,16 +1227,16 @@ export function ReportView({
                   <th scope="col" className="py-2 font-medium">Zdroj</th>
                 </tr>
               </thead>
-              <tbody className="font-mono">
+              <tbody className="tabular-nums">
                 {rateYears.map((rateYear) => (
-                  <tr key={rateYear} className="border-b border-linka/60">
+                  <tr key={rateYear} className="border-b border-line/60">
                     <td className="py-2 pr-4">{rateYear}</td>
                     {(['USD', 'EUR', 'GBP'] as const).map((ccy) => (
                       <td key={ccy} className="py-2 pr-4 text-right">
                         {(UNIFIED_RATES[rateYear]?.[ccy] ?? '—').replace('.', ',')}
                       </td>
                     ))}
-                    <td className="py-2 font-sans text-xs text-inkoust-tlumeny">
+                    <td className="py-2 font-sans text-xs text-ink-muted">
                       {isRateVerified(rateYear) && UNIFIED_RATE_SOURCES[rateYear]
                         ? `pokyn ${UNIFIED_RATE_SOURCES[rateYear]}`
                         : 'orientační (do vydání pokynu)'}

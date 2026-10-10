@@ -1,31 +1,29 @@
 import type { LimitStatus } from '@danero/engine';
 import { czk, pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Card, CardTitle } from '@/components/ui/card';
 
 /**
- * Výplň odměrky vůči dráze (`bg-linka/40`). WCAG 1.4.11 chce u grafiky, která
- * nese informaci, aspoň 3:1 — a jantarová `--jantar` (#c7861b) dávala proti
- * dráze #f4f3f0 jen 2,76:1, přitom pásmo „zvýšené čerpání“ je nejběžnější stav
- * (30 000–42 500 Kč z limitu 50 000). Čitelný odstín téže barvy
- * (`--jantar-text`) má 5,2:1; v tmavém režimu se oba tokeny rovnají, takže se
- * tam nic nemění (H-3-04).
+ * Výplň odměrky vůči dráze (`bg-line/40`). WCAG 1.4.11 chce u grafiky, která
+ * nese informaci, aspoň 3:1 — systémové barvy stavů v plné sytosti (zelená
+ * #34c759, žlutá #ffcc00) by proti světlé dráze neprošly, proto jsou tokeny
+ * ve světlém režimu tmavší odstíny týchž barev. Poměry ověřuje
+ * test/design-tokens.test.ts (H-3-04) a čte je přímo z téhle mapy.
  */
 const ZONE_COLOR: Record<LimitStatus['zone'], string> = {
-  OK: 'bg-zelena',
-  WARNING: 'bg-jantar-text',
-  CRITICAL: 'bg-oranz',
-  EXCEEDED: 'bg-cervena',
+  OK: 'bg-success',
+  WARNING: 'bg-caution',
+  CRITICAL: 'bg-warning',
+  EXCEEDED: 'bg-danger',
 };
 
-const ZONE_TEXT: Record<LimitStatus['zone'], string> = {
-  OK: 'text-zelena-text',
-  WARNING: 'text-jantar-text',
-  CRITICAL: 'text-oranz-text',
-  EXCEEDED: 'text-cervena',
+export const ZONE_TEXT: Record<LimitStatus['zone'], string> = {
+  OK: 'text-success-text',
+  WARNING: 'text-caution-text',
+  CRITICAL: 'text-warning-text',
+  EXCEEDED: 'text-danger',
 };
 
-const ZONE_LABEL: Record<LimitStatus['zone'], string> = {
+export const ZONE_LABEL: Record<LimitStatus['zone'], string> = {
   OK: 'v pořádku',
   WARNING: 'zvýšené čerpání',
   CRITICAL: 'těsně pod limitem',
@@ -37,19 +35,20 @@ export const zoneForRatio = (ratio: number): LimitStatus['zone'] =>
   ratio > 1 ? 'EXCEEDED' : ratio >= 0.85 ? 'CRITICAL' : ratio >= 0.6 ? 'WARNING' : 'OK';
 
 /**
- * Vodorovný bar čerpání limitu (H4): dráha 0–100 % limitu, výplň barvou pásma,
+ * Vodorovná odměrka čerpání limitu: dráha 0–100 % limitu, výplň barvou pásma,
  * svislá ryska na 100 %. Při přetečení se škála protáhne na 130 % — výplň se
- * zastaví na rysce a dál pokračuje šrafovaně červeně (poctivé „kolik přes“).
+ * zastaví na rysce a dál pokračuje šrafovaně (poctivé „kolik přes“).
+ *
+ * Výplň se při načtení neanimuje: přehled člověk otevírá denně a číslo má být
+ * na místě hned, ne po sedmi stech milisekundách.
  */
 export function LimitBar({
   ratio,
   zone,
-  animate = true,
   className,
 }: {
   ratio: number;
   zone: LimitStatus['zone'];
-  animate?: boolean;
   className?: string;
 }) {
   const exceeded = zone === 'EXCEEDED';
@@ -58,62 +57,71 @@ export function LimitBar({
   const fillPct = (Math.min(ratio, 1) / scale) * 100;
   const overPct = exceeded ? ((Math.min(ratio, 1.3) - 1) / scale) * 100 : 0;
 
+  // `span`, ne `div`: odměrka stojí i uvnitř tlačítka (řádek seznamu limitů),
+  // kam smí jen frázový obsah
   return (
-    <div
-      className={cn('relative h-2.5 w-full overflow-hidden rounded-full bg-linka/40', className)}
+    <span
+      className={cn(
+        'relative block h-1.5 w-full overflow-hidden rounded-full bg-line/40',
+        className,
+      )}
     >
-      <div
-        className={cn('absolute inset-y-0 left-0 origin-left rounded-l-full', ZONE_COLOR[zone])}
-        style={{
-          width: `${fillPct}%`,
-          animation: animate ? 'gauge-grow 700ms ease-out' : undefined,
-        }}
+      <span
+        className={cn('absolute inset-y-0 left-0 rounded-l-full', ZONE_COLOR[zone])}
+        style={{ width: `${fillPct}%` }}
       />
       {exceeded && overPct > 0 && (
-        <div
+        <span
           aria-hidden
           className="absolute inset-y-0"
           style={{
             left: `${markPct}%`,
             width: `${overPct}%`,
             background:
-              'repeating-linear-gradient(135deg, var(--cervena) 0 4px, transparent 4px 8px)',
+              'repeating-linear-gradient(135deg, var(--danger) 0 3px, transparent 3px 6px)',
           }}
         />
       )}
-      <div
+      <span
         aria-hidden
-        className="absolute inset-y-0 w-0.5 bg-inkoust/60"
+        className="absolute inset-y-0 w-0.5 bg-ink/70"
         style={{ left: `calc(${markPct}% - 1px)` }}
       />
-    </div>
+    </span>
   );
 }
 
-/** KPI karta limitu: hodnota/limit + procento se štítkem zóny nad barem. */
+/**
+ * Jeden limit jako samostatný blok: název, čerpání, odměrka a vysvětlení.
+ * Bez rámečku — hierarchii nese velikost čísla a barva stavu. Na přehledu
+ * limity zobrazuje `LimitsInspector`; tenhle blok slouží tam, kde stojí
+ * limit sám (veřejné stránky).
+ */
 export function LimitGauge({
   label,
   hint,
-  status, headingAs, className }: {
+  status,
+  headingAs: Heading = 'h2',
+  className,
+}: {
   label: string;
   hint: string;
   status: LimitStatus;
   headingAs?: 'h2' | 'h3' | 'p';
-  /** Umístění v mřížce (např. dorovnání řádku) — vzhled karty zůstává. */
   className?: string;
 }) {
   return (
-    <Card className={cn('space-y-1.5', className)}>
-      <CardTitle as={headingAs}>{label}</CardTitle>
-      <p className="font-mono text-lg font-medium">
+    <div className={cn('space-y-2', className)}>
+      <Heading className="type-callout font-medium text-ink">{label}</Heading>
+      <p className="type-figure">
         {czk(status.usedCzk)}
-        <span className="text-sm text-inkoust-tlumeny"> / {czk(status.limitCzk)}</span>
-      </p>
-      <p className={cn('text-sm font-semibold', ZONE_TEXT[status.zone])}>
-        {pct(status.ratio * 100)} · {ZONE_LABEL[status.zone]}
+        <span className="type-callout font-normal text-ink-muted"> z {czk(status.limitCzk)}</span>
       </p>
       <LimitBar ratio={status.ratio} zone={status.zone} />
-      <p className="pt-1 text-xs text-inkoust-tlumeny">{hint}</p>
-    </Card>
+      <p className={cn('type-footnote font-medium', ZONE_TEXT[status.zone])}>
+        {pct(status.ratio * 100)} · {ZONE_LABEL[status.zone]}
+      </p>
+      <p className="type-footnote text-ink-muted">{hint}</p>
+    </div>
   );
 }

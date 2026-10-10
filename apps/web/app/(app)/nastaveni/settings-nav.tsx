@@ -27,7 +27,7 @@ export function SettingsNav({ active }: { active: SettingsSection }) {
      * u aktivní záložky. Na displeji s klasickými posuvníky z toho byly dvě
      * šipky vpravo nahoře. Do řádku se vejdou i na mobilu díky `short`.
      */
-    <nav aria-label="Sekce nastavení" className="flex gap-1 border-b border-linka">
+    <nav aria-label="Sekce nastavení" className="flex gap-1 border-b border-line">
       {SECTIONS.map((section) => (
         <Link
           key={section.key}
@@ -38,8 +38,8 @@ export function SettingsNav({ active }: { active: SettingsSection }) {
             // jinak jsou pod ní 2 px růžové a hned pod nimi 1 px šedé
             '-mb-px whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm transition-colors',
             section.key === active
-              ? 'border-ruzova font-semibold text-ruzova-text'
-              : 'border-transparent text-inkoust-tlumeny hover:text-inkoust',
+              ? 'border-accent font-semibold text-accent-text'
+              : 'border-transparent text-ink-muted hover:text-ink',
           )}
         >
           <span className="sm:hidden">{section.short}</span>

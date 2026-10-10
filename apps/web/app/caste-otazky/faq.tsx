@@ -21,7 +21,7 @@ export const FAQ: FaqItem[] = [
         zjistíš za minutu v{' '}
         <Link
           href="/kalkulacka"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           kalkulačce
         </Link>
@@ -47,7 +47,7 @@ export const FAQ: FaqItem[] = [
         Kompletní seznam s návody, kde výpis stáhnout, je na stránce{' '}
         <Link
           href="/platformy"
-          className="font-medium text-ruzova-text underline underline-offset-2"
+          className="font-medium text-accent-text underline underline-offset-2"
         >
           Platformy
         </Link>

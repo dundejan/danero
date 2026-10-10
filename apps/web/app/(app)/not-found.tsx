@@ -22,22 +22,22 @@ export default function AppNotFound() {
           stránky, která `notFound()` vyhodila — prohlížeč bere ten první,
           takže by tu jen přibyl třetí neplatný `<title>`. Titulek 404 musí
           vzniknout v `generateMetadata` té stránky (audit H2-06). */}
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
+      <p className="tabular-nums text-xs font-semibold uppercase tracking-[0.18em] text-accent-text">
         Chyba 404
       </p>
-      <h1 className="mt-3 text-balance font-display text-3xl font-bold leading-tight tracking-tight">
+      <h1 className="mt-3 text-balance text-3xl font-bold leading-tight tracking-tight">
         Tahle stránka neexistuje
       </h1>
-      <p className="mt-4 text-inkoust-tlumeny">
+      <p className="mt-4 text-ink-muted">
         Buď se odkaz změnil, nebo v adrese něco přebývá. Pokud jsi mířil na detail pozice,
         kterou v evidenci nemáš, může chybět import — historie se do Danera dostane až
         z výpisu nebo z napojeného účtu.
       </p>
-      <ul className="mt-6 space-y-2 text-inkoust-tlumeny">
+      <ul className="mt-6 space-y-2 text-ink-muted">
         <li>
           <Link
             href="/prehled"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Přehled
           </Link>{' '}
@@ -46,7 +46,7 @@ export default function AppNotFound() {
         <li>
           <Link
             href="/portfolio"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Portfolio
           </Link>{' '}
@@ -55,7 +55,7 @@ export default function AppNotFound() {
         <li>
           <Link
             href="/import"
-            className="font-medium text-ruzova-text underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Zdroje dat
           </Link>{' '}

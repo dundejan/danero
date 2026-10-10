@@ -2,151 +2,371 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Design tokeny — docs/07-design.md („růžový formulář“) */
+/* ──────────────────────────────────────────────────────────────────────────
+   Designový základ „macOS“ (varianta C redesignu).
+
+   Jazyk desktopových aplikací Macu: neutrální plochy, jediná akcentní barva,
+   stavy systémovými barvami, průsvitný materiál jen na chromu (postranní
+   panel, lišty, sheety). Hierarchii nese typografie a zarovnání, ne rámečky.
+
+   Barevné tokeny jsou schválně hexadecimální: test/design-tokens.test.ts
+   z nich počítá kontrasty a hlídá, že každá barevná třída má svůj token.
+   ────────────────────────────────────────────────────────────────────────── */
 :root {
-  --pozadi: #f6f5f1;
-  --plocha: #ffffff;
-  --inkoust: #171930;
-  --inkoust-tlumeny: #5a5d78;
-  --ruzova: #d6336c;
-  --zelena: #2e8b62;
-  --jantar: #c7861b;
-  --oranz: #c25a25;
-  --cervena: #b3362f;
-  --linka: #e4e2da;
-  /* Hranice ovládacích prvků (pole, selecty, přepínače, sekundární tlačítka).
-     WCAG 2.1 SC 1.4.11 žádá u hranice, která prvek odlišuje od okolí, ≥ 3:1 —
-     a `--linka` má proti bílé výplni jen 1,30:1 (audit H2-02, 7. 8. 2026):
-     bílé pole na bílé kartě pak splývá s plochou. Ztmavit rovnou `--linka`
-     nešlo — nese i vlásové oddělovače a rámečky karet, kde by taková čára
-     byla hrubá. Proto vlastní token; ověřuje ho test/design-tokens.test.ts.
-     #8f8a7e: 3,44:1 na --plocha, 3,15:1 na --pozadi. */
-  --linka-ovladaci: #8f8a7e;
-  /* Kategorické barvy grafů (G3) — pevné pořadí, kontrast ≥ 3:1 proti ploše
-     karet. Semaforové barvy limitů se v grafech NEpoužívají pro série — jen
-     pro stav/polaritu. Brand růžová do sérií NEpatří vůbec (F1 z panelového
-     testování): zůstává výhradně akcentem (dnes/limit/aktivní/hover). */
-  --graf-1: #1c7ed6;
-  --graf-2: #3b5bdb;
-  --graf-3: #0ca678;
-  --graf-4: #7048e8;
-  /* Rozšíření palety 5–8 (koláč alokace, kde jsou 4 sloty málo) — barva tam
-     jen odděluje sousední výseče (identitu nesou popisky); hodnoty se
-     semaforem nekolidují (žádná jantarová/oranžová/červená). */
-  --graf-5: #1098ad;
-  --graf-6: #ae3ec9;
-  --graf-7: #5c940d;
-  --graf-8: #868e96;
-  /* Syté výplně pro CTA/danger s bílým textem — v dark módu NEsmí zesvětlat
-     (světlé odstíny --ruzova/--cervena tam slouží textu, bílá by na nich
-     neměla kontrast). Hodnoty = světlé tokeny, stejné v obou režimech. */
-  --ruzova-syta: #d6336c;
-  --cervena-syta: #b3362f;
-  --zelena-syta: #2a7d59;
-  /* Textové odstíny akcentů — drobný text na tónovaných plochách musí držet
-     AA 4,5:1; světlé akcenty samy o sobě padají (růžová 4,2:1, jantar 2,8:1,
-     zelená 4,0:1 na --pozadi). Pro výplně/okraje dál platí základní tokeny. */
-  --ruzova-text: #bb2058;
-  --zelena-text: #1f6a4a;
-  --jantar-text: #8a5c0f;
-  --oranz-text: #9c451a;
+  /* Plochy. `surface` je obsah okna (bílá), `canvas` druhotná plocha —
+     postranní panel, skupiny, tiché výplně. `control` je výplň ovládacích
+     prvků (dráha segmentového přepínače, šedé tlačítko). */
+  --surface: #ffffff;
+  --canvas: #f5f5f7;
+  --control: #e8e8ed;
+
+  /* Text. Typická „apple“ šedá #86868b má na bílé jen 3,62:1 — druhotný text
+     je proto tmavší: #6e6e73 = 5,07:1 na --surface, 4,66:1 na --canvas. */
+  --ink: #1d1d1f;
+  --ink-muted: #6e6e73;
+
+  /* Vlásové oddělovače (řádky tabulek, hrany lišt). */
+  --line: #d2d2d7;
+  /* Hranice ovládacích prvků (pole, selecty, přepínače). WCAG 2.1 SC 1.4.11
+     žádá u hranice, která prvek odlišuje od okolí, ≥ 3:1 — vlásová --line má
+     proti bílé 1,5:1, takže pole na bílé ploše by splývalo. Proto vlastní
+     token: #86868b = 3,62:1 na --surface, 3,33:1 na --canvas. */
+  --line-control: #86868b;
+
+  /* Akcent: systémová modrá. V macOS je to výchozí akcent a barva, kterou
+     uživatel čte jako „tohle je aktivní / sem se kliká“; s červenou, oranžovou
+     ani zelenou stavů si neplete (dřívější růžová stála těsně vedle červené).
+     `accent` = výplně a indikátory, `accent-fill` = výplň s bílým textem
+     (4,70:1), `accent-text` = odkazy a drobný text (5,57:1 na bílé). */
+  --accent: #0071e3;
+  --accent-fill: #0071e3;
+  --accent-text: #0066cc;
+
+  /* Značka: růžová tečka loga. Logo se chová jako ikona aplikace — nese barvu
+     značky, zatímco ovládání používá systémový akcent. Jinde se nepoužívá. */
+  --brand: #d6336c;
+
+  /* Stavy — systémová zelená / žlutá / oranžová / červená v odstínech, které
+     ve světlém režimu drží kontrast: výplň odměrky ≥ 3:1 proti dráze,
+     `-text` ≥ 4,5:1 na --surface i --canvas, `-fill` ≥ 4,5:1 s bílým textem. */
+  --success: #248a3d;
+  --success-text: #1d7a34;
+  --success-fill: #1d7a34;
+  --caution: #b26b00;
+  --caution-text: #8f5200;
+  --warning: #c93400;
+  --warning-text: #b83000;
+  --danger: #d70015;
+  --danger-fill: #d70015;
+
+  /* Kategorické barvy grafů — pevné pořadí, kontrast ≥ 3:1 proti ploše.
+     Barvy stavů se pro série nepoužívají (nesou jen stav/polaritu). */
+  --chart-1: #0071e3;
+  --chart-2: #5856d6;
+  --chart-3: #0c8f8f;
+  --chart-4: #8944ab;
+  --chart-5: #1098ad;
+  --chart-6: #ae3ec9;
+  --chart-7: #5c940d;
+  --chart-8: #7c7c80;
+
+  /* Materiály (průsvitný chrom). Hodnoty jsou rgba, ne hex — nejsou to barvy
+     pro utility třídy, používají je jen třídy .material-* níž.
+     Sheet je skoro neprůhledný schválně: spodní sheet žije v nativním
+     <dialog> (horní vrstva prohlížeče) a tam rozostření na stránku pod ním
+     nedosáhne — s nižším krytím by přes něj ostře prosvítala spodní lišta. */
+  --material-bar: rgba(255, 255, 255, 0.8);
+  --material-sidebar: rgba(245, 245, 247, 0.78);
+  --material-sheet: rgba(246, 246, 248, 0.92);
+  --material-edge: rgba(0, 0, 0, 0.1);
+  /* Zvýraznění řádku (výběr v postranním panelu, stisk řádku tabulky). */
+  --highlight: rgba(0, 0, 0, 0.06);
+  --highlight-pressed: rgba(0, 0, 0, 0.1);
+  --scrim: rgba(0, 0, 0, 0.32);
+  /* Stín nese jen to, co se opravdu vznáší (okno, sheet, popover, palec
+     segmentového přepínače) — obsah stíny nemá. */
+  --elevation-floating:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.06);
+  --elevation-window:
+    0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 36px 64px -36px rgba(0, 0, 0, 0.3),
+    0 8px 20px -8px rgba(0, 0, 0, 0.1);
+  --elevation-thumb: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.14);
+
+  /* Pohyb. Pružiny (motion) jsou v lib/motion.ts; tohle jsou jen časy pro CSS:
+     odezva na stisk je okamžitá a krátká, nic v rozhraní netrvá přes 250 ms. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --press-duration: 100ms;
+
+  /* Rozměry skořápky aplikace. */
+  --sidebar-width: 15rem;
+  --toolbar-height: 3.25rem;
+  --tabbar-height: 3.25rem;
+  /* Okraje obsahu okna; lišta je zápornými okraji ruší (app-toolbar.tsx). */
+  --page-gutter: 1rem;
+  --page-top: 1.25rem;
+  /* Dvousloupcová pracovní plocha: šířka inspektoru a mezera mezi sloupci. */
+  --inspector-width: 22rem;
+  --column-gap: 2.5rem;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --page-gutter: 2rem;
+    --page-top: 1.75rem;
+  }
+}
+@media (min-width: 80rem) {
+  :root {
+    --page-gutter: 2.5rem;
+  }
 }
 
 .dark {
-  --pozadi: #15172b;
-  --plocha: #1c1e36;
-  --inkoust: #edece6;
-  --inkoust-tlumeny: #9a9db8;
-  --ruzova: #f06e9b;
-  --zelena: #5cbd8f;
-  --jantar: #e3a93c;
-  --oranz: #e07c42;
-  /* světlejší než světlý token — záporné hodnoty na --plocha 5,5:1 (WCAG AA) */
-  --cervena: #e8746a;
-  --linka: #2b2e4a;
-  /* v tmavém režimu musí hranice naopak zesvětlat: #686c8d = 3,20:1 na
-     --plocha, 3,46:1 na --pozadi (samotná --linka má 1,24:1) */
-  --linka-ovladaci: #686c8d;
-  --graf-1: #339af0;
-  --graf-2: #5c7cfa;
-  --graf-3: #0ca678;
-  --graf-4: #845ef7;
-  --graf-5: #1098ad;
-  --graf-6: #be4bdb;
-  --graf-7: #66a80f;
-  --graf-8: #adb5bd;
-  --ruzova-syta: #d6336c;
-  --cervena-syta: #b3362f;
-  --zelena-syta: #2a7d59;
-  /* v dark módu textové kontrasty drží už samotné (zesvětlené) akcenty */
-  --ruzova-text: var(--ruzova);
-  --zelena-text: var(--zelena);
-  --jantar-text: var(--jantar);
-  --oranz-text: var(--oranz);
+  /* Tmavý režim po vzoru Akcií na Macu: obsah na černé, druhotné plochy
+     o stupeň světlejší (ne naopak) — hloubku nese jas, ne stín. */
+  --surface: #000000;
+  --canvas: #1c1c1e;
+  --control: #2c2c2e;
+  --ink: #f5f5f7;
+  /* 7,31:1 na --surface, 5,93:1 na --canvas */
+  --ink-muted: #98989d;
+  --line: #38383a;
+  /* 4,14:1 na --surface, 3,36:1 na --canvas */
+  --line-control: #6e6e73;
+  --accent: #0a84ff;
+  --accent-fill: #0071e3;
+  /* 6,96:1 na --surface, 5,64:1 na --canvas */
+  --accent-text: #2997ff;
+  --brand: #f06e9b;
+  --success: #30d158;
+  --success-text: #30d158;
+  --success-fill: #1d7a34;
+  --caution: #ffd60a;
+  --caution-text: #ffd60a;
+  --warning: #ff9f0a;
+  --warning-text: #ff9f0a;
+  /* 6,16:1 na --surface, 4,99:1 na --canvas */
+  --danger: #ff453a;
+  --danger-fill: #d70015;
+  --chart-1: #0a84ff;
+  --chart-2: #7d7aff;
+  --chart-3: #40c8c8;
+  --chart-4: #bf5af2;
+  --chart-5: #64d2ff;
+  --chart-6: #da8fff;
+  --chart-7: #8fce3b;
+  --chart-8: #aeaeb2;
+  --material-bar: rgba(0, 0, 0, 0.78);
+  --material-sidebar: rgba(28, 28, 30, 0.78);
+  --material-sheet: rgba(36, 36, 38, 0.92);
+  --material-edge: rgba(255, 255, 255, 0.14);
+  --highlight: rgba(255, 255, 255, 0.08);
+  --highlight-pressed: rgba(255, 255, 255, 0.14);
+  --scrim: rgba(0, 0, 0, 0.56);
+  --elevation-floating: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --elevation-window: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 40px 80px -24px rgba(0, 0, 0, 0.8);
+  --elevation-thumb: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {
-  --color-pozadi: var(--pozadi);
-  --color-plocha: var(--plocha);
-  --color-inkoust: var(--inkoust);
-  --color-inkoust-tlumeny: var(--inkoust-tlumeny);
-  --color-ruzova: var(--ruzova);
-  --color-zelena: var(--zelena);
-  --color-jantar: var(--jantar);
-  --color-oranz: var(--oranz);
-  --color-cervena: var(--cervena);
-  --color-linka: var(--linka);
-  --color-linka-ovladaci: var(--linka-ovladaci);
-  --color-ruzova-syta: var(--ruzova-syta);
-  --color-cervena-syta: var(--cervena-syta);
-  --color-zelena-syta: var(--zelena-syta);
-  --color-ruzova-text: var(--ruzova-text);
-  --color-zelena-text: var(--zelena-text);
-  --color-jantar-text: var(--jantar-text);
-  --color-oranz-text: var(--oranz-text);
-  --color-graf-1: var(--graf-1);
-  --color-graf-2: var(--graf-2);
-  --color-graf-3: var(--graf-3);
-  --color-graf-4: var(--graf-4);
-  --color-graf-5: var(--graf-5);
-  --color-graf-6: var(--graf-6);
-  --color-graf-7: var(--graf-7);
-  --color-graf-8: var(--graf-8);
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+  --color-control: var(--control);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-line-control: var(--line-control);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-text: var(--accent-text);
+  --color-brand: var(--brand);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-fill: var(--success-fill);
+  --color-caution: var(--caution);
+  --color-caution-text: var(--caution-text);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+  --color-danger-fill: var(--danger-fill);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
 
-  --font-display: var(--font-bricolage), system-ui, sans-serif;
-  --font-sans: var(--font-hanken), system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  /* Systémové písmo. Pojmenované rodiny stojí před `system-ui` schválně:
+     na Macu vyhraje San Francisco, na Windows Segoe UI, na Androidu Roboto;
+     samotné `system-ui` vrací na některých systémech písmo jiné abecedy.
+     Čísla se zarovnávají přes `tabular-nums`, ne neproporcionálním písmem. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-floating: var(--elevation-floating);
+  --shadow-window: var(--elevation-window);
+  --shadow-thumb: var(--elevation-thumb);
 }
 
-/* Tisk podkladů k přiznání (/report): bílé pozadí, inkoust, bez navigace
+/* ── Typografická škála ─────────────────────────────────────────────────────
+   Proklad a prostrkání se mění s velikostí: velké titulky těsně a se záporným
+   prostrkáním, text kolem nuly, drobné popisky lehce kladně. Hierarchie je
+   vždy trojice velikost + váha + proklad. Velikosti jsou v rem, takže se
+   škála řídí nastavením velikosti písma v prohlížeči. */
+@utility type-display {
+  font-size: clamp(2.5rem, 1.55rem + 4.2vw, 4.5rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+@utility type-title-1 {
+  font-size: clamp(1.75rem, 1.35rem + 1.7vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+@utility type-title-2 {
+  font-size: 1.375rem;
+  line-height: 1.2;
+  letter-spacing: -0.018em;
+  font-weight: 600;
+}
+@utility type-title-3 {
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  font-weight: 600;
+}
+@utility type-lede {
+  font-size: clamp(1.0625rem, 0.98rem + 0.4vw, 1.3125rem);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+@utility type-body {
+  font-size: 0.9375rem;
+  line-height: 1.47;
+  letter-spacing: -0.005em;
+}
+@utility type-callout {
+  font-size: 0.875rem;
+  line-height: 1.43;
+  letter-spacing: 0;
+}
+@utility type-footnote {
+  font-size: 0.8125rem;
+  line-height: 1.38;
+  letter-spacing: 0;
+}
+@utility type-caption {
+  font-size: 0.75rem;
+  line-height: 1.33;
+  letter-spacing: 0.005em;
+}
+/* Čísla jako hlavní sdělení: tabulkové číslice, těsné prostrkání. */
+@utility type-figure {
+  font-size: 1.375rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+@utility type-figure-lg {
+  font-size: clamp(1.75rem, 1.5rem + 1vw, 2.125rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Materiály ──────────────────────────────────────────────────────────────
+   Průsvitnost patří jen chromu, pod kterým něco je nebo roluje. Silnější
+   plocha = silnější rozostření. Spodní hranu lišty kreslí .scroll-edge,
+   ne plný rámeček. */
+@utility material-bar {
+  background-color: var(--material-bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+@utility material-sidebar {
+  background-color: var(--material-sidebar);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+}
+@utility material-sheet {
+  background-color: var(--material-sheet);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  backdrop-filter: saturate(180%) blur(40px);
+}
+
+/* Hrana lišty tam, kde pod ní roluje obsah: vlásová linka, která se objeví až
+   po odrolování (lišta nahoře na stránce žádnou čáru nemá). Kde prohlížeč
+   neumí animace řízené rolováním, zůstává linka viditelná stále. */
+@utility scroll-edge {
+  box-shadow: 0 0.5px 0 var(--material-edge);
+  @supports (animation-timeline: scroll()) {
+    box-shadow: 0 0.5px 0 transparent;
+    animation: scroll-edge-in linear both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 24px;
+  }
+}
+@keyframes scroll-edge-in {
+  to {
+    box-shadow: 0 0.5px 0 var(--material-edge);
+  }
+}
+
+/* ── Odezva na stisk ────────────────────────────────────────────────────────
+   Zpětná vazba přichází při stisku (:active), ne při uvolnění. Tlačítko se
+   nepatrně zmenší; řádek seznamu se jen zvýrazní (řádky se neškálují). */
+@utility pressable {
+  transition: transform var(--press-duration) var(--ease-out);
+  &:active {
+    transform: scale(0.97);
+  }
+}
+@utility row-pressable {
+  &:active {
+    background-color: var(--highlight-pressed);
+  }
+}
+
+/* Tisk podkladů k přiznání (/report): bílé pozadí, černý text, bez navigace
    a interaktivních prvků. Prohlížeč „uložit jako PDF“ = náš PDF report. */
 @media print {
   :root,
   .dark {
-    --pozadi: #ffffff;
-    --plocha: #ffffff;
-    --inkoust: #000000;
-    --inkoust-tlumeny: #444444;
-    --linka: #bbbbbb;
+    --canvas: #ffffff;
+    --surface: #ffffff;
+    --control: #ffffff;
+    --ink: #000000;
+    --ink-muted: #444444;
+    --line: #bbbbbb;
     /* ovládací prvky se netisknou (form/button níž), ale token musí být
        definovaný i tady — jinak by v tisku zůstala tmavá varianta */
-    --linka-ovladaci: #767676;
-    /* H-3-05: tisk z TMAVÉHO režimu měnil jen šest tokenů výš, takže barevné
-       texty šly na papír ve světlých odstínech pro tmavé pozadí: „Osvobozeno“
-       (--zelena-text) mělo na bílé 2,30:1, varování (--jantar-text) 2,10:1,
-       červená 2,94 a růžová 2,83 — AA pro drobný text chce 4,50. Semafor proto
-       v tisku vracíme na světlé hodnoty. */
-    --zelena: #2e8b62;
-    --jantar: #c7861b;
-    --oranz: #c25a25;
-    --cervena: #b3362f;
-    --ruzova-text: #bb2058;
-    --zelena-text: #1f6a4a;
-    --jantar-text: #8a5c0f;
-    --oranz-text: #9c451a;
+    --line-control: #767676;
+    /* H-3-05: tisk z TMAVÉHO režimu nesmí dát na papír světlé odstíny určené
+       pro tmavé pozadí (AA pro drobný text chce 4,50) — stavy i akcent se
+       v tisku vracejí na světlé hodnoty. */
+    --success: #248a3d;
+    --caution: #b26b00;
+    --warning: #c93400;
+    --danger: #d70015;
+    --accent-text: #0066cc;
+    --success-text: #1d7a34;
+    --caution-text: #8f5200;
+    --warning-text: #b83000;
   }
   aside,
   nav,
@@ -177,33 +397,23 @@
   }
 }
 
-/* Orchestrovaný moment při načtení dashboardu (docs/07): odměrky se naplní,
-   tečky horizontu naskočí. prefers-reduced-motion vše vypíná (viz níže). */
-/* vodorovný progress bar limitů — výplň naroste zleva (šířka, ne výška) */
-@keyframes gauge-grow {
-  from {
-    transform: scaleX(0);
-  }
-}
-
+/* Tečky horizontu osvobození naskočí při prvním vykreslení (horizon-strip). */
 @keyframes dot-in {
   from {
     opacity: 0;
   }
 }
 
-/* Vodorovně scrollovatelné tabulky (mobil): stínová affordance na hranách —
+/* Vodorovně rolovatelné tabulky (mobil): stínová affordance na hranách —
    bez ní vypadá oříznutý poslední sloupec jako rozbitý layout. Čistě CSS
-   (Lea Verou scroll shadows): krycí gradienty scrollují s obsahem
-   (attachment: local), stínové drží na hranách. Předpoklad: plocha karty. */
-.scroll-stiny {
+   (Lea Verou scroll shadows): krycí přechody rolují s obsahem
+   (attachment: local), stínové drží na hranách. Předpoklad: plocha --surface. */
+.scroll-shadows {
   background:
-    linear-gradient(to right, var(--plocha) 30%, transparent) 0 0,
-    linear-gradient(to left, var(--plocha) 30%, transparent) 100% 0,
-    linear-gradient(to right, color-mix(in srgb, var(--inkoust) 14%, transparent), transparent)
-      0 0,
-    linear-gradient(to left, color-mix(in srgb, var(--inkoust) 14%, transparent), transparent)
-      100% 0;
+    linear-gradient(to right, var(--surface) 30%, transparent) 0 0,
+    linear-gradient(to left, var(--surface) 30%, transparent) 100% 0,
+    linear-gradient(to right, color-mix(in srgb, var(--ink) 14%, transparent), transparent) 0 0,
+    linear-gradient(to left, color-mix(in srgb, var(--ink) 14%, transparent), transparent) 100% 0;
   background-size:
     40px 100%,
     40px 100%,
@@ -214,14 +424,27 @@
 }
 
 @layer base {
+  html {
+    /* mobil: šedý záblesk prohlížeče přes stisknutý prvek by se pral s vlastní
+       odezvou na stisk; inflace písma na šířku rozbíjí škálu */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
-    background: var(--pozadi);
-    color: var(--inkoust);
-    font-family: var(--font-hanken), system-ui, sans-serif;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.47;
+    letter-spacing: -0.005em;
+    font-optical-sizing: auto;
+    text-rendering: optimizeLegibility;
   }
 
   :focus-visible {
-    outline: 2px solid var(--ruzova);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
@@ -241,16 +464,87 @@
     cursor: pointer;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      /* i delay — stagger teček horizontu (index × 25 ms) by jinak nechal
-         prvky až sekundu neviditelné (fill-mode both drží opacity 0) */
-      animation-delay: 0ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+  /* Dotyk: žádné čekání na dvojité klepnutí a žádné označování popisku
+     tlačítka dlouhým stiskem. Jen ovládací prvky — text stránky (a odkazy
+     v něm) zůstává označitelný, lidé si z něj kopírují částky a hlášky. */
+  button,
+  a,
+  summary,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+  button,
+  summary,
+  [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* iOS Safari přiblíží stránku při fokusu pole s písmem pod 16 px a zpátky
+     ji nevrátí. Zákaz zoomu je chyba přístupnosti — opravuje se velikost. */
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 1rem;
     }
+  }
+}
+
+/* Mimo @layer: pravidla níž musí přebít utility třídy (.pressable, .material-*),
+   a nevrstvené CSS má před vrstvami přednost. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    /* i delay — stagger teček horizontu (index × 25 ms) by jinak nechal
+       prvky až sekundu neviditelné (fill-mode both drží opacity 0) */
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  /* Omezený pohyb neznamená žádnou odezvu: barvy a průhlednost se mění dál,
+     mizí jen posuny a změny měřítka. */
+  .pressable,
+  [class*='transition-transform'],
+  [class*='transition-all'] {
+    transition-duration: 0.01ms !important;
+  }
+  .pressable:active {
+    transform: none;
+  }
+}
+
+/* Omezená průhlednost / vyšší kontrast: materiál ztuhne v plnou plochu
+   a tam, kde ho nesla jen průsvitnost, dostane zřetelnou hranu. */
+@media (prefers-reduced-transparency: reduce) {
+  .material-bar,
+  .material-sidebar,
+  .material-sheet {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .material-bar {
+    background-color: var(--surface);
+  }
+  .material-sidebar,
+  .material-sheet {
+    background-color: var(--canvas);
+  }
+}
+@media (prefers-contrast: more) {
+  .material-bar,
+  .material-sidebar,
+  .material-sheet {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: var(--surface);
+    outline: 1px solid var(--ink);
+    outline-offset: -1px;
+  }
+  .scroll-edge {
+    animation: none;
+    box-shadow: 0 1px 0 var(--ink);
   }
 }
