@@ -256,13 +256,21 @@ export interface HorizonDotItem {
   quantity: number;
   /** Příspěvek pozice k váze tečky (CZK, nebo kusy — dle weightBasis tečky). */
   weight: number;
+  /**
+   * Pozice nemá cenu, přestože se tečka váží hodnotou — k váze nepřispívá
+   * a v rozpadu se ukáže počtem kusů, ne jako „0 Kč“.
+   */
+  unpriced?: true;
 }
 
 export interface HorizonDot {
   /** Datum osvobození: 'YYYY-MM-DD' (denní tečka z horizonDots), po klientském
    *  slučování groupHorizonDots případně 'YYYY-MM' (měsíční tečka). */
   exemptFrom: string;
-  /** Váha pro velikost tečky: součet hodnot v CZK (známe-li ceny všech pozic), jinak kusů. */
+  /**
+   * Váha pro velikost tečky: součet hodnot v CZK oceněných pozic; kusy jen
+   * tehdy, když cenu nemá žádná pozice portfolia.
+   */
   weight: number;
   weightBasis: 'value' | 'quantity';
   isExempt: boolean;
@@ -283,16 +291,24 @@ function pricePerShareCzk(
   return rate ? price.price.mul(d(rate)) : null;
 }
 
-/** Váhy lotů: CZK hodnota, jen když jde ocenit CELÉ portfolio — jinak kusy (nemíchat). */
+/**
+ * Čím se váží portfolio: hodnotou v CZK, jakmile jde ocenit aspoň jedna
+ * pozice, jinak počtem kusů.
+ *
+ * Dřív stačila JEDINÁ pozice bez ceny a celé portfolio se přepnulo na kusy —
+ * a sto milionů kusů levné mince pak přebilo všechno ostatní („Bez daně už
+ * dnes 0 %“ u portfolia za miliardy, R2-10). Kusy různých instrumentů se
+ * sčítat nedají; pozice bez ceny proto z vážení hodnotou vypadne a volající
+ * řekne, kolik jich je.
+ */
 function weightBasisFor(
   positions: Position[],
   prices: Map<string, InstrumentPrice>,
   fxYear: number,
 ): 'value' | 'quantity' {
-  const allPriced =
-    positions.length > 0 &&
-    positions.every((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null);
-  return allPriced ? 'value' : 'quantity';
+  return positions.some((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null)
+    ? 'value'
+    : 'quantity';
 }
 
 /**
@@ -315,7 +331,7 @@ export function horizonDots(
     {
       isExempt: boolean;
       weight: Money;
-      byIsin: Map<string, { quantity: Money; weight: Money }>;
+      byIsin: Map<string, { quantity: Money; weight: Money; unpriced: boolean }>;
     }
   >();
   for (const position of positions) {
@@ -327,7 +343,9 @@ export function horizonDots(
       if (!lot.exemptionPossible) continue;
       // klíč = přesný den osvobození → loty téhož dne sdílí i stav isExempt
       const key = lot.exemptFrom;
-      const weight = basis === 'value' && priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
+      const unpriced = basis === 'value' && priceCzk === null;
+      const weight =
+        basis === 'quantity' ? lot.remaining : priceCzk ? lot.remaining.mul(priceCzk) : ZERO;
       let group = days.get(key);
       if (!group) {
         group = { isExempt: lot.isExempt, weight: ZERO, byIsin: new Map() };
@@ -339,7 +357,7 @@ export function horizonDots(
         item.quantity = item.quantity.plus(lot.remaining);
         item.weight = item.weight.plus(weight);
       } else {
-        group.byIsin.set(position.isin, { quantity: lot.remaining, weight });
+        group.byIsin.set(position.isin, { quantity: lot.remaining, weight, unpriced });
       }
     }
   }
@@ -356,6 +374,7 @@ export function horizonDots(
           label: labels.get(isin) ?? isin,
           quantity: num(item.quantity),
           weight: num(item.weight),
+          ...(item.unpriced ? { unpriced: true as const } : {}),
         })),
     }))
     .sort((a, b) => a.exemptFrom.localeCompare(b.exemptFrom));
@@ -424,14 +443,23 @@ export interface OutlookPoint {
 
 export interface ExemptionOutlook {
   points: OutlookPoint[];
-  /** 'value' = váženo hodnotou (ceny známe), 'quantity' = počtem kusů. */
+  /** 'value' = váženo hodnotou oceněných pozic, 'quantity' = počtem kusů. */
   basis: 'value' | 'quantity';
+  /**
+   * Kolik pozic se do podílu nepočítá, protože nemají cenu (jen u `value`).
+   * Podíl je pak „z oceněných pozic“ a stránka to musí říct.
+   */
+  unpricedCount: number;
 }
 
 /**
  * Kumulativní osvobozování portfolia v čase (výhled z exemptFrom lotů).
- * Váha lotu = hodnota v CZK (kde známe cenu i kurz), jinak fallback na kusy
- * pro celé portfolio — míchat měny bez přepočtu by lhalo.
+ *
+ * Váha lotu je jeho hodnota v CZK. Pozice bez ceny (nebo bez kurzu měny) se do
+ * podílu nepočítá a vrací se jejich počet — podíl je pak z oceněné části.
+ * Na počet kusů se přechází jen u portfolia o JEDINÉM instrumentu: kusy akcie
+ * a kusy krypta se sčítat nedají (R2-10), takže víc instrumentů bez jediné
+ * ceny podíl nemá vůbec (`null`).
  */
 export function exemptionOutlook(
   positions: Position[],
@@ -439,16 +467,22 @@ export function exemptionOutlook(
   today: string,
   fxYear: number,
 ): ExemptionOutlook | null {
-  const lots = positions.flatMap((position) => position.lots.map((lot) => ({ position, lot })));
-  if (lots.length === 0) return null;
+  const held = positions.filter((position) => position.lots.length > 0);
+  if (held.length === 0) return null;
 
-  const basis = weightBasisFor(positions, prices, fxYear);
+  const priced = held.filter((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null);
+  const basis: ExemptionOutlook['basis'] = priced.length > 0 ? 'value' : 'quantity';
+  if (basis === 'quantity' && held.length > 1) return null;
+
+  const counted = basis === 'value' ? priced : held;
+  const lots = counted.flatMap((position) => position.lots.map((lot) => ({ position, lot })));
   const weight = ({ position, lot }: (typeof lots)[number]): Money => {
     const priceCzk = basis === 'value' ? pricePerShareCzk(position.isin, prices, fxYear) : null;
     return priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
   };
 
   const total = lots.reduce((sum, item) => sum.plus(weight(item)), ZERO);
+  // nulová (nebo záporná) váha: podíl by dělil nulou
   if (total.lte(0)) return null;
 
   let exempt = lots
@@ -469,5 +503,5 @@ export function exemptionOutlook(
     if (last.date === item.lot.exemptFrom) last.exemptShare = share();
     else points.push({ date: item.lot.exemptFrom, exemptShare: share() });
   }
-  return { points, basis };
+  return { points, basis, unpricedCount: basis === 'value' ? held.length - priced.length : 0 };
 }
