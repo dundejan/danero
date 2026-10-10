@@ -15,9 +15,34 @@ describe('plural: český tvar slova k číslu', () => {
 });
 
 describe('money: částky v historii transakcí', () => {
+  // mezi částkou a kódem měny i mezi tisíci je pevná mezera (U+00A0)
+  const NBSP = '\u00A0';
+
   it('zaokrouhluje na 2 desetinná místa s čárkou a jednotkou', () => {
-    expect(money(0.73383905457, 'USD')).toBe('0,73 USD');
-    expect(money(0.13, 'USD')).toBe('0,13 USD');
+    expect(money(0.73383905457, 'USD')).toBe(`0,73${NBSP}USD`);
+    expect(money(0.13, 'USD')).toBe(`0,13${NBSP}USD`);
+    expect(money(d('1234.5'), 'EUR')).toBe(`1${NBSP}234,50${NBSP}EUR`);
+    expect(money(0, 'CZK')).toBe(`0,00${NBSP}CZK`);
+  });
+
+  it('R2-27: částku a kód měny nejde rozdělit na dva řádky', () => {
+    // „Dividenda 12 345 678,90 USD (srážka 3 703 703,67 / USD)“ na detailu pozice
+    for (const text of [money(d('12345678.90'), 'USD'), money(d('3703703.67'), 'USD', true)]) {
+      expect(text).not.toMatch(/[ \t\n]/);
+      expect(text.endsWith(`${NBSP}USD`)).toBe(true);
+    }
+  });
+
+  it('R2-11: cena pod haléř se neukáže jako nula', () => {
+    // mince za 0,00031 Kč: „0,00 CZK za kus“ vedle hodnoty pozice 38 272 Kč
+    expect(money(d('0.00031'), 'CZK')).toBe(`0,00031${NBSP}CZK`);
+    expect(money(d('0.000123456'), 'USD')).toBe(`0,000123${NBSP}USD`);
+    // zisk pozice o jednom satoshi: „+0,00 CZK (+7,1 %)“
+    expect(money(d('0.0003'), 'CZK', true)).toBe(`+0,0003${NBSP}CZK`);
+    expect(money(d('-0.0042'), 'CZK', true)).toBe(`-0,0042${NBSP}CZK`);
+    // od haléře výš beze změny, ať se sloupce částek nerozjedou
+    expect(money(d('0.01'), 'CZK')).toBe(`0,01${NBSP}CZK`);
+    expect(money(d('0.0149'), 'CZK')).toBe(`0,01${NBSP}CZK`);
   });
 });
 

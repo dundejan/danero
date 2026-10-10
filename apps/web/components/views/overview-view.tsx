@@ -491,7 +491,10 @@ export function OverviewView({
         exceeded && (
           <Link
             href={`${basePath}/report`}
-            className={buttonVariants({ variant: 'primary', size: 'sm' })}
+            // V náhledu na úvodní stránce je hlavní akcí stránky „Vyzkoušet
+            // demo“ — třetí plné modré tlačítko v prvním okně by s ní soupeřilo
+            // (R1A-26).
+            className={buttonVariants({ variant: preview ? 'secondary' : 'primary', size: 'sm' })}
           >
             Otevřít report
           </Link>

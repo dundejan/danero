@@ -63,11 +63,21 @@ const amountFormat = new Intl.NumberFormat('cs-CZ', {
   maximumFractionDigits: 2,
 });
 
-/** Částka v cizí měně česky: „1 234,56 USD“ (+ volitelné znaménko u P/L). */
+// Částka pod haléř: dvě desetinná místa by z ní udělala nulu („0,00 CZK za
+// kus“ u mince s cenou 0,00031 Kč vedle pozice za desítky tisíc — R2-11).
+// Píšou se proto první tři platné číslice, kolik desetin je potřeba.
+const tinyAmountFormat = new Intl.NumberFormat('cs-CZ', { maximumSignificantDigits: 3 });
+
+/**
+ * Částka v cizí měně česky: „1 234,56 USD“ (+ volitelné znaménko u P/L).
+ * Před kódem měny je pevná mezera — obyčejná dovolila rozlomit částku na
+ * „3 703 703,67 / USD“ (R2-27); stejně to mají `pct` a `czkCompact`.
+ */
 export const money = (value: Money | number, currency: string, signed = false): string => {
   const n = typeof value === 'number' ? value : value.toNumber();
   const sign = signed && n > 0 ? '+' : '';
-  return `${sign}${amountFormat.format(n)} ${currency}`;
+  const format = n !== 0 && Math.abs(n) < 0.01 ? tinyAmountFormat : amountFormat;
+  return `${sign}${format.format(n)}\u00A0${currency}`;
 };
 
 /** Lidské popisky metod párování prodejů (R-05c) — jednotné pro celé UI. */
