@@ -1,12 +1,19 @@
 import Link from 'next/link';
-import { Card, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { czk, czDate, money, qty, signedPct } from '@/lib/format';
+import { AppToolbar } from '@/components/app-toolbar';
+import { buttonVariants } from '@/components/ui/button';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { Group, Row } from '@/components/ui/list';
+import { Section } from '@/components/ui/section';
+import { Stat } from '@/components/ui/stat';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
+import { czk, czDate, money, plural, qty, signedPct } from '@/lib/format';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
-import type { Transaction } from '@danero/shared';
-import { buttonVariants } from '@/components/ui/button';
+import { tidy } from '@/lib/typography';
+import { cn } from '@/lib/utils';
+import { ZERO, type Transaction } from '@danero/shared';
+import type { PositionLot } from '@danero/engine';
 
 /** Popis transakce pro historii pozice (jen typy, které se ISIN týkají). */
 function describeTx(tx: {
@@ -17,12 +24,12 @@ function describeTx(tx: {
     case 'BUY':
       return {
         date: String(tx.tradeDate),
-        text: `Nákup ${qty(tx.quantity as never)} ks @ ${money(tx.pricePerShare as never, String(tx.currency))}`,
+        text: `Nákup ${qty(tx.quantity as never)} ks po ${money(tx.pricePerShare as never, String(tx.currency))}`,
       };
     case 'SELL':
       return {
         date: String(tx.tradeDate),
-        text: `Prodej ${qty(tx.quantity as never)} ks @ ${money(tx.pricePerShare as never, String(tx.currency))}`,
+        text: `Prodej ${qty(tx.quantity as never)} ks po ${money(tx.pricePerShare as never, String(tx.currency))}`,
       };
     case 'DIVIDEND':
       return {
@@ -46,7 +53,6 @@ function describeTx(tx: {
   }
 }
 
-/** Historie transakcí ISIN (nejnovější první) — pro view i kontrolu existence. */
 /** Druhy korporátních akcí česky — klíče jsou hodnoty `subtype` z modelu. */
 const KORPORATNI_AKCE: Record<string, string> = {
   SPLIT: 'štěpení akcií',
@@ -57,6 +63,7 @@ const KORPORATNI_AKCE: Record<string, string> = {
   DELISTING: 'stažení z burzy',
 };
 
+/** Historie transakcí ISIN (nejnovější první) — pro view i kontrolu existence. */
 export function positionHistory(
   txs: Transaction[],
   isin: string,
@@ -68,10 +75,37 @@ export function positionHistory(
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
+const daysText = (days: number): string => `za ${days} ${plural(days, 'den', 'dny', 'dní')}`;
+
 /**
- * Sdílené tělo detailu pozice: loty s časovými testy, ocenění a historie —
- * čisté výpočty nad hotovou analýzou. `basePath` směruje odkazy
- * ('' pro aplikaci, '/demo' pro demo).
+ * Stav časového testu jednoho nákupu. U pozice bez nároku (obchodní majetek,
+ * stablecoin, derivát) by datum i odpočet slibovaly osvobození, které nikdy
+ * nepřijde (A2-3-04) — proto „nevztahuje se“.
+ */
+function LotStatus({ lot, stacked = false }: { lot: PositionLot; stacked?: boolean }) {
+  if (!lot.exemptionPossible) return <span className="text-ink-muted">nevztahuje se</span>;
+  if (lot.isExempt) return <span className="font-medium text-success-text">už bez daně</span>;
+  return (
+    // v tabulce stojí odpočet před datem, aby data lícovala na pravý okraj
+    <span className={stacked ? 'flex flex-col-reverse' : undefined}>
+      <span className={cn('type-footnote text-ink-muted', !stacked && 'mr-2')}>
+        {daysText(lot.daysToExempt)}
+      </span>
+      <span>{czDate(lot.exemptFrom)}</span>
+    </span>
+  );
+}
+
+/**
+ * Sdílené tělo detailu pozice: čisté výpočty nad hotovou analýzou.
+ * `basePath` směruje odkazy ('' pro aplikaci, '/demo' pro demo).
+ *
+ * Skladba shora dolů:
+ * 1. cesta zpět na portfolio,
+ * 2. odpověď — kolik kusů jde dnes prodat bez daně (jedna věta) a vedle ní
+ *    hodnota, výsledek prodeje dnes a den, kdy se osvobodí další kusy,
+ * 3. vedle sebe: nákupy s jejich časovými testy | historie transakcí.
+ * Hlavní akce stránky je simulace prodeje — ta spočítá i dopad na limity.
  */
 export function PositionView({
   isin,
@@ -100,160 +134,252 @@ export function PositionView({
   const label = labels.get(isin) ?? isin;
   const fullName = instrumentNames(txs).get(isin);
 
+  const lots = position
+    ? [...position.lots].sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate))
+    : [];
+  const pending = lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
+  const nearest = pending.length
+    ? pending.reduce((a, b) => (a.exemptFrom < b.exemptFrom ? a : b))
+    : null;
+  const nearestQuantity = nearest
+    ? pending
+        .filter((lot) => lot.exemptFrom === nearest.exemptFrom)
+        .reduce((sum, lot) => sum.plus(lot.remaining), ZERO)
+    : ZERO;
+  const exemptQuantity = valuation?.exemptQuantity ?? ZERO;
+
+  // Odpověď jednou větou: stav časového testu celé pozice.
+  let verdict: string;
+  let verdictPositive = false;
+  if (!position) {
+    verdict = 'Pozice je uzavřená';
+  } else if (lots.every((lot) => !lot.exemptionPossible)) {
+    verdict = 'Časový test se na tuhle pozici nevztahuje';
+  } else if (exemptQuantity.gte(position.totalRemaining)) {
+    verdict = 'Celá pozice je bez daně';
+    verdictPositive = true;
+  } else if (exemptQuantity.gt(0)) {
+    verdict = `${qty(exemptQuantity)} z ${qty(position.totalRemaining)} ks je bez daně`;
+    verdictPositive = true;
+  } else if (nearest) {
+    // jediný termín pro všechny kusy, nebo jen první z několika
+    const single = pending.every((lot) => lot.exemptFrom === nearest.exemptFrom);
+    verdict = `${single ? 'Bez daně' : 'První kusy bez daně'} od ${czDate(nearest.exemptFrom)}`;
+  } else {
+    verdict = 'Zatím nic bez daně';
+  }
+
+  const subtitle = [fullName && fullName !== label ? fullName : null, isin !== label ? isin : null]
+    .filter((part): part is string => part !== null)
+    .join(' · ');
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          {/* drobečky patří do <nav> se seznamem — jako odstavec je čtečka
-              přečte jako běžný text a nenabídne je v seznamu navigací */}
-          <nav aria-label="Drobečková navigace" className="text-sm text-ink-muted">
-            <ol className="flex flex-wrap items-baseline gap-1">
-              <li>
-                <Link href={`${basePath}/portfolio`} className="hover:text-accent">
-                  Portfolio
-                </Link>
-              </li>
-              <li aria-hidden>/</li>
-              <li aria-current="page">{label}</li>
-            </ol>
-          </nav>
-          <h1 className="text-3xl font-bold">
-            {label}
-            {fullName && fullName !== label && (
-              <span className="ml-3 text-lg font-normal text-ink-muted">{fullName}</span>
-            )}
-          </h1>
-          <p className="mt-1 tabular-nums text-xs text-ink-muted">{isin}</p>
-        </div>
-        {position && (
-          <Link
-            href={`${basePath}/simulator?isin=${encodeURIComponent(isin)}`}
-            className={buttonVariants({ variant: 'primary' })}
-          >
-            Simulovat prodej
-          </Link>
-        )}
-      </header>
-
-      {position ? (
-        <section className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardTitle>Držíš</CardTitle>
-            <p className="mt-2 text-2xl font-bold">{qty(position.totalRemaining)} ks</p>
-            {valuation?.valueCzk && (
-              <p className="mt-1 text-xs text-ink-muted">
-                ≈ {czk(valuation.valueCzk)} (orientačně, cena{' '}
-                {money(valuation.price!, valuation.currency!)}
-                {valuation.priceAsOf && ` k ${valuation.priceAsOf.toLocaleDateString('cs-CZ')}`})
-              </p>
-            )}
-          </Card>
-          <Card>
-            <CardTitle>Bez daně už dnes</CardTitle>
-            <p className="mt-2 text-2xl font-bold text-success">
-              {qty(valuation?.exemptQuantity ?? position.totalRemaining.mul(0))} ks
-            </p>
-            <p className="mt-1 text-xs text-ink-muted">
-              Kusy po 3letém časovém testu — prodej je osvobozený bez ohledu na limity.
-            </p>
-          </Card>
-          <Card>
-            <CardTitle>Nerealizovaný zisk/ztráta</CardTitle>
-            <p
-              className={`mt-2 text-2xl font-bold ${
-                valuation?.unrealized
-                  ? valuation.unrealized.gte(0)
-                    ? 'text-success'
-                    : 'text-danger'
-                  : ''
-              }`}
+    <>
+      <AppToolbar
+        title={label}
+        actions={
+          position && (
+            <Link
+              href={`${basePath}/simulator?isin=${encodeURIComponent(isin)}`}
+              className={buttonVariants({ variant: 'primary', size: 'sm' })}
             >
-              {valuation?.unrealized ? money(valuation.unrealized, valuation.currency!, true) : '—'}
-            </p>
-            <p className="mt-1 text-xs text-ink-muted">
-              {valuation?.unrealizedPct !== undefined
-                ? `${signedPct(valuation.unrealizedPct, 1)} proti nabývací ceně — `
-                : ''}
-              kolik bys vydělal/prodělal prodejem teď, před zdaněním.
-            </p>
-          </Card>
-        </section>
-      ) : (
-        <Card>
-          <p className="text-sm text-ink-muted">
-            Pozice je uzavřená — níž zůstává kompletní historie.
-          </p>
-        </Card>
-      )}
-
-      {position && (
-        <Card className="space-y-2">
-          <CardTitle>Nákupy (loty) a časové testy</CardTitle>
-          <ScrollArea label="Nákupy (loty) a časové testy">
-            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
-            <table aria-label="Nákupy (loty) a jejich časové testy" className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                  <th scope="col" className="py-2 pr-4">Nabytí</th>
-                  <th scope="col" className="py-2 pr-4 text-right">Kusů</th>
-                  <th scope="col" className="py-2 pr-4 text-right">Cena/ks</th>
-                  <th scope="col" className="py-2 pr-4">Bez daně od</th>
-                  <th scope="col" className="py-2 text-right">Zbývá dní</th>
-                </tr>
-              </thead>
-              <tbody className="tabular-nums">
-                {position.lots.map((lot) => (
-                  <tr key={lot.lotId} className="border-t border-line">
-                    <td className="py-2 pr-4">{czDate(lot.acquisitionDate)}</td>
-                    <td className="py-2 pr-4 text-right">{qty(lot.remaining)}</td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-right">
-                      {money(lot.costPerShare, position.currency)}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {/* A2-3-04: u pozice bez nároku (obchodní majetek, stablecoin,
-                          derivát) by datum i odpočet slibovaly osvobození, které
-                          nikdy nepřijde */}
-                      {!lot.exemptionPossible ? (
-                        <span className="text-ink-muted">nevztahuje se</span>
-                      ) : lot.isExempt ? (
-                        <span className="font-medium text-success-text">už bez daně</span>
-                      ) : (
-                        czDate(lot.exemptFrom)
-                      )}
-                    </td>
-                    <td className="py-2 text-right">
-                      {!lot.exemptionPossible || lot.isExempt ? '—' : lot.daysToExempt}
-                      {lot.interpretive && (
-                        <span title="Datum nabytí vychází z výkladu (fúze/spin-off)"> *</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollArea>
-          {position.lots.some((lot) => lot.interpretive) && (
-            <p className="text-xs text-ink-muted">
-              * datum nabytí vychází z výkladu korporátní akce (detail v reportu).
-            </p>
-          )}
-        </Card>
-      )}
-
-      <Card className="space-y-2">
-        <CardTitle>Historie ({history.length})</CardTitle>
-        <ul className="space-y-1">
-          {history.map((item, index) => (
-            <li
-              key={`${item.date}-${index}`}
-              className="flex flex-wrap items-baseline gap-3 border-t border-line py-2 text-sm first:border-t-0"
-            >
-              <span className="tabular-nums text-xs text-ink-muted">{czDate(item.date)}</span>
-              <span>{item.text}</span>
+              Simulovat prodej
+            </Link>
+          )
+        }
+      />
+      <div className="@container max-w-[72rem] pt-0 md:pt-1">
+        {/* cesta zpět patří do <nav> se seznamem — jako odstavec ji čtečka
+            přečte jako běžný text a nenabídne ji mezi navigacemi */}
+        <nav aria-label="Drobečková navigace" className="-mt-2">
+          <ol>
+            <li>
+              <Link
+                href={`${basePath}/portfolio`}
+                className="type-callout inline-flex min-h-11 items-center gap-1 font-medium text-accent-text hover:underline active:opacity-60"
+              >
+                <span aria-hidden>‹</span>
+                Portfolio
+              </Link>
             </li>
-          ))}
-        </ul>
-      </Card>
-    </div>
+            <li aria-current="page" className="sr-only">
+              {label}
+            </li>
+          </ol>
+        </nav>
+
+        <div className="mt-3 flex flex-wrap items-end gap-x-16 gap-y-7">
+          <div className="min-w-0">
+            {subtitle && (
+              <p className="type-callout break-words tabular-nums text-ink-muted">{subtitle}</p>
+            )}
+            <h2
+              className={cn(
+                'type-title-1 mt-2 max-w-[22ch] text-balance',
+                verdictPositive && 'text-success-text',
+              )}
+            >
+              {tidy(verdict)}
+            </h2>
+          </div>
+
+          {position && valuation && (
+            <dl className="flex flex-wrap gap-x-12 gap-y-6">
+              {valuation.valueCzk ? (
+                <Stat
+                  label="Hodnota"
+                  value={czk(valuation.valueCzk)}
+                  note={`${qty(position.totalRemaining)} ks · ${money(valuation.price!, valuation.currency!)} za kus`}
+                  info={
+                    <InfoPopover label="Hodnota" title="Z čeho hodnota vychází">
+                      <p>
+                        {tidy(
+                          `Poslední cena od brokera${valuation.priceAsOf ? ` k ${czDate(valuation.priceAsOf)}` : ''}, orientačně přepočtená jednotným kurzem roku ${currentYear}.`,
+                        )}
+                      </p>
+                    </InfoPopover>
+                  }
+                />
+              ) : (
+                <Stat label="Držíš" value={`${qty(position.totalRemaining)} ks`} />
+              )}
+              {valuation.unrealized && (
+                <Stat
+                  label="Zisk/ztráta"
+                  tone={valuation.unrealized.gte(0) ? 'success' : 'danger'}
+                  value={money(valuation.unrealized, valuation.currency!, true)}
+                  note={
+                    valuation.unrealizedPct !== undefined
+                      ? `${signedPct(valuation.unrealizedPct, 1)} · před zdaněním`
+                      : 'před zdaněním'
+                  }
+                  info={
+                    <InfoPopover label="Zisk/ztráta">
+                      <p>
+                        {tidy(
+                          'Rozdíl dnešní hodnoty a nabývací ceny — kolik bys vydělal nebo prodělal prodejem teď, před zdaněním.',
+                        )}
+                      </p>
+                    </InfoPopover>
+                  }
+                />
+              )}
+              {nearest &&
+                (exemptQuantity.gt(0) ? (
+                  <Stat
+                    label="Další osvobození"
+                    value={czDate(nearest.exemptFrom)}
+                    note={`${qty(nearestQuantity)} ks · ${daysText(nearest.daysToExempt)}`}
+                  />
+                ) : (
+                  // datum už nese věta nahoře — vedle ní stačí, kolik zbývá
+                  <Stat
+                    label="Do osvobození"
+                    value={`${nearest.daysToExempt} ${plural(nearest.daysToExempt, 'den', 'dny', 'dní')}`}
+                    note={
+                      nearestQuantity.lt(position.totalRemaining)
+                        ? `${qty(nearestQuantity)} z ${qty(position.totalRemaining)} ks`
+                        : undefined
+                    }
+                  />
+                ))}
+            </dl>
+          )}
+        </div>
+
+        <div className="mt-14 grid gap-x-(--column-gap) gap-y-14 @5xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          {position && (
+            <Section
+              title="Nákupy"
+              count={lots.length}
+              info={
+                <InfoPopover label="Nákupy" title="Nákupy a časový test" align="start">
+                  <p>
+                    {tidy(
+                      'Každý nákup má vlastní tříletý časový test. Jakmile doběhne, je prodej těch kusů osvobozený od daně bez ohledu na limity.',
+                    )}
+                  </p>
+                  <p>
+                    {tidy(
+                      'Které kusy se prodají dřív a co prodej udělá s letošními limity, spočítá simulátor.',
+                    )}
+                  </p>
+                </InfoPopover>
+              }
+            >
+              {/* telefon: seznam — čtyři sloupce by se na 360 px nevešly */}
+              <Group className="@2xl:hidden" aria-label="Nákupy a jejich časové testy">
+                {lots.map((lot) => (
+                  <Row
+                    key={lot.lotId}
+                    label={
+                      <span className="tabular-nums">
+                        {czDate(lot.acquisitionDate)}
+                        {lot.interpretive && ' *'}
+                      </span>
+                    }
+                    hint={
+                      <span className="tabular-nums">
+                        {qty(lot.remaining)} ks · {money(lot.costPerShare, position.currency)} za
+                        kus
+                      </span>
+                    }
+                    value={<LotStatus lot={lot} stacked />}
+                  />
+                ))}
+              </Group>
+
+              <div className="hidden @2xl:block">
+                <Table aria-label="Nákupy a jejich časové testy">
+                  <thead>
+                    <tr>
+                      <Th>Nabytí</Th>
+                      <Th align="right">Kusů</Th>
+                      <Th align="right">Cena za kus</Th>
+                      <Th align="right">Bez daně od</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lots.map((lot) => (
+                      <Tr key={lot.lotId}>
+                        <Td>
+                          {czDate(lot.acquisitionDate)}
+                          {lot.interpretive && ' *'}
+                        </Td>
+                        <Td align="right">{qty(lot.remaining)}</Td>
+                        <Td align="right" className="whitespace-nowrap">
+                          {money(lot.costPerShare, position.currency)}
+                        </Td>
+                        <Td align="right" className="whitespace-nowrap">
+                          <LotStatus lot={lot} />
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+
+              {lots.some((lot) => lot.interpretive) && (
+                <p className="type-caption pt-2 text-ink-muted">
+                  * Datum nabytí vychází z výkladu korporátní akce — podrobnosti jsou v reportu.
+                </p>
+              )}
+            </Section>
+          )}
+
+          <Section title="Historie" count={history.length}>
+            <Group aria-label="Historie transakcí">
+              {history.map((item, index) => (
+                <Row
+                  key={`${item.date}-${index}`}
+                  label={item.text}
+                  value={<span className="type-footnote text-ink-muted">{czDate(item.date)}</span>}
+                />
+              ))}
+            </Group>
+          </Section>
+        </div>
+      </div>
+    </>
   );
 }

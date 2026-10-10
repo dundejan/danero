@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { PortfolioView } from '@/components/views/portfolio-view';
+import { PortfolioEmpty, PortfolioView } from '@/components/views/portfolio-view';
 import { getDb } from '@/db';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
@@ -35,20 +34,7 @@ export default async function PortfolioPage({
   if (!profile) redirect('/nastaveni');
 
   const txs = await loadTransactions(db, user.id);
-  if (txs.length === 0) {
-    return (
-      <div className="max-w-3xl space-y-4">
-        <h1 className="text-3xl font-bold">Portfolio</h1>
-        <p className="text-sm text-ink-muted">
-          Zatím žádná data —{' '}
-          <Link href="/import" className="font-medium text-accent-text">
-            naimportuj výpisy
-          </Link>{' '}
-          a Danero ukáže hodnotu portfolia, dividendy i výhled osvobozování.
-        </p>
-      </div>
-    );
-  }
+  if (txs.length === 0) return <PortfolioEmpty />;
 
   // jeden okamžik pro datum i rok, česká zóna (R-05c, lib/clock.ts)
   const instant = now();

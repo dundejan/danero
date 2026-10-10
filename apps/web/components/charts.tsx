@@ -7,8 +7,6 @@ import {
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -20,7 +18,6 @@ import type {
   DividendsByMonth,
   ExemptionOutlook,
   LimitSeries,
-  PortfolioAllocation,
   YearBar,
 } from '@/lib/charts-data';
 import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
@@ -402,6 +399,21 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
   const points = outlook.points.map((point) => ({ ...point, t: toMs(point.date) }));
   const firstPoint = outlook.points[0];
   const lastPoint = outlook.points[outlook.points.length - 1];
+  // Osa času: „dnes“ a začátky dalších let. Z dat jednotlivých nákupů na ni
+  // vycházela nahodilá data („29. 5. 2027“), která nic neříkala — přesný den
+  // ukáže bublina nad křivkou.
+  const startMs = points[0]?.t ?? 0;
+  const endMs = points[points.length - 1]?.t ?? startMs;
+  const yearTicks: number[] = [];
+  for (
+    let year = new Date(startMs).getUTCFullYear() + 1;
+    Date.UTC(year, 0, 1) <= endMs;
+    year += 1
+  ) {
+    const tick = Date.UTC(year, 0, 1);
+    // letopočet těsně za „dnes“ by se s ním překryl
+    if (tick - startMs > (endMs - startMs) * 0.07) yearTicks.push(tick);
+  }
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart
@@ -420,12 +432,15 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
           type="number"
           dataKey="t"
           domain={['dataMin', 'dataMax']}
-          tickFormatter={(ms: number) => msLabel(ms)}
-          minTickGap={48}
+          ticks={[startMs, ...yearTicks]}
+          tickFormatter={(ms: number) =>
+            ms === startMs ? 'dnes' : String(new Date(ms).getUTCFullYear())
+          }
         />
         <YAxis
           {...axisProps}
           domain={[0, 100]}
+          ticks={[0, 50, 100]}
           tickFormatter={(v: number) => `${v} %`}
           width={44}
         />
@@ -456,132 +471,5 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         />
       </LineChart>
     </ResponsiveContainer>
-  );
-}
-
-/* ── Alokace portfolia (velký koláč všech pozic) ────────────────────────── */
-
-const RADIAN = Math.PI / 180;
-
-/** Rozšířená paleta pro koláč (--chart-5..8 zatím jen tady, série grafů dál 1–4). */
-const PIE_SERIES = [...SERIES, 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)'];
-
-/** Přímý popisek výseče: ticker těsně za vnějším okrajem, jen pro podíl ≥ 3 %
-    — inkoust na ploše karty drží kontrast v obou režimech. */
-function pieSliceLabel(props: {
-  cx?: number;
-  cy?: number;
-  midAngle?: number;
-  outerRadius?: number;
-  payload?: { label: string; share: number };
-}) {
-  const { cx, cy, midAngle, outerRadius, payload } = props;
-  if (
-    cx === undefined ||
-    cy === undefined ||
-    midAngle === undefined ||
-    outerRadius === undefined ||
-    !payload ||
-    payload.share < 3
-  ) {
-    return null;
-  }
-  const r = outerRadius + 10;
-  const x = cx + r * Math.cos(-midAngle * RADIAN);
-  return (
-    <text
-      x={x}
-      y={cy + r * Math.sin(-midAngle * RADIAN)}
-      textAnchor={x > cx ? 'start' : 'end'}
-      dominantBaseline="central"
-      fill="var(--ink)"
-      fontSize={11}
-      fontFamily="var(--font-sans)"
-    >
-      {payload.label}
-    </text>
-  );
-}
-
-export function AllocationPie({ allocation }: { allocation: PortfolioAllocation }) {
-  // Kategorické střídání --chart-1..8 podle pořadí (index mod 8) — barva jen
-  // odděluje sousední výseče, identitu nese přímý popisek a tooltip. Paleta
-  // validována dataviz skriptem vč. wrap-around páru 8↔1.
-  const count = allocation.slices.length;
-  const fillFor = (index: number): string => {
-    // wrap-around: při n mod 8 == 1 by poslední výseč měla barvu první —
-    // dostane místo ní graf-3 (odlišná i od předchozí graf-8)
-    if (count > PIE_SERIES.length && index === count - 1 && count % PIE_SERIES.length === 1) {
-      return PIE_SERIES[2]!;
-    }
-    return PIE_SERIES[index % PIE_SERIES.length]!;
-  };
-  const data = allocation.slices.map((slice, index) => ({
-    ...slice,
-    fill: fillFor(index),
-  }));
-  return (
-    <div>
-      <div className="relative">
-        <ResponsiveContainer width="100%" height={360}>
-          <PieChart
-            margin={{ top: 16, right: 16, bottom: 16, left: 16 }}
-            title="Alokace portfolia podle pozic"
-            desc={`Celkem ${czkCompact(allocation.totalCzk)} v ${data.length} pozicích. Největší: ${data
-              .slice(0, 5)
-              .map((slice) => `${slice.label} ${pct(slice.share, 1)}`)
-              .join(', ')}.`}
-          >
-            <Pie
-              data={data}
-              dataKey="valueCzk"
-              nameKey="label"
-              innerRadius="55%"
-              outerRadius="85%"
-              paddingAngle={0.5}
-              stroke="var(--surface)"
-              strokeWidth={2}
-              isAnimationActive={false}
-              label={pieSliceLabel}
-              labelLine={false}
-            />
-            <Tooltip
-              content={({ active, payload }) =>
-                active && payload?.[0] ? (
-                  <TooltipBox
-                    title={(() => {
-                      const slice = payload[0].payload as { label: string; name?: string };
-                      return slice.name ? `${slice.label} — ${slice.name}` : slice.label;
-                    })()}
-                    rows={[
-                      {
-                        name: 'Hodnota',
-                        value: czkCompact(Number(payload[0].value)),
-                        color: String((payload[0].payload as { fill: string }).fill),
-                      },
-                      {
-                        name: 'Podíl',
-                        value: pct((payload[0].payload as { share: number }).share, 1),
-                      },
-                    ]}
-                  />
-                ) : null
-              }
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        {/* uprostřed koláče celková hodnota — text nenese barvu série */}
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[10px] uppercase tracking-wide text-ink-muted">celkem</span>
-          <span className="tabular-nums text-sm font-semibold text-ink">
-            {czkCompact(allocation.totalCzk)}
-          </span>
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-ink-muted">
-        Barvy jen odlišují sousední výseče — pořadí je podle hodnoty. Pozice bez ceny od brokera v
-        grafu nejsou.
-      </p>
-    </div>
   );
 }
