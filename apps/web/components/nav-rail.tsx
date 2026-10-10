@@ -5,7 +5,12 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { Logo } from '@/components/logo';
 import { NavIcon } from '@/components/nav-icons';
-import { APP_NAV_ITEMS, DEMO_NAV_ITEMS, type NavItem } from '@/components/nav-items';
+import {
+  activeNavHref,
+  APP_NAV_ITEMS,
+  DEMO_NAV_ITEMS,
+  type NavItem,
+} from '@/components/nav-items';
 import { SignOutButton } from '@/components/sign-out-button';
 import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -48,7 +53,7 @@ export function SidebarNav({
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'row-pressable flex h-8 items-center gap-2.5 rounded-md px-2 text-sm font-medium text-ink pointer-coarse:h-11',
+              'control-link row-pressable flex h-8 items-center gap-2.5 rounded-md px-2 text-sm font-medium text-ink pointer-coarse:h-11',
               active ? 'bg-(--highlight)' : 'row-hover',
             )}
           >
@@ -61,12 +66,11 @@ export function SidebarNav({
   );
 }
 
-const activeItem = (items: readonly NavItem[], pathname: string): string | undefined =>
-  items.find((item) => pathname.startsWith(item.href))?.href;
-
 /**
- * Postranní panel (desktop): jediná plocha aplikace s výrazným materiálem.
- * Drží se u okraje okna po celé výšce, obsah roluje vedle něj.
+ * Postranní panel (desktop): druhotná plocha (`canvas`) u okraje okna po celé
+ * výšce, obsah roluje vedle něj. Je to plná plocha, ne průsvitný materiál —
+ * panel stojí vedle obsahu, ne nad ním, takže pod ním nic neroluje a rozostření
+ * by se platilo za prázdno.
  */
 function Rail({
   items,
@@ -87,7 +91,7 @@ function Rail({
           <Logo className="text-[1.0625rem]" />
         </Link>
 
-        <SidebarNav items={items} activeHref={activeItem(items, pathname)} className="flex-1" />
+        <SidebarNav items={items} activeHref={activeNavHref(items, pathname)} className="flex-1" />
 
         {footer && <div className="space-y-1.5 px-2 pt-4">{footer}</div>}
       </div>
@@ -99,20 +103,23 @@ function Rail({
  * Spodní lišta (mobil): průsvitná, obsah roluje pod ní. Položky nad limit se
  * sbalí pod „Více“, které otevře sheet se zbytkem sekcí.
  */
-function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: string }) {
+function TabBar({ items, accountEmail }: { items: readonly NavItem[]; accountEmail?: string }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const overflow = items.length > TAB_LIMIT + 1;
   const tabs = overflow ? items.slice(0, TAB_LIMIT) : items;
   const rest = overflow ? items.slice(TAB_LIMIT) : [];
-  const active = activeItem(items, pathname);
+  const active = activeNavHref(items, pathname);
   const restActive = rest.some((item) => item.href === active);
 
   const tabClass = (isActive: boolean) =>
     cn(
       // Aktivní položku nenese jen barva (H-3-12): má silnější tah ikony
       // a tučnější popisek.
-      'flex min-w-0 flex-col items-center justify-center gap-0.5 text-[0.625rem] leading-none tracking-[0.01em] active:opacity-50',
+      // Popisek je nejdrobnější text aplikace (10 px) a sloupec lišty má pevnou
+      // šířku: strop `3.4vw` drží popisky ve sloupci i při zvětšeném písmu
+      // prohlížeče, při výchozím písmu nezasáhne (320 px → 10,9 px).
+      'flex min-w-0 flex-col items-center justify-center gap-0.5 text-[min(0.625rem,3.4vw)] leading-none tracking-[0.01em] active:opacity-50',
       isActive ? 'font-semibold text-accent-text' : 'font-medium text-ink-muted',
     );
 
@@ -135,10 +142,10 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
               key={item.href}
               href={item.href}
               aria-current={isActive ? 'page' : undefined}
-              className={tabClass(isActive)}
+              className={cn(tabClass(isActive), 'control-link')}
             >
               <NavIcon name={item.icon} strong={isActive} className="h-6 w-6" />
-              <span className="max-w-full truncate px-0.5">{item.short ?? item.label}</span>
+              <span className="max-w-full truncate px-0.5">{item.label}</span>
             </Link>
           );
         })}
@@ -151,13 +158,18 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
             className={tabClass(restActive)}
           >
             <NavIcon name="more" strong={restActive} className="h-6 w-6" />
-            <span>Více</span>
+            <span className="max-w-full truncate px-0.5">Více</span>
           </button>
         )}
       </nav>
 
       {overflow && (
-        <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} label="Další sekce">
+        <Sheet
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          onReopen={() => setMoreOpen(true)}
+          label="Další sekce"
+        >
           <ul className="overflow-hidden rounded-xl bg-surface">
             {rest.map((item, index) => (
               <li key={item.href}>
@@ -165,7 +177,7 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
                   href={item.href}
                   aria-current={item.href === active ? 'page' : undefined}
                   onClick={() => setMoreOpen(false)}
-                  className="row-pressable flex h-12 items-center gap-3 pl-4 text-[1.0625rem] text-ink"
+                  className="control-link row-pressable flex h-12 items-center gap-3 pl-4 text-[1.0625rem] text-ink"
                 >
                   <NavIcon name={item.icon} className="text-accent" />
                   <span
@@ -181,10 +193,20 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
               </li>
             ))}
           </ul>
-          {sheetNote && (
-            <p className="type-footnote truncate px-4 pt-3 text-ink-muted" title={sheetNote}>
-              {sheetNote}
-            </p>
+          {/* Účet: kdo je přihlášený a cesta ven. Na počítači je obojí v patičce
+              panelu; na telefonu bylo odhlášení až v Nastavení → Účet, čtyři
+              kroky daleko. Adresa se zalamuje celá — zkrácenou by na dotyku
+              nešlo přečíst nikde. */}
+          {accountEmail && (
+            <div className="mt-5">
+              <p className="type-footnote px-4 pb-2 text-ink-muted wrap-anywhere">{accountEmail}</p>
+              <div className="overflow-hidden rounded-xl bg-surface">
+                <SignOutButton
+                  className="row-pressable flex h-12 w-full items-center px-4 text-left text-[1.0625rem] text-accent-text"
+                  errorClassName="type-footnote px-4 pb-3 text-danger"
+                />
+              </div>
+            </div>
           )}
         </Sheet>
       )}
@@ -194,7 +216,7 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
 
 /** Desktop: postranní panel. Mobil (<md): spodní lišta.
  *  Patička panelu je jen účet (e-mail + odhlášení) — přepínač vzhledu žije
- *  v Nastavení. Pod md je totéž odhlášení v Nastavení → Účet (L7-01). */
+ *  v Nastavení. Pod md je totéž v sheetu „Více“. */
 export function NavRail({ userEmail }: { userEmail: string }) {
   return (
     <Rail
@@ -216,7 +238,7 @@ export function NavRail({ userEmail }: { userEmail: string }) {
 }
 
 export function NavTabBar({ userEmail }: { userEmail?: string }) {
-  return <TabBar items={APP_NAV_ITEMS} sheetNote={userEmail} />;
+  return <TabBar items={APP_NAV_ITEMS} accountEmail={userEmail} />;
 }
 
 /** Demo panel: bez patičky — návrat na úvod nese logo (vede na úvodní stránku)
