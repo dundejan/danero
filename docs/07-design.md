@@ -32,6 +32,7 @@ třídu bez tokenu a hlídá kontrasty.
 | `line` | `#d2d2d7` | `#38383a` | vlásové oddělovače (`divide-line/70`, `border-line/70`) |
 | `line-control` | `#86868b` | `#6e6e73` | hranice polí a vypnutá dráha přepínače (≥ 3:1) |
 | `accent` / `accent-fill` / `accent-text` | `#0071e3` / `#0071e3` / `#0066cc` | `#0a84ff` / `#0071e3` / `#2997ff` | ovládání: výplň hlavního tlačítka, odkazy, fokus, tečka loga |
+| `accent-strong` | `#0058b0` | `#64b5ff` | text na akcentním tónu (tlačítko `tinted`) — `accent-text` na tónu nedrží AA |
 | `success` (+`-text`, `-fill`) | `#248a3d` | `#30d158` | v pořádku, osvobozeno |
 | `caution` (+`-text`) | `#b26b00` | `#ffd60a` | zvýšené čerpání, upozornění |
 | `warning` (+`-text`) | `#c93400` | `#ff9f0a` | těsně pod limitem |
@@ -42,15 +43,23 @@ třídu bez tokenu a hlídá kontrasty.
 - **Modrá nikdy nenese stav.** Stav = zelená / žlutá / oranžová / červená, a vždy i slovem.
 - `-text` odstíny jsou pro text (AA na `surface` i `canvas`), `-fill` pro výplň s bílým
   textem, holý název pro grafiku (odměrka, tečka).
-- **Materiály** (`material-bar`, `material-sidebar`, `material-sheet`): průsvitnost jen na
-  chromu, pod kterým něco roluje — lišty, postranní panel, sheet. Obsah je vždy plná plocha.
+- **Materiály** (`material-bar`, `material-tabbar`, `material-sidebar`, `material-sheet`):
+  průsvitnost jen na chromu, pod kterým něco roluje — lišty, postranní panel, sheet. Obsah
+  je vždy plná plocha. Spodní lišta telefonu má vlastní, hustší materiál: nese nejdrobnější
+  text a roluje pod ní cokoli, takže s krytím horní lišty klesly popisky pod AA.
+- **Zvýrazněný řádek** (`row-hover` pod myší, `row-pressable` při stisku) přepíná tichý text
+  na plnou barvu — `ink-muted` má na zvýrazněné ploše 4,06–4,45:1. Klikací řádek proto
+  ber přes tyhle dvě třídy (nebo rovnou `Row href` / `DisclosureRow`), ne přes
+  `hover:bg-(--highlight)`.
 - **Stín** má jen to, co se vznáší: `shadow-floating` (bublina, dialog, sheet, toast),
   `shadow-thumb` (palec přepínače). Obsah stíny nemá.
 - **Zaoblení:** `rounded-md` 8 px pole, `rounded-lg` 12 px řádek pod myší, `rounded-xl`
   16 px panel a skupina, `rounded-2xl` inspektor/dialog, `rounded-full` tlačítka.
 - **Rozměry skořápky:** `--page-gutter`, `--page-top`, `--sidebar-width`, `--toolbar-height`,
   `--tabbar-height`, `--inspector-width`, `--column-gap`; veřejné stránky `--wrap-gutter`,
-  `--band-y`, `--band-y-lg`, `--nav-height`.
+  `--band-y`, `--band-y-lg`, `--nav-height`. Veřejné stránky mají **jediný sloupec**
+  `wrap-wide` (1056 px) — lišta, titulek stránky, obsah pásů i patička začínají na stejné
+  levé hraně; šířku textu drží `measure`.
 
 ## 2. Typografie
 
@@ -85,36 +94,44 @@ font-bold`**, vyber stupeň.
 | Soubor → export | Kdy použít |
 |---|---|
 | `ui/info-popover.tsx` → `InfoPopover` | Vysvětlení u čísla nebo pojmu: tlačítko „i“, bublina (na telefonu sheet). Hlavní nástroj textové diety. |
-| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). |
-| `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). |
-| `ui/list.tsx` → `Group`, `Row` | Seskupený seznam: popisek vlevo, hodnota nebo ovládací prvek vpravo. `variant="inset"` = šedá skupina (nastavení, sheet). |
-| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. |
+| `ui/info-print.tsx` → `InfoPrint` | Tisková kopie vysvětlivky: tentýž obsah, vidět jen na papíře. Stojí pod blokem, kterého se týká. |
+| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. |
+| `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). Smí stát i uvnitř `DisclosureRow`. |
+| `ui/disclosure.tsx` → `Chevron` | Šipka rozbalovátka pro vlastní `<details class="disclosure">` (řádek tabulky, FAQ). Patří do `<summary>`. |
+| `ui/open-on-hash.tsx` → `OpenOnHash` | Rozbalí `<details>`, na který míří kotva v adrese. Jednou na stránku, která na rozbalovací řádky odkazuje. |
+| `ui/list.tsx` → `Group`, `Row` | Seskupený seznam: popisek vlevo, hodnota nebo ovládací prvek vpravo. `variant="inset"` = šedá skupina (nastavení, sheet). `Row wrap` = hodnota je věta a smí se zalomit. |
+| `ui/list.tsx` → `FieldRow` | Řádek skupiny s polem nebo nabídkou; v úzkém okně se pole složí pod popisek. Stránka kolem potřebuje `@container`. |
+| `ui/list.tsx` → `GroupItem` | Položka skupiny s volným obsahem (soubor s formulářem, limit s odměrkou). |
+| `ui/section.tsx` → `Section`, `SectionHeader` | Sekce stránky aplikace: nadpis + vysvětlivka + počet + akce vpravo. `scrollActions` = akce se na úzkém displeji posouvá vodorovně (přepínač roku). |
 | `ui/stat.tsx` → `Stat` | Klíčové číslo s popiskem a nejvýš pár slovy pod ním. `size="lg"` nejvýš dvakrát na stránku. |
 | `ui/status.tsx` → `StatusLabel`, `TONE_TEXT` | Stav jednou větou: barevná tečka + text téže barvy. |
 | `ui/notice.tsx` → `Notice` | Sdělení k celé stránce/sekci (něco chybí, něco se stalo). Místo obarvené karty. |
-| `ui/empty-state.tsx` → `EmptyState` | Sekce nebo stránka nemá co ukázat. `compact` do sekce. |
-| `ui/button.tsx` → `Button`, `buttonVariants` | Tlačítko. `primary` jednou na stránku; `tinted`, `secondary`, `ghost`, `danger`; velikosti `sm`/`md`/`lg`/`icon`. |
+| `ui/empty-state.tsx` → `EmptyState` | Sekce nebo stránka nemá co ukázat. `compact` do sekce. Stejná podoba i pro stav celé stránky (chyba, nenalezeno): `headingAs="h1"`, v `action` tlačítko a nejvýš jeden odkaz, `note` pro kód chyby. |
+| `ui/button.tsx` → `Button`, `buttonVariants` | Tlačítko. `primary` jednou na stránku; `tinted` (druhá akce — drží kontrast i na šedém panelu), `secondary`, `ghost`, `danger`; velikosti `sm`/`md`/`lg`/`icon`. |
 | `ui/submit-button.tsx` → `SubmitButton` | Odesílací tlačítko formuláře se stavem „odesílám“. |
-| `ui/link.tsx` → `TextLink` | Textový odkaz. `chevron` = samostatný odkaz se šipkou; bez něj odkaz ve větě (podtržený). |
+| `ui/link.tsx` → `TextLink` | Textový odkaz. `chevron` = samostatný odkaz se šipkou; bez něj odkaz ve větě (podtržený). Umí i kotvu (`#…`), stažení (`download`) a cizí web (`external`) — vlastní `<a>` s třídami odkazu nepiš. |
 | `ui/field.tsx` → `Field`, `Label`, `Input`, `Select`, `Textarea`, `Checkbox`, `FieldHint`, `FieldError`, `describedByError` | Formulářová pole. Chybu zapíná `aria-invalid` přes `describedByError`. |
 | `ui/switch.tsx` → `Switch` | Přepínač pro nastavení, které platí hned. |
 | `ui/file-field.tsx` → `FileField` | Výběr souborů s českými texty. |
 | `ui/auto-submit.tsx` | Formulář, který se odešle při změně pole. |
-| `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami. |
+| `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami. `size="md"` když je přepínač hlavní ovládání (odpověď v kalkulačce); `fit="content"` pro různě dlouhé popisky. Výšku ani mřížku nepřebíjej třídou. |
 | `ui/sheet.tsx` → `Sheet` | Spodní sheet na telefonu: detail řádku, další sekce, vysvětlivka. S `title` má hlavičku a „Hotovo“. |
-| `ui/confirm-dialog.tsx` → `ConfirmDialog` | Potvrzení nevratné akce. Jen pro nevratné. |
+| `ui/confirm-dialog.tsx` → `ConfirmDialog` | Potvrzení nevratné akce. Jen pro nevratné. S `action` nese formulář sám (skrytá pole `fields`, viditelná jako `children`), během akce ukazuje `pendingLabel` a nejde odeslat dvakrát. |
 | `components/toast.tsx` → `Toast` | Výsledek akce z adresy (`?ok=` / `?chyba=`); `floating` = plovoucí. |
 | `ui/table.tsx` → `Table`, `Th`, `Tr`, `Td` | Tabulka dat: vlásové linky, tiché záhlaví, čísla vpravo. |
 | `ui/scroll-area.tsx` → `ScrollArea` | Obal široké tabulky na úzkém displeji (roluje jen tabulka). |
 | `ui/card.tsx` → `Card`, `CardTitle` | Šedý panel kolem kusu FORMULÁŘE. Ne kolem obsahu ke čtení. |
-| `ui/hint.tsx` → `Hint` | Starší jméno pro `InfoPopover`; v novém kódu nepoužívej. |
-| `components/app-toolbar.tsx` → `AppToolbar` | Hlavička stránky aplikace: titulek (jediné `h1`), přepínač, jedna akce. |
-| `components/view-switch.tsx` → `ViewSwitch` | Sekce se dvěma pohledy na tatáž data (graf / tabulka). |
+| `components/app-toolbar.tsx` → `AppToolbar` | Hlavička stránky aplikace: titulek (jediné `h1`), přepínač, jedna akce. Podstránka má vlevo od titulku cestu zpět (`back`). |
+| `components/view-switch.tsx` → `ViewSwitch` | Sekce se dvěma pohledy na tatáž data (graf / tabulka) nebo variantami téhož výpočtu. V tisku ukáže všechny pod sebou. |
 | `components/year-switcher.tsx` → `YearSwitcher` | Přepínač zdaňovacího období do lišty. |
 | `components/limits-inspector.tsx` → `LimitsInspector` | Seznam + detail vybraného řádku (inspektor; na telefonu sheet). |
+| `lib/use-container-wide.ts` → `useContainerWide` | „Je okno s obsahem dost široké na inspektor?“ — pro rozvržení, kde šířka mění i chování (výběr řádku × odkaz). |
 | `components/limit-gauge.tsx` → `LimitBar`, `ZONE_TEXT`, `ZONE_LABEL` | Odměrka čerpání limitu a slovní stav. |
-| `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `MarketingCta` | Skořápka a stavební kameny veřejné stránky. |
-| `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. |
+| `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `MarketingCta` | Skořápka veřejné stránky: lišta, titulek, pásy, závěrečná výzva, patička. |
+| `components/marketing-blocks.tsx` → `Split`, `SpecList`, `SpecRow`, `LinkList`, `DemoCta` | Obsah pásů: titulek vlevo + text vpravo; list „pojem — co k němu patří“; seznam odkazů „titulek + věta + šipka“; jednotná závěrečná výzva podstránek. |
+| `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. `ArticleSection` umí kotvu (`id`), mezititulky `h3`, `lead` a `footnote`. |
+| `components/long-read.tsx` → `LongRead`, `PROSE_ANCHORS`, `ANCHOR_OFFSET` | Dlouhý text s obsahem stránky (metodika, podmínky, soukromí): obsah vpravo zůstává na očích, na telefonu nad textem. |
+| `components/faq-list.tsx` → `FaqList` | Otázky a odpovědi nad `<details>`. |
 | `components/form-page.tsx` → `FormPage` | Stránka s jediným formulářem mimo aplikaci (přihlášení, registrace…). |
 | `components/logo.tsx` → `Logo`, `LogoMark` | Značka. Tečka je `accent`. |
 
@@ -154,23 +171,60 @@ Ukázky:
   <Row label="E-mail při 85 % limitu"><Switch name="limit85" aria-label="E-mail při 85 % limitu" /></Row>
 </Group>
 
-// Nevratná akce.
+// Nastavení s polem: v úzkém okně se pole složí pod popisek.
+<Group variant="inset">
+  <FieldRow label="Souhrn" htmlFor="frekvence" hint="Jednou týdně, v pondělí.">
+    <Select id="frekvence" name="frekvence">…</Select>
+  </FieldRow>
+</Group>
+
+// Nevratná akce nad server action: skrytá pole přes `fields`, stav „probíhá“ má dialog sám.
 <ConfirmDialog
-  trigger={<Button variant="danger">Smazat účet</Button>}
-  title="Smazat účet?"
-  description="Smažeme účet i všechna nahraná data. Tohle nejde vrátit."
-  confirmLabel="Smazat účet"
-  action={deleteAccountAction}
+  trigger={<Button variant="danger" size="sm">Vrátit import zpět</Button>}
+  title="Vrátit import zpět?"
+  description="Smažeme 12 transakcí, které přibyly tímhle importem."
+  confirmLabel="Vrátit import zpět"
+  pendingLabel="Vracím…"
+  action={undoImportAction}
+  fields={{ davka: batch.id }}
 />
+
+// Totéž s viditelnými poli (heslo); po neúspěchu ho server otevře znovu.
+<ConfirmDialog … action={deleteAccountAction} defaultOpen={deleteError !== null}>
+  <Field label="Heslo" htmlFor="heslo"><Input id="heslo" name="heslo" type="password" /></Field>
+  {deleteError && <FieldError id="smazani-error">{deleteError}</FieldError>}
+</ConfirmDialog>
+
+// Vysvětlivka, která má být i na papíře.
+<Section title="Použité kurzy" info={<InfoPopover label="Použité kurzy">{ratesInfo}</InfoPopover>}>
+  <Table>…</Table>
+  <InfoPrint>{ratesInfo}</InfoPrint>
+</Section>
 ```
 
 Pravidla, která z kódu nejsou vidět:
 
-- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`).
-  Jeho obsah se vykreslí až po otevření — co musí být vidět vždy, patří vedle čísla.
+- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`)
+  **a nesmí stát ani v `<p>`**: v úzkém okně se vedle tlačítka vykreslí `<dialog>` sheetu,
+  prohlížeč odstavec rozdělí a hydratace spadne. Řádek s textem a vysvětlivkou je `div`
+  (nebo `li`), ne odstavec.
+  Jeho obsah se vykreslí až po otevření — co musí být vidět vždy, patří vedle čísla, co má
+  být na papíře, dostane `InfoPrint`.
   Uvnitř `Stat` se bublina kotví pod celý blok sama; jinde zvol `side`/`align` tak, aby
   nezakryla číslo, které vysvětluje.
-- Děti `Group` jsou jen `Row` a `DisclosureRow` (skupina je pro čtečku seznam).
+- `InfoPopover label="X"` dává tlačítku přístupný název **„Vysvětlení: X“**. Když je X
+  zároveň popisek pole, najde `getByLabel('X')` pole i tlačítko a Playwright spadne na
+  strict mode — v testu použij `getByRole('textbox', { name: 'X' })` nebo `exact`, v kódu
+  dej vysvětlivce `label`, který říká, co vysvětluje („jak funguje souhrn“).
+- Děti `Group` jsou `Row`, `FieldRow`, `DisclosureRow` a `GroupItem` (skupina je pro čtečku
+  seznam) — `role="listitem"` ručně nepiš.
+- **Kotvy a rolování po server action.** Přesměrování bez kotvy odroluje stránku nahoru;
+  kotva na existující prvek k němu skočí; kotva na prvek, který na stránce není, nechá
+  polohu být (tak ukládá `/nastaveni/upozorneni` — `#ulozeno`). Odkaz na kotvu téže stránky
+  piš přes `TextLink` (obyčejné `<a>`): směrovač Nextu při změně samotné kotvy nevyvolá
+  `hashchange`. Míří-li kotva na zavřený `DisclosureRow`, stránka potřebuje `OpenOnHash`.
+  Cíl kotvy pod přilepenou lištou potřebuje odstup (`ANCHOR_OFFSET`, v aplikaci
+  `scroll-mt-24`).
 - Tabulku na úzkém displeji obal do `ScrollArea`; první sloupec text, čísla `align="right"`.
 - Když primitivum chybí, **nepiš si vlastní do stránky**. Slož ho z existujících, nebo ho
   navrhni zvlášť (viz Sdílené soubory). Dialogy, popovery a menu staví na Base UI
@@ -203,13 +257,19 @@ Pravidla, která z kódu nejsou vidět:
 
 ```tsx
 <MarketingPage active="cenik">
-  <PageHero eyebrow="Ceník" title="Danero je zdarma. Celé." lede="…" />
-  <Band tone="canvas">
-    <BandHeading title="Proč je to zdarma" lede="…" />
-    …
+  <PageHero eyebrow="Proč zdarma" title="Danero je zdarma. Celé." lede="…" />
+  {/* pás pojmenovaný svým nadpisem */}
+  <Band tone="canvas" aria-labelledby="platformy-nadpis">
+    <BandHeading id="platformy-nadpis" title="Odkud načte obchody" />
+    <SpecList className="mt-10">
+      <SpecRow label="Živě přes API">…</SpecRow>
+    </SpecList>
   </Band>
-  <Band>…</Band>
-  <MarketingCta title="Vyzkoušej všechno — zdarma" lede="…" primary="registrace" />
+  <Band>
+    <Split title="Proč se neplatí"><p>…</p></Split>
+    <Split divided title="Kde je háček"><p>…</p></Split>
+  </Band>
+  <DemoCta />
 </MarketingPage>
 ```
 
@@ -217,8 +277,16 @@ Pravidla, která z kódu nejsou vidět:
   až dvakrát (silný moment, závěrečná výzva). Jeden pás = jedna myšlenka.
 - V pásu je titulek (`type-headline`), nejvýš jeden perex a obsah. Žádné karty s rámečkem,
   žádné verzálkové štítky, žádné ikony v kroužku. Seznam výhod je seznam, ne mřížka dlaždic.
-- Text drž v `measure` (≈ 62 znaků), živé kusy rozhraní smí do `wrap-wide` (`<Band wide>`).
+- Sloupec je jeden (`wrap-wide`): titulek stránky, obsah pásů i patička lícují s logem
+  v liště. Text drž v `measure` (≈ 62 znaků); živé kusy rozhraní smí přes celý sloupec.
+- `eyebrow` u `PageHero` je volitelný — říká, kde čtenář je, když to neříká titulek sám.
+- Závěrečná výzva je na podstránkách `<DemoCta />` (všude stejná věta); vlastní
+  `<MarketingCta title lede />` jen tam, kde výzva navazuje na obsah stránky (článek,
+  kalkulačka). Na předchozí pás doléhá, od článku si drží odstup sama.
 - Úvodní stránka má `type-display` a `type-figure-xl`; podstránky `type-headline`.
+- Hlas: veřejné stránky mluví za Danero ve třetí osobě nebo v množném čísle („čteme“,
+  „Danero spočítá“). První osoba autora patří jen na `/o-projektu` a `/cenik` („Proč
+  zdarma“), kde mluví sám za sebe.
 
 ### Dlouhý textový článek
 
@@ -230,9 +298,13 @@ Pravidla, která z kódu nejsou vidět:
     <ArticleSection title="…"><p>…</p><Example title="…">…</Example></ArticleSection>
     <ArticleFooter next={[…]} />
   </ArticleBody>
-  <MarketingCta … />
+  <MarketingCta title="…" lede="…" />
 </MarketingPage>
 ```
+
+Dlouhý text, ve kterém se hledá (metodika, podmínky, soukromí), má obsah stránky:
+`<LongRead contents={[{ id, title }]}>` kolem `ArticleSection id="…"` nebo kolem
+`<Prose className={PROSE_ANCHORS}>` s obyčejnými `h2 id="…"`.
 
 Právní a metodické texty s vlastní strukturou: `<Prose>` kolem obyčejných `h2`/`p`/`ul`.
 Tady text zůstává — dieta se týká rozhraní, ne článku, který si člověk přišel přečíst.
@@ -241,9 +313,10 @@ Odkaz uprostřed věty je vždy podtržený.
 ### Formulář
 
 - Mimo aplikaci: `<FormPage title="Přihlášení" lede={…} footer={…}> <form>…</form> </FormPage>`.
-- V aplikaci (nastavení): `Section` → `Card` (nebo `Group variant="inset"` pro řadu
-  přepínačů) → `Field` + tlačítko. Popisek nad polem, nápověda jedna věta (`hint`), delší
-  výklad do `info`. Chyba pod polem (`FieldError`), ne v dialogu.
+- V aplikaci (nastavení): `Section` → `Group variant="inset"` s řádky `FieldRow` (pole,
+  nabídka) a `Row` (přepínač, tlačítko). Samostatný kus formuláře mimo seznam: `Card` →
+  `Field` + tlačítko. Popisek, nápověda jedna věta (`hint`), delší výklad do `info`.
+  Chyba pod polem (`FieldError`) — v dialogu jen tehdy, když pole v dialogu je.
 - Volba, která platí hned = `Switch`; volba odesílaná formulářem = `Checkbox`.
 - Výsledek akce hlásí `Toast`, nevratnou akci potvrzuje `ConfirmDialog`.
 
@@ -318,25 +391,37 @@ tarify ani „vyzkoušej zdarma na 14 dní“.
 
 ## 9. Sdílené soubory
 
-Na redesignu pracuje víc lidí a agentů souběžně v oddělených větvích. Aby se větve daly
-sloučit, jsou tyhle soubory **uzamčené — smíš je používat, ne měnit**:
+Souběžná fáze redesignu (šest větví podle jedné reference) skončila 10. 10. 2026 — soubory
+už nejsou uzamčené. Zůstává dělba, kdo co nese, a jedno pravidlo: **co potřebují dvě
+stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
 
-- `apps/web/app/globals.css`, `apps/web/app/layout.tsx`
-- `apps/web/components/ui/*`
-- skořápky: `components/app-toolbar.tsx`, `components/nav-rail.tsx`, `components/nav-items.ts`,
-  `components/nav-icons.tsx`, `components/marketing-page.tsx`, `components/marketing-nav.tsx`,
-  `components/form-page.tsx`, `components/guide-article.tsx`, `components/logo.tsx`,
-  `components/toast.tsx`, `components/theme-toggle.tsx`, `components/view-switch.tsx`,
-  `components/year-switcher.tsx`, `app/(app)/layout.tsx`, `app/demo/layout.tsx`
-- `apps/web/lib/typography.ts`, `apps/web/lib/motion.ts`
-- `docs/07-design.md`
+- **Tokeny a utility:** `apps/web/app/globals.css`. Nová barva = nový token tady (hex,
+  světlý i tmavý) a řádek v tabulce výš; `test/design-tokens.test.ts` hlídá, že třída má
+  token, a počítá kontrasty.
+- **Primitiva:** `apps/web/components/ui/*` — obecné stavební kameny bez znalosti domény.
+  Když primitivu něco chybí (velikost, varianta, stav), **doplň to v něm**; třída, která
+  primitivum ve stránce přebíjí (`h-9` na přepínači, `[--highlight:transparent]`, jiná
+  plocha dialogu), je dluh a při integraci se všechny takové mazaly.
+  Galerie `/dev/primitiva` má ukázat každý nový stav.
+- **Skořápka aplikace:** `app/(app)/layout.tsx`, `app/demo/layout.tsx`,
+  `components/nav-rail.tsx`, `components/nav-items.ts`, `components/nav-icons.tsx`,
+  `components/app-toolbar.tsx`, `components/view-switch.tsx`, `components/year-switcher.tsx`,
+  `components/toast.tsx`, `components/theme-toggle.tsx`.
+- **Skořápka a bloky veřejných stránek:** `components/marketing-page.tsx`,
+  `components/marketing-nav.tsx`, `components/marketing-blocks.tsx`,
+  `components/guide-article.tsx`, `components/long-read.tsx`, `components/faq-list.tsx`,
+  `components/form-page.tsx`, `components/logo.tsx`.
+- **Doménové komponenty sdílené mezi stránkami:** `components/warnings-list.tsx`,
+  `components/horizon-strip.tsx`, `components/charts.tsx`, `components/limit-gauge.tsx`,
+  `components/limits-inspector.tsx`, `components/filing-verdict.tsx`,
+  `components/tax-year-config-notice.tsx`, `components/positions-table.tsx`,
+  `components/positions-explorer.tsx`, `components/position-card.tsx`. Verdikt o povinnosti
+  podat přiznání kreslí na přehledu i v reportu týž `FilingVerdict` — neopisuj ho.
+- **Stránky a jejich místní části:** `components/views/*` (přehled, portfolio, detail,
+  simulátor, report — sdílí je aplikace a demo) a soubory vedle `page.tsx`
+  (`app/(app)/import/*`, `app/(app)/nastaveni/*`). Místní komponenta je v pořádku, dokud
+  ji používá jedna stránka; s druhým použitím se stěhuje výš.
+- **Texty a typografie:** `lib/typography.ts`, `lib/format.ts`; pružiny `lib/motion.ts`;
+  názvy platforem `platformName()` v `lib/brokers-catalog.ts`.
 
-Když ti něco chybí: slož to z existujících primitiv ve své stránce (třídami tokenů
-a `type-*`), a do závěrečné zprávy napiš, co chybělo a proč — doplní se to na jednom místě.
-Variantu barvy, velikosti nebo nový token si do stránky nepřidávej.
-
-Soubory sdílené mezi stránkami, které uzamčené **nejsou**, ale mění je vždy jen jeden:
-`components/warnings-list.tsx`, `components/horizon-strip.tsx`, `components/charts.tsx`,
-`components/limit-gauge.tsx`, `components/limits-inspector.tsx`, `components/filing-verdict.tsx`,
-`components/tax-year-config-notice.tsx`, `components/positions-table.tsx` — domluv se dřív,
-než na ně sáhneš.
+Tahle reference se mění zároveň s primitivem — nový prop bez řádku tady neexistuje.
