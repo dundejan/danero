@@ -140,16 +140,19 @@ describe('robots a sitemapa (K8-09)', () => {
     // Tabulka drží poslední DOLOŽENOU změnu viditelného obsahu; kdo obsah
     // veřejné stránky změní, přepíše datum v sitemapě a řádek tady.
     const lastContentChange: Record<string, string> = {
-      '/': '2026-10-08', // úvodní stránka bez tarifů
-      '/platformy': '2026-10-08', // věta o ručním nahrání výpisu bez zmínky o ceně
-      '/bezpecnost': '2026-10-09', // lhůta odpovědi podle SECURITY.md (L1-04)
-      '/cenik': '2026-10-08', // služba celá zdarma
+      // 10. 10. 2026: redesign přepsal texty všech veřejných stránek kromě právních
+      '/': '2026-10-10',
+      '/platformy': '2026-10-10',
+      '/bezpecnost': '2026-10-10',
+      '/cenik': '2026-10-10',
       '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
-      '/caste-otazky': '2026-10-09', // limity § 38g s rokem (L3-01)
-      '/jak-pocitame': '2026-10-09', // limity § 38g s rokem (L3-01)
-      '/kalkulacka': '2026-10-09', // karta o limitech § 38g s rokem (A20-R1-01)
-      '/pruvodce/limit-100-000-kc': '2026-10-09', // limity § 38g s rokem (L3-01)
-      '/o-projektu': '2026-10-08',
+      '/caste-otazky': '2026-10-10',
+      '/jak-pocitame': '2026-10-10',
+      '/kalkulacka': '2026-10-10',
+      '/pruvodce': '2026-10-10',
+      '/pruvodce/limit-100-000-kc': '2026-10-10',
+      '/pruvodce/pausalni-rezim-a-investice': '2026-10-10',
+      '/o-projektu': '2026-10-10',
       '/podminky': '2026-10-08', // podmínky 3.0
       '/soukromi': '2026-10-08',
     };

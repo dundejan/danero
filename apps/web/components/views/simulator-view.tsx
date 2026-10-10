@@ -12,7 +12,7 @@ import { Disclosure } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
-import { Group, Row } from '@/components/ui/list';
+import { Group, GroupItem, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
 import { Section } from '@/components/ui/section';
 import { Stat } from '@/components/ui/stat';
@@ -583,7 +583,7 @@ function LimitChange({
   const after = ratioOf(afterCzk);
   const zone: LimitStatus['zone'] = exceeded ? 'EXCEEDED' : zoneForRatio(after);
   return (
-    <div role="listitem" className="py-3.5">
+    <GroupItem>
       <div className="flex items-baseline justify-between gap-4">
         <span className="font-medium">{name}</span>
         <span className={cn('font-semibold tabular-nums', ZONE_TEXT[zone])}>
@@ -597,14 +597,14 @@ function LimitChange({
         </span>
         <span className={cn('shrink-0', ZONE_TEXT[zone])}>{ZONE_LABEL[zone]}</span>
       </div>
-    </div>
+    </GroupItem>
   );
 }
 
 /** Řádek pro případ, kdy limit neexistuje a daní se každý prodej. */
 function NoLimit({ name, info }: { name: string; info: React.ReactNode }) {
   return (
-    <div role="listitem" className="py-3.5">
+    <GroupItem>
       <div className="flex items-baseline justify-between gap-4">
         <span className="inline-flex items-center gap-1 font-medium">
           {name}
@@ -613,7 +613,7 @@ function NoLimit({ name, info }: { name: string; info: React.ReactNode }) {
         <span className="font-semibold text-danger">bez limitu</span>
       </div>
       <p className="type-footnote mt-1 text-danger">daní se každý prodej</p>
-    </div>
+    </GroupItem>
   );
 }
 

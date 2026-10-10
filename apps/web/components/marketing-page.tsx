@@ -16,15 +16,10 @@ import { cn } from '@/lib/utils';
  * a patička. Hierarchii nese velikost titulků a střídání ploch (bílá / šedá /
  * černá), ne rámečky.
  *
- * Šířky: `wrap` (980 px) je čtecí sloupec pásu, `wrap-wide` (1056 px) drží
- * lištu, patičku a živé kusy rozhraní. Čitelnou šířku odstavce nese `measure`.
+ * Šířka: jediný sloupec `wrap-wide` (1056 px) drží lištu, titulek stránky,
+ * obsah pásů i patičku — levá hrana je na celé stránce jedna. Čitelnou šířku
+ * odstavce nese `measure`.
  */
-
-/**
- * Jednotný kontejner veřejných stránek (lišta, patička, obsah mimo pásy).
- * Starší jméno pro třídu `wrap-wide` — v novém kódu piš třídu rovnou.
- */
-export const CONTAINER = 'wrap-wide';
 
 export async function MarketingHeader({ active }: { active?: MarketingNavKey }) {
   // Přihlášenému nemá hlavička nabízet registraci — veřejné stránky zůstávají
@@ -76,12 +71,11 @@ const BAND_TONE: Record<BandTone, string> = {
  *
  * Pás smí stát přímo v `<main>` stránky i uvnitř sloupce (`full-bleed` ho
  * roztáhne); obal stránky musí mít `overflow-x-clip` (`MarketingPage` má).
- * `wide` dá obsahu širší sloupec (živé kusy rozhraní, tabulky).
+ * Obsah pásu stojí ve stejném sloupci jako titulek stránky (`PageHero`).
  */
 export function Band({
   tone = 'surface',
   size = 'md',
-  wide = false,
   className,
   children,
   ...props
@@ -89,7 +83,6 @@ export function Band({
   tone?: BandTone;
   /** Svislý rytmus: `md` běžný pás, `lg` pás s jedinou velkou myšlenkou. */
   size?: 'md' | 'lg';
-  wide?: boolean;
 }) {
   return (
     <section
@@ -101,7 +94,7 @@ export function Band({
       )}
       {...props}
     >
-      <div className={wide ? 'wrap-wide' : 'wrap'}>{children}</div>
+      <div className="wrap-wide">{children}</div>
     </section>
   );
 }
@@ -110,8 +103,11 @@ export function Band({
  * Hlavička pásu: tichý řádek nad titulkem (běžná věta, žádné verzálky),
  * velký titulek a nejvýš jeden perex. `align="center"` jen u pásu s jedinou
  * myšlenkou; pás s obsahem vedle titulku nechává hlavičku vlevo.
+ *
+ * `id` dostane nadpis — pás se jím pojmenuje (`<Band aria-labelledby="…">`).
  */
 export function BandHeading({
+  id,
   eyebrow,
   title,
   lede,
@@ -119,6 +115,7 @@ export function BandHeading({
   as: Heading = 'h2',
   className,
 }: {
+  id?: string;
   eyebrow?: string;
   title: string;
   lede?: React.ReactNode;
@@ -131,6 +128,7 @@ export function BandHeading({
     <div className={cn(centered && 'flex flex-col items-center text-center', className)}>
       {eyebrow && <p className="type-callout mb-3 font-semibold text-ink-muted">{eyebrow}</p>}
       <Heading
+        id={id}
         className={cn(
           Heading === 'h1' ? 'type-display' : 'type-headline',
           'text-balance',
@@ -149,22 +147,23 @@ export function BandHeading({
 }
 
 /**
- * Hlavička podstránky: tichý řádek, kde čtenář je → titulek → perex. Stojí
- * na bílé ploše nahoře stránky; pod ní pokračují pásy nebo článek.
+ * Hlavička podstránky: tichý řádek, kde čtenář je (`eyebrow`, volitelný —
+ * stránka, jejíž titulek to říká sám, ho nepotřebuje) → titulek → perex.
+ * Stojí na bílé ploše nahoře stránky; pod ní pokračují pásy nebo článek.
  */
 export function PageHero({
   eyebrow,
   title,
   lede,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   lede?: string;
 }) {
   return (
     <div className="pt-14 md:pt-24">
-      <p className="type-callout font-semibold text-ink-muted">{eyebrow}</p>
-      <h1 className="type-headline mt-3 max-w-[20ch] text-balance">{tidy(title)}</h1>
+      {eyebrow && <p className="type-callout mb-3 font-semibold text-ink-muted">{eyebrow}</p>}
+      <h1 className="type-headline max-w-[20ch] text-balance">{tidy(title)}</h1>
       {lede && (
         <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">{tidy(lede)}</p>
       )}
@@ -175,7 +174,8 @@ export function PageHero({
 /**
  * Závěrečná výzva — stejný oddíl na všech veřejných stránkách: černý pás přes
  * celou šířku okna, jedna věta a nejvýš dvě tlačítka. Patička na něj doléhá
- * bez mezery.
+ * bez mezery. Na předchozí pás doléhá taky (šedý pás by jinak od černé dělil
+ * bílý pruh); odstup si drží jen od obsahu, který pásem není (článek).
  */
 export async function MarketingCta({
   title,
@@ -194,7 +194,7 @@ export async function MarketingCta({
   const filled = buttonVariants({ variant: 'primary', size: 'lg' });
   const quiet = buttonVariants({ variant: 'secondary', size: 'lg' });
   return (
-    <Band tone="black" size="lg" className="mt-(--band-y)">
+    <Band tone="black" size="lg" className="[:not(.full-bleed)+&]:mt-(--band-y)">
       <div className="flex flex-col items-center text-center">
         <h2 className="type-headline max-w-[20ch] text-balance">{tidy(title)}</h2>
         <p className="type-lede measure mt-5 text-pretty text-ink-muted">

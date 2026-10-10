@@ -24,7 +24,7 @@ export default function PlatformyPage() {
       />
 
       <div className="mt-10 md:mt-14">
-        <PlatformCatalog variant="public" />
+        <PlatformCatalog />
       </div>
 
       <DemoCta />

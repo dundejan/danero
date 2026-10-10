@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Group, Row } from '@/components/ui/list';
@@ -7,8 +9,7 @@ import { czDateTime, plural } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { undoImportAction } from './actions';
-import { ConfirmedAction } from './confirmed-action';
-import { platformName } from './platform-names';
+import { platformName } from '@/lib/brokers-catalog';
 
 export type ImportBatchRow = typeof importBatches.$inferSelect;
 
@@ -165,10 +166,14 @@ function BatchDetails({ batch }: { batch: ImportBatchRow }) {
       {/* Vracet je co jen u dávky, která něco přidala. U nepřečteného výpisu by
           tlačítko navíc zahodilo případ, který čeká na rozbor. */}
       {batch.added > 0 && (
-        <ConfirmedAction
+        <ConfirmDialog
+          trigger={
+            <Button variant="danger" size="sm">
+              Vrátit import zpět
+            </Button>
+          }
           action={undoImportAction}
           fields={{ davka: batch.id }}
-          label="Vrátit import zpět"
           pendingLabel="Vracím…"
           title="Vrátit import zpět?"
           // Poctivě: maže se podle toho, KTERÝ import obchod uložil jako první.

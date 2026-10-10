@@ -1,4 +1,6 @@
 import { SyncJobProgress, type SyncJobView } from '@/components/sync-job-progress';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Group, Row } from '@/components/ui/list';
@@ -14,7 +16,6 @@ import {
 import { czDateTime, plural } from '@/lib/format';
 import { tidy } from '@/lib/typography';
 import { disconnectBrokerAction, syncBrokerAction } from './actions';
-import { ConfirmedAction } from './confirmed-action';
 
 interface BrokerCopy {
   /** Popisek tlačítka, které stáhne historii poprvé. */
@@ -242,10 +243,14 @@ export function ConnectedAccount({
               />
             )}
             <Row label="Přístupový klíč" hint="uložený šifrovaně, nikde se nezobrazuje">
-              <ConfirmedAction
+              <ConfirmDialog
+                trigger={
+                  <Button variant="danger" size="sm">
+                    Odpojit
+                  </Button>
+                }
                 action={disconnectBrokerAction}
                 fields={{ ucet: account.id }}
-                label="Odpojit"
                 pendingLabel="Odpojuji…"
                 title={`Odpojit ${account.label}?`}
                 description="Smažeme uložený klíč a účet se přestane synchronizovat. Transakce, které se z něj už stáhly, zůstanou."

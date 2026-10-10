@@ -94,10 +94,8 @@ function Question<T extends string | boolean>({
           if (picked) onChange(picked.value);
         }}
         // větší než přepínač pohledu v liště: tady je odpověď hlavní ovládání
-        className={cn(
-          'mt-4 flex h-9 w-full pointer-coarse:h-11',
-          options.length > 2 ? 'max-w-md' : 'max-w-60',
-        )}
+        size="md"
+        className={cn('mt-4 w-full', options.length > 2 ? 'max-w-md' : 'max-w-60')}
       />
     </div>
   );

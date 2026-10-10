@@ -177,6 +177,7 @@ export function PositionView({
     <>
       <AppToolbar
         title={label}
+        back={{ href: `${basePath}/portfolio`, label: 'Portfolio' }}
         actions={
           position && (
             <Link
@@ -188,27 +189,8 @@ export function PositionView({
           )
         }
       />
-      <div className="@container max-w-[72rem] pt-0 md:pt-1">
-        {/* cesta zpět patří do <nav> se seznamem — jako odstavec ji čtečka
-            přečte jako běžný text a nenabídne ji mezi navigacemi */}
-        <nav aria-label="Drobečková navigace" className="-mt-2">
-          <ol>
-            <li>
-              <Link
-                href={`${basePath}/portfolio`}
-                className="type-callout inline-flex min-h-11 items-center gap-1 font-medium text-accent-text hover:underline active:opacity-60"
-              >
-                <span aria-hidden>‹</span>
-                Portfolio
-              </Link>
-            </li>
-            <li aria-current="page" className="sr-only">
-              {label}
-            </li>
-          </ol>
-        </nav>
-
-        <div className="mt-3 flex flex-wrap items-end gap-x-16 gap-y-7">
+      <div className="@container max-w-[72rem] pt-2 md:pt-4">
+        <div className="flex flex-wrap items-end gap-x-16 gap-y-7">
           <div className="min-w-0">
             {subtitle && (
               <p className="type-callout break-words tabular-nums text-ink-muted">{subtitle}</p>

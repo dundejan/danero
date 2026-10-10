@@ -146,7 +146,7 @@ export default async function CenikPage() {
         lede="Bez placené verze, bez zkušební doby a bez karty. Všechno, co umí, máš od první minuty."
       />
 
-      <Band tone="canvas" wide className="mt-14 md:mt-20" aria-labelledby="obsah-nadpis">
+      <Band tone="canvas" className="mt-14 md:mt-20" aria-labelledby="obsah-nadpis">
         <h2 id="obsah-nadpis" className="type-title-1">
           Co všechno dostaneš
         </h2>
@@ -181,7 +181,7 @@ export default async function CenikPage() {
         </SpecList>
       </Band>
 
-      <Band wide className="pb-0">
+      <Band>
         <Split title="Proč se neplatí">
           <p>
             {tidy(

@@ -63,7 +63,7 @@ export default function OProjektuPage() {
 
       {/* otevřený kód je u daňového nástroje odpověď na „proč mám věřit, že to
           počítáš správně“, ne technikálie */}
-      <Band tone="canvas" wide className="mt-(--band-y)">
+      <Band tone="canvas" className="mt-(--band-y)">
         <Split title="Danero si můžeš přečíst.">
           <p>
             {tidy(

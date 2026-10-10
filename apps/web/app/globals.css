@@ -43,6 +43,10 @@
   --accent: #0071e3;
   --accent-fill: #0071e3;
   --accent-text: #0066cc;
+  /* Text na akcentním tónu (tlačítko `tinted`): tón plochu ztmaví, takže
+     `accent-text` na něm klesl pod AA (3,7–4,4:1 na --canvas). Tenhle odstín
+     drží ≥ 4,5:1 i na nejtmavším tónu (stisk, 24 %) nad --canvas. */
+  --accent-strong: #0058b0;
 
   /* Stavy — systémová zelená / žlutá / oranžová / červená v odstínech, které
      ve světlém režimu drží kontrast: výplň odměrky ≥ 3:1 proti dráze,
@@ -76,6 +80,11 @@
      Krytí 0,97 navíc drží druhotný text na sheetu nad 4,5:1 i v nejhorším
      případě (černý obsah pod ním): 4,61:1. */
   --material-bar: rgba(255, 255, 255, 0.8);
+  /* Spodní lišta na telefonu nese nejdrobnější text aplikace (popisky záložek)
+     a roluje pod ní cokoli — modré tlačítko i černý text. S krytím 0,8 klesl
+     tichý popisek na 3,84:1 nad `primary` a na 3,35:1 nad textem; 0,94 drží
+     ≥ 4,5:1 v obou případech (tmavý režim 0,86). */
+  --material-tabbar: rgba(255, 255, 255, 0.94);
   --material-sidebar: rgba(245, 245, 247, 0.78);
   --material-sheet: rgba(252, 252, 253, 0.97);
   --material-edge: rgba(0, 0, 0, 0.1);
@@ -148,6 +157,7 @@
   --accent-fill: #0071e3;
   /* 6,96:1 na --surface, 5,64:1 na --canvas */
   --accent-text: #2997ff;
+  --accent-strong: #64b5ff;
   --success: #30d158;
   --success-text: #30d158;
   --success-fill: #1d7a34;
@@ -167,6 +177,7 @@
   --chart-7: #8fce3b;
   --chart-8: #aeaeb2;
   --material-bar: rgba(0, 0, 0, 0.78);
+  --material-tabbar: rgba(0, 0, 0, 0.86);
   --material-sidebar: rgba(28, 28, 30, 0.78);
   --material-sheet: rgba(36, 36, 38, 0.92);
   --material-edge: rgba(255, 255, 255, 0.14);
@@ -189,6 +200,7 @@
   --color-accent: var(--accent);
   --color-accent-fill: var(--accent-fill);
   --color-accent-text: var(--accent-text);
+  --color-accent-strong: var(--accent-strong);
   --color-success: var(--success);
   --color-success-text: var(--success-text);
   --color-success-fill: var(--success-fill);
@@ -332,18 +344,13 @@
 }
 
 /* ── Rozvržení veřejných stránek ────────────────────────────────────────────
-   `wrap` je čtecí sloupec (980 px jako na apple.com), `wrap-wide` širší
-   sloupec pro navigaci, patičku a živé kusy rozhraní. `full-bleed` roztáhne
+   `wrap-wide` je jediný sloupec veřejných stránek (1056 px): drží navigaci,
+   titulek stránky, obsah pásů i patičku, takže levá hrana je všude stejná.
+   Užší čtecí sloupec `wrap` (980 px) býval vedle něj — titulek a pás pod ním
+   pak stály o 38 px jinde, a tak zmizel. `full-bleed` roztáhne
    pás přes celou šířku okna, i když stojí uvnitř sloupce: `100vw` počítá
    i se svislým posuvníkem, takže přesah o jeho šířku ořízne obal stránky
    (`overflow-x: clip` — na rozdíl od `hidden` nerozbije `sticky`). */
-@utility wrap {
-  width: 100%;
-  max-width: calc(61.25rem + var(--wrap-gutter-left) + var(--wrap-gutter-right));
-  margin-inline: auto;
-  padding-left: var(--wrap-gutter-left);
-  padding-right: var(--wrap-gutter-right);
-}
 @utility wrap-wide {
   width: 100%;
   max-width: calc(66rem + var(--wrap-gutter-left) + var(--wrap-gutter-right));
@@ -384,6 +391,11 @@
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
 }
+@utility material-tabbar {
+  background-color: var(--material-tabbar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
 @utility material-sidebar {
   background-color: var(--material-sidebar);
   -webkit-backdrop-filter: saturate(180%) blur(30px);
@@ -415,7 +427,12 @@
 
 /* ── Odezva na stisk ────────────────────────────────────────────────────────
    Zpětná vazba přichází při stisku (:active), ne při uvolnění. Tlačítko se
-   nepatrně zmenší; řádek seznamu se jen zvýrazní (řádky se neškálují). */
+   nepatrně zmenší; řádek seznamu se jen zvýrazní (řádky se neškálují).
+
+   Zvýrazněný řádek (`row-hover` pod myší, `row-pressable` při stisku) zároveň
+   přepne tichý text na plnou barvu: `ink-muted` má na zvýrazněné ploše jen
+   4,45:1 a ve skupině `inset` 4,06:1. Přepisuje se token, ne třída, takže to
+   platí i pro obsah, který do řádku vložil volající. */
 @utility pressable {
   transition: transform var(--press-duration) var(--ease-out);
   &:active {
@@ -425,6 +442,15 @@
 @utility row-pressable {
   &:active {
     background-color: var(--highlight-pressed);
+    --ink-muted: var(--ink);
+  }
+}
+@utility row-hover {
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--highlight);
+      --ink-muted: var(--ink);
+    }
   }
 }
 
@@ -649,12 +675,14 @@
    a tam, kde ho nesla jen průsvitnost, dostane zřetelnou hranu. */
 @media (prefers-reduced-transparency: reduce) {
   .material-bar,
+  .material-tabbar,
   .material-sidebar,
   .material-sheet {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  .material-bar {
+  .material-bar,
+  .material-tabbar {
     background-color: var(--surface);
   }
   .material-sidebar,
@@ -664,6 +692,7 @@
 }
 @media (prefers-contrast: more) {
   .material-bar,
+  .material-tabbar,
   .material-sidebar,
   .material-sheet {
     -webkit-backdrop-filter: none;

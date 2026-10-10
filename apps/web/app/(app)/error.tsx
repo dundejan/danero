@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { AppState } from '@/components/app-state';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TextLink } from '@/components/ui/link';
 
 /** Error boundary aplikačních stránek (G9b) — česky, s možností opakovat. */
@@ -18,9 +18,10 @@ export default function AppError({
   }, [error]);
 
   return (
-    <AppState
+    <EmptyState
+      headingAs="h1"
       title="Něco se pokazilo"
-      actions={
+      action={
         <>
           <Button type="button" onClick={reset}>
             Zkusit znovu
@@ -33,6 +34,6 @@ export default function AppError({
       note={error.digest ? `Kód chyby: ${error.digest}` : undefined}
     >
       Stránku se nepodařilo načíst. Tvoje data jsou v pořádku.
-    </AppState>
+    </EmptyState>
   );
 }

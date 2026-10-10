@@ -1,4 +1,5 @@
 import { NavRail, NavTabBar } from '@/components/nav-rail';
+import { TextLink } from '@/components/ui/link';
 import { SOURCE_URL } from '@/lib/legal';
 import { requireUser } from '@/lib/session';
 
@@ -33,23 +34,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         */}
         <footer className="type-caption px-(--page-gutter) pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+1.5rem)] pt-12 text-ink-muted md:pb-8">
           Danero je otevřený software pod licencí{' '}
-          <a
-            href="https://www.gnu.org/licenses/agpl-3.0.html"
-            className="text-accent-text hover:underline"
-            target="_blank"
-            rel="noreferrer"
-          >
+          {/* odkazy ve větě jsou podtržené — jen barvou by se od textu neodlišily
+              (WCAG 1.4.1; axe to hlásil na každé stránce aplikace) */}
+          <TextLink href="https://www.gnu.org/licenses/agpl-3.0.html" external>
             AGPL-3.0
-          </a>{' '}
+          </TextLink>{' '}
           — zdrojový kód téhle aplikace je na{' '}
-          <a
-            href={SOURCE_URL}
-            className="text-accent-text hover:underline"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <TextLink href={SOURCE_URL} external className="break-all">
             {SOURCE_URL.replace(/^https?:\/\//, '')}
-          </a>
+          </TextLink>
           .
         </footer>
       </div>

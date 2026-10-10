@@ -28,13 +28,7 @@ const normalize = (text: string): string =>
  * čtou kontakt provozovatele z prostředí, které prohlížeč nemá) — tady se jen
  * rozhoduje, které z nich jsou vidět. Bez JavaScriptu zůstane celý seznam.
  */
-export function PlatformSearch({
-  groups,
-  headingLevel,
-}: {
-  groups: PlatformSearchGroup[];
-  headingLevel: 'h2' | 'h3';
-}) {
+export function PlatformSearch({ groups }: { groups: PlatformSearchGroup[] }) {
   const [query, setQuery] = useState('');
   const statusId = useId();
   const needle = normalize(query);
@@ -46,7 +40,6 @@ export function PlatformSearch({
         : group.items,
     }))
     .filter((group) => group.items.length > 0);
-  const Heading = headingLevel;
 
   return (
     <div>
@@ -71,7 +64,7 @@ export function PlatformSearch({
       <div className="@container">
         {visible.map((group) => (
           <div key={group.key} className="mt-8">
-            <Heading className="type-title-3 pb-3">{group.label}</Heading>
+            <h2 className="type-title-3 pb-3">{group.label}</h2>
             <div role="list" className="grid items-start gap-x-(--column-gap) @2xl:grid-cols-2">
               {group.items.map((item) => (
                 <Fragment key={item.id}>{item.row}</Fragment>

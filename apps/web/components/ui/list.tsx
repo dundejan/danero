@@ -12,6 +12,9 @@ import { cn } from '@/lib/utils';
  *   prvky, a pro obsah sheetu.
  *
  * `title` je popisek skupiny nad ní, `footer` tichá věta pod ní.
+ *
+ * Děti jsou `Row`, `FieldRow`, `DisclosureRow` a `GroupItem` — každé nese roli
+ * `listitem`, skupina je pro čtečku seznam.
  */
 export function Group({
   variant = 'plain',
@@ -71,6 +74,8 @@ export function Group({
  * - `href` udělá z celého řádku odkaz se šipkou (pak do něj nepatří `info`
  *   ani jiný ovládací prvek),
  * - `strong` zvýrazní součtový řádek,
+ * - `wrap` dovolí hodnotě zalomit se — pro hodnotu, která je věta („daněna
+ *   jako dividenda (bezpečný výklad)“); částky a krátké údaje ji nepotřebují,
  * - `children` jdou vpravo místo `value` (přepínač, tlačítko, select).
  */
 export function Row({
@@ -80,6 +85,7 @@ export function Row({
   value,
   href,
   strong = false,
+  wrap = false,
   className,
   children,
 }: {
@@ -89,12 +95,13 @@ export function Row({
   value?: React.ReactNode;
   href?: string;
   strong?: boolean;
+  wrap?: boolean;
   className?: string;
   children?: React.ReactNode;
 }) {
   const body = (
     <>
-      <span className="min-w-0 flex-1">
+      <span className={wrap ? 'max-w-[45%] shrink-0' : 'min-w-0 flex-1'}>
         <span className={cn('inline-flex items-center gap-1', strong && 'font-semibold')}>
           {label}
           {info}
@@ -104,7 +111,8 @@ export function Row({
       {(value != null || children) && (
         <span
           className={cn(
-            'shrink-0 text-right tabular-nums',
+            'text-right tabular-nums',
+            wrap ? 'min-w-0 flex-1 text-pretty' : 'shrink-0',
             strong ? 'font-semibold text-ink' : href ? 'text-ink-muted' : 'text-ink',
           )}
         >
@@ -119,11 +127,15 @@ export function Row({
       )}
     </>
   );
-  const classes = cn('flex min-h-11 items-center gap-4 py-2.5', className);
+  const classes = cn(
+    'flex min-h-11 gap-4 py-2.5',
+    wrap ? 'items-baseline' : 'items-center',
+    className,
+  );
   if (href) {
     return (
       <div role="listitem">
-        <Link href={href} className={cn(classes, 'row-pressable -mx-2 rounded-lg px-2 hover:bg-(--highlight)')}>
+        <Link href={href} className={cn(classes, 'row-hover row-pressable -mx-2 rounded-lg px-2')}>
           {body}
         </Link>
       </div>
@@ -132,6 +144,86 @@ export function Row({
   return (
     <div role="listitem" className={classes}>
       {body}
+    </div>
+  );
+}
+
+/**
+ * Položka skupiny s volným obsahem: něco, co není „popisek — hodnota“ ani
+ * rozbalovací řádek (soubor s formulářem pod ním, limit s odměrkou). Drží jen
+ * roli a svislý rytmus řádku; obsah si skládá volající.
+ */
+export function GroupItem({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div role="listitem" className={cn('py-3.5', className)} {...props} />;
+}
+
+/**
+ * Řádek skupiny s polem nebo nabídkou: popisek vlevo, ovládací prvek vpravo —
+ * a v úzkém okně pod sebou, protože pole s textem se vedle popisku na telefon
+ * nevejde. (`Row` se neskládá, drží jeden řádek; pro přepínač, tlačítko
+ * a krátkou hodnotu je dál správný on.)
+ *
+ * Šířku rozhoduje okno s obsahem — stránka kolem skupiny potřebuje
+ * `@container`.
+ *
+ * - `htmlFor` páruje popisek s polem; bez něj je popisek obyčejný text
+ *   (skupina zaškrtávátek si název bere přes `labelId` a `aria-labelledby`),
+ * - `hint` je tichá věta pod popiskem, `hintId` ji naváže na pole přes
+ *   `aria-describedby`,
+ * - `info` je `InfoPopover` s celým výkladem,
+ * - `fit` nechá ovládacímu prvku jeho vlastní šířku (řada přepínacích
+ *   políček); výchozí je pevný sloupec, aby pole pod sebou lícovala.
+ *
+ * Řádek je skupina `group/field-row`: text nápovědy se tak může měnit podle
+ * vybrané volby bez JavaScriptu (`group-has-[option:checked]/field-row:…`).
+ */
+export function FieldRow({
+  label,
+  htmlFor,
+  labelId,
+  info,
+  hint,
+  hintId,
+  fit = false,
+  className,
+  children,
+}: {
+  label: React.ReactNode;
+  htmlFor?: string;
+  labelId?: string;
+  info?: React.ReactNode;
+  hint?: React.ReactNode;
+  hintId?: string;
+  fit?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="listitem"
+      className={cn(
+        'group/field-row flex flex-col gap-x-6 gap-y-2 py-3 text-ink @lg:min-h-11 @lg:flex-row @lg:items-center @lg:py-2.5',
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <span className="inline-flex items-center gap-1">
+          {htmlFor ? (
+            <label htmlFor={htmlFor} id={labelId}>
+              {label}
+            </label>
+          ) : (
+            <span id={labelId}>{label}</span>
+          )}
+          {info}
+        </span>
+        {hint && (
+          <div id={hintId} className="type-footnote text-pretty text-ink-muted">
+            {hint}
+          </div>
+        )}
+      </div>
+      <div className={cn('shrink-0', !fit && '@lg:w-64')}>{children}</div>
     </div>
   );
 }

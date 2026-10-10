@@ -6,8 +6,12 @@ import { cn } from '@/lib/utils';
  * odkaz někam vede (na jinou stránku), a je jen ozdoba (`aria-hidden`).
  * Na dotyku má řádek 44 px na výšku, s myší je to běžný řádek textu.
  *
- * Vnější adresa (`http…`, `mailto:`) se otevře obyčejným `<a>`; `external`
- * přidá nové okno.
+ * Obyčejné `<a>` místo směrovače Nextu dostane:
+ * - vnější adresa (`http…`, `mailto:`); `external` přidá nové okno,
+ * - kotva na téže stránce (`#…`) — směrovač při změně samotné kotvy nevyvolá
+ *   `hashchange`, takže by se `OpenOnHash` nedozvěděl, že má cílový řádek
+ *   rozbalit,
+ * - stažení souboru (`download`).
  */
 export function TextLink({
   href,
@@ -42,7 +46,7 @@ export function TextLink({
       )}
     </>
   );
-  if (external || /^(https?:|mailto:)/.test(href)) {
+  if (external || props.download !== undefined || /^(https?:|mailto:|#)/.test(href)) {
     return (
       <a
         href={href}

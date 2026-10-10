@@ -16,12 +16,13 @@ import {
 } from '@/components/filing-verdict';
 import { PrintButton } from '@/components/print-button';
 import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
+import { ViewSwitch } from '@/components/view-switch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Disclosure } from '@/components/ui/disclosure';
+import { Chevron, Disclosure } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, FieldHint, Input, Select } from '@/components/ui/field';
-import { InfoPopover } from '@/components/ui/info-popover';
+import { InfoPopover, InfoPrint } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
 import { Group, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
@@ -29,7 +30,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section, SectionHeader } from '@/components/ui/section';
 import { Stat } from '@/components/ui/stat';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
-import { VariantSwitch } from '@/components/variant-switch';
 import { groupByCode, WarningsList } from '@/components/warnings-list';
 import { YearSwitcher } from '@/components/year-switcher';
 import { today as todayInPrague } from '@/lib/clock';
@@ -194,40 +194,6 @@ const NOTABLE_TAX_SAVING_CZK = 100;
 const EPO_FORM_ID = 'epo-export';
 
 /**
- * Text, který je na obrazovce schovaný za „i“ (vysvětlivka se vykreslí až po
- * otevření), a v tisku proto stojí rozepsaný. Vytištěný report je dokument:
- * co jde na obrazovce rozkliknout, musí být na papíře vidět rovnou.
- */
-function PrintNote({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'type-footnote mt-3 hidden max-w-[80ch] text-ink-muted print:block [&>*+*]:mt-1.5',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Šipka rozbalovacího řádku tabulky — stejná jako v `ui/disclosure`. */
-function Chevron() {
-  return (
-    <svg
-      viewBox="0 0 8 12"
-      aria-hidden
-      className="h-[0.7em] w-auto shrink-0 fill-none stroke-current text-ink-muted transition-transform duration-150 ease-(--ease-out) group-open/disclosure:rotate-90 print:hidden"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M1.5 1.5L6 6l-4.5 4.5" />
-    </svg>
-  );
-}
-
-/**
  * Řádek „řádek formuláře → částka“: vlevo tiché číslo řádku přiznání, vedle něj
  * co se na něj píše, vpravo částka. Řádky bez částky (počítá ji formulář sám)
  * jen říkají, kudy číslo dál putuje.
@@ -286,7 +252,7 @@ function LineRow({
  * 6. jak je to spočítáno: rozpad daně, porovnání variant, metoda a kurzy.
  *
  * Výklad je na obrazovce ve vysvětlivkách a rozbalovacích detailech; v tisku
- * stojí všechno rozepsané (`PrintNote`, `details` otevírá globals.css).
+ * stojí všechno rozepsané (`InfoPrint`, `details` otevírá globals.css).
  */
 export function ReportView({
   txs,
@@ -403,7 +369,7 @@ export function ReportView({
       : 'obecného základu (15/23 %)';
 
   /* ── texty vysvětlivek ──────────────────────────────────────────────────
-     Každý stojí dvakrát: na obrazovce za „i“, v tisku rozepsaný (PrintNote).
+     Každý stojí dvakrát: na obrazovce za „i“, v tisku rozepsaný (InfoPrint).
      Jeden zdroj, ať se obě podoby nerozejdou. */
 
   const deadlineInfo = filesElectronicallyOnly ? (
@@ -788,7 +754,7 @@ export function ReportView({
               />
             </dl>
           </div>
-          <PrintNote className="mt-0">
+          <InfoPrint className="mt-0">
             <p>
               <strong>Termín podání.</strong> {deadlineInfo}
             </p>
@@ -796,7 +762,7 @@ export function ReportView({
               <strong>Orientační daň z investic.</strong>
             </p>
             {taxInfo}
-          </PrintNote>
+          </InfoPrint>
           {/* na telefonu se tlačítko do lišty vedle exportu nevejde */}
           <PrintButton className="sm:hidden" />
           {filingLimit && !exceeded && reportsExemptIncome && (
@@ -842,7 +808,7 @@ export function ReportView({
               finanční správa ještě nezveřejnila.
             </p>
           )}
-          <PrintNote className="mt-1">{rowNumbersInfo}</PrintNote>
+          <InfoPrint className="mt-1">{rowNumbersInfo}</InfoPrint>
 
           <div className="@container mt-8">
             <div
@@ -997,7 +963,8 @@ export function ReportView({
                 variantu vybírá uživatel (i ve formuláři pro XML níž) */}
               {showDividends && (
                 <div>
-                  <VariantSwitch
+                  <ViewSwitch
+                    headingAs="h3"
                     title="Dividendy a úroky ze zahraničí"
                     info={
                       <InfoPopover label="Dvě varianty zdanění dividend" align="start">
@@ -1006,12 +973,12 @@ export function ReportView({
                     }
                     ariaLabel="Varianta zdanění dividend a úroků"
                     defaultKey={result.tax.recommended}
-                    variants={[
+                    views={[
                       { key: 'GENERAL', label: 'Obecný základ', content: generalVariant },
                       { key: 'SEPARATE_16A', label: 'Samostatný základ', content: separateVariant },
                     ]}
                   />
-                  <PrintNote>{dividendChoiceInfo}</PrintNote>
+                  <InfoPrint>{dividendChoiceInfo}</InfoPrint>
                   {flatTaxCreditCaveat && (
                     <div className="mt-5">
                       <PausalCreditCaveat amount={czk(result.dividends.foreignWithholdingCzk)} />
@@ -1092,7 +1059,7 @@ export function ReportView({
                         </Group>
                       )}
                       {result.dividends.taxableInterestCzk.gt(0) && (
-                        <PrintNote>{interestInfo}</PrintNote>
+                        <InfoPrint>{interestInfo}</InfoPrint>
                       )}
                     </div>
                   )}
@@ -1371,9 +1338,9 @@ export function ReportView({
                       <Tr key={disposal.sellTxId}>
                         <Td>
                           {/* nativní <details> — server component bez JS; rozpad = auditní stopa párování */}
-                          <details className="disclosure group/disclosure">
+                          <details className="disclosure">
                             <summary className="inline-flex min-h-6 cursor-pointer items-center gap-1.5 active:opacity-60 pointer-coarse:min-h-11">
-                              <Chevron />
+                              <Chevron className="text-ink-muted print:hidden" />
                               <span className="font-medium">
                                 {labels.get(disposal.isin) ?? disposal.isin}
                               </span>
@@ -1417,9 +1384,9 @@ export function ReportView({
                 </tbody>
               </Table>
             </ScrollArea>
-            <PrintNote>
+            <InfoPrint>
               <p>Pod každým prodejem jsou nákupy, ze kterých čerpal. {expenseRateNote}</p>
-            </PrintNote>
+            </InfoPrint>
             {/* Na papíře musí být vidět, že tabulka pokračuje — stránkovací lišta
                 je `print:hidden`, takže bez téhle věty odnese uživatel na finanční
                 úřad neúplný rozpis v domnění, že je kompletní (H-3-01). */}
@@ -1565,7 +1532,7 @@ export function ReportView({
                 </tbody>
               </Table>
             </ScrollArea>
-            <PrintNote>{shortSalesInfo}</PrintNote>
+            <InfoPrint>{shortSalesInfo}</InfoPrint>
           </Section>
         )}
 
@@ -1724,18 +1691,18 @@ export function ReportView({
                   value={czk(activeTax.taxCzk)}
                 />
               </Group>
-              <PrintNote>
+              <InfoPrint>
                 <p>{tidy(result.tax.note)}</p>
                 <p>
                   Druhy příjmů z prodejů se mezi sebou nekompenzují. Zápočet zahraniční daně (§ 38f)
                   je stropovaný podílem zahraničních příjmů na základu — může být nižší než
                   započitatelná srážka z tabulky států.
                 </p>
-              </PrintNote>
+              </InfoPrint>
             </Section>
 
             <div>
-              <VariantSwitch
+              <ViewSwitch
                 headingAs="h2"
                 title="Porovnání variant párování"
                 info={
@@ -1745,7 +1712,7 @@ export function ReportView({
                 }
                 ariaLabel="Kurzy ve srovnání variant"
                 defaultKey={result.options.fxMethod}
-                variants={fxMethods.map((fx) => ({
+                views={fxMethods.map((fx) => ({
                   key: fx,
                   label: fx === 'UNIFIED' ? 'Jednotný kurz' : 'Denní kurzy ČNB',
                   content: variantsTable(fx),
@@ -1755,7 +1722,7 @@ export function ReportView({
                 FIFO je bezpečný standard; jinou metodu párování lze obhájit jen průkaznou
                 identifikací konkrétních prodávaných kusů.
               </p>
-              <PrintNote>{variantsInfo}</PrintNote>
+              <InfoPrint>{variantsInfo}</InfoPrint>
               {!demo && !dailyRates && (
                 <Notice
                   tone="caution"
@@ -1768,8 +1735,7 @@ export function ReportView({
             </div>
 
             <Section title="Metoda výpočtu">
-              {/* vlastní seznam místo `Row`: hodnoty jsou věty a musí se umět zalomit */}
-              <dl className="divide-y divide-line/70">
+              <Group>
                 {[
                   ['Párování prodejů', methodLabel],
                   ['Kurzy', fxMethodLabel(result)],
@@ -1796,15 +1762,10 @@ export function ReportView({
                       : 'daněna jako dividenda (bezpečný výklad)',
                   ],
                 ].map(([term, value]) => (
-                  <div
-                    key={term}
-                    className="flex min-h-11 items-baseline justify-between gap-6 py-2.5"
-                  >
-                    <dt className="shrink-0">{term}</dt>
-                    <dd className="text-right text-pretty">{value}</dd>
-                  </div>
+                  // hodnoty jsou věty („daněna jako dividenda…“) a musí se umět zalomit
+                  <Row key={term} wrap label={term} value={value} />
                 ))}
-              </dl>
+              </Group>
               {!demo && (
                 <p className="type-caption pt-2 text-pretty text-ink-muted">
                   {pinned ? pinnedMethodNote(year, pinned) : 'Metodu a výklady změníš v Nastavení.'}
@@ -1866,7 +1827,7 @@ export function ReportView({
                   <p className="type-caption mt-2 text-ink-muted">
                     Jednotný kurz GFŘ, Kč za jednotku měny.
                   </p>
-                  <PrintNote>{ratesInfo}</PrintNote>
+                  <InfoPrint>{ratesInfo}</InfoPrint>
                 </>
               )}
             </Section>

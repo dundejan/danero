@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Field, Select, Textarea } from '@/components/ui/field';
-import { Group } from '@/components/ui/list';
+import { Group, GroupItem } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { StatusLabel } from '@/components/ui/status';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -116,7 +116,7 @@ export function UnreadStatements({ cases }: { cases: FailedImportCase[] }) {
     <Section title="Výpisy, které jsme nepřečetli">
       <Group aria-label="Výpisy, které jsme nepřečetli">
         {cases.map((item) => (
-          <div key={item.id} role="listitem" className="py-3.5">
+          <GroupItem key={item.id}>
             <p className="type-callout flex items-baseline justify-between gap-3 font-medium">
               <span className="min-w-0 break-all">{item.filename}</span>
               <span className="type-caption shrink-0 font-normal tabular-nums text-ink-muted">
@@ -126,7 +126,7 @@ export function UnreadStatements({ cases }: { cases: FailedImportCase[] }) {
             <div className="mt-1.5">
               <CaseBody item={item} />
             </div>
-          </div>
+          </GroupItem>
         ))}
       </Group>
     </Section>

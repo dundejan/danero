@@ -3,6 +3,7 @@ import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
 import { describedByError, Field, FieldError, Input } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -26,7 +27,6 @@ import {
   deleteAccountAction,
   revokeOtherSessionsAction,
 } from '../actions';
-import { ConfirmFormDialog } from './confirm-form-dialog';
 
 export const metadata = { title: 'Účet a zabezpečení — Danero' };
 
@@ -98,10 +98,7 @@ export default async function AccountSettingsPage({
 
       <div className="@container max-w-[44rem] space-y-12 pt-2 md:pt-4">
         <Section title="Přihlášení a zabezpečení" id="ucet">
-          {/* Bez zvýraznění pod myší: na šedé skupině by tichý údaj vpravo
-              (adresa, „Změnit“) spadl pod kontrast AA. Že jde řádek rozbalit,
-              říká šipka; stisk se dál zvýrazní. */}
-          <Group variant="inset" className="[--highlight:transparent]">
+          <Group variant="inset">
             <DisclosureRow
               key={`email-${renderKey}`}
               title="E-mail"
@@ -293,8 +290,7 @@ export default async function AccountSettingsPage({
             </InfoPopover>
           }
         >
-          {/* popisky jsou různě dlouhé — šířku segmentů určuje text (viz lišta nastavení) */}
-          <ThemeToggle withLabels className="inline-grid auto-cols-auto grid-flow-col" />
+          <ThemeToggle withLabels />
         </Section>
 
         <Section title="Tvoje data">
@@ -319,7 +315,7 @@ export default async function AccountSettingsPage({
               </a>
             </Row>
             <Row label="Smazání účtu" hint="Nevratné — smaže účet i všechna data.">
-              <ConfirmFormDialog
+              <ConfirmDialog
                 trigger={
                   <Button variant="danger" size="sm">
                     Smazat účet…
@@ -356,7 +352,7 @@ export default async function AccountSettingsPage({
                   />
                 </Field>
                 {deleteError && <FieldError id={DELETE_ERROR_ID}>{deleteError}</FieldError>}
-              </ConfirmFormDialog>
+              </ConfirmDialog>
             </Row>
           </Group>
         </Section>

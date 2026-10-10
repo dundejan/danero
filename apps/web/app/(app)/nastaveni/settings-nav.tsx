@@ -28,10 +28,8 @@ export function SettingsToolbar({ active }: { active: SettingsSection }) {
           label: section.label,
           href: section.href,
         }))}
-        // Popisky jsou různě dlouhé: stejně široké segmenty (výchozí chování
-        // přepínače, šité na roky) by nejdelší ořízly. Mřížka dá každému
-        // šířku podle textu; na telefonu se přepínač roztáhne přes celý řádek.
-        className="grid w-full auto-cols-auto grid-flow-col md:w-auto"
+        fit="content"
+        className="w-full md:w-auto"
       />
     </AppToolbar>
   );

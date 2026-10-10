@@ -1,6 +1,11 @@
 import type { Metadata } from 'next';
-import { ArticleLink, ArticleList, DisputedReading } from '@/components/guide-article';
-import { ANCHOR_OFFSET, LongRead, type ContentsItem } from '@/components/long-read';
+import {
+  ArticleLink,
+  ArticleList,
+  ArticleSection,
+  DisputedReading,
+} from '@/components/guide-article';
+import { LongRead, type ContentsItem } from '@/components/long-read';
 import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
 import { Disclosure } from '@/components/ui/disclosure';
 import { verifiedRateSourceNote } from '@/lib/tax-config';
@@ -338,19 +343,6 @@ const CONTENTS: ContentsItem[] = [
   { id: DISPUTED_ID, title: 'Sporné výklady' },
 ];
 
-/**
- * Sazba oddílu metodiky — stejná jako `ArticleSection` průvodce, jen s kotvou
- * a s mezititulky (`h3`). První odstavec je pravidlo samo, proto je v barvě
- * textu; zbytek je výklad a je o stupeň tišší. Rozbalovací detail uvnitř
- * dostává velikost čteného textu, ne poznámky.
- */
-const SECTION_BODY = [
-  'type-reading mt-4 space-y-4 text-pretty text-ink-muted',
-  '[&>p:first-child]:text-ink [&_strong]:font-semibold [&_strong]:text-ink',
-  '[&>h3]:type-title-3 [&>h3]:pt-4 [&>h3]:text-ink',
-  '[&_details>div]:type-callout',
-].join(' ');
-
 export default function JakPocitamePage() {
   return (
     <MarketingPage>
@@ -363,50 +355,50 @@ export default function JakPocitamePage() {
       <LongRead contents={CONTENTS} narrow="list">
         <div className="space-y-16">
           {RULES.map((rule) => (
-            <section key={rule.id} id={rule.id} className={ANCHOR_OFFSET}>
-              <h2 className="type-title-2 text-balance">{rule.title}</h2>
-              <div className={SECTION_BODY}>{rule.body}</div>
-              <p className="type-footnote mt-5 text-pretty text-ink-muted">
-                Zdroj: {rule.source}
-              </p>
-            </section>
+            <ArticleSection
+              key={rule.id}
+              id={rule.id}
+              title={rule.title}
+              lead
+              footnote={<>Zdroj: {rule.source}</>}
+              className="mt-0"
+            >
+              {rule.body}
+            </ArticleSection>
           ))}
 
-          <section id={DISPUTED_ID} className={ANCHOR_OFFSET}>
-            <h2 className="type-title-2 text-balance">{DISPUTED_TITLE}</h2>
-            <div className={SECTION_BODY}>
-              <p>
-                Kde existuje víc obhajitelných výkladů, Danero vždy počítá
-                defaultně bezpečnou (přísnější) variantu, vedle v korunách vyčíslí,
-                co by znamenal výhodnější výklad, a na rovinu popíše riziko, kdyby ho
-                správce daně neuznal. Rozhodnutí je pak na tobě — přepínačem.
-              </p>
-              <ArticleList>
-                <li>
-                  Limit 100 000 Kč: defaultně do něj počítáme i prodeje osvobozené
-                  časovým testem (striktní výklad); mírnější výklad je vynechává.
-                </li>
-                <li>
-                  Začátek časového testu: defaultně den vypořádání obchodu; část
-                  praxe počítá den zadání obchodu.
-                </li>
-                <li>
-                  Opce, která propadla bezcenná: zaplacenou prémii defaultně
-                  neuplatňujeme jako výdaj; mírnější výklad ji uplatní proti ostatním
-                  derivátovým příjmům.
-                </li>
-                <li>
-                  Stablecoiny a tříletý test: z limitu 100 000 Kč je zákon vylučuje,
-                  u tříletého testu mlčí — označujeme to jako sporné a u dotčených
-                  prodejů tě upozorníme.
-                </li>
-              </ArticleList>
-              <p>
-                Zvolené přepínače se tisknou přímo do výstupních podkladů — kdyby se
-                úřad ptal, máš černé na bílém, jak bylo počítáno.
-              </p>
-            </div>
-          </section>
+          <ArticleSection id={DISPUTED_ID} title={DISPUTED_TITLE} lead className="mt-0">
+            <p>
+              Kde existuje víc obhajitelných výkladů, Danero vždy počítá
+              defaultně bezpečnou (přísnější) variantu, vedle v korunách vyčíslí,
+              co by znamenal výhodnější výklad, a na rovinu popíše riziko, kdyby ho
+              správce daně neuznal. Rozhodnutí je pak na tobě — přepínačem.
+            </p>
+            <ArticleList>
+              <li>
+                Limit 100 000 Kč: defaultně do něj počítáme i prodeje osvobozené
+                časovým testem (striktní výklad); mírnější výklad je vynechává.
+              </li>
+              <li>
+                Začátek časového testu: defaultně den vypořádání obchodu; část
+                praxe počítá den zadání obchodu.
+              </li>
+              <li>
+                Opce, která propadla bezcenná: zaplacenou prémii defaultně
+                neuplatňujeme jako výdaj; mírnější výklad ji uplatní proti ostatním
+                derivátovým příjmům.
+              </li>
+              <li>
+                Stablecoiny a tříletý test: z limitu 100 000 Kč je zákon vylučuje,
+                u tříletého testu mlčí — označujeme to jako sporné a u dotčených
+                prodejů tě upozorníme.
+              </li>
+            </ArticleList>
+            <p>
+              Zvolené přepínače se tisknou přímo do výstupních podkladů — kdyby se
+              úřad ptal, máš černé na bílém, jak bylo počítáno.
+            </p>
+          </ArticleSection>
         </div>
 
         <p className="type-footnote mt-16 border-t border-line/70 pt-6 text-pretty text-ink-muted">

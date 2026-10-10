@@ -6,7 +6,7 @@ import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input, Select } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { Group, Row } from '@/components/ui/list';
+import { FieldRow, Group, Row } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -18,7 +18,7 @@ import { filingLimitTexts } from '@/lib/filing-limits';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
-import { DisputedHint, SettingRow } from './setting-row';
+import { DisputedHint } from './disputed-hint';
 import { SettingsToolbar } from './settings-nav';
 import { SettingsToast } from './settings-toast';
 import { saveProfileAction, unpinTaxYearAction } from './actions';
@@ -47,7 +47,7 @@ export default async function SettingsPage({
   const taxProfile = (
     <Section title="Daňový profil">
       <Group variant="inset">
-        <SettingRow
+        <FieldRow
           label="Daňový režim"
           htmlFor="rezim"
           hintId="rezim-napoveda"
@@ -65,19 +65,19 @@ export default async function SettingsPage({
           // krátký a limit přitom nezmizí.
           hint={
             <>
-              <span className="hidden group-has-[option:disabled:checked]/setting:inline">
+              <span className="hidden group-has-[option:disabled:checked]/field-row:inline">
                 Z výpisů se zjistit nedá.
               </span>
-              <span className="hidden group-has-[option[value=PAUSAL]:checked]/setting:inline">
+              <span className="hidden group-has-[option[value=PAUSAL]:checked]/field-row:inline">
                 {tidy('Hlídá se limit 50 000 Kč.')}
               </span>
-              <span className="hidden group-has-[option[value=ZAMESTNANEC]:checked]/setting:inline">
+              <span className="hidden group-has-[option[value=ZAMESTNANEC]:checked]/field-row:inline">
                 {tidy(`Hlídá se limit ${filingLimits.employee}.`)}
               </span>
-              <span className="hidden group-has-[option[value=OSVC]:checked]/setting:inline">
+              <span className="hidden group-has-[option[value=OSVC]:checked]/field-row:inline">
                 Přiznání podáváš tak jako tak.
               </span>
-              <span className="hidden group-has-[option[value=JINE]:checked]/setting:inline">
+              <span className="hidden group-has-[option[value=JINE]:checked]/field-row:inline">
                 {tidy(`Hlídá se obecný limit ${filingLimits.general}.`)}
               </span>
             </>
@@ -105,14 +105,14 @@ export default async function SettingsPage({
             <option value="OSVC">OSVČ mimo paušál</option>
             <option value="JINE">Jiné</option>
           </Select>
-        </SettingRow>
+        </FieldRow>
         {/* R-08f, R-09a, R-09b: profil má tuhle částku jen jednu a engine ji
             přičte ke každému roku — i ke skončenému a zafixovanému (fixace
             R-05c drží párování, kurzy a výklad limitu 100 000 Kč, tohle pole
             ne). Letošní nájem tak bez vysvětlení přepsal verdikt loňského
             roku (L24-03): výhrada proto stojí přímo u pole, zbytek ve
             vysvětlivce. */}
-        <SettingRow
+        <FieldRow
           label="Další zdanitelné příjmy"
           htmlFor="ostatni-prijmy"
           hintId="ostatni-prijmy-napoveda"
@@ -138,7 +138,7 @@ export default async function SettingsPage({
             aria-describedby="ostatni-prijmy-napoveda"
             className="tabular-nums"
           />
-        </SettingRow>
+        </FieldRow>
         <Row
           label={<label htmlFor="obchodni-majetek">Cenné papíry v obchodním majetku</label>}
           hint="Ruší osvobození — netypické."
@@ -173,7 +173,7 @@ export default async function SettingsPage({
         }
       >
         <Group variant="inset">
-          <SettingRow
+          <FieldRow
             label="Párování prodejů"
             htmlFor="parovani"
             info={
@@ -198,8 +198,8 @@ export default async function SettingsPage({
               <option value="MAX_PROFIT">Max. zisk — nejlevnější první</option>
               <option value="MAX_LOSS">Max. ztráta — nejdražší první</option>
             </Select>
-          </SettingRow>
-          <SettingRow
+          </FieldRow>
+          <FieldRow
             label="Měnové kurzy"
             htmlFor="kurzy"
             info={
@@ -216,8 +216,8 @@ export default async function SettingsPage({
               <option value="UNIFIED">Jednotný kurz GFŘ</option>
               <option value="CNB_DAILY">Denní kurzy ČNB</option>
             </Select>
-          </SettingRow>
-          <SettingRow
+          </FieldRow>
+          <FieldRow
             label="Začátek časového testu"
             htmlFor="zaklad-casoveho-testu"
             info={
@@ -238,7 +238,7 @@ export default async function SettingsPage({
               <option value="settlement">Datum vypořádání</option>
               <option value="trade">Datum obchodu</option>
             </Select>
-          </SettingRow>
+          </FieldRow>
         </Group>
       </Section>
 
@@ -255,7 +255,7 @@ export default async function SettingsPage({
         }
       >
         <Group variant="inset">
-          <SettingRow
+          <FieldRow
             label={tidy('Co se počítá do limitu 100 000 Kč')}
             htmlFor="limit-100k"
             hintId="limit-100k-napoveda"
@@ -290,8 +290,8 @@ export default async function SettingsPage({
                 </option>
               </optgroup>
             </Select>
-          </SettingRow>
-          <SettingRow
+          </FieldRow>
+          <FieldRow
             label="Prémie bezcenně expirovaných opcí"
             htmlFor="derivaty-vydaje"
             hintId="derivaty-vydaje-napoveda"
@@ -328,8 +328,8 @@ export default async function SettingsPage({
                 </option>
               </optgroup>
             </Select>
-          </SettingRow>
-          <SettingRow
+          </FieldRow>
+          <FieldRow
             label="Stablecoiny a časový test"
             htmlFor="emt-casovy-test"
             hintId="emt-casovy-test-napoveda"
@@ -364,8 +364,8 @@ export default async function SettingsPage({
                 </option>
               </optgroup>
             </Select>
-          </SettingRow>
-          <SettingRow
+          </FieldRow>
+          <FieldRow
             label="Vratka kapitálu"
             htmlFor="vratka-kapitalu"
             hintId="vratka-kapitalu-napoveda"
@@ -410,7 +410,7 @@ export default async function SettingsPage({
                 </option>
               </optgroup>
             </Select>
-          </SettingRow>
+          </FieldRow>
           {/* R-13b: prodej nakrátko volbu NEMÁ. Příjem plyne vždy prodejem —
               opačný výklad se objevuje jen v diskusích, které short zaměňují
               s CFD, a oporu v zákoně nemá. Vysvětlení, jak se short daní, nese
@@ -517,9 +517,8 @@ export default async function SettingsPage({
                         confirmLabel="Zrušit fixaci"
                         cancelLabel="Ponechat"
                         action={unpinTaxYearAction}
-                      >
-                        <input type="hidden" name="rok" value={pinned.taxYear} />
-                      </ConfirmDialog>
+                        fields={{ rok: pinned.taxYear }}
+                      />
                     </div>
                   </DisclosureRow>
                 ))}

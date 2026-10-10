@@ -5,12 +5,16 @@ import { cn } from '@/lib/utils';
  * vysvětlivka (`info` = `InfoPopover`) a tichý údaj (`count`), vpravo akce
  * nebo přepínač pohledu. Pod titulkem NENÍ úvodní odstavec — co sekce
  * ukazuje, má být poznat z ní samé; „jak se to počítá“ patří do `info`.
+ *
+ * `scrollActions` je pro akci, která se na úzký displej nemusí vejít
+ * (přepínač roku s mnoha lety): posouvá se vodorovně jen ona, ne stránka.
  */
 export function SectionHeader({
   title,
   info,
   count,
   actions,
+  scrollActions = false,
   as: Heading = 'h2',
   className,
 }: {
@@ -19,6 +23,7 @@ export function SectionHeader({
   /** Tiché číslo za titulkem (počet položek). */
   count?: React.ReactNode;
   actions?: React.ReactNode;
+  scrollActions?: boolean;
   as?: 'h2' | 'h3';
   className?: string;
 }) {
@@ -33,7 +38,19 @@ export function SectionHeader({
         </Heading>
         {info}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && (
+        <div
+          className={
+            scrollActions
+              ? // svislé odsazení nechává místo klikacím plochám segmentů, které
+                // dráhu přepínače přesahují (stejně jako v nástrojové liště)
+                '-my-2 flex max-w-full min-w-0 overflow-x-auto py-2 [scrollbar-width:none]'
+              : 'flex shrink-0 items-center gap-2'
+          }
+        >
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -48,6 +65,7 @@ export function Section({
   info,
   count,
   actions,
+  scrollActions,
   className,
   children,
   ...props
@@ -56,10 +74,17 @@ export function Section({
   info?: React.ReactNode;
   count?: React.ReactNode;
   actions?: React.ReactNode;
+  scrollActions?: boolean;
 }) {
   return (
     <section className={className} {...props}>
-      <SectionHeader title={title} info={info} count={count} actions={actions} />
+      <SectionHeader
+        title={title}
+        info={info}
+        count={count}
+        actions={actions}
+        scrollActions={scrollActions}
+      />
       <div className="mt-4">{children}</div>
     </section>
   );

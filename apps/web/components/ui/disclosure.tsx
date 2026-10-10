@@ -1,13 +1,18 @@
 import { cn } from '@/lib/utils';
 
-/** Šipka rozbalovátka: zavřená míří doprava, otevřená dolů. */
-function Chevron({ className }: { className?: string }) {
+/**
+ * Šipka rozbalovátka: zavřená míří doprava, otevřená dolů. Patří do `<summary>`
+ * — otáčí se podle NEJBLIŽŠÍHO `<details>`, ne podle skupiny: rozbalovátko
+ * vnořené do jiného rozbalovátka by jinak přebíralo stav rodiče (zavřený
+ * detail v otevřeném řádku by ukazoval dolů).
+ */
+export function Chevron({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 8 12"
       aria-hidden
       className={cn(
-        'h-[0.7em] w-auto shrink-0 fill-none stroke-current transition-transform duration-150 ease-(--ease-out) group-open/disclosure:rotate-90',
+        'h-[0.7em] w-auto shrink-0 fill-none stroke-current transition-transform duration-150 ease-(--ease-out) [details[open]>summary_&]:rotate-90',
         className,
       )}
       strokeWidth="1.8"
@@ -36,7 +41,7 @@ export function Disclosure({
   children: React.ReactNode;
 }) {
   return (
-    <details className={cn('disclosure group/disclosure', className)} {...props}>
+    <details className={cn('disclosure', className)} {...props}>
       <summary className="type-footnote inline-flex min-h-11 items-center gap-1.5 font-medium text-accent-text active:opacity-60 md:min-h-7">
         <Chevron />
         {summary}
@@ -54,6 +59,9 @@ export function Disclosure({
  *
  * Řádky patří do `Group` (ta kreslí oddělovače). `eyebrow` je barevné slovo
  * nad titulkem („Chyba“, „Upozornění“) — barvu dodá volající třídou.
+ *
+ * `id` a ostatní atributy dostává `<details>`: řádek jde otevřít kotvou
+ * (`OpenOnHash`) i atributem `open`.
  */
 export function DisclosureRow({
   title,
@@ -72,19 +80,19 @@ export function DisclosureRow({
   return (
     // `listitem` nese obal: <details> má vlastní roli a do seznamu sám nepatří
     <div role="listitem" className={className}>
-    <details className="disclosure group/disclosure" {...props}>
-      <summary className="row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-(--highlight)">
-        <span className="min-w-0 flex-1">
-          {eyebrow}
-          <span className="type-callout block font-medium text-pretty">{title}</span>
-        </span>
-        {meta && (
-          <span className="type-caption shrink-0 tabular-nums text-ink-muted">{meta}</span>
-        )}
-        <Chevron className="self-center text-ink-muted" />
-      </summary>
-      <div className="type-callout pb-3.5 pr-6 text-pretty text-ink-muted">{children}</div>
-    </details>
+      <details className="disclosure" {...props}>
+        <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5">
+          <span className="min-w-0 flex-1">
+            {eyebrow}
+            <span className="type-callout block font-medium text-pretty">{title}</span>
+          </span>
+          {meta && (
+            <span className="type-caption shrink-0 tabular-nums text-ink-muted">{meta}</span>
+          )}
+          <Chevron className="self-center text-ink-muted" />
+        </summary>
+        <div className="type-callout pb-3.5 pr-6 text-pretty text-ink-muted">{children}</div>
+      </details>
     </div>
   );
 }

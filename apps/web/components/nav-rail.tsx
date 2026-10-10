@@ -24,15 +24,22 @@ const TAB_LIMIT = 4;
 export function SidebarNav({
   items,
   activeHref,
+  ariaLabel = 'Hlavní navigace',
   className,
 }: {
   items: readonly NavItem[];
   /** Aktivní položka; `undefined` = žádná. */
   activeHref?: string;
+  /**
+   * Název navigace pro čtečku. Náhled aplikace na úvodní stránce potřebuje
+   * vlastní — „Hlavní navigace“ je tam už lišta webu a dvě stejně pojmenované
+   * oblasti od sebe čtečka nerozliší.
+   */
+  ariaLabel?: string;
   className?: string;
 }) {
   return (
-    <nav aria-label="Hlavní navigace" className={cn('flex flex-col gap-0.5', className)}>
+    <nav aria-label={ariaLabel} className={cn('flex flex-col gap-0.5', className)}>
       {items.map((item) => {
         const active = item.href === activeHref;
         return (
@@ -42,7 +49,7 @@ export function SidebarNav({
             aria-current={active ? 'page' : undefined}
             className={cn(
               'row-pressable flex h-8 items-center gap-2.5 rounded-md px-2 text-sm font-medium text-ink pointer-coarse:h-11',
-              active ? 'bg-(--highlight)' : 'hover:bg-(--highlight)',
+              active ? 'bg-(--highlight)' : 'row-hover',
             )}
           >
             <NavIcon name={item.icon} className="h-[1.125rem] w-[1.125rem] text-accent" />
@@ -115,7 +122,7 @@ function TabBar({ items, sheetNote }: { items: readonly NavItem[]; sheetNote?: s
         aria-label="Hlavní navigace"
         // H-3-18: bez rezervy na gesto domovského indikátoru by popisky
         // ležely uvnitř systémového gesta
-        className="material-bar fixed inset-x-0 bottom-0 z-30 grid h-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-0.5px_0_var(--material-edge)] md:hidden"
+        className="material-tabbar fixed inset-x-0 bottom-0 z-30 grid h-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-0.5px_0_var(--material-edge)] md:hidden"
         // Počet sloupců z délky seznamu, ne natvrdo: přidání položky by jinak
         // tiše shodilo lištu do dvou řad. Tailwind `grid-cols-${n}` staticky
         // nevygeneruje, proto inline styl.

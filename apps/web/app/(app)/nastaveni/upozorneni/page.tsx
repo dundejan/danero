@@ -1,7 +1,7 @@
 import { AutoSubmit } from '@/components/ui/auto-submit';
 import { Select } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { Group, Row } from '@/components/ui/list';
+import { FieldRow, Group, Row } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
@@ -17,7 +17,6 @@ import {
 import { plural } from '@/lib/format';
 import { tidy } from '@/lib/typography';
 import { cn, firstParam } from '@/lib/utils';
-import { SettingRow } from '../setting-row';
 import { SettingsToolbar } from '../settings-nav';
 import { SettingsToast } from '../settings-toast';
 import { saveNotificationPrefsAction } from '../actions';
@@ -92,16 +91,7 @@ function ChoiceRow({
   className?: string;
 }) {
   return (
-    <div
-      role="listitem"
-      className={cn(
-        'flex flex-col gap-x-6 gap-y-2 py-3 text-ink @lg:min-h-11 @lg:flex-row @lg:items-center @lg:py-2.5',
-        className,
-      )}
-    >
-      <span id={id} className="min-w-0 flex-1">
-        {label}
-      </span>
+    <FieldRow label={label} labelId={id} fit className={className}>
       <div role="group" aria-labelledby={id} className="flex flex-wrap gap-1.5">
         {options.map((option) => (
           <label
@@ -120,7 +110,7 @@ function ChoiceRow({
           </label>
         ))}
       </div>
-    </div>
+    </FieldRow>
   );
 }
 
@@ -222,7 +212,7 @@ export default async function NotificationSettingsPage({
                   defaultChecked={prefs.emailEnabled}
                 />
               </Row>
-              <SettingRow
+              <FieldRow
                 className={NEEDS_EMAIL}
                 label="Souhrn"
                 htmlFor="frekvence-emailu"
@@ -244,7 +234,7 @@ export default async function NotificationSettingsPage({
                   <option value="DAILY">Nejvýš jednou denně</option>
                   <option value="WEEKLY">Jednou týdně</option>
                 </Select>
-              </SettingRow>
+              </FieldRow>
               <Row
                 className={NEEDS_EMAIL}
                 label={<label htmlFor="nalehave-hned">Naléhavé posílat hned</label>}
@@ -265,7 +255,7 @@ export default async function NotificationSettingsPage({
                   defaultChecked={rules.urgentImmediately}
                 />
               </Row>
-              <SettingRow
+              <FieldRow
                 className={NEEDS_EMAIL}
                 label="Pravidelný přehled"
                 htmlFor="pravidelny-prehled"
@@ -288,7 +278,7 @@ export default async function NotificationSettingsPage({
                   <option value="MONTHLY">Jednou měsíčně</option>
                   <option value="QUARTERLY">Jednou za čtvrtletí</option>
                 </Select>
-              </SettingRow>
+              </FieldRow>
             </Group>
           </Section>
 
@@ -387,7 +377,7 @@ export default async function NotificationSettingsPage({
                     defaultChecked={prefs.calendarEmails}
                   />
                 </Row>
-                <SettingRow
+                <FieldRow
                   className={NEEDS_SWITCH}
                   label="Připomenout termín"
                   htmlFor="lhuta-terminu"
@@ -403,7 +393,7 @@ export default async function NotificationSettingsPage({
                       </option>
                     ))}
                   </Select>
-                </SettingRow>
+                </FieldRow>
               </Group>
             </div>
           </Section>

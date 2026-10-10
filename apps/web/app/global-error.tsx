@@ -28,7 +28,7 @@ export default function GlobalError({
   return (
     <html lang="cs">
       <body className="bg-surface text-ink antialiased">
-        <main className="wrap flex min-h-svh flex-col justify-center py-16">
+        <main className="wrap-wide flex min-h-svh flex-col justify-center py-16">
           <div className="measure">
             <h1 className="type-title-1 text-balance">Danero se teď nepodařilo načíst</h1>
             <p className="type-body mt-3 text-pretty text-ink-muted">

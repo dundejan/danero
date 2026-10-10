@@ -7,7 +7,7 @@ import { StatusLabel } from '@/components/ui/status';
 import { SubmitButton } from '@/components/ui/submit-button';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { saveAliasesAction } from './actions';
-import { platformName } from './platform-names';
+import { platformName } from '@/lib/brokers-catalog';
 
 /**
  * Číselník titulů: symboly, ke kterým broker ve výpisu neposílá ISIN

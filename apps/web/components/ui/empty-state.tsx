@@ -7,11 +7,18 @@ import { cn } from '@/lib/utils';
  *
  * `compact` je varianta do sekce uvnitř stránky (zarovnaná vlevo, bez
  * velkých okrajů); výchozí podoba je vystředěná a patří prázdné stránce.
+ *
+ * Stejnou podobu má i stav celé stránky bez nástrojové lišty — chyba,
+ * nenalezeno, výpočet nejde dokončit. Titulek je pak `headingAs="h1"` (lišta,
+ * která jinak nese jediný nadpis první úrovně, na takové stránce není),
+ * `action` smí vedle tlačítka nést jeden odkaz a `note` je tichý údaj pod
+ * nimi (kód chyby pro podporu).
  */
 export function EmptyState({
   title,
   children,
   action,
+  note,
   compact = false,
   headingAs: Heading = 'h2',
   className,
@@ -19,9 +26,12 @@ export function EmptyState({
   title: string;
   /** Jedna věta: co udělat, aby tu něco bylo. */
   children?: React.ReactNode;
+  /** Tlačítko a nejvýš jeden odkaz. */
   action?: React.ReactNode;
+  /** Tichý údaj pod akcemi. */
+  note?: React.ReactNode;
   compact?: boolean;
-  headingAs?: 'h2' | 'h3' | 'p';
+  headingAs?: 'h1' | 'h2' | 'h3' | 'p';
   className?: string;
 }) {
   return (
@@ -37,16 +47,30 @@ export function EmptyState({
         {title}
       </Heading>
       {children && (
-        <p
+        <div
           className={cn(
-            'text-pretty text-ink-muted',
+            'text-pretty text-ink-muted [&>*+*]:mt-2',
             compact ? 'type-footnote mt-1' : 'type-body mt-2',
           )}
         >
           {children}
-        </p>
+        </div>
       )}
-      {action && <div className={compact ? 'mt-3' : 'mt-6'}>{action}</div>}
+      {action && (
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-x-5 gap-y-2',
+            compact ? 'mt-3' : 'mt-6 justify-center',
+          )}
+        >
+          {action}
+        </div>
+      )}
+      {note && (
+        <div className={cn('type-caption tabular-nums text-ink-muted', compact ? 'mt-3' : 'mt-6')}>
+          {note}
+        </div>
+      )}
     </div>
   );
 }

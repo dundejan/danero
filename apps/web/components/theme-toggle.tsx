@@ -38,6 +38,7 @@ export function ThemeToggle({
         label: withLabels ? mode.label : mode.short,
         ariaLabel: mode.label,
       }))}
+      fit={withLabels ? 'content' : 'equal'}
       className={className}
     />
   );

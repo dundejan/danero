@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { AppState } from '@/components/app-state';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TextLink } from '@/components/ui/link';
 
 /** Error boundary demo stránek — bez něj by pád skončil v anglické defaultní
@@ -19,9 +19,10 @@ export default function DemoError({
   }, [error]);
 
   return (
-    <AppState
+    <EmptyState
+      headingAs="h1"
       title="Něco se pokazilo"
-      actions={
+      action={
         <>
           <Button type="button" onClick={reset}>
             Zkusit znovu
@@ -34,6 +35,6 @@ export default function DemoError({
       note={error.digest ? `Kód chyby: ${error.digest}` : undefined}
     >
       Demo se nepodařilo načíst. Kdyby to nepomohlo, vrať se za chvíli.
-    </AppState>
+    </EmptyState>
   );
 }

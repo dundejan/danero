@@ -57,7 +57,11 @@ function AppWindow({ children }: { children: React.ReactNode }) {
           <div className="mb-5 mt-6 px-2">
             <Logo className="text-[1.0625rem]" />
           </div>
-          <SidebarNav items={DEMO_NAV_ITEMS} activeHref="/demo/prehled" />
+          <SidebarNav
+            items={DEMO_NAV_ITEMS}
+            activeHref="/demo/prehled"
+            ariaLabel="Sekce dema"
+          />
         </div>
         <div className="min-w-0 flex-1 px-(--page-gutter) pb-8 pt-(--page-top)">{children}</div>
       </div>
@@ -263,7 +267,7 @@ export default async function LandingPage({
       </section>
 
       {/* ── časové testy: živý horizont ─────────────────────────────────────── */}
-      <Band wide aria-label="Časové testy">
+      <Band aria-label="Časové testy">
         <BandHeading
           title="Kdy bude prodej bez daně"
           lede="Po třech letech držení se z prodeje daň neplatí. Tečka je den, kdy ta lhůta doběhne dalším kusům z ukázkového portfolia."
@@ -279,7 +283,7 @@ export default async function LandingPage({
       </Band>
 
       {/* ── podklady k přiznání: živý výtah z porovnání variant ─────────────── */}
-      <Band tone="canvas" wide aria-label="Podklady k přiznání">
+      <Band tone="canvas" aria-label="Podklady k přiznání">
         <div className="grid items-start gap-x-(--column-gap) gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <BandHeading
             title="Podklady k přiznání"
@@ -320,7 +324,7 @@ export default async function LandingPage({
       </Band>
 
       {/* ── odkud data: výčet podle způsobu načtení, jména z katalogu ───────── */}
-      <Band wide aria-label="Podporované platformy">
+      <Band aria-label="Podporované platformy">
         <BandHeading title="Odkud načte obchody" />
         <SpecList className="mt-10">
           <SpecRow label="Živě přes API">
@@ -345,7 +349,7 @@ export default async function LandingPage({
       </Band>
 
       {/* ── proč zdarma: odpověď a tři odkazy, kde ji ověřit ────────────────── */}
-      <Band tone="canvas" wide aria-label="Proč je zdarma">
+      <Band tone="canvas" aria-label="Proč je zdarma">
         <Split title="Proč je zdarma" size="headline">
           <p>
             {tidy(
@@ -372,7 +376,7 @@ export default async function LandingPage({
       </Band>
 
       {/* ── jak začít: tři kroky a dvě akce ─────────────────────────────────── */}
-      <Band tone="black" size="lg" wide aria-label="Jak začít">
+      <Band tone="black" size="lg" aria-label="Jak začít">
         {/* v kódu titulek → kroky → akce (tak se čte na telefonu); na širokém
             okně stojí akce hned pod titulkem a kroky vedle nich */}
         <div className="grid gap-x-(--column-gap) gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr]">

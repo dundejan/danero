@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { AppState } from '@/components/app-state';
 import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TextLink } from '@/components/ui/link';
 
 /**
@@ -11,9 +11,10 @@ import { TextLink } from '@/components/ui/link';
  */
 export default function DemoNotFound() {
   return (
-    <AppState
+    <EmptyState
+      headingAs="h1"
       title="Tahle stránka v ukázce není"
-      actions={
+      action={
         <>
           <Link href="/demo/prehled" className={buttonVariants()}>
             Zpět do ukázky
@@ -25,6 +26,6 @@ export default function DemoNotFound() {
       }
     >
       Demo běží nad pevným ukázkovým portfoliem, takže adresa mimo něj nikam nevede.
-    </AppState>
+    </EmptyState>
   );
 }

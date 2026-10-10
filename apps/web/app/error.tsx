@@ -28,7 +28,7 @@ export default function RootError({
   }, [error]);
 
   return (
-    <main className="wrap flex min-h-svh flex-col justify-center py-16">
+    <main className="wrap-wide flex min-h-svh flex-col justify-center py-16">
       <div className="measure">
         <Link
           href="/"

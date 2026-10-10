@@ -27,16 +27,32 @@ export function SheetDemo() {
 
 export function SegmentedDemo() {
   const [value, setValue] = useState('graf');
+  const [section, setSection] = useState('tax');
   return (
-    <SegmentedControl
-      ariaLabel="Ukázka přepínače"
-      value={value}
-      onChange={setValue}
-      segments={[
-        { key: 'graf', label: 'Graf' },
-        { key: 'tabulka', label: 'Tabulka' },
-        { key: 'oboji', label: 'Obojí' },
-      ]}
-    />
+    <>
+      <SegmentedControl
+        ariaLabel="Ukázka přepínače"
+        value={value}
+        onChange={setValue}
+        segments={[
+          { key: 'graf', label: 'Graf' },
+          { key: 'tabulka', label: 'Tabulka' },
+          { key: 'oboji', label: 'Obojí' },
+        ]}
+      />
+      {/* větší velikost a šířka segmentů podle popisku */}
+      <SegmentedControl
+        ariaLabel="Ukázka většího přepínače"
+        size="md"
+        fit="content"
+        value={section}
+        onChange={setSection}
+        segments={[
+          { key: 'tax', label: 'Daň a výpočet' },
+          { key: 'notifications', label: 'Upozornění' },
+          { key: 'account', label: 'Účet' },
+        ]}
+      />
+    </>
   );
 }

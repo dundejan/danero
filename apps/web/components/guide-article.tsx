@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ANCHOR_OFFSET } from '@/components/long-read';
 import { cn } from '@/lib/utils';
 
 /**
@@ -21,14 +22,46 @@ export function ArticleIntro({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Sekce článku: nadpis + odstavce a bloky s jednotnými mezerami. */
-export function ArticleSection({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * Sekce článku: nadpis + odstavce a bloky s jednotnými mezerami.
+ *
+ * - `id` udělá ze sekce cíl kotvy (obsah stránky v `LongRead`) a přidá odstup
+ *   od přilepené lišty,
+ * - mezititulky uvnitř jsou obyčejné `h3`,
+ * - `lead` vysází první odstavec barvou textu — pro stránku, kde je první
+ *   odstavec pravidlo samo a zbytek jeho výklad (metodika),
+ * - `footnote` je tichý řádek pod sekcí (zdroj pravidla).
+ */
+export function ArticleSection({
+  title,
+  id,
+  lead = false,
+  footnote,
+  className,
+  children,
+}: {
+  title: string;
+  id?: string;
+  lead?: boolean;
+  footnote?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mt-14">
+    <section id={id} className={cn('mt-14', id && ANCHOR_OFFSET, className)}>
       <h2 className="type-title-2 text-balance">{title}</h2>
-      <div className="type-reading mt-4 space-y-4 text-pretty text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink">
+      <div
+        className={cn(
+          'type-reading mt-4 space-y-4 text-pretty text-ink-muted [&_strong]:font-semibold [&_strong]:text-ink',
+          '[&>h3]:type-title-3 [&>h3]:pt-4 [&>h3]:text-ink',
+          // rozbalovací detail uvnitř má velikost čteného textu, ne poznámky
+          '[&_details>div]:type-callout',
+          lead && '[&>p:first-child]:text-ink',
+        )}
+      >
         {children}
       </div>
+      {footnote && <p className="type-footnote mt-5 text-pretty text-ink-muted">{footnote}</p>}
     </section>
   );
 }

@@ -110,8 +110,10 @@ describe.each(TODAYS)('demo dataset k %s', (today) => {
 
     const valuation = valuePositions(positions, labels, instrumentNames(txs), prices, year);
     expect(valuation.unpricedCount).toBe(0);
-    // dolní mez drží tvrzení na landingu („50+ pozic za víc než 2,3 milionu Kč“) —
-    // do 7. 8. 2026 tam byl odhad „zhruba 2 miliony“, který nic nehlídalo (E-48)
+    // Rozsah drží demo věrohodné a stabilní: náhled aplikace na úvodní stránce
+    // i snímky v dokumentaci ukazují právě tohle portfolio. Do 10. 10. 2026
+    // hlídal i větu z úvodní stránky („50+ pozic za víc než 2,3 milionu Kč“,
+    // E-48); redesign ji vypustil, čísla o demu už veřejný text netvrdí.
     expect(valuation.totalCzk.toNumber()).toBeGreaterThan(2_300_000);
     expect(valuation.totalCzk.toNumber()).toBeLessThan(2_500_000);
     // nerealizovaný P/L kladný i záporný

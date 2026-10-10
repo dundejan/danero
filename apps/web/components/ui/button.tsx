@@ -33,7 +33,7 @@ export const buttonVariants = cva(
           'bg-control text-ink hover:brightness-95 active:brightness-90 dark:hover:brightness-125 dark:active:brightness-150',
         // Druhá nejdůležitější akce vedle `primary` (akcentní text na tónu).
         tinted:
-          'bg-accent/12 text-accent-text hover:bg-accent/18 active:bg-accent/24 dark:bg-accent/20 dark:hover:bg-accent/28',
+          'bg-accent/12 text-accent-strong hover:bg-accent/18 active:bg-accent/24 dark:bg-accent/20 dark:hover:bg-accent/28 dark:active:bg-accent/28',
         // Textové tlačítko v řádku nebo v liště.
         ghost: 'text-accent-text hover:bg-(--highlight) active:bg-(--highlight-pressed)',
         // Nebezpečná akce je textová, ne vylitá: plnou červenou si nechává až

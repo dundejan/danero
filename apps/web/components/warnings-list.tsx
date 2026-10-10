@@ -1,7 +1,7 @@
 import { d, ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
 import { DisclosureRow } from '@/components/ui/disclosure';
-import { Group } from '@/components/ui/list';
+import { Group, GroupItem } from '@/components/ui/list';
 import { TextLink } from '@/components/ui/link';
 import { czDate, czk } from '@/lib/format';
 import { withoutLawRefs } from '@/lib/typography';
@@ -201,10 +201,10 @@ export function WarningsList({
             // hláška, která se vejde do titulku celá, nemá co rozbalovat
             if (title === first.message) {
               return (
-                <div key={group.code} role="listitem" className="py-2.5">
+                <GroupItem key={group.code} className="py-2.5">
                   {eyebrowFor(group.level)}
                   <p className="type-callout font-medium text-pretty">{title}</p>
-                </div>
+                </GroupItem>
               );
             }
             return (

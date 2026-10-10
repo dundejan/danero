@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 /**
@@ -11,6 +12,10 @@ import { cn } from '@/lib/utils';
  * obsahového okna. Na telefonu se přepínač zalomí pod titulek na vlastní
  * řádek, aby titulek ani akce neustupovaly.
  *
+ * Podstránka (detail pozice) má vlevo od titulku cestu zpět (`back`): šipka
+ * a název nadřazené stránky, jako tlačítko zpět v okně Macu. Je to navigace,
+ * ne obsah — proto patří do lišty, a ne jako první řádek stránky.
+ *
  * Každá stránka aplikace má právě jednu lištu a ta nese její jediný nadpis
  * první úrovně. Do lišty patří titulek, přepínač (rok, pohled) a nejvýš jedna
  * hlavní akce; žádný podtitulek ani popis stránky — metadata výpočtu
@@ -19,12 +24,15 @@ import { cn } from '@/lib/utils';
 export function AppToolbar({
   title,
   titleContext,
+  back,
   children,
   actions,
   pinned = true,
   className,
 }: {
   title: string;
+  /** Cesta zpět na nadřazenou stránku — vlevo od titulku. */
+  back?: { href: string; label: string };
   /**
    * Doplněk titulku, který patří k nadpisu stránky (rok: „Přehled 2026“).
    * Když lišta nese přepínač, který totéž ukazuje, je doplněk jen pro čtečku;
@@ -55,6 +63,17 @@ export function AppToolbar({
         className,
       )}
     >
+      {back && (
+        <nav aria-label="Drobečková navigace" className="-mr-1 shrink-0">
+          <Link
+            href={back.href}
+            className="type-callout -my-2 -ml-1.5 inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 font-medium text-accent-text hover:underline active:opacity-60"
+          >
+            <span aria-hidden>‹</span>
+            {back.label}
+          </Link>
+        </nav>
+      )}
       <div className="min-w-0 flex-1 md:flex-none">
         {/* v náhledu na úvodní stránce nesmí vzniknout druhý nadpis první úrovně */}
         {pinned ? (

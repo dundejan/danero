@@ -20,42 +20,24 @@ const METHOD_WORD: Record<PlatformInfo['method'], string> = {
   template: 'šablona',
 };
 
-/** Co k návodu platformy dodat podle způsobu načtení a podle toho, kde katalog stojí. */
-function MethodNote({
-  platform,
-  variant,
-}: {
-  platform: PlatformInfo;
-  variant: 'app' | 'public';
-}) {
+/** Co k návodu platformy dodat podle způsobu načtení. */
+function MethodNote({ platform }: { platform: PlatformInfo }) {
   if (platform.method === 'template') {
     return (
       <p>
         Stažený výpis přepiš do{' '}
-        <a
-          href="/api/sablona"
-          className="font-medium text-accent-text underline underline-offset-2"
-          download
-        >
+        <TextLink href="/api/sablona" download>
           univerzální šablony
-        </a>{' '}
-        (<a href="#sablona" className="font-medium text-accent-text underline underline-offset-2">
-          jak ji vyplnit
-        </a>
-        ) a {variant === 'app' ? 'nahraj ji tady' : 'nahraj ji v aplikaci na stránce Zdroje dat'}.
-        Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný vzorek na{' '}
+        </TextLink>{' '}
+        (<TextLink href="#sablona">jak ji vyplnit</TextLink>) a nahraj ji v aplikaci na stránce
+        Zdroje dat. Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný vzorek na{' '}
         <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> a bude to
         rychlejší.
       </p>
     );
   }
   if (platform.method === 'api') {
-    return variant === 'app' ? (
-      <p>
-        Napojení nastavíš{' '}
-        <TextLink href={platform.connectAnchor ?? '#trading212'}>výš na této stránce</TextLink>.
-      </p>
-    ) : (
+    return (
       <p>
         Klíč jen pro čtení připojíš po <TextLink href="/registrace">registraci</TextLink> na
         stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout. Výpis z téhle
@@ -71,12 +53,10 @@ function MethodNote({
  * řádky „název — způsob načtení“; návod, kde výpis stáhnout, se rozbalí pod
  * řádkem. Žádná loga ani dlaždice — hledá se podle jména.
  *
- * Varianta 'app' (Zdroje dat) odkazuje na napojení a nahrání na téže stránce;
- * 'public' (veřejná /platformy) vede do registrace a aplikace.
+ * Je to katalog veřejné stránky `/platformy`. Aplikace (`/import`) ho
+ * nepoužívá — tam člověk vybírá svou platformu z nabídky (`platform-guide`).
  */
-export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public' }) {
-  const headingLevel = variant === 'public' ? 'h2' : 'h3';
-  const Heading = headingLevel;
+export function PlatformCatalog() {
   const groups: PlatformSearchGroup[] = PLATFORM_GROUPS.map((group) => ({
     key: group.key,
     label: group.label,
@@ -87,17 +67,11 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
         <DisclosureRow
           className="border-t border-line/70"
           title={<span className="type-body font-medium">{platform.name}</span>}
-          // pod myší řádek ztmavne (zvýraznění primitiva) a tichý text by na něm
-          // neměl kontrast 4,5 : 1 — proto se s ním zesílí i slovo vpravo
-          meta={
-            <span className="type-footnote group-hover/disclosure:text-ink">
-              {METHOD_WORD[platform.method]}
-            </span>
-          }
+          meta={<span className="type-footnote">{METHOD_WORD[platform.method]}</span>}
         >
           <div className="space-y-2">
             <p>{platform.guide}</p>
-            <MethodNote platform={platform} variant={variant} />
+            <MethodNote platform={platform} />
           </div>
         </DisclosureRow>
       ),
@@ -106,20 +80,16 @@ export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public
 
   return (
     <div>
-      <PlatformSearch groups={groups} headingLevel={headingLevel} />
+      <PlatformSearch groups={groups} />
 
       {/* kotva #sablona: odkazují na ni řádky platforem s vedeným importem */}
       <div id="sablona" className="mt-12 scroll-mt-24">
-        <Heading className="type-title-3">{UNIVERSAL_INFO.name}</Heading>
+        <h2 className="type-title-3">{UNIVERSAL_INFO.name}</h2>
         <p className="type-body measure mt-2 text-pretty text-ink-muted">
           {UNIVERSAL_INFO.guide}{' '}
-          <a
-            href="/api/sablona"
-            className="font-medium text-accent-text underline underline-offset-2"
-            download
-          >
+          <TextLink href="/api/sablona" download>
             Stáhnout šablonu
-          </a>
+          </TextLink>
           . Opakované nahrání nic nezdvojí.
         </p>
         {/* pravidla vyplnění: nadpisy jsou vidět jako rejstřík, znění po rozbalení */}

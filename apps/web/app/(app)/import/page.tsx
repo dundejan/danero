@@ -2,6 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { AppToolbar } from '@/components/app-toolbar';
 import { Toast } from '@/components/toast';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { OpenOnHash } from '@/components/ui/open-on-hash';
 import { Group } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { getDb } from '@/db';
@@ -17,7 +18,6 @@ import { AliasForm } from './alias-form';
 import { ConnectIbkr, ConnectTrading212 } from './connect-broker';
 import { ConnectedAccount } from './connected-account';
 import { ImportHistory, type BatchIssues } from './import-history';
-import { OpenOnHash } from './open-on-hash';
 import { UnreadStatements } from './unread-statements';
 import { UploadPanel } from './upload-panel';
 

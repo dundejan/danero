@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
 import { Notice } from '@/components/ui/notice';
-import { Section, SectionHeader } from '@/components/ui/section';
+import { Section } from '@/components/ui/section';
 import { Group, Row } from '@/components/ui/list';
 import { Stat } from '@/components/ui/stat';
 import { YearSwitcher } from '@/components/year-switcher';
@@ -403,42 +403,30 @@ export function PortfolioView({
               )}
 
               {showDividends && (
-                <section>
-                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                    <SectionHeader
-                      title={years.length > 1 ? 'Dividendy' : `Dividendy ${year}`}
-                      count={
-                        dividends.totalCzk > 0 ? `${czk(dividends.totalCzk)} brutto` : undefined
-                      }
-                      info={
-                        <InfoPopover label="Dividendy" align="start">
-                          <p>
-                            {tidy(
-                              'Částky jsou brutto, před srážkovou daní, přepočtené kurzem pro přiznání. Barva sloupce je stát, kde byla dividenda zdaněna u zdroje.',
-                            )}
-                          </p>
-                        </InfoPopover>
-                      }
-                    />
-                    {/* Hodně let se na úzký displej nevejde — posouvá se jen
-                        přepínač, ne stránka; svislé odsazení nechává místo
-                        klikacím plochám segmentů (stejně jako v liště). */}
-                    <div className="-my-2 flex max-w-full min-w-0 overflow-x-auto py-2 [scrollbar-width:none]">
-                      <YearSwitcher
-                        years={years}
-                        active={year}
-                        hrefBase={`${basePath}/portfolio`}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    {dividends.totalCzk > 0 ? (
-                      <DividendsByMonthChart data={dividends} />
-                    ) : (
-                      <EmptyState compact title={`V roce ${year} žádné dividendy`} headingAs="p" />
-                    )}
-                  </div>
-                </section>
+                <Section
+                  title={years.length > 1 ? 'Dividendy' : `Dividendy ${year}`}
+                  count={dividends.totalCzk > 0 ? `${czk(dividends.totalCzk)} brutto` : undefined}
+                  info={
+                    <InfoPopover label="Dividendy" align="start">
+                      <p>
+                        {tidy(
+                          'Částky jsou brutto, před srážkovou daní, přepočtené kurzem pro přiznání. Barva sloupce je stát, kde byla dividenda zdaněna u zdroje.',
+                        )}
+                      </p>
+                    </InfoPopover>
+                  }
+                  // hodně let se na úzký displej nevejde — posouvá se jen přepínač
+                  scrollActions
+                  actions={
+                    <YearSwitcher years={years} active={year} hrefBase={`${basePath}/portfolio`} />
+                  }
+                >
+                  {dividends.totalCzk > 0 ? (
+                    <DividendsByMonthChart data={dividends} />
+                  ) : (
+                    <EmptyState compact title={`V roce ${year} žádné dividendy`} headingAs="p" />
+                  )}
+                </Section>
               )}
 
               {showRealized && (

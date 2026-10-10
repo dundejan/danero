@@ -5,7 +5,6 @@ import { Select } from '@/components/ui/field';
 import { TextLink } from '@/components/ui/link';
 import { Group, Row } from '@/components/ui/list';
 import { tidy } from '@/lib/typography';
-import { AnchorLink } from './anchor-link';
 
 /** Co průvodce o platformě potřebuje — výřez z `PlatformInfo` (jde přes hranici server → klient). */
 export interface GuidePlatform {
@@ -22,8 +21,6 @@ export interface GuideGroup {
 }
 
 const OTHER = 'other';
-
-const DOWNLOAD_LINK = 'font-medium text-accent-text underline underline-offset-2';
 
 /**
  * Nápověda „kde výpis stáhnout“: člověk vybere svou platformu a dostane cestu
@@ -84,10 +81,10 @@ export function PlatformGuide({
             {platform.method === 'template' && (
               <p className="text-ink-muted">
                 Tenhle výpis zatím sami nepřečteme — přepiš ho do{' '}
-                <a href="/api/sablona" download className={DOWNLOAD_LINK}>
+                <TextLink href="/api/sablona" download>
                   univerzální šablony
-                </a>{' '}
-                (<AnchorLink href={`#${templateAnchor}`}>jak ji vyplnit</AnchorLink>) a nahraj ji
+                </TextLink>{' '}
+                (<TextLink href={`#${templateAnchor}`}>jak ji vyplnit</TextLink>) a nahraj ji
                 tady. Vlastní čtečku připravujeme — pošli nám anonymizovaný vzorek na{' '}
                 <TextLink href={`mailto:${contactEmail}`}>{contactEmail}</TextLink> a bude to
                 rychlejší.
@@ -95,9 +92,9 @@ export function PlatformGuide({
             )}
             {platform.method === 'api' && platform.connectAnchor && (
               <p>
-                <AnchorLink href={platform.connectAnchor} chevron>
+                <TextLink href={platform.connectAnchor} chevron>
                   Napojit automaticky
-                </AnchorLink>
+                </TextLink>
               </p>
             )}
           </div>
@@ -106,10 +103,10 @@ export function PlatformGuide({
           <div className="type-callout space-y-2 pb-3 pt-1 text-pretty">
             <p>{tidy(otherGuide)}</p>
             <p>
-              <a href="/api/sablona" download className={DOWNLOAD_LINK}>
+              <TextLink href="/api/sablona" download>
                 Stáhnout šablonu
-              </a>{' '}
-              · <AnchorLink href={`#${templateAnchor}`}>jak ji vyplnit</AnchorLink>
+              </TextLink>{' '}
+              · <TextLink href={`#${templateAnchor}`}>jak ji vyplnit</TextLink>
             </p>
           </div>
         )}

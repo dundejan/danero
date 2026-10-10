@@ -7,7 +7,7 @@ import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Checkbox, Field, Input, Select, Textarea, describedByError } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { Group, Row } from '@/components/ui/list';
+import { FieldRow, Group, GroupItem, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section } from '@/components/ui/section';
@@ -106,7 +106,14 @@ export default function PrimitivesPage() {
               value="2 180 Kč"
             />
             <Row label="Portfolio" value="52 pozic" href="/demo/portfolio" />
+            <Row wrap label="Vratka kapitálu" value="daněna jako dividenda (bezpečný výklad)" />
             <Row strong label="Orientační daň z investic" value="2 180 Kč" />
+            <GroupItem>
+              <p className="font-medium">Položka s volným obsahem</p>
+              <p className="type-footnote mt-1 text-ink-muted">
+                Cokoli, co není „popisek — hodnota“ ani rozbalovací řádek.
+              </p>
+            </GroupItem>
           </Group>
         </Section>
 
@@ -121,6 +128,13 @@ export default function PrimitivesPage() {
             <Row label="Zakázaná volba">
               <Switch disabled aria-label="Zakázaná volba" />
             </Row>
+            <FieldRow label="Souhrn" htmlFor="galerie-souhrn" hint="V úzkém okně se pole složí pod popisek.">
+              <Select id="galerie-souhrn" defaultValue="tydne">
+                <option value="denne">Denně</option>
+                <option value="tydne">Týdně</option>
+              </Select>
+            </FieldRow>
+            <Row label="Klikací řádek s tichým údajem" value="Změnit" href="/demo/prehled" />
           </Group>
         </Section>
       </div>
@@ -132,6 +146,10 @@ export default function PrimitivesPage() {
           </DisclosureRow>
           <DisclosureRow title="CSPX: osvobození za 13 dní" meta="10. 10. 2026" open>
             <p>15 ks CSPX splní tříletý časový test 23. 10. 2026.</p>
+            {/* vnořené rozbalovátko má vlastní šipku — neřídí se otevřeným řádkem */}
+            <Disclosure summary="Jednotlivé nákupy (2)">
+              <p>10 ks z 23. 10. 2023, 5 ks z 2. 11. 2023.</p>
+            </Disclosure>
           </DisclosureRow>
           <DisclosureRow
             eyebrow={<span className="type-caption block font-semibold text-danger">Chyba</span>}

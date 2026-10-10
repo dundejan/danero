@@ -175,6 +175,15 @@ describe('vrácení importu', () => {
     const { join } = await import('node:path');
     return readFileSync(join(import.meta.dirname, '..', 'app', '(app)', 'import', file), 'utf8');
   };
+  /** Sdílený potvrzovací dialog — nese popis akce i stav „probíhá“. */
+  const confirmDialogSource = async (): Promise<string> => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    return readFileSync(
+      join(import.meta.dirname, '..', 'components', 'ui', 'confirm-dialog.tsx'),
+      'utf8',
+    );
+  };
 
   /**
    * K6a-15: co vrácení importu doopravdy udělá, viselo nejdřív v `title=`
@@ -193,8 +202,8 @@ describe('vrácení importu', () => {
     expect(dialog).toContain('které přibyly tímhle importem');
     expect(dialog).toContain('nahraj ho potom znovu');
     // a dialog popis opravdu vykreslí jako viditelný text
-    const confirm = await importSource('confirmed-action.tsx');
-    expect(confirm).toContain('description={description}');
+    const confirm = await confirmDialogSource();
+    expect(confirm).toMatch(/<AlertDialog\.Description[^>]*>\s*\{description\}/);
   });
 
   /**
@@ -207,17 +216,18 @@ describe('vrácení importu', () => {
     const history = await importSource('import-history.tsx');
     const undo = history.slice(history.indexOf('action={undoImportAction}'));
     const dialog = undo.slice(0, undo.indexOf('/>'));
-    expect(history).toContain('<ConfirmedAction');
-    expect(dialog).toContain('label="Vrátit import zpět"');
+    // spouštěč je opravdové tlačítko nebezpečné akce a vede přes potvrzení
+    const trigger = history.slice(history.lastIndexOf('<ConfirmDialog', history.indexOf('action={undoImportAction}')));
+    expect(trigger).toMatch(/<Button variant="danger"[^>]*>\s*Vrátit import zpět/);
     expect(dialog).toContain('pendingLabel="Vracím…"');
     expect(dialog).toContain('confirmLabel="Vrátit import zpět"');
 
-    const confirm = await importSource('confirmed-action.tsx');
+    // stav „probíhá“ nese sdílený dialog: potvrzení bere stav z formuláře,
+    // během běhu ukazuje `pendingLabel` a nejde stisknout podruhé
+    const confirm = await confirmDialogSource();
     expect(confirm).toContain('useFormStatus');
-    expect(confirm).toContain('<Button');
-    expect(confirm).toContain('disabled={pending}');
-    expect(confirm).toContain('{pending ? pendingLabel : label}');
-    expect(confirm).toContain('<ConfirmDialog');
+    expect(confirm).toMatch(/<button type="submit" disabled=\{pending\}/);
+    expect(confirm).toContain('pendingLabel ?? confirmLabel');
 
     // potvrzení po akci má kam doskočit
     expect(await importSource('page.tsx')).toContain('id={IMPORT_HISTORY_ANCHOR}');

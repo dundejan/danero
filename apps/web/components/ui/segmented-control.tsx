@@ -21,8 +21,21 @@ export interface Segment {
  * prvek sdílený přes `layoutId`, takže přechod jde přerušit dalším klepnutím
  * a naváže z místa, kde zrovna je.
  *
- * Cíl dotyku: viditelná výška je 28 px (32 px pro prst), ale klikací plocha
- * segmentu je pseudo-prvkem natažená na 44 px — tak, jak to dělá systém.
+ * Velikost:
+ * - `sm` (výchozí) — přepínač pohledu v liště a v hlavičce sekce: viditelná
+ *   výška 28 px (32 px pro prst), klikací plocha segmentu je pseudo-prvkem
+ *   natažená na 44 px, jak to dělá systém;
+ * - `md` — přepínač, který je hlavním ovládáním (odpověď v kalkulačce):
+ *   36 px, na dotyku rovnou 44 px.
+ *
+ * Šířka segmentů:
+ * - `equal` (výchozí) — všechny stejně široké podle nejdelšího popisku
+ *   (roky, „Graf / Tabulka“);
+ * - `content` — každý podle svého popisku; pro různě dlouhé popisky, které
+ *   by ve stejné šířce na telefon nevešly („Daň a výpočet / Upozornění / Účet“).
+ *
+ * Přepínač je široký podle obsahu; `className="w-full"` ho roztáhne a segmenty
+ * si místo rozdělí.
  */
 export function SegmentedControl({
   segments,
@@ -30,6 +43,8 @@ export function SegmentedControl({
   onChange,
   ariaLabel,
   kind = 'toggle',
+  size = 'sm',
+  fit = 'equal',
   className,
 }: {
   segments: Segment[];
@@ -41,6 +56,8 @@ export function SegmentedControl({
    * `nav` — odkazy s `aria-current` (každý segment je jiná adresa).
    */
   kind?: 'toggle' | 'nav';
+  size?: 'sm' | 'md';
+  fit?: 'equal' | 'content';
   className?: string;
 }) {
   const thumbId = useId();
@@ -51,10 +68,14 @@ export function SegmentedControl({
       role={kind === 'nav' ? undefined : 'group'}
       aria-label={ariaLabel}
       className={cn(
-        // Bez `overflow`: ořízl by klikací plochy segmentů, které dráhu svisle
-        // přesahují. Kdo čeká víc segmentů, než se vejde (roky v liště), dává
-        // přepínač do vlastního vodorovně posuvného obalu.
-        'inline-flex h-7 shrink-0 items-stretch rounded-lg bg-control p-0.5 pointer-coarse:h-8',
+        // Mřížka, ne flex: stejně široké sloupce (`fr`) se řídí nejdelším
+        // popiskem, takže žádný nepřeteče. Bez `overflow`: ořízl by klikací
+        // plochy segmentů, které dráhu svisle přesahují. Kdo čeká víc
+        // segmentů, než se vejde (roky v liště), dává přepínač do vlastního
+        // vodorovně posuvného obalu.
+        'inline-grid shrink-0 grid-flow-col rounded-lg bg-control p-0.5',
+        fit === 'equal' ? 'auto-cols-fr' : 'auto-cols-auto',
+        size === 'md' ? 'h-9 pointer-coarse:h-11' : 'h-7 pointer-coarse:h-8',
         className,
       )}
     >
@@ -74,9 +95,12 @@ export function SegmentedControl({
           </>
         );
         const itemClass = cn(
-          'relative inline-flex min-w-11 flex-1 items-center justify-center whitespace-nowrap rounded-[7px] px-3 text-[0.8125rem] leading-none tabular-nums',
+          'relative inline-flex min-w-11 items-center justify-center whitespace-nowrap rounded-[7px] px-3 leading-none tabular-nums',
           // klikací plocha 44 px na výšku bez změny vzhledu
-          'after:absolute after:inset-x-0 after:-inset-y-2 pointer-coarse:after:-inset-y-1.5',
+          'after:absolute after:inset-x-0',
+          size === 'md'
+            ? 'text-sm after:-inset-y-1 pointer-coarse:after:inset-y-0'
+            : 'text-[0.8125rem] after:-inset-y-2 pointer-coarse:after:-inset-y-1.5',
           active ? 'font-semibold text-ink' : 'font-medium text-ink active:opacity-60',
         );
         return segment.href ? (

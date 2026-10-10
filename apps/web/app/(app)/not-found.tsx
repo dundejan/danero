@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { AppState } from '@/components/app-state';
 import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TextLink } from '@/components/ui/link';
 
 /**
@@ -25,9 +25,10 @@ import { TextLink } from '@/components/ui/link';
  */
 export default function AppNotFound() {
   return (
-    <AppState
+    <EmptyState
+      headingAs="h1"
       title="Tahle stránka neexistuje"
-      actions={
+      action={
         <>
           <Link href="/prehled" className={buttonVariants()}>
             Přejít na přehled
@@ -41,6 +42,6 @@ export default function AppNotFound() {
     >
       Odkaz se změnil, nebo pozice v evidenci chybí — historie se sem dostane až z výpisu nebo
       z napojeného účtu.
-    </AppState>
+    </EmptyState>
   );
 }
