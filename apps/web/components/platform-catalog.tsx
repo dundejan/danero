@@ -1,6 +1,7 @@
 import { OPERATOR } from '@/lib/contact';
-import Image from 'next/image';
-import Link from 'next/link';
+import { PlatformSearch, type PlatformSearchGroup } from '@/components/platform-search';
+import { DisclosureRow } from '@/components/ui/disclosure';
+import { TextLink } from '@/components/ui/link';
 import {
   PLATFORM_GROUPS,
   PLATFORMS,
@@ -10,249 +11,125 @@ import {
 } from '@/lib/brokers-catalog';
 
 /**
- * Monogramová dlaždice platformy — jednotný vizuál místo cizích log (CSP self,
- * ochranné známky). Barva je orientační barva značky; `ink: 'dark'` řeší
- * světlé dlaždice (žlutá RB).
+ * Jak se platforma načítá — jedním obyčejným slovem vpravo v řádku. Odpovídá
+ * na to, co člověk u svého brokera potřebuje vědět dřív, než řádek rozbalí.
  */
-export function PlatformTile({
-  platform,
-  className = 'h-8 w-8 text-xs',
-}: {
-  platform: Pick<PlatformInfo, 'name' | 'color' | 'ink' | 'monogram'>;
-  className?: string;
-}) {
-  const monogram = platform.monogram ?? platform.name.slice(0, 1).toUpperCase();
-  return (
-    <span
-      aria-hidden
-      className={`flex shrink-0 select-none items-center justify-center rounded-md tabular-nums font-bold ring-1 ring-inset ring-ink/10 dark:ring-white/20 ${
-        platform.ink === 'dark' ? 'text-black/80' : 'text-white'
-      } ${className}`}
-      style={{ backgroundColor: platform.color }}
-    >
-      {monogram}
-    </span>
-  );
-}
+const METHOD_WORD: Record<PlatformInfo['method'], string> = {
+  api: 'živé napojení',
+  file: 'výpis',
+  template: 'šablona',
+};
 
-/**
- * Logo platformy na světlém čipu — jednotně v obou barevných režimech
- * (řada log má tmavý text, na tmavém pozadí by zanikla). Ikonové značky
- * doplňuje název v textu, wordmark nese název sám; bez loga monogram.
- */
-export function PlatformLogo({
+/** Co k návodu platformy dodat podle způsobu načtení a podle toho, kde katalog stojí. */
+function MethodNote({
   platform,
-  withName = true,
+  variant,
 }: {
-  platform: Pick<PlatformInfo, 'name' | 'color' | 'ink' | 'monogram' | 'logo'>;
-  withName?: boolean;
+  platform: PlatformInfo;
+  variant: 'app' | 'public';
 }) {
-  const logo = platform.logo;
-  if (!logo) {
+  if (platform.method === 'template') {
     return (
-      <span className="flex min-w-0 items-center gap-2.5">
-        <PlatformTile platform={platform} />
-        {withName && (
-          <span className="min-w-0 truncate text-sm font-semibold leading-tight">
-            {platform.name}
-          </span>
-        )}
-      </span>
+      <p>
+        Stažený výpis přepiš do{' '}
+        <a
+          href="/api/sablona"
+          className="font-medium text-accent-text underline underline-offset-2"
+          download
+        >
+          univerzální šablony
+        </a>{' '}
+        (<a href="#sablona" className="font-medium text-accent-text underline underline-offset-2">
+          jak ji vyplnit
+        </a>
+        ) a {variant === 'app' ? 'nahraj ji tady' : 'nahraj ji v aplikaci na stránce Zdroje dat'}.
+        Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný vzorek na{' '}
+        <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> a bude to
+        rychlejší.
+      </p>
     );
   }
-  if (logo.kind === 'icon') {
-    return (
-      <span className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-inset ring-ink/10">
-          <Image
-            src={logo.src}
-            alt=""
-            width={24}
-            height={24}
-            className="h-6 w-6 object-contain"
-          />
-        </span>
-        {withName && (
-          <span className="min-w-0 truncate text-sm font-semibold leading-tight">
-            {platform.name}
-          </span>
-        )}
-      </span>
+  if (platform.method === 'api') {
+    return variant === 'app' ? (
+      <p>
+        Napojení nastavíš{' '}
+        <TextLink href={platform.connectAnchor ?? '#trading212'}>výš na této stránce</TextLink>.
+      </p>
+    ) : (
+      <p>
+        Klíč jen pro čtení připojíš po <TextLink href="/registrace">registraci</TextLink> na
+        stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout. Výpis z téhle
+        platformy můžeš místo toho nahrát i ručně.
+      </p>
     );
   }
-  // wordmark: název nese samo logo — text by se dubloval
-  return (
-    <span className="flex h-8 shrink-0 items-center rounded-md bg-white px-2.5 ring-1 ring-inset ring-ink/10">
-      {/* h-5 + w-auto: u širokých wordmarků max-w strop mírně poruší poměr
-          stran (dev-only warning next/image) — h-auto by ale SVG bez
-          intrinsic rozměrů zkolabovalo na nulu; object-contain to kreslí správně */}
-      <Image
-        src={logo.src}
-        alt={platform.name}
-        width={120}
-        height={20}
-        className="h-5 w-auto max-w-[110px] object-contain"
-      />
-    </span>
-  );
+  return null;
 }
 
 /**
- * Kompaktní mřížka pro landing: dlaždice + jméno, u živých API štítek.
- * `limit` ukáže jen nejznámější platformy a zbytek shrne dlaždicí s odkazem
- * na /platformy — plný výčet na landingu jen natahoval stránku.
- */
-/** Homepage: nejpoužívanější platformy v ČR (doloženo v docs/11) — brokeři
-    pro samostatné investory napřed, pak největší fondové platformy a krypto. */
-const GRID_PRIORITY = [
-  'trading212',
-  'xtb',
-  'portu',
-  'fio',
-  'patria',
-  'conseq',
-  'csob',
-  'anycoin',
-  'revolut',
-];
-
-export function PlatformGrid({ limit }: { limit?: number }) {
-  const rank = (platform: PlatformInfo): number => {
-    const index = GRID_PRIORITY.indexOf(platform.id);
-    return index === -1 ? GRID_PRIORITY.length : index;
-  };
-  const ordered = [...PLATFORMS].sort((a, b) => rank(a) - rank(b));
-  const shown = limit ? ordered.slice(0, limit) : ordered;
-  const rest = ordered.length - shown.length;
-  return (
-    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-      {shown.map((platform) => (
-        <li key={platform.id}>
-          <div className="flex h-14 items-center rounded-xl bg-canvas px-3.5">
-            <PlatformLogo platform={platform} />
-          </div>
-        </li>
-      ))}
-      {rest > 0 && (
-        <li>
-          <Link
-            href="/platformy"
-            className="row-pressable flex h-14 items-center rounded-xl px-3.5 hover:bg-canvas"
-          >
-            <span className="type-callout font-medium text-accent-text">
-              + dalších {rest} platforem
-            </span>
-          </Link>
-        </li>
-      )}
-    </ul>
-  );
-}
-
-/**
- * Plný katalog: skupiny → rozbalovací návod per platforma. Varianta 'app'
- * (Zdroje dat) odkazuje na karty napojení a upload na téže stránce; 'public'
- * (marketingová /platformy) místo toho vede do registrace/aplikace.
+ * Katalog platforem jako užitkový seznam: hledání, pod ním skupiny a v nich
+ * řádky „název — způsob načtení“; návod, kde výpis stáhnout, se rozbalí pod
+ * řádkem. Žádná loga ani dlaždice — hledá se podle jména.
+ *
+ * Varianta 'app' (Zdroje dat) odkazuje na napojení a nahrání na téže stránce;
+ * 'public' (veřejná /platformy) vede do registrace a aplikace.
  */
 export function PlatformCatalog({ variant = 'app' }: { variant?: 'app' | 'public' }) {
+  const headingLevel = variant === 'public' ? 'h2' : 'h3';
+  const Heading = headingLevel;
+  const groups: PlatformSearchGroup[] = PLATFORM_GROUPS.map((group) => ({
+    key: group.key,
+    label: group.label,
+    items: PLATFORMS.filter((platform) => platform.group === group.key).map((platform) => ({
+      id: platform.id,
+      keywords: `${platform.name} ${platform.id}`,
+      row: (
+        <DisclosureRow
+          className="border-t border-line/70"
+          title={<span className="type-body font-medium">{platform.name}</span>}
+          // pod myší řádek ztmavne (zvýraznění primitiva) a tichý text by na něm
+          // neměl kontrast 4,5 : 1 — proto se s ním zesílí i slovo vpravo
+          meta={
+            <span className="type-footnote group-hover/disclosure:text-ink">
+              {METHOD_WORD[platform.method]}
+            </span>
+          }
+        >
+          <div className="space-y-2">
+            <p>{platform.guide}</p>
+            <MethodNote platform={platform} variant={variant} />
+          </div>
+        </DisclosureRow>
+      ),
+    })),
+  }));
+
   return (
-    <div className="space-y-5">
-      {PLATFORM_GROUPS.map((group) => {
-        const GroupHeading = variant === 'public' ? 'h2' : 'h3';
-        return (
-        <div key={group.key}>
-          <GroupHeading className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            {group.label}
-          </GroupHeading>
-          <ul className="mt-3 grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {PLATFORMS.filter((platform) => platform.group === group.key).map((platform) => (
-              <li key={platform.id}>
-                <details className="group rounded-lg border border-line bg-surface">
-                  {/* jen logo a jméno — formáty a typ napojení jsou žargon,
-                      detail (kde co stáhnout) říká rozbalený návod */}
-                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
-                    <span className="flex min-w-0 flex-1 items-center">
-                      <PlatformLogo platform={platform} />
-                    </span>
-                    <span
-                      aria-hidden
-                      className="text-ink-muted transition-transform group-open:rotate-90"
-                    >
-                      ›
-                    </span>
-                  </summary>
-                  <div className="space-y-1.5 border-t border-line/60 p-3.5 text-sm text-ink-muted">
-                    <p>{platform.guide}</p>
-                    {platform.method === 'template' && (
-                      <p>
-                        Stažený výpis přepiš do{' '}
-                        <a href="/api/sablona" className="font-medium text-accent-text underline underline-offset-2" download>
-                          univerzální šablony
-                        </a>{' '}
-                        (
-                        <a href="#sablona" className="font-medium text-accent-text underline underline-offset-2">
-                          jak ji vyplnit
-                        </a>
-                        , čti pod seznamem platforem) a{' '}
-                        {variant === 'app'
-                          ? 'nahraj ji tady'
-                          : 'nahraj ji v aplikaci na stránce Zdroje dat'}
-                        . Vlastní čtečku tohohle výpisu připravujeme — pošli nám anonymizovaný
-                        vzorek na{' '}
-                        <a href={`mailto:${OPERATOR.email}`} className="font-medium text-accent-text underline underline-offset-2">
-                          {OPERATOR.email}
-                        </a>{' '}
-                        a bude to rychlejší.
-                      </p>
-                    )}
-                    {platform.method === 'api' &&
-                      (variant === 'app' ? (
-                        <p>
-                          Napojení nastavíš v{' '}
-                          <Link
-                            href={platform.connectAnchor ?? '#trading212'}
-                            className="font-medium text-accent-text underline underline-offset-2"
-                          >
-                            kartě výš na této stránce
-                          </Link>
-                          .
-                        </p>
-                      ) : (
-                        <p>
-                          Klíč jen pro čtení připojíš po{' '}
-                          <Link href="/registrace" className="font-medium text-accent-text underline underline-offset-2">
-                            registraci
-                          </Link>{' '}
-                          na stránce Zdroje dat — i s podrobným návodem, která práva zaškrtnout.
-                          Výpis z téhle platformy můžeš místo toho nahrát i ručně.
-                        </p>
-                      ))}
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        </div>
-        );
-      })}
-      {/* kotva #sablona: odkazují na ni karty platforem s vedeným importem */}
-      <div id="sablona" className="scroll-mt-24 space-y-2 text-sm text-ink-muted">
-        <p>
-          <strong className="text-ink">{UNIVERSAL_INFO.name}:</strong> {UNIVERSAL_INFO.guide}{' '}
-          <a href="/api/sablona" className="font-medium text-accent-text underline underline-offset-2" download>
+    <div>
+      <PlatformSearch groups={groups} headingLevel={headingLevel} />
+
+      {/* kotva #sablona: odkazují na ni řádky platforem s vedeným importem */}
+      <div id="sablona" className="mt-12 scroll-mt-24">
+        <Heading className="type-title-3">{UNIVERSAL_INFO.name}</Heading>
+        <p className="type-body measure mt-2 text-pretty text-ink-muted">
+          {UNIVERSAL_INFO.guide}{' '}
+          <a
+            href="/api/sablona"
+            className="font-medium text-accent-text underline underline-offset-2"
+            download
+          >
             Stáhnout šablonu
           </a>
-          . Opakované nahrání nic nezdvojí — deduplikace je součástí importu a funguje i napříč
-          soubory.
+          . Opakované nahrání nic nezdvojí.
         </p>
-        <p>Při vyplňování šablony se drž těchhle pravidel:</p>
-        <ul className="list-disc space-y-1 pl-5">
+        {/* pravidla vyplnění: nadpisy jsou vidět jako rejstřík, znění po rozbalení */}
+        <div role="list" className="mt-4 max-w-[42rem] divide-y divide-line/70 border-y border-line/70">
           {TEMPLATE_RULES.map((rule) => (
-            <li key={rule.label}>
-              <strong className="text-ink">{rule.label}:</strong> {rule.text}
-            </li>
+            <DisclosureRow key={rule.label} title={rule.label}>
+              <p>{rule.text}</p>
+            </DisclosureRow>
           ))}
-        </ul>
+        </div>
       </div>
     </div>
   );

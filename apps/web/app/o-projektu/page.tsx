@@ -1,9 +1,11 @@
 import { OPERATOR } from '@/lib/contact';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
-import { MarketingCta, MarketingPage, PageHero } from '@/components/marketing-page';
+import { DemoCta, SpecList, SpecRow, Split } from '@/components/marketing-blocks';
+import { Band, MarketingPage, PageHero } from '@/components/marketing-page';
+import { TextLink } from '@/components/ui/link';
 import { SOURCE_URL } from '@/lib/legal';
+import { tidy } from '@/lib/typography';
 
 export const metadata: Metadata = {
   title: 'Kdo za tím stojí — Danero',
@@ -20,129 +22,96 @@ export default function OProjektuPage() {
         lede="Jmenuju se Jan Dunder, jsem vývojář z Prahy — a Danero jsem původně napsal pro sebe."
       />
 
-      <section aria-label="Příběh projektu" className="mt-12">
-        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div className="max-w-3xl space-y-4 leading-relaxed text-ink-muted">
-            <p>
-              Investuju přes několik platforem najednou a jako OSVČ v paušálním režimu
-              mám každý rok stejný úkol: poskládat prodeje, dividendy a úroky ze všech
-              účtů dohromady a uhlídat, ať nikde nepřeteče limit — 50 000 Kč pro paušál,
-              100 000 Kč pro osvobozené prodeje, a k tomu tříletý test u každého nákupu
-              zvlášť. Dělal jsem to v tabulkách a stejně jsem si nikdy nebyl jistý, že
-              na něco nezapomínám. Ten nejistý pocit mě štval víc než samotná daň.
-            </p>
-            <p>
-              Tak jsem si napsal nástroj, který to hlídá za mě — průběžně, celý rok, nad
-              skutečnými daty ze všech mých účtů. Danero dodnes ladím na vlastním
-              portfoliu: jsem jeho první uživatel, a když něco nesedí, bolí to nejdřív
-              mě. Proto taky sporné daňové výklady nezametám pod koberec — aplikace je
-              označí, spočítá bezpečnou variantu a ukáže, co by znamenala ta výhodnější.
-            </p>
-            <p>
-              Není za tím firma s marketingovým oddělením. Jen jeden člověk, kterého
-              tenhle problém opravdu štval. Když ti něco nebude sedět, napiš mi na{' '}
-              <a
-                href={`mailto:${OPERATOR.email}`}
-                className="font-medium text-accent-text underline underline-offset-2"
-              >
-                {OPERATOR.email}
-              </a>{' '}
-              — odpovídám osobně. A víc o mně najdeš na{' '}
-              <a
-                href="https://jandunder.dev"
-                className="font-medium text-accent-text underline underline-offset-2"
-                target="_blank"
-                rel="noreferrer"
-              >
-                jandunder.dev
-              </a>
-              .
-            </p>
-          </div>
-          <figure className="mx-auto w-56 max-w-full lg:mx-0 lg:w-full">
-            <Image
-              src="/jan-foto.jpg"
-              alt="Jan Dunder — autor Danera"
-              width={800}
-              height={840}
-              sizes="(min-width: 1024px) 320px, 224px"
-              className="rotate-1 rounded-lg border border-line shadow-lg shadow-ink/10"
-            />
-          </figure>
+      <section
+        aria-label="Příběh projektu"
+        className="mt-12 grid items-start gap-x-(--column-gap) gap-y-10 md:mt-16 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]"
+      >
+        <div className="type-reading measure space-y-4 text-pretty text-ink-muted">
+          <p>
+            {tidy(
+              'Investuju přes několik platforem a jako OSVČ v paušálním režimu mám každý rok stejný úkol: poskládat prodeje, dividendy a úroky ze všech účtů a uhlídat limity — 50 000 Kč pro paušál, 100 000 Kč pro osvobozené prodeje a tříletý test u každého nákupu zvlášť. Dělal jsem to v tabulkách a nikdy jsem si nebyl jistý, že na něco nezapomínám.',
+            )}
+          </p>
+          <p>
+            {tidy(
+              'Tak jsem si napsal nástroj, který to hlídá průběžně nad skutečnými daty ze všech mých účtů. Jsem jeho první uživatel a dodnes ho ladím na vlastním portfoliu. Sporné daňové výklady aplikace označí, spočítá bezpečnou variantu a ukáže, co by znamenala ta výhodnější.',
+            )}
+          </p>
+          <p>
+            Není za tím firma. Když ti něco nebude sedět, napiš mi na{' '}
+            <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink> — odpovídám
+            osobně.
+          </p>
+          <p className="type-body flex flex-wrap gap-x-6">
+            <TextLink href="https://jandunder.dev" chevron external>
+              jandunder.dev
+            </TextLink>
+            <TextLink href="https://www.linkedin.com/in/jan-dunder" chevron external>
+              LinkedIn
+            </TextLink>
+          </p>
         </div>
+        <Image
+          src="/jan-foto.jpg"
+          alt="Jan Dunder — autor Danera"
+          width={800}
+          height={840}
+          sizes="(min-width: 1024px) 400px, 288px"
+          className="w-72 max-w-full rounded-2xl lg:w-full"
+        />
       </section>
 
-      {/* otevřený kód je u daňového nástroje trust signál, ne technikálie:
-          je to jediná odpověď na „proč mám věřit, že to počítáš správně“ */}
-      <section aria-label="Otevřený kód" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
-          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            Otevřený kód
+      {/* otevřený kód je u daňového nástroje odpověď na „proč mám věřit, že to
+          počítáš správně“, ne technikálie */}
+      <Band tone="canvas" wide className="mt-(--band-y)">
+        <Split title="Danero si můžeš přečíst.">
+          <p>
+            {tidy(
+              'Celý zdrojový kód i pravidla, podle kterých počítá — s odkazy na paragrafy zákona a pokyny GFŘ — jsou veřejné pod licencí AGPL-3.0. U nástroje, který ti počítá daň, mi to přišlo jako jediná poctivá odpověď na otázku „proč ti mám věřit“.',
+            )}
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-            <strong className="text-ink">Danero si můžeš přečíst.</strong> Celý
-            zdrojový kód i{' '}
-            <a
+          <p>
+            {tidy(
+              'Kdyby Danero někdy skončilo, kód zůstane a data si vyvezeš. Provozovat si ho můžeš i sám.',
+            )}
+          </p>
+          <p className="type-body flex flex-wrap gap-x-6">
+            <TextLink href={SOURCE_URL} chevron external>
+              Zdrojový kód na GitHubu
+            </TextLink>
+            <TextLink
               href={`${SOURCE_URL}/blob/main/docs/02-danova-pravidla.md`}
-              className="font-medium text-accent-text underline underline-offset-2"
-              target="_blank"
-              rel="noreferrer"
+              chevron
+              external
             >
-              pravidla, podle kterých počítá
-            </a>{' '}
-            — s odkazy na paragrafy zákona a pokyny GFŘ — jsou veřejné na{' '}
-            <a
-              href={SOURCE_URL}
-              className="font-medium text-accent-text underline underline-offset-2"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHubu
-            </a>{' '}
-            pod licencí AGPL-3.0. U nástroje, který ti počítá daň, mi to přišlo jako
-            jediná poctivá odpověď na otázku „proč ti mám věřit". Vedlejší efekt: kdyby
-            Danero někdy skončilo, kód zůstane a data si vyvezeš.
+              Pravidla výpočtu
+            </TextLink>
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-            Provozovat si ho můžeš i sám. Nemusíš — danero.cz je zdarma celé, bez
-            placené verze.
-          </p>
-        </div>
-      </section>
+        </Split>
+      </Band>
 
       {/* věcná identifikace provozovatele — u daní a API klíčů se hodí vědět,
-          s kým máš tu čest; detail je v podmínkách užití */}
-      <section aria-label="Provozovatel" className="mt-16">
-        <div className="max-w-3xl rounded-lg border border-line bg-surface p-6">
-          <p className="tabular-nums text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            Provozovatel
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-            Danero provozuje <strong className="text-ink">{OPERATOR.name}</strong>, IČO{' '}
-            {OPERATOR.ico}, fyzická osoba podnikající. Úplné údaje a pravidla
-            najdeš v{' '}
-            <Link
-              href="/podminky"
-              className="font-medium text-accent-text underline underline-offset-2"
-            >
-              podmínkách užití
-            </Link>{' '}
-            a v{' '}
-            <Link
-              href="/soukromi"
-              className="font-medium text-accent-text underline underline-offset-2"
-            >
-              ochraně soukromí
-            </Link>
-            .
-          </p>
-        </div>
+          s kým máš tu čest; úplné údaje jsou v podmínkách užití */}
+      <section aria-labelledby="provozovatel-nadpis" className="mt-(--band-y)">
+        <h2 id="provozovatel-nadpis" className="type-title-1">
+          Provozovatel
+        </h2>
+        <SpecList className="mt-8">
+          <SpecRow label="Kdo">
+            <span className="text-ink">{OPERATOR.name}</span>, IČO {OPERATOR.ico}, fyzická osoba
+            podnikající
+          </SpecRow>
+          <SpecRow label="Kontakt">
+            <TextLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</TextLink>
+          </SpecRow>
+          <SpecRow label="Pravidla služby">
+            <TextLink href="/podminky">Podmínky užití</TextLink> a{' '}
+            <TextLink href="/soukromi">ochrana soukromí</TextLink>
+          </SpecRow>
+        </SpecList>
       </section>
 
-      <MarketingCta
-        title="Nejlíp to poznáš zevnitř"
-        lede="Plné demo běží nad vzorovým portfoliem s 50+ pozicemi — bez registrace, nic se neukládá."
-      />
+      <DemoCta />
     </MarketingPage>
   );
 }

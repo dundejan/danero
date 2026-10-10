@@ -1,17 +1,22 @@
-/** Sdílený FAQ akordeon — jeden vzor pro landing i podstránky (details/summary). */
+/**
+ * Seznam otázek a odpovědí nad nativním `<details>`: otázka je řádek s šipkou,
+ * odpověď se rozbalí pod ní. Řádky dělí vlásová linka — žádné karty. Stejný
+ * jazyk jako `DisclosureRow` v aplikaci, jen s větším písmem: odpověď je text
+ * ke čtení, ne poznámka pod čarou.
+ */
 
-function IconPlus() {
+/** Šipka rozbalovátka: zavřená míří doprava, otevřená dolů. */
+function Chevron() {
   return (
     <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      className="h-4 w-4 shrink-0 text-ink-muted transition-transform group-open:rotate-45"
+      viewBox="0 0 8 12"
       aria-hidden
+      className="h-3 w-auto shrink-0 fill-none stroke-current text-ink-muted transition-transform duration-150 ease-(--ease-out) group-open/disclosure:rotate-90"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path d="M12 5v14M5 12h14" />
+      <path d="M1.5 1.5L6 6l-4.5 4.5" />
     </svg>
   );
 }
@@ -28,14 +33,14 @@ export interface FaqItem {
 
 export function FaqList({ items }: { items: FaqItem[] }) {
   return (
-    <div className="max-w-3xl space-y-3">
+    <div className="divide-y divide-line/70 border-y border-line/70">
       {items.map((item) => (
-        <details key={item.q} className="group rounded-lg border border-line bg-surface p-5">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-1 font-semibold [&::-webkit-details-marker]:hidden">
-            {item.q}
-            <IconPlus />
+        <details key={item.q} className="disclosure group/disclosure">
+          <summary className="row-pressable -mx-2 flex min-h-11 items-center gap-4 rounded-lg px-2 py-4 hover:bg-(--highlight)">
+            <span className="type-title-3 min-w-0 flex-1 text-pretty">{item.q}</span>
+            <Chevron />
           </summary>
-          <p className="mt-3 text-sm leading-relaxed text-ink-muted">{item.a}</p>
+          <p className="type-body measure pb-5 text-pretty text-ink-muted">{item.a}</p>
         </details>
       ))}
     </div>
