@@ -8,6 +8,7 @@ import {
   UNIFIED_RATE_SOURCES,
   type DerivativeItem,
   type EngineInput,
+  type TaxYearResult,
 } from '@danero/engine';
 import { AppToolbar } from '@/components/app-toolbar';
 import { EpoExportForm } from '@/components/epo-export-form';
@@ -349,6 +350,10 @@ function LineRow({
  * se jen nakupovalo, osnovu dostane (věta „nemáš žádné obchody“ by neplatila).
  * Nejbližší rok se hledá nejdřív mezi staršími: kdo v lednu otevře report,
  * přišel nejspíš pro ten loňský. Čistá funkce kvůli testu.
+ *
+ * Tohle je jen první polovina otázky „je rok prázdný“ — druhou odpovídá
+ * engine (`engineHasNothingFor`): rok bez transakce může nést prodej
+ * vypořádaný po Novém roce.
  */
 export function emptyYearFallback(
   txs: Transaction[],
@@ -370,13 +375,46 @@ export function emptyYearFallback(
 }
 
 /**
+ * Nemá engine za rok nic — žádný příjem, žádnou položku, žádné sdělení ani
+ * povinnost?
+ *
+ * Datum transakce na to nestačí (nález revize R6): prodej z 30. 12. řadí
+ * engine do roku VYPOŘÁDÁNÍ, derivát do roku události, a limit pro podání
+ * přiznání čerpají i „další zdanitelné příjmy“ z profilu, které v transakcích
+ * nejsou vůbec. Rok podle dat prázdný tak může nést základ daně i povinnost
+ * podat přiznání. O prázdném stavu proto rozhoduje výsledek: cokoli engine
+ * pro rok má, report ukáže celý.
+ *
+ * V pochybnosti „něco má“ — zbytečná osnova je menší škoda než schovaná daň.
+ */
+export function engineHasNothingFor(result: TaxYearResult): boolean {
+  const { securities, crypto, shortSales, derivatives, dividends, limits, warnings } = result;
+  const filingLimits = [limits.flatTax50k, limits.employee20k, limits.generalFiling50k];
+  const hasSomething =
+    securities.disposals.length > 0 ||
+    crypto.disposals.length > 0 ||
+    shortSales.items.length > 0 ||
+    shortSales.openAtYearEnd.length > 0 ||
+    derivatives.items.length > 0 ||
+    derivatives.openPositions.length > 0 ||
+    dividends.items.length > 0 ||
+    dividends.interestItems.length > 0 ||
+    // povinnost podat přiznání i bez jediné transakce (příjmy z profilu)
+    filingLimits.some((limit) => limit.applicable && limit.status.exceeded) ||
+    limits.reporting38v.length > 0 ||
+    // kontrola výpočtu je sdělení, které se má dočíst
+    warnings.length > 0;
+  return !hasSomething;
+}
+
+/**
  * Sdílené tělo daňového reportu: kompletní podklady k přiznání z čistého
  * enginu. Reálná stránka dodá data z DB (a denní kurzy ČNB), demo ukázkový
  * dataset. V demu se export XML nahrazuje pozvánkou — soubor by nesl smyšlená
  * data a bez účtu nemá kam vést.
  *
- * Rok bez jediné transakce osnovu nedostane — jen prázdný stav s cestou dál
- * (`emptyYearFallback`).
+ * Rok bez jediné transakce, pro který nic nemá ani engine, osnovu nedostane —
+ * jen prázdný stav s cestou dál (`emptyYearFallback`, `engineHasNothingFor`).
  *
  * Skladba shora dolů (docs/07, textová dieta):
  * 1. verdikt — musím podat přiznání, do kdy a kolik to bude; vedle akce
@@ -429,10 +467,15 @@ export function ReportView({
     comparison: ReturnType<typeof compareVariants>;
   };
 }) {
-  // R2-14: rok bez jediné transakce — žádná osnova, žádný export, jen cesta dál.
+  // R2-14: rok bez jediné transakce, pro který ani engine nic nemá — žádná
+  // osnova, žádný export, jen cesta dál. Samotná data nestačí: prodej
+  // vypořádaný po Novém roce nebo příjmy z profilu dávají roku obsah i bez
+  // transakce s jeho datem (`engineHasNothingFor`).
   // Lišta s přepínačem roků zůstává, jinak by se z prázdného roku nedalo odejít.
   const emptyYear = emptyYearFallback(txs, year);
-  if (emptyYear.empty) {
+  const input = engineInputForUser(txs, profile, year, dailyRates);
+  const result = precomputed?.result ?? analyzeTaxYear(input);
+  if (emptyYear.empty && engineHasNothingFor(result)) {
     return (
       <>
         <AppToolbar title="Report" titleContext={String(year)}>
@@ -463,8 +506,6 @@ export function ReportView({
     );
   }
 
-  const input = engineInputForUser(txs, profile, year, dailyRates);
-  const result = precomputed?.result ?? analyzeTaxYear(input);
   // skončený rok: verdikt už není „zatím“ (R2-14)
   const yearClosed = year < Number(today.slice(0, 4));
   // R-05c: metoda zafixovaná pro tenhle rok (podklady už se za něj generovaly)
