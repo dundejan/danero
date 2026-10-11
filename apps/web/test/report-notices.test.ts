@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { compareVariants, type VariantResult } from '@danero/engine';
 import { d, parseTransactions, type Transaction } from '@danero/shared';
+import { filingVerdictHeadline } from '@/components/filing-verdict';
 import { ReportView } from '@/components/views/report-view';
 import { czk } from '@/lib/format';
 import { LIMIT_NAME } from '@/lib/limit-names';
@@ -25,6 +26,13 @@ vi.mock('@/components/ui/info-popover', () => ({
 }));
 
 const YEAR = 2025;
+/**
+ * „Dnes“ je pevně v dalším roce: fixace i její sdělení patří ke skončenému
+ * roku a test nesmí záviset na tom, kdy běží. Nadpis verdiktu se bere ze
+ * sdílené funkce — je to jen kotva, od které se čte začátek stránky.
+ */
+const TODAY = `${YEAR + 1}-02-10`;
+const VERDICT = filingVerdictHeadline({ year: YEAR, exceeded: true, closed: true });
 
 const PROFILE: ProfileRow = {
   userId: 'u1',
@@ -73,6 +81,7 @@ const render = (
       years: [props.year ?? YEAR],
       demo: props.demo,
       justPinned: props.justPinned,
+      today: TODAY,
     }),
   );
 
@@ -262,13 +271,13 @@ describe('zafixovaný rok (R4-02, R1B-12)', () => {
 
   it('o fixaci se čte nahoře, ne až na konci stránky', () => {
     const text = plain(render(100, pinned));
-    const top = between(text, 'podáš daňové přiznání', 'Co zapsat do přiznání');
+    const top = between(text, VERDICT, 'Co zapsat do přiznání');
     expect(top).toContain(`Rok ${YEAR} je zafixovaný: párování LIFO, jednotný kurz GFŘ.`);
   });
 
   it('ve chvíli, kdy se rok zafixuje, to stránka řekne jako sdělení', () => {
     const html = render(100, pinned, { justPinned: true });
-    const top = between(plain(html), 'podáš daňové přiznání', 'Co zapsat do přiznání');
+    const top = between(plain(html), VERDICT, 'Co zapsat do přiznání');
     expect(top).toContain(`Rok ${YEAR} jsme právě zafixovali: párování LIFO, jednotný kurz GFŘ`);
     expect(top).toContain('otevřením reportu za skončený rok');
     expect(top).toContain('Zrušit fixaci');

@@ -106,6 +106,7 @@ const reportHtml = (grossCzk: string, regime = 'PAUSAL', year = YEAR): string =>
       profile: { ...PROFILE, regime },
       year,
       years: [year],
+      today: `${year}-07-20`,
     }),
   );
 

@@ -57,6 +57,8 @@ export function filingLimitFor(result: TaxYearResult): FilingLimit | null {
  * `closed` říká, že zdaňovací období už skončilo. „Zatím … nevzniká“ platí jen
  * pro rok, který ještě běží a ve kterém limit může prolomit zítřejší prodej;
  * u skončeného roku je to hotová věc a „zatím“ tam mate (nález R2-14).
+ * Totéž nad limitem: „podáš“ u roku 2022 zní jako úkol, který teprve přijde —
+ * skončený rok proto říká minulým časem, že povinnost vznikla.
  */
 export function filingVerdictHeadline({
   year,
@@ -67,7 +69,11 @@ export function filingVerdictHeadline({
   exceeded: boolean;
   closed: boolean;
 }): string {
-  if (exceeded) return `Za rok ${year} podáš daňové přiznání`;
+  if (exceeded) {
+    return closed
+      ? `Za rok ${year} ti vznikla povinnost podat přiznání`
+      : `Za rok ${year} podáš daňové přiznání`;
+  }
   return closed
     ? `Za rok ${year} ti povinnost podat přiznání nevznikla`
     : 'Zatím ti povinnost podat přiznání nevzniká';

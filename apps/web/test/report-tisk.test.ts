@@ -217,6 +217,7 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
   describe('skončený rok: povinnost „nevznikla“, ne „zatím nevzniká“ (R2-14)', () => {
     const NEXT_YEAR = `${YEAR + 1}-02-10`;
     const CLOSED = `Za rok ${YEAR} ti povinnost podat přiznání nevznikla`;
+    const CLOSED_OVER_LIMIT = `Za rok ${YEAR} ti vznikla povinnost podat přiznání`;
 
     it('nadpis verdiktu se liší podle toho, jestli rok ještě běží', () => {
       expect(filingVerdictHeadline({ year: 2022, exceeded: false, closed: true })).toBe(
@@ -225,9 +226,40 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
       expect(filingVerdictHeadline({ year: 2026, exceeded: false, closed: false })).toBe(
         UNDER_LIMIT,
       );
-      // nad limitem se znění nemění
-      for (const closed of [true, false]) {
-        expect(filingVerdictHeadline({ year: YEAR, exceeded: true, closed })).toBe(OVER_LIMIT);
+      // nad limitem v běžném roce je to úkol před uživatelem
+      expect(filingVerdictHeadline({ year: YEAR, exceeded: true, closed: false })).toBe(OVER_LIMIT);
+    });
+
+    /**
+     * „Za rok 2022 podáš daňové přiznání“ četl i ten, kdo ho podal před třemi
+     * lety. Skončený rok nad limitem říká minulým časem, že povinnost vznikla
+     * — a nesmí se splést s větví pod limitem („nevznikla“).
+     */
+    it('nad limitem říká skončený rok „vznikla“, ne „podáš“', { timeout: 30_000 }, () => {
+      const headline = filingVerdictHeadline({ year: 2022, exceeded: true, closed: true });
+      expect(headline).toContain('Za rok 2022');
+      expect(headline).toMatch(/(?<!ne)vznikla povinnost podat přiznání/);
+      expect(headline).not.toMatch(/podáš|nevznik|[Zz]atím/);
+
+      for (const html of [
+        reportHtml('60000', 'PAUSAL', NEXT_YEAR),
+        overviewHtml('60000', 'PAUSAL', NEXT_YEAR),
+      ]) {
+        expect(html).toContain(CLOSED_OVER_LIMIT);
+        expect(html).not.toContain(OVER_LIMIT);
+        expect(html).not.toContain(CLOSED);
+      }
+      // tatáž částka zaměstnanci povinnost zakládá taky — stejné znění
+      expect(reportHtml('30000', 'ZAMESTNANEC', NEXT_YEAR)).toContain(CLOSED_OVER_LIMIT);
+    });
+
+    it('nad limitem běžný rok beze změny — poslední den roku ještě „podáš“', { timeout: 30_000 }, () => {
+      for (const html of [
+        reportHtml('60000', 'PAUSAL', `${YEAR}-12-31`),
+        overviewHtml('60000', 'PAUSAL', `${YEAR}-12-31`),
+      ]) {
+        expect(html).toContain(OVER_LIMIT);
+        expect(html).not.toContain(CLOSED_OVER_LIMIT);
       }
     });
 
