@@ -114,6 +114,12 @@ const ACCOUNT_LIMITS: Record<string, { operation: string; max: number }> = {
   '/two-factor/disable': { operation: 'two_factor_disable', max: 5 },
 };
 
+/**
+ * Cesty se stropem na účet — pro test, který hlídá, že strop (nebo zavření
+ * v `DISABLED_AUTH_PATHS`) má každá cesta Better Authu ověřující heslo.
+ */
+export const ACCOUNT_LIMITED_PATHS: readonly string[] = Object.keys(ACCOUNT_LIMITS);
+
 export function limitSensitiveAccountOperations(db: Db) {
   return createAuthMiddleware(async (ctx) => {
     const limit = ACCOUNT_LIMITS[ctx.path];
