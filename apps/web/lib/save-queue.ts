@@ -46,7 +46,12 @@ export type SaveResult =
   /** Odpověď nepřišla — síť, pád serveru. */
   | { kind: 'failed' }
   /** Přihlášení mezitím skončilo; aplikace člověka pošle na přihlášení. */
-  | { kind: 'signedOut' };
+  | { kind: 'signedOut' }
+  /**
+   * Odesláno cestou, která odpověď nevrací (`navigator.sendBeacon` při zániku
+   * dokumentu) — jak dopadlo, se stránka nedozví, takže není co hlásit.
+   */
+  | { kind: 'sent' };
 
 /** Uložení, které skončilo tím, že uživatel už není přihlášený. */
 export class SignedOutError extends Error {}
@@ -62,9 +67,22 @@ const isActionRedirect = (error: unknown): boolean =>
 interface SaveQueueDeps {
   /** Běžné odeslání, dokud stránka žije. */
   send(job: SaveJob): Promise<AutoSaveOutcome>;
-  /** Odeslání, které přežije odchod ze stránky. */
-  sendLeaving(job: SaveJob): Promise<AutoSaveOutcome>;
+  /**
+   * Odeslání, které přežije odchod ze stránky. `null` = odesláno, ale odpověď
+   * nepřijde (viz `sent` v `SaveResult`).
+   */
+  sendLeaving(job: SaveJob, context: LeavingContext): Promise<AutoSaveOutcome | null>;
   report(result: SaveResult, context: SaveReportContext): void;
+}
+
+/** Za jakých okolností odeslání při odchodu odchází. */
+export interface LeavingContext {
+  /**
+   * Zaniká celý dokument (`pagehide`: zavření panelu, F5, odchod na jinou
+   * adresu) — na rozdíl od přechodu uvnitř aplikace nebo pouhého skrytí
+   * panelu, kde stránka žije dál a odpověď si přečte.
+   */
+  unloading: boolean;
 }
 
 export interface SaveReportContext {
@@ -78,8 +96,11 @@ export interface SaveReportContext {
 export interface SaveQueue {
   /** Zařadí odeslání; běží-li jiné, počká na něj (a slije se s dalším čekajícím). */
   enqueue(job: SaveJob): void;
-  /** Odchod ze stránky: čekající odeslání (a případné `job` navíc) jde hned. */
-  flush(job?: SaveJob): void;
+  /**
+   * Odchod ze stránky: čekající odeslání (a případné `job` navíc) jde hned.
+   * `unloading` říká, že zaniká celý dokument (viz `LeavingContext`).
+   */
+  flush(job?: SaveJob, context?: Partial<LeavingContext>): void;
   /**
    * Stav formuláře z posledního odeslání, dokud nějaké běží nebo čeká; jinak
    * `null`. Formulář vykreslený znovu uprostřed ukládání by jinak ukázal stav
@@ -107,9 +128,12 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     if (!draining && waiting === null && leavingInFlight === 0) latest = null;
   };
 
-  const settle = async (sending: () => Promise<AutoSaveOutcome>): Promise<SaveResult> => {
+  const settle = async (
+    sending: () => Promise<AutoSaveOutcome | null>,
+  ): Promise<SaveResult> => {
     try {
       const outcome = await sending();
+      if (outcome === null) return { kind: 'sent' };
       return outcome.ok
         ? { kind: 'saved', message: outcome.message }
         : { kind: 'rejected', message: outcome.message, field: outcome.field };
@@ -153,13 +177,13 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       draining = true;
       void drain();
     },
-    flush(job) {
+    flush(job, { unloading = false } = {}) {
       if (job) merge(job);
       if (!waiting) return;
       const sent = waiting;
       waiting = null;
       leavingInFlight += 1;
-      void settle(() => deps.sendLeaving(sent)).then((result) => {
+      void settle(() => deps.sendLeaving(sent, { unloading })).then((result) => {
         leavingInFlight -= 1;
         deps.report(result, { job: sent, leaving: true, last: waiting === null && !draining });
         settled();

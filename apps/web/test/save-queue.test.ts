@@ -5,6 +5,7 @@ import {
   saveBody,
   SignedOutError,
   type AutoSaveOutcome,
+  type LeavingContext,
   type SaveJob,
   type SaveReportContext,
   type SaveResult,
@@ -17,7 +18,9 @@ import {
 interface Sent {
   job: SaveJob;
   leaving: boolean;
-  finish(outcome: AutoSaveOutcome): void;
+  /** Jen u odeslání při odchodu: zaniká celý dokument? */
+  unloading?: boolean;
+  finish(outcome: AutoSaveOutcome | null): void;
   fail(error: unknown): void;
 }
 
@@ -26,10 +29,12 @@ function harness() {
   const reports: Array<{ result: SaveResult; context: SaveReportContext }> = [];
   const sending =
     (leaving: boolean) =>
-    (job: SaveJob): Promise<AutoSaveOutcome> =>
-      new Promise((finish, fail) => sent.push({ job, leaving, finish, fail }));
+    (job: SaveJob, context?: LeavingContext): Promise<AutoSaveOutcome | null> =>
+      new Promise((finish, fail) =>
+        sent.push({ job, leaving, unloading: context?.unloading, finish, fail }),
+      );
   const queue = createSaveQueue({
-    send: sending(false),
+    send: sending(false) as (job: SaveJob) => Promise<AutoSaveOutcome>,
     sendLeaving: sending(true),
     report: (result, context) => reports.push({ result, context }),
   });
@@ -127,6 +132,25 @@ describe('fronta ukládání', () => {
     queue.flush(job({ castka: '500' }, 'castka'));
     expect(sent).toHaveLength(1);
     expect(sent[0]!.leaving).toBe(true);
+  });
+
+  it('odeslání při odchodu ví, jestli zaniká celý dokument', () => {
+    const { queue, sent } = harness();
+    queue.flush(job({ castka: '500' }, 'castka'));
+    queue.flush(job({ castka: '600' }, 'castka'), { unloading: true });
+    expect(sent.map((item) => item.unloading)).toEqual([false, true]);
+  });
+
+  it('odeslání bez odpovědi (beacon) nehlásí úspěch ani chybu a frontu uvolní', async () => {
+    const { queue, sent, reports } = harness();
+    queue.flush(job({ castka: '500' }, 'castka'), { unloading: true });
+    expect(queue.unsettled()?.get('castka')).toBe('500');
+    sent[0]!.finish(null);
+    await settle();
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.result).toEqual({ kind: 'sent' });
+    expect(reports[0]!.context).toMatchObject({ leaving: true, last: true });
+    expect(queue.unsettled()).toBeNull();
   });
 
   it('rozliší odmítnutí, výpadek a vypršelé přihlášení', async () => {

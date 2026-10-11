@@ -19,13 +19,12 @@ import {
   type FormControlState,
 } from '@/lib/form-changes';
 import { rememberLeavingDraft, takeLeavingDraft } from '@/lib/leaving-draft';
+import { fetchLeaving, postLeaving } from '@/lib/leaving-request';
 import { announce, refreshFromServer } from '@/lib/save-feedback';
 import {
   createSaveQueue,
   saveBody,
-  SignedOutError,
   type AutoSaveOutcome,
-  type SaveJob,
   type SaveQueue,
   type SaveReportContext,
   type SaveResult,
@@ -146,22 +145,6 @@ function confirmDrafts(
   return names;
 }
 
-/** Odeslání při odchodu: obyčejný požadavek, který přežije zavření panelu. */
-async function postLeaving(endpoint: string, job: SaveJob): Promise<AutoSaveOutcome> {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    body: saveBody(job),
-    keepalive: true,
-    headers: { Accept: 'application/json' },
-  });
-  if (response.status === 401) throw new SignedOutError();
-  const outcome = (await response.json()) as Partial<AutoSaveOutcome>;
-  if (typeof outcome.ok !== 'boolean' || typeof outcome.message !== 'string') {
-    throw new Error('neznámá odpověď na uložení');
-  }
-  return { ok: outcome.ok, message: outcome.message, field: outcome.field };
-}
-
 function queueFor(endpoint: string): SaveQueue {
   const existing = queues.get(endpoint);
   if (existing) return existing;
@@ -170,9 +153,10 @@ function queueFor(endpoint: string): SaveQueue {
   const queue = createSaveQueue({
     send: (job) => {
       const action = actions.get(endpoint);
-      return action ? action(saveBody(job)) : postLeaving(endpoint, job);
+      // bez akce (formulář mezitím zanikl) jde i běžné odeslání obyčejným požadavkem
+      return action ? action(saveBody(job)) : fetchLeaving(endpoint, job);
     },
-    sendLeaving: (job) => postLeaving(endpoint, job),
+    sendLeaving: (job, context) => postLeaving(endpoint, job, context),
     report: (result, context) => {
       if (result.kind === 'saved') announce('ok', result.message);
       if (result.kind === 'rejected') announce('chyba', result.message);
@@ -394,13 +378,15 @@ export function AutoSubmit({
     const onSubmit = (event: Event): void => event.preventDefault();
     // Skrytí i zavření panelu: co čeká, jde hned a požadavkem, který odchod
     // přežije. Na telefonu je skrytí panelu často poslední, co stránka zažije.
-    const leave = (): void => {
+    // `unloading`: zaniká celý dokument — kde prohlížeč neumí `keepalive`,
+    // jde uložení přes beacon (`lib/leaving-request.ts`).
+    const leave = (unloading: boolean): void => {
       const names = confirmDrafts(form, { validOnly: true });
       if (names.length === 0) {
-        queue.flush();
+        queue.flush(undefined, { unloading });
         return;
       }
-      queue.flush({ data: snapshot(form), triggers: names });
+      queue.flush({ data: snapshot(form), triggers: names }, { unloading });
       // F5: nová stránka se vykreslí dřív, než se tohle uložení zapíše —
       // text si převezme z poznámky (`lib/leaving-draft.ts`)
       rememberLeavingDraft({
@@ -414,8 +400,9 @@ export function AutoSubmit({
         ),
       });
     };
+    const onPageHide = (): void => leave(true);
     const onVisibilityChange = (): void => {
-      if (document.visibilityState === 'hidden') leave();
+      if (document.visibilityState === 'hidden') leave(false);
     };
 
     // Odeslání nedopadlo: obrazovka nesmí tvrdit, že je uloženo.
@@ -457,7 +444,7 @@ export function AutoSubmit({
     form.addEventListener('change', onChange);
     form.addEventListener('focusout', onFocusOut);
     form.addEventListener('submit', onSubmit);
-    window.addEventListener('pagehide', leave);
+    window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibilityChange);
     unsavedHandlers.set(endpoint, onUnsaved);
     // jednou: vývojový režim Reactu pouští efekt dvakrát a druhé odeslání by
@@ -503,7 +490,7 @@ export function AutoSubmit({
       form.removeEventListener('change', onChange);
       form.removeEventListener('focusout', onFocusOut);
       form.removeEventListener('submit', onSubmit);
-      window.removeEventListener('pagehide', leave);
+      window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('beforeunload', onBeforeUnload);
       if (unsavedHandlers.get(endpoint) === onUnsaved) unsavedHandlers.delete(endpoint);
