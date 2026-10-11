@@ -43,7 +43,6 @@ async function pageText(
     .replaceAll('&quot;', '"')
     .replaceAll('&#x27;', "'")
     .replaceAll('&amp;', '&')
-    .replaceAll('\u2011', '-')
     .replace(/\s+/g, ' ');
   return { html, text };
 }

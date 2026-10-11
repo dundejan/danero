@@ -13,10 +13,10 @@ import { tidy } from '@/lib/typography';
  *
  * Pravidla sazby jsou jen v `tidy()` — tady je jen průchod stromem.
  *
- * Znění textu se nemění: vkládá se jen nezlomitelná mezera (U+00A0) a
- * nezlomitelný spojovník v „e-mail“ (U+2011). U právních textů to hlídá
- * `test/typeset.test.ts` — po převodu zpět na obyčejné mezery a spojovníky
- * musí vyjít původní text znak po znaku.
+ * Znění textu se nemění: vkládá se jen nezlomitelná mezera (U+00A0), žádný
+ * jiný znak; slovo „e-mail“ drží pohromadě obal se stylem (viz
+ * `keepTogether`). U právních textů to hlídá `test/typeset.test.ts` — po
+ * převodu zpět na obyčejné mezery musí vyjít původní text znak po znaku.
  */
 
 const NBSP = '\u00a0';
@@ -27,7 +27,7 @@ const TRAILING_PREPOSITION = new RegExp(`(?:^|[\\s${NBSP}(„])[ksvzouaiKSVZOUAI
 /**
  * Prvky, do kterých sazba nesahá: jejich text je údaj, ne věta. Kontakt
  * (`mailto:`, `tel:`) se má dát zkopírovat přesně tak, jak je zapsaný —
- * adresa se slovem „e-mail“ by jinak dostala nezlomitelný spojovník.
+ * pevná mezera v telefonním čísle nebo v kódu by po vložení jinam vadila.
  */
 function isVerbatim(element: React.ReactElement<{ href?: unknown }>): boolean {
   if (typeof element.type === 'string' && /^(code|pre|kbd|samp|script|style)$/.test(element.type)) {
@@ -38,12 +38,43 @@ function isVerbatim(element: React.ReactElement<{ href?: unknown }>): boolean {
 }
 
 /**
+ * „e-mail“ se nemá zlomit ve spojovníku („e- / mailem“ — jedna z chyb, které
+ * našla recenze dlouhých textů). Řeší to styl, ne znak: slovo dostane obal
+ * s `white-space: nowrap` a spojovník zůstává obyčejný, takže ho najde
+ * hledání v prohlížeči a zkopíruje se, jak je. Nezlomitelný spojovník
+ * (U+2011), který tu býval do 11. 10. 2026, obojí rozbíjel.
+ *
+ * Jen tady, v průchodu stromem: `tidy()` vrací řetězec a prvek do něj vložit
+ * nejde. Krátký text, kde by zalomení vadilo, proto pošli přes `typeset()`.
+ */
+const EMAIL_WORD = /(\b[eE]-mail\p{L}*)/u;
+
+function keepTogether(text: string, keyPrefix: string): React.ReactNode[] {
+  if (!EMAIL_WORD.test(text)) return [text];
+  return text
+    .split(EMAIL_WORD)
+    .map((part, index) =>
+      index % 2 === 1 ? (
+        <span key={`${keyPrefix}-${index}`} className="whitespace-nowrap">
+          {part}
+        </span>
+      ) : (
+        part
+      ),
+    )
+    .filter((part) => part !== '');
+}
+
+/**
  * Strom Reactu s českou sazbou na textových listech. Sousední texty a čísla
  * (`{count} platforem`, `IČO {ico}`) se nejdřív spojí — prohlížeč je stejně
  * vykreslí jako jednu větu a pravidlo „číslo + jednotka“ musí vidět obojí.
  */
 export function typeset(node: React.ReactNode): React.ReactNode {
-  if (typeof node === 'string') return tidy(node);
+  if (typeof node === 'string') {
+    const parts = keepTogether(tidy(node), 'nowrap');
+    return parts.length === 1 ? parts[0] : parts;
+  }
   if (typeof node === 'number' || node === null || node === undefined || typeof node === 'boolean') {
     return node;
   }
@@ -62,7 +93,7 @@ export function typeset(node: React.ReactNode): React.ReactNode {
     let set = tidy(text);
     // „v <a>podmínkách</a>“: mezera za předložkou patří k prvku, který následuje
     if (beforeElement && TRAILING_PREPOSITION.test(set)) set = `${set.slice(0, -1)}${NBSP}`;
-    result.push(set);
+    result.push(...keepTogether(set, `nowrap-${result.length}`));
     text = '';
   };
   for (const item of items) {

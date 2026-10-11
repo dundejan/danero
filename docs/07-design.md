@@ -69,7 +69,10 @@ třídu bez tokenu a hlídá kontrasty.
 
 ## 2. Typografie
 
-Písmo je systémové (San Francisco / Segoe UI Variable / Roboto), nic se nestahuje. Čísla
+Písmo je systémové (San Francisco / Segoe UI Variable / Roboto), nic se nestahuje. Jediná
+výjimka je obrázek pro sdílení (`app/opengraph-image.tsx`): kreslí se na serveru, systémové
+písmo nevidí, a tak má přibalenou podmnožinu Interu s plnou češtinou (`apps/web/assets/og`,
+licence OFL vedle). Čísla
 se zarovnávají přes `tabular-nums`, neproporcionální písmo se nepoužívá. Škála jsou třídy
 `type-*` — nesou velikost, proklad, prostrkání i váhu naráz, takže **nepiš `text-2xl
 font-bold`**, vyber stupeň.
@@ -96,7 +99,11 @@ font-bold`**, vyber stupeň.
 - Text složený z řetězce protáhni přes **`tidy()` z `lib/typography.ts`** (nebo `<Tidy>`):
   neodtrhne předložku, číslo od jednotky („Kč“, „%“, „roky“, „hodin“), „§“ ani zkratku od
   čísla, nerozlomí datum a nenechá řádek začínat pomlčkou. Pravidla sazby jsou **jen tam**
-  — `typeset()` pro text v JSX je jen průchod stromem, který `tidy()` volá. Ve stejném
+  — `typeset()` pro text v JSX je jen průchod stromem, který `tidy()` volá.
+  **`tidy()` vkládá jen pevné mezery, žádný jiný znak**: nezlomitelný spojovník v „e-mail“
+  rozbil hledání v prohlížeči i kopírování. Aby se „e-mail“ nezlomil ve spojovníku,
+  obalí ho `typeset()` stylem `whitespace-nowrap` — text s „e-mailem“ na viditelném místě
+  proto pošli přes `typeset()`, ne přes `tidy()`. Ve stejném
   souboru je `plainTitle()` (titulek upozornění bez obrázkového znaku) a `withoutLawRefs()`
   (titulek bez „(§ …)“).
 - Částku v cizí měně píše `money()` z `lib/format.ts`: pevná mezera před kódem měny a pod
@@ -150,7 +157,7 @@ font-bold`**, vyber stupeň.
 | `components/marketing-page.tsx` → `MarketingPage`, `PageHero`, `Band`, `BandHeading`, `PageClosing` | Skořápka veřejné stránky: lišta, titulek, pásy, závěr stránky, patička. `PageClosing` nemá parametry — je všude stejný. |
 | `components/marketing-blocks.tsx` → `Split`, `SpecList`, `SpecRow`, `LinkList`, `SECTION_TITLE` | Obsah pásů: titulek vlevo + text vpravo; list „pojem — co k němu patří“; seznam odkazů „titulek + věta + šipka“; třídy nadpisu oddílu na podstránce. |
 | `components/guide-article.tsx` → `ArticleBody`, `ArticleIntro`, `ArticleSection`, `ArticleList`, `Example`, `DisputedReading`, `ArticleLink`, `ArticleFooter`, `Prose` | Dlouhý text: článek průvodce z bloků, právní text přes `Prose`. `ArticleBody contents` přidá obsah stránky; `ArticleSection` umí kotvu (`id`), mezititulky `h3` a `footnote`. |
-| `components/typeset.tsx` → `typeset` | Česká sazba textu psaného v JSX (odstavce s odkazy a tučnými místy): projde strom a pustí `tidy()` na textové listy. Volají ho obaly dlouhých textů, ne stránky. Pravidla sama jsou v `tidy()`. |
+| `components/typeset.tsx` → `typeset` | Česká sazba textu psaného v JSX (odstavce s odkazy a tučnými místy): projde strom a pustí `tidy()` na textové listy; slovo „e-mail“ navíc obalí, aby se nezlomilo ve spojovníku. Volají ho obaly dlouhých textů, ne stránky — stránka jen tehdy, když jí jde o „e-mail“ v krátkém textu. Pravidla sama jsou v `tidy()`. |
 | `components/long-read.tsx` → `LongRead`, `PROSE_ANCHORS`, `ANCHOR_OFFSET` | Dlouhý text s obsahem stránky (metodika, podmínky, soukromí): obsah vpravo zůstává na očích, na telefonu nad textem. |
 | `components/faq-list.tsx` → `FaqList` | Otázky a odpovědi nad `<details>`. |
 | `components/form-page.tsx` → `FormPage` | Stránka s jediným formulářem mimo aplikaci (přihlášení, registrace…). |

@@ -118,13 +118,17 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
   const features = page.locator('details').filter({
     has: page.getByRole('heading', { name: 'Co všechno Danero umí' }),
   });
-  await expect(features.getByText('Import výpisů — neomezeně platforem')).toBeHidden();
+  await expect(features.getByText('Výpisy z více platforem najednou')).toBeHidden();
   await features.locator('summary').click();
-  await expect(features.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
+  await expect(features.getByText('Výpisy z více platforem najednou')).toBeVisible();
   await expect(features.getByText(/XML pro elektronické podání/)).toBeVisible();
-  await expect(features.getByText('Živé napojení na Trading 212, IBKR i Lynx')).toBeVisible();
-  // spojovník v „E-mailová“ je po české sazbě nezlomitelný — proto výraz
-  await expect(features.getByText(/E.mailová\supozornění\sna\slimity\sa\stermíny/)).toBeVisible();
+  // obyčejnými slovy: celé jméno brokera, žádná zkratka
+  await expect(
+    features.getByText('Živé napojení na Trading 212, Interactive Brokers a Lynx'),
+  ).toBeVisible();
+  // spojovník v „E-mailová“ je obyčejný — nezlomitelný (U+2011) nenašlo
+  // hledání v prohlížeči a tenhle řetězec by na něm neprošel
+  await expect(features.getByText('E-mailová upozornění na limity a termíny')).toBeVisible();
   // Sekce o příspěvku se vykreslí jen s nastaveným účtem nebo odkazem
   // (lib/support.ts). Tahle sada je nemá — a bez nich nesmí web o peníze žádat.
   await expect(page.getByRole('heading', { name: 'Příspěvek na provoz' })).toHaveCount(0);
@@ -162,9 +166,9 @@ test('podmínky: zdarma, bez objednávek, se starým zněním na dosah', async (
 test('landing: hlídací e-maily nejsou podmíněné placeným tarifem', async ({ page }) => {
   await page.goto('/');
   // obojí říká třetí krok „Jak začít“ jednou větou; text prochází českou sazbou,
-  // takže mezery mohou být pevné a spojovník v „e-mailu“ nezlomitelný
+  // takže mezery mohou být pevné — spojovník v „E-mail“ je ale obyčejný
   const steps = page.getByRole('region', { name: 'Jak začít' });
-  await expect(steps.getByText(/E.mail\spošle\spři\s60,\s85\sa\s100\s%\slimitu/)).toBeVisible();
+  await expect(steps.getByText(/E-mail\spošle\spři\s60,\s85\sa\s100\s%\slimitu/)).toBeVisible();
   await expect(steps.getByText(/30\sa\s7\sdní\spřed\sosvobozením/)).toBeVisible();
   await expect(page.getByText(/celoročním hlídáním/)).toHaveCount(0);
   await expect(page.getByText(/tarif/i)).toHaveCount(0);

@@ -5,22 +5,28 @@
  * Jednopísmenná předložka nebo spojka nesmí zůstat viset na konci řádku
  * („v / březnu“), číslo se nesmí odtrhnout od jednotky („100 / %“,
  * „50 000 / Kč“, „3 / roky“), paragraf ani zkratka od toho, co uvádí
- * („§ / 72“, „čl. / 10“), datum se nesmí rozlomit uvnitř („15. 2. / 2025“),
- * řádek nesmí začínat pomlčkou a „e-mail“ se nesmí zlomit ve spojovníku.
+ * („§ / 72“, „čl. / 10“), datum se nesmí rozlomit uvnitř („15. 2. / 2025“)
+ * a řádek nesmí začínat pomlčkou.
  * U velkého titulku, kde má řádek tři slova, je každá taková chyba vidět na
  * první pohled; v dlouhých textech jich recenze redesignu našla desítky.
  *
- * Čistá funkce nad řetězcem — vkládá jen nezlomitelné mezery (U+00A0)
- * a nezlomitelný spojovník (U+2011), znění textu nemění (u právních textů to
- * hlídá `test/typeset.test.ts`). Do dat ani do textů, které se s něčím
- * porovnávají (klíče, hodnoty polí), nepatří.
+ * Čistá funkce nad řetězcem — vkládá JEN nezlomitelné mezery (U+00A0), žádný
+ * jiný znak nemění ani nepřidává (hlídá `test/typeset.test.ts`). Pevnou mezeru
+ * bere hledání v prohlížeči jako obyčejnou a čtečka taky; do hodnot polí
+ * formuláře, klíčů ani textů, které se s něčím porovnávají, ale nepatří.
+ *
+ * Do 11. 10. 2026 měnila i spojovník v „e-mail“ za nezlomitelný (U+2011).
+ * Je to jiný znak: Ctrl+F „e-mail“ takový výskyt nenašlo a zkopírovaný text
+ * nesl spojovník, který hledání v poště ani tabulce nepozná. Zalomení
+ * „e- / mail“ hlídá styl, ne znak: `typeset()` slovo obalí
+ * `white-space: nowrap`. Řetězec z `tidy()` obal nést nemůže — text, kde by
+ * zalomení vadilo, proto pošli přes `typeset()`.
  *
  * Text psaný v JSX (odstavec s odkazy a tučnými místy) prochází
  * `typeset()` z `components/typeset.tsx`, který tuhle funkci pustí na každý
  * textový list. Pravidla jsou jen tady — jedno místo pravdy.
  */
 const NBSP = '\u00a0';
-const NB_HYPHEN = '\u2011';
 
 /**
  * Jednotky a počítaná slova, která se nesmí odtrhnout od čísla. Za slovem
@@ -59,7 +65,6 @@ export function tidy(text: string): string {
       .replace(new RegExp(`(?<!\\d)(\\d{1,2}\\.) (?=(?:${MONTHS})(?![\\p{L}]))`, 'gu'), `$1${NBSP}`)
       // pomlčka zůstává na konci řádku u slova, za kterým stojí
       .replace(/ ([—–])(?= |$)/g, `${NBSP}$1`)
-      .replace(/\b([eE])-mail/g, `$1${NB_HYPHEN}mail`)
   );
 }
 
