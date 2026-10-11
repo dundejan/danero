@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { readEarlyInput } from '@/lib/early-input';
 import {
   describeFocus,
@@ -280,20 +280,28 @@ export function AutoSubmit({
   endpoint: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
-  /**
-   * Formulář právě zaniká. Chromium při zániku pole s rozepsaným textem
-   * ohlásí `change` ještě během vykreslování; text v tu chvíli už patří
-   * předávce nebo uložení při odchodu a tahle událost se nepočítá.
-   */
-  const detached = useRef(false);
+  // serverový snímek platí jen pro první vykreslení při hydrataci
+  const hydratedFromServer = useRef(
+    useSyncExternalStore(
+      subscribeToNothing,
+      () => false,
+      () => true,
+    ),
+  );
 
-  // Layout efekt: úklid běží, dokud zanikající pole ještě stojí v dokumentu
-  // (běžný efekt by už viděl fokus na <body>), a nový formulář fokus vrátí
-  // dřív, než prohlížeč cokoli vykreslí.
+  // Všechno v layout efektu, nic v běžném:
+  // - úklid běží, dokud zanikající pole ještě stojí v dokumentu (běžný efekt
+  //   by už viděl fokus na <body>), a nový formulář fokus vrátí dřív, než
+  //   prohlížeč cokoli vykreslí;
+  // - posluchači vznikají ve stejném kroku jako formulář. Běžný efekt běží až
+  //   po vykreslení: pole s vráceným fokusem by chvíli nikdo neposlouchal
+  //   a klávesa zmáčknutá v té mezeře by změnila hodnotu, která se neuloží;
+  // - posluchači mizí dřív než pole. Chromium při zániku pole s rozepsaným
+  //   textem ohlásí `change` ještě během vykreslování — text v tu chvíli už
+  //   patří předávce nebo uložení při odchodu.
   useLayoutEffect(() => {
     const form = ref.current?.form;
     if (!form) return;
-    detached.current = false;
     actions.set(endpoint, action);
     liveForms.set(endpoint, form);
     // Formulář vznikl znovu uprostřed ukládání: server ho vykreslil se stavem
@@ -324,55 +332,7 @@ export function AutoSubmit({
         if (departure?.endpoint === endpoint) departure.resumed = field.name;
       }
     }
-    return () => {
-      detached.current = true;
-      if (liveForms.get(endpoint) === form) liveForms.delete(endpoint);
-      const active = document.activeElement;
-      if (active instanceof HTMLElement && form.contains(active)) {
-        const field = textFieldOf(active);
-        const descriptor = describeFocus(
-          active,
-          focusablesOf(form),
-          field ? confirmedValue(field) : undefined,
-        );
-        // rozepsaný text se předává jen tehdy, když ho psal člověk
-        if (field && !humanEdited.has(field)) descriptor.draft = null;
-        focusHandoff = { pathname, descriptor, at: performance.now() };
-      }
-      // Buď formulář vznikne znovu na téže stránce (uložení ji vykreslilo
-      // znovu) a rozepsaný text převezme, nebo se stránka opouští a text je
-      // potřeba uložit. Nástupce vzniká v témže vykreslení — po něm je jasno.
-      const leaving = { endpoint, resumed: null as string | null };
-      departure = leaving;
-      queueMicrotask(() => {
-        if (departure === leaving) departure = null;
-        // vývojový režim Reactu efekt zkusmo uklidí a pustí znovu — formulář stojí dál
-        if (form.isConnected) return;
-        const names = confirmDrafts(form, { except: leaving.resumed });
-        const job = names.length > 0 ? { data: snapshot(form), triggers: names } : undefined;
-        const queue = queueFor(endpoint);
-        // s nástupcem fronta pokračuje sama; bez něj se stránka opouští
-        if (liveForms.has(endpoint)) {
-          if (job) queue.enqueue(job);
-        } else {
-          queue.flush(job);
-        }
-      });
-    };
-  }, [action, endpoint]);
 
-  // serverový snímek platí jen pro první vykreslení při hydrataci
-  const hydratedFromServer = useRef(
-    useSyncExternalStore(
-      subscribeToNothing,
-      () => false,
-      () => true,
-    ),
-  );
-
-  useEffect(() => {
-    const form = ref.current?.form;
-    if (!form) return;
     const queue = queueFor(endpoint);
     const save = (triggers: string[]): void =>
       queue.enqueue({ data: snapshot(form), triggers });
@@ -410,7 +370,6 @@ export function AutoSubmit({
       syncUnloadGuard();
     };
     const onChange = (event: Event): void => {
-      if (detached.current) return;
       const field = textFieldOf(event.target);
       if (field) {
         // Enter v poli, jehož text už odešel, nic nového neříká
@@ -425,7 +384,6 @@ export function AutoSubmit({
     // (předávka po novém vykreslení) prohlížeč jako změnu neohlásí.
     // `change` přichází před `focusout`, takže běžné psaní sem nedojde.
     const onFocusOut = (event: FocusEvent): void => {
-      if (detached.current) return;
       const field = textFieldOf(event.target);
       if (!field || !hasOwnDraft(field)) return;
       confirm(field);
@@ -437,7 +395,6 @@ export function AutoSubmit({
     // Skrytí i zavření panelu: co čeká, jde hned a požadavkem, který odchod
     // přežije. Na telefonu je skrytí panelu často poslední, co stránka zažije.
     const leave = (): void => {
-      if (detached.current) return;
       const names = confirmDrafts(form, { validOnly: true });
       if (names.length === 0) {
         queue.flush();
@@ -551,8 +508,40 @@ export function AutoSubmit({
       window.removeEventListener('beforeunload', onBeforeUnload);
       if (unsavedHandlers.get(endpoint) === onUnsaved) unsavedHandlers.delete(endpoint);
       form.removeAttribute(READY_ATTRIBUTE);
+      if (liveForms.get(endpoint) === form) liveForms.delete(endpoint);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && form.contains(active)) {
+        const field = textFieldOf(active);
+        const descriptor = describeFocus(
+          active,
+          focusablesOf(form),
+          field ? confirmedValue(field) : undefined,
+        );
+        // rozepsaný text se předává jen tehdy, když ho psal člověk
+        if (field && !humanEdited.has(field)) descriptor.draft = null;
+        focusHandoff = { pathname, descriptor, at: performance.now() };
+      }
+      // Buď formulář vznikne znovu na téže stránce (uložení ji vykreslilo
+      // znovu) a rozepsaný text převezme, nebo se stránka opouští a text je
+      // potřeba uložit. Nástupce vzniká v témže vykreslení — po něm je jasno.
+      const leaving = { endpoint, resumed: null as string | null };
+      departure = leaving;
+      queueMicrotask(() => {
+        if (departure === leaving) departure = null;
+        // vývojový režim Reactu efekt zkusmo uklidí a pustí znovu — formulář stojí dál
+        if (form.isConnected) return;
+        const names = confirmDrafts(form, { except: leaving.resumed });
+        const job = names.length > 0 ? { data: snapshot(form), triggers: names } : undefined;
+        const queue = queueFor(endpoint);
+        // s nástupcem fronta pokračuje sama; bez něj se stránka opouští
+        if (liveForms.has(endpoint)) {
+          if (job) queue.enqueue(job);
+        } else {
+          queue.flush(job);
+        }
+      });
     };
-  }, [endpoint]);
+  }, [action, endpoint]);
 
   return <input ref={ref} type="hidden" name={CHANGED_FIELD} />;
 }
