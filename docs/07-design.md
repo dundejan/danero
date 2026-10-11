@@ -371,7 +371,14 @@ Odkaz uprostřed věty je vždy podtržený.
   `Field` + tlačítko. Popisek, nápověda jedna věta (`hint`), delší výklad do `info`.
   Chyba pod polem (`FieldError`) — v dialogu jen tehdy, když pole v dialogu je.
 - Volba, která platí hned = `Switch`; volba odesílaná formulářem = `Checkbox`.
-- Výsledek akce hlásí `Toast`, nevratnou akci potvrzuje `ConfirmDialog`.
+- Výsledek akce hlásí `Toast`, nevratnou akci potvrzuje `ConfirmDialog`. Výsledek, který
+  mluví o konkrétním seznamu na stránce (nahrání a vrácení importu → historie importů),
+  neplave: je to `Notice` v toku stránky hned nad tím seznamem — plovoucí hláška na telefonu
+  ležela přes řádek, o kterém mluvila. Kód výsledku z adresy pak uklidí `ClearFeedbackUrl`.
+- Formulář s auto-save (`AutoSubmit`) nese skrytý stav, se kterým byl vykreslen, a server
+  zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`) — panel se starým stavem
+  tak nepřepíše změnu udělanou jinde. Výchozí hodnoty polí i skrytý stav ber z jednoho místa
+  (vzor: `app/(app)/nastaveni/form-state.ts`) a formuláři dej `key` podle toho stavu.
 
 ## 5. Textová dieta
 

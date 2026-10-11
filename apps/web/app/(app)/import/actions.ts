@@ -28,6 +28,7 @@ import {
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { errorText, logEvent } from '@/lib/log';
+import { hasAnyTransaction } from '@/lib/onboarding';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -74,6 +75,10 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   // se vůbec nezpracovaly. Do historie se v takové chvíli nemá jak zapsat nic,
   // takže jediné, co uživateli zbývá, je hláška — proto se počítají a řekne se
   // to na stránce.
+  // Krok 2 cesty nového uživatele: nahrání, které přinese první data účtu,
+  // nabídne přehled (`isFirstDataUpload`). Stav průvodce se neukládá — že jde
+  // o první data, se pozná z účtu těsně před nahráním.
+  const hadData = await hasAnyTransaction(db, user.id);
   let failed = 0;
   let added = 0;
   let filesWithErrors = 0;
@@ -100,12 +105,18 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   // se v produkčním buildu v prohlížeči často nedokončila a tlačítko viselo na
   // „Nahrávám a počítám…“ (L6a-02; platí pro všechny akce v tomhle souboru —
   // hlídá to test/import-feedback.test.ts). Adresa zároveň nese souhrn pro
-  // plovoucí hlášku a kotvu historie, která na mobilu leží tři obrazovky pod
-  // formulářem (L7d-01).
+  // hlášku nad historií a kotvu historie, která na mobilu leží tři obrazovky
+  // pod formulářem (L7d-01).
   redirect(
     importFeedbackUrl(
       'nahrano',
-      { files: files.length, added, filesWithErrors, batchId: batchesToOpen(summaries) },
+      {
+        files: files.length,
+        added,
+        filesWithErrors,
+        batchId: batchesToOpen(summaries),
+        firstData: !hadData && added > 0,
+      },
       IMPORT_HISTORY_ANCHOR,
     ),
   );

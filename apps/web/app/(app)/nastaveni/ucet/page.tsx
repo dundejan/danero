@@ -17,7 +17,7 @@ import { humanizeUserAgent } from '@/lib/ua';
 import { czDateTime } from '@/lib/format';
 import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
-import { ClearFeedbackUrl } from '../feedback-url';
+import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { SettingsToolbar } from '../settings-nav';
 import { SettingsToast, settingsErrorText } from '../settings-toast';
 import {
