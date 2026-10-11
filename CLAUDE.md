@@ -364,6 +364,18 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   neprojeví: živé ověření běží proti staré instanci a oprava „nefunguje“
   (11. 10. 2026 tak spadlo první živé ověření opraveného stropu pokusů — běžel
   starý háček). Po zásahu do auth dev server restartuj.
+- **WebKit z Playwrightu puštěný ve WSL lokálně nejspíš shodí celé WSL.**
+  11. 10. 2026 spadl stroj dvakrát za večer, pokaždé ve chvíli, kdy jedna
+  session pouštěla WebKit nad knihovnami rozbalenými do domovského adresáře
+  (bez roota, tedy bez `playwright install-deps`). Příčina není doložená, jen
+  pravděpodobná: v `journalctl -k -b -1` je v posledních minutách před pádem
+  záplava hlášek `dxgk` (grafický ovladač WSL, `/dev/dxg`) — stovky za minutu,
+  kdežto po běžném startu jich je pár desítek. Lokálně proto pouštěj jen
+  Chromium z Playwrightu, headless, a pro jistotu bez grafiky
+  (`env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 …`). Firefox
+  a WebKit patří do kontejneru (`mcr.microsoft.com/playwright`), ne na stroj.
+  Pád vezme s sebou i `/tmp` — rozdělanou práci commituj průběžně a výkazy
+  nenechávej jen ve scratchpadu.
 
 ## Stav a plán
 
