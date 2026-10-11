@@ -7,8 +7,8 @@ import { d } from '@danero/shared';
 import {
   evaluateCalculator as evaluateWithLimits,
   incomeQuestions,
-  KalkulackaPriznani,
-  OZNAMENI_5M,
+  FilingCalculator,
+  LARGE_EXEMPT_INCOME_NOTICE,
   type CalculatorAnswers,
 } from '@/components/filing-calculator';
 import { filingLimitTexts, type FilingLimitTexts } from '@/lib/filing-limits';
@@ -39,9 +39,9 @@ const nothingAnswered: CalculatorAnswers = {
   situation: null,
   salesOver100k: null,
   allHeldThreeYears: null,
-  kryptoNad100k: null,
-  kryptoDrzeno3Roky: null,
-  prijmy: null,
+  cryptoOver100k: null,
+  cryptoHeldThreeYears: null,
+  income: null,
 };
 
 const answers = (over: Partial<CalculatorAnswers>): CalculatorAnswers => ({
@@ -65,8 +65,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
         situation: 'pausal',
         salesOver100k: true,
         allHeldThreeYears: null,
-        kryptoNad100k: false,
-        prijmy: 'ne',
+        cryptoOver100k: false,
+        income: 'ne',
       }),
     );
 
@@ -79,8 +79,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
       answers({
         situation: 'zamestnanec',
         salesOver100k: false,
-        kryptoNad100k: true,
-        kryptoDrzeno3Roky: null,
+        cryptoOver100k: true,
+        cryptoHeldThreeYears: null,
       }),
     );
 
@@ -105,8 +105,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
         situation: 'pausal',
         salesOver100k: true,
         allHeldThreeYears: true,
-        kryptoNad100k: false,
-        prijmy: 'ne',
+        cryptoOver100k: false,
+        income: 'ne',
       }),
     );
 
@@ -119,8 +119,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
       answers({
         situation: 'pausal',
         salesOver100k: false,
-        kryptoNad100k: false,
-        prijmy: 'ne',
+        cryptoOver100k: false,
+        income: 'ne',
       }),
     );
 
@@ -130,7 +130,7 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
 
   it('krypto nad limit bez tří let držení → přiznání', () => {
     const outcome = evaluateCalculator(
-      answers({ situation: 'jine', kryptoNad100k: true, kryptoDrzeno3Roky: false }),
+      answers({ situation: 'jine', cryptoOver100k: true, cryptoHeldThreeYears: false }),
     );
 
     expect(outcome.verdict).toBe('priznani');
@@ -142,8 +142,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
       answers({
         situation: 'zamestnanec',
         salesOver100k: false,
-        kryptoNad100k: false,
-        prijmy: 'nevim',
+        cryptoOver100k: false,
+        income: 'nevim',
       }),
     );
 
@@ -169,8 +169,8 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
       answers({
         situation: 'zamestnanec',
         salesOver100k: false,
-        kryptoNad100k: false,
-        prijmy: 'ano',
+        cryptoOver100k: false,
+        income: 'ano',
       }),
       2026,
     );
@@ -185,11 +185,11 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
     // § 136 odst. 2 písm. a) daňového řádu jen tomu, kdo přiznání „následně"
     // podá elektronicky (pokyn GFŘ D-59, str. 45). Rozdíl je až měsíc a sankce
     // podle § 38w je 0,1–15 % z neoznámeného příjmu.
-    expect(OZNAMENI_5M).not.toContain('lhůta je ale stejná');
-    expect(OZNAMENI_5M).toContain('§ 38v');
+    expect(LARGE_EXEMPT_INCOME_NOTICE).not.toContain('lhůta je ale stejná');
+    expect(LARGE_EXEMPT_INCOME_NOTICE).toContain('§ 38v');
     // musí říct, že lhůta je KRATŠÍ, a jednou větou proč
-    expect(OZNAMENI_5M).toContain('tři měsíce');
-    expect(OZNAMENI_5M).toContain('kdo přiznání opravdu podá');
+    expect(LARGE_EXEMPT_INCOME_NOTICE).toContain('tři měsíce');
+    expect(LARGE_EXEMPT_INCOME_NOTICE).toContain('kdo přiznání opravdu podá');
   });
 
   it('R-09d/K7a-03: totéž vysvětluje i metodika /jak-pocitame', () => {
@@ -213,7 +213,7 @@ describe('kalkulačka „Musím podat přiznání?“', () => {
  */
 describe('kalkulačka: limity § 38g z konfigurace roku (R-09a, R-09b, L3-01)', () => {
   const withIncome = (situation: 'zamestnanec' | 'jine'): CalculatorAnswers =>
-    answers({ situation, salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' });
+    answers({ situation, salesOver100k: false, cryptoOver100k: false, income: 'ano' });
 
   for (const year of [2026, 2027]) {
     const { limits } = configForYear(year);
@@ -279,12 +279,12 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
       given.situation,
       given.salesOver100k,
       given.allHeldThreeYears,
-      given.kryptoNad100k,
-      given.kryptoDrzeno3Roky,
-      given.prijmy,
+      given.cryptoOver100k,
+      given.cryptoHeldThreeYears,
+      given.income,
     ];
     const html = renderToStaticMarkup(
-      createElement(KalkulackaPriznani, {
+      createElement(FilingCalculator, {
         filingLimits: limits,
         previousFilingLimits: previousLimits,
       }),
@@ -317,7 +317,7 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
   it('zaměstnanec, který odpoví „Ne“, vidí vedle verdiktu i limit za rok 2026', () => {
     // scénář z nálezu: 30 000 Kč dividend za rok 2026, únor 2027
     const text = renderAnswered(
-      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ne' }),
+      answers({ situation: 'zamestnanec', salesOver100k: false, cryptoOver100k: false, income: 'ne' }),
     );
     expect(text).toContain(`Máš letos vedle zaměstnání jiné zdanitelné příjmy nad ${current.employee}?`);
     expect(text).toContain(employeeNote);
@@ -326,14 +326,14 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
 
   it('otázka i zdůvodnění verdiktu jmenují limit běžného roku, ne loňský', () => {
     const employee = renderAnswered(
-      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' }),
+      answers({ situation: 'zamestnanec', salesOver100k: false, cryptoOver100k: false, income: 'ano' }),
     );
     expect(employee).toContain(`nad ${current.employee}?`);
     expect(employee).toContain(`Vedlejší zdanitelné příjmy nad ${current.employee} vedle zaměstnání`);
     expect(employee).not.toContain(`nad ${previous.employee}`);
 
     const other = renderAnswered(
-      answers({ situation: 'jine', salesOver100k: false, kryptoNad100k: false, prijmy: 'ano' }),
+      answers({ situation: 'jine', salesOver100k: false, cryptoOver100k: false, income: 'ano' }),
     );
     expect(other).toContain(`Máš letos zdanitelné příjmy nad ${current.general} celkem?`);
     expect(other).toContain(generalNote);
@@ -343,7 +343,7 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
 
   it('v roce beze změny kalkulačka žádný rok nejmenuje', () => {
     const text = renderAnswered(
-      answers({ situation: 'zamestnanec', salesOver100k: false, kryptoNad100k: false, prijmy: 'ne' }),
+      answers({ situation: 'zamestnanec', salesOver100k: false, cryptoOver100k: false, income: 'ne' }),
       filingLimitTexts(2026),
       filingLimitTexts(2025),
     );
@@ -370,7 +370,7 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
 
   it('R-09d: verdikt „bez přiznání“ ukazuje oznámení nad 5 milionů Kč i tříměsíční lhůtu', () => {
     const exempt = renderAnswered(
-      answers({ situation: 'jine', salesOver100k: true, allHeldThreeYears: true, kryptoNad100k: false, prijmy: 'ne' }),
+      answers({ situation: 'jine', salesOver100k: true, allHeldThreeYears: true, cryptoOver100k: false, income: 'ne' }),
       filingLimitTexts(2026),
       filingLimitTexts(2025),
     );

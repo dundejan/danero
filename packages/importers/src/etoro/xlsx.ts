@@ -761,14 +761,14 @@ export async function parseEtoroXlsx(
   // o dividendách ani zmínka. Vynechaný příjem § 8 přitom umí shodit i limit
   // 50 000 Kč (nález B-3-7). Porovnává se proto s POČTEM řádků, ne s nulou.
   const imported = result.transactions.filter((tx) => tx.type === 'DIVIDEND').length;
-  const chybi = ctx.activityDividendRows.count - imported;
-  if (chybi > 0) {
+  const missingDividends = ctx.activityDividendRows.count - imported;
+  if (missingDividends > 0) {
     result.errors.push({
       line: 1,
       message:
         imported === 0
           ? `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale list „Dividends“ ve výpisu chybí (nebo je prázdný) — dividendy jsme proto nenaimportovali. Stáhni z eToro Account Statement za celé období včetně listu Dividends (je v něm i sražená daň) a nahraj ho znovu.`
-          : `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale z listu „Dividends“ jich jde načíst jen ${imported} — ${chybi} by se do daně nedostalo. Stáhni z eToro Account Statement za celé období, ať je list Dividends kompletní (je v něm i sražená daň), a nahraj ho znovu.`,
+          : `V listu „Account Activity“ je ${ctx.activityDividendRows.count} dividendových řádků, ale z listu „Dividends“ jich jde načíst jen ${imported} — ${missingDividends} by se do daně nedostalo. Stáhni z eToro Account Statement za celé období, ať je list Dividends kompletní (je v něm i sražená daň), a nahraj ho znovu.`,
     });
   }
 

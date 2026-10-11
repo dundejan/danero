@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { KalkulackaPriznani } from '@/components/filing-calculator';
+import { FilingCalculator } from '@/components/filing-calculator';
 import { MarketingPage, PageHero } from '@/components/marketing-page';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { TextLink } from '@/components/ui/link';
@@ -50,7 +50,7 @@ export default function KalkulackaPage() {
             rámu volá `connection()`), takže běžný rok zná server a kalkulačce
             stačí poslat limity § 38g toho roku. Limity roku předchozího jdou
             s nimi: v sezóně přiznání se rozhoduje o něm (R-09a, R-09b). */}
-        <KalkulackaPriznani
+        <FilingCalculator
           filingLimits={filingLimitTexts(year)}
           previousFilingLimits={filingLimitTexts(year - 1)}
         >
@@ -71,7 +71,7 @@ export default function KalkulackaPage() {
               </TextLink>
             </p>
           </section>
-        </KalkulackaPriznani>
+        </FilingCalculator>
       </div>
       {/* bez závěru stránky: obě akce (demo, založení účtu) nese verdikt, kde
           dávají smysl — druhá výzva o obrazovku níž je jen opakovala */}
