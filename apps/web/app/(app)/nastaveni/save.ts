@@ -17,7 +17,12 @@ import {
 } from '@/lib/notification-rules';
 import { dropStaleLimitNotifications, profileAffectsCalculations } from '@/lib/profile-changes';
 import type { AutoSaveOutcome } from '@/lib/save-queue';
-import { NOTIFICATION_FIELDS, OTHER_INCOME_FORMAT, PROFILE_FIELDS } from './form-state';
+import {
+  NOTIFICATION_FIELDS,
+  OTHER_INCOME_FORMAT,
+  OTHER_INCOME_MAX_DIGITS,
+  PROFILE_FIELDS,
+} from './form-state';
 import { settingsErrorText, settingsOkText } from './settings-toast';
 
 /**
@@ -66,8 +71,10 @@ const ProfileFormSchema = z.object({
         });
         return;
       }
-      // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
-      if (d(v).gt('1000000000000')) {
+      // Horní mez: nejvýš dvanáct číslic před desetinnou tečkou (pod bilion Kč)
+      // — bez ní by nesmyslný vstup přetekl DB numeric(18,2). Počítají se
+      // číslice, ne hodnota, aby tutéž mez poznal i `pattern` v prohlížeči.
+      if (v.split('.')[0]!.length > OTHER_INCOME_MAX_DIGITS) {
         ctx.addIssue({
           code: 'custom',
           message: 'Částka je nereálně vysoká — zkontroluj ji.',

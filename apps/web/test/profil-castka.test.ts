@@ -101,6 +101,32 @@ describe('částka v nastavení se čte tak, jak ji lidé píšou', () => {
       expect(kam, `„${vstup}" nesmí spadnout`).toBe('/nastaveni?chyba=prijmy');
     }
   });
+
+  /**
+   * Server dřív odmítal částku nad bilion, kterou `pattern` v prohlížeči
+   * pustil — kdo s ní zavřel panel, nedozvěděl se, že se neuložila (prohlížeč
+   * se při odchodu ptá jen u textu, o kterém ví, že neprojde). Mez je proto
+   * počet číslic a obě strany ji čtou z jedné konstanty.
+   */
+  it('horní mez částky pozná prohlížeč stejně jako server', { timeout: 30_000 }, async () => {
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    const { OTHER_INCOME_PATTERN } = await import('@/app/(app)/nastaveni/form-state');
+    const browser = new RegExp(`^(?:${OTHER_INCOME_PATTERN})$`, 'v');
+    const { taxpayerProfiles } = await import('@/db/schema');
+
+    for (const vstup of ['999999999999,99', '999 999 999 999']) {
+      expect(browser.test(vstup), `„${vstup}" má prohlížeč pustit`).toBe(true);
+      const kam = await cil(() => saveProfileAction(form(vstup)));
+      expect(kam, `„${vstup}" má server uložit`).not.toBe('/nastaveni?chyba=prijmy');
+      const [row] = await stav.db.select().from(taxpayerProfiles);
+      expect(d(row?.otherIncomeCzk ?? '-1').eq(vstup.replace(/\s/g, '').replace(',', '.'))).toBe(true);
+    }
+    for (const vstup of ['1000000000000', '1 000 000 000 000,00', '99999999999999999999']) {
+      expect(browser.test(vstup), `„${vstup}" má prohlížeč zastavit`).toBe(false);
+      const kam = await cil(() => saveProfileAction(form(vstup)));
+      expect(kam, `„${vstup}" má server odmítnout`).toBe('/nastaveni?chyba=prijmy');
+    }
+  });
 });
 
 /**
