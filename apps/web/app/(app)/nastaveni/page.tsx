@@ -15,12 +15,14 @@ import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
+import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
 import { configForYear } from '@/lib/tax-config';
 import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
 import { DisputedHint } from './disputed-hint';
+import { PROFILE_FIELDS, profileFormEntries } from './form-state';
 import { SettingsToolbar } from './settings-nav';
 import { SettingsToast } from './settings-toast';
 import { saveProfileAction, unpinTaxYearAction } from './actions';
@@ -49,6 +51,11 @@ export default async function SettingsPage({
   const { limits } = configForYear(currentTaxYear());
   const watchedLimit = (kind: LimitKind, amountCzk: string): string =>
     tidy(`Hlídá se ${limitWithAmount(kind, d(amountCzk))}.`);
+  // Stav, se kterým se formulář vykreslí: z něj jsou výchozí hodnoty polí
+  // i skryté pole, podle kterého server pozná, co člověk změnil
+  // (`lib/form-baseline.ts`).
+  const baseline = encodeBaseline(profileFormEntries(profile));
+  const shown = new URLSearchParams(baseline);
 
   const taxProfile = (
     <Section title="Daňový profil">
@@ -98,7 +105,7 @@ export default async function SettingsPage({
           <Select
             id="rezim"
             name="rezim"
-            defaultValue={profile?.regime ?? ''}
+            defaultValue={shown.get(PROFILE_FIELDS.regime) ?? ''}
             required
             aria-describedby="rezim-napoveda"
           >
@@ -140,8 +147,7 @@ export default async function SettingsPage({
             name="ostatni-prijmy"
             inputMode="decimal"
             autoComplete="off"
-            // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
-            defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
+            defaultValue={shown.get(PROFILE_FIELDS.otherIncomeCzk) ?? ''}
             aria-describedby="ostatni-prijmy-napoveda"
             className="tabular-nums"
           />
@@ -153,7 +159,7 @@ export default async function SettingsPage({
           <Switch
             id="obchodni-majetek"
             name="obchodni-majetek"
-            defaultChecked={profile?.hasBusinessAssets ?? false}
+            defaultChecked={shown.has(PROFILE_FIELDS.hasBusinessAssets)}
           />
         </Row>
       </Group>
@@ -199,7 +205,11 @@ export default async function SettingsPage({
               </InfoPopover>
             }
           >
-            <Select id="parovani" name="parovani" defaultValue={profile?.matchingMethod ?? 'FIFO'}>
+            <Select
+              id="parovani"
+              name="parovani"
+              defaultValue={shown.get(PROFILE_FIELDS.matchingMethod) ?? ''}
+            >
               <option value="FIFO">FIFO — nejstarší první</option>
               <option value="LIFO">LIFO — nejnovější první</option>
               <option value="MAX_PROFIT">Max. zisk — nejlevnější první</option>
@@ -219,7 +229,7 @@ export default async function SettingsPage({
               </InfoPopover>
             }
           >
-            <Select id="kurzy" name="kurzy" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
+            <Select id="kurzy" name="kurzy" defaultValue={shown.get(PROFILE_FIELDS.fxMethod) ?? ''}>
               <option value="UNIFIED">Jednotný kurz GFŘ</option>
               <option value="CNB_DAILY">Denní kurzy ČNB</option>
             </Select>
@@ -240,7 +250,7 @@ export default async function SettingsPage({
             <Select
               id="zaklad-casoveho-testu"
               name="zaklad-casoveho-testu"
-              defaultValue={profile?.timeTestBasis ?? 'settlement'}
+              defaultValue={shown.get(PROFILE_FIELDS.timeTestBasis) ?? ''}
             >
               <option value="settlement">Datum vypořádání</option>
               <option value="trade">Datum obchodu</option>
@@ -289,7 +299,7 @@ export default async function SettingsPage({
             <Select
               id="limit-100k"
               name="limit-100k"
-              defaultValue={(profile?.limit100kStrict ?? true) ? 'strict' : 'lenient'}
+              defaultValue={shown.get(PROFILE_FIELDS.limit100kStrict) ?? ''}
               aria-describedby="limit-100k-napoveda"
             >
               <optgroup label="Bezpečný výklad">
@@ -325,9 +335,7 @@ export default async function SettingsPage({
             <Select
               id="derivaty-vydaje"
               name="derivaty-vydaje"
-              defaultValue={
-                (profile?.derivativesExpensesPerType ?? false) ? 'perType' : 'restrictive'
-              }
+              defaultValue={shown.get(PROFILE_FIELDS.derivativesExpensesPerType) ?? ''}
               aria-describedby="derivaty-vydaje-napoveda"
             >
               <optgroup label="Bezpečný výklad">
@@ -363,7 +371,7 @@ export default async function SettingsPage({
             <Select
               id="emt-casovy-test"
               name="emt-casovy-test"
-              defaultValue={(profile?.emtTimeTestExempt ?? false) ? 'lenient' : 'safe'}
+              defaultValue={shown.get(PROFILE_FIELDS.emtTimeTestExempt) ?? ''}
               aria-describedby="emt-casovy-test-napoveda"
             >
               <optgroup label="Bezpečný výklad">
@@ -408,7 +416,7 @@ export default async function SettingsPage({
             <Select
               id="vratka-kapitalu"
               name="vratka-kapitalu"
-              defaultValue={(profile?.returnOfCapitalReducesBasis ?? false) ? 'lenient' : 'safe'}
+              defaultValue={shown.get(PROFILE_FIELDS.returnOfCapitalReducesBasis) ?? ''}
               aria-describedby="vratka-kapitalu-napoveda"
             >
               <optgroup label="Bezpečný výklad">
@@ -451,12 +459,19 @@ export default async function SettingsPage({
             S kotvou by každá změna dole odrolovala zpátky nahoru.
             `autoComplete="off"` u formuláře s auto-save: prohlížeč pak do polí
             po F5 nebo návratu v historii nevrací hodnoty z doby před načtením
-            (Firefox to dělá i u nabídek a přepínačů) — viz `AutoSubmit`. */}
+            (Firefox to dělá i u nabídek a přepínačů) — viz `AutoSubmit`.
+            Klíč: jakmile server pošle jiný stav (uložení, obnovení stránky po
+            návratu v historii), formulář se vykreslí celý znovu. React jinak
+            výchozí hodnotu nabídky po prvním vykreslení nemění — pole by dál
+            ukazovalo staré a skrytý stav už nové, takže by se nedotčené pole
+            tvářilo jako změněné. */}
         <form
+          key={baseline}
           action={saveProfileAction}
           autoComplete={profile ? 'off' : undefined}
           className="space-y-14"
         >
+          <input type="hidden" name={BASELINE_FIELD} value={baseline} />
           {taxProfile}
           {profile ? (
             <>

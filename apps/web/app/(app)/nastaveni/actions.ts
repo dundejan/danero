@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
+import { changedFields, pickChanged } from '@/lib/form-baseline';
 import { errorText, logEvent } from '@/lib/log';
 import { afterProfileSaveUrl, hasAnyTransaction } from '@/lib/onboarding';
 import { isCommonPassword } from '@/lib/password-strength';
@@ -17,6 +18,7 @@ import {
   profileAffectsCalculations,
 } from '@/lib/profile-changes';
 import { authApi, requireUser } from '@/lib/session';
+import { NOTIFICATION_FIELDS, PROFILE_FIELDS } from './form-state';
 
 /**
  * Klíče schématu = `name` atributy formuláře, které jsou podle pravidla 1
@@ -86,7 +88,7 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     redirect(`/nastaveni?chyba=${kod}`);
   }
 
-  const values = {
+  const submitted = {
     regime: parsed.data.rezim,
     hasBusinessAssets: parsed.data['obchodni-majetek'] === 'on',
     otherIncomeCzk: parsed.data['ostatni-prijmy'],
@@ -97,7 +99,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     derivativesExpensesPerType: parsed.data['derivaty-vydaje'] === 'perType',
     emtTimeTestExempt: parsed.data['emt-casovy-test'] === 'lenient',
     returnOfCapitalReducesBasis: parsed.data['vratka-kapitalu'] === 'lenient',
-    updatedAt: new Date(),
   };
 
   const db = await getDb();
@@ -105,16 +106,28 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     .select()
     .from(taxpayerProfiles)
     .where(eq(taxpayerProfiles.userId, user.id));
-  await db
-    .insert(taxpayerProfiles)
-    .values({ userId: user.id, ...values })
-    .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: values });
-  await logAudit(db, user.id, 'PROFILE_CHANGE');
+  // Existující profil se nepřepisuje celý: zapíšou se jen pole, která člověk
+  // v tomhle formuláři změnil. Panel, který zůstal otevřený se starým stavem,
+  // jinak změnou jednoho pole vrátil všechna ostatní (`lib/form-baseline.ts`).
+  // UPDATE nese jen ta pole, takže se dvě souběžná uložení nepřepíšou ani
+  // mezi čtením a zápisem.
+  const applied = previous
+    ? pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS)))
+    : submitted;
+  // uložení, které nic nemění (tlačítko Uložit bez JavaScriptu), nic nezapisuje
+  if (Object.keys(applied).length > 0) {
+    const updatedAt = new Date();
+    await db
+      .insert(taxpayerProfiles)
+      .values({ userId: user.id, ...submitted, updatedAt })
+      .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: { ...applied, updatedAt } });
+    await logAudit(db, user.id, 'PROFILE_CHANGE');
+  }
 
   // K2-02: změna profilu přepočítá všechny nezafixované roky, takže uložená
   // upozornění hlídače za ně přestala platit — a jejich dedupe klíč by hlídač
   // na ten rok umlčel natrvalo (detail a testy v lib/profile-changes.ts).
-  if (profileAffectsCalculations(previous, values)) {
+  if (profileAffectsCalculations(previous, applied)) {
     await dropStaleLimitNotifications(db, user.id);
   }
 
@@ -397,7 +410,7 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
     formatNumberList(
       parseNumberList(formData.getAll(name).map(String).join(','), allowed, []),
     );
-  const values = {
+  const submitted = {
     emailEnabled: formData.get('emaily-zapnute') === 'on',
     timeTestEvents: formData.get('upozorneni-casove-testy') === 'on',
     limitEvents: formData.get('upozorneni-limity') === 'on',
@@ -419,12 +432,20 @@ export async function saveNotificationPrefsAction(formData: FormData): Promise<v
       DEFAULT_NOTIFICATION_RULES.summaryFrequency,
     ),
     urgentImmediately: formData.get('nalehave-hned') === 'on',
-    updatedAt: new Date(),
   };
+  // Jen pole, která člověk v tomhle formuláři změnil — zastaralý panel jinak
+  // jedním přepnutím vrátil všechno ostatní (`lib/form-baseline.ts`). Řádek,
+  // který ještě neexistuje, vznikne celý z odeslaného formuláře.
+  const applied = pickChanged(
+    submitted,
+    NOTIFICATION_FIELDS,
+    changedFields(formData, Object.values(NOTIFICATION_FIELDS)),
+  );
+  const updatedAt = new Date();
   await db
     .insert(notificationPrefs)
-    .values({ userId: user.id, ...values })
-    .onConflictDoUpdate({ target: notificationPrefs.userId, set: values });
+    .values({ userId: user.id, ...submitted, updatedAt })
+    .onConflictDoUpdate({ target: notificationPrefs.userId, set: { ...applied, updatedAt } });
   revalidatePath('/nastaveni/upozorneni');
   redirect('/nastaveni/upozorneni?ok=notifikace');
 }
