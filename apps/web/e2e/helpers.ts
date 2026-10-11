@@ -192,7 +192,14 @@ export async function pageSettled(page: Page): Promise<void> {
           if (document.querySelector('[role="status"][aria-busy="true"]')) {
             waiting.push('je vidět kostra načítání');
           }
-          const controls = document.querySelectorAll('button, input, select, textarea');
+          // Skrytá pole se nepočítají: formulář se server action dostane od
+          // serveru `<input type="hidden" name="$ACTION_ID_…">` (odeslání bez
+          // JavaScriptu) a React ho při hydrataci schválně přeskočí — handlery
+          // nedostane nikdy a stránka s takovým formulářem (/import, Účet) by
+          // se „neustálila“ do limitu.
+          const controls = document.querySelectorAll(
+            'button, input:not([type="hidden"]), select, textarea',
+          );
           const inert = [...controls].filter(
             (element) => !Object.keys(element).some((key) => key.startsWith('__reactProps$')),
           );
