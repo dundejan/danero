@@ -148,7 +148,13 @@ export default async function NotificationSettingsPage({
             Není vybraná žádná událost ani pravidelný přehled.
           </Notice>
         )}
-        <form action={saveInPlace} className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}>
+        {/* `autoComplete="off"`: prohlížeč do formuláře s auto-save nevrací po
+            F5 staré hodnoty — viz `AutoSubmit` */}
+        <form
+          action={saveInPlace}
+          autoComplete="off"
+          className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}
+        >
           <Section
             title="Odesílání"
             info={

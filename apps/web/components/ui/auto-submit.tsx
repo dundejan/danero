@@ -2,9 +2,21 @@
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
-import { differsFromServerHtml, type FormControlState } from '@/lib/form-changes';
+import { readEarlyInput } from '@/lib/early-input';
+import {
+  reconcileWithServerHtml,
+  restoreServerHtml,
+  type FormControlState,
+} from '@/lib/form-changes';
 
 const subscribeToNothing = (): (() => void) => () => {};
+
+/**
+ * Atribut, který formulář dostane ve chvíli, kdy auto-save začne poslouchat.
+ * Do té doby změna pole nic neodešle (a změnu vyslanou skriptem nikdo
+ * nedožene) — čeká na něj E2E (`autoSaveForm` v `e2e/helpers.ts`).
+ */
+const READY_ATTRIBUTE = 'data-auto-submit';
 
 /**
  * Auto-save formuláře: vloží se DOVNITŘ <form> a každou změnu pole odešle
@@ -16,10 +28,19 @@ const subscribeToNothing = (): (() => void) => () => {};
  * tak neztratí ani neodešle dvakrát.
  *
  * Změna provedená DŘÍV, než se stránka hydratovala, událost `change` vyslala
- * do prázdna: nabídka ukazovala novou volbu, ale nic se neuložilo a nic to
- * neřeklo. Po hydrataci se proto formulář porovná s HTML ze serveru a rozdíl
- * se odešle. Jen po hydrataci — po vykreslení v prohlížeči (přechod odkazem)
- * pole teprve vznikla a není co dohánět.
+ * do prázdna. Po hydrataci se proto formulář srovná s HTML ze serveru —
+ * a rozhoduje, KDO rozdíl způsobil (`lib/form-changes.ts`):
+ * - pole, které prokazatelně změnil člověk (`lib/early-input.ts`), se odešle;
+ * - každý jiný rozdíl se vrátí na hodnotu ze serveru a NEODEŠLE se. Tak
+ *   vypadá hodnota, kterou do pole vrátil prohlížeč (F5 ve Firefoxu, návrat
+ *   v historii, obnovený panel) nebo vyplnilo rozšíření: odeslat ji by
+ *   potichu přepsalo nastavení změněné mezitím jinde.
+ * Jen po hydrataci — po vykreslení v prohlížeči (přechod odkazem) pole
+ * teprve vznikla a není co srovnávat.
+ *
+ * Formulář s auto-save má mít `autoComplete="off"`: prohlížeč pak staré
+ * hodnoty do polí nevrací vůbec (ani bez JavaScriptu, kde by je odeslalo
+ * tlačítko Uložit). Srovnání výše je pojistka pro případy, kdy to nestačí.
  *
  * Bez JS se auto-save nekoná — komponenta proto vykresluje <noscript> tlačítko.
  */
@@ -59,14 +80,19 @@ export function AutoSubmit() {
     form.addEventListener('change', onChange);
     // jednou: vývojový režim Reactu pouští efekt dvakrát a druhé odeslání by
     // se s prvním pralo
-    if (
-      hydratedFromServer.current &&
-      differsFromServerHtml(form.elements as Iterable<FormControlState>)
-    ) {
-      form.requestSubmit();
+    if (hydratedFromServer.current) {
+      hydratedFromServer.current = false;
+      const controls = Array.from(form.elements) as unknown as FormControlState[];
+      const { revert, submit } = reconcileWithServerHtml(controls, readEarlyInput(window));
+      // nejdřív vrátit, co není od člověka — odesílá se celý formulář
+      revert.forEach(restoreServerHtml);
+      if (submit) form.requestSubmit();
     }
-    hydratedFromServer.current = false;
-    return () => form.removeEventListener('change', onChange);
+    form.setAttribute(READY_ATTRIBUTE, 'ready');
+    return () => {
+      form.removeEventListener('change', onChange);
+      form.removeAttribute(READY_ATTRIBUTE);
+    };
   }, []);
 
   return (

@@ -1,6 +1,7 @@
 import type { Viewport } from 'next';
 import { THEME_COLOR } from '@/components/theme-color';
 import { ThemeProvider } from '@/components/theme-provider';
+import { EARLY_INPUT_SCRIPT } from '@/lib/early-input';
 import { SITE_METADATA } from '@/lib/site';
 import './globals.css';
 
@@ -38,6 +39,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="cs" suppressHydrationWarning>
       <body className="antialiased">
+        {/* Před veškerým obsahem: pamatuje si, na která pole sáhl člověk dřív,
+            než se stránka hydratovala (`lib/early-input.ts`). Kořenové
+            rozložení se vykresluje jen na serveru, takže se skript vždy
+            provede — vložený hlouběji by při přechodu odkazem vznikl
+            v prohlížeči a ten takový skript nespouští. */}
+        <script dangerouslySetInnerHTML={{ __html: EARLY_INPUT_SCRIPT }} />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}
         </ThemeProvider>

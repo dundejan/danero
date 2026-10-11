@@ -448,8 +448,15 @@ export default async function SettingsPage({
         )}
         {/* Formulář schválně NEMÁ `id="dan"`: akce po uložení přesměruje na
             `#dan` a kotva, která neexistuje, nechá stránku stát tam, kde je.
-            S kotvou by každá změna dole odrolovala zpátky nahoru. */}
-        <form action={saveProfileAction} className="space-y-14">
+            S kotvou by každá změna dole odrolovala zpátky nahoru.
+            `autoComplete="off"` u formuláře s auto-save: prohlížeč pak do polí
+            po F5 nebo návratu v historii nevrací hodnoty z doby před načtením
+            (Firefox to dělá i u nabídek a přepínačů) — viz `AutoSubmit`. */}
+        <form
+          action={saveProfileAction}
+          autoComplete={profile ? 'off' : undefined}
+          className="space-y-14"
+        >
           {taxProfile}
           {profile ? (
             <>
