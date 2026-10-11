@@ -48,8 +48,11 @@ const tagOf = (element: FocusableState): string => element.tagName.toLowerCase()
 const isGroupMember = (element: FocusableState): boolean =>
   tagOf(element) === 'input' && /^(checkbox|radio)$/i.test(element.type ?? '');
 
-/** Typy `<input>`, do kterých se píše — jen u nich má smysl nést rozepsaný text. */
-const TEXT_INPUT_TYPES = new Set(['text', 'search', 'tel', 'url', 'email', 'number', 'password']);
+/**
+ * Typy `<input>`, do kterých se píše — jen u nich má smysl nést rozepsaný text.
+ * Heslo mezi nimi schválně není: rozepsané heslo se nikam neodkládá.
+ */
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'tel', 'url', 'email', 'number']);
 
 const isTextEntry = (element: FocusableState): boolean =>
   tagOf(element) === 'textarea' ||

@@ -122,6 +122,11 @@ describe('rozepsaný text', () => {
     });
   });
 
+  it('rozepsané heslo se nepředává', () => {
+    const password = { ...text('heslo', 'tajne', ''), type: 'password' };
+    expect(describeFocus(password, [password]).draft).toBeNull();
+  });
+
   it('hodnota nabídky ani přepínače se nepředává nikdy — ta je vždy ze serveru', () => {
     const changedSelect = { ...select('frekvence'), value: 'B', defaultValue: 'A' };
     const changedToggle = { ...toggle('nalehave'), defaultValue: 'off' };
