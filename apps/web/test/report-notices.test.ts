@@ -344,9 +344,14 @@ describe('sekce exportu se tiskne jako sdělení, formulář ne (R5-12)', () => 
 
   it('v roce bez XML se sdělení tiskne taky', () => {
     const year = Math.min(...EPO_SUPPORTED_YEARS) - 1;
+    // rok bez jediné transakce by sekci exportu vůbec neměl (prázdný stav,
+    // R2-14) — proto v něm fixtura dostává nákup
+    const buyInYear = parseTransactions([
+      { type: 'BUY', id: 'b-rok', isin: 'XX0000000033', ticker: 'TRI', quantity: '1', pricePerShare: '100', currency: 'CZK', tradeDate: `${year}-05-05`, settlementDate: `${year}-05-07` },
+    ]);
     const html = renderToStaticMarkup(
       createElement(ReportView, {
-        txs: portfolio(100),
+        txs: [...portfolio(100), ...buyInYear],
         profile: PROFILE,
         year,
         years: [year],
