@@ -1,7 +1,28 @@
 /**
+ * Číslo z pole simulátoru (kusy, cena) do tvaru pro `Decimal`: bez mezer
+ * a s desetinnou tečkou.
+ *
+ * Aplikace sama píše čísla česky — tisíce odděluje pevnou mezerou
+ * („1 234,56“), některé prohlížeče úzkou pevnou. Do 11. 10. 2026 se převáděla
+ * jen čárka, takže číslo zkopírované z portfolia do pole „Cena za kus“ skončilo
+ * hláškou „Zadej cenu za kus — kladné číslo“. `\s` pokrývá obyčejnou, pevnou
+ * (U+00A0), úzkou pevnou (U+202F) i tenkou mezeru (U+2009).
+ *
+ * Nic se tu nehádá: tečka zůstává desetinnou tečkou (tisíce tečkou aplikace
+ * nepíše) a jednotky ani měnu funkce neodřezává — co po úpravě není číslo,
+ * odmítne kontrola tvaru u pole.
+ */
+export const normalizeNumberInput = (raw: string): string =>
+  raw.replace(/\s/g, '').replace(',', '.');
+
+/**
  * Klíč zadání simulátoru (pozice, kusy, cena). Server jím označí výsledek,
  * který spočítal, formulář zadání, které právě odeslal — dokud se neshodují,
  * výsledek na obrazovce k formuláři ještě nepatří a zobrazí se zešedlý.
+ *
+ * Klíč nese zadání TAK, JAK HO UŽIVATEL NAPSAL (jen bez okrajových mezer) —
+ * normalizuje se až pro výpočet. Kdyby jedna strana číslo normalizovala
+ * a druhá ne, klíče by se nesešly a výsledek by zůstal zešedlý.
  *
  * Sdílí ho serverová i klientská komponenta, proto bydlí mimo obě.
  */
