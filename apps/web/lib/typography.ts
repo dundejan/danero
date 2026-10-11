@@ -85,8 +85,10 @@ export function Tidy({ children }: { children: string }): string {
 export function plainTitle(title: string): string {
   return title
     .replace(/\p{Extended_Pictographic}️?/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    // Slévají se jen obyčejné mezery a konce řádků. `\s` bere i pevnou mezeru,
+    // kterou do částky píše `czk()` — titulek se pak lámal uprostřed čísla.
+    .replace(/[ \t\r\n]+/g, ' ')
+    .replace(/^ | $/g, '');
 }
 
 /**

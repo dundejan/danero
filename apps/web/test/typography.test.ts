@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { d } from '@danero/shared';
+import { czk } from '@/lib/format';
 import { plainTitle, tidy, withoutLawRefs } from '@/lib/typography';
 
 const NBSP = ' ';
@@ -65,6 +67,15 @@ describe('plainTitle: titulek upozornění bez obrázkového znaku', () => {
     expect(plainTitle('Prolomen limit 50 000 Kč pro paušální daň')).toBe(
       'Prolomen limit 50 000 Kč pro paušální daň',
     );
+  });
+
+  it('pevné mezery v částce zůstávají — jinak se částka v titulku zalomí', () => {
+    // Do 11. 10. 2026 titulek sléval každou „mezeru“ včetně pevné na obyčejnou
+    // a v seznamu upozornění se částka lámala uprostřed: „(100 / 000 Kč)“.
+    const title = `Skoro vyčerpáno: osvobození prodejů cenných papírů (${czk(d('100000'))})`;
+    expect(title).toContain('100\u00a0000\u00a0Kč');
+    expect(plainTitle(title)).toBe(title);
+    expect(plainTitle(`CRM:  osvobozeno \n ${czk(d('1500'))}`)).toBe('CRM: osvobozeno 1\u00a0500\u00a0Kč');
   });
 });
 
