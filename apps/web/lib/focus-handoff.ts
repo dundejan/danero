@@ -54,19 +54,23 @@ const isGroupMember = (element: FocusableState): boolean =>
  */
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'tel', 'url', 'email', 'number']);
 
-const isTextEntry = (element: FocusableState): boolean =>
+/** Pole, do kterého se píše (a jehož změnu prohlížeč ohlásí až s opuštěním pole). */
+export const isTextEntry = (element: FocusableState): boolean =>
   tagOf(element) === 'textarea' ||
   (tagOf(element) === 'input' && TEXT_INPUT_TYPES.has((element.type ?? 'text').toLowerCase()));
 
-/** Popis prvku s fokusem; `focusables` jsou všechny prvky formuláře, které fokus přijmou. */
+/**
+ * Popis prvku s fokusem; `focusables` jsou všechny prvky formuláře, které fokus
+ * přijmou. `confirmedValue` je hodnota, kterou pole už odeslalo k uložení —
+ * rozepsaný je jen text, který se liší od ní (výchozí je hodnota ze serveru).
+ */
 export function describeFocus<Element extends FocusableState>(
   element: Element,
   focusables: readonly Element[],
+  confirmedValue: string = element.defaultValue ?? '',
 ): FocusDescriptor {
   const editing =
-    isTextEntry(element) &&
-    typeof element.value === 'string' &&
-    element.value !== (element.defaultValue ?? '');
+    isTextEntry(element) && typeof element.value === 'string' && element.value !== confirmedValue;
   return {
     tagName: tagOf(element),
     id: element.id ?? '',

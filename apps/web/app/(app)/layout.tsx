@@ -1,3 +1,4 @@
+import { AutoSaveFeedback } from '@/components/auto-save-feedback';
 import { NavRail, NavTabBar } from '@/components/nav-rail';
 import { RefreshOnRestore } from '@/components/refresh-on-restore';
 import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
@@ -57,6 +58,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </footer>
       </div>
       <NavTabBar userEmail={user.email} />
+      {/* Potvrzení a chyby automatického ukládání. Až za obsahem: hláška plave,
+          ale její křížek nesmí v pořadí fokusu předběhnout odkaz „Přeskočit
+          na obsah“. */}
+      <AutoSaveFeedback />
     </div>
   );
 }

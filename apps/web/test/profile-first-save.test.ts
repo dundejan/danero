@@ -88,7 +88,7 @@ describe('kam vede uložení daňového profilu', () => {
     const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
     state.userId = 'u-novy';
     expect(await redirectTarget(() => saveProfileAction(profileForm()))).toBe(
-      '/nastaveni?ok=profil#dan',
+      '/nastaveni?ok=profil',
     );
   });
 
@@ -120,10 +120,10 @@ describe('pravidlo cíle bez databáze', () => {
     expect(afterProfileSaveUrl({ firstSave: true, hasData: false })).toBe('/import?ulozeno=profil');
     expect(afterProfileSaveUrl({ firstSave: true, hasData: true })).toBe('/prehled');
     expect(afterProfileSaveUrl({ firstSave: false, hasData: false })).toBe(
-      '/nastaveni?ok=profil#dan',
+      '/nastaveni?ok=profil',
     );
     expect(afterProfileSaveUrl({ firstSave: false, hasData: true })).toBe(
-      '/nastaveni?ok=profil#dan',
+      '/nastaveni?ok=profil',
     );
   });
 });

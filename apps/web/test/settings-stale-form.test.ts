@@ -36,18 +36,6 @@ vi.mock('@/lib/session', () => ({
   }),
 }));
 
-/** Cíl přesměrování, kterým akce skončila. */
-async function redirectTarget(run: () => Promise<void>): Promise<string> {
-  try {
-    await run();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith('REDIRECT:')) return message.slice('REDIRECT:'.length);
-    throw error;
-  }
-  throw new Error('server action neskončila přesměrováním');
-}
-
 type Entries = Array<[string, string]>;
 
 /**
@@ -79,9 +67,9 @@ describe('daňový profil: zastaralý panel', () => {
     const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
     return profileFormEntries(await profile());
   }
-  async function save(form: FormData): Promise<string> {
-    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
-    return redirectTarget(() => saveProfileAction(form));
+  async function save(form: FormData): Promise<boolean> {
+    const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    return (await autoSaveProfileAction(form)).ok;
   }
 
   beforeAll(async () => {
@@ -106,7 +94,7 @@ describe('daňový profil: zastaralý panel', () => {
     expect((await profile()).matchingMethod).toBe('LIFO');
 
     // panel 2 pořád ukazuje FIFO a mění kurzy
-    expect(await save(submittedForm(stale, { kurzy: 'CNB_DAILY' }))).toBe('/nastaveni?ok=profil#dan');
+    expect(await save(submittedForm(stale, { kurzy: 'CNB_DAILY' }))).toBe(true);
     const after = await profile();
     expect(after.fxMethod).toBe('CNB_DAILY');
     expect(after.matchingMethod).toBe('LIFO');
@@ -160,7 +148,7 @@ describe('daňový profil: zastaralý panel', () => {
     const before = await countChanges();
 
     // tlačítko Uložit bez JavaScriptu v panelu, kde se nic nezměnilo
-    expect(await save(submittedForm(stale, {}))).toBe('/nastaveni?ok=profil#dan');
+    expect(await save(submittedForm(stale, {}))).toBe(true);
     expect((await profile()).matchingMethod).toBe('MAX_PROFIT');
     expect(await countChanges()).toBe(before);
   });
@@ -207,9 +195,9 @@ describe('upozornění: zastaralý panel', () => {
     const { notificationFormEntries } = await import('@/app/(app)/nastaveni/form-state');
     return notificationFormEntries(await prefs());
   }
-  async function save(form: FormData): Promise<string> {
-    const { saveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
-    return redirectTarget(() => saveNotificationPrefsAction(form));
+  async function save(form: FormData): Promise<boolean> {
+    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
+    return (await autoSaveNotificationPrefsAction(form)).ok;
   }
 
   it(
@@ -221,9 +209,7 @@ describe('upozornění: zastaralý panel', () => {
       await save(submittedForm(stale, { 'frekvence-emailu': 'WEEKLY' }));
       expect((await prefs()).emailFrequency).toBe('WEEKLY');
 
-      expect(await save(submittedForm(stale, { 'nalehave-hned': null }))).toBe(
-        '/nastaveni/upozorneni?ok=notifikace',
-      );
+      expect(await save(submittedForm(stale, { 'nalehave-hned': null }))).toBe(true);
       const after = await prefs();
       expect(after.urgentImmediately).toBe(false);
       expect(after.emailFrequency).toBe('WEEKLY');
