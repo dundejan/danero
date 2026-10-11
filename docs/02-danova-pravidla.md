@@ -223,7 +223,11 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   Konfigurace se zafixuje ve chvíli, kdy si uživatel za daný
   rok skutečně vygeneruje podklady k přiznání — otevře report za ten rok nebo
   stáhne XML pro EPO. Fixuje se **jen už skončený rok**: za běžící rok přiznání
-  podat nelze, takže jeho konfigurace zůstává volná a sleduje profil. Fixace je
+  podat nelze, takže jeho konfigurace zůstává volná a sleduje profil. Report,
+  který místo podkladů ukáže jen prázdný stav (rok bez transakce, pro který
+  nemá nic ani výpočet), **nefixuje** — podklad nevznikl a fixace by se
+  v Nastavení objevila u roku, za který uživatel nic nemá (do 11. 10. 2026
+  fixovalo pouhé otevření adresy). Fixace je
   idempotentní — jednou zapsané hodnoty se nikdy nepřepisují, ani při dalším
   generování podkladů. Od té chvíle se ten rok počítá zafixovanou konfigurací
   ve **všech** pohledech (přehled, portfolio, simulátor, report, XML i

@@ -1,5 +1,9 @@
 import { redirect } from 'next/navigation';
-import { ReportView } from '@/components/views/report-view';
+import {
+  emptyYearFallback,
+  engineHasNothingFor,
+  ReportView,
+} from '@/components/views/report-view';
 import { reportDataCached } from '@/lib/engine-cache';
 import { EngineErrorCard, engineErrorMessage } from '@/lib/fx-error';
 import { currentTaxYear, now, today as todayInPrague } from '@/lib/clock';
@@ -49,11 +53,16 @@ export default async function ReportPage({
   // R-05c: podklady za skončený rok fixují párování, kurzovou soustavu i výklad
   // limitu 100k — od téhle chvíle se rok počítá jimi, i když si uživatel
   // v nastavení vybere jiné (zákon chce konzistenci a čísla v podaném přiznání
-  // se nesmí zpětně změnit)
-  const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
-  const justPinned =
-    profile.pinnedTaxYears?.[year] === undefined &&
-    pinnedProfile.pinnedTaxYears?.[year] !== undefined;
+  // se nesmí zpětně změnit).
+  // Fixuje podklad, ne otevření adresy: rok bez transakce, pro který nemá nic
+  // ani engine, ukáže jen prázdný stav a fixovat tam není co — přepínač roků
+  // takové roky nabízí a v Nastavení pak přibývaly „Zafixované roky“, za které
+  // uživatel nic nemá. Jestli podklad vznikne, ví u takového roku až výsledek
+  // enginu (prodej vypořádaný po Novém roce, příjmy z profilu) — viz níž.
+  const hasTransactionsInYear = !emptyYearFallback(txs, year).empty;
+  let pinnedProfile = hasTransactionsInYear
+    ? await pinTaxYear(db, profile, year, currentYear)
+    : profile;
 
   // denní kurzy ČNB (R-06b): s nimi srovnání variant zahrnuje jednotný × denní
   const dailyRates = await loadDailyRates(db, txs, currentYear);
@@ -70,6 +79,14 @@ export default async function ReportPage({
     if (!message) throw error;
     return <EngineErrorCard message={message} />;
   }
+  if (!hasTransactionsInYear && !engineHasNothingFor(precomputed.result)) {
+    // fixace čísla nemění (fixuje se právě to, čím se teď počítalo), takže
+    // výsledek spočítaný před ní platí dál
+    pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
+  }
+  const justPinned =
+    profile.pinnedTaxYears?.[year] === undefined &&
+    pinnedProfile.pinnedTaxYears?.[year] !== undefined;
 
   return (
     <ReportView
