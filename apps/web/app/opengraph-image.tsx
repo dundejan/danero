@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ImageResponse } from 'next/og';
 import { SITE_NAME, SITE_TAGLINE, SITE_TAGLINE_HOW, SITE_TITLE, SITE_URL } from '@/lib/site';
 
@@ -24,6 +26,45 @@ const INK = '#1d1d1f';
 const INK_MUTED = '#6e6e73';
 const ACCENT = '#0071e3';
 
+/**
+ * Písmo obrázku: Inter Display (SIL OFL 1.1, licence v `assets/og/OFL.txt`).
+ *
+ * Web sám žádné písmo nestahuje (je systémové) — tohle slouží JEN obrázku pro
+ * sdílení, který se kreslí na serveru a systémové písmo nevidí. Písmo, které
+ * má `next/og` v sobě, nemá českou diakritiku: „č“ a „ě“ se braly z náhradního
+ * písma a mezery mezi slovy vycházely každá jinak (24–37 px, nález z revize
+ * redesignu). Náhradní písmo si navíc knihovna stahovala za běhu ze sítě.
+ *
+ * Soubory jsou podmnožina (latinka + Latin-1 + Latin Extended-A, cca 38 kB
+ * každý) statických řezů z vydání Inter 4.1, bez hintingu:
+ *
+ *   pyftsubset InterDisplay-SemiBold.ttf --no-hinting --desubroutinize \
+ *     --unicodes="U+0020-007E,U+00A0-00FF,U+0100-017F,U+2010-2015,U+2018-201E,U+2026,U+2030,U+2032,U+2033,U+2039,U+203A,U+20AC,U+2212" \
+ *     --layout-features="kern,locl,ccmp,mark,mkmk"
+ *
+ * Musí to být statické TTF/OTF/WOFF: satori neumí WOFF2 ani variabilní písmo.
+ * Čte se jednou při načtení modulu, ne při každém požadavku; cestu složenou
+ * od `process.cwd()` umí trasování souborů Nextu dohledat a přibalit k funkci
+ * i do samostatného buildu pro Docker. Formát, velikost, českou abecedu a to,
+ * že vykreslení nesahá na síť, hlídá `test/seo-metadata.test.ts`.
+ */
+const FONT_FAMILY = 'Inter Display';
+const FONT_DIR = join(process.cwd(), 'assets', 'og');
+const FONTS = [
+  {
+    name: FONT_FAMILY,
+    data: await readFile(join(FONT_DIR, 'InterDisplay-Regular.ttf')),
+    weight: 400 as const,
+    style: 'normal' as const,
+  },
+  {
+    name: FONT_FAMILY,
+    data: await readFile(join(FONT_DIR, 'InterDisplay-SemiBold.ttf')),
+    weight: 600 as const,
+    style: 'normal' as const,
+  },
+];
+
 export default function OpengraphImage() {
   return new ImageResponse(
     <div
@@ -36,6 +77,7 @@ export default function OpengraphImage() {
         backgroundColor: BACKGROUND,
         color: INK,
         padding: '72px 80px',
+        fontFamily: FONT_FAMILY,
       }}
     >
       {/* značka: akcentní tečka (nákup) + linie dneška = „d“, stejná geometrie jako components/logo.tsx */}
@@ -52,7 +94,7 @@ export default function OpengraphImage() {
             }}
           />
         </div>
-        <div style={{ marginLeft: 24, fontSize: 56, fontWeight: 700, letterSpacing: '-0.02em' }}>
+        <div style={{ marginLeft: 24, fontSize: 56, fontWeight: 600, letterSpacing: '-0.02em' }}>
           {SITE_NAME}
         </div>
       </div>
@@ -63,10 +105,10 @@ export default function OpengraphImage() {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          fontSize: 70,
-          lineHeight: 1.15,
-          // bez záporného prostrkání: satori ho nerozloží rovnoměrně a mezery
-          // mezi slovy pak vyjdou každá jinak
+          fontSize: 72,
+          lineHeight: 1.12,
+          fontWeight: 600,
+          letterSpacing: '-0.025em',
         }}
       >
         <div>{SITE_TAGLINE}</div>
@@ -78,6 +120,6 @@ export default function OpengraphImage() {
         <div style={{ marginLeft: 20 }}>{new URL(SITE_URL).host}</div>
       </div>
     </div>,
-    size,
+    { ...size, fonts: FONTS },
   );
 }

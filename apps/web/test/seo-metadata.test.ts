@@ -135,6 +135,92 @@ describe('náhledový obrázek (K8-04)', () => {
   });
 });
 
+/**
+ * Písmo obrázku pro sdílení. Písmo, které má `next/og` v sobě, nemá „č“ ani
+ * „ě“: knihovna si je za běhu stahovala ze sítě z jiného písma a mezery mezi
+ * slovy vycházely nestejně („Bezpečně␣a“ 29 px, „a␣zdarma“ 21 px). Od
+ * 11. 10. 2026 je u obrázku přibalená podmnožina Interu s plnou češtinou.
+ */
+describe('písmo náhledového obrázku', () => {
+  const FONT_DIR = join(APP_DIR, '..', 'assets', 'og');
+  const fontFiles = (): string[] =>
+    readdirSync(FONT_DIR).filter((name) => /\.(ttf|otf|woff2?)$/i.test(name));
+
+  /** Znaky, které písmo umí — z tabulky `cmap` (formát 4, základní rovina Unicode). */
+  function supportedCodePoints(font: Buffer): Set<number> {
+    const tableCount = font.readUInt16BE(4);
+    let cmap = -1;
+    for (let index = 0; index < tableCount; index++) {
+      const record = 12 + index * 16;
+      if (font.toString('latin1', record, record + 4) === 'cmap') cmap = font.readUInt32BE(record + 8);
+    }
+    expect(cmap, 'písmo nemá tabulku cmap').toBeGreaterThan(0);
+    const points = new Set<number>();
+    for (let index = 0; index < font.readUInt16BE(cmap + 2); index++) {
+      const subtable = cmap + font.readUInt32BE(cmap + 4 + index * 8 + 4);
+      if (font.readUInt16BE(subtable) !== 4) continue;
+      const segments = font.readUInt16BE(subtable + 6) / 2;
+      const ends = subtable + 14;
+      const starts = ends + segments * 2 + 2;
+      for (let segment = 0; segment < segments; segment++) {
+        const end = font.readUInt16BE(ends + segment * 2);
+        const start = font.readUInt16BE(starts + segment * 2);
+        for (let point = start; point <= end && point !== 0xffff; point++) points.add(point);
+      }
+    }
+    return points;
+  }
+
+  it('jsou to statické soubory, které satori přečte, a licence leží vedle nich', () => {
+    const files = fontFiles();
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of files) {
+      // TrueType 00 01 00 00, OpenType „OTTO“, WOFF „wOFF“ — WOFF2 („wOF2“) satori neumí
+      const magic = readFileSync(join(FONT_DIR, name)).subarray(0, 4).toString('hex');
+      expect(['00010000', '4f54544f', '774f4646'], name).toContain(magic);
+    }
+    const license = readFileSync(join(FONT_DIR, 'OFL.txt'), 'utf8');
+    expect(license).toContain('SIL OPEN FONT LICENSE Version 1.1');
+    expect(license).toContain('The Inter Project Authors');
+    // obrázek čte právě tyhle soubory a žádné jiné
+    const image = readFileSync(join(APP_DIR, 'opengraph-image.tsx'), 'utf8');
+    for (const name of files) expect(image, name).toContain(`'${name}'`);
+  });
+
+  it('jsou to podmnožiny, ne celé písmo — do repozitáře i do funkce jde pár desítek kB', () => {
+    const sizes = fontFiles().map((name) => statSync(join(FONT_DIR, name)).size);
+    for (const size of sizes) expect(size).toBeLessThan(60_000);
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThan(120_000);
+  });
+
+  it('každý řez umí celou českou abecedu i všechno, co na obrázku stojí', () => {
+    const czech = 'áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ';
+    const onImage = `${SITE_NAME}${SITE_TAGLINE}${SITE_TAGLINE_HOW}${new URL(SITE_URL).host}`;
+    for (const name of fontFiles()) {
+      const points = supportedCodePoints(readFileSync(join(FONT_DIR, name)));
+      const missing = [...new Set(`${czech}${onImage} „“–— `)].filter(
+        (char) => !points.has(char.codePointAt(0)!),
+      );
+      expect(missing, name).toEqual([]);
+    }
+  });
+
+  it('vykreslení nesahá na síť — žádné písmo se nedotahuje za běhu', async () => {
+    const calls: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
+      calls.push(String(input instanceof Request ? input.url : input));
+      return Promise.reject(new Error('síť je v testu vypnutá'));
+    }) as typeof fetch;
+    try {
+      await ogImage.default().arrayBuffer();
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(calls).toEqual([]);
+  }, 30_000);
+});
+
 describe('robots a sitemapa (K8-09)', () => {
   it('robots nepouští roboty na ověřovací odkaz z e-mailu', () => {
     const disallow = robots().rules;
@@ -177,7 +263,7 @@ describe('robots a sitemapa (K8-09)', () => {
       '/': '2026-10-10',
       '/platformy': '2026-10-10',
       '/bezpecnost': '2026-10-10',
-      '/cenik': '2026-10-10',
+      '/cenik': '2026-10-11', // výčet funkcí obyčejnými slovy, titulek „Proč je Danero zdarma“
       '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
       '/caste-otazky': '2026-10-10',
       '/jak-pocitame': '2026-10-10',
@@ -186,7 +272,7 @@ describe('robots a sitemapa (K8-09)', () => {
       '/pruvodce/limit-100-000-kc': '2026-10-10',
       '/pruvodce/pausalni-rezim-a-investice': '2026-10-10',
       '/o-projektu': '2026-10-10',
-      '/podminky': '2026-10-08', // podmínky 3.0
+      '/podminky': '2026-10-11', // čl. 3 jmenuje stránku „Proč zdarma“ (znění 3.0 beze změny)
       '/soukromi': '2026-10-08',
     };
     const byPath = new Map(
