@@ -71,6 +71,18 @@ describe('daňový profil: zastaralý panel', () => {
     const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
     return (await autoSaveProfileAction(form)).ok;
   }
+  /** První uložení tlačítkem — končí přesměrováním; vrací jeho cíl. */
+  async function saveFirst(form: FormData): Promise<string> {
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    try {
+      await saveProfileAction(form);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('REDIRECT:')) return message.slice('REDIRECT:'.length);
+      throw error;
+    }
+    throw new Error('první uložení neskončilo přesměrováním');
+  }
 
   beforeAll(async () => {
     const { createPgliteDb } = await vi.importActual<typeof import('@/db')>('@/db');
@@ -147,7 +159,7 @@ describe('daňový profil: zastaralý panel', () => {
       ).length;
     const before = await countChanges();
 
-    // tlačítko Uložit bez JavaScriptu v panelu, kde se nic nezměnilo
+    // odeslání z panelu, kde se nic nezměnilo (Enter před hydratací)
     expect(await save(submittedForm(stale, {}))).toBe(true);
     expect((await profile()).matchingMethod).toBe('MAX_PROFIT');
     expect(await countChanges()).toBe(before);
@@ -170,13 +182,15 @@ describe('daňový profil: zastaralý panel', () => {
       state.userId = 'u-novacek';
       const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
       const firstForm = profileFormEntries(null);
-      // panel 1 profil založí a upraví
-      expect(await save(submittedForm(firstForm, { rezim: 'ZAMESTNANEC' }))).toBe(
+      // panel 1 profil založí (tlačítkem) a upraví (auto-save)
+      expect(await saveFirst(submittedForm(firstForm, { rezim: 'ZAMESTNANEC' }))).toBe(
         '/import?ulozeno=profil',
       );
       await save(submittedForm(await rendered(), { kurzy: 'CNB_DAILY', 'limit-100k': 'lenient' }));
       // panel 2 pořád ukazuje formulář prvního uložení s předvolbami
-      await save(submittedForm(firstForm, { rezim: 'PAUSAL' }));
+      expect(await saveFirst(submittedForm(firstForm, { rezim: 'PAUSAL' }))).toBe(
+        '/nastaveni?ok=profil',
+      );
       const after = await profile();
       expect(after.regime).toBe('PAUSAL');
       expect(after.fxMethod).toBe('CNB_DAILY');

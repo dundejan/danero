@@ -122,6 +122,15 @@ describe('rozepsaný text', () => {
     });
   });
 
+  it('text, který pole už odeslalo k uložení, rozepsaný není', () => {
+    // „125“ odešlo a čeká na odpověď: nové vykreslení ho dostane ze serveru
+    const sent = text('prijmy', '125', '0');
+    expect(describeFocus(sent, [sent], '125').draft).toBeNull();
+    // člověk se mezitím vrátil k původní hodnotě — ta je teď rozepsaná
+    const back = text('prijmy', '0', '0');
+    expect(describeFocus(back, [back], '125').draft?.value).toBe('0');
+  });
+
   it('rozepsané heslo se nepředává', () => {
     const password = { ...text('heslo', 'tajne', ''), type: 'password' };
     expect(describeFocus(password, [password]).draft).toBeNull();

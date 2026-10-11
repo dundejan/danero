@@ -193,14 +193,14 @@ describe('formuláře s auto-save', () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tsx'))
       .map((entry) => join(entry.parentPath, entry.name));
 
-  it('každý formulář s <AutoSubmit /> zakazuje prohlížeči vracet do polí staré hodnoty', () => {
+  it('každý formulář s <AutoSubmit> zakazuje prohlížeči vracet do polí staré hodnoty', () => {
     // Bez `autoComplete="off"` Firefox po F5 vrátí do nabídek a přepínačů
-    // hodnoty z doby před načtením. `AutoSubmit` je sice neodešle, ale bez
-    // JavaScriptu by je odeslalo tlačítko Uložit — a do hydratace jsou vidět.
+    // hodnoty z doby před načtením. `AutoSubmit` je sice neodešle, ale do
+    // hydratace jsou vidět.
     const root = join(import.meta.dirname, '..');
     const withAutoSubmit = [...sources(join(root, 'app')), ...sources(join(root, 'components'))]
       .map((path) => ({ path, source: readFileSync(path, 'utf8') }))
-      .filter(({ source }) => source.includes('<AutoSubmit />'));
+      .filter(({ source }) => /<AutoSubmit\b/.test(source));
 
     expect(withAutoSubmit.length).toBeGreaterThan(0);
     for (const { path, source } of withAutoSubmit) {

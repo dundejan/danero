@@ -76,6 +76,14 @@ describe('změněná pole formuláře', () => {
     expect([...changedFields(form(RENDERED, { changed: '' }), NAMES)]).toEqual([]);
   });
 
+  it('změněných polí smí přijít víc — zapíšou se všechna', () => {
+    // dvě změny se sešly v jednom odeslání a obě se mezitím vrátily na původní hodnotu
+    const data = form(RENDERED);
+    data.append(CHANGED_FIELD, 'kurzy');
+    data.append(CHANGED_FIELD, 'majetek');
+    expect([...changedFields(data, NAMES)]).toEqual(['kurzy', 'majetek']);
+  });
+
   it('formulář bez výchozího stavu se bere celý', () => {
     expect([...changedFields(form(RENDERED, { baseline: null }), NAMES)]).toEqual([...NAMES]);
   });
