@@ -1,3 +1,4 @@
+import { DetailsOnce } from '@/components/ui/details-once';
 import { cn } from '@/lib/utils';
 
 /**
@@ -61,12 +62,13 @@ export function Disclosure({
  * nad titulkem („Chyba“, „Upozornění“) — barvu dodá volající třídou.
  *
  * `id` a ostatní atributy dostává `<details>`: řádek jde otevřít kotvou
- * (`OpenOnHash`) i atributem `open`.
+ * (`OpenOnHash`) i atributem `open`; `defaultOpen` ho otevře jen napoprvé.
  */
 export function DisclosureRow({
   title,
   eyebrow,
   meta,
+  defaultOpen,
   children,
   className,
   ...props
@@ -75,30 +77,43 @@ export function DisclosureRow({
   eyebrow?: React.ReactNode;
   /** Tichý údaj vpravo (datum, počet výskytů). */
   meta?: React.ReactNode;
+  /** DEFAULT_OPEN_DOC */
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const body = (
+    <>
+      {/* v tisku bez přesahu do okrajů — zvýraznění řádku tam nemá smysl
+          a přesah vyčníval z tiskové plochy */}
+      <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5 print:mx-0 print:px-0">
+        <span className="min-w-0 flex-1 wrap-anywhere">
+          {eyebrow}
+          <span className="type-callout block font-medium text-pretty">{title}</span>
+        </span>
+        {/* tichý údaj si bere nejvýš 40 % řádku: dlouhý se zalomí, místo aby
+            titulek složil po slově na řádek */}
+        {meta && (
+          <span className="type-caption max-w-[40%] min-w-0 shrink-0 text-right tabular-nums text-ink-muted wrap-anywhere">
+            {meta}
+          </span>
+        )}
+        <Chevron className="self-center text-ink-muted" />
+      </summary>
+      <div className="type-callout pb-3.5 pr-6 text-pretty text-ink-muted">{children}</div>
+    </>
+  );
   return (
     // `listitem` nese obal: <details> má vlastní roli a do seznamu sám nepatří
     <div role="listitem" className={className}>
-      <details className="disclosure" {...props}>
-        {/* v tisku bez přesahu do okrajů — zvýraznění řádku tam nemá smysl
-            a přesah vyčníval z tiskové plochy */}
-        <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-2.5 print:mx-0 print:px-0">
-          <span className="min-w-0 flex-1 wrap-anywhere">
-            {eyebrow}
-            <span className="type-callout block font-medium text-pretty">{title}</span>
-          </span>
-          {/* tichý údaj si bere nejvýš 40 % řádku: dlouhý se zalomí, místo aby
-              titulek složil po slově na řádek */}
-          {meta && (
-            <span className="type-caption max-w-[40%] min-w-0 shrink-0 text-right tabular-nums text-ink-muted wrap-anywhere">
-              {meta}
-            </span>
-          )}
-          <Chevron className="self-center text-ink-muted" />
-        </summary>
-        <div className="type-callout pb-3.5 pr-6 text-pretty text-ink-muted">{children}</div>
-      </details>
+      {defaultOpen === undefined ? (
+        <details className="disclosure" {...props}>
+          {body}
+        </details>
+      ) : (
+        <DetailsOnce className="disclosure" {...props} defaultOpen={defaultOpen}>
+          {body}
+        </DetailsOnce>
+      )}
     </div>
   );
 }
