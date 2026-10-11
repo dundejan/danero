@@ -62,7 +62,9 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
   await page.getByLabel('Poznámka (nepovinné)').fill('Stáhnuto přes Transakce → Export.');
   await page.getByRole('button', { name: 'Odeslat' }).click();
 
-  await expect(page.getByText(/Díky — máme to/)).toBeVisible();
+  // hlášku sází `typeset()`: před pomlčkou je pevná mezera, a regulární výraz
+  // (na rozdíl od řetězce) mezery nenormalizuje
+  await expect(page.getByText(/Díky\s— máme to/)).toBeVisible();
   await expect(page.getByText(/platforma: Portu/)).toBeVisible();
 
   const hlaseni = await waitForEmail(page, E2E_OPERATOR.email, (m) => m.text.includes('Portu'));
