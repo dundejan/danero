@@ -6,6 +6,7 @@ import {
   type StoredReconciliation,
 } from '@/lib/broker-sync';
 import { plural } from '@/lib/format';
+import { parseSyncFailure } from '@/lib/sync-failure';
 import { tidy } from '@/lib/typography';
 
 export interface AccountState {
@@ -28,6 +29,26 @@ type AccountFields = Pick<
 const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 const RETRY_HINT = 'Spusť ji znovu — co už se stáhlo, zůstává a nic se nezdvojí.';
+
+/**
+ * Co pod stavem „synchronizace selhala“ stojí: věta pro člověka a — když
+ * chyba nese i syrový text od brokera — ten až za rozbalením, ať ho jde
+ * poslat provozovateli (`lib/sync-failure.ts`). Věta s detailem už říká, co
+ * dělat (počkat, vyměnit klíč); starší záznam bez detailu dostane obecnou
+ * radu zkusit to znovu jako dřív.
+ */
+function failureNote(stored: string): Pick<AccountState, 'note' | 'details'> {
+  const { text, detail } = parseSyncFailure(stored);
+  if (detail === undefined) return { note: `${text} ${RETRY_HINT}` };
+  return {
+    note: text,
+    details: {
+      summary: 'Technický detail',
+      // syrový text bývá JSON nebo adresa bez mezer — smí se zlomit kdekoli
+      body: <p className="whitespace-pre-wrap wrap-anywhere">{detail}</p>,
+    },
+  };
+}
 
 const instruments = (count: number): string =>
   `${count} ${plural(count, 'instrument', 'instrumenty', 'instrumentů')}`;
@@ -120,7 +141,7 @@ export function accountStates(
       key: 'sync',
       tone: 'danger',
       text: 'Poslední synchronizace selhala',
-      note: `${account.lastSyncError} ${RETRY_HINT}`,
+      ...failureNote(account.lastSyncError),
     };
     // kontrola, která sama skončila chybou, by řekla totéž podruhé
     if (!reconciliation || reconciliation.error) return [failure];
@@ -148,7 +169,7 @@ export function accountStates(
         key: 'sync',
         tone: 'danger',
         text: 'Synchronizace selhala',
-        note: `${reconciliation.error} ${RETRY_HINT}`,
+        ...failureNote(reconciliation.error),
       },
     ];
   }
