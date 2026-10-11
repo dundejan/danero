@@ -101,7 +101,7 @@ export default function TermsPage() {
           omezení a bez platební karty. Placená verze neexistuje. Co všechno služba
           umí, popisuje stránka{' '}
           <Link href="/cenik">
-            Ceník
+            Proč zdarma
           </Link>
           .
         </p>

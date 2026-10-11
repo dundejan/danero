@@ -292,7 +292,7 @@ describe('kalkulačka v roce změny limitů § 38g (A20-R1-02, R-09a, R-09b)', (
     // kdyby komponenta přibrala další stav, fronta by se rozešla s pořadím
     expect(seededState.queue).toEqual([]);
     // sazba (`tidy`) v textu vymění obyčejné mezery za pevné — tady jde o znění
-    return html.replace(/<[^>]+>/g, ' ').replaceAll('\u00a0', ' ').replaceAll('\u2011', '-');
+    return html.replace(/<[^>]+>/g, ' ').replaceAll('\u00a0', ' ');
   };
 
   const employeeNote = `Limit ${current.employee} platí pro příjmy za rok 2027 — za rok 2026 to bylo ještě ${previous.employee}.`;

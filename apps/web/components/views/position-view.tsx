@@ -261,13 +261,22 @@ export function PositionView({
                 <Stat label="Držíš" value={`${qty(position.totalRemaining)} ks`} />
               )}
               {valuation.unrealized && (
+                // Hodnota vedle je v korunách, zisk v měně titulu (R1B-30) —
+                // hlavní číslo je proto procento, které měnu nemá, a částka
+                // stojí pod ním s kódem měny. Na koruny se nepřepočítává:
+                // jedním kurzem by vyšlo číslo, které vypadá jako základ daně
+                // a není jím (výdaj se daní kurzem roku nákupu, R-06).
                 <Stat
                   label="Zisk/ztráta"
                   tone={valuation.unrealized.gte(0) ? 'success' : 'danger'}
-                  value={money(valuation.unrealized, valuation.currency!, true)}
+                  value={
+                    valuation.unrealizedPct !== undefined
+                      ? signedPct(valuation.unrealizedPct, 1)
+                      : money(valuation.unrealized, valuation.currency!, true)
+                  }
                   note={
                     valuation.unrealizedPct !== undefined
-                      ? `${signedPct(valuation.unrealizedPct, 1)} · před zdaněním`
+                      ? `${money(valuation.unrealized, valuation.currency!, true)} · před zdaněním`
                       : 'před zdaněním'
                   }
                   info={
@@ -277,6 +286,13 @@ export function PositionView({
                           'Rozdíl dnešní hodnoty a nabývací ceny — kolik bys vydělal nebo prodělal prodejem teď, před zdaněním.',
                         )}
                       </p>
+                      {valuation.currency !== 'CZK' && (
+                        <p>
+                          {tidy(
+                            `Počítá se v měně titulu (${valuation.currency}), takže v něm není pohyb kurzu koruny. Kolik z prodeje zdaníš, spočítá simulátor.`,
+                          )}
+                        </p>
+                      )}
                     </InfoPopover>
                   }
                 />

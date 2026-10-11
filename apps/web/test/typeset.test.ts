@@ -23,9 +23,10 @@ vi.mock('@/components/marketing-page', () => ({
 
 const NBSP = '\u00a0';
 const NB_HYPHEN = '\u2011';
+const WORD_JOINER = '\u2060';
 
-/** Zpátky na obyčejné mezery a spojovníky — tak se pozná, že se nezměnilo nic jiného. */
-const plain = (text: string): string => text.replaceAll(NBSP, ' ').replaceAll(NB_HYPHEN, '-');
+/** Zpátky na obyčejné mezery — tak se pozná, že se nezměnilo nic jiného. */
+const plain = (text: string): string => text.replaceAll(NBSP, ' ');
 
 const html = (node: ReactNode): string =>
   renderToStaticMarkup(createElement('div', null, typeset(node))).replace(/^<div>|<\/div>$/g, '');
@@ -81,10 +82,42 @@ describe('tidy: pravidla, která přibyla s dlouhými texty', () => {
     'Kryptoaktiva: od 15. 2. 2025 vlastní pravidla — a ne jen pro bitcoin.',
     'Dozvíš se to e-mailem nejméně 30 dní předem (čl. 6 odst. 1 písm. b GDPR).',
     'USA, Německo či Japonsko 15 %, Nizozemsko jen 10 %; strop 40 mil. Kč trvá.',
-  ])('mění jen druh mezer a spojovník: %s', (text) => {
+  ])('mění jen druh mezer: %s', (text) => {
     const set = tidy(text);
     expect(set).not.toBe(text);
     expect(plain(set)).toBe(text);
+  });
+
+  /**
+   * Do 11. 10. 2026 dávala sazba do „e-mail“ nezlomitelný spojovník (U+2011).
+   * Vypadá stejně, ale je to jiný znak: hledání v prohlížeči (Ctrl+F „e-mail“)
+   * takový výskyt nenašlo a zkopírovaná věta ho nesla dál.
+   */
+  it('„e-mail“ nechává s obyčejným spojovníkem — jde najít i zkopírovat', () => {
+    for (const text of [
+      'při 100 % ti přijde e-mail',
+      'E-mailová upozornění na limity a termíny',
+      'dozvíš se to e-mailem nejméně 30 dní předem',
+      'adresa e-mailu a e-maily z Danera',
+    ]) {
+      const set = tidy(text);
+      expect(set).toMatch(/e-mail/i);
+      expect(set).not.toContain(NB_HYPHEN);
+      expect(plain(set)).toBe(text);
+    }
+  });
+
+  it('nepřidává žádný jiný znak než pevnou mezeru', () => {
+    // všechno, co pravidla umí, v jedné větě — a k tomu znaky, na které sahat nesmí
+    const text =
+      'Od 15. 2. 2025 platí podle § 4 odst. 1 písm. w limit 100 000 Kč (tj. 40 mil. Kč u krypta) — a 85 % z toho tzv. hlídáme: e-mail, T-Mobile, 1–2 dny, „v klidu“.';
+    const set = tidy(text);
+    const added = [...set].filter((char, index) => char !== [...text][index]);
+    expect(new Set(added)).toEqual(new Set([NBSP]));
+    expect(set).toHaveLength(text.length);
+    for (const char of [NB_HYPHEN, WORD_JOINER, ' ', ' ', '​', '­']) {
+      expect(set).not.toContain(char);
+    }
   });
 });
 
@@ -118,8 +151,7 @@ describe('typeset: strom Reactu', () => {
   });
 
   it('kontakt a kód nechává znak po znaku', () => {
-    // adresa se slovem „e-mail“ by jinak dostala nezlomitelný spojovník a po
-    // zkopírování by nefungovala
+    // do adresy ani do kódu sazba nesahá — pevná mezera by po zkopírování vadila
     const address = 'e-mail@priklad.test';
     const node = [
       'Piš e-mailem na ',
@@ -129,9 +161,32 @@ describe('typeset: strom Reactu', () => {
       '.',
     ];
     const rendered = html(node);
-    expect(rendered).toContain(`Piš e${NB_HYPHEN}mailem na `);
+    expect(rendered).toContain('Piš <span class="whitespace-nowrap">e-mailem</span> na ');
     expect(rendered).toContain(`>${address}</a>`);
     expect(rendered).toContain('<code>a b 1 000</code>');
+  });
+
+  it('„e-mail“ drží pohromadě stylem a text zůstává obyčejný', () => {
+    // řetězec i odstavec s prvky; skloňované tvary a velké písmeno na začátku věty
+    expect(html('E-mail pošle při 60 % limitu.')).toBe(
+      `<span class="whitespace-nowrap">E-mail</span> pošle při 60${NBSP}% limitu.`,
+    );
+    const node = createElement(
+      'p',
+      null,
+      'Změny oznámíme e-mailem; ',
+      createElement('strong', null, 'e-mailová adresa'),
+      ' stačí.',
+    );
+    const rendered = html(node);
+    expect(rendered).toBe(
+      '<p>Změny oznámíme <span class="whitespace-nowrap">e-mailem</span>; <strong><span class="whitespace-nowrap">e-mailová</span> adresa</strong> stačí.</p>',
+    );
+    // po odstranění značek je to původní věta — najde ji hledání i kopírování
+    expect(rendered.replace(/<[^>]+>/g, '')).toBe('Změny oznámíme e-mailem; e-mailová adresa stačí.');
+    expect(rendered).not.toContain(NB_HYPHEN);
+    // text bez „e-mailu“ žádný obal nedostane
+    expect(html('Limit 100 000 Kč')).toBe(`Limit 100${NBSP}000${NBSP}Kč`);
   });
 
   it('prázdné hodnoty a prvky bez potomků vrací beze změny', () => {
@@ -144,7 +199,7 @@ describe('typeset: strom Reactu', () => {
 });
 
 /**
- * Právní texty: sazba smí změnit jen druh mezer (a spojovník v „e-mail“).
+ * Právní texty: sazba smí změnit jen druh mezer.
  * Stránka se vykreslí dvakrát — se sazbou a s vypnutou — a po převodu zpět
  * na obyčejné znaky musí vyjít tentýž text. Kdyby kdokoli přidal do
  * `tidy()` pravidlo, které přepíše slovo, číslo nebo interpunkci
@@ -191,11 +246,13 @@ describe('/podminky a /soukromi: sazba nemění znění', () => {
       const set = await renderPage(page, true);
 
       // bez sazby stránka žádnou pevnou mezeru nenese — jinak by test nic neměřil
-      expect(raw).not.toContain(NB_HYPHEN);
+      expect(raw).not.toContain(NBSP);
       // sazba se opravdu zapojila…
       expect(set.split(NBSP).length - 1).toBeGreaterThan(50);
-      expect(set).toContain(`e${NB_HYPHEN}mail`);
-      // …a nezměnila nic než mezery a spojovník
+      expect(set).toContain('e-mail');
+      expect(set).not.toContain(NB_HYPHEN);
+      expect(set).not.toContain(WORD_JOINER);
+      // …a nezměnila nic než mezery: spojovník v „e-mail“ zůstal obyčejný
       expect(plain(set)).toBe(plain(raw));
     },
   );

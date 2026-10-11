@@ -101,15 +101,17 @@ test('portfolio: přehled grafů → pozice → detail s nákupy (+ screenshoty)
     'href',
     '/import',
   );
-  // bez cen se kusy různých titulů sčítat nedají: místo podílu portfolia stojí
-  // počet pozic a výhrada, a křivka osvobozování se nekreslí vůbec (s cenami
-  // ji hlídá demo.spec.ts)
+  // bez cen se kusy různých titulů sčítat nedají: místo částky a podílu
+  // portfolia stojí počet pozic, a křivka osvobozování se nekreslí vůbec
+  // (s cenami ji hlídá demo.spec.ts). Proč částka chybí, říká sdělení
+  // „Hodnotu zatím neznáme“ hned pod čísly — poznámka u čísla to neopakuje.
   const exemptToday = page
     .getByRole('term')
     .filter({ hasText: 'Bez daně už dnes' })
     .locator('xpath=..');
   await expect(exemptToday.getByRole('definition').first()).toHaveText('0 z 7 pozic');
-  await expect(exemptToday).toContainText('podíl bez cen neznáme');
+  await expect(exemptToday).not.toContainText('Kč');
+  await expect(exemptToday).not.toContainText('%');
   await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toHaveCount(0);
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
   // Grafy nejsou schované v tabu — jsou vidět bez kliku.

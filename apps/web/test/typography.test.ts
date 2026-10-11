@@ -22,7 +22,7 @@ describe('tidy: jednopísmenné předložky, částky a paragrafy se nelámou', 
       `Osvobození krypta${NBSP}— 100${NBSP}000${NBSP}Kč`,
     );
     expect(tidy('při 60, 85 a 100 % ti přijde e-mail')).toBe(
-      `při 60, 85 a${NBSP}100${NBSP}% ti přijde e‑mail`,
+      `při 60, 85 a${NBSP}100${NBSP}% ti přijde e-mail`,
     );
     expect(tidy('po 3 let držení, 15 ks')).toBe(`po 3${NBSP}let držení, 15${NBSP}ks`);
   });

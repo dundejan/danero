@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { groupHorizonDots, type ExemptionOutlook, type HorizonDot } from '@/lib/charts-data';
+import {
+  groupHorizonDots,
+  type ExemptionOutlook,
+  type HorizonDot,
+  type HorizonWeightBasis,
+} from '@/lib/charts-data';
 import { czDate, czkCompact, MONTH_LABELS, pct, plural, qty } from '@/lib/format';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -11,8 +16,8 @@ import { cn } from '@/lib/utils';
  * Horizont osvobození: časový pás, tečka = den (pohled „1 rok“), nebo měsíc
  * (delší pohledy — aktuální měsíc ale zůstává po dnech, ať žádná tečka neleží
  * za čárou „dnes“ s neosvobozenými kusy). Velikost tečky = celková hodnota
- * (známe-li ceny), jinak kusy. Pod osou běží kumulativní plocha „kolik % už
- * bude bez daně“.
+ * (známe-li ceny), jinak nabývací cena; kusy jen u jediného titulu. Pod osou
+ * běží kumulativní plocha „kolik % už bude bez daně“.
  *
  * Pás se kreslí ve skutečných pixelech podle šířky místa, které dostane —
  * písmo i tečky tak mají na telefonu stejnou velikost jako na monitoru a nic
@@ -94,12 +99,17 @@ const rangeLabel = (first: HorizonDot, last: HorizonDot): string => {
 };
 
 /**
- * Celková váha tečky jako text: částka v Kč, nebo počet kusů (když cenu nemá
- * žádná pozice portfolia). Pozice bez ceny v tečce vážené hodnotou do částky
- * nevstupuje — text to přizná, aby „0 Kč“ nevypadalo jako bezcenná pozice.
+ * Součet tečky jako text: částka v Kč, když se váží hodnotou. Pozice bez ceny
+ * do částky nevstupuje — text to přizná, aby „0 Kč“ nevypadalo jako bezcenná
+ * pozice. Bez cen zbývají kusy, a ty se sčítají jen v rámci jednoho titulu:
+ * u tečky s víc tituly součet není (`null`) a kusy nese rozpad po pozicích.
+ * Do 11. 10. 2026 tu stálo „celkem 46 ks“ za 40 akcií a 6 kusů fondu.
  */
-const totalText = (dot: HorizonDot): string => {
-  if (dot.weightBasis !== 'value') return `celkem ${qty(dot.weight)} ks`;
+const totalText = (dot: HorizonDot): string | null => {
+  if (dot.weightBasis !== 'value') {
+    const [only, ...others] = dot.items;
+    return only && others.length === 0 ? `celkem ${qty(only.quantity)} ks` : null;
+  }
   const unpriced = dot.items.filter((item) => item.unpriced).length;
   if (unpriced === dot.items.length) return 'bez ceny';
   return `celkem ${czkCompact(dot.weight)}${unpriced > 0 ? ' + bez ceny' : ''}`;
@@ -119,6 +129,7 @@ function mergeDots(dots: HorizonDot[], exemptFrom: string): HorizonDot {
       if (existing) {
         existing.quantity += item.quantity;
         existing.weight += item.weight;
+        if (!item.unpriced) delete existing.unpriced;
       } else {
         items.set(item.isin, { ...item });
       }
@@ -143,9 +154,15 @@ function pileOf(dots: HorizonDot[]): HorizonDot | null {
  * Přehled ji dává k nadpisu sekce (nadpis tam kreslí `ViewSwitch`), samostatný
  * horizont si ji k nadpisu přidá sám.
  */
-export function HorizonInfo({ byValue }: { byValue: boolean }) {
+export function HorizonInfo({ basis }: { basis: HorizonWeightBasis | undefined }) {
   // Legenda, ne návod (R1B-24): co tečka, barva a velikost znamenají. Jak se
   // pás ovládá, pozná člověk najetím nebo klepnutím.
+  const size =
+    basis === 'value'
+      ? 'celkové hodnotě'
+      : basis === 'cost'
+        ? 'nabývací ceně (dnešní ceny známe jen od připojeného brokera)'
+        : 'počtu kusů';
   return (
     <InfoPopover label="Horizont osvobození" align="start">
       <p>
@@ -153,8 +170,9 @@ export function HorizonInfo({ byValue }: { byValue: boolean }) {
         bez daně. Zelené už ho mají za sebou; první tečka vlevo shrnuje všechny starší.
       </p>
       <p>
-        Velikost tečky odpovídá {byValue ? 'celkové hodnotě' : 'celkovému počtu kusů'}; termíny
-        blízko sebe se slučují do jedné. Spodní křivka je podíl portfolia, který už bude bez daně.
+        Velikost tečky odpovídá {size}; termíny blízko sebe se slučují do jedné.
+        {/* křivku bez cen nekreslíme (podíl portfolia by neměl z čeho být) */}
+        {basis !== 'cost' && ' Spodní křivka je podíl portfolia, který už bude bez daně.'}
       </p>
     </InfoPopover>
   );
@@ -474,6 +492,7 @@ export function HorizonStrip({
   const activeItem = active
     ? (view.placed.find((item) => item.dot.exemptFrom === active.key) ?? null)
     : null;
+  const activeTotal = activeItem ? totalText(activeItem.dot) : null;
 
   // legenda jen pro stavy, které v datech opravdu jsou (žádné „osvobozené“
   // bez jediné zelené tečky)
@@ -625,7 +644,8 @@ export function HorizonStrip({
             detail; rozpad po pozicích nese bublina */}
         {view.placed.map(({ dot, cx, r, label: placedLabel }) => {
           const isActive = activeItem?.dot.exemptFrom === dot.exemptFrom;
-          const label = `${placedLabel} — ${totalText(dot)}, ${dot.items.length} ${plural(
+          const total = totalText(dot);
+          const label = `${placedLabel} — ${total ? `${total}, ` : ''}${dot.items.length} ${plural(
             dot.items.length,
             'pozice',
             'pozice',
@@ -667,7 +687,8 @@ export function HorizonStrip({
           }}
         >
           <p className="font-semibold text-ink">
-            {activeItem.label} — {totalText(activeItem.dot)}
+            {activeItem.label}
+            {activeTotal && ` — ${activeTotal}`}
           </p>
           {activeItem.dot.items.slice(0, TIP_MAX_ITEMS).map((item) => (
             <p key={item.isin} className="flex items-center gap-2 tabular-nums text-ink-muted">
@@ -690,8 +711,6 @@ export function HorizonStrip({
     </div>
   );
 
-  const byValue = dots[0]?.weightBasis === 'value';
-
   if (embedded) {
     return (
       <div>
@@ -709,7 +728,7 @@ export function HorizonStrip({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <h2 className="type-title-2">Horizont osvobození</h2>
-          <HorizonInfo byValue={byValue} />
+          <HorizonInfo basis={dots[0]?.weightBasis} />
         </div>
         {rangeButtons}
       </div>

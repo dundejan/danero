@@ -444,7 +444,7 @@ export default async function LandingPage({
                 </span>
                 <div>
                   <h3 className="type-title-3">{step.title}</h3>
-                  <p className="type-body mt-1 text-pretty text-ink-muted">{tidy(step.body)}</p>
+                  <p className="type-body mt-1 text-pretty text-ink-muted">{typeset(step.body)}</p>
                 </div>
               </li>
             ))}
