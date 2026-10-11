@@ -52,8 +52,8 @@ export function RefreshOnRestore() {
     // Zpět/Vpřed uvnitř aplikace. Směrovač stránku buď vrátí z paměti (pak je
     // obnovení potřeba), nebo si pro ni sám dojde na server a mezitím ukáže
     // kostru načítání — tam by druhý dotaz byl navíc a pral se s dalším
-    // krokem v historii (změřeno ve Firefoxu: zhruba v jednom běhu z osmi
-    // skončil krok Vpřed načtením celého dokumentu). Krátké čekání nechá
+    // krokem v historii (změřeno ve Firefoxu: ve dvou z 28 běhů skončil krok
+    // Vpřed načtením celého dokumentu, po úpravě v žádném z 24). Krátké čekání nechá
     // směrovač vykreslit, co má, a další krok v historii čekání ruší.
     const onPopState = () => {
       clearTimeout(deferred);
