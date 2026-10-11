@@ -768,9 +768,13 @@ export function HorizonStrip({
                 dot.isExempt ? 'fill-success' : 'fill-ink-muted',
               )}
               onKeyDown={(event) => moveFocus(event, index)}
-              onFocus={() => {
-                setActive({ key: dot.exemptFrom, by: 'focus' });
+              onFocus={(event) => {
                 setRoving(dot.exemptFrom);
+                // Tečku zaměří i klik a klepnutí — bublinu tam ale řídí ukazatel
+                // a nápověda o šipkách patří jen tomu, kdo přišel klávesnicí.
+                if (event.currentTarget.matches(':focus-visible')) {
+                  setActive({ key: dot.exemptFrom, by: 'focus' });
+                }
               }}
               onBlur={() => setActive((current) => (current?.by === 'focus' ? null : current))}
             />

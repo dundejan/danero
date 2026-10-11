@@ -86,11 +86,11 @@ const HISTORY_LONG_STEP = 100;
 
 /**
  * Kolik importů má historie ukázat: výchozích 20, odkazem dál.
- * Hodnota je z adresy — bere se jen celé číslo (nejvýš čtyři číslice).
+ * Hodnota je z adresy — bere se jen celé číslo (nejvýš šest číslic).
  */
 export function historyLimit(params: Params): number {
   const raw = firstParam(params[HISTORY_PARAM]);
-  if (raw === undefined || !/^\d{1,4}$/.test(raw)) return HISTORY_PAGE;
+  if (raw === undefined || !/^\d{1,6}$/.test(raw)) return HISTORY_PAGE;
   return Math.max(Number(raw), HISTORY_PAGE);
 }
 

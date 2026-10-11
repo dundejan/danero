@@ -74,6 +74,9 @@ describe('historie importů: hloubka', () => {
   it('délka z adresy nemá strop dvě stě', () => {
     expect(historyLimit({ historie: '260' })).toBe(260);
     expect(historyLimit({ historie: '9999' })).toBe(9999);
+    // odkaz „Zobrazit starší“ nesmí vést na délku, kterou stránka nepřijme —
+    // se čtyřmi číslicemi spadl krok z 9 900 na 10 000 zpátky na dvacet
+    expect(historyLimit({ historie: String(nextHistoryLimit(9900)) })).toBe(10_000);
   });
 
   it('krok roste: po dvaceti do stovky, pak po stovce', () => {

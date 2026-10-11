@@ -485,9 +485,12 @@ export interface OutlookPoint {
 export interface ExemptionOutlook {
   points: OutlookPoint[];
   /**
-   * Čím se podíl váží — stejná tři měřítka jako u teček horizontu
+   * Čím se podíl váží — tatáž tři měřítka jako u teček horizontu
    * (`HorizonWeightBasis`): hodnotou oceněných pozic, bez cen nabývací cenou,
-   * počtem kusů jen u jediného titulu.
+   * počtem kusů jen u jediného titulu. Křivka je ale podíl z CELÉHO
+   * portfolia, takže tituly počítá všechny držené, kdežto tečky jen ty, které
+   * se osvobodit můžou. U portfolia s titulem bez nároku (stablecoin) tak
+   * křivka jde podle nabývací ceny, i když tečky ukazují kusy jediného titulu.
    */
   basis: HorizonWeightBasis;
   /**

@@ -74,15 +74,18 @@ export default async function ReportPage({
   let precomputed: ReturnType<typeof reportDataCached>;
   try {
     precomputed = reportDataCached(user.id, txs, pinnedProfile, year, today, dailyRates);
+    if (!hasTransactionsInYear && !engineHasNothingFor(precomputed.result)) {
+      pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
+      // Fixace sama čísla nemění — fixuje se to, čím se právě počítalo, takže
+      // tohle je zásah do mezipaměti. Při souběhu ale mohl rok mezitím
+      // zafixovat jiný požadavek s jiným nastavením (`pinTaxYear` pak vrátí
+      // jeho fixaci) a čísla musí odpovídat tomu, co je v databázi.
+      precomputed = reportDataCached(user.id, txs, pinnedProfile, year, today, dailyRates);
+    }
   } catch (error) {
     const message = engineErrorMessage(error);
     if (!message) throw error;
     return <EngineErrorCard message={message} />;
-  }
-  if (!hasTransactionsInYear && !engineHasNothingFor(precomputed.result)) {
-    // fixace čísla nemění (fixuje se právě to, čím se teď počítalo), takže
-    // výsledek spočítaný před ní platí dál
-    pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
   }
   const justPinned =
     profile.pinnedTaxYears?.[year] === undefined &&

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { openForPrint } from '@/lib/print-details';
 import { cn } from '@/lib/utils';
 
 /**
@@ -16,15 +17,19 @@ import { cn } from '@/lib/utils';
 export function OpenDetailsForPrint() {
   useEffect(() => {
     if (CSS.supports('selector(::details-content)')) return;
-    const openedForPrint: HTMLDetailsElement[] = [];
+    let closeAgain: (() => void) | undefined;
     const open = (): void => {
-      for (const details of document.querySelectorAll<HTMLDetailsElement>('details:not([open])')) {
-        details.open = true;
-        openedForPrint.push(details);
-      }
+      // dvě `beforeprint` po sobě bez `afterprint` mezi nimi: první vrácení se neztratí
+      const earlier = closeAgain;
+      const latest = openForPrint(document.querySelectorAll('details'));
+      closeAgain = () => {
+        latest();
+        earlier?.();
+      };
     };
     const restore = (): void => {
-      for (const details of openedForPrint.splice(0)) details.open = false;
+      closeAgain?.();
+      closeAgain = undefined;
     };
     window.addEventListener('beforeprint', open);
     window.addEventListener('afterprint', restore);

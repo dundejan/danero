@@ -8,6 +8,7 @@ import { filingVerdictHeadline } from '@/components/filing-verdict';
 import { OverviewView } from '@/components/views/overview-view';
 import { printedRangeNote, disposalPage, ReportView } from '@/components/views/report-view';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
+import { openForPrint } from '@/lib/print-details';
 
 /**
  * H-3-01: vytištěný podklad k přiznání musí říct, kolik prodejů obsahuje.
@@ -71,10 +72,15 @@ describe('rozsah vytištěného podkladu (H-3-01)', () => {
     expect(print).toMatch(/details::details-content\s*\{[^}]*display:\s*block/);
     // starší (před Chromium 131, Safari 18.4, Firefox 143): skript před tiskem —
     // bez něj by na papíře mlčky chyběla část podkladu
+    const closed = { open: false };
+    const openedByUser = { open: true };
+    const closeAgain = openForPrint([closed, openedByUser]);
+    expect([closed.open, openedByUser.open]).toEqual([true, true]);
+    closeAgain();
+    // co měl uživatel otevřené sám, po tisku otevřené zůstane
+    expect([closed.open, openedByUser.open]).toEqual([false, true]);
     const fallback = readFileSync(join(root, 'components', 'print-button.tsx'), 'utf8');
     expect(fallback).toContain("CSS.supports('selector(::details-content)')");
-    expect(fallback).toContain("addEventListener('beforeprint'");
-    expect(fallback).toContain("addEventListener('afterprint'");
     const report = readFileSync(join(root, 'components', 'views', 'report-view.tsx'), 'utf8');
     expect(report).toContain('<OpenDetailsForPrint />');
   });

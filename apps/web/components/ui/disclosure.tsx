@@ -77,7 +77,11 @@ export function DisclosureRow({
   eyebrow?: React.ReactNode;
   /** Tichý údaj vpravo (datum, počet výskytů). */
   meta?: React.ReactNode;
-  /** DEFAULT_OPEN_DOC */
+  /**
+   * Otevřít při prvním vykreslení a dál nechat na uživateli (`DetailsOnce`).
+   * Na rozdíl od `open` řádek nezavře, když další vykreslení ze serveru
+   * přijde s jinou hodnotou.
+   */
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {

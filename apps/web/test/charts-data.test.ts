@@ -297,19 +297,20 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
       const outlook = exemptionOutlook(positions, new Map(), '2026-09-01', 2026)!;
       expect(outlook.basis).toBe('cost');
       expect(outlook.unpricedCount).toBe(0);
-      // očekávání z lotů, ne opsané: nabývací cena nese i poplatek nákupu
+      // váha lotu je kusy × nabývací cena za kus (poplatek nákupu v ní není)
       const cost = (isin: string) =>
         positions
           .find((position) => position.isin === isin)!
           .lots.reduce((sum, lot) => sum + lot.remaining.mul(lot.costPerShare).toNumber(), 0);
       const aapl = cost('US0378331005');
       const iwda = cost('IE00B4L5Y983');
-      expect(aapl).toBeGreaterThan(0);
+      expect(aapl).toBe(50 * 100);
       expect(iwda).toBe(50 * 80);
       // AAPL už bez daně, IWDA čeká; obě v dolarech, kurz se v podílu krátí
       expect(outlook.points[0]!.exemptShare).toBe(Number(((aapl / (aapl + iwda)) * 100).toFixed(1)));
       expect(outlook.points.at(-1)!.exemptShare).toBe(100);
-      // stejné měřítko jako tečky nad křivkou
+      // tady i tečky nad křivkou: oba tituly se můžou osvobodit, takže obě
+      // měřítka vyjdou stejně (liší se, když některý titul nárok nemá)
       const dots = horizonDots(positions, new Map(), new Map(), 2026);
       expect(dots.every((dot) => dot.weightBasis === 'cost')).toBe(true);
     });
