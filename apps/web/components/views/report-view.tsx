@@ -33,6 +33,7 @@ import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { ViewSwitch } from '@/components/view-switch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Chevron, Disclosure } from '@/components/ui/disclosure';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { InfoPrint } from '@/components/ui/info-print';
@@ -337,10 +338,45 @@ function LineRow({
 }
 
 /**
+ * Je rok bez jediné transakce — a který rok s daty je mu nejblíž?
+ *
+ * Přepínač roků nabízí souvislou řadu od prvního obchodu po běžný rok, takže
+ * rok bez transakce je běžná věc (v lednu běžný rok, jindy mezera mezi nákupem
+ * a prodejem). Report za něj nemá co ukázat: vykreslit osnovu plnou nul
+ * a formulář exportu XML je horší než říct to jednou větou (nález R2-14).
+ *
+ * „Transakce“ je cokoli s datem v tom roce — i samotný nákup: rok, ve kterém
+ * se jen nakupovalo, osnovu dostane (věta „nemáš žádné obchody“ by neplatila).
+ * Nejbližší rok se hledá nejdřív mezi staršími: kdo v lednu otevře report,
+ * přišel nejspíš pro ten loňský. Čistá funkce kvůli testu.
+ */
+export function emptyYearFallback(
+  txs: Transaction[],
+  year: number,
+): { empty: boolean; nearestYear: number | null } {
+  const yearsWithData = new Set(
+    txs.map((tx) =>
+      Number((tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date).slice(0, 4)),
+    ),
+  );
+  if (yearsWithData.has(year)) return { empty: false, nearestYear: null };
+  const older = [...yearsWithData].filter((other) => other < year);
+  const newer = [...yearsWithData].filter((other) => other > year);
+  return {
+    empty: true,
+    nearestYear:
+      older.length > 0 ? Math.max(...older) : newer.length > 0 ? Math.min(...newer) : null,
+  };
+}
+
+/**
  * Sdílené tělo daňového reportu: kompletní podklady k přiznání z čistého
  * enginu. Reálná stránka dodá data z DB (a denní kurzy ČNB), demo ukázkový
  * dataset. V demu se export XML nahrazuje pozvánkou — soubor by nesl smyšlená
  * data a bez účtu nemá kam vést.
+ *
+ * Rok bez jediné transakce osnovu nedostane — jen prázdný stav s cestou dál
+ * (`emptyYearFallback`).
  *
  * Skladba shora dolů (docs/07, textová dieta):
  * 1. verdikt — musím podat přiznání, do kdy a kolik to bude; vedle akce
@@ -393,6 +429,40 @@ export function ReportView({
     comparison: ReturnType<typeof compareVariants>;
   };
 }) {
+  // R2-14: rok bez jediné transakce — žádná osnova, žádný export, jen cesta dál.
+  // Lišta s přepínačem roků zůstává, jinak by se z prázdného roku nedalo odejít.
+  const emptyYear = emptyYearFallback(txs, year);
+  if (emptyYear.empty) {
+    return (
+      <>
+        <AppToolbar title="Report" titleContext={String(year)}>
+          <YearSwitcher years={years} active={year} hrefBase={`${basePath}/report`} />
+        </AppToolbar>
+        <EmptyState
+          title={tidy(`V roce ${year} nemáš žádné obchody ani dividendy`)}
+          action={
+            <>
+              {emptyYear.nearestYear !== null && (
+                <Link
+                  href={`${basePath}/report?rok=${emptyYear.nearestYear}`}
+                  className={buttonVariants()}
+                >
+                  Otevřít report {emptyYear.nearestYear}
+                </Link>
+              )}
+              {/* v demu Zdroje dat nejsou — odkaz by vedl na přihlášení */}
+              {!demo && (
+                <TextLink href="/import" chevron>
+                  Nahrát výpisy
+                </TextLink>
+              )}
+            </>
+          }
+        />
+      </>
+    );
+  }
+
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = precomputed?.result ?? analyzeTaxYear(input);
   // skončený rok: verdikt už není „zatím“ (R2-14)
