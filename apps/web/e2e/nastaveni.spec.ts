@@ -356,3 +356,201 @@ test('nastavení: návrat zpět ukáže stav ze serveru, ne z paměti prohlíže
   expect(saves).toEqual([]);
   await elsewhere.close();
 });
+
+/**
+ * Po každém uložení se stránka vykreslí znovu a pole s fokusem zanikne —
+ * klávesnice se vracela na začátek stránky a klávesa zmáčknutá těsně po
+ * uložení šla do prázdna (změřeno 11. 10. 2026: mezerník na druhém přepínači
+ * se neprovedl vůbec). Nový formulář proto fokus převezme
+ * (`lib/focus-handoff.ts`). Test jde klávesnicí, jak ji používá člověk.
+ */
+test('nastavení klávesnicí: po uložení zůstane fokus na poli a další klávesa platí', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Klávesnice', email: 'klavesnice@danero.cz' });
+  let finishedSaves = 0;
+  page.on('requestfinished', (request) => {
+    if (request.method() === 'POST') finishedSaves += 1;
+  });
+  const savesFinished = (count: number) =>
+    expect.poll(() => finishedSaves, { message: `čekám na ${count} dokončených uložení` }).toBe(count);
+
+  await page.goto('/nastaveni/upozorneni');
+  await autoSaveForm(page);
+
+  // ── nabídka šipkou: uloží se a fokus zůstane na ní ──────────────────────
+  const frequency = page.locator('#frekvence-emailu');
+  await frequency.focus();
+  await page.keyboard.press('ArrowDown');
+  await savesFinished(1);
+  await autoSaveForm(page);
+  await expect(savedToast(page)).toBeVisible();
+  await expect(frequency).toHaveValue('WEEKLY');
+  await expect(frequency).toBeFocused();
+  // fokus je vidět — po klávesnici patří k poli obrys
+  expect(await frequency.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+
+  // ── další klávesa jde do téhož pole, ne do prázdna ──────────────────────
+  await page.keyboard.press('ArrowUp');
+  await savesFinished(2);
+  await autoSaveForm(page);
+  await expect(frequency).toHaveValue('DAILY');
+  await expect(frequency).toBeFocused();
+
+  // ── přepínač mezerníkem dvakrát po sobě: obě změny, fokus pořád na něm ──
+  const urgent = page.getByRole('switch', { name: 'Naléhavé posílat hned' });
+  await urgent.focus();
+  await expect(urgent).toBeChecked();
+  await page.keyboard.press('Space');
+  await savesFinished(3);
+  await autoSaveForm(page);
+  await expect(urgent).not.toBeChecked();
+  await expect(urgent).toBeFocused();
+  await page.keyboard.press('Space');
+  await savesFinished(4);
+  await autoSaveForm(page);
+  await expect(urgent).toBeChecked();
+  await expect(urgent).toBeFocused();
+
+  // ── políčko ze skupiny (bez vlastního id) se pozná podle hodnoty ────────
+  const threshold = page.locator('input[name="hranice-limitu"][value="75"]');
+  await threshold.focus();
+  await page.keyboard.press('Space');
+  await savesFinished(5);
+  await autoSaveForm(page);
+  await expect(threshold).toBeChecked();
+  await expect(threshold).toBeFocused();
+
+  // uložilo se doopravdy — a po načtení stránky fokus nikam neskáče
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(threshold).toBeChecked();
+  await expect(urgent).toBeChecked();
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+});
+
+/**
+ * Uložení v běhu: první POST se pozdrží, dokud test neřekne, a ostatní se jen
+ * počítají. Kolik jich bude, je věc prohlížeče (Chromium při zániku pole s
+ * rozepsaným textem ohlásí `change` a uloží ho hned, Firefox ne) — test proto
+ * čeká na klid, ne na počet.
+ */
+async function holdFirstSave(page: Page): Promise<{ release: () => void; idle: () => Promise<void> }> {
+  let release = (): void => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  let inFlight = 0;
+  let finished = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST') inFlight += 1;
+  });
+  const done = (request: { method(): string }): void => {
+    if (request.method() !== 'POST') return;
+    inFlight -= 1;
+    finished += 1;
+  };
+  page.on('requestfinished', done);
+  page.on('requestfailed', done);
+  await page.route('**/nastaveni**', async (route) => {
+    if (route.request().method() === 'POST' && !held) {
+      held = true;
+      await released;
+    }
+    await route.continue().catch(() => {});
+  });
+  return {
+    release,
+    idle: async () => {
+      await expect.poll(() => finished, { message: 'čekám na první dokončené uložení' }).toBeGreaterThan(0);
+      // klid = žádné uložení neběží ani po chvíli (další se spouští až po vykreslení)
+      await expect
+        .poll(
+          async () => {
+            if (inFlight > 0) return false;
+            await page.waitForTimeout(400);
+            return inFlight === 0;
+          },
+          { message: 'čekám, až doběhnou všechna uložení' },
+        )
+        .toBe(true);
+    },
+  };
+}
+
+/** Hodnota je uložená na serveru: čerstvě načtená stránka ji ukazuje. */
+async function expectSaved(page: Page, selector: string, value: string): Promise<void> {
+  // stejně jako v `zaklad.spec.ts`: ověřuje se výsledek, ne jedna odpověď serveru
+  await expect(async () => {
+    await page.reload();
+    await expect(page.locator(selector)).toHaveValue(value);
+  }).toPass({ timeout: 20_000 });
+  await autoSaveForm(page);
+}
+
+/**
+ * Rozepsaná částka během ukládání jiného pole: uložení formulář vykreslí
+ * znovu a text, který uživatel právě psal, by s ním zmizel. S vráceným
+ * fokusem by navíc psal dál do staré hodnoty. Rozepsaný text se proto předá
+ * novému poli a uloží se, jakmile ho uživatel opustí.
+ */
+test('nastavení: rozepsaná částka přežije uložení jiného pole a psaní pokračuje', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Rozepsáno', email: 'rozepsano@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const saves = await holdFirstSave(page);
+
+  const matching = page.getByLabel('Párování prodejů');
+  await matching.focus();
+  await page.keyboard.press('ArrowDown');
+  // uložení běží; uživatel mezitím píše částku
+  const income = page.locator('#ostatni-prijmy');
+  await income.click();
+  await income.press('ControlOrMeta+a');
+  await page.keyboard.type('4321');
+  saves.release();
+  await saves.idle();
+  await autoSaveForm(page);
+
+  // formulář se vykreslil znovu — rozepsaný text i fokus zůstaly
+  await expect(matching).toHaveValue('LIFO');
+  await expect(income).toHaveValue('4321');
+  await expect(income).toBeFocused();
+  // psaní pokračuje tam, kde skončilo
+  await page.keyboard.type('5');
+  await expect(income).toHaveValue('43215');
+  await page.keyboard.press('Tab');
+  await saves.idle();
+
+  await expectSaved(page, '#ostatni-prijmy', '43215');
+  await expect(matching).toHaveValue('LIFO');
+});
+
+test('nastavení: rozepsaná částka se uloží, i když po uložení jiného pole nic nepřipíšu', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Rozepsáno 2', email: 'rozepsano-2@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const saves = await holdFirstSave(page);
+
+  const rates = page.getByLabel('Měnové kurzy');
+  await rates.focus();
+  await page.keyboard.press('ArrowDown');
+  const income = page.locator('#ostatni-prijmy');
+  await income.click();
+  await income.press('ControlOrMeta+a');
+  await page.keyboard.type('777');
+  saves.release();
+  await saves.idle();
+  await autoSaveForm(page);
+  await expect(income).toHaveValue('777');
+  await expect(income).toBeFocused();
+
+  // hodnotu vrácenou skriptem prohlížeč jako změnu neohlásí — opuštění pole ji odešle samo
+  await page.keyboard.press('Tab');
+  await saves.idle();
+  await expectSaved(page, '#ostatni-prijmy', '777');
+  await expect(rates).toHaveValue('CNB_DAILY');
+});
