@@ -34,6 +34,7 @@ import {
 } from '@/lib/charts-data';
 import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
 import { LIMIT_NAME, limitTitle } from '@/lib/limit-names';
+import { currentNotificationText } from '@/lib/notification-display';
 import { taxSummary } from '@/lib/payable-tax';
 import { wholeBasesCzk } from '@/lib/priloha2';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
@@ -42,8 +43,9 @@ import { plainTitle, tidy } from '@/lib/typography';
 import { cn } from '@/lib/utils';
 
 /** Upozornění pro seznam „Poslední upozornění“ — DB řádek i demo kandidát. */
-export interface PrehledNotification {
+export interface OverviewNotification {
   dedupeKey: string;
+  type: string;
   title: string;
   body: string;
   createdAt: Date;
@@ -224,7 +226,7 @@ export function OverviewView({
   years: number[];
   year: number;
   today: string;
-  notifications: PrehledNotification[];
+  notifications: OverviewNotification[];
   basePath?: string;
   preview?: boolean;
 }) {
@@ -676,17 +678,25 @@ export function OverviewView({
                 {notifications.length > 0 && (
                   <Section title="Poslední upozornění">
                     <Group>
-                      {notifications.map((notification) => (
-                        <DisclosureRow
-                          key={notification.dedupeKey}
-                          title={plainTitle(notification.title)}
-                          meta={czDate(notification.createdAt)}
-                        >
-                          {/* text upozornění je i tělo e-mailu — zdroj se nemění,
-                              jen se při zobrazení neláme uprostřed částky (R2-12) */}
-                          <p>{tidy(notification.body)}</p>
-                        </DisclosureRow>
-                      ))}
+                      {notifications.map((notification) => {
+                        // Uložené upozornění nese znění, se kterým vzniklo
+                        // (a odešlo e-mailem). Zobrazuje se dnešními názvy
+                        // limitů — jinak by starší řádek jmenoval týž limit
+                        // jinak než řádek pod ním a než seznam limitů výš.
+                        const shown = currentNotificationText(notification);
+                        return (
+                          <DisclosureRow
+                            key={notification.dedupeKey}
+                            title={plainTitle(shown.title)}
+                            meta={czDate(notification.createdAt)}
+                          >
+                            {/* text upozornění je i tělo e-mailu — uložený záznam
+                                se nemění, jen se při zobrazení neláme uprostřed
+                                částky (R2-12) */}
+                            <p>{tidy(shown.body)}</p>
+                          </DisclosureRow>
+                        );
+                      })}
                     </Group>
                   </Section>
                 )}
