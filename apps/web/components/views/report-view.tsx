@@ -4,6 +4,7 @@ import {
   analyzeTaxYear,
   compareVariants,
   filingDeadlines,
+  taxpayerCreditCzk,
   UNIFIED_RATE_SOURCES,
   type DerivativeItem,
   type EngineInput,
@@ -32,6 +33,7 @@ import { TaxYearConfigNotice } from '@/components/tax-year-config-notice';
 import { ViewSwitch } from '@/components/view-switch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Chevron, Disclosure } from '@/components/ui/disclosure';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/field';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { InfoPrint } from '@/components/ui/info-print';
@@ -54,7 +56,13 @@ import { EPO_FORM_ID } from '@/lib/epo-form';
 import { fxMethodLabel } from '@/lib/fx-method';
 import { LIMIT_NAME } from '@/lib/limit-names';
 import { taxSummary } from '@/lib/payable-tax';
-import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
+import {
+  base8WholeCzk,
+  lossBeyondIncomeCzk,
+  priloha2,
+  wholeBasesCzk,
+  wholeCzkDown,
+} from '@/lib/priloha2';
 import { regimeLimitFor } from '@/lib/simulator-verdict';
 import { variantDifference, variantHint, variantHintTitle } from '@/lib/variant-hint';
 import {
@@ -330,10 +338,45 @@ function LineRow({
 }
 
 /**
+ * Je rok bez jediné transakce — a který rok s daty je mu nejblíž?
+ *
+ * Přepínač roků nabízí souvislou řadu od prvního obchodu po běžný rok, takže
+ * rok bez transakce je běžná věc (v lednu běžný rok, jindy mezera mezi nákupem
+ * a prodejem). Report za něj nemá co ukázat: vykreslit osnovu plnou nul
+ * a formulář exportu XML je horší než říct to jednou větou (nález R2-14).
+ *
+ * „Transakce“ je cokoli s datem v tom roce — i samotný nákup: rok, ve kterém
+ * se jen nakupovalo, osnovu dostane (věta „nemáš žádné obchody“ by neplatila).
+ * Nejbližší rok se hledá nejdřív mezi staršími: kdo v lednu otevře report,
+ * přišel nejspíš pro ten loňský. Čistá funkce kvůli testu.
+ */
+export function emptyYearFallback(
+  txs: Transaction[],
+  year: number,
+): { empty: boolean; nearestYear: number | null } {
+  const yearsWithData = new Set(
+    txs.map((tx) =>
+      Number((tx.type === 'BUY' || tx.type === 'SELL' ? tx.tradeDate : tx.date).slice(0, 4)),
+    ),
+  );
+  if (yearsWithData.has(year)) return { empty: false, nearestYear: null };
+  const older = [...yearsWithData].filter((other) => other < year);
+  const newer = [...yearsWithData].filter((other) => other > year);
+  return {
+    empty: true,
+    nearestYear:
+      older.length > 0 ? Math.max(...older) : newer.length > 0 ? Math.min(...newer) : null,
+  };
+}
+
+/**
  * Sdílené tělo daňového reportu: kompletní podklady k přiznání z čistého
  * enginu. Reálná stránka dodá data z DB (a denní kurzy ČNB), demo ukázkový
  * dataset. V demu se export XML nahrazuje pozvánkou — soubor by nesl smyšlená
  * data a bez účtu nemá kam vést.
+ *
+ * Rok bez jediné transakce osnovu nedostane — jen prázdný stav s cestou dál
+ * (`emptyYearFallback`).
  *
  * Skladba shora dolů (docs/07, textová dieta):
  * 1. verdikt — musím podat přiznání, do kdy a kolik to bude; vedle akce
@@ -358,11 +401,18 @@ export function ReportView({
   precomputed,
   strana = 1,
   justPinned = false,
+  today = todayInPrague(),
 }: {
   txs: Transaction[];
   profile: ProfileRow;
   year: number;
   years: number[];
+  /**
+   * Dnešek v české zóně (ISO) — podle něj se pozná skončený rok a nese ho
+   * razítko výtisku. Stránka předává tentýž okamžik, ze kterého bere běžný rok
+   * (demo svůj „dnešek“ dema); výchozí hodnota jsou hodiny aplikace.
+   */
+  today?: string;
   dailyRates?: EngineInput['dailyRates'];
   basePath?: string;
   demo?: boolean;
@@ -379,8 +429,44 @@ export function ReportView({
     comparison: ReturnType<typeof compareVariants>;
   };
 }) {
+  // R2-14: rok bez jediné transakce — žádná osnova, žádný export, jen cesta dál.
+  // Lišta s přepínačem roků zůstává, jinak by se z prázdného roku nedalo odejít.
+  const emptyYear = emptyYearFallback(txs, year);
+  if (emptyYear.empty) {
+    return (
+      <>
+        <AppToolbar title="Report" titleContext={String(year)}>
+          <YearSwitcher years={years} active={year} hrefBase={`${basePath}/report`} />
+        </AppToolbar>
+        <EmptyState
+          title={tidy(`V roce ${year} nemáš žádné obchody ani dividendy`)}
+          action={
+            <>
+              {emptyYear.nearestYear !== null && (
+                <Link
+                  href={`${basePath}/report?rok=${emptyYear.nearestYear}`}
+                  className={buttonVariants()}
+                >
+                  Otevřít report {emptyYear.nearestYear}
+                </Link>
+              )}
+              {/* v demu Zdroje dat nejsou — odkaz by vedl na přihlášení */}
+              {!demo && (
+                <TextLink href="/import" chevron>
+                  Nahrát výpisy
+                </TextLink>
+              )}
+            </>
+          }
+        />
+      </>
+    );
+  }
+
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = precomputed?.result ?? analyzeTaxYear(input);
+  // skončený rok: verdikt už není „zatím“ (R2-14)
+  const yearClosed = year < Number(today.slice(0, 4));
   // R-05c: metoda zafixovaná pro tenhle rok (podklady už se za něj generovaly)
   const pinned = profile.pinnedTaxYears?.[year];
   const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
@@ -392,6 +478,8 @@ export function ReportView({
   const activeTax = tax.variant === 'GENERAL' ? result.tax.general : result.tax.separate16a;
   // daňová část měsíční paušální zálohy z konfigurace roku (R-08f) — pro ř. 86
   const monthlyAdvanceTaxCzk = configForYear(year).flatTaxAdvance?.monthlyTaxCzk ?? null;
+  // ř. 64 (R-14g)
+  const taxpayerCredit = taxpayerCreditCzk(year);
 
   // rozpis prodejů: CP + krypto v jedné tabulce (druh u řádku), řazeno dle data
   const allDisposals = [
@@ -456,9 +544,9 @@ export function ReportView({
 
   const methodLabel = METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod;
   const fxLabel = FX_METHOD_LABEL[result.options.fxMethod] ?? result.options.fxMethod;
-  const base10Total = result.securities.base10Czk
-    .plus(result.crypto.base10Czk)
-    .plus(result.derivatives.base10Czk);
+  // Rozpad daně ukazuje základy v celých korunách, jak je nese tiskopis — tytéž
+  // částky jako Příloha č. 2 a ř. 38 výš na stránce, ne o korunu jiné (R-14h).
+  const wholeBases = wholeBasesCzk(result, tax.variant);
   // uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
   // zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout součet)
   const appliedCreditCzk = activeTax.taxBeforeCreditCzk
@@ -639,7 +727,9 @@ export function ReportView({
                       </span>
                     )}
                   </Td>
-                  <Td align="right">{czk(variant.base10Czk)}</Td>
+                  {/* celé koruny dolů jako ř. 209 — u používané varianty je to
+                      přesně číslo z Přílohy č. 2 výš (R-14h) */}
+                  <Td align="right">{czk(wholeCzkDown(variant.base10Czk))}</Td>
                   <Td align="right">{czk(variant.taxCzk)}</Td>
                   <Td align="right">
                     {czk(variant.flatTax50kUsedCzk)}
@@ -768,7 +858,7 @@ export function ReportView({
         <div className="hidden print:block">
           <p className="type-title-2">Podklady k daňovému přiznání {year}</p>
           <p className="type-caption mt-2 text-ink-muted">
-            Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
+            Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(today)}{' '}
             aplikací Danero · {txs.length}{' '}
             {plural(txs.length, 'transakce', 'transakce', 'transakcí')} · párování {methodLabel} ·{' '}
             {fxMethodLabel(result)} · výklad limitu 100 000 Kč pro osvobození prodejů cenných
@@ -810,6 +900,7 @@ export function ReportView({
                 <ReportFilingVerdict
                   year={year}
                   limit={filingLimit}
+                  closed={yearClosed}
                   reportsExemptIncome={reportsExemptIncome}
                 />
               ) : (
@@ -1067,7 +1158,17 @@ export function ReportView({
                 <div>
                   <SectionHeader as="h3" title="Další řádky" />
                   <Group className="mt-2" aria-label="Další řádky přiznání">
-                    <LineRow line="ř. 64" label="Sleva na poplatníka" value="30 840 Kč" />
+                    <LineRow
+                      line="ř. 64"
+                      label="Sleva na poplatníka"
+                      value={
+                        taxpayerCredit === null ? (
+                          <NoAmount>najdeš v pokynech k tiskopisu</NoAmount>
+                        ) : (
+                          czk(d(taxpayerCredit))
+                        )
+                      }
+                    />
                     {/* ř. 86: po prolomení limitu zálohy známe (R-08f, tytéž, které
                         odečítá doplatek nahoře); jinak záleží na počtu měsíců
                         v režimu, a ten Danero nezná — řekne aspoň pravidlo */}
@@ -1649,26 +1750,26 @@ export function ReportView({
                         ' · vše osvobozeno, prodeje do 100 000 Kč za rok'}
                     </>
                   }
-                  value={czk(result.securities.base10Czk)}
+                  value={czk(wholeBases.securitiesCzk)}
                 />
                 {hasCrypto && (
                   <Row
                     label="Kryptoaktiva"
                     hint={<>tržby {czk(result.crypto.totalGrossProceedsCzk)}</>}
-                    value={czk(result.crypto.base10Czk)}
+                    value={czk(wholeBases.cryptoCzk)}
                   />
                 )}
                 {hasDerivatives && (
                   <Row
                     label="Deriváty"
                     hint={<>plnění {czk(result.derivatives.taxableIncomeCzk)}</>}
-                    value={czk(result.derivatives.base10Czk)}
+                    value={czk(wholeBases.derivativesCzk)}
                   />
                 )}
                 <Row
                   label="Základ daně z prodejů"
                   hint={(hasCrypto || hasDerivatives) && 'součet druhů, nekompenzují se'}
-                  value={czk(base10Total)}
+                  value={czk(wholeBases.base10Czk)}
                 />
                 <Row
                   label="Základ daně z dividend a úroků"
@@ -1678,7 +1779,7 @@ export function ReportView({
                       započitatelné {czk(result.dividends.creditableWithholdingCzk)}
                     </>
                   }
-                  value={czk(result.dividends.base8Czk)}
+                  value={czk(wholeBases.base8Czk)}
                 />
                 {/* E-27: variantu zdanění dividend nedoporučujeme — řádek říká, se
                     kterou se počítá dál, a kolik by vyšla ta druhá. Dva řádky

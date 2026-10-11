@@ -1233,13 +1233,14 @@ o čísle, které poplatník odevzdá finančnímu úřadu, takže patří sem.
   odečítají od daně podle § 16, teprve pak se přičítá daň ze samostatného základu.
 - **R-14b Sleva se na § 16a NEUPLATNÍ (§ 35ba odst. 1).** Slevy podle § 35ba se
   odečítají „od daně vypočtené **podle § 16**", ne od celkové daně. Nevyčerpaný
-  zbytek slevy na poplatníka (2025 i 2026: **30 840 Kč**) se tedy do daně ze
+  zbytek slevy na poplatníka (částka podle roku, R-14g) se tedy do daně ze
   samostatného základu **nepřelévá**.
 - **R-14c Sleva daň nesnižuje pod nulu (§ 35 odst. 5).** „Daň … lze snížit … nejvýše
   do nuly." Sleva na poplatníka není daňový bonus, přeplatek z ní nevzniká.
   Mezikrok se proto zaokrouhluje na nulu **hned**, ne až na konci řetězce.
 - **R-14d Vzorec.** `daň = max(0, daň§16 − slevy) + daň§16a`. V tiskopisu DPFDP7:
-  ř. 71 = `max(0, ř.60 − 30 840)`, ř. 74a = daň § 16a (ř. 414 Přílohy 4),
+  ř. 71 = `max(0, ř.60 − ř.64)`, kde ř. 64 je sleva na poplatníka (R-14g; v letech
+  s XML 30 840 Kč), ř. 74a = daň § 16a (ř. 414 Přílohy 4),
   ř. 75 = ř. 74 + ř. 74a, ř. 77 = ř. 75 (bez daňového bonusu).
 - **R-14e Hranice 200 Kč (§ 38b).** „Daň … se nepředepíše a neplatí, **nepřesáhne-li
   200 Kč**." Do řádku „zbývá doplatit" (ř. 91) jde proto `ř.77 ≤ 200 ? 0 : ř.77`.
@@ -1251,6 +1252,61 @@ o čísle, které poplatník odevzdá finančnímu úřadu, takže patří sem.
   a daní 6 000 Kč prošlo bez výhrad. Podmínka se navíc váže na **veškeré** příjmy
   poplatníka, které Danero nevidí (§ 6, § 7 mimo evidovaná data). Uplatnit ji sami
   by znamenalo doplnit poplatníkovi nulu tam, kde má platit.
+- **R-14g Sleva na poplatníka je částka ZDAŇOVACÍHO OBDOBÍ (§ 35ba odst. 1
+  písm. a)).** Základní sleva se v čase měnila a na ř. 64 patří ta, která platila
+  pro rok, za který se přiznání podává:
+
+  | Zdaňovací období | Sleva | Zdroj |
+  |---|---|---|
+  | 2012–2020 | **24 840 Kč** | znění § 35ba odst. 1 písm. a) před zák. č. 609/2020 Sb. (částka, kterou čl. XI bod 62 nahrazuje) |
+  | 2021 | **27 840 Kč** | zák. č. 609/2020 Sb., čl. XI bod 62; podle čl. XII bodu 20 se použije „již pro zdaňovací období roku 2021“ |
+  | od 2022 | **30 840 Kč** | zák. č. 609/2020 Sb., čl. XI bod 63, účinný od 1. 1. 2022 (čl. XLVIII písm. c)) |
+
+  Jediná definice je `taxpayerCreditCzk(rok)` v
+  `packages/engine/src/config/taxYear.ts`. Bere si ji ř. 64 v reportu, generátor
+  XML (ř. 64 a vzorec ř. 71) i varování `SEPARATE_16A_CREDIT_LOSS` (R-07i).
+  **Rok před 2012 vrací „nevím“**: rok 2011 měl slevu dočasně sníženou a starší
+  částky jsme proti Sbírce neověřili — report u něj na ř. 64 částku neuvádí
+  a odkáže na pokyny k tiskopisu. Rok za tabulkou dědí poslední částku (v zákoně
+  stojí číslem, R-15b); novela, která ji změní, přidá do tabulky řádek.
+
+  **Do orientační daně sleva nevstupuje** (ta je „před slevami na dani“ — spotřebu
+  slevy na § 6 a § 7 Danero nevidí), takže se oprava z 11. 10. 2026 výsledné daně
+  ani doplatku nedotkla.
+
+  ⚠️ Do 11. 10. 2026 stála sleva v enginu jako jediná konstanta 30 840 Kč a report
+  ji tiskl natvrdo. Report za rok 2021 tak radil zapsat na ř. 64 o **3 000 Kč**
+  víc, za rok 2020 a starší o **6 000 Kč** víc. XML se vada netýkala (generuje se
+  jen za roky 2024 a 2025, kde 30 840 Kč platí), varování R-07i prakticky taky ne
+  (§ 16a se doporučuje jen s hranicí 23 %, kterou registr vede od roku 2024).
+- **R-14h Dílčí základy v celých korunách: DOLŮ a podle úhrnu — a totéž číslo
+  všude.** Tiskopis se vyplňuje v celých korunách, zákon ale způsob zaokrouhlení
+  dílčích základů neurčuje: § 146 odst. 1 daňového řádu zaokrouhluje nahoru až
+  **daň**, § 16 odst. 2 ZDP zaokrouhluje na sta dolů až **základ daně**. Danero
+  proto dílčí základy zapisuje tak, aby se základ daně nepohnul:
+  - druhy § 10 (řádky Přílohy č. 2) a po nich § 8 (ř. 38) dostanou celé koruny
+    **podle běžícího úhrnu** — součet prvních *i* položek je celá koruna dolů
+    z jejich nezaokrouhleného součtu (`wholeCzkParts` v `apps/web/lib/priloha2.ts`).
+    Úhrn (ř. 209, ř. 42) je tak vždy `floor` přesného základu z enginu a ř. 56
+    (sta dolů) vyjde stejně jako `roundBaseDownTo100` v enginu;
+  - matematické zaokrouhlení po položkách tohle nezaručí: tři druhy po 33,40 Kč
+    dají 99 Kč místo 100 a naopak základ 99 999,60 Kč by se zaokrouhlil na
+    100 000 Kč a přeskočil stovku (původní nález A3-08: report 52 092 Kč, XML
+    52 107 Kč);
+  - samostatný základ § 16a (ř. 401a) má vlastní zaokrouhlení na sta, takže se
+    bere dolů samostatně.
+
+  **Totéž číslo patří na obrazovku.** Rozpad daně na přehledu a v reportu
+  („Základ daně z prodejů“, řádky po druzích, „Základ daně z dividend a úroků“)
+  i porovnání variant ukazují tyhle celé koruny (`wholeBasesCzk`, `wholeCzkDown`),
+  ne nezaokrouhlený základ zformátovaný matematicky. Do 11. 10. 2026 stálo
+  v demu za rok 2026 v jednom reportu 8 551 Kč (ř. 209) a o pár sekcí níž 8 552 Kč.
+  Sjednocení je **jen zobrazení**: daň počítá engine dál z nezaokrouhleného
+  základu a XML se nezměnilo ani o bajt.
+
+  Zdroj tvaru: tiskopis DPFDP7 (částky v celých Kč) a vzorky přijaté zkušební
+  podatelnou (`pnpm validate:epo`); výklad „dolů“ je volba Danera v mezeře, kterou
+  zákon nechává, zdůvodněná tím, že nemění ř. 56.
 
 ⚠️ **Proč to sem muselo přijít.** Kód počítal ř. 91 jako
 `max(0, ř.60 − 30 840 + ř.74a)`, tedy s nevyčerpaným zbytkem slevy proti dani § 16a.
@@ -1380,9 +1436,10 @@ tak ozve v CI, ne rozbitou aplikací.
    a **výši paušální zálohy** (`flatTaxAdvance`, R-08f). Když finanční správa zálohu do
    té doby nezveřejnila, zapíše se dopočet podle § 38lk ZDP s poznámkou v komentáři
    a po vydání „Informace k institutu paušální daně“ se ověří. Zákonné částky, které
-   nový rok z předchozího dědí (limity, přirážka k záloze), se při tom **ověří proti
-   novelám účinným od 1. 1. roku R+1** a změněné se v konfiguraci přepíšou výslovně
-   (R-15b). Bez tohohle kroku je rok
+   nový rok z předchozího dědí (limity, přirážka k záloze, sleva na poplatníka),
+   se při tom **ověří proti novelám účinným od 1. 1. roku R+1** a změněné se
+   v konfiguraci přepíšou výslovně (R-15b; sleva na poplatníka má vlastní tabulku
+   podle roku, R-14g). Bez tohohle kroku je rok
    R+1 mimo registr a aplikace u něj poctivě řekne „nevím“ (R-15e). Hlídá
    `apps/web/test/runbook.test.ts`. Při téže příležitosti se **přepočítá orientační
    kurz roku R** (viz níž).

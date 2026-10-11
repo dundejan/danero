@@ -370,6 +370,36 @@ describe('R-07 dividendy a úroky (§ 8)', () => {
     expect(varovani?.context?.taxUnderSection16Czk).toBe('0.00');
   });
 
+  /**
+   * R-14g: sleva na poplatníka není jedno číslo pro všechny roky. Varování do
+   * 11. 10. 2026 počítalo s 30 840 Kč i za rok 2021, kdy byla 27 840 Kč, a za
+   * rok 2020 (24 840 Kč) — propadlý zbytek slevy tak vycházel o 3 000,
+   * resp. 6 000 Kč vyšší, než kolik by poplatník opravdu ztratil.
+   */
+  it.each([
+    [2020, '24 840 Kč', '24840.00'],
+    [2021, '27 840 Kč', '27840.00'],
+    [2022, '30 840 Kč', '30840.00'],
+  ])('R-07i, R-14g: za rok %i varování počítá se slevou toho roku', (year, text, unused) => {
+    const result = run(
+      [dividend({ gross: '1800000', withholdingTax: '0', date: `${year}-04-01` })],
+      { config: { ...CFG_2025, year } },
+    );
+    expect(result.tax.recommended).toBe('SEPARATE_16A');
+    const varovani = result.warnings.find((w) => w.code === 'SEPARATE_16A_CREDIT_LOSS');
+    expect(varovani?.message).toContain(text);
+    expect(varovani?.context?.unusedCreditCzk).toBe(unused);
+  });
+
+  it('R-07i, R-14g: za rok, jehož slevu neznáme, se ztráta nevyčísluje cizím číslem', () => {
+    const result = run(
+      [dividend({ gross: '1800000', withholdingTax: '0', date: '2010-04-01' })],
+      { config: { ...CFG_2025, year: 2010 } },
+    );
+    expect(result.tax.recommended).toBe('SEPARATE_16A');
+    expect(hasWarning(result, 'SEPARATE_16A_CREDIT_LOSS')).toBe(false);
+  });
+
   it('R-07i: se základem § 10 nad slevou se nevaruje — sleva se vyčerpá tak jako tak', () => {
     // base10 = 2 000 000 − 100 000 = 1 900 000 → daň § 16 hluboko nad slevou
     const result = run([

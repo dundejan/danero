@@ -51,16 +51,25 @@ export function filingLimitFor(result: TaxYearResult): FilingLimit | null {
   return null;
 }
 
-/** Nadpis verdiktu — totéž znění na přehledu i v reportu. */
+/**
+ * Nadpis verdiktu — totéž znění na přehledu i v reportu.
+ *
+ * `closed` říká, že zdaňovací období už skončilo. „Zatím … nevzniká“ platí jen
+ * pro rok, který ještě běží a ve kterém limit může prolomit zítřejší prodej;
+ * u skončeného roku je to hotová věc a „zatím“ tam mate (nález R2-14).
+ */
 export function filingVerdictHeadline({
   year,
   exceeded,
+  closed,
 }: {
   year: number;
   exceeded: boolean;
+  closed: boolean;
 }): string {
-  return exceeded
-    ? `Za rok ${year} podáš daňové přiznání`
+  if (exceeded) return `Za rok ${year} podáš daňové přiznání`;
+  return closed
+    ? `Za rok ${year} ti povinnost podat přiznání nevznikla`
     : 'Zatím ti povinnost podat přiznání nevzniká';
 }
 
@@ -76,7 +85,16 @@ const ZONE_TONE: Record<LimitStatus['zone'], Tone> = {
  * Stav limitu a nadpis verdiktu — společný začátek přehledu i reportu. Limit
  * se jmenuje stejně jako v seznamu limitů pod ním („Limit paušální daně“).
  */
-export function FilingVerdictHeading({ year, limit }: { year: number; limit: FilingLimit }) {
+export function FilingVerdictHeading({
+  year,
+  limit,
+  closed,
+}: {
+  year: number;
+  limit: FilingLimit;
+  /** Zdaňovací období už skončilo (rok je menší než běžný rok v české zóně). */
+  closed: boolean;
+}) {
   const { status, name } = limit;
   return (
     <>
@@ -84,7 +102,7 @@ export function FilingVerdictHeading({ year, limit }: { year: number; limit: Fil
         {`${name} — ${ZONE_LABEL[status.zone]}`}
       </StatusLabel>
       <h2 className="type-title-1 mt-3 max-w-[22ch] text-balance">
-        {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded }))}
+        {tidy(filingVerdictHeadline({ year, exceeded: status.exceeded, closed }))}
       </h2>
     </>
   );
@@ -181,10 +199,13 @@ export function FilingDeadlineStat({
 export function ReportFilingVerdict({
   year,
   limit,
+  closed,
   reportsExemptIncome = false,
 }: {
   year: number;
   limit: FilingLimit;
+  /** Zdaňovací období už skončilo — viz `filingVerdictHeadline`. */
+  closed: boolean;
   reportsExemptIncome?: boolean;
 }) {
   const { status, label } = limit;
@@ -205,7 +226,7 @@ export function ReportFilingVerdict({
   );
   return (
     <div>
-      <FilingVerdictHeading year={year} limit={limit} />
+      <FilingVerdictHeading year={year} limit={limit} closed={closed} />
       <div className="type-footnote mt-3 flex items-center gap-1 text-ink-muted print:hidden">
         {status.exceeded
           ? 'Podle příjmů, které Danero eviduje.'

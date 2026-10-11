@@ -35,6 +35,7 @@ import {
 import { czDate, czk, METHOD_LABEL, pct, plural } from '@/lib/format';
 import { LIMIT_NAME, limitTitle } from '@/lib/limit-names';
 import { taxSummary } from '@/lib/payable-tax';
+import { wholeBasesCzk } from '@/lib/priloha2';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
 import { plainTitle, tidy } from '@/lib/typography';
@@ -279,13 +280,13 @@ export function OverviewView({
 
   // Rozpad základu § 10 po druzích — souhrnné „(prodeje)“ mátlo: daň může být
   // jen z derivátů (bez osvobození, R-12c), zatímco prodeje CP/krypto jsou pod limity
-  const base10Total = result.securities.base10Czk
-    .plus(result.crypto.base10Czk)
-    .plus(result.derivatives.base10Czk);
+  // Částky v celých korunách, jak je nese tiskopis — stejné číslo jako v reportu
+  // u Přílohy č. 2 a ř. 38, ne o korunu jiné (R-14h).
+  const wholeBases = wholeBasesCzk(result, tax.variant);
   const base10Parts = [
-    { label: 'cenné papíry', value: result.securities.base10Czk },
-    { label: 'kryptoaktiva', value: result.crypto.base10Czk },
-    { label: 'deriváty', value: result.derivatives.base10Czk },
+    { label: 'cenné papíry', value: wholeBases.securitiesCzk },
+    { label: 'kryptoaktiva', value: wholeBases.cryptoCzk },
+    { label: 'deriváty', value: wholeBases.derivativesCzk },
   ].filter((part) => part.value.gt(0));
 
   // prodeje proběhly, ale jsou celé osvobozené → řekni to, jinak čtenář hledá
@@ -457,7 +458,7 @@ export function OverviewView({
       <div className="grid gap-x-(--column-gap) gap-y-7 @3xl:grid-cols-2 @3xl:items-end">
         <div>
           {filingLimit ? (
-            <FilingVerdictHeading year={year} limit={filingLimit} />
+            <FilingVerdictHeading year={year} limit={filingLimit} closed={year < currentYear} />
           ) : (
             <h2 className="type-title-1 max-w-[22ch] text-balance">
               {tidy(`Daně z investic za rok ${year}`)}
@@ -655,11 +656,11 @@ export function OverviewView({
                       ? `z toho ${base10Parts.map((part) => `${part.label} ${czk(part.value)}`).join(', ')}`
                       : undefined
                   }
-                  value={czk(base10Total)}
+                  value={czk(wholeBases.base10Czk)}
                 />
                 <Row
                   label="Základ daně z dividend a úroků"
-                  value={czk(result.dividends.base8Czk)}
+                  value={czk(wholeBases.base8Czk)}
                 />
                 {/* E-27: variantu zdanění dividend nedoporučujeme (docs/13 V-4) —
                     řádek říká, se kterou počítáme, a kolik by vyšla ta druhá.

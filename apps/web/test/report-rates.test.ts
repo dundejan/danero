@@ -67,6 +67,26 @@ const TXS_2019: Transaction[] = parseTransactions([
   },
 ]);
 
+/**
+ * Tatáž historie a k ní nákup v daném roce — report za rok bez jediné
+ * transakce osnovu (a s ní kartu kurzů) nekreslí, ukáže prázdný stav (R2-14).
+ */
+const withBuyIn = (year: number): Transaction[] => [
+  ...TXS_2019,
+  ...parseTransactions([
+    {
+      type: 'BUY',
+      id: `b-${year}`,
+      isin: 'CZ0000000002',
+      quantity: '1',
+      pricePerShare: '100',
+      currency: 'CZK',
+      tradeDate: `${year}-03-03`,
+      settlementDate: `${year}-03-05`,
+    },
+  ]),
+];
+
 const render = (txs: Transaction[], year: number): string =>
   renderToStaticMarkup(createElement(ReportView, { txs, profile: PROFILE, year, years: [year] }));
 
@@ -115,7 +135,7 @@ describe('karta „Použité kurzy“ u roku bez jednotného kurzu (K1-04)', () 
   });
 
   it('report za rok s kurzy pořád nese důkazní tabulku', () => {
-    const out = render(TXS_2019, 2025);
+    const out = render(withBuyIn(2025), 2025);
     expect(out).toContain('pokyn GFŘ D-75');
     expect(out).not.toContain('jednotný kurz GFŘ nemáme');
   });
@@ -131,7 +151,7 @@ describe('věta o orientačním kurzu jen tam, kde orientační kurz vstupuje do
   const ESTIMATED = 'orientační do vydání pokynu';
   /** Text tiskové kopie vysvětlivky pod tabulkou kurzů. */
   const ratesNote = (year: number): string => {
-    const out = render(TXS_2019, year).replace(/<[^>]+>/g, ' ').replace(/ /g, ' ');
+    const out = render(withBuyIn(year), year).replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' ');
     const from = out.lastIndexOf('Ověřené jednotné kurzy');
     expect(from).toBeGreaterThan(-1);
     return out.slice(from, from + 400);

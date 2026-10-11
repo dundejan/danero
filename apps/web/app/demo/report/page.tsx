@@ -28,6 +28,7 @@ export default async function DemoReportPage({
       profile={profile}
       year={year}
       years={years}
+      today={today}
       dailyRates={dailyRates}
       basePath="/demo"
       demo

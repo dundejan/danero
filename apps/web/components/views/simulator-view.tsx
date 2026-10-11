@@ -28,7 +28,7 @@ import {
   type ProfileRow,
 } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
-import { simulationKey } from '@/lib/simulator-input';
+import { normalizeNumberInput, simulationKey } from '@/lib/simulator-input';
 import {
   regimeLimitFor,
   simulatorVerdict,
@@ -129,8 +129,10 @@ export function SimulatorView({
     (selected ? lastPriceOf(selected.isin, selected.currency) : undefined) ??
     ''
   ).trim();
-  const priceRaw = priceParam.replace(',', '.');
-  const quantityRaw = quantityParam.replace(',', '.');
+  // číslo tak, jak ho píše aplikace („1 234,56“ s pevnou mezerou), se musí dát
+  // do pole vložit — pole i klíč výsledku si přitom drží, co uživatel napsal
+  const priceRaw = normalizeNumberInput(priceParam);
+  const quantityRaw = normalizeNumberInput(quantityParam);
 
   // druh je vlastnost instrumentu — derivát poznáme z transakcí i bez pozice
   const isDerivativeIsin =

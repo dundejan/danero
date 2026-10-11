@@ -14,6 +14,7 @@ import {
   type NotificationRules,
 } from '@/lib/notification-rules';
 import { czDate, czk, pct, plural, qty } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
 import { recommendedTaxCzk, unpaidUnderLimitCzk } from '@/lib/payable-tax';
 import {
   analyzeForUser,
@@ -110,27 +111,29 @@ export function computeNotificationCandidates(args: {
   }
 
   const year = result.year;
+  // Limity se jmenují stejně jako v aplikaci (`lib/limit-names.ts`) — titulek
+  // upozornění stojí na přehledu hned vedle seznamu limitů a je to i předmět
+  // e-mailu. Částka se bere ze stavu limitu: u limitů § 38g se rok od roku
+  // liší (R-09a, R-09b), takže titulek a věta o čerpání nejmenují dvě různé.
   const limitEvents: Array<{
     key: string;
+    kind: LimitKind;
     applicable: boolean;
     status: LimitStatus;
-    label: string;
     consequence: string;
   }> = [
     {
       key: '50k',
+      kind: 'FLAT_TAX',
       applicable: result.limits.flatTax50k.applicable,
       status: result.limits.flatTax50k.status,
-      label: 'limit 50 000 Kč pro paušální daň',
       consequence: 'Při překročení za rok podáváš přiznání a přehledy (v paušálním režimu zůstáváš).',
     },
     {
       key: '20k',
+      kind: 'EMPLOYEE_SIDE_INCOME',
       applicable: result.limits.employee20k.applicable,
       status: result.limits.employee20k.status,
-      // R-09b: částka se rok od roku liší (do ZO 2026 20 000 Kč, od ZO 2027
-      // 40 000 Kč) — z téhož stavu ji bere i věta o čerpání pod titulkem
-      label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
@@ -140,19 +143,19 @@ export function computeNotificationCandidates(args: {
       // nic. Klíč nese jen druh limitu, částku ne: ta se od ZO 2027 mění
       // (100 000 Kč) a bere se ze stavu limitu stejně jako u zaměstnance.
       key: 'filing50k',
+      kind: 'GENERAL_FILING',
       applicable: result.limits.generalFiling50k.applicable,
       status: result.limits.generalFiling50k.status,
-      label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
       key: '100k',
+      kind: 'SECURITIES',
       // K6b-02: `true` natvrdo posílalo měřák „X ze 100 000" i poplatníkovi
       // s obchodním majetkem, který na osvobození podle § 4/1 t) nárok nemá
       // (R-02f) — v přehledu se přitom správně nezobrazoval.
       applicable: result.limits.limit100k.applicable,
       status: result.limits.limit100k,
-      label: 'limit 100 000 Kč pro osvobození prodejů',
       // fakt bez imperativu: individualizovaný pokyn („zvaž, počkej“) je za
       // hranicí § 1 zákona 523/1992 Sb. (nález V-4 auditu) — rada patří leda
       // obecně do marketingu, ne do e-mailu s čísly konkrétního člověka
@@ -160,10 +163,10 @@ export function computeNotificationCandidates(args: {
     },
     {
       key: 'krypto100k',
+      kind: 'CRYPTO',
       // totéž pro krypto: v roce bez osvobození (ZO ≤ 2024, R-10b) měřák lže
       applicable: result.limits.cryptoLimit100k.applicable,
       status: result.limits.cryptoLimit100k,
-      label: 'limit 100 000 Kč pro osvobození krypta',
       consequence:
         'Nad limit se daní prodeje a směny kryptoaktiv bez splněného časového testu.',
     },
@@ -187,15 +190,20 @@ export function computeNotificationCandidates(args: {
     // hranici má uživatel zaškrtnutou. Bez toho by ten, kdo si odškrtl 100 %,
     // dostal při 150 % limitu titulek „Blížíš se“.
     const breached = event.status.exceeded;
+    const name = limitWithAmount(event.kind, event.status.limitCzk);
+    // Limit se „prolomí“, osvobození prodej „zruší“ — stejná slovesa jako
+    // v simulátoru. A „Blížíš se: osvobození…“ by se četlo jako dobrá zpráva
+    // o časovém testu, proto má osvobození vlastní předstih.
+    const exemption = event.kind === 'SECURITIES' || event.kind === 'CRYPTO';
     add({
       dedupeKey: `limit|${event.key}|${thresholdKey(top)}|${year}`,
       type: breached ? 'LIMIT_EXCEEDED' : top >= 85 ? 'LIMIT_CRITICAL' : 'LIMIT_WARNING',
       urgent: breached,
       title: breached
-        ? `Prolomen ${event.label}`
+        ? `${exemption ? 'Zrušeno' : 'Prolomen'} ${name}`
         : top >= 85
-          ? `Blížíš se: ${event.label}`
-          : `Za polovinou: ${event.label}`,
+          ? `${exemption ? 'Skoro vyčerpáno' : 'Blížíš se'}: ${name}`
+          : `Za polovinou: ${name}`,
       body: breached ? `${usage}. ${event.consequence}` : `${usage} — přes ${top} %. ${event.consequence}`,
     });
   }
@@ -286,7 +294,8 @@ export function calendarCandidates(args: {
       dedupeKey: `rocni|${taxYear}`,
       type: 'YEAR_SUMMARY',
       title: `Podklady za rok ${taxYear} jsou připravené`,
-      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu${xmlSlib}. ${deadlineNote}`,
+      // stránka se jmenuje „Report“ (dřív „Daňový report“)
+      body: `Report za rok ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu${xmlSlib}. ${deadlineNote}`,
     });
   }
   // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
@@ -343,38 +352,30 @@ export function summaryCandidate(args: {
 }): NotificationCandidate {
   const { result, positions, labels, today, period } = args;
 
+  // Řádky se jmenují stejně jako seznam limitů na přehledu (`LIMIT_NAME`);
+  // částku limitu nese hned věta za jménem („… z 50 000 Kč“), a to ze stavu
+  // limitu — u limitů § 38g se rok od roku liší (R-09a, R-09b).
   const limits: Array<{ label: string; status: LimitStatus }> = [
     ...(result.limits.flatTax50k.applicable
-      ? [{ label: 'limit 50 000 Kč pro paušální daň', status: result.limits.flatTax50k.status }]
+      ? [{ label: LIMIT_NAME.FLAT_TAX, status: result.limits.flatTax50k.status }]
       : []),
     ...(result.limits.employee20k.applicable
-      ? [
-          {
-            // R-09b: částka z konfigurace roku, ne natvrdo (od ZO 2027 je 40 000 Kč)
-            label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
-            status: result.limits.employee20k.status,
-          },
-        ]
+      ? [{ label: LIMIT_NAME.EMPLOYEE_SIDE_INCOME, status: result.limits.employee20k.status }]
       : []),
     // L12-02: bez tohoto řádku přehled v režimu „Jiné“ ukázal jen nečerpanou
     // stovku a působil klidně i při prolomeném limitu pro přiznání (R-09a)
     ...(result.limits.generalFiling50k.applicable
-      ? [
-          {
-            label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
-            status: result.limits.generalFiling50k.status,
-          },
-        ]
+      ? [{ label: LIMIT_NAME.GENERAL_FILING, status: result.limits.generalFiling50k.status }]
       : []),
     // K6b-02b: měřák limitu, na který poplatník nárok NEMÁ, v přehledu být
     // nesmí — s cennými papíry v obchodním majetku osvobození podle § 4/1 t)
     // neexistuje (R-02f) a řádek „0 ze 100 000" tvrdí klid tam, kde se daní
     // každá koruna. V aplikaci se správně nezobrazuje už dřív.
     ...(result.limits.limit100k.applicable
-      ? [{ label: 'limit 100 000 Kč pro osvobození prodejů', status: result.limits.limit100k }]
+      ? [{ label: LIMIT_NAME.SECURITIES, status: result.limits.limit100k }]
       : []),
     ...(result.limits.cryptoLimit100k.applicable && result.limits.cryptoLimit100k.usedCzk.gt(0)
-      ? [{ label: 'limit 100 000 Kč pro osvobození krypta', status: result.limits.cryptoLimit100k }]
+      ? [{ label: LIMIT_NAME.CRYPTO, status: result.limits.cryptoLimit100k }]
       : []),
   ];
   const limitLines = limits.map(
