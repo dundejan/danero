@@ -159,37 +159,36 @@ test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s h
 /**
  * L7-01: na telefonu se nedalo odhlásit vůbec — jediné „Odhlásit se“ žilo
  * v patičce railu a ten se pod 768 px nevykresluje. Relace přitom platí 7 dní,
- * takže na půjčeném zařízení zůstala daňová data přístupná. Tlačítko je proto
- * i v Nastavení → Účet (jen na šířkách, kde rail chybí) a v sheetu „Více“
- * spodní lišty.
+ * takže na půjčeném zařízení zůstala daňová data přístupná.
+ *
+ * Odhlášení je v každé šířce okna právě jedno a vždy u účtu ve skořápce:
+ * v patičce postranního panelu, na telefonu v sheetu „Více“ spodní lišty.
+ * Tlačítko na stránce Nastavení → Účet, které bylo na telefonu vidět vedle
+ * toho v sheetu, je pryč (rozhodnuto 11. 10. 2026).
  */
-test('odhlášení na telefonu: tlačítko v Nastavení → Účet ukončí relaci', async ({ page }) => {
+test('odhlášení: v každé šířce právě jedno — na telefonu v sheetu „Více“', async ({ page }) => {
   const email = 'odhlaseni-telefon@danero.cz';
   await registerWithProfile(page, { name: 'E2E Telefon', email });
   await page.goto('/nastaveni/ucet');
   const signOutControl = page.getByRole('button', { name: 'Odhlásit se' });
 
-  // desktop: jediné tlačítko je to v railu — druhé by shodilo strict režim
-  // v ostatních testech, které na téhle stránce klikají na „Odhlásit se“
+  // počítač: jediné tlačítko je v patičce postranního panelu
   await expect(signOutControl).toHaveCount(1);
+  await expect(page.getByRole('complementary').getByRole('button', { name: 'Odhlásit se' })).toBeVisible();
 
-  // šířka telefonu: rail zmizel, odhlášení nabízí stránka účtu
+  // šířka telefonu: panel zmizel a stránka účtu vlastní odhlášení nemá
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('complementary')).toHaveCount(0);
-  await expect(signOutControl).toHaveCount(1);
-  await expect(signOutControl).toBeVisible();
+  await expect(signOutControl).toHaveCount(0);
 
-  // druhá cesta z kterékoli stránky: sheet „Více“ ve spodní liště ukáže, kdo
-  // je přihlášený, a nabídne odhlášení
+  // jediná cesta je sheet „Více“: ukáže, kdo je přihlášený, a nabídne odhlášení
   const tabBar = page.getByRole('navigation', { name: 'Hlavní navigace' });
   await (await hydrated(tabBar.getByRole('button', { name: 'Více' }))).click();
   const sheet = page.getByRole('dialog', { name: 'Další sekce' });
   await expect(sheet.getByText(email)).toBeVisible();
-  await expect(sheet.getByRole('button', { name: 'Odhlásit se' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(sheet).toBeHidden();
+  await expect(signOutControl).toHaveCount(1);
 
-  await signOutControl.click();
+  await sheet.getByRole('button', { name: 'Odhlásit se' }).click();
   await page.waitForURL('**/prihlaseni');
   expect((await page.request.get('/api/export')).status()).toBe(401);
 });

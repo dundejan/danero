@@ -17,38 +17,36 @@ const ACCOUNT_PAGE = 'app/(app)/nastaveni/ucet/page.tsx';
 const NAV_RAIL = 'components/nav-rail.tsx';
 const SIGN_OUT_BUTTON = 'components/sign-out-button.tsx';
 
-/** Otevírací značka prvku, který bezprostředně obaluje místo `index`. */
-function enclosingOpeningTag(source: string, index: number): string {
-  const start = source.lastIndexOf('<div', index);
-  return source.slice(start, source.indexOf('>', start) + 1);
-}
-
-describe('L7-01: odhlášení je dosažitelné i na telefonu', () => {
-  it('stránka účtu nabízí „Odhlásit se“ v sekci přihlášených zařízení', () => {
+/**
+ * L7-01 (revize 5): na telefonu se nedalo odhlásit vůbec. Redesign přidal
+ * odhlášení do sheetu „Více“ a to původní na stránce účtu zůstalo — na
+ * telefonu tak byla dvě (R1B-08, rozhodnuto 11. 10. 2026). Pravidlo: v každé
+ * šířce okna právě jedno místo, a to u účtu ve skořápce.
+ */
+describe('odhlášení: v každé šířce okna právě jedno', () => {
+  it('stránka účtu vlastní „Odhlásit se“ nemá', () => {
     const page = read(ACCOUNT_PAGE);
-    expect(page).toContain("from '@/components/sign-out-button'");
-    const button = page.indexOf('<SignOutButton');
-    expect(button).toBeGreaterThan(-1);
-    // mezi kartou zařízení a kartou vzhledu, ne někde nahoře u hesla
-    expect(button).toBeGreaterThan(page.indexOf('id="aktivita"'));
-    expect(button).toBeLessThan(page.indexOf('id="vzhled"'));
-    // právě jednou — dvě tlačítka na jedné stránce by nedávala smysl
-    expect(page.split('<SignOutButton').length - 1).toBe(1);
+    expect(page).not.toContain('<SignOutButton');
+    expect(page).not.toContain("from '@/components/sign-out-button'");
   });
 
-  it('tlačítko na stránce účtu je vidět jen pod md, kde chybí rail', () => {
-    const page = read(ACCOUNT_PAGE);
-    const wrapper = enclosingOpeningTag(page, page.indexOf('<SignOutButton'));
-    // Na desktopu má odhlášení rail. Druhé viditelné tlačítko téhož jména by
-    // shodilo E2E, které na /nastaveni/ucet kliká na „Odhlásit se“ ve strict
-    // režimu (ucet.spec.ts, dvoufaktor.spec.ts).
-    expect(wrapper).toContain('md:hidden');
-    // a rail se na téže hranici opravdu objevuje — jinak by mezi šířkami
-    // vznikla díra, kde není vidět ani jedno
-    expect(read(NAV_RAIL)).toMatch(/<aside className="hidden [^"]*\bmd:flex"/);
+  it('skořápka ho má dvakrát: v panelu od md výš a v sheetu „Více“ pod md', () => {
+    const rail = read(NAV_RAIL);
+    expect(rail.split('<SignOutButton').length - 1).toBe(2);
+
+    // postranní panel (s patičkou účtu) je vidět od md výš…
+    expect(rail).toMatch(/<aside className="hidden [^"]*\bmd:flex"/);
+    // …a spodní lišta s tlačítkem „Více“, které sheet otevírá, jen pod md —
+    // na téže hranici, jinak by mezi šířkami bylo odhlášení dvakrát, nebo vůbec
+    const tabBar = rail.slice(rail.indexOf('aria-label="Hlavní navigace"', rail.indexOf('function TabBar')));
+    expect(tabBar.slice(0, tabBar.indexOf('>'))).toMatch(/\bmd:hidden\b/);
+    const sheet = rail.slice(rail.indexOf('<Sheet'), rail.indexOf('</Sheet>'));
+    expect(sheet).toContain('<SignOutButton');
+    const footer = rail.slice(rail.indexOf('export function NavRail'));
+    expect(footer).toContain('<SignOutButton');
   });
 
-  it('rail i stránka účtu používají totéž tlačítko, odhlášení se nekopíruje', () => {
+  it('obě místa používají totéž tlačítko, odhlášení se nekopíruje', () => {
     const rail = read(NAV_RAIL);
     expect(rail).toContain("from '@/components/sign-out-button'");
     expect(rail).toContain('<SignOutButton');

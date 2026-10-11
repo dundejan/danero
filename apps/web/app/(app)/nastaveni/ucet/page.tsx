@@ -1,5 +1,4 @@
 import { headers } from 'next/headers';
-import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TwoFactorSection } from '@/components/two-factor-section';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -35,9 +34,9 @@ export const metadata = { title: 'Účet a zabezpečení — Danero' };
  * neúspěchu otevře znovu a hlášku ukáže u pole, kterého se týká — ne
  * v toastu nad zavřeným řádkem.
  */
-const PASSWORD_ERRORS = ['heslo', 'heslo-bezne', 'heslo-spatne', 'heslo-limit'];
+const PASSWORD_ERRORS = ['heslo', 'heslo-bezne', 'heslo-spatne', 'heslo-limit', 'heslo-selhalo'];
 const EMAIL_ERRORS = ['email', 'email-obsazeny', 'email-ulozeni', 'email-heslo', 'email-limit'];
-const DELETE_ERRORS = ['smazani', 'smazani-heslo', 'smazani-limit'];
+const DELETE_ERRORS = ['smazani', 'smazani-heslo', 'smazani-limit', 'smazani-selhalo'];
 
 const PASSWORD_ERROR_ID = 'zmena-hesla-error';
 const EMAIL_ERROR_ID = 'zmena-emailu-error';
@@ -273,17 +272,9 @@ export default async function AccountSettingsPage({
               </Group>
             </Disclosure>
           )}
-          {/* L7-01: pod md není postranní panel, a tedy ani jeho „Odhlásit se“.
-              Na telefonu je odhlášení i v sheetu „Více“ (R1B-08); tady zůstává,
-              protože se hledá u přihlášených zařízení. Od md výš je schované, ať
-              na stránce nejsou dvě tlačítka téhož jména (hranice musí sedět
-              s `md:flex` panelu). */}
-          <div className="mt-5 space-y-2 md:hidden">
-            <SignOutButton
-              className={buttonVariants({ variant: 'secondary', className: 'w-full' })}
-              errorClassName="type-footnote text-danger"
-            />
-          </div>
+          {/* „Odhlásit se“ tady není: v každé šířce okna je právě jedno, u účtu
+              ve skořápce — v patičce postranního panelu, na telefonu v sheetu
+              „Více“ (`components/nav-rail.tsx`). */}
         </Section>
 
         <Section
