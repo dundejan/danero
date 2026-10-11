@@ -14,6 +14,8 @@ const WEB_ROOT = resolve(import.meta.dirname, '..');
 const read = (path: string): string => readFileSync(resolve(WEB_ROOT, path), 'utf8');
 
 const ACCOUNT_PAGE = 'app/(app)/nastaveni/ucet/page.tsx';
+/** Formuláře stránky s chybou u pole (v prohlížeči — `lib/action-result.ts`). */
+const ACCOUNT_FORMS = 'app/(app)/nastaveni/ucet/account-forms.tsx';
 const NAV_RAIL = 'components/nav-rail.tsx';
 const SIGN_OUT_BUTTON = 'components/sign-out-button.tsx';
 
@@ -64,7 +66,7 @@ describe('odhlášení: v každé šířce okna právě jedno', () => {
 
 describe('L7-06: potvrzení smazání účtu na telefonu', () => {
   it('pole „Napiš SMAZAT“ si říká o velká písmena', () => {
-    const page = read(ACCOUNT_PAGE);
+    const page = read(ACCOUNT_FORMS);
     const id = page.indexOf('id="potvrzeni"');
     expect(id).toBeGreaterThan(-1);
     // celá značka pole, ať test nezávisí na tom, kolik řádků zabírá

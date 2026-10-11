@@ -388,6 +388,11 @@ Odkaz uprostřed věty je vždy podtržený.
   Taková hláška nemizí sama, takže ji po úklidu adresy musí držet prohlížeč: stránka se
   umí obnovit i bez uživatele (doběhne synchronizace) a ze serveru už přijde bez ní
   (vzor: `app/(app)/import/upload-result.tsx`).
+- Totéž platí pro chybu u pole: formulář, který ji ukazuje podle kódu z adresy, si výsledek
+  akce drží v prohlížeči (`lib/action-result.ts`; vzor: `nastaveni/ucet/account-forms.tsx`).
+  Řádek s formulářem otevírej přes `defaultOpen`, nikdy řízeným `open`, a nedávej mu klíč,
+  který se mění při každém vykreslení — obojí ho při obnovení stránky zavře uživateli pod
+  rukama i s rozepsaným textem.
 - Formulář s auto-save (`AutoSubmit`) nese skrytý stav, se kterým byl vykreslen, a server
   zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`) — panel se starým stavem
   tak nepřepíše změnu udělanou jinde. Výchozí hodnoty polí i skrytý stav ber z jednoho místa
@@ -402,8 +407,9 @@ Odkaz uprostřed věty je vždy podtržený.
   během ukládání se slijí — a stránku ze serveru dotáhne až poslední v řadě.
 - Text, který člověk napsal a pole neopustil, se neztrácí: uloží se při odchodu ze stránky
   (Zpět, odkaz, skrytí i zavření panelu, F5) požadavkem, který odchod přežije
-  (`/api/settings/*`, `lib/auto-save-route.ts`), a po F5 ho pole hned ukazuje
-  (`lib/leaving-draft.ts`). Ukládá se jen text, který prokazatelně psal člověk. Neplatný
+  (`/api/settings/*`, `lib/auto-save-route.ts`; kde prohlížeč neumí `fetch` s `keepalive`,
+  jde při zániku dokumentu přes beacon — `lib/leaving-request.ts`), a po F5 ho pole hned
+  ukazuje (`lib/leaving-draft.ts`). Ukládá se jen text, který prokazatelně psal člověk. Neplatný
   text server odmítne: hláška to řekne i na stránce, kam člověk odešel, pole zůstane
   označené a ostatní změny se uloží bez něj. Pole s pevným tvarem má dostat `pattern`
   (a větu k němu v `title`) — podle něj se při zavírání panelu s neplatným textem prohlížeč
