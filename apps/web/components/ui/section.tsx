@@ -35,8 +35,14 @@ export function SectionHeader({
           className={cn('min-w-0 wrap-anywhere', Heading === 'h2' ? 'type-title-2' : 'type-title-3')}
         >
           {title}
+          {/* Mezera patří do textu nadpisu, ne jen do okraje: bez ní čtečka
+              i přehled nadpisů čtou titulek a počet jako jedno slovo („Prodeje
+              v roce 20264“). Okraj je o tu mezeru užší. */}
           {count != null && (
-            <span className="ml-2 font-normal tabular-nums text-ink-muted">{count}</span>
+            <>
+              {' '}
+              <span className="ml-1 font-normal tabular-nums text-ink-muted">{count}</span>
+            </>
           )}
         </Heading>
         {info}

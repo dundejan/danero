@@ -7,8 +7,10 @@ import { AppToolbar } from '@/components/app-toolbar';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { Row } from '@/components/ui/list';
+import { SectionHeader } from '@/components/ui/section';
 import { Stat } from '@/components/ui/stat';
 import { StatusLabel } from '@/components/ui/status';
+import { LotStatus } from '@/components/views/position-view';
 
 const webRoot = join(import.meta.dirname, '..');
 const read = (relative: string): string => readFileSync(join(webRoot, relative), 'utf8');
@@ -220,5 +222,39 @@ describe('pojistky proti dlouhému obsahu (R2-01, R2-16 až R2-22, R2-26)', () =
   it('velké číslo má strop podle šířky okna — při zvětšeném písmu nevyjede ze stránky', () => {
     const figure = block(css, css.indexOf('@utility type-figure-lg {')).body;
     expect(figure).toMatch(/font-size: min\(clamp\([^;]+\), 9vw\);/);
+  });
+});
+
+/**
+ * Text, který čte čtečka (a který si člověk zkopíruje), je obsah prvku bez
+ * značek. Dva sousední řádkové prvky oddělené jen okrajem v něm splynou:
+ * nadpis sekce „Prodeje v roce 2026“ s počtem 4 se četl „Prodeje v roce 20264“
+ * a přehled nadpisů nabízel „Pozice52“. Našlo to až E2E po redesignu, když
+ * začalo nadpisy hledat podle role a celého jména.
+ */
+describe('sousední texty se v přístupném názvu neslepí', () => {
+  const textOf = (markup: string): string => markup.replace(/<[^>]+>/g, '');
+
+  it('SectionHeader: počet za titulkem odděluje mezera', () => {
+    const markup = renderToStaticMarkup(
+      createElement(SectionHeader, { title: 'Prodeje v roce 2026', count: 4 }),
+    );
+    expect(textOf(markup)).toBe('Prodeje v roce 2026 4');
+  });
+
+  it('SectionHeader: bez počtu za titulkem mezera nepřibude', () => {
+    const markup = renderToStaticMarkup(createElement(SectionHeader, { title: 'Limity' }));
+    expect(textOf(markup)).toBe('Limity');
+  });
+
+  it('LotStatus: odpočet a datum osvobození v buňce tabulky odděluje mezera', () => {
+    const lot = {
+      exemptionPossible: true,
+      isExempt: false,
+      daysToExempt: 245,
+      exemptFrom: '2027-06-12',
+    } as Parameters<typeof LotStatus>[0]['lot'];
+    const text = textOf(renderToStaticMarkup(createElement(LotStatus, { lot })));
+    expect(text.replace(/\s/g, ' ')).toBe('za 245 dní 12. 6. 2027');
   });
 });

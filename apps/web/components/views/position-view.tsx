@@ -98,15 +98,16 @@ const EXTRA_LOT_TABLE_ROW = 'hidden group-has-[input:checked]/lots:table-row pri
  * stablecoin, derivát) by datum i odpočet slibovaly osvobození, které nikdy
  * nepřijde (A2-3-04) — proto „nevztahuje se“.
  */
-function LotStatus({ lot, stacked = false }: { lot: PositionLot; stacked?: boolean }) {
+export function LotStatus({ lot, stacked = false }: { lot: PositionLot; stacked?: boolean }) {
   if (!lot.exemptionPossible) return <span className="text-ink-muted">nevztahuje se</span>;
   if (lot.isExempt) return <span className="font-medium text-success-text">už bez daně</span>;
   return (
     // v tabulce stojí odpočet před datem, aby data lícovala na pravý okraj
     <span className={stacked ? 'flex flex-col-reverse' : undefined}>
-      <span className={cn('type-footnote text-ink-muted', !stacked && 'mr-2')}>
+      <span className={cn('type-footnote text-ink-muted', !stacked && 'mr-1')}>
         {daysText(lot.daysToExempt)}
       </span>
+      {/* mezera patří do textu buňky: jen s okrajem čtečka četla „za 245 dní12. 6. 2027“ */}{' '}
       <span>{czDate(lot.exemptFrom)}</span>
     </span>
   );
