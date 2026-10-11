@@ -107,4 +107,58 @@ describe('odpověď na uložení při odchodu', () => {
     expect(response.status).toBe(400);
     expect(save).not.toHaveBeenCalled();
   });
+
+  /**
+   * Revize R7 (M4): cesta neměla strop velikosti těla — 5 MB prošlo až
+   * k validaci formuláře. Formulář nastavení má kolem 4 kB.
+   */
+  it('moc velké tělo odmítne stavem 413 a nic neuloží', async () => {
+    const { autoSaveResponse, MAX_BODY_BYTES } = await import('@/lib/auto-save-route');
+    const save = vi.fn();
+    const oversized = new FormData();
+    oversized.append('pole', 'x'.repeat(MAX_BODY_BYTES));
+    const response = await autoSaveResponse(request(SAME_ORIGIN, oversized), USER, save);
+    expect(response.status).toBe(413);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('strop platí i bez hlavičky Content-Length (tělo po kusech)', async () => {
+    const { autoSaveResponse, MAX_BODY_BYTES } = await import('@/lib/auto-save-route');
+    const save = vi.fn();
+    const chunk = new TextEncoder().encode('x'.repeat(4096));
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent > 4 * MAX_BODY_BYTES) return controller.close();
+        sent += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+    const streamed = new Request('https://danero.test/api/settings/profile', {
+      method: 'POST',
+      headers: { ...SAME_ORIGIN, 'content-type': 'multipart/form-data; boundary=x' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(streamed.headers.get('content-length')).toBeNull();
+    const response = await autoSaveResponse(streamed, USER, save);
+    expect(response.status).toBe(413);
+    expect(save).not.toHaveBeenCalled();
+    // zbytek těla se nečte: čtení skončilo dlouho před koncem proudu
+    expect(sent).toBeLessThan(4 * MAX_BODY_BYTES);
+  });
+
+  it('formulář běžné velikosti projde beze změny', async () => {
+    const { autoSaveResponse } = await import('@/lib/auto-save-route');
+    const body = new FormData();
+    for (let index = 0; index < 30; index++) body.append(`pole-${index}`, 'hodnota '.repeat(8));
+    body.append('ostatni-prijmy', '12 000,50');
+    const save = vi.fn(async (_userId: string, formData: FormData) => ({
+      ok: true,
+      message: String(formData.get('ostatni-prijmy')),
+    }));
+    const response = await autoSaveResponse(request(SAME_ORIGIN, body), USER, save);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, message: '12 000,50' });
+  });
 });
