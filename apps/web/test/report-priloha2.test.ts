@@ -338,7 +338,7 @@ describe('Věta o číslech řádků rozlišuje rok minulý a budoucí (R2-04)',
   });
 
   it('report minulého roku tu větu opravdu vykreslí', () => {
-    const html = render(lossyTxs(past), past).replace(/ /g, ' ');
+    const html = render(lossyTxs(past), past).replace(/\u00a0/g, ' ');
     expect(html).toContain(formLinesNote(past)!.short);
     expect(html).not.toContain('ještě nezveřejnila');
   });

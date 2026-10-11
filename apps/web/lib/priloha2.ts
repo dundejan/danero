@@ -179,6 +179,42 @@ export function wholeBasesCzk(
 }
 
 /**
+ * Tržby (u derivátů plnění) druhu v celých korunách tak, aby seděly na sloupec
+ * „Příjmy“ Přílohy č. 2 — pro tichý řádek pod druhem v rozpadu daně
+ * (docs/02 R-14h).
+ *
+ * Příloha příjmy druhu nezaokrouhluje, ale dopočítává (výdaje dolů + rozdíl
+ * podle úhrnu, viz `priloha2`), takže vyjdou až o 2 Kč níž než táž tržba
+ * zaokrouhlená matematicky: u tržby 108 601,60 Kč stálo v příloze 108 601 Kč
+ * a o pár sekcí níž „tržby 108 602 Kč“. Zdanitelná část tržeb se proto bere
+ * z řádku přílohy. Osvobozená část (časový test, prodeje do limitu) v příloze
+ * není vůbec — přičte se zaokrouhlená na koruny, takže rok, kde je osvobozené
+ * všechno, ukáže totéž číslo jako čerpání limitu na přehledu.
+ *
+ * Jen zobrazení: nic z toho nejde do XML ani do výpočtu daně.
+ */
+export function wholeProceedsCzk(result: TaxYearResult): {
+  securitiesCzk: Money;
+  cryptoCzk: Money;
+  derivativesCzk: Money;
+} {
+  const rows = priloha2(result).rows;
+  const beyondForm = (grossCzk: Money, taxableCzk: Money): Money =>
+    grossCzk.sub(taxableCzk).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+  const { securities, crypto } = result;
+  return {
+    securitiesCzk: rows[0]!.prijmyCzk.plus(
+      beyondForm(securities.totalGrossProceedsCzk, securities.taxableIncomeCzk),
+    ),
+    cryptoCzk: rows[1]!.prijmyCzk.plus(
+      beyondForm(crypto.totalGrossProceedsCzk, crypto.taxableIncomeCzk),
+    ),
+    // u derivátů se zobrazuje rovnou zdanitelné plnění — to je řádek přílohy
+    derivativesCzk: rows[2]!.prijmyCzk,
+  };
+}
+
+/**
  * Ztráta, kterou do Přílohy 2 zapsat nejde: součet toho, oč výdaje každého
  * druhu převýšily jeho příjmy (§ 10 odst. 4; R-05d, R-10c, R-12b). Druhy se
  * nekompenzují, takže zisk jednoho ztrátu druhého nesnižuje.

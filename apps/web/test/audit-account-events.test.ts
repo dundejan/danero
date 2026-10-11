@@ -90,7 +90,7 @@ describe('audit účtu zaznamená převzetí účtu (K4-04)', () => {
       body: { password: HESLO },
       headers: new Headers({ cookie: cookies }),
     });
-    const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)?.[1]!;
+    const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
 
     // samotné /two-factor/enable ještě nic nezapíná — jen vydá QR a záložní
     // kódy, takže se do auditu nesmí zapsat nic
@@ -126,7 +126,7 @@ describe('audit účtu zaznamená převzetí účtu (K4-04)', () => {
       body: { password: HESLO },
       headers: new Headers({ cookie: cookies }),
     });
-    const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)?.[1]!;
+    const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
     await auth.api.verifyTOTP({
       body: { code: codeForStep(secret, currentStep()) },
       headers: new Headers({ cookie: cookies }),

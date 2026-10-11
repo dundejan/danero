@@ -72,7 +72,7 @@ function requireEmailEnv(): void {
 }
 
 /** „0 kB“ vypadá jako prázdný soubor, a to je jiná diagnóza. */
-const velikost = (bytes: number): string =>
+const fileSize = (bytes: number): string =>
   bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
 
 /** Hláška k případu, na který se nedá sáhnout. Stav v ní být musí — bez něj je rada k ničemu. */
@@ -97,7 +97,7 @@ async function list(): Promise<void> {
     console.log(
       [
         `${item.id}  ${item.createdAt.toISOString().slice(0, 16).replace('T', ' ')}`,
-        `  soubor:    ${item.filename} (${velikost(item.byteSize)})`,
+        `  soubor:    ${item.filename} (${fileSize(item.byteSize)})`,
         `  uživatel:  ${item.email}`,
         `  platforma: ${item.reportedPlatform ?? '— (uživatel nenahlásil)'}`,
         ...(item.reportedNote ? [`  poznámka:  ${item.reportedNote}`] : []),

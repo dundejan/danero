@@ -1,3 +1,4 @@
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NextConfig } from 'next';
 
@@ -47,17 +48,48 @@ const securityHeaders = [
   },
 ];
 
+/**
+ * Next 16 zamyká dev server per distDir (.next/dev/lock) — oddělený distDir
+ * umožní E2E dev server vedle běžícího `pnpm dev` (NEXT_DIST_DIR=.next-e2e).
+ */
+const distDir = process.env.NEXT_DIST_DIR || '.next';
+
+/**
+ * Vlastní distDir dostane vlastní tsconfig.
+ *
+ * Next si při každém startu připíše do `include` v tsconfigu cesty typů svého
+ * distDiru (`<distDir>/types/**`), a když tam nejsou, soubor přepíše. S každým
+ * `NEXT_DIST_DIR` tak v `tsconfig.json` přibyly dva řádky, které se buď ručně
+ * vracely, nebo se commitly (`.next-a11y`, `.next-oprava-e` v něm ležely
+ * měsíce). Jinému distDiru než `.next` proto dáme odvozený soubor, který
+ * z hlavního jen dědí: do konfigurace s `extends` Next nezapisuje vůbec
+ * (`writeConfigurationDefaults` u ní automatické nastavení vzdává), takže
+ * nesahá ani na něj, ani na `tsconfig.json`. Kontrola typů je stejná jako
+ * u výchozího buildu — typy tras přicházejí přes `next-env.d.ts`, ne přes
+ * `include` (ten by stejně přebilo `exclude: [".next"]`). Odvozené soubory
+ * jsou v `.gitignore`.
+ */
+function tsconfigPathFor(dir: string): string | undefined {
+  if (dir === '.next') return undefined;
+  const file = `tsconfig.${dir.replace(/^\.+/, '').replace(/[^a-zA-Z0-9-]+/g, '-')}.json`;
+  const path = join(import.meta.dirname, file);
+  if (!existsSync(path)) {
+    writeFileSync(path, `${JSON.stringify({ extends: './tsconfig.json' }, null, 2)}\n`);
+  }
+  return file;
+}
+const tsconfigPath = tsconfigPathFor(distDir);
+
 const nextConfig: NextConfig = {
   devIndicators: false,
+  ...(tsconfigPath ? { typescript: { tsconfigPath } } : {}),
   // Vlastní instance (Docker) potřebuje samostatný server.js se zabaleným
   // node_modules; na Vercelu se nechává vypnuté, aby build zůstal beze změny.
   // Trasování musí začínat v kořeni monorepa, jinak vypadnou workspace balíčky.
   ...(process.env.NEXT_OUTPUT_STANDALONE
     ? { output: 'standalone' as const, outputFileTracingRoot: join(import.meta.dirname, '../..') }
     : {}),
-  // Next 16 zamyká dev server per distDir (.next/dev/lock) — oddělený distDir
-  // umožní E2E dev server vedle běžícího `pnpm dev` (NEXT_DIST_DIR=.next-e2e)
-  distDir: process.env.NEXT_DIST_DIR || '.next',
+  distDir,
   // workspace balíčky exportují TS zdrojáky — Next je transpiluje sám
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)

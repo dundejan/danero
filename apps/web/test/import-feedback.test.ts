@@ -486,10 +486,10 @@ describe('které dávky se po nahrání otevřou', () => {
 });
 
 describe('délka historie importů z adresy', () => {
-  it('výchozích dvacet, odkazem po dvaceti dál, nejvýš dvě stě', () => {
+  it('výchozích dvacet, odkazem dál, bez stropu (viz import-history-depth.test.ts)', () => {
     expect(historyLimit({})).toBe(20);
     expect(historyLimit({ historie: '40' })).toBe(40);
-    expect(historyLimit({ historie: '9999' })).toBe(200);
+    expect(historyLimit({ historie: '9999' })).toBe(9999);
     expect(historyLimit({ historie: '5' })).toBe(20);
   });
 

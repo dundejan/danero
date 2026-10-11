@@ -6,6 +6,9 @@ dist/
 # (.next-e2e, .next-paywall, .next-a11y…) a vyjmenovávat je po jednom
 # znamenalo, že se dřív nebo později některý commitne.
 .next-*/
+# tsconfig odvozený pro vlastní distDir — zakládá ho next.config.ts, aby Next
+# nepřipisoval cesty typů do verzovaného tsconfig.json
+apps/web/tsconfig.next-*.json
 next-env.d.ts
 .turbo/
 coverage/

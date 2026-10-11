@@ -81,7 +81,7 @@ const textOf = (html: string, visible: boolean): string =>
   )
     .replace(/<!-- -->/g, '')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/ /g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ');
 
 const overviewHtml = (grossCzk: string, regime = 'PAUSAL', year = YEAR): string => {
@@ -111,7 +111,7 @@ const reportHtml = (grossCzk: string, regime = 'PAUSAL', year = YEAR): string =>
   );
 
 /** Hodnota v korunách s obyčejnými mezerami — stejně jako `textOf`. */
-const kc = (value: Parameters<typeof czk>[0]): string => czk(value).replace(/ /g, ' ');
+const kc = (value: Parameters<typeof czk>[0]): string => czk(value).replace(/\u00a0/g, ' ');
 
 describe('taxSummary: co je hlavní číslo', () => {
   it('bez paušálního režimu je hlavním číslem orientační daň, zálohy se neodečítají', () => {

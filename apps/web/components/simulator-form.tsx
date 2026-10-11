@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { describedByError, Field, FieldError, Input, Select } from '@/components/ui/field';
+import { currencyUnit } from '@/lib/format';
 import { answeredSubmissions, simulationKey } from '@/lib/simulator-input';
 import { cn } from '@/lib/utils';
 
@@ -189,7 +190,7 @@ export function SimulatorWorkbench({
                 />
               </Field>
               <Field
-                label={selected ? `Cena za kus (${selected.currency})` : 'Cena za kus'}
+                label={selected ? `Cena za kus (${currencyUnit(selected.currency)})` : 'Cena za kus'}
                 htmlFor="cena"
                 hint={
                   selected?.lastPrice && price.trim() === selected.lastPrice

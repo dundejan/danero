@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   groupHorizonDots,
+  outlookBasisNote,
   type ExemptionOutlook,
   type HorizonDot,
   type HorizonWeightBasis,
@@ -61,6 +62,41 @@ const PAST_SHARE = 0.18;
 const TODAY_CLEARANCE = 18;
 /** Dosah prstu a myši: tečka se chytí, i když ukazatel míří těsně vedle. */
 const REACH_PX = 22;
+
+/** Bublina s rozpadem tečky: nejširší podoba a odstup od tečky. */
+const TIP_MAX_WIDTH = 230;
+const TIP_GAP = 10;
+
+/**
+ * Kam bublina patří. Stojí VEDLE tečky a uvnitř pásu — ne nad ní: nad pásem
+ * je nadpis sekce a bublina nejlevější tečky (souhrn starších kusů, tedy ta
+ * nejvyšší) ho celý zakryla. Vedle tečky taky neleží pod prstem.
+ *
+ * - Vpravo, když se tam vejde celá; jinak na tu stranu, kde je víc místa,
+ *   a zúžená na šířku, která tam zbývá (telefon, tečka uprostřed pásu).
+ * - Svisle je vystředěná na tečku; vyšší bublina začíná u horní hrany pásu
+ *   a roste dolů přes legendu, ne nahoru přes nadpis.
+ *
+ * Souřadnice jsou v pixelech pásu (`width` × `HEIGHT`).
+ */
+export function tipPlacement(args: { cx: number; r: number; width: number; tipHeight: number }): {
+  side: 'left' | 'right';
+  /** Vzdálenost bližší hrany bubliny od téže hrany pásu. */
+  inset: number;
+  maxWidth: number;
+  top: number;
+} {
+  const { cx, r, width, tipHeight } = args;
+  const rightSpace = width - (cx + r + TIP_GAP);
+  const leftSpace = cx - r - TIP_GAP;
+  const side = rightSpace >= TIP_MAX_WIDTH || rightSpace >= leftSpace ? 'right' : 'left';
+  return {
+    side,
+    inset: side === 'right' ? cx + r + TIP_GAP : width - (cx - r - TIP_GAP),
+    maxWidth: Math.min(TIP_MAX_WIDTH, Math.max(side === 'right' ? rightSpace : leftSpace, 0)),
+    top: Math.max(0, AXIS_Y - tipHeight / 2),
+  };
+}
 
 /** Klíč souhrnné tečky — není to datum, na osu času nepatří. */
 const PILE_KEY = 'pile';
@@ -154,15 +190,24 @@ function pileOf(dots: HorizonDot[]): HorizonDot | null {
  * Přehled ji dává k nadpisu sekce (nadpis tam kreslí `ViewSwitch`), samostatný
  * horizont si ji k nadpisu přidá sám.
  */
-export function HorizonInfo({ basis }: { basis: HorizonWeightBasis | undefined }) {
+export function HorizonInfo({
+  basis,
+  outlook,
+}: {
+  basis: HorizonWeightBasis | undefined;
+  /** Křivka pod tečkami; `null` = nekreslí se a vysvětlivka o ní mlčí. */
+  outlook: ExemptionOutlook | null;
+}) {
   // Legenda, ne návod (R1B-24): co tečka, barva a velikost znamenají. Jak se
   // pás ovládá, pozná člověk najetím nebo klepnutím.
   const size =
     basis === 'value'
       ? 'celkové hodnotě'
       : basis === 'cost'
-        ? 'nabývací ceně (dnešní ceny známe jen od připojeného brokera)'
+        ? // proč ne dnešní hodnotě, říká hned věta o křivce — bez křivky to řekne tahle
+          `nabývací ceně${outlook ? '' : ' (dnešní ceny známe jen od připojeného brokera)'}`
         : 'počtu kusů';
+  const outlookNote = outlook ? outlookBasisNote(outlook) : null;
   return (
     <InfoPopover label="Horizont osvobození" align="start">
       <p>
@@ -171,9 +216,15 @@ export function HorizonInfo({ basis }: { basis: HorizonWeightBasis | undefined }
       </p>
       <p>
         Velikost tečky odpovídá {size}; termíny blízko sebe se slučují do jedné.
-        {/* křivku bez cen nekreslíme (podíl portfolia by neměl z čeho být) */}
-        {basis !== 'cost' && ' Spodní křivka je podíl portfolia, který už bude bez daně.'}
       </p>
+      {outlook && (
+        <p>
+          Spodní křivka je podíl portfolia, který už bude bez daně.
+          {/* z čeho se podíl počítá, když to není celé portfolio v dnešních
+              cenách — totéž znění jako u křivky na portfoliu */}
+          {outlookNote && ` ${outlookNote}`}
+        </p>
+      )}
     </InfoPopover>
   );
 }
@@ -296,7 +347,18 @@ export function HorizonStrip({
   const [active, setActive] = useState<{ key: string; by: 'pointer' | 'touch' | 'focus' } | null>(
     null,
   );
+  // Tečka, na které se zastaví tabulátor (viz `moveFocus`); `null` = výchozí.
+  const [roving, setRoving] = useState<string | null>(null);
+  const [tipHeight, setTipHeight] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+
+  // Výška bubliny se zná až po vykreslení (počet pozic, zalomený titulek);
+  // měří se před nakreslením na obrazovku, takže bublina neposkočí.
+  useLayoutEffect(() => {
+    const height = tipRef.current?.offsetHeight ?? 0;
+    setTipHeight((current) => (current === height ? current : height));
+  });
 
   // šířku známe až v prohlížeči; měří se před prvním vykreslením na obrazovku,
   // aby pás neproblikl ve zmenšené podobě
@@ -454,6 +516,7 @@ export function HorizonStrip({
       onChange={(key) => {
         setRange(key as RangeKey);
         setActive(null);
+        setRoving(null);
       }}
       segments={RANGES.map((preset) => ({ key: preset.key, label: preset.label }))}
     />
@@ -522,15 +585,48 @@ export function HorizonStrip({
 
   // měřítko mezi souřadnicemi pásu a obrazovkou je 1 : 1, jakmile je šířka
   // změřená; do té doby (a bez JavaScriptu) se pás vejde zmenšený
-  const tipLeft = activeItem ? `${(activeItem.cx / width) * 100}%` : '0';
+  const tip = activeItem
+    ? tipPlacement({ cx: activeItem.cx, r: activeItem.r, width, tipHeight })
+    : null;
+
+  /*
+   * Pás je pro klávesnici JEDNA zastávka, ne tolik, kolik má teček (v demu
+   * 27): tabulátor zastaví na jedné tečce a mezi tečkami se chodí šipkami,
+   * Home a End — jako v každé jiné skupině voleb. Zastávkou je naposledy
+   * navštívená tečka, jinak nejbližší čekající (kvůli ní se na pás chodí).
+   */
+  const rovingKey =
+    view.placed.find((item) => item.dot.exemptFrom === roving)?.dot.exemptFrom ??
+    (view.placed.find((item) => !item.dot.isExempt) ?? view.placed[0])?.dot.exemptFrom;
+  const moveFocus = (event: React.KeyboardEvent<SVGCircleElement>, index: number) => {
+    const last = view.placed.length - 1;
+    const target =
+      event.key === 'ArrowRight'
+        ? Math.min(index + 1, last)
+        : event.key === 'ArrowLeft'
+          ? Math.max(index - 1, 0)
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null;
+    if (target === null) return;
+    event.preventDefault();
+    const circles = event.currentTarget.parentElement?.querySelectorAll<SVGCircleElement>(
+      'circle[data-dot]',
+    );
+    circles?.[target]?.focus();
+  };
 
   const strip = (
     <div ref={wrapRef} className="relative mt-3 min-w-0 max-w-full">
-      {/* bez role="img" na svg — fokusovatelné tečky musí zůstat v accessibility tree */}
+      {/* bez role="img" na svg — fokusovatelné tečky musí zůstat v accessibility tree;
+          skupina je pojmenovaná, aby čtečka řekla, čeho jsou tečky součástí */}
       <svg
         viewBox={`0 0 ${width} ${HEIGHT}`}
         height={HEIGHT}
         className="block w-full touch-pan-y select-none"
+        role="group"
         aria-label="Horizont osvobození"
         onPointerDown={point}
         onPointerMove={point}
@@ -642,7 +738,7 @@ export function HorizonStrip({
 
         {/* tečky dnů/měsíců — víc pozic v jedné tečce, proto žádný odkaz na
             detail; rozpad po pozicích nese bublina */}
-        {view.placed.map(({ dot, cx, r, label: placedLabel }) => {
+        {view.placed.map(({ dot, cx, r, label: placedLabel }, index) => {
           const isActive = activeItem?.dot.exemptFrom === dot.exemptFrom;
           const total = totalText(dot);
           const label = `${placedLabel} — ${total ? `${total}, ` : ''}${dot.items.length} ${plural(
@@ -659,7 +755,8 @@ export function HorizonStrip({
               r={r}
               fillOpacity="0.92"
               strokeWidth={isActive ? 2 : 1.5}
-              tabIndex={0}
+              data-dot=""
+              tabIndex={dot.exemptFrom === rovingKey ? 0 : -1}
               role="img"
               aria-label={label}
               className={cn(
@@ -670,20 +767,30 @@ export function HorizonStrip({
                 // zeleným. `ink-muted` má na černé kontrast přes 7 : 1.
                 dot.isExempt ? 'fill-success' : 'fill-ink-muted',
               )}
-              onFocus={() => setActive({ key: dot.exemptFrom, by: 'focus' })}
+              onKeyDown={(event) => moveFocus(event, index)}
+              onFocus={(event) => {
+                setRoving(dot.exemptFrom);
+                // Tečku zaměří i klik a klepnutí — bublinu tam ale řídí ukazatel
+                // a nápověda o šipkách patří jen tomu, kdo přišel klávesnicí.
+                if (event.currentTarget.matches(':focus-visible')) {
+                  setActive({ key: dot.exemptFrom, by: 'focus' });
+                }
+              }}
               onBlur={() => setActive((current) => (current?.by === 'focus' ? null : current))}
             />
           );
         })}
       </svg>
 
-      {/* bublina s rozpadem — u krajů ji pixelový clamp drží uvnitř pásu */}
-      {activeItem && (
+      {/* bublina s rozpadem — vedle tečky a uvnitř pásu (`tipPlacement`) */}
+      {activeItem && tip && (
         <div
-          className="pointer-events-none absolute z-10 w-max max-w-[230px] -translate-x-1/2 -translate-y-full rounded-lg bg-surface px-3 py-2 text-xs shadow-floating dark:bg-control"
+          ref={tipRef}
+          className="pointer-events-none absolute z-10 w-max rounded-lg bg-surface px-3 py-2 text-xs shadow-floating dark:bg-control"
           style={{
-            left: `clamp(115px, ${tipLeft}, calc(100% - 115px))`,
-            top: `${AXIS_Y - activeItem.r - 8}px`,
+            [tip.side === 'right' ? 'left' : 'right']: `${(tip.inset / width) * 100}%`,
+            top: `${tip.top}px`,
+            maxWidth: `${tip.maxWidth}px`,
           }}
         >
           <p className="font-semibold text-ink">
@@ -705,6 +812,10 @@ export function HorizonStrip({
               + {plural(activeItem.dot.items.length - TIP_MAX_ITEMS, 'další', 'další', 'dalších')}{' '}
               {activeItem.dot.items.length - TIP_MAX_ITEMS}
             </p>
+          )}
+          {/* jen při chůzi klávesnicí: jak se dostat na další tečku */}
+          {active?.by === 'focus' && view.placed.length > 1 && (
+            <p className="mt-1 text-ink-muted">Další tečka: šipky ← →</p>
           )}
         </div>
       )}
@@ -728,7 +839,7 @@ export function HorizonStrip({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <h2 className="type-title-2">Horizont osvobození</h2>
-          <HorizonInfo basis={dots[0]?.weightBasis} />
+          <HorizonInfo basis={dots[0]?.weightBasis} outlook={outlook ?? null} />
         </div>
         {rangeButtons}
       </div>

@@ -445,7 +445,9 @@
    Zvýrazněný řádek (`row-hover` pod myší, `row-pressable` při stisku) zároveň
    přepne tichý text na plnou barvu: `ink-muted` má na zvýrazněné ploše jen
    4,45:1 a ve skupině `inset` 4,06:1. Přepisuje se token, ne třída, takže to
-   platí i pro obsah, který do řádku vložil volající. */
+   platí i pro obsah, který do řádku vložil volající. Ze stejného důvodu
+   ztmavne akcentní text (odkaz, „Odhlásit se“): při stisku na bílé ploše má
+   běžná akcentní barva 4,46:1. */
 @utility pressable {
   transition: transform var(--press-duration) var(--ease-out);
   &:active {
@@ -456,6 +458,7 @@
   &:active {
     background-color: var(--highlight-pressed);
     --ink-muted: var(--ink);
+    --accent-text: var(--accent-strong);
   }
 }
 @utility row-hover {
@@ -463,6 +466,7 @@
     &:hover {
       background-color: var(--highlight);
       --ink-muted: var(--ink);
+      --accent-text: var(--accent-strong);
     }
   }
 }
@@ -617,7 +621,8 @@
   }
   /* auditní stopa (rozpad prodejů na loty) musí být v tištěném podkladu vidět
      i bez rozkliknutí — ::details-content umí otevřít <details> jen pro tisk
-     (Chromium 131+; starší prohlížeče vytisknou zavřené, nic se nerozbije) */
+     (Chromium 131+, Safari 18.4+, Firefox 143+; starším prohlížečům je před
+     tiskem otevře skript — `OpenDetailsForPrint` v components/print-button.tsx) */
   details::details-content {
     content-visibility: visible;
     display: block;

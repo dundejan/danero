@@ -289,30 +289,17 @@ const ALLOWED: { file: string; names: string[]; reason: string }[] = [
 ];
 
 /**
- * DOČASNÉ: dávky revize 5, které tyhle soubory teprve přejmenovávají
- * (L12-09). Až dávka do větve dojde, její řádek smaž — strážce pak vypíše,
- * co v souborech zbylo, a to buď přejmenuj, nebo zapiš s důvodem výš.
+ * DOČASNÉ: dávka revize 5, která tyhle soubory teprve přejmenovává (L12-09).
+ * Až do větve dojde, řádek smaž — strážce pak vypíše, co v souborech zbylo,
+ * a to buď přejmenuj, nebo zapiš s důvodem výš.
+ *
+ * Zbývá jediná: generátor XML pro EPO a Příloha č. 2, kde se česky jmenují
+ * i vlastnosti typů, které drží tvar podání (`prijmyCzk`, `rodneCislo`…),
+ * a s nimi report, formulář exportu a jejich testy. Ostatní dávky (B19, B25,
+ * B27) jsou hotové od 11. 10. 2026 a jejich soubory strážce hlídá celé.
  */
 const PENDING_BATCHES: Record<string, string[]> = {
-  B19: ['packages/importers/src/etoro/xlsx.ts'],
-  B22: [
-    'apps/web/lib/epo.ts',
-    'apps/web/lib/priloha2.ts',
-    'apps/web/components/views/report-view.tsx',
-  ],
-  B25: ['packages/importers/src/fio/csv.ts'],
-  B27: [
-    'apps/web/lib/email-layout.ts',
-    'apps/web/lib/email.ts',
-    'apps/web/lib/prices.ts',
-    'apps/web/lib/notifications.ts',
-    'apps/web/lib/demo-data.ts',
-    'apps/web/components/filing-calculator.tsx',
-    'apps/web/components/guide-article.tsx',
-    'apps/web/components/views/position-view.tsx',
-    'apps/web/app/(app)/nastaveni/settings-toast.tsx',
-    'apps/web/scripts/failed-imports.ts',
-  ],
+  B22: ['apps/web/lib/epo.ts', 'apps/web/lib/priloha2.ts'],
 };
 
 /**
@@ -322,6 +309,7 @@ const PENDING_BATCHES: Record<string, string[]> = {
  */
 const KNOWN_DEBT: Record<string, string[]> = {
   'apps/web/app/(app)/nastaveni/actions.ts': ['kod'],
+  'apps/web/app/(app)/nastaveni/settings-toast.tsx': ['CHYBA_LABELS'],
   'apps/web/app/api/epo/route.ts': [
     'DAP_TYPY',
     'chyba',
@@ -330,11 +318,6 @@ const KNOWN_DEBT: Record<string, string[]> = {
     'typRaw',
     'zjistenoDne',
   ],
-  'apps/web/components/views/overview-view.tsx': ['PrehledNotification'],
-  'apps/web/lib/import-service.ts': ['useknuty'],
-  'packages/engine/src/engine.ts': ['podStropem'],
-  'packages/engine/src/ledger/ledger.ts': ['cteni', 'nazev', 'zapis', 'zdanitelne'],
-  'packages/importers/src/portu/csv.ts': ['typ', 'typRaw'],
   'scripts/validate-epo.mjs': ['varianta'],
 };
 

@@ -469,7 +469,7 @@ describe('regresní scénář z panelu: demo VWCE 5 ks @ 140 EUR', () => {
  * letošní prodeje, jenže to verdikt říkal jen u prodeje osvobozeného celého.
  */
 describe('zdanitelný prodej, který zruší osvobození do 100 000 Kč (R1B-04)', () => {
-  const plain = (text: string | undefined): string => (text ?? '').replace(/ /g, ' ');
+  const plain = (text: string | undefined): string => (text ?? '').replace(/\u00a0/g, ' ');
 
   it('verdikt nese zrušené osvobození i změnu daně', () => {
     const verdict = simulatorVerdict(
@@ -563,7 +563,7 @@ describe('zdanitelný prodej, který zruší osvobození do 100 000 Kč (R1B-04)
     )
       .replace(/<!-- -->/g, '')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/ /g, ' ')
+      .replace(/\u00a0/g, ' ')
       .replace(/\s+/g, ' ');
     return { text, simulation };
   };
@@ -578,7 +578,7 @@ describe('zdanitelný prodej, který zruší osvobození do 100 000 Kč (R1B-04)
     expect(text).toContain(`Prodej zruší ${LIMIT_NAME.SECURITIES.toLowerCase()}`);
     expect(text).toContain('zpětně zdaní i ty dřívější');
     // o kolik prodej limity zvedne — víc než jeho vlastní tržba
-    const kc = (value: Money): string => czk(value).replace(/ /g, ' ');
+    const kc = (value: Money): string => czk(value).replace(/\u00a0/g, ' ');
     const increase = simulation.deltas.limit100kUsedCzk;
     expect(increase.gt(simulation.simulatedDisposal!.taxableProceedsCzk)).toBe(true);
     expect(text).toContain(`+${kc(increase)}`);

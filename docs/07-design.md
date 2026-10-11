@@ -117,7 +117,7 @@ font-bold`**, vyber stupeň.
 |---|---|
 | `ui/info-popover.tsx` → `InfoPopover` | Vysvětlení u čísla nebo pojmu: tlačítko „i“, bublina (na telefonu sheet). Hlavní nástroj textové diety. |
 | `ui/info-print.tsx` → `InfoPrint` | Tisková kopie vysvětlivky: tentýž obsah, vidět jen na papíře. Stojí pod blokem, kterého se týká. |
-| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. |
+| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. Má-li se řádek otevřít sám podle stavu z adresy (dávka po nahrání, formulář s chybou), dostane `defaultOpen`, ne `open` — řízený atribut by ho při dalším vykreslení ze serveru zavřel. |
 | `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). Smí stát i uvnitř `DisclosureRow`. |
 | `ui/disclosure.tsx` → `Chevron` | Šipka rozbalovátka pro vlastní `<details class="disclosure">` (řádek tabulky, FAQ). Patří do `<summary>`. |
 | `ui/open-on-hash.tsx` → `OpenOnHash` | Rozbalí `<details>`, na který míří kotva v adrese. Jednou na stránku, která na rozbalovací řádky odkazuje. |
@@ -234,10 +234,9 @@ Ukázky:
 
 Pravidla, která z kódu nejsou vidět:
 
-- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`)
-  **a nesmí stát ani v `<p>`**: v úzkém okně se vedle tlačítka vykreslí `<dialog>` sheetu,
-  prohlížeč odstavec rozdělí a hydratace spadne. Řádek s textem a vysvětlivkou je `div`
-  (nebo `li`), ne odstavec.
+- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`).
+  Jinak smí stát všude, kde smí stát text: bublina i sheet (úzké okno) se vykreslují
+  portálem do `<body>`, takže `<dialog>` s nadpisem neskončí v `<span>`, `<dt>` ani `<p>`.
   Jeho obsah se vykreslí až po otevření — co musí být vidět vždy, patří vedle čísla, co má
   být na papíře, dostane `InfoPrint`.
   Uvnitř `Stat` se bublina kotví pod celý blok sama; jinde zvol `side`/`align` tak, aby

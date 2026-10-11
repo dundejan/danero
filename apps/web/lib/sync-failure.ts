@@ -205,6 +205,21 @@ export function describeSyncFailure(error: unknown, account: FailedAccount): Syn
         ? ibkrKind(error)
         : null;
   if (kind !== null) return { text: sentence(kind, account), detail: cleanDetail(raw, secrets) };
+  // Zbylé chyby klientů brokerů jsou hotové české věty, které už říkají, co
+  // dělat („vygeneruj nový token a ulož ho znovu“, „Spusť synchronizaci
+  // znovu“). Detail u nich nese jen kód — a hlavně odlišuje větu, která radu
+  // má, od staršího záznamu bez detailu: tomu stránka přidává obecné „Spusť
+  // ji znovu…“ a za větou klienta by ta rada stála podruhé, u neplatného
+  // tokenu navíc špatně.
+  if (error instanceof IbkrFlexError) {
+    return { text: redactSecrets(error.message, secrets), detail: `Kód IBKR Flex: ${error.code}` };
+  }
+  if (error instanceof Trading212ApiError) {
+    return {
+      text: redactSecrets(error.message, secrets),
+      detail: `Stav odpovědi Trading 212: ${error.status}`,
+    };
+  }
   // chyby runtime (síť, jiný tvar odpovědi) mají vlastní české věty — K5-09, K5-10
   const translated = syncErrorText(error);
   if (translated !== errorText(error))

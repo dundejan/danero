@@ -127,6 +127,63 @@ describe('report za rok bez jediné transakce (R2-14)', () => {
     ]);
     expect(render(2024, {}, [...TXS, ...withDividend])).toContain('Co zapsat do přiznání');
   });
+
+  /**
+   * Zaměstnanec a režim „jiné“ dostávají od enginu pod limitem pro podání
+   * VŽDY poznámku „do limitu se počítají i příjmy ze samostatné činnosti“
+   * (`FILING_LIMIT_IGNORES_SELF_EMPLOYMENT`) — je to stálá výhrada k profilu,
+   * ne sdělení o datech roku. Prázdný stav ji do 11. 10. 2026 bral jako „engine
+   * pro rok něco má“, takže ho ve dvou režimech ze tří neukázal nikdy: rok bez
+   * transakce dál vykreslil osnovu plnou nul i s exportem XML. Našlo se až
+   * naživo; testy výš jedou jen s paušálním profilem.
+   */
+  it.each(['ZAMESTNANEC', 'JINE'] as const)(
+    'režim %s: rok bez transakce je prázdný stav, ne osnova plná nul',
+    (regime) => {
+      const html = render(2024, { profile: { ...PROFILE, regime } });
+      expect(html.replace(/\s/g, ' ')).toContain('V roce 2024 nemáš žádné obchody ani dividendy');
+      for (const part of OUTLINE) expect(html, part).not.toContain(part);
+      expect(html).not.toMatch(/\d\sKč/);
+    },
+  );
+
+  it.each([
+    ['ZAMESTNANEC', '30000'],
+    ['JINE', '60000'],
+  ] as const)(
+    'režim %s: příjmy z profilu nad limitem pro podání rok prázdným nenechají',
+    (regime, otherIncomeCzk) => {
+      const html = render(2024, { profile: { ...PROFILE, regime, otherIncomeCzk } });
+      expect(html.replace(/\s/g, ' ')).not.toContain('nemáš žádné obchody ani dividendy');
+      expect(html).toContain('Co zapsat do přiznání');
+    },
+  );
+
+  /**
+   * Před rokem 2024 není v konfiguraci hranice 23% sazby a engine to hlásí
+   * v každém takovém roce (`PROGRESSIVE_THRESHOLD_UNKNOWN`), i když není z čeho
+   * daň počítat. Stejná past jako výš: rok 2022 bez transakce dál vykreslil
+   * osnovu plnou nul — každému, bez ohledu na režim.
+   */
+  it('rok před 2024 bez transakce je prázdný stav i přes poznámku o hranici sazby', () => {
+    const txs = parseTransactions([
+      {
+        type: 'BUY',
+        id: 'b',
+        isin: 'CZ0005112300',
+        ticker: 'CEZ',
+        quantity: '10',
+        pricePerShare: '700',
+        currency: 'CZK',
+        tradeDate: '2021-05-10',
+        settlementDate: '2021-05-12',
+      },
+    ]);
+    const html = render(2022, { years: [2026, 2025, 2024, 2023, 2022, 2021] }, txs);
+    expect(html.replace(/\s/g, ' ')).toContain('V roce 2022 nemáš žádné obchody ani dividendy');
+    for (const part of OUTLINE) expect(html, part).not.toContain(part);
+    expect(html).toMatch(/href="\/report\?rok=2021"[^>]*>Otevřít report 2021</);
+  });
 });
 
 /**

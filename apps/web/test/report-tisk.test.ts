@@ -8,6 +8,7 @@ import { filingVerdictHeadline } from '@/components/filing-verdict';
 import { OverviewView } from '@/components/views/overview-view';
 import { printedRangeNote, disposalPage, ReportView } from '@/components/views/report-view';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
+import { openForPrint } from '@/lib/print-details';
 
 /**
  * H-3-01: vytištěný podklad k přiznání musí říct, kolik prodejů obsahuje.
@@ -61,6 +62,27 @@ describe('rozsah vytištěného podkladu (H-3-01)', () => {
     expect(zdroj).toContain('printedRangeNote({');
     // a nesmí se vrátit tvrzení, že tisk obsahuje všechny prodeje
     expect(zdroj).not.toContain('Tisk\n                i XML pro podatelnu obsahují všechny prodeje');
+  });
+
+  it('rozbalení (rozpad prodeje na nákupy) se pro tisk otevřou i bez `::details-content`', () => {
+    const root = join(import.meta.dirname, '..');
+    // novější prohlížeče: styl
+    const css = readFileSync(join(root, 'app', 'globals.css'), 'utf8');
+    const print = css.slice(css.indexOf('@media print'));
+    expect(print).toMatch(/details::details-content\s*\{[^}]*display:\s*block/);
+    // starší (před Chromium 131, Safari 18.4, Firefox 143): skript před tiskem —
+    // bez něj by na papíře mlčky chyběla část podkladu
+    const closed = { open: false };
+    const openedByUser = { open: true };
+    const closeAgain = openForPrint([closed, openedByUser]);
+    expect([closed.open, openedByUser.open]).toEqual([true, true]);
+    closeAgain();
+    // co měl uživatel otevřené sám, po tisku otevřené zůstane
+    expect([closed.open, openedByUser.open]).toEqual([false, true]);
+    const fallback = readFileSync(join(root, 'components', 'print-button.tsx'), 'utf8');
+    expect(fallback).toContain("CSS.supports('selector(::details-content)')");
+    const report = readFileSync(join(root, 'components', 'views', 'report-view.tsx'), 'utf8');
+    expect(report).toContain('<OpenDetailsForPrint />');
   });
 });
 

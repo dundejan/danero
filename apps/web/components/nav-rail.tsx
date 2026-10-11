@@ -228,7 +228,7 @@ export function NavRail({ userEmail }: { userEmail: string }) {
             {userEmail}
           </p>
           <SignOutButton
-            className="type-footnote -mx-2 rounded-md px-2 py-1 font-medium text-accent-text hover:bg-(--highlight) active:bg-(--highlight-pressed)"
+            className="type-footnote -mx-2 rounded-md px-2 py-1 font-medium text-accent-text hover:bg-(--highlight) hover:text-accent-strong active:bg-(--highlight-pressed) active:text-accent-strong"
             errorClassName="type-caption text-danger"
           />
         </>

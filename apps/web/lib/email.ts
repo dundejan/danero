@@ -210,7 +210,7 @@ export function resolveEmailSender(): EmailSender {
  * bez něj tam Gmail vytáhne první větu těla, což u „Někdo požádal o…“
  * vypadá jako phishing.
  */
-function zprava(args: {
+function composeMessage(args: {
   subject: string;
   preheader: string;
   blocks: EmailBlock[];
@@ -233,7 +233,7 @@ function zprava(args: {
  * i člověku, kterému někdo cizí zadal adresu do formuláře.
  */
 export function resetPasswordEmail(url: string): Omit<EmailMessage, 'to'> {
-  return zprava({
+  return composeMessage({
     subject: 'Obnova hesla do Danera',
     preheader: 'Odkaz na nastavení nového hesla platí hodinu.',
     blocks: [
@@ -280,7 +280,7 @@ export function emailChangedEmail(
   { previousVerified }: { previousVerified: boolean } = { previousVerified: true },
 ): Omit<EmailMessage, 'to'> {
   const masked = maskEmail(newEmail);
-  return zprava({
+  return composeMessage({
     subject: 'E-mail tvého účtu v Daneru se změnil',
     preheader: 'Upozornění a obnova hesla teď chodí na novou adresu.',
     blocks: previousVerified
@@ -314,7 +314,7 @@ export function emailChangedEmail(
 
 /** Potvrzení adresy po registraci — vysvětluje, proč to po uživateli chceme. */
 export function verifyEmailEmail(url: string): Omit<EmailMessage, 'to'> {
-  return zprava({
+  return composeMessage({
     subject: 'Potvrď svůj e-mail v Daneru',
     preheader: 'Poslední krok k účtu — odkaz platí 24 hodin.',
     blocks: [
@@ -375,7 +375,7 @@ export function failedImportAlertEmail(args: {
   reported?: boolean;
 }): Omit<EmailMessage, 'to'> {
   const reported = args.reported === true;
-  return zprava({
+  return composeMessage({
     subject: reported
       ? `Danero: uživatel nahlásil nepřečtený výpis (${args.reportedPlatform ?? 'bez platformy'})`
       : `Danero: nepřečetli jsme výpis (${args.filename})`,
@@ -458,7 +458,7 @@ export function failedImportResolvedEmail(args: {
         : pending
           ? 'Jeho formát jsme do Danera doplnili a výpis nahráli za tebe — nic nového z něj ale zatím nepřibylo.'
           : 'Formát jsme do Danera doplnili a výpis načetli — všechny obchody z něj už jsi mezitím měl uložené odjinud, takže se ti čísla nezmění.';
-    return zprava({
+    return composeMessage({
       subject: pending
         ? 'Tvůj výpis už umíme přečíst — zbývá ho doplnit'
         : 'Tvůj výpis už umíme přečíst — je naimportovaný',
@@ -480,7 +480,7 @@ export function failedImportResolvedEmail(args: {
       footer: operatorSignature(),
     });
   }
-  return zprava({
+  return composeMessage({
     subject: 'Tvůj výpis se nám přečíst nepodařilo',
     preheader: `${args.filename}: co s tím dál.`,
     blocks: [

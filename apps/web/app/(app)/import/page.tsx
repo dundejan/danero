@@ -11,11 +11,11 @@ import { brokerAccounts, importBatches } from '@/db/schema';
 import { casesForBatches } from '@/lib/failed-imports';
 import {
   feedbackPlacement,
-  HISTORY_MAX,
-  HISTORY_PAGE,
   historyLimit,
+  historyQueryLimit,
   IMPORT_HISTORY_ANCHOR,
   importFeedback,
+  nextHistoryLimit,
   offersOverviewAfterUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
@@ -88,9 +88,10 @@ export default async function ImportPage({
   const ulozeno = firstParam(params.ulozeno);
   const feedback = importFeedback(params);
   // Jeden dotaz pro historii, číselník i nepřečtené výpisy. Historie z něj
-  // ukazuje prvních `limit` (20, odkazem „Zobrazit starší“ po dvaceti dál);
-  // číselník a nepřečtené výpisy se dívají na všechno načtené — výzva nesmí
-  // zmizet jen proto, že uživatel mezitím importoval další soubory (R2-05).
+  // ukazuje prvních `limit` (20, odkazem „Zobrazit starší“ dál — bez stropu,
+  // starý import musí jít dohledat a vrátit); číselník a nepřečtené výpisy se
+  // dívají na všechno načtené — výzva nesmí zmizet jen proto, že uživatel
+  // mezitím importoval další soubory (R2-05).
   const limit = historyLimit(params);
   const [recentBatches, accounts, aliases] = await Promise.all([
     db
@@ -98,7 +99,7 @@ export default async function ImportPage({
       .from(importBatches)
       .where(eq(importBatches.userId, user.id))
       .orderBy(desc(importBatches.createdAt))
-      .limit(HISTORY_MAX),
+      .limit(historyQueryLimit(limit)),
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
     loadAliases(db, user.id),
   ]);
@@ -106,7 +107,7 @@ export default async function ImportPage({
   // kotva, která na stránce není, nechá polohu být — seznam se jen prodlouží
   const olderHref =
     recentBatches.length > limit
-      ? `/import?historie=${Math.min(limit + HISTORY_PAGE, HISTORY_MAX)}#starsi`
+      ? `/import?historie=${nextHistoryLimit(limit)}#starsi`
       : undefined;
   // Krok 2 cesty nového uživatele: profil má, data ještě ne. Stav se
   // neukládá, odvozuje se z účtu (stejně jako na /vitejte).

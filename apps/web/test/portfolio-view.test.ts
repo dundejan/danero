@@ -91,7 +91,7 @@ const textOf = (markup: string): string =>
     .replace(/<[^>]+>/g, ' ')
     .replaceAll('&quot;', '"')
     .replaceAll('&amp;', '&')
-    .replaceAll(' ', ' ')
+    .replaceAll('\u00a0', ' ')
     .replace(/\s+/g, ' ');
 
 const portfolio = (prices: Map<string, InstrumentPrice>): string =>
@@ -203,6 +203,18 @@ describe('zisk pozice vedle hodnoty v korunách (R1B-30)', () => {
     const gain = stat(markup, 'Zisk/ztráta');
     expect(gain).toMatch(/\+11,1 %/);
     expect(gain).not.toContain('v měně titulu');
+  });
+
+  it('korunový titul: zisk i cena v „Kč“, stejně jako hodnota vedle', { timeout: 30_000 }, () => {
+    // bylo: Hodnota „40 000 Kč“, pod ní „1 000,00 CZK za kus“ a vedle zisk „+4 000,00 CZK“
+    const markup = detail('CZ0005112300', new Map([['CZ0005112300', price('1000', 'CZK')]]));
+    expect(stat(markup, 'Hodnota')).toMatch(/40 000 Kč .*1 000,00 Kč za kus/);
+    expect(stat(markup, 'Zisk/ztráta')).toContain('+4 000 Kč · před zdaněním');
+    expect(textOf(markup)).not.toContain('CZK');
+    // i v inspektoru a v řádcích portfolia
+    const list = portfolio(new Map([['CZ0005112300', price('1000', 'CZK')]]));
+    expect(textOf(list)).toContain('+4 000 Kč');
+    expect(textOf(list)).not.toContain('CZK');
   });
 
   it('portfolio: inspektor píše procento před částku v měně titulu', { timeout: 30_000 }, () => {

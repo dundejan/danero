@@ -215,9 +215,9 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
     // jen API sync, takže ručně nahraný nedostažený soubor se naimportoval
     // z části a tvářil se jako celý.
     if (isTruncatedTrading212Export(text)) {
-      const useknuty = emptyResult(TRADING212_BROKER);
+      const truncatedOutcome = emptyResult(TRADING212_BROKER);
       // vada je v přenosu, ne v našem parseru — soubor si neschováváme
-      useknuty.errors.push({
+      truncatedOutcome.errors.push({
         line: 1,
         message:
           'Soubor vypadá poškozený — končí rozepsaným řádkem nebo v něm zůstala neuzavřená ' +
@@ -225,7 +225,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
           'ho celý; kdybychom ho vzali takhle, chyběla by ti část obchodů a limity by vyšly ' +
           'nižší, než jsou.',
       });
-      return { outcome: useknuty, unmapped: [], unrecognized: false };
+      return { outcome: truncatedOutcome, unmapped: [], unrecognized: false };
     }
     return noUnmapped(parseTrading212Csv(text));
   }

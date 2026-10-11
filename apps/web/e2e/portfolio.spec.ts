@@ -102,8 +102,7 @@ test('portfolio: přehled grafů → pozice → detail s nákupy (+ screenshoty)
     '/import',
   );
   // bez cen se kusy různých titulů sčítat nedají: místo částky a podílu
-  // portfolia stojí počet pozic, a křivka osvobozování se nekreslí vůbec
-  // (s cenami ji hlídá demo.spec.ts). Proč částka chybí, říká sdělení
+  // portfolia stojí počet pozic. Proč částka chybí, říká sdělení
   // „Hodnotu zatím neznáme“ hned pod čísly — poznámka u čísla to neopakuje.
   const exemptToday = page
     .getByRole('term')
@@ -112,7 +111,20 @@ test('portfolio: přehled grafů → pozice → detail s nákupy (+ screenshoty)
   await expect(exemptToday.getByRole('definition').first()).toHaveText('0 z 7 pozic');
   await expect(exemptToday).not.toContainText('Kč');
   await expect(exemptToday).not.toContainText('%');
-  await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toHaveCount(0);
+  // Křivka osvobozování se kreslí i bez cen — váží se nabývací cenou, stejně
+  // jako tečky horizontu na přehledu — a vysvětlivka to říká.
+  const outlook = page
+    .getByRole('heading', { name: 'Horizont osvobození' })
+    .locator('xpath=ancestor::section[1]');
+  await expect(
+    outlook.getByRole('application', { name: 'Osvobozování portfolia v čase' }),
+  ).toBeVisible();
+  await (
+    await hydrated(outlook.getByRole('button', { name: 'Vysvětlení: Horizont osvobození' }))
+  ).click();
+  // řetězcem, ne výrazem: text jde přes `tidy()` a za „z“ je pevná mezera
+  await expect(page.getByText('Počítá se z nabývacích cen', { exact: false })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
   // Grafy nejsou schované v tabu — jsou vidět bez kliku.
   // Přes roli, ne přes text: graf má stejný název i jako přístupné jméno

@@ -245,10 +245,10 @@ const HOLDINGS: Holding[] = [
 
 // ── plán dividend (rok jako offset → měsíce výplat) ─────────────────────────
 
-const Q_LEDEN = ['01', '04', '07', '10'];
-const Q_UNOR = ['02', '05', '08', '11'];
-const Q_BREZEN = ['03', '06', '09', '12'];
-const MESICNE = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+const Q_FROM_JANUARY = ['01', '04', '07', '10'];
+const Q_FROM_FEBRUARY = ['02', '05', '08', '11'];
+const Q_FROM_MARCH = ['03', '06', '09', '12'];
+const MONTHLY = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
 interface DividendPlan {
   tag: string;
@@ -264,16 +264,16 @@ interface DividendPlan {
 /** První výplata každého instrumentu je vždy až PO jeho nákupu. */
 const DIVIDEND_PLANS: DividendPlan[] = [
   // US 15 % (W-8BEN v pořádku)
-  { tag: 'ko', isin: 'US1912161007', currency: 'USD', country: 'US', gross: '24', wht: '3.60', day: '09', byYear: { [-5]: ['07', '10'], [-4]: Q_LEDEN, [-3]: Q_LEDEN, [-2]: Q_LEDEN, [-1]: Q_LEDEN, 0: Q_LEDEN } },
-  { tag: 'aapl', isin: 'US0378331005', currency: 'USD', country: 'US', gross: '30', wht: '4.50', day: '13', byYear: { [-2]: Q_UNOR, [-1]: Q_UNOR, 0: Q_UNOR } },
-  { tag: 'msft', isin: 'US5949181045', currency: 'USD', country: 'US', gross: '28', wht: '4.20', day: '12', byYear: { 0: Q_BREZEN } },
-  { tag: 'o', isin: 'US7561091049', currency: 'USD', country: 'US', gross: '24', wht: '3.60', day: '15', byYear: { [-4]: MESICNE.slice(3), [-3]: MESICNE, [-2]: MESICNE, [-1]: MESICNE, 0: MESICNE } },
-  { tag: 'v', isin: 'US92826C8394', currency: 'USD', country: 'US', gross: '10', wht: '1.50', day: '03', byYear: { [-2]: ['09', '12'], [-1]: Q_BREZEN, 0: Q_BREZEN } },
-  { tag: 'jnj', isin: 'US4781601046', currency: 'USD', country: 'US', gross: '28', wht: '4.20', day: '10', byYear: { [-5]: ['06', '09', '12'], [-4]: Q_BREZEN, [-3]: Q_BREZEN, [-2]: Q_BREZEN, [-1]: Q_BREZEN, 0: Q_BREZEN } },
-  { tag: 'pg', isin: 'US7427181091', currency: 'USD', country: 'US', gross: '26', wht: '3.90', day: '17', byYear: { [-5]: ['05', '08', '11'], [-4]: Q_UNOR, [-3]: Q_UNOR, [-2]: Q_UNOR, [-1]: Q_UNOR, 0: Q_UNOR } },
-  { tag: 'xom', isin: 'US30231G1022', currency: 'USD', country: 'US', gross: '22', wht: '3.30', day: '10', byYear: { [-5]: ['09', '12'], [-4]: Q_BREZEN, [-3]: Q_BREZEN, [-2]: Q_BREZEN, [-1]: Q_BREZEN, 0: Q_BREZEN } },
+  { tag: 'ko', isin: 'US1912161007', currency: 'USD', country: 'US', gross: '24', wht: '3.60', day: '09', byYear: { [-5]: ['07', '10'], [-4]: Q_FROM_JANUARY, [-3]: Q_FROM_JANUARY, [-2]: Q_FROM_JANUARY, [-1]: Q_FROM_JANUARY, 0: Q_FROM_JANUARY } },
+  { tag: 'aapl', isin: 'US0378331005', currency: 'USD', country: 'US', gross: '30', wht: '4.50', day: '13', byYear: { [-2]: Q_FROM_FEBRUARY, [-1]: Q_FROM_FEBRUARY, 0: Q_FROM_FEBRUARY } },
+  { tag: 'msft', isin: 'US5949181045', currency: 'USD', country: 'US', gross: '28', wht: '4.20', day: '12', byYear: { 0: Q_FROM_MARCH } },
+  { tag: 'o', isin: 'US7561091049', currency: 'USD', country: 'US', gross: '24', wht: '3.60', day: '15', byYear: { [-4]: MONTHLY.slice(3), [-3]: MONTHLY, [-2]: MONTHLY, [-1]: MONTHLY, 0: MONTHLY } },
+  { tag: 'v', isin: 'US92826C8394', currency: 'USD', country: 'US', gross: '10', wht: '1.50', day: '03', byYear: { [-2]: ['09', '12'], [-1]: Q_FROM_MARCH, 0: Q_FROM_MARCH } },
+  { tag: 'jnj', isin: 'US4781601046', currency: 'USD', country: 'US', gross: '28', wht: '4.20', day: '10', byYear: { [-5]: ['06', '09', '12'], [-4]: Q_FROM_MARCH, [-3]: Q_FROM_MARCH, [-2]: Q_FROM_MARCH, [-1]: Q_FROM_MARCH, 0: Q_FROM_MARCH } },
+  { tag: 'pg', isin: 'US7427181091', currency: 'USD', country: 'US', gross: '26', wht: '3.90', day: '17', byYear: { [-5]: ['05', '08', '11'], [-4]: Q_FROM_FEBRUARY, [-3]: Q_FROM_FEBRUARY, [-2]: Q_FROM_FEBRUARY, [-1]: Q_FROM_FEBRUARY, 0: Q_FROM_FEBRUARY } },
+  { tag: 'xom', isin: 'US30231G1022', currency: 'USD', country: 'US', gross: '22', wht: '3.30', day: '10', byYear: { [-5]: ['09', '12'], [-4]: Q_FROM_MARCH, [-3]: Q_FROM_MARCH, [-2]: Q_FROM_MARCH, [-1]: Q_FROM_MARCH, 0: Q_FROM_MARCH } },
   // US 30 % — u custodiana chybí W-8BEN → varování „srážka nad smlouvu“
-  { tag: 'mo', isin: 'US02209S1033', currency: 'USD', country: 'US', gross: '75', wht: '22.50', day: '25', byYear: { [-1]: ['04', '07', '10'], 0: Q_LEDEN } },
+  { tag: 'mo', isin: 'US02209S1033', currency: 'USD', country: 'US', gross: '75', wht: '22.50', day: '25', byYear: { [-1]: ['04', '07', '10'], 0: Q_FROM_JANUARY } },
   // DE 26,375 % (KESt nad smluvních 15 %)
   { tag: 'sap', isin: 'DE0007164600', currency: 'EUR', country: 'DE', gross: '160', wht: '42.20', day: '20', byYear: { [-2]: ['05'], [-1]: ['05'], 0: ['05'] } },
   { tag: 'alv', isin: 'DE0008404005', currency: 'EUR', country: 'DE', gross: '240', wht: '63.30', day: '08', byYear: { [-1]: ['05'], 0: ['05'] } },

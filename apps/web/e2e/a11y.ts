@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
+import { pageSettled } from './helpers';
 
 /**
  * Sdílené jádro auditu přístupnosti (H-28).
@@ -131,7 +132,7 @@ export async function auditPage(
   const name = prepare ? `${path} — ${prepare.label}` : path;
   await page.setViewportSize(DESKTOP);
   await page.goto(path);
-  await page.waitForLoadState('networkidle');
+  await pageSettled(page);
   // Stránka, která přesměruje (objednávka bez čeho koupit, onboarding s daty),
   // by se jinak tiše auditovala jako cíl přesměrování — sada by hlásila zeleň
   // za stránku, kterou nikdy nenačetla.

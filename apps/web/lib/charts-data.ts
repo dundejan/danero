@@ -1,6 +1,7 @@
 import { d, ZERO, type Money, type Transaction } from '@danero/shared';
 import type { Position, TaxYearResult } from '@danero/engine';
 import type { PortfolioValuation } from '@/lib/portfolio-value';
+import { plural } from '@/lib/format';
 import type { InstrumentPrice } from '@/lib/prices';
 import { UNIFIED_RATES } from '@/lib/tax-config';
 
@@ -483,11 +484,20 @@ export interface OutlookPoint {
 
 export interface ExemptionOutlook {
   points: OutlookPoint[];
-  /** 'value' = váženo hodnotou oceněných pozic, 'quantity' = počtem kusů. */
-  basis: 'value' | 'quantity';
   /**
-   * Kolik pozic se do podílu nepočítá, protože nemají cenu (jen u `value`).
-   * Podíl je pak „z oceněných pozic“ a stránka to musí říct.
+   * Čím se podíl váží — tatáž tři měřítka jako u teček horizontu
+   * (`HorizonWeightBasis`): hodnotou oceněných pozic, bez cen nabývací cenou,
+   * počtem kusů jen u jediného titulu. Křivka je ale podíl z CELÉHO
+   * portfolia, takže tituly počítá všechny držené, kdežto tečky jen ty, které
+   * se osvobodit můžou. U portfolia s titulem bez nároku (stablecoin) tak
+   * křivka jde podle nabývací ceny, i když tečky ukazují kusy jediného titulu.
+   */
+  basis: HorizonWeightBasis;
+  /**
+   * Kolik pozic se do podílu nepočítá, protože jim chybí to, čím se váží:
+   * cena od brokera (`value`), nebo nabývací cena či kurz její měny (`cost`).
+   * Podíl je pak jen z části portfolia a stránka to musí říct
+   * (`outlookBasisNote`).
    */
   unpricedCount: number;
 }
@@ -497,9 +507,16 @@ export interface ExemptionOutlook {
  *
  * Váha lotu je jeho hodnota v CZK. Pozice bez ceny (nebo bez kurzu měny) se do
  * podílu nepočítá a vrací se jejich počet — podíl je pak z oceněné části.
+ *
+ * Bez jediné ceny se váží nabývací cenou v CZK, stejně jako tečky horizontu
+ * (`weightBasisFor`). Do 11. 10. 2026 se v tom stavu křivka nekreslila vůbec,
+ * ačkoli tečky nad ní se nabývací cenou vážily: kdo jen nahrává výpisy, viděl
+ * na přehledu tečky bez křivky a na portfoliu sekci „Horizont osvobození“
+ * neviděl nikdy. Nabývací cena tu není daňový výdaj — je to váha pro podíl,
+ * přepočtená orientačním kurzem běžného roku (`rateToCzk`).
+ *
  * Na počet kusů se přechází jen u portfolia o JEDINÉM instrumentu: kusy akcie
- * a kusy krypta se sčítat nedají (R2-10), takže víc instrumentů bez jediné
- * ceny podíl nemá vůbec (`null`).
+ * a kusy krypta se sčítat nedají (R2-10).
  */
 export function exemptionOutlook(
   positions: Position[],
@@ -511,23 +528,36 @@ export function exemptionOutlook(
   if (held.length === 0) return null;
 
   const priced = held.filter((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null);
-  const basis: ExemptionOutlook['basis'] = priced.length > 0 ? 'value' : 'quantity';
-  if (basis === 'quantity' && held.length > 1) return null;
+  const basis: HorizonWeightBasis =
+    priced.length > 0 ? 'value' : held.length > 1 ? 'cost' : 'quantity';
 
-  const counted = basis === 'value' ? priced : held;
-  const lots = counted.flatMap((position) => position.lots.map((lot) => ({ position, lot })));
-  const weight = ({ position, lot }: (typeof lots)[number]): Money => {
-    const priceCzk = basis === 'value' ? pricePerShareCzk(position.isin, prices, fxYear) : null;
-    return priceCzk ? lot.remaining.mul(priceCzk) : lot.remaining;
+  /** Váha lotu; `null` = lot nemá, čím by se vážil. */
+  const weightOf = (position: Position, lot: Position['lots'][number]): Money | null => {
+    if (basis === 'quantity') return lot.remaining;
+    if (basis === 'value') {
+      const priceCzk = pricePerShareCzk(position.isin, prices, fxYear);
+      return priceCzk ? lot.remaining.mul(priceCzk) : null;
+    }
+    // nákup za nulu (kusy z oddělení společnosti) ani měna bez kurzu váhu nemají
+    const rate = rateToCzk(position.currency, fxYear);
+    return rate && lot.costPerShare.gt(0) ? lot.remaining.mul(lot.costPerShare).mul(rate) : null;
   };
 
-  const total = lots.reduce((sum, item) => sum.plus(weight(item)), ZERO);
+  const lots = held.flatMap((position) =>
+    position.lots.flatMap((lot) => {
+      const weight = weightOf(position, lot);
+      return weight ? [{ position, lot, weight }] : [];
+    }),
+  );
+  const counted = new Set(lots.map(({ position }) => position.isin));
+
+  const total = lots.reduce((sum, item) => sum.plus(item.weight), ZERO);
   // nulová (nebo záporná) váha: podíl by dělil nulou
   if (total.lte(0)) return null;
 
   let exempt = lots
     .filter(({ lot }) => lot.isExempt)
-    .reduce((sum, item) => sum.plus(weight(item)), ZERO);
+    .reduce((sum, item) => sum.plus(item.weight), ZERO);
 
   // A2-3-04: lot bez nároku na osvobození nikdy „nedojde" — v křivce by posunul
   // podíl osvobozeného majetku ke 100 % a s datem v minulosti rozbil i osu
@@ -538,10 +568,39 @@ export function exemptionOutlook(
   const share = () => Number(exempt.div(total).mul(100).toFixed(1));
   const points: OutlookPoint[] = [{ date: today, exemptShare: share() }];
   for (const item of future) {
-    exempt = exempt.plus(weight(item));
+    exempt = exempt.plus(item.weight);
     const last = points[points.length - 1]!;
     if (last.date === item.lot.exemptFrom) last.exemptShare = share();
     else points.push({ date: item.lot.exemptFrom, exemptShare: share() });
   }
-  return { points, basis, unpricedCount: basis === 'value' ? held.length - priced.length : 0 };
+  return { points, basis, unpricedCount: held.length - counted.size };
+}
+
+/** Čím se podíl váží, slovy do věty: „podle hodnoty“, „podle nabývací ceny“. */
+export const OUTLOOK_BASIS_LABEL: Record<HorizonWeightBasis, string> = {
+  value: 'hodnoty',
+  cost: 'nabývací ceny',
+  quantity: 'počtu kusů',
+};
+
+/**
+ * Výhrada ke křivce do vysvětlivky (jedna věta, nebo nic): z čeho se podíl
+ * počítá, když to není celé portfolio v dnešních cenách. Jedno znění pro
+ * přehled i portfolio — obě stránky kreslí tutéž křivku.
+ */
+export function outlookBasisNote(outlook: ExemptionOutlook): string | null {
+  const missing = outlook.unpricedCount;
+  const absent = `${missing} ${plural(missing, 'pozice', 'pozice', 'pozic')}`;
+  const verb = plural(missing, 'není', 'nejsou', 'není');
+  if (outlook.basis === 'value') {
+    return missing > 0
+      ? `Počítá se jen z oceněných pozic; ${absent} bez ceny v křivce ${verb}.`
+      : null;
+  }
+  if (outlook.basis === 'cost') {
+    return `Počítá se z nabývacích cen — dnešní ceny známe jen od připojeného brokera${
+      missing > 0 ? `; ${absent} bez nabývací ceny v křivce ${verb}` : ''
+    }.`;
+  }
+  return null;
 }
