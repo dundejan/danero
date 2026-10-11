@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { TextLink } from '@/components/ui/link';
 import { EngineErrorCard } from '@/lib/fx-error';
+import { LIMIT_NAME } from '@/lib/limit-names';
 import { SegmentedDemo, SheetDemo } from './sheet-demo';
 
 export const metadata = {
@@ -77,7 +78,7 @@ export default function PrimitivesPage() {
           </InfoPopover>
         }
       >
-        <StatusLabel tone="danger">Limit 50 000 Kč pro paušální daň — přes limit</StatusLabel>
+        <StatusLabel tone="danger">{`${LIMIT_NAME.FLAT_TAX} — přes limit`}</StatusLabel>
         <dl className="mt-5 flex flex-wrap gap-x-16 gap-y-6">
           <Stat
             size="lg"
@@ -351,7 +352,7 @@ export default function PrimitivesPage() {
             </DisclosureRow>
           </Group>
           <StatusLabel tone="danger">
-            Limit 50 000 Kč pro paušální daň — přes limit o částku, která se na jeden řádek nevejde
+            {`${LIMIT_NAME.FLAT_TAX} — přes limit o částku, která se na jeden řádek nevejde`}
           </StatusLabel>
           <Notice
             tone="caution"
