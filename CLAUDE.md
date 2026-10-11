@@ -376,6 +376,12 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   a WebKit patří do kontejneru (`mcr.microsoft.com/playwright`), ne na stroj.
   Pád vezme s sebou i `/tmp` — rozdělanou práci commituj průběžně a výkazy
   nenechávej jen ve scratchpadu.
+- **Playwright srovná mezery jen u řetězce, ne u regulárního výrazu.** Texty
+  aplikace jdou přes `tidy()`/`typeset()`, takže za jednopísmennou předložkou
+  a uvnitř částky je pevná mezera. `getByText('Počítá se z nabývacích cen')`
+  ji najde, `getByText(/Počítá se z nabývacích cen/)` ne — a spec spadne na
+  textu, který na stránce prokazatelně je (11. 10. 2026 dvakrát za den). Ve
+  výrazu piš `\s`, nebo hledej řetězcem s `{ exact: false }`.
 
 ## Stav a plán
 
