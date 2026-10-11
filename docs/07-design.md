@@ -234,10 +234,9 @@ Ukázky:
 
 Pravidla, která z kódu nejsou vidět:
 
-- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`)
-  **a nesmí stát ani v `<p>`**: v úzkém okně se vedle tlačítka vykreslí `<dialog>` sheetu,
-  prohlížeč odstavec rozdělí a hydratace spadne. Řádek s textem a vysvětlivkou je `div`
-  (nebo `li`), ne odstavec.
+- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`).
+  Jinak smí stát všude, kde smí stát text: bublina i sheet (úzké okno) se vykreslují
+  portálem do `<body>`, takže `<dialog>` s nadpisem neskončí v `<span>`, `<dt>` ani `<p>`.
   Jeho obsah se vykreslí až po otevření — co musí být vidět vždy, patří vedle čísla, co má
   být na papíře, dostane `InfoPrint`.
   Uvnitř `Stat` se bublina kotví pod celý blok sama; jinde zvol `side`/`align` tak, aby

@@ -2,6 +2,7 @@
 
 import { Popover } from '@base-ui/react/popover';
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { Sheet } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
@@ -73,9 +74,10 @@ const BODY =
  * (výhrada „orientačně, jen z investic“), proto patří vedle čísla, ne sem.
  * Co má být i na papíře, dostane vedle sebe `InfoPrint` (`ui/info-print.tsx`).
  *
- * Nesmí stát ani uvnitř `<p>`: v úzkém okně se vedle tlačítka vykreslí
- * `<dialog>` sheetu a ten do odstavce nepatří (prohlížeč odstavec rozdělí
- * a hydratace spadne). Obal ať je `div` nebo `span` s `inline-flex`.
+ * Bublina i sheet se vykreslují portálem do `<body>`, ne vedle tlačítka. Do
+ * 11. 10. 2026 stál sheet v úzkém okně na místě: `<dialog>` s nadpisem tak
+ * ležel uvnitř `<span>` popisku řádku nebo v `<dt>` u `Stat` (nevalidní HTML)
+ * a dědil po nich styl písma. Tlačítko samo smí stát všude, kde smí stát text.
  */
 export function InfoPopover({
   label,
@@ -135,15 +137,21 @@ export function InfoPopover({
         >
           <InfoGlyph />
         </button>
-        <Sheet
-          open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          onReopen={() => setSheetOpen(true)}
-          label={heading ?? label}
-          title={heading ?? undefined}
-        >
-          <div className={cn(BODY, 'type-callout px-1 pb-2')}>{children}</div>
-        </Sheet>
+        {/* portálem do <body>: dialog s nadpisem nepatří do <span> ani <dt>,
+            kde tlačítko stojí; `narrow` platí jen v prohlížeči, takže
+            `document` tu je vždy */}
+        {createPortal(
+          <Sheet
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            onReopen={() => setSheetOpen(true)}
+            label={heading ?? label}
+            title={heading ?? undefined}
+          >
+            <div className={cn(BODY, 'type-callout px-1 pb-2')}>{children}</div>
+          </Sheet>,
+          document.body,
+        )}
       </>
     );
   }
