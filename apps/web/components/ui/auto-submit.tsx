@@ -10,7 +10,7 @@ import {
   type FocusDescriptor,
   type FocusHandoff,
 } from '@/lib/focus-handoff';
-import { BASELINE_FIELD, CHANGED_FIELD } from '@/lib/form-baseline';
+import { CHANGED_FIELD } from '@/lib/form-baseline';
 import {
   applyFormValues,
   differsFromServerHtml,
@@ -18,7 +18,7 @@ import {
   restoreServerHtml,
   type FormControlState,
 } from '@/lib/form-changes';
-import { encodeLeavingDraft, LEAVING_DRAFT_KEY, leavingDraftFor } from '@/lib/leaving-draft';
+import { rememberLeavingDraft, takeLeavingDraft } from '@/lib/leaving-draft';
 import { announce, refreshFromServer } from '@/lib/save-feedback';
 import {
   createSaveQueue,
@@ -110,30 +110,6 @@ const hasDraft = (field: TextField): boolean => field.value !== confirmedValue(f
  */
 const hasOwnDraft = (field: TextField): boolean =>
   hasDraft(field) && humanEdited.has(field) && rejectedValues.get(field) !== field.value;
-
-const baselineOf = (form: HTMLFormElement): string => {
-  const field = form.elements.namedItem(BASELINE_FIELD);
-  return field instanceof HTMLInputElement ? field.value : '';
-};
-
-/** Úložiště panelu umí být vypnuté nebo plné — poznámka o odchodu je jen pomůcka. */
-function writeLeavingDraft(value: string): void {
-  try {
-    window.sessionStorage.setItem(LEAVING_DRAFT_KEY, value);
-  } catch {
-    // bez poznámky nová stránka ukáže, co poslal server
-  }
-}
-
-function takeLeavingDraft(): string | null {
-  try {
-    const raw = window.sessionStorage.getItem(LEAVING_DRAFT_KEY);
-    window.sessionStorage.removeItem(LEAVING_DRAFT_KEY);
-    return raw;
-  } catch {
-    return null;
-  }
-}
 
 const confirm = (field: TextField): void => {
   confirmedValues.set(field, field.value);
@@ -470,19 +446,16 @@ export function AutoSubmit({
       queue.flush({ data: snapshot(form), triggers: names });
       // F5: nová stránka se vykreslí dřív, než se tohle uložení zapíše —
       // text si převezme z poznámky (`lib/leaving-draft.ts`)
-      writeLeavingDraft(
-        encodeLeavingDraft({
-          endpoint,
-          pathname: window.location.pathname,
-          baseline: baselineOf(form),
-          at: Date.now(),
-          fields: Object.fromEntries(
-            textFieldsOf(form)
-              .filter((field) => names.includes(field.name))
-              .map((field) => [field.name, field.value]),
-          ),
-        }),
-      );
+      rememberLeavingDraft({
+        endpoint,
+        pathname: window.location.pathname,
+        at: Date.now(),
+        fields: Object.fromEntries(
+          textFieldsOf(form)
+            .filter((field) => names.includes(field.name))
+            .map((field) => [field.name, { from: field.defaultValue, text: field.value }]),
+        ),
+      });
     };
     const onVisibilityChange = (): void => {
       if (document.visibilityState === 'hidden') leave();
@@ -543,18 +516,20 @@ export function AutoSubmit({
       // text, se kterým předchozí stránka odcházela (F5) a který tahle ještě
       // neukazuje: vrátí se do pole a uloží znovu — server, který ho mezitím
       // zapsal, podruhé nic nezapíše
-      const left = leavingDraftFor(takeLeavingDraft(), {
+      const left = takeLeavingDraft({
         endpoint,
         pathname: window.location.pathname,
-        baseline: baselineOf(form),
         now: Date.now(),
+        served: Object.fromEntries(
+          textFieldsOf(form).map((field) => [field.name, field.defaultValue]),
+        ),
       });
       const resumed: string[] = [];
       for (const field of textFieldsOf(form)) {
         if (early.edited.has(field)) humanEdited.add(field);
         // text potvrzený před hydratací se odešle; rozepsaný zůstává rozepsaný
         if (early.committed.has(field) && hasDraft(field)) confirm(field);
-        const text = left?.[field.name];
+        const text = left[field.name];
         // kdo do pole mezitím psal, má přednost
         if (text === undefined || text === field.value || early.edited.has(field)) continue;
         field.value = text;

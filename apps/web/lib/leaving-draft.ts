@@ -7,19 +7,19 @@
  * 11. 10. 2026 v Chromiu i Firefoxu). Člověk by ji psal znovu.
  *
  * Zanikající stránka si proto text poznamená do úložiště panelu a nová si ho
- * převezme: pokud ještě vidí stav, se kterým stará stránka odcházela, vrátí
- * text do pole a uloží ho obvyklou cestou (server, který ho mezitím zapsal,
- * podruhé nic nezapíše). Jakmile je stav jiný, uložení už doběhlo a platí, co
- * poslal server.
+ * převezme: pokud pole od serveru dostalo pořád tu hodnotu, se kterou stará
+ * stránka odcházela, vrátí do něj text a uloží ho obvyklou cestou (server,
+ * který ho mezitím zapsal, podruhé nic nezapíše). Jakmile server poslal jinou
+ * hodnotu, uložení už doběhlo — nebo pole mezitím změnil někdo jinde —
+ * a platí, co poslal server.
  *
- * Poznámka platí krátce a jen pro tentýž formulář na téže adrese se stejným
- * stavem — nesmí se z ní stát cesta, kterou se do nastavení vrátí stará hodnota.
- *
- * Čisté funkce bez DOM — úložiště si volající čte a zapisuje sám.
+ * Poznámka platí krátce a jen pro tentýž formulář na téže adrese; odhlášení
+ * ji maže. Nesmí se z ní stát cesta, kterou se do nastavení vrátí stará
+ * hodnota nebo text jiného účtu.
  */
 
 /** Klíč v `sessionStorage`. */
-export const LEAVING_DRAFT_KEY = 'danero:leaving-draft';
+const LEAVING_DRAFT_KEY = 'danero:leaving-draft';
 
 /** Jak dlouho po odchodu poznámka platí (ms). */
 export const LEAVING_DRAFT_TTL_MS = 10_000;
@@ -29,11 +29,9 @@ interface LeavingDraft {
   endpoint: string;
   /** Cesta stránky, ze které se odcházelo. */
   pathname: string;
-  /** Stav formuláře při vykreslení (skryté pole `puvodni-stav`). */
-  baseline: string;
   at: number;
-  /** Rozepsaný text podle `name` pole. */
-  fields: Record<string, string>;
+  /** Podle `name` pole: hodnota, kterou pole dostalo od serveru, a rozepsaný text. */
+  fields: Record<string, { from: string; text: string }>;
 }
 
 export function encodeLeavingDraft(draft: LeavingDraft): string {
@@ -46,36 +44,87 @@ const isLeavingDraft = (value: unknown): value is LeavingDraft => {
   return (
     typeof draft.endpoint === 'string' &&
     typeof draft.pathname === 'string' &&
-    typeof draft.baseline === 'string' &&
     typeof draft.at === 'number' &&
     typeof draft.fields === 'object' &&
     draft.fields !== null &&
-    Object.values(draft.fields).every((text) => typeof text === 'string')
+    Object.values(draft.fields).every(
+      (field: unknown) =>
+        typeof field === 'object' &&
+        field !== null &&
+        typeof (field as { from?: unknown }).from === 'string' &&
+        typeof (field as { text?: unknown }).text === 'string',
+    )
   );
 };
 
+/** Formulář, který se po načtení ptá, jestli má co převzít. */
+interface LoadedForm {
+  endpoint: string;
+  pathname: string;
+  now: number;
+  /** Hodnoty textových polí, jak je poslal server (podle `name`). */
+  served: Record<string, string>;
+}
+
 /**
- * Text, který má formulář po načtení převzít; `null`, když poznámka chybí,
- * je poškozená, stará, patří jinému formuláři nebo se stav mezitím změnil.
+ * Text, který má formulář po načtení převzít (podle `name` pole); prázdné,
+ * když poznámka chybí, je poškozená, stará nebo patří jinému formuláři. Pole,
+ * kterému server mezitím poslal jinou hodnotu, text nedostane.
  */
-export function leavingDraftFor(
-  raw: string | null,
-  form: { endpoint: string; pathname: string; baseline: string; now: number },
-): Record<string, string> | null {
-  if (!raw) return null;
+export function leavingDraftFor(raw: string | null, form: LoadedForm): Record<string, string> {
+  if (!raw) return {};
   let draft: unknown;
   try {
     draft = JSON.parse(raw);
   } catch {
-    return null;
+    return {};
   }
-  if (!isLeavingDraft(draft)) return null;
+  if (!isLeavingDraft(draft)) return {};
   const age = form.now - draft.at;
-  return draft.endpoint === form.endpoint &&
-    draft.pathname === form.pathname &&
-    draft.baseline === form.baseline &&
-    age >= 0 &&
-    age <= LEAVING_DRAFT_TTL_MS
-    ? draft.fields
-    : null;
+  if (
+    draft.endpoint !== form.endpoint ||
+    draft.pathname !== form.pathname ||
+    age < 0 ||
+    age > LEAVING_DRAFT_TTL_MS
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(draft.fields)
+      .filter(([name, field]) => form.served[name] === field.from)
+      .map(([name, field]) => [name, field.text]),
+  );
+}
+
+/*
+ * Úložiště panelu umí být vypnuté nebo plné — poznámka je jen pomůcka, bez ní
+ * nová stránka ukáže, co poslal server.
+ */
+
+export function rememberLeavingDraft(draft: LeavingDraft): void {
+  try {
+    window.sessionStorage.setItem(LEAVING_DRAFT_KEY, encodeLeavingDraft(draft));
+  } catch {
+    // bez poznámky
+  }
+}
+
+/** Přečte poznámku a smaže ji — platí pro jedno načtení stránky. */
+export function takeLeavingDraft(form: LoadedForm): Record<string, string> {
+  try {
+    const raw = window.sessionStorage.getItem(LEAVING_DRAFT_KEY);
+    window.sessionStorage.removeItem(LEAVING_DRAFT_KEY);
+    return leavingDraftFor(raw, form);
+  } catch {
+    return {};
+  }
+}
+
+/** Odhlášení: text rozepsaný v jednom účtu se nesmí nabídnout dalšímu. */
+export function forgetLeavingDraft(): void {
+  try {
+    window.sessionStorage.removeItem(LEAVING_DRAFT_KEY);
+  } catch {
+    // není co mazat
+  }
 }
