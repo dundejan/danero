@@ -103,7 +103,9 @@ font-bold`**, vyber stupeň.
   **`tidy()` vkládá jen pevné mezery, žádný jiný znak**: nezlomitelný spojovník v „e-mail“
   rozbil hledání v prohlížeči i kopírování. Aby se „e-mail“ nezlomil ve spojovníku,
   obalí ho `typeset()` stylem `whitespace-nowrap` — text s „e-mailem“ na viditelném místě
-  proto pošli přes `typeset()`, ne přes `tidy()`. Ve stejném
+  proto pošli přes `typeset()`, ne přes `tidy()`. Krátké hlášky to dělají samy:
+  `Toast`, `FieldError` a titulek s větou ve `FormPage` sází svůj text přes `typeset()`
+  (hlídá `test/email-nowrap.test.ts`). Ve stejném
   souboru je `plainTitle()` (titulek upozornění bez obrázkového znaku) a `withoutLawRefs()`
   (titulek bez „(§ …)“).
 - Částku v cizí měně píše `money()` z `lib/format.ts`: pevná mezera před kódem měny a pod
@@ -382,10 +384,16 @@ Odkaz uprostřed věty je vždy podtržený.
   mluví o konkrétním seznamu na stránce (nahrání a vrácení importu → historie importů),
   neplave: je to `Notice` v toku stránky hned nad tím seznamem — plovoucí hláška na telefonu
   ležela přes řádek, o kterém mluvila. Kód výsledku z adresy pak uklidí `ClearFeedbackUrl`.
+  Taková hláška nemizí sama, takže ji po úklidu adresy musí držet prohlížeč: stránka se
+  umí obnovit i bez uživatele (doběhne synchronizace) a ze serveru už přijde bez ní
+  (vzor: `app/(app)/import/upload-result.tsx`).
 - Formulář s auto-save (`AutoSubmit`) nese skrytý stav, se kterým byl vykreslen, a server
   zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`) — panel se starým stavem
   tak nepřepíše změnu udělanou jinde. Výchozí hodnoty polí i skrytý stav ber z jednoho místa
   (vzor: `app/(app)/nastaveni/form-state.ts`) a formuláři dej `key` podle toho stavu.
+  Uložení formulář vykreslí celý znovu; fokus přitom zůstává na poli, kde byl, a rozepsaný
+  text se neztratí — předá si je starý a nový formulář (`lib/focus-handoff.ts`). Hodnoty
+  ostatních polí se nepředávají nikdy, ty jsou vždy ze serveru.
 
 ## 5. Textová dieta
 
