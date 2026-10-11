@@ -8,8 +8,10 @@ import { expect, type Page } from '@playwright/test';
  * souborů — import ze souboru s `test(...)` by jeho testy zaregistroval
  * podruhé.
  */
-export const MOBILE = { width: 390, height: 844 };
-export const DESKTOP = { width: 1280, height: 900 };
+const MOBILE = { width: 390, height: 844 };
+const DESKTOP = { width: 1280, height: 900 };
+const VIEWPORTS = { mobil: MOBILE, desktop: DESKTOP } as const;
+type Viewport = keyof typeof VIEWPORTS;
 
 /**
  * Nálezy, které stránku shodí.
@@ -66,8 +68,68 @@ async function expectSingleContentLandmark(page: Page, label: string) {
   expect.soft(problemy, label).toEqual([]);
 }
 
-/** Jeden průchod stránkou: světlý i tmavý režim, mobil i desktop. */
-export async function auditPage(page: Page, path: string) {
+/**
+ * Počká, až doběhnou přechody na stránce. Bublina, dialog i sheet přijíždějí
+ * prolnutím — axe by jinak měřil kontrast napůl průhledného textu a nález by
+ * záležel na tom, v které milisekundě se trefil.
+ *
+ * Počítají se jen BĚŽÍCÍ animace s konečnou délkou: nekonečná (točící se
+ * ukazatel průběhu) ani pozastavená nedoběhne nikdy a čekání na její
+ * `finished` by viselo do limitu testu.
+ */
+async function settleAnimations(page: Page) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            document.getAnimations().filter((animation) => {
+              const end = animation.effect?.getComputedTiming().endTime;
+              return animation.playState === 'running' && Number.isFinite(Number(end));
+            }).length,
+        ),
+      { message: 'přechody na stránce nedoběhly' },
+    )
+    .toBe(0);
+}
+
+/** Zkontroluje, že stránka opravdu přepnula barevný režim, který se má měřit. */
+async function switchScheme(page: Page, scheme: 'light' | 'dark') {
+  await page.emulateMedia({ colorScheme: scheme });
+  // ThemeProvider přepíná třídu na <html> podle systémového nastavení;
+  // bez téhle kontroly by se „tmavý“ průchod mohl tiše měřit ve světlém
+  await expect
+    .soft(page.locator('html'))
+    .toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
+}
+
+/**
+ * Rozbalí všechny rozbalovací řádky a detaily na stránce — klepnutím, jako
+ * uživatel, takže zároveň ověří, že se k obsahu dá dostat. Opakuje se, dokud
+ * je co otevírat: rozbalený řádek může nést další (návod uvnitř formuláře).
+ */
+export async function expandAllDisclosures(page: Page) {
+  const closed = page.locator('details:not([open]) > summary:visible');
+  for (let opened = 0; opened < 200 && (await closed.count()) > 0; opened += 1) {
+    await closed.first().click();
+  }
+  expect.soft(await closed.count(), 'některý rozbalovací řádek nejde otevřít').toBe(0);
+}
+
+/**
+ * Jeden průchod stránkou: světlý i tmavý režim, mobil i desktop.
+ *
+ * `prepare` uvede stránku do stavu, který se má měřit a který přežije změnu
+ * šířky i režimu (rozbalené řádky, vyplněná kalkulačka). Stavy vázané na
+ * šířku okna — sheet, bublina, dialog — měří `auditOverlay`.
+ */
+export async function auditPage(
+  page: Page,
+  path: string,
+  prepare?: { label: string; run: (page: Page) => Promise<void> },
+) {
+  const name = prepare ? `${path} — ${prepare.label}` : path;
+  await page.setViewportSize(DESKTOP);
   await page.goto(path);
   await page.waitForLoadState('networkidle');
   // Stránka, která přesměruje (objednávka bez čeho koupit, onboarding s daty),
@@ -77,30 +139,54 @@ export async function auditPage(page: Page, path: string) {
   expect
     .soft(`${cil.pathname}${cil.search}`, `${path} přesměrovalo jinam — audit měřil něco jiného`)
     .toBe(path);
-  await expectSingleContentLandmark(page, path);
+  await expectSingleContentLandmark(page, name);
+  await prepare?.run(page);
   // kurzor zůstává tam, kam naposledy klikl test — jinak by axe měřil `:hover`
   // stav náhodného prvku pod ním a nález by záležel na rozložení stránky
   await page.mouse.move(0, 0);
 
   for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    // ThemeProvider přepíná třídu na <html> podle systémového nastavení;
-    // bez téhle kontroly by se „tmavý“ průchod mohl tiše měřit ve světlém
-    await expect
-      .soft(page.locator('html'))
-      .toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
+    await switchScheme(page, scheme);
 
-    for (const [name, size] of [
-      ['mobil', MOBILE],
-      ['desktop', DESKTOP],
-    ] as const) {
-      await page.setViewportSize(size);
+    for (const viewport of ['mobil', 'desktop'] as const) {
+      await page.setViewportSize(VIEWPORTS[viewport]);
       // grafy se překreslují přes ResizeObserver — bez snímku navíc by axe
       // měřil na plátně o předchozí šířce
       await page.waitForTimeout(150);
-      if (name === 'mobil') await expectNoHorizontalOverflow(page, `${path} (${scheme}, ${name})`);
-      await expectNoSeriousViolations(page, `${path} (${scheme}, ${name})`);
+      if (viewport === 'mobil') {
+        await expectNoHorizontalOverflow(page, `${name} (${scheme}, ${viewport})`);
+      }
+      await expectNoSeriousViolations(page, `${name} (${scheme}, ${viewport})`);
     }
   }
 }
 
+/**
+ * Audit překryvu, který vznikne až interakcí a patří k jedné šířce okna:
+ * spodní sheet na telefonu, bublina vysvětlivky v širokém okně, potvrzovací
+ * dialog. `open` ho otevře (a počká, až je vidět); měří se ve světlém
+ * i tmavém režimu se stejným prahem jako celé stránky.
+ */
+export async function auditOverlay(
+  page: Page,
+  {
+    label,
+    path,
+    viewport,
+    open,
+  }: { label: string; path: string; viewport: Viewport; open: (page: Page) => Promise<void> },
+) {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.setViewportSize(VIEWPORTS[viewport]);
+  await page.goto(path);
+  await open(page);
+  await page.mouse.move(0, 0);
+
+  for (const scheme of ['light', 'dark'] as const) {
+    await switchScheme(page, scheme);
+    await settleAnimations(page);
+    const name = `${path} — ${label} (${scheme}, ${viewport})`;
+    if (viewport === 'mobil') await expectNoHorizontalOverflow(page, name);
+    await expectNoSeriousViolations(page, name);
+  }
+}
