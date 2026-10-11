@@ -174,3 +174,68 @@ test('Zdroje dat na telefonu: výsledek nahrání stojí nad historií a nic nek
   await expect(failure).toBeVisible();
   expect(await failure.evaluate((element) => getComputedStyle(element).position)).not.toBe('fixed');
 });
+
+/** Výpis Trading 212 s jedním vadným řádkem: datum, kusy ani cena nejdou přečíst. */
+const BAD_T212_ROW =
+  'Market buy,neni-datum,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-0000000000e9,deset,abc,USD,0.0435,,,xx,CZK,,,,,,,2.10,CZK,,';
+
+/**
+ * Nález revize R6 (č. 5): po prvním nahrání nabízela zelená hláška „Hotovo,
+ * otevřít přehled“ i tehdy, když soubor měl chyby — a vedla tak nového
+ * uživatele pryč od řádku, který si má přečíst.
+ */
+test('první nahrání s chybami: hláška na chyby upozorní a „Hotovo“ nenabízí', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E První s chybou', email: 'prvni-s-chybou@danero.cz' });
+  await page.goto('/import');
+
+  await uploadStatement(page, csv('t212-s-chybou.csv', `${T212_FIXTURE_2026}\n${BAD_T212_ROW}`));
+  const result = page
+    .getByRole('status')
+    .filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+  // účet první data má — přehled jde otevřít z navigace, hláška k němu ale nevede
+  await expect(page.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toHaveCount(0);
+});
+
+/**
+ * Nález revize R6 (č. 4): výsledek nahrání „nemizí sám“ — jenže zmizel, jakmile
+ * doběhla souběžná synchronizace. Úklid adresy z ní smazal kód výsledku
+ * a obnovení stránky po doběhu úlohy ji vykreslilo bez hlášky. Hláška proto
+ * drží v prohlížeči, dokud uživatel neodejde nebo neudělá další akci.
+ */
+test('výsledek nahrání zůstane, i když mezitím doběhne synchronizace', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Hláška a sync', email: 'hlaska-sync@danero.cz' });
+  await page.goto('/import');
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  const connect = await openDisclosure(brokers, 'Trading 212');
+  await connect.getByLabel('ID klíče API').fill('e2e-key-id');
+  await connect.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
+  await connect.getByRole('button', { name: 'Připojit' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Klíč je uložený' })).toBeVisible();
+
+  const account = page.locator('#trading212');
+  await account.getByRole('button', { name: 'Stáhnout kompletní historii' }).click();
+  const progress = account.getByRole('list', { name: 'Průběh po letech' });
+  await expect(progress).toBeVisible();
+
+  // během běžící synchronizace nahraje uživatel výpis ručně
+  await uploadStatement(page, csv('behem-synchronizace.csv', `${T212_FIXTURE_2026}\n${BAD_T212_ROW}`));
+  const result = page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor/ });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+  // předpoklad zkoušky: úloha ještě běží, stránku teprve obnoví
+  await expect(progress).toBeVisible();
+
+  // synchronizace doběhne a stránka se sama obnoví — výpisy z ní přibudou do historie
+  await expect(importHistory(page).getByText('t212-api-2024.csv')).toBeVisible({ timeout: 60_000 });
+  await expect(progress).toHaveCount(0);
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+
+  // adresa je uklizená: obnovení stránky hlášku znovu neukáže
+  expect(new URL(page.url()).searchParams.has('ulozeno')).toBe(false);
+  await page.reload();
+  await expect(importHistory(page).getByText('behem-synchronizace.csv')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor/ })).toHaveCount(0);
+});

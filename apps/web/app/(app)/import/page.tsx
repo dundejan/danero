@@ -1,9 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
-import Link from 'next/link';
 import { AppToolbar } from '@/components/app-toolbar';
-import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { Toast } from '@/components/toast';
-import { buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { OpenOnHash } from '@/components/ui/open-on-hash';
 import { Group } from '@/components/ui/list';
@@ -19,7 +16,7 @@ import {
   historyLimit,
   IMPORT_HISTORY_ANCHOR,
   importFeedback,
-  isFirstDataUpload,
+  offersOverviewAfterUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
 import type { UnmappedSymbol } from '@/lib/import-service';
@@ -33,6 +30,7 @@ import { ConnectIbkr, ConnectTrading212 } from './connect-broker';
 import { ConnectedAccount } from './connected-account';
 import { ImportHistory, type BatchIssues } from './import-history';
 import { UnreadStatements } from './unread-statements';
+import { UploadResultNotice } from './upload-result';
 import { UploadPanel } from './upload-panel';
 
 export const metadata = { title: 'Zdroje dat — Danero' };
@@ -113,11 +111,12 @@ export default async function ImportPage({
   // Krok 2 cesty nového uživatele: profil má, data ještě ne. Stav se
   // neukládá, odvozuje se z účtu (stejně jako na /vitejte).
   const withoutSources = recentBatches.length === 0 && accounts.length === 0;
-  // Konec kroku 2: nahrání právě přineslo první data. Příznak je z adresy,
+  // Konec kroku 2: nahrání právě přineslo první data — a bez chyb, jinak by
+  // „Hotovo“ vedlo pryč od řádku s chybou. Příznak je z adresy,
   // proto se ověří i na účtu — přehled má smysl nabídnout jen tomu, kdo má
   // profil (bez něj by ho přehled poslal do Nastavení) a opravdu nějaká data.
   const firstDataUploaded =
-    isFirstDataUpload(params) && recentBatches.some((batch) => batch.added > 0);
+    offersOverviewAfterUpload(params) && recentBatches.some((batch) => batch.added > 0);
   const hasProfile =
     withoutSources || firstDataUploaded ? (await getProfile(db, user.id)) !== null : false;
   const awaitingFirstData = withoutSources && hasProfile;
@@ -282,27 +281,14 @@ export default async function ImportPage({
                   o čem mluví. Plovoucí hláška na telefonu ležela přesně přes
                   první řádek historie (R2-25). Nemizí sama: po prvním nahrání
                   nese další krok cesty nového uživatele. */}
-              {feedback && placement === 'history' && (
-                <>
-                  <ClearFeedbackUrl />
-                  <Notice
-                    className="mb-8"
-                    role={feedback.kind === 'chyba' ? 'alert' : 'status'}
-                    tone={feedback.kind === 'chyba' ? 'danger' : 'success'}
-                    title={feedback.text}
-                    action={
-                      offerOverview && (
-                        <Link
-                          href="/prehled"
-                          className={buttonVariants({ variant: 'tinted', size: 'sm' })}
-                        >
-                          Hotovo, otevřít přehled
-                        </Link>
-                      )
-                    }
-                  />
-                </>
-              )}
+              <UploadResultNotice
+                result={
+                  feedback && placement === 'history'
+                    ? { kind: feedback.kind, text: feedback.text, offerOverview }
+                    : null
+                }
+                otherFeedback={ulozeno !== undefined || chyba !== undefined}
+              />
               <div className="space-y-14">
                 <UnreadStatements cases={unreadCases} />
                 <ImportHistory

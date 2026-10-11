@@ -13,6 +13,7 @@ import {
   importFeedback,
   importFeedbackUrl,
   isFirstDataUpload,
+  offersOverviewAfterUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
 import { importFileIsolated } from '@/lib/import-service';
@@ -127,6 +128,27 @@ describe('hláška z parametrů adresy', () => {
     expect(isFirstDataUpload({ ...first, ulozeno: 'vraceno' })).toBe(false);
     // příznak toast i úklid adresy smažou spolu s ostatními údaji hlášky
     expect(IMPORT_FEEDBACK_PARAMS).toContain('prvni');
+  });
+
+  /**
+   * Nález revize R6: „Hotovo, otevřít přehled“ stálo i vedle věty „Soubor má
+   * chyby“ — první data sice přibyla, ale hotovo není, dokud si uživatel
+   * chyby nepřečte.
+   */
+  it('první data s chybami: přehled se nenabízí, hláška na chyby upozorní', () => {
+    const clean = { ulozeno: 'nahrano', soubory: '1', pridano: '2', chyby: '0', prvni: 'true' };
+    expect(offersOverviewAfterUpload(clean)).toBe(true);
+    expect(offersOverviewAfterUpload({ ...clean, chyby: undefined })).toBe(true);
+
+    const withErrors = { ...clean, chyby: '1' };
+    // první data to pořád jsou — jen se k nim neříká „Hotovo“
+    expect(isFirstDataUpload(withErrors)).toBe(true);
+    expect(offersOverviewAfterUpload(withErrors)).toBe(false);
+    expect(importFeedback(withErrors)!.text).toContain('Soubor má chyby');
+    // víc souborů, chybu má jen jeden z nich
+    expect(offersOverviewAfterUpload({ ...clean, soubory: '3', chyby: '1' })).toBe(false);
+    // bez prvních dat se nenabízí nikdy
+    expect(offersOverviewAfterUpload({ ...clean, prvni: undefined })).toBe(false);
   });
 
   it('skloňuje podle počtu', () => {

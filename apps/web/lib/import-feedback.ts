@@ -245,6 +245,16 @@ export function isFirstDataUpload(params: Params): boolean {
 }
 
 /**
+ * Má hláška po nahrání nabídnout přehled („Hotovo, otevřít přehled“)? Jen po
+ * prvních datech účtu a jen když nahrání proběhlo BEZ chyb: „Hotovo“ vedle věty
+ * „Soubor má chyby“ vedlo nového uživatele pryč od řádku, který si má přečíst
+ * (nález revize R6). Přehled má po ruce v navigaci.
+ */
+export function offersOverviewAfterUpload(params: Params): boolean {
+  return isFirstDataUpload(params) && (count(params[PARAM_NAMES.filesWithErrors]) ?? 0) === 0;
+}
+
+/**
  * Hláška k výsledku akce podle parametrů adresy; `null`, když adresa žádný
  * z těchto výsledků nenese. (`ulozeno=ciselnik` a `ulozeno=hlaseni` mají
  * hlášku přímo na stránce.)
