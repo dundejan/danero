@@ -42,7 +42,9 @@ export default function RootError({
           Stránku se nepodařilo načíst. Zkus to znovu, a kdyby to nepomohlo, vrať se za chvíli.
         </p>
         <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <Button onClick={reset}>Zkusit znovu</Button>
+          <Button type="button" onClick={reset}>
+            Zkusit znovu
+          </Button>
           <TextLink href="/" chevron>
             Úvodní stránka
           </TextLink>
