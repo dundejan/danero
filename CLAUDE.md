@@ -302,8 +302,11 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **`waitForLoadState('networkidle')` umí viset do limitu testu.** Test
   přístupnosti má limit 30 minut (prochází desítky stránek) a 9. 10. 2026 se
   jednou zasekl na `/portfolio` bez jediného běžícího dotazu — celá E2E sada
-  pak trvala 34 minut místo 8. Opakování prošlo. Když E2E běží podezřele
-  dlouho, podívej se do logu dřív, než doběhne limit.
+  pak trvala 34 minut místo 8. Opakování prošlo. Audit proto od 11. 10. 2026
+  čeká na stav, který jde pojmenovat (`pageSettled` v `e2e/helpers.ts`: obsah
+  dostreamoval, React naběhl, viditelné grafy se nakreslily) — s limitem 30 s
+  a hláškou, co chybí. `networkidle` do E2E nevracej. Když sada přesto běží
+  podezřele dlouho, podívej se do logu dřív, než doběhne limit.
 - **Háček Better Authu, který zapisuje cookie, musí běžet přímo ve vnějším
   middleware.** `hooks.before`/`hooks.after` berou jediný middleware, takže je
   v `lib/auth-hooks.ts` skládáme z menších. Menší háček zabalený do vlastního
@@ -346,6 +349,21 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Mutační testy měř v čisté kopii** (`git worktree add`). V pracovním
   adresáři si Stryker do pískoviště kopíruje i neverzované soubory a start pak
   trvá deset minut místo vteřiny — 10. 10. 2026 se to málem přičetlo Vitestu 4.
+- **E2E, které mění pole ve formuláři s automatickým ukládáním, musí napřed
+  počkat na `form[data-auto-submit="ready"]`** (helper `autoSaveForm`
+  v `e2e/helpers.ts`). Změna vyslaná skriptem před hydratací (`selectOption`,
+  `fill`) se ZÁMĚRNĚ neuloží: není to vstup člověka, vypadá stejně jako
+  hodnota, kterou do pole po F5 vrátil prohlížeč, a tu `AutoSubmit` vrací na
+  stav ze serveru (`lib/early-input.ts` pozná člověka podle důvěryhodných
+  událostí). Test bez čekání tak občas „ztratí“ uložení a vypadá to jako vada
+  aplikace. Skutečný vstup před hydratací hlídá `nastaveni.spec.ts`.
+- **Instance Better Authu žije v `globalThis` a HMR ji nevymění.** `getAuth()`
+  (`lib/auth.ts`) si ji sestaví jednou a drží v `globalThis.__daneroAuth` —
+  i s háčky a konfigurací, se kterými vznikla. Úprava `lib/auth-hooks.ts`,
+  `disabledPaths` nebo čehokoli v `buildAuth` se proto na běžícím dev serveru
+  neprojeví: živé ověření běží proti staré instanci a oprava „nefunguje“
+  (11. 10. 2026 tak spadlo první živé ověření opraveného stropu pokusů — běžel
+  starý háček). Po zásahu do auth dev server restartuj.
 
 ## Stav a plán
 
