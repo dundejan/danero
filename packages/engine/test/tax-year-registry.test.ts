@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { TAX_YEAR_CONFIGS } from '../src';
+import {
+  FIRST_TAXPAYER_CREDIT_YEAR,
+  LAST_CONFIGURED_TAX_YEAR,
+  TAX_YEAR_CONFIGS,
+  taxpayerCreditCzk,
+} from '../src';
 
 /**
  * R-15a: registr zdaňovacích období je výčet čísel, která stát vyhlásil nebo
@@ -61,5 +66,61 @@ describe('R-15a: registr let si drží vyhlášená a zákonná čísla', () => 
       monthlyTotalCzk: '8716',
       monthlyTaxCzk: '100',
     });
+  });
+});
+
+/**
+ * R-14g: základní sleva na poplatníka (§ 35ba odst. 1 písm. a) ZDP) se rok od
+ * roku lišila. Do 11. 10. 2026 ji engine vedl jako jedinou konstantu
+ * 30 840 Kč, takže report za rok 2021 radil zapsat na ř. 64 o 3 000 Kč víc,
+ * než kolik zákon pro ten rok dával (a za rok 2020 a starší o 6 000 Kč víc).
+ *
+ * Částky jsou opsané pro každý rok zvlášť — stejně jako limity výš má test
+ * spadnout při úpravě historického řádku.
+ */
+describe('R-14g: sleva na poplatníka podle zdaňovacího období', () => {
+  it.each([
+    // zák. č. 609/2020 Sb., čl. XI bod 62: „24840 Kč“ se nahrazuje „27840 Kč“ —
+    // do roku 2020 tedy platilo 24 840 Kč
+    [2012, '24840'],
+    [2013, '24840'],
+    [2014, '24840'],
+    [2015, '24840'],
+    [2016, '24840'],
+    [2017, '24840'],
+    [2018, '24840'],
+    [2019, '24840'],
+    [2020, '24840'],
+    // čl. XII bod 20: znění bodu 62 „se použije již pro zdaňovací období roku 2021“
+    [2021, '27840'],
+    // čl. XI bod 63 (27840 → 30840), účinný od 1. 1. 2022 (čl. XLVIII písm. c)
+    [2022, '30840'],
+    [2023, '30840'],
+    [2024, '30840'],
+    [2025, '30840'],
+    [2026, '30840'],
+    [2027, '30840'],
+  ])('za rok %i je sleva %s Kč', (year, amountCzk) => {
+    expect(taxpayerCreditCzk(year)).toBe(amountCzk);
+  });
+
+  it('každý rok v registru slevu má — XML i report ji na ř. 64 potřebují', () => {
+    for (const year of Object.keys(TAX_YEAR_CONFIGS).map(Number)) {
+      expect(taxpayerCreditCzk(year), `rok ${year}`).not.toBeNull();
+    }
+  });
+
+  it('rok před první známou částkou vrací „nevím“, ne nejbližší číslo', () => {
+    // 2011 mělo slevu sníženou („povodňová stokoruna“), starší roky jiné
+    // částky — neověřili jsme je, takže je netvrdíme
+    expect(FIRST_TAXPAYER_CREDIT_YEAR).toBe(2012);
+    expect(taxpayerCreditCzk(FIRST_TAXPAYER_CREDIT_YEAR - 1)).toBeNull();
+    expect(taxpayerCreditCzk(2008)).toBeNull();
+  });
+
+  it('rok za registrem dědí poslední zákonnou částku (R-15b)', () => {
+    expect(taxpayerCreditCzk(LAST_CONFIGURED_TAX_YEAR + 1)).toBe(
+      taxpayerCreditCzk(LAST_CONFIGURED_TAX_YEAR),
+    );
   });
 });

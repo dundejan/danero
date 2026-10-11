@@ -60,6 +60,14 @@ export function wholeCzkParts(values: Money[]): Money[] {
 }
 
 /**
+ * Úhrn v celých korunách dolů — totéž, co `wholeCzkParts` dá v součtu. Pro
+ * úhrn, který se po druzích nerozepisuje (základ z prodejů jiné varianty
+ * párování v porovnání variant).
+ */
+export const wholeCzkDown = (value: Money): Money =>
+  value.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
+
+/**
  * `kod10 = 'Z'` znamená příjem ZE ZDROJŮ V ZAHRANIČÍ. Rozhoduje původ
  * instrumentu: ISIN začínající `CZ` je tuzemský. Míchá-li druh tuzemské
  * i zahraniční, označí se `Z` — přiznat zahraniční zdroj je bezpečnější směr
@@ -128,7 +136,45 @@ export function base8WholeCzk(result: TaxYearResult): {
 } {
   return {
     generalCzk: wholeCzkParts([...base10Values(result), result.dividends.base8Czk]).at(-1)!,
-    separate16aCzk: result.dividends.base8Czk.toDecimalPlaces(0, Decimal.ROUND_FLOOR),
+    separate16aCzk: wholeCzkDown(result.dividends.base8Czk),
+  };
+}
+
+/**
+ * Dílčí základy tak, jak je ponese tiskopis — pro ROZPAD DANĚ na přehledu
+ * a v reportu (docs/02 R-14h).
+ *
+ * Rozpad do 11. 10. 2026 formátoval nezaokrouhlené základy z enginu
+ * matematicky, kdežto Příloha č. 2 o pár řádků výš je nese v celých korunách
+ * dolů: v demu za rok 2026 stálo pod sebou 8 551 Kč (ř. 209) a 8 552 Kč
+ * („Základ daně z prodejů“). Jedna veličina má mít jedno číslo — a to, které
+ * se opisuje do formuláře.
+ *
+ * Nic se tu nepočítá nově: druhy § 10 jsou řádky `priloha2()`, § 8 je
+ * `base8WholeCzk()` pro zvolený způsob zdanění dividend. Daň se z toho
+ * nepočítá — tu dál dává engine z nezaokrouhleného základu, který § 16 odst. 2
+ * zaokrouhluje na sta dolů, takže celé koruny dolů výsledek neposunou.
+ */
+export function wholeBasesCzk(
+  result: TaxYearResult,
+  taxation: 'GENERAL' | 'SEPARATE_16A',
+): {
+  securitiesCzk: Money;
+  cryptoCzk: Money;
+  derivativesCzk: Money;
+  /** Úhrn druhů § 10 = ř. 209 Přílohy č. 2 = ř. 40 přiznání. */
+  base10Czk: Money;
+  /** § 8: ř. 38 (s ostatními příjmy), nebo ř. 401a Přílohy č. 4 (zvlášť). */
+  base8Czk: Money;
+} {
+  const p2 = priloha2(result);
+  const base8 = base8WholeCzk(result);
+  return {
+    securitiesCzk: p2.rows[0]!.rozdilCzk,
+    cryptoCzk: p2.rows[1]!.rozdilCzk,
+    derivativesCzk: p2.rows[2]!.rozdilCzk,
+    base10Czk: p2.rozdilCzk,
+    base8Czk: taxation === 'GENERAL' ? base8.generalCzk : base8.separate16aCzk,
   };
 }
 

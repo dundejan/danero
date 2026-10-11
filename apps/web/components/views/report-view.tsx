@@ -4,6 +4,7 @@ import {
   analyzeTaxYear,
   compareVariants,
   filingDeadlines,
+  taxpayerCreditCzk,
   UNIFIED_RATE_SOURCES,
   type DerivativeItem,
   type EngineInput,
@@ -54,7 +55,13 @@ import { EPO_FORM_ID } from '@/lib/epo-form';
 import { fxMethodLabel } from '@/lib/fx-method';
 import { LIMIT_NAME } from '@/lib/limit-names';
 import { taxSummary } from '@/lib/payable-tax';
-import { base8WholeCzk, lossBeyondIncomeCzk, priloha2 } from '@/lib/priloha2';
+import {
+  base8WholeCzk,
+  lossBeyondIncomeCzk,
+  priloha2,
+  wholeBasesCzk,
+  wholeCzkDown,
+} from '@/lib/priloha2';
 import { regimeLimitFor } from '@/lib/simulator-verdict';
 import { variantDifference, variantHint, variantHintTitle } from '@/lib/variant-hint';
 import {
@@ -392,6 +399,8 @@ export function ReportView({
   const activeTax = tax.variant === 'GENERAL' ? result.tax.general : result.tax.separate16a;
   // daňová část měsíční paušální zálohy z konfigurace roku (R-08f) — pro ř. 86
   const monthlyAdvanceTaxCzk = configForYear(year).flatTaxAdvance?.monthlyTaxCzk ?? null;
+  // ř. 64 (R-14g)
+  const taxpayerCredit = taxpayerCreditCzk(year);
 
   // rozpis prodejů: CP + krypto v jedné tabulce (druh u řádku), řazeno dle data
   const allDisposals = [
@@ -456,9 +465,9 @@ export function ReportView({
 
   const methodLabel = METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod;
   const fxLabel = FX_METHOD_LABEL[result.options.fxMethod] ?? result.options.fxMethod;
-  const base10Total = result.securities.base10Czk
-    .plus(result.crypto.base10Czk)
-    .plus(result.derivatives.base10Czk);
+  // Rozpad daně ukazuje základy v celých korunách, jak je nese tiskopis — tytéž
+  // částky jako Příloha č. 2 a ř. 38 výš na stránce, ne o korunu jiné (R-14h).
+  const wholeBases = wholeBasesCzk(result, tax.variant);
   // uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
   // zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout součet)
   const appliedCreditCzk = activeTax.taxBeforeCreditCzk
@@ -639,7 +648,9 @@ export function ReportView({
                       </span>
                     )}
                   </Td>
-                  <Td align="right">{czk(variant.base10Czk)}</Td>
+                  {/* celé koruny dolů jako ř. 209 — u používané varianty je to
+                      přesně číslo z Přílohy č. 2 výš (R-14h) */}
+                  <Td align="right">{czk(wholeCzkDown(variant.base10Czk))}</Td>
                   <Td align="right">{czk(variant.taxCzk)}</Td>
                   <Td align="right">
                     {czk(variant.flatTax50kUsedCzk)}
@@ -1067,7 +1078,17 @@ export function ReportView({
                 <div>
                   <SectionHeader as="h3" title="Další řádky" />
                   <Group className="mt-2" aria-label="Další řádky přiznání">
-                    <LineRow line="ř. 64" label="Sleva na poplatníka" value="30 840 Kč" />
+                    <LineRow
+                      line="ř. 64"
+                      label="Sleva na poplatníka"
+                      value={
+                        taxpayerCredit === null ? (
+                          <NoAmount>najdeš v pokynech k tiskopisu</NoAmount>
+                        ) : (
+                          czk(d(taxpayerCredit))
+                        )
+                      }
+                    />
                     {/* ř. 86: po prolomení limitu zálohy známe (R-08f, tytéž, které
                         odečítá doplatek nahoře); jinak záleží na počtu měsíců
                         v režimu, a ten Danero nezná — řekne aspoň pravidlo */}
@@ -1649,26 +1670,26 @@ export function ReportView({
                         ' · vše osvobozeno, prodeje do 100 000 Kč za rok'}
                     </>
                   }
-                  value={czk(result.securities.base10Czk)}
+                  value={czk(wholeBases.securitiesCzk)}
                 />
                 {hasCrypto && (
                   <Row
                     label="Kryptoaktiva"
                     hint={<>tržby {czk(result.crypto.totalGrossProceedsCzk)}</>}
-                    value={czk(result.crypto.base10Czk)}
+                    value={czk(wholeBases.cryptoCzk)}
                   />
                 )}
                 {hasDerivatives && (
                   <Row
                     label="Deriváty"
                     hint={<>plnění {czk(result.derivatives.taxableIncomeCzk)}</>}
-                    value={czk(result.derivatives.base10Czk)}
+                    value={czk(wholeBases.derivativesCzk)}
                   />
                 )}
                 <Row
                   label="Základ daně z prodejů"
                   hint={(hasCrypto || hasDerivatives) && 'součet druhů, nekompenzují se'}
-                  value={czk(base10Total)}
+                  value={czk(wholeBases.base10Czk)}
                 />
                 <Row
                   label="Základ daně z dividend a úroků"
@@ -1678,7 +1699,7 @@ export function ReportView({
                       započitatelné {czk(result.dividends.creditableWithholdingCzk)}
                     </>
                   }
-                  value={czk(result.dividends.base8Czk)}
+                  value={czk(wholeBases.base8Czk)}
                 />
                 {/* E-27: variantu zdanění dividend nedoporučujeme — řádek říká, se
                     kterou se počítá dál, a kolik by vyšla ta druhá. Dva řádky

@@ -1,5 +1,5 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
-import { TAXPAYER_CREDIT_CZK, type TaxYearConfig } from '../config/taxYear';
+import { taxpayerCreditCzk, type TaxYearConfig } from '../config/taxYear';
 import type { DerivativesResult } from '../basis/derivatives';
 import type { DividendsResult } from '../basis/dividends';
 import type { SecuritiesResult } from '../basis/securities';
@@ -150,8 +150,12 @@ export function estimateTax(
   // § 16a klesá. Kdo jiné příjmy nemá, může o nevyčerpaný zbytek přijít.
   // Doporučení se tím nemění (spotřebu slevy na § 6/§ 7 engine nevidí), ale
   // musí se říct nahlas i s čísly.
-  const credit = d(TAXPAYER_CREDIT_CZK);
-  if (recommended === 'SEPARATE_16A' && taxB.lt(credit)) {
+  // R-14g: sleva je částka TOHO roku (2021: 27 840 Kč, do 2020: 24 840 Kč).
+  // Rok, jehož slevu neznáme, se nevyčísluje cizí částkou — a doporučit § 16a
+  // u něj aplikace stejně neumí, protože k němu nezná ani hranici 23 % (R-15a).
+  const creditCzk = taxpayerCreditCzk(config.year);
+  const credit = creditCzk === null ? null : d(creditCzk);
+  if (recommended === 'SEPARATE_16A' && credit !== null && taxB.lt(credit)) {
     const lost = credit.sub(taxB);
     warnings.add(
       'SEPARATE_16A_CREDIT_LOSS',

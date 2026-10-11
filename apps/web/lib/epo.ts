@@ -1,7 +1,7 @@
 import { d, Decimal, roundBaseDownTo100, ZERO, type Money } from '@danero/shared';
 import {
   TAX_YEAR_CONFIGS,
-  TAXPAYER_CREDIT_CZK,
+  taxpayerCreditCzk,
   type EngineOptions,
   type TaxYearResult,
 } from '@danero/engine';
@@ -113,10 +113,21 @@ function progressiveThresholdFor(year: number): Money {
 }
 
 /**
- * Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO na ř. 64 vyžaduje
- * přesně 30 840 Kč. Jediná definice je v enginu, ať se dvě kopie nerozejdou.
+ * Základní sleva na poplatníka § 35ba odst. 1 písm. a) — EPO ji na ř. 64
+ * vyžaduje přesně, a to částku TOHO zdaňovacího období (R-14g: 30 840 Kč až
+ * od roku 2022). Jediná definice je v enginu, ať se dvě kopie nerozejdou.
+ *
+ * Chybějící částka je vada údržby, ne vstupu — stejně jako u hranice 23 %.
  */
-const SLEVA_POPLATNIK = d(TAXPAYER_CREDIT_CZK);
+function taxpayerCreditFor(year: number): Money {
+  const credit = taxpayerCreditCzk(year);
+  if (credit === null) {
+    throw new Error(
+      `Rok ${year} je v EPO_SUPPORTED_YEARS, ale engine pro něj nezná slevu na poplatníka (taxpayerCreditCzk).`,
+    );
+  }
+  return d(credit);
+}
 
 /** Nepovinná částka z formuláře — prázdné pole znamená nulu, ne chybu. */
 function castka(value: string | undefined, popis: string): Money {
@@ -422,6 +433,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     );
   }
   const threshold = progressiveThresholdFor(year);
+  const taxpayerCredit = taxpayerCreditFor(year);
   const varianta = input.varianta ?? result.tax.recommended;
   const dapTyp: EpoDapTyp = input.dapTyp ?? 'B';
   const jeDodatecne = DODATECNE_DAP_TYPY.includes(dapTyp);
@@ -526,7 +538,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // ---------- 4.–7. oddíl (VetaD) ----------
   const r58 = hasPriloha3 ? r330 : r57; // daň § 16, příp. po zápočtu z P3
   const r60 = ceil0(r58); // daň celkem, celé Kč nahoru
-  const r71 = Decimal.max(ZERO, r60.sub(SLEVA_POPLATNIK)); // po slevě na poplatníka
+  const r71 = Decimal.max(ZERO, r60.sub(taxpayerCredit)); // po slevě na poplatníka
   const r74 = r71; // sleva § 35c nemáme
   const r74a = p4?.r414;
   const r75 = r74.plus(r74a ?? ZERO); // daň celkem
@@ -568,8 +580,8 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       da_slezap: kc2(r58),
       da_celod13: kc(r60),
       kc_dztrata: '0',
-      kc_op15_1a: kc(SLEVA_POPLATNIK),
-      uhrn_slevy35ba: kc(SLEVA_POPLATNIK),
+      kc_op15_1a: kc(taxpayerCredit),
+      uhrn_slevy35ba: kc(taxpayerCredit),
       da_slevy35ba: kc(r71),
       da_slevy35c: kc(r74),
       da_samzakl: r74a === undefined ? undefined : kc(r74a),
