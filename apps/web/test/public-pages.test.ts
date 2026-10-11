@@ -281,6 +281,13 @@ describe('/cenik: krátký seznam faktů místo odstavců', () => {
     expect(texts.length).toBeLessThanOrEqual(5);
     expect(links).toHaveLength(texts.length);
     expect(links).toEqual(expect.arrayContaining(["'/o-projektu'", 'SOURCE_URL', "'/bezpecnost'"]));
+    // řádek o reklamách a prodeji dat dokládá „Ochrana soukromí“, řádek
+    // o klíči k brokerovi „Bezpečnost“ — do 11. 10. 2026 vedly oba na Bezpečnost
+    const target = (pattern: RegExp): string =>
+      links[texts.findIndex((text) => pattern.test(text))] ?? '';
+    expect(target(/bez reklam/)).toBe("'/soukromi'");
+    expect(target(/Klíč k brokerovi/)).toBe("'/bezpecnost'");
+    expect(facts).toContain("label: 'Ochrana soukromí'");
     // „open-source“ nesmí stát bez vysvětlení pro toho, kdo není vývojář
     const openSource = texts.find((text) => /open-source/.test(text)) ?? '';
     expect(openSource).toMatch(/kód je veřejný a kdokoli se může podívat/);
@@ -289,7 +296,7 @@ describe('/cenik: krátký seznam faktů místo odstavců', () => {
   });
 
   it('výčet toho, co Danero umí, zůstal — sbalený, ale celý ve stránce', () => {
-    // podmínky (čl. 3): „Co všechno služba umí, popisuje stránka Ceník.“
+    // podmínky (čl. 3): „Co všechno služba umí, popisuje stránka Proč zdarma.“
     const details = /<details[\s\S]*?<\/details>/.exec(source)?.[0] ?? '';
     expect(details).toContain('Co všechno Danero umí');
     for (const list of ['WATCHING', 'DATA', 'FILING']) {
@@ -300,6 +307,26 @@ describe('/cenik: krátký seznam faktů místo odstavců', () => {
     expect(details).toContain('XML pro elektronické podání');
     // výčet nesmí být otevřený napořád — stránku by zase natáhl
     expect(details).not.toMatch(/<details[^>]*\bopen\b/);
+  });
+
+  it('výčet mluví obyčejnými slovy a části aplikace jmenuje stejně jako aplikace', () => {
+    // Do 11. 10. 2026: „IBKR“, „Automatický denní sync“, „FIFO/LIFO, kurzy“,
+    // „Simulátor prodeje“ a „neomezeně platforem“ — čte to kdokoli, kdo investuje.
+    const items = ['WATCHING', 'DATA', 'FILING'].flatMap((list) => {
+      const block = source.slice(source.indexOf(`const ${list}`), source.indexOf('];', source.indexOf(`const ${list}`)));
+      return [...block.matchAll(/^\s+'([^']+)',$/gm)].map((match) => match[1]!);
+    });
+    expect(items).toHaveLength(12);
+    for (const item of items) {
+      expect(item, item).not.toMatch(/\bIBKR\b|\bsync\b|FIFO|LIFO|\bAPI\b|neomezeně/i);
+      // části aplikace mají jedno jméno (docs/07, `nav-items.ts`)
+      expect(item, item).not.toMatch(/Simulátor prodeje|Simulace|Daňový report|Výhled osvobození/);
+    }
+    const all = items.join('\n');
+    expect(all).toMatch(/^Simulátor: /m);
+    expect(all).toMatch(/^Report: /m);
+    expect(all).toMatch(/^Horizont osvobození: /m);
+    expect(all).toContain('Interactive Brokers');
   });
 
   it('příspěvek na provoz stojí hned pod fakty a nic neodemyká', () => {
@@ -342,12 +369,19 @@ describe('navigace a názvy stránek', () => {
     expect(read('app/kalkulacka/page.tsx')).toContain('<MarketingPage active="kalkulacka">');
   });
 
-  it('stránka, na kterou podmínky odkazují jako na „Ceník“, to slovo nese v titulku (R1A-19)', async () => {
-    // čl. 3 podmínek: „Co všechno služba umí, popisuje stránka Ceník.“ Stránka
-    // se v liště jmenuje „Proč zdarma“ a právní text se kvůli tomu nepřepisoval.
-    expect(read('app/podminky/page.tsx')).toMatch(/<Link href="\/cenik">\s*Ceník\s*<\/Link>/);
+  it('stránka „Proč zdarma“ se jmenuje stejně v liště, v podmínkách i v titulku (R1A-19)', async () => {
+    // čl. 3 podmínek: „Co všechno služba umí, popisuje stránka Proč zdarma.“
+    // Do 11. 10. 2026 tam stálo „Ceník“ — jméno, které stránka od redesignu
+    // nenese nikde, kam se čtenář podívá.
+    const terms = read('app/podminky/page.tsx');
+    expect(terms).toMatch(/<Link href="\/cenik">\s*Proč zdarma\s*<\/Link>/);
+    expect(withoutComments(terms)).not.toMatch(/Ceník/);
+    expect(read('components/marketing-nav.tsx')).toContain("href: '/cenik', label: 'Proč zdarma'");
     const { metadata } = await import('@/app/cenik/page');
-    expect(String(metadata.title)).toMatch(/^Ceník\b/);
+    expect(String(metadata.title)).toBe('Proč je Danero zdarma');
+    for (const file of PUBLIC_SOURCES) {
+      expect(withoutComments(read(file)), file).not.toMatch(/Ceník/);
+    }
     // a žádná cena: Danero nic neprodává
     expect(withoutComments(read('app/cenik/page.tsx'))).not.toMatch(/\d\s*Kč\s*(měsíčně|ročně|\/)/);
   });

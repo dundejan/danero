@@ -43,12 +43,12 @@ const PAGES: Page[] = [
     priority: 0.8,
   },
   { path: '/bezpecnost', lastModified: '2026-10-10', changeFrequency: 'yearly', priority: 0.5 },
-  { path: '/cenik', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.9 },
+  { path: '/cenik', lastModified: '2026-10-11', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/demo/prehled', lastModified: '2026-10-08', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/caste-otazky', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/jak-pocitame', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/o-projektu', lastModified: '2026-10-10', changeFrequency: 'yearly', priority: 0.5 },
-  { path: '/podminky', lastModified: '2026-10-09', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/podminky', lastModified: '2026-10-11', changeFrequency: 'yearly', priority: 0.2 },
   { path: '/soukromi', lastModified: '2026-10-09', changeFrequency: 'yearly', priority: 0.2 },
 ];
 

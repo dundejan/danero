@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { toDataURL } from 'qrcode';
 import { SpecList, SpecRow, Split } from '@/components/marketing-blocks';
 import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
 import { buttonVariants } from '@/components/ui/button';
 import { Chevron } from '@/components/ui/disclosure';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -26,12 +27,13 @@ export const dynamic = 'force-dynamic';
 // tarifů), ale ceník bez cen by byl prázdné slovo: stránka odpovídá na otázku
 // „proč je to zdarma“ a tak se i jmenuje v navigaci.
 //
-// Slovo „Ceník“ nese titulek dokumentu: podmínky užití (čl. 3) na stránku
-// odkazují jménem „Ceník“ („Co všechno služba umí, popisuje stránka Ceník“)
-// a právní text se kvůli přejmenování nepřepisoval. Z téhož důvodu tu musí
-// zůstat výčet toho, co Danero umí — viz `FEATURES` níž.
+// Stránka má jedno jméno všude: v liště, v titulku dokumentu i v podmínkách
+// užití (čl. 3: „Co všechno služba umí, popisuje stránka Proč zdarma“). Do
+// 11. 10. 2026 podmínky odkazovaly na „Ceník“ a titulek dokumentu to slovo
+// nesl jen kvůli nim. Protože na ni podmínky odkazují, musí tu zůstat výčet
+// toho, co Danero umí — viz `WATCHING`, `DATA` a `FILING` níž.
 export const metadata: Metadata = {
-  title: 'Ceník: Danero je zdarma',
+  title: 'Proč je Danero zdarma',
   description:
     'Danero je zdarma celé: import výpisů, limity a časové testy, podklady k přiznání včetně XML, napojení na brokery i hlídací e-maily. Bez placené verze a bez karty — dělá ho jeden člověk a nic neprodává.',
 };
@@ -63,7 +65,7 @@ const FACTS: Fact[] = [
   },
   {
     text: 'Je bez reklam a sledovacích skriptů a data nikomu neprodávám.',
-    link: { href: '/bezpecnost', label: 'Bezpečnost' },
+    link: { href: '/soukromi', label: 'Ochrana soukromí' },
   },
   {
     text: 'Klíč k brokerovi je jen pro čtení a ukládá se šifrovaný.',
@@ -83,33 +85,38 @@ const FACTS: Fact[] = [
  * Výčet nesmí zmizet (odkazují na něj podmínky užití), ale stránku nemá
  * natahovat: stojí na jejím konci sbalený a rozbalí se na místě. Sbalený
  * `<details>` je ve stránce celý — hledání i vyhledávače ho vidí.
+ *
+ * Čte to kdokoli, kdo investuje: žádné zkratky brokerů („IBKR“), vývojářská
+ * slova („sync“) ani názvy metod („FIFO/LIFO“). Části aplikace se jmenují
+ * stejně jako v ní — Report, Simulátor, Horizont osvobození (hlídá
+ * `test/public-pages.test.ts`).
  */
 const WATCHING: readonly string[] = [
   'Limity 100 000 Kč i 50 000 Kč průběžně celý rok',
-  'Tříleté časové testy a horizont osvobození: kdy je co bez daně',
+  'Horizont osvobození: kdy je která pozice po třech letech bez daně',
   'E-mailová upozornění na limity a termíny',
-  'Simulátor prodeje: co udělá další obchod',
+  'Simulátor: co s daní udělá prodej, než ho zadáš',
 ];
 
 const DATA: readonly string[] = [
-  'Import výpisů — neomezeně platforem',
-  'Živé napojení na Trading 212, IBKR i Lynx',
-  'Automatický denní sync a přepočet',
+  'Výpisy z více platforem najednou',
+  'Živé napojení na Trading 212, Interactive Brokers a Lynx',
+  'Napojený účet se každý den načte a přepočítá sám',
   'Krypto i deriváty jako samostatné druhy příjmů',
 ];
 
 const FILING: readonly string[] = [
   'Orientační daň z investic',
-  'Podklady k přiznání: čísla přesně do řádků formuláře',
+  'Report: čísla přesně do řádků přiznání',
   'Rozpad na jednotlivé nákupy a použité kurzy',
-  'Srovnání variant výpočtu (FIFO/LIFO, kurzy)',
+  'Porovnání metod výpočtu vedle sebe',
 ];
 
 function FeatureList({ items, children }: { items: readonly string[]; children?: React.ReactNode }) {
   return (
     <ul className="space-y-2 text-ink">
       {items.map((item) => (
-        <li key={item}>{tidy(item)}</li>
+        <li key={item}>{typeset(item)}</li>
       ))}
       {children}
     </ul>
@@ -204,7 +211,7 @@ export default async function CenikPage() {
             key={fact.text}
             className="grid gap-x-(--column-gap) py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-baseline md:py-5"
           >
-            <p className="type-reading measure text-pretty">{tidy(fact.text)}</p>
+            <p className="type-reading measure text-pretty">{typeset(fact.text)}</p>
             <TextLink
               href={fact.link.href}
               chevron
