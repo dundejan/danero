@@ -1,5 +1,6 @@
 import { AutoSaveFeedback } from '@/components/auto-save-feedback';
 import { NavRail, NavTabBar } from '@/components/nav-rail';
+import { NoScriptNotice } from '@/components/no-script-notice';
 import { RefreshOnRestore } from '@/components/refresh-on-restore';
 import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { TextLink } from '@/components/ui/link';
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <NavRail userEmail={user.email} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main id="obsah" className="min-w-0 flex-1 px-(--page-gutter) pt-(--page-top)">
+          <NoScriptNotice />
           {children}
         </main>
         {/*
