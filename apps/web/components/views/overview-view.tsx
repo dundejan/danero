@@ -538,6 +538,7 @@ export function OverviewView({
     lenientProceeds.lte(result.limits.limit100k.limitCzk);
 
   const dots = horizonDots(positions, labels, prices, currentYear);
+  const outlook = exemptionOutlook(positions, prices, today, currentYear);
   const fxLabel = result.options.fxMethod === 'UNIFIED' ? 'jednotný kurz' : 'denní kurzy ČNB';
   const methodLabel = METHOD_LABEL[result.options.matchingMethod] ?? result.options.matchingMethod;
 
@@ -586,7 +587,7 @@ export function OverviewView({
           {positions.length > 0 ? (
             <ViewSwitch
               title="Horizont osvobození"
-              info={<HorizonInfo basis={dots[0]?.weightBasis} />}
+              info={<HorizonInfo basis={dots[0]?.weightBasis} outlook={outlook} />}
               ariaLabel="Zobrazení horizontu osvobození"
               defaultKey="graf"
               views={[
@@ -597,7 +598,7 @@ export function OverviewView({
                     <HorizonStrip
                       dots={dots}
                       today={today}
-                      outlook={exemptionOutlook(positions, prices, today, currentYear)}
+                      outlook={outlook}
                       embedded
                     />
                   ),

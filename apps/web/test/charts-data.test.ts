@@ -9,6 +9,7 @@ import {
   groupHorizonDots,
   horizonDots,
   limit100kSeries,
+  outlookBasisNote,
   portfolioAllocation,
 } from '@/lib/charts-data';
 import { engineInputForUser, type ProfileRow } from '@/lib/portfolio';
@@ -287,9 +288,76 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
       expect(outlook.points.map((point) => point.date)).not.toContain('2029-02-02');
     });
 
-    it('víc instrumentů bez jediné ceny podíl nemá — kusy se nesčítají', () => {
-      expect(exemptionOutlook(positions, new Map(), '2026-09-01', 2026)).toBeNull();
-      expect(exemptionOutlook(withCoin, new Map(), '2026-09-01', 2026)).toBeNull();
+    /**
+     * Do 11. 10. 2026 tu křivka nebyla vůbec (`null`), ačkoli tečky horizontu
+     * nad ní se v téže situaci vážily nabývací cenou: kdo jen nahrává výpisy,
+     * měl na přehledu tečky bez křivky a na portfoliu sekci neviděl nikdy.
+     */
+    it('víc instrumentů bez jediné ceny: podíl podle nabývací ceny, kusy se nesčítají', () => {
+      const outlook = exemptionOutlook(positions, new Map(), '2026-09-01', 2026)!;
+      expect(outlook.basis).toBe('cost');
+      expect(outlook.unpricedCount).toBe(0);
+      // očekávání z lotů, ne opsané: nabývací cena nese i poplatek nákupu
+      const cost = (isin: string) =>
+        positions
+          .find((position) => position.isin === isin)!
+          .lots.reduce((sum, lot) => sum + lot.remaining.mul(lot.costPerShare).toNumber(), 0);
+      const aapl = cost('US0378331005');
+      const iwda = cost('IE00B4L5Y983');
+      expect(aapl).toBeGreaterThan(0);
+      expect(iwda).toBe(50 * 80);
+      // AAPL už bez daně, IWDA čeká; obě v dolarech, kurz se v podílu krátí
+      expect(outlook.points[0]!.exemptShare).toBe(Number(((aapl / (aapl + iwda)) * 100).toFixed(1)));
+      expect(outlook.points.at(-1)!.exemptShare).toBe(100);
+      // stejné měřítko jako tečky nad křivkou
+      const dots = horizonDots(positions, new Map(), new Map(), 2026);
+      expect(dots.every((dot) => dot.weightBasis === 'cost')).toBe(true);
+    });
+
+    it('mince s miliony kusů za pár set dolarů křivku nepřebije', () => {
+      const outlook = exemptionOutlook(withCoin, new Map(), '2026-09-01', 2026)!;
+      expect(outlook.basis).toBe('cost');
+      // podle kusů by „bez daně“ bylo 0,0 %; podle nabývací ceny skoro polovina
+      // (mince stála 1 235 USD z desetitisícového portfolia)
+      expect(outlook.points[0]!.exemptShare).toBeGreaterThan(40);
+      // mince čeká na osvobození a v křivce je — poslední skok patří jí
+      expect(outlook.points.at(-1)).toEqual({ date: '2029-02-02', exemptShare: 100 });
+    });
+
+    it('nákup za nulu váhu nemá: pozice v křivce není a výhled to přizná', () => {
+      const withSpinOff = positionsAt(
+        analyzeTaxYear(
+          engineInputForUser(
+            [
+              ...TXS,
+              ...parseTransactions([
+                // oddělená společnost: kusy přibyly s cenou 0 (tak je posílá Trading 212)
+                { type: 'BUY', id: 'z1', isin: 'US0000000009', ticker: 'SPIN', quantity: '12', pricePerShare: '0', currency: 'USD', tradeDate: '2026-02-01', settlementDate: '2026-02-01' },
+              ]),
+            ],
+            PROFILE,
+            2026,
+          ),
+        ).ledger,
+        '2026-09-01',
+      );
+      const outlook = exemptionOutlook(withSpinOff, new Map(), '2026-09-01', 2026)!;
+      expect(outlook.basis).toBe('cost');
+      expect(outlook.unpricedCount).toBe(1);
+      expect(outlook.points.map((point) => point.date)).not.toContain('2029-02-02');
+      expect(outlookBasisNote(outlook)).toContain('1 pozice bez nabývací ceny v křivce není');
+    });
+
+    it('vysvětlivka říká, z čeho se podíl počítá — jen když to není celé portfolio v dnešních cenách', () => {
+      expect(outlookBasisNote(exemptionOutlook(positions, PRICED, '2026-09-01', 2026)!)).toBeNull();
+      expect(outlookBasisNote(exemptionOutlook(withCoin, PRICED, '2026-09-01', 2026)!)).toBe(
+        'Počítá se jen z oceněných pozic; 1 pozice bez ceny v křivce není.',
+      );
+      expect(outlookBasisNote(exemptionOutlook(positions, new Map(), '2026-09-01', 2026)!)).toBe(
+        'Počítá se z nabývacích cen — dnešní ceny známe jen od připojeného brokera.',
+      );
+      const single = positions.filter((position) => position.isin === 'IE00B4L5Y983');
+      expect(outlookBasisNote(exemptionOutlook(single, new Map(), '2026-09-01', 2026)!)).toBeNull();
     });
 
     it('jediný instrument bez ceny jde podle kusů a dojde ke 100 %', () => {

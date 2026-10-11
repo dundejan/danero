@@ -6,7 +6,7 @@ import { Group, Row } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { Stat } from '@/components/ui/stat';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
-import { czk, czDate, money, plural, qty, signedPct } from '@/lib/format';
+import { czk, czDate, money, plural, profitLoss, qty, signedPct } from '@/lib/format';
 import { instrumentNames, type YearAnalysis } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
@@ -42,7 +42,7 @@ function describeTx(tx: {
       // abychom ho zamlčeli — ale česky pojmenované musí být to, co umíme.
       return {
         date: String(tx.date),
-        text: `Korporátní akce: ${KORPORATNI_AKCE[String(tx.subtype)] ?? String(tx.subtype)}`,
+        text: `Korporátní akce: ${CORPORATE_ACTION_LABELS[String(tx.subtype)] ?? String(tx.subtype)}`,
       };
     case 'TRANSFER_IN':
       return { date: String(tx.date), text: `Převod na účet: ${qty(tx.quantity as never)} ks` };
@@ -54,7 +54,7 @@ function describeTx(tx: {
 }
 
 /** Druhy korporátních akcí česky — klíče jsou hodnoty `subtype` z modelu. */
-const KORPORATNI_AKCE: Record<string, string> = {
+const CORPORATE_ACTION_LABELS: Record<string, string> = {
   SPLIT: 'štěpení akcií',
   REVERSE_SPLIT: 'zpětné štěpení akcií',
   SPINOFF: 'oddělení části firmy (spin-off)',
@@ -272,11 +272,11 @@ export function PositionView({
                   value={
                     valuation.unrealizedPct !== undefined
                       ? signedPct(valuation.unrealizedPct, 1)
-                      : money(valuation.unrealized, valuation.currency!, true)
+                      : profitLoss(valuation.unrealized, valuation.currency!)
                   }
                   note={
                     valuation.unrealizedPct !== undefined
-                      ? `${money(valuation.unrealized, valuation.currency!, true)} · před zdaněním`
+                      ? `${profitLoss(valuation.unrealized, valuation.currency!)} · před zdaněním`
                       : 'před zdaněním'
                   }
                   info={

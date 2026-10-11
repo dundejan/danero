@@ -14,11 +14,12 @@ import {
   YAxis,
 } from 'recharts';
 import type { LegendPayload } from 'recharts';
-import type {
-  DividendsByMonth,
-  ExemptionOutlook,
-  LimitSeries,
-  YearBar,
+import {
+  OUTLOOK_BASIS_LABEL,
+  type DividendsByMonth,
+  type ExemptionOutlook,
+  type LimitSeries,
+  type YearBar,
 } from '@/lib/charts-data';
 import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
 
@@ -401,7 +402,7 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
 /* ── Výhled osvobozování portfolia ──────────────────────────────────────── */
 
 export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }) {
-  const basisLabel = outlook.basis === 'value' ? 'hodnoty' : 'kusů';
+  const basisLabel = OUTLOOK_BASIS_LABEL[outlook.basis];
   const points = outlook.points.map((point) => ({ ...point, t: toMs(point.date) }));
   const firstPoint = outlook.points[0];
   const lastPoint = outlook.points[outlook.points.length - 1];
@@ -428,8 +429,8 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         title="Osvobozování portfolia v čase"
         desc={
           firstPoint && lastPoint
-            ? `Podíl ${basisLabel} portfolia, který půjde prodat bez daně: dnes ${pct(firstPoint.exemptShare, 1)}, k ${dateLabel(lastPoint.date)} ${pct(lastPoint.exemptShare, 1)}.`
-            : `Podíl ${basisLabel} portfolia, který půjde prodat bez daně, v čase.`
+            ? `Podíl portfolia podle ${basisLabel}, který půjde prodat bez daně: dnes ${pct(firstPoint.exemptShare, 1)}, k ${dateLabel(lastPoint.date)} ${pct(lastPoint.exemptShare, 1)}.`
+            : `Podíl portfolia podle ${basisLabel}, který půjde prodat bez daně, v čase.`
         }
       >
         <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
@@ -457,7 +458,7 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
                 title={dateLabel(String(payload[0].payload.date))}
                 rows={[
                   {
-                    name: `Bez daně (% ${basisLabel})`,
+                    name: `Bez daně (podle ${basisLabel})`,
                     value: pct(Number(payload[0].value), 1),
                     color: SERIES[0],
                   },
