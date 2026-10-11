@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { taxpayerProfiles } from '@/db/schema';
+import { accountFailure, type AccountFailure } from '@/lib/account-errors';
 import { logAudit } from '@/lib/audit';
 import { changedFields, pickChanged } from '@/lib/form-baseline';
 import { errorText, logEvent } from '@/lib/log';
@@ -203,6 +204,18 @@ async function limitAccountAction(
   }
 }
 
+/** Kód hlášky (`settings-toast.tsx`) podle toho, proč operace s účtem selhala. */
+const PASSWORD_ERROR_CODES: Record<AccountFailure, string> = {
+  password: 'heslo-spatne',
+  limit: 'heslo-limit',
+  other: 'heslo-selhalo',
+};
+const DELETE_ERROR_CODES: Record<AccountFailure, string> = {
+  password: 'smazani-heslo',
+  limit: 'smazani-limit',
+  other: 'smazani-selhalo',
+};
+
 const ChangePasswordSchema = z.object({
   'stavajici-heslo': z.string().min(1),
   'nove-heslo': z.string().min(10),
@@ -232,7 +245,9 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
     // G-16: bez userId nejde v logu odlišit jeden opakovaně chybující účet
     // od stovky překlepů různých uživatelů
     logEvent('error', 'account.change_password_failed', { userId: user.id, error: errorText(error) });
-    redirect('/nastaveni/ucet?chyba=heslo-spatne');
+    // „heslo nesedí“ jen tehdy, když to Better Auth opravdu řekl — limit
+    // pokusů ani výpadek se za špatné heslo vydávat nesmí
+    redirect(`/nastaveni/ucet?chyba=${PASSWORD_ERROR_CODES[accountFailure(error)]}`);
   }
   // audit PŘES id z úvodní session — po rotaci session by requireUser selhal
   await logAudit(await getDb(), user.id, 'PASSWORD_CHANGE');
@@ -367,7 +382,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
     });
   } catch (error) {
     logEvent('error', 'account.delete_failed', { userId: user.id, error: errorText(error) });
-    redirect('/nastaveni/ucet?chyba=smazani-heslo');
+    redirect(`/nastaveni/ucet?chyba=${DELETE_ERROR_CODES[accountFailure(error)]}`);
   }
 
   // K4-07 / K4-08: co po smazání zůstává mimo cizí klíče (odkaz na obnovu

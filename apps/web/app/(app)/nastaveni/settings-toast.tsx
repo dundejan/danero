@@ -31,6 +31,10 @@ const CHYBA_LABELS: Record<string, string> = {
   'heslo-limit': 'Moc pokusů o změnu hesla po sobě — zkus to prosím za pět minut.',
   'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
   'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
+  // selhání, které není ve vyplněných údajích — za špatné heslo se nevydává
+  'heslo-selhalo': 'Heslo se teď nepodařilo změnit, chyba je na naší straně — zkus to prosím za chvíli.',
+  'smazani-selhalo':
+    'Účet se teď nepodařilo smazat, chyba je na naší straně — zkus to prosím za chvíli.',
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
   rezim: 'Vyber svůj daňový režim — podle něj Danero pozná, který limit ti má hlídat.',
   prijmy:
