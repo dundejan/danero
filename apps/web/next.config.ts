@@ -62,8 +62,12 @@ const distDir = process.env.NEXT_DIST_DIR || '.next';
  * `NEXT_DIST_DIR` tak v `tsconfig.json` přibyly dva řádky, které se buď ručně
  * vracely, nebo se commitly (`.next-a11y`, `.next-oprava-e` v něm ležely
  * měsíce). Jinému distDiru než `.next` proto dáme odvozený soubor, který
- * z hlavního jen dědí — Next si doplní `include` do něj a `tsconfig.json`
- * zůstane, jak je. Odvozené soubory jsou v `.gitignore`.
+ * z hlavního jen dědí: do konfigurace s `extends` Next nezapisuje vůbec
+ * (`writeConfigurationDefaults` u ní automatické nastavení vzdává), takže
+ * nesahá ani na něj, ani na `tsconfig.json`. Kontrola typů je stejná jako
+ * u výchozího buildu — typy tras přicházejí přes `next-env.d.ts`, ne přes
+ * `include` (ten by stejně přebilo `exclude: [".next"]`). Odvozené soubory
+ * jsou v `.gitignore`.
  */
 function tsconfigPathFor(dir: string): string | undefined {
   if (dir === '.next') return undefined;
