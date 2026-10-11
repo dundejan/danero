@@ -198,7 +198,7 @@ describe('písmo náhledového obrázku', () => {
     const onImage = `${SITE_NAME}${SITE_TAGLINE}${SITE_TAGLINE_HOW}${new URL(SITE_URL).host}`;
     for (const name of fontFiles()) {
       const points = supportedCodePoints(readFileSync(join(FONT_DIR, name)));
-      const missing = [...new Set(`${czech}${onImage} „“–— `)].filter(
+      const missing = [...new Set(`${czech}${onImage} „“–—\u00a0`)].filter(
         (char) => !points.has(char.codePointAt(0)!),
       );
       expect(missing, name).toEqual([]);

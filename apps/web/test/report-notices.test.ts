@@ -89,7 +89,7 @@ const plain = (html: string): string =>
   html
     .replace(/<!-- -->/g, '')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/ /g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ');
 
 /** Úsek stránky mezi dvěma texty — ať selhání nevypisuje celý report. */
@@ -102,7 +102,7 @@ const between = (text: string, from: string, to: string): string => {
 };
 
 const TAX_TITLE = /by daň z investic vyšla o [\d ]+ Kč nižší/;
-const kc = (value: Parameters<typeof czk>[0]): string => czk(value).replace(/ /g, ' ');
+const kc = (value: Parameters<typeof czk>[0]): string => czk(value).replace(/\u00a0/g, ' ');
 
 describe('variantHint: co jiná varianta opravdu přinese (R4-01)', () => {
   const FLAT_TAX: RegimeLimit = {
@@ -131,7 +131,7 @@ describe('variantHint: co jiná varianta opravdu přinese (R4-01)', () => {
     const recommended = variant({ matchingMethod: 'FIFO', income: '44990', tax: '5940' });
     const hint = variantHint(active, recommended, FLAT_TAX)!;
     expect(hint.reason).toBe('STAYS_UNDER_LIMIT');
-    const title = variantHintTitle(hint, active).replace(/ /g, ' ');
+    const title = variantHintTitle(hint, active).replace(/\u00a0/g, ' ');
     // skutečný přínos je limit — částka daně (vyšší než současná) do titulku nepatří
     expect(title).toBe('S párováním FIFO bys zůstal pod limitem paušální daně (50 000 Kč)');
     expect(title).not.toContain(kc(5940));
@@ -141,7 +141,7 @@ describe('variantHint: co jiná varianta opravdu přinese (R4-01)', () => {
     const active = variant({ matchingMethod: 'LIFO', income: '30000', tax: '1500' });
     const recommended = variant({ income: '0', tax: '0' });
     const hint = variantHint(active, recommended, EMPLOYEE)!;
-    expect(variantHintTitle(hint, active).replace(/ /g, ' ')).toContain(
+    expect(variantHintTitle(hint, active).replace(/\u00a0/g, ' ')).toContain(
       'pod limitem vedlejších příjmů (20 000 Kč)',
     );
   });
@@ -151,7 +151,7 @@ describe('variantHint: co jiná varianta opravdu přinese (R4-01)', () => {
     const recommended = variant({ income: '70000', tax: '2500' });
     const hint = variantHint(active, recommended, FLAT_TAX)!;
     expect(hint.reason).toBe('LOWER_TAX');
-    expect(variantHintTitle(hint, active).replace(/ /g, ' ')).toBe(
+    expect(variantHintTitle(hint, active).replace(/\u00a0/g, ' ')).toBe(
       'S párováním FIFO by daň z investic vyšla o 1 500 Kč nižší',
     );
   });
