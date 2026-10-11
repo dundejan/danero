@@ -77,6 +77,7 @@ export default async function ReportPage({
       profile={pinnedProfile}
       year={year}
       years={years}
+      today={today}
       dailyRates={dailyRates}
       precomputed={precomputed}
       strana={strana}

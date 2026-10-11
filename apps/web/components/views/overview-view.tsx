@@ -458,7 +458,7 @@ export function OverviewView({
       <div className="grid gap-x-(--column-gap) gap-y-7 @3xl:grid-cols-2 @3xl:items-end">
         <div>
           {filingLimit ? (
-            <FilingVerdictHeading year={year} limit={filingLimit} />
+            <FilingVerdictHeading year={year} limit={filingLimit} closed={year < currentYear} />
           ) : (
             <h2 className="type-title-1 max-w-[22ch] text-balance">
               {tidy(`Daně z investic za rok ${year}`)}

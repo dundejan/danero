@@ -365,11 +365,18 @@ export function ReportView({
   precomputed,
   strana = 1,
   justPinned = false,
+  today = todayInPrague(),
 }: {
   txs: Transaction[];
   profile: ProfileRow;
   year: number;
   years: number[];
+  /**
+   * Dnešek v české zóně (ISO) — podle něj se pozná skončený rok a nese ho
+   * razítko výtisku. Stránka předává tentýž okamžik, ze kterého bere běžný rok
+   * (demo svůj „dnešek“ dema); výchozí hodnota jsou hodiny aplikace.
+   */
+  today?: string;
   dailyRates?: EngineInput['dailyRates'];
   basePath?: string;
   demo?: boolean;
@@ -388,6 +395,8 @@ export function ReportView({
 }) {
   const input = engineInputForUser(txs, profile, year, dailyRates);
   const result = precomputed?.result ?? analyzeTaxYear(input);
+  // skončený rok: verdikt už není „zatím“ (R2-14)
+  const yearClosed = year < Number(today.slice(0, 4));
   // R-05c: metoda zafixovaná pro tenhle rok (podklady už se za něj generovaly)
   const pinned = profile.pinnedTaxYears?.[year];
   const { variants, recommended } = precomputed?.comparison ?? compareVariants(input);
@@ -779,7 +788,7 @@ export function ReportView({
         <div className="hidden print:block">
           <p className="type-title-2">Podklady k daňovému přiznání {year}</p>
           <p className="type-caption mt-2 text-ink-muted">
-            Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(todayInPrague())}{' '}
+            Podklady k přiznání za zdaňovací období {year} · vygenerováno {czDate(today)}{' '}
             aplikací Danero · {txs.length}{' '}
             {plural(txs.length, 'transakce', 'transakce', 'transakcí')} · párování {methodLabel} ·{' '}
             {fxMethodLabel(result)} · výklad limitu 100 000 Kč pro osvobození prodejů cenných
@@ -821,6 +830,7 @@ export function ReportView({
                 <ReportFilingVerdict
                   year={year}
                   limit={filingLimit}
+                  closed={yearClosed}
                   reportsExemptIncome={reportsExemptIncome}
                 />
               ) : (
