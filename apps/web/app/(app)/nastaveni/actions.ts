@@ -29,6 +29,9 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const result = await saveProfile(user.id, formData);
   if (!result.ok) redirect(`/nastaveni?chyba=${result.error}`);
+  revalidatePath('/prehled');
+  revalidatePath('/nastaveni');
+  revalidatePath('/import');
   // první uložení = cesta nového uživatele pokračuje krokem 2 (přidat data),
   // případně přehledem, když už data má. Profil, který mezitím vznikl jinde
   // (formulář prvního uložení otevřený ve dvou panelech), zůstává v Nastavení.

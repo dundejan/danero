@@ -64,8 +64,6 @@ interface SaveQueueDeps {
   send(job: SaveJob): Promise<AutoSaveOutcome>;
   /** Odeslání, které přežije odchod ze stránky. */
   sendLeaving(job: SaveJob): Promise<AutoSaveOutcome>;
-  /** Obal jednoho běhu fronty (v prohlížeči přechod Reactu, viz `AutoSubmit`). */
-  scope(run: () => Promise<void>): void;
   report(result: SaveResult, context: SaveReportContext): void;
 }
 
@@ -73,7 +71,7 @@ export interface SaveReportContext {
   job: SaveJob;
   /** Odesláno při odchodu ze stránky. */
   leaving: boolean;
-  /** Žádné další odeslání téhož formuláře nečeká. */
+  /** Žádné další odeslání téhož formuláře neběží ani nečeká. */
   last: boolean;
 }
 
@@ -82,6 +80,12 @@ export interface SaveQueue {
   enqueue(job: SaveJob): void;
   /** Odchod ze stránky: čekající odeslání (a případné `job` navíc) jde hned. */
   flush(job?: SaveJob): void;
+  /**
+   * Stav formuláře z posledního odeslání, dokud nějaké běží nebo čeká; jinak
+   * `null`. Formulář vykreslený znovu uprostřed ukládání by jinak ukázal stav
+   * serveru z doby před ním a změna by na chvíli skočila zpátky.
+   */
+  unsettled(): FormData | null;
 }
 
 /** Tělo požadavku: stav formuláře a jména změněných polí. */
@@ -97,6 +101,11 @@ export function saveBody(job: SaveJob): FormData {
 export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   let waiting: SaveJob | null = null;
   let draining = false;
+  let leavingInFlight = 0;
+  let latest: FormData | null = null;
+  const settled = (): void => {
+    if (!draining && waiting === null && leavingInFlight === 0) latest = null;
+  };
 
   const settle = async (sending: () => Promise<AutoSaveOutcome>): Promise<SaveResult> => {
     try {
@@ -113,6 +122,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
 
   /** Novější stav formuláře nahrazuje čekající, jména změněných polí se sčítají. */
   const merge = (job: SaveJob): void => {
+    latest = job.data;
     waiting = waiting
       ? { data: job.data, triggers: [...new Set([...waiting.triggers, ...job.triggers])] }
       : job;
@@ -124,10 +134,15 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         const job = waiting;
         waiting = null;
         const result = await settle(() => deps.send(job));
-        deps.report(result, { job, leaving: false, last: waiting === null });
+        deps.report(result, {
+          job,
+          leaving: false,
+          last: waiting === null && leavingInFlight === 0,
+        });
       }
     } finally {
       draining = false;
+      settled();
     }
   };
 
@@ -136,16 +151,20 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       merge(job);
       if (draining) return;
       draining = true;
-      deps.scope(drain);
+      void drain();
     },
     flush(job) {
       if (job) merge(job);
       if (!waiting) return;
       const sent = waiting;
       waiting = null;
-      void settle(() => deps.sendLeaving(sent)).then((result) =>
-        deps.report(result, { job: sent, leaving: true, last: waiting === null }),
-      );
+      leavingInFlight += 1;
+      void settle(() => deps.sendLeaving(sent)).then((result) => {
+        leavingInFlight -= 1;
+        deps.report(result, { job: sent, leaving: true, last: waiting === null && !draining });
+        settled();
+      });
     },
+    unsettled: () => latest,
   };
 }

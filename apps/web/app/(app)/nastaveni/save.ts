@@ -1,4 +1,3 @@
-import { revalidatePath } from 'next/cache';
 import { d } from '@danero/shared';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -28,6 +27,11 @@ import { settingsErrorText, settingsOkText } from './settings-toast';
  * odchodu ze stránky (`/api/settings/*`, požadavek, který přežije zavření
  * panelu). Všechny tři musí zapsat totéž a stejně: jen pole, která člověk
  * v tom formuláři změnil (`lib/form-baseline.ts`).
+ *
+ * Stránky tu nikdo neznehodnocuje (`revalidatePath`): auto-save si stránku
+ * po uložení dotáhne ze serveru sám, jednou po posledním odeslání v řadě.
+ * Akce, která by to dělala za něj, by stránku vykreslila po každém odeslání
+ * zvlášť — i uprostřed řady, se stavem, který další odeslání hned mění.
  */
 
 /**
@@ -185,10 +189,6 @@ export async function saveProfile(userId: string, formData: FormData): Promise<P
     await dropStaleLimitNotifications(db, userId);
   }
 
-  revalidatePath('/prehled');
-  revalidatePath('/nastaveni');
-  // první uložení = cesta nového uživatele pokračuje krokem 2 (přidat data)
-  revalidatePath('/import');
   return { ok: true, firstSave: previous === undefined };
 }
 
@@ -233,5 +233,4 @@ export async function saveNotificationPrefs(userId: string, formData: FormData):
     .insert(notificationPrefs)
     .values({ userId, ...submitted, updatedAt })
     .onConflictDoUpdate({ target: notificationPrefs.userId, set: { ...applied, updatedAt } });
-  revalidatePath('/nastaveni/upozorneni');
 }

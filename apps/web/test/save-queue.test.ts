@@ -31,7 +31,6 @@ function harness() {
   const queue = createSaveQueue({
     send: sending(false),
     sendLeaving: sending(true),
-    scope: (run) => void run(),
     report: (result, context) => reports.push({ result, context }),
   });
   return { queue, sent, reports };
@@ -164,6 +163,47 @@ describe('fronta ukládání', () => {
     sent[1]!.finish(saved);
     await settle();
     expect(reports.map((report) => report.result.kind)).toEqual(['failed', 'saved']);
+  });
+});
+
+describe('stav, který právě odchází', () => {
+  it('je k dispozici, dokud něco běží nebo čeká, a pak zmizí', async () => {
+    const { queue, sent } = harness();
+    expect(queue.unsettled()).toBeNull();
+    queue.enqueue(job({ a: '1' }, 'a'));
+    expect(queue.unsettled()?.get('a')).toBe('1');
+    // formulář vykreslený znovu uprostřed ukládání má ukázat nejnovější stav
+    queue.enqueue(job({ a: '2' }, 'a'));
+    expect(queue.unsettled()?.get('a')).toBe('2');
+    sent[0]!.finish(saved);
+    await settle();
+    expect(queue.unsettled()?.get('a')).toBe('2');
+    sent[1]!.finish(saved);
+    await settle();
+    expect(queue.unsettled()).toBeNull();
+  });
+
+  it('platí i pro odeslání při odchodu', async () => {
+    const { queue, sent } = harness();
+    queue.flush(job({ castka: '500' }, 'castka'));
+    expect(queue.unsettled()?.get('castka')).toBe('500');
+    sent[0]!.finish(saved);
+    await settle();
+    expect(queue.unsettled()).toBeNull();
+  });
+
+  it('poslední je až odeslání, po kterém nic neběží ani nečeká', async () => {
+    const { queue, sent, reports } = harness();
+    queue.enqueue(job({ a: '1' }, 'a'));
+    queue.enqueue(job({ a: '2' }, 'a'));
+    queue.flush();
+    // odchod doběhne dřív než první běžné odeslání
+    sent[1]!.finish(saved);
+    await settle();
+    expect(reports[0]!.context).toMatchObject({ leaving: true, last: false });
+    sent[0]!.finish(saved);
+    await settle();
+    expect(reports[1]!.context).toMatchObject({ leaving: false, last: true });
   });
 });
 

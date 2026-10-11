@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { readEarlyInput } from '@/lib/early-input';
 import {
   describeFocus,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/focus-handoff';
 import { BASELINE_FIELD, CHANGED_FIELD } from '@/lib/form-baseline';
 import {
+  applyFormValues,
   differsFromServerHtml,
   reconcileWithServerHtml,
   restoreServerHtml,
@@ -188,23 +189,27 @@ async function postLeaving(endpoint: string, job: SaveJob): Promise<AutoSaveOutc
 function queueFor(endpoint: string): SaveQueue {
   const existing = queues.get(endpoint);
   if (existing) return existing;
+  // něco se uložilo a stránka to ještě neukazuje
+  let unrefreshed = false;
   const queue = createSaveQueue({
     send: (job) => {
       const action = actions.get(endpoint);
       return action ? action(saveBody(job)) : postLeaving(endpoint, job);
     },
     sendLeaving: (job) => postLeaving(endpoint, job),
-    // Jeden běh fronty = jeden přechod Reactu. Server action po uložení
-    // vykreslí stránku znovu; dokud přechod běží, React to vykreslení drží,
-    // takže formulář neskočí na stav po prvním uložení, zatímco druhé běží.
-    scope: (run) => startTransition(run),
     report: (result, context) => {
       if (result.kind === 'saved') announce('ok', result.message);
       if (result.kind === 'rejected') announce('chyba', result.message);
       if (result.kind === 'failed') announce('chyba', SAVE_FAILED);
-      // Odeslání při odchodu šlo mimo směrovač: co je na obrazovce, se musí
-      // dotáhnout ze serveru (po vypršelém přihlášení tím skončí na přihlášení).
-      if (context.leaving && result.kind !== 'failed') refreshFromServer();
+      // Stránku po uložení dotáhne ze serveru až poslední odeslání v řadě,
+      // jedním dotazem (akce sama stránku nepřekresluje — vykreslila by ji po
+      // každém odeslání zvlášť). Po vypršelém přihlášení tím odeslání při
+      // odchodu skončí na přihlášení; akci tam přesměruje server sám.
+      unrefreshed ||= result.kind === 'saved' || (context.leaving && result.kind === 'signedOut');
+      if (context.last && unrefreshed) {
+        unrefreshed = false;
+        refreshFromServer();
+      }
       if (result.kind !== 'saved') unsavedHandlers.get(endpoint)?.(result, context);
     },
   });
@@ -241,12 +246,13 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * od stavu při vykreslení, a to jmenované vždy (`lib/form-baseline.ts`).
  * Odeslání řadí fronta (`lib/save-queue.ts`): jdou za sebou a změny, které
  * přijdou během ukládání, se slijí do jednoho dalšího. Ukládá server action
- * `action`, která po uložení vykreslí stránku znovu, a výsledek ukáže hláška
- * v rozložení aplikace (`lib/save-feedback.ts`). Adresa stránky se nemění:
- * dřív uložení končilo přesměrováním s `?ok=` a každá změna přidala krok do
- * historie prohlížeče (změřeno 11. 10. 2026: po třech změnách čtyři stisky
- * Zpět). Formulář se prohlížečem neodesílá nikdy — ani Enterem v textovém
- * poli, který dřív poslal totéž podruhé.
+ * `action`; výsledek ukáže hláška v rozložení aplikace
+ * (`lib/save-feedback.ts`) a po posledním odeslání v řadě se stránka dotáhne
+ * ze serveru. Adresa stránky se nemění a stránka neroluje: dřív uložení
+ * končilo přesměrováním s `?ok=` a každá změna přidala krok do historie
+ * prohlížeče (změřeno 11. 10. 2026: po třech změnách čtyři stisky Zpět).
+ * Formulář se prohlížečem neodesílá nikdy — ani Enterem v textovém poli,
+ * který dřív poslal totéž podruhé.
  *
  * ROZEPSANÝ TEXT. Text, který člověk napsal a pole ještě neopustil,
  * prohlížeč neohlásil (`change`). Neztratí se:
@@ -314,6 +320,17 @@ export function AutoSubmit({
     detached.current = false;
     actions.set(endpoint, action);
     liveForms.set(endpoint, form);
+    // Formulář vznikl znovu uprostřed ukládání: server ho vykreslil se stavem
+    // z doby před ním. Pole proto dostanou, co právě odchází — jinak by změna
+    // na chvíli skočila zpátky. Odeslaný text je odeslaný, ne rozepsaný.
+    const unsettled = queueFor(endpoint).unsettled();
+    if (unsettled) {
+      const controls = Array.from(form.elements) as unknown as FormControlState[];
+      for (const control of applyFormValues(controls, unsettled)) {
+        const field = textFieldOf(control);
+        if (field) confirm(field);
+      }
+    }
     // cesta z doby vzniku: při odchodu jinam už adresa může patřit nové stránce
     const { pathname } = window.location;
     const handoff = focusHandoff;
