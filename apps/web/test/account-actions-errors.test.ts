@@ -167,6 +167,23 @@ describe('změna hesla: hláška podle příčiny', () => {
 });
 
 describe('texty chyb účtu', () => {
+  it('příčina se čte z chyby Better Authu, ne hádá', async () => {
+    const { APIError } = await import('better-auth/api');
+    const { accountFailure } = await import('@/lib/account-errors');
+    expect(
+      accountFailure(new APIError('BAD_REQUEST', { message: 'Invalid password', code: 'INVALID_PASSWORD' })),
+    ).toBe('password');
+    // strop háčku pro HTTP cestu — kdyby někdy zasáhl i tady, nesmí to být „heslo nesedí“
+    expect(
+      accountFailure(
+        new APIError('TOO_MANY_REQUESTS', { message: 'Zkoušíš to moc často.', code: 'ACCOUNT_RATE_LIMITED' }),
+      ),
+    ).toBe('limit');
+    expect(accountFailure(new APIError('INTERNAL_SERVER_ERROR', { message: 'boom' }))).toBe('other');
+    expect(accountFailure(new Error('connection lost'))).toBe('other');
+    expect(accountFailure(undefined)).toBe('other');
+  });
+
   it('limit i jiné selhání mají vlastní větu', async () => {
     const { settingsErrorText } = await import('@/app/(app)/nastaveni/settings-toast');
     for (const code of ['smazani-limit', 'heslo-limit']) {

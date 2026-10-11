@@ -100,6 +100,13 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   // nevratná akce je za potvrzovacím dialogem — heslo a opsané slovo se
   // vyplňují až v něm
   const dialog = await openConfirmDialog(page, page.getByRole('button', { name: 'Smazat účet…' }));
+  // Překlep v hesle: dialog se otevře znovu a řekne to u pole. Správné heslo
+  // hned potom účet smaže — dřív jeden pokus stál dva zápisy do limitu, takže
+  // druhý pokus narazil na strop a formulář k tomu tvrdil, že heslo nesedí.
+  await dialog.getByLabel('Heslo', { exact: true }).fill('tohle-neni-moje-heslo');
+  await dialog.getByLabel('Pro potvrzení napiš SMAZAT').fill('SMAZAT');
+  await dialog.getByRole('button', { name: 'Smazat účet', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveText('Heslo nesedí — účet se nesmazal.');
   await dialog.getByLabel('Heslo', { exact: true }).fill(NOVE_HESLO);
   await dialog.getByLabel('Pro potvrzení napiš SMAZAT').fill('SMAZAT');
   await dialog.getByRole('button', { name: 'Smazat účet', exact: true }).click();
