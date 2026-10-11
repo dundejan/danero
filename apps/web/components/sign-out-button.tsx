@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { forgetLeavingDraft } from '@/lib/leaving-draft';
 import { attemptSignOut } from '@/lib/sign-out';
 
 /**
@@ -22,6 +23,8 @@ function useSignOut(): { signOut: () => void; error: string | null } {
         setError(outcome.message);
         return;
       }
+      // text rozepsaný v tomhle účtu se po odhlášení nikomu nenabízí
+      forgetLeavingDraft();
       router.push(outcome.redirectTo);
       router.refresh();
     });

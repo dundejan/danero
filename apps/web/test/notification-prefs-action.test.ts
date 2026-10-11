@@ -33,18 +33,6 @@ vi.mock('@/lib/session', () => ({
   }),
 }));
 
-/** Vrátí cílovou URL redirectu, kterým server action skončila. */
-async function redirectTarget(run: () => Promise<void>): Promise<string> {
-  try {
-    await run();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith('REDIRECT:')) return message.slice('REDIRECT:'.length);
-    throw error;
-  }
-  throw new Error('server action neskončila redirectem');
-}
-
 const form = (fields: Record<string, string>): FormData => {
   const data = new FormData();
   for (const [name, value] of Object.entries(fields)) data.append(name, value);
@@ -60,19 +48,17 @@ describe('nastavení hlídacích e-mailů', () => {
   }, 30_000);
 
   it('uloží se komukoli, bez jakéhokoli tarifu', { timeout: 30_000 }, async () => {
-    const { saveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
+    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
 
     expect(
-      await redirectTarget(() =>
-        saveNotificationPrefsAction(
-          form({
-            'emaily-zapnute': 'on',
-            'upozorneni-casove-testy': 'on',
-            'lhuta-casoveho-testu': '7',
-          }),
-        ),
+      await autoSaveNotificationPrefsAction(
+        form({
+          'emaily-zapnute': 'on',
+          'upozorneni-casove-testy': 'on',
+          'lhuta-casoveho-testu': '7',
+        }),
       ),
-    ).toBe('/nastaveni/upozorneni?ok=notifikace');
+    ).toEqual({ ok: true, message: 'Uloženo. E-maily se řídí novým nastavením.' });
 
     const { notificationPrefs } = await import('@/db/schema');
     const [row] = await state.db.select().from(notificationPrefs);
@@ -90,8 +76,8 @@ describe('nastavení hlídacích e-mailů', () => {
     const { getNotificationPrefs } = await import('@/lib/notifications');
     expect((await getNotificationPrefs(state.db, 'u-notif')).emailEnabled).toBe(false);
 
-    const { saveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
-    await redirectTarget(() => saveNotificationPrefsAction(form({ 'emaily-zapnute': 'on' })));
+    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
+    await autoSaveNotificationPrefsAction(form({ 'emaily-zapnute': 'on' }));
     expect((await getNotificationPrefs(state.db, 'u-notif')).emailEnabled).toBe(true);
   });
 });

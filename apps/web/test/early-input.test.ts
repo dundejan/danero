@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EARLY_INPUT_KEY, EARLY_INPUT_SCRIPT, readEarlyInput } from '@/lib/early-input';
+import { CHANGED_FIELD } from '@/lib/form-baseline';
 
 /**
  * Skript, který si před hydratací pamatuje, na která pole sáhl člověk.
@@ -111,6 +112,22 @@ describe('záznam vstupu před hydratací', () => {
       expect(early.edited.has(control)).toBe(false);
       expect(early.committed.has(control)).toBe(false);
     }
+  });
+
+  it('formulář s auto-save prohlížeči odeslat nedovolí, jiné formuláře nechává být', () => {
+    const page = runScript();
+    const prevented: string[] = [];
+    const submit = (name: string, elements: Record<string, unknown>) =>
+      page.fire('submit', {
+        isTrusted: true,
+        target: { elements },
+        preventDefault: () => prevented.push(name),
+      } as never);
+    // Enter v textovém poli před hydratací: změnu si skript zapamatoval,
+    // odeslání prohlížečem by stránku načetlo znovu s poli v adrese
+    submit('auto-save', { [CHANGED_FIELD]: {} });
+    submit('přihlášení', { email: {} });
+    expect(prevented).toEqual(['auto-save']);
   });
 
   it('skript nenese nic, co by ukončilo značku <script> nebo potřebovalo překlad', () => {

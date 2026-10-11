@@ -38,6 +38,9 @@ export function AppSkeleton() {
   const { switcher, action } = toolbarShape(usePathname());
   return (
     <div
+      // bez JavaScriptu kostru schová sdělení v `NoScriptNotice`; podle ní
+      // taky `RefreshOnRestore` pozná, že si směrovač pro stránku došel sám
+      data-app-skeleton=""
       role="status"
       aria-busy="true"
       aria-label="Načítám"

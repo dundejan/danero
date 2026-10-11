@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { EarlyInput } from '@/lib/early-input';
 import {
+  applyFormValues,
   differsFromServerHtml,
   reconcileWithServerHtml,
   restoreServerHtml,
@@ -121,6 +122,64 @@ describe('návrat pole na hodnotu ze serveru', () => {
   });
 });
 
+describe('formulář vykreslený znovu uprostřed ukládání', () => {
+  /** Stav formuláře, jak odchází na server. */
+  const sent = (entries: Array<[string, string]>) => {
+    const data = new FormData();
+    for (const [name, value] of entries) data.append(name, value);
+    return data;
+  };
+
+  it('pole dostanou, co právě odchází — změna neskočí zpátky na stav ze serveru', () => {
+    const matching = { ...select(option(true, true), option(false, false)), name: 'parovani', value: 'FIFO' };
+    const urgent = { ...checkbox(true, true), name: 'nalehave', value: 'on' };
+    const quiet = { ...checkbox(false, false), name: 'tiche', value: 'on' };
+    const income = { ...text('0', '0'), name: 'prijmy' };
+    const texts = applyFormValues(
+      [matching, urgent, quiet, income],
+      sent([
+        ['parovani', 'LIFO'],
+        ['tiche', 'on'],
+        ['prijmy', '500'],
+      ]),
+    );
+    expect(matching.value).toBe('LIFO');
+    // odškrtnutý přepínač v odeslání chybí
+    expect(urgent.checked).toBe(false);
+    expect(quiet.checked).toBe(true);
+    expect(income.value).toBe('500');
+    // přepsaný text je odeslaný, ne rozepsaný
+    expect(texts).toEqual([income]);
+  });
+
+  it('skupina políček se řídí hodnotami, ne jménem', () => {
+    const box = (value: string, checked: boolean) => ({
+      ...checkbox(checked, checked),
+      name: 'hranice',
+      value,
+    });
+    const boxes = [box('50', false), box('75', true), box('100', true)];
+    applyFormValues(
+      boxes,
+      sent([
+        ['hranice', '50'],
+        ['hranice', '100'],
+      ]),
+    );
+    expect(boxes.map((item) => item.checked)).toEqual([true, false, true]);
+  });
+
+  it('pole, které v odeslání není, ani pole bez jména nemění', () => {
+    const income = { ...text('7', '7'), name: 'prijmy' };
+    const nameless = text('x', 'x');
+    const kept = { ...select(option(true, true)), name: 'kurzy', value: 'UNIFIED' };
+    expect(applyFormValues([income, nameless, kept], sent([['prijmy', '7']]))).toEqual([]);
+    expect(income.value).toBe('7');
+    expect(nameless.value).toBe('x');
+    expect(kept.value).toBe('UNIFIED');
+  });
+});
+
 describe('formulář po hydrataci', () => {
   it('nedotčený formulář se neodesílá a nic se nevrací', () => {
     const controls = [select(option(true, true), option(false, false)), text('0', '0')];
@@ -193,14 +252,14 @@ describe('formuláře s auto-save', () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tsx'))
       .map((entry) => join(entry.parentPath, entry.name));
 
-  it('každý formulář s <AutoSubmit /> zakazuje prohlížeči vracet do polí staré hodnoty', () => {
+  it('každý formulář s <AutoSubmit> zakazuje prohlížeči vracet do polí staré hodnoty', () => {
     // Bez `autoComplete="off"` Firefox po F5 vrátí do nabídek a přepínačů
-    // hodnoty z doby před načtením. `AutoSubmit` je sice neodešle, ale bez
-    // JavaScriptu by je odeslalo tlačítko Uložit — a do hydratace jsou vidět.
+    // hodnoty z doby před načtením. `AutoSubmit` je sice neodešle, ale do
+    // hydratace jsou vidět.
     const root = join(import.meta.dirname, '..');
     const withAutoSubmit = [...sources(join(root, 'app')), ...sources(join(root, 'components'))]
       .map((path) => ({ path, source: readFileSync(path, 'utf8') }))
-      .filter(({ source }) => source.includes('<AutoSubmit />'));
+      .filter(({ source }) => /<AutoSubmit\b/.test(source));
 
     expect(withAutoSubmit.length).toBeGreaterThan(0);
     for (const { path, source } of withAutoSubmit) {

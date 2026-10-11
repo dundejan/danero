@@ -36,18 +36,6 @@ vi.mock('@/lib/session', () => ({
   }),
 }));
 
-/** Cíl přesměrování, kterým akce skončila. */
-async function redirectTarget(run: () => Promise<void>): Promise<string> {
-  try {
-    await run();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith('REDIRECT:')) return message.slice('REDIRECT:'.length);
-    throw error;
-  }
-  throw new Error('server action neskončila přesměrováním');
-}
-
 type Entries = Array<[string, string]>;
 
 /**
@@ -79,9 +67,21 @@ describe('daňový profil: zastaralý panel', () => {
     const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
     return profileFormEntries(await profile());
   }
-  async function save(form: FormData): Promise<string> {
+  async function save(form: FormData): Promise<boolean> {
+    const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    return (await autoSaveProfileAction(form)).ok;
+  }
+  /** První uložení tlačítkem — končí přesměrováním; vrací jeho cíl. */
+  async function saveFirst(form: FormData): Promise<string> {
     const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
-    return redirectTarget(() => saveProfileAction(form));
+    try {
+      await saveProfileAction(form);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('REDIRECT:')) return message.slice('REDIRECT:'.length);
+      throw error;
+    }
+    throw new Error('první uložení neskončilo přesměrováním');
   }
 
   beforeAll(async () => {
@@ -106,7 +106,7 @@ describe('daňový profil: zastaralý panel', () => {
     expect((await profile()).matchingMethod).toBe('LIFO');
 
     // panel 2 pořád ukazuje FIFO a mění kurzy
-    expect(await save(submittedForm(stale, { kurzy: 'CNB_DAILY' }))).toBe('/nastaveni?ok=profil#dan');
+    expect(await save(submittedForm(stale, { kurzy: 'CNB_DAILY' }))).toBe(true);
     const after = await profile();
     expect(after.fxMethod).toBe('CNB_DAILY');
     expect(after.matchingMethod).toBe('LIFO');
@@ -128,6 +128,32 @@ describe('daňový profil: zastaralý panel', () => {
     expect(after.hasBusinessAssets).toBe(true);
     expect(after.limit100kStrict).toBe(false);
   });
+
+  it(
+    'totéž odeslání podruhé nic nezapíše — rozepsaná částka uložená při F5 a znovu po načtení',
+    { timeout: 30_000 },
+    async () => {
+      const { auditLog } = await import('@/db/schema');
+      const countChanges = async () =>
+        (await state.db.select().from(auditLog).where(eq(auditLog.userId, state.userId))).filter(
+          (row) => row.type === 'PROFILE_CHANGE',
+        ).length;
+      const shown = await rendered();
+      const original = (await profile()).otherIncomeCzk;
+      const twice = () => submittedForm(shown, { 'ostatni-prijmy': '777' }, { changed: 'ostatni-prijmy' });
+      const before = await countChanges();
+      expect(await save(twice())).toBe(true);
+      expect(await save(twice())).toBe(true);
+      expect((await profile()).otherIncomeCzk).toBe('777.00');
+      expect(await countChanges()).toBe(before + 1);
+      // a hodnota zpátky: druhé odeslání téhož stavu zase nic nepřidá
+      const back = () => submittedForm(shown, {}, { changed: 'ostatni-prijmy' });
+      await save(back());
+      await save(back());
+      expect((await profile()).otherIncomeCzk).toBe(original);
+      expect(await countChanges()).toBe(before + 2);
+    },
+  );
 
   it('odškrtnutý přepínač je změna, i když ve formuláři chybí', { timeout: 30_000 }, async () => {
     expect((await profile()).hasBusinessAssets).toBe(true);
@@ -159,8 +185,8 @@ describe('daňový profil: zastaralý panel', () => {
       ).length;
     const before = await countChanges();
 
-    // tlačítko Uložit bez JavaScriptu v panelu, kde se nic nezměnilo
-    expect(await save(submittedForm(stale, {}))).toBe('/nastaveni?ok=profil#dan');
+    // odeslání z panelu, kde se nic nezměnilo (Enter před hydratací)
+    expect(await save(submittedForm(stale, {}))).toBe(true);
     expect((await profile()).matchingMethod).toBe('MAX_PROFIT');
     expect(await countChanges()).toBe(before);
   });
@@ -182,13 +208,15 @@ describe('daňový profil: zastaralý panel', () => {
       state.userId = 'u-novacek';
       const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
       const firstForm = profileFormEntries(null);
-      // panel 1 profil založí a upraví
-      expect(await save(submittedForm(firstForm, { rezim: 'ZAMESTNANEC' }))).toBe(
+      // panel 1 profil založí (tlačítkem) a upraví (auto-save)
+      expect(await saveFirst(submittedForm(firstForm, { rezim: 'ZAMESTNANEC' }))).toBe(
         '/import?ulozeno=profil',
       );
       await save(submittedForm(await rendered(), { kurzy: 'CNB_DAILY', 'limit-100k': 'lenient' }));
       // panel 2 pořád ukazuje formulář prvního uložení s předvolbami
-      await save(submittedForm(firstForm, { rezim: 'PAUSAL' }));
+      expect(await saveFirst(submittedForm(firstForm, { rezim: 'PAUSAL' }))).toBe(
+        '/nastaveni?ok=profil',
+      );
       const after = await profile();
       expect(after.regime).toBe('PAUSAL');
       expect(after.fxMethod).toBe('CNB_DAILY');
@@ -207,9 +235,9 @@ describe('upozornění: zastaralý panel', () => {
     const { notificationFormEntries } = await import('@/app/(app)/nastaveni/form-state');
     return notificationFormEntries(await prefs());
   }
-  async function save(form: FormData): Promise<string> {
-    const { saveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
-    return redirectTarget(() => saveNotificationPrefsAction(form));
+  async function save(form: FormData): Promise<boolean> {
+    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
+    return (await autoSaveNotificationPrefsAction(form)).ok;
   }
 
   it(
@@ -221,9 +249,7 @@ describe('upozornění: zastaralý panel', () => {
       await save(submittedForm(stale, { 'frekvence-emailu': 'WEEKLY' }));
       expect((await prefs()).emailFrequency).toBe('WEEKLY');
 
-      expect(await save(submittedForm(stale, { 'nalehave-hned': null }))).toBe(
-        '/nastaveni/upozorneni?ok=notifikace',
-      );
+      expect(await save(submittedForm(stale, { 'nalehave-hned': null }))).toBe(true);
       const after = await prefs();
       expect(after.urgentImmediately).toBe(false);
       expect(after.emailFrequency).toBe('WEEKLY');

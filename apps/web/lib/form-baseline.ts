@@ -22,6 +22,8 @@
  * vyvolala. To se zapíše vždy. Bez něj by se ztratilo vrácení změny během
  * běžícího ukládání — přepínač zapnutý a hned vypnutý pošle podruhé totéž, co
  * stálo ve formuláři při vykreslení, a samotné srovnání by řeklo „beze změny“.
+ * Jmen smí být víc: změny, které se sešly dřív, než odešlo předchozí uložení,
+ * jdou jedním odesláním (`lib/save-queue.ts`).
  *
  * Čisté funkce bez DOM typů — sdílí je server (akce, stránka) i prohlížeč.
  */
@@ -29,7 +31,7 @@
 /** Skryté pole se stavem, se kterým byl formulář vykreslen (`name` česky — pravidlo 1). */
 export const BASELINE_FIELD = 'puvodni-stav';
 
-/** Skryté pole se jménem pole, jehož změna odeslání vyvolala (jen s auto-save). */
+/** Skryté pole se jmény polí, jejichž změna odeslání vyvolala (jen s auto-save). */
 export const CHANGED_FIELD = 'zmenene-pole';
 
 /** Služební pole, která do stavu formuláře nepatří (React si k akci přidává vlastní). */
@@ -62,7 +64,7 @@ const sameValues = (a: string[], b: string[]): boolean =>
 
 /**
  * Která z polí `names` má server zapsat: ta, jejichž odeslaná hodnota se liší
- * od stavu při vykreslení, a to, jehož změna odeslání vyvolala.
+ * od stavu při vykreslení, a ta, jejichž změna odeslání vyvolala.
  *
  * Formulář bez výchozího stavu (stránka vykreslená starší verzí aplikace,
  * požadavek mimo naše UI) se bere celý — tak se ukládalo vždycky.
@@ -70,10 +72,10 @@ const sameValues = (a: string[], b: string[]): boolean =>
 export function changedFields(form: FormValues, names: readonly string[]): Set<string> {
   if (!form.has(BASELINE_FIELD)) return new Set(names);
   const baseline = new URLSearchParams(String(form.get(BASELINE_FIELD)));
-  const trigger = String(form.get(CHANGED_FIELD) ?? '');
+  const triggers = new Set(form.getAll(CHANGED_FIELD).map(String));
   return new Set(
     names.filter(
-      (name) => name === trigger || !sameValues(valuesOf(form, name), valuesOf(baseline, name)),
+      (name) => triggers.has(name) || !sameValues(valuesOf(form, name), valuesOf(baseline, name)),
     ),
   );
 }

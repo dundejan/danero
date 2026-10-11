@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { FormPage } from '@/components/form-page';
+import { NoScriptNotice } from '@/components/no-script-notice';
 import { Button } from '@/components/ui/button';
 import { describedByError, Field, Input } from '@/components/ui/field';
 import { TextLink } from '@/components/ui/link';
@@ -67,7 +68,8 @@ export function ForgotPasswordForm() {
       lede="Pošleme ti odkaz na nastavení nového hesla."
       footer={BACK_TO_SIGN_IN}
     >
-      <form onSubmit={onSubmit} className="space-y-5">
+      <NoScriptNotice className="mb-5" />
+      <form method="post" onSubmit={onSubmit} className="space-y-5">
         <Field label="E-mail" htmlFor="email" error={error} errorId={ERROR_ID}>
           <Input
             id="email"

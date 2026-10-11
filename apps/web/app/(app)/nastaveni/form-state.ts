@@ -39,6 +39,18 @@ export const PROFILE_FIELDS = {
 } as const;
 
 /**
+ * Tvar částky v poli „Další zdanitelné příjmy“ pro atribut `pattern`: číslice
+ * s mezerami kdekoli a nejvýš jedna desetinná čárka nebo tečka se dvěma místy
+ * (prázdné pole je nula). Musí pustit všechno, co pustí server (`save.ts`) —
+ * přísnější vzor by platnou částku při zavírání panelu neuložil. Shodu hlídá
+ * `test/profil-castka.test.ts`.
+ */
+export const OTHER_INCOME_PATTERN = String.raw`\s*(\d\s*)+([.,]\s*(\d\s*){1,2})?|\s*`;
+
+/** Věta k tomu tvaru — nápověda pole a hláška, když rozepsaná částka neprojde. */
+export const OTHER_INCOME_FORMAT = 'Zadej částku v korunách, třeba 12000 nebo 12000,50.';
+
+/**
  * Stav formuláře daňového profilu. Bez profilu jsou to bezpečné předvolby;
  * režim předvolbu nemá (L7i-01), takže v dvojicích chybí.
  */

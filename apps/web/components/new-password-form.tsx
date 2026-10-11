@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { COMMON_PASSWORD_CODE, COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
 import { FormPage } from '@/components/form-page';
+import { NoScriptNotice } from '@/components/no-script-notice';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { describedByError, Field, FieldError, Input } from '@/components/ui/field';
 
@@ -86,7 +87,9 @@ export function NewPasswordForm({ token }: { token: string }) {
 
   return (
     <FormPage title="Nové heslo">
+      <NoScriptNotice className="mb-5" />
       <form
+        method="post"
         onSubmit={onSubmit}
         onBlur={reportMismatch}
         onChange={clearMismatch}

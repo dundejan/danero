@@ -1,150 +1,58 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { d } from '@danero/shared';
 import { redirect } from 'next/navigation';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
-import { taxpayerProfiles } from '@/db/schema';
 import { accountFailure, type AccountFailure } from '@/lib/account-errors';
 import { logAudit } from '@/lib/audit';
-import { changedFields, pickChanged } from '@/lib/form-baseline';
 import { errorText, logEvent } from '@/lib/log';
 import { afterProfileSaveUrl, hasAnyTransaction } from '@/lib/onboarding';
 import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
-import {
-  dropStaleLimitNotifications,
-  profileAffectsCalculations,
-} from '@/lib/profile-changes';
+import type { AutoSaveOutcome } from '@/lib/save-queue';
 import { authApi, requireUser } from '@/lib/session';
-import { NOTIFICATION_FIELDS, PROFILE_FIELDS } from './form-state';
+import {
+  notificationPrefsOutcome,
+  profileOutcome,
+  saveNotificationPrefs,
+  saveProfile,
+} from './save';
 
 /**
- * Klíče schématu = `name` atributy formuláře, které jsou podle pravidla 1
- * z CLAUDE.md česky (uživatel je vidí v DOM). Na anglické identifikátory se
- * překlápějí hned níž, takže dál v kódu ani v databázi čeština není.
+ * První uložení daňového profilu tlačítkem. Auto-save už existujícího profilu
+ * jde přes `autoSaveProfileAction` — nikam nepřesměrovává, takže nemění
+ * adresu ani historii prohlížeče.
  */
-const ProfileFormSchema = z.object({
-  rezim: z.enum(['PAUSAL', 'ZAMESTNANEC', 'OSVC', 'JINE']),
-  'obchodni-majetek': z.literal('on').optional(),
-  /**
-   * Částku píše člověk, ne stroj: „10 000“, „1 234,50“, klidně s nedělitelnou
-   * mezerou zkopírovanou z Danera (aplikace sama odděluje tisíce NBSP, takže
-   * kopie vlastního čísla zpátky do formuláře je běžný pohyb). Mezery se proto
-   * odstraní a desetinná čárka převede na tečku.
-   *
-   * ⚠️ Kontrola nesmí být rozdělená do dvou `.refine()`: Zod pustí i to druhé,
-   * i když první selhalo, a `d('10 000')` vyhodí `DecimalError`. Ten už není
-   * chybou validace, ale výjimkou uvnitř `safeParse` — a uživatel místo hlášky
-   * dostal chybovou stránku. Rozhoduje se proto v jednom `superRefine`, který
-   * `d()` zavolá až na tvaru, o kterém ví, že je číslo.
-   */
-  'ostatni-prijmy': z
-    .string()
-    .transform((v) => v.replace(/\s/g, '').replace(',', '.') || '0')
-    .superRefine((v, ctx) => {
-      if (!/^\d+(\.\d{1,2})?$/.test(v)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Zadej částku v korunách, třeba 12000 nebo 12000,50.',
-          params: { kod: 'prijmy' },
-        });
-        return;
-      }
-      // horní mez: bilion Kč — bez ní by nesmyslný vstup přetekl DB numeric(18,2)
-      if (d(v).gt('1000000000000')) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Částka je nereálně vysoká — zkontroluj ji.',
-          params: { kod: 'prijmy' },
-        });
-      }
-    }),
-  parovani: z.enum(['FIFO', 'LIFO', 'MAX_PROFIT', 'MAX_LOSS']),
-  kurzy: z.enum(['UNIFIED', 'CNB_DAILY']),
-  'limit-100k': z.enum(['strict', 'lenient']),
-  'zaklad-casoveho-testu': z.enum(['settlement', 'trade']),
-  'derivaty-vydaje': z.enum(['restrictive', 'perType']),
-  'emt-casovy-test': z.enum(['safe', 'lenient']),
-  'vratka-kapitalu': z.enum(['safe', 'lenient']),
-});
-
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const parsed = ProfileFormSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) {
-    // u částky umíme poradit konkrétně; zbytek formuláře jsou jen nabídky,
-    // do kterých se z UI nedá napsat nic vlastního
-    const kod = parsed.error.issues.some(
-      (issue) => (issue as { params?: { kod?: string } }).params?.kod === 'prijmy',
-    )
-      ? 'prijmy'
-      : // L7i-01 (R8): režim nemá předvolbu, takže první uložení bez výběru je
-        // běžný pohyb, ne podvržený formulář — chce vlastní větu
-        parsed.error.issues.some((issue) => issue.path[0] === 'rezim')
-        ? 'rezim'
-        : 'formular';
-    redirect(`/nastaveni?chyba=${kod}`);
-  }
-
-  const submitted = {
-    regime: parsed.data.rezim,
-    hasBusinessAssets: parsed.data['obchodni-majetek'] === 'on',
-    otherIncomeCzk: parsed.data['ostatni-prijmy'],
-    matchingMethod: parsed.data.parovani,
-    fxMethod: parsed.data.kurzy,
-    limit100kStrict: parsed.data['limit-100k'] === 'strict',
-    timeTestBasis: parsed.data['zaklad-casoveho-testu'],
-    derivativesExpensesPerType: parsed.data['derivaty-vydaje'] === 'perType',
-    emtTimeTestExempt: parsed.data['emt-casovy-test'] === 'lenient',
-    returnOfCapitalReducesBasis: parsed.data['vratka-kapitalu'] === 'lenient',
-  };
-
-  const db = await getDb();
-  const [previous] = await db
-    .select()
-    .from(taxpayerProfiles)
-    .where(eq(taxpayerProfiles.userId, user.id));
-  // Existující profil se nepřepisuje celý: zapíšou se jen pole, která člověk
-  // v tomhle formuláři změnil. Panel, který zůstal otevřený se starým stavem,
-  // jinak změnou jednoho pole vrátil všechna ostatní (`lib/form-baseline.ts`).
-  // UPDATE nese jen ta pole, takže se dvě souběžná uložení nepřepíšou ani
-  // mezi čtením a zápisem.
-  const applied = previous
-    ? pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS)))
-    : submitted;
-  // uložení, které nic nemění (tlačítko Uložit bez JavaScriptu), nic nezapisuje
-  if (Object.keys(applied).length > 0) {
-    const updatedAt = new Date();
-    await db
-      .insert(taxpayerProfiles)
-      .values({ userId: user.id, ...submitted, updatedAt })
-      .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: { ...applied, updatedAt } });
-    await logAudit(db, user.id, 'PROFILE_CHANGE');
-  }
-
-  // K2-02: změna profilu přepočítá všechny nezafixované roky, takže uložená
-  // upozornění hlídače za ně přestala platit — a jejich dedupe klíč by hlídač
-  // na ten rok umlčel natrvalo (detail a testy v lib/profile-changes.ts).
-  if (profileAffectsCalculations(previous, applied)) {
-    await dropStaleLimitNotifications(db, user.id);
-  }
-
+  const result = await saveProfile(user.id, formData);
+  if (!result.ok) redirect(`/nastaveni?chyba=${result.error}`);
   revalidatePath('/prehled');
   revalidatePath('/nastaveni');
-  // první uložení = cesta nového uživatele pokračuje krokem 2 (přidat data),
-  // případně přehledem, když už data má; další změny se ukládají samy
-  // (auto-save) a uživatel zůstává u formuláře s potvrzením
   revalidatePath('/import');
+  // první uložení = cesta nového uživatele pokračuje krokem 2 (přidat data),
+  // případně přehledem, když už data má. Profil, který mezitím vznikl jinde
+  // (formulář prvního uložení otevřený ve dvou panelech), zůstává v Nastavení.
   redirect(
     afterProfileSaveUrl({
-      firstSave: previous === undefined,
-      // na data se ptáme jen při prvním uložení — auto-save je nepotřebuje
-      hasData: previous === undefined && (await hasAnyTransaction(db, user.id)),
+      firstSave: result.firstSave,
+      // na data se ptáme jen při prvním uložení
+      hasData: result.firstSave && (await hasAnyTransaction(await getDb(), user.id)),
     }),
   );
+}
+
+/**
+ * Auto-save daňového profilu: uloží a vrátí výsledek, který formulář ukáže
+ * sám (`AutoSubmit`). Bez přesměrování — potvrzení v adrese přidávalo každou
+ * změnou krok do historie prohlížeče a Zpět z Nastavení chtělo tolik stisků,
+ * kolik bylo změn (změřeno 11. 10. 2026).
+ */
+export async function autoSaveProfileAction(formData: FormData): Promise<AutoSaveOutcome> {
+  const user = await requireUser();
+  return profileOutcome(await saveProfile(user.id, formData));
 }
 
 /**
@@ -406,61 +314,11 @@ export async function revokeOtherSessionsAction(): Promise<void> {
 
 /* ── G8d + H3: notifikační preference ────────────────────────────────────── */
 
-export async function saveNotificationPrefsAction(formData: FormData): Promise<void> {
+/** Auto-save nastavení upozornění — stejně jako u profilu bez přesměrování. */
+export async function autoSaveNotificationPrefsAction(
+  formData: FormData,
+): Promise<AutoSaveOutcome> {
   const user = await requireUser();
-  const db = await getDb();
-  const { notificationPrefs } = await import('@/db/schema');
-  const {
-    DEADLINE_LEAD_OPTIONS,
-    DEFAULT_NOTIFICATION_RULES,
-    formatNumberList,
-    LIMIT_THRESHOLD_OPTIONS,
-    parseNumberList,
-    pickOption,
-    SUMMARY_FREQUENCIES,
-    TIME_TEST_LEAD_OPTIONS,
-  } = await import('@/lib/notification-rules');
-  /** Zaškrtnuté volby → text pro DB; mimo nabídku se cokoli zahodí. */
-  const checked = (name: string, allowed: readonly number[]): string =>
-    formatNumberList(
-      parseNumberList(formData.getAll(name).map(String).join(','), allowed, []),
-    );
-  const submitted = {
-    emailEnabled: formData.get('emaily-zapnute') === 'on',
-    timeTestEvents: formData.get('upozorneni-casove-testy') === 'on',
-    limitEvents: formData.get('upozorneni-limity') === 'on',
-    calendarEmails: formData.get('upozorneni-kalendar') === 'on',
-    // hodnoty ze selectů a zaškrtávátek validujeme na whitelist — cokoli jiného
-    // spadne na bezpečný default (formulář jde odeslat i mimo naše UI)
-    emailFrequency: formData.get('frekvence-emailu') === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
-    timeTestLeadDays: checked('lhuta-casoveho-testu', TIME_TEST_LEAD_OPTIONS),
-    timeTestDone: formData.get('osvobozeno-hotovo') === 'on',
-    limitThresholdsPct: checked('hranice-limitu', LIMIT_THRESHOLD_OPTIONS),
-    deadlineLeadDays: pickOption(
-      Number(formData.get('lhuta-terminu')),
-      DEADLINE_LEAD_OPTIONS,
-      DEFAULT_NOTIFICATION_RULES.deadlineLeadDays,
-    ),
-    summaryFrequency: pickOption(
-      formData.get('pravidelny-prehled'),
-      SUMMARY_FREQUENCIES,
-      DEFAULT_NOTIFICATION_RULES.summaryFrequency,
-    ),
-    urgentImmediately: formData.get('nalehave-hned') === 'on',
-  };
-  // Jen pole, která člověk v tomhle formuláři změnil — zastaralý panel jinak
-  // jedním přepnutím vrátil všechno ostatní (`lib/form-baseline.ts`). Řádek,
-  // který ještě neexistuje, vznikne celý z odeslaného formuláře.
-  const applied = pickChanged(
-    submitted,
-    NOTIFICATION_FIELDS,
-    changedFields(formData, Object.values(NOTIFICATION_FIELDS)),
-  );
-  const updatedAt = new Date();
-  await db
-    .insert(notificationPrefs)
-    .values({ userId: user.id, ...submitted, updatedAt })
-    .onConflictDoUpdate({ target: notificationPrefs.userId, set: { ...applied, updatedAt } });
-  revalidatePath('/nastaveni/upozorneni');
-  redirect('/nastaveni/upozorneni?ok=notifikace');
+  await saveNotificationPrefs(user.id, formData);
+  return notificationPrefsOutcome();
 }

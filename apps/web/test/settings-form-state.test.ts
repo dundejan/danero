@@ -211,7 +211,7 @@ describe('upozornění: skrytý stav odpovídá polím', () => {
         '@/app/(app)/nastaveni/upozorneni/page'
       );
       const html = renderToStaticMarkup(
-        await NotificationSettingsPage({ searchParams: Promise.resolve({}) }),
+        await NotificationSettingsPage(),
       );
       const { formHtml, baseline } = formWithBaseline(html);
       expect(sorted(untouchedSubmission(formHtml))).toEqual(sorted(baseline));
@@ -228,7 +228,7 @@ describe('upozornění: skrytý stav odpovídá polím', () => {
       '@/app/(app)/nastaveni/upozorneni/page'
     );
     const html = renderToStaticMarkup(
-      await NotificationSettingsPage({ searchParams: Promise.resolve({}) }),
+      await NotificationSettingsPage(),
     );
     const { NOTIFICATION_FIELDS } = await import('@/app/(app)/nastaveni/form-state');
     const { baseline } = formWithBaseline(html);

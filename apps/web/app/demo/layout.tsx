@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { DemoNavRail, DemoNavTabBar } from '@/components/nav-rail';
+import { NoScriptNotice } from '@/components/no-script-notice';
 import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -43,6 +44,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
           </Link>
         </header>
         <main id="obsah" className="min-w-0 flex-1 px-(--page-gutter) pt-(--page-top)">
+          <NoScriptNotice />
           {children}
         </main>
         {/* mini patička: demo je veřejná vstupní brána — návštěvník potřebuje

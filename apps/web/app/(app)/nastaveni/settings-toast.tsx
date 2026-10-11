@@ -2,12 +2,13 @@ import { Toast } from '@/components/toast';
 import { COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
 
 /**
- * Potvrzení a chyby obou stránek nastavení na jednom místě — akce v
- * `actions.ts` posílají kód v `?ok=` / `?chyba=` a která stránka ho zobrazí,
- * je na cíli přesměrování. Toast plave, protože po auto-save uprostřed dlouhé
- * stránky musí být potvrzení vidět bez ohledu na pozici scrollu.
+ * Potvrzení a chyby stránek nastavení na jednom místě. Akce s přesměrováním
+ * (`actions.ts`) posílají kód v `?ok=` / `?chyba=` a která stránka ho zobrazí,
+ * je na cíli přesměrování; auto-save adresu nemění a text si bere odsud přímo
+ * (`save.ts`). Toast plave, protože po uložení uprostřed dlouhé stránky musí
+ * být potvrzení vidět bez ohledu na pozici scrollu.
  */
-const OK_LABELS: Record<string, string> = {
+const OK_LABELS = {
   heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
   email:
     'E-mail změněn. Poslali jsme na novou adresu ověřovací odkaz — potvrď ho, jinak se příště nepřihlásíš.',
@@ -15,7 +16,12 @@ const OK_LABELS: Record<string, string> = {
   profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
   notifikace: 'Uloženo. E-maily se řídí novým nastavením.',
   fixace: 'Fixace zrušená. Rok se zase počítá podle nastavení v profilu.',
-};
+} as const satisfies Record<string, string>;
+
+/** Text potvrzení podle kódu — pro auto-save, který ho ukazuje bez adresy. */
+export function settingsOkText(code: keyof typeof OK_LABELS): string {
+  return OK_LABELS[code];
+}
 
 const CHYBA_LABELS: Record<string, string> = {
   heslo: 'Nové heslo musí mít aspoň 10 znaků.',
@@ -38,7 +44,7 @@ const CHYBA_LABELS: Record<string, string> = {
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
   rezim: 'Vyber svůj daňový režim — podle něj Danero pozná, který limit ti má hlídat.',
   prijmy:
-    'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Nastavení se zatím neuložilo.',
+    'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Takhle se neuloží.',
 };
 
 /** Text chyby podle kódu z adresy — pro hlášku přímo u pole (stránka účtu). */
@@ -68,8 +74,13 @@ export function SettingsToast({
           text={settingsErrorText(chyba)}
         />
       )}
-      {ok && OK_LABELS[ok] && (
-        <Toast key={crypto.randomUUID()} kind="ok" floating text={OK_LABELS[ok]} />
+      {ok && ok in OK_LABELS && (
+        <Toast
+          key={crypto.randomUUID()}
+          kind="ok"
+          floating
+          text={OK_LABELS[ok as keyof typeof OK_LABELS]}
+        />
       )}
     </>
   );

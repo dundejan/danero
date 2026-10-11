@@ -1,3 +1,5 @@
+import { CHANGED_FIELD } from '@/lib/form-baseline';
+
 /**
  * Na co uživatel sáhl DŘÍV, než se stránka hydratovala.
  *
@@ -36,8 +38,15 @@ export interface EarlyInput {
  * přijít stejný v každém sestavení a nesmí záviset na tom, co s tělem funkce
  * udělá překladač. Posluchače jsou ve fázi zachytávání, takže je kód stránky
  * nemůže předběhnout zastavením události.
+ *
+ * Poslední posluchač drží formulář s auto-save na stránce: ten se neodesílá
+ * prohlížečem nikdy (ukládá ho skript, pozná se podle skrytého pole
+ * `CHANGED_FIELD`). Enter v textovém poli zmáčknutý před hydratací by ho jinak
+ * odeslal jako obyčejný formulář a stránka by se načetla znovu s jeho poli
+ * v adrese. Změnu, kterou Enter potvrdil, si skript zapamatoval o řádek výš
+ * a `AutoSubmit` ji po hydrataci uloží.
  */
-export const EARLY_INPUT_SCRIPT = `(function(d,w,k){if(w[k])return;var g=false,e=new WeakSet(),c=new WeakSet();w[k]={edited:e,committed:c};function t(v){if(v.isTrusted)g=true}["pointerdown","mousedown","touchstart","keydown","click"].forEach(function(n){d.addEventListener(n,t,true)});d.addEventListener("input",function(v){if(v.isTrusted&&g&&v.target)e.add(v.target)},true);d.addEventListener("change",function(v){if(v.isTrusted&&g&&v.target){e.add(v.target);c.add(v.target)}},true)})(document,window,${JSON.stringify(EARLY_INPUT_KEY)})`;
+export const EARLY_INPUT_SCRIPT = `(function(d,w,k,s){if(w[k])return;var g=false,e=new WeakSet(),c=new WeakSet();w[k]={edited:e,committed:c};function t(v){if(v.isTrusted)g=true}["pointerdown","mousedown","touchstart","keydown","click"].forEach(function(n){d.addEventListener(n,t,true)});d.addEventListener("input",function(v){if(v.isTrusted&&g&&v.target)e.add(v.target)},true);d.addEventListener("change",function(v){if(v.isTrusted&&g&&v.target){e.add(v.target);c.add(v.target)}},true);d.addEventListener("submit",function(v){var f=v.target;if(f&&f.elements&&f.elements[s])v.preventDefault()},true)})(document,window,${JSON.stringify(EARLY_INPUT_KEY)},${JSON.stringify(CHANGED_FIELD)})`;
 
 const NOTHING_RECORDED: EarlyInput = {
   edited: { has: () => false },
