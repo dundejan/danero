@@ -15,6 +15,45 @@ const MOCK_PORT = 3211;
 /** Sdílené s e2e/helpers.ts — relativní k apps/web, kde běží server i testy. */
 export const EMAIL_LOG = '.data/e2e-emails.log';
 
+/**
+ * Prohlížeč, ve kterém sada poběží. Výchozí (a jediný v CI) je Chromium;
+ * Firefox a WebKit (jádro Safari) se pouštějí přepínačem:
+ *
+ *   E2E_BROWSER=firefox pnpm test:e2e
+ *   E2E_BROWSER=webkit pnpm test:e2e
+ *
+ * Běh je vždy jen v jednom prohlížeči — scénáře si zakládají účty v jedné
+ * databázi a dva projekty za sebou by se praly o tytéž e-maily.
+ *
+ * WebKit potřebuje systémové knihovny (GTK 4, GStreamer…). Kde nejsou a nejde
+ * je doinstalovat, připraví je do domovského adresáře `scripts/webkit-local.sh`
+ * a spustí pod nimi cokoli: `scripts/webkit-local.sh pnpm test:e2e`.
+ * Obal prohlížeče, který si knihovny najde, pak přijde v `E2E_WEBKIT_EXECUTABLE`.
+ */
+const BROWSER_PROJECTS = {
+  chromium: { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  firefox: { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  webkit: {
+    name: 'webkit',
+    use: {
+      ...devices['Desktop Safari'],
+      ...(process.env.E2E_WEBKIT_EXECUTABLE
+        ? { launchOptions: { executablePath: process.env.E2E_WEBKIT_EXECUTABLE } }
+        : {}),
+    },
+  },
+} as const;
+
+type E2eBrowser = keyof typeof BROWSER_PROJECTS;
+
+const requestedBrowser = process.env.E2E_BROWSER || 'chromium';
+if (!Object.hasOwn(BROWSER_PROJECTS, requestedBrowser)) {
+  throw new Error(
+    `E2E_BROWSER=${requestedBrowser} neznám — vyber z: ${Object.keys(BROWSER_PROJECTS).join(', ')}`,
+  );
+}
+const E2E_BROWSER = requestedBrowser as E2eBrowser;
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
@@ -28,7 +67,7 @@ export default defineConfig({
     baseURL: `http://localhost:${APP_PORT}`,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [BROWSER_PROJECTS[E2E_BROWSER]],
   webServer: [
     {
       command: 'node e2e/t212-mock-server.mjs',
