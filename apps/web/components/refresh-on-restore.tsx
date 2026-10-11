@@ -25,6 +25,12 @@ import { cameFromHistoryCache, type NavigationInfo } from '@/lib/restored-page';
  * serverová část pošle na přihlášení, místo aby mu prohlížeč ukázal poslední
  * obrazovku s daty.
  */
+/** Kostra načítání stránky (`components/app-skeleton.tsx`). */
+const SKELETON_SELECTOR = '[data-app-skeleton]';
+
+/** Jak dlouho po kroku v historii počkat, než je jasné, co směrovač ukázal (ms). */
+const SETTLE_MS = 100;
+
 export function RefreshOnRestore() {
   const router = useRouter();
   useEffect(() => {
@@ -37,20 +43,30 @@ export function RefreshOnRestore() {
     // obnovení spuštěné dřív jako rozdělanou práci zahodí (změřeno: dotaz na
     // server odešel, čerstvá odpověď přišla a stránka zůstala stará).
     let deferred: ReturnType<typeof setTimeout> | undefined;
-    const refreshAfterEvent = () => {
+    // stránka rozmrazená z bfcache: nic se nenačítalo, efekty neběží znovu
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
       clearTimeout(deferred);
       deferred = setTimeout(() => router.refresh(), 0);
     };
-    // stránka rozmrazená z bfcache: nic se nenačítalo, efekty neběží znovu
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) refreshAfterEvent();
+    // Zpět/Vpřed uvnitř aplikace. Směrovač stránku buď vrátí z paměti (pak je
+    // obnovení potřeba), nebo si pro ni sám dojde na server a mezitím ukáže
+    // kostru načítání — tam by druhý dotaz byl navíc a pral se s dalším
+    // krokem v historii (změřeno ve Firefoxu: zhruba v jednom běhu z osmi
+    // skončil krok Vpřed načtením celého dokumentu). Krátké čekání nechá
+    // směrovač vykreslit, co má, a další krok v historii čekání ruší.
+    const onPopState = () => {
+      clearTimeout(deferred);
+      deferred = setTimeout(() => {
+        if (!document.querySelector(SKELETON_SELECTOR)) router.refresh();
+      }, SETTLE_MS);
     };
     window.addEventListener('pageshow', onPageShow);
-    window.addEventListener('popstate', refreshAfterEvent);
+    window.addEventListener('popstate', onPopState);
     return () => {
       clearTimeout(deferred);
       window.removeEventListener('pageshow', onPageShow);
-      window.removeEventListener('popstate', refreshAfterEvent);
+      window.removeEventListener('popstate', onPopState);
     };
   }, [router]);
   return null;
