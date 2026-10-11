@@ -23,7 +23,7 @@ export function settingsOkText(code: keyof typeof OK_LABELS): string {
   return OK_LABELS[code];
 }
 
-const CHYBA_LABELS: Record<string, string> = {
+const ERROR_LABELS: Record<string, string> = {
   heslo: 'Nové heslo musí mít aspoň 10 znaků.',
   'heslo-bezne': `${COMMON_PASSWORD_MESSAGE} Heslo se nezměnilo.`,
   'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
@@ -49,7 +49,7 @@ const CHYBA_LABELS: Record<string, string> = {
 
 /** Text chyby podle kódu z adresy — pro hlášku přímo u pole (stránka účtu). */
 export function settingsErrorText(code: string): string {
-  return CHYBA_LABELS[code] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.';
+  return ERROR_LABELS[code] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.';
 }
 
 export function SettingsToast({

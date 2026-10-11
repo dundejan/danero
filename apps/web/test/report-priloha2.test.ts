@@ -107,23 +107,23 @@ describe('Příloha č. 2: report a XML berou čísla z jednoho zdroje (K3-03)',
     // engine drží skutečný výdaj…
     expect(result.securities.expensesCzk.toFixed(0)).toBe('1000000');
     // …ale do přílohy se smí zapsat nejvýš do výše příjmů
-    expect(p2.rows[0]!.prijmyCzk.toFixed(0)).toBe('200000');
-    expect(p2.rows[0]!.vydajeCzk.toFixed(0)).toBe('200000');
-    expect(p2.rozdilCzk.toFixed(0)).toBe('0');
+    expect(p2.rows[0]!.incomeCzk.toFixed(0)).toBe('200000');
+    expect(p2.rows[0]!.expensesCzk.toFixed(0)).toBe('200000');
+    expect(p2.differenceCzk.toFixed(0)).toBe('0');
   });
 
   it('XML a průvodce v reportu ukazují tutéž dvojici čísel', () => {
     const p2 = priloha2(result);
-    const { xml } = generateDpfdp7({ year: 2025, result, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year: 2025, result, personal: {}, taxation: 'GENERAL' });
     const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
     const dp = (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
       .DPFDP7;
     const vetaV = dp.VetaV as Record<string, string>;
-    expect(vetaV.kc_prij10).toBe(p2.prijmyCzk.toFixed(0));
-    expect(vetaV.kc_vyd10).toBe(p2.vydajeCzk.toFixed(0));
+    expect(vetaV.kc_prij10).toBe(p2.incomeCzk.toFixed(0));
+    expect(vetaV.kc_vyd10).toBe(p2.expensesCzk.toFixed(0));
 
     const pruvodce = guide(render(txs, 2025));
-    expect(pruvodce).toContain(czk(p2.vydajeCzk));
+    expect(pruvodce).toContain(czk(p2.expensesCzk));
     // nezastropovaný výdaj z enginu se do průvodce dostat NESMÍ
     expect(pruvodce).not.toContain(czk(result.securities.expensesCzk));
   });
@@ -154,8 +154,8 @@ describe('§ 8: průvodce a XML nesou stejnou korunu (L5-05, L5-01)', () => {
   ]);
   const result = analyzeTaxYear(engineInputForUser(txs, PROFILE, 2025));
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
-  const dpFor = (varianta: 'GENERAL' | 'SEPARATE_16A') => {
-    const { xml } = generateDpfdp7({ year: 2025, result, personal: {}, varianta });
+  const dpFor = (taxation: 'GENERAL' | 'SEPARATE_16A') => {
+    const { xml } = generateDpfdp7({ year: 2025, result, personal: {}, taxation });
     return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, Record<string, string>> } })
       .Pisemnost.DPFDP7;
   };
@@ -431,11 +431,11 @@ describe('Průvodce ukazuje čísla i pro rok bez XML (K3-05)', () => {
     const txs = lossyTxs(2026);
     const result = analyzeTaxYear(engineInputForUser(txs, PROFILE, 2026));
     const p2 = priloha2(result);
-    expect(p2.prijmyCzk.gt(0)).toBe(true);
+    expect(p2.incomeCzk.gt(0)).toBe(true);
 
     const pruvodce = guide(render(txs, 2026)).replace(/\u00a0/g, ' ');
-    expect(pruvodce).toContain(czk(p2.prijmyCzk).replace(/\u00a0/g, ' '));
-    expect(pruvodce).toContain(czk(p2.vydajeCzk).replace(/\u00a0/g, ' '));
+    expect(pruvodce).toContain(czk(p2.incomeCzk).replace(/\u00a0/g, ' '));
+    expect(pruvodce).toContain(czk(p2.expensesCzk).replace(/\u00a0/g, ' '));
     // a musí přiznat, ze kterých let čísla ŘÁDKŮ jsou — výčet jde ze seznamu
     // podporovaných roků, v textu se neopisuje (L5-03)
     expect(pruvodce).toContain(`z tiskopisu ${yearList(EPO_SUPPORTED_YEARS)}`);

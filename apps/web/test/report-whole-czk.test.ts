@@ -135,15 +135,15 @@ describe('rozpad daně ukazuje čísla tiskopisu (R-14h)', () => {
     expect(result.securities.base10Czk.toFixed(2)).toBe('8551.60');
     expect(result.crypto.base10Czk.toFixed(2)).toBe('20000.60');
     expect(result.dividends.base8Czk.toFixed(2)).toBe('6552.66');
-    expect(p2.rows[0]!.rozdilCzk.toFixed(0)).toBe('8551');
-    expect(p2.rozdilCzk.toFixed(0)).toBe('28552');
+    expect(p2.rows[0]!.differenceCzk.toFixed(0)).toBe('8551');
+    expect(p2.differenceCzk.toFixed(0)).toBe('28552');
   });
 
   it('report: řádky rozpadu se rovnají řádkům Přílohy č. 2 a ř. 38', () => {
     const html = reportHtml(TXS, PROFILE, YEAR);
-    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).toContain(czk(p2.rows[0]!.rozdilCzk));
-    expect(rowText(html, BREAKDOWN, 'Kryptoaktiva')).toContain(czk(p2.rows[1]!.rozdilCzk));
-    expect(rowText(html, BREAKDOWN, 'Základ daně z prodejů')).toContain(czk(p2.rozdilCzk));
+    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).toContain(czk(p2.rows[0]!.differenceCzk));
+    expect(rowText(html, BREAKDOWN, 'Kryptoaktiva')).toContain(czk(p2.rows[1]!.differenceCzk));
+    expect(rowText(html, BREAKDOWN, 'Základ daně z prodejů')).toContain(czk(p2.differenceCzk));
     expect(rowText(html, BREAKDOWN, 'Základ daně z dividend a úroků')).toContain(
       czk(base8.generalCzk),
     );
@@ -156,7 +156,7 @@ describe('rozpad daně ukazuje čísla tiskopisu (R-14h)', () => {
     const table = html.slice(html.indexOf('Srovnání variant výpočtu daně'));
     const activeRow = table.split('<tr').find((chunk) => chunk.includes('používáš'));
     expect(activeRow).toBeDefined();
-    expect(activeRow!.replace(/<[^>]+>/g, ' ')).toContain(czk(p2.rozdilCzk));
+    expect(activeRow!.replace(/<[^>]+>/g, ' ')).toContain(czk(p2.differenceCzk));
   });
 
   it('přehled: základ z prodejů i z dividend jsou čísla tiskopisu', () => {
@@ -172,10 +172,10 @@ describe('rozpad daně ukazuje čísla tiskopisu (R-14h)', () => {
       }),
     );
     const sales = rowText(html, BREAKDOWN, 'Základ daně z prodejů');
-    expect(sales).toContain(czk(p2.rozdilCzk));
+    expect(sales).toContain(czk(p2.differenceCzk));
     // i rozpis po druzích v nápovědě řádku
-    expect(sales).toContain(`cenné papíry ${czk(p2.rows[0]!.rozdilCzk)}`);
-    expect(sales).toContain(`kryptoaktiva ${czk(p2.rows[1]!.rozdilCzk)}`);
+    expect(sales).toContain(`cenné papíry ${czk(p2.rows[0]!.differenceCzk)}`);
+    expect(sales).toContain(`kryptoaktiva ${czk(p2.rows[1]!.differenceCzk)}`);
     expect(rowText(html, BREAKDOWN, 'Základ daně z dividend a úroků')).toContain(
       czk(base8.generalCzk),
     );
@@ -195,14 +195,14 @@ describe('tržby v rozpadu daně sedí na Příjmy v Příloze č. 2 (R-14h)', (
 
   it('sonda: matematické zaokrouhlení tržby se od přílohy liší', () => {
     expect(result.securities.totalGrossProceedsCzk.toFixed(2)).toBe('108601.60');
-    expect(p2.rows[0]!.prijmyCzk.toFixed(0)).toBe('108601');
-    expect(czk(result.securities.totalGrossProceedsCzk)).not.toBe(czk(p2.rows[0]!.prijmyCzk));
+    expect(p2.rows[0]!.incomeCzk.toFixed(0)).toBe('108601');
+    expect(czk(result.securities.totalGrossProceedsCzk)).not.toBe(czk(p2.rows[0]!.incomeCzk));
   });
 
   it('report: „tržby“ u cenných papírů i krypta jsou Příjmy z přílohy', () => {
     const html = reportHtml(TXS, PROFILE, YEAR);
-    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).toContain(`tržby ${czk(p2.rows[0]!.prijmyCzk)}`);
-    expect(rowText(html, BREAKDOWN, 'Kryptoaktiva')).toContain(`tržby ${czk(p2.rows[1]!.prijmyCzk)}`);
+    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).toContain(`tržby ${czk(p2.rows[0]!.incomeCzk)}`);
+    expect(rowText(html, BREAKDOWN, 'Kryptoaktiva')).toContain(`tržby ${czk(p2.rows[1]!.incomeCzk)}`);
     // Matematicky zaokrouhlená tržba v rozpadu nezůstala. (V tabulce prodejů
     // stojí dál u jednotlivého prodeje — to je částka z výpisu brokera, ne
     // řádek tiskopisu, a úhrn přílohy se po prodejích rozdělit nedá.)
@@ -222,7 +222,7 @@ describe('tržby v rozpadu daně sedí na Příjmy v Příloze č. 2 (R-14h)', (
     const whole = wholeProceedsCzk(mixed);
     // 108 601 (příloha) + 20 000 (osvobozeno) — ne 128 602 z 128 602,00
     expect(whole.securitiesCzk.toFixed(0)).toBe('128601');
-    expect(whole.securitiesCzk.sub(priloha2(mixed).rows[0]!.prijmyCzk).toFixed(0)).toBe('20000');
+    expect(whole.securitiesCzk.sub(priloha2(mixed).rows[0]!.incomeCzk).toFixed(0)).toBe('20000');
     expect(rowText(reportHtml(txs, PROFILE, YEAR), BREAKDOWN, 'Cenné papíry')).toContain(
       `tržby ${czk(whole.securitiesCzk)}`,
     );
@@ -249,7 +249,7 @@ describe('demo: základ z prodejů je v reportu jedno číslo (R-14h)', () => {
 
   it.each([2024, 2025, 2026])('rok %i', (year) => {
     const result = analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates));
-    const whole: Money = priloha2(result).rozdilCzk;
+    const whole: Money = priloha2(result).differenceCzk;
     const html = reportHtml(txs, profile, year, { dailyRates, demo: true, basePath: '/demo' });
     expect(rowText(html, BREAKDOWN, 'Základ daně z prodejů')).toContain(czk(whole));
     const table = html.slice(html.indexOf('Srovnání variant výpočtu daně'));
@@ -262,7 +262,7 @@ describe('demo: základ z prodejů je v reportu jedno číslo (R-14h)', () => {
     if (result.derivatives.items.length === 0) return;
     const html = reportHtml(txs, profile, year, { dailyRates, demo: true, basePath: '/demo' });
     expect(rowText(html, BREAKDOWN, 'Deriváty')).toContain(
-      `plnění ${czk(priloha2(result).rows[2]!.prijmyCzk)}`,
+      `plnění ${czk(priloha2(result).rows[2]!.incomeCzk)}`,
     );
   });
 });

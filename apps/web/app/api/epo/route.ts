@@ -6,7 +6,7 @@ import { OPERATOR } from '@/lib/contact';
 import {
   EpoInputError,
   generateDpfdp7,
-  type EpoDapTyp,
+  type EpoFilingType,
   type EpoPersonalData,
 } from '@/lib/epo';
 import { xmlBlockedByFxMix } from '@/lib/fx-method';
@@ -25,9 +25,9 @@ const field = (form: FormData, name: string): string | undefined => {
 };
 
 /** Číselník typů přiznání — jediný seznam pro validaci vstupu. */
-const DAP_TYPY: readonly EpoDapTyp[] = ['B', 'O', 'D', 'E'];
+const FILING_TYPES: readonly EpoFilingType[] = ['B', 'O', 'D', 'E'];
 
-const chyba = (message: string, status = 400): Response =>
+const errorResponse = (message: string, status = 400): Response =>
   new Response(message, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
 /**
@@ -45,22 +45,22 @@ export async function POST(request: Request): Promise<Response> {
   // `integer`, takže `rok: -1e21` by místo hlášky shodil dotaz, a záporný rok
   // by si tam zapsal fixaci nesmyslného období (C-27).
   if (!Number.isInteger(year) || year < 1900 || year > 2999) {
-    return chyba('Chybí platný rok exportu.');
+    return errorResponse('Chybí platný rok exportu.');
   }
 
-  const variantaRaw = field(form, 'varianta');
-  const varianta =
-    variantaRaw === 'GENERAL' || variantaRaw === 'SEPARATE_16A' ? variantaRaw : undefined;
+  const taxationRaw = field(form, 'varianta');
+  const taxation =
+    taxationRaw === 'GENERAL' || taxationRaw === 'SEPARATE_16A' ? taxationRaw : undefined;
 
   const db = await getDb();
   const { checkRateLimit } = await import('@/lib/rate-limit');
   if (!(await checkRateLimit(db, `epo:${session.user.id}`, { max: 10, windowMs: 60_000 }))) {
-    return chyba('Příliš mnoho exportů za sebou — počkej minutu.', 429);
+    return errorResponse('Příliš mnoho exportů za sebou — počkej minutu.', 429);
   }
   const profile = await getProfile(db, session.user.id);
-  if (!profile) return chyba('Nejdřív vyplň daňový profil v Nastavení.');
+  if (!profile) return errorResponse('Nejdřív vyplň daňový profil v Nastavení.');
   const txs = await loadTransactions(db, session.user.id);
-  if (txs.length === 0) return chyba('Zatím nemáš žádné transakce — nejdřív importuj data.');
+  if (txs.length === 0) return errorResponse('Zatím nemáš žádné transakce — nejdřív importuj data.');
 
   // stejný výpočet jako /report: denní kurzy ČNB, když jsou k dispozici (R-06b)
   const currentYear = currentTaxYear();
@@ -71,43 +71,43 @@ export async function POST(request: Request): Promise<Response> {
   const fxMix = xmlBlockedByFxMix(
     analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates)),
   );
-  if (fxMix) return chyba(fxMix, 409);
+  if (fxMix) return errorResponse(fxMix, 409);
   // R-05c: XML je podklad pro podání → konfigurace se pro ten rok zafixuje
   const pinnedProfile = await pinTaxYear(db, profile, year, currentYear);
   const result = analyzeTaxYear(engineInputForUser(txs, pinnedProfile, year, dailyRates));
 
   const personal: EpoPersonalData = {
-    dic: field(form, 'dic'),
-    rodneCislo: field(form, 'rodneCislo'),
-    prijmeni: field(form, 'prijmeni'),
-    jmeno: field(form, 'jmeno'),
-    ulice: field(form, 'ulice'),
-    cisloPopisne: field(form, 'cisloPopisne'),
-    obec: field(form, 'obec'),
-    psc: field(form, 'psc'),
-    ufoCil: field(form, 'ufoCil'),
-    pracUfo: field(form, 'pracUfo'),
+    taxId: field(form, 'dic'),
+    birthNumber: field(form, 'rodneCislo'),
+    lastName: field(form, 'prijmeni'),
+    firstName: field(form, 'jmeno'),
+    street: field(form, 'ulice'),
+    houseNumber: field(form, 'cisloPopisne'),
+    city: field(form, 'obec'),
+    postalCode: field(form, 'psc'),
+    taxOfficeCode: field(form, 'ufoCil'),
+    localOfficeCode: field(form, 'pracUfo'),
     email: field(form, 'email'),
   };
 
   // K3-07: typ přiznání (řádné / opravné / dodatečné) — neznámou hodnotu
   // nedosazujeme tiše na „řádné", to je právě ta záměna, kterou nález popisuje.
-  const typRaw = field(form, 'typ-priznani');
-  if (typRaw !== undefined && !DAP_TYPY.includes(typRaw as EpoDapTyp)) {
-    return chyba('Neznámý typ přiznání.');
+  const filingTypeRaw = field(form, 'typ-priznani');
+  if (filingTypeRaw !== undefined && !FILING_TYPES.includes(filingTypeRaw as EpoFilingType)) {
+    return errorResponse('Neznámý typ přiznání.');
   }
-  const dapTyp = (typRaw as EpoDapTyp | undefined) ?? 'B';
-  const zjistenoDne = field(form, 'datum-zjisteni');
-  const dodatecne = zjistenoDne
+  const filingType = (filingTypeRaw as EpoFilingType | undefined) ?? 'B';
+  const discoveredOn = field(form, 'datum-zjisteni');
+  const supplementary = discoveredOn
     ? {
-        zjistenoDne,
-        posledniZnamaDanCzk: field(form, 'posledni-dan'),
-        posledniZnamaZtrataCzk: field(form, 'posledni-ztrata'),
+        discoveredOn,
+        lastKnownTaxCzk: field(form, 'posledni-dan'),
+        lastKnownLossCzk: field(form, 'posledni-ztrata'),
       }
     : undefined;
 
   try {
-    const { xml } = generateDpfdp7({ year, result, personal, varianta, dapTyp, dodatecne });
+    const { xml } = generateDpfdp7({ year, result, personal, taxation, filingType, supplementary });
     return new Response(xml, {
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
@@ -122,7 +122,7 @@ export async function POST(request: Request): Promise<Response> {
     // podesáté a dostane totéž.
     if (error instanceof EpoInputError) {
       logEvent('info', 'epo.export_rejected', { userId: session.user.id, year, error: error.message });
-      return chyba(error.message, 400);
+      return errorResponse(error.message, 400);
     }
     // Interní hláška uživateli nepomůže a může nést obsah dotazu i s parametry
     // (Drizzle je dává do message) — do odpovědi jde jen česká věta, detail do logu.
@@ -130,7 +130,7 @@ export async function POST(request: Request): Promise<Response> {
     // Adresa se bere z lib/contact.ts, ať se neslibuje schránka, která
     // neexistuje: `podpora@danero.cz` tu stálo natvrdo, ale kořenová doména
     // nemá MX záznam, takže by taková zpráva nikam nedošla.
-    return chyba(
+    return errorResponse(
       `Export se nepodařil. Zkus to prosím znovu, případně napiš na ${OPERATOR.email}.`,
       500,
     );

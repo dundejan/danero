@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { EpoExportForm } from '@/components/epo-export-form';
-import { DODATECNE_DAP_TYPY } from '@/lib/epo';
+import { SUPPLEMENTARY_FILING_TYPES } from '@/lib/epo';
 import { EPO_FORM_ID, epoFieldError, isSupplementaryFiling } from '@/lib/epo-form';
 
 /**
@@ -88,7 +88,7 @@ describe('dodatečné přiznání vyžaduje den zjištění důvodů (R4-07)', (
   it('povinné je u týchž typů, u kterých ho vyžaduje generátor XML', () => {
     for (const type of ['B', 'O', 'D', 'E']) {
       expect(isSupplementaryFiling(type), type).toBe(
-        (DODATECNE_DAP_TYPY as readonly string[]).includes(type),
+        (SUPPLEMENTARY_FILING_TYPES as readonly string[]).includes(type),
       );
     }
   });

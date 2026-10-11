@@ -50,7 +50,7 @@ import { today as todayInPrague } from '@/lib/clock';
 import {
   creditIncomeByCountry,
   EPO_SUPPORTED_YEARS,
-  prijmyZeStatuProZapocet,
+  creditIncomeFromCountry,
   attachment4Lines,
 } from '@/lib/epo';
 import { EPO_FORM_ID } from '@/lib/epo-form';
@@ -1116,9 +1116,9 @@ export function ReportView({
                                 druh D — prodej cenných papírů
                               </span>
                             </Td>
-                            <Td align="right">{czk(p2.rows[0]!.prijmyCzk)}</Td>
-                            <Td align="right">{czk(p2.rows[0]!.vydajeCzk)}</Td>
-                            <Td align="right">{czk(p2.rows[0]!.rozdilCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.incomeCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.expensesCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.differenceCzk)}</Td>
                           </Tr>
                           {hasCrypto && (
                             <Tr>
@@ -1128,9 +1128,9 @@ export function ReportView({
                                   druh C — prodej movitých věcí
                                 </span>
                               </Td>
-                              <Td align="right">{czk(p2.rows[1]!.prijmyCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[1]!.vydajeCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[1]!.rozdilCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.incomeCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.expensesCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.differenceCzk)}</Td>
                             </Tr>
                           )}
                           {hasDerivatives && (
@@ -1141,27 +1141,27 @@ export function ReportView({
                                   druh F — jiné ostatní příjmy
                                 </span>
                               </Td>
-                              <Td align="right">{czk(p2.rows[2]!.prijmyCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[2]!.vydajeCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[2]!.rozdilCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.incomeCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.expensesCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.differenceCzk)}</Td>
                             </Tr>
                           )}
                           <Tr className="font-semibold">
                             <Td>Součty přílohy</Td>
                             <Td align="right">
-                              {czk(p2.prijmyCzk)}
+                              {czk(p2.incomeCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 207
                               </span>
                             </Td>
                             <Td align="right">
-                              {czk(p2.vydajeCzk)}
+                              {czk(p2.expensesCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 208
                               </span>
                             </Td>
                             <Td align="right">
-                              {czk(p2.rozdilCzk)}
+                              {czk(p2.differenceCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 209
                               </span>
@@ -1179,7 +1179,7 @@ export function ReportView({
                       strong
                       line="ř. 40"
                       label="Rozdíl z ř. 209 Přílohy č. 2"
-                      value={czk(p2.rozdilCzk)}
+                      value={czk(p2.differenceCzk)}
                     />
                   </Group>
                   {lossBeyondIncome.gt(0) && (
@@ -1338,7 +1338,7 @@ export function ReportView({
                                     <Td align="right" className="whitespace-nowrap">
                                       {czk(
                                         creditIncome.get(country) ??
-                                          prijmyZeStatuProZapocet(country, data, result.options),
+                                          creditIncomeFromCountry(country, data, result.options),
                                       )}
                                     </Td>
                                     <Td align="right" className="whitespace-nowrap">
