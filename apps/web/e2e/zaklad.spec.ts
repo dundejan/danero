@@ -44,8 +44,9 @@ test('registrace → profil → import → přehled → simulátor → report', 
   const notifications = page
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Poslední upozornění' }) });
+  // jméno limitu je stejné jako v seznamu limitů výš (`lib/limit-names.ts`)
   await expect(
-    notifications.getByText('Prolomen limit 100 000 Kč pro osvobození prodejů'),
+    notifications.getByText(/Zrušeno osvobození prodejů cenných papírů \(100\s000\sKč\)/),
   ).toBeVisible();
 
   // ── simulátor: prodej 10 ks zbývajících AAPL ────────────────────────────

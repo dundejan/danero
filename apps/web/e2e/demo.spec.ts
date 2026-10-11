@@ -74,9 +74,12 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
   // demo upozornění z hlídače (prolomený limit) — jen v sekci upozornění: týž
-  // začátek věty nese i varování enginu v „Kontrolách výpočtu“
+  // titulek nese i varování enginu v „Kontrolách výpočtu“. Limit se jmenuje
+  // stejně jako v seznamu limitů (`lib/limit-names.ts`).
   await expect(
-    section(page, 'Poslední upozornění').getByText(/Prolomen limit 50.*paušální/),
+    section(page, 'Poslední upozornění').getByText(
+      /Prolomen limit paušální daně \(50\s000\sKč\)/,
+    ),
   ).toBeVisible();
 
   // rok-switcher: přepnutí na loňsko přes query param

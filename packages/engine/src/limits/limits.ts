@@ -246,10 +246,14 @@ export function computeLimits(
     const advancesPart = advance
       ? `Zaplacené zálohy na daň (${czkText(d(advance.monthlyTaxCzk))} měsíčně z paušální zálohy ${czkText(d(advance.monthlyTotalCzk))}, 1. pásmo) se do ní započtou, takže doplatek daně vychází orientačně na ${czkText(breachImpact.additionalTaxCzk)}. Počítáme s ${FLAT_TAX_ADVANCE_MONTHS} měsíci v paušálním režimu — pokud jsi do něj vstoupil nebo z něj vystoupil během roku, zaplatil jsi záloh míň a doplatek bude vyšší o ${czkText(d(advance.monthlyTaxCzk))} za každý měsíc mimo režim.${surchargePart}`
       : `Zálohy na daň za tento rok v konfiguraci nemáme, doplatek daně proto vyčíslujeme bez jejich započtení.`;
+    // První věta je v aplikaci titulkem kontroly a stojí hned pod seznamem
+    // limitů — limit se proto jmenuje stejně jako tam („Limit paušální daně“,
+    // částka v závorce). Engine o názvech ve webu neví; shodu drží test
+    // `apps/web/test/notification-names.test.ts`. Odkaz na § 7a zůstává ve větě.
     warnings.add(
       'FLAT_TAX_BROKEN',
       'WARNING',
-      `Prolomen limit ${czkText(d(config.limits.flatTaxOtherIncome))} pro daň rovnou paušální dani (§ 7a): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}. Vzniká povinnost podat přiznání; v paušálním režimu zůstáváš. Daň z investičních příjmů (§ 8 + § 10) vychází na ${czkText(breachImpact.taxCzk)}. ${advancesPart} Nezapočítali jsme daň z podnikání (§ 7), kterou Danero nevidí. Navíc vzniká povinnost podat přehledy ČSSZ a ZP a doplatit pojistné ze skutečných příjmů — to spočítat neumíme, protože neznáme tvůj základ z § 7.`,
+      `Prolomen limit paušální daně (${czkText(d(config.limits.flatTaxOtherIncome))}): zdanitelné příjmy § 8–10 činí ${czkText(sideIncome)}, takže daň za tento rok už není rovna paušální dani (§ 7a). Vzniká povinnost podat přiznání; v paušálním režimu zůstáváš. Daň z investičních příjmů (§ 8 + § 10) vychází na ${czkText(breachImpact.taxCzk)}. ${advancesPart} Nezapočítali jsme daň z podnikání (§ 7), kterou Danero nevidí. Navíc vzniká povinnost podat přehledy ČSSZ a ZP a doplatit pojistné ze skutečných příjmů — to spočítat neumíme, protože neznáme tvůj základ z § 7.`,
       {
         usedCzk: sideIncome.toFixed(2),
         taxCzk: breachImpact.taxCzk.toFixed(2),
