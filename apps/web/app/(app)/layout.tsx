@@ -1,4 +1,5 @@
 import { NavRail, NavTabBar } from '@/components/nav-rail';
+import { RefreshOnRestore } from '@/components/refresh-on-restore';
 import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { TextLink } from '@/components/ui/link';
 import { SOURCE_URL } from '@/lib/legal';
@@ -13,6 +14,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   return (
     <div className="flex min-h-dvh bg-surface">
+      {/* Zpět/Vpřed umí ukázat stránku z paměti prohlížeče — pak se stav
+          dotáhne ze serveru (nic nevykresluje). */}
+      <RefreshOnRestore />
       {/* a11y: skip-link — první fokusovatelný prvek, viditelný jen s fokusem */}
       <a
         href="#obsah"

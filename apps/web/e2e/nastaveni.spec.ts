@@ -161,3 +161,198 @@ test('nastavení: změna, kterou člověk udělá před hydratací, se uloží',
   await expect(matching).toHaveValue('LIFO');
   await expect(income).toHaveValue('4321');
 });
+
+/**
+ * Formulář nese ve skrytém poli stav, se kterým byl vykreslen, a server
+ * zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`). Skrytý
+ * stav proto musí říkat přesně to, co by neupravený formulář odeslal — jinak
+ * by se nedotčené pole tvářilo jako změněné.
+ */
+async function expectFormMatchesBaseline(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.locator('form[data-auto-submit="ready"]').evaluate((form: HTMLFormElement) => {
+        const sorted = (query: string): string =>
+          [...new URLSearchParams(query)].map((pair) => pair.join('=')).sort().join('&');
+        const data = new FormData(form);
+        const shown = [...data].filter(
+          (pair): pair is [string, string] =>
+            typeof pair[1] === 'string' &&
+            pair[0] !== 'puvodni-stav' &&
+            pair[0] !== 'zmenene-pole' &&
+            !pair[0].startsWith('$ACTION'),
+        );
+        return sorted(new URLSearchParams(shown).toString()) === sorted(String(data.get('puvodni-stav')));
+      }),
+    )
+    .toBe(true);
+}
+
+const savedToast = (page: Page) => page.getByRole('status').filter({ hasText: 'Uloženo' });
+
+test('nastavení: panel se starým stavem nepřepíše, co se mezitím uložilo jinde', async ({
+  page,
+  browser,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Starý panel', email: 'stary-panel@danero.cz' });
+  // druhé zařízení téhož účtu — otevřené dřív, než se cokoli změní
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const stale = await elsewhere.newPage();
+
+  // ── daňový profil ───────────────────────────────────────────────────────
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await expectFormMatchesBaseline(page);
+  await stale.goto('/nastaveni');
+  await autoSaveForm(stale);
+
+  await page.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(savedToast(page)).toBeVisible();
+
+  // druhý panel pořád ukazuje FIFO a mění JINÉ pole
+  await expect(stale.getByLabel('Párování prodejů')).toHaveValue('FIFO');
+  await stale.getByLabel('Měnové kurzy').selectOption('CNB_DAILY');
+  await expect(savedToast(stale)).toBeVisible();
+  // po uložení ukazuje stav ze serveru, včetně cizí změny
+  await expect(stale.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+  await expect(stale.getByLabel('Měnové kurzy')).toHaveValue('CNB_DAILY');
+  await expectFormMatchesBaseline(stale);
+
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+  await expect(page.getByLabel('Měnové kurzy')).toHaveValue('CNB_DAILY');
+
+  // ── upozornění ──────────────────────────────────────────────────────────
+  await page.goto('/nastaveni/upozorneni');
+  await autoSaveForm(page);
+  await expectFormMatchesBaseline(page);
+  await stale.goto('/nastaveni/upozorneni');
+  await autoSaveForm(stale);
+
+  await page.getByLabel('Souhrn', { exact: true }).selectOption('WEEKLY');
+  await expect(savedToast(page)).toBeVisible();
+  await expect(stale.getByLabel('Souhrn', { exact: true })).toHaveValue('DAILY');
+  await stale.getByText('Naléhavé posílat hned').click();
+  await expect(savedToast(stale)).toBeVisible();
+  await expect(stale.getByLabel('Souhrn', { exact: true })).toHaveValue('WEEKLY');
+  await expectFormMatchesBaseline(stale);
+
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(page.getByLabel('Souhrn', { exact: true })).toHaveValue('WEEKLY');
+  await expect(page.getByRole('switch', { name: 'Naléhavé posílat hned' })).not.toBeChecked();
+  await elsewhere.close();
+});
+
+test('nastavení: změny rychle po sobě se uloží všechny, i ta vrácená', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Rychlé změny', email: 'rychle-zmeny@danero.cz' });
+
+  // ── dvě nabídky hned po sobě: druhá se dřív ztratila, protože dokončené
+  //    uložení formulář vykreslilo znovu ze serveru ─────────────────────────
+  // Každá změna je vlastní uložení; další krok smí přijít, až doběhnou
+  // všechna — obnovení stránky by rozdělané uložení utnulo.
+  let finishedSaves = 0;
+  page.on('requestfinished', (request) => {
+    if (request.method() === 'POST') finishedSaves += 1;
+  });
+  const savesFinished = (count: number) =>
+    expect.poll(() => finishedSaves, { message: `čekám na ${count} dokončených uložení` }).toBe(count);
+
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  // druhá změna přijde dřív, než první uložení doběhne
+  await page.evaluate(() => {
+    for (const [id, value] of [
+      ['parovani', 'LIFO'],
+      ['kurzy', 'CNB_DAILY'],
+    ] as const) {
+      const select = document.getElementById(id) as HTMLSelectElement;
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+  await savesFinished(2);
+  await expect(page.getByLabel('Měnové kurzy')).toHaveValue('CNB_DAILY');
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+
+  // ── přepínač zapnutý a hned vypnutý: druhé odeslání nese totéž, co stálo
+  //    ve formuláři při vykreslení — i tak se musí zapsat ──────────────────
+  const businessAssets = page.getByRole('switch', { name: 'Cenné papíry v obchodním majetku' });
+  await autoSaveForm(page);
+  await page.evaluate(() => {
+    const input = document.getElementById('obchodni-majetek') as HTMLInputElement;
+    input.click();
+    input.click();
+  });
+  await savesFinished(4);
+  await expect(businessAssets).not.toBeChecked();
+
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+  await expect(page.getByLabel('Měnové kurzy')).toHaveValue('CNB_DAILY');
+  await expect(businessAssets).not.toBeChecked();
+
+  // ── tři políčka za sebou v upozornění ───────────────────────────────────
+  await page.goto('/nastaveni/upozorneni');
+  await autoSaveForm(page);
+  const threshold = (percent: number) =>
+    page.locator(`input[name="hranice-limitu"][value="${percent}"]`);
+  await page.evaluate(() => {
+    for (const percent of [50, 75, 90]) {
+      document
+        .querySelector<HTMLInputElement>(`input[name="hranice-limitu"][value="${percent}"]`)!
+        .click();
+    }
+  });
+  await savesFinished(7);
+  for (const percent of [50, 60, 75, 85, 90, 100]) await expect(threshold(percent)).toBeChecked();
+  await page.reload();
+  await autoSaveForm(page);
+  for (const percent of [50, 60, 75, 85, 90, 100]) await expect(threshold(percent)).toBeChecked();
+});
+
+/**
+ * Zpět umí ukázat stránku z paměti prohlížeče — a tedy starý stav. Rozložení
+ * aplikace ji v tom případě obnoví ze serveru (`RefreshOnRestore`). Cesty jsou
+ * dvě: dokument z mezipaměti při procházení historie (tu test prochází
+ * doopravdy) a rozmrazení z bfcache, které se ve vývojovém režimu nestane —
+ * proto se jeho událost vysílá ručně.
+ */
+test('nastavení: návrat zpět ukáže stav ze serveru, ne z paměti prohlížeče', async ({
+  page,
+  browser,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Návrat zpět', email: 'navrat-zpet@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('FIFO');
+  // plné načtení jiné stránky, ne přechod uvnitř aplikace
+  await page.goto('/soukromi');
+
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const other = await elsewhere.newPage();
+  await other.goto('/nastaveni');
+  await autoSaveForm(other);
+  await other.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(savedToast(other)).toBeVisible();
+
+  const saves = watchSaves(page);
+  await page.goBack();
+  await autoSaveForm(page);
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
+  await expectFormMatchesBaseline(page);
+
+  // bfcache: stránka se rozmrazí bez načítání, přijde jen `pageshow`
+  await other.getByLabel('Párování prodejů').selectOption('MAX_PROFIT');
+  await expect(savedToast(other)).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+  await expect(page.getByLabel('Párování prodejů')).toHaveValue('MAX_PROFIT');
+  await expectFormMatchesBaseline(page);
+  // obnovení nic neukládá
+  expect(saves).toEqual([]);
+  await elsewhere.close();
+});
