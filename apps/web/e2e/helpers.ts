@@ -163,6 +163,42 @@ export async function hydrated(locator: Locator): Promise<Locator> {
 }
 
 /**
+ * Počká, až formulář s auto-save začne poslouchat, a vrátí ho.
+ *
+ * Auto-save odesílá skript. Změnu, kterou do pole před hydratací udělá
+ * ČLOVĚK, `AutoSubmit` po hydrataci dožene — pozná ji podle důvěryhodných
+ * událostí (`lib/early-input.ts`). Změna vyslaná skriptem (`selectOption`,
+ * `fill`) důvěryhodná není: vypadá stejně jako hodnota, kterou do pole vrátil
+ * prohlížeč, a ta se schválně neodesílá, pole se vrátí na stav ze serveru.
+ * Test proto čeká na signál aplikace (`data-auto-submit="ready"`), ne na
+ * štěstí. Skutečný vstup před hydratací hlídá `nastaveni.spec.ts`.
+ */
+export async function autoSaveForm(page: Page): Promise<Locator> {
+  const form = page.locator('form[data-auto-submit="ready"]');
+  await expect(form, 'formulář s auto-save ještě neposlouchá').toHaveCount(1);
+  return form;
+}
+
+/**
+ * Pozdrží všechny skripty stránky — HTML ze serveru je vidět a dá se
+ * ovládat, ale React ještě nenaběhl (pomalé připojení). Vrácená funkce skripty
+ * pustí. Stránku je potřeba načítat s `waitUntil: 'commit'`: událost `load`
+ * na pozdržené skripty čeká.
+ */
+export async function holdScripts(page: Page): Promise<() => void> {
+  let release = (): void => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/*', async (route) => {
+    if (route.request().resourceType() === 'script') await released;
+    // požadavek mohl mezitím zaniknout (stránka odešla jinam)
+    await route.continue().catch(() => {});
+  });
+  return release;
+}
+
+/**
  * Tlačítko „Odhlásit se“, připravené ke klepnutí. Hledá se v celé stránce,
  * ne jen v postranním panelu: v širokém okně smí být na stránce jediné
  * a druhé (viditelné) by tady shodilo strict režim.

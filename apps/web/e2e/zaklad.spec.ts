@@ -1,6 +1,12 @@
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { registerWithProfile, selectLimit, simulateSale, uploadStatement } from './helpers';
+import {
+  autoSaveForm,
+  registerWithProfile,
+  selectLimit,
+  simulateSale,
+  uploadStatement,
+} from './helpers';
 
 /**
  * Hlavní scénář (docs/09, G1): registrace → daňový profil → ruční import
@@ -61,11 +67,15 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.goto('/nastaveni');
   // s existujícím profilem žádná tlačítka Uložit u profilu/metod/upozornění
   await expect(page.getByRole('button', { name: 'Uložit profil' })).toHaveCount(0);
-  // změna selectu metody → uloží se hned, potvrzení toastem (i když volba
-  // předběhne hydrataci stránky — `AutoSubmit` ji po ní dožene)
+  // změna selectu metody → uloží se hned, potvrzení toastem. Volba skriptem
+  // čeká, až auto-save poslouchá: `selectOption` není vstup člověka a změnu
+  // před hydratací by `AutoSubmit` schválně neodeslal (viz nastaveni.spec.ts,
+  // kde se mezera před hydratací zkouší skutečnou myší a klávesnicí)
+  await autoSaveForm(page);
   await page.getByLabel('Párování prodejů').selectOption('LIFO');
   await expect(page.getByText('Uloženo. Výpočty se přepočítají podle nového profilu.')).toBeVisible();
   await page.reload();
+  await autoSaveForm(page);
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
   /**
@@ -79,6 +89,8 @@ test('registrace → profil → import → přehled → simulátor → report', 
       await page.reload();
       await expect(page.getByLabel(popisek)).toHaveValue(hodnota);
     }).toPass({ timeout: 20_000 });
+    // další krok do formuláře zase píše — až auto-save poslouchá
+    await autoSaveForm(page);
   };
 
   // Částku lidé píšou s mezerou mezi tisíci — a Danero ji tak samo tiskne,
@@ -105,11 +117,11 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(returnOfCapital).toBeVisible();
   await expect(returnOfCapital).toContainText('snižuje nabývací cenu');
   // Volba hned po `goto` umí předběhnout hydrataci, kdy `AutoSubmit` ještě
-  // neposlouchá. Do 11. 10. 2026 se taková změna neuložila vůbec (v CI
-  // 8. 10. 2026 na tom spadl pokus i jeho opakování a test celý krok dokola
-  // opakoval); teď ji `AutoSubmit` po hydrataci dožene. Čeká se proto na
-  // potvrzení a až pak se stránka načítá znovu — bez opakování volby.
+  // neposlouchá: v CI 8. 10. 2026 na tom spadl pokus i jeho opakování a test
+  // pak celý krok dokola opakoval. Teď čeká na signál aplikace, že auto-save
+  // poslouchá, volí jednou a čeká na potvrzení — bez opakování volby.
   await page.goto('/nastaveni');
+  await autoSaveForm(page);
   await page.getByLabel('Vratka kapitálu').selectOption('safe');
   await expect(
     page.getByRole('status').filter({ hasText: 'Uloženo. Výpočty se přepočítají' }),
@@ -124,6 +136,7 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByRole('button', { name: 'Uložit' })).toHaveCount(0);
 
   // přepnutí switche upozornění → taky auto-save
+  await autoSaveForm(page);
   await page.getByText('Posílat e-maily').click();
   await expect(page.getByText('Uloženo. E-maily se řídí novým nastavením.')).toBeVisible();
   await page.reload();
