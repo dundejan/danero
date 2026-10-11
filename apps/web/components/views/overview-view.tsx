@@ -583,7 +583,7 @@ export function OverviewView({
           {positions.length > 0 ? (
             <ViewSwitch
               title="Horizont osvobození"
-              info={<HorizonInfo byValue={dots[0]?.weightBasis === 'value'} />}
+              info={<HorizonInfo basis={dots[0]?.weightBasis} />}
               ariaLabel="Zobrazení horizontu osvobození"
               defaultKey="graf"
               views={[

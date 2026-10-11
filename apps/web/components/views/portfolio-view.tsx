@@ -27,6 +27,7 @@ import {
   portfolioAllocation,
   realizedGainsByYear,
 } from '@/lib/charts-data';
+import { exemptToday as exemptTodayOf } from '@/lib/exempt-today';
 import { czDate, czk, money, pct, plural, qty, signedPct } from '@/lib/format';
 import {
   engineInputForUser,
@@ -122,8 +123,6 @@ export function PortfolioView({
   const byIsin = new Map(positions.map((position) => [position.isin, position]));
   // nejbližší konec časového testu napříč portfoliem — číslo nahoře na stránce
   let nextExemption: { isin: string; exemptFrom: string; days: number } | null = null;
-  // hodnota kusů po časovém testu — součet přes oceněné pozice
-  let exemptValueCzk = ZERO;
 
   const explorerRows: ExplorerRow[] = valuation.rows.map((row) => {
     const lots = byIsin.get(row.isin)?.lots ?? [];
@@ -157,7 +156,6 @@ export function PortfolioView({
       row.valueCzk && row.quantity.gt(0)
         ? row.valueCzk.mul(row.exemptQuantity).div(row.quantity)
         : null;
-    if (rowExemptCzk) exemptValueCzk = exemptValueCzk.plus(rowExemptCzk);
 
     const share = shareByIsin.get(row.isin);
     const sortedLots = [...lots].sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate));
@@ -208,34 +206,9 @@ export function PortfolioView({
   // TypeScript přiřazení uvnitř `map` nesleduje — po cyklu si typ vrátíme
   const next = nextExemption as { isin: string; exemptFrom: string; days: number } | null;
 
-  // „Bez daně už dnes“ (R2-10): částka a podíl z oceněných pozic. Pozice bez
-  // ceny se do nich nepočítají a číslo to říká; na počet kusů se nepřechází
-  // nikdy napříč instrumenty (jen u portfolia o jediné pozici bez ceny). Když
-  // nejde ocenit nic, zbývá poctivý počet pozic, které kusy bez daně mají.
-  const exemptPositions = explorerRows.filter((row) => row.exemptQtyText).length;
-  const exemptToday: { value: string; note: string; positive: boolean } | null =
-    explorerRows.length === 0
-      ? null
-      : outlook?.basis === 'value'
-        ? {
-            value: czk(exemptValueCzk),
-            note:
-              outlook.unpricedCount > 0
-                ? `${pct(outlook.points[0]!.exemptShare, 1)} z oceněných pozic · ${outlook.unpricedCount} bez ceny`
-                : `${pct(outlook.points[0]!.exemptShare, 1)} portfolia`,
-            positive: outlook.points[0]!.exemptShare > 0,
-          }
-        : outlook
-          ? {
-              value: pct(outlook.points[0]!.exemptShare, 1),
-              note: 'podle počtu kusů',
-              positive: outlook.points[0]!.exemptShare > 0,
-            }
-          : {
-              value: `${exemptPositions} z ${explorerRows.length} pozic`,
-              note: 'aspoň zčásti · podíl bez cen neznáme',
-              positive: exemptPositions > 0,
-            };
+  // „Bez daně už dnes“: částka z oceněných pozic, a kde by byla nulou jen
+  // proto, že chybí ceny, počet pozic — pravidla jsou v `lib/exempt-today.ts`.
+  const exemptToday = exemptTodayOf(valuation.rows);
   // nákup v datech vůbec není (jen dividendy), nebo je všechno prodané? (R2-19)
   const everHeld = txs.some((tx) => tx.type === 'BUY' || tx.type === 'TRANSFER_IN');
 
@@ -294,12 +267,16 @@ export function PortfolioView({
                   'Kusy, které držíš déle než tři roky, mají splněný časový test — jejich prodej je osvobozený od daně bez ohledu na limity.',
                 )}
               </p>
-              {outlook?.basis === 'value' && outlook.unpricedCount > 0 && (
-                <p>
-                  {tidy(
-                    `Částka i podíl jsou z pozic, které umíme ocenit. Bez ceny od brokera nebo bez kurzu měny ${plural(outlook.unpricedCount, 'je', 'jsou', 'je')} ${outlook.unpricedCount} ${plural(outlook.unpricedCount, 'pozice', 'pozice', 'pozic')} — v čísle ${plural(outlook.unpricedCount, 'není', 'nejsou', 'není')}.`,
-                  )}
-                </p>
+              {!hasPrices ? (
+                <p>{tidy('Částku umíme jen u pozic s cenou od brokera — bez cen zbývá počet.')}</p>
+              ) : (
+                exemptToday.missing > 0 && (
+                  <p>
+                    {tidy(
+                      `Částku umíme jen u pozic s cenou od brokera — ${exemptToday.missing} ${plural(exemptToday.missing, 'pozice, která kusy bez daně má', 'pozice, které kusy bez daně mají', 'pozic, které kusy bez daně mají')}, v ní chybí.`,
+                    )}
+                  </p>
+                )
               )}
               <p>
                 {tidy('Jak by konkrétní prodej dopadl včetně letošních limitů, spočítá simulátor.')}{' '}
@@ -370,7 +347,7 @@ export function PortfolioView({
                   {hasPrices && (
                     <li>
                       {tidy(
-                        'Zisk/ztráta — rozdíl dnešní hodnoty a nabývací ceny, tedy výsledek, kdybys prodal teď. Před zdaněním.',
+                        'Zisk/ztráta — o kolik je dnešní cena nad nebo pod nabývací, v měně titulu (pohyb kurzu koruny v něm není). Před zdaněním.',
                       )}
                     </li>
                   )}

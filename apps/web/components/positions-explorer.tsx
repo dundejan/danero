@@ -285,12 +285,14 @@ function PositionInspector({ row, basePath }: { row: ExplorerRow; basePath: stri
 
       <Group className="mt-3" aria-label={`${row.label}: stav pozice`}>
         {row.plText && (
+          // Procento napřed: hodnota nad ním je v korunách, částka zisku
+          // v měně titulu — vedle sebe nejdou porovnat (R1B-30). Procento měnu
+          // nemá a částka nese svůj kód měny.
           <Row
             label="Zisk/ztráta"
             value={
               <span className={row.plPositive ? 'text-success-text' : 'text-danger'}>
-                {row.plText}
-                {row.plPctText && ` (${row.plPctText})`}
+                {row.plPctText ? `${row.plPctText} · ${row.plText}` : row.plText}
               </span>
             }
           />

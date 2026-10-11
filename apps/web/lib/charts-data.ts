@@ -250,6 +250,15 @@ export function portfolioAllocation(valuation: PortfolioValuation): PortfolioAll
   return { slices, totalCzk: num(valuation.totalCzk) };
 }
 
+/**
+ * Čím se váží velikost tečky horizontu:
+ * - `value` — dnešní hodnotou v CZK (aspoň jedna pozice má cenu od brokera),
+ * - `cost` — nabývací cenou v CZK (cenu nemá žádná pozice; kusy různých titulů
+ *   se sčítat nedají),
+ * - `quantity` — počtem kusů, jen když je v horizontu jediný titul.
+ */
+export type HorizonWeightBasis = 'value' | 'cost' | 'quantity';
+
 export interface HorizonDotItem {
   isin: string;
   label: string;
@@ -257,8 +266,9 @@ export interface HorizonDotItem {
   /** Příspěvek pozice k váze tečky (CZK, nebo kusy — dle weightBasis tečky). */
   weight: number;
   /**
-   * Pozice nemá cenu, přestože se tečka váží hodnotou — k váze nepřispívá
-   * a v rozpadu se ukáže počtem kusů, ne jako „0 Kč“.
+   * Pozice k váze nepřispívá, protože chybí to, čím se váží: cena od brokera
+   * (`value`), případně nabývací cena nebo kurz její měny (`cost`). V rozpadu
+   * se ukáže počtem kusů, ne jako „0 Kč“.
    */
   unpriced?: true;
 }
@@ -268,11 +278,12 @@ export interface HorizonDot {
    *  slučování groupHorizonDots případně 'YYYY-MM' (měsíční tečka). */
   exemptFrom: string;
   /**
-   * Váha pro velikost tečky: součet hodnot v CZK oceněných pozic; kusy jen
-   * tehdy, když cenu nemá žádná pozice portfolia.
+   * Váha pro velikost tečky: součet v CZK (hodnota, bez cen nabývací cena);
+   * kusy jen u portfolia o jediném titulu. Je to číslo pro vykreslení, ne
+   * údaj k zobrazení — nabývací cena tu není daňový výdaj (viz `rateToCzk`).
    */
   weight: number;
-  weightBasis: 'value' | 'quantity';
+  weightBasis: HorizonWeightBasis;
   isExempt: boolean;
   /** Rozpad tečky po pozicích, seřazený podle váhy sestupně (pro tooltip). */
   items: HorizonDotItem[];
@@ -286,29 +297,47 @@ function pricePerShareCzk(
 ): Money | null {
   const price = prices.get(isin);
   if (!price) return null;
-  if (price.currency === 'CZK') return price.price;
-  const rate = UNIFIED_RATES[fxYear]?.[price.currency];
-  return rate ? price.price.mul(d(rate)) : null;
+  const rate = rateToCzk(price.currency, fxYear);
+  return rate ? price.price.mul(rate) : null;
 }
 
 /**
- * Čím se váží portfolio: hodnotou v CZK, jakmile jde ocenit aspoň jedna
- * pozice, jinak počtem kusů.
+ * Jednotný kurz měny pro ORIENTAČNÍ přepočet na koruny — tentýž, kterým se
+ * oceňuje portfolio (kurz běžného roku). Pence (GBX, tak nakupuje T212 na
+ * londýnské burze) jdou přes libru. Není to kurz pro daně: výdaj se v přiznání
+ * přepočítává kurzem roku nákupu (R-06) a to dělá engine, ne grafy.
+ */
+function rateToCzk(currency: string, fxYear: number): Money | null {
+  if (currency === 'CZK') return d(1);
+  if (currency === 'GBX') {
+    const pound = UNIFIED_RATES[fxYear]?.GBP;
+    return pound ? d(pound).div(100) : null;
+  }
+  const rate = UNIFIED_RATES[fxYear]?.[currency];
+  return rate ? d(rate) : null;
+}
+
+/**
+ * Čím se váží tečky horizontu (viz `HorizonWeightBasis`).
  *
- * Dřív stačila JEDINÁ pozice bez ceny a celé portfolio se přepnulo na kusy —
- * a sto milionů kusů levné mince pak přebilo všechno ostatní („Bez daně už
- * dnes 0 %“ u portfolia za miliardy, R2-10). Kusy různých instrumentů se
- * sčítat nedají; pozice bez ceny proto z vážení hodnotou vypadne a volající
- * řekne, kolik jich je.
+ * Kusy různých instrumentů se sčítat ani porovnávat nedají — a přesto se jimi
+ * portfolio vážilo dvakrát. Nejdřív stačila JEDINÁ pozice bez ceny a celé
+ * portfolio se přepnulo na kusy: sto milionů kusů levné mince přebilo všechno
+ * ostatní („Bez daně už dnes 0 %“ u portfolia za miliardy, R2-10). Pozice bez
+ * ceny proto z vážení hodnotou vypadne a volající řekne, kolik jich je.
+ * Do 11. 10. 2026 pak totéž zůstalo u portfolia bez jediné ceny, tedy u každého,
+ * kdo jen nahrává výpisy: tečka s mincí byla největší a akcie za desetinásobek
+ * vedle ní sotva vidět. Bez cen se proto váží nabývací cenou — tu výpisy
+ * nesou (až na kusy přibylé za nulu); na kusy dojde jen u jediného titulu.
  */
 function weightBasisFor(
   positions: Position[],
   prices: Map<string, InstrumentPrice>,
   fxYear: number,
-): 'value' | 'quantity' {
-  return positions.some((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null)
-    ? 'value'
-    : 'quantity';
+): HorizonWeightBasis {
+  if (positions.some((p) => pricePerShareCzk(p.isin, prices, fxYear) !== null)) return 'value';
+  const shown = positions.filter((p) => p.lots.some((lot) => lot.exemptionPossible));
+  return shown.length > 1 ? 'cost' : 'quantity';
 }
 
 /**
@@ -335,7 +364,8 @@ export function horizonDots(
     }
   >();
   for (const position of positions) {
-    const priceCzk = pricePerShareCzk(position.isin, prices, fxYear);
+    const priceCzk = basis === 'value' ? pricePerShareCzk(position.isin, prices, fxYear) : null;
+    const costRate = basis === 'cost' ? rateToCzk(position.currency, fxYear) : null;
     for (const lot of position.lots) {
       // A2-3-04: horizont ukazuje cestu k osvobození — lot, který na osvobození
       // nárok nemá (obchodní majetek, stablecoin, derivát, období bez krypto
@@ -343,9 +373,17 @@ export function horizonDots(
       if (!lot.exemptionPossible) continue;
       // klíč = přesný den osvobození → loty téhož dne sdílí i stav isExempt
       const key = lot.exemptFrom;
-      const unpriced = basis === 'value' && priceCzk === null;
+      // koruny za kus: dnešní cena, bez cen nabývací cena; `null` = chybí
+      // (pozice bez ceny, nákup za nulu po oddělení společnosti, měna bez kurzu)
+      const perShareCzk =
+        basis === 'value'
+          ? priceCzk
+          : costRate && lot.costPerShare.gt(0)
+            ? lot.costPerShare.mul(costRate)
+            : null;
+      const unpriced = basis !== 'quantity' && perShareCzk === null;
       const weight =
-        basis === 'quantity' ? lot.remaining : priceCzk ? lot.remaining.mul(priceCzk) : ZERO;
+        basis === 'quantity' ? lot.remaining : perShareCzk ? lot.remaining.mul(perShareCzk) : ZERO;
       let group = days.get(key);
       if (!group) {
         group = { isExempt: lot.isExempt, weight: ZERO, byIsin: new Map() };
@@ -356,6 +394,7 @@ export function horizonDots(
       if (item) {
         item.quantity = item.quantity.plus(lot.remaining);
         item.weight = item.weight.plus(weight);
+        item.unpriced = item.unpriced && unpriced;
       } else {
         group.byIsin.set(position.isin, { quantity: lot.remaining, weight, unpriced });
       }
@@ -426,6 +465,7 @@ export function groupHorizonDots(
       if (existing) {
         existing.quantity += item.quantity;
         existing.weight += item.weight;
+        if (!item.unpriced) delete existing.unpriced;
       } else {
         merged.items.push({ ...item });
       }

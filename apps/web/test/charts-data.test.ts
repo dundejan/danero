@@ -364,7 +364,10 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     // po dnech: přesná data osvobození (den po „vypořádání + 3 roky“, R-01)
     expect(dots.map((dot) => dot.exemptFrom)).toEqual(['2028-03-08', '2028-03-23']);
     expect(dots.map((dot) => dot.isExempt)).toEqual([false, false]);
-    expect(dots.map((dot) => dot.weight)).toEqual([10, 30]);
+    // dva tituly bez cen: váží se nabývací cenou v Kč (10 × 10 USD a 30 × 10 USD)
+    expect(dots.map((dot) => dot.weightBasis)).toEqual(['cost', 'cost']);
+    expect(dots[0]!.weight).toBeCloseTo(100 * Number(USD_RATE_2026), 6);
+    expect(dots[1]!.weight).toBeCloseTo(300 * Number(USD_RATE_2026), 6);
 
     // klientské sloučení po měsících: jedna tečka s rozpadem řazeným vahou
     const monthly = groupHorizonDots(dots, 'month', '2026-09-01');
@@ -372,13 +375,119 @@ describe('charts-data: agregace sedí na výstupy enginu', () => {
     const dot = monthly[0]!;
     expect(dot.exemptFrom).toBe('2028-03');
     expect(dot.isExempt).toBe(false);
-    expect(dot.weightBasis).toBe('quantity');
-    expect(dot.weight).toBe(40); // součet vah měsíce (kusy)
+    expect(dot.weightBasis).toBe('cost');
+    expect(dot.weight).toBeCloseTo(400 * Number(USD_RATE_2026), 6); // součet vah měsíce
     expect(dot.items.map((item) => item.label)).toEqual(['BBB', 'AAA']); // podle váhy sestupně
     expect(dot.items.map((item) => item.quantity)).toEqual([30, 10]);
 
     // granularita 'day' vrací tečky beze změny
     expect(groupHorizonDots(dots, 'day', '2026-09-01')).toEqual(dots);
+  });
+
+  /**
+   * Bez jediné ceny se tečky vážily součtem kusů napříč tituly — a kus akcie
+   * s kusem mince srovnat nejde. Padesát milionů kusů mince za pár set dolarů
+   * dalo největší tečku horizontu, akcie za desetinásobek vedle ní nejmenší.
+   * Ceny jsou jen od připojeného brokera, takže se to týkalo každého, kdo jen
+   * nahrává výpisy. Bez cen se proto váží nabývací cenou v Kč.
+   */
+  describe('horizonDots bez cen: váha je nabývací cena, ne součet kusů', () => {
+    const buy = (
+      id: string,
+      isin: string,
+      quantity: string,
+      pricePerShare: string,
+      currency: string,
+      tradeDate: string,
+      extra: Record<string, string> = {},
+    ) => ({
+      type: 'BUY' as const,
+      id,
+      isin,
+      ticker: id.toUpperCase(),
+      quantity,
+      pricePerShare,
+      currency,
+      tradeDate,
+      settlementDate: tradeDate,
+      ...extra,
+    });
+    const positionsOf = (txs: Parameters<typeof parseTransactions>[0]) =>
+      positionsAt(
+        analyzeTaxYear(engineInputForUser(parseTransactions(txs), PROFILE, 2026)).ledger,
+        '2026-09-01',
+      );
+    const LABELS = new Map([
+      ['CZ0000000001', 'AKCIE'],
+      ['COIN', 'MINCE'],
+      ['GB0000000001', 'LONDYN'],
+    ]);
+    const itemOf = (dots: ReturnType<typeof horizonDots>, label: string) =>
+      dots.flatMap((dot) => dot.items).find((item) => item.label === label)!;
+
+    it('mince s miliony kusů nepřebije akcii, která stála desetkrát víc', () => {
+      const positions = positionsOf([
+        buy('a', 'CZ0000000001', '40', '900', 'CZK', '2025-02-10'),
+        buy('m', 'COIN', '50000000', '0.00001', 'USD', '2025-08-01', { assetClass: 'CRYPTO' }),
+      ]);
+      const dots = horizonDots(positions, LABELS, new Map(), 2026);
+      expect(dots.every((dot) => dot.weightBasis === 'cost')).toBe(true);
+      const stock = itemOf(dots, 'AKCIE');
+      const coin = itemOf(dots, 'MINCE');
+      // 40 × 900 Kč proti 500 USD
+      expect(stock.weight).toBeCloseTo(36_000, 6);
+      expect(coin.weight).toBeCloseTo(500 * Number(USD_RATE_2026), 6);
+      expect(stock.weight).toBeGreaterThan(coin.weight);
+      // kusy zůstávají v rozpadu (ukazuje je bublina), jen už neurčují velikost
+      expect(coin.quantity).toBe(50_000_000);
+      expect(stock.unpriced).toBeUndefined();
+    });
+
+    it('pence z londýnské burzy jdou přes libru', () => {
+      const positions = positionsOf([
+        buy('a', 'CZ0000000001', '40', '900', 'CZK', '2025-02-10'),
+        buy('l', 'GB0000000001', '10', '2500', 'GBX', '2025-03-10'),
+      ]);
+      const london = itemOf(horizonDots(positions, LABELS, new Map(), 2026), 'LONDYN');
+      // 10 ks × 2 500 pencí = 250 liber
+      expect(london.weight).toBeCloseTo(250 * Number(UNIFIED_RATES[2026]!.GBP!), 6);
+    });
+
+    it('nákup za nulu váhu nemá a tečka to přizná příznakem, ne nulou', () => {
+      const positions = positionsOf([
+        buy('a', 'CZ0000000001', '40', '900', 'CZK', '2025-02-10'),
+        // oddělená společnost: kusy přibyly s cenou 0 (tak je posílá Trading 212)
+        buy('m', 'COIN', '12', '0', 'USD', '2025-08-01'),
+      ]);
+      const coin = itemOf(horizonDots(positions, LABELS, new Map(), 2026), 'MINCE');
+      expect(coin).toMatchObject({ quantity: 12, weight: 0, unpriced: true });
+    });
+
+    it('jediný titul se dál váží kusy — tam součet smysl dává', () => {
+      const positions = positionsOf([
+        buy('a', 'CZ0000000001', '40', '900', 'CZK', '2025-02-10'),
+        buy('a2', 'CZ0000000001', '10', '1100', 'CZK', '2026-02-10'),
+      ]);
+      const dots = horizonDots(positions, LABELS, new Map(), 2026);
+      expect(dots.map((dot) => [dot.weightBasis, dot.weight])).toEqual([
+        ['quantity', 40],
+        ['quantity', 10],
+      ]);
+    });
+
+    it('jakmile má cenu aspoň jedna pozice, váží se dnešní hodnotou jako dřív', () => {
+      const positions = positionsOf([
+        buy('a', 'CZ0000000001', '40', '900', 'CZK', '2025-02-10'),
+        buy('m', 'COIN', '50000000', '0.00001', 'USD', '2025-08-01', { assetClass: 'CRYPTO' }),
+      ]);
+      const prices = new Map<string, InstrumentPrice>([
+        ['CZ0000000001', { price: d('1000'), currency: 'CZK', source: 'trading212', asOf: new Date() }],
+      ]);
+      const dots = horizonDots(positions, LABELS, prices, 2026);
+      expect(dots.every((dot) => dot.weightBasis === 'value')).toBe(true);
+      expect(itemOf(dots, 'AKCIE').weight).toBeCloseTo(40_000, 6);
+      expect(itemOf(dots, 'MINCE')).toMatchObject({ weight: 0, unpriced: true });
+    });
   });
 
   it('horizonDots: osvobozené a čekající loty mají vlastní tečky (dle dne)', () => {
