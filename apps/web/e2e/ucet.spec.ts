@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universal/csv';
-import { registerWithProfile } from './helpers';
+import {
+  hydrated,
+  openConfirmDialog,
+  openDisclosure,
+  registerWithProfile,
+  signOut,
+  signOutButton,
+  uploadStatement,
+} from './helpers';
 
 const HESLO = 'bezpecne-heslo-e2e';
 const NOVE_HESLO = 'jeste-bezpecnejsi-heslo';
@@ -14,32 +22,35 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 
   // data k exportu: univerzální šablona
   await page.goto('/import');
-  await page.locator('input[name="soubory"]').setInputFiles({
+  await uploadStatement(page, {
     name: 'sablona.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(UNIVERSAL_TEMPLATE_CSV, 'utf8'),
   });
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(page.getByText('sablona.csv')).toBeVisible();
 
   // ── zabezpečení: sessions + audit (G8b) ──────────────────────────────────
   await page.goto('/nastaveni/ucet');
-  await expect(page.getByText(/Aktivní přihlášení \(\d+\)/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Aktivní přihlášení \d+$/ })).toBeVisible();
   await expect(page.getByText('toto zařízení')).toBeVisible();
-  await expect(page.getByText('Přihlášení').first()).toBeVisible(); // audit LOGIN
-  await expect(page.getByText('Import výpisu').first()).toBeVisible(); // audit IMPORT
+  // záznamy auditu jsou za rozbalením pod přihlášenými zařízeními
+  const activity = (await openDisclosure(page, /^Poslední aktivita \(\d+\)$/)).getByRole(
+    'listitem',
+  );
+  await expect(activity.filter({ hasText: /^Přihlášení/ }).first()).toBeVisible(); // audit LOGIN
+  await expect(activity.filter({ hasText: /^Import výpisu/ })).toBeVisible(); // audit IMPORT
 
   // ── změna hesla ──────────────────────────────────────────────────────────
-  await page.getByLabel('Současné heslo').fill(HESLO);
-  await page.getByLabel('Nové heslo (min. 10 znaků)').fill(NOVE_HESLO);
-  await page.getByRole('button', { name: 'Změnit heslo' }).click();
-  await expect(page.getByText('Heslo změněno')).toBeVisible();
+  const password = await openDisclosure(page, /^Heslo/);
+  await password.getByLabel('Současné heslo').fill(HESLO);
+  await password.getByLabel('Nové heslo').fill(NOVE_HESLO);
+  await password.getByRole('button', { name: 'Změnit heslo' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Heslo změněno' })).toBeVisible();
 
-  await expect(page.getByText('Změna hesla').first()).toBeVisible();
+  await openDisclosure(page, /^Poslední aktivita \(\d+\)$/);
+  await expect(activity.filter({ hasText: /^Změna hesla/ })).toBeVisible();
 
   // nové heslo funguje (odhlásit → přihlásit)
-  await page.getByRole('button', { name: 'Odhlásit se' }).click();
-  await page.waitForURL('**/prihlaseni');
+  await signOut(page);
   await page.getByLabel('E-mail').fill('ucet@danero.cz');
   await page.getByLabel('Heslo').fill(NOVE_HESLO);
   await page.getByRole('button', { name: 'Přihlásit se' }).click();
@@ -47,11 +58,16 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 
   // ── změna e-mailu (proti mrtvé konfiguraci — dřív padala vždy) ──────────
   await page.goto('/nastaveni/ucet');
-  await page.getByLabel('Nový e-mail').fill('ucet-novy@danero.cz');
-  await page.getByLabel('Heslo (potvrzení)').fill(NOVE_HESLO);
-  await page.getByRole('button', { name: 'Změnit e-mail' }).click();
-  await expect(page.getByText('E-mail změněn.')).toBeVisible();
-  await expect(page.getByText('ucet-novy@danero.cz').first()).toBeVisible();
+  const emailRow = await openDisclosure(page, /^E-mail/);
+  await emailRow.getByLabel('Nový e-mail').fill('ucet-novy@danero.cz');
+  await emailRow.getByLabel('Heslo (potvrzení)').fill(NOVE_HESLO);
+  await emailRow.getByRole('button', { name: 'Změnit e-mail' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'E-mail změněn.' })).toBeVisible();
+  // nová adresa je vidět v řádku účtu i u přihlášeného uživatele v panelu
+  await expect(page.locator('summary').filter({ hasText: /^E-mail/ })).toContainText(
+    'ucet-novy@danero.cz',
+  );
+  await expect(page.getByRole('complementary')).toContainText('ucet-novy@danero.cz');
 
   // surový endpoint Better Auth je vypnutý — bez něj by session cookie stačila
   // k přepsání identity účtu bez hesla; jediná cesta je akce s re-autentizací
@@ -61,6 +77,10 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   expect(rawChange.status()).toBe(403);
 
   // ── export dat: JSON s transakcemi ───────────────────────────────────────
+  await expect(page.getByRole('link', { name: 'Stáhnout moje data' })).toHaveAttribute(
+    'href',
+    '/api/export',
+  );
   const exportResponse = await page.request.get('/api/export');
   expect(exportResponse.ok()).toBe(true);
   const exported = (await exportResponse.json()) as {
@@ -77,9 +97,12 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 
   // ── smazání účtu ─────────────────────────────────────────────────────────
   await page.goto('/nastaveni/ucet');
-  await page.getByLabel('Heslo', { exact: true }).fill(NOVE_HESLO);
-  await page.getByLabel('Napiš SMAZAT').fill('SMAZAT');
-  await page.getByRole('button', { name: 'Nevratně smazat účet' }).click();
+  // nevratná akce je za potvrzovacím dialogem — heslo a opsané slovo se
+  // vyplňují až v něm
+  const dialog = await openConfirmDialog(page, page.getByRole('button', { name: 'Smazat účet…' }));
+  await dialog.getByLabel('Heslo', { exact: true }).fill(NOVE_HESLO);
+  await dialog.getByLabel('Pro potvrzení napiš SMAZAT').fill('SMAZAT');
+  await dialog.getByRole('button', { name: 'Smazat účet', exact: true }).click();
   await page.waitForURL(/smazano=1/);
   await expect(page.getByText('Účet byl smazán.')).toBeVisible();
 
@@ -103,12 +126,15 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
 test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s hláškou', async ({ page }) => {
   await registerWithProfile(page, { name: 'E2E Odhlášení', email: 'odhlaseni@danero.cz' });
   const failureMessage = page.getByText('Odhlásit se nepodařilo — tvoje přihlášení dál platí.');
+  // stránka, na které uživatel je (nový účet končí na Zdrojích dat)
+  await page.goto('/prehled');
+  await expect(page.getByRole('heading', { name: 'Přehled' })).toBeVisible();
 
   // ── server odpoví 500 ────────────────────────────────────────────────────
   await page.route('**/api/auth/sign-out', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }),
   );
-  await page.getByRole('button', { name: 'Odhlásit se' }).click();
+  await (await signOutButton(page)).click();
   await expect(failureMessage).toBeVisible();
   await expect(page).toHaveURL(/\/prehled$/);
   // relace opravdu trvá — chráněný export ji pořád pustí
@@ -119,7 +145,7 @@ test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s h
   await page.reload();
   await expect(failureMessage).toHaveCount(0);
   await page.route('**/api/auth/sign-out', (route) => route.abort('failed'));
-  await page.getByRole('button', { name: 'Odhlásit se' }).click();
+  await (await signOutButton(page)).click();
   await expect(failureMessage).toBeVisible();
   await expect(page).toHaveURL(/\/prehled$/);
   await page.unroute('**/api/auth/sign-out');
@@ -134,24 +160,36 @@ test('odhlášení: po chybě serveru i výpadku sítě zůstane na stránce s h
  * L7-01: na telefonu se nedalo odhlásit vůbec — jediné „Odhlásit se“ žilo
  * v patičce railu a ten se pod 768 px nevykresluje. Relace přitom platí 7 dní,
  * takže na půjčeném zařízení zůstala daňová data přístupná. Tlačítko je proto
- * i v Nastavení → Účet, ale jen na šířkách, kde rail chybí.
+ * i v Nastavení → Účet (jen na šířkách, kde rail chybí) a v sheetu „Více“
+ * spodní lišty.
  */
 test('odhlášení na telefonu: tlačítko v Nastavení → Účet ukončí relaci', async ({ page }) => {
-  await registerWithProfile(page, { name: 'E2E Telefon', email: 'odhlaseni-telefon@danero.cz' });
+  const email = 'odhlaseni-telefon@danero.cz';
+  await registerWithProfile(page, { name: 'E2E Telefon', email });
   await page.goto('/nastaveni/ucet');
-  const signOut = page.getByRole('button', { name: 'Odhlásit se' });
+  const signOutControl = page.getByRole('button', { name: 'Odhlásit se' });
 
   // desktop: jediné tlačítko je to v railu — druhé by shodilo strict režim
   // v ostatních testech, které na téhle stránce klikají na „Odhlásit se“
-  await expect(signOut).toHaveCount(1);
+  await expect(signOutControl).toHaveCount(1);
 
   // šířka telefonu: rail zmizel, odhlášení nabízí stránka účtu
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('complementary')).toHaveCount(0);
-  await expect(signOut).toHaveCount(1);
-  await expect(signOut).toBeVisible();
+  await expect(signOutControl).toHaveCount(1);
+  await expect(signOutControl).toBeVisible();
 
-  await signOut.click();
+  // druhá cesta z kterékoli stránky: sheet „Více“ ve spodní liště ukáže, kdo
+  // je přihlášený, a nabídne odhlášení
+  const tabBar = page.getByRole('navigation', { name: 'Hlavní navigace' });
+  await (await hydrated(tabBar.getByRole('button', { name: 'Více' }))).click();
+  const sheet = page.getByRole('dialog', { name: 'Další sekce' });
+  await expect(sheet.getByText(email)).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Odhlásit se' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+
+  await signOutControl.click();
   await page.waitForURL('**/prihlaseni');
   expect((await page.request.get('/api/export')).status()).toBe(401);
 });
@@ -165,16 +203,22 @@ test('zdarma: nic není zamčené a staré stránky tarifů přesměrují', asyn
   await registerWithProfile(page, { name: 'E2E Zdarma', email: 'zdarma@danero.cz' });
 
   // v navigaci aplikace už položka Předplatné není
+  await expect(page.getByRole('navigation', { name: 'Hlavní navigace' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Předplatné' })).toHaveCount(0);
 
   // napojení brokera nabízí rovnou formulář na klíč, ne výzvu k objednání
   await page.goto('/import');
-  await expect(page.getByRole('heading', { name: /Trading 212 — automatická synchronizace/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Synchronizovat automaticky' })).toBeVisible();
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  const trading212 = await openDisclosure(brokers, 'Trading 212');
+  await expect(trading212.getByLabel('Tajný klíč')).toBeVisible();
+  await expect(trading212.getByRole('button', { name: 'Připojit' })).toBeEnabled();
   await expect(page.getByRole('link', { name: 'Objednat hlídání' })).toHaveCount(0);
 
   // hlídací e-maily jdou nastavit
   await page.goto('/nastaveni/upozorneni');
-  await expect(page.getByText('Co ti teď chodí')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Odesílání' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Posílat e-maily' })).toBeEnabled();
   await expect(page.getByRole('link', { name: 'Objednat hlídání' })).toHaveCount(0);
 
   // odkazy ze starých e-mailů (potvrzení objednávky, upomínka) nekončí na 404
