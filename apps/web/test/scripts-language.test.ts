@@ -321,7 +321,6 @@ const PENDING_BATCHES: Record<string, string[]> = {
  * nepřibývaly další. Po přejmenování řádek smaž; nové sem nepřidávej.
  */
 const KNOWN_DEBT: Record<string, string[]> = {
-  'apps/web/app/(app)/nastaveni/actions.ts': ['kod'],
   'apps/web/app/api/epo/route.ts': [
     'DAP_TYPY',
     'chyba',

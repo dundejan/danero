@@ -62,7 +62,7 @@ const ProfileFormSchema = z.object({
         ctx.addIssue({
           code: 'custom',
           message: OTHER_INCOME_FORMAT,
-          params: { kod: 'prijmy' },
+          params: { code: 'prijmy' },
         });
         return;
       }
@@ -71,7 +71,7 @@ const ProfileFormSchema = z.object({
         ctx.addIssue({
           code: 'custom',
           message: 'Částka je nereálně vysoká — zkontroluj ji.',
-          params: { kod: 'prijmy' },
+          params: { code: 'prijmy' },
         });
       }
     }),
@@ -128,7 +128,7 @@ export async function saveProfile(userId: string, formData: FormData): Promise<P
     // u částky umíme poradit konkrétně; zbytek formuláře jsou jen nabídky,
     // do kterých se z UI nedá napsat nic vlastního
     const error = parsed.error.issues.some(
-      (issue) => (issue as { params?: { kod?: string } }).params?.kod === 'prijmy',
+      (issue) => (issue as { params?: { code?: string } }).params?.code === 'prijmy',
     )
       ? 'prijmy'
       : // L7i-01 (R8): režim nemá předvolbu, takže první uložení bez výběru je

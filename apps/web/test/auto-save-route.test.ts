@@ -1,17 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 /**
  * Uložení při odchodu ze stránky (`/api/settings/*`): obyčejný požadavek,
  * který přežije zavření panelu. Server action má kontrolu původu vestavěnou,
  * tahle cesta si ji hlídá sama — formulář smí poslat jen naše stránka
- * a jen přihlášený uživatel.
+ * a jen přihlášený uživatel (toho zjišťuje každá cesta z relace a předává).
  */
-const state = vi.hoisted(() => ({ session: null as { user: { id: string } } | null }));
-
-vi.mock('@/lib/auth', () => ({
-  getAuth: async () => ({ api: { getSession: async () => state.session } }),
-}));
-
 const request = (headers: Record<string, string>, body: BodyInit = new FormData()): Request =>
   new Request('https://danero.test/api/settings/profile', { method: 'POST', headers, body });
 
@@ -53,23 +47,20 @@ describe('původ požadavku', () => {
 });
 
 describe('odpověď na uložení při odchodu', () => {
-  beforeEach(() => {
-    state.session = { user: { id: 'u-odchod' } };
-  });
+  const USER = 'u-odchod';
 
   it('cizí stránce neuloží nic', async () => {
     const { autoSaveResponse } = await import('@/lib/auto-save-route');
     const save = vi.fn();
-    const response = await autoSaveResponse(request({ 'sec-fetch-site': 'cross-site' }), save);
+    const response = await autoSaveResponse(request({ 'sec-fetch-site': 'cross-site' }), USER, save);
     expect(response.status).toBe(403);
     expect(save).not.toHaveBeenCalled();
   });
 
   it('nepřihlášenému neuloží nic a řekne to stavem 401', async () => {
-    state.session = null;
     const { autoSaveResponse } = await import('@/lib/auto-save-route');
     const save = vi.fn();
-    const response = await autoSaveResponse(request(SAME_ORIGIN), save);
+    const response = await autoSaveResponse(request(SAME_ORIGIN), null, save);
     expect(response.status).toBe(401);
     expect(save).not.toHaveBeenCalled();
   });
@@ -82,7 +73,7 @@ describe('odpověď na uložení při odchodu', () => {
       ok: true,
       message: 'Uloženo.',
     }));
-    const response = await autoSaveResponse(request(SAME_ORIGIN, body), save);
+    const response = await autoSaveResponse(request(SAME_ORIGIN, body), USER, save);
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({ ok: true, message: 'Uloženo.' });
@@ -92,7 +83,7 @@ describe('odpověď na uložení při odchodu', () => {
 
   it('odmítnutou hodnotu vrátí i s hláškou a polem', async () => {
     const { autoSaveResponse } = await import('@/lib/auto-save-route');
-    const response = await autoSaveResponse(request(SAME_ORIGIN), async () => ({
+    const response = await autoSaveResponse(request(SAME_ORIGIN), USER, async () => ({
       ok: false,
       message: 'Zadej částku.',
       field: 'ostatni-prijmy',
@@ -110,6 +101,7 @@ describe('odpověď na uložení při odchodu', () => {
     const save = vi.fn();
     const response = await autoSaveResponse(
       request({ ...SAME_ORIGIN, 'content-type': 'application/json' }, '{"a":1}'),
+      USER,
       save,
     );
     expect(response.status).toBe(400);

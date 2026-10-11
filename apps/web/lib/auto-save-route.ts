@@ -1,4 +1,3 @@
-import { getAuth } from '@/lib/auth';
 import type { AutoSaveOutcome } from '@/lib/save-queue';
 
 /**
@@ -11,8 +10,10 @@ import type { AutoSaveOutcome } from '@/lib/save-queue';
  * požadavkem, který zavření panelu přežije. Ukládá totéž a stejně jako akce
  * (`app/(app)/nastaveni/save.ts`).
  *
- * Server action má kontrolu původu požadavku vestavěnou, tady ji děláme sami:
- * formulář smí poslat jen naše stránka.
+ * Kdo volá, zjišťuje každá cesta sama a předává sem (`userId`) — strážce
+ * tenancy to chce vidět přímo v ní. Server action má navíc vestavěnou
+ * kontrolu původu požadavku; tady ji děláme sami: formulář smí poslat jen
+ * naše stránka.
  */
 
 /**
@@ -36,22 +37,25 @@ export function isSameOriginRequest(headers: Headers): boolean {
 const json = (outcome: AutoSaveOutcome, status: number): Response =>
   Response.json(outcome, { status, headers: { 'Cache-Control': 'no-store' } });
 
+/**
+ * Odpověď na uložení při odchodu. `userId` je přihlášený uživatel, jak ho
+ * cesta zjistila z relace (`null` = nikdo).
+ */
 export async function autoSaveResponse(
   request: Request,
+  userId: string | null,
   save: (userId: string, formData: FormData) => Promise<AutoSaveOutcome>,
 ): Promise<Response> {
   if (!isSameOriginRequest(request.headers)) {
     return json({ ok: false, message: 'Požadavek nepřišel z aplikace.' }, 403);
   }
-  const auth = await getAuth();
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) return json({ ok: false, message: 'Přihlášení vypršelo.' }, 401);
+  if (userId === null) return json({ ok: false, message: 'Přihlášení vypršelo.' }, 401);
   let formData: FormData;
   try {
     formData = await request.formData();
   } catch {
     return json({ ok: false, message: 'Formulář se nepodařilo přečíst.' }, 400);
   }
-  const outcome = await save(session.user.id, formData);
+  const outcome = await save(userId, formData);
   return json(outcome, outcome.ok ? 200 : 422);
 }
