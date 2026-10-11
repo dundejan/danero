@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   DEGIRO_TRANSACTIONS_CZ,
 } from '../../../packages/importers/test/fixtures/degiro';
@@ -15,10 +15,17 @@ import {
   XTB_ROWS_EN,
 } from '../../../packages/importers/test/fixtures/xtb';
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
-import { registerWithProfile } from './helpers';
+import { openDisclosure, registerWithProfile, uploadStatement } from './helpers';
 
-/** Sekce „Historie importů“ — jediné místo, kde je název souboru záznamem. */
-const historie = (page: Page) => page.locator('section').filter({ hasText: 'Historie importů' });
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/**
+ * Platformu importu nese řádek historie jménem z katalogu („Degiro · 2 nové ·
+ * 0 duplicit“). Hledá se jméno následované oddělovačem — samotné „degiro“ by
+ * našel i název souboru a test by prošel, ať se pozná kterýkoli broker.
+ */
+const recognizedAs = (platform: string): RegExp =>
+  new RegExp(`${platform.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · \\d+ nov`);
 
 /**
  * Akceptace G4: import každého nového formátu end-to-end — Degiro CSV,
@@ -29,89 +36,73 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   await registerWithProfile(page, { name: 'E2E Brokeři', email: 'brokeri@danero.cz' });
   await page.goto('/import');
 
-  // deterministický upload: čeká, až se import propíše do historie (nový batch),
-  // jinak další setInputFiles závodí s překreslením stránky po redirectu
-  const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
-    // Čeká se na nový záznam V HISTORII (ne na tlačítko dávky: to má jen import,
-    // který něco přidal). Scope na sekci je nutný — jméno souboru krátce svítí
-    // i u samotného pole pro výběr, než ho server action zresetuje.
-    const zaznamy = historie(page).getByText(file.name, { exact: true });
-    const before = await zaznamy.count();
-    await page.locator('input[name="soubory"]').setInputFiles(file);
-    await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-    await expect(zaznamy).toHaveCount(before + 1, { timeout: 20_000 });
-  };
-
   // ── Degiro Transactions (CZ hlavičky, středníky, des. čárka) ────────────
-  await upload({
+  const degiro = await uploadStatement(page, {
     name: 'degiro-transactions.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(DEGIRO_TRANSACTIONS_CZ, 'utf8'),
   });
-  await expect(page.getByText('degiro-transactions.csv')).toBeVisible();
-  await expect(page.getByText(/degiro/).first()).toBeVisible();
+  await expect(degiro).toContainText(recognizedAs('Degiro'));
 
   // ── Fio (windows-1250): nejdřív číselník, pak import ────────────────────
-  await upload({
+  const fio = await uploadStatement(page, {
     name: 'fio-obchody.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(encodeCp1250(FIO_FIXTURE)),
   });
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).toBeVisible();
+  await expect(fio).toContainText(recognizedAs('Fio e-Broker'));
+  const aliases = page.getByRole('heading', { name: 'Doplň chybějící údaje instrumentů' });
+  await expect(aliases).toBeVisible();
   await page.locator('input[name="isin-0"]').fill('US0378331005');
   await page.getByRole('button', { name: 'Uložit číselník' }).click();
-  await expect(page.getByText('Číselník uložen')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Číselník uložen' })).toBeVisible();
 
-  await upload({
+  await uploadStatement(page, {
     name: 'fio-obchody.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(encodeCp1250(FIO_FIXTURE)),
   });
   // po doplnění číselníku už formulář nevyskakuje a obchody se naimportovaly
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
+  await expect(aliases).toBeHidden();
 
   // ── XTB XLSX: číselník chce ISIN i měnu ─────────────────────────────────
-  const xlsx = await buildXtbXlsx({ rows: XTB_ROWS_EN });
-  await upload({
+  const xtb = await uploadStatement(page, {
     name: 'xtb-report.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: Buffer.from(xlsx),
+    mimeType: XLSX,
+    buffer: Buffer.from(await buildXtbXlsx({ rows: XTB_ROWS_EN })),
   });
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).toBeVisible();
+  await expect(xtb).toContainText(recognizedAs('XTB'));
+  await expect(aliases).toBeVisible();
   const isinInputs = page.locator('input[name^="isin-"]');
   const count = await isinInputs.count();
+  expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i += 1) {
     await page.locator(`input[name="isin-${i}"]`).fill('US5949181045');
     await page.locator(`input[name="currency-${i}"]`).fill('USD');
   }
   await page.getByRole('button', { name: 'Uložit číselník' }).click();
-  await expect(page.getByText('Číselník uložen')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Číselník uložen' })).toBeVisible();
 
-  const xlsx2 = await buildXtbXlsx({ rows: XTB_ROWS_EN });
-  await upload({
+  await uploadStatement(page, {
     name: 'xtb-report.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: Buffer.from(xlsx2),
+    mimeType: XLSX,
+    buffer: Buffer.from(await buildXtbXlsx({ rows: XTB_ROWS_EN })),
   });
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
+  await expect(aliases).toBeHidden();
 
   // ── XTB, report z tlačítka „Export (new)“: jiné listy, sloupce i typy ───
   // 7. 10. 2026 ho autodetekce nepoznala a první cizí uživatel četl „XLSX
   // nepoznáváme — podporujeme reporty XTB…“. AAPL.US už v číselníku je, takže
   // se má načíst celý: 8 řádků, srážková daň splyne s dividendou.
-  await upload({
+  const newReport = await uploadStatement(page, {
     name: XTB_NEW_FILENAME,
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    mimeType: XLSX,
     buffer: await buildXtbNewReportXlsx(),
   });
-  const newReport = historie(page)
-    .locator('div')
-    .filter({ hasText: XTB_NEW_FILENAME })
-    .filter({ hasText: 'duplicit' })
-    .last();
-  await expect(newReport).toContainText('· xtb');
-  await expect(newReport).toContainText('7 nových · 0 duplicit · 0 chyb');
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).not.toBeVisible();
+  await expect(newReport).toContainText('XTB · 7 nových · 0 duplicit');
+  // chyby se píšou jen tehdy, když nějaké jsou — nula chyb není zpráva
+  await expect(newReport).not.toContainText(/chyb/);
+  await expect(aliases).toBeHidden();
 
   // stažitelná šablona existuje — ve tvaru pro český Excel (BOM + středník),
   // jinak se po dvojkliku nasype do jednoho sloupce s rozbitou diakritikou
@@ -121,9 +112,16 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   expect([...template.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   expect(template.toString('utf8')).toContain('CORPORATE_ACTION;2024-08-31;');
 
-  // a pravidla pro vyplnění stojí tam, kde se šablona stahuje
-  await expect(page.locator('#sablona')).toContainText('5.3.2026');
-  await expect(page.locator('#sablona')).toContainText('TRANSFER_OUT');
+  // a pravidla pro vyplnění stojí tam, kde se šablona stahuje — za rozbalením
+  // pod formulářem pro nahrání
+  const rules = await openDisclosure(page, 'Jak vyplnit univerzální šablonu');
+  await expect(rules).toHaveAttribute('id', 'sablona');
+  await expect(rules.getByRole('link', { name: 'Stáhnout šablonu' })).toHaveAttribute(
+    'href',
+    '/api/sablona',
+  );
+  await expect(rules.getByText('5.3.2026')).toBeVisible();
+  await expect(rules.getByText('TRANSFER_OUT')).toBeVisible();
 });
 
 /**
@@ -136,58 +134,48 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote'
   await registerWithProfile(page, { name: 'E2E Brokeři 2', email: 'brokeri2@danero.cz' });
   await page.goto('/import');
 
-  const upload = async (file: { name: string; mimeType: string; buffer: Buffer }) => {
-    // Čeká se na nový záznam V HISTORII (ne na tlačítko dávky: to má jen import,
-    // který něco přidal). Scope na sekci je nutný — jméno souboru krátce svítí
-    // i u samotného pole pro výběr, než ho server action zresetuje.
-    const zaznamy = historie(page).getByText(file.name, { exact: true });
-    const before = await zaznamy.count();
-    await page.locator('input[name="soubory"]').setInputFiles(file);
-    await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-    await expect(zaznamy).toHaveCount(before + 1, { timeout: 20_000 });
-  };
-
   // Revolut invest (ISIN se doplňuje číselníkem — objeví se formulář)
-  await upload({
+  const revolut = await uploadStatement(page, {
     name: 'revolut-invest.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(REVOLUT_INVEST_CSV, 'utf8'),
   });
-  await expect(page.getByText('revolut-invest.csv')).toBeVisible();
-  await expect(page.getByText('Doplň chybějící údaje instrumentů')).toBeVisible();
+  await expect(revolut).toContainText(recognizedAs('Revolut'));
+  await expect(
+    page.getByRole('heading', { name: 'Doplň chybějící údaje instrumentů' }),
+  ).toBeVisible();
 
   // Coinmate (CZ hlavičky, středník) — krypto s ISIN=symbol, číselník netřeba
-  await upload({
+  const coinmate = await uploadStatement(page, {
     name: 'coinmate-vypis.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(COINMATE_CZ, 'utf8'),
   });
-  await expect(page.getByText('coinmate-vypis.csv')).toBeVisible();
-  await expect(page.getByText(/coinmate/).first()).toBeVisible();
+  await expect(coinmate).toContainText(recognizedAs('Coinmate'));
 
   // Kraken ledgers (páry přes refid)
-  await upload({
+  const kraken = await uploadStatement(page, {
     name: 'ledgers.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(KRAKEN_LEDGERS_NEW, 'utf8'),
   });
-  await expect(page.getByText(/kraken/).first()).toBeVisible();
+  await expect(kraken).toContainText(recognizedAs('Kraken'));
 
   // MT4 HTML statement (deriváty dle R-12r)
-  await upload({
+  const mt4 = await uploadStatement(page, {
     name: 'statement.htm',
     mimeType: 'text/html',
     buffer: Buffer.from(MT4_HTML, 'utf8'),
   });
-  await expect(page.getByText(/mt4/).first()).toBeVisible();
+  await expect(mt4).toContainText(recognizedAs('MetaTrader 4'));
 
   // Swissquote (středníkové CSV, EN 13 sloupců)
-  await upload({
+  const swissquote = await uploadStatement(page, {
     name: 'transactions-from-01012022-to-31122022.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(SWISSQUOTE_EN, 'utf8'),
   });
-  await expect(page.getByText(/swissquote/).first()).toBeVisible();
+  await expect(swissquote).toContainText(recognizedAs('Swissquote'));
 });
 
 /**
@@ -201,14 +189,13 @@ test('T212 export s přejmenovaným sloupcem „Time (UTC)“ se naimportuje', a
   await registerWithProfile(page, { name: 'E2E T212 2026', email: 't212-2026@danero.cz' });
   await page.goto('/import');
 
-  await page.locator('input[name="soubory"]').setInputFiles({
+  const imported = await uploadStatement(page, {
     name: 't212-2026.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(T212_FIXTURE_2026, 'utf8'),
   });
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-
-  await expect(page.getByText('t212-2026.csv')).toBeVisible({ timeout: 20_000 });
+  await expect(imported).toContainText(recognizedAs('Trading 212'));
+  // hláška cizího parseru nesmí být nikde na stránce, ani v zavřeném řádku
   await expect(page.getByText(/Chybí povinný sloupec/)).toHaveCount(0);
-  await expect(page.getByText(/trading212/).first()).toBeVisible();
+  await expect(imported).not.toContainText(/chyb/);
 });
