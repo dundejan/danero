@@ -376,6 +376,23 @@ export function emptyYearFallback(
 }
 
 /**
+ * Kontroly výpočtu, které nejsou sdělením o datech roku, ale stálou výhradou:
+ *
+ * - k profilu — zaměstnanec a režim „jiné“ dostávají pod limitem pro podání
+ *   v každém roce poznámku o příjmech ze samostatné činnosti,
+ * - k roku — před rokem 2024 není v konfiguraci hranice 23% sazby a engine to
+ *   hlásí vždy, i když není z čeho daň počítat.
+ *
+ * Kdyby se počítaly, prázdný stav by se neukázal zaměstnanci nikdy a nikomu
+ * za rok před 2024 (tak to do 11. 10. 2026 bylo). Překročený limit rok
+ * prázdným nenechá tak jako tak — hlídá se zvlášť.
+ */
+const STANDING_NOTES: ReadonlySet<string> = new Set([
+  'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT',
+  'PROGRESSIVE_THRESHOLD_UNKNOWN',
+]);
+
+/**
  * Nemá engine za rok nic — žádný příjem, žádnou položku, žádné sdělení ani
  * povinnost?
  *
@@ -404,7 +421,7 @@ export function engineHasNothingFor(result: TaxYearResult): boolean {
     filingLimits.some((limit) => limit.applicable && limit.status.exceeded) ||
     limits.reporting38v.length > 0 ||
     // kontrola výpočtu je sdělení, které se má dočíst
-    warnings.length > 0;
+    warnings.some((warning) => !STANDING_NOTES.has(warning.code));
   return !hasSomething;
 }
 
