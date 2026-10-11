@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
+import { differsFromServerHtml, type FormControlState } from '@/lib/form-changes';
+
+const subscribeToNothing = (): (() => void) => () => {};
 
 /**
  * Auto-save formuláře: vloží se DOVNITŘ <form> a každou změnu pole odešle
@@ -12,6 +15,12 @@ import { useFormStatus } from 'react-dom';
  * a formulář se odešle znovu po dokončení — rychlé přepnutí dvou přepínačů se
  * tak neztratí ani neodešle dvakrát.
  *
+ * Změna provedená DŘÍV, než se stránka hydratovala, událost `change` vyslala
+ * do prázdna: nabídka ukazovala novou volbu, ale nic se neuložilo a nic to
+ * neřeklo. Po hydrataci se proto formulář porovná s HTML ze serveru a rozdíl
+ * se odešle. Jen po hydrataci — po vykreslení v prohlížeči (přechod odkazem)
+ * pole teprve vznikla a není co dohánět.
+ *
  * Bez JS se auto-save nekoná — komponenta proto vykresluje <noscript> tlačítko.
  */
 export function AutoSubmit() {
@@ -20,6 +29,14 @@ export function AutoSubmit() {
   const pendingRef = useRef(pending);
   const queuedRef = useRef(false);
   pendingRef.current = pending;
+  // serverový snímek platí jen pro první vykreslení při hydrataci
+  const hydratedFromServer = useRef(
+    useSyncExternalStore(
+      subscribeToNothing,
+      () => false,
+      () => true,
+    ),
+  );
 
   // změna nastřádaná během běžícího uložení → odeslat hned po dokončení
   useEffect(() => {
@@ -40,6 +57,15 @@ export function AutoSubmit() {
       form.requestSubmit();
     };
     form.addEventListener('change', onChange);
+    // jednou: vývojový režim Reactu pouští efekt dvakrát a druhé odeslání by
+    // se s prvním pralo
+    if (
+      hydratedFromServer.current &&
+      differsFromServerHtml(form.elements as Iterable<FormControlState>)
+    ) {
+      form.requestSubmit();
+    }
+    hydratedFromServer.current = false;
     return () => form.removeEventListener('change', onChange);
   }, []);
 
