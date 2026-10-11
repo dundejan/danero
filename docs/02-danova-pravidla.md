@@ -1304,6 +1304,17 @@ o čísle, které poplatník odevzdá finančnímu úřadu, takže patří sem.
   Sjednocení je **jen zobrazení**: daň počítá engine dál z nezaokrouhleného
   základu a XML se nezměnilo ani o bajt.
 
+  Totéž platí pro **příjmy druhu** (sloupec 2 Přílohy č. 2). Příloha je
+  nezaokrouhluje, ale dopočítává — výdaje dolů plus rozdíl podle úhrnu, aby řádek
+  seděl (`priloha2`) — takže vyjdou až o 2 Kč níž než táž tržba zaokrouhlená
+  matematicky. Tichý řádek „tržby X Kč“ (u derivátů „plnění X Kč“) pod druhem
+  v rozpadu daně proto bere zdanitelnou část z řádku přílohy (`wholeProceedsCzk`);
+  osvobozená část, která v příloze není, se přičte zaokrouhlená na koruny. Do
+  11. 10. 2026 stálo v demu za rok 2026 u derivátů 14 461 Kč v příloze a „plnění
+  14 462 Kč“ v rozpadu. Částky jednotlivých prodejů v tabulce prodejů zůstávají
+  zaokrouhlené každá zvlášť: jsou to částky z výpisu, ne řádky tiskopisu, a úhrn
+  přílohy se po prodejích rozdělit nedá.
+
   Zdroj tvaru: tiskopis DPFDP7 (částky v celých Kč) a vzorky přijaté zkušební
   podatelnou (`pnpm validate:epo`); výklad „dolů“ je volba Danera v mezeře, kterou
   zákon nechává, zdůvodněná tím, že nemění ř. 56.

@@ -8,7 +8,7 @@ import { ReportView } from '@/components/views/report-view';
 import { demoDataset } from '@/lib/demo-data';
 import { czk } from '@/lib/format';
 import { analyzeForUser, engineInputForUser, type ProfileRow } from '@/lib/portfolio';
-import { base8WholeCzk, priloha2 } from '@/lib/priloha2';
+import { base8WholeCzk, priloha2, wholeProceedsCzk } from '@/lib/priloha2';
 
 /**
  * R-14h — tatáž veličina má na obrazovce jedno číslo, a to číslo tiskopisu.
@@ -184,6 +184,62 @@ describe('rozpad daně ukazuje čísla tiskopisu (R-14h)', () => {
 });
 
 /**
+ * Tichý řádek pod druhem („tržby X Kč“, u derivátů „plnění X Kč“) je tatáž
+ * veličina jako sloupec „Příjmy“ Přílohy č. 2 o pár sekcí výš — jenže příloha
+ * příjmy dopočítává (výdaje dolů + rozdíl), kdežto řádek je zaokrouhloval
+ * matematicky: u tržby 108 601,60 Kč stálo v jednom reportu 108 601 a 108 602.
+ */
+describe('tržby v rozpadu daně sedí na Příjmy v Příloze č. 2 (R-14h)', () => {
+  const result = analyzeTaxYear(engineInputForUser(TXS, PROFILE, YEAR));
+  const p2 = priloha2(result);
+
+  it('sonda: matematické zaokrouhlení tržby se od přílohy liší', () => {
+    expect(result.securities.totalGrossProceedsCzk.toFixed(2)).toBe('108601.60');
+    expect(p2.rows[0]!.prijmyCzk.toFixed(0)).toBe('108601');
+    expect(czk(result.securities.totalGrossProceedsCzk)).not.toBe(czk(p2.rows[0]!.prijmyCzk));
+  });
+
+  it('report: „tržby“ u cenných papírů i krypta jsou Příjmy z přílohy', () => {
+    const html = reportHtml(TXS, PROFILE, YEAR);
+    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).toContain(`tržby ${czk(p2.rows[0]!.prijmyCzk)}`);
+    expect(rowText(html, BREAKDOWN, 'Kryptoaktiva')).toContain(`tržby ${czk(p2.rows[1]!.prijmyCzk)}`);
+    // Matematicky zaokrouhlená tržba v rozpadu nezůstala. (V tabulce prodejů
+    // stojí dál u jednotlivého prodeje — to je částka z výpisu brokera, ne
+    // řádek tiskopisu, a úhrn přílohy se po prodejích rozdělit nedá.)
+    expect(rowText(html, BREAKDOWN, 'Cenné papíry')).not.toMatch(/108\s602\sKč/);
+  });
+
+  it('osvobozená část tržeb v příloze není — přičte se k jejímu řádku', () => {
+    // prodej po časovém testu (osvobozený) vedle zdanitelného; úhrn přes limit
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'o1', isin: 'CZ0008019106', quantity: '10', pricePerShare: '1000', currency: 'CZK', tradeDate: `${YEAR - 5}-02-01`, settlementDate: `${YEAR - 5}-02-05` },
+      { type: 'SELL', id: 'o2', isin: 'CZ0008019106', quantity: '10', pricePerShare: '2000.04', currency: 'CZK', tradeDate: `${YEAR}-03-01`, settlementDate: `${YEAR}-03-03` },
+      ...TXS,
+    ]);
+    const mixed = analyzeTaxYear(engineInputForUser(txs, PROFILE, YEAR));
+    const exempt = mixed.securities.totalGrossProceedsCzk.sub(mixed.securities.taxableIncomeCzk);
+    expect(exempt.toFixed(2)).toBe('20000.40');
+    const whole = wholeProceedsCzk(mixed);
+    // 108 601 (příloha) + 20 000 (osvobozeno) — ne 128 602 z 128 602,00
+    expect(whole.securitiesCzk.toFixed(0)).toBe('128601');
+    expect(whole.securitiesCzk.sub(priloha2(mixed).rows[0]!.prijmyCzk).toFixed(0)).toBe('20000');
+    expect(rowText(reportHtml(txs, PROFILE, YEAR), BREAKDOWN, 'Cenné papíry')).toContain(
+      `tržby ${czk(whole.securitiesCzk)}`,
+    );
+  });
+
+  it('rok, kde je osvobozené všechno: stejné číslo jako čerpání limitu na přehledu', () => {
+    const txs = parseTransactions([
+      { type: 'BUY', id: 'm1', isin: 'CZ0008019106', quantity: '10', pricePerShare: '1000', currency: 'CZK', tradeDate: `${YEAR - 1}-02-01`, settlementDate: `${YEAR - 1}-02-05` },
+      { type: 'SELL', id: 'm2', isin: 'CZ0008019106', quantity: '10', pricePerShare: '1234.56', currency: 'CZK', tradeDate: `${YEAR}-03-01`, settlementDate: `${YEAR}-03-03` },
+    ]);
+    const small = analyzeTaxYear(engineInputForUser(txs, PROFILE, YEAR));
+    expect(small.securities.exemptUnder100k).toBe(true);
+    expect(czk(wholeProceedsCzk(small).securitiesCzk)).toBe(czk(small.limits.limit100k.usedCzk));
+  });
+});
+
+/**
  * Totéž nad demo daty — na nich byl rozdíl nalezen (rok 2026: 8 551 × 8 552).
  * Očekávání se neopisuje, bere se z přílohy: demo data se rok od roku posouvají.
  */
@@ -199,5 +255,14 @@ describe('demo: základ z prodejů je v reportu jedno číslo (R-14h)', () => {
     const table = html.slice(html.indexOf('Srovnání variant výpočtu daně'));
     const activeRow = table.split('<tr').find((chunk) => chunk.includes('používáš'));
     expect(activeRow!.replace(/<[^>]+>/g, ' ')).toContain(czk(whole));
+  });
+
+  it.each([2024, 2025, 2026])('rok %i: plnění z derivátů je řádek přílohy', (year) => {
+    const result = analyzeTaxYear(engineInputForUser(txs, profile, year, dailyRates));
+    if (result.derivatives.items.length === 0) return;
+    const html = reportHtml(txs, profile, year, { dailyRates, demo: true, basePath: '/demo' });
+    expect(rowText(html, BREAKDOWN, 'Deriváty')).toContain(
+      `plnění ${czk(priloha2(result).rows[2]!.prijmyCzk)}`,
+    );
   });
 });

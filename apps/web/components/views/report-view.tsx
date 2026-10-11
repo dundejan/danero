@@ -63,6 +63,7 @@ import {
   priloha2,
   wholeBasesCzk,
   wholeCzkDown,
+  wholeProceedsCzk,
 } from '@/lib/priloha2';
 import { regimeLimitFor } from '@/lib/simulator-verdict';
 import { variantDifference, variantHint, variantHintTitle } from '@/lib/variant-hint';
@@ -588,6 +589,8 @@ export function ReportView({
   // Rozpad daně ukazuje základy v celých korunách, jak je nese tiskopis — tytéž
   // částky jako Příloha č. 2 a ř. 38 výš na stránce, ne o korunu jiné (R-14h).
   const wholeBases = wholeBasesCzk(result, tax.variant);
+  // tiché řádky „tržby“ a „plnění“ pod druhy — táž čísla jako Příjmy v Příloze č. 2
+  const wholeProceeds = wholeProceedsCzk(result);
   // uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
   // zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout součet)
   const appliedCreditCzk = activeTax.taxBeforeCreditCzk
@@ -1786,7 +1789,7 @@ export function ReportView({
                   label="Cenné papíry"
                   hint={
                     <>
-                      tržby {czk(result.securities.totalGrossProceedsCzk)}
+                      tržby {czk(wholeProceeds.securitiesCzk)}
                       {result.securities.exemptUnder100k &&
                         ' · vše osvobozeno, prodeje do 100 000 Kč za rok'}
                     </>
@@ -1796,14 +1799,14 @@ export function ReportView({
                 {hasCrypto && (
                   <Row
                     label="Kryptoaktiva"
-                    hint={<>tržby {czk(result.crypto.totalGrossProceedsCzk)}</>}
+                    hint={<>tržby {czk(wholeProceeds.cryptoCzk)}</>}
                     value={czk(wholeBases.cryptoCzk)}
                   />
                 )}
                 {hasDerivatives && (
                   <Row
                     label="Deriváty"
-                    hint={<>plnění {czk(result.derivatives.taxableIncomeCzk)}</>}
+                    hint={<>plnění {czk(wholeProceeds.derivativesCzk)}</>}
                     value={czk(wholeBases.derivativesCzk)}
                   />
                 )}
