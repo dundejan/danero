@@ -5,13 +5,13 @@ import {
   previouslyVerifiedYears,
   reconcileBrokerPositions,
   syncBatchFilename,
-  syncErrorText,
   testEnvBaseUrl,
   type BrokerAccountRow,
   type StoredReconciliation,
   type SyncProgress,
   type SyncStatus,
 } from '@/lib/broker-sync';
+import { storedSyncFailure } from '@/lib/sync-failure';
 import { decryptSecret } from '@/lib/crypto';
 import { errorText, logEvent } from '@/lib/log';
 import { importParsed, type ImportSummary } from '@/lib/import-service';
@@ -158,7 +158,7 @@ export async function syncIbkr(
       // přechodné selhání rekonciliace nepřepisuje poslední platný stav —
       // chyba jde do lastSyncError (stejně jako v t212-sync), a to česky:
       // syrové „fetch failed“ uživateli neřekne nic. Původní text do logu.
-      reconciliationError = syncErrorText(error);
+      reconciliationError = storedSyncFailure(error, account);
       logEvent('warn', 'sync.reconciliation_failed', {
         accountId: account.id,
         broker: account.broker,

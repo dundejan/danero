@@ -96,6 +96,12 @@ export function rejectReusedTotpCode(db: Db) {
  * Klíč je userId, takže střídání adres nepomůže. Okno a stropy jsou stejné
  * jako u odpovídajících server actions, aby se limit nedal obejít přechodem
  * z jedné cesty na druhou — čítač je pro obě tentýž.
+ *
+ * Proto háček počítá JEN požadavky, které přišly po HTTP. Server action volá
+ * `auth.api.*` napřímo (bez `ctx.request`) a pokus si do téhož čítače zapsala
+ * sama, ještě než heslo vůbec ověřovala. Dokud ho háček počítal podruhé, stál
+ * jeden pokus dva zápisy: správné heslo hned po jednom překlepu narazilo na
+ * strop smazání účtu (3) a formulář k tomu hlásil „heslo nesedí“.
  */
 const ACCOUNT_WINDOW_MS = 5 * 60_000;
 
@@ -112,6 +118,8 @@ export function limitSensitiveAccountOperations(db: Db) {
   return createAuthMiddleware(async (ctx) => {
     const limit = ACCOUNT_LIMITS[ctx.path];
     if (!limit) return;
+    // volání ze serveru (server action) si pokus započítalo samo
+    if (!ctx.request) return;
     // Bez relace endpoint stejně skončí na 401 — kbelík nezakládáme, jinak by
     // šlo cizí účet vyčerpat zvenčí (a útočník userId ani nezná).
     const session = await getSessionFromCtx(ctx);

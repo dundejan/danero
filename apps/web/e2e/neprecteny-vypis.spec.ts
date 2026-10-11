@@ -77,7 +77,8 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
   await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
   await expect(historie.getByText('t212-2026.csv')).toHaveCount(1);
   // odezva je vidět tam, kde uživatel zrovna je (L7d-01) — historie leží na
-  // mobilu tři obrazovky pod formulářem; hláška plave a adresa po ní zůstane čistá
+  // mobilu tři obrazovky pod formulářem; stránka na ni skočí, hláška stojí
+  // hned nad ní a adresa po ní zůstane čistá
   await expect(
     page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ }),
   ).toBeVisible();
@@ -128,4 +129,48 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
   const again = await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
   await expect(historie.getByText('t212-2026.csv')).toHaveCount(1);
   await expect(again).toContainText(/0 duplicit/);
+});
+
+/**
+ * R2-25: plovoucí hláška po nahrání ležela na telefonu přesně přes první
+ * řádek historie importů — ten, na který odkazovala (hláška 640–724 px, řádek
+ * 622–700 px). Výsledek nahrání i vrácení proto stojí v toku stránky hned nad
+ * historií a nemizí sám; po prvních datech nese další krok.
+ */
+test('Zdroje dat na telefonu: výsledek nahrání stojí nad historií a nic nekryje', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Telefon import', email: 'telefon-import@danero.cz' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/import');
+
+  const row = await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  const result = page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ });
+  await expect(result).toBeVisible();
+  await expect(result).toBeInViewport();
+  await expect(row).toBeInViewport();
+
+  // hláška je v toku stránky a končí nad prvním řádkem historie
+  expect(await result.evaluate((element) => getComputedStyle(element).position)).not.toBe('fixed');
+  const resultBox = (await result.boundingBox())!;
+  const rowBox = (await row.boundingBox())!;
+  expect(resultBox.y + resultBox.height).toBeLessThanOrEqual(rowBox.y);
+  // a nic plovoucího přes historii neleží
+  await expect(page.locator('.toast-enter')).toHaveCount(0);
+
+  // první data: hláška nabízí další krok; po dalším nahrání už ne
+  await expect(result.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toBeVisible();
+  await page.goto('/import');
+  await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Nahráno: 1 soubor, žádná nová transakce nepřibyla.' }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toHaveCount(0);
+
+  // vadný soubor: chyba je taky v toku stránky, ne plovoucí
+  await page.goto('/import');
+  await uploadStatement(page, csv('vypis.csv', '%PDF-1.7 smyšlený obsah'));
+  const failure = page.getByRole('alert').filter({ hasText: /Soubor má chyby/ });
+  await expect(failure).toBeVisible();
+  expect(await failure.evaluate((element) => getComputedStyle(element).position)).not.toBe('fixed');
 });

@@ -1,6 +1,9 @@
 import { desc, eq } from 'drizzle-orm';
+import Link from 'next/link';
 import { AppToolbar } from '@/components/app-toolbar';
+import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { Toast } from '@/components/toast';
+import { buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { OpenOnHash } from '@/components/ui/open-on-hash';
 import { Group } from '@/components/ui/list';
@@ -10,11 +13,13 @@ import { getDb } from '@/db';
 import { brokerAccounts, importBatches } from '@/db/schema';
 import { casesForBatches } from '@/lib/failed-imports';
 import {
+  feedbackPlacement,
   HISTORY_MAX,
   HISTORY_PAGE,
   historyLimit,
   IMPORT_HISTORY_ANCHOR,
   importFeedback,
+  isFirstDataUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
 import type { UnmappedSymbol } from '@/lib/import-service';
@@ -107,10 +112,18 @@ export default async function ImportPage({
       : undefined;
   // Krok 2 cesty nového uživatele: profil má, data ještě ne. Stav se
   // neukládá, odvozuje se z účtu (stejně jako na /vitejte).
-  const awaitingFirstData =
-    recentBatches.length === 0 &&
-    accounts.length === 0 &&
-    (await getProfile(db, user.id)) !== null;
+  const withoutSources = recentBatches.length === 0 && accounts.length === 0;
+  // Konec kroku 2: nahrání právě přineslo první data. Příznak je z adresy,
+  // proto se ověří i na účtu — přehled má smysl nabídnout jen tomu, kdo má
+  // profil (bez něj by ho přehled poslal do Nastavení) a opravdu nějaká data.
+  const firstDataUploaded =
+    isFirstDataUpload(params) && recentBatches.some((batch) => batch.added > 0);
+  const hasProfile =
+    withoutSources || firstDataUploaded ? (await getProfile(db, user.id)) !== null : false;
+  const awaitingFirstData = withoutSources && hasProfile;
+  const offerOverview = firstDataUploaded && hasProfile;
+  // výsledek nahrání a vrácení stojí nad historií, ostatní hlášky plavou
+  const placement = feedbackPlacement(params);
   const t212 = accounts.find((account) => account.broker === 'trading212');
   const ibkr = accounts.find((account) => account.broker === 'ibkr');
 
@@ -183,10 +196,11 @@ export default async function ImportPage({
         {chyba && !inlineOnly && (
           <Toast key={crypto.randomUUID()} kind="chyba" text={errorText} />
         )}
-        {/* Výsledek nahrání, vrácení, připojení, odpojení a spuštění synchronizace.
-            Plave, protože akce končí na kotvě (historie, účet u brokera) a hláška
-            nahoře na stránce by zůstala mimo obrazovku (L7d-01). */}
-        {feedback && (
+        {/* Výsledek připojení, odpojení a spuštění synchronizace. Plave, protože
+            akce končí na kotvě účtu u brokera a hláška nahoře na stránce by
+            zůstala mimo obrazovku (L7d-01). Výsledek nahrání a vrácení je
+            v toku stránky nad historií — viz níž. */}
+        {feedback && placement === 'floating' && (
           <Toast key={crypto.randomUUID()} kind={feedback.kind} floating text={feedback.text} />
         )}
         {ulozeno === 'ciselnik' && (
@@ -263,13 +277,40 @@ export default async function ImportPage({
 
             {/* Jedna kotva pro obě sekce: po nahrání stránka skočí sem a nepřečtený
                 výpis (ten jediný po uživateli něco chce) je nad historií vidět hned. */}
-            <div id={IMPORT_HISTORY_ANCHOR} className="min-w-0 scroll-mt-20 space-y-14">
-              <UnreadStatements cases={unreadCases} />
-              <ImportHistory
-                batches={batches}
-                olderHref={olderHref}
-                highlightedBatchIds={uploadedBatchIds(params)}
-              />
+            <div id={IMPORT_HISTORY_ANCHOR} className="min-w-0 scroll-mt-20">
+              {/* Výsledek nahrání a vrácení stojí v toku stránky hned nad tím,
+                  o čem mluví. Plovoucí hláška na telefonu ležela přesně přes
+                  první řádek historie (R2-25). Nemizí sama: po prvním nahrání
+                  nese další krok cesty nového uživatele. */}
+              {feedback && placement === 'history' && (
+                <>
+                  <ClearFeedbackUrl />
+                  <Notice
+                    className="mb-8"
+                    role={feedback.kind === 'chyba' ? 'alert' : 'status'}
+                    tone={feedback.kind === 'chyba' ? 'danger' : 'success'}
+                    title={feedback.text}
+                    action={
+                      offerOverview && (
+                        <Link
+                          href="/prehled"
+                          className={buttonVariants({ variant: 'tinted', size: 'sm' })}
+                        >
+                          Hotovo, otevřít přehled
+                        </Link>
+                      )
+                    }
+                  />
+                </>
+              )}
+              <div className="space-y-14">
+                <UnreadStatements cases={unreadCases} />
+                <ImportHistory
+                  batches={batches}
+                  olderHref={olderHref}
+                  highlightedBatchIds={uploadedBatchIds(params)}
+                />
+              </div>
             </div>
           </div>
         </div>

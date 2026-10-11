@@ -45,3 +45,42 @@ test('T212 sync jako job: připojení klíče → průběh po letech → výsled
   await page.goto('/prehled');
   await expect(page.getByRole('heading', { name: /Přehled \d{4}/ })).toBeVisible();
 });
+
+/**
+ * Chyba synchronizace se dřív vypisovala syrově („Trading212 API 500 na
+ * /history/exports: {…}“). Na obrazovce má být věta podle druhu chyby
+ * a syrový text až za rozbalením, ať ho jde poslat provozovateli
+ * (`lib/sync-failure.ts`). Mock brokera vrací chybu účtu, jehož ID klíče je
+ * `selhani-<kód>`.
+ */
+test('T212 sync: když broker neodpovídá, řekne to větou a syrovou chybu schová', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Sync chyba', email: 'sync-chyba@danero.cz' });
+  await page.goto('/import');
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  const connect = await openDisclosure(brokers, 'Trading 212');
+  await connect.getByLabel('ID klíče API').fill('selhani-500');
+  await connect.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
+  await connect.getByRole('button', { name: 'Připojit' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Klíč je uložený' })).toBeVisible();
+
+  const account = page.locator('#trading212');
+  await account.getByRole('button', { name: 'Stáhnout kompletní historii' }).click();
+  await expect(account.getByText('Poslední synchronizace selhala')).toBeVisible({ timeout: 60_000 });
+
+  // věta pro člověka, bez kódu a bez adresy rozhraní
+  await expect(
+    account.getByText('Trading 212 teď neodpovídá. Zkus to za chvíli znovu — co už se stáhlo, zůstává.'),
+  ).toBeVisible();
+  const raw = account.getByText(/Trading212 API 500 na \/history\/exports/);
+  await expect(raw).toBeHidden();
+  // syrový text je k mání na požádání
+  const detail = await openDisclosure(account, 'Technický detail');
+  await expect(detail.getByText(/Trading212 API 500 na \/history\/exports/)).toBeVisible();
+
+  // po neúspěchu zůstává první synchronizace plná — účet se netváří jako
+  // synchronizovaný (`lastSyncedAt` se nenastavilo)
+  await expect(account.getByRole('button', { name: 'Stáhnout kompletní historii' })).toBeVisible();
+  await expect(account.getByText('Poslední synchronizace', { exact: true })).toHaveCount(0);
+});

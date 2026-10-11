@@ -26,7 +26,12 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByText(/Krok 2 ze 2/)).toHaveCount(0);
 
   // ── dashboard: limity z reálných dat ────────────────────────────────────
-  await page.goto('/prehled');
+  // Bez `goto`: výsledek prvního nahrání nabízí další krok sám — dřív cesta
+  // nového uživatele skončila na Zdrojích dat hláškou a dál nic.
+  const uploadResult = page
+    .getByRole('status')
+    .filter({ hasText: 'Nahráno: 1 soubor, přibyly 2 transakce.' });
+  await uploadResult.getByRole('link', { name: 'Hotovo, otevřít přehled' }).click();
   await expect(page.getByRole('heading', { name: /Přehled \d{4}/ })).toBeVisible();
   // v seznamu je jméno limitu a čerpání; celé znění s částkou nese detail
   // vybraného řádku
@@ -80,9 +85,9 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
   /**
-   * Auto-save je asynchronní a `AutoSubmit` navíc změnu během běžícího uložení
-   * ZAŘADÍ DO FRONTY — čekat na jednu odpověď serveru proto nestačí, dá se
-   * chytit odpověď předchozího uložení a reload pak předběhne to skutečné.
+   * Auto-save je asynchronní a uložení jdou na server jedno po druhém — čekat
+   * na jednu odpověď serveru proto nestačí, dá se chytit odpověď předchozího
+   * uložení a reload pak předběhne to skutečné.
    * Ověřuje se tedy VÝSLEDEK: opakovaně načíst stránku, dokud tam hodnota není.
    */
   const ulozenoJako = async (popisek: RegExp | string, hodnota: string) => {

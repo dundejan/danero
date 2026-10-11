@@ -15,6 +15,7 @@ import {
   notificationRules,
   TIME_TEST_LEAD_OPTIONS,
 } from '@/lib/notification-rules';
+import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
 import { plural } from '@/lib/format';
 import { runInPlace } from '@/lib/redirect-in-place';
 import { tidy } from '@/lib/typography';
@@ -22,6 +23,7 @@ import { cn, firstParam } from '@/lib/utils';
 import { SettingsToolbar } from '../settings-nav';
 import { SettingsToast } from '../settings-toast';
 import { saveNotificationPrefsAction } from '../actions';
+import { NOTIFICATION_FIELDS, notificationFormEntries } from '../form-state';
 
 export const metadata = { title: 'Upozornění — Danero' };
 
@@ -125,6 +127,10 @@ export default async function NotificationSettingsPage({
   const params = await searchParams;
   const prefs = await getNotificationPrefs(db, user.id);
   const rules = notificationRules(prefs);
+  // Stav, se kterým se formulář vykreslí: výchozí hodnoty polí i skryté pole,
+  // podle kterého server pozná, co člověk změnil (`lib/form-baseline.ts`).
+  const baseline = encodeBaseline(notificationFormEntries(prefs));
+  const shown = new URLSearchParams(baseline);
 
   // Souhrn „Co ti teď chodí“ tu býval jako sekce nad formulářem; v nové skladbě
   // jen větami opakoval přepínače a štítky o obrazovku níž (R1B-16). Zůstává
@@ -149,12 +155,16 @@ export default async function NotificationSettingsPage({
           </Notice>
         )}
         {/* `autoComplete="off"`: prohlížeč do formuláře s auto-save nevrací po
-            F5 staré hodnoty — viz `AutoSubmit` */}
+            F5 staré hodnoty — viz `AutoSubmit`. Klíč: s jiným stavem ze
+            serveru se formulář vykreslí celý znovu, aby pole a skrytý stav
+            zůstaly v páru (proč, je u formuláře daňového profilu). */}
         <form
+          key={baseline}
           action={saveInPlace}
           autoComplete="off"
           className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}
         >
+          <input type="hidden" name={BASELINE_FIELD} value={baseline} />
           <Section
             title="Odesílání"
             info={
@@ -189,7 +199,7 @@ export default async function NotificationSettingsPage({
                 <Switch
                   id="emaily-zapnute"
                   name="emaily-zapnute"
-                  defaultChecked={prefs.emailEnabled}
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.emailEnabled)}
                 />
               </Row>
               <FieldRow
@@ -209,7 +219,7 @@ export default async function NotificationSettingsPage({
                 <Select
                   id="frekvence-emailu"
                   name="frekvence-emailu"
-                  defaultValue={prefs.emailFrequency === 'WEEKLY' ? 'WEEKLY' : 'DAILY'}
+                  defaultValue={shown.get(NOTIFICATION_FIELDS.emailFrequency) ?? ''}
                 >
                   <option value="DAILY">Nejvýš jednou denně</option>
                   <option value="WEEKLY">Jednou týdně</option>
@@ -232,7 +242,7 @@ export default async function NotificationSettingsPage({
                 <Switch
                   id="nalehave-hned"
                   name="nalehave-hned"
-                  defaultChecked={rules.urgentImmediately}
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.urgentImmediately)}
                 />
               </Row>
               <FieldRow
@@ -252,7 +262,7 @@ export default async function NotificationSettingsPage({
                 <Select
                   id="pravidelny-prehled"
                   name="pravidelny-prehled"
-                  defaultValue={rules.summaryFrequency}
+                  defaultValue={shown.get(NOTIFICATION_FIELDS.summaryFrequency) ?? ''}
                 >
                   <option value="OFF">Neposílat</option>
                   <option value="MONTHLY">Jednou měsíčně</option>
@@ -280,7 +290,7 @@ export default async function NotificationSettingsPage({
                   <Switch
                     id="upozorneni-casove-testy"
                     name="upozorneni-casove-testy"
-                    defaultChecked={prefs.timeTestEvents}
+                    defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestEvents)}
                   />
                 </Row>
                 <ChoiceRow
@@ -292,7 +302,7 @@ export default async function NotificationSettingsPage({
                     value: days,
                     text: String(days),
                     suffix: ` ${plural(days, 'den', 'dny', 'dní')} předem`,
-                    checked: rules.timeTestLeadDays.includes(days),
+                    checked: shown.getAll(NOTIFICATION_FIELDS.timeTestLeadDays).includes(String(days)),
                   }))}
                 />
                 <Row
@@ -302,7 +312,7 @@ export default async function NotificationSettingsPage({
                   <Switch
                     id="osvobozeno-hotovo"
                     name="osvobozeno-hotovo"
-                    defaultChecked={rules.timeTestDone}
+                    defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestDone)}
                   />
                 </Row>
               </Group>
@@ -323,7 +333,7 @@ export default async function NotificationSettingsPage({
                   <Switch
                     id="upozorneni-limity"
                     name="upozorneni-limity"
-                    defaultChecked={prefs.limitEvents}
+                    defaultChecked={shown.has(NOTIFICATION_FIELDS.limitEvents)}
                   />
                 </Row>
                 <ChoiceRow
@@ -335,7 +345,9 @@ export default async function NotificationSettingsPage({
                     value: percent,
                     text: tidy(`${percent} %`),
                     suffix: percent === 100 ? ' — prolomení limitu' : ' limitu',
-                    checked: rules.limitThresholdsPct.includes(percent),
+                    checked: shown
+                      .getAll(NOTIFICATION_FIELDS.limitThresholdsPct)
+                      .includes(String(percent)),
                   }))}
                 />
               </Group>
@@ -354,7 +366,7 @@ export default async function NotificationSettingsPage({
                   <Switch
                     id="upozorneni-kalendar"
                     name="upozorneni-kalendar"
-                    defaultChecked={prefs.calendarEmails}
+                    defaultChecked={shown.has(NOTIFICATION_FIELDS.calendarEmails)}
                   />
                 </Row>
                 <FieldRow
@@ -365,7 +377,7 @@ export default async function NotificationSettingsPage({
                   <Select
                     id="lhuta-terminu"
                     name="lhuta-terminu"
-                    defaultValue={String(rules.deadlineLeadDays)}
+                    defaultValue={shown.get(NOTIFICATION_FIELDS.deadlineLeadDays) ?? ''}
                   >
                     {DEADLINE_LEAD_OPTIONS.map((days) => (
                       <option key={days} value={days}>

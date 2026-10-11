@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { useFormStatus } from 'react-dom';
 import { readEarlyInput } from '@/lib/early-input';
+import { CHANGED_FIELD } from '@/lib/form-baseline';
 import {
   reconcileWithServerHtml,
   restoreServerHtml,
@@ -23,9 +23,21 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * (form.requestSubmit() → server action). U textových polí prohlížeč spouští
  * `change` až při blur — přesně to chceme, žádný debounce není potřeba.
  *
- * Ochrana proti dvojímu odeslání: během pending se další change jen zapamatuje
- * a formulář se odešle znovu po dokončení — rychlé přepnutí dvou přepínačů se
- * tak neztratí ani neodešle dvakrát.
+ * Každá změna se odešle HNED, i když předchozí uložení ještě běží. Dřív se
+ * taková změna jen zapamatovala a formulář se měl odeslat po dokončení —
+ * jenže dokončené uložení formulář vykreslí znovu ze stavu na serveru, takže
+ * čekající změna z obrazovky zmizela a neodeslala se nikdy (změřeno
+ * 11. 10. 2026: dvě nabídky přepnuté rychle po sobě, druhá se ztratila).
+ * Odeslat každou zvlášť je bezpečné, protože server zapisuje jen pole, která
+ * se liší od stavu při vykreslení (`lib/form-baseline.ts`): dvě odeslání se
+ * nepřepíšou a server je zpracuje v pořadí, v jakém je člověk udělal.
+ *
+ * Jediné, co samotné srovnání nepozná, je změna vrácená během ukládání
+ * (přepínač zapnutý a hned vypnutý — druhé odeslání nese totéž, co stálo ve
+ * formuláři při vykreslení). Jméno pole, jehož změna odeslání vyvolala, proto
+ * jde serveru ve skrytém poli `CHANGED_FIELD` a to pole se zapíše vždy.
+ * Hodnotu skrytému poli nastavuje jen tenhle skript; React ho vykreslí bez
+ * hodnoty a nikdy mu ji nepřepíše.
  *
  * Změna provedená DŘÍV, než se stránka hydratovala, událost `change` vyslala
  * do prázdna. Po hydrataci se proto formulář srovná s HTML ze serveru —
@@ -45,11 +57,7 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * Bez JS se auto-save nekoná — komponenta proto vykresluje <noscript> tlačítko.
  */
 export function AutoSubmit() {
-  const { pending } = useFormStatus();
-  const ref = useRef<HTMLSpanElement>(null);
-  const pendingRef = useRef(pending);
-  const queuedRef = useRef(false);
-  pendingRef.current = pending;
+  const ref = useRef<HTMLInputElement>(null);
   // serverový snímek platí jen pro první vykreslení při hydrataci
   const hydratedFromServer = useRef(
     useSyncExternalStore(
@@ -59,22 +67,13 @@ export function AutoSubmit() {
     ),
   );
 
-  // změna nastřádaná během běžícího uložení → odeslat hned po dokončení
   useEffect(() => {
-    if (!pending && queuedRef.current) {
-      queuedRef.current = false;
-      ref.current?.closest('form')?.requestSubmit();
-    }
-  }, [pending]);
-
-  useEffect(() => {
-    const form = ref.current?.closest('form');
-    if (!form) return;
-    const onChange = () => {
-      if (pendingRef.current) {
-        queuedRef.current = true;
-        return;
-      }
+    const changedField = ref.current;
+    const form = changedField?.form;
+    if (!changedField || !form) return;
+    const onChange = (event: Event) => {
+      const name = (event.target as { name?: unknown } | null)?.name;
+      changedField.value = typeof name === 'string' ? name : '';
       form.requestSubmit();
     };
     form.addEventListener('change', onChange);
@@ -84,7 +83,8 @@ export function AutoSubmit() {
       hydratedFromServer.current = false;
       const controls = Array.from(form.elements) as unknown as FormControlState[];
       const { revert, submit } = reconcileWithServerHtml(controls, readEarlyInput(window));
-      // nejdřív vrátit, co není od člověka — odesílá se celý formulář
+      // nejdřív vrátit, co není od člověka — server by rozdíl proti stavu při
+      // vykreslení vzal jako změnu
       revert.forEach(restoreServerHtml);
       if (submit) form.requestSubmit();
     }
@@ -97,7 +97,7 @@ export function AutoSubmit() {
 
   return (
     <>
-      <span ref={ref} hidden />
+      <input ref={ref} type="hidden" name={CHANGED_FIELD} />
       <noscript>
         <button
           type="submit"

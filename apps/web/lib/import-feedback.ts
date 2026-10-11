@@ -35,6 +35,12 @@ export interface ImportFeedbackDetails {
   /** Id účtu u brokera a jobu — jen aby se adresa neopakovala. */
   accountId?: string;
   jobId?: string;
+  /**
+   * Nahrání přineslo PRVNÍ data účtu (do té chvíle neměl jedinou transakci) —
+   * hláška pak nabídne přehled (`isFirstDataUpload`). `false` se do adresy
+   * nepíše.
+   */
+  firstData?: boolean;
 }
 
 /**
@@ -49,6 +55,7 @@ const PARAM_NAMES: Record<keyof ImportFeedbackDetails, string> = {
   batchId: 'davka',
   accountId: 'ucet',
   jobId: 'uloha',
+  firstData: 'prvni',
 };
 
 /**
@@ -98,7 +105,7 @@ export function importFeedbackUrl(
   const query = new URLSearchParams({ ulozeno: code });
   for (const key of Object.keys(PARAM_NAMES) as Array<keyof ImportFeedbackDetails>) {
     const value = details[key];
-    if (value === undefined) continue;
+    if (value === undefined || value === false) continue;
     for (const item of Array.isArray(value) ? value : [value]) {
       query.append(PARAM_NAMES[key], String(item));
     }
@@ -124,17 +131,17 @@ function count(value: string | string[] | undefined): number | undefined {
 
 const transactionsWord = (n: number): string => plural(n, 'transakce', 'transakce', 'transakcí');
 
-const HISTORY_HINT = 'Podrobnosti najdeš v historii importů.';
-
 /**
  * Souhrn nahrání. Schválně jinými slovy než karta v historii („2 nové ·
- * 0 duplicit“): hláška říká, co se stalo a kde hledat zbytek, karta nese čísla.
+ * 0 duplicit“): hláška říká, co se stalo, karta nese čísla. Stojí přímo nad
+ * historií importů (`feedbackPlacement`), takže na ni větou neodkazuje — jen
+ * u chyb říká, kde jsou vypsané.
  */
 function uploadFeedback(params: Params): ImportFeedback {
   const files = count(params[PARAM_NAMES.files]);
   const added = count(params[PARAM_NAMES.added]);
   if (files === undefined || files === 0 || added === undefined) {
-    return { kind: 'ok', text: `Nahráno. ${HISTORY_HINT}` };
+    return { kind: 'ok', text: 'Nahráno.' };
   }
   const errors = Math.min(count(params[PARAM_NAMES.filesWithErrors]) ?? 0, files);
   // Nic nepřibylo a soubory mají chyby: zelené „hotovo“ by lhalo — a věta
@@ -153,7 +160,7 @@ function uploadFeedback(params: Params): ImportFeedback {
     (added === 0
       ? 'žádná nová transakce nepřibyla.'
       : `${plural(added, 'přibyla', 'přibyly', 'přibylo')} ${added} ${transactionsWord(added)}.`);
-  if (errors === 0) return { kind: 'ok', text: `${head} ${HISTORY_HINT}` };
+  if (errors === 0) return { kind: 'ok', text: head };
   const who =
     files === 1
       ? 'Soubor má chyby'
@@ -209,6 +216,32 @@ function undoFeedback(params: Params): ImportFeedback {
     kind: 'ok',
     text: `Import vrácen, ${plural(removed, 'smazána', 'smazány', 'smazáno')} ${removed} ${transactionsWord(removed)}.`,
   };
+}
+
+/**
+ * Kde se hláška ukáže. Výsledek nahrání a vrácení patří do toku stránky nad
+ * historii importů: akce končí na její kotvě a plovoucí hláška na telefonu
+ * ležela přesně přes první řádek historie — ten, o kterém mluvila (R2-25).
+ * Ostatní výsledky k historii nepatří a plavou dál. `null` = adresa žádnou
+ * z těchto hlášek nenese.
+ */
+export function feedbackPlacement(params: Params): 'history' | 'floating' | null {
+  if (importFeedback(params) === null) return null;
+  const code = firstParam(params.ulozeno);
+  return code === 'nahrano' || code === 'vraceno' ? 'history' : 'floating';
+}
+
+/**
+ * Přineslo právě dokončené nahrání první data účtu? Příznak dává akce (ví, že
+ * účet před nahráním neměl jedinou transakci); z adresy se bere jen spolu
+ * s nenulovým počtem přidaných transakcí.
+ */
+export function isFirstDataUpload(params: Params): boolean {
+  return (
+    firstParam(params.ulozeno) === 'nahrano' &&
+    firstParam(params[PARAM_NAMES.firstData]) === 'true' &&
+    (count(params[PARAM_NAMES.added]) ?? 0) > 0
+  );
 }
 
 /**

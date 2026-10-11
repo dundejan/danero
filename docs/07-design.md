@@ -126,7 +126,7 @@ font-bold`**, vyber stupeň.
 | `ui/field.tsx` → `Field`, `Label`, `Input`, `Select`, `Textarea`, `Checkbox`, `FieldHint`, `FieldError`, `describedByError` | Formulářová pole. Chybu zapíná `aria-invalid` přes `describedByError`. |
 | `ui/switch.tsx` → `Switch` | Přepínač pro nastavení, které platí hned. |
 | `ui/file-field.tsx` → `FileField` | Výběr souborů s českými texty. |
-| `ui/auto-submit.tsx` | Formulář, který se odešle při změně pole. |
+| `ui/auto-submit.tsx` → `AutoSubmit` | Formulář, který se odešle při změně pole — každou změnu hned, i když předchozí uložení běží. Patří k němu skrytý stav formuláře (`lib/form-baseline.ts`, viz Formulář). |
 | `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami (roků smí být víc). `size="md"` když je přepínač hlavní ovládání (odpověď v kalkulačce); `fit="content"` pro různě dlouhé popisky. U `nav` se palec pohne hned při klepnutí, na odpověď serveru nečeká. Když se nevejde, posouvá se sám uvnitř a vybraný segment si srovná do zorného pole — vlastní posuvný obal kolem něj nepiš. Výšku ani mřížku nepřebíjej třídou. |
 | `ui/sheet.tsx` → `Sheet` | Spodní sheet na telefonu: detail řádku, další sekce, vysvětlivka. S `title` má hlavičku a „Hotovo“. Vedle `onClose` předej i `onReopen` (zavíraný sheet jde hodem nahoru vrátit a rodič má vědět, že je zase otevřený). Stav drží automat v `ui/sheet-machine.ts`. |
 | `ui/confirm-dialog.tsx` → `ConfirmDialog` | Potvrzení nevratné akce. Jen pro nevratné. S `action` nese formulář sám (skrytá pole `fields`, viditelná jako `children`), během akce ukazuje `pendingLabel` a nejde odeslat dvakrát. |
@@ -371,7 +371,14 @@ Odkaz uprostřed věty je vždy podtržený.
   `Field` + tlačítko. Popisek, nápověda jedna věta (`hint`), delší výklad do `info`.
   Chyba pod polem (`FieldError`) — v dialogu jen tehdy, když pole v dialogu je.
 - Volba, která platí hned = `Switch`; volba odesílaná formulářem = `Checkbox`.
-- Výsledek akce hlásí `Toast`, nevratnou akci potvrzuje `ConfirmDialog`.
+- Výsledek akce hlásí `Toast`, nevratnou akci potvrzuje `ConfirmDialog`. Výsledek, který
+  mluví o konkrétním seznamu na stránce (nahrání a vrácení importu → historie importů),
+  neplave: je to `Notice` v toku stránky hned nad tím seznamem — plovoucí hláška na telefonu
+  ležela přes řádek, o kterém mluvila. Kód výsledku z adresy pak uklidí `ClearFeedbackUrl`.
+- Formulář s auto-save (`AutoSubmit`) nese skrytý stav, se kterým byl vykreslen, a server
+  zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`) — panel se starým stavem
+  tak nepřepíše změnu udělanou jinde. Výchozí hodnoty polí i skrytý stav ber z jednoho místa
+  (vzor: `app/(app)/nastaveni/form-state.ts`) a formuláři dej `key` podle toho stavu.
 
 ## 5. Textová dieta
 
@@ -481,7 +488,8 @@ stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
   `components/app-toolbar.tsx`, `components/view-switch.tsx`, `components/year-switcher.tsx`,
   `components/toast.tsx`, `components/theme-toggle.tsx`, `components/theme-provider.tsx`,
   `components/theme-color.ts`, `components/app-skeleton.tsx`,
-  `components/shell-disclaimer.ts`.
+  `components/shell-disclaimer.ts`, `components/sign-out-button.tsx`,
+  `components/refresh-on-restore.tsx`, `components/clear-feedback-url.tsx`.
 - **Skořápka a bloky veřejných stránek:** `components/marketing-page.tsx`,
   `components/marketing-nav.tsx`, `components/marketing-blocks.tsx`,
   `components/guide-article.tsx`, `components/long-read.tsx`, `components/faq-list.tsx`,

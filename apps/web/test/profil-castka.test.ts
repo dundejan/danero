@@ -133,7 +133,11 @@ describe('daňový režim se při prvním uložení musí vybrat (L7i-01, R8)', 
       'utf8',
     );
     const select = page.slice(page.indexOf('id="rezim"'), page.indexOf('<option value="PAUSAL">'));
-    expect(select).toContain("defaultValue={profile?.regime ?? ''}");
+    // výchozí hodnota jde ze stavu formuláře (`form-state.ts`) — a ten bez
+    // profilu žádný režim nenese, takže se vybere prázdná položka
+    expect(select).toContain("defaultValue={shown.get(PROFILE_FIELDS.regime) ?? ''}");
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    expect(profileFormEntries(null).map(([name]) => name)).not.toContain('rezim');
     expect(select).toContain('required');
     expect(select).toContain('<option value="" disabled>');
     expect(page).not.toMatch(/regime \?\? 'PAUSAL'/);

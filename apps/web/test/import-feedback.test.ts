@@ -7,10 +7,12 @@ import type { Db } from '@/db';
 import { brokerAccounts, importBatches, jobs, transactions, user } from '@/db/schema';
 import {
   batchesToOpen,
+  feedbackPlacement,
   historyLimit,
   IMPORT_FEEDBACK_PARAMS,
   importFeedback,
   importFeedbackUrl,
+  isFirstDataUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
 import { importFileIsolated } from '@/lib/import-service';
@@ -85,12 +87,46 @@ async function freshDb(): Promise<Db> {
 }
 
 describe('hláška z parametrů adresy', () => {
-  it('po nahrání řekne, kolik souborů a transakcí, a pošle do historie (L7d-01)', () => {
+  it('po nahrání řekne, kolik souborů a transakcí (L7d-01)', () => {
     const feedback = importFeedback({ ulozeno: 'nahrano', soubory: '2', pridano: '15', chyby: '0' });
+    // hláška stojí přímo nad historií importů — odkazovat na ni větou netřeba
     expect(feedback).toEqual({
       kind: 'ok',
-      text: 'Nahráno: 2 soubory, přibylo 15 transakcí. Podrobnosti najdeš v historii importů.',
+      text: 'Nahráno: 2 soubory, přibylo 15 transakcí.',
     });
+  });
+
+  /**
+   * R2-25: plovoucí hláška po nahrání na telefonu ležela přesně přes první
+   * řádek historie importů (hláška 640–724 px, řádek 622–700 px) — tedy přes
+   * to jediné, na co odkazovala. Výsledek nahrání a vrácení proto patří do
+   * toku stránky nad historii; plovoucí zůstávají hlášky, které k historii
+   * nepatří (připojení brokera, spuštění synchronizace…).
+   */
+  it('výsledek nahrání a vrácení patří k historii, ostatní hlášky plavou', () => {
+    expect(feedbackPlacement({ ulozeno: 'nahrano', soubory: '1', pridano: '2' })).toBe('history');
+    expect(feedbackPlacement({ ulozeno: 'vraceno', smazano: '3' })).toBe('history');
+    for (const code of ['pripojeno', 'odpojeno', 'spusteno', 'profil']) {
+      expect(feedbackPlacement({ ulozeno: code }), code).toBe('floating');
+    }
+    expect(feedbackPlacement({})).toBeNull();
+    expect(feedbackPlacement({ ulozeno: 'ciselnik' })).toBeNull();
+  });
+
+  /**
+   * Krok 2 cesty nového uživatele končil na Zdrojích dat hláškou a dál nic.
+   * Po prvním nahrání, které přineslo data, hláška nabídne přehled.
+   */
+  it('první data: po nahrání, které něco přidalo, se nabídne přehled', () => {
+    const first = { ulozeno: 'nahrano', soubory: '1', pridano: '2', prvni: 'true' };
+    expect(isFirstDataUpload(first)).toBe(true);
+    // bez příznaku z akce, bez přidaných transakcí, nebo po jiné akci ne
+    expect(isFirstDataUpload({ ...first, prvni: undefined })).toBe(false);
+    expect(isFirstDataUpload({ ...first, pridano: '0' })).toBe(false);
+    expect(isFirstDataUpload({ ...first, pridano: 'hodně' })).toBe(false);
+    expect(isFirstDataUpload({ ...first, ulozeno: 'vraceno' })).toBe(false);
+    // příznak toast i úklid adresy smažou spolu s ostatními údaji hlášky
+    expect(IMPORT_FEEDBACK_PARAMS).toContain('prvni');
   });
 
   it('skloňuje podle počtu', () => {
@@ -166,7 +202,7 @@ describe('hláška z parametrů adresy', () => {
       pridano: '-3',
       chyby: '1e9',
     });
-    expect(feedback).toEqual({ kind: 'ok', text: 'Nahráno. Podrobnosti najdeš v historii importů.' });
+    expect(feedback).toEqual({ kind: 'ok', text: 'Nahráno.' });
     expect(importFeedback({ ulozeno: 'vraceno', smazano: 'vše' })!.text).toBe('Import vrácen.');
   });
 
@@ -322,6 +358,41 @@ describe('akce na /import končí na adrese s hláškou, ne na té právě otev�
     expect(batches.map((batch) => batch.id)).toContain(url!.searchParams.get('davka'));
     expect(url!.hash).toBe('#historie');
   });
+
+  it(
+    'nahrání: jen první soubor, který přinesl data, nese příznak prvních dat',
+    { timeout: 30_000 },
+    async () => {
+      await freshDb();
+      const { uploadImportAction } = await import('@/app/(app)/import/actions');
+      const upload = (name: string, content: string) => {
+        const data = new FormData();
+        data.append('soubory', new File([content], name, { type: 'text/csv' }));
+        return target(uploadImportAction, data);
+      };
+
+      // nepřečtený soubor nic nepřidal — účet je dál bez dat
+      const failed = await upload('vypis.csv', '%PDF-1.7 smyšlený obsah');
+      expect(failed!.searchParams.get('pridano')).toBe('0');
+      expect(failed!.searchParams.has('prvni')).toBe(false);
+
+      const first = await upload('t212.csv', T212_CSV);
+      expect(first!.searchParams.get('pridano')).toBe('2');
+      expect(first!.searchParams.get('prvni')).toBe('true');
+      expect(isFirstDataUpload(Object.fromEntries(first!.searchParams))).toBe(true);
+
+      // další výpis už první není, i když něco přidá
+      const second = await upload(
+        't212-dalsi.csv',
+        [
+          T212_CSV.split('\n')[0],
+          'Market buy,2025-01-15 10:00:00,US5949181045,MSFT,Microsoft Corp,5,400.00,USD,,,,,,,,,FB9',
+        ].join('\n'),
+      );
+      expect(second!.searchParams.get('pridano')).toBe('1');
+      expect(second!.searchParams.has('prvni')).toBe(false);
+    },
+  );
 });
 
 /**

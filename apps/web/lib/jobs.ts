@@ -7,14 +7,14 @@ import type { SyncJobView } from '@/components/sync-job-progress';
 import {
   markAccountSyncError,
   SyncPaused,
-  syncErrorText,
   type SyncProgress,
   type SyncStatus,
 } from '@/lib/broker-sync';
 import { isUniqueViolation } from '@/lib/db-errors';
 import { errorText } from '@/lib/log';
 import { syncIbkr } from '@/lib/ibkr-sync';
-import { explainT212SyncError, syncTrading212, type SyncOptions } from '@/lib/t212-sync';
+import { storedSyncFailure } from '@/lib/sync-failure';
+import { syncTrading212, type SyncOptions } from '@/lib/t212-sync';
 
 /**
  * Background joby (docs/09, G1). Zvolený model zpracování:
@@ -270,7 +270,6 @@ async function withSyncAccount<T>(
     account: typeof brokerAccounts.$inferSelect,
     onProgress: (progress: SyncProgress) => Promise<void>,
   ) => Promise<T>,
-  explainError: (message: string) => string = (message) => message,
 ): Promise<T> {
   const { accountId } = jobPayload(job);
   const accounts = accountId
@@ -308,12 +307,7 @@ async function withSyncAccount<T>(
     // do UI jde česky (K5-09/K5-10: `catch` chytá i TypeError a surová
     // anglická hláška runtime končila v lastSyncError); do logu níž jde
     // původní text, ať se příčina neztratí
-    await markAccountSyncError(
-      db,
-      account.id,
-      job.userId,
-      explainError(syncErrorText(error)),
-    );
+    await markAccountSyncError(db, account.id, job.userId, storedSyncFailure(error, account));
     throw error;
   }
 }
@@ -373,26 +367,21 @@ async function runT212SyncJob(
   job: JobRow,
   options: JobRunOptions,
 ): Promise<SyncJobResult> {
-  return withSyncAccount(
-    db,
-    job,
-    async (account, onProgress) => {
-      const resume = await fullSyncResume(db, job);
-      const outcome = await syncTrading212(db, account, {
-        ...options,
-        onProgress,
-        ...(resume ? { resume } : {}),
-      });
-      return {
-        added: outcome.added,
-        duplicates: outcome.duplicates,
-        errorCount: outcome.errorCount,
-        yearsCovered: outcome.yearsCovered,
-        syncStatus: outcome.status,
-      };
-    },
-    explainT212SyncError,
-  );
+  return withSyncAccount(db, job, async (account, onProgress) => {
+    const resume = await fullSyncResume(db, job);
+    const outcome = await syncTrading212(db, account, {
+      ...options,
+      onProgress,
+      ...(resume ? { resume } : {}),
+    });
+    return {
+      added: outcome.added,
+      duplicates: outcome.duplicates,
+      errorCount: outcome.errorCount,
+      yearsCovered: outcome.yearsCovered,
+      syncStatus: outcome.status,
+    };
+  });
 }
 
 /** Běh IBKR sync jobu (Flex Web Service). */
