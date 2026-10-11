@@ -122,7 +122,8 @@ test('portfolio: přehled grafů → pozice → detail s nákupy (+ screenshoty)
   await (
     await hydrated(outlook.getByRole('button', { name: 'Vysvětlení: Horizont osvobození' }))
   ).click();
-  await expect(page.getByText(/Počítá se z nabývacích cen/)).toBeVisible();
+  // řetězcem, ne výrazem: text jde přes `tidy()` a za „z“ je pevná mezera
+  await expect(page.getByText('Počítá se z nabývacích cen', { exact: false })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
   // Grafy nejsou schované v tabu — jsou vidět bez kliku.

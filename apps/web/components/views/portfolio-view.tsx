@@ -434,7 +434,8 @@ export function PortfolioView({
                     <InfoPopover label="Horizont osvobození" align="start">
                       <p>
                         {tidy(
-                          `Jaký podíl portfolia (podle ${OUTLOOK_BASIS_LABEL[outlook.basis]}) půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
+                          // u nabývací ceny říká měřítko i důvod hned další věta
+                          `Jaký podíl portfolia${outlook.basis === 'cost' ? '' : ` (podle ${OUTLOOK_BASIS_LABEL[outlook.basis]})`} půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
                         )}
                       </p>
                       {outlookNote && <p>{tidy(outlookNote)}</p>}
