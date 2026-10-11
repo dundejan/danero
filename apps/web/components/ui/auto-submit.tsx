@@ -10,13 +10,14 @@ import {
   type FocusDescriptor,
   type FocusHandoff,
 } from '@/lib/focus-handoff';
-import { CHANGED_FIELD } from '@/lib/form-baseline';
+import { BASELINE_FIELD, CHANGED_FIELD } from '@/lib/form-baseline';
 import {
   differsFromServerHtml,
   reconcileWithServerHtml,
   restoreServerHtml,
   type FormControlState,
 } from '@/lib/form-changes';
+import { encodeLeavingDraft, LEAVING_DRAFT_KEY, leavingDraftFor } from '@/lib/leaving-draft';
 import { announce, refreshFromServer } from '@/lib/save-feedback';
 import {
   createSaveQueue,
@@ -60,11 +61,12 @@ let departure: { endpoint: string; resumed: string | null } | null = null;
  *   Jen jejich rozepsaný text se ukládá bez `change` (při odchodu, při
  *   opuštění pole po předávce) — hodnota, kterou do pole dal skript nebo
  *   prohlížeč, se sama neuloží nikdy;
- * - pole, která server odmítl a která jsme proto označili `aria-invalid`.
+ * - text, který server odmítl: pole je označené `aria-invalid` a tentýž text
+ *   se podruhé neposílá (člověk už ví, že neprošel).
  */
 const confirmedValues = new WeakMap<Element, string>();
 const humanEdited = new WeakSet<Element>();
-const markedInvalid = new WeakSet<Element>();
+const rejectedValues = new WeakMap<Element, string>();
 
 /** Fronty a akce podle adresy uložení: přežívají nové vykreslení i zánik formuláře. */
 const queues = new Map<string, SaveQueue>();
@@ -101,6 +103,37 @@ const confirmedValue = (field: TextField): string =>
 /** Text, který uživatel napsal a pole ho ještě neodeslalo. */
 const hasDraft = (field: TextField): boolean => field.value !== confirmedValue(field);
 
+/**
+ * Rozepsaný text, který se smí uložit bez `change`: psal ho člověk a server
+ * ho ještě neodmítl.
+ */
+const hasOwnDraft = (field: TextField): boolean =>
+  hasDraft(field) && humanEdited.has(field) && rejectedValues.get(field) !== field.value;
+
+const baselineOf = (form: HTMLFormElement): string => {
+  const field = form.elements.namedItem(BASELINE_FIELD);
+  return field instanceof HTMLInputElement ? field.value : '';
+};
+
+/** Úložiště panelu umí být vypnuté nebo plné — poznámka o odchodu je jen pomůcka. */
+function writeLeavingDraft(value: string): void {
+  try {
+    window.sessionStorage.setItem(LEAVING_DRAFT_KEY, value);
+  } catch {
+    // bez poznámky nová stránka ukáže, co poslal server
+  }
+}
+
+function takeLeavingDraft(): string | null {
+  try {
+    const raw = window.sessionStorage.getItem(LEAVING_DRAFT_KEY);
+    window.sessionStorage.removeItem(LEAVING_DRAFT_KEY);
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 const confirm = (field: TextField): void => {
   confirmedValues.set(field, field.value);
 };
@@ -128,7 +161,7 @@ function confirmDrafts(
 ): string[] {
   const names: string[] = [];
   for (const field of textFieldsOf(form)) {
-    if (!hasDraft(field) || !humanEdited.has(field) || field.name === except) continue;
+    if (!hasOwnDraft(field) || field.name === except) continue;
     if (validOnly && !field.validity.valid) continue;
     confirm(field);
     names.push(field.name);
@@ -377,8 +410,8 @@ export function AutoSubmit({
       const field = textFieldOf(event.target);
       if (!field) return;
       if (event.isTrusted) humanEdited.add(field);
-      if (markedInvalid.has(field)) {
-        markedInvalid.delete(field);
+      if (rejectedValues.has(field)) {
+        rejectedValues.delete(field);
         field.removeAttribute('aria-invalid');
       }
       syncUnloadGuard();
@@ -401,7 +434,7 @@ export function AutoSubmit({
     const onFocusOut = (event: FocusEvent): void => {
       if (detached.current) return;
       const field = textFieldOf(event.target);
-      if (!field || !hasDraft(field) || !humanEdited.has(field)) return;
+      if (!field || !hasOwnDraft(field)) return;
       confirm(field);
       syncUnloadGuard();
       save([field.name]);
@@ -413,7 +446,26 @@ export function AutoSubmit({
     const leave = (): void => {
       if (detached.current) return;
       const names = confirmDrafts(form, { validOnly: true });
-      queue.flush(names.length > 0 ? { data: snapshot(form), triggers: names } : undefined);
+      if (names.length === 0) {
+        queue.flush();
+        return;
+      }
+      queue.flush({ data: snapshot(form), triggers: names });
+      // F5: nová stránka se vykreslí dřív, než se tohle uložení zapíše —
+      // text si převezme z poznámky (`lib/leaving-draft.ts`)
+      writeLeavingDraft(
+        encodeLeavingDraft({
+          endpoint,
+          pathname: window.location.pathname,
+          baseline: baselineOf(form),
+          at: Date.now(),
+          fields: Object.fromEntries(
+            textFieldsOf(form)
+              .filter((field) => names.includes(field.name))
+              .map((field) => [field.name, field.value]),
+          ),
+        }),
+      );
     };
     const onVisibilityChange = (): void => {
       if (document.visibilityState === 'hidden') leave();
@@ -428,7 +480,7 @@ export function AutoSubmit({
         );
         for (const field of rejected) {
           confirmedValues.delete(field);
-          markedInvalid.add(field);
+          rejectedValues.set(field, field.value);
           field.setAttribute('aria-invalid', 'true');
         }
         syncUnloadGuard();
@@ -471,12 +523,29 @@ export function AutoSubmit({
       // nejdřív vrátit, co není od člověka — server by rozdíl proti stavu při
       // vykreslení vzal jako změnu
       revert.forEach(restoreServerHtml);
+      // text, se kterým předchozí stránka odcházela (F5) a který tahle ještě
+      // neukazuje: vrátí se do pole a uloží znovu — server, který ho mezitím
+      // zapsal, podruhé nic nezapíše
+      const left = leavingDraftFor(takeLeavingDraft(), {
+        endpoint,
+        pathname: window.location.pathname,
+        baseline: baselineOf(form),
+        now: Date.now(),
+      });
+      const resumed: string[] = [];
       for (const field of textFieldsOf(form)) {
         if (early.edited.has(field)) humanEdited.add(field);
         // text potvrzený před hydratací se odešle; rozepsaný zůstává rozepsaný
         if (early.committed.has(field) && hasDraft(field)) confirm(field);
+        const text = left?.[field.name];
+        // kdo do pole mezitím psal, má přednost
+        if (text === undefined || text === field.value || early.edited.has(field)) continue;
+        field.value = text;
+        humanEdited.add(field);
+        confirm(field);
+        resumed.push(field.name);
       }
-      if (submit) save([]);
+      if (submit || resumed.length > 0) save(resumed);
     }
     syncUnloadGuard();
     form.setAttribute(READY_ATTRIBUTE, 'ready');

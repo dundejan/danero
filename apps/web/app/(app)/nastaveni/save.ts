@@ -103,6 +103,21 @@ export function notificationPrefsOutcome(): AutoSaveOutcome {
   return { ok: true, message: settingsOkText('notifikace') };
 }
 
+/** Vynechá sloupce, jejichž odeslaná hodnota je už v databázi. */
+function omitUnchanged<Values extends Record<string, unknown>>(
+  values: Partial<Values>,
+  stored: Record<string, unknown>,
+): Partial<Values> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([column, value]) =>
+      // částka je v databázi `numeric` („5000.00“), z formuláře přijde „5000“
+      column === 'otherIncomeCzk'
+        ? !d(String(stored[column])).eq(String(value))
+        : stored[column] !== value,
+    ),
+  ) as Partial<Values>;
+}
+
 export async function saveProfile(userId: string, formData: FormData): Promise<ProfileSaveResult> {
   const parsed = ProfileFormSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
@@ -143,8 +158,15 @@ export async function saveProfile(userId: string, formData: FormData): Promise<P
   // jinak změnou jednoho pole vrátil všechna ostatní (`lib/form-baseline.ts`).
   // UPDATE nese jen ta pole, takže se dvě souběžná uložení nepřepíšou ani
   // mezi čtením a zápisem.
+  // A z nich jen ta, která stav v databázi opravdu mění: totéž odeslání může
+  // přijít dvakrát (rozepsaná částka uložená při F5 a znovu po načtení
+  // stránky, `lib/leaving-draft.ts`) a podruhé nemá co zapsat ani do historie
+  // účtu, ani kvůli němu mazat upozornění.
   const applied = previous
-    ? pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS)))
+    ? omitUnchanged(
+        pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS))),
+        previous,
+      )
     : submitted;
   // uložení, které nic nemění, nic nezapisuje
   if (Object.keys(applied).length > 0) {

@@ -129,6 +129,32 @@ describe('daňový profil: zastaralý panel', () => {
     expect(after.limit100kStrict).toBe(false);
   });
 
+  it(
+    'totéž odeslání podruhé nic nezapíše — rozepsaná částka uložená při F5 a znovu po načtení',
+    { timeout: 30_000 },
+    async () => {
+      const { auditLog } = await import('@/db/schema');
+      const countChanges = async () =>
+        (await state.db.select().from(auditLog).where(eq(auditLog.userId, state.userId))).filter(
+          (row) => row.type === 'PROFILE_CHANGE',
+        ).length;
+      const shown = await rendered();
+      const original = (await profile()).otherIncomeCzk;
+      const twice = () => submittedForm(shown, { 'ostatni-prijmy': '777' }, { changed: 'ostatni-prijmy' });
+      const before = await countChanges();
+      expect(await save(twice())).toBe(true);
+      expect(await save(twice())).toBe(true);
+      expect((await profile()).otherIncomeCzk).toBe('777.00');
+      expect(await countChanges()).toBe(before + 1);
+      // a hodnota zpátky: druhé odeslání téhož stavu zase nic nepřidá
+      const back = () => submittedForm(shown, {}, { changed: 'ostatni-prijmy' });
+      await save(back());
+      await save(back());
+      expect((await profile()).otherIncomeCzk).toBe(original);
+      expect(await countChanges()).toBe(before + 2);
+    },
+  );
+
   it('odškrtnutý přepínač je změna, i když ve formuláři chybí', { timeout: 30_000 }, async () => {
     expect((await profile()).hasBusinessAssets).toBe(true);
     await save(submittedForm(await rendered(), { 'obchodni-majetek': null }));
