@@ -4,6 +4,7 @@ import { Group, GroupItem } from '@/components/ui/list';
 import { Section } from '@/components/ui/section';
 import { StatusLabel } from '@/components/ui/status';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { typeset } from '@/components/typeset';
 import { PLATFORMS } from '@/lib/brokers-catalog';
 import { MAX_NOTE_CHARS, type FailedImportCase } from '@/lib/failed-imports';
 import { czDateTime } from '@/lib/format';
@@ -54,7 +55,7 @@ function CaseBody({ item }: { item: FailedImportCase }) {
       {/* „jakmile ho zpracujeme“, ne „jakmile půjde nahrát“ — druhé zní, jako by
           měl uživatel po e-mailu ještě něco dělat. Nahrajeme ho za něj. */}
       <p className="type-footnote mt-1 text-pretty text-ink-muted">
-        Dáme ti e-mailem vědět, jakmile ho zpracujeme.
+        {typeset('Dáme ti e-mailem vědět, jakmile ho zpracujeme.')}
         {!fromSync &&
           item.reportedAt &&
           ` Díky, máme to${item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}.`}

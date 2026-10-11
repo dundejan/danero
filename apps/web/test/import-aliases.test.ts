@@ -86,10 +86,16 @@ const savedAliases = async (): Promise<Record<string, string>> => {
   return Object.fromEntries(rows.map((row) => [`${row.broker}|${row.symbol}`, row.isin]));
 };
 
-/** Stránka /import jako HTML — tak, jak ji dostane prohlížeč bez JavaScriptu. */
+/**
+ * Stránka /import jako HTML — tak, jak ji dostane prohlížeč bez JavaScriptu.
+ * Hlášky sází `typeset()` (pevné mezery za předložkami a u čísel); test hlídá
+ * znění, ne druh mezer, takže je vrací na obyčejné.
+ */
 async function renderImportPage(params: Record<string, string | string[]> = {}): Promise<string> {
   const { default: ImportPage } = await import('@/app/(app)/import/page');
-  return renderToStaticMarkup(await ImportPage({ searchParams: Promise.resolve(params) }));
+  return renderToStaticMarkup(
+    await ImportPage({ searchParams: Promise.resolve(params) }),
+  ).replaceAll(' ', ' ');
 }
 
 /** Atributy všech `<input>` na stránce (pořadí atributů v HTML není zaručené). */

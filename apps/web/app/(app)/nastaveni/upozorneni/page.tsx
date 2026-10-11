@@ -5,6 +5,7 @@ import { FieldRow, Group, Row } from '@/components/ui/list';
 import { Notice } from '@/components/ui/notice';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
+import { typeset } from '@/components/typeset';
 import { getDb } from '@/db';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
@@ -170,12 +171,12 @@ export default async function NotificationSettingsPage({
             info={
               <InfoPopover label="jak fungují e-maily z Danera" title="E-maily z Danera">
                 <p>
-                  {tidy(
+                  {typeset(
                     'Danero hlídá limity a časové testy každý den. Tady si řekneš, o čem ti má dát vědět e-mailem a jak často — v aplikaci upozornění uvidíš vždycky.',
                   )}
                 </p>
                 <p>
-                  {tidy(
+                  {typeset(
                     'Upozornění se počítají z dat, která máš v Daneru: po napojení brokera nebo nahrání výpisu se projeví hned další den. Každý e-mail má odhlašovací odkaz.',
                   )}
                 </p>
@@ -184,12 +185,12 @@ export default async function NotificationSettingsPage({
           >
             <Group variant="inset" className={LONE_EMAIL_SWITCH}>
               <Row
-                label={<label htmlFor="emaily-zapnute">Posílat e-maily</label>}
+                label={<label htmlFor="emaily-zapnute">{typeset('Posílat e-maily')}</label>}
                 hint="V aplikaci upozornění uvidíš vždycky."
                 info={
                   <InfoPopover label="hlavní vypínač e-mailů" title="Posílat e-maily">
                     <p>
-                      {tidy(
+                      {typeset(
                         'Hlavní vypínač. Vypnuté typy se po zapnutí nehromadí zpětně a každý e-mail má odhlašovací odkaz.',
                       )}
                     </p>
@@ -209,7 +210,7 @@ export default async function NotificationSettingsPage({
                 info={
                   <InfoPopover label="jak funguje souhrn" title="Souhrn">
                     <p>
-                      {tidy(
+                      {typeset(
                         'Souhrn sbírá události od posledního e-mailu, takže z jednoho rušného dne nepřijde pět zpráv.',
                       )}
                     </p>
@@ -232,7 +233,7 @@ export default async function NotificationSettingsPage({
                 info={
                   <InfoPopover label="co je naléhavé" title="Naléhavé posílat hned">
                     <p>
-                      {tidy(
+                      {typeset(
                         'Naléhavé = prolomený limit, osvobození do sedmi dní a blížící se termín přiznání. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po tom, co se staly.',
                       )}
                     </p>
@@ -252,7 +253,7 @@ export default async function NotificationSettingsPage({
                 info={
                   <InfoPopover label="co je v pravidelném přehledu" title="Pravidelný přehled">
                     <p>
-                      {tidy(
+                      {typeset(
                         'Jediný e-mail, který přijde, i když se nic nestalo: čerpání limitů, nejbližší osvobození a orientační daň. Hodí se, když chceš mít jistotu, že hlídač běží.',
                       )}
                     </p>
@@ -280,7 +281,7 @@ export default async function NotificationSettingsPage({
                   info={
                     <InfoPopover label="hlídání časových testů" title="Blížící se osvobození">
                       <p>
-                        {tidy(
+                        {typeset(
                           'Tříletý časový test u konkrétních kusů. Vyber, kolik dní předem chceš vědět, že se prodej stane osvobozeným.',
                         )}
                       </p>
@@ -323,7 +324,7 @@ export default async function NotificationSettingsPage({
                   info={
                     <InfoPopover label="které limity se hlídají" title="Limity">
                       <p>
-                        {tidy(
+                        {typeset(
                           'Roční limity, které Danero vede podle tvého režimu — osvobození prodejů i krypta a hranice pro podání přiznání. Ozveme se při každé vybrané hranici čerpání.',
                         )}
                       </p>
@@ -358,7 +359,7 @@ export default async function NotificationSettingsPage({
                   info={
                     <InfoPopover label="co chodí k termínům" title="Termíny přiznání">
                       <p>
-                        {tidy('Lednové shrnutí uplynulého roku a připomínka termínu přiznání.')}
+                        {typeset('Lednové shrnutí uplynulého roku a připomínka termínu přiznání.')}
                       </p>
                     </InfoPopover>
                   }

@@ -1,3 +1,4 @@
+import { typeset } from '@/components/typeset';
 import { cn } from '@/lib/utils';
 
 /**
@@ -96,7 +97,7 @@ export function FieldError({
 }) {
   return (
     <p id={id} role="alert" className={cn('text-sm text-danger', className)}>
-      {children}
+      {typeset(children)}
     </p>
   );
 }

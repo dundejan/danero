@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { typeset } from '@/components/typeset';
 import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
 import { cn } from '@/lib/utils';
 
@@ -104,7 +105,7 @@ export function Toast({
           floating && 'max-h-[40dvh] overflow-y-auto overscroll-contain',
         )}
       >
-        {text}
+        {typeset(text)}
       </p>
       <button
         type="button"
