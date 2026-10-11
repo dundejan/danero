@@ -15,6 +15,7 @@ import {
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
 import { FormPage } from '@/components/form-page';
+import { NoScriptNotice } from '@/components/no-script-notice';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { describedByError, Field, FieldError, Input } from '@/components/ui/field';
 import { TextLink } from '@/components/ui/link';
@@ -226,7 +227,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           </div>
         }
       >
-        <form onSubmit={onSubmit} className="space-y-5">
+        <form method="post" onSubmit={onSubmit} className="space-y-5">
           <Field
             label="Záložní kód"
             htmlFor="zalozni-kod"
@@ -277,7 +278,7 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
           </div>
         }
       >
-        <form onSubmit={onSubmit} className="space-y-5">
+        <form method="post" onSubmit={onSubmit} className="space-y-5">
           <Field
             label="Kód z autentikátoru"
             htmlFor="kod"
@@ -334,7 +335,12 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
         )
       }
     >
-      <form onSubmit={onSubmit} className="space-y-5">
+      <NoScriptNotice className="mb-5" />
+      {/* `method="post"`: formulář odesílá skript, ale než naběhne (pomalé
+          připojení) nebo když je vypnutý, odešle ho prohlížeč sám — a bez
+          metody by e-mail i heslo skončily v adrese (změřeno 11. 10. 2026:
+          `/prihlaseni?email=…&heslo=…`). Takhle se stránka jen načte znovu. */}
+      <form method="post" onSubmit={onSubmit} className="space-y-5">
         {signUp && (
           <Field
             label={

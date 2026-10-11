@@ -9,14 +9,22 @@ import { Notice } from '@/components/ui/notice';
  * Aplikace bez JavaScriptu fungovat nemůže a nepředstírá to: místo kostry
  * ukáže jednu větu, co se děje a co s tím.
  *
+ * Totéž sdělení stojí u přihlášení, registrace a obnovy hesla: ty formuláře
+ * odesílá skript a bez něj nikdy nefungovaly (změřeno tamtéž — prohlížeč je
+ * odeslal sám a nic se nestalo).
+ *
  * Styl uvnitř `<noscript>` schová kostru (`data-app-skeleton`) — platí jen
  * tam, kde skripty neběží, takže běžné načítání neovlivní.
  */
-export function NoScriptNotice() {
+export function NoScriptNotice({ className }: { className?: string }) {
   return (
     <noscript>
       <style>{'[data-app-skeleton]{display:none}'}</style>
-      <Notice tone="caution" title="Danero potřebuje zapnutý JavaScript.">
+      <Notice
+        tone="caution"
+        title="Danero potřebuje zapnutý JavaScript."
+        className={className}
+      >
         Zapni ho v nastavení prohlížeče a načti stránku znovu.
       </Notice>
     </noscript>

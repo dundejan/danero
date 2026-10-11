@@ -60,7 +60,7 @@ export function ResendVerificationForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form method="post" onSubmit={onSubmit} className="space-y-5">
       {defaultEmail ? (
         // Adresu známe z registrace — pole by jen opakovalo to, co stojí
         // o řádek výš, takže zbývá jediné tlačítko.
