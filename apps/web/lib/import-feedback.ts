@@ -71,18 +71,36 @@ export const IMPORT_FEEDBACK_PARAMS: readonly string[] = Object.values(PARAM_NAM
  */
 export const HISTORY_PARAM = 'historie';
 export const HISTORY_PAGE = 20;
-/** Hlouběji stránka nesahá ani pro číselník a nepřečtené výpisy. */
-export const HISTORY_MAX = 200;
+/**
+ * Kolik posledních dávek stránka načte vždy — tak daleko se dívá číselník
+ * a nepřečtené výpisy, i když historie ukazuje jen prvních dvacet.
+ *
+ * Strop historie to NENÍ (do 11. 10. 2026 byl): záznam o dávce je jediná
+ * cesta, jak její transakce vrátit, a napojený účet zapíše dávku při každé
+ * denní synchronizaci — ruční výpis z doby před napojením by tak z dosahu
+ * vypadl během měsíců. Odkaz „Zobrazit starší“ proto vede, dokud je kam.
+ */
+export const HISTORY_LOOKBACK = 200;
+/** Od téhle délky se „Zobrazit starší“ posouvá po stovce, ne po dvaceti. */
+const HISTORY_LONG_STEP = 100;
 
 /**
- * Kolik importů má historie načíst: výchozích 20, odkazem po dvaceti dál.
- * Hodnota je z adresy — bere se jen celé číslo v mezích.
+ * Kolik importů má historie ukázat: výchozích 20, odkazem dál.
+ * Hodnota je z adresy — bere se jen celé číslo (nejvýš čtyři číslice).
  */
 export function historyLimit(params: Params): number {
   const raw = firstParam(params[HISTORY_PARAM]);
   if (raw === undefined || !/^\d{1,4}$/.test(raw)) return HISTORY_PAGE;
-  return Math.min(Math.max(Number(raw), HISTORY_PAGE), HISTORY_MAX);
+  return Math.max(Number(raw), HISTORY_PAGE);
 }
+
+/** Délka, na kterou vede „Zobrazit starší“: po dvaceti do stovky, pak po stovce. */
+export const nextHistoryLimit = (limit: number): number =>
+  limit < HISTORY_LONG_STEP ? limit + HISTORY_PAGE : limit + HISTORY_LONG_STEP;
+
+/** Kolik dávek načíst: o jednu víc, než se ukáže (pozná se, že jsou starší). */
+export const historyQueryLimit = (limit: number): number =>
+  Math.max(limit + 1, HISTORY_LOOKBACK);
 
 /** Kotva sekce „Historie importů“ — tam vede odezva po nahrání a po vrácení. */
 export const IMPORT_HISTORY_ANCHOR = 'historie';
