@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { linkFromEmail } from './helpers';
+import { hydrated, linkFromEmail, simulateSale } from './helpers';
 
 /**
  * Demo prohlídka: návštěvník bez registrace vidí vizuálně totéž co přihlášený
@@ -9,9 +9,14 @@ import { linkFromEmail } from './helpers';
 
 /** Banner dema s CTA je na každé demo stránce. */
 async function expectDemoBanner(page: Page) {
-  await expect(page.getByText('Prohlížíš demo s ukázkovými daty')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Založit účet zdarma' }).first()).toBeVisible();
+  const banner = page.getByRole('banner');
+  await expect(banner.getByText('Prohlížíš demo s ukázkovými daty')).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'Založit účet' })).toBeVisible();
 }
+
+/** Sekce stránky podle jejího nadpisu (nadpis nese i tichý počet položek). */
+const section = (page: Page, heading: string | RegExp) =>
+  page.locator('section').filter({ has: page.getByRole('heading', { name: heading }) });
 
 test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', async ({ page }) => {
   // /demo (odkaz z landing page) → redirect na vstupní stránku prohlídky
@@ -21,25 +26,58 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
 
   // mini patička s právními odkazy; pruh „Vyzkoušej si“ pod bannerem je pryč
   await expect(page.getByRole('navigation', { name: 'Prohlídka dema' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Podmínky užití' })).toBeVisible();
+  const footer = page.getByRole('contentinfo');
+  await expect(footer.getByRole('link', { name: 'Podmínky užití' })).toBeVisible();
+  // výhrada je jeden krátký odkaz na článek podmínek, kde je závazné znění
+  await expect(footer.getByRole('link', { name: 'Není daňové poradenství' })).toHaveAttribute(
+    'href',
+    '/podminky#co-danero-je',
+  );
 
-  // verdikt-box: prolomený limit 50k → „podáš přiznání“ + orientační daň
-  await expect(page.getByText(/podáš daňové přiznání/)).toBeVisible();
-  await expect(page.getByText('Orientační daň z investic:')).toBeVisible();
+  // verdikt: prolomený limit 50k → „podáš přiznání“ a vedle něj číslo daně.
+  // Demo platí paušální zálohy, takže hlavní číslo je doplatek; orientační daň
+  // z investic je řádek rozpadu, ze kterého doplatek vzniká.
+  await expect(page.getByRole('heading', { name: /podáš daňové přiznání/ })).toBeVisible();
+  await expect(page.getByRole('term').filter({ hasText: 'Doplatek daně' })).toBeVisible();
+  const breakdown = page.getByRole('list', { name: 'Z čeho se orientační daň z investic počítá' });
+  await expect(
+    breakdown.getByRole('listitem').filter({ hasText: /^Orientační daň z investic/ }),
+  ).toHaveText(/\d\sKč$/);
+  await expect(breakdown.getByRole('listitem').filter({ hasText: /^Doplatek daně/ })).toHaveText(
+    /\d\sKč$/,
+  );
 
-  // odměrky limitů (50k prolomený, 100k CRITICAL, krypto OK)
-  await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
-  await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
-  await expect(page.getByText('Osvobození krypta — 100 000 Kč')).toBeVisible();
+  // odměrky limitů (50k prolomený, 100k CRITICAL, krypto OK): v seznamu jméno,
+  // čerpání a slovní stav, celé znění s částkou v detailu vybraného řádku
+  await expect(
+    page.getByRole('button', { name: /^Limit paušální daně \d+\s% .* přes limit$/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: /^Osvobození prodejů cenných papírů \d+\s% .* těsně pod limitem$/,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /^Osvobození krypta \d+\s% .* v pořádku$/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Limit paušální daně — 50 000 Kč' }).getByRole('heading'),
+  ).toBeVisible();
+  const cryptoRow = await hydrated(page.getByRole('button', { name: /^Osvobození krypta/ }));
+  await cryptoRow.click();
+  await expect(
+    page.getByRole('region', { name: 'Osvobození krypta — 100 000 Kč' }).getByRole('heading'),
+  ).toBeVisible();
 
   // horizont osvobození s tečkami (SVG pás)
   await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toBeVisible();
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 
-  // demo upozornění z hlídače (prolomený limit) — .first(): týž text nese
-  // i varování enginu v „Kontrolách výpočtu“
-  await expect(page.getByText('Poslední upozornění')).toBeVisible();
-  await expect(page.getByText(/Prolomen limit 50.*paušální/).first()).toBeVisible();
+  // demo upozornění z hlídače (prolomený limit) — jen v sekci upozornění: týž
+  // začátek věty nese i varování enginu v „Kontrolách výpočtu“
+  await expect(
+    section(page, 'Poslední upozornění').getByText(/Prolomen limit 50.*paušální/),
+  ).toBeVisible();
 
   // rok-switcher: přepnutí na loňsko přes query param
   const heading = await page.getByRole('heading', { level: 1 }).textContent();
@@ -53,49 +91,85 @@ test('demo přehled: verdikt, odměrky, horizont, upozornění; rok-switcher', a
   await expectDemoBanner(page);
 });
 
-test('demo portfolio: hodnota, tabulka s hledáním, donut, deriváty → detail pozice', async ({
+test('demo portfolio: hodnota, tabulka s hledáním, podíly, deriváty → detail pozice', async ({
   page,
 }) => {
   await page.goto('/demo/portfolio');
   await expectDemoBanner(page);
 
   // KPI: hodnota portfolia je oceněná (žádné „—“)
-  await expect(page.getByText('Hodnota portfolia')).toBeVisible();
-  await expect(page.getByText(/mil\.|\d{3}\s?\d{3}\s?Kč/).first()).toBeVisible();
+  const value = page.getByRole('term').filter({ hasText: 'Hodnota portfolia' }).locator('xpath=..');
+  await expect(value.getByRole('definition').first()).toHaveText(/^\d[\d\s]*\sKč$/);
   await expect(page.getByText('Nejbližší osvobození')).toBeVisible();
 
-  // 50+ pozic se stránkováním po 10
-  await expect(page.getByText(/1–10 z 5\d pozic/)).toBeVisible();
+  // 50+ pozic: tabulka ukazuje prvních dvanáct a zbytek na požádání
+  // (stránkování po deseti zaniklo)
+  const positionsHeading = page.getByRole('heading', { name: /^Pozice 5\d$/ });
+  await expect(positionsHeading).toBeVisible();
+  const total = Number((await positionsHeading.textContent())?.match(/\d+/)?.[0]);
+  const table = page.getByRole('table', { name: 'Tabulka pozic' });
+  const rows = table.locator('tbody tr');
+  await expect(rows).toHaveCount(12);
+  await (await hydrated(page.getByRole('button', { name: `Zobrazit všech ${total}` }))).click();
+  await expect(rows).toHaveCount(total);
+  await page.getByRole('button', { name: 'Zobrazit méně' }).click();
+  await expect(rows).toHaveCount(12);
+
+  // řadicí hlavičky: s cenami je výchozí Hodnota sestupně (aria-sort)
+  await expect(table.getByRole('columnheader', { name: /Hodnota/ })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  );
 
   // tabulka pozic + hledání (najde Apple, schová VWCE)
-  await expect(page.getByRole('link', { name: 'VWCE' })).toBeVisible();
-  await page.getByRole('searchbox', { name: /Hledat pozici/ }).fill('apple');
-  await expect(page.getByRole('link', { name: 'AAPL' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'VWCE' })).toHaveCount(0);
-  await page.getByRole('searchbox', { name: /Hledat pozici/ }).fill('');
+  const search = page.getByRole('searchbox', { name: /Hledat pozici/ });
+  await expect(table.getByRole('link', { name: 'VWCE' })).toBeVisible();
+  await search.fill('apple');
+  await expect(table.getByRole('link', { name: 'AAPL' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'VWCE' })).toHaveCount(0);
+  // hledání nesmyslu ukáže poctivý prázdný stav, smazání dotazu ho vrátí
+  await search.fill('neexistujici-pozice');
+  await expect(page.getByText('Nic nenalezeno pro „neexistujici-pozice“.')).toBeVisible();
+  await search.fill('');
 
-  // donut alokace (přepínač pohledu Pozice → Graf)
-  await page
-    .getByRole('group', { name: 'Pohled na pozice' })
-    .getByRole('button', { name: 'Graf' })
-    .click();
-  await expect(page.locator('.recharts-pie').first()).toBeVisible();
+  // alokace: koláč zanikl, podíl na portfoliu nese řádek pozice
+  const vwce = table.getByRole('row', { name: /^VWCE/ });
+  await expect(vwce).toContainText(/ks · \d+(,\d)?\s%/);
 
   // otevřená opce v sekci derivátů
-  await expect(page.getByText('Otevřené derivátové pozice')).toBeVisible();
-  await expect(page.getByText('Opce SPY put 560')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Otevřené deriváty' })).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Otevřené derivátové pozice' }).getByText('Opce SPY put 560'),
+  ).toBeVisible();
 
-  // detail pozice: loty s časovými testy + historie + odkaz na simulátor
-  await page
-    .getByRole('group', { name: 'Pohled na pozice' })
-    .getByRole('button', { name: 'Tabulka' })
-    .click();
-  await page.getByRole('link', { name: 'VWCE' }).click();
+  // s cenami od brokera je vidět i křivka osvobozování portfolia (bez cen se
+  // nekreslí — portfolio.spec.ts)
+  await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toBeVisible();
+  await expect(
+    page.getByRole('application', { name: 'Osvobozování portfolia v čase' }),
+  ).toBeVisible();
+
+  // detail pozice: v širokém okně klepnutí řádek jen vybere a detail nabízí
+  // inspektor vedle tabulky (odkaz v řádku zůstává odkazem pro klávesnici
+  // a nový panel)
+  await vwce.getByRole('link', { name: 'VWCE' }).click();
+  const inspector = page.getByRole('region', { name: 'Vybraná pozice: VWCE' });
+  await expect(inspector.getByText(/\d+(,\d)?\s% portfolia/)).toBeVisible();
+  await inspector.getByRole('link', { name: 'Detail pozice' }).click();
   await page.waitForURL('**/demo/portfolio/IE00BK5BQT80');
   await expectDemoBanner(page);
-  await expect(page.getByText('Nákupy (loty) a časové testy')).toBeVisible();
-  await expect(page.getByText('už bez daně').first()).toBeVisible();
-  await expect(page.getByText(/Historie \(\d+\)/)).toBeVisible();
+  // nákupy s časovými testy + historie + odkaz na simulátor
+  await expect(page.getByRole('heading', { name: /^Nákupy \d+$/ })).toBeVisible();
+  await expect(
+    page
+      .getByRole('table', { name: 'Nákupy a jejich časové testy' })
+      .getByRole('cell', { name: 'už bez daně' })
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Historie \d+$/ })).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Historie transakcí' }).getByRole('listitem').first(),
+  ).toBeVisible();
 
   // „Simulovat prodej“ vede do demo simulátoru s předvyplněnou pozicí
   await page.getByRole('link', { name: 'Simulovat prodej' }).click();
@@ -105,56 +179,80 @@ test('demo portfolio: hodnota, tabulka s hledáním, donut, deriváty → detail
 test('demo simulátor: GET výpočet nad ukázkovými daty', async ({ page }) => {
   await page.goto('/demo/simulator');
   await expectDemoBanner(page);
-  await expect(page.getByRole('heading', { name: 'Simulátor prodeje' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Simulátor \d{4}$/ })).toBeVisible();
 
   // formulář: VWCE, 5 ks za 140 EUR → GET → verdikt. Prodej je sice z lotu
   // osvobozeného časovým testem, ale prolomí úhrn 100k (91k + ~17k) — poctivý
   // verdikt varuje před knock-on zdaněním dřívějších letošních prodejů.
-  await page.getByLabel('Pozice').selectOption('IE00BK5BQT80');
-  await page.getByLabel('Kusů (prázdné = vše)').fill('5');
-  await page.getByLabel('Cena/ks').fill('140');
-  await page.getByRole('button', { name: 'Spočítat dopad' }).click();
-  await page.waitForURL(/\/demo\/simulator\?.*isin=IE00BK5BQT80/);
+  await simulateSale(page, { position: 'IE00BK5BQT80', quantity: '5', price: '140' });
+  await expect(page).toHaveURL(/\/demo\/simulator\?.*isin=IE00BK5BQT80/);
+  await expect(page.getByRole('textbox', { name: 'Cena za kus (EUR)' })).toHaveValue('140');
 
-  await expect(page.getByText('Verdikt')).toBeVisible();
+  const verdict = page.getByRole('region', { name: 'Verdikt' });
   await expect(
-    page.getByText(/Prodej je osvobozený časovým testem, ale prolomí úhrn 100 000 Kč/),
+    verdict.getByRole('heading', { name: 'Prodej zruší osvobození prodejů cenných papírů' }),
   ).toBeVisible();
-  await expect(page.getByText('Rozpad prodeje')).toBeVisible();
-  await expect(page.getByText('Paušální daň (50 000 Kč)')).toBeVisible();
+  await expect(verdict).toContainText(
+    'Sám je osvobozený časovým testem, ale letošní prodeje s ním přesáhnou 100 000 Kč a ty dřívější se zpětně zdaní.',
+  );
+  await expect(page.getByRole('heading', { name: 'Rozpad prodeje' })).toBeVisible();
+  await expect(
+    section(page, 'Limity po prodeji')
+      .getByRole('listitem')
+      .filter({ hasText: /^Limit paušální daně/ }),
+  ).toContainText('z 50 000 Kč');
 });
 
-test('demo report: čísla k přiznání + teaser místo EPO exportu', async ({ page }) => {
+test('demo report: čísla k přiznání + ukázkové XML místo EPO exportu', async ({ page }) => {
   await page.goto('/demo/report');
   await expectDemoBanner(page);
 
-  await expect(page.getByRole('heading', { name: /Daňový report \d{4}/ })).toBeVisible();
-  await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Report \d{4}$/ })).toBeVisible();
+  const taxBreakdown = section(page, 'Výpočet daně').getByRole('listitem');
+  await expect(taxBreakdown.filter({ hasText: /^Základ daně z prodejů/ })).toHaveText(/\d\sKč$/);
 
   // varianty párování × kurz: 4 metody × 2 kurzy = 8 řádků (demo má
-  // syntetické denní kurzy, tabulka je kompletní jako v reálném reportu)
-  await expect(page.getByText('Porovnání variant párování')).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'denní ČNB' })).toHaveCount(4);
-  await expect(page.getByRole('cell', { name: 'jednotný', exact: true })).toHaveCount(4);
-  await expect(page.getByText('Dílčí základ § 8 (dividendy, úroky)')).toBeVisible();
-  await expect(page.getByText(/Prodeje v roce \d{4}/)).toBeVisible();
-  await expect(page.getByText(/Derivátové obchody v roce \d{4}/)).toBeVisible();
+  // syntetické denní kurzy, srovnání je kompletní jako v reálném reportu).
+  // Kurzové soustavy jsou dva pohledy téže sekce — druhý je za přepínačem.
+  await expect(page.getByRole('heading', { name: 'Porovnání variant párování' })).toBeVisible();
+  const unified = page.getByRole('table', {
+    name: 'Srovnání variant výpočtu daně, jednotný kurz GFŘ',
+  });
+  const daily = page.getByRole('table', {
+    name: 'Srovnání variant výpočtu daně, denní kurzy ČNB',
+  });
+  await expect(unified.locator('tbody tr')).toHaveCount(4);
+  await expect(daily).toBeHidden();
+  const fxSwitch = page.getByRole('group', { name: 'Kurzy ve srovnání variant' });
+  await (await hydrated(fxSwitch.getByRole('button', { name: 'Denní kurzy ČNB' }))).click();
+  await expect(daily.locator('tbody tr')).toHaveCount(4);
+  await expect(unified).toBeHidden();
+
+  await expect(taxBreakdown.filter({ hasText: /^Základ daně z dividend a úroků/ })).toHaveText(
+    /\d\sKč$/,
+  );
+  await expect(page.getByRole('heading', { name: /^Prodeje v roce \d{4} \d+$/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^Derivátové obchody v roce \d{4} \d+$/ }),
+  ).toBeVisible();
   // Podstata, ne formulace: rozpad zahraničních příjmů po státech pro zápočet
   // dle § 38f. Nadpis se změnil z „Dividendy" na „Příjmy", jakmile do tabulky
   // přibyly i úroky — tvrzení zůstalo stejné, jen přesnější.
   await expect(page.getByRole('heading', { name: /podle států/ })).toBeVisible();
 
-  // EPO export je v demu nahrazený teaserem s CTA + odkazem na ukázkové XML
-  await expect(page.getByText('Export pro mojedane.cz')).toBeVisible();
-  await expect(page.getByText(/V demu nedostupné/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Stáhnout XML pro EPO' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Stáhni ukázkové XML (2025)' })).toHaveAttribute(
+  // EPO export je v demu nahrazený odkazem na ukázkové XML: soubor s čísly
+  // z dema by nesl smyšlená data, takže se nenabízí formulář ani tlačítko
+  // v liště
+  await expect(page.getByRole('heading', { name: 'Export pro mojedane.cz' })).toBeVisible();
+  await expect(page.getByText('S účtem stáhneš XML s vlastními čísly.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Stáhnout XML/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Stáhnout ukázkové XML (2025)' })).toHaveAttribute(
     'href',
     '/marketing/ukazka-dpfdp7-2025.xml',
   );
 
   // CTA z banneru vede na registraci
-  await page.getByRole('link', { name: 'Založit účet zdarma' }).first().click();
+  await page.getByRole('banner').getByRole('link', { name: 'Založit účet' }).click();
   await page.waitForURL('**/registrace');
 });
 
@@ -170,20 +268,43 @@ test('onboarding: registrace → průvodce → profil → výzva k datům', asyn
   await page.goto(await linkFromEmail(page, 'onboarding@danero.cz'));
   await page.waitForURL('**/vitejte');
 
-  await expect(page.getByText('Vítej v Daneru')).toBeVisible();
-  await expect(page.getByText('Krok 1: Řekni nám, kdo jsi vůči dani')).toBeVisible();
+  await expect(page.getByText('Krok 1 ze 2')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Vítej v Daneru' })).toBeVisible();
 
   // vyplnění profilu → krok 2 (data)
   await page.getByRole('link', { name: 'Vyplnit daňový profil' }).click();
   await page.waitForURL('**/nastaveni');
+  // stránka říká, proč tu člověk je — bez profilu sem vede i zbytek aplikace
+  await expect(page.getByText('Krok 1 ze 2 — vyber daňový režim')).toBeVisible();
   // bez vybraného režimu formulář neodejde (R8): pole je povinné a prázdné
   await expect(page.getByLabel('Daňový režim')).toHaveValue('');
   await page.getByRole('button', { name: 'Uložit profil' }).click();
   await expect(page).toHaveURL(/\/nastaveni$/);
   await page.getByLabel('Daňový režim').selectOption('ZAMESTNANEC');
   await page.getByRole('button', { name: 'Uložit profil' }).click();
-  await page.waitForURL('**/prehled');
+
+  // první uložení profilu pokračuje rovnou krokem 2 na Zdrojích dat — obě
+  // cesty k datům jsou na jedné stránce: nahrát výpis, nebo napojit brokera
+  await page.waitForURL(/\/import(\?|$)/);
+  await expect(page.getByText('Krok 2 ze 2 — přidej svoje obchody')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nahrát výpisy' })).toBeVisible();
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  await expect(brokers.locator('summary').filter({ hasText: 'Trading 212' })).toBeVisible();
+  await expect(brokers.locator('summary').filter({ hasText: 'Interactive Brokers' })).toBeVisible();
+
+  // kroky se odvozují z účtu, neukládají: průvodce teď ukazuje krok 2
+  // a vede zpátky na Zdroje dat
   await page.goto('/vitejte');
-  await expect(page.getByText('Krok 2: Nahraj svoje obchody')).toBeVisible();
-  await expect(page.getByText('Trading 212 / IBKR API')).toBeVisible();
+  await expect(page.getByText('Krok 2 ze 2')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Přidej svoje obchody' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Přidat data' })).toHaveAttribute('href', '/import');
+
+  // prázdný přehled není slepá ulička: vede k nahrání výpisů a říká, proč
+  // Report a Simulátor zatím končí tady
+  await page.goto('/report');
+  await page.waitForURL('**/prehled');
+  await expect(page.getByRole('heading', { name: 'Zatím žádná data' })).toBeVisible();
+  await expect(page.getByText(/Report a Simulátor se otevřou s prvním výpisem/)).toBeVisible();
+  await page.getByRole('link', { name: 'Nahrát výpisy' }).click();
+  await page.waitForURL('**/import');
 });
