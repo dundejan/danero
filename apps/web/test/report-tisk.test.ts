@@ -62,6 +62,22 @@ describe('rozsah vytištěného podkladu (H-3-01)', () => {
     // a nesmí se vrátit tvrzení, že tisk obsahuje všechny prodeje
     expect(zdroj).not.toContain('Tisk\n                i XML pro podatelnu obsahují všechny prodeje');
   });
+
+  it('rozbalení (rozpad prodeje na nákupy) se pro tisk otevřou i bez `::details-content`', () => {
+    const root = join(import.meta.dirname, '..');
+    // novější prohlížeče: styl
+    const css = readFileSync(join(root, 'app', 'globals.css'), 'utf8');
+    const print = css.slice(css.indexOf('@media print'));
+    expect(print).toMatch(/details::details-content\s*\{[^}]*display:\s*block/);
+    // starší (před Chromium 131, Safari 18.4, Firefox 143): skript před tiskem —
+    // bez něj by na papíře mlčky chyběla část podkladu
+    const fallback = readFileSync(join(root, 'components', 'print-button.tsx'), 'utf8');
+    expect(fallback).toContain("CSS.supports('selector(::details-content)')");
+    expect(fallback).toContain("addEventListener('beforeprint'");
+    expect(fallback).toContain("addEventListener('afterprint'");
+    const report = readFileSync(join(root, 'components', 'views', 'report-view.tsx'), 'utf8');
+    expect(report).toContain('<OpenDetailsForPrint />');
+  });
 });
 
 /**

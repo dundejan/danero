@@ -117,7 +117,7 @@ font-bold`**, vyber stupeň.
 |---|---|
 | `ui/info-popover.tsx` → `InfoPopover` | Vysvětlení u čísla nebo pojmu: tlačítko „i“, bublina (na telefonu sheet). Hlavní nástroj textové diety. |
 | `ui/info-print.tsx` → `InfoPrint` | Tisková kopie vysvětlivky: tentýž obsah, vidět jen na papíře. Stojí pod blokem, kterého se týká. |
-| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. |
+| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. Má-li se řádek otevřít sám podle stavu z adresy (dávka po nahrání, formulář s chybou), dostane `defaultOpen`, ne `open` — řízený atribut by ho při dalším vykreslení ze serveru zavřel. |
 | `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). Smí stát i uvnitř `DisclosureRow`. |
 | `ui/disclosure.tsx` → `Chevron` | Šipka rozbalovátka pro vlastní `<details class="disclosure">` (řádek tabulky, FAQ). Patří do `<summary>`. |
 | `ui/open-on-hash.tsx` → `OpenOnHash` | Rozbalí `<details>`, na který míří kotva v adrese. Jednou na stránku, která na rozbalovací řádky odkazuje. |

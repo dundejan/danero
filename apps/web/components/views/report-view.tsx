@@ -19,7 +19,7 @@ import {
   filingLimitFor,
   ReportFilingVerdict,
 } from '@/components/filing-verdict';
-import { PrintButton } from '@/components/print-button';
+import { OpenDetailsForPrint, PrintButton } from '@/components/print-button';
 import {
   DIVIDEND_TAXATION_LABEL,
   DividendTaxationInfo,
@@ -2012,6 +2012,7 @@ export function ReportView({
       <div className="mt-10 print:hidden sm:hidden">
         <PrintButton long />
       </div>
+      <OpenDetailsForPrint />
     </>
   );
 }

@@ -621,7 +621,8 @@
   }
   /* auditní stopa (rozpad prodejů na loty) musí být v tištěném podkladu vidět
      i bez rozkliknutí — ::details-content umí otevřít <details> jen pro tisk
-     (Chromium 131+; starší prohlížeče vytisknou zavřené, nic se nerozbije) */
+     (Chromium 131+, Safari 18.4+, Firefox 143+; starším prohlížečům je před
+     tiskem otevře skript — `OpenDetailsForPrint` v components/print-button.tsx) */
   details::details-content {
     content-visibility: visible;
     display: block;
