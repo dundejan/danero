@@ -3,7 +3,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { IbkrFlexError, Trading212ApiError } from '@danero/importers';
 import { accountStates } from '@/app/(app)/import/account-state';
-import { describeSyncFailure, parseSyncFailure, storedSyncFailure } from '@/lib/sync-failure';
+import { encryptSecret } from '@/lib/crypto';
+import {
+  describeSyncFailure,
+  parseSyncFailure,
+  redactSecrets,
+  storedSyncFailure,
+  type FailedAccount,
+} from '@/lib/sync-failure';
 
 /**
  * Chyba synchronizace se uživateli vypisovala syrově: „Trading212 API 500 na
@@ -173,5 +180,115 @@ describe('stav účtu na Zdrojích dat', () => {
       'Spojení spadlo. Spusť ji znovu — co už se stáhlo, zůstává a nic se nezdvojí.',
     );
     expect(failure!.details).toBeUndefined();
+  });
+});
+
+/**
+ * Nález revize R6 (č. 6): čištění přístupových údajů se týkalo jen detailu
+ * a jen parametrů adresy. Naměřeno: token v první větě nepřeložené chyby
+ * prošel celý, `Authorization: Bearer …` v těle odpovědi taky a druhý řádek
+ * víceřádkové chyby se stal „detailem“ bez čištění. Text chyby je určený
+ * k přeposlání provozovateli — nesmí v něm zůstat nic, čím se dá přihlásit.
+ */
+describe('chyba synchronizace nenese přístupové údaje (R6)', () => {
+  const TOKEN = '123456789012345678901234';
+  const KEY_ID = 'smysleny-klic-id-4242';
+  const KEY_SECRET = 'smysleny-tajny-klic-8899';
+  const BASIC = Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString('base64');
+  const SECRETS = [TOKEN, KEY_ID, KEY_SECRET, BASIC];
+
+  /** Všechno, co se k chybě uloží a ukáže — věta i detail. */
+  const everything = (error: unknown, account: FailedAccount): string => {
+    const stored = storedSyncFailure(error, account);
+    const parsed = parseSyncFailure(stored);
+    // uložený text a jeho přečtení musí říkat totéž — nic se nesmí schovat mezi řádky
+    expect([parsed.text, parsed.detail].filter(Boolean).join('\n')).toBe(stored);
+    return stored;
+  };
+  const expectClean = (text: string): void => {
+    for (const secret of SECRETS) expect(text, secret).not.toContain(secret);
+  };
+
+  it('token v adrese zmizí i z první věty nepřeložené chyby', () => {
+    const text = everything(
+      new TypeError(`Failed to parse URL from https://x/SendRequest?t=${TOKEN}&q=1`),
+      IBKR,
+    );
+    expectClean(text);
+    // zbytek chyby zůstává čitelný
+    expect(text).toContain('Failed to parse URL from https://x/SendRequest?t=');
+    expect(text).toContain('&q=1');
+  });
+
+  it('parametr adresy se pozná bez ohledu na velikost písmen', () => {
+    const text = everything(
+      new IbkrFlexError('500', `IBKR Flex služba neodpovídá (HTTP 500) https://x/?T=${TOKEN}&Token=${TOKEN}`),
+      IBKR,
+    );
+    expectClean(text);
+  });
+
+  it('hlavička Authorization a údaje Basic/Bearer zmizí z těla odpovědi', () => {
+    for (const body of [
+      `{"code":"Unauthorized","apiKey":"${KEY_SECRET}","authorization":"Basic ${BASIC}"}`,
+      `Authorization: Bearer ${TOKEN}`,
+      `authorization=Basic ${BASIC}; x-api-key: ${KEY_SECRET}`,
+      `request headers: { Authorization: '${KEY_SECRET}' }`,
+    ]) {
+      const text = everything(t212(401, '/equity/account/cash', body), T212);
+      expectClean(text);
+      expect(text).toMatch(/Trading 212 klíč odmítl/);
+      expect(text).toContain('Trading212 API 401 na /equity/account/cash');
+    }
+  });
+
+  it('víceřádková chyba: čistí se každý řádek, ne jen první', () => {
+    const text = everything(
+      new Error(`první řádek\nAuthorization: Basic ${BASIC}\ntřetí řádek ?token=${TOKEN}`),
+      T212,
+    );
+    expectClean(text);
+    const parsed = parseSyncFailure(text);
+    expect(parsed.text).toBe('první řádek');
+    expect(parsed.detail).toContain('třetí řádek');
+  });
+
+  it('uložený klíč nebo token připojení zmizí, i když ho nic neoznačuje', () => {
+    const t212Account = {
+      ...T212,
+      credentialsEncrypted: encryptSecret(JSON.stringify({ keyId: KEY_ID, secret: KEY_SECRET })),
+    };
+    const ibkrAccount = {
+      ...IBKR,
+      credentialsEncrypted: encryptSecret(JSON.stringify({ token: TOKEN, queryId: '998877' })),
+    };
+    // starší formát T212: samotný klíč, ne JSON
+    const legacyAccount = { ...T212, credentialsEncrypted: encryptSecret(KEY_SECRET) };
+
+    expectClean(
+      everything(t212(500, '/history/exports', `klient ${KEY_ID} / ${KEY_SECRET} nenalezen`), t212Account),
+    );
+    expectClean(everything(new Error(`upstream odmítl ${BASIC}`), t212Account));
+    expectClean(everything(new Error(`neznámý účet ${TOKEN}\ndruhý řádek ${TOKEN}`), ibkrAccount));
+    expectClean(everything(t212(500, '/x', `echo ${KEY_SECRET}`), legacyAccount));
+  });
+
+  it('údaje, které se nepodaří rozšifrovat, čištění neshodí', () => {
+    const broken = { ...T212, credentialsEncrypted: 'tohle-neni-sifra' };
+    expect(() => storedSyncFailure(t212(500), broken)).not.toThrow();
+    expect(describeSyncFailure(t212(500), broken).text).toMatch(/teď neodpovídá/);
+  });
+
+  it('běžný text chyby čištění nemění', () => {
+    for (const message of [
+      'IBKR Flex služba odmítla požadavek (HTTP 403) — zkontroluj token a Query ID v nastavení.',
+      'Token je neplatný nebo expiroval — vygeneruj v IBKR nový (Flex Web Service Configuration) a ulož ho znovu.',
+      'IBKR Flex služba vrátila chybu 1018: Too many requests have been made from this token.',
+      'Stažený export je neúplný — přišlo 10 z 20 bajtů, přenos se zřejmě přerušil. Spusť synchronizaci znovu.',
+      'Trading212 API 500 na /history/exports: {"code":"InternalError"}',
+      'upstream returned basic information only, bearer unknown',
+    ]) {
+      expect(redactSecrets(message)).toBe(message);
+    }
   });
 });
