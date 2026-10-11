@@ -163,6 +163,54 @@ export async function hydrated(locator: Locator): Promise<Locator> {
 }
 
 /**
+ * Počká, až je stránka celá a živá: obsah dorazil, React naběhl a grafy se
+ * nakreslily.
+ *
+ * Nahrazuje `waitForLoadState('networkidle')`, které čeká na půl vteřiny
+ * síťového ticha — a to se nemusí dostavit nikdy: 9. 10. 2026 se audit
+ * přístupnosti zasekl na `/portfolio` bez jediného běžícího dotazu a visel do
+ * limitu testu (30 minut). Tady se čeká na stav, který jde pojmenovat, s vlastním
+ * krátkým limitem; když nenastane, hláška řekne, co přesně chybí.
+ *
+ * - Stránky aplikace se streamují: nejdřív přijde kostra (`loading.tsx`), obsah
+ *   až po ní. Dokud React segment nezařadí, leží v dokumentu jeho zástupka.
+ * - Ovládací prvky jsou v HTML dřív, než jim React připojí handlery (viz
+ *   `hydrated`).
+ * - Grafy se kreslí až v prohlížeči, po změření šířky — hlídají se jen ty
+ *   viditelné (graf ve skrytém pohledu se nenakreslí nikdy).
+ */
+export async function pageSettled(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const waiting: string[] = [];
+          if (document.readyState !== 'complete') waiting.push('dokument se načítá');
+          if (document.querySelector('template[id^="B:"], div[hidden][id^="S:"]')) {
+            waiting.push('obsah se streamuje');
+          }
+          if (document.querySelector('[role="status"][aria-busy="true"]')) {
+            waiting.push('je vidět kostra načítání');
+          }
+          const controls = document.querySelectorAll('button, input, select, textarea');
+          const inert = [...controls].filter(
+            (element) => !Object.keys(element).some((key) => key.startsWith('__reactProps$')),
+          );
+          if (inert.length > 0) waiting.push(`${inert.length} prvků bez handlerů Reactu`);
+          for (const chart of document.querySelectorAll('.recharts-responsive-container')) {
+            if (chart.getClientRects().length > 0 && !chart.querySelector('svg')) {
+              waiting.push('graf se nenakreslil');
+            }
+          }
+          return waiting;
+        // stránka, která právě odchází jinam (přesměrování v prohlížeči), kontext zahodí
+        }).catch(() => ['stránka přechází na jinou adresu']),
+      { message: 'stránka se neustálila', timeout: 30_000 },
+    )
+    .toEqual([]);
+}
+
+/**
  * Počká, až formulář s auto-save začne poslouchat, a vrátí ho.
  *
  * Auto-save odesílá skript. Změnu, kterou do pole před hydratací udělá
