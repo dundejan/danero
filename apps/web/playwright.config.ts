@@ -31,7 +31,19 @@ export const EMAIL_LOG = '.data/e2e-emails.log';
  */
 const BROWSER_PROJECTS = {
   chromium: { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-  firefox: { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  firefox: {
+    name: 'firefox',
+    use: {
+      ...devices['Desktop Firefox'],
+      // Záznam bez snímků DOM: se zapnutým snímáním se ve Firefoxu stránka
+      // vrácená z historie (Zpět na dokument z mezipaměti) nedohydratuje —
+      // skořápka ano, obsah už ne, na kterékoli stránce aplikace (změřeno
+      // 12. 10. 2026: se snímky 4 ze 4, bez nich ani jednou; ostatní části
+      // záznamu vliv nemají). Je to souhra nástroje s prohlížečem, ne vada
+      // aplikace, ale test návratu Zpět na ní padal pokaždé.
+      trace: { mode: 'retain-on-failure', snapshots: false },
+    },
+  },
   webkit: { name: 'webkit', use: { ...devices['Desktop Safari'] } },
 } as const;
 

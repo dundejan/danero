@@ -16,6 +16,7 @@ import { hydrated, registerWithProfile, uploadStatement } from './helpers';
  */
 test('report: XML pro EPO se stáhne tlačítkem z lišty, neplatné pole se ohlásí', async ({
   page,
+  browserName,
 }) => {
   await registerWithProfile(page, { name: 'E2E Export', email: 'epo-export@danero.cz' });
   await page.goto('/import');
@@ -60,9 +61,31 @@ test('report: XML pro EPO se stáhne tlačítkem z lišty, neplatné pole se ohl
 
   // ── řádné přiznání: soubor se stáhne a je to podání za zvolený rok ───────
   await filingType.selectOption('B');
-  const [download] = await Promise.all([page.waitForEvent('download'), toolbarDownload.click()]);
-  expect(download.suggestedFilename()).toBe('danero-dpfdp7-2025.xml');
-  const xml = await readFile(await download.path(), 'utf8');
+  let xml: string;
+  if (browserName === 'webkit') {
+    // WebKit z Playwrightu (linuxová sestava) odpověď typu `application/xml`
+    // nestáhne, ani když ji server posílá jako přílohu — vykreslí ji v okně.
+    // Ověřeno 12. 10. 2026 na holém serveru: tatáž odpověď s typem
+    // `application/octet-stream` se stáhne, odkazem i formulářem. Je to
+    // vlastnost té sestavy, ne aplikace, a stažení tu tedy vyzkoušet nejde:
+    // místo souboru se ověřuje, co server poslal — hlavička přílohy se jménem
+    // souboru a tělo. Skutečné Safari zbývá vyzkoušet ručně.
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (candidate) =>
+          new URL(candidate.url()).pathname === '/api/epo' && candidate.request().method() === 'POST',
+      ),
+      toolbarDownload.click(),
+    ]);
+    expect(response.headers()['content-disposition']).toBe(
+      'attachment; filename="danero-dpfdp7-2025.xml"',
+    );
+    xml = await response.text();
+  } else {
+    const [download] = await Promise.all([page.waitForEvent('download'), toolbarDownload.click()]);
+    expect(download.suggestedFilename()).toBe('danero-dpfdp7-2025.xml');
+    xml = await readFile(await download.path(), 'utf8');
+  }
   expect(xml).toMatch(/^<\?xml /);
   expect(xml).toContain('<Pisemnost');
   expect(xml).toMatch(/rok="2025"/);
