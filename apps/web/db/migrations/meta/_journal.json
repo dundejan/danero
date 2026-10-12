@@ -330,6 +330,13 @@
       "when": 1791535850856,
       "tag": "0046_revoke_trusted_devices",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791790004356,
+      "tag": "0047_save_order",
+      "breakpoints": true
     }
   ]
 }
