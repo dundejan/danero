@@ -254,7 +254,7 @@ export function ImportHistory({
               key={batch.id}
               title={title}
               meta={wideDate}
-              open={(hasIssues && highlightedBatchIds.has(batch.id)) || undefined}
+              defaultOpen={hasIssues && highlightedBatchIds.has(batch.id)}
             >
               <BatchDetails batch={batch} />
             </DisclosureRow>

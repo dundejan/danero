@@ -222,7 +222,7 @@ const CRYPTO_HOLDING_INFO: QuestionInfo = {
  * (pokyn GFŘ D-59 ke § 38v). Rozdíl je až měsíc a sankce 0,1–15 % se počítá
  * z NEOZNÁMENÉHO PŘÍJMU, ne z daně.
  */
-export const OZNAMENI_5M =
+export const LARGE_EXEMPT_INCOME_NOTICE =
   'Pozor na jednu výjimku: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu přesto oznamuje (§ 38v zákona o daních z příjmů). Přiznání to není, a proto máš kratší lhůtu — tři měsíce po konci roku: měsíc navíc, který patří k elektronickému přiznání, dostane jen ten, kdo přiznání opravdu podá.';
 
 /**
@@ -252,9 +252,9 @@ export interface CalculatorAnswers {
   situation: Situation | null;
   salesOver100k: boolean | null;
   allHeldThreeYears: boolean | null;
-  kryptoNad100k: boolean | null;
-  kryptoDrzeno3Roky: boolean | null;
-  prijmy: IncomeAnswer | null;
+  cryptoOver100k: boolean | null;
+  cryptoHeldThreeYears: boolean | null;
+  income: IncomeAnswer | null;
 }
 
 export interface CalculatorOutcome {
@@ -279,9 +279,9 @@ export function evaluateCalculator(
     situation,
     salesOver100k,
     allHeldThreeYears,
-    kryptoNad100k,
-    kryptoDrzeno3Roky,
-    prijmy,
+    cryptoOver100k,
+    cryptoHeldThreeYears,
+    income,
   }: CalculatorAnswers,
   limits: FilingLimitTexts,
 ): CalculatorOutcome {
@@ -289,16 +289,16 @@ export function evaluateCalculator(
   // null = na verdict zatím chybí odpověď
   const salesExempt = salesOver100k === null ? null : !salesOver100k ? true : allHeldThreeYears;
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10)
-  const kryptoOsvobozene =
-    kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
+  const cryptoExempt =
+    cryptoOver100k === null ? null : !cryptoOver100k ? true : cryptoHeldThreeYears;
 
   let verdict: CalculatorOutcome['verdict'] = null;
   let reason: string | null = null;
-  if (kryptoOsvobozene === false) {
+  if (cryptoExempt === false) {
     verdict = 'priznani';
     reason =
       'Prodeje a směny kryptoaktiv nad 100 000 Kč ročně bez tří let držení jsou zdanitelný příjem.';
-  } else if (situation !== null && prijmy === 'ano') {
+  } else if (situation !== null && income === 'ano') {
     verdict = 'priznani';
     reason = incomeReasons(limits)[situation];
   } else if (salesExempt === false) {
@@ -307,10 +307,10 @@ export function evaluateCalculator(
   } else if (
     situation !== null &&
     salesExempt !== null &&
-    kryptoOsvobozene !== null &&
-    prijmy !== null
+    cryptoExempt !== null &&
+    income !== null
   ) {
-    if (prijmy === 'nevim') {
+    if (income === 'nevim') {
       verdict = 'nejasne';
       reason =
         'Jestli dividendy a úroky limit přesáhly, zjistí Danero přesně z napojeného účtu nebo výpisu — včetně zahraniční srážkové daně.';
@@ -330,13 +330,13 @@ export function evaluateCalculator(
       ? [{ label: QUESTIONS.holding, answered: allHeldThreeYears !== null }]
       : []),
     ...(salesOver100k !== null
-      ? [{ label: QUESTIONS.crypto, answered: kryptoNad100k !== null }]
+      ? [{ label: QUESTIONS.crypto, answered: cryptoOver100k !== null }]
       : []),
-    ...(kryptoNad100k === true
-      ? [{ label: QUESTIONS.cryptoHolding, answered: kryptoDrzeno3Roky !== null }]
+    ...(cryptoOver100k === true
+      ? [{ label: QUESTIONS.cryptoHolding, answered: cryptoHeldThreeYears !== null }]
       : []),
-    ...(situation !== null && kryptoOsvobozene !== null
-      ? [{ label: incomeQuestions(limits)[situation].question, answered: prijmy !== null }]
+    ...(situation !== null && cryptoExempt !== null
+      ? [{ label: incomeQuestions(limits)[situation].question, answered: income !== null }]
       : []),
   ];
   const firstUnanswered = questions.findIndex((question) => !question.answered);
@@ -379,7 +379,7 @@ const VERDICTS: Record<
   },
 };
 
-export function KalkulackaPriznani({
+export function FilingCalculator({
   filingLimits,
   previousFilingLimits,
   children,
@@ -389,19 +389,19 @@ export function KalkulackaPriznani({
   /** Obsah pod otázkami (pravidla): na širokém okně vedle něj verdikt dál drží na očích. */
   children?: React.ReactNode;
 }) {
-  const [situation, setSituace] = useState<Situation | null>(null);
-  const [salesOver100k, setProdejeNad100k] = useState<boolean | null>(null);
-  const [allHeldThreeYears, setVseDrzeno3Roky] = useState<boolean | null>(null);
-  const [kryptoNad100k, setKryptoNad100k] = useState<boolean | null>(null);
-  const [kryptoDrzeno3Roky, setKryptoDrzeno3Roky] = useState<boolean | null>(null);
-  const [prijmy, setPrijmy] = useState<IncomeAnswer | null>(null);
+  const [situation, setSituation] = useState<Situation | null>(null);
+  const [salesOver100k, setSalesOver100k] = useState<boolean | null>(null);
+  const [allHeldThreeYears, setAllHeldThreeYears] = useState<boolean | null>(null);
+  const [cryptoOver100k, setCryptoOver100k] = useState<boolean | null>(null);
+  const [cryptoHeldThreeYears, setCryptoHeldThreeYears] = useState<boolean | null>(null);
+  const [income, setIncome] = useState<IncomeAnswer | null>(null);
   // krypto: vlastní limit 100k a od 15. 2. 2025 i vlastní tříletý test (R-10) —
   // řídí, kdy se ukáže poslední otázka
-  const kryptoOsvobozene =
-    kryptoNad100k === null ? null : !kryptoNad100k ? true : kryptoDrzeno3Roky;
+  const cryptoExempt =
+    cryptoOver100k === null ? null : !cryptoOver100k ? true : cryptoHeldThreeYears;
 
   const { verdict, reason, skippedQuestion } = evaluateCalculator(
-    { situation, salesOver100k, allHeldThreeYears, kryptoNad100k, kryptoDrzeno3Roky, prijmy },
+    { situation, salesOver100k, allHeldThreeYears, cryptoOver100k, cryptoHeldThreeYears, income },
     filingLimits,
   );
   // otázka i verdikt jmenují limit běžného roku; loňský jde jen do nápovědy
@@ -410,12 +410,12 @@ export function KalkulackaPriznani({
   const shown = verdict ? VERDICTS[verdict] : null;
 
   const startOver = () => {
-    setSituace(null);
-    setProdejeNad100k(null);
-    setVseDrzeno3Roky(null);
-    setKryptoNad100k(null);
-    setKryptoDrzeno3Roky(null);
-    setPrijmy(null);
+    setSituation(null);
+    setSalesOver100k(null);
+    setAllHeldThreeYears(null);
+    setCryptoOver100k(null);
+    setCryptoHeldThreeYears(null);
+    setIncome(null);
   };
 
   return (
@@ -434,9 +434,9 @@ export function KalkulackaPriznani({
             ]}
             value={situation}
             onChange={(value) => {
-              setSituace(value);
+              setSituation(value);
               // limit otázky na příjmy se situací mění (50k vs. 20k) — odpověď nepřenášet
-              setPrijmy(null);
+              setIncome(null);
             }}
           />
           {situation !== null && (
@@ -449,7 +449,7 @@ export function KalkulackaPriznani({
                 { value: true, label: 'Ano' },
               ]}
               value={salesOver100k}
-              onChange={setProdejeNad100k}
+              onChange={setSalesOver100k}
             />
           )}
           {salesOver100k === true && (
@@ -461,7 +461,7 @@ export function KalkulackaPriznani({
                 { value: false, label: 'Ne' },
               ]}
               value={allHeldThreeYears}
-              onChange={setVseDrzeno3Roky}
+              onChange={setAllHeldThreeYears}
             />
           )}
           {salesOver100k !== null && (
@@ -473,15 +473,15 @@ export function KalkulackaPriznani({
                 { value: false, label: 'Ne' },
                 { value: true, label: 'Ano' },
               ]}
-              value={kryptoNad100k}
+              value={cryptoOver100k}
               onChange={(value) => {
-                setKryptoNad100k(value);
+                setCryptoOver100k(value);
                 // podotázka na držení se týká jen odpovědi Ano — odpověď nepřenášet
-                setKryptoDrzeno3Roky(null);
+                setCryptoHeldThreeYears(null);
               }}
             />
           )}
-          {kryptoNad100k === true && (
+          {cryptoOver100k === true && (
             <Question<boolean>
               question={QUESTIONS.cryptoHolding}
               hint="Počítá se i držení před 15. 2. 2025."
@@ -490,11 +490,11 @@ export function KalkulackaPriznani({
                 { value: true, label: 'Ano, všechno' },
                 { value: false, label: 'Ne' },
               ]}
-              value={kryptoDrzeno3Roky}
-              onChange={setKryptoDrzeno3Roky}
+              value={cryptoHeldThreeYears}
+              onChange={setCryptoHeldThreeYears}
             />
           )}
-          {incomeQuestion !== null && kryptoOsvobozene !== null && (
+          {incomeQuestion !== null && cryptoExempt !== null && (
             // Nápověda zůstává celá na očích: vyjmenovává, co do limitu patří
             // (deriváty, stablecoiny) — bez ní se na otázku odpovídá špatně.
             <Question<IncomeAnswer>
@@ -505,8 +505,8 @@ export function KalkulackaPriznani({
                 { value: 'ano', label: 'Ano' },
                 { value: 'nevim', label: 'Nevím' },
               ]}
-              value={prijmy}
-              onChange={setPrijmy}
+              value={income}
+              onChange={setIncome}
             />
           )}
         </div>
@@ -554,7 +554,7 @@ export function KalkulackaPriznani({
                       'Výjimka: jednotlivý osvobozený prodej nad 5 milionů Kč se finančnímu úřadu oznamuje — do tří měsíců po konci roku.',
                     )}{' '}
                     <InfoPopover label="Oznámení osvobozeného příjmu" align="end" className="-my-1">
-                      <p>{tidy(OZNAMENI_5M)}</p>
+                      <p>{tidy(LARGE_EXEMPT_INCOME_NOTICE)}</p>
                     </InfoPopover>
                   </li>
                 )}

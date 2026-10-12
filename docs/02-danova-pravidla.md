@@ -223,7 +223,11 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
   Konfigurace se zafixuje ve chvíli, kdy si uživatel za daný
   rok skutečně vygeneruje podklady k přiznání — otevře report za ten rok nebo
   stáhne XML pro EPO. Fixuje se **jen už skončený rok**: za běžící rok přiznání
-  podat nelze, takže jeho konfigurace zůstává volná a sleduje profil. Fixace je
+  podat nelze, takže jeho konfigurace zůstává volná a sleduje profil. Report,
+  který místo podkladů ukáže jen prázdný stav (rok bez transakce, pro který
+  nemá nic ani výpočet), **nefixuje** — podklad nevznikl a fixace by se
+  v Nastavení objevila u roku, za který uživatel nic nemá (do 11. 10. 2026
+  fixovalo pouhé otevření adresy). Fixace je
   idempotentní — jednou zapsané hodnoty se nikdy nepřepisují, ani při dalším
   generování podkladů. Od té chvíle se ten rok počítá zafixovanou konfigurací
   ve **všech** pohledech (přehled, portfolio, simulátor, report, XML i
@@ -1303,6 +1307,17 @@ o čísle, které poplatník odevzdá finančnímu úřadu, takže patří sem.
   v demu za rok 2026 v jednom reportu 8 551 Kč (ř. 209) a o pár sekcí níž 8 552 Kč.
   Sjednocení je **jen zobrazení**: daň počítá engine dál z nezaokrouhleného
   základu a XML se nezměnilo ani o bajt.
+
+  Totéž platí pro **příjmy druhu** (sloupec 2 Přílohy č. 2). Příloha je
+  nezaokrouhluje, ale dopočítává — výdaje dolů plus rozdíl podle úhrnu, aby řádek
+  seděl (`priloha2`) — takže vyjdou až o 2 Kč níž než táž tržba zaokrouhlená
+  matematicky. Tichý řádek „tržby X Kč“ (u derivátů „plnění X Kč“) pod druhem
+  v rozpadu daně proto bere zdanitelnou část z řádku přílohy (`wholeProceedsCzk`);
+  osvobozená část, která v příloze není, se přičte zaokrouhlená na koruny. Do
+  11. 10. 2026 stálo v demu za rok 2026 u derivátů 14 461 Kč v příloze a „plnění
+  14 462 Kč“ v rozpadu. Částky jednotlivých prodejů v tabulce prodejů zůstávají
+  zaokrouhlené každá zvlášť: jsou to částky z výpisu, ne řádky tiskopisu, a úhrn
+  přílohy se po prodejích rozdělit nedá.
 
   Zdroj tvaru: tiskopis DPFDP7 (částky v celých Kč) a vzorky přijaté zkušební
   podatelnou (`pnpm validate:epo`); výklad „dolů“ je volba Danera v mezeře, kterou

@@ -30,7 +30,7 @@ type Attrs = Record<string, string>;
 
 const xmlFor = (transactions: unknown[], personal: Record<string, string> = {}) => {
   const result = analyzeTaxYear(engineInputForUser(parseTransactions(transactions), PROFILE, 2025));
-  const { xml } = generateDpfdp7({ year: 2025, result, personal, varianta: 'GENERAL' });
+  const { xml } = generateDpfdp7({ year: 2025, result, personal, taxation: 'GENERAL' });
   return { xml, dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Attrs } }).Pisemnost.DPFDP7 };
 };
 
@@ -116,7 +116,7 @@ describe('EPO: co odmítla zkušební podatelna (A3-01, A3-07)', () => {
   it('A3-07: řídicí znak ve jméně nesmí udělat z písemnosti nevalidní XML', () => {
     // U+0001 se do jména dostane kopírováním z PDF nebo z Wordu; XML 1.0 ho
     // v obsahu nepřipouští vůbec, takže podatelna soubor ani nenačte.
-    const { xml } = xmlFor([], { jmeno: `Jan${String.fromCharCode(1)}`, prijmeni: 'Novák' });
+    const { xml } = xmlFor([], { firstName: `Jan${String.fromCharCode(1)}`, lastName: 'Novák' });
     const jenPovolene = [...xml].every(
       (znak) => (znak.codePointAt(0) ?? 0) > 0x1f || '\t\n\r'.includes(znak),
     );

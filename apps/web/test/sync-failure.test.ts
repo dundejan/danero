@@ -111,14 +111,18 @@ describe('věta podle druhu chyby', () => {
     expect(ibkr.detail).toContain('1099');
   });
 
-  it('věta, která už lidská je, projde beze změny a bez detailu', () => {
-    for (const [error, account] of [
-      [new IbkrFlexError('1012', 'Token je neplatný nebo expiroval — vygeneruj v IBKR nový (Flex Web Service Configuration) a ulož ho znovu.'), IBKR],
-      [new Trading212ApiError(502, 'Stažený export je neúplný — přišlo 10 z 20 bajtů, přenos se zřejmě přerušil. Spusť synchronizaci znovu.'), T212],
-      [new Error('Účet u brokera byl během synchronizace odpojen — sync přerušen.'), T212],
-    ] as const) {
-      expect(describeSyncFailure(error, account)).toEqual({ text: error.message });
-    }
+  it('věta, která už lidská je, projde beze změny', () => {
+    const ibkr = new IbkrFlexError('1012', 'Token je neplatný nebo expiroval — vygeneruj v IBKR nový (Flex Web Service Configuration) a ulož ho znovu.');
+    const t212Partial = new Trading212ApiError(502, 'Stažený export je neúplný — přišlo 10 z 20 bajtů, přenos se zřejmě přerušil. Spusť synchronizaci znovu.');
+    const plain = new Error('Účet u brokera byl během synchronizace odpojen — sync přerušen.');
+    // věty klientů brokerů nesou jako detail jen kód chyby (pro podporu) …
+    expect(describeSyncFailure(ibkr, IBKR)).toEqual({ text: ibkr.message, detail: 'Kód IBKR Flex: 1012' });
+    expect(describeSyncFailure(t212Partial, T212)).toEqual({
+      text: t212Partial.message,
+      detail: 'Stav odpovědi Trading 212: 502',
+    });
+    // … obyčejná chyba detail nemá
+    expect(describeSyncFailure(plain, T212)).toEqual({ text: plain.message });
   });
 
   it('technický detail nenese přístupové údaje a je krátký', () => {
@@ -180,6 +184,24 @@ describe('stav účtu na Zdrojích dat', () => {
       'Spojení spadlo. Spusť ji znovu — co už se stáhlo, zůstává a nic se nezdvojí.',
     );
     expect(failure!.details).toBeUndefined();
+  });
+
+  /**
+   * Věta klienta už říká, co dělat. Bez detailu ji stránka brala jako starší
+   * záznam a přidala obecné „Spusť ji znovu…“: „…a ulož ho znovu. Spusť ji
+   * znovu — co už se stáhlo, zůstává“ (u neplatného tokenu navíc špatná rada)
+   * a „Spusť synchronizaci znovu. Spusť ji znovu…“.
+   */
+  it('za větu klienta, která radu už má, se obecná rada nepřidává', () => {
+    for (const [error, acc] of [
+      [new IbkrFlexError('1012', 'Token je neplatný nebo expiroval — vygeneruj v IBKR nový (Flex Web Service Configuration) a ulož ho znovu.'), IBKR],
+      [new Trading212ApiError(502, 'Stažený export je neúplný — přišlo 10 z 20 bajtů, přenos se zřejmě přerušil. Spusť synchronizaci znovu.'), T212],
+    ] as const) {
+      const [failure] = accountStates(account(storedSyncFailure(error, acc)), null, 'nápověda');
+      expect(failure!.note).toBe(error.message);
+      expect(failure!.note).not.toContain('Spusť ji znovu');
+      expect(failure!.details?.summary).toBe('Technický detail');
+    }
   });
 });
 

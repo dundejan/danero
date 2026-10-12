@@ -27,18 +27,18 @@ import { base8WholeCzk, priloha2, wholeCzkParts } from '@/lib/priloha2';
 
 /** Osobní údaje poplatníka — jen protečou do XML, Danero je nikde neukládá. */
 export interface EpoPersonalData {
-  dic?: string;
-  rodneCislo?: string;
-  prijmeni?: string;
-  jmeno?: string;
-  ulice?: string;
-  cisloPopisne?: string;
-  obec?: string;
-  psc?: string;
+  taxId?: string;
+  birthNumber?: string;
+  lastName?: string;
+  firstName?: string;
+  street?: string;
+  houseNumber?: string;
+  city?: string;
+  postalCode?: string;
   /** Kód finančního úřadu (číselník ÚFO) — VetaD.c_ufo_cil. */
-  ufoCil?: string;
+  taxOfficeCode?: string;
   /** Kód územního pracoviště (číselník PRACUFO) — VetaP.c_pracufo. */
-  pracUfo?: string;
+  localOfficeCode?: string;
   email?: string;
 }
 
@@ -47,10 +47,10 @@ export interface EpoPersonalData {
  * `B` řádné · `O` opravné (před uplynutím lhůty) · `D` dodatečné ·
  * `E` opravné dodatečné. XSD připouští všechny čtyři.
  */
-export type EpoDapTyp = 'B' | 'O' | 'D' | 'E';
+export type EpoFilingType = 'B' | 'O' | 'D' | 'E';
 
 /** Typy, u kterých podatelna vyžaduje 6. oddíl (dodatečné přiznání). */
-export const DODATECNE_DAP_TYPY: readonly EpoDapTyp[] = ['D', 'E'];
+export const SUPPLEMENTARY_FILING_TYPES: readonly EpoFilingType[] = ['D', 'E'];
 
 /**
  * 6. oddíl tiskopisu — vyplňuje se JEN u dodatečného přiznání.
@@ -62,24 +62,24 @@ export const DODATECNE_DAP_TYPY: readonly EpoDapTyp[] = ['D', 'E'];
  * a ztrátu musí zadat uživatel: pocházejí z dřív podaného přiznání, které
  * Danero nevidí (mohlo obsahovat i § 6 a § 7).
  */
-export interface EpoDodatecne {
+export interface EpoSupplementary {
   /** Den zjištění důvodů pro podání (ISO `YYYY-MM-DD`) — § 141 odst. 1 DŘ. */
-  zjistenoDne: string;
+  discoveredOn: string;
   /** ř. 78 — poslední známá daň z dříve podaného přiznání. */
-  posledniZnamaDanCzk?: string;
+  lastKnownTaxCzk?: string;
   /** ř. 81 — poslední známá daňová ztráta. */
-  posledniZnamaZtrataCzk?: string;
+  lastKnownLossCzk?: string;
 }
 
 export interface EpoInput {
   year: number;
   result: TaxYearResult;
   personal: EpoPersonalData;
-  varianta?: 'GENERAL' | 'SEPARATE_16A';
+  taxation?: 'GENERAL' | 'SEPARATE_16A';
   /** Typ přiznání; výchozí `B` (řádné). */
-  dapTyp?: EpoDapTyp;
+  filingType?: EpoFilingType;
   /** 6. oddíl — povinný u `D` i `E`. */
-  dodatecne?: EpoDodatecne;
+  supplementary?: EpoSupplementary;
 }
 
 /**
@@ -130,10 +130,10 @@ function taxpayerCreditFor(year: number): Money {
 }
 
 /** Nepovinná částka z formuláře — prázdné pole znamená nulu, ne chybu. */
-function castka(value: string | undefined, popis: string): Money {
+function optionalAmount(value: string | undefined, label: string): Money {
   if (value === undefined || value.trim() === '') return ZERO;
   const parsed = new Decimal(value.replace(/\s/g, '').replace(',', '.'));
-  if (!parsed.isFinite()) throw new EpoInputError(`Zadej ${popis} jako číslo v korunách.`);
+  if (!parsed.isFinite()) throw new EpoInputError(`Zadej ${label} jako číslo v korunách.`);
   return parsed;
 }
 
@@ -145,7 +145,7 @@ function epoDate(iso: string): string {
 }
 
 /** § 38b: daň se nepředepíše a neplatí, nepřesáhne-li 200 Kč (R-14e). */
-const HRANICE_38B = d('200');
+const SECTION_38B_LIMIT = d('200');
 
 /**
  * Vada VSTUPU, kterou uživatel umí odstranit — nepodporovaný rok, kód státu
@@ -173,9 +173,9 @@ const ceil0 = (v: Money): Money => v.toDecimalPlaces(0, Decimal.ROUND_CEIL);
 const round2 = (v: Money): Money => v.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
 /** Částka v celých Kč jako atribut. */
-const kc = (v: Money): string => round0(v).toFixed(0);
+const czkWhole = (v: Money): string => round0(v).toFixed(0);
 /** Částka s max. 2 des. místy (XSD fractionDigits=2) — bez koncových nul. */
-const kc2 = (v: Money): string => round2(v).toString();
+const czkCents = (v: Money): string => round2(v).toString();
 
 /**
  * Číselník zemí (ISO 3166-1 alpha-2), který podatelna u Přílohy 3 vyžaduje.
@@ -186,7 +186,7 @@ const kc2 = (v: Money): string => round2(v).toString();
  * odmítne (nález A3-06). Radši to poznáme my a řekneme uživateli, co doplnit,
  * než aby mu to spadlo až na podatelně.
  */
-const KODY_ZEMI = new Set(
+const COUNTRY_CODES = new Set(
   ('AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ ' +
     'CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR ' +
     'GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP ' +
@@ -207,17 +207,18 @@ const KODY_ZEMI = new Set(
  * (nález A3-07). Psáno smyčkou, ne regulárním výrazem — literál s řídicími
  * znaky neprojde lintem (no-control-regex).
  */
-const bezRidicichZnaku = (value: string): string => {
+const stripControlChars = (value: string): string => {
   let out = '';
-  for (const znak of value) {
-    const kod = znak.codePointAt(0) ?? 0;
-    if (kod > 0x1f || kod === 0x09 || kod === 0x0a || kod === 0x0d) out += znak;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    const allowed = codePoint > 0x1f || codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+    if (allowed) out += char;
   }
   return out;
 };
 
 const escapeXml = (value: string): string =>
-  bezRidicichZnaku(value)
+  stripControlChars(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -225,7 +226,7 @@ const escapeXml = (value: string): string =>
     .replace(/'/g, '&apos;');
 
 /** Věta jako self-closing element; atributy s hodnotou undefined se vynechají. */
-const veta = (name: string, attrs: Record<string, string | undefined>): string => {
+const xmlRecord = (name: string, attrs: Record<string, string | undefined>): string => {
   const parts = Object.entries(attrs)
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .map(([key, value]) => `${key}="${escapeXml(value)}"`);
@@ -240,15 +241,15 @@ const clean = (value?: string): string | undefined => {
 };
 
 /** DIČ jen číselná část — případný prefix „CZ“ a mezery pryč. */
-const cleanDic = (value?: string): string | undefined =>
+const cleanTaxId = (value?: string): string | undefined =>
   clean(clean(value)?.replace(/^cz/i, '').replace(/\s+/g, ''));
 
 /** Rodné číslo bez lomítka a mezer (XSD chce jen číslice). */
-const cleanRodneCislo = (value?: string): string | undefined =>
+const cleanBirthNumber = (value?: string): string | undefined =>
   clean(clean(value)?.replace(/[\s/]+/g, ''));
 
 /** PSČ bez mezer (XSD: 5 znaků bez mezer). */
-const cleanPsc = (value?: string): string | undefined =>
+const cleanPostalCode = (value?: string): string | undefined =>
   clean(clean(value)?.replace(/\s+/g, ''));
 
 /**
@@ -270,15 +271,15 @@ const cleanPsc = (value?: string): string | undefined =>
  * zápočtu nevstupuje. Exportováno, aby report ukazoval po státech tatáž čísla
  * jako XML (nález A3-12).
  */
-export function prijmyZeStatuProZapocet(
+export function creditIncomeFromCountry(
   country: string,
   agg: { grossCzk: Money; interestGrossCzk: Money },
   options: Pick<EngineOptions, 'treatyInterestWithholdingCap' | 'defaultInterestTreatyCap'>,
 ): Money {
-  const stropUroku = d(
+  const interestCap = d(
     options.treatyInterestWithholdingCap[country] ?? options.defaultInterestTreatyCap,
   );
-  return stropUroku.gt(0) ? agg.grossCzk.plus(agg.interestGrossCzk) : agg.grossCzk;
+  return interestCap.gt(0) ? agg.grossCzk.plus(agg.interestGrossCzk) : agg.grossCzk;
 }
 
 /**
@@ -305,13 +306,13 @@ export function creditIncomeByCountry(result: TaxYearResult): Map<string, Money>
     .filter(([, agg]) => agg.creditableCzk.gt(0))
     .sort(([a], [b]) => a.localeCompare(b));
   const parts = wholeCzkParts(
-    countries.map(([country, agg]) => prijmyZeStatuProZapocet(country, agg, result.options)),
+    countries.map(([country, agg]) => creditIncomeFromCountry(country, agg, result.options)),
   );
   return new Map(countries.map(([country], i) => [country, parts[i]!]));
 }
 
 /** Rozpočet na výčet ISIN v Seznamu — zbytek do 200 znaků nechává na dovětek. */
-const IDENT_UDAJE_BUDGET = 180;
+const PAYER_ID_BUDGET = 180;
 
 /**
  * K3-08: identifikace zahraničních plátců pro Seznam dle § 38f odst. 10.
@@ -322,7 +323,7 @@ const IDENT_UDAJE_BUDGET = 180;
  * papírů, ze kterých příjem z daného státu pochází: podle nich se plátce
  * dohledá. Když ISIN chybí (typicky úrok z hotovosti), zbývá role brokera.
  */
-function identUdajeSeznamu(country: string, result: TaxYearResult): string {
+function payerIdentification(country: string, result: TaxYearResult): string {
   const prefix = 'Výplata přes zahraničního obchodníka s cennými papíry';
   const fallback = `${prefix}; plátci dle výpisů brokera`;
   const isins = [
@@ -335,19 +336,19 @@ function identUdajeSeznamu(country: string, result: TaxYearResult): string {
   ].sort();
   const shown: string[] = [];
   for (const isin of isins) {
-    if (`${prefix}; cenné papíry ${[...shown, isin].join(', ')}`.length > IDENT_UDAJE_BUDGET) break;
+    if (`${prefix}; cenné papíry ${[...shown, isin].join(', ')}`.length > PAYER_ID_BUDGET) break;
     shown.push(isin);
   }
   if (shown.length === 0) return fallback;
-  const zbytek = isins.length - shown.length;
-  return `${prefix}; cenné papíry ${shown.join(', ')}${zbytek > 0 ? ` a dalších ${zbytek}` : ''}`;
+  const remaining = isins.length - shown.length;
+  return `${prefix}; cenné papíry ${shown.join(', ')}${remaining > 0 ? ` a dalších ${remaining}` : ''}`;
 }
 
 /** Daň podle § 16: 15 % do hranice, 23 % nad ní; vstupem základ zaokrouhlený na sta dolů. */
-const danPodle16 = (zdZaokrouhleny: Money, threshold: Money): Money =>
-  zdZaokrouhleny.lte(threshold)
-    ? zdZaokrouhleny.mul('0.15')
-    : threshold.mul('0.15').plus(zdZaokrouhleny.sub(threshold).mul('0.23'));
+const taxUnderSection16 = (roundedBase: Money, threshold: Money): Money =>
+  roundedBase.lte(threshold)
+    ? roundedBase.mul('0.15')
+    : threshold.mul('0.15').plus(roundedBase.sub(threshold).mul('0.23'));
 
 /** Zahraniční příjmy a srážka po státech — společný vstup Přílohy 3 i 4. */
 function creditStates(result: TaxYearResult) {
@@ -434,21 +435,21 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   }
   const threshold = progressiveThresholdFor(year);
   const taxpayerCredit = taxpayerCreditFor(year);
-  const varianta = input.varianta ?? result.tax.recommended;
-  const dapTyp: EpoDapTyp = input.dapTyp ?? 'B';
-  const jeDodatecne = DODATECNE_DAP_TYPY.includes(dapTyp);
+  const taxation = input.taxation ?? result.tax.recommended;
+  const filingType: EpoFilingType = input.filingType ?? 'B';
+  const isSupplementary = SUPPLEMENTARY_FILING_TYPES.includes(filingType);
   // Dodatečné přiznání se podává do konce měsíce následujícího po měsíci, kdy
   // poplatník důvody zjistil (§ 141 odst. 1 daňového řádu) — bez toho data
   // nejde lhůtu posoudit a podatelna položku vyžaduje.
-  if (jeDodatecne && !input.dodatecne?.zjistenoDne) {
+  if (isSupplementary && !input.supplementary?.discoveredOn) {
     throw new EpoInputError(
       'U dodatečného přiznání musíš vyplnit den, kdy jsi zjistil důvody pro jeho podání — bez něj ho podatelna nepřijme.',
     );
   }
-  const dZjist = jeDodatecne ? epoDate(input.dodatecne!.zjistenoDne) : undefined;
-  const poslednDan = castka(input.dodatecne?.posledniZnamaDanCzk, 'poslední známou daň');
-  const poslednZtrata = castka(
-    input.dodatecne?.posledniZnamaZtrataCzk,
+  const discoveryDate = isSupplementary ? epoDate(input.supplementary!.discoveredOn) : undefined;
+  const lastKnownTax = optionalAmount(input.supplementary?.lastKnownTaxCzk, 'poslední známou daň');
+  const lastKnownLoss = optionalAmount(
+    input.supplementary?.lastKnownLossCzk,
     'poslední známou daňovou ztrátu',
   );
 
@@ -458,18 +459,10 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // zatímco XML neslo min(výdaje, příjmy) podle § 10 odst. 4 — nález K3-03.
   // Pořadí řádků VetaJ v XML = pořadí v `priloha2` (D → C → F).
   const p2 = priloha2(result);
-  const druhy10 = p2.rows.map((row) => ({
-    kod: row.kod,
-    popis: row.popis,
-    prij: row.prijmyCzk,
-    vyd: row.vydajeCzk,
-    zd: row.rozdilCzk,
-    zahranicni: row.zahranicniZdroj,
-  }));
-  const prij10 = p2.prijmyCzk; // ř. 207
-  const vyd10 = p2.vydajeCzk; // ř. 208
-  const zd10 = p2.rozdilCzk; // ř. 209
-  const hasPriloha2 = prij10.gt(0);
+  const income10 = p2.incomeCzk; // ř. 207
+  const expenses10 = p2.expensesCzk; // ř. 208
+  const difference10 = p2.differenceCzk; // ř. 209
+  const hasPriloha2 = income10.gt(0);
 
   // ---------- § 8 — dividendy + úroky brutto (celé Kč) ----------
   // V obecném základu je § 8 posledním dílem rozdělení výše. V samostatném
@@ -478,38 +471,38 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // stejně jako `roundBaseDownTo100` v enginu. Obě hodnoty dává
   // `base8WholeCzk`, ze kterého je opisuje i průvodce v reportu (L5-05).
   const base8Whole = base8WholeCzk(result);
-  const base8 = varianta === 'GENERAL' ? base8Whole.generalCzk : base8Whole.separate16aCzk;
+  const base8 = taxation === 'GENERAL' ? base8Whole.generalCzk : base8Whole.separate16aCzk;
 
   // ---------- rozpad zahraničních příjmů a započitatelné srážky po státech (P3 / P4) ----------
-  const staty = creditStates(result);
+  const states = creditStates(result);
 
   // ---------- 2. oddíl — dílčí základy (VetaO) ----------
   // ř. 38: § 8 jen v obecném základu (GENERAL); u § 16a jde do Přílohy 4
-  const r38 = varianta === 'GENERAL' ? base8 : ZERO;
-  const r40 = hasPriloha2 ? zd10 : ZERO; // ř. 40 = ř. 209 Přílohy 2
+  const r38 = taxation === 'GENERAL' ? base8 : ZERO;
+  const r40 = hasPriloha2 ? difference10 : ZERO; // ř. 40 = ř. 209 Přílohy 2
   const r41 = r38.plus(r40); // ř. 41 = ř. 37 + 38 + 39 + 40 (u nás jen 38 + 40)
   const r42 = r41; // ř. 42 = ř. 36 + kladný ř. 41 (§ 6 nemáme)
   const r45 = r42; // ř. 45 — bez uplatněné ztráty
   const r55 = r45; // ř. 55 — bez nezdanitelných částí
   const r56 = roundBaseDownTo100(r55); // ř. 56: celá sta Kč dolů (§ 16 odst. 2)
-  const r57 = danPodle16(r56, threshold); // ř. 57
+  const r57 = taxUnderSection16(r56, threshold); // ř. 57
 
   // ---------- Příloha 3 — prostý zápočet po státech (jen GENERAL, § 38f) ----------
   const hasPriloha3 =
-    varianta === 'GENERAL' && result.dividends.creditableWithholdingCzk.gt(0) && r57.gt(0);
+    taxation === 'GENERAL' && result.dividends.creditableWithholdingCzk.gt(0) && r57.gt(0);
   // Kód státu jde do Přílohy 3 i do Seznamu; podatelna ho kontroluje proti
   // číselníku zemí a neplatný kód shodí CELÉ podání (A3-06). Prefix ISIN ale
   // není vždy země — `XS` (eurobondy), `EU`, `QS`. Radši to poznáme tady
   // a řekneme uživateli, co doplnit, než aby mu podání odmítla podatelna.
-  const neznameZeme = [
-    ...new Set(staty.filter((s) => s.creditable.gt(0) && !KODY_ZEMI.has(s.country)).map((s) => s.country)),
+  const unknownCountries = [
+    ...new Set(states.filter((s) => s.creditable.gt(0) && !COUNTRY_CODES.has(s.country)).map((s) => s.country)),
   ];
-  if (hasPriloha3 && neznameZeme.length > 0) {
+  if (hasPriloha3 && unknownCountries.length > 0) {
     throw new EpoInputError(
-      `Kód státu ${neznameZeme.join(', ')} není zemí podle číselníku finanční správy — vznikl z prefixu ISIN (např. XS u eurobondů). Doplň u těchhle dividend zemi zdroje v importu, jinak podatelna podání odmítne.`,
+      `Kód státu ${unknownCountries.join(', ')} není zemí podle číselníku finanční správy — vznikl z prefixu ISIN (např. XS u eurobondů). Doplň u těchhle dividend zemi zdroje v importu, jinak podatelna podání odmítne.`,
     );
   }
-  const p3 = (hasPriloha3 ? staty.filter((s) => s.creditable.gt(0)) : []).map((s) => {
+  const p3 = (hasPriloha3 ? states.filter((s) => s.creditable.gt(0)) : []).map((s) => {
     const r321 = s.gross; // příjmy ze státu (metoda zápočtu)
     // ř. 323: daň zaplacená v zahraničí JEN do výše dle smlouvy (R-07c) — přeplatek
     // (např. US 30 % bez W-8BEN) se do přiznání nedostane vůbec; testovací
@@ -532,7 +525,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
 
   // ---------- Příloha 4 — samostatný základ § 16a (varianta SEPARATE_16A) ----------
   // výpočet sdílí report (`attachment4Lines`), aby řádky na stránce a v XML byly tytéž
-  const p4 = varianta === 'SEPARATE_16A' ? (attachment4Lines(result) ?? undefined) : undefined;
+  const p4 = taxation === 'SEPARATE_16A' ? (attachment4Lines(result) ?? undefined) : undefined;
   const has16a = p4 !== undefined;
 
   // ---------- 4.–7. oddíl (VetaD) ----------
@@ -554,7 +547,7 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // se sem dostal z jediného pokusu s ř.77 = 30 Kč — uvnitř okna § 38b, kde
   // oba vzorce shodně dávají nulu. Vzorek, který rozdíl pozná, musí mít
   // zároveň ř.60 < 30 840 a ř.414 > 200 Kč.
-  const r91 = r77.lte(HRANICE_38B) ? ZERO : r77;
+  const r91 = r77.lte(SECTION_38B_LIMIT) ? ZERO : r77;
 
   // ---------- sestavení XML (pořadí vět, jak ho přijímá podatelna) ----------
   const lines: string[] = [];
@@ -563,13 +556,13 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   lines.push('<DPFDP7 verzePis="01.01">');
 
   lines.push(
-    veta('VetaD', {
-      c_ufo_cil: clean(personal.ufoCil), // bez FÚ: uživatel doplní po načtení v EPO
+    xmlRecord('VetaD', {
+      c_ufo_cil: clean(personal.taxOfficeCode), // bez FÚ: uživatel doplní po načtení v EPO
       // K3-07: typ přiznání byl natvrdo „řádné", ačkoli UI navádí i na
       // dodatečné. V EPO jde po načtení přepnout, ale kdo to neudělá, podá
       // řádné přiznání za období, které už jednou přiznal.
-      dap_typ: dapTyp,
-      d_zjist: dZjist,
+      dap_typ: filingType,
+      d_zjist: discoveryDate,
       dokument: 'DP7',
       k_uladis: 'DPF',
       rok: String(year),
@@ -577,45 +570,45 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
       audit: 'N',
       zdobd_od: `1.1.${year}`,
       zdobd_do: `31.12.${year}`,
-      da_slezap: kc2(r58),
-      da_celod13: kc(r60),
+      da_slezap: czkCents(r58),
+      da_celod13: czkWhole(r60),
       kc_dztrata: '0',
-      kc_op15_1a: kc(taxpayerCredit),
-      uhrn_slevy35ba: kc(taxpayerCredit),
-      da_slevy35ba: kc(r71),
-      da_slevy35c: kc(r74),
-      da_samzakl: r74a === undefined ? undefined : kc(r74a),
-      kc_dan_celk: kc(r75),
-      kc_dan_po_db: kc(r77),
+      kc_op15_1a: czkWhole(taxpayerCredit),
+      uhrn_slevy35ba: czkWhole(taxpayerCredit),
+      da_slevy35ba: czkWhole(r71),
+      da_slevy35c: czkWhole(r74),
+      da_samzakl: r74a === undefined ? undefined : czkWhole(r74a),
+      kc_dan_celk: czkWhole(r75),
+      kc_dan_po_db: czkWhole(r77),
       kc_db_po_odpd: '0',
       // ---------- 6. oddíl — jen u dodatečného přiznání ----------
       // Vzorce ř. 80 = ř. 79 − ř. 78 a ř. 83 = ř. 82 − ř. 81 podatelna
       // KONTROLUJE (změřeno 23. 8. 2026), takže se posílají všechny řádky
       // naráz, nebo žádný.
-      kc_pzdp: jeDodatecne ? kc(poslednDan) : undefined,
-      kc_zjidp: jeDodatecne ? kc(r77) : undefined,
-      kc_rozdil_dp: jeDodatecne ? kc(r77.sub(poslednDan)) : undefined,
-      kc_pzzt: jeDodatecne ? kc(poslednZtrata) : undefined,
-      kc_zjizt: jeDodatecne ? '0' : undefined, // naše ř. 61 je vždy 0
-      kc_rozdil_zt: jeDodatecne ? kc(ZERO.sub(poslednZtrata)) : undefined,
-      kc_zbyvpred: kc(r91),
+      kc_pzdp: isSupplementary ? czkWhole(lastKnownTax) : undefined,
+      kc_zjidp: isSupplementary ? czkWhole(r77) : undefined,
+      kc_rozdil_dp: isSupplementary ? czkWhole(r77.sub(lastKnownTax)) : undefined,
+      kc_pzzt: isSupplementary ? czkWhole(lastKnownLoss) : undefined,
+      kc_zjizt: isSupplementary ? '0' : undefined, // naše ř. 61 je vždy 0
+      kc_rozdil_zt: isSupplementary ? czkWhole(ZERO.sub(lastKnownLoss)) : undefined,
+      kc_zbyvpred: czkWhole(r91),
     }),
   );
 
-  const vetaP: Record<string, string | undefined> = {
-    dic: cleanDic(personal.dic),
-    rod_c: cleanRodneCislo(personal.rodneCislo),
-    prijmeni: clean(personal.prijmeni),
-    jmeno: clean(personal.jmeno),
-    ulice: clean(personal.ulice),
-    c_pop: clean(personal.cisloPopisne),
-    naz_obce: clean(personal.obec),
-    psc: cleanPsc(personal.psc),
-    c_pracufo: clean(personal.pracUfo),
+  const taxpayerAttrs: Record<string, string | undefined> = {
+    dic: cleanTaxId(personal.taxId),
+    rod_c: cleanBirthNumber(personal.birthNumber),
+    prijmeni: clean(personal.lastName),
+    jmeno: clean(personal.firstName),
+    ulice: clean(personal.street),
+    c_pop: clean(personal.houseNumber),
+    naz_obce: clean(personal.city),
+    psc: cleanPostalCode(personal.postalCode),
+    c_pracufo: clean(personal.localOfficeCode),
     email: clean(personal.email),
   };
-  if (Object.values(vetaP).some((value) => value !== undefined)) {
-    lines.push(veta('VetaP', { ...vetaP, stat: 'ČESKÁ REPUBLIKA' }));
+  if (Object.values(taxpayerAttrs).some((value) => value !== undefined)) {
+    lines.push(xmlRecord('VetaP', { ...taxpayerAttrs, stat: 'ČESKÁ REPUBLIKA' }));
   }
 
   // Ř. 41 je součet ř. 38–40 a podatelna ten vzorec kontroluje: chybějící
@@ -626,39 +619,39 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
   // investora, který si podklady zaplatil: všechny prodeje osvobozené nebo pod
   // limitem 100k. Jakmile vyplňujeme úhrn, musí být vyplněné i sčítance.
   lines.push(
-    veta('VetaO', {
-      kc_zakldan8: varianta === 'GENERAL' ? kc(base8) : undefined,
-      kc_zd10: kc(r40),
-      kc_uhrn: kc(r41),
-      kc_zakldan23: kc(r42),
-      kc_zakldan: kc(r45),
+    xmlRecord('VetaO', {
+      kc_zakldan8: taxation === 'GENERAL' ? czkWhole(base8) : undefined,
+      kc_zd10: czkWhole(r40),
+      kc_uhrn: czkWhole(r41),
+      kc_zakldan23: czkWhole(r42),
+      kc_zakldan: czkWhole(r45),
     }),
   );
-  lines.push(veta('VetaS', { kc_zdsniz: kc(r55), kc_zdzaokr: kc(r56), da_dan16: kc2(r57) }));
+  lines.push(xmlRecord('VetaS', { kc_zdsniz: czkWhole(r55), kc_zdzaokr: czkWhole(r56), da_dan16: czkCents(r57) }));
 
   // VetaB: přehled příloh (P2 jako „A“, P3 + seznam a P4 jako počty dle XSD)
-  const prilohCelkem =
+  const attachmentCount =
     (hasPriloha2 ? 1 : 0) + (hasPriloha3 ? p3.length + 1 : 0) + (has16a ? 1 : 0);
-  if (prilohCelkem > 0) {
+  if (attachmentCount > 0) {
     lines.push(
-      veta('VetaB', {
+      xmlRecord('VetaB', {
         priloha2: hasPriloha2 ? 'A' : undefined,
         priloha4: has16a ? '1' : undefined,
         pril3_samlist: hasPriloha3 ? String(p3.length) : undefined,
         seznam: hasPriloha3 ? '1' : undefined,
-        priloh_celk: String(prilohCelkem),
+        priloh_celk: String(attachmentCount),
       }),
     );
   }
 
   if (hasPriloha2) {
     lines.push(
-      veta('VetaV', {
-        kc_prij10: kc(prij10),
-        kc_vyd10: kc(vyd10),
-        kc_zd10p: kc(zd10),
-        uhrn_prijmy10: kc(prij10),
-        uhrn_vydaje10: kc(vyd10),
+      xmlRecord('VetaV', {
+        kc_prij10: czkWhole(income10),
+        kc_vyd10: czkWhole(expenses10),
+        kc_zd10p: czkWhole(difference10),
+        uhrn_prijmy10: czkWhole(income10),
+        uhrn_vydaje10: czkWhole(expenses10),
         // Úhrn 4. sloupce tabulky je součet KLADNÝCH rozdílů. Skončily-li
         // všechny druhy nanejvýš na nule (rok jen se ztrátovým prodejem —
         // výdaje jsou stropované příjmy druhu, § 10 odst. 4), není co sčítat
@@ -666,20 +659,20 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
         // se součtem kladných hodnot sloupce (nález A3-13, ověřeno zkušební
         // podatelnou). Řádky tabulky se ale vypisují dál — bez nich přestanou
         // sedět úhrny 2. a 3. sloupce (ř. 207 a 208) a to je už věcná chyba.
-        uhrn_rozdil10: zd10.gt(0) ? kc(zd10) : undefined,
+        uhrn_rozdil10: difference10.gt(0) ? czkWhole(difference10) : undefined,
       }),
     );
-    for (const druh of druhy10) {
-      if (druh.prij.lte(0)) continue;
+    for (const row of p2.rows) {
+      if (row.incomeCzk.lte(0)) continue;
       lines.push(
-        veta('VetaJ', {
-          kod_dr_prij10: druh.kod,
-          druh_prij10: druh.popis,
-          prijmy10: kc(druh.prij),
-          vydaje10: kc(druh.vyd),
-          rozdil10: kc(druh.zd),
+        xmlRecord('VetaJ', {
+          kod_dr_prij10: row.code,
+          druh_prij10: row.label,
+          prijmy10: czkWhole(row.incomeCzk),
+          vydaje10: czkWhole(row.expensesCzk),
+          rozdil10: czkWhole(row.differenceCzk),
           // 'Z' jen u skutečně zahraničního zdroje; u tuzemského se atribut vynechá
-          kod10: druh.zahranicni ? 'Z' : undefined,
+          kod10: row.foreignSource ? 'Z' : undefined,
         }),
       );
     }
@@ -687,19 +680,19 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
 
   if (hasPriloha3) {
     lines.push(
-      veta('VetaW', { uhrn_uzndan: kc2(r328), uhrn_neuzndan: kc2(r329), da_zazahr: kc2(r330) }),
+      xmlRecord('VetaW', { uhrn_uzndan: czkCents(r328), uhrn_neuzndan: czkCents(r329), da_zazahr: czkCents(r330) }),
     );
     for (const row of p3) {
       lines.push(
-        veta('VetaL', {
+        xmlRecord('VetaL', {
           kod_statu: row.country,
-          kc_prijzap: kc(row.r321),
+          kc_prijzap: czkWhole(row.r321),
           kc_vydzap: '0',
-          da_zahr: kc(row.r323),
-          proczahr: kc2(row.r324),
-          kc_k_zapzahr: kc2(row.r325),
-          da_uznzap: kc2(row.r326),
-          roz_od12: kc2(row.r327),
+          da_zahr: czkWhole(row.r323),
+          proczahr: czkCents(row.r324),
+          kc_k_zapzahr: czkCents(row.r325),
+          da_uznzap: czkCents(row.r326),
+          roz_od12: czkCents(row.r327),
         }),
       );
     }
@@ -715,12 +708,12 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
     // (ř. 323/326), Seznam ho nezvyšuje.
     for (const row of p3) {
       lines.push(
-        veta('Vetad', {
-          ident_udaje: identUdajeSeznamu(row.country, result),
+        xmlRecord('Vetad', {
+          ident_udaje: payerIdentification(row.country, result),
           k_stat_zdroj: row.country,
-          zapl_dan: kc(row.paid),
-          prijmy_seznam: kc(row.r321),
-          dan_seznam: kc(row.paid),
+          zapl_dan: czkWhole(row.paid),
+          prijmy_seznam: czkWhole(row.r321),
+          dan_seznam: czkWhole(row.paid),
         }),
       );
     }
@@ -728,15 +721,15 @@ export function generateDpfdp7(input: EpoInput): { xml: string } {
 
   if (p4) {
     lines.push(
-      veta('VetaZ', {
-        kc_prij48: kc(p4.r401a),
-        kc_zd48: kc(p4.r406),
-        kc_uhrndzd: kc(p4.r409),
-        kc_dan415: kc(p4.r410),
-        kc_uh415: p4.r411.gt(0) ? kc(p4.r411) : undefined,
-        kc_zahr415: p4.r411.gt(0) ? kc(p4.r412) : undefined,
-        kc_uznzap415: p4.r411.gt(0) ? kc2(p4.r413) : undefined,
-        da_samzakl4: kc(p4.r414),
+      xmlRecord('VetaZ', {
+        kc_prij48: czkWhole(p4.r401a),
+        kc_zd48: czkWhole(p4.r406),
+        kc_uhrndzd: czkWhole(p4.r409),
+        kc_dan415: czkWhole(p4.r410),
+        kc_uh415: p4.r411.gt(0) ? czkWhole(p4.r411) : undefined,
+        kc_zahr415: p4.r411.gt(0) ? czkWhole(p4.r412) : undefined,
+        kc_uznzap415: p4.r411.gt(0) ? czkCents(p4.r413) : undefined,
+        da_samzakl4: czkWhole(p4.r414),
       }),
     );
   }

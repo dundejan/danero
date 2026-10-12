@@ -24,11 +24,13 @@ import {
   dividendsByMonth,
   exemptionOutlook,
   feesByYear,
+  OUTLOOK_BASIS_LABEL,
+  outlookBasisNote,
   portfolioAllocation,
   realizedGainsByYear,
 } from '@/lib/charts-data';
 import { exemptToday as exemptTodayOf } from '@/lib/exempt-today';
-import { czDate, czk, money, pct, plural, qty, signedPct } from '@/lib/format';
+import { czDate, czk, money, pct, plural, profitLoss, qty, signedPct } from '@/lib/format';
 import {
   engineInputForUser,
   instrumentNames,
@@ -169,7 +171,7 @@ export function PortfolioView({
       valueText: row.valueCzk ? czk(row.valueCzk) : undefined,
       // podíl jen z úplně oceněného portfolia — jinak by byl podílem z části
       shareText: share !== undefined && valuation.unpricedCount === 0 ? pct(share, 1) : undefined,
-      plText: row.unrealized ? money(row.unrealized, row.currency!, true) : undefined,
+      plText: row.unrealized ? profitLoss(row.unrealized, row.currency!) : undefined,
       plPctText: row.unrealizedPct !== undefined ? signedPct(row.unrealizedPct, 1) : undefined,
       plPositive: row.unrealized ? row.unrealized.gte(0) : undefined,
       exemptState,
@@ -307,6 +309,7 @@ export function PortfolioView({
   // křivka má co říct až od dvou budoucích termínů; jediný skok je jen datum,
   // a to už nese číslo „Nejbližší osvobození“ i tabulka
   const showOutlook = outlook !== null && outlook.points.length > 2;
+  const outlookNote = outlook ? outlookBasisNote(outlook) : null;
   const showDividends = dividends.totalCzk > 0 || years.length > 1;
   const showRealized = realized.some((bar) => bar.valueCzk !== 0);
   const showFees = fees.bars.length > 0;
@@ -431,16 +434,11 @@ export function PortfolioView({
                     <InfoPopover label="Horizont osvobození" align="start">
                       <p>
                         {tidy(
-                          `Jaký podíl portfolia (podle ${outlook.basis === 'value' ? 'hodnoty' : 'počtu kusů'}) půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
+                          // u nabývací ceny říká měřítko i důvod hned další věta
+                          `Jaký podíl portfolia${outlook.basis === 'cost' ? '' : ` (podle ${OUTLOOK_BASIS_LABEL[outlook.basis]})`} půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
                         )}
                       </p>
-                      {outlook.unpricedCount > 0 && (
-                        <p>
-                          {tidy(
-                            `Počítá se z oceněných pozic; ${outlook.unpricedCount} bez ceny v křivce ${plural(outlook.unpricedCount, 'není', 'nejsou', 'není')}.`,
-                          )}
-                        </p>
-                      )}
+                      {outlookNote && <p>{tidy(outlookNote)}</p>}
                       <p>
                         Po dnech a pozicích ho ukazuje{' '}
                         <TextLink href={`${basePath}/prehled`}>přehled</TextLink>.

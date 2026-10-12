@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { autoSaveForm, holdScripts, registerWithProfile } from './helpers';
+import { expect, test, type Page, type Route } from '@playwright/test';
+import { autoSaveForm, holdScripts, registerWithProfile, signOut } from './helpers';
 
 /**
  * Auto-save v Nastavení a mezera před hydratací.
@@ -250,8 +250,8 @@ test('nastavení: změny rychle po sobě se uloží všechny, i ta vrácená', a
 
   // ── dvě nabídky hned po sobě: druhá se dřív ztratila, protože dokončené
   //    uložení formulář vykreslilo znovu ze serveru ─────────────────────────
-  // Každá změna je vlastní uložení; další krok smí přijít, až doběhnou
-  // všechna — obnovení stránky by rozdělané uložení utnulo.
+  // Odeslání jdou za sebou (změny během ukládání se slijí do jednoho
+  // dalšího); další krok smí přijít, až doběhnou všechna.
   let finishedSaves = 0;
   page.on('requestfinished', (request) => {
     if (request.method() === 'POST') finishedSaves += 1;
@@ -306,7 +306,8 @@ test('nastavení: změny rychle po sobě se uloží všechny, i ta vrácená', a
         .click();
     }
   });
-  await savesFinished(7);
+  // první změna odejde hned, zbylé dvě se slijí do jednoho dalšího odeslání
+  await savesFinished(6);
   for (const percent of [50, 60, 75, 85, 90, 100]) await expect(threshold(percent)).toBeChecked();
   await page.reload();
   await autoSaveForm(page);
@@ -387,8 +388,11 @@ test('nastavení klávesnicí: po uložení zůstane fokus na poli a další kl�
   await expect(savedToast(page)).toBeVisible();
   await expect(frequency).toHaveValue('WEEKLY');
   await expect(frequency).toBeFocused();
-  // fokus je vidět — po klávesnici patří k poli obrys
-  expect(await frequency.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+  // fokus je vidět — po klávesnici patří k poli obrys. Stránka se po uložení
+  // dotahuje ze serveru zvlášť, takže nové pole může vzniknout o chvíli později.
+  await expect
+    .poll(() => frequency.evaluate((element) => element.matches(':focus-visible')))
+    .toBe(true);
 
   // ── další klávesa jde do téhož pole, ne do prázdna ──────────────────────
   await page.keyboard.press('ArrowUp');
@@ -431,9 +435,7 @@ test('nastavení klávesnicí: po uložení zůstane fokus na poli a další kl�
 
 /**
  * Uložení v běhu: první POST se pozdrží, dokud test neřekne, a ostatní se jen
- * počítají. Kolik jich bude, je věc prohlížeče (Chromium při zániku pole s
- * rozepsaným textem ohlásí `change` a uloží ho hned, Firefox ne) — test proto
- * čeká na klid, ne na počet.
+ * počítají. Test čeká na klid, ne na počet.
  */
 async function holdFirstSave(page: Page): Promise<{ release: () => void; idle: () => Promise<void> }> {
   let release = (): void => {};
@@ -553,4 +555,582 @@ test('nastavení: rozepsaná částka se uloží, i když po uložení jiného p
   await saves.idle();
   await expectSaved(page, '#ostatni-prijmy', '777');
   await expect(rates).toHaveValue('CNB_DAILY');
+});
+
+/** Napíše do pole částky skutečnou klávesnicí — a pole neopustí. */
+async function typeIncome(page: Page, text: string): Promise<void> {
+  const income = page.locator('#ostatni-prijmy');
+  await income.click();
+  await income.press('ControlOrMeta+a');
+  await page.keyboard.type(text);
+}
+
+/** Částka uložená na serveru: přečte ji čerstvě načtený panel téhož účtu. */
+async function savedIncome(page: Page): Promise<string> {
+  const probe = await page.context().newPage();
+  try {
+    await probe.goto('/nastaveni');
+    return await probe.locator('#ostatni-prijmy').inputValue();
+  } finally {
+    await probe.close();
+  }
+}
+
+const expectIncomeSaved = (page: Page, value: string): Promise<void> =>
+  expect.poll(() => savedIncome(page), { message: `částka ${value} se má uložit` }).toBe(value);
+
+/** Do Nastavení odkazem v aplikaci — přechod uvnitř směrovače, ne načtení dokumentu. */
+async function openSettingsByLink(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Nastavení' }).first().click();
+  await page.waitForURL('**/nastaveni');
+  await autoSaveForm(page);
+}
+
+/**
+ * Textové pole ohlásí změnu až s opuštěním. Kdo částku napsal a odešel, aniž
+ * pole opustil, o ni přišel — změřeno 11. 10. 2026: v Chromiu při Zpět,
+ * zavření panelu, F5 i odchodu na jinou adresu, ve Firefoxu při Zpět uvnitř
+ * aplikace a zavření panelu. Rozepsaný text se proto ukládá i při odchodu.
+ */
+test('nastavení: rozepsaná částka se uloží i při odchodu, aniž pole opustím', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Odchod', email: 'odchod@danero.cz' });
+
+  // ── Zpět uvnitř aplikace: formulář zaniká, potvrzení přijde na stránce, kam se odešlo ──
+  await openSettingsByLink(page);
+  await typeIncome(page, '1111');
+  await page.goBack();
+  await page.waitForURL(/\/import(\?|$)/);
+  await expect(savedToast(page)).toBeVisible();
+  await expectIncomeSaved(page, '1111');
+
+  // ── odchod na jinou adresu (načtení jiného dokumentu) ───────────────────
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await typeIncome(page, '2222');
+  await page.goto('/soukromi');
+  await expectIncomeSaved(page, '2222');
+
+  // ── F5: uloží se a nová stránka ji hned ukazuje ─────────────────────────
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await typeIncome(page, '3333');
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(page.locator('#ostatni-prijmy')).toHaveValue('3333');
+  await expectIncomeSaved(page, '3333');
+
+  // ── zavření panelu ──────────────────────────────────────────────────────
+  const tab = await page.context().newPage();
+  await tab.goto('/nastaveni');
+  await autoSaveForm(tab);
+  await typeIncome(tab, '4444');
+  await tab.close();
+  await expectIncomeSaved(page, '4444');
+
+  // ── Enter v poli uloží jednou (dřív odešla dvě stejná odeslání) ─────────
+  await page.reload();
+  await autoSaveForm(page);
+  const saves = watchSaves(page);
+  await typeIncome(page, '5555');
+  await page.keyboard.press('Enter');
+  await expect(savedToast(page)).toBeVisible();
+  await expectIncomeSaved(page, '5555');
+  expect(saves).toHaveLength(1);
+});
+
+/**
+ * Neplatnou částku server neuloží. Dřív se o tom člověk dozvěděl jen tehdy,
+ * když na stránce zůstal; při odchodu zmizela beze slova.
+ */
+test('nastavení: neplatná částka se nezahodí potichu a nebrzdí ostatní změny', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Neplatná', email: 'neplatna@danero.cz' });
+  const refusal = page.getByRole('alert').filter({ hasText: 'Další zdanitelné příjmy zadej jako částku' });
+
+  // ── odchod uvnitř aplikace: hláška přijde na stránce, kam se odešlo ─────
+  await openSettingsByLink(page);
+  await typeIncome(page, '12 000 Kč');
+  await page.goBack();
+  await page.waitForURL(/\/import(\?|$)/);
+  await expect(refusal).toBeVisible();
+  await expectIncomeSaved(page, '0');
+
+  // ── opuštění pole: text zůstane k opravě a pole je označené ─────────────
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const income = page.locator('#ostatni-prijmy');
+  await typeIncome(page, '12 000 Kč');
+  await page.keyboard.press('Tab');
+  await expect(refusal).toBeVisible();
+  await expect(income).toHaveValue('12 000 Kč');
+  await expect(income).toHaveAttribute('aria-invalid', 'true');
+
+  // ── jiná změna se uloží i s neplatnou částkou vedle ─────────────────────
+  await page.getByText('Cenné papíry v obchodním majetku').click();
+  // hláška říká obojí: co se uložilo a že částka pořád ne (holé „Uloženo“ by
+  // odmítnutí přebilo — revize R7, D2)
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Ostatní změny jsou uložené.' }),
+  ).toContainText('Další zdanitelné příjmy zadej jako částku');
+  await expect(savedToast(page)).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const probe = await page.context().newPage();
+      await probe.goto('/nastaveni');
+      const checked = await probe.locator('#obchodni-majetek').isChecked();
+      await probe.close();
+      return checked;
+    })
+    .toBe(true);
+  await expectIncomeSaved(page, '0');
+  // uložení stránku dotáhlo ze serveru a formulář vznikl znovu — odmítnutý
+  // text v něm zůstal i s označením
+  await autoSaveForm(page);
+  await expect(page.locator('#obchodni-majetek')).toHaveJSProperty('defaultChecked', true);
+  await expect(income).toHaveValue('12 000 Kč');
+  await expect(income).toHaveAttribute('aria-invalid', 'true');
+
+  // ── zavírání panelu: není kde to říct, tak se prohlížeč zeptá ───────────
+  await autoSaveForm(page);
+  await typeIncome(page, 'abc');
+  const dialog = page.waitForEvent('dialog');
+  // obnovení čeká na odpověď na dotaz — nečeká se na něj
+  void page.evaluate(() => window.location.reload()).catch(() => {});
+  const question = await dialog;
+  expect(question.type()).toBe('beforeunload');
+  await question.dismiss();
+  // kdo zůstal, vidí proč — a text má pořád v poli
+  await expect(page.getByRole('alert').filter({ hasText: 'Zadej částku v korunách' })).toBeVisible();
+  await expect(income).toHaveValue('abc');
+});
+
+/** Zdrží každé uložení akcí o `ms` — pomalé připojení. Vrací funkci, která zdržování zruší. */
+async function slowSaves(page: Page, ms: number): Promise<() => Promise<void>> {
+  const pattern = '**/nastaveni**';
+  const handler = async (route: Route): Promise<void> => {
+    const request = route.request();
+    if (request.method() === 'POST' && request.headers()['next-action']) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    await route.continue().catch(() => {});
+  };
+  await page.route(pattern, handler);
+  return () => page.unroute(pattern, handler);
+}
+
+/** Hodnota pole uložená na serveru: přečte ji čerstvě načtený panel téhož účtu. */
+async function savedValue(page: Page, selector: string): Promise<string> {
+  const probe = await page.context().newPage();
+  try {
+    await probe.goto('/nastaveni');
+    return await probe.locator(selector).inputValue();
+  } finally {
+    await probe.close();
+  }
+}
+
+const MATCHING = 'select[name="parovani"]';
+
+/**
+ * Revize R7, D1 a D2 — neplatná částka v řadě s jinou změnou, na pomalém
+ * připojení. Server odmítá formulář celý, takže:
+ * - D1: změna zařazená ZA neplatnou částku nesla tentýž text a padla s ním.
+ *   Nabídka ukazovala LIFO, v databázi zůstalo FIFO — a neuložilo se to ani
+ *   při odchodu ze stránky.
+ * - D2: neplatná částka zadaná hned PO jiné změně skončila hláškou „Uloženo“
+ *   (z odeslání zbytku) a dotažení stránky ji z pole smazalo. Člověk odešel
+ *   s tím, že příjmy zadal; limit se počítal s nulou.
+ */
+test('nastavení: neplatná částka v řadě s jinou změnou — změna se uloží, odmítnutí zůstane vidět', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Řada', email: 'rada@danero.cz' });
+  await openSettingsByLink(page);
+  const income = page.locator('#ostatni-prijmy');
+  const matching = page.locator(MATCHING);
+  const refusal = page.getByRole('alert').filter({ hasText: 'Další zdanitelné příjmy zadej jako částku' });
+  /** Stránka je dotažená ze serveru: nabídka má novou volbu už v HTML. */
+  const rendered = (value: string): Promise<void> =>
+    expect(page.locator(`${MATCHING} option[value="${value}"]`)).toHaveJSProperty(
+      'defaultSelected',
+      true,
+    );
+  const fast = await slowSaves(page, 1500);
+
+  // ── D1: částka (běží) a hned za ní nabídka (čeká) ───────────────────────
+  await typeIncome(page, 'abc');
+  await page.keyboard.press('Tab');
+  await matching.selectOption('LIFO');
+  await expect(refusal).toBeVisible();
+  await expect.poll(() => savedValue(page, MATCHING), { message: 'párování se má uložit' }).toBe('LIFO');
+  await rendered('LIFO');
+  await autoSaveForm(page);
+  await expect(matching).toHaveValue('LIFO');
+  // odmítnutý text přežil i nové vykreslení formuláře a hláška o něm je poslední
+  await expect(income).toHaveValue('abc');
+  await expect(income).toHaveAttribute('aria-invalid', 'true');
+  await expect(refusal).toBeVisible();
+  await expect(savedToast(page)).toHaveCount(0);
+  await expectIncomeSaved(page, '0');
+
+  // ── D2: nabídka (běží) a hned za ní neplatná částka — dva tvary ─────────
+  for (const [invalid, choice] of [
+    ['12x', 'MAX_PROFIT'],
+    ['50.000', 'MAX_LOSS'],
+  ] as const) {
+    await matching.selectOption(choice);
+    await typeIncome(page, invalid);
+    await page.keyboard.press('Tab');
+    await expect.poll(() => savedValue(page, MATCHING)).toBe(choice);
+    await rendered(choice);
+    await autoSaveForm(page);
+    await expect(income, `„${invalid}“ má zůstat v poli`).toHaveValue(invalid);
+    await expect(income).toHaveAttribute('aria-invalid', 'true');
+    await expect(refusal).toBeVisible();
+    await expect(savedToast(page)).toHaveCount(0);
+    await expectIncomeSaved(page, '0');
+  }
+
+  // ── oprava: platná částka se uloží, označení i hláška o chybě zmizí ─────
+  await fast();
+  await typeIncome(page, '50000');
+  await page.keyboard.press('Tab');
+  await expect(savedToast(page)).toBeVisible();
+  await expectIncomeSaved(page, '50000');
+  await expect(income).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(refusal).toHaveCount(0);
+});
+
+/** Napodobí skrytí a návrat panelu — v headless prohlížeči jinak nenastane. */
+const setVisibility = (page: Page, state: 'hidden' | 'visible'): Promise<void> =>
+  page.evaluate((next) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => next });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => next === 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
+
+const LEAVING_NOTE = 'danero:leaving-draft';
+
+/**
+ * Revize R7, D3 — poznámka pro F5 (`lib/leaving-draft.ts`) se psala i při
+ * pouhém skrytí panelu a nikdo ji nemazal. Do deseti vteřin: napíšu 5000,
+ * přepnu panel (uloží se), vrátím se, přepíšu na 0, F5 → server pošle 0,
+ * poznámka do pole vrátí 5000 a auto-save ho uloží. Hodnota, kterou uživatel
+ * výslovně zrušil, byla zpátky v databázi — s hláškou „Uloženo“.
+ */
+test('nastavení: F5 nevrátí částku, kterou uživatel mezitím přepsal', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Poznámka', email: 'poznamka@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const income = page.locator('#ostatni-prijmy');
+
+  await typeIncome(page, '5000');
+  await setVisibility(page, 'hidden');
+  await expectIncomeSaved(page, '5000');
+  await setVisibility(page, 'visible');
+  // stránka žije dál — poznámka pro F5 nevznikla
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), LEAVING_NOTE)).toBeNull();
+
+  // uživatel si to rozmyslel
+  await typeIncome(page, '0');
+  await page.keyboard.press('Tab');
+  await expectIncomeSaved(page, '0');
+
+  const saves = watchSaves(page);
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(income).toHaveValue('0');
+  // nic se po načtení neukládá a na serveru zůstala nula
+  await expect(savedToast(page)).toHaveCount(0);
+  expect(await savedIncome(page)).toBe('0');
+  expect(saves).toEqual([]);
+
+  // ── poznámka jiného účtu (odhlášení v jiném panelu ji smazat neumí) ─────
+  await typeIncome(page, '7000');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+  const note = JSON.parse(
+    (await page.evaluate((key) => sessionStorage.getItem(key), LEAVING_NOTE)) ?? 'null',
+  ) as { owner: string; fields: Record<string, { from: string; text: string }> } | null;
+  // poznámka nese označení účtu — ne e-mail ani id
+  expect(note?.owner).toMatch(/^[0-9a-f]{16}$/);
+  expect(note?.fields['ostatni-prijmy']).toEqual({ from: '0', text: '7000' });
+  await expectIncomeSaved(page, '7000');
+  // tatáž poznámka s cizím označením a částkou, kterou server nemá
+  await page.evaluate(
+    ([key, raw]) => sessionStorage.setItem(key!, raw!),
+    [
+      LEAVING_NOTE,
+      JSON.stringify({
+        ...note,
+        owner: 'cizi-ucet-000000',
+        at: Date.now(),
+        fields: { 'ostatni-prijmy': { from: '7000', text: '9999' } },
+      }),
+    ],
+  );
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(income).toHaveValue('7000');
+  expect(await savedIncome(page)).toBe('7000');
+});
+
+/**
+ * Revize R7, M1 — hláška auto-save se z úložiště nikdy nemazala. Po návratu
+ * z veřejné stránky se „Uloženo…“ ukázalo znovu a po odhlášení ho viděl i další
+ * účet přihlášený v témže panelu (týž dokument, rozložení aplikace vzniklo
+ * znovu). Text je obecný, ale je to nepravdivé potvrzení cizímu účtu.
+ */
+test('nastavení: hláška o uložení se neukáže znovu po návratu ani jinému účtu', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Druhý', email: 'hlaska-b@danero.cz' });
+  await signOut(page);
+  await registerWithProfile(page, { name: 'E2E První', email: 'hlaska-a@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const marker = await page.evaluate(() => {
+    const value = Math.random();
+    (window as unknown as { documentMarker: number }).documentMarker = value;
+    return value;
+  });
+  const sameDocument = (): Promise<boolean> =>
+    page.evaluate(
+      (value) => (window as unknown as { documentMarker?: number }).documentMarker === value,
+      marker,
+    );
+
+  // ── hláška zavřená uživatelem se po návratu z veřejné stránky neukáže ───
+  await page.locator(MATCHING).selectOption('LIFO');
+  await expect(savedToast(page)).toBeVisible();
+  await savedToast(page).getByRole('button', { name: 'Zavřít' }).click();
+  await expect(savedToast(page)).toHaveCount(0);
+  await page.locator('footer a[href^="/podminky"]').first().click();
+  await page.waitForURL('**/podminky**');
+  await page.goBack();
+  await page.waitForURL('**/nastaveni');
+  await autoSaveForm(page);
+  expect(await sameDocument()).toBe(true);
+  await expect(savedToast(page)).toHaveCount(0);
+
+  // ── hláška, která ještě svítí, se po odhlášení neukáže dalšímu účtu ─────
+  await page.locator(MATCHING).selectOption('FIFO');
+  await expect(savedToast(page)).toBeVisible();
+  await signOut(page);
+  await page.getByLabel('E-mail').fill('hlaska-b@danero.cz');
+  await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
+  await page.getByRole('button', { name: 'Přihlásit se' }).click();
+  await page.waitForURL('**/prehled');
+  await expect(page.getByRole('heading', { name: 'Přehled' })).toBeVisible();
+  // týž dokument — úložiště hlášek přežilo, a přesto se nic neukáže
+  expect(await sameDocument()).toBe(true);
+  await expect(savedToast(page)).toHaveCount(0);
+});
+
+/**
+ * Revize R7, M2 — ztracená odpověď. Požadavek dorazil a server zapsal, jen
+ * odpověď se cestou ztratila (výpadek mobilní sítě). Obrazovka řekla „Uložení
+ * se nepovedlo“ a vrátila nabídku na starou volbu, přestože v databázi byla
+ * nová: ukazovala jiné párování, než kterým se počítá. Stránka teď netvrdí
+ * nic, dokud si stav nevyžádá ze serveru — a formulář je do té doby zamčený.
+ */
+test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu uložené', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Odpověď', email: 'odpoved@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const matching = page.locator(MATCHING);
+  const unknown = page.getByRole('alert').filter({ hasText: 'Spojení vypadlo.' });
+  let mode: 'lost-response' | 'never-sent' = 'lost-response';
+  await page.route('**/nastaveni**', async (route) => {
+    const request = route.request();
+    if (!(request.method() === 'POST' && request.headers()['next-action'])) {
+      return route.continue();
+    }
+    // server změnu zapíše, odpověď se ztratí — nebo požadavek vůbec neodejde
+    if (mode === 'lost-response') await route.fetch();
+    return route.abort('connectionfailed');
+  });
+
+  // ── server zapsal, odpověď se ztratila: obrazovka ukáže novou volbu ─────
+  await matching.selectOption('LIFO');
+  await expect(unknown).toBeVisible();
+  await autoSaveForm(page);
+  await expect(matching).toHaveValue('LIFO');
+  expect(await savedValue(page, MATCHING)).toBe('LIFO');
+
+  // ── požadavek neodešel: obrazovka se vrátí na uložený stav ──────────────
+  mode = 'never-sent';
+  await matching.selectOption('MAX_PROFIT');
+  await expect(unknown).toBeVisible();
+  await autoSaveForm(page);
+  await expect(matching).toHaveValue('LIFO');
+  expect(await savedValue(page, MATCHING)).toBe('LIFO');
+
+  // ── server není dosažitelný vůbec: formulář je zamčený a netvrdí nic ────
+  await page.route('**/api/health', (route) => route.abort('connectionfailed'));
+  await matching.selectOption('MAX_LOSS');
+  await expect(unknown).toBeVisible();
+  const form = page.locator('form[data-auto-submit]');
+  await expect(form).toHaveAttribute('data-auto-submit', 'unsynced');
+  await expect(form).toHaveAttribute('aria-busy', 'true');
+  await expect(form).toHaveJSProperty('inert', true);
+  // spojení se vrátí: stránka si stav vyžádá sama a formulář odemkne
+  await page.unroute('**/api/health');
+  await autoSaveForm(page);
+  await expect(form).not.toHaveAttribute('aria-busy', 'true');
+  await expect(matching).toHaveValue('LIFO');
+  expect(await savedValue(page, MATCHING)).toBe('LIFO');
+
+  // a další změna se uloží jako obvykle
+  await page.unroute('**/nastaveni**');
+  await matching.selectOption('FIFO');
+  await expect(savedToast(page)).toBeVisible();
+  await expect.poll(() => savedValue(page, MATCHING)).toBe('FIFO');
+});
+
+/**
+ * Uložení dřív končilo přesměrováním s potvrzením v adrese: každá změna
+ * přidala krok do historie prohlížeče (po třech změnách čtyři stisky Zpět)
+ * a v adrese po ní zůstala kotva.
+ */
+test('nastavení: uložení nemění adresu, historii prohlížeče ani polohu stránky', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Historie', email: 'historie@danero.cz' });
+  let finishedSaves = 0;
+  page.on('requestfinished', (request) => {
+    if (request.method() === 'POST') finishedSaves += 1;
+  });
+  const savesFinished = (count: number) =>
+    expect.poll(() => finishedSaves, { message: `čekám na ${count} dokončených uložení` }).toBe(count);
+  /** Přepne nabídku klávesnicí na druhou volbu. */
+  const flip = async (label: string): Promise<void> => {
+    await page.getByLabel(label).focus();
+    await page.keyboard.press('ArrowDown');
+  };
+
+  await openSettingsByLink(page);
+  const entries = await page.evaluate(() => window.history.length);
+  await flip('Párování prodejů');
+  await savesFinished(1);
+  await flip('Měnové kurzy');
+  await savesFinished(2);
+
+  // změna dole na stránce ji nesmí vrátit nahoru
+  const lowest = page.getByLabel('Vratka kapitálu');
+  await lowest.scrollIntoViewIfNeeded();
+  await lowest.focus();
+  const scrolled = await page.evaluate(() => Math.round(window.scrollY));
+  expect(scrolled).toBeGreaterThan(0);
+  await page.keyboard.press('ArrowDown');
+  await savesFinished(3);
+  await expect(savedToast(page)).toBeVisible();
+  await autoSaveForm(page);
+  await expect(lowest).toHaveValue('lenient');
+  expect(await page.evaluate(() => Math.round(window.scrollY))).toBe(scrolled);
+
+  // adresa je pořád táž a historie nepřibyla
+  expect(new URL(page.url()).pathname + new URL(page.url()).search + new URL(page.url()).hash).toBe(
+    '/nastaveni',
+  );
+  expect(await page.evaluate(() => window.history.length)).toBe(entries);
+
+  // totéž na stránce upozornění
+  await page.getByRole('link', { name: 'Upozornění' }).first().click();
+  await page.waitForURL('**/nastaveni/upozorneni');
+  await autoSaveForm(page);
+  await page.getByText('Naléhavé posílat hned').click();
+  await savesFinished(4);
+  await expect(savedToast(page)).toBeVisible();
+  expect(page.url()).toMatch(/\/nastaveni\/upozorneni$/);
+
+  // jeden stisk Zpět = o stránku zpět, ne o jednu změnu
+  await page.goBack();
+  await expect(page).toHaveURL(/\/nastaveni$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/import(\?|$)/);
+});
+
+/**
+ * Zpět a Vpřed uvnitř aplikace vracel směrovač ze své paměti a serveru se
+ * nezeptal — Nastavení ukázalo stav z doby před odchodem (změřeno
+ * 11. 10. 2026 v Chromiu i Firefoxu). Rozložení aplikace proto po návratu
+ * stránku obnoví (`RefreshOnRestore`).
+ */
+test('nastavení: Zpět a Vpřed uvnitř aplikace ukážou stav ze serveru', async ({ page, browser }) => {
+  await registerWithProfile(page, { name: 'E2E Směrovač', email: 'smerovac@danero.cz' });
+  await openSettingsByLink(page);
+  const matching = page.getByLabel('Párování prodejů');
+  await expect(matching).toHaveValue('FIFO');
+  // odchod odkazem v aplikaci — stránka zůstává v paměti směrovače
+  await page.getByRole('link', { name: 'Zdroje dat' }).first().click();
+  await page.waitForURL(/\/import(\?|$)/);
+
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const other = await elsewhere.newPage();
+  await other.goto('/nastaveni');
+  await autoSaveForm(other);
+  await other.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(savedToast(other)).toBeVisible();
+
+  const saves = watchSaves(page);
+  await page.goBack();
+  await page.waitForURL('**/nastaveni');
+  await expect(matching).toHaveValue('LIFO');
+  await autoSaveForm(page);
+  await expectFormMatchesBaseline(page);
+
+  // o krok dál zpět, další změna jinde, a Vpřed
+  await page.goBack();
+  await page.waitForURL(/\/import(\?|$)/);
+  await other.getByLabel('Měnové kurzy').selectOption('CNB_DAILY');
+  await expect(savedToast(other)).toBeVisible();
+  await page.goForward();
+  await page.waitForURL('**/nastaveni');
+  await expect(page.getByLabel('Měnové kurzy')).toHaveValue('CNB_DAILY');
+  await expect(matching).toHaveValue('LIFO');
+  await autoSaveForm(page);
+  await expectFormMatchesBaseline(page);
+  // obnovení nic neukládá
+  expect(saves).toEqual([]);
+  await elsewhere.close();
+});
+
+/**
+ * Aplikace se bez JavaScriptu nevykreslí: obsah se posílá po částech a na
+ * místo ho skládá skript. Dřív zůstala na obrazovce kostra načítání, která
+ * se nikdy nedočkala. Teď stránka řekne, co chybí — a přihlášení, které bez
+ * skriptu taky nefunguje, aspoň nepošle heslo do adresy.
+ */
+test('bez JavaScriptu aplikace, demo i přihlášení řeknou, co chybí', async ({ page, browser }) => {
+  await registerWithProfile(page, { name: 'E2E Bez skriptů', email: 'bez-skriptu@danero.cz' });
+  const context = await browser.newContext({
+    javaScriptEnabled: false,
+    storageState: await page.context().storageState(),
+  });
+  const plain = await context.newPage();
+  // Co je na stránce doopravdy vidět. Lokátory Playwrightu obsah `<noscript>`
+  // přeskakují (počítají s tím, že skripty běží), `innerText` ne — a skryté
+  // prvky do něj nepatří.
+  const shown = async (): Promise<string> =>
+    (await plain.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ');
+  const NOTICE =
+    'Danero potřebuje zapnutý JavaScript. Zapni ho v nastavení prohlížeče a načti stránku znovu.';
+
+  for (const path of ['/nastaveni', '/prehled', '/demo/prehled']) {
+    await plain.goto(path);
+    await expect.poll(shown, { message: path }).toContain(NOTICE);
+    // kostra načítání, která by se nedočkala obsahu, vidět není
+    await expect(plain.locator('[data-app-skeleton]'), path).toBeHidden();
+  }
+
+  // veřejná stránka se čte i bez skriptů a nic takového neříká
+  await plain.goto('/podminky');
+  await expect(plain.getByRole('heading', { level: 1, name: 'Podmínky užití' })).toBeVisible();
+  expect(await shown()).not.toContain('potřebuje zapnutý JavaScript');
+
+  // přihlášení: sdělení, a odeslání prohlížečem nenechá heslo v adrese
+  await plain.goto('/prihlaseni');
+  await expect.poll(shown).toContain(NOTICE);
+  await plain.getByLabel('E-mail').fill('bez-skriptu@danero.cz');
+  await plain.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
+  await plain.getByRole('button', { name: 'Přihlásit se' }).click();
+  await plain.waitForLoadState();
+  expect(plain.url()).not.toContain('heslo');
+  expect(plain.url()).not.toContain('bezpecne-heslo-e2e');
+  await context.close();
 });

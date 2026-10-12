@@ -194,6 +194,28 @@ describe('pojistky proti dlouhému obsahu (R2-01, R2-16 až R2-22, R2-26)', () =
     expect(classesOf(markup)).toContain('print:mx-0');
   });
 
+  it('DisclosureRow: `defaultOpen` otevře řádek napoprvé a dál ho neřídí', () => {
+    const row = (defaultOpen: boolean): string =>
+      renderToStaticMarkup(
+        createElement(DisclosureRow, { title: 'Dávka', defaultOpen, children: 'chyby' }),
+      );
+    expect(row(true)).toMatch(/<details[^>]* open=""/);
+    expect(row(false)).not.toMatch(/<details[^>]* open/);
+    // Řízený atribut `open` by řádek zavřel, jakmile by další vykreslení ze
+    // serveru přišlo bez něj (dávka v historii importů po úklidu adresy) —
+    // `DetailsOnce` si proto první hodnotu drží ve stavu a dál ji nemění.
+    const source = read('components/ui/details-once.tsx');
+    expect(source).toMatch(/const \[initiallyOpen\] = useState\(defaultOpen\)/);
+    // historie importů a řádky napojení brokera se otevírají takhle, ne přes `open`
+    for (const file of [
+      'app/(app)/import/import-history.tsx',
+      'app/(app)/import/connect-broker.tsx',
+    ]) {
+      expect(read(file), file).not.toMatch(/<DisclosureRow[^>]*\sopen=/);
+      expect(read(file), file).toContain('defaultOpen=');
+    }
+  });
+
   it('SegmentedControl: nepřeteče, roluje uvnitř a segment má na dotyku 44 px', () => {
     const source = read('components/ui/segmented-control.tsx');
     expect(source).toContain('overflow-x-auto');

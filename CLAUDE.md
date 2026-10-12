@@ -302,8 +302,11 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **`waitForLoadState('networkidle')` umí viset do limitu testu.** Test
   přístupnosti má limit 30 minut (prochází desítky stránek) a 9. 10. 2026 se
   jednou zasekl na `/portfolio` bez jediného běžícího dotazu — celá E2E sada
-  pak trvala 34 minut místo 8. Opakování prošlo. Když E2E běží podezřele
-  dlouho, podívej se do logu dřív, než doběhne limit.
+  pak trvala 34 minut místo 8. Opakování prošlo. Audit proto od 11. 10. 2026
+  čeká na stav, který jde pojmenovat (`pageSettled` v `e2e/helpers.ts`: obsah
+  dostreamoval, React naběhl, viditelné grafy se nakreslily) — s limitem 30 s
+  a hláškou, co chybí. `networkidle` do E2E nevracej. Když sada přesto běží
+  podezřele dlouho, podívej se do logu dřív, než doběhne limit.
 - **Háček Better Authu, který zapisuje cookie, musí běžet přímo ve vnějším
   middleware.** `hooks.before`/`hooks.after` berou jediný middleware, takže je
   v `lib/auth-hooks.ts` skládáme z menších. Menší háček zabalený do vlastního
@@ -346,6 +349,73 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
 - **Mutační testy měř v čisté kopii** (`git worktree add`). V pracovním
   adresáři si Stryker do pískoviště kopíruje i neverzované soubory a start pak
   trvá deset minut místo vteřiny — 10. 10. 2026 se to málem přičetlo Vitestu 4.
+- **E2E, které mění pole ve formuláři s automatickým ukládáním, musí napřed
+  počkat na `form[data-auto-submit="ready"]`** (helper `autoSaveForm`
+  v `e2e/helpers.ts`). Změna vyslaná skriptem před hydratací (`selectOption`,
+  `fill`) se ZÁMĚRNĚ neuloží: není to vstup člověka, vypadá stejně jako
+  hodnota, kterou do pole po F5 vrátil prohlížeč, a tu `AutoSubmit` vrací na
+  stav ze serveru (`lib/early-input.ts` pozná člověka podle důvěryhodných
+  událostí). Test bez čekání tak občas „ztratí“ uložení a vypadá to jako vada
+  aplikace. Skutečný vstup před hydratací hlídá `nastaveni.spec.ts`.
+- **Instance Better Authu žije v `globalThis` a HMR ji nevymění.** `getAuth()`
+  (`lib/auth.ts`) si ji sestaví jednou a drží v `globalThis.__daneroAuth` —
+  i s háčky a konfigurací, se kterými vznikla. Úprava `lib/auth-hooks.ts`,
+  `disabledPaths` nebo čehokoli v `buildAuth` se proto na běžícím dev serveru
+  neprojeví: živé ověření běží proti staré instanci a oprava „nefunguje“
+  (11. 10. 2026 tak spadlo první živé ověření opraveného stropu pokusů — běžel
+  starý háček). Po zásahu do auth dev server restartuj.
+- **WebKit z Playwrightu puštěný ve WSL lokálně nejspíš shodí celé WSL.**
+  11. 10. 2026 spadl stroj dvakrát za večer, pokaždé ve chvíli, kdy jedna
+  session pouštěla WebKit nad knihovnami rozbalenými do domovského adresáře
+  (bez roota, tedy bez `playwright install-deps`). Příčina není doložená, jen
+  pravděpodobná: v `journalctl -k -b -1` je v posledních minutách před pádem
+  záplava hlášek `dxgk` (grafický ovladač WSL, `/dev/dxg`) — stovky za minutu,
+  kdežto po běžném startu jich je pár desítek. Lokálně proto pouštěj jen
+  Chromium z Playwrightu, headless, a pro jistotu bez grafiky
+  (`env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 …`). Firefox
+  a WebKit patří do kontejneru (`mcr.microsoft.com/playwright`), ne na stroj.
+  Pád vezme s sebou i `/tmp` — rozdělanou práci commituj průběžně a výkazy
+  nenechávej jen ve scratchpadu.
+- **Playwright srovná mezery jen u řetězce, ne u regulárního výrazu.** Texty
+  aplikace jdou přes `tidy()`/`typeset()`, takže za jednopísmennou předložkou
+  a uvnitř částky je pevná mezera. `getByText('Počítá se z nabývacích cen')`
+  ji najde, `getByText(/Počítá se z nabývacích cen/)` ne — a spec spadne na
+  textu, který na stránce prokazatelně je (11. 10. 2026 dvakrát za den). Ve
+  výrazu piš `\s`, nebo hledej řetězcem s `{ exact: false }`.
+- **Co stránka ukazuje podle kódu v adrese, který se hned uklízí, musí držet
+  prohlížeč.** Chyba u pole, otevřený řádek, hláška v toku stránky: adresa se
+  po zobrazení čistí (`ClearFeedbackUrl`) a první obnovení stránky ze serveru
+  (`router.refresh()` po uložení jinde, po Zpět/Vpřed, po doběhlé synchronizaci)
+  přijde už bez kódu. Na stránce Účet tak řádek s chybou zmizel uživateli pod
+  rukama i s rozepsaným heslem — a stejně dopadl řádek otevřený ručně, protože
+  měl `key={crypto.randomUUID()}` z každého vykreslení (12. 10. 2026). Vzor:
+  `lib/action-result.ts` + `nastaveni/ucet/account-forms.tsx`; `defaultOpen`,
+  nikdy řízené `open`, a klíč, který se mění jen s novým výsledkem akce.
+- **Auto-save neposílá odeslání vždy za sebou.** Odchod ze stránky pošle
+  čekající změnu hned, souběžně s tou, která ještě běží, a jinou cestou
+  (`/api/settings/*` místo server action; na Vercelu jiná funkce) — na server
+  můžou dorazit obráceně. Odeslání proto nese pořadí (`SUBMISSION_FIELD`)
+  a řádek nastavení si pamatuje poslední (`save_instance`, `save_sequence`,
+  migrace 0047); podmínka je součást zápisu. Kdo přidá další formulář
+  s `AutoSubmit`, musí jeho ukládání podmínit stejně (`notSuperseded`
+  v `nastaveni/save.ts`), jinak mu opožděné odeslání přepíše novější.
+  A dva další poznatky z téže revize: server odmítá formulář CELÝ, takže
+  odmítnuté pole nesmí zůstat v čekajícím odeslání (`withoutField`), a po
+  ztracené odpovědi stránka neví, co je uložené — nevracej pole na starou
+  hodnotu, zeptej se serveru (`resync` v `ui/auto-submit.tsx`).
+- **Klíč mezipaměti výsledků musí nést všechno, čím se počítá — i to, co
+  nevzniká v profilu.** `lib/engine-cache.ts` stál na `updatedAt` profilu, jenže
+  fixace roku (R-05c) se zapisuje jinam. Dvě otevření reportu s různým
+  nastavením skončila fixací jednoho a čísly druhého, dokud se profil znovu
+  nezměnil (`test/report-pin-race.test.ts`).
+- **`net::ERR_NETWORK_CHANGED` v E2E je stroj, ne aplikace.** Když se pod WSL
+  změní síťové rozhraní (co přesně ho mění, doložené není — rozhraní má několik
+  dočasných adres IPv6), Chromium zahodí rozdělané požadavky i na `localhost`:
+  směrovač Nextu spadne do načtení celého dokumentu, skripty se nenačtou
+  a test čeká na hydrataci do limitu. 12. 10. 2026 tak jednou spadl `nastaveni.spec.ts` („formulář
+  s auto-save ještě neposlouchá“); v trace je šestkrát `Failed to load
+  resource: net::ERR_NETWORK_CHANGED`. Než začneš hledat vadu, otevři
+  `0-trace.trace` z `test-results/…/trace.zip` a tohle v něm hledej.
 
 ## Stav a plán
 

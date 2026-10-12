@@ -171,8 +171,8 @@ type RowKind =
   | 'UNKNOWN';
 
 /** Klasifikace řádku dle sloupce Směr (case-insensitive), doplňkově dle Text FIO. */
-function classifyRow(smer: string, text: string): RowKind {
-  const s = smer.trim().toLowerCase();
+function classifyRow(direction: string, text: string): RowKind {
+  const s = direction.trim().toLowerCase();
   const t = text.trim().toLowerCase();
   if (s.includes('nákup')) return 'BUY';
   if (s.includes('prodej')) return 'SELL';
@@ -367,9 +367,9 @@ export function parseFioCsv(
 
     const raw = row.join(';');
     const rawDate = map.get(row, 'Datum obchodu');
-    const smer = map.get(row, 'Směr');
+    const direction = map.get(row, 'Směr');
     const symbol = map.get(row, 'Symbol');
-    const mena = map.get(row, 'Měna');
+    const currencyCode = map.get(row, 'Měna');
     const note = map.get(row, 'Text FIO');
 
     const date = toIsoDate(rawDate);
@@ -387,16 +387,16 @@ export function parseFioCsv(
     // ID nese i vyřešenou částku — hotovostní operace téhož dne s různými
     // částkami nesmí sdílet základ hashe (ID by pak záviselo na pořadí v souboru)
     const rowId = (amount?: Decimal): string =>
-      contentId([smer.toLowerCase(), date, symbol, quantity, price, mena, amount?.toString()]);
-    const kind = classifyRow(smer, note);
+      contentId([direction.toLowerCase(), date, symbol, quantity, price, currencyCode, amount?.toString()]);
+    const kind = classifyRow(direction, note);
 
     switch (kind) {
       case 'BUY':
       case 'SELL': {
-        if (!symbol || !quantity || !price || !mena) {
+        if (!symbol || !quantity || !price || !currencyCode) {
           result.errors.push({
             line,
-            message: `${smer}: chybí symbol, počet kusů, cena nebo měna — řádek nelze zpracovat.`,
+            message: `${direction}: chybí symbol, počet kusů, cena nebo měna — řádek nelze zpracovat.`,
             raw,
           });
           return;
@@ -410,7 +410,7 @@ export function parseFioCsv(
         if (quantityValue === null || priceValue === null) {
           result.errors.push({
             line,
-            message: `${smer}: nečitelný počet kusů „${map.get(row, 'Počet')}“ nebo cena „${map.get(row, 'Cena')}“ — řádek nelze zpracovat.`,
+            message: `${direction}: nečitelný počet kusů „${map.get(row, 'Počet')}“ nebo cena „${map.get(row, 'Cena')}“ — řádek nelze zpracovat.`,
             raw,
           });
           return;
@@ -436,15 +436,15 @@ export function parseFioCsv(
           ticker: symbol,
           quantity: quantityValue.abs().toString(),
           pricePerShare: priceValue.abs().toString(),
-          currency: mena,
-          fee: resolveFee(row, mena, line),
+          currency: currencyCode,
+          fee: resolveFee(row, currencyCode, line),
           tradeDate: date,
           note: note || undefined,
         });
         return;
       }
       case 'DIVIDEND': {
-        const resolved = resolveAmount(row, mena);
+        const resolved = resolveAmount(row, currencyCode);
         if (!resolved) {
           result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.', raw });
           return;
@@ -473,7 +473,7 @@ export function parseFioCsv(
         return;
       }
       case 'TAX': {
-        const resolved = resolveAmount(row, mena);
+        const resolved = resolveAmount(row, currencyCode);
         if (!resolved) {
           result.errors.push({
             line,
@@ -487,9 +487,9 @@ export function parseFioCsv(
       }
       case 'INTEREST':
       case 'FEE': {
-        const resolved = resolveAmount(row, mena);
+        const resolved = resolveAmount(row, currencyCode);
         if (!resolved) {
-          result.errors.push({ line, message: `${smer}: chybí částka.`, raw });
+          result.errors.push({ line, message: `${direction}: chybí částka.`, raw });
           return;
         }
         push(line, raw, {
@@ -505,9 +505,9 @@ export function parseFioCsv(
       case 'DEPOSIT':
       case 'WITHDRAWAL':
       case 'TRANSFER': {
-        const resolved = resolveAmount(row, mena);
+        const resolved = resolveAmount(row, currencyCode);
         if (!resolved) {
-          result.errors.push({ line, message: `${smer}: chybí částka.`, raw });
+          result.errors.push({ line, message: `${direction}: chybí částka.`, raw });
           return;
         }
         // „Převod“ nese směr znaménkem částky; Vloženo/Vybráno ho mají ve Směru
@@ -525,7 +525,7 @@ export function parseFioCsv(
       }
       case 'TEXT_ONLY': {
         // prázdný Směr s textem (poplatek za data, ADR fee…) — záporná částka = poplatek
-        const resolved = resolveAmount(row, mena);
+        const resolved = resolveAmount(row, currencyCode);
         if (resolved && resolved.amount.lt(0)) {
           push(line, raw, {
             type: 'FEE',
@@ -547,7 +547,7 @@ export function parseFioCsv(
       case 'UNKNOWN': {
         result.errors.push({
           line,
-          message: `Neznámý směr „${smer}“ — nahlaš nám ho, doplníme podporu.`,
+          message: `Neznámý směr „${direction}“ — nahlaš nám ho, doplníme podporu.`,
           raw,
         });
         return;

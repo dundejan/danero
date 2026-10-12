@@ -145,8 +145,8 @@ test('demo portfolio: hodnota, tabulka s hledáním, podíly, deriváty → deta
     page.getByRole('list', { name: 'Otevřené derivátové pozice' }).getByText('Opce SPY put 560'),
   ).toBeVisible();
 
-  // s cenami od brokera je vidět i křivka osvobozování portfolia (bez cen se
-  // nekreslí — portfolio.spec.ts)
+  // křivka osvobozování portfolia (bez cen se váží nabývací cenou —
+  // portfolio.spec.ts)
   await expect(page.getByRole('heading', { name: 'Horizont osvobození' })).toBeVisible();
   await expect(
     page.getByRole('application', { name: 'Osvobozování portfolia v čase' }),

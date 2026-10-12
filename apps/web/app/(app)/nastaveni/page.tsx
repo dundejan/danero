@@ -13,6 +13,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
 import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
@@ -22,10 +23,15 @@ import { configForYear } from '@/lib/tax-config';
 import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
 import { DisputedHint } from './disputed-hint';
-import { PROFILE_FIELDS, profileFormEntries } from './form-state';
+import {
+  OTHER_INCOME_FORMAT,
+  OTHER_INCOME_PATTERN,
+  PROFILE_FIELDS,
+  profileFormEntries,
+} from './form-state';
 import { SettingsToolbar } from './settings-nav';
 import { SettingsToast } from './settings-toast';
-import { saveProfileAction, unpinTaxYearAction } from './actions';
+import { autoSaveProfileAction, saveProfileAction, unpinTaxYearAction } from './actions';
 
 export const metadata = { title: 'Daň a výpočet — Danero' };
 
@@ -148,6 +154,11 @@ export default async function SettingsPage({
             inputMode="decimal"
             autoComplete="off"
             defaultValue={shown.get(PROFILE_FIELDS.otherIncomeCzk) ?? ''}
+            // Jen u auto-save: prohlížeč podle tvaru pozná rozepsanou částku,
+            // kterou server odmítne, dřív než s ní člověk zavře panel. První
+            // uložení tlačítkem hlásí chybu samo (a prohlížeč by ho s `pattern`
+            // zastavil vlastní bublinou).
+            {...(profile ? { pattern: OTHER_INCOME_PATTERN, title: OTHER_INCOME_FORMAT } : {})}
             aria-describedby="ostatni-prijmy-napoveda"
             className="tabular-nums"
           />
@@ -454,20 +465,19 @@ export default async function SettingsPage({
             report zatím neotevře.
           </Notice>
         )}
-        {/* Formulář schválně NEMÁ `id="dan"`: akce po uložení přesměruje na
-            `#dan` a kotva, která neexistuje, nechá stránku stát tam, kde je.
-            S kotvou by každá změna dole odrolovala zpátky nahoru.
-            `autoComplete="off"` u formuláře s auto-save: prohlížeč pak do polí
+        {/* `autoComplete="off"` u formuláře s auto-save: prohlížeč pak do polí
             po F5 nebo návratu v historii nevrací hodnoty z doby před načtením
             (Firefox to dělá i u nabídek a přepínačů) — viz `AutoSubmit`.
             Klíč: jakmile server pošle jiný stav (uložení, obnovení stránky po
             návratu v historii), formulář se vykreslí celý znovu. React jinak
             výchozí hodnotu nabídky po prvním vykreslení nemění — pole by dál
             ukazovalo staré a skrytý stav už nové, takže by se nedotčené pole
-            tvářilo jako změněné. */}
+            tvářilo jako změněné.
+            Akci má jen první uložení (tlačítko); existující profil ukládá
+            `AutoSubmit` a prohlížeč ten formulář neodesílá nikdy. */}
         <form
           key={baseline}
-          action={saveProfileAction}
+          action={profile ? undefined : saveProfileAction}
           autoComplete={profile ? 'off' : undefined}
           className="space-y-14"
         >
@@ -477,7 +487,11 @@ export default async function SettingsPage({
             <>
               {calculation}
               {/* auto-save: každá změna se uloží sama */}
-              <AutoSubmit />
+              <AutoSubmit
+                action={autoSaveProfileAction}
+                endpoint="/api/settings/profile"
+                owner={await ownerTag(user.id)}
+              />
             </>
           ) : (
             // Nový uživatel potřebuje jen režim: zbytek je přednastavený

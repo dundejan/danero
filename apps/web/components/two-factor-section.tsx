@@ -171,7 +171,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
 
   if (view.kind === 'enabled') {
     return (
-      <form onSubmit={onDisable} className="space-y-4">
+      <form method="post" onSubmit={onDisable} className="space-y-4">
         <p className="text-pretty">
           Při přihlášení se vyžaduje kód z autentikátoru. Záložní kódy už znovu neukážeme — když
           je nemáš uložené, ověření vypni a zapni znovu a vzniknou nové.
@@ -240,7 +240,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
           <BackupCodes codes={view.backupCodes} />
         </Step>
         <Step title="3. Potvrď prvním kódem z aplikace">
-          <form onSubmit={onVerify} className={FIELD_WITH_ACTION}>
+          <form method="post" onSubmit={onVerify} className={FIELD_WITH_ACTION}>
             <Field
               label="První kód z aplikace"
               htmlFor="kod-2fa"
@@ -282,7 +282,7 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <form onSubmit={onEnable} className="space-y-4">
+    <form method="post" onSubmit={onEnable} className="space-y-4">
       <p className="text-pretty">
         Při přihlášení navíc zadáš kód z aplikace v telefonu. Chrání tvoje daňová data, i kdyby
         heslo uniklo.

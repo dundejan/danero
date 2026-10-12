@@ -7,7 +7,7 @@ import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { typeset } from '@/components/typeset';
 import { getDb } from '@/db';
-import { redirect } from 'next/navigation';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { getNotificationPrefs } from '@/lib/notifications';
 import {
@@ -18,12 +18,10 @@ import {
 } from '@/lib/notification-rules';
 import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
 import { plural } from '@/lib/format';
-import { runInPlace } from '@/lib/redirect-in-place';
 import { tidy } from '@/lib/typography';
-import { cn, firstParam } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { SettingsToolbar } from '../settings-nav';
-import { SettingsToast } from '../settings-toast';
-import { saveNotificationPrefsAction } from '../actions';
+import { autoSaveNotificationPrefsAction } from '../actions';
 import { NOTIFICATION_FIELDS, notificationFormEntries } from '../form-state';
 
 export const metadata = { title: 'Upozornění — Danero' };
@@ -48,32 +46,6 @@ const HIDE_WITHOUT = {
 } as const;
 /** Osamělý řádek s vypínačem nemá mít pod sebou linku ke schovaným sousedům. */
 const LONE_EMAIL_SWITCH = '[&:has(#emaily-zapnute:not(:checked))>*]:border-b-0';
-
-/**
- * Uložení, po kterém stránka zůstane tam, kde byla. Akce po úspěchu
- * přesměruje na adresu bez kotvy a Next po takové navigaci odroluje na
- * začátek — přepnutí vypínače na konci dlouhé stránky by člověka pokaždé
- * vyhodilo nahoru. Kotva, která na stránce neexistuje, je pro Next „vyřízené
- * rolování“, takže poloha zůstane (stejně to má uložení profilu s `#dan`).
- *
- * Kotvu dostane jen úspěšný návrat na tuhle stránku; jiné přesměrování vnitřní
- * akce (chyba, přihlášení) i opravdová výjimka jdou dál beze změny — pravidlo
- * a jeho testy jsou v `lib/redirect-in-place.ts` (R4-10).
- */
-const PAGE_PATH = '/nastaveni/upozorneni';
-const KEEP_SCROLL_ANCHOR = 'ulozeno';
-
-async function saveInPlace(formData: FormData): Promise<void> {
-  'use server';
-  await requireUser();
-  const target = await runInPlace(
-    () => saveNotificationPrefsAction(formData),
-    PAGE_PATH,
-    KEEP_SCROLL_ANCHOR,
-  );
-  // akce bez přesměrování uložila a nic neřekla — potvrzení dodá obal
-  redirect(target ?? `${PAGE_PATH}?ok=notifikace#${KEEP_SCROLL_ANCHOR}`);
-}
 
 /**
  * Řádek s výběrem několika hodnot naráz (lhůty, hranice): popisek vlevo,
@@ -118,14 +90,9 @@ function ChoiceRow({
   );
 }
 
-export default async function NotificationSettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ chyba?: string | string[]; ok?: string | string[] }>;
-}) {
+export default async function NotificationSettingsPage() {
   const user = await requireUser();
   const db = await getDb();
-  const params = await searchParams;
   const prefs = await getNotificationPrefs(db, user.id);
   const rules = notificationRules(prefs);
   // Stav, se kterým se formulář vykreslí: výchozí hodnoty polí i skryté pole,
@@ -147,7 +114,6 @@ export default async function NotificationSettingsPage({
   return (
     <>
       <SettingsToolbar active="notifications" />
-      <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
 
       <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
         {nothingSelected && (
@@ -161,7 +127,6 @@ export default async function NotificationSettingsPage({
             zůstaly v páru (proč, je u formuláře daňového profilu). */}
         <form
           key={baseline}
-          action={saveInPlace}
           autoComplete="off"
           className={cn('space-y-14', HIDE_WITHOUT_EMAIL)}
         >
@@ -391,7 +356,11 @@ export default async function NotificationSettingsPage({
             </div>
           </Section>
 
-          <AutoSubmit />
+          <AutoSubmit
+            action={autoSaveNotificationPrefsAction}
+            endpoint="/api/settings/notifications"
+            owner={await ownerTag(user.id)}
+          />
         </form>
       </div>
     </>

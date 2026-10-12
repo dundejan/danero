@@ -86,16 +86,16 @@ async function buildSamples() {
   const profile = TaxpayerProfileSchema.parse({ regime: 'PAUSAL' });
   // fiktivní testovací identita (stejná jako v empiricky ověřených vzorech)
   const personal = {
-    dic: '8501011233',
-    rodneCislo: '8501011233',
-    prijmeni: 'Testovací',
-    jmeno: 'Jan',
-    ulice: 'Testovací',
-    cisloPopisne: '1',
-    obec: 'Praha 1',
-    psc: '11000',
-    ufoCil: '451',
-    pracUfo: '2001',
+    taxId: '8501011233',
+    birthNumber: '8501011233',
+    lastName: 'Testovací',
+    firstName: 'Jan',
+    street: 'Testovací',
+    houseNumber: '1',
+    city: 'Praha 1',
+    postalCode: '11000',
+    taxOfficeCode: '451',
+    localOfficeCode: '2001',
   };
   const latestYear = Math.max(...EPO_SUPPORTED_YEARS);
 
@@ -108,9 +108,9 @@ async function buildSamples() {
         profile,
         config: TAX_YEAR_CONFIGS[year],
       });
-    const gen = (label, res, varianta = 'GENERAL', extra = {}) => [
+    const gen = (label, res, taxation = 'GENERAL', extra = {}) => [
       `${year}: ${label}`,
-      generateDpfdp7({ year, result: res, personal, varianta, ...extra }).xml,
+      generateDpfdp7({ year, result: res, personal, taxation, ...extra }).xml,
     ];
 
     const result = analyze([
@@ -189,13 +189,13 @@ async function buildSamples() {
       gen('jediný stát se zápočtem v § 16a — ř. 411 nepřesáhne ř. 406 (L5-01)', singleCountry, 'SEPARATE_16A'),
       // K3-07: samotný `dap_typ="D"` podatelna odmítne — kontroluje i vzorce
       // 6. oddílu (ř. 80 = ř. 79 − ř. 78, ř. 83 = ř. 82 − ř. 81).
-      gen('opravné přiznání (K3-07)', result, 'GENERAL', { dapTyp: 'O' }),
+      gen('opravné přiznání (K3-07)', result, 'GENERAL', { filingType: 'O' }),
       gen('dodatečné přiznání s 6. oddílem (K3-07)', result, 'GENERAL', {
-        dapTyp: 'D',
-        dodatecne: {
-          zjistenoDne: `${year + 1}-08-05`,
-          posledniZnamaDanCzk: '100',
-          posledniZnamaZtrataCzk: '0',
+        filingType: 'D',
+        supplementary: {
+          discoveredOn: `${year + 1}-08-05`,
+          lastKnownTaxCzk: '100',
+          lastKnownLossCzk: '0',
         },
       }),
     );

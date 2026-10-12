@@ -1,7 +1,45 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { openForPrint } from '@/lib/print-details';
 import { cn } from '@/lib/utils';
+
+/**
+ * Tisk v prohlížeči, který neumí `::details-content`.
+ *
+ * Rozbalení (rozpad prodeje na nákupy — auditní stopa podkladu) otevírá pro
+ * tisk styl v globals.css. Pseudoprvek ale znají až Chromium 131, Safari 18.4
+ * a Firefox 143; starší prohlížeč rozbalení vytiskl zavřená a na papíře tak
+ * mlčky chyběla část podkladu. Tam je před tiskem otevře skript a po tisku
+ * vrátí do stavu, v jakém je uživatel nechal. Kde to styl umí, nedělá nic.
+ */
+export function OpenDetailsForPrint() {
+  useEffect(() => {
+    if (CSS.supports('selector(::details-content)')) return;
+    let closeAgain: (() => void) | undefined;
+    const open = (): void => {
+      // dvě `beforeprint` po sobě bez `afterprint` mezi nimi: první vrácení se neztratí
+      const earlier = closeAgain;
+      const latest = openForPrint(document.querySelectorAll('details'));
+      closeAgain = () => {
+        latest();
+        earlier?.();
+      };
+    };
+    const restore = (): void => {
+      closeAgain?.();
+      closeAgain = undefined;
+    };
+    window.addEventListener('beforeprint', open);
+    window.addEventListener('afterprint', restore);
+    return () => {
+      window.removeEventListener('beforeprint', open);
+      window.removeEventListener('afterprint', restore);
+    };
+  }, []);
+  return null;
+}
 
 /**
  * Tisk podkladů k přiznání — tiskové styly řeší globals.css (@media print).

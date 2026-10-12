@@ -33,7 +33,7 @@ vi.mock('@/db', async () => {
 // kalkulačka sama částku v prvním vykreslení neukazuje (otázka přijde až po
 // první odpovědi) — místo ní proto zástupce, který vypíše, co jí stránka předala
 vi.mock('@/components/filing-calculator', () => ({
-  KalkulackaPriznani: (props: { filingLimits: unknown; previousFilingLimits: unknown }) =>
+  FilingCalculator: (props: { filingLimits: unknown; previousFilingLimits: unknown }) =>
     createElement(
       'pre',
       { 'data-filing-limits': '' },

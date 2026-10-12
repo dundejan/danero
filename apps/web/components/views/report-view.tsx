@@ -19,7 +19,7 @@ import {
   filingLimitFor,
   ReportFilingVerdict,
 } from '@/components/filing-verdict';
-import { PrintButton } from '@/components/print-button';
+import { OpenDetailsForPrint, PrintButton } from '@/components/print-button';
 import {
   DIVIDEND_TAXATION_LABEL,
   DividendTaxationInfo,
@@ -50,7 +50,7 @@ import { today as todayInPrague } from '@/lib/clock';
 import {
   creditIncomeByCountry,
   EPO_SUPPORTED_YEARS,
-  prijmyZeStatuProZapocet,
+  creditIncomeFromCountry,
   attachment4Lines,
 } from '@/lib/epo';
 import { EPO_FORM_ID } from '@/lib/epo-form';
@@ -63,6 +63,7 @@ import {
   priloha2,
   wholeBasesCzk,
   wholeCzkDown,
+  wholeProceedsCzk,
 } from '@/lib/priloha2';
 import { regimeLimitFor } from '@/lib/simulator-verdict';
 import { variantDifference, variantHint, variantHintTitle } from '@/lib/variant-hint';
@@ -375,6 +376,23 @@ export function emptyYearFallback(
 }
 
 /**
+ * Kontroly výpočtu, které nejsou sdělením o datech roku, ale stálou výhradou:
+ *
+ * - k profilu — zaměstnanec a režim „jiné“ dostávají pod limitem pro podání
+ *   v každém roce poznámku o příjmech ze samostatné činnosti,
+ * - k roku — před rokem 2024 není v konfiguraci hranice 23% sazby a engine to
+ *   hlásí vždy, i když není z čeho daň počítat.
+ *
+ * Kdyby se počítaly, prázdný stav by se neukázal zaměstnanci nikdy a nikomu
+ * za rok před 2024 (tak to do 11. 10. 2026 bylo). Překročený limit rok
+ * prázdným nenechá tak jako tak — hlídá se zvlášť.
+ */
+const STANDING_NOTES: ReadonlySet<string> = new Set([
+  'FILING_LIMIT_IGNORES_SELF_EMPLOYMENT',
+  'PROGRESSIVE_THRESHOLD_UNKNOWN',
+]);
+
+/**
  * Nemá engine za rok nic — žádný příjem, žádnou položku, žádné sdělení ani
  * povinnost?
  *
@@ -403,7 +421,7 @@ export function engineHasNothingFor(result: TaxYearResult): boolean {
     filingLimits.some((limit) => limit.applicable && limit.status.exceeded) ||
     limits.reporting38v.length > 0 ||
     // kontrola výpočtu je sdělení, které se má dočíst
-    warnings.length > 0;
+    warnings.some((warning) => !STANDING_NOTES.has(warning.code));
   return !hasSomething;
 }
 
@@ -588,6 +606,8 @@ export function ReportView({
   // Rozpad daně ukazuje základy v celých korunách, jak je nese tiskopis — tytéž
   // částky jako Příloha č. 2 a ř. 38 výš na stránce, ne o korunu jiné (R-14h).
   const wholeBases = wholeBasesCzk(result, tax.variant);
+  // tiché řádky „tržby“ a „plnění“ pod druhy — táž čísla jako Příjmy v Příloze č. 2
+  const wholeProceeds = wholeProceedsCzk(result);
   // uplatněný zápočet = rozdíl zaokrouhlených členů, ať rovnice sedí i po
   // zaokrouhlení na celé Kč (jinak by X − Y mohlo o korunu minout součet)
   const appliedCreditCzk = activeTax.taxBeforeCreditCzk
@@ -1096,9 +1116,9 @@ export function ReportView({
                                 druh D — prodej cenných papírů
                               </span>
                             </Td>
-                            <Td align="right">{czk(p2.rows[0]!.prijmyCzk)}</Td>
-                            <Td align="right">{czk(p2.rows[0]!.vydajeCzk)}</Td>
-                            <Td align="right">{czk(p2.rows[0]!.rozdilCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.incomeCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.expensesCzk)}</Td>
+                            <Td align="right">{czk(p2.rows[0]!.differenceCzk)}</Td>
                           </Tr>
                           {hasCrypto && (
                             <Tr>
@@ -1108,9 +1128,9 @@ export function ReportView({
                                   druh C — prodej movitých věcí
                                 </span>
                               </Td>
-                              <Td align="right">{czk(p2.rows[1]!.prijmyCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[1]!.vydajeCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[1]!.rozdilCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.incomeCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.expensesCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[1]!.differenceCzk)}</Td>
                             </Tr>
                           )}
                           {hasDerivatives && (
@@ -1121,27 +1141,27 @@ export function ReportView({
                                   druh F — jiné ostatní příjmy
                                 </span>
                               </Td>
-                              <Td align="right">{czk(p2.rows[2]!.prijmyCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[2]!.vydajeCzk)}</Td>
-                              <Td align="right">{czk(p2.rows[2]!.rozdilCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.incomeCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.expensesCzk)}</Td>
+                              <Td align="right">{czk(p2.rows[2]!.differenceCzk)}</Td>
                             </Tr>
                           )}
                           <Tr className="font-semibold">
                             <Td>Součty přílohy</Td>
                             <Td align="right">
-                              {czk(p2.prijmyCzk)}
+                              {czk(p2.incomeCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 207
                               </span>
                             </Td>
                             <Td align="right">
-                              {czk(p2.vydajeCzk)}
+                              {czk(p2.expensesCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 208
                               </span>
                             </Td>
                             <Td align="right">
-                              {czk(p2.rozdilCzk)}
+                              {czk(p2.differenceCzk)}
                               <span className="type-caption block font-normal text-ink-muted">
                                 ř. 209
                               </span>
@@ -1159,7 +1179,7 @@ export function ReportView({
                       strong
                       line="ř. 40"
                       label="Rozdíl z ř. 209 Přílohy č. 2"
-                      value={czk(p2.rozdilCzk)}
+                      value={czk(p2.differenceCzk)}
                     />
                   </Group>
                   {lossBeyondIncome.gt(0) && (
@@ -1318,7 +1338,7 @@ export function ReportView({
                                     <Td align="right" className="whitespace-nowrap">
                                       {czk(
                                         creditIncome.get(country) ??
-                                          prijmyZeStatuProZapocet(country, data, result.options),
+                                          creditIncomeFromCountry(country, data, result.options),
                                       )}
                                     </Td>
                                     <Td align="right" className="whitespace-nowrap">
@@ -1786,7 +1806,7 @@ export function ReportView({
                   label="Cenné papíry"
                   hint={
                     <>
-                      tržby {czk(result.securities.totalGrossProceedsCzk)}
+                      tržby {czk(wholeProceeds.securitiesCzk)}
                       {result.securities.exemptUnder100k &&
                         ' · vše osvobozeno, prodeje do 100 000 Kč za rok'}
                     </>
@@ -1796,14 +1816,14 @@ export function ReportView({
                 {hasCrypto && (
                   <Row
                     label="Kryptoaktiva"
-                    hint={<>tržby {czk(result.crypto.totalGrossProceedsCzk)}</>}
+                    hint={<>tržby {czk(wholeProceeds.cryptoCzk)}</>}
                     value={czk(wholeBases.cryptoCzk)}
                   />
                 )}
                 {hasDerivatives && (
                   <Row
                     label="Deriváty"
-                    hint={<>plnění {czk(result.derivatives.taxableIncomeCzk)}</>}
+                    hint={<>plnění {czk(wholeProceeds.derivativesCzk)}</>}
                     value={czk(wholeBases.derivativesCzk)}
                   />
                 )}
@@ -2009,6 +2029,7 @@ export function ReportView({
       <div className="mt-10 print:hidden sm:hidden">
         <PrintButton long />
       </div>
+      <OpenDetailsForPrint />
     </>
   );
 }

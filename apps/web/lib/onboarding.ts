@@ -24,8 +24,10 @@ export async function hasAnyTransaction(db: Db, userId: string): Promise<boolean
 /**
  * Kam vede uložení daňového profilu.
  *
- * - Další uložení (profil už existoval) zůstává u formuláře s potvrzením —
- *   nastavení se ukládá samo při každé změně.
+ * - Uložení tlačítkem, když profil mezitím vznikl jinde (formulář prvního
+ *   uložení otevřený ve dvou panelech), zůstává u formuláře s potvrzením.
+ *   Běžné změny existujícího profilu sem nechodí — ukládají se samy a bez
+ *   přesměrování (`autoSaveProfileAction`).
  * - První uložení bez dat pokračuje rovnou ke kroku 2. Dřív končilo na
  *   prázdném přehledu a k nahrání výpisu se šlo přes dvě mezistránky, které
  *   jen říkaly „pokračuj“ (R1B-05).
@@ -39,6 +41,6 @@ export function afterProfileSaveUrl({
   firstSave: boolean;
   hasData: boolean;
 }): string {
-  if (!firstSave) return '/nastaveni?ok=profil#dan';
+  if (!firstSave) return '/nastaveni?ok=profil';
   return hasData ? '/prehled' : ONBOARDING_DATA_URL;
 }

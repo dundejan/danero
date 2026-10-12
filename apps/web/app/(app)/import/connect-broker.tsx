@@ -49,7 +49,7 @@ function KeyGuide({ summary, children }: { summary: string; children: React.Reac
 
 export function ConnectTrading212({ invalid }: { invalid: boolean }) {
   return (
-    <DisclosureRow id="trading212" title="Trading 212" open={invalid || undefined}>
+    <DisclosureRow id="trading212" title="Trading 212" defaultOpen={invalid}>
       {/* záporný okraj ruší odsazení obsahu rozbalovacího řádku — panel drží šířku řádku */}
       <Card className="-mr-6 space-y-4 text-ink">
         <KeyGuide summary="Kde klíč vezmu">
@@ -117,7 +117,7 @@ export function ConnectIbkr({ invalid }: { invalid: boolean }) {
       id="ibkr"
       title="Interactive Brokers"
       meta="i účty u Lynx"
-      open={invalid || undefined}
+      defaultOpen={invalid}
     >
       {/* záporný okraj ruší odsazení obsahu rozbalovacího řádku — panel drží šířku řádku */}
       <Card className="-mr-6 space-y-4 text-ink">

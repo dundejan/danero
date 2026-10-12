@@ -117,7 +117,7 @@ font-bold`**, vyber stupeň.
 |---|---|
 | `ui/info-popover.tsx` → `InfoPopover` | Vysvětlení u čísla nebo pojmu: tlačítko „i“, bublina (na telefonu sheet). Hlavní nástroj textové diety. |
 | `ui/info-print.tsx` → `InfoPrint` | Tisková kopie vysvětlivky: tentýž obsah, vidět jen na papíře. Stojí pod blokem, kterého se týká. |
-| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. |
+| `ui/disclosure.tsx` → `DisclosureRow` | Řádek seznamu s titulkem a skrytým celým zněním (kontroly, upozornění, dlouhé texty z enginu). S `id` jde otevřít kotvou. Má-li se řádek otevřít sám podle stavu z adresy (dávka po nahrání, formulář s chybou), dostane `defaultOpen`, ne `open` — řízený atribut by ho při dalším vykreslení ze serveru zavřel. |
 | `ui/disclosure.tsx` → `Disclosure` | Malý odkaz „ukaž víc“ pod textem (výčet případů, „Co to znamená“). Smí stát i uvnitř `DisclosureRow`. |
 | `ui/disclosure.tsx` → `Chevron` | Šipka rozbalovátka pro vlastní `<details class="disclosure">` (řádek tabulky, FAQ). Patří do `<summary>`. |
 | `ui/open-on-hash.tsx` → `OpenOnHash` | Rozbalí `<details>`, na který míří kotva v adrese. Jednou na stránku, která na rozbalovací řádky odkazuje. |
@@ -135,11 +135,13 @@ font-bold`**, vyber stupeň.
 | `ui/field.tsx` → `Field`, `Label`, `Input`, `Select`, `Textarea`, `Checkbox`, `FieldHint`, `FieldError`, `describedByError` | Formulářová pole. Chybu zapíná `aria-invalid` přes `describedByError`. |
 | `ui/switch.tsx` → `Switch` | Přepínač pro nastavení, které platí hned. |
 | `ui/file-field.tsx` → `FileField` | Výběr souborů s českými texty. |
-| `ui/auto-submit.tsx` → `AutoSubmit` | Formulář, který se odešle při změně pole — každou změnu hned, i když předchozí uložení běží. Patří k němu skrytý stav formuláře (`lib/form-baseline.ts`, viz Formulář). |
+| `ui/auto-submit.tsx` → `AutoSubmit` | Formulář, který se ukládá sám při změně pole. Dostane server action, která vrací výsledek (`action`), a adresu, která uloží totéž při odchodu ze stránky (`endpoint`). Adresu stránky ani historii prohlížeče nemění. Patří k němu skrytý stav formuláře (`lib/form-baseline.ts`, viz Formulář). |
 | `ui/segmented-control.tsx` → `SegmentedControl` | Přepnutí pohledu (`toggle`) nebo adresy (`nav`) mezi 2–6 volbami (roků smí být víc). `size="md"` když je přepínač hlavní ovládání (odpověď v kalkulačce); `fit="content"` pro různě dlouhé popisky. U `nav` se palec pohne hned při klepnutí, na odpověď serveru nečeká. Když se nevejde, posouvá se sám uvnitř a vybraný segment si srovná do zorného pole — vlastní posuvný obal kolem něj nepiš. Výšku ani mřížku nepřebíjej třídou. |
 | `ui/sheet.tsx` → `Sheet` | Spodní sheet na telefonu: detail řádku, další sekce, vysvětlivka. S `title` má hlavičku a „Hotovo“. Vedle `onClose` předej i `onReopen` (zavíraný sheet jde hodem nahoru vrátit a rodič má vědět, že je zase otevřený). Stav drží automat v `ui/sheet-machine.ts`. |
 | `ui/confirm-dialog.tsx` → `ConfirmDialog` | Potvrzení nevratné akce. Jen pro nevratné. S `action` nese formulář sám (skrytá pole `fields`, viditelná jako `children`), během akce ukazuje `pendingLabel` a nejde odeslat dvakrát. |
 | `components/toast.tsx` → `Toast` | Výsledek akce z adresy (`?ok=` / `?chyba=`); `floating` = plovoucí (odchází tam, odkud přijela; dlouhý text roluje uvnitř, nezakryje telefon). |
+| `components/auto-save-feedback.tsx` → `AutoSaveFeedback` | Výsledek automatického uložení (`lib/save-feedback.ts`) — stejný `Toast`, jen bez adresy. Stojí v rozložení aplikace, protože uložení při odchodu ze stránky se potvrzuje až na stránce, kam člověk odešel. |
+| `components/no-script-notice.tsx` → `NoScriptNotice` | Sdělení „Danero potřebuje zapnutý JavaScript.“ místo kostry načítání. Aplikace ani demo se bez skriptů nevykreslí a nepředstírají to; tlačítka v `<noscript>` do formulářů aplikace nepiš, nejde na ně dosáhnout. |
 | `ui/table.tsx` → `Table`, `Th`, `Tr`, `Td` | Tabulka dat: vlásové linky, tiché záhlaví, čísla vpravo. |
 | `ui/scroll-area.tsx` → `ScrollArea` | Obal široké tabulky na úzkém displeji (roluje jen tabulka). |
 | `ui/card.tsx` → `Card`, `CardTitle` | Šedý panel kolem kusu FORMULÁŘE. Ne kolem obsahu ke čtení. |
@@ -234,10 +236,9 @@ Ukázky:
 
 Pravidla, která z kódu nejsou vidět:
 
-- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`)
-  **a nesmí stát ani v `<p>`**: v úzkém okně se vedle tlačítka vykreslí `<dialog>` sheetu,
-  prohlížeč odstavec rozdělí a hydratace spadne. Řádek s textem a vysvětlivkou je `div`
-  (nebo `li`), ne odstavec.
+- `InfoPopover` nesmí stát **uvnitř** tlačítka ani odkazu (ani v klikacím `Row href`).
+  Jinak smí stát všude, kde smí stát text: bublina i sheet (úzké okno) se vykreslují
+  portálem do `<body>`, takže `<dialog>` s nadpisem neskončí v `<span>`, `<dt>` ani `<p>`.
   Jeho obsah se vykreslí až po otevření — co musí být vidět vždy, patří vedle čísla, co má
   být na papíře, dostane `InfoPrint`.
   Uvnitř `Stat` se bublina kotví pod celý blok sama; jinde zvol `side`/`align` tak, aby
@@ -387,13 +388,49 @@ Odkaz uprostřed věty je vždy podtržený.
   Taková hláška nemizí sama, takže ji po úklidu adresy musí držet prohlížeč: stránka se
   umí obnovit i bez uživatele (doběhne synchronizace) a ze serveru už přijde bez ní
   (vzor: `app/(app)/import/upload-result.tsx`).
+- Totéž platí pro chybu u pole: formulář, který ji ukazuje podle kódu z adresy, si výsledek
+  akce drží v prohlížeči (`lib/action-result.ts`; vzor: `nastaveni/ucet/account-forms.tsx`).
+  Řádek s formulářem otevírej přes `defaultOpen`, nikdy řízeným `open`, a nedávej mu klíč,
+  který se mění při každém vykreslení — obojí ho při obnovení stránky zavře uživateli pod
+  rukama i s rozepsaným textem.
 - Formulář s auto-save (`AutoSubmit`) nese skrytý stav, se kterým byl vykreslen, a server
   zapisuje jen pole, která se od něj liší (`lib/form-baseline.ts`) — panel se starým stavem
   tak nepřepíše změnu udělanou jinde. Výchozí hodnoty polí i skrytý stav ber z jednoho místa
   (vzor: `app/(app)/nastaveni/form-state.ts`) a formuláři dej `key` podle toho stavu.
   Uložení formulář vykreslí celý znovu; fokus přitom zůstává na poli, kde byl, a rozepsaný
   text se neztratí — předá si je starý a nový formulář (`lib/focus-handoff.ts`). Hodnoty
-  ostatních polí se nepředávají nikdy, ty jsou vždy ze serveru.
+  ostatních polí jsou vždy ze serveru; jen dokud další uložení ještě běží, ukazuje formulář
+  stav, který právě odchází (jinak by změna na chvíli skočila zpátky).
+- Auto-save nepřesměrovává: výsledek vrací akce a ukáže ho `AutoSaveFeedback`, adresa ani
+  historie prohlížeče se nemění (dřív každá změna přidala krok a Zpět z Nastavení chtělo
+  tolik stisků, kolik bylo změn). Odeslání řadí `lib/save-queue.ts` — jdou za sebou, změny
+  během ukládání se slijí — a stránku ze serveru dotáhne až poslední v řadě.
+- Text, který člověk napsal a pole neopustil, se neztrácí: uloží se při odchodu ze stránky
+  (Zpět, odkaz, skrytí i zavření panelu, F5) požadavkem, který odchod přežije
+  (`/api/settings/*`, `lib/auto-save-route.ts`; kde prohlížeč neumí `fetch` s `keepalive`,
+  jde při zániku dokumentu přes beacon — `lib/leaving-request.ts`), a po F5 ho pole hned
+  ukazuje (`lib/leaving-draft.ts`). Ukládá se jen text, který prokazatelně psal člověk. Neplatný
+  text server odmítne: hláška to řekne i na stránce, kam člověk odešel, pole zůstane
+  označené a ostatní změny se uloží bez něj. Pole s pevným tvarem má dostat `pattern`
+  (a větu k němu v `title`) — podle něj se při zavírání panelu s neplatným textem prohlížeč
+  zeptá, jestli opravdu odejít; jinde už to říct nejde.
+- Co auto-save nesmí (revize R7 — každý bod byla naměřená tichá ztráta nebo nepravda):
+  - **potvrdit přes odmítnutí.** Dokud v poli leží text, který server odmítl, potvrzení jiné
+    změny říká obojí („Ostatní změny jsou uložené. …“) a odmítnutý text i s `aria-invalid`
+    přežije nové vykreslení formuláře;
+  - **tvrdit stav, který nezná.** Když odpověď na uložení nepřijde, formulář se zamkne
+    (`inert`, `data-auto-submit="unsynced"`) a stav si vyžádá ze serveru, až je zase
+    dosažitelný; do té doby neukazuje ani starou, ani novou volbu jako platnou;
+  - **nechat starší odeslání přepsat novější.** Odeslání nese pořadí
+    (`SUBMISSION_FIELD` v `lib/form-baseline.ts`) a server starší odeslání téhož formuláře
+    nezapíše — odchod ze stránky posílá čekající změnu souběžně s tou, která ještě běží;
+  - **vrátit hodnotu z poznámky pro F5,** kterou uživatel mezitím přepsal, nebo ji nabídnout
+    jinému účtu: poznámka vzniká jen při zániku dokumentu a nese označení účtu
+    (`lib/owner-tag.ts`);
+  - **ukázat hlášku dvakrát nebo cizímu účtu:** hláška, která z obrazovky odešla, se z úložiště
+    maže a patří jen účtu, jehož formulář ji vyvolal (`lib/save-feedback.ts`).
+- Formulář, který odesílá skript, má `method="post"`. Než skript naběhne (nebo když je
+  vypnutý), odešle ho prohlížeč sám — a bez metody by pole včetně hesla skončila v adrese.
 
 ## 5. Textová dieta
 
@@ -504,7 +541,8 @@ stránky, patří do sdíleného souboru, ne do druhé kopie ve stránce.**
   `components/toast.tsx`, `components/theme-toggle.tsx`, `components/theme-provider.tsx`,
   `components/theme-color.ts`, `components/app-skeleton.tsx`,
   `components/shell-disclaimer.ts`, `components/sign-out-button.tsx`,
-  `components/refresh-on-restore.tsx`, `components/clear-feedback-url.tsx`.
+  `components/refresh-on-restore.tsx`, `components/clear-feedback-url.tsx`,
+  `components/auto-save-feedback.tsx`, `components/no-script-notice.tsx`.
 - **Skořápka a bloky veřejných stránek:** `components/marketing-page.tsx`,
   `components/marketing-nav.tsx`, `components/marketing-blocks.tsx`,
   `components/guide-article.tsx`, `components/long-read.tsx`, `components/faq-list.tsx`,

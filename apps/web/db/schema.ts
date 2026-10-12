@@ -118,6 +118,13 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   // prodejem. Sloupec `short_sale_income_on_sale` zahodila migrace 0041.
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // Pořadí posledního odeslání formuláře, které řádek zapsalo: označení
+  // formuláře (panelu) a pořadové číslo (`SUBMISSION_FIELD` v
+  // lib/form-baseline.ts). Starší odeslání téhož formuláře, které dorazí až po
+  // novějším, podle nich řádek nepřepíše. Není to údaj uživatele — do exportu
+  // dat nepatří.
+  saveInstance: text('save_instance'),
+  saveSequence: integer('save_sequence'),
 });
 
 /**
@@ -237,6 +244,9 @@ export const notificationPrefs = pgTable('notification_prefs', {
   // (latentní posun týdenního okna mimo UTC) — timestamptz je round-trip čistý
   lastDigestAt: timestamp('last_digest_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // Pořadí posledního odeslání formuláře — stejně jako u `taxpayer_profiles`.
+  saveInstance: text('save_instance'),
+  saveSequence: integer('save_sequence'),
 });
 
 /** Napojený broker účet — API klíč šifrovaný AES-256-GCM (lib/crypto.ts), nikdy plaintext. */

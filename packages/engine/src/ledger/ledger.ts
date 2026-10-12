@@ -259,12 +259,12 @@ export function buildLedger(
   const openLots = (isin: string): Lot[] => {
     const bucket = lotsByIsin.get(isin);
     if (!bucket) return [];
-    let zapis = 0;
-    for (let cteni = 0; cteni < bucket.length; cteni += 1) {
-      const lot = bucket[cteni]!;
-      if (lot.remaining.gt(0)) bucket[zapis++] = lot;
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < bucket.length; readIndex += 1) {
+      const lot = bucket[readIndex]!;
+      if (lot.remaining.gt(0)) bucket[writeIndex++] = lot;
     }
-    bucket.length = zapis;
+    bucket.length = writeIndex;
     return bucket.slice();
   };
   /**
@@ -487,18 +487,18 @@ export function buildLedger(
    * (1/3 pozice) zlomek haléře a vyrobil falešné varování o přebytku.
    */
   const processReturnOfCapital = (tx: DividendTransaction): void => {
-    const zdanitelne = (amount: Money): void => {
+    const taxAsDividend = (amount: Money): void => {
       returnOfCapitalTaxable.set(tx.id, amount);
     };
-    const nazev = tx.ticker ?? tx.isin ?? 'vratka kapitálu';
+    const instrumentLabel = tx.ticker ?? tx.isin ?? 'vratka kapitálu';
     if (tx.withholdingTax.gt(0)) {
       warnings.add(
         'RETURN_OF_CAPITAL_WITHHELD',
         'WARNING',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} má sraženou daň ${moneyText(tx.withholdingTax, tx.currency)} — z vrácení vkladu se daň nesráží, takže řádek daníme jako dividendu (§ 8) i při zapnutém mírnějším výkladu. Zkontroluj ho ve výpisu brokera.`,
+        `Vratka kapitálu ${instrumentLabel} z ${czDateText(tx.date)} má sraženou daň ${moneyText(tx.withholdingTax, tx.currency)} — z vrácení vkladu se daň nesráží, takže řádek daníme jako dividendu (§ 8) i při zapnutém mírnějším výkladu. Zkontroluj ho ve výpisu brokera.`,
         { txId: tx.id },
       );
-      return zdanitelne(tx.gross);
+      return taxAsDividend(tx.gross);
     }
     const candidates = tx.isin ? openLots(tx.isin) : [];
     const held = sum(candidates.map((lot) => lot.remaining));
@@ -506,10 +506,10 @@ export function buildLedger(
       warnings.add(
         'RETURN_OF_CAPITAL_NO_POSITION',
         'WARNING',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)}: k tomuhle dni už není otevřená pozice, které by šlo snížit nabývací cenu — celá částka ${moneyText(tx.gross, tx.currency)} se daní jako dividenda (§ 8).`,
+        `Vratka kapitálu ${instrumentLabel} z ${czDateText(tx.date)}: k tomuhle dni už není otevřená pozice, které by šlo snížit nabývací cenu — celá částka ${moneyText(tx.gross, tx.currency)} se daní jako dividenda (§ 8).`,
         { txId: tx.id },
       );
-      return zdanitelne(tx.gross);
+      return taxAsDividend(tx.gross);
     }
 
     const perShare = tx.gross.div(held);
@@ -541,7 +541,7 @@ export function buildLedger(
       warnings.add(
         'RETURN_OF_CAPITAL_CURRENCY_MISMATCH',
         'WARNING',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} je v ${tx.currency}, ale pozice je vedená v jiné měně — část ${moneyText(otherCurrency, tx.currency)} připadající na tyhle kusy se daní jako dividenda (§ 8). Přepočet vratky a nabývací ceny dvěma různými kurzovými soustavami by pozici rozhodil (R-06a).`,
+        `Vratka kapitálu ${instrumentLabel} z ${czDateText(tx.date)} je v ${tx.currency}, ale pozice je vedená v jiné měně — část ${moneyText(otherCurrency, tx.currency)} připadající na tyhle kusy se daní jako dividenda (§ 8). Přepočet vratky a nabývací ceny dvěma různými kurzovými soustavami by pozici rozhodil (R-06a).`,
         { txId: tx.id },
       );
     }
@@ -549,7 +549,7 @@ export function buildLedger(
       warnings.add(
         'RETURN_OF_CAPITAL_REDUCED_BASIS',
         'INFO',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} snížila nabývací cenu držených kusů o ${moneyText(reduced, tx.currency)} (R-07h) — daň z ní přijde až s prodejem.`,
+        `Vratka kapitálu ${instrumentLabel} z ${czDateText(tx.date)} snížila nabývací cenu držených kusů o ${moneyText(reduced, tx.currency)} (R-07h) — daň z ní přijde až s prodejem.`,
         { txId: tx.id },
       );
     }
@@ -560,11 +560,11 @@ export function buildLedger(
       warnings.add(
         'RETURN_OF_CAPITAL_EXCESS',
         'WARNING',
-        `Vratka kapitálu ${nazev} z ${czDateText(tx.date)} vyšla na ${moneyText(perShare, tx.currency)} na kus. U ${qtyText(overBasisShares)} ks je to víc, než kolik ten kus stál, takže se přebytek ${moneyText(overBasis, tx.currency)} daní jako dividenda (§ 8) — nabývací cenu už není z čeho snižovat. Ostatních kusů se to netýká: vratka se počítá na kus, ne na celou pozici.`,
+        `Vratka kapitálu ${instrumentLabel} z ${czDateText(tx.date)} vyšla na ${moneyText(perShare, tx.currency)} na kus. U ${qtyText(overBasisShares)} ks je to víc, než kolik ten kus stál, takže se přebytek ${moneyText(overBasis, tx.currency)} daní jako dividenda (§ 8) — nabývací cenu už není z čeho snižovat. Ostatních kusů se to netýká: vratka se počítá na kus, ne na celou pozici.`,
         { txId: tx.id },
       );
     }
-    zdanitelne(otherCurrency.plus(overBasis));
+    taxAsDividend(otherCurrency.plus(overBasis));
   };
 
   const processTransferOut = (tx: Extract<Transaction, { type: 'TRANSFER_OUT' }>): void => {

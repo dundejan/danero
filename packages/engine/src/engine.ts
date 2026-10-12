@@ -124,12 +124,12 @@ function resolveSharedCapRatios(
       includesTimeTestExempt,
     }),
   };
-  const podStropem = cap.appliesTo.filter((scope) => exposed[scope].gt(0));
-  const combined = sum(podStropem.map((scope) => exposed[scope]));
+  const cappedScopes = cap.appliesTo.filter((scope) => exposed[scope].gt(0));
+  const combined = sum(cappedScopes.map((scope) => exposed[scope]));
   if (combined.lte(capCzk)) return ratios;
 
   const ratio = capCzk.div(combined);
-  const scopeLabel = podStropem
+  const scopeLabel = cappedScopes
     .map((scope) => (scope === 'SECURITIES' ? 'CP' : 'kryptoaktiva'))
     .join(' + ');
   warnings.add(
@@ -138,7 +138,7 @@ function resolveSharedCapRatios(
     `Úhrn příjmů osvobozených časovým testem (${scopeLabel}) ${czkText(combined)} přesáhl strop ${czkText(capCzk)} (§ 4 odst. 3, R-03/R-10d). Osvobození je kráceno poměrně: osvobozeno zůstává ${pctText(ratio, 2)} těchto příjmů, zbytek vstupuje do dílčího základu § 10 s poměrnou částí výdajů. Rozhodný je moment přijetí peněz — zkontroluj vypořádání přes přelom roku.`,
   );
   // krátí se jen druhy, které do stropu skutečně vstoupily
-  for (const scope of podStropem) ratios[scope] = ratio;
+  for (const scope of cappedScopes) ratios[scope] = ratio;
   return ratios;
 }
 

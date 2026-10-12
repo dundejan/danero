@@ -92,8 +92,8 @@ type Attrs = Record<string, string>;
 const toArray = (value: unknown): Attrs[] =>
   value === undefined ? [] : Array.isArray(value) ? (value as Attrs[]) : [value as Attrs];
 
-function generate(varianta: 'GENERAL' | 'SEPARATE_16A', personal = {}) {
-  const { xml } = generateDpfdp7({ year: 2025, result, personal, varianta });
+function generate(taxation: 'GENERAL' | 'SEPARATE_16A', personal = {}) {
+  const { xml } = generateDpfdp7({ year: 2025, result, personal, taxation });
   const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } };
   return { xml, dp: parsed.Pisemnost.DPFDP7 };
 }
@@ -236,12 +236,12 @@ describe('generateDpfdp7: varianta SEPARATE_16A (§ 16a, Příloha 4)', () => {
 describe('generateDpfdp7: osobní údaje a chyby', () => {
   it('escapuje XML znaky a čistí DIČ/RČ/PSČ', () => {
     const { xml, dp } = generate('GENERAL', {
-      jmeno: 'Jan & "Ámos" <Komenský>',
-      prijmeni: 'Dvořák',
-      dic: 'CZ8501011233',
-      rodneCislo: '850101/1233',
-      psc: '110 00',
-      ufoCil: '451',
+      firstName: 'Jan & "Ámos" <Komenský>',
+      lastName: 'Dvořák',
+      taxId: 'CZ8501011233',
+      birthNumber: '850101/1233',
+      postalCode: '110 00',
+      taxOfficeCode: '451',
     });
     expect(xml).toContain('Jan &amp; &quot;Ámos&quot; &lt;Komenský&gt;');
     const vetaP = dp.VetaP as Attrs;
@@ -274,7 +274,7 @@ describe('generateDpfdp7: osobní údaje a chyby', () => {
       year: 2025,
       result,
       personal: {},
-      varianta: result.tax.recommended,
+      taxation: result.tax.recommended,
     });
     expect(xml).toBe(expected.xml);
   });
@@ -292,7 +292,7 @@ describe('generateDpfdp7: základ daně sedí na engine (A3-08)', () => {
   const cpOnly = TXS.filter((tx) => tx.type === 'BUY' || tx.type === 'SELL');
   const res = analyzeTaxYear(engineInputForUser([...cpOnly, ...urokTxs], PROFILE, 2025));
   const { dp } = (() => {
-    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, taxation: 'GENERAL' });
     return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
   })();
   const nezaokrouhlenyZaklad = res.securities.base10Czk
@@ -330,7 +330,7 @@ describe('generateDpfdp7: úroky zdaněné v zahraničí v Příloze 3 (A3-12)',
   ]);
   const res = analyzeTaxYear(engineInputForUser([...TXS, ...uroky], PROFILE, 2025));
   const { dp } = (() => {
-    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, taxation: 'GENERAL' });
     return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
   })();
   const rows = Object.fromEntries(toArray(dp.VetaL).map((row) => [row.kod_statu!, row]));
@@ -362,7 +362,7 @@ describe('generateDpfdp7: kryptoaktiva v Příloze 2 (R-10c)', () => {
     engineInputForUser([...TXS, ...cryptoTxs], PROFILE, 2025),
   );
   const { dp } = (() => {
-    const { xml } = generateDpfdp7({ year: 2025, result: mixedResult, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year: 2025, result: mixedResult, personal: {}, taxation: 'GENERAL' });
     return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
   })();
 
@@ -395,7 +395,7 @@ describe('generateDpfdp7: deriváty v Příloze 2 (R-12n)', () => {
   ]);
   const derivResult = analyzeTaxYear(engineInputForUser([...TXS, ...derivTxs], PROFILE, 2025));
   const { dp } = (() => {
-    const { xml } = generateDpfdp7({ year: 2025, result: derivResult, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year: 2025, result: derivResult, personal: {}, taxation: 'GENERAL' });
     return { dp: (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost.DPFDP7 };
   })();
 
@@ -449,7 +449,7 @@ describe('ř. 91: sleva se do § 16a nepřelévá (K3-01, R-14b)', () => {
       year: 2025,
       result: onlyResult,
       personal: {},
-      varianta: 'SEPARATE_16A',
+      taxation: 'SEPARATE_16A',
     });
     return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
       .DPFDP7;
@@ -510,7 +510,7 @@ describe('ř. 91: daň do 200 Kč se nepředepisuje (K3-02, § 38b)', () => {
       year: 2025,
       result: czechSale(gainCzk),
       personal: {},
-      varianta: 'GENERAL',
+      taxation: 'GENERAL',
     });
     const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } };
     return parsed.Pisemnost.DPFDP7.VetaD as Attrs;
@@ -554,7 +554,7 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
     const { EpoInputError } = await import('@/lib/epo');
     let caught: unknown;
     try {
-      generateDpfdp7({ year: 2025, result: xsResult, personal: {}, varianta: 'GENERAL' });
+      generateDpfdp7({ year: 2025, result: xsResult, personal: {}, taxation: 'GENERAL' });
     } catch (error) {
       caught = error;
     }
@@ -567,7 +567,7 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
     const { EpoInputError } = await import('@/lib/epo');
     const unsupported = Math.max(...EPO_SUPPORTED_YEARS) + 1;
     expect(() =>
-      generateDpfdp7({ year: unsupported, result, personal: {}, varianta: 'GENERAL' }),
+      generateDpfdp7({ year: unsupported, result, personal: {}, taxation: 'GENERAL' }),
     ).toThrow(EpoInputError);
   });
 
@@ -579,7 +579,7 @@ describe('vada vstupu se uživateli dostane celá (K3-06)', () => {
       'utf8',
     );
     expect(route).toContain('error instanceof EpoInputError');
-    expect(route).toContain('chyba(error.message, 400)');
+    expect(route).toContain('errorResponse(error.message, 400)');
   });
 
   /**
@@ -641,7 +641,7 @@ describe('roky EPO z jediného zdroje (L5-03)', () => {
     const xml = withSupportedYear(
       added,
       () =>
-        generateDpfdp7({ year: added, result: addedResult, personal: {}, varianta: 'GENERAL' }).xml,
+        generateDpfdp7({ year: added, result: addedResult, personal: {}, taxation: 'GENERAL' }).xml,
     );
     const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: { VetaD: Attrs } } };
     expect(parsed.Pisemnost.DPFDP7.VetaD.rok).toBe(String(added));
@@ -684,20 +684,20 @@ describe('roky EPO z jediného zdroje (L5-03)', () => {
  */
 describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
   const dp = (
-    dapTyp?: 'B' | 'O' | 'D' | 'E',
-    dodatecne?: {
-      zjistenoDne: string;
-      posledniZnamaDanCzk?: string;
-      posledniZnamaZtrataCzk?: string;
+    filingType?: 'B' | 'O' | 'D' | 'E',
+    supplementary?: {
+      discoveredOn: string;
+      lastKnownTaxCzk?: string;
+      lastKnownLossCzk?: string;
     },
   ) => {
     const { xml } = generateDpfdp7({
       year: 2025,
       result,
       personal: {},
-      varianta: 'GENERAL',
-      ...(dapTyp ? { dapTyp } : {}),
-      ...(dodatecne ? { dodatecne } : {}),
+      taxation: 'GENERAL',
+      ...(filingType ? { filingType } : {}),
+      ...(supplementary ? { supplementary } : {}),
     });
     const parsed = parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } };
     return parsed.Pisemnost.DPFDP7.VetaD as Attrs;
@@ -722,9 +722,9 @@ describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
    */
   it('dodatečné přiznání nese datum i celý 6. oddíl', () => {
     const vetaD = dp('D', {
-      zjistenoDne: '2026-08-05',
-      posledniZnamaDanCzk: '100',
-      posledniZnamaZtrataCzk: '5000',
+      discoveredOn: '2026-08-05',
+      lastKnownTaxCzk: '100',
+      lastKnownLossCzk: '5000',
     });
     expect(vetaD.dap_typ).toBe('D');
     expect(vetaD.d_zjist).toBe('5.8.2026');
@@ -737,7 +737,7 @@ describe('typ přiznání ve formuláři pro XML (K3-07)', () => {
   });
 
   it('nevyplněná poslední daň znamená nulu, ne chybu', () => {
-    const vetaD = dp('D', { zjistenoDne: '2026-08-05' });
+    const vetaD = dp('D', { discoveredOn: '2026-08-05' });
     expect(vetaD.kc_pzdp).toBe('0');
     expect(vetaD.kc_rozdil_dp).toBe(vetaD.kc_dan_po_db); // ř. 79 − 0
   });
@@ -780,9 +780,9 @@ describe('příjmy po státech nepřesáhnou základ (L5-01)', () => {
     currency: 'USD',
     date: '2025-06-02',
   };
-  const dpFor = (txs: unknown[], varianta: 'GENERAL' | 'SEPARATE_16A') => {
+  const dpFor = (txs: unknown[], taxation: 'GENERAL' | 'SEPARATE_16A') => {
     const res = analyzeTaxYear(engineInputForUser(parseTransactions(txs), PROFILE, 2025));
-    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, varianta });
+    const { xml } = generateDpfdp7({ year: 2025, result: res, personal: {}, taxation });
     return (parser.parse(xml) as { Pisemnost: { DPFDP7: Record<string, unknown> } }).Pisemnost
       .DPFDP7;
   };

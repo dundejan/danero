@@ -288,3 +288,86 @@ describe('kontrasty odměrky a tisku (H-3-04, H-3-05)', () => {
     }
   });
 });
+
+/**
+ * Textové tlačítko (`ghost`, „Odhlásit se“ v postranním panelu) dostane pod
+ * myší a při stisku zvýraznění (`--highlight`), které pod textem ubere
+ * kontrast. S běžnou akcentní barvou vycházel text na ploše `canvas` na
+ * 4,46:1 (tmavý režim 4,49) — těsně pod AA. Axe to v běžném průchodu nevidí,
+ * protože stránku měří bez myši; proto se to počítá z tokenů tady.
+ */
+describe('akcentní text na zvýraznění pod myší', () => {
+  const css = readFileSync(join(webRoot, 'app', 'globals.css'), 'utf8');
+  const MODES = [
+    { name: 'světlý', selector: ':root' },
+    { name: 'tmavý', selector: '.dark' },
+  ];
+
+  /** `--highlight: rgba(r, g, b, alfa)` smíchané s plochou pod ním. */
+  function highlighted(selector: string, token: string, surface: string): string {
+    const match = new RegExp(
+      `--${token}:\\s*rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([\\d.]+)\\)`,
+    ).exec(cssBlock(css, selector));
+    expect(match, `${selector} --${token}`).not.toBeNull();
+    const alpha = Number(match![4]);
+    const mixed = [1, 2, 3].map((index, channel) =>
+      Math.round(
+        Number(match![index]) * alpha +
+          parseInt(surface.slice(1 + channel * 2, 3 + channel * 2), 16) * (1 - alpha),
+      ),
+    );
+    return `#${mixed.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  /** Barva textu, kterou třídy dávají danému stavu (`hover:text-…`). */
+  function stateTextToken(classes: string, state: 'hover' | 'active'): string {
+    const match = new RegExp(`(?:^|\\s)${state}:text-([a-z-]+)`).exec(classes);
+    expect(match, `třída ${state}:text-… v „${classes}“`).not.toBeNull();
+    return match![1]!;
+  }
+
+  const sources = [
+    {
+      name: 'Button ghost',
+      classes: /ghost:\s*'([^']+)'/.exec(
+        readFileSync(join(webRoot, 'components', 'ui', 'button.tsx'), 'utf8'),
+      )?.[1],
+    },
+    {
+      name: 'Odhlásit se v postranním panelu',
+      // v souboru je i odhlášení v sheetu „Více“ — to je řádek, ne textové tlačítko
+      classes: /<SignOutButton\s+className="([^"]*hover:bg-\(--highlight\)[^"]*)"/.exec(
+        readFileSync(join(webRoot, 'components', 'nav-rail.tsx'), 'utf8'),
+      )?.[1],
+    },
+  ];
+
+  it.each(MODES)('pod myší i při stisku drží AA 4,5:1 ($name)', ({ selector }) => {
+    const tokens = tokensOf(css, selector);
+    for (const { name, classes } of sources) {
+      expect(classes, `třídy: ${name}`).toBeDefined();
+      for (const [state, highlight] of [
+        ['hover', 'highlight'],
+        ['active', 'highlight-pressed'],
+      ] as const) {
+        expect(classes, name).toContain(`${state}:bg-(--${highlight})`);
+        const text = tokens[stateTextToken(classes!, state)];
+        expect(text, `${name}: token textu pro ${state}`).toBeDefined();
+        // tlačítko stojí na bílé ploše i na `canvas` (postranní panel, karta)
+        for (const surface of ['surface', 'canvas'] as const) {
+          expect(
+            Number(contrast(text!, highlighted(selector, highlight, tokens[surface]!)).toFixed(2)),
+            `${name}, ${state} na --${surface}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it('běžná akcentní barva by pod myší na canvas neprošla — proto tmavší', () => {
+    const tokens = tokensOf(css, ':root');
+    expect(
+      contrast(tokens['accent-text']!, highlighted(':root', 'highlight', tokens['canvas']!)),
+    ).toBeLessThan(4.5);
+  });
+});

@@ -254,7 +254,7 @@ export function ReportFilingVerdict({
  * lhůty přiznání, je pod ním. Kdo přiznání nepodává, má na oznámení jen
  * základní tříměsíční lhůtu a sankce podle § 38w se počítá z neoznámeného
  * příjmu — právě u něj to bolí nejvíc (A24-R1-01; znění drží krok
- * s `OZNAMENI_5M` kalkulačky).
+ * s `LARGE_EXEMPT_INCOME_NOTICE` kalkulačky).
  */
 export function ExemptIncomeReportingNotice({ deadline }: { deadline: string }) {
   return (

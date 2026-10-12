@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { d } from '@danero/shared';
-import { money, plural, qty, yearList } from '@/lib/format';
+import { currencyUnit, money, plural, profitLoss, qty, yearList } from '@/lib/format';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 
 describe('plural: český tvar slova k číslu', () => {
@@ -22,7 +22,7 @@ describe('money: částky v historii transakcí', () => {
     expect(money(0.73383905457, 'USD')).toBe(`0,73${NBSP}USD`);
     expect(money(0.13, 'USD')).toBe(`0,13${NBSP}USD`);
     expect(money(d('1234.5'), 'EUR')).toBe(`1${NBSP}234,50${NBSP}EUR`);
-    expect(money(0, 'CZK')).toBe(`0,00${NBSP}CZK`);
+    expect(money(0, 'CZK')).toBe(`0,00${NBSP}Kč`);
   });
 
   it('R2-27: částku a kód měny nejde rozdělit na dva řádky', () => {
@@ -35,14 +35,43 @@ describe('money: částky v historii transakcí', () => {
 
   it('R2-11: cena pod haléř se neukáže jako nula', () => {
     // mince za 0,00031 Kč: „0,00 CZK za kus“ vedle hodnoty pozice 38 272 Kč
-    expect(money(d('0.00031'), 'CZK')).toBe(`0,00031${NBSP}CZK`);
+    expect(money(d('0.00031'), 'CZK')).toBe(`0,00031${NBSP}Kč`);
     expect(money(d('0.000123456'), 'USD')).toBe(`0,000123${NBSP}USD`);
     // zisk pozice o jednom satoshi: „+0,00 CZK (+7,1 %)“
-    expect(money(d('0.0003'), 'CZK', true)).toBe(`+0,0003${NBSP}CZK`);
-    expect(money(d('-0.0042'), 'CZK', true)).toBe(`-0,0042${NBSP}CZK`);
+    expect(money(d('0.0003'), 'CZK', true)).toBe(`+0,0003${NBSP}Kč`);
+    expect(money(d('-0.0042'), 'CZK', true)).toBe(`-0,0042${NBSP}Kč`);
     // od haléře výš beze změny, ať se sloupce částek nerozjedou
-    expect(money(d('0.01'), 'CZK')).toBe(`0,01${NBSP}CZK`);
-    expect(money(d('0.0149'), 'CZK')).toBe(`0,01${NBSP}CZK`);
+    expect(money(d('0.01'), 'CZK')).toBe(`0,01${NBSP}Kč`);
+    expect(money(d('0.0149'), 'CZK')).toBe(`0,01${NBSP}Kč`);
+  });
+
+  it('koruny se píšou „Kč“, kód měny jen u cizích měn', () => {
+    // u korunového titulu stálo „1 010,50 CZK za kus“ vedle „Hodnota 40 000 Kč“
+    expect(currencyUnit('CZK')).toBe('Kč');
+    expect(currencyUnit('USD')).toBe('USD');
+    expect(money(d('1010.5'), 'CZK')).toBe(`1${NBSP}010,50${NBSP}Kč`);
+    expect(money(d('1010.5'), 'CZK')).not.toContain('CZK');
+  });
+});
+
+describe('profitLoss: zisk pozice vedle hodnoty v korunách', () => {
+  const NBSP = '\u00A0';
+
+  it('korunový zisk je v celých korunách jako hodnota vedle něj', () => {
+    // bylo „+4 000,00 CZK“ vedle „40 000 Kč“
+    expect(profitLoss(d('4000'), 'CZK')).toBe(`+4${NBSP}000${NBSP}Kč`);
+    expect(profitLoss(d('-1234.56'), 'CZK')).toBe(`-1${NBSP}235${NBSP}Kč`);
+    expect(profitLoss(d('0'), 'CZK')).toBe(`0,00${NBSP}Kč`);
+  });
+
+  it('pod korunu přesně, ne „+0 Kč“ (R2-11)', () => {
+    expect(profitLoss(d('0.0003'), 'CZK')).toBe(`+0,0003${NBSP}Kč`);
+    expect(profitLoss(d('-0.42'), 'CZK')).toBe(`-0,42${NBSP}Kč`);
+  });
+
+  it('cizí měna na setiny s kódem měny', () => {
+    expect(profitLoss(d('1860'), 'USD')).toBe(`+1${NBSP}860,00${NBSP}USD`);
+    expect(profitLoss(d('-12.5'), 'EUR')).toBe(`-12,50${NBSP}EUR`);
   });
 });
 

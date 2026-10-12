@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universal/csv';
-import { hydrated, openDisclosure, registerWithProfile, uploadStatement } from './helpers';
+import {
+  hydrated,
+  openDisclosure,
+  pageSettled,
+  registerWithProfile,
+  uploadStatement,
+} from './helpers';
 
 /**
  * Vizuální audit (ne asserty — sběr screenshotů pro ruční/AI rozbor):
@@ -15,7 +21,7 @@ import { hydrated, openDisclosure, registerWithProfile, uploadStatement } from '
 const OUT = 'test-results/design';
 
 async function shoot(page: Page, name: string) {
-  await page.waitForLoadState('networkidle');
+  await pageSettled(page);
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
 }
 

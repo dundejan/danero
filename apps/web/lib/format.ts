@@ -69,15 +69,35 @@ const amountFormat = new Intl.NumberFormat('cs-CZ', {
 const tinyAmountFormat = new Intl.NumberFormat('cs-CZ', { maximumSignificantDigits: 3 });
 
 /**
- * Částka v cizí měně česky: „1 234,56 USD“ (+ volitelné znaménko u P/L).
- * Před kódem měny je pevná mezera — obyčejná dovolila rozlomit částku na
+ * Jednotka měny, jak ji aplikace píše: koruny jsou všude „Kč“, kód měny
+ * (ISO 4217) jen u cizích. Do 11. 10. 2026 stálo u korunového titulu „+4 000,00
+ * CZK“ hned vedle „Hodnota 40 000 Kč“ — dvě jména téže měny v jednom řádku.
+ */
+export const currencyUnit = (currency: string): string => (currency === 'CZK' ? 'Kč' : currency);
+
+/**
+ * Částka v měně titulu na haléře (cena za kus, částka transakce):
+ * „1 234,56 USD“, „1 010,50 Kč“ (+ volitelné znaménko).
+ * Před jednotkou je pevná mezera — obyčejná dovolila rozlomit částku na
  * „3 703 703,67 / USD“ (R2-27); stejně to mají `pct` a `czkCompact`.
  */
 export const money = (value: Money | number, currency: string, signed = false): string => {
   const n = typeof value === 'number' ? value : value.toNumber();
   const sign = signed && n > 0 ? '+' : '';
   const format = n !== 0 && Math.abs(n) < 0.01 ? tinyAmountFormat : amountFormat;
-  return `${sign}${format.format(n)}\u00A0${currency}`;
+  return `${sign}${format.format(n)}\u00A0${currencyUnit(currency)}`;
+};
+
+/**
+ * Zisk nebo ztráta pozice se znaménkem, v měně titulu. V korunách na celé
+ * koruny jako každá jiná korunová částka v aplikaci (stojí vedle hodnoty
+ * pozice, kterou píše `czk`); pod jednu korunu přesně, aby drobná pozice
+ * neukázala „+0 Kč“ (R2-11). Cizí měna na setiny jako cena.
+ */
+export const profitLoss = (value: Money | number, currency: string): string => {
+  const n = typeof value === 'number' ? value : value.toNumber();
+  if (currency !== 'CZK' || Math.abs(n) < 1) return money(n, currency, true);
+  return `${n > 0 ? '+' : ''}${czk(n)}`;
 };
 
 /** Lidské popisky metod párování prodejů (R-05c) — jednotné pro celé UI. */

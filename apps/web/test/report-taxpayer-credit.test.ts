@@ -106,7 +106,7 @@ describe('ř. 64: sleva na poplatníka podle roku (R-14g)', () => {
 describe('XML: sleva na poplatníka je částka roku podání (R-14g)', () => {
   it.each(EPO_SUPPORTED_YEARS)('rok %i', (year) => {
     const result = analyzeTaxYear(engineInputForUser(saleIn(year), PROFILE, year));
-    const { xml } = generateDpfdp7({ year, result, personal: {}, varianta: 'GENERAL' });
+    const { xml } = generateDpfdp7({ year, result, personal: {}, taxation: 'GENERAL' });
     const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
     const vetaD = (parser.parse(xml) as { Pisemnost: { DPFDP7: { VetaD: Record<string, string> } } })
       .Pisemnost.DPFDP7.VetaD;

@@ -18,6 +18,7 @@ import {
   type TaxYearResult,
   type VariantComparison,
 } from '@danero/engine';
+import { withoutSaveOrder } from '@/lib/form-baseline';
 import type { Db } from '@/db';
 import type { CnbRateProvider } from '@/lib/cnb';
 import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
@@ -39,7 +40,11 @@ export type PinnedTaxYearOptions = Pick<
 /** Daňový rok → konfigurace, se kterou se ten rok zafixoval. */
 export type PinnedTaxYears = Record<number, PinnedTaxYearOptions>;
 
-export type ProfileRow = typeof taxpayerProfiles.$inferSelect & {
+export type ProfileRow = Omit<
+  typeof taxpayerProfiles.$inferSelect,
+  // pořadí odeslání formuláře není součást profilu (viz schema.ts)
+  'saveInstance' | 'saveSequence'
+> & {
   /**
    * Roky, za které si uživatel vygeneroval podklady, si drží konfiguraci,
    * se kterou se počítaly (R-05c). Plní je `getProfile`, aby přehled,
@@ -55,7 +60,7 @@ export async function getProfile(db: Db, userId: string): Promise<ProfileRow | n
     .where(eq(taxpayerProfiles.userId, userId));
   const row = rows[0];
   if (!row) return null;
-  return { ...row, pinnedTaxYears: await loadPinnedTaxYears(db, userId) };
+  return { ...withoutSaveOrder(row), pinnedTaxYears: await loadPinnedTaxYears(db, userId) };
 }
 
 export type PinnedTaxYearRow = typeof taxYearSettings.$inferSelect;

@@ -1,4 +1,5 @@
 import { and, asc, eq, gt } from 'drizzle-orm';
+import { withoutSaveOrder } from '@/lib/form-baseline';
 import { getAuth } from '@/lib/auth';
 import { getDb, type Db } from '@/db';
 import {
@@ -113,12 +114,16 @@ async function* exportChunks(
   });
   yield line(
     'profiles',
-    await db.select().from(taxpayerProfiles).where(eq(taxpayerProfiles.userId, userId)),
+    (await db.select().from(taxpayerProfiles).where(eq(taxpayerProfiles.userId, userId))).map(
+      withoutSaveOrder,
+    ),
   );
   // nastavení upozornění zadal uživatel sám → čl. 20 GDPR (přenositelnost)
   yield line(
     'notificationPrefs',
-    await db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId)),
+    (await db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId))).map(
+      withoutSaveOrder,
+    ),
   );
 
   // kanonický model (docs/04) — payload je zdroj pravdy každé transakce.

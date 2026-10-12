@@ -1,4 +1,4 @@
-import type { EpoDapTyp } from '@/lib/epo';
+import type { EpoFilingType } from '@/lib/epo';
 
 /**
  * Sdílené konstanty formuláře exportu XML — zvlášť od `lib/epo.ts`, aby je
@@ -9,7 +9,7 @@ import type { EpoDapTyp } from '@/lib/epo';
 export const EPO_FORM_ID = 'epo-export';
 
 /** Typy přiznání, u kterých podatelna vyžaduje den zjištění důvodů (§ 141 DŘ). */
-const SUPPLEMENTARY_TYPES: readonly EpoDapTyp[] = ['D', 'E'];
+const SUPPLEMENTARY_TYPES: readonly EpoFilingType[] = ['D', 'E'];
 
 export const isSupplementaryFiling = (type: string): boolean =>
   (SUPPLEMENTARY_TYPES as readonly string[]).includes(type);

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universal/csv';
 import {
+  autoSaveForm,
   hydrated,
   openConfirmDialog,
   openDisclosure,
@@ -122,6 +123,70 @@ test('účet: změna hesla → export dat → nevratné smazání', async ({ pag
   // export bez session vrací 401
   const after = await page.request.get('/api/export');
   expect(after.status()).toBe(401);
+});
+
+/**
+ * Chyba u pole je výsledek akce z adresy a adresa se po zobrazení uklízí.
+ * Dokud formuláře kreslil server jen podle ní, první obnovení stránky ze
+ * serveru řádek zavřelo uživateli pod rukama: hláška zmizela a rozepsané
+ * heslo s ní (naživo 11. 10. 2026). Obnovení tu vyvolá návrat stránky
+ * z mezipaměti prohlížeče; že opravdu doběhlo, se pozná podle záznamu
+ * v aktivitě, který mezitím přibyl z jiného zařízení.
+ */
+test('účet: chyba u pole a rozepsaný text přežijí obnovení stránky ze serveru', async ({
+  page,
+  browser,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Chyba u pole', email: 'ucet-chyba@danero.cz' });
+  await page.goto('/nastaveni/ucet');
+  const activity = page.locator('summary').filter({ hasText: /^Poslední aktivita \(\d+\)$/ });
+  const eventsBefore = Number((await activity.innerText()).match(/\d+/)![0]);
+
+  // špatné současné heslo: řádek se otevře znovu a řekne to u pole
+  const password = await openDisclosure(page, /^Heslo/);
+  await password.getByLabel('Současné heslo').fill('tohle-neni-moje-heslo');
+  await password.getByLabel('Nové heslo').fill(NOVE_HESLO);
+  await password.getByRole('button', { name: 'Změnit heslo' }).click();
+  const fieldError = page.getByRole('alert').filter({ hasText: 'Současné heslo nesedí' });
+  await expect(fieldError).toBeVisible();
+  await expect(page).toHaveURL(/\/nastaveni\/ucet$/);
+  // uživatel začne opravovat; vedle má ručně otevřený a rozepsaný i e-mail
+  const currentPassword = page.getByLabel('Současné heslo');
+  await currentPassword.fill(HESLO);
+  const emailRow = await openDisclosure(page, /^E-mail/);
+  await emailRow.getByLabel('Nový e-mail').fill('rozepsany@danero.cz');
+
+  // jiné zařízení téhož účtu mezitím změní profil → přibude záznam v aktivitě
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const other = await elsewhere.newPage();
+  await other.goto('/nastaveni');
+  await autoSaveForm(other);
+  await other.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(other.getByRole('status').filter({ hasText: 'Uloženo.' })).toBeVisible();
+  await elsewhere.close();
+
+  // stránka se obnoví ze serveru (návrat z mezipaměti prohlížeče)
+  await page.evaluate(() =>
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })),
+  );
+  await expect(
+    page.locator('summary').filter({ hasText: `Poslední aktivita (${eventsBefore + 1})` }),
+  ).toBeVisible();
+
+  // řádek zůstal otevřený i s hláškou a s tím, co je v něm napsané
+  await expect(fieldError).toBeVisible();
+  await expect(currentPassword).toHaveValue(HESLO);
+  await expect(currentPassword).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByLabel('Nový e-mail')).toHaveValue('rozepsany@danero.cz');
+
+  // a oprava projde: řádek se zavře, pole jsou prázdná
+  await page.getByLabel('Nové heslo').fill(NOVE_HESLO);
+  await page.getByRole('button', { name: 'Změnit heslo' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Heslo změněno' })).toBeVisible();
+  await expect(page.locator('summary').filter({ hasText: /^Heslo/ }).locator('xpath=..')).not.toHaveAttribute(
+    'open',
+  );
+  await expect(fieldError).toHaveCount(0);
 });
 
 /**

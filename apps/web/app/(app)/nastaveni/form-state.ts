@@ -39,6 +39,28 @@ export const PROFILE_FIELDS = {
 } as const;
 
 /**
+ * Kolik číslic smí mít částka před desetinnou čárkou: dvanáct, tedy pod bilion
+ * korun. Mez je počet číslic, ne hodnota — jen tak ji stejně pozná server
+ * (`save.ts`) i atribut `pattern` v prohlížeči. Dřív server odmítal částku nad
+ * bilion, kterou vzor pustil: kdo s ní zavřel panel, nedozvěděl se, že se
+ * neuložila.
+ */
+export const OTHER_INCOME_MAX_DIGITS = 12;
+
+/**
+ * Tvar částky v poli „Další zdanitelné příjmy“ pro atribut `pattern`: nejvýš
+ * dvanáct číslic s mezerami kdekoli a nejvýš jedna desetinná čárka nebo tečka
+ * se dvěma místy (prázdné pole je nula). Musí pustit přesně to, co pustí
+ * server (`save.ts`): přísnější vzor by platnou částku při zavírání panelu
+ * neuložil, volnější by nechal odejít s částkou, kterou server zahodí. Shodu
+ * hlídá `test/profil-castka.test.ts`.
+ */
+export const OTHER_INCOME_PATTERN = String.raw`\s*(\d\s*){1,${OTHER_INCOME_MAX_DIGITS}}([.,]\s*(\d\s*){1,2})?|\s*`;
+
+/** Věta k tomu tvaru — nápověda pole a hláška, když rozepsaná částka neprojde. */
+export const OTHER_INCOME_FORMAT = 'Zadej částku v korunách, třeba 12000 nebo 12000,50.';
+
+/**
  * Stav formuláře daňového profilu. Bez profilu jsou to bezpečné předvolby;
  * režim předvolbu nemá (L7i-01), takže v dvojicích chybí.
  */

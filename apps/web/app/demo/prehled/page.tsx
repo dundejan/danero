@@ -1,4 +1,4 @@
-import { OverviewView, type PrehledNotification } from '@/components/views/overview-view';
+import { OverviewView, type OverviewNotification } from '@/components/views/overview-view';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { computeNotificationCandidates } from '@/lib/notifications';
@@ -26,7 +26,7 @@ export default async function DemoPrehledPage({
 
   // „Poslední upozornění“ v demu: kandidáti hlídače nad demo výsledkem —
   // stejná čistá funkce, kterou plní reálné notifikace (jen bez DB)
-  const notifications: PrehledNotification[] = computeNotificationCandidates({
+  const notifications: OverviewNotification[] = computeNotificationCandidates({
     result: analysis.result,
     positions: analysis.positions,
     labels: analysis.labels,

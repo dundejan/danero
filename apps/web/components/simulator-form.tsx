@@ -2,9 +2,9 @@
 
 import Form from 'next/form';
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { describedByError, Field, FieldError, Input, Select } from '@/components/ui/field';
+import { currencyUnit } from '@/lib/format';
 import { answeredSubmissions, simulationKey } from '@/lib/simulator-input';
 import { cn } from '@/lib/utils';
 
@@ -42,7 +42,8 @@ const TYPING_PAUSE_MS = 250;
  *   platný zůstane stát zešedlý a chyba je u pole. Dřív ho nahradila krátká
  *   hláška a sloupec při psaní skákal mezi 757 a 248 px (R3-09).
  * - Je to obyčejný formulář metodou GET: adresa nese zadání (jde sdílet
- *   a obnovit) a bez JavaScriptu ho odešle tlačítko v `<noscript>`.
+ *   a obnovit). Tlačítko pro odeslání bez JavaScriptu tu bývalo, jenže stránka
+ *   aplikace se bez něj nevykreslí vůbec (`components/no-script-notice.tsx`).
  */
 export function SimulatorWorkbench({
   action,
@@ -189,7 +190,7 @@ export function SimulatorWorkbench({
                 />
               </Field>
               <Field
-                label={selected ? `Cena za kus (${selected.currency})` : 'Cena za kus'}
+                label={selected ? `Cena za kus (${currencyUnit(selected.currency)})` : 'Cena za kus'}
                 htmlFor="cena"
                 hint={
                   selected?.lastPrice && price.trim() === selected.lastPrice
@@ -214,9 +215,6 @@ export function SimulatorWorkbench({
             </div>
             {/* jedna hláška pod poli — ve sloupci širokém půl panelu by se lámala po slovech */}
             {error && <FieldError id={ERROR_ID}>{error.message}</FieldError>}
-            <noscript>
-              <Button type="submit">Spočítat dopad</Button>
-            </noscript>
           </Form>
         </Card>
 

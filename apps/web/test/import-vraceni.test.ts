@@ -1,4 +1,4 @@
-import { and, eq, like } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import {
@@ -9,7 +9,6 @@ import {
   transactions,
   user,
 } from '@/db/schema';
-import { isSyncBatchFilename } from '@/lib/broker-sync';
 import { importFileIsolated } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 

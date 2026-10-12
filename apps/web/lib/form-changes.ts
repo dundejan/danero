@@ -99,6 +99,37 @@ export function restoreServerHtml(control: FormControlState): void {
 }
 
 /**
+ * Nastaví pole podle stavu formuláře, který právě odchází na server (bez
+ * událostí — nic se tím neodesílá). Formulář vykreslený znovu, zatímco se
+ * ukládá, dostal od serveru stav z doby před tím uložením: přepínač, který
+ * člověk právě přepnul, by na chvíli skočil zpátky. Vrací textová pole, která
+ * přepsal — jejich text je odeslaný, ne rozepsaný.
+ */
+export function applyFormValues<Control extends FormControlState>(
+  controls: Iterable<Control>,
+  values: { getAll(name: string): unknown[] },
+): Control[] {
+  const texts: Control[] = [];
+  for (const control of controls) {
+    const kind = kindOf(control);
+    if (kind === 'none' || !control.name) continue;
+    const sent = values
+      .getAll(control.name)
+      .filter((value): value is string => typeof value === 'string');
+    if (kind === 'toggle') {
+      control.checked = sent.includes(control.value ?? 'on');
+      continue;
+    }
+    // nabídka a text nesou jednu hodnotu; pole, které v odeslání není, zůstává
+    const [value] = sent;
+    if (value === undefined || value === control.value) continue;
+    control.value = value;
+    if (kind === 'text') texts.push(control);
+  }
+  return texts;
+}
+
+/**
  * Co s formulářem po hydrataci: která pole vrátit na hodnotu ze serveru
  * a jestli formulář odeslat.
  *

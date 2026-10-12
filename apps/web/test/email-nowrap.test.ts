@@ -132,7 +132,7 @@ describe('„e-mail“ v textech aplikace drží pohromadě', () => {
     const { default: NotificationSettingsPage } =
       await import('@/app/(app)/nastaveni/upozorneni/page');
     const html = renderToStaticMarkup(
-      await NotificationSettingsPage({ searchParams: Promise.resolve({}) }),
+      await NotificationSettingsPage(),
     );
     // stránka o e-mailech mluví na víc místech — kdyby test nic nenašel, nehlídá nic
     expect(protectedWords(html).length).toBeGreaterThanOrEqual(5);
