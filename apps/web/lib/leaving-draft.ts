@@ -32,6 +32,16 @@ const LEAVING_DRAFT_KEY = 'danero:leaving-draft';
 /** Jak dlouho po odchodu poznámka platí (ms). */
 export const LEAVING_DRAFT_TTL_MS = 10_000;
 
+/**
+ * O kolik smí být poznámka „z budoucnosti“ (ms). Stáří se měří systémovým
+ * časem a ten umí skočit zpátky — seřízení hodin ho mezi zánikem staré stránky
+ * a načtením nové posune a čerstvá poznámka pak vypadá, jako by vznikla až za
+ * chvíli. Změřeno 12. 10. 2026: stroj vracel hodiny o 1,2 s každou půlminutu,
+ * poznámka měla „stáří“ −0,9 s, zahodila se a pole po F5 ukázalo starou
+ * částku, přestože nová byla uložená. Větší posun už seřízení hodin není.
+ */
+export const LEAVING_DRAFT_CLOCK_SLACK_MS = 5_000;
+
 export interface LeavingDraft {
   /** Adresa uložení formuláře. */
   endpoint: string;
@@ -98,7 +108,7 @@ export function leavingDraftFor(raw: string | null, form: LoadedForm): Record<st
     draft.endpoint !== form.endpoint ||
     draft.owner !== form.owner ||
     draft.pathname !== form.pathname ||
-    age < 0 ||
+    age < -LEAVING_DRAFT_CLOCK_SLACK_MS ||
     age > LEAVING_DRAFT_TTL_MS
   ) {
     return {};

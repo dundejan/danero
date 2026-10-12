@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   encodeLeavingDraft,
+  LEAVING_DRAFT_CLOCK_SLACK_MS,
   LEAVING_DRAFT_TTL_MS,
   leavingDraftFor,
 } from '@/lib/leaving-draft';
@@ -67,8 +68,18 @@ describe('rozepsaný text po F5', () => {
   it('stará poznámka neplatí — návrat po čase ukáže stav ze serveru', () => {
     expect(leavingDraftFor(left, { ...form, now: AT + LEAVING_DRAFT_TTL_MS })).not.toEqual({});
     expect(leavingDraftFor(left, { ...form, now: AT + LEAVING_DRAFT_TTL_MS + 1 })).toEqual({});
-    // hodiny posunuté zpět
-    expect(leavingDraftFor(left, { ...form, now: AT - 1 })).toEqual({});
+  });
+
+  it('seřízení hodin o pár sekund zpět čerstvou poznámku nezahodí', () => {
+    // stroj, který vrací hodiny po půlvteřinách: nová stránka „vznikla dřív“ než poznámka
+    expect(leavingDraftFor(left, { ...form, now: AT - 900 })).toEqual({ 'ostatni-prijmy': '5000' });
+    expect(leavingDraftFor(left, { ...form, now: AT - LEAVING_DRAFT_CLOCK_SLACK_MS })).not.toEqual(
+      {},
+    );
+    // větší posun už seřízení není — poznámka z jiné doby se nepoužije
+    expect(leavingDraftFor(left, { ...form, now: AT - LEAVING_DRAFT_CLOCK_SLACK_MS - 1 })).toEqual(
+      {},
+    );
   });
 
   it('chybějící nebo poškozená poznámka nic nevrací', () => {
