@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { resetAutoSave } from '@/lib/auto-save-session';
 import { forgetLeavingDraft } from '@/lib/leaving-draft';
 import { dismissFeedback } from '@/lib/save-feedback';
 import { attemptSignOut } from '@/lib/sign-out';
@@ -28,6 +29,8 @@ function useSignOut(): { signOut: () => void; error: string | null } {
       forgetLeavingDraft();
       // ani hláška o uložení: dalšímu účtu v tomhle panelu nepatří
       dismissFeedback();
+      // a ukládání, které ještě běží nebo čeká, se k dalšímu účtu nedostane
+      resetAutoSave();
       router.push(outcome.redirectTo);
       router.refresh();
     });

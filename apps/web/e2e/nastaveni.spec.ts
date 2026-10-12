@@ -935,7 +935,12 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   await page.goto('/nastaveni');
   await autoSaveForm(page);
   const matching = page.locator(MATCHING);
+  // server odpovídá, jen odpověď na uložení nepřišla — spojení za to nemůže
+  const unconfirmed = page.getByRole('alert').filter({ hasText: 'Uložení se nepotvrdilo.' });
   const unknown = page.getByRole('alert').filter({ hasText: 'Spojení vypadlo.' });
+  // Revize R8, M3: zámek shodí fokus na stránku; po odemčení má být zpátky na
+  // poli, kde byl — i když formulář mezitím vznikl znovu s jiným stavem.
+  await matching.focus();
   let mode: 'lost-response' | 'never-sent' = 'lost-response';
   await page.route('**/nastaveni**', async (route) => {
     const request = route.request();
@@ -949,22 +954,26 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
 
   // ── server zapsal, odpověď se ztratila: obrazovka ukáže novou volbu ─────
   await matching.selectOption('LIFO');
-  await expect(unknown).toBeVisible();
+  await expect(unconfirmed).toBeVisible();
   await autoSaveForm(page);
   await expect(matching).toHaveValue('LIFO');
+  await expect(matching).toBeFocused();
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
 
   // ── požadavek neodešel: obrazovka se vrátí na uložený stav ──────────────
   mode = 'never-sent';
   await matching.selectOption('MAX_PROFIT');
-  await expect(unknown).toBeVisible();
+  await expect(unconfirmed).toBeVisible();
   await autoSaveForm(page);
   await expect(matching).toHaveValue('LIFO');
+  await expect(matching).toBeFocused();
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
+  await expect(unknown).toHaveCount(0);
 
   // ── server není dosažitelný vůbec: formulář je zamčený a netvrdí nic ────
   await page.route('**/api/health', (route) => route.abort('connectionfailed'));
   await matching.selectOption('MAX_LOSS');
+  // zámek je ohlášený (`role="alert"`) — čtečka jinak jen přijde o pole
   await expect(unknown).toBeVisible();
   const form = page.locator('form[data-auto-submit]');
   await expect(form).toHaveAttribute('data-auto-submit', 'unsynced');
@@ -975,6 +984,7 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   await autoSaveForm(page);
   await expect(form).not.toHaveAttribute('aria-busy', 'true');
   await expect(matching).toHaveValue('LIFO');
+  await expect(matching).toBeFocused();
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
 
   // a další změna se uloží jako obvykle
@@ -982,6 +992,269 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   await matching.selectOption('FIFO');
   await expect(savedToast(page)).toBeVisible();
   await expect.poll(() => savedValue(page, MATCHING)).toBe('FIFO');
+});
+
+/** Počítá server actions stránky: kolik jich odešlo a kolik doběhlo. */
+function watchActions(page: Page): { sent: () => number; finished: () => number } {
+  let sent = 0;
+  let finished = 0;
+  const isAction = (request: { method(): string; headers(): Record<string, string> }): boolean =>
+    request.method() === 'POST' && Boolean(request.headers()['next-action']);
+  page.on('request', (request) => {
+    if (isAction(request)) sent += 1;
+  });
+  const done = (request: Parameters<typeof isAction>[0]): void => {
+    if (isAction(request)) finished += 1;
+  };
+  page.on('requestfinished', done);
+  page.on('requestfailed', done);
+  return { sent: () => sent, finished: () => finished };
+}
+
+/**
+ * Revize R8, D1 — ochrana pořadí (R7, M3) zahazovala vrácení změny. Server
+ * zapisuje jen pole jmenovaná a pole, která se liší od stavu při vykreslení;
+ * změna vrácená na původní hodnotu je vidět jen podle jména, a to neslo jen
+ * odeslání, které ji vracelo. Naměřeno 12. 10. 2026 v Chromiu i Firefoxu:
+ * párování FIFO → LIFO (akce běží), zpět na FIFO (čeká), skrytí panelu pošle
+ * vrácení cestou odchodu a to se zdrží; po návratu změna kurzů dorazí dřív,
+ * server opožděné vrácení zahodí jako starší a zůstane na LIFO — s hláškou
+ * „Uloženo“. Každé odeslání proto nese jména všech změn, které server ještě
+ * nepotvrdil (`lib/save-queue.ts`).
+ */
+test('nastavení: vrácená změna se neztratí, když ji předběhne uložení jiného pole', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Vrácení', email: 'vraceni@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const matching = page.locator(MATCHING);
+  const rates = page.locator('select[name="kurzy"]');
+  const actions = watchActions(page);
+
+  // první akce chvíli běží; uložení při odchodu visí v síti, dokud ho test nepustí
+  let releaseFirst = (): void => {};
+  const firstHeld = new Promise<void>((resolve) => (releaseFirst = resolve));
+  let releaseLeaving = (): void => {};
+  const leavingHeld = new Promise<void>((resolve) => (releaseLeaving = resolve));
+  let held = false;
+  await page.route('**/nastaveni**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST' && request.headers()['next-action'] && !held) {
+      held = true;
+      await firstHeld;
+    }
+    await route.continue().catch(() => {});
+  });
+  let leavingDone = 0;
+  await page.route('**/api/settings/profile', async (route) => {
+    await leavingHeld;
+    await route.continue().catch(() => {});
+  });
+  page.on('requestfinished', (request) => {
+    if (request.url().includes('/api/settings/profile')) leavingDone += 1;
+  });
+
+  await matching.selectOption('LIFO'); // 1: akce běží
+  await matching.selectOption('FIFO'); // 2: uživatel si to rozmyslel — čeká
+  await setVisibility(page, 'hidden'); // 2 odchází cestou odchodu a zdrží se
+  releaseFirst();
+  await expect.poll(actions.finished, { message: 'první akce má doběhnout' }).toBe(1);
+  await setVisibility(page, 'visible');
+  await expect(matching).toHaveValue('FIFO');
+  await rates.selectOption('CNB_DAILY'); // 3: jiné pole, dorazí dřív než 2
+  await expect.poll(actions.finished, { message: 'změna kurzů má doběhnout' }).toBe(2);
+  releaseLeaving();
+  await expect.poll(() => leavingDone, { message: 'opožděné vrácení má dorazit' }).toBe(1);
+
+  await autoSaveForm(page);
+  await expect(matching).toHaveValue('FIFO');
+  await expect(rates).toHaveValue('CNB_DAILY');
+  expect(await savedValue(page, MATCHING)).toBe('FIFO');
+  expect(await savedValue(page, 'select[name="kurzy"]')).toBe('CNB_DAILY');
+});
+
+/**
+ * Revize R8, D2 — server na uložení odpovídá chybou (500, zásah WAF), ale jinak
+ * běží. Rozepsaná částka se po dotažení stránky poslala znovu, to selhalo,
+ * stránka se dotáhla… 36 kol za 12 s, formulář blikal mezi zamčeným
+ * a odemčeným a hláška se ohlásila 36×. Teď: jeden pokus, jedna hláška, text
+ * zůstane v poli a odejde s další změnou, kterou člověk udělá.
+ */
+test('nastavení: po chybě serveru se uložení částky neopakuje samo', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Chyba serveru', email: 'chyba-serveru@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const actions = watchActions(page);
+  let failing = true;
+  let healthChecks = 0;
+  await page.route('**/nastaveni**', async (route) => {
+    const request = route.request();
+    if (failing && request.method() === 'POST' && request.headers()['next-action']) {
+      return route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' });
+    }
+    return route.continue().catch(() => {});
+  });
+  page.on('request', (request) => {
+    if (request.url().includes('/api/health')) healthChecks += 1;
+  });
+  // každá hláška, která se na stránce objeví (i ta, která mezitím zmizela)
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { alertsSeen: string[] }).alertsSeen = seen;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const alert = node.matches('[role="alert"]') ? node : node.querySelector('[role="alert"]');
+          if (alert?.textContent) seen.push(alert.textContent.trim());
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  const alertsSeen = (): Promise<string[]> =>
+    page.evaluate(() => (window as unknown as { alertsSeen: string[] }).alertsSeen);
+
+  const income = page.locator('#ostatni-prijmy');
+  await typeIncome(page, '4321');
+  await page.keyboard.press('Tab');
+  const unsaved = page.getByRole('alert').filter({ hasText: 'Uložení se nepovedlo.' });
+  await expect(unsaved).toBeVisible();
+  await autoSaveForm(page);
+  // dost dlouho na to, aby se dřívější smyčka otočila desetkrát
+  await page.waitForTimeout(3000);
+  expect(actions.sent(), 'uložení se má zkusit jednou').toBe(1);
+  expect(healthChecks).toBe(1);
+  expect(await alertsSeen()).toHaveLength(1);
+  // text zůstal v poli, formulář jde ovládat a fokus je tam, kam uživatel přešel
+  await expect(income).toHaveValue('4321');
+  await expect(page.locator('#obchodni-majetek')).toBeFocused();
+  expect(await savedIncome(page)).toBe('0');
+
+  // ── server už odpovídá: částka odejde s další změnou ─────────────────────
+  failing = false;
+  await page.locator(MATCHING).selectOption('LIFO');
+  await expect(savedToast(page)).toBeVisible();
+  expect(actions.sent()).toBe(2);
+  await expectIncomeSaved(page, '4321');
+  expect(await savedValue(page, MATCHING)).toBe('LIFO');
+
+  // ── a stejně tak, když se člověk do pole jen vrátí a zase ho opustí ──────
+  await autoSaveForm(page);
+  failing = true;
+  await typeIncome(page, '555');
+  await page.keyboard.press('Tab');
+  await expect(unsaved).toBeVisible();
+  await autoSaveForm(page);
+  expect(actions.sent()).toBe(3);
+  failing = false;
+  await income.focus();
+  await page.keyboard.press('Tab');
+  await expectIncomeSaved(page, '555');
+  expect(actions.sent()).toBe(4);
+});
+
+/**
+ * Revize R8, M1 — fronta auto-save žije s dokumentem, ne s přihlášením.
+ * Odeslání účtu A viselo v síti, A se odhlásil a v témže panelu se přihlásil
+ * B: formulář B ukázal volbu účtu A (jako „stav, který právě odchází“)
+ * a s další změnou ji zapsal do svého profilu. Pozdržené odeslání navíc
+ * dorazilo s cookie účtu B a server ho zapsal taky.
+ */
+test('nastavení: rozdělané uložení jednoho účtu se nedostane k dalšímu v témže panelu', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Druhý', email: 'fronta-b@danero.cz' });
+  await signOut(page);
+  await registerWithProfile(page, { name: 'E2E První', email: 'fronta-a@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const marker = await page.evaluate(() => {
+    const value = Math.random();
+    (window as unknown as { documentMarker: number }).documentMarker = value;
+    return value;
+  });
+  const saves = await holdFirstSave(page);
+  // těla odeslání formuláře nastavení (jiné akce na stránce sem nepatří)
+  const bodies: string[] = [];
+  page.on('request', (request) => {
+    const body = request.method() === 'POST' ? (request.postData() ?? '') : '';
+    if (request.headers()['next-action'] && body.includes('puvodni-stav')) bodies.push(body);
+  });
+
+  // uložení účtu A visí v síti; A se odhlásí a přihlásí se B
+  await page.locator(MATCHING).selectOption('MAX_LOSS');
+  await signOut(page);
+  await page.getByLabel('E-mail').fill('fronta-b@danero.cz');
+  await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
+  await page.getByRole('button', { name: 'Přihlásit se' }).click();
+  await page.waitForURL('**/prehled');
+  await openSettingsByLink(page);
+  expect(
+    await page.evaluate(
+      (value) => (window as unknown as { documentMarker?: number }).documentMarker === value,
+      marker,
+    ),
+    'má jít o týž dokument — jinak by fronta zanikla sama',
+  ).toBe(true);
+
+  // formulář B ukazuje stav účtu B a jeho změna nese jen to, co změnil on
+  await expect(page.locator(MATCHING)).toHaveValue('FIFO');
+  await page.locator('select[name="kurzy"]').selectOption('CNB_DAILY');
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(bodies[1]).not.toMatch(/zmenene-pole"\r\n\r\nparovani/);
+  expect(bodies[1]).toMatch(/zmenene-pole"\r\n\r\nkurzy/);
+
+  // pozdržené odeslání účtu A dorazí až teď — s cookie účtu B
+  saves.release();
+  await saves.idle();
+  await expect.poll(() => savedValue(page, 'select[name="kurzy"]')).toBe('CNB_DAILY');
+  expect(await savedValue(page, MATCHING)).toBe('FIFO');
+});
+
+/**
+ * Revize R8 (N1) — přihlášení vypršelo a formulář ukládá. Nesmí skončit
+ * zamčený s hláškou o spojení: člověk má skončit na přihlášení, ať ukládá
+ * akce, nebo požadavek při odchodu.
+ */
+test('nastavení: uložení po vypršelém přihlášení vede na přihlášení, ne k zámku', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Vypršelo', email: 'vyprselo@danero.cz' });
+  const signInAgain = async (): Promise<void> => {
+    await page.getByLabel('E-mail').fill('vyprselo@danero.cz');
+    await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
+    await page.getByRole('button', { name: 'Přihlásit se' }).click();
+    await page.waitForURL('**/prehled');
+    await page.goto('/nastaveni');
+    await autoSaveForm(page);
+  };
+  const lost = page.getByRole('alert').filter({ hasText: /Spojení vypadlo|Uložení se/ });
+
+  // ── běžné uložení (server action) ────────────────────────────────────────
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await page.context().clearCookies();
+  await page.locator(MATCHING).selectOption('LIFO');
+  await page.waitForURL('**/prihlaseni**');
+  await expect(lost).toHaveCount(0);
+
+  // ── uložení při odchodu (skrytý panel s rozepsanou částkou) ──────────────
+  await signInAgain();
+  await typeIncome(page, '4321');
+  await page.context().clearCookies();
+  const leaving = page.waitForResponse((response) =>
+    response.url().includes('/api/settings/profile'),
+  );
+  await setVisibility(page, 'hidden');
+  expect((await leaving).status()).toBe(401);
+  await page.waitForURL('**/prihlaseni**');
+  await expect(lost).toHaveCount(0);
+
+  // nic z toho se neuložilo
+  await signInAgain();
+  await expect(page.locator(MATCHING)).toHaveValue('FIFO');
+  await expect(page.locator('#ostatni-prijmy')).toHaveValue('0');
 });
 
 /**

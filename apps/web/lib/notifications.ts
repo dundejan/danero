@@ -2,8 +2,8 @@ import { and, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
-import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
-import { withoutSaveOrder } from '@/lib/form-baseline';
+import { notifications, user } from '@/db/schema';
+import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
@@ -415,10 +415,10 @@ export function summaryCandidate(args: {
 export async function getNotificationPrefs(db: Db, userId: string) {
   const [row] = await db
     .select()
-    .from(notificationPrefs)
-    .where(eq(notificationPrefs.userId, userId));
+    .from(notificationPrefData)
+    .where(eq(notificationPrefData.userId, userId));
   return (
-    (row && withoutSaveOrder(row)) ?? {
+    row ?? {
       userId,
       emailEnabled: true,
       timeTestEvents: true,
@@ -692,10 +692,10 @@ export async function processUserNotifications(
       // posunout okno digestu (lastDigestAt i u DAILY — po přepnutí na WEEKLY
       // se hned neodešle další souhrn)
       await db
-        .insert(notificationPrefs)
+        .insert(notificationPrefData)
         .values({ userId: target.id, lastDigestAt: todayDate })
         .onConflictDoUpdate({
-          target: notificationPrefs.userId,
+          target: notificationPrefData.userId,
           set: { lastDigestAt: todayDate },
         });
     }
@@ -733,6 +733,6 @@ export async function listNotificationTargets(db: Db): Promise<Array<{ id: strin
   return db
     .select({ id: user.id, email: user.email })
     .from(user)
-    .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id))
+    .innerJoin(taxpayerProfileData, eq(taxpayerProfileData.userId, user.id))
     .where(eq(user.emailVerified, true));
 }

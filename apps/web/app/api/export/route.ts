@@ -1,5 +1,4 @@
 import { and, asc, eq, gt } from 'drizzle-orm';
-import { withoutSaveOrder } from '@/lib/form-baseline';
 import { getAuth } from '@/lib/auth';
 import { getDb, type Db } from '@/db';
 import {
@@ -10,14 +9,13 @@ import {
   instrumentAliases,
   instrumentPrices,
   jobs,
-  notificationPrefs,
   notifications,
   session,
-  taxpayerProfiles,
   taxYearSettings,
   transactions,
   user,
 } from '@/db/schema';
+import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,16 +112,13 @@ async function* exportChunks(
   });
   yield line(
     'profiles',
-    (await db.select().from(taxpayerProfiles).where(eq(taxpayerProfiles.userId, userId))).map(
-      withoutSaveOrder,
-    ),
+    // bez pořadí odeslání formuláře: není to údaj uživatele (`db/settings-data.ts`)
+    await db.select().from(taxpayerProfileData).where(eq(taxpayerProfileData.userId, userId)),
   );
   // nastavení upozornění zadal uživatel sám → čl. 20 GDPR (přenositelnost)
   yield line(
     'notificationPrefs',
-    (await db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, userId))).map(
-      withoutSaveOrder,
-    ),
+    await db.select().from(notificationPrefData).where(eq(notificationPrefData.userId, userId)),
   );
 
   // kanonický model (docs/04) — payload je zdroj pravdy každé transakce.

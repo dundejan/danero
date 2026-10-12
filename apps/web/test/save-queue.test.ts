@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BASELINE_FIELD, CHANGED_FIELD, SUBMISSION_FIELD } from '@/lib/form-baseline';
+import {
+  BASELINE_FIELD,
+  CHANGED_FIELD,
+  OWNER_FIELD,
+  SUBMISSION_FIELD,
+} from '@/lib/form-baseline';
 import {
   createSaveQueue,
   saveBody,
@@ -108,7 +113,8 @@ describe('fronta ukládání', () => {
     queue.flush();
     expect(sent).toHaveLength(2);
     expect(sent[1]!.leaving).toBe(true);
-    expect(sent[1]!.job.triggers).toEqual(['b']);
+    // nese i pole z odeslání, které ještě běží — server ho zatím nepotvrdil
+    expect(sent[1]!.job.triggers).toEqual(['a', 'b']);
 
     // nic se neposílá dvakrát: po odpovědi na první už fronta nemá co odeslat
     sent[0]!.finish(saved);
@@ -124,7 +130,7 @@ describe('fronta ukládání', () => {
     queue.enqueue(job({ a: '1', b: '2' }, 'b'));
     queue.flush(job({ a: '1', b: '2', castka: '500' }, 'castka'));
     expect(sent).toHaveLength(2);
-    expect(sent[1]!.job.triggers).toEqual(['b', 'castka']);
+    expect(sent[1]!.job.triggers).toEqual(['a', 'b', 'castka']);
     expect(sent[1]!.job.data.get('castka')).toBe('500');
   });
 
@@ -172,12 +178,18 @@ describe('fronta ukládání', () => {
     queue.enqueue(job({ a: '1' }, 'a'));
     sent[3]!.fail(Object.assign(new Error('redirect'), { digest: 'NEXT_REDIRECT;replace;/prihlaseni;307;' }));
     await settle();
+    // formulář jiného účtu, než který je přihlášený, server nezapíše — stránka si stav vyžádá znovu
+    queue.enqueue(job({ a: '1' }, 'a'));
+    sent[4]!.finish({ ok: false, message: '', foreign: true });
+    await settle();
 
     expect(reports.map((report) => report.result)).toEqual([
       { kind: 'rejected', message: 'Zadej částku.', field: 'castka' },
       { kind: 'failed' },
-      { kind: 'signedOut' },
-      { kind: 'signedOut' },
+      // `redirected`: na přihlášení posílá už server (akce); jinak si stránku dotahuje prohlížeč
+      { kind: 'signedOut', redirected: false },
+      { kind: 'signedOut', redirected: true },
+      { kind: 'signedOut', redirected: false },
     ]);
   });
 
@@ -249,6 +261,12 @@ describe('tělo požadavku', () => {
     const body = saveBody({ ...job({ a: '1', [SUBMISSION_FIELD]: 'cizi.9' }, 'a'), mark: 'fronta.3' });
     expect(body.getAll(SUBMISSION_FIELD)).toEqual(['fronta.3']);
   });
+
+  it('nese označení účtu, kterému formulář patří — jen to od fronty', () => {
+    const body = saveBody({ ...job({ a: '1', [OWNER_FIELD]: 'podvrh' }, 'a'), owner: 'ucet-a' });
+    expect(body.getAll(OWNER_FIELD)).toEqual(['ucet-a']);
+    expect(saveBody(job({ a: '1' }, 'a')).has(OWNER_FIELD)).toBe(false);
+  });
 });
 
 /**
@@ -305,6 +323,133 @@ describe('pořadí odeslání', () => {
     first.enqueue(job({ a: '1' }, 'a'));
     second.enqueue(job({ a: '1' }, 'a'));
     expect(sentMarks[0]).toMatch(/^[0-9a-f-]{36}\.1$/);
+  });
+});
+
+/**
+ * Revize R8, D1: server zapisuje jen pole jmenovaná a pole, která se liší od
+ * stavu při vykreslení. Vrácení změny na původní hodnotu je proto vidět jen
+ * podle jména — a to musí nést každé další odeslání, dokud server vrácení
+ * nepotvrdí. Jinak ho pozdější odeslání jiného pole předběhne, server opožděné
+ * vrácení zahodí jako starší a zůstane na volbě, kterou si uživatel rozmyslel.
+ */
+describe('nepotvrzené změny', () => {
+  it('pozdější odeslání nese i jméno pole z odeslání, které se ještě nevrátilo', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO', kurzy: 'UNIFIED' }, 'parovani')); // 1 běží
+    queue.enqueue(job({ parovani: 'FIFO', kurzy: 'UNIFIED' }, 'parovani')); // 2 čeká
+    queue.flush(); // skrytý panel: 2 odchází cestou odchodu a zdrží se
+    sent[0]!.finish(saved);
+    await settle();
+    // návrat do panelu, jiná změna: nese i párování, které server ještě nepotvrdil
+    queue.enqueue(job({ parovani: 'FIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(sent).toHaveLength(3);
+    expect(sent[2]!.job.mark).toBe('fronta.3');
+    expect(sent[2]!.job.triggers).toEqual(['parovani', 'kurzy']);
+    expect(sent[2]!.job.data.get('parovani')).toBe('FIFO');
+  });
+
+  it('potvrzené pole už další odeslání nejmenuje', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani'));
+    sent[0]!.finish(saved);
+    await settle();
+    queue.enqueue(job({ parovani: 'LIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(sent[1]!.job.triggers).toEqual(['kurzy']);
+  });
+
+  it('odpověď potvrzuje jen změny, které odeslání neslo — pozdější změna téhož pole čeká dál', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani')); // 1 běží
+    queue.enqueue(job({ parovani: 'FIFO' }, 'parovani')); // 2 čeká
+    queue.flush(); // 2 odchází a zdrží se
+    sent[0]!.finish(saved); // potvrzena je jen změna z 1; párování se ve 2 změnilo znovu
+    await settle();
+    queue.enqueue(job({ parovani: 'FIFO', a: '1' }, 'a'));
+    expect(sent[2]!.job.triggers).toEqual(['parovani', 'a']);
+    // až odpověď na 2 (nebo na cokoli pozdějšího) párování uvolní
+    sent[2]!.finish(saved);
+    await settle();
+    queue.enqueue(job({ parovani: 'FIFO', a: '1', b: '2' }, 'b'));
+    expect(sent[3]!.job.triggers).toEqual(['b']);
+  });
+
+  it('odeslání, na které odpověď nepřišla, nepotvrzuje nic — další ho nese celé', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani'));
+    queue.enqueue(job({ parovani: 'LIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    sent[0]!.fail(new Error('síť'));
+    await settle();
+    expect(sent[1]!.job.triggers).toEqual(['parovani', 'kurzy']);
+  });
+
+  it('beacon odpověď nevrací: stránka, která žije dál, změnu pošle s další znovu', async () => {
+    const { queue, sent } = harness();
+    queue.flush(job({ castka: '500' }, 'castka'), { unloading: true });
+    sent[0]!.finish(null);
+    await settle();
+    // návrat z mezipaměti prohlížeče — formulář stojí, jak ho uživatel opustil
+    queue.enqueue(job({ castka: '500', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(sent[1]!.job.triggers).toEqual(['castka', 'kurzy']);
+  });
+
+  it('odmítnutý text se mezi nepotvrzenými nedrží', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ castka: 'abc' }, 'castka'));
+    sent[0]!.finish({ ok: false, message: 'Zadej částku.', field: 'castka' });
+    await settle();
+    queue.enqueue(job({ castka: '0', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(sent[1]!.job.triggers).toEqual(['kurzy']);
+  });
+
+  it('formulář se stavem ze serveru nepotvrzené změny zahodí — jen když nic neběží', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani'));
+    // uprostřed ukládání se nezahazuje nic
+    queue.rebase();
+    sent[0]!.fail(new Error('síť'));
+    await settle();
+    queue.enqueue(job({ parovani: 'LIFO', a: '1' }, 'a'));
+    expect(sent[1]!.job.triggers).toEqual(['parovani', 'a']);
+    sent[1]!.fail(new Error('síť'));
+    await settle();
+    // formulář si vyžádal stav ze serveru a ukazuje ho: co nedopadlo, na obrazovce není
+    queue.rebase();
+    queue.enqueue(job({ parovani: 'FIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(sent[2]!.job.triggers).toEqual(['kurzy']);
+  });
+});
+
+/**
+ * Revize R8, M1: fronta žije s dokumentem, ne s přihlášením. Odeslání účtu A,
+ * které viselo v síti, přežilo odhlášení a formulář účtu B v témže panelu
+ * převzal jeho volbu jako „stav, který právě odchází“.
+ */
+describe('odhlášení', () => {
+  it('zahozená fronta nic dalšího neodešle a výsledek toho, co je na cestě, nehlásí', async () => {
+    const { queue, sent, reports } = harness();
+    queue.enqueue(job({ parovani: 'MAX_LOSS' }, 'parovani')); // visí v síti
+    queue.enqueue(job({ parovani: 'MAX_LOSS', kurzy: 'CNB_DAILY' }, 'kurzy')); // čeká
+    queue.discard();
+    expect(queue.isDiscarded()).toBe(true);
+    expect(queue.unsettled()).toBeNull();
+    sent[0]!.finish(saved);
+    await settle();
+    // čekající odeslání by odešlo už pod přihlášením někoho jiného
+    expect(sent).toHaveLength(1);
+    expect(reports).toHaveLength(0);
+    queue.enqueue(job({ a: '1' }, 'a'));
+    queue.flush(job({ a: '2' }, 'a'));
+    expect(sent).toHaveLength(1);
+  });
+
+  it('odeslání při odchodu, které je na cestě, po zahození taky nic nehlásí', async () => {
+    const { queue, sent, reports } = harness();
+    queue.flush(job({ castka: '500' }, 'castka'));
+    queue.discard();
+    sent[0]!.finish(saved);
+    await settle();
+    expect(reports).toHaveLength(0);
   });
 });
 

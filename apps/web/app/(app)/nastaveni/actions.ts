@@ -13,12 +13,7 @@ import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
 import type { AutoSaveOutcome } from '@/lib/save-queue';
 import { authApi, requireUser } from '@/lib/session';
-import {
-  notificationPrefsOutcome,
-  profileOutcome,
-  saveNotificationPrefs,
-  saveProfile,
-} from './save';
+import { autoSaveNotificationPrefs, autoSaveProfile, saveProfile } from './save';
 
 /**
  * První uložení daňového profilu tlačítkem. Auto-save už existujícího profilu
@@ -52,7 +47,7 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
  */
 export async function autoSaveProfileAction(formData: FormData): Promise<AutoSaveOutcome> {
   const user = await requireUser();
-  return profileOutcome(await saveProfile(user.id, formData));
+  return autoSaveProfile(user.id, formData);
 }
 
 /**
@@ -319,6 +314,5 @@ export async function autoSaveNotificationPrefsAction(
   formData: FormData,
 ): Promise<AutoSaveOutcome> {
   const user = await requireUser();
-  await saveNotificationPrefs(user.id, formData);
-  return notificationPrefsOutcome();
+  return autoSaveNotificationPrefs(user.id, formData);
 }

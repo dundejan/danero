@@ -1,10 +1,11 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { notifications, taxpayerProfiles } from '@/db/schema';
+import { notifications } from '@/db/schema';
+import type { taxpayerProfileData } from '@/db/settings-data';
 import { invalidateUserCache } from '@/lib/engine-cache';
 import { loadPinnedTaxYears } from '@/lib/portfolio';
 
-type ProfileRow = typeof taxpayerProfiles.$inferSelect;
+type ProfileRow = typeof taxpayerProfileData.$inferSelect;
 
 /**
  * Změnilo se v profilu něco, co hýbe výpočtem?

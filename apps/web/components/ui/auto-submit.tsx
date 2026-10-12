@@ -1,6 +1,7 @@
 'use client';
 
 import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { onAutoSaveReset } from '@/lib/auto-save-session';
 import { readEarlyInput } from '@/lib/early-input';
 import {
   describeFocus,
@@ -42,11 +43,24 @@ type AutoSaveAction = (data: FormData) => Promise<AutoSaveOutcome>;
 type TextField = HTMLInputElement | HTMLTextAreaElement;
 
 /**
- * Když odpověď na uložení vůbec nepřišla. Neříká „neuložilo se“: požadavek
- * mohl dorazit a ztratila se jen odpověď (revize R7, M2) — co platí, ukáže
- * až stránka dotažená ze serveru.
+ * Když odpověď na uložení nepřišla a server není dosažitelný. Neříká
+ * „neuložilo se“: požadavek mohl dorazit a ztratila se jen odpověď (revize R7,
+ * M2) — co platí, ukáže až stránka dotažená ze serveru.
  */
 const SAVE_UNKNOWN = 'Spojení vypadlo. Co je uložené, ukážeme hned, jak se obnoví.';
+/**
+ * Odpověď nepřišla (nebo přišla chyba serveru), ale server odpovídá a formulář
+ * už ukazuje stav od něj.
+ */
+const SAVE_UNCONFIRMED = 'Uložení se nepotvrdilo. Formulář ukazuje, co je uložené.';
+/**
+ * Totéž, když v poli zůstal text, který se uložit nepodařilo. Stránka ho sama
+ * znovu neposílá (revize R8, D2: server odpovídal chybou a formulář ji zkoušel
+ * devětkrát za vteřinu) — odejde s další změnou, s opuštěním pole nebo stránky.
+ */
+const DRAFT_UNSAVED = 'Uložení se nepovedlo. Zkusíme to znovu s tvojí další změnou.';
+/** Za jak dlouho zamčený formulář řekne proč, i když ještě neví, jak to dopadne (ms). */
+const LOCK_NOTICE_MS = 1000;
 /** Uložilo se něco jiného, zatímco v jiném poli pořád leží odmítnutý text. */
 const OTHERS_SAVED = 'Ostatní změny jsou uložené.';
 /** Když pole s neplatným textem nemá vlastní nápovědu (`title`). */
@@ -64,10 +78,29 @@ const RETRY_MS = 4000;
 let focusHandoff: FocusHandoff | null = null;
 
 /**
+ * Formulář jednoho účtu. Všechno, co si auto-save pamatuje mimo komponentu, je
+ * vedené pod `key` — tedy zvlášť pro každý účet, který se v tomhle dokumentu
+ * vystřídá (`lib/auto-save-session.ts`).
+ */
+interface Scope {
+  key: string;
+  /** Adresa uložení formuláře. */
+  endpoint: string;
+  /** Označení účtu (`lib/owner-tag.ts`). */
+  owner: string;
+}
+
+const scopeOf = (endpoint: string, owner: string): Scope => ({
+  key: `${owner} ${endpoint}`,
+  endpoint,
+  owner,
+});
+
+/**
  * Formulář, který právě zaniká, a jméno pole, jehož rozepsaný text převzal
  * jeho nástupce. Co nikdo nepřevzal, se uloží — stránka se opouští.
  */
-let departure: { endpoint: string; resumed: string | null } | null = null;
+let departure: { key: string; resumed: string | null } | null = null;
 
 /**
  * Stav polí mimo komponentu (klíčem je prvek, takže zaniká s ním):
@@ -78,24 +111,36 @@ let departure: { endpoint: string; resumed: string | null } | null = null;
  *   opuštění pole po předávce) — hodnota, kterou do pole dal skript nebo
  *   prohlížeč, se sama neuloží nikdy;
  * - text, který server odmítl: pole je označené `aria-invalid` a tentýž text
- *   se podruhé neposílá (člověk už ví, že neprošel).
+ *   se podruhé neposílá (člověk už ví, že neprošel);
+ * - text, který už jednou odešel a odpověď na něj nepřišla (`stalled`). Sám se
+ *   znovu neposílá — jen po obnoveném spojení, a to jednou; jinak odejde
+ *   s další změnou ve formuláři, s opuštěním pole nebo stránky.
  */
 const confirmedValues = new WeakMap<Element, string>();
 const humanEdited = new WeakSet<Element>();
 const rejectedValues = new WeakMap<Element, string>();
+const stalled = new WeakSet<Element>();
 
-/** Fronty a akce podle adresy uložení: přežívají nové vykreslení i zánik formuláře. */
+/*
+ * Všechny mapy níž mají klíč `Scope.key` — formulář (adresa uložení) a účet.
+ */
+
+/** Fronty a akce: přežívají nové vykreslení i zánik formuláře. */
 const queues = new Map<string, SaveQueue>();
 const actions = new Map<string, AutoSaveAction>();
-/** Označení účtu, kterému formulář na stránce patří (`lib/owner-tag.ts`). */
-const owners = new Map<string, string>();
 /** Formuláře, které jsou právě na stránce (nástupce zanikajícího se pozná tady). */
 const liveForms = new Map<string, HTMLFormElement>();
 /** Jak formuláři na stránce říct, že jeho odeslání nedopadlo. */
 const unsavedHandlers = new Map<string, (result: SaveResult, context: SaveReportContext) => void>();
+/**
+ * Formuláře, jejichž rozepsaný text už po obnoveném spojení jednou odešel sám
+ * a nedopadl. Další pokus patří uživateli; uvolní ho uložení, které dopadne,
+ * nebo jeho další změna.
+ */
+const autoResent = new Set<string>();
 
 /**
- * Text, který server odmítl, a věta, kterou to řekl — podle adresy uložení
+ * Text, který server odmítl, a věta, kterou to řekl — podle formuláře
  * a jména pole. Mimo prvky, protože odmítnutý text musí přežít nové vykreslení
  * formuláře stejně jako rozepsaný text s fokusem: jiná změna stránku dotáhne
  * ze serveru, pole vznikne znovu s uloženou hodnotou a `aria-invalid` zmizí.
@@ -118,6 +163,19 @@ const hiddenDrafts = new Map<string, LeavingDraft>();
 
 /** Formuláře, u kterých se po ztracené odpovědi čeká na stav ze serveru. */
 const resyncing = new Set<string>();
+
+// Odhlášení: nic z toho, co tu po účtu zbylo, se nesmí dostat k dalšímu.
+// Odeslání, která jsou na cestě, doběhnou pod přihlášením, se kterým odešla —
+// jejich výsledek už ale nikdo nedostane.
+onAutoSaveReset(() => {
+  for (const queue of queues.values()) queue.discard();
+  queues.clear();
+  actions.clear();
+  autoResent.clear();
+  rejections.clear();
+  hiddenDrafts.clear();
+  focusHandoff = null;
+});
 
 /** Prvky formuláře, které přijmou fokus — pole i tlačítka vysvětlivek mezi nimi. */
 const FOCUSABLE =
@@ -176,32 +234,51 @@ function snapshot(form: HTMLFormElement): FormData {
  */
 function confirmDrafts(
   form: HTMLFormElement,
-  { except = null, validOnly = false }: { except?: string | null; validOnly?: boolean } = {},
+  {
+    except = null,
+    validOnly = false,
+    only = () => true,
+  }: {
+    except?: string | null;
+    validOnly?: boolean;
+    /** Zúží výběr na pole, která vyhoví. */
+    only?: (field: TextField) => boolean;
+  } = {},
 ): string[] {
   const names: string[] = [];
   for (const field of textFieldsOf(form)) {
-    if (!hasOwnDraft(field) || field.name === except) continue;
+    if (!hasOwnDraft(field) || field.name === except || !only(field)) continue;
     if (validOnly && !field.validity.valid) continue;
     confirm(field);
+    stalled.delete(field);
     names.push(field.name);
   }
   return names;
 }
 
+/**
+ * Rozepsaný text, který nečeká na to, až člověk pole opustí: pole už opustil
+ * (fokus mu vzal zámek formuláře), nebo text jednou odešel a odpověď nepřišla.
+ * Odejde s nejbližší další změnou. Text v poli, kde člověk právě píše, sem
+ * nepatří — ten se s cizí změnou neposílá nikdy (viz `snapshot`).
+ */
+const isOverdue = (field: TextField): boolean =>
+  stalled.has(field) || document.activeElement !== field;
+
 /** Označí pole textem, který server odmítl, a zapamatuje si ho pro další vykreslení. */
-function markRejected(endpoint: string, field: TextField, message: string): void {
+function markRejected(key: string, field: TextField, message: string): void {
   rejectedValues.set(field, field.value);
   field.setAttribute('aria-invalid', 'true');
-  const refused = rejections.get(endpoint) ?? new Map<string, { text: string; message: string }>();
+  const refused = rejections.get(key) ?? new Map<string, { text: string; message: string }>();
   refused.set(field.name, { text: field.value, message });
-  rejections.set(endpoint, refused);
+  rejections.set(key, refused);
 }
 
 /** Člověk do pole sáhl: odmítnutý text už neplatí, pole se posoudí znovu. */
-function clearRejected(endpoint: string, field: TextField): void {
+function clearRejected(key: string, field: TextField): void {
   rejectedValues.delete(field);
   field.removeAttribute('aria-invalid');
-  rejections.get(endpoint)?.delete(field.name);
+  rejections.get(key)?.delete(field.name);
 }
 
 /**
@@ -236,24 +313,75 @@ const untilRetry = (): Promise<void> =>
   });
 
 /**
+ * Kde ve formuláři je fokus. Zámek (`inert`) ho shodí na stránku a kdo ovládá
+ * klávesnicí, hledal by po odemčení místo znovu od začátku (revize R8, M3).
+ */
+function focusWithin(form: HTMLFormElement | undefined): FocusDescriptor | null {
+  const active = document.activeElement;
+  return form && active instanceof HTMLElement && form.contains(active)
+    ? describeFocus(active, focusablesOf(form))
+    : null;
+}
+
+/** Vrátí fokus, kde byl před zámkem — jen když ho mezitím nikdo nepřevzal. */
+function restoreFocus(form: HTMLFormElement, descriptor: FocusDescriptor | null): void {
+  const active = document.activeElement;
+  if (!descriptor || (active !== null && active !== document.body)) return;
+  findFocusTarget(descriptor, focusablesOf(form))?.focus({ preventScroll: true });
+}
+
+/**
  * Odpověď na uložení nepřišla, takže stránka neví, co server zapsal (revize
  * R7, M2: obrazovka se vracela na starou volbu, přestože server uložil novou).
  * Formulář se proto zamkne a stav si vyžádá ze serveru; do té doby netvrdí
  * nic. Dotažení stránky se pouští až po ověření, že server odpovídá — bez
  * spojení by ho směrovač nahradil načtením celého dokumentu a místo aplikace
  * by zbyla chybová stránka prohlížeče.
+ *
+ * HLÁŠKA. Zamčený formulář řekne proč, a to jednou: hned jak je jasné, že
+ * spojení není, jinak až s výsledkem (server odpovídá a formulář už ukazuje
+ * jeho stav), nejpozději ale za `LOCK_NOTICE_MS` — zámek beze slova je pro
+ * čtečku jen pole, které přestalo existovat.
+ *
+ * ROZEPSANÝ TEXT se po odemčení pošle znovu jen tehdy, když opravdu chybělo
+ * spojení, a jen jednou. Když server celou dobu odpovídal, vinou spojení to
+ * nebylo a další pokus by dopadl stejně: do revize R8 (D2) se tu uložení
+ * částky, na které server odpovídal chybou 500, opakovalo bez prodlevy, dokud
+ * byla stránka otevřená (36 pokusů a 36 hlášek za 12 s). Text proto zůstává
+ * v poli a odejde s další změnou, kterou člověk udělá.
  */
-async function resync(endpoint: string): Promise<void> {
-  if (resyncing.has(endpoint)) return;
-  resyncing.add(endpoint);
-  markSynced(liveForms.get(endpoint), false);
+async function resync(scope: Scope): Promise<void> {
+  const { key, owner } = scope;
+  if (resyncing.has(key)) return;
+  resyncing.add(key);
+  const locked = liveForms.get(key);
+  const focus = focusWithin(locked);
+  markSynced(locked, false);
+  const said = { anything: false };
+  const tell = (text: string): void => {
+    said.anything = true;
+    announce('chyba', text, owner);
+  };
+  const notice = setTimeout(() => tell(SAVE_UNKNOWN), LOCK_NOTICE_MS);
+  let offline = false;
   try {
-    while (!(await serverReachable())) await untilRetry();
+    while (!(await serverReachable())) {
+      if (!offline) {
+        offline = true;
+        clearTimeout(notice);
+        if (!said.anything) tell(SAVE_UNKNOWN);
+      }
+      await untilRetry();
+    }
     await refreshFromServer();
   } finally {
-    resyncing.delete(endpoint);
-    const form = liveForms.get(endpoint);
-    if (form) {
+    clearTimeout(notice);
+    resyncing.delete(key);
+    const form = liveForms.get(key);
+    if (!form) {
+      // člověk mezitím odešel jinam; co je uložené, uvidí, až se k formuláři vrátí
+      if (!said.anything) tell(SAVE_UNCONFIRMED);
+    } else {
       // Týž formulář jako před dotažením = server poslal stav, se kterým byl
       // vykreslen: nabídky a přepínače, které se neuložily, se na něj vrátí.
       // Nový formulář už uložený stav ukazuje a není co vracet.
@@ -261,63 +389,96 @@ async function resync(endpoint: string): Promise<void> {
         if (textFieldOf(control) === null) restoreServerHtml(control as unknown as FormControlState);
       }
       markSynced(form, true);
-      // rozepsaný text čekal na spojení — teď se uloží
-      const names = confirmDrafts(form);
+      // obrazovka ukazuje stav serveru — co nedopadlo, na ní není a dál se nenese
+      const queue = queueFor(scope);
+      queue.rebase();
+      restoreFocus(form, focus);
+      // Text, který čekal na spojení, se teď uloží sám — jednou. Jinak zůstává
+      // v poli a hláška říká, kdy odejde. Text v poli, kam se právě vrátil fokus
+      // a který ještě nikdy neodešel, je rozepsaný jako každý jiný: uloží se,
+      // až ho člověk opustí.
+      const names =
+        offline && !autoResent.has(key) ? confirmDrafts(form, { only: isOverdue }) : [];
       if (names.length > 0) {
-        queueFor(endpoint).enqueue({
-          data: snapshot(form),
-          triggers: names,
-          owner: owners.get(endpoint),
-        });
+        autoResent.add(key);
+        queue.enqueue({ data: snapshot(form), triggers: names, owner });
+      } else if (textFieldsOf(form).some((field) => hasOwnDraft(field) && isOverdue(field))) {
+        tell(DRAFT_UNSAVED);
+      } else if (!said.anything) {
+        tell(SAVE_UNCONFIRMED);
       }
     }
   }
 }
 
-function queueFor(endpoint: string): SaveQueue {
-  const existing = queues.get(endpoint);
-  if (existing) return existing;
+function queueFor(scope: Scope): SaveQueue {
+  const { key, endpoint, owner } = scope;
+  const existing = queues.get(key);
+  if (existing && !existing.isDiscarded()) return existing;
   // něco se uložilo a stránka to ještě neukazuje
   let unrefreshed = false;
+  // Nejvyšší číslo odeslání, na které odpověď nepřišla, a nejvyšší uložené.
+  // Ztracenou odpověď napraví jen uložené POZDĚJŠÍ odeslání (nese všechno, co
+  // server do té doby nepotvrdil); dřívější o ní neříká nic.
+  let unknownUpTo = 0;
+  let savedUpTo = 0;
   const queue = createSaveQueue({
     send: (job) => {
-      const action = actions.get(endpoint);
+      const action = actions.get(key);
       // bez akce (formulář mezitím zanikl) jde i běžné odeslání obyčejným požadavkem
       return action ? action(saveBody(job)) : fetchLeaving(endpoint, job);
     },
     sendLeaving: (job, context) => postLeaving(endpoint, job, context),
     report: (result, context) => {
-      // hláška patří účtu, jehož formulář odeslání vytvořil
-      const owner = context.job.owner ?? '';
+      const sequence = context.job.sequence ?? 0;
+      if (result.kind === 'saved') savedUpTo = Math.max(savedUpTo, sequence);
+      if (result.kind === 'failed') unknownUpTo = Math.max(unknownUpTo, sequence);
+      const unknown = unknownUpTo > savedUpTo;
       if (result.kind === 'saved') {
+        autoResent.delete(key);
         // Potvrzení jiné změny nesmí přebít odmítnutí, které pořád platí:
         // člověk by odešel s tím, že je uloženo všechno (R7, D2). Hláška proto
         // říká obojí — co se uložilo a co pořád ne.
-        const [refused] = rejections.get(endpoint)?.values() ?? [];
-        if (refused) announce('chyba', `${OTHERS_SAVED} ${refused.message}`, owner);
-        else announce('ok', result.message, owner);
+        const [refused] = rejections.get(key)?.values() ?? [];
+        // A dokud není jasné, jak dopadlo pozdější odeslání, nepotvrzuje se nic:
+        // „Uloženo“ by platilo jen pro část toho, co formulář ukazuje.
+        if (!unknown) {
+          if (refused) announce('chyba', `${OTHERS_SAVED} ${refused.message}`, owner);
+          else announce('ok', result.message, owner);
+        }
       }
-      if (result.kind === 'rejected') announce('chyba', result.message, owner);
-      if (result.kind === 'failed') announce('chyba', SAVE_UNKNOWN, owner);
+      if (result.kind === 'rejected') {
+        announce('chyba', result.message, owner);
+        unsavedHandlers.get(key)?.(result, context);
+      }
       // Stránku po uložení dotáhne ze serveru až poslední odeslání v řadě,
       // jedním dotazem (akce sama stránku nepřekresluje — vykreslila by ji po
       // každém odeslání zvlášť). Po vypršelém přihlášení tím odeslání při
       // odchodu skončí na přihlášení; akci tam přesměruje server sám.
-      unrefreshed ||= result.kind === 'saved' || (context.leaving && result.kind === 'signedOut');
-      const failedLast = result.kind === 'failed' && context.last;
-      if (context.last && unrefreshed && !failedLast) {
+      unrefreshed ||= result.kind === 'saved' || (result.kind === 'signedOut' && !result.redirected);
+      if (!context.last) return;
+      if (unknown) {
+        // Řada doběhla a o některém odeslání nevíme, jak dopadlo — ať bylo
+        // poslední, nebo ne (odchod ze stránky, který se nevrátil, zatímco starší
+        // akce doběhla v pořádku). Stav dotahuje `resync`, až když server
+        // odpovídá; bez formuláře na stránce zbývá jen to říct.
+        unknownUpTo = 0;
+        unsavedHandlers.get(key)?.({ kind: 'failed' }, context);
+        if (liveForms.has(key)) {
+          unrefreshed = false;
+          void resync(scope);
+        } else {
+          announce('chyba', SAVE_UNKNOWN, owner);
+        }
+        return;
+      }
+      if (unrefreshed) {
         unrefreshed = false;
         void refreshFromServer();
       }
-      if (result.kind !== 'saved') unsavedHandlers.get(endpoint)?.(result, context);
-      // po ztracené odpovědi dotahuje `resync` — až když server odpovídá
-      if (failedLast && liveForms.has(endpoint)) {
-        unrefreshed = false;
-        void resync(endpoint);
-      }
     },
   });
-  queues.set(endpoint, queue);
+  queues.set(key, queue);
   return queue;
 }
 
@@ -349,7 +510,9 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * které se změnilo (`CHANGED_FIELD`); server zapíše jen pole, která se liší
  * od stavu při vykreslení, a to jmenované vždy (`lib/form-baseline.ts`).
  * Odeslání řadí fronta (`lib/save-queue.ts`): jdou za sebou a změny, které
- * přijdou během ukládání, se slijí do jednoho dalšího. Ukládá server action
+ * přijdou během ukládání, se slijí do jednoho dalšího. Jméno změněného pole
+ * nese každé další odeslání, dokud server tu změnu nepotvrdí — jen tak smí
+ * starší odeslání, které dorazí pozdě, zahodit. Ukládá server action
  * `action`; výsledek ukáže hláška v rozložení aplikace
  * (`lib/save-feedback.ts`) a po posledním odeslání v řadě se stránka dotáhne
  * ze serveru. Adresa stránky se nemění a stránka neroluje: dřív uložení
@@ -395,6 +558,13 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * prázdna. Hodnoty polí se nepředávají, ty jsou vždy ze serveru; výjimka je
  * rozepsaný text.
  *
+ * KDYŽ ODPOVĚĎ NEPŘIJDE, formulář se zamkne, řekne proč a stav si vyžádá ze
+ * serveru; po odemčení vrátí fokus, kde byl. Podrobnosti u `resync`.
+ *
+ * ÚČET. Všechno, co si auto-save pamatuje, je vedené zvlášť pro každý účet
+ * (`owner`) a odhlášení to zahodí (`lib/auto-save-session.ts`); odeslání nese
+ * označení účtu a server ho pod jiným přihlášením nezapíše (`lib/owner-tag.ts`).
+ *
  * Bez JavaScriptu auto-save není — a není ani aplikace: stránka bez něj
  * ukáže jen sdělení, že ho potřebuje (`components/no-script-notice.tsx`).
  */
@@ -433,19 +603,26 @@ export function AutoSubmit({
   useLayoutEffect(() => {
     const form = ref.current?.form;
     if (!form) return;
-    actions.set(endpoint, action);
-    owners.set(endpoint, owner);
-    liveForms.set(endpoint, form);
+    const scope = scopeOf(endpoint, owner);
+    const { key } = scope;
+    const queue = queueFor(scope);
+    actions.set(key, action);
+    liveForms.set(key, form);
     // Formulář vznikl znovu uprostřed ukládání: server ho vykreslil se stavem
     // z doby před ním. Pole proto dostanou, co právě odchází — jinak by změna
     // na chvíli skočila zpátky. Odeslaný text je odeslaný, ne rozepsaný.
-    const unsettled = queueFor(endpoint).unsettled();
+    const unsettled = queue.unsettled();
     if (unsettled) {
       const controls = Array.from(form.elements) as unknown as FormControlState[];
       for (const control of applyFormValues(controls, unsettled)) {
         const field = textFieldOf(control);
         if (field) confirm(field);
       }
+    } else {
+      // Nic neběží a formulář je čerstvě ze serveru: změny, které server dřív
+      // nepotvrdil (ztracená odpověď, přihlášení mezitím vypršelo), na
+      // obrazovce nejsou a další odeslání je pod svým jménem nést nesmí.
+      queue.rebase();
     }
     // cesta z doby vzniku: při odchodu jinam už adresa může patřit nové stránce
     const { pathname } = window.location;
@@ -461,25 +638,30 @@ export function AutoSubmit({
       const field = target && document.activeElement === target ? textFieldOf(target) : null;
       if (field && handoff.descriptor.draft) {
         resumeDraft(field, handoff.descriptor.draft);
-        if (departure?.endpoint === endpoint) departure.resumed = field.name;
+        if (departure?.key === key) departure.resumed = field.name;
       }
     }
 
     // Text, který server odmítl ještě předchozímu vykreslení formuláře, se vrací
     // do pole i s označením — jen tam, kde pole od serveru nikdo nepřevzal
     // (předávka fokusu, odeslání v běhu).
-    const refused = rejections.get(endpoint);
+    const refused = rejections.get(key);
     for (const field of refused ? textFieldsOf(form) : []) {
       const entry = refused?.get(field.name);
       if (!entry || field.value !== field.defaultValue) continue;
       field.value = entry.text;
       humanEdited.add(field);
-      markRejected(endpoint, field, entry.message);
+      markRejected(key, field, entry.message);
     }
 
-    const queue = queueFor(endpoint);
     const jobFor = (triggers: string[]): SaveJob => ({ data: snapshot(form), triggers, owner });
-    const save = (triggers: string[]): void => queue.enqueue(jobFor(triggers));
+    // Změna, kterou udělal člověk. Vezme s sebou i text, který na uložení čeká
+    // (`isOverdue`) — po chybě serveru je to ten „další pokus“, který hláška slíbila.
+    const save = (triggers: string[]): void => {
+      autoResent.delete(key);
+      const overdue = confirmDrafts(form, { only: isOverdue });
+      queue.enqueue(jobFor([...new Set([...overdue, ...triggers])]));
+    };
 
     // Neplatný rozepsaný text při zavírání panelu: uložit nejde a po odchodu
     // už není kde to říct — prohlížeč se zeptá, jestli opravdu odejít.
@@ -507,7 +689,9 @@ export function AutoSubmit({
       const field = textFieldOf(event.target);
       if (!field) return;
       if (event.isTrusted) humanEdited.add(field);
-      if (rejectedValues.has(field)) clearRejected(endpoint, field);
+      // kdo text přepisuje, píše nový — ten odejde až s opuštěním pole
+      stalled.delete(field);
+      if (rejectedValues.has(field)) clearRejected(key, field);
       syncUnloadGuard();
     };
     const onChange = (event: Event): void => {
@@ -527,7 +711,7 @@ export function AutoSubmit({
     const onFocusOut = (event: FocusEvent): void => {
       const field = textFieldOf(event.target);
       // dokud se čeká na stav ze serveru, nic se neposílá (text se uloží po něm)
-      if (!field || !hasOwnDraft(field) || resyncing.has(endpoint)) return;
+      if (!field || !hasOwnDraft(field) || resyncing.has(key)) return;
       confirm(field);
       syncUnloadGuard();
       save([field.name]);
@@ -558,19 +742,19 @@ export function AutoSubmit({
                   .map((field) => [field.name, { from: field.defaultValue, text: field.value }]),
               ),
             }
-          : hiddenDrafts.get(endpoint);
+          : hiddenDrafts.get(key);
       if (!note) return;
       if (unloading) {
-        hiddenDrafts.delete(endpoint);
+        hiddenDrafts.delete(key);
         rememberLeavingDraft({ ...note, at: Date.now() });
       } else {
-        hiddenDrafts.set(endpoint, note);
+        hiddenDrafts.set(key, note);
       }
     };
     // Stránka žije dál (panel je zase vidět, návrat z mezipaměti prohlížeče):
     // poznámka pro F5 patřila odchodu, který nenastal.
     const alive = (): void => {
-      hiddenDrafts.delete(endpoint);
+      hiddenDrafts.delete(key);
       forgetLeavingDraft();
     };
     const onPageHide = (): void => leave(true);
@@ -592,7 +776,7 @@ export function AutoSubmit({
         for (const field of textFieldsOf(form)) {
           if (field.name !== result.field || confirmedValues.get(field) !== sent) continue;
           confirmedValues.delete(field);
-          if (field.value === sent) markRejected(endpoint, field, result.message);
+          if (field.value === sent) markRejected(key, field, result.message);
         }
         syncUnloadGuard();
         // Server odmítl formulář celý. Ostatní změny, které šly s neplatným textem,
@@ -609,10 +793,15 @@ export function AutoSubmit({
         if (stale && last && (rest.length > 0 || othersChanged)) save(rest);
       }
       if (result.kind === 'failed' && last) {
-        // Odpověď nepřišla. Text zůstává rozepsaný (uloží se, až bude spojení);
-        // nabídky a přepínače nechává být — co z nich platí, řekne až server
-        // (`resync`), do té doby je formulář zamčený.
-        for (const field of textFieldsOf(form)) confirmedValues.delete(field);
+        // Odpověď nepřišla. Text, který s odesláním odešel, je zase rozepsaný
+        // a pamatuje si, že už jednou neuspěl (`stalled`); nabídky a přepínače
+        // nechává být — co z nich platí, řekne až server (`resync`), do té
+        // doby je formulář zamčený.
+        for (const field of textFieldsOf(form)) {
+          if (!confirmedValues.has(field)) continue;
+          confirmedValues.delete(field);
+          if (hasDraft(field)) stalled.add(field);
+        }
         syncUnloadGuard();
       }
     };
@@ -624,7 +813,7 @@ export function AutoSubmit({
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
     document.addEventListener('visibilitychange', onVisibilityChange);
-    unsavedHandlers.set(endpoint, onUnsaved);
+    unsavedHandlers.set(key, onUnsaved);
     // jednou: vývojový režim Reactu pouští efekt dvakrát a druhé odeslání by
     // se s prvním pralo
     if (hydratedFromServer.current) {
@@ -664,7 +853,7 @@ export function AutoSubmit({
     }
     syncUnloadGuard();
     // formulář vzniklý uprostřed čekání na stav ze serveru zůstává zamčený
-    markSynced(form, !resyncing.has(endpoint));
+    markSynced(form, !resyncing.has(key));
     return () => {
       form.removeEventListener('input', onInput);
       form.removeEventListener('change', onChange);
@@ -674,9 +863,9 @@ export function AutoSubmit({
       window.removeEventListener('pageshow', onPageShow);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('beforeunload', onBeforeUnload);
-      if (unsavedHandlers.get(endpoint) === onUnsaved) unsavedHandlers.delete(endpoint);
+      if (unsavedHandlers.get(key) === onUnsaved) unsavedHandlers.delete(key);
       form.removeAttribute(READY_ATTRIBUTE);
-      if (liveForms.get(endpoint) === form) liveForms.delete(endpoint);
+      if (liveForms.get(key) === form) liveForms.delete(key);
       const active = document.activeElement;
       if (active instanceof HTMLElement && form.contains(active)) {
         const field = textFieldOf(active);
@@ -692,23 +881,41 @@ export function AutoSubmit({
       // Buď formulář vznikne znovu na téže stránce (uložení ji vykreslilo
       // znovu) a rozepsaný text převezme, nebo se stránka opouští a text je
       // potřeba uložit. Nástupce vzniká v témže vykreslení — po něm je jasno.
-      const leaving = { endpoint, resumed: null as string | null };
+      const leaving = { key, resumed: null as string | null };
       departure = leaving;
       queueMicrotask(() => {
         if (departure === leaving) departure = null;
         // vývojový režim Reactu efekt zkusmo uklidí a pustí znovu — formulář stojí dál
         if (form.isConnected) return;
-        const names = confirmDrafts(form, { except: leaving.resumed });
+        const successor = liveForms.get(key);
+        // Text, jehož uložení nedopadlo, se s novým vykreslením formuláře sám
+        // neposílá (viz `resync`): nástupce ho převezme jako rozepsaný — pokud
+        // mu server mezitím neposlal totéž (pak uložený je) a pokud do pole
+        // nikdo nesáhl.
+        const heirs = successor ? textFieldsOf(successor) : [];
+        for (const field of successor ? textFieldsOf(form) : []) {
+          if (!stalled.has(field) || !hasOwnDraft(field) || field.name === leaving.resumed) continue;
+          const heir = heirs.find((candidate) => candidate.name === field.name);
+          if (!heir || heir.value !== heir.defaultValue || heir.value === field.value) continue;
+          heir.value = field.value;
+          humanEdited.add(heir);
+          stalled.add(heir);
+        }
+        const names = confirmDrafts(form, {
+          except: leaving.resumed,
+          only: (field) => !successor || !stalled.has(field),
+        });
         const job = names.length > 0 ? jobFor(names) : undefined;
-        const queue = queueFor(endpoint);
+        // fronta podle toho, co platí teď — odhlášení tu původní mezitím zahodilo
+        const current = queueFor(scope);
         // s nástupcem fronta pokračuje sama; bez něj se stránka opouští
-        if (liveForms.has(endpoint)) {
-          if (job) queue.enqueue(job);
+        if (successor) {
+          if (job) current.enqueue(job);
         } else {
-          queue.flush(job);
+          current.flush(job);
           // odmítnutý text ani text ze skrytého panelu se na jinou stránku nenese
-          rejections.delete(endpoint);
-          hiddenDrafts.delete(endpoint);
+          rejections.delete(key);
+          hiddenDrafts.delete(key);
         }
       });
     };
