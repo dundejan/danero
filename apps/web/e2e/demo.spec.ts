@@ -311,3 +311,45 @@ test('onboarding: registrace → průvodce → profil → výzva k datům', asyn
   await page.getByRole('link', { name: 'Nahrát výpisy' }).click();
   await page.waitForURL('**/import');
 });
+
+/**
+ * Sheet v úzkém okně jde táhnout i myší. První tah titulek sheetu označil
+ * a druhé chycení za označený text vzal prohlížeč jako přetahování textu:
+ * sheet se nepohnul a ve WebKitu zůstal „v ruce“ — nešel zavřít klávesou ani
+ * klepnutím mimo (změřeno 11. 10. 2026 v Chromiu, Firefoxu i WebKitu).
+ */
+test('sheet: jde myší chytit opakovaně a pak zavřít klávesou', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/demo/prehled');
+  await (await hydrated(page.getByRole('button', { name: /^Limit paušální daně/ }))).click();
+  const dialog = page.getByRole('dialog', { name: /^Limit paušální daně — / });
+  await expect(dialog).toBeVisible();
+  const panel = dialog.locator('.material-sheet');
+  // sheet přijíždí pružinou — měří se, až stojí
+  await (await panel.elementHandle())?.waitForElementState('stable');
+  const rest = (await panel.boundingBox())!;
+  const x = rest.x + rest.width / 2;
+  const top = async () => Math.round((await panel.boundingBox())!.y - rest.y);
+
+  // první tah za úchyt: kousek dolů, ukazatel zastaví a pustí — sheet se vrátí
+  await page.mouse.move(x, rest.y + 12);
+  await page.mouse.down();
+  for (let step = 1; step <= 4; step += 1) await page.mouse.move(x, rest.y + 12 + step * 10);
+  expect(await top()).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  await page.mouse.up();
+  await expect.poll(top).toBe(0);
+  // tah po sobě nenechal označený text
+  expect(await page.evaluate(() => window.getSelection()?.toString().trim() ?? '')).toBe('');
+
+  // druhý tah za titulek: sheet ho zase sleduje (nahoru s odporem)
+  await page.mouse.move(x, rest.y + 44);
+  await page.mouse.down();
+  for (let step = 1; step <= 7; step += 1) await page.mouse.move(x, rest.y + 44 - step * 6);
+  expect(await top()).toBeLessThan(0);
+  await page.mouse.up();
+  await expect.poll(top).toBe(0);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});

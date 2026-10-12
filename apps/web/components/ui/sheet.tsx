@@ -40,6 +40,13 @@ const MOMENTUM_THRESHOLD = 100;
 const EXIT_SLACK = 4;
 
 /**
+ * Úchyt a hlavička jsou místo, za které se sheet táhne — jako titulek okna,
+ * ne text k označení. Myš by při tahu titulek označila a další chycení za
+ * označený text by prohlížeč vzal jako přetahování textu (viz `onDragStart`).
+ */
+const GRIP = 'select-none';
+
+/**
  * Spodní sheet (mobil): jediné místo v aplikaci se skutečně tažitelnou
  * plochou, a proto jediné místo s gesty.
  *
@@ -352,6 +359,13 @@ export function Sheet({
         }}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onDragStart={(event) => {
+          // Chycený sheet nesmí prohlížeč vyměnit za přetahování označeného
+          // textu: tah by skončil `pointercancel` a sheet se nepohnul, a WebKit
+          // neposlal ani to — sheet zůstal „v ruce“ a nešel zavřít klávesou
+          // ani klepnutím mimo (změřeno 11. 10. 2026 ve všech třech jádrech).
+          if (drag.current) event.preventDefault();
+        }}
         onClickCapture={(event) => {
           if (!suppressClick.current) return;
           suppressClick.current = false;
@@ -369,11 +383,19 @@ export function Sheet({
       >
         {/* úchyt: říká, že plochu jde stáhnout — s omezeným pohybem stáhnout
             nejde, tak ho neslibujeme (odstup shora zůstává) */}
-        <div aria-hidden className="flex h-6 shrink-0 touch-none items-center justify-center">
+        <div
+          aria-hidden
+          className={cn('flex h-6 shrink-0 touch-none items-center justify-center', GRIP)}
+        >
           {!reducedMotion && <span className="h-1 w-9 rounded-full bg-ink-muted/50" />}
         </div>
         {title && (
-          <div className="flex shrink-0 touch-none items-center justify-between gap-4 px-5 pb-3">
+          <div
+            className={cn(
+              'flex shrink-0 touch-none items-center justify-between gap-4 px-5 pb-3',
+              !reducedMotion && GRIP,
+            )}
+          >
             <h2 className="type-title-3 min-w-0 flex-1 text-balance wrap-anywhere">{title}</h2>
             <button
               type="button"
