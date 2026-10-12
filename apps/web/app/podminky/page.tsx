@@ -1,5 +1,9 @@
 import Link from 'next/link';
-import { MarketingPage } from '@/components/marketing-page';
+import { Prose } from '@/components/guide-article';
+import { LongRead, PROSE_ANCHORS, type ContentsItem } from '@/components/long-read';
+import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
+import { TextLink } from '@/components/ui/link';
 import { OPERATOR } from '@/lib/contact';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { yearList } from '@/lib/format';
@@ -17,21 +21,30 @@ export const metadata = {
     'Práva a povinnosti při užívání Danera: co služba dělá a nedělá, že je zdarma, a jak je to s odpovědností — srozumitelně a bez kliček.',
 };
 
+/**
+ * Obsah stránky: kotvy článků. Titulky opakují nadpisy níž slovo od slova —
+ * znění podmínek se tu nemění, jen se v něm dá skočit na článek.
+ */
+const CONTENTS: ContentsItem[] = [
+  { id: 'co-danero-je', title: '1. Co Danero je (a co není)' },
+  { id: 'rozsah', title: '2. Na co se tyhle podmínky vztahují' },
+  { id: 'cena', title: '3. Cena a rozsah služby' },
+  { id: 'provoz-a-vystupy', title: '4. Co Danero potřebuje k provozu a co z něj vypadne' },
+  { id: 'ukonceni', title: '5. Jak dlouho to trvá a jak skončit' },
+  { id: 'ucet-a-data', title: '6. Tvůj účet a data' },
+  { id: 'odpovednost', title: '7. Odpovědnost' },
+  { id: 'kontakt', title: '8. Provozovatel a kontakt' },
+  { id: 'spory', title: '9. Když se neshodneme' },
+  { id: 'zmeny', title: '10. Rozhodné právo a změny podmínek' },
+];
+
 export default function TermsPage() {
   return (
     <MarketingPage>
-      <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
-      <div>
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
-          Právní
-        </p>
-        <h1 className="mt-3 font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
-          Podmínky užití
-        </h1>
-      </div>
-
-      <section className="space-y-3 text-sm leading-relaxed">
-        <h2 className="font-display text-lg font-semibold">1. Co Danero je (a co není)</h2>
+      <PageHero eyebrow="Právní" title="Podmínky užití" />
+      <LongRead contents={CONTENTS}>
+      <Prose className={PROSE_ANCHORS}>
+        <h2 id="co-danero-je">1. Co Danero je (a co není)</h2>
         <p>
           Danero je výpočetní a evidenční nástroj pro sledování daňových dopadů investic
           fyzických osob v ČR. Výpočty vycházejí ze zveřejněné metodiky (zákon
@@ -41,13 +54,13 @@ export default function TermsPage() {
           daňového přiznání odpovídá vždy poplatník.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">
+        <h2 id="rozsah">
           2. Na co se tyhle podmínky vztahují
         </h2>
         <p>
           Danero jsou dvě věci a je dobré je nesměšovat:
         </p>
-        <ul className="list-disc space-y-2 pl-5">
+        <ul>
           <li>
             <strong>Služba na danero.cz</strong>, kterou provozuje níže uvedený
             provozovatel. Na ni se vztahují tyhle podmínky i všechna tvoje spotřebitelská
@@ -57,7 +70,7 @@ export default function TermsPage() {
             <strong>Software Danero</strong>, jehož zdrojový kód je veřejný pod licencí{' '}
             <a
               href="https://www.gnu.org/licenses/agpl-3.0.html"
-              className="font-medium text-ruzova-text"
+             
               target="_blank"
               rel="noreferrer"
             >
@@ -76,7 +89,7 @@ export default function TermsPage() {
           ni nic z toho, co slibujeme tady.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">3. Cena a rozsah služby</h2>
+        <h2 id="cena">3. Cena a rozsah služby</h2>
         {/*
           Verze 3.0 (8. 10. 2026): placené tarify zanikly. Do verze 2.4 tu byla
           cena, závazek aktualizací jako protiplnění ročního hlídání (E-3-09)
@@ -87,8 +100,8 @@ export default function TermsPage() {
           <strong>Danero je zdarma, a to celé</strong> — všechny funkce, bez časového
           omezení a bez platební karty. Placená verze neexistuje. Co všechno služba
           umí, popisuje stránka{' '}
-          <Link href="/cenik" className="font-medium text-ruzova-text">
-            Ceník
+          <Link href="/cenik">
+            Proč zdarma
           </Link>
           .
         </p>
@@ -124,11 +137,11 @@ export default function TermsPage() {
           rozhodnutí je na tobě, ale podklad k němu dostaneš.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">
+        <h2 id="provoz-a-vystupy">
           4. Co Danero potřebuje k provozu a co z něj vypadne
         </h2>
         <p>Ať víš předem, s čím Danero funguje a co si z něj odneseš:</p>
-        <ul className="list-disc space-y-2 pl-5">
+        <ul>
           <li>
             <strong>Co potřebuješ:</strong> běžný webový prohlížeč v aktuální verzi
             (Chrome, Firefox, Safari, Edge) a připojení k internetu. Nic se neinstaluje —
@@ -154,7 +167,7 @@ export default function TermsPage() {
           </li>
         </ul>
 
-        <h2 className="font-display text-lg font-semibold">5. Jak dlouho to trvá a jak skončit</h2>
+        <h2 id="ukonceni">5. Jak dlouho to trvá a jak skončit</h2>
         {/*
           Do verze 2.4 tu byly placené objednávky a 14denní odstoupení (§ 1829
           a násl. OZ) se samostatnou stránkou /odstoupeni. Bez plateb není od
@@ -167,7 +180,7 @@ export default function TermsPage() {
           takže není co vracet ani doplácet.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">6. Tvůj účet a data</h2>
+        <h2 id="ucet-a-data">6. Tvůj účet a data</h2>
         <p>
           Účet je osobní a nepřenosný. Do aplikace vkládej pouze data ke svým vlastním
           investičním účtům (případně účtům, ke kterým máš oprávnění). API klíče brokerů
@@ -177,7 +190,7 @@ export default function TermsPage() {
           všech svých dat.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">7. Odpovědnost</h2>
+        <h2 id="odpovednost">7. Odpovědnost</h2>
         <p>
           Danero počítá podle zveřejněné metodiky z dat, která do něj vložíš nebo která
           načteme z tvého brokera. Neodpovídáme za výsledek, pokud vstupní data nebyla
@@ -189,7 +202,7 @@ export default function TermsPage() {
           je vůbec).
         </p>
 
-        <h2 id="kontakt" className="font-display text-lg font-semibold">
+        <h2 id="kontakt">
           8. Provozovatel a kontakt
         </h2>
         {/* § 435 OZ: podnikatel uvádí na webu jméno, sídlo a IČO. Danero je sice
@@ -219,7 +232,7 @@ export default function TermsPage() {
             </>
           )}{' '}
           Připomínky a chyby posílej na{' '}
-          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+          <a href={`mailto:${OPERATOR.email}`}>
             {OPERATOR.email}
           </a>
           {OPERATOR.phone ? (
@@ -227,7 +240,7 @@ export default function TermsPage() {
               , telefon{' '}
               <a
                 href={`tel:${OPERATOR.phone.replace(/\s/g, '')}`}
-                className="font-medium text-ruzova-text"
+               
               >
                 {OPERATOR.phone}
               </a>
@@ -236,7 +249,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">9. Když se neshodneme</h2>
+        <h2 id="spory">9. Když se neshodneme</h2>
         <p>
           Nejrychlejší cesta je napsat mi — snažím se každý problém vyřešit napřímo.
           Pokud se nedohodneme a jsi spotřebitel, můžeš se obrátit na Českou obchodní
@@ -244,7 +257,7 @@ export default function TermsPage() {
           {ADR.address},{' '}
           <a
             href={`https://${ADR.web}`}
-            className="font-medium text-ruzova-text"
+           
             target="_blank"
             rel="noreferrer"
           >
@@ -253,7 +266,7 @@ export default function TermsPage() {
           ; návrh jde podat online na{' '}
           <a
             href={`https://${ADR.online}`}
-            className="font-medium text-ruzova-text"
+           
             target="_blank"
             rel="noreferrer"
           >
@@ -262,7 +275,7 @@ export default function TermsPage() {
           .
         </p>
 
-        <h2 className="font-display text-lg font-semibold">10. Rozhodné právo a změny podmínek</h2>
+        <h2 id="zmeny">10. Rozhodné právo a změny podmínek</h2>
         <p>
           Tyto podmínky se řídí právem České republiky; případné spory řeší české soudy.
           Podmínky můžeme v přiměřeném rozsahu upravit — třeba když se změní zákon nebo
@@ -286,7 +299,7 @@ export default function TermsPage() {
           něj i{' '}
           <a
             href={PREVIOUS_TERMS_URL}
-            className="font-medium text-ruzova-text"
+           
             target="_blank"
             rel="noreferrer"
           >
@@ -294,18 +307,23 @@ export default function TermsPage() {
           </a>{' '}
           — kde by pro tebe bylo výhodnější, použije se ono.
         </p>
-      </section>
+      </Prose>
 
-      <p className="text-xs text-inkoust-tlumeny">
-        Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+      <p className="type-footnote mt-12 border-t border-line/70 pt-6 text-ink-muted">
+        {typeset(
+          <>
+            Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+          </>,
+        )}
       </p>
 
-      <p className="text-sm">
-        <Link href="/" className="font-medium text-ruzova-text">
+      {/* samostatný odkaz, ne odkaz ve větě: na dotyku má 44 px na výšku */}
+      <p className="type-callout mt-4">
+        <TextLink href="/" className="inline-flex min-h-11 items-center md:min-h-0">
           ← Zpět na úvod
-        </Link>
+        </TextLink>
       </p>
-      </div>
+      </LongRead>
     </MarketingPage>
   );
 }

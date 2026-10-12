@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { IBKR_FLEX_XML } from '../test/ibkr-data.mjs';
-import { registerWithProfile } from './helpers';
+import {
+  importHistory,
+  importHistoryRow,
+  openDisclosure,
+  registerWithProfile,
+  uploadStatement,
+} from './helpers';
 
 /**
  * Akceptace G2: import IBKR end-to-end — připojení Flex tokenu, sync jako
@@ -14,30 +20,34 @@ test('IBKR: připojení Flex → sync jako job → rekonciliace → ruční XML 
 
   // ── připojení IBKR na stránce Zdroje dat (mock přijme cokoli) ───────────
   await page.goto('/import');
-  await page.getByLabel('Token Flex Web Service').fill('e2e-flex-token-1234');
-  await page.getByLabel('Query ID').fill('654321');
-  await page.locator('#ibkr').getByRole('button', { name: 'Připojit' }).click();
+  // formulář na token je za řádkem brokera — zavřený řádek je jen jméno
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  const connect = await openDisclosure(brokers, 'Interactive Brokers');
+  await connect.getByLabel('Token Flex Web Service').fill('e2e-flex-token-1234');
+  await connect.getByLabel('Query ID').fill('654321');
+  await connect.getByRole('button', { name: 'Připojit' }).click();
 
   // ── sync jako background job ────────────────────────────────────────────
-  await expect(page.locator('#ibkr').getByText('Připojeno.')).toBeVisible();
-  await page.getByRole('button', { name: 'Synchronizovat', exact: true }).click();
+  const account = page.locator('#ibkr');
+  await expect(account.getByText('Připojeno.')).toBeVisible();
+  await account.getByRole('button', { name: 'Synchronizovat', exact: true }).click();
 
   // dokončení: rekonciliace proti OpenPositions sedí, batch je v historii
-  await expect(page.getByText(/Pozice sedí s Interactive Brokers/)).toBeVisible({
+  await expect(account.getByText(/Pozice sedí s Interactive Brokers/)).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText(/ibkr-flex-.*\.xml/)).toBeVisible();
-  await expect(page.getByText('3 nové · 0 duplicit')).toBeVisible();
+  const synced = importHistory(page)
+    .getByRole('listitem')
+    .filter({ hasText: /ibkr-flex-.*\.xml/ });
+  await expect(synced).toContainText('3 nové · 0 duplicit');
 
   // ── ruční nahrání téhož XML: vše duplicitní ─────────────────────────────
-  await page.locator('input[name="soubory"]').setInputFiles({
+  await uploadStatement(page, {
     name: 'ibkr-rucni.xml',
     mimeType: 'text/xml',
     buffer: Buffer.from(IBKR_FLEX_XML, 'utf8'),
   });
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(page.getByText('ibkr-rucni.xml')).toBeVisible();
-  await expect(page.getByText('0 nových · 3 duplicity')).toBeVisible();
+  await expect(importHistoryRow(page, 'ibkr-rucni.xml')).toContainText('0 nových · 3 duplicity');
 
   // dashboard po syncu ukazuje data (dividenda + prodej 2026)
   await page.goto('/prehled');

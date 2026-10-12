@@ -80,15 +80,51 @@ export interface TaxYearConfig {
 }
 
 /**
- * Základní sleva na poplatníka podle § 35ba odst. 1 písm. a) — od ZO 2022 do
- * dnešního dne **30 840 Kč** (zák. č. 609/2020 Sb. ji zvedl z 27 840 Kč a od té
- * doby se nezměnila; tiskopis DPFDP7 ji na ř. 64 vyžaduje přesně).
+ * R-14g: základní sleva na poplatníka podle § 35ba odst. 1 písm. a) ZDP —
+ * částka platná OD uvedeného zdaňovacího období, od nejnovější.
  *
- * Není součástí `TaxYearConfig` schválně: engine z ní nic nepočítá, používá ji
- * jen text varování `SEPARATE_16A_CREDIT_LOSS` (R-07i) a generátor XML na ř. 64.
- * Až se změní, patří sem — a runbook (R-14) na ni pak musí ukázat.
+ * - od ZO 2022: **30 840 Kč** (zák. č. 609/2020 Sb., čl. XI bod 63, účinný
+ *   od 1. 1. 2022 podle čl. XLVIII písm. c)),
+ * - ZO 2021: **27 840 Kč** (čl. XI bod 62; podle čl. XII bodu 20 se použije
+ *   „již pro zdaňovací období roku 2021“),
+ * - ZO 2012–2020: **24 840 Kč** (částka, kterou bod 62 nahrazuje).
+ *
+ * Starší roky v tabulce schválně nejsou: rok 2011 měl slevu dočasně sníženou
+ * a částky před ním jsme proti Sbírce neověřili — `taxpayerCreditCzk` pro ně
+ * vrací `null` a volající řekne „nevím“ (stejný princip jako R-15a).
+ *
+ * Do 11. 10. 2026 tu stála jediná konstanta 30 840 Kč pro každý rok: report
+ * za rok 2021 tak radil zapsat na ř. 64 o 3 000 Kč víc a za rok 2020 a starší
+ * o 6 000 Kč víc, než kolik zákon dával.
  */
-export const TAXPAYER_CREDIT_CZK = '30840';
+const TAXPAYER_CREDIT_FROM_YEAR: ReadonlyArray<readonly [fromYear: number, amountCzk: string]> = [
+  [2022, '30840'],
+  [2021, '27840'],
+  [2012, '24840'],
+];
+
+/** První zdaňovací období, pro které slevu na poplatníka známe (R-14g). */
+export const FIRST_TAXPAYER_CREDIT_YEAR = Math.min(
+  ...TAXPAYER_CREDIT_FROM_YEAR.map(([fromYear]) => fromYear),
+);
+
+/**
+ * Základní sleva na poplatníka za zdaňovací období `year` (R-14g), nebo `null`
+ * pro rok, jehož částku neznáme.
+ *
+ * Není součástí `TaxYearConfig` schválně: sleva stojí v zákoně pevnou částkou
+ * a platí i pro roky mimo registr (R-15b), kdežto `TaxYearConfig` se pro ně
+ * skládá ze šablony cizího roku — pole v konfiguraci by tak rok 2021 zdědil
+ * od roku 2024. Rok za posledním řádkem tabulky dědí poslední částku; novela,
+ * která ji změní, sem přidá řádek (runbook, krok 3).
+ *
+ * Engine ze slevy daň nepočítá (orientační daň je před slevami) — používá ji
+ * text varování `SEPARATE_16A_CREDIT_LOSS` (R-07i), ř. 64 v reportu a generátor
+ * XML.
+ */
+export function taxpayerCreditCzk(year: number): string | null {
+  return TAXPAYER_CREDIT_FROM_YEAR.find(([fromYear]) => year >= fromYear)?.[1] ?? null;
+}
 
 export const TAX_YEAR_2025: TaxYearConfig = {
   year: 2025,

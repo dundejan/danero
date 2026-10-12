@@ -2,48 +2,60 @@
 
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { flushSync } from 'react-dom';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 
 const MODES = [
-  { key: 'system', icon: '○', label: 'Podle systému' },
-  { key: 'light', icon: '☀', label: 'Světlý' },
-  { key: 'dark', icon: '☾', label: 'Tmavý' },
+  { key: 'system', label: 'Podle systému' },
+  { key: 'light', label: 'Světlý' },
+  { key: 'dark', label: 'Tmavý' },
 ] as const;
 
 /**
- * Přepínač vzhledu (H4): tři stavy systém/světlý/tmavý přes next-themes.
+ * Přepínač vzhledu: tři stavy systém/světlý/tmavý přes next-themes.
  * mounted-guard: server nezná uložené téma, aktivní stav se ukáže až po
- * hydrataci (jinak hydration mismatch). `withLabels` ukáže vedle ikon i text
- * (v Nastavení) — samotné glyfy vysvětluje jen title/aria-label.
+ * hydrataci (jinak hydration mismatch).
+ *
+ * Popisky jsou všude stejné („Podle systému / Světlý / Tmavý“) — dřív měl
+ * přepínač v patičce dema zkrácené „Auto“ a tentýž prvek se na dvou místech
+ * jmenoval jinak.
+ *
+ * Změna vzhledu stránku prolne (150 ms, `::view-transition` v globals.css):
+ * skok z bílé do černé je náraz jasu. S omezeným pohybem a v prohlížeči, který
+ * přechody pohledů neumí, se přepne rovnou.
  */
-export function ThemeToggle({ withLabels = false }: { withLabels?: boolean }) {
+export function ThemeToggle({
+  className,
+}: {
+  className?: string;
+}) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const active = mounted ? (theme ?? 'system') : null;
+  const active = mounted ? (theme ?? 'system') : '';
+
+  const change = (key: string) => {
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (still || typeof document.startViewTransition !== 'function') {
+      setTheme(key);
+      return;
+    }
+    document.startViewTransition(async () => {
+      flushSync(() => setTheme(key));
+      // třídu `.dark` přepíná next-themes až v efektu — snímek nového stavu
+      // se smí pořídit teprve po něm
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
 
   return (
-    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Vzhled aplikace">
-      {MODES.map((mode) => (
-        <button
-          key={mode.key}
-          type="button"
-          aria-label={mode.label}
-          title={mode.label}
-          aria-pressed={active === mode.key}
-          onClick={() => setTheme(mode.key)}
-          className={cn(
-            'flex items-center justify-center rounded-md text-sm',
-            withLabels ? 'gap-1.5 px-3 py-1.5' : 'h-7 w-7',
-            active === mode.key
-              ? 'bg-pozadi font-semibold text-ruzova-text'
-              : 'text-inkoust-tlumeny hover:text-inkoust',
-          )}
-        >
-          <span aria-hidden>{mode.icon}</span>
-          {withLabels && <span>{mode.label}</span>}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Vzhled aplikace"
+      value={active}
+      onChange={change}
+      segments={MODES.map((mode) => ({ key: mode.key, label: mode.label }))}
+      fit="content"
+      className={className}
+    />
   );
 }

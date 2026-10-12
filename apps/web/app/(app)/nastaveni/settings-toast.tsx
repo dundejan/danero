@@ -2,12 +2,13 @@ import { Toast } from '@/components/toast';
 import { COMMON_PASSWORD_MESSAGE } from '@/lib/password-strength';
 
 /**
- * Potvrzení a chyby obou stránek nastavení na jednom místě — akce v
- * `actions.ts` posílají kód v `?ok=` / `?chyba=` a která stránka ho zobrazí,
- * je na cíli přesměrování. Toast plave, protože po auto-save uprostřed dlouhé
- * stránky musí být potvrzení vidět bez ohledu na pozici scrollu.
+ * Potvrzení a chyby stránek nastavení na jednom místě. Akce s přesměrováním
+ * (`actions.ts`) posílají kód v `?ok=` / `?chyba=` a která stránka ho zobrazí,
+ * je na cíli přesměrování; auto-save adresu nemění a text si bere odsud přímo
+ * (`save.ts`). Toast plave, protože po uložení uprostřed dlouhé stránky musí
+ * být potvrzení vidět bez ohledu na pozici scrollu.
  */
-const OK_LABELS: Record<string, string> = {
+const OK_LABELS = {
   heslo: 'Heslo změněno. Ostatní zařízení byla odhlášena.',
   email:
     'E-mail změněn. Poslali jsme na novou adresu ověřovací odkaz — potvrď ho, jinak se příště nepřihlásíš.',
@@ -15,9 +16,14 @@ const OK_LABELS: Record<string, string> = {
   profil: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
   notifikace: 'Uloženo. E-maily se řídí novým nastavením.',
   fixace: 'Fixace zrušená. Rok se zase počítá podle nastavení v profilu.',
-};
+} as const satisfies Record<string, string>;
 
-const CHYBA_LABELS: Record<string, string> = {
+/** Text potvrzení podle kódu — pro auto-save, který ho ukazuje bez adresy. */
+export function settingsOkText(code: keyof typeof OK_LABELS): string {
+  return OK_LABELS[code];
+}
+
+const ERROR_LABELS: Record<string, string> = {
   heslo: 'Nové heslo musí mít aspoň 10 znaků.',
   'heslo-bezne': `${COMMON_PASSWORD_MESSAGE} Heslo se nezměnilo.`,
   'heslo-spatne': 'Současné heslo nesedí — heslo se nezměnilo.',
@@ -31,27 +37,50 @@ const CHYBA_LABELS: Record<string, string> = {
   'heslo-limit': 'Moc pokusů o změnu hesla po sobě — zkus to prosím za pět minut.',
   'email-limit': 'Moc pokusů o změnu e-mailu po sobě — zkus to prosím za pět minut.',
   'smazani-limit': 'Moc pokusů o smazání účtu po sobě — zkus to prosím za pět minut.',
+  // selhání, které není ve vyplněných údajích — za špatné heslo se nevydává
+  'heslo-selhalo': 'Heslo se teď nepodařilo změnit, chyba je na naší straně — zkus to prosím za chvíli.',
+  'smazani-selhalo':
+    'Účet se teď nepodařilo smazat, chyba je na naší straně — zkus to prosím za chvíli.',
   fixace: 'Fixaci se nepodařilo zrušit — zkus to prosím znovu.',
   rezim: 'Vyber svůj daňový režim — podle něj Danero pozná, který limit ti má hlídat.',
   prijmy:
-    'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Nastavení se zatím neuložilo.',
+    'Další zdanitelné příjmy zadej jako částku v korunách — třeba 12000 nebo 12000,50. Takhle se neuloží.',
 };
 
-export function SettingsToast({ ok, chyba }: { ok?: string; chyba?: string }) {
+/** Text chyby podle kódu z adresy — pro hlášku přímo u pole (stránka účtu). */
+export function settingsErrorText(code: string): string {
+  return ERROR_LABELS[code] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.';
+}
+
+export function SettingsToast({
+  ok,
+  chyba,
+  inline = false,
+}: {
+  ok?: string;
+  chyba?: string;
+  /** Chybu stránka ukazuje u pole, kterého se týká — toast ji neopakuje. */
+  inline?: boolean;
+}) {
   return (
     <>
-      {chyba && (
+      {chyba && !inline && (
         <Toast
           // klíč per render: po dalším uložení se toast musí remountnout,
           // jinak by visible=false z minula potvrzení skrylo
           key={crypto.randomUUID()}
           kind="chyba"
           floating
-          text={CHYBA_LABELS[chyba] ?? 'Formulář se nepodařilo uložit. Zkontroluj vyplněné hodnoty.'}
+          text={settingsErrorText(chyba)}
         />
       )}
-      {ok && OK_LABELS[ok] && (
-        <Toast key={crypto.randomUUID()} kind="ok" floating text={OK_LABELS[ok]} />
+      {ok && ok in OK_LABELS && (
+        <Toast
+          key={crypto.randomUUID()}
+          kind="ok"
+          floating
+          text={OK_LABELS[ok as keyof typeof OK_LABELS]}
+        />
       )}
     </>
   );

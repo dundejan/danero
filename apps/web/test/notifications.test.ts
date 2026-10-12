@@ -5,6 +5,7 @@ import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/s
 import { filingDeadlines } from '@danero/engine';
 import { czDate } from '@/lib/format';
 import { importCsvText } from '@/lib/import-service';
+import { LIMIT_NAME, limitWithAmount } from '@/lib/limit-names';
 import {
   getNotificationPrefs,
   listNotificationTargets,
@@ -53,7 +54,8 @@ describe('notifikace (in-memory PGlite)', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toBe('notify@danero.cz');
     expect(sent[0]!.text).toContain('AAPL');
-    expect(sent[0]!.text).toContain('50 000');
+    // částku píše `czk()` s pevnou mezerou
+    expect(sent[0]!.text).toMatch(/50\s000/);
     expect(sent[0]!.text).toContain('daňové poradenství');
 
     // druhý běh týž den: nic nového, žádný e-mail (idempotence)
@@ -236,7 +238,7 @@ describe('měřák limitu, na který není nárok, se hlídačem neposílá (K6b
       today: '2026-07-20',
       period: '2026-07',
     });
-    expect(bez.body).toContain('limit 100 000 Kč pro osvobození prodejů');
+    expect(bez.body).toContain(`${LIMIT_NAME.SECURITIES}: `);
 
     const sMajetkem = summaryCandidate({
       result: analyzeTaxYear(engineInputForUser(txs, profil({ hasBusinessAssets: true }), 2026)),
@@ -245,7 +247,7 @@ describe('měřák limitu, na který není nárok, se hlídačem neposílá (K6b
       today: '2026-07-20',
       period: '2026-07',
     });
-    expect(sMajetkem.body).not.toContain('limit 100 000 Kč pro osvobození prodejů');
+    expect(sMajetkem.body).not.toContain(LIMIT_NAME.SECURITIES);
   });
 
   it('v roce bez krypto osvobození (2024) se neposílá ani krypto stovka', async () => {
@@ -454,7 +456,8 @@ describe('nastavitelné e-maily (H3)', () => {
     expect(outcome.created).toBeGreaterThanOrEqual(3); // TT30 + limity 50k a 100k
     expect(outcome.emailed).toBe(2); // jen limity
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.text).toContain('50 000');
+    // částku píše `czk()` s pevnou mezerou
+    expect(sent[0]!.text).toMatch(/50\s000/);
     expect(sent[0]!.text).not.toContain('splní tříletý časový test');
 
     const rows = await db.select().from(notifications).where(eq(notifications.userId, 'u5'));
@@ -988,7 +991,7 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
     // titulek nese DEN, ne období: přehled odchází první den období a nesl by
     // jinak název měsíce, který ještě nezačal
     expect(souhrny[0]!.title).toBe('Přehled k 20. 7. 2026');
-    expect(souhrny[0]!.body).toContain('limit 100 000 Kč pro osvobození prodejů');
+    expect(souhrny[0]!.body).toContain(`${LIMIT_NAME.SECURITIES}: `);
 
     // druhý běh v témž měsíci nic nepřidá, další měsíc ano
     await processUserNotifications(db, target, { send, today: '2026-07-25' });
@@ -1173,7 +1176,8 @@ describe('naléhavost a formulace podle skutečnosti, ne podle škatulky', () =>
     }).find((c) => c.dedupeKey.startsWith('limit|100k|'));
 
     expect(event).toBeDefined();
-    expect(event!.title).toContain('Prolomen');
+    // osvobození se „zruší“ (limit „prolomí“) — hlavně ne předstih „Skoro vyčerpáno“
+    expect(event!.title).toMatch(/^Zrušeno /);
     expect(event!.type).toBe('LIMIT_EXCEEDED');
     expect(event!.urgent).toBe(true);
     // klíč nese hranici, která se ozvala — nižší, protože 100 % uživatel nechce
@@ -1268,7 +1272,8 @@ describe('název limitu vedlejších příjmů nese částku z konfigurace roku 
         today: `${year}-07-20`,
       }).find((candidate) => candidate.dedupeKey.startsWith('limit|20k|'));
 
-      expect(event?.title).toBe(`Blížíš se: limit ${czk(limit)} vedlejších příjmů`);
+      expect(event?.title).toBe(`Blížíš se: ${limitWithAmount('EMPLOYEE_SIDE_INCOME', limit)}`);
+      expect(event?.title).toContain(czk(limit));
       // titulek a věta o čerpání nesmí jmenovat dvě různé částky
       expect(event?.body).toContain(`z ${czk(limit)} (${year})`);
     });
@@ -1286,7 +1291,10 @@ describe('název limitu vedlejších příjmů nese částku z konfigurace roku 
         period: `${year}-07`,
       });
 
-      expect(summary.body).toContain(`limit ${czk(limit)} vedlejších příjmů: `);
+      // jméno limitu a hned za ním čerpání s částkou limitu toho roku
+      expect(summary.body).toMatch(
+        new RegExp(`${LIMIT_NAME.EMPLOYEE_SIDE_INCOME}: [^.]* z ${czk(limit)} `),
+      );
     });
   }
 });
@@ -1361,7 +1369,7 @@ describe('hlídač vede i limit pro podání přiznání v režimu „Jiné“ (
         dedupeKey: `limit|filing50k|EXCEEDED|${year}`,
         type: 'LIMIT_EXCEEDED',
         urgent: true,
-        title: `Prolomen limit ${czk(limit)} pro podání přiznání`,
+        title: `Prolomen ${limitWithAmount('GENERAL_FILING', limit)}`,
       });
       // titulek a věta o čerpání nesmí jmenovat dvě různé částky
       expect(event?.body).toContain(`z ${czk(limit)} (${year})`);
@@ -1382,25 +1390,27 @@ describe('hlídač vede i limit pro podání přiznání v režimu „Jiné“ (
         period: `${year}-07`,
       });
 
-      expect(summary.body).toContain(`limit ${czk(limit)} pro podání přiznání: `);
+      expect(summary.body).toContain(`${LIMIT_NAME.GENERAL_FILING}: `);
       expect(summary.body).toContain(`z ${czk(limit)} (${pct(131)})`);
     });
   }
 
   it('pásma čerpání fungují jako u paušálu: 60 % a 85 % dají předstih', async () => {
-    const { czk } = await import('@/lib/format');
-
     const warning = await limitEvents('JINE', 2026, '0.66');
     expect(warning.events.map((event) => [event.dedupeKey, event.type, event.urgent])).toEqual([
       ['limit|filing50k|WARNING|2026', 'LIMIT_WARNING', false],
     ]);
-    expect(warning.events[0]!.title).toBe(`Za polovinou: limit ${czk(warning.limit)} pro podání přiznání`);
+    expect(warning.events[0]!.title).toBe(
+      `Za polovinou: ${limitWithAmount('GENERAL_FILING', warning.limit)}`,
+    );
 
     const critical = await limitEvents('JINE', 2026, '0.87');
     expect(critical.events.map((event) => [event.dedupeKey, event.type, event.urgent])).toEqual([
       ['limit|filing50k|CRITICAL|2026', 'LIMIT_CRITICAL', false],
     ]);
-    expect(critical.events[0]!.title).toBe(`Blížíš se: limit ${czk(critical.limit)} pro podání přiznání`);
+    expect(critical.events[0]!.title).toBe(
+      `Blížíš se: ${limitWithAmount('GENERAL_FILING', critical.limit)}`,
+    );
     expect(critical.events[0]!.body).toContain('přes 85 %');
 
     // pod nejnižší hranicí hlídač mlčí

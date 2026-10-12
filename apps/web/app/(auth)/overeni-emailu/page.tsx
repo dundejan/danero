@@ -1,8 +1,8 @@
 import { headers } from 'next/headers';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Logo } from '@/components/logo';
+import { FormPage } from '@/components/form-page';
 import { ResendVerificationForm } from '@/components/resend-verification-form';
+import { TextLink } from '@/components/ui/link';
 import { getAuth } from '@/lib/auth';
 import { emailDeliveryConfigured } from '@/lib/email';
 
@@ -35,59 +35,50 @@ export default async function VerifyEmailPage({
   // spadne), a stránka přitom tvrdila „poslali jsme ti odkaz“. Čte se při
   // požadavku — v Dockeru proměnné při buildu nejsou.
   const deliveryConfigured = emailDeliveryConfigured();
+  const address = email ? (
+    <>
+      {' '}
+      na <span className="break-all text-ink">{email}</span>
+    </>
+  ) : null;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
-      <div>
-        <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
-          <Logo className="text-lg" />
-        </Link>
-        <h1 className="font-display text-3xl font-bold">
-          {error
-            ? 'Odkaz už neplatí'
-            : deliveryConfigured
-              ? 'Potvrď svůj e-mail'
-              : 'Ověřovací odkaz se neodeslal'}
-        </h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
-          {error ? (
-            <>Ověřovací odkaz vypršel nebo už byl použitý. Nech si poslat nový.</>
-          ) : !deliveryConfigured ? (
-            <>
-              Tahle instance Danera nemá nastavené odesílání e-mailů, takže odkaz
-              {email ? ` na ${email}` : ''} neodešel. Účet půjde potvrdit, až ho nastaví ten, kdo ji
-              provozuje.
-            </>
+    <FormPage
+      title={
+        error
+          ? 'Odkaz už neplatí'
+          : deliveryConfigured
+            ? 'Potvrď svůj e-mail'
+            : 'Ověřovací odkaz se neodeslal'
+      }
+      lede={
+        error ? (
+          <>Ověřovací odkaz vypršel nebo už byl použitý.</>
+        ) : !deliveryConfigured ? (
+          <>
+            Tahle instance Danera nemá nastavené odesílání e-mailů, takže odkaz{address} neodešel.
+            Účet půjde potvrdit, až ho nastaví ten, kdo ji provozuje.
+          </>
+        ) : (
+          <>Poslali jsme ti odkaz{address}. Platí 24 hodin.</>
+        )
+      }
+      footer={<TextLink href="/prihlaseni">Zpátky na přihlášení</TextLink>}
+    >
+      {!error && (
+        <p className="type-footnote mb-3 text-pretty text-ink-muted">
+          {deliveryConfigured ? (
+            <>Nepřišel? Zkontroluj spam.</>
           ) : (
             <>
-              Poslali jsme ti odkaz{email ? ` na ${email}` : ''}. Klikni na něj a jsi uvnitř —
-              odkaz platí 24 hodin.
+              Provozuješ ji ty? Nastav proměnnou RESEND_API_KEY (postup je v návodu k vlastní
+              instanci, docs/16-selfhosting.md), spusť aplikaci znovu a nech si odkaz poslat
+              tlačítkem níž.
             </>
           )}
         </p>
-      </div>
-
+      )}
       <ResendVerificationForm defaultEmail={email} deliveryConfigured={deliveryConfigured} />
-
-      <p className="text-xs leading-relaxed text-inkoust-tlumeny">
-        {deliveryConfigured ? (
-          <>
-            Nepřišel? Zkontroluj spam. Potvrzení chceme proto, že na tuhle adresu ti budou chodit
-            upozornění na limity a termíny — a taky obnova hesla, kdybys ho zapomněl.
-          </>
-        ) : (
-          <>
-            Provozuješ ji ty? Nastav proměnnou RESEND_API_KEY (postup je v návodu k vlastní
-            instanci, docs/16-selfhosting.md), spusť aplikaci znovu a nech si odkaz poslat
-            tlačítkem výš.
-          </>
-        )}
-      </p>
-      <p className="text-sm text-inkoust-tlumeny">
-        <Link href="/prihlaseni" className="font-medium text-ruzova-text">
-          Zpátky na přihlášení
-        </Link>
-      </p>
-    </main>
+    </FormPage>
   );
 }

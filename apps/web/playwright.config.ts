@@ -15,6 +15,48 @@ const MOCK_PORT = 3211;
 /** Sdílené s e2e/helpers.ts — relativní k apps/web, kde běží server i testy. */
 export const EMAIL_LOG = '.data/e2e-emails.log';
 
+/**
+ * Prohlížeč, ve kterém sada poběží. Výchozí (a jediný v CI) je Chromium;
+ * Firefox a WebKit (jádro Safari) vybírá `E2E_BROWSER` — a pouštějí se
+ * v kontejneru, ne na stroji:
+ *
+ *   scripts/e2e-docker.sh firefox
+ *   scripts/e2e-docker.sh webkit
+ *
+ * (Proč kontejner: „Známé zrady“ v CLAUDE.md — WebKit puštěný ve WSL lokálně
+ * nejspíš shodil celý stroj.)
+ *
+ * Běh je vždy jen v jednom prohlížeči — scénáře si zakládají účty v jedné
+ * databázi a dva projekty za sebou by se praly o tytéž e-maily.
+ */
+const BROWSER_PROJECTS = {
+  chromium: { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  firefox: {
+    name: 'firefox',
+    use: {
+      ...devices['Desktop Firefox'],
+      // Záznam bez snímků DOM: se zapnutým snímáním se ve Firefoxu stránka
+      // vrácená z historie (Zpět na dokument z mezipaměti) nedohydratuje —
+      // skořápka ano, obsah už ne, na kterékoli stránce aplikace (změřeno
+      // 12. 10. 2026: se snímky 4 ze 4, bez nich ani jednou; ostatní části
+      // záznamu vliv nemají). Je to souhra nástroje s prohlížečem, ne vada
+      // aplikace, ale test návratu Zpět na ní padal pokaždé.
+      trace: { mode: 'retain-on-failure', snapshots: false },
+    },
+  },
+  webkit: { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+} as const;
+
+type E2eBrowser = keyof typeof BROWSER_PROJECTS;
+
+const requestedBrowser = process.env.E2E_BROWSER || 'chromium';
+if (!Object.hasOwn(BROWSER_PROJECTS, requestedBrowser)) {
+  throw new Error(
+    `E2E_BROWSER=${requestedBrowser} neznám — vyber z: ${Object.keys(BROWSER_PROJECTS).join(', ')}`,
+  );
+}
+const E2E_BROWSER = requestedBrowser as E2eBrowser;
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
@@ -28,7 +70,7 @@ export default defineConfig({
     baseURL: `http://localhost:${APP_PORT}`,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [BROWSER_PROJECTS[E2E_BROWSER]],
   webServer: [
     {
       command: 'node e2e/t212-mock-server.mjs',

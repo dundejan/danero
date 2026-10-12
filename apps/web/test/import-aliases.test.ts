@@ -86,10 +86,16 @@ const savedAliases = async (): Promise<Record<string, string>> => {
   return Object.fromEntries(rows.map((row) => [`${row.broker}|${row.symbol}`, row.isin]));
 };
 
-/** Stránka /import jako HTML — tak, jak ji dostane prohlížeč bez JavaScriptu. */
+/**
+ * Stránka /import jako HTML — tak, jak ji dostane prohlížeč bez JavaScriptu.
+ * Hlášky sází `typeset()` (pevné mezery za předložkami a u čísel); test hlídá
+ * znění, ne druh mezer, takže je vrací na obyčejné.
+ */
 async function renderImportPage(params: Record<string, string | string[]> = {}): Promise<string> {
   const { default: ImportPage } = await import('@/app/(app)/import/page');
-  return renderToStaticMarkup(await ImportPage({ searchParams: Promise.resolve(params) }));
+  return renderToStaticMarkup(
+    await ImportPage({ searchParams: Promise.resolve(params) }),
+  ).replaceAll(' ', ' ');
 }
 
 /** Atributy všech `<input>` na stránce (pořadí atributů v HTML není zaručené). */
@@ -289,7 +295,8 @@ describe('číselník: přepis ISIN u symbolu s uloženými transakcemi (L23-02)
     expect(await loadTransactions(stav.db, 'u1')).toHaveLength(stored.length);
 
     const html = await renderImportPage({ chyba: 'isin-pouzity' });
-    expect(html).toContain('vrať import zpět');
+    // vrácení je v historii až po rozbalení řádku — hláška to říká (R5-07)
+    expect(html).toContain('rozbal ten import a vrať ho zpět');
   });
 
   it('změna jen měny u titulu s transakcemi neprojde — i měna je v otisku obchodu', { timeout: 60_000 }, async () => {

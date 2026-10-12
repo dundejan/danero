@@ -1,5 +1,6 @@
 import { FIRST_CONFIGURED_TAX_YEAR, LAST_CONFIGURED_TAX_YEAR } from '@danero/engine';
-import { Card, CardTitle } from '@/components/ui/card';
+import { Disclosure } from '@/components/ui/disclosure';
+import { Notice } from '@/components/ui/notice';
 import { isConfiguredTaxYear } from '@/lib/tax-config';
 
 /**
@@ -8,8 +9,9 @@ import { isConfiguredTaxYear } from '@/lib/tax-config';
  *
  * Do 31. 8. 2026 se konfigurace neznámého roku odvozovala recyklací posledního
  * známého, takže aplikace mlčky počítala daň loňskými čísly (nález K1-01).
- * Dneska o tom poctivě řekne „nevím“ — a tahle karta je to místo, kde se to
- * dozví člověk. Musí splnit troje: nesmí vypadat jako chyba (hlídání běží dál),
+ * Dneska o tom poctivě řekne „nevím“ — a tohle sdělení je to místo, kde se to
+ * dozví člověk. Vidět je titulek a jedna věta o dopadu; celé vysvětlení se
+ * rozbalí pod ním. Musí splnit troje: nesmí vypadat jako chyba (hlídání běží dál),
  * musí říct, CO přesně tím pádem chybí, a musí přiznat, že odhad daně vychází
  * spíš nižší než skutečnost.
  *
@@ -29,17 +31,21 @@ export function TaxYearConfigNotice({
   if (isConfiguredTaxYear(year)) return null;
   const ahead = year > LAST_CONFIGURED_TAX_YEAR;
   return (
-    <Card className="space-y-2 border-jantar bg-jantar/5">
-      <CardTitle>
-        {ahead
+    <Notice
+      tone="caution"
+      title={
+        ahead
           ? `Pro rok ${year} ještě neznáme dvě státem vyhlašovaná čísla`
-          : `Pro rok ${year} nemáme dvě čísla, která se vyhlašují na každý rok zvlášť`}
-      </CardTitle>
-      <p className="text-sm text-inkoust-tlumeny">
+          : `Pro rok ${year} nemáme dvě čísla, která se vyhlašují na každý rok zvlášť`
+      }
+    >
+      <p>Hlídání limitů běží dál, jen odhad daně je méně přesný.</p>
+      <Disclosure summary="Co to znamená" className="[&_p+p]:mt-2">
+      <p>
         Není to chyba tvých dat a hlídání běží dál: prodeje, limit 100 000 Kč, limit
         50 000 Kč i tříletý časový test na nich nestojí a počítají se normálně.
       </p>
-      <p className="text-sm text-inkoust-tlumeny">
+      <p>
         Chybí <strong>hranice, nad kterou se z výdělku platí vyšší daň</strong>.{' '}
         {ahead
           ? `Tu vyhlašuje vláda nařízením, a to až na podzim ${year}.`
@@ -59,17 +65,18 @@ export function TaxYearConfigNotice({
         )}
       </p>
       {ahead ? (
-        <p className="text-sm text-inkoust-tlumeny">
+        <p>
           Jakmile obě čísla vyjdou, doplníme je a všechno se přepočítá samo — nemusíš
           dělat nic. Podklady k přiznání za rok {year} se stejně podávají až v roce{' '}
           {year + 1}.
         </p>
       ) : (
-        <p className="text-sm text-inkoust-tlumeny">
+        <p>
           U takhle starého roku to obvykle nevadí: hranici vyšší daně překročí jen velmi
           vysoký výdělek. Pokud se tě týká, napiš nám a čísla za ten rok doplníme.
         </p>
       )}
-    </Card>
+      </Disclosure>
+    </Notice>
   );
 }

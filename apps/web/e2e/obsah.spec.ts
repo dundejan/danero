@@ -7,7 +7,7 @@ test('/jak-pocitame a průvodce se vykreslí s obsahem', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
     'Každé pravidlo má svůj paragraf',
   );
-  await expect(page.getByText('Sporné výklady přiznáváme')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sporné výklady přiznáváme' })).toBeVisible();
 
   await page.goto('/pruvodce');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -18,7 +18,7 @@ test('/jak-pocitame a průvodce se vykreslí s obsahem', async ({ page }) => {
 
 test('/bezpecnost je dostupná', async ({ page }) => {
   await page.goto('/bezpecnost');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Bereme to vážně');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Co se děje s tvými daty');
   await expect(page.getByText('API klíče jen pro čtení', { exact: true })).toBeVisible();
 });
 
@@ -33,7 +33,7 @@ test('otevřený kód: odkaz v patičce, sekce na /o-projektu i /bezpecnost', as
   await expect(odkaz).toHaveAttribute('href', 'https://github.com/dundejan/danero');
 
   await page.goto('/o-projektu');
-  await expect(page.getByText('Danero si můžeš přečíst.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Danero si můžeš přečíst' })).toBeVisible();
 
   await page.goto('/bezpecnost');
   await expect(page.getByText('Nemusíš nám věřit — můžeš si to přečíst')).toBeVisible();
@@ -56,21 +56,44 @@ test('podmínky oddělují službu danero.cz od softwaru pod AGPL', async ({ pag
   await expect(page.getByText('Do veřejných issue nikdy nevkládej výpis od brokera')).toBeVisible();
 });
 
-test('menu a patička: 4 položky menu, kalkulačka žije v patičce', async ({ page }) => {
+test('menu a patička: 4 položky menu, zbytek žije v patičce', async ({ page }) => {
   await page.goto('/');
-  // menu po zeštíhlení (12. 7.): Platformy · Ceník · Časté otázky · O projektu
-  const nav = page.locator('header nav');
-  for (const label of ['Platformy', 'Ceník', 'Časté otázky', 'O projektu']) {
-    await expect(nav.getByRole('link', { name: label })).toBeVisible();
-  }
-  await expect(nav.getByRole('link', { name: 'Kalkulačka' })).toHaveCount(0);
+  // lišta: Platformy · Kalkulačka · Proč zdarma · Časté otázky — právě tyhle
+  // čtyři a v tomhle pořadí (vedle nich jen přihlášení a výzva do dema)
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Hlavní navigace' });
+  await expect(nav.getByRole('link')).toHaveText([
+    'Platformy',
+    'Kalkulačka',
+    'Proč zdarma',
+    'Časté otázky',
+    'Přihlásit se',
+    'Vyzkoušet demo',
+  ]);
+  // „O projektu“ z lišty vypadlo — jediná garantovaná cesta je patička
+  await expect(nav.getByRole('link', { name: 'O projektu' })).toHaveCount(0);
+  const footer = page.locator('footer');
+  await expect(footer.getByRole('link', { name: 'O projektu' })).toHaveAttribute(
+    'href',
+    '/o-projektu',
+  );
+  // výhrada je v patičce krátký odkaz na článek podmínek se závazným zněním
+  await expect(footer.getByRole('link', { name: 'Není daňové poradenství' })).toHaveAttribute(
+    'href',
+    '/podminky#co-danero-je',
+  );
 
-  // jediná garantovaná cesta ke kalkulačce je patička
-  await page.locator('footer').getByRole('link', { name: 'Kalkulačka' }).click();
+  // kalkulačka je v liště i v patičce; patička vede na tutéž stránku
+  await footer.getByRole('link', { name: 'Kalkulačka' }).click();
   await page.waitForURL('**/kalkulacka');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
     'Musím kvůli investicím podat daňové přiznání?',
   );
+  await expect(
+    page
+      .getByRole('banner')
+      .getByRole('navigation', { name: 'Hlavní navigace' })
+      .getByRole('link', { name: 'Kalkulačka' }),
+  ).toHaveAttribute('aria-current', 'page');
 });
 
 test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
@@ -80,19 +103,36 @@ test('/platformy a /cenik se vykreslí s obsahem', async ({ page }) => {
 
   await page.goto('/cenik');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  // jeden tarif a je zdarma — žádná cena, kterou by šlo zaplatit
+  // žádný tarif a žádná cena, kterou by šlo zaplatit
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Danero je zdarma');
-  await expect(page.getByText('0 Kč', { exact: true })).toBeVisible();
-  await expect(page.getByText(/\b[49]90 Kč/)).toHaveCount(0);
-  // v jediném seznamu je i to, co dřív bylo placené
-  const features = page.getByLabel('Cena a obsah');
-  await expect(features.getByText('Import výpisů — neomezeně platforem')).toBeVisible();
+  await expect(
+    page.getByText('Bez placené verze, bez zkušební doby a bez karty.'),
+  ).toBeVisible();
+  await expect(page.getByText(/\b[49]90\sKč/)).toHaveCount(0);
+  // pět důvodů, proč je zdarma — každý s odkazem, kde si ho ověřit
+  await expect(
+    page.getByRole('list', { name: 'Proč je Danero zdarma' }).getByRole('listitem'),
+  ).toHaveCount(5);
+  // v jediném výčtu je i to, co dřív bylo placené — výčet funkcí je za
+  // rozbalením, na stránce je vidět až po klepnutí
+  const features = page.locator('details').filter({
+    has: page.getByRole('heading', { name: 'Co všechno Danero umí' }),
+  });
+  await expect(features.getByText('Výpisy z více platforem najednou')).toBeHidden();
+  await features.locator('summary').click();
+  await expect(features.getByText('Výpisy z více platforem najednou')).toBeVisible();
   await expect(features.getByText(/XML pro elektronické podání/)).toBeVisible();
-  await expect(features.getByText('Živé napojení na Trading 212, IBKR i Lynx')).toBeVisible();
+  // obyčejnými slovy: celé jméno brokera, žádná zkratka
+  await expect(
+    features.getByText('Živé napojení na Trading 212, Interactive Brokers a Lynx'),
+  ).toBeVisible();
+  // spojovník v „E-mailová“ je obyčejný — nezlomitelný (U+2011) nenašlo
+  // hledání v prohlížeči a tenhle řetězec by na něm neprošel
   await expect(features.getByText('E-mailová upozornění na limity a termíny')).toBeVisible();
   // Sekce o příspěvku se vykreslí jen s nastaveným účtem nebo odkazem
   // (lib/support.ts). Tahle sada je nemá — a bez nich nesmí web o peníze žádat.
-  await expect(page.getByRole('heading', { name: 'Chceš přispět na provoz?' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Příspěvek na provoz' })).toHaveCount(0);
+  await expect(page.getByText(/přisp[ěí]v/i)).toHaveCount(0);
 });
 
 /**
@@ -111,7 +151,7 @@ test('podmínky: zdarma, bez objednávek, se starým zněním na dosah', async (
   await expect(page.getByRole('heading', { name: /Placené objednávky/ })).toHaveCount(0);
 
   // přechodné ustanovení: verze, datum a odkaz na předchozí znění
-  await expect(page.getByText(/Verze 3\.0 · účinnost od 8\. října 2026/)).toBeVisible();
+  await expect(page.getByText(/Verze\s3\.0\s·\súčinnost\sod\s8\.\sříjna\s2026/)).toBeVisible();
   const previousTerms = page.getByRole('link', { name: 'předchozí znění 2.4' });
   await expect(previousTerms).toHaveAttribute('href', /placene-tarify/);
 
@@ -125,9 +165,13 @@ test('podmínky: zdarma, bez objednávek, se starým zněním na dosah', async (
  */
 test('landing: hlídací e-maily nejsou podmíněné placeným tarifem', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText(/při 60, 85 a 100 % ti přijde e-mail/)).toBeVisible();
-  await expect(page.getByText(/e-mail ti přijde 30 a 7 dní předem/)).toBeVisible();
+  // obojí říká třetí krok „Jak začít“ jednou větou; text prochází českou sazbou,
+  // takže mezery mohou být pevné — spojovník v „E-mail“ je ale obyčejný
+  const steps = page.getByRole('region', { name: 'Jak začít' });
+  await expect(steps.getByText(/E-mail\spošle\spři\s60,\s85\sa\s100\s%\slimitu/)).toBeVisible();
+  await expect(steps.getByText(/30\sa\s7\sdní\spřed\sosvobozením/)).toBeVisible();
   await expect(page.getByText(/celoročním hlídáním/)).toHaveCount(0);
+  await expect(page.getByText(/tarif/i)).toHaveCount(0);
 });
 
 /**
@@ -139,18 +183,18 @@ test('FAQ: cena popsaná pravdivě, EPO taky', async ({ page }) => {
 
   const cena = page.locator('details', { hasText: 'Kolik Danero stojí?' });
   await cena.locator('summary').click();
-  await expect(cena.getByText(/Danero je zdarma celé/)).toBeVisible();
+  await expect(cena.getByText('Danero je zdarma celé')).toBeVisible();
   // příspěvek nesmí vypadat jako cena za něco
-  await expect(cena.getByText(/nic se tím neodemyká/)).toBeVisible();
+  await expect(cena.getByText('nic se tím neodemyká')).toBeVisible();
 
   const epo = page.locator('details', { hasText: 'ověřeno zkušební podatelnou EPO' });
   await epo.locator('summary').click();
   // Hlídá se PODSTATA, ne formulace: posíláme vzorky (ne uživatelovo XML)
   // a děláme to automaticky. Doslovné znění se mění — dřív tenhle test spadl
   // jen kvůli přeformulování věty, přestože tvrzení zůstalo pravdivé.
-  await expect(epo.getByText(/Posíláme jí vzorová podání/)).toBeVisible();
-  await expect(epo.getByText(/automaticky při každé změně kódu/)).toBeVisible();
+  await expect(epo.getByText('Posíláme jí vzorová podání')).toBeVisible();
+  await expect(epo.getByText('automaticky při každé změně kódu')).toBeVisible();
   // nesmí se vrátit slib, že se ověřuje KAŽDÉ uživatelovo XML — to není pravda
   await expect(page.getByText('Každou vygenerovanou písemnost XML tam ověřujeme')).toHaveCount(0);
-  await expect(epo.getByText(/Tvoje konkrétní XML tam neposíláme/)).toBeVisible();
+  await expect(epo.getByText('Tvoje konkrétní XML tam neposíláme')).toBeVisible();
 });

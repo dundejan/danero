@@ -14,14 +14,30 @@ import {
   TOTP_CODE_PATTERN,
   TOTP_CODE_TITLE,
 } from '@/lib/auth-errors';
-import { Button } from '@/components/ui/button';
-import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+import { FormPage } from '@/components/form-page';
+import { NoScriptNotice } from '@/components/no-script-notice';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { describedByError, Field, FieldError, Input } from '@/components/ui/field';
+import { TextLink } from '@/components/ui/link';
 
 /** Cíle `aria-describedby` u polí, kterých se chyba týká. */
 const TOTP_ERROR_ID = 'kod-error';
 const BACKUP_ERROR_ID = 'zalozni-kod-error';
 const CREDENTIALS_ERROR_ID = 'prihlaseni-error';
+const PASSWORD_HINT_ID = 'heslo-napoveda';
 
+const MIN_PASSWORD_LENGTH = 10;
+
+/** Textové tlačítko pod formulářem — vypadá jako odkaz, protože jím je (jiná cesta týmž krokem). */
+const LINK_BUTTON =
+  'inline-flex items-center text-left font-medium text-accent-text underline underline-offset-2 active:opacity-60 pointer-coarse:min-h-11';
+
+/**
+ * Přihlášení a registrace. Každý krok je vlastní klidná obrazovka s jedním
+ * titulkem, jedním formulářem a cestou zpět: e-mail a heslo → kód
+ * z autentikátoru → (záložní kód), případně „potvrď svůj e-mail“. Titulek se
+ * mění s krokem, aby bylo pořád jasné, kde člověk je.
+ */
 export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   const router = useRouter();
   const [error, setError] = useState<AuthErrorMessage | null>(null);
@@ -32,12 +48,22 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
   // Bez ní byly vypsané kódy k ničemu: server je přijímá, formulář je neuměl
   // odeslat (do pole na šest číslic se `xxxxx-xxxxx` ani nevejde).
   const [backupStep, setBackupStep] = useState(false);
+  // Krátké heslo ohlásíme hned po opuštění pole, ne až po odeslání — jen
+  // u registrace; přihlášení tvar hesla nehlídá vůbec.
+  const [passwordTooShort, setPasswordTooShort] = useState(false);
 
   const finish = () => {
     // registrace nevytváří session — účet čeká na potvrzení e-mailu, teprve
     // odkaz z něj přihlásí a pustí do onboarding průvodce (G9a)
     router.push('/prehled');
     router.refresh();
+  };
+
+  const backToCredentials = () => {
+    setTotpStep(false);
+    setBackupStep(false);
+    setUnverified(null);
+    setError(null);
   };
 
   // Vyčerpaná nebo propadlá výzva už nepřijme žádný kód (L21-02): formulář se
@@ -146,164 +172,266 @@ export function AuthForm({ mode }: { mode: 'prihlaseni' | 'registrace' }) {
     }
   }
 
+  const backLink = (
+    <button type="button" onClick={backToCredentials} className={LINK_BUTTON}>
+      Zpátky na přihlášení
+    </button>
+  );
+
   if (unverified) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
-          <p className="font-medium">Účet ještě není potvrzený.</p>
-          <p className="mt-2 text-inkoust-tlumeny">
-            {unverified.resent
-              ? `Poslali jsme ti na ${unverified.email} nový ověřovací odkaz. Klikni na něj a jsi uvnitř.`
-              : 'Potvrď adresu odkazem, který ti přišel po registraci. Nový si můžeš nechat poslat níž.'}
-          </p>
-        </div>
+      <FormPage
+        title="Potvrď svůj e-mail"
+        lede={
+          <>
+            Účet ještě není potvrzený.{' '}
+            {unverified.resent ? (
+              <>
+                Poslali jsme ti na <span className="break-all text-ink">{unverified.email}</span>{' '}
+                nový odkaz.
+              </>
+            ) : (
+              'Potvrď adresu odkazem, který ti přišel po registraci.'
+            )}
+          </>
+        }
+        footer={backLink}
+      >
         <Link
           href={`/overeni-emailu?email=${encodeURIComponent(unverified.email)}`}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
+          className={buttonVariants({ variant: 'secondary', className: 'w-full' })}
         >
           Nepřišel? Poslat znovu
         </Link>
-      </div>
+      </FormPage>
     );
   }
 
   if (backupStep) {
     return (
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <Label htmlFor="zalozni-kod">Záložní kód</Label>
-          <Input
-            id="zalozni-kod"
-            name="zalozni-kod"
-            autoComplete="one-time-code"
-            // kódy rozlišují velká a malá písmena — telefon nesmí první zvětšit sám
-            autoCapitalize="none"
-            required
-            autoFocus
-            placeholder="xxxxx-xxxxx"
-            className="font-mono tracking-widest"
-            {...describedByError(error !== null, BACKUP_ERROR_ID)}
-          />
-          <p className="mt-2 text-xs text-inkoust-tlumeny">
-            Kódy sis uložil při zapínání dvoufaktorového ověření. Každý funguje jen jednou.
-          </p>
-        </div>
-        {error && <FieldError id={BACKUP_ERROR_ID}>{error.text}</FieldError>}
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? 'Ověřuji…' : 'Přihlásit záložním kódem'}
-        </Button>
-        <button
-          type="button"
-          onClick={() => {
-            setBackupStep(false);
-            setError(null);
-          }}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
-        >
-          Mám telefon po ruce — zadat kód z autentikátoru
-        </button>
-      </form>
+      <FormPage
+        title="Záložní kód"
+        footer={
+          <div className="flex flex-col items-start gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setBackupStep(false);
+                setError(null);
+              }}
+              className={LINK_BUTTON}
+            >
+              Mám telefon po ruce — zadat kód z autentikátoru
+            </button>
+            {backLink}
+          </div>
+        }
+      >
+        <form method="post" onSubmit={onSubmit} className="space-y-5">
+          <Field
+            label="Záložní kód"
+            htmlFor="zalozni-kod"
+            hint={error ? undefined : 'Uložil sis je při zapínání ověření. Každý funguje jen jednou.'}
+            error={error?.text}
+            errorId={BACKUP_ERROR_ID}
+          >
+            <Input
+              id="zalozni-kod"
+              name="zalozni-kod"
+              autoComplete="one-time-code"
+              // kódy rozlišují velká a malá písmena — telefon nesmí první zvětšit sám
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+              autoFocus
+              placeholder="xxxxx-xxxxx"
+              className="tabular-nums tracking-widest"
+              {...describedByError(error !== null, BACKUP_ERROR_ID)}
+            />
+          </Field>
+          <Button type="submit" disabled={pending} className="w-full">
+            {pending ? 'Ověřuji…' : 'Přihlásit záložním kódem'}
+          </Button>
+        </form>
+      </FormPage>
     );
   }
 
   if (totpStep) {
     return (
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <Label htmlFor="kod">Kód z autentikátoru</Label>
-          <Input
-            id="kod"
-            name="kod"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern={TOTP_CODE_PATTERN}
-            title={TOTP_CODE_TITLE}
-            required
-            autoFocus
-            className="font-mono tracking-widest"
-            {...describedByError(error !== null, TOTP_ERROR_ID)}
-          />
-        </div>
-        {error && <FieldError id={TOTP_ERROR_ID}>{error.text}</FieldError>}
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? 'Ověřuji…' : 'Ověřit kód'}
-        </Button>
-        <button
-          type="button"
-          onClick={() => {
-            setBackupStep(true);
-            setError(null);
-          }}
-          className="text-sm font-medium text-ruzova-text underline underline-offset-2"
-        >
-          Nemáš telefon? Zadej záložní kód
-        </button>
-      </form>
+      <FormPage
+        title="Ověřovací kód"
+        footer={
+          <div className="flex flex-col items-start gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setBackupStep(true);
+                setError(null);
+              }}
+              className={LINK_BUTTON}
+            >
+              Nemáš telefon? Zadej záložní kód
+            </button>
+            {backLink}
+          </div>
+        }
+      >
+        <form method="post" onSubmit={onSubmit} className="space-y-5">
+          <Field
+            label="Kód z autentikátoru"
+            htmlFor="kod"
+            error={error?.text}
+            errorId={TOTP_ERROR_ID}
+          >
+            <Input
+              id="kod"
+              name="kod"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern={TOTP_CODE_PATTERN}
+              title={TOTP_CODE_TITLE}
+              required
+              autoFocus
+              className="tabular-nums tracking-widest"
+              {...describedByError(error !== null, TOTP_ERROR_ID)}
+            />
+          </Field>
+          <Button type="submit" disabled={pending} className="w-full">
+            {pending ? 'Ověřuji…' : 'Ověřit kód'}
+          </Button>
+        </form>
+      </FormPage>
     );
   }
 
+  const signUp = mode === 'registrace';
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {mode === 'registrace' && (
-        <div>
-          <Label htmlFor="jmeno">
-            Jméno{' '}
-            <span className="font-normal text-inkoust-tlumeny">
-              (nepovinné — jak ti máme říkat)
-            </span>
-          </Label>
-          <Input id="jmeno" name="jmeno" autoComplete="name" />
-        </div>
-      )}
-      <div>
-        <Label htmlFor="email">E-mail</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
-          // chyba přihlášení je společná pro e-mail i heslo (server záměrně
-          // neprozrazuje, které z nich nesedí) — odkazujeme ji z obou polí
-          {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="heslo">{mode === 'registrace' ? 'Heslo (min. 10 znaků)' : 'Heslo'}</Label>
-        <Input
-          id="heslo"
-          name="heslo"
-          type="password"
-          // validace délky patří jen k registraci — při loginu uživatel zadává
-          // heslo, které zná; hlídat mu jeho tvar nedává smysl (chybné heslo
-          // stejně odmítne server jednotnou hláškou)
-          {...(mode === 'registrace' ? { required: true, minLength: 10 } : {})}
-          autoComplete={mode === 'registrace' ? 'new-password' : 'current-password'}
-          {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
-        />
-      </div>
-      {error && (
-        <FieldError id={CREDENTIALS_ERROR_ID}>
-          {error.text}
-          {error.link && (
-            <>
-              {' '}
-              <a href={error.link.href} className="font-medium underline underline-offset-2">
-                {error.link.label}
-              </a>
-            </>
-          )}
-        </FieldError>
-      )}
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending
-          ? mode === 'registrace'
-            ? 'Vytvářím účet…'
-            : 'Přihlašuji…'
-          : mode === 'registrace'
-            ? 'Vytvořit účet'
-            : 'Přihlásit se'}
-      </Button>
-    </form>
+    <FormPage
+      title={signUp ? 'Registrace' : 'Přihlášení'}
+      lede={
+        signUp ? (
+          <>
+            Už máš účet? <TextLink href="/prihlaseni">Přihlas se</TextLink>
+          </>
+        ) : (
+          <>
+            Nemáš účet? <TextLink href="/registrace">Zaregistruj se</TextLink>
+          </>
+        )
+      }
+      footer={
+        signUp ? (
+          // B-1 právního auditu: podmínky se do smlouvy včleňují odkazem při
+          // registraci (§ 1751 OZ) a GDPR informace patří ke sběru údajů (čl. 13)
+          <p className="type-footnote text-pretty">
+            Vytvořením účtu souhlasíš s <TextLink href="/podminky">podmínkami užití</TextLink> a
+            potvrzuješ, že víš, <TextLink href="/soukromi">jak nakládáme s tvými daty</TextLink>.
+          </p>
+        ) : (
+          <TextLink href="/zapomenute-heslo">Zapomněl jsi heslo?</TextLink>
+        )
+      }
+    >
+      <NoScriptNotice className="mb-5" />
+      {/* `method="post"`: formulář odesílá skript, ale než naběhne (pomalé
+          připojení) nebo když je vypnutý, odešle ho prohlížeč sám — a bez
+          metody by e-mail i heslo skončily v adrese (změřeno 11. 10. 2026:
+          `/prihlaseni?email=…&heslo=…`). Takhle se stránka jen načte znovu. */}
+      <form method="post" onSubmit={onSubmit} className="space-y-5">
+        {signUp && (
+          <Field
+            label={
+              <>
+                Jméno <span className="font-normal text-ink-muted">· nepovinné</span>
+              </>
+            }
+            htmlFor="jmeno"
+          >
+            <Input id="jmeno" name="jmeno" autoComplete="name" />
+          </Field>
+        )}
+        <Field label="E-mail" htmlFor="email">
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            // chyba přihlášení je společná pro e-mail i heslo (server záměrně
+            // neprozrazuje, které z nich nesedí) — odkazujeme ji z obou polí
+            {...describedByError(error !== null, CREDENTIALS_ERROR_ID)}
+          />
+        </Field>
+        <Field
+          label="Heslo"
+          htmlFor="heslo"
+          hint={
+            signUp && !passwordTooShort ? (
+              <span id={PASSWORD_HINT_ID}>Aspoň {MIN_PASSWORD_LENGTH} znaků.</span>
+            ) : undefined
+          }
+          error={passwordTooShort ? `Heslo musí mít aspoň ${MIN_PASSWORD_LENGTH} znaků.` : undefined}
+          errorId={PASSWORD_HINT_ID}
+        >
+          <Input
+            id="heslo"
+            name="heslo"
+            type="password"
+            // validace délky patří jen k registraci — při loginu uživatel zadává
+            // heslo, které zná; hlídat mu jeho tvar nedává smysl (chybné heslo
+            // stejně odmítne server jednotnou hláškou)
+            {...(signUp
+              ? {
+                  required: true,
+                  minLength: MIN_PASSWORD_LENGTH,
+                  onBlur: (event: React.FocusEvent<HTMLInputElement>) => {
+                    const { length } = event.currentTarget.value;
+                    setPasswordTooShort(length > 0 && length < MIN_PASSWORD_LENGTH);
+                  },
+                  onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+                    if (passwordTooShort && event.currentTarget.value.length >= MIN_PASSWORD_LENGTH) {
+                      setPasswordTooShort(false);
+                    }
+                  },
+                }
+              : {})}
+            autoComplete={signUp ? 'new-password' : 'current-password'}
+            aria-invalid={error !== null || passwordTooShort ? true : undefined}
+            aria-describedby={
+              [error !== null ? CREDENTIALS_ERROR_ID : null, signUp ? PASSWORD_HINT_ID : null]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
+          />
+        </Field>
+        {error && (
+          <FieldError id={CREDENTIALS_ERROR_ID}>
+            {error.text}
+            {error.link && (
+              <>
+                {' '}
+                <a href={error.link.href} className="font-medium underline underline-offset-2">
+                  {error.link.label}
+                </a>
+              </>
+            )}
+          </FieldError>
+        )}
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending
+            ? signUp
+              ? 'Vytvářím účet…'
+              : 'Přihlašuji…'
+            : signUp
+              ? 'Vytvořit účet'
+              : 'Přihlásit se'}
+        </Button>
+      </form>
+    </FormPage>
   );
 }

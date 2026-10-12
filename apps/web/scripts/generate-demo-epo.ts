@@ -29,7 +29,7 @@ const { xml } = generateDpfdp7({
   year: YEAR,
   result,
   // fiktivní osobní údaje — ať je na první pohled jasné, že jde o ukázku
-  personal: { jmeno: 'Ukázka', prijmeni: 'Demo', obec: 'Praha' },
+  personal: { firstName: 'Ukázka', lastName: 'Demo', city: 'Praha' },
 });
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'marketing');

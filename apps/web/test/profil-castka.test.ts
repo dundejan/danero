@@ -82,7 +82,10 @@ describe('částka v nastavení se čte tak, jak ji lidé píšou', () => {
     it(`„${vstup}" se uloží jako ${ulozeno}`, { timeout: 30_000 }, async () => {
       const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
       const kam = await cil(() => saveProfileAction(form(vstup)));
-      expect(kam, `„${vstup}" mělo projít, skončilo na ${kam}`).toMatch(/^\/(prehled|nastaveni\?ok=)/);
+      expect(kam, `„${vstup}" mělo projít, skončilo na ${kam}`).toMatch(
+        // první uložení účtu bez dat vede ke kroku 2 (Zdroje dat), další zůstávají v nastavení
+        /^\/(import\?ulozeno=profil|prehled|nastaveni\?ok=)/,
+      );
 
       const { taxpayerProfiles } = await import('@/db/schema');
       const [row] = await stav.db.select().from(taxpayerProfiles);
@@ -97,6 +100,68 @@ describe('částka v nastavení se čte tak, jak ji lidé píšou', () => {
       const kam = await cil(() => saveProfileAction(form(vstup)));
       expect(kam, `„${vstup}" nesmí spadnout`).toBe('/nastaveni?chyba=prijmy');
     }
+  });
+
+  /**
+   * Server dřív odmítal částku nad bilion, kterou `pattern` v prohlížeči
+   * pustil — kdo s ní zavřel panel, nedozvěděl se, že se neuložila (prohlížeč
+   * se při odchodu ptá jen u textu, o kterém ví, že neprojde). Mez je proto
+   * počet číslic a obě strany ji čtou z jedné konstanty.
+   */
+  it('horní mez částky pozná prohlížeč stejně jako server', { timeout: 30_000 }, async () => {
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    const { OTHER_INCOME_PATTERN } = await import('@/app/(app)/nastaveni/form-state');
+    const browser = new RegExp(`^(?:${OTHER_INCOME_PATTERN})$`, 'v');
+    const { taxpayerProfiles } = await import('@/db/schema');
+
+    for (const vstup of ['999999999999,99', '999 999 999 999']) {
+      expect(browser.test(vstup), `„${vstup}" má prohlížeč pustit`).toBe(true);
+      const kam = await cil(() => saveProfileAction(form(vstup)));
+      expect(kam, `„${vstup}" má server uložit`).not.toBe('/nastaveni?chyba=prijmy');
+      const [row] = await stav.db.select().from(taxpayerProfiles);
+      expect(d(row?.otherIncomeCzk ?? '-1').eq(vstup.replace(/\s/g, '').replace(',', '.'))).toBe(true);
+    }
+    for (const vstup of ['1000000000000', '1 000 000 000 000,00', '99999999999999999999']) {
+      expect(browser.test(vstup), `„${vstup}" má prohlížeč zastavit`).toBe(false);
+      const kam = await cil(() => saveProfileAction(form(vstup)));
+      expect(kam, `„${vstup}" má server odmítnout`).toBe('/nastaveni?chyba=prijmy');
+    }
+  });
+});
+
+/**
+ * Auto-save má u pole atribut `pattern`: prohlížeč podle něj pozná rozepsanou
+ * částku, kterou server odmítne, dřív než s ní člověk zavře panel (pak už není
+ * kde to říct). Vzor proto nesmí být přísnější než server — platnou částku by
+ * při odchodu neuložil. Prohlížeč vzor obaluje `^(?:…)$` a překládá s příznakem `v`.
+ */
+describe('tvar částky pro prohlížeč odpovídá tomu, co přijme server', () => {
+  it('pustí všechno, co server uloží, a zastaví, co server odmítne', async () => {
+    const { OTHER_INCOME_PATTERN } = await import('@/app/(app)/nastaveni/form-state');
+    const browser = new RegExp(`^(?:${OTHER_INCOME_PATTERN})$`, 'v');
+    for (const vstup of ['10000', '10 000', '10\u00a0000', '1 234,50', '12000,5', '12000.5', '', ' 7 ']) {
+      expect(browser.test(vstup), `„${vstup}" má projít`).toBe(true);
+    }
+    for (const vstup of ['12 000 Kč', 'abc', '10.000', '-5', '1e9', '1,5,5', '12,', ',5']) {
+      expect(browser.test(vstup), `„${vstup}" nemá projít`).toBe(false);
+    }
+  });
+
+  it('auto-save odmítnutou částku vrátí s hláškou a jménem pole', { timeout: 30_000 }, async () => {
+    const { createPgliteDb } = await vi.importActual<typeof import('@/db')>('@/db');
+    stav.db = await createPgliteDb();
+    const { user } = await import('@/db/schema');
+    await stav.db.insert(user).values({ id: 'u-castka', name: 'Jan', email: 'jan@danero.cz' });
+    const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    expect(await autoSaveProfileAction(form('12 000 Kč'))).toEqual({
+      ok: false,
+      message: expect.stringMatching(/Další zdanitelné příjmy zadej jako částku/),
+      field: 'ostatni-prijmy',
+    });
+    expect(await autoSaveProfileAction(form('12 000'))).toEqual({
+      ok: true,
+      message: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
+    });
   });
 });
 
@@ -130,7 +195,11 @@ describe('daňový režim se při prvním uložení musí vybrat (L7i-01, R8)', 
       'utf8',
     );
     const select = page.slice(page.indexOf('id="rezim"'), page.indexOf('<option value="PAUSAL">'));
-    expect(select).toContain("defaultValue={profile?.regime ?? ''}");
+    // výchozí hodnota jde ze stavu formuláře (`form-state.ts`) — a ten bez
+    // profilu žádný režim nenese, takže se vybere prázdná položka
+    expect(select).toContain("defaultValue={shown.get(PROFILE_FIELDS.regime) ?? ''}");
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    expect(profileFormEntries(null).map(([name]) => name)).not.toContain('rezim');
     expect(select).toContain('required');
     expect(select).toContain('<option value="" disabled>');
     expect(page).not.toMatch(/regime \?\? 'PAUSAL'/);

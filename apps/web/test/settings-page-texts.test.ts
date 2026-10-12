@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProfileRow } from '@/lib/portfolio';
@@ -22,6 +23,13 @@ vi.mock('@/lib/portfolio', async () => {
   return { ...actual, getProfile: () => getProfile(), listPinnedTaxYears: async () => [] };
 });
 
+// Vysvětlivka se vykresluje až po otevření — test si ji nahradí obalem, aby
+// její text ve statickém HTML byl (vzor: test/payable-tax.test.ts).
+vi.mock('@/components/ui/info-popover', () => ({
+  InfoPopover: ({ children }: { children: React.ReactNode }) =>
+    createElement('span', { 'data-info': '' }, children),
+}));
+
 const PROFILE: ProfileRow = {
   userId: 'u-texty',
   regime: 'PAUSAL',
@@ -44,10 +52,22 @@ async function settingsHtml(): Promise<string> {
   return renderToStaticMarkup(await SettingsPage({ searchParams: Promise.resolve({}) }));
 }
 
+const plainText = (html: string): string =>
+  html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
 /** Text prvku s daným `id` bez značek; prázdný řetězec, když na stránce není. */
 function textOfElement(html: string, id: string): string {
   const match = new RegExp(`<(\\w+)[^>]*\\sid="${id}"[^>]*>(.*?)</\\1>`, 's').exec(html);
-  return (match?.[2] ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  return plainText(match?.[2] ?? '');
+}
+
+/**
+ * Text vysvětlivky u pole: v řádku nastavení stojí mezi popiskem pole
+ * a tichou větou pod ním.
+ */
+function explanationOfField(html: string, fieldId: string, hintId: string): string {
+  const row = html.slice(html.indexOf(`for="${fieldId}"`), html.indexOf(`id="${hintId}"`));
+  return plainText(/<span data-info="">(.*?)<\/span>/s.exec(row)?.[1] ?? '');
 }
 
 /**
@@ -58,6 +78,11 @@ function textOfElement(html: string, id: string): string {
  * neřekl: kdo si v říjnu zapsal letošní nájem, tomu loňský rok pod limitem
  * zpětně přeskočil na „podáš daňové přiznání“ a nevěděl proč (nález L24-03
  * revize 5). Dokud částka není vedená po rocích, musí to pole přiznat.
+ *
+ * Redesign (říjen 2026) rozdělil větu na dvě: výhrada, která chrání před
+ * špatným závěrem, zůstává vidět přímo u pole a je na něj navázaná; co to
+ * znamená prakticky, říká vysvětlivka hned vedle popisku (docs/07, textová
+ * dieta, pravidlo 3).
  */
 describe('nastavení: pole „Další zdanitelné příjmy“ říká, že platí pro všechny roky (L24-03)', () => {
   beforeEach(() => {
@@ -68,7 +93,7 @@ describe('nastavení: pole „Další zdanitelné příjmy“ říká, že plat�
     ['před prvním uložením profilu', null],
     ['u uloženého profilu', PROFILE],
   ] as const) {
-    it(`${label}: vysvětlení je navázané na pole a mluví o skončených rocích`, { timeout: 30_000 }, async () => {
+    it(`${label}: výhrada je navázaná na pole a vysvětlivka říká, co změna udělá`, { timeout: 30_000 }, async () => {
       getProfile.mockResolvedValue(profile);
       const html = await settingsHtml();
 
@@ -78,13 +103,17 @@ describe('nastavení: pole „Další zdanitelné příjmy“ říká, že plat�
       const hintId = /aria-describedby="([^"]+)"/.exec(input)?.[1] ?? '';
       expect(hintId).not.toBe('');
 
+      // vidět vždy: částka není jen za letošek
       const hint = textOfElement(html, hintId);
       expect(hint).toMatch(/všechny roky/);
-      expect(hint).toMatch(/ke každému roku/);
       expect(hint).toMatch(/skončen/);
       expect(hint).toMatch(/zafixovan/);
-      // a co to znamená prakticky: změna částky přepíše i minulé roky
-      expect(hint).toMatch(/minulé roky/);
+
+      // na požádání: jak přesně se částka přičítá a co to znamená prakticky —
+      // změna přepíše i minulé roky
+      const explanation = explanationOfField(html, 'ostatni-prijmy', hintId);
+      expect(explanation).toMatch(/ke každému roku/);
+      expect(explanation).toMatch(/minulé roky/);
     });
   }
 });

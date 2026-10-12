@@ -280,7 +280,6 @@ const ALLOWED: { file: string; names: string[]; reason: string }[] = [
     reason: `${FORM_FIELD}; formulář se odesílá metodou GET, takže jsou to zároveň parametry URL`,
   },
   { file: 'apps/web/components/new-password-form.tsx', names: ['heslo'], reason: FORM_FIELD },
-  { file: 'apps/web/app/api/epo/route.ts', names: ['varianta', 'variantaRaw'], reason: FORM_FIELD },
   {
     file: 'apps/web/lib/epo-submission.ts',
     names: ['Polozka', 'Typ', 'Zkr'],
@@ -289,58 +288,11 @@ const ALLOWED: { file: string; names: string[]; reason: string }[] = [
 ];
 
 /**
- * DOČASNÉ: dávky revize 5, které tyhle soubory teprve přejmenovávají
- * (L12-09). Až dávka do větve dojde, její řádek smaž — strážce pak vypíše,
- * co v souborech zbylo, a to buď přejmenuj, nebo zapiš s důvodem výš.
+ * Seznam odložených dávek ani známého dluhu tu už není: poslední dávka
+ * (generátor XML pro EPO a Příloha č. 2) i čtyři soubory dluhu jsou od
+ * 11. 10. 2026 přejmenované. Kdo najde český název, přejmenuje ho — nebo ho
+ * s důvodem zapíše mezi oprávněné výš. Třetí cesta není.
  */
-const PENDING_BATCHES: Record<string, string[]> = {
-  B19: ['packages/importers/src/etoro/xlsx.ts'],
-  B22: [
-    'apps/web/lib/epo.ts',
-    'apps/web/lib/priloha2.ts',
-    'apps/web/components/views/report-view.tsx',
-  ],
-  B25: ['packages/importers/src/fio/csv.ts'],
-  B27: [
-    'apps/web/lib/email-layout.ts',
-    'apps/web/lib/email.ts',
-    'apps/web/lib/prices.ts',
-    'apps/web/lib/notifications.ts',
-    'apps/web/lib/demo-data.ts',
-    'apps/web/components/filing-calculator.tsx',
-    'apps/web/components/guide-article.tsx',
-    'apps/web/components/views/position-view.tsx',
-    'apps/web/app/(app)/nastaveni/settings-toast.tsx',
-    'apps/web/scripts/failed-imports.ts',
-  ],
-};
-
-/**
- * DLUH: české deklarace, které rozšířený strážce našel navíc a žádná dávka
- * revize 5 je nepřejmenovává. Nejsou oprávněné — seznam jen drží stav, aby
- * nepřibývaly další. Po přejmenování řádek smaž; nové sem nepřidávej.
- */
-const KNOWN_DEBT: Record<string, string[]> = {
-  'apps/web/app/(app)/nastaveni/actions.ts': ['kod'],
-  'apps/web/app/api/epo/route.ts': [
-    'DAP_TYPY',
-    'chyba',
-    'dapTyp',
-    'dodatecne',
-    'typRaw',
-    'zjistenoDne',
-  ],
-  'apps/web/app/bezpecnost/page.tsx': ['ZASADY', 'zasada'],
-  'apps/web/app/jak-pocitame/page.tsx': ['PRAVIDLA', 'pravidlo', 'zdroj'],
-  'apps/web/app/kalkulacka/page.tsx': ['PRAVIDLA', 'pravidlo'],
-  'apps/web/app/pruvodce/page.tsx': ['CLANKY', 'clanek', 'popis', 'stitek'],
-  'apps/web/components/views/overview-view.tsx': ['PrehledNotification'],
-  'apps/web/lib/import-service.ts': ['useknuty'],
-  'packages/engine/src/engine.ts': ['podStropem'],
-  'packages/engine/src/ledger/ledger.ts': ['cteni', 'nazev', 'zapis', 'zdanitelne'],
-  'packages/importers/src/portu/csv.ts': ['typ', 'typRaw'],
-  'scripts/validate-epo.mjs': ['varianta'],
-};
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
 
@@ -441,10 +393,9 @@ function routeWords(file: string): Set<string> {
 
 function czechDeclarations(file: string): string[] {
   const fromRoute = routeWords(file);
-  const allowed = new Set([
-    ...ALLOWED.filter((entry) => entry.file === file).flatMap((entry) => entry.names),
-    ...(KNOWN_DEBT[file] ?? []),
-  ]);
+  const allowed = new Set(
+    ALLOWED.filter((entry) => entry.file === file).flatMap((entry) => entry.names),
+  );
   const hits = new Set<string>();
   for (const { name, line } of declarations(file)) {
     // Diakritika v identifikátoru je vždycky chyba — JS ji technicky povolí.
@@ -459,11 +410,6 @@ function czechDeclarations(file: string): string[] {
 
 describe('identifikátory anglicky (pravidlo 1)', () => {
   const files = SCAN_ROOTS.flatMap((root) => sourceFiles(join(REPO_ROOT, root)));
-  const pending = new Map(
-    Object.entries(PENDING_BATCHES).flatMap(([batch, batchFiles]) =>
-      batchFiles.map((file) => [file, batch] as const),
-    ),
-  );
 
   it('strážce vidí web, balíčky i skripty (jinak nic nehlídá)', () => {
     for (const root of SCAN_ROOTS) {
@@ -524,7 +470,6 @@ describe('identifikátory anglicky (pravidlo 1)', () => {
     () => {
       const offenders: string[] = [];
       for (const file of files) {
-        if (pending.has(file)) continue;
         for (const hit of czechDeclarations(file)) offenders.push(`${file}: ${hit}`);
       }
       expect(

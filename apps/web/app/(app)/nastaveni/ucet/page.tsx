@@ -1,29 +1,30 @@
 import { headers } from 'next/headers';
-import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TwoFactorSection } from '@/components/two-factor-section';
-import { Card, CardTitle } from '@/components/ui/card';
-import { SubmitButton } from '@/components/ui/submit-button';
 import { buttonVariants } from '@/components/ui/button';
-import { Input, Label } from '@/components/ui/field';
+import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { Group, Row } from '@/components/ui/list';
+import { Section } from '@/components/ui/section';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { getDb } from '@/db';
 import { requireUser } from '@/lib/session';
 import { getAuth } from '@/lib/auth';
+import type { ActionResult } from '@/lib/action-result';
 import { AUDIT_LABELS, recentAuditEvents, type AuditType } from '@/lib/audit';
 import { humanizeUserAgent } from '@/lib/ua';
 import { czDateTime } from '@/lib/format';
 import { firstParam } from '@/lib/utils';
-import { SettingsNav } from '../settings-nav';
-import { SettingsSection } from '../settings-section';
+import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
+import { SettingsToolbar } from '../settings-nav';
 import { SettingsToast } from '../settings-toast';
-import {
-  changeEmailAction,
-  changePasswordAction,
-  deleteAccountAction,
-  revokeOtherSessionsAction,
-} from '../actions';
+import { revokeOtherSessionsAction } from '../actions';
+import { CredentialRows, DeleteAccountDialog } from './account-forms';
+import { isInlineAccountError } from './inline-errors';
 
 export const metadata = { title: 'Účet a zabezpečení — Danero' };
+
+const API_CLIENT_LABEL = 'API klient (curl)';
 
 export default async function AccountSettingsPage({
   searchParams,
@@ -57,190 +58,158 @@ export default async function AccountSettingsPage({
       return map.set(label, group);
     }, new Map<string, DeviceGroup>())
     .values()].sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
-  const API_CLIENT_HINT =
-    'Přístup z příkazové řádky (např. skript). Pokud ho nepoznáváš, odhlas ostatní zařízení.';
+
+  const errorCode = firstParam(params.chyba);
+  const okCode = firstParam(params.ok);
+  const shownInline = errorCode !== undefined && isInlineAccountError(errorCode);
+  // Výsledek akce pro formuláře, které ho ukazují u pole. Vzniká jen tehdy,
+  // když ho adresa nese: obyčejné obnovení stránky (adresa se po zobrazení
+  // uklízí) pošle `null` a formuláře si drží ten, který už mají — dřív se při
+  // něm zavřely i s chybou a rozepsaným textem (`lib/action-result.ts`).
+  const result: ActionResult | null =
+    errorCode !== undefined || okCode !== undefined
+      ? { id: crypto.randomUUID(), error: errorCode ?? null }
+      : null;
 
   return (
-    // jeden sloupec s šířkou pro formulář — viz komentář na daňové stránce
-    <div className="max-w-4xl space-y-8">
-      <header className="space-y-4">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Účet a zabezpečení</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
-            Přihlašovací údaje, druhý faktor a přehled zařízení, ze kterých jsi přihlášený.
-          </p>
-        </div>
-        <SettingsNav active="account" />
-      </header>
+    <>
+      <SettingsToolbar active="account" />
+      <SettingsToast ok={okCode} chyba={errorCode} inline={shownInline} />
+      {shownInline && <ClearFeedbackUrl />}
 
-      <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
+      <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
+        <Section title="Přihlášení a zabezpečení" id="ucet">
+          <Group variant="inset">
+            <CredentialRows email={user.email} result={result} />
 
-      <Card className="space-y-5" id="ucet">
-        <CardTitle>Účet</CardTitle>
-
-        <p className="text-sm text-inkoust-tlumeny">
-          Přihlášený účet: <span className="break-all font-medium text-inkoust">{user.email}</span>
-        </p>
-
-        <SettingsSection title="Změna hesla">
-          <form action={changePasswordAction} className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="stavajici-heslo">Současné heslo</Label>
-                <Input id="stavajici-heslo" name="stavajici-heslo" type="password" required autoComplete="current-password" />
+            <DisclosureRow
+              id="2fa"
+              title="Dvoufaktorové ověření"
+              meta={
+                user.twoFactorEnabled ? (
+                  <span className="text-success-text">Zapnuto</span>
+                ) : (
+                  'Vypnuto'
+                )
+              }
+            >
+              <div className="pt-1">
+                <TwoFactorSection enabled={user.twoFactorEnabled} />
               </div>
-              <div>
-                <Label htmlFor="nove-heslo">Nové heslo (min. 10 znaků)</Label>
-                <Input id="nove-heslo" name="nove-heslo" type="password" required minLength={10} autoComplete="new-password" />
-              </div>
-            </div>
-            <SubmitButton pendingLabel="Měním…">Změnit heslo</SubmitButton>
-          </form>
-        </SettingsSection>
+            </DisclosureRow>
+          </Group>
+        </Section>
 
-        <SettingsSection
-          title="Změna e-mailu"
-          description="Na novou adresu pošleme ověřovací odkaz — dokud ho nepotvrdíš, nepřihlásíš se."
+        <Section
+          id="aktivita"
+          title="Aktivní přihlášení"
+          count={sessions.length}
+          actions={
+            sessions.length > 1 && (
+              <form action={revokeOtherSessionsAction}>
+                <SubmitButton variant="secondary" size="sm" pendingLabel="Odhlašuji…">
+                  Odhlásit ostatní zařízení
+                </SubmitButton>
+              </form>
+            )
+          }
         >
-          <form action={changeEmailAction} className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="novy-email">Nový e-mail</Label>
-                {/* autoComplete NESMÍ být „email“ — password manager sem cpal
-                    starou adresu; „off“ + rozbití páru s heslem níže */}
-                <Input id="novy-email" name="novy-email" type="email" required autoComplete="off" />
-              </div>
-              <div>
-                <Label htmlFor="emailPassword">Heslo (potvrzení)</Label>
-                <Input
-                  id="emailPassword"
-                  name="stavajici-heslo"
-                  type="password"
-                  required
-                  autoComplete="new-password"
-                />
-              </div>
-            </div>
-            <SubmitButton pendingLabel="Měním…">Změnit e-mail</SubmitButton>
-          </form>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Export dat"
-          description="Kompletní JSON se všemi transakcemi, profilem a nastavením (broker API klíče se z bezpečnostních důvodů neexportují)."
-        >
-          <a href="/api/export" download className={buttonVariants({ variant: 'secondary' })}>
-            Stáhnout export (JSON)
-          </a>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Smazání účtu"
-          description="Nevratně smaže účet i všechna data — transakce, profil, šifrované broker klíče, upozornění i historii importů. Nejdřív si případně stáhni export."
-        >
-          <form action={deleteAccountAction} className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="deletePassword">Heslo</Label>
-                <Input id="deletePassword" name="heslo" type="password" required autoComplete="current-password" />
-              </div>
-              <div>
-                <Label htmlFor="potvrzeni">Napiš SMAZAT</Label>
-                {/* L7-06: bez autoCapitalize napíše iOS „Smazat“ */}
-                <Input
-                  id="potvrzeni"
-                  name="potvrzeni"
-                  required
-                  placeholder="SMAZAT"
-                  autoComplete="off"
-                  autoCapitalize="characters"
-                />
-              </div>
-            </div>
-            <SubmitButton variant="danger" pendingLabel="Mažu…">
-              Nevratně smazat účet
-            </SubmitButton>
-          </form>
-        </SettingsSection>
-      </Card>
-
-      <Card className="space-y-4" id="2fa">
-        <CardTitle>Dvoufaktorové ověření (2FA)</CardTitle>
-        <TwoFactorSection enabled={user.twoFactorEnabled} />
-      </Card>
-
-      <Card className="space-y-5" id="aktivita">
-        <CardTitle>Přihlášená zařízení a aktivita</CardTitle>
-
-        <SettingsSection title={`Aktivní přihlášení (${sessions.length})`}>
-          <ul className="space-y-1 text-sm text-inkoust-tlumeny">
+          <Group>
             {deviceGroups.map((group) => (
-              <li key={group.label} className="flex flex-wrap items-baseline gap-2">
-                <span
-                  className="font-medium text-inkoust"
-                  title={group.label === 'API klient (curl)' ? API_CLIENT_HINT : undefined}
-                >
-                  {group.label}
-                </span>
-                <span>
-                  — {group.count} přihlášení, naposledy{' '}
-                  {czDateTime(group.lastAt)}
-                </span>
-                {group.isCurrent && (
-                  <span className="rounded bg-zelena/10 px-1.5 py-0.5 text-xs font-medium text-zelena-text">
-                    toto zařízení
-                  </span>
-                )}
-              </li>
+              <Row
+                key={group.label}
+                label={group.label}
+                hint={
+                  group.count > 1
+                    ? `${group.count}× přihlášeno · naposledy ${czDateTime(group.lastAt)}`
+                    : `Naposledy ${czDateTime(group.lastAt)}`
+                }
+                info={
+                  group.label === API_CLIENT_LABEL ? (
+                    <InfoPopover label={group.label}>
+                      <p>
+                        Přístup z příkazové řádky (např. skript). Pokud ho nepoznáváš, odhlas
+                        ostatní zařízení.
+                      </p>
+                    </InfoPopover>
+                  ) : undefined
+                }
+                value={
+                  group.isCurrent ? (
+                    <span className="type-footnote text-ink-muted">toto zařízení</span>
+                  ) : undefined
+                }
+              />
             ))}
-          </ul>
-          {/* L7-01: pod md není rail, a tedy ani jeho „Odhlásit se“ — bez
-              tohohle tlačítka se na telefonu odhlásit nedalo vůbec. Od md výš
-              je schované, ať na stránce nejsou dvě tlačítka téhož jména
-              (hranice musí sedět s `md:flex` railu). */}
-          <div className="space-y-2 md:hidden">
-            <SignOutButton
-              className={buttonVariants({ variant: 'secondary' })}
-              errorClassName="text-sm text-cervena"
-            />
-          </div>
-          {sessions.length > 1 && (
-            <form action={revokeOtherSessionsAction}>
-              <SubmitButton variant="danger" pendingLabel="Odhlašuji…">
-                Odhlásit všechna ostatní zařízení
-              </SubmitButton>
-            </form>
+          </Group>
+          {auditEvents.length > 0 && (
+            <Disclosure summary={`Poslední aktivita (${auditEvents.length})`} className="mt-2">
+              <Group>
+                {auditEvents.map((event) => (
+                  <Row
+                    key={event.id}
+                    label={
+                      <span className="text-ink">
+                        {AUDIT_LABELS[event.type as AuditType] ?? event.type}
+                      </span>
+                    }
+                    hint={event.detail ?? undefined}
+                    value={
+                      <span className="type-caption text-ink-muted">
+                        {czDateTime(event.createdAt)}
+                      </span>
+                    }
+                  />
+                ))}
+              </Group>
+            </Disclosure>
           )}
-        </SettingsSection>
+          {/* „Odhlásit se“ tady není: v každé šířce okna je právě jedno, u účtu
+              ve skořápce — v patičce postranního panelu, na telefonu v sheetu
+              „Více“ (`components/nav-rail.tsx`). */}
+        </Section>
 
-        <SettingsSection title="Poslední aktivita">
-          {auditEvents.length === 0 ? (
-            <p className="text-sm text-inkoust-tlumeny">Zatím žádné události.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-inkoust-tlumeny">
-              {auditEvents.map((event) => (
-                <li key={event.id} className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono text-xs">
-                    {czDateTime(event.createdAt)}
-                  </span>
-                  <span className="font-medium text-inkoust">
-                    {AUDIT_LABELS[event.type as AuditType] ?? event.type}
-                  </span>
-                  {event.detail && <span>{event.detail}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </SettingsSection>
-      </Card>
+        <Section
+          id="vzhled"
+          title="Vzhled"
+          info={
+            <InfoPopover label="Vzhled">
+              <p>
+                Volba se ukládá v tomhle prohlížeči — na jiném zařízení se nastavuje zvlášť.
+              </p>
+            </InfoPopover>
+          }
+        >
+          <ThemeToggle />
+        </Section>
 
-      <Card className="space-y-3" id="vzhled">
-        <CardTitle>Vzhled</CardTitle>
-        <ThemeToggle withLabels />
-        <p className="text-sm text-inkoust-tlumeny">
-          Volba se ukládá v tomhle prohlížeči — na jiném zařízení se nastavuje zvlášť.
-        </p>
-      </Card>
-    </div>
+        <Section title="Tvoje data">
+          <Group variant="inset">
+            <Row
+              label="Export dat"
+              info={
+                <InfoPopover label="Export dat">
+                  <p>
+                    Kompletní JSON se všemi transakcemi, profilem a nastavením. Klíče k brokerům
+                    se z bezpečnostních důvodů neexportují.
+                  </p>
+                </InfoPopover>
+              }
+            >
+              <a
+                href="/api/export"
+                download
+                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+              >
+                Stáhnout moje data
+              </a>
+            </Row>
+            <Row label="Smazání účtu" hint="Nevratné — smaže účet i všechna data.">
+              <DeleteAccountDialog result={result} />
+            </Row>
+          </Group>
+        </Section>
+      </div>
+    </>
   );
 }

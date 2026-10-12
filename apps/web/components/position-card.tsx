@@ -2,17 +2,23 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 /**
- * Mobilní karta pozice (H4): sdílený markup pro seznamy pozic na přehledu
- * i v portfoliu (`md:hidden` náhrada tabulky). Server component — dostává
- * už naformátované texty, žádné Decimal v props.
+ * Řádek pozice v seznamu na telefonu — sdílený přehledem i portfoliem
+ * (náhrada tabulky v úzkém okně). Dva řádky textu: vlevo název, vpravo hlavní
+ * číslo a pod ním stav časového testu. Celý řádek je odkaz na detail pozice,
+ * šipka to naznačuje. Bez rámečku — řádky dělí vlásová linka rodiče a stisk
+ * řádek zvýrazní. Server component — dostává už naformátované texty, žádné
+ * Decimal v props.
+ *
+ * Název se smí zalomit na dva řádky: u pozice bez tickeru (Degiro, univerzální
+ * šablona) je popiskem celý název fondu a na jednom řádku z něj zbylo „Amu…“
+ * (R2-02). Když se název vedle čísla nevejde ani tak (velké písmo), spadne
+ * číslo pod něj — název nesmí zmizet (R2-07).
  */
 export function PositionCard({
   isin,
   label,
   name,
   primaryText,
-  secondaryText,
-  pl,
   exemptText,
   exemptDone,
   basePath = '',
@@ -24,51 +30,38 @@ export function PositionCard({
   basePath?: string;
   /** Hlavní hodnota vpravo nahoře — hodnota v Kč, nebo počet kusů. */
   primaryText: string;
-  /** Doplněk pod hlavní hodnotou (např. počet kusů, když primární je Kč). */
-  secondaryText?: string;
-  /** Nerealizovaný zisk/ztráta jako badge (semafor podle polarity). */
-  pl?: { text: string; positive: boolean } | null;
-  /** „bez daně od …“ / „vše bez daně“. */
+  /** Stav časového testu: „vše bez daně“ / „40,5 ks bez daně“ / „bez daně od …“. */
   exemptText: string;
+  /** Aspoň část pozice už je bez daně — text je zelený. */
   exemptDone: boolean;
 }) {
   return (
     <Link
       href={`${basePath}/portfolio/${isin}`}
-      className="block rounded-md border border-linka p-3 hover:border-inkoust-tlumeny"
+      className="row-pressable -mx-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-3"
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0">
-          <span className="font-medium text-inkoust">{label}</span>
-          {name && <span className="block truncate text-xs text-inkoust-tlumeny">{name}</span>}
-        </p>
-        <p className="shrink-0 text-right">
-          <span className="font-mono text-sm font-semibold">{primaryText}</span>
-          {secondaryText && (
-            <span className="block font-mono text-xs text-inkoust-tlumeny">{secondaryText}</span>
-          )}
-        </p>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span
-          className={cn(
-            'font-medium',
-            exemptDone ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
-          )}
-        >
-          {exemptText}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="min-w-[min(8rem,100%)] flex-1">
+          <span className="line-clamp-2 font-medium text-ink [overflow-wrap:anywhere]">
+            {label}
+          </span>
+          {name && <span className="type-footnote block truncate text-ink-muted">{name}</span>}
         </span>
-        {pl && (
+        <span className="ml-auto text-right">
+          <span className="block font-medium tabular-nums">{primaryText}</span>
           <span
             className={cn(
-              'rounded-md px-1.5 py-0.5 font-mono font-semibold',
-              pl.positive ? 'bg-zelena/10 text-zelena-text' : 'bg-cervena/10 text-cervena',
+              'type-footnote block tabular-nums',
+              exemptDone ? 'text-success-text' : 'text-ink-muted',
             )}
           >
-            {pl.text}
+            {exemptText}
           </span>
-        )}
-      </div>
+        </span>
+      </span>
+      <span aria-hidden className="text-ink-muted">
+        ›
+      </span>
     </Link>
   );
 }

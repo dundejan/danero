@@ -7,6 +7,7 @@ import {
   analyzeForUser,
   compareVariantsForUser,
   dailyRatesAffectAnalysis,
+  taxYearOptions,
 } from '@/lib/portfolio';
 
 /**
@@ -219,9 +220,27 @@ export function analysisFingerprint(
 ): string {
   // hash ID transakcí: levný a citlivý na přidání/odebrání i pořadí
   const txHash = fnv1a64(txs.map((tx) => tx.id).join('|'));
-  return [userId, year, atDate, txs.length, txHash, profileRow.updatedAt.getTime(), rates].join(
-    ':',
+  // Volby, kterými se rok opravdu počítá (R-05c: zafixované, jinak z profilu).
+  // `updatedAt` profilu je nenese: fixace vzniká mimo profil. Většinou zapíše
+  // to, čím se právě počítalo, a klíč se nemění — jenže při souběhu dvou
+  // otevření reportu s různým nastavením vyhraje fixace jednoho z nich a druhý
+  // by si dál bral z mezipaměti čísla spočítaná SVÝM nastavením, dokud by se
+  // profil znovu nezměnil (revize R7, P1).
+  const { matchingMethod, fxMethod, limit100kIncludesTimeTestExempt } = taxYearOptions(
+    profileRow,
+    year,
   );
+  const yearOptions = `${matchingMethod}/${fxMethod}/${limit100kIncludesTimeTestExempt ? 1 : 0}`;
+  return [
+    userId,
+    year,
+    atDate,
+    txs.length,
+    txHash,
+    profileRow.updatedAt.getTime(),
+    yearOptions,
+    rates,
+  ].join(':');
 }
 
 /** Společné jádro obou cachovaných vstupů: klíč, hit, výpočet, uložení. */

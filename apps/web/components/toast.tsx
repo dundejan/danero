@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { typeset } from '@/components/typeset';
 import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
+import { cn } from '@/lib/utils';
 
 /**
  * Parametry, které nesou hlášku: kód výsledku a u /import i údaje k němu
@@ -23,20 +25,42 @@ export function urlWithoutFeedback(href: string): string | null {
 
 /**
  * Toast po akcích (G9b): vykresluje hlášku z query parametrů (?ok= / ?chyba=),
- * po 6 s se sám schová (chybové zůstávají). Server actions dál fungují bez JS —
- * toast je jen progressive enhancement nad stávajícími bannery.
+ * po 6 s se sám schová (chybový po 15 s). Server actions dál fungují bez JS —
+ * hláška se vykreslí už na serveru, JavaScript ji jen uklidí.
+ *
+ * Proto to není knihovní toast volaný z klienta: výsledek akce přichází
+ * přesměrováním, ne událostí v prohlížeči.
+ *
+ * Stav nese barevná tečka a role (`status` / `alert`), text je běžným
+ * inkoustem — dlouhá chybová hláška se má dát přečíst. Plovoucí varianta je
+ * neprůsvitná plocha se stínem (jedna z mála věcí, které se opravdu vznášejí),
+ * řádková varianta tichý panel v toku stránky.
  */
 export function Toast({
   kind,
   text,
   floating = false,
+  onGone,
 }: {
   kind: 'ok' | 'chyba';
   text: string;
   /** Plovoucí varianta (pravý dolní roh) — vidět i po skoku na kotvu sekce. */
   floating?: boolean;
+  /**
+   * Hláška zmizela z obrazovky (vypršela nebo ji uživatel zavřel). Kdo ji
+   * drží mimo adresu, tady ji má zahodit — jinak ji další vykreslení ukáže
+   * znovu (`lib/save-feedback.ts`).
+   */
+  onGone?: () => void;
 }) {
-  const [visible, setVisible] = useState(true);
+  // Plovoucí hláška neodchází skokem: nejdřív `leaving` (přechod v CSS ji
+  // pošle tam, odkud přijela), odmontuje se až po jeho doběhu. Řádková
+  // varianta leží v toku stránky a mizí rovnou.
+  const [phase, setPhase] = useState<'visible' | 'leaving' | 'gone'>('visible');
+  const dismiss = useCallback(
+    () => setPhase((current) => (current === 'visible' && floating ? 'leaving' : 'gone')),
+    [floating],
+  );
   useEffect(() => {
     // hláška patří k právě provedené akci — z URL ji smaž, ať ji reload
     // ani tlačítko zpět neukáže znovu (bez RSC refetche)
@@ -45,37 +69,73 @@ export function Toast({
     // H-3-06: chybový toast se dřív sám nikdy neschoval — jediná cesta ven byl
     // křížek o velikosti 8 × 20 px, který navíc na mobilu ležel přes tab bar.
     // Chyba má být vidět déle než potvrzení, ale ne napořád.
-    const timer = setTimeout(() => setVisible(false), kind === 'ok' ? 6000 : 15000);
+    const timer = setTimeout(dismiss, kind === 'ok' ? 6000 : 15000);
     return () => clearTimeout(timer);
-  }, [kind]);
-  if (!visible) return null;
+  }, [kind, dismiss]);
+  useEffect(() => {
+    if (phase !== 'leaving') return;
+    // pojistka: `transitionend` nepřijde, když přechod neproběhne (skrytá
+    // záložka) — hláška nesmí zůstat viset neviditelná
+    const timer = setTimeout(() => setPhase('gone'), 300);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  useEffect(() => {
+    if (phase === 'gone') onGone?.();
+  }, [phase, onGone]);
+  if (phase === 'gone') return null;
   return (
-    <p
+    <div
       role={kind === 'chyba' ? 'alert' : 'status'}
-      className={`rounded-md border px-4 py-3 text-sm ${
-        kind === 'ok' ? 'border-zelena text-zelena-text' : 'border-cervena text-cervena'
-      }${
+      data-leaving={phase === 'leaving' ? '' : undefined}
+      onTransitionEnd={(event) => {
+        if (phase === 'leaving' && event.target === event.currentTarget) setPhase('gone');
+      }}
+      className={cn(
+        'type-callout flex items-start gap-2.5 rounded-xl py-3 pl-4 pr-2 text-ink',
         floating
-          ? // H-3-06: nad mobilním tab barem (40 px + bezpečná zóna gesta), ne přes
+          ? // H-3-06: nad mobilním tab barem (lišta + bezpečná zóna gesta), ne přes
             // něj — plovoucí toast dřív zakrýval 24 ze 40 px navigace včetně popisků
-            ' fixed inset-x-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-50 max-w-sm' +
-            ' bg-plocha shadow-lg sm:inset-x-auto sm:right-4 md:bottom-4'
-          : ''
-      }`}
+            'toast-enter fixed inset-x-4 bottom-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+0.75rem)] z-50 bg-surface shadow-floating sm:inset-x-auto sm:right-4 sm:max-w-sm md:bottom-4 dark:bg-control'
+          : 'bg-canvas',
+      )}
     >
-      {text}
+      <span
+        aria-hidden
+        className={cn(
+          'mt-[0.45em] size-2 shrink-0 rounded-full',
+          kind === 'ok' ? 'bg-success' : 'bg-danger',
+        )}
+      />
+      {/* Dlouhá hláška nesmí zakrýt telefon: nad 40 % výšky okna roluje text
+          uvnitř (roluje odstavec, ne celá hláška — ta by ořízla klikací plochu
+          křížku). `wrap-anywhere` zalomí i název souboru bez mezer. */}
+      <p
+        className={cn(
+          'min-w-0 flex-1 text-pretty wrap-anywhere',
+          floating && 'max-h-[40dvh] overflow-y-auto overscroll-contain',
+        )}
+      >
+        {typeset(text)}
+      </p>
       <button
         type="button"
-        onClick={() => setVisible(false)}
-        // bez opacity: průhlednost srazí kontrast pod AA (text-cervena/60 dá na
-        // --plocha jen 2,8:1) a tohle je ovládací prvek, ne dekorace
+        onClick={dismiss}
         // SC 2.5.8: cíl aspoň 24 × 24 px — křížek měl 8 × 20 px a u chybového
-        // toastu to byla jediná cesta ven (H-3-22)
-        className="float-right -mr-1 -mt-1 ml-3 inline-flex h-6 w-6 items-center justify-center font-bold"
+        // toastu to byla jediná cesta ven (H-3-22); na dotyku 44 px
+        className="-my-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-(--highlight) hover:text-ink active:bg-(--highlight-pressed) pointer-coarse:hit-area"
         aria-label="Zavřít"
       >
-        ×
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden
+          className="size-3 fill-none stroke-current"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        >
+          <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+        </svg>
       </button>
-    </p>
+    </div>
   );
 }
+

@@ -255,7 +255,8 @@ describe('přechod roku: co uvidí uživatel v reportu za rok mimo registr (R-15
 
   it('report není prázdný — čísla, která na vyhlášení nezávisí, ukazuje dál', () => {
     const out = html();
-    expect(out).toContain(`Daňový report ${UNKNOWN_YEAR}`);
+    // rok v nadpisu nese skrytý doplněk titulku lišty (vidět je v přepínači)
+    expect(out.replace(/<[^>]+>/g, '')).toContain(`Report ${UNKNOWN_YEAR}`);
     expect(out).toContain('Použité kurzy');
     // dílčí základ § 10 se spočítal normálně
     expect(out).toContain(czk(d('2000000')));
@@ -281,4 +282,26 @@ describe('přechod roku: co uvidí uživatel v reportu za rok mimo registr (R-15
     );
     expect(out).not.toContain('státem vyhlašovaná čísla');
   });
+});
+
+/**
+ * Hranici osvobození prodejů (100 000 Kč) jmenují výkladové texty natvrdo —
+ * report („prodeje do 100 000 Kč za rok“), přehled, simulátor, Nastavení,
+ * kalkulačka i průvodce. Je to vědomé: částka je v zákoně pevná a v registru
+ * je ve všech letech stejná, kdežto stav limitu (seznam limitů, upozornění)
+ * ji bere z konfigurace. Kdyby ji novela změnila, tenhle test spadne dřív,
+ * než aplikace začne v textech tvrdit starou částku vedle nové v číslech.
+ */
+describe('osvobození prodejů: částka v textech odpovídá konfiguraci', () => {
+  it.each([2014, 2020, 2024, 2025, 2026, LAST_CONFIGURED_TAX_YEAR, LAST_CONFIGURED_TAX_YEAR + 1])(
+    'rok %i má hranici 100 000 Kč pro cenné papíry i krypto',
+    (year) => {
+      const { limits } = configForYear(year);
+      const hint =
+        'změnila se hranice osvobození — projdi literály „100 000 Kč“ v components/views, ' +
+        'app/(app)/nastaveni, components/filing-calculator.tsx a app/pruvodce';
+      expect(limits.securitiesProceedsExemption, hint).toBe('100000');
+      expect(limits.cryptoProceedsExemption, hint).toBe('100000');
+    },
+  );
 });

@@ -135,6 +135,12 @@ describe('R-08 paušální daň — limit 50 000 Kč (§ 7a)', () => {
     expect(warning.context).toMatchObject({ additionalTaxCzk: '11550.00' });
     // pojistné neumíme spočítat (chybí základ § 7) — musí zaznít aspoň slovně
     expect(warning.message).toContain('přehledy ČSSZ a ZP');
+    // R-08b: první věta jmenuje limit jako aplikace (je to titulek kontroly),
+    // částku bere z konfigurace roku a odkaz na § 7a ve znění zůstává
+    expect(warning.message.replace(/\s/g, ' ')).toMatch(
+      /^Prolomen limit paušální daně \(50 000 Kč\): /,
+    );
+    expect(warning.message).toContain('není rovna paušální dani (§ 7a)');
 
     // pod limitem se nic nevyčísluje
     const under = run([

@@ -69,15 +69,15 @@ export async function upsertInstrumentPrices(
   // 500 round-tripů — na Neonu (~3 ms) 1,5 s čisté latence po každém syncu.
   // Dávkujeme; strop je kvůli limitu parametrů v jednom dotazu (Postgres jich
   // bere 65 535, tady je jich 6 na řádek).
-  const DAVKA = 500;
+  const BATCH_SIZE = 500;
   // Tentýž ISIN dvakrát v JEDNOM příkazu Postgres odmítne („cannot affect row
   // a second time"), takže poslední hodnota vyhrává ještě před zápisem.
-  const posledni = new Map(rows.map((row) => [row.isin, row]));
-  const unikatni = [...posledni.values()];
-  for (let i = 0; i < unikatni.length; i += DAVKA) {
+  const latestByIsin = new Map(rows.map((row) => [row.isin, row]));
+  const uniqueRows = [...latestByIsin.values()];
+  for (let i = 0; i < uniqueRows.length; i += BATCH_SIZE) {
     await db
       .insert(instrumentPrices)
-      .values(unikatni.slice(i, i + DAVKA))
+      .values(uniqueRows.slice(i, i + BATCH_SIZE))
       .onConflictDoUpdate({
         target: [instrumentPrices.userId, instrumentPrices.isin],
         set: {
@@ -88,7 +88,7 @@ export async function upsertInstrumentPrices(
         },
       });
   }
-  return unikatni.length;
+  return uniqueRows.length;
 }
 
 export async function loadInstrumentPrices(

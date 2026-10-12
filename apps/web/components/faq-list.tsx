@@ -1,20 +1,14 @@
-/** Sdílený FAQ akordeon — jeden vzor pro landing i podstránky (details/summary). */
+import { typeset } from '@/components/typeset';
+import { Chevron } from '@/components/ui/disclosure';
+import { tidy } from '@/lib/typography';
 
-function IconPlus() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      className="h-4 w-4 shrink-0 text-inkoust-tlumeny transition-transform group-open:rotate-45"
-      aria-hidden
-    >
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+/**
+ * Seznam otázek a odpovědí nad nativním `<details>`: otázka je řádek s šipkou,
+ * odpověď se rozbalí pod ní. Řádky dělí vlásová linka — žádné karty. Stejný
+ * jazyk jako `DisclosureRow` v aplikaci, jen s větším písmem: odpověď je text
+ * ke čtení, ne poznámka pod čarou. Českou sazbu otázek i odpovědí dělá
+ * seznam sám (`typeset`).
+ */
 
 export interface FaqItem {
   q: string;
@@ -28,14 +22,14 @@ export interface FaqItem {
 
 export function FaqList({ items }: { items: FaqItem[] }) {
   return (
-    <div className="max-w-3xl space-y-3">
+    <div className="divide-y divide-line/70 border-y border-line/70">
       {items.map((item) => (
-        <details key={item.q} className="group rounded-lg border border-linka bg-plocha p-5">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-1 font-semibold [&::-webkit-details-marker]:hidden">
-            {item.q}
-            <IconPlus />
+        <details key={item.q} className="disclosure">
+          <summary className="row-hover row-pressable -mx-2 flex min-h-11 items-center gap-4 rounded-lg px-2 py-4">
+            <span className="type-title-3 min-w-0 flex-1 text-pretty">{tidy(item.q)}</span>
+            <Chevron className="h-3 text-ink-muted" />
           </summary>
-          <p className="mt-3 text-sm leading-relaxed text-inkoust-tlumeny">{item.a}</p>
+          <p className="type-body measure pb-5 text-pretty text-ink-muted">{typeset(item.a)}</p>
         </details>
       ))}
     </div>

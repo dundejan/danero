@@ -7,6 +7,7 @@ import { d, parseTransactions, type Money, type Transaction } from '@danero/shar
 import { OverviewView } from '@/components/views/overview-view';
 import { filingLimitTexts } from '@/lib/filing-limits';
 import { czk } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount } from '@/lib/limit-names';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
 import { configForYear } from '@/lib/tax-config';
 
@@ -32,7 +33,7 @@ vi.mock('@/db', async () => {
 // kalkulačka sama částku v prvním vykreslení neukazuje (otázka přijde až po
 // první odpovědi) — místo ní proto zástupce, který vypíše, co jí stránka předala
 vi.mock('@/components/filing-calculator', () => ({
-  KalkulackaPriznani: (props: { filingLimits: unknown; previousFilingLimits: unknown }) =>
+  FilingCalculator: (props: { filingLimits: unknown; previousFilingLimits: unknown }) =>
     createElement(
       'pre',
       { 'data-filing-limits': '' },
@@ -43,7 +44,6 @@ vi.mock('@/components/filing-calculator', () => ({
 vi.mock('@/components/marketing-page', () => ({
   MarketingPage: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   PageHero: () => null,
-  MarketingCta: () => null,
 }));
 vi.mock('@/lib/portfolio', async () => {
   const actual = await vi.importActual<typeof import('@/lib/portfolio')>('@/lib/portfolio');
@@ -83,7 +83,8 @@ const dividend = (year: number, gross: Money): Transaction[] =>
 
 /**
  * Text přehledu roku pro daný režim s dividendou ve výši 90 % jeho limitu.
- * Bez značek: nadpis karty obaluje „Kč“ do vlastního `<span>` (`keepCurrencyCase`).
+ * Bez značek, takže sousední prvky na sebe navazují bez mezery („Nejbližší
+ * limit90 %limit …“ = popisek, hodnota a poznámka klíčového čísla).
  */
 function overviewHtml(year: number, regime: 'ZAMESTNANEC' | 'JINE', limit: Money): string {
   const today = `${year}-07-20`;
@@ -110,17 +111,18 @@ describe('přehled: částka limitu § 38g v popiscích je z konfigurace roku (L
       const limit = d(limits.employeeSideIncome);
       const html = overviewHtml(year, 'ZAMESTNANEC', limit);
 
-      expect(html).toContain(`Vedlejší příjmy — ${czk(limit)}`);
-      expect(html).toContain(`Nejblíž je limit ${czk(limit)} vedlejších příjmů`);
+      expect(html).toContain(`${LIMIT_NAME.EMPLOYEE_SIDE_INCOME} — ${czk(limit)}`);
+      // klíčové číslo „Nejbližší limit“ jmenuje limit stejně jako seznam pod ním (R1B-10)
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%${LIMIT_NAME.EMPLOYEE_SIDE_INCOME}`));
     });
 
     it(`R-09a: režim „jiné“ v roce ${year}`, { timeout: 30_000 }, () => {
       const limit = d(limits.generalFiling);
       const html = overviewHtml(year, 'JINE', limit);
 
-      expect(html).toContain(`Podání přiznání — ${czk(limit)}`);
+      expect(html).toContain(`${LIMIT_NAME.GENERAL_FILING} — ${czk(limit)}`);
       expect(html).toContain(`zdanitelné příjmy do ${czk(limit)} za rok`);
-      expect(html).toContain(`Nejblíž je limit ${czk(limit)} pro podání přiznání`);
+      expect(html).toMatch(new RegExp(`Nejbližší limit90\\s%${LIMIT_NAME.GENERAL_FILING}`));
     });
   }
 });
@@ -147,10 +149,24 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
       const { default: SettingsPage } = await import('@/app/(app)/nastaveni/page');
       const html = renderToStaticMarkup(await SettingsPage({ searchParams: Promise.resolve({}) }));
 
-      expect(html).toContain(`Zaměstnanec (hlídá se limit ${employeeLimit})`);
-      expect(html).toContain(`Jiné (hlídá se obecný limit ${generalLimit})`);
+      // Limit už nestojí v textu položky nabídky, ale ve větě pod popiskem,
+      // která se přepíná podle vybraného režimu (`:has()` nad položkou) —
+      // každý režim má svou a hlídá se, že jmenuje limit běžného roku.
+      const hintFor = (regime: string): string =>
+        (new RegExp(`option\\[value=${regime}\\]:checked[^>]*>([^<]*)<`).exec(html)?.[1] ?? '')
+          .replace(/\s/g, ' ');
+      const spaced = (text: string): string => text.replace(/\s/g, ' ');
+      // Limity se jmenují stejně jako na přehledu (R1B-10): jméno i částka jdou
+      // z `lib/limit-names.ts` a z konfigurace roku, ne z literálu ve stránce.
+      const watched = (kind: Parameters<typeof limitWithAmount>[0], amountCzk: string): string =>
+        spaced(`Hlídá se ${limitWithAmount(kind, d(amountCzk))}.`);
+      expect(hintFor('ZAMESTNANEC')).toBe(watched('EMPLOYEE_SIDE_INCOME', limits.employeeSideIncome));
+      expect(hintFor('ZAMESTNANEC')).toContain(`limit vedlejších příjmů (${spaced(employeeLimit)})`);
+      expect(hintFor('JINE')).toBe(watched('GENERAL_FILING', limits.generalFiling));
+      expect(hintFor('JINE')).toContain(`limit pro podání přiznání (${spaced(generalLimit)})`);
       // limit paušální daně (§ 7a) se nemění
-      expect(html).toContain('OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)');
+      expect(hintFor('PAUSAL')).toBe(watched('FLAT_TAX', limits.flatTaxOtherIncome));
+      expect(hintFor('PAUSAL')).toBe('Hlídá se limit paušální daně (50 000 Kč).');
     });
 
     it(`první krok uvítání v roce ${year}`, { timeout: 30_000 }, async () => {
@@ -199,7 +215,7 @@ describe('nastavení a uvítání: limity § 38g běžného roku (L3-01)', () =>
     const page = readFileSync(join(webDir, 'app', 'kalkulacka', 'page.tsx'), 'utf8');
     const shell = readFileSync(join(webDir, 'components', 'marketing-page.tsx'), 'utf8');
 
-    expect(page).toMatch(/^\s*<MarketingPage>/m);
+    expect(page).toMatch(/^\s*<MarketingPage\b/m);
     expect(page).toMatch(/^ {2}const year = currentTaxYear\(\);/m);
     expect(shell).toMatch(/^\s*await connection\(\);/m);
     // kalkulačka je klientská komponenta — hodiny zařízení do výběru limitu nemluví

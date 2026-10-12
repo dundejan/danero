@@ -2,13 +2,19 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { buttonVariants } from '@/components/ui/button';
+import { Logo } from '@/components/logo';
+import { Button } from '@/components/ui/button';
+import { TextLink } from '@/components/ui/link';
 
 /**
  * Kořenový error boundary — chytá marketingové i přihlašovací stránky
  * (`app/(auth)`), které vlastní `error.tsx` neměly. Bez něj by tam pád skončil
  * v anglické defaultní obrazovce Nextu, a to hned na první stránce, kterou
  * návštěvník vidí. Aplikační a demo část mají vlastní, konkrétnější hlášku.
+ *
+ * Obrazovka odpovídá na čtyři otázky: kde jsem (značka), co se stalo (jedna
+ * věta), co s tím (zkusit znovu) a jak ven (úvodní stránka). Kód chyby je
+ * tichý řádek dole — je pro toho, kdo chybu hlásí, ne pro čtení.
  */
 export default function RootError({
   error,
@@ -22,22 +28,32 @@ export default function RootError({
   }, [error]);
 
   return (
-    <main className="mx-auto flex max-w-xl flex-col items-start gap-4 px-6 pt-24">
-      <h1 className="font-display text-3xl font-bold">Něco se pokazilo</h1>
-      <p className="text-inkoust-tlumeny">
-        Stránku se nepodařilo načíst. Zkus to prosím ještě jednou — a kdyby to nepomohlo,
-        vrať se za chvíli.
-      </p>
-      {error.digest && (
-        <p className="font-mono text-xs text-inkoust-tlumeny">Kód chyby: {error.digest}</p>
-      )}
-      <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={reset} className={buttonVariants({ variant: 'primary' })}>
-          Zkusit znovu
-        </button>
-        <Link href="/" className="font-medium text-ruzova-text underline underline-offset-2">
-          Zpět na úvodní stránku
+    <main className="wrap-wide flex min-h-svh flex-col justify-center py-16">
+      <div className="measure">
+        <Link
+          href="/"
+          aria-label="Danero — úvodní stránka"
+          className="inline-flex min-h-11 items-center"
+        >
+          <Logo className="text-[1.0625rem]" />
         </Link>
+        <h1 className="type-title-1 mt-8 text-balance">Něco se pokazilo</h1>
+        <p className="type-body mt-3 text-pretty text-ink-muted">
+          Stránku se nepodařilo načíst. Zkus to znovu, a kdyby to nepomohlo, vrať se za chvíli.
+        </p>
+        <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <Button type="button" onClick={reset}>
+            Zkusit znovu
+          </Button>
+          <TextLink href="/" chevron>
+            Úvodní stránka
+          </TextLink>
+        </div>
+        {error.digest && (
+          <p className="type-caption mt-10 tabular-nums text-ink-muted">
+            Kód chyby: {error.digest}
+          </p>
+        )}
       </div>
     </main>
   );

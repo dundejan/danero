@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint app components db lib",
+    "lint": "eslint app components db e2e lib scripts test",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:prod": "playwright test --config playwright.prod.config.ts",
@@ -16,6 +16,7 @@
     "two-factor": "tsx scripts/two-factor.ts"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@danero/engine": "workspace:*",
     "@danero/importers": "workspace:*",
     "@danero/shared": "workspace:*",
@@ -24,6 +25,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
+    "motion": "^14.1.0",
     "next": "~16.3.8",
     "next-themes": "^0.4.6",
     "postgres": "^3.4.5",

@@ -7,8 +7,6 @@ import {
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -16,21 +14,20 @@ import {
   YAxis,
 } from 'recharts';
 import type { LegendPayload } from 'recharts';
-import type {
-  DividendsByMonth,
-  ExemptionOutlook,
-  LimitSeries,
-  PortfolioAllocation,
-  YearBar,
+import {
+  OUTLOOK_BASIS_LABEL,
+  type DividendsByMonth,
+  type ExemptionOutlook,
+  type LimitSeries,
+  type YearBar,
 } from '@/lib/charts-data';
 import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
 
 /**
  * Grafy G3 (Recharts, 'use client'). Barvy výhradně z design tokenů:
- * kategorické série --graf-1..4 (pevné pořadí; největší kategorie — třeba US
- * v dividendách — dostává --graf-1), semafor jen pro stav/polaritu
- * (zisk/ztráta, pásma limitů). Brand růžová v sériích není — zůstává jen
- * akcentem (dnes/limit/aktivní). Mřížka a osy ustupují datům.
+ * kategorické série --chart-1..4 (pevné pořadí; největší kategorie — třeba US
+ * v dividendách — dostává --chart-1), semafor jen pro stav/polaritu
+ * (zisk/ztráta, čára limitu). Mřížka a osy ustupují datům.
  *
  * Přístupnost: každý graf dostává `title` a `desc` — Recharts je vykreslí do
  * `<svg role="application" tabindex="0">`. Bez nich se na graf dá klávesnicí
@@ -38,7 +35,7 @@ import { czkCompact, MONTH_LABELS, pct } from '@/lib/format';
  * čísla, ne jen popis typu grafu; jinak jsou data pro nevidomého nedostupná.
  */
 
-const SERIES = ['var(--graf-1)', 'var(--graf-2)', 'var(--graf-3)', 'var(--graf-4)'];
+const SERIES = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)'];
 
 const czkAxis = (value: number): string => {
   const abs = Math.abs(value);
@@ -76,8 +73,8 @@ export const msLabel = (ms: number): string =>
   });
 
 const axisProps = {
-  tick: { fill: 'var(--inkoust-tlumeny)', fontSize: 11, fontFamily: 'var(--font-mono)' },
-  axisLine: { stroke: 'var(--linka)' },
+  tick: { fill: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' },
+  axisLine: { stroke: 'var(--line)' },
   tickLine: false as const,
 };
 
@@ -91,7 +88,9 @@ function niceTicks(max: number, min = 0): { domain: [number, number]; ticks: num
   const hi = Math.max(max, 1);
   const rawStep = (hi - lo) / 4;
   const pow = 10 ** Math.floor(Math.log10(rawStep));
-  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= rawStep)!;
+  // Osa je v celých korunách: s krokem pod 1 Kč vycházely u haléřových
+  // částek popisky „0, 1, 1“ (R2-28).
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= rawStep)!);
   const niceMax = Math.ceil(hi / step) * step;
   const niceMin = lo < 0 ? Math.floor(lo / step) * step : 0;
   const ticks: number[] = [];
@@ -107,15 +106,15 @@ function TooltipBox({
   rows: Array<{ color?: string; name: string; value: string }>;
 }) {
   return (
-    <div className="rounded-md border border-linka bg-plocha px-3 py-2 text-xs shadow-sm">
-      <p className="mb-1 font-semibold text-inkoust">{title}</p>
+    <div className="rounded-lg bg-surface px-3 py-2 text-xs shadow-floating dark:bg-control">
+      <p className="mb-1 font-semibold text-ink">{title}</p>
       {rows.map((row) => (
-        <p key={row.name} className="flex items-center gap-2 font-mono text-inkoust-tlumeny">
+        <p key={row.name} className="flex items-center gap-2 tabular-nums text-ink-muted">
           {row.color && (
             <span className="inline-block size-2 rounded-full" style={{ background: row.color }} />
           )}
           <span>{row.name}</span>
-          <span className="ml-auto pl-3 text-inkoust">{row.value}</span>
+          <span className="ml-auto pl-3 text-ink">{row.value}</span>
         </p>
       ))}
     </div>
@@ -136,7 +135,7 @@ function ChartLegend({ payload }: { payload?: ReadonlyArray<LegendPayload> }) {
       {(payload ?? []).map((entry) => (
         <li
           key={String(entry.value)}
-          className="flex items-center gap-1.5 text-xs text-inkoust-tlumeny"
+          className="flex items-center gap-1.5 text-xs text-ink-muted"
         >
           <span
             aria-hidden
@@ -150,7 +149,12 @@ function ChartLegend({ payload }: { payload?: ReadonlyArray<LegendPayload> }) {
   );
 }
 
-/* ── Čerpání limitu v průběhu roku ──────────────────────────────────────── */
+/* ── Čerpání limitu v průběhu roku ────────────────────────────────────────
+   V grafu je jediná vodicí čára: limit. Pásma 60 a 85 % se nekreslí (Janovo
+   rozhodnutí 10. 10. 2026) — stav limitu nese odměrka a slovní popis vedle
+   grafu, tři čáry navíc jen ubíraly čitelnost křivce. Totéž platí pro každý
+   další graf limitu. Graf nemá popisek ani legendu: osa, křivka a slovo
+   „limit“ u čáry stačí. */
 
 export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name: string }) {
   const year = Number(series.points[0]?.date.slice(0, 4));
@@ -166,18 +170,14 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
 
   return (
     <div>
-      {/* stav ke konci roku mimo kreslicí plochu — nepřekrývá popisek „limit“ */}
-      <p className="mb-1 text-right font-mono text-xs text-inkoust-tlumeny">
-        k 31. 12.: <span className="text-inkoust">{czkCompact(lastValue)}</span>
-      </p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart
           data={points}
           margin={{ top: 8, right: 12, bottom: 0, left: 8 }}
           title={`Čerpání limitu ${czkCompact(series.limitCzk)} v roce ${year} — ${name.toLowerCase()}`}
-          desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušované čáry označují pásma 60, 85 a 100 % limitu.`}
+          desc={`Kumulativní řada od 1. 1. ${year}; k 31. 12. ${czkCompact(lastValue)} z limitu ${czkCompact(series.limitCzk)}. Přerušovaná čára označuje limit.`}
         >
-          <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+          <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
           <XAxis
             {...axisProps}
             type="number"
@@ -196,17 +196,19 @@ export function LimitDrawdownChart({ series, name }: { series: LimitSeries; name
           />
           <ReferenceLine
             y={series.limitCzk}
-            stroke="var(--cervena)"
+            stroke="var(--danger)"
             strokeDasharray="4 4"
+            // Popisek stojí vlevo NAD čarou (u vodorovné čáry to je
+            // `insideBottomLeft`): řada tam teprve začíná od nuly. Vpravo pod
+            // čarou ho při čerpání těsně pod limitem přeškrtla křivka (R1B-25)
+            // a u limitu u dna grafu se kryl s popisky osy (R2-15).
             label={{
               value: 'limit',
-              fill: 'var(--cervena)',
+              fill: 'var(--danger)',
               fontSize: 10,
-              position: 'insideTopRight',
+              position: 'insideBottomLeft',
             }}
           />
-          <ReferenceLine y={series.limitCzk * 0.85} stroke="var(--oranz)" strokeDasharray="2 4" />
-          <ReferenceLine y={series.limitCzk * 0.6} stroke="var(--jantar)" strokeDasharray="2 4" />
           <Tooltip
             content={({ active, payload }) =>
               active && payload?.[0] ? (
@@ -250,7 +252,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
         title="Dividendy po měsících a státech"
         desc={`Skládané sloupce: brutto dividendy v Kč po měsících, barevně podle státu (${data.countries.join(', ')}). Celkem ${czkCompact(data.totalCzk)}.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="month" tickFormatter={monthLabel} />
         <YAxis
           {...axisProps}
@@ -260,7 +262,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
           ticks={yScale.ticks}
         />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload && payload.length > 0 ? (
               <TooltipBox
@@ -283,7 +285,7 @@ export function DividendsByMonthChart({ data }: { data: DividendsByMonth }) {
             dataKey={country}
             stackId="dividendy"
             fill={SERIES[index % SERIES.length]}
-            stroke="var(--plocha)"
+            stroke="var(--surface)"
             strokeWidth={2}
             maxBarSize={36}
             isAnimationActive={false}
@@ -300,7 +302,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
   // polarita zisk/ztráta = semaforové barvy (per-entry fill; Cell je v Recharts 3 deprecated)
   const data = bars.map((bar) => ({
     ...bar,
-    fill: bar.valueCzk >= 0 ? 'var(--zelena)' : 'var(--cervena)',
+    fill: bar.valueCzk >= 0 ? 'var(--success)' : 'var(--danger)',
   }));
   const yScale = niceTicks(
     Math.max(...bars.map((bar) => bar.valueCzk), 0),
@@ -314,7 +316,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
         title="Realizovaný zisk a ztráta po letech"
         desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}. Zelená = zisk, červená = ztráta.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
           {...axisProps}
@@ -323,9 +325,9 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
           domain={yScale.domain}
           ticks={yScale.ticks}
         />
-        <ReferenceLine y={0} stroke="var(--inkoust-tlumeny)" />
+        <ReferenceLine y={0} stroke="var(--ink-muted)" />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload?.[0] ? (
               <TooltipBox
@@ -334,7 +336,7 @@ export function RealizedByYearChart({ bars }: { bars: YearBar[] }) {
                   {
                     name: Number(payload[0].value) >= 0 ? 'Zisk' : 'Ztráta',
                     value: czkCompact(Number(payload[0].value)),
-                    color: Number(payload[0].value) >= 0 ? 'var(--zelena)' : 'var(--cervena)',
+                    color: Number(payload[0].value) >= 0 ? 'var(--success)' : 'var(--danger)',
                   },
                 ]}
               />
@@ -359,7 +361,7 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
         title="Poplatky brokerům po letech"
         desc={`Sloupce podle let: ${bars.map((bar) => `${bar.year} ${czkCompact(bar.valueCzk)}`).join(', ')}.`}
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis {...axisProps} dataKey="year" />
         <YAxis
           {...axisProps}
@@ -369,7 +371,7 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
           ticks={yScale.ticks}
         />
         <Tooltip
-          cursor={{ fill: 'var(--pozadi)' }}
+          cursor={{ fill: 'var(--canvas)' }}
           content={({ active, payload, label }) =>
             active && payload?.[0] ? (
               <TooltipBox
@@ -400,10 +402,25 @@ export function FeesByYearChart({ bars }: { bars: YearBar[] }) {
 /* ── Výhled osvobozování portfolia ──────────────────────────────────────── */
 
 export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }) {
-  const basisLabel = outlook.basis === 'value' ? 'hodnoty' : 'kusů';
+  const basisLabel = OUTLOOK_BASIS_LABEL[outlook.basis];
   const points = outlook.points.map((point) => ({ ...point, t: toMs(point.date) }));
   const firstPoint = outlook.points[0];
   const lastPoint = outlook.points[outlook.points.length - 1];
+  // Osa času: „dnes“ a začátky dalších let. Z dat jednotlivých nákupů na ni
+  // vycházela nahodilá data („29. 5. 2027“), která nic neříkala — přesný den
+  // ukáže bublina nad křivkou.
+  const startMs = points[0]?.t ?? 0;
+  const endMs = points[points.length - 1]?.t ?? startMs;
+  const yearTicks: number[] = [];
+  for (
+    let year = new Date(startMs).getUTCFullYear() + 1;
+    Date.UTC(year, 0, 1) <= endMs;
+    year += 1
+  ) {
+    const tick = Date.UTC(year, 0, 1);
+    // letopočet těsně za „dnes“ by se s ním překryl
+    if (tick - startMs > (endMs - startMs) * 0.07) yearTicks.push(tick);
+  }
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart
@@ -412,22 +429,25 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         title="Osvobozování portfolia v čase"
         desc={
           firstPoint && lastPoint
-            ? `Podíl ${basisLabel} portfolia, který půjde prodat bez daně: dnes ${pct(firstPoint.exemptShare, 1)}, k ${dateLabel(lastPoint.date)} ${pct(lastPoint.exemptShare, 1)}.`
-            : `Podíl ${basisLabel} portfolia, který půjde prodat bez daně, v čase.`
+            ? `Podíl portfolia podle ${basisLabel}, který půjde prodat bez daně: dnes ${pct(firstPoint.exemptShare, 1)}, k ${dateLabel(lastPoint.date)} ${pct(lastPoint.exemptShare, 1)}.`
+            : `Podíl portfolia podle ${basisLabel}, který půjde prodat bez daně, v čase.`
         }
       >
-        <CartesianGrid stroke="var(--linka)" strokeDasharray="2 4" vertical={false} />
+        <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />
         <XAxis
           {...axisProps}
           type="number"
           dataKey="t"
           domain={['dataMin', 'dataMax']}
-          tickFormatter={(ms: number) => msLabel(ms)}
-          minTickGap={48}
+          ticks={[startMs, ...yearTicks]}
+          tickFormatter={(ms: number) =>
+            ms === startMs ? 'dnes' : String(new Date(ms).getUTCFullYear())
+          }
         />
         <YAxis
           {...axisProps}
           domain={[0, 100]}
+          ticks={[0, 50, 100]}
           tickFormatter={(v: number) => `${v} %`}
           width={44}
         />
@@ -438,9 +458,9 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
                 title={dateLabel(String(payload[0].payload.date))}
                 rows={[
                   {
-                    name: `Bez daně (% ${basisLabel})`,
+                    name: `Bez daně (podle ${basisLabel})`,
                     value: pct(Number(payload[0].value), 1),
-                    color: 'var(--zelena)',
+                    color: SERIES[0],
                   },
                 ]}
               />
@@ -450,7 +470,8 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         <Line
           type="stepAfter"
           dataKey="exemptShare"
-          stroke="var(--zelena)"
+          // stejná barva jako táž křivka pod horizontem na přehledu (R1B-11)
+          stroke={SERIES[0]}
           strokeWidth={2}
           dot={false}
           activeDot={{ r: 4 }}
@@ -458,132 +479,5 @@ export function ExemptionOutlookChart({ outlook }: { outlook: ExemptionOutlook }
         />
       </LineChart>
     </ResponsiveContainer>
-  );
-}
-
-/* ── Alokace portfolia (velký koláč všech pozic) ────────────────────────── */
-
-const RADIAN = Math.PI / 180;
-
-/** Rozšířená paleta pro koláč (--graf-5..8 zatím jen tady, série grafů dál 1–4). */
-const PIE_SERIES = [...SERIES, 'var(--graf-5)', 'var(--graf-6)', 'var(--graf-7)', 'var(--graf-8)'];
-
-/** Přímý popisek výseče: ticker těsně za vnějším okrajem, jen pro podíl ≥ 3 %
-    — inkoust na ploše karty drží kontrast v obou režimech. */
-function pieSliceLabel(props: {
-  cx?: number;
-  cy?: number;
-  midAngle?: number;
-  outerRadius?: number;
-  payload?: { label: string; share: number };
-}) {
-  const { cx, cy, midAngle, outerRadius, payload } = props;
-  if (
-    cx === undefined ||
-    cy === undefined ||
-    midAngle === undefined ||
-    outerRadius === undefined ||
-    !payload ||
-    payload.share < 3
-  ) {
-    return null;
-  }
-  const r = outerRadius + 10;
-  const x = cx + r * Math.cos(-midAngle * RADIAN);
-  return (
-    <text
-      x={x}
-      y={cy + r * Math.sin(-midAngle * RADIAN)}
-      textAnchor={x > cx ? 'start' : 'end'}
-      dominantBaseline="central"
-      fill="var(--inkoust)"
-      fontSize={11}
-      fontFamily="var(--font-mono)"
-    >
-      {payload.label}
-    </text>
-  );
-}
-
-export function AllocationPie({ allocation }: { allocation: PortfolioAllocation }) {
-  // Kategorické střídání --graf-1..8 podle pořadí (index mod 8) — barva jen
-  // odděluje sousední výseče, identitu nese přímý popisek a tooltip. Paleta
-  // validována dataviz skriptem vč. wrap-around páru 8↔1.
-  const count = allocation.slices.length;
-  const fillFor = (index: number): string => {
-    // wrap-around: při n mod 8 == 1 by poslední výseč měla barvu první —
-    // dostane místo ní graf-3 (odlišná i od předchozí graf-8)
-    if (count > PIE_SERIES.length && index === count - 1 && count % PIE_SERIES.length === 1) {
-      return PIE_SERIES[2]!;
-    }
-    return PIE_SERIES[index % PIE_SERIES.length]!;
-  };
-  const data = allocation.slices.map((slice, index) => ({
-    ...slice,
-    fill: fillFor(index),
-  }));
-  return (
-    <div>
-      <div className="relative">
-        <ResponsiveContainer width="100%" height={360}>
-          <PieChart
-            margin={{ top: 16, right: 16, bottom: 16, left: 16 }}
-            title="Alokace portfolia podle pozic"
-            desc={`Celkem ${czkCompact(allocation.totalCzk)} v ${data.length} pozicích. Největší: ${data
-              .slice(0, 5)
-              .map((slice) => `${slice.label} ${pct(slice.share, 1)}`)
-              .join(', ')}.`}
-          >
-            <Pie
-              data={data}
-              dataKey="valueCzk"
-              nameKey="label"
-              innerRadius="55%"
-              outerRadius="85%"
-              paddingAngle={0.5}
-              stroke="var(--plocha)"
-              strokeWidth={2}
-              isAnimationActive={false}
-              label={pieSliceLabel}
-              labelLine={false}
-            />
-            <Tooltip
-              content={({ active, payload }) =>
-                active && payload?.[0] ? (
-                  <TooltipBox
-                    title={(() => {
-                      const slice = payload[0].payload as { label: string; name?: string };
-                      return slice.name ? `${slice.label} — ${slice.name}` : slice.label;
-                    })()}
-                    rows={[
-                      {
-                        name: 'Hodnota',
-                        value: czkCompact(Number(payload[0].value)),
-                        color: String((payload[0].payload as { fill: string }).fill),
-                      },
-                      {
-                        name: 'Podíl',
-                        value: pct((payload[0].payload as { share: number }).share, 1),
-                      },
-                    ]}
-                  />
-                ) : null
-              }
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        {/* uprostřed koláče celková hodnota — text nenese barvu série */}
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[10px] uppercase tracking-wide text-inkoust-tlumeny">celkem</span>
-          <span className="font-mono text-sm font-semibold text-inkoust">
-            {czkCompact(allocation.totalCzk)}
-          </span>
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-inkoust-tlumeny">
-        Barvy jen odlišují sousední výseče — pořadí je podle hodnoty. Pozice bez ceny od brokera v
-        grafu nejsou.
-      </p>
-    </div>
   );
 }

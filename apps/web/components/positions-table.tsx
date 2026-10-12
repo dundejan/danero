@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import type { Position } from '@danero/engine';
-import { czDate, qty } from '@/lib/format';
+import { czDate, plural, qty } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { PositionCard } from '@/components/position-card';
-import { cn } from '@/lib/utils';
+import { TextLink } from '@/components/ui/link';
 
 interface Row {
   isin: string;
@@ -18,15 +20,15 @@ interface Row {
   neverExempt: boolean;
 }
 
-/** Délka 3letého časového testu ve dnech — pro mini progress „Zbývá dní“. */
-const TEST_DAYS = 3 * 365;
+/** Od kolika pozic výš tabulka ukazuje jen nejbližší čekající (a kolik jich). */
+const MAX_ROWS = 10;
 
 /** Zelený checkmark: časový test celé pozice splněn. */
 function CheckIcon() {
   return (
     <svg
       viewBox="0 0 16 16"
-      className="inline size-4 text-zelena"
+      className="inline size-4 text-success"
       role="img"
       aria-label="časový test splněn"
     >
@@ -39,22 +41,6 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
-  );
-}
-
-/** Mini progress uplynulé části časového testu (uplynulo / 1095 dní). */
-function TestProgress({ daysToExempt }: { daysToExempt: number }) {
-  const elapsed = Math.min(1, Math.max(0, (TEST_DAYS - daysToExempt) / TEST_DAYS));
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-linka/60">
-        <span
-          className="block h-full rounded-full bg-ruzova"
-          style={{ width: `${elapsed * 100}%` }}
-        />
-      </span>
-      {daysToExempt.toLocaleString('cs-CZ')}
-    </span>
   );
 }
 
@@ -78,6 +64,7 @@ export function PositionsTable({
       // A2-3-04: pozice bez nároku na osvobození (obchodní majetek, stablecoiny,
       // deriváty, období bez krypto osvobození) nesmí ukazovat odpočet ani
       // „vše bez daně“ — čeká se u nich na něco, co nikdy nepřijde
+      const label = labels.get(position.isin) ?? position.isin;
       const neverExempt = position.lots.every((lot) => !lot.exemptionPossible);
       const pending = position.lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
       const nearest = pending.length
@@ -85,8 +72,9 @@ export function PositionsTable({
         : null;
       return {
         isin: position.isin,
-        label: labels.get(position.isin) ?? position.isin,
-        name: names.get(position.isin),
+        label,
+        // název shodný se zkratkou by se v řádku jen opakoval
+        name: names.get(position.isin) === label ? undefined : names.get(position.isin),
         total: position.totalRemaining.toNumber(),
         exemptQty: position.lots
           .filter((lot) => lot.isExempt)
@@ -98,114 +86,137 @@ export function PositionsTable({
     })
     .sort((a, b) => (a.nearestExemptFrom ?? '0').localeCompare(b.nearestExemptFrom ?? '0'));
 
+  // Horizont se ptá „co se osvobodí nejdřív“ — u většího portfolia proto
+  // tabulka ukáže jen nejbližší čekající pozice a zbytek shrne jednou větou
+  // s odkazem na portfolio. Dřív vypsala všechno (demo: 52 řádků) a zbytek
+  // přehledu odjel o dvě obrazovky níž, přitom úplný seznam s hledáním
+  // a řazením už portfolio má (R1B-18). Malé portfolio se vypíše celé.
+  const pendingRows = rows.filter((row) => row.nearestExemptFrom !== null);
+  const condensed = rows.length > MAX_ROWS;
+  const shown = condensed ? pendingRows.slice(0, MAX_ROWS) : rows;
+  const morePending = condensed ? pendingRows.length - shown.length : 0;
+  const allExempt = rows.filter((row) => !row.neverExempt && row.nearestExemptFrom === null);
+  const never = rows.filter((row) => row.neverExempt);
+  const rest = condensed
+    ? [
+        morePending > 0
+          ? `${morePending} ${plural(morePending, 'další čeká', 'další čekají', 'dalších čeká')}`
+          : null,
+        allExempt.length > 0
+          ? `${allExempt.length} ${plural(allExempt.length, 'pozice je už celá', 'pozice jsou už celé', 'pozic je už celých')} bez daně`
+          : null,
+        never.length > 0 ? `u ${never.length} se časový test nevztahuje` : null,
+      ].filter((part): part is string => part !== null)
+    : [];
+
   // E2: sloupec „Z toho bez daně“ jen když má co říct — samé nuly nese
   // už KPI „Bez daně už dnes“ (0 %)
-  const anyExempt = rows.some((row) => row.exemptQty > 0);
+  const anyExempt = shown.some((row) => row.exemptQty > 0);
 
   const content = (
     <>
       {/* mobil: karty místo tabulky (H4) */}
-      <div className="space-y-2 md:hidden">
-        {rows.map((row) => (
-          <PositionCard
-            key={row.isin}
-            isin={row.isin}
-            basePath={basePath}
-            label={row.label}
-            name={row.name}
-            primaryText={`${qty(row.total)} ks`}
-            secondaryText={row.exemptQty > 0 ? `${qty(row.exemptQty)} ks bez daně` : undefined}
-            exemptText={
-              row.neverExempt
-                ? 'časový test se nevztahuje'
-                : row.nearestExemptFrom
-                  ? `bez daně od ${czDate(row.nearestExemptFrom)}`
-                  : 'vše bez daně'
-            }
-            exemptDone={!row.neverExempt && row.nearestExemptFrom === null}
-          />
+      <ul className={cn('divide-y divide-line/70 md:hidden', shown.length === 0 && 'hidden')}>
+        {shown.map((row) => (
+          <li key={row.isin}>
+            <PositionCard
+              isin={row.isin}
+              basePath={basePath}
+              label={row.label}
+              name={row.name}
+              primaryText={`${qty(row.total)} ks`}
+              exemptText={
+                row.neverExempt
+                  ? 'časový test se nevztahuje'
+                  : row.nearestExemptFrom === null
+                    ? 'vše bez daně'
+                    : row.exemptQty > 0
+                      ? `${qty(row.exemptQty)} ks bez daně`
+                      : `bez daně od ${czDate(row.nearestExemptFrom)}`
+              }
+              exemptDone={!row.neverExempt && (row.nearestExemptFrom === null || row.exemptQty > 0)}
+            />
+          </li>
         ))}
-      </div>
+      </ul>
 
-      <ScrollArea label="Pozice a jejich časové testy" className="hidden md:block">
-        <table className="w-full text-sm">
+      <ScrollArea
+        label="Pozice a jejich časové testy"
+        className={shown.length === 0 ? 'hidden' : 'hidden md:block'}
+      >
+        <Table>
           {/* caption = název tabulky pro čtečku (audit H2-12); vizuálně ho nese
-              CardTitle nad ní, proto sr-only. `scope="col"` váže buňky
-              na hlavičku i tam, kde si to prohlížeč sám neodvodí. */}
+              nadpis sekce nad ní, proto sr-only. `scope="col"` (dává ho `Th`)
+              váže buňky na hlavičku i tam, kde si to prohlížeč sám neodvodí. */}
           <caption className="sr-only">Pozice a jejich časové testy</caption>
           <thead>
-            <tr className="border-b border-linka text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-              <th scope="col" className="py-2 pr-4 font-medium">
-                Instrument
-              </th>
-              <th scope="col" className="py-2 pr-4 text-right font-medium">
-                Kusů
-              </th>
-              {anyExempt && (
-                <th scope="col" className="py-2 pr-4 text-right font-medium">
-                  Z toho bez daně
-                </th>
-              )}
-              <th scope="col" className="py-2 pr-4 text-right font-medium">
-                Nejbližší osvobození
-              </th>
-              <th scope="col" className="py-2 text-right font-medium">
-                Zbývá dní
-              </th>
+            <tr>
+              <Th>Instrument</Th>
+              <Th align="right">Kusů</Th>
+              {anyExempt && <Th align="right">Z toho bez daně</Th>}
+              <Th align="right">Nejbližší osvobození</Th>
+              <Th align="right">Zbývá dní</Th>
             </tr>
           </thead>
-          <tbody className="font-mono">
-            {rows.map((row) => (
-              <tr key={row.isin} className="border-b border-linka/60">
-                <td className="py-2 pr-4">
+          <tbody>
+            {shown.map((row) => (
+              <Tr key={row.isin}>
+                <Td>
                   {/* klikací konzistentně s tabulkou na /portfolio */}
                   <Link
                     href={`${basePath}/portfolio/${row.isin}`}
-                    className="font-sans font-medium text-inkoust hover:text-ruzova"
+                    className="font-medium text-ink hover:text-accent-text"
                   >
                     {row.label}
                   </Link>{' '}
-                  <span className="text-xs text-inkoust-tlumeny">
+                  <span className="type-caption text-ink-muted">
                     {row.name ? `${row.name} · ` : ''}
                     {row.isin}
                   </span>
-                </td>
-                <td className="py-2 pr-4 text-right">{qty(row.total)}</td>
+                </Td>
+                <Td align="right">{qty(row.total)}</Td>
                 {anyExempt && (
-                  <td
-                    className={cn(
-                      'py-2 pr-4 text-right',
-                      row.exemptQty > 0 ? 'font-semibold text-zelena-text' : 'text-inkoust-tlumeny',
-                    )}
+                  <Td
+                    align="right"
+                    className={
+                      row.exemptQty > 0 ? 'font-medium text-success-text' : 'text-ink-muted'
+                    }
                   >
                     {qty(row.exemptQty)}
-                  </td>
+                  </Td>
                 )}
-                <td className="py-2 pr-4 text-right">
+                <Td align="right">
                   {row.neverExempt ? (
-                    <span className="font-sans text-inkoust-tlumeny">
-                      časový test se nevztahuje
-                    </span>
+                    <span className="text-ink-muted">časový test se nevztahuje</span>
                   ) : row.nearestExemptFrom ? (
                     czDate(row.nearestExemptFrom)
                   ) : (
-                    <span className="font-sans font-semibold text-zelena-text">vše bez daně</span>
+                    <span className="font-medium text-success-text">vše bez daně</span>
                   )}
-                </td>
-                <td className="py-2 text-right">
+                </Td>
+                <Td align="right">
                   {row.neverExempt ? (
-                    <span className="text-inkoust-tlumeny">—</span>
+                    <span className="text-ink-muted">—</span>
                   ) : row.daysToExempt === null ? (
                     <CheckIcon />
                   ) : (
-                    <TestProgress daysToExempt={row.daysToExempt} />
+                    row.daysToExempt.toLocaleString('cs-CZ')
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </ScrollArea>
+      {condensed && (
+        <div className="type-footnote flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-ink-muted">
+          {/* věta začíná velkým písmenem, ať je první kterákoli část */}
+          <p>{rest.length > 0 && `${rest.join(' · ').replace(/^./, (c) => c.toUpperCase())}.`}</p>
+          <TextLink href={`${basePath}/portfolio`} chevron>
+            Všechny pozice v portfoliu
+          </TextLink>
+        </div>
+      )}
     </>
   );
 

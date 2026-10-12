@@ -142,10 +142,14 @@ describe('TwoFactorSection — vykreslení jednotlivých stavů', () => {
     });
     expect(codeSpans(html)).toEqual(SETUP.backupCodes);
     expect(html).toContain('>Zkopírovat</button>');
-    const save = html.indexOf('ulož si záložní kódy');
-    const confirm = html.indexOf('Teprve pak zapnutí potvrď');
+    // pořadí kroků: uložit kódy stojí PŘED polem na první kód (dřív to hlídala
+    // slova úvodní věty; kroky jsou teď očíslované, tak se hlídá jejich pořadí)
+    const save = html.indexOf('Ulož si záložní kódy');
+    const firstCode = html.indexOf(SETUP.backupCodes[0]!);
+    const confirm = html.indexOf('id="kod-2fa"');
     expect(save).toBeGreaterThan(-1);
-    expect(confirm).toBeGreaterThan(save);
+    expect(firstCode).toBeGreaterThan(save);
+    expect(confirm).toBeGreaterThan(firstCode);
     expect(html).toMatch(new RegExp(`<code[^>]*>${MANUAL_KEY}</code>`, 'v'));
     // celá adresa zůstává samostatným prvkem — E2E z ní čte tajemství
     expect(html).toMatch(/<p[^>]*>otpauth:\/\/totp\/[^<]+<\/p>/);
@@ -182,7 +186,7 @@ describe('TwoFactorSection — vykreslení jednotlivých stavů', () => {
     expect(codeSpans(html)).toEqual([]);
     expect(html).toContain('Záložní kódy už znovu neukážeme');
     expect(html).toContain('vypni a zapni znovu');
-    expect(html).toContain('>Vypnout 2FA</button>');
+    expect(html).toContain('>Vypnout ověření</button>');
   });
 });
 

@@ -4,9 +4,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { parseTransactions } from '@danero/shared';
+import { filingVerdictHeadline } from '@/components/filing-verdict';
 import { OverviewView } from '@/components/views/overview-view';
 import { printedRangeNote, disposalPage, ReportView } from '@/components/views/report-view';
 import { analyzeForUser, type ProfileRow } from '@/lib/portfolio';
+import { openForPrint } from '@/lib/print-details';
 
 /**
  * H-3-01: vytištěný podklad k přiznání musí říct, kolik prodejů obsahuje.
@@ -55,11 +57,32 @@ describe('rozsah vytištěného podkladu (H-3-01)', () => {
     // odstavec s rozsahem musí být v tiskové větvi (`print:block`)
     const tiskovyOdstavec = zdroj
       .split('\n')
-      .findIndex((radek) => radek.includes('print:block') && radek.includes('text-inkoust-tlumeny'));
+      .findIndex((radek) => radek.includes('print:block') && radek.includes('text-ink-muted'));
     expect(tiskovyOdstavec).toBeGreaterThan(-1);
     expect(zdroj).toContain('printedRangeNote({');
     // a nesmí se vrátit tvrzení, že tisk obsahuje všechny prodeje
     expect(zdroj).not.toContain('Tisk\n                i XML pro podatelnu obsahují všechny prodeje');
+  });
+
+  it('rozbalení (rozpad prodeje na nákupy) se pro tisk otevřou i bez `::details-content`', () => {
+    const root = join(import.meta.dirname, '..');
+    // novější prohlížeče: styl
+    const css = readFileSync(join(root, 'app', 'globals.css'), 'utf8');
+    const print = css.slice(css.indexOf('@media print'));
+    expect(print).toMatch(/details::details-content\s*\{[^}]*display:\s*block/);
+    // starší (před Chromium 131, Safari 18.4, Firefox 143): skript před tiskem —
+    // bez něj by na papíře mlčky chyběla část podkladu
+    const closed = { open: false };
+    const openedByUser = { open: true };
+    const closeAgain = openForPrint([closed, openedByUser]);
+    expect([closed.open, openedByUser.open]).toEqual([true, true]);
+    closeAgain();
+    // co měl uživatel otevřené sám, po tisku otevřené zůstane
+    expect([closed.open, openedByUser.open]).toEqual([false, true]);
+    const fallback = readFileSync(join(root, 'components', 'print-button.tsx'), 'utf8');
+    expect(fallback).toContain("CSS.supports('selector(::details-content)')");
+    const report = readFileSync(join(root, 'components', 'views', 'report-view.tsx'), 'utf8');
+    expect(report).toContain('<OpenDetailsForPrint />');
   });
 });
 
@@ -94,6 +117,8 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
   const UNDER_LIMIT = 'Zatím ti povinnost podat přiznání nevzniká';
   const OVER_LIMIT = `Za rok ${YEAR} podáš daňové přiznání`;
   const CAVEAT = 'příjmů, které Danero eviduje';
+  /** Nadpis první sekce pod verdiktem — po redesignu „řádek formuláře → částka“. */
+  const FIRST_SECTION = 'Co zapsat do přiznání';
 
   /** Jediný zdanitelný příjem roku: zahraniční dividenda v dané hrubé výši. */
   const dividend = (grossCzk: string) =>
@@ -110,25 +135,28 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
       },
     ]);
 
-  const reportHtml = (grossCzk: string, regime: string = 'PAUSAL'): string =>
+  // „dnes“ je v běžícím roce — verdikt pod limitem je „zatím“; skončený rok
+  // má vlastní znění a vlastní test níž
+  const reportHtml = (grossCzk: string, regime: string = 'PAUSAL', today = TODAY): string =>
     renderToStaticMarkup(
       createElement(ReportView, {
         txs: dividend(grossCzk),
         profile: { ...PROFILE, regime },
         year: YEAR,
         years: [YEAR],
+        today,
       }),
     );
-  const overviewHtml = (grossCzk: string, regime: string = 'PAUSAL'): string => {
+  const overviewHtml = (grossCzk: string, regime: string = 'PAUSAL', today = TODAY): string => {
     const txs = dividend(grossCzk);
     return renderToStaticMarkup(
       createElement(OverviewView, {
         txs,
-        analysis: analyzeForUser(txs, { ...PROFILE, regime }, YEAR, TODAY),
+        analysis: analyzeForUser(txs, { ...PROFILE, regime }, YEAR, today),
         prices: new Map(),
         years: [YEAR],
         year: YEAR,
-        today: TODAY,
+        today,
         notifications: [],
       }),
     );
@@ -164,9 +192,9 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
     expect(classes).not.toContain('print:hidden');
     expect(classes).not.toContain('hidden');
 
-    // verdikt stojí nahoře — dřív než první karta s čísly i než termín podání
-    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Dílčí základ § 10'));
-    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Termín podání za rok'));
+    // verdikt stojí nahoře — dřív než řádky přiznání i než termín podání
+    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf(FIRST_SECTION));
+    expect(html.indexOf(UNDER_LIMIT)).toBeLessThan(html.indexOf('Termín podání'));
   });
 
   it('verdikt nese výhradu, že platí jen pro příjmy, které Danero eviduje', { timeout: 30_000 }, () => {
@@ -202,12 +230,100 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
     }
   });
 
-  /** Text karty verdiktu bez značek — od nadpisu po první kartu s čísly. */
+  /**
+   * R2-14: „Zatím ti povinnost … nevzniká“ platí jen pro rok, který ještě běží
+   * a ve kterém se limit může prolomit zítřejším prodejem. U skončeného roku
+   * je to hotová věc — a „zatím“ tam četl i ten, kdo si otevřel report za rok
+   * 2022.
+   */
+  describe('skončený rok: povinnost „nevznikla“, ne „zatím nevzniká“ (R2-14)', () => {
+    const NEXT_YEAR = `${YEAR + 1}-02-10`;
+    const CLOSED = `Za rok ${YEAR} ti povinnost podat přiznání nevznikla`;
+    const CLOSED_OVER_LIMIT = `Za rok ${YEAR} ti vznikla povinnost podat přiznání`;
+
+    it('nadpis verdiktu se liší podle toho, jestli rok ještě běží', () => {
+      expect(filingVerdictHeadline({ year: 2022, exceeded: false, closed: true })).toBe(
+        'Za rok 2022 ti povinnost podat přiznání nevznikla',
+      );
+      expect(filingVerdictHeadline({ year: 2026, exceeded: false, closed: false })).toBe(
+        UNDER_LIMIT,
+      );
+      // nad limitem v běžném roce je to úkol před uživatelem
+      expect(filingVerdictHeadline({ year: YEAR, exceeded: true, closed: false })).toBe(OVER_LIMIT);
+    });
+
+    /**
+     * „Za rok 2022 podáš daňové přiznání“ četl i ten, kdo ho podal před třemi
+     * lety. Skončený rok nad limitem říká minulým časem, že povinnost vznikla
+     * — a nesmí se splést s větví pod limitem („nevznikla“).
+     */
+    it('nad limitem říká skončený rok „vznikla“, ne „podáš“', { timeout: 30_000 }, () => {
+      const headline = filingVerdictHeadline({ year: 2022, exceeded: true, closed: true });
+      expect(headline).toContain('Za rok 2022');
+      expect(headline).toMatch(/(?<!ne)vznikla povinnost podat přiznání/);
+      expect(headline).not.toMatch(/podáš|nevznik|[Zz]atím/);
+
+      for (const html of [
+        reportHtml('60000', 'PAUSAL', NEXT_YEAR),
+        overviewHtml('60000', 'PAUSAL', NEXT_YEAR),
+      ]) {
+        expect(html).toContain(CLOSED_OVER_LIMIT);
+        expect(html).not.toContain(OVER_LIMIT);
+        expect(html).not.toContain(CLOSED);
+      }
+      // tatáž částka zaměstnanci povinnost zakládá taky — stejné znění
+      expect(reportHtml('30000', 'ZAMESTNANEC', NEXT_YEAR)).toContain(CLOSED_OVER_LIMIT);
+    });
+
+    it('nad limitem běžný rok beze změny — poslední den roku ještě „podáš“', { timeout: 30_000 }, () => {
+      for (const html of [
+        reportHtml('60000', 'PAUSAL', `${YEAR}-12-31`),
+        overviewHtml('60000', 'PAUSAL', `${YEAR}-12-31`),
+      ]) {
+        expect(html).toContain(OVER_LIMIT);
+        expect(html).not.toContain(CLOSED_OVER_LIMIT);
+      }
+    });
+
+    it('report i přehled za skončený rok „zatím“ neříkají', { timeout: 30_000 }, () => {
+      for (const html of [
+        reportHtml('20000', 'PAUSAL', NEXT_YEAR),
+        overviewHtml('20000', 'PAUSAL', NEXT_YEAR),
+      ]) {
+        expect(html).toContain(CLOSED);
+        expect(html).not.toContain(UNDER_LIMIT);
+      }
+    });
+
+    it('běžný rok beze změny — poslední den roku ještě „zatím“', { timeout: 30_000 }, () => {
+      for (const html of [
+        reportHtml('20000', 'PAUSAL', `${YEAR}-12-31`),
+        overviewHtml('20000', 'PAUSAL', `${YEAR}-12-31`),
+      ]) {
+        expect(html).toContain(UNDER_LIMIT);
+        expect(html).not.toContain(CLOSED);
+      }
+    });
+
+    it('zaměstnanec i režim „jiné“ mají u skončeného roku totéž znění', { timeout: 30_000 }, () => {
+      expect(reportHtml('5000', 'ZAMESTNANEC', NEXT_YEAR)).toContain(CLOSED);
+      expect(reportHtml('5000', 'JINE', NEXT_YEAR)).toContain(CLOSED);
+    });
+  });
+
+  /**
+   * Text verdiktu bez značek — od nadpisu po první sekci s čísly. Celé znění
+   * výhrady je na obrazovce ve vysvětlivce (ta se vykreslí až po otevření),
+   * v HTML ho nese odstavec určený pro tisk; krátká výhrada a případné
+   * sdělení o oznámení stojí vedle něj.
+   */
   const verdictCard = (html: string, headline: string): string => {
     const text = html.replace(/<[^>]+>/g, '');
     const from = text.indexOf(headline);
     expect(from, headline).toBeGreaterThan(-1);
-    return text.slice(from, text.indexOf('Dílčí základ § 10'));
+    const to = text.indexOf(FIRST_SECTION, from);
+    expect(to, FIRST_SECTION).toBeGreaterThan(from);
+    return text.slice(from, to);
   };
   const DEADLINE_ONLY_IF_FILING = /Termín podání a čísla k opsání níž na stránce potřebuješ jen tehdy/;
 
@@ -232,7 +348,7 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
       expect(html).not.toContain(OVER_LIMIT);
     }
     const card = verdictCard(reportHtml('30000'), UNDER_LIMIT);
-    expect(card).toMatch(/limit 50\s000\sKč pro paušální daň je čerpaný z 60\s%/);
+    expect(card).toMatch(/limit paušální daně \(50\s000\sKč\) je čerpaný z 60\s%/);
     // tatáž částka zaměstnanci povinnost zakládá
     expect(reportHtml('30000', 'ZAMESTNANEC')).toContain(OVER_LIMIT);
   });
@@ -259,7 +375,13 @@ describe('verdikt o povinnosti podat přiznání v reportu (L5-02)', () => {
 
       const card = verdictCard(
         renderToStaticMarkup(
-          createElement(ReportView, { txs: exemptSaleOver5m, profile, year: YEAR, years: [YEAR] }),
+          createElement(ReportView, {
+            txs: exemptSaleOver5m,
+            profile,
+            year: YEAR,
+            years: [YEAR],
+            today: TODAY,
+          }),
         ),
         UNDER_LIMIT,
       );

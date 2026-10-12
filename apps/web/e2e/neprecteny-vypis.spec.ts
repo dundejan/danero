@@ -1,7 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
 import { E2E_OPERATOR } from './operator';
-import { registerWithProfile, waitForEmail } from './helpers';
+import {
+  confirmInDialog,
+  importHistory,
+  importHistoryRow,
+  openDisclosure,
+  registerWithProfile,
+  uploadStatement,
+  waitForEmail,
+} from './helpers';
 
 /**
  * Nepřečtený výpis: uživatel vidí, že si ho necháváme a co s ním bude,
@@ -29,13 +37,18 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
   await registerWithProfile(page, { name: 'E2E Nepřečtený', email });
   await page.goto('/import');
 
-  await page.locator('input[name="soubory"]').setInputFiles(csv('vypis-neznamy.csv', NEZNAMY_VYPIS));
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
+  const batch = await uploadStatement(page, csv('vypis-neznamy.csv', NEZNAMY_VYPIS));
 
   // uživatel se dozví, co se stalo a co bude dál — ne jen že to nešlo
-  await expect(page.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
-  await expect(page.getByText(/Dáme ti e-mailem vědět/)).toBeVisible();
+  const unread = page.getByRole('list', { name: 'Výpisy, které jsme nepřečetli' });
+  await expect(unread.getByText('vypis-neznamy.csv')).toBeVisible();
+  await expect(unread.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
+  await expect(unread.getByText(/Dáme ti e-mailem vědět/)).toBeVisible();
 
+  // řádek historie se po nahrání otevřel sám a říká, co jsme v hlavičce našli
+  await expect(batch.locator('details')).toHaveAttribute('open', '');
+  await expect(batch).toContainText('Formát souboru nepoznáváme — v hlavičce jsme našli:');
+  await expect(batch).toContainText('Obchodni den');
   // vrácení importu se u nepřečteného výpisu nenabízí (není co vracet)
   await expect(page.getByRole('button', { name: 'Vrátit import zpět' })).toHaveCount(0);
 
@@ -49,7 +62,9 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
   await page.getByLabel('Poznámka (nepovinné)').fill('Stáhnuto přes Transakce → Export.');
   await page.getByRole('button', { name: 'Odeslat' }).click();
 
-  await expect(page.getByText(/Díky — máme to/)).toBeVisible();
+  // hlášku sází `typeset()`: před pomlčkou je pevná mezera, a regulární výraz
+  // (na rozdíl od řetězce) mezery nenormalizuje
+  await expect(page.getByText(/Díky\s— máme to/)).toBeVisible();
   await expect(page.getByText(/platforma: Portu/)).toBeVisible();
 
   const hlaseni = await waitForEmail(page, E2E_OPERATOR.email, (m) => m.text.includes('Portu'));
@@ -60,12 +75,12 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
   await registerWithProfile(page, { name: 'E2E Vrácení', email: 'vraceni@danero.cz' });
   await page.goto('/import');
 
-  const historie = page.locator('section').filter({ hasText: 'Historie importů' });
-  await page.locator('input[name="soubory"]').setInputFiles(csv('t212-2026.csv', T212_FIXTURE_2026));
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(historie.getByText('t212-2026.csv')).toHaveCount(1, { timeout: 20_000 });
+  const historie = importHistory(page);
+  await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  await expect(historie.getByText('t212-2026.csv')).toHaveCount(1);
   // odezva je vidět tam, kde uživatel zrovna je (L7d-01) — historie leží na
-  // mobilu tři obrazovky pod formulářem; hláška plave a adresa po ní zůstane čistá
+  // mobilu tři obrazovky pod formulářem; stránka na ni skočí, hláška stojí
+  // hned nad ní a adresa po ní zůstane čistá
   await expect(
     page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ }),
   ).toBeVisible();
@@ -78,13 +93,34 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
     const data = (await response.json()) as { transactions: unknown[] };
     return data.transactions.length;
   };
-  expect(await pocetTransakci()).toBeGreaterThan(0);
+  const nahrano = await pocetTransakci();
+  expect(nahrano).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: 'Vrátit import zpět' }).first().click();
+  // Vrácení je vzácná a nevratná akce: je o úroveň hlouběji (rozbalený řádek
+  // importu) a za potvrzovacím dialogem, který řekne, kolik transakcí zmizí.
+  const row = importHistoryRow(page, 't212-2026.csv');
+  await expect(page.getByRole('button', { name: 'Vrátit import zpět' })).toBeHidden();
+  await openDisclosure(row, 't212-2026.csv');
+  const undo = row.getByRole('button', { name: 'Vrátit import zpět' });
+
+  // dialog jde zavřít bez následků — nic se nesmaže
+  await confirmInDialog(page, undo, 'Zrušit');
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  expect(await pocetTransakci()).toBe(nahrano);
+
+  await undo.click();
+  await expect(page.getByRole('alertdialog')).toContainText(
+    new RegExp(`Smažeme ${nahrano} transakc`),
+  );
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Vrátit import zpět', exact: true })
+    .click();
   // vrácení dřív proběhlo beze slova (L6a-04, L7d-04)
   await expect(
     page.getByRole('status').filter({ hasText: /Import vrácen, smazán[ayo] \d+ transakc/ }),
   ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('alertdialog')).toBeHidden();
   await expect(historie.getByText('t212-2026.csv')).toHaveCount(0, { timeout: 20_000 });
 
   // transakce jsou opravdu pryč, ne jen záznam v historii
@@ -92,8 +128,116 @@ test('vrácení importu smaže i transakce a soubor jde nahrát znovu', async ({
 
   // a tentýž soubor jde nahrát znovu — dedupe už nebrání
   await page.goto('/import');
-  await page.locator('input[name="soubory"]').setInputFiles(csv('t212-2026.csv', T212_FIXTURE_2026));
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(historie.getByText('t212-2026.csv')).toHaveCount(1, { timeout: 20_000 });
-  await expect(historie.getByText(/0 duplicit/)).toBeVisible();
+  const again = await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  await expect(historie.getByText('t212-2026.csv')).toHaveCount(1);
+  await expect(again).toContainText(/0 duplicit/);
+});
+
+/**
+ * R2-25: plovoucí hláška po nahrání ležela na telefonu přesně přes první
+ * řádek historie importů — ten, na který odkazovala (hláška 640–724 px, řádek
+ * 622–700 px). Výsledek nahrání i vrácení proto stojí v toku stránky hned nad
+ * historií a nemizí sám; po prvních datech nese další krok.
+ */
+test('Zdroje dat na telefonu: výsledek nahrání stojí nad historií a nic nekryje', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Telefon import', email: 'telefon-import@danero.cz' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/import');
+
+  const row = await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  const result = page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ });
+  await expect(result).toBeVisible();
+  await expect(result).toBeInViewport();
+  await expect(row).toBeInViewport();
+
+  // hláška je v toku stránky a končí nad prvním řádkem historie
+  expect(await result.evaluate((element) => getComputedStyle(element).position)).not.toBe('fixed');
+  const resultBox = (await result.boundingBox())!;
+  const rowBox = (await row.boundingBox())!;
+  expect(resultBox.y + resultBox.height).toBeLessThanOrEqual(rowBox.y);
+  // a nic plovoucího přes historii neleží
+  await expect(page.locator('.toast-enter')).toHaveCount(0);
+
+  // první data: hláška nabízí další krok; po dalším nahrání už ne
+  await expect(result.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toBeVisible();
+  await page.goto('/import');
+  await uploadStatement(page, csv('t212-2026.csv', T212_FIXTURE_2026));
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Nahráno: 1 soubor, žádná nová transakce nepřibyla.' }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toHaveCount(0);
+
+  // vadný soubor: chyba je taky v toku stránky, ne plovoucí
+  await page.goto('/import');
+  await uploadStatement(page, csv('vypis.csv', '%PDF-1.7 smyšlený obsah'));
+  const failure = page.getByRole('alert').filter({ hasText: /Soubor má chyby/ });
+  await expect(failure).toBeVisible();
+  expect(await failure.evaluate((element) => getComputedStyle(element).position)).not.toBe('fixed');
+});
+
+/** Výpis Trading 212 s jedním vadným řádkem: datum, kusy ani cena nejdou přečíst. */
+const BAD_T212_ROW =
+  'Market buy,neni-datum,US0378331005,AAPL,Apple Inc,,019fbae1-0000-7000-8000-0000000000e9,deset,abc,USD,0.0435,,,xx,CZK,,,,,,,2.10,CZK,,';
+
+/**
+ * Nález revize R6 (č. 5): po prvním nahrání nabízela zelená hláška „Hotovo,
+ * otevřít přehled“ i tehdy, když soubor měl chyby — a vedla tak nového
+ * uživatele pryč od řádku, který si má přečíst.
+ */
+test('první nahrání s chybami: hláška na chyby upozorní a „Hotovo“ nenabízí', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E První s chybou', email: 'prvni-s-chybou@danero.cz' });
+  await page.goto('/import');
+
+  await uploadStatement(page, csv('t212-s-chybou.csv', `${T212_FIXTURE_2026}\n${BAD_T212_ROW}`));
+  const result = page
+    .getByRole('status')
+    .filter({ hasText: /Nahráno: 1 soubor, přibyl[ayo] \d+ transakc/ });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+  // účet první data má — přehled jde otevřít z navigace, hláška k němu ale nevede
+  await expect(page.getByRole('link', { name: 'Hotovo, otevřít přehled' })).toHaveCount(0);
+});
+
+/**
+ * Nález revize R6 (č. 4): výsledek nahrání „nemizí sám“ — jenže zmizel, jakmile
+ * doběhla souběžná synchronizace. Úklid adresy z ní smazal kód výsledku
+ * a obnovení stránky po doběhu úlohy ji vykreslilo bez hlášky. Hláška proto
+ * drží v prohlížeči, dokud uživatel neodejde nebo neudělá další akci.
+ */
+test('výsledek nahrání zůstane, i když mezitím doběhne synchronizace', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Hláška a sync', email: 'hlaska-sync@danero.cz' });
+  await page.goto('/import');
+  const brokers = page.getByRole('list', { name: 'Brokeři s automatickou synchronizací' });
+  const connect = await openDisclosure(brokers, 'Trading 212');
+  await connect.getByLabel('ID klíče API').fill('e2e-key-id');
+  await connect.getByLabel('Tajný klíč').fill('e2e-tajny-klic-12345');
+  await connect.getByRole('button', { name: 'Připojit' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Klíč je uložený' })).toBeVisible();
+
+  const account = page.locator('#trading212');
+  await account.getByRole('button', { name: 'Stáhnout kompletní historii' }).click();
+  const progress = account.getByRole('list', { name: 'Průběh po letech' });
+  await expect(progress).toBeVisible();
+
+  // během běžící synchronizace nahraje uživatel výpis ručně
+  await uploadStatement(page, csv('behem-synchronizace.csv', `${T212_FIXTURE_2026}\n${BAD_T212_ROW}`));
+  const result = page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor/ });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+  // předpoklad zkoušky: úloha ještě běží, stránku teprve obnoví
+  await expect(progress).toBeVisible();
+
+  // synchronizace doběhne a stránka se sama obnoví — výpisy z ní přibudou do historie
+  await expect(importHistory(page).getByText('t212-api-2024.csv')).toBeVisible({ timeout: 60_000 });
+  await expect(progress).toHaveCount(0);
+  await expect(result).toBeVisible();
+  await expect(result).toContainText('Soubor má chyby');
+
+  // adresa je uklizená: obnovení stránky hlášku znovu neukáže
+  expect(new URL(page.url()).searchParams.has('ulozeno')).toBe(false);
+  await page.reload();
+  await expect(importHistory(page).getByText('behem-synchronizace.csv')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor/ })).toHaveCount(0);
 });

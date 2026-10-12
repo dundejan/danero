@@ -78,7 +78,7 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
       w({ context: { isin: 'NL0010273215', country: 'NL', overCzk: '49.50' } }),
     ])[0]!;
     // Intl vkládá nezlomitelné mezery — pro čitelnost testu normalizujeme na obyčejné
-    const text = withholdingSummary(group, labels).replace(/ /g, ' ');
+    const text = withholdingSummary(group, labels).replace(/\u00a0/g, ' ');
     expect(text).toContain('U 3 dividend');
     expect(text).toContain('350 Kč'); // 100,50 + 200 + 49,50 zaokrouhleno na celé Kč
     expect(text).toContain('Dotčené tituly: AAPL, ASML.');
@@ -118,7 +118,7 @@ describe('agregovaný souhrn WITHHOLDING_ABOVE_TREATY', () => {
     ])[0]!;
     // 276 − 150 z karty § 8 (vč. rozdílů ze zaokrouhlení zápočtu dolů);
     // Intl vkládá nezlomitelné mezery — normalizujeme na obyčejné
-    const text = withholdingSummary(group, labels, d('126')).replace(/ /g, ' ');
+    const text = withholdingSummary(group, labels, d('126')).replace(/\u00a0/g, ' ');
     expect(text).toContain('126 Kč');
     expect(text).not.toContain('150 Kč');
   });
@@ -134,7 +134,7 @@ describe('kompaktní řádek případu (warningCaseLine)', () => {
         context: { isin: 'US0378331005', date: '2026-02-13', country: 'US', overCzk: '75.45' },
       }),
       labels,
-    ).replace(/ /g, ' ');
+    ).replace(/\u00a0/g, ' ');
     expect(line).toBe('AAPL · 13. 2. 2026 · 75 Kč');
   });
 
@@ -142,7 +142,7 @@ describe('kompaktní řádek případu (warningCaseLine)', () => {
     const line = warningCaseLine(
       w({ context: { isin: 'DE0007164600', overCzk: '10.00' } }),
       labels,
-    ).replace(/ /g, ' ');
+    ).replace(/\u00a0/g, ' ');
     expect(line).toBe('DE0007164600 · 10 Kč');
   });
 

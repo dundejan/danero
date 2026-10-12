@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { resendVerificationErrorMessage } from '@/lib/auth-errors';
 import { Button } from '@/components/ui/button';
-import { describedByError, FieldError, Input, Label } from '@/components/ui/field';
+import { describedByError, Field, FieldError, Input } from '@/components/ui/field';
+import { StatusLabel } from '@/components/ui/status';
 
 const ERROR_ID = 'overeni-emailu-error';
 
@@ -52,28 +53,35 @@ export function ResendVerificationForm({
 
   if (sent) {
     return (
-      <div className="rounded-lg border border-linka bg-plocha p-4 text-sm">
-        <p className="font-medium">Odkaz je na cestě.</p>
-        <p className="mt-2 text-inkoust-tlumeny">Zkontroluj schránku i spam.</p>
+      <div role="status">
+        <StatusLabel tone="success">Odkaz je na cestě.</StatusLabel>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="email">E-mail</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          required
-          defaultValue={defaultEmail}
-          autoComplete="email"
-          {...describedByError(error !== null, ERROR_ID)}
-        />
-      </div>
-      {error && <FieldError id={ERROR_ID}>{error}</FieldError>}
+    <form method="post" onSubmit={onSubmit} className="space-y-5">
+      {defaultEmail ? (
+        // Adresu známe z registrace — pole by jen opakovalo to, co stojí
+        // o řádek výš, takže zbývá jediné tlačítko.
+        <>
+          <input type="hidden" name="email" value={defaultEmail} />
+          {error && <FieldError id={ERROR_ID}>{error}</FieldError>}
+        </>
+      ) : (
+        <Field label="E-mail" htmlFor="email" error={error} errorId={ERROR_ID}>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            {...describedByError(error !== null, ERROR_ID)}
+          />
+        </Field>
+      )}
       <Button type="submit" disabled={pending} variant="secondary" className="w-full">
         {pending ? 'Odesílám…' : 'Poslat odkaz znovu'}
       </Button>

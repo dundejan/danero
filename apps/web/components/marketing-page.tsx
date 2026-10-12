@@ -2,34 +2,52 @@ import Link from 'next/link';
 import { connection } from 'next/server';
 import { Logo } from '@/components/logo';
 import { MarketingNav, type MarketingNavKey } from '@/components/marketing-nav';
+import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { currentUser } from '@/lib/session';
 import { OPERATOR } from '@/lib/contact';
 import { SOURCE_URL } from '@/lib/legal';
+import { SITE_TAGLINE } from '@/lib/site';
+import { buttonVariants } from '@/components/ui/button';
+import { TextLink } from '@/components/ui/link';
+import { cn } from '@/lib/utils';
+import { tidy } from '@/lib/typography';
 
 /**
- * Jednotný shell veřejných (marketingových) stránek: sticky hlavička s plnou
- * navigací, stejná šířka kontejneru (max-w-6xl) a plná patička — VŠUDE stejné,
- * landing i podstránky. Obsah stránek si čitelnost řeší vnitřními max-w.
+ * Skořápka veřejných stránek v redakčním jazyce: přilepená průsvitná lišta,
+ * obsah skládaný z pásů přes celou šířku okna (`Band`), tichý závěr stránky
+ * (`PageClosing`) a patička. Hierarchii nese velikost titulků a střídání ploch
+ * (bílá / šedá), ne rámečky.
+ *
+ * Šířka: jediný sloupec `wrap-wide` (1056 px) drží lištu, titulek stránky,
+ * obsah pásů i patičku — levá hrana je na celé stránce jedna. Čitelnou šířku
+ * odstavce nese `measure`.
  */
 
 export async function MarketingHeader({ active }: { active?: MarketingNavKey }) {
-  // Přihlášenému nemá hlavička nabízet registraci — marketingové stránky
-  // zůstávají přístupné oběma, mění se jen akce účtu. currentUser() sahá na DB
-  // jen když je přítomná session cookie, takže anonymní provoz nic nestojí.
+  // Přihlášenému nemá hlavička nabízet registraci — veřejné stránky zůstávají
+  // přístupné oběma, mění se jen akce účtu. currentUser() sahá na DB jen když
+  // je přítomná session cookie, takže anonymní provoz nic nestojí.
   const user = await currentUser();
-  // bez backdrop-blur: filter by z headeru udělal containing block pro fixed
-  // scrim mobilního menu (nulová výška) — plné pozadí je i čitelnější
+  // Materiál lišty leží ve VLASTNÍ vrstvě pod obsahem, ne na <header>:
+  // backdrop-filter dělá z prvku kontejner pro `position: fixed`, takže by
+  // scrim mobilního menu (potomek hlavičky) měl nulovou výšku.
   return (
-    <header className="sticky top-0 z-40 border-b border-linka/60 bg-pozadi">
+    <header className="sticky top-0 z-40 pt-[env(safe-area-inset-top,0px)]">
+      <div aria-hidden className="material-bar scroll-edge absolute inset-0 -z-10" />
       <a
         href="#obsah"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-plocha focus:px-4 focus:py-2 focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-floating"
       >
         Přeskočit na obsah
       </a>
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link href="/" aria-label="Danero — úvodní stránka">
-          <Logo className="text-lg" />
+      <div className="wrap-wide flex h-(--nav-height) items-center justify-between">
+        <Link
+          href="/"
+          aria-label="Danero — úvodní stránka"
+          className="-my-2 flex min-h-11 items-center active:opacity-60"
+        >
+          <Logo className="text-[1.0625rem]" />
         </Link>
         <MarketingNav active={active} signedIn={Boolean(user)} />
       </div>
@@ -37,91 +55,212 @@ export async function MarketingHeader({ active }: { active?: MarketingNavKey }) 
   );
 }
 
-/** Hlavička podstránky: jednotný vzor eyebrow → H1 → perex (landing má hero vlastní). */
+type BandTone = 'surface' | 'canvas';
+
+const BAND_TONE: Record<BandTone, string> = {
+  surface: 'bg-surface',
+  canvas: 'bg-canvas',
+};
+
+/**
+ * Pás veřejné stránky: oddíl přes celou šířku okna s obsahem ve sloupci.
+ * Stránka je sled pásů a sousední pásy střídají plochu — bílá (`surface`)
+ * a šedá (`canvas`). Dva pásy stejné plochy za sebou splynou v jeden — to je
+ * v pořádku, když k sobě patří.
+ *
+ * Černý pás (`black`) tu býval pro závěrečnou výzvu a zanikl s ní
+ * (10. 10. 2026): v tmavém režimu měl stejnou plochu jako stránka, takže
+ * z něj zbyl jen prázdný pruh a osamocený nadpis (nález R1A-01). Nevracej ho
+ * bez plochy, která se od stránky liší v obou režimech.
+ *
+ * Pás smí stát přímo v `<main>` stránky i uvnitř sloupce (`full-bleed` ho
+ * roztáhne); obal stránky musí mít `overflow-x-clip` (`MarketingPage` má).
+ * Obsah pásu stojí ve stejném sloupci jako titulek stránky (`PageHero`).
+ */
+export function Band({
+  tone = 'surface',
+  className,
+  children,
+  ...props
+}: React.ComponentProps<'section'> & {
+  tone?: BandTone;
+}) {
+  return (
+    <section
+      className={cn('full-bleed', BAND_TONE[tone], 'py-(--band-y)', className)}
+      {...props}
+    >
+      <div className="wrap-wide">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * Hlavička pásu: tichý řádek nad titulkem (běžná věta, žádné verzálky),
+ * velký titulek a nejvýš jeden perex. `align="center"` jen u pásu s jedinou
+ * myšlenkou; pás s obsahem vedle titulku nechává hlavičku vlevo.
+ *
+ * `id` dostane nadpis — pás se jím pojmenuje (`<Band aria-labelledby="…">`).
+ */
+export function BandHeading({
+  id,
+  eyebrow,
+  title,
+  lede,
+  align = 'left',
+  as: Heading = 'h2',
+  className,
+}: {
+  id?: string;
+  eyebrow?: string;
+  title: string;
+  lede?: React.ReactNode;
+  align?: 'left' | 'center';
+  as?: 'h1' | 'h2';
+  className?: string;
+}) {
+  const centered = align === 'center';
+  return (
+    <div className={cn(centered && 'flex flex-col items-center text-center', className)}>
+      {eyebrow && <p className="type-callout mb-3 font-semibold text-ink-muted">{eyebrow}</p>}
+      <Heading
+        id={id}
+        className={cn(
+          Heading === 'h1' ? 'type-display' : 'type-headline',
+          'text-balance',
+          centered ? 'max-w-[20ch]' : 'max-w-[18ch]',
+        )}
+      >
+        {tidy(title)}
+      </Heading>
+      {lede && (
+        <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">
+          {typeof lede === 'string' ? tidy(lede) : lede}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Hlavička podstránky: tichý řádek, kde čtenář je (`eyebrow`, volitelný —
+ * stránka, jejíž titulek to říká sám, ho nepotřebuje) → titulek → perex.
+ * Stojí na bílé ploše nahoře stránky; pod ní pokračují pásy nebo článek.
+ */
 export function PageHero({
   eyebrow,
   title,
   lede,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   lede?: string;
 }) {
   return (
-    <div className="pt-12 md:pt-16">
-      <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
-        {eyebrow}
-      </p>
-      <h1 className="mt-3 max-w-3xl text-balance font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
-        {title}
-      </h1>
-      {lede && <p className="mt-5 max-w-2xl text-lg text-inkoust-tlumeny">{lede}</p>}
+    <div className="pt-14 md:pt-24">
+      {eyebrow && <p className="type-callout mb-3 font-semibold text-ink-muted">{eyebrow}</p>}
+      <h1 className="type-headline max-w-[20ch] text-balance">{tidy(title)}</h1>
+      {lede && (
+        <p className="type-lede measure mt-5 text-pretty text-ink-muted md:mt-6">{tidy(lede)}</p>
+      )}
     </div>
   );
 }
 
-/** Závěrečné CTA — stejný blok na landingu i podstránkách. */
-export async function MarketingCta({
-  title,
-  lede,
-  primary = 'demo',
-}: {
-  title: string;
-  lede: string;
-  /** Co je plné tlačítko: demo (default) nebo registrace (ceník, kalkulačka). */
-  primary?: 'demo' | 'registrace';
-}) {
-  // „Založit účet zdarma" pod článkem, který si čte přihlášený uživatel, je
-  // slepá ulička — registrace ho jen pošle zpátky. Demo na cizích datech taky
-  // ne, když má vlastní.
+/** Jediná věta závěru stránky — všude stejná, a proto tady, ne ve stránkách. */
+export const CLOSING_SENTENCE =
+  'Demo je celá aplikace nad ukázkovým portfoliem. Nic se v něm neukládá.';
+
+/**
+ * Závěr stránky — na všech veřejných stránkách tentýž a tichý: jedna věcná
+ * věta a dvě akce na stejném místě (demo, založení účtu). Nemá titulek ani
+ * vlastní text podle stránky; do 10. 10. 2026 měla každá stránka svůj slogan
+ * velikostí titulku na černém pásu přes třetinu okna a v tmavém režimu pás
+ * splýval se stránkou (nálezy R1A-01 a R1A-05). Proto žádné parametry.
+ *
+ * Plocha je `canvas` — od stránky se liší ve světlém i tmavém režimu
+ * a navazuje na patičku, od které ji dělí vlásová linka. Pás před závěrem má
+ * proto být bílý (`surface`), jinak by s ním splynul. Na předchozí pás doléhá;
+ * odstup si drží jen od obsahu, který pásem není (článek).
+ *
+ * Kde závěr nic nepřidává, stránka ho nemá: právní texty, 404 a kalkulačka
+ * (tam obě akce nese verdikt).
+ */
+export async function PageClosing() {
+  // „Založit účet“ pod článkem, který si čte přihlášený uživatel, je slepá
+  // ulička — registrace ho jen pošle zpátky. Demo na cizích datech taky ne,
+  // když má vlastní.
   const user = await currentUser();
-  if (user) {
-    return (
-      <section className="mt-24 lg:mt-32">
-        <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
-          <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            {title}
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">
-            Účet už máš — stačí se do něj vrátit.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/prehled"
-              className="inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95"
-            >
-              Přejít do aplikace
-            </Link>
-          </div>
-        </div>
-      </section>
-    );
-  }
-  const demoClass =
-    primary === 'demo'
-      ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
-  const registerClass =
-    primary === 'registrace'
-      ? 'inline-block rounded-md bg-ruzova-syta px-6 py-3 font-semibold text-white hover:brightness-95'
-      : 'inline-block rounded-md border border-linka-ovladaci bg-plocha px-6 py-3 font-semibold shadow-sm hover:border-ruzova hover:text-ruzova';
+  const action = buttonVariants({ variant: 'tinted' });
   return (
-    <section className="mt-24 lg:mt-32">
-      <div className="rounded-lg border border-ruzova/30 bg-ruzova/5 px-6 py-12 text-center sm:py-16">
-        <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
-          {title}
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-inkoust-tlumeny">{lede}</p>
-        <div className="mt-8 flex flex-wrap justify-center gap-4">
-          <Link href="/demo/prehled" className={demoClass}>
-            Vyzkoušet demo — bez registrace
-          </Link>
-          <Link href="/registrace" className={registerClass}>
-            Založit účet zdarma
-          </Link>
+    <section
+      aria-label={user ? 'Zpátky do aplikace' : 'Vyzkoušet Danero'}
+      className="full-bleed bg-canvas [:not(.full-bleed)+&]:mt-(--band-y)"
+    >
+      <div className="wrap-wide">
+        <div className="flex flex-col gap-x-10 gap-y-4 border-b border-line py-10 md:flex-row md:items-center md:justify-between md:py-12">
+          <p className="type-reading measure text-pretty">
+            {tidy(user ? 'Účet už máš — stačí se do něj vrátit.' : CLOSING_SENTENCE)}
+          </p>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2">
+            {user ? (
+              <Link href="/prehled" className={action}>
+                Přejít do aplikace
+              </Link>
+            ) : (
+              <>
+                <Link href="/demo/prehled" className={action}>
+                  Vyzkoušet demo
+                </Link>
+                <TextLink href="/registrace" chevron>
+                  Založit účet
+                </TextLink>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+interface FooterLink {
+  href: string;
+  label: string;
+  external?: boolean;
+}
+
+/** Sloupec odkazů v patičce. Na telefonu má každý řádek 44 px na prst. */
+function FooterColumn({ title, links }: { title: string; links: FooterLink[] }) {
+  // `active:` je odezva na dotyku — zvýraznění prohlížeče je vypnuté globálně
+  const linkClass =
+    'flex min-h-11 items-center hover:text-ink active:opacity-60 md:min-h-0 md:py-1';
+  return (
+    <div>
+      <p className="font-semibold text-ink">{title}</p>
+      <ul className="mt-1 md:mt-2.5">
+        {links.map((link) => (
+          <li key={link.href}>
+            {link.external ? (
+              <a
+                href={link.href}
+                className={cn(linkClass, 'break-all')}
+                // e-mail otevírá poštovního klienta, nové okno k tomu nepotřebuje
+                {...(link.href.startsWith('mailto:')
+                  ? {}
+                  : { target: '_blank', rel: 'noreferrer' })}
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link href={link.href} className={linkClass}>
+                {link.label}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -142,151 +281,93 @@ export async function MarketingCta({
 export async function MarketingFooter() {
   await connection();
   return (
-    <footer className="mt-24 border-t border-linka">
-      <div className="mx-auto max-w-6xl px-6 py-10 text-sm text-inkoust-tlumeny">
-        <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-md space-y-3">
-            <Logo className="text-base text-inkoust" />
-            <p>
-              Danero hlídá českým investorům daně z investic — limity, časové testy
-              i podklady k přiznání.
-            </p>
+    <footer className="type-footnote bg-canvas text-ink-muted">
+      <div className="wrap-wide pb-[max(2rem,env(safe-area-inset-bottom))] pt-10 md:pt-14">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-8 md:grid-cols-[minmax(0,5fr)_repeat(3,minmax(0,3fr))]">
+          <div className="col-span-2 max-w-xs md:col-span-1">
+            <Logo className="text-[1.0625rem] text-ink" />
+            {/* jen co Danero je: že je zdarma, říká titulek úvodu a stránka
+                „Proč zdarma“ (odkaz vedle), a o kódu mluví až odkaz „Zdrojový
+                kód“ — patička na každé stránce neopakuje ani jedno */}
+            <p className="mt-4">{tidy(SITE_TAGLINE)}</p>
           </div>
-          <div className="flex flex-wrap gap-x-16 gap-y-8">
-            <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                Danero
-              </p>
-              <ul className="mt-3 space-y-2">
-                <li>
-                  <Link href="/platformy" className="font-medium hover:text-inkoust">
-                    Platformy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/kalkulacka" className="font-medium hover:text-inkoust">
-                    Kalkulačka
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/pruvodce" className="font-medium hover:text-inkoust">
-                    Průvodce
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/cenik" className="font-medium hover:text-inkoust">
-                    Ceník
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/demo/prehled" className="font-medium hover:text-inkoust">
-                    Demo
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/caste-otazky" className="font-medium hover:text-inkoust">
-                    Časté otázky
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/jak-pocitame" className="font-medium hover:text-inkoust">
-                    Jak počítáme
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/bezpecnost" className="font-medium hover:text-inkoust">
-                    Bezpečnost
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                Autor
-              </p>
-              <ul className="mt-3 space-y-2">
-                <li>
-                  <Link href="/o-projektu" className="font-medium hover:text-inkoust">
-                    O projektu
-                  </Link>
-                </li>
-                <li>
-                  <a
-                    href="https://jandunder.dev"
-                    className="font-medium hover:text-inkoust"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    jandunder.dev
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={SOURCE_URL}
-                    className="font-medium hover:text-inkoust"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Zdrojový kód
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://www.linkedin.com/in/jan-dunder"
-                    className="font-medium hover:text-inkoust"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    LinkedIn
-                  </a>
-                </li>
-                {/* § 1820 odst. 1 písm. c) OZ: adresa, telefon i e-mail musí být
-                    k dispozici PŘED uzavřením smlouvy, tedy na veřejných
-                    stránkách — ne až v potvrzovacím e-mailu (nález E-3-02).
-                    Telefon se vypíše, jen když je nastavený DANERO_CONTACT_PHONE. */}
-                <li>
-                  <a
-                    href={`mailto:${OPERATOR.email}`}
-                    className="font-medium hover:text-inkoust"
-                  >
-                    {OPERATOR.email}
-                  </a>
-                </li>
-                {/* Telefon tu schválně NENÍ. § 1820 odst. 1 písm. c) chce, aby
-                    byl k dispozici před uzavřením smlouvy — to plní `/podminky`
-                    (odkaz je v patičce hned vedle) a potvrzení objednávky na
-                    trvalém nosiči. Vypisovat ho na všech dvanácti veřejných
-                    stránkách povinnost nepřidává, jen zve k volání, které
-                    nikdo nezvedne. Preferovaný kanál je e-mail. */}
-              </ul>
-            </div>
-          </div>
+          <FooterColumn
+            title="Danero"
+            links={[
+              { href: '/platformy', label: 'Platformy' },
+              { href: '/kalkulacka', label: 'Kalkulačka' },
+              { href: '/cenik', label: 'Proč zdarma' },
+            ]}
+          />
+          <FooterColumn
+            title="Jak to funguje"
+            links={[
+              { href: '/pruvodce', label: 'Průvodce' },
+              { href: '/caste-otazky', label: 'Časté otázky' },
+              { href: '/jak-pocitame', label: 'Jak počítáme' },
+              { href: '/bezpecnost', label: 'Bezpečnost' },
+            ]}
+          />
+          {/* § 1820 odst. 1 písm. c) OZ: adresa, telefon i e-mail musí být
+              k dispozici PŘED uzavřením smlouvy, tedy na veřejných stránkách —
+              ne až v potvrzovacím e-mailu (nález E-3-02). E-mail je tady.
+              Telefon tu schválně NENÍ: povinnost plní `/podminky` (odkaz je
+              o řádek níž) a potvrzení objednávky na trvalém nosiči. Vypisovat
+              ho na všech dvanácti veřejných stránkách povinnost nepřidává, jen
+              zve k volání, které nikdo nezvedne. Preferovaný kanál je e-mail. */}
+          {/* Osobní odkazy autora (web, LinkedIn) jsou na `/o-projektu`; demo je
+              v liště každé stránky — patička je neopakuje. */}
+          <FooterColumn
+            title="Projekt"
+            links={[
+              { href: '/o-projektu', label: 'O projektu' },
+              { href: SOURCE_URL, label: 'Zdrojový kód', external: true },
+              { href: `mailto:${OPERATOR.email}`, label: OPERATOR.email, external: true },
+            ]}
+          />
         </div>
-        <div className="mt-8 space-y-3 border-t border-linka pt-6">
-          <p>
-            Danero je výpočetní a evidenční nástroj, nikoli daňové poradenství ve smyslu zákona
-            č. 523/1992 Sb. Za správnost daňového přiznání odpovídá poplatník.
-          </p>
-          {/* Do 8. 10. 2026 tu stálo upozornění, že loga brokerů jsou známky
+
+        <div className="mt-10 border-t border-line pt-4">
+          {/* Do 10. 10. 2026 tu stála celá věta „Danero je výpočetní a evidenční
+              nástroj, nikoli daňové poradenství ve smyslu zákona č. 523/1992 Sb.
+              …“. Majitel ji z patičky vyřadil (právní texty na webu jen v míře,
+              kterou zákon chce): vymezení teď nese krátký odkaz na článek 1
+              podmínek, kde je závazné znění. Hlídá `test/public-pages.test.ts`.
+
+              Do 8. 10. 2026 tu stálo i upozornění, že loga brokerů jsou známky
               jejich vlastníků a Danero s nimi není propojené (nález E-3-06).
               Zákon ho nevyžaduje, byla to pojistka — provozovatel ji vědomě
               vypustil. Nevracej ji jen proto, že ji další audit navrhne znovu. */}
-          <p>
-            <Link href="/podminky" className="font-medium hover:text-inkoust">
-              Podmínky užití
-            </Link>{' '}
-            ·{' '}
-            <Link href="/soukromi" className="font-medium hover:text-inkoust">
-              Ochrana soukromí
-            </Link>
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+            <p className="flex flex-wrap gap-x-6">
+              <Link
+                href="/podminky"
+                className="flex min-h-11 items-center hover:text-ink active:opacity-60"
+              >
+                Podmínky užití
+              </Link>
+              <Link
+                href="/soukromi"
+                className="flex min-h-11 items-center hover:text-ink active:opacity-60"
+              >
+                Ochrana soukromí
+              </Link>
+              <Link
+                href={NOT_TAX_ADVICE.href}
+                className="flex min-h-11 items-center hover:text-ink active:opacity-60"
+              >
+                {NOT_TAX_ADVICE.label}
+              </Link>
+            </p>
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </footer>
   );
 }
 
-/** Obal celé marketingové stránky: hlavička + obsah v jednotném kontejneru + patička. */
+/** Obal celé veřejné stránky: lišta + obsah ve sloupci + patička. */
 export function MarketingPage({
   active,
   children,
@@ -295,9 +376,17 @@ export function MarketingPage({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
+    // overflow-x-clip: pásy jdou přes celou šířku okna (`full-bleed`)
+    <div className="flex min-h-svh flex-col overflow-x-clip bg-surface">
       <MarketingHeader active={active} />
-      <main id="obsah" className="mx-auto w-full max-w-6xl flex-1 px-6">{children}</main>
+      {/* stránka bez závěru (podmínky, soukromí, 404, kalkulačka) si pod
+          obsahem drží odstup od patičky; pás i závěr na ni naopak doléhají */}
+      <main
+        id="obsah"
+        className="wrap-wide flex-1 [&>:last-child:not(.full-bleed)]:mb-(--band-y-lg)"
+      >
+        {children}
+      </main>
       <MarketingFooter />
     </div>
   );

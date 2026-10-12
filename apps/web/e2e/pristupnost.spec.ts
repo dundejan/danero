@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
-import { auditPage } from './a11y';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { auditOverlay, auditPage, expandAllDisclosures } from './a11y';
 import { UNIVERSAL_TEMPLATE_CSV } from '../../../packages/importers/src/universal/csv';
-import { registerWithProfile } from './helpers';
+import { hydrated, registerAccount, saveFirstProfile, uploadStatement } from './helpers';
 
 /**
  * Přístupnost celé aplikace — pojistka, ne dekorace (H-28).
@@ -20,7 +20,11 @@ import { registerWithProfile } from './helpers';
  * – axe běží na mobilu i na desktopu. Obojí je nutné: `scrollable-region-focusable`
  *   se ozve jedině tam, kde tabulka opravdu přetéká (tedy na úzkém displeji),
  *   zatímco tabulky s `hidden md:block` jsou na mobilu skryté a axe by je vůbec
- *   neviděl.
+ *   neviděl,
+ * – měří se i to, co je vidět až po interakci: rozbalené řádky, vysvětlivka,
+ *   spodní sheet a potvrzovací dialog. Redesign z října 2026 schoval výklad
+ *   za „i“ a detaily za rozbalení — stránka bez nich je jen půlka toho, co
+ *   uživatel čte.
  *
  * Každá stránka se načte jednou a pak se na ní přepínají režim a viewport.
  */
@@ -32,7 +36,11 @@ const APP_PAGES = [
   // detail pozice — ISIN z univerzální šablony, kterou test importuje
   '/portfolio/US0378331005',
   '/report',
+  // skončený rok: jiná skladba stránky — formulář exportu XML a tlačítko v liště
+  '/report?rok=2025',
   '/simulator',
+  // simulátor s výsledkem (verdikt, limity po prodeji, rozpad prodeje)
+  '/simulator?isin=US0378331005&kusy=1&cena=200',
   '/import',
   '/nastaveni',
   '/nastaveni/upozorneni',
@@ -54,6 +62,7 @@ const DEMO_PAGES = [
   '/demo/portfolio',
   '/demo/portfolio/IE00BK5BQT80',
   '/demo/simulator',
+  '/demo/simulator?isin=IE00BK5BQT80&kusy=5&cena=140',
   '/demo/report',
 ];
 
@@ -99,31 +108,165 @@ const MARKETING_PAGES = [
   '/soukromi',
 ];
 
+/**
+ * Stránky s rozbalovacími řádky a detaily — měří se podruhé, se vším
+ * otevřeným (kontroly výpočtu a upozornění, řádky účtu s formuláři, historie
+ * importů, napojení brokera, osobní údaje exportu, otázky a odpovědi).
+ */
+const EXPANDABLE_PAGES = [
+  '/prehled',
+  '/report',
+  '/report?rok=2025',
+  '/import',
+  '/nastaveni/ucet',
+  '/demo/prehled',
+  '/demo/report',
+  '/cenik',
+  '/caste-otazky',
+];
+
+const EXPANDED = { label: 'rozbalené řádky', run: expandAllDisclosures };
+
+/** Otevře prvek klepnutím na spouštěč a počká na dialog daného jména. */
+const openDialog =
+  (
+    trigger: (page: Page) => Locator,
+    role: 'dialog' | 'alertdialog',
+    name: string | RegExp,
+  ) =>
+  async (page: Page) => {
+    await (await hydrated(trigger(page))).click();
+    const dialog = page.getByRole(role, { name });
+    await expect(dialog).toBeVisible();
+    // sheet přijíždí pružinou řízenou skriptem — měřit se má, až stojí
+    await (await dialog.elementHandle())?.waitForElementState('stable');
+  };
+
+/** Spodní sheety telefonu: detail limitu, další sekce, vysvětlivka. */
+const MOBILE_OVERLAYS = [
+  {
+    label: 'sheet limitu',
+    path: '/prehled',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: /^Osvobození prodejů cenných papírů/ }),
+      'dialog',
+      /^Osvobození prodejů cenných papírů — /,
+    ),
+  },
+  {
+    label: 'sheet „Více“',
+    path: '/prehled',
+    open: openDialog((page) => page.getByRole('button', { name: 'Více' }), 'dialog', 'Další sekce'),
+  },
+  {
+    label: 'vysvětlivka v sheetu',
+    path: '/prehled',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Vysvětlení: Daň z investic' }),
+      'dialog',
+      'Jak se daň počítá',
+    ),
+  },
+  {
+    label: 'potvrzovací dialog',
+    path: '/nastaveni/ucet',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Smazat účet…' }),
+      'alertdialog',
+      'Smazat účet?',
+    ),
+  },
+  {
+    label: 'sheet limitu v demu',
+    path: '/demo/prehled',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: /^Limit paušální daně/ }),
+      'dialog',
+      /^Limit paušální daně — /,
+    ),
+  },
+  {
+    label: 'rozbalené menu',
+    path: '/',
+    open: async (page: Page) => {
+      await (await hydrated(page.getByRole('button', { name: 'Otevřít menu' }))).click();
+      await expect(page.getByRole('navigation', { name: 'Mobilní navigace' })).toBeVisible();
+    },
+  },
+] as const;
+
+/** Překryvy širokého okna: bublina vysvětlivky a potvrzovací dialog. */
+const DESKTOP_OVERLAYS = [
+  {
+    label: 'vysvětlivka',
+    path: '/prehled',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Vysvětlení: Daň z investic' }),
+      'dialog',
+      'Jak se daň počítá',
+    ),
+  },
+  {
+    label: 'vysvětlivka u pole',
+    path: '/nastaveni',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Vysvětlení: jak se daní vratky kapitálu' }),
+      'dialog',
+      'Vratka kapitálu',
+    ),
+  },
+  {
+    label: 'potvrzovací dialog',
+    path: '/nastaveni/ucet',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Smazat účet…' }),
+      'alertdialog',
+      'Smazat účet?',
+    ),
+  },
+  {
+    label: 'vysvětlivka v demu',
+    path: '/demo/portfolio',
+    open: openDialog(
+      (page) => page.getByRole('button', { name: 'Vysvětlení: Hodnota portfolia' }),
+      'dialog',
+      'Z čeho hodnota vychází',
+    ),
+  },
+] as const;
+
 test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení (light i dark)', async ({
   page,
 }) => {
-  // 35 stránek × 2 režimy × 2 viewporty — pomalé, ale je to jediná pojistka
-  // proti tomu, aby se přístupnost zase tiše rozpadla
+  // 40 stránek × 2 režimy × 2 viewporty a stavy po interakci — pomalé, ale je
+  // to jediná pojistka proti tomu, aby se přístupnost zase tiše rozpadla
   test.setTimeout(1_800_000);
   // dokud je prohlížeč odhlášený — potvrzenému uživateli tyhle stránky utečou
   for (const path of LOGGED_OUT_PAGES) {
     await auditPage(page, path);
   }
 
-  await registerWithProfile(page, { name: 'E2E A11y', email: 'a11y@danero.cz' });
-
-  // onboarding se po naimportování dat přesměruje na přehled — projít ho jde
-  // jedině teď, s hotovým profilem a prázdnou historií
+  // krok 1: účet bez profilu — průvodce a Nastavení s výzvou vybrat režim
+  // (sem vede i přehled, portfolio, simulátor a report)
+  await registerAccount(page, { name: 'E2E A11y', email: 'a11y@danero.cz' });
   await auditPage(page, '/vitejte');
+  await auditPage(page, '/nastaveni');
+  await auditPage(page, '/nastaveni', EXPANDED);
 
+  // krok 2: profil je, data ne — průvodce, Zdroje dat s výzvou a prázdný
+  // přehled se po naimportování dat už neukážou, projít je jde jedině teď
+  await saveFirstProfile(page);
+  await auditPage(page, '/vitejte');
+  await auditPage(page, '/import');
+  await auditPage(page, '/prehled');
+
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/import');
-  await page.locator('input[name="soubory"]').setInputFiles({
+  await uploadStatement(page, {
     name: 'sablona.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(UNIVERSAL_TEMPLATE_CSV, 'utf8'),
   });
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(page.getByText('sablona.csv')).toBeVisible();
 
   for (const path of [
     ...APP_PAGES,
@@ -133,5 +276,34 @@ test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení
     ...MARKETING_PAGES,
   ]) {
     await auditPage(page, path);
+  }
+
+  for (const path of EXPANDABLE_PAGES) {
+    await auditPage(page, path, EXPANDED);
+  }
+
+  // kalkulačka s verdiktem — bez odpovědí je na stránce jen prázdný stav
+  await auditPage(page, '/kalkulacka', {
+    label: 'verdikt',
+    run: async (calculator) => {
+      const answer = (question: string | RegExp, option: string) =>
+        calculator
+          .getByRole('group', { name: question })
+          .getByRole('button', { name: option, exact: true });
+      await (await hydrated(answer(/Jsi zaměstnanec/, 'Zaměstnanec'))).click();
+      await answer(/akcie nebo ETF za víc než 100 000 Kč/, 'Ne').click();
+      await answer(/kryptoměny za víc než 100 000 Kč/, 'Ne').click();
+      await answer(/vedle zaměstnání jiné zdanitelné příjmy/, 'Ne').click();
+      await expect(
+        calculator.getByText('Vypadá to, že přiznání kvůli investicím řešit nemusíš.'),
+      ).toBeVisible();
+    },
+  });
+
+  for (const overlay of MOBILE_OVERLAYS) {
+    await auditOverlay(page, { ...overlay, viewport: 'mobil' });
+  }
+  for (const overlay of DESKTOP_OVERLAYS) {
+    await auditOverlay(page, { ...overlay, viewport: 'desktop' });
   }
 });

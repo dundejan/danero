@@ -1,9 +1,11 @@
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Logo } from '@/components/logo';
+import { FormPage } from '@/components/form-page';
 import { ResendVerificationForm } from '@/components/resend-verification-form';
 import { buttonVariants } from '@/components/ui/button';
+import { Disclosure } from '@/components/ui/disclosure';
+import { TextLink } from '@/components/ui/link';
 import { getAuth } from '@/lib/auth';
 
 export const metadata = { title: 'E-mail potvrzený — Danero' };
@@ -34,43 +36,28 @@ export default async function EmailVerifiedPage({
     if (session?.user.emailVerified) redirect('/vitejte');
   }
 
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
-      <div>
-        <Link href="/" className="mb-8 inline-block" aria-label="Danero — na úvodní stránku">
-          <Logo className="text-lg" />
-        </Link>
-        <h1 className="font-display text-3xl font-bold">
-          {error ? 'Odkaz už neplatí' : 'Adresu máme potvrzenou'}
-        </h1>
-        <p className="mt-2 text-sm text-inkoust-tlumeny">
-          {error ? (
-            <>Ověřovací odkaz vypršel nebo už byl použitý. Nech si poslat nový.</>
-          ) : (
-            <>
-              Stačí se přihlásit a jsi uvnitř. Rovnou tě odkaz pustí dál jen v prohlížeči, ve
-              kterém ses registroval — jinde (jiný počítač, telefon) chceme kvůli bezpečnosti
-              účtu heslo. Stejně to dopadne, když si odkaz dřív než ty otevře firemní ochrana
-              pošty.
-            </>
-          )}
-        </p>
-      </div>
+  if (error) {
+    return (
+      <FormPage
+        title="Odkaz už neplatí"
+        lede="Ověřovací odkaz vypršel nebo už byl použitý."
+        footer={<TextLink href="/prihlaseni">Zpátky na přihlášení</TextLink>}
+      >
+        <ResendVerificationForm />
+      </FormPage>
+    );
+  }
 
-      {error ? (
-        <>
-          <ResendVerificationForm />
-          <p className="text-sm text-inkoust-tlumeny">
-            <Link href="/prihlaseni" className="font-medium text-ruzova-text">
-              Zpátky na přihlášení
-            </Link>
-          </p>
-        </>
-      ) : (
-        <Link href="/prihlaseni" className={buttonVariants({ className: 'w-full' })}>
-          Přihlásit se
-        </Link>
-      )}
-    </main>
+  return (
+    <FormPage title="Adresu máme potvrzenou" lede="Stačí se přihlásit.">
+      <Link href="/prihlaseni" className={buttonVariants({ className: 'w-full' })}>
+        Přihlásit se
+      </Link>
+      <Disclosure summary="Proč mě odkaz nepřihlásil rovnou?" className="mt-4">
+        Rovnou tě odkaz pustí dál jen v prohlížeči, ve kterém ses registroval — jinde (jiný
+        počítač, telefon) chceme kvůli bezpečnosti účtu heslo. Stejně to dopadne, když si odkaz
+        dřív než ty otevře firemní ochrana pošty.
+      </Disclosure>
+    </FormPage>
   );
 }

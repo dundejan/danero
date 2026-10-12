@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { notifications } from '@/db/schema';
+import { AppToolbar } from '@/components/app-toolbar';
+import { EmptyState } from '@/components/ui/empty-state';
 import { OverviewView } from '@/components/views/overview-view';
 import { getDb } from '@/db';
 import { loadInstrumentPrices } from '@/lib/prices';
@@ -46,20 +48,27 @@ export default async function OverviewPage({
 
   const txs = await loadTransactions(db, user.id);
   if (txs.length === 0) {
+    // Stejná podoba jako prázdné portfolio: lišta s titulkem a pozvánka uprostřed.
+    // Tlačítko vede rovnou na Zdroje dat, kde je krok 2 uvítání (R1B-05) —
+    // dřív vedlo přes „Otevřít průvodce“ na mezistránku, která jen řekla
+    // „pokračuj“. Poznámka pod ním říká, proč tu skončil i ten, kdo klikl na
+    // Report nebo Simulátor: obě stránky sem bez dat přesměrují (R1B-06).
     return (
-      <div className="flex max-w-xl flex-col items-start gap-4">
-        <h1 className="font-display text-3xl font-bold">Zatím žádná data</h1>
-        <p className="text-inkoust-tlumeny">
-          Připoj brokera nebo nahraj výpis a Danero pohlídá zbytek — časové testy, limity i podklady
-          k přiznání.
-        </p>
-        <Link
-          href="/vitejte"
-          className={buttonVariants({ variant: 'primary' })}
+      <>
+        <AppToolbar title="Přehled" />
+        <EmptyState
+          title="Zatím žádná data"
+          action={
+            <Link href="/import" className={buttonVariants()}>
+              Nahrát výpisy
+            </Link>
+          }
+          note="Report a Simulátor se otevřou s prvním výpisem — bez dat vedou sem."
         >
-          Otevřít průvodce
-        </Link>
-      </div>
+          Nahraj výpis nebo připoj brokera a Danero pohlídá zbytek — časové testy, limity i podklady
+          k přiznání.
+        </EmptyState>
+      </>
     );
   }
 

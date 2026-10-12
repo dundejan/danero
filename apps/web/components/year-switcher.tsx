@@ -1,33 +1,33 @@
-import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 
+/**
+ * Přepínač zdaňovacího období — segmentový přepínač v nástrojové liště.
+ * Každý rok je odkaz (`?rok=`), takže funguje i bez JavaScriptu a adresa
+ * vždy říká, na jaký rok se uživatel dívá.
+ */
 export function YearSwitcher({
   years,
   active,
   hrefBase,
+  className,
 }: {
   years: number[];
   active: number;
   hrefBase: string;
+  className?: string;
 }) {
   if (years.length <= 1) return null;
   return (
-    <nav className="flex flex-wrap gap-1" aria-label="Zdaňovací období">
-      {years.map((year) => (
-        <Link
-          key={year}
-          href={`${hrefBase}?rok=${year}`}
-          aria-current={year === active ? 'page' : undefined}
-          className={cn(
-            'rounded-md px-3 py-1 font-mono text-sm',
-            year === active
-              ? 'bg-ruzova-syta font-semibold text-white'
-              : 'text-inkoust-tlumeny hover:text-inkoust',
-          )}
-        >
-          {year}
-        </Link>
-      ))}
-    </nav>
+    <SegmentedControl
+      kind="nav"
+      ariaLabel="Zdaňovací období"
+      value={String(active)}
+      segments={years.map((year) => ({
+        key: String(year),
+        label: year,
+        href: `${hrefBase}?rok=${year}`,
+      }))}
+      className={className}
+    />
   );
 }

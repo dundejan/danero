@@ -20,7 +20,6 @@ const CONFIGURED = operatorFromEnv();
 vi.mock('@/components/marketing-page', () => ({
   MarketingPage: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   PageHero: () => null,
-  MarketingCta: () => null,
 }));
 
 afterEach(() => {
@@ -49,10 +48,14 @@ async function pageText(
 }
 
 describe('/podminky: věta o telefonu jen s telefonem (L7s-05)', () => {
-  /** Článek 8 — jinde na stránce slovo „telefon“ znamená zařízení, ne kontakt. */
+  /**
+   * Článek 8 — jinde na stránce slovo „telefon“ znamená zařízení, ne kontakt.
+   * Nadpisy článků stojí na stránce dvakrát: nejdřív v obsahu stránky (odkazy
+   * na kotvy), pak nad samotným článkem. Hledá se proto POSLEDNÍ výskyt.
+   */
   const contactArticle = (text: string): string => {
-    const start = text.indexOf('8. Provozovatel a kontakt');
-    const end = text.indexOf('9. Když se neshodneme');
+    const start = text.lastIndexOf('8. Provozovatel a kontakt');
+    const end = text.lastIndexOf('9. Když se neshodneme');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     return text.slice(start, end);

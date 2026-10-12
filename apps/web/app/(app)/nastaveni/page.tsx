@@ -1,20 +1,42 @@
 import { d } from '@danero/shared';
-import { Card, CardTitle } from '@/components/ui/card';
 import { AutoSubmit } from '@/components/ui/auto-submit';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Disclosure, DisclosureRow } from '@/components/ui/disclosure';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Input, Select } from '@/components/ui/field';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { FieldRow, Group, Row } from '@/components/ui/list';
+import { Notice } from '@/components/ui/notice';
+import { Section } from '@/components/ui/section';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { Input, Label, Select } from '@/components/ui/field';
+import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
-import { filingLimitTexts } from '@/lib/filing-limits';
+import { BASELINE_FIELD, encodeBaseline, OWNER_FIELD } from '@/lib/form-baseline';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
+import { configForYear } from '@/lib/tax-config';
+import { tidy } from '@/lib/typography';
 import { firstParam } from '@/lib/utils';
-import { SettingsNav } from './settings-nav';
+import { DisputedHint } from './disputed-hint';
+import {
+  OTHER_INCOME_FORMAT,
+  OTHER_INCOME_PATTERN,
+  PROFILE_FIELDS,
+  profileFormEntries,
+} from './form-state';
+import { SettingsToolbar } from './settings-nav';
 import { SettingsToast } from './settings-toast';
-import { saveProfileAction, unpinTaxYearAction } from './actions';
+import { autoSaveProfileAction, saveProfileAction, unpinTaxYearAction } from './actions';
 
 export const metadata = { title: 'Daň a výpočet — Danero' };
+
+/** Věta u sporného výkladu, když je zapnutá mírnější varianta. */
+const DISPUTED_ON = 'Sporný výklad — neseš riziko doměrku.';
 
 export default async function SettingsPage({
   searchParams,
@@ -29,328 +51,543 @@ export default async function SettingsPage({
   const pinnedYears = await listPinnedTaxYears(db, user.id);
   // R-09a, R-09b: limity § 38g se rok od roku liší (do ZO 2026 50 000 /
   // 20 000 Kč, od ZO 2027 100 000 / 40 000 Kč). Profil platí pro všechny roky,
-  // takže volba režimu jmenuje limit běžného roku.
-  const filingLimits = filingLimitTexts(currentTaxYear());
+  // takže volba režimu jmenuje limit běžného roku. Jméno limitu je z
+  // `lib/limit-names.ts` — stejné jako na přehledu, v reportu i v simulátoru
+  // (R1B-10).
+  const { limits } = configForYear(currentTaxYear());
+  const watchedLimit = (kind: LimitKind, amountCzk: string): string =>
+    tidy(`Hlídá se ${limitWithAmount(kind, d(amountCzk))}.`);
+  // Stav, se kterým se formulář vykreslí: z něj jsou výchozí hodnoty polí
+  // i skryté pole, podle kterého server pozná, co člověk změnil
+  // (`lib/form-baseline.ts`).
+  const baseline = encodeBaseline(profileFormEntries(profile));
+  const shown = new URLSearchParams(baseline);
+
+  const taxProfile = (
+    <Section title="Daňový profil">
+      <Group variant="inset">
+        <FieldRow
+          label="Daňový režim"
+          htmlFor="rezim"
+          hintId="rezim-napoveda"
+          info={
+            <InfoPopover label="proč se ptáme na režim" title="Daňový režim">
+              <p>
+                {tidy(
+                  'Podle režimu Danero pozná, který limit ti hlídat a kdy ti říct, že přiznání podávat nemusíš. Z výpisů se zjistit nedá, proto se na něj ptáme.',
+                )}
+              </p>
+            </InfoPopover>
+          }
+          // Důsledek volby je vidět hned pod popiskem a přepíná se s nabídkou
+          // (`:has()` nad vybranou položkou) — text položek tak může zůstat
+          // krátký a limit přitom nezmizí. Limity se jmenují stejně jako na
+          // přehledu (R1B-10).
+          hint={
+            <>
+              <span className="hidden group-has-[option:disabled:checked]/field-row:inline">
+                Z výpisů se zjistit nedá.
+              </span>
+              <span className="hidden group-has-[option[value=PAUSAL]:checked]/field-row:inline">
+                {watchedLimit('FLAT_TAX', limits.flatTaxOtherIncome)}
+              </span>
+              <span className="hidden group-has-[option[value=ZAMESTNANEC]:checked]/field-row:inline">
+                {watchedLimit('EMPLOYEE_SIDE_INCOME', limits.employeeSideIncome)}
+              </span>
+              <span className="hidden group-has-[option[value=OSVC]:checked]/field-row:inline">
+                Přiznání podáváš tak jako tak.
+              </span>
+              <span className="hidden group-has-[option[value=JINE]:checked]/field-row:inline">
+                {watchedLimit('GENERAL_FILING', limits.generalFiling)}
+              </span>
+            </>
+          }
+        >
+          {/* L7i-01 (R8): bez předvolby. Režim z dat zjistit nejde a rozhoduje
+              o verdiktu — předvolený paušál hlídal zaměstnanci limit
+              50 000 Kč místo 20 000 Kč a tvrdil mu, že přiznání nepodává.
+              Prázdná položka je jen u nového profilu; uložený režim se
+              na ni vrátit nedá. */}
+          <Select
+            id="rezim"
+            name="rezim"
+            defaultValue={shown.get(PROFILE_FIELDS.regime) ?? ''}
+            required
+            aria-describedby="rezim-napoveda"
+          >
+            {!profile && (
+              <option value="" disabled>
+                Vyber, co na tebe sedí…
+              </option>
+            )}
+            <option value="PAUSAL">OSVČ v paušálním režimu</option>
+            <option value="ZAMESTNANEC">Zaměstnanec</option>
+            <option value="OSVC">OSVČ mimo paušál</option>
+            <option value="JINE">Jiné</option>
+          </Select>
+        </FieldRow>
+        {/* R-08f, R-09a, R-09b: profil má tuhle částku jen jednu a engine ji
+            přičte ke každému roku — i ke skončenému a zafixovanému (fixace
+            R-05c drží párování, kurzy a výklad limitu 100 000 Kč, tohle pole
+            ne). Letošní nájem tak bez vysvětlení přepsal verdikt loňského
+            roku (L24-03): výhrada proto stojí přímo u pole, zbytek ve
+            vysvětlivce. */}
+        <FieldRow
+          label="Další zdanitelné příjmy"
+          htmlFor="ostatni-prijmy"
+          hintId="ostatni-prijmy-napoveda"
+          hint="Třeba nájem, v Kč za rok. Platí pro všechny roky, i skončené a zafixované."
+          info={
+            <InfoPopover label="co se počítá do dalších příjmů" title="Další zdanitelné příjmy">
+              <p>{tidy('Zdanitelné příjmy podle § 8–10 mimo investice, třeba nájem.')}</p>
+              <p>
+                {tidy(
+                  'Částka platí pro všechny roky naráz — Danero ji přičte ke každému roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za minulé roky (třeba jestli za ně podáváš přiznání).',
+                )}
+              </p>
+            </InfoPopover>
+          }
+        >
+          <Input
+            id="ostatni-prijmy"
+            name="ostatni-prijmy"
+            inputMode="decimal"
+            autoComplete="off"
+            defaultValue={shown.get(PROFILE_FIELDS.otherIncomeCzk) ?? ''}
+            // Jen u auto-save: prohlížeč podle tvaru pozná rozepsanou částku,
+            // kterou server odmítne, dřív než s ní člověk zavře panel. První
+            // uložení tlačítkem hlásí chybu samo (a prohlížeč by ho s `pattern`
+            // zastavil vlastní bublinou).
+            {...(profile ? { pattern: OTHER_INCOME_PATTERN, title: OTHER_INCOME_FORMAT } : {})}
+            aria-describedby="ostatni-prijmy-napoveda"
+            className="tabular-nums"
+          />
+        </FieldRow>
+        <Row
+          label={<label htmlFor="obchodni-majetek">Cenné papíry v obchodním majetku</label>}
+          hint="Ruší osvobození — netypické."
+        >
+          <Switch
+            id="obchodni-majetek"
+            name="obchodni-majetek"
+            defaultChecked={shown.has(PROFILE_FIELDS.hasBusinessAssets)}
+          />
+        </Row>
+      </Group>
+    </Section>
+  );
+
+  const calculation = (
+    <>
+      <Section
+        title="Výpočet"
+        info={
+          <InfoPopover label="Výpočet">
+            <p>
+              {tidy(
+                'Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se tiskne do každého reportu.',
+              )}
+            </p>
+            <p>
+              {tidy(
+                'Párování prodejů, měnové kurzy a výklad osvobození prodejů (100 000 Kč) se u každého skončeného roku zafixují ve chvíli, kdy si za něj poprvé otevřeš report — změna tady se pak projeví jen v letech bez fixace.',
+              )}
+            </p>
+          </InfoPopover>
+        }
+      >
+        <Group variant="inset">
+          <FieldRow
+            label="Párování prodejů"
+            htmlFor="parovani"
+            info={
+              <InfoPopover label="jak se párují prodeje" title="Párování prodejů">
+                <p>
+                  {tidy(
+                    'Které kusy se prodejem spotřebují dřív — mění zisk i to, jestli prodané kusy splnily tříletý test.',
+                  )}
+                </p>
+                <ul>
+                  <li>FIFO — nejstarší kusy první (doporučeno)</li>
+                  <li>LIFO — nejnovější kusy první</li>
+                  <li>Max. zisk — nejlevnější kusy první</li>
+                  <li>Max. ztráta — nejdražší kusy první</li>
+                </ul>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="parovani"
+              name="parovani"
+              defaultValue={shown.get(PROFILE_FIELDS.matchingMethod) ?? ''}
+            >
+              <option value="FIFO">FIFO — nejstarší první</option>
+              <option value="LIFO">LIFO — nejnovější první</option>
+              <option value="MAX_PROFIT">Max. zisk — nejlevnější první</option>
+              <option value="MAX_LOSS">Max. ztráta — nejdražší první</option>
+            </Select>
+          </FieldRow>
+          <FieldRow
+            label="Měnové kurzy"
+            htmlFor="kurzy"
+            info={
+              <InfoPopover label="volba kurzů" title="Měnové kurzy">
+                <p>
+                  {tidy(
+                    'V jednom roce platí jedna soustava — kombinovat je nelze. Rozdíl mezi nimi bývají i desítky tisíc korun, report ti ukáže obě varianty.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select id="kurzy" name="kurzy" defaultValue={shown.get(PROFILE_FIELDS.fxMethod) ?? ''}>
+              <option value="UNIFIED">Jednotný kurz GFŘ</option>
+              <option value="CNB_DAILY">Denní kurzy ČNB</option>
+            </Select>
+          </FieldRow>
+          <FieldRow
+            label="Začátek časového testu"
+            htmlFor="zaklad-casoveho-testu"
+            info={
+              <InfoPopover label="odkdy běží časový test" title="Začátek časového testu">
+                <p>
+                  {tidy(
+                    'Od kterého data se počítají 3 roky držení. Datum vypořádání odpovídá pokynu D-59.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="zaklad-casoveho-testu"
+              name="zaklad-casoveho-testu"
+              defaultValue={shown.get(PROFILE_FIELDS.timeTestBasis) ?? ''}
+            >
+              <option value="settlement">Datum vypořádání</option>
+              <option value="trade">Datum obchodu</option>
+            </Select>
+          </FieldRow>
+        </Group>
+      </Section>
+
+      <Section
+        title="Sporné výklady"
+        info={
+          <InfoPopover label="Sporné výklady">
+            <p>
+              {tidy(
+                'Kde zákon není jednoznačný, je přednastavený bezpečný výklad. Mírnější může daň snížit, ale neseš riziko doměrku. Zvolená varianta se tiskne do každého reportu.',
+              )}
+            </p>
+          </InfoPopover>
+        }
+      >
+        <Group variant="inset">
+          <FieldRow
+            // popisek pole je krátký; celé jméno limitu nese titulek vysvětlivky
+            label={tidy('Co čerpá osvobození prodejů (100 000 Kč)')}
+            htmlFor="limit-100k"
+            hintId="limit-100k-napoveda"
+            hint={
+              <DisputedHint
+                safe="Mírnější výklad osvobodí víc, ale hrozí doměrek."
+                lenient={DISPUTED_ON}
+              />
+            }
+            info={
+              <InfoPopover
+                label="co čerpá osvobození prodejů"
+                title={LIMIT_NAME.SECURITIES}
+              >
+                <p>
+                  {tidy(
+                    'Prodeje cenných papírů jsou osvobozené, dokud jejich roční úhrn nepřesáhne 100 000 Kč. Jestli se do něj počítají i prodeje po tříletém časovém testu, zákon jednoznačně neříká; finanční správa se kloní k přísnějšímu čtení. Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="limit-100k"
+              name="limit-100k"
+              defaultValue={shown.get(PROFILE_FIELDS.limit100kStrict) ?? ''}
+              aria-describedby="limit-100k-napoveda"
+            >
+              <optgroup label="Bezpečný výklad">
+                <option value="strict">Všechny prodeje</option>
+              </optgroup>
+              <optgroup label="Mírnější výklad (sporný)">
+                <option value="lenient" data-disputed="">
+                  Jen prodeje bez časového testu
+                </option>
+              </optgroup>
+            </Select>
+          </FieldRow>
+          <FieldRow
+            label="Prémie bezcenně expirovaných opcí"
+            htmlFor="derivaty-vydaje"
+            hintId="derivaty-vydaje-napoveda"
+            hint={
+              <DisputedHint
+                safe="Mírnější výklad sníží daň, ale hrozí doměrek."
+                lenient={DISPUTED_ON}
+              />
+            }
+            info={
+              <InfoPopover label="opce, které vypršely bezcenné" title="Prémie bezcenně expirovaných opcí">
+                <p>
+                  {tidy(
+                    'Když koupená opce vyprší bezcenná, oficiální výklad chybí. Mírnější čtení (výdaje se posuzují za celý druh příjmů) prémii uplatní proti ostatním derivátovým ziskům roku — sníží daň, ale neseš riziko doměrku.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="derivaty-vydaje"
+              name="derivaty-vydaje"
+              defaultValue={shown.get(PROFILE_FIELDS.derivativesExpensesPerType) ?? ''}
+              aria-describedby="derivaty-vydaje-napoveda"
+            >
+              <optgroup label="Bezpečný výklad">
+                <option value="restrictive">Neuplatnit jako výdaj</option>
+              </optgroup>
+              <optgroup label="Mírnější výklad (sporný)">
+                <option value="perType" data-disputed="">
+                  Výdaj celého druhu deriváty
+                </option>
+              </optgroup>
+            </Select>
+          </FieldRow>
+          <FieldRow
+            label="Stablecoiny a časový test"
+            htmlFor="emt-casovy-test"
+            hintId="emt-casovy-test-napoveda"
+            hint={
+              <DisputedHint
+                safe="Mírnější výklad osvobodí prodej po 3 letech, ale hrozí doměrek."
+                lenient={DISPUTED_ON}
+              />
+            }
+            info={
+              <InfoPopover label="stablecoiny po třech letech" title="Stablecoiny a časový test">
+                <p>
+                  {tidy(
+                    'Stablecoiny (USDT, USDC…) zákon vylučuje z osvobození do 100 000 Kč — jejich prodej se daní vždy. Zda pro ně platí aspoň tříleté osvobození, jasné není; mírnější čtení má oporu v textu zákona, ale neseš riziko doměrku.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="emt-casovy-test"
+              name="emt-casovy-test"
+              defaultValue={shown.get(PROFILE_FIELDS.emtTimeTestExempt) ?? ''}
+              aria-describedby="emt-casovy-test-napoveda"
+            >
+              <optgroup label="Bezpečný výklad">
+                <option value="safe">Daní se i po 3 letech</option>
+              </optgroup>
+              <optgroup label="Mírnější výklad (sporný)">
+                <option value="lenient" data-disputed="">
+                  Po 3 letech držení bez daně
+                </option>
+              </optgroup>
+            </Select>
+          </FieldRow>
+          <FieldRow
+            label="Vratka kapitálu"
+            htmlFor="vratka-kapitalu"
+            hintId="vratka-kapitalu-napoveda"
+            hint={
+              <DisputedHint
+                safe="Mírnější výklad daň odloží až na prodej, je ale sporný."
+                lenient="Sporný výklad — zákon to u zahraničních fondů neřeší."
+              />
+            }
+            info={
+              <InfoPopover label="jak se daní vratky kapitálu" title="Vratka kapitálu">
+                {/* R1B-24: bublina měla 108 slov. Zůstává, co rozhoduje o volbě,
+                    a pokyn pro stará data (nové pole se do už nahraných výpisů
+                    samo nedostane); jak příznak vyplnit v šabloně, říkají její
+                    pravidla ve Zdrojích dat. */}
+                <p>
+                  {tidy(
+                    'Některé fondy a REITy vracejí část vloženého kapitálu („Return of capital“). Věcně to jen snižuje nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních fondů neřeší. Bezpečný výklad daní hned a čerpá limit paušální daně.',
+                  )}
+                </p>
+                <p>
+                  {tidy(
+                    'Týká se jen výplat, které jsou tak ve výpisu označené. U výpisů nahraných před 12. 8. 2026 příznak chybí — ve Zdrojích dat rozbal import v historii, vrať ho zpět a výpis nahraj znovu.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Select
+              id="vratka-kapitalu"
+              name="vratka-kapitalu"
+              defaultValue={shown.get(PROFILE_FIELDS.returnOfCapitalReducesBasis) ?? ''}
+              aria-describedby="vratka-kapitalu-napoveda"
+            >
+              <optgroup label="Bezpečný výklad">
+                <option value="safe">Zdanit jako dividendu</option>
+              </optgroup>
+              <optgroup label="Mírnější výklad (sporný)">
+                <option value="lenient" data-disputed="">
+                  Snížit nabývací cenu
+                </option>
+              </optgroup>
+            </Select>
+          </FieldRow>
+          {/* R-13b: prodej nakrátko volbu NEMÁ. Příjem plyne vždy prodejem —
+              opačný výklad se objevuje jen v diskusích, které short zaměňují
+              s CFD, a oporu v zákoně nemá. Vysvětlení, jak se short daní, nese
+              karta „Prodeje nakrátko“ v reportu. */}
+        </Group>
+      </Section>
+    </>
+  );
 
   return (
-    // jeden sloupec s šířkou pro formulář — nastavení se nečte přes celou
-    // obrazovku a dva sloupce vedle sebe nikdy nevyjdou stejně vysoké
-    <div className="max-w-4xl space-y-8">
-      <header className="space-y-4">
-        <div>
-          {/* nadpis pojmenovává SEKCI, ne celé nastavení: /nastaveni je první
-              ze tří záložek a „Nastavení“ nahoře nad aktivní záložkou
-              „Daň a výpočet“ vypadalo, že se stránka nepřepnula */}
-          <h1 className="font-display text-3xl font-bold">
-            {profile ? 'Daň a výpočet' : 'Nastav svůj daňový profil'}
-          </h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
-            Profil určuje, které limity Danero hlídá a jak počítá. Vše jde kdykoli změnit —
-            výpočty se přepočítají od nuly.
-            {profile && ' Změny se ukládají automaticky.'}
-          </p>
-        </div>
-        <SettingsNav active="tax" />
-      </header>
-
+    <>
+      <SettingsToolbar active="tax" />
       <SettingsToast ok={firstParam(params.ok)} chyba={firstParam(params.chyba)} />
 
-      <form action={saveProfileAction} className="space-y-6" id="dan">
-        <Card className="space-y-4">
-          <CardTitle>Kdo jsi vůči dani</CardTitle>
-          {/* dvě pole vedle sebe (stejně jako u metod výpočtu) — přes celou
-              šířku karty by se z nich staly zbytečně roztažené ovládací prvky.
-              `items-end`: druhý popisek se na užším displeji zalomí na dva
-              řádky a pole by si bez toho stála v jiné výšce */}
-          <div className="grid items-end gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="rezim">Daňový režim</Label>
-              {/* L7i-01 (R8): bez předvolby. Režim z dat zjistit nejde a rozhoduje
-                  o verdiktu — předvolený paušál hlídal zaměstnanci limit
-                  50 000 Kč místo 20 000 Kč a tvrdil mu, že přiznání nepodává.
-                  Prázdná položka je jen u nového profilu; uložený režim se
-                  na ni vrátit nedá. */}
-              <Select
-                id="rezim"
-                name="rezim"
-                defaultValue={profile?.regime ?? ''}
-                required
-                aria-describedby="rezim-napoveda"
-              >
-                {!profile && (
-                  <option value="" disabled>
-                    Vyber, co na tebe sedí…
-                  </option>
-                )}
-                <option value="PAUSAL">OSVČ v paušálním režimu (hlídá se limit 50 000 Kč)</option>
-                <option value="ZAMESTNANEC">
-                  {`Zaměstnanec (hlídá se limit ${filingLimits.employee})`}
-                </option>
-                <option value="OSVC">OSVČ mimo paušál (přiznání podávám tak jako tak)</option>
-                <option value="JINE">
-                  {`Jiné (hlídá se obecný limit ${filingLimits.general})`}
-                </option>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="ostatni-prijmy">
-                Další zdanitelné příjmy § 8–10 mimo investice (nájem apod.), Kč/rok
-              </Label>
-              <Input
-                id="ostatni-prijmy"
-                name="ostatni-prijmy"
-                inputMode="decimal"
-                // DB numeric vrací „0.00“ — do pole patří lidské „0“ (uložení/parsování beze změny)
-                defaultValue={d(profile?.otherIncomeCzk ?? '0').toString()}
-                aria-describedby="ostatni-prijmy-napoveda"
-              />
-            </div>
-          </div>
-          {/* R-08f, R-09a, R-09b: profil má tuhle částku jen jednu a engine ji
-              přičte ke každému roku — i ke skončenému a zafixovanému (fixace
-              R-05c drží párování, kurzy a výklad limitu 100 000 Kč, tohle pole
-              ne). „Kč/rok“ v popisku to neřeklo a letošní nájem tak bez
-              vysvětlení přepsal verdikt loňského roku. Věta stojí POD dvojicí
-              polí, ne pod tím svým: mřížka má `items-end` a text pod jedním
-              polem by ho vystrčil o řádek výš než sousední. */}
-          <p id="rezim-napoveda" className="text-xs text-inkoust-tlumeny">
-            Podle režimu Danero pozná, který limit ti hlídat a kdy ti říct, že přiznání podávat
-            nemusíš. Z výpisů se zjistit nedá, proto se na něj ptáme.
-          </p>
-          <p id="ostatni-prijmy-napoveda" className="text-xs text-inkoust-tlumeny">
-            Částka dalších příjmů platí pro všechny roky naráz — Danero ji přičte ke každému
-            roku, i ke skončenému a zafixovanému. Když ji změníš, změní se i to, co hlásí za
-            minulé roky (třeba jestli za ně podáváš přiznání).
-          </p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="obchodni-majetek"
-              defaultChecked={profile?.hasBusinessAssets ?? false}
-              className="h-4 w-4 accent-[var(--ruzova)]"
-            />
-            Cenné papíry mám v obchodním majetku (ruší osvobození — netypické)
-          </label>
-        </Card>
-
-        <Card className="space-y-4">
-          <CardTitle>Metody výpočtu</CardTitle>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="parovani">
-                Párování prodejů
-              </Label>
-              <Select
-                id="parovani"
-                name="parovani"
-                defaultValue={profile?.matchingMethod ?? 'FIFO'}
-              >
-                <option value="FIFO">FIFO — nejstarší kusy první (doporučeno)</option>
-                <option value="LIFO">LIFO — nejnovější kusy první</option>
-                <option value="MAX_PROFIT">Max. zisk — nejlevnější kusy první</option>
-                <option value="MAX_LOSS">Max. ztráta — nejdražší kusy první</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Které kusy se prodejem spotřebují dřív — mění zisk i to, jestli prodané
-                kusy splnily tříletý test.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="kurzy">
-                Měnové kurzy
-              </Label>
-              <Select id="kurzy" name="kurzy" defaultValue={profile?.fxMethod ?? 'UNIFIED'}>
-                <option value="UNIFIED">Jednotný kurz GFŘ</option>
-                <option value="CNB_DAILY">Denní kurzy ČNB</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                V jednom roce platí jedna soustava — kombinovat je nelze. Rozdíl mezi
-                nimi bývají i desítky tisíc korun, report ti ukáže obě varianty.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="limit-100k">Co se počítá do limitu 100k</Label>
-              <Select
-                id="limit-100k"
-                name="limit-100k"
-                defaultValue={(profile?.limit100kStrict ?? true) ? 'strict' : 'lenient'}
-              >
-                <option value="strict">Bezpečný výklad — všechny prodeje (doporučeno)</option>
-                <option value="lenient">Mírnější výklad — jen prodeje bez časového testu (sporné)</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Zákon jednoznačný není; finanční správa se kloní k přísnějšímu čtení.
-                Mírnější výklad ti může osvobodit víc, ale neseš riziko doměrku.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="zaklad-casoveho-testu">
-                Báze časového testu
-              </Label>
-              <Select
-                id="zaklad-casoveho-testu"
-                name="zaklad-casoveho-testu"
-                defaultValue={profile?.timeTestBasis ?? 'settlement'}
-              >
-                <option value="settlement">Datum vypořádání (dle pokynu D-59)</option>
-                <option value="trade">Datum obchodu</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Od kterého data se počítají 3 roky držení.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="derivaty-vydaje">
-                Prémie bezcenně expirovaných opcí
-              </Label>
-              <Select
-                id="derivaty-vydaje"
-                name="derivaty-vydaje"
-                defaultValue={(profile?.derivativesExpensesPerType ?? false) ? 'perType' : 'restrictive'}
-              >
-                <option value="restrictive">Bezpečný výklad — neuplatnit jako výdaj (doporučeno)</option>
-                <option value="perType">Mírnější výklad — výdaj celého druhu deriváty (sporné)</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Když koupená opce vyprší bezcenná, oficiální výklad chybí. Mírnější čtení
-                (výdaje se posuzují za celý druh příjmů) prémii uplatní proti ostatním
-                derivátovým ziskům roku — sníží daň, ale neseš riziko doměrku.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="emt-casovy-test">
-                Stablecoiny a časový test
-              </Label>
-              <Select
-                id="emt-casovy-test"
-                name="emt-casovy-test"
-                defaultValue={(profile?.emtTimeTestExempt ?? false) ? 'lenient' : 'safe'}
-              >
-                <option value="safe">Bezpečný výklad — stablecoiny se daní i po 3 letech (doporučeno)</option>
-                <option value="lenient">Mírnější výklad — po 3 letech držení bez daně i stablecoiny (sporné)</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Stablecoiny (USDT, USDC…) zákon vylučuje z osvobození do 100 000 Kč — jejich
-                prodej se daní vždy. Zda pro ně platí aspoň tříleté osvobození, jasné není;
-                mírnější čtení má oporu v textu zákona, ale neseš riziko doměrku.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="vratka-kapitalu">Vratka kapitálu</Label>
-              <Select
-                id="vratka-kapitalu"
-                name="vratka-kapitalu"
-                defaultValue={(profile?.returnOfCapitalReducesBasis ?? false) ? 'lenient' : 'safe'}
-              >
-                <option value="safe">Bezpečný výklad — zdanit jako dividendu (doporučeno)</option>
-                <option value="lenient">Mírnější výklad — snížit nabývací cenu držených kusů (sporné)</option>
-              </Select>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Některé fondy a REITy vracejí část vloženého kapitálu (broker to hlásí jako
-                „Return of capital“). Není to podíl na zisku, takže věcně jen snižuje
-                nabývací cenu a daň přijde až s prodejem — zákon to ale u zahraničních
-                fondů neřeší. Bezpečný výklad daní hned a čerpá limit 50 000 Kč.
-                Volba se týká jen výplat, které jsou ve výpisu takhle označené. Příznak
-                čteme z výpisů Trading 212 a Interactive Brokers a jde vyplnit i ručně
-                ve sloupci <span className="font-mono">return_of_capital</span> univerzální
-                šablony. U výpisů nahraných před 12. 8. 2026 v datech chybí, takže je
-                potřeba ve Zdrojích dat vrátit import zpět a výpis nahrát znovu.
-              </p>
-            </div>
-            {/* R-13b: prodej nakrátko volbu NEMÁ. Příjem plyne vždy prodejem —
-                opačný výklad se objevuje jen v diskusích, které short zaměňují
-                s CFD, a oporu v zákoně nemá. Vysvětlení, jak se short daní, nese
-                karta „Prodeje nakrátko“ v reportu. */}
-          </div>
-          <p className="text-xs text-inkoust-tlumeny">
-            Přednastavené hodnoty jsou konzervativní a průkazné. Zvolená konfigurace se
-            tiskne do každého reportu. Párování prodejů, měnové kurzy a výklad limitu
-            100 000 Kč se u každého skončeného roku zafixují ve chvíli, kdy si za něj
-            vygeneruješ podklady k přiznání — změna tady se pak projeví jen v letech
-            bez fixace, aby se čísla v už podaném přiznání zpětně nezměnila.
-            {profile && ' Seznam zafixovaných roků je pod formulářem.'}
-          </p>
-        </Card>
-
-        {/* auto-save: každá změna se uloží sama; bez profilu je potřeba
-            první uložení potvrdit tlačítkem (auto-save by nováčka po první
-            změně přesměroval na /prehled uprostřed vyplňování) */}
-        {profile && <AutoSubmit />}
-        {!profile && <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>}
-      </form>
-
-      {/* R-05c — mimo formulář profilu: vnořené <form> HTML nedovoluje
-          (a auto-save nahoře by se se zrušením fixace pral) */}
-      {profile && (
-        <Card className="space-y-3" id="fixace">
-          <CardTitle>Zafixované daňové roky</CardTitle>
-          {pinnedYears.length === 0 ? (
-            <p className="text-sm text-inkoust-tlumeny">
-              Zatím žádný. Jakmile si za skončený rok vygeneruješ podklady k přiznání,
-              zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho
-              nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.
-            </p>
-          ) : (
+      {/* jeden sloupec s šířkou pro seznam — nastavení se nečte přes celou obrazovku */}
+      <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
+        {/* Bez profilu sem přesměruje přehled, portfolio, simulátor i report
+            (R1B-06). Stránka proto říká, proč tu člověk je a co má udělat —
+            jinak klik v navigaci vypadal, jako že nic neudělal. */}
+        {!profile && (
+          <Notice title="Krok 1 ze 2 — vyber daňový režim">
+            Bez něj Danero neví, který limit ti hlídat, takže přehled, portfolio, simulátor ani
+            report zatím neotevře.
+          </Notice>
+        )}
+        {/* `autoComplete="off"` u formuláře s auto-save: prohlížeč pak do polí
+            po F5 nebo návratu v historii nevrací hodnoty z doby před načtením
+            (Firefox to dělá i u nabídek a přepínačů) — viz `AutoSubmit`.
+            Klíč: jakmile server pošle jiný stav (uložení, obnovení stránky po
+            návratu v historii), formulář se vykreslí celý znovu. React jinak
+            výchozí hodnotu nabídky po prvním vykreslení nemění — pole by dál
+            ukazovalo staré a skrytý stav už nové, takže by se nedotčené pole
+            tvářilo jako změněné.
+            Akci má jen první uložení (tlačítko); existující profil ukládá
+            `AutoSubmit` a prohlížeč ten formulář neodesílá nikdy. */}
+        <form
+          key={baseline}
+          action={profile ? undefined : saveProfileAction}
+          autoComplete={profile ? 'off' : undefined}
+          className="space-y-14"
+        >
+          <input type="hidden" name={BASELINE_FIELD} value={baseline} />
+          {taxProfile}
+          {profile ? (
             <>
-              <p className="text-sm text-inkoust-tlumeny">
-                Za tyhle roky sis už vygeneroval podklady, takže se počítají pořád
-                stejně — i když nahoře vybereš něco jiného.
-              </p>
-              <ul className="space-y-3">
+              {calculation}
+              {/* auto-save: každá změna se uloží sama */}
+              <AutoSubmit
+                action={autoSaveProfileAction}
+                endpoint="/api/settings/profile"
+                owner={await ownerTag(user.id)}
+              />
+            </>
+          ) : (
+            // Nový uživatel potřebuje jen režim: zbytek je přednastavený
+            // bezpečně a čeká o úroveň níž. Pole ve sbaleném detailu se
+            // odesílají dál, takže profil vznikne úplný. První uložení
+            // potvrzuje tlačítko — auto-save by nováčka po první změně
+            // přesměroval na /prehled uprostřed vyplňování.
+            // Tlačítko stojí POD rozbalením: kdo si volby projde, má ho na
+            // konci a je zřejmé, že ukládá i je (R1B-15).
+            <div className="space-y-6">
+              {/* Čí formulář to je: kdyby se v prohlížeči mezitím přihlásil
+                  někdo jiný, server ho nezapíše (`isOwnSubmission`). U auto-save
+                  totéž přidává fronta. */}
+              <input type="hidden" name={OWNER_FIELD} value={await ownerTag(user.id)} />
+              <Disclosure summary="Výpočet a sporné výklady — přednastaveno bezpečně">
+                <div className="type-body space-y-14 pt-6 text-ink">{calculation}</div>
+              </Disclosure>
+              <SubmitButton pendingLabel="Ukládám…">Uložit profil</SubmitButton>
+            </div>
+          )}
+        </form>
+
+        {/* R-05c — mimo formulář profilu: vnořené <form> HTML nedovoluje
+            (a auto-save nahoře by se se zrušením fixace pral) */}
+        {profile && (
+          <Section
+            id="fixace"
+            title="Zafixované roky"
+            info={
+              <InfoPopover label="Zafixované roky">
+                <p>
+                  {tidy(
+                    'Jakmile si za skončený rok poprvé otevřeš report, zapamatujeme si, jak se ten rok počítal — pozdější změna nastavení už ho nepřepočítá, aby čísla v odeslaném přiznání zůstala platná.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            {pinnedYears.length === 0 ? (
+              <EmptyState compact headingAs="p" title="Zatím žádný">
+                Skončený rok se zafixuje, když si za něj poprvé otevřeš report.
+              </EmptyState>
+            ) : (
+              <Group>
                 {pinnedYears.map((pinned) => (
-                  <li key={pinned.taxYear} className="border-t border-linka pt-3 first:border-0 first:pt-0">
-                    <p className="text-sm font-semibold">
-                      {pinned.taxYear}{' '}
-                      <span className="font-normal text-inkoust-tlumeny">
-                        (zafixováno {czDateTime(pinned.pinnedAt)})
-                      </span>
-                    </p>
-                    <ul className="mt-1 space-y-0.5 text-sm text-inkoust-tlumeny">
+                  <DisclosureRow
+                    key={pinned.taxYear}
+                    title={<span className="tabular-nums">{pinned.taxYear}</span>}
+                    meta={`zafixováno ${czDateTime(pinned.pinnedAt)}`}
+                  >
+                    <ul className="space-y-0.5">
                       <li>
                         Párování prodejů:{' '}
-                        <span className="text-inkoust">
+                        <span className="text-ink">
                           {METHOD_LABEL[pinned.matchingMethod] ?? pinned.matchingMethod}
                         </span>
                       </li>
                       <li>
                         Měnové kurzy:{' '}
-                        <span className="text-inkoust">
+                        <span className="text-ink">
                           {FX_METHOD_LABEL[pinned.fxMethod] ?? pinned.fxMethod}
                         </span>
                       </li>
                       <li>
-                        Limit 100 000 Kč:{' '}
-                        <span className="text-inkoust">{limit100kLabel(pinned.limit100kStrict)}</span>
+                        {tidy('Osvobození prodejů (100 000 Kč):')}{' '}
+                        <span className="text-ink">{limit100kLabel(pinned.limit100kStrict)}</span>
                       </li>
                     </ul>
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-sm text-inkoust-tlumeny hover:text-inkoust">
-                        Zrušit fixaci roku {pinned.taxYear}
-                      </summary>
-                      <div className="mt-2 space-y-2">
-                        <p className="text-xs text-inkoust-tlumeny">
-                          Rok {pinned.taxYear} se pak přepočítá podle nastavení výš (
-                          {METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod},{' '}
-                          {FX_METHOD_LABEL[profile.fxMethod] ?? profile.fxMethod},{' '}
-                          {limit100kLabel(profile.limit100kStrict)}) a čísla se můžou lišit
-                          od těch, které jsi už poslal na finanční úřad. Dělej to jen tehdy,
-                          když za ten rok budeš podávat dodatečné přiznání.
-                        </p>
-                        <form action={unpinTaxYearAction}>
-                          <input type="hidden" name="rok" value={pinned.taxYear} />
-                          <SubmitButton variant="danger" pendingLabel="Ruším…">
-                            Ano, zrušit fixaci roku {pinned.taxYear}
-                          </SubmitButton>
-                        </form>
-                      </div>
-                    </details>
-                  </li>
+                    <div className="mt-3">
+                      <ConfirmDialog
+                        trigger={
+                          <Button variant="danger" size="sm">
+                            Zrušit fixaci roku {pinned.taxYear}
+                          </Button>
+                        }
+                        title={`Zrušit fixaci roku ${pinned.taxYear}?`}
+                        description={tidy(
+                          `Rok ${pinned.taxYear} se přepočítá podle dnešního nastavení (${
+                            METHOD_LABEL[profile.matchingMethod] ?? profile.matchingMethod
+                          }, ${FX_METHOD_LABEL[profile.fxMethod] ?? profile.fxMethod}, ${limit100kLabel(
+                            profile.limit100kStrict,
+                          )}) a čísla se můžou lišit od těch, které jsi už poslal na finanční úřad. Dělej to jen tehdy, když za ten rok budeš podávat dodatečné přiznání.`,
+                        )}
+                        confirmLabel="Zrušit fixaci"
+                        cancelLabel="Ponechat"
+                        action={unpinTaxYearAction}
+                        fields={{ rok: pinned.taxYear }}
+                      />
+                    </div>
+                  </DisclosureRow>
                 ))}
-              </ul>
-            </>
-          )}
-        </Card>
-      )}
-    </div>
+              </Group>
+            )}
+          </Section>
+        )}
+      </div>
+    </>
   );
 }

@@ -102,14 +102,37 @@ export function resolveTrustedProxies(): string[] {
   return listed.length > 0 ? listed : DEFAULT_TRUSTED_PROXIES;
 }
 
+/**
+ * HTTP cesty Better Authu, které Danero nepoužívá a zavírá (proč, je u
+ * `disabledPaths` níž). Vyvezené kvůli testu, který hlídá, že každá cesta
+ * ověřující heslo je buď tady, nebo má strop na účet (`ACCOUNT_LIMITS`).
+ */
+export const DISABLED_AUTH_PATHS: readonly string[] = [
+  '/delete-user',
+  '/list-sessions',
+  '/verify-password',
+  '/two-factor/get-totp-uri',
+  '/two-factor/generate-backup-codes',
+];
+
 function buildAuth(db: Db) {
   return betterAuth({
     /**
-     * Dvě výchozí HTTP cesty Better Authu, které Danero nepoužívá a které
+     * Výchozí HTTP cesty Better Authu, které Danero nepoužívá a které
      * z jedné ukradené session cookie dělají mnohem větší škodu (nálezy
      * D-3-01 a D-3-04). `disabledPaths` zavírá jen HTTP router (`api/index.mjs`
      * vrátí 404) — serverová volání `auth.api.*` fungují dál, takže vlastní
      * server actions zůstávají nedotčené.
+     *
+     * `/verify-password`, `/two-factor/get-totp-uri`
+     * a `/two-factor/generate-backup-codes` ověřují heslo přihlášeného
+     * uživatele a strop na účet neměly: z unesené relace šlo heslo hádat bez
+     * brzdy (12 z 12 pokusů 400, žádná 429 — nález revize R6), druhá navíc se
+     * správným heslem vydá tajemství TOTP a třetí přegeneruje záložní kódy.
+     * Aplikace je nevolá: zapnutí dvoufázového ověření vrací adresu pro
+     * autentikátor i záložní kódy samo (`/two-factor/enable`, ta strop má).
+     * Kdyby některou někdy potřebovala, patří místo sem do `ACCOUNT_LIMITS`
+     * v `lib/auth-hooks.ts`.
      *
      * `/delete-user`: heslo je v Better Authu **volitelné** — bez něj stačí
      * „čerstvá" relace (`session.freshAge`, výchozích 24 h). Ověřeno naostro
@@ -129,7 +152,7 @@ function buildAuth(db: Db) {
      * čte relace serverově přes `auth.api.listSessions` a do klienta posílá
      * jen popisek zařízení a čas.
      */
-    disabledPaths: ['/delete-user', '/list-sessions'],
+    disabledPaths: [...DISABLED_AUTH_PATHS],
     advanced: { ipAddress: { trustedProxies: resolveTrustedProxies() } },
     database: drizzleAdapter(db, {
       provider: 'pg',

@@ -12,11 +12,12 @@ import { encryptSecret } from '@/lib/crypto';
 import { invalidateUserCache } from '@/lib/engine-cache';
 import { reportFailedImport } from '@/lib/failed-imports';
 import {
+  batchesToOpen,
   brokerCardAnchor,
   IMPORT_HISTORY_ANCHOR,
   importFeedbackUrl,
 } from '@/lib/import-feedback';
-import { importFileIsolated } from '@/lib/import-service';
+import { importFileIsolated, type ImportSummary } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import {
   aliasesBlockedByTransactions,
@@ -27,6 +28,7 @@ import {
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
 import { enqueueSyncJob, jobTypeForBroker, processJob } from '@/lib/jobs';
 import { errorText, logEvent } from '@/lib/log';
+import { hasAnyTransaction } from '@/lib/onboarding';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -73,16 +75,20 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   // se vůbec nezpracovaly. Do historie se v takové chvíli nemá jak zapsat nic,
   // takže jediné, co uživateli zbývá, je hláška — proto se počítají a řekne se
   // to na stránce.
+  // Krok 2 cesty nového uživatele: nahrání, které přinese první data účtu,
+  // nabídne přehled (`isFirstDataUpload`). Stav průvodce se neukládá — že jde
+  // o první data, se pozná z účtu těsně před nahráním.
+  const hadData = await hasAnyTransaction(db, user.id);
   let failed = 0;
   let added = 0;
   let filesWithErrors = 0;
-  let lastBatchId: string | undefined;
+  const summaries: ImportSummary[] = [];
   for (const file of files) {
     try {
       const summary = await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
       added += summary.added;
       if (summary.errors.length > 0) filesWithErrors += 1;
-      lastBatchId = summary.batchId;
+      summaries.push(summary);
     } catch (error) {
       failed += 1;
       logEvent('error', 'import.upload_failed', {
@@ -99,12 +105,18 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   // se v produkčním buildu v prohlížeči často nedokončila a tlačítko viselo na
   // „Nahrávám a počítám…“ (L6a-02; platí pro všechny akce v tomhle souboru —
   // hlídá to test/import-feedback.test.ts). Adresa zároveň nese souhrn pro
-  // plovoucí hlášku a kotvu historie, která na mobilu leží tři obrazovky pod
-  // formulářem (L7d-01).
+  // hlášku nad historií a kotvu historie, která na mobilu leží tři obrazovky
+  // pod formulářem (L7d-01).
   redirect(
     importFeedbackUrl(
       'nahrano',
-      { files: files.length, added, filesWithErrors, batchId: lastBatchId },
+      {
+        files: files.length,
+        added,
+        filesWithErrors,
+        batchId: batchesToOpen(summaries),
+        firstData: !hadData && added > 0,
+      },
       IMPORT_HISTORY_ANCHOR,
     ),
   );

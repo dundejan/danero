@@ -1,15 +1,17 @@
-import Link from 'next/link';
 import { d, ZERO, type Money } from '@danero/shared';
 import type { EngineWarning } from '@danero/engine';
+import { DisclosureRow } from '@/components/ui/disclosure';
+import { Group, GroupItem } from '@/components/ui/list';
+import { TextLink } from '@/components/ui/link';
 import { czDate, czk } from '@/lib/format';
-import { cn } from '@/lib/utils';
+import { tidy, withoutLawRefs } from '@/lib/typography';
 
 /**
  * Seskupené zobrazení kontrol výpočtu (varování enginu) — server komponenta
- * sdílená přehledem a reportem. Jeden výskyt kódu = prostý text; víc výskytů =
- * blok s lidským nadpisem, počtem a rozbalitelnými jednotlivými případy
- * (kompaktně „TICKER · datum · částka“ — vysvětlení nese souhrn, ne každý
- * řádek). Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
+ * sdílená přehledem a reportem. Každý kód je jeden řádek s titulkem; plné
+ * znění a jednotlivé případy (kompaktně „TICKER · datum · částka“ —
+ * vysvětlení nese souhrn, ne každý řádek) se rozbalují pod ním.
+ * Interní kódy (WITHHOLDING_ABOVE_TREATY…) se uživateli neukazují.
  */
 
 interface WarningGroup {
@@ -39,20 +41,6 @@ const GROUP_TITLES: Record<string, string> = {
   FRACTIONAL_SHARES: 'Frakční akcie — nejednoznačný status',
   FX_UNIFIED_RATE_MISSING: 'Chybějící jednotný kurz',
   FX_DAILY_RATE_MISSING: 'Chybějící denní kurz ČNB',
-};
-
-const LEVEL_CLASS: Record<EngineWarning['level'], string> = {
-  ERROR: 'text-cervena',
-  WARNING: 'text-jantar-text',
-  INFO: 'text-inkoust-tlumeny',
-};
-
-/** Badge závažnosti u skupiny — barvy jen z tokenů (semafor). Bílý text smí
-    jen na syté výplně (v dark módu jsou základní akcenty zesvětlené). */
-const LEVEL_BADGE: Record<EngineWarning['level'], { text: string; tone: string }> = {
-  ERROR: { text: 'Chyba', tone: 'bg-cervena-syta text-white' },
-  WARNING: { text: 'Upozornění', tone: 'bg-jantar/15 text-jantar-text' },
-  INFO: { text: 'Info', tone: 'bg-linka/50 text-inkoust-tlumeny' },
 };
 
 const SEVERITY: Record<EngineWarning['level'], number> = { ERROR: 2, WARNING: 1, INFO: 0 };
@@ -111,25 +99,6 @@ export function warningCaseLine(warning: EngineWarning, labels: Map<string, stri
     .join(' · ');
 }
 
-/** Rozbalitelný výčet jednotlivých případů skupiny (auditní stopa). */
-function GroupDetails({ group, labels }: { group: WarningGroup; labels: Map<string, string> }) {
-  return (
-    <details className="mt-1">
-      {/* žádné opacity-80: průhlednost srazí kontrast pod AA (na --plocha
-          3,80:1 pro jantar-text, 4,04:1 pro inkoust-tlumeny, 4,17:1 pro
-          červenou) — plné tokeny drží 5,8–6,4:1. Drobnost nese text-xs. */}
-      <summary className="cursor-pointer text-xs">
-        Jednotlivé případy ({group.items.length})
-      </summary>
-      <ul className="mt-1 space-y-1 font-mono text-xs">
-        {group.items.map((warning, i) => (
-          <li key={i}>{warningCaseLine(warning, labels)}</li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
 /**
  * Agregovaný souhrn nadsmluvních srážek: propadlá daň + dotčené tituly.
  * `forfeitedCzk` (sraženo − započitatelné za celý rok) má přednost před součtem
@@ -171,70 +140,132 @@ export function withholdingSummary(
     .join(' ');
 }
 
-/** Badge závažnosti („Chyba“ / „Upozornění“ / „Info“). */
-function LevelBadge({ level }: { level: EngineWarning['level'] }) {
-  const badge = LEVEL_BADGE[level];
-  return (
-    <span
-      className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold leading-4',
-        badge.tone,
-      )}
-    >
-      {badge.text}
-    </span>
-  );
+/**
+ * Znění hlášky pod titulkem řádku. Titulek je u jednotlivé kontroly první věta
+ * hlášky, takže rozbalený text začínal jeho doslovným opakováním („Osvobozené
+ * příjmy z kryptoaktiv 46 000 Kč: hlavní stablecoiny…“ pod titulkem
+ * „Osvobozené příjmy z kryptoaktiv 46 000 Kč“, nález R1B-20). Když je titulek
+ * přesně začátkem hlášky, vrací se jen pokračování.
+ *
+ * Zdroj se nepřepisuje a nic se neztrácí: kde zobrazený titulek přišel
+ * o odkaz na paragraf (`withoutLawRefs`) nebo je to lidský název kódu, hláška
+ * jím nezačíná a vrací se celá. Export kvůli unit testům.
+ */
+export function warningBody(message: string, shownTitle: string): string {
+  for (const separator of [': ', ' — ']) {
+    const prefix = shownTitle + separator;
+    if (message.startsWith(prefix) && message.length > prefix.length) {
+      const rest = message.slice(prefix.length);
+      return rest.charAt(0).toUpperCase() + rest.slice(1);
+    }
+  }
+  return message;
 }
 
+/**
+ * Má být řádek rozbalený hned? Chyba ano — co se stalo a co s tím, musí být
+ * vidět bez kliknutí (R5-02: po redesignu byla sbalená i úroveň „Chyba“ a zbyl
+ * z ní jen titulek). Varování a informace zůstávají sbalené.
+ * Export kvůli unit testům.
+ */
+export const opensByDefault = (level: EngineWarning['level']): boolean => level === 'ERROR';
+
+/**
+ * Závažnost slovem nad titulkem — jen u chyby. „Upozornění“ a „Info“ nad
+ * každým řádkem byla tři stejná slova bez informace a seznam kvůli nim vypadal
+ * na přehledu jinak než v reportu (R1B-20); pořadí řádků závažnost nese dál.
+ */
+function ErrorLabel() {
+  return <span className="type-caption block font-semibold text-danger">Chyba</span>;
+}
+
+/**
+ * Každá kontrola je řádek s titulkem; celé znění (a u opakovaných kontrol
+ * výčet jednotlivých případů — auditní stopa) se rozbalí pod ním. Texty
+ * z enginu se nepřepisují, jen se zkracuje to, co je vidět hned: titulek je
+ * lidský název kódu nebo první věta hlášky, bez čísla paragrafu. Chyby jsou
+ * rozbalené rovnou. Při tisku se všechny detaily otevřou samy (globals.css).
+ *
+ * Texty jdou přes `tidy()`: hlášky enginu mají v částkách obyčejné mezery
+ * a na telefonu se lámaly uprostřed čísla („100 / 000 Kč“, R2-12).
+ */
 export function WarningsList({
   warnings,
   labels,
   forfeitedWithholdingCzk,
+  more,
 }: {
   warnings: EngineWarning[];
   labels: Map<string, string>;
   /** Propadlá srážka za rok (sraženo − započitatelné) — sjednocuje souhrn s kartou § 8. */
   forfeitedWithholdingCzk?: Money;
+  /** Odkaz na úplný seznam, když tenhle ukazuje jen část (přehled bez informací). */
+  more?: { label: string; href: string };
 }) {
+  const groups = groupByCode(warnings);
   return (
     <>
-      {groupByCode(warnings).map((group) => {
-        const color = LEVEL_CLASS[group.level];
-        if (group.items.length === 1) {
+      <Group>
+        {groups.map((group) => {
+          const rawTitle = groupTitle(group);
+          const title = tidy(withoutLawRefs(rawTitle));
+          const first = group.items[0]!;
+          const eyebrow = group.level === 'ERROR' ? <ErrorLabel /> : undefined;
+          if (group.items.length === 1) {
+            // hláška, která se vejde do titulku celá, nemá co rozbalovat
+            if (withoutLawRefs(rawTitle) === first.message) {
+              return (
+                <GroupItem key={group.code} className="py-2.5">
+                  {eyebrow}
+                  <p className="type-callout font-medium text-pretty">{title}</p>
+                </GroupItem>
+              );
+            }
+            return (
+              <DisclosureRow
+                key={group.code}
+                eyebrow={eyebrow}
+                title={title}
+                open={opensByDefault(group.level)}
+              >
+                <p>{tidy(warningBody(first.message, withoutLawRefs(rawTitle)))}</p>
+              </DisclosureRow>
+            );
+          }
           return (
-            <p key={group.code} className={cn('flex items-start gap-2 text-sm', color)}>
-              <LevelBadge level={group.level} />
-              <span>{group.items[0]!.message}</span>
-            </p>
+            <DisclosureRow
+              key={group.code}
+              eyebrow={eyebrow}
+              title={title}
+              meta={`${group.items.length}×`}
+              open={opensByDefault(group.level)}
+            >
+              {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
+                <p>{tidy(withholdingSummary(group, labels, forfeitedWithholdingCzk))}</p>
+              )}
+              <ul className="type-footnote mt-2 space-y-1 tabular-nums first:mt-0">
+                {group.items.map((warning, index) => (
+                  <li key={index}>{tidy(warningCaseLine(warning, labels))}</li>
+                ))}
+              </ul>
+            </DisclosureRow>
           );
-        }
-        return (
-          <div key={group.code} className={color}>
-            <p className="flex items-start gap-2 text-sm font-medium">
-              <LevelBadge level={group.level} />
-              <span>
-                {groupTitle(group)}{' '}
-                <span className="font-mono text-xs">({group.items.length}×)</span>
-              </span>
-            </p>
-            {group.code === 'WITHHOLDING_ABOVE_TREATY' && (
-              <p className="text-sm">
-                {withholdingSummary(group, labels, forfeitedWithholdingCzk)}
-              </p>
-            )}
-            <GroupDetails group={group} labels={labels} />
-          </div>
-        );
-      })}
+        })}
+      </Group>
       {warnings.length > 0 && (
         // H-3-03: aplikace ukazovala interní kódy pravidel („R-05c"), ale
         // odkaz na jejich vysvětlení z přihlášené části nevedl NIKAM. Kódy
         // z UI zmizely (v tištěném podkladu zůstávají kvůli průkaznosti)
         // a místo nich je tu cesta k metodice.
-        <p className="pt-1 text-sm">
-          <Link href="/jak-pocitame" className="font-medium text-ruzova-text hover:underline">
-            Jak Danero počítá →
-          </Link>
+        <p className="type-callout flex flex-wrap gap-x-6 pt-2">
+          <TextLink href="/jak-pocitame" chevron>
+            Jak Danero počítá
+          </TextLink>
+          {more && (
+            <TextLink href={more.href} chevron>
+              {more.label}
+            </TextLink>
+          )}
         </p>
       )}
     </>

@@ -119,35 +119,35 @@ export function parsePortuCsv(text: string): ImportResult {
     if (row.every((cell) => cell.trim() === '')) return;
 
     const raw = row.join(';');
-    const typRaw = map.get(row, COL.type);
-    const typ = normalizeHeader(typRaw);
+    const rawType = map.get(row, COL.type);
+    const rowType = normalizeHeader(rawType);
 
     // vklady/výběry = převody peněz, forex = interní konverze — bez daňové události
-    if (typ === 'vklad' || typ === 'vyber') {
+    if (rowType === 'vklad' || rowType === 'vyber') {
       result.skipped.push({
         line,
-        message: `„${typRaw}“: převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.`,
+        message: `„${rawType}“: převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.`,
       });
       return;
     }
-    if (typ === 'forex nakup' || typ === 'forex prodej') {
+    if (rowType === 'forex nakup' || rowType === 'forex prodej') {
       result.skipped.push({
         line,
-        message: `„${typRaw}“ (${map.get(row, COL.description) || 'měnový pár neuveden'}): měnová konverze v rámci Portu — bez daňové události (Portu ji provádí automaticky při vkladech).`,
+        message: `„${rawType}“ (${map.get(row, COL.description) || 'měnový pár neuveden'}): měnová konverze v rámci Portu — bez daňové události (Portu ji provádí automaticky při vkladech).`,
       });
       return;
     }
-    if (typ === 'prevod') {
+    if (rowType === 'prevod') {
       result.warnings.push({
         line,
-        message: `„${typRaw}“: převod mezi portfolii — řádek jsme přeskočili, ale zkontroluj ve výpisu Portu, zda nejde ve skutečnosti o prodej (ten by byl daňová událost).`,
+        message: `„${rawType}“: převod mezi portfolii — řádek jsme přeskočili, ale zkontroluj ve výpisu Portu, zda nejde ve skutečnosti o prodej (ten by byl daňová událost).`,
       });
       return;
     }
-    if (typ !== 'nakup' && typ !== 'prodej' && typ !== 'dividenda' && typ !== 'poplatek') {
+    if (rowType !== 'nakup' && rowType !== 'prodej' && rowType !== 'dividenda' && rowType !== 'poplatek') {
       result.errors.push({
         line,
-        message: `Neznámý typ pohybu „${typRaw}“ — nahlaš nám ho, doplníme podporu (typy Portu mimo Forex zatím odvozujeme z filtrů v jejich aplikaci, reálný export je může pojmenovat jinak).`,
+        message: `Neznámý typ pohybu „${rawType}“ — nahlaš nám ho, doplníme podporu (typy Portu mimo Forex zatím odvozujeme z filtrů v jejich aplikaci, reálný export je může pojmenovat jinak).`,
         raw,
       });
       return;
@@ -176,14 +176,14 @@ export function parsePortuCsv(text: string): ImportResult {
 
     const value = num(map.get(row, COL.value));
 
-    switch (typ) {
+    switch (rowType) {
       case 'nakup':
       case 'prodej': {
         const isin = map.get(row, COL.isin);
         if (isin === '') {
           result.errors.push({
             line,
-            message: `${typRaw}: chybí ISIN instrumentu — řádek nelze zpracovat.`,
+            message: `${rawType}: chybí ISIN instrumentu — řádek nelze zpracovat.`,
             raw,
           });
           return;
@@ -192,7 +192,7 @@ export function parsePortuCsv(text: string): ImportResult {
         if (quantity === null || quantity.eq(0)) {
           result.errors.push({
             line,
-            message: `${typRaw}: chybí počet kusů — řádek nelze zpracovat.`,
+            message: `${rawType}: chybí počet kusů — řádek nelze zpracovat.`,
             raw,
           });
           return;
@@ -202,7 +202,7 @@ export function parsePortuCsv(text: string): ImportResult {
           if (value === null || value.eq(0)) {
             result.errors.push({
               line,
-              message: `${typRaw}: chybí cena za kus i hodnota obchodu — řádek nelze zpracovat.`,
+              message: `${rawType}: chybí cena za kus i hodnota obchodu — řádek nelze zpracovat.`,
               raw,
             });
             return;
@@ -211,7 +211,7 @@ export function parsePortuCsv(text: string): ImportResult {
           price = value.abs().div(quantity.abs());
         }
         push(line, raw, {
-          type: typ === 'nakup' ? 'BUY' : 'SELL',
+          type: rowType === 'nakup' ? 'BUY' : 'SELL',
           id: rowId(row),
           isin,
           ticker: map.get(row, COL.symbol) || undefined,

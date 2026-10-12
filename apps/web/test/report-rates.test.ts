@@ -67,6 +67,26 @@ const TXS_2019: Transaction[] = parseTransactions([
   },
 ]);
 
+/**
+ * Tatáž historie a k ní nákup v daném roce — report za rok bez jediné
+ * transakce osnovu (a s ní kartu kurzů) nekreslí, ukáže prázdný stav (R2-14).
+ */
+const withBuyIn = (year: number): Transaction[] => [
+  ...TXS_2019,
+  ...parseTransactions([
+    {
+      type: 'BUY',
+      id: `b-${year}`,
+      isin: 'CZ0000000002',
+      quantity: '1',
+      pricePerShare: '100',
+      currency: 'CZK',
+      tradeDate: `${year}-03-03`,
+      settlementDate: `${year}-03-05`,
+    },
+  ]),
+];
+
 const render = (txs: Transaction[], year: number): string =>
   renderToStaticMarkup(createElement(ReportView, { txs, profile: PROFILE, year, years: [year] }));
 
@@ -115,9 +135,43 @@ describe('karta „Použité kurzy“ u roku bez jednotného kurzu (K1-04)', () 
   });
 
   it('report za rok s kurzy pořád nese důkazní tabulku', () => {
-    const out = render(TXS_2019, 2025);
+    const out = render(withBuyIn(2025), 2025);
     expect(out).toContain('pokyn GFŘ D-75');
     expect(out).not.toContain('jednotný kurz GFŘ nemáme');
+  });
+});
+
+/**
+ * K nálezu R2-04: věta o orientačním kurzu ve vysvětlivce „Použité kurzy“ stála
+ * u každého roku („kurz běžného roku je orientační do vydání pokynu“) — i v
+ * podkladu za rok, do kterého žádný orientační kurz nevstupuje. Podklad má
+ * říkat jen to, co se ho týká.
+ */
+describe('věta o orientačním kurzu jen tam, kde orientační kurz vstupuje do podkladu', () => {
+  const ESTIMATED = 'orientační do vydání pokynu';
+  /** Text tiskové kopie vysvětlivky pod tabulkou kurzů. */
+  const ratesNote = (year: number): string => {
+    const out = render(withBuyIn(year), year).replace(/<[^>]+>/g, ' ').replace(/\u00a0/g, ' ');
+    const from = out.lastIndexOf('Ověřené jednotné kurzy');
+    expect(from).toBeGreaterThan(-1);
+    return out.slice(from, from + 400);
+  };
+
+  it('rok s ověřeným kurzem o orientačním kurzu nemluví', () => {
+    // poslední ověřený rok: všechny kurzy v jeho tabulce jsou z pokynů GFŘ
+    expect(isRateVerified(LAST_VERIFIED_RATE_YEAR)).toBe(true);
+    expect(ratesNote(LAST_VERIFIED_RATE_YEAR)).not.toContain(ESTIMATED);
+    expect(ratesNote(LAST_VERIFIED_RATE_YEAR)).not.toContain('běžného roku');
+  });
+
+  it('rok s odhadnutým kurzem ho jmenuje', () => {
+    const estimated = LAST_VERIFIED_RATE_YEAR + 1;
+    // předpoklad sondy: kurz za ten rok v tabulce je, jen není ověřený
+    expect(UNIFIED_RATES[estimated]).toBeDefined();
+    expect(isRateVerified(estimated)).toBe(false);
+    const note = ratesNote(estimated);
+    expect(note).toContain(ESTIMATED);
+    expect(note).toContain(String(estimated));
   });
 });
 

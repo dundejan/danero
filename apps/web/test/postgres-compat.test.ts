@@ -1165,4 +1165,83 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(again.added).toBe(0);
     expect(again.duplicates).toBe(parsedNow.length);
   });
+
+  /**
+   * Revize R7 (M3): migrace 0047 přidává řádkům nastavení pořadí posledního
+   * odeslání formuláře a uložení je podle něj podmíněné. Sem patří kvůli tomu,
+   * co PGlite neprověří: podmínka `ON CONFLICT … DO UPDATE … WHERE` s `IS
+   * DISTINCT FROM` a parametry jde přes postgres.js, a o pořadí dvou souběžných
+   * odeslání rozhoduje zámek řádku na opravdovém serveru.
+   */
+  it('migrace 0047 + pořadí odeslání: starší odeslání téhož formuláře nepřepíše novější', {
+    timeout: 60_000,
+  }, async () => {
+    const { readFileSync } = await import('node:fs');
+    const { saveNotificationPrefs, saveProfile } = await import('@/app/(app)/nastaveni/save');
+    const { profileFormEntries, notificationFormEntries } = await import(
+      '@/app/(app)/nastaveni/form-state'
+    );
+    const { BASELINE_FIELD, CHANGED_FIELD, encodeBaseline, SUBMISSION_FIELD } = await import(
+      '@/lib/form-baseline'
+    );
+    const { getNotificationPrefs } = await import('@/lib/notifications');
+
+    // druhý běh migrace nad hotovým schématem nesmí spadnout ani nic změnit
+    const migration = readFileSync('db/migrations/0047_save_order.sql', 'utf8');
+    for (let run = 0; run < 2; run++) {
+      for (const statementSql of migration.split('--> statement-breakpoint')) {
+        if (statementSql.trim() !== '') await db.execute(sql.raw(statementSql));
+      }
+    }
+
+    const userId = await makeUser();
+    const submission = (
+      rendered: Array<[string, string]>,
+      changes: Record<string, string>,
+      mark?: string,
+    ): FormData => {
+      const data = new FormData();
+      data.append(BASELINE_FIELD, encodeBaseline(rendered));
+      for (const name of Object.keys(changes)) data.append(CHANGED_FIELD, name);
+      for (const [name, value] of rendered) if (!(name in changes)) data.append(name, value);
+      for (const [name, value] of Object.entries(changes)) data.append(name, value);
+      if (mark !== undefined) data.append(SUBMISSION_FIELD, mark);
+      return data;
+    };
+    const matching = async () => (await getProfile(db, userId))!.matchingMethod;
+
+    // ── profil: novější odeslání dorazilo první, starší po něm nic nezapíše ──
+    const panel = profileFormEntries(await getProfile(db, userId));
+    expect((await saveProfile(userId, submission(panel, { parovani: 'FIFO' }, 'pg-a.2'), db)).ok).toBe(true);
+    expect((await saveProfile(userId, submission(panel, { parovani: 'LIFO' }, 'pg-a.1'), db)).ok).toBe(true);
+    expect(await matching()).toBe('FIFO');
+    const [marked] = await db.select().from(taxpayerProfiles).where(eq(taxpayerProfiles.userId, userId));
+    expect(marked).toMatchObject({ saveInstance: 'pg-a', saveSequence: 2 });
+
+    // běžné pořadí, jiný formulář a odeslání bez pořadí zapisují jako dřív
+    await saveProfile(userId, submission(panel, { parovani: 'LIFO' }, 'pg-a.3'), db);
+    expect(await matching()).toBe('LIFO');
+    await saveProfile(userId, submission(panel, { parovani: 'MAX_PROFIT' }, 'pg-b.1'), db);
+    expect(await matching()).toBe('MAX_PROFIT');
+    await saveProfile(userId, submission(panel, { parovani: 'MAX_LOSS' }), db);
+    expect(await matching()).toBe('MAX_LOSS');
+
+    // ── souběh: obě odeslání naráz, na pořadí příchodu nezáleží ──────────────
+    for (let round = 0; round < 5; round++) {
+      const base = 10 + round * 2;
+      const older = submission(panel, { parovani: 'LIFO' }, `pg-c.${base}`);
+      const newer = submission(panel, { parovani: 'FIFO' }, `pg-c.${base + 1}`);
+      const racing = round % 2 === 0 ? [older, newer] : [newer, older];
+      await Promise.all(racing.map((form) => saveProfile(userId, form, db)));
+      expect(await matching(), `kolo ${round}`).toBe('FIFO');
+    }
+
+    // ── upozornění: řádek teprve vzniká novějším odesláním ───────────────────
+    const prefsPanel = notificationFormEntries(await getNotificationPrefs(db, userId));
+    await saveNotificationPrefs(userId, submission(prefsPanel, { 'frekvence-emailu': 'DAILY' }, 'pg-u.2'), db);
+    await saveNotificationPrefs(userId, submission(prefsPanel, { 'frekvence-emailu': 'WEEKLY' }, 'pg-u.1'), db);
+    expect((await getNotificationPrefs(db, userId)).emailFrequency).toBe('DAILY');
+    await saveNotificationPrefs(userId, submission(prefsPanel, { 'frekvence-emailu': 'WEEKLY' }, 'pg-u.3'), db);
+    expect((await getNotificationPrefs(db, userId)).emailFrequency).toBe('WEEKLY');
+  });
 });

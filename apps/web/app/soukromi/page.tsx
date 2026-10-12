@@ -1,5 +1,8 @@
-import Link from 'next/link';
-import { MarketingPage } from '@/components/marketing-page';
+import { Prose } from '@/components/guide-article';
+import { LongRead, PROSE_ANCHORS, type ContentsItem } from '@/components/long-read';
+import { MarketingPage, PageHero } from '@/components/marketing-page';
+import { typeset } from '@/components/typeset';
+import { TextLink } from '@/components/ui/link';
 import { OPERATOR } from '@/lib/contact';
 import { TERMS_EFFECTIVE_FROM, TERMS_VERSION } from '@/lib/legal';
 import { supportAvailable, supportFromEnv } from '@/lib/support';
@@ -10,22 +13,31 @@ export const metadata = {
     'Jaká data Danero zpracovává, proč, jak dlouho a jaká máš práva — bez cookie lišty a bez trackerů.',
 };
 
+/**
+ * Obsah stránky: kotvy oddílů. Titulky opakují nadpisy níž slovo od slova —
+ * znění dokumentu se tu nemění, jen se v něm dá skočit na oddíl.
+ */
+const CONTENTS: ContentsItem[] = [
+  { id: 'spravce', title: 'Kdo tvoje data spravuje' },
+  { id: 'udaje', title: 'Co o tobě víme a proč' },
+  { id: 'pravni-zaklad', title: 'Na jakém základě data zpracováváme' },
+  { id: 'zachazeni', title: 'Jak s daty zacházíme' },
+  { id: 'neprecteny-vypis', title: 'Když výpis nepřečteme' },
+  { id: 'doba-ulozeni', title: 'Jak dlouho data držíme' },
+  { id: 'cookies', title: 'Cookies' },
+  { id: 'zpracovatele', title: 'Zpracovatelé a předání mimo EU' },
+  { id: 'automatizovane-rozhodovani', title: 'Automatizované rozhodování neprobíhá' },
+  { id: 'prava', title: 'Tvoje práva' },
+];
+
 export default function PrivacyPage() {
   const support = supportFromEnv();
   return (
     <MarketingPage>
-      <div className="mx-auto max-w-2xl space-y-6 py-12 md:py-16">
-      <div>
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-ruzova-text">
-          Právní
-        </p>
-        <h1 className="mt-3 font-display text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
-          Ochrana soukromí
-        </h1>
-      </div>
-
-      <section className="space-y-3 text-sm leading-relaxed">
-        <h2 className="font-display text-lg font-semibold">Kdo tvoje data spravuje</h2>
+      <PageHero eyebrow="Právní" title="Ochrana soukromí" />
+      <LongRead contents={CONTENTS}>
+      <Prose className={PROSE_ANCHORS}>
+        <h2 id="spravce">Kdo tvoje data spravuje</h2>
         {/* údaje z lib/contact.ts — čl. 13 odst. 1 písm. a) GDPR chce totožnost
             a kontakt správce, a musí sedět všude stejně (nálezy E-3-02 a E-3-15).
 
@@ -36,7 +48,7 @@ export default function PrivacyPage() {
         <p>
           Danero je osobní projekt. Jeho provozovatelem a správcem tvých údajů
           je {OPERATOR.name} (IČO {OPERATOR.ico}, {OPERATOR.address}). Kontakt:{' '}
-          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+          <a href={`mailto:${OPERATOR.email}`}>
             {OPERATOR.email}
           </a>
           {/* Čl. 13 odst. 1 písm. a) GDPR chce kontaktní údaje správce, ne
@@ -46,7 +58,7 @@ export default function PrivacyPage() {
           pro obě strany.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Co o tobě víme a proč</h2>
+        <h2 id="udaje">Co o tobě víme a proč</h2>
         <p>
           Jen to nejnutnější: <strong>e-mail a heslo</strong> (heslo neukládáme, jen
           jeho jednosměrný otisk), volitelně nastavení dvoufaktorového ověření, tvůj
@@ -59,7 +71,7 @@ export default function PrivacyPage() {
           z e-mailové adresy).
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Na jakém základě data zpracováváme</h2>
+        <h2 id="pravni-zaklad">Na jakém základě data zpracováváme</h2>
         <p>
           Účet, daňový profil a transakce zpracováváme, protože bez
           nich ti službu nejde poskytnout (plnění smlouvy, čl. 6 odst. 1 písm. b GDPR).
@@ -71,7 +83,7 @@ export default function PrivacyPage() {
           adresy nepoužíváme; {/* E-35: „adresu pak smažeme" tady stálo dřív, ale žádný
           kód to nedělal. Odvolání souhlasu je ruční krok a jako ruční se taky popisuje. */}
           souhlas můžeš kdykoli odvolat — napiš na{' '}
-          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+          <a href={`mailto:${OPERATOR.email}`}>
             {OPERATOR.email}
           </a>{' '}
           a adresu ze seznamu smažeme. A pokud ti někdy budeme chtít poslat něco jiného
@@ -88,7 +100,7 @@ export default function PrivacyPage() {
           Danero umí, si prohlédneš v demu bez registrace.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Jak s daty zacházíme</h2>
+        <h2 id="zachazeni">Jak s daty zacházíme</h2>
         <p>
           Data leží v EU. API klíče brokerů jsou šifrované (AES-256-GCM) a nikdy se
           nezobrazují; jsou jen pro čtení. Data nikomu neprodáváme a nepoužíváme je k
@@ -96,7 +108,7 @@ export default function PrivacyPage() {
           na provozovatele.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Když výpis nepřečteme</h2>
+        <h2 id="neprecteny-vypis">Když výpis nepřečteme</h2>
         <p>
           Když nahraješ výpis, jehož formát Danero nezná, <strong>necháme si ten soubor</strong>{' '}
           — jinak nemáme podle čeho jeho čtení doplnit; u takového importu uvidíš, že na
@@ -124,7 +136,7 @@ export default function PrivacyPage() {
           nahrání téhož souboru, a hned, když smažeš účet. Nechceš-li ho u nás mít dřív, napiš nám a smažeme ho.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Jak dlouho data držíme</h2>
+        <h2 id="doba-ulozeni">Jak dlouho data držíme</h2>
         <p>
           Účet, daňový profil a transakční historii držíme, dokud účet nesmažeš — pak
           všechno odstraníme. Jediné, co může smazání účtu přežít, je nečitelný
@@ -149,14 +161,14 @@ export default function PrivacyPage() {
           Nastavení si pamatujeme u tvého účtu, dokud ho nesmažeš.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Cookies</h2>
+        <h2 id="cookies">Cookies</h2>
         <p>
           Používáme jen nezbytné cookies pro přihlášení a bezpečnost relace (session a
           auth cookies). Žádná analytika třetích stran, žádné marketingové ani sledovací
           cookies — proto tu nenajdeš ani cookie lištu.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Zpracovatelé a předání mimo EU</h2>
+        <h2 id="zpracovatele">Zpracovatelé a předání mimo EU</h2>
         <p>
           Provoz zajišťují: hosting aplikace (Vercel) a databáze (Neon) — obojí
           v regionu Frankfurt, odesílání e-mailů (Resend) a rozhraní tvého brokera
@@ -226,7 +238,7 @@ export default function PrivacyPage() {
           používáme ho jen na převod do anonymního testovacího vzorku a pak ho mažeme.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">
+        <h2 id="automatizovane-rozhodovani">
           Automatizované rozhodování neprobíhá
         </h2>
         <p>
@@ -237,7 +249,7 @@ export default function PrivacyPage() {
           nechává jako přepínač a obě čísla ukazuje vedle sebe.
         </p>
 
-        <h2 className="font-display text-lg font-semibold">Tvoje práva</h2>
+        <h2 id="prava">Tvoje práva</h2>
         <p>
           Kdykoli můžeš chtít vědět, co o tobě máme (přístup), nechat to opravit,
           omezit zpracování, vznést námitku proti zpracování z oprávněného zájmu,
@@ -245,14 +257,14 @@ export default function PrivacyPage() {
           nebo všechno smazat zrušením účtu — smazání odstraní všechna tvoje data
           včetně transakcí a šifrovaných klíčů. Dotazy a žádosti posílej
           na{' '}
-          <a href={`mailto:${OPERATOR.email}`} className="font-medium text-ruzova-text">
+          <a href={`mailto:${OPERATOR.email}`}>
             {OPERATOR.email}
           </a>
           . Pokud si myslíš, že s tvými údaji zacházíme špatně, máš právo podat stížnost
           u dozorového úřadu — Úřadu pro ochranu osobních údajů (
           <a
             href="https://uoou.gov.cz"
-            className="font-medium text-ruzova-text"
+           
             target="_blank"
             rel="noreferrer"
           >
@@ -260,18 +272,23 @@ export default function PrivacyPage() {
           </a>
           ).
         </p>
-      </section>
+      </Prose>
 
-      <p className="text-xs text-inkoust-tlumeny">
-        Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+      <p className="type-footnote mt-12 border-t border-line/70 pt-6 text-ink-muted">
+        {typeset(
+          <>
+            Verze {TERMS_VERSION} · účinnost od {TERMS_EFFECTIVE_FROM} · změny oznámíme e-mailem
+          </>,
+        )}
       </p>
 
-      <p className="text-sm">
-        <Link href="/" className="font-medium text-ruzova-text">
+      {/* samostatný odkaz, ne odkaz ve větě: na dotyku má 44 px na výšku */}
+      <p className="type-callout mt-4">
+        <TextLink href="/" className="inline-flex min-h-11 items-center md:min-h-0">
           ← Zpět na úvod
-        </Link>
+        </TextLink>
       </p>
-      </div>
+      </LongRead>
     </MarketingPage>
   );
 }

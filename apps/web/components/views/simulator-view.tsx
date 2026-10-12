@@ -1,12 +1,26 @@
-import Link from 'next/link';
 import { positionsAt, simulateSale, analyzeTaxYear, type EngineInput } from '@danero/engine';
-import type { DisposalReport } from '@danero/engine';
+import type { DisposalReport, LimitStatus } from '@danero/engine';
 import { d, ZERO, type Money, type Transaction } from '@danero/shared';
-import { LimitBar, zoneForRatio } from '@/components/limit-gauge';
-import { Button } from '@/components/ui/button';
-import { Card, CardTitle, keepCurrencyCase } from '@/components/ui/card';
-import { describedByError, FieldError, Input, Label, Select } from '@/components/ui/field';
-import { czk, METHOD_LABEL, qty } from '@/lib/format';
+import { AppToolbar } from '@/components/app-toolbar';
+import { LimitBar, ZONE_LABEL, ZONE_TEXT, zoneForRatio } from '@/components/limit-gauge';
+import {
+  SimulatorWorkbench,
+  type SimulatorField,
+  type SimulatorOption,
+} from '@/components/simulator-form';
+import { TAX_NAME } from '@/components/tax-figure';
+import { Disclosure } from '@/components/ui/disclosure';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { TextLink } from '@/components/ui/link';
+import { Group, GroupItem, Row } from '@/components/ui/list';
+import { Notice } from '@/components/ui/notice';
+import { Section } from '@/components/ui/section';
+import { Stat } from '@/components/ui/stat';
+import { StatusLabel, type Tone } from '@/components/ui/status';
+import { czk, METHOD_LABEL, pct, qty } from '@/lib/format';
+import { LIMIT_NAME, limitWithAmount } from '@/lib/limit-names';
+import { taxSummary } from '@/lib/payable-tax';
 import {
   engineInputForUser,
   instrumentLabels,
@@ -14,12 +28,14 @@ import {
   type ProfileRow,
 } from '@/lib/portfolio';
 import type { InstrumentPrice } from '@/lib/prices';
+import { normalizeNumberInput, simulationKey } from '@/lib/simulator-input';
 import {
   regimeLimitFor,
   simulatorVerdict,
   type RegimeLimit,
   type SimulatorVerdict,
 } from '@/lib/simulator-verdict';
+import { tidy } from '@/lib/typography';
 import { cn, firstParam } from '@/lib/utils';
 
 /** Opakovaný query parametr přijde jako pole — normalizuje se přes firstParam. */
@@ -29,21 +45,27 @@ export interface SimParams {
   cena?: string | string[];
 }
 
-/** Pole formuláře simulátoru — určuje, ke kterému inputu chyba patří. */
-type SimField = 'isin' | 'kusy' | 'cena';
-
-/** Cíl `aria-describedby` u pole, kterého se chyba týká. */
-const FORM_ERROR_ID = 'simulator-error';
-
 /** Číslo ve tvaru „123“ / „123.45“ (bez vědecké notace — regex ji odmítne). */
 const NUM_RE = /^\d+(\.\d+)?$/;
 /** Horní mez vstupů (cena i kusy) — brání „∞ Kč“ a absurdním procentům. */
 const MAX_INPUT = d('1000000000');
 
 /**
- * Sdílené tělo simulátoru prodeje: GET formulář + čistý výpočet dopadu
- * (simulateSale) nad transakcemi — reálná stránka je dodá z DB, demo
- * z ukázkového datasetu. `basePath` směruje odkazy.
+ * Řádek výběru pozice: ticker a název. Pozice bez tickeru má popiskem název —
+ * ten se pak nepřipojuje podruhé („ČEZ — ČEZ“, „AMD — AMD“; R2-06, R1B-30).
+ * Export kvůli unit testům.
+ */
+export const optionLabel = (label: string, name: string | undefined): string =>
+  name && name !== label ? `${label} — ${name}` : label;
+
+/**
+ * Sdílené tělo simulátoru prodeje: zadání vlevo, odpověď vpravo. Výpočet dopadu
+ * (`simulateSale`) je čistá funkce nad transakcemi — reálná stránka je dodá
+ * z DB, demo z ukázkového datasetu. `basePath` směruje odkazy.
+ *
+ * Otázka stránky je „co se stane s daní a limity, když tohle prodám“, takže
+ * odpověď má tři vrstvy: verdikt jednou větou, daň před a po, limity před a po.
+ * Rozpad tržby je až pod nimi; metodika ve vysvětlivkách.
  */
 export function SimulatorView({
   txs,
@@ -60,7 +82,7 @@ export function SimulatorView({
   today: string;
   params: SimParams;
   dailyRates?: EngineInput['dailyRates'];
-  /** Poslední známé ceny od brokera — předvyplnění pole „Cena/ks“. */
+  /** Poslední známé ceny od brokera — předvyplnění pole „Cena za kus“. */
   prices?: Map<string, InstrumentPrice>;
   basePath?: string;
   /** Baseline z page-guardu (EngineError) — bez něj by se engine počítal 2×. */
@@ -75,67 +97,88 @@ export function SimulatorView({
   );
   const labels = instrumentLabels(txs);
   const names = instrumentNames(txs);
-  // options řadíme podle tickeru/labelu (ISIN uživateli nic neříká)
-  const options = [...positions].sort((a, b) =>
-    (labels.get(a.isin) ?? a.isin).localeCompare(labels.get(b.isin) ?? b.isin, 'cs'),
-  );
+
+  // Poslední známá cena od brokera se nabízí jen ve shodné měně — jiná by
+  // uživatele zmátla.
+  const lastPriceOf = (isin: string, currency: string): string | undefined => {
+    const known = prices?.get(isin);
+    return known && known.currency === currency ? known.price.toString() : undefined;
+  };
+
+  // řadíme podle tickeru/labelu (ISIN uživateli nic neříká)
+  const options: SimulatorOption[] = [...positions]
+    .sort((a, b) =>
+      (labels.get(a.isin) ?? a.isin).localeCompare(labels.get(b.isin) ?? b.isin, 'cs'),
+    )
+    .map((position) => ({
+      isin: position.isin,
+      label: optionLabel(labels.get(position.isin) ?? position.isin, names.get(position.isin)),
+      held: `${qty(position.totalRemaining)} ks`,
+      currency: position.currency,
+      lastPrice: lastPriceOf(position.isin, position.currency),
+    }));
 
   const isinParam = firstParam(params.isin);
   const selected = positions.find((p) => p.isin === isinParam);
-  const priceRaw = (firstParam(params.cena) ?? '').replace(',', '.').trim();
-  const quantityRaw = (firstParam(params.kusy) ?? '').replace(',', '.').trim();
+  const quantityParam = (firstParam(params.kusy) ?? '').trim();
+  // Chybějící parametr ceny (odkaz z detailu pozice) se doplní poslední známou
+  // cenou a simulace běží rovnou — odpověď má přijít bez dalšího kroku. Prázdný
+  // parametr je něco jiného: pole uživatel vymazal a teprve píše.
+  const priceParam = (
+    firstParam(params.cena) ??
+    (selected ? lastPriceOf(selected.isin, selected.currency) : undefined) ??
+    ''
+  ).trim();
+  // číslo tak, jak ho píše aplikace („1 234,56“ s pevnou mezerou), se musí dát
+  // do pole vložit — pole i klíč výsledku si přitom drží, co uživatel napsal
+  const priceRaw = normalizeNumberInput(priceParam);
+  const quantityRaw = normalizeNumberInput(quantityParam);
 
   // druh je vlastnost instrumentu — derivát poznáme z transakcí i bez pozice
   const isDerivativeIsin =
     isinParam !== undefined &&
     txs.some(
       (tx) =>
-        'isin' in tx && tx.isin === isinParam && 'assetClass' in tx && tx.assetClass === 'DERIVATIVE',
+        'isin' in tx &&
+        tx.isin === isinParam &&
+        'assetClass' in tx &&
+        tx.assetClass === 'DERIVATIVE',
     );
-
-  // předvyplnění poslední známou cenou od brokera (jen shodná měna — jiná by
-  // uživatele zmátla); simulace se s ní nespouští, jen šetří psaní
-  const lastKnown = selected ? prices?.get(selected.isin) : undefined;
-  const prefillPrice =
-    selected && priceRaw === '' && lastKnown && lastKnown.currency === selected.currency
-      ? lastKnown.price
-      : undefined;
 
   // limit podle režimu (jako v přehledu) — čerpání (příjmy § 8–10) je pro
   // všechny režimy stejné, liší se jen strop a název; zaměstnanec nesmí vidět
   // nerelevantní paušální limit a OSVČ mimo paušál (podává přiznání vždy)
-  // žádnou režimovou kartu — stejně jako přehled. Z téhož výběru bere limit
-  // karta i věta verdiktu, aby si neprotiřečily.
+  // žádný režimový řádek — stejně jako přehled. Z téhož výběru bere limit
+  // řádek i věta verdiktu, aby si neprotiřečily.
   const regimeLimit = regimeLimitFor(baseline.limits);
-  const regimeLimitLabel = regimeLimit
-    ? `${regimeLimit.label} (${czk(regimeLimit.limitCzk)})`
-    : null;
 
   let simulation: ReturnType<typeof simulateSale> | null = null;
   // chyba nese i pole, kterého se týká — jen tak ji jde svázat s inputem přes
   // aria-describedby / aria-invalid (WCAG 3.3.1)
-  let formError: { field: SimField; message: string } | null = null;
+  let formError: { field: SimulatorField; message: string } | null = null;
   if (isDerivativeIsin) {
     // R-12: deriváty nemají osvobození ani limity — simulace by lhala
     formError = {
       field: 'isin',
-      message:
-        'Deriváty simulátor zatím neumí — daní se vždy, bez osvobození i limitů (§ 10, druh F).',
+      message: 'Deriváty simulátor zatím neumí — daní se vždy, bez osvobození i limitů.',
     };
-  } else if (selected && (priceRaw !== '' || !prefillPrice)) {
+  } else if (selected && priceRaw !== '') {
     const quantity = quantityRaw === '' ? selected.totalRemaining.toString() : quantityRaw;
     // validace výhradně Decimalem — Number by u velkých vstupů přetekl do Infinity
     if (!NUM_RE.test(priceRaw) || !d(priceRaw).gt(0)) {
-      formError = { field: 'cena', message: 'Zadej cenu za kus (kladné číslo, v měně instrumentu).' };
+      formError = {
+        field: 'price',
+        message: 'Zadej cenu za kus — kladné číslo v měně instrumentu.',
+      };
     } else if (d(priceRaw).gt(MAX_INPUT)) {
-      formError = { field: 'cena', message: 'To není reálná cena — zadej cenu do 1 000 000 000.' };
+      formError = { field: 'price', message: 'To není reálná cena — zadej cenu do 1 000 000 000.' };
     } else if (!NUM_RE.test(quantity) || !d(quantity).gt(0)) {
-      formError = { field: 'kusy', message: 'Počet kusů musí být kladné číslo.' };
+      formError = { field: 'quantity', message: 'Počet kusů musí být kladné číslo.' };
     } else if (d(quantity).gt(MAX_INPUT)) {
-      formError = { field: 'kusy', message: 'Zadej počet kusů do 1 000 000 000.' };
+      formError = { field: 'quantity', message: 'Zadej počet kusů do 1 000 000 000.' };
     } else if (selected.totalRemaining.lt(quantity)) {
       formError = {
-        field: 'kusy',
+        field: 'quantity',
         message: `Držíš jen ${qty(selected.totalRemaining)} ks — tolik prodat nejde.`,
       };
     } else {
@@ -150,493 +193,563 @@ export function SimulatorView({
     }
   }
 
+  const methodLabel =
+    METHOD_LABEL[baseline.options.matchingMethod] ?? baseline.options.matchingMethod;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      <header>
-        <h1 className="font-display text-3xl font-bold">Simulátor prodeje</h1>
-        <p className="mt-1 text-sm text-inkoust-tlumeny">
-          Co udělá zamýšlený prodej s tvými limity a daní — ještě před obchodem, rok {year}.
-        </p>
-      </header>
-
-      <Card>
-        <form method="get" className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end">
-          <div>
-            <Label htmlFor="isin">Pozice</Label>
-            <Select
-              id="isin"
-              name="isin"
-              defaultValue={selected?.isin ?? ''}
-              required
-              {...describedByError(formError?.field === 'isin', FORM_ERROR_ID)}
-            >
-              <option value="" disabled>
-                Vyber instrument…
-              </option>
-              {options.map((position) => (
-                <option key={position.isin} value={position.isin}>
-                  {labels.get(position.isin) ?? position.isin}
-                  {names.get(position.isin) ? ` — ${names.get(position.isin)}` : ''} ·{' '}
-                  {qty(position.totalRemaining)} ks · {position.currency}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="kusy">Kusů (prázdné = vše)</Label>
-            <Input
-              id="kusy"
-              name="kusy"
-              inputMode="decimal"
-              defaultValue={firstParam(params.kusy) ?? ''}
-              {...describedByError(formError?.field === 'kusy', FORM_ERROR_ID)}
+    <>
+      <AppToolbar title="Simulátor" titleContext={String(year)} />
+      <div className="max-w-[72rem] pt-2 md:pt-4">
+        <SimulatorWorkbench
+          action={`${basePath}/simulator`}
+          options={options}
+          selectedIsin={selected?.isin ?? ''}
+          quantity={quantityParam}
+          price={priceParam}
+          resultKey={simulationKey(
+            selected?.isin ?? '',
+            quantityParam,
+            firstParam(params.cena) ?? priceParam,
+          )}
+          error={formError}
+          hasResult={simulation !== null}
+        >
+          {simulation && selected ? (
+            <SimulationResult
+              simulation={simulation}
+              baseline={baseline}
+              regimeLimit={regimeLimit}
+              crypto={selected.assetClass === 'CRYPTO'}
+              year={year}
+              methodLabel={methodLabel}
+              basePath={basePath}
             />
-          </div>
-          <div>
-            <Label htmlFor="cena">Cena/ks</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="cena"
-                name="cena"
-                inputMode="decimal"
-                required
-                defaultValue={firstParam(params.cena) ?? prefillPrice?.toString() ?? ''}
-                placeholder="cena za kus"
-                title="Cena za kus v měně instrumentu"
-                {...describedByError(formError?.field === 'cena', FORM_ERROR_ID)}
-              />
-              {/* měnu instrumentu známe z pozice — uživatel nemusí hádat */}
-              {selected && (
-                <span className="shrink-0 font-mono text-sm text-inkoust-tlumeny">
-                  {selected.currency}
-                </span>
-              )}
-            </div>
-          </div>
-          <Button type="submit">Spočítat dopad</Button>
-        </form>
-        {prefillPrice && (
-          <p className="mt-3 text-xs text-inkoust-tlumeny">
-            Předvyplnili jsme poslední známou cenu — uprav podle trhu a spočítej dopad.
-          </p>
-        )}
-        {formError && (
-          <FieldError id={FORM_ERROR_ID} className="mt-3">
-            {formError.message}
-          </FieldError>
-        )}
-      </Card>
+          ) : options.length === 0 ? (
+            <EmptyState title="Žádné otevřené pozice">
+              Simulovat jde prodej pozice, kterou právě držíš.
+            </EmptyState>
+          ) : selected && !formError ? (
+            <EmptyState title="Zadej cenu za kus">
+              Poslední cenu téhle pozice neznáme — doplň ji a hned uvidíš dopad.
+            </EmptyState>
+          ) : selected ? (
+            <EmptyState title="Oprav zadání">
+              Výsledek se ukáže, jakmile bude zadání platné.
+            </EmptyState>
+          ) : (
+            <EmptyState title="Vyber pozici">
+              Hned uvidíš, co prodej udělá s daní a s limity — ještě před obchodem.
+            </EmptyState>
+          )}
+        </SimulatorWorkbench>
+      </div>
+    </>
+  );
+}
 
-      {/* H4: před prvním výpočtem místo prázdné plochy ukázka výsledku */}
-      {!simulation && (
-        <Card className="space-y-3">
-          <CardTitle>Co dostaneš</CardTitle>
-          <p className="text-sm text-inkoust-tlumeny">
-            Vyber pozici a zadej cenu — Danero ještě před obchodem spočítá verdikt, rozpad tržby a
-            dopad na limity i orientační daň. Třeba takhle:
-          </p>
-          <div aria-hidden className="select-none space-y-4 pt-1">
-            {/* plný token místo /60: průhlednost dávala 2,65:1 (light) a
-                3,09:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
-            <p className="text-lg font-semibold text-inkoust-tlumeny">
-              „Prodej je celý osvobozený — limity ani daň nečerpá.“
+/** Barva verdiktu: zelená jen pro čistě osvobozený stav, modrá nikdy. */
+const VERDICT_TONE: Record<SimulatorVerdict['kind'], Tone> = {
+  EXEMPT_CLEAN: 'success',
+  EXEMPT_DRAWS_LIMIT: 'caution',
+  EXEMPT_BREAKS_100K: 'danger',
+  BREAKS_REGIME_LIMIT: 'danger',
+  TAXABLE: 'neutral',
+};
+
+/** Limit 100 000 Kč, o který prodej přijde — jménem z přehledu. */
+const exemptionName = (crypto: boolean): string =>
+  (crypto ? LIMIT_NAME.CRYPTO : LIMIT_NAME.SECURITIES).toLowerCase();
+
+/** O kolik vzroste celková daň, když prodej zruší osvobození — jako dovětek věty. */
+const retroactiveTax = (taxDeltaCzk: Money): string =>
+  taxDeltaCzk.gt(0)
+    ? ` Celková daň vzroste o ${czk(taxDeltaCzk)} — za všechny letošní prodeje, ne jen za tenhle.`
+    : '';
+
+/**
+ * Verdikt ve třech vrstvách podle čisté funkce `simulatorVerdict`: stav jedním
+ * slovem, nadpis a nejvýš jedna až dvě věty navíc. Poctivý i u řetězového
+ * efektu — prodej, který zruší osvobození do 100 000 Kč, zpětně zdaní dřívější
+ * letošní prodeje, a to musí být v nadpisu, ne pod čarou. Platí to pro prodej
+ * osvobozený časovým testem i pro zdanitelný (R1B-04).
+ *
+ * Stav (`status`) je jen tam, kde k nadpisu něco přidává; „Zdanitelné“ nad
+ * „Prodej je zdanitelný“ bylo totéž dvakrát (R1B-21).
+ *
+ * Částka limitu jde ze stavu limitu, ne z pevného textu (částky § 38g se od
+ * roku 2027 mění), a limit se jmenuje stejnými slovy jako na přehledu
+ * (`LIMIT_NAME`).
+ *
+ * Export kvůli unit testům — čistá funkce bez JSX.
+ */
+export function verdictText(verdict: SimulatorVerdict): {
+  status?: string;
+  tone: Tone;
+  headline: string;
+  detail?: string;
+} {
+  const tone = VERDICT_TONE[verdict.kind];
+  switch (verdict.kind) {
+    case 'EXEMPT_CLEAN':
+      return {
+        status: 'Osvobozeno',
+        tone,
+        headline: 'Prodej je celý osvobozený',
+        detail: 'Limity ani daň nečerpá.',
+      };
+    case 'EXEMPT_BREAKS_100K':
+      return {
+        status: 'Přes limit',
+        tone,
+        headline: `Prodej zruší ${exemptionName(verdict.crypto)}`,
+        detail:
+          'Sám je osvobozený časovým testem, ale letošní prodeje s ním přesáhnou 100 000 Kč a ty dřívější se zpětně zdaní.' +
+          retroactiveTax(verdict.taxDeltaCzk),
+      };
+    case 'EXEMPT_DRAWS_LIMIT':
+      return verdict.taxDeltaCzk.gt(0)
+        ? {
+            status: 'Osvobozeno, ale daň vzroste',
+            tone,
+            headline: 'Prodej je osvobozený, ale daň se zvýší',
+            detail: `Celková daň vzroste o ${czk(verdict.taxDeltaCzk)}.`,
+          }
+        : {
+            status: 'Osvobozeno, čerpá limit',
+            tone,
+            headline: 'Prodej je osvobozený a daň nezvýší',
+            detail: `Čerpá ale ${exemptionName(verdict.crypto)} (100 000 Kč za rok) — hlídej, kolik zbývá.`,
+          };
+    case 'BREAKS_REGIME_LIMIT': {
+      const details = [
+        // název limitu vedlejších příjmů sám neříká, co jeho prolomení znamená
+        verdict.limit.kind === 'EMPLOYEE_SIDE_INCOME'
+          ? 'Při překročení za rok podáváš daňové přiznání.'
+          : null,
+        verdict.brokenExemption
+          ? `Zároveň zruší ${exemptionName(verdict.brokenExemption.crypto)}: letošní prodeje přesáhnou 100 000 Kč a zpětně se zdaní i ty dřívější.`
+          : null,
+      ].filter((part): part is string => part !== null);
+      return {
+        status: 'Přes limit',
+        tone,
+        headline: `Prodej prolomí ${limitWithAmount(verdict.limit.kind, verdict.limit.limitCzk)}`,
+        detail: details.length > 0 ? details.join(' ') : undefined,
+      };
+    }
+    case 'TAXABLE':
+      return verdict.brokenExemption
+        ? {
+            status: 'Přes limit',
+            tone: 'danger',
+            headline: `Prodej zruší ${exemptionName(verdict.brokenExemption.crypto)}`,
+            detail:
+              'Letošní prodeje s ním přesáhnou 100 000 Kč, takže se zpětně zdaní i ty dřívější.' +
+              retroactiveTax(verdict.brokenExemption.taxDeltaCzk),
+          }
+        : { tone, headline: 'Prodej je zdanitelný' };
+  }
+}
+
+/** Částka „před → po“; beze změny jen jedna hodnota. */
+function BeforeAfter({ before, after }: { before: string; after: string }) {
+  if (before === after) return <>{after}</>;
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-[0.35em]">
+      <span className="text-ink-muted">{before}</span>
+      <span aria-hidden className="text-ink-muted">
+        →
+      </span>
+      <span className="sr-only">, po prodeji </span>
+      <span>{after}</span>
+    </span>
+  );
+}
+
+function SimulationResult({
+  simulation,
+  baseline,
+  regimeLimit,
+  crypto,
+  year,
+  methodLabel,
+  basePath,
+}: {
+  simulation: ReturnType<typeof simulateSale>;
+  baseline: ReturnType<typeof analyzeTaxYear>;
+  regimeLimit: RegimeLimit | null;
+  /** Prodává se kryptoaktivum — čerpá vlastní limit 100 000 Kč. */
+  crypto: boolean;
+  year: number;
+  methodLabel: string;
+  basePath: string;
+}) {
+  const verdict = simulatorVerdict(simulation, regimeLimit);
+  const text = verdictText(verdict);
+  const taxDelta = simulation.deltas.taxCzk;
+
+  // R-09f: „Orientační daň“ je daň, kdyby se podávalo přiznání. Pod limitem
+  // režimu se neplatí; prodej, který limit prolomí, spustí daň ze všech
+  // letošních příjmů. Kdo je nad limitem už před prodejem, nic nového nečte.
+  const incomeBefore = simulation.baseline.flatTax50kUsedCzk;
+  const incomeAfter = simulation.simulated.flatTax50kUsedCzk;
+  const underLimitBefore = regimeLimit !== null && !incomeBefore.gt(regimeLimit.limitCzk);
+  const breaksRegimeLimit = underLimitBefore && incomeAfter.gt(regimeLimit.limitCzk);
+  const staysUnderLimit = underLimitBefore && !breaksRegimeLimit;
+
+  // Paušalista nad limitem už před prodejem: na přehledu a v reportu je jeho
+  // hlavní číslo doplatek po odečtení záloh. Simulátor ukazuje daň před a po —
+  // rozdíl je stejný —, takže tu zálohy stojí aspoň jako pár slov u čísla,
+  // jinak by 2 180 Kč tady a 980 Kč na přehledu vypadaly jako rozpor (R1B-03).
+  const advances = taxSummary(baseline).advances;
+
+  const taxNote = [
+    taxDelta.gt(0) ? `+${czk(taxDelta)}` : taxDelta.lt(0) ? `${czk(taxDelta)}` : 'beze změny',
+    staysUnderLimit ? 'platí se jen při podání přiznání' : null,
+    advances ? `před odečtením záloh ${czk(advances.totalCzk)}` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ');
+
+  const disposal = simulation.simulatedDisposal;
+
+  return (
+    <div className="space-y-12">
+      <div className="flex flex-wrap items-end gap-x-16 gap-y-7" aria-live="polite">
+        <section aria-label="Verdikt">
+          {text.status && <StatusLabel tone={text.tone}>{text.status}</StatusLabel>}
+          <h2 className={cn('type-title-1 max-w-[24ch] text-balance', text.status && 'mt-3')}>
+            {tidy(text.headline)}
+          </h2>
+          {text.detail && (
+            <p className="type-body mt-3 max-w-[52ch] text-pretty text-ink-muted">
+              {tidy(text.detail)}
             </p>
-            <div className="grid gap-4 sm:grid-cols-3">
-              {[
-                ...(regimeLimitLabel ? [regimeLimitLabel] : []),
-                'Prodeje CP (100 000 Kč)',
-                'Orientační daň',
-              ].map(
-                (label) => (
-                  <div key={label} className="rounded-lg border border-dashed border-linka p-4">
-                    {/* plný token místo /70: průhlednost dávala 3,23:1 (light)
-                        a 3,72:1 (dark) proti --plocha, plný drží 6,42 / 6,12:1 */}
-                    <p className="text-xs font-semibold uppercase tracking-wide text-inkoust-tlumeny">
-                      {keepCurrencyCase(label)}
-                    </p>
-                    <div className="mt-3 h-5 w-24 rounded bg-linka/60" />
-                    <div className="mt-2 h-3 w-16 rounded bg-linka/40" />
-                    <div className="mt-3 h-1.5 w-full rounded-full bg-linka/40" />
-                  </div>
-                ),
-              )}
-            </div>
-          </div>
-        </Card>
+          )}
+        </section>
+        <dl className="flex flex-wrap items-end gap-x-12 gap-y-6">
+          <Stat
+            size="lg"
+            label={TAX_NAME}
+            value={
+              <BeforeAfter
+                before={czk(simulation.baseline.taxCzk)}
+                after={czk(simulation.simulated.taxCzk)}
+              />
+            }
+            note={taxNote}
+            info={
+              <InfoPopover label={TAX_NAME} title="Daň před prodejem a po něm">
+                <p>
+                  Změna orientační daně proti stavu bez prodeje. Zahrnuje celoroční dopad, takže
+                  může převýšit i tržbu tohoto prodeje — třeba když prolomí limit a zdaní ostatní
+                  letošní prodeje.
+                </p>
+                {advances && (
+                  <p>
+                    {tidy(
+                      `Od daně se ti odečtou zaplacené zálohy z paušálního režimu (${czk(advances.totalCzk)}) — doplatek je o ně nižší před prodejem i po něm, rozdíl zůstává stejný.`,
+                    )}
+                  </p>
+                )}
+                {staysUnderLimit && regimeLimit && (
+                  <p>
+                    Pod limitem {czk(regimeLimit.limitCzk)} přiznání nepodáváš, takže tuhle
+                    orientační daň neplatíš — ani po tomhle prodeji. Počítáme jen s příjmy, o
+                    kterých Danero ví.
+                  </p>
+                )}
+              </InfoPopover>
+            }
+          />
+          {disposal && (
+            <Stat
+              size="lg"
+              label="Zdanitelná tržba"
+              value={czk(disposal.taxableProceedsCzk)}
+              // „z 61 622 Kč“ pod „61 622 Kč“ nic neříká (R1B-21)
+              note={
+                disposal.taxableProceedsCzk.eq(disposal.grossProceedsCzk)
+                  ? 'celá tržba'
+                  : `z ${czk(disposal.grossProceedsCzk)}`
+              }
+            />
+          )}
+        </dl>
+      </div>
+
+      {breaksRegimeLimit && regimeLimit && (
+        <FilingConsequence limit={regimeLimit} hypotheticalTaxCzk={simulation.simulated.taxCzk} />
       )}
 
-      {simulation && selected && (
-        <>
-          <Card className="space-y-2">
-            <CardTitle>Verdikt</CardTitle>
-            <VerdictLine verdict={simulatorVerdict(simulation, regimeLimit)} />
-            <p className="text-sm text-inkoust-tlumeny">
-              Z tržby {czk(simulation.simulatedDisposal?.grossProceedsCzk ?? 0)} je osvobozeno{' '}
-              <span className="font-mono text-zelena-text">
-                {czk(simulation.simulatedDisposal?.exemptProceedsCzk ?? 0)}
-              </span>{' '}
-              a zdanitelných{' '}
-              <span className="font-mono text-cervena">
-                {czk(simulation.simulatedDisposal?.taxableProceedsCzk ?? 0)}
-              </span>
-              . Párování metodou{' '}
-              {METHOD_LABEL[baseline.options.matchingMethod] ?? baseline.options.matchingMethod}.
-            </p>
-          </Card>
-
-          {simulation.simulatedDisposal && (
-            <Card className="space-y-3">
-              <CardTitle>Rozpad prodeje</CardTitle>
-              <SaleWaterfall
-                disposal={simulation.simulatedDisposal}
-                taxDeltaCzk={simulation.deltas.taxCzk}
-              />
-            </Card>
-          )}
-
-          <section className="grid gap-4 sm:grid-cols-3">
-            {regimeLimit && regimeLimitLabel && (
-              <DeltaCard
-                label={regimeLimitLabel}
-                beforeCzk={simulation.baseline.flatTax50kUsedCzk}
-                afterCzk={simulation.simulated.flatTax50kUsedCzk}
-                exceeded={simulation.simulated.flatTax50kUsedCzk.gt(regimeLimit.limitCzk)}
-                limitCzk={regimeLimit.limitCzk}
-              />
-            )}
-            {/* exceeded = STAV po prodeji přes limit — konzistentně s kartou 50k */}
-            {selected.assetClass === 'CRYPTO' ? (
-              baseline.limits.cryptoLimit100k.applicable ? (
-                <DeltaCard
-                  label="Prodeje krypta (100 000 Kč)"
-                  beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
-                  afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
-                  exceeded={!simulation.simulated.cryptoExemptUnder100k}
-                  limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
-                />
-              ) : (
-                /* R-10b: v roce bez krypto osvobození žádný limit není — karta
-                   „0 / 100 000“ by tvrdila, že je co čerpat */
-                <Card className="space-y-2">
-                  <CardTitle>Prodeje krypta ({year})</CardTitle>
-                  <p className="text-sm font-semibold text-cervena">osvobození neexistuje</p>
-                  <p className="text-xs text-inkoust-tlumeny">
-                    Limit 100 000 Kč ani tříletý test pro kryptoaktiva za rok {year} neplatí
-                    (zavedl je až zákon č. 32/2025 Sb. od 15. 2. 2025) — tenhle prodej se zdaní
-                    celý a naplno čerpá limit paušální daně.
-                  </p>
-                </Card>
-              )
-            ) : (
-              <DeltaCard
-                label="Prodeje CP (100 000 Kč)"
-                beforeCzk={simulation.baseline.limit100kUsedCzk}
-                afterCzk={simulation.simulated.limit100kUsedCzk}
-                exceeded={!simulation.simulated.exemptUnder100k}
-                limitCzk={baseline.limits.limit100k.limitCzk}
-              />
-            )}
-            <DeltaCard
-              label="Orientační daň"
-              beforeCzk={simulation.baseline.taxCzk}
-              afterCzk={simulation.simulated.taxCzk}
-            />
-          </section>
-          {/* R-09f: karta výš je daň, KDYBY se podávalo přiznání. Pod limitem
-              režimu se neplatí a prodej, který limit prolomí, spustí daň ze
-              všech letošních příjmů — obojí říká věta, ne druhé číslo vedle
-              odhadu doplatku z přehledu. */}
+      <Section title="Limity po prodeji">
+        <div role="list" className="divide-y divide-line/70">
           {regimeLimit && (
-            <PayableTaxNote
-              limit={regimeLimit}
-              incomeBeforeCzk={simulation.baseline.flatTax50kUsedCzk}
-              incomeAfterCzk={simulation.simulated.flatTax50kUsedCzk}
-              hypotheticalTaxCzk={simulation.simulated.taxCzk}
+            <LimitChange
+              name={regimeLimit.label}
+              beforeCzk={incomeBefore}
+              afterCzk={incomeAfter}
+              limitCzk={regimeLimit.limitCzk}
             />
           )}
+          {crypto ? (
+            baseline.limits.cryptoLimit100k.applicable ? (
+              <LimitChange
+                name={LIMIT_NAME.CRYPTO}
+                beforeCzk={simulation.baseline.cryptoLimit100kUsedCzk}
+                afterCzk={simulation.simulated.cryptoLimit100kUsedCzk}
+                limitCzk={baseline.limits.cryptoLimit100k.limitCzk}
+                exceeded={!simulation.simulated.cryptoExemptUnder100k}
+              />
+            ) : (
+              /* R-10b: v roce bez krypto osvobození žádný limit není — řádek
+                 „0 z 100 000“ by tvrdil, že je co čerpat */
+              <NoLimit
+                name={`Krypto ${year}`}
+                info={
+                  <InfoPopover label={`Krypto ${year}`} title="Osvobození neexistuje">
+                    <p>
+                      Limit 100 000 Kč ani tříletý test pro kryptoaktiva za rok {year} neplatí
+                      (zavedl je až zákon č. 32/2025 Sb. od 15. 2. 2025) — tenhle prodej se zdaní
+                      celý{regimeLimit ? ` a naplno čerpá ${regimeLimit.label.toLowerCase()}` : ''}.
+                    </p>
+                  </InfoPopover>
+                }
+              />
+            )
+          ) : baseline.limits.limit100k.applicable ? (
+            <LimitChange
+              name={LIMIT_NAME.SECURITIES}
+              beforeCzk={simulation.baseline.limit100kUsedCzk}
+              afterCzk={simulation.simulated.limit100kUsedCzk}
+              limitCzk={baseline.limits.limit100k.limitCzk}
+              exceeded={!simulation.simulated.exemptUnder100k}
+            />
+          ) : (
+            /* R-02f: s cennými papíry v obchodním majetku osvobození neexistuje */
+            <NoLimit
+              name="Cenné papíry v obchodním majetku"
+              info={
+                <InfoPopover label="Cenné papíry v obchodním majetku" title="Osvobození neexistuje">
+                  <p>
+                    {tidy(
+                      'Máš v nastavení uvedeno, že cenné papíry patří do tvého obchodního majetku. Roční limit 100 000 Kč ani tříletý časový test se na ně nevztahují.',
+                    )}
+                  </p>
+                </InfoPopover>
+              }
+            />
+          )}
+        </div>
+      </Section>
 
-          <p className="text-xs text-inkoust-tlumeny">
-            Simulace počítá s prodejem k dnešnímu dni za zadanou cenu.{' '}
-            <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
-              Detailní rozpad najdeš v reportu
-            </Link>
-            .
-          </p>
-        </>
+      {disposal && (
+        <Section
+          title="Rozpad prodeje"
+          info={
+            <InfoPopover label="Rozpad prodeje" title="Jak simulace počítá">
+              <p>
+                Počítá s prodejem k dnešnímu dni za zadanou cenu, párování metodou {methodLabel}.
+                Výdaj je nabývací cena zdanitelné části, přepočtená kurzem roku nákupu.
+              </p>
+              <p>
+                <TextLink href={`${basePath}/report`} chevron>
+                  Report
+                </TextLink>
+              </p>
+            </InfoPopover>
+          }
+        >
+          <SaleBreakdown disposal={disposal} />
+        </Section>
       )}
     </div>
   );
 }
 
 /**
- * Věta verdiktu podle čisté funkce simulatorVerdict — poctivá i u knock-on
- * efektu (osvobozený prodej, který prolomí úhrn 100k a zpětně zdaní dřívější
- * letošní prodeje). Barva: zelená jen pro čistě osvobozený stav.
+ * Co znamená, když prodej prolomí limit režimu (R-09f, R-08f): přiznání se
+ * podá za celý rok a zdaní se v něm všechny letošní příjmy z investic, ne jen
+ * tenhle prodej. U paušalisty přibude podnikání a pojistné, proto věta žádné
+ * „zaplatíš X“ neslibuje.
  */
-function VerdictLine({ verdict }: { verdict: SimulatorVerdict }) {
-  switch (verdict.kind) {
-    case 'EXEMPT_CLEAN':
-      return (
-        <p className="text-lg font-semibold text-zelena-text">
-          Prodej je celý osvobozený — limity ani daň nečerpá.
-        </p>
-      );
-    case 'EXEMPT_BREAKS_100K':
-      return (
-        <p className="text-lg font-semibold text-cervena">
-          Prodej je osvobozený časovým testem, ale prolomí úhrn 100 000 Kč
-          {verdict.crypto ? ' pro kryptoaktiva' : ''} — zpětně zdaní dřívější letošní prodeje
-          {verdict.taxDeltaCzk.gt(0) ? ` (daň +${czk(verdict.taxDeltaCzk)})` : ''}.
-        </p>
-      );
-    case 'EXEMPT_DRAWS_LIMIT':
-      return (
-        <p className="text-lg font-semibold text-jantar-text">
-          {verdict.taxDeltaCzk.gt(0)
-            ? `Prodej je osvobozený, ale celková daň se zvýší o ${czk(verdict.taxDeltaCzk)} — dopad níže.`
-            : `Prodej je osvobozený a daň nezvýší, ale čerpá roční limit 100 000 Kč${verdict.crypto ? ' pro kryptoaktiva' : ''} — hlídej zbývající prostor níže.`}
-        </p>
-      );
-    case 'BREAKS_REGIME_LIMIT':
-      return (
-        <p className="text-lg font-semibold text-cervena">
-          Tento prodej prolomí {regimeLimitPhrase(verdict.limit)}.
-        </p>
-      );
-    case 'TAXABLE':
-      return <p className="text-lg font-semibold">Prodej je zdanitelný — dopad níže.</p>;
-  }
-}
-
-/**
- * Jak větě verdiktu říct, který limit padl — stejnými slovy jako přehled
- * a e-maily hlídače. Částka jde ze stavu limitu, ne z pevného textu (částky
- * § 38g se od roku 2027 mění). U vedlejších příjmů přidáváme důsledek: název
- * limitu sám neříká, co jeho prolomení znamená.
- */
-function regimeLimitPhrase(limit: RegimeLimit): string {
-  const amount = czk(limit.limitCzk);
-  switch (limit.kind) {
-    case 'FLAT_TAX':
-      return `limit ${amount} pro paušální daň`;
-    case 'EMPLOYEE_SIDE_INCOME':
-      return `limit ${amount} vedlejších příjmů — při překročení za rok podáváš daňové přiznání`;
-    case 'GENERAL_FILING':
-      return `limit ${amount} pro podání přiznání`;
-  }
-}
-
-/**
- * Věta pod kartami pro poplatníka s režimovým limitem (R-09f): „Orientační
- * daň“ je daň, kdyby se podávalo přiznání. Pod limitem se neplatí; prodej,
- * který limit prolomí, spustí daň ze všech letošních příjmů — a u paušalisty
- * mnohem víc než daň z investic (R-08f), proto tam věta žádné „zaplatíš X“
- * neslibuje. Kdo je nad limitem už před prodejem, nic nového by nečetl.
- */
-function PayableTaxNote({
+function FilingConsequence({
   limit,
-  incomeBeforeCzk,
-  incomeAfterCzk,
   hypotheticalTaxCzk,
 }: {
   limit: RegimeLimit;
-  incomeBeforeCzk: Money;
-  incomeAfterCzk: Money;
   /** Orientační daň po prodeji — daň, kdyby se přiznání podávalo. */
   hypotheticalTaxCzk: Money;
 }) {
-  if (incomeBeforeCzk.gt(limit.limitCzk)) return null;
-  const breaks = incomeAfterCzk.gt(limit.limitCzk);
   const taxClause = hypotheticalTaxCzk.gt(0)
     ? `orientačně ${czk(hypotheticalTaxCzk)}`
     : 'i když z nich daň vyjde nulová';
   return (
-    <p className="text-sm text-inkoust-tlumeny">
-      {!breaks ? (
-        <>
-          Pod limitem {czk(limit.limitCzk)} přiznání nepodáváš, takže orientační daň výš
-          neplatíš — ani po tomhle prodeji.
-        </>
-      ) : limit.kind === 'FLAT_TAX' ? (
-        <>
-          Tímhle prodejem překročíš limit {czk(limit.limitCzk)} pro paušální daň. Za celý rok pak
-          podáš běžné přiznání: zdaní se v něm{' '}
-          <strong>všechny letošní zdanitelné příjmy z investic</strong> ({taxClause}), ne jen
-          tenhle prodej, a k tomu podnikání — doplatíš i pojistné a zaplacené paušální zálohy se
-          započtou. Tu část Danero spočítat neumí.
-        </>
-      ) : (
-        <>
-          Tímhle prodejem překročíš limit {czk(limit.limitCzk)}, pod kterým přiznání nepodáváš.
-          Zdaní se v něm <strong>všechny letošní zdanitelné příjmy z investic</strong> (
-          {taxClause}), ne jen tenhle prodej.
-        </>
-      )}{' '}
-      Počítáme jen s příjmy, o kterých Danero ví.
-    </p>
+    <Notice
+      tone="danger"
+      title="V přiznání se zdaní všechny letošní příjmy z investic, ne jen tenhle prodej"
+    >
+      <Disclosure summary="Co to znamená">
+        <p>
+          {limit.kind === 'FLAT_TAX' ? (
+            <>
+              Tímhle prodejem překročíš {limitWithAmount(limit.kind, limit.limitCzk)}. Za celý rok
+              pak podáš běžné přiznání: zdaní se v něm{' '}
+              <strong className="text-ink">všechny letošní zdanitelné příjmy z investic</strong> (
+              {taxClause}), ne jen tenhle prodej, a k tomu podnikání — doplatíš i pojistné a
+              zaplacené paušální zálohy se započtou. Tu část Danero spočítat neumí.
+            </>
+          ) : (
+            <>
+              Tímhle prodejem překročíš {limitWithAmount(limit.kind, limit.limitCzk)}, pod kterým
+              přiznání nepodáváš. Zdaní se v něm{' '}
+              <strong className="text-ink">všechny letošní zdanitelné příjmy z investic</strong> (
+              {taxClause}), ne jen tenhle prodej.
+            </>
+          )}{' '}
+          Počítáme jen s příjmy, o kterých Danero ví.
+        </p>
+      </Disclosure>
+    </Notice>
   );
 }
 
 /**
- * Delta karta (H4): po-hodnota + badge se semaforem podle SMĚRU změny
- * (zhoršení červeně, zlepšení zeleně, beze změny neutrálně) vždy POD číslem —
- * tři karty mají stejný layout. Červené číslo jen u prolomeného limitu;
- * částka daně zůstává neutrálním inkoustem. Před/po progress bary limitu
- * doplňuje textové čerpání „X % → Y %“ (při přetečení obou se bary neliší).
+ * Řádek limitu po prodeji: název a čerpání „před → po“, odměrka stavu po
+ * prodeji, pod ní částky a slovní stav. Červená jen u prolomeného limitu.
  */
-function DeltaCard({
-  label,
+function LimitChange({
+  name,
   beforeCzk,
   afterCzk,
-  exceeded = false,
   limitCzk,
+  exceeded,
 }: {
-  label: string;
+  name: string;
   beforeCzk: Money;
   afterCzk: Money;
-  /** Prolomený limit — jediný stav, který barví částku červeně. */
+  limitCzk: Money;
+  /** Stav z enginu, kde ho známe přesněji než z poměru (úhrn 100 000 Kč). */
   exceeded?: boolean;
-  /** Je-li zadán limit, vykreslí se před/po progress bary čerpání. */
-  limitCzk?: Money;
 }) {
-  const delta = afterCzk.minus(beforeCzk);
-  const badge = delta.gt(0)
-    ? { text: `↑ +${czk(delta)}`, tone: 'bg-cervena/10 text-cervena' }
-    : delta.lt(0)
-      ? { text: `↓ ${czk(delta)}`, tone: 'bg-zelena/10 text-zelena-text' }
-      : { text: '→ beze změny', tone: 'bg-linka/50 text-inkoust-tlumeny' };
-  const bars =
-    limitCzk?.gt(0) &&
-    ([
-      ['před', beforeCzk.div(limitCzk).toNumber()],
-      ['po', afterCzk.div(limitCzk).toNumber()],
-    ] as const);
-  const pct = (ratio: number): string => `${Math.round(ratio * 100)} %`;
-
+  const ratioOf = (value: Money): number => (limitCzk.gt(0) ? value.div(limitCzk).toNumber() : 0);
+  const before = ratioOf(beforeCzk);
+  const after = ratioOf(afterCzk);
+  const zone: LimitStatus['zone'] = exceeded ? 'EXCEEDED' : zoneForRatio(after);
+  // O kolik prodej čerpání zvedne. Když zruší osvobození do 100 000 Kč, je to
+  // víc než jeho tržba (do limitu se vrátí i dřívější prodeje) — bez téhle
+  // částky si rozdíl musel čtenář dopočítat (R5-18).
+  const increase = afterCzk.sub(beforeCzk);
   return (
-    <Card className="space-y-2">
-      <CardTitle>{label}</CardTitle>
-      <div>
-        {/* H-3-02: milionová částka se do třetiny gridu na mobilu nevejde jako
-            nezlomitelný token — na úzkém displeji proto o stupeň menší písmo */}
-        <p className={cn('font-mono text-base font-semibold sm:text-lg', exceeded && 'text-cervena')}>
-          {czk(afterCzk)}
-        </p>
-        <span
-          className={cn(
-            'mt-1 inline-block rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold',
-            badge.tone,
-          )}
-        >
-          {badge.text}
+    <GroupItem>
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="font-medium">{name}</span>
+        <span className={cn('font-semibold tabular-nums', ZONE_TEXT[zone])}>
+          <BeforeAfter before={pct(before * 100)} after={pct(after * 100)} />
         </span>
       </div>
-      <p className="text-xs text-inkoust-tlumeny">
-        před prodejem: <span className="font-mono">{czk(beforeCzk)}</span>
-      </p>
-      {bars && (
-        <div className="space-y-1.5 pt-1">
-          {bars.map(([name, ratio]) => (
-            <div key={name} className="flex items-center gap-2">
-              <span className="w-8 shrink-0 font-mono text-[10px] text-inkoust-tlumeny">
-                {name}
-              </span>
-              <LimitBar
-                ratio={ratio}
-                zone={zoneForRatio(ratio)}
-                animate={false}
-                className="h-1.5"
-              />
-            </div>
-          ))}
-          <p className="font-mono text-[10px] text-inkoust-tlumeny">
-            čerpání {pct(bars[0][1])} → {pct(bars[1][1])}
-          </p>
-        </div>
-      )}
-    </Card>
+      <LimitBar ratio={after} zone={zone} className="mt-2.5" />
+      <div className="type-footnote mt-2 flex items-baseline justify-between gap-4 text-ink-muted">
+        <span className="tabular-nums">
+          <BeforeAfter before={czk(beforeCzk)} after={czk(afterCzk)} /> z {czk(limitCzk)}
+          {increase.gt(0) && <> · +{czk(increase)}</>}
+        </span>
+        <span className={cn('shrink-0', ZONE_TEXT[zone])}>{ZONE_LABEL[zone]}</span>
+      </div>
+    </GroupItem>
+  );
+}
+
+/** Řádek pro případ, kdy limit neexistuje a daní se každý prodej. */
+function NoLimit({ name, info }: { name: string; info: React.ReactNode }) {
+  return (
+    <GroupItem>
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="inline-flex items-center gap-1 font-medium">
+          {name}
+          {info}
+        </span>
+        <span className="font-semibold text-danger">bez limitu</span>
+      </div>
+      <p className="type-footnote mt-1 text-danger">daní se každý prodej</p>
+    </GroupItem>
   );
 }
 
 /**
- * Vodorovný waterfall rozpadu prodeje (H4): Tržba → (osvobozeno) → Výdaj →
- * Základ → Daň. Čisté divy nad společnou škálou 0–tržba; výdaj „visí“
- * mezi základem a zdanitelnou částí, jak se odečítá.
+ * Rozpad tržby: jeden pruh rozdělený na osvobozenou část, výdaj a základ daně
+ * (dohromady dají tržbu) a pod ním tytéž části čísly. Legendou pruhu jsou
+ * řádky pod ním — žádné osy ani popisky navíc.
  */
-function SaleWaterfall({
-  disposal,
-  taxDeltaCzk,
-}: {
-  disposal: DisposalReport;
-  taxDeltaCzk: Money;
-}) {
-  const gross = disposal.grossProceedsCzk.toNumber();
-  if (gross <= 0) return null;
-  const exempt = disposal.exemptProceedsCzk.toNumber();
-  const taxable = disposal.taxableProceedsCzk.toNumber();
-  const expense = disposal.allocations
-    .reduce((sum, allocation) => sum.plus(allocation.expenseCzk), ZERO)
-    .toNumber();
-  const base = Math.max(0, taxable - expense);
-  const tax = Math.max(0, taxDeltaCzk.toNumber());
-  const isLoss = taxable - expense < 0;
+function SaleBreakdown({ disposal }: { disposal: DisposalReport }) {
+  const gross = disposal.grossProceedsCzk;
+  if (!gross.gt(0)) return null;
+  const exempt = disposal.exemptProceedsCzk;
+  const taxable = disposal.taxableProceedsCzk;
+  const expense = disposal.allocations.reduce(
+    (sum, allocation) => sum.plus(allocation.expenseCzk),
+    ZERO,
+  );
+  const isLoss = taxable.sub(expense).lt(0);
+  const base = isLoss ? ZERO : taxable.sub(expense);
+  // v pruhu se výdaj kreslí nejvýš do výše zdanitelné tržby (ztráta nemá kam přetéct)
+  const expenseShown = isLoss ? taxable : expense;
 
-  const rows: Array<{ label: string; from: number; to: number; color: string; value: number }> = [
-    { label: 'Tržba', from: 0, to: gross, color: 'var(--graf-1)', value: gross },
-    ...(exempt > 0
-      ? [
-          {
-            label: 'Osvobozeno',
-            from: gross - exempt,
-            to: gross,
-            color: 'var(--zelena)',
-            value: exempt,
-          },
-        ]
-      : []),
+  const parts = [
+    { key: 'exempt', label: 'Osvobozeno', value: exempt, shown: exempt, color: 'bg-success' },
     {
+      key: 'expense',
       label: 'Výdaj',
-      from: base,
-      to: Math.min(base + expense, Math.max(taxable, base)),
-      color: 'var(--inkoust-tlumeny)',
       value: expense,
+      shown: expenseShown,
+      color: 'bg-ink-muted',
     },
-    { label: 'Základ', from: 0, to: base, color: 'var(--graf-2)', value: base },
-    // strop na tržbu: delta daně zahrnuje celoroční dopad (může ovlivnit
-    // i zdanění ostatních letošních prodejů) a mohla by přetéct škálu —
-    // bar se zastaví na 100 %, přesnou hodnotu nese číslo vpravo
-    { label: 'Daň', from: 0, to: Math.min(tax, gross), color: 'var(--cervena)', value: tax },
+    { key: 'base', label: 'Základ daně', value: base, shown: base, color: 'bg-chart-1' },
   ];
+  const percent = (value: Money): number => value.div(gross).toNumber() * 100;
 
   return (
-    <div className="space-y-2">
-      {rows.map((row) => (
-        <div
-          key={row.label}
-          className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-x-3 sm:grid-cols-[5.5rem_1fr_8rem]"
-        >
-          <span className="text-xs text-inkoust-tlumeny">{row.label}</span>
-          <div className="relative h-4 overflow-hidden rounded bg-linka/30">
-            {row.value > 0 && (
-              <div
-                className="absolute inset-y-0 rounded-sm"
-                style={{
-                  left: `${(row.from / gross) * 100}%`,
-                  width: `${Math.max(((row.to - row.from) / gross) * 100, 0.8)}%`,
-                  background: row.color,
-                }}
-              />
-            )}
-          </div>
-          <span className="text-right font-mono text-xs text-inkoust">{czk(row.value)}</span>
-        </div>
-      ))}
-      <p className="pt-1 text-xs text-inkoust-tlumeny">
-        Výdaj = nabývací cena zdanitelné části (kurzem roku nákupu). Daň = změna orientační daně
-        proti stavu bez prodeje — zahrnuje celoroční dopad, může tedy převýšit i tržbu tohoto
-        prodeje (třeba když prolomí limit a zdaní ostatní letošní prodeje).
-        {isLoss && ' Prodej je ve ztrátě — základ z něj je nulový.'}
-      </p>
+    <div>
+      <div aria-hidden className="flex h-2.5 gap-0.5 overflow-hidden rounded-full">
+        {parts
+          .filter((part) => part.shown.gt(0))
+          .map((part) => (
+            <span
+              key={part.key}
+              className={cn('h-full min-w-1', part.color)}
+              style={{ width: `${percent(part.shown)}%` }}
+            />
+          ))}
+      </div>
+      <Group
+        className="mt-3"
+        aria-label="Rozpad tržby"
+        footer={isLoss ? 'Prodej je ve ztrátě — základ daně z něj je nulový.' : undefined}
+      >
+        {/* Tečka je legenda pruhu; „Tržba“ je celek, tečku nemá — ale místo
+            pro ni ano, ať popisky všech čtyř řádků lícují (R1B-21). */}
+        <Row
+          label={
+            <span className="inline-flex items-center gap-2">
+              <span aria-hidden className="size-2 shrink-0" />
+              Tržba
+            </span>
+          }
+          value={czk(gross)}
+        />
+        {parts.map((part) => (
+          <Row
+            key={part.key}
+            label={
+              <span className="inline-flex items-center gap-2">
+                <span aria-hidden className={cn('size-2 shrink-0 rounded-full', part.color)} />
+                {part.label}
+              </span>
+            }
+            value={czk(part.value)}
+          />
+        ))}
+      </Group>
     </div>
   );
 }

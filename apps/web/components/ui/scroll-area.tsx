@@ -9,7 +9,11 @@ import { cn } from '@/lib/utils';
  * čtečce řeknou, do čeho fokus vstoupil; bez role by byl `aria-label` na
  * obyčejném divu zakázaný atribut.
  *
- * Stínovou affordanci na hranách nese třída `.scroll-stiny` z globals.css.
+ * Stínovou affordanci na hranách nese třída `.scroll-shadows` z globals.css.
+ *
+ * `relative`: skrytý text pro čtečku uvnitř (`sr-only` v hlavičce tabulky,
+ * `caption`) je absolutně umístěný — bez umístěného předka ho posuvná oblast
+ * neořízne a roztáhne celou stránku o to, oč tabulka přesahuje.
  */
 export function ScrollArea({
   label,
@@ -26,7 +30,7 @@ export function ScrollArea({
       role="region"
       aria-label={label}
       tabIndex={0}
-      className={cn('scroll-stiny overflow-x-auto', className)}
+      className={cn('scroll-shadows relative overflow-x-auto', className)}
     >
       {children}
     </div>

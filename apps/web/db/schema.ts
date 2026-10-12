@@ -95,11 +95,12 @@ export const verification = pgTable('verification', {
 
 /* ── Doména Danero ───────────────────────────────────────────────────────── */
 
-/** Daňový profil = konfigurace enginu per uživatel (docs/02, tabulka přepínačů). */
-export const taxpayerProfiles = pgTable('taxpayer_profiles', {
-  userId: text('user_id')
-    .primaryKey()
-    .references(() => user.id, { onDelete: 'cascade' }),
+/**
+ * Sloupce daňového profilu, jak je vyplňuje uživatel — bez pořadí odeslání
+ * formuláře. Zvlášť proto, že z nich vzniká i pohled na tabulku, který o
+ * sloupcích pořadí neví (`db/settings-data.ts`).
+ */
+export const taxpayerProfileColumns = {
   regime: text('regime').notNull(), // PAUSAL | ZAMESTNANEC | OSVC | JINE
   hasBusinessAssets: boolean('has_business_assets').notNull().default(false),
   w8benFiled: boolean('w8ben_filed').notNull().default(true),
@@ -118,6 +119,29 @@ export const taxpayerProfiles = pgTable('taxpayer_profiles', {
   // prodejem. Sloupec `short_sale_income_on_sale` zahodila migrace 0041.
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+};
+
+/**
+ * Daňový profil = konfigurace enginu per uživatel (docs/02, tabulka přepínačů).
+ *
+ * ⚠️ Číst a zapisovat přes `taxpayerProfileData` (`db/settings-data.ts`). Tahle
+ * úplná tabulka patří jen zápisu, který pořadí odeslání potřebuje (`save.ts`):
+ * Drizzle v `select()`, `insert()` i `returning()` jmenuje VŠECHNY sloupce
+ * tabulky, takže by každé čtení profilu spadlo, kdykoli se kód dostane na
+ * produkci dřív než migrace 0047 (revize R8, B1).
+ */
+export const taxpayerProfiles = pgTable('taxpayer_profiles', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ...taxpayerProfileColumns,
+  // Pořadí posledního odeslání formuláře, které řádek zapsalo: označení
+  // formuláře (panelu) a pořadové číslo (`SUBMISSION_FIELD` v
+  // lib/form-baseline.ts). Starší odeslání téhož formuláře, které dorazí až po
+  // novějším, podle nich řádek nepřepíše. Není to údaj uživatele — do exportu
+  // dat nepatří.
+  saveInstance: text('save_instance'),
+  saveSequence: integer('save_sequence'),
 });
 
 /**
@@ -199,11 +223,10 @@ export const appRateLimits = pgTable('app_rate_limits', {
  * Notifikační preference (G8d, H3) — per uživatel. Přepínače řídí JEN e-maily
  * (v aplikaci se upozornění zobrazují vždy); `emailEnabled` je jediný master
  * vypínač. Chybějící řádek = všechno zapnuté, denní souhrn (bez onboardingu).
+ *
+ * Sloupce bez pořadí odeslání formuláře — viz `taxpayerProfileColumns`.
  */
-export const notificationPrefs = pgTable('notification_prefs', {
-  userId: text('user_id')
-    .primaryKey()
-    .references(() => user.id, { onDelete: 'cascade' }),
+export const notificationPrefColumns = {
   emailEnabled: boolean('email_enabled').notNull().default(true),
   timeTestEvents: boolean('time_test_events').notNull().default(true),
   limitEvents: boolean('limit_events').notNull().default(true),
@@ -237,6 +260,17 @@ export const notificationPrefs = pgTable('notification_prefs', {
   // (latentní posun týdenního okna mimo UTC) — timestamptz je round-trip čistý
   lastDigestAt: timestamp('last_digest_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+};
+
+/** ⚠️ Číst a zapisovat přes `notificationPrefData` — viz `taxpayerProfiles`. */
+export const notificationPrefs = pgTable('notification_prefs', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ...notificationPrefColumns,
+  // Pořadí posledního odeslání formuláře — stejně jako u `taxpayer_profiles`.
+  saveInstance: text('save_instance'),
+  saveSequence: integer('save_sequence'),
 });
 
 /** Napojený broker účet — API klíč šifrovaný AES-256-GCM (lib/crypto.ts), nikdy plaintext. */

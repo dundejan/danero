@@ -1,6 +1,12 @@
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { registerWithProfile } from './helpers';
+import {
+  autoSaveForm,
+  registerWithProfile,
+  selectLimit,
+  simulateSale,
+  uploadStatement,
+} from './helpers';
 
 /**
  * Hlavní scénář (docs/09, G1): registrace → daňový profil → ruční import
@@ -12,58 +18,76 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await registerWithProfile(page, { name: 'E2E Tester', email: 'zaklad@danero.cz' });
 
   // ── ruční import fixtury ────────────────────────────────────────────────
-  await page.goto('/import');
-  await page
-    .locator('input[name="soubory"]')
-    .setInputFiles(join(__dirname, 'fixtures', 't212-vzorek.csv'));
-  await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
-  await expect(page.getByText('t212-vzorek.csv').first()).toBeVisible();
-  await expect(page.getByText('2 nové · 0 duplicit')).toBeVisible();
+  // Bez `goto`: uložení prvního profilu vede rovnou na Zdroje dat (krok 2),
+  // takže nový uživatel nahrává tam, kam ho aplikace sama dovedla.
+  const imported = await uploadStatement(page, join(__dirname, 'fixtures', 't212-vzorek.csv'));
+  await expect(imported).toContainText('2 nové · 0 duplicit');
+  // s prvními daty výzva „krok 2“ zmizí — krok se odvozuje z účtu, neukládá se
+  await expect(page.getByText(/Krok 2 ze 2/)).toHaveCount(0);
 
   // ── dashboard: limity z reálných dat ────────────────────────────────────
-  await page.goto('/prehled');
+  // Bez `goto`: výsledek prvního nahrání nabízí další krok sám — dřív cesta
+  // nového uživatele skončila na Zdrojích dat hláškou a dál nic.
+  const uploadResult = page
+    .getByRole('status')
+    .filter({ hasText: 'Nahráno: 1 soubor, přibyly 2 transakce.' });
+  await uploadResult.getByRole('link', { name: 'Hotovo, otevřít přehled' }).click();
   await expect(page.getByRole('heading', { name: /Přehled \d{4}/ })).toBeVisible();
-  await expect(page.getByText('Limit paušální daně — 50 000 Kč')).toBeVisible();
-  await expect(page.getByText('Osvobození prodejů cenných papírů — 100 000 Kč')).toBeVisible();
+  // v seznamu je jméno limitu a čerpání; celé znění s částkou nese detail
+  // vybraného řádku
+  const flatTax = await selectLimit(page, 'Limit paušální daně');
+  await expect(
+    flatTax.getByRole('heading', { name: 'Limit paušální daně — 50 000 Kč' }),
+  ).toBeVisible();
+  const securities = await selectLimit(page, 'Osvobození prodejů cenných papírů');
+  await expect(
+    securities.getByRole('heading', { name: 'Osvobození prodejů cenných papírů — 100 000 Kč' }),
+  ).toBeVisible();
   // upozornění se v aplikaci počítají při otevření přehledu — bez tohohle by
   // je uživatel viděl až po nočním běhu hlídače, přestože to nastavení
   // upozornění slibuje
-  await expect(page.getByText('Poslední upozornění')).toBeVisible();
+  const notifications = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Poslední upozornění' }) });
+  // jméno limitu je stejné jako v seznamu limitů výš (`lib/limit-names.ts`)
   await expect(
-    page.getByText('Prolomen limit 100 000 Kč pro osvobození prodejů').first(),
+    notifications.getByText(/Zrušeno osvobození prodejů cenných papírů \(100\s000\sKč\)/),
   ).toBeVisible();
 
   // ── simulátor: prodej 10 ks zbývajících AAPL ────────────────────────────
   await page.goto('/simulator');
-  await page.locator('select[name="isin"]').selectOption({ index: 1 });
-  await page.locator('input[name="kusy"]').fill('10');
-  await page.locator('input[name="cena"]').fill('200');
-  await page.getByRole('button', { name: 'Spočítat dopad' }).click();
-  await expect(page.getByText('Verdikt')).toBeVisible();
+  await simulateSale(page, { position: { index: 1 }, quantity: '10', price: '200' });
+  const verdict = page.getByRole('region', { name: 'Verdikt' });
+  await expect(verdict.getByRole('heading')).toBeVisible();
 
   // ── report ──────────────────────────────────────────────────────────────
   await page.goto('/report');
-  await expect(page.getByRole('heading', { name: /Daňový report \d{4}/ })).toBeVisible();
-  await expect(page.getByText('Dílčí základ § 10 (součet druhů)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Report \d{4}/ })).toBeVisible();
+  await expect(page.getByText('Základ daně z prodejů', { exact: true })).toBeVisible();
   // G5: průvodce, tisk a EPO export (rok 2026 → poctivá hláška o struktuře)
-  await expect(page.getByText('Průvodce: co kam zapsat v přiznání')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Vytisknout / uložit PDF' })).toBeVisible();
-  await expect(page.getByText('Export pro mojedane.cz')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Co zapsat do přiznání' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vytisknout', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Export pro mojedane.cz' })).toBeVisible();
 
   // ── auto-save nastavení: změny se ukládají bez tlačítek Uložit ──────────
   await page.goto('/nastaveni');
   // s existujícím profilem žádná tlačítka Uložit u profilu/metod/upozornění
   await expect(page.getByRole('button', { name: 'Uložit profil' })).toHaveCount(0);
-  // změna selectu metody → uloží se hned, potvrzení toastem
+  // změna selectu metody → uloží se hned, potvrzení toastem. Volba skriptem
+  // čeká, až auto-save poslouchá: `selectOption` není vstup člověka a změnu
+  // před hydratací by `AutoSubmit` schválně neodeslal (viz nastaveni.spec.ts,
+  // kde se mezera před hydratací zkouší skutečnou myší a klávesnicí)
+  await autoSaveForm(page);
   await page.getByLabel('Párování prodejů').selectOption('LIFO');
   await expect(page.getByText('Uloženo. Výpočty se přepočítají podle nového profilu.')).toBeVisible();
   await page.reload();
+  await autoSaveForm(page);
   await expect(page.getByLabel('Párování prodejů')).toHaveValue('LIFO');
 
   /**
-   * Auto-save je asynchronní a `AutoSubmit` navíc změnu během běžícího uložení
-   * ZAŘADÍ DO FRONTY — čekat na jednu odpověď serveru proto nestačí, dá se
-   * chytit odpověď předchozího uložení a reload pak předběhne to skutečné.
+   * Auto-save je asynchronní a uložení jdou na server jedno po druhém — čekat
+   * na jednu odpověď serveru proto nestačí, dá se chytit odpověď předchozího
+   * uložení a reload pak předběhne to skutečné.
    * Ověřuje se tedy VÝSLEDEK: opakovaně načíst stránku, dokud tam hodnota není.
    */
   const ulozenoJako = async (popisek: RegExp | string, hodnota: string) => {
@@ -71,6 +95,8 @@ test('registrace → profil → import → přehled → simulátor → report', 
       await page.reload();
       await expect(page.getByLabel(popisek)).toHaveValue(hodnota);
     }).toPass({ timeout: 20_000 });
+    // další krok do formuláře zase píše — až auto-save poslouchá
+    await autoSaveForm(page);
   };
 
   // Částku lidé píšou s mezerou mezi tisíci — a Danero ji tak samo tiskne,
@@ -90,21 +116,24 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await page.getByLabel('Vratka kapitálu').selectOption('lenient');
   await ulozenoJako('Vratka kapitálu', 'lenient');
   await page.goto('/report');
-  // pozor: tatáž věta je i v odstavci `print:block` (jen pro tisk, na obrazovce
-  // skrytý) — hledá se ta viditelná, tedy bez dvojtečky
-  await expect(page.getByText(/vratka kapitálu snižuje nabývací cenu/)).toBeVisible();
-  // Volba hned po `goto` umí předběhnout hydrataci: `AutoSubmit` ještě
-  // neposlouchá, změna se neodešle a čekat na výsledek je pak marné (v CI
-  // 8. 10. 2026 takhle spadl pokus i jeho opakování). Opakuje se proto celý
-  // krok včetně volby, ne jen čtení výsledku.
-  await expect(async () => {
-    await page.goto('/nastaveni');
-    await page.getByLabel('Vratka kapitálu').selectOption('safe');
-    await expect(async () => {
-      await page.reload();
-      await expect(page.getByLabel('Vratka kapitálu')).toHaveValue('safe', { timeout: 2_000 });
-    }).toPass({ timeout: 8_000 });
-  }).toPass({ timeout: 45_000 });
+  // pozor: tatáž věta je i v tiskové hlavičce (`print:block`, na obrazovce
+  // skrytá) — hledá se řádek seznamu „Metoda výpočtu“, kde pojem a hodnota
+  // stojí vedle sebe
+  const returnOfCapital = page.getByRole('listitem').filter({ hasText: /^Vratka kapitálu/ });
+  await expect(returnOfCapital).toBeVisible();
+  await expect(returnOfCapital).toContainText('snižuje nabývací cenu');
+  // Volba hned po `goto` umí předběhnout hydrataci, kdy `AutoSubmit` ještě
+  // neposlouchá: v CI 8. 10. 2026 na tom spadl pokus i jeho opakování a test
+  // pak celý krok dokola opakoval. Teď čeká na signál aplikace, že auto-save
+  // poslouchá, volí jednou a čeká na potvrzení — bez opakování volby.
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await page.getByLabel('Vratka kapitálu').selectOption('safe');
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Uloženo. Výpočty se přepočítají' }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Vratka kapitálu')).toHaveValue('safe');
 
   // upozornění mají vlastní stránku — odkaz z podnavigace tam musí vést
   await page.getByRole('link', { name: 'Upozornění' }).click();
@@ -113,6 +142,7 @@ test('registrace → profil → import → přehled → simulátor → report', 
   await expect(page.getByRole('button', { name: 'Uložit' })).toHaveCount(0);
 
   // přepnutí switche upozornění → taky auto-save
+  await autoSaveForm(page);
   await page.getByText('Posílat e-maily').click();
   await expect(page.getByText('Uloženo. E-maily se řídí novým nastavením.')).toBeVisible();
   await page.reload();

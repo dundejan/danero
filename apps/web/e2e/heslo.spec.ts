@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { linkFromEmail, registerWithProfile } from './helpers';
+import { linkFromEmail, registerWithProfile, signOut } from './helpers';
 
 /**
  * Potvrzení e-mailu při registraci a samoobslužná obnova hesla. Testy jdou
@@ -41,8 +41,7 @@ test('obnova zapomenutého hesla přes odkaz v e-mailu', async ({ page }) => {
   const noveHeslo = 'uplne-nove-heslo-2026';
   await registerWithProfile(page, { name: 'E2E Zapomněl', email });
 
-  await page.getByRole('button', { name: 'Odhlásit se' }).click();
-  await page.waitForURL('**/prihlaseni');
+  await signOut(page);
 
   await page.getByRole('link', { name: 'Zapomněl jsi heslo?' }).click();
   await page.waitForURL('**/zapomenute-heslo');
@@ -52,10 +51,14 @@ test('obnova zapomenutého hesla přes odkaz v e-mailu', async ({ page }) => {
 
   await page.goto(await linkFromEmail(page, email));
   await page.waitForURL('**/nove-heslo**');
-  await page.getByLabel('Nové heslo (min. 10 znaků)').fill(noveHeslo);
-  await page.getByLabel('Nové heslo ještě jednou').fill(noveHeslo);
+  // požadavek na délku říká nápověda pod polem, ne popisek
+  await expect(page.getByText('Aspoň 10 znaků.')).toBeVisible();
+  await page.getByLabel('Nové heslo', { exact: true }).fill(noveHeslo);
+  await page.getByLabel('Heslo ještě jednou').fill(noveHeslo);
   await page.getByRole('button', { name: 'Nastavit heslo' }).click();
-  await expect(page.getByText('Heslo je změněné.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Heslo je změněné' })).toBeVisible();
+  // obnova hesla odhlašuje všude — stránka to říká a vede zpět na přihlášení
+  await expect(page.getByText('Pro jistotu jsme tě odhlásili ze všech zařízení.')).toBeVisible();
 
   // nové heslo funguje, staré ne
   await page.goto('/prihlaseni');

@@ -1,41 +1,68 @@
 import Link from 'next/link';
-import { Card, CardTitle } from '@/components/ui/card';
+import { AppToolbar } from '@/components/app-toolbar';
 import {
-  AllocationPie,
   DividendsByMonthChart,
   ExemptionOutlookChart,
   FeesByYearChart,
   RealizedByYearChart,
 } from '@/components/charts';
-import { PositionsExplorer, type ExplorerRow } from '@/components/positions-explorer';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ViewSwitch } from '@/components/view-switch';
+import {
+  PositionsExplorer,
+  type ExemptState,
+  type ExplorerRow,
+} from '@/components/positions-explorer';
+import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { TextLink } from '@/components/ui/link';
+import { Notice } from '@/components/ui/notice';
+import { Section } from '@/components/ui/section';
+import { Group, Row } from '@/components/ui/list';
+import { Stat } from '@/components/ui/stat';
 import { YearSwitcher } from '@/components/year-switcher';
 import {
   dividendsByMonth,
   exemptionOutlook,
   feesByYear,
+  OUTLOOK_BASIS_LABEL,
+  outlookBasisNote,
   portfolioAllocation,
   realizedGainsByYear,
 } from '@/lib/charts-data';
-import { czDate, czk, money, pct, plural, qty, signedPct } from '@/lib/format';
-import { cn } from '@/lib/utils';
+import { exemptToday as exemptTodayOf } from '@/lib/exempt-today';
+import { czDate, czk, money, pct, plural, profitLoss, qty, signedPct } from '@/lib/format';
 import {
   engineInputForUser,
-  instrumentLabels,
   instrumentNames,
   type ProfileRow,
   type YearAnalysis,
 } from '@/lib/portfolio';
 import { valuePositions } from '@/lib/portfolio-value';
 import type { InstrumentPrice } from '@/lib/prices';
-import type { Transaction } from '@danero/shared';
+import { tidy } from '@/lib/typography';
+import { ZERO, type Transaction } from '@danero/shared';
 import { analyzeTaxYear, EngineError, type EngineInput, type TaxYearResult } from '@danero/engine';
+
+/** Kolik nákupů ukáže inspektor; zbytek je na detailu pozice. */
+const INSPECTOR_LOTS = 4;
+
+const daysText = (days: number): string => `za ${days} ${plural(days, 'den', 'dny', 'dní')}`;
 
 /**
  * Sdílené tělo portfolia: čisté výpočty (ocenění, grafy, řádky tabulky) nad
  * hotovou analýzou — data dodá reálná stránka z DB, demo z ukázkového datasetu.
  * `basePath` směruje odkazy ('' pro aplikaci, '/demo' pro demo).
+ *
+ * Skladba shora dolů (docs/07, vzor „stránka aplikace“):
+ * 1. odpověď — kolik portfolio stojí, kolik z něj jde dnes prodat bez daně
+ *    a kdy se osvobodí další kusy,
+ * 2. pozice — tabulka s hledáním, řazením a inspektorem vybraného řádku
+ *    (na telefonu seznam; detail je o úroveň hlouběji),
+ * 3. otevřené deriváty (jen když nějaké jsou),
+ * 4. výhled osvobození a historie: dividendy, realizovaný výsledek, poplatky.
+ *
+ * Rok se přepíná jen u dividend — pozice, hodnota i časové testy jsou vždy
+ * k dnešku, takže přepínač v liště by sliboval pohled, který neexistuje.
  */
 export function PortfolioView({
   txs,
@@ -82,307 +109,438 @@ export function PortfolioView({
   const dividends = dividendsByMonth(result);
   const fees = feesByYear(txs);
   const outlook = exemptionOutlook(positions, prices, today, currentYear);
-  const labelsAll = instrumentLabels(txs);
   const allocation = portfolioAllocation(valuation);
-  const exemptShareToday = outlook?.points[0]?.exemptShare ?? null;
+  const shareByIsin = new Map(allocation?.slices.map((slice) => [slice.isin, slice.share]));
+  const hasPrices = valuation.pricedCount > 0;
 
-  // E2: sloupec „Bez daně“ jen když má co říct — informaci o nule nese KPI
-  // „Bez daně už dnes“
-  const anyExempt = valuation.rows.some((row) => row.exemptQuantity.gt(0));
+  // Otevřené deriváty počítá engine ke konci analyzovaného roku. Stránka je
+  // ukazuje jako dnešní stav, takže je bere z běžného roku — ne z roku, který
+  // si člověk přepnul u dividend.
+  const openDerivatives = (resultsByYear.get(currentYear) ?? result).derivatives.openPositions;
 
-  // nejbližší konec časového testu per pozice — pro mobilní karty
-  const nearestExemption = new Map<string, string | null>(
-    positions.map((position) => {
-      // A2-3-04: lot bez nároku na osvobození (obchodní majetek, stablecoin,
-      // derivát) nesmí vyrobit „nejbližší osvobození“, které nikdy nenastane
-      const pending = position.lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
-      return [
-        position.isin,
-        pending.length
-          ? pending.reduce((a, b) => (a.exemptFrom < b.exemptFrom ? a : b)).exemptFrom
-          : null,
-      ];
-    }),
-  );
+  /* ── řádky tabulky ──────────────────────────────────────────────────────
+     Server předpočítá texty i čísla pro řazení; přes hranici klienta nejde
+     žádný Decimal. */
 
-  // KPI „Nejbližší osvobození“: minimum přes všechny pozice s nesplněným testem
-  let nextExemption: { isin: string; exemptFrom: string } | null = null;
-  for (const [isin, exemptFrom] of nearestExemption) {
-    if (exemptFrom && (!nextExemption || exemptFrom < nextExemption.exemptFrom)) {
-      nextExemption = { isin, exemptFrom };
-    }
-  }
-  const daysToNextExemption = nextExemption
-    ? Math.ceil((Date.parse(nextExemption.exemptFrom) - Date.parse(today)) / 86_400_000)
-    : null;
+  const byIsin = new Map(positions.map((position) => [position.isin, position]));
+  // nejbližší konec časového testu napříč portfoliem — číslo nahoře na stránce
+  let nextExemption: { isin: string; exemptFrom: string; days: number } | null = null;
 
-  // řádky pro interaktivní tabulku — server předpočítá texty i čísla pro
-  // řazení, přes hranici klienta nejde žádný Decimal
   const explorerRows: ExplorerRow[] = valuation.rows.map((row) => {
-    const nearest = nearestExemption.get(row.isin) ?? null;
-    const pctText =
-      row.unrealizedPct !== undefined
-        ? signedPct(row.unrealizedPct, 1)
-        : undefined;
+    const lots = byIsin.get(row.isin)?.lots ?? [];
+    // A2-3-04: lot bez nároku na osvobození (obchodní majetek, stablecoin,
+    // derivát) nesmí vyrobit „nejbližší osvobození“, které nikdy nenastane
+    const pending = lots.filter((lot) => lot.exemptionPossible && !lot.isExempt);
+    const nearest = pending.length
+      ? pending.reduce((a, b) => (a.exemptFrom < b.exemptFrom ? a : b))
+      : null;
+    if (nearest && (!nextExemption || nearest.exemptFrom < nextExemption.exemptFrom)) {
+      nextExemption = {
+        isin: row.isin,
+        exemptFrom: nearest.exemptFrom,
+        days: nearest.daysToExempt,
+      };
+    }
+    const nearestQuantity = nearest
+      ? pending
+          .filter((lot) => lot.exemptFrom === nearest.exemptFrom)
+          .reduce((sum, lot) => sum.plus(lot.remaining), ZERO)
+      : null;
+
+    const exemptState: ExemptState = lots.every((lot) => !lot.exemptionPossible)
+      ? 'never'
+      : row.exemptQuantity.gte(row.quantity)
+        ? 'all'
+        : row.exemptQuantity.gt(0)
+          ? 'part'
+          : 'none';
+    const rowExemptCzk =
+      row.valueCzk && row.quantity.gt(0)
+        ? row.valueCzk.mul(row.exemptQuantity).div(row.quantity)
+        : null;
+
+    const share = shareByIsin.get(row.isin);
+    const sortedLots = [...lots].sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate));
+
     return {
       isin: row.isin,
       label: row.label,
-      name: row.name,
-      qtyText: qty(row.quantity),
+      name: row.name && row.name !== row.label ? row.name : undefined,
+      qtyText: `${qty(row.quantity)} ks`,
       priceText: row.price ? money(row.price, row.currency!) : undefined,
       valueText: row.valueCzk ? czk(row.valueCzk) : undefined,
-      plText: row.unrealized
-        ? `${money(row.unrealized, row.currency!, true)}${pctText ? ` (${pctText})` : ''}`
-        : undefined,
-      plPct: row.unrealizedPct,
+      // podíl jen z úplně oceněného portfolia — jinak by byl podílem z části
+      shareText: share !== undefined && valuation.unpricedCount === 0 ? pct(share, 1) : undefined,
+      plText: row.unrealized ? profitLoss(row.unrealized, row.currency!) : undefined,
+      plPctText: row.unrealizedPct !== undefined ? signedPct(row.unrealizedPct, 1) : undefined,
       plPositive: row.unrealized ? row.unrealized.gte(0) : undefined,
-      exemptText: nearest ? `bez daně od ${czDate(nearest)}` : 'vše bez daně',
-      exemptDone: !nearest,
+      exemptState,
       exemptQtyText: row.exemptQuantity.gt(0) ? `${qty(row.exemptQuantity)} ks` : undefined,
+      nextExemptText: nearest ? czDate(nearest.exemptFrom) : undefined,
+      nextExemptNote:
+        nearest && nearestQuantity
+          ? `${qty(nearestQuantity)} ks · ${daysText(nearest.daysToExempt)}`
+          : undefined,
+      lots: sortedLots.slice(0, INSPECTOR_LOTS).map((lot) => ({
+        id: lot.lotId,
+        dateText: czDate(lot.acquisitionDate),
+        qtyText: `${qty(lot.remaining)} ks`,
+        state: !lot.exemptionPossible ? 'never' : lot.isExempt ? 'done' : 'pending',
+        statusText: !lot.exemptionPossible
+          ? 'nevztahuje se'
+          : lot.isExempt
+            ? 'bez daně'
+            : `od ${czDate(lot.exemptFrom)}`,
+      })),
+      moreLots: Math.max(0, sortedLots.length - INSPECTOR_LOTS),
       sort: {
         label: row.label,
         qty: row.quantity.toNumber(),
         value: row.valueCzk ? row.valueCzk.toNumber() : null,
         pl: row.unrealizedPct ?? null,
-        exempt: row.exemptQuantity.toNumber(),
+        // srovnatelná je hodnota v Kč; bez cen aspoň počet kusů
+        exempt: row.exemptQuantity.gt(0) ? (rowExemptCzk ?? row.exemptQuantity).toNumber() : null,
+        next: nearest ? Date.parse(nearest.exemptFrom) : null,
       },
     };
   });
 
-  return (
-    <div className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Portfolio</h1>
-          <p className="mt-1 text-sm text-inkoust-tlumeny">
-            Hodnota z posledních cen od brokera, grafy z tvých transakcí.
-          </p>
-        </div>
-        <YearSwitcher years={years} active={year} hrefBase={`${basePath}/portfolio`} />
-      </header>
+  // TypeScript přiřazení uvnitř `map` nesleduje — po cyklu si typ vrátíme
+  const next = nextExemption as { isin: string; exemptFrom: string; days: number } | null;
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardTitle>Hodnota portfolia</CardTitle>
-          {valuation.pricedCount > 0 ? (
-            <>
-              <p className="mt-2 font-display text-3xl font-bold">{czk(valuation.totalCzk)}</p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Orientační přepočet jednotným kurzem {valuation.fxYear}
-                {valuation.oldestPriceAt &&
-                  `, ceny k ${czDate(valuation.oldestPriceAt)}`}
-                {valuation.unpricedCount > 0 &&
-                  ` · ${valuation.unpricedCount} ${plural(valuation.unpricedCount, 'pozice', 'pozice', 'pozic')} bez ceny či kurzu (nezapočteno)`}
-                . Ceny se obnovují při synchronizaci.
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-inkoust-tlumeny">
-              Bez cen — ceny bereme jen z připojených brokerů (
-              {/* v demu /import nevede nikam — pozvat k registraci */}
-              <Link
-                href={basePath ? '/registrace' : '/import'}
-                className="font-medium text-ruzova-text"
-              >
-                připoj API
-              </Link>
-              ), žádný externí zdroj.
-            </p>
-          )}
-        </Card>
-        <Card>
-          <CardTitle>Bez daně už dnes</CardTitle>
-          {/* zelená jen pro skutečně pozitivní stav — 0 % není úspěch */}
-          <p
-            className={cn(
-              'mt-2 font-display text-3xl font-bold',
-              exemptShareToday !== null && exemptShareToday > 0 && 'text-zelena',
-            )}
-          >
-            {exemptShareToday !== null ? pct(exemptShareToday, 1) : '—'}
-          </p>
-          <p className="mt-1 text-xs text-inkoust-tlumeny">
-            Podíl portfolia ({outlook?.basis === 'value' ? 'podle hodnoty' : 'podle kusů'}) po
-            3letém časovém testu — prodej je osvobozený.
-          </p>
-        </Card>
-        <Card>
-          <CardTitle>Dividendy {year}</CardTitle>
-          <p className="mt-2 font-display text-3xl font-bold">{czk(dividends.totalCzk)}</p>
-          <p className="mt-1 text-xs text-inkoust-tlumeny">
-            Brutto před srážkou, přepočet kurzem pro přiznání.
-          </p>
-        </Card>
-        <Card>
-          <CardTitle>Nejbližší osvobození</CardTitle>
-          {nextExemption && daysToNextExemption !== null ? (
-            <>
-              <p className="mt-2 font-display text-3xl font-bold">
-                {czDate(nextExemption.exemptFrom)}
-              </p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                {labels.get(nextExemption.isin) ?? nextExemption.isin} — za {daysToNextExemption}{' '}
-                {plural(daysToNextExemption, 'den', 'dny', 'dní')} doběhne 3letý test, prodej pak
-                bude bez daně.
-              </p>
-            </>
-          ) : positions.length > 0 ? (
-            <>
-              <p className="mt-2 font-display text-3xl font-bold text-zelena">vše bez daně</p>
-              <p className="mt-1 text-xs text-inkoust-tlumeny">
-                Všechny držené kusy už mají splněný časový test.
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 font-display text-3xl font-bold">—</p>
-          )}
-        </Card>
-      </section>
+  // „Bez daně už dnes“: částka z oceněných pozic, a kde by byla nulou jen
+  // proto, že chybí ceny, počet pozic — pravidla jsou v `lib/exempt-today.ts`.
+  const exemptToday = exemptTodayOf(valuation.rows);
+  // nákup v datech vůbec není (jen dividendy), nebo je všechno prodané? (R2-19)
+  const everHeld = txs.some((tx) => tx.type === 'BUY' || tx.type === 'TRANSFER_IN');
 
-      {/* Pozice: tabulka a koláč alokace jsou dvě zobrazení téže informace —
-          jednotný nadpis a přepínač pohledu (default tabulka) */}
-      <Card>
-        <ViewSwitch
-          title="Pozice"
-          ariaLabel="Pohled na pozice"
-          defaultKey="tabulka"
-          views={[
-            {
-              key: 'tabulka',
-              label: 'Tabulka',
-              content: (
-                <div className="space-y-2">
-                  {valuation.unpricedCount > 0 && valuation.pricedCount > 0 && (
-                    <p className="text-xs text-jantar-text">
-                      U {valuation.unpricedCount}{' '}
-                      {plural(valuation.unpricedCount, 'pozice', 'pozic', 'pozic')} chybí cena od
-                      brokera nebo kurz měny — hodnota a zisk/ztráta tam nejsou.
-                    </p>
+  /* ── odpověď ────────────────────────────────────────────────────────── */
+
+  const answer = (
+    // Popisky tří čísel stojí na jedné lince, i když třetí číslo je menší
+    // a jen některý popisek má vysvětlivku (R1B-26).
+    <dl className="flex flex-wrap items-start gap-x-12 gap-y-7 md:gap-x-16 [&_dt]:min-h-6">
+      {hasPrices && (
+        <Stat
+          size="lg"
+          label="Hodnota portfolia"
+          value={czk(valuation.totalCzk)}
+          note={
+            valuation.unpricedCount > 0
+              ? `orientačně · ${valuation.unpricedCount} ${plural(valuation.unpricedCount, 'pozice', 'pozice', 'pozic')} bez ceny`
+              : valuation.oldestPriceAt
+                ? `orientačně, ceny k ${czDate(valuation.oldestPriceAt)}`
+                : 'orientačně'
+          }
+          info={
+            <InfoPopover label="Hodnota portfolia" title="Z čeho hodnota vychází">
+              <p>
+                {tidy(
+                  `Poslední ceny od připojeného brokera, přepočtené jednotným kurzem roku ${valuation.fxYear}. Ceny se obnovují při synchronizaci.`,
+                )}
+              </p>
+              {valuation.unpricedCount > 0 && (
+                <p>
+                  {tidy(
+                    `U ${valuation.unpricedCount} ${plural(valuation.unpricedCount, 'pozice', 'pozic', 'pozic')} chybí cena od brokera nebo kurz měny — v součtu nejsou.`,
                   )}
-                  {explorerRows.length > 0 ? (
-                    <PositionsExplorer
-                      rows={explorerRows}
-                      showExempt={anyExempt}
-                      basePath={basePath}
-                    />
-                  ) : (
-                    <p className="text-sm text-inkoust-tlumeny">Žádné otevřené pozice.</p>
-                  )}
-                </div>
-              ),
-            },
-            {
-              key: 'graf',
-              label: 'Graf',
-              content: allocation ? (
-                <AllocationPie allocation={allocation} />
-              ) : (
-                // poctivý prázdný stav — bez cen od brokera koláč nesestavíme
-                <p className="text-sm text-inkoust-tlumeny">
-                  Bez cen od brokera graf nesestavíme — připoj API{' '}
-                  <Link
-                    href={basePath ? '/registrace' : '/import'}
-                    className="font-medium text-ruzova-text"
-                  >
-                    {basePath ? 'po registraci' : 'na stránce Zdroje dat'}
-                  </Link>
-                  .
                 </p>
-              ),
-            },
-          ]}
+              )}
+              <p>
+                Hodnota je orientační a neslouží jako podklad pro obchodní rozhodnutí. Daňové
+                výpočty najdeš v <TextLink href={`${basePath}/report`}>reportu</TextLink>.
+              </p>
+            </InfoPopover>
+          }
         />
-      </Card>
-
-      {result.derivatives.openPositions.length > 0 && (
-        <Card className="space-y-2">
-          <CardTitle>Otevřené derivátové pozice</CardTitle>
-          <p className="text-xs text-inkoust-tlumeny">
-            Opce, futures a CFD — samostatný druh příjmu bez osvobození (deriváty se daní vždy, bez
-            ohledu na dobu držení i výši tržeb). Záporný počet = vypsaná (short) pozice.
-          </p>
-          <ScrollArea label="Otevřené derivátové pozice">
-            {/* název tabulky pro čtečku; vizuálně ho nese nadpis karty nad ní */}
-            <table aria-label="Pozice v portfoliu s hodnotou a časovým testem" className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-inkoust-tlumeny">
-                  <th scope="col" className="py-2 pr-4">Instrument</th>
-                  <th scope="col" className="py-2 pr-4 text-right">Kontraktů</th>
-                  <th scope="col" className="py-2 text-right">Otevřeno</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {result.derivatives.openPositions.map((position) => (
-                  <tr key={position.isin} className="border-t border-linka">
-                    <td className="py-2 pr-4 font-sans font-medium">
-                      {labels.get(position.isin) ?? position.isin}
-                    </td>
-                    <td
-                      className={`py-2 pr-4 text-right ${position.quantity.lt(0) ? 'text-jantar-text' : ''}`}
-                    >
-                      {qty(position.quantity)}
-                    </td>
-                    <td className="py-2 text-right">{czDate(position.openedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollArea>
-        </Card>
       )}
+      {exemptToday && (
+        <Stat
+          size="lg"
+          label="Bez daně už dnes"
+          // zelená jen pro skutečně pozitivní stav — nula není úspěch
+          tone={exemptToday.positive ? 'success' : undefined}
+          value={exemptToday.value}
+          note={exemptToday.note}
+          info={
+            <InfoPopover label="Bez daně už dnes" title="Co jde prodat bez daně">
+              <p>
+                {tidy(
+                  'Kusy, které držíš déle než tři roky, mají splněný časový test — jejich prodej je osvobozený od daně bez ohledu na limity.',
+                )}
+              </p>
+              {!hasPrices ? (
+                <p>{tidy('Částku umíme jen u pozic s cenou od brokera — bez cen zbývá počet.')}</p>
+              ) : (
+                exemptToday.missing > 0 && (
+                  <p>
+                    {tidy(
+                      `Částku umíme jen u pozic s cenou od brokera — ${exemptToday.missing} ${plural(exemptToday.missing, 'pozice, která kusy bez daně má', 'pozice, které kusy bez daně mají', 'pozic, které kusy bez daně mají')}, v ní chybí.`,
+                    )}
+                  </p>
+                )
+              )}
+              <p>
+                {tidy('Jak by konkrétní prodej dopadl včetně letošních limitů, spočítá simulátor.')}{' '}
+                <TextLink href={`${basePath}/simulator`}>Simulátor</TextLink>
+              </p>
+            </InfoPopover>
+          }
+        />
+      )}
+      {next && (
+        <Stat
+          label="Nejbližší osvobození"
+          value={czDate(next.exemptFrom)}
+          // u pozice bez tickeru je popiskem celý název fondu — poznámka pod
+          // číslem ho smí zalomit na dva řádky, ne roztáhnout řadu čísel
+          note={
+            <span className="line-clamp-2 max-w-[18rem] [overflow-wrap:anywhere]">
+              {labels.get(next.isin) ?? next.isin} · {daysText(next.days)}
+            </span>
+          }
+        />
+      )}
+    </dl>
+  );
 
-      {/* grafy jsou vidět vždy — žádné schovávání do tabu */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        {outlook && outlook.points.length > 1 && (
-          <Card>
-            <CardTitle>Osvobozování portfolia v čase</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Výhled: kolik % portfolia ({outlook.basis === 'value' ? 'hodnoty' : 'kusů'}) půjde
-              prodat bez daně, když nic nepřikoupíš ani neprodáš.
-            </p>
-            <ExemptionOutlookChart outlook={outlook} />
-          </Card>
-        )}
-        {dividends.totalCzk > 0 && (
-          <Card>
-            <CardTitle>Dividendy {year} po měsících a státech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Brutto v Kč; podle státu, kde byla dividenda zdaněna u zdroje (srážková daň).
-            </p>
-            <DividendsByMonthChart data={dividends} />
-          </Card>
-        )}
-        {realized.some((bar) => bar.valueCzk !== 0) && (
-          <Card>
-            <CardTitle>Realizovaný zisk/ztráta po letech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Skutečný výsledek prodejů (tržby − náklady vč. poplatků) — bez ohledu na to, jestli
-              byly daňově osvobozené.
-            </p>
-            <RealizedByYearChart bars={realized} />
-          </Card>
-        )}
-        {fees.bars.length > 0 && (
-          <Card>
-            <CardTitle>Poplatky brokerům po letech</CardTitle>
-            <p className="mb-2 mt-1 text-xs text-inkoust-tlumeny">
-              Obchodní i účetní poplatky, orientační přepočet jednotnými kurzy.
-              {fees.skippedCurrencies.length > 0 &&
-                ` Bez kurzu: ${fees.skippedCurrencies.join(', ')} (nezapočteno).`}
-            </p>
-            <FeesByYearChart bars={fees.bars} />
-          </Card>
-        )}
-      </section>
+  /* ── výhled a historie ──────────────────────────────────────────────── */
 
-      <p className="text-xs text-inkoust-tlumeny">
-        Popisky instrumentů: {labelsAll.size} známých. Hodnoty jsou orientační a neslouží jako
-        podklad pro obchodní rozhodnutí — daňové výpočty najdeš v{' '}
-        <Link href={`${basePath}/report`} className="font-medium text-ruzova-text">
-          reportu
-        </Link>
-        .
-      </p>
-    </div>
+  // křivka má co říct až od dvou budoucích termínů; jediný skok je jen datum,
+  // a to už nese číslo „Nejbližší osvobození“ i tabulka
+  const showOutlook = outlook !== null && outlook.points.length > 2;
+  const outlookNote = outlook ? outlookBasisNote(outlook) : null;
+  const showDividends = dividends.totalCzk > 0 || years.length > 1;
+  const showRealized = realized.some((bar) => bar.valueCzk !== 0);
+  const showFees = fees.bars.length > 0;
+
+  return (
+    <>
+      <AppToolbar title="Portfolio" />
+      <div className="max-w-[72rem] space-y-14 pt-2 md:pt-4">
+        {positions.length > 0 && answer}
+
+        {positions.length > 0 && !hasPrices && (
+          <Notice
+            title="Hodnotu zatím neznáme"
+            action={
+              // v demu /import nevede nikam — pozvat k registraci
+              <TextLink href={basePath ? '/registrace' : '/import'} chevron>
+                Připojit brokera
+              </TextLink>
+            }
+          >
+            Ceny bereme jen od připojeného brokera, z výpisů je nepoznáme.
+          </Notice>
+        )}
+
+        <Section
+          title="Pozice"
+          count={positions.length > 0 ? positions.length : undefined}
+          info={
+            positions.length > 0 ? (
+              <InfoPopover label="Pozice" title="Co sloupce znamenají" align="start">
+                <ul>
+                  <li>
+                    {tidy(
+                      'Bez daně dnes — kusy, kterým už doběhl tříletý časový test. Jejich prodej je osvobozený.',
+                    )}
+                  </li>
+                  <li>Další osvobození — den, kdy test doběhne dalším kusům.</li>
+                  {hasPrices && (
+                    <li>
+                      {tidy(
+                        'Zisk/ztráta — o kolik je dnešní cena nad nebo pod nabývací, v měně titulu (pohyb kurzu koruny v něm není). Před zdaněním.',
+                      )}
+                    </li>
+                  )}
+                </ul>
+              </InfoPopover>
+            ) : undefined
+          }
+        >
+          {explorerRows.length > 0 ? (
+            <PositionsExplorer rows={explorerRows} showValue={hasPrices} basePath={basePath} />
+          ) : (
+            <EmptyState
+              compact
+              title="Žádné otevřené pozice"
+              action={
+                // v demu /import nevede nikam
+                !everHeld && !basePath ? (
+                  <TextLink href="/import" chevron>
+                    Nahrát výpisy
+                  </TextLink>
+                ) : undefined
+              }
+            >
+              {everHeld
+                ? `Všechny pozice jsou prodané.${showDividends || showRealized || showFees ? ' Historie zůstává níž.' : ''}`
+                : 'Ve výpisech zatím není žádný nákup — nahraj výpis obchodů.'}
+            </EmptyState>
+          )}
+        </Section>
+
+        {openDerivatives.length > 0 && (
+          <Section
+            title="Otevřené deriváty"
+            info={
+              <InfoPopover label="Otevřené deriváty" align="start">
+                <p>
+                  {tidy(
+                    'Opce, futures a CFD jsou samostatný druh příjmu bez osvobození: daní se vždy, bez ohledu na dobu držení i výši tržeb.',
+                  )}
+                </p>
+                <p>Vypsaná znamená prodanou (short) pozici.</p>
+              </InfoPopover>
+            }
+          >
+            {/* Pár řádků na šířku tabulky pozic nad nimi (v širokém okně tedy
+                bez sloupce inspektoru) — s vlastní šířkou visel počet kontraktů
+                uprostřed a s tabulkou nelícoval (R1B-26). Výhrada v patičce
+                nesmí zmizet — u derivátů žádné osvobození nečekej. */}
+            <div className="@container">
+              <div className="gap-x-(--column-gap) @min-[60rem]:grid @min-[60rem]:grid-cols-[minmax(0,1fr)_minmax(0,var(--inspector-width))]">
+                <Group
+                  footer="Deriváty se daní vždy — časový test ani limity pro ně neplatí."
+                  aria-label="Otevřené derivátové pozice"
+                >
+                  {openDerivatives.map((position) => {
+                    const contracts = position.quantity.abs();
+                    return (
+                      <Row
+                        key={position.isin}
+                        label={labels.get(position.isin) ?? position.isin}
+                        hint={`${position.quantity.lt(0) ? 'vypsaná · ' : ''}otevřeno ${czDate(position.openedAt)}`}
+                        value={`${qty(contracts)} ${plural(contracts.toNumber(), 'kontrakt', 'kontrakty', 'kontraktů')}`}
+                      />
+                    );
+                  })}
+                </Group>
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {(showOutlook || showDividends || showRealized || showFees) && (
+          <div className="@container">
+            <div className="grid gap-x-(--column-gap) gap-y-14 @3xl:grid-cols-2">
+              {showOutlook && (
+                // Táž křivka jako pod horizontem na přehledu — proto stejné
+                // jméno i barva (R1B-11); tečky po dnech má jen přehled.
+                <Section
+                  title="Horizont osvobození"
+                  info={
+                    <InfoPopover label="Horizont osvobození" align="start">
+                      <p>
+                        {tidy(
+                          // u nabývací ceny říká měřítko i důvod hned další věta
+                          `Jaký podíl portfolia${outlook.basis === 'cost' ? '' : ` (podle ${OUTLOOK_BASIS_LABEL[outlook.basis]})`} půjde prodat bez daně, když nic nepřikoupíš ani neprodáš.`,
+                        )}
+                      </p>
+                      {outlookNote && <p>{tidy(outlookNote)}</p>}
+                      <p>
+                        Po dnech a pozicích ho ukazuje{' '}
+                        <TextLink href={`${basePath}/prehled`}>přehled</TextLink>.
+                      </p>
+                    </InfoPopover>
+                  }
+                >
+                  <ExemptionOutlookChart outlook={outlook} />
+                </Section>
+              )}
+
+              {showDividends && (
+                <Section
+                  title={years.length > 1 ? 'Dividendy' : `Dividendy ${year}`}
+                  count={
+                    dividends.totalCzk <= 0
+                      ? undefined
+                      : // haléřová dividenda se zaokrouhlila na „0 Kč brutto“ (R2-28)
+                        dividends.totalCzk < 1
+                        ? 'méně než 1 Kč brutto'
+                        : `${czk(dividends.totalCzk)} brutto`
+                  }
+                  info={
+                    <InfoPopover label="Dividendy" align="start">
+                      <p>
+                        {tidy(
+                          'Částky jsou brutto, před srážkovou daní, přepočtené kurzem pro přiznání. Barva sloupce je stát, kde byla dividenda zdaněna u zdroje.',
+                        )}
+                      </p>
+                    </InfoPopover>
+                  }
+                  actions={
+                    <YearSwitcher years={years} active={year} hrefBase={`${basePath}/portfolio`} />
+                  }
+                >
+                  {dividends.totalCzk > 0 ? (
+                    <DividendsByMonthChart data={dividends} />
+                  ) : (
+                    <EmptyState compact title={`V roce ${year} žádné dividendy`} headingAs="p" />
+                  )}
+                </Section>
+              )}
+
+              {showRealized && (
+                <Section
+                  title="Realizovaný zisk a ztráta"
+                  info={
+                    <InfoPopover label="Realizovaný zisk a ztráta" align="start">
+                      <p>
+                        {tidy(
+                          'Skutečný výsledek prodejů po letech: tržby minus náklady včetně poplatků. Bez ohledu na to, jestli byly prodeje osvobozené od daně.',
+                        )}
+                      </p>
+                    </InfoPopover>
+                  }
+                >
+                  <RealizedByYearChart bars={realized} />
+                </Section>
+              )}
+
+              {showFees && (
+                <Section
+                  title="Poplatky"
+                  info={
+                    <InfoPopover label="Poplatky" align="start">
+                      <p>
+                        {tidy(
+                          'Obchodní i účetní poplatky brokerům po letech, orientačně přepočtené jednotnými kurzy.',
+                        )}
+                      </p>
+                      {fees.skippedCurrencies.length > 0 && (
+                        <p>Bez kurzu, a proto nezapočteno: {fees.skippedCurrencies.join(', ')}.</p>
+                      )}
+                    </InfoPopover>
+                  }
+                >
+                  <FeesByYearChart bars={fees.bars} />
+                </Section>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Prázdné portfolio nového účtu: pozvánka k importu, ne omluva. */
+export function PortfolioEmpty() {
+  return (
+    <>
+      <AppToolbar title="Portfolio" />
+      <EmptyState
+        title="Portfolio je zatím prázdné"
+        action={
+          <Link href="/import" className={buttonVariants()}>
+            Nahrát výpisy
+          </Link>
+        }
+      >
+        Nahraj výpisy od brokera a uvidíš, co držíš, kolik to stojí a co už můžeš prodat bez daně.
+      </EmptyState>
+    </>
   );
 }

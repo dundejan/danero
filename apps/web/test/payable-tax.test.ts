@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { analyzeTaxYear } from '@danero/engine';
 import { d, parseTransactions } from '@danero/shared';
 import { OverviewView } from '@/components/views/overview-view';
@@ -13,6 +13,18 @@ import { analyzeForUser, engineInputForUser, type ProfileRow } from '@/lib/portf
  * KDYBY se podávalo přiznání. Pod limitem svého režimu ji poplatník neplatí —
  * a přehled, e-mail i simulátor to do revize 5 neříkaly.
  */
+
+/**
+ * Krátká výhrada („Platí se jen při podání přiznání“) stojí na přehledu hned
+ * u částky; strop limitu a zbytek vysvětlení jsou ve vysvětlivce, která se
+ * vykreslí až po otevření. Test proto vysvětlivku nahrazuje obyčejným obalem,
+ * aby šlo ověřit i její obsah — hlídá, CO přehled říká, ne v jaké vrstvě.
+ */
+vi.mock('@/components/ui/info-popover', () => ({
+  InfoPopover: ({ children }: { children: React.ReactNode }) =>
+    createElement('span', { 'data-info': '' }, children),
+}));
+
 const PROFILE: ProfileRow = {
   userId: 'u1',
   regime: 'PAUSAL',
@@ -94,7 +106,9 @@ describe('přehled říká, že se orientační daň pod limitem neplatí (L24-0
     // předpoklad: orientační daň je nenulová, jinak by věta neměla co vysvětlovat
     expect(recommendedTaxCzk(resultFor('30000', 'PAUSAL')).gt(0)).toBe(true);
     const html = overviewHtml('30000', 'PAUSAL');
-    expect(html).toContain(SENTENCE);
+    // výhrada u částky je vidět bez otevření vysvětlivky…
+    expect(html.replace(/<span data-info="">.*?<\/span>/gs, '')).toContain(SENTENCE);
+    // …a vysvětlivka jmenuje strop limitu
     expect(html).toMatch(/pod limitem\s*(<!-- -->)?\s*50\s000\sKč/);
     expect(html).toContain('o kterých Danero ví');
   });

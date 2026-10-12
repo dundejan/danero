@@ -2,7 +2,8 @@ import { and, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
-import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { notifications, user } from '@/db/schema';
+import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
@@ -14,6 +15,12 @@ import {
   type NotificationRules,
 } from '@/lib/notification-rules';
 import { czDate, czk, pct, plural, qty } from '@/lib/format';
+import { LIMIT_NAME, type LimitKind } from '@/lib/limit-names';
+import {
+  currentNotificationText,
+  limitEventTitle,
+  type LimitEventKey,
+} from '@/lib/notification-display';
 import { recommendedTaxCzk, unpaidUnderLimitCzk } from '@/lib/payable-tax';
 import {
   analyzeForUser,
@@ -81,14 +88,14 @@ export function computeNotificationCandidates(args: {
         // které pozice spadla: s jedinou nastavenou lhůtou „30 dní“ by jinak
         // i pozice den před osvobozením čekala na týdenní souhrn
         const soon = lot.daysToExempt <= 7;
-        const dny = plural(lot.daysToExempt, 'den', 'dny', 'dní');
+        const dayWord = plural(lot.daysToExempt, 'den', 'dny', 'dní');
         add({
           dedupeKey: `tt${lead}|${position.isin}|${lot.exemptFrom}`,
           type: `TIME_TEST_${lead}`,
           urgent: soon,
           title: soon
-            ? `${label}: osvobození už za ${lot.daysToExempt} ${dny}`
-            : `${label}: osvobození za ${lot.daysToExempt} ${dny}`,
+            ? `${label}: osvobození už za ${lot.daysToExempt} ${dayWord}`
+            : `${label}: osvobození za ${lot.daysToExempt} ${dayWord}`,
           // fakt + termín, žádný imperativ („počkej“) — individualizovaný pokyn
           // by se blížil radě dle § 1 zákona 523/1992 Sb. (nález V-4 právního auditu)
           body: soon
@@ -110,27 +117,29 @@ export function computeNotificationCandidates(args: {
   }
 
   const year = result.year;
+  // Limity se jmenují stejně jako v aplikaci (`lib/limit-names.ts`) — titulek
+  // upozornění stojí na přehledu hned vedle seznamu limitů a je to i předmět
+  // e-mailu. Částka se bere ze stavu limitu: u limitů § 38g se rok od roku
+  // liší (R-09a, R-09b), takže titulek a věta o čerpání nejmenují dvě různé.
   const limitEvents: Array<{
-    key: string;
+    key: LimitEventKey;
+    kind: LimitKind;
     applicable: boolean;
     status: LimitStatus;
-    label: string;
     consequence: string;
   }> = [
     {
       key: '50k',
+      kind: 'FLAT_TAX',
       applicable: result.limits.flatTax50k.applicable,
       status: result.limits.flatTax50k.status,
-      label: 'limit 50 000 Kč pro paušální daň',
       consequence: 'Při překročení za rok podáváš přiznání a přehledy (v paušálním režimu zůstáváš).',
     },
     {
       key: '20k',
+      kind: 'EMPLOYEE_SIDE_INCOME',
       applicable: result.limits.employee20k.applicable,
       status: result.limits.employee20k.status,
-      // R-09b: částka se rok od roku liší (do ZO 2026 20 000 Kč, od ZO 2027
-      // 40 000 Kč) — z téhož stavu ji bere i věta o čerpání pod titulkem
-      label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
@@ -140,19 +149,19 @@ export function computeNotificationCandidates(args: {
       // nic. Klíč nese jen druh limitu, částku ne: ta se od ZO 2027 mění
       // (100 000 Kč) a bere se ze stavu limitu stejně jako u zaměstnance.
       key: 'filing50k',
+      kind: 'GENERAL_FILING',
       applicable: result.limits.generalFiling50k.applicable,
       status: result.limits.generalFiling50k.status,
-      label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
       consequence: 'Při překročení za rok podáváš daňové přiznání.',
     },
     {
       key: '100k',
+      kind: 'SECURITIES',
       // K6b-02: `true` natvrdo posílalo měřák „X ze 100 000" i poplatníkovi
       // s obchodním majetkem, který na osvobození podle § 4/1 t) nárok nemá
       // (R-02f) — v přehledu se přitom správně nezobrazoval.
       applicable: result.limits.limit100k.applicable,
       status: result.limits.limit100k,
-      label: 'limit 100 000 Kč pro osvobození prodejů',
       // fakt bez imperativu: individualizovaný pokyn („zvaž, počkej“) je za
       // hranicí § 1 zákona 523/1992 Sb. (nález V-4 auditu) — rada patří leda
       // obecně do marketingu, ne do e-mailu s čísly konkrétního člověka
@@ -160,10 +169,10 @@ export function computeNotificationCandidates(args: {
     },
     {
       key: 'krypto100k',
+      kind: 'CRYPTO',
       // totéž pro krypto: v roce bez osvobození (ZO ≤ 2024, R-10b) měřák lže
       applicable: result.limits.cryptoLimit100k.applicable,
       status: result.limits.cryptoLimit100k,
-      label: 'limit 100 000 Kč pro osvobození krypta',
       consequence:
         'Nad limit se daní prodeje a směny kryptoaktiv bez splněného časového testu.',
     },
@@ -187,15 +196,12 @@ export function computeNotificationCandidates(args: {
     // hranici má uživatel zaškrtnutou. Bez toho by ten, kdo si odškrtl 100 %,
     // dostal při 150 % limitu titulek „Blížíš se“.
     const breached = event.status.exceeded;
+    const level = breached ? 'exceeded' : top >= 85 ? 'critical' : 'warning';
     add({
       dedupeKey: `limit|${event.key}|${thresholdKey(top)}|${year}`,
       type: breached ? 'LIMIT_EXCEEDED' : top >= 85 ? 'LIMIT_CRITICAL' : 'LIMIT_WARNING',
       urgent: breached,
-      title: breached
-        ? `Prolomen ${event.label}`
-        : top >= 85
-          ? `Blížíš se: ${event.label}`
-          : `Za polovinou: ${event.label}`,
+      title: limitEventTitle(event.kind, level, event.status.limitCzk),
       body: breached ? `${usage}. ${event.consequence}` : `${usage} — přes ${top} %. ${event.consequence}`,
     });
   }
@@ -273,10 +279,10 @@ export function calendarCandidates(args: {
   // existuje. Ceník, /podminky i report si to odvozují z EPO_SUPPORTED_YEARS —
   // e-maily byly jediné místo, kde to stálo natvrdo, takže lednové shrnutí za
   // rok 2026 slibovalo XML, které `/api/epo` odmítne vygenerovat.
-  const xmlDostupne = EPO_SUPPORTED_YEARS.includes(taxYear);
-  const xmlSlib = xmlDostupne ? ' i XML pro mojedane.cz' : '';
-  const xmlOdkaz = xmlDostupne ? ' — XML export najdeš v reportu' : '';
-  const xmlVeta = xmlDostupne ? ' XML pro mojedane.cz vygeneruješ v reportu.' : '';
+  const xmlAvailable = EPO_SUPPORTED_YEARS.includes(taxYear);
+  const xmlPromise = xmlAvailable ? ' i XML pro mojedane.cz' : '';
+  const xmlPointer = xmlAvailable ? ' — XML export najdeš v reportu' : '';
+  const xmlSentence = xmlAvailable ? ' XML pro mojedane.cz vygeneruješ v reportu.' : '';
   const out: NotificationCandidate[] = [];
   if (hadActivityLastYear && today >= `${year}-01-01` && today <= `${year}-01-31`) {
     const deadlineNote = selfEmployed
@@ -286,7 +292,8 @@ export function calendarCandidates(args: {
       dedupeKey: `rocni|${taxYear}`,
       type: 'YEAR_SUMMARY',
       title: `Podklady za rok ${taxYear} jsou připravené`,
-      body: `Daňový report za ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu${xmlSlib}. ${deadlineNote}`,
+      // stránka se jmenuje „Report“ (dřív „Daňový report“)
+      body: `Report za rok ${taxYear} máš hotový v aplikaci — čísla do přiznání, srovnání variant výpočtu${xmlPromise}. ${deadlineNote}`,
     });
   }
   // okna upomínek končí PŘESNĚ dnem termínu, ne pevným datem — jinak poslední
@@ -302,7 +309,7 @@ export function calendarCandidates(args: {
       type: 'DEADLINE',
       urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín přiznání: ${czDate(paper)}`,
-      body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)}${xmlOdkaz}.`,
+      body: `Písemné přiznání za rok ${taxYear} se podává do ${czDate(paper)}. Elektronické podání (mojedane.cz) má lhůtu do ${czDate(electronic)}${xmlPointer}.`,
     });
   }
   if (
@@ -318,7 +325,7 @@ export function calendarCandidates(args: {
       type: 'DEADLINE',
       urgent: deadlineLeadDays <= 14,
       title: `Blíží se termín elektronického přiznání: ${czDate(electronic)}`,
-      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}.${xmlVeta}${extra}`,
+      body: `Elektronické přiznání za rok ${taxYear} se podává do ${czDate(electronic)}.${xmlSentence}${extra}`,
     });
   }
   return out;
@@ -343,38 +350,30 @@ export function summaryCandidate(args: {
 }): NotificationCandidate {
   const { result, positions, labels, today, period } = args;
 
+  // Řádky se jmenují stejně jako seznam limitů na přehledu (`LIMIT_NAME`);
+  // částku limitu nese hned věta za jménem („… z 50 000 Kč“), a to ze stavu
+  // limitu — u limitů § 38g se rok od roku liší (R-09a, R-09b).
   const limits: Array<{ label: string; status: LimitStatus }> = [
     ...(result.limits.flatTax50k.applicable
-      ? [{ label: 'limit 50 000 Kč pro paušální daň', status: result.limits.flatTax50k.status }]
+      ? [{ label: LIMIT_NAME.FLAT_TAX, status: result.limits.flatTax50k.status }]
       : []),
     ...(result.limits.employee20k.applicable
-      ? [
-          {
-            // R-09b: částka z konfigurace roku, ne natvrdo (od ZO 2027 je 40 000 Kč)
-            label: `limit ${czk(result.limits.employee20k.status.limitCzk)} vedlejších příjmů`,
-            status: result.limits.employee20k.status,
-          },
-        ]
+      ? [{ label: LIMIT_NAME.EMPLOYEE_SIDE_INCOME, status: result.limits.employee20k.status }]
       : []),
     // L12-02: bez tohoto řádku přehled v režimu „Jiné“ ukázal jen nečerpanou
     // stovku a působil klidně i při prolomeném limitu pro přiznání (R-09a)
     ...(result.limits.generalFiling50k.applicable
-      ? [
-          {
-            label: `limit ${czk(result.limits.generalFiling50k.status.limitCzk)} pro podání přiznání`,
-            status: result.limits.generalFiling50k.status,
-          },
-        ]
+      ? [{ label: LIMIT_NAME.GENERAL_FILING, status: result.limits.generalFiling50k.status }]
       : []),
     // K6b-02b: měřák limitu, na který poplatník nárok NEMÁ, v přehledu být
     // nesmí — s cennými papíry v obchodním majetku osvobození podle § 4/1 t)
     // neexistuje (R-02f) a řádek „0 ze 100 000" tvrdí klid tam, kde se daní
     // každá koruna. V aplikaci se správně nezobrazuje už dřív.
     ...(result.limits.limit100k.applicable
-      ? [{ label: 'limit 100 000 Kč pro osvobození prodejů', status: result.limits.limit100k }]
+      ? [{ label: LIMIT_NAME.SECURITIES, status: result.limits.limit100k }]
       : []),
     ...(result.limits.cryptoLimit100k.applicable && result.limits.cryptoLimit100k.usedCzk.gt(0)
-      ? [{ label: 'limit 100 000 Kč pro osvobození krypta', status: result.limits.cryptoLimit100k }]
+      ? [{ label: LIMIT_NAME.CRYPTO, status: result.limits.cryptoLimit100k }]
       : []),
   ];
   const limitLines = limits.map(
@@ -416,8 +415,8 @@ export function summaryCandidate(args: {
 export async function getNotificationPrefs(db: Db, userId: string) {
   const [row] = await db
     .select()
-    .from(notificationPrefs)
-    .where(eq(notificationPrefs.userId, userId));
+    .from(notificationPrefData)
+    .where(eq(notificationPrefData.userId, userId));
   return (
     row ?? {
       userId,
@@ -581,6 +580,27 @@ export async function processUserNotifications(
         gte(notifications.createdAt, emailRetryCutoff),
       ),
     );
+  // Upozornění, které ještě neodešlo, není záznam o odeslaném e-mailu — smí
+  // (a má) odejít s dnešními názvy limitů, ne s těmi, se kterými vzniklo před
+  // přejmenováním. Řádek se přepíše dřív, než se pošle, takže v databázi dál
+  // stojí přesně to, co odešlo. Odeslaných řádků se to netýká: ty se převádějí
+  // až při zobrazení (`lib/notification-display.ts`).
+  for (const row of pending) {
+    const current = currentNotificationText(row);
+    if (current.title === row.title && current.body === row.body) continue;
+    await db
+      .update(notifications)
+      .set(current)
+      .where(
+        and(
+          eq(notifications.userId, target.id),
+          eq(notifications.dedupeKey, row.dedupeKey),
+          isNull(notifications.emailedAt),
+        ),
+      );
+    row.title = current.title;
+    row.body = current.body;
+  }
   const emailAllowed = (type: string): boolean => {
     if (!prefs.emailEnabled) return false;
     // pravidelný přehled má vlastní vypínač (kadenci) — a musí platit i pro
@@ -633,7 +653,7 @@ export async function processUserNotifications(
     if (toSend.length > 0) {
       const lines = toSend.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
       const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
-      const odhlasit = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
+      const unsubscribeUrl = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
       try {
         await options.send({
           to: target.email,
@@ -647,12 +667,12 @@ export async function processUserNotifications(
           // ať se digest nerozejde s ostatními e-maily (nález E-46). Bere se
           // CELÁ: dřívější `.slice(1)` odřezával oddělovač „—“, a když ho
           // contact.ts z pole vypustil, odřezával jméno a IČO (L13-06).
-          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${odhlasit}\n\n${operatorSignature().join('\n')}`,
+          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${unsubscribeUrl}\n\n${operatorSignature().join('\n')}`,
           // RFC 8058: jednoklikové odhlášení. `/api/odhlasit` na to je připravené —
           // GET jen ptá (mail scannery nic nezmění), stav mění až POST, přesně
           // jak to jednoklik vyžaduje.
           headers: {
-            'List-Unsubscribe': `<${odhlasit}>`,
+            'List-Unsubscribe': `<${unsubscribeUrl}>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
           },
         });
@@ -672,10 +692,10 @@ export async function processUserNotifications(
       // posunout okno digestu (lastDigestAt i u DAILY — po přepnutí na WEEKLY
       // se hned neodešle další souhrn)
       await db
-        .insert(notificationPrefs)
+        .insert(notificationPrefData)
         .values({ userId: target.id, lastDigestAt: todayDate })
         .onConflictDoUpdate({
-          target: notificationPrefs.userId,
+          target: notificationPrefData.userId,
           set: { lastDigestAt: todayDate },
         });
     }
@@ -713,6 +733,6 @@ export async function listNotificationTargets(db: Db): Promise<Array<{ id: strin
   return db
     .select({ id: user.id, email: user.email })
     .from(user)
-    .innerJoin(taxpayerProfiles, eq(taxpayerProfiles.userId, user.id))
+    .innerJoin(taxpayerProfileData, eq(taxpayerProfileData.userId, user.id))
     .where(eq(user.emailVerified, true));
 }

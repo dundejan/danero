@@ -17,9 +17,9 @@ import {
   type SyncYearProgress,
   previouslyVerifiedYears,
   SyncPaused,
-  syncErrorText,
   syncBatchFilename,
 } from '@/lib/broker-sync';
+import { storedSyncFailure } from '@/lib/sync-failure';
 import { decryptSecret } from '@/lib/crypto';
 import {
   detectAndParseExport,
@@ -44,13 +44,6 @@ export interface SyncOutcome {
    * řádky z téhle části, protože ty starší už v paměti nejsou.
    */
   errorCount: number;
-}
-
-/** U 403 doplní nápovědu k oprávněním T212 klíče (jinak vrací zprávu beze změny). */
-export function explainT212SyncError(message: string): string {
-  return message.includes('403')
-    ? `${message} — klíč zřejmě nemá potřebná oprávnění (Account data, History + podkategorie, Metadata, Portfolio). Vygeneruj nový klíč podle návodu na stránce Zdroje dat.`
-    : message;
 }
 
 export interface SyncOptions {
@@ -489,9 +482,10 @@ export async function syncTrading212(
   } catch (error) {
     // přechodné selhání rekonciliace (typicky 429 na portfolio endpoint) nesmí
     // přepsat poslední platný „pozice sedí“ — chyba se uloží vedle.
-    // Do UI jde česky (`syncErrorText`), do logu původní text: bez něj by se
-    // příčina ztratila, protože sync sám doběhl a job skončí jako úspěšný.
-    reconciliationError = syncErrorText(error);
+    // Do UI jde věta pro člověka (`lib/sync-failure.ts`), do logu původní
+    // text: bez něj by se příčina ztratila, protože sync sám doběhl a job
+    // skončí jako úspěšný.
+    reconciliationError = storedSyncFailure(error, account);
     logEvent('warn', 'sync.reconciliation_failed', {
       accountId: account.id,
       broker: account.broker,
