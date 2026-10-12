@@ -387,4 +387,35 @@ describe('formulář jiného účtu, než který je přihlášený', () => {
     expect(own.ok).toBe(true);
     expect((await getNotificationPrefs(state.db, state.userId)).emailFrequency).toBe(other);
   });
+
+  /**
+   * Formulář prvního uložení (tlačítko) označení nese ve skrytém poli: panel
+   * účtu bez profilu, ve vedlejším panelu se mezitím přihlásí jiný účet,
+   * „Uložit profil“ v prvním — a režim toho druhého byl přepsaný.
+   */
+  it('první uložení tlačítkem taky ne', { timeout: 30_000 }, async () => {
+    const { getProfile } = await import('@/lib/portfolio');
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    const target = async (form: FormData): Promise<string> =>
+      saveProfileAction(form).then(
+        () => 'bez přesměrování',
+        (error: unknown) => String((error as Error).message),
+      );
+    const before = (await getProfile(state.db, state.userId))!;
+    expect(before.regime).toBe('PAUSAL');
+    // formulář účtu bez profilu, jak ho stránka vykreslila někomu jinému
+    const blank = profileFormEntries(null);
+
+    expect(
+      await target(withOwner(submission(blank, { rezim: 'OSVC' }), await tagFor('u-nekdo-jiny'))),
+    ).toBe('REDIRECT:/nastaveni');
+    expect((await getProfile(state.db, state.userId))!.regime).toBe('PAUSAL');
+
+    // vlastní formulář se uloží a pokračuje dál
+    expect(
+      await target(withOwner(submission(blank, { rezim: 'OSVC' }), await tagFor(state.userId))),
+    ).toMatch(/^REDIRECT:\/nastaveni\?ok=/);
+    expect((await getProfile(state.db, state.userId))!.regime).toBe('OSVC');
+  });
 });

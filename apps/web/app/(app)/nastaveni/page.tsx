@@ -16,7 +16,7 @@ import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
 import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
-import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
+import { BASELINE_FIELD, encodeBaseline, OWNER_FIELD } from '@/lib/form-baseline';
 import { czDateTime, FX_METHOD_LABEL, limit100kLabel, METHOD_LABEL } from '@/lib/format';
 import { LIMIT_NAME, limitWithAmount, type LimitKind } from '@/lib/limit-names';
 import { configForYear } from '@/lib/tax-config';
@@ -502,6 +502,10 @@ export default async function SettingsPage({
             // Tlačítko stojí POD rozbalením: kdo si volby projde, má ho na
             // konci a je zřejmé, že ukládá i je (R1B-15).
             <div className="space-y-6">
+              {/* Čí formulář to je: kdyby se v prohlížeči mezitím přihlásil
+                  někdo jiný, server ho nezapíše (`isOwnSubmission`). U auto-save
+                  totéž přidává fronta. */}
+              <input type="hidden" name={OWNER_FIELD} value={await ownerTag(user.id)} />
               <Disclosure summary="Výpočet a sporné výklady — přednastaveno bezpečně">
                 <div className="type-body space-y-14 pt-6 text-ink">{calculation}</div>
               </Disclosure>

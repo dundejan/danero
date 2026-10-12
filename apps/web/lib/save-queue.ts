@@ -141,6 +141,16 @@ export interface SaveQueue {
    * serveru z doby před ním a změna by na chvíli skočila zpátky.
    */
   unsettled(): FormData | null;
+  /** Jména polí, jejichž změnu server ještě nepotvrdil. */
+  unconfirmed(): string[];
+  /**
+   * Čeká další odeslání? Kdo zpracovává výsledek (`report`), mohl mezitím
+   * zařadit nové — pak ten právě hlášený poslední není, i když to o něm
+   * fronta ve chvíli hlášení tvrdila.
+   */
+  hasWaiting(): boolean;
+  /** Splní se, až nic neběží ani nečeká (hned, pokud je to už teď). */
+  whenIdle(): Promise<void>;
   /**
    * Formulář právě ukazuje stav ze serveru (vznikl znovu, nebo si ho po
    * ztracené odpovědi vyžádal): pokud nic neběží ani nečeká, není už co
@@ -209,8 +219,13 @@ export function createSaveQueue(
    */
   const pending = new Map<string, number>();
   const idle = (): boolean => !draining && waiting === null && leavingInFlight === 0;
+  let idleWaiters: Array<() => void> = [];
   const settled = (): void => {
-    if (idle()) latest = null;
+    if (!idle()) return;
+    latest = null;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const resolve of waiters) resolve();
   };
 
   const settle = async (
@@ -332,6 +347,10 @@ export function createSaveQueue(
       });
     },
     unsettled: () => latest,
+    unconfirmed: () => [...pending.keys()],
+    hasWaiting: () => waiting !== null,
+    whenIdle: () =>
+      idle() ? Promise.resolve() : new Promise((resolve) => void idleWaiters.push(resolve)),
     rebase() {
       if (idle()) pending.clear();
     },
@@ -340,6 +359,9 @@ export function createSaveQueue(
       waiting = null;
       latest = null;
       pending.clear();
+      const waiters = idleWaiters;
+      idleWaiters = [];
+      for (const resolve of waiters) resolve();
     },
     isDiscarded: () => discarded,
   };

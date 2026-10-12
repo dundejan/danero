@@ -9,6 +9,7 @@ import { accountFailure, type AccountFailure } from '@/lib/account-errors';
 import { logAudit } from '@/lib/audit';
 import { errorText, logEvent } from '@/lib/log';
 import { afterProfileSaveUrl, hasAnyTransaction } from '@/lib/onboarding';
+import { isOwnSubmission } from '@/lib/owner-tag';
 import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
 import type { AutoSaveOutcome } from '@/lib/save-queue';
@@ -22,6 +23,9 @@ import { autoSaveNotificationPrefs, autoSaveProfile, saveProfile } from './save'
  */
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
+  // Formulář vykreslený jinému účtu (v prohlížeči se mezitím přihlásil někdo
+  // jiný) nezapíše nic — stránka se ukáže znovu, už pro toho, kdo je přihlášený.
+  if (!(await isOwnSubmission(formData, user.id))) redirect('/nastaveni');
   const result = await saveProfile(user.id, formData);
   if (!result.ok) redirect(`/nastaveni?chyba=${result.error}`);
   revalidatePath('/prehled');

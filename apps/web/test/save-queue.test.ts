@@ -420,6 +420,63 @@ describe('nepotvrzené změny', () => {
   });
 });
 
+describe('co fronta o sobě řekne', () => {
+  it('jména nepotvrzených změn — pro formulář vykreslený znovu uprostřed ukládání', async () => {
+    const { queue, sent } = harness();
+    expect(queue.unconfirmed()).toEqual([]);
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani'));
+    queue.enqueue(job({ parovani: 'LIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(queue.unconfirmed()).toEqual(['parovani', 'kurzy']);
+    sent[0]!.finish(saved);
+    await settle();
+    expect(queue.unconfirmed()).toEqual(['kurzy']);
+  });
+
+  it('odeslání zařazené při zpracování výsledku je vidět hned', async () => {
+    const waitingSeen: boolean[] = [];
+    const sent: Array<(outcome: AutoSaveOutcome) => void> = [];
+    const queue = createSaveQueue({
+      send: () => new Promise((finish) => sent.push(finish)),
+      sendLeaving: async () => saved,
+      report: (result, context) => {
+        // zpracování odmítnutí zařadí zbytek změn — hlášené odeslání už poslední není
+        if (result.kind === 'rejected') queue.enqueue(job({ a: '1' }, 'a'));
+        waitingSeen.push(context.last && !queue.hasWaiting());
+      },
+    });
+    queue.enqueue(job({ castka: 'abc', a: '1' }, 'castka'));
+    sent[0]!({ ok: false, message: 'Zadej částku.', field: 'castka' });
+    await settle();
+    sent[1]!(saved);
+    await settle();
+    expect(waitingSeen).toEqual([false, true]);
+  });
+
+  it('whenIdle se splní, až nic neběží ani nečeká — i přes odchod a zahození', async () => {
+    const { queue, sent } = harness();
+    await queue.whenIdle(); // prázdná fronta nečeká
+    let idle = false;
+    queue.enqueue(job({ a: '1' }, 'a'));
+    queue.enqueue(job({ a: '2' }, 'a'));
+    queue.flush(); // odhlášení: co čeká, jde hned
+    void queue.whenIdle().then(() => (idle = true));
+    sent[1]!.finish(saved);
+    await settle();
+    expect(idle).toBe(false);
+    sent[0]!.finish(saved);
+    await settle();
+    expect(idle).toBe(true);
+
+    const other = harness();
+    let released = false;
+    other.queue.enqueue(job({ a: '1' }, 'a'));
+    void other.queue.whenIdle().then(() => (released = true));
+    other.queue.discard();
+    await settle();
+    expect(released).toBe(true);
+  });
+});
+
 /**
  * Revize R8, M1: fronta žije s dokumentem, ne s přihlášením. Odeslání účtu A,
  * které viselo v síti, přežilo odhlášení a formulář účtu B v témže panelu

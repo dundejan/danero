@@ -985,6 +985,8 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   await expect(form).not.toHaveAttribute('aria-busy', 'true');
   await expect(matching).toHaveValue('LIFO');
   await expect(matching).toBeFocused();
+  // nabídka se nevrací beze slova: po odemčení zazní, že formulář ukazuje stav serveru
+  await expect(unconfirmed).toBeVisible();
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
 
   // a další změna se uloží jako obvykle
@@ -1072,6 +1074,87 @@ test('nastavení: vrácená změna se neztratí, když ji předběhne uložení 
   await expect(rates).toHaveValue('CNB_DAILY');
   expect(await savedValue(page, MATCHING)).toBe('FIFO');
   expect(await savedValue(page, 'select[name="kurzy"]')).toBe('CNB_DAILY');
+});
+
+/**
+ * Nález revize oprav R8. Formulář vykreslený znovu uprostřed ukládání dostával
+ * CELÝ stav odeslání, které právě odchází — i pole, na která uživatel nesáhl.
+ * V panelu se starým stavem tak do nového formuláře (který už ukazoval změnu
+ * udělanou jinde) vrátil starou hodnotu, a ta se od stavu při vykreslení
+ * lišila: další změna v tom panelu ji zapsala a cizí změnu potichu přepsala.
+ * Formulář teď z odcházejícího odeslání přebírá jen pole, která uživatel
+ * opravdu změnil.
+ */
+test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí znovu uprostřed ukládání', async ({
+  page,
+  browser,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Starý panel', email: 'stary-panel@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  const matching = page.locator(MATCHING);
+  const actions = watchActions(page);
+
+  // jinde (jiný panel téhož účtu) se mezitím změní párování
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const other = await elsewhere.newPage();
+  await other.goto('/nastaveni');
+  await autoSaveForm(other);
+  await other.locator(MATCHING).selectOption('LIFO');
+  await expect(savedToast(other)).toBeVisible();
+  await elsewhere.close();
+  await expect(matching).toHaveValue('FIFO');
+
+  // dotažení stránky po prvním uložení a uložení při odchodu se zdrží, dokud
+  // test neřekne — formulář tak vznikne znovu, zatímco odchodové uložení běží
+  let releaseRefresh = (): void => {};
+  const refreshHeld = new Promise<void>((resolve) => (releaseRefresh = resolve));
+  let releaseLeaving = (): void => {};
+  const leavingHeld = new Promise<void>((resolve) => (releaseLeaving = resolve));
+  let refreshes = 0;
+  let leavingSent = 0;
+  let leavingDone = 0;
+  await page.route('**/nastaveni**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' && request.headers()['rsc']) {
+      refreshes += 1;
+      if (refreshes === 1) await refreshHeld;
+    }
+    await route.continue().catch(() => {});
+  });
+  await page.route('**/api/settings/profile', async (route) => {
+    leavingSent += 1;
+    await leavingHeld;
+    await route.continue().catch(() => {});
+  });
+  page.on('requestfinished', (request) => {
+    if (request.url().includes('/api/settings/profile')) leavingDone += 1;
+  });
+
+  await page.locator('select[name="kurzy"]').selectOption('CNB_DAILY'); // 1: uloží se, stránka se dotahuje
+  await expect.poll(() => refreshes, { message: 'stránka se má po uložení dotahovat' }).toBe(1);
+  await typeIncome(page, '4321'); // 2: rozepsaná částka odejde se skrytím panelu
+  await setVisibility(page, 'hidden');
+  await expect.poll(() => leavingSent).toBe(1);
+  releaseRefresh();
+
+  // formulář vznikl znovu se stavem serveru; odchodové uložení pořád běží
+  await expect(page.locator('input[name="puvodni-stav"]')).toHaveValue(/parovani=LIFO/);
+  await expect(page.locator('#ostatni-prijmy'), 'částka, která právě odchází, zůstává vidět').toHaveValue('4321');
+  await expect(matching, 'pole, na které uživatel nesáhl, ukazuje stav serveru').toHaveValue('LIFO');
+
+  // návrat do panelu a další změna dřív, než odchodové uložení doběhne
+  await setVisibility(page, 'visible');
+  await page.locator('select[name="zaklad-casoveho-testu"]').selectOption('trade');
+  await expect.poll(actions.finished, { message: 'mají doběhnout dvě akce' }).toBe(2);
+  releaseLeaving();
+  await expect.poll(() => leavingDone).toBe(1);
+  await autoSaveForm(page);
+
+  expect(await savedValue(page, MATCHING), 'cizí změna párování má zůstat').toBe('LIFO');
+  expect(await savedValue(page, 'select[name="kurzy"]')).toBe('CNB_DAILY');
+  expect(await savedValue(page, 'select[name="zaklad-casoveho-testu"]')).toBe('trade');
+  expect(await savedIncome(page)).toBe('4321');
 });
 
 /**
@@ -1213,6 +1296,32 @@ test('nastavení: rozdělané uložení jednoho účtu se nedostane k dalšímu 
 });
 
 /**
+ * Odhlášení fronty auto-save zahazuje (viz test výš) — změna, která při
+ * klepnutí na „Odhlásit se“ teprve čekala na uložení, se ale ztratit nesmí.
+ * Tlačítko proto nejdřív nechá doběhnout, co čeká, a teprve pak odhlašuje.
+ */
+test('nastavení: změny udělané těsně před odhlášením se ještě uloží', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Před odhlášením', email: 'pred-odhlasenim@danero.cz' });
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  // první uložení chvíli běží, takže druhá změna čeká ve frontě
+  const restore = await slowSaves(page, 1500);
+  await page.locator(MATCHING).selectOption('LIFO');
+  await page.locator('select[name="kurzy"]').selectOption('CNB_DAILY');
+  await signOut(page);
+  await restore();
+
+  await page.getByLabel('E-mail').fill('pred-odhlasenim@danero.cz');
+  await page.getByLabel('Heslo').fill('bezpecne-heslo-e2e');
+  await page.getByRole('button', { name: 'Přihlásit se' }).click();
+  await page.waitForURL('**/prehled');
+  await page.goto('/nastaveni');
+  await autoSaveForm(page);
+  await expect(page.locator(MATCHING)).toHaveValue('LIFO');
+  await expect(page.locator('select[name="kurzy"]')).toHaveValue('CNB_DAILY');
+});
+
+/**
  * Revize R8 (N1) — přihlášení vypršelo a formulář ukládá. Nesmí skončit
  * zamčený s hláškou o spojení: člověk má skončit na přihlášení, ať ukládá
  * akce, nebo požadavek při odchodu.
@@ -1285,8 +1394,14 @@ test('nastavení: uložení nemění adresu, historii prohlížeče ani polohu s
 
   // změna dole na stránce ji nesmí vrátit nahoru
   const lowest = page.getByLabel('Vratka kapitálu');
-  await lowest.scrollIntoViewIfNeeded();
-  await lowest.focus();
+  // předchozí uložení stránku ještě dotahuje ze serveru a formulář při tom
+  // vzniká znovu — pole, které test právě drží, může zaniknout pod rukama
+  // (ve Firefoxu naměřeno 12. 10. 2026: „Element is not attached to the DOM“)
+  await expect(async () => {
+    await lowest.scrollIntoViewIfNeeded();
+    await lowest.focus();
+    await expect(lowest).toBeFocused();
+  }).toPass();
   const scrolled = await page.evaluate(() => Math.round(window.scrollY));
   expect(scrolled).toBeGreaterThan(0);
   await page.keyboard.press('ArrowDown');

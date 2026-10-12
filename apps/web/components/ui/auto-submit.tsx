@@ -1,7 +1,7 @@
 'use client';
 
 import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
-import { onAutoSaveReset } from '@/lib/auto-save-session';
+import { onAutoSaveSessionEnd } from '@/lib/auto-save-session';
 import { readEarlyInput } from '@/lib/early-input';
 import {
   describeFocus,
@@ -11,7 +11,7 @@ import {
   type FocusDescriptor,
   type FocusHandoff,
 } from '@/lib/focus-handoff';
-import { CHANGED_FIELD } from '@/lib/form-baseline';
+import { CHANGED_FIELD, changedFields } from '@/lib/form-baseline';
 import {
   applyFormValues,
   differsFromServerHtml,
@@ -59,6 +59,11 @@ const SAVE_UNCONFIRMED = 'Uložení se nepotvrdilo. Formulář ukazuje, co je ul
  * devětkrát za vteřinu) — odejde s další změnou, s opuštěním pole nebo stránky.
  */
 const DRAFT_UNSAVED = 'Uložení se nepovedlo. Zkusíme to znovu s tvojí další změnou.';
+/**
+ * Formulář je zamčený déle, než aby to šlo přejít mlčky, a ještě není jasné,
+ * jak to dopadne. O spojení neříká nic — server možná odpovídá, jen pomalu.
+ */
+const SAVE_CHECKING = 'Uložení se nepotvrdilo. Ověřujeme, co je uložené.';
 /** Za jak dlouho zamčený formulář řekne proč, i když ještě neví, jak to dopadne (ms). */
 const LOCK_NOTICE_MS = 1000;
 /** Uložilo se něco jiného, zatímco v jiném poli pořád leží odmítnutý text. */
@@ -67,6 +72,11 @@ const OTHERS_SAVED = 'Ostatní změny jsou uložené.';
 const DRAFT_INVALID = 'Rozepsaná hodnota není platná a neuloží se.';
 /** Adresa, na které se pozná, že je server zase dosažitelný. */
 const REACHABILITY_URL = '/api/health';
+/**
+ * Jak dlouho na tu odpověď čekat (ms). Spojení, které jen visí, by jinak
+ * drželo formulář zamčený až do limitu prohlížeče.
+ */
+const REACHABILITY_TIMEOUT_MS = 8000;
 /** Jak často zkoušet spojení, dokud je dole (ms). */
 const RETRY_MS = 4000;
 
@@ -75,7 +85,7 @@ const RETRY_MS = 4000;
  * Proměnná modulu, ne stav komponenty: uložení stránku vykreslí celou znovu
  * a stav komponenty s ní zanikne — modul zůstává.
  */
-let focusHandoff: FocusHandoff | null = null;
+let focusHandoff: (FocusHandoff & { key: string }) | null = null;
 
 /**
  * Formulář jednoho účtu. Všechno, co si auto-save pamatuje mimo komponentu, je
@@ -167,14 +177,24 @@ const resyncing = new Set<string>();
 // Odhlášení: nic z toho, co tu po účtu zbylo, se nesmí dostat k dalšímu.
 // Odeslání, která jsou na cestě, doběhnou pod přihlášením, se kterým odešla —
 // jejich výsledek už ale nikdo nedostane.
-onAutoSaveReset(() => {
-  for (const queue of queues.values()) queue.discard();
-  queues.clear();
-  actions.clear();
-  autoResent.clear();
-  rejections.clear();
-  hiddenDrafts.clear();
-  focusHandoff = null;
+onAutoSaveSessionEnd({
+  flush: async () => {
+    await Promise.all(
+      Array.from(queues.values(), (queue) => {
+        queue.flush();
+        return queue.whenIdle();
+      }),
+    );
+  },
+  reset: () => {
+    for (const queue of queues.values()) queue.discard();
+    queues.clear();
+    actions.clear();
+    autoResent.clear();
+    rejections.clear();
+    hiddenDrafts.clear();
+    focusHandoff = null;
+  },
 });
 
 /** Prvky formuláře, které přijmou fokus — pole i tlačítka vysvětlivek mezi nimi. */
@@ -294,9 +314,16 @@ function markSynced(form: HTMLFormElement | undefined, synced: boolean): void {
   else form.setAttribute('aria-busy', 'true');
 }
 
+/**
+ * Odpovídá server? Chyba 5xx se počítá jako „ne“: `/api/health` jí říká, že
+ * nedosáhne na databázi, a dotažená stránka by skončila chybou místo stavu.
+ */
 const serverReachable = (): Promise<boolean> =>
-  fetch(REACHABILITY_URL, { cache: 'no-store' }).then(
-    () => true,
+  fetch(REACHABILITY_URL, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(REACHABILITY_TIMEOUT_MS),
+  }).then(
+    (response) => response.status < 500,
     () => false,
   );
 
@@ -338,10 +365,12 @@ function restoreFocus(form: HTMLFormElement, descriptor: FocusDescriptor | null)
  * spojení by ho směrovač nahradil načtením celého dokumentu a místo aplikace
  * by zbyla chybová stránka prohlížeče.
  *
- * HLÁŠKA. Zamčený formulář řekne proč, a to jednou: hned jak je jasné, že
- * spojení není, jinak až s výsledkem (server odpovídá a formulář už ukazuje
- * jeho stav), nejpozději ale za `LOCK_NOTICE_MS` — zámek beze slova je pro
- * čtečku jen pole, které přestalo existovat.
+ * HLÁŠKA. Když server odpovídá, zazní jediná — s výsledkem, ve chvíli, kdy
+ * formulář už ukazuje jeho stav. Když ne, řekne zámek hned, že spojení
+ * vypadlo, a po jeho obnovení, jak to dopadlo (první hláška do té doby dávno
+ * zmizela a nabídka by se jinak vrátila beze slova). A trvá-li to déle než
+ * `LOCK_NOTICE_MS`, ohlásí se zámek aspoň obecně — beze slova je pro čtečku
+ * jen pole, které přestalo existovat.
  *
  * ROZEPSANÝ TEXT se po odemčení pošle znovu jen tehdy, když opravdu chybělo
  * spojení, a jen jednou. Když server celou dobu odpovídal, vinou spojení to
@@ -357,19 +386,15 @@ async function resync(scope: Scope): Promise<void> {
   const locked = liveForms.get(key);
   const focus = focusWithin(locked);
   markSynced(locked, false);
-  const said = { anything: false };
-  const tell = (text: string): void => {
-    said.anything = true;
-    announce('chyba', text, owner);
-  };
-  const notice = setTimeout(() => tell(SAVE_UNKNOWN), LOCK_NOTICE_MS);
+  const tell = (text: string): void => announce('chyba', text, owner);
+  const notice = setTimeout(() => tell(SAVE_CHECKING), LOCK_NOTICE_MS);
   let offline = false;
   try {
     while (!(await serverReachable())) {
       if (!offline) {
         offline = true;
         clearTimeout(notice);
-        if (!said.anything) tell(SAVE_UNKNOWN);
+        tell(SAVE_UNKNOWN);
       }
       await untilRetry();
     }
@@ -380,7 +405,7 @@ async function resync(scope: Scope): Promise<void> {
     const form = liveForms.get(key);
     if (!form) {
       // člověk mezitím odešel jinam; co je uložené, uvidí, až se k formuláři vrátí
-      if (!said.anything) tell(SAVE_UNCONFIRMED);
+      tell(SAVE_UNCONFIRMED);
     } else {
       // Týž formulář jako před dotažením = server poslal stav, se kterým byl
       // vykreslen: nabídky a přepínače, které se neuložily, se na něj vrátí.
@@ -404,7 +429,7 @@ async function resync(scope: Scope): Promise<void> {
         queue.enqueue({ data: snapshot(form), triggers: names, owner });
       } else if (textFieldsOf(form).some((field) => hasOwnDraft(field) && isOverdue(field))) {
         tell(DRAFT_UNSAVED);
-      } else if (!said.anything) {
+      } else {
         tell(SAVE_UNCONFIRMED);
       }
     }
@@ -456,7 +481,9 @@ function queueFor(scope: Scope): SaveQueue {
       // každém odeslání zvlášť). Po vypršelém přihlášení tím odeslání při
       // odchodu skončí na přihlášení; akci tam přesměruje server sám.
       unrefreshed ||= result.kind === 'saved' || (result.kind === 'signedOut' && !result.redirected);
-      if (!context.last) return;
+      // Zpracování odmítnutí výš mohlo zařadit další odeslání (zbytek změn bez
+      // odmítnutého pole) — pak tohle poslední není a rozhodne se až po něm.
+      if (!context.last || queue.hasWaiting()) return;
       if (unknown) {
         // Řada doběhla a o některém odeslání nevíme, jak dopadlo — ať bylo
         // poslední, nebo ne (odchod ze stránky, který se nevrátil, zatímco starší
@@ -614,7 +641,15 @@ export function AutoSubmit({
     const unsettled = queue.unsettled();
     if (unsettled) {
       const controls = Array.from(form.elements) as unknown as FormControlState[];
-      for (const control of applyFormValues(controls, unsettled)) {
+      // Jen pole, která uživatel opravdu změnil (liší se od stavu, se kterým
+      // odeslání vzniklo, nebo jejich změnu server ještě nepotvrdil). Odeslání
+      // nese celý formulář: v panelu se starým stavem by pole, na které nikdo
+      // nesáhl, přepsalo hodnotu právě došlou ze serveru starou — a ta by se
+      // s další změnou zapsala přes změnu udělanou jinde.
+      const names = controls.flatMap((control) => (control.name ? [control.name] : []));
+      const own = changedFields(unsettled, names);
+      for (const name of queue.unconfirmed()) own.add(name);
+      for (const control of applyFormValues(controls, unsettled, (name) => own.has(name))) {
         const field = textFieldOf(control);
         if (field) confirm(field);
       }
@@ -628,7 +663,7 @@ export function AutoSubmit({
     const { pathname } = window.location;
     const handoff = focusHandoff;
     focusHandoff = null;
-    if (handoffApplies(handoff, pathname, performance.now())) {
+    if (handoff?.key === key && handoffApplies(handoff, pathname, performance.now())) {
       const target = findFocusTarget(handoff.descriptor, focusablesOf(form));
       const active = document.activeElement;
       // fokus nikomu nebereme: vrací se jen tehdy, když zánikem pole spadl na stránku
@@ -699,6 +734,9 @@ export function AutoSubmit({
       if (field) {
         // Enter v poli, jehož text už odešel, nic nového neříká
         if (!hasDraft(field)) return;
+        // Zámek pole o fokus připravil sám; dokud se čeká na stav ze serveru,
+        // nic se neposílá (stejně jako ve `focusout` níž) — text zůstává rozepsaný.
+        if (resyncing.has(key)) return;
         confirm(field);
         syncUnloadGuard();
       }
@@ -876,7 +914,7 @@ export function AutoSubmit({
         );
         // rozepsaný text se předává jen tehdy, když ho psal člověk
         if (field && !humanEdited.has(field)) descriptor.draft = null;
-        focusHandoff = { pathname, descriptor, at: performance.now() };
+        focusHandoff = { key, pathname, descriptor, at: performance.now() };
       }
       // Buď formulář vznikne znovu na téže stránce (uložení ji vykreslilo
       // znovu) a rozepsaný text převezme, nebo se stránka opouští a text je
