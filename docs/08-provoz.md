@@ -123,6 +123,34 @@ přejmenovat), teprve pak kód. Migraci, na kterou nový kód spoléhá (typicky
 doplnění dat — třeba 0021), pusť **před** nasazením: `gh workflow run
 migrate.yml`, počkat na doběhnutí, teprve pak push kódu.
 
+**Když migrace i kód čekají v téže větvi** (běžný stav — `db:generate` je dělá
+naráz), samotné `gh workflow run migrate.yml` nestačí: workflow jede jen
+z `main` a jen s tím, co v `main` je. Migrace tam musí dřív než kód:
+
+1. Větev od `main` **jen se soubory migrace** — `NNNN_*.sql`,
+   `meta/NNNN_snapshot.json` a `meta/_journal.json`. Vezmi je z větve s kódem
+   (`git checkout <větev> -- <soubory>`), ne znovu vygenerované: musí být
+   bajtově tytéž, jinak se pozdější sloučení popere o žurnál.
+2. Pull request, zelené `ci`, `e2e`, `dco` a `guards`, sloučit. Push do `main`
+   spustí `migrate.yml` sám (cesta `db/migrations/**`); Vercel mezitím nasadí
+   starý kód s novým žurnálem.
+3. Počkej na zelený běh „Migrace produkční databáze“ a na `/api/health` = 200
+   (`migrations.applied` = `expected`; do té doby vrací 503 — to je v pořádku).
+4. Teprve pak sluč větev s kódem.
+
+Mezi kroky 2 a 4 **nepouštěj `db:generate` na `main`**: snímek schématu už nové
+sloupce zná, `schema.ts` ještě ne, a drizzle-kit by vygeneroval jejich smazání.
+
+Takhle šla migrace 0047 (pořadí odeslání formulářů nastavení; větev
+`redesign-migrace-0047`, 12. 10. 2026). Kód k ní je navíc napsaný tak, aby
+obrácené pořadí přežil: tabulky nastavení čte a zapisuje přes pohled, který
+sloupce `save_*` nezná (`apps/web/db/settings-data.ts`), a zápis s pořadím se
+při chybě 42703 uloží bez něj a zaloguje `settings.save_order_unavailable`
+(`orderedOrPlain` v `nastaveni/save.ts`; hlídá
+`test/settings-before-migration.test.ts`). Je to pojistka pro případ, že se
+postup výš nedodrží nebo migrace spadne — ne náhrada za něj: sloupec, bez
+kterého se nový kód neobejde ani ve čtení, takhle ošetřit nejde.
+
 Ruční zásahy a zálohy: `scripts/db.sh [status|migrate|backup|prune|restore SOUBOR]`. Bere řetězec
 z `~/.danero/produkce.env` (řádek `DATABASE_URL_DIRECT=…`, mimo repozitář,
 `chmod 600`) a nikdy ho nevypisuje. `prune` databázi nepotřebuje — maže jen staré

@@ -99,5 +99,7 @@ export async function autoSaveResponse(
     return json({ ok: false, message: 'Formulář se nepodařilo přečíst.' }, 400);
   }
   const outcome = await save(userId, formData);
-  return json(outcome, outcome.ok ? 200 : 422);
+  // formulář jiného účtu, než který je přihlášený, je pro prohlížeč totéž co
+  // vypršelé přihlášení: stránku si vyžádá znovu (`lib/owner-tag.ts`)
+  return json(outcome, outcome.ok ? 200 : outcome.foreign ? 401 : 422);
 }

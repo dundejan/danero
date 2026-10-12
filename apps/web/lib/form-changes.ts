@@ -108,11 +108,12 @@ export function restoreServerHtml(control: FormControlState): void {
 export function applyFormValues<Control extends FormControlState>(
   controls: Iterable<Control>,
   values: { getAll(name: string): unknown[] },
+  only: (name: string) => boolean = () => true,
 ): Control[] {
   const texts: Control[] = [];
   for (const control of controls) {
     const kind = kindOf(control);
-    if (kind === 'none' || !control.name) continue;
+    if (kind === 'none' || !control.name || !only(control.name)) continue;
     const sent = values
       .getAll(control.name)
       .filter((value): value is string => typeof value === 'string');

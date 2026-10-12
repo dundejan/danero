@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { flushAutoSave, resetAutoSave } from '@/lib/auto-save-session';
 import { forgetLeavingDraft } from '@/lib/leaving-draft';
 import { dismissFeedback } from '@/lib/save-feedback';
 import { attemptSignOut } from '@/lib/sign-out';
@@ -17,20 +18,26 @@ function useSignOut(): { signOut: () => void; error: string | null } {
   const [error, setError] = useState<string | null>(null);
   const signOut = () => {
     setError(null);
-    // attemptSignOut nevyhazuje (výjimku sítě vrací jako neúspěch), takže
-    // tenhle řetěz nemůže skončit neošetřeným odmítnutím
-    void attemptSignOut(() => authClient.signOut()).then((outcome) => {
-      if (!outcome.ok) {
-        setError(outcome.message);
-        return;
-      }
-      // text rozepsaný v tomhle účtu se po odhlášení nikomu nenabízí
-      forgetLeavingDraft();
-      // ani hláška o uložení: dalšímu účtu v tomhle panelu nepatří
-      dismissFeedback();
-      router.push(outcome.redirectTo);
-      router.refresh();
-    });
+    // Změna udělaná těsně před odhlášením se ještě stihne uložit — pod tímhle
+    // přihlášením; po něm už by ji server nevzal. Ani flushAutoSave, ani
+    // attemptSignOut nevyhazují (výjimku sítě vrací jako neúspěch), takže
+    // tenhle řetěz nemůže skončit neošetřeným odmítnutím.
+    void flushAutoSave()
+      .then(() => attemptSignOut(() => authClient.signOut()))
+      .then((outcome) => {
+        if (!outcome.ok) {
+          setError(outcome.message);
+          return;
+        }
+        // text rozepsaný v tomhle účtu se po odhlášení nikomu nenabízí
+        forgetLeavingDraft();
+        // ani hláška o uložení: dalšímu účtu v tomhle panelu nepatří
+        dismissFeedback();
+        // a ukládání, které ještě běží nebo čeká, se k dalšímu účtu nedostane
+        resetAutoSave();
+        router.push(outcome.redirectTo);
+        router.refresh();
+      });
   };
   return { signOut, error };
 }

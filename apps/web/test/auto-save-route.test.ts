@@ -96,6 +96,16 @@ describe('odpověď na uložení při odchodu', () => {
     });
   });
 
+  it('formulář jiného účtu je pro prohlížeč totéž co vypršelé přihlášení', async () => {
+    const { autoSaveResponse } = await import('@/lib/auto-save-route');
+    const response = await autoSaveResponse(request(SAME_ORIGIN), USER, async () => ({
+      ok: false,
+      message: 'Stránka patří jinému přihlášení.',
+      foreign: true,
+    }));
+    expect(response.status).toBe(401);
+  });
+
   it('tělo, které není formulář, skončí chybou požadavku, ne výjimkou', async () => {
     const { autoSaveResponse } = await import('@/lib/auto-save-route');
     const save = vi.fn();

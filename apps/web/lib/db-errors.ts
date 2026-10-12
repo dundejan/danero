@@ -3,13 +3,26 @@
  * (DrizzleQueryError) — pg kód bývá v `cause`, ne na chybě samotné.
  */
 
-/** 23505 = unique_violation (souběžný insert / obsazený unikátní sloupec). */
-export function isUniqueViolation(error: unknown): boolean {
+/** Má chyba (nebo některá z jejích příčin) tenhle kód SQLSTATE? */
+function hasSqlState(error: unknown, code: string): boolean {
   for (let e = error; e instanceof Error; e = e.cause as Error) {
-    if ((e as { code?: string }).code === '23505') return true;
+    if ((e as { code?: string }).code === code) return true;
     if (!(e.cause instanceof Error)) break;
   }
   return false;
+}
+
+/** 23505 = unique_violation (souběžný insert / obsazený unikátní sloupec). */
+export function isUniqueViolation(error: unknown): boolean {
+  return hasSqlState(error, '23505');
+}
+
+/**
+ * 42703 = undefined_column: dotaz jmenuje sloupec, který databáze nemá — kód
+ * je na produkci dřív než migrace, která sloupec přidává (`docs/08-provoz.md`).
+ */
+export function isUndefinedColumn(error: unknown): boolean {
+  return hasSqlState(error, '42703');
 }
 
 /**

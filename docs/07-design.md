@@ -400,7 +400,9 @@ Odkaz uprostřed věty je vždy podtržený.
   Uložení formulář vykreslí celý znovu; fokus přitom zůstává na poli, kde byl, a rozepsaný
   text se neztratí — předá si je starý a nový formulář (`lib/focus-handoff.ts`). Hodnoty
   ostatních polí jsou vždy ze serveru; jen dokud další uložení ještě běží, ukazuje formulář
-  stav, který právě odchází (jinak by změna na chvíli skočila zpátky).
+  u polí, která uživatel změnil, to, co právě odchází (jinak by změna na chvíli skočila
+  zpátky). Jen u nich: odeslání nese celý formulář, a pole, na které nikdo nesáhl, by
+  v panelu se starým stavem přepsalo hodnotu právě došlou ze serveru.
 - Auto-save nepřesměrovává: výsledek vrací akce a ukáže ho `AutoSaveFeedback`, adresa ani
   historie prohlížeče se nemění (dřív každá změna přidala krok a Zpět z Nastavení chtělo
   tolik stisků, kolik bylo změn). Odeslání řadí `lib/save-queue.ts` — jdou za sebou, změny
@@ -414,16 +416,32 @@ Odkaz uprostřed věty je vždy podtržený.
   označené a ostatní změny se uloží bez něj. Pole s pevným tvarem má dostat `pattern`
   (a větu k němu v `title`) — podle něj se při zavírání panelu s neplatným textem prohlížeč
   zeptá, jestli opravdu odejít; jinde už to říct nejde.
-- Co auto-save nesmí (revize R7 — každý bod byla naměřená tichá ztráta nebo nepravda):
+- Co auto-save nesmí (revize R7 a R8 — každý bod byla naměřená tichá ztráta nebo nepravda):
   - **potvrdit přes odmítnutí.** Dokud v poli leží text, který server odmítl, potvrzení jiné
     změny říká obojí („Ostatní změny jsou uložené. …“) a odmítnutý text i s `aria-invalid`
     přežije nové vykreslení formuláře;
   - **tvrdit stav, který nezná.** Když odpověď na uložení nepřijde, formulář se zamkne
     (`inert`, `data-auto-submit="unsynced"`) a stav si vyžádá ze serveru, až je zase
-    dosažitelný; do té doby neukazuje ani starou, ani novou volbu jako platnou;
+    dosažitelný; do té doby neukazuje ani starou, ani novou volbu jako platnou. Zámek se
+    ohlásí (`role="alert"`): když server odpovídá, jedinou hláškou s výsledkem; když ne, hned
+    („Spojení vypadlo…“) a znovu po odemčení, kdy formulář ukazuje stav serveru. Po odemčení
+    se fokus vrátí na pole, kde byl;
+  - **zkoušet to dokola.** Rozepsaný text, jehož uložení nedopadlo, se sám pošle znovu jen
+    po opravdovém výpadku spojení, a to jednou. Když server odpovídá chybou, zůstane text
+    v poli a odejde s další změnou, s opuštěním pole nebo stránky (revize R8: 36 pokusů
+    a 36 hlášek za 12 s);
   - **nechat starší odeslání přepsat novější.** Odeslání nese pořadí
     (`SUBMISSION_FIELD` v `lib/form-baseline.ts`) a server starší odeslání téhož formuláře
-    nezapíše — odchod ze stránky posílá čekající změnu souběžně s tou, která ještě běží;
+    nezapíše — odchod ze stránky posílá čekající změnu souběžně s tou, která ještě běží.
+    Zahodit starší smí jen proto, že každé odeslání nese jména všech polí, jejichž změnu
+    server ještě nepotvrdil (`lib/save-queue.ts`): server zapisuje jen pole jmenovaná
+    a pole lišící se od stavu při vykreslení, takže změna vrácená na původní hodnotu by
+    jinak v pozdějším odeslání nebyla (revize R8: vrácené párování zůstalo v databázi);
+  - **zapsat formulář jednoho účtu druhému.** Fronty, rozepsaný i odmítnutý text jsou vedené
+    zvlášť pro každý účet a odhlášení je zahodí — nejdřív ale nechá doběhnout, co na uložení
+    čeká (`lib/auto-save-session.ts`); odeslání (i první uložení profilu tlačítkem) nese
+    označení účtu, kterému byl formulář vykreslen, a server ho pod jiným přihlášením
+    nezapíše (`isOwnSubmission` v `lib/owner-tag.ts`);
   - **vrátit hodnotu z poznámky pro F5,** kterou uživatel mezitím přepsal, nebo ji nabídnout
     jinému účtu: poznámka vzniká jen při zániku dokumentu a nese označení účtu
     (`lib/owner-tag.ts`);

@@ -18,10 +18,10 @@ import {
   type TaxYearResult,
   type VariantComparison,
 } from '@danero/engine';
-import { withoutSaveOrder } from '@/lib/form-baseline';
 import type { Db } from '@/db';
 import type { CnbRateProvider } from '@/lib/cnb';
-import { taxpayerProfiles, taxYearSettings, transactions } from '@/db/schema';
+import { taxYearSettings, transactions } from '@/db/schema';
+import { taxpayerProfileData } from '@/db/settings-data';
 import { errorText, logEvent } from '@/lib/log';
 import { currentTaxYear } from './clock';
 import { configForYear, UNIFIED_RATES } from './tax-config';
@@ -40,11 +40,8 @@ export type PinnedTaxYearOptions = Pick<
 /** Daňový rok → konfigurace, se kterou se ten rok zafixoval. */
 export type PinnedTaxYears = Record<number, PinnedTaxYearOptions>;
 
-export type ProfileRow = Omit<
-  typeof taxpayerProfiles.$inferSelect,
-  // pořadí odeslání formuláře není součást profilu (viz schema.ts)
-  'saveInstance' | 'saveSequence'
-> & {
+// řádek bez pořadí odeslání formuláře — to není součást profilu (`db/settings-data.ts`)
+export type ProfileRow = typeof taxpayerProfileData.$inferSelect & {
   /**
    * Roky, za které si uživatel vygeneroval podklady, si drží konfiguraci,
    * se kterou se počítaly (R-05c). Plní je `getProfile`, aby přehled,
@@ -56,11 +53,11 @@ export type ProfileRow = Omit<
 export async function getProfile(db: Db, userId: string): Promise<ProfileRow | null> {
   const rows = await db
     .select()
-    .from(taxpayerProfiles)
-    .where(eq(taxpayerProfiles.userId, userId));
+    .from(taxpayerProfileData)
+    .where(eq(taxpayerProfileData.userId, userId));
   const row = rows[0];
   if (!row) return null;
-  return { ...withoutSaveOrder(row), pinnedTaxYears: await loadPinnedTaxYears(db, userId) };
+  return { ...row, pinnedTaxYears: await loadPinnedTaxYears(db, userId) };
 }
 
 export type PinnedTaxYearRow = typeof taxYearSettings.$inferSelect;
@@ -159,9 +156,9 @@ export async function unpinTaxYear(db: Db, userId: string, year: number): Promis
     .delete(taxYearSettings)
     .where(and(eq(taxYearSettings.userId, userId), eq(taxYearSettings.taxYear, year)));
   await db
-    .update(taxpayerProfiles)
+    .update(taxpayerProfileData)
     .set({ updatedAt: new Date() })
-    .where(eq(taxpayerProfiles.userId, userId));
+    .where(eq(taxpayerProfileData.userId, userId));
 }
 
 /**

@@ -152,6 +152,30 @@ describe('formulář vykreslený znovu uprostřed ukládání', () => {
     expect(texts).toEqual([income]);
   });
 
+  /**
+   * Odeslání nese celý formulář. Panel se starým stavem by polem, na které
+   * uživatel nesáhl, přepsal hodnotu, kterou nový formulář právě dostal ze
+   * serveru (změna udělaná jinde) — a další změna by tu starou zapsala.
+   */
+  it('přebírá jen pole, která volající označí za změněná uživatelem', () => {
+    const matching = { ...select(option(true, true), option(false, false)), name: 'parovani', value: 'LIFO' };
+    const rates = { ...select(option(true, true), option(false, false)), name: 'kurzy', value: 'UNIFIED' };
+    const income = { ...text('900', '900'), name: 'prijmy' };
+    const texts = applyFormValues(
+      [matching, rates, income],
+      sent([
+        ['parovani', 'FIFO'], // stará hodnota z panelu, který o změně jinde neví
+        ['kurzy', 'CNB_DAILY'], // tohle uživatel změnil
+        ['prijmy', '0'],
+      ]),
+      (name) => name === 'kurzy',
+    );
+    expect(matching.value).toBe('LIFO');
+    expect(rates.value).toBe('CNB_DAILY');
+    expect(income.value).toBe('900');
+    expect(texts).toEqual([]);
+  });
+
   it('skupina políček se řídí hodnotami, ne jménem', () => {
     const box = (value: string, checked: boolean) => ({
       ...checkbox(checked, checked),

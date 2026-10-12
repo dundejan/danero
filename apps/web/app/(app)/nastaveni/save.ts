@@ -3,7 +3,9 @@ import { eq, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb, type Db } from '@/db';
 import { notificationPrefs, taxpayerProfiles } from '@/db/schema';
+import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 import { logAudit } from '@/lib/audit';
+import { isUndefinedColumn } from '@/lib/db-errors';
 import {
   changedFields,
   pickChanged,
@@ -20,6 +22,8 @@ import {
   SUMMARY_FREQUENCIES,
   TIME_TEST_LEAD_OPTIONS,
 } from '@/lib/notification-rules';
+import { logEvent } from '@/lib/log';
+import { isOwnSubmission } from '@/lib/owner-tag';
 import { dropStaleLimitNotifications, profileAffectsCalculations } from '@/lib/profile-changes';
 import type { AutoSaveOutcome } from '@/lib/save-queue';
 import {
@@ -108,15 +112,41 @@ const ERROR_FIELD: Partial<Record<ProfileFormError, string>> = {
 };
 
 /** Výsledek uložení profilu tak, jak ho auto-save ukáže uživateli. */
-export function profileOutcome(result: ProfileSaveResult): AutoSaveOutcome {
+function profileOutcome(result: ProfileSaveResult): AutoSaveOutcome {
   return result.ok
     ? { ok: true, message: settingsOkText('profil') }
     : { ok: false, message: settingsErrorText(result.error), field: ERROR_FIELD[result.error] };
 }
 
 /** Potvrzení uloženého nastavení upozornění (formulář nemá co odmítnout). */
-export function notificationPrefsOutcome(): AutoSaveOutcome {
+function notificationPrefsOutcome(): AutoSaveOutcome {
   return { ok: true, message: settingsOkText('notifikace') };
+}
+
+/**
+ * Formulář vykreslený jinému účtu, než který je přihlášený: nezapíše se nic
+ * (`isOwnSubmission`). Větu prohlížeč neukazuje — stránku si vyžádá znovu.
+ */
+const FOREIGN_FORM: AutoSaveOutcome = {
+  ok: false,
+  message: 'Stránka patří jinému přihlášení.',
+  foreign: true,
+};
+
+/** Auto-save daňového profilu — totéž pro server action i pro uložení při odchodu. */
+export async function autoSaveProfile(userId: string, formData: FormData): Promise<AutoSaveOutcome> {
+  if (!(await isOwnSubmission(formData, userId))) return FOREIGN_FORM;
+  return profileOutcome(await saveProfile(userId, formData));
+}
+
+/** Auto-save nastavení upozornění — totéž pro server action i pro uložení při odchodu. */
+export async function autoSaveNotificationPrefs(
+  userId: string,
+  formData: FormData,
+): Promise<AutoSaveOutcome> {
+  if (!(await isOwnSubmission(formData, userId))) return FOREIGN_FORM;
+  await saveNotificationPrefs(userId, formData);
+  return notificationPrefsOutcome();
 }
 
 /** Vynechá sloupce, jejichž odeslaná hodnota je už v databázi. */
@@ -156,6 +186,31 @@ const notSuperseded = (
 ): SQL =>
   sql`(${row.saveInstance} IS DISTINCT FROM ${mark.instance} OR ${row.saveSequence} IS NULL OR ${row.saveSequence} <= ${mark.sequence})`;
 
+/**
+ * Zápis s pořadím — a když databáze sloupce pořadí ještě nemá, zápis bez něj.
+ *
+ * Sloupce přidává migrace 0047 a ta běží souběžně s nasazením kódu
+ * (`docs/08-provoz.md`, M-5). Dokud nedoběhne, končí zápis s pořadím chybou
+ * `42703` (neexistující sloupec); uložení se kvůli tomu nesmí ztratit ani
+ * skončit chybovou stránkou. Uloží se proto jako dřív — platí, kdo přišel
+ * poslední — a do logu jde varování, podle kterého se pozná, že migrace chybí.
+ * Všechno ostatní čte a zapisuje přes pohled, který ty sloupce nezná
+ * (`db/settings-data.ts`), takže tohle je jediné místo, kde na nich záleží.
+ */
+async function orderedOrPlain<Result>(
+  userId: string,
+  ordered: () => Promise<Result>,
+  plain: () => Promise<Result>,
+): Promise<Result> {
+  try {
+    return await ordered();
+  } catch (error) {
+    if (!isUndefinedColumn(error)) throw error;
+    logEvent('warn', 'settings.save_order_unavailable', { userId });
+    return plain();
+  }
+}
+
 export async function saveProfile(
   userId: string,
   formData: FormData,
@@ -194,8 +249,8 @@ export async function saveProfile(
   const db = database ?? (await getDb());
   const [previous] = await db
     .select()
-    .from(taxpayerProfiles)
-    .where(eq(taxpayerProfiles.userId, userId));
+    .from(taxpayerProfileData)
+    .where(eq(taxpayerProfileData.userId, userId));
   // Existující profil se nepřepisuje celý: zapíšou se jen pole, která člověk
   // v tomhle formuláři změnil. Panel, který zůstal otevřený se starým stavem,
   // jinak změnou jednoho pole vrátil všechna ostatní (`lib/form-baseline.ts`).
@@ -210,8 +265,17 @@ export async function saveProfile(
   // kvůli němu mazat upozornění.
   const applied = previous ? omitUnchanged(changed, previous) : submitted;
   const mark = submissionMark(formData);
-  let written = false;
-  if (mark) {
+  const writePlain = async (): Promise<boolean> => {
+    // uložení, které nic nemění, nic nezapisuje
+    if (Object.keys(applied).length === 0) return false;
+    const updatedAt = new Date();
+    await db
+      .insert(taxpayerProfileData)
+      .values({ userId, ...submitted, updatedAt })
+      .onConflictDoUpdate({ target: taxpayerProfileData.userId, set: { ...applied, updatedAt } });
+    return true;
+  };
+  const writeOrdered = async (order: SubmissionMark): Promise<boolean> => {
     // Odeslání s pořadím zapisuje všechno, co člověk ve formuláři změnil, ne
     // jen to, čím se liší od právě přečteného řádku: mezi čtením a zápisem mohlo
     // dorazit starší odeslání a pole změnit. Pořadí se zapíše i tehdy, když se
@@ -220,26 +284,21 @@ export async function saveProfile(
     // výpočtů); historie účtu a mazání upozornění se dál řídí tím, co se opravdu
     // změnilo.
     const stamp = Object.keys(changed).length > 0 ? { updatedAt: new Date() } : {};
-    const order = { saveInstance: mark.instance, saveSequence: mark.sequence };
+    const saved = { saveInstance: order.instance, saveSequence: order.sequence };
     const rows = await db
       .insert(taxpayerProfiles)
-      .values({ userId, ...submitted, ...order })
+      .values({ userId, ...submitted, ...saved })
       .onConflictDoUpdate({
         target: taxpayerProfiles.userId,
-        set: { ...changed, ...stamp, ...order },
-        setWhere: notSuperseded(taxpayerProfiles, mark),
+        set: { ...changed, ...stamp, ...saved },
+        setWhere: notSuperseded(taxpayerProfiles, order),
       })
       .returning({ userId: taxpayerProfiles.userId });
-    written = rows.length > 0 && Object.keys(applied).length > 0;
-  } else if (Object.keys(applied).length > 0) {
-    // uložení, které nic nemění, nic nezapisuje
-    const updatedAt = new Date();
-    await db
-      .insert(taxpayerProfiles)
-      .values({ userId, ...submitted, updatedAt })
-      .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: { ...applied, updatedAt } });
-    written = true;
-  }
+    return rows.length > 0 && Object.keys(applied).length > 0;
+  };
+  const written = mark
+    ? await orderedOrPlain(userId, () => writeOrdered(mark), writePlain)
+    : await writePlain();
   if (written) await logAudit(db, userId, 'PROFILE_CHANGE');
 
   // K2-02: změna profilu přepočítá všechny nezafixované roky, takže uložená
@@ -296,13 +355,22 @@ export async function saveNotificationPrefs(
   const updatedAt = new Date();
   // starší odeslání téhož formuláře, které dorazilo až po novějším, nezapíše nic
   const mark = submissionMark(formData);
-  const order = mark ? { saveInstance: mark.instance, saveSequence: mark.sequence } : {};
-  await db
-    .insert(notificationPrefs)
-    .values({ userId, ...submitted, updatedAt, ...order })
-    .onConflictDoUpdate({
-      target: notificationPrefs.userId,
-      set: { ...applied, updatedAt, ...order },
-      setWhere: mark ? notSuperseded(notificationPrefs, mark) : undefined,
-    });
+  const writePlain = async (): Promise<void> => {
+    await db
+      .insert(notificationPrefData)
+      .values({ userId, ...submitted, updatedAt })
+      .onConflictDoUpdate({ target: notificationPrefData.userId, set: { ...applied, updatedAt } });
+  };
+  const writeOrdered = async (order: SubmissionMark): Promise<void> => {
+    const saved = { saveInstance: order.instance, saveSequence: order.sequence };
+    await db
+      .insert(notificationPrefs)
+      .values({ userId, ...submitted, updatedAt, ...saved })
+      .onConflictDoUpdate({
+        target: notificationPrefs.userId,
+        set: { ...applied, updatedAt, ...saved },
+        setWhere: notSuperseded(notificationPrefs, order),
+      });
+  };
+  await (mark ? orderedOrPlain(userId, () => writeOrdered(mark), writePlain) : writePlain());
 }

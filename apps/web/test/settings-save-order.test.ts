@@ -1,10 +1,12 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/db';
+import type { AutoSaveOutcome, SaveJob } from '@/lib/save-queue';
 import {
   BASELINE_FIELD,
   CHANGED_FIELD,
   encodeBaseline,
+  OWNER_FIELD,
   SUBMISSION_FIELD,
 } from '@/lib/form-baseline';
 
@@ -182,8 +184,15 @@ describe('daňový profil: pořadí odeslání', () => {
     expect(shown).not.toContain(SUBMISSION_FIELD);
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
+    // profil po uložení s pořadím ho nenese — a export čte tutéž podobu tabulek
+    // bez sloupců pořadí (`db/settings-data.ts`), ne ty úplné
+    await save(submission(await rendered(), { parovani: 'LIFO' }, 'panel-h.1'));
+    expect(await profile()).not.toHaveProperty('saveInstance');
+    expect(await profile()).not.toHaveProperty('saveSequence');
     const route = readFileSync(join(import.meta.dirname, '..', 'app', 'api', 'export', 'route.ts'), 'utf8');
-    expect(route.match(/\.map\(\s*withoutSaveOrder,?\s*\)/g)?.length).toBe(2);
+    expect(route).toContain('.from(taxpayerProfileData)');
+    expect(route).toContain('.from(notificationPrefData)');
+    expect(route).not.toMatch(/\b(taxpayerProfiles|notificationPrefs)\b\s*[,)]/);
   });
 });
 
@@ -213,5 +222,200 @@ describe('upozornění: pořadí odeslání', () => {
     // odeslání bez pořadí se ukládá jako dřív
     await save(submission(panel, { 'frekvence-emailu': 'DAILY' }));
     expect((await prefs()).emailFrequency).toBe('DAILY');
+  });
+});
+
+/**
+ * Revize R8, D1 — fronta a server dohromady. Ochrana pořadí výš zahazuje
+ * starší odeslání; to je správně jen tehdy, když ho pozdější odeslání
+ * obsahuje. Naměřeno 12. 10. 2026 v Chromiu i Firefoxu: párování FIFO → LIFO
+ * (akce běží), hned zpět na FIFO (čeká), skrytí panelu pošle vrácení cestou
+ * odchodu a to se zdrží; po návratu změna kurzů dorazí dřív. Kurzy nesly jen
+ * své jméno, server opožděné vrácení zahodil a zůstal na LIFO — s hláškou
+ * „Uloženo“. Odeslání tu vyrábí skutečná fronta a ukládá skutečný server;
+ * test jen rozhoduje, v jakém pořadí dorazí.
+ */
+describe('pořadí odeslání: vrácená změna, kterou předběhne pozdější odeslání', () => {
+  /** Fronta, jejíž odeslání čekají „v síti“, dokud je test nedoručí (`deliver`). */
+  async function wired(save: (body: FormData) => Promise<unknown>, instance: string) {
+    const { createSaveQueue, saveBody } = await import('@/lib/save-queue');
+    const wire: Array<() => Promise<void>> = [];
+    const sending = (job: SaveJob): Promise<AutoSaveOutcome> =>
+      new Promise((resolve) => {
+        wire.push(async () => {
+          await save(saveBody(job));
+          resolve({ ok: true, message: '' });
+        });
+      });
+    const queue = createSaveQueue({ send: sending, sendLeaving: sending, report: () => {} }, instance);
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const deliver = async (index: number): Promise<void> => {
+      await wire[index]!();
+      await settle();
+    };
+    return { queue, wire, deliver };
+  }
+  /** Změna pole `name`: `state` je celý stav formuláře po ní (proti stavu při vykreslení). */
+  const change = (rendered: Entries, state: Record<string, string | null>, name: string): SaveJob => ({
+    data: submission(rendered, state),
+    triggers: [name],
+  });
+
+  it('daňový profil skončí na poslední volbě uživatele', { timeout: 30_000 }, async () => {
+    const { taxpayerProfiles } = await import('@/db/schema');
+    const { getProfile } = await import('@/lib/portfolio');
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { saveProfile } = await import('@/app/(app)/nastaveni/save');
+    await state.db
+      .update(taxpayerProfiles)
+      .set({ matchingMethod: 'FIFO', fxMethod: 'UNIFIED', saveInstance: null, saveSequence: null })
+      .where(eq(taxpayerProfiles.userId, state.userId));
+    const panel = profileFormEntries(await getProfile(state.db, state.userId));
+    const { queue, wire, deliver } = await wired((body) => saveProfile(state.userId, body), 'panel-r8');
+
+    queue.enqueue(change(panel, { parovani: 'LIFO' }, 'parovani')); // 1: akce běží
+    queue.enqueue(change(panel, { parovani: 'FIFO' }, 'parovani')); // 2: čeká
+    queue.flush(); // skrytí panelu: 2 odchází cestou odchodu — a zdrží se
+    expect(wire).toHaveLength(2);
+    await deliver(0);
+    // 3: po návratu do panelu jiné pole; dorazí dřív než 2
+    queue.enqueue(change(panel, { parovani: 'FIFO', kurzy: 'CNB_DAILY' }, 'kurzy'));
+    expect(wire).toHaveLength(3);
+    await deliver(2);
+    await deliver(1);
+
+    expect(await getProfile(state.db, state.userId)).toMatchObject({
+      matchingMethod: 'FIFO',
+      fxMethod: 'CNB_DAILY',
+    });
+  });
+
+  it('nastavení upozornění taky', { timeout: 30_000 }, async () => {
+    const { getNotificationPrefs } = await import('@/lib/notifications');
+    const { notificationFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { saveNotificationPrefs } = await import('@/app/(app)/nastaveni/save');
+    const before = await getNotificationPrefs(state.db, state.userId);
+    expect(before).toMatchObject({ emailFrequency: 'DAILY', limitEvents: true });
+    const panel = notificationFormEntries(before);
+    const { queue, deliver } = await wired(
+      (body) => saveNotificationPrefs(state.userId, body),
+      'panel-r8u',
+    );
+
+    queue.enqueue(change(panel, { 'frekvence-emailu': 'WEEKLY' }, 'frekvence-emailu'));
+    queue.enqueue(change(panel, { 'frekvence-emailu': 'DAILY' }, 'frekvence-emailu'));
+    queue.flush();
+    await deliver(0);
+    queue.enqueue(
+      change(panel, { 'frekvence-emailu': 'DAILY', 'upozorneni-limity': null }, 'upozorneni-limity'),
+    );
+    await deliver(2);
+    await deliver(1);
+
+    expect(await getNotificationPrefs(state.db, state.userId)).toMatchObject({
+      emailFrequency: 'DAILY',
+      limitEvents: false,
+    });
+  });
+});
+
+/**
+ * Revize R8, M1 — formulář jednoho účtu pod přihlášením druhého. Přihlášení se
+ * v prohlížeči může změnit, aniž se stránka načte znovu (odhlášení a přihlášení
+ * jiného účtu v témže panelu nebo ve vedlejším). Naměřeno 12. 10. 2026:
+ * odeslání účtu A pozdržené přes odhlášení dorazilo s cookie účtu B a server
+ * volbu účtu A zapsal do profilu B. Auto-save proto k odeslání přidává označení
+ * účtu, kterému stránka formulář vykreslila, a server cizí formulář nezapíše.
+ */
+describe('formulář jiného účtu, než který je přihlášený', () => {
+  async function tagFor(userId: string): Promise<string> {
+    const { ownerTag } = await import('@/lib/owner-tag');
+    return ownerTag(userId);
+  }
+  const withOwner = (form: FormData, owner: string): FormData => {
+    form.append(OWNER_FIELD, owner);
+    return form;
+  };
+
+  it('daňový profil nezapíše — vlastní a neoznačený formulář ano', { timeout: 30_000 }, async () => {
+    const { getProfile } = await import('@/lib/portfolio');
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { autoSaveProfile } = await import('@/app/(app)/nastaveni/save');
+    const before = (await getProfile(state.db, state.userId))!;
+    const panel = profileFormEntries(before);
+    const other = before.matchingMethod === 'MAX_LOSS' ? 'MAX_PROFIT' : 'MAX_LOSS';
+
+    const foreign = await autoSaveProfile(
+      state.userId,
+      withOwner(submission(panel, { parovani: other }, 'panel-x.1'), await tagFor('u-nekdo-jiny')),
+    );
+    expect(foreign).toMatchObject({ ok: false, foreign: true });
+    expect((await getProfile(state.db, state.userId))!.matchingMethod).toBe(before.matchingMethod);
+
+    // vlastní formulář projde; bez označení (první uložení tlačítkem, starší stránka) taky
+    const own = await autoSaveProfile(
+      state.userId,
+      withOwner(submission(panel, { parovani: other }, 'panel-x.2'), await tagFor(state.userId)),
+    );
+    expect(own.ok).toBe(true);
+    expect((await getProfile(state.db, state.userId))!.matchingMethod).toBe(other);
+    const unmarked = await autoSaveProfile(state.userId, submission(panel, { parovani: 'FIFO' }));
+    expect(unmarked.ok).toBe(true);
+    expect((await getProfile(state.db, state.userId))!.matchingMethod).toBe('FIFO');
+  });
+
+  it('nastavení upozornění taky ne', { timeout: 30_000 }, async () => {
+    const { getNotificationPrefs } = await import('@/lib/notifications');
+    const { notificationFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { autoSaveNotificationPrefs } = await import('@/app/(app)/nastaveni/save');
+    const before = await getNotificationPrefs(state.db, state.userId);
+    const panel = notificationFormEntries(before);
+    const other = before.emailFrequency === 'DAILY' ? 'WEEKLY' : 'DAILY';
+
+    const foreign = await autoSaveNotificationPrefs(
+      state.userId,
+      withOwner(submission(panel, { 'frekvence-emailu': other }), await tagFor('u-nekdo-jiny')),
+    );
+    expect(foreign).toMatchObject({ ok: false, foreign: true });
+    expect((await getNotificationPrefs(state.db, state.userId)).emailFrequency).toBe(
+      before.emailFrequency,
+    );
+    const own = await autoSaveNotificationPrefs(
+      state.userId,
+      withOwner(submission(panel, { 'frekvence-emailu': other }), await tagFor(state.userId)),
+    );
+    expect(own.ok).toBe(true);
+    expect((await getNotificationPrefs(state.db, state.userId)).emailFrequency).toBe(other);
+  });
+
+  /**
+   * Formulář prvního uložení (tlačítko) označení nese ve skrytém poli: panel
+   * účtu bez profilu, ve vedlejším panelu se mezitím přihlásí jiný účet,
+   * „Uložit profil“ v prvním — a režim toho druhého byl přepsaný.
+   */
+  it('první uložení tlačítkem taky ne', { timeout: 30_000 }, async () => {
+    const { getProfile } = await import('@/lib/portfolio');
+    const { profileFormEntries } = await import('@/app/(app)/nastaveni/form-state');
+    const { saveProfileAction } = await import('@/app/(app)/nastaveni/actions');
+    const target = async (form: FormData): Promise<string> =>
+      saveProfileAction(form).then(
+        () => 'bez přesměrování',
+        (error: unknown) => String((error as Error).message),
+      );
+    const before = (await getProfile(state.db, state.userId))!;
+    expect(before.regime).toBe('PAUSAL');
+    // formulář účtu bez profilu, jak ho stránka vykreslila někomu jinému
+    const blank = profileFormEntries(null);
+
+    expect(
+      await target(withOwner(submission(blank, { rezim: 'OSVC' }), await tagFor('u-nekdo-jiny'))),
+    ).toBe('REDIRECT:/nastaveni');
+    expect((await getProfile(state.db, state.userId))!.regime).toBe('PAUSAL');
+
+    // vlastní formulář se uloží a pokračuje dál
+    expect(
+      await target(withOwner(submission(blank, { rezim: 'OSVC' }), await tagFor(state.userId))),
+    ).toMatch(/^REDIRECT:\/nastaveni\?ok=/);
+    expect((await getProfile(state.db, state.userId))!.regime).toBe('OSVC');
   });
 });

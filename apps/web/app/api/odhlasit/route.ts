@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { notificationPrefs } from '@/db/schema';
+import { notificationPrefData } from '@/db/settings-data';
 import { verifyUnsubscribeToken } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
@@ -56,10 +56,10 @@ export async function POST(request: Request): Promise<Response> {
 
   const db = await getDb();
   await db
-    .insert(notificationPrefs)
+    .insert(notificationPrefData)
     .values({ userId, emailEnabled: false })
     .onConflictDoUpdate({
-      target: notificationPrefs.userId,
+      target: notificationPrefData.userId,
       set: { emailEnabled: false, updatedAt: new Date() },
     });
 
