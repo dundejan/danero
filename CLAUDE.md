@@ -416,6 +416,26 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   s auto-save ještě neposlouchá“); v trace je šestkrát `Failed to load
   resource: net::ERR_NETWORK_CHANGED`. Než začneš hledat vadu, otevři
   `0-trace.trace` z `test-results/…/trace.zip` a tohle v něm hledej.
+- **Drizzle jmenuje v `select()`, `insert()` i `returning()` VŠECHNY sloupce
+  tabulky** — i ty, které nenastavuješ (`… values ($1, default, default)`).
+  Nový sloupec ve `schema.ts` tak rozbije každé čtení i zápis té tabulky,
+  dokud migrace neproběhne, a migrace jede souběžně s nasazením (docs/08,
+  M-5). U 0047 by spadla každá stránka aplikace (`getProfile`). Postup:
+  migrace do `main` zvláštní větví napřed (docs/08), a kde to jde, pohled na
+  tabulku bez nových sloupců (`db/settings-data.ts`) — sdílí objekty sloupců se
+  `schema.ts`, ale leží mimo něj, aby ho `drizzle-kit` neviděl jako druhou tabulku.
+- **Auto-save: server smí zahodit starší odeslání jen proto, že to pozdější
+  nese jména všech nepotvrzených změn** (`pending` v `lib/save-queue.ts`).
+  Stav formuláře sám nestačí — server zapisuje jen pole jmenovaná a pole lišící
+  se od stavu při vykreslení, takže změna vrácená na původní hodnotu v něm
+  není. A formulář vykreslený znovu uprostřed ukládání smí z odcházejícího
+  odeslání převzít jen pole, která uživatel změnil; celý stav by v panelu se
+  starým stavem přepsal změnu udělanou jinde (obojí revize R8, 12. 10. 2026).
+- **Každý E2E scénář potřebuje vlastní e-mail napříč VŠEMI specy.** Sada jede
+  nad jednou databází; druhá registrace téže adresy skončí bez přihlášení
+  a test spadne na čekání na `/vitejte` — samostatně puštěný přitom projde.
+  Novou adresu si před commitem vyhledej v celém `e2e/` (12. 10. 2026 kolidovaly
+  dvě naráz, jedna s jiným specem).
 
 ## Stav a plán
 
