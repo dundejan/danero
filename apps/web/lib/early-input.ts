@@ -1,5 +1,3 @@
-import { CHANGED_FIELD } from '@/lib/form-baseline';
-
 /**
  * Na co uživatel sáhl DŘÍV, než se stránka hydratovala.
  *
@@ -45,8 +43,15 @@ export interface EarlyInput {
  * odeslal jako obyčejný formulář a stránka by se načetla znovu s jeho poli
  * v adrese. Změnu, kterou Enter potvrdil, si skript zapamatoval o řádek výš
  * a `AutoSubmit` ji po hydrataci uloží.
+ *
+ * Celý text je jediná neměnná konstanta bez interpolace: do stránky jde jako
+ * surové HTML a `JSON.stringify` neescapuje `</script>` ani U+2028, takže
+ * skládat ho z hodnot by znamenalo ručit za každou z nich. Jméno vlastnosti
+ * (`EARLY_INPUT_KEY`) i skrytého pole (`CHANGED_FIELD` z `lib/form-baseline`)
+ * jsou proto na konci zapsané doslova; že se s konstantami nerozešly, hlídá
+ * `test/early-input.test.ts`.
  */
-export const EARLY_INPUT_SCRIPT = `(function(d,w,k,s){if(w[k])return;var g=false,e=new WeakSet(),c=new WeakSet();w[k]={edited:e,committed:c};function t(v){if(v.isTrusted)g=true}["pointerdown","mousedown","touchstart","keydown","click"].forEach(function(n){d.addEventListener(n,t,true)});d.addEventListener("input",function(v){if(v.isTrusted&&g&&v.target)e.add(v.target)},true);d.addEventListener("change",function(v){if(v.isTrusted&&g&&v.target){e.add(v.target);c.add(v.target)}},true);d.addEventListener("submit",function(v){var f=v.target;if(f&&f.elements&&f.elements[s])v.preventDefault()},true)})(document,window,${JSON.stringify(EARLY_INPUT_KEY)},${JSON.stringify(CHANGED_FIELD)})`;
+export const EARLY_INPUT_SCRIPT = `(function(d,w,k,s){if(w[k])return;var g=false,e=new WeakSet(),c=new WeakSet();w[k]={edited:e,committed:c};function t(v){if(v.isTrusted)g=true}["pointerdown","mousedown","touchstart","keydown","click"].forEach(function(n){d.addEventListener(n,t,true)});d.addEventListener("input",function(v){if(v.isTrusted&&g&&v.target)e.add(v.target)},true);d.addEventListener("change",function(v){if(v.isTrusted&&g&&v.target){e.add(v.target);c.add(v.target)}},true);d.addEventListener("submit",function(v){var f=v.target;if(f&&f.elements&&f.elements[s])v.preventDefault()},true)})(document,window,"__daneroEarlyInput","zmenene-pole")`;
 
 const NOTHING_RECORDED: EarlyInput = {
   edited: { has: () => false },

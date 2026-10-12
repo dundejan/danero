@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NextConfig } from 'next';
 
@@ -73,8 +73,15 @@ function tsconfigPathFor(dir: string): string | undefined {
   if (dir === '.next') return undefined;
   const file = `tsconfig.${dir.replace(/^\.+/, '').replace(/[^a-zA-Z0-9-]+/g, '-')}.json`;
   const path = join(import.meta.dirname, file);
-  if (!existsSync(path)) {
-    writeFileSync(path, `${JSON.stringify({ extends: './tsconfig.json' }, null, 2)}\n`);
+  // Jediný atomický zápis (`wx` = jen když soubor není) místo dotazu
+  // „existuje?“ a zápisu po něm: mezi těmi dvěma kroky by ho mohl založit
+  // souběžný start a my bychom mu ho přepsali.
+  try {
+    writeFileSync(path, `${JSON.stringify({ extends: './tsconfig.json' }, null, 2)}\n`, {
+      flag: 'wx',
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
   return file;
 }

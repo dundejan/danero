@@ -132,6 +132,18 @@ describe('záznam vstupu před hydratací', () => {
 
   it('skript nenese nic, co by ukončilo značku <script> nebo potřebovalo překlad', () => {
     expect(EARLY_INPUT_SCRIPT).not.toContain('<');
+    // oddělovače řádku a odstavce jsou v JS konec řádku i uvnitř řetězce
+    expect(EARLY_INPUT_SCRIPT).not.toContain(String.fromCharCode(0x2028));
+    expect(EARLY_INPUT_SCRIPT).not.toContain(String.fromCharCode(0x2029));
     expect(EARLY_INPUT_SCRIPT).not.toMatch(/=>|\bconst\b|\blet\b/);
+  });
+
+  it('jména zapsaná ve skriptu doslova odpovídají konstantám, se kterými pracuje zbytek kódu', () => {
+    // skript je text bez interpolace — kdo konstantu přejmenuje, musí i tady
+    const call = `(document,window,${JSON.stringify(EARLY_INPUT_KEY)},${JSON.stringify(CHANGED_FIELD)})`;
+    expect(EARLY_INPUT_SCRIPT.endsWith(call)).toBe(true);
+    for (const literal of [JSON.stringify(EARLY_INPUT_KEY), JSON.stringify(CHANGED_FIELD)]) {
+      expect(EARLY_INPUT_SCRIPT.split(literal).length - 1, literal).toBe(1);
+    }
   });
 });
