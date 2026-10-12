@@ -1,10 +1,15 @@
 import { d } from '@danero/shared';
-import { eq } from 'drizzle-orm';
+import { eq, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { getDb } from '@/db';
+import { getDb, type Db } from '@/db';
 import { notificationPrefs, taxpayerProfiles } from '@/db/schema';
 import { logAudit } from '@/lib/audit';
-import { changedFields, pickChanged } from '@/lib/form-baseline';
+import {
+  changedFields,
+  pickChanged,
+  submissionMark,
+  type SubmissionMark,
+} from '@/lib/form-baseline';
 import {
   DEADLINE_LEAD_OPTIONS,
   DEFAULT_NOTIFICATION_RULES,
@@ -129,7 +134,34 @@ function omitUnchanged<Values extends Record<string, unknown>>(
   ) as Partial<Values>;
 }
 
-export async function saveProfile(userId: string, formData: FormData): Promise<ProfileSaveResult> {
+/**
+ * Podmínka zápisu: řádek naposledy nezapsalo NOVĚJŠÍ odeslání téhož formuláře.
+ *
+ * Auto-save posílá odeslání za sebou — až na odchod ze stránky: co čeká, jde
+ * hned, souběžně s tím, co ještě běží, a jinou cestou (`/api/settings/*`
+ * místo server action; na Vercelu jiná funkce). Na server tak můžou dorazit
+ * obráceně. Revize R7 (M3): párování přepnuté tam a zpět a zavřený panel
+ * skončily na starší volbě.
+ *
+ * Odeslání proto nese pořadí (`SUBMISSION_FIELD`) a řádek si pamatuje to
+ * poslední. Podmínka je součást téhož příkazu jako zápis, takže ji dvě
+ * souběžná odeslání nemůžou obejít mezi čtením a zápisem. Jiný formulář
+ * (jiný panel, jiné zařízení, stránka načtená znovu) má jiné označení a mezi
+ * nimi se pořadí neurčuje — platí, kdo přišel poslední, jako dřív. Stejné
+ * číslo podruhé (opakované odeslání) projde.
+ */
+const notSuperseded = (
+  row: { saveInstance: AnyColumn; saveSequence: AnyColumn },
+  mark: SubmissionMark,
+): SQL =>
+  sql`(${row.saveInstance} IS DISTINCT FROM ${mark.instance} OR ${row.saveSequence} IS NULL OR ${row.saveSequence} <= ${mark.sequence})`;
+
+export async function saveProfile(
+  userId: string,
+  formData: FormData,
+  /** Jen pro testy proti konkrétní databázi (`test/postgres-compat.test.ts`). */
+  database?: Db,
+): Promise<ProfileSaveResult> {
   const parsed = ProfileFormSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     // u částky umíme poradit konkrétně; zbytek formuláře jsou jen nabídky,
@@ -159,7 +191,7 @@ export async function saveProfile(userId: string, formData: FormData): Promise<P
     returnOfCapitalReducesBasis: parsed.data['vratka-kapitalu'] === 'lenient',
   };
 
-  const db = await getDb();
+  const db = database ?? (await getDb());
   const [previous] = await db
     .select()
     .from(taxpayerProfiles)
@@ -169,38 +201,64 @@ export async function saveProfile(userId: string, formData: FormData): Promise<P
   // jinak změnou jednoho pole vrátil všechna ostatní (`lib/form-baseline.ts`).
   // UPDATE nese jen ta pole, takže se dvě souběžná uložení nepřepíšou ani
   // mezi čtením a zápisem.
-  // A z nich jen ta, která stav v databázi opravdu mění: totéž odeslání může
-  // přijít dvakrát (rozepsaná částka uložená při F5 a znovu po načtení
-  // stránky, `lib/leaving-draft.ts`) a podruhé nemá co zapsat ani do historie
-  // účtu, ani kvůli němu mazat upozornění.
-  const applied = previous
-    ? omitUnchanged(
-        pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS))),
-        previous,
-      )
+  const changed = previous
+    ? pickChanged(submitted, PROFILE_FIELDS, changedFields(formData, Object.values(PROFILE_FIELDS)))
     : submitted;
-  // uložení, které nic nemění, nic nezapisuje
-  if (Object.keys(applied).length > 0) {
+  // A z nich mění stav v databázi jen některá: totéž odeslání může přijít
+  // dvakrát (rozepsaná částka uložená při F5 a znovu po načtení stránky,
+  // `lib/leaving-draft.ts`) a podruhé nemá co zapsat do historie účtu, ani
+  // kvůli němu mazat upozornění.
+  const applied = previous ? omitUnchanged(changed, previous) : submitted;
+  const mark = submissionMark(formData);
+  let written = false;
+  if (mark) {
+    // Odeslání s pořadím zapisuje všechno, co člověk ve formuláři změnil, ne
+    // jen to, čím se liší od právě přečteného řádku: mezi čtením a zápisem mohlo
+    // dorazit starší odeslání a pole změnit. Pořadí se zapíše i tehdy, když se
+    // nemění nic — jen tak ho starší odeslání, které teprve dorazí, najde.
+    // `updatedAt` se posouvá s každým takovým zápisem polí (je to klíč mezipaměti
+    // výpočtů); historie účtu a mazání upozornění se dál řídí tím, co se opravdu
+    // změnilo.
+    const stamp = Object.keys(changed).length > 0 ? { updatedAt: new Date() } : {};
+    const order = { saveInstance: mark.instance, saveSequence: mark.sequence };
+    const rows = await db
+      .insert(taxpayerProfiles)
+      .values({ userId, ...submitted, ...order })
+      .onConflictDoUpdate({
+        target: taxpayerProfiles.userId,
+        set: { ...changed, ...stamp, ...order },
+        setWhere: notSuperseded(taxpayerProfiles, mark),
+      })
+      .returning({ userId: taxpayerProfiles.userId });
+    written = rows.length > 0 && Object.keys(applied).length > 0;
+  } else if (Object.keys(applied).length > 0) {
+    // uložení, které nic nemění, nic nezapisuje
     const updatedAt = new Date();
     await db
       .insert(taxpayerProfiles)
       .values({ userId, ...submitted, updatedAt })
       .onConflictDoUpdate({ target: taxpayerProfiles.userId, set: { ...applied, updatedAt } });
-    await logAudit(db, userId, 'PROFILE_CHANGE');
+    written = true;
   }
+  if (written) await logAudit(db, userId, 'PROFILE_CHANGE');
 
   // K2-02: změna profilu přepočítá všechny nezafixované roky, takže uložená
   // upozornění hlídače za ně přestala platit — a jejich dedupe klíč by hlídač
   // na ten rok umlčel natrvalo (detail a testy v lib/profile-changes.ts).
-  if (profileAffectsCalculations(previous, applied)) {
+  if (written && profileAffectsCalculations(previous, applied)) {
     await dropStaleLimitNotifications(db, userId);
   }
 
   return { ok: true, firstSave: previous === undefined };
 }
 
-export async function saveNotificationPrefs(userId: string, formData: FormData): Promise<void> {
-  const db = await getDb();
+export async function saveNotificationPrefs(
+  userId: string,
+  formData: FormData,
+  /** Jen pro testy proti konkrétní databázi (`test/postgres-compat.test.ts`). */
+  database?: Db,
+): Promise<void> {
+  const db = database ?? (await getDb());
   /** Zaškrtnuté volby → text pro DB; mimo nabídku se cokoli zahodí. */
   const checked = (name: string, allowed: readonly number[]): string =>
     formatNumberList(parseNumberList(formData.getAll(name).map(String).join(','), allowed, []));
@@ -236,8 +294,15 @@ export async function saveNotificationPrefs(userId: string, formData: FormData):
     changedFields(formData, Object.values(NOTIFICATION_FIELDS)),
   );
   const updatedAt = new Date();
+  // starší odeslání téhož formuláře, které dorazilo až po novějším, nezapíše nic
+  const mark = submissionMark(formData);
+  const order = mark ? { saveInstance: mark.instance, saveSequence: mark.sequence } : {};
   await db
     .insert(notificationPrefs)
-    .values({ userId, ...submitted, updatedAt })
-    .onConflictDoUpdate({ target: notificationPrefs.userId, set: { ...applied, updatedAt } });
+    .values({ userId, ...submitted, updatedAt, ...order })
+    .onConflictDoUpdate({
+      target: notificationPrefs.userId,
+      set: { ...applied, updatedAt, ...order },
+      setWhere: mark ? notSuperseded(notificationPrefs, mark) : undefined,
+    });
 }

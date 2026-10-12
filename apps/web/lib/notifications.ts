@@ -3,6 +3,7 @@ import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } 
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
 import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { withoutSaveOrder } from '@/lib/form-baseline';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
@@ -417,7 +418,7 @@ export async function getNotificationPrefs(db: Db, userId: string) {
     .from(notificationPrefs)
     .where(eq(notificationPrefs.userId, userId));
   return (
-    row ?? {
+    (row && withoutSaveOrder(row)) ?? {
       userId,
       emailEnabled: true,
       timeTestEvents: true,
