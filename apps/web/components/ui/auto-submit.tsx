@@ -5,6 +5,7 @@ import { readEarlyInput } from '@/lib/early-input';
 import {
   describeFocus,
   findFocusTarget,
+  FOCUS_HANDOFF_TTL_MS,
   handoffApplies,
   isTextEntry,
   type FocusDescriptor,
@@ -61,7 +62,14 @@ const RETRY_MS = 4000;
  * Proměnná modulu, ne stav komponenty: uložení stránku vykreslí celou znovu
  * a stav komponenty s ní zanikne — modul zůstává.
  */
-let focusHandoff: FocusHandoff | null = null;
+let focusHandoff: (FocusHandoff & { heldSpace: boolean }) | null = null;
+
+/**
+ * Kde stránka stála, když formulář zanikl — nový ji tam vrátí. Platí stejně
+ * krátce a jen pro tutéž stránku jako předávka fokusu, ale nezávisle na ní:
+ * polohu drží i ten, kdo ve formuláři fokus neměl (přepnul prstem).
+ */
+let scrollHandoff: { pathname: string; x: number; y: number; at: number } | null = null;
 
 /**
  * Formulář, který právě zaniká, a jméno pole, jehož rozepsaný text převzal
@@ -186,6 +194,36 @@ function confirmDrafts(
     names.push(field.name);
   }
   return names;
+}
+
+/** Políčko nebo přepínač — prvek, který mezerník přepne až puštěním klávesy. */
+const isToggle = (target: unknown): target is HTMLInputElement =>
+  target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio');
+
+/**
+ * Dokončí stisk mezerníku, který začal na zaniklém prvku.
+ *
+ * Mezerník přepíná políčko až puštěním — a jen na prvku, na kterém byl
+ * stisknut. Když formulář mezi stiskem a puštěním vznikl znovu (doběhlo
+ * předchozí uložení), puštění dopadne na nový prvek, který stisk neviděl,
+ * a prohlížeč ho zahodí: klávesa šla do prázdna, přepínač zůstal, jak byl
+ * (změřeno 12. 10. 2026 shodně v Chromiu, Firefoxu i WebKitu). Nový prvek
+ * proto puštění dokončí sám. Jiná klávesa nebo ztráta fokusu čekání ruší —
+ * pak už nejde o tentýž stisk.
+ */
+function finishHeldSpace(target: HTMLInputElement): void {
+  const stop = (): void => {
+    target.removeEventListener('keyup', finish);
+    target.removeEventListener('keydown', stop);
+    target.removeEventListener('blur', stop);
+  };
+  const finish = (event: KeyboardEvent): void => {
+    stop();
+    if (event.key === ' ' && event.isTrusted && !target.disabled) target.click();
+  };
+  target.addEventListener('keyup', finish);
+  target.addEventListener('keydown', stop);
+  target.addEventListener('blur', stop);
 }
 
 /** Označí pole textem, který server odmítl, a zapamatuje si ho pro další vykreslení. */
@@ -463,6 +501,23 @@ export function AutoSubmit({
         resumeDraft(field, handoff.descriptor.draft);
         if (departure?.endpoint === endpoint) departure.resumed = field.name;
       }
+      if (handoff.heldSpace && target && document.activeElement === target && isToggle(target)) {
+        finishHeldSpace(target);
+      }
+    }
+    // Stránka po novém vykreslení stojí tam, kde stála: starý formulář zanikl
+    // a nový je na jeho místě, jenže WebKit mezi tím stránku zkrátí a polohu
+    // rolování zahodí (kotvení rolování neumí) — uložení dole v Nastavení
+    // vracelo Safari na začátek stránky (změřeno 12. 10. 2026: 516 → 0 px).
+    const scroll = scrollHandoff;
+    scrollHandoff = null;
+    if (
+      scroll !== null &&
+      scroll.pathname === pathname &&
+      performance.now() - scroll.at <= FOCUS_HANDOFF_TTL_MS &&
+      (window.scrollX !== scroll.x || window.scrollY !== scroll.y)
+    ) {
+      window.scrollTo({ left: scroll.x, top: scroll.y, behavior: 'instant' });
     }
 
     // Text, který server odmítl ještě předchozímu vykreslení formuláře, se vrací
@@ -531,6 +586,15 @@ export function AutoSubmit({
       confirm(field);
       syncUnloadGuard();
       save([field.name]);
+    };
+    // Mezerník stisknutý na políčku a ještě nepuštěný: zanikne-li formulář
+    // v té chvíli, nástupce stisk dokončí (`finishHeldSpace`).
+    let spaceDownOn: EventTarget | null = null;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === ' ' && isToggle(event.target)) spaceDownOn = event.target;
+    };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === ' ') spaceDownOn = null;
     };
     // formulář ukládá skript; prohlížeč ho neodesílá (Enter v textovém poli)
     const onSubmit = (event: Event): void => event.preventDefault();
@@ -620,6 +684,8 @@ export function AutoSubmit({
     form.addEventListener('input', onInput);
     form.addEventListener('change', onChange);
     form.addEventListener('focusout', onFocusOut);
+    form.addEventListener('keydown', onKeyDown);
+    form.addEventListener('keyup', onKeyUp);
     form.addEventListener('submit', onSubmit);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
@@ -669,6 +735,8 @@ export function AutoSubmit({
       form.removeEventListener('input', onInput);
       form.removeEventListener('change', onChange);
       form.removeEventListener('focusout', onFocusOut);
+      form.removeEventListener('keydown', onKeyDown);
+      form.removeEventListener('keyup', onKeyUp);
       form.removeEventListener('submit', onSubmit);
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('pageshow', onPageShow);
@@ -687,8 +755,14 @@ export function AutoSubmit({
         );
         // rozepsaný text se předává jen tehdy, když ho psal člověk
         if (field && !humanEdited.has(field)) descriptor.draft = null;
-        focusHandoff = { pathname, descriptor, at: performance.now() };
+        focusHandoff = {
+          pathname,
+          descriptor,
+          at: performance.now(),
+          heldSpace: spaceDownOn === active,
+        };
       }
+      scrollHandoff = { pathname, x: window.scrollX, y: window.scrollY, at: performance.now() };
       // Buď formulář vznikne znovu na téže stránce (uložení ji vykreslilo
       // znovu) a rozepsaný text převezme, nebo se stránka opouští a text je
       // potřeba uložit. Nástupce vzniká v témže vykreslení — po něm je jasno.

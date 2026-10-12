@@ -434,6 +434,50 @@ test('nastavení klávesnicí: po uložení zůstane fokus na poli a další kl�
 });
 
 /**
+ * Mezerník přepíná až puštěním klávesy, a jen na prvku, na kterém byl
+ * stisknut. Když formulář mezi stiskem a puštěním vznikl znovu (doběhlo
+ * předchozí uložení), puštění dopadlo na nový přepínač, který stisk neviděl,
+ * a klávesa šla do prázdna — změřeno 12. 10. 2026 shodně v Chromiu, Firefoxu
+ * i WebKitu. Člověk klávesu drží desítky milisekund, takže se do té chvíle
+ * trefí snáz než test, který ji pouští hned.
+ */
+test('nastavení klávesnicí: mezerník držený přes nové vykreslení formuláře platí', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Držená klávesa', email: 'drzena-klavesa@danero.cz' });
+  await page.goto('/nastaveni/upozorneni');
+  const form = await autoSaveForm(page);
+  const urgent = page.getByRole('switch', { name: 'Naléhavé posílat hned' });
+  const frequency = page.locator('#frekvence-emailu');
+  await expect(urgent).toBeChecked();
+  // značka na formuláři: zmizí, až ho uložení vykreslí znovu
+  await form.evaluate((element) => element.setAttribute('data-e2e-puvodni', ''));
+
+  // první změna se uloží až na pokyn — do té doby formulář stojí
+  const firstSave = await holdFirstSave(page);
+  await frequency.focus();
+  await page.keyboard.press('ArrowDown');
+
+  // stisk ještě na starém přepínači, puštění až na novém
+  await urgent.focus();
+  await page.keyboard.down('Space');
+  firstSave.release();
+  await expect(page.locator('form[data-e2e-puvodni]')).toHaveCount(0);
+  await expect(urgent).toBeFocused();
+  await page.keyboard.up('Space');
+
+  await expect(urgent).not.toBeChecked();
+  await firstSave.idle();
+  await expectFormMatchesBaseline(page);
+
+  // obě změny jsou uložené doopravdy
+  await page.reload();
+  await autoSaveForm(page);
+  await expect(frequency).toHaveValue('WEEKLY');
+  await expect(urgent).not.toBeChecked();
+});
+
+/**
  * Uložení v běhu: první POST se pozdrží, dokud test neřekne, a ostatní se jen
  * počítají. Test čeká na klid, ne na počet.
  */
@@ -1009,6 +1053,10 @@ test('nastavení: uložení nemění adresu, historii prohlížeče ani polohu s
   await savesFinished(1);
   await flip('Měnové kurzy');
   await savesFinished(2);
+  // Doběhlé odeslání ještě není nový formulář: stránka se po něm dotahuje ze
+  // serveru zvlášť. Test na další pole sáhne, až ho má — jinak mu prvek
+  // zanikne pod rukou (Firefox: „Element is not attached to the DOM“).
+  await expectFormMatchesBaseline(page);
 
   // změna dole na stránce ji nesmí vrátit nahoru
   const lowest = page.getByLabel('Vratka kapitálu');
@@ -1021,6 +1069,9 @@ test('nastavení: uložení nemění adresu, historii prohlížeče ani polohu s
   await expect(savedToast(page)).toBeVisible();
   await autoSaveForm(page);
   await expect(lowest).toHaveValue('lenient');
+  // Poloha se měří až po novém vykreslení formuláře: právě ono stránku ve
+  // WebKitu vracelo na začátek (kotvení rolování neumí; 12. 10. 2026: 516 → 0 px).
+  await expectFormMatchesBaseline(page);
   expect(await page.evaluate(() => Math.round(window.scrollY))).toBe(scrolled);
 
   // adresa je pořád táž a historie nepřibyla
