@@ -215,6 +215,75 @@ export async function buildXtbNewReportXlsx(spec: XtbNewReportSpec = {}): Promis
   return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
 }
 
+/*
+ * ── Roční daňový přehled („Fiscal Report“) ──────────────────────────────
+ *
+ * Z reálného přehledu je opsané jen ROZLOŽENÍ: jeden list, nadpis mimo první
+ * sloupec, tabulky pod sebou s nadpisem ve sloupci C a hlavičkami rozházenými
+ * po sloučených buňkách. Účet, klient, tituly, kusy, částky i časy jsou
+ * vymyšlené.
+ */
+export const XTB_FISCAL_SHEET = 'Fiscal_Report_2025';
+export const XTB_FISCAL_FILENAME = 'FiscalReport_2025.xlsx';
+
+export interface XtbFiscalReportSpec {
+  sheetName?: string;
+  /** null = přehled bez nadpisu (pozná se jen podle názvu listu). */
+  title?: string | null;
+  /** false = list bez jediné tabulky přehledu. */
+  sections?: boolean;
+}
+
+/** Zapíše hodnoty do zadaných sloupců jednoho řádku (sloupce jako v Excelu). */
+function placeCells(sheet: ExcelJS.Worksheet, row: number, cells: Record<string, XtbCellValue>): void {
+  for (const [column, value] of Object.entries(cells)) sheet.getCell(`${column}${row}`).value = value;
+}
+
+export async function buildXtbFiscalReportXlsx(spec: XtbFiscalReportSpec = {}): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(spec.sheetName ?? XTB_FISCAL_SHEET);
+  const title = spec.title === undefined ? 'Fiscal Report: 2025/01/01 - 2025/12/31' : spec.title;
+  if (title !== null) placeCells(sheet, 2, { H: title });
+  placeCells(sheet, 4, { I: 'Client:', K: 'Jana Vzorová' });
+
+  if (spec.sections !== false) {
+    const login = 7654321;
+    placeCells(sheet, 7, { C: 'List of Open Trades - 2025/12/31' });
+    placeCells(sheet, 8, {
+      C: "Client's Login", E: 'Currency', J: 'Deal ID', O: 'System', R: 'Open Time', AD: 'Type',
+      AG: 'Lots', AJ: 'Symbol', AL: 'Commission', AN: 'Swap', AQ: 'Gross Profit', AT: 'Net Profit',
+    });
+    placeCells(sheet, 9, {
+      C: login, E: 'CZK', J: 500000001, O: 'XS', R: utc(2025, 3, 4, 15, 30), AD: 'BUY',
+      AG: 4, AJ: 'shsAAPL.US', AL: 0, AN: 0, AQ: 1250.5, AT: 1250.5,
+    });
+
+    placeCells(sheet, 11, { C: 'Profit Loss Summary STC' });
+    placeCells(sheet, 12, { C: "Client's Login", D: 'Currency', G: 'STC/CFD Product Type', O: 'Profit/Loss' });
+    placeCells(sheet, 13, { C: login, D: 'CZK', G: 'STC Only', O: 310 });
+
+    placeCells(sheet, 15, { C: 'List of Stock Transactions' });
+    placeCells(sheet, 16, {
+      C: "Client's Login", E: 'Currency', J: 'Deal ID', O: 'System', R: 'Open Time', AA: 'Type',
+      AE: 'Lots/Volume', AH: 'Symbol', AK: 'Instrument \nCurrency',
+      AM: 'Purchase value in Account Currency', AO: 'Sale value in Account Currency',
+      AR: 'Close Time', AW: 'Holding Period Days', BB: 'Commission',
+    });
+    placeCells(sheet, 17, {
+      C: login, E: 'CZK', J: 500000002, O: 'XS', R: utc(2025, 2, 10, 9, 5), AA: 'buy', AE: 3,
+      AH: 'MSFT.US', AK: 'USD', AM: 27100, AO: 27410, AR: utc(2025, 2, 21, 16, 40), AW: 11, BB: 0,
+    });
+
+    placeCells(sheet, 19, { C: 'List of Dividends and other cash operations' });
+    placeCells(sheet, 20, { C: "Client's Login", D: 'Currency', G: 'Comment', P: 'Transaction Date', Y: 'Amount' });
+    placeCells(sheet, 21, { C: login, D: 'CZK', G: 'MSFT.US USD 0.7500/ SHR', P: utc(2025, 6, 12), Y: 52.4 });
+    placeCells(sheet, 22, { C: login, D: 'CZK', G: 'MSFT.US USD WHT 15%', P: utc(2025, 6, 12), Y: -7.86 });
+  }
+
+  const raw = await workbook.xlsx.writeBuffer();
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+}
+
 export interface XtbWorkbookSpec {
   sheetName?: string;
   preamble?: XtbCellValue[][];
