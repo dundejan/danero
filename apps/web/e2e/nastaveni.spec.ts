@@ -1027,7 +1027,7 @@ function watchActions(page: Page): { sent: () => number; finished: () => number 
 test('nastavení: vrácená změna se neztratí, když ji předběhne uložení jiného pole', async ({
   page,
 }) => {
-  await registerWithProfile(page, { name: 'E2E Vrácení', email: 'vraceni@danero.cz' });
+  await registerWithProfile(page, { name: 'E2E Vrácená změna', email: 'vracena-zmena@danero.cz' });
   await page.goto('/nastaveni');
   await autoSaveForm(page);
   const matching = page.locator(MATCHING);
@@ -1089,7 +1089,7 @@ test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí
   page,
   browser,
 }) => {
-  await registerWithProfile(page, { name: 'E2E Starý panel', email: 'stary-panel@danero.cz' });
+  await registerWithProfile(page, { name: 'E2E Panel v běhu', email: 'stary-panel-v-behu@danero.cz' });
   await page.goto('/nastaveni');
   await autoSaveForm(page);
   const matching = page.locator(MATCHING);
