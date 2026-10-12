@@ -14,12 +14,14 @@ import {
 const AT = 1_000_000;
 const left = encodeLeavingDraft({
   endpoint: '/api/settings/profile',
+  owner: 'ucet-a',
   pathname: '/nastaveni',
   at: AT,
   fields: { 'ostatni-prijmy': { from: '0', text: '5000' } },
 });
 const form = {
   endpoint: '/api/settings/profile',
+  owner: 'ucet-a',
   pathname: '/nastaveni',
   now: AT + 800,
   served: { 'ostatni-prijmy': '0' },
@@ -50,6 +52,16 @@ describe('rozepsaný text po F5', () => {
   it('jiný formulář ani jiná stránka text nedostane', () => {
     expect(leavingDraftFor(left, { ...form, endpoint: '/api/settings/notifications' })).toEqual({});
     expect(leavingDraftFor(left, { ...form, pathname: '/nastaveni/upozorneni' })).toEqual({});
+  });
+
+  it('jinému účtu se text nenabídne (R7, D3)', () => {
+    // odhlášení v jiném panelu poznámku nesmaže — úložiště je pro každý panel zvlášť
+    expect(leavingDraftFor(left, { ...form, owner: 'ucet-b' })).toEqual({});
+    expect(leavingDraftFor(left, { ...form, owner: '' })).toEqual({});
+    // poznámka ze starší verze aplikace označení nenese
+    const withoutOwner = JSON.parse(left) as Record<string, unknown>;
+    delete withoutOwner.owner;
+    expect(leavingDraftFor(JSON.stringify(withoutOwner), form)).toEqual({});
   });
 
   it('stará poznámka neplatí — návrat po čase ukáže stav ze serveru', () => {

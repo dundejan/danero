@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHANGED_FIELD } from '@/lib/form-baseline';
+import { BASELINE_FIELD, CHANGED_FIELD, SUBMISSION_FIELD } from '@/lib/form-baseline';
 import {
   createSaveQueue,
   saveBody,
@@ -9,6 +9,7 @@ import {
   type SaveJob,
   type SaveReportContext,
   type SaveResult,
+  withoutField,
 } from '@/lib/save-queue';
 
 /**
@@ -33,11 +34,14 @@ function harness() {
       new Promise((finish, fail) =>
         sent.push({ job, leaving, unloading: context?.unloading, finish, fail }),
       );
-  const queue = createSaveQueue({
-    send: sending(false) as (job: SaveJob) => Promise<AutoSaveOutcome>,
-    sendLeaving: sending(true),
-    report: (result, context) => reports.push({ result, context }),
-  });
+  const queue = createSaveQueue(
+    {
+      send: sending(false) as (job: SaveJob) => Promise<AutoSaveOutcome>,
+      sendLeaving: sending(true),
+      report: (result, context) => reports.push({ result, context }),
+    },
+    'fronta',
+  );
   return { queue, sent, reports };
 }
 
@@ -237,5 +241,149 @@ describe('tělo požadavku', () => {
     expect(body.get('a')).toBe('1');
     // prázdné skryté pole z formuláře se nahradí jmény změněných polí
     expect(body.getAll(CHANGED_FIELD)).toEqual(['a', 'b']);
+    // odeslání, které nešlo frontou, pořadí nenese
+    expect(body.has(SUBMISSION_FIELD)).toBe(false);
+  });
+
+  it('pořadí odeslání nese jednou, i kdyby ho stav formuláře už obsahoval', () => {
+    const body = saveBody({ ...job({ a: '1', [SUBMISSION_FIELD]: 'cizi.9' }, 'a'), mark: 'fronta.3' });
+    expect(body.getAll(SUBMISSION_FIELD)).toEqual(['fronta.3']);
+  });
+});
+
+/**
+ * Revize R7, M3: odchod ze stránky pošle čekající odeslání souběžně s tím,
+ * které ještě běží, a na server můžou dorazit obráceně (přepnutí tam a zpět
+ * a zavření panelu skončilo na starší volbě). Fronta proto odeslání čísluje
+ * ve chvíli, kdy vznikají; server starší odeslání téhož formuláře nezapíše
+ * (`test/settings-save-order.test.ts`).
+ */
+describe('pořadí odeslání', () => {
+  const marks = (sent: Sent[]): Array<string | undefined> => sent.map((item) => item.job.mark);
+
+  it('každé odeslání má vyšší číslo než předchozí a označení fronty', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ a: '1' }, 'a'));
+    sent[0]!.finish(saved);
+    await settle();
+    queue.enqueue(job({ a: '2' }, 'a'));
+    expect(marks(sent)).toEqual(['fronta.1', 'fronta.2']);
+    expect(saveBody(sent[1]!.job).get(SUBMISSION_FIELD)).toBe('fronta.2');
+  });
+
+  it('číslo patří chvíli, kdy odeslání vzniklo — odchod během ukládání je novější', () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ parovani: 'LIFO' }, 'parovani')); // běží
+    queue.enqueue(job({ parovani: 'FIFO' }, 'parovani')); // čeká
+    queue.flush(); // odchází souběžně s prvním
+    expect(sent.map((item) => [item.leaving, item.job.mark])).toEqual([
+      [false, 'fronta.1'],
+      [true, 'fronta.2'],
+    ]);
+  });
+
+  it('slité odeslání nese číslo poslední změny', () => {
+    const { queue, sent } = harness();
+    queue.enqueue(job({ a: '1' }, 'a'));
+    queue.enqueue(job({ a: '1', b: '2' }, 'b'));
+    queue.enqueue(job({ a: '1', b: '3' }, 'b'));
+    queue.flush();
+    expect(marks(sent)).toEqual(['fronta.1', 'fronta.3']);
+  });
+
+  it('dvě fronty (dva formuláře nebo dvě načtení stránky) mají různá označení', () => {
+    const first = createSaveQueue({ send: async () => saved, sendLeaving: async () => saved, report: () => {} });
+    const sentMarks: string[] = [];
+    const second = createSaveQueue({
+      send: async (sentJob) => {
+        sentMarks.push(sentJob.mark ?? '');
+        return saved;
+      },
+      sendLeaving: async () => saved,
+      report: () => {},
+    });
+    first.enqueue(job({ a: '1' }, 'a'));
+    second.enqueue(job({ a: '1' }, 'a'));
+    expect(sentMarks[0]).toMatch(/^[0-9a-f-]{36}\.1$/);
+  });
+});
+
+/**
+ * Revize R7, D1: server odmítá formulář celý. Odeslání, které vzniklo dřív,
+ * než odmítnutí přišlo, nese tentýž neplatný text — a s ním padla i změna,
+ * která za něj nemůže (částka `abc` a hned po ní párování: nabídka ukazovala
+ * LIFO, v databázi zůstalo FIFO a neuložilo se to ani při odchodu).
+ */
+describe('odmítnutý text uprostřed řady', () => {
+  const baseline = 'ostatni-prijmy=0&parovani=FIFO';
+  const withBaseline = (fields: Record<string, string>, ...triggers: string[]): SaveJob =>
+    job({ [BASELINE_FIELD]: baseline, ...fields }, ...triggers);
+  const refusal: AutoSaveOutcome = { ok: false, message: 'Zadej částku.', field: 'ostatni-prijmy' };
+
+  it('čekající odeslání odmítnutý text odloží a zbytek uloží', async () => {
+    const { queue, sent, reports } = harness();
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc', parovani: 'FIFO' }, 'ostatni-prijmy'));
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc', parovani: 'LIFO' }, 'parovani'));
+    sent[0]!.finish(refusal);
+    await settle();
+
+    expect(sent).toHaveLength(2);
+    const second = sent[1]!.job;
+    // částka se vrací na stav, se kterým byl formulář vykreslen — server ji nezapíše
+    expect(second.data.getAll('ostatni-prijmy')).toEqual(['0']);
+    expect(second.data.get('parovani')).toBe('LIFO');
+    expect(second.triggers).toEqual(['parovani']);
+    // formulář vykreslený znovu nesmí dostat odmítnutý text jako „odeslaný“
+    expect(queue.unsettled()?.get('ostatni-prijmy')).toBe('0');
+    expect(reports[0]!.context.last).toBe(false);
+    sent[1]!.finish(saved);
+    await settle();
+    expect(reports.map((report) => report.result.kind)).toEqual(['rejected', 'saved']);
+  });
+
+  it('text, který člověk mezitím opravil, zůstává', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc' }, 'ostatni-prijmy'));
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': '5000' }, 'ostatni-prijmy'));
+    sent[0]!.finish(refusal);
+    await settle();
+    expect(sent[1]!.job.data.get('ostatni-prijmy')).toBe('5000');
+    expect(sent[1]!.job.triggers).toEqual(['ostatni-prijmy']);
+  });
+
+  it('odeslání vzniklé až po odmítnutí se nepřepisuje — tentýž text posoudí server znovu', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc' }, 'ostatni-prijmy'));
+    sent[0]!.finish(refusal);
+    await settle();
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc' }, 'ostatni-prijmy'));
+    expect(sent[1]!.job.data.get('ostatni-prijmy')).toBe('abc');
+  });
+
+  it('odmítnutí bez jména pole čekající odeslání nemění', async () => {
+    const { queue, sent } = harness();
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc' }, 'ostatni-prijmy'));
+    queue.enqueue(withBaseline({ 'ostatni-prijmy': 'abc', parovani: 'LIFO' }, 'parovani'));
+    sent[0]!.finish({ ok: false, message: 'Formulář se nepodařilo uložit.' });
+    await settle();
+    expect(sent[1]!.job.data.get('ostatni-prijmy')).toBe('abc');
+  });
+
+  it('withoutField vrátí pole na stav při vykreslení — i skupinu políček a pole, které ve stavu není', () => {
+    const data = new FormData();
+    data.append(BASELINE_FIELD, 'hranice=60&hranice=85&castka=0');
+    for (const value of ['60', '100']) data.append('hranice', value);
+    data.append('castka', 'abc');
+    data.append('prepinac', 'on');
+    const base: SaveJob = { data, triggers: ['hranice', 'castka', 'prepinac'], owner: 'ucet', mark: 'fronta.4' };
+
+    const group = withoutField(base, 'hranice');
+    expect(group.data.getAll('hranice')).toEqual(['60', '85']);
+    expect(group.triggers).toEqual(['castka', 'prepinac']);
+    expect(group).toMatchObject({ owner: 'ucet', mark: 'fronta.4' });
+    // přepínač ve stavu při vykreslení nebyl (nezaškrtnutý) → z odeslání zmizí
+    expect(withoutField(base, 'prepinac').data.has('prepinac')).toBe(false);
+    // původní odeslání se nemění
+    expect(base.data.get('castka')).toBe('abc');
   });
 });

@@ -1,4 +1,4 @@
-import { CHANGED_FIELD } from '@/lib/form-baseline';
+import { BASELINE_FIELD, CHANGED_FIELD, SUBMISSION_FIELD } from '@/lib/form-baseline';
 
 /**
  * Fronta automatického ukládání jednoho formuláře.
@@ -36,6 +36,10 @@ export interface AutoSaveOutcome {
 export interface SaveJob {
   data: FormData;
   triggers: string[];
+  /** Čí formulář odeslání vytvořil (`lib/owner-tag.ts`) — hláška o výsledku se ukáže jen jemu. */
+  owner?: string;
+  /** Pořadí odeslání (`SUBMISSION_FIELD`); přiděluje ho fronta, když odeslání vzniká. */
+  mark?: string;
 }
 
 /** Jak odeslání dopadlo z pohledu prohlížeče. */
@@ -109,18 +113,43 @@ export interface SaveQueue {
   unsettled(): FormData | null;
 }
 
-/** Tělo požadavku: stav formuláře a jména změněných polí. */
+/** Tělo požadavku: stav formuláře, jména změněných polí a pořadí odeslání. */
 export function saveBody(job: SaveJob): FormData {
   const body = new FormData();
   for (const [name, value] of job.data) {
-    if (name !== CHANGED_FIELD) body.append(name, value);
+    if (name !== CHANGED_FIELD && name !== SUBMISSION_FIELD) body.append(name, value);
   }
   for (const name of job.triggers) body.append(CHANGED_FIELD, name);
+  if (job.mark !== undefined) body.append(SUBMISSION_FIELD, job.mark);
   return body;
 }
 
-export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
+/**
+ * Odeslání bez změny pole `field`: hodnota se vrátí na stav, se kterým byl
+ * formulář vykreslen (takže ji server nezapíše), a pole zmizí ze jmen změněných.
+ *
+ * Server odmítá formulář celý. Odeslání, které vzniklo dřív, než odmítnutí
+ * přišlo, nese tentýž neplatný text — a s ním by padly i změny, které za něj
+ * nemůžou (revize R7, D1: neplatná částka a hned po ní změna párování; nabídka
+ * ukazovala novou volbu, v databázi zůstala stará).
+ */
+export function withoutField(job: SaveJob, field: string): SaveJob {
+  const baseline = job.data.get(BASELINE_FIELD);
+  const served =
+    typeof baseline === 'string' ? new URLSearchParams(baseline).getAll(field) : [];
+  const data = new FormData();
+  for (const [name, value] of job.data) if (name !== field) data.append(name, value);
+  for (const value of served) data.append(field, value);
+  return { ...job, data, triggers: job.triggers.filter((name) => name !== field) };
+}
+
+export function createSaveQueue(
+  deps: SaveQueueDeps,
+  /** Označení fronty v pořadí odeslání — jedno na formulář a načtení stránky. */
+  instance: string = crypto.randomUUID(),
+): SaveQueue {
   let waiting: SaveJob | null = null;
+  let sequence = 0;
   let draining = false;
   let leavingInFlight = 0;
   let latest: FormData | null = null;
@@ -144,12 +173,32 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     }
   };
 
-  /** Novější stav formuláře nahrazuje čekající, jména změněných polí se sčítají. */
+  /**
+   * Novější stav formuláře nahrazuje čekající, jména změněných polí se sčítají.
+   * Odeslání dostává pořadové číslo ve chvíli, kdy vzniká — ne až když odchází.
+   */
   const merge = (job: SaveJob): void => {
     latest = job.data;
-    waiting = waiting
-      ? { data: job.data, triggers: [...new Set([...waiting.triggers, ...job.triggers])] }
-      : job;
+    sequence += 1;
+    waiting = {
+      ...job,
+      triggers: waiting ? [...new Set([...waiting.triggers, ...job.triggers])] : job.triggers,
+      mark: `${instance}.${sequence}`,
+    };
+  };
+
+  /**
+   * Server právě odmítl text pole. Čekající odeslání, které ho nese taky
+   * (vzniklo dřív, než odpověď přišla), ho odloží — viz `withoutField`.
+   * Odeslání vzniklá později už nesou, co je v poli doopravdy.
+   */
+  const dropRefused = (job: SaveJob, result: SaveResult): void => {
+    if (result.kind !== 'rejected' || result.field === undefined || waiting === null) return;
+    const refused = job.data.get(result.field);
+    if (refused === null || waiting.data.get(result.field) !== refused) return;
+    const stale = waiting.data;
+    waiting = withoutField(waiting, result.field);
+    if (latest === stale) latest = waiting.data;
   };
 
   const drain = async (): Promise<void> => {
@@ -158,6 +207,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         const job = waiting;
         waiting = null;
         const result = await settle(() => deps.send(job));
+        dropRefused(job, result);
         deps.report(result, {
           job,
           leaving: false,

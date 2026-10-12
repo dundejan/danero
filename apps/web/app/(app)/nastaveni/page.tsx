@@ -13,6 +13,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
 import { getDb } from '@/db';
 import { getProfile, listPinnedTaxYears } from '@/lib/portfolio';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { currentTaxYear } from '@/lib/clock';
 import { BASELINE_FIELD, encodeBaseline } from '@/lib/form-baseline';
@@ -486,7 +487,11 @@ export default async function SettingsPage({
             <>
               {calculation}
               {/* auto-save: každá změna se uloží sama */}
-              <AutoSubmit action={autoSaveProfileAction} endpoint="/api/settings/profile" />
+              <AutoSubmit
+                action={autoSaveProfileAction}
+                endpoint="/api/settings/profile"
+                owner={await ownerTag(user.id)}
+              />
             </>
           ) : (
             // Nový uživatel potřebuje jen režim: zbytek je přednastavený

@@ -40,11 +40,18 @@ export function Toast({
   kind,
   text,
   floating = false,
+  onGone,
 }: {
   kind: 'ok' | 'chyba';
   text: string;
   /** Plovoucí varianta (pravý dolní roh) — vidět i po skoku na kotvu sekce. */
   floating?: boolean;
+  /**
+   * Hláška zmizela z obrazovky (vypršela nebo ji uživatel zavřel). Kdo ji
+   * drží mimo adresu, tady ji má zahodit — jinak ji další vykreslení ukáže
+   * znovu (`lib/save-feedback.ts`).
+   */
+  onGone?: () => void;
 }) {
   // Plovoucí hláška neodchází skokem: nejdřív `leaving` (přechod v CSS ji
   // pošle tam, odkud přijela), odmontuje se až po jeho doběhu. Řádková
@@ -72,6 +79,9 @@ export function Toast({
     const timer = setTimeout(() => setPhase('gone'), 300);
     return () => clearTimeout(timer);
   }, [phase]);
+  useEffect(() => {
+    if (phase === 'gone') onGone?.();
+  }, [phase, onGone]);
   if (phase === 'gone') return null;
   return (
     <div

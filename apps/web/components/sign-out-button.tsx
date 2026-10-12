@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { forgetLeavingDraft } from '@/lib/leaving-draft';
+import { dismissFeedback } from '@/lib/save-feedback';
 import { attemptSignOut } from '@/lib/sign-out';
 
 /**
@@ -25,6 +26,8 @@ function useSignOut(): { signOut: () => void; error: string | null } {
       }
       // text rozepsaný v tomhle účtu se po odhlášení nikomu nenabízí
       forgetLeavingDraft();
+      // ani hláška o uložení: dalšímu účtu v tomhle panelu nepatří
+      dismissFeedback();
       router.push(outcome.redirectTo);
       router.refresh();
     });

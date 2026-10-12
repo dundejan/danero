@@ -5,6 +5,7 @@ import { RefreshOnRestore } from '@/components/refresh-on-restore';
 import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
 import { TextLink } from '@/components/ui/link';
 import { SOURCE_URL } from '@/lib/legal';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 
 /**
@@ -63,7 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Potvrzení a chyby automatického ukládání. Až za obsahem: hláška plave,
           ale její křížek nesmí v pořadí fokusu předběhnout odkaz „Přeskočit
           na obsah“. */}
-      <AutoSaveFeedback />
+      <AutoSaveFeedback owner={await ownerTag(user.id)} />
     </div>
   );
 }

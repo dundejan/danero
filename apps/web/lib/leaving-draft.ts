@@ -13,9 +13,17 @@
  * hodnotu, uložení už doběhlo — nebo pole mezitím změnil někdo jinde —
  * a platí, co poslal server.
  *
- * Poznámka platí krátce a jen pro tentýž formulář na téže adrese; odhlášení
- * ji maže. Nesmí se z ní stát cesta, kterou se do nastavení vrátí stará
- * hodnota nebo text jiného účtu.
+ * Poznámka platí krátce a jen pro tentýž formulář téhož účtu na téže adrese;
+ * odhlášení ji maže. Nesmí se z ní stát cesta, kterou se do nastavení vrátí
+ * stará hodnota nebo text jiného účtu:
+ * - píše se jen ve chvíli, kdy dokument opravdu zaniká (`pagehide`). Do revize
+ *   R7 ji psalo i pouhé skrytí panelu a nikdo ji nemazal: kdo částku napsal,
+ *   přepnul panel, vrátil se, přepsal ji zpátky a dal F5, dostal do pole
+ *   i do databáze hodnotu, kterou právě zrušil;
+ * - stránka, která žije dál (návrat z mezipaměti prohlížeče, panel zase
+ *   vidět), ji zahodí;
+ * - nese označení účtu a jinému účtu se nepoužije — odhlášení v JINÉM panelu
+ *   ji smazat neumí, úložiště je pro každý panel zvlášť.
  */
 
 /** Klíč v `sessionStorage`. */
@@ -24,9 +32,11 @@ const LEAVING_DRAFT_KEY = 'danero:leaving-draft';
 /** Jak dlouho po odchodu poznámka platí (ms). */
 export const LEAVING_DRAFT_TTL_MS = 10_000;
 
-interface LeavingDraft {
+export interface LeavingDraft {
   /** Adresa uložení formuláře. */
   endpoint: string;
+  /** Označení účtu, který text psal (`lib/owner-tag.ts`). */
+  owner: string;
   /** Cesta stránky, ze které se odcházelo. */
   pathname: string;
   at: number;
@@ -43,6 +53,7 @@ const isLeavingDraft = (value: unknown): value is LeavingDraft => {
   const draft = value as Record<string, unknown>;
   return (
     typeof draft.endpoint === 'string' &&
+    typeof draft.owner === 'string' &&
     typeof draft.pathname === 'string' &&
     typeof draft.at === 'number' &&
     typeof draft.fields === 'object' &&
@@ -60,6 +71,8 @@ const isLeavingDraft = (value: unknown): value is LeavingDraft => {
 /** Formulář, který se po načtení ptá, jestli má co převzít. */
 interface LoadedForm {
   endpoint: string;
+  /** Označení přihlášeného účtu. */
+  owner: string;
   pathname: string;
   now: number;
   /** Hodnoty textových polí, jak je poslal server (podle `name`). */
@@ -83,6 +96,7 @@ export function leavingDraftFor(raw: string | null, form: LoadedForm): Record<st
   const age = form.now - draft.at;
   if (
     draft.endpoint !== form.endpoint ||
+    draft.owner !== form.owner ||
     draft.pathname !== form.pathname ||
     age < 0 ||
     age > LEAVING_DRAFT_TTL_MS
@@ -120,7 +134,10 @@ export function takeLeavingDraft(form: LoadedForm): Record<string, string> {
   }
 }
 
-/** Odhlášení: text rozepsaný v jednom účtu se nesmí nabídnout dalšímu. */
+/**
+ * Zahodí poznámku: při odhlášení (text rozepsaný v jednom účtu se nesmí
+ * nabídnout dalšímu) a pokaždé, když stránka, která ji napsala, žije dál.
+ */
 export function forgetLeavingDraft(): void {
   try {
     window.sessionStorage.removeItem(LEAVING_DRAFT_KEY);

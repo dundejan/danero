@@ -7,6 +7,7 @@ import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { typeset } from '@/components/typeset';
 import { getDb } from '@/db';
+import { ownerTag } from '@/lib/owner-tag';
 import { requireUser } from '@/lib/session';
 import { getNotificationPrefs } from '@/lib/notifications';
 import {
@@ -358,6 +359,7 @@ export default async function NotificationSettingsPage() {
           <AutoSubmit
             action={autoSaveNotificationPrefsAction}
             endpoint="/api/settings/notifications"
+            owner={await ownerTag(user.id)}
           />
         </form>
       </div>

@@ -34,9 +34,42 @@ export const BASELINE_FIELD = 'puvodni-stav';
 /** Skryté pole se jmény polí, jejichž změna odeslání vyvolala (jen s auto-save). */
 export const CHANGED_FIELD = 'zmenene-pole';
 
+/**
+ * Pořadí odeslání: `<označení formuláře>.<pořadové číslo>`. Přidává ho fronta
+ * auto-save (`lib/save-queue.ts`), ne pole ve stránce.
+ *
+ * Odeslání téhož formuláře jdou za sebou — až na odchod ze stránky: co čeká,
+ * jde hned a souběžně s tím, co ještě běží, a na server můžou dorazit
+ * v opačném pořadí (revize R7, M3: přepnutí tam a zpět a zavření panelu skončilo
+ * na starší volbě). Server si proto u řádku pamatuje poslední pořadí a starší
+ * odeslání téhož formuláře už nezapíše. Pozdější odeslání nese celý stav
+ * formuláře, takže to dřívější v sobě obsahuje.
+ */
+export const SUBMISSION_FIELD = 'poradi-odeslani';
+
 /** Služební pole, která do stavu formuláře nepatří (React si k akci přidává vlastní). */
 const isServiceField = (name: string): boolean =>
-  name === BASELINE_FIELD || name === CHANGED_FIELD || name.startsWith('$ACTION');
+  name === BASELINE_FIELD ||
+  name === CHANGED_FIELD ||
+  name === SUBMISSION_FIELD ||
+  name.startsWith('$ACTION');
+
+/** Pořadí odeslání: který formulář (panel) ho poslal a kolikáté to bylo. */
+export interface SubmissionMark {
+  instance: string;
+  sequence: number;
+}
+
+/**
+ * Pořadí odeslání z formuláře; `null`, když chybí nebo nemá správný tvar
+ * (první uložení tlačítkem, požadavek mimo naše UI) — pak se ukládá bez něj.
+ */
+export function submissionMark(form: { get(name: string): unknown }): SubmissionMark | null {
+  const raw = form.get(SUBMISSION_FIELD);
+  if (typeof raw !== 'string') return null;
+  const match = /^([A-Za-z0-9-]{1,64})\.([1-9][0-9]{0,8})$/.exec(raw);
+  return match ? { instance: match[1]!, sequence: Number(match[2]) } : null;
+}
 
 /**
  * Stav formuláře jako text: dvojice jméno–hodnota tak, jak by je neupravený
@@ -102,4 +135,19 @@ export function pickChanged<Values extends Record<string, unknown>>(
   return Object.fromEntries(
     Object.entries(values).filter(([column]) => changed.has(fieldOf[column as keyof Values])),
   ) as Partial<Values>;
+}
+
+/**
+ * Řádek nastavení bez pořadí odeslání formuláře (`save_instance`,
+ * `save_sequence`): je to pomocný údaj serveru o tom, který panel uložil
+ * naposledy, ne údaj uživatele — nepatří do profilu, do pravidel upozornění
+ * ani do exportu jeho dat.
+ */
+export function withoutSaveOrder<Row extends { saveInstance: unknown; saveSequence: unknown }>(
+  row: Row,
+): Omit<Row, 'saveInstance' | 'saveSequence'> {
+  const copy: Partial<Row> = { ...row };
+  delete copy.saveInstance;
+  delete copy.saveSequence;
+  return copy as Omit<Row, 'saveInstance' | 'saveSequence'>;
 }

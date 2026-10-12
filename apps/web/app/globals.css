@@ -694,6 +694,13 @@
     cursor: pointer;
   }
 
+  /* Formulář s auto-save, u kterého po ztracené odpovědi nevíme, co server
+     uložil (`components/ui/auto-submit.tsx`): je zamčený (`inert`) a ztlumený,
+     dokud stav nepotvrdí server — obrazovka nemá tvrdit, co neví. */
+  form[data-auto-submit='unsynced'] {
+    opacity: 0.5;
+  }
+
   /* Dotyk: žádné čekání na dvojité klepnutí a žádné označování popisku
      tlačítka dlouhým stiskem. Jen ovládací prvky — text stránky (a odkazy
      v něm) zůstává označitelný, lidé si z něj kopírují částky a hlášky. */

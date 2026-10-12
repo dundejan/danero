@@ -414,6 +414,21 @@ Odkaz uprostřed věty je vždy podtržený.
   označené a ostatní změny se uloží bez něj. Pole s pevným tvarem má dostat `pattern`
   (a větu k němu v `title`) — podle něj se při zavírání panelu s neplatným textem prohlížeč
   zeptá, jestli opravdu odejít; jinde už to říct nejde.
+- Co auto-save nesmí (revize R7 — každý bod byla naměřená tichá ztráta nebo nepravda):
+  - **potvrdit přes odmítnutí.** Dokud v poli leží text, který server odmítl, potvrzení jiné
+    změny říká obojí („Ostatní změny jsou uložené. …“) a odmítnutý text i s `aria-invalid`
+    přežije nové vykreslení formuláře;
+  - **tvrdit stav, který nezná.** Když odpověď na uložení nepřijde, formulář se zamkne
+    (`inert`, `data-auto-submit="unsynced"`) a stav si vyžádá ze serveru, až je zase
+    dosažitelný; do té doby neukazuje ani starou, ani novou volbu jako platnou;
+  - **nechat starší odeslání přepsat novější.** Odeslání nese pořadí
+    (`SUBMISSION_FIELD` v `lib/form-baseline.ts`) a server starší odeslání téhož formuláře
+    nezapíše — odchod ze stránky posílá čekající změnu souběžně s tou, která ještě běží;
+  - **vrátit hodnotu z poznámky pro F5,** kterou uživatel mezitím přepsal, nebo ji nabídnout
+    jinému účtu: poznámka vzniká jen při zániku dokumentu a nese označení účtu
+    (`lib/owner-tag.ts`);
+  - **ukázat hlášku dvakrát nebo cizímu účtu:** hláška, která z obrazovky odešla, se z úložiště
+    maže a patří jen účtu, jehož formulář ji vyvolal (`lib/save-feedback.ts`).
 - Formulář, který odesílá skript, má `method="post"`. Než skript naběhne (nebo když je
   vypnutý), odešle ho prohlížeč sám — a bez metody by pole včetně hesla skončila v adrese.
 
