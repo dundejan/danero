@@ -418,6 +418,26 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   s auto-save ještě neposlouchá“); v trace je šestkrát `Failed to load
   resource: net::ERR_NETWORK_CHANGED`. Než začneš hledat vadu, otevři
   `0-trace.trace` z `test-results/…/trace.zip` a tohle v něm hledej.
+- **Systémový čas na tomhle stroji skáče zpět.** WSL si hodiny seřizuje
+  skokem: dvakrát po 0,6 s každou půlminutu (změřeno 12. 10. 2026 na stroji
+  i v kontejneru, `Date.now()` proti `performance.now()`). Cokoli měří stáří
+  rozdílem dvou `Date.now()`, tak občas dostane záporné číslo — poznámka
+  o rozepsané částce po F5 se kvůli tomu zahazovala (`lib/leaving-draft.ts`
+  dnes pár sekund „z budoucnosti“ snese). Uvnitř jedné stránky měř
+  `performance.now()`; mezi stránkami počítej s tím, že čas není monotónní.
+- **WebKit neumí kotvení rolování.** Když se velký kus stránky vykreslí celý
+  znovu (formulář s novým `key` po uložení), Chromium a Firefox polohu
+  podrží, Safari stránku vrátí na začátek. Kdo takový blok přemontovává, musí
+  si polohu předat sám — vzor je `scrollHandoff` v `ui/auto-submit.tsx`.
+  Chromium to nikdy neukáže; chytí to až `scripts/e2e-docker.sh webkit`.
+- **Firefox a WebKit z Playwrightu mají vlastní slepá místa** (12. 10. 2026):
+  se snímky DOM v záznamu se ve Firefoxu nedohydratuje stránka vrácená
+  z historie (projekt `firefox` proto snímky nemá); `page.close()` v něm asi
+  v 5 % případů zavře panel dřív, než odejde požadavek z `pagehide`; linuxový
+  WebKit odpověď typu `application/xml` nestáhne ani jako přílohu; a snímky
+  obrazovky v obou nekreslí `backdrop-filter`, takže průsvitná lišta na nich
+  vypadá hůř než ve skutečnosti. Písmo v kontejneru sjednocuje skript
+  (Liberation Sans) — výchozí bezpatkové písmo obrazu je čínské.
 
 ## Stav a plán
 
