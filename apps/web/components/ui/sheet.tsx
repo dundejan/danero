@@ -138,7 +138,18 @@ export function Sheet({
     const panel = panelRef.current;
     if (!state.mounted || !dialog || !panel || dialog.open) return;
     closedBySheet.current = false;
+    // Kam s fokusem po otevření. Dialog ho dává prvnímu ovládacímu prvku —
+    // a WebKit u fokusu přesunutého skriptem kreslí obrys vždy, takže sheet
+    // otevřený prstem nebo myší začínal modrým rámečkem kolem „Hotovo“ nebo
+    // první položky (změřeno 12. 10. 2026; Chromium a Firefox ho po klepnutí
+    // nekreslí). Obrys patří klávesnici: kdo sheet otevřel z ní (spouštěč měl
+    // viditelný fokus), dostane fokus na první prvek i s obrysem; jinak ho
+    // převezme plocha sheetu, která obrys nemá, a Tab pokračuje prvním prvkem.
+    const opener = document.activeElement;
+    const openedByKeyboard =
+      opener instanceof HTMLElement && opener !== document.body && opener.matches(':focus-visible');
     dialog.showModal();
+    if (!openedByKeyboard) panel.focus({ preventScroll: true });
     // `showModal()` dává fokus dovnitř plochy, která v tu chvíli leží pod
     // hranou okna. Dialog je proto `overflow-clip` (ořez bez rolování) — jako
     // rolovatelný kontejner by k fokusu odroloval přesně o výšku sheetu
@@ -312,6 +323,7 @@ export function Sheet({
       />
       <motion.div
         ref={panelRef}
+        tabIndex={-1}
         style={{ y, opacity: reducedMotion ? fade : 1 }}
         onPointerDown={(event) => {
           if (reducedMotion || drag.current) return;
@@ -373,7 +385,7 @@ export function Sheet({
           event.stopPropagation();
         }}
         className={cn(
-          'material-sheet absolute inset-x-0 bottom-0 mx-auto flex max-h-[calc(100dvh-2.5rem)] max-w-[40rem] flex-col rounded-t-2xl shadow-floating',
+          'material-sheet absolute inset-x-0 bottom-0 mx-auto flex max-h-[calc(100dvh-2.5rem)] max-w-[40rem] flex-col rounded-t-2xl shadow-floating outline-none',
           // Plocha pokračuje pod spodní hranu okna: při tahu nahoru a při
           // překmitu po hodu se sheet zvedne nad svou polohu a pod ním by jinak
           // zůstala mezera na stránku.

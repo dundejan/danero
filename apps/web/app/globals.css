@@ -784,6 +784,17 @@
     background-color: var(--surface);
   }
 }
+/* Prohlížeč, který rozostření pozadí neumí vůbec (ani s předponou): průsvitná
+   lišta by text pod sebou nechala ostrý a titulek by se s ním pral. Ztuhne
+   proto stejně jako při omezené průhlednosti. Firefox tuhle volbu uživatele
+   (`prefers-reduced-transparency`) zatím nezná — lišty v něm zůstávají
+   průsvitné vždy. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .material-bar,
+  .material-tabbar {
+    background-color: var(--surface);
+  }
+}
 @media (prefers-contrast: more) {
   .material-bar,
   .material-tabbar,
