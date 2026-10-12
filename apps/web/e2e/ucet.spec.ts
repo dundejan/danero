@@ -190,6 +190,60 @@ test('účet: chyba u pole a rozepsaný text přežijí obnovení stránky ze se
 });
 
 /**
+ * Revize R8, M2 — kód výsledku se z adresy uklízel jen jednou. Druhá chyba
+ * u pole v JINÉM formuláři téže stránky (špatné heslo u změny hesla, pak
+ * u změny e-mailu) v adrese zůstala: stránka pak při každém obnovení ze
+ * serveru vypadala jako čerstvý výsledek, řádky vznikly znovu a rozepsaný
+ * text zmizel; obnovení stránky navíc ukázalo chybu znovu.
+ */
+test('účet: druhá chyba v jiném formuláři nenechá kód v adrese', async ({ page, browser }) => {
+  await registerWithProfile(page, { name: 'E2E Dvě chyby', email: 'ucet-dve-chyby@danero.cz' });
+  await page.goto('/nastaveni/ucet');
+  const activity = page.locator('summary').filter({ hasText: /^Poslední aktivita \(\d+\)$/ });
+  const eventsBefore = Number((await activity.innerText()).match(/\d+/)![0]);
+
+  const password = await openDisclosure(page, /^Heslo/);
+  await password.getByLabel('Současné heslo').fill('tohle-neni-moje-heslo');
+  await password.getByLabel('Nové heslo').fill(NOVE_HESLO);
+  await password.getByRole('button', { name: 'Změnit heslo' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Současné heslo nesedí' })).toBeVisible();
+  await expect(page).toHaveURL(/\/nastaveni\/ucet$/);
+
+  // hned potom chyba ve vedlejším formuláři — stránka se mezitím neobnovila
+  const emailRow = await openDisclosure(page, /^E-mail/);
+  await emailRow.getByLabel('Nový e-mail').fill('jiny@danero.cz');
+  await emailRow.getByLabel('Heslo (potvrzení)').fill('tohle-taky-ne');
+  await emailRow.getByRole('button', { name: 'Změnit e-mail' }).click();
+  const emailError = page.getByRole('alert').filter({ hasText: 'Heslo nesedí — e-mail se nezměnil.' });
+  await expect(emailError).toBeVisible();
+  await expect(page).toHaveURL(/\/nastaveni\/ucet$/);
+
+  // uživatel opravuje adresu; stránka se obnoví ze serveru (jiné zařízení něco uložilo)
+  const newEmail = page.getByLabel('Nový e-mail');
+  await newEmail.fill('rozepsany@danero.cz');
+  const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
+  const other = await elsewhere.newPage();
+  await other.goto('/nastaveni');
+  await autoSaveForm(other);
+  await other.getByLabel('Párování prodejů').selectOption('LIFO');
+  await expect(other.getByRole('status').filter({ hasText: 'Uloženo.' })).toBeVisible();
+  await elsewhere.close();
+  await page.evaluate(() =>
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })),
+  );
+  await expect(
+    page.locator('summary').filter({ hasText: `Poslední aktivita (${eventsBefore + 1})` }),
+  ).toBeVisible();
+  await expect(newEmail).toHaveValue('rozepsany@danero.cz');
+  await expect(emailError).toBeVisible();
+
+  // a obnovení stránky chybu neukáže znovu
+  await page.reload();
+  await expect(page.locator('summary').filter({ hasText: /^E-mail/ })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Heslo nesedí' })).toHaveCount(0);
+});
+
+/**
  * L12-04: odhlášení, které server nepotvrdil, nesmí ukázat přihlašovací
  * stránku. Dřív se po chybě 500 (výpadek databáze, strop požadavků) rovnou
  * přesměrovalo na /prihlaseni, ač relace platila dál — na sdíleném počítači
