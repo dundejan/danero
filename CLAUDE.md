@@ -373,7 +373,9 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   kdežto po běžném startu jich je pár desítek. Lokálně proto pouštěj jen
   Chromium z Playwrightu, headless, a pro jistotu bez grafiky
   (`env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 …`). Firefox
-  a WebKit patří do kontejneru (`mcr.microsoft.com/playwright`), ne na stroj.
+  a WebKit patří do kontejneru (`mcr.microsoft.com/playwright`), ne na stroj:
+  `scripts/e2e-docker.sh firefox|webkit` v něm pustí dev server i prohlížeč
+  a před startem si ověří, že v kontejneru `/dev/dxg` není.
   Pád vezme s sebou i `/tmp` — rozdělanou práci commituj průběžně a výkazy
   nenechávej jen ve scratchpadu.
 - **Playwright srovná mezery jen u řetězce, ne u regulárního výrazu.** Texty
