@@ -79,7 +79,8 @@ export default async function ReportPage({
       // Fixace sama čísla nemění — fixuje se to, čím se právě počítalo, takže
       // tohle je zásah do mezipaměti. Při souběhu ale mohl rok mezitím
       // zafixovat jiný požadavek s jiným nastavením (`pinTaxYear` pak vrátí
-      // jeho fixaci) a čísla musí odpovídat tomu, co je v databázi.
+      // jeho fixaci) a čísla musí odpovídat tomu, co je v databázi. Volby
+      // roku jsou součást klíče mezipaměti, takže jiná fixace = nový výpočet.
       precomputed = reportDataCached(user.id, txs, pinnedProfile, year, today, dailyRates);
     }
   } catch (error) {
