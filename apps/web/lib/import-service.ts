@@ -43,6 +43,7 @@ import {
   UNIVERSAL_TEMPLATE_CSV,
   parseUniversalCsv,
   parseXtbXlsx,
+  xtbFiscalReportResult,
   sniffAnycoinCsv,
   sniffCoinbaseCsv,
   sniffCoinmateCsv,
@@ -60,6 +61,7 @@ import {
   sniffSchwabCsv,
   sniffSwissquoteCsv,
   sniffTastytradeCsv,
+  sniffXtbFiscalReport,
   sniffXtbXlsx,
   type ImportResult,
   type KeyPromotion,
@@ -504,6 +506,12 @@ async function importXlsxUpload(
         needsCurrency: true,
       })),
     });
+  }
+  // Roční daňový přehled XTB poznáme, ale transakce z něj neskládáme (chybí
+  // nákupní ceny otevřených pozic) — uživatel dostane návod, který export
+  // nahrát místo něj. Náprava je na něm, takže se soubor neschovává.
+  if (sniffXtbFiscalReport(workbook)) {
+    return importParsed(db, userId, filename, xtbFiscalReportResult(), undefined, NOT_OURS);
   }
   if (sniffEtoroXlsx(workbook)) {
     const aliases = await loadAliases(db, userId);

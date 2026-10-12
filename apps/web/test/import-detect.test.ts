@@ -36,13 +36,15 @@ import {
   T212_FIXTURE_2026,
 } from '../../../packages/importers/test/fixtures/t212';
 import {
+  buildXtbFiscalReportXlsx,
   buildXtbNewReportXlsx,
   buildXtbXlsx,
+  XTB_FISCAL_FILENAME,
   XTB_NEW_FILENAME,
   XTB_ROWS_EN,
 } from '../../../packages/importers/test/fixtures/xtb';
 import { createPgliteDb, type Db } from '@/db';
-import { user } from '@/db/schema';
+import { failedImports, user } from '@/db/schema';
 import { detectAndParse, importFileIsolated } from '@/lib/import-service';
 
 /**
@@ -167,6 +169,30 @@ describe('routing ručního nahrání (importFileIsolated)', () => {
       expect(summary.added).toBeGreaterThan(0);
     },
   );
+
+  /**
+   * Roční daňový přehled XTB (Fiscal Report) poznáme, ale neimportujeme —
+   * otevřené pozice v něm nemají nákupní cenu. První přišel 10/2026 a skončil
+   * u obecného „XLSX nepoznáváme“ s upozorněním provozovateli, přestože náprava
+   * je na uživateli: nahrát historii účtu.
+   */
+  it('daňový přehled XTB → návod, který export nahrát, a nic k rozboru', { timeout: 30_000 }, async () => {
+    const summary = await importFileIsolated(
+      db,
+      'u1',
+      XTB_FISCAL_FILENAME,
+      toArrayBuffer(await buildXtbFiscalReportXlsx()),
+    );
+    expect(summary.broker).toBe('xtb');
+    expect(summary.added).toBe(0);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]!.message).toContain('Fiscal Report');
+    expect(summary.errors[0]!.message).toContain('Export (new)');
+    expect(summary.errors[0]!.message).not.toContain('nepoznáváme');
+    // náprava je na uživateli — soubor se neschovává a provozovatel nedostane e-mail
+    expect(summary.unrecognized).toBeFalsy();
+    expect(await db.select().from(failedImports)).toHaveLength(0);
+  });
 });
 
 /**

@@ -10,6 +10,7 @@ export * from './universal/csv';
 export * from './ibkr/xml';
 export * from './ibkr/api';
 export * from './xtb/xlsx';
+export * from './xtb/fiscal-report';
 export * from './degiro/csv';
 export * from './fio/csv';
 export * from './etoro/xlsx';
