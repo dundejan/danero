@@ -382,6 +382,40 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   ji najde, `getByText(/Počítá se z nabývacích cen/)` ne — a spec spadne na
   textu, který na stránce prokazatelně je (11. 10. 2026 dvakrát za den). Ve
   výrazu piš `\s`, nebo hledej řetězcem s `{ exact: false }`.
+- **Co stránka ukazuje podle kódu v adrese, který se hned uklízí, musí držet
+  prohlížeč.** Chyba u pole, otevřený řádek, hláška v toku stránky: adresa se
+  po zobrazení čistí (`ClearFeedbackUrl`) a první obnovení stránky ze serveru
+  (`router.refresh()` po uložení jinde, po Zpět/Vpřed, po doběhlé synchronizaci)
+  přijde už bez kódu. Na stránce Účet tak řádek s chybou zmizel uživateli pod
+  rukama i s rozepsaným heslem — a stejně dopadl řádek otevřený ručně, protože
+  měl `key={crypto.randomUUID()}` z každého vykreslení (12. 10. 2026). Vzor:
+  `lib/action-result.ts` + `nastaveni/ucet/account-forms.tsx`; `defaultOpen`,
+  nikdy řízené `open`, a klíč, který se mění jen s novým výsledkem akce.
+- **Auto-save neposílá odeslání vždy za sebou.** Odchod ze stránky pošle
+  čekající změnu hned, souběžně s tou, která ještě běží, a jinou cestou
+  (`/api/settings/*` místo server action; na Vercelu jiná funkce) — na server
+  můžou dorazit obráceně. Odeslání proto nese pořadí (`SUBMISSION_FIELD`)
+  a řádek nastavení si pamatuje poslední (`save_instance`, `save_sequence`,
+  migrace 0047); podmínka je součást zápisu. Kdo přidá další formulář
+  s `AutoSubmit`, musí jeho ukládání podmínit stejně (`notSuperseded`
+  v `nastaveni/save.ts`), jinak mu opožděné odeslání přepíše novější.
+  A dva další poznatky z téže revize: server odmítá formulář CELÝ, takže
+  odmítnuté pole nesmí zůstat v čekajícím odeslání (`withoutField`), a po
+  ztracené odpovědi stránka neví, co je uložené — nevracej pole na starou
+  hodnotu, zeptej se serveru (`resync` v `ui/auto-submit.tsx`).
+- **Klíč mezipaměti výsledků musí nést všechno, čím se počítá — i to, co
+  nevzniká v profilu.** `lib/engine-cache.ts` stál na `updatedAt` profilu, jenže
+  fixace roku (R-05c) se zapisuje jinam. Dvě otevření reportu s různým
+  nastavením skončila fixací jednoho a čísly druhého, dokud se profil znovu
+  nezměnil (`test/report-pin-race.test.ts`).
+- **`net::ERR_NETWORK_CHANGED` v E2E je stroj, ne aplikace.** Když se pod WSL
+  změní síťové rozhraní (co přesně ho mění, doložené není — rozhraní má několik
+  dočasných adres IPv6), Chromium zahodí rozdělané požadavky i na `localhost`:
+  směrovač Nextu spadne do načtení celého dokumentu, skripty se nenačtou
+  a test čeká na hydrataci do limitu. 12. 10. 2026 tak jednou spadl `nastaveni.spec.ts` („formulář
+  s auto-save ještě neposlouchá“); v trace je šestkrát `Failed to load
+  resource: net::ERR_NETWORK_CHANGED`. Než začneš hledat vadu, otevři
+  `0-trace.trace` z `test-results/…/trace.zip` a tohle v něm hledej.
 
 ## Stav a plán
 
