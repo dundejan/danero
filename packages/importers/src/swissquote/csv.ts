@@ -39,10 +39,10 @@ const FIELDS = {
   unitPrice: { names: ['unit price', 'stuckpreis'], fuzzy: (h) => /^st.{0,2}ckpreis$/.test(h) },
   costs: { names: ['costs', 'kosten'] },
   netAmount: { names: ['net amount', 'nettobetrag'] },
-  // pořadí názvů je důležité: DE „Währung Nettobetrag“ (měna transakce) má
-  // přednost; EN „Currency“ je měna transakce, prosté DE „Währung“ (subúčet) neexistuje v EN
+  // Měna TRANSAKCE ve vlastním sloupci (výpis s 15 sloupci). Třináctisloupcový
+  // výpis ji má v prostém „Currency“ / „Währung“ — viz `PLAIN_CURRENCY`.
   currency: {
-    names: ['wahrung nettobetrag', 'currency'],
+    names: ['net amount currency', 'wahrung nettobetrag'],
     fuzzy: (h) => /^w.{0,2}hrung nettobetrag$/.test(h),
   },
   // hodnoty těchhle dvou sloupců parser nečte — slouží jen k poznání výpisu
@@ -52,6 +52,26 @@ const FIELDS = {
 } as const satisfies Record<string, FieldSpec>;
 
 type Field = keyof typeof FIELDS;
+
+/**
+ * Výpis má čtyři podoby hlavičky (EN i DE, 13 nebo 15 sloupců) a prosté
+ * „Currency“ / „Währung“ v nich znamená dvě různé věci:
+ *
+ *  - ve 13 sloupcích je to měna transakce,
+ *  - v 15 sloupcích měna ÚČTU — měnu částky tam nese „Net Amount currency“ /
+ *    „Währung Nettobetrag“ a částku v měně účtu vlastní sloupec
+ *    (`ACCOUNT_AMOUNT_HEADER`). S měnou účtu by se prodej v USD na účtu v CHF
+ *    uložil v CHF, bez jediné chyby.
+ *
+ * Prosté „Currency“ se proto bere jen tam, kde sloupec s částkou v měně účtu
+ * není. Když ho výpis má a sloupec s měnou částky chybí (přejmenovali ho),
+ * je to chybějící povinný sloupec, ne důvod sáhnout po měně účtu.
+ */
+const PLAIN_CURRENCY: FieldSpec = {
+  names: ['currency', 'wahrung'],
+  fuzzy: (h) => /^w.{0,2}hrung$/.test(h),
+};
+const ACCOUNT_AMOUNT_HEADER = /account currency|des kontos/;
 
 /** Najde sloupec podle přesných názvů (po normalizeHeader), pak fuzzy predikátem. */
 function findColumn(normalizedHeaders: string[], spec: FieldSpec): number {
@@ -96,9 +116,15 @@ const MIN_OWN_FIELDS = 2;
 /** Pozice všech známých sloupců v hlavičce (−1 = chybí). */
 function resolveColumns(headers: string[]): Record<Field, number> {
   const normalizedHeaders = headers.map(normalizeHeader);
-  return Object.fromEntries(
+  const col = Object.fromEntries(
     (Object.keys(FIELDS) as Field[]).map((field) => [field, findColumn(normalizedHeaders, FIELDS[field])]),
   ) as Record<Field, number>;
+  // měna transakce v prostém „Currency“ jen u výpisu se 13 sloupci
+  const hasAccountAmount = normalizedHeaders.some((header) => ACCOUNT_AMOUNT_HEADER.test(header));
+  if (col.currency < 0 && !hasAccountAmount) {
+    col.currency = findColumn(normalizedHeaders, PLAIN_CURRENCY);
+  }
+  return col;
 }
 
 /**
@@ -142,10 +168,13 @@ function toIsoDate(value: string): string | null {
 
 /* ── Klasifikace typu transakce (EN/DE slovník) ──────────────────────────── */
 
+const CAPITAL_GAIN_NOTE = (instrument: string): string =>
+  `„Capital Gain“ ${instrument}: výplata z titulu, kterou Swissquote vede vedle dividendy a bez švýcarské srážky — bývá to výplata z kapitálových rezerv, tedy vrácení části vkladu. Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`;
+
 type SqKind =
   | { kind: 'BUY' }
   | { kind: 'SELL' }
-  | { kind: 'DIVIDEND' }
+  | { kind: 'DIVIDEND'; returnOfCapital?: true }
   | { kind: 'FEE' }
   | { kind: 'INTEREST' }
   | { kind: 'INTEREST_DEBIT' }
@@ -170,15 +199,29 @@ const SKIP_TYPES = new Map<string, string>([
   ['fx debit comp.', 'FX konverze'],
   ['fx-belastung comp.', 'FX konverze'],
   ['tax statement', 'poplatek za daňový výpis se nebere jako výdaj automaticky'],
+  ['fees tax statement', 'poplatek za daňový výpis se nebere jako výdaj automaticky'],
 ]);
 
 /** Typy, které zatím neumíme zaúčtovat automaticky → warning + skip. */
-const WARN_SKIP_TYPES = new Set(['spin off', 'capital gain', 'interne titelumbuchung', 'berichtigung']);
+const WARN_SKIP_TYPES = new Set([
+  'spin off',
+  'interne titelumbuchung',
+  'berichtigung',
+  // EN protějšek „Rückzahlung“ (zrušený fond, splatný dluhopis)
+  'redemption',
+  // pohyby kusů bez peněz: štěpení (pár řádků starý/nový ISIN) a příchozí převod
+  'split',
+  'titeleingang',
+]);
 
 function classify(normalized: string): SqKind {
   if (normalized === 'buy' || normalized === 'kauf') return { kind: 'BUY' };
   if (normalized === 'sell' || normalized === 'verkauf') return { kind: 'SELL' };
   if (normalized === 'dividend' || normalized === 'dividende') return { kind: 'DIVIDEND' };
+  // „Capital Gain“ je výplata z titulu připsaná vedle dividendy (týž den,
+  // bez srážky). Do 13. 10. 2026 se přeskakovala a příjem v dani chyběl.
+  // Typ zůstává anglicky i v německém exportu.
+  if (normalized === 'capital gain') return { kind: 'DIVIDEND', returnOfCapital: true };
   if (
     normalized === 'custody fees' ||
     normalized === 'spesen' ||
@@ -189,7 +232,12 @@ function classify(normalized: string): SqKind {
   }
   // debetní úrok dřív než obecné „zinsen“
   if (normalized === 'zinsen auf belastungen') return { kind: 'INTEREST_DEBIT' };
-  if (normalized === 'interests' || normalized === 'zins' || normalized === 'zinsen') {
+  if (
+    normalized === 'interests' ||
+    normalized === 'zins' ||
+    normalized === 'zinsen' ||
+    normalized === 'zinsen auf einlagen'
+  ) {
     return { kind: 'INTEREST' };
   }
   const skipReason = SKIP_TYPES.get(normalized);
@@ -248,7 +296,11 @@ export function parseSwissquoteCsv(text: string): ImportResult {
 
   if (missingRequired.length > 0 || !looksOwn) {
     const namesOf = (fields: readonly Field[]): string =>
-      fields.map((f) => FIELDS[f].names.join('/')).join(', ');
+      fields
+        .map((f) =>
+          (f === 'currency' ? [...FIELDS[f].names, ...PLAIN_CURRENCY.names] : FIELDS[f].names).join('/'),
+        )
+        .join(', ');
     // chybějící povinný sloupec je konkrétnější zpráva, proto má přednost
     const reason =
       missingRequired.length > 0
@@ -431,8 +483,15 @@ export function parseSwissquoteCsv(text: string): ImportResult {
           gross: toGbp(gross).toString(),
           currency,
           withholdingTax: toGbp(withholding).toString(),
+          ...(classified.returnOfCapital ? { returnOfCapital: true } : {}),
           date,
         });
+        if (classified.returnOfCapital) {
+          result.warnings.push({
+            line,
+            message: CAPITAL_GAIN_NOTE(cellAt('symbol') || cellAt('isin')),
+          });
+        }
         return;
       }
       case 'FEE': {

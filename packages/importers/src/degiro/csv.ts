@@ -365,6 +365,13 @@ interface BookEntry {
  * úplatný převod). Obojí s varováním. Odpis za nulu prodej není a končí
  * chybou: jinak by se celá nabývací cena odečetla jako ztráta.
  */
+/**
+ * Strop na počet zápisů jednoho okamžiku. Párování porovnává každý odpis
+ * s každým připisem; uměle sestavený soubor s tisíci zápisy v jedné minutě by
+ * tím import zdržel na minuty. Skutečný výpis jich má ve stejný okamžik jednotky.
+ */
+const MAX_BOOK_ENTRIES_PER_MOMENT = 40;
+
 function resolveBookEntries(
   entries: BookEntry[],
   result: ImportResult,
@@ -374,7 +381,9 @@ function resolveBookEntries(
   const moments = new Map<string, BookEntry[]>();
   for (const entry of entries) {
     const key = `${entry.date}|${entry.time}`;
-    moments.set(key, [...(moments.get(key) ?? []), entry]);
+    const moment = moments.get(key);
+    if (moment) moment.push(entry);
+    else moments.set(key, [entry]);
   }
 
   const value = (entry: BookEntry): ReturnType<typeof d> => entry.quantity.abs().mul(entry.price);
@@ -387,6 +396,18 @@ function resolveBookEntries(
   const retracted = (result.retracted ??= []);
 
   for (const group of moments.values()) {
+    // viz `MAX_BOOK_ENTRIES_PER_MOMENT`
+    if (group.length > MAX_BOOK_ENTRIES_PER_MOMENT) {
+      for (const entry of group) {
+        result.errors.push({
+          line: entry.line,
+          message: `${entry.product || entry.isin} (${entry.date}): ve stejný okamžik je ve výpisu ${group.length} zápisů korporátních akcí — tolik jich k sobě spolehlivě nepřiřadíme. Doplň akce přes univerzální šablonu.`,
+          raw: entry.raw,
+          knownUnsupported: true,
+        });
+      }
+      continue;
+    }
     const outs = group.filter((entry) => entry.quantity.lt(0));
     const ins = group.filter((entry) => entry.quantity.gt(0));
     const pairs: Array<[BookEntry, BookEntry]> = [];

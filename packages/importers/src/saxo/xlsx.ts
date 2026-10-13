@@ -33,6 +33,27 @@ interface SaxoLanguage {
   months: Record<string, number>;
 }
 
+/**
+ * Alternativní názvy téhož sloupce. Saxo v březnu 2026 přejmenovalo „Amount“
+ * na „Booked Amount“ (a přidalo dva sloupce) — protože `detectLanguage` chce
+ * všechny názvy jazyka, přestal se dnešní export poznávat úplně („XLSX
+ * nepoznáváme“). Doloženo: dickwolff/Export-To-Ghostfolio issue #319
+ * (26. 3. 2026) s doslovnou hlavičkou. Čte je sniffer i parser touž funkcí.
+ * Nový název přidávej SEM; pro DA/NL/DE zatím doložený není.
+ */
+const SAXO_HEADER_ALIASES: Record<string, readonly string[]> = {
+  Amount: ['Booked Amount'],
+};
+
+/** Hlavička hledaná pod svým názvem i pod alternativními (po normalizeHeader). */
+const headerIndex = (normalizedHeaders: string[], header: string): number => {
+  for (const name of [header, ...(SAXO_HEADER_ALIASES[header] ?? [])]) {
+    const index = normalizedHeaders.indexOf(normalizeHeader(name));
+    if (index >= 0) return index;
+  }
+  return -1;
+};
+
 const SAXO_LANGUAGES: readonly SaxoLanguage[] = [
   {
     code: 'en',
@@ -132,6 +153,12 @@ const CASH_TRANSFER_SKIP_EVENTS = new Set(['deposit', 'withdrawal', 'indbetaling
 const TRADE_EVENT_RE = /^(buy|sell|købt|salg|koop|verkoop|kauf|verkauf)\s+([\d.,]+)\s*@\s*([\d.,]+)/i;
 const BUY_VERBS = new Set(['buy', 'købt', 'koop', 'kauf']);
 
+/** Zkratky měsíců všech jazyků slovníku dohromady (významem si nekolidují). */
+const ALL_SAXO_MONTHS: Record<string, number> = Object.assign(
+  {},
+  ...SAXO_LANGUAGES.map((lang) => lang.months),
+);
+
 /**
  * Jazyk podle NÁZVŮ sloupců, ne podle délky hlavičky.
  *
@@ -142,10 +169,10 @@ const BUY_VERBS = new Set(['buy', 'købt', 'koop', 'kauf']);
  * takže stačí, aby všechny názvy daného jazyka v hlavičce byly.
  */
 function detectLanguage(headerCells: string[]): SaxoLanguage | null {
-  const normalized = new Set(headerCells.map(normalizeHeader).filter((h) => h !== ''));
+  const normalized = headerCells.map(normalizeHeader).filter((h) => h !== '');
   return (
     SAXO_LANGUAGES.find((lang) =>
-      lang.headers.every((header) => normalized.has(normalizeHeader(header))),
+      lang.headers.every((header) => headerIndex(normalized, header) >= 0),
     ) ?? null
   );
 }
@@ -191,7 +218,10 @@ function toIsoDate(value: string, months: Record<string, number>): string | null
   if (isoMatch) return isValidIsoDate(isoMatch[1]!) ? isoMatch[1]! : null;
   const match = /^(\d{1,2})-([^\s-]+)-(\d{4})$/.exec(trimmed);
   if (!match) return null;
-  const month = months[normalizeHeader(match[2]!)];
+  // Datum se řídí místním nastavením uživatele, ne jazykem hlavičky: pod
+  // anglickou hlavičkou chodí i „24-mei-2026“. Napřed jazyk hlavičky, pak
+  // měsíce všech jazyků.
+  const month = months[normalizeHeader(match[2]!)] ?? ALL_SAXO_MONTHS[normalizeHeader(match[2]!)];
   if (month === undefined) return null;
   const iso = `${match[3]}-${String(month).padStart(2, '0')}-${match[1]!.padStart(2, '0')}`;
   return isValidIsoDate(iso) ? iso : null;
@@ -240,7 +270,8 @@ export function sniffSaxoXlsxShape(workbook: ExcelJS.Workbook): boolean {
   const [header, ...dataRows] = readSheetRows(sheet);
   if (!header || detectLanguage(header.cells) !== null) return false;
   const columnCount = header.cells.filter((cell) => cell.trim() !== '').length;
-  if (columnCount !== SAXO_LANGUAGES[0]!.headers.length) return false;
+  // dnešní export má sloupců patnáct (od března 2026), starší třináct
+  if (columnCount < SAXO_LANGUAGES[0]!.headers.length) return false;
   const cellAt = (row: { cells: string[] }, index: number): string => (row.cells[index] ?? '').trim();
   return dataRows.some(
     (row) =>
@@ -299,7 +330,7 @@ export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportR
   // mapování sloupců podle NÁZVŮ hlaviček detekovaného jazyka (ne podle pozic)
   const normalizedHeaders = header.cells.map(normalizeHeader);
   const columnOf = (canonicalIndex: number): number =>
-    normalizedHeaders.indexOf(normalizeHeader(lang.headers[canonicalIndex]!));
+    headerIndex(normalizedHeaders, lang.headers[canonicalIndex]!);
   const col = {
     tradeDate: columnOf(1),
     valueDate: columnOf(2),

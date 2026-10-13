@@ -161,7 +161,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#E2001A',
     guide:
-      'eTrading → Portfolio → Transactions → nastav období → šipka u pravého okraje → export CSV. Hlavičku čteme anglicky i německy.',
+      'eTrading → Portfolio → Transactions → nastav období → tlačítko „Export CSV“ vpravo nahoře. Výpis čteme anglicky a německy — jazyk exportu se řídí jazykem zobrazení, takže s francouzským nebo italským rozhraním si ho před stažením přepni (Profile and Settings → Settings).',
   },
   {
     id: 'tastytrade',

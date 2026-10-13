@@ -79,6 +79,8 @@ type OperationKind =
   | 'FEE'
   | 'DEPOSIT'
   | 'WITHDRAWAL'
+  | 'TRANSFER'
+  | 'CFD'
   | 'UNKNOWN';
 
 /** List podle názvu — bez ohledu na diakritiku, velikost písmen a mezery navíc. */
@@ -123,6 +125,18 @@ function findHeader(rows: SheetRow[]): { index: number; columns: ColumnMap } | n
 
 /** Měna účtu z metadat nad tabulkou („Account currency“ / „Měna účtu“). */
 function detectAccountCurrency(preambleRows: SheetRow[]): string | null {
+  // Starý Full report nese měnu ve DVOU řádcích: popisky „Name and surname |
+  // Account | Currency“ a hodnoty pod nimi. Dokud se hledala jen na řádku
+  // s textem „Account currency“, uložil se účet v CZK jako EUR — s varováním,
+  // které tvrdilo, že report měnu neuvádí.
+  for (let r = 0; r + 1 < preambleRows.length; r += 1) {
+    const labels = preambleRows[r]!.cells;
+    for (let i = 0; i < labels.length; i += 1) {
+      if (!/^(currency|mena)$/i.test(stripDiacritics(labels[i]!).trim())) continue;
+      const below = (preambleRows[r + 1]!.cells[i] ?? '').trim();
+      if (/^[A-Z]{3}$/.test(below)) return below;
+    }
+  }
   for (const row of preambleRows) {
     for (let i = 0; i < row.cells.length; i += 1) {
       const cell = row.cells[i]!;
@@ -230,9 +244,13 @@ function toIsoDate(value: string): string | null {
   return iso !== undefined && isValidIsoDate(iso) ? iso : null;
 }
 
+const CFD_MESSAGE = (type: string): string =>
+  `${type}: výsledek pozice CFD (nebo swap k ní). CFD z výpisu XTB zatím sami nezaúčtujeme — zisk i ztrátu z nich si doplň přes univerzální šablonu (derivát, řádky s prefixem CFD:). Akcií a ETF se to netýká.`;
+
 /** Klasifikace operace podle Type (EN/CZ synonyma, case-insensitive, bez diakritiky). */
 function classifyOperation(type: string, comment: string): OperationKind {
-  const t = stripDiacritics(type).toLowerCase();
+  // spojovník jako mezera: starý Full report píše „Free-funds Interest“
+  const t = stripDiacritics(type).toLowerCase().replace(/-/g, ' ');
   // nový report píše „Stock purchase“ / „Stock sell“; variantu pro ETF známe
   // jen analogií (reálný vzorek obsahoval samé akcie)
   if (t.includes('stocks/etf purchase') || t.includes('nakup akcii/etf') || /^(stock|etf) purchase$/.test(t)) {
@@ -249,7 +267,13 @@ function classifyOperation(type: string, comment: string): OperationKind {
   if (t.includes('free funds interest') || t.includes('uroky z volnych prostredku')) {
     return 'INTEREST';
   }
-  if (t.includes('dividend')) return 'DIVIDEND'; // pokrývá i CZ „Dividenda“
+  // „DIVIDENT“ (sic) píše XTB ve starém Full reportu; „dividend“ pokrývá i CZ „Dividenda“
+  if (t.includes('dividend') || t.includes('divident')) return 'DIVIDEND';
+  // výsledek a swap pozice CFD („Profit/Loss (FX/CFD)“, „Swap“), převod mezi
+  // vlastními účty a francouzská daň z finančních transakcí („Tax IFTT“)
+  if (t.includes('profit/loss') || t === 'swap' || t.includes('fx/cfd')) return 'CFD';
+  if (t === 'transfer' || t === 'prevod') return 'TRANSFER';
+  if (t === 'tax iftt') return 'FEE';
   const c = stripDiacritics(comment).toLowerCase();
   if (t.includes('commission') || t.includes('provize') || c.includes('commission') || c.includes('provize')) {
     return 'FEE';
@@ -563,8 +587,30 @@ export async function parseXtbXlsx(
         break;
       }
       case 'INTEREST': {
-        if (!amount || amount.lt(0)) {
-          result.errors.push({ line, message: `${type}: chybí kladná částka úroku.`, raw });
+        if (!amount || amount.isZero()) {
+          result.errors.push({ line, message: `${type}: chybí částka úroku.`, raw });
+          break;
+        }
+        // Záporný řádek je oprava dřív připsaného úroku („Corr Free-funds
+        // Interest 2025-08“). Úrok se o ni NESNIŽUJE: jeho obsah by pak závisel
+        // na tom, jestli export opravu obsahuje, a delší export nahraný později
+        // by tentýž úrok uložil podruhé (dedupe je obsahový). Oprava jde zvlášť
+        // jako poplatek — stejně jako záporný úrok u Degira a IBKR — a úrok
+        // v § 8 zůstane o ni vyšší, což je bezpečný směr.
+        if (amount.lt(0)) {
+          const currency = accountCurrency(line);
+          push(line, raw, {
+            type: 'FEE',
+            id: rowId,
+            amount: amount.abs().toString(),
+            currency,
+            date,
+            note: `Oprava úroku (${comment || type})`,
+          });
+          result.warnings.push({
+            line,
+            message: `${comment || type}: XTB tímhle řádkem vzal zpět ${amount.abs().toString()} ${currency} z dřív připsaného úroku. Úrok o tu částku nesnižujeme (evidujeme ji zvlášť jako poplatek), takže příjem z úroků vychází o ni vyšší — daň tím vyjde nanejvýš o něco vyšší.`,
+          });
           break;
         }
         push(line, raw, {
@@ -629,6 +675,18 @@ export async function parseXtbXlsx(
         });
         break;
       }
+      case 'TRANSFER': {
+        result.skipped.push({
+          line,
+          message: `${type}: převod mezi vlastními účty u XTB — pro výpočet daně není potřeba.`,
+          raw,
+        });
+        break;
+      }
+      case 'CFD': {
+        result.errors.push({ line, message: CFD_MESSAGE(type), raw, knownUnsupported: true });
+        break;
+      }
       case 'UNKNOWN': {
         result.errors.push({
           line,
@@ -639,6 +697,7 @@ export async function parseXtbXlsx(
       }
     }
   }
+
 
   // párování srážek k dividendám (1:1 symbol+den, v pořadí řádků); dividenda
   // i srážka jsou v měně ÚČTU — XTB je připisuje po přepočtu

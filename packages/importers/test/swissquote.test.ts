@@ -336,7 +336,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
           Date: 'date/datum',
           Transaction: 'transaction/transaktionen',
           'Net Amount': 'net amount/nettobetrag',
-          Currency: 'wahrung nettobetrag/currency',
+          Currency: 'net amount currency/wahrung nettobetrag/currency/wahrung',
           Costs: 'costs/kosten',
         },
       ],
@@ -346,7 +346,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
           Datum: 'date/datum',
           Transaktionen: 'transaction/transaktionen',
           Nettobetrag: 'net amount/nettobetrag',
-          'Währung Nettobetrag': 'wahrung nettobetrag/currency',
+          'Währung Nettobetrag': 'net amount currency/wahrung nettobetrag/currency/wahrung',
           Kosten: 'costs/kosten',
         },
       ],
@@ -377,7 +377,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
 
   it('přejmenovaný povinný sloupec: sniffer soubor pustí a parser řekne, který chybí (A09-R1-02)', () => {
     const renamed: Array<[csv: string, missing: string, newName: string]> = [
-      [SWISSQUOTE_EN.replace(';Currency', ';Ccy'), 'wahrung nettobetrag/currency', 'Ccy'],
+      [SWISSQUOTE_EN.replace(';Currency', ';Ccy'), 'net amount currency/wahrung nettobetrag/currency/wahrung', 'Ccy'],
       [
         SWISSQUOTE_EN.replace('Net Amount', 'Net amount (CHF)'),
         'net amount/nettobetrag',
@@ -387,7 +387,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
       [SWISSQUOTE_EN.replace(';Transaction;', ';Type;'), 'transaction/transaktionen', 'Type'],
       [
         SWISSQUOTE_DE.replace(';Währung Nettobetrag;', ';Handelswährung;'),
-        'wahrung nettobetrag/currency',
+        'net amount currency/wahrung nettobetrag/currency/wahrung',
         'Handelswährung',
       ],
     ];
@@ -405,7 +405,7 @@ describe('sniffSwissquoteCsv (autodetekce)', () => {
     // dva povinné sloupce pryč už není přejmenování, ale jiný soubor
     const twoRenamed = SWISSQUOTE_EN.replace(';Currency', ';Ccy').replace('Net Amount', 'Amount');
     expect(sniffSwissquoteCsv(twoRenamed)).toBe(false);
-    expect(headerError(twoRenamed)).toContain('chybí sloupce net amount/nettobetrag, wahrung');
+    expect(headerError(twoRenamed)).toContain('chybí sloupce net amount/nettobetrag, net amount currency');
   });
 
   it('přejmenovaný „Costs“/„Kosten“: parser výpis odmítne, poplatky ani sražená daň se neztratí potichu (A09-R2-01, R-05b, R-07f)', () => {

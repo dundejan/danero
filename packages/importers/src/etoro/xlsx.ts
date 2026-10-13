@@ -590,7 +590,9 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         // Details nese poměr („NVDA/USD 10:1“); kusy otevřené pozice v tomhle
         // listu jsou z doby PŘED štěpením. Jestli jsou kusy v Closed Positions
         // po štěpení přepočtené, doložené není — proto akci neúčtujeme sami.
-        const ratio = /(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(cell('details'));
+        const ratio = /(\d{1,9}(?:\.\d{1,9})?)[ \t\u00a0]{0,3}:[ \t\u00a0]{0,3}(\d{1,9}(?:\.\d{1,9})?)/.exec(
+          cell('details').slice(0, 200),
+        );
         ctx.result.warnings.push({
           line,
           message: ratio
