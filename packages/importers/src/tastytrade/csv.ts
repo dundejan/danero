@@ -39,7 +39,31 @@ const REMOVAL_SUBTYPES = new Map<string, string>([
   ['Cash Settled Exercise', 'Cash settled exercise — zánik opce (uzavření za 0)'],
 ]);
 
-const SPLIT_WARNING = 'výpis neuvádí poměr splitu — doplň korporátní akci přes univerzální šablonu';
+/**
+ * Opce vypořádané v hotovosti (indexové SPX, VIX…). Broker posílá DVA řádky:
+ * „Assignment“ / „Exercise“ bez hodnoty a „Cash Settled Assignment“ /
+ * „Cash Settled Exercise“ s vypořádanou částkou. Dokud se oba zavíraly za 0,
+ * vypořádaná částka zmizela a ze ztráty se stal zisk (doloženo
+ * laroche/tastyworks-pnl, `is_symbol_cash_settled`).
+ */
+const CASH_SETTLED = new Set(['Cash Settled Assignment', 'Cash Settled Exercise']);
+
+/**
+ * Podtyp peněžního pohybu, jak se má zaúčtovat. Starší exporty (éra
+ * tastyworks) zapisovaly dividendu i úrok jako „Deposit“: se symbolem je to
+ * dividenda (záporná = srážka u zdroje), s popisem „INTEREST ON CREDIT
+ * BALANCE“ úrok. Jako peněžní převod by obojí zmizelo mezi přeskočenými.
+ * „Special Dividend“ v Money Movement je mimořádná dividenda v penězích.
+ */
+function moneySubType(norm: { subType: string; symbol: string; description: string; isOption: boolean }): string {
+  if (norm.subType === 'Special Dividend' && !norm.isOption) return 'Dividend';
+  if (norm.subType !== 'Deposit') return norm.subType;
+  if (/interest on credit balance/i.test(norm.description)) return 'Credit Interest';
+  return norm.symbol.trim() !== '' ? 'Dividend' : norm.subType;
+}
+
+const SPLIT_WARNING =
+  'štěpení sami nezaúčtujeme — doplň korporátní akci přes univerzální šablonu (poměr dají kusy odepsané a připsané dvojicí řádků)';
 
 /** Receive Deliver podtypy vědomě přeskočené S varováním. */
 const RD_WARN_SKIP = new Map<string, string>([
@@ -523,10 +547,25 @@ export function parseTastytradeCsv(
     });
   };
 
+  const cashSettledOptions = new Set<string>();
+
   const processReceiveDeliver = (norm: NormalizedRow): void => {
     const { line, raw } = norm;
     const removalNote = REMOVAL_SUBTYPES.get(norm.subType);
     if (removalNote !== undefined) {
+      const cashSettled = CASH_SETTLED.has(norm.subType);
+      // sesterský řádek bez částky — viz `CASH_SETTLED`
+      if (
+        !cashSettled &&
+        norm.optionIsin !== null &&
+        cashSettledOptions.has(`${norm.optionIsin}|${norm.date}`)
+      ) {
+        result.skipped.push({
+          line,
+          message: `${norm.subType} ${norm.symbol}: opce vypořádaná v hotovosti — částku nese sousední řádek „Cash Settled …“, tenhle je jen jeho protějšek bez hodnoty.`,
+        });
+        return;
+      }
       if (!norm.isOption || norm.optionIsin === null) {
         result.warnings.push({
           line,
@@ -554,6 +593,16 @@ export function parseTastytradeCsv(
         return;
       }
       const type = position.gt(0) ? 'SELL' : 'BUY';
+      // vypořádaná částka na kus = |Value| / počet (stejná konvence jako prémie)
+      const settledRaw = cashSettled ? parseTastyNumber(norm.valueRaw) : null;
+      const settlementPrice =
+        settledRaw === null ? d(0) : d(settledRaw).abs().div(quantity).toDecimalPlaces(10);
+      if (cashSettled && settledRaw === null) {
+        result.warnings.push({
+          line,
+          message: `${norm.subType} ${norm.symbol}: řádek nenese vypořádanou částku (Value „${norm.valueRaw}“) — opci zavíráme za 0. Zkontroluj ji podle výpisu a případně uprav přes univerzální šablonu.`,
+        });
+      }
       push(line, raw, {
         type,
         id: nextId(norm.cells),
@@ -562,28 +611,39 @@ export function parseTastytradeCsv(
         assetClass: 'DERIVATIVE',
         settlementStyle: 'PREMIUM',
         quantity: quantity.toString(),
-        pricePerShare: '0',
+        pricePerShare: settlementPrice.toString(),
         currency: norm.currency,
         fee: norm.fee.gt(0) ? { amount: norm.fee.toString(), currency: norm.currency } : undefined,
         tradeDate: norm.date,
-        note: removalNote,
+        note: settlementPrice.gt(0) ? `${norm.subType} — opce vypořádaná v hotovosti` : removalNote,
       });
       trackTrade(norm.optionIsin, type, quantity);
       return;
     }
     const warnSkip = RD_WARN_SKIP.get(norm.subType);
     if (warnSkip !== undefined) {
+      // řádek nese směr i počet kusů — z dvojice jde poměr dopočítat
+      const legQuantity = parseTastyNumber(norm.quantityRaw);
+      const leg =
+        norm.direction !== null && legQuantity !== null
+          ? ` Tenhle řádek ${norm.direction === 'SELL' ? 'odepisuje' : 'připisuje'} ${d(legQuantity).abs().toString()} ks.`
+          : '';
       result.warnings.push({
         line,
-        message: `„${norm.subType}“${norm.symbol ? ` (${norm.symbol})` : ''}: ${warnSkip}. Řádek přeskočen.`,
+        message: `„${norm.subType}“${norm.symbol ? ` (${norm.symbol})` : ''}: ${warnSkip}.${leg} Řádek přeskočen.`,
       });
       return;
     }
     if (RD_SILENT_SKIP.has(norm.subType)) {
-      result.skipped.push({
+      // převod skutečných kusů nesmí zmizet mezi přeskočenými: bez něj nemá
+      // pozdější prodej nabývací cenu ani časový test
+      const moved = parseTastyNumber(norm.quantityRaw);
+      const issue = {
         line,
-        message: `„${norm.subType}“: převod pozic — pro výpočet ho případně doplň jako TRANSFER_IN/OUT přes univerzální šablonu.`,
-      });
+        message: `„${norm.subType}“${norm.symbol ? ` (${norm.symbol})` : ''}: převod pozic mezi účty nebo brokery — sami ho nezaúčtujeme, protože řádek nenese datum ani cenu původního pořízení. Doplň ho přes univerzální šablonu řádkem TRANSFER_IN nebo TRANSFER_OUT, jinak pozdější prodej nebude mít nabývací cenu ani časový test.`,
+      };
+      if (moved !== null && !d(moved).isZero()) result.warnings.push(issue);
+      else result.skipped.push(issue);
       return;
     }
     result.errors.push({
@@ -596,8 +656,9 @@ export function parseTastytradeCsv(
   const processMoneyMovement = (norm: NormalizedRow): void => {
     const { line, raw } = norm;
     const amountRaw = parseTastyNumber(norm.valueRaw);
+    const subType = moneySubType(norm);
 
-    if (norm.subType === 'Dividend') {
+    if (subType === 'Dividend') {
       if (amountRaw === null) {
         result.errors.push({
           line,
@@ -630,7 +691,7 @@ export function parseTastytradeCsv(
       }
       return;
     }
-    if (norm.subType === 'Credit Interest') {
+    if (subType === 'Credit Interest') {
       if (amountRaw === null) {
         result.errors.push({ line, message: 'Credit Interest: chybí částka úroku.', raw });
         return;
@@ -652,14 +713,14 @@ export function parseTastytradeCsv(
       });
       return;
     }
-    if (norm.subType === 'Debit Interest') {
+    if (subType === 'Debit Interest') {
       result.skipped.push({
         line,
         message: '„Debit Interest“: debetní úrok je náklad — do daňového výpočtu ho nezařazujeme.',
       });
       return;
     }
-    if (norm.subType === 'Fee') {
+    if (subType === 'Fee') {
       if (amountRaw === null) {
         result.errors.push({ line, message: 'Fee: chybí částka poplatku.', raw });
         return;
@@ -674,38 +735,58 @@ export function parseTastytradeCsv(
       });
       return;
     }
-    if (MM_SILENT_SKIP.has(norm.subType)) {
+    if (MM_SILENT_SKIP.has(subType)) {
       result.skipped.push({
         line,
-        message: `„${norm.subType}“: peněžní převod — pro daňový výpočet není potřeba.`,
+        message: `„${subType}“: peněžní převod — pro daňový výpočet není potřeba.`,
       });
       return;
     }
-    const warnSkip = MM_WARN_SKIP.get(norm.subType);
+    const warnSkip = MM_WARN_SKIP.get(subType);
     if (warnSkip !== undefined) {
-      result.warnings.push({ line, message: `„${norm.subType}“: ${warnSkip}. Řádek přeskočen.` });
+      result.warnings.push({ line, message: `„${subType}“: ${warnSkip}. Řádek přeskočen.` });
       return;
     }
     result.errors.push({
       line,
-      message: `Neznámý typ pohybu „Money Movement / ${norm.subType}“ — nahlaš nám ho, doplníme podporu.`,
+      message: `Neznámý typ pohybu „Money Movement / ${subType}“ — nahlaš nám ho, doplníme podporu.`,
       raw,
     });
   };
 
   // export je řazený od NEJNOVĚJŠÍHO → iterace odspodu = chronologicky
+  const norms: NormalizedRow[] = [];
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const row = rows[i]!;
     if (row.every((cell) => cell.trim() === '')) continue;
     const line = i + 2; // 1 = hlavička
-    const norm = legacy ? normalizeLegacy(row, line) : normalizeV2(row, line);
+    norms.push(legacy ? normalizeLegacy(row, line) : normalizeV2(row, line));
+  }
+  // opce vypořádané v hotovosti: klíč „opce|den“ řádků, které nesou částku
+  for (const norm of norms) {
+    if (CASH_SETTLED.has(norm.subType) && norm.optionIsin !== null && norm.date !== null) {
+      cashSettledOptions.add(`${norm.optionIsin}|${norm.date}`);
+    }
+  }
 
+  for (const norm of norms) {
+    const { line } = norm;
     if (norm.date === null) {
       result.errors.push({
         line,
         message: `Neplatné datum „${norm.dateRaw}“ (očekáván ${legacy ? 'US formát MM/DD/YYYY s časem' : 'ISO čas, např. 2024-08-16T15:57:13+0200'}).`,
         raw: norm.raw,
       });
+      continue;
+    }
+    // Štěpení, změna symbolu, fúze i převody mají vyplněnou Action a cenu.
+    // Podle směru by z nich vznikl prodej celé pozice a nový nákup — tržba
+    // čerpá limit a nový lot ztrácí časový test. Proto dřív než směr.
+    if (
+      norm.code === 'Receive Deliver' &&
+      (RD_WARN_SKIP.has(norm.subType) || RD_SILENT_SKIP.has(norm.subType) || CASH_SETTLED.has(norm.subType))
+    ) {
+      processReceiveDeliver(norm);
       continue;
     }
     if (norm.direction !== null) {

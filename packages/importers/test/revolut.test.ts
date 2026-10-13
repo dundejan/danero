@@ -409,9 +409,9 @@ describe('Revolut krypto — nový formát (Symbol,Type,Quantity,Price,Value,Fee
   it('Send/Stake → skipped s vysvětlením; Staking reward → warning + skip', () => {
     const result = parseRevolutCryptoCsv(REVOLUT_CRYPTO_NEW_CSV);
 
-    expect(result.skipped.some((s) => s.message.includes('vlastní peněženky'))).toBe(true);
+    expect(result.skipped.some((s) => s.message.includes('vlastní peněženku'))).toBe(true);
     expect(result.skipped.some((s) => s.message.includes('stakingu'))).toBe(true);
-    expect(result.warnings[0]!.message).toContain('odměn');
+    expect(result.warnings.some((w) => w.message.includes('odměn'))).toBe(true);
     // reward řádek se nesmí propsat do transakcí
     expect(result.transactions.some((t) => t.type === 'BUY' && t.isin === 'ETH')).toBe(false);
   });
@@ -601,11 +601,23 @@ describe('lokalizovaná čísla: tisíce vs. desetinná místa (B-3-12)', () => 
   it('bez rozhodujícího čísla se nehádá tiše — varuje', () => {
     const csv = [
       REVOLUT_INVEST_HEADER,
-      '2023-09-22T13:30:10.514Z,MSFT,BUY - MARKET,"1,500",$26,"$39135",USD,1',
+      '2023-09-22T13:30:10.514Z,MSFT,BUY - MARKET,"1,500",$26,,USD,1',
     ].join('\n');
     const result = parseRevolutInvestCsv(csv, { MSFT: { isin: 'US5949181045' } });
     expect(result.errors).toEqual([]);
     expect(result.warnings.map((w) => w.message).join(' ')).toContain('tisíckrát');
+
+    // když částka rozhodne (1,5 × 26 = 39), není co hádat ani o čem varovat
+    const decided = parseRevolutInvestCsv(
+      [
+        REVOLUT_INVEST_HEADER,
+        '2023-09-22T13:30:10.514Z,MSFT,BUY - MARKET,"1,500",$26,"$39",USD,1',
+      ].join('\n'),
+      { MSFT: { isin: 'US5949181045' } },
+    );
+    const [buy] = decided.transactions;
+    expect(buy?.type === 'BUY' && buy.quantity.toString()).toBe('1.5');
+    expect(decided.warnings).toEqual([]);
   });
 
   /**

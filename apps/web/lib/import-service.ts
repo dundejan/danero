@@ -288,6 +288,42 @@ function looksLikeTemplate(columns: string[]): boolean {
 }
 
 /**
+ * Výpis od podporované platformy, jen JINÝ než ten, který čteme — uživatel
+ * má dostat větu, která ho pojmenuje a řekne, co stáhnout místo něj, ne
+ * obecné „formát nepoznáváme“ se seznamem sloupců (u JSON dokonce „v hlavičce
+ * jsme našli: {“). Není to vada parseru, takže se soubor neschovává jako
+ * nepřečtený.
+ *
+ *  - Schwab Equity Awards (akcie od zaměstnavatele): tři tvary exportu — dva
+ *    CSV se sloupcem `FeesAndCommissions` a JSON s polem `Transactions`
+ *    (doloženo dokumentací a zkušebními daty cgt-calc).
+ *  - Revolut, výpis z běžného účtu: první výpis, na který uživatel v aplikaci
+ *    narazí (hlavička `Type,Product,Started Date,Completed Date,…`).
+ */
+function knownOtherStatement(text: string, columns: string[]): string | null {
+  const names = new Set(columns.map((column) => column.trim()));
+  const head = text.trimStart().slice(0, 4_000);
+  const equityAwards =
+    names.has('FeesAndCommissions') ||
+    (head.startsWith('{') && head.includes('"Transactions"') && head.includes('"FeesAndCommissions"'));
+  if (equityAwards) {
+    return (
+      'Tohle je výpis z účtu Schwab Equity Awards (akcie od zaměstnavatele — RSU, ESPP), ten zatím nečteme. ' +
+      'Nahraj export transakcí z investičního (brokerage) účtu: Accounts → History → Export. ' +
+      'Přidělené akcie v něm jsou jen jako „Stock Plan Activity“ bez ceny — doplň je přes univerzální šablonu.'
+    );
+  }
+  if (names.has('Started Date') && names.has('Completed Date') && names.has('Product')) {
+    return (
+      'Tohle je výpis z běžného účtu Revolut (platby a spoření), ne z investic. Pro akcie stáhni v aplikaci ' +
+      'Stocks → Documents → Account statement, pro krypto Crypto → Documents → Account statement. ' +
+      'Úroky ze spoření doplň přes univerzální šablonu.'
+    );
+  }
+  return null;
+}
+
+/**
  * Poslední krok autodetekce: univerzální šablona, nebo poctivé „nepoznáváme“.
  *
  * Šablona bývala fallback pro VŠECHNO, co neprošlo sniffery, takže každý
@@ -326,6 +362,11 @@ function universalOrUnknown(text: string): ParsedFile {
   // jednotlivý sloupec — detail v `looksLikeTemplate`.
   if (looksLikeTemplate(columns)) {
     return { outcome: parseUniversalCsv(text), unmapped: [], unrecognized: false };
+  }
+
+  const otherStatement = knownOtherStatement(text, columns);
+  if (otherStatement !== null) {
+    return { outcome: unknownFormat(otherStatement), unmapped: [], unrecognized: false };
   }
 
   // binární smetí (přejmenovaný .xls, obrázek) se do hlášky nesmí obtisknout
@@ -907,6 +948,32 @@ async function applyBrokerCorrections(
   };
 
   for (const { tx, key } of superseded) {
+    const sameEvent = and(
+      eq(transactions.userId, userId),
+      eq(transactions.broker, broker),
+      eq(transactions.type, tx.type),
+      sql`${brokerId} = ${tx.id}`,
+    );
+    // Účet synchronizovaný před 13. 10. 2026 může tutéž událost držet dvakrát
+    // (originál a opravenou kopii vedle sebe — přesně ta vada, kterou tohle
+    // řeší). Přepis by oběma řádkům dal týž klíč a spadl na primárním klíči,
+    // takže se nadbytečné kopie napřed odstraní a přepíše se jediná.
+    const copies = await db
+      .select({ dedupeKey: transactions.dedupeKey })
+      .from(transactions)
+      .where(sameEvent)
+      .orderBy(transactions.dedupeKey);
+    const extraKeys = copies.slice(1).map((row) => row.dedupeKey);
+    if (extraKeys.length > 0) {
+      await db
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), inArray(transactions.dedupeKey, extraKeys)));
+      for (const extra of extraKeys) {
+        state.keys.delete(extra);
+        state.bareDividends.delete(extra);
+      }
+      outcome.retracted += extraKeys.length;
+    }
     const updated = await db
       .update(transactions)
       .set({

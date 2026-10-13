@@ -122,6 +122,9 @@ type CryptoKind =
   | { kind: 'WARN_SKIP'; reason: string }
   | { kind: 'UNKNOWN' };
 
+const RECEIVE_NOTE =
+  'přijaté mince (převod z jiné peněženky nebo burzy) — sami je nezaúčtujeme, protože řádek nenese datum ani cenu, za kterou jsi je pořídil. Bez nich bude mít pozdější prodej nulovou nabývací cenu a žádný časový test: doplň je přes univerzální šablonu řádkem TRANSFER_IN s původním datem a cenou.';
+
 /** Klasifikace řádku nového formátu podle sloupce Type. */
 function classifyCryptoType(type: string): CryptoKind {
   switch (type.toLowerCase()) {
@@ -132,11 +135,16 @@ function classifyCryptoType(type: string): CryptoKind {
     case 'payment':
       return { kind: 'SELL', note: 'platba kryptem = úplatný převod (zdanitelný)' };
     case 'send':
-    case 'receive':
       return {
         kind: 'SKIP',
         reason:
-          'převod na/z vlastní peněženky — bez daňové události; pokud šlo o dar či platbu, doplň přes univerzální šablonu',
+          'převod na vlastní peněženku — bez daňové události; pokud šlo o dar či platbu, doplň přes univerzální šablonu',
+      };
+    case 'receive':
+      // varování, ne tichý skip: přeskočené řádky uživatel vidí jen počtem
+      return {
+        kind: 'WARN_SKIP',
+        reason: RECEIVE_NOTE,
       };
     case 'stake':
     case 'unstake':

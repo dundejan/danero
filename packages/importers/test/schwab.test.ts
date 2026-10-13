@@ -44,8 +44,9 @@ describe('sniffSchwabCsv (autodetekce)', () => {
     expect(sniffSchwabCsv(SCHWAB_REORDERED)).toBe(true);
   });
 
-  it('odmítne bankovní CSV, prázdný text a cizí formáty', () => {
-    expect(sniffSchwabCsv(SCHWAB_BANK)).toBe(false);
+  it('bankovní CSV pustí k parseru (ten řekne, který výpis nahrát); prázdný text a cizí formáty odmítne', () => {
+    expect(sniffSchwabCsv(SCHWAB_BANK)).toBe(true);
+    expect(parseSchwabCsv(SCHWAB_BANK).errors[0]!.message).toContain('bankovního');
     expect(sniffSchwabCsv('')).toBe(false);
     expect(sniffSchwabCsv(UNIVERSAL_TEMPLATE_CSV)).toBe(false);
     expect(sniffSchwabCsv('Datum;Typ;Částka\n1;2;3')).toBe(false);

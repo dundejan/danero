@@ -53,6 +53,7 @@ export function sniffRevolutInvestCsv(text: string): boolean {
 type InvestKind =
   | { kind: 'BUY' | 'SELL' }
   | { kind: 'DIVIDEND' }
+  | { kind: 'DIVIDEND_TAX_CORRECTION' }
   | { kind: 'FEE' }
   | { kind: 'SPLIT' }
   | { kind: 'SKIP'; reason: string }
@@ -65,6 +66,7 @@ function classifyInvestType(type: string): InvestKind {
   if (/^BUY - \S/.test(type)) return { kind: 'BUY' };
   if (/^SELL - \S/.test(type)) return { kind: 'SELL' };
   if (type === 'DIVIDEND') return { kind: 'DIVIDEND' };
+  if (type === 'DIVIDEND TAX (CORRECTION)') return { kind: 'DIVIDEND_TAX_CORRECTION' };
   if (type === 'CASH TOP-UP')
     return { kind: 'SKIP', reason: 'vklad hotovosti — pohyb peněz mimo daňový výpočet CP' };
   if (type === 'CASH WITHDRAWAL')
@@ -107,6 +109,12 @@ export function parseRevolutInvestTable(
   const money = (value: string): ReturnType<typeof parseRevolutMoney> =>
     parseRevolutMoney(value, decimal);
   const map = new HeaderMap(headers);
+  // desetinný oddělovač sloupce Quantity zvlášť (viz čtení počtu kusů níž)
+  const quantityDecimal = detectRevolutDecimal(rows.map((row) => [map.get(row, 'Quantity')]));
+  const taxCorrections = new Map<
+    string,
+    { line: number; ticker: string; date: string; currency: string; net: ReturnType<typeof d> }
+  >();
   const missing = REQUIRED_HEADERS.filter((name) => !map.has(name));
   if (missing.length > 0) {
     result.errors.push({
@@ -206,15 +214,35 @@ export function parseRevolutInvestTable(
           });
           return;
         }
-        const quantityMoney = money(map.get(row, 'Quantity'));
-        const quantity = quantityMoney ? d(quantityMoney.amount) : null;
-        if (decimal === null && quantity !== null) {
-          const note = revolutAmbiguityNote(
-            'Počet kusů',
-            map.get(row, 'Quantity'),
-            quantity.toString(),
-          );
-          if (note !== null) result.warnings.push({ line, message: note });
+        const quantityRaw = map.get(row, 'Quantity');
+        // Počet kusů má vlastní lokalizaci: export z 9/2025 ho píše s desetinnou
+        // čárkou („0,76672417“), ceny na témže řádku s tečkou — hlasování přes
+        // celý soubor by čárku přehlasovalo a „1,125“ kusu uložilo jako 1 125.
+        // Rozhoduje sloupec Quantity; když důkaz nedá, zkusí se, které čtení
+        // sedí na Total Amount, a teprve pak se varuje.
+        const quantityMoney = parseRevolutMoney(quantityRaw, quantityDecimal ?? decimal);
+        let quantity = quantityMoney ? d(quantityMoney.amount) : null;
+        const ambiguous =
+          quantity !== null && revolutAmbiguityNote('Počet kusů', quantityRaw, quantity.toString()) !== null;
+        if (ambiguous && quantity !== null && quantityDecimal === null) {
+          const unitPrice = money(map.get(row, 'Price per share'));
+          const total = money(map.get(row, 'Total Amount'));
+          const asDecimal = parseRevolutMoney(quantityRaw, quantityRaw.includes(',') ? ',' : null);
+          const asThousands = parseRevolutMoney(quantityRaw, quantityRaw.includes(',') ? '.' : ',');
+          const fits = (candidate: ReturnType<typeof parseRevolutMoney>): boolean => {
+            if (!candidate || !unitPrice || !total) return false;
+            const expected = d(total.amount).abs();
+            return (
+              expected.gt(0) &&
+              d(candidate.amount).mul(d(unitPrice.amount).abs()).minus(expected).abs().lte(expected.mul('0.02'))
+            );
+          };
+          if (fits(asDecimal) !== fits(asThousands)) {
+            quantity = d((fits(asDecimal) ? asDecimal : asThousands)!.amount);
+          } else {
+            const note = revolutAmbiguityNote('Počet kusů', quantityRaw, quantity.toString());
+            if (note !== null) result.warnings.push({ line, message: note });
+          }
         }
         if (!quantity || quantity.lte(0)) {
           result.errors.push({
@@ -253,6 +281,22 @@ export function parseRevolutInvestTable(
           currency,
           tradeDate: isoDate, // datum vypořádání výpis neobsahuje — dopočte engine
         });
+        return;
+      }
+      case 'DIVIDEND_TAX_CORRECTION': {
+        const correction = money(map.get(row, 'Total Amount'));
+        if (!correction) {
+          result.errors.push({
+            line,
+            message: `${type} ${ticker}: chybí částka (Total Amount „${map.get(row, 'Total Amount')}“).`,
+            raw,
+          });
+          return;
+        }
+        const key = `${ticker}|${isoDate}|${currency}`;
+        const entry = taxCorrections.get(key) ?? { line, ticker, date: isoDate, currency, net: d(0) };
+        entry.net = entry.net.plus(correction.amount);
+        taxCorrections.set(key, entry);
         return;
       }
       case 'DIVIDEND': {
@@ -344,6 +388,26 @@ export function parseRevolutInvestTable(
     }
   });
   yearBoundary.flush();
+
+  // „DIVIDEND TAX (CORRECTION)“: opravy chodí většinou v páru, který se vyruší
+  // (dřív dvě zbytečné chyby „neznámý typ“). Co po sečtení zbude, je daň
+  // sražená nebo vrácená dodatečně. Dividendy Revolut vyplácí už PO srážce
+  // a brutto z výpisu neznáme, takže ji k dividendě sami nepřičítáme — řekneme
+  // o ní, ať zápočet nezapadne.
+  for (const correction of taxCorrections.values()) {
+    if (correction.net.isZero()) {
+      result.skipped.push({
+        line: correction.line,
+        message: `Opravy daně z dividendy ${correction.ticker} z ${correction.date} se navzájem ruší — nic k zaúčtování.`,
+      });
+      continue;
+    }
+    const withheld = correction.net.lt(0);
+    result.warnings.push({
+      line: correction.line,
+      message: `Oprava daně z dividendy ${correction.ticker} z ${correction.date}: Revolut dodatečně ${withheld ? 'strhl' : 'vrátil'} ${correction.net.abs().toString()} ${correction.currency}. Do výpočtu ji sami nezařazujeme — ${withheld ? 'chceš-li tu daň započíst, doplň' : 'zápočet daně u té dividendy tím klesá; uprav'} dividendu přes univerzální šablonu (brutto a sražená daň).`,
+    });
+  }
 
   result.unmappedSymbols = [...unmapped];
   return result;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseIbkrFlexXml } from '@danero/importers';
 import { d } from '@danero/shared';
 import { createPgliteDb, type Db } from '@/db';
-import { user } from '@/db/schema';
+import { transactions, user } from '@/db/schema';
 import { importParsed } from '@/lib/import-service';
 import { loadTransactions } from '@/lib/portfolio';
 
@@ -203,6 +203,36 @@ describe('IBKR: zpětná oprava u napojeného účtu nesmí událost zdvojit', (
       const { undoImportBatch } = await import('@/lib/import-undo');
       await undoImportBatch(db, 'u1', corrected.batchId);
       expect((await storedGross(db, 'US7561091049')).count).toBe(1);
+    },
+  );
+
+  it(
+    'účet, který má tutéž dividendu z dřívějška uloženou dvakrát, se opravou srovná na jednu',
+    { timeout: 30_000 },
+    async () => {
+      const db = await freshDb();
+      await syncStatement(db, '2026-03-06', dividendStatement(DIVIDEND + withholding('-7.5', '940000002')));
+      // stav před opravou importu: přepočtená kopie téže události vedle původní
+      const [stored] = await db.select().from(transactions);
+      await db.insert(transactions).values({
+        ...stored!,
+        dedupeKey: `${stored!.dedupeKey}-kopie`,
+        payload: { ...(stored!.payload as Record<string, unknown>), withholdingTax: '15' },
+      });
+      expect((await storedGross(db, 'US7561091049')).count).toBe(2);
+
+      await syncStatement(
+        db,
+        '2026-09-19',
+        dividendStatement(
+          DIVIDEND +
+            withholding('-7.5', '940000002') +
+            withholding('7.5', '940000101') +
+            withholding('-2.5', '940000102'),
+        ),
+      );
+      expect(await storedGross(db, 'US7561091049')).toEqual({ count: 1, gross: '50' });
+      expect(await storedWithholding(db)).toEqual(['2.5']);
     },
   );
 

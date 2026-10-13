@@ -27,6 +27,7 @@ describe('R-04 korporátní akce', () => {
   it('R-04a + R-04e: reverse split s novým ISIN přesune přepočtený lot pod nový ISIN a test běží dál', () => {
     const txs = [
       buy({ isin: 'CZ0000000001', quantity: '600', pricePerShare: '20', tradeDate: '2022-05-10', settlementDate: '2022-05-10' }),
+      buy({ isin: 'CZ0000000001', quantity: '200', pricePerShare: '30', tradeDate: '2023-01-10', settlementDate: '2023-01-10' }),
       corpAction({
         subtype: 'SPLIT',
         isin: 'CZ0000000001',
@@ -42,6 +43,11 @@ describe('R-04 korporátní akce', () => {
     expect(lot.remaining.toString()).toBe('30');
     expect(lot.costPerShare.toString()).toBe('400');
     expect(lot.acquisitionDate).toBe('2022-05-10');
+    // přesun nesmí přeskočit další loty téhož titulu (iteruje se přes kopii zásoby)
+    expect(ledger.lots.map((l) => `${l.isin}:${l.remaining.toString()}`)).toEqual([
+      'CZ0000000099:30',
+      'CZ0000000099:10',
+    ]);
 
     // prodej pod novým ISIN po 3 letech od původního nabytí je osvobozený a nic nechybí
     const result = run([

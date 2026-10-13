@@ -196,6 +196,20 @@ const TAX_MATCH_MAX_DAYS = 5;
 const dayDistance = (a: string, b: string): number =>
   Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
+/** Dluhopis ze Schwabu nemá symbol, ale devítimístný CUSIP („91282CJL6“). */
+const CUSIP_RE = /^[0-9A-Z]{9}$/;
+
+/**
+ * Sloupec s číslem šeku — poznávací znamení výpisu z BANKOVNÍHO účtu Schwab
+ * (dnes „CheckNumber“, dřív „Check #“). Parser pro něj má hotovou větu „nahraj
+ * export z investičního účtu“, jenže sniffer ho k parseru nepustil a uživatel
+ * četl obecné „formát nepoznáváme“.
+ */
+const SCHWAB_BANK_COLUMNS = ['Check #', 'CheckNumber'];
+const isSchwabBankHeader = (cells: string[]): boolean =>
+  cells.some((cell) => SCHWAB_BANK_COLUMNS.includes(cell)) &&
+  cells.some((cell) => /^(Withdrawal|Deposit|RunningBalance)/.test(cell));
+
 /**
  * Autodetekce Schwab exportu: v prvních třech řádcích je řádek obsahující
  * „Action“ i „Fees & Comm“ (starší exporty mají před hlavičkou titulní řádek).
@@ -204,7 +218,11 @@ const dayDistance = (a: string, b: string): number =>
 export function sniffSchwabCsv(text: string): boolean {
   if (text.trim() === '') return false;
   const lines = text.split(/\r?\n/).slice(0, 3);
-  return lines.some((line) => line.includes('Action') && line.includes('Fees & Comm'));
+  return lines.some(
+    (line) =>
+      (line.includes('Action') && line.includes('Fees & Comm')) ||
+      isSchwabBankHeader(parseCsv(line).headers.map((cell) => cell.trim())),
+  );
 }
 
 /**
@@ -238,7 +256,7 @@ export function parseSchwabCsv(
   if (headerIndex === -1) {
     const looksLikeBank = allRows
       .slice(0, 3)
-      .some((row) => row.map((cell) => cell.trim()).includes('Check #'));
+      .some((row) => isSchwabBankHeader(row.map((cell) => cell.trim())));
     result.errors.push({
       line: 1,
       message: looksLikeBank
@@ -483,6 +501,29 @@ export function parseSchwabCsv(
         });
         continue;
       }
+      // Dluhopis: Quantity je jmenovitá hodnota a Price cena za 100 USD nominálu.
+      // Jako akcie by nákup za 20 tisíc vyšel na dva miliony. Čtení se ověřuje
+      // proti částce obchodu (liší se o naběhlý úrok, ne o dva řády).
+      let unitPrice = priceRaw;
+      const isBond = CUSIP_RE.test(symbol) && /\d/.test(symbol);
+      if (isBond) {
+        const amountRaw = parseSchwabNumber(map.get(row, 'Amount'));
+        const cash = amountRaw === null ? null : d(amountRaw).abs();
+        const perHundred = quantity.mul(priceRaw).div(100);
+        const near = (value: ReturnType<typeof d>): boolean =>
+          cash !== null && cash.gt(0) && value.minus(cash).abs().lte(cash.mul('0.1'));
+        if (near(perHundred)) {
+          unitPrice = d(priceRaw).div(100).toString();
+        } else if (!near(quantity.mul(priceRaw))) {
+          result.errors.push({
+            line,
+            message: `${action} ${symbol}: vypadá jako dluhopis (symbol je CUSIP) a cena ve výpisu se udává za 100 USD jmenovité hodnoty — částka obchodu ale nesedí ani na jedno čtení, takže ho sami nezaúčtujeme. Doplň ho přes univerzální šablonu.`,
+            raw,
+            knownUnsupported: true,
+          });
+          continue;
+        }
+      }
       const isin = requireIsin(symbol, line);
       if (isin === null) continue; // error per symbol už je nahlášený
       push(line, raw, {
@@ -491,8 +532,9 @@ export function parseSchwabCsv(
         isin,
         ticker: symbol,
         name: description || undefined,
+        ...(isBond ? { assetClass: 'BOND' } : {}),
         quantity: quantity.toString(),
-        pricePerShare: priceRaw,
+        pricePerShare: unitPrice,
         currency: USD,
         fee: feeOf(row),
         tradeDate: date,
