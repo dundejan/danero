@@ -630,6 +630,9 @@ export function buildLedger(
           lot.quantity = lot.quantity.mul(factor);
           lot.remaining = lot.remaining.mul(factor);
           lot.costPerShare = lot.costPerShare.div(factor);
+          // Split, se kterým titul dostal nový ISIN (u reverse splitu v USA
+          // pravidlo): lot pokračuje pod novým ISIN (R-04a + R-04e), test běží dál.
+          if (tx.newIsin && tx.newIsin !== tx.isin) moveLotToIsin(lot, tx.newIsin);
         }
         break;
       }

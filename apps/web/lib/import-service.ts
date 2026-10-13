@@ -1,4 +1,5 @@
 import {
+  brokerCorrectsEvents,
   brokerIdKey,
   dedupeTransactions,
   decodeUpload,
@@ -65,11 +66,12 @@ import {
   sniffXtbXlsx,
   type ImportResult,
   type KeyPromotion,
+  type RetractedEvent,
   type RowIssue,
   type WorkbookOutline,
 } from '@danero/importers';
 import type { Transaction } from '@danero/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { czDate, plural, qty } from '@/lib/format';
@@ -611,7 +613,9 @@ export async function loadImportState(db: Db, userId: string): Promise<ImportSta
   return {
     keys: new Set(rows.map((row) => row.key)),
     brokerIds: new Set(
-      rows.filter((row) => row.id !== null).map((row) => brokerIdKey(row.broker, row.id!)),
+      rows
+        .filter((row) => row.id !== null)
+        .map((row) => brokerIdKey(row.broker, { type: row.type, id: row.id! })),
     ),
     bareDividends: new Map(
       rows
@@ -696,15 +700,20 @@ function crossBrokerMatches(
  * Uživatel se to ale musí dozvědět: čísla se liší a my si necháváme ta dřív
  * uložená.
  */
-const restatedWarnings = (restated: Transaction[]): RowIssue[] =>
+const restatedWarnings = (restated: Transaction[], broker: string): RowIssue[] =>
   restated.map((tx) => ({
     line: 1,
     message:
       `Událost „${tx.id}“ už máš uloženou z dřívějšího výpisu, jen s jinými čísly — ` +
       'necháváme tu původní a tuhle neukládáme (jinak by ses o ni v přehledu počítal dvakrát). ' +
-      'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
-      'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, vrať starší import zpět ' +
-      'tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu.',
+      (brokerCorrectsEvents(broker)
+        ? 'Tenhle broker záznamy zpětně opravuje (třeba přeúčtuje sraženou daň) a z ručně nahraného ' +
+          'souboru nepoznáme, která verze je novější. Je-li novější tenhle výpis, vrať starší import ' +
+          'zpět tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu; ' +
+          'u napojeného účtu se oprava propíše sama při další synchronizaci.'
+        : 'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
+          'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, vrať starší import zpět ' +
+          'tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu.'),
   }));
 
 /**
@@ -818,6 +827,117 @@ async function promoteStoredDividends(
   }
 }
 
+const CORRECTED_ROW_LABELS: Partial<Record<Transaction['type'], string>> = {
+  BUY: 'Nákup',
+  SELL: 'Prodej',
+  DIVIDEND: 'Dividenda',
+  INTEREST: 'Úrok',
+  CORPORATE_ACTION: 'Korporátní akce',
+};
+
+const correctedRowLabel = (row: { type: string; txDate: string; isin: string | null; ticker: string | null }): string =>
+  `${CORRECTED_ROW_LABELS[row.type as Transaction['type']] ?? 'Transakce'} ${row.ticker ?? row.isin ?? ''} z ${czDate(row.txDate)}`.replace(
+    /\s+/g,
+    ' ',
+  );
+
+/**
+ * Promítne do uložených řádků to, co broker zpětně opravil nebo zrušil — jen
+ * u brokerů, jejichž id je per záznam (dnes IBKR, viz `SUPERSEDING_ID_BROKERS`
+ * v dedupe).
+ *
+ * Napojený účet stahuje každý den výpis za posledních 365 dní. Dividenda,
+ * které broker po měsících přeúčtoval srážkovou daň, se v něm objeví s jinými
+ * čísly a obsahový dedupe ji uložil VEDLE té původní; obchod stornovaný až po
+ * první synchronizaci zůstal v databázi napořád, protože parser vyřazuje
+ * originál jen z téhož výpisu.
+ *
+ * Opravený řádek (`superseded`) se PŘEPISUJE na místě jedním UPDATE: zůstane
+ * ve své původní dávce, takže vrácení novějšího importu ho nesmaže, a mezi
+ * starou a novou verzí není okamžik, kdy by neexistovala žádná. Zrušený
+ * (`retracted`) se maže. Hledá se podle id od brokera A typu — čísla obchodů
+ * a hotovostních pohybů jsou u IBKR různé řady.
+ */
+async function applyBrokerCorrections(
+  db: Db,
+  userId: string,
+  broker: string,
+  superseded: Array<{ tx: Transaction; key: string }>,
+  retracted: RetractedEvent[],
+  state: ImportState,
+): Promise<{ warnings: RowIssue[]; replaced: number; retracted: number }> {
+  const outcome = { warnings: [] as RowIssue[], replaced: 0, retracted: 0 };
+  const brokerId = sql<string>`${transactions.payload} ->> 'id'`;
+  const described = {
+    type: transactions.type,
+    txDate: transactions.txDate,
+    isin: transactions.isin,
+    ticker: sql<string | null>`${transactions.payload} ->> 'ticker'`,
+  };
+
+  for (const { tx, key } of superseded) {
+    const updated = await db
+      .update(transactions)
+      .set({
+        dedupeKey: key,
+        txDate: txDate(tx),
+        isin: 'isin' in tx ? (tx.isin ?? null) : null,
+        payload: JSON.parse(JSON.stringify(tx)) as unknown,
+      })
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.broker, broker),
+          eq(transactions.type, tx.type),
+          sql`${brokerId} = ${tx.id}`,
+          // cílový klíč mezitím vložil souběžný import → přepis by spadl na PK
+          sql`not exists (select 1 from ${transactions} as taken where taken.user_id = ${userId} and taken.dedupe_key = ${key})`,
+        ),
+      )
+      .returning(described);
+    // starý klíč ve sdíleném stavu zůstane do konce běhu; vadí jen tomu, kdo by
+    // v témže běhu přinesl přesně původní čísla — a ta by byla zase stará
+    for (const row of updated) {
+      state.keys.add(key);
+      outcome.replaced += 1;
+      outcome.warnings.push({
+        line: 1,
+        message: `${correctedRowLabel(row)}: broker tenhle záznam zpětně opravil, takže jsme uloženou verzi přepsali čísly z dnešního výpisu.`,
+      });
+    }
+  }
+
+  // Výpis jmenuje zrušené události každý den znovu; ptát se databáze má smysl
+  // jen na ty, které podle stavu uložené opravdu jsou.
+  const stored = retracted.filter((event) =>
+    event.types.some((type) => state.brokerIds.has(brokerIdKey(broker, { type, id: event.id }))),
+  );
+  for (const event of stored) {
+    const removed = await db
+      .delete(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.broker, broker),
+          inArray(transactions.type, event.types),
+          sql`${brokerId} = ${event.id}`,
+        ),
+      )
+      .returning({ ...described, dedupeKey: transactions.dedupeKey });
+    for (const row of removed) {
+      state.keys.delete(row.dedupeKey);
+      state.bareDividends.delete(row.dedupeKey);
+      state.brokerIds.delete(brokerIdKey(broker, { type: row.type, id: event.id }));
+      outcome.retracted += 1;
+      outcome.warnings.push({
+        line: 1,
+        message: `${correctedRowLabel(row)}: broker tenhle záznam zrušil, takže jsme ho z dřívějšího importu odstranili.`,
+      });
+    }
+  }
+  return outcome;
+}
+
 /**
  * Uložení už naparsovaného výsledku (sdílí ruční upload i API sync).
  * `existing` (volitelné) ušetří opakovaný select při dávkových importech —
@@ -829,15 +949,21 @@ export async function importParsed(
   filename: string,
   parsed: ImportResult,
   existing?: ImportState,
-  extras: { unmapped?: UnmappedSymbol[]; unrecognized?: boolean } = {},
+  extras: {
+    unmapped?: UnmappedSymbol[];
+    unrecognized?: boolean;
+    /** Výpis je stažený teď od brokera, tedy novější než uložená data (viz `DedupeOptions`). */
+    newerThanStored?: boolean;
+  } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
-  const { fresh, duplicates, restated, promoted, ambiguous, untaxed } = dedupeTransactions(
+  const { fresh, duplicates, restated, superseded, promoted, ambiguous, untaxed } = dedupeTransactions(
     parsed.broker,
     parsed.transactions,
     state.keys,
     state.brokerIds,
     state.bareDividends,
+    { newerThanStored: extras.newerThanStored === true },
   );
   const unmapped = extras.unmapped ?? [];
   // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak
@@ -848,9 +974,21 @@ export async function importParsed(
   const unrecognized =
     extras.unrecognized ?? (producedNothing(parsed) && unmapped.length === 0);
   const crossBroker = crossBrokerMatches(parsed.broker, fresh, state.keys);
+  // před zápisem dávky: počet varování v ní má být úplný
+  const outdated = await applyBrokerCorrections(
+    db,
+    userId,
+    parsed.broker,
+    superseded,
+    (parsed.retracted ?? []).filter(
+      (event) => !event.onlyFromNewerStatement || extras.newerThanStored === true,
+    ),
+    state,
+  );
   const warnings = [
     ...parsed.warnings,
-    ...restatedWarnings(restated),
+    ...outdated.warnings,
+    ...restatedWarnings(restated, parsed.broker),
     ...ambiguousDividendWarnings(ambiguous),
     ...untaxedDividendWarnings(untaxed),
   ];
@@ -921,7 +1059,7 @@ export async function importParsed(
           part.map(({ tx, key }) => {
             storedKeys.push({
               key,
-              brokerId: brokerIdKey(parsed.broker, tx.id),
+              brokerId: brokerIdKey(parsed.broker, tx),
               ...(tx.type === 'DIVIDEND' && !tx.isin ? { bareTicker: tx.ticker ?? null } : {}),
             });
             return {
@@ -984,11 +1122,15 @@ export async function importParsed(
   // přepis už uložených řádků (doplněný ISIN dividendy) musí být dohledatelný
   const promotedNote =
     promoted.length > 0 ? `, ISIN doplněn u uložených dividend: ${promoted.length}` : '';
+  const outdatedNote =
+    outdated.replaced + outdated.retracted > 0
+      ? `, opraveno brokerem: ${outdated.replaced}, zrušeno brokerem: ${outdated.retracted}`
+      : '';
   await logAudit(
     db,
     userId,
     'IMPORT',
-    `${filename} (${parsed.broker}): ${actuallyAdded} nových${promotedNote}`,
+    `${filename} (${parsed.broker}): ${actuallyAdded} nových${promotedNote}${outdatedNote}`,
   );
 
   return {

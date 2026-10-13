@@ -240,7 +240,7 @@ describe('IBKR Flex XML parser', () => {
     expect(a!.id).toBe(b!.id);
   });
 
-  it('storno (Ca.) odstraní i původní exekuci; bez dohledatelného originálu je z něj error', () => {
+  it('storno (Ca.) odstraní i původní exekuci; storno obchodu mimo výpis se ohlásí a předá importu', () => {
     const cancelled = wrapStatement(`<Trades>
       <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2001" tradeDate="20260401" buySell="BUY" quantity="10" tradePrice="200" levelOfDetail="EXECUTION" />
       <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2002" origTradeID="2001" tradeDate="20260402" buySell="BUY (Ca.)" quantity="-10" tradePrice="200" levelOfDetail="EXECUTION" />
@@ -255,8 +255,14 @@ describe('IBKR Flex XML parser', () => {
     const orphanCancel = wrapStatement(`<Trades>
       <Trade assetCategory="STK" symbol="AAPL" isin="US0378331005" currency="USD" tradeID="2002" origTradeID="1999" tradeDate="20260402" buySell="BUY (Ca.)" quantity="-10" tradePrice="200" levelOfDetail="EXECUTION" />
     </Trades>`);
+    // Originál mimo období výpisu: storno se neúčtuje a import podle
+    // `retracted` odstraní obchod uložený z dřívější synchronizace.
     const orphan = parseIbkrFlexXml(orphanCancel);
-    expect(orphan.errors.some((e) => e.message.includes('Storno'))).toBe(true);
+    expect(orphan.transactions).toEqual([]);
+    expect(orphan.errors).toEqual([]);
+    expect(orphan.warnings.some((w) => w.message.includes('Storno obchodu'))).toBe(true);
+    expect(orphan.retracted).toEqual([{ id: 'ibkr-1999', types: ['BUY', 'SELL'] }]);
+    expect(parsed.retracted).toEqual([{ id: 'ibkr-2001', types: ['BUY', 'SELL'] }]);
   });
 
   it('více dividend v den: srážka pro-rata z celku; korekce → netto', () => {

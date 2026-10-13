@@ -106,7 +106,9 @@ export async function syncIbkr(
     parsed.skipped.length > 0 ||
     parsed.warnings.length > 0;
   const filename = syncBatchFilename.ibkr(now.toISOString().slice(0, 10));
-  const batch = hasContent ? await importParsed(db, account.userId, filename, parsed) : null;
+  const batch = hasContent
+    ? await importParsed(db, account.userId, filename, parsed, undefined, { newerThanStored: true })
+    : null;
 
   // Změna formátu na straně brokera by u napojeného účtu jinak zůstala němá:
   // parser se rozeběhne, nevydá jedinou transakci a uživatel ani provozovatel

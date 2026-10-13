@@ -1,6 +1,7 @@
 import {
   isTruncatedTrading212Export,
   mapPositionsToIsin,
+  positionsCarryIsin,
   Trading212ApiError,
   Trading212Client,
   type RowIssue,
@@ -118,7 +119,7 @@ function parseCredentials(encrypted: string): StoredCredentials {
 /**
  * T212 dokumentace je nejednoznačná v tom, zda se autentizuje párem ID+secret
  * (HTTP Basic), nebo samotným tajným klíčem v Authorization. Ověříme si to sami
- * levným getCash(): zkusíme Basic, na 401 spadneme na samotný secret.
+ * levným getAccountSummary(): zkusíme Basic, na 401 spadneme na samotný secret.
  */
 function defaultPollIntervalMs(): number {
   if (process.env.NODE_ENV !== 'production') {
@@ -180,7 +181,7 @@ async function resolveClient(
   let lastError: unknown;
   for (const client of candidates) {
     try {
-      await client.getCash();
+      await client.getAccountSummary();
       return client;
     } catch (error) {
       lastError = error;
@@ -445,10 +446,8 @@ export async function syncTrading212(
   let reconciliation: StoredReconciliation | null = null;
   let reconciliationError: string | null = null;
   try {
-    const [positions, instruments] = await Promise.all([
-      client.getPositions(),
-      client.getInstruments(),
-    ]);
+    const positions = await client.getPositions();
+    const instruments = positionsCarryIsin(positions) ? [] : await client.getInstruments();
     const mapped = mapPositionsToIsin(positions, instruments);
     await upsertInstrumentPrices(
       db,

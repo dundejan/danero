@@ -19,6 +19,7 @@ import {
   dedupeTransactions,
   mapPositionsToIsin,
   parseTrading212Csv,
+  positionsCarryIsin,
   reconcilePositions,
   Trading212Client,
   TRADING212_BROKER,
@@ -37,14 +38,17 @@ describe.skipIf(!apiKey)('živé Trading212 API (T212_API_KEY)', () => {
       const client = new Trading212Client({ apiKey: apiKey!, apiSecret });
 
       // 1) autentizace — nejlevnější endpoint
-      const cash = await client.getCash();
-      console.info(`[api] klíč platí (${apiSecret ? 'HTTP Basic' : 'klíč v Authorization'}); hotovost: ${cash.free}`);
+      const summary = await client.getAccountSummary();
+      console.info(
+        `[api] klíč platí (${apiSecret ? 'HTTP Basic' : 'klíč v Authorization'}); měna účtu: ${summary.currency ?? 'neznámá (starší cesta)'}`,
+      );
+      // dokumentovaná cesta měnu účtu nese; bez ní jsme spadli na starší
+      expect(summary.currency).toBeDefined();
 
-      // 2) pozice + mapování ticker → ISIN
-      const [positions, instruments] = await Promise.all([
-        client.getPositions(),
-        client.getInstruments(),
-      ]);
+      // 2) pozice + mapování ticker → ISIN (dokumentovaná cesta nese ISIN sama)
+      const positions = await client.getPositions();
+      expect(positionsCarryIsin(positions)).toBe(true);
+      const instruments = positionsCarryIsin(positions) ? [] : await client.getInstruments();
       const mapped = mapPositionsToIsin(positions, instruments);
       console.info(`[api] pozic: ${positions.length}, spárováno na ISIN: ${mapped.positions.length}`);
       if (mapped.unmatchedTickers.length > 0) {

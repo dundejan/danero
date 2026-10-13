@@ -6,7 +6,7 @@
  */
 
 export const CSV_HEADER =
-  'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID';
+  'Action,Time (UTC),ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID';
 
 /**
  * @param {string} idPrefix
@@ -25,12 +25,38 @@ export function csvByYear(idPrefix) {
   };
 }
 
-export const PORTFOLIO = [
-  { ticker: 'AAPL_US_EQ', quantity: 50, averagePrice: 185.5, currentPrice: 210, ppl: 0 },
+export const POSITIONS = [
+  {
+    instrument: { ticker: 'AAPL_US_EQ', name: 'Apple', isin: 'US0378331005', currency: 'USD' },
+    createdAt: '2024-06-10T14:30:02.000Z',
+    quantity: 50,
+    quantityAvailableForTrading: 50,
+    quantityInPies: 0,
+    currentPrice: 210,
+    averagePricePaid: 185.5,
+    walletImpact: {
+      currency: 'EUR',
+      totalCost: 8533,
+      currentValue: 9660,
+      unrealizedProfitLoss: 1127,
+      fxImpact: null,
+    },
+  },
 ];
 
 export const INSTRUMENTS = [
   { ticker: 'AAPL_US_EQ', isin: 'US0378331005', currencyCode: 'USD', name: 'Apple' },
 ];
 
-export const CASH = { free: 100, total: 100, invested: 0 };
+export const ACCOUNT_SUMMARY = {
+  id: 1234567,
+  currency: 'EUR',
+  totalValue: 9760,
+  cash: { availableToTrade: 100, inPies: 0, reservedForOrders: 0 },
+  investments: {
+    currentValue: 9660,
+    totalCost: 8533,
+    realizedProfitLoss: 0,
+    unrealizedProfitLoss: 1127,
+  },
+};

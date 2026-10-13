@@ -448,7 +448,7 @@ describe('MT5: dva překrývající se reporty (kratší období po delším)', 
       MT5_BROKER,
       jenUzavreni.transactions,
       prvni.fresh.map((f) => f.key),
-      prvni.fresh.map((f) => brokerIdKey(MT5_BROKER, f.tx.id)),
+      prvni.fresh.map((f) => brokerIdKey(MT5_BROKER, f.tx)),
     );
     // bez druhé sítě by se tytéž obchody uložily znovu s jinou cenou
     expect(druhy.fresh).toHaveLength(0);

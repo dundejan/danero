@@ -3,9 +3,10 @@ import { IbkrFlexClient } from '../src';
 import { IBKR_FIXTURE } from './fixtures/ibkr';
 
 /**
- * D-7: `sendRequest` přebírá adresu pro vyzvednutí výpisu z odpovědi IBKR
- * a připojuje k ní Flex token — cizí hostname by znamenal token poslaný
- * cizímu serveru.
+ * D-7: Flex token smí odejít jen tam, kam je klient nastavený. Odpověď
+ * SendRequest nese `<Url>`, kterou dokumentace IBKR říká ignorovat („The <url>
+ * returned in the response body should be ignored“) — a klient ji opravdu
+ * nečte, takže ať v ní stojí cokoli, výpis se vyzvedne na základní adrese.
  */
 const sendWithUrl = (url: string) => `<FlexStatementResponse timestamp="x">
   <Status>Success</Status>
@@ -37,50 +38,35 @@ const client = (send: string, baseUrl?: string) => {
   };
 };
 
-describe('důvěra k adrese z odpovědi IBKR (D-7)', () => {
-  it('cizí doména v odpovědi = chyba a token se tam neodešle', async () => {
-    const { client: c, mock } = client(sendWithUrl('https://utocnik.example.com/GetStatement'));
-    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu \(utocnik/);
-    expect(mock.urls.every((url) => !url.includes('utocnik.example.com'))).toBe(true);
-    expect(mock.urls).toHaveLength(1); // jen SendRequest, žádné vyzvednutí
-  });
+const DOCUMENTED_STATEMENT_URL =
+  'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?t=tok-abc&q=REF123&v=3';
 
-  it('http varianta domény IBKR taky neprojde (token by šel v čitelné podobě)', async () => {
-    const { client: c } = client(sendWithUrl('http://ndcdyn.interactivebrokers.com/GetStatement'));
-    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu/);
-  });
-
-  it('doména, která jen KONČÍ na jméno IBKR, neprojde', async () => {
-    const { client: c } = client(sendWithUrl('https://notinteractivebrokers.com/GetStatement'));
-    await expect(c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).rejects.toThrow(/cizí adresu/);
-  });
-
-  it('jiná subdoména IBKR projde (výpisy chodí z gdcdyn i ndcdyn)', async () => {
-    const { client: c, mock } = client(
-      sendWithUrl('https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement'),
+describe('adresa z odpovědi IBKR se ignoruje (D-7)', () => {
+  it.each([
+    ['cizí doména', 'https://utocnik.example.com/GetStatement'],
+    ['http varianta domény IBKR', 'http://ndcdyn.interactivebrokers.com/GetStatement'],
+    ['doména, která jen končí na jméno IBKR', 'https://notinteractivebrokers.com/GetStatement'],
+    [
+      'stará adresa, která od května 2026 vrací na všechno 1001',
+      'https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement',
+    ],
+    ['adresa s vlastními parametry', 'https://ndcdyn.interactivebrokers.com/GetStatement?t=cizi-token&amp;x=1'],
+  ])('%s: výpis se vyzvedne na dokumentované adrese a token jinam neodejde', async (_label, url) => {
+    const { client: c, mock } = client(sendWithUrl(url));
+    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain(
+      '<FlexQueryResponse',
     );
-    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
-    expect(mock.urls[1]).toBe(
-      'https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?t=tok-abc&q=REF123&v=3',
-    );
+    expect(mock.urls).toHaveLength(2);
+    expect(mock.urls[1]).toBe(DOCUMENTED_STATEMENT_URL);
   });
 
-  it('nakonfigurovaná adresa (mock, vlastní proxy) projde beze změny', async () => {
+  it('nakonfigurovaná adresa (mock, vlastní proxy) platí pro obě fáze', async () => {
     const { client: c, mock } = client(
-      sendWithUrl('https://flex.test/GetStatement'),
+      sendWithUrl('https://jinde.test/GetStatement'),
       'https://flex.test',
     );
     expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
+    expect(mock.urls[0]).toBe('https://flex.test/SendRequest?t=tok-abc&q=123456&p=365&v=3');
     expect(mock.urls[1]).toBe('https://flex.test/GetStatement?t=tok-abc&q=REF123&v=3');
-  });
-
-  it('parametry z odpovědi se zahazují — token se skládá sám', async () => {
-    const { client: c, mock } = client(
-      sendWithUrl('https://ndcdyn.interactivebrokers.com/GetStatement?t=cizi-token&amp;x=1'),
-    );
-    expect(await c.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 })).toContain('<FlexQueryResponse');
-    expect(mock.urls[1]).toBe(
-      'https://ndcdyn.interactivebrokers.com/GetStatement?t=tok-abc&q=REF123&v=3',
-    );
   });
 });

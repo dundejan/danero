@@ -995,7 +995,7 @@ describe('částečné plnění objednávky napříč soubory (id ≠ transakce)
       DEGIRO_BROKER,
       druhy.transactions,
       ulozene.fresh.map((f) => f.key),
-      ulozene.fresh.map((f) => brokerIdKey(DEGIRO_BROKER, f.tx.id)),
+      ulozene.fresh.map((f) => brokerIdKey(DEGIRO_BROKER, f.tx)),
     );
     expect(dalsi.fresh).toHaveLength(1);
     expect(dalsi.restated).toEqual([]);

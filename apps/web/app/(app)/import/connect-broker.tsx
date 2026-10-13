@@ -54,7 +54,12 @@ export function ConnectTrading212({ invalid }: { invalid: boolean }) {
       <Card className="-mr-6 space-y-4 text-ink">
         <KeyGuide summary="Kde klíč vezmu">
             <p>
-              V Trading 212 otevři <Term>Settings → API (Beta) → Generate key</Term> a nastav:
+              Položku API uvidíš jen na ostrém účtu Invest nebo Stocks ISA — klíč z režimu
+              Practice ani z účtu CFD tady fungovat nebude.
+            </p>
+            <p>
+              V Trading 212 otevři <Term>Settings → API (Beta) → Generate API key</Term>,
+              potvrď upozornění na rizika a nastav:
             </p>
             <ul className="list-disc space-y-1 pl-4">
               <li>
@@ -125,13 +130,14 @@ export function ConnectIbkr({ invalid }: { invalid: boolean }) {
             <p>
               Potřebuješ dvě věci: <Term>Flex Query</Term> (říká, co se stahuje) a{' '}
               <Term>token</Term> (přístup jen ke čtení výpisů). Účet u Lynx běží na
-              infrastruktuře IBKR — postup i napojení jsou úplně stejné.
+              infrastruktuře IBKR — postup je stejný, jen se přihlašuješ přes web Lynxu.
             </p>
             <p>V IBKR Client Portal:</p>
             <ol className="list-decimal space-y-1 pl-5">
               <li>
                 <Term>Performance &amp; Reports → Flex Queries → „+“ u Activity Flex Query.</Term>{' '}
-                Pojmenuj ji třeba „Danero“.
+                Pojmenuj ji třeba „Danero“. (Trade Confirmation Flex Query nestačí — nemá
+                dividendy ani úroky.)
               </li>
               <li>
                 Zapni sekce a úrovně přesně takto: Trades = Executions · Cash Transactions = Detail
@@ -140,18 +146,26 @@ export function ConnectIbkr({ invalid }: { invalid: boolean }) {
               </li>
               <li>
                 V Delivery Configuration nastav <Term>Format XML</Term> a{' '}
-                <Term>Period „Last 365 Calendar Days“</Term>. Ulož a poznamenej si{' '}
-                <Term>Query ID</Term> (číslo u názvu query).
+                <Term>Period „Last 365 Calendar Days“</Term>. Ulož; <Term>Query ID</Term> najdeš
+                po kliknutí na ikonu „i“ vedle názvu query.
               </li>
               <li>
-                <Term>Settings → Account Settings → Flex Web Service</Term> → aktivuj a zkopíruj{' '}
-                <Term>token</Term>.
+                Na téže stránce otevři ozubeným kolem{' '}
+                <Term>Flex Web Service Configuration</Term>, službu zapni a vygeneruj{' '}
+                <Term>token</Term>: platnost nastav na <Term>1 Year</Term> (výchozí je 6 hodin)
+                a pole pro IP adresu nech prázdné — Danero se připojuje z adres, které se mění.
               </li>
             </ol>
             <p>
-              Máš u IBKR historii starší než rok? Vytvoř si tutéž query ještě jednou s obdobím po
-              letech (Custom Date Range), stáhni XML ručně a nahraj je jako výpis — jednorázově,
-              dál už vše řeší synchronizace.
+              Máš u IBKR starší historii? Synchronizace sahá rok zpět. Starší roky stáhni ručně:
+              u téže query klikni na šipku <Term>Run</Term>, zvol <Term>Custom Date Range</Term>{' '}
+              (nejvýš 365 dní) a formát XML, a soubory nahraj jako výpis. IBKR takhle vydá letošek
+              a čtyři předchozí roky; co je starší, doplň univerzální šablonou.
+            </p>
+            <p>
+              Účet připojený před 13. 10. 2026: daň z transakce v nákladech obchodu a daň sraženou
+              z úroku jsme do té doby nečetli. U dřív stažených dat je doplníš tak, že ve Zdrojích
+              dat vrátíš starší importy IBKR zpět a pustíš synchronizaci znovu.
             </p>
         </KeyGuide>
         <form action={saveIbkrKeyAction} className="space-y-4">

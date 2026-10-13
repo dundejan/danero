@@ -1,5 +1,12 @@
-/** Sdílený mock T212 API pro testy syncu a background jobů. Data: test/t212-data.mjs. */
-import { CASH, csvByYear, CSV_HEADER, INSTRUMENTS, PORTFOLIO } from './t212-data.mjs';
+/**
+ * Sdílený mock T212 API pro testy syncu a background jobů. Data: test/t212-data.mjs.
+ *
+ * Zná JEN cesty a tvary z dnešní dokumentace (OpenAPI specifikace
+ * docs.trading212.com, stav 13. 10. 2026). Starší cesty, na kterých klient
+ * běžel dřív, tu schválně nejsou: mock, který by je obsluhoval dál, by zakryl
+ * den, kdy je broker vypne. Zálohu na starší cestu zkouší `api.test.ts`.
+ */
+import { ACCOUNT_SUMMARY, csvByYear, CSV_HEADER, INSTRUMENTS, POSITIONS } from './t212-data.mjs';
 
 export const CSV_BY_YEAR = csvByYear('EOFSYNC');
 
@@ -53,14 +60,14 @@ export function makeMockFetch(
     authorizations.push(authorization);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
-    if (url.endsWith('/equity/account/cash')) {
+    if (url.endsWith('/equity/account/summary')) {
       // simulace API, které pár ID+secret přes Basic odmítá (nejednoznačná dokumentace)
       if (options.rejectBasicAuth && authorization.startsWith('Basic ')) {
         return new Response('{"message":"unauthorized"}', { status: 401 });
       }
-      return json(CASH);
+      return json(ACCOUNT_SUMMARY);
     }
-    if (url.endsWith('/history/exports') && method === 'POST') {
+    if (url.endsWith('/equity/history/exports') && method === 'POST') {
       if (options.failExports) {
         return new Response('{"message":"forbidden"}', { status: 403 });
       }
@@ -71,7 +78,7 @@ export function makeMockFetch(
       reportYears.set(lastReportId, year);
       return json({ reportId: lastReportId });
     }
-    if (url.endsWith('/history/exports')) {
+    if (url.endsWith('/equity/history/exports')) {
       if (options.stuckYears?.includes(reportYears.get(lastReportId) ?? -1)) {
         return json([{ reportId: lastReportId, status: 'Processing' }]);
       }
@@ -102,9 +109,9 @@ export function makeMockFetch(
       // prázdné roky vrací T212 jako ÚPLNĚ prázdný soubor (ověřeno na reálném API)
       return new Response(hidden ? '' : (CSV_BY_YEAR[year] ?? ''), { status: 200 });
     }
-    if (url.endsWith('/equity/portfolio')) {
+    if (url.endsWith('/equity/positions')) {
       if (options.malformedPortfolio) return json({ items: [] });
-      return json(options.emptyPortfolio ? [] : PORTFOLIO);
+      return json(options.emptyPortfolio ? [] : POSITIONS);
     }
     if (url.endsWith('/equity/metadata/instruments')) {
       return json(INSTRUMENTS);

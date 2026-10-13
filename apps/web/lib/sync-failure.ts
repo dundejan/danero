@@ -83,7 +83,7 @@ function trading212Kind(error: Trading212ApiError): FailureKind | null {
 }
 
 /** Kódy klienta IBKR Flex, které znamenají „služba teď nefunguje“. */
-const IBKR_UNREACHABLE = new Set(['network', 'timeout', 'bad-response', 'bad-url']);
+const IBKR_UNREACHABLE = new Set(['network', 'timeout', 'bad-response']);
 /** Kód Flex Web Service pro „moc dotazů z tohohle tokenu“. */
 const IBKR_THROTTLED = '1018';
 /** Chyba Flex Web Service, pro kterou klient nemá vlastní větu. */

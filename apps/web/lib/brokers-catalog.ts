@@ -65,7 +65,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#00A7E1',
     guide:
-      'Živě přes API klíč jen pro čtení (Nastavení → API v aplikaci T212), nebo CSV export z History — ten umí max. rok, takže starší historii stáhni po letech (duplicity odfiltrujeme).',
+      'Živě přes API klíč jen pro čtení (Nastavení → API v aplikaci T212), nebo CSV export z History — ten umí max. rok, takže starší historii stáhni po letech (duplicity odfiltrujeme). V dialogu exportu nech zaškrtnuté všechny druhy dat: bez dividend a úroků by ti tu chyběl příjem.',
     connectAnchor: '#trading212',
   },
   {
@@ -106,7 +106,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#D81222',
     guide:
-      'Živě přes Flex Web Service: Client Portal → Performance & Reports → Flex Queries (token se zapíná tamtéž ve Flex Web Service Configuration). Nebo si stejnou Flex Query stáhni jako XML — jeden běh pokrývá max. rok, starší historii stahuj po letech.',
+      'Živě přes Flex Web Service: Client Portal → Performance & Reports → Flex Queries (token se zapíná tamtéž ve Flex Web Service Configuration). Nebo si stejnou Flex Query stáhni jako XML — jeden běh pokrývá max. rok, starší historii stahuj po letech (IBKR vydá letošek a čtyři předchozí roky).',
     connectAnchor: '#ibkr',
   },
   {
@@ -140,7 +140,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#0FA396',
     guide:
-      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně: Client Portal → Performance & Reports → Flex Queries.',
+      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně, jen se přihlašuješ přes web Lynxu: Performance & Reports → Flex Queries.',
     connectAnchor: '#ibkr',
   },
   {

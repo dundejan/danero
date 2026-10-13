@@ -150,7 +150,7 @@ Osvobozen je úhrn **hrubých příjmů (tržeb)** z úplatného převodu CP za 
 
 ## R-04 Korporátní akce a časový test
 
-- **R-04a Split / reverse split** (výměna při zachování celkové jmenovité hodnoty): test **nepřerušuje**; lot se transformuje (množství × poměr, cena / poměr), datum nabytí zůstává.
+- **R-04a Split / reverse split** (výměna při zachování celkové jmenovité hodnoty): test **nepřerušuje**; lot se transformuje (množství × poměr, cena / poměr), datum nabytí zůstává. Dostane-li titul se splitem i nový ISIN (u reverse splitu amerických akcií pravidlo — nový CUSIP), pokračuje lot pod novým ISIN stejně jako podle R-04e; v modelu je to jedna akce `SPLIT` s vyplněným `newIsin`.
 - **R-04b Fúze/rozdělení** dle § 23b/§ 23c: nepřerušuje. ⚠️ U zahraničních emitentů a ETF výkladové — přepínač na úrovni akce `preservesAcquisitionDate` (default true pro merger se zachováním hodnoty, s upozorněním).
 - **R-04c Výměna akcií se změnou celkové jmenovité hodnoty**: test **přerušuje** —
   a contrario z litery § 4 odst. 1 písm. u): „při výměně akcie emitentem za jinou

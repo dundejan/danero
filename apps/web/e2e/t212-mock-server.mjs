@@ -5,7 +5,7 @@
  */
 import { createServer } from 'node:http';
 import { FLEX_SEND_OK, IBKR_FLEX_XML } from '../test/ibkr-data.mjs';
-import { CASH, csvByYear, INSTRUMENTS, PORTFOLIO } from '../test/t212-data.mjs';
+import { ACCOUNT_SUMMARY, csvByYear, INSTRUMENTS, POSITIONS } from '../test/t212-data.mjs';
 
 const PORT = Number(process.env.PORT ?? 3211);
 const CSV_BY_YEAR = csvByYear('E2ESYNC');
@@ -69,16 +69,16 @@ const server = createServer(async (req, res) => {
   // 401 a 403 odmítnou už ověření klíče, ostatní kódy až objednávku exportu
   if (
     t212Failure !== null &&
-    (t212Failure === 401 || t212Failure === 403 || path === '/api/v0/history/exports')
+    (t212Failure === 401 || t212Failure === 403 || path === '/api/v0/equity/history/exports')
   ) {
     for await (const chunk of req) void chunk;
-    res.writeHead(t212Failure, { 'content-type': 'application/json', 'retry-after': '1' });
+    res.writeHead(t212Failure, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ code: 'MockFailure', message: `Mock failure ${t212Failure}` }));
   }
-  if (path === '/api/v0/equity/account/cash') {
-    return json(res, CASH);
+  if (path === '/api/v0/equity/account/summary') {
+    return json(res, ACCOUNT_SUMMARY);
   }
-  if (path === '/api/v0/history/exports' && req.method === 'POST') {
+  if (path === '/api/v0/equity/history/exports' && req.method === 'POST') {
     let body = '';
     for await (const chunk of req) body += chunk;
     const year = Number(JSON.parse(body).timeFrom.slice(0, 4));
@@ -86,7 +86,7 @@ const server = createServer(async (req, res) => {
     reportYears.set(lastReportId, year);
     return json(res, { reportId: lastReportId });
   }
-  if (path === '/api/v0/history/exports') {
+  if (path === '/api/v0/equity/history/exports') {
     return json(res, [
       {
         reportId: lastReportId,
@@ -101,8 +101,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/csv' });
     return res.end(CSV_BY_YEAR[year] ?? '');
   }
-  if (path === '/api/v0/equity/portfolio') {
-    return json(res, PORTFOLIO);
+  if (path === '/api/v0/equity/positions') {
+    return json(res, POSITIONS);
   }
   if (path === '/api/v0/equity/metadata/instruments') {
     return json(res, INSTRUMENTS);

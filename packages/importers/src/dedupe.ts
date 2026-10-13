@@ -85,6 +85,17 @@ export const contentFingerprint = (tx: Transaction): string =>
 export const dedupeKey = (broker: string, tx: Transaction, occurrence = 1): string =>
   `${broker}|${contentFingerprint(tx)}|${occurrence}`;
 
+export interface DedupeOptions {
+  /**
+   * Příchozí výpis je prokazatelně novější než to, co je uložené — platí pro
+   * synchronizaci napojeného účtu (stahuje se dnešní stav), NE pro ručně
+   * nahraný soubor: ten může být starší než poslední synchronizace a opravu,
+   * kterou broker mezitím udělal, by přepsal zpátky. Bez příznaku se shodné
+   * id s jinými čísly jen ohlásí (`restated`) a uložená verze zůstane.
+   */
+  newerThanStored?: boolean;
+}
+
 export interface DedupeOutcome {
   /** Transakce k uložení i s klíčem — počítat ho podruhé zvlášť nejde (pořadí). */
   fresh: Array<{ tx: Transaction; key: string }>;
@@ -95,6 +106,14 @@ export interface DedupeOutcome {
    * výpisu pochází. Neukládá se (jinak by vznikl duplikát), ale hlásí se.
    */
   restated: Transaction[];
+  /**
+   * Táž událost brokera (shodné `id` i typ), kterou broker mezitím OPRAVIL —
+   * jen u brokerů ze `SUPERSEDING_ID_BROKERS` a jen s `newerThanStored`.
+   * Ve `fresh` NEJSOU: volající jimi uložený řádek téhož id PŘEPÍŠE na místě
+   * (zůstane ve své původní dávce, takže vrácení novějšího importu ho
+   * nesmaže). `key` je klíč, pod kterým má přepsaný řádek dál žít.
+   */
+  superseded: Array<{ tx: Transaction; key: string }>;
   /**
    * Dividendy, které už uložené JSOU, jen bez ISIN: klíč uloženého řádku
    * (`from`) se má přepsat na klíč s ISIN (`to`) a řádku se ISIN doplní.
@@ -128,7 +147,8 @@ export interface KeyPromotion {
 }
 
 /** Jmenný prostor id přiděleného brokerem — id samo o sobě není unikátní napříč brokery. */
-export const brokerIdKey = (broker: string, id: string): string => `${broker}|${id}`;
+export const brokerIdKey = (broker: string, tx: { type: string; id: string }): string =>
+  `${broker}|${tx.type}|${tx.id}`;
 
 /**
  * Brokeři, jejichž `id` identifikuje JEDNU UDÁLOST, ne objednávku či řádek.
@@ -147,6 +167,28 @@ export const brokerIdKey = (broker: string, id: string): string => `${broker}|${
  * je per transakce — výchozí (chybějící) stav je bezpečný.
  */
 const TRANSACTION_ID_BROKERS = new Set(['etoro', 'mt4', 'mt5']);
+
+/**
+ * Brokeři, u kterých shodné id s jinými čísly znamená OPRAVU, ne jiné
+ * zaokrouhlení — a novější výpis má pravdu.
+ *
+ * IBKR události zpětně opravuje a oprava nese PŮVODNÍ čas a pozdější
+ * `reportDate`: přeúčtovaná srážková daň (typicky v únoru za loňský rok) nebo
+ * stornovaná a znovu zaúčtovaná dividenda. Napojený účet stahuje každý den
+ * výpis za posledních 365 dní, takže tutéž dividendu po opravě složí
+ * s jinými čísly — a obsahový klíč ji uložil vedle té původní (naměřeno:
+ * 50 USD jako 100 USD). `transactionID` i `tradeID` jsou u IBKR per záznam,
+ * takže podle nich jde uložený řádek nahradit.
+ *
+ * Klíč id nese i TYP transakce (`brokerIdKey`): čísla obchodů a hotovostních
+ * pohybů jsou u IBKR dvě různé řady a shoda napříč nimi by jinak smazala
+ * řádek, který s příchozím nesouvisí.
+ */
+const SUPERSEDING_ID_BROKERS = new Set(['ibkr']);
+
+/** Opravuje tenhle broker uložené události zpětně? (viz `SUPERSEDING_ID_BROKERS`) */
+export const brokerCorrectsEvents = (broker: string): boolean =>
+  SUPERSEDING_ID_BROKERS.has(broker);
 
 /**
  * Odfiltruje transakce, jejichž klíč už existuje (např. z DB nebo dřívějších
@@ -175,11 +217,13 @@ export function dedupeTransactions(
   existingKeys: Iterable<string> = [],
   existingIds: Iterable<string> = [],
   storedBareDividends: Iterable<readonly [string, string | null | undefined]> = [],
+  options: DedupeOptions = {},
 ): DedupeOutcome {
   const stored = new Set(existingKeys);
   const seen = new Set(stored);
   const storedIds = new Set(existingIds);
   const restated: Transaction[] = [];
+  const superseded: DedupeOutcome['superseded'] = [];
   const untaxed: Transaction[] = [];
   // ČTVRTÁ síť (A29): dividenda se srážkou proti UŽ ULOŽENÉ dvojnici se
   // srážkou 0. Porovnává se jen s tím, co bylo uložené před touto dávkou
@@ -222,11 +266,17 @@ export function dedupeTransactions(
       duplicates += 1;
       continue;
     }
-    if (
-      TRANSACTION_ID_BROKERS.has(broker) &&
-      idCounts.get(tx.id) === 1 &&
-      storedIds.has(brokerIdKey(broker, tx.id))
-    ) {
+    const sameEventStored = idCounts.get(tx.id) === 1 && storedIds.has(brokerIdKey(broker, tx));
+    const corrects = SUPERSEDING_ID_BROKERS.has(broker);
+    if (sameEventStored && corrects && options.newerThanStored) {
+      // Broker událost opravil a tenhle výpis je novější: volající uložený
+      // řádek přepíše. Schválně před čtvrtou sítí níž — ta by opravu jen
+      // ohlásila a v databázi by zůstala stará čísla.
+      superseded.push({ tx, key });
+      seen.add(key);
+      continue;
+    }
+    if (sameEventStored && (corrects || TRANSACTION_ID_BROKERS.has(broker))) {
       // tutéž událost už máme, jen s jinými čísly — uložit ji podruhé by
       // zdvojilo držbu i nabývací cenu, takže ji jen ohlásíme
       restated.push(tx);
@@ -255,13 +305,14 @@ export function dedupeTransactions(
     storedBareDividends,
   );
   if (promoted.length === 0) {
-    return { fresh, duplicates, restated, promoted, ambiguous, untaxed };
+    return { fresh, duplicates, restated, superseded, promoted, ambiguous, untaxed };
   }
   const promotedKeys = new Set(promoted.map((item) => item.to));
   return {
     fresh: fresh.filter((item) => !promotedKeys.has(item.key)),
     duplicates: duplicates + promoted.length,
     restated,
+    superseded,
     promoted,
     ambiguous,
     untaxed,

@@ -73,11 +73,11 @@ test('T212 sync: když broker neodpovídá, řekne to větou a syrovou chybu sch
   await expect(
     account.getByText('Trading 212 teď neodpovídá. Zkus to za chvíli znovu — co už se stáhlo, zůstává.'),
   ).toBeVisible();
-  const raw = account.getByText(/Trading212 API 500 na \/history\/exports/);
+  const raw = account.getByText(/Trading212 API 500 na \/equity\/history\/exports/);
   await expect(raw).toBeHidden();
   // syrový text je k mání na požádání
   const detail = await openDisclosure(account, 'Technický detail');
-  await expect(detail.getByText(/Trading212 API 500 na \/history\/exports/)).toBeVisible();
+  await expect(detail.getByText(/Trading212 API 500 na \/equity\/history\/exports/)).toBeVisible();
 
   // po neúspěchu zůstává první synchronizace plná — účet se netváří jako
   // synchronizovaný (`lastSyncedAt` se nenastavilo)

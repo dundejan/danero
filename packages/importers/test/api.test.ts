@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   mapPositionsToIsin,
+  positionsCarryIsin,
   Trading212ApiError,
   Trading212Client,
   type Trading212Instrument,
@@ -39,16 +40,16 @@ const makeFetch = (
 describe('Trading212Client', () => {
   it('posílá API klíč v Authorization; se secretem HTTP Basic', async () => {
     const captured: CapturedRequest[] = [];
-    await new Trading212Client({ apiKey: 'key123', fetchImpl: makeFetch([{ body: {} }], captured) }).getCash();
+    await new Trading212Client({ apiKey: 'key123', fetchImpl: makeFetch([{ body: {} }], captured) }).getAccountSummary();
     expect(captured[0]!.authorization).toBe('key123');
-    expect(captured[0]!.url).toBe('https://live.trading212.com/api/v0/equity/account/cash');
+    expect(captured[0]!.url).toBe('https://live.trading212.com/api/v0/equity/account/summary');
 
     const capturedBasic: CapturedRequest[] = [];
     await new Trading212Client({
       apiKey: 'key123',
       apiSecret: 'sec456',
       fetchImpl: makeFetch([{ body: {} }], capturedBasic),
-    }).getCash();
+    }).getAccountSummary();
     expect(capturedBasic[0]!.authorization).toBe(
       `Basic ${Buffer.from('key123:sec456').toString('base64')}`,
     );
@@ -56,7 +57,7 @@ describe('Trading212Client', () => {
 
   it('429 opakuje dle Retry-After, pak uspěje', async () => {
     const positions: Trading212Position[] = [
-      { ticker: 'AAPL_US_EQ', quantity: 10, averagePrice: 150, currentPrice: 210, ppl: 600 },
+      { ticker: 'AAPL_US_EQ', quantity: 10, currentPrice: 210 },
     ];
     const client = new Trading212Client({
       apiKey: 'k',
@@ -97,8 +98,8 @@ describe('Trading212Client', () => {
 describe('mapPositionsToIsin', () => {
   it('mapuje interní tickery na ISIN a hlásí nespárované', () => {
     const positions: Trading212Position[] = [
-      { ticker: 'AAPL_US_EQ', quantity: 10, averagePrice: 1, currentPrice: 1, ppl: 0 },
-      { ticker: 'NEZNAMY_EQ', quantity: 5, averagePrice: 1, currentPrice: 1, ppl: 0 },
+      { ticker: 'AAPL_US_EQ', quantity: 10, currentPrice: 1 },
+      { ticker: 'NEZNAMY_EQ', quantity: 5, currentPrice: 1 },
     ];
     const instruments: Trading212Instrument[] = [
       { ticker: 'AAPL_US_EQ', isin: 'US0378331005', currencyCode: 'USD', name: 'Apple' },
@@ -246,25 +247,227 @@ describe('mapPositionsToIsin — tvar odpovědi brokera (K5-09)', () => {
   });
 });
 
-describe('cesta exportních endpointů (T212 ji v dokumentaci přesunul pod /equity)', () => {
-  it('na 404 zkusí dokumentovanou cestu a tu úspěšnou si zapamatuje', async () => {
-    const calls: string[] = [];
-    const fetchImpl = (async (url: string | URL): Promise<Response> => {
-      const path = new URL(String(url)).pathname;
+/**
+ * Cesty a tvary podle OpenAPI specifikace https://docs.trading212.com/api
+ * (stav 13. 10. 2026). `/equity/account/cash` a `/equity/portfolio` z ní
+ * zmizely na přelomu let 2025 a 2026, exporty se přestěhovaly pod `/equity`.
+ * Klient proto volá dokumentovanou cestu a starší má jako zálohu na 404.
+ */
+describe('cesty endpointů: dokumentovaná napřed, starší jako záloha na 404', () => {
+  const DOCUMENTED_POSITION = {
+    instrument: { ticker: 'AAA_US_EQ', name: 'Alfa Inc', isin: 'US0000000001', currency: 'USD' },
+    createdAt: '2025-02-10T14:30:02.000Z',
+    quantity: 12.5,
+    quantityAvailableForTrading: 12.5,
+    quantityInPies: 0,
+    currentPrice: 21.4,
+    averagePricePaid: 19.9,
+    walletImpact: {
+      currency: 'EUR',
+      totalCost: 228.1,
+      currentValue: 246.2,
+      unrealizedProfitLoss: 18.1,
+      fxImpact: null,
+    },
+  };
+  const DOCUMENTED_SUMMARY = {
+    id: 1234567,
+    currency: 'EUR',
+    totalValue: 1500.5,
+    cash: { availableToTrade: 100.25, inPies: 0, reservedForOrders: 0 },
+    investments: {
+      currentValue: 1400.25,
+      totalCost: 1300,
+      realizedProfitLoss: 12.5,
+      unrealizedProfitLoss: 100.25,
+    },
+  };
+
+  /** API, které zná jen vyjmenované cesty; ostatní vrací 404 jako zrušená cesta. */
+  const apiWith = (routes: Record<string, unknown>, calls: string[] = []): typeof fetch =>
+    (async (url: string | URL): Promise<Response> => {
+      const path = new URL(String(url)).pathname.replace('/api/v0', '');
       calls.push(path);
-      if (path.endsWith('/api/v0/history/exports')) {
-        return new Response('not found', { status: 404 });
-      }
-      return new Response(JSON.stringify([]), { status: 200 });
+      return path in routes
+        ? new Response(JSON.stringify(routes[path]), { status: 200 })
+        : new Response('{"status":404,"title":"Requested entity not found"}', { status: 404 });
     }) as unknown as typeof fetch;
 
-    const client = new Trading212Client({ apiKey: 'k', fetchImpl });
+  const clientOf = (fetchImpl: typeof fetch): Trading212Client =>
+    new Trading212Client({ apiKey: 'key-id', apiSecret: 'secret-000000', fetchImpl });
+
+  it('účet se čte z /equity/account/summary', async () => {
+    const calls: string[] = [];
+    const client = clientOf(apiWith({ '/equity/account/summary': DOCUMENTED_SUMMARY }, calls));
+    await expect(client.getAccountSummary()).resolves.toEqual({ currency: 'EUR', freeCash: 100.25 });
+    expect(calls).toEqual(['/equity/account/summary']);
+  });
+
+  it('když dokumentovaná cesta účtu vrátí 404, poslouží starší /equity/account/cash', async () => {
+    const calls: string[] = [];
+    const client = clientOf(
+      apiWith({ '/equity/account/cash': { free: 55.5, total: 80, invested: 24.5 } }, calls),
+    );
+    await expect(client.getAccountSummary()).resolves.toEqual({ freeCash: 55.5 });
+    await client.getAccountSummary();
+    // napodruhé už bez zbytečného dotazu na cestu, která neexistuje
+    expect(calls).toEqual(['/equity/account/summary', '/equity/account/cash', '/equity/account/cash']);
+  });
+
+  it('pozice z /equity/positions nesou ISIN samy — číselník instrumentů není potřeba', async () => {
+    const calls: string[] = [];
+    const client = clientOf(apiWith({ '/equity/positions': [DOCUMENTED_POSITION] }, calls));
+    const positions = await client.getPositions();
+    expect(positionsCarryIsin(positions)).toBe(true);
+    expect(mapPositionsToIsin(positions)).toEqual({
+      positions: [
+        { isin: 'US0000000001', ticker: 'AAA_US_EQ', quantity: 12.5, currentPrice: 21.4, currency: 'USD' },
+      ],
+      unmatchedTickers: [],
+    });
+    expect(calls).toEqual(['/equity/positions']);
+  });
+
+  it('když dokumentovaná cesta pozic vrátí 404, poslouží starší /equity/portfolio s číselníkem', async () => {
+    const client = clientOf(
+      apiWith({
+        '/equity/portfolio': [
+          { ticker: 'AAA_US_EQ', quantity: 12.5, averagePrice: 19.9, currentPrice: 21.4, ppl: 18.1 },
+        ],
+        '/equity/metadata/instruments': [
+          { ticker: 'AAA_US_EQ', isin: 'US0000000001', currencyCode: 'USD', name: 'Alfa Inc' },
+        ],
+      }),
+    );
+    const positions = await client.getPositions();
+    expect(positionsCarryIsin(positions)).toBe(false);
+    const mapped = mapPositionsToIsin(positions, await client.getInstruments());
+    expect(mapped.unmatchedTickers).toEqual([]);
+    expect(mapped.positions).toEqual([
+      { isin: 'US0000000001', ticker: 'AAA_US_EQ', quantity: 12.5, currentPrice: 21.4, currency: 'USD' },
+    ]);
+  });
+
+  it('položka pozic bez tickeru nebo kusů je cizí tvar, ne pozice k zahození', async () => {
+    const client = clientOf(
+      apiWith({ '/equity/positions': [DOCUMENTED_POSITION, { instrument: { isin: 'US0000000002' } }] }),
+    );
+    await expect(client.getPositions()).rejects.toThrow(/v jiném tvaru/);
+  });
+
+  it('exporty: na 404 z /equity/history/exports zkusí starší cestu a zapamatuje si ji', async () => {
+    const calls: string[] = [];
+    const client = clientOf(apiWith({ '/history/exports': [] }, calls));
     await expect(client.listExports()).resolves.toEqual([]);
-    expect(calls).toEqual(['/api/v0/history/exports', '/api/v0/equity/history/exports']);
+    expect(calls).toEqual(['/equity/history/exports', '/history/exports']);
 
     // druhé volání už jde rovnou na fungující cestu (limit je 1 dotaz / 30 s)
     calls.length = 0;
     await client.listExports();
-    expect(calls).toEqual(['/api/v0/equity/history/exports']);
+    expect(calls).toEqual(['/history/exports']);
+  });
+
+  it('404 na obou cestách skončí chybou 404, ne tichým prázdnem', async () => {
+    const error = await clientOf(apiWith({}))
+      .getPositions()
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+    expect(error).toBeInstanceOf(Trading212ApiError);
+    expect((error as Trading212ApiError).status).toBe(404);
+  });
+});
+
+describe('stav exportu Canceled', () => {
+  // Specifikace: ReportResponse.status = Queued | Processing | Running |
+  // Canceled | Failed | Finished. Zrušený export už hotový nebude.
+  it('ukončí čekání hned a neskončí jako vypršení (408)', async () => {
+    let listCalls = 0;
+    const fetchImpl = (async (_url: string | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ reportId: 501 }), { status: 200 });
+      }
+      listCalls += 1;
+      return new Response(JSON.stringify([{ reportId: 501, status: 'Canceled' }]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const error = await new Trading212Client({ apiKey: 'k', apiSecret: 's', fetchImpl })
+      .fetchHistoryCsv(EXPORT_REQUEST, { pollIntervalMs: 1, maxAttempts: 4 })
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+
+    expect(error).toBeInstanceOf(Trading212ApiError);
+    expect((error as Trading212ApiError).message).toMatch(/zrušen/);
+    expect((error as Trading212ApiError).status).not.toBe(408);
+    expect(listCalls).toBe(1);
+  });
+});
+
+describe('čekání po 429', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const limited = (headers: Record<string, string>): Response =>
+    new Response('{"code":"TooManyRequests"}', { status: 429, headers });
+
+  // Dokumentace: „Every API response includes … x-ratelimit-reset: A Unix
+  // timestamp indicating the exact time when the limit will be fully reset.“
+  it('řídí se hlavičkou x-ratelimit-reset — limit obnovený za 2 s nestojí půl minuty', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-13T10:00:00Z') });
+    const resetAt = Math.floor(Date.now() / 1000) + 2;
+    let calls = 0;
+    const fetchImpl = (async (): Promise<Response> => {
+      calls += 1;
+      return calls === 1
+        ? limited({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(resetAt) })
+        : new Response('[]', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const pending = new Trading212Client({ apiKey: 'k', apiSecret: 's', fetchImpl }).getPositions();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(calls).toBe(2);
+    await expect(pending).resolves.toEqual([]);
+  });
+
+  it('bez hlaviček čeká 30 s (exporty je u 429 neposílají)', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-13T10:00:00Z') });
+    let calls = 0;
+    const fetchImpl = (async (): Promise<Response> => {
+      calls += 1;
+      return calls === 1 ? limited({}) : new Response('[]', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const pending = new Trading212Client({ apiKey: 'k', apiSecret: 's', fetchImpl }).listExports();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(calls).toBe(2);
+    await expect(pending).resolves.toEqual([]);
+  });
+
+  it('součet čekání na jeden dotaz nepřeroste dvě minuty', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-13T10:00:00Z') });
+    let calls = 0;
+    const fetchImpl = (async (): Promise<Response> => {
+      calls += 1;
+      return limited({ 'retry-after': '100' });
+    }) as unknown as typeof fetch;
+
+    const outcome = new Trading212Client({ apiKey: 'k', apiSecret: 's', fetchImpl })
+      .getPositions()
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(Trading212ApiError);
+    expect((error as Trading212ApiError).status).toBe(429);
+    // první čekání 100 s proběhne, druhé by součet přetáhlo přes 120 s
+    expect(calls).toBe(2);
   });
 });

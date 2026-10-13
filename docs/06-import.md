@@ -61,28 +61,38 @@ Měny: pozor na **GBX** (pence, LSE) — engine normalizuje na GBP/100.
 
 ## Trading212 API (`Trading212Client` + `syncTrading212`)
 
-**Vytvoření klíče (Settings → API (Beta) → Generate key):**
+**Vytvoření klíče (Settings → API (Beta) → Generate API key; jen ostrý účet Invest nebo Stocks ISA):**
 
 | Pole | Hodnota | Proč |
 |---|---|---|
 | Name | libovolné (např. „Danero") | jen popisek |
 | IP restrictions | Neomezené | server Danera nemá stálou IP |
-| ✅ Account data | ano | `getCash()` — ověření klíče |
-| ✅ History + History-dividends/orders/transactions | ano | `POST/GET /history/exports` — stažení historie |
-| ✅ Metadata | ano | `getInstruments()` — mapování ticker→ISIN |
+| ✅ Account data | ano | `getAccountSummary()` — ověření klíče |
+| ✅ History + History-dividends/orders/transactions | ano | `POST/GET /equity/history/exports` — stažení historie |
+| ✅ Metadata | ano | `getInstruments()` — mapování ticker→ISIN, jen když pozice ISIN nenesou (starší cesta API) |
 | ✅ Portfolio | ano | `getPositions()` — rekonciliace |
 | ❌ Orders (execute i read), Pies (read i write) | NE | Danero nesmí mít právo obchodovat ani nic měnit |
 
 Po vygenerování T212 zobrazí **dvě hodnoty: „ID klíče API" a „Tajný klíč"** (tajný
 klíč jen jednou!) — do Danera se vkládají obě. Kterou variantou se API autentizuje
 (HTTP Basic z páru vs. samotný tajný klíč) si `syncTrading212` ověří samo levným
-`getCash()` — Basic, na 401 fallback na samotný secret.
+`getAccountSummary()` — Basic, na 401 fallback na samotný secret.
 
-Klient: `getCash()` (ověření klíče),
-`getPositions()` + `getInstruments()` (rekonciliace, ticker→ISIN),
+Klient: `getAccountSummary()` (ověření klíče), `getPositions()` (rekonciliace;
+pozice nesou ISIN samy, `getInstruments()` je záloha pro starší cestu),
 `requestExport()`/`fetchHistoryCsv()` (vygenerování CSV historie → stejný parser).
-Autentizace: klíč v hlavičce `Authorization`; s `apiSecret` HTTP Basic — ověřit na účtu.
-429 se opakuje dle Retry-After (3 pokusy).
+
+**Cesty (stav 13. 10. 2026):** klient volá cesty z dokumentace —
+`/equity/account/summary`, `/equity/positions`, `/equity/history/exports` —
+a na 404 zkusí starší (`/equity/account/cash`, `/equity/portfolio`,
+`/history/exports`), na kterých běžel dřív. Ostré API k tomu datu odpovídá na
+obojí, dokumentace zná už jen první trojici. Mocky v testech znají taky jen ji.
+
+Autentizace: pár ID + tajný klíč přes HTTP Basic; samotný klíč v hlavičce
+`Authorization` vede specifikace jako `legacyApiKeyHeader`.
+429: čeká se podle `Retry-After`, jinak podle `x-ratelimit-reset`, bez obou 30 s;
+nejvýš 5 pokusů a 120 s čekání na jeden dotaz. Stav exportu `Canceled` i `Failed`
+ukončí čekání hned.
 
 **Synchronizace v aplikaci (`apps/web/lib/t212-sync.ts`): stačí API klíč.** První
 běh projde smyčkou všechny roky od běžného zpět (konec po dvou po sobě prázdných

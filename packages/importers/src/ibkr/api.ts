@@ -5,17 +5,47 @@ import { XMLParser } from 'fast-xml-parser';
  * SendRequest (token + query ID → referenceCode) → GetStatement (poll, dokud
  * se výpis generuje). Trpělivé retry — generování větších výpisů trvá minuty
  * a služba vrací 1019 „in progress“, případně 1018 „throttled“.
+ *
+ * Podle dokumentace IBKR (interactivebrokers.com/docs/web-api/flex-web-service
+ * a ibkrguides „Flex Web Service Version 3“, stav 13. 10. 2026). Limit je
+ * 1 dotaz za sekundu a 10 za minutu na token.
  */
 
 const DEFAULT_BASE_URL =
   'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService';
 
-/** Doména, které jediné smíme poslat Flex token (D-7). */
-const IBKR_DOMAIN = 'interactivebrokers.com';
+/** Nejdelší období, které jde přes parametr `p` vyžádat. */
+const MAX_PERIOD_DAYS = 365;
+
+/**
+ * Kódy, u kterých IBKR sám píše „Please try again shortly“ — výpis se
+ * generuje, data ještě nejsou připravená, server je přetížený nebo škrtí.
+ * Opakují se v obou fázích; do 13. 10. 2026 jen 1018, 1019 a 1021, takže
+ * třeba 1001 nebo 1009 ukončily synchronizaci na první pokus.
+ */
+const TRANSIENT_CODES = new Set([
+  '1001',
+  '1004',
+  '1005',
+  '1006',
+  '1007',
+  '1008',
+  '1009',
+  '1018',
+  '1019',
+  '1021',
+]);
 
 export interface IbkrFlexClientOptions {
   token: string;
   queryId: string;
+  /**
+   * Kolik posledních dní výpis pokryje (parametr `p`, „Period Override“,
+   * nejvýš 365). Posílá se VŽDY: období uložené ve Flex Query služba ve
+   * verzi 3 nedodržuje spolehlivě — uživatelé hlásí, že „Last 365 Calendar
+   * Days“ vrátí přes API jediný den (csingley/ibflex #109, 5–6/2026).
+   */
+  periodDays?: number;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 }
@@ -43,13 +73,21 @@ export class IbkrFlexError extends Error {
   }
 }
 
-/** Chybové kódy Flex Web Service přeložené do řeči uživatele. */
+/**
+ * Chybové kódy Flex Web Service přeložené do řeči uživatele. Významy podle
+ * tabulky IBKR (…/flex-web-service/error-codes): 1003 je „Statement is not
+ * available“ a 1020 „Invalid request“ — špatné Query ID hlásí 1014.
+ */
 const ERROR_MESSAGES: Record<string, string> = {
-  '1003': 'Výpis pro tuto query není dostupný — zkontroluj Query ID v IBKR (Performance & Reports → Flex Queries).',
+  '1003': 'IBKR teď výpis nemá k dispozici — zkus synchronizaci později. Kdyby to trvalo, zkontroluj v IBKR, že Flex Query existuje a má zapnuté sekce (Performance & Reports → Flex Queries).',
+  '1010': 'Tahle Flex Query je starého typu, který IBKR už nepodporuje — vytvoř si novou Activity Flex Query a ulož její Query ID.',
+  '1011': 'Flex Web Service je u tohohle účtu vypnutá — zapni ji v IBKR (Performance & Reports → Flex Queries → Flex Web Service Configuration).',
   '1012': 'Token je neplatný nebo expiroval — vygeneruj v IBKR nový (Flex Web Service Configuration) a ulož ho znovu.',
+  '1013': 'Token je omezený na konkrétní IP adresu, a Danero se připojuje z adres, které se mění. Vygeneruj v IBKR nový token a pole pro IP adresu nech prázdné.',
+  '1014': 'Query ID IBKR nezná — zkontroluj ho v IBKR (Performance & Reports → Flex Queries, ikona „i“ u názvu query) a ulož znovu.',
   '1015': 'Token je neplatný — zkontroluj, že je zkopírovaný celý, bez mezer.',
   '1016': 'Token nepatří k tomuto účtu — zkontroluj, že query i token pochází ze stejného IBKR přihlášení.',
-  '1020': 'Query ID neexistuje nebo k němu token nemá přístup — zkontroluj obojí v IBKR.',
+  '1020': 'IBKR požadavek odmítl jako neplatný — zkontroluj token i Query ID, jestli jsou zkopírované celé a patří k sobě.',
 };
 
 interface StatementResponse {
@@ -57,7 +95,6 @@ interface StatementResponse {
   errorCode?: string;
   errorMessage?: string;
   referenceCode?: string;
-  url?: string;
 }
 
 const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false });
@@ -78,7 +115,6 @@ function readStatementResponse(xml: string): StatementResponse | null {
     errorCode: text(response.ErrorCode),
     errorMessage: text(response.ErrorMessage),
     referenceCode: text(response.ReferenceCode),
-    url: text(response.Url),
   };
 }
 
@@ -95,54 +131,26 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class IbkrFlexClient {
   private readonly token: string;
   private readonly queryId: string;
+  private readonly periodDays: number;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: IbkrFlexClientOptions) {
     this.token = options.token;
     this.queryId = options.queryId;
+    this.periodDays = Math.min(Math.max(Math.trunc(options.periodDays ?? MAX_PERIOD_DAYS), 1), MAX_PERIOD_DAYS);
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  /**
-   * D-7: adresu pro vyzvednutí výpisu diktuje odpověď IBKR a my k ní připojíme
-   * Flex token. Cizí hostname by tedy znamenal token poslaný cizímu serveru —
-   * povolíme jen doménu IBKR (výpisy chodí i z jiné subdomény, než na kterou
-   * se posílá SendRequest) nebo přesně tu, kterou má klient nakonfigurovanou
-   * (mock v testech, vlastní proxy). Případný query string z odpovědi
-   * zahazujeme — parametry si skládáme sami.
-   */
-  private resolveStatementUrl(raw: string | undefined): string {
-    const fallback = `${this.baseUrl}/GetStatement`;
-    if (!raw) return fallback;
-    const base = new URL(fallback);
-    let parsed: URL;
-    try {
-      parsed = new URL(raw, base);
-    } catch {
-      throw new IbkrFlexError(
-        'bad-url',
-        'IBKR vrátil nesrozumitelný odkaz na výpis — zkus synchronizaci za chvíli znovu.',
-      );
-    }
-    const sameAsConfigured = parsed.origin === base.origin;
-    const ibkrDomain =
-      parsed.protocol === 'https:' &&
-      (parsed.hostname === IBKR_DOMAIN || parsed.hostname.endsWith(`.${IBKR_DOMAIN}`));
-    if (!sameAsConfigured && !ibkrDomain) {
-      throw new IbkrFlexError(
-        'bad-url',
-        `IBKR vrátil odkaz na cizí adresu (${parsed.hostname}) — synchronizaci jsme zastavili a token nikam neposlali. Zkus to za chvíli znovu.`,
-      );
-    }
-    return `${parsed.origin}${parsed.pathname}`;
-  }
-
   private async get(url: string): Promise<string> {
-    // HTTP vrstva: retry na 429/5xx a síťové chyby (max 5 pokusů, backoff)
+    // HTTP vrstva: retry na 429/5xx a síťové chyby. Tři pokusy po nejvýš 60 s
+    // a dvě prodlevy dají 195 s — pod rozpočtem jednoho běhu jobů (225 s).
+    // Pět pokusů (375 s) přesáhlo i strop funkce na hostingu: neodpovídající
+    // službu neukončila naše chyba, ale platforma, a job zůstal viset.
     let lastError: unknown;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await sleep(5_000 * attempt);
       try {
         const response = await this.fetchImpl(url, {
           headers: { 'User-Agent': 'danero/1.0' },
@@ -153,7 +161,6 @@ export class IbkrFlexClient {
             String(response.status),
             `IBKR Flex služba neodpovídá (HTTP ${response.status}) — zkus synchronizaci za chvíli znovu.`,
           );
-          await sleep(5_000 * (attempt + 1));
           continue;
         }
         if (!response.ok) {
@@ -164,32 +171,32 @@ export class IbkrFlexClient {
         }
         return await response.text();
       } catch (error) {
-        if (error instanceof IbkrFlexError && !['429'].includes(error.code)) throw error;
+        if (error instanceof IbkrFlexError) throw error;
         lastError = error;
-        await sleep(5_000 * (attempt + 1));
       }
     }
-    throw lastError instanceof Error
+    throw lastError instanceof IbkrFlexError
       ? lastError
       : new IbkrFlexError('network', 'IBKR Flex služba neodpovídá — zkus to za chvíli znovu.');
   }
 
   /**
-   * Fáze 1: objednání výpisu → referenceCode + URL pro vyzvednutí. Kód 1018
-   * (throttling) je i tady dočasný — trpělivý retry, ne fatální chyba.
-   * Pokusy se berou ze SPOLEČNÉHO rozpočtu s vyzvedáváním, aby se celkové
-   * čekání nesečetlo nad strop.
+   * Fáze 1: objednání výpisu → referenceCode. Dočasné kódy (`TRANSIENT_CODES`)
+   * se trpělivě opakují. Pokusy se berou ze SPOLEČNÉHO rozpočtu s vyzvedáváním,
+   * aby se celkové čekání nesečetlo nad strop.
+   *
+   * `<Url>` z odpovědi se NEČTE: dokumentace říká „The <url> returned in the
+   * response body should be ignored“ a služba v ní dodnes posílá i starou
+   * adresu, která na všechno vrací 1001. Výpis se vyzvedává na téže základní
+   * adrese — token tak nikdy neodejde jinam, než kam je klient nastavený.
    */
   private async sendRequest(
     budget: { attemptsLeft: number },
     pollIntervalMs: number,
     onPoll?: () => void | Promise<void>,
-  ): Promise<{
-    referenceCode: string;
-    url: string;
-  }> {
+  ): Promise<string> {
     for (;;) {
-      const query = `t=${encodeURIComponent(this.token)}&q=${encodeURIComponent(this.queryId)}&v=3`;
+      const query = `t=${encodeURIComponent(this.token)}&q=${encodeURIComponent(this.queryId)}&p=${this.periodDays}&v=3`;
       const xml = await this.get(`${this.baseUrl}/SendRequest?${query}`);
       const response = readStatementResponse(xml);
       if (!response) {
@@ -199,12 +206,13 @@ export class IbkrFlexClient {
         );
       }
       if (response.status === 'Success' && response.referenceCode) {
-        return {
-          referenceCode: response.referenceCode,
-          url: this.resolveStatementUrl(response.url),
-        };
+        return response.referenceCode;
       }
-      if (response.errorCode === '1018' && budget.attemptsLeft > 0) {
+      if (
+        response.errorCode !== undefined &&
+        TRANSIENT_CODES.has(response.errorCode) &&
+        budget.attemptsLeft > 0
+      ) {
         budget.attemptsLeft -= 1;
         await onPoll?.();
         await sleep(pollIntervalMs);
@@ -230,18 +238,18 @@ export class IbkrFlexClient {
     const pollIntervalMs = options.pollIntervalMs ?? 10_000;
     const maxAttempts = options.maxAttempts ?? 58;
     const budget = { attemptsLeft: maxAttempts };
-    const { referenceCode, url } = await this.sendRequest(budget, pollIntervalMs, options.onPoll);
+    const referenceCode = await this.sendRequest(budget, pollIntervalMs, options.onPoll);
 
     for (;;) {
       const query = `t=${encodeURIComponent(this.token)}&q=${encodeURIComponent(referenceCode)}&v=3`;
-      const body = await this.get(`${url}?${query}`);
+      const body = await this.get(`${this.baseUrl}/GetStatement?${query}`);
 
       // hotový výpis je FlexQueryResponse; FlexStatementResponse = stav/chyba
       if (body.includes('<FlexQueryResponse')) return body;
 
       const response = readStatementResponse(body);
       const code = response?.errorCode;
-      if (code === '1019' || code === '1018' || code === '1021') {
+      if (code !== undefined && TRANSIENT_CODES.has(code)) {
         if (budget.attemptsLeft <= 0) {
           throw new IbkrFlexError(
             'timeout',

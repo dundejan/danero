@@ -2,7 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { d, TransactionSchema, ZERO } from '@danero/shared';
 import { cleanNumber, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
-import type { ImportResult } from '../types';
+import type { ImportResult, RetractedEvent } from '../types';
 
 export const IBKR_BROKER = 'ibkr';
 
@@ -37,6 +37,8 @@ export interface IbkrParseOutcome extends ImportResult {
    * v historii a kontrola pozic to musí říct (B-6).
    */
   coveredYears: number[];
+  /** Události, které výpis ruší — viz `ImportResult.retracted`. */
+  retracted: RetractedEvent[];
 }
 
 type Attrs = Record<string, string>;
@@ -73,7 +75,7 @@ function detectSlashOrder(text: string): { order: SlashOrder; decided: boolean; 
   let dayFirst = 0;
   let monthFirst = 0;
   let present = false;
-  for (const match of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/\d{4}\b/g)) {
+  for (const match of text.matchAll(/="(\d{1,2})\/(\d{1,2})\/(?:\d{4}|\d{2})(?=[";,\s])/g)) {
     present = true;
     if (Number(match[1]) > 12) dayFirst += 1;
     else if (Number(match[2]) > 12) monthFirst += 1;
@@ -111,16 +113,18 @@ function toIsoDateCandidate(value: string | undefined): string | null {
   const datePart = value.trim().split(/[;,\s]|T(?=\d)/)[0]!;
 
   const compact = datePart.replaceAll('-', '');
-  if (/^\d{8}$/.test(compact)) {
+  // osm číslic je datum, čtrnáct datum a čas bez oddělovače (volba „No separator“)
+  if (/^\d{8}(\d{6})?$/.test(compact)) {
     return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
   }
 
   // MM/dd/yyyy (US) i dd/MM/yyyy — pořadí rozhoduje CELÝ dokument, ne jednotlivá
   // hodnota: „05/06/2025“ je samo o sobě nerozhodnutelné a hádat řádek po řádku
   // znamená, že v jednom souboru vyjde jednou květen a jindy červen
-  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(datePart);
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})$/.exec(datePart);
   if (slash) {
-    const [, first, second, year] = slash;
+    const [, first, second, yearRaw] = slash;
+    const year = yearRaw!.length === 2 ? `20${yearRaw}` : yearRaw!;
     const [month, day] = slashOrder === 'dd/MM' ? [second!, first!] : [first!, second!];
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
@@ -221,8 +225,8 @@ function contentId(prefix: string, parts: Array<string | undefined>): string {
 /** Roky pokryté výpisem: fromDate–toDate (YYYYMMDD) z FlexStatement. */
 function statementYears(statement: Record<string, unknown>): number[] {
   const yearOf = (value: unknown): number | null => {
-    const match = /^(\d{4})/.exec(String(value ?? ''));
-    return match ? Number(match[1]) : null;
+    const iso = toIsoDate(value === undefined || value === null ? undefined : String(value));
+    return iso ? Number(iso.slice(0, 4)) : null;
   };
   const from = yearOf(statement.fromDate ?? statement.periodStart);
   const to = yearOf(statement.toDate ?? statement.periodEnd);
@@ -240,6 +244,7 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
     openPositions: [],
     accountIds: [],
     coveredYears: [],
+    retracted: [],
   };
 
   resetContentIds();
@@ -275,12 +280,23 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
     return result;
   }
 
+  // Flex Web Service vydává i „Trade Confirmation Flex Query“ (type="TCF",
+  // obchody v <TradeConfirms>). Je to jiný výpis: jen potvrzení obchodů, bez
+  // dividend, úroků a korporátních akcí. Dřív z něj vyšel prázdný výsledek bez
+  // chyby a synchronizace skončila jako úspěšná.
   const statementsWrap = response.FlexStatements as Record<string, unknown> | undefined;
   const statements = asArray(statementsWrap?.FlexStatement) as unknown as Array<
     Record<string, unknown>
   >;
   if (statements.length === 0) {
     result.errors.push({ line: 1, message: 'Flex XML neobsahuje žádný FlexStatement.' });
+    return result;
+  }
+  if (
+    String(response.type ?? '').toUpperCase() === 'TCF' ||
+    statements.some((item) => item.TradeConfirms !== undefined && item.Trades === undefined)
+  ) {
+    result.errors.push({ line: 1, message: TRADE_CONFIRMATION_MESSAGE });
     return result;
   }
 
@@ -327,6 +343,60 @@ export function parseIbkrFlexXml(text: string): IbkrParseOutcome {
 
 type PushFn = (line: number, raw: Attrs, candidate: Record<string, unknown>) => void;
 
+const TRADE_CONFIRMATION_MESSAGE =
+  'Tohle je Trade Confirmation Flex Query — nese jen potvrzení obchodů, bez dividend, úroků a korporátních akcí, takže z ní daně nespočítáme. V IBKR si vytvoř Activity Flex Query (Performance & Reports → Flex Queries → „+“ u Activity Flex Query) a použij její Query ID.';
+
+const UNSUPPORTED_ASSET_MESSAGE =(symbol: string, assetCategory: string): string =>
+  `Obchod ${symbol} (${assetCategory === 'CRYPTO' ? 'kryptoměna' : 'komodita'}) z výpisu IBKR sami nezaúčtujeme — nemá ISIN, podle kterého pozice vedeme. Doplň ho přes univerzální šablonu.`;
+
+/**
+ * Náklady obchodu: komise brokera a daň z transakce (atribut `taxes` — kolkovné,
+ * daň z finančních transakcí, GST). IBKR počítá do nabývací ceny obojí: „Cost
+ * Basis … is the inverse of proceeds plus commission and tax amount“
+ * (reference Flex Query, sekce Trades). Dokud se četla jen komise, daň
+ * z transakce z výdajů potichu zmizela.
+ *
+ * Obojí je u nákladu ZÁPORNÉ. Kladná komise je rabat a kladná daň vratka —
+ * výdajem nejsou, takže se nepřičtou (dřív je `.abs()` obrátilo v náklad)
+ * a řekneme o nich. Model nese u obchodu jednu měnu poplatku: daň je v měně
+ * obchodu, komise v `ibCommissionCurrency`, a když se liší, započte se komise
+ * a o dani se řekne.
+ */
+function tradeFee(
+  trade: Attrs,
+  line: number,
+  result: ImportResult,
+): { amount: string; currency: string } | undefined {
+  const cost = (raw: string | undefined, label: string, currency: string): ReturnType<typeof d> => {
+    if (!raw) return ZERO;
+    const value = d(cleanNumber(raw));
+    if (value.gt(0)) {
+      result.warnings.push({
+        line,
+        message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''}: ${label} je kladná (${value.toString()} ${currency}) — broker ti ji vrátil. Od nabývací ceny ji neodečítáme; jde-li o podstatnou částku, uprav obchod přes univerzální šablonu.`,
+      });
+      return ZERO;
+    }
+    return value.abs();
+  };
+  const tradeCurrency = trade.currency ?? '';
+  const commissionCurrency = trade.ibCommissionCurrency || tradeCurrency;
+  const commission = cost(trade.ibCommission, 'komise', commissionCurrency);
+  const taxes = cost(trade.taxes, 'daň z transakce', tradeCurrency);
+
+  if (taxes.gt(0) && commission.gt(0) && commissionCurrency !== tradeCurrency) {
+    result.warnings.push({
+      line,
+      message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''}: daň z transakce ${taxes.toString()} ${tradeCurrency} je v jiné měně než komise (${commissionCurrency}) — do výdajů jsme započetli jen komisi, daň doplň ručně.`,
+    });
+    return { amount: commission.toString(), currency: commissionCurrency };
+  }
+  if (commission.gt(0)) {
+    return { amount: commission.plus(taxes).toString(), currency: commissionCurrency };
+  }
+  return taxes.gt(0) ? { amount: taxes.toString(), currency: tradeCurrency } : undefined;
+}
+
 /* ── Trades ──────────────────────────────────────────────────────────────── */
 
 function processTrades(
@@ -336,10 +406,20 @@ function processTrades(
   nextLine: () => number,
   push: PushFn,
 ): void {
-  const trades = asArray((statement.Trades as Record<string, unknown> | undefined)?.Trade);
-  let filteredLevels = 0;
+  const section = statement.Trades as Record<string, unknown> | undefined;
+  const trades = asArray(section?.Trade);
+  // Úroveň „Orders“ a souhrny nejsou `<Trade levelOfDetail="ORDER">`, ale
+  // vlastní elementy `<Order>`, `<SymbolSummary>` a `<AssetSummary>`. Dokud se
+  // četl jen `<Trade>`, dal výpis s objednávkami bez exekucí 0 obchodů
+  // a 0 chyb. (`<Lot>` sem nepatří: uzavřené loty chodí vedle exekucí.)
+  let filteredLevels =
+    asArray(section?.Order).length +
+    asArray(section?.SymbolSummary).length +
+    asArray(section?.AssetSummary).length;
   let processed = 0;
   const cancellations: Array<{ line: number; attrs: Attrs }> = [];
+  // exekuce tohohle výpisu (akcie i deriváty) — podle nich se dohledává originál storna
+  const executed: Array<{ id: string; attrs: Attrs }> = [];
 
   for (const trade of trades) {
     const line = nextLine();
@@ -349,7 +429,7 @@ function processTrades(
     }
     processed += 1;
 
-    const assetCategory = (trade.assetCategory ?? 'STK').toUpperCase();
+    const assetCategory = (trade.assetCategory || 'STK').toUpperCase();
     if (assetCategory === 'CASH') {
       // FX konverze — pro výpočet daně z CP nepodstatné (kurzy řeší engine dle R-06)
       result.skipped.push({
@@ -401,7 +481,7 @@ function processTrades(
       }
       const multiplierRaw = trade.multiplier ? d(cleanNumber(trade.multiplier)) : ZERO;
       const multiplier = multiplierRaw.gt(0) ? multiplierRaw : d(1);
-      const commission = trade.ibCommission ? d(cleanNumber(trade.ibCommission)).abs() : ZERO;
+      const fee = tradeFee(trade, line, result);
       const id = trade.tradeID || trade.transactionID;
       const notes = String(trade.notes ?? '');
       const noteCodes = new Set(notes.split(';').map((code) => code.trim()));
@@ -421,11 +501,13 @@ function processTrades(
         });
       }
 
+      const derivativeId = id
+        ? `ibkr-${id}`
+        : contentId('trade', [buySell, tradeDate, key, quantity.toString(), String(price)]);
+      executed.push({ id: derivativeId, attrs: trade });
       push(line, trade, {
         type: buySell,
-        id: id
-          ? `ibkr-${id}`
-          : contentId('trade', [buySell, tradeDate, key, quantity.toString(), String(price)]),
+        id: derivativeId,
         account: accountId || undefined,
         isin: key,
         ticker: symbol || undefined,
@@ -438,9 +520,7 @@ function processTrades(
         quantity: quantity.abs().toString(),
         pricePerShare: d(cleanNumber(String(price))).mul(multiplier).toString(),
         currency: trade.currency,
-        ...(commission.gt(0)
-          ? { fee: { amount: commission.toString(), currency: trade.ibCommissionCurrency || trade.currency } }
-          : {}),
+        ...(fee ? { fee } : {}),
         tradeDate,
         ...(toIsoDate(trade.settleDateTarget) ? { settlementDate: toIsoDate(trade.settleDateTarget) } : {}),
         ...(noteCodes.has('Ep') ? { note: 'Expirace opce (uzavření za 0)' } : {}),
@@ -448,6 +528,16 @@ function processTrades(
       continue;
     }
 
+    if (!isin && (assetCategory === 'CRYPTO' || assetCategory === 'CMDTY')) {
+      // krypto a komodity ISIN nemají — rada „přidej pole ISIN“ by nikam nevedla
+      result.errors.push({
+        line,
+        message: UNSUPPORTED_ASSET_MESSAGE(trade.symbol ?? '', assetCategory),
+        raw: JSON.stringify(trade),
+        knownUnsupported: true,
+      });
+      continue;
+    }
     if (!isin) {
       result.errors.push({
         line,
@@ -465,10 +555,13 @@ function processTrades(
       continue;
     }
 
+    // Pokladniční poukázka (BILL) se kotuje stejně jako dluhopis: quantity je
+    // nominál a tradePrice procento nominálu. Mezi akciemi by vyšla stokrát dráž.
+    const isDebt = assetCategory === 'BOND' || assetCategory === 'BILL';
     // dluhopisy IBKR kotuje v procentech nominálu — jediná spolehlivá cena je
     // z proceeds (skutečné plnění); bez něj radši viditelná chyba než 100× výdaj
     let pricePerShare = cleanNumber(price);
-    if (assetCategory === 'BOND') {
+    if (isDebt) {
       const proceeds = trade.proceeds ? d(cleanNumber(trade.proceeds)).abs() : null;
       if (!proceeds || quantity.abs().lte(0)) {
         result.errors.push({
@@ -481,7 +574,7 @@ function processTrades(
       pricePerShare = proceeds.div(quantity.abs()).toDecimalPlaces(10).toString();
     }
 
-    const commission = trade.ibCommission ? d(cleanNumber(trade.ibCommission)).abs() : ZERO;
+    const fee = tradeFee(trade, line, result);
     const settlement = toIsoDate(trade.settleDateTarget);
     const id = trade.tradeID || trade.transactionID;
     // R-13 se týká jen spotových obchodů — u derivátů (výše) se značka
@@ -489,45 +582,80 @@ function processTrades(
     // rolování opce, se kterým short nemá nic společného
     const positionEffect = shortPositionEffect(trade, buySell, line, result);
 
+    const txId = id
+      ? `ibkr-${id}`
+      : contentId('trade', [buySell, tradeDate, isin, quantity.toString(), pricePerShare]);
+    executed.push({ id: txId, attrs: trade });
     push(line, trade, {
       type: buySell,
       ...(positionEffect ? { positionEffect } : {}),
-      id: id
-        ? `ibkr-${id}`
-        : contentId('trade', [buySell, tradeDate, isin, quantity.toString(), pricePerShare]),
+      id: txId,
       account: accountId || undefined,
       isin,
       ticker: trade.symbol || undefined,
       name: trade.description || undefined,
-      assetClass: assetCategory === 'BOND' ? 'BOND' : assetCategory === 'FUND' ? 'ETF' : 'STOCK',
+      assetClass: isDebt ? 'BOND' : assetCategory === 'FUND' ? 'ETF' : 'STOCK',
       quantity: quantity.abs().toString(),
       pricePerShare,
       currency: trade.currency,
-      ...(commission.gt(0)
-        ? { fee: { amount: commission.toString(), currency: trade.ibCommissionCurrency || trade.currency } }
-        : {}),
+      ...(fee ? { fee } : {}),
       tradeDate,
       ...(settlement ? { settlementDate: settlement } : {}),
     });
   }
 
-  // storna: odstranit i původní exekuci (jinak by v DB zůstal zrušený obchod)
+  // Storna: odstranit i původní exekuci (jinak by v DB zůstal zrušený obchod).
+  // Originál se hledá podle `origTradeID`; kdo si to pole ve Flex Query
+  // nezaškrtl, má storno bez odkazu — pak rozhoduje obsah (titul, čas, kusy,
+  // cena, směr). Shodný je i opravný obchod, proto se bere PRVNÍ nevyřazená
+  // shoda a každé storno vyřadí právě jednu exekuci.
+  const removed = new Set<string>();
+  const sameExecution = (original: Attrs, cancellation: Attrs): boolean => {
+    const direction = String(cancellation.buySell ?? '').toUpperCase().replace(/\s*\(CA\.\)/, '');
+    const quantityOf = (attrs: Attrs): string =>
+      attrs.quantity ? d(cleanNumber(attrs.quantity)).abs().toString() : '';
+    const priceOf = (attrs: Attrs): string =>
+      attrs.tradePrice ? d(cleanNumber(attrs.tradePrice)).toString() : '';
+    return (
+      String(original.buySell ?? '').toUpperCase() === direction &&
+      (original.isin ?? '') === (cancellation.isin ?? '') &&
+      (original.tradeDate ?? '') === (cancellation.tradeDate ?? '') &&
+      (original.dateTime ?? '') === (cancellation.dateTime ?? '') &&
+      (original.currency ?? '') === (cancellation.currency ?? '') &&
+      quantityOf(original) !== '' &&
+      quantityOf(original) === quantityOf(cancellation) &&
+      priceOf(original) === priceOf(cancellation)
+    );
+  };
   for (const cancellation of cancellations) {
     const attrs = cancellation.attrs;
     const originalId = attrs.origTradeID ? `ibkr-${attrs.origTradeID}` : null;
-    const index = originalId
-      ? result.transactions.findIndex((tx) => tx.id === originalId)
-      : -1;
-    if (index >= 0) {
+    // Storno říká brokerovo id původního obchodu. I když originál v tomhle
+    // výpisu není (nebo je a vyřadí se), z DŘÍVĚJŠÍ synchronizace už uložený
+    // být může — import ho podle `retracted` odstraní.
+    if (originalId) result.retracted.push({ id: originalId, types: ['BUY', 'SELL'] });
+    const matched = originalId
+      ? executed.find((item) => item.id === originalId && !removed.has(item.id))
+      : executed.find((item) => !removed.has(item.id) && sameExecution(item.attrs, attrs));
+    const index = matched ? result.transactions.findIndex((tx) => tx.id === matched.id) : -1;
+    if (matched && index >= 0) {
+      removed.add(matched.id);
       result.transactions.splice(index, 1);
       result.warnings.push({
         line: cancellation.line,
-        message: `Stornovaný obchod ${attrs.symbol ?? ''} (${attrs.origTradeID}) — originál i storno vynechány, opravný obchod je ve výpisu samostatně.`,
+        message: `Stornovaný obchod ${attrs.symbol ?? ''}${attrs.origTradeID ? ` (${attrs.origTradeID})` : ''} — originál i storno vynechány, opravný obchod je ve výpisu samostatně.`,
+      });
+    } else if (originalId) {
+      // originál je mimo období výpisu: storno samo se neúčtuje a uložený
+      // originál (pokud nějaký je) odstraní import
+      result.warnings.push({
+        line: cancellation.line,
+        message: `Storno obchodu ${attrs.symbol ?? ''} (tradeID ${attrs.origTradeID}) míří na obchod, který v tomhle výpisu není. Jestli ho máš uložený z dřívějška, odstraníme ho; samotné storno se neúčtuje. Kdybys výpis s původním obchodem nahrál až po tomhle, nahraj pak tenhle ještě jednou.`,
       });
     } else {
       result.errors.push({
         line: cancellation.line,
-        message: `Storno obchodu ${attrs.symbol ?? ''} se nepodařilo spárovat s originálem${attrs.origTradeID ? ` (tradeID ${attrs.origTradeID})` : ''} — zkontroluj, že výpis pokrývá i původní obchod, jinak oprav ručně.`,
+        message: `Storno obchodu ${attrs.symbol ?? ''} se nepodařilo spárovat s originálem — ve Flex Query si u Trades zapni pole „Orig Trade ID“, podle kterého se storno k obchodu přiřazuje, a zkontroluj, že výpis pokrývá i původní obchod.`,
         raw: JSON.stringify(attrs),
       });
     }
@@ -565,6 +693,13 @@ function processCashTransactions(
 
   const groupKey = (attrs: Attrs, date: string): string =>
     `${attrs.isin || attrs.symbol || '?'}|${date}|${attrs.currency ?? '?'}`;
+
+  // IBKR Ireland sráží z kreditního úroku 20 % a posílá to jako „Withholding
+  // Tax“ BEZ titulu („WITHHOLDING @ 20% ON CREDIT INT FOR …“). K dividendě
+  // nepatří — páruje se s úrokem téhož dne a měny, proto se úroky účtují až
+  // po průchodu všemi řádky.
+  const interestRows: Array<{ line: number; attrs: Attrs; key: string; candidate: Record<string, unknown> }> = [];
+  const interestWithholding = new Map<string, { total: ReturnType<typeof d>; line: number }>();
 
   let filteredLevels = 0;
   let processed = 0;
@@ -614,6 +749,13 @@ function processCashTransactions(
         break;
       }
       case 'Withholding Tax': {
+        if (!row.isin?.trim() && !row.symbol?.trim()) {
+          const cashKey = `${date}|${row.currency ?? '?'}`;
+          const entry = interestWithholding.get(cashKey) ?? { total: ZERO, line };
+          entry.total = entry.total.plus(amount.neg());
+          interestWithholding.set(cashKey, entry);
+          break;
+        }
         const key = groupKey(row, date);
         const group = dividendGroups.get(key) ?? {
           dividends: [],
@@ -662,14 +804,20 @@ function processCashTransactions(
       case 'Broker Interest Received':
       case 'Bond Interest Received':
       case 'Credit Interest': {
-        push(line, row, {
-          type: 'INTEREST',
-          id,
-          account: accountId || undefined,
-          amount: amount.toString(),
-          currency: row.currency,
-          date,
-          note: row.description || undefined,
+        interestRows.push({
+          line,
+          attrs: row,
+          // kupón z dluhopisu srážku bez titulu nebere — ta patří k úroku od brokera
+          key: type === 'Bond Interest Received' ? '' : `${date}|${row.currency ?? '?'}`,
+          candidate: {
+            type: 'INTEREST',
+            id,
+            account: accountId || undefined,
+            amount: amount.toString(),
+            currency: row.currency,
+            date,
+            note: row.description || undefined,
+          },
         });
         break;
       }
@@ -732,6 +880,33 @@ function processCashTransactions(
     }
   }
 
+  // úroky: srážka bez titulu z téhož dne a měny připadne prvnímu úroku (R-07f)
+  for (const item of interestRows) {
+    const withheld = item.key === '' ? undefined : interestWithholding.get(item.key);
+    if (!withheld) {
+      push(item.line, item.attrs, item.candidate);
+      continue;
+    }
+    interestWithholding.delete(item.key);
+    if (withheld.total.lt(0)) {
+      result.warnings.push({
+        line: withheld.line,
+        message:
+          'U úroku převažuje vrácená srážková daň nad sraženou — srážku počítáme jako 0, zkontroluj opravy ve výpisu.',
+      });
+    }
+    push(item.line, item.attrs, {
+      ...item.candidate,
+      withholdingTax: (withheld.total.lt(0) ? ZERO : withheld.total).toString(),
+    });
+  }
+  for (const withheld of interestWithholding.values()) {
+    result.warnings.push({
+      line: withheld.line,
+      message: `Srážková daň ${withheld.total.toString()} bez titulu a bez úroku ze stejného dne — nezaúčtováno. Bývá to srážka z úroku, který je v jiném výpisu (oprava přes hranici období); zkontroluj export za celé období.`,
+    });
+  }
+
   // dividendové skupiny → DIVIDEND transakce (srážka rozpočtená dle brutta)
   for (const group of dividendGroups.values()) {
     if (group.dividends.length === 0) {
@@ -769,7 +944,27 @@ function processCashTransactions(
       // reversal/korekce v téže skupině: poctivé netto jednou transakcí
       const netGross = group.dividends.reduce((sum, item) => sum.plus(item.amount), ZERO);
       const firstPositive = group.dividends.find((item) => item.amount.gt(0)) ?? group.dividends[0]!;
+      // Skupina se účtuje jednou transakcí pod id první kladné položky.
+      // Ostatní kladné položky se mohly uložit samostatně, dokud korekce ve
+      // výpisu nebyla (napojený účet) — import je podle `retracted` odstraní,
+      // jinak by se k netto přičetly.
+      for (const item of group.dividends) {
+        if (item !== firstPositive && item.amount.gt(0) && item.attrs.transactionID) {
+          result.retracted.push({
+            id: `ibkr-${item.attrs.transactionID}`,
+            types: ['DIVIDEND'],
+            onlyFromNewerStatement: true,
+          });
+        }
+      }
       if (netGross.lte(0)) {
+        if (firstPositive.attrs.transactionID) {
+          result.retracted.push({
+            id: `ibkr-${firstPositive.attrs.transactionID}`,
+            types: ['DIVIDEND'],
+            onlyFromNewerStatement: true,
+          });
+        }
         result.warnings.push({
           line: firstPositive.line,
           message:
@@ -835,6 +1030,40 @@ function processCashTransactions(
 
 /* ── CorporateActions (FS/RS/IC/SO/TC/DW) ────────────────────────────────── */
 
+/**
+ * Popis akce bez poslední závorky. Dvě nohy téže akce mají popis shodný až na
+ * ni — závorka jmenuje titul té které nohy:
+ *
+ *   „ABC(US…1016) SPLIT 1 FOR 20 (ABCD, ALFA CORP, US…2006)“      nový titul
+ *   „ABC(US…1016) SPLIT 1 FOR 20 (ABCD.OLD, ALFA CORP, US…1016)“  starý titul
+ *
+ * Závorky se počítají odzadu, protože název titulu může obsahovat vlastní.
+ */
+function actionStem(description: string): string {
+  const text = description.trim();
+  if (!text.endsWith(')')) return text;
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    if (text[i] === ')') depth += 1;
+    else if (text[i] === '(') {
+      depth -= 1;
+      if (depth === 0) return text.slice(0, i).trim();
+    }
+  }
+  return text;
+}
+
+/**
+ * Klíč, pod kterým se sejdou nohy jedné korporátní akce. `actionID` je
+ * spolehlivé, jenže ve skutečných výpisech bývá prázdné (všechny veřejně
+ * dostupné vzorky do roku 2023); pak rozhoduje popis bez poslední závorky
+ * a den. Dokud se bral popis celý, nesešly se nohy nikdy: změna ISIN končila
+ * chybou „nemá kompletní pár“ a výměna akcií jako prodej za nulu.
+ */
+function legGroupKey(type: string, row: Attrs, description: string, date: string): string {
+  return row.actionID ? `${type}|${row.actionID}` : `${type}|${actionStem(description)}|${date}`;
+}
+
 function processCorporateActions(
   statement: Record<string, unknown>,
   accountId: string,
@@ -846,9 +1075,13 @@ function processCorporateActions(
     (statement.CorporateActions as Record<string, unknown> | undefined)?.CorporateAction,
   );
 
-  // IC/TC chodí v párech (staré isin záporně, nové kladně) — grupujeme přes
-  // actionID, případně popis+datum
+  // IC/TC chodí v párech (staré isin záporně, nové kladně) — viz `legGroupKey`
   const pairGroups = new Map<string, Array<{ line: number; attrs: Attrs }>>();
+  // FS/RS: jeden řádek, nebo dvojice starý/nový titul, když se splitem mění ISIN
+  const splitGroups = new Map<
+    string,
+    Array<{ line: number; attrs: Attrs; id: string; date: string; description: string }>
+  >();
 
   let filteredLevels = 0;
   let processed = 0;
@@ -880,31 +1113,15 @@ function processCorporateActions(
     switch (type) {
       case 'FS':
       case 'RS': {
-        const isin = row.isin?.trim();
-        const ratio = parseForRatio(description);
-        if (!isin || !ratio) {
-          result.errors.push({
-            line,
-            message: `Split ${row.symbol ?? ''} se nepodařilo přečíst (chybí ISIN nebo poměr „X FOR Y“ v popisu).`,
-            raw: JSON.stringify(row),
-          });
-          break;
-        }
-        push(line, row, {
-          type: 'CORPORATE_ACTION',
-          id,
-          account: accountId || undefined,
-          subtype: 'SPLIT',
-          isin,
-          date,
-          ratio,
-          note: description || undefined,
-        });
+        const key = legGroupKey(type, row, description, date);
+        const group = splitGroups.get(key) ?? [];
+        group.push({ line, attrs: row, id, date, description });
+        splitGroups.set(key, group);
         break;
       }
       case 'IC':
       case 'TC': {
-        const key = row.actionID ? `${type}-${row.actionID}` : `${type}-${description}-${date}`;
+        const key = legGroupKey(type, row, description, date);
         const group = pairGroups.get(key) ?? [];
         group.push({ line, attrs: row });
         pairGroups.set(key, group);
@@ -967,6 +1184,63 @@ function processCorporateActions(
     }
   }
 
+  // Splity. Když se splitem mění ISIN (u reverse splitu v USA pravidlo — nový
+  // CUSIP), posílá IBKR DVA řádky téhož typu: starý titul se zápornými kusy
+  // a nový s kladnými. Dva samostatné splity by nechaly kusy pod starým ISIN
+  // a nový by neměl žádný lot; je to jedna akce se starým i novým ISIN.
+  const legQuantity = (attrs: Attrs): ReturnType<typeof d> => d(cleanNumber(attrs.quantity || '0'));
+  for (const group of splitGroups.values()) {
+    const oldLeg = group.find((leg) => legQuantity(leg.attrs).lt(0));
+    const newLeg = group.find((leg) => legQuantity(leg.attrs).gt(0));
+    const oldIsin = oldLeg?.attrs.isin?.trim();
+    const newIsin = newLeg?.attrs.isin?.trim();
+    if (group.length === 2 && oldLeg && newLeg && oldIsin && newIsin && oldIsin !== newIsin) {
+      // poměr z popisu je přesný; počty kusů ho zkreslí zaokrouhlením zlomků
+      const ratio = parseForRatio(oldLeg.description) ?? {
+        from: legQuantity(oldLeg.attrs).abs().toString(),
+        to: legQuantity(newLeg.attrs).toString(),
+      };
+      // Do 13. 10. 2026 se z každé nohy uložil vlastní SPLIT. Starou nohu
+      // nahradí tahle akce (stejné id), split nového titulu je potřeba zrušit
+      // — jinak by se poměr u už synchronizovaného účtu uplatnil dvakrát.
+      result.retracted.push({ id: newLeg.id, types: ['CORPORATE_ACTION'] });
+      push(oldLeg.line, oldLeg.attrs, {
+        type: 'CORPORATE_ACTION',
+        id: oldLeg.id,
+        account: accountId || undefined,
+        subtype: 'SPLIT',
+        isin: oldIsin,
+        newIsin,
+        date: oldLeg.date,
+        ratio,
+        note: actionStem(oldLeg.description) || undefined,
+      });
+      continue;
+    }
+    for (const leg of group) {
+      const isin = leg.attrs.isin?.trim();
+      const ratio = parseForRatio(leg.description);
+      if (!isin || !ratio) {
+        result.errors.push({
+          line: leg.line,
+          message: `Split ${leg.attrs.symbol ?? ''} se nepodařilo přečíst (chybí ISIN nebo poměr „X FOR Y“ v popisu).`,
+          raw: JSON.stringify(leg.attrs),
+        });
+        continue;
+      }
+      push(leg.line, leg.attrs, {
+        type: 'CORPORATE_ACTION',
+        id: leg.id,
+        account: accountId || undefined,
+        subtype: 'SPLIT',
+        isin,
+        date: leg.date,
+        ratio,
+        note: leg.description || undefined,
+      });
+    }
+  }
+
   // párové akce: IC → ISIN_CHANGE, TC → MERGER (stock-for-stock) / SELL (cash)
   for (const [key, group] of pairGroups) {
     const type = key.startsWith('IC') ? 'IC' : 'TC';
@@ -974,7 +1248,9 @@ function processCorporateActions(
     const newLeg = group.find((g) => d(cleanNumber(g.attrs.quantity || '0')).gt(0));
     const first = group[0]!;
     const date = toIsoDate(first.attrs.dateTime ?? first.attrs.reportDate)!;
-    const description = String(first.attrs.actionDescription ?? first.attrs.description ?? '');
+    const description = actionStem(
+      String(first.attrs.actionDescription ?? first.attrs.description ?? ''),
+    );
     const id = first.attrs.actionID
       ? `ibkr-ca-${first.attrs.actionID}`
       : contentId('ca', [type, date, description]);
@@ -1017,6 +1293,18 @@ function processCorporateActions(
         });
         continue;
       }
+      // Do 13. 10. 2026 se nohy bez actionID nespárovaly a stará se uložila
+      // jako PRODEJ ZA NULU (id z celého popisu nohy). U synchronizovaného
+      // účtu by vedle fúze zůstal — tohle je jeho tehdejší id.
+      if (!oldLeg.attrs.actionID) {
+        const legacyDescription = String(
+          oldLeg.attrs.actionDescription ?? oldLeg.attrs.description ?? '',
+        );
+        result.retracted.push({
+          id: `ibkr-ca-${fnv1a64(['TC', date, legacyDescription].join('|'))}`,
+          types: ['SELL'],
+        });
+      }
       // smíšené plnění (akcie + hotovost): hotovostní část nesmí tiše zmizet
       const cashPart = oldLeg.attrs.proceeds ? d(cleanNumber(oldLeg.attrs.proceeds)).abs() : ZERO;
       if (cashPart.gt(0)) {
@@ -1046,7 +1334,7 @@ function processCorporateActions(
       const isin = attrs.isin?.trim();
       const qty = d(cleanNumber(attrs.quantity!)).abs();
       const proceeds = attrs.proceeds ? d(cleanNumber(attrs.proceeds)).abs() : null;
-      if (!isin || qty.lte(0) || !proceeds) {
+      if (!isin || qty.lte(0) || !proceeds || proceeds.isZero()) {
         result.errors.push({
           line: oldLeg.line,
           message: `Fúze za hotovost (${attrs.symbol ?? ''}) nemá cenu vypořádání — zadej prodej ručně přes univerzální šablonu.`,
@@ -1110,10 +1398,14 @@ function processTransfers(
     }
     processed += 1;
 
-    const assetCategory = (row.assetCategory ?? 'STK').toUpperCase();
-    if (assetCategory === 'CASH') {
+    const assetCategory = (row.assetCategory || 'STK').toUpperCase();
+    const cashAmount = row.cashTransfer ? d(cleanNumber(row.cashTransfer)) : null;
+    // čistě hotovostní převod nemusí nést assetCategory="CASH" — pozná se
+    // i podle toho, že nemá titul a má částku
+    const isCashOnly = !row.isin?.trim() && !row.symbol?.trim() && cashAmount !== null && !cashAmount.eq(0);
+    if (assetCategory === 'CASH' || isCashOnly) {
       const date = toIsoDate(row.date ?? row.dateTime);
-      const amount = row.cashTransfer ? d(cleanNumber(row.cashTransfer)) : null;
+      const amount = cashAmount;
       if (!date || !amount || amount.eq(0)) {
         result.skipped.push({ line, message: 'Hotovostní převod bez částky — přeskočeno.' });
         continue;

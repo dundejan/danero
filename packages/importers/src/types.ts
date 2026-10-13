@@ -15,6 +15,20 @@ export interface RowIssue {
   knownUnsupported?: true;
 }
 
+/** Uložená událost, kterou výpis ruší — viz `ImportResult.retracted`. */
+export interface RetractedEvent {
+  id: string;
+  /** Typy transakcí, mezi kterými se id hledá (řady id se u brokera liší podle druhu). */
+  types: Array<Transaction['type']>;
+  /**
+   * Zrušení platí, jen když je výpis novější než uložená data (synchronizace
+   * napojeného účtu). Týká se dividend složených z více řádků: zrušená položka
+   * se nahrazuje jinou, a ta se u ručně nahraného výpisu nepřepisuje — smazat
+   * jednu bez přepsání druhé by příjem snížilo.
+   */
+  onlyFromNewerStatement?: true;
+}
+
 export interface ImportResult {
   broker: string;
   transactions: Transaction[];
@@ -23,6 +37,15 @@ export interface ImportResult {
   /** Řádky vědomě přeskočené (pro výpočet nejsou potřeba). */
   skipped: RowIssue[];
   warnings: RowIssue[];
+  /**
+   * Události, které broker tímhle výpisem ZRUŠIL: stornovaný obchod (IBKR:
+   * `BUY (Ca.)` s odkazem na původní `tradeID`) nebo dividenda, kterou
+   * stornoval a zaúčtoval znovu. Parser je vyřadí jen z téhož výpisu;
+   * u napojeného účtu se ale uložily dřív, než zrušení přišlo, a v databázi
+   * by zůstaly napořád. Import podle tohohle seznamu uložené řádky odstraní.
+   * Smí sem jen id, které broker sám označil za zrušené.
+   */
+  retracted?: RetractedEvent[];
 }
 
 export const emptyResult = (broker: string): ImportResult => ({

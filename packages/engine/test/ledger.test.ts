@@ -24,6 +24,35 @@ describe('R-04 korporátní akce', () => {
     expect(result.securities.timeTestExemptProceedsCzk.toString()).toBe('120000');
   });
 
+  it('R-04a + R-04e: reverse split s novým ISIN přesune přepočtený lot pod nový ISIN a test běží dál', () => {
+    const txs = [
+      buy({ isin: 'CZ0000000001', quantity: '600', pricePerShare: '20', tradeDate: '2022-05-10', settlementDate: '2022-05-10' }),
+      corpAction({
+        subtype: 'SPLIT',
+        isin: 'CZ0000000001',
+        newIsin: 'CZ0000000099',
+        date: '2024-06-01',
+        ratio: { from: '20', to: '1' },
+      }),
+    ];
+    const warnings = new WarningCollector();
+    const ledger = buildLedger(txs, resolveOptions(), warnings);
+    const lot = ledger.lots[0]!;
+    expect(lot.isin).toBe('CZ0000000099');
+    expect(lot.remaining.toString()).toBe('30');
+    expect(lot.costPerShare.toString()).toBe('400');
+    expect(lot.acquisitionDate).toBe('2022-05-10');
+
+    // prodej pod novým ISIN po 3 letech od původního nabytí je osvobozený a nic nechybí
+    const result = run([
+      ...txs,
+      sell({ isin: 'CZ0000000099', quantity: '30', pricePerShare: '500', tradeDate: '2025-07-01', settlementDate: '2025-07-01' }),
+    ]);
+    expect(hasWarning(result, 'NEGATIVE_POSITION')).toBe(false);
+    expect(result.securities.base10Czk.toString()).toBe('0');
+    expect(result.securities.timeTestExemptProceedsCzk.toString()).toBe('15000');
+  });
+
   it('R-04e: změna ISIN nepřerušuje test — prodej pod novým ISIN najde původní loty', () => {
     const result = run([
       buy({ isin: 'CZ0000000001', quantity: '100', pricePerShare: '1000', tradeDate: '2022-01-10', settlementDate: '2022-01-10' }),

@@ -927,3 +927,98 @@ describe('Trading 212: brutto dividendy = kusy × čistá částka na kus + srá
     expect(result.errors[0]!.message).toContain('„Price / share“ („-0.10“)');
   });
 });
+
+/**
+ * Převzetí placené akciemi kupujícího exportuje T212 jako `Market sell`
+ * s cenou `0E-10` a `Total` `0.00`; nové kusy přijdou řádkem `Stock
+ * distribution`. Tvar popisují dva na sobě nezávislé nástroje nad skutečnými
+ * exporty (cgt-calc PR #1221 z 5. 10. 2026, broker-to-edavki issue #28
+ * z 9. 10. 2026). Jako SELL za nulu by se celá nabývací cena odečetla jako
+ * ztráta, která nevznikla — a bez jediného varování.
+ */
+describe('Trading 212: kusy odepsané za nulu nejsou prodej', () => {
+  const takeover = [
+    HEADER_2026,
+    'Market buy,2025-02-10 14:30:02,US0000000001,AAA,Alfa Inc,,EOF9000000001,30.0000000000,2.00,USD,0.92,,,55.30,EUR,,,,,,,0.08,EUR,,',
+    'Market sell,2026-05-12 07:00:00,US0000000001,AAA,Alfa Inc,,EOF9000000002,30.0000000000,0E-10,USD,Not available,-55.30,EUR,0.00,EUR,,,,,,,,,,',
+    'Stock distribution,2026-05-12 07:00:01,US0000000002,BBB,Beta Inc,,EOF9000000003,12.0000000000,0E-10,USD,Not available,,,0.00,EUR,,,,,,,,,,',
+  ].join('\n');
+
+  it('řádek s nulovou cenou i nulovým Total se nezaúčtuje jako SELL', () => {
+    const result = parseTrading212Csv(takeover);
+    expect(result.transactions.map((tx) => tx.type)).toEqual(['BUY']);
+  });
+
+  it('uživatel dostane chybu s radou, kudy pohyb doplnit — a není to „nepřečtený výpis“', () => {
+    const result = parseTrading212Csv(takeover);
+    const error = result.errors.find((issue) => issue.line === 3);
+    expect(error?.message).toContain('to není prodej');
+    expect(error?.message).toContain('univerzální šablonu');
+    expect(error?.knownUnsupported).toBe(true);
+  });
+
+  it('prázdný Total se bere stejně jako nulový', () => {
+    const result = parseRow2026(
+      'Market sell,2026-05-12 07:00:00,US0000000001,AAA,Alfa Inc,,EOF9000000005,30.0000000000,0,USD,Not available,,,,,,,,,,,,,,',
+    );
+    expect(result.transactions).toEqual([]);
+    expect(result.errors[0]?.knownUnsupported).toBe(true);
+  });
+
+  it('prodej zlomku kusu s nulovým Total, ale skutečnou cenou, zůstává prodejem', () => {
+    const result = parseRow2026(
+      'Market sell,2026-05-12 07:00:00,US0000000001,AAA,Alfa Inc,,EOF9000000004,0.0001000000,2.00,USD,0.92,0.00,EUR,0.00,EUR,,,,,,,,,,',
+    );
+    expect(result.transactions.map((tx) => tx.type)).toEqual(['SELL']);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('nulová cena se skutečnou částkou (titul pod cent) zůstává prodejem', () => {
+    const result = parseRow2026(
+      'Market sell,2026-05-12 07:00:00,US0000000001,AAA,Alfa Inc,,EOF9000000006,5000.0000000000,0.00,USD,0.92,-12.00,EUR,3.10,EUR,,,,,,,,,,',
+    );
+    expect(result.transactions.map((tx) => tx.type)).toEqual(['SELL']);
+  });
+});
+
+/**
+ * Exporty zhruba do začátku roku 2024 nesly měnu účtu v NÁZVU sloupce
+ * (community.trading212.com/t/csv-headers-with-different-currency/60788,
+ * zkušební data cgt-calc z roku 2020). Sniffer je pozná, takže se musí přečíst
+ * celé: dřív se načetly jen obchody a dividendy, vklady a úroky končily na
+ * „chybí částka/měna“ a poplatek za konverzi se zahodil beze slova.
+ */
+describe('Trading 212: starý tvar exportu se sloupci „Total (EUR)“', () => {
+  const OLD_HEADER =
+    'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result (EUR),Total (EUR),Withholding tax,Currency (Withholding tax),Charge amount (EUR),Notes,ID,Currency conversion fee (EUR)';
+  const old = [
+    OLD_HEADER,
+    'Deposit,2022-03-01 08:00:00,,,,,,,,,500.00,,,,Transaction ID: x,D-1,',
+    'Market buy,2022-03-02 14:30:05,US0000000001,AAA,Alfa Inc,4.0000000000,20.00,USD,1.10000,,72.84,,,,,EOF8000000001,0.11',
+    'Interest on cash,2022-03-03 02:10:00,,,,,,,,,0.21,,,,Interest on cash,I-1,',
+    'Withdrawal,2022-03-04 09:00:00,,,,,,,,,-100.00,,,,Transaction ID: y,W-1,',
+  ].join('\n');
+
+  it('vklad, výběr i úrok se načtou s měnou z názvu sloupce', () => {
+    const result = parseTrading212Csv(old);
+    expect(result.errors).toEqual([]);
+    const cash = result.transactions.flatMap((tx) =>
+      tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL' || tx.type === 'INTEREST'
+        ? [`${tx.type} ${tx.amount.toString()} ${tx.currency}`]
+        : [],
+    );
+    expect(cash).toEqual(['DEPOSIT 500 EUR', 'INTEREST 0.21 EUR', 'WITHDRAWAL 100 EUR']);
+  });
+
+  it('poplatek za konverzi se započte do výdajů nákupu', () => {
+    const buy = parseTrading212Csv(old).transactions.find((tx) => tx.type === 'BUY');
+    if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.fee?.amount.toString()).toBe('0.11');
+    expect(buy.fee?.currency).toBe('EUR');
+  });
+
+  it('dnešní tvar má přednost — „Time (UTC)“ se za částku v měně UTC nezamění', () => {
+    const result = parseTrading212Csv(FIXTURE_2026);
+    expect(result.errors).toEqual([]);
+  });
+});

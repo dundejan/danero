@@ -64,7 +64,56 @@ const SHARE_MOVEMENT_GUIDANCE = {
     'převod kusů z tohohle účtu jinam (není to prodej). Je to pohyb kusů, který sami nezaúčtujeme, takže v evidenci dál zůstávají kusy, které tu už nemáš. Doplň ho přes univerzální šablonu řádkem TRANSFER_OUT.',
   singleLineSplit:
     'změna počtu kusů (split) zapsaná jedním řádkem — umíme ji jen jako dvojici řádků „Stock split close“ a „Stock split open“. Je to pohyb kusů, který sami nezaúčtujeme, takže počet kusů v evidenci po téhle události nesedí. Doplň ji přes univerzální šablonu řádkem CORPORATE_ACTION se subtypem SPLIT a poměrem starých a nových kusů.',
+  // Text schválně netvrdí, o jakou událost šlo: stejně vypadá výměna akcií při
+  // převzetí i vyřazení titulu a z řádku se to nepozná.
+  removedForNothing:
+    'Trading 212 tímhle řádkem odepsal kusy za nulovou cenu a nic za ně nevyplatil — to není prodej. Takhle se v exportu objevuje třeba výměna akcií při převzetí firmy (nové kusy pak připíše řádek „Stock distribution“) nebo vyřazení titulu. Jako prodej za nulu by z řádku vznikla ztráta ve výši celé nabývací ceny, proto ho sami nezaúčtujeme a kusy v evidenci zůstávají. Zjisti si u brokera, co se s nimi stalo, a doplň to přes univerzální šablonu — výměnu akcií řádkem CORPORATE_ACTION se subtypem MERGER.',
 } as const;
+
+/**
+ * Starší exporty (zhruba do začátku roku 2024) nesly měnu účtu v NÁZVU
+ * sloupce: `Total (EUR)`, `Result (EUR)`, `Currency conversion fee (EUR)`.
+ * Dnešní mají `Total` a vedle něj `Currency (Total)`. T212 sice starý tvar už
+ * negeneruje, ale soubor uložený tehdy je pro toho, kdo účet mezitím zrušil,
+ * jediný doklad — a napůl přečtený je horší než nepřečtený: obchody se
+ * načetly, vklady a úroky skončily na „chybí částka“ a poplatek za konverzi
+ * se zahodil beze slova.
+ */
+class AmountColumns {
+  private readonly legacy = new Map<string, { header: string; currency: string }>();
+
+  constructor(
+    private readonly map: HeaderMap,
+    headers: string[],
+  ) {
+    for (const header of headers) {
+      const match = /^(.+) \(([A-Z]{3})\)$/.exec(header.trim());
+      if (match) this.legacy.set(match[1]!, { header, currency: match[2]! });
+    }
+  }
+
+  /** Syrová částka sloupce `name`, ať je pojmenovaný po novu, nebo po staru. */
+  amount(row: string[], name: string): string {
+    if (this.map.has(name)) return this.map.get(row, name);
+    const legacy = this.legacy.get(name);
+    return legacy ? this.map.get(row, legacy.header) : '';
+  }
+
+  /** Měna částky: ze sloupce `Currency (name)`, ve starém tvaru z názvu sloupce. */
+  currency(row: string[], name: string): string {
+    if (this.map.has(name)) return this.map.get(row, `Currency (${name})`);
+    return this.legacy.get(name)?.currency ?? '';
+  }
+}
+
+/** Je to číslo a je nulové? T212 píše nulu i jako „0E-10“. */
+function isZeroAmount(value: string): boolean {
+  try {
+    return new Decimal(value).isZero();
+  } catch {
+    return false;
+  }
+}
 
 /** Klasifikace řádku podle sloupce Action (hodnoty typu "Market buy", "Dividend (Ordinary)"…). */
 function classifyAction(action: string): RowKind {
@@ -148,6 +197,7 @@ export function parseTrading212Csv(text: string): ImportResult {
   const result = emptyResult(TRADING212_BROKER);
   const { headers, rows } = parseCsv(text);
   const map = new HeaderMap(headers);
+  const amounts = new AmountColumns(map, headers);
 
   // Úplně prázdný soubor = prázdné období (T212 ho vrací pro roky před založením
   // účtu) — to není chyba formátu, ale nula transakcí.
@@ -235,7 +285,24 @@ export function parseTrading212Csv(text: string): ImportResult {
             });
             return;
           }
-          const fee = collectFees(map, row, result, line);
+          // Kusy odepsané za nulu, za které nepřišla ani koruna, nejsou prodej
+          // (takhle T212 exportuje např. převzetí placené akciemi kupujícího:
+          // cena „0E-10“, Total „0.00“). Podmínka chce OBOJÍ nulové — nulová
+          // cena se skutečnou částkou je akcie pod cent, nulová částka se
+          // skutečnou cenou prodej zlomku kusu.
+          if (classified.kind === 'SELL' && isZeroAmount(price)) {
+            const total = cleanNumber(amounts.amount(row, 'Total'));
+            if (total === '' || isZeroAmount(total)) {
+              result.errors.push({
+                line,
+                message: `${action}: ${SHARE_MOVEMENT_GUIDANCE.removedForNothing}`,
+                raw: row.join(','),
+                knownUnsupported: true,
+              });
+              return;
+            }
+          }
+          const fee = collectFees(amounts, row, result, line);
           result.transactions.push(
             TransactionSchema.parse({
               type: classified.kind,
@@ -261,11 +328,11 @@ export function parseTrading212Csv(text: string): ImportResult {
           // by řádek spadl až na schématu se syrovým výpisem validace. Oprava
           // se nezapočítá (příjem zůstane vyšší — bezpečný směr), stejně jako
           // u Degira.
-          const dividendTotal = cleanNumber(map.get(row, 'Total'));
+          const dividendTotal = cleanNumber(amounts.amount(row, 'Total'));
           if (dividendTotal.startsWith('-')) {
             result.warnings.push({
               line,
-              message: `${action}: záporná dividenda ${dividendTotal} ${map.get(row, 'Currency (Total)')} — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+              message: `${action}: záporná dividenda ${dividendTotal} ${amounts.currency(row, 'Total')} — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
             });
             return;
           }
@@ -341,9 +408,9 @@ export function parseTrading212Csv(text: string): ImportResult {
             }
           } else {
             // starší formát bez kusů/ceny: k dispozici jen čistá částka Total
-            gross = cleanNumber(map.get(row, 'Total'));
+            gross = cleanNumber(amounts.amount(row, 'Total'));
             paid = gross;
-            currency = map.get(row, 'Currency (Total)');
+            currency = amounts.currency(row, 'Total');
             if (!gross || !currency) {
               result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.' });
               return;
@@ -382,8 +449,8 @@ export function parseTrading212Csv(text: string): ImportResult {
           return;
         }
         case 'INTEREST': {
-          const amount = cleanNumber(map.get(row, 'Total'));
-          const currency = map.get(row, 'Currency (Total)');
+          const amount = cleanNumber(amounts.amount(row, 'Total'));
+          const currency = amounts.currency(row, 'Total');
           if (!amount || !currency) {
             result.errors.push({ line, message: `${action}: chybí částka/měna úroku.` });
             return;
@@ -437,8 +504,8 @@ export function parseTrading212Csv(text: string): ImportResult {
         }
         case 'DEPOSIT':
         case 'WITHDRAWAL': {
-          const amount = cleanNumber(map.get(row, 'Total'));
-          const currency = map.get(row, 'Currency (Total)');
+          const amount = cleanNumber(amounts.amount(row, 'Total'));
+          const currency = amounts.currency(row, 'Total');
           if (!amount || !currency) {
             result.errors.push({ line, message: `${action}: chybí částka/měna.` });
             return;
@@ -664,7 +731,7 @@ function describeRowError(
  * Bezpečný směr: podezřelý poplatek (záporný = vratka, bez sloupce s měnou) se
  * NEzapočte a nahlásí — nezapočtený výdaj daň nesníží, tichá chyba by ji zkreslila. */
 function collectFees(
-  map: HeaderMap,
+  amounts: AmountColumns,
   row: string[],
   result: ImportResult,
   line: number,
@@ -672,7 +739,7 @@ function collectFees(
   let total: Decimal | undefined;
   let currency: string | undefined;
   for (const column of FEE_COLUMNS) {
-    const raw = cleanNumber(map.get(row, column));
+    const raw = cleanNumber(amounts.amount(row, column));
     if (!raw) continue;
     if (raw.startsWith('-')) {
       result.warnings.push({
@@ -681,7 +748,7 @@ function collectFees(
       });
       continue;
     }
-    const feeCurrency = map.get(row, `Currency (${column})`) || undefined;
+    const feeCurrency = amounts.currency(row, column) || undefined;
     if (feeCurrency === undefined) {
       result.warnings.push({
         line,

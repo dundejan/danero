@@ -52,7 +52,7 @@ describe('IbkrFlexClient (mock fetch)', () => {
     const xml = await client.fetchStatementXml({ pollIntervalMs: 5, maxAttempts: 3 });
     expect(xml).toContain('<FlexQueryResponse');
     // SendRequest nese token+query, GetStatement referenceCode
-    expect(mock.urls[0]).toContain('SendRequest?t=tok-abc&q=123456&v=3');
+    expect(mock.urls[0]).toContain('SendRequest?t=tok-abc&q=123456&p=365&v=3');
     expect(mock.urls[1]).toContain('GetStatement?t=tok-abc&q=REF123&v=3');
     expect(mock.urls).toHaveLength(4);
   });
