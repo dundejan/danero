@@ -293,7 +293,7 @@ test('přístupnost: axe bez vážných nálezů a bez vodorovného přetečení
       await (await hydrated(answer(/Jsi zaměstnanec/, 'Zaměstnanec'))).click();
       await answer(/akcie nebo ETF za víc než 100 000 Kč/, 'Ne').click();
       await answer(/kryptoměny za víc než 100 000 Kč/, 'Ne').click();
-      await answer(/vedle zaměstnání jiné zdanitelné příjmy/, 'Ne').click();
+      await answer(/vedle zaměstnání zdanitelné příjmy/, 'Ne').click();
       await expect(
         calculator.getByText('Vypadá to, že přiznání kvůli investicím řešit nemusíš.'),
       ).toBeVisible();

@@ -267,7 +267,7 @@ describe('robots a sitemapa (K8-09)', () => {
       '/demo/prehled': '2026-10-08', // demo bez naváděcího pruhu
       '/caste-otazky': '2026-10-10',
       '/jak-pocitame': '2026-10-10',
-      '/kalkulacka': '2026-10-10',
+      '/kalkulacka': '2026-10-13', // nové otázky (zaměstnanec / OSVČ / ani jedno) a znění verdiktů
       '/pruvodce': '2026-10-10',
       '/pruvodce/limit-100-000-kc': '2026-10-10',
       '/pruvodce/pausalni-rezim-a-investice': '2026-10-10',

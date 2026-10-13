@@ -112,26 +112,26 @@ test('podstránka /o-projektu: příběh, fotka a provozovatel', async ({ page }
 
 test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => {
   await page.goto('/kalkulacka');
+  // odpovědi jsou přepínače pojmenované zněním otázky
+  const question = (name: string | RegExp) => page.getByRole('group', { name });
+  const answer = (name: string | RegExp, option: string) =>
+    question(name).getByRole('button', { name: option, exact: true });
+  const verdict = page.getByRole('status');
+  const SALES = /akcie nebo ETF za víc než 100 000 Kč/;
+  const SALES_HELD = 'Držel jsi všechny prodané kusy déle než 3 roky?';
+  const CRYPTO = /kryptoměny za víc než 100 000 Kč/;
+  const FLAT_TAX = 'Jsi v paušálním režimu?';
 
   // zaměstnanec s prodeji do 100 000 Kč → osvobozeno + zlaté pravidlo
-  // (odpovědi jsou přepínače — klepnutí před hydratací by propadlo)
-  const employee = page
-    .getByRole('group', { name: 'Jsi zaměstnanec, OSVČ v paušálu, nebo jiné?' })
-    .getByRole('button', { name: 'Zaměstnanec' });
-  await (await hydrated(employee)).click();
-  const prodeje = page.getByRole('group', { name: /akcie nebo ETF za víc než 100 000 Kč/ });
-  await prodeje.getByRole('button', { name: 'Ne', exact: true }).click();
-  // krypto má vlastní limit (a žádný časový test) — samostatná otázka
-  await page
-    .getByRole('group', { name: /kryptoměny za víc než 100 000 Kč/ })
-    .getByRole('button', { name: 'Ne', exact: true })
-    .click();
-  // zaměstnanec má navíc otázku na vedlejší příjmy (20k) — bez ní verdikt nepadá
-  await page
-    .getByRole('group', { name: /vedle zaměstnání jiné zdanitelné příjmy/ })
-    .getByRole('button', { name: 'Ne', exact: true })
-    .click();
-  const verdict = page.getByRole('status');
+  // (klepnutí před hydratací by propadlo)
+  await (await hydrated(answer('Jsi zaměstnanec, nebo OSVČ?', 'Zaměstnanec'))).click();
+  // na paušální režim se ptáme jen OSVČ
+  await expect(question(FLAT_TAX)).toHaveCount(0);
+  await answer(SALES, 'Ne').click();
+  // krypto má vlastní limit — samostatná otázka
+  await answer(CRYPTO, 'Ne').click();
+  // zaměstnanec má navíc otázku na vedlejší příjmy — bez ní verdikt nepadá
+  await answer(/vedle zaměstnání zdanitelné příjmy/, 'Ne').click();
   await expect(
     verdict.getByText('Vypadá to, že přiznání kvůli investicím řešit nemusíš.'),
   ).toBeVisible();
@@ -139,31 +139,54 @@ test('podstránka /kalkulacka dává orientační verdikt', async ({ page }) => 
     verdict.getByText('Do 100 000 Kč tržeb z prodejů se daň z prodejů neřeší — vůbec.'),
   ).toBeVisible();
 
-  // neosvobozené prodeje (nad 100k, drženo méně než 3 roky) → verdikt se otočí
-  await prodeje.getByRole('button', { name: 'Ano', exact: true }).click();
-  await page
-    .getByRole('group', { name: 'Držel jsi všechny prodané kusy déle než 3 roky?' })
-    .getByRole('button', { name: 'Ne', exact: true })
-    .click();
+  // prodeje nad 100 000 Kč: dokud chybí odpověď na držení, verdikt není
+  // a pozdější otázky čekají
+  await answer(SALES, 'Ano').click();
+  await expect(verdict).toContainText('Ukáže se tady, jakmile odpovíš na všechny otázky.');
+  await expect(question(CRYPTO)).toHaveCount(0);
+  // nic z toho tři roky nevydrželo → verdikt je jistý a dál se neptáme
+  await answer(SALES_HELD, 'Žádné').click();
   await expect(verdict.getByText('Nejspíš podáš přiznání.')).toBeVisible();
+  await expect(verdict.getByText('celá tržba, ne jen zisk')).toBeVisible();
+  await expect(question(CRYPTO)).toHaveCount(0);
 
-  // krypto nad 100k má od 15. 2. 2025 vlastní tříletý test (nález 2 daňového auditu)
-  await page
-    .getByRole('group', { name: /kryptoměny za víc než 100 000 Kč/ })
-    .getByRole('button', { name: 'Ano', exact: true })
-    .click();
-  await page
-    .getByRole('group', { name: 'Držel jsi všechno prodané krypto déle než 3 roky?' })
-    .getByRole('button', { name: 'Ne', exact: true })
-    .click();
+  // vydržela jen část → zbytek se přičítá až v otázce na ostatní příjmy;
+  // dřívější odpověď na krypto zůstala
+  await answer(SALES_HELD, 'Jen část').click();
+  await expect(answer(CRYPTO, 'Ne')).toHaveAttribute('aria-pressed', 'true');
   await expect(
-    verdict.getByText('kryptoaktiv nad 100 000 Kč ročně bez tří let držení'),
+    page.getByText('Započítej celou tržbu (ne zisk) za akcie a ETF, které jsi nedržel déle než 3 roky.'),
   ).toBeVisible();
+  await answer(/vedle zaměstnání zdanitelné příjmy/, 'Ano').click();
+  await expect(verdict.getByText('Nejspíš podáš přiznání.')).toBeVisible();
+  // část prodejů byla osvobozená tříletým testem → oznámení nad 5 milionů Kč
+  await expect(verdict.getByText('ve lhůtě pro přiznání')).toBeVisible();
+
+  // OSVČ mimo paušál podává přiznání tak jako tak — verdikt mluví o investicích v něm
+  await answer('Jsi zaměstnanec, nebo OSVČ?', 'OSVČ').click();
+  await expect(verdict).toContainText('Ukáže se tady, jakmile odpovíš na všechny otázky.');
+  await answer(FLAT_TAX, 'Ne').click();
+  await expect(verdict.getByText('Investice nejspíš patří do tvého přiznání.')).toBeVisible();
+  await expect(
+    verdict.getByText('Vycházíme z toho, že přiznání kvůli podnikání podáváš.'),
+  ).toBeVisible();
+
+  // paušalista: krypto nad 100 000 Kč má od 15. 2. 2025 vlastní tříletý test
+  // (nález 2 daňového auditu) a prolomení limitu znamená i přehledy
+  await answer(FLAT_TAX, 'Ano').click();
+  await answer(CRYPTO, 'Ano').click();
+  await answer('Držel jsi všechno prodané krypto déle než 3 roky?', 'Nic').click();
+  await expect(verdict.getByText('Krypto jsi prodal nebo směnil za víc než 100 000 Kč')).toBeVisible();
+  await expect(verdict.getByText('v paušálním režimu ale zůstáváš')).toBeVisible();
   await expect(
     verdict.getByText('Orientačně — přesně to spočítá aplikace z tvých dat.'),
   ).toBeVisible();
   // CTA přímo ve verdiktu (role=status) — akci nese verdikt, stránka závěr nemá
   await expect(verdict.getByRole('link', { name: 'Vyzkoušet demo', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Začít znovu' }).click();
+  await expect(question(SALES)).toHaveCount(0);
+  await expect(verdict).toContainText('Ukáže se tady, jakmile odpovíš na všechny otázky.');
 });
 
 test('landing: CTA vede rovnou do dema bez registrace', async ({ page }) => {

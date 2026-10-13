@@ -716,6 +716,42 @@ Dvě oddělené roviny:
   prolomení limitu je skutečný doplatek jiný příběh (R-08f: daň z podnikání
   a pojistné aplikace nevidí).
 
+- **R-09g Veřejná kalkulačka „Musím podat přiznání?“** (`/kalkulacka`,
+  `apps/web/components/filing-calculator.tsx`) žádné vlastní pravidlo nemá —
+  jen z odpovědí bez částek skládá R-01, R-02, R-08, R-09a–f a R-10. Co z nich
+  odvozuje:
+
+  | Odpověď | Důsledek | Pravidlo |
+  |---|---|---|
+  | prodeje (CP, zvlášť krypto) do 100 000 Kč | osvobozené | R-02, R-10a |
+  | nad 100 000 Kč, **všechno** drženo déle než 3 roky | osvobozené | R-01, R-10b |
+  | nad 100 000 Kč, **nic** drženo déle než 3 roky | zdanitelný příjem nad 100 000 Kč → překročí každý limit (i obecných 100 000 Kč od ZO 2027: „víc než“) | R-08d, R-09a, R-09b |
+  | nad 100 000 Kč, drženo **jen část** | zbytek je zdanitelný v plné výši tržby (striktní výklad — stovku vyčerpaly všechny prodeje dohromady); výši kalkulačka nezná, proto ho uživatel přičte až v otázce na ostatní příjmy | R-02c |
+  | zaměstnanec / paušál / ani jedno | limit R-09b / R-08b / R-09a | |
+  | OSVČ mimo paušál | limit nemá: jakýkoli zdanitelný příjem z investic patří do přiznání, které podává kvůli podnikání | R-09f |
+
+  Do limitů se počítají hrubé částky podle R-08d (zahraniční dividendy a úroky
+  před srážkou, kladná plnění z derivátů, prodeje stablecoinů) a **nepočítají**
+  se osvobozené prodeje ani české dividendy a úroky zdaněné srážkou (R-07a,
+  R-07g). Oznámení podle R-09d kalkulačka zmiňuje jen tomu, kdo něco osvobodil
+  časovým testem — prodeje do 100 000 Kč za rok pěti milionů dosáhnout nemůžou
+  — a lhůtu volí podle verdiktu: tři měsíce nepodávajícímu, lhůtu přiznání
+  podávajícímu, obojí u verdiktu „nedá se určit“. Řídí se jen otázkami, které
+  jsou vidět: kdo dostal verdikt už u cenných papírů, na krypto dotázán nebyl
+  a oznámení za něj hlídá až aplikace z dat (`REPORTING_38V`).
+
+  Odpověď „jen část“ stojí na striktním výkladu R-02c. Verdikt, který by
+  menšinový výklad mohl změnit („přiznání“ nebo „nedá se určit“), to říká
+  větou a vysvětlivkou — stejně jako přepínač v Nastavení (pravidlo 2).
+
+  Do 13. 10. 2026 měla kalkulačka jedinou volbu „Zaměstnanec / OSVČ v paušálu /
+  Jiné“. OSVČ mimo paušál tak spadla pod obecný limit a četla, že přiznání
+  řešit nemusí; „ne všechno drženo tři roky“ znamenalo rovnou přiznání, i když
+  šlo o pár kusů za tisícovku; a nápověda jmenovala „úroky“ bez rozlišení, takže
+  do limitu počítal i ten, kdo je má ze spořicího účtu. Shodu kalkulačky
+  s enginem hlídá `apps/web/test/filing-calculator.test.ts`: každý průchod
+  otázkami přeloží na transakce s částkami na hranách limitů a porovná verdikt.
+
 ## R-10 Kryptoaktiva (zák. č. 32/2025 Sb., účinnost 15. 2. 2025) — implementováno (G6)
 
 Vymezení: kryptoaktivum dle nařízení MiCA (EU) 2023/1114 — digitální zachycení hodnoty

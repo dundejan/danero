@@ -31,7 +31,7 @@ const RULES = [
   },
   {
     title: 'Limity pro podání přiznání',
-    body: 'OSVČ v paušálním režimu má hranici 50 000 Kč zdanitelných příjmů mimo podnikání. Překročení z režimu nevyhazuje — jen daň přestane být rovna paušální dani, takže vzniká povinnost podat přiznání a přehledy. Do hranice patří neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnanci hlídají vedlejší příjmy — za rok 2026 do 20 000 Kč, od roku 2027 do 40 000 Kč; pro ostatní platí obecný limit 50 000 Kč za rok 2026 a 100 000 Kč od roku 2027. Osvobozené prodeje se do limitů nepočítají. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
+    body: 'OSVČ v paušálním režimu má hranici 50 000 Kč zdanitelných příjmů mimo podnikání. Překročení z režimu nevyhazuje — jen daň přestane být rovna paušální dani, takže vzniká povinnost podat přiznání a přehledy. Do hranice patří neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnanci hlídají vedlejší příjmy — za rok 2026 do 20 000 Kč, od roku 2027 do 40 000 Kč; kdo není zaměstnanec ani OSVČ, má obecný limit 50 000 Kč za rok 2026 a 100 000 Kč od roku 2027. OSVČ mimo paušální režim podává přiznání kvůli podnikání tak jako tak a zdanitelné příjmy z investic do něj patří v jakékoli výši. Osvobozené prodeje se do limitů nepočítají, stejně jako české dividendy a úroky z banky zdaněné srážkou. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
   },
 ] as const;
 
