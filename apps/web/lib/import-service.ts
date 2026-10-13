@@ -1,5 +1,6 @@
 import {
   ETORO_ENGLISH_ONLY,
+  readSheetRows,
   brokerCorrectsEvents,
   brokerIdKey,
   dedupeTransactions,
@@ -492,10 +493,10 @@ export async function importFile(
   // Fio: parser dostává TENTÝŽ text jako sniffer — kódování už jednou určil
   // `decodeUpload`. Druhé dekódování natvrdo jako windows-1250 rozbilo výpis
   // přeuložený v UTF-8: sniffer ho poznal, parser pak četl „SmÄ›r“ (L2c-04).
-  // Kontroluje se JEN první řádek — poznámka v jiném souboru nesmí import
-  // přesměrovat na Fio.
-  const header = firstLine(text);
-  if (sniffFioCsv(header)) {
+  // Hlavička se hledá v prvních řádcích (skutečný export začíná preambulí
+  // s názvem portfolia) a jen jako řádek se sloupcem „Datum obchodu“ —
+  // poznámka v jiném souboru nesmí import přesměrovat na Fio.
+  if (sniffFioCsv(text)) {
     const aliases = await loadAliases(db, userId);
     const outcome = parseFioCsv(text, { symbolMap: aliases.isinOnly.fio });
     return importParsed(db, userId, filename, outcome, undefined, {
@@ -586,7 +587,21 @@ async function importXlsxUpload(
   if (sniffSaxoXlsxShape(workbook)) {
     return importParsed(db, userId, filename, await parseSaxoXlsx(data), undefined, NOT_OURS);
   }
-  const unknown = unknownFormat(unknownXlsxMessage(outlineWorkbook(workbook), filename));
+  const outline = outlineWorkbook(workbook);
+  // Univerzální šablona uložená z Excelu jako sešit. Do 13. 10. 2026 dostala
+  // „XLSX nepoznáváme … nebo použij univerzální šablonu“ — tu, kterou uživatel
+  // právě nahrál — a ještě se schovala jako nepřečtený výpis. První list se
+  // převede na CSV a čte ho tentýž parser jako šablonu v CSV.
+  const firstSheet = workbook.worksheets[0];
+  if (firstSheet && looksLikeTemplate(outline.firstRow)) {
+    const csv = readSheetRows(firstSheet)
+      .map((row) =>
+        Array.from(row.cells, (cell) => `"${(cell ?? '').replace(/"/g, '""')}"`).join(','),
+      )
+      .join('\n');
+    return importParsed(db, userId, filename, parseUniversalCsv(csv), undefined, NOT_OURS);
+  }
+  const unknown = unknownFormat(unknownXlsxMessage(outline, filename));
   return importParsed(db, userId, filename, unknown, undefined, { unrecognized: true });
 }
 

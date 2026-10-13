@@ -1,6 +1,6 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
-import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import { REENTER_VIA_TEMPLATE, emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 import { YearBoundaryWatch } from '../year-boundary';
 import {
   detectRevolutDecimal,
@@ -333,7 +333,7 @@ export function parseRevolutInvestTable(
         });
         result.warnings.push({
           line,
-          message: `Dividenda ${ticker}: Revolut uvádí dividendy netto po srážce v zahraničí — srážkovou daň výpis neobsahuje; pro přesný zápočet uprav řádek přes univerzální šablonu.`,
+          message: `Dividenda ${ticker}: Revolut uvádí dividendy netto po srážce v zahraničí — srážkovou daň výpis neobsahuje, takže ji do zápočtu nedáváme. ${REENTER_VIA_TEMPLATE}`,
         });
         return;
       }
@@ -405,7 +405,7 @@ export function parseRevolutInvestTable(
     const withheld = correction.net.lt(0);
     result.warnings.push({
       line: correction.line,
-      message: `Oprava daně z dividendy ${correction.ticker} z ${correction.date}: Revolut dodatečně ${withheld ? 'strhl' : 'vrátil'} ${correction.net.abs().toString()} ${correction.currency}. Do výpočtu ji sami nezařazujeme — ${withheld ? 'chceš-li tu daň započíst, doplň' : 'zápočet daně u té dividendy tím klesá; uprav'} dividendu přes univerzální šablonu (brutto a sražená daň).`,
+      message: `Oprava daně z dividendy ${correction.ticker} z ${correction.date}: Revolut dodatečně ${withheld ? 'strhl' : 'vrátil'} ${correction.net.abs().toString()} ${correction.currency}. Do výpočtu ji sami nezařazujeme${withheld ? '' : ' — zápočet daně u té dividendy tím klesá'}. ${REENTER_VIA_TEMPLATE}`,
     });
   }
 

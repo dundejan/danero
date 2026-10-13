@@ -3,6 +3,7 @@ import { Decimal, ZERO } from '@danero/shared';
 import { normalizeHeader } from '../csv';
 import { emptyResult, type ImportResult } from '../types';
 import {
+  centAccountMessage,
   extractHtmlRows,
   findAccountCurrency,
   makePush,
@@ -132,6 +133,11 @@ function parseMt5Rows(rows: Mt5Row[], result: ImportResult): ImportResult {
       message:
         'V hlavičce reportu chybí měna účtu („Currency: …“) — bez ní neumíme výsledky obchodů zpracovat. Vygeneruj report znovu z MT5 terminálu.',
     });
+    return result;
+  }
+  const centAccount = centAccountMessage(currency);
+  if (centAccount !== null) {
+    result.errors.push({ line: 1, message: centAccount, knownUnsupported: true });
     return result;
   }
 

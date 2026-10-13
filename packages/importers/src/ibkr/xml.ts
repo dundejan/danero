@@ -2,7 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { d, TransactionSchema, ZERO } from '@danero/shared';
 import { cleanNumber, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
-import type { ImportResult, RetractedEvent } from '../types';
+import { REENTER_VIA_TEMPLATE, type ImportResult, type RetractedEvent } from '../types';
 
 export const IBKR_BROKER = 'ibkr';
 
@@ -373,7 +373,7 @@ function tradeFee(
     if (value.gt(0)) {
       result.warnings.push({
         line,
-        message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''}: ${label} je kladná (${value.toString()} ${currency}) — broker ti ji vrátil. Od nabývací ceny ji neodečítáme; jde-li o podstatnou částku, uprav obchod přes univerzální šablonu.`,
+        message: `Obchod ${trade.symbol ?? ''} z ${trade.tradeDate ?? ''}: ${label} je kladná (${value.toString()} ${currency}) — broker ti ji vrátil. Od nabývací ceny ji neodečítáme. ${REENTER_VIA_TEMPLATE}`,
       });
       return ZERO;
     }
@@ -491,7 +491,7 @@ function processTrades(
         // podkladu; počítáme konzervativně (výdaj nepropadá do podkladu automaticky)
         result.warnings.push({
           line,
-          message: `Opce ${symbol}: ${noteCodes.has('A') ? 'assignment' : 'uplatnění (exercise)'} — zaplacená prémie nakoupené opce by správně vstoupila do nabývací ceny podkladu. Danero ji konzervativně neuplatňuje automaticky; podklad případně uprav univerzální šablonou.`,
+          message: `Opce ${symbol}: ${noteCodes.has('A') ? 'assignment' : 'uplatnění (exercise)'} — zaplacená prémie nakoupené opce by správně vstoupila do nabývací ceny podkladu. Danero ji konzervativně neuplatňuje automaticky. ${REENTER_VIA_TEMPLATE}`,
         });
       }
       if (assetCategory === 'WAR') {
@@ -1442,18 +1442,16 @@ function processTransfers(
       ? `ibkr-${row.transactionID}`
       : contentId('tr', [direction || (isIncoming ? 'IN' : 'OUT'), date, isin, quantity.toString()]);
     if (isIncoming) {
+      // Příchozí převod se NEUKLÁDÁ. Do 13. 10. 2026 se ukládal bez nabytí
+      // (cena 0, test od převodu) a hláška radila doplnit TRANSFER_IN šablonou
+      // — šablona je ale jiný jmenný prostor dedupe, takže kdo radu poslechl,
+      // měl kusy v evidenci dvakrát a k nim trvale lot s nulovou cenou.
+      // Původní datum a cenu IBKR nezná; doplnit je může jen uživatel, a to
+      // jedním řádkem. Dřív uložený záznam import podle `retracted` odstraní.
+      result.retracted.push({ id, types: ['TRANSFER_IN'] });
       result.warnings.push({
         line,
-        message: `Příchozí převod ${row.symbol ?? isin}: IBKR nezná původní datum a cenu nabytí — doplň je v univerzální šabloně (TRANSFER_IN s acquisition), jinak počítáme cenu 0 a časový test od převodu.`,
-      });
-      push(line, row, {
-        type: 'TRANSFER_IN',
-        id,
-        account: accountId || undefined,
-        isin,
-        quantity: quantity.abs().toString(),
-        date,
-        note: row.description || undefined,
+        message: `Příchozí převod ${row.symbol ?? isin} (${quantity.abs().toString()} ks, ${date}): IBKR nezná původní datum ani cenu, za kterou jsi kusy pořídil, takže ho sami nezaúčtujeme. Doplň ho přes univerzální šablonu řádkem TRANSFER_IN se sloupci acquisition_date, acquisition_price a acquisition_currency — bez něj nebude mít pozdější prodej nabývací cenu ani časový test.`,
       });
     } else {
       push(line, row, {

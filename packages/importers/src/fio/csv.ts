@@ -26,8 +26,35 @@ export interface FioImportResult extends ImportResult {
  * určilo špatně. Chybějící „Směr“ pak ohlásí parser Fia vlastní hláškou,
  * ne cizí parser.
  */
-export function sniffFioCsv(header: string): boolean {
-  return header.includes('Datum obchodu');
+export function sniffFioCsv(text: string): boolean {
+  return fioHeaderLine(text) !== null;
+}
+
+/**
+ * Skutečný export z e-Brokeru nezačíná hlavičkou: nad ní jsou tři řádky
+ * preambule („Přehled operací pro portfolio…“, „Vytvořeno: …“, „Období: …“)
+ * a prázdný řádek, pod daty řádek „Součet“. Dokud se četl jen první řádek,
+ * nepoznal se vůbec. Hlavička se proto hledá v prvních řádcích — stejnou
+ * funkcí pro sniffer i parser.
+ */
+const FIO_HEADER_SEARCH_LINES = 20;
+
+/** Hlavička: „Datum obchodu“ jako samostatná buňka řádku se středníky. */
+const isFioHeaderLine = (line: string): boolean => {
+  const cells = line.split(';').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+  return cells.length >= 3 && cells.includes('Datum obchodu');
+};
+
+function fioHeaderLine(text: string): { index: number; offset: number } | null {
+  let offset = 0;
+  for (let index = 0; index < FIO_HEADER_SEARCH_LINES && offset <= text.length; index += 1) {
+    const end = text.indexOf('\n', offset);
+    const line = end === -1 ? text.slice(offset) : text.slice(offset, end);
+    if (isFioHeaderLine(line)) return { index, offset };
+    if (end === -1) break;
+    offset = end + 1;
+  }
+  return null;
 }
 
 /**
@@ -181,8 +208,11 @@ function classifyRow(direction: string, text: string): RowKind {
   if (s.includes('převod')) return 'TRANSFER';
   if (s.includes('úrok')) return 'INTEREST';
   if (s.includes('poplatek')) return 'FEE';
-  // daň PŘED dividendou — „Daň z dividendy“ obsahuje obě klíčová slova
-  if (t.includes('srážková daň') || t.startsWith('daň')) return 'TAX';
+  // příchozí a odchozí převod peněz má Směr prázdný a pozná se jen z textu
+  if (s === '' && /^(převod z |převod na |bezhotovostní převod)/.test(t)) return 'TRANSFER';
+  // daň PŘED dividendou — „Daň z dividendy“ obsahuje obě klíčová slova; slovo
+  // „daň“ může stát i uprostřed textu („AAPL - Daň z dividendy“)
+  if (t.includes('srážková daň') || /(^|[^\p{L}])daň/u.test(t)) return 'TAX';
   if (s.includes('dividenda') || t.includes('dividend')) return 'DIVIDEND';
   if (s === '' && t !== '') return 'TEXT_ONLY';
   return 'UNKNOWN';
@@ -243,7 +273,13 @@ export function parseFioCsv(
     return result;
   }
 
-  const { headers, rows } = parseSemicolonCsv(text);
+  // preambule („Přehled operací pro portfolio…“, „Vytvořeno:“, „Období:“) pryč
+  const headerAt = fioHeaderLine(text);
+  const lineOffset = headerAt?.index ?? 0;
+  const { headers: rawHeaders, rows } = parseSemicolonCsv(
+    headerAt ? text.slice(headerAt.offset) : text,
+  );
+  const headers = rawHeaders.map((header) => header.trim());
   const map = new HeaderMap(headers);
 
   if (!map.has('Datum obchodu') || !map.has('Směr')) {
@@ -362,8 +398,12 @@ export function parseFioCsv(
   const taxes: TaxEntry[] = [];
 
   rows.forEach((row, rowIndex) => {
-    const line = rowIndex + 2; // 1 = hlavička
+    const line = lineOffset + rowIndex + 2; // řádek hlavičky + 1
     if (row.every((cell) => cell.trim() === '')) return;
+    // součtový řádek pod daty („;;Součet;…“) není pohyb
+    if (map.get(row, 'Datum obchodu') === '' && row.some((cell) => /^součet$/i.test(cell.trim()))) {
+      return;
+    }
 
     const raw = row.join(';');
     const rawDate = map.get(row, 'Datum obchodu');
@@ -449,6 +489,15 @@ export function parseFioCsv(
           result.errors.push({ line, message: 'Dividenda bez částky — řádek nelze zpracovat.', raw });
           return;
         }
+        // záporná částka se na příjem neotáčí (dřív `abs()`): storno by se
+        // přičetlo k dividendě, kterou ruší
+        if (resolved.amount.lt(0)) {
+          result.warnings.push({
+            line,
+            message: `Záporná dividenda ${resolved.amount.toString()} ${resolved.currency}${symbol ? ` (${symbol})` : ''} — vypadá jako storno nebo sražená daň zapsaná jinak, než čekáme. Nezaúčtovali jsme ji; zkontroluj řádek ve výpisu („${note}“).`,
+          });
+          return;
+        }
         // symbol, ke kterému má soubor JEN dividendy, se dřív k doplnění ISIN
         // vůbec nenabídl (unmappedSymbols se plnily jen ve větvi BUY/SELL)
         if (symbol && !symbolMap[symbol]?.isin && !unmappedListed.has(symbol)) {
@@ -464,7 +513,7 @@ export function parseFioCsv(
           symbol,
           isin: symbolMap[symbol]?.isin,
           date,
-          gross: resolved.amount.abs(),
+          gross: resolved.amount,
           currency: resolved.currency,
           sourceCountry: countryFromText(note),
           note: note || undefined,

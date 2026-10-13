@@ -48,6 +48,17 @@ export interface ImportResult {
   retracted?: RetractedEvent[];
 }
 
+/**
+ * Věta pro hlášku u řádku, který parser ULOŽIL, jen ne úplně přesně (sražená
+ * daň, kterou výpis nenese; rabat; opravy ve více měnách). Radit „uprav ho
+ * přes univerzální šablonu“ nejde: šablona je jiný jmenný prostor dedupe
+ * a jednotlivou transakci smazat nelze, takže dopsaný řádek by se k uloženému
+ * přičetl — dividenda nebo obchod by byly v evidenci dvakrát. Poctivá cesta
+ * vede přes vrácení importu.
+ */
+export const REENTER_VIA_TEMPLATE =
+  'Chceš-li to mít přesně, vrať tenhle import zpět (tlačítko v historii importů) a zapiš řádek přes univerzální šablonu — řádek dopsaný navíc by se k tomu uloženému přičetl podruhé.';
+
 export const emptyResult = (broker: string): ImportResult => ({
   broker,
   transactions: [],

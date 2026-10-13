@@ -165,13 +165,15 @@ describe('IBKR Flex XML parser', () => {
     expect(spinoff.ratio?.to.toString()).toBe('1');
   });
 
-  it('transfery: IN s varováním o nabývací ceně (R-04i), OUT bez', () => {
-    const transferIn = result.transactions.find((t) => t.type === 'TRANSFER_IN');
-    if (!transferIn || transferIn.type !== 'TRANSFER_IN') throw new Error('unreachable');
-    expect(transferIn.isin).toBe('US5949181045');
-    expect(transferIn.quantity.toString()).toBe('10');
-    expect(transferIn.acquisition).toBeUndefined();
-    expect(result.warnings.some((w) => w.message.includes('časový test od převodu'))).toBe(true);
+  it('transfery: příchozí se neukládá a řekne, jak ho doplnit (R-04i); odchozí se ukládá', () => {
+    // IBKR původní datum ani cenu nezná. Dřív se převod uložil s cenou 0
+    // a hláška radila doplnit TRANSFER_IN šablonou — kdo poslechl, měl kusy
+    // dvakrát. Teď se neukládá a dřív uložený záznam import odstraní.
+    expect(result.transactions.some((t) => t.type === 'TRANSFER_IN')).toBe(false);
+    expect(result.retracted.some((event) => event.types.includes('TRANSFER_IN'))).toBe(true);
+    const advice = result.warnings.find((w) => w.message.includes('Příchozí převod'));
+    expect(advice?.message).toContain('acquisition_date');
+    expect(advice?.message).toContain('10 ks');
 
     const transferOut = result.transactions.find((t) => t.type === 'TRANSFER_OUT');
     if (!transferOut || transferOut.type !== 'TRANSFER_OUT') throw new Error('unreachable');

@@ -195,7 +195,7 @@ export function parseCoinmateCsv(text: string): ImportResult {
       result.warnings.push({
         line,
         message:
-          'Odměny z affiliate programu zatím daňově nezařazujeme — řádek jsme přeskočili. Pokud jsou částky významné, doplň je přes univerzální šablonu jako ostatní příjem.',
+          'Odměny z affiliate programu zatím daňově nezařazujeme — řádek jsme přeskočili a do výpočtu nevstupuje.',
       });
       return;
     }

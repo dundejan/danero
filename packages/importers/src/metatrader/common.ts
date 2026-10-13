@@ -185,7 +185,32 @@ export function findAccountCurrency(rows: Array<{ cells: string[] }>): string | 
       if (bracket) return bracket;
     }
   }
+  // Skutečný report MT5 nemá řádek „Currency:“ a popisek „Account:“ leží
+  // v JINÉ buňce než hodnota „12345 (USD, server, real, Hedge)“ — v sešitu
+  // sloupec A a D. Doloženo třemi nezávislými parsery reportů MT5.
+  for (const row of rows) {
+    const labelAt = row.cells.findIndex((cell) => /^account\s*:?$/i.test(cell.trim()));
+    if (labelAt < 0) continue;
+    for (let j = labelAt + 1; j < row.cells.length; j += 1) {
+      const bracket = /\(\s*([A-Za-z]{3})\s*[,)]/.exec(row.cells[j]!.slice(0, 200));
+      if (bracket) return bracket[1]!.toUpperCase();
+    }
+  }
   return null;
+}
+
+/**
+ * Centový účet (Exness „USC“, obdobně „EUC“): částky reportu jsou v centech.
+ * Kód projde kontrolou tří písmen, obchody by se uložily v měně, pro kterou
+ * neexistuje kurz, a spadl by celý výpočet („Chybí jednotný kurz pro USC“).
+ */
+const CENT_CURRENCIES: Record<string, string> = { USC: 'USD', EUC: 'EUR' };
+
+/** Věta pro report z centového účtu, nebo `null`, když je měna běžná. */
+export function centAccountMessage(currency: string): string | null {
+  const base = CENT_CURRENCIES[currency];
+  if (base === undefined) return null;
+  return `Report je z centového účtu (měna ${currency}) — částky jsou v centech ${base}, a takový účet zatím nečteme. Výsledky obchodů přepočti na ${base} (vyděl stem) a zapiš je přes univerzální šablonu jako derivát (asset_class DERIVATIVE).`;
 }
 
 /**

@@ -2,7 +2,7 @@ import { d } from '@danero/shared';
 import { detectDecimalSeparator, isAmbiguousThousandGroup, isValidIsoDate } from '../csv';
 import { fnv1a64, uniqueIdFactory } from '../dedupe';
 import { makePush } from '../metatrader/common';
-import { emptyResult, type ImportResult } from '../types';
+import { REENTER_VIA_TEMPLATE, emptyResult, type ImportResult } from '../types';
 
 export const DEGIRO_BROKER = 'degiro';
 
@@ -1387,7 +1387,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       // a řekne se to; zahodit je by dividendu ztratilo beze stopy.
       result.warnings.push({
         line: event.dividends[0]?.line ?? event.taxes[0]!.line,
-        message: `Dividenda ${event.dividends[0]?.isin ?? event.taxes[0]?.isin ?? ''} z ${event.dividends[0]?.date ?? event.taxes[0]!.date} má ve výpisu opravné zápisy ve více měnách (${[...currencies].join(', ')}) — sečíst je neumíme. Kladné výplaty jsme zaúčtovali bez oprav a bez sražené daně; zkontroluj je podle výpisu a případně uprav přes univerzální šablonu.`,
+        message: `Dividenda ${event.dividends[0]?.isin ?? event.taxes[0]?.isin ?? ''} z ${event.dividends[0]?.date ?? event.taxes[0]!.date} má ve výpisu opravné zápisy ve více měnách (${[...currencies].join(', ')}) — sečíst je neumíme. Kladné výplaty jsme zaúčtovali bez oprav a bez sražené daně; zkontroluj je podle výpisu. ${REENTER_VIA_TEMPLATE}`,
       });
       for (const dividend of event.dividends) {
         if (d(dividend.gross).gt(0)) pushDividend(dividend, dividend.gross, '0');

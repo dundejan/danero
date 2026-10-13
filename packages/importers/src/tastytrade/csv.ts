@@ -2,7 +2,7 @@ import { Decimal, d, TransactionSchema, ZERO } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { parseUsDate } from '../csv';
-import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import { REENTER_VIA_TEMPLATE, emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 
 export const TASTYTRADE_BROKER = 'tastytrade';
 
@@ -600,7 +600,7 @@ export function parseTastytradeCsv(
       if (cashSettled && settledRaw === null) {
         result.warnings.push({
           line,
-          message: `${norm.subType} ${norm.symbol}: řádek nenese vypořádanou částku (Value „${norm.valueRaw}“) — opci zavíráme za 0. Zkontroluj ji podle výpisu a případně uprav přes univerzální šablonu.`,
+          message: `${norm.subType} ${norm.symbol}: řádek nenese vypořádanou částku (Value „${norm.valueRaw}“) — opci zavíráme za 0. Zkontroluj ji podle výpisu. ${REENTER_VIA_TEMPLATE}`,
         });
       }
       push(line, raw, {

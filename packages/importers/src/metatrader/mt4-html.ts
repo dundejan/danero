@@ -1,5 +1,6 @@
 import { emptyResult, type ImportResult } from '../types';
 import {
+  centAccountMessage,
   extractHtmlRows,
   findAccountCurrency,
   makePush,
@@ -66,12 +67,13 @@ const isTradeShape = (row: HtmlRow): boolean =>
   ['buy', 'sell'].includes((row.cells[2] ?? '').trim().toLowerCase());
 
 /**
- * Autodetekce MT4 statementu: `<title>Statement…` + buňky Ticket / Open Time /
- * Close Time. „Direction“ je poznávací znak MT5 reportu — MT4 a MT5 sniffy
+ * Autodetekce MT4 statementu: buňky Ticket / Open Time / Close Time (podmnožina
+ * toho, co čte parser). „Direction“ je poznávací znak MT5 reportu — MT4 a MT5 sniffy
  * nesmí matchnout navzájem.
  */
 export function sniffMt4Html(text: string): boolean {
-  if (!/<title>\s*statement/i.test(text)) return false;
+  // Titulek se nečte: parser ho taky nepotřebuje a statement uložený
+  // s jiným titulkem by skončil u „HTML soubor nepoznáváme“.
   if (/>\s*Direction\s*</i.test(text)) return false;
   return (
     />\s*Ticket\s*</i.test(text) &&
@@ -102,6 +104,11 @@ export function parseMt4Html(text: string): ImportResult {
       message:
         'V hlavičce statementu chybí měna účtu („Currency: …“) — bez ní neumíme výsledky obchodů zpracovat. Ulož statement znovu z MT4 terminálu (Account History → „Save as Report“).',
     });
+    return result;
+  }
+  const centAccount = centAccountMessage(currency);
+  if (centAccount !== null) {
+    result.errors.push({ line: 1, message: centAccount, knownUnsupported: true });
     return result;
   }
 

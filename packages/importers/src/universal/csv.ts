@@ -447,6 +447,17 @@ export function parseUniversalCsv(text: string): ImportResult {
             });
             return;
           }
+          // Derivát bez asset_class by se tiše uložil jako akcie: tržba by čerpala
+          // limit 100 000 Kč a zisk by mohl vyjít osvobozený. Záměr je z řádku
+          // zřejmý, ale hádat ho nebudeme — ať ho uživatel potvrdí.
+          if (assetClass === undefined && (settlementStyle !== '' || /^(CFD|OPT|FUT):/i.test(isin))) {
+            result.errors.push({
+              line,
+              message: `Řádek ${isin} vypadá jako derivát (${settlementStyle !== '' ? 'má vyplněný settlement_style' : 'isin začíná prefixem derivátu'}), ale sloupec asset_class je prázdný — bez něj by se uložil jako akcie. Doplň do něj DERIVATIVE.`,
+              raw: row.join(','),
+            });
+            return;
+          }
           if (assetClass === 'DERIVATIVE' && settlementStyle === '' && !warnedMissingStyle.has(isin)) {
             warnedMissingStyle.add(isin);
             result.warnings.push({
@@ -569,7 +580,12 @@ export function parseUniversalCsv(text: string): ImportResult {
             });
             return;
           }
-          if ((subtype === 'ISIN_CHANGE' || subtype === 'MERGER') && !map.get(row, 'new_isin')) {
+          // SPINOFF taky: engine na něm bez nového ISIN končí výjimkou a s ní
+          // spadne výpočet celé aplikace, dokud uživatel import nevrátí
+          if (
+            (subtype === 'ISIN_CHANGE' || subtype === 'MERGER' || subtype === 'SPINOFF') &&
+            !map.get(row, 'new_isin')
+          ) {
             result.errors.push({
               line,
               message: `${subtype} potřebuje sloupec new_isin (nový ISIN po akci).`,

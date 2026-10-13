@@ -234,7 +234,16 @@ export function parsePortuCsv(text: string): ImportResult {
             });
             return;
           }
-          gross = value.abs();
+          // záporná částka je storno, ne příjem — `abs()` by ho přičetl k dividendě,
+          // kterou ruší
+          if (value.lt(0)) {
+            result.warnings.push({
+              line,
+              message: `Záporná dividenda ${value.toString()} ${currency} (${map.get(row, COL.symbol) || map.get(row, COL.isin) || 'bez symbolu'}, ${date}) — vypadá jako storno dřívější výplaty. Nezaúčtovali jsme ji a původní výplatu sami nerušíme; zkontroluj obě ve výpisu Portu.`,
+            });
+            return;
+          }
+          gross = value;
           const label = map.get(row, COL.symbol) || map.get(row, COL.isin) || 'bez symbolu';
           result.warnings.push({
             line,
@@ -247,7 +256,7 @@ export function parsePortuCsv(text: string): ImportResult {
           id: rowId(row),
           isin: map.get(row, COL.isin) || undefined,
           ticker: map.get(row, COL.symbol) || undefined,
-          gross: gross.abs().toString(),
+          gross: gross.toString(),
           currency,
           withholdingTax: withholding === null ? '0' : withholding.abs().toString(),
           date,

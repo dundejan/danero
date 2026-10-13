@@ -119,7 +119,7 @@ export function parseAnycoinCsv(text: string): ImportResult {
     if (type === 'stake_reward') {
       result.warnings.push({
         line,
-        message: `Odměny ze stakingu zatím daňově nezařazujeme — řádek (${amountRaw} ${currency}) jsme přeskočili. Pokud jsou částky významné, doplň je přes univerzální šablonu jako ostatní příjem.`,
+        message: `Odměny ze stakingu zatím daňově nezařazujeme — řádek (${amountRaw} ${currency}) jsme přeskočili a do výpočtu nevstupuje.`,
       });
       return;
     }

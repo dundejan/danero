@@ -232,7 +232,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#1C4E9D',
     guide:
-      'e-Broker → Obchody → nastav období → Zobraz → export CSV (kódování řešíme za tebe). Fio zobrazuje max. rok, takže starší historii stáhni po letech. Sloupce si volíš sám v !Nastavení — nech tam aspoň Datum obchodu, Směr, Symbol, Cena, Počet, Měna, Objem a Poplatky. ISIN Fio neexportuje: doplníš ho při prvním importu a zapamatujeme si ho.',
+      'e-Broker → Obchody → nastav období → Zobraz → export CSV (kódování řešíme za tebe). Fio zobrazuje max. rok, takže starší historii stáhni po letech. Sloupce si volíš sám v !Nastavení — nech tam aspoň Datum obchodu, Směr, Symbol, Cena, Počet, Měna, Objem, Poplatky a Text FIO (bez něj nepoznáme dividendy, sraženou daň ani poplatky). ISIN Fio neexportuje: doplníš ho při prvním importu a zapamatujeme si ho.',
   },
   {
     id: 'raiffeisen',
