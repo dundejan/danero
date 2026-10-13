@@ -258,6 +258,28 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   zaokrouhlenou cenou) se smí použít jen tam, kde je doloženě per transakce —
   seznam je v `dedupe.ts`. Degiro tam dává číslo OBJEDNÁVKY a ta se plní i pár
   dní: druhé plnění v pozdějším exportu by se zahodilo jako „už uložené".
+- **Oprava parseru změní obsah řádku — a obsahový dedupe ho pak uloží podruhé.**
+  Kdo má výpis nahraný z dřívějška a nahraje ho znovu, dostane opravený řádek
+  VEDLE toho starého. Kde je id otiskem celého řádku nebo id řádku od brokera
+  (Kraken, Revolut, Schwab, Swissquote, Tastytrade, XTB), patří broker do
+  `TRANSACTION_ID_BROKERS`: řádek se neuloží a uživatel dostane radu vrátit
+  starší import. Kde broker sám zpětně opravuje (IBKR), přepisuje import uložený
+  řádek na místě (`applyBrokerCorrections`), ale jen u synchronizace — ručně
+  nahraný soubor může být starší než uložená data. Výjimka ze sítě: dividenda
+  čekající na doplnění ISIN (první verze ji spolkla, 13. 10. 2026 — chytila to
+  až celá webová sada).
+- **Fixtura psaná bez skutečného výpisu lže.** Audit 13. 10. 2026 našel
+  smyšlené fixtury u Degira (český výpis má „Pohyb“, ne „Změna“), Fia (skutečný
+  export začíná preambulí), MT5 (měna účtu je v jiné buňce) i IBKR (párové akce
+  nemají společné `actionID`) — sada byla zelená a skutečný soubor se nenačetl.
+  Než napíšeš nebo opravíš parser, najdi skutečný tvar: `everytrade-io/
+  everytrade-plugins`, testovací výpisy Portfolio Performance,
+  `dickwolff/Export-To-Ghostfolio`, cgt-calc, BittyTax. Tvary doložené cizím
+  zdrojem jsou v testech `*-real-layouts.test.ts`.
+- **Neraď „uprav to přes univerzální šablonu“ u řádku, který parser uložil.**
+  Šablona je jiný jmenný prostor dedupe a jednotlivou transakci smazat nejde,
+  takže dopsaný řádek se přičte. Poctivá rada je vrátit import zpět
+  (`REENTER_VIA_TEMPLATE` v `types.ts`); hlídá to test nad zdrojáky parserů.
 - **Český text nepiš přes shell heredoc.** `node - <<'EOF'` (a `cat` s českým
   obsahem) uloží diakritiku jako literální `č` escapy — v komentářích je to
   nečitelné, v šablonových řetězcích to projde testy a nikdo si toho nevšimne.
