@@ -1,4 +1,5 @@
 import {
+  ETORO_ENGLISH_ONLY,
   brokerCorrectsEvents,
   brokerIdKey,
   dedupeTransactions,
@@ -544,9 +545,16 @@ async function importXlsxUpload(
   if (sniffSaxoXlsxShape(workbook)) {
     return importParsed(db, userId, filename, await parseSaxoXlsx(data), undefined, NOT_OURS);
   }
-  const unknown = unknownFormat(unknownXlsxMessage(outlineWorkbook(workbook)));
+  const unknown = unknownFormat(unknownXlsxMessage(outlineWorkbook(workbook), filename));
   return importParsed(db, userId, filename, unknown, undefined, { unrecognized: true });
 }
+
+/**
+ * Sešit z eToro v jiném jazyce než v angličtině nepozná žádný sniffer (listy
+ * jsou přeložené), takže skončí tady. Pozná se aspoň podle jména souboru —
+ * eToro ho pojmenovává „etoro-account-statement-…“.
+ */
+const ETORO_LANGUAGE_HINT = `Jestli je to výpis z eToro: ${ETORO_ENGLISH_ONLY}`;
 
 /** Kolik názvů listů vypsat do hlášky, ať zůstane čitelná. */
 const MAX_LISTED_SHEETS = 8;
@@ -563,7 +571,7 @@ const MAX_LISTED_SHEETS = 8;
  * První řádek prvního listu je obdoba prvního řádku CSV, se stejným stropem
  * 200 znaků, jaký má vzorek v upozornění (`lib/failed-imports.ts`).
  */
-function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline): string {
+function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline, filename = ''): string {
   const sheets = printableSample(sheetNames.slice(0, MAX_LISTED_SHEETS).join(', '), 200);
   const row = printableSample(firstRow.slice(0, MAX_LISTED_COLUMNS).join(', '), 200);
   const found = [
@@ -573,7 +581,8 @@ function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline): string {
   return (
     `XLSX nepoznáváme${found.length > 0 ? ` — v sešitu jsme našli ${found.join('; ')}` : ''}. ` +
     'Podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. V nápovědě „Kde výpis ' +
-    'stáhnout“ najdeš, který export potřebuješ — nebo použij univerzální šablonu.'
+    'stáhnout“ najdeš, který export potřebuješ — nebo použij univerzální šablonu.' +
+    (/etoro/i.test(filename) ? ` ${ETORO_LANGUAGE_HINT}` : '')
   );
 }
 
@@ -700,21 +709,43 @@ function crossBrokerMatches(
  * Uživatel se to ale musí dozvědět: čísla se liší a my si necháváme ta dřív
  * uložená.
  */
-const restatedWarnings = (restated: Transaction[], broker: string): RowIssue[] =>
-  restated.map((tx) => ({
+/** Od kolika shod se místo hlášky na každou událost vypíše jedna souhrnná. */
+const MAX_RESTATED_WARNINGS = 5;
+
+const restatedWarnings = (restated: Transaction[], broker: string): RowIssue[] => {
+  if (restated.length === 0) return [];
+  const advice = brokerCorrectsEvents(broker)
+    ? 'Tenhle broker záznamy zpětně opravuje (třeba přeúčtuje sraženou daň) a z ručně nahraného ' +
+      'souboru nepoznáme, která verze je novější. Je-li novější tenhle výpis, vrať starší import ' +
+      'zpět tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu; ' +
+      'u napojeného účtu se oprava propíše sama při další synchronizaci.'
+    : 'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
+      'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, vrať starší import zpět ' +
+      'tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu.';
+  // Desítky stejných hlášek jsou šum, ne informace: po změně parseru (eToro od
+  // 13. 10. 2026 bere ceny v USD ze sloupců Amount a Profit) se o haléř liší
+  // každá dřív uložená pozice z překrývajícího se výpisu.
+  if (restated.length > MAX_RESTATED_WARNINGS) {
+    const sample = restated
+      .slice(0, 3)
+      .map((tx) => `„${tx.id}“`)
+      .join(', ');
+    return [
+      {
+        line: 1,
+        message:
+          `${restated.length} událostí z tohohle výpisu už máš uložených z dřívějška, jen s jinými čísly ` +
+          `(například ${sample}) — necháváme ty původní a tyhle neukládáme (jinak by se počítaly dvakrát). ${advice}`,
+      },
+    ];
+  }
+  return restated.map((tx) => ({
     line: 1,
     message:
       `Událost „${tx.id}“ už máš uloženou z dřívějšího výpisu, jen s jinými čísly — ` +
-      'necháváme tu původní a tuhle neukládáme (jinak by ses o ni v přehledu počítal dvakrát). ' +
-      (brokerCorrectsEvents(broker)
-        ? 'Tenhle broker záznamy zpětně opravuje (třeba přeúčtuje sraženou daň) a z ručně nahraného ' +
-          'souboru nepoznáme, která verze je novější. Je-li novější tenhle výpis, vrať starší import ' +
-          'zpět tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu; ' +
-          'u napojeného účtu se oprava propíše sama při další synchronizaci.'
-        : 'Typicky jde o zaokrouhlení: tentýž obchod uvádí broker v jedné sekci výpisu přesně ' +
-          'a v jiné zaokrouhleně. Když si myslíš, že jde o opravu obchodu, vrať starší import zpět ' +
-          'tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu.'),
+      `necháváme tu původní a tuhle neukládáme (jinak by ses o ni v přehledu počítal dvakrát). ${advice}`,
   }));
+};
 
 /**
  * Dividenda se sraženou daní, kterou už máme uloženou se srážkou 0 (A29; viz

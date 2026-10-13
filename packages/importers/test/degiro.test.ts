@@ -170,10 +170,15 @@ describe('Degiro Account.csv', () => {
     expect(action.note).toContain('\n');
   });
 
-  it('NL popisy: storting/terugstorting/rente/dividendbelasting; koop a flatex přeskočené', () => {
+  it('NL popisy: storting/terugstorting/rente/dividendbelasting; koop přeskočený, úrok od flatexu je úrok', () => {
     const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL);
     expect(result.errors).toEqual([]);
-    expect(result.skipped).toHaveLength(2);
+    expect(result.skipped).toHaveLength(1);
+    // „Flatex Interest Income“ je připsaný úrok z hotovosti, ne přesun peněz —
+    // do 13. 10. 2026 se přeskakoval jako cash sweep a z § 8 by zmizel
+    const interest = result.transactions.find((t) => t.type === 'INTEREST')!;
+    if (interest.type !== 'INTEREST') throw new Error('unreachable');
+    expect(interest.amount.toString()).toBe('0.1');
 
     const deposit = result.transactions.find((t) => t.type === 'DEPOSIT')!;
     if (deposit.type !== 'DEPOSIT') throw new Error('unreachable');
@@ -533,12 +538,15 @@ describe('Degiro Account.csv — echo obchodu vs. korporátní akce (B4-0, B4-2)
     }
   });
 
-  it('korporátní akce ve tvaru „PREFIX: sloveso počet“ se pořád pozná', () => {
-    const result = parseDegiroAccountCsv(radek('AKTIENSPLIT: Kauf 40 NĚCO'));
-    // sama o sobě je to jen jedna noha páru, takže chyba — ale rozpoznaná jako
-    // štěpení, ne jako obchod
-    expect(result.errors[0]!.message).toContain('Štěpení akcií');
-    expect(result.skipped).toEqual([]);
+  it('noha korporátní akce „PREFIX: sloveso počet“ se přeskočí s odkazem na Transactions.csv', () => {
+    // Tak Degiro akce opravdu zapisuje (obě nohy nesou částku a vyruší se).
+    // Tytéž akce jsou v Transactions.csv, odkud se berou — z Přehledu účtu by
+    // se importovaly podruhé. Není to obchod ani chyba.
+    const result = parseDegiroAccountCsv(radek('AKTIENSPLIT: Kauf 40 NĚCO', '-100,00'));
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped[0]!.message).toContain('Transactions.csv');
+    expect(result.skipped[0]!.message).toContain('korporátní akce');
   });
 
   it('řádek bez peněžního pohybu, který hýbe KUSY, nesmí zmizet beze stopy', () => {

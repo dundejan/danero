@@ -76,7 +76,7 @@ describe('eToro XLSX parser', () => {
     expect(result.warnings).toHaveLength(3);
   });
 
-  it('uzavřená pozice → pár BUY/SELL: ID -open/-close, datumy DD/MM, ceny z Open/Close Rate', async () => {
+  it('uzavřená pozice → pár BUY/SELL: ID -open/-close, datumy DD/MM, ceny v USD z Amount a Profit(USD)', async () => {
     const buffer = await buildEtoroHappyPath();
     const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
 
@@ -85,7 +85,8 @@ describe('eToro XLSX parser', () => {
     expect(buy.isin).toBe('US91347P1057');
     expect(buy.ticker).toBe('OLED'); // z „Buy Universal Display (OLED)“
     expect(buy.quantity.toString()).toBe('0.102626');
-    expect(buy.pricePerShare.toString()).toBe('170.55');
+    // cena v USD = Amount / kusy (17,50 / 0,102626), ne Open Rate — ten je v měně titulu
+    expect(buy.pricePerShare.toDecimalPlaces(2).toString()).toBe('170.52');
     expect(buy.currency).toBe('USD');
     expect(buy.tradeDate).toBe('2023-06-12'); // 12/06/2023 = 12. června (den/měsíc!)
     expect(buy.assetClass).toBe('STOCK');
@@ -93,31 +94,35 @@ describe('eToro XLSX parser', () => {
 
     const sell = result.transactions.find((t) => t.id === 'etoro-2355395242-close');
     if (!sell || sell.type !== 'SELL') throw new Error('unreachable');
-    expect(sell.pricePerShare.toString()).toBe('179.6');
+    expect(sell.pricePerShare.toDecimalPlaces(2).toString()).toBe('179.58'); // (Amount + Profit) / kusy
     expect(sell.tradeDate).toBe('2024-01-09');
     expect(sell.quantity.toString()).toBe('0.102626');
   });
 
-  it('CFD short s pákou → otevření SELL, uzavření BUY, DERIVATIVE + MARGIN, klíč s prefixem CFD:', async () => {
+  it('CFD short s pákou → výsledek pozice podle Profit(USD), DERIVATIVE + MARGIN, klíč s prefixem CFD:', async () => {
     const buffer = await buildEtoroHappyPath();
     const result = await parseEtoroXlsx(buffer, ETORO_INSTRUMENT_MAP);
 
+    // R-12r: u derivátu se přebírá realizovaný výsledek pozice v USD (kurzy
+    // jsou v měně instrumentu a můžou být i v jenech nebo pencích). Zisk 10 USD
+    // = otevření za 0, uzavření za 10.
     const open = result.transactions.find((t) => t.id === 'etoro-2400000001-open');
-    if (!open || open.type !== 'SELL') throw new Error('unreachable');
+    if (!open || open.type !== 'BUY') throw new Error('unreachable');
     // klíč NESMÍ být holý ticker: se spotovou pozicí téhož tickeru (klidně
     // u jiného brokera) by splynuly v jeden instrument a celá držba by se
-    // překlopila na derivátový příjem (A2-3-06)
-    expect(open.isin).toBe('CFD:TSLA');
+    // překlopila na derivátový příjem (A2-3-06). Nese i id pozice, ať se páry
+    // s nulovou cenou nespárují napříč pozicemi.
+    expect(open.isin).toBe('CFD:TSLA#2400000001');
     expect(open.assetClass).toBe('DERIVATIVE');
     expect(open.settlementStyle).toBe('MARGIN'); // R-12g: CFD se vypořádává rozdílem
-    expect(open.pricePerShare.toString()).toBe('200');
+    expect(open.pricePerShare.toString()).toBe('0');
     expect(open.tradeDate).toBe('2024-02-01');
 
     const close = result.transactions.find((t) => t.id === 'etoro-2400000001-close');
-    if (!close || close.type !== 'BUY') throw new Error('unreachable');
-    expect(close.assetClass).toBe('DERIVATIVE');
+    if (!close || close.type !== 'SELL') throw new Error('unreachable');
+    expect(close.isin).toBe('CFD:TSLA#2400000001');
     expect(close.settlementStyle).toBe('MARGIN');
-    expect(close.pricePerShare.toString()).toBe('180');
+    expect(close.pricePerShare.toString()).toBe('10');
     expect(close.tradeDate).toBe('2024-02-15');
   });
 
@@ -298,7 +303,7 @@ describe('eToro XLSX parser', () => {
 
     const messages = result.warnings.map((w) => w.message).join('\n');
     expect(messages).toContain('staking'); // zdanění zatím nepodporujeme
-    expect(messages).toContain('poměr splitu'); // split bez poměru → univerzální šablona
+    expect(messages).toMatch(/Split .*(štěpení v poměru|poměr štěpení)/); // split → univerzální šablona
     expect(messages).toContain('univerzální šablon');
     expect(messages).toContain('8888888888'); // uzavření pozice bez záznamu v Closed Positions
   });
@@ -329,7 +334,7 @@ describe('eToro XLSX parser', () => {
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.ticker).toBe('NVDA');
     expect(buy.quantity.toString()).toBe('2.5'); // „2,5“
-    expect(buy.pricePerShare.toString()).toBe('85.11'); // „ 85,11 “
+    expect(buy.pricePerShare.toDecimalPlaces(2).toString()).toBe('85.11'); // Amount / kusy
     expect(buy.tradeDate).toBe('2020-04-15');
 
     const sell = result.transactions.find((t) => t.id === 'etoro-1074146905-close');

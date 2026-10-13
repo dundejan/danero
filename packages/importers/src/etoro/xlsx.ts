@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { Decimal, d, ZERO, TransactionSchema } from '@danero/shared';
 import { isValidIsoDate, normalizeHeader } from '../csv';
 import { fnv1a64 } from '../dedupe';
+import { syntheticDerivativePair } from '../metatrader/common';
 import { readSheetRows, type SheetRow } from '../xlsx';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 
@@ -76,6 +77,14 @@ const canon = (value: string): string => normalizeHeader(value).replace(/\s+/g, 
 
 const findSheet = (workbook: ExcelJS.Workbook, name: string): ExcelJS.Worksheet | undefined =>
   workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === name);
+
+/**
+ * eToro překládá sešit do jazyka rozhraní — i názvy listů a sloupců („Posiciones
+ * cerradas“, „Dividendos“). Čteme jen anglickou verzi, stejně jako ostatní
+ * nástroje nad tímhle výpisem; uživatel se musí dozvědět, co s tím.
+ */
+export const ETORO_ENGLISH_ONLY =
+  'eToro výpis překládá do jazyka, ve kterém máš platformu — čteme jen anglickou verzi. Přepni si eToro v nastavení do angličtiny a Account Statement stáhni znovu.';
 
 /** Sniff: eToro Account Statement poznáme podle listů Closed Positions + Account Activity. */
 export function sniffEtoroXlsx(workbook: ExcelJS.Workbook): boolean {
@@ -177,6 +186,8 @@ interface Ctx {
   requireIsin: (ticker: string, line: number) => string | null;
   /** Kolik dividendových řádků má Account Activity — musí je pokrýt list Dividends. */
   activityDividendRows: { count: number };
+  /** Řádky listu Dividends zaúčtované jako derivátový příjem (R-12t), ne jako DIVIDEND. */
+  derivativeDividendRows: { count: number };
 }
 
 const CLOSED_MATCHERS = {
@@ -191,6 +202,9 @@ const CLOSED_MATCHERS = {
   closeRate: oneOf('close rate'),
   type: oneOf('type'),
   isin: oneOf('isin'),
+  amount: oneOf('amount'),
+  profit: (header: string) =>
+    header === 'profit' || header.startsWith('profit(usd') || header.startsWith('profit (usd'),
 } as const;
 type ClosedField = keyof typeof CLOSED_MATCHERS;
 const CLOSED_REQUIRED = [
@@ -299,6 +313,47 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     }
     if (isin === null) continue; // error per symbol už je nahlášený
 
+    // „Open Rate“ a „Close Rate“ jsou v měně, ve které se titul KOTUJE (eToro
+    // API: „Entry price of the position in the instrument's currency“); v USD
+    // je jen „Amount“ (investovaná částka) a „Profit(USD)“. Účet je přitom
+    // vedený v USD a všechno se ukládá v USD — kurz evropské akcie vydávaný
+    // za dolarový dával chybu kolem 10 %, u pencí a jenů řádovou.
+    const amount = parseEtoroNumber(cell('amount'));
+    const profit = parseEtoroNumber(cell('profit'));
+
+    if (derivative && profit !== null) {
+      // R-12r: u derivátu se přebírá realizovaný výsledek pozice v měně účtu,
+      // stejně jako u MetaTraderu. Vlastní klíč na pozici: páry s nulovou
+      // cenou by se jinak FIFO spárovaly napříč pozicemi a výsledek by se
+      // mohl přesunout do jiného roku.
+      const [open, close] = syntheticDerivativePair({
+        idBase: `etoro-${pid}`,
+        isin: `${derivativeIsin(parsed.ticker)}#${pid}`,
+        symbol: parsed.ticker,
+        openDate,
+        closeDate,
+        net: profit,
+        currency: LEDGER_CURRENCY,
+        note: `${short ? 'Short' : 'Long'} ${units.toString()} ks, výsledek pozice podle sloupce Profit(USD)`,
+      });
+      ctx.push(line, raw, open);
+      ctx.push(line, raw, close);
+      continue;
+    }
+
+    // Ceny v USD dávají jen Amount a Profit(USD): nákup = Amount / kusy,
+    // prodej = (Amount + Profit) / kusy. Berou se tak VŽDY, když je výpis má —
+    // hádat měnu kurzu z toho, jestli Amount sedí na kusy × kurz, selže, kdykoli
+    // byl kurz měny při otevření blízko jedné (EUR/USD na podzim 2022). Stejně
+    // se počítá i otevřená pozice z listu Account Activity, takže se obě verze
+    // téže nohy shodnou. Bez těch sloupců (starší výpisy) zbývají kurzy.
+    let openPrice = openRate;
+    let closePrice = closeRate;
+    if (amount !== null && amount.gt(0) && profit !== null) {
+      openPrice = amount.div(units);
+      closePrice = Decimal.max(amount.plus(profit), 0).div(units);
+    }
+
     const common = {
       isin,
       ticker: parsed.ticker,
@@ -311,14 +366,14 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       type: short ? 'SELL' : 'BUY',
       id: `etoro-${pid}-open`,
       ...common,
-      pricePerShare: openRate.toString(),
+      pricePerShare: openPrice.toString(),
       tradeDate: openDate,
     });
     ctx.push(line, raw, {
       type: short ? 'BUY' : 'SELL',
       id: `etoro-${pid}-close`,
       ...common,
-      pricePerShare: closeRate.toString(),
+      pricePerShare: closePrice.toString(),
       tradeDate: closeDate,
     });
   }
@@ -349,6 +404,10 @@ const ACTIVITY_SKIP_MESSAGES: Record<string, string> = {
   'conversion fee': 'Poplatek za konverzi měny — s obchody nesouvisí, do výpočtu daně nevstupuje.',
   'transfer to crypto wallet':
     'Převod na vlastní krypto peněženku — není zdanitelná událost, přeskočen.',
+  'withdraw request cancelled': 'Zrušená žádost o výběr — peníze zůstaly na účtu, pro výpočet daně není potřeba.',
+  'withdraw fee cancelled': 'Vrácený poplatek za zrušený výběr — s obchody nesouvisí, do výpočtu daně nevstupuje.',
+  'start copy': 'Začátek kopírování obchodníka — přesun peněz uvnitř účtu, obchody kopie jsou ve výpisu samostatně.',
+  'stop copy': 'Konec kopírování obchodníka — přesun peněz uvnitř účtu, obchody kopie jsou ve výpisu samostatně.',
   'overnight refund':
     'Vratka overnight poplatku — záporný poplatek zatím neumíme zaúčtovat; případně si o ni sniž výdaje ručně.',
 };
@@ -435,12 +494,21 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         });
         continue;
       }
-      let assetClass: 'STOCK' | 'ETF' | 'CRYPTO' | 'DERIVATIVE';
-      let isin: string | null;
+      // Otevřený derivát nemá daňový dopad (R-12e) a z tohohle listu ho ani
+      // zaúčtovat nejde: „Amount“ je u páky jen složená marže, takže
+      // Amount / Units není cena, a list neříká směr — short by se uložil
+      // jako nákup. Výsledek přijde s uzavřením pozice (list Closed Positions).
       if (DERIVATIVE_TYPES.has(assetType)) {
-        assetClass = 'DERIVATIVE';
-        isin = derivativeIsin(ticker);
-      } else if (assetType === 'crypto') {
+        ctx.result.skipped.push({
+          line,
+          message: `Otevřená pozice ${ticker} (${cell('assetType')}): derivát se daní až při uzavření — do té doby ho neevidujeme.`,
+          raw,
+        });
+        continue;
+      }
+      let assetClass: 'STOCK' | 'ETF' | 'CRYPTO';
+      let isin: string | null;
+      if (assetType === 'crypto') {
         assetClass = 'CRYPTO';
         isin = ticker;
       } else {
@@ -454,7 +522,6 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         isin,
         ticker,
         assetClass,
-        ...(assetClass === 'DERIVATIVE' ? { settlementStyle: 'MARGIN' } : {}),
         quantity: units.toString(),
         // Amount je investovaná částka v USD → cena za kus = Amount / Units (Decimal)
         pricePerShare: amount.div(units).toString(),
@@ -520,9 +587,15 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     }
     if (t.startsWith('corp action')) {
       if (t.includes('split')) {
+        // Details nese poměr („NVDA/USD 10:1“); kusy otevřené pozice v tomhle
+        // listu jsou z doby PŘED štěpením. Jestli jsou kusy v Closed Positions
+        // po štěpení přepočtené, doložené není — proto akci neúčtujeme sami.
+        const ratio = /(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(cell('details'));
         ctx.result.warnings.push({
           line,
-          message: `Split ${cell('details')}: eToro výpis neuvádí poměr splitu — doplň korporátní akci přes univerzální šablonu, jinak nebudou počty kusů před a po splitu sedět.`,
+          message: ratio
+            ? `Split ${cell('details')}: štěpení v poměru ${ratio[1]}:${ratio[2]} sami nezaúčtujeme. Držíš-li titul dál, doplň ho přes univerzální šablonu (CORPORATE_ACTION, subtyp SPLIT, ratio_from ${ratio[2]}, ratio_to ${ratio[1]}), jinak nebudou počty kusů před a po štěpení sedět.`
+            : `Split ${cell('details')}: poměr štěpení se z výpisu nepodařilo přečíst — doplň korporátní akci přes univerzální šablonu, jinak nebudou počty kusů před a po štěpení sedět.`,
           raw,
         });
       } else {
@@ -566,6 +639,7 @@ const DIVIDEND_MATCHERS = {
   positionId: oneOf('position id'),
   isin: oneOf('isin'),
   currency: oneOf('currency'),
+  type: oneOf('type'),
 } as const;
 type DividendField = keyof typeof DIVIDEND_MATCHERS;
 const DIVIDEND_REQUIRED = ['date', 'net'] as const satisfies readonly DividendField[];
@@ -618,6 +692,28 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     const net = parseEtoroNumber(cell('net'));
     if (net === null) {
       ctx.result.errors.push({ line, message: `Dividenda ${instrument}: chybí částka.`, raw });
+      continue;
+    }
+    // R-12t: u pozice CFD nejde o dividendu od firmy, ale o úpravu, kterou
+    // eToro připisuje (u shortu strhává) držiteli kontraktu. Je to plnění
+    // z derivátu — § 10, nikdy § 8 (R-12a) — a „sražená daň“ u něj není
+    // zahraniční daň k zápočtu. Přebírá se čistá připsaná částka.
+    if (DERIVATIVE_TYPES.has(canon(cell('type')))) {
+      const symbol = instrument.split('/')[0]!.trim() || instrument;
+      const idBase = ctx.contentId(['cfd-dividend', cell('date'), instrument, cell('net'), cell('positionId')]);
+      const [open, close] = syntheticDerivativePair({
+        idBase,
+        isin: `${derivativeIsin(symbol)}#${idBase}`,
+        symbol,
+        openDate: date,
+        closeDate: date,
+        net,
+        currency: LEDGER_CURRENCY,
+        note: 'Dividendová úprava u pozice CFD (plnění z derivátu, R-12t)',
+      });
+      ctx.push(line, raw, open);
+      ctx.push(line, raw, close);
+      ctx.derivativeDividendRows.count += 1;
       continue;
     }
     if (net.lt(0)) {
@@ -688,7 +784,7 @@ export async function parseEtoroXlsx(
     ].join(' a ');
     result.errors.push({
       line: 1,
-      message: `Soubor neobsahuje list ${missing} — nevypadá jako výpis z eToro (Account Statement). Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}`,
+      message: `Soubor neobsahuje list ${missing} — nevypadá jako výpis z eToro (Account Statement). Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}. ${ETORO_ENGLISH_ONLY}`,
     });
     return result;
   }
@@ -746,6 +842,7 @@ export async function parseEtoroXlsx(
     contentId,
     requireIsin,
     activityDividendRows: { count: 0 },
+    derivativeDividendRows: { count: 0 },
   };
   // pořadí je závazné: Closed Positions plní closedPositionIds, Activity je čte
   parseClosedSheet(ctx, closedSheet);
@@ -760,7 +857,9 @@ export async function parseEtoroXlsx(
   // Activity + 1 v Dividends → naimportovala se 1 a mezi errors/warnings/skipped
   // o dividendách ani zmínka. Vynechaný příjem § 8 přitom umí shodit i limit
   // 50 000 Kč (nález B-3-7). Porovnává se proto s POČTEM řádků, ne s nulou.
-  const imported = result.transactions.filter((tx) => tx.type === 'DIVIDEND').length;
+  const imported =
+    result.transactions.filter((tx) => tx.type === 'DIVIDEND').length +
+    ctx.derivativeDividendRows.count;
   const missingDividends = ctx.activityDividendRows.count - imported;
   if (missingDividends > 0) {
     result.errors.push({

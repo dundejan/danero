@@ -55,7 +55,7 @@ const upload = async (db: Db, filename: string, buffer: Buffer) =>
   );
 
 describe('eToro: pozice otevřená v prvním výpisu a uzavřená ve druhém', () => {
-  it('nákup se neuloží dvakrát a uživatel se o rozdílu dozví', { timeout: 60_000 }, async () => {
+  it('nákup se neuloží dvakrát — obě verze otevírací nohy se shodují přesně', { timeout: 60_000 }, async () => {
     const db = await withUser();
 
     // 1. výpis: pozice AMD je otevřená → BUY jen z Account Activity
@@ -84,10 +84,12 @@ describe('eToro: pozice otevřená v prvním výpisu a uzavřená ve druhém', (
     const idsPoDruhem = poDruhem.map((tx) => tx.id);
     expect(new Set(idsPoDruhem).size).toBe(idsPoDruhem.length);
 
-    // rozdíl se nesmí spolknout: řádek se neuloží, ale uživatel se to dozví
-    const hlaseno = druhy.warnings.filter((w) => w.message.includes('už máš uloženou'));
-    expect(hlaseno.length).toBeGreaterThan(0);
-    expect(hlaseno[0]!.message).toContain('zaokrouhlení');
+    // Otevírací noha se v obou listech počítá stejně (Amount / kusy v USD),
+    // takže je to obyčejná duplicita — žádné „stejná událost, jiná čísla“.
+    // Do 13. 10. 2026 bral list Closed Positions zaokrouhlený Open Rate
+    // a uživatel dostával varování o rozdílu, který žádný nebyl.
+    expect(druhy.warnings.filter((w) => w.message.includes('už máš uložen'))).toEqual([]);
+    expect(druhy.duplicates).toBeGreaterThan(0);
   });
 });
 

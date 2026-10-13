@@ -86,7 +86,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#009FDF',
     guide:
-      'Inbox → „Transakce“ (Transactions.csv) a „Přehled účtu“ (Account.csv) → Export CSV. Nahraj OBA soubory: obchody jsou v Transakcích, dividendy a poplatky v Přehledu účtu. Výpis čteme v češtině, angličtině, nizozemštině, němčině i francouzštině.',
+      'Inbox → „Transakce“ (Transactions.csv) a „Přehled účtu“ (Account.csv) → Export CSV — na webu Degira, mobilní aplikace export nemá (v novějším rozhraní se menu jmenuje Aktivita). Nahraj OBA soubory: obchody a korporátní akce jsou v Transakcích, dividendy a poplatky v Přehledu účtu. Výpis čteme v češtině, angličtině, nizozemštině, němčině i francouzštině.',
   },
   {
     id: 'etoro',
@@ -96,7 +96,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#6AAC0E',
     guide:
-      'Portfolio → History (ikona hodin) → ozubené kolo vpravo nahoře → Account Statement → období → Create → stáhni jako XLS.',
+      'Portfolio → History (ikona hodin) → ozubené kolo vpravo nahoře → Account Statement → období → Create → stáhni jako XLS. Platformu měj při stahování přepnutou do angličtiny — eToro výpis překládá a čteme jen anglickou verzi.',
   },
   {
     id: 'ibkr',

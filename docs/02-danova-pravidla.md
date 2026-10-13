@@ -1050,6 +1050,21 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   metoda i o tom, která prémie propadne. Příklad: nákup 3 ks po 100
   a 7 ks po 200, prodej 5 ks po 300 → příjem 1 500, výdaj 3 × 100 + 2 × 200
   = 700.
+- **R-12t Dividendové úpravy u CFD**: částka, kterou broker připíše držiteli
+  dlouhé pozice CFD v den výplaty dividendy podkladu (a u krátké pozice
+  strhne), není dividenda — držitel kontraktu není akcionář a výplatu neposílá
+  emitent, ale protistrana kontraktu. Je to plnění z derivátu: **§ 10 podle
+  R-12a, nikdy § 8**, kladná úprava je příjem druhu a záporná výdaj druhu
+  (R-12b, R-12e). „Sražená daň“, kterou u ní broker uvádí (eToro: sloupec
+  Withholding Tax Amount), je snížení úpravy, ne zahraniční daň z příjmu
+  poplatníka, takže se **nezapočítává** (R-07 se nepoužije); přebírá se čistá
+  připsaná částka. Zdroj: § 8 odst. 1 písm. a) ZDP míří na podíly na zisku
+  z majetkového podílu, který držitel CFD nemá; zápočet podle § 38f
+  předpokládá daň zaplacenou poplatníkem v zahraničí. Výslovný výklad GFŘ
+  k úpravám u CFD neexistuje, jistota střední. Bezpečnost: do limitu
+  50 000 Kč (R-12q) kladná úprava vstupuje stejně jako dividenda, rozdíl je
+  jen v tom, že se k ní nepřičítá zápočet. Importy: eToro (list Dividends,
+  řádky typu CFD).
 
 Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
 tiskopis 5405-P2 vzor 21 (číselník A–H); XTB „Informace o zdaňování příjmů
