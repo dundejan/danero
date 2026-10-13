@@ -282,6 +282,17 @@ function indexTransfers(rows: string[][], map: HeaderMap): TransferIndex {
   return { cancelling, cryptoOutflows };
 }
 
+/**
+ * Řádky z počátků nového Kraken Earn (jaro 2024) mají sloupec `subtype`
+ * prázdný. Přesun je dvojice −X/+X bez poplatku, odměna kladný řádek
+ * s NENULOVÝM poplatkem — podle něj se pozná („earn with a fee must be a
+ * reward“, BittyTax `kraken.py`).
+ */
+const earnRowHasFee = (feeRaw: string): boolean => {
+  const fee = parseKrakenNumber(feeRaw);
+  return fee !== null && !d(fee).isZero();
+};
+
 /** Jedna noha obchodu (řádek type=trade / spend / receive) čekající na spárování. */
 interface TradeLeg {
   line: number;
@@ -374,7 +385,8 @@ export function parseKrakenCsv(text: string): ImportResult {
       case 'earn':
         // odměnu od přesunu uvnitř Earn odliší jen subtyp
         if (!hasSubtype) ambiguousRows += 1;
-        if (subtype === 'reward') {
+        // bez subtypu rozhoduje poplatek — viz `earnRowHasFee`
+        if (subtype === 'reward' || (subtype === '' && earnRowHasFee(map.get(row, 'fee')))) {
           result.warnings.push({
             line,
             message: `Odměna z Kraken Earn (${asset}) — odměny ze stakingu zatím daňově nezařazujeme, řádek přeskočen.`,
@@ -607,8 +619,15 @@ export function parseKrakenCsv(text: string): ImportResult {
       continue;
     }
 
-    const quantity = cryptoAmount.abs();
-    if (quantity.eq(0)) {
+    // Poplatek na krypto noze jde ze zůstatku: po řádku je zůstatek předchozí
+    // + amount − fee (ověřeno přepočtem sloupce `balance`). Do evidence proto
+    // patří ČISTÉ množství — u nákupu amount − fee, u prodeje |amount| + fee —
+    // a cena je zaplacená (utržená) částka dělená tím množstvím. Dřív se
+    // ukládalo hrubé amount a poplatek jen zazněl ve varování: v evidenci byly
+    // kusy, které uživatel nikdy neměl (typicky každý nákup v aplikaci Kraken).
+    const cryptoFee = d(crypto.fee);
+    const quantity = type === 'BUY' ? cryptoAmount.minus(cryptoFee) : cryptoAmount.abs().plus(cryptoFee);
+    if (quantity.lte(0)) {
       result.errors.push({
         line: crypto.leg.line,
         message: `Obchod ${refid} má nulový počet kusů — řádek nelze zpracovat.`,
@@ -618,14 +637,6 @@ export function parseKrakenCsv(text: string): ImportResult {
     }
     const total = fiatAmount.abs();
 
-    // poplatek ve fiat odečítáme; poplatek v kryptu ocenit neumíme → poctivý warning
-    const cryptoFee = d(crypto.fee);
-    if (cryptoFee.gt(0)) {
-      result.warnings.push({
-        line: crypto.leg.line,
-        message: `Poplatek ${crypto.fee} ${crypto.asset} je v kryptoměně — neumíme ho ocenit ve fiat, do výpočtu nebyl odečten.`,
-      });
-    }
     const fiatFee = d(fiat.fee);
     const fee = fiatFee.gt(0) ? { amount: fiatFee.toString(), currency: fiat.asset } : undefined;
 

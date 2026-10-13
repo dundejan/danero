@@ -98,11 +98,13 @@ const isFiatCode = (value: string): boolean => FIAT_CURRENCIES.has(value);
 const looksLikeSymbol = (value: string): boolean => /^[A-Z][A-Z0-9]{1,9}$/.test(value);
 
 /** Typy transakcí podle směru; ostatní se přeskakují nebo hlásí. */
-const BUY_TYPES = new Set(['BUY', 'QUICK_BUY', 'MARKET_BUY']);
-const SELL_TYPES = new Set(['SELL', 'QUICK_SELL', 'MARKET_SELL']);
+// INSTANT_* jsou okamžité příkazy přes API (typicky DCA boty) — podle dokumentace
+// API Coinmate (`transactionType`) tentýž nákup a prodej jako QUICK_*.
+const BUY_TYPES = new Set(['BUY', 'QUICK_BUY', 'MARKET_BUY', 'INSTANT_BUY']);
+const SELL_TYPES = new Set(['SELL', 'QUICK_SELL', 'MARKET_SELL', 'INSTANT_SELL']);
 const TRANSFER_TYPES = new Set(['DEPOSIT', 'WITHDRAWAL']);
 const BALANCE_MOVE_TYPES = new Set(['BALANCE_MOVE_CREDIT', 'BALANCE_MOVE_DEBIT']);
-const AFFILIATE_TYPES = new Set(['AFFILIATE', 'REFERRAL']);
+const AFFILIATE_TYPES = new Set(['AFFILIATE', 'REFERRAL', 'NEW_USER_REWARD']);
 /** V2 statement: Type = Trade/Quick trade, směr je ve sloupci Type detail. */
 const TRADE_WRAPPER_TYPES = new Set(['TRADE', 'QUICK TRADE']);
 

@@ -142,17 +142,18 @@ describe('Kraken ledgers.csv parser', () => {
     expect(result.warnings[0]!.message).toContain('univerzální šablonu');
   });
 
-  it('poplatek v kryptoměně → warning, obchod se zpracuje bez poplatku', () => {
+  it('poplatek v kryptoměně se odečte z množství — v evidenci je to, co přibylo na zůstatku', () => {
     const result = parseKrakenCsv(KRAKEN_CRYPTO_FEE);
 
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
     expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]!.type).toBe('BUY');
-    if (result.transactions[0]!.type !== 'BUY') throw new Error('unreachable');
-    expect(result.transactions[0]!.fee).toBeUndefined();
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toContain('kryptoměně');
-    expect(result.warnings[0]!.message).toContain('nebyl odečten');
+    const buy = result.transactions[0]!;
+    if (buy.type !== 'BUY') throw new Error('unreachable');
+    // 0,002 BTC připsáno, 0,00001 BTC strženo jako poplatek → 0,00199 BTC za 100 EUR
+    expect(buy.quantity.toString()).toBe('0.00199');
+    expect(buy.quantity.mul(buy.pricePerShare).toDecimalPlaces(8).toString()).toBe('100');
+    expect(buy.fee).toBeUndefined();
   });
 
   it('fiat–fiat pár (FX konverze) → skipped, ne obchod', () => {

@@ -219,7 +219,7 @@ describe('Anycoin CSV parser', () => {
       },
     );
 
-    it('vrácený nákup vedle vkladu v CZK a výběru v BTC → soubor má obě měny, filtr to není', () => {
+    it('vrácený nákup vedle vkladu v CZK a výběru v BTC → zrušená objednávka není chyba ani podezření na filtr', () => {
       const csv = [
         ANYCOIN_HEADER,
         '2025-03-01T10:00:00.000Z,deposit,5000,CZK,',
@@ -229,10 +229,11 @@ describe('Anycoin CSV parser', () => {
       ].join('\n');
       const result = parseAnycoinCsv(csv);
 
-      expect(result.warnings.map((w) => w.line)).toEqual([4]);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]!.message).toContain('Obchod 940001 nemá kompletní pár');
-      expect(result.errors[0]!.message).not.toContain('filtr');
+      // platba a její vrácení pod týmž Order ID = zrušená objednávka: obchod
+      // neproběhl, takže to není ani neúplný pár, ani důvod k varování
+      expect(result.warnings).toEqual([]);
+      expect(result.errors).toEqual([]);
+      expect(result.skipped.some((entry) => entry.message.includes('Objednávka 940001 byla zrušená'))).toBe(true);
     });
 
     it('filtr na jednu měnu nechá i její vklady a staking (SOL i SOL.S) → souhrn platí dál', () => {

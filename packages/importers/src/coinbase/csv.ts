@@ -243,6 +243,20 @@ export function parseCoinbaseCsv(text: string): ImportResult {
 
   const nextId = uniqueIdFactory();
 
+  // Novější export píše Convert DVĚMA řádky se stejnou poznámkou: zdrojovou
+  // nohu a cílovou (Asset = cílové aktivum). Dokud se každý bral jako celá
+  // směna, vznikl z cílového řádku prodej právě nabytého aktiva a druhý nákup
+  // — tržba, která čerpá limity, se zdvojila. Tady jsou poznámky směn, které
+  // zdrojový řádek mají.
+  const convertSources = new Set<string>();
+  for (const row of rows) {
+    if (col.type === null || map.get(row, col.type).trim().toLowerCase() !== 'convert') continue;
+    const note = col.notes === null ? '' : map.get(row, col.notes).trim();
+    const target = CONVERT_NOTES.exec(note)?.[2]?.toUpperCase();
+    const rowAsset = col.asset === null ? '' : map.get(row, col.asset).trim().toUpperCase();
+    if (target !== undefined && rowAsset !== '' && rowAsset !== target) convertSources.add(note);
+  }
+
   // R-05d: časy jsou ve světovém čase, den i rok se berou z nich
   const yearBoundary = new YearBoundaryWatch(result);
   rows.forEach((row, rowIndex) => {
@@ -390,6 +404,24 @@ export function parseCoinbaseCsv(text: string): ImportResult {
         return;
       }
       const targetQuantity = d(targetQuantityRaw);
+      // cílová noha dvouřádkového Convertu — směna se účtuje ze zdrojové
+      if (asset === match[2]!.toUpperCase()) {
+        if (convertSources.has(notes)) {
+          result.skipped.push({
+            line,
+            message: `Convert (${asset}): cílová noha směny — celou směnu účtujeme ze zdrojového řádku se stejnou poznámkou.`,
+          });
+        } else {
+          result.errors.push({
+            line,
+            message: `Convert (${asset}): řádek nese jen přijaté aktivum a zdrojový řádek téže směny („${notes}“) ve výpisu chybí — směnu doplň přes univerzální šablonu jako prodej + nákup.`,
+            raw,
+          });
+        }
+        return;
+      }
+      // Bez poplatku: Subtotal je už hodnota toho, co přišlo (Total − Fees).
+      // S poplatkem navrch se odečítal podruhé a výnos prodeje vycházel nižší.
       push({
         type: 'SELL',
         id: `${baseId}-sell`,
@@ -398,7 +430,6 @@ export function parseCoinbaseCsv(text: string): ImportResult {
         quantity: quantity.toString(),
         pricePerShare: subtotal.div(quantity).toString(),
         currency,
-        fee,
         tradeDate: date,
         note: notes,
       });
@@ -440,7 +471,22 @@ export function parseCoinbaseCsv(text: string): ImportResult {
         }
       } else {
         const counterAsset = match[2]!.toUpperCase();
-        if (counterAsset !== currency && !FIAT_CURRENCIES.has(counterAsset)) {
+        // Starší poznámka nese za „for“ částku v měně účtu i na páru
+        // krypto–krypto („Sold … ETH for … GBP on ETH-BTC“). Podle částky by
+        // protistrana byly peníze a nabytý BTC by zmizel bez jediného slova.
+        const pairQuote = /\bon [A-Za-z0-9]+-([A-Za-z0-9]+)\b/.exec(notes)?.[1]?.toUpperCase();
+        if (
+          pairQuote !== undefined &&
+          pairQuote !== counterAsset &&
+          pairQuote !== currency &&
+          !FIAT_CURRENCIES.has(pairQuote)
+        ) {
+          result.warnings.push({
+            line,
+            message: `${typeRaw} (${asset}): poznámka („${notes}“) uvádí částku v ${counterAsset}, ale obchodovalo se na páru s ${pairQuote} — šlo tedy o směnu krypto–krypto a její druhá strana (${pairQuote}) ve výpisu chybí. Řádek jsme uložili oceněný v ${currency}; druhou stranu oceň a doplň přes univerzální šablonu jako ${isBuy ? 'prodej' : 'nákup'} ${pairQuote}.`,
+            raw,
+          });
+        } else if (counterAsset !== currency && !FIAT_CURRENCIES.has(counterAsset)) {
           counterLeg = {
             type: isBuy ? 'SELL' : 'BUY',
             id: `${baseId}-${isBuy ? 'sell' : 'buy'}`,

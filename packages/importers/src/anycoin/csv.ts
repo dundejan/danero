@@ -93,6 +93,8 @@ export function parseAnycoinCsv(text: string): ImportResult {
 
   // obchody = páry řádků přes Order ID; sbíráme a párujeme až po průchodu souborem
   const orders = new Map<string, TradeLeg[]>();
+  // vrácené platby podle Order ID (zrušená objednávka = platba + vrácení)
+  const refunds = new Map<string, { line: number; label: string }>();
   // Podklad pro rozpoznání exportu omezeného filtrem měny (níž): měny VŠECH
   // řádků souboru, i přeskočených a odmítnutých, a to, zda některý obchodní
   // řádek vypadl na validaci.
@@ -123,9 +125,13 @@ export function parseAnycoinCsv(text: string): ImportResult {
     }
 
     if (type === 'trade refund') {
-      result.warnings.push({
+      // Zrušená objednávka je v exportu dvojice „trade payment“ + „trade
+      // refund“ se stejným Order ID. Platba by jinak čekala na plnění, které
+      // nepřijde, a skončila chybou „export nepokrývá celé období“.
+      const refundedOrder = map.get(row, 'order id');
+      refunds.set(refundedOrder !== '' ? refundedOrder : `bez-id-${line}`, {
         line,
-        message: `Vrácený obchod (${amountRaw} ${currency}, Order ID ${map.get(row, 'order id') || 'neuvedeno'}) — zkontroluj, že párový obchod není započten.`,
+        label: `${amountRaw} ${currency}, Order ID ${refundedOrder || 'neuvedeno'}`,
       });
       return;
     }
@@ -228,6 +234,15 @@ export function parseAnycoinCsv(text: string): ImportResult {
     if (firstLeg) yearBoundary.row(firstLeg.line, firstLeg.time);
     const payments = legs.filter((leg) => leg.role === 'payment');
     const fills = legs.filter((leg) => leg.role === 'fill');
+    // zrušená objednávka: platba a její vrácení, žádné plnění
+    if (refunds.has(orderId) && fills.length === 0) {
+      result.skipped.push({
+        line: legs[0]!.line,
+        message: `Objednávka ${orderId} byla zrušená — platba se vrátila (řádek ${refunds.get(orderId)!.line}), obchod neproběhl.`,
+      });
+      refunds.delete(orderId);
+      continue;
+    }
     if (payments.length !== 1 || fills.length !== 1) {
       result.errors.push({
         line: legs[0]!.line,
@@ -285,6 +300,15 @@ export function parseAnycoinCsv(text: string): ImportResult {
     }
   }
   yearBoundary.flush();
+
+  // vrácení, které nezrušilo žádnou objednávku z tohohle výpisu (platba chybí,
+  // nebo obchod přesto proběhl) — na uživateli, ať si párový obchod ověří
+  for (const refund of refunds.values()) {
+    result.warnings.push({
+      line: refund.line,
+      message: `Vrácený obchod (${refund.label}) — zkontroluj, že párový obchod není započten.`,
+    });
+  }
 
   return result;
 }

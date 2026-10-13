@@ -1,8 +1,10 @@
 import { d, type Transaction } from '@danero/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  brokerIdKey,
   dedupeKey,
   dedupeTransactions,
+  parseKrakenCsv,
   parseFioCsv,
   parseRevolutInvestCsv,
   parseSchwabCsv,
@@ -11,6 +13,7 @@ import {
 import { FIO_FIXTURE, FIO_SYMBOL_MAP } from './fixtures/fio';
 import { REVOLUT_INSTRUMENT_MAP, REVOLUT_INVEST_CSV } from './fixtures/revolut';
 import { SCHWAB_HEADER } from './fixtures/schwab';
+import { KRAKEN_CRYPTO_FEE } from './fixtures/kraken';
 import { TASTY_INSTRUMENT_MAP, TASTY_V2 } from './fixtures/tastytrade';
 
 /**
@@ -472,5 +475,44 @@ describe('dedupeTransactions: dividenda uložená bez srážky po opravě parser
     expect(outcome.fresh).toEqual([]);
     expect(outcome.untaxed).toEqual([taxed]);
     expect(outcome.duplicates).toBe(1);
+  });
+});
+
+/**
+ * Druhá síť u parserů, jejichž id je otisk celého řádku nebo id řádku od
+ * brokera: shodné id s jiným obsahem může vzniknout jen změnou PARSERU. Bez
+ * sítě by se řádek nahraný znovu po opravě uložil vedle starší, špatné verze.
+ */
+describe('tentýž řádek výpisu přečtený po opravě parseru jinak se neuloží podruhé', () => {
+  it('Kraken: nákup uložený s hrubým množstvím a po opravě s čistým zůstane jeden', () => {
+    const [fixed] = parseKrakenCsv(KRAKEN_CRYPTO_FEE).transactions;
+    if (fixed?.type !== 'BUY') throw new Error('unreachable');
+    // tak ho ukládal parser před 13. 10. 2026: 0,002 BTC bez odečtení poplatku
+    const legacy: Transaction = { ...fixed, quantity: d('0.002'), pricePerShare: d('50000') };
+    const stored = dedupeTransactions('kraken', [legacy]);
+
+    const again = dedupeTransactions(
+      'kraken',
+      [fixed],
+      stored.fresh.map((item) => item.key),
+      stored.fresh.map((item) => brokerIdKey('kraken', item.tx)),
+    );
+    expect(again.fresh).toEqual([]);
+    expect(again.restated).toEqual([fixed]);
+  });
+
+  it('broker mimo seznam (Degiro: id je číslo objednávky) se dál řídí jen obsahem', () => {
+    const [fixed] = parseKrakenCsv(KRAKEN_CRYPTO_FEE).transactions;
+    if (fixed?.type !== 'BUY') throw new Error('unreachable');
+    const other: Transaction = { ...fixed, quantity: d('0.002') };
+    const stored = dedupeTransactions('degiro', [other]);
+    const again = dedupeTransactions(
+      'degiro',
+      [fixed],
+      stored.fresh.map((item) => item.key),
+      stored.fresh.map((item) => brokerIdKey('degiro', item.tx)),
+    );
+    expect(again.fresh).toHaveLength(1);
+    expect(again.restated).toEqual([]);
   });
 });

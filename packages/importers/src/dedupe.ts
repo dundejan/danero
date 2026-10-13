@@ -162,11 +162,30 @@ export const brokerIdKey = (broker: string, tx: { type: string; id: string }): s
  * Degiro sem NEPATŘÍ: jeho id je číslo OBJEDNÁVKY a ta se plní i několik dní.
  * Druhé plnění v pozdějším exportu má totéž id, takže by ho síť zahodila jako
  * „už uložené“ — skutečný nákup by zmizel z FIFO i ze základu daně. Ověřeno
- * testem; ostatní parsery skládají id z otisku řádku, kde se táž kolize
- * projeví stejně. Nový broker se sem přidává, až když je doložené, že jeho id
- * je per transakce — výchozí (chybějící) stav je bezpečný.
+ * testem. Nový broker se sem přidává, až když je doložené, že jeho id je per
+ * transakce nebo že je otiskem celého řádku výpisu — výchozí (chybějící) stav
+ * je bezpečný.
  */
-const TRANSACTION_ID_BROKERS = new Set(['etoro', 'mt4', 'mt5']);
+const TRANSACTION_ID_BROKERS = new Set([
+  'etoro',
+  'mt4',
+  'mt5',
+  // Parsery, jejichž id je otisk CELÉHO řádku výpisu (nebo id řádku od
+  // brokera — Kraken `txid`, XTB `ID`): shodné id znamená tentýž řádek.
+  // Jiný obsah pod stejným id tedy může vzniknout jen tím, že se změnil
+  // PARSER — a přesně to se stalo 13. 10. 2026 (Kraken začal odečítat
+  // poplatek z množství, Swissquote bere měnu transakce místo měny účtu, XTB
+  // čte měnu účtu správně, Revolut desetinnou čárku v počtu kusů, Schwab
+  // cenu dluhopisu, Tastytrade vypořádanou opci). Bez téhle sítě by se řádek
+  // nahraný znovu uložil VEDLE té starší, špatné verze. Takhle se neuloží
+  // a uživatel dostane radu vrátit starší import a nahrát výpis znovu.
+  'kraken',
+  'revolut',
+  'schwab',
+  'swissquote',
+  'tastytrade',
+  'xtb',
+]);
 
 /**
  * Brokeři, u kterých shodné id s jinými čísly znamená OPRAVU, ne jiné
@@ -223,6 +242,15 @@ export function dedupeTransactions(
   const seen = new Set(stored);
   const storedIds = new Set(existingIds);
   const restated: Transaction[] = [];
+  // otisky uložených dividend BEZ ISIN (klíč = broker|otisk|pořadí)
+  const bareDividendRows = [...storedBareDividends];
+  const storedBareFingerprints = new Set(
+    bareDividendRows.flatMap(([key]) => {
+      const prefix = `${broker}|`;
+      const at = key.lastIndexOf('|');
+      return key.startsWith(prefix) && at > prefix.length ? [key.slice(prefix.length, at)] : [];
+    }),
+  );
   const superseded: DedupeOutcome['superseded'] = [];
   const untaxed: Transaction[] = [];
   // ČTVRTÁ síť (A29): dividenda se srážkou proti UŽ ULOŽENÉ dvojnici se
@@ -276,7 +304,15 @@ export function dedupeTransactions(
       seen.add(key);
       continue;
     }
-    if (sameEventStored && (corrects || TRANSACTION_ID_BROKERS.has(broker))) {
+    // Výjimka z druhé sítě: dividenda, kterou máme uloženou BEZ ISIN a teď
+    // přišla s ním (uživatel doplnil číselník a nahrál týž výpis znovu). Je to
+    // tentýž řádek s jiným obsahem, ale ne chyba parseru — má projít dál ke
+    // třetí síti, která uloženému řádku ISIN doplní (L14-02).
+    const awaitsIsin =
+      tx.type === 'DIVIDEND' &&
+      Boolean(tx.isin) &&
+      storedBareFingerprints.has(contentFingerprint({ ...tx, isin: undefined }));
+    if (sameEventStored && !awaitsIsin && (corrects || TRANSACTION_ID_BROKERS.has(broker))) {
       // tutéž událost už máme, jen s jinými čísly — uložit ji podruhé by
       // zdvojilo držbu i nabývací cenu, takže ji jen ohlásíme
       restated.push(tx);
@@ -302,7 +338,7 @@ export function dedupeTransactions(
     incoming,
     fresh,
     occurrences,
-    storedBareDividends,
+    bareDividendRows,
   );
   if (promoted.length === 0) {
     return { fresh, duplicates, restated, superseded, promoted, ambiguous, untaxed };

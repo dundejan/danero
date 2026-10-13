@@ -78,7 +78,8 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(sell.quantity.toString()).toBe('0.05413984');
     expect(sell.pricePerShare.eq(d('10415.01').div(d('0.05413984')))).toBe(true);
     expect(sell.currency).toBe('USD');
-    expect(sell.fee?.amount.toString()).toBe('111.73');
+    // @@FEE@@
+    expect(sell.fee).toBeUndefined();
     expect(sell.tradeDate).toBe('2019-09-25');
     expect(sell.id.endsWith('-sell')).toBe(true);
 
@@ -88,7 +89,7 @@ describe('Coinbase transaction history CSV parser', () => {
     expect(buy.quantity.toString()).toBe('451.212148');
     expect(buy.pricePerShare.eq(d('10415.01').div(d('451.212148')))).toBe(true);
     expect(buy.currency).toBe('USD');
-    expect(buy.fee).toBeUndefined(); // poplatek nese jen SELL noha
+    expect(buy.fee).toBeUndefined();
     expect(buy.tradeDate).toBe('2019-09-25');
     expect(buy.id.endsWith('-buy')).toBe(true);
 
