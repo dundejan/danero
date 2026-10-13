@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { brokerIdKey } from '@danero/importers';
 import type { Db } from '@/db';
 import * as schema from '@/db/schema';
 import {
@@ -268,7 +269,7 @@ popis('kompatibilita s produkčním Postgresem', () => {
 
     const state = await loadImportState(db, userId);
     expect(state.keys.size).toBe(1);
-    expect(state.brokerIds.has('etoro|etoro-42-open')).toBe(true);
+    expect(state.brokerIds.has(brokerIdKey('etoro', { type: 'BUY', id: 'etoro-42-open' }))).toBe(true);
   });
 
   it('dividendě uložené bez ISIN se po doplnění číselníku ISIN doplní i přes postgres.js (L14-02)', {

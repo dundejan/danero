@@ -80,6 +80,9 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   SQL dávej data přes `ts()` z `lib/sql.ts`. Testy citlivé na driver patří do
   `test/postgres-compat.test.ts`, který v CI běží proti opravdovému Postgresu
   (`TEST_DATABASE_URL`; lokálně stačí docker kontejner).
+  **Lokálně se ten soubor bez `TEST_DATABASE_URL` přeskakuje** — po zásahu do
+  importu ho před pushem pusť proti místnímu klastru (postup níž), jinak se
+  o zastaralém očekávání dozvíš až z červené CI po nasazení (13. 10. 2026).
 - **`db.transaction()` + pád spojení = výjimka, kterou nejde odchytit.**
   postgres.js 3.4.9 pošle po pádu spojení `ROLLBACK` do už zavřeného
   REZERVOVANÉHO spojení a spadne v `setImmediate` na `socket.write` nad `null` —
