@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { isValidIsin } from '@danero/shared';
 import {
   candidatesFrom,
+  diffRecords,
   isUsEquityIsin,
-  mergeAppendOnly,
+  verifyWithOpenFigi,
 } from '../scripts/build-isin-directory';
 import { builtinInstrument, isinDirectoryRecords } from '../src/isin-directory';
 import type { IsinDirectoryRecord } from '../src/isin-directory/data';
@@ -25,7 +26,9 @@ describe('vestavěný číselník ISIN: data', () => {
 
   it('má rozumnou velikost a každý ISIN je americká akcie s platnou kontrolní číslicí', () => {
     expect(records.length).toBeGreaterThan(1000);
-    const bad = records.filter((record) => !isUsEquityIsin(record.isin) || !isValidIsin(record.isin));
+    const bad = records.filter(
+      (record) => !isUsEquityIsin(record.isin) || !isValidIsin(record.isin),
+    );
     expect(bad).toEqual([]);
   });
 
@@ -35,9 +38,9 @@ describe('vestavěný číselník ISIN: data', () => {
     expect(new Set(tickers).size).toBe(tickers.length);
     expect(new Set(isins).size).toBe(isins.length);
     expect(tickers.filter((ticker) => !/^[A-Z]{1,5}$/.test(ticker))).toEqual([]);
-    expect(records.every((record) => record.name !== '' && record.source.startsWith('wikidata:Q'))).toBe(
-      true,
-    );
+    expect(
+      records.every((record) => record.name !== '' && record.source.startsWith('wikidata:Q')),
+    ).toBe(true);
   });
 
   it('známé dvojice sedí', () => {
@@ -56,6 +59,37 @@ describe('vestavěný číselník ISIN: data', () => {
     expect(tickers.has('GOOGL')).toBe(false);
     // ISIN dluhopisu u firmy (Paramount Global měl US124857AK99) se nebere
     expect(records.some((record) => record.isin === 'US124857AK99')).toBe(false);
+  });
+
+  it('neobsahuje ISIN jiného emitenta ani zastaralý ISIN (revize 15. 10. 2026)', () => {
+    // Wikidata vedou u tickeru starou entitu nebo jinou firmu; ověření přes
+    // OpenFIGI je musí vyřadit. Vzorky z revize dat: jiný emitent (TT je ISIN
+    // Ingersoll Rand, CB stará Chubb Corp, AA stará Alcoa, recyklované LB,
+    // TEN…) a zastaralý ISIN téže firmy (XOM, SHOP s neexistujícím US ISIN).
+    const wrong = [
+      ['AA', 'US0138171014'],
+      ['BREW', 'US2241221017'],
+      ['CB', 'US1712321017'],
+      ['CECO', 'US71363P1066'],
+      ['JIVE', 'US47760A1088'],
+      ['LAZR', 'US5504243032'],
+      ['LB', 'US5017971046'],
+      ['NP', 'US6400791090'],
+      ['OWL', 'US69121K1043'],
+      ['PFLT', 'US7080621045'],
+      ['RUBI', 'US55955D1000'],
+      ['TACO', 'US2454961044'],
+      ['TEN', 'US8803491054'],
+      ['TINY', 'US68235B2088'],
+      ['TT', 'US45687V1061'],
+      ['VJET', 'US92912L1070'],
+      ['XONE', 'US3021041047'],
+      ['XOM', 'US30231G1022'],
+    ];
+    const present = wrong.filter(([ticker, isin]) =>
+      records.some((record) => record.ticker === ticker && record.isin === isin),
+    );
+    expect(present).toEqual([]);
   });
 
   it('nerozchází se s ISIN, které používají fixtury brokerů', () => {
@@ -171,22 +205,58 @@ describe('generátor číselníku', () => {
     expect(excluded['firma zanikla, byla nahrazena nebo převzata']).toBe(1);
   });
 
-  it('záznamy jen přidává: starý zůstane beze změny a konflikt se vypíše', () => {
-    const old: IsinDirectoryRecord = {
-      market: 'US',
-      ticker: 'AAPL',
-      isin: 'US0378331005',
-      name: 'Apple Inc.',
-      source: 'wikidata:Q312',
+  const record = (ticker: string, isin: string): IsinDirectoryRecord => ({
+    market: 'US',
+    ticker,
+    isin,
+    name: `Firma ${ticker}`,
+    source: 'wikidata:Q1',
+  });
+
+  it('OpenFIGI: projde jen ISIN, který na US burzách vede na TENTÝŽ ticker kmenové akcie', async () => {
+    const answers: Record<string, { data?: Array<{ ticker: string; securityType: string }> }> = {
+      US0378331005: { data: [{ ticker: 'AAPL', securityType: 'Common Stock' }] },
+      // Wikidata u TT vedou ISIN Ingersoll Rand
+      US45687V1061: { data: [{ ticker: 'IR', securityType: 'Common Stock' }] },
+      // zastaralý ISIN (XOM) OpenFIGI nezná
+      US30231G1022: {},
+      // preferenční akcie
+      US12542R2094: { data: [{ ticker: 'CHSCP', securityType: 'Preference' }] },
+      US8740391003: { data: [{ ticker: 'TSM', securityType: 'ADR' }] },
     };
-    const changed = { ...old, isin: 'US5949181045', name: 'Jiná firma' };
-    const fresh: IsinDirectoryRecord = { ...old, ticker: 'KO', isin: 'US1912161007', name: 'Coca-Cola' };
+    const batches: number[] = [];
+    const { records, rejected } = await verifyWithOpenFigi(
+      [
+        record('AAPL', 'US0378331005'),
+        record('TT', 'US45687V1061'),
+        record('XOM', 'US30231G1022'),
+        record('CHSCP', 'US12542R2094'),
+        record('TSM', 'US8740391003'),
+      ],
+      async (jobs) => {
+        batches.push(jobs.length);
+        expect(jobs.every((job) => job.idType === 'ID_ISIN' && job.exchCode === 'US')).toBe(true);
+        return jobs.map((job) => answers[job.idValue!] ?? {});
+      },
+      { batchSize: 2 },
+    );
 
-    const result = mergeAppendOnly([old], [changed, fresh]);
+    expect(records.map((item) => item.ticker)).toEqual(['AAPL', 'TSM']);
+    expect(rejected.map((item) => `${item.record.ticker}: ${item.reason}`)).toEqual([
+      'TT: OpenFIGI vede ISIN na jiný ticker (IR)',
+      'XOM: OpenFIGI ISIN na US burzách nezná',
+      'CHSCP: druh cenného papíru Preference',
+    ]);
+    expect(batches).toEqual([2, 2, 1]);
+  });
 
-    expect(result.records).toEqual([old, fresh]);
-    expect(result.added).toEqual([fresh]);
-    expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts[0]).toContain('ponechán starý');
+  it('soubor se sestavuje znovu: změny proti stávajícímu se jen vypíší', () => {
+    const { added, removed, changed } = diffRecords(
+      [record('AAPL', 'US0378331005'), record('XOM', 'US30231G1022'), record('TT', 'US45687V1061')],
+      [record('AAPL', 'US0378331005'), record('XOM', 'US30233Q1085'), record('KO', 'US1912161007')],
+    );
+    expect(added).toEqual(['KO US1912161007 (Firma KO)']);
+    expect(removed).toEqual(['TT US45687V1061 (Firma TT)']);
+    expect(changed).toEqual(['XOM: US30231G1022 → US30233Q1085']);
   });
 });

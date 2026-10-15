@@ -26,11 +26,22 @@
  * - položka s víc tickery na amerických burzách (zase třídy akcií),
  * - ticker, který napříč položkami vede na víc ISIN, a ISIN s víc tickery.
  *
- * Záznamy se jen PŘIDÁVAJÍ (`src/isin-directory/index.ts`): existující
- * soubor se načte, nic z něj nezmizí ani se nezmění. Když nová data říkají
- * u známého tickeru jiný ISIN, skript to vypíše jako konflikt a nechá starý
- * záznam — rozhodnutí je na člověku (změna by u uživatelů, kteří už záznam
- * mají, nic neopravila, protože import si dvojici ukládá do jejich číselníku).
+ * Wikidata samy nestačí: revize 15. 10. 2026 v nich našla 20 % chyb — ISIN
+ * jiného emitenta (TT → ISIN Ingersoll Rand, CB → stará Chubb Corp,
+ * recyklované tickery LB, TEN…), zastaralý ISIN téže firmy (XOM) a tickery,
+ * které emitent už nepoužívá. Každý kandidát proto projde OVĚŘENÍM PŘES
+ * OpenFIGI (`verifyWithOpenFigi`): dotaz na ISIN na amerických burzách musí
+ * vrátit FIGI se STEJNÝM tickerem a druhem cenného papíru ze seznamu
+ * `ALLOWED_SECURITY_TYPES`. Z odpovědi se bere jen ano/ne, nic se z ní
+ * neukládá. Volá se jen při ručním běhu skriptu; bez klíče platí limit
+ * OpenFIGI (dávky po 10, 25 dotazů za minutu), s `OPENFIGI_API_KEY`
+ * v prostředí jde běh rychleji.
+ *
+ * Soubor se při každém běhu sestaví ZNOVU: co ověřením neprojde, z něj
+ * vypadne, a skript změny vypíše. Je to bezpečné, protože import každou
+ * doplněnou dvojici ukládá do uživatelova číselníku (`instrument_aliases`)
+ * — změna souboru se už naimportovaných dat netkne. Pouštěj ho pravidelně
+ * (čtvrtletně), ať se do souboru propíší přejmenování a zániky firem.
  */
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -38,10 +49,25 @@ import { fileURLToPath } from 'node:url';
 import { isValidIsin } from '@danero/shared';
 import { ISIN_DIRECTORY, type IsinDirectoryRecord } from '../src/isin-directory/data';
 
-const OUTPUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'isin-directory', 'data.ts');
+const OUTPUT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'src',
+  'isin-directory',
+  'data.ts',
+);
 const ENDPOINT = 'https://query.wikidata.org/sparql';
 /** Wikimedia chce v User-Agent kontakt — odkaz na repozitář projektu. */
 const USER_AGENT = 'DaneroIsinDirectory/1.0 (https://github.com/dundejan/danero)';
+
+const OPENFIGI_ENDPOINT = 'https://api.openfigi.com/v3/mapping';
+
+/**
+ * Druhy cenných papírů z OpenFIGI, které do číselníku smí. Preferenční akcie
+ * (CHSCP), warranty, dluhopisy ani fondy sem nepatří — ticker by vedl jinam
+ * než na kmenovou akcii.
+ */
+export const ALLOWED_SECURITY_TYPES = new Set(['Common Stock', 'ADR', 'REIT', 'MLP']);
 
 /** NYSE (Q13677) a Nasdaq (Q82059). */
 const QUERY = `
@@ -95,7 +121,8 @@ async function fetchRows(): Promise<SparqlRow[]> {
   const response = await fetch(url, {
     headers: { Accept: 'application/sparql-results+json', 'User-Agent': USER_AGENT },
   });
-  if (!response.ok) throw new Error(`Wikidata odpověděla ${response.status} ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`Wikidata odpověděla ${response.status} ${response.statusText}`);
   const body = (await response.json()) as { results: { bindings: SparqlRow[] } };
   return body.results.bindings;
 }
@@ -121,7 +148,8 @@ export function candidatesFrom(rows: SparqlRow[]): {
     };
     facts.label ??= row.label?.value;
     if (row.ended?.value === 'true') facts.ended = true;
-    if (row.listingRank.value !== DEPRECATED && !row.listingEnd) facts.tickers.add(row.ticker.value);
+    if (row.listingRank.value !== DEPRECATED && !row.listingEnd)
+      facts.tickers.add(row.ticker.value);
     if (row.isinRank.value !== DEPRECATED && !row.isinEnd) {
       facts.isins.add(row.isin.value.trim().toUpperCase());
     }
@@ -136,7 +164,8 @@ export function candidatesFrom(rows: SparqlRow[]): {
     // emitentovi a starý ISIN by se mu potichu přiřadil (VMW, FRC, SPLK…).
     if (facts.ended) exclude('firma zanikla, byla nahrazena nebo převzata');
     else if (tickers.length === 0) exclude('výpis ukončený nebo zastaralý');
-    else if (usIsins.length !== 1) exclude(usIsins.length === 0 ? 'bez platného US ISIN' : 'víc US ISIN u jedné položky');
+    else if (usIsins.length !== 1)
+      exclude(usIsins.length === 0 ? 'bez platného US ISIN' : 'víc US ISIN u jedné položky');
     else if (tickers.length !== 1) exclude('víc tickerů u jedné položky');
     else if (!US_TICKER.test(tickers[0]!)) exclude('ticker není jen písmena');
     else if (!facts.label) exclude('bez anglického názvu');
@@ -155,8 +184,14 @@ export function candidatesFrom(rows: SparqlRow[]): {
   const isinsByTicker = new Map<string, Set<string>>();
   const tickersByIsin = new Map<string, Set<string>>();
   for (const record of proposed) {
-    isinsByTicker.set(record.ticker, (isinsByTicker.get(record.ticker) ?? new Set()).add(record.isin));
-    tickersByIsin.set(record.isin, (tickersByIsin.get(record.isin) ?? new Set()).add(record.ticker));
+    isinsByTicker.set(
+      record.ticker,
+      (isinsByTicker.get(record.ticker) ?? new Set()).add(record.isin),
+    );
+    tickersByIsin.set(
+      record.isin,
+      (tickersByIsin.get(record.isin) ?? new Set()).add(record.ticker),
+    );
   }
   const records: IsinDirectoryRecord[] = [];
   const seen = new Set<string>();
@@ -171,41 +206,108 @@ export function candidatesFrom(rows: SparqlRow[]): {
   return { records, excluded };
 }
 
-/** Sloučení se stávajícím souborem: staré záznamy beze změny, nové jen přibudou. */
-export function mergeAppendOnly(
+interface FigiEntry {
+  ticker?: string;
+  securityType?: string;
+}
+
+type FigiFetch = (jobs: Array<Record<string, string>>) => Promise<Array<{ data?: FigiEntry[] }>>;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Dotaz na OpenFIGI s trpělivým opakováním při překročení limitu (HTTP 429). */
+function openFigiFetch(apiKey: string | undefined): FigiFetch {
+  return async (jobs) => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const response = await fetch(OPENFIGI_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': USER_AGENT,
+          ...(apiKey ? { 'X-OPENFIGI-APIKEY': apiKey } : {}),
+        },
+        body: JSON.stringify(jobs),
+      });
+      if (response.status === 429) {
+        console.warn('OpenFIGI: limit dotazů, čekám minutu…');
+        await sleep(61_000);
+        continue;
+      }
+      if (!response.ok)
+        throw new Error(`OpenFIGI odpověděla ${response.status} ${response.statusText}`);
+      return (await response.json()) as Array<{ data?: FigiEntry[] }>;
+    }
+    throw new Error('OpenFIGI: limit dotazů se nepodařilo přečkat');
+  };
+}
+
+/**
+ * Ověření kandidátů přes OpenFIGI: ISIN na amerických burzách (`exchCode: US`)
+ * musí vést na FIGI se stejným tickerem a povoleným druhem cenného papíru.
+ * Vrací ověřené záznamy a důvody vyřazení ostatních.
+ */
+export async function verifyWithOpenFigi(
+  records: readonly IsinDirectoryRecord[],
+  fetchBatch: FigiFetch,
+  { batchSize = 10, pauseMs = 0 }: { batchSize?: number; pauseMs?: number } = {},
+): Promise<{
+  records: IsinDirectoryRecord[];
+  rejected: Array<{ record: IsinDirectoryRecord; reason: string }>;
+}> {
+  const verified: IsinDirectoryRecord[] = [];
+  const rejected: Array<{ record: IsinDirectoryRecord; reason: string }> = [];
+  for (let start = 0; start < records.length; start += batchSize) {
+    const chunk = records.slice(start, start + batchSize);
+    const answers = await fetchBatch(
+      chunk.map((record) => ({ idType: 'ID_ISIN', idValue: record.isin, exchCode: 'US' })),
+    );
+    chunk.forEach((record, index) => {
+      const entries = answers[index]?.data ?? [];
+      const sameTicker = entries.filter((entry) => entry.ticker === record.ticker);
+      if (entries.length === 0)
+        rejected.push({ record, reason: 'OpenFIGI ISIN na US burzách nezná' });
+      else if (sameTicker.length === 0) {
+        const tickers = [...new Set(entries.map((entry) => entry.ticker))].join(', ');
+        rejected.push({ record, reason: `OpenFIGI vede ISIN na jiný ticker (${tickers})` });
+      } else if (
+        !sameTicker.some((entry) => ALLOWED_SECURITY_TYPES.has(entry.securityType ?? ''))
+      ) {
+        rejected.push({
+          record,
+          reason: `druh cenného papíru ${sameTicker[0]!.securityType ?? '?'}`,
+        });
+      } else verified.push(record);
+    });
+    if (pauseMs > 0 && start + batchSize < records.length) await sleep(pauseMs);
+  }
+  return { records: verified, rejected };
+}
+
+/** Změny proti stávajícímu souboru — jen pro výpis, soubor se sestavuje znovu. */
+export function diffRecords(
   existing: readonly IsinDirectoryRecord[],
   fresh: readonly IsinDirectoryRecord[],
-): { records: IsinDirectoryRecord[]; added: IsinDirectoryRecord[]; conflicts: string[] } {
+): { added: string[]; removed: string[]; changed: string[] } {
   const key = (record: IsinDirectoryRecord): string => `${record.market}|${record.ticker}`;
-  const byKey = new Map(existing.map((record) => [key(record), record]));
-  const knownIsins = new Map(existing.map((record) => [record.isin, record]));
-  const added: IsinDirectoryRecord[] = [];
-  const conflicts: string[] = [];
-  for (const record of fresh) {
-    const old = byKey.get(key(record));
-    if (old) {
-      if (old.isin !== record.isin) {
-        conflicts.push(
-          `${record.market} ${record.ticker}: v souboru ${old.isin} (${old.name}), Wikidata teď ${record.isin} (${record.name}) — ponechán starý`,
-        );
-      }
-      continue;
-    }
-    const sameIsin = knownIsins.get(record.isin);
-    if (sameIsin) {
-      conflicts.push(
-        `${record.market} ${record.ticker}: ISIN ${record.isin} už v souboru patří tickeru ${sameIsin.ticker} — nepřidán`,
-      );
-      continue;
-    }
-    byKey.set(key(record), record);
-    added.push(record);
+  const before = new Map(existing.map((record) => [key(record), record]));
+  const after = new Map(fresh.map((record) => [key(record), record]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+  for (const [id, record] of after) {
+    const old = before.get(id);
+    if (!old) added.push(`${record.ticker} ${record.isin} (${record.name})`);
+    else if (old.isin !== record.isin)
+      changed.push(`${record.ticker}: ${old.isin} → ${record.isin}`);
   }
-  const records = [...byKey.values()].sort((a, b) =>
-    `${a.market}|${a.ticker}`.localeCompare(`${b.market}|${b.ticker}`),
-  );
-  return { records, added, conflicts };
+  for (const [id, record] of before) {
+    if (!after.has(id)) removed.push(`${record.ticker} ${record.isin} (${record.name})`);
+  }
+  return { added, removed, changed };
 }
+
+export const sortRecords = (records: readonly IsinDirectoryRecord[]): IsinDirectoryRecord[] =>
+  [...records].sort((a, b) => `${a.market}|${a.ticker}`.localeCompare(`${b.market}|${b.ticker}`));
 
 export function renderDataFile(records: readonly IsinDirectoryRecord[]): string {
   const lines = records.map(
@@ -215,10 +317,11 @@ export function renderDataFile(records: readonly IsinDirectoryRecord[]): string 
   return [
     '/**',
     ' * Vestavěný číselník ISIN — VYGENEROVÁNO skriptem',
-    ' * `scripts/build-isin-directory.ts`, ručně neupravovat. Záznamy se jen',
-    ' * přidávají, nikdy nemění ani nemažou (`index.ts`).',
+    ' * `scripts/build-isin-directory.ts`, ručně neupravovat (soubor se při',
+    ' * každém běhu sestaví znovu).',
     ' *',
-    ' * Zdroj: Wikidata (https://www.wikidata.org), data pod licencí CC0 1.0.',
+    ' * Zdroj: Wikidata (https://www.wikidata.org), data pod licencí CC0 1.0;',
+    ' * každá dvojice ověřená přes OpenFIGI (https://www.openfigi.com).',
     ' */',
     '',
     'export interface IsinDirectoryRecord {',
@@ -240,14 +343,45 @@ export function renderDataFile(records: readonly IsinDirectoryRecord[]): string 
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
+  const apiKey = process.env.OPENFIGI_API_KEY || undefined;
   const rows = await fetchRows();
-  const { records: fresh, excluded } = candidatesFrom(rows);
-  const { records, added, conflicts } = mergeAppendOnly(ISIN_DIRECTORY, fresh);
+  const { records: candidates, excluded } = candidatesFrom(rows);
+  console.log(`Wikidata: ${rows.length} řádků, ${candidates.length} jednoznačných dvojic.`);
+  for (const [reason, count] of Object.entries(excluded))
+    console.log(`  vyřazeno (${reason}): ${count}`);
 
-  console.log(`Wikidata: ${rows.length} řádků, ${fresh.length} jednoznačných dvojic.`);
-  for (const [reason, count] of Object.entries(excluded)) console.log(`  vyřazeno (${reason}): ${count}`);
-  console.log(`Soubor: ${ISIN_DIRECTORY.length} stávajících, ${added.length} nových, celkem ${records.length}.`);
-  for (const conflict of conflicts) console.warn(`KONFLIKT ${conflict}`);
+  console.log(
+    `OpenFIGI: ověřuji ${candidates.length} dvojic${apiKey ? ' (s klíčem)' : ' (bez klíče, potrvá to)'}…`,
+  );
+  const { records: verified, rejected } = await verifyWithOpenFigi(
+    candidates,
+    openFigiFetch(apiKey),
+    {
+      batchSize: apiKey ? 100 : 10,
+      pauseMs: apiKey ? 300 : 2_600,
+    },
+  );
+  const reasons = new Map<string, number>();
+  for (const { reason } of rejected) {
+    const kind = reason.replace(/ \(.*\)$/, '');
+    reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
+  }
+  for (const [reason, count] of reasons) console.log(`  vyřazeno (${reason}): ${count}`);
+
+  // Výpadek nebo změna API by jinak tiše vyprázdnila soubor.
+  if (verified.length < candidates.length / 2) {
+    throw new Error(
+      `OpenFIGI ověřila jen ${verified.length} z ${candidates.length} dvojic — podezřelé, soubor nepřepisuji.`,
+    );
+  }
+  const records = sortRecords(verified);
+  const { added, removed, changed } = diffRecords(ISIN_DIRECTORY, records);
+  console.log(
+    `Soubor: dřív ${ISIN_DIRECTORY.length}, teď ${records.length} (+${added.length} / −${removed.length} / změněno ${changed.length}).`,
+  );
+  for (const line of added) console.log(`  + ${line}`);
+  for (const line of removed) console.log(`  − ${line}`);
+  for (const line of changed) console.log(`  ~ ${line}`);
   if (dryRun) return;
   writeFileSync(OUTPUT, renderDataFile(records));
   console.log(`Zapsáno: ${OUTPUT}`);
