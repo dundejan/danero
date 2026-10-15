@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { Decimal, ZERO } from '@danero/shared';
 import { normalizeHeader } from '../csv';
 import { emptyResult, type ImportResult } from '../types';
+import { openXlsxSource, type XlsxSource } from '../xlsx';
 import {
   centAccountMessage,
   extractHtmlRows,
@@ -342,20 +343,15 @@ export function sniffMt5Xlsx(workbook: ExcelJS.Workbook): boolean {
   });
 }
 
-export async function parseMt5Xlsx(data: ArrayBuffer | Buffer): Promise<ImportResult> {
+export async function parseMt5Xlsx(data: XlsxSource): Promise<ImportResult> {
   const result = emptyResult(MT5_BROKER);
 
-  const workbook = new ExcelJS.Workbook();
-  try {
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch (error) {
-    result.errors.push({
-      line: 1,
-      message: `Soubor se nepodařilo přečíst jako XLSX: ${error instanceof Error ? error.message : String(error)}`,
-    });
+  const opened = await openXlsxSource(data);
+  if ('error' in opened) {
+    result.errors.push({ line: 1, message: opened.error });
     return result;
   }
+  const { workbook } = opened;
 
   // list s tabulkou Deals (reporty mívají jediný list, ale nespoléháme na to)
   const sheet =

@@ -4,13 +4,19 @@ import ExcelJS from 'exceljs';
 /**
  * Strop na součet NEKOMPRIMOVANÝCH velikostí položek archivu.
  *
- * Limit 20 MB na nahraný soubor platí na zip — jenže XLSX zip JE a `load()`
+ * Limit na nahraný soubor platí na zip — jenže XLSX zip JE a `load()`
  * rozbalí, co v něm najde: ověřený validní soubor 1,09 MB se rozbalil na
- * 320 MB XML (poměr ~294:1), takže soubor na hraně limitu by dal ~5,9 GB
- * a sežral paměť funkce. Běžný poměr XML:zip u reálných reportů je ~10:1,
- * takže 150 MB pokryje i obří export a bombu zastaví.
+ * 320 MB XML (poměr ~294:1).
+ *
+ * Do 15. 10. 2026 tu bylo 150 MB. Bezpečnostní revize změřila, co stojí
+ * paměť: ExcelJS si na 1 MB XML listu vezme zhruba 33 MB (sešit s 11 MB XML
+ * → špička 428 MB, s 22 MB → 862 MB). Strop proto odpovídá limitu uploadu:
+ * 4 MB zipu dává při běžném poměru ~10:1 kolem 40 MB XML, tedy ~1,3 GB
+ * paměti — to legitimní export pod limitem ještě projde a funkci (2 GB na
+ * Vercelu) neshodí. Hlavní úspora je jinde: import sešit načte jen jednou
+ * (`XlsxSource`), dřív ho držel dvakrát a týž soubor vzal přes 1,6 GB.
  */
-const MAX_UNCOMPRESSED_BYTES = 150 * 1024 * 1024;
+const MAX_UNCOMPRESSED_BYTES = 40 * 1024 * 1024;
 
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_FILE_SIGNATURE = 0x02014b50;
@@ -284,21 +290,20 @@ export function assertXlsxUnpackedSize(
 }
 
 /**
- * Jedno načtení XLSX pro všechny sniffy. Parsery si soubor načítají znovu
- * samy (dvojí load je vědomá cena za jednoduché signatury — soubory mají
- * limit 20 MB a upload je vzácná operace; kdyby to někdy bolelo, řešením je
- * `parse*Workbook(workbook)` varianta parserů, ne cache tady).
+ * Jedno načtení XLSX pro všechny sniffy — a import ho pak předá i parseru
+ * (`XlsxSource`), takže se sešit v paměti nedrží dvakrát.
  *
  * Velikost po rozbalení se kontroluje PŘED `load()` — potom už je pozdě.
  */
 export async function loadXlsxWorkbook(
-  data: ArrayBuffer,
+  data: ArrayBuffer | Buffer,
   maxUnpackedBytes = MAX_UNCOMPRESSED_BYTES,
 ): Promise<ExcelJS.Workbook> {
   assertXlsxUnpackedSize(data, maxUnpackedBytes);
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(data);
+    // JSZip pod exceljs bere ArrayBuffer i Buffer; typy exceljs znají jen jeden
+    await workbook.xlsx.load(data as ArrayBuffer);
   } catch (error) {
     // exceljs padá na cizím obsahu anglickou TypeError („Cannot read properties
     // of undefined (reading 'col')“) — uživateli patří česká věta, ne stack.
@@ -307,4 +312,36 @@ export async function loadXlsxWorkbook(
     );
   }
   return workbook;
+}
+
+/**
+ * Vstup parseru sešitu: bajty souboru, nebo sešit, který už načetl import
+ * kvůli sniffům. Druhé načtení téhož souboru by paměť zdvojnásobilo
+ * (bezpečnostní revize 15. 10. 2026: 4 MB soubor 1,0 → 1,6 GB).
+ */
+export type XlsxSource = ArrayBuffer | Buffer | ExcelJS.Workbook;
+
+/** Je zdroj už načtený sešit? Podle bajtů, ne `instanceof` — dvě kopie exceljs by ho rozbily. */
+export function isLoadedWorkbook(data: XlsxSource): data is ExcelJS.Workbook {
+  return !(data instanceof ArrayBuffer) && !Buffer.isBuffer(data);
+}
+
+/**
+ * Sešit pro parser: načtený se použije, jak je, bajty se načtou přes
+ * `loadXlsxWorkbook` (stejná kontrola velikosti i hlášky jako při importu —
+ * parser se dá volat i samostatně). Chybu vrací jako text, který parser
+ * zapíše do výsledku, místo aby vyhodil.
+ */
+export async function openXlsxSource(
+  data: XlsxSource,
+): Promise<{ workbook: ExcelJS.Workbook } | { error: string }> {
+  if (isLoadedWorkbook(data)) return { workbook: data };
+  try {
+    return { workbook: await loadXlsxWorkbook(data) };
+  } catch (error) {
+    if (error instanceof XlsxTooLargeError || error instanceof XlsxUnreadableError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }

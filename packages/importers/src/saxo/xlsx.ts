@@ -7,7 +7,7 @@ import {
   normalizeHeader,
 } from '../csv';
 import { fnv1a64 } from '../dedupe';
-import { readSheetRows } from '../xlsx';
+import { openXlsxSource, readSheetRows, type XlsxSource } from '../xlsx';
 import { emptyResult, type ImportResult } from '../types';
 
 export const SAXO_BROKER = 'saxo';
@@ -288,20 +288,15 @@ export function sniffSaxoXlsxShape(workbook: ExcelJS.Workbook): boolean {
  * FEE, Interest jako INTEREST; vklady/výběry se vědomě přeskakují.
  * GBX (pence) se normalizuje na GBP s cenou/100.
  */
-export async function parseSaxoXlsx(data: ArrayBuffer | Buffer): Promise<ImportResult> {
+export async function parseSaxoXlsx(data: XlsxSource): Promise<ImportResult> {
   const result = emptyResult(SAXO_BROKER);
 
-  const workbook = new ExcelJS.Workbook();
-  try {
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch (error) {
-    result.errors.push({
-      line: 1,
-      message: `Soubor se nepodařilo přečíst jako XLSX: ${error instanceof Error ? error.message : String(error)}`,
-    });
+  const opened = await openXlsxSource(data);
+  if ('error' in opened) {
+    result.errors.push({ line: 1, message: opened.error });
     return result;
   }
+  const { workbook } = opened;
 
   const sheet = workbook.worksheets[0];
   if (!sheet) {

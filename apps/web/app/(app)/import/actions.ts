@@ -16,14 +16,18 @@ import {
   brokerCardAnchor,
   IMPORT_HISTORY_ANCHOR,
   importFeedbackUrl,
+  MAX_FILES_PER_UPLOAD,
 } from '@/lib/import-feedback';
 import { importFileIsolated, type ImportSummary } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
 import { aliasFeedbackUrl } from '@/lib/alias-feedback';
 import {
+  aliasCountAfterSave,
   aliasesBlockedByTransactions,
   deleteAlias,
   ISIN_ONLY_BROKERS,
+  MAX_ALIAS_SYMBOL_LENGTH,
+  MAX_ALIASES_PER_USER,
   returningAfterDelete,
   saveAliases,
   updateAlias,
@@ -63,6 +67,7 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
     .filter((f): f is File => f instanceof File && (f.size > 0 || f.name !== ''));
 
   if (files.length === 0) redirect('/import?chyba=zadny-soubor');
+  if (files.length > MAX_FILES_PER_UPLOAD) redirect('/import?chyba=pocet-souboru');
   if (files.some((f) => f.size > MAX_FILE_BYTES)) redirect('/import?chyba=velikost');
 
   const db = await getDb();
@@ -155,7 +160,9 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
     const symbol = String(formData.get(`symbol-${i}`) ?? '');
     const isin = String(formData.get(`isin-${i}`) ?? '').trim().toUpperCase();
     const currency = String(formData.get(`currency-${i}`) ?? '').trim().toUpperCase();
-    if (!ALIAS_BROKERS.has(broker) || !symbol) continue;
+    // symbol přichází z formuláře, ne z výpisu — delší, než jaký kdy parser
+    // vydal, je podvržený řádek (strop proti plnění databáze)
+    if (!ALIAS_BROKERS.has(broker) || !symbol || symbol.length > MAX_ALIAS_SYMBOL_LENGTH) continue;
     if (isin === '' && currency === '') continue; // nevyplněný řádek přeskoč
     if (!ISIN_RE.test(isin)) redirect('/import?chyba=isin');
     if (currency !== '' && !CURRENCY_RE.test(currency)) redirect('/import?chyba=mena');
@@ -173,6 +180,13 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
   let isinInUse = false;
   if (rows.length > 0) {
     const db = await getDb();
+    const { checkRateLimit } = await import('@/lib/rate-limit');
+    if (!(await checkRateLimit(db, `aliases:${user.id}`, { max: 30, windowMs: 10 * 60_000 }))) {
+      redirect('/import?chyba=ciselnik-limit');
+    }
+    if ((await aliasCountAfterSave(db, user.id, rows)) > MAX_ALIASES_PER_USER) {
+      redirect('/import?chyba=ciselnik-plny');
+    }
     // L23-02: ISIN u symbolu, pod kterým už leží transakce, se nepřepisuje —
     // další nahrání téhož výpisu by všechno uložilo podruhé. Ostatní řádky
     // se uloží (stejně jako u kontrolní číslice níž).

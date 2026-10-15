@@ -97,6 +97,9 @@ const nextConfig: NextConfig = {
     ? { output: 'standalone' as const, outputFileTracingRoot: join(import.meta.dirname, '../..') }
     : {}),
   distDir,
+  // `X-Powered-By: Next.js` jen napovídá, na jaké zranitelnosti zkoušet
+  // (pasivní sken OWASP ZAP, bezpečnostní revize 15. 10. 2026)
+  poweredByHeader: false,
   // workspace balíčky exportují TS zdrojáky — Next je transpiluje sám
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)

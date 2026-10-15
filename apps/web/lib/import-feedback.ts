@@ -105,6 +105,14 @@ export const historyQueryLimit = (limit: number): number =>
 /** Kotva sekce „Historie importů“ — tam vede odezva po nahrání a po vrácení. */
 export const IMPORT_HISTORY_ANCHOR = 'historie';
 
+/**
+ * Kolik souborů jde nahrát najednou. Víc nenahraje ani uživatel s exporty po
+ * letech od několika brokerů; limit nahrání se počítá na požadavek, takže bez
+ * stropu šlo jedním požadavkem s tisíci drobných souborů založit tisíce dávek
+ * a držet funkci do maxDuration (bezpečnostní revize 15. 10. 2026).
+ */
+export const MAX_FILES_PER_UPLOAD = 20;
+
 /** Bloky brokerů na /import (připojený účet i řádek „napojit“) mají jako `id` přímo kód brokera. */
 const BROKER_CARD_ANCHORS = new Set(['trading212', 'ibkr']);
 

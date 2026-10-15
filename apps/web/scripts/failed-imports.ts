@@ -40,7 +40,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from '@/db';
-import { eraseCase, rejectCase, retryCase } from '@/lib/failed-import-review';
+import { eraseCase, formatCaseListing, rejectCase, retryCase } from '@/lib/failed-import-review';
 import { caseOverview, listOpenCases, loadOpenCase } from '@/lib/failed-imports';
 import { emailEnvError, missingEmailEnv } from '@/lib/operator-env';
 
@@ -71,10 +71,6 @@ function requireEmailEnv(): void {
   process.exit(1);
 }
 
-/** „0 kB“ vypadá jako prázdný soubor, a to je jiná diagnóza. */
-const fileSize = (bytes: number): string =>
-  bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
-
 /** Hláška k případu, na který se nedá sáhnout. Stav v ní být musí — bez něj je rada k ničemu. */
 function reportUnavailable(caseId: string, result: { outcome: 'missing' } | { outcome: 'closed'; status: string }): never {
   console.error(
@@ -94,16 +90,7 @@ async function list(): Promise<void> {
     return;
   }
   for (const item of cases) {
-    console.log(
-      [
-        `${item.id}  ${item.createdAt.toISOString().slice(0, 16).replace('T', ' ')}`,
-        `  soubor:    ${item.filename} (${fileSize(item.byteSize)})`,
-        `  uživatel:  ${item.email}`,
-        `  platforma: ${item.reportedPlatform ?? '— (uživatel nenahlásil)'}`,
-        ...(item.reportedNote ? [`  poznámka:  ${item.reportedNote}`] : []),
-        `  důvod:     ${item.reason}`,
-      ].join('\n'),
-    );
+    console.log(formatCaseListing(item));
     console.log('');
   }
   console.log(`Celkem ${cases.length}.`);

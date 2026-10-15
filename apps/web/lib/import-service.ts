@@ -660,7 +660,7 @@ async function importXlsxUpload(
   const workbook = await loadXlsxWorkbook(data);
   if (sniffXtbXlsx(workbook)) {
     const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) => {
-      const outcome = await parseXtbXlsx(data, aliases.xtb, { filename });
+      const outcome = await parseXtbXlsx(workbook, aliases.xtb, { filename });
       return {
         outcome,
         unmapped: outcome.unmappedSymbols.map((symbol) => ({
@@ -680,21 +680,21 @@ async function importXlsxUpload(
   }
   if (sniffEtoroXlsx(workbook)) {
     const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) =>
-      withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro)),
+      withUnmapped('etoro', await parseEtoroXlsx(workbook, aliases.isinOnly.etoro)),
     );
     return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
   if (sniffSaxoXlsx(workbook)) {
-    return save(await parseSaxoXlsx(data));
+    return save(await parseSaxoXlsx(workbook));
   }
   if (sniffMt5Xlsx(workbook)) {
-    return save(await parseMt5Xlsx(data));
+    return save(await parseMt5Xlsx(workbook));
   }
   // Revolut nabízí „Account statement“ jako Excel a podle účtu z něj chodí
   // jednou CSV a jindy opravdový sešit — obojí vede na tentýž parser
   if (sniffRevolutXlsx(workbook)) {
     const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) =>
-      withUnmapped('revolut', await parseRevolutXlsx(data, aliases.isinOnly.revolut)),
+      withUnmapped('revolut', await parseRevolutXlsx(workbook, aliases.isinOnly.revolut)),
     );
     return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
@@ -703,7 +703,7 @@ async function importXlsxUpload(
   // a je na uživateli, takže se soubor neschovává. Volnější sniffer patří až
   // SEM, za všechny ostatní — jinak by jim sešit ukradl.
   if (sniffSaxoXlsxShape(workbook)) {
-    return save(await parseSaxoXlsx(data), NOT_OURS);
+    return save(await parseSaxoXlsx(workbook), NOT_OURS);
   }
   const outline = outlineWorkbook(workbook);
   // Univerzální šablona uložená z Excelu jako sešit. Do 13. 10. 2026 dostala

@@ -143,6 +143,56 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
   });
 
   /**
+   * Bezpečnostní revize před propagací (15. 10. 2026; „obejití 2FA“ z oddílu
+   * 8.3 revize 5 zůstalo neověřené): kdo zná heslo, nesmí si v jedné výzvě
+   * kód vyhádat. Strop IP adresy (5/min) v testech neběží a v provozu ho
+   * obejde kdokoli s víc adresami — tohle je strop na výzvu, který drží vždy.
+   * Po vyčerpání neprojde ani správný kód, výzva je mrtvá.
+   */
+  it(
+    'hádání kódu: po pěti chybách v jedné výzvě neprojde ani správný kód',
+    { timeout: 30_000 },
+    async () => {
+      const { getAuth } = await import('@/lib/auth');
+      const auth = await getAuth();
+      const email = 'hadani@test.cz';
+      const { secret } = await userWithTwoFactor(auth, email);
+      const challenge = await startSignIn(auth, email);
+      const correct = codeForStep(secret, currentStep() + 1);
+      // Pokaždé jiný kód: opakovaný kód odmítne už háček D-01 (rejectReusedTotpCode)
+      // dřív, než se dostane k počítadlu výzvy — útočník by stejně zkoušel různé.
+      // Žádný nesmí být v okně, které server přijme (předchozí až následující krok).
+      const valid = new Set(
+        [-1, 0, 1, 2].map((offset) => codeForStep(secret, currentStep() + offset)),
+      );
+      const guesses = ['000000', '111111', '222222', '333333', '444444', '555555', '666666']
+        .filter((code) => !valid.has(code))
+        .slice(0, 5);
+
+      for (const guess of guesses) {
+        const response = await auth.handler(
+          new Request('http://localhost:3000/api/auth/two-factor/verify-totp', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', cookie: challenge },
+            body: JSON.stringify({ code: guess }),
+          }),
+        );
+        expect(response.status).toBe(401);
+      }
+
+      const late = await auth.handler(
+        new Request('http://localhost:3000/api/auth/two-factor/verify-totp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: challenge },
+          body: JSON.stringify({ code: correct }),
+        }),
+      );
+      expect(late.status).not.toBe(200);
+      expect(cookiesFrom(late)).not.toContain('session_token');
+    },
+  );
+
+  /**
    * Použité kódy se musí držet per uživatel. Kdyby stačil samotný kód, měl by
    * kdokoli páku na cizí účty: šestimístných kódů je jen milion, takže by je
    * šlo cizím účtům plošně „spalovat" dřív, než je majitel stihne opsat.

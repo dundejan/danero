@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import { Decimal, d, TransactionSchema } from '@danero/shared';
 import { cleanNumber, isValidIsoDate, normalizeHeader, stripDiacritics } from '../csv';
 import { fnv1a64 } from '../dedupe';
-import { readSheetRows, type SheetRow } from '../xlsx';
+import { openXlsxSource, readSheetRows, type SheetRow, type XlsxSource } from '../xlsx';
 import { emptyResult, type ImportResult } from '../types';
 
 export const XTB_BROKER = 'xtb';
@@ -320,23 +320,18 @@ function parseAmount(raw: string): Decimal | null {
  * — obojí v peněžních operacích chybí.
  */
 export async function parseXtbXlsx(
-  data: ArrayBuffer | Buffer,
+  data: XlsxSource,
   instrumentMap: XtbInstrumentMap = {},
   options: { filename?: string } = {},
 ): Promise<ImportResult & { unmappedSymbols: string[] }> {
   const result = { ...emptyResult(XTB_BROKER), unmappedSymbols: [] as string[] };
 
-  const workbook = new ExcelJS.Workbook();
-  try {
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch (error) {
-    result.errors.push({
-      line: 1,
-      message: `Soubor se nepodařilo přečíst jako XLSX: ${error instanceof Error ? error.message : String(error)}`,
-    });
+  const opened = await openXlsxSource(data);
+  if ('error' in opened) {
+    result.errors.push({ line: 1, message: opened.error });
     return result;
   }
+  const { workbook } = opened;
 
   const sheet = findCashSheet(workbook);
   if (!sheet) {

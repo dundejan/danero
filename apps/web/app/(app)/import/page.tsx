@@ -15,6 +15,7 @@ import {
   historyQueryLimit,
   IMPORT_HISTORY_ANCHOR,
   importFeedback,
+  MAX_FILES_PER_UPLOAD,
   nextHistoryLimit,
   offersOverviewAfterUpload,
   uploadedBatchIds,
@@ -37,6 +38,7 @@ import {
   isIsinOnlyBroker,
   listAliases,
   loadAliases,
+  MAX_ALIASES_PER_USER,
 } from '@/lib/instrument-aliases';
 import { platformName } from '@/lib/brokers-catalog';
 import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
@@ -70,6 +72,9 @@ const ERROR_TEXTS: Record<string, string> = {
   isin: 'ISIN má tvar 2 písmena + 10 znaků (např. US0378331005) — zkontroluj vyplněné hodnoty.',
   mena: 'Měna má tvar 3 písmena (např. USD) — zkontroluj vyplněné hodnoty.',
   limit: 'Příliš mnoho nahrání za sebou — počkej chvíli a zkus to znovu.',
+  'pocet-souboru': `Najednou jde nahrát nejvýš ${MAX_FILES_PER_UPLOAD} souborů — vyber méně a zbytek nahraj potom. Nic se nezdvojí.`,
+  'ciselnik-limit': 'Příliš mnoho uložení za sebou — počkej pár minut a zkus to znovu.',
+  'ciselnik-plny': `Doplněných údajů instrumentů je už ${MAX_ALIASES_PER_USER.toLocaleString('cs-CZ')}, víc se jich neuloží. Smaž v seznamu ty, které nepotřebuješ, nebo nám napiš.`,
   'zadny-ucet': 'Tenhle účet u brokera už neexistuje — obnov stránku.',
   'hlaseni-prazdne': 'Vyber platformu nebo napiš poznámku — bez toho nám hlášení nepomůže.',
   'hlaseni-neexistuje': 'Tenhle výpis už mezitím vyřešený je — obnov stránku.',

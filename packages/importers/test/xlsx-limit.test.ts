@@ -7,6 +7,8 @@ import {
   XlsxTooLargeError,
   XlsxUnreadableError,
 } from '../src/xlsx';
+import { parseXtbXlsx } from '../src/xtb/xlsx';
+import { buildXtbNewReportXlsx, XTB_NEW_INSTRUMENT_MAP } from './fixtures/xtb';
 
 /**
  * D-4: limit 20 MB platí na KOMPRIMOVANÝ soubor, jenže XLSX je zip a
@@ -254,5 +256,50 @@ describe('strop hlídá skutečně rozbalené bajty, ne to, co archiv tvrdí (L8
     const outOfBounds = Buffer.from(zip);
     outOfBounds.writeUInt32LE(zip.length * 2, centralOffset + 20);
     expect(() => assertXlsxUnpackedSize(outOfBounds)).toThrow(XlsxUnreadableError);
+  });
+});
+
+describe('strop drží paměť funkce, ne jen bajty (bezpečnostní revize 15. 10. 2026)', () => {
+  it('soubor pod limitem uploadu, který by se rozbalil na desítky MB XML, se odmítne', async () => {
+    // ExcelJS bere ~33 MB paměti na 1 MB XML listu; strop (40 MB XML) drží
+    // načtení pod ~1,3 GB a zastaví ho dřív, než se sešit načte.
+    const heavy = buildZip([
+      { name: '[Content_Types].xml', content: CONTENT_TYPES },
+      { name: 'xl/worksheets/sheet1.xml', content: Buffer.alloc(45 * MB, 0x20) },
+    ]);
+    expect(heavy.byteLength).toBeLessThan(4 * MB);
+    expect(() => assertXlsxUnpackedSize(heavy)).toThrow(XlsxTooLargeError);
+    await expect(loadXlsxWorkbook(heavy)).rejects.toThrow(/rozděl export na kratší období/);
+  });
+
+  it('legitimní export na hraně limitu uploadu strop projde', () => {
+    // 4 MB zipu dává u skutečných exportů (poměr ~10:1) kolem 35–40 MB XML;
+    // strop nesmí odmítnout soubor, který se dřív naimportoval
+    const large = buildZip([
+      { name: '[Content_Types].xml', content: CONTENT_TYPES },
+      { name: 'xl/worksheets/sheet1.xml', content: Buffer.alloc(36 * MB, 0x20) },
+    ]);
+    expect(assertXlsxUnpackedSize(large)).toBeGreaterThan(36 * MB);
+  });
+
+  it('parser přijme sešit načtený importem a přečte z něj totéž co z bajtů', async () => {
+    const bytes = await buildXtbNewReportXlsx();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as unknown as ArrayBuffer);
+
+    const fromWorkbook = await parseXtbXlsx(workbook, XTB_NEW_INSTRUMENT_MAP);
+    const fromBytes = await parseXtbXlsx(bytes, XTB_NEW_INSTRUMENT_MAP);
+    expect(fromWorkbook.transactions.length).toBeGreaterThan(0);
+    expect(fromWorkbook).toEqual(fromBytes);
+  });
+
+  it('parser volaný s bajty hlídá strop sám a řekne to česky', async () => {
+    const heavy = buildZip([
+      { name: '[Content_Types].xml', content: CONTENT_TYPES },
+      { name: 'xl/worksheets/sheet1.xml', content: Buffer.alloc(45 * MB, 0x20) },
+    ]);
+    const result = await parseXtbXlsx(heavy);
+    expect(result.transactions).toEqual([]);
+    expect(result.errors[0]?.message).toMatch(/po rozbalení příliš velký/);
   });
 });

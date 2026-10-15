@@ -347,6 +347,54 @@ export async function saveBuiltinAliases(
   }
 }
 
+/**
+ * Stropy číselníku proti plnění databáze (bezpečnostní revize 15. 10. 2026).
+ * Formulář posílá nejvýš 200 řádků, jenže bez stropu délky symbolu a počtu
+ * záznamů šlo opakovaným voláním server action uložit megabajty na požadavek
+ * — na Neonu zdarma (0,5 GB) by databáze za ~120 požadavků došla všem.
+ * Symbol bývá ticker, u některých brokerů název titulu; 200 znaků i 2 000
+ * záznamů jsou daleko za tím, co má i velmi aktivní investor.
+ */
+export const MAX_ALIAS_SYMBOL_LENGTH = 200;
+export const MAX_ALIASES_PER_USER = 2000;
+
+/** Kolik záznamů v číselníku uživatel má. */
+export async function aliasCount(db: Db, userId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(instrumentAliases)
+    .where(eq(instrumentAliases.userId, userId));
+  return row?.count ?? 0;
+}
+
+/**
+ * Kolik záznamů bude mít číselník po uložení `rows`. Uložení je upsert, takže
+ * řádek, který jen mění existující záznam (doplněná měna u XTB), počet
+ * nezvětší — a nesmí ho tedy zastavit ani plný číselník.
+ */
+export async function aliasCountAfterSave(
+  db: Db,
+  userId: string,
+  rows: AliasInput[],
+): Promise<number> {
+  const keys = new Set(rows.map((row) => `${row.broker}\u0000${row.symbol}`));
+  if (keys.size === 0) return aliasCount(db, userId);
+  const existing = await db
+    .select({ broker: instrumentAliases.broker, symbol: instrumentAliases.symbol })
+    .from(instrumentAliases)
+    .where(
+      and(
+        eq(instrumentAliases.userId, userId),
+        inArray(
+          instrumentAliases.symbol,
+          rows.map((row) => row.symbol),
+        ),
+      ),
+    );
+  for (const row of existing) keys.delete(`${row.broker}\u0000${row.symbol}`);
+  return (await aliasCount(db, userId)) + keys.size;
+}
+
 export async function saveAliases(db: Db, userId: string, rows: AliasInput[]): Promise<void> {
   for (const row of rows) {
     await db

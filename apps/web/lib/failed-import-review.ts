@@ -1,7 +1,14 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { auditLog, importBatches } from '@/db/schema';
-import { caseOverview, deleteCase, loadOpenCase, resolveCase } from '@/lib/failed-imports';
+import { printableSample } from '@danero/importers';
+import {
+  caseOverview,
+  deleteCase,
+  loadOpenCase,
+  resolveCase,
+  type FailedImportCase,
+} from '@/lib/failed-imports';
 import { plural } from '@/lib/format';
 import { importFile, type ImportSummary } from '@/lib/import-service';
 
@@ -14,8 +21,38 @@ import { importFile, type ImportSummary } from '@/lib/import-service';
  * souboru by z toho byl kruh. Druhý důvod je testovatelnost: dokud tohle bydlelo
  * ve `scripts/failed-imports.ts`, nemohl na to sáhnout jediný test.
  *
- * Každá funkce vrací výsledek, ne text — hlášky skládá CLI.
+ * Každá funkce vrací výsledek, ne text — hlášky skládá CLI. Výjimkou je
+ * `formatCaseListing`, protože o tom, co z cizího textu smí na terminál, se
+ * nesmí rozhodovat až v CLI, kam žádný test nedosáhne.
  */
+
+/** „0 kB“ vypadá jako prázdný soubor, a to je jiná diagnóza. */
+const fileSize = (bytes: number): string =>
+  bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
+
+/** Cizí text na jeden řádek, bez řídicích znaků, zkrácený a zřetelně v uvozovkách. */
+const quoted = (value: string, max: number): string => `«${printableSample(value, max)}»`;
+
+/**
+ * Případ, jak ho vypíše `failed-imports list`.
+ *
+ * Název souboru, platformu, poznámku, důvod (ten cituje hlavičku souboru)
+ * i adresu účtu napsal cizí člověk. Bez očištění by řídicí znaky ANSI
+ * v terminálu část výpisu skryly nebo přepsaly a nový řádek v názvu souboru
+ * by vyrobil podvržený řádek „uživatel:“. Výpis navíc čte agent skillu `/vypis`, který
+ * smí commitnout a nasadit — cizí text proto stojí v uvozovkách jako citace,
+ * ne jako pokračování výpisu (bezpečnostní revize 15. 10. 2026).
+ */
+export function formatCaseListing(item: FailedImportCase & { email: string }): string {
+  return [
+    `${item.id}  ${item.createdAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+    `  soubor:    ${quoted(item.filename, 200)} (${fileSize(item.byteSize)})`,
+    `  uživatel:  ${quoted(item.email, 320)}`,
+    `  platforma: ${item.reportedPlatform ? quoted(item.reportedPlatform, 120) : '— (uživatel nenahlásil)'}`,
+    ...(item.reportedNote ? [`  poznámka:  ${quoted(item.reportedNote, 500)}`] : []),
+    `  důvod:     ${quoted(item.reason, 1000)}`,
+  ].join('\n');
+}
 
 export type RetryResult =
   | { outcome: 'missing' }

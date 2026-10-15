@@ -399,7 +399,8 @@ describe('MT5 report parser (XLSX)', () => {
 
     const broken = await parseMt5Xlsx(Buffer.from('tohle není xlsx'));
     expect(broken.errors).toHaveLength(1);
-    expect(broken.errors[0]!.message).toContain('nepodařilo přečíst jako XLSX');
+    // nesmysl pozná už kontrola velikosti před načtením (`openXlsxSource`)
+    expect(broken.errors[0]!.message).toContain('není to platný XLSX');
   });
 
   it('sniffMt5Xlsx: pozná MT5 report, nematchne cizí workbook', async () => {

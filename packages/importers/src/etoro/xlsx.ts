@@ -3,7 +3,7 @@ import { Decimal, d, ZERO, TransactionSchema } from '@danero/shared';
 import { isValidIsoDate, normalizeHeader } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { syntheticDerivativePair } from '../metatrader/common';
-import { readSheetRows, type SheetRow } from '../xlsx';
+import { openXlsxSource, readSheetRows, type SheetRow, type XlsxSource } from '../xlsx';
 import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
 
 export const ETORO_BROKER = 'etoro';
@@ -786,22 +786,17 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
  * Ledger je v USD; čísla i datumy se čtou tolerantně k locale účtu.
  */
 export async function parseEtoroXlsx(
-  data: ArrayBuffer | Buffer,
+  data: XlsxSource,
   instrumentMap: EtoroInstrumentMap = {},
 ): Promise<ImportResult & { unmappedSymbols: string[] }> {
   const result = { ...emptyResult(ETORO_BROKER), unmappedSymbols: [] as string[] };
 
-  const workbook = new ExcelJS.Workbook();
-  try {
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch (error) {
-    result.errors.push({
-      line: 1,
-      message: `Soubor se nepodařilo přečíst jako XLSX: ${error instanceof Error ? error.message : String(error)}`,
-    });
+  const opened = await openXlsxSource(data);
+  if ('error' in opened) {
+    result.errors.push({ line: 1, message: opened.error });
     return result;
   }
+  const { workbook } = opened;
 
   const closedSheet = findSheet(workbook, 'closed positions');
   const activitySheet = findSheet(workbook, 'account activity');

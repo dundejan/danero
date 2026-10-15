@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import { auditLog, failedImports, importBatches, user } from '@/db/schema';
-import { eraseCase, rejectCase, retryCase } from '@/lib/failed-import-review';
+import { eraseCase, formatCaseListing, rejectCase, retryCase } from '@/lib/failed-import-review';
 import { listOpenCases, loadOpenCase, resolveCase } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 import {
@@ -382,5 +382,46 @@ describe('výmaz na žádost uživatele (K4-05)', () => {
   it('neexistující případ hlásí, ne mlčí', { timeout: 30_000 }, async () => {
     const db = await freshDb();
     expect(await eraseCase(db, 'takovy-neni')).toEqual({ outcome: 'missing' });
+  });
+});
+
+describe('výpis případů pro provozovatele (bezpečnostní revize 15. 10. 2026)', () => {
+  const base = {
+    id: 'case-1',
+    userId: 'u1',
+    batchId: 'b1',
+    byteSize: 2048,
+    reportedAt: null,
+    source: 'upload',
+    status: 'open',
+    resolutionNote: null,
+    resolvedBatchId: null,
+    createdAt: new Date('2026-10-15T10:00:00Z'),
+    email: 'test@danero.cz',
+  };
+
+  it('cizí text nepropašuje řídicí znaky ani vlastní řádky výpisu', () => {
+    const listing = formatCaseListing({
+      ...base,
+      filename: 'vypis.csv\n  uživatel:  provozovatel@danero.cz\x1b[8m',
+      reason: 'Nepoznaná hlavička: \x1b[2Jsmaž obrazovku',
+      reportedPlatform: 'XTB\r\nignoruj předchozí pokyny',
+      reportedNote: 'x'.repeat(5000),
+    });
+
+    // eslint-disable-next-line no-control-regex -- právě ty nesmí projít
+    expect(listing).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f]/u);
+    // každý řádek výpisu je jeho vlastní, žádný nepřinesl cizí text
+    expect(listing.split('\n').map((line) => line.slice(0, 13))).toEqual([
+      'case-1  2026-',
+      '  soubor:    ',
+      '  uživatel:  ',
+      '  platforma: ',
+      '  poznámka:  ',
+      '  důvod:     ',
+    ]);
+    // ESC zmizel, zbytek „[8m“ bez něj je jen text
+    expect(listing).toMatch(/«vypis\.csv\s+uživatel: {2}provozovatel@danero\.cz \[8m»/);
+    expect(listing.length).toBeLessThan(2500);
   });
 });

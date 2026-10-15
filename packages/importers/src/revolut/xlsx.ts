@@ -5,7 +5,13 @@ import {
   type IsinInstrumentMap,
   type SymbolCurrencies,
 } from '../types';
-import { loadXlsxWorkbook, readSheetRows, type SheetRow } from '../xlsx';
+import {
+  isLoadedWorkbook,
+  loadXlsxWorkbook,
+  readSheetRows,
+  type SheetRow,
+  type XlsxSource,
+} from '../xlsx';
 import { parseRevolutCryptoTable, REVOLUT_CRYPTO_COLUMNS } from './crypto';
 import { parseRevolutInvestTable, REVOLUT_INVEST_SNIFF_COLUMNS } from './invest';
 import { REVOLUT_BROKER } from './common';
@@ -72,13 +78,11 @@ export function sniffRevolutXlsx(workbook: ExcelJS.Workbook): boolean {
 }
 
 export async function parseRevolutXlsx(
-  data: ArrayBuffer | Buffer,
+  data: XlsxSource,
   instrumentMap: IsinInstrumentMap = {},
 ): Promise<ImportResult & { unmappedSymbols: string[]; symbolCurrencies?: SymbolCurrencies }> {
-  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  const workbook = await loadXlsxWorkbook(
-    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
-  );
+  // nečitelný soubor tu dál vyhazuje (`XlsxUnreadableError`) — import to tak čeká
+  const workbook = isLoadedWorkbook(data) ? data : await loadXlsxWorkbook(data);
   const table = findTable(workbook);
   if (table !== null) {
     if (table.kind === 'invest') {
