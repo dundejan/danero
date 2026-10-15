@@ -8,21 +8,24 @@ export const PORTU_BROKER = 'portu';
 /**
  * Parser CSV exportu transakcí Portu (portu.cz — řízená portfolia).
  *
- * Formát (doloženo vzorkem z fóra Portfolio Performance): středníkové CSV,
- * hlavička doslova
+ * Formát (doloženo skutečným exportem „Transakční historie“, 15. 10. 2026):
+ * středníkové CSV v UTF-8, hlavička doslova
  * `Datum;Název;Typ;Symbol;ISIN;Kusy / Pozice;Popis;Cena;Hodnota;Měna;Srážková daň;Hrubá výše dividendy`.
- * Datum dd.MM.yyyy, čísla s desetinnou čárkou, záporná Hodnota = odchozí
- * peníze, frakční kusy jsou běžné. `Název` nese jméno PORTFOLIA uživatele
- * (ne instrumentu!) — instrument je v Symbol/ISIN, u forexu je měnový pár
- * v Popisu. Forex nákup/prodej dělá Portu automaticky při vkladech — bez
- * daňové události, přeskakujeme.
+ * Datum dd.MM.yyyy, čísla s desetinnou čárkou a pevnou mezerou mezi tisíci,
+ * záporná Hodnota = odchozí peníze, frakční kusy jsou běžné. `Název` nese
+ * jméno PORTFOLIA uživatele (ne instrumentu!) — instrument je v Symbol/ISIN,
+ * u forexu je měnový pár nebo zajišťovací kontrakt v Popisu.
  *
- * POZOR: hodnoty sloupce Typ mimo „Forex nákup/prodej“ jsou ODVOZENÉ z filtrů
- * v aplikaci Portu (Vklady/Výběry/Nákupy/Prodeje/Převody/Poplatky/Forex/Ostatní),
- * ne z reálného souboru — neznámý typ proto hlásíme s DOSLOVNÝM zněním, ať
- * slovník doplníme z reálných exportů. Typy mapujeme přes normalizeHeader
- * (case-insensitive, bez diakritiky) — funguje i pro export s rozbitou nebo
- * vynechanou diakritikou („Nakup“, „Vyber“).
+ * Sloupec Typ začíná druhem pohybu a za pomlčkou nese podrobnosti, které
+ * opakují ostatní sloupce: „Nákup – VWCE GY – 0,4823 kusů (103,58 € za kus)“,
+ * „Poplatek – březen 2026“, „Výběr na bankovní účet – peníze jsme odeslali …“.
+ * Rozhoduje jen druh před první pomlčkou (`movementKind`). Do 15. 10. 2026
+ * parser čekal holé „Nákup“ (slovník byl odvozený z filtrů v aplikaci Portu)
+ * a první skutečný export skončil chybou na každém řádku.
+ *
+ * Druhy mapujeme přes normalizeHeader (bez diakritiky, malými písmeny) —
+ * funguje i pro export s rozbitou nebo vynechanou diakritikou („Nakup“).
+ * Neznámý druh hlásíme s DOSLOVNÝM zněním, ať slovník doplníme.
  */
 
 /** Sloupce v tvaru normalizeHeader — diakritiku v hlavičce srovná normalizace. */
@@ -41,6 +44,24 @@ const COL = {
 } as const;
 
 const isCurrency = (value: string): boolean => /^[A-Z]{3}$/.test(value);
+
+/**
+ * Druh pohybu ze sloupce Typ: text před první pomlčkou, normalizovaný.
+ * Pomlčka je ve skutečném exportu en dash; spojovník s mezerami bereme taky
+ * (rozbité kódování, ruční úprava v tabulkovém editoru). Podrobnosti za ní
+ * smí obsahovat další pomlčky („Swap USDCZK - Roll“) — ty už nerozhodují.
+ */
+function movementKind(rawType: string): string {
+  return normalizeHeader(rawType.split(/\s[–—-]\s/, 1)[0] ?? '');
+}
+
+/**
+ * Zajišťovací noha (R-12u): Portu u zajištěných portfolií vypořádává měnové
+ * swapy a forwardy a v Popisu je pojmenuje („3.4.2023 Swap USDCZK“,
+ * „2.9.2025 Forward EURCZK“). Podle ISIN to nejde — ten mají jen novější
+ * forwardy.
+ */
+const isHedgeLeg = (description: string): boolean => /\b(swap|forward)\b/i.test(description);
 
 /** Číslo s desetinnou čárkou → Decimal; prázdné/nečíselné → null. */
 function num(value: string): Decimal | null {
@@ -102,6 +123,13 @@ export function parsePortuCsv(text: string): ImportResult {
     return seen === 1 ? base : `${base}-${seen}`;
   };
 
+  // R-12u: zajišťovací nohy se nepočítají, ale soubor o nich musí říct — jedno
+  // upozornění za soubor místo stovek u řádků
+  const hedgeLegs = { count: 0, firstLine: undefined as number | undefined, years: new Set<string>() };
+  // kusy přesunuté mezi portfolii: „do“ odečítá, „z“ přičítá — v exportu všech
+  // portfolií se každý titul vynuluje
+  const transferred = new Map<string, { net: Decimal; line: number; ticker: string }>();
+
   const push = (line: number, raw: string, candidate: Record<string, unknown>): void => {
     try {
       result.transactions.push(TransactionSchema.parse(candidate));
@@ -120,34 +148,73 @@ export function parsePortuCsv(text: string): ImportResult {
 
     const raw = row.join(';');
     const rawType = map.get(row, COL.type);
-    const rowType = normalizeHeader(rawType);
+    const rowType = movementKind(rawType);
+    const skip = (message: string): void => {
+      result.skipped.push({ line, message: `„${rawType}“: ${message}` });
+    };
 
-    // vklady/výběry = převody peněz, forex = interní konverze — bez daňové události
-    if (rowType === 'vklad' || rowType === 'vyber') {
-      result.skipped.push({
-        line,
-        message: `„${rawType}“: převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.`,
-      });
+    // „Vklad z bankovního účtu“, „Výběr na bankovní účet – peníze jsme odeslali …“.
+    // Jen přesně tyhle druhy: jiný „vklad“ (třeba cenných papírů od jiného
+    // obchodníka) nesmí potichu propadnout, má skončit jako neznámý typ.
+    if (rowType === 'vklad z bankovniho uctu' || rowType === 'vyber na bankovni ucet') {
+      skip('převod peněz mezi bankou a Portu — pro daňový výpočet není potřeba.');
       return;
     }
     if (rowType === 'forex nakup' || rowType === 'forex prodej') {
-      result.skipped.push({
-        line,
-        message: `„${rawType}“ (${map.get(row, COL.description) || 'měnový pár neuveden'}): měnová konverze v rámci Portu — bez daňové události (Portu ji provádí automaticky při vkladech).`,
-      });
+      const description = map.get(row, COL.description);
+      if (isHedgeLeg(description)) {
+        hedgeLegs.count += 1;
+        hedgeLegs.firstLine ??= line;
+        const year = parseEuroDate(map.get(row, COL.date))?.slice(0, 4);
+        if (year) hedgeLegs.years.add(year);
+        skip('vypořádání měnového zajištění — výsledek z exportu spočítat nejde, viz upozornění k zajištění.');
+        return;
+      }
+      skip(`měnová konverze v rámci Portu (${description || 'měnový pár neuveden'}) — bez daňové události.`);
       return;
     }
-    if (rowType === 'prevod') {
-      result.warnings.push({
-        line,
-        message: `„${rawType}“: převod mezi portfolii — řádek jsme přeskočili, ale zkontroluj ve výpisu Portu, zda nejde ve skutečnosti o prodej (ten by byl daňová událost).`,
-      });
+    // „Převod do <portfolio>“ / „Převod z <portfolio>“ — peníze i kusy mezi
+    // portfolii TÉHOŽ uživatele: vlastník se nemění, takže to není prodej,
+    // a nabytí (datum i cena) zůstává. Obě nohy přeskočíme; pozice se počítají
+    // za uživatele, ne za portfolio, takže součet kusů sedí i bez nich —
+    // pokud ve výpisu jsou obě nohy (hlídá to `transferred`).
+    const transferOut = rowType.startsWith('prevod do ');
+    if (transferOut || rowType.startsWith('prevod z ')) {
+      const isin = map.get(row, COL.isin);
+      const quantity = num(map.get(row, COL.quantity));
+      if (isin !== '' && quantity !== null) {
+        const entry = transferred.get(isin) ?? {
+          net: d(0),
+          line,
+          ticker: map.get(row, COL.symbol) || isin,
+        };
+        entry.net = transferOut ? entry.net.minus(quantity.abs()) : entry.net.plus(quantity.abs());
+        transferred.set(isin, entry);
+      }
+      skip('přesun mezi tvými portfolii v Portu — nejde o prodej, nákup zůstává s původním datem i cenou.');
       return;
     }
-    if (rowType !== 'nakup' && rowType !== 'prodej' && rowType !== 'dividenda' && rowType !== 'poplatek') {
+    // poplatky do výpočtu nevstupují (FEE loty neovlivňuje), takže ani jejich sleva
+    if (rowType.startsWith('sleva na poplatku')) {
+      skip('vrácená část poplatku — poplatky za správu daň neovlivňují.');
+      return;
+    }
+    // půjčka od Portu a její splátka stejnou částkou — pohyb peněz, který se
+    // splátkou vyrovná; příjem z investic to není
+    if (rowType === 'bezurocna pujcka' || rowType === 'splatka bezurocne pujcky') {
+      skip('bezúročná půjčka od Portu a její splátka — nejde o příjem.');
+      return;
+    }
+    if (
+      rowType !== 'nakup' &&
+      rowType !== 'prodej' &&
+      rowType !== 'dividenda' &&
+      rowType !== 'poplatek' &&
+      rowType !== 'urok'
+    ) {
       result.errors.push({
         line,
-        message: `Neznámý typ pohybu „${rawType}“ — nahlaš nám ho, doplníme podporu (typy Portu mimo Forex zatím odvozujeme z filtrů v jejich aplikaci, reálný export je může pojmenovat jinak).`,
+        message: `Neznámý typ pohybu „${rawType}“ — nahlaš nám ho, doplníme podporu.`,
         raw,
       });
       return;
@@ -282,8 +349,59 @@ export function parsePortuCsv(text: string): ImportResult {
         });
         return;
       }
+      case 'urok': {
+        // Úrok z úročené hotovosti v Portu (Investiční rezerva, Peněženka).
+        // Portu ho připisuje v hrubé výši a sám ho řadí do § 8 (FAQ
+        // Investiční rezervy); export u něj vyplňuje „Srážková daň“ nulou.
+        // Engine takový český úrok podle R-07g započte do § 8 i do limitů.
+        if (value === null) {
+          result.errors.push({ line, message: 'Úrok bez částky — řádek nelze zpracovat.', raw });
+          return;
+        }
+        // záporný úrok = oprava dřívějšího připsání; `abs()` by ho přičetl
+        if (value.lt(0)) {
+          result.warnings.push({
+            line,
+            message: `Záporný úrok ${value.toString()} ${currency} (${date}) — vypadá jako oprava dřívějšího připsání. Nezaúčtovali jsme ho; zkontroluj ho ve výpisu Portu.`,
+          });
+          return;
+        }
+        const withholding = num(map.get(row, COL.withholdingTax));
+        push(line, raw, {
+          type: 'INTEREST',
+          id: rowId(row),
+          amount: value.toString(),
+          currency,
+          withholdingTax: withholding === null ? '0' : withholding.abs().toString(),
+          sourceCountry: 'CZ', // Portu je česká firma a úrok připisuje sama
+          date,
+        });
+        return;
+      }
     }
   });
+
+  for (const [isin, entry] of transferred) {
+    if (entry.net.eq(0)) continue;
+    result.warnings.push({
+      line: entry.line,
+      message: `Přesun ${entry.ticker} mezi tvými portfolii nemá ve výpisu druhou stranu (rozdíl ${entry.net.abs().toString()} ks, ${isin}). Stáhni výpis za všechna portfolia najednou, jinak budou kusy v jednom z nich chybět nebo přebývat.`,
+    });
+  }
+
+  if (hedgeLegs.count > 0) {
+    const years = [...hedgeLegs.years].sort();
+    const count = hedgeLegs.count;
+    const movements = count === 1 ? 'pohyb' : count < 5 ? 'pohyby' : 'pohybů';
+    const period = years.length === 1 ? `z roku ${years[0]}` : `z let ${years.join(', ')}`;
+    result.warnings.push({
+      line: hedgeLegs.firstLine ?? 1,
+      message:
+        `Výpis obsahuje ${count} ${movements} měnového zajištění (swapy a forwardy, kterými Portu chrání zajištěná portfolia před pohybem kurzu) ${period}. ` +
+        'Jejich výsledek se daní jako příjem z derivátů, jenže export obsahuje jen převody měn, ne celé kontrakty, takže ho z něj spolehlivě spočítat nejde — do výpočtu jsme ho nezahrnuli. ' +
+        'Zisk ze zajištění za rok patří do ostatních příjmů (§ 10). Do limitu 50 000 Kč pro paušální daň se navíc počítají zisky z jednotlivých kontraktů, i když jiné skončily ztrátou.',
+    });
+  }
 
   return result;
 }

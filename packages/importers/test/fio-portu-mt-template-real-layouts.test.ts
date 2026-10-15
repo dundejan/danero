@@ -15,7 +15,9 @@
  *    (app/js/core/parser.js, sešit z Exness), khnguyendinh/TradeMonitor
  *    (MT5LogParserServiceTest.java) a niken-003/check-your-trading-strategy.
  *  - Portu: magazin.portu.cz/rekvalifikace-dividend-zmatek-v-transakcich
- *    (27. 5. 2020) — záporné dividendy v přehledu transakcí.
+ *    (27. 5. 2020) — záporné dividendy v přehledu transakcí; skutečný export
+ *    „Transakční historie“ nahraný uživatelem 15. 10. 2026 — tvar sloupce Typ
+ *    a druhy pohybů (`PORTU_REAL_LAYOUT_FIXTURE`).
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,7 +40,7 @@ import {
 } from '../src';
 import { FIO_SYMBOL_MAP } from './fixtures/fio';
 import { buildMt4Html, buildMt5Html, MT5_DEALS, mt5DealHtmlRow } from './fixtures/metatrader';
-import { PORTU_HEADER } from './fixtures/portu';
+import { PORTU_HEADER, PORTU_REAL_LAYOUT_FIXTURE } from './fixtures/portu';
 
 /** Kulaté testovací kurzy (NE skutečné) — stejný tvar jako v e2e.engine.test.ts. */
 const CONFIG: TaxYearConfig = {
@@ -170,6 +172,118 @@ describe('Portu: storno dividendy', () => {
       { grossTotal: grossTotal.toString(), flagged },
       'storno se přičetlo jako druhá dividenda a nikde se to neřeklo',
     ).not.toEqual({ grossTotal: '29.06', flagged: false });
+  });
+});
+
+describe('Portu: skutečný tvar sloupce Typ', () => {
+  /**
+   * Do 15. 10. 2026 parser čekal v Typu holé „Nákup“ (slovník byl odvozený
+   * z filtrů v aplikaci Portu). Skutečný export za druh píše podrobnosti
+   * („Nákup – VWCE GY – 0,4823 kusů (…)“), takže první nahraný výpis skončil
+   * „Neznámý typ pohybu“ na každém řádku a nenačetlo se z něj nic.
+   */
+  const result = parsePortuCsv(PORTU_REAL_LAYOUT_FIXTURE);
+
+  it('žádný řádek skutečného exportu nekončí chybou', () => {
+    expect(result.errors).toEqual([]);
+  });
+
+  it('úrok z Investiční rezervy → INTEREST v CZK, česká země zdroje, srážka 0 (R-07g)', () => {
+    const interest = result.transactions.filter((tx) => tx.type === 'INTEREST');
+    expect(interest).toHaveLength(1);
+    const [tx] = interest;
+    if (tx?.type !== 'INTEREST') throw new Error('unreachable');
+    expect(tx.amount.toString()).toBe('212.4');
+    expect(tx.currency).toBe('CZK');
+    expect(tx.withholdingTax.toString()).toBe('0');
+    expect(tx.sourceCountry).toBe('CZ');
+    expect(tx.date).toBe('2025-07-31');
+  });
+
+  it('záporný úrok se nepřičte, ale ohlásí', () => {
+    const negative = parsePortuCsv(
+      [PORTU_HEADER, '31.05.2025;Rezerva;Úrok;;CZK000000001;;;;-3,10;CZK;0,00;'].join('\n'),
+    );
+    expect(negative.transactions).toEqual([]);
+    expect(negative.warnings[0]?.message).toContain('Záporný úrok');
+  });
+
+  it('tisíce kusů s pevnou mezerou se přečtou celé', () => {
+    const buy = result.transactions.find((tx) => tx.type === 'BUY');
+    if (buy?.type !== 'BUY') throw new Error('unreachable');
+    expect(buy.quantity.toString()).toBe('1250');
+    expect(buy.pricePerShare.toString()).toBe('1.2');
+    expect(buy.isin).toBe('CZ0000000017');
+  });
+
+  it('výběr, sleva na poplatku, půjčka od Portu a přesuny mezi portfolii se přeskočí bez varování', () => {
+    // přesun kusů mezi vlastními portfolii nesmí být prodej ani nákup — jinak
+    // by se nabytí posunulo na den přesunu a časový test začal znovu
+    expect(result.transactions.map((tx) => tx.type)).toEqual(['INTEREST', 'BUY']);
+    expect(result.skipped.map((s) => s.line)).toEqual(
+      expect.arrayContaining([3, 4, 5, 6, 7, 8, 9, 10]),
+    );
+    expect(result.warnings.filter((w) => w.line >= 3 && w.line <= 10)).toEqual([]);
+  });
+
+  it('měnové zajištění (R-12u): nohy přeskočené, JEDNO upozornění za soubor s počtem a roky', () => {
+    const hedgeSkipped = result.skipped.filter((s) => s.message.includes('měnového zajištění'));
+    expect(hedgeSkipped.map((s) => s.line)).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+
+    expect(result.warnings).toHaveLength(1);
+    const [warning] = result.warnings;
+    expect(warning?.line).toBe(11);
+    expect(warning?.message).toContain('8 pohybů měnového zajištění');
+    expect(warning?.message).toContain('z let 2023, 2025');
+    expect(warning?.message).toContain('§ 10');
+  });
+
+  it('jediná zajišťovací noha: upozornění v jednotném čísle', () => {
+    const single = parsePortuCsv(
+      [
+        PORTU_HEADER,
+        '10.11.2025;Moje portfolio;Forex nákup – 2.9.2025 Forward EURCZK;;EZ0000000001;;2.9.2025 Forward EURCZK;;7\u00a0410,50;CZK;;',
+      ].join('\n'),
+    );
+    expect(single.warnings[0]?.message).toContain('1 pohyb měnového zajištění');
+    expect(single.warnings[0]?.message).toContain('z roku 2025');
+  });
+
+  it('přesun kusů bez druhé strany (výpis jen jednoho portfolia) se ohlásí', () => {
+    // Uživatel stáhne výpis jen cílového portfolia: kusy, které do něj přišly,
+    // nemají nákup, a prodej z nich by skončil zápornou pozicí bez vysvětlení.
+    const oneSided = parsePortuCsv(
+      [
+        PORTU_HEADER,
+        '18.02.2026;Rezerva;Převod z Moje portfolio – VWCE GY – 0,2100 kusů;VWCE GY;IE00BK5BQT80;0,2100;;121,3000;25,47;EUR;;',
+      ].join('\n'),
+    );
+    expect(oneSided.errors).toEqual([]);
+    expect(oneSided.warnings).toHaveLength(1);
+    expect(oneSided.warnings[0]?.message).toContain('nemá ve výpisu druhou stranu');
+    expect(oneSided.warnings[0]?.message).toContain('0.21 ks');
+  });
+
+  it('neznámý „vklad“ (třeba cenných papírů) nepropadne potichu jako převod peněz', () => {
+    const unknown = parsePortuCsv(
+      [
+        PORTU_HEADER,
+        '02.03.2026;Moje portfolio;Vklad cenných papírů – VWCE GY – 3 kusy;VWCE GY;IE00BK5BQT80;3;;;;EUR;;',
+      ].join('\n'),
+    );
+    expect(unknown.errors[0]?.message).toContain('Neznámý typ pohybu');
+  });
+
+  it('obyčejná konverze měny upozornění na zajištění nevyvolá', () => {
+    const spot = parsePortuCsv(
+      [
+        PORTU_HEADER,
+        '12.02.2026;Moje portfolio;Forex nákup – CZK/EUR;;;;CZK/EUR;;40,00;EUR;;',
+        '12.02.2026;Moje portfolio;Forex prodej – EUR/CZK;;;;EUR/CZK;;-976,00;CZK;;',
+      ].join('\n'),
+    );
+    expect(spot.skipped).toHaveLength(2);
+    expect(spot.warnings).toEqual([]);
   });
 });
 

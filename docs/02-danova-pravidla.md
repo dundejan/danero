@@ -1065,6 +1065,42 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   50 000 Kč (R-12q) kladná úprava vstupuje stejně jako dividenda, rozdíl je
   jen v tom, že se k ní nepřičítá zápočet. Importy: eToro (list Dividends,
   řádky typu CFD).
+- **R-12u Měnové zajištění řízených portfolií (Portu)**: zajištěná portfolia
+  Portu drží měnové swapy a forwardy (mimoburzovní deriváty, ISIN s prefixem
+  `EZ` přiděluje ANNA DSB) a jejich vypořádání se klientovi připisuje do
+  portfolia. Podle R-12a je výsledek takového zajištění plnění z derivátu,
+  tedy **§ 10**, nikdy § 8 ani režim CP; totéž píše Portu: „Příjem z měnového
+  zajištění (měnové forwardy a swapy) je považován za ostatní příjem dle
+  § 10“. Jistota kvalifikace vysoká.
+
+  **Import výsledek nepočítá, ale jednou za soubor varuje** (počet pohybů
+  a roky, kterých se týkají). Export transakcí obsahuje jen měnové nohy
+  vypořádání („Forex nákup – 3.4.2023 Swap USDCZK“, „Forex prodej –
+  2.9.2025 Forward EURCZK“), ne kontrakty: swap se v něm spárovat dá
+  (otevírací a uzavírací noha téhož kontraktu nesou stejnou cizí částku),
+  forward ale ne — vypořádává se jednou nohou proti vlastní cizí měně
+  portfolia nebo protiforwardem. Ve skutečném exportu (15. 10. 2026) forwardy
+  protinohu většinou neměly a cizí měna se v zajišťovacích nohách k nule
+  nevracela v žádném portfoliu, kde zajištění běželo déle. Výsledek
+  z neúplných párů by byl číslo, které nejde doložit; nespočítat ho znamená
+  příjem druhu podhodnotit. Ani jedno není bezpečný směr, a tak import
+  neodhaduje a říká to nahlas: kladný výsledek zajištění za rok patří do § 10
+  a do limitu 50 000 Kč se podle R-12q počítají kladná plnění jednotlivých
+  kontraktů, ne čistý výsledek. Portu ho mezi daňovými podklady nejmenuje
+  (týž článek vyjmenovává transakce, dividendy a poplatky).
+
+  Ocenit každé vypořádání zvlášť (přijaté Kč proti cizí měně přepočtené
+  kurzem dne) by šlo, ale při jednotném kurzu by rozdíl mezi ročním
+  a skutečným kurzem vyrobil fiktivní kladná plnění a nafoukl limit 50 000 Kč
+  (R-12q) — bez rozhodnutí o metodě se proto nepočítá.
+
+  Obyčejná konverze měny („Forex nákup – EUR/CZK“, kterou Portu dělá při
+  vkladu a nákupu) derivát není a do přiznání nevstupuje (tamtéž: „Tato směna
+  měn do daňového přiznání nevstupuje“) — import ji přeskakuje stejně jako
+  konverze ostatních brokerů. Zajišťovací nohu pozná podle popisu („Swap“,
+  „Forward“), ne podle ISIN, který Portu uvádí jen u novějších forwardů.
+  Zdroj: [Portu magazín — Portu: vše, co potřebujete vědět o
+  daních](https://magazin.portu.cz/portu-vse-co-potrebujete-vedet-o-danich/).
 
 Zdroje: § 4, § 5, § 10, § 38, § 38a ZDP; D-59 K § 10/1 b) a K § 10/4;
 tiskopis 5405-P2 vzor 21 (číselník A–H); XTB „Informace o zdaňování příjmů

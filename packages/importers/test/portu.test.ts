@@ -32,7 +32,7 @@ describe('Portu CSV parser', () => {
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.id).toMatch(/^portu-[0-9a-f]{16}$/);
     expect(buy.isin).toBe('IE00BK5BQT80');
-    expect(buy.ticker).toBe('VWCE');
+    expect(buy.ticker).toBe('VWCE GY');
     expect(buy.name).toBeUndefined(); // Název = jméno portfolia, ne instrumentu
     expect(buy.quantity.toString()).toBe('0.4823');
     expect(buy.pricePerShare.toString()).toBe('103.58');
@@ -57,11 +57,11 @@ describe('Portu CSV parser', () => {
 
     const dividend = result.transactions.find((t) => t.type === 'DIVIDEND');
     if (!dividend || dividend.type !== 'DIVIDEND') throw new Error('unreachable');
-    expect(dividend.isin).toBe('IE00B5BMR087');
-    expect(dividend.ticker).toBe('CSPX');
+    expect(dividend.isin).toBe('DE0002635307');
+    expect(dividend.ticker).toBe('EXSA GY');
     expect(dividend.gross.toString()).toBe('14.53'); // hrubá výše, ne Hodnota 12,35
     expect(dividend.withholdingTax.toString()).toBe('2.18');
-    expect(dividend.currency).toBe('USD');
+    expect(dividend.currency).toBe('EUR');
     expect(dividend.date).toBe('2026-03-10');
   });
 
@@ -70,10 +70,10 @@ describe('Portu CSV parser', () => {
 
     const fee = result.transactions.find((t) => t.type === 'FEE');
     if (!fee || fee.type !== 'FEE') throw new Error('unreachable');
-    expect(fee.amount.toString()).toBe('1.25');
-    expect(fee.currency).toBe('EUR');
+    expect(fee.amount.toString()).toBe('41.25');
+    expect(fee.currency).toBe('CZK');
     expect(fee.date).toBe('2026-03-31');
-    expect(fee.note).toBe('Poplatek za správu portfolia');
+    expect(fee.note).toBe('březen 2026');
   });
 
   it('vklad a forex pár → skipped s vysvětlením (měnová konverze bez daňové události)', () => {
@@ -84,17 +84,16 @@ describe('Portu CSV parser', () => {
     const forex = result.skipped.filter((s) => s.message.includes('měnová konverze'));
     expect(forex).toHaveLength(2);
     expect(forex[0]!.message).toContain('bez daňové události');
-    expect(forex[0]!.message).toContain('EUR/USD'); // měnový pár z Popisu
+    expect(forex[0]!.message).toContain('CZK/EUR'); // měnový pár z Popisu
   });
 
-  it('neznámý typ → error s DOSLOVNÝM zněním a poznámkou o odvozeném slovníku', () => {
+  it('neznámý typ → error s DOSLOVNÝM zněním celého sloupce Typ', () => {
     const result = parsePortuCsv(PORTU_FIXTURE);
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.line).toBe(9);
-    expect(result.errors[0]!.message).toContain('„Odměna“');
+    expect(result.errors[0]!.message).toContain('„Odměna – bonus za doporučení“');
     expect(result.errors[0]!.message).toContain('nahlaš nám ho');
-    expect(result.errors[0]!.message).toContain('odvozujeme');
   });
 
   it('chybějící Cena → jednotková cena z |Hodnota| / kusy (Decimal)', () => {
@@ -117,12 +116,12 @@ describe('Portu CSV parser', () => {
     expect(warning?.message).toContain('čistá částka');
   });
 
-  it('převod mezi portfolii → warning + skip (může jít o prodej)', () => {
+  it('převod mezi portfolii → skip bez varování (vlastník se nemění, nejde o prodej)', () => {
     const result = parsePortuCsv(PORTU_EDGE_FIXTURE);
 
-    const warning = result.warnings.find((w) => w.line === 4);
-    expect(warning?.message).toContain('převod mezi portfolii');
-    expect(warning?.message).toContain('prodej');
+    const skipped = result.skipped.find((s) => s.line === 4);
+    expect(skipped?.message).toContain('přesun mezi tvými portfolii');
+    expect(result.warnings.map((w) => w.line)).not.toContain(4);
     // převod se neemituje jako transakce
     expect(result.transactions.filter((t) => t.type === 'TRANSFER_OUT')).toEqual([]);
     expect(result.errors).toEqual([]);

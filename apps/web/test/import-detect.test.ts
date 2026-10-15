@@ -18,7 +18,10 @@ import {
   MT4_HTML,
   MT5_HTML,
 } from '../../../packages/importers/test/fixtures/metatrader';
-import { PORTU_FIXTURE } from '../../../packages/importers/test/fixtures/portu';
+import {
+  PORTU_FIXTURE,
+  PORTU_REAL_LAYOUT_FIXTURE,
+} from '../../../packages/importers/test/fixtures/portu';
 import {
   REVOLUT_CRYPTO_NEW_CSV,
   REVOLUT_CRYPTO_OLD_CSV,
@@ -67,6 +70,7 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Swissquote EN bez sloupce „Order #“', SWISSQUOTE_EN_NO_ORDER, 'swissquote'],
   ['Swissquote EN s přejmenovaným sloupcem objednávky', SWISSQUOTE_EN_ORDER_RENAMED, 'swissquote'],
   ['Portu', PORTU_FIXTURE, 'portu'],
+  ['Portu (úrok, přesuny mezi portfolii, měnové zajištění)', PORTU_REAL_LAYOUT_FIXTURE, 'portu'],
   ['Anycoin orders.csv', ANYCOIN_BASIC, 'anycoin'],
   ['Coinbase V4', COINBASE_V4, 'coinbase'],
   ['Coinbase V1 (EUR prefix)', COINBASE_V1_EUR, 'coinbase'],

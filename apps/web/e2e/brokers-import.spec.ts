@@ -6,6 +6,7 @@ import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate'
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
 import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kraken';
 import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
+import { PORTU_REAL_LAYOUT_FIXTURE } from '../../../packages/importers/test/fixtures/portu';
 import { REVOLUT_INVEST_CSV } from '../../../packages/importers/test/fixtures/revolut';
 import { SWISSQUOTE_EN } from '../../../packages/importers/test/fixtures/swissquote';
 import {
@@ -128,7 +129,7 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
  * Autodetekce nové vlny brokerů end-to-end: každý formát projde uploadem,
  * pozná se správný broker a transakce se propíší do historie importů.
  */
-test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote', async ({
+test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote, Portu', async ({
   page,
 }) => {
   await registerWithProfile(page, { name: 'E2E Brokeři 2', email: 'brokeri2@danero.cz' });
@@ -176,6 +177,17 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote'
     buffer: Buffer.from(SWISSQUOTE_EN, 'utf8'),
   });
   await expect(swissquote).toContainText(recognizedAs('Swissquote'));
+
+  // Portu ve skutečném tvaru sloupce Typ („Nákup – … – … kusů“). 15. 10. 2026
+  // skončil první skutečný export chybou na každém řádku; načte se úrok
+  // a nákup, zbytek (výběr, přesuny, zajištění…) se přeskočí bez chyby.
+  const portu = await uploadStatement(page, {
+    name: 'Transakcni_historie.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(PORTU_REAL_LAYOUT_FIXTURE, 'utf8'),
+  });
+  await expect(portu).toContainText('Portu · 2 nové · 0 duplicit');
+  await expect(portu).not.toContainText(/chyb/);
 });
 
 /**
