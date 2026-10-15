@@ -194,7 +194,8 @@ const MAX_OPENED_BATCHES = 20;
 
 /**
  * Které právě nahrané dávky má historie po přesměrování otevřít: všechny, které
- * mají chybu, varování nebo shodu s jiným brokerem — ne jen tu poslední.
+ * mají chybu, varování, shodu s jiným brokerem nebo doplněný ISIN — ne jen
+ * tu poslední.
  * Při nahrání víc souborů naráz jinak chyby dřívějších zůstaly zavřené za
  * počtem „1 chyba“ (R5-05).
  *
@@ -207,12 +208,17 @@ export function batchesToOpen(
     errors: readonly unknown[];
     warnings: readonly unknown[];
     crossBroker: readonly unknown[];
+    /** ISIN doplněné z vestavěného číselníku — i ty má uživatel vidět. */
+    filled?: readonly unknown[];
   }>,
 ): string[] {
   const withIssues = summaries
     .filter(
       (summary) =>
-        summary.errors.length > 0 || summary.warnings.length > 0 || summary.crossBroker.length > 0,
+        summary.errors.length > 0 ||
+        summary.warnings.length > 0 ||
+        summary.crossBroker.length > 0 ||
+        (summary.filled?.length ?? 0) > 0,
     )
     .map((summary) => summary.batchId);
   const last = summaries.at(-1)?.batchId;

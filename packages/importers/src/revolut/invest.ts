@@ -1,6 +1,13 @@
 import { d, TransactionSchema } from '@danero/shared';
 import { HeaderMap, isValidIsoDate, parseCsv } from '../csv';
-import { REENTER_VIA_TEMPLATE, emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import {
+  REENTER_VIA_TEMPLATE,
+  emptyResult,
+  noteSymbolCurrency,
+  type ImportResult,
+  type IsinInstrumentMap,
+  type SymbolCurrencies,
+} from '../types';
 import { YearBoundaryWatch } from '../year-boundary';
 import {
   detectRevolutDecimal,
@@ -21,6 +28,12 @@ import {
  * z kurzů ČNB.
  */
 export type RevolutInstrumentMap = IsinInstrumentMap;
+
+export type RevolutInvestResult = ImportResult & {
+  unmappedSymbols: string[];
+  /** Měny, ve kterých se který ticker ve výpisu obchodoval (vestavěný číselník ISIN). */
+  symbolCurrencies: SymbolCurrencies;
+};
 
 /** Hlavička výpisu je stabilně anglická — mapujeme podle přesných názvů sloupců. */
 const REQUIRED_HEADERS = [
@@ -84,10 +97,14 @@ function classifyInvestType(type: string): InvestKind {
 export function parseRevolutInvestCsv(
   text: string,
   instrumentMap: RevolutInstrumentMap = {},
-): ImportResult & { unmappedSymbols: string[] } {
+): RevolutInvestResult {
   // prázdný soubor = prázdné období, ne chyba formátu (konzistentně s T212)
   if (text.trim() === '') {
-    return { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
+    return {
+      ...emptyResult(REVOLUT_BROKER),
+      unmappedSymbols: [] as string[],
+      symbolCurrencies: new Map() as SymbolCurrencies,
+    };
   }
   const { headers, rows } = parseCsv(text);
   return parseRevolutInvestTable(headers, rows, instrumentMap);
@@ -102,8 +119,12 @@ export function parseRevolutInvestTable(
   headers: string[],
   rows: string[][],
   instrumentMap: RevolutInstrumentMap = {},
-): ImportResult & { unmappedSymbols: string[] } {
-  const result = { ...emptyResult(REVOLUT_BROKER), unmappedSymbols: [] as string[] };
+): RevolutInvestResult {
+  const result = {
+    ...emptyResult(REVOLUT_BROKER),
+    unmappedSymbols: [] as string[],
+    symbolCurrencies: new Map() as SymbolCurrencies,
+  };
   // lokalizace čísel se pozná z celého souboru, ne z jedné buňky (B-3-12)
   const decimal = detectRevolutDecimal(rows);
   const money = (value: string): ReturnType<typeof parseRevolutMoney> =>
@@ -198,6 +219,7 @@ export function parseRevolutInvestTable(
     const type = map.get(row, 'Type').toUpperCase();
     const ticker = map.get(row, 'Ticker');
     const currency = map.get(row, 'Currency');
+    noteSymbolCurrency(result.symbolCurrencies, ticker, currency);
     const id = nextId(row);
     const classified = classifyInvestType(type);
 

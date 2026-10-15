@@ -51,6 +51,26 @@ export function aliasFeedbackUrl(
   return `/import?${query.toString()}#${ALIAS_LIST_ANCHOR}`;
 }
 
+/** Kolik doplněných symbolů věta vyjmenuje; zbytek shrne počtem. */
+const LISTED_FILLED = 5;
+
+/**
+ * Věta o ISIN, které import doplnil z vestavěného číselníku:
+ * „Doplnili jsme ISIN: AAPL → Apple Inc. (US0378331005).“ `null`, když nic.
+ */
+export function filledSentence(
+  filled: ReadonlyArray<{ symbol: string; isin: string; name: string }>,
+): string | null {
+  if (filled.length === 0) return null;
+  const listed = filled
+    .slice(0, LISTED_FILLED)
+    .map((item) => `${item.symbol} → ${item.name} (${item.isin})`)
+    .join(', ');
+  const rest = filled.length - LISTED_FILLED;
+  const tail = rest > 0 ? ` a ${rest} ${rest < 5 ? 'další' : 'dalších'}` : '';
+  return `Doplnili jsme ISIN: ${listed}${tail}.`;
+}
+
 /** Údaje k výsledku z adresy; hodnoty se znovu omezí na povolené znaky (adresu mohl napsat kdokoli). */
 export function aliasFeedbackDetails(params: Record<string, string | string[] | undefined>): {
   rowKey: string | undefined;

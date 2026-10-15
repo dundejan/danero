@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { buttonVariants } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
+import { ALIAS_LIST_ANCHOR } from '@/lib/alias-feedback';
 
 /** Výsledek nahrání nebo vrácení importu tak, jak ho stránka složila z adresy. */
 export interface UploadResult {
@@ -12,6 +13,8 @@ export interface UploadResult {
   text: string;
   /** Po prvních datech účtu (a bez chyb) hláška nabídne přehled. */
   offerOverview: boolean;
+  /** Věta o ISIN doplněných z vestavěného číselníku (`filledSentence`). */
+  filled?: string;
 }
 
 /**
@@ -71,7 +74,16 @@ export function UploadResultNotice({
             </Link>
           )
         }
-      />
+      >
+        {shown.filled && (
+          <>
+            {shown.filled}{' '}
+            <a href={`#${ALIAS_LIST_ANCHOR}`} className="text-accent-text underline-offset-2 hover:underline">
+              Opravit jde v seznamu doplněných údajů
+            </a>
+          </>
+        )}
+      </Notice>
     </>
   );
 }

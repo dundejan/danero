@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./isin-directory": "./src/isin-directory/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src test"
+    "lint": "eslint src test scripts",
+    "isin-directory": "tsx scripts/build-isin-directory.ts"
   },
   "dependencies": {
     "@danero/shared": "workspace:*",

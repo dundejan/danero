@@ -1,5 +1,10 @@
 import ExcelJS from 'exceljs';
-import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import {
+  emptyResult,
+  type ImportResult,
+  type IsinInstrumentMap,
+  type SymbolCurrencies,
+} from '../types';
 import { loadXlsxWorkbook, readSheetRows, type SheetRow } from '../xlsx';
 import { parseRevolutCryptoTable, REVOLUT_CRYPTO_COLUMNS } from './crypto';
 import { parseRevolutInvestTable, REVOLUT_INVEST_SNIFF_COLUMNS } from './invest';
@@ -69,7 +74,7 @@ export function sniffRevolutXlsx(workbook: ExcelJS.Workbook): boolean {
 export async function parseRevolutXlsx(
   data: ArrayBuffer | Buffer,
   instrumentMap: IsinInstrumentMap = {},
-): Promise<ImportResult & { unmappedSymbols: string[] }> {
+): Promise<ImportResult & { unmappedSymbols: string[]; symbolCurrencies?: SymbolCurrencies }> {
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
   const workbook = await loadXlsxWorkbook(
     buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,

@@ -36,6 +36,11 @@ export interface StoredIssues<U = unknown> {
    * nové nahrání vyřídilo, u staré dávky už neukazuje (`lib/import-resolved.ts`).
    */
   fileHash?: string;
+  /**
+   * Symboly, kterým import doplnil ISIN z vestavěného číselníku — historie
+   * a hláška po nahrání je vyjmenují (`FilledInstrument` z lib/instrument-aliases).
+   */
+  filled?: Array<{ broker: string; symbol: string; isin: string; name: string }>;
 }
 
 const clip = (text: string): string =>
@@ -58,6 +63,7 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
   unmapped: U[];
   crossBroker: string[];
   fileHash?: string;
+  filled?: Array<{ broker: string; symbol: string; isin: string; name: string }>;
 }): StoredIssues<U> {
   // zkrácený symbol by se s výpisem už nikdy nespároval — raději ho vynechat
   const symbols = issues.unmapped.filter((item) => item.symbol.length <= MAX_STORED_SYMBOL);
@@ -78,5 +84,15 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
     ...(crossBroker.length > 0 ? { crossBroker } : {}),
     ...(truncated.length > 0 ? { truncated } : {}),
     ...(issues.fileHash ? { fileHash: issues.fileHash } : {}),
+    ...(issues.filled?.length
+      ? {
+          filled: issues.filled.slice(0, MAX_STORED_UNMAPPED).map((item) => ({
+            broker: item.broker,
+            symbol: item.symbol,
+            isin: item.isin,
+            name: clip(item.name),
+          })),
+        }
+      : {}),
   };
 }

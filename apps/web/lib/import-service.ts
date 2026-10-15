@@ -70,6 +70,7 @@ import {
   type KeyPromotion,
   type RetractedEvent,
   type RowIssue,
+  type SymbolCurrencies,
   type WorkbookOutline,
 } from '@danero/importers';
 import { createHash } from 'node:crypto';
@@ -79,7 +80,15 @@ import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { czDate, plural, qty } from '@/lib/format';
 import { capStoredIssues } from '@/lib/import-issues';
-import { loadAliases, type AliasMaps } from '@/lib/instrument-aliases';
+import { builtinInstrument } from '@danero/importers/isin-directory';
+import {
+  aliasCovers,
+  loadAliases,
+  saveBuiltinAliases,
+  type AliasMaps,
+  type FilledInstrument,
+  type IsinOnlyBroker,
+} from '@/lib/instrument-aliases';
 import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
 
@@ -102,6 +111,8 @@ export interface ImportSummary {
   unmapped: UnmappedSymbol[];
   /** Věty o transakcích shodných s jiným brokerem (B-3-3) — hlásíme, neslučujeme. */
   crossBroker: string[];
+  /** Symboly, kterým import doplnil ISIN z vestavěného číselníku (a uložil je do uživatelova). */
+  filled: FilledInstrument[];
   /**
    * Soubor jsme nepřečetli a chyba může být na NAŠÍ straně (nepoznaný formát,
    * přejmenovaný sloupec). Originál si proto necháme k rozboru
@@ -494,23 +505,65 @@ export async function importFile(
   // s názvem portfolia) a jen jako řádek se sloupcem „Datum obchodu“ —
   // poznámka v jiném souboru nesmí import přesměrovat na Fio.
   if (sniffFioCsv(text)) {
-    const aliases = await loadAliases(db, userId);
-    const outcome = parseFioCsv(text, { symbolMap: aliases.isinOnly.fio });
-    return save(outcome, {
-      unmapped: outcome.unmappedSymbols.map((symbol) => ({
-        broker: 'fio',
-        symbol,
-        needsCurrency: false,
-      })),
-    });
+    const { parsed, filled } = await parseWithAliases(db, userId, (aliases) =>
+      withUnmapped('fio', parseFioCsv(text, { symbolMap: aliases.isinOnly.fio })),
+    );
+    return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
 
-  const aliases = await loadAliases(db, userId);
-  const parsed = detectAndParseText(text, aliases);
+  const { parsed, filled } = await parseWithAliases(db, userId, (aliases) =>
+    detectAndParseText(text, aliases),
+  );
   return save(parsed.outcome, {
     unmapped: parsed.unmapped,
     unrecognized: parsed.unrecognized,
+    filled,
   });
+}
+
+/**
+ * Parsování výpisu brokera bez ISIN: nejdřív s číselníkem uživatele, a když
+ * zbydou symboly, které zná vestavěný číselník (`@danero/importers/isin-directory`),
+ * uloží je uživateli do číselníku a výpis přečte znovu.
+ *
+ * Uživatelův záznam má vždy přednost — vestavěný se zkouší jen u symbolů,
+ * pro které záznam nemá, a ukládá se bez přepisu (`saveBuiltinAliases`).
+ * Uložením se z doplněné dvojice stane obyčejný záznam: je vidět v seznamu
+ * „Doplněné údaje instrumentů“, jde opravit a pozdější změna vestavěného
+ * souboru se už naimportovaných dat netkne.
+ */
+async function parseWithAliases(
+  db: Db,
+  userId: string,
+  parse: (aliases: AliasMaps) => ParsedFile | Promise<ParsedFile>,
+): Promise<{ parsed: ParsedFile; filled: FilledInstrument[] }> {
+  const first = await parse(await loadAliases(db, userId));
+  const currencies = (first.outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies;
+  const candidates = first.unmapped.flatMap((item): FilledInstrument[] => {
+    const found = builtinInstrument(item.broker, item.symbol, [
+      ...(currencies?.get(item.symbol) ?? []),
+    ]);
+    return found ? [{ broker: item.broker, ...found }] : [];
+  });
+  if (candidates.length === 0) return { parsed: first, filled: [] };
+
+  await saveBuiltinAliases(db, userId, candidates);
+  const aliases = await loadAliases(db, userId);
+  const parsed = await parse(aliases);
+  // Ohlásí se jen to, co import opravdu použil: záznam, který si uživatel
+  // mezitím uložil sám (souběžný formulář), vestavěný nepřepsal.
+  const covers = aliasCovers(aliases);
+  const stillUnmapped = new Set(parsed.unmapped.map((item) => `${item.broker}|${item.symbol}`));
+  const filled = candidates.filter((item) => {
+    if (stillUnmapped.has(`${item.broker}|${item.symbol}`)) return false;
+    if (!covers(item.broker, item.symbol)) return false;
+    const stored =
+      item.broker === 'xtb'
+        ? aliases.xtb[item.symbol]
+        : aliases.isinOnly[item.broker as IsinOnlyBroker][item.symbol];
+    return stored?.isin === item.isin;
+  });
+  return { parsed, filled };
 }
 
 /**
@@ -540,15 +593,18 @@ async function importXlsxUpload(
 ): Promise<ImportSummary> {
   const workbook = await loadXlsxWorkbook(data);
   if (sniffXtbXlsx(workbook)) {
-    const aliases = await loadAliases(db, userId);
-    const outcome = await parseXtbXlsx(data, aliases.xtb, { filename });
-    return save(outcome, {
-      unmapped: outcome.unmappedSymbols.map((symbol) => ({
-        broker: 'xtb',
-        symbol,
-        needsCurrency: true,
-      })),
+    const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) => {
+      const outcome = await parseXtbXlsx(data, aliases.xtb, { filename });
+      return {
+        outcome,
+        unmapped: outcome.unmappedSymbols.map((symbol) => ({
+          broker: 'xtb',
+          symbol,
+          needsCurrency: true,
+        })),
+      };
     });
+    return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
   // Roční daňový přehled XTB poznáme, ale transakce z něj neskládáme (chybí
   // nákupní ceny otevřených pozic) — uživatel dostane návod, který export
@@ -557,11 +613,10 @@ async function importXlsxUpload(
     return save(xtbFiscalReportResult(), NOT_OURS);
   }
   if (sniffEtoroXlsx(workbook)) {
-    const aliases = await loadAliases(db, userId);
-    const parsed = withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro));
-    return save(parsed.outcome, {
-      unmapped: parsed.unmapped,
-    });
+    const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) =>
+      withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro)),
+    );
+    return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
   if (sniffSaxoXlsx(workbook)) {
     return save(await parseSaxoXlsx(data));
@@ -572,11 +627,10 @@ async function importXlsxUpload(
   // Revolut nabízí „Account statement“ jako Excel a podle účtu z něj chodí
   // jednou CSV a jindy opravdový sešit — obojí vede na tentýž parser
   if (sniffRevolutXlsx(workbook)) {
-    const aliases = await loadAliases(db, userId);
-    const parsed = withUnmapped('revolut', await parseRevolutXlsx(data, aliases.isinOnly.revolut));
-    return save(parsed.outcome, {
-      unmapped: parsed.unmapped,
-    });
+    const { parsed, filled } = await parseWithAliases(db, userId, async (aliases) =>
+      withUnmapped('revolut', await parseRevolutXlsx(data, aliases.isinOnly.revolut)),
+    );
+    return save(parsed.outcome, { unmapped: parsed.unmapped, filled });
   }
   // Saxo v jazyce mimo slovník, poznaný jen podle tvaru (L2b-03). Parser z něj
   // nic nepřečte a řekne proč: stačí přepnout jazyk platformy. Náprava je známá
@@ -1067,6 +1121,8 @@ export async function importParsed(
     newerThanStored?: boolean;
     /** Otisk nahraného souboru (jen ruční nahrání) — viz `StoredIssues.fileHash`. */
     fileHash?: string;
+    /** Symboly, kterým import doplnil ISIN z vestavěného číselníku. */
+    filled?: FilledInstrument[];
   } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
@@ -1157,6 +1213,7 @@ export async function importParsed(
       unmapped,
       crossBroker,
       ...(extras.fileHash ? { fileHash: extras.fileHash } : {}),
+      ...(extras.filled?.length ? { filled: extras.filled } : {}),
     }),
   });
 
@@ -1258,6 +1315,7 @@ export async function importParsed(
     warnings,
     unmapped,
     crossBroker,
+    filled: extras.filled ?? [],
     ...(unrecognized ? { unrecognized: true } : {}),
   };
 }

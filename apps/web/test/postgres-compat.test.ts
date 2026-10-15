@@ -343,6 +343,33 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(await deleteAlias(db, userId, 'tastytrade', 'ZZTB')).toEqual({ outcome: 'missing' });
   });
 
+  it('vestavěný číselník ISIN: doplněná dvojice se uloží bez přepisu uživatelova záznamu', {
+    timeout: 30_000,
+  }, async () => {
+    // hromadný insert s `on conflict do nothing` na složeném klíči
+    const userId = await makeUser();
+    await saveAliases(db, userId, [{ broker: 'schwab', symbol: 'PEP', isin: 'US0378331005' }]);
+    const statement = [
+      '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+      '"03/03/2025","Buy","KO","COCA COLA CO","40","$70.00","","-$2800.00"',
+      '"03/04/2025","Buy","PEP","PEPSICO INC","1","$150.00","","-$150.00"',
+    ].join('\n');
+    const summary = await importFileIsolated(
+      db,
+      userId,
+      'schwab.csv',
+      new TextEncoder().encode(statement).buffer as ArrayBuffer,
+    );
+
+    expect(summary.added).toBe(2);
+    expect(summary.filled.map((item) => item.symbol)).toEqual(['KO']);
+    const stored = await db
+      .select({ isin: transactions.isin })
+      .from(transactions)
+      .where(eq(transactions.userId, userId));
+    expect(stored.map((row) => row.isin).sort()).toEqual(['US0378331005', 'US1912161007']);
+  });
+
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {
     const userId = `u-${Date.now()}`;
     await db.insert(user).values({ id: userId, name: 'PG', email: `${userId}@danero.cz` });

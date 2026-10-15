@@ -39,7 +39,7 @@ const recognizedAs = (platform: string): RegExp =>
 
 /**
  * Akceptace G4: import každého nového formátu end-to-end — Degiro CSV,
- * Fio (windows-1250) a XTB XLSX včetně doplnění číselníku (ISIN/měna)
+ * Fio (windows-1250) a XTB XLSX včetně číselníku (ISIN/měna) — vestavěného i ručně doplněného —
  * a opakovaného nahrání, které nic nezdvojí.
  */
 test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ page }) => {
@@ -54,49 +54,47 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
   });
   await expect(degiro).toContainText(recognizedAs('Degiro'));
 
-  // ── Fio (windows-1250): nejdřív číselník, pak import ────────────────────
+  // ── Fio (windows-1250): AAPL doplní vestavěný číselník ISIN sám ─────────
   const fio = await uploadStatement(page, {
     name: 'fio-obchody.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from(encodeCp1250(FIO_FIXTURE)),
   });
   await expect(fio).toContainText(recognizedAs('Fio e-Broker'));
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: 'Doplnili jsme ISIN: AAPL → Apple Inc. (US0378331005).' }),
+  ).toBeVisible();
   const aliases = page.getByRole('heading', { name: 'Doplň chybějící údaje instrumentů' });
-  await expect(aliases).toBeVisible();
-  await page.locator('input[name="isin-0"]').fill('US0378331005');
-  await page.getByRole('button', { name: 'Uložit číselník' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Číselník uložen' })).toBeVisible();
-
-  await uploadStatement(page, {
-    name: 'fio-obchody.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.from(encodeCp1250(FIO_FIXTURE)),
-  });
-  // po doplnění číselníku už formulář nevyskakuje a obchody se naimportovaly
   await expect(aliases).toBeHidden();
+  await expect(fio).not.toContainText(/chyb/);
 
   // ── XTB XLSX: číselník chce ISIN i měnu ─────────────────────────────────
+  // AAPL.US doplní vestavěný číselník (i s měnou), ETF z Londýna zná jen uživatel
+  const xtbRows = [
+    ...XTB_ROWS_EN,
+    [100010, 'Stocks/ETF purchase', '05.02.2025 11:00:00', 'OPEN BUY 10 @ 92.10', 'IWDA.UK', -921],
+  ];
   const xtb = await uploadStatement(page, {
     name: 'xtb-report.xlsx',
     mimeType: XLSX,
-    buffer: Buffer.from(await buildXtbXlsx({ rows: XTB_ROWS_EN })),
+    buffer: Buffer.from(await buildXtbXlsx({ rows: xtbRows })),
   });
   await expect(xtb).toContainText(recognizedAs('XTB'));
   await expect(aliases).toBeVisible();
   const isinInputs = page.locator('input[name^="isin-"]');
-  const count = await isinInputs.count();
-  expect(count).toBeGreaterThan(0);
-  for (let i = 0; i < count; i += 1) {
-    await page.locator(`input[name="isin-${i}"]`).fill('US5949181045');
-    await page.locator(`input[name="currency-${i}"]`).fill('USD');
-  }
+  await expect(isinInputs).toHaveCount(1);
+  await expect(page.getByRole('textbox', { name: 'ISIN pro IWDA.UK' })).toBeVisible();
+  await page.locator('input[name="isin-0"]').fill('IE00B4L5Y983');
+  await page.locator('input[name="currency-0"]').fill('USD');
   await page.getByRole('button', { name: 'Uložit číselník' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Číselník uložen' })).toBeVisible();
 
   await uploadStatement(page, {
     name: 'xtb-report.xlsx',
     mimeType: XLSX,
-    buffer: Buffer.from(await buildXtbXlsx({ rows: XTB_ROWS_EN })),
+    buffer: Buffer.from(await buildXtbXlsx({ rows: xtbRows })),
   });
   await expect(aliases).toBeHidden();
 

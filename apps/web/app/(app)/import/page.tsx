@@ -23,6 +23,7 @@ import type { UnmappedSymbol } from '@/lib/import-service';
 import {
   aliasFeedbackDetails,
   aliasRowKey,
+  filledSentence,
   isAliasRowError,
 } from '@/lib/alias-feedback';
 import { czDateTime } from '@/lib/format';
@@ -231,6 +232,13 @@ export default async function ImportPage({
     };
   }
   const aliasRowError = chyba !== undefined && isAliasRowError(chyba);
+  // ISIN, které právě nahrané výpisy doplnily z vestavěného číselníku
+  const justUploaded = uploadedBatchIds(params);
+  const uploadFilled = filledSentence(
+    recentBatches
+      .filter((batch) => justUploaded.has(batch.id))
+      .flatMap((batch) => (batch.issues as BatchIssues).filled ?? []),
+  );
 
   // chyby formulářů připojení a řádků číselníku mají hlášku přímo u pole
   const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr' || aliasRowError;
@@ -358,7 +366,12 @@ export default async function ImportPage({
               <UploadResultNotice
                 result={
                   feedback && placement === 'history'
-                    ? { kind: feedback.kind, text: feedback.text, offerOverview }
+                    ? {
+                        kind: feedback.kind,
+                        text: feedback.text,
+                        offerOverview,
+                        ...(uploadFilled ? { filled: uploadFilled } : {}),
+                      }
                     : null
                 }
                 otherFeedback={ulozeno !== undefined || chyba !== undefined}
@@ -383,6 +396,11 @@ export default async function ImportPage({
                         <p>
                           ISIN (u XTB i měna) k symbolům brokerů, kteří je ve výpisu neuvádějí.
                           Import je bere odsud.
+                        </p>
+                        <p>
+                          U běžných amerických akcií je doplňujeme sami z veřejných dat
+                          (Wikidata). Smazaný záznam takového titulu při dalším nahrání doplníme
+                          znovu — chceš-li jiný ISIN, záznam uprav.
                         </p>
                         <p>
                           Opravit nebo smazat jde záznam, pod kterým zatím nejsou uložené

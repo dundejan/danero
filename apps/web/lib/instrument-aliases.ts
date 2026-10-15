@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import type { IsinInstrumentMap, XtbInstrumentMap } from '@danero/importers';
 import type { Db } from '@/db';
 import { importBatches, instrumentAliases, transactions } from '@/db/schema';
@@ -116,6 +116,60 @@ export async function aliasesBlockedByTransactions(
     if (used) blocked.push(row);
   }
   return blocked;
+}
+
+/** Symbol, kterému import doplnil ISIN z vestavěného číselníku. */
+export interface FilledInstrument {
+  broker: string;
+  symbol: string;
+  isin: string;
+  /** Název z vestavěného číselníku (Wikidata) — jen pro hlášku. */
+  name: string;
+  currency?: string;
+}
+
+/**
+ * Uloží dvojice z vestavěného číselníku do uživatelova. Nikdy nepřepíše
+ * ISIN, který už uživatel má (jeho údaj má přednost a podle L23-02 by
+ * přepis mohl zdvojit uložené transakce) — proto `onConflictDoNothing`;
+ * jediná výjimka je chybějící měna u XTB při shodném ISIN.
+ */
+export async function saveBuiltinAliases(
+  db: Db,
+  userId: string,
+  rows: FilledInstrument[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await db
+    .insert(instrumentAliases)
+    .values(
+      rows.map((row) => ({
+        userId,
+        broker: row.broker,
+        symbol: row.symbol,
+        isin: row.isin,
+        currency: row.currency ?? null,
+      })),
+    )
+    .onConflictDoNothing();
+  // XTB: záznam se shodným ISIN, jen bez měny (dividendám ISIN stačí, obchody
+  // čekají na měnu), dostane měnu z vestavěného číselníku. ISIN se nemění
+  // a obchod bez měny se nikdy neuložil, takže tu není co zdvojit (L23-02).
+  for (const row of rows) {
+    if (row.broker !== 'xtb' || !row.currency) continue;
+    await db
+      .update(instrumentAliases)
+      .set({ currency: row.currency })
+      .where(
+        and(
+          eq(instrumentAliases.userId, userId),
+          eq(instrumentAliases.broker, 'xtb'),
+          eq(instrumentAliases.symbol, row.symbol),
+          eq(instrumentAliases.isin, row.isin),
+          isNull(instrumentAliases.currency),
+        ),
+      );
+  }
 }
 
 export async function saveAliases(db: Db, userId: string, rows: AliasInput[]): Promise<void> {

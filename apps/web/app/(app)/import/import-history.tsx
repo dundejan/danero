@@ -9,6 +9,7 @@ import type { importBatches } from '@/db/schema';
 import { czDateTime, plural } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { UnmappedSymbol } from '@/lib/import-service';
+import { ALIAS_LIST_ANCHOR, filledSentence } from '@/lib/alias-feedback';
 import type { BatchIssueView } from '@/lib/import-resolved';
 import { undoImportAction } from './actions';
 import { platformName } from '@/lib/brokers-catalog';
@@ -21,6 +22,8 @@ export interface BatchIssues {
   unmapped?: UnmappedSymbol[];
   /** Shoda s transakcemi jiného brokera (B-3-3) — hlásíme, neslučujeme. */
   crossBroker?: string[];
+  /** ISIN doplněné z vestavěného číselníku (lib/instrument-aliases `FilledInstrument`). */
+  filled?: Array<{ symbol: string; isin: string; name: string }>;
 }
 
 /**
@@ -125,6 +128,7 @@ function BatchDetails({ batch, view }: { batch: ImportBatchRow; view: BatchIssue
   const errors = view.errors;
   const warnings = view.warnings;
   const crossBroker = issues.crossBroker ?? [];
+  const filled = filledSentence(issues.filled ?? []);
   const wholeFile = batch.broker === UNKNOWN_FORMAT;
   return (
     <div className="type-footnote space-y-3">
@@ -166,6 +170,12 @@ function BatchDetails({ batch, view }: { batch: ImportBatchRow; view: BatchIssue
             </li>
           )}
         </ul>
+      )}
+      {filled && (
+        <p className="text-pretty text-ink">
+          {filled}{' '}
+          <TextLink href={`#${ALIAS_LIST_ANCHOR}`}>Opravit jde v seznamu doplněných údajů</TextLink>
+        </p>
       )}
       {(warnings.length > 0 || crossBroker.length > 0) && (
         <ul className="space-y-1.5">
@@ -269,7 +279,8 @@ export function ImportHistory({
             view.warnings.length > 0 ||
             view.pendingTrades.length > 0 ||
             view.pendingDividends.length > 0 ||
-            (issues.crossBroker?.length ?? 0) > 0;
+            (issues.crossBroker?.length ?? 0) > 0 ||
+            (issues.filled?.length ?? 0) > 0;
           const date = czDateTime(batch.createdAt);
           const title = (
             <>

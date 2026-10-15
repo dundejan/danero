@@ -1,7 +1,7 @@
 import { Decimal, d, TransactionSchema, ZERO } from '@danero/shared';
 import { decodeUpload, HeaderMap, isValidIsoDate } from '../csv';
 import { fnv1a64 } from '../dedupe';
-import type { ImportResult } from '../types';
+import { noteSymbolCurrency, type ImportResult, type SymbolCurrencies } from '../types';
 
 export const FIO_BROKER = 'fio';
 
@@ -16,6 +16,8 @@ export interface FioParseOptions {
 export interface FioImportResult extends ImportResult {
   /** Symboly obchodů bez ISIN mapování — uživatel je musí doplnit a import zopakovat. */
   unmappedSymbols: string[];
+  /** Měny, ve kterých se který symbol ve výpisu obchodoval (vestavěný číselník ISIN). */
+  symbolCurrencies: SymbolCurrencies;
 }
 
 /**
@@ -263,6 +265,7 @@ export function parseFioCsv(
     skipped: [],
     warnings: [],
     unmappedSymbols: [],
+    symbolCurrencies: new Map(),
   };
 
   if (text.trim() === '') {
@@ -411,6 +414,7 @@ export function parseFioCsv(
     const symbol = map.get(row, 'Symbol');
     const currencyCode = map.get(row, 'Měna');
     const note = map.get(row, 'Text FIO');
+    noteSymbolCurrency(result.symbolCurrencies, symbol, currencyCode);
 
     const date = toIsoDate(rawDate);
     if (!date) {
