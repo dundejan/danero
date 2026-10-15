@@ -7,7 +7,10 @@ import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixt
 import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kraken';
 import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
 import { PORTU_REAL_LAYOUT_FIXTURE } from '../../../packages/importers/test/fixtures/portu';
-import { REVOLUT_INVEST_CSV } from '../../../packages/importers/test/fixtures/revolut';
+import {
+  REVOLUT_INVEST_CSV,
+  REVOLUT_INVEST_HEADER,
+} from '../../../packages/importers/test/fixtures/revolut';
 import { SWISSQUOTE_EN } from '../../../packages/importers/test/fixtures/swissquote';
 import {
   buildXtbNewReportXlsx,
@@ -16,7 +19,13 @@ import {
   XTB_ROWS_EN,
 } from '../../../packages/importers/test/fixtures/xtb';
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
-import { openDisclosure, registerWithProfile, uploadStatement } from './helpers';
+import {
+  confirmInDialog,
+  importHistoryRow,
+  openDisclosure,
+  registerWithProfile,
+  uploadStatement,
+} from './helpers';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -210,4 +219,89 @@ test('T212 export s přejmenovaným sloupcem „Time (UTC)“ se naimportuje', a
   // hláška cizího parseru nesmí být nikde na stránce, ani v zavřeném řádku
   await expect(page.getByText(/Chybí povinný sloupec/)).toHaveCount(0);
   await expect(imported).not.toContainText(/chyb/);
+});
+
+/**
+ * Seznam „Doplněné údaje instrumentů“: uložený ISIN jde zobrazit, opravit
+ * a smazat. Do 15. 10. 2026 symbol po uložení zmizel a špatně opsaný (ale
+ * platný) ISIN nešel opravit vůbec. Ticker je smyšlený, aby ho nedoplnil
+ * vestavěný číselník.
+ */
+test('číselník: uložený ISIN jde opravit a smazat, stará chyba v historii je vyřízená', async ({
+  page,
+}) => {
+  await registerWithProfile(page, { name: 'E2E Číselník', email: 'ciselnik-seznam@danero.cz' });
+  await page.goto('/import');
+
+  const FILE = 'revolut-ciselnik.csv';
+  const statement = {
+    name: FILE,
+    mimeType: 'text/csv',
+    buffer: Buffer.from(
+      [
+        REVOLUT_INVEST_HEADER,
+        '2024-06-03T13:30:00.000Z,ZQXA,BUY - MARKET,2,$150.00,$300.00,USD,1.0800',
+        '2024-06-28T13:30:00.000Z,ZQXA,DIVIDEND,,,$0.40,USD,1.0700',
+      ].join('\n'),
+      'utf8',
+    ),
+  };
+  const GOOGL = 'US02079K3059';
+  const GOOG = 'US02079K1079';
+
+  const first = await uploadStatement(page, statement);
+  await expect(first).toContainText('1 chyba');
+
+  // uloží se platný, ale špatný ISIN
+  await page.getByRole('textbox', { name: 'ISIN pro ZQXA' }).fill(GOOGL);
+  await page.getByRole('button', { name: 'Uložit číselník' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Číselník uložen' })).toBeVisible();
+
+  // stará dávka už chybu nehlásí — jen co zbývá udělat
+  await expect(first).not.toContainText(/chyb/);
+  const firstOpen = await openDisclosure(first, FILE);
+  await expect(firstOpen).toContainText('ISIN doplněn — nahraj výpis znovu a obchody se doimportují.');
+  await expect(firstOpen).not.toContainText('doplň ISIN');
+
+  // ── záznam je v seznamu a jde opravit ───────────────────────────────────
+  await expect(page.getByRole('heading', { name: 'Doplněné údaje instrumentů' })).toBeVisible();
+  const list = await openDisclosure(page, '1 záznam');
+  const row = await openDisclosure(list, 'ZQXA');
+  await expect(row).toContainText(GOOGL);
+  await row.getByRole('textbox', { name: 'ISIN pro ZQXA' }).fill(GOOG);
+  await row.getByRole('button', { name: 'Uložit změnu' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Záznam upraven' })).toBeVisible();
+  await expect(page.locator('summary').filter({ hasText: 'ZQXA' })).toContainText(GOOG);
+
+  // nové nahrání téhož výpisu obchod doimportuje a vyřízená věta zmizí
+  const second = await uploadStatement(page, statement);
+  await expect(second).toContainText('Revolut · 1 nová · 1 duplicita');
+  await expect(page.getByText('ISIN doplněn — nahraj výpis znovu')).toHaveCount(0);
+
+  // ── pod ISIN už leží transakce: změna se odmítne a řekne, co vrátit ─────
+  const listAgain = await openDisclosure(page, '1 záznam');
+  const rowAgain = await openDisclosure(listAgain, 'ZQXA');
+  await rowAgain.getByRole('textbox', { name: 'ISIN pro ZQXA' }).fill(GOOGL);
+  await rowAgain.getByRole('button', { name: 'Uložit změnu' }).click();
+  const blocked = page.getByRole('alert').filter({ hasText: 'Záznam teď nejde změnit' });
+  await expect(blocked).toBeVisible();
+  await expect(blocked).toContainText(FILE);
+  await expect(page.locator('summary').filter({ hasText: 'ZQXA' })).toContainText(GOOG);
+
+  // ── vrátit oba importy, pak záznam smazat ───────────────────────────────
+  for (let left = 2; left > 0; left -= 1) {
+    const batch = importHistoryRow(page, FILE).first();
+    await openDisclosure(batch, FILE);
+    await confirmInDialog(
+      page,
+      batch.getByRole('button', { name: 'Vrátit import zpět' }),
+      'Vrátit import zpět',
+    );
+    await expect(importHistoryRow(page, FILE)).toHaveCount(left - 1, { timeout: 20_000 });
+  }
+  const listLast = await openDisclosure(page, '1 záznam');
+  const rowLast = await openDisclosure(listLast, 'ZQXA');
+  await rowLast.getByRole('button', { name: 'Smazat záznam' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Záznam smazán' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Doplněné údaje instrumentů' })).toHaveCount(0);
 });

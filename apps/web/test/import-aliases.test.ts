@@ -39,6 +39,7 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT:${url}`);
   },
   useRouter: () => ({ refresh: () => undefined }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/lib/session', () => ({ requireUser: async () => ({ id: 'u1' }) }));
 vi.mock('@/db', async () => {

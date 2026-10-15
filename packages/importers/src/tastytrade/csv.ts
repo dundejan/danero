@@ -399,6 +399,7 @@ export function parseTastytradeCsv(
       result.errors.push({
         line,
         message: `Symbol ${symbol}: doplň ISIN instrumentu (Tastytrade ho neexportuje).`,
+        unmappedSymbol: symbol,
       });
     }
     return null;
@@ -415,6 +416,7 @@ export function parseTastytradeCsv(
     result.warnings.push({
       line,
       message: `Symbol ${symbol}: doplň ISIN — Tastytrade ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+      unmappedSymbol: symbol,
     });
   };
 

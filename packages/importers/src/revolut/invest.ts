@@ -142,6 +142,7 @@ export function parseRevolutInvestTable(
       result.errors.push({
         line,
         message: `Symbol ${ticker}: doplň ISIN instrumentu (Revolut ho neexportuje).`,
+        unmappedSymbol: ticker,
       });
     }
     return null;
@@ -158,6 +159,7 @@ export function parseRevolutInvestTable(
     result.warnings.push({
       line,
       message: `Symbol ${ticker}: doplň ISIN — Revolut ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+      unmappedSymbol: ticker,
     });
   };
 

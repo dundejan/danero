@@ -26,7 +26,12 @@ import {
 import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
 import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import-service';
-import { saveAliases } from '@/lib/instrument-aliases';
+import {
+  deleteAlias,
+  importsUsingIsin,
+  saveAliases,
+  updateAlias,
+} from '@/lib/instrument-aliases';
 import {
   enqueueSyncJob,
   processPendingJobs,
@@ -300,6 +305,42 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(dividends[0]!.isin).toBe('US0000000018');
     expect(dividends[0]!.payload).toMatchObject({ isin: 'US0000000018', gross: '20' });
     expect((await upload()).added).toBe(0);
+  });
+
+  it('seznam doplněných údajů: importy pod ISIN, změna a smazání záznamu (L23-02)', {
+    timeout: 30_000,
+  }, async () => {
+    // `selectDistinct` + spojení s dávkami + řazení podle času — na PGlite
+    // projde leccos, co postgres.js odmítne
+    const userId = await makeUser();
+    const statement = [
+      '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+      '"05/02/2025","Qualified Dividend","ZZTB","ZETA TEST CORP","","","","$20.00"',
+      '"03/03/2025","Buy","ZZTB","ZETA TEST CORP","40","$70.00","","-$2800.00"',
+    ].join('\n');
+    await saveAliases(db, userId, [{ broker: 'schwab', symbol: 'ZZTB', isin: 'US0000000018' }]);
+    const summary = await importFileIsolated(
+      db,
+      userId,
+      'schwab.csv',
+      new TextEncoder().encode(statement).buffer as ArrayBuffer,
+    );
+    expect(summary.added).toBe(2);
+
+    const imports = await importsUsingIsin(db, userId, 'schwab', 'US0000000018');
+    expect(imports.map((item) => item.id)).toEqual([summary.batchId]);
+    expect(imports[0]!.createdAt).toBeInstanceOf(Date);
+    expect(
+      await updateAlias(db, userId, { broker: 'schwab', symbol: 'ZZTB', isin: 'US0378331005' }),
+    ).toMatchObject({ outcome: 'in-use' });
+    expect(await deleteAlias(db, userId, 'schwab', 'ZZTB')).toMatchObject({ outcome: 'in-use' });
+
+    await saveAliases(db, userId, [{ broker: 'tastytrade', symbol: 'ZZTB', isin: 'US0000000018' }]);
+    expect(
+      await updateAlias(db, userId, { broker: 'tastytrade', symbol: 'ZZTB', isin: 'US0378331005' }),
+    ).toEqual({ outcome: 'ok' });
+    expect(await deleteAlias(db, userId, 'tastytrade', 'ZZTB')).toEqual({ outcome: 'ok' });
+    expect(await deleteAlias(db, userId, 'tastytrade', 'ZZTB')).toEqual({ outcome: 'missing' });
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {

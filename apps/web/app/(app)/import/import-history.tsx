@@ -9,6 +9,7 @@ import type { importBatches } from '@/db/schema';
 import { czDateTime, plural } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { UnmappedSymbol } from '@/lib/import-service';
+import type { BatchIssueView } from '@/lib/import-resolved';
 import { undoImportAction } from './actions';
 import { platformName } from '@/lib/brokers-catalog';
 
@@ -36,7 +37,7 @@ const SHOWN_WARNINGS = 5;
  * varování a přeskočené řádky se píšou jen tehdy, když nějaké jsou — nula
  * chyb není zpráva.
  */
-function BatchSummary({ batch }: { batch: ImportBatchRow }) {
+function BatchSummary({ batch, view }: { batch: ImportBatchRow; view: BatchIssueView }) {
   // prázdný export (T212 vrací pro roky před založením účtu prázdný
   // soubor) není chyba uživatele — nezobrazovat červeně jako chyby.
   // POZOR: poznává se VÝHRADNĚ nulovými počty (parser od fixu vrací
@@ -57,18 +58,18 @@ function BatchSummary({ batch }: { batch: ImportBatchRow }) {
         <>
           {batch.added} {plural(batch.added, 'nová', 'nové', 'nových')} · {batch.duplicates}{' '}
           {plural(batch.duplicates, 'duplicita', 'duplicity', 'duplicit')}
-          {batch.errorCount > 0 && (
+          {view.errorCount > 0 && (
             <>
               {' · '}
               <span className="text-danger">
-                {batch.errorCount} {plural(batch.errorCount, 'chyba', 'chyby', 'chyb')}
+                {view.errorCount} {plural(view.errorCount, 'chyba', 'chyby', 'chyb')}
               </span>
             </>
           )}
-          {batch.warningCount > 0 && (
+          {view.warningCount > 0 && (
             <>
               {' · '}
-              <span className="text-caution-text">{batch.warningCount} varování</span>
+              <span className="text-caution-text">{view.warningCount} varování</span>
             </>
           )}
           {batch.skippedCount > 0 && ` · ${batch.skippedCount} přeskočeno`}
@@ -117,12 +118,12 @@ function IssueLine({
   );
 }
 
-function BatchDetails({ batch }: { batch: ImportBatchRow }) {
+function BatchDetails({ batch, view }: { batch: ImportBatchRow; view: BatchIssueView }) {
   const issues = batch.issues as BatchIssues;
-  const moreErrors = batch.errorCount - SHOWN_ERRORS;
-  const moreWarnings = batch.warningCount - SHOWN_WARNINGS;
-  const errors = issues.errors ?? [];
-  const warnings = issues.warnings ?? [];
+  const moreErrors = view.errorCount - SHOWN_ERRORS;
+  const moreWarnings = view.warningCount - SHOWN_WARNINGS;
+  const errors = view.errors;
+  const warnings = view.warnings;
   const crossBroker = issues.crossBroker ?? [];
   const wholeFile = batch.broker === UNKNOWN_FORMAT;
   return (
@@ -140,6 +141,28 @@ function BatchDetails({ batch }: { batch: ImportBatchRow }) {
               … a {plural(moreErrors, 'další', 'další', 'dalších')} {moreErrors}{' '}
               {plural(moreErrors, 'chyba', 'chyby', 'chyb')}. Bývají stejného druhu — oprav první
               a nahraj soubor znovu.
+            </li>
+          )}
+        </ul>
+      )}
+      {/* Hlášky „doplň ISIN“, které uživatel mezitím vyřídil číselníkem — už
+          ne jako chyba, ale co zbývá udělat (`lib/import-resolved.ts`). */}
+      {(view.pendingTrades.length > 0 || view.pendingDividends.length > 0) && (
+        <ul className="space-y-1.5">
+          {view.pendingTrades.length > 0 && (
+            <li className="text-pretty text-ink">
+              <span className="mr-1.5 font-medium text-success-text">
+                {view.pendingTrades.join(', ')}:
+              </span>
+              ISIN doplněn — nahraj výpis znovu a obchody se doimportují.
+            </li>
+          )}
+          {view.pendingDividends.length > 0 && (
+            <li className="text-pretty text-ink">
+              <span className="mr-1.5 font-medium text-success-text">
+                {view.pendingDividends.join(', ')}:
+              </span>
+              ISIN doplněn — nahraj výpis znovu a dividendy ho dostanou.
             </li>
           )}
         </ul>
@@ -188,6 +211,19 @@ function BatchDetails({ batch }: { batch: ImportBatchRow }) {
   );
 }
 
+/** Hlášky dávky tak, jak se uložily — pro dávku, ke které stránka pohled nespočítala. */
+function rawIssueView(batch: ImportBatchRow): BatchIssueView {
+  const issues = batch.issues as BatchIssues;
+  return {
+    errors: issues.errors ?? [],
+    warnings: issues.warnings ?? [],
+    errorCount: batch.errorCount,
+    warningCount: batch.warningCount,
+    pendingTrades: [],
+    pendingDividends: [],
+  };
+}
+
 /**
  * Historie importů: co se kdy nahrálo a co z toho přibylo. Řádek říká výsledek
  * (počty), rozbalení ukáže hlášky k souboru a vrácení importu — to je vzácná
@@ -202,10 +238,13 @@ function BatchDetails({ batch }: { batch: ImportBatchRow }) {
  */
 export function ImportHistory({
   batches,
+  issueViews,
   olderHref,
   highlightedBatchIds,
 }: {
   batches: ImportBatchRow[];
+  /** Hlášky dávek bez těch, které uživatel vyřídil číselníkem (`lib/import-resolved.ts`). */
+  issueViews: ReadonlyMap<string, BatchIssueView>;
   /** Odkaz „Zobrazit starší“; chybí, když už starší importy nejsou. */
   olderHref?: string;
   highlightedBatchIds: ReadonlySet<string>;
@@ -224,15 +263,18 @@ export function ImportHistory({
       <Group aria-label="Historie importů">
         {batches.map((batch) => {
           const issues = batch.issues as BatchIssues;
+          const view = issueViews.get(batch.id) ?? rawIssueView(batch);
           const hasIssues =
-            (issues.errors?.length ?? 0) > 0 ||
-            (issues.warnings?.length ?? 0) > 0 ||
+            view.errors.length > 0 ||
+            view.warnings.length > 0 ||
+            view.pendingTrades.length > 0 ||
+            view.pendingDividends.length > 0 ||
             (issues.crossBroker?.length ?? 0) > 0;
           const date = czDateTime(batch.createdAt);
           const title = (
             <>
               <Filename>{batch.filename}</Filename>
-              <BatchSummary batch={batch} />
+              <BatchSummary batch={batch} view={view} />
               {/* na telefonu by datum vedle souhrnu lámalo řádek na tři — jde pod něj */}
               <span className="type-caption mt-0.5 block font-normal tabular-nums text-ink-muted sm:hidden">
                 {date}
@@ -252,11 +294,13 @@ export function ImportHistory({
           return (
             <DisclosureRow
               key={batch.id}
+              // kotva pro odkaz z hlášky číselníku („nejdřív vrať zpět import …“)
+              id={`import-${batch.id}`}
               title={title}
               meta={wideDate}
               defaultOpen={hasIssues && highlightedBatchIds.has(batch.id)}
             >
-              <BatchDetails batch={batch} />
+              <BatchDetails batch={batch} view={view} />
             </DisclosureRow>
           );
         })}

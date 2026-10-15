@@ -315,6 +315,7 @@ export function parseSchwabCsv(
       result.errors.push({
         line,
         message: `Symbol ${symbol}: doplň ISIN instrumentu (Schwab ho neexportuje).`,
+        unmappedSymbol: symbol,
       });
     }
     return null;
@@ -331,6 +332,7 @@ export function parseSchwabCsv(
     result.warnings.push({
       line,
       message: `Symbol ${symbol}: doplň ISIN — Schwab ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a nepoznáme stát, ze kterého přišla. Po doplnění nahraj výpis znovu — dividenda se neuloží podruhé, jen dostane ISIN.`,
+      unmappedSymbol: symbol,
     });
   };
 

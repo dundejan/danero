@@ -13,6 +13,12 @@ export interface RowIssue {
    * Říká to parser příznakem, ať to import nemusí hádat z textu hlášky.
    */
   knownUnsupported?: true;
+  /**
+   * Hláška říká jen „doplň ISIN k tomuhle symbolu“ (broker bez ISIN ve
+   * výpisu). Historie importů podle toho pozná, že ji uživatel číselníkem už
+   * vyřídil — strukturovaně, ne z textu hlášky, který se smí měnit.
+   */
+  unmappedSymbol?: string;
 }
 
 /** Uložená událost, kterou výpis ruší — viz `ImportResult.retracted`. */

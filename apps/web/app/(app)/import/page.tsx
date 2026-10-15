@@ -20,12 +20,28 @@ import {
   uploadedBatchIds,
 } from '@/lib/import-feedback';
 import type { UnmappedSymbol } from '@/lib/import-service';
-import { isIsinOnlyBroker, loadAliases } from '@/lib/instrument-aliases';
+import {
+  aliasFeedbackDetails,
+  aliasRowKey,
+  isAliasRowError,
+} from '@/lib/alias-feedback';
+import { czDateTime } from '@/lib/format';
+import { batchIssueViews } from '@/lib/import-resolved';
+import {
+  aliasCovers,
+  importsUsingIsin,
+  isIsinOnlyBroker,
+  listAliases,
+  loadAliases,
+} from '@/lib/instrument-aliases';
+import { platformName } from '@/lib/brokers-catalog';
+import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { activeSyncJobsByAccount, toSyncJobView } from '@/lib/jobs';
 import { getProfile } from '@/lib/portfolio';
 import { requireUser } from '@/lib/session';
 import { firstParam } from '@/lib/utils';
 import { AliasForm } from './alias-form';
+import { AliasList, type AliasListItem, type AliasRowResult } from './alias-list';
 import { ConnectIbkr, ConnectTrading212 } from './connect-broker';
 import { ConnectedAccount } from './connected-account';
 import { ImportHistory, type BatchIssues } from './import-history';
@@ -57,7 +73,8 @@ const ERROR_TEXTS: Record<string, string> = {
   ulozeni:
     'Aspoň jeden soubor se nepodařilo uložit — na naší straně selhala databáze. Se souborem nic není a nic se nezdvojí: zkus ho nahrát znovu za chvíli a v historii importů si zkontroluj, co se stihlo uložit.',
   'isin-pouzity':
-    'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív v historii importů rozbal ten import a vrať ho zpět, pak údaj ulož a výpis nahraj znovu. Ostatní řádky jsou uložené.',
+    'ISIN ani měnu nejde přepsat u titulu, pod kterým už máš uložené transakce — po dalším nahrání výpisu by se obchody i dividendy uložily podruhé. Chceš je opravit? Nejdřív v historii importů rozbal ten import a vrať ho zpět, pak záznam uprav v seznamu „Doplněné údaje instrumentů“ a výpis nahraj znovu. Ostatní řádky jsou uložené.',
+  'zaznam-neexistuje': 'Tenhle záznam už neexistuje — obnov stránku.',
 };
 
 const DEFAULT_ERROR_TEXT = 'Vyber aspoň jeden CSV, XML, XLSX nebo HTML soubor.';
@@ -93,7 +110,7 @@ export default async function ImportPage({
   // dívají na všechno načtené — výzva nesmí zmizet jen proto, že uživatel
   // mezitím importoval další soubory (R2-05).
   const limit = historyLimit(params);
-  const [recentBatches, accounts, aliases] = await Promise.all([
+  const [recentBatches, accounts, aliases, aliasRecords] = await Promise.all([
     db
       .select()
       .from(importBatches)
@@ -102,6 +119,7 @@ export default async function ImportPage({
       .limit(historyQueryLimit(limit)),
     db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
     loadAliases(db, user.id),
+    listAliases(db, user.id),
   ]);
   const batches = recentBatches.slice(0, limit);
   // kotva, která na stránce není, nechá polohu být — seznam se jen prodlouží
@@ -172,8 +190,50 @@ export default async function ImportPage({
     return item && (item.status === 'open' || shownBatchIds.has(batch.id)) ? [item] : [];
   });
 
-  // chyby formulářů připojení mají hlášku přímo u pole
-  const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr';
+  // Číselník: hlášky ke starým dávkám, které uživatel mezitím vyřídil
+  // (`lib/import-resolved.ts`). Obchodům XTB nestačí ISIN, potřebují i měnu.
+  const issueViews = batchIssueViews(recentBatches, aliasCovers(aliases));
+  const aliasItems: AliasListItem[] = aliasRecords.map((record) => ({
+    key: aliasRowKey(record.broker, record.symbol),
+    broker: record.broker,
+    brokerName: platformName(record.broker),
+    symbol: record.symbol,
+    isin: record.isin,
+    currency: record.currency,
+  }));
+  // Výsledek změny/smazání záznamu — jen když ho adresa nese (jinak `null`
+  // a seznam si drží ten, který už má; `lib/action-result.ts`).
+  const aliasFeedback = aliasFeedbackDetails(params);
+  let aliasResult: AliasRowResult | null = null;
+  if (aliasFeedback.rowKey !== undefined && (chyba !== undefined || ulozeno !== undefined)) {
+    const record = aliasRecords.find(
+      (item) => aliasRowKey(item.broker, item.symbol) === aliasFeedback.rowKey,
+    );
+    // Importy se dohledávají tady, ne z adresy: kterou dávku vrátit, ví jen databáze.
+    const blocking =
+      record && (chyba === 'zaznam-pouzity' || chyba === 'smazani-pouzite')
+        ? await importsUsingIsin(db, user.id, record.broker, record.isin)
+        : [];
+    aliasResult = {
+      id: crypto.randomUUID(),
+      error: chyba ?? null,
+      rowKey: aliasFeedback.rowKey,
+      entered: {
+        ...(aliasFeedback.isin ? { isin: aliasFeedback.isin } : {}),
+        ...(aliasFeedback.currency ? { currency: aliasFeedback.currency } : {}),
+      },
+      imports: blocking.map((item) => ({
+        id: item.id,
+        filename: item.filename,
+        date: czDateTime(item.createdAt),
+        inHistory: shownBatchIds.has(item.id),
+      })),
+    };
+  }
+  const aliasRowError = chyba !== undefined && isAliasRowError(chyba);
+
+  // chyby formulářů připojení a řádků číselníku mají hlášku přímo u pole
+  const inlineOnly = chyba === 'api-klic' || chyba === 'ibkr' || aliasRowError;
   // kód je z adresy — do slovníku se sahá jen na vlastní klíče (ne `constructor` apod.)
   const errorText =
     chyba === 'isin-kontrola'
@@ -196,6 +256,7 @@ export default async function ImportPage({
         {chyba && !inlineOnly && (
           <Toast key={crypto.randomUUID()} kind="chyba" text={errorText} />
         )}
+        {aliasRowError && <ClearFeedbackUrl />}
         {/* Výsledek připojení, odpojení a spuštění synchronizace. Plave, protože
             akce končí na kotvě účtu u brokera a hláška nahoře na stránce by
             zůstala mimo obrazovku (L7d-01). Výsledek nahrání a vrácení je
@@ -209,6 +270,18 @@ export default async function ImportPage({
             kind="ok"
             floating
             text="Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují (a nic se nezdvojí)."
+          />
+        )}
+        {(ulozeno === 'zaznam-upraven' || ulozeno === 'zaznam-smazan') && (
+          <Toast
+            key={crypto.randomUUID()}
+            kind="ok"
+            floating
+            text={
+              ulozeno === 'zaznam-upraven'
+                ? 'Záznam upraven. Další nahrání výpisu použije nový údaj.'
+                : 'Záznam smazán.'
+            }
           />
         )}
         {ulozeno === 'hlaseni' && (
@@ -294,9 +367,34 @@ export default async function ImportPage({
                 <UnreadStatements cases={unreadCases} />
                 <ImportHistory
                   batches={batches}
+                  issueViews={issueViews}
                   olderHref={olderHref}
                   highlightedBatchIds={uploadedBatchIds(params)}
                 />
+                {aliasItems.length > 0 && (
+                  <Section
+                    title="Doplněné údaje instrumentů"
+                    info={
+                      <InfoPopover
+                        label="Doplněné údaje instrumentů"
+                        title="Co tu je"
+                        align="start"
+                      >
+                        <p>
+                          ISIN (u XTB i měna) k symbolům brokerů, kteří je ve výpisu neuvádějí.
+                          Import je bere odsud.
+                        </p>
+                        <p>
+                          Opravit nebo smazat jde záznam, pod kterým zatím nejsou uložené
+                          transakce. Jinak nejdřív vrať zpět import, který je uložil, záznam oprav
+                          a výpis nahraj znovu — nic se nezdvojí.
+                        </p>
+                      </InfoPopover>
+                    }
+                  >
+                    <AliasList items={aliasItems} result={aliasResult} />
+                  </Section>
+                )}
               </div>
             </div>
           </div>

@@ -19,10 +19,13 @@ import {
 } from '@/lib/import-feedback';
 import { importFileIsolated, type ImportSummary } from '@/lib/import-service';
 import { undoImportBatch } from '@/lib/import-undo';
+import { aliasFeedbackUrl } from '@/lib/alias-feedback';
 import {
   aliasesBlockedByTransactions,
+  deleteAlias,
   ISIN_ONLY_BROKERS,
   saveAliases,
+  updateAlias,
   type AliasInput,
 } from '@/lib/instrument-aliases';
 import { continueJobsElsewhere } from '@/lib/cron-handoff';
@@ -190,6 +193,60 @@ export async function saveAliasesAction(formData: FormData): Promise<void> {
     redirect(`/import?${query.toString()}`);
   }
   redirect('/import?ulozeno=ciselnik');
+}
+
+/** Řádek seznamu „Doplněné údaje instrumentů“, kterého se akce týká. */
+function aliasRowFrom(formData: FormData): { broker: string; symbol: string } | null {
+  const broker = String(formData.get('broker') ?? '');
+  const symbol = String(formData.get('symbol') ?? '');
+  return ALIAS_BROKERS.has(broker) && symbol !== '' ? { broker, symbol } : null;
+}
+
+/**
+ * Změna uloženého záznamu v číselníku. Kontroly jsou tytéž jako při prvním
+ * uložení (tvar, kontrolní číslice, měna u XTB) a změna se odmítne, když pod
+ * dosavadním ISIN leží transakce (L23-02) — hláška pak jmenuje importy,
+ * které je potřeba nejdřív vrátit.
+ */
+export async function updateAliasAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const row = aliasRowFrom(formData);
+  if (!row) redirect('/import?chyba=zaznam-neexistuje');
+  const isin = String(formData.get('isin') ?? '').trim().toUpperCase();
+  const currency =
+    row.broker === 'xtb' ? String(formData.get('mena') ?? '').trim().toUpperCase() : '';
+  const entered = { isin, currency };
+  if (!ISIN_RE.test(isin)) redirect(aliasFeedbackUrl({ error: 'zaznam-isin' }, row, entered));
+  if (row.broker === 'xtb' && !CURRENCY_RE.test(currency)) {
+    redirect(aliasFeedbackUrl({ error: 'zaznam-mena' }, row, entered));
+  }
+  if (!isValidIsin(isin)) redirect(aliasFeedbackUrl({ error: 'zaznam-kontrola' }, row, entered));
+
+  const db = await getDb();
+  const change = await updateAlias(db, user.id, {
+    ...row,
+    isin,
+    ...(currency ? { currency } : {}),
+  });
+  revalidatePath('/import');
+  if (change.outcome === 'missing') redirect('/import?chyba=zaznam-neexistuje');
+  if (change.outcome === 'in-use') {
+    redirect(aliasFeedbackUrl({ error: 'zaznam-pouzity' }, row, entered));
+  }
+  redirect(aliasFeedbackUrl({ ok: 'zaznam-upraven' }, row));
+}
+
+/** Smazání uloženého záznamu v číselníku — blokované stejně jako změna (L23-02). */
+export async function deleteAliasAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const row = aliasRowFrom(formData);
+  if (!row) redirect('/import?chyba=zaznam-neexistuje');
+  const db = await getDb();
+  const change = await deleteAlias(db, user.id, row.broker, row.symbol);
+  revalidatePath('/import');
+  if (change.outcome === 'missing') redirect('/import?chyba=zaznam-neexistuje');
+  if (change.outcome === 'in-use') redirect(aliasFeedbackUrl({ error: 'smazani-pouzite' }, row));
+  redirect(aliasFeedbackUrl({ ok: 'zaznam-smazan' }, row));
 }
 
 /**

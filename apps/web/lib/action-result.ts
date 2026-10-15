@@ -28,10 +28,10 @@ export interface ActionResult {
  *   vrácenou z paměti směrovače (Zpět/Vpřed): ta si pamatuje i výsledek, se
  *   kterým byla kdysi vykreslená, a chybu z minula by ukázala znovu.
  */
-export function heldActionResult(
-  held: ActionResult | null,
-  incoming: ActionResult | null,
+export function heldActionResult<T extends ActionResult>(
+  held: T | null,
+  incoming: T | null,
   fresh: boolean,
-): ActionResult | null {
+): T | null {
   return fresh && incoming !== null && incoming.id !== held?.id ? incoming : held;
 }

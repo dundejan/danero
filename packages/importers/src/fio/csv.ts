@@ -464,6 +464,7 @@ export function parseFioCsv(
             result.errors.push({
               line,
               message: `Symbol ${symbol}: doplň ISIN — Fio ho neexportuje.`,
+              unmappedSymbol: symbol,
               raw,
             });
           }
@@ -505,6 +506,7 @@ export function parseFioCsv(
           result.warnings.push({
             line,
             message: `Symbol ${symbol}: doplň ISIN — Fio ho neexportuje. Dividendu jsme zaúčtovali podle symbolu, ale bez ISIN ji nepřiřadíme k pozici a zemi zdroje odhadujeme jen z textu.`,
+            unmappedSymbol: symbol,
           });
         }
         dividends.push({

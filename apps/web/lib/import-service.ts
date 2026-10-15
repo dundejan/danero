@@ -72,6 +72,7 @@ import {
   type RowIssue,
   type WorkbookOutline,
 } from '@danero/importers';
+import { createHash } from 'node:crypto';
 import type { Transaction } from '@danero/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
@@ -421,6 +422,19 @@ export async function importCsvText(
   return importParsed(db, userId, filename, detectAndParse(text));
 }
 
+type ImportExtras = NonNullable<Parameters<typeof importParsed>[5]>;
+type SaveParsed = (outcome: ImportResult, extras?: ImportExtras) => Promise<ImportSummary>;
+
+/**
+ * Uložení výsledku nahraného souboru — s otiskem jeho obsahu, podle kterého
+ * historie pozná, že uživatel tentýž výpis nahrál znovu (`lib/import-resolved.ts`).
+ */
+function saverFor(db: Db, userId: string, filename: string, data: ArrayBuffer): SaveParsed {
+  const fileHash = createHash('sha256').update(new Uint8Array(data)).digest('hex');
+  return (outcome, extras = {}) =>
+    importParsed(db, userId, filename, outcome, undefined, { ...extras, fileHash });
+}
+
 /**
  * Import nahraného souboru s autodetekcí formátu: XLSX podle obsahu listů
  * (XTB / eToro / Saxo / MT5 / Revolut — jedno načtení workbooku pro všechny
@@ -434,36 +448,23 @@ export async function importFile(
   filename: string,
   data: ArrayBuffer,
 ): Promise<ImportSummary> {
+  const save = saverFor(db, userId, filename, data);
   // Formát určuje OBSAH, ne přípona: portály nabízejí „XLS“ a doručí XLSX,
   // prohlížeč připíše .csv k sešitu a uživatel soubory přejmenovává.
   const format = sniffFileFormat(data);
   if (format !== null && format !== 'xlsx') {
-    return importParsed(
-      db,
-      userId,
-      filename,
-      unknownFormat(unsupportedFormatMessage(format)!),
-      undefined,
-      NOT_OURS,
-    );
+    return save(unknownFormat(unsupportedFormatMessage(format)!), NOT_OURS);
   }
 
   if (format === 'xlsx') {
     try {
-      return await importXlsxUpload(db, userId, filename, data);
+      return await importXlsxUpload(db, userId, filename, data, save);
     } catch (error) {
       // Konkrétní diagnózu XLSX (zip bomba, uříznutý archiv) jinak spolkne
       // importFileIsolated a uživatel dostane generické „soubor je poškozený“ —
       // rada „rozděl export na kratší období“ je přitom úplně jiná.
       if (error instanceof XlsxTooLargeError || error instanceof XlsxUnreadableError) {
-        return importParsed(
-          db,
-          userId,
-          filename,
-          unknownFormat(error.message),
-          undefined,
-          NOT_OURS,
-        );
+        return save(unknownFormat(error.message), NOT_OURS);
       }
       throw error;
     }
@@ -478,14 +479,10 @@ export async function importFile(
   // Dřív ho odchytila kontrola XLSX; po přechodu na detekci podle obsahu by
   // propadl do textové větve a skončil jako „0 transakcí, 0 chyb“.
   if (isBlankUpload(text)) {
-    return importParsed(
-      db,
-      userId,
-      filename,
+    return save(
       unknownFormat(
         'Soubor je prázdný — stahování nejspíš selhalo. Stáhni výpis od své platformy znovu.',
       ),
-      undefined,
       NOT_OURS,
     );
   }
@@ -499,7 +496,7 @@ export async function importFile(
   if (sniffFioCsv(text)) {
     const aliases = await loadAliases(db, userId);
     const outcome = parseFioCsv(text, { symbolMap: aliases.isinOnly.fio });
-    return importParsed(db, userId, filename, outcome, undefined, {
+    return save(outcome, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'fio',
         symbol,
@@ -510,7 +507,7 @@ export async function importFile(
 
   const aliases = await loadAliases(db, userId);
   const parsed = detectAndParseText(text, aliases);
-  return importParsed(db, userId, filename, parsed.outcome, undefined, {
+  return save(parsed.outcome, {
     unmapped: parsed.unmapped,
     unrecognized: parsed.unrecognized,
   });
@@ -539,12 +536,13 @@ async function importXlsxUpload(
   userId: string,
   filename: string,
   data: ArrayBuffer,
+  save: SaveParsed,
 ): Promise<ImportSummary> {
   const workbook = await loadXlsxWorkbook(data);
   if (sniffXtbXlsx(workbook)) {
     const aliases = await loadAliases(db, userId);
     const outcome = await parseXtbXlsx(data, aliases.xtb, { filename });
-    return importParsed(db, userId, filename, outcome, undefined, {
+    return save(outcome, {
       unmapped: outcome.unmappedSymbols.map((symbol) => ({
         broker: 'xtb',
         symbol,
@@ -556,27 +554,27 @@ async function importXlsxUpload(
   // nákupní ceny otevřených pozic) — uživatel dostane návod, který export
   // nahrát místo něj. Náprava je na něm, takže se soubor neschovává.
   if (sniffXtbFiscalReport(workbook)) {
-    return importParsed(db, userId, filename, xtbFiscalReportResult(), undefined, NOT_OURS);
+    return save(xtbFiscalReportResult(), NOT_OURS);
   }
   if (sniffEtoroXlsx(workbook)) {
     const aliases = await loadAliases(db, userId);
     const parsed = withUnmapped('etoro', await parseEtoroXlsx(data, aliases.isinOnly.etoro));
-    return importParsed(db, userId, filename, parsed.outcome, undefined, {
+    return save(parsed.outcome, {
       unmapped: parsed.unmapped,
     });
   }
   if (sniffSaxoXlsx(workbook)) {
-    return importParsed(db, userId, filename, await parseSaxoXlsx(data));
+    return save(await parseSaxoXlsx(data));
   }
   if (sniffMt5Xlsx(workbook)) {
-    return importParsed(db, userId, filename, await parseMt5Xlsx(data));
+    return save(await parseMt5Xlsx(data));
   }
   // Revolut nabízí „Account statement“ jako Excel a podle účtu z něj chodí
   // jednou CSV a jindy opravdový sešit — obojí vede na tentýž parser
   if (sniffRevolutXlsx(workbook)) {
     const aliases = await loadAliases(db, userId);
     const parsed = withUnmapped('revolut', await parseRevolutXlsx(data, aliases.isinOnly.revolut));
-    return importParsed(db, userId, filename, parsed.outcome, undefined, {
+    return save(parsed.outcome, {
       unmapped: parsed.unmapped,
     });
   }
@@ -585,7 +583,7 @@ async function importXlsxUpload(
   // a je na uživateli, takže se soubor neschovává. Volnější sniffer patří až
   // SEM, za všechny ostatní — jinak by jim sešit ukradl.
   if (sniffSaxoXlsxShape(workbook)) {
-    return importParsed(db, userId, filename, await parseSaxoXlsx(data), undefined, NOT_OURS);
+    return save(await parseSaxoXlsx(data), NOT_OURS);
   }
   const outline = outlineWorkbook(workbook);
   // Univerzální šablona uložená z Excelu jako sešit. Do 13. 10. 2026 dostala
@@ -599,10 +597,10 @@ async function importXlsxUpload(
         Array.from(row.cells, (cell) => `"${(cell ?? '').replace(/"/g, '""')}"`).join(','),
       )
       .join('\n');
-    return importParsed(db, userId, filename, parseUniversalCsv(csv), undefined, NOT_OURS);
+    return save(parseUniversalCsv(csv), NOT_OURS);
   }
   const unknown = unknownFormat(unknownXlsxMessage(outline, filename));
-  return importParsed(db, userId, filename, unknown, undefined, { unrecognized: true });
+  return save(unknown, { unrecognized: true });
 }
 
 /**
@@ -1067,6 +1065,8 @@ export async function importParsed(
     unrecognized?: boolean;
     /** Výpis je stažený teď od brokera, tedy novější než uložená data (viz `DedupeOptions`). */
     newerThanStored?: boolean;
+    /** Otisk nahraného souboru (jen ruční nahrání) — viz `StoredIssues.fileHash`. */
+    fileHash?: string;
   } = {},
 ): Promise<ImportSummary> {
   const state = existing ?? (await loadImportState(db, userId));
@@ -1156,6 +1156,7 @@ export async function importParsed(
       warnings,
       unmapped,
       crossBroker,
+      ...(extras.fileHash ? { fileHash: extras.fileHash } : {}),
     }),
   });
 

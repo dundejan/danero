@@ -446,6 +446,7 @@ export async function parseXtbXlsx(
       result.errors.push({
         line,
         message: `Symbol ${symbol}: doplň ISIN a měnu instrumentu (XTB je neexportuje).`,
+        unmappedSymbol: symbol,
       });
     }
     return null;

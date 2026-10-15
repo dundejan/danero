@@ -831,6 +831,7 @@ export async function parseEtoroXlsx(
       result.errors.push({
         line,
         message: `Symbol ${ticker}: doplň ISIN instrumentu (eToro ho u této pozice neuvádí).`,
+        unmappedSymbol: ticker,
       });
     }
     return null;

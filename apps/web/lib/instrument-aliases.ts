@@ -1,7 +1,7 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { IsinInstrumentMap, XtbInstrumentMap } from '@danero/importers';
 import type { Db } from '@/db';
-import { instrumentAliases, transactions } from '@/db/schema';
+import { importBatches, instrumentAliases, transactions } from '@/db/schema';
 
 /**
  * Číselník instrumentů pro brokery, jejichž export neuvádí ISIN (a u XTB ani
@@ -51,6 +51,18 @@ export async function loadAliases(db: Db, userId: string): Promise<AliasMaps> {
   }
   return maps;
 }
+
+/**
+ * Má uživatel k symbolu záznam, se kterým import obchod uloží? Obchodům XTB
+ * nestačí ISIN, potřebují i měnu. Vlastní klíče objektu jen přes `hasOwn` —
+ * symbol pochází z výpisu.
+ */
+export const aliasCovers =
+  (aliases: AliasMaps) =>
+  (broker: string, symbol: string): boolean =>
+    broker === 'xtb'
+      ? Object.hasOwn(aliases.xtb, symbol) && aliases.xtb[symbol]!.currency !== undefined
+      : isIsinOnlyBroker(broker) && Object.hasOwn(aliases.isinOnly[broker], symbol);
 
 export interface AliasInput {
   broker: string;
@@ -122,4 +134,147 @@ export async function saveAliases(db: Db, userId: string, rows: AliasInput[]): P
         set: { isin: row.isin, currency: row.currency ?? null },
       });
   }
+}
+
+/* ── Úprava a mazání uložených záznamů (stránka /import) ─────────────────── */
+
+export interface AliasRecord {
+  broker: string;
+  symbol: string;
+  isin: string;
+  currency: string | null;
+}
+
+/** Uložené záznamy uživatele, seřazené podle brokera a symbolu. */
+export async function listAliases(db: Db, userId: string): Promise<AliasRecord[]> {
+  return db
+    .select({
+      broker: instrumentAliases.broker,
+      symbol: instrumentAliases.symbol,
+      isin: instrumentAliases.isin,
+      currency: instrumentAliases.currency,
+    })
+    .from(instrumentAliases)
+    .where(eq(instrumentAliases.userId, userId))
+    .orderBy(asc(instrumentAliases.broker), asc(instrumentAliases.symbol));
+}
+
+export async function findAlias(
+  db: Db,
+  userId: string,
+  broker: string,
+  symbol: string,
+): Promise<AliasRecord | undefined> {
+  const [row] = await db
+    .select({
+      broker: instrumentAliases.broker,
+      symbol: instrumentAliases.symbol,
+      isin: instrumentAliases.isin,
+      currency: instrumentAliases.currency,
+    })
+    .from(instrumentAliases)
+    .where(
+      and(
+        eq(instrumentAliases.userId, userId),
+        eq(instrumentAliases.broker, broker),
+        eq(instrumentAliases.symbol, symbol),
+      ),
+    );
+  return row;
+}
+
+/** Import z historie, pod jehož transakcemi leží daný ISIN. */
+export interface ImportUsingIsin {
+  id: string;
+  filename: string;
+  createdAt: Date;
+}
+
+/**
+ * Importy, které uložily transakce brokera pod daným ISIN — ty musí uživatel
+ * vrátit zpět, než ISIN v číselníku změní nebo smaže (L23-02). Od nejnovějšího.
+ */
+export async function importsUsingIsin(
+  db: Db,
+  userId: string,
+  broker: string,
+  isin: string,
+): Promise<ImportUsingIsin[]> {
+  return db
+    .selectDistinct({
+      id: importBatches.id,
+      filename: importBatches.filename,
+      createdAt: importBatches.createdAt,
+    })
+    .from(transactions)
+    .innerJoin(
+      importBatches,
+      and(eq(importBatches.id, transactions.batchId), eq(importBatches.userId, userId)),
+    )
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.broker, broker),
+        eq(transactions.isin, isin),
+      ),
+    )
+    .orderBy(desc(importBatches.createdAt));
+}
+
+export type AliasChange =
+  | { outcome: 'ok' }
+  | { outcome: 'missing' }
+  | { outcome: 'in-use'; imports: ImportUsingIsin[] };
+
+/**
+ * Změní ISIN (u XTB i měnu) uloženého záznamu. Pod dosavadním ISIN nesmí
+ * ležet transakce téhož brokera — další nahrání výpisu by je pod novým ISIN
+ * uložilo podruhé (L23-02). Stejné údaje znovu nejsou změna a projdou.
+ */
+export async function updateAlias(db: Db, userId: string, input: AliasInput): Promise<AliasChange> {
+  const existing = await findAlias(db, userId, input.broker, input.symbol);
+  if (!existing) return { outcome: 'missing' };
+  const currency = input.currency ?? null;
+  if (existing.isin === input.isin && existing.currency === currency) return { outcome: 'ok' };
+  const imports = await importsUsingIsin(db, userId, input.broker, existing.isin);
+  if (imports.length > 0) return { outcome: 'in-use', imports };
+  await db
+    .update(instrumentAliases)
+    .set({ isin: input.isin, currency })
+    .where(
+      and(
+        eq(instrumentAliases.userId, userId),
+        eq(instrumentAliases.broker, input.broker),
+        eq(instrumentAliases.symbol, input.symbol),
+      ),
+    );
+  return { outcome: 'ok' };
+}
+
+/**
+ * Smaže uložený záznam. Blokuje se stejně jako změna: dividenda uložená
+ * s ISIN by se bez záznamu při dalším nahrání téhož výpisu uložila znovu,
+ * tentokrát bez ISIN — jiný otisk, takže podruhé (opačný směr párování
+ * dividend dedupe nedělá, `promoteStoredDividends` v importers).
+ */
+export async function deleteAlias(
+  db: Db,
+  userId: string,
+  broker: string,
+  symbol: string,
+): Promise<AliasChange> {
+  const existing = await findAlias(db, userId, broker, symbol);
+  if (!existing) return { outcome: 'missing' };
+  const imports = await importsUsingIsin(db, userId, broker, existing.isin);
+  if (imports.length > 0) return { outcome: 'in-use', imports };
+  await db
+    .delete(instrumentAliases)
+    .where(
+      and(
+        eq(instrumentAliases.userId, userId),
+        eq(instrumentAliases.broker, broker),
+        eq(instrumentAliases.symbol, symbol),
+      ),
+    );
+  return { outcome: 'ok' };
 }

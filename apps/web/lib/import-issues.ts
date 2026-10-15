@@ -30,15 +30,25 @@ export interface StoredIssues<U = unknown> {
   crossBroker?: string[];
   /** Seznamy, ze kterých se neuložilo všechno — úplné počty jsou ve sloupcích dávky. */
   truncated?: IssueList[];
+  /**
+   * Otisk nahraného souboru (SHA-256 obsahu). Podle něj historie pozná, že
+   * uživatel TENTÝŽ výpis nahrál znovu — a hlášky o chybějícím ISIN, které
+   * nové nahrání vyřídilo, u staré dávky už neukazuje (`lib/import-resolved.ts`).
+   */
+  fileHash?: string;
 }
 
 const clip = (text: string): string =>
   text.length <= MAX_STORED_TEXT ? text : `${text.slice(0, MAX_STORED_TEXT - 1)}…`;
 
-const clipIssue = (issue: RowIssue): RowIssue => ({
+const clipIssue = ({ unmappedSymbol, ...issue }: RowIssue): RowIssue => ({
   ...issue,
   message: clip(issue.message),
   ...(issue.raw === undefined ? {} : { raw: clip(issue.raw) }),
+  // zkrácený symbol by se s číselníkem nespároval — hláška pak zůstane vidět
+  ...(unmappedSymbol !== undefined && unmappedSymbol.length <= MAX_STORED_SYMBOL
+    ? { unmappedSymbol }
+    : {}),
 });
 
 export function capStoredIssues<U extends { symbol: string }>(issues: {
@@ -47,6 +57,7 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
   warnings: RowIssue[];
   unmapped: U[];
   crossBroker: string[];
+  fileHash?: string;
 }): StoredIssues<U> {
   // zkrácený symbol by se s výpisem už nikdy nespároval — raději ho vynechat
   const symbols = issues.unmapped.filter((item) => item.symbol.length <= MAX_STORED_SYMBOL);
@@ -66,5 +77,6 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
     ...(unmapped.length > 0 ? { unmapped } : {}),
     ...(crossBroker.length > 0 ? { crossBroker } : {}),
     ...(truncated.length > 0 ? { truncated } : {}),
+    ...(issues.fileHash ? { fileHash: issues.fileHash } : {}),
   };
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { typeset } from '@/components/typeset';
+import { ALIAS_FEEDBACK_PARAMS } from '@/lib/alias-feedback';
 import { IMPORT_FEEDBACK_PARAMS } from '@/lib/import-feedback';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +11,13 @@ import { cn } from '@/lib/utils';
  * (počty, id dávky…). Mažou se všechny naráz — samotný kód nestačí, zbytek by
  * v adrese zůstal viset.
  */
-const FEEDBACK_PARAMS = ['ok', 'chyba', 'ulozeno', ...IMPORT_FEEDBACK_PARAMS];
+const FEEDBACK_PARAMS = [
+  'ok',
+  'chyba',
+  'ulozeno',
+  ...IMPORT_FEEDBACK_PARAMS,
+  ...ALIAS_FEEDBACK_PARAMS,
+];
 
 /**
  * Adresa bez parametrů hlášky; `null`, když v ní žádný není (pak se historie
