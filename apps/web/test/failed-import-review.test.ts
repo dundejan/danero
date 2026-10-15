@@ -438,4 +438,17 @@ describe('výpis případů pro provozovatele (bezpečnostní revize 15. 10. 202
     expect(fileLine.match(/[«»]/gu)).toEqual(['«', '»']);
     expect(fileLine).toContain('vypis.csv" (1 kB)');
   });
+
+  it('formátovací znaky Unicode výpis nepřeskládají ani nezalomí', () => {
+    const listing = formatCaseListing({
+      ...base,
+      // obrácení směru (Trojan Source), nulová šířka, oddělovač řádku a odstavce
+      filename: 'vypis\u202Evsc.exe\u200B\u2028uživatel: x\u2029\uFEFF.csv',
+      reason: 'r\u2066izolace\u2069',
+      reportedPlatform: null,
+      reportedNote: null,
+    });
+    expect(listing).not.toMatch(/[\p{Cf}\p{Zl}\p{Zp}]/u);
+    expect(listing.split(/\r?\n|\u2028|\u2029/u)).toHaveLength(5);
+  });
 });

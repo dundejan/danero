@@ -33,10 +33,13 @@ const fileSize = (bytes: number): string =>
 /**
  * Cizí text na jeden řádek, bez řídicích znaků, zkrácený a zřetelně
  * v uvozovkách. Uvozovky uvnitř textu se mění na obyčejné — jinak by si
- * cizí text citaci sám uzavřel a za ni připsal, co chce.
+ * cizí text citaci sám uzavřel a za ni připsal, co chce. Pryč jdou i
+ * formátovací znaky Unicode (`\p{Cf}`: obrácení směru textu, nulová šířka)
+ * a oddělovače řádku a odstavce — `printableSample` bere jen řídicí znaky
+ * C0/C1, a tyhle umí výpis v terminálu přeskládat nebo zalomit.
  */
 const quoted = (value: string, max: number): string =>
-  `«${printableSample(value.replace(/[«»]/gu, '"'), max)}»`;
+  `«${printableSample(value.replace(/[«»]/gu, '"').replace(/[\p{Cf}\p{Zl}\p{Zp}]+/gu, ' '), max)}»`;
 
 /**
  * Případ, jak ho vypíše `failed-imports list`.
