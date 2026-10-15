@@ -238,6 +238,27 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     return;
   }
 
+  // Předprůchod: ISIN, které list uvádí u tickeru (spot, ne derivát). Musí
+  // být hotový dřív, než se čte první řádek — řádek téhož tickeru bez ISIN
+  // může v listu stát před tím s ISIN (revize N5).
+  for (let i = header.index + 1; i < rows.length; i += 1) {
+    const cells = rows[i]!.cells;
+    const at = (field: ClosedField): string => {
+      const col = header.columns[field];
+      return col === undefined ? '' : (cells[col] ?? '');
+    };
+    const parsed = parseAction(at('action'));
+    const isin = at('isin');
+    if (!parsed || isin === '') continue;
+    const typeNorm = canon(at('type'));
+    const short = canon(at('longShort')).startsWith('short') || parsed.short;
+    const derivative =
+      short || DERIVATIVE_TYPES.has(typeNorm) || parseLeverage(at('leverage')).gt(1);
+    if (derivative || typeNorm === 'crypto') continue;
+    const known = ctx.fileIsins.get(parsed.ticker) ?? new Set<string>();
+    ctx.fileIsins.set(parsed.ticker, known.add(isin));
+  }
+
   for (let i = header.index + 1; i < rows.length; i += 1) {
     const row = rows[i]!;
     const line = row.rowNumber;
@@ -315,10 +336,6 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     } else {
       assetClass = typeNorm === 'etf' ? 'ETF' : 'STOCK';
       isin = cell('isin') !== '' ? cell('isin') : ctx.requireIsin(parsed.ticker, line);
-      if (cell('isin') !== '') {
-        const known = ctx.fileIsins.get(parsed.ticker) ?? new Set<string>();
-        ctx.fileIsins.set(parsed.ticker, known.add(cell('isin')));
-      }
     }
     if (isin === null) continue; // error per symbol už je nahlášený
 

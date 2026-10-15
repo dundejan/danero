@@ -313,7 +313,9 @@ export default async function ImportPage({
                 ? 'Záznam upraven. Další nahrání výpisu použije nový údaj.'
                 : ulozeno === 'zaznam-smazan'
                   ? 'Záznam smazán.'
-                  : 'Záznam smazán. Při dalším nahrání výpisu ho doplníme znovu sami — chceš-li jiný ISIN, záznam místo smazání uprav.'
+                  : aliasFeedback.returning
+                    ? `Záznam smazán. Při dalším nahrání výpisu doplníme znovu ISIN ${aliasFeedback.returning} — chceš-li vlastní, záznam uprav, nemaž.`
+                    : 'Záznam smazán. Při dalším nahrání výpisu ho doplníme znovu sami — chceš-li jiný ISIN, záznam místo smazání uprav.'
             }
           />
         )}

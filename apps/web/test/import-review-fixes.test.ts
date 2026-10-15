@@ -146,7 +146,7 @@ describe('R2: Revolut — americký ISIN doplněný podle USD obchodů a obchod 
       expect(warning?.line).toBe(2);
       expect(warning?.message).toContain('v EUR');
       expect(warning?.message).toContain('US7134481081');
-      expect(warning?.message).toContain('Doplněné údaje instrumentů');
+      // rada „oprav záznam“ by nešla provést (revize N2) — viz test N2
     },
   );
 
@@ -318,6 +318,174 @@ describe('vlastní data: ISIN podle obchodů u brokera, který ho uvádí', () =
       );
       expect(summary.filled).toEqual([]);
       expect(summary.unmapped.map((item) => item.symbol).sort()).toEqual(['GOOG', 'SHEL']);
+    },
+  );
+});
+
+describe('druhá revize (N1–N4)', () => {
+  const SCHWAB_HEADER =
+    '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"';
+
+  it(
+    'N1: UCITS ETF z LSE v USD (IE ISIN) se k americkému tickeru nepřiřadí',
+    { timeout: 60_000 },
+    async () => {
+      stav.builtin = true;
+      await upload(
+        't212.csv',
+        buf(
+          [
+            T212_HEADER,
+            'Market buy,2024-01-10 14:30:02,IE00BMC38736,SMH,VanEck Semiconductor UCITS ETF,2,30.00,USD,0.0435,,,1500.00,CZK,,,,EOF9001,1.00,CZK',
+          ].join('\n'),
+        ),
+      );
+      const summary = await upload(
+        'schwab.csv',
+        buf(
+          [
+            SCHWAB_HEADER,
+            '"03/03/2025","Buy","SMH","VANECK SEMICONDUCTOR ETF","3","$250.00","","-$750.00"',
+          ].join('\n'),
+        ),
+      );
+      expect(summary.filled.map((item) => item.isin)).not.toContain('IE00BMC38736');
+      expect(summary.unmapped.map((item) => item.symbol)).toEqual(['SMH']);
+    },
+  );
+
+  it(
+    'N1: vlastní obchody, které nesouhlasí s vestavěným číselníkem, nedoplní nic',
+    { timeout: 60_000 },
+    async () => {
+      stav.builtin = true;
+      // T212 vede KO (USD) na jiný americký ISIN než vestavěný číselník
+      await upload(
+        't212.csv',
+        buf(
+          [
+            T212_HEADER,
+            'Market buy,2024-01-10 14:30:02,US0378331005,KO,Nejasný titul,2,60.00,USD,0.0435,,,3000.00,CZK,,,,EOF9002,1.00,CZK',
+          ].join('\n'),
+        ),
+      );
+      const summary = await upload(
+        'schwab.csv',
+        buf(
+          [
+            SCHWAB_HEADER,
+            '"03/03/2025","Buy","KO","COCA COLA CO","40","$70.00","","-$2800.00"',
+          ].join('\n'),
+        ),
+      );
+      expect(summary.filled).toEqual([]);
+      expect(summary.unmapped.map((item) => item.symbol)).toEqual(['KO']);
+    },
+  );
+
+  it(
+    'N2: varování k obchodu v jiné měně neradí opravu záznamu, která nejde provést',
+    { timeout: 60_000 },
+    async () => {
+      stav.builtin = true;
+      await upload(
+        'revolut-2025.csv',
+        buf(
+          [
+            REVOLUT_INVEST_HEADER,
+            '2025-07-05T07:26:04.809Z,PEP,BUY - MARKET,1,$140.00,$140,USD,1.0000',
+          ].join('\n'),
+        ),
+      );
+      const second = await upload(
+        'revolut-2026.csv',
+        buf(
+          [
+            REVOLUT_INVEST_HEADER,
+            '2026-02-05T07:26:04.809Z,PEP,BUY - MARKET,1,€120.00,€120,EUR,1.0000',
+          ].join('\n'),
+        ),
+      );
+      const warning = second.warnings.find((item) => item.message.includes('PEP'))!;
+      expect(warning.message).toContain('US7134481081');
+      expect(warning.message).toContain('napiš nám');
+      expect(warning.message).not.toContain('oprav');
+      expect(warning.message).not.toContain('který jsme doplnili');
+    },
+  );
+
+  it(
+    'N3: obchod z JINÉHO souboru pod týmž ISIN hlášku u první dávky neschová',
+    { timeout: 90_000 },
+    async () => {
+      const f1 = buf(REVOLUT_INVEST_UNMAPPED_CSV);
+      await upload('f1.csv', f1);
+      await saveAliases(stav.db, 'u1', [{ broker: 'revolut', symbol: 'NVDA', isin: NVDA }]);
+      const second = await upload('f1.csv', f1);
+      expect(second.added).toBe(1);
+      expect((await upload('f1.csv', f1)).added).toBe(0);
+      expect(
+        (
+          await upload(
+            'f2.csv',
+            buf(
+              [
+                REVOLUT_INVEST_HEADER,
+                '2025-01-03T13:30:00.000Z,NVDA,BUY - MARKET,1,$140.00,$140.00,USD,1.0800',
+              ].join('\n'),
+            ),
+          )
+        ).added,
+      ).toBe(1);
+      await undoImportBatch(stav.db, 'u1', second.batchId);
+      expect(await renderImportPage()).toContain(
+        'ISIN doplněn — nahraj výpis znovu a obchody se doimportují.',
+      );
+    },
+  );
+
+  it(
+    'N3: po novém nahrání téhož souboru hláška zmizí (obchody leží v jeho dávce)',
+    { timeout: 90_000 },
+    async () => {
+      const f1 = buf(REVOLUT_INVEST_UNMAPPED_CSV);
+      await upload('f1.csv', f1);
+      await saveAliases(stav.db, 'u1', [{ broker: 'revolut', symbol: 'NVDA', isin: NVDA }]);
+      await upload('f1.csv', f1);
+      const html = await renderImportPage();
+      expect(html).not.toContain('ISIN doplněn');
+      expect(html).not.toContain('Symbol NVDA');
+    },
+  );
+
+  it(
+    'N4: smazání změněného automatického záznamu řekne, který ISIN se vrátí',
+    { timeout: 60_000 },
+    async () => {
+      stav.builtin = true;
+      const statement = [
+        SCHWAB_HEADER,
+        '"03/03/2025","Buy","KO","COCA COLA CO","40","$70.00","","-$2800.00"',
+      ].join('\n');
+      const first = await upload('schwab.csv', buf(statement));
+      await undoImportBatch(stav.db, 'u1', first.batchId);
+      const { updateAlias } = await import('@/lib/instrument-aliases');
+      expect(
+        await updateAlias(stav.db, 'u1', { broker: 'schwab', symbol: 'KO', isin: 'US0378331005' }),
+      ).toEqual({
+        outcome: 'ok',
+      });
+
+      const target = await remove({ broker: 'schwab', symbol: 'KO' });
+      expect(target).toBe(
+        '/import?ulozeno=zaznam-smazan-vrati-se&zaznam=schwab%2FKO&doplnime=US1912161007#ciselnik',
+      );
+      const html = await renderImportPage({
+        ulozeno: 'zaznam-smazan-vrati-se',
+        zaznam: 'schwab/KO',
+        doplnime: 'US1912161007',
+      });
+      expect(html).toContain('doplníme znovu ISIN US1912161007');
     },
   );
 });

@@ -397,8 +397,9 @@ popis('kompatibilita s produkčním Postgresem', () => {
       expect.objectContaining({ symbol: 'GOOG', source: 'own', sourceBroker: 'trading212' }),
     ]);
     const stored = await storedUnderAliases(db, userId, await loadAliases(db, userId));
-    expect(stored('schwab', 'GOOG', 'trade')).toBe(true);
-    expect(stored('schwab', 'GOOG', 'dividend')).toBe(false);
+    expect(stored('schwab', 'GOOG', 'trade', [summary.batchId])).toBe(true);
+    expect(stored('schwab', 'GOOG', 'trade', ['jina-davka'])).toBe(false);
+    expect(stored('schwab', 'GOOG', 'dividend', [summary.batchId])).toBe(false);
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {

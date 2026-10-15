@@ -599,6 +599,23 @@ describe('otevřená pozice bez ISIN: ISIN z téhož výpisu (revize R5)', () =>
     expect(buy && 'isin' in buy ? buy.isin : undefined).toBe('US91347P1057');
   });
 
+  it('nezáleží na pořadí: řádek bez ISIN PŘED řádkem s ISIN téhož tickeru (N5)', async () => {
+    const withoutIsin = [...ETORO_CLOSED_ROWS[0]!];
+    withoutIsin[ETORO_CLOSED_HEADERS.indexOf('Position ID')] = '2355395277';
+    withoutIsin[ETORO_CLOSED_HEADERS.indexOf('ISIN')] = '';
+    const buffer = await buildEtoroXlsx({
+      closed: { rows: [withoutIsin, ETORO_CLOSED_ROWS[0]!] },
+      activity: { rows: [] },
+      dividends: { rows: [] },
+    });
+    const result = await parseEtoroXlsx(buffer, {});
+
+    expect(result.unmappedSymbols).toEqual([]);
+    const fromFirst = result.transactions.filter((tx) => tx.id.includes('2355395277'));
+    expect(fromFirst.length).toBeGreaterThan(0);
+    expect(fromFirst.every((tx) => 'isin' in tx && tx.isin === 'US91347P1057')).toBe(true);
+  });
+
   it('ticker, který má v souboru dva různé ISIN, se dál ptá', async () => {
     const second = [...ETORO_CLOSED_ROWS[0]!];
     second[ETORO_CLOSED_HEADERS.indexOf('Position ID')] = '2355395299';

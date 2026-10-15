@@ -599,10 +599,14 @@ const hasSymbolCurrencies = (outcome: ImportResult): boolean =>
  *
  * Řádek se přesto UKLÁDÁ: obchod, který z výpisu potichu zmizí, se v daních
  * neprojeví nikde a uživatel ho nemá jak najít, kdežto špatně přiřazený
- * titul se ukáže v portfoliu a jde napravit (vrátit import, opravit záznam,
- * nahrát znovu). Tohle varování mu k tomu dá vodítko. Hlásí se jen tam, kde
- * záznam nese ISIN, který by import doplnil sám — ručně zadaný jiný ISIN je
- * vědomé rozhodnutí uživatele.
+ * titul se ukáže v portfoliu. Hlásí se jen tam, kde záznam nese ISIN, který
+ * by import doplnil sám — ručně zadaný jiný ISIN je vědomé rozhodnutí.
+ *
+ * ⚠️ Varování NESMÍ radit „oprav záznam“ (revize N2): záznam je per broker
+ * a symbol, ne per měna, a pod ním leží USD obchody — změnu by L23-02
+ * odmítla a i kdyby prošla, přeřadila by i americké obchody. Model „PEP
+ * v USD je americký titul, v EUR jiný“ zatím vyjádřit neumíme, takže hláška
+ * jen poctivě řekne, co jsme udělali, a pošle uživatele za námi.
  */
 function otherCurrencyWarnings(
   outcome: ImportResult,
@@ -622,7 +626,7 @@ function otherCurrencyWarnings(
     const [currency, line] = other[0]!;
     warnings.push({
       line,
-      message: `Symbol ${symbol}: obchody v ${currency} jsme přiřadili k ISIN ${stored}, který jsme doplnili podle obchodů v USD (americký titul). Jde-li v ${currency} o jiný cenný papír (třeba evropskou kotaci), vrať tenhle import zpět, oprav ISIN v seznamu „Doplněné údaje instrumentů“ a výpis nahraj znovu.`,
+      message: `Symbol ${symbol}: obchody v ${currency} jsme přiřadili k titulu s ISIN ${stored} (americká akcie). Jde-li v ${currency} o jiný cenný papír, napiš nám — jeden symbol v různých měnách zatím rozlišit neumíme.`,
     });
   }
   return warnings;

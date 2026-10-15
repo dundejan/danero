@@ -95,37 +95,54 @@ export function originOf(
     : { source: 'builtin' };
 }
 
-export async function aliasOrigin(
+/**
+ * Co import k symbolu doplní sám, až záznam smazaný uživatelem chybí —
+ * i když ho uživatel předtím změnil na jiný ISIN (revize N4). `differs`
+ * říká, že se vrátí JINÝ ISIN, než jaký záznam teď má.
+ */
+export async function returningAfterDelete(
   db: Db,
   userId: string,
   broker: string,
   symbol: string,
-): Promise<AliasOrigin | null> {
+): Promise<{ isin: string; differs: boolean } | null> {
   const record = await findAlias(db, userId, broker, symbol);
   if (!record) return null;
-  return originOf(await ownTickerIsins(db, userId), record);
+  const automatic = automaticInstrument(await ownTickerIsins(db, userId), broker, symbol);
+  return automatic ? { isin: automatic.isin, differs: automatic.isin !== record.isin } : null;
 }
 
 /**
- * Dotaz pro historii importů: leží pod ISIN ze záznamu transakce brokera?
- * (`StoredUnderAlias` v lib/import-resolved.) Jeden dotaz na kombinace
- * broker × ISIN × typ.
+ * Dotaz pro historii importů: leží pod ISIN ze záznamu transakce brokera
+ * v daných dávkách? (`StoredUnderAlias` v lib/import-resolved.) Jeden dotaz
+ * na kombinace dávka × broker × ISIN × typ.
  */
 export async function storedUnderAliases(
   db: Db,
   userId: string,
   aliases: AliasMaps,
-): Promise<(broker: string, symbol: string, kind: 'trade' | 'dividend') => boolean> {
+): Promise<
+  (broker: string, symbol: string, kind: 'trade' | 'dividend', batchIds: readonly string[]) => boolean
+> {
   const rows = await db
-    .selectDistinct({ broker: transactions.broker, isin: transactions.isin, type: transactions.type })
+    .selectDistinct({
+      batchId: transactions.batchId,
+      broker: transactions.broker,
+      isin: transactions.isin,
+      type: transactions.type,
+    })
     .from(transactions)
     .where(and(eq(transactions.userId, userId), isNotNull(transactions.isin)));
+  const kindOf = (type: string): string => (type === 'DIVIDEND' ? 'dividend' : 'trade');
   const present = new Set(
-    rows.map((row) => `${row.broker}|${row.isin}|${row.type === 'DIVIDEND' ? 'dividend' : 'trade'}`),
+    rows.map((row) => `${row.batchId}|${row.broker}|${row.isin}|${kindOf(row.type)}`),
   );
-  return (broker, symbol, kind) => {
+  return (broker, symbol, kind, batchIds) => {
     const isin = aliasIsin(aliases, broker, symbol);
-    return isin !== undefined && present.has(`${broker}|${isin}|${kind}`);
+    return (
+      isin !== undefined &&
+      batchIds.some((batchId) => present.has(`${batchId}|${broker}|${isin}|${kind}`))
+    );
   };
 }
 
@@ -215,10 +232,11 @@ export type OwnTickerIsins = Map<string, { isin: string; broker: string }>;
 
 /**
  * ISIN, který k tickeru vede v uživatelových VLASTNÍCH datech: transakce
- * u brokera, který ISIN uvádí (`OWN_DATA_BROKERS`), v USD — tedy americká
- * kotace, stejně jako u vestavěného číselníku. Je to přesně ten ISIN, se
- * kterým se má pozice spojit, a pokryje i ETF a třídy akcií (GOOG/GOOGL),
- * které vestavěný číselník nezná. Ticker, který vede na víc ISIN, se nebere.
+ * u brokera, který ISIN uvádí (`OWN_DATA_BROKERS`), v USD a s americkým
+ * ISIN — tedy americká kotace, stejně jako u vestavěného číselníku. Je to
+ * přesně ten ISIN, se kterým se má pozice spojit, a pokryje i americká ETF
+ * (VOO, SPY, QQQ) a třídy akcií (GOOG/GOOGL), které vestavěný číselník
+ * nezná. Ticker, který vede na víc ISIN, se nebere.
  */
 export async function ownTickerIsins(db: Db, userId: string): Promise<OwnTickerIsins> {
   const ticker = sql<string | null>`${transactions.payload}->>'ticker'`;
@@ -244,6 +262,11 @@ export async function ownTickerIsins(db: Db, userId: string): Promise<OwnTickerI
   for (const [symbol, isins] of found) {
     if (isins.size !== 1) continue;
     const [entry] = [...isins];
+    // USD není americká kotace: na LSE se v USD obchodují UCITS ETF pod
+    // stejnými tickery jako americké fondy (VanEck SMH, GDX, MOAT; ISIN IE…).
+    // Bere se jen americký ISIN — a jen když ticker u uživatele nevede
+    // i na jiný ISIN (revize N1).
+    if (!entry![0].startsWith('US')) continue;
     result.set(symbol, { isin: entry![0], broker: entry![1] });
   }
   return result;
@@ -251,7 +274,8 @@ export async function ownTickerIsins(db: Db, userId: string): Promise<OwnTickerI
 
 /**
  * Odkud by import údaj k symbolu doplnil sám (vlastní data > vestavěný
- * číselník). U Revolutu a Fia se počítá s obchody v USD — jen ty se doplňují.
+ * číselník; když se oba zdroje rozcházejí, nic). U Revolutu a Fia se počítá
+ * s obchody v USD — jen ty se doplňují.
  */
 export function automaticInstrument(
   own: OwnTickerIsins,
@@ -262,6 +286,9 @@ export function automaticInstrument(
   const us = usTickerFor(broker, symbol, currencies);
   if (!us) return undefined;
   const mine = own.get(us.ticker);
+  const builtin = builtinInstrument(broker, symbol, currencies);
+  // Dva zdroje, dvě odpovědi: nedoplnit nic a zeptat se (revize N1).
+  if (mine && builtin && mine.isin !== builtin.isin) return undefined;
   if (mine) {
     return {
       broker,
@@ -273,7 +300,6 @@ export function automaticInstrument(
       sourceBroker: mine.broker,
     };
   }
-  const builtin = builtinInstrument(broker, symbol, currencies);
   return builtin ? { broker, ...builtin, source: 'builtin' } : undefined;
 }
 

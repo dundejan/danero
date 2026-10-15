@@ -19,8 +19,9 @@ import type { StoredIssues } from '@/lib/import-issues';
  * „Jisté“ znamená obojí naráz: novější dávka téhož brokera se STEJNÝM
  * otiskem souboru (`fileHash`) symbol už v seznamu k doplnění nemá, A v
  * databázi opravdu leží transakce brokera (obchody, resp. dividendy) pod ISIN
- * ze záznamu. Samotná novější dávka nestačí — tu, která obchody uložila, mohl
- * uživatel vrátit zpět (revize R1). Jiný soubor (navazující období) nic
+ * ze záznamu V DÁVKÁCH TOHOTO SOUBORU. Samotná novější dávka nestačí — tu,
+ * která obchody uložila, mohl uživatel vrátit zpět (revize R1) — a obchod
+ * z jiného výpisu nedokazuje nic (revize N3). Jiný soubor (navazující období) nic
  * nedokazuje — u něj zůstává věta o novém nahrání.
  */
 
@@ -38,13 +39,15 @@ export interface BatchForIssues {
 export type AliasCovers = (broker: string, symbol: string) => boolean;
 
 /**
- * Leží v databázi transakce brokera pod ISIN, který k symbolu vede číselník?
- * `trade` = obchody a ostatní pohyby, `dividend` = dividendy.
+ * Leží v databázi transakce brokera pod ISIN, který k symbolu vede číselník,
+ * a to v některé z daných dávek? `trade` = obchody a ostatní pohyby,
+ * `dividend` = dividendy.
  */
 export type StoredUnderAlias = (
   broker: string,
   symbol: string,
   kind: 'trade' | 'dividend',
+  batchIds: readonly string[],
 ) => boolean;
 
 export interface BatchIssueView {
@@ -103,8 +106,17 @@ export function batchIssueView(
   // Novější dávka téhož souboru sama nestačí: tu, která obchody uložila, mohl
   // uživatel vrátit a zůstala jen ta se samými duplicitami (revize R1).
   // Schovat se smí jen to, co v databázi opravdu leží.
-  const reimported = (symbol: string, kind: 'trade' | 'dividend'): boolean =>
-    sameFileLater.some((later) => resolvedBy(later, symbol)) && stored(batch.broker, symbol, kind);
+  // Důkazem jsou jen transakce v dávkách TÉHOŽ souboru: obchod stejného
+  // titulu z jiného výpisu neříká nic o tom, jestli se uložily obchody tohohle
+  // (revize N3). Vlastní dávka se počítá taky — dividenda, které se ISIN
+  // doplnil povýšením klíče, v ní zůstává.
+  const reimported = (symbol: string, kind: 'trade' | 'dividend'): boolean => {
+    const proving = sameFileLater.filter((later) => resolvedBy(later, symbol));
+    return (
+      proving.length > 0 &&
+      stored(batch.broker, symbol, kind, [batch.id, ...proving.map((later) => later.id)])
+    );
+  };
 
   const tradeSymbols = new Set<string>();
   const dividendSymbols = new Set<string>();

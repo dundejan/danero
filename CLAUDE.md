@@ -490,6 +490,8 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   najednou nic nečeká. Vestavěný číselník vypni
   (`vi.mock('@danero/importers/isin-directory', …)` s `builtinInstrument:
   () => undefined`, ostatní exporty nech skutečné), nebo použij smyšlený ticker.
+  Pozor, mock nestačí, když si test předem nahraje výpis T212 nebo IBKR
+  s týmž tickerem: symbol se pak doplní z vlastních obchodů (`ownTickerIsins`).
 - **Wikidata jako zdroj ISIN je nespolehlivá.** Revize 15. 10. 2026 našla
   ve vestavěném číselníku 20 % chyb: ISIN jiného emitenta (TT → Ingersoll
   Rand, CB → stará Chubb Corp), zastaralý ISIN téže firmy (XOM), recyklované

@@ -12,8 +12,15 @@ export const ALIAS_LIST_ANCHOR = 'ciselnik';
 const PARAM_ROW = 'zaznam';
 const PARAM_ISIN = 'zadany-isin';
 const PARAM_CURRENCY = 'zadana-mena';
+/** ISIN, který import po smazání záznamu doplní znovu (když se liší od smazaného). */
+const PARAM_RETURNING = 'doplnime';
 
-export const ALIAS_FEEDBACK_PARAMS: readonly string[] = [PARAM_ROW, PARAM_ISIN, PARAM_CURRENCY];
+export const ALIAS_FEEDBACK_PARAMS: readonly string[] = [
+  PARAM_ROW,
+  PARAM_ISIN,
+  PARAM_CURRENCY,
+  PARAM_RETURNING,
+];
 
 /** Chyby, které se ukazují přímo u řádku seznamu (ne v toastu). */
 export const ALIAS_ROW_ERRORS = [
@@ -39,6 +46,7 @@ export function aliasFeedbackUrl(
   result: { ok: 'zaznam-upraven' | 'zaznam-smazan' | 'zaznam-smazan-vrati-se' } | { error: string },
   row: { broker: string; symbol: string },
   entered?: { isin: string; currency: string },
+  returningIsin?: string,
 ): string {
   const query = new URLSearchParams(
     'ok' in result ? { ulozeno: result.ok } : { chyba: result.error },
@@ -47,6 +55,9 @@ export function aliasFeedbackUrl(
   if (entered && enteredIsin(entered.isin)) query.set(PARAM_ISIN, enteredIsin(entered.isin));
   if (entered && enteredCurrency(entered.currency)) {
     query.set(PARAM_CURRENCY, enteredCurrency(entered.currency));
+  }
+  if (returningIsin && enteredIsin(returningIsin)) {
+    query.set(PARAM_RETURNING, enteredIsin(returningIsin));
   }
   return `/import?${query.toString()}#${ALIAS_LIST_ANCHOR}`;
 }
@@ -130,6 +141,7 @@ export function aliasFeedbackDetails(params: Record<string, string | string[] | 
   rowKey: string | undefined;
   isin: string | undefined;
   currency: string | undefined;
+  returning: string | undefined;
 } {
   const first = (name: string): string | undefined => {
     const value = params[name];
@@ -139,5 +151,6 @@ export function aliasFeedbackDetails(params: Record<string, string | string[] | 
     rowKey: first(PARAM_ROW),
     isin: enteredIsin(first(PARAM_ISIN)?.toUpperCase() ?? '') || undefined,
     currency: enteredCurrency(first(PARAM_CURRENCY)?.toUpperCase() ?? '') || undefined,
+    returning: enteredIsin(first(PARAM_RETURNING)?.toUpperCase() ?? '') || undefined,
   };
 }

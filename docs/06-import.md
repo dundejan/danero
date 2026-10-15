@@ -54,8 +54,12 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   2. **uživatelovy vlastní obchody** u brokera, který ISIN uvádí — Trading 212
      a Interactive Brokers (`OWN_DATA_BROKERS`; oba mají ticker v americkém
      tvaru, Degiro ticker nemá, Saxo ho píše jako `AAPL:xnas`): ticker, který
-     u nich v transakcích **v USD** vede na jediný ISIN. Je to přesně ISIN,
-     se kterým se má pozice spojit, a pokryje i ETF a třídy akcií (GOOG/GOOGL),
+     u nich v transakcích **v USD** vede na jediný **americký** ISIN (`US…`).
+     USD samo americkou kotaci nedokazuje — na LSE se v USD obchodují UCITS
+     ETF pod stejnými tickery jako americké fondy (VanEck SMH, GDX; ISIN
+     `IE…`). Pokryje třídy akcií (GOOG/GOOGL) a americká ETF. Když vestavěný
+     číselník ticker zná a vlastní obchody s ním nesouhlasí, nedoplní se nic,
+     import se zeptá,
   3. vestavěný číselník (níž).
 
   Nalezenou dvojici import **uloží do uživatelova číselníku** (bez přepisu;
@@ -72,9 +76,11 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
 - Pojistka „jen USD“ platí v rámci jednoho souboru. Když pak jiný výpis
   Revolutu nebo Fia obchoduje týž symbol v jiné měně a záznam nese ISIN, který
   by import doplnil sám, řádek se **uloží s varováním** (obchod v EUR jsme
-  přiřadili k americkému ISIN; jde-li o jiný titul, vrať import a oprav
-  záznam). Ztracený obchod se v daních neprojeví nikde, špatně přiřazený je
-  vidět v portfoliu a jde napravit.
+  přiřadili k titulu s ISIN X, americká akcie; jde-li o jiný cenný papír, ať
+  nám napíše). Ztracený obchod se v daních neprojeví nikde, špatně přiřazený
+  je vidět v portfoliu. Rada „oprav záznam“ by nešla provést: záznam je per
+  broker a symbol, ne per měna, a pod ním leží USD obchody — jeden symbol
+  v různých měnách zatím rozlišit neumíme.
 - eToro: otevřená pozice v Account Activity ISIN nemá, ale tentýž výpis ho
   u téhož tickeru často uvádí v Closed Positions — použije se dřív než
   číselník (pokud v souboru vede ticker na jediný ISIN).
@@ -105,8 +111,8 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   - ETF nepokrývá: Wikidata je u fondů skoro nemají (QQQ bez ISIN, VOO, SPY
     ani UCITS fondy vůbec) a k seznamu obchodovatelných instrumentů Deutsche
     Börse (Xetra) nejsou zveřejněné podmínky, které by šíření výtahu výslovně
-    dovolovaly. Fondy pokryjí uživatelovy vlastní obchody (bod 2), jinak se
-    import ptá.
+    dovolovaly. Americká ETF (VOO, SPY, QQQ) pokryjí uživatelovy vlastní
+    obchody (bod 2), UCITS fondy ne — na ty se import ptá.
 - Historie importů: hlášky „doplň ISIN“ nesou symbol strukturovaně
   (`RowIssue.unmappedSymbol`) a dávka si ukládá jejich počty per symbol
   z celého seznamu (`issues.unmappedCounts`, uložené hlášky se ořezávají).
@@ -114,8 +120,9 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   („ISIN doplněn — nahraj výpis znovu…“) a nepočítá je do souhrnu. Úplně
   zmizí, jen když platí obojí: novější dávka TÉHOŽ souboru (shodný SHA-256
   v `issues.fileHash`) symbol už nehlásí, A v databázi opravdu leží transakce
-  brokera pod ISIN ze záznamu (obchody, resp. dividendy). Samotná novější
-  dávka nestačí — tu, která obchody uložila, mohl uživatel vrátit
+  brokera pod ISIN ze záznamu (obchody, resp. dividendy) **v dávkách téhož
+  souboru**. Samotná novější dávka nestačí — tu, která obchody uložila, mohl
+  uživatel vrátit — a obchod z jiného výpisu nedokazuje nic
   (`apps/web/lib/import-resolved.ts`).
 
 ## Trading212 (`parseTrading212Csv`)
