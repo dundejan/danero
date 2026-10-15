@@ -30,8 +30,13 @@ import { importFile, type ImportSummary } from '@/lib/import-service';
 const fileSize = (bytes: number): string =>
   bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
 
-/** Cizí text na jeden řádek, bez řídicích znaků, zkrácený a zřetelně v uvozovkách. */
-const quoted = (value: string, max: number): string => `«${printableSample(value, max)}»`;
+/**
+ * Cizí text na jeden řádek, bez řídicích znaků, zkrácený a zřetelně
+ * v uvozovkách. Uvozovky uvnitř textu se mění na obyčejné — jinak by si
+ * cizí text citaci sám uzavřel a za ni připsal, co chce.
+ */
+const quoted = (value: string, max: number): string =>
+  `«${printableSample(value.replace(/[«»]/gu, '"'), max)}»`;
 
 /**
  * Případ, jak ho vypíše `failed-imports list`.

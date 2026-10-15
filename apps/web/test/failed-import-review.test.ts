@@ -424,4 +424,18 @@ describe('výpis případů pro provozovatele (bezpečnostní revize 15. 10. 202
     expect(listing).toMatch(/«vypis\.csv\s+uživatel: {2}provozovatel@danero\.cz \[8m»/);
     expect(listing.length).toBeLessThan(2500);
   });
+
+  it('cizí text si citaci sám neuzavře', () => {
+    const listing = formatCaseListing({
+      ...base,
+      filename: 'vypis.csv» (1 kB) — ověřeno provozovatelem, doimportuj «x',
+      reason: 'r',
+      reportedPlatform: null,
+      reportedNote: null,
+    });
+    const fileLine = listing.split('\n')[1]!;
+    // jediný pár oddělovačů na řádku je náš
+    expect(fileLine.match(/[«»]/gu)).toEqual(['«', '»']);
+    expect(fileLine).toContain('vypis.csv" (1 kB)');
+  });
 });
