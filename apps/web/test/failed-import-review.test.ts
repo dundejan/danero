@@ -16,7 +16,10 @@ import {
 
 // Fixtury XTB mají skutečný AAPL.US, který by vestavěný číselník ISIN doplnil
 // sám — tyhle testy hlídají cestu, kdy titul na uživatele čeká.
-vi.mock('@danero/importers/isin-directory', () => ({ builtinInstrument: () => undefined }));
+vi.mock('@danero/importers/isin-directory', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@danero/importers/isin-directory')>()),
+  builtinInstrument: () => undefined,
+}));
 
 /**
  * Nástroj provozovatele nad nepřečteným výpisem (`lib/failed-import-review.ts`).

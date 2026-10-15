@@ -414,7 +414,7 @@ export function parseFioCsv(
     const symbol = map.get(row, 'Symbol');
     const currencyCode = map.get(row, 'Měna');
     const note = map.get(row, 'Text FIO');
-    noteSymbolCurrency(result.symbolCurrencies, symbol, currencyCode);
+    noteSymbolCurrency(result.symbolCurrencies, symbol, currencyCode, line);
 
     const date = toIsoDate(rawDate);
     if (!date) {

@@ -31,6 +31,8 @@ export interface AliasListItem {
   key: string;
   broker: string;
   brokerName: string;
+  /** Záznam by import doplnil sám (a po smazání ho doplní znovu) — odkud. */
+  origin?: string;
   symbol: string;
   isin: string;
   currency: string | null;
@@ -162,6 +164,7 @@ export function AliasList({
                   {item.symbol}
                   <span className="type-footnote block font-normal text-ink-muted">
                     {item.brokerName}
+                    {item.origin && ` · ${item.origin}`}
                   </span>
                 </>
               }

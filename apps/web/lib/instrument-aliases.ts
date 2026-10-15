@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { builtinInstrument, usTickerFor } from '@danero/importers/isin-directory';
+import { isValidIsin } from '@danero/shared';
 import type { IsinInstrumentMap, XtbInstrumentMap } from '@danero/importers';
 import type { Db } from '@/db';
 import { importBatches, instrumentAliases, transactions } from '@/db/schema';
@@ -64,6 +66,69 @@ export const aliasCovers =
       ? Object.hasOwn(aliases.xtb, symbol) && aliases.xtb[symbol]!.currency !== undefined
       : isIsinOnlyBroker(broker) && Object.hasOwn(aliases.isinOnly[broker], symbol);
 
+/** ISIN, který k symbolu vede uživatelův číselník (bez ohledu na měnu u XTB). */
+export function aliasIsin(aliases: AliasMaps, broker: string, symbol: string): string | undefined {
+  if (broker === 'xtb') {
+    return Object.hasOwn(aliases.xtb, symbol) ? aliases.xtb[symbol]!.isin : undefined;
+  }
+  if (!isIsinOnlyBroker(broker)) return undefined;
+  const map = aliases.isinOnly[broker];
+  return Object.hasOwn(map, symbol) ? map[symbol]!.isin : undefined;
+}
+
+/** Odkud by import údaj doplnil sám — pro popisek v seznamu a hlášku po smazání. */
+export type AliasOrigin = { source: 'builtin' } | { source: 'own'; broker: string };
+
+/**
+ * Je uložený záznam ten, který by import doplnil sám? Porovná se ISIN
+ * záznamu s tím, co by dnes doplnil (vlastní obchody > vestavěný číselník).
+ * U Revolutu a Fia se počítá s obchody v USD — jen ty se doplňují.
+ */
+export function originOf(
+  own: OwnTickerIsins,
+  record: { broker: string; symbol: string; isin: string },
+): AliasOrigin | null {
+  const automatic = automaticInstrument(own, record.broker, record.symbol);
+  if (!automatic || automatic.isin !== record.isin) return null;
+  return automatic.source === 'own'
+    ? { source: 'own', broker: automatic.sourceBroker ?? '' }
+    : { source: 'builtin' };
+}
+
+export async function aliasOrigin(
+  db: Db,
+  userId: string,
+  broker: string,
+  symbol: string,
+): Promise<AliasOrigin | null> {
+  const record = await findAlias(db, userId, broker, symbol);
+  if (!record) return null;
+  return originOf(await ownTickerIsins(db, userId), record);
+}
+
+/**
+ * Dotaz pro historii importů: leží pod ISIN ze záznamu transakce brokera?
+ * (`StoredUnderAlias` v lib/import-resolved.) Jeden dotaz na kombinace
+ * broker × ISIN × typ.
+ */
+export async function storedUnderAliases(
+  db: Db,
+  userId: string,
+  aliases: AliasMaps,
+): Promise<(broker: string, symbol: string, kind: 'trade' | 'dividend') => boolean> {
+  const rows = await db
+    .selectDistinct({ broker: transactions.broker, isin: transactions.isin, type: transactions.type })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), isNotNull(transactions.isin)));
+  const present = new Set(
+    rows.map((row) => `${row.broker}|${row.isin}|${row.type === 'DIVIDEND' ? 'dividend' : 'trade'}`),
+  );
+  return (broker, symbol, kind) => {
+    const isin = aliasIsin(aliases, broker, symbol);
+    return isin !== undefined && present.has(`${broker}|${isin}|${kind}`);
+  };
+}
+
 export interface AliasInput {
   broker: string;
   symbol: string;
@@ -118,14 +183,98 @@ export async function aliasesBlockedByTransactions(
   return blocked;
 }
 
-/** Symbol, kterému import doplnil ISIN z vestavěného číselníku. */
+/** Symbol, kterému import doplnil ISIN (nebo u XTB měnu) sám. */
 export interface FilledInstrument {
   broker: string;
   symbol: string;
   isin: string;
-  /** Název z vestavěného číselníku (Wikidata) — jen pro hlášku. */
+  /** Název z vestavěného číselníku (Wikidata) — jen pro hlášku; u vlastních dat prázdný. */
   name: string;
   currency?: string;
+  /**
+   * Odkud údaj je: `own` = z uživatelových obchodů u brokera, který ISIN
+   * uvádí (`ownTickerIsins`), `builtin` = vestavěný číselník.
+   */
+  source: 'own' | 'builtin';
+  /** U `own`: broker, podle jehož obchodů se ISIN doplnil. */
+  sourceBroker?: string;
+  /** XTB: ISIN zadal uživatel, import doplnil jen měnu. */
+  currencyOnly?: true;
+}
+
+/**
+ * Brokeři, jejichž výpis nese ISIN i ticker v americkém tvaru (`AAPL`,
+ * `GOOG`): Trading 212 (sloupce ISIN a Ticker) a Interactive Brokers (isin
+ * a symbol). Ostatní buď ticker nemají (Degiro), nebo ho píšou jinak (Saxo
+ * `AAPL:xnas`), nebo ISIN samy berou z číselníku.
+ */
+export const OWN_DATA_BROKERS = ['trading212', 'ibkr'] as const;
+
+/** Ticker → ISIN z uživatelových obchodů (viz `ownTickerIsins`). */
+export type OwnTickerIsins = Map<string, { isin: string; broker: string }>;
+
+/**
+ * ISIN, který k tickeru vede v uživatelových VLASTNÍCH datech: transakce
+ * u brokera, který ISIN uvádí (`OWN_DATA_BROKERS`), v USD — tedy americká
+ * kotace, stejně jako u vestavěného číselníku. Je to přesně ten ISIN, se
+ * kterým se má pozice spojit, a pokryje i ETF a třídy akcií (GOOG/GOOGL),
+ * které vestavěný číselník nezná. Ticker, který vede na víc ISIN, se nebere.
+ */
+export async function ownTickerIsins(db: Db, userId: string): Promise<OwnTickerIsins> {
+  const ticker = sql<string | null>`${transactions.payload}->>'ticker'`;
+  const currency = sql<string | null>`${transactions.payload}->>'currency'`;
+  const rows = await db
+    .selectDistinct({ broker: transactions.broker, isin: transactions.isin, ticker, currency })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        inArray(transactions.broker, [...OWN_DATA_BROKERS]),
+        isNotNull(transactions.isin),
+      ),
+    );
+  const found = new Map<string, Map<string, string>>();
+  for (const row of rows) {
+    if (!row.ticker || !row.isin || row.currency !== 'USD' || !isValidIsin(row.isin)) continue;
+    const isins = found.get(row.ticker) ?? new Map<string, string>();
+    if (!isins.has(row.isin)) isins.set(row.isin, row.broker);
+    found.set(row.ticker, isins);
+  }
+  const result: OwnTickerIsins = new Map();
+  for (const [symbol, isins] of found) {
+    if (isins.size !== 1) continue;
+    const [entry] = [...isins];
+    result.set(symbol, { isin: entry![0], broker: entry![1] });
+  }
+  return result;
+}
+
+/**
+ * Odkud by import údaj k symbolu doplnil sám (vlastní data > vestavěný
+ * číselník). U Revolutu a Fia se počítá s obchody v USD — jen ty se doplňují.
+ */
+export function automaticInstrument(
+  own: OwnTickerIsins,
+  broker: string,
+  symbol: string,
+  currencies: readonly string[] = ['USD'],
+): FilledInstrument | undefined {
+  const us = usTickerFor(broker, symbol, currencies);
+  if (!us) return undefined;
+  const mine = own.get(us.ticker);
+  if (mine) {
+    return {
+      broker,
+      symbol,
+      isin: mine.isin,
+      name: '',
+      ...(us.currency ? { currency: us.currency } : {}),
+      source: 'own',
+      sourceBroker: mine.broker,
+    };
+  }
+  const builtin = builtinInstrument(broker, symbol, currencies);
+  return builtin ? { broker, ...builtin, source: 'builtin' } : undefined;
 }
 
 /**
@@ -284,6 +433,11 @@ export type AliasChange =
  * Změní ISIN (u XTB i měnu) uloženého záznamu. Pod dosavadním ISIN nesmí
  * ležet transakce téhož brokera — další nahrání výpisu by je pod novým ISIN
  * uložilo podruhé (L23-02). Stejné údaje znovu nejsou změna a projdou.
+ *
+ * Kontrola a zápis nejsou atomické (revize R6): import, který doběhne přesně
+ * mezi nimi, může pod starým ISIN ještě uložit transakce. Okno je zlomek
+ * sekundy, transakci kvůli postgres.js nepoužíváme (CLAUDE.md) a stejně se
+ * chová i první uložení číselníku (`aliasesBlockedByTransactions`).
  */
 export async function updateAlias(db: Db, userId: string, input: AliasInput): Promise<AliasChange> {
   const existing = await findAlias(db, userId, input.broker, input.symbol);
@@ -310,6 +464,7 @@ export async function updateAlias(db: Db, userId: string, input: AliasInput): Pr
  * s ISIN by se bez záznamu při dalším nahrání téhož výpisu uložila znovu,
  * tentokrát bez ISIN — jiný otisk, takže podruhé (opačný směr párování
  * dividend dedupe nedělá, `promoteStoredDividends` v importers).
+ * Souběh kontroly a zápisu viz `updateAlias`.
  */
 export async function deleteAlias(
   db: Db,

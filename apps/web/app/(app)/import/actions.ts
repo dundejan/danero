@@ -22,6 +22,7 @@ import { undoImportBatch } from '@/lib/import-undo';
 import { aliasFeedbackUrl } from '@/lib/alias-feedback';
 import {
   aliasesBlockedByTransactions,
+  aliasOrigin,
   deleteAlias,
   ISIN_ONLY_BROKERS,
   saveAliases,
@@ -242,11 +243,14 @@ export async function deleteAliasAction(formData: FormData): Promise<void> {
   const row = aliasRowFrom(formData);
   if (!row) redirect('/import?chyba=zaznam-neexistuje');
   const db = await getDb();
+  // Záznam, který by import doplnil sám (vestavěný číselník, vlastní obchody),
+  // se při dalším nahrání vrátí — uživatel se to má dozvědět (revize R4).
+  const comesBack = (await aliasOrigin(db, user.id, row.broker, row.symbol)) !== null;
   const change = await deleteAlias(db, user.id, row.broker, row.symbol);
   revalidatePath('/import');
   if (change.outcome === 'missing') redirect('/import?chyba=zaznam-neexistuje');
   if (change.outcome === 'in-use') redirect(aliasFeedbackUrl({ error: 'smazani-pouzite' }, row));
-  redirect(aliasFeedbackUrl({ ok: 'zaznam-smazan' }, row));
+  redirect(aliasFeedbackUrl({ ok: comesBack ? 'zaznam-smazan-vrati-se' : 'zaznam-smazan' }, row));
 }
 
 /**

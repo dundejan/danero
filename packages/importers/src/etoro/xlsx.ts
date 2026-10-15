@@ -188,6 +188,11 @@ interface Ctx {
   activityDividendRows: { count: number };
   /** Řádky listu Dividends zaúčtované jako derivátový příjem (R-12t), ne jako DIVIDEND. */
   derivativeDividendRows: { count: number };
+  /**
+   * ISIN, které výpis sám uvádí u tickeru v Closed Positions (spot, ne
+   * derivát) — otevřená pozice téhož tickeru v Account Activity ISIN nemá.
+   */
+  fileIsins: Map<string, Set<string>>;
 }
 
 const CLOSED_MATCHERS = {
@@ -310,6 +315,10 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     } else {
       assetClass = typeNorm === 'etf' ? 'ETF' : 'STOCK';
       isin = cell('isin') !== '' ? cell('isin') : ctx.requireIsin(parsed.ticker, line);
+      if (cell('isin') !== '') {
+        const known = ctx.fileIsins.get(parsed.ticker) ?? new Set<string>();
+        ctx.fileIsins.set(parsed.ticker, known.add(cell('isin')));
+      }
     }
     if (isin === null) continue; // error per symbol už je nahlášený
 
@@ -822,8 +831,16 @@ export async function parseEtoroXlsx(
   };
 
   const unmapped = new Set<string>();
-  /** ISIN z mapování pro akcie/ETF bez ISIN ve výpisu — JEDEN error per symbol. */
+  const fileIsins = new Map<string, Set<string>>();
+  /**
+   * ISIN pro akcie/ETF bez ISIN na řádku — JEDEN error per symbol. Nejdřív
+   * z téhož výpisu (Closed Positions uvádí ISIN u tickeru, Account Activity
+   * u otevřené pozice ne; revize R5), pak z číselníku. Ticker, který má ve
+   * výpisu dva různé ISIN, se ze souboru nebere.
+   */
   const requireIsin = (ticker: string, line: number): string | null => {
+    const inFile = fileIsins.get(ticker);
+    if (inFile?.size === 1) return [...inFile][0]!;
     const mapped = instrumentMap[ticker]?.isin;
     if (mapped !== undefined) return mapped;
     if (!unmapped.has(ticker)) {
@@ -846,6 +863,7 @@ export async function parseEtoroXlsx(
     requireIsin,
     activityDividendRows: { count: 0 },
     derivativeDividendRows: { count: 0 },
+    fileIsins,
   };
   // pořadí je závazné: Closed Positions plní closedPositionIds, Activity je čte
   parseClosedSheet(ctx, closedSheet);

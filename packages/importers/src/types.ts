@@ -80,16 +80,21 @@ export const emptyResult = (broker: string): ImportResult => ({
 export type IsinInstrumentMap = Record<string, { isin: string }>;
 
 /**
- * Měny, ve kterých se symbol ve výpisu obchodoval. Brokeři, kteří pod
- * podobnými symboly vedou víc trhů (Revolut, Fio), podle toho nechávají
- * poznat americký ticker vestavěnému číselníku ISIN.
+ * Měny, ve kterých se symbol ve výpisu obchodoval (měna → první řádek
+ * souboru s ní). Brokeři, kteří pod podobnými symboly vedou víc trhů
+ * (Revolut, Fio), podle toho nechávají poznat americký ticker číselníkům ISIN.
  */
-export type SymbolCurrencies = Map<string, Set<string>>;
+export type SymbolCurrencies = Map<string, Map<string, number>>;
 
-/** Zapíše měnu symbolu do `SymbolCurrencies`. */
-export function noteSymbolCurrency(target: SymbolCurrencies, symbol: string, currency: string): void {
+/** Zapíše měnu symbolu do `SymbolCurrencies` (pamatuje si první řádek). */
+export function noteSymbolCurrency(
+  target: SymbolCurrencies,
+  symbol: string,
+  currency: string,
+  line: number,
+): void {
   if (symbol === '' || currency === '') return;
-  const seen = target.get(symbol) ?? new Set<string>();
-  seen.add(currency);
+  const seen = target.get(symbol) ?? new Map<string, number>();
+  if (!seen.has(currency)) seen.set(currency, line);
   target.set(symbol, seen);
 }

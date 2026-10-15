@@ -6,15 +6,17 @@ import { ISIN_DIRECTORY, type IsinDirectoryRecord } from './data';
  * XTB). Import se uživatele ptá jen na to, co tady není.
  *
  * Data jsou statická (`data.ts`), generuje je ručně spouštěný skript
- * `scripts/build-isin-directory.ts` z Wikidat (CC0) a za běhu se nikam
- * nevolá. Do souboru se dostane jen JEDNOZNAČNÁ dvojice: ticker, který vede
- * na víc ISIN (třídy akcií GOOG/GOOGL, přejmenované firmy), v něm není vůbec.
+ * `scripts/build-isin-directory.ts` z Wikidat (CC0) s ověřením každé dvojice
+ * přes OpenFIGI; za běhu se nikam nevolá. Do souboru se dostane jen
+ * JEDNOZNAČNÁ a ověřená dvojice: ticker, který vede na víc ISIN (třídy akcií
+ * GOOG/GOOGL), v něm není vůbec.
  *
- * ⚠️ Záznamy se jen PŘIDÁVAJÍ, nikdy nemění ani nemažou — ISIN je součást
- * obsahového otisku transakce. Import navíc každou doplněnou dvojici uloží
- * do uživatelova číselníku (`instrument_aliases`), takže pozdější změna
- * tohohle souboru se už naimportovaných dat netkne a uživatel ji vidí
- * a může opravit v seznamu „Doplněné údaje instrumentů“.
+ * Soubor se při každém běhu generátoru sestaví znovu (záznamy, které ověření
+ * neprojdou, z něj vypadnou). Import každou doplněnou dvojici uloží do
+ * uživatelova číselníku (`instrument_aliases`), takže změna tohohle souboru
+ * se už naimportovaných dat netkne — ISIN v dedupe otisku se nezmění —
+ * a uživatel dvojici vidí a může opravit v seznamu „Doplněné údaje
+ * instrumentů“.
  *
  * Modul je jen pro server (import); do klientského kódu nepatří — proto má
  * vlastní vstup balíčku a hlavní `index.ts` ho nereexportuje.
@@ -43,11 +45,19 @@ const usRecord = (ticker: string): IsinDirectoryRecord | undefined => {
       record,
     ]),
   );
-  return US_TICKER.test(ticker) ? byUsTicker.get(ticker) : undefined;
+  return byUsTicker.get(ticker);
 };
 
+/** Americký ticker, pod kterým se symbol z výpisu hledá v číselnících ISIN. */
+export interface UsTicker {
+  ticker: string;
+  /** Měna instrumentu — jen u XTB, kde ji výpis neuvádí. */
+  currency?: string;
+}
+
 /**
- * Brokeři, jejichž symbol jde spolehlivě převést na americký ticker:
+ * Brokeři, jejichž symbol jde spolehlivě převést na americký ticker. Platí
+ * pro vestavěný číselník i pro ISIN odvozený z obchodů u jiného brokera:
  *
  * - Schwab a Tastytrade jsou americké brokery — symbol JE americký ticker.
  * - eToro dává tickerům mimo USA příponu burzy (`BARC.L`, `SAP.DE`), holý
@@ -57,38 +67,45 @@ const usRecord = (ticker: string): IsinDirectoryRecord | undefined => {
  *   ticker v nich poznáme jen podle měny: symbol, který se ve výpisu
  *   obchodoval VÝHRADNĚ v USD. Bez měny (nebo s jinou) se nedoplňuje.
  */
-export function builtinInstrument(
+export function usTickerFor(
   broker: string,
   symbol: string,
   /** Měny, ve kterých se symbol ve výpisu objevil (Revolut, Fio). */
   currencies: readonly string[] = [],
-): BuiltinInstrument | undefined {
-  let ticker: string;
-  let currency: string | undefined;
+): UsTicker | undefined {
   switch (broker) {
     case 'schwab':
     case 'tastytrade':
     case 'etoro':
-      ticker = symbol;
-      break;
+      return US_TICKER.test(symbol) ? { ticker: symbol } : undefined;
     case 'revolut':
     case 'fio':
       if (currencies.length === 0 || currencies.some((code) => code !== 'USD')) return undefined;
-      ticker = symbol;
-      break;
+      return US_TICKER.test(symbol) ? { ticker: symbol } : undefined;
     case 'xtb': {
       const match = /^([A-Z]{1,5})\.US$/.exec(symbol);
-      if (!match) return undefined;
-      ticker = match[1]!;
-      currency = 'USD';
-      break;
+      return match ? { ticker: match[1]!, currency: 'USD' } : undefined;
     }
     default:
       return undefined;
   }
-  const record = usRecord(ticker);
-  if (!record) return undefined;
-  return { symbol, isin: record.isin, name: record.name, ...(currency ? { currency } : {}) };
+}
+
+/** ISIN americké akcie z vestavěného číselníku pro symbol z výpisu brokera. */
+export function builtinInstrument(
+  broker: string,
+  symbol: string,
+  currencies: readonly string[] = [],
+): BuiltinInstrument | undefined {
+  const us = usTickerFor(broker, symbol, currencies);
+  const record = us ? usRecord(us.ticker) : undefined;
+  if (!us || !record) return undefined;
+  return {
+    symbol,
+    isin: record.isin,
+    name: record.name,
+    ...(us.currency ? { currency: us.currency } : {}),
+  };
 }
 
 /** Všechny záznamy (pro testy a generátor). */

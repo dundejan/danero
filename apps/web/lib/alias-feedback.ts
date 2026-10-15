@@ -36,7 +36,7 @@ const enteredIsin = (value: string): string => value.replace(/[^A-Z0-9]/g, '').s
 const enteredCurrency = (value: string): string => value.replace(/[^A-Z]/g, '').slice(0, 3);
 
 export function aliasFeedbackUrl(
-  result: { ok: 'zaznam-upraven' | 'zaznam-smazan' } | { error: string },
+  result: { ok: 'zaznam-upraven' | 'zaznam-smazan' | 'zaznam-smazan-vrati-se' } | { error: string },
   row: { broker: string; symbol: string },
   entered?: { isin: string; currency: string },
 ): string {
@@ -54,21 +54,75 @@ export function aliasFeedbackUrl(
 /** Kolik doplněných symbolů věta vyjmenuje; zbytek shrne počtem. */
 const LISTED_FILLED = 5;
 
+/** Doplněný údaj tak, jak ho dávka importu uloží (`FilledInstrument` z lib/instrument-aliases). */
+export interface StoredFilled {
+  broker?: string;
+  symbol: string;
+  isin: string;
+  name: string;
+  currency?: string;
+  /** Chybí u dávek z doby, kdy byl jen vestavěný číselník. */
+  source?: 'own' | 'builtin';
+  sourceBroker?: string;
+  currencyOnly?: boolean;
+}
+
+function listSentence(prefix: string, items: string[]): string {
+  const listed = items.slice(0, LISTED_FILLED).join(', ');
+  const rest = items.length - LISTED_FILLED;
+  const tail = rest > 0 ? ` a ${rest} ${rest < 5 ? 'další' : 'dalších'}` : '';
+  return `${prefix}: ${listed}${tail}.`;
+}
+
 /**
- * Věta o ISIN, které import doplnil z vestavěného číselníku:
- * „Doplnili jsme ISIN: AAPL → Apple Inc. (US0378331005).“ `null`, když nic.
+ * Věty o tom, co import doplnil sám — zvlášť podle zdroje:
+ * „Doplnili jsme ISIN: AAPL → Apple Inc. (US0378331005).“,
+ * „Doplnili jsme ISIN podle tvých obchodů u Trading 212: GOOG (US02079K1079).“
+ * a u XTB „Doplnili jsme měnu: AAPL.US → USD.“ `null`, když nic.
  */
 export function filledSentence(
-  filled: ReadonlyArray<{ symbol: string; isin: string; name: string }>,
+  filled: readonly StoredFilled[],
+  brokerName: (broker: string) => string = (broker) => broker,
 ): string | null {
   if (filled.length === 0) return null;
-  const listed = filled
-    .slice(0, LISTED_FILLED)
-    .map((item) => `${item.symbol} → ${item.name} (${item.isin})`)
-    .join(', ');
-  const rest = filled.length - LISTED_FILLED;
-  const tail = rest > 0 ? ` a ${rest} ${rest < 5 ? 'další' : 'dalších'}` : '';
-  return `Doplnili jsme ISIN: ${listed}${tail}.`;
+  const sentences: string[] = [];
+  const builtin = filled.filter((item) => !item.currencyOnly && item.source !== 'own');
+  if (builtin.length > 0) {
+    sentences.push(
+      listSentence(
+        'Doplnili jsme ISIN',
+        builtin.map((item) => `${item.symbol} → ${item.name} (${item.isin})`),
+      ),
+    );
+  }
+  const ownBrokers = [
+    ...new Set(
+      filled
+        .filter((item) => !item.currencyOnly && item.source === 'own')
+        .map((item) => item.sourceBroker ?? ''),
+    ),
+  ];
+  for (const source of ownBrokers) {
+    const items = filled.filter(
+      (item) => !item.currencyOnly && item.source === 'own' && (item.sourceBroker ?? '') === source,
+    );
+    sentences.push(
+      listSentence(
+        `Doplnili jsme ISIN podle tvých obchodů u ${brokerName(source)}`,
+        items.map((item) => `${item.symbol} (${item.isin})`),
+      ),
+    );
+  }
+  const currencyOnly = filled.filter((item) => item.currencyOnly && item.currency);
+  if (currencyOnly.length > 0) {
+    sentences.push(
+      listSentence(
+        'Doplnili jsme měnu',
+        currencyOnly.map((item) => `${item.symbol} → ${item.currency}`),
+      ),
+    );
+  }
+  return sentences.join(' ');
 }
 
 /** Údaje k výsledku z adresy; hodnoty se znovu omezí na povolené znaky (adresu mohl napsat kdokoli). */

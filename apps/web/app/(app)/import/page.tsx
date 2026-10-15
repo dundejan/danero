@@ -31,6 +31,9 @@ import { batchIssueViews } from '@/lib/import-resolved';
 import {
   aliasCovers,
   importsUsingIsin,
+  originOf,
+  ownTickerIsins,
+  storedUnderAliases,
   isIsinOnlyBroker,
   listAliases,
   loadAliases,
@@ -193,15 +196,32 @@ export default async function ImportPage({
 
   // Číselník: hlášky ke starým dávkám, které uživatel mezitím vyřídil
   // (`lib/import-resolved.ts`). Obchodům XTB nestačí ISIN, potřebují i měnu.
-  const issueViews = batchIssueViews(recentBatches, aliasCovers(aliases));
-  const aliasItems: AliasListItem[] = aliasRecords.map((record) => ({
-    key: aliasRowKey(record.broker, record.symbol),
-    broker: record.broker,
-    brokerName: platformName(record.broker),
-    symbol: record.symbol,
-    isin: record.isin,
-    currency: record.currency,
-  }));
+  const issueViews = batchIssueViews(
+    recentBatches,
+    aliasCovers(aliases),
+    await storedUnderAliases(db, user.id, aliases),
+  );
+  // odkud by import záznam doplnil sám — popisek v seznamu (smazaný se vrátí)
+  const own = aliasRecords.length > 0 ? await ownTickerIsins(db, user.id) : new Map();
+  const aliasItems: AliasListItem[] = aliasRecords.map((record) => {
+    const origin = originOf(own, record);
+    return {
+      key: aliasRowKey(record.broker, record.symbol),
+      broker: record.broker,
+      brokerName: platformName(record.broker),
+      symbol: record.symbol,
+      isin: record.isin,
+      currency: record.currency,
+      ...(origin
+        ? {
+            origin:
+              origin.source === 'own'
+                ? `doplněno podle obchodů u ${platformName(origin.broker)}`
+                : 'doplněno z veřejných dat',
+          }
+        : {}),
+    };
+  });
   // Výsledek změny/smazání záznamu — jen když ho adresa nese (jinak `null`
   // a seznam si drží ten, který už má; `lib/action-result.ts`).
   const aliasFeedback = aliasFeedbackDetails(params);
@@ -238,6 +258,7 @@ export default async function ImportPage({
     recentBatches
       .filter((batch) => justUploaded.has(batch.id))
       .flatMap((batch) => (batch.issues as BatchIssues).filled ?? []),
+    platformName,
   );
 
   // chyby formulářů připojení a řádků číselníku mají hlášku přímo u pole
@@ -280,7 +301,9 @@ export default async function ImportPage({
             text="Číselník uložen. Nahraj soubor znovu — doplněné symboly se teď naimportují (a nic se nezdvojí)."
           />
         )}
-        {(ulozeno === 'zaznam-upraven' || ulozeno === 'zaznam-smazan') && (
+        {(ulozeno === 'zaznam-upraven' ||
+          ulozeno === 'zaznam-smazan' ||
+          ulozeno === 'zaznam-smazan-vrati-se') && (
           <Toast
             key={crypto.randomUUID()}
             kind="ok"
@@ -288,7 +311,9 @@ export default async function ImportPage({
             text={
               ulozeno === 'zaznam-upraven'
                 ? 'Záznam upraven. Další nahrání výpisu použije nový údaj.'
-                : 'Záznam smazán.'
+                : ulozeno === 'zaznam-smazan'
+                  ? 'Záznam smazán.'
+                  : 'Záznam smazán. Při dalším nahrání výpisu ho doplníme znovu sami — chceš-li jiný ISIN, záznam místo smazání uprav.'
             }
           />
         )}
@@ -398,9 +423,10 @@ export default async function ImportPage({
                           Import je bere odsud.
                         </p>
                         <p>
-                          U běžných amerických akcií je doplňujeme sami z veřejných dat
-                          (Wikidata). Smazaný záznam takového titulu při dalším nahrání doplníme
-                          znovu — chceš-li jiný ISIN, záznam uprav.
+                          U amerických akcií je doplňujeme sami — podle tvých obchodů u brokera,
+                          který ISIN uvádí (Trading 212, Interactive Brokers), nebo z veřejných
+                          dat. Smazaný záznam takového titulu při dalším nahrání doplníme znovu —
+                          chceš-li jiný ISIN, záznam uprav.
                         </p>
                         <p>
                           Opravit nebo smazat jde záznam, pod kterým zatím nejsou uložené

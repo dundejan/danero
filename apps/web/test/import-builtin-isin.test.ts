@@ -109,7 +109,13 @@ describe('vestavěný číselník ISIN při importu', () => {
     expect(summary.unmapped).toEqual([]);
     expect(summary.added).toBe(2);
     expect(summary.filled).toEqual([
-      { broker: 'schwab', symbol: 'KO', isin: 'US1912161007', name: 'The Coca-Cola Company' },
+      {
+        broker: 'schwab',
+        symbol: 'KO',
+        isin: 'US1912161007',
+        name: 'The Coca-Cola Company',
+        source: 'builtin',
+      },
     ]);
     expect(await aliasesOf()).toEqual({ 'schwab|KO': { isin: 'US1912161007', currency: null } });
     const transactions = await loadTransactions(stav.db, 'u1');
@@ -177,7 +183,14 @@ describe('vestavěný číselník ISIN při importu', () => {
     const summary = await upload('xtb.xlsx', bufferOf(report));
 
     expect(summary.filled).toEqual([
-      { broker: 'xtb', symbol: 'AAPL.US', isin: 'US0378331005', name: 'Apple Inc.', currency: 'USD' },
+      {
+        broker: 'xtb',
+        symbol: 'AAPL.US',
+        isin: 'US0378331005',
+        name: 'Apple Inc.',
+        currency: 'USD',
+        source: 'builtin',
+      },
     ]);
     expect(summary.unmapped.map((item) => item.symbol)).toEqual(['IWDA.UK']);
     expect(await aliasesOf()).toEqual({ 'xtb|AAPL.US': { isin: 'US0378331005', currency: 'USD' } });

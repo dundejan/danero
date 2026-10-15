@@ -564,3 +564,51 @@ describe('derivát a spot se nesmí potkat pod jedním klíčem (A2-3-06)', () =
     expect(short.isin).not.toBe(spot.isin);
   });
 });
+
+describe('otevřená pozice bez ISIN: ISIN z téhož výpisu (revize R5)', () => {
+  const openRow = (positionId: string, details: string): EtoroCellValue[] =>
+    ETORO_ACTIVITY_HEADERS.map(
+      (header) =>
+        (
+          ({
+            Date: '01/03/2024 15:30:00',
+            Type: 'Open Position',
+            Details: details,
+            Amount: 50,
+            Units: 0.25,
+            'Realized Equity Change': 0,
+            'Realized Equity': '1,000.00',
+            Balance: 0,
+            'Position ID': positionId,
+            'Asset type': 'Stocks',
+            NWA: 0,
+          }) as Record<string, EtoroCellValue>
+        )[header] ?? '',
+    );
+
+  it('ISIN, který výpis uvádí u téhož tickeru v Closed Positions, se použije', async () => {
+    const buffer = await buildEtoroXlsx({
+      closed: { rows: [ETORO_CLOSED_ROWS[0]!] },
+      activity: { rows: [openRow('2999999999', 'OLED/USD')] },
+      dividends: { rows: [] },
+    });
+    const result = await parseEtoroXlsx(buffer, {});
+
+    expect(result.unmappedSymbols).toEqual([]);
+    const buy = result.transactions.find((tx) => tx.type === 'BUY' && tx.id.includes('2999999999'));
+    expect(buy && 'isin' in buy ? buy.isin : undefined).toBe('US91347P1057');
+  });
+
+  it('ticker, který má v souboru dva různé ISIN, se dál ptá', async () => {
+    const second = [...ETORO_CLOSED_ROWS[0]!];
+    second[ETORO_CLOSED_HEADERS.indexOf('Position ID')] = '2355395299';
+    second[ETORO_CLOSED_HEADERS.indexOf('ISIN')] = 'US0378331005';
+    const buffer = await buildEtoroXlsx({
+      closed: { rows: [ETORO_CLOSED_ROWS[0]!, second] },
+      activity: { rows: [openRow('2999999999', 'OLED/USD')] },
+      dividends: { rows: [] },
+    });
+    const result = await parseEtoroXlsx(buffer, {});
+    expect(result.unmappedSymbols).toEqual(['OLED']);
+  });
+});

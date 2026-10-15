@@ -80,14 +80,16 @@ import type { Db } from '@/db';
 import { importBatches, transactions } from '@/db/schema';
 import { czDate, plural, qty } from '@/lib/format';
 import { capStoredIssues } from '@/lib/import-issues';
-import { builtinInstrument } from '@danero/importers/isin-directory';
 import {
   aliasCovers,
+  aliasIsin,
+  automaticInstrument,
   loadAliases,
+  ownTickerIsins,
   saveBuiltinAliases,
   type AliasMaps,
   type FilledInstrument,
-  type IsinOnlyBroker,
+  type OwnTickerIsins,
 } from '@/lib/instrument-aliases';
 import { isDatabaseError } from '@/lib/db-errors';
 import { errorText, logEvent } from '@/lib/log';
@@ -523,47 +525,107 @@ export async function importFile(
 
 /**
  * Parsování výpisu brokera bez ISIN: nejdřív s číselníkem uživatele, a když
- * zbydou symboly, které zná vestavěný číselník (`@danero/importers/isin-directory`),
- * uloží je uživateli do číselníku a výpis přečte znovu.
+ * zbydou symboly, ke kterým ISIN zná import sám, uloží je uživateli do
+ * číselníku a výpis přečte znovu. Pořadí zdrojů: uživatelův záznam >
+ * uživatelovy obchody u brokera, který ISIN uvádí (`ownTickerIsins`) >
+ * vestavěný číselník (`@danero/importers/isin-directory`).
  *
- * Uživatelův záznam má vždy přednost — vestavěný se zkouší jen u symbolů,
- * pro které záznam nemá, a ukládá se bez přepisu (`saveBuiltinAliases`).
- * Uložením se z doplněné dvojice stane obyčejný záznam: je vidět v seznamu
- * „Doplněné údaje instrumentů“, jde opravit a pozdější změna vestavěného
- * souboru se už naimportovaných dat netkne.
+ * Automatický údaj se zkouší jen u symbolů, pro které uživatel záznam nemá,
+ * a ukládá se bez přepisu (`saveBuiltinAliases`). Uložením se z něj stane
+ * obyčejný záznam: je vidět v seznamu „Doplněné údaje instrumentů“, jde
+ * opravit a pozdější změna vestavěného souboru se už naimportovaných dat
+ * netkne.
  */
 async function parseWithAliases(
   db: Db,
   userId: string,
   parse: (aliases: AliasMaps) => ParsedFile | Promise<ParsedFile>,
 ): Promise<{ parsed: ParsedFile; filled: FilledInstrument[] }> {
-  const first = await parse(await loadAliases(db, userId));
-  const currencies = (first.outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies;
+  const before = await loadAliases(db, userId);
+  const first = await parse(before);
+  const currenciesOf = (outcome: ImportResult, symbol: string): string[] => [
+    ...((outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies?.get(symbol)?.keys() ??
+      []),
+  ];
+  const own =
+    first.unmapped.length > 0 || hasSymbolCurrencies(first.outcome)
+      ? await ownTickerIsins(db, userId)
+      : new Map();
   const candidates = first.unmapped.flatMap((item): FilledInstrument[] => {
-    const found = builtinInstrument(item.broker, item.symbol, [
-      ...(currencies?.get(item.symbol) ?? []),
-    ]);
-    return found ? [{ broker: item.broker, ...found }] : [];
+    const found = automaticInstrument(
+      own,
+      item.broker,
+      item.symbol,
+      currenciesOf(first.outcome, item.symbol),
+    );
+    if (!found) return [];
+    // XTB záznam se shodným ISIN, kterému chybí jen měna
+    const existing = item.broker === 'xtb' && Object.hasOwn(before.xtb, item.symbol)
+      ? before.xtb[item.symbol]
+      : undefined;
+    return [existing?.isin === found.isin ? { ...found, currencyOnly: true } : found];
   });
-  if (candidates.length === 0) return { parsed: first, filled: [] };
 
-  await saveBuiltinAliases(db, userId, candidates);
-  const aliases = await loadAliases(db, userId);
-  const parsed = await parse(aliases);
-  // Ohlásí se jen to, co import opravdu použil: záznam, který si uživatel
-  // mezitím uložil sám (souběžný formulář), vestavěný nepřepsal.
-  const covers = aliasCovers(aliases);
-  const stillUnmapped = new Set(parsed.unmapped.map((item) => `${item.broker}|${item.symbol}`));
-  const filled = candidates.filter((item) => {
-    if (stillUnmapped.has(`${item.broker}|${item.symbol}`)) return false;
-    if (!covers(item.broker, item.symbol)) return false;
-    const stored =
-      item.broker === 'xtb'
-        ? aliases.xtb[item.symbol]
-        : aliases.isinOnly[item.broker as IsinOnlyBroker][item.symbol];
-    return stored?.isin === item.isin;
-  });
+  let parsed = first;
+  let aliases = before;
+  let filled: FilledInstrument[] = [];
+  if (candidates.length > 0) {
+    await saveBuiltinAliases(db, userId, candidates);
+    aliases = await loadAliases(db, userId);
+    parsed = await parse(aliases);
+    // Ohlásí se jen to, co import opravdu použil: záznam, který si uživatel
+    // mezitím uložil sám (souběžný formulář), automatický nepřepsal.
+    const covers = aliasCovers(aliases);
+    const stillUnmapped = new Set(parsed.unmapped.map((item) => `${item.broker}|${item.symbol}`));
+    filled = candidates.filter((item) => {
+      if (stillUnmapped.has(`${item.broker}|${item.symbol}`)) return false;
+      if (!covers(item.broker, item.symbol)) return false;
+      return aliasIsin(aliases, item.broker, item.symbol) === item.isin;
+    });
+  }
+  parsed.outcome.warnings.push(...otherCurrencyWarnings(parsed.outcome, aliases, own));
   return { parsed, filled };
+}
+
+const hasSymbolCurrencies = (outcome: ImportResult): boolean =>
+  ((outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies?.size ?? 0) > 0;
+
+/**
+ * Revolut a Fio: automatický ISIN se doplňuje jen podle obchodů v USD
+ * (americká kotace). Pojistka ale platí jen v rámci jednoho souboru — další
+ * výpis, kde se týž symbol obchoduje v EUR, už záznam v číselníku najde
+ * a použije americký ISIN. Může jít o tentýž titul koupený v eurech, ale
+ * i o evropskou kotaci jiného cenného papíru.
+ *
+ * Řádek se přesto UKLÁDÁ: obchod, který z výpisu potichu zmizí, se v daních
+ * neprojeví nikde a uživatel ho nemá jak najít, kdežto špatně přiřazený
+ * titul se ukáže v portfoliu a jde napravit (vrátit import, opravit záznam,
+ * nahrát znovu). Tohle varování mu k tomu dá vodítko. Hlásí se jen tam, kde
+ * záznam nese ISIN, který by import doplnil sám — ručně zadaný jiný ISIN je
+ * vědomé rozhodnutí uživatele.
+ */
+function otherCurrencyWarnings(
+  outcome: ImportResult,
+  aliases: AliasMaps,
+  own: OwnTickerIsins,
+): RowIssue[] {
+  const broker = outcome.broker;
+  if (broker !== 'revolut' && broker !== 'fio') return [];
+  const currencies = (outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies;
+  const warnings: RowIssue[] = [];
+  for (const [symbol, seen] of currencies ?? []) {
+    const other = [...seen].filter(([currency]) => currency !== 'USD');
+    if (other.length === 0) continue;
+    const stored = aliasIsin(aliases, broker, symbol);
+    const automatic = automaticInstrument(own, broker, symbol, ['USD']);
+    if (!stored || !automatic || automatic.isin !== stored) continue;
+    const [currency, line] = other[0]!;
+    warnings.push({
+      line,
+      message: `Symbol ${symbol}: obchody v ${currency} jsme přiřadili k ISIN ${stored}, který jsme doplnili podle obchodů v USD (americký titul). Jde-li v ${currency} o jiný cenný papír (třeba evropskou kotaci), vrať tenhle import zpět, oprav ISIN v seznamu „Doplněné údaje instrumentů“ a výpis nahraj znovu.`,
+    });
+  }
+  return warnings;
 }
 
 /**

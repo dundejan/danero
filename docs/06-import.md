@@ -33,7 +33,7 @@
   (T+1 US od 28. 5. 2024 a Kanada od 27. 5. 2024, jinak T+2, pracovní dny bez
   svátků), pokud ho export neuvádí.
 
-## Číselník instrumentů a vestavěný číselník ISIN
+## Číselník instrumentů a automaticky doplňovaný ISIN
 
 Brokeři bez ISIN ve výpisu (Schwab, Tastytrade, Revolut, Fio, eToro u pozic
 bez ISIN a XTB, kde chybí i měna) berou ISIN z uživatelova číselníku
@@ -45,45 +45,78 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   leží transakce téhož brokera (L23-02) — hláška jmenuje importy, které je
   potřeba nejdřív vrátit. Smazání se blokuje taky: dividenda uložená s ISIN by
   se bez záznamu při dalším nahrání uložila znovu bez ISIN (opačný směr
-  povýšení klíče dedupe nedělá).
+  povýšení klíče dedupe nedělá). Záznam, který by import doplnil sám, má
+  v řádku popisek („doplněno z veřejných dat“, „doplněno podle obchodů
+  u Trading 212“) a hláška po smazání řekne, že se při dalším nahrání vrátí.
+- **Automatické doplnění** (`parseWithAliases` v `lib/import-service.ts`) se
+  zkouší jen u symbolů, ke kterým uživatel záznam nemá. Pořadí zdrojů:
+  1. uživatelův záznam (vždy má přednost, nikdy se nepřepisuje),
+  2. **uživatelovy vlastní obchody** u brokera, který ISIN uvádí — Trading 212
+     a Interactive Brokers (`OWN_DATA_BROKERS`; oba mají ticker v americkém
+     tvaru, Degiro ticker nemá, Saxo ho píše jako `AAPL:xnas`): ticker, který
+     u nich v transakcích **v USD** vede na jediný ISIN. Je to přesně ISIN,
+     se kterým se má pozice spojit, a pokryje i ETF a třídy akcií (GOOG/GOOGL),
+  3. vestavěný číselník (níž).
+
+  Nalezenou dvojici import **uloží do uživatelova číselníku** (bez přepisu;
+  u XTB záznamu se shodným ISIN jen doplní chybějící měnu) a výpis přečte
+  znovu. Výsledek importu to řekne větou („Doplnili jsme ISIN: …“, „Doplnili
+  jsme ISIN podle tvých obchodů u Trading 212: …“, „Doplnili jsme měnu: …“)
+  s odkazem na seznam, kde jde dvojici opravit.
+- Kdy se symbol bere jako americký ticker (`usTickerFor`, platí pro oba
+  automatické zdroje): Schwab a Tastytrade vždy, eToro bez přípony burzy
+  (`BARC.L` ne), XTB jen s příponou `.US` (pak i měna USD), Revolut a Fio jen
+  u symbolu, který se ve výpisu obchodoval **výhradně v USD** (oba vedou
+  i evropské trhy pod podobnými symboly). Jinak se nedoplňuje nic — lepší se
+  zeptat než doplnit špatně.
+- Pojistka „jen USD“ platí v rámci jednoho souboru. Když pak jiný výpis
+  Revolutu nebo Fia obchoduje týž symbol v jiné měně a záznam nese ISIN, který
+  by import doplnil sám, řádek se **uloží s varováním** (obchod v EUR jsme
+  přiřadili k americkému ISIN; jde-li o jiný titul, vrať import a oprav
+  záznam). Ztracený obchod se v daních neprojeví nikde, špatně přiřazený je
+  vidět v portfoliu a jde napravit.
+- eToro: otevřená pozice v Account Activity ISIN nemá, ale tentýž výpis ho
+  u téhož tickeru často uvádí v Closed Positions — použije se dřív než
+  číselník (pokud v souboru vede ticker na jediný ISIN).
 - **Vestavěný číselník** (`packages/importers/src/isin-directory/`, vstup
-  balíčku `@danero/importers/isin-directory`, jen pro server): ticker na NYSE
-  nebo Nasdaqu → ISIN, zhruba 1 500 amerických akcií. Import ho zkusí u
-  symbolů, ke kterým uživatel záznam nemá; nalezenou dvojici **uloží do
-  uživatelova číselníku** (bez přepisu existujícího záznamu) a výpis přečte
-  znovu. Výsledek importu to řekne větou „Doplnili jsme ISIN: …“ s odkazem na
-  seznam, kde jde dvojici opravit. Uživatelův záznam má vždy přednost
-  a pozdější změna vestavěného souboru se už naimportovaných dat netkne.
-- Kdy se symbol bere jako americký ticker: Schwab a Tastytrade vždy, eToro bez
-  přípony burzy (`BARC.L` ne), XTB jen s příponou `.US` (pak i měna USD),
-  Revolut a Fio jen u symbolu, který se ve výpisu obchodoval **výhradně v USD**
-  (oba vedou i evropské trhy pod podobnými symboly). Jinak se nedoplňuje nic —
-  lepší se zeptat než doplnit špatně.
-- **Zdroj: Wikidata** (data pod CC0 1.0). Generátor
-  `pnpm --filter @danero/importers isin-directory` (`--dry-run` jen vypíše
-  změny) stáhne položky s ISIN (P946) a výpisem na burze (P414) s tickerem
-  (P249) a pustí do souboru jen jednoznačné dvojice: bez ukončeného výpisu,
-  ticker jen 1–5 písmen, firma nezaniklá a nepřevzatá (P576, P1366, P2669,
-  P749 — ticker zaniklé firmy burza časem přidělí jiné; Wikidata převzetí
-  nezapisují vždy hned, takže ochrana není úplná), položka s právě jedním
-  americkým ISIN **akcie**
-  (číslo emise číselné — Wikidata u firem vedou i ISIN dluhopisů), s jediným
-  tickerem a bez kolize napříč položkami. Alphabet má na položce oba ISIN
-  (GOOG i GOOGL) bez vazby na ticker, takže v souboru není ani jeden;
-  zahraniční ISIN (ADR vs. domácí akcie) se nebere vůbec.
-- **Záznamy se jen přidávají, nikdy nemění ani nemažou** — ISIN je součást
-  obsahového otisku. Generátor načte stávající soubor, nové dvojice přidá
-  a konflikty (známý ticker s jiným ISIN) jen vypíše. Za běhu aplikace se
-  nikam nevolá, data jsou statická.
-- ETF číselník nepokrývá: Wikidata je u fondů skoro nemají (QQQ bez ISIN,
-  VOO, SPY ani UCITS fondy vůbec) a k seznamu obchodovatelných instrumentů
-  Deutsche Börse (Xetra) nejsou zveřejněné podmínky, které by šíření výtahu
-  výslovně dovolovaly. Na fondy se import dál ptá uživatele.
+  balíčku `@danero/importers/isin-directory`, jen pro server; za běhu se nikam
+  nevolá): ticker na NYSE nebo Nasdaqu → ISIN, jen americké akcie.
+  - **Zdroj: Wikidata** (data pod CC0 1.0), **ověřené přes OpenFIGI.**
+    Generátor `pnpm --filter @danero/importers isin-directory` (`--dry-run`
+    jen vypíše změny; volitelně `OPENFIGI_API_KEY` v prostředí pro rychlejší
+    běh) stáhne položky s ISIN (P946) a výpisem na burze (P414) s tickerem
+    (P249) a vybere jednoznačné dvojice: bez ukončeného výpisu, ticker jen
+    1–5 písmen, firma nezaniklá a nepřevzatá (P576, P1366, P2669, P749),
+    položka s právě jedním americkým ISIN **akcie** (číslo emise číselné —
+    Wikidata u firem vedou i ISIN dluhopisů), s jediným tickerem a bez kolize
+    napříč položkami. Alphabet má na položce oba ISIN (GOOG i GOOGL) bez vazby
+    na ticker, takže v souboru není ani jeden.
+  - Wikidata samy nestačí: revize 15. 10. 2026 v nich našla 20 % chyb (ISIN
+    jiného emitenta, zastaralý ISIN téže firmy, tickery, které emitent už
+    nepoužívá). Každá dvojice proto musí projít dotazem na OpenFIGI: ISIN na
+    amerických burzách vede na FIGI se **stejným tickerem** a druhem kmenová
+    akcie, ADR, REIT nebo MLP. Z odpovědi se bere jen ano/ne.
+  - Soubor se **při každém běhu sestaví znovu** — co ověřením neprojde,
+    vypadne, a skript změny vypíše. Je to bezpečné: doplněná dvojice se
+    ukládá do uživatelova číselníku, takže změna souboru se už
+    naimportovaných dat (a ISIN v jejich dedupe otisku) netkne. **Generátor
+    pouštěj čtvrtletně**, ať se propíší přejmenování, zániky a recyklované
+    tickery.
+  - ETF nepokrývá: Wikidata je u fondů skoro nemají (QQQ bez ISIN, VOO, SPY
+    ani UCITS fondy vůbec) a k seznamu obchodovatelných instrumentů Deutsche
+    Börse (Xetra) nejsou zveřejněné podmínky, které by šíření výtahu výslovně
+    dovolovaly. Fondy pokryjí uživatelovy vlastní obchody (bod 2), jinak se
+    import ptá.
 - Historie importů: hlášky „doplň ISIN“ nesou symbol strukturovaně
-  (`RowIssue.unmappedSymbol`). U symbolu, který už v číselníku je, je stará
-  dávka ukazuje jako vyřízené („ISIN doplněn — nahraj výpis znovu…“) a nepočítá
-  je do souhrnu; po novém nahrání TÉHOŽ souboru (shodný SHA-256 v
-  `issues.fileHash`) zmizí úplně (`apps/web/lib/import-resolved.ts`).
+  (`RowIssue.unmappedSymbol`) a dávka si ukládá jejich počty per symbol
+  z celého seznamu (`issues.unmappedCounts`, uložené hlášky se ořezávají).
+  U symbolu, který už v číselníku je, je stará dávka ukazuje jako vyřízené
+  („ISIN doplněn — nahraj výpis znovu…“) a nepočítá je do souhrnu. Úplně
+  zmizí, jen když platí obojí: novější dávka TÉHOŽ souboru (shodný SHA-256
+  v `issues.fileHash`) symbol už nehlásí, A v databázi opravdu leží transakce
+  brokera pod ISIN ze záznamu (obchody, resp. dividendy). Samotná novější
+  dávka nestačí — tu, která obchody uložila, mohl uživatel vrátit
+  (`apps/web/lib/import-resolved.ts`).
 
 ## Trading212 (`parseTrading212Csv`)
 

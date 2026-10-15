@@ -41,7 +41,10 @@ const stav = vi.hoisted(() => ({
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }));
 // Seznam a historie se tu zkoušejí na symbolech, které uživatel doplňuje sám;
 // vestavěný číselník ISIN (by NVDA i AAPL doplnil) má vlastní testy.
-vi.mock('@danero/importers/isin-directory', () => ({ builtinInstrument: () => undefined }));
+vi.mock('@danero/importers/isin-directory', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@danero/importers/isin-directory')>()),
+  builtinInstrument: () => undefined,
+}));
 vi.mock('next/navigation', () => ({
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);

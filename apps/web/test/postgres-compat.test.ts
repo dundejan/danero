@@ -29,9 +29,13 @@ import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import
 import {
   deleteAlias,
   importsUsingIsin,
+  loadAliases,
+  ownTickerIsins,
   saveAliases,
+  storedUnderAliases,
   updateAlias,
 } from '@/lib/instrument-aliases';
+import { T212_HEADER } from '../../../packages/importers/test/fixtures/t212';
 import {
   enqueueSyncJob,
   processPendingJobs,
@@ -368,6 +372,33 @@ popis('kompatibilita s produkčním Postgresem', () => {
       .from(transactions)
       .where(eq(transactions.userId, userId));
     expect(stored.map((row) => row.isin).sort()).toEqual(['US0378331005', 'US1912161007']);
+  });
+
+  it('ISIN z vlastních obchodů a stav pro historii: jsonb ->> a selectDistinct přes postgres.js', {
+    timeout: 30_000,
+  }, async () => {
+    const userId = await makeUser();
+    const t212 = [
+      T212_HEADER,
+      'Market buy,2024-01-10 14:30:02,US02079K1079,GOOG,Alphabet C,2,140.00,USD,0.0435,,,6500.00,CZK,,,,EOF9101,1.00,CZK',
+    ].join('\n');
+    const encode = (text: string) => new TextEncoder().encode(text).buffer as ArrayBuffer;
+    await importFileIsolated(db, userId, 't212.csv', encode(t212));
+    expect(await ownTickerIsins(db, userId)).toEqual(
+      new Map([['GOOG', { isin: 'US02079K1079', broker: 'trading212' }]]),
+    );
+
+    const schwab = [
+      '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+      '"03/03/2025","Buy","GOOG","ALPHABET INC CLASS C","3","$170.00","","-$510.00"',
+    ].join('\n');
+    const summary = await importFileIsolated(db, userId, 'schwab.csv', encode(schwab));
+    expect(summary.filled).toEqual([
+      expect.objectContaining({ symbol: 'GOOG', source: 'own', sourceBroker: 'trading212' }),
+    ]);
+    const stored = await storedUnderAliases(db, userId, await loadAliases(db, userId));
+    expect(stored('schwab', 'GOOG', 'trade')).toBe(true);
+    expect(stored('schwab', 'GOOG', 'dividend')).toBe(false);
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {

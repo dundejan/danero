@@ -483,6 +483,18 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   obrazovky v obou nekreslí `backdrop-filter`, takže průsvitná lišta na nich
   vypadá hůř než ve skutečnosti. Písmo v kontejneru sjednocuje skript
   (Liberation Sans) — výchozí bezpatkové písmo obrazu je čínské.
+- **Skutečný ticker v testu si ISIN doplní sám.** Od 15. 10. 2026 import
+  u brokerů bez ISIN doplňuje ISIN z vestavěného číselníku a z uživatelových
+  obchodů u T212/IBKR (`docs/06`). Test, který čeká „symbol čeká na
+  uživatele“ (formulář číselníku, chyba „doplň ISIN“), s AAPL, NVDA nebo KO
+  najednou nic nečeká. Vestavěný číselník vypni
+  (`vi.mock('@danero/importers/isin-directory', …)` s `builtinInstrument:
+  () => undefined`, ostatní exporty nech skutečné), nebo použij smyšlený ticker.
+- **Wikidata jako zdroj ISIN je nespolehlivá.** Revize 15. 10. 2026 našla
+  ve vestavěném číselníku 20 % chyb: ISIN jiného emitenta (TT → Ingersoll
+  Rand, CB → stará Chubb Corp), zastaralý ISIN téže firmy (XOM), recyklované
+  tickery. Do `src/isin-directory/data.ts` smí jen dvojice ověřená přes
+  OpenFIGI (generátor to dělá sám) — ruční „doplnění“ záznamu z Wikidat ne.
 
 ## Stav a plán
 

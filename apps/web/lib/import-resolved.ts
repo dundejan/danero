@@ -16,11 +16,12 @@ import type { StoredIssues } from '@/lib/import-issues';
  * text hlášky se nečte. Dávky uložené dřív ten údaj nemají a ukazují se
  * beze změny — nic z nich nezmizí potichu.
  *
- * „Jisté“ znamená: novější dávka téhož brokera se STEJNÝM otiskem souboru
- * (`fileHash`) a symbol už v jejím seznamu k doplnění není. Tentýž soubor se
- * čte deterministicky, takže jeho obchody s tím symbolem se tehdy buď uložily,
- * nebo už uložené byly. Jiný soubor (navazující období) to dokázat neumí —
- * u něj zůstává věta o novém nahrání.
+ * „Jisté“ znamená obojí naráz: novější dávka téhož brokera se STEJNÝM
+ * otiskem souboru (`fileHash`) symbol už v seznamu k doplnění nemá, A v
+ * databázi opravdu leží transakce brokera (obchody, resp. dividendy) pod ISIN
+ * ze záznamu. Samotná novější dávka nestačí — tu, která obchody uložila, mohl
+ * uživatel vrátit zpět (revize R1). Jiný soubor (navazující období) nic
+ * nedokazuje — u něj zůstává věta o novém nahrání.
  */
 
 /** Dávka historie tak, jak ji čte tahle logika (výřez řádku `import_batches`). */
@@ -35,6 +36,16 @@ export interface BatchForIssues {
 
 /** Má uživatel k symbolu u brokera záznam v číselníku, který import použije? */
 export type AliasCovers = (broker: string, symbol: string) => boolean;
+
+/**
+ * Leží v databázi transakce brokera pod ISIN, který k symbolu vede číselník?
+ * `trade` = obchody a ostatní pohyby, `dividend` = dividendy.
+ */
+export type StoredUnderAlias = (
+  broker: string,
+  symbol: string,
+  kind: 'trade' | 'dividend',
+) => boolean;
 
 export interface BatchIssueView {
   /** Chyby a varování k zobrazení — bez hlášek vyřízených číselníkem. */
@@ -71,6 +82,8 @@ export function batchIssueView(
   batch: BatchForIssues,
   allBatches: readonly BatchForIssues[],
   covers: AliasCovers,
+  /** Bez něj se vyřízená hláška nikdy neschová úplně (jen „ISIN doplněn…“). */
+  stored: StoredUnderAlias = () => false,
 ): BatchIssueView {
   const issues = storedIssues(batch);
   const errors = issues.errors ?? [];
@@ -87,8 +100,11 @@ export function batchIssueView(
           storedIssues(other).fileHash === issues.fileHash,
       )
     : [];
-  const reimported = (symbol: string): boolean =>
-    sameFileLater.some((later) => resolvedBy(later, symbol));
+  // Novější dávka téhož souboru sama nestačí: tu, která obchody uložila, mohl
+  // uživatel vrátit a zůstala jen ta se samými duplicitami (revize R1).
+  // Schovat se smí jen to, co v databázi opravdu leží.
+  const reimported = (symbol: string, kind: 'trade' | 'dividend'): boolean =>
+    sameFileLater.some((later) => resolvedBy(later, symbol)) && stored(batch.broker, symbol, kind);
 
   const tradeSymbols = new Set<string>();
   const dividendSymbols = new Set<string>();
@@ -97,14 +113,33 @@ export function batchIssueView(
 
   const shownErrors = errors.filter((issue) => !resolved(issue));
   const shownWarnings = warnings.filter((issue) => !resolved(issue));
+  // Kolik hlášek vyřízení ubírá: podle počtů per symbol z celého seznamu
+  // (uložená je jen část, `MAX_STORED_ISSUES`), u starších dávek bez nich
+  // jen ty uložené.
+  const resolvedCount = (
+    list: readonly RowIssue[],
+    shown: readonly RowIssue[],
+    counts: Record<string, number> | undefined,
+  ): number => {
+    if (!counts) return list.length - shown.length;
+    return Object.entries(counts)
+      .filter(([symbol]) => covers(batch.broker, symbol))
+      .reduce((sum, [, count]) => sum + count, 0);
+  };
   return {
     errors: shownErrors,
     warnings: shownWarnings,
-    errorCount: Math.max(0, batch.errorCount - (errors.length - shownErrors.length)),
-    warningCount: Math.max(0, batch.warningCount - (warnings.length - shownWarnings.length)),
-    pendingTrades: [...tradeSymbols].filter((symbol) => !reimported(symbol)),
+    errorCount: Math.max(
+      0,
+      batch.errorCount - resolvedCount(errors, shownErrors, issues.unmappedCounts?.errors),
+    ),
+    warningCount: Math.max(
+      0,
+      batch.warningCount - resolvedCount(warnings, shownWarnings, issues.unmappedCounts?.warnings),
+    ),
+    pendingTrades: [...tradeSymbols].filter((symbol) => !reimported(symbol, 'trade')),
     pendingDividends: [...dividendSymbols].filter(
-      (symbol) => !tradeSymbols.has(symbol) && !reimported(symbol),
+      (symbol) => !tradeSymbols.has(symbol) && !reimported(symbol, 'dividend'),
     ),
   };
 }
@@ -113,6 +148,9 @@ export function batchIssueView(
 export function batchIssueViews(
   batches: readonly BatchForIssues[],
   covers: AliasCovers,
+  stored: StoredUnderAlias,
 ): Map<string, BatchIssueView> {
-  return new Map(batches.map((batch) => [batch.id, batchIssueView(batch, batches, covers)]));
+  return new Map(
+    batches.map((batch) => [batch.id, batchIssueView(batch, batches, covers, stored)]),
+  );
 }

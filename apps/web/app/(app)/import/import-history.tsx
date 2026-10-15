@@ -9,7 +9,7 @@ import type { importBatches } from '@/db/schema';
 import { czDateTime, plural } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { UnmappedSymbol } from '@/lib/import-service';
-import { ALIAS_LIST_ANCHOR, filledSentence } from '@/lib/alias-feedback';
+import { ALIAS_LIST_ANCHOR, filledSentence, type StoredFilled } from '@/lib/alias-feedback';
 import type { BatchIssueView } from '@/lib/import-resolved';
 import { undoImportAction } from './actions';
 import { platformName } from '@/lib/brokers-catalog';
@@ -23,7 +23,7 @@ export interface BatchIssues {
   /** Shoda s transakcemi jiného brokera (B-3-3) — hlásíme, neslučujeme. */
   crossBroker?: string[];
   /** ISIN doplněné z vestavěného číselníku (lib/instrument-aliases `FilledInstrument`). */
-  filled?: Array<{ symbol: string; isin: string; name: string }>;
+  filled?: StoredFilled[];
 }
 
 /**
@@ -128,7 +128,7 @@ function BatchDetails({ batch, view }: { batch: ImportBatchRow; view: BatchIssue
   const errors = view.errors;
   const warnings = view.warnings;
   const crossBroker = issues.crossBroker ?? [];
-  const filled = filledSentence(issues.filled ?? []);
+  const filled = filledSentence(issues.filled ?? [], platformName);
   const wholeFile = batch.broker === UNKNOWN_FORMAT;
   return (
     <div className="type-footnote space-y-3">

@@ -219,7 +219,7 @@ export function parseRevolutInvestTable(
     const type = map.get(row, 'Type').toUpperCase();
     const ticker = map.get(row, 'Ticker');
     const currency = map.get(row, 'Currency');
-    noteSymbolCurrency(result.symbolCurrencies, ticker, currency);
+    noteSymbolCurrency(result.symbolCurrencies, ticker, currency, line);
     const id = nextId(row);
     const classified = classifyInvestType(type);
 

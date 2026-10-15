@@ -1,4 +1,5 @@
 import type { RowIssue } from '@danero/importers';
+import type { StoredFilled } from '@/lib/alias-feedback';
 
 /**
  * Co si dávka importu ukládá do `import_batches.issues` (L8b-02).
@@ -40,7 +41,13 @@ export interface StoredIssues<U = unknown> {
    * Symboly, kterým import doplnil ISIN z vestavěného číselníku — historie
    * a hláška po nahrání je vyjmenují (`FilledInstrument` z lib/instrument-aliases).
    */
-  filled?: Array<{ broker: string; symbol: string; isin: string; name: string }>;
+  filled?: StoredFilled[];
+  /**
+   * Kolik hlášek „doplň ISIN“ připadá na který symbol — spočítané z CELÝCH
+   * seznamů před oříznutím. Historie podle toho odečte vyřízené hlášky
+   * i tehdy, když se uložila jen část (`MAX_STORED_ISSUES`).
+   */
+  unmappedCounts?: { errors: Record<string, number>; warnings: Record<string, number> };
 }
 
 const clip = (text: string): string =>
@@ -56,6 +63,27 @@ const clipIssue = ({ unmappedSymbol, ...issue }: RowIssue): RowIssue => ({
     : {}),
 });
 
+/** Počty hlášek per symbol (`StoredIssues.unmappedCounts`); prázdný objekt, když žádné nejsou. */
+function unmappedCountsOf(
+  errors: readonly RowIssue[],
+  warnings: readonly RowIssue[],
+): Pick<StoredIssues, 'unmappedCounts'> {
+  const count = (list: readonly RowIssue[]): Record<string, number> => {
+    const counts = new Map<string, number>();
+    for (const issue of list) {
+      const symbol = issue.unmappedSymbol;
+      if (symbol === undefined || symbol.length > MAX_STORED_SYMBOL) continue;
+      counts.set(symbol, (counts.get(symbol) ?? 0) + 1);
+    }
+    // fromEntries zakládá vlastní klíče — i symbol „__proto__“ zůstane daty
+    return Object.fromEntries(counts);
+  };
+  const result = { errors: count(errors), warnings: count(warnings) };
+  return Object.keys(result.errors).length + Object.keys(result.warnings).length > 0
+    ? { unmappedCounts: result }
+    : {};
+}
+
 export function capStoredIssues<U extends { symbol: string }>(issues: {
   errors: RowIssue[];
   skipped: RowIssue[];
@@ -63,7 +91,7 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
   unmapped: U[];
   crossBroker: string[];
   fileHash?: string;
-  filled?: Array<{ broker: string; symbol: string; isin: string; name: string }>;
+  filled?: StoredFilled[];
 }): StoredIssues<U> {
   // zkrácený symbol by se s výpisem už nikdy nespároval — raději ho vynechat
   const symbols = issues.unmapped.filter((item) => item.symbol.length <= MAX_STORED_SYMBOL);
@@ -84,12 +112,11 @@ export function capStoredIssues<U extends { symbol: string }>(issues: {
     ...(crossBroker.length > 0 ? { crossBroker } : {}),
     ...(truncated.length > 0 ? { truncated } : {}),
     ...(issues.fileHash ? { fileHash: issues.fileHash } : {}),
+    ...unmappedCountsOf(issues.errors, issues.warnings),
     ...(issues.filled?.length
       ? {
           filled: issues.filled.slice(0, MAX_STORED_UNMAPPED).map((item) => ({
-            broker: item.broker,
-            symbol: item.symbol,
-            isin: item.isin,
+            ...item,
             name: clip(item.name),
           })),
         }
