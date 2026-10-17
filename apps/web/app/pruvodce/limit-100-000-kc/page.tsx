@@ -7,10 +7,14 @@ import {
   ArticleSection,
   ArticleBody,
   ArticleIntro,
+  ArticleUpdated,
   Example,
   DisputedReading,
 } from '@/components/guide-article';
 import type { ContentsItem } from '@/components/long-read';
+import { ARTICLES } from '@/lib/articles';
+
+const PATH = '/pruvodce/limit-100-000-kc';
 
 export const metadata: Metadata = {
   title: 'Limit 100 000 Kč z prodeje akcií: počítá se objem, ne zisk — Danero',
@@ -35,7 +39,8 @@ const CONTENTS: ContentsItem[] = [
 export default function Limit100000KcPage() {
   return (
     <MarketingPage>
-      <PageHero eyebrow="Průvodce" title="Limit 100 000 Kč: počítá se objem prodejů, ne zisk" />
+      <PageHero eyebrow="Průvodce" title={ARTICLES[PATH].headline} />
+      <ArticleUpdated path={PATH} />
 
       <ArticleBody contents={CONTENTS}>
         <ArticleIntro>

@@ -7,8 +7,9 @@ import { buttonVariants } from '@/components/ui/button';
 import { Disclosure } from '@/components/ui/disclosure';
 import { TextLink } from '@/components/ui/link';
 import { getAuth } from '@/lib/auth';
+import { NOINDEX } from '@/lib/site';
 
-export const metadata = { title: 'E-mail potvrzený — Danero' };
+export const metadata = { title: 'E-mail potvrzený — Danero', robots: NOINDEX };
 
 /**
  * Cíl odkazu z ověřovacího e-mailu (K8-05).

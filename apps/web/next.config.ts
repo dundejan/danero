@@ -100,6 +100,13 @@ const nextConfig: NextConfig = {
   // `X-Powered-By: Next.js` jen napovídá, na jaké zranitelnosti zkoušet
   // (pasivní sken OWASP ZAP, bezpečnostní revize 15. 10. 2026)
   poweredByHeader: false,
+  // Metadata z `generateMetadata` Next jinak streamuje na konec `<body>` všem
+  // kromě vyjmenovaných robotů — a v tom seznamu chybí SeznamBot i roboti AI
+  // vyhledávačů, kteří JavaScript nespouštějí. Ověřovací tag Seznamu
+  // (`seznam-wmt`) musí být v `<head>` úvodu, jinak ověření webu neprojde.
+  // Async metadata máme jen na úvodu (čtení env) a u detailu pozice, takže
+  // blokující metadata pro všechny nic nestojí.
+  htmlLimitedBots: /.*/,
   // workspace balíčky exportují TS zdrojáky — Next je transpiluje sám
   transpilePackages: ['@danero/engine', '@danero/importers', '@danero/shared'],
   // nativní/WASM balíčky nesmí do server bundle (PGlite si načítá WASM přes import.meta.url)
@@ -120,11 +127,20 @@ const nextConfig: NextConfig = {
    * bezplatným. Odkazy na ně ale žijí dál ve starých e-mailech (potvrzení
    * objednávky, upomínka před obnovou) a ve vyhledávačích — místo 404 proto
    * vedou tam, kde se čtenář dozví, co platí teď.
+   *
+   * `/demo` (odkazy z e-mailů, z `/vitejte` a starších zmínek) je vstup do
+   * prohlídky. Dřív to byla stránka s `redirect()`, jenže hranice Suspense
+   * z `app/demo/loading.tsx` stihla začít streamovat a Next přesměrování dodal
+   * jako stav 200 s `<meta http-equiv="refresh">` — robot viděl prázdnou
+   * stránku kanonizovanou sama na sebe (SEO audit, K2). Tady je to skutečné
+   * 307 dřív, než se cokoli vykreslí. Dočasné schválně: vstup do dema se může
+   * přesunout a trvalé přesměrování si prohlížeče pamatují.
    */
   async redirects() {
     return [
       { source: '/predplatne/:path*', destination: '/cenik', permanent: true },
       { source: '/odstoupeni', destination: '/podminky', permanent: true },
+      { source: '/demo', destination: '/demo/prehled', permanent: false },
     ];
   },
 };

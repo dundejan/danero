@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { ARTICLES } from '@/lib/articles';
 import { SITE_URL } from '@/lib/site';
 
 /**
@@ -17,6 +18,10 @@ import { SITE_URL } from '@/lib/site';
  * odvodilo od souboru stránky a minulo zdroj, ze kterého stránka text bere.
  * Stejně tak /demo/* (společný `layout.tsx`) a právní stránky (`lib/legal.ts`).
  * Poslední doloženou změnu drží i `test/seo-metadata.test.ts`.
+ *
+ * U článků průvodce a metodiky je datum v `lib/articles.ts`: stránka ho
+ * ukazuje pod titulkem („Aktualizováno …“) a nese ho `Article` v JSON-LD,
+ * takže sitemapa ho jen přebírá a nemůže se s nimi rozejít.
  */
 interface Page {
   path: string;
@@ -27,18 +32,18 @@ interface Page {
 
 const PAGES: Page[] = [
   { path: '/', lastModified: '2026-10-10', changeFrequency: 'weekly', priority: 1 },
-  { path: '/kalkulacka', lastModified: '2026-10-13', changeFrequency: 'monthly', priority: 0.9 },
+  { path: '/kalkulacka', lastModified: '2026-10-17', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/platformy', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/pruvodce', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
   {
     path: '/pruvodce/limit-100-000-kc',
-    lastModified: '2026-10-10',
+    lastModified: ARTICLES['/pruvodce/limit-100-000-kc'].modified,
     changeFrequency: 'monthly',
     priority: 0.8,
   },
   {
     path: '/pruvodce/pausalni-rezim-a-investice',
-    lastModified: '2026-10-10',
+    lastModified: ARTICLES['/pruvodce/pausalni-rezim-a-investice'].modified,
     changeFrequency: 'monthly',
     priority: 0.8,
   },
@@ -46,7 +51,12 @@ const PAGES: Page[] = [
   { path: '/cenik', lastModified: '2026-10-11', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/demo/prehled', lastModified: '2026-10-08', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/caste-otazky', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
-  { path: '/jak-pocitame', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
+  {
+    path: '/jak-pocitame',
+    lastModified: ARTICLES['/jak-pocitame'].modified,
+    changeFrequency: 'monthly',
+    priority: 0.7,
+  },
   { path: '/o-projektu', lastModified: '2026-10-10', changeFrequency: 'yearly', priority: 0.5 },
   { path: '/podminky', lastModified: '2026-10-11', changeFrequency: 'yearly', priority: 0.2 },
   { path: '/soukromi', lastModified: '2026-10-09', changeFrequency: 'yearly', priority: 0.2 },

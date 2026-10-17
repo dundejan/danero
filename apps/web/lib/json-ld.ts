@@ -1,4 +1,5 @@
 import type { FaqItem } from '@/components/faq-list';
+import { ARTICLES, type ArticlePath } from '@/lib/articles';
 import { SOURCE_URL } from '@/lib/legal';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
 
@@ -23,6 +24,46 @@ export function organizationJsonLd(): Record<string, unknown> {
     description: SITE_DESCRIPTION,
     // zdrojový kód pod AGPL je veřejný a fork si adresu přepíše přes NEXT_PUBLIC_SOURCE_URL
     sameAs: [SOURCE_URL],
+  };
+}
+
+/**
+ * Web jako celek (K4). Google podle něj volí jméno webu nad výsledkem
+ * („Danero“ místo „danero.cz“); `alternateName` je doména instance, takže
+ * fork si ji přes `NEXT_PUBLIC_APP_URL` nese svou.
+ */
+export function websiteJsonLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    alternateName: new URL(SITE_URL).host,
+    url: `${SITE_URL}/`,
+    inLanguage: 'cs',
+  };
+}
+
+/**
+ * Článek průvodce nebo metodika (K5): titulek, kdy vznikl a kdy se naposledy
+ * změnil — tatáž data, která stránka ukazuje pod titulkem (`lib/articles.ts`).
+ *
+ * Autor je **značka Danero**, ne osoba: jméno člověka do kódu nepatří
+ * (pravidlo 8, viz výš) a `/o-projektu`, kam `url` vede, říká, kdo za
+ * projektem stojí.
+ */
+export function articleJsonLd(path: ArticlePath): Record<string, unknown> {
+  const article = ARTICLES[path];
+  const danero = { '@type': 'Organization', name: SITE_NAME, url: `${SITE_URL}/o-projektu` };
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: article.headline,
+    datePublished: article.published,
+    dateModified: article.modified,
+    inLanguage: 'cs',
+    mainEntityOfPage: `${SITE_URL}${path}`,
+    author: danero,
+    publisher: { ...danero, logo: `${SITE_URL}/znacka/danero-logo-1024x256.png` },
   };
 }
 

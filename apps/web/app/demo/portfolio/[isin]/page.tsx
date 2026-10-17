@@ -1,8 +1,10 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PositionView, positionHistory } from '@/components/views/position-view';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { instrumentLabels } from '@/lib/portfolio';
+import { NOINDEX } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +13,12 @@ export async function generateMetadata({
   params,
 }: {
   params: Promise<{ isin: string }>;
-}): Promise<{ title: string }> {
+}): Promise<Metadata> {
   const { isin: rawIsin } = await params;
   const isin = decodeURIComponent(rawIsin).toUpperCase();
   const { txs } = demoDataset(demoToday());
   const label = instrumentLabels(txs).get(isin) ?? isin;
-  return { title: `Demo: ${label} — Danero` };
+  return { title: `Demo: ${label} — Danero`, robots: NOINDEX };
 }
 
 export default async function DemoPositionDetailPage({

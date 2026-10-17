@@ -115,6 +115,9 @@ openssl rand -hex 32      # CRON_SECRET
 | `NEXT_PUBLIC_SOURCE_URL` | **ano, pokud kód měníš** | adresa repozitáře **s tvými úpravami**. Aplikace ji ukazuje přihlášeným uživatelům v patičce, protože § 13 licence AGPL-3.0 ukládá nabídnout zdrojový kód každému, komu instanci nabízíš po síti. Bez ní ukazuje upstream — a ten tvoje změny neobsahuje, takže bys licenci porušoval. |
 | `DANERO_SUPPORT_IBAN` | ne | český IBAN, na který jde poslat dobrovolný příspěvek. Stránka `/cenik` z něj vykreslí QR platbu a číslo účtu. Nastav **svůj**, nebo nic — bez proměnné se o příspěvek nežádá. |
 | `DANERO_SUPPORT_URL` | ne | https odkaz na příspěvek kartou (např. GitHub Sponsors). |
+| `DANERO_SITE_VERIFICATION_GOOGLE` | ne | ověřovací kód z Google Search Console; úvodní stránka ho vypíše jako `<meta name="google-site-verification">`. Jen kód, ne celý tag. Bez proměnné se tag nevypíše. Nastav **svůj** — ověřuje tvoji doménu |
+| `DANERO_SITE_VERIFICATION_BING` | ne | totéž pro Bing Webmaster Tools (`<meta name="msvalidate.01">`) |
+| `DANERO_SITE_VERIFICATION_SEZNAM` | ne | totéž pro Seznam Webmaster (`<meta name="seznam-wmt">`). Seznam ověření přes DNS nezná, takže bez téhle proměnné tam web ověřit nejde |
 
 Placené tarify Danero nemá — všechny funkce jsou odemčené každému. Do října
 2026 je uměla zapnout proměnná `DANERO_BILLING=stripe`; ta i `STRIPE_*` už nic

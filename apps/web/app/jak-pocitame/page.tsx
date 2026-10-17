@@ -3,16 +3,18 @@ import {
   ArticleLink,
   ArticleList,
   ArticleSection,
+  ArticleUpdated,
   DisputedReading,
 } from '@/components/guide-article';
 import { LongRead, type ContentsItem } from '@/components/long-read';
 import { typeset } from '@/components/typeset';
 import { MarketingPage, PageClosing, PageHero } from '@/components/marketing-page';
 import { Disclosure } from '@/components/ui/disclosure';
+import { ARTICLES } from '@/lib/articles';
 import { verifiedRateSourceNote } from '@/lib/tax-config';
 
 export const metadata: Metadata = {
-  title: 'Jak počítáme — Danero',
+  title: 'Jak počítáme daně z investic: časový test a limity — Danero',
   description:
     'Daňová metodika Danera v lidské řeči: časový test 3 roky, limit 100 000 Kč, kryptoaktiva, dividendy, deriváty, kurzy i párování prodejů — každé pravidlo s odkazem na paragraf a poctivě označenými spornými výklady.',
 };
@@ -73,8 +75,11 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
       <>
         <p>
           Jsou-li tvoje celkové tržby z prodejů cenných papírů za rok nejvýš
-          100 000 Kč, jsou osvobozené — i když jsi nic nedržel 3 roky. Pozor: počítá
-          se objem prodejů (kolik ti z nich přišlo), ne zisk. I prodej za 101 000 Kč
+          100 000 Kč, jsou osvobozené — i když jsi nic nedržel 3 roky. Pozor:{' '}
+          <ArticleLink href="/pruvodce/limit-100-000-kc">
+            počítá se objem prodejů
+          </ArticleLink>{' '}
+          (kolik ti z nich přišlo), ne zisk. I prodej za 101 000 Kč
           se ztrátou limit prolomí.
         </p>
         <p>
@@ -224,7 +229,10 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
     body: (
       <>
         <p>
-          OSVČ v paušálním režimu: aby daň zůstala „rovna paušální dani“, smí
+          <ArticleLink href="/pruvodce/pausalni-rezim-a-investice">
+            OSVČ v paušálním režimu
+          </ArticleLink>
+          : aby daň zůstala „rovna paušální dani“, smí
           tvoje příjmy z kapitálu, nájmu a ostatní příjmy (mimo podnikání) dělat
           v úhrnu nejvýš 50 000 Kč za rok. Počítají se hrubé tržby, ne zisk —
           prodej akcií za 120 000 Kč se ziskem 5 000 Kč znamená 120 000 Kč do
@@ -350,9 +358,10 @@ export default function JakPocitamePage() {
     <MarketingPage>
       <PageHero
         eyebrow="Metodika"
-        title="Každé pravidlo má svůj paragraf"
+        title={ARTICLES['/jak-pocitame'].headline}
         lede="Celá metodika Danera, pravidlo po pravidlu, vždy s odkazem na zákon. Kde se výklady liší, píšeme to na rovinu."
       />
+      <ArticleUpdated path="/jak-pocitame" />
 
       <LongRead contents={CONTENTS} narrow="list">
         <div className="space-y-16">

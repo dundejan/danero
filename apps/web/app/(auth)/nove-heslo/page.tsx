@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { FormPage } from '@/components/form-page';
 import { NewPasswordForm } from '@/components/new-password-form';
 import { buttonVariants } from '@/components/ui/button';
+import { NOINDEX } from '@/lib/site';
 
-export const metadata = { title: 'Nové heslo — Danero' };
+export const metadata = { title: 'Nové heslo — Danero', robots: NOINDEX };
 
 /**
  * Cíl odkazu z e-mailu. Better Auth token nejdřív ověří na svém endpointu

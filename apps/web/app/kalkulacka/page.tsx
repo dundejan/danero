@@ -9,7 +9,7 @@ import { filingLimitTexts } from '@/lib/filing-limits';
 import { tidy } from '@/lib/typography';
 
 export const metadata: Metadata = {
-  title: 'Musím podat daňové přiznání kvůli investicím? Kalkulačka zdarma — Danero',
+  title: 'Musím kvůli investicím podat přiznání? Kalkulačka — Danero',
   description:
     'Odpověz na pár otázek a zjisti orientačně, jestli se tě kvůli akciím, ETF či kryptu týká daňové přiznání. Limit 100 000 Kč, tříletý časový test i limit 50 000 Kč pro paušální daň.',
 };
@@ -19,10 +19,14 @@ export const metadata: Metadata = {
  * má na obrazovce otázky a verdikt, výklad je na požádání). Na rok vázaná
  * nejsou, takže limity § 38g jmenují s oběma roky i částkami (R-09a, R-09b) —
  * hlídá `test/public-filing-limits.test.ts`, který čte řádky `body:`.
+ *
+ * `guide` je článek průvodce, který pravidlo rozvádí — jeden odkaz pod
+ * rozbaleným zněním (SEO audit, K6: články jinak visely jen na rozcestníku).
  */
 const RULES = [
   {
     title: 'Limit 100 000 Kč',
+    guide: { href: '/pruvodce/limit-100-000-kc', label: 'Článek: limit 100 000 Kč' },
     body: 'Jsou-li tvoje celkové tržby z prodeje cenných papírů za rok do 100 000 Kč, jsou všechny osvobozené — bez ohledu na zisk a bez tříletého čekání. Počítá se, kolik ti z prodejů přiteklo, ne kolik jsi vydělal. Kryptoaktiva mají od 15. 2. 2025 stejný limit zvlášť.',
   },
   {
@@ -31,6 +35,7 @@ const RULES = [
   },
   {
     title: 'Limity pro podání přiznání',
+    guide: { href: '/pruvodce/pausalni-rezim-a-investice', label: 'Článek: OSVČ v paušálu' },
     body: 'OSVČ v paušálním režimu má hranici 50 000 Kč zdanitelných příjmů mimo podnikání. Překročení z režimu nevyhazuje — jen daň přestane být rovna paušální dani, takže vzniká povinnost podat přiznání a přehledy. Do hranice patří neosvobozené prodeje, zahraniční dividendy (v hrubé výši před srážkou), úroky i kladná plnění z derivátů. Zaměstnanci hlídají vedlejší příjmy — za rok 2026 do 20 000 Kč, od roku 2027 do 40 000 Kč; kdo není zaměstnanec ani OSVČ, má obecný limit 50 000 Kč za rok 2026 a 100 000 Kč od roku 2027. OSVČ mimo paušální režim podává přiznání kvůli podnikání tak jako tak a zdanitelné příjmy z investic do něj patří v jakékoli výši. Osvobozené prodeje se do limitů nepočítají, stejně jako české dividendy a úroky z banky zdaněné srážkou. Deriváty (CFD, opce, futures) žádné osvobození nemají — do limitu vstupuje součet kladných plnění, ne čistý zisk po odečtení ztrát.',
   },
 ] as const;
@@ -62,6 +67,13 @@ export default function KalkulackaPage() {
               {RULES.map((rule) => (
                 <DisclosureRow key={rule.title} title={tidy(rule.title)}>
                   <p>{tidy(rule.body)}</p>
+                  {'guide' in rule && (
+                    <p className="mt-2">
+                      <TextLink href={rule.guide.href} chevron>
+                        {tidy(rule.guide.label)}
+                      </TextLink>
+                    </p>
+                  )}
                 </DisclosureRow>
               ))}
             </Group>

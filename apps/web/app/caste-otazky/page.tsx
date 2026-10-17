@@ -10,7 +10,7 @@ import { faqPageJsonLd } from '@/lib/json-ld';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
-  title: 'Časté otázky — Danero',
+  title: 'Daně z investic: časté otázky — Danero',
   description:
     'Musím kvůli investicím podávat přiznání? Které brokery Danero načte? Jak je to s bezpečností, kryptem a deriváty? Odpovědi na nejčastější otázky k hlídání daní z investic.',
 };

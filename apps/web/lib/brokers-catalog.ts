@@ -18,6 +18,10 @@
  * TADY (texty se nikde jinde neopisují).
  */
 export interface PlatformInfo {
+  /**
+   * Interní id a zároveň **veřejná kotva** řádku na `/platformy` (`#xtb`,
+   * `#trading212`) — odkazují na ni fóra a odpovědi, takže se nemění.
+   */
   id: string;
   name: string;
   group: 'brokeri' | 'banky' | 'krypto';

@@ -1,11 +1,17 @@
 # Danero
 
-**Daně z investic pod kontrolou — hlídač časových testů a daňových limitů pro
-české investory.**
+**Hlídač daní z investic pro české investory — časové testy, limit 100 000 Kč
+a paušální daň.**
+
+[Vyzkoušet demo](https://danero.cz/demo/prehled) · [danero.cz](https://danero.cz) ·
+[Pravidla výpočtu](docs/02-danova-pravidla.md)
+
+*In English: a Czech capital-gains tax tracker for retail investors. The app and
+docs are Czech-only — see the [English summary](#english) at the end.*
 
 Danero hlídá, kdy jsou tvoje pozice osvobozené od daně (tříletý časový test),
-kolik ti zbývá do limitu 100 000 Kč z prodejů cenných papírů, a — unikátně —
-hlídá **limit 50 000 Kč pro OSVČ v paušálním režimu** (včetně zahraničních
+kolik ti zbývá do limitu 100 000 Kč z prodejů cenných papírů, a hlídá i
+**limit 50 000 Kč pro OSVČ v paušálním režimu** (včetně zahraničních
 dividend, které do něj počítají brutto). Umí simulovat „co když teď prodám X"
 a spočítat podklady k daňovému přiznání včetně XML pro elektronické podání.
 
@@ -115,9 +121,9 @@ Danero je výpočetní a evidenční nástroj, **nikoli daňové poradenství** 
 smyslu zákona č. 523/1992 Sb. Výstupy jsou orientační podklady; za správnost
 daňového přiznání odpovídá poplatník.
 
----
+## English
 
-**English:** Danero is a Czech tax watchdog for retail investors — it tracks
+Danero is a Czech tax watchdog for retail investors — it tracks
 capital-gains exemption limits, three-year holding tests and prepares the annual
 tax return (incl. XML for the Czech e-filing portal). The product, docs and UI
 are Czech-only by design; the code is AGPL-3.0 and contributions — especially

@@ -8,7 +8,16 @@ import { firstParam, resolveTaxYear } from '@/lib/utils';
 // „dnešek“ dema se odvíjí od skutečného data — žádný prerender při buildu
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Demo: Přehled — Danero' };
+/**
+ * Jediná stránka dema, která má být ve vyhledávání (a v sitemapě): vstup do
+ * prohlídky. Vlastní popis proto, aby ve výsledcích nestál obecný popis webu;
+ * ostatní podstránky dema mají `noindex` (smyšlená čísla mimo AI odpovědi).
+ */
+export const metadata = {
+  title: 'Demo: Přehled — Danero',
+  description:
+    'Ukázka Danera nad smyšleným portfoliem: limit 100 000 Kč, limit paušální daně, tříleté časové testy a upozornění. Bez registrace, nic se neukládá.',
+};
 
 export default async function DemoPrehledPage({
   searchParams,

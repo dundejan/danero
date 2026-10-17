@@ -1,9 +1,10 @@
 import { SimulatorView, type SimParams } from '@/components/views/simulator-view';
 import { demoDataset, demoToday } from '@/lib/demo-data';
+import { NOINDEX } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Demo: Simulátor — Danero' };
+export const metadata = { title: 'Demo: Simulátor — Danero', robots: NOINDEX };
 
 export default async function DemoSimulatorPage({
   searchParams,

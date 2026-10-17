@@ -16,6 +16,11 @@ import { NOT_TAX_ADVICE } from '@/components/shell-disclaimer';
  * úpravě textů potichu nevrátilo.
  */
 vi.mock('@/lib/session', () => ({ currentUser: async () => null }));
+// metadata úvodu čekají na požadavek (`connection()`), který test nemá
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  connection: async () => undefined,
+}));
 // rám stránky (lišta, patička) je asynchronní a k obsahu úvodu nepatří
 vi.mock('@/components/marketing-page', async () => {
   const actual = await vi.importActual<typeof import('@/components/marketing-page')>(
@@ -200,11 +205,11 @@ describe('„zdarma“ jednou v úvodu a jednou v pásu (R1A-06)', () => {
     const html = await landingHtml();
     const hero = textOf(html.slice(0, html.indexOf('aria-label="Časové testy"')));
     const site = await import('@/lib/site');
-    const landing = await import('@/app/page');
+    const landing = await (await import('@/app/page')).generateMetadata();
     const texts = {
       'úvodní obrazovka': hero,
-      'titulek úvodu': String(landing.metadata.title),
-      'popis úvodu': String(landing.metadata.description),
+      'titulek úvodu': String(landing.title),
+      'popis úvodu': String(landing.description),
       'výchozí titulek': site.SITE_TITLE,
       'výchozí popis': site.SITE_DESCRIPTION,
       'věty obrázku pro sdílení': `${site.SITE_TAGLINE} ${site.SITE_TAGLINE_HOW}`,

@@ -7,9 +7,13 @@ import {
   ArticleList,
   ArticleBody,
   ArticleIntro,
+  ArticleUpdated,
   Example,
 } from '@/components/guide-article';
 import type { ContentsItem } from '@/components/long-read';
+import { ARTICLES } from '@/lib/articles';
+
+const PATH = '/pruvodce/pausalni-rezim-a-investice';
 
 export const metadata: Metadata = {
   title: 'OSVČ v paušálu a investice: limit 50 000 Kč — Danero',
@@ -34,10 +38,8 @@ const CONTENTS: ContentsItem[] = [
 export default function PausalniRezimAInvesticePage() {
   return (
     <MarketingPage>
-      <PageHero
-        eyebrow="Průvodce"
-        title="OSVČ v paušálu: jak ti investice můžou vrátit přiznání"
-      />
+      <PageHero eyebrow="Průvodce" title={ARTICLES[PATH].headline} />
+      <ArticleUpdated path={PATH} />
 
       <ArticleBody contents={CONTENTS}>
         <ArticleIntro>

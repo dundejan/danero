@@ -3,10 +3,11 @@ import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { availableYears } from '@/lib/portfolio';
 import { firstParam, resolveTaxYear } from '@/lib/utils';
+import { NOINDEX } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Demo: Portfolio — Danero' };
+export const metadata = { title: 'Demo: Portfolio — Danero', robots: NOINDEX };
 
 export default async function DemoPortfolioPage({
   searchParams,

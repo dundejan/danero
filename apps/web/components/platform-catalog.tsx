@@ -2,6 +2,7 @@ import { OPERATOR } from '@/lib/contact';
 import { PlatformSearch, type PlatformSearchGroup } from '@/components/platform-search';
 import { typeset } from '@/components/typeset';
 import { DisclosureRow } from '@/components/ui/disclosure';
+import { OpenOnHash } from '@/components/ui/open-on-hash';
 import { TextLink } from '@/components/ui/link';
 import {
   PLATFORM_GROUPS,
@@ -71,7 +72,10 @@ export function PlatformCatalog() {
       keywords: `${platform.name} ${platform.id}`,
       row: (
         <DisclosureRow
-          className="border-t border-line/70"
+          // kotva `/platformy#xtb`: na návod jde odkázat z fóra i z odpovědi
+          // (SEO audit, K8); `OpenOnHash` řádek při příchodu rozbalí
+          id={platform.id}
+          className="border-t border-line/70 [&>details]:scroll-mt-24"
           title={<span className="type-body font-medium">{platform.name}</span>}
           meta={<span className="type-footnote">{METHOD_WORD[platform.method]}</span>}
         >
@@ -86,6 +90,7 @@ export function PlatformCatalog() {
 
   return (
     <div className="@container">
+      <OpenOnHash />
       <PlatformSearch groups={groups} />
 
       {/* stejné dva sloupce jako seznam platforem nad tím — jedna pravá hrana

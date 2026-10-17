@@ -41,6 +41,17 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
    sekce o příspěvku nevykreslí, s překlepem to ohlásí `/api/health`
    (`support: "invalid"`).
 
+   Volitelně i ověření webu pro vyhledávače: `DANERO_SITE_VERIFICATION_GOOGLE`
+   (Search Console, meta tag `google-site-verification`),
+   `DANERO_SITE_VERIFICATION_BING` (Bing Webmaster Tools, `msvalidate.01`)
+   a `DANERO_SITE_VERIFICATION_SEZNAM` (Seznam Webmaster, `seznam-wmt`). Do
+   proměnné patří jen kód z nástroje; meta tag se vypíše na úvodní stránce,
+   a jen když je proměnná vyplněná. Čte se za běhu (`generateMetadata`
+   s `connection()` v `app/page.tsx`), takže nezáleží na tom, jestli se
+   proměnná propíše do buildu. **Seznam DNS ověření nezná** — bez
+   `DANERO_SITE_VERIFICATION_SEZNAM` web v Seznam Webmasteru ověřit nejde.
+   Google a Bing jdou ověřit i přes DNS, resp. importem ze Search Console.
+
    Platby aplikace **nemá** — od 8. 10. 2026 je Danero celé zdarma. Proměnné
    `DANERO_BILLING` a `STRIPE_*` už nic nedělají a z prostředí je smaž; poslední
    stav s platbami je pod značkou `placene-tarify`.

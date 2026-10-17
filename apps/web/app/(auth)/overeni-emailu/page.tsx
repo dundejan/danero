@@ -5,8 +5,9 @@ import { ResendVerificationForm } from '@/components/resend-verification-form';
 import { TextLink } from '@/components/ui/link';
 import { getAuth } from '@/lib/auth';
 import { emailDeliveryConfigured } from '@/lib/email';
+import { NOINDEX } from '@/lib/site';
 
-export const metadata = { title: 'Potvrzení e-mailu — Danero' };
+export const metadata = { title: 'Potvrzení e-mailu — Danero', robots: NOINDEX };
 
 /**
  * Dvě role naráz: rozcestník po registraci a cíl odkazu z ověřovacího e-mailu.

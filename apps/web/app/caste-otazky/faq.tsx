@@ -27,9 +27,12 @@ export const FAQ_SECTIONS: FaqSection[] = [
         q: 'Musím kvůli investicím vůbec podávat přiznání?',
         a: (
           <>
-            Často ne: do 100 000 Kč tržeb z prodejů za rok se daň z prodejů neřeší vůbec
-            a kusy držené přes 3 roky jsou osvobozené úplně. Pozor ale na zahraniční
-            dividendy a úroky — do těchhle limitů nespadají a hlavně u OSVČ v paušálu
+            Často ne: do{' '}
+            <TextLink href="/pruvodce/limit-100-000-kc">100 000 Kč tržeb z prodejů</TextLink> za
+            rok se daň z prodejů neřeší vůbec a kusy držené přes 3 roky jsou osvobozené
+            úplně. Pozor ale na zahraniční dividendy a úroky — do těchhle limitů nespadají
+            a hlavně u{' '}
+            <TextLink href="/pruvodce/pausalni-rezim-a-investice">OSVČ v paušálu</TextLink>{' '}
             můžou samy prolomit hranici 50 000 Kč, i bez jediného prodeje. Orientačně to
             zjistíš za minutu v <TextLink href="/kalkulacka">kalkulačce</TextLink>; přesně
             ti to Danero spočítá z dat.

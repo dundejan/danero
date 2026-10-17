@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { connection } from 'next/server';
 import { compareVariants, type VariantComparison } from '@danero/engine';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { JsonLd } from '@/components/json-ld';
@@ -20,22 +21,33 @@ import { exemptionOutlook, horizonDots } from '@/lib/charts-data';
 import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
-import { organizationJsonLd } from '@/lib/json-ld';
+import { organizationJsonLd, websiteJsonLd } from '@/lib/json-ld';
 import { availableYears, engineInputForUser } from '@/lib/portfolio';
 import { currentUser } from '@/lib/session';
 import { typeset } from '@/components/typeset';
-import { SITE_TAGLINE, SITE_TAGLINE_HOW } from '@/lib/site';
+import { SITE_TAGLINE, SITE_TAGLINE_HOW, siteVerification } from '@/lib/site';
 import { tidy } from '@/lib/typography';
 
 // „dnešek“ dema se odvíjí od skutečného data (horizont, limity) —
 // žádný prerender při buildu; engine výsledek drží sdílená cache s /demo
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Danero — hlídač daní z investic, bezpečně a zdarma',
-  description:
-    'Danero z tvých obchodů počítá, jestli z investic platíš daň a kolik: limit 100 000 Kč, limit paušální daně i tříleté časové testy. Připraví podklady k přiznání včetně XML. K brokerovi se připojuje jen pro čtení; celé zdarma, bez karty.',
-};
+/**
+ * Metadata úvodu. Funkce místo konstanty kvůli ověřovacím meta tagům
+ * vyhledávačů (`siteVerification`): kódy jsou v prostředí instance a čtou se
+ * až při požadavku (`connection()`), aby je případné předrenderování úvodu
+ * nezapeklo prázdné. Patří jen sem — Seznam tag hledá na domovské stránce
+ * a jinde nemá co dělat.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  await connection();
+  return {
+    title: 'Danero — hlídač daní z investic, bezpečně a zdarma',
+    description:
+      'Danero z tvých obchodů počítá, jestli z investic platíš daň a kolik: limit 100 000 Kč, limit paušální daně i tříleté časové testy. Připraví podklady k přiznání včetně XML. K brokerovi se připojuje jen pro čtení; celé zdarma, bez karty.',
+    verification: siteVerification(),
+  };
+}
 
 /* ── stavební prvky ───────────────────────────────────────────────────────── */
 
@@ -189,7 +201,14 @@ const STEPS = [
   },
   {
     title: 'Dál hlídá Danero',
-    body: 'Limity a tříleté lhůty přepočítává denně. E-mail pošle při 60, 85 a 100 % limitu a 30 a 7 dní před osvobozením.',
+    // odkaz na článek průvodce z už existujícího slova, ne nová věta (SEO
+    // audit, K6): články jinak visely jen na rozcestníku /pruvodce
+    body: (
+      <>
+        <TextLink href="/pruvodce/limit-100-000-kc">Limity</TextLink> a tříleté lhůty přepočítává
+        denně. E-mail pošle při 60, 85 a 100 % limitu a 30 a 7 dní před osvobozením.
+      </>
+    ),
   },
 ] as const;
 
@@ -233,6 +252,7 @@ export default async function LandingPage({
   return (
     <MarketingPage>
       <JsonLd data={organizationJsonLd()} />
+      <JsonLd data={websiteJsonLd()} />
 
       {smazano === '1' && (
         <Notice role="status" title="Účet byl smazán." className="mt-6">

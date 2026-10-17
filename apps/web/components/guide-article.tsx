@@ -1,7 +1,11 @@
 import Link from 'next/link';
+import { JsonLd } from '@/components/json-ld';
 import { ANCHOR_OFFSET, LongRead, type ContentsItem } from '@/components/long-read';
 import { typeset } from '@/components/typeset';
 import { TextLink } from '@/components/ui/link';
+import { ARTICLES, type ArticlePath } from '@/lib/articles';
+import { czDate } from '@/lib/format';
+import { articleJsonLd } from '@/lib/json-ld';
 import { cn } from '@/lib/utils';
 import { tidy } from '@/lib/typography';
 
@@ -37,6 +41,24 @@ export function ArticleBody({
     );
   }
   return <article className="measure mt-10 md:mt-14">{children}</article>;
+}
+
+/**
+ * Tichá řádka pod titulkem článku „Aktualizováno 10. 10. 2026“ a k ní
+ * strukturovaná data `Article` (K5). Obojí z jednoho záznamu v
+ * `lib/articles.ts`: datum, které vidí čtenář, a datum pro vyhledávače se
+ * tak nemůžou rozejít. Autor se nevypisuje — je jím projekt, ne osoba.
+ */
+export function ArticleUpdated({ path }: { path: ArticlePath }) {
+  const { modified } = ARTICLES[path];
+  return (
+    <>
+      <JsonLd data={articleJsonLd(path)} />
+      <p className="type-footnote mt-4 text-ink-muted">
+        Aktualizováno <time dateTime={modified}>{tidy(czDate(modified))}</time>
+      </p>
+    </>
+  );
 }
 
 /** Úvodní odstavec — krátká odpověď článku; tučnou část označí článek přes <strong>. */

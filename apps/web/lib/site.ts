@@ -77,3 +77,49 @@ export const SITE_METADATA: Metadata = {
   },
   twitter: { card: 'summary_large_image' },
 };
+
+/**
+ * Stránka, která do výsledků vyhledávání nepatří, ale odkazy z ní ano
+ * (`noindex, follow`): podstránky dema se smyšlenými čísly — ta nemají skončit
+ * v citaci AI odpovědi jako „zisk z Applu“ — a stránky hesel a ověření e-mailu,
+ * které mimo odkaz z e-mailu nedávají smysl. Žádná z nich nesmí být v sitemapě
+ * (hlídá `test/seo-metadata.test.ts`).
+ */
+export const NOINDEX: NonNullable<Metadata['robots']> = { index: false, follow: true };
+
+/** Zdroj hodnot ověření — `process.env`, nebo prostředí podstrčené testem. */
+type EnvSource = Record<string, string | undefined>;
+
+/**
+ * Ověření vlastnictví webu pro Google Search Console, Bing Webmaster Tools
+ * a Seznam Webmaster — meta tagy na úvodní stránce.
+ *
+ * Kódy patří instanci, ne projektu: cizí self-hoster nemá na svém webu nést
+ * ověření danero.cz (stejný princip jako pravidlo 8), proto jen z prostředí
+ * a bez hodnoty se tag nevypíše. Seznam jiné ověření než meta tag na domovské
+ * stránce (nebo soubor v kořeni) nezná — DNS záznam mu nestačí.
+ *
+ * Čte se za běhu (`generateMetadata` úvodu s `connection()`), ne při buildu:
+ * proměnné se na Vercelu do buildu nemusí propsat (viz `MarketingFooter`)
+ * a předrenderovaný úvod by si zapekl prázdnou hodnotu — ověření by pak po
+ * čase tiše spadlo.
+ */
+export function siteVerification(
+  env: EnvSource = process.env,
+): NonNullable<Metadata['verification']> | undefined {
+  // prázdný řádek šablony (`DANERO_SITE_VERIFICATION_SEZNAM=`) je totéž co žádný
+  const clean = (value: string | undefined): string | undefined => value?.trim() || undefined;
+  const google = clean(env.DANERO_SITE_VERIFICATION_GOOGLE);
+  // klíče jsou jména meta tagů, která vyhledávače hledají
+  const other = Object.fromEntries(
+    Object.entries({
+      'msvalidate.01': clean(env.DANERO_SITE_VERIFICATION_BING),
+      'seznam-wmt': clean(env.DANERO_SITE_VERIFICATION_SEZNAM),
+    }).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+  if (!google && Object.keys(other).length === 0) return undefined;
+  return {
+    ...(google ? { google } : {}),
+    ...(Object.keys(other).length > 0 ? { other } : {}),
+  };
+}
