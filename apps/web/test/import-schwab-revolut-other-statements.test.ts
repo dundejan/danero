@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectAndParse } from '@/lib/import-service';
+import { REVOLUT_CRYPTO_SUMMARY_CSV } from '../../../packages/importers/test/fixtures/revolut';
 
 /**
  * Charles Schwab a Revolut (audit 13. 10. 2026) — webová vrstva: co uvidí
@@ -121,5 +122,22 @@ describe('Revolut: výpis z běžného účtu (i spoření a „Flexible“)', (
     const message = result.errors[0]?.message ?? '';
     expect(message).toMatch(/Revolut/);
     expect(message).not.toContain(GENERIC);
+  });
+});
+
+describe('Revolut: přehled krypto zisků „Crypto Summaries“', () => {
+  it('dostane větu, která ho pojmenuje a pošle pro Account statement', () => {
+    const result = detectAndParse(REVOLUT_CRYPTO_SUMMARY_CSV);
+    expect(result.transactions).toHaveLength(0);
+    const message = result.errors[0]?.message ?? '';
+    expect(message).toContain('přehled krypto zisků');
+    expect(message).toContain('Account statement');
+    expect(message).not.toContain(GENERIC);
+  });
+
+  it('samotný nadpis bez tabulek přehledu za něj neprojde', () => {
+    // nadpis si může dát kdokoli — bez tabulky zůstane soubor nepoznaný a schová se k rozboru
+    const result = detectAndParse('"Crypto Summaries",,,\nfoo,bar,baz,\n');
+    expect(result.errors[0]?.message ?? '').toContain(GENERIC);
   });
 });

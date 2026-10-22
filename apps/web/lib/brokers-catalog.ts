@@ -299,7 +299,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#191C1F',
     guide:
-      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát CSV nebo Excel a celé období. Krypto: Crypto → More (⋯) → Documents → Account statement. Nahraj oba — přečteme CSV i sešit .xlsx. Výpis z běžného účtu (tlačítko Statement u účtu) sem nepatří. „Profit and loss statement“ z téže nabídky nepoužívej: ten nečteme, patří sem „Account statement“.',
+      'Akcie: Invest → More (⋯) → Documents → Stocks → Account statement → formát CSV nebo Excel a celé období. Krypto: Crypto → More (⋯) → Documents → Account statement. Nahraj oba — přečteme CSV i sešit .xlsx. Výpis z běžného účtu (tlačítko Statement u účtu) sem nepatří. „Profit and loss statement“ ani přehled zisků „Crypto Summaries“ z téže nabídky nepoužívej: ty nečteme, patří sem „Account statement“.',
   },
   {
     id: 'anycoin',

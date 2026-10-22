@@ -25,6 +25,7 @@ import {
 import {
   REVOLUT_CRYPTO_NEW_CSV,
   REVOLUT_CRYPTO_OLD_CSV,
+  REVOLUT_CRYPTO_SUMMARY_CSV,
   REVOLUT_INVEST_CSV,
 } from '../../../packages/importers/test/fixtures/revolut';
 import { buildSaxoXlsx, SAXO_ROWS_EN } from '../../../packages/importers/test/fixtures/saxo';
@@ -194,6 +195,27 @@ describe('routing ručního nahrání (importFileIsolated)', () => {
     expect(summary.errors[0]!.message).toContain('Export (new)');
     expect(summary.errors[0]!.message).not.toContain('nepoznáváme');
     // náprava je na uživateli — soubor se neschovává a provozovatel nedostane e-mail
+    expect(summary.unrecognized).toBeFalsy();
+    expect(await db.select().from(failedImports)).toHaveLength(0);
+  });
+
+  /**
+   * Přehled krypto zisků Revolutu (Crypto Summaries) taky jen poznáme — prodeje
+   * v něm Revolut rozpároval po svém a přijaté mince ocenil dnem převodu. První
+   * přišel 10/2026 a skončil u obecného „Formát souboru nepoznáváme“.
+   */
+  it('přehled krypto zisků Revolutu → návod na Account statement', { timeout: 30_000 }, async () => {
+    const summary = await importFileIsolated(
+      db,
+      'u1',
+      'summary.csv',
+      toArrayBuffer(Buffer.from(REVOLUT_CRYPTO_SUMMARY_CSV, 'utf8')),
+    );
+    expect(summary.added).toBe(0);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]!.message).toContain('přehled krypto zisků');
+    expect(summary.errors[0]!.message).toContain('Account statement');
+    expect(summary.errors[0]!.message).not.toContain('nepoznáváme');
     expect(summary.unrecognized).toBeFalsy();
     expect(await db.select().from(failedImports)).toHaveLength(0);
   });

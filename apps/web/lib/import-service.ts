@@ -302,6 +302,41 @@ function looksLikeTemplate(columns: string[]): boolean {
   return TEMPLATE_MARKERS.some((marker) => lower.includes(marker));
 }
 
+/** Oddíly, které má jen přehled krypto zisků Revolutu; ke shodě stačí jeden. */
+const REVOLUT_CRYPTO_SUMMARY_SECTIONS = [
+  'crypto transaction statements',
+  'transaction statement (only sales)',
+  'transaction statement (only acquisitions)',
+  'capital gains from sale',
+];
+
+/**
+ * Přehled krypto zisků Revolutu („Crypto Summaries“) — poznáme ho, ale
+ * neimportujeme. První přišel 10/2026: CSV o sedmnácti sloupcích s oddíly
+ * pod sebou (souhrn zisků, údaje o účtu, držba ke konci období a tabulky
+ * prodejů, nákupů, příchozích a odchozích převodů).
+ *
+ * Nákupy v něm sice jsou, ale prodeje už Revolut rozpároval podle vlastních
+ * pravidel a mince přijaté z jiné peněženky vede jako koupené v den převodu
+ * za tehdejší cenu — skutečná nabývací cena se ztratí. „Account statement“,
+ * který čteme, nese tytéž události po jedné a přijaté mince nechá na
+ * uživateli (R-04i). Kdo by nahrál obojí, měl by nákupy dvakrát.
+ *
+ * Nadpis sám nestačí (může ho mít kdokoli), proto k němu aspoň jeden další
+ * oddíl přehledu.
+ */
+function isRevolutCryptoSummary(text: string, columns: string[]): boolean {
+  if (columns[0]?.trim().toLowerCase() !== 'crypto summaries') return false;
+  const lower = text.toLowerCase();
+  return REVOLUT_CRYPTO_SUMMARY_SECTIONS.some((section) => lower.includes(section));
+}
+
+const REVOLUT_CRYPTO_SUMMARY_MESSAGE =
+  'Tohle je přehled krypto zisků z Revolutu (Crypto Summaries), ne výpis transakcí. Každý prodej ' +
+  'v něm Revolut sám přiřadil ke svým nákupům a mince převedené z jiné peněženky vede jako ' +
+  'koupené v den převodu — daň z něj správně spočítat nejde. Nahraj místo něj výpis transakcí: Crypto → More (⋯) ' +
+  '→ Documents → Account statement, období od založení účtu.';
+
 /**
  * Výpis od podporované platformy, jen JINÝ než ten, který čteme — uživatel
  * má dostat větu, která ho pojmenuje a řekne, co stáhnout místo něj, ne
@@ -314,6 +349,7 @@ function looksLikeTemplate(columns: string[]): boolean {
  *    (doloženo dokumentací a zkušebními daty cgt-calc).
  *  - Revolut, výpis z běžného účtu: první výpis, na který uživatel v aplikaci
  *    narazí (hlavička `Type,Product,Started Date,Completed Date,…`).
+ *  - Revolut, přehled krypto zisků „Crypto Summaries“ (`isRevolutCryptoSummary`).
  */
 function knownOtherStatement(text: string, columns: string[]): string | null {
   const names = new Set(columns.map((column) => column.trim()));
@@ -328,6 +364,7 @@ function knownOtherStatement(text: string, columns: string[]): string | null {
       'Přidělené akcie v něm jsou jen jako „Stock Plan Activity“ bez ceny — doplň je přes univerzální šablonu.'
     );
   }
+  if (isRevolutCryptoSummary(text, columns)) return REVOLUT_CRYPTO_SUMMARY_MESSAGE;
   if (names.has('Started Date') && names.has('Completed Date') && names.has('Product')) {
     return (
       'Tohle je výpis z běžného účtu Revolut (platby a spoření), ne z investic. Pro akcie stáhni v aplikaci ' +
