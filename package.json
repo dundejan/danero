@@ -28,7 +28,7 @@
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.24.0",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "pnpm": {
     "overrides": {
@@ -43,7 +43,15 @@
       "nanoid@<3.3.18": ">=3.3.18 <4",
       "source-map-js@<1.2.2": ">=1.2.2 <2",
       "sharp@<0.35.5": ">=0.35.5 <0.36",
-      "baseline-browser-mapping@<2.11.0": ">=2.11.0 <3"
+      "baseline-browser-mapping@<2.11.0": ">=2.11.0 <3",
+      "vite@>=7.0.0 <7.3.7": ">=7.3.7 <8"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-2464-fhr4-w9xw",
+        "GHSA-673q-mjm6-r5xr",
+        "GHSA-p3m5-59mp-jv5r"
+      ]
     }
   }
 }

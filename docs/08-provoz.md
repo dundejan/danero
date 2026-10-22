@@ -213,9 +213,20 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   má některá produkční závislost hlášení v databázi GitHubu. Opravuje se
   povýšením balíčku, u nepřímé závislosti přepisem v `pnpm.overrides`
   v kořenovém `package.json`.
-  Seznam výjimek (`pnpm.auditConfig.ignoreGhsas`) **neexistuje a nemá
-  vzniknout**: do 10. 10. 2026 v něm byla tři hlášení k Vitestu 3, která
-  zmizela povýšením na Vitest 4. Pozor na jednu past: audit počítá Vitest mezi
+  Seznam výjimek (`pnpm.auditConfig.ignoreGhsas`) **má zůstat prázdný**: do
+  10. 10. 2026 v něm byla tři hlášení k Vitestu 3, která zmizela povýšením na
+  Vitest 4.
+  ⚠️ **Dočasná výjimka od 22. 10. 2026 (rozhodl Jan): tři hlášení k Next.js
+  ≤ 16.4.0** — dvě vzdálená spuštění kódu (`GHSA-2464-fhr4-w9xw`
+  v optimalizaci obrázků jen se SVG; `GHSA-673q-mjm6-r5xr` jen ve funkcích
+  s `use cache`) a zahlcení přes server actions (`GHSA-p3m5-59mp-jv5r`).
+  SVG optimalizace (`dangerouslyAllowSVG`) ani `use cache` nepoužíváme;
+  zahlcení se nás týká a bereme ho jako vědomé riziko (výpadek, ne únik dat).
+  Opravené Next 16.4.1 i 16.4.2 má přepsaný klientský router a rozbíjí
+  auto-save nastavení: druhé rychlé uložení server přijme, ale klient spojení
+  zahodí po refreshi z prvního (3 testy v `e2e/nastaveni.spec.ts`; na 16.3.8
+  projdou). **Výjimky smaž hned, jak Next přejde na verzi, se kterou
+  `nastaveni.spec.ts` projde** — u každé verze Next to zkus znovu. Pozor na jednu past: audit počítá Vitest mezi
   „produkční“ závislosti, protože si ho Better Auth deklaruje jako volitelnou
   partnerskou závislost — hlášení k testovacímu nástroji tak umí shodit job,
   i když se do nasazené aplikace nedostane. Řešením je povýšit, ne ignorovat.
