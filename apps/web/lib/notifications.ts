@@ -1,8 +1,8 @@
-import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, max, min } from 'drizzle-orm';
 import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
-import { notifications, user } from '@/db/schema';
+import { brokerAccounts, jobs, notifications, user } from '@/db/schema';
 import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
@@ -24,6 +24,7 @@ import {
   type LimitEventKey,
 } from '@/lib/notification-display';
 import { recommendedTaxCzk, unpaidUnderLimitCzk } from '@/lib/payable-tax';
+import { parseSyncFailure } from '@/lib/sync-failure';
 import {
   analyzeForUser,
   dailyRatesForProfile,
@@ -333,6 +334,59 @@ export function calendarCandidates(args: {
   return out;
 }
 
+/** Po kolika dnech selhávající synchronizace se hlídač ozve. */
+export const SYNC_FAILING_AFTER_DAYS = 3;
+
+/**
+ * Účet u brokera, jehož synchronizace selhává (vypršelý nebo zrušený klíč,
+ * výpadek brokera). Do 7. 11. 2026 to hlídač nevěděl: počítal potichu ze
+ * starých dat a přehled ani e-mail neřekly, že nové obchody a dividendy
+ * chybí.
+ *
+ * Začátek výpadku (`failingSince`) je první neúspěšný sync po posledním
+ * úspěšném — z historie jobů, ne z `lastSyncedAt`: ten se nastavuje jen po
+ * úspěchu a vrácení importu ze syncu ho nuluje, takže by z něj vycházelo
+ * „z účtu se nikdy nic nestáhlo“ i u účtu s daty za léta. Ozve se jednou za
+ * výpadek (klíč nese den začátku) a až po `SYNC_FAILING_AFTER_DAYS` dnech —
+ * jednodenní výpadek brokera vyřeší další noční běh sám.
+ */
+export function syncFailureCandidates(args: {
+  accounts: Array<{
+    id: string;
+    label: string;
+    lastSyncStatus: string | null;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+    /** První neúspěšný sync po posledním úspěšném; `null` = neznámý. */
+    failingSince: Date | null;
+  }>;
+  today: string;
+}): NotificationCandidate[] {
+  const out: NotificationCandidate[] = [];
+  for (const account of args.accounts) {
+    if (account.lastSyncStatus !== 'error' || account.failingSince === null) continue;
+    // den v pražském čase — sync ve 00:30 je ještě „dnes“, ne včera v UTC
+    const since = todayInPrague(account.failingSince);
+    if (diffDays(since, args.today) < SYNC_FAILING_AFTER_DAYS) continue;
+    // věta z `lastSyncError` je psaná pro uživatele a bez přístupových údajů
+    // (`lib/sync-failure.ts`); technický detail do e-mailu nejde
+    const reason = account.lastSyncError ? parseSyncFailure(account.lastSyncError).text.trim() : '';
+    const reasonSentence = reason === '' ? '' : ` ${/[.!?…]$/.test(reason) ? reason : `${reason}.`}`;
+    const lastSuccess = account.lastSyncedAt
+      ? ` Naposledy se data podařilo stáhnout ${czDate(todayInPrague(account.lastSyncedAt))}.`
+      : '';
+    out.push({
+      dedupeKey: `sync|${account.id}|${since}`,
+      type: 'SYNC_FAILING',
+      // nesnese čekání na týdenní souhrn: do té doby jsou všechna čísla stará
+      urgent: true,
+      title: `${account.label}: synchronizace nefunguje od ${czDate(since)}`,
+      body: `Synchronizace účtu ${account.label} od ${czDate(since)} selhává, takže výpočty nevidí nové obchody ani dividendy.${lastSuccess}${reasonSentence} Stav účtu a obnovení klíče najdeš v Importu.`,
+    });
+  }
+  return out;
+}
+
 /** Řádek měřáku limitu v pravidelném přehledu. */
 export interface SummaryMeter {
   label: string;
@@ -479,6 +533,89 @@ export interface DigestEntry {
   title: string;
   body: string;
   urgent?: boolean | null;
+  /** Klíč události — u časového testu nese titul a datum (`tt30|<isin>|<datum>`). */
+  dedupeKey?: string;
+}
+
+/**
+ * Klíč události časového testu: `tt<lhůta>|<isin>|<datum osvobození>` nebo
+ * `ttdone|<isin>|<datum>` (`computeNotificationCandidates`). Titul a datum se
+ * berou z klíče, ne z textu — ten je pro lidi a mění se.
+ */
+const TIME_TEST_KEY = /^tt(\d+|done)\|(.+)\|(\d{4}-\d{2}-\d{2})$/;
+
+export function parseTimeTestKey(
+  dedupeKey: string | undefined,
+): { done: boolean; isin: string; exemptFrom: string } | null {
+  const match = dedupeKey === undefined ? null : TIME_TEST_KEY.exec(dedupeKey);
+  return match ? { done: match[1] === 'done', isin: match[2]!, exemptFrom: match[3]! } : null;
+}
+
+/**
+ * Události časového testu téhož titulu se v e-mailu slijí do jedné položky.
+ *
+ * Hlídač zakládá událost pro každý nákup zvlášť (každý má vlastní lhůtu), a kdo
+ * nakupuje pravidelně, dostal by seznam „VWRL: osvobození za 7 dní“ pod sebou
+ * pro každý den v týdnu. Tady z nich vznikne „VWRL: blíží se osvobození
+ * 5 nákupů“ s rozpětím dat. V aplikaci zůstávají jednotlivě.
+ */
+function mergeTimeTests(entries: DigestEntry[]): DigestEntry[] {
+  const groups = new Map<string, Array<{ entry: DigestEntry; exemptFrom: string }>>();
+  const out: Array<DigestEntry | string> = [];
+  for (const entry of entries) {
+    const key = parseTimeTestKey(entry.dedupeKey);
+    // titul tak, jak ho uživatel zná — vše před „: osvobození…“ v titulku
+    const cut = entry.title.lastIndexOf(': osvoboz');
+    if (!key || cut <= 0) {
+      out.push(entry);
+      continue;
+    }
+    const groupKey = `${key.done ? 'done' : 'lead'}|${key.isin}`;
+    const group = groups.get(groupKey);
+    // dvě lhůty TÉHOŽ nákupu (7 a 1 den) jsou jeden nákup, ne dva — zůstane
+    // ta pozdější, bližší událost
+    const same = group?.findIndex((g) => g.exemptFrom === key.exemptFrom) ?? -1;
+    if (group && same >= 0) {
+      const urgent = group[same]!.entry.urgent === true || entry.urgent === true;
+      group[same] = { entry: { ...entry, urgent }, exemptFrom: key.exemptFrom };
+    } else if (group) group.push({ entry, exemptFrom: key.exemptFrom });
+    else {
+      groups.set(groupKey, [{ entry, exemptFrom: key.exemptFrom }]);
+      out.push(groupKey);
+    }
+  }
+  return out.map((item) => {
+    if (typeof item !== 'string') return item;
+    const group = groups.get(item)!;
+    const first = group[0]!.entry;
+    if (group.length === 1) return first;
+    const n = group.length;
+    const label = first.title.slice(0, first.title.lastIndexOf(': osvoboz'));
+    const dates = group.map((g) => g.exemptFrom).sort();
+    const [from, to] = [dates[0]!, dates[dates.length - 1]!];
+    const purchases = `${n} ${plural(n, 'nákup', 'nákupy', 'nákupů')} ${label}`;
+    if (item.startsWith('done|')) {
+      const when = from === to ? czDate(from) : `${czDate(from)} až ${czDate(to)}`;
+      return {
+        type: first.type,
+        title: `${label}: osvobozeno (${n} ${plural(n, 'nákup', 'nákupy', 'nákupů')}) 🎉`,
+        // POZOR: i časově osvobozená tržba se při bezpečném výkladu počítá do
+        // úhrnu 100 000 Kč — stejná výhrada jako u jednotlivé události
+        body: `${purchases} ${plural(n, 'splnil', 'splnily', 'splnilo')} časový test (${when}) — prodej je osvobozený od daně. Při bezpečném výkladu se ale tržba pořád počítá do ročního úhrnu 100 000 Kč — dopad prodeje si ověř v simulátoru.`,
+        urgent: group.some((g) => g.entry.urgent === true),
+      };
+    }
+    return {
+      type: first.type,
+      title: `${label}: blíží se osvobození ${n} nákupů`,
+      // fakt a termín, žádný pokyn (V-4)
+      body:
+        from === to
+          ? `${purchases} splní časový test ${czDate(from)}. Prodej po tomto datu bude od daně osvobozený — před ním se zisk daní celý.`
+          : `${purchases} splní časový test postupně mezi ${czDate(from)} a ${czDate(to)}. Prodej každého z nich je od jeho data bez daně — dřív se zisk daní celý.`,
+      urgent: group.some((g) => g.entry.urgent === true),
+    };
+  });
 }
 
 /** Kolik událostí jedné skupiny se vypíše v e-mailu (zbytek je v aplikaci). */
@@ -486,6 +623,8 @@ const MAX_DIGEST_ITEMS_PER_GROUP = 15;
 
 /** Skupiny souhrnného e-mailu v pořadí, ve kterém se ukazují. */
 const DIGEST_GROUPS: Array<{ title: string; matches: (type: string) => boolean }> = [
+  // nejdřív: bez fungující synchronizace jsou ostatní čísla stará
+  { title: 'Synchronizace brokera', matches: (type) => type === 'SYNC_FAILING' },
   { title: 'Limity', matches: (type) => type.startsWith('LIMIT_') },
   { title: 'Časový test', matches: (type) => type.startsWith('TIME_TEST') },
   { title: 'Termíny přiznání', matches: (type) => type === 'DEADLINE' || type === 'YEAR_SUMMARY' },
@@ -507,7 +646,9 @@ export function digestEmail(args: {
   baseUrl: string;
   unsubscribeUrl: string;
 }): Omit<EmailMessage, 'to'> {
-  const { entries, summary, baseUrl, unsubscribeUrl } = args;
+  const { summary, baseUrl, unsubscribeUrl } = args;
+  // co e-mail opravdu ukazuje: časové testy jednoho titulu jako jedna položka
+  const entries = mergeTimeTests(args.entries);
   const subject =
     entries.length === 1
       ? `Danero: ${entries[0]!.title}`
@@ -768,6 +909,48 @@ export async function processUserNotifications(
     }
   }
 
+  // Selhávající synchronizace brokera — nezávisle na profilu a transakcích:
+  // účet, ze kterého se nepodařilo stáhnout nic, transakce nemá
+  const accountRows = await db
+    .select({
+      id: brokerAccounts.id,
+      label: brokerAccounts.label,
+      lastSyncStatus: brokerAccounts.lastSyncStatus,
+      lastSyncedAt: brokerAccounts.lastSyncedAt,
+      lastSyncError: brokerAccounts.lastSyncError,
+    })
+    .from(brokerAccounts)
+    .where(eq(brokerAccounts.userId, target.id));
+  const failingSince = async (accountId: string): Promise<Date | null> => {
+    // klíč jobu synchronizace je id účtu (`enqueueSync`)
+    const [lastSuccess] = await db
+      .select({ at: max(jobs.createdAt) })
+      .from(jobs)
+      .where(and(eq(jobs.userId, target.id), eq(jobs.dedupeKey, accountId), eq(jobs.status, 'success')));
+    const [firstError] = await db
+      .select({ at: min(jobs.createdAt) })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.userId, target.id),
+          eq(jobs.dedupeKey, accountId),
+          eq(jobs.status, 'error'),
+          ...(lastSuccess?.at ? [gt(jobs.createdAt, lastSuccess.at)] : []),
+        ),
+      );
+    return firstError?.at ?? null;
+  };
+  const accounts = await Promise.all(
+    accountRows.map(async (account) => ({
+      ...account,
+      failingSince: account.lastSyncStatus === 'error' ? await failingSince(account.id) : null,
+    })),
+  );
+  created += await syncNotifications(db, target.id, syncFailureCandidates({ accounts, today }));
+  const failingAccounts = new Set(
+    accountRows.filter((account) => account.lastSyncStatus === 'error').map((account) => account.id),
+  );
+
   // E-mailová fronta (H3) — čekající notifikace se dělí do tří tříd:
   // 1. odeslané v digestu → emailedAt (idempotence, druhý běh nic neposílá),
   // 2. potlačené preferencí (master vypnutý nebo vypnutý typ) → TAKY emailedAt
@@ -824,10 +1007,17 @@ export async function processUserNotifications(
     // nesmí ho v nejbližším souhrnu přesto dostat
     if (type === 'SUMMARY') return rules.summaryFrequency !== 'OFF';
     if (type === 'YEAR_SUMMARY' || type === 'DEADLINE') return prefs.calendarEmails;
+    // provozní zpráva bez vlastního vypínače: s nefunkční synchronizací jsou
+    // stará všechna ostatní čísla, takže ji dostane každý, kdo e-maily chce
+    if (type === 'SYNC_FAILING') return true;
     return type.startsWith('TIME_TEST') ? prefs.timeTestEvents : prefs.limitEvents;
   };
-  const suppressed = pending.filter((n) => !emailAllowed(n.type));
-  const queue = pending.filter((n) => emailAllowed(n.type));
+  // Zpráva o nefunkční synchronizaci, která čekala na odeslání, se zahodí,
+  // když mezitím synchronizace zase proběhla — jinak by přišla po opravě.
+  const stillRelevant = (n: (typeof pending)[number]): boolean =>
+    n.type !== 'SYNC_FAILING' || failingAccounts.has(n.dedupeKey.split('|')[1] ?? '');
+  const suppressed = pending.filter((n) => !emailAllowed(n.type) || !stillRelevant(n));
+  const queue = pending.filter((n) => emailAllowed(n.type) && stillRelevant(n));
 
   // Okno digestu: WEEKLY nejdřív po 6,5 dnech od minulého, DAILY nejdřív po
   // půl dni — druhý běh cronu týž den (ruční re-trigger) tak nepošle druhý
@@ -843,7 +1033,39 @@ export async function processUserNotifications(
   // by v týdenním režimu čekaly na souhrn i šest dní — a upozornění „osvobození
   // za 7 dní“ doručené po termínu je k ničemu. Kdo si to nechá zapnuté, dostane
   // je hned, pořád ale nejvýš jeden e-mail za půl dne.
-  const urgent = queue.some((n) => n.urgent);
+  //
+  // Časový test je naléhavý u každého nákupu zvlášť, takže by u pravidelného
+  // investora prorážel týdenní okno každý den (revize 7. 11. 2026: denní nákup
+  // dvou ETF = 28 e-mailů za 28 dní v režimu „jednou týdně“). Okno proto
+  // prorazí nejvýš jednou za týden pro týž titul; další nákupy téhož titulu
+  // počkají na souhrn, kde se slijí do jedné položky.
+  const weekAgo = new Date(todayDate.getTime() - 6.5 * DAY_MS);
+  const alertedRecently = new Set(
+    (
+      await db
+        .select({ dedupeKey: notifications.dedupeKey })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, target.id),
+            eq(notifications.urgent, true),
+            gte(notifications.emailedAt, weekAgo),
+          ),
+        )
+    )
+      .map((row) => parseTimeTestKey(row.dedupeKey)?.isin)
+      .filter((isin): isin is string => isin !== undefined),
+  );
+  // Pojistka ale nesmí zdržet připomínku za termín: když nákup doběhne dřív,
+  // než otevře příští týdenní souhrn (jiná lhůta téhož nákupu, pozdě
+  // naimportovaný nákup), okno prorazí i podruhé.
+  const nextDigestDay =
+    prefs.lastDigestAt === null ? today : addDays(todayInPrague(prefs.lastDigestAt), 7);
+  const urgent = queue.some((n) => {
+    if (!n.urgent) return false;
+    const timeTest = parseTimeTestKey(n.dedupeKey);
+    return !timeTest || !alertedRecently.has(timeTest.isin) || timeTest.exemptFrom <= nextDigestDay;
+  });
   const windowDays = prefs.emailFrequency === 'WEEKLY' && !(rules.urgentImmediately && urgent) ? 6.5 : 0.5;
   const windowOpen = sinceLastMs >= windowDays * DAY_MS;
 
@@ -916,10 +1138,12 @@ export async function processUserNotifications(
     }
   }
   if (suppressed.length > 0) {
-    // potlačené preferencí označit vždy (třída 2) — bez ohledu na týdenní okno
+    // potlačené preferencí označit vždy (třída 2) — bez ohledu na týdenní okno.
+    // `urgent` se jim bere: neodeslané upozornění se nesmí počítat mezi ta,
+    // která už jednou za týden prorazila okno (`alertedRecently`).
     await db
       .update(notifications)
-      .set({ emailedAt: new Date() })
+      .set({ emailedAt: new Date(), urgent: false })
       .where(
         and(
           eq(notifications.userId, target.id),

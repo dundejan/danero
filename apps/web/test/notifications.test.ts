@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
 import { createPgliteDb, type Db } from '@/db';
-import { notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
+import { brokerAccounts, jobs, notificationPrefs, notifications, taxpayerProfiles, user } from '@/db/schema';
 import { filingDeadlines } from '@danero/engine';
 import { czDate } from '@/lib/format';
 import { importCsvText } from '@/lib/import-service';
@@ -1481,5 +1481,202 @@ describe('digest hlídače se identifikuje jménem, IČO i kontaktem provozovate
     for (const line of operatorSignature()) {
       expect(sent[0]!.html).toContain(line.replace(/&/g, '&amp;'));
     }
+  });
+});
+
+/**
+ * Revize 7. 11. 2026: časový test je naléhavý u každého nákupu zvlášť, takže
+ * u pravidelného investora prorážel týdenní okno každý den — „jednou týdně“
+ * se změnilo v denní e-mail.
+ */
+describe('týdenní souhrn u pravidelných nákupů', () => {
+  it('naléhavý časový test téhož titulu prorazí okno jen jednou za týden', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    // bez profilu: hlídač nic nepočítá, fronta je jen to, co test vloží
+    await db.insert(user).values({ id: 'u-dca', name: 'Test', email: 'dca@danero.cz', emailVerified: true });
+    await db.insert(notificationPrefs).values({ userId: 'u-dca', emailFrequency: 'WEEKLY' });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-dca', email: 'dca@danero.cz' };
+    const ttRow = (isin: string, date: string) => ({
+      userId: 'u-dca',
+      dedupeKey: `tt7|${isin}|${date}`,
+      type: 'TIME_TEST_7',
+      title: `${isin}: osvobození už za 7 dní`,
+      body: 'naléhavé',
+      urgent: true,
+    });
+
+    await db.insert(notifications).values({
+      userId: 'u-dca', dedupeKey: 'test|start', type: 'LIMIT_WARNING', title: 'Start', body: 'start',
+    });
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+
+    // první naléhavý nákup titulu okno prorazí
+    await db.insert(notifications).values(ttRow('IE0000000001', '2026-07-28'));
+    await processUserNotifications(db, target, { send, today: '2026-07-21' });
+    expect(sent).toHaveLength(2);
+
+    // další nákup téhož titulu den nato počká na týdenní souhrn
+    await db.insert(notifications).values(ttRow('IE0000000001', '2026-07-29'));
+    await processUserNotifications(db, target, { send, today: '2026-07-22' });
+    expect(sent).toHaveLength(2);
+
+    // jiný titul je nová zpráva a prorazí — a vezme s sebou i čekající nákup
+    // prvního titulu
+    await db.insert(notifications).values(ttRow('US0000000002', '2026-07-29'));
+    await processUserNotifications(db, target, { send, today: '2026-07-22' });
+    expect(sent).toHaveLength(3);
+    expect(sent[2]!.text).toContain('US0000000002');
+    expect(sent[2]!.text).toContain('IE0000000001');
+
+    // týden po prvním průrazu už týž titul prorazit smí
+    await db.insert(notifications).values(ttRow('IE0000000001', '2026-08-05'));
+    await processUserNotifications(db, target, { send, today: '2026-07-24' });
+    expect(sent).toHaveLength(3);
+    await db.insert(notifications).values(ttRow('IE0000000001', '2026-08-06'));
+    await processUserNotifications(db, target, { send, today: '2026-07-29' });
+    expect(sent).toHaveLength(4);
+  });
+});
+
+describe('selhávající synchronizace brokera v e-mailu', () => {
+  const job = (id: string, status: string, createdAt: string) => ({
+    id,
+    userId: 'u-sync',
+    type: 't212-sync',
+    dedupeKey: 'acc-sync',
+    status,
+    createdAt: new Date(createdAt),
+  });
+
+  it('přijde i s vypnutými druhy upozornění, jen jednou a ne po obnovení', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u-sync', name: 'Test', email: 'sync@danero.cz', emailVerified: true });
+    await db.insert(notificationPrefs).values({
+      userId: 'u-sync',
+      timeTestEvents: false,
+      limitEvents: false,
+      calendarEmails: false,
+    });
+    await db.insert(brokerAccounts).values({
+      id: 'acc-sync',
+      userId: 'u-sync',
+      broker: 'trading212',
+      label: 'Trading 212',
+      credentialsEncrypted: 'x',
+      lastSyncStatus: 'error',
+      // vrácení importu ze syncu tohle nuluje — začátek výpadku jde z jobů
+      lastSyncedAt: null,
+      lastSyncError: 'Klíč k API přestal platit — vlož nový v Importu',
+    });
+    await db.insert(jobs).values([
+      job('j1', 'success', '2026-07-14T03:00:00Z'),
+      job('j2', 'error', '2026-07-15T03:00:00Z'),
+      job('j3', 'error', '2026-07-16T03:00:00Z'),
+    ]);
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-sync', email: 'sync@danero.cz' };
+
+    const tooEarly = await processUserNotifications(db, target, { send, today: '2026-07-17' });
+    expect(tooEarly.created).toBe(0);
+
+    const first = await processUserNotifications(db, target, { send, today: '2026-07-18' });
+    expect(first.created).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.subject).toBe('Danero: Trading 212: synchronizace nefunguje od 15. 7. 2026');
+    expect(sent[0]!.text).not.toContain('nepodařilo stáhnout žádná');
+
+    const second = await processUserNotifications(db, target, { send, today: '2026-07-19' });
+    expect(second.created).toBe(0);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('zpráva čekající na týdenní souhrn se po obnovení synchronizace neodešle', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u-sync', name: 'Test', email: 'sync@danero.cz', emailVerified: true });
+    // naléhavé hned vypnuté → zpráva čeká na týdenní okno
+    await db.insert(notificationPrefs).values({
+      userId: 'u-sync',
+      emailFrequency: 'WEEKLY',
+      urgentImmediately: false,
+      lastDigestAt: new Date('2026-07-17T00:00:00Z'),
+    });
+    await db.insert(brokerAccounts).values({
+      id: 'acc-sync', userId: 'u-sync', broker: 'trading212', label: 'Trading 212',
+      credentialsEncrypted: 'x', lastSyncStatus: 'error',
+    });
+    await db.insert(jobs).values([job('j2', 'error', '2026-07-15T03:00:00Z')]);
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-sync', email: 'sync@danero.cz' };
+    expect((await processUserNotifications(db, target, { send, today: '2026-07-19' })).created).toBe(1);
+    expect(sent).toHaveLength(0);
+
+    await db.update(brokerAccounts).set({ lastSyncStatus: 'ok', lastSyncError: null });
+    await processUserNotifications(db, target, { send, today: '2026-07-25' });
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe('pojistka průrazu nezdrží připomínku za termín', () => {
+  it('nákup téhož titulu, který doběhne před příštím souhrnem, okno prorazí', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u-late', name: 'Test', email: 'late@danero.cz', emailVerified: true });
+    await db.insert(notificationPrefs).values({ userId: 'u-late', emailFrequency: 'WEEKLY' });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-late', email: 'late@danero.cz' };
+    const ttRow = (lead: string, date: string) => ({
+      userId: 'u-late', dedupeKey: `tt${lead}|IE0000000001|${date}`, type: `TIME_TEST_${lead}`,
+      title: 'Meridian ETF: osvobození už brzy', body: 'naléhavé', urgent: true,
+    });
+
+    await db.insert(notifications).values(ttRow('7', '2026-07-27'));
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+
+    // týž nákup s lhůtou 1 den doběhne dřív, než otevře příští souhrn (27. 7.)
+    await db.insert(notifications).values(ttRow('1', '2026-07-27'));
+    await processUserNotifications(db, target, { send, today: '2026-07-26' });
+    expect(sent).toHaveLength(2);
+  });
+
+  it('potlačené upozornění se nepočítá mezi ta, která už prorazila', { timeout: 30_000 }, async () => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u-off', name: 'Test', email: 'off@danero.cz', emailVerified: true });
+    await db.insert(notificationPrefs).values({ userId: 'u-off', emailFrequency: 'WEEKLY', timeTestEvents: false });
+    const sent: EmailMessage[] = [];
+    const send = async (m: EmailMessage) => {
+      sent.push(m);
+    };
+    const target = { id: 'u-off', email: 'off@danero.cz' };
+    const ttRow = (date: string) => ({
+      userId: 'u-off', dedupeKey: `tt7|IE0000000001|${date}`, type: 'TIME_TEST_7',
+      title: 'Meridian ETF: osvobození už za 7 dní', body: 'naléhavé', urgent: true,
+    });
+    await db.insert(notifications).values({
+      userId: 'u-off', dedupeKey: 'test|start', type: 'LIMIT_WARNING', title: 'Start', body: 'start',
+    });
+    await db.insert(notifications).values(ttRow('2026-07-28'));
+    await processUserNotifications(db, target, { send, today: '2026-07-20' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).not.toContain('Meridian');
+
+    // časové testy zase zapnuté — první naléhavý nákup prorazí, i když potlačený byl
+    await db.update(notificationPrefs).set({ timeTestEvents: true }).where(eq(notificationPrefs.userId, 'u-off'));
+    await db.insert(notifications).values(ttRow('2026-07-30'));
+    await processUserNotifications(db, target, { send, today: '2026-07-23' });
+    expect(sent).toHaveLength(2);
   });
 });

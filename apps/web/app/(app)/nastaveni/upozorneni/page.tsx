@@ -27,23 +27,18 @@ import { NOTIFICATION_FIELDS, notificationFormEntries } from '../form-state';
 export const metadata = { title: 'Upozornění — Danero' };
 
 /**
- * Volby, které bez svého vypínače nic neznamenají, se s ním schovají — hned,
- * bez čekání na server (`:has()` nad stavem přepínače). Schované pole se
- * odesílá dál (`display: none` formulář nevynechá), takže vypnutí a zapnutí
- * nic neztratí. Řádek se k vypínači hlásí třídou, skupina vyjmenuje, čí
- * vypínač hlídá — třídy musí stát v kódu celé, jinak je Tailwind nevygeneruje.
+ * Volby e-mailů se s hlavním vypínačem schovají — hned, bez čekání na server
+ * (`:has()` nad stavem přepínače). Schované pole se odesílá dál (`display:
+ * none` formulář nevynechá), takže vypnutí a zapnutí nic neztratí. Třídy musí
+ * stát v kódu celé, jinak je Tailwind nevygeneruje.
+ *
+ * „Co hlídat“ se neschovává nikdy: lhůty a hranice určují, jaká upozornění
+ * vůbec vzniknou, tedy i to, co je na přehledu v aplikaci. Do 7. 11. 2026 se
+ * schovávaly s e-maily — kdo si hranice odškrtl a e-maily vypnul, neviděl
+ * upozornění ani v aplikaci a volbu, která to dělá, na stránce nenašel.
  */
 const NEEDS_EMAIL = 'needs-email';
-const NEEDS_SWITCH = 'needs-switch';
 const HIDE_WITHOUT_EMAIL = '[&:has(#emaily-zapnute:not(:checked))_.needs-email]:hidden';
-const HIDE_WITHOUT = {
-  'upozorneni-casove-testy': 
-    '[&:has(#upozorneni-casove-testy:not(:checked))>.needs-switch]:hidden [&:has(#upozorneni-casove-testy:not(:checked))>*]:border-b-0',
-  'upozorneni-limity': 
-    '[&:has(#upozorneni-limity:not(:checked))>.needs-switch]:hidden [&:has(#upozorneni-limity:not(:checked))>*]:border-b-0',
-  'upozorneni-kalendar': 
-    '[&:has(#upozorneni-kalendar:not(:checked))>.needs-switch]:hidden [&:has(#upozorneni-kalendar:not(:checked))>*]:border-b-0',
-} as const;
 /** Osamělý řádek s vypínačem nemá mít pod sebou linku ke schovaným sousedům. */
 const LONE_EMAIL_SWITCH = '[&:has(#emaily-zapnute:not(:checked))>*]:border-b-0';
 
@@ -117,8 +112,10 @@ export default async function NotificationSettingsPage() {
 
       <div className="@container max-w-[44rem] space-y-14 pt-2 md:pt-4">
         {nothingSelected && (
-          <Notice tone="caution" title="Odesílání je zapnuté, ale nic ti nepřijde">
-            Není vybraná žádná událost ani pravidelný přehled.
+          <Notice tone="caution" title="Odesílání je zapnuté, ale skoro nic ti nepřijde">
+            {typeset(
+              'Není vybraná žádná událost ani pravidelný přehled. Přijde jen zpráva, kdyby přestala fungovat synchronizace s brokerem.',
+            )}
           </Notice>
         )}
         {/* `autoComplete="off"`: prohlížeč do formuláře s auto-save nevrací po
@@ -199,12 +196,12 @@ export default async function NotificationSettingsPage() {
                   <InfoPopover label="co je naléhavé" title="Naléhavé posílat hned">
                     <p>
                       {typeset(
-                        'Naléhavé = prolomený limit, osvobození do sedmi dní a termín přiznání, pokud ho máš připomenout 14 dní předem nebo dřív. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po tom, co se staly.',
+                        'Naléhavé = prolomený limit, nefunkční synchronizace s brokerem, osvobození do sedmi dní a termín přiznání, pokud ho máš připomenout 14 dní předem nebo dřív. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po tom, co se staly.',
                       )}
                     </p>
                     <p>
                       {typeset(
-                        'Odejde s nejbližší ranní kontrolou a vezme s sebou i ostatní čekající upozornění. U denního souhrnu se nic nemění — ten chodí hned tak jako tak.',
+                        'Odejde s nejbližší ranní kontrolou a vezme s sebou i ostatní čekající upozornění. Osvobození téhož titulu prorazí souhrn nejvýš jednou za týden — další nákupy počkají, pokud nedoběhnou dřív než příští souhrn. U denního souhrnu se nic nemění, ten chodí hned tak jako tak.',
                       )}
                     </p>
                   </InfoPopover>
@@ -243,122 +240,136 @@ export default async function NotificationSettingsPage() {
             </Group>
           </Section>
 
-          <Section title="Co hlídat" className={NEEDS_EMAIL}>
-            <div className="space-y-5">
-              <Group variant="inset" className={HIDE_WITHOUT['upozorneni-casove-testy']}>
-                <Row
-                  label={<label htmlFor="upozorneni-casove-testy">Blížící se osvobození</label>}
-                  info={
-                    <InfoPopover label="hlídání časových testů" title="Blížící se osvobození">
-                      <p>
-                        {typeset(
-                          'Tříletý časový test u konkrétních kusů. Vyber, kolik dní předem chceš vědět, že se prodej stane osvobozeným.',
-                        )}
-                      </p>
-                    </InfoPopover>
-                  }
-                >
-                  <Switch
-                    id="upozorneni-casove-testy"
-                    name="upozorneni-casove-testy"
-                    defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestEvents)}
-                  />
-                </Row>
-                <ChoiceRow
-                  className={NEEDS_SWITCH}
-                  id="lhuta-casoveho-testu-popisek"
-                  label="Kolik dní předem"
-                  name="lhuta-casoveho-testu"
-                  options={TIME_TEST_LEAD_OPTIONS.map((days) => ({
-                    value: days,
-                    text: String(days),
-                    suffix: ` ${plural(days, 'den', 'dny', 'dní')} předem`,
-                    checked: shown.getAll(NOTIFICATION_FIELDS.timeTestLeadDays).includes(String(days)),
-                  }))}
+          <Section
+            title={typeset('Co posílat e-mailem')}
+            className={NEEDS_EMAIL}
+            info={
+              <InfoPopover label="co chodí e-mailem vždy" title="Co posílat e-mailem">
+                <p>
+                  {typeset(
+                    'Když synchronizace s brokerem několik dní nefunguje, dáme vědět vždycky — bez ní jsou všechna ostatní čísla stará.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Group variant="inset">
+              <Row
+                label={<label htmlFor="upozorneni-casove-testy">Blížící se osvobození</label>}
+                info={
+                  <InfoPopover label="hlídání časových testů" title="Blížící se osvobození">
+                    <p>
+                      {typeset(
+                        'Tříletý časový test u konkrétních kusů. Víc nákupů téhož titulu přijde v jednom e-mailu jako jedna položka.',
+                      )}
+                    </p>
+                  </InfoPopover>
+                }
+              >
+                <Switch
+                  id="upozorneni-casove-testy"
+                  name="upozorneni-casove-testy"
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestEvents)}
                 />
-                <Row
-                  className={NEEDS_SWITCH}
-                  label={<label htmlFor="osvobozeno-hotovo">I ve chvíli, kdy pozice test splní</label>}
-                >
-                  <Switch
-                    id="osvobozeno-hotovo"
-                    name="osvobozeno-hotovo"
-                    defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestDone)}
-                  />
-                </Row>
-              </Group>
-
-              <Group variant="inset" className={HIDE_WITHOUT['upozorneni-limity']}>
-                <Row
-                  label={<label htmlFor="upozorneni-limity">Limity</label>}
-                  info={
-                    <InfoPopover label="které limity se hlídají" title="Limity">
-                      <p>
-                        {typeset(
-                          'Roční limity, které Danero vede podle tvého režimu — osvobození prodejů i krypta a hranice pro podání přiznání. Ozveme se, když čerpání přejde vybranou hranici; přeskočí-li jich naráz víc, přijde jedno upozornění za tu nejvyšší.',
-                        )}
-                      </p>
-                    </InfoPopover>
-                  }
-                >
-                  <Switch
-                    id="upozorneni-limity"
-                    name="upozorneni-limity"
-                    defaultChecked={shown.has(NOTIFICATION_FIELDS.limitEvents)}
-                  />
-                </Row>
-                <ChoiceRow
-                  className={NEEDS_SWITCH}
-                  id="hranice-limitu-popisek"
-                  label="Při čerpání"
-                  name="hranice-limitu"
-                  options={LIMIT_THRESHOLD_OPTIONS.map((percent) => ({
-                    value: percent,
-                    text: tidy(`${percent} %`),
-                    suffix: percent === 100 ? ' — prolomení limitu' : ' limitu',
-                    checked: shown
-                      .getAll(NOTIFICATION_FIELDS.limitThresholdsPct)
-                      .includes(String(percent)),
-                  }))}
+              </Row>
+              <Row
+                label={<label htmlFor="upozorneni-limity">Limity</label>}
+                info={
+                  <InfoPopover label="které limity se hlídají" title="Limity">
+                    <p>
+                      {typeset(
+                        'Roční limity, které Danero vede podle tvého režimu — osvobození prodejů i krypta a hranice pro podání přiznání. Ozveme se, když čerpání přejde vybranou hranici; přeskočí-li jich naráz víc, přijde jedno upozornění za tu nejvyšší.',
+                      )}
+                    </p>
+                  </InfoPopover>
+                }
+              >
+                <Switch
+                  id="upozorneni-limity"
+                  name="upozorneni-limity"
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.limitEvents)}
                 />
-              </Group>
+              </Row>
+              <Row label={<label htmlFor="upozorneni-kalendar">Termíny přiznání</label>}>
+                <Switch
+                  id="upozorneni-kalendar"
+                  name="upozorneni-kalendar"
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.calendarEmails)}
+                />
+              </Row>
+            </Group>
+          </Section>
 
-              <Group variant="inset" className={HIDE_WITHOUT['upozorneni-kalendar']}>
-                <Row
-                  label={<label htmlFor="upozorneni-kalendar">Termíny přiznání</label>}
-                  info={
-                    <InfoPopover label="co chodí k termínům" title="Termíny přiznání">
-                      <p>
-                        {typeset('Lednové shrnutí uplynulého roku a připomínka termínu přiznání.')}
-                      </p>
-                    </InfoPopover>
-                  }
+          <Section
+            title="Co hlídat"
+            info={
+              <InfoPopover label="pro co platí, co hlídat" title="Co hlídat">
+                <p>
+                  {typeset(
+                    'Lhůty a hranice určují, kdy upozornění vznikne — platí pro přehled v aplikaci i pro e-maily. Jestli o něm dostaneš i e-mail, nastavíš výš.',
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Group variant="inset">
+              <ChoiceRow
+                id="lhuta-casoveho-testu-popisek"
+                label="Osvobození: kolik dní předem"
+                name="lhuta-casoveho-testu"
+                options={TIME_TEST_LEAD_OPTIONS.map((days) => ({
+                  value: days,
+                  text: String(days),
+                  suffix: ` ${plural(days, 'den', 'dny', 'dní')} předem`,
+                  checked: shown.getAll(NOTIFICATION_FIELDS.timeTestLeadDays).includes(String(days)),
+                }))}
+              />
+              <Row
+                label={<label htmlFor="osvobozeno-hotovo">I ve chvíli, kdy pozice test splní</label>}
+              >
+                <Switch
+                  id="osvobozeno-hotovo"
+                  name="osvobozeno-hotovo"
+                  defaultChecked={shown.has(NOTIFICATION_FIELDS.timeTestDone)}
+                />
+              </Row>
+              <ChoiceRow
+                id="hranice-limitu-popisek"
+                label="Limity: při čerpání"
+                name="hranice-limitu"
+                options={LIMIT_THRESHOLD_OPTIONS.map((percent) => ({
+                  value: percent,
+                  text: tidy(`${percent} %`),
+                  suffix: percent === 100 ? ' — prolomení limitu' : ' limitu',
+                  checked: shown
+                    .getAll(NOTIFICATION_FIELDS.limitThresholdsPct)
+                    .includes(String(percent)),
+                }))}
+              />
+              <FieldRow
+                label="Termín přiznání připomenout"
+                htmlFor="lhuta-terminu"
+                info={
+                  <InfoPopover label="co chodí k termínům" title="Termíny přiznání">
+                    <p>
+                      {typeset('Lednové shrnutí uplynulého roku a připomínka termínu přiznání.')}
+                    </p>
+                  </InfoPopover>
+                }
+              >
+                <Select
+                  id="lhuta-terminu"
+                  name="lhuta-terminu"
+                  defaultValue={shown.get(NOTIFICATION_FIELDS.deadlineLeadDays) ?? ''}
                 >
-                  <Switch
-                    id="upozorneni-kalendar"
-                    name="upozorneni-kalendar"
-                    defaultChecked={shown.has(NOTIFICATION_FIELDS.calendarEmails)}
-                  />
-                </Row>
-                <FieldRow
-                  className={NEEDS_SWITCH}
-                  label="Připomenout termín"
-                  htmlFor="lhuta-terminu"
-                >
-                  <Select
-                    id="lhuta-terminu"
-                    name="lhuta-terminu"
-                    defaultValue={shown.get(NOTIFICATION_FIELDS.deadlineLeadDays) ?? ''}
-                  >
-                    {DEADLINE_LEAD_OPTIONS.map((days) => (
-                      <option key={days} value={days}>
-                        {days} dní předem
-                      </option>
-                    ))}
-                  </Select>
-                </FieldRow>
-              </Group>
-            </div>
+                  {DEADLINE_LEAD_OPTIONS.map((days) => (
+                    <option key={days} value={days}>
+                      {days} dní předem
+                    </option>
+                  ))}
+                </Select>
+              </FieldRow>
+            </Group>
           </Section>
 
           <AutoSubmit
