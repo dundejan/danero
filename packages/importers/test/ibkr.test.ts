@@ -460,3 +460,62 @@ describe('R-13: prodej nakrátko z Flex Query', () => {
     expect(message).toContain('position_effect');
   });
 });
+
+describe('nečitelné číslo v záznamu neshodí celý import', () => {
+  /**
+   * Fuzz (7. 11. 2026): `multiplier="1,2,3"` u derivátu shodil `d()` výjimkou
+   * uprostřed sekce obchodů a s ním celý import. Totéž platilo pro každé číselné
+   * pole. Vadný záznam má skončit chybou u sebe a zbytek výpisu se přečíst.
+   */
+  const trade = (id: string, overrides: Record<string, string> = {}): string => {
+    const attrs: Record<string, string> = {
+      accountId: 'U1234567',
+      currency: 'USD',
+      assetCategory: 'STK',
+      symbol: 'NORD',
+      isin: 'US0000000001',
+      tradeID: id,
+      tradeDate: '20260410',
+      tradePrice: '12',
+      quantity: '5',
+      buySell: 'BUY',
+      ibCommission: '-1',
+      ibCommissionCurrency: 'USD',
+      levelOfDetail: 'EXECUTION',
+      ...overrides,
+    };
+    return `<Trade ${Object.entries(attrs)
+      .map(([name, value]) => `${name}="${value}"`)
+      .join(' ')} />`;
+  };
+
+  it.each([
+    ['quantity', '1,2,3'],
+    ['multiplier', '1.2.3'],
+    ['ibCommission', '-'],
+  ])('vadné pole %s: chyba u záznamu, ostatní obchody zůstanou', (field, value) => {
+    const xml = wrapStatement(`<Trades>${trade('7001')}${trade('7002', { [field]: value })}</Trades>`);
+    const result = parseIbkrFlexXml(xml);
+    expect(result.transactions.map((tx) => tx.id)).toEqual(['ibkr-7001']);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain(`„${field}“`);
+  });
+
+  it('nečitelná částka hotovostního pohybu skončí chybou, ne výjimkou', () => {
+    const xml = wrapStatement(
+      `<CashTransactions><CashTransaction accountId="U1234567" currency="USD" type="Deposits/Withdrawals" dateTime="20260410" amount="1 0,0,0" levelOfDetail="DETAIL" /></CashTransactions>`,
+    );
+    const result = parseIbkrFlexXml(xml);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('„amount“');
+  });
+
+  it('otevřená pozice s nečitelným počtem jen varuje a do kontroly pozic nejde', () => {
+    const xml = wrapStatement(
+      `<OpenPositions><OpenPosition accountId="U1234567" currency="USD" symbol="NORD" isin="US0000000001" position="--5" markPrice="12" levelOfDetail="SUMMARY" /></OpenPositions>`,
+    );
+    const result = parseIbkrFlexXml(xml);
+    expect(result.openPositions).toEqual([]);
+    expect(result.warnings.some((w) => w.message.includes('„position“'))).toBe(true);
+  });
+});

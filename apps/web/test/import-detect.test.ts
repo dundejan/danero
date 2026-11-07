@@ -8,6 +8,7 @@ import {
   DEGIRO_TRANSACTIONS_2026_EN,
   DEGIRO_TRANSACTIONS_2026_NL,
   DEGIRO_TRANSACTIONS_CZ,
+  DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS,
 } from '../../../packages/importers/test/fixtures/degiro';
 import {
   KRAKEN_LEDGERS_NEW,
@@ -79,6 +80,8 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   // L2a-01: rozložení 2026 má 18 sloupců a měnu poplatku v názvu sloupce
   ['Degiro Transactions 2026 NL (18 sloupců)', DEGIRO_TRANSACTIONS_2026_NL, 'degiro'],
   ['Degiro Transactions 2026 EN (18 sloupců)', DEGIRO_TRANSACTIONS_2026_EN, 'degiro'],
+  // nepřečtený výpis 7. 11. 2026: každý datový řádek zabalený celý do uvozovek
+  ['Degiro Transactions EN se zabalenými řádky', DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS, 'degiro'],
   // L23-04: druhý soubor Degira (hotovostní pohyby) má v autodetekci vlastní větev
   ['Degiro Account.csv CZ', DEGIRO_ACCOUNT_CZ, 'degiro'],
   ['Trading212 (sloupec „Time“)', T212_FIXTURE, 'trading212'],

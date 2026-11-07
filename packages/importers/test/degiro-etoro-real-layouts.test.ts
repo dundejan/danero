@@ -15,6 +15,11 @@ import {
   ETORO_DIVIDEND_HEADERS,
   type EtoroCellValue,
 } from './fixtures/etoro';
+import {
+  DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS,
+  DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER,
+  quoteWholeRow,
+} from './fixtures/degiro';
 
 /**
  * Degiro a eToro: tvary výpisů, jak je platformy opravdu posílají (audit
@@ -129,6 +134,52 @@ describe('Degiro Transactions.csv: korporátní akce nejsou obchody', () => {
       newIsin: 'NL0000000022',
     });
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe('Degiro: každý datový řádek zabalený celý do uvozovek', () => {
+  /**
+   * Nepřečtený výpis ze 7. 11. 2026: anglická hlavička bez uvozovek
+   * a oddělovač čárka, ale desetinná čárka v číslech — a každý DATOVÝ řádek
+   * je jediné pole v uvozovkách se zdvojenými uvozovkami uvnitř. Parser v něm
+   * viděl jednu buňku a hlásil „Neplatné datum“ s celým řádkem v uvozovkách.
+   * Rozložení (hlavička, zabalení, CRLF) je z originálu; tituly, čísla, časy
+   * a ID jsou smyšlené.
+   */
+  const crlf = (...rows: string[]): string => `${rows.join('\r\n')}\r\n`;
+
+  it('obchody se přečtou i s čárkou v názvu titulu a desetinnou čárkou', () => {
+    const text = DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS;
+    expect(isDegiroCsv(text)).toBe('transactions');
+    const result = parseDegiroTransactionsCsv(text);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const buys = ofType(result.transactions, 'BUY');
+    expect(buys).toHaveLength(2);
+    expect(buys[0]).toMatchObject({ isin: 'US0000000044', tradeDate: '2026-09-14', currency: 'USD' });
+    expect(buys[0]!.name).toBe('ORBITAL WIDGETS, INC.');
+    expect(buys[0]!.quantity.toString()).toBe('25');
+    expect(buys[0]!.pricePerShare.toString()).toBe('8.37');
+    const [sell] = ofType(result.transactions, 'SELL');
+    expect(sell!.quantity.toString()).toBe('15');
+    expect(sell!.pricePerShare.toString()).toBe('9.2');
+  });
+
+  it('Account.csv zabalený stejně se přečte také', () => {
+    const text = crlf(
+      ACCOUNT_HEADER_EN,
+      quoteWholeRow('03-08-2026,07:10,01-08-2026,,,Deposit,,EUR,"500,00",EUR,"512,40",'),
+    );
+    expect(isDegiroCsv(text)).toBe('account');
+    const result = parseDegiroAccountCsv(text);
+    expect(result.errors).toEqual([]);
+    expect(ofType(result.transactions, 'DEPOSIT')).toHaveLength(1);
+  });
+
+  it('řádek s jedinou neprázdnou buňkou bez oddělovače se nerozbaluje', () => {
+    const result = parseDegiroTransactionsCsv(crlf(DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER, '"jen poznámka"'));
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(1);
   });
 });
 

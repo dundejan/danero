@@ -56,6 +56,28 @@ export const DEGIRO_TRANSACTIONS_2026_EN = [
   '11-02-2026,15:48,NORDWIND CORP,US0000000001,NDQ,XNAS,8,45.2500,USD,-362.00,USD,-335.00,1.0806,-0.84,-2.00,-337.84,en-2026-1,',
 ].join('\n');
 
+/**
+ * Rozložení nepřečteného výpisu ze 7. 11. 2026: anglická hlavička bez
+ * uvozovek a bez čárky na konci, desetinná čárka, CRLF — a každý DATOVÝ
+ * řádek zabalený celý do uvozovek se zdvojenými uvozovkami uvnitř. Tituly,
+ * čísla, časy a ID jsou smyšlené.
+ */
+export const DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER =
+  'Date,Time,Product,ISIN,Reference exchange,Venue,Quantity,Price,,Local value,,Value EUR,Exchange rate,AutoFX Fee,Transaction and/or third party fees EUR,Total EUR,Order ID';
+
+/** Zabalí řádek CSV celý do uvozovek, jak to dělá výpis výše. */
+export const quoteWholeRow = (row: string): string => `"${row.replace(/"/g, '""')}"`;
+
+export const DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS = `${[
+  DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER,
+  ...[
+    // čárka v názvu titulu: uvnitř zabaleného řádku má zdvojené uvozovky
+    '14-09-2026,17:05,"ORBITAL WIDGETS, INC.",US0000000044,NDQ,XNAS,25,"8,3700",USD,"-209,25",USD,"-180,50","1,1510","-0,45","-2,00","-182,95",7b1e0c52-0000-4000-8000-00000000e001',
+    '02-03-2025,10:12,"ORBITAL WIDGETS, INC.",US0000000044,NDQ,XNAS,40,"6,0500",USD,"-242,00",USD,"-225,10","1,0751","-0,56","-2,00","-227,66",7b1e0c52-0000-4000-8000-00000000e002',
+    '20-10-2026,15:31,"ORBITAL WIDGETS, INC.",US0000000044,NDQ,XNAS,-15,"9,2000",USD,"138,00",USD,"119,90","1,1509","-0,30","-2,00","117,60",7b1e0c52-0000-4000-8000-00000000e003',
+  ].map(quoteWholeRow),
+].join('\r\n')}\r\n`;
+
 export const DEGIRO_ACCOUNT_HEADER_CZ =
   'Datum;Čas;Datum valuty;Produkt;ISIN;Popis;Kurz;Změna;;Saldo;;ID objednávky';
 

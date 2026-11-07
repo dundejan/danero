@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   DEGIRO_TRANSACTIONS_CZ,
+  DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS,
 } from '../../../packages/importers/test/fixtures/degiro';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
@@ -53,6 +54,16 @@ test('import Degiro, Fio a XTB včetně číselníku instrumentů', async ({ pag
     buffer: Buffer.from(DEGIRO_TRANSACTIONS_CZ, 'utf8'),
   });
   await expect(degiro).toContainText(recognizedAs('Degiro'));
+
+  // ── Degiro Transactions se zabalenými řádky (nepřečtený výpis 7. 11. 2026) ─
+  const degiroQuoted = await uploadStatement(page, {
+    name: 'Transactions.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS, 'utf8'),
+  });
+  await expect(degiroQuoted).toContainText(recognizedAs('Degiro'));
+  await expect(degiroQuoted).toContainText('3 nové');
+  await expect(degiroQuoted).not.toContainText(/chyb/);
 
   // ── Fio (windows-1250): AAPL doplní vestavěný číselník ISIN sám ─────────
   const fio = await uploadStatement(page, {

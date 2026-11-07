@@ -91,7 +91,24 @@ function parseDelimited(text: string, delimiter: ';' | ','): DelimitedTable {
   }
 
   const headers = (rows.shift() ?? []).map((h) => h.trim());
-  return { headers, rows };
+  return { headers, rows: rows.map((r) => unwrapQuotedRow(r, headers.length, delimiter)) };
+}
+
+/**
+ * Řádek zabalený CELÝ do uvozovek: `"14-09-2026,17:05,""PRODUKT, INC."",…"`.
+ * Takhle chodí Transactions.csv z Degira s čárkou jako oddělovačem
+ * i desetinnou čárkou (případ z 7. 11. 2026) — hlavička je obyčejná,
+ * každý datový řádek je jediné pole se zdvojenými uvozovkami uvnitř.
+ * Parser by v něm viděl jednu buňku a celý řádek četl jako datum. Pole
+ * s oddělovačem uvnitř, které je v řádku samo, zatímco hlavička má víc
+ * sloupců, se proto rozloží znovu jako samostatný řádek CSV.
+ */
+function unwrapQuotedRow(row: string[], columns: number, delimiter: ';' | ','): string[] {
+  if (columns < 2 || row.length !== 1 || !row[0]!.includes(delimiter)) return row;
+  // úvodní prázdný řádek slouží jako hlavička o jednom sloupci, takže se
+  // rozbalování nezanoří znovu
+  const inner = parseDelimited(`\n${row[0]!}`, delimiter).rows;
+  return inner.length === 1 && inner[0]!.length > 1 ? inner[0]! : row;
 }
 
 /** Oddělovač podle hlavičky: středník (CZ/NL lokalizace) vs. čárka (EN). */

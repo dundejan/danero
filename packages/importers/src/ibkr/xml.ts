@@ -58,6 +58,51 @@ function asArray(value: unknown): Attrs[] {
 }
 
 /**
+ * Atributy, které parser převádí na Decimal. Nečitelné číslo („1,2,3“, „-“)
+ * by `d()` shodilo výjimkou uprostřed sekce a s ní celý import — fuzz to našel
+ * 7. 11. 2026 u `multiplier`. Záznam s takovým číslem proto skončí chybou
+ * u sebe a ostatní záznamy se přečtou.
+ */
+const NUMERIC_ATTRS = [
+  'quantity',
+  'tradePrice',
+  'multiplier',
+  'proceeds',
+  'ibCommission',
+  'taxes',
+  'amount',
+  'cashTransfer',
+  'position',
+  'markPrice',
+] as const;
+
+/** Název prvního atributu, který je vyplněný, ale nejde přečíst jako číslo. */
+function unreadableNumber(attrs: Attrs): string | undefined {
+  return NUMERIC_ATTRS.find((name) => {
+    const raw = attrs[name];
+    if (raw === undefined || raw === '') return false;
+    try {
+      d(cleanNumber(raw));
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/** Zapíše chybu záznamu s nečitelným číslem; `true` = záznam přeskočit. */
+function rejectUnreadableNumber(attrs: Attrs, line: number, result: ImportResult): boolean {
+  const name = unreadableNumber(attrs);
+  if (name === undefined) return false;
+  result.errors.push({
+    line,
+    message: `Záznam ${attrs.symbol ?? attrs.description ?? ''} má v poli „${name}“ hodnotu „${attrs[name]}“, která není číslo — tenhle záznam jsme nenačetli. Stáhni výpis z IBKR znovu.`,
+    raw: JSON.stringify(attrs),
+  });
+  return true;
+}
+
+/**
  * Pořadí dne a měsíce v lomítkovém datu. Platí pro CELÝ dokument a nastaví se
  * jednou na začátku parsování (parser je synchronní, takže si běhy nelezou do
  * zelí). Výchozí je americký tvar, který IBKR nabízí jako první.
@@ -428,6 +473,7 @@ function processTrades(
       continue;
     }
     processed += 1;
+    if (rejectUnreadableNumber(trade, line, result)) continue;
 
     const assetCategory = (trade.assetCategory || 'STK').toUpperCase();
     if (assetCategory === 'CASH') {
@@ -711,6 +757,7 @@ function processCashTransactions(
       continue;
     }
     processed += 1;
+    if (rejectUnreadableNumber(row, line, result)) continue;
 
     const type = String(row.type ?? '');
     const date = toIsoDate(row.dateTime ?? row.reportDate);
@@ -1093,6 +1140,7 @@ function processCorporateActions(
       continue;
     }
     processed += 1;
+    if (rejectUnreadableNumber(row, line, result)) continue;
 
     const type = String(row.type ?? '').toUpperCase();
     const date = toIsoDate(row.dateTime ?? row.reportDate);
@@ -1397,6 +1445,7 @@ function processTransfers(
       continue;
     }
     processed += 1;
+    if (rejectUnreadableNumber(row, line, result)) continue;
 
     const assetCategory = (row.assetCategory || 'STK').toUpperCase();
     const cashAmount = row.cashTransfer ? d(cleanNumber(row.cashTransfer)) : null;
@@ -1496,6 +1545,15 @@ function collectOpenPositions(
       result.warnings.push({
         line: 1,
         message: `Otevřená pozice „${row.description?.trim() || row.symbol?.trim() || 'bez popisu'}“ nemá ${!key ? 'ISIN, symbol ani conid' : 'počet kusů'} — do kontroly pozic proti výpisu ji nezapočítáváme. Ve Flex Query zapni u sekce Open Positions pole ISIN, Symbol, Conid a Position.`,
+      });
+      continue;
+    }
+    // nečitelné číslo by shodilo až porovnání pozic, které ho převádí na Decimal
+    const unreadable = unreadableNumber(row);
+    if (unreadable !== undefined) {
+      result.warnings.push({
+        line: 1,
+        message: `Otevřená pozice „${row.description?.trim() || key}“ má v poli „${unreadable}“ hodnotu, která není číslo — do kontroly pozic proti výpisu ji nezapočítáváme.`,
       });
       continue;
     }
