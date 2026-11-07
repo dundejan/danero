@@ -119,9 +119,17 @@ export function TwoFactorSection({ enabled }: { enabled: boolean }) {
     event.preventDefault();
     const password = String(new FormData(event.currentTarget).get('heslo') ?? '');
     void submit(
-      () => authClient.twoFactor.enable({ password }),
+      () => authClient.twoFactor.enable({ password, method: 'totp' }),
       (result) => {
-        if (result.error || !result.data) {
+        // Better Auth 1.7 už zapnuté ověření znovu nespustí — stává se to ve
+        // druhé kartě, která ještě ukazuje „vypnuto“; heslo je v pořádku
+        if (result.error?.code === 'TOTP_ALREADY_ENABLED') {
+          setError('Dvoufaktorové ověření už je zapnuté — obnov stránku.');
+          return;
+        }
+        // místo autentikátoru umí 1.7 zapnout i kódy e-mailem (`method:
+        // 'otp'`) — ty nenabízíme a server bez `sendOTP` je odmítne
+        if (result.error || result.data?.method !== 'totp') {
           setError('Nepodařilo se spustit nastavení — zkontroluj heslo.');
           return;
         }

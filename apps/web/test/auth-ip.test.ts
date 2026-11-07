@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getIp } from 'better-auth/api';
+import { getIP } from 'better-auth/api';
 import { resolveTrustedProxies } from '@/lib/auth';
 
 /**
@@ -15,13 +15,13 @@ const options = (trustedProxies: string[]) => ({
 describe('rozřešení IP klienta pro rate limit (D-1)', () => {
   it('řetězec od proxy: klientská IP se vezme zprava, hopy proxy se přeskočí', () => {
     const headers = new Headers({ 'x-forwarded-for': '198.51.100.7, 10.0.0.5' });
-    expect(getIp(headers, options(resolveTrustedProxies()))).toBe('198.51.100.7');
+    expect(getIP(headers, options(resolveTrustedProxies()))).toBe('198.51.100.7');
   });
 
   it('dva různí klienti za toutéž proxy nesdílí jeden kbelík', () => {
     const opts = options(resolveTrustedProxies());
-    const first = getIp(new Headers({ 'x-forwarded-for': '198.51.100.7, 10.0.0.5' }), opts);
-    const second = getIp(new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.5' }), opts);
+    const first = getIP(new Headers({ 'x-forwarded-for': '198.51.100.7, 10.0.0.5' }), opts);
+    const second = getIP(new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.5' }), opts);
     expect(first).not.toBe(second);
   });
 
@@ -30,12 +30,12 @@ describe('rozřešení IP klienta pro rate limit (D-1)', () => {
     // útočník si sám pošle `X-Forwarded-For: 1.2.3.4`, proxy za něj doplní
     // jeho skutečnou adresu — ta je vpravo a rozhoduje
     const headers = new Headers({ 'x-forwarded-for': '1.2.3.4, 203.0.113.9, 10.0.0.5' });
-    expect(getIp(headers, opts)).toBe('203.0.113.9');
+    expect(getIP(headers, opts)).toBe('203.0.113.9');
   });
 
   it('produkce (Vercel): jediná veřejná hodnota v hlavičce projde jako klient', () => {
     const headers = new Headers({ 'x-forwarded-for': '203.0.113.9' });
-    expect(getIp(headers, options(resolveTrustedProxies()))).toBe('203.0.113.9');
+    expect(getIP(headers, options(resolveTrustedProxies()))).toBe('203.0.113.9');
   });
 
   it('všechny výchozí rozsahy jsou platné CIDR (jinak je Better Auth tiše zahodí)', () => {
@@ -44,11 +44,11 @@ describe('rozřešení IP klienta pro rate limit (D-1)', () => {
     const hops = ['127.0.0.1', '10.1.2.3', '172.20.0.5', '192.168.1.1', '100.64.0.1'];
     for (const hop of hops) {
       const headers = new Headers({ 'x-forwarded-for': `203.0.113.9, ${hop}` });
-      expect(getIp(headers, opts)).toBe('203.0.113.9');
+      expect(getIP(headers, opts)).toBe('203.0.113.9');
     }
     // IPv6 varianty (loopback a ULA) — klient je taky IPv6
     const ipv6 = new Headers({ 'x-forwarded-for': '2001:db8::1, fd00::1' });
-    expect(getIp(ipv6, opts)).toBe('2001:0db8:0000:0000:0000:0000:0000:0000');
+    expect(getIP(ipv6, opts)).toBe('2001:0db8:0000:0000:0000:0000:0000:0000');
   });
 
   it('DANERO_TRUSTED_PROXIES přepíše výchozí seznam', () => {
@@ -80,8 +80,8 @@ describe('prázdná DANERO_TRUSTED_PROXIES se čte jako nevyplněná (D07-R1-01)
         expect(resolveTrustedProxies()).toEqual(unset);
         const opts = options(resolveTrustedProxies());
         // dvě hodnoty v hlavičce: klient za další proxy, CDN před proxy, podvrh
-        const first = getIp(new Headers({ 'x-forwarded-for': '203.0.113.7, 198.51.100.9' }), opts);
-        const second = getIp(new Headers({ 'x-forwarded-for': '192.0.2.44, 198.51.100.77' }), opts);
+        const first = getIP(new Headers({ 'x-forwarded-for': '203.0.113.7, 198.51.100.9' }), opts);
+        const second = getIP(new Headers({ 'x-forwarded-for': '192.0.2.44, 198.51.100.77' }), opts);
         expect(first).toBe('198.51.100.9');
         expect(second).toBe('198.51.100.77');
       });

@@ -42,10 +42,12 @@ import { hashPassword, verifyPassword } from '@/lib/password';
  *
  * ⚠️ Heslo se schválně NEPŘEPISUJE tím z nového pokusu. Vyhrával by poslední
  * zapisující, takže útočníkovi by stačilo zaregistrovat se jako druhý. A odkaz
- * nejde svázat s konkrétním pokusem: ověřovací token je JWT jen s adresou.
+ * nejde svázat s konkrétním pokusem: ověřovací token je JWT s adresou a id
+ * účtu, ne s heslem.
  *
- * ⚠️ Spor patří k ADRESE, ne k účtu. Ověřovací odkaz taky nese jen adresu,
- * takže platí i pro účet, který na ní vznikl později: kdyby spor visel na id
+ * ⚠️ Spor patří k ADRESE, ne k účtu. Odkaz od Better Authu 1.7 nese i id účtu
+ * a pro účet, který na adrese vznikl později, neplatí — jenže nový odkaz si
+ * nový účet vyžádá hned. Kdyby spor visel na id
  * účtu, držitel by ho shodil tím, že účet smaže a adresu si předregistruje
  * znovu (a stejně tak změnou e-mailu jinam a zpátky). Ze stejného důvodu spor
  * neruší registrace stejným heslem, zrušení účtu ani jeho odchod z adresy —
@@ -182,14 +184,16 @@ export async function handleExistingUserSignUp(
  * je ještě to z předregistrace) a on jde na „Zapomenuté heslo“.
  *
  * ⚠️ Relace se ruší TADY a dřív než spor, i když je Better Auth ruší taky
- * (`revokeSessionsOnPasswordReset`): ten to dělá až PO tomhle háčku, takže
- * kdyby jeho mazání selhalo, zůstal by účet bez sporu a s cizí relací. Když
- * selže cokoli tady, spor zůstane a rozhodne se až při potvrzení adresy.
+ * (`revokeSessionsOnPasswordReset`; od 1.7 před tímhle háčkem, do 1.6 po
+ * něm): na pořadí v knihovně nestavíme, aby nezůstal účet bez sporu a s cizí
+ * relací. Když selže cokoli tady, spor zůstane a rozhodne se až při
+ * potvrzení adresy.
  *
  * ⚠️ Jen u účtu, který od založení NIKDO NEZMĚNIL (`updatedAt` = `createdAt`),
  * tedy u předregistrace. Obnova dokládá schránku, do které odkaz ODEŠEL, a ta
- * nemusí být ta dnešní: Better Auth odkaz spotřebuje, pak stovky milisekund
- * počítá otisk hesla a účet si přečte až potom. Kdo má zavedený účet, nechal
+ * nemusí být ta dnešní: mezi čtením účtu a tímhle háčkem Better Auth stovky
+ * milisekund počítá otisk hesla (do 1.6 četl účet až po něm, od 1.7 před ním
+ * a háček dostane ten starší snímek). Kdo má zavedený účet, nechal
  * by si odkaz poslat na vlastní adresu a souběžně s obnovou přešel změnou
  * e-mailu na spornou cizí — spor by zavřel heslem, které zná on, a majitel by
  * pak svým odkazem potvrdil účet s cizím heslem (D01-R1-01). `changeEmailAction`

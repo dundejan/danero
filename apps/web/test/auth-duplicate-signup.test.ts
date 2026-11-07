@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, gt, like } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { getAuth as GetAuth } from '@/lib/auth';
 import { emailsIn, postAuth, signUpVerified, type LoggedEmail } from './auth-helpers';
@@ -164,12 +164,27 @@ async function accountState(email: string) {
   };
 }
 
-/** Záznamy o sporných adresách (v tabulce `verification`), všechny naráz. */
+/**
+ * Živé záznamy o sporných adresách (v tabulce `verification`), všechny naráz.
+ *
+ * Jen nevypršelé: Better Auth při každém hledání v `verification` maže prošlé
+ * řádky a od 1.7 hledá i při obnově hesla, takže spor, který jiný test nechal
+ * vypršet, zmizí uprostřed cizího testu — a počty „před“ a „po“ by se rozešly
+ * o cizí řádek.
+ */
 async function contestRows() {
   const { getDb } = await import('@/db');
   const { verification } = await import('@/db/schema');
   const db = await getDb();
-  return db.select().from(verification).where(like(verification.identifier, 'signup-contest:%'));
+  return db
+    .select()
+    .from(verification)
+    .where(
+      and(
+        like(verification.identifier, 'signup-contest:%'),
+        gt(verification.expiresAt, new Date()),
+      ),
+    );
 }
 
 describe('druhá registrace téže adresy (L8a-01)', () => {

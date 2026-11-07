@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { getAuth } from '@/lib/auth';
-import { signUpVerified } from './auth-helpers';
+import { signUpVerified, totpSetup } from './auth-helpers';
 import { totp } from './totp-util';
 
 type Auth = Awaited<ReturnType<typeof getAuth>>;
@@ -35,10 +35,12 @@ async function userWithTwoFactor(auth: Auth, email: string) {
   const sessionCookies = cookiesFrom(firstSignIn);
   expect(sessionCookies).toContain('session_token');
 
-  const enable = await auth.api.enableTwoFactor({
-    body: { password: HESLO },
-    headers: new Headers({ cookie: sessionCookies }),
-  });
+  const enable = totpSetup(
+    await auth.api.enableTwoFactor({
+      body: { password: HESLO },
+      headers: new Headers({ cookie: sessionCookies }),
+    }),
+  );
   expect(enable.totpURI).toContain('otpauth://totp/');
   expect(enable.backupCodes.length).toBeGreaterThan(0);
   const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)?.[1];
@@ -350,10 +352,12 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
 
       // nové zapnutí s novým tajemstvím: žádná stará důvěra se nevrátí
       const noveCookies = cookiesFrom(vypnuti);
-      const zapnuti = await auth.api.enableTwoFactor({
-        body: { password: HESLO },
-        headers: new Headers({ cookie: noveCookies }),
-      });
+      const zapnuti = totpSetup(
+        await auth.api.enableTwoFactor({
+          body: { password: HESLO },
+          headers: new Headers({ cookie: noveCookies }),
+        }),
+      );
       const noveTajemstvi = /[?&]secret=([^&]+)/.exec(zapnuti.totpURI)![1]!;
       const aktivace = await auth.api.verifyTOTP({
         body: { code: codeForStep(noveTajemstvi, currentStep()) },
@@ -436,10 +440,12 @@ describe('2FA TOTP flow přes Better Auth API (in-memory PGlite)', () => {
       const plain = await signInWithCookies(authAfterScript, email, '');
       expect(plain.twoFactorRedirect).toBe(false);
       expect(plain.cookies).toContain('session_token');
-      const enable = await authAfterScript.api.enableTwoFactor({
-        body: { password: HESLO },
-        headers: new Headers({ cookie: plain.cookies }),
-      });
+      const enable = totpSetup(
+        await authAfterScript.api.enableTwoFactor({
+          body: { password: HESLO },
+          headers: new Headers({ cookie: plain.cookies }),
+        }),
+      );
       const newSecret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
       const activation = await authAfterScript.api.verifyTOTP({
         body: { code: codeForStep(newSecret, currentStep()) },

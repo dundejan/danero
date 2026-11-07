@@ -91,8 +91,9 @@ function fileSink(path: string): EmailSender {
 /**
  * Strop na jedno odeslání přes Resend (K5-11).
  *
- * Resend 4.8 volá holý `fetch(url, options)` bez `signal`, takže vlastní
- * timeout nepřijme — jediný způsob, jak čekání ukončit, je `Promise.race`.
+ * Resend 4.8 volal holý `fetch(url, options)` bez `signal`, takže vlastní
+ * timeout nepřijal — čekání proto ukončuje `Promise.race` (6.x už `signal`
+ * přes `requestOptions` předá, race ale funguje dál).
  * Bez něj se čeká, dokud se neozve undici se svým `headersTimeout`, což je
  * **300 s**: jediný zaseknutý e-mail sežere celých 300 s `maxDuration` cronu.
  * Netrpí tím jen cron — na témž volání visí i uživatelské server actions

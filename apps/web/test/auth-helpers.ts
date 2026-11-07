@@ -67,3 +67,15 @@ export function verificationTokenFrom(logPath: string): string {
   if (!token) throw new Error(`Odkaz neobsahuje token: ${url}`);
   return token;
 }
+
+/**
+ * Výsledek `/two-factor/enable` zúžený na autentikátor. Better Auth 1.7 umí
+ * zapnout i kódy e-mailem (`method: 'otp'`), ty ale nenabízíme — testy proto
+ * selžou nahlas, kdyby server vrátil cokoli jiného než adresu a záložní kódy.
+ */
+export function totpSetup<T extends { method: string }>(
+  enable: T,
+): Extract<T, { method: 'totp' }> {
+  if (enable.method !== 'totp') throw new Error(`čekal jsem TOTP, server vrátil ${enable.method}`);
+  return enable as Extract<T, { method: 'totp' }>;
+}

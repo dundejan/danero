@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { getAuth } from '@/lib/auth';
-import { signUpVerified } from './auth-helpers';
+import { signUpVerified, totpSetup } from './auth-helpers';
 import { totp } from './totp-util';
 
 /**
@@ -86,10 +86,12 @@ describe('audit účtu zaznamená převzetí účtu (K4-04)', () => {
     await signUpVerified(auth, { email, password: HESLO, name: 'Audit 2FA' });
     const cookies = await signIn(auth, email);
 
-    const enable = await auth.api.enableTwoFactor({
-      body: { password: HESLO },
-      headers: new Headers({ cookie: cookies }),
-    });
+    const enable = totpSetup(
+      await auth.api.enableTwoFactor({
+        body: { password: HESLO },
+        headers: new Headers({ cookie: cookies }),
+      }),
+    );
     const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
 
     // samotné /two-factor/enable ještě nic nezapíná — jen vydá QR a záložní
@@ -122,10 +124,12 @@ describe('audit účtu zaznamená převzetí účtu (K4-04)', () => {
     const email = 'audit-2fa-login@test.cz';
     await signUpVerified(auth, { email, password: HESLO, name: 'Audit login' });
     const cookies = await signIn(auth, email);
-    const enable = await auth.api.enableTwoFactor({
-      body: { password: HESLO },
-      headers: new Headers({ cookie: cookies }),
-    });
+    const enable = totpSetup(
+      await auth.api.enableTwoFactor({
+        body: { password: HESLO },
+        headers: new Headers({ cookie: cookies }),
+      }),
+    );
     const secret = /[?&]secret=([^&]+)/.exec(enable.totpURI)![1]!;
     await auth.api.verifyTOTP({
       body: { code: codeForStep(secret, currentStep()) },
