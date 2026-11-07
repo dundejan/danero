@@ -285,8 +285,9 @@ describe('údržba: rate_limit Better Authu a dokončení rotace klíče', () =>
   it('maže jen prošlé řádky rate_limit, běžící okno nechá', async () => {
     const db = await createPgliteDb();
     const now = new Date('2026-08-10T12:00:00Z');
-    const stary = Math.floor(now.getTime() / 1000) - 7200; // 2 hodiny zpět
-    const cerstvy = Math.floor(now.getTime() / 1000) - 60;
+    // Better Auth zapisuje `lastRequest` jako `Date.now()`, tedy v milisekundách
+    const stary = now.getTime() - 2 * 60 * 60_000;
+    const cerstvy = now.getTime() - 60_000;
     await db.insert(rateLimit).values([
       { id: 'rl-stary', key: 'ip:1.2.3.4/sign-in', count: 3, lastRequest: stary },
       { id: 'rl-cerstvy', key: 'ip:5.6.7.8/sign-in', count: 1, lastRequest: cerstvy },

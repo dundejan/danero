@@ -203,14 +203,16 @@ export function pruneFailedImports(db: Db, now = new Date()): Promise<number> {
  * a syrové IP adresy v ní leží donekonečna. Naše vlastní `app_rate_limits`
  * uklízí `pruneRateLimits`; tohle je ta druhá, cizí.
  *
- * Maže se podle `lastRequest` (epoch v sekundách, ne timestamp). Nejdelší
- * okno v `customRules` je 300 s, takže hodina je bohatá rezerva i pro řádek,
- * který právě běží.
+ * Maže se podle `lastRequest` — epoch v MILISEKUNDÁCH (`Date.now()`
+ * v `better-auth/dist/api/rate-limiter`), ne timestamp. Do 7. 11. 2026 se tu
+ * porovnávaly sekundy, takže podmínka neplatila nikdy a úklid nesmazal nic;
+ * test měl fixturu ve stejně chybných sekundách. Nejdelší okno v `customRules`
+ * je 300 s, takže hodina je bohatá rezerva i pro řádek, který právě běží.
  */
 export const AUTH_RATE_LIMIT_RETENTION_MS = 60 * 60_000;
 
 export function pruneAuthRateLimits(db: Db, now = new Date()): Promise<number> {
-  const cutoffSeconds = Math.floor((now.getTime() - AUTH_RATE_LIMIT_RETENTION_MS) / 1000);
+  const cutoffMs = now.getTime() - AUTH_RATE_LIMIT_RETENTION_MS;
   return deleteInBatches((limit) =>
     db
       .delete(rateLimit)
@@ -220,7 +222,7 @@ export function pruneAuthRateLimits(db: Db, now = new Date()): Promise<number> {
           db
             .select({ id: rateLimit.id })
             .from(rateLimit)
-            .where(lt(rateLimit.lastRequest, cutoffSeconds))
+            .where(lt(rateLimit.lastRequest, cutoffMs))
             .limit(limit),
         ),
       )
