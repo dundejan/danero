@@ -12,6 +12,8 @@
  * otevřel.
  */
 
+import { tidy } from '@/lib/typography';
+
 /**
  * Barvy z `globals.css` — v e-mailu musí být natvrdo, proměnné tam neplatí.
  * Světlé hodnoty jdou do inline stylů (ty přečte každý klient), tmavé do
@@ -30,6 +32,16 @@ const COLORS = {
   accent: '#0071e3',
   /** Výplň tlačítka — `accent-fill` (bílý text 4,7 : 1, v obou režimech stejná). */
   accentFill: '#0071e3',
+  /** Odkaz v textu — `accent-text`. */
+  link: '#0066cc',
+  /** Dělicí linka mezi položkami — `line`. */
+  line: '#d2d2d7',
+  /** Prázdná dráha měřáku — `line` (na panelu `canvas` by `control` zanikl). */
+  track: '#d2d2d7',
+  /** Měřák nad hranicí, kde se už ozýváme naléhavě — `caution`. */
+  caution: '#b26b00',
+  /** Prolomený limit a naléhavá událost — `danger`. */
+  danger: '#d70015',
 } as const;
 
 const DARK = {
@@ -42,6 +54,12 @@ const DARK = {
   ink: '#f5f5f7',
   muted: '#98989d',
   accent: '#0a84ff',
+  link: '#2997ff',
+  line: '#38383a',
+  /** Dráha leží na panelu (`control`), proto o stupeň světlejší — `line`. */
+  track: '#38383a',
+  caution: '#ffd60a',
+  danger: '#ff453a',
 } as const;
 
 /**
@@ -62,6 +80,13 @@ const DARK_STYLES = `:root{color-scheme:light dark;supported-color-schemes:light
 .e-muted{color:${DARK.muted}!important}
 .e-dot{background:${DARK.accent}!important}
 .e-bar{background:${DARK.ink}!important}
+.e-link{color:${DARK.link}!important}
+.e-danger{color:${DARK.danger}!important}
+.e-line{border-color:${DARK.line}!important}
+.e-track{background:${DARK.track}!important}
+.e-fill-accent{background:${DARK.accent}!important}
+.e-fill-caution{background:${DARK.caution}!important}
+.e-fill-danger{background:${DARK.danger}!important}
 }`;
 
 const FONT =
@@ -77,7 +102,34 @@ export type EmailBlock =
   /** Dvousloupcový přehled (co / za kolik). */
   | { kind: 'rows'; rows: [string, string][] }
   /** Vysvětlivka drobným písmem — právní poučení, které nemá překřičet obsah. */
-  | { kind: 'note'; text: string };
+  | { kind: 'note'; text: string }
+  /**
+   * Seznam událostí (upozornění hlídače): tučný titulek a věta pod ním,
+   * oddělené linkou. Naléhavou událost uvozuje červené „Naléhavé“.
+   */
+  | { kind: 'items'; items: EmailItem[] }
+  /** Měřáky čerpání (limity): popisek, hodnota a pruh s podílem. */
+  | { kind: 'meters'; rows: EmailMeter[] }
+  /** Drobné odkazy pod obsahem (nastavení, odhlášení). */
+  | { kind: 'links'; links: { label: string; url: string }[] };
+
+export interface EmailItem {
+  title: string;
+  text: string;
+  urgent?: boolean;
+}
+
+export interface EmailMeter {
+  label: string;
+  /** Čerpání slovy („41 200 Kč z 50 000 Kč“) — pod pruhem. */
+  value: string;
+  /** Podíl v procentech, jak ho píše aplikace („82 %“) — vpravo nahoře. */
+  percent: string;
+  /** Podíl čerpání (1 = celý limit); pruh se kreslí nejvýš do plna. */
+  ratio: number;
+  /** `caution` od hranice, kde hlídač píše naléhavěji; `danger` = prolomeno. */
+  tone?: 'normal' | 'caution' | 'danger';
+}
 
 const escape = (value: string): string =>
   value
@@ -85,6 +137,13 @@ const escape = (value: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+
+/**
+ * Text obsahu do HTML: pevné mezery jako v aplikaci (`tidy`), aby se na úzkém
+ * displeji neodtrhlo „3.“ od „12. 2026“ ani „Kč“ od částky. Textová verze
+ * je bez nich — tam řádky láme `wrapText` a pevná mezera by mu překážela.
+ */
+const content = (value: string): string => escape(tidy(value));
 
 /**
  * Zalomení textové verze na 78 znaků. Delší řádky některé klienty zalomí samy
@@ -107,6 +166,12 @@ function wrapText(text: string, width = 78): string {
   return lines.join('\n');
 }
 
+const indent = (text: string, prefix: string): string =>
+  text
+    .split('\n')
+    .map((line) => `${prefix}${line}`)
+    .join('\n');
+
 /** Textová verze — to, co uvidí čtečka i klient bez HTML. */
 export function renderText(blocks: EmailBlock[], footer: string[]): string {
   const parts = blocks.map((block) => {
@@ -121,6 +186,17 @@ export function renderText(blocks: EmailBlock[], footer: string[]): string {
         return block.rows.map(([label, value]) => `${label}: ${value}`).join('\n');
       case 'note':
         return wrapText(block.text);
+      case 'items':
+        return block.items
+          .map(
+            (item) =>
+              `• ${item.urgent ? '(naléhavé) ' : ''}${item.title}\n${indent(wrapText(item.text, 76), '  ')}`,
+          )
+          .join('\n\n');
+      case 'meters':
+        return block.rows.map((row) => `${row.label}: ${row.value} (${row.percent})`).join('\n');
+      case 'links':
+        return block.links.map((link) => `${link.label}:\n${link.url}`).join('\n\n');
     }
   });
   return [...parts, '', ...footer].join('\n\n').replace(/\n{3,}/g, '\n\n');
@@ -151,6 +227,74 @@ function brandMark(): string {
 </tr></table>`;
 }
 
+/**
+ * Seznam událostí v panelu. Každá položka je vlastní řádek tabulky s linkou
+ * nahoře (kromě první) — `border-top` na buňce zvládne i Outlook.
+ */
+function renderItems(items: EmailItem[]): string {
+  const rows = items
+    .map((item, i) => {
+      const separator = i === 0 ? '' : `border-top:1px solid ${COLORS.line};`;
+      // Naléhavost slovem, ne jen barevnou tečkou: tečku nepřečte čtečka
+      // a Outlook pro Windows rozměry u `span` nedodrží, takže by zmizela.
+      const marker = item.urgent
+        ? `<p class="e-danger" style="margin:0 0 2px;font-size:12px;line-height:1.4;font-weight:600;color:${COLORS.danger}">Naléhavé</p>\n`
+        : '';
+      return `<tr><td class="e-line" style="${separator}padding:14px 16px">
+${marker}<p class="e-ink" style="margin:0 0 4px;font-size:15px;line-height:1.4;font-weight:600;color:${COLORS.ink}">${content(item.title)}</p>
+<p class="e-muted" style="margin:0;font-size:14px;line-height:1.55;color:${COLORS.muted}">${content(item.text)}</p>
+</td></tr>`;
+    })
+    .join('\n');
+  return `<table class="e-panel" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;background:${COLORS.panel};border-radius:12px">
+${rows}
+</table>`;
+}
+
+const METER_FILL = {
+  normal: { className: 'e-fill-accent', color: COLORS.accent },
+  caution: { className: 'e-fill-caution', color: COLORS.caution },
+  danger: { className: 'e-fill-danger', color: COLORS.danger },
+} as const;
+
+/**
+ * Měřáky čerpání: popisek a hodnota na řádku, pod nimi pruh. Pruh je tabulka
+ * se dvěma buňkami v poměru čerpání — šířka v procentech na buňce je jediné,
+ * co spolehlivě vykreslí Gmail, Outlook i Seznam.
+ */
+function renderMeters(rows: EmailMeter[]): string {
+  const bar = (ratio: number, tone: EmailMeter['tone']): string => {
+    const pct = Math.round(Math.min(Math.max(ratio, 0), 1) * 100);
+    const fill = METER_FILL[tone ?? 'normal'];
+    const cell = (className: string, color: string, width: number) =>
+      // `height` jako atribut a řádek přesně na výšku: Outlook (Word) jinak
+      // nechá buňce výšku písma a pruh vyjde kolem 15 px
+      `<td class="${className}" width="${width}%" height="6" style="width:${width}%;height:6px;background:${color};font-size:6px;line-height:6px;mso-line-height-rule:exactly">&nbsp;</td>`;
+    const cells = [
+      ...(pct > 0 ? [cell(fill.className, fill.color, pct)] : []),
+      ...(pct < 100 ? [cell('e-track', COLORS.track, 100 - pct)] : []),
+    ].join('');
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-radius:3px;overflow:hidden"><tr>${cells}</tr></table>`;
+  };
+  // Popisek a procento nahoře, částky pod pruhem: v jednom řádku se na
+  // telefonu dlouhý název limitu lámal po slovech vedle „112 400 Kč z …“.
+  const items = rows
+    .map(
+      (row, i) => `<tr><td style="padding:${i === 0 ? '14px' : '16px'} 16px ${i === rows.length - 1 ? '14px' : '0'}">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 6px"><tr>
+<td class="e-ink" style="font-size:14px;line-height:1.4;font-weight:500;color:${COLORS.ink}">${content(row.label)}</td>
+<td class="e-ink" style="font-size:14px;line-height:1.4;font-weight:600;text-align:right;white-space:nowrap;padding-left:12px;color:${COLORS.ink}">${content(row.percent)}</td>
+</tr></table>
+${bar(row.ratio, row.tone)}
+<p class="e-muted" style="margin:6px 0 0;font-size:13px;line-height:1.4;color:${COLORS.muted}">${content(row.value)}</p>
+</td></tr>`,
+    )
+    .join('\n');
+  return `<table class="e-panel" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;background:${COLORS.panel};border-radius:12px">
+${items}
+</table>`;
+}
+
 /** HTML verze. */
 export function renderHtml(args: {
   title: string;
@@ -159,13 +303,14 @@ export function renderHtml(args: {
   footer: string[];
 }): string {
   const body = args.blocks
-    .map((block) => {
+    .map((block, index) => {
       switch (block.kind) {
         case 'p':
-          return `<p class="e-ink" style="margin:0 0 16px;font-size:15px;line-height:1.6;color:${COLORS.ink}">${escape(block.text)}</p>`;
+          return `<p class="e-ink" style="margin:0 0 16px;font-size:15px;line-height:1.6;color:${COLORS.ink}">${content(block.text)}</p>`;
         case 'h':
           // váha místo verzálek — stejně jako nadpisy v aplikaci
-          return `<p class="e-ink" style="margin:28px 0 8px;font-size:15px;line-height:1.4;font-weight:600;color:${COLORS.ink}">${escape(block.text)}</p>`;
+          // první nadpis nemá nad sebou co oddělovat
+          return `<p class="e-ink" style="margin:${index === 0 ? '0' : '28px'} 0 8px;font-size:15px;line-height:1.4;font-weight:600;color:${COLORS.ink}">${content(block.text)}</p>`;
         case 'cta':
           // tabulka místo <a> s paddingem: Outlook padding na odkazu ignoruje
           return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px"><tr><td style="border-radius:980px;background:${COLORS.accentFill}"><a href="${escape(block.url)}" style="display:inline-block;padding:12px 24px;font-size:15px;font-weight:500;color:#ffffff;text-decoration:none;border-radius:980px">${escape(block.label)}</a></td></tr></table>
@@ -180,7 +325,18 @@ ${block.rows
   .join('\n')}
 </table>`;
         case 'note':
-          return `<p class="e-muted" style="margin:0 0 14px;font-size:13px;line-height:1.55;color:${COLORS.muted}">${escape(block.text)}</p>`;
+          return `<p class="e-muted" style="margin:0 0 14px;font-size:13px;line-height:1.55;color:${COLORS.muted}">${content(block.text)}</p>`;
+        case 'items':
+          return renderItems(block.items);
+        case 'meters':
+          return renderMeters(block.rows);
+        case 'links':
+          return `<p class="e-muted" style="margin:0 0 14px;font-size:13px;line-height:1.7;color:${COLORS.muted}">${block.links
+            .map(
+              (link) =>
+                `<a class="e-link" href="${escape(link.url)}" style="color:${COLORS.link};text-decoration:none">${escape(link.label)}</a>`,
+            )
+            .join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</p>`;
       }
     })
     .join('\n');

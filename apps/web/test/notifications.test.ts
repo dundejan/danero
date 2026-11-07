@@ -947,13 +947,22 @@ describe('vlastní pravidla hlídače (lhůty, hranice, přehled)', () => {
     expect(sent).toHaveLength(1);
 
     // den nato přijde prolomený limit — okno je zavřené, ale naléhavé se posílá hned
-    await db.insert(notifications).values({
-      userId: 'u-urgent', dedupeKey: 'test|urgent', type: 'LIMIT_EXCEEDED',
-      title: 'Prolomen limit', body: 'naléhavé', urgent: true,
-    });
+    await db.insert(notifications).values([
+      {
+        userId: 'u-urgent', dedupeKey: 'test|urgent', type: 'LIMIT_EXCEEDED',
+        title: 'Prolomen limit', body: 'naléhavé', urgent: true,
+      },
+      // nenaléhavá událost jde s naléhavou v témže e-mailu
+      {
+        userId: 'u-urgent', dedupeKey: 'test|vedlejsi', type: 'LIMIT_WARNING',
+        title: 'Za polovinou', body: 'vedle', urgent: false,
+      },
+    ]);
     const hned = await processUserNotifications(db, target, { send, today: '2026-07-21' });
-    expect(hned.emailed).toBe(1);
+    expect(hned.emailed).toBe(2);
     expect(sent).toHaveLength(2);
+    // mimo týdenní okno to není „souhrn za týden“ (nález revize 7. 11. 2026)
+    expect(sent[1]!.subject).not.toContain('za týden');
 
     // s vypnutou volbou počká naléhavá událost na týdenní souhrn jako ostatní
     await db
@@ -1465,7 +1474,12 @@ describe('digest hlídače se identifikuje jménem, IČO i kontaktem provozovate
     expect(text).toContain(OPERATOR.name);
     expect(text).toContain(`IČO ${OPERATOR.ico}`);
     expect(text).toContain(OPERATOR.email);
-    // celá patička, ne její výřez — zkrácení o řádek by jinak prošlo znovu
-    expect(text.endsWith(`\n\n${operatorSignature().join('\n')}`)).toBe(true);
+    // celá patička, ne její výřez — zkrácení o řádek by jinak prošlo znovu;
+    // řádky odděluje prázdný řádek jako u všech e-mailů z `composeMessage`
+    expect(text.endsWith(`\n\n${operatorSignature().join('\n\n')}`)).toBe(true);
+    // a totéž v HTML podobě, kterou vidí většina schránek
+    for (const line of operatorSignature()) {
+      expect(sent[0]!.html).toContain(line.replace(/&/g, '&amp;'));
+    }
   });
 });

@@ -677,7 +677,18 @@ export function OverviewView({
             {(importantWarnings.length > 0 || notifications.length > 0) && (
               <div className="space-y-14">
                 {notifications.length > 0 && (
-                  <Section title="Poslední upozornění">
+                  <Section
+                    title="Poslední upozornění"
+                    actions={
+                      // kde se dá změnit, co a jak často chodí e-mailem; v demu
+                      // Nastavení není — odkaz by vedl na přihlášení
+                      basePath === '' ? (
+                        <TextLink href="/nastaveni/upozorneni" chevron>
+                          Nastavit e-maily
+                        </TextLink>
+                      ) : undefined
+                    }
+                  >
                     <Group>
                       {notifications.map((notification) => {
                         // Uložené upozornění nese znění, se kterým vzniklo

@@ -210,7 +210,7 @@ export function resolveEmailSender(): EmailSender {
  * bez něj tam Gmail vytáhne první větu těla, což u „Někdo požádal o…“
  * vypadá jako phishing.
  */
-function composeMessage(args: {
+export function composeMessage(args: {
   subject: string;
   preheader: string;
   blocks: EmailBlock[];

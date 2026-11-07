@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { filingDeadlines, type LimitStatus, type Position, type TaxYearResult } from '@danero/engine';
 import { addDays, diffDays } from '@danero/shared';
 import type { Db } from '@/db';
@@ -7,6 +7,8 @@ import { notificationPrefData, taxpayerProfileData } from '@/db/settings-data';
 import { today as todayInPrague } from '@/lib/clock';
 import { EPO_SUPPORTED_YEARS } from '@/lib/epo';
 import { operatorSignature } from '@/lib/contact';
+import { composeMessage, type EmailMessage, type EmailSender } from '@/lib/email';
+import type { EmailBlock, EmailItem } from '@/lib/email-layout';
 import {
   DEFAULT_NOTIFICATION_RULES,
   formatNumberList,
@@ -331,24 +333,47 @@ export function calendarCandidates(args: {
   return out;
 }
 
+/** Řádek měřáku limitu v pravidelném přehledu. */
+export interface SummaryMeter {
+  label: string;
+  usedCzk: string;
+  limitCzk: string;
+  percent: string;
+  ratio: number;
+  /** `danger` = prolomeno podle enginu, `caution` = od 85 % (naléhavé pásmo hlídače). */
+  tone: 'normal' | 'caution' | 'danger';
+}
+
+/** Obsah pravidelného přehledu po částech — z nich se skládá text i e-mail. */
+export interface SummaryContent {
+  title: string;
+  /** Daňový rok, za který limity platí (v lednu je to už nový rok). */
+  year: number;
+  /** „Stav k 1. 7. 2026 za rok 2026.“ */
+  intro: string;
+  meters: SummaryMeter[];
+  /** Nejbližší osvobození, nebo věta, že žádné nečeká. */
+  next: string;
+  /** Orientační daň (s výhradou, když pod limitem režimu nevzniká povinnost). */
+  tax: string;
+}
+
 /**
  * Pravidelný přehled (měsíční/čtvrtletní): jediná událost, která vzniká i ve
  * chvíli, kdy se NIC nestalo — od toho je. Shrne, kde je uživatel s limity,
  * co ho nejdřív čeká a na kolik zatím vychází daň, aby nemusel nic otvírat.
  *
- * Období je součástí dedupe klíče, takže za měsíc (čtvrtletí) odejde nejvýš
- * jeden — i když cron poběží každý den. V titulku ale období NENÍ: přehled
- * odchází první den období a nese stav k tomu dni, takže „Přehled za srpen“
- * odeslaný 1. srpna by popisoval červenec. Je to snímek k datu, ne uzávěrka.
+ * V titulku období NENÍ: přehled odchází první den období a nese stav k tomu
+ * dni, takže „Přehled za srpen“ odeslaný 1. srpna by popisoval červenec. Je to
+ * snímek k datu, ne uzávěrka.
  */
-export function summaryCandidate(args: {
+export function summaryContent(args: {
   result: TaxYearResult;
   positions: Position[];
   labels: Map<string, string>;
   today: string;
-  period: string;
-}): NotificationCandidate {
-  const { result, positions, labels, today, period } = args;
+}): SummaryContent {
+  const { result, positions, labels, today } = args;
 
   // Řádky se jmenují stejně jako seznam limitů na přehledu (`LIMIT_NAME`);
   // částku limitu nese hned věta za jménem („… z 50 000 Kč“), a to ze stavu
@@ -376,9 +401,16 @@ export function summaryCandidate(args: {
       ? [{ label: LIMIT_NAME.CRYPTO, status: result.limits.cryptoLimit100k }]
       : []),
   ];
-  const limitLines = limits.map(
-    (limit) =>
-      `${limit.label}: ${czk(limit.status.usedCzk)} z ${czk(limit.status.limitCzk)} (${pct(limit.status.ratio * 100)})`,
+  const meters = limits.map(
+    ({ label, status }): SummaryMeter => ({
+      label,
+      usedCzk: czk(status.usedCzk),
+      limitCzk: czk(status.limitCzk),
+      percent: pct(status.ratio * 100),
+      ratio: status.ratio,
+      // o prolomení rozhoduje engine (přesně 100 000 Kč je ještě pod limitem)
+      tone: status.exceeded ? 'danger' : status.ratio >= 0.85 ? 'caution' : 'normal',
+    }),
   );
 
   // nejbližší pozice, které doběhne časový test — jediné číslo, kvůli kterému
@@ -403,12 +435,187 @@ export function summaryCandidate(args: {
       : '';
 
   return {
-    dedupeKey: `souhrn|${period}`,
-    type: 'SUMMARY',
     title: `Přehled k ${czDate(today)}`,
+    year: result.year,
+    intro: `Stav k ${czDate(today)} za rok ${result.year}.`,
+    meters,
+    next: nextLine,
     // fakt a čísla, žádný pokyn (V-4) — stejná pravidla jako u ostatních e-mailů
-    body: `Stav k ${czDate(today)} za rok ${result.year}. ${limitLines.join('. ')}. ${nextLine} Orientační daň z investic zatím ${czk(taxCzk)}${underLimit}.`,
+    tax: `Orientační daň z investic zatím ${czk(taxCzk)}${underLimit}.`,
   };
+}
+
+/** Text přehledu tak, jak se ukládá a ukazuje v aplikaci. */
+export function summaryBody(content: SummaryContent): string {
+  const limitLines = content.meters.map(
+    (meter) => `${meter.label}: ${meter.usedCzk} z ${meter.limitCzk} (${meter.percent})`,
+  );
+  return `${content.intro} ${limitLines.join('. ')}. ${content.next} ${content.tax}`;
+}
+
+/**
+ * Událost pravidelného přehledu. Období je součástí dedupe klíče, takže za
+ * měsíc (čtvrtletí) odejde nejvýš jeden — i když cron poběží každý den.
+ */
+export function summaryCandidate(args: {
+  result: TaxYearResult;
+  positions: Position[];
+  labels: Map<string, string>;
+  today: string;
+  period: string;
+}): NotificationCandidate {
+  const content = summaryContent(args);
+  return {
+    dedupeKey: `souhrn|${args.period}`,
+    type: 'SUMMARY',
+    title: content.title,
+    body: summaryBody(content),
+  };
+}
+
+/** Událost, jak vstupuje do souhrnného e-mailu. */
+export interface DigestEntry {
+  type: string;
+  title: string;
+  body: string;
+  urgent?: boolean | null;
+}
+
+/** Kolik událostí jedné skupiny se vypíše v e-mailu (zbytek je v aplikaci). */
+const MAX_DIGEST_ITEMS_PER_GROUP = 15;
+
+/** Skupiny souhrnného e-mailu v pořadí, ve kterém se ukazují. */
+const DIGEST_GROUPS: Array<{ title: string; matches: (type: string) => boolean }> = [
+  { title: 'Limity', matches: (type) => type.startsWith('LIMIT_') },
+  { title: 'Časový test', matches: (type) => type.startsWith('TIME_TEST') },
+  { title: 'Termíny přiznání', matches: (type) => type === 'DEADLINE' || type === 'YEAR_SUMMARY' },
+];
+
+/**
+ * Souhrnný e-mail hlídače. Do 7. 11. 2026 odcházel jako holý text s odrážkami
+ * — jediný e-mail z Danera bez HTML podoby. Události se dělí do skupin
+ * (limity, časový test, termíny), naléhavé jdou ve skupině první a pravidelný
+ * přehled má měřáky čerpání. Text i HTML vznikají z týchž bloků.
+ *
+ * `summary` je obsah přehledu spočítaný v tomhle běhu; bez něj se přehled
+ * vypíše jako ostatní události, z uloženého textu.
+ */
+export function digestEmail(args: {
+  entries: DigestEntry[];
+  weekly: boolean;
+  summary?: SummaryContent;
+  baseUrl: string;
+  unsubscribeUrl: string;
+}): Omit<EmailMessage, 'to'> {
+  const { entries, summary, baseUrl, unsubscribeUrl } = args;
+  const subject =
+    entries.length === 1
+      ? `Danero: ${entries[0]!.title}`
+      : args.weekly
+        ? 'Danero: souhrn upozornění za týden'
+        : `Danero: ${entries.length} ${plural(entries.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`;
+
+  const toItem = (entry: DigestEntry): EmailItem => ({
+    title: entry.title,
+    text: entry.body,
+    urgent: entry.urgent === true,
+  });
+  // Měřáky se kreslí jen pro přehled vzniklý v tomhle běhu (titulek nese
+  // dnešní datum) — ten má spočítaný obsah. Přehled, který čekal na týdenní
+  // okno, odejde tak, jak vznikl, ze svého uloženého textu: v databázi tak
+  // zůstává přesně to, co odešlo, a rok se mu pod rukama nezmění.
+  const summaryEntries = entries.filter((entry) => entry.type === 'SUMMARY');
+  const freshSummary = summary && summaryEntries.some((entry) => entry.title === summary.title) ? summary : undefined;
+  const storedSummaries = summaryEntries.filter((entry) => entry.title !== freshSummary?.title);
+  const grouped = DIGEST_GROUPS.map((group) => ({
+    title: group.title,
+    // naléhavé ve skupině první, jinak v pořadí, v jakém vznikly
+    items: entries
+      .filter((entry) => group.matches(entry.type))
+      .sort((a, b) => Number(b.urgent === true) - Number(a.urgent === true))
+      .map(toItem),
+  }));
+  const known = new Set(
+    entries.filter((entry) => entry.type === 'SUMMARY' || DIGEST_GROUPS.some((g) => g.matches(entry.type))),
+  );
+  const other = entries.filter((entry) => !known.has(entry)).map(toItem);
+  const sections = [
+    ...grouped,
+    ...(other.length > 0 ? [{ title: 'Další upozornění', items: other }] : []),
+  ].filter((section) => section.items.length > 0);
+  // nadpisy skupin jen tam, kde je co od sebe oddělit
+  const withHeadings = sections.length + (summaryEntries.length > 0 ? 1 : 0) > 1;
+
+  const blocks: EmailBlock[] = [];
+  for (const section of sections) {
+    if (withHeadings) blocks.push({ kind: 'h', text: section.title });
+    // Strop na skupinu: Gmail zprávu nad ~102 kB zkrátí i s patičkou, a s ní
+    // zmizí odhlašovací odkaz a identifikace provozovatele. Celý seznam je
+    // v aplikaci.
+    const shown = section.items.slice(0, MAX_DIGEST_ITEMS_PER_GROUP);
+    blocks.push({ kind: 'items', items: shown });
+    const hidden = section.items.length - shown.length;
+    if (hidden > 0) {
+      blocks.push({
+        kind: 'note',
+        text: `A ${plural(hidden, 'další', 'další', 'dalších')} ${hidden} ${plural(hidden, 'upozornění', 'upozornění', 'upozornění')} — všechna najdeš v přehledu v aplikaci.`,
+      });
+    }
+  }
+  if (freshSummary) {
+    blocks.push(
+      { kind: 'h', text: freshSummary.title },
+      // rok musí zaznít: v lednu měřáky začínají od nuly za nový rok
+      { kind: 'note', text: `Čerpání ročních limitů za rok ${freshSummary.year}.` },
+    );
+    if (freshSummary.meters.length > 0) {
+      blocks.push({
+        kind: 'meters',
+        rows: freshSummary.meters.map((meter) => ({
+          label: meter.label,
+          value: `${meter.usedCzk} z ${meter.limitCzk}`,
+          percent: meter.percent,
+          ratio: meter.ratio,
+          tone: meter.tone,
+        })),
+      });
+    }
+    blocks.push({ kind: 'p', text: freshSummary.next }, { kind: 'p', text: freshSummary.tax });
+  }
+  if (storedSummaries.length > 0) {
+    if (withHeadings && !freshSummary) blocks.push({ kind: 'h', text: 'Pravidelný přehled' });
+    blocks.push({ kind: 'items', items: storedSummaries.map(toItem) });
+  }
+  blocks.push(
+    { kind: 'cta', label: 'Otevřít přehled', url: `${baseUrl}/prehled` },
+    { kind: 'note', text: 'Danero je výpočetní nástroj, nikoli daňové poradenství.' },
+    {
+      kind: 'links',
+      links: [
+        { label: 'Nastavit, co a jak často chodí', url: `${baseUrl}/nastaveni/upozorneni` },
+        { label: 'Odhlásit e-mailová upozornění', url: unsubscribeUrl },
+      ],
+    },
+  );
+
+  // náhled v seznamu zpráv: titulky v pořadí, v jakém je e-mail ukazuje;
+  // čekající přehledy jsou v e-mailu jeden, tak i tady
+  const shownTitles = [
+    ...sections.flatMap((section) => section.items.map((item) => item.title)),
+    ...summaryEntries.map((entry) => entry.title),
+  ];
+  const preheader = entries.length === 1 ? entries[0]!.body : [...new Set(shownTitles)].join(' · ');
+
+  return composeMessage({
+    subject,
+    // po znacích, ne po UTF-16 jednotkách: 🎉 v titulku by se jinak rozsekl na „�“
+    preheader:
+      Array.from(preheader).length > 150
+        ? `${Array.from(preheader).slice(0, 147).join('').trimEnd()}…`
+        : preheader,
+    blocks,
+    footer: operatorSignature(),
+  });
 }
 
 /** Preference uživatele; chybějící řádek = vše zapnuté, denní souhrn (G8d, H3). */
@@ -487,7 +694,6 @@ export async function verifyUnsubscribeToken(
 }
 
 // odesílání žije v lib/email.ts (sdílí ho auth vrstva, která nesmí tahat engine)
-import type { EmailSender } from '@/lib/email';
 export { resolveEmailSender, type EmailMessage, type EmailSender } from '@/lib/email';
 
 /**
@@ -509,6 +715,8 @@ export async function processUserNotifications(
   const rules = notificationRules(prefs);
 
   let created = 0;
+  // obsah pravidelného přehledu k dnešku — e-mail z něj kreslí měřáky
+  let summaryNow: SummaryContent | undefined;
   const profile = await getProfile(db, target.id);
   if (profile) {
     const txs = await loadTransactions(db, target.id);
@@ -521,6 +729,12 @@ export async function processUserNotifications(
       // H3: do DB se zakládá VŠECHNO — přehled v aplikaci zůstává úplný,
       // preference filtrují až e-mailovou frontu níže
       const period = summaryPeriod(today, rules.summaryFrequency);
+      summaryNow = summaryContent({
+        result: analysis.result,
+        positions: analysis.positions,
+        labels: analysis.labels,
+        today,
+      });
       const candidates = [
         ...computeNotificationCandidates({
           result: analysis.result,
@@ -579,7 +793,9 @@ export async function processUserNotifications(
         isNull(notifications.emailedAt),
         gte(notifications.createdAt, emailRetryCutoff),
       ),
-    );
+    )
+    // pořadí vzniku, ne fyzické pořadí řádků (Postgres je po UPDATE přeskládá)
+    .orderBy(asc(notifications.createdAt), asc(notifications.dedupeKey));
   // Upozornění, které ještě neodešlo, není záznam o odeslaném e-mailu — smí
   // (a má) odejít s dnešními názvy limitů, ne s těmi, se kterými vzniklo před
   // přejmenováním. Řádek se přepíše dřív, než se pošle, takže v databázi dál
@@ -651,23 +867,22 @@ export async function processUserNotifications(
     const claimedKeys = new Set(claimed.map((c) => c.dedupeKey));
     const toSend = queue.filter((n) => claimedKeys.has(n.dedupeKey));
     if (toSend.length > 0) {
-      const lines = toSend.map((n) => `• ${n.title}\n  ${n.body}`).join('\n\n');
       const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
       const unsubscribeUrl = `${baseUrl}/api/odhlasit?token=${await unsubscribeToken(target.id)}`;
       try {
         await options.send({
           to: target.email,
-          subject:
-            toSend.length === 1
-              ? `Danero: ${toSend[0]!.title}`
-              : prefs.emailFrequency === 'WEEKLY'
-                ? 'Danero: souhrn upozornění za týden'
-                : `Danero: ${toSend.length} ${plural(toSend.length, 'nové upozornění', 'nová upozornění', 'nových upozornění')}`,
-          // patička jde z lib/contact.ts — identifikace i kontakt na jednom místě,
-          // ať se digest nerozejde s ostatními e-maily (nález E-46). Bere se
-          // CELÁ: dřívější `.slice(1)` odřezával oddělovač „—“, a když ho
-          // contact.ts z pole vypustil, odřezával jméno a IČO (L13-06).
-          text: `${lines}\n\n—\nDetail najdeš v přehledu: ${baseUrl}/prehled\nDanero je výpočetní nástroj, nikoli daňové poradenství.\nOdhlásit e-mailová upozornění: ${unsubscribeUrl}\n\n${operatorSignature().join('\n')}`,
+          // patička jde z lib/contact.ts — identifikace i kontakt na jednom
+          // místě, ať se digest nerozejde s ostatními e-maily (E-46, L13-06)
+          ...digestEmail({
+            entries: toSend,
+            // „za týden“ jen tehdy, když opravdu odchází týdenní souhrn — ne
+            // e-mail, který okno prorazil kvůli naléhavé události
+            weekly: prefs.emailFrequency === 'WEEKLY' && sinceLastMs >= 6.5 * DAY_MS,
+            summary: summaryNow,
+            baseUrl,
+            unsubscribeUrl,
+          }),
           // RFC 8058: jednoklikové odhlášení. `/api/odhlasit` na to je připravené —
           // GET jen ptá (mail scannery nic nezmění), stav mění až POST, přesně
           // jak to jednoklik vyžaduje.

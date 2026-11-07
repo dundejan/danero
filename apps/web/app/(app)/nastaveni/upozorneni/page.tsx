@@ -194,12 +194,17 @@ export default async function NotificationSettingsPage() {
               <Row
                 className={NEEDS_EMAIL}
                 label={<label htmlFor="nalehave-hned">Naléhavé posílat hned</label>}
-                hint="I mimo souhrn."
+                hint="Platí pro týdenní souhrn."
                 info={
                   <InfoPopover label="co je naléhavé" title="Naléhavé posílat hned">
                     <p>
                       {typeset(
-                        'Naléhavé = prolomený limit, osvobození do sedmi dní a blížící se termín přiznání. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po tom, co se staly.',
+                        'Naléhavé = prolomený limit, osvobození do sedmi dní a termín přiznání, pokud ho máš připomenout 14 dní předem nebo dřív. Bez tohohle by v týdenním režimu dorazily klidně až šest dní po tom, co se staly.',
+                      )}
+                    </p>
+                    <p>
+                      {typeset(
+                        'Odejde s nejbližší ranní kontrolou a vezme s sebou i ostatní čekající upozornění. U denního souhrnu se nic nemění — ten chodí hned tak jako tak.',
                       )}
                     </p>
                   </InfoPopover>
@@ -290,7 +295,7 @@ export default async function NotificationSettingsPage() {
                     <InfoPopover label="které limity se hlídají" title="Limity">
                       <p>
                         {typeset(
-                          'Roční limity, které Danero vede podle tvého režimu — osvobození prodejů i krypta a hranice pro podání přiznání. Ozveme se při každé vybrané hranici čerpání.',
+                          'Roční limity, které Danero vede podle tvého režimu — osvobození prodejů i krypta a hranice pro podání přiznání. Ozveme se, když čerpání přejde vybranou hranici; přeskočí-li jich naráz víc, přijde jedno upozornění za tu nejvyšší.',
                         )}
                       </p>
                     </InfoPopover>

@@ -31,6 +31,22 @@ const BLOCKS: EmailBlock[] = [
   { kind: 'cta', label: 'Potvrdit', url: 'https://danero.test/odkaz' },
   { kind: 'rows', rows: [['Soubor', 'vypis.csv']] },
   { kind: 'note', text: 'Poznámka.' },
+  {
+    kind: 'items',
+    items: [
+      { title: 'Událost', text: 'Popis události.' },
+      { title: 'Naléhavá událost', text: 'Popis.', urgent: true },
+    ],
+  },
+  {
+    kind: 'meters',
+    rows: [
+      { label: 'Limit', value: '10 Kč z 100 Kč', percent: '10 %', ratio: 0.1 },
+      { label: 'Skoro', value: '90 Kč z 100 Kč', percent: '90 %', ratio: 0.9, tone: 'caution' },
+      { label: 'Přes', value: '120 Kč z 100 Kč', percent: '120 %', ratio: 1.2, tone: 'danger' },
+    ],
+  },
+  { kind: 'links', links: [{ label: 'Nastavení', url: 'https://danero.test/nastaveni' }] },
 ];
 
 const html = renderHtml({
@@ -78,8 +94,32 @@ describe('vzhled e-mailů drží krok s aplikací', () => {
     const colored = [...inline.matchAll(/<(p|span|td)\b([^>]*)style="[^"]*(?<![-\w])color:(#[0-9a-f]{6})[^"]*"/g)];
     expect(colored.length).toBeGreaterThan(4);
     for (const [tag, , attributes] of colored) {
-      expect(attributes, tag).toMatch(/class="e-(ink|muted)"/);
+      expect(attributes, tag).toMatch(/class="e-(ink|muted|danger)"/);
     }
+  });
+
+  it('události, měřáky a odkazy mají barvy z tokenů a tmavou podobu', () => {
+    for (const token of ['line', 'danger', 'caution', 'accent-text']) {
+      expect(inline, `token ${token}`).toContain(light[token]!);
+    }
+    for (const token of ['line', 'danger', 'caution', 'accent-text']) {
+      expect(darkRules, `tmavý token ${token}`).toContain(dark[token]!);
+    }
+    // každá obarvená plocha měřáku i tečka naléhavé události má třídu pro
+    // tmavý režim (tlačítko ne: jeho výplň je v obou režimech stejná)
+    const fills = [
+      ...inline.matchAll(/<(td|span)\b([^>]*)style="[^"]*(?:height:[68]px)[^"]*(?<![-\w])background:(#[0-9a-f]{6})[^"]*"/g),
+    ];
+    expect(fills.length).toBeGreaterThan(4);
+    for (const [tag, , attributes] of fills) {
+      expect(attributes, tag).toMatch(/class="e-[a-z-]+"/);
+    }
+  });
+
+  it('pruh měřáku se nekreslí přes plnou šířku ani při prolomeném limitu', () => {
+    const widths = [...inline.matchAll(/width:(\d+)%;height:6px/g)].map(([, w]) => Number(w));
+    expect(widths).toContain(100);
+    expect(Math.max(...widths)).toBe(100);
   });
 
   it('nadpisy nejsou verzálkami', () => {
