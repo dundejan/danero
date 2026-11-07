@@ -176,6 +176,38 @@ describe('Degiro: každý datový řádek zabalený celý do uvozovek', () => {
     expect(ofType(result.transactions, 'DEPOSIT')).toHaveLength(1);
   });
 
+  it('prázdný účetní zápis (0 kusů za 0, bez místa a ID objednávky) se přeskočí, není chybou', () => {
+    // Tvar z výpisu ze 7. 11. 2026: měsíc po změně ISIN titulu z korporátní
+    // akce zapsal Degiro řádek s nulou všude. Dřív končil chybou „Obchod
+    // s nulovým počtem kusů“, ačkoli nic nepřevádí.
+    const result = parseDegiroTransactionsCsv(
+      crlf(
+        DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER,
+        quoteWholeRow(
+          '11-06-2024,00:00,ORBITAL SPINCO,US0000000055,NSY,,0,"0,0000",USD,"0,00",USD,"0,00","1,0802","0,00",,"0,00",',
+        ),
+      ),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.message).toContain('nulovým počtem kusů i cenou');
+  });
+
+  it('obchod s nulou a ID objednávky zůstává chybou', () => {
+    const result = parseDegiroTransactionsCsv(
+      crlf(
+        DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER,
+        quoteWholeRow(
+          '11-06-2024,15:40,ORBITAL SPINCO,US0000000055,NSY,XNYS,0,"0,0000",USD,"0,00",USD,"0,00","1,0802","0,00","-2,00","-2,00",7b1e0c52-0000-4000-8000-00000000e004',
+        ),
+      ),
+    );
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('nulovým počtem kusů');
+  });
+
   it('řádek s jedinou neprázdnou buňkou bez oddělovače se nerozbaluje', () => {
     const result = parseDegiroTransactionsCsv(crlf(DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS_HEADER, '"jen poznámka"'));
     expect(result.transactions).toEqual([]);

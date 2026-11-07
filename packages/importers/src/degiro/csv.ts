@@ -207,7 +207,7 @@ const ORDER_ID_HEADERS = [
   'id de l ordre',
   "id de l'ordre",
 ];
-/** Místo provedení obchodu — korporátní akce ho mají prázdné (viz `isBookEntry`). */
+/** Místo provedení obchodu — korporátní akce ho mají prázdné (viz `isBookRow`). */
 const VENUE_HEADERS = ['venue', 'uitvoeringsplaats', 'ausführungsort', 'ausfuhrungsort', "lieu d'exécution"];
 /** Hodnota obchodu v měně titulu („Local value“) — kontrola multiplikátoru u derivátů. */
 const isLocalValueHeader = (lower: string): boolean =>
@@ -622,7 +622,28 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       return;
     }
 
+    // Nové rozložení má pod „Order ID“ prázdnou buňku a samotné ID až
+    // v bezejmenném sloupci za ní.
+    const orderId =
+      cell(row, col.orderId) ||
+      (col.orderId >= 0 && isUnnamed(col.orderId + 1) ? cell(row, col.orderId + 1) : '');
+    // bez ID objednávky a bez místa provedení (starší rozložení: čas 00:00)
+    // nejde o obchod na burze, ale o účetní zápis korporátní akce
+    const isBookRow =
+      orderId === '' &&
+      (col.venue >= 0 ? cell(row, col.venue) === '' : cell(row, col.time) === '00:00');
+
     const quantity = d(quantityRaw);
+    if (quantity.eq(0) && isBookRow && d(priceRaw).eq(0)) {
+      // Po korporátní akci Degiro občas zapíše prázdný účetní řádek: nula kusů
+      // za nulovou cenu (výpis ze 7. 11. 2026, měsíc po změně ISIN). Nic
+      // nepřevádí, takže to není chyba — jen to uživateli řekneme.
+      result.skipped.push({
+        line,
+        message: `${cell(row, col.product) || isin} (${isoDate}): účetní zápis s nulovým počtem kusů i cenou — nic k zaúčtování.`,
+      });
+      return;
+    }
     if (quantity.eq(0)) {
       result.errors.push({
         line,
@@ -704,11 +725,6 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       }
     }
 
-    // Nové rozložení má pod „Order ID“ prázdnou buňku a samotné ID až
-    // v bezejmenném sloupci za ní.
-    const orderId =
-      cell(row, col.orderId) ||
-      (col.orderId >= 0 && isUnnamed(col.orderId + 1) ? cell(row, col.orderId + 1) : '');
     const contentHash = fnv1a64(
       [isoDate, cell(row, col.time), isin, quantityRaw, priceRaw, cell(row, col.total)].join('|'),
     );
@@ -725,10 +741,7 @@ export function parseDegiroTransactionsCsv(text: string): ImportResult {
       tradeDate: isoDate, // datum vypořádání export neobsahuje — dopočte engine
     };
 
-    const isBookEntry =
-      orderId === '' &&
-      (col.venue >= 0 ? cell(row, col.venue) === '' : cell(row, col.time) === '00:00');
-    if (isBookEntry) {
+    if (isBookRow) {
       bookEntries.push({
         line,
         raw: row.join(';'),
