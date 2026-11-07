@@ -118,6 +118,16 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   Dvě pasti naráz: socket delší než 107 znaků server odmítne (scratchpad na `-k`
   nestačí) a **porty nad ~15000 hlásí „Address already in use", i když nikdo
   neposlouchá** (WSL si je drží jako dynamický rozsah) — proto 5433, ne 55433.
+  ⚠️ **Od 7. 11. 2026 tam serverové binárky nejsou** (zůstal jen klient, `initdb`
+  chybí). Funguje test v kontejneru se sdílenou sítí:
+  `docker run -d --name pg --network host -e POSTGRES_PASSWORD=test -e
+  POSTGRES_DB=danero_test -e PGPORT=5433 postgres:17-alpine` a pak
+  `docker run --rm --network container:pg --user $(id -u):$(id -g) -e HOME=/tmp
+  -e TEST_DATABASE_URL=postgres://postgres:test@127.0.0.1:5433/danero_test
+  -v $PWD:$PWD -w $PWD/apps/web mcr.microsoft.com/playwright:v1.59.1-noble node
+  <cesta k vitest.mjs> run test/postgres-compat.test.ts` (cesta přes
+  `readlink -f apps/web/node_modules/vitest`). Obraz musí být s glibc —
+  v alpine chybí nativní rollup.
 - **Migrace s víc příkazy se musí dělit `--> statement-breakpoint`.** Bez toho
   je drizzle pošle jako jeden prepared statement a driver odmítne
   (`cannot insert multiple commands into a prepared statement`) — spadne
