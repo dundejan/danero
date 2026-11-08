@@ -294,9 +294,11 @@ describe('robots a sitemapa (K8-09)', () => {
       '/caste-otazky': '2026-10-10',
       '/jak-pocitame': '2026-10-10',
       '/kalkulacka': '2026-10-17', // odkazy na články průvodce pod pravidly (K6)
-      '/pruvodce': '2026-10-10',
+      '/pruvodce': '2026-11-08', // články o přiznání a o zahraničních dividendách
       '/pruvodce/limit-100-000-kc': '2026-10-10',
       '/pruvodce/pausalni-rezim-a-investice': '2026-10-10',
+      '/pruvodce/kdy-podat-priznani': '2026-11-08',
+      '/pruvodce/dividendy-ze-zahranici': '2026-11-08',
       '/o-projektu': '2026-10-10',
       '/podminky': '2026-10-11', // čl. 3 jmenuje stránku „Proč zdarma“ (znění 3.0 beze změny)
       '/soukromi': '2026-10-08',
@@ -563,6 +565,8 @@ describe('datum a Article u článků a metodiky (K5)', () => {
   const PAGE_FILES: Record<ArticlePath, string> = {
     '/pruvodce/limit-100-000-kc': 'pruvodce/limit-100-000-kc/page.tsx',
     '/pruvodce/pausalni-rezim-a-investice': 'pruvodce/pausalni-rezim-a-investice/page.tsx',
+    '/pruvodce/kdy-podat-priznani': 'pruvodce/kdy-podat-priznani/page.tsx',
+    '/pruvodce/dividendy-ze-zahranici': 'pruvodce/dividendy-ze-zahranici/page.tsx',
     '/jak-pocitame': 'jak-pocitame/page.tsx',
   };
   const paths = Object.keys(ARTICLES) as ArticlePath[];

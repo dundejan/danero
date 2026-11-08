@@ -64,6 +64,8 @@ const PUBLIC_PAGES = [
   'app/pruvodce/page.tsx',
   'app/pruvodce/limit-100-000-kc/page.tsx',
   'app/pruvodce/pausalni-rezim-a-investice/page.tsx',
+  'app/pruvodce/kdy-podat-priznani/page.tsx',
+  'app/pruvodce/dividendy-ze-zahranici/page.tsx',
   'app/jak-pocitame/page.tsx',
   'app/bezpecnost/page.tsx',
   'app/podminky/page.tsx',

@@ -34,7 +34,7 @@ const PAGES: Page[] = [
   { path: '/', lastModified: '2026-10-10', changeFrequency: 'weekly', priority: 1 },
   { path: '/kalkulacka', lastModified: '2026-10-17', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/platformy', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.9 },
-  { path: '/pruvodce', lastModified: '2026-10-10', changeFrequency: 'monthly', priority: 0.7 },
+  { path: '/pruvodce', lastModified: '2026-11-08', changeFrequency: 'monthly', priority: 0.7 },
   {
     path: '/pruvodce/limit-100-000-kc',
     lastModified: ARTICLES['/pruvodce/limit-100-000-kc'].modified,
@@ -44,6 +44,18 @@ const PAGES: Page[] = [
   {
     path: '/pruvodce/pausalni-rezim-a-investice',
     lastModified: ARTICLES['/pruvodce/pausalni-rezim-a-investice'].modified,
+    changeFrequency: 'monthly',
+    priority: 0.8,
+  },
+  {
+    path: '/pruvodce/kdy-podat-priznani',
+    lastModified: ARTICLES['/pruvodce/kdy-podat-priznani'].modified,
+    changeFrequency: 'monthly',
+    priority: 0.8,
+  },
+  {
+    path: '/pruvodce/dividendy-ze-zahranici',
+    lastModified: ARTICLES['/pruvodce/dividendy-ze-zahranici'].modified,
     changeFrequency: 'monthly',
     priority: 0.8,
   },

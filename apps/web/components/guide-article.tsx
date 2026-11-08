@@ -157,13 +157,20 @@ export function ArticleLink({ href, children }: { href: string; children: React.
  * Odkazy stojí samostatně pod sebou, proto jsou to `TextLink chevron` — na
  * dotyku má každý 44 px na výšku.
  */
-export function ArticleFooter({ next }: { next: { href: string; title: string }[] }) {
+export function ArticleFooter({
+  next,
+  periods = '2025 a 2026',
+}: {
+  next: { href: string; title: string }[];
+  /** Zdaňovací období, o kterých článek mluví — „2026 a 2027“. */
+  periods?: string;
+}) {
   const links = [...next, { href: '/pruvodce', title: 'Všechny články průvodce' }];
   return (
     <footer className="mt-14 border-t border-line/70 pt-6">
       <p className="type-caption text-pretty text-ink-muted">
         {tidy(
-          'Článek vychází z pravidel pro zdaňovací období 2025 a 2026 (zákon č. 586/1992 Sb., o daních z příjmů); sporné výklady poctivě označujeme. Danero je výpočetní a evidenční nástroj, ne daňové poradenství — za přiznání odpovídá poplatník.',
+          `Článek vychází z pravidel pro zdaňovací období ${periods} (zákon č. 586/1992 Sb., o daních z příjmů); sporné výklady poctivě označujeme. Danero je výpočetní a evidenční nástroj, ne daňové poradenství — za přiznání odpovídá poplatník.`,
         )}
       </p>
       <p className="type-footnote mt-5 font-semibold text-ink">Další čtení</p>

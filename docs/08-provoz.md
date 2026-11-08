@@ -60,13 +60,24 @@ a šifrovací klíč se vygenerují do `.data/` (gitignored). Reset = smazat `.d
 
    | UTC | Routa | Co dělá |
    |---|---|---|
-   | 1:00 denně | `/api/cron/maintenance` | úklid dat po retenční lhůtě |
+   | 1:00 denně | `/api/cron/maintenance` | úklid dat po retenční lhůtě; v pondělí navíc souhrn používání |
    | 2:00 denně | `/api/cron/fx` | denní kurzy ČNB |
    | 3:00 denně | `/api/cron/sync-brokers` | sync všech napojených brokerů |
    | 5:00 denně | `/api/cron/notify` | přepočet limitů + upozornění |
    | 13:00 denně | `/api/cron/jobs` | záchranná síť background jobů (denní pojistka) |
 
    `Authorization: Bearer $CRON_SECRET` posílá Vercel sám.
+
+   **Týdenní souhrn používání** (`lib/usage-summary.ts`): v pondělí pražského
+   času pošle cron údržby na `DANERO_ALERT_EMAIL` (bez ní na
+   `DANERO_CONTACT_EMAIL`) počty za uplynulý týden po–ne: nové účty, kolik
+   z nich potvrdilo e-mail a nahrálo data, napojení brokeři, importy
+   a nepřečtené výpisy. Jen počty, žádné adresy ani id účtů. Proti dvojímu
+   spuštění téhož dne ho hlídá claim `usage-summary:weekly` v `app_rate_limits`;
+   když odeslání selže, cron vrátí `failed: 1` a souhrn za ten týden vypadne
+   (selhání je v logu jako `usage_summary.failed`). Bez záznamu v logu vypadne
+   jen tehdy, když funkce skončí na časovém limitu mezi claimem a odesláním.
+   Chybí-li v pondělí souhrn, podívej se do logu cronu `maintenance`.
 
    **Proč celé hodiny a všechno jen denně:** hostovaná instance běží na
    **Vercel Hobby**. Ten dovolí cron nejvýš jednou za den (častější výraz

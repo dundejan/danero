@@ -103,6 +103,8 @@ const MARKETING_PAGES = [
   '/pruvodce',
   '/pruvodce/limit-100-000-kc',
   '/pruvodce/pausalni-rezim-a-investice',
+  '/pruvodce/kdy-podat-priznani',
+  '/pruvodce/dividendy-ze-zahranici',
   '/kalkulacka',
   '/podminky',
   '/soukromi',

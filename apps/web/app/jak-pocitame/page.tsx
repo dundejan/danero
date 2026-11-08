@@ -146,7 +146,11 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
     body: (
       <>
         <p>
-          Zahraniční dividendy se u nás daní z hrubé (brutto) částky — tedy z toho,
+          Zahraniční dividendy se u nás{' '}
+          <ArticleLink href="/pruvodce/dividendy-ze-zahranici">
+            daní z hrubé (brutto) částky
+          </ArticleLink>{' '}
+          — tedy z toho,
           co firma vyplatila před stržením zahraniční daně, ne z toho, co ti
           přistálo na účtu.
         </p>
@@ -249,7 +253,9 @@ const RULES: { id: string; title: string; body: React.ReactNode; source: string 
             jako přehled v aplikaci, takže částka bez roku by od ledna 2027
             neplatila — a v sezóně přiznání za rok 2026 zase platit musí. */}
         <p>
-          Zaměstnanec podává přiznání, přesáhnou-li jeho zdanitelné příjmy mimo
+          Zaměstnanec{' '}
+          <ArticleLink href="/pruvodce/kdy-podat-priznani">podává přiznání</ArticleLink>,
+          přesáhnou-li jeho zdanitelné příjmy mimo
           zaměstnání 20 000 Kč za rok; od roku 2027 je to 40 000 Kč. Pro ostatní
           platí obecný limit 50 000 Kč zdanitelných příjmů, od roku 2027
           100 000 Kč. Vyšší částky platí až pro příjmy roku 2027 — přiznání za

@@ -1,5 +1,5 @@
 /**
- * Články s datem: dva články průvodce a metodika. Odtud bere datum viditelná
+ * Články s datem: články průvodce a metodika. Odtud bere datum viditelná
  * řádka „Aktualizováno …“ pod titulkem, `Article` v JSON-LD i `lastModified`
  * v sitemapě — jeden zdroj, ať se nerozejdou (SEO audit, K5).
  *
@@ -32,6 +32,16 @@ export const ARTICLES = {
     headline: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
     published: '2026-07-12',
     modified: '2026-10-10',
+  },
+  '/pruvodce/kdy-podat-priznani': {
+    headline: 'Kdy kvůli investicím podáváš přiznání a co se mění od roku 2027',
+    published: '2026-11-08',
+    modified: '2026-11-08',
+  },
+  '/pruvodce/dividendy-ze-zahranici': {
+    headline: 'Dividendy ze zahraničí v přiznání: brutto, srážka a zápočet',
+    published: '2026-11-08',
+    modified: '2026-11-08',
   },
   '/jak-pocitame': {
     headline: 'Každé pravidlo má svůj paragraf',

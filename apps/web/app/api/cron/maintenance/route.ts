@@ -12,6 +12,7 @@ import {
   pruneSessions,
   pruneVerifications,
 } from '@/lib/retention';
+import { sendWeeklyUsageSummary } from '@/lib/usage-summary';
 
 /**
  * Denní úklid dat, která už nemáme držet: /soukromi slibuje u technického
@@ -35,7 +36,12 @@ export const GET = withCron('maintenance', async (_request: Request): Promise<Re
   // dřív než upozornění: leží tu cizí výpisy, ne naše provozní záznamy
   const failedImportsDeleted = await pruneFailedImports(db);
   const notificationsDeleted = await pruneNotifications(db);
+  // až po úklidu: souhrn je bonus, úklid je slib z /soukromi; výjimku nepouští
+  const usageSummary = await sendWeeklyUsageSummary(db);
   return Response.json({
+    usageSummarySent: usageSummary === 'sent' ? 1 : 0,
+    // konvence `withCron`: nenulové `failed` jde do logu jako error
+    failed: usageSummary === 'failed' ? 1 : 0,
     auditDeleted,
     sessionsDeleted,
     verificationsDeleted,

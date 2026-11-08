@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -637,6 +637,54 @@ popis('kompatibilita s produkčním Postgresem', () => {
       .from(notificationPrefs)
       .where(eq(notificationPrefs.userId, userId));
     expect(prefs!.lastDigestAt?.toISOString()).toBe('2026-08-07T00:00:00.000Z');
+  });
+
+  it('týdenní souhrn používání (K11): počty a okna týdne přes postgres.js', {
+    timeout: 60_000,
+  }, async () => {
+    const { computeUsageSummary } = await import('@/lib/usage-summary');
+    // týden daleko v budoucnu: databáze je sdílená s ostatními testy a jejich
+    // účty vznikají „teď“, takže do tohohle okna nespadne nic cizího. Jen účty
+    // z předchozího běhu téhož testu: lokální databáze mezi běhy zůstává.
+    await db
+      .delete(user)
+      .where(
+        and(
+          gte(user.createdAt, new Date('2031-01-05T00:00:00Z')),
+          lt(user.createdAt, new Date('2031-01-13T00:00:00Z')),
+        ),
+      );
+    const userId = await makeUser();
+    await db
+      .update(user)
+      .set({ emailVerified: true, createdAt: new Date('2031-01-07T12:00:00Z') })
+      .where(eq(user.id, userId));
+    const batchId = await makeBatch(userId, 'xtb');
+    await db
+      .update(importBatches)
+      .set({ createdAt: new Date('2031-01-08T12:00:00Z') })
+      .where(eq(importBatches.id, batchId));
+    await db.insert(transactions).values({
+      userId,
+      dedupeKey: `xtb|souhrn|${userId}`,
+      batchId,
+      broker: 'xtb',
+      type: 'BUY',
+      txDate: '2030-12-01',
+      payload: {},
+    });
+
+    const summary = await computeUsageSummary(db, new Date('2031-01-13T01:30:00Z'));
+
+    expect(summary).toMatchObject({
+      signups: 1,
+      signupsVerified: 1,
+      signupsWithData: 1,
+      imports: 1,
+    });
+    expect(typeof summary.accounts).toBe('number');
+    expect(summary.accounts).toBeGreaterThanOrEqual(1);
+    expect(summary.accountsWithData).toBeGreaterThanOrEqual(1);
   });
 
   it('denní úklid: audit, rate limity i joby se smažou a podruhé nemají co', {

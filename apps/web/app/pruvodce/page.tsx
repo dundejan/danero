@@ -6,7 +6,7 @@ import { TextLink } from '@/components/ui/link';
 export const metadata: Metadata = {
   title: 'Průvodce daněmi z investic — Danero',
   description:
-    'Srozumitelné články o daních z investic pro české investory: limit 100 000 Kč z objemu prodejů, tříletý časový test a OSVČ v paušálním režimu. Bez žargonu, s příklady.',
+    'Srozumitelné články o daních z investic pro české investory: limit 100 000 Kč z objemu prodejů, OSVČ v paušálním režimu, kdy podat přiznání a zdanění zahraničních dividend. Bez žargonu, s příklady.',
 };
 
 /** Články průvodce: titulek a jedna věta, kterou článek zodpovídá. */
@@ -22,6 +22,18 @@ const ARTICLES: { slug: string; title: string; summary: string }[] = [
     title: 'OSVČ v paušálu: jak ti investice můžou vrátit přiznání',
     summary:
       'Limit 50 000 Kč jiných příjmů se počítá z hrubých částek. Co do něj patří, co ne a co znamená prolomení.',
+  },
+  {
+    slug: 'kdy-podat-priznani',
+    title: 'Kdy kvůli investicím podáváš přiznání a co se mění od roku 2027',
+    summary:
+      'Limity pro zaměstnance, paušalisty i ostatní, co se do nich počítá a proč vyšší částky platí až pro příjmy roku 2027.',
+  },
+  {
+    slug: 'dividendy-ze-zahranici',
+    title: 'Dividendy ze zahraničí v přiznání: brutto, srážka a zápočet',
+    summary:
+      'Proč se daní částka před srážkou, kolik sražené daně si odečteš a co změní formulář W-8BEN.',
   },
 ];
 
