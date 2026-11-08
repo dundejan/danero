@@ -73,6 +73,9 @@ export function DividendTaxationInfo() {
   );
 }
 
+/** Co k doplatku z investic po prolomení paušálu přibude (R-08e). */
+export const BREACH_EXTRAS = 'daň z podnikání, pojistné a přehledy';
+
 /** Pár slov pod číslem, která nesmí zmizet (docs/07 §5.3). */
 function figureNote(summary: TaxSummary, unpaidUnderLimit: boolean): React.ReactNode {
   if (summary.flatTaxBroken) {
@@ -83,11 +86,13 @@ function figureNote(summary: TaxSummary, unpaidUnderLimit: boolean): React.React
             ? tidy(`daň ${czk(summary.taxCzk)} − zálohy ${czk(summary.advances.totalCzk)}`)
             : 'před odečtením záloh'}
         </span>
-        {/* R5-03: doplatek daně není celá cena prolomení — u paušalisty ji
-            nese hlavně pojistné, a to musí být vidět bez otevření vysvětlivky */}
+        {/* R5-03, R-08e: doplatek daně není celá cena prolomení. Přidá se daň
+            z podnikání (v paušální záloze je na dani jen 100 Kč měsíčně, takže
+            bývá o desítky tisíc vyšší než tohle číslo), pojistné a přehledy —
+            a to musí být vidět bez otevření vysvětlivky */}
         <span className="block">
-          {summary.advances ? 'orientačně, jen z investic' : 'jen z investic'} · navíc pojistné a
-          přehledy
+          {summary.advances ? 'orientačně, jen z investic' : 'jen z investic'} ·{' '}
+          {tidy(`navíc ${BREACH_EXTRAS}`)}
         </span>
       </>
     );

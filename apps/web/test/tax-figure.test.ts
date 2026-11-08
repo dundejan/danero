@@ -208,10 +208,10 @@ describe('přehled a report ukazují pod stejným verdiktem stejné číslo (R1B
   );
 
   it.each(Object.entries(pages))(
-    '%s: u doplatku stojí, že nejde o celou cenu prolomení (R5-03)',
+    '%s: u doplatku stojí, že nejde o celou cenu prolomení a přibude i daň z podnikání (R5-03, R-08e)',
     (_page, verdict) => {
       expect(verdict).toContain('jen z investic');
-      expect(verdict).toContain('navíc pojistné a přehledy');
+      expect(verdict).toContain('navíc daň z podnikání, pojistné a přehledy');
     },
   );
 
@@ -231,7 +231,7 @@ describe('přehled a report ukazují pod stejným verdiktem stejné číslo (R1B
     ] as const) {
       for (const html of [overviewHtml(gross, regime), reportHtml(gross, regime)]) {
         const text = textOf(html, true);
-        expect(text).not.toContain('navíc pojistné a přehledy');
+        expect(text).not.toContain('navíc daň z podnikání, pojistné a přehledy');
         expect(text).not.toContain(DUE_NAME);
         expect(text).toContain(TAX_NAME);
       }
@@ -243,7 +243,7 @@ describe('přehled a report ukazují pod stejným verdiktem stejné číslo (R1B
     for (const html of [overviewHtml('200000', 'PAUSAL', year), reportHtml('200000', 'PAUSAL', year)]) {
       const text = textOf(html, true);
       expect(text).toContain('před odečtením záloh');
-      expect(text).toContain('navíc pojistné a přehledy');
+      expect(text).toContain('navíc daň z podnikání, pojistné a přehledy');
       expect(text).not.toContain(DUE_NAME);
     }
   });

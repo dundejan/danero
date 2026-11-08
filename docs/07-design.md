@@ -483,7 +483,9 @@ Zkouška: zakryj odstavec. Rozhodne se člověk hůř? Když ne, odstavec patř�
 Příklad z přehledu — bylo pod verdiktem: dva odstavce o datové schránce, lhůtě, ČSSZ
 a základu z § 7. Je: `Termín podání 3. 5. 2027 · jen elektronicky ⓘ` a `Doplatek daně
 980 Kč ⓘ` se dvěma tichými řádky pod číslem: `daň 2 180 Kč − zálohy 1 200 Kč` (odkud
-doplatek je) a `orientačně, jen z investic · navíc pojistné a přehledy` (výhrada).
+doplatek je) a `orientačně, jen z investic · navíc daň z podnikání, pojistné a přehledy`
+(výhrada; daň z podnikání tam je od 8. 11. 2026 — v paušální záloze je na dani jen
+100 Kč měsíčně, takže po prolomení bývá doplatek o desítky tisíc vyšší než číslo nad ní).
 
 **Grafy limitů mají jedinou vodicí čáru: limit.** Pásma 60 a 85 % se nekreslí nikde.
 
