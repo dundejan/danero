@@ -575,6 +575,468 @@ describe('Degiro Account.csv: storno a oprava dividendy', () => {
   });
 });
 
+/*
+ * Český export obou souborů téhož účtu (e-mail uživatele, listopad 2026):
+ * Account.csv má ANGLICKOU hlavičku a české popisy. Z něj je opsané jen
+ * rozložení a znění popisů; tituly, ISINy, částky i data jsou smyšlené.
+ */
+
+describe('Degiro Transactions.csv: změna ISIN titulu bez ceny', () => {
+  /**
+   * Akcie po konkurzu přešly na „… - NON TRADEABLE“ s novým ISIN: odpis
+   * i připis za 0 USD, bez místa provedení a ID objednávky. Párování hledalo
+   * nohy se stejnou HODNOTOU a nulovou hodnotu vylučovalo, takže obě skončily
+   * chybou „neumíme poznat, které k sobě patří“ — přestože jiný zápis ve
+   * stejný okamžik nebyl.
+   */
+  it('odpis a připis za nulu se stejným počtem kusů → ISIN_CHANGE, žádná chyba', () => {
+    const result = parseDegiroTransactionsCsv(
+      lines(
+        TX_HEADER_2026_EN,
+        '17-05-2024,10:41,LUMENIX BIO - NON TRADEABLE,US000ESC0017,DEG,,150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+        '17-05-2024,10:41,LUMENIX BIO,US0000000017,OTC,,-150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+      ),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]).toMatchObject({
+      type: 'CORPORATE_ACTION',
+      subtype: 'ISIN_CHANGE',
+      isin: 'US0000000017',
+      newIsin: 'US000ESC0017',
+    });
+  });
+
+  it('kontrola opačným směrem: odpis jednoho titulu a připis jiného za nulu se nespárují', () => {
+    // vyřazený titul a bonusové akcie jiného — nabývací cena nesmí přejít k cizímu titulu
+    const result = parseDegiroTransactionsCsv(
+      lines(
+        TX_HEADER_2026_EN,
+        '17-05-2024,10:41,ORIMA CORP - BONUS,US0000000058,DEG,,150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+        '17-05-2024,10:41,LUMENIX BIO,US0000000017,OTC,,-150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+      ),
+    );
+
+    expect(result.transactions.filter((tx) => tx.type === 'CORPORATE_ACTION')).toEqual([]);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it('kontrola opačným směrem: pouhý společný začátek názvu na změnu ISIN nestačí', () => {
+    const result = parseDegiroTransactionsCsv(
+      lines(
+        TX_HEADER_2026_EN,
+        '17-05-2024,10:41,LUMENIX BIO HOLDINGS SPINCO,US0000000025,DEG,,150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+        '17-05-2024,10:41,LUMENIX BIO,US0000000017,OTC,,-150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+      ),
+    );
+
+    expect(result.transactions.filter((tx) => tx.type === 'CORPORATE_ACTION')).toEqual([]);
+  });
+
+  it('kontrola opačným směrem: jiný počet kusů za nulu se nespáruje (může jít o dvě akce)', () => {
+    const result = parseDegiroTransactionsCsv(
+      lines(
+        TX_HEADER_2026_EN,
+        '17-05-2024,10:41,LUMENIX BIO - NON TRADEABLE,US000ESC0017,DEG,,100,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+        '17-05-2024,10:41,LUMENIX BIO,US0000000017,OTC,,-150,"0,0000",USD,"0,00",USD,"0,00","1,0820","0,00",,"0,00",',
+      ),
+    );
+
+    expect(result.transactions).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+  });
+});
+
+describe('Degiro Account.csv: popisy z českého exportu', () => {
+  it('„ADR/GDR Pass-Through poplatek“ a „Francouzská transakční dań“ (překlep Degira) jsou poplatky', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '14-08-2026,07:05,13-08-2026,ADR ON HARBORLINE PLC,US0000000025,ADR/GDR Pass-Through poplatek,,USD,"-0,30",USD,"12,10",',
+        '03-09-2025,15:20,03-09-2025,CORVANT SA,FR0000000033,Francouzská transakční dań,,EUR,"-3,10",EUR,"812,40",7b1e0c52-0000-4000-8000-00000000e001',
+      ),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(ofType(result.transactions, 'FEE').map((fee) => fee.amount.toString())).toEqual([
+      '0.3',
+      '3.1',
+    ]);
+  });
+
+  /**
+   * Změnu produktu (nový název nebo burza) a štěpení zapisuje Degiro do
+   * Transactions.csv jako dvojici účetních zápisů — odtud se berou. V českém
+   * Account.csv je táž událost podruhé: „Změna produktu: Prodej/Nákup N …“
+   * (za nulu i s částkou, která se mezi nohama vyruší) a „ÚPRAVA SPLITU: N … @
+   * cena“ bez slovesa. Končily chybou o kusech nebo „neznámým popisem“, přitom
+   * kusy z Transakcí sedí.
+   */
+  it('změna produktu a úprava splitu se přeskočí s odkazem na Transactions.csv', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '13-09-2022,12:05,13-09-2022,KESTREL HEALTH,US0000000041,Změna produktu: Nákup 9 Kestrel Health@0 EUR (US0000000041),,EUR,"0,00",EUR,"40,10",',
+        '13-09-2022,12:05,13-09-2022,KESTREL HEALTH - NON TRADEABLE,US0000000041,Změna produktu: Prodej 9 Kestrel Health - Non tradeable@0 EUR (US0000000041),,EUR,"0,00",EUR,"40,10",',
+        '20-06-2022,15:40,20-06-2022,LUMENIX BIO,US0000000017,"Změna produktu: Nákup 150 Lumenix Bio@0,2210 USD (US0000000017)",,USD,"-33,15",USD,"0,00",',
+        '20-06-2022,15:40,20-06-2022,LUMENIX BIO,US0000000017,"Změna produktu: Prodej 150 Lumenix Bio@0,2210 USD (US0000000017)",,USD,"33,15",USD,"33,15",',
+        '25-11-2022,13:15,25-11-2022,ADR ON ORIMA CORP,US0000000058,"ÚPRAVA SPLITU: 40 ADR on Orima Corp @ 21,50 USD (US0000000058)",,USD,"-860,00",USD,"0,00",',
+        '25-11-2022,13:15,25-11-2022,ADR ON ORIMA CORP,US0000000058,"ÚPRAVA SPLITU: 8 ADR on Orima Corp @ 107,50 USD (US0000000058)",,USD,"860,00",USD,"860,00",',
+      ),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(6);
+    for (const skipped of result.skipped) expect(skipped.message).toContain('Transactions.csv');
+  });
+
+  it('kontrola opačným směrem: změna produktu, jejíž peníze se nevyruší, končí chybou', () => {
+    // jen jedna noha s penězi — skutečná platba by se přeskočením ztratila
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '20-06-2022,15:40,20-06-2022,LUMENIX BIO,US0000000017,"Změna produktu: Prodej 150 Lumenix Bio@0,2210 USD (US0000000017)",,USD,"33,15",USD,"33,15",',
+        '20-06-2022,15:40,20-06-2022,LUMENIX BIO,US0000000017,Změna produktu: Nákup 150 Lumenix Bio@0 USD (US0000000017),,USD,"0,00",USD,"33,15",',
+      ),
+    );
+
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]!.message).toContain('nevyruší');
+  });
+
+  it('kontrola opačným směrem: nevyrušené nohy dvou různých titulů téhož dne se nesečtou do nuly', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '20-06-2022,15:40,20-06-2022,LUMENIX BIO,US0000000017,"Změna produktu: Prodej 150 Lumenix Bio@0,10 USD (US0000000017)",,USD,"15,00",USD,"15,00",',
+        '20-06-2022,16:10,20-06-2022,ORIMA CORP,US0000000058,"Změna produktu: Nákup 150 Orima Corp@0,10 USD (US0000000058)",,USD,"-15,00",USD,"0,00",',
+      ),
+    );
+
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+  });
+
+  it('„Akciová dividenda: Nákup 0 …@0 USD“ se přeskočí — nula kusů nic nemění', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '05-06-2022,10:30,20-04-2022,ARDEN OFFICE TRUST,US0000000066,Akciová dividenda: Nákup 0 Arden Office Trust@0 USD (US0000000066),,USD,"0,00",USD,"0,00",',
+      ),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+  });
+
+  it('kontrola opačným směrem: akciová dividenda s nenulovým počtem kusů dál končí chybou o kusech', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '05-06-2022,10:30,20-04-2022,ARDEN OFFICE TRUST,US0000000066,Akciová dividenda: Nákup 3 Arden Office Trust@0 USD (US0000000066),,USD,"0,00",USD,"0,00",',
+      ),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain('kusy');
+  });
+
+  /**
+   * „Náklady akcie“ nese navzdory názvu KLADNOU částku: hotovost za zlomek
+   * akcie, který se při korporátní akci nepřipsal (ve skutečném výpisu sedí
+   * na zbytek po spin-offu). Jako poplatek by se z kladné
+   * částky stala „vratka poplatku“, jako neznámý popis chyba.
+   */
+  it('„Náklady akcie“ s kladnou částkou → varování o hotovosti za zlomek, se zápornou → poplatek', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        '06-05-2024,17:00,06-05-2024,KESTREL HOLDINGS,US0000000074,Náklady akcie,,EUR,"21,40",EUR,"61,50",',
+        '07-05-2024,09:00,07-05-2024,KESTREL HOLDINGS,US0000000074,Náklady akcie,,EUR,"-1,00",EUR,"60,50",',
+        '08-05-2024,09:00,08-05-2024,KESTREL HOLDINGS,US0000000074,Náklady akcie,,EUR,"0,00",EUR,"60,50",',
+      ),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toContain('zlomek akcie');
+    expect(result.warnings[0]!.message).toContain('21.40 EUR');
+    expect(ofType(result.transactions, 'FEE').map((fee) => fee.amount.toString())).toEqual(['1']);
+  });
+});
+
+describe('Degiro Account.csv: zpětné přeúčtování výplaty REITu (R-07k)', () => {
+  const ISIN = 'US0000000082';
+  /** Původní výplata: zaúčtovaná den po datu valuty, srážka 15 %. */
+  const ORIGINAL = [
+    `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"-6,00",USD,"34,00",`,
+    `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"40,00",USD,"40,00",`,
+  ];
+  /**
+   * O rok později REIT výplatu přeřadí: storno (−40, srážka zpět +6), nová
+   * dividenda 37 se srážkou 5,55, vratka kapitálu 2,75 a capital gain 0,25 se
+   * srážkou 21 %. Datum zaúčtování nové, datum valuty původní.
+   */
+  const RESTATEMENT = [
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},QIE Distribution Capital Gain,,USD,"0,25",USD,"1,10",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},QIE Distribution Capital Gain Tax,,USD,"-0,05",USD,"0,85",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"2,75",USD,"0,90",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"37,00",USD,"-1,85",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"-5,55",USD,"-38,85",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"6,00",USD,"-33,30",`,
+    `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"-40,00",USD,"-39,30",`,
+  ];
+  const sumGross = (transactions: Transaction[]): string =>
+    ofType(transactions, 'DIVIDEND')
+      .reduce((sum, dividend) => sum.plus(dividend.gross), d(0))
+      .toString();
+
+  /**
+   * Skládané po dni zaúčtování dávalo storno „zápornou dividendu bez výplaty“
+   * (nezaúčtováno) a vratka 2,75 se přičetla k původní výplatě 40, ve které
+   * už byla; capital gain končil „neznámým popisem“.
+   */
+  it('výsledek patří k datu původní výplaty: dividenda vč. capital gain, srážky sečtené, vratka zvlášť', () => {
+    const result = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...RESTATEMENT, ...ORIGINAL));
+
+    expect(result.errors).toEqual([]);
+    const dividends = ofType(result.transactions, 'DIVIDEND');
+    expect(dividends).toHaveLength(2);
+    const [dividend] = dividends.filter((tx) => !tx.returnOfCapital);
+    const [ret] = dividends.filter((tx) => tx.returnOfCapital);
+    expect(dividend).toMatchObject({ date: '2023-07-19', isin: ISIN });
+    expect(dividend!.gross.toString()).toBe('37.25');
+    expect(dividend!.withholdingTax.toString()).toBe('5.6');
+    expect(ret).toMatchObject({ date: '2023-07-19', isin: ISIN });
+    expect(ret!.gross.toString()).toBe('2.75');
+    // přeřazení celkovou částku nemění
+    expect(sumGross(result.transactions)).toBe('40');
+    expect(result.warnings.some((w) => w.message.includes('zpětně přeúčtoval'))).toBe(true);
+  });
+
+  /**
+   * Kdo původní výplatu nahrál dřív (z exportu před přeúčtováním), má ji
+   * uloženou s id řádku. Obsahový dedupe by výsledek uložil VEDLE ní — proto
+   * nese id původní výplaty a výpis ho označí k přepsání (`supersedes`).
+   * A naopak: starší export nahraný až po novějším nese původní čísla pod
+   * týmž id a nesmí se uložit (síť podle id u řádků Account.csv).
+   */
+  const storedFrom = (transactions: Transaction[]) => {
+    const fresh = dedupeTransactions('degiro', transactions, new Set()).fresh;
+    return {
+      keys: new Set(fresh.map((entry) => entry.key)),
+      ids: new Set(fresh.map((entry) => brokerIdKey('degiro', entry.tx))),
+    };
+  };
+
+  it('starší export, pak novější: výsledek přepíše uloženou původní výplatu na místě', () => {
+    const before = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...ORIGINAL));
+    const [original] = ofType(before.transactions, 'DIVIDEND');
+    const after = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...RESTATEMENT, ...ORIGINAL));
+    const [restated] = ofType(after.transactions, 'DIVIDEND').filter((tx) => !tx.returnOfCapital);
+    expect(restated!.id).toBe(original!.id);
+    expect(after.supersedes).toContain(original!.id);
+    // nikdy nerušit id, které výsledek sám nese
+    const retractedIds = (after.retracted ?? []).map((event) => event.id);
+    for (const tx of after.transactions) expect(retractedIds).not.toContain(tx.id);
+
+    const state = storedFrom(before.transactions);
+    const outcome = dedupeTransactions('degiro', after.transactions, state.keys, state.ids, [], {
+      supersedingIds: new Set(after.supersedes),
+    });
+    expect(outcome.superseded.map((entry) => entry.tx.id)).toEqual([original!.id]);
+    expect(outcome.fresh.map((entry) => entry.tx)).toEqual(
+      ofType(after.transactions, 'DIVIDEND').filter((tx) => tx.returnOfCapital),
+    );
+  });
+
+  it('novější export, pak starší: původní čísla se k přeúčtovaným neuloží', () => {
+    const newer = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...RESTATEMENT, ...ORIGINAL));
+    const older = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...ORIGINAL));
+    const state = storedFrom(newer.transactions);
+    const outcome = dedupeTransactions('degiro', older.transactions, state.keys, state.ids, [], {
+      supersedingIds: new Set(older.supersedes ?? []),
+    });
+    expect(outcome.fresh).toEqual([]);
+    expect(outcome.superseded).toEqual([]);
+    expect(outcome.restated).toHaveLength(1);
+  });
+
+  /**
+   * Původní výplata už s vratkou: výsledek musí nést id PŮVODNÍ vratky (ta
+   * je uložená), ne vratky z přeúčtování — jinak se původní zruší a starší
+   * export nahraný potom by ji uložil znovu vedle nové.
+   */
+  it('vratka z původní výplaty: výsledek nese její id a starší export ji pak neuloží znovu', () => {
+    const original = [
+      `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"10,00",USD,"40,00",`,
+      `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"30,00",USD,"30,00",`,
+    ];
+    const restatement = [
+      `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"5,00",USD,"5,00",`,
+      `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"35,00",USD,"0,00",`,
+      `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"-10,00",USD,"-35,00",`,
+      `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"-30,00",USD,"-25,00",`,
+    ];
+    const older = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...original));
+    const newer = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...restatement, ...original));
+    const [olderReturn] = ofType(older.transactions, 'DIVIDEND').filter((tx) => tx.returnOfCapital);
+    const [newerReturn] = ofType(newer.transactions, 'DIVIDEND').filter((tx) => tx.returnOfCapital);
+    expect(newerReturn!.id).toBe(olderReturn!.id);
+    expect(newerReturn!.gross.toString()).toBe('5');
+
+    const state = storedFrom(newer.transactions);
+    const outcome = dedupeTransactions('degiro', older.transactions, state.keys, state.ids);
+    expect(outcome.fresh).toEqual([]);
+  });
+
+  it('původní výplata celá vratkou: výsledek patří k jejímu dni, ne ke dni přeúčtování', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"8,00",USD,"8,00",`,
+        `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"32,00",USD,"0,00",`,
+        `09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"-40,00",USD,"-32,00",`,
+        `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Vratka kapitálu,,USD,"40,00",USD,"40,00",`,
+      ),
+    );
+
+    const dividends = ofType(result.transactions, 'DIVIDEND');
+    expect(dividends.map((tx) => `${tx.date} ${tx.gross.toString()}${tx.returnOfCapital ? ' vratka' : ''}`).sort()).toEqual([
+      '2023-07-19 32 vratka',
+      '2023-07-19 8',
+    ]);
+  });
+
+  /**
+   * Výplata přeúčtovaná podruhé (nejdřív srážka, o rok později celá výplata):
+   * export s jen prvním přeúčtováním a pozdější s oběma dají totéž id a jiná
+   * čísla. Novější musí uloženou verzi přepsat, ne se přičíst.
+   */
+  it('druhé přeúčtování téže výplaty přepíše výsledek prvního', () => {
+    const taxRefund = [
+      `14-11-2024,09:35,18-07-2023,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"6,00",USD,"6,00",`,
+      `14-11-2024,09:35,18-07-2023,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"-4,00",USD,"2,00",`,
+    ];
+    const first = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...taxRefund, ...ORIGINAL));
+    const second = parseDegiroAccountCsv(
+      lines(ACCOUNT_HEADER_EN, ...RESTATEMENT, ...taxRefund, ...ORIGINAL),
+    );
+    const state = storedFrom(first.transactions);
+    const outcome = dedupeTransactions('degiro', second.transactions, state.keys, state.ids, [], {
+      supersedingIds: new Set(second.supersedes),
+    });
+    expect(outcome.superseded).toHaveLength(1);
+    expect(outcome.fresh.every((entry) => entry.tx.type === 'DIVIDEND' && entry.tx.returnOfCapital)).toBe(
+      true,
+    );
+  });
+
+  it('opakované nahrání téhož výpisu je idempotentní (stabilní id i obsah)', () => {
+    const csv = lines(ACCOUNT_HEADER_EN, ...RESTATEMENT, ...ORIGINAL);
+    const first = parseDegiroAccountCsv(csv);
+    const second = parseDegiroAccountCsv(csv);
+    const stored = dedupeTransactions('degiro', first.transactions, new Set()).fresh;
+    const again = dedupeTransactions(
+      'degiro',
+      second.transactions,
+      new Set(stored.map((entry) => entry.key)),
+      new Set(stored.map((entry) => brokerIdKey('degiro', entry.tx))),
+    );
+    expect(again.fresh).toEqual([]);
+  });
+
+  /**
+   * Export, který k původní výplatě nesahá: storno bez výplaty. Vratka z téhož
+   * přeúčtování je součást té výplaty — zaúčtovat ji by ji přičetlo k výplatě
+   * uložené z dřívějška.
+   */
+  it('přeúčtování bez původní výplaty v exportu: nic se nezaúčtuje, ani vratka', () => {
+    const result = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...RESTATEMENT));
+
+    expect(result.errors).toEqual([]);
+    expect(result.transactions).toEqual([]);
+    expect(result.retracted ?? []).toEqual([]);
+    expect(result.warnings.some((w) => w.message.includes('ani vratku kapitálu'))).toBe(true);
+  });
+
+  it('zpětně snížená srážka (vrácení +, nová −) se promítne do původní výplaty', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        `14-11-2024,09:35,06-03-2023,ALTIPLANO MINING,US0000000090,Daň z dividendy,,USD,"1,40",USD,"1,40",`,
+        `14-11-2024,09:35,06-03-2023,ALTIPLANO MINING,US0000000090,Daň z dividendy,,USD,"-0,60",USD,"0,80",`,
+        `07-03-2023,07:50,06-03-2023,ALTIPLANO MINING,US0000000090,Daň z dividendy,,USD,"-1,40",USD,"2,60",`,
+        `07-03-2023,07:50,06-03-2023,ALTIPLANO MINING,US0000000090,Dividenda,,USD,"4,00",USD,"4,00",`,
+      ),
+    );
+
+    const dividends = ofType(result.transactions, 'DIVIDEND');
+    expect(dividends).toHaveLength(1);
+    expect(dividends[0]).toMatchObject({ date: '2023-03-07' });
+    expect(dividends[0]!.gross.toString()).toBe('4');
+    expect(dividends[0]!.withholdingTax.toString()).toBe('0.6');
+    // bez vratky to není REIT — vysvětlení o REITech by tu mátlo
+    expect(result.warnings.some((w) => w.message.includes('REIT'))).toBe(false);
+  });
+
+  /**
+   * Dividenda vyplacená v akciích (R-07l): „Reinvestice dividendy“ je nákup
+   * akcí za výplatu. Jako záporná dividenda výplatu vynulovala — příjem
+   * zmizel i se zápočtem srážky, ačkoli kusy přišly.
+   */
+  it('„Reinvestice dividendy“ výplatu neruší: dividenda se zdaní i se srážkou', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        `03-03-2022,11:25,14-01-2022,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"20,00",USD,"-3,00",`,
+        `03-03-2022,11:25,14-01-2022,HARBORLINE REIT INC,${ISIN},Reinvestice dividendy,,USD,"-20,00",USD,"-23,00",`,
+        `03-03-2022,11:25,14-01-2022,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"-3,00",USD,"-3,00",`,
+      ),
+    );
+
+    const dividends = ofType(result.transactions, 'DIVIDEND');
+    expect(dividends).toHaveLength(1);
+    expect(dividends[0]!.gross.toString()).toBe('20');
+    expect(dividends[0]!.withholdingTax.toString()).toBe('3');
+    expect(result.skipped.some((s) => s.message.includes('v akciích'))).toBe(true);
+  });
+
+  /**
+   * Datum valuty jen u části řádků (prázdná buňka): seskupení podle něj by
+   * dividendu a její srážku rozdělilo do dvou výplat a srážka by propadla.
+   */
+  it('chybí-li datum valuty u některého řádku, skládá se celý soubor po dni zaúčtování', () => {
+    const result = parseDegiroAccountCsv(
+      lines(
+        ACCOUNT_HEADER_EN,
+        `19-07-2023,08:40,,HARBORLINE REIT INC,${ISIN},Daň z dividendy,,USD,"-6,00",USD,"34,00",`,
+        `19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,${ISIN},Dividenda,,USD,"40,00",USD,"40,00",`,
+      ),
+    );
+
+    expect(result.warnings).toEqual([]);
+    const [dividend] = ofType(result.transactions, 'DIVIDEND');
+    expect(dividend!.withholdingTax.toString()).toBe('6');
+  });
+
+  it('kontrola opačným směrem: běžná výplata zaúčtovaná den po dni valuty má dál id i datum svého řádku', () => {
+    const result = parseDegiroAccountCsv(lines(ACCOUNT_HEADER_EN, ...ORIGINAL));
+
+    expect(result.retracted ?? []).toEqual([]);
+    const [dividend] = ofType(result.transactions, 'DIVIDEND');
+    expect(dividend).toMatchObject({ date: '2023-07-19' });
+    expect(dividend!.id).toMatch(/^degiro-[0-9a-f]{16}$/);
+    expect(dividend!.withholdingTax.toString()).toBe('6');
+  });
+});
+
 /* ── eToro ───────────────────────────────────────────────────────────────── */
 
 const closedRow = (values: Record<string, EtoroCellValue>): EtoroCellValue[] =>

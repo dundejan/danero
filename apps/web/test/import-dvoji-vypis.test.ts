@@ -813,3 +813,81 @@ describe('dividenda uložená bez srážky → týž řádek se srážkou (A29)'
     },
   );
 });
+
+/**
+ * Degiro: výplata REITu ve starším exportu a táž výplata zpětně přeúčtovaná
+ * v novějším (R-07k). Parser výsledek skládá k datu původní výplaty pod id
+ * PŮVODNÍ dividendy a označí ho k přepsání (`supersedes`), takže se uložený
+ * řádek přepíše na místě. Starší export nahraný až potom narazí na totéž id
+ * a neuloží se (síť `hasRowFingerprintId`). Bez toho by obsahový dedupe
+ * uložil přeúčtovanou výplatu VEDLE té původní a příjem § 8 by byl dvojí.
+ */
+describe('Degiro: výplata REITu ve starším exportu, přeúčtovaná v novějším (R-07k)', () => {
+  const HEADER = 'Date,Time,Value date,Product,ISIN,Description,FX,Change,,Balance,,Order Id';
+  const ORIGINAL = [
+    '19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,US0000000082,Daň z dividendy,,USD,"-6,00",USD,"34,00",',
+    '19-07-2023,08:40,18-07-2023,HARBORLINE REIT INC,US0000000082,Dividenda,,USD,"40,00",USD,"40,00",',
+  ];
+  const RESTATEMENT = [
+    '09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,US0000000082,Vratka kapitálu,,USD,"2,75",USD,"0,90",',
+    '09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,US0000000082,Dividenda,,USD,"37,25",USD,"-1,85",',
+    '09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,US0000000082,Daň z dividendy,,USD,"-5,60",USD,"-39,10",',
+    '09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,US0000000082,Daň z dividendy,,USD,"6,00",USD,"-33,50",',
+    '09-01-2025,10:12,18-07-2023,HARBORLINE REIT INC,US0000000082,Dividenda,,USD,"-40,00",USD,"-39,50",',
+  ];
+
+  const withUser = async (): Promise<Db> => {
+    const db = await createPgliteDb();
+    await db.insert(user).values({ id: 'u1', name: 'Test', email: 'test@danero.cz' });
+    return db;
+  };
+  const uploadText = (db: Db, filename: string, lines: string[]) =>
+    importFileIsolated(
+      db,
+      'u1',
+      filename,
+      new TextEncoder().encode([HEADER, ...lines].join('\n')).buffer as ArrayBuffer,
+    );
+  const dividends = async (db: Db) =>
+    (await loadTransactions(db, 'u1'))
+      .filter((tx) => tx.type === 'DIVIDEND')
+      .map((tx) =>
+        tx.type === 'DIVIDEND'
+          ? `${tx.date} ${tx.gross.toString()}/${tx.withholdingTax.toString()}${tx.returnOfCapital ? ' vratka' : ''}`
+          : '',
+      )
+      .sort();
+
+  it(
+    'novější export uloženou původní výplatu nahradí, opakované nahrání nic nezmění',
+    { timeout: 60_000 },
+    async () => {
+      const db = await withUser();
+
+      const older = await uploadText(db, 'Account-2023.csv', ORIGINAL);
+      expect(older.errors).toEqual([]);
+      expect(await dividends(db)).toEqual(['2023-07-19 40/6']);
+
+      const newer = await uploadText(db, 'Account-2025.csv', [...RESTATEMENT, ...ORIGINAL]);
+      expect(newer.errors).toEqual([]);
+      expect(await dividends(db)).toEqual(['2023-07-19 2.75/0 vratka', '2023-07-19 37.25/5.6']);
+
+      const again = await uploadText(db, 'Account-2025.csv', [...RESTATEMENT, ...ORIGINAL]);
+      expect(again.errors).toEqual([]);
+      expect(await dividends(db)).toEqual(['2023-07-19 2.75/0 vratka', '2023-07-19 37.25/5.6']);
+    },
+  );
+
+  it(
+    'starší export nahraný až po novějším původní čísla vedle přeúčtovaných neuloží',
+    { timeout: 60_000 },
+    async () => {
+      const db = await withUser();
+
+      await uploadText(db, 'Account-2025.csv', [...RESTATEMENT, ...ORIGINAL]);
+      const older = await uploadText(db, 'Account-2023.csv', ORIGINAL);
+      expect(older.errors).toEqual([]);
+      expect(await dividends(db)).toEqual(['2023-07-19 2.75/0 vratka', '2023-07-19 37.25/5.6']);
+    },
+  );
+});

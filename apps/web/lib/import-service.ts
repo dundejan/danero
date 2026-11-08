@@ -925,7 +925,15 @@ const MAX_RESTATED_WARNINGS = 5;
 
 const restatedWarnings = (restated: Transaction[], broker: string): RowIssue[] => {
   if (restated.length === 0) return [];
-  const advice = brokerCorrectsEvents(broker)
+  // Degiro: řádek z Account.csv pod týmž id (síť `hasRowFingerprintId`) je
+  // typicky výplata, kterou novější výpis přeúčtoval (R-07k) — tam platí
+  // uložená verze a rada „vrať starší import“ by smazala správná čísla.
+  const advice = broker === 'degiro'
+    ? 'U Degira to bývá výplata, kterou broker později přeúčtoval (americký REIT po skončení roku) — ' +
+      'uložená verze pochází z novějšího výpisu a platí, nic dělat nemusíš. Jinak jde o řádek, který ' +
+      'starší verze Danera četla jinak: pak vrať starší import zpět tlačítkem v historii níž ' +
+      '(smaže se i s transakcemi) a nahraj výpis znovu.'
+    : brokerCorrectsEvents(broker)
     ? 'Tenhle broker záznamy zpětně opravuje (třeba přeúčtuje sraženou daň) a z ručně nahraného ' +
       'souboru nepoznáme, která verze je novější. Je-li novější tenhle výpis, vrať starší import ' +
       'zpět tlačítkem v historii níž (smaže se i s transakcemi) a nahraj výpis znovu; ' +
@@ -1086,7 +1094,8 @@ const correctedRowLabel = (row: { type: string; txDate: string; isin: string | n
 /**
  * Promítne do uložených řádků to, co broker zpětně opravil nebo zrušil — jen
  * u brokerů, jejichž id je per záznam (dnes IBKR, viz `SUPERSEDING_ID_BROKERS`
- * v dedupe).
+ * v dedupe), a u událostí, které výpis sám označil za přeúčtované
+ * (`ImportResult.supersedes`: výplata REITu u Degira, R-07k).
  *
  * Napojený účet stahuje každý den výpis za posledních 365 dní. Dividenda,
  * které broker po měsících přeúčtoval srážkovou daň, se v něm objeví s jinými
@@ -1235,7 +1244,10 @@ export async function importParsed(
     state.keys,
     state.brokerIds,
     state.bareDividends,
-    { newerThanStored: extras.newerThanStored === true },
+    {
+      newerThanStored: extras.newerThanStored === true,
+      supersedingIds: new Set(parsed.supersedes ?? []),
+    },
   );
   const unmapped = extras.unmapped ?? [];
   // Volající má poslední slovo (`false` u selhání, za které nemůžeme); jinak

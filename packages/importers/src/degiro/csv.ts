@@ -217,6 +217,7 @@ const isLocalValueHeader = (lower: string): boolean =>
   lower.includes('wert in lokal') ||
   lower.includes('valeur locale');
 const DESCRIPTION_HEADERS = ['popis', 'description', 'omschrijving', 'beschreibung'];
+const VALUE_DATE_HEADERS = ['value date', 'valutadatum', 'date de valeur'];
 const CHANGE_HEADERS = ['změna', 'pohyb', 'change', 'mutatie', 'änderung', 'anderung', 'variation'];
 
 /**
@@ -370,7 +371,8 @@ interface BookEntry {
  * Z účetních zápisů jednoho okamžiku složí korporátní akce:
  *
  *  - odpis a připis TÉHOŽ ISIN → štěpení s poměrem z kusů,
- *  - odpis jednoho a připis jiného ISIN se stejnou hodnotou: stejný počet →
+ *  - odpis jednoho a připis jiného ISIN se stejnou hodnotou (u titulu bez
+ *    ceny obojí za nulu se stejným počtem kusů): stejný počet →
  *    změna ISIN; jiný počet a stejný název → štěpení s novým ISIN (R-04a
  *    + R-04e); jiný název → fúze s poměrem (jestli zachovává časový test, řekne
  *    engine výkladovým varováním — z výpisu se to nepozná).
@@ -410,6 +412,27 @@ function resolveBookEntries(
     const larger = va.gt(vb) ? va : vb;
     return a.currency === b.currency && larger.gt(0) && va.minus(vb).abs().lte(larger.mul('0.02'));
   };
+  // Titul bez ceny (delistovaný, v konkurzu) mění ISIN za nulu: obě nohy mají
+  // hodnotu 0, takže hodnotou spárovat nejdou. Tvar změny ISIN ale nese
+  // shodný počet kusů — skutečný výpis: akcie po konkurzu přešly na
+  // „… - NON TRADEABLE“ s novým ISIN, odpis i připis 0 USD. Bez toho skončily
+  // obě nohy chybou „neumíme poznat, které k sobě patří“, přestože jiný zápis
+  // v tom okamžiku nebyl.
+  // Shodný počet za nulu by ale mohl spojit i odpis jednoho vyřazeného titulu
+  // s připisem jiného (bonusové akce, spin-off 1 : 1) a přestěhovat nabývací
+  // cenu k cizímu titulu — proto ještě název: shodný až na příponu za „ - “
+  // („LUMENIX BIO“ → „LUMENIX BIO - NON TRADEABLE“). Pouhý společný začátek
+  // nestačí: „ACME“ a „ACME HOLDINGS SPINCO“ jsou dva tituly.
+  const productStem = (entry: BookEntry): string =>
+    entry.product.split(' - ')[0]!.trim().toLowerCase();
+  const sameTitle = (a: BookEntry, b: BookEntry): boolean =>
+    productStem(a) !== '' && productStem(a) === productStem(b);
+  const worthlessSwap = (a: BookEntry, b: BookEntry): boolean =>
+    a.currency === b.currency &&
+    value(a).isZero() &&
+    value(b).isZero() &&
+    a.quantity.abs().eq(b.quantity.abs()) &&
+    sameTitle(a, b);
   const retracted = (result.retracted ??= []);
 
   for (const group of moments.values()) {
@@ -444,7 +467,10 @@ function resolveBookEntries(
       }
     };
     pairUp((out, into) => out.isin === into.isin); // štěpení
-    pairUp((out, into) => out.isin !== into.isin && sameValue(out, into)); // změna ISIN, fúze
+    // změna ISIN, fúze
+    pairUp(
+      (out, into) => out.isin !== into.isin && (sameValue(out, into) || worthlessSwap(out, into)),
+    );
 
     for (const [out, into] of pairs) {
       const from = out.quantity.abs();
@@ -774,10 +800,12 @@ type AccountKind =
   | { kind: 'INTEREST' }
   | { kind: 'FEE' }
   | { kind: 'COURTESY' }
+  | { kind: 'FRACTION_CASH' }
   | { kind: 'DEPOSIT' }
   | { kind: 'WITHDRAWAL' }
   | { kind: 'CORPORATE'; subtype: CorporateSubtype }
   | { kind: 'SKIP'; reason: string }
+  | { kind: 'BOOK_ECHO' }
   | { kind: 'UNKNOWN' };
 
 const containsAny = (haystack: string, needles: string[]): boolean =>
@@ -858,10 +886,23 @@ const TRADE_ECHO =
  * neodešel do ztracena.
  */
 const SHARE_MOVEMENT =
-  /(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+\d/iu;
+  /(?:^|\s)(nákup|prodej|koop|verkoop|buy|sell|kauf|verkauf|achat|vente)\s+(\d[\d.,]*)/iu;
 
 /** Změna produktu („PRODUCTWIJZIGING : Koop 500 @ …“) — kusy se odepíšou a znovu připíšou. */
-const PRODUCT_CHANGE = /productwijziging/i;
+const PRODUCT_CHANGE = /productwijziging|změna\s+produktu/iu;
+
+/**
+ * Peněžní noha štěpení v českém exportu: „ÚPRAVA SPLITU: <nový počet> ADR on …
+ * @ <nová cena> USD“ a protizápis se starým počtem a cenou — bez slovesa obchodu,
+ * takže ji `CORPORATE_BOOK_ENTRY` nepozná, a „splitu“ není slovo „split“.
+ */
+const SPLIT_ADJUSTMENT = /^\s*úprava\s+splitu\s*:\s*\d/iu;
+
+/** Počet kusů z popisu, který hýbe kusy, je nula („Akciová dividenda: Nákup 0 …@0 USD“). */
+const movesNoShares = (description: string): boolean => {
+  const quantity = SHARE_MOVEMENT.exec(description)?.[2];
+  return quantity !== undefined && /^0+(?:[.,]0+)?$/.test(quantity);
+};
 
 /**
  * Klasifikace řádku Account.csv podle POPISU — slovníky CZ/EN/NL/DE/FR, case-insensitive.
@@ -887,6 +928,18 @@ function classifyDescription(description: string): AccountKind {
   // dřív než cokoli se slovesem obchodu: „Konverze Peněžního Fondu: Prodej 2,1140 v …“
   if (containsAny(lower, ['konverze peněžního fondu', 'změna ceny peněžního fondu']))
     return { kind: 'SKIP', reason: 'peněžní fond, ve kterém Degiro dřív drželo hotovost — pro daň z CP nepodstatné' };
+  // Změnu produktu (nový název nebo burza, třeba po spin-offu) a
+  // štěpení zapisuje Degiro do Transactions.csv jako dvojici účetních zápisů
+  // a odtud se berou (`resolveBookEntries`); v Account.csv je táž událost
+  // podruhé a částky obou nohou se vyruší. Doloženo skutečným českým exportem
+  // obou souborů téhož účtu (listopad 2026): všechny tři změny produktu
+  // a štěpení z Account.csv jsou v Transakcích. Do té doby končila změna
+  // produktu chybou o kusech, které ale z Transakcí sedět měly.
+  if (
+    (PRODUCT_CHANGE.test(description) && CORPORATE_BOOK_ENTRY.test(description)) ||
+    SPLIT_ADJUSTMENT.test(description)
+  )
+    return { kind: 'BOOK_ECHO' };
   // korporátní akce dřív než zbytek — NIKDY je neinterpretovat jako obchod
   for (const { subtype, pattern } of CORPORATE_PATTERNS) {
     if (!pattern.test(lower)) continue;
@@ -912,10 +965,25 @@ function classifyDescription(description: string): AccountKind {
       'retenue a la source',
       'impôts sur dividende',
       'impots sur dividende',
+      // srážka z „QIE Distribution Capital Gain“ (viz níž) — USA ji srážejí 21 %
+      'qie distribution capital gain tax',
     ])
   )
     return { kind: 'DIVIDEND_TAX' };
-  if (containsAny(lower, ['dividenda', 'dividend'])) return { kind: 'DIVIDEND' };
+  // „Reinvestice dividendy“ je NÁKUP akcí za vyplacenou dividendu, ne její
+  // storno: dividenda je příjem i vyplacená v akciích (nepeněžní příjem, § 3
+  // odst. 3 ZDP; R-07l). Jako záporná dividenda by výplatu vynulovala.
+  if (lower.includes('reinvestice dividendy'))
+    return {
+      kind: 'SKIP',
+      reason:
+        'dividenda vyplacená v akciích — dividendu daníme jako peněžní (R-07l), připsané kusy bereme z Transactions.csv',
+    };
+  // „QIE Distribution Capital Gain“ je část výplaty amerického REITu, kterou
+  // REIT označil za kapitálový zisk (QIE = qualified investment entity).
+  // Pro českého rezidenta je to pořád podíl na zisku — R-07k.
+  if (containsAny(lower, ['dividenda', 'dividend', 'qie distribution capital gain']))
+    return { kind: 'DIVIDEND' };
   // přesuny do peněžního trhu nejsou příjem („Flatex Interest Income“ je úrok — viz níž)
   if (containsAny(lower, ['cash sweep', 'geldmarktfonds', 'money market']))
     return { kind: 'SKIP', reason: 'převod peněžního trhu / cash sweep — pro daň z CP nepodstatné' };
@@ -951,6 +1019,12 @@ function classifyDescription(description: string): AccountKind {
     ])
   )
     return { kind: 'SKIP', reason: 'FX konverze — pro daňový výpočet CP není potřeba' };
+  // „Náklady akcie“ přes název nese KLADNOU částku: hotovost za zlomek akcie,
+  // který se při korporátní akci nepřipsal. Doloženo skutečným výpisem: ve
+  // všech případech šlo o den, kdy po spin-offu přišly nové kusy, a částka
+  // odpovídá zbytku po zaokrouhlení jejich počtu dolů krát tehdejší cena.
+  // Záporná částka by byl skutečný náklad akce.
+  if (lower.includes('náklady akcie')) return { kind: 'FRACTION_CASH' };
   if (
     containsAny(lower, [
       'poplatek za připojení na burzu',
@@ -978,6 +1052,10 @@ function classifyDescription(description: string): AccountKind {
       'adr/gdr weitergabegebuhr',
       'gebühr für kapitalmaßnahme',
       'gebuhr fur kapitalmassnahme',
+      // český export (listopad 2026), i s překlepem Degira v „dań“
+      'adr/gdr pass-through poplatek',
+      'francouzská transakční daň',
+      'francouzská transakční dań',
     ])
   )
     return { kind: 'FEE' };
@@ -1071,6 +1149,15 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     });
     return result;
   }
+  // Datum valuty („Value date“, „Valutadatum“; český export má podruhé jen
+  // „Datum“). Podle něj se poznají zápisy téže výplaty, které Degiro zaúčtoval
+  // v různé dny — viz skládání dividend níž.
+  const valueDateColumn = ((): number => {
+    const named = findColumn(headers, VALUE_DATE_HEADERS);
+    if (named >= 0) return named;
+    const lower = headers.map((h) => h.trim().toLowerCase());
+    return lower.indexOf(lower[col.date]!, col.date + 1);
+  })();
 
   const nextId = uniqueIdFactory();
 
@@ -1101,6 +1188,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     id: string;
     isin?: string;
     date: string;
+    valueDate?: string;
     gross: string;
     currency: string;
     withholding?: string;
@@ -1109,11 +1197,33 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     line: number;
     isin?: string;
     date: string;
+    valueDate?: string;
     amount: string;
     currency: string;
   }
+  interface PendingReturn {
+    line: number;
+    raw: string;
+    id: string;
+    isin?: string;
+    date: string;
+    valueDate?: string;
+    amount: string;
+    currency: string;
+    description: string;
+  }
   const dividends: PendingDividend[] = [];
   const taxes: PendingTax[] = [];
+  const returns: PendingReturn[] = [];
+  const bookEchoes: Array<{
+    line: number;
+    raw: string;
+    moment: string;
+    description: string;
+    amount?: string;
+    currency?: string;
+    invalid: boolean;
+  }> = [];
   const corporateLegs = new Map<string, CorporateLeg[]>(); // klíč: subtype|datum
 
   const push = makePush(result);
@@ -1135,6 +1245,8 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
 
     const description = cell(row, col.description);
     const classified = classifyDescription(description);
+    // nečitelné datum valuty jen vypne skládání podle něj, chyba to není
+    const valueDate = toIsoDate(cell(row, valueDateColumn)) ?? undefined;
 
     // korporátní akce nemají peněžní pohyb (Změna bývá prázdná) — sbíráme páry
     if (classified.kind === 'CORPORATE') {
@@ -1180,6 +1292,23 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     // částka + měna = pojmenovaný sloupec Změna + bezejmenný za ním (obě pořadí)
     const pair = readAmountCurrencyPair(row, col.change, decimal);
 
+    // Změna produktu a štěpení: kusy z Transactions.csv. Přeskočit se ale smí,
+    // jen když se peníze obou nohou v tom okamžiku vyruší — kontrola po
+    // přečtení celého souboru (`bookEchoes`).
+    if (classified.kind === 'BOOK_ECHO') {
+      bookEchoes.push({
+        line,
+        raw: row.join(';'),
+        // den a ISIN, ne minuta: nohy téže změny mívají různý čas (NL vzorek:
+        // 02:30 a 04:10), ISIN ale sdílejí; nesouvisející změny se nesčítají
+        moment: `${isoDate}|${cell(row, col.isin)}`,
+        description,
+        ...(pair.kind === 'ok' ? { amount: pair.amount, currency: pair.currency } : {}),
+        invalid: pair.kind === 'invalid',
+      });
+      return;
+    }
+
     // Řádek, který nehýbe penězi, zato HÝBE KUSY: `STOCK DIVIDEND: Verkoop 35 …`
     // se kvůli slovu „dividend“ klasifikuje jako dividenda a bez částky by
     // zmizel beze stopy i s pohybem 35 kusů (nález B4-0). Skutečné avízo
@@ -1191,11 +1320,18 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     // a druhý „Neznámý popis“ (L2a-04) — proto se ptáme dřív než na neznámý popis.
     const carriesNoMoney = pair.kind === 'empty' || (pair.kind === 'ok' && d(pair.amount).eq(0));
     if (carriesNoMoney && SHARE_MOVEMENT.test(description)) {
+      // „Akciová dividenda: Nákup 0 …@0 USD“: nula kusů za nulu nic nemění
+      // (zlomek, který se nepřipsal, přišel zvlášť v hotovosti)
+      if (movesNoShares(description)) {
+        result.skipped.push({
+          line,
+          message: `„${description}“: nulový počet kusů i částka — nic k zaúčtování.`,
+        });
+        return;
+      }
       result.errors.push({
         line,
-        message: PRODUCT_CHANGE.test(description)
-          ? `„${description}“ je změna produktu: Degiro při ní kusy odepíše a znovu připíše, peníze se nehýbou. Takový pohyb z výpisu neumíme zpracovat — když se změnil ISIN nebo počet kusů, doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů. Když ISIN i počet zůstaly stejné, nic doplňovat nemusíš.`
-          : `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
+        message: `„${description}“ nehýbe penězi, ale kusy — takový pohyb z výpisu Degiro neumíme zpracovat. Doplň ho ručně přes univerzální šablonu, jinak ti nebude sedět počet kusů.`,
         raw: row.join(';'),
       });
       return;
@@ -1262,6 +1398,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           id,
           isin: cell(row, col.isin) || undefined,
           date: isoDate,
+          valueDate,
           gross: changeRaw,
           currency,
         });
@@ -1272,6 +1409,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
           line,
           isin: cell(row, col.isin) || undefined,
           date: isoDate,
+          valueDate,
           // sražená daň je záporná; kladná je vrácená srážka (oprava)
           amount: change.neg().toString(),
           currency,
@@ -1279,27 +1417,41 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
         return;
       }
       case 'RETURN_OF_CAPITAL': {
-        if (change.lte(0)) {
-          result.warnings.push({
-            line,
-            message: `Vratka kapitálu ${changeRaw} ${currency} („${description}“) není kladná — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+        // zaúčtuje se až s výplatou, ke které patří — přeúčtování ji ruší i přidává
+        returns.push({
+          line,
+          raw: row.join(';'),
+          id,
+          isin: cell(row, col.isin) || undefined,
+          date: isoDate,
+          valueDate,
+          amount: changeRaw,
+          currency,
+          description,
+        });
+        return;
+      }
+      case 'FRACTION_CASH': {
+        if (change.eq(0)) {
+          result.skipped.push({ line, message: `„${description}“: nulová částka — nic k zaúčtování.` });
+          return;
+        }
+        if (change.lt(0)) {
+          push(line, row.join(';'), {
+            type: 'FEE',
+            id,
+            amount: change.abs().toString(),
+            currency,
+            date: isoDate,
+            note: description,
           });
           return;
         }
-        push(line, row.join(';'), {
-          type: 'DIVIDEND',
-          id,
-          isin: cell(row, col.isin) || undefined,
-          gross: changeRaw,
-          currency,
-          withholdingTax: '0',
-          returnOfCapital: true,
-          date: isoDate,
-          note: description,
-        });
+        // Prodej zlomku je příjem podle § 10, jenže výpis neříká, jaký zlomek
+        // to byl, a bez počtu kusů prodej zaúčtovat nejde.
         result.warnings.push({
           line,
-          message: `„${description}“: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu držených kusů (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`,
+          message: `„${description}“ ${changeRaw} ${currency} (${cell(row, col.isin) || 'bez ISIN'}, ${isoDate}): Degiro takhle vyplácí hotovost za zlomek akcie, který se při korporátní akci (spin-off, akciová dividenda) nepřipsal. Je to příjem z prodeje toho zlomku, jenže výpis neuvádí, kolik kusů to bylo, takže ho do výpočtu nezahrnujeme. Když tvoje prodeje cenných papírů za rok nepřesáhnou 100 000 Kč, je příjem osvobozený a doplňovat nic nemusíš; jinak prodej doplň přes univerzální šablonu.`,
         });
         return;
       }
@@ -1373,19 +1525,74 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     }
   });
 
-  // Dividendy a srážky se skládají po titulu a dni.
-  const eventKey = (item: { isin?: string; date: string }): string => `${item.isin ?? ''}|${item.date}`;
-  const events = new Map<string, { dividends: PendingDividend[]; taxes: PendingTax[] }>();
-  const eventOf = (item: { isin?: string; date: string }) => {
+  // Změna produktu a štěpení: v jednom dni u jednoho ISIN se peníze nohou musí
+  // vyrušit (po měnách). Když ne, nese některá noha skutečnou platbu — třeba
+  // výplatu za starou řadu — a přeskočit ji by peníze ztratilo beze stopy.
+  const echoMoments = new Map<string, typeof bookEchoes>();
+  for (const echo of bookEchoes) {
+    echoMoments.set(echo.moment, [...(echoMoments.get(echo.moment) ?? []), echo]);
+  }
+  for (const group of echoMoments.values()) {
+    const totals = new Map<string, ReturnType<typeof d>>();
+    for (const echo of group) {
+      if (echo.amount === undefined || echo.currency === undefined) continue;
+      totals.set(echo.currency, (totals.get(echo.currency) ?? d(0)).plus(echo.amount));
+    }
+    const balanced = !group.some((echo) => echo.invalid) && [...totals.values()].every((total) => total.isZero());
+    for (const echo of group) {
+      if (balanced) {
+        result.skipped.push({
+          line: echo.line,
+          message: `„${echo.description}“: účetní zápis změny produktu nebo štěpení — kusy bereme z Transactions.csv, kde je táž událost (jinak by se importovala dvakrát)`,
+        });
+        continue;
+      }
+      result.errors.push({
+        line: echo.line,
+        message: `„${echo.description}“ je zápis změny produktu nebo štěpení, ale peníze jeho nohou se ve výpisu nevyruší — některá noha nese skutečnou platbu, kterou sami nezaúčtujeme. Zkontroluj výpis a platbu doplň přes univerzální šablonu.`,
+        raw: echo.raw,
+      });
+    }
+  }
+
+  // Dividendy, srážky a vratky kapitálu se skládají po titulu a dni VALUTY
+  // (bez sloupce s datem valuty po dni zaúčtování). Datum valuty spojí
+  // i zápisy téže výplaty zaúčtované o rok později: americký REIT po skončení
+  // roku výplatu rozdělí na dividendu, vratku kapitálu a kapitálový výnos
+  // a Degiro to zapíše stornem a novými zápisy s pozdějším datem zaúčtování,
+  // ale s datem valuty původní výplaty. Skládané po dni zaúčtování dávalo
+  // storno „zápornou dividendu bez výplaty“ a vratka se zaúčtovala NAVÍC
+  // k původní výplatě, ve které už byla (skutečný český výpis, listopad 2026,
+  // tři REITy; a zpětně snížená srážka u jiného titulu se zahodila úplně).
+  interface PaymentEvent {
+    dividends: PendingDividend[];
+    taxes: PendingTax[];
+    returns: PendingReturn[];
+  }
+  type EventRow = { isin?: string; date: string; valueDate?: string };
+  // Jen když datum valuty mají VŠECHNY řádky výplat: dividenda s datem valuty
+  // a její srážka bez něj by se jinak rozešly do dvou výplat.
+  const byValueDate = [...dividends, ...taxes, ...returns].every((row) => row.valueDate !== undefined);
+  const eventKey = (item: EventRow): string =>
+    `${item.isin ?? ''}|${byValueDate ? item.valueDate : item.date}`;
+  const events = new Map<string, PaymentEvent>();
+  const eventOf = (item: EventRow): PaymentEvent => {
     const key = eventKey(item);
-    const event = events.get(key) ?? { dividends: [], taxes: [] };
+    const event = events.get(key) ?? { dividends: [], taxes: [], returns: [] };
     events.set(key, event);
     return event;
   };
   for (const dividend of dividends) eventOf(dividend).dividends.push(dividend);
   for (const tax of taxes) eventOf(tax).taxes.push(tax);
+  for (const ret of returns) eventOf(ret).returns.push(ret);
+  const retracted = (result.retracted ??= []);
+  const supersedes = (result.supersedes ??= []);
 
-  const pushDividend = (dividend: PendingDividend, gross: string, withholding: string): void =>
+  const pushDividend = (
+    dividend: PendingDividend,
+    gross: string,
+    withholding: string,
+  ): void =>
     push(dividend.line, '', {
       type: 'DIVIDEND',
       id: dividend.id,
@@ -1396,6 +1603,152 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       date: dividend.date,
     });
 
+  const pushReturn = (ret: PendingReturn, amount: string, id: string, date: string): void => {
+    push(ret.line, ret.raw, {
+      type: 'DIVIDEND',
+      id,
+      isin: ret.isin,
+      gross: amount,
+      currency: ret.currency,
+      withholdingTax: '0',
+      returnOfCapital: true,
+      date,
+      note: ret.description,
+    });
+    result.warnings.push({
+      line: ret.line,
+      message: `„${ret.description}“: vratka kapitálu není podíl na zisku — věcně snižuje nabývací cenu držených kusů (daň až při prodeji). Ve výchozím nastavení ji daníme jako dividendu (§ 8) a čerpá limit 50 000 Kč, protože je to bezpečnější výklad; přepnout to jde v Nastavení u „Vratka kapitálu“ (R-07h).`,
+    });
+  };
+
+  /** Kladný řádek zaúčtovaný nejdřív (při shodě první v pořadí výpisu). */
+  const earliestPositive = <T extends { date: string }>(
+    list: T[],
+    amountOf: (row: T) => string,
+  ): T | undefined =>
+    list
+      .filter((row) => d(amountOf(row)).gt(0))
+      .reduce<T | undefined>(
+        (earliest, row) => (earliest === undefined || row.date < earliest.date ? row : earliest),
+        undefined,
+      );
+
+  const sumOf = (amounts: string[]): ReturnType<typeof d> =>
+    amounts.reduce((sum, amount) => sum.plus(amount), d(0));
+
+  /**
+   * Vratky kapitálu jedné výplaty. Bez protizápisu každá zvlášť, tak jak je;
+   * s ním (storno a nový zápis, i v jiné dny) nebo u přeúčtované výplaty
+   * (`restatedDate`) jen jejich součet — u přeúčtování k datu původní výplaty.
+   * Vrací id zaúčtovaných vratek.
+   */
+  const settleReturns = (list: PendingReturn[], restatedDate?: string): string[] => {
+    if (list.length === 0) return [];
+    const reversed = list.some((ret) => d(ret.amount).lt(0));
+    const currencies = new Set(list.map((ret) => ret.currency));
+    if ((!reversed && restatedDate === undefined) || currencies.size > 1) {
+      const pushed: string[] = [];
+      for (const ret of list) {
+        if (d(ret.amount).gt(0)) {
+          pushReturn(ret, ret.amount, ret.id, restatedDate ?? ret.date);
+          pushed.push(ret.id);
+          continue;
+        }
+        result.warnings.push({
+          line: ret.line,
+          message: `Vratka kapitálu ${ret.amount} ${ret.currency} („${ret.description}“) není kladná — vypadá jako korekce, nezaúčtováno; zkontroluj výpis.`,
+        });
+      }
+      return pushed;
+    }
+    const net = sumOf(list.map((ret) => ret.amount));
+    // u přeúčtování nese výsledek id PŮVODNÍ vratky (nejdřív zaúčtované) —
+    // stejně jako dividenda; jinak by starší export vratku uložil znovu
+    const first = earliestPositive(list, (ret) => ret.amount) ?? list[0]!;
+    if (net.gt(0)) {
+      pushReturn(first, net.toString(), first.id, restatedDate ?? first.date);
+      return [first.id];
+    }
+    if (net.lt(0)) {
+      result.warnings.push({
+        line: first.line,
+        message: `Vratka kapitálu ${first.isin ?? ''} z ${first.date} vychází po opravných zápisech záporná (${net.toString()} ${first.currency}) — nezaúčtováno; zkontroluj výpis.`,
+      });
+    }
+    return [];
+  };
+
+  const nonNegative = (amount: ReturnType<typeof d>): string => (amount.lt(0) ? d(0) : amount).toString();
+
+  const cancelledNote = (carrier: PendingDividend): string =>
+    `Dividenda ${carrier.isin ?? ''} z ${carrier.date} je ve výpisu stornovaná (výplata i protizápis se vyruší) — nezaúčtována.`;
+
+  /** Dovětek k hlášce, po které se nezaúčtuje nic z výplaty — ani její vratka. */
+  const returnsToo = (event: PaymentEvent): string =>
+    event.returns.length > 0 ? ' (ani vratku kapitálu z téže opravy)' : '';
+
+  /**
+   * Výplata, kterou Degiro zpětně přeúčtoval (opravné zápisy s pozdějším
+   * datem zaúčtování). Výsledek patří k datu PŮVODNÍ výplaty — tehdy peníze
+   * přišly (R-07k) — a nese id původní dividendy: uloženou verzi import
+   * přepíše na místě (`supersedes`), takže zůstane ve své dávce. Starší
+   * export nahraný až potom pak pod týmž id narazí na přepsanou verzi a jako
+   * duplicita se neuloží (síť podle id, `hasRowFingerprintId` v dedupe).
+   * Ostatní zápisy téže výplaty, které starší verze parseru uložila zvlášť
+   * (vratka zaúčtovaná ke dni přeúčtování, kladný výsledek dne přeúčtování),
+   * se ruší přes `retracted` — nikdy id, které tenhle výsledek sám nese.
+   */
+  const settleRestated = (event: PaymentEvent): void => {
+    const rows: EventRow[] = [...event.dividends, ...event.taxes, ...event.returns];
+    // Původní výplata = zápisy z prvního dne zaúčtování. Výsledek patří k němu,
+    // i když původní výplata byla celá vratkou a dividenda přibyla až
+    // přeúčtováním (R-07k: rozhoduje, kdy peníze přišly).
+    const originalDate = rows.map((row) => row.date).sort()[0]!;
+    const bookedLater = [...new Set(rows.map((row) => row.date))]
+      .filter((date) => date > originalDate)
+      .sort();
+    const isin = rows[0]!.isin ?? '';
+    const carrier = earliestPositive(event.dividends, (dividend) => dividend.gross);
+    const line = carrier?.line ?? (event.dividends[0] ?? event.taxes[0] ?? event.returns[0])!.line;
+    const currency = carrier?.currency ?? event.dividends[0]?.currency;
+    const net = sumOf(
+      event.dividends.filter((dividend) => dividend.currency === currency).map((dividend) => dividend.gross),
+    );
+    if (net.lt(0)) {
+      // víc stornováno, než bylo vyplaceno (původní výplata v exportu není
+      // celá): uloženou výplatu radši nechat
+      result.warnings.push({
+        line,
+        message: `Dividenda ${isin} z ${originalDate} vychází po zpětném přeúčtování (${bookedLater.join(', ')}) záporná (${net.toString()} ${currency}) — nezaúčtováno${returnsToo(event)}; zkontroluj, že výpis pokrývá i den původní výplaty.`,
+      });
+      return;
+    }
+    const kept = new Set<string>();
+    if (carrier !== undefined && net.gt(0)) {
+      const withheld = nonNegative(
+        sumOf(event.taxes.filter((tax) => tax.currency === currency).map((tax) => tax.amount)),
+      );
+      pushDividend({ ...carrier, date: originalDate }, net.toString(), withheld);
+      kept.add(carrier.id);
+      result.warnings.push({
+        line,
+        message: `Dividendu ${isin} z ${originalDate} Degiro zpětně přeúčtoval (${bookedLater.join(', ')})${event.returns.length > 0 ? ' — tak to dělají americké REITy po skončení roku, když výplatu rozdělí na dividendu, vratku kapitálu a kapitálový výnos' : ''}. Účtujeme výsledek k datu původní výplaty: ${net.toString()} ${currency}, sražená daň ${withheld} ${currency}. Čísla za rok ${originalDate.slice(0, 4)} se tím mohou změnit.`,
+      });
+    } else if (carrier !== undefined) {
+      result.warnings.push({ line, message: cancelledNote({ ...carrier, date: originalDate }) });
+    }
+    for (const id of settleReturns(event.returns, originalDate)) kept.add(id);
+    supersedes.push(...kept);
+    // Řádky, které už nic nenesou, ale starší verze parseru je mohla uložit
+    // samostatně. Výjimka, o které víme: původní výplata o DVOU kladných
+    // dividendových řádcích — druhý se zruší a starší export nahraný potom by
+    // ho uložil znovu (u Degira jsme takovou výplatu neviděli).
+    for (const row of [...event.dividends, ...event.returns]) {
+      if (!kept.has(row.id)) retracted.push({ id: row.id, types: ['DIVIDEND'] });
+    }
+  };
+
+
   for (const event of events.values()) {
     // Degiro opravuje protizápisem: záporná „Dividend“ ruší výplatu a KLADNÁ
     // „Dividendbelasting“ vrací srážku (doloženo výpisy z let 2019–2025
@@ -1405,6 +1758,11 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     const corrected =
       event.dividends.some((dividend) => d(dividend.gross).lt(0)) ||
       event.taxes.some((tax) => d(tax.amount).lt(0));
+    const bookingDates = new Set(
+      [...event.dividends, ...event.taxes, ...event.returns].map((row) => row.date),
+    );
+    const restated =
+      (corrected || event.returns.some((ret) => d(ret.amount).lt(0))) && bookingDates.size > 1;
 
     const currencies = new Set([
       ...event.dividends.map((dividend) => dividend.currency),
@@ -1414,14 +1772,23 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
       // Opravy ve víc měnách (Degiro výplatu přeúčtoval do jiné měny) sečíst
       // nejde. Kladné výplaty se proto zaúčtují tak, jak jsou, bez sražené
       // daně — příjem zůstane a zápočet se neuplatní (bezpečný směr) —
-      // a řekne se to; zahodit je by dividendu ztratilo beze stopy.
+      // a řekne se to; zahodit je by dividendu ztratilo beze stopy. U výplaty
+      // přeúčtované později jen ty z prvního dne: nové zápisy ji jen opakují.
+      const firstDay = [...bookingDates].sort()[0];
       result.warnings.push({
         line: event.dividends[0]?.line ?? event.taxes[0]!.line,
-        message: `Dividenda ${event.dividends[0]?.isin ?? event.taxes[0]?.isin ?? ''} z ${event.dividends[0]?.date ?? event.taxes[0]!.date} má ve výpisu opravné zápisy ve více měnách (${[...currencies].join(', ')}) — sečíst je neumíme. Kladné výplaty jsme zaúčtovali bez oprav a bez sražené daně; zkontroluj je podle výpisu. ${REENTER_VIA_TEMPLATE}`,
+        message: `Dividenda ${event.dividends[0]?.isin ?? event.taxes[0]?.isin ?? ''} z ${event.dividends[0]?.date ?? event.taxes[0]!.date} má ve výpisu opravné zápisy ve více měnách (${[...currencies].join(', ')}) — sečíst je neumíme. Kladné výplaty${restated ? ` z ${firstDay} (jen původní výplatu, bez pozdějšího přeúčtování a jeho vratky kapitálu)` : ''} jsme zaúčtovali bez oprav a bez sražené daně; zkontroluj je podle výpisu. ${REENTER_VIA_TEMPLATE}`,
       });
       for (const dividend of event.dividends) {
-        if (d(dividend.gross).gt(0)) pushDividend(dividend, dividend.gross, '0');
+        if (d(dividend.gross).gt(0) && (!restated || dividend.date === firstDay))
+          pushDividend(dividend, dividend.gross, '0');
       }
+      settleReturns(restated ? event.returns.filter((ret) => ret.date === firstDay) : event.returns);
+      continue;
+    }
+
+    if (restated) {
+      settleRestated(event);
       continue;
     }
 
@@ -1438,25 +1805,34 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
             message: `Opravy daně z dividendy (${event.taxes[0]!.isin ?? 'bez ISIN'}, ${event.taxes[0]!.date}) nemají ve výpisu dividendu, ke které patří — nezaúčtováno, zkontroluj, že export pokrývá celé období.`,
           });
         }
+        settleReturns(event.returns);
         continue;
       }
       const net = event.dividends
         .filter((dividend) => dividend.currency === carrier.currency)
         .reduce((sum, dividend) => sum.plus(dividend.gross), d(0));
-      if (net.lte(0)) {
+      if (net.lt(0)) {
+        // Storno výplaty, která v tomhle výpisu není (typicky přeúčtování
+        // starší výplaty, když export tak daleko nesahá). Vratka z téhož
+        // přeúčtování je součástí té výplaty — zaúčtovat ji by ji přičetlo
+        // k původní výplatě, je-li uložená z dřívějška.
         result.warnings.push({
           line: carrier.line,
-          message: net.eq(0)
-            ? `Dividenda ${carrier.isin ?? ''} z ${carrier.date} je ve výpisu stornovaná (výplata i protizápis se vyruší) — nezaúčtována.`
-            : `Záporná dividenda ${net.toString()} ${carrier.currency} (${carrier.isin ?? 'bez ISIN'}, ${carrier.date}) — vypadá jako korekce výplaty, která v tomhle výpisu není; nezaúčtováno, zkontroluj výpis.`,
+          message: `Záporná dividenda ${net.toString()} ${carrier.currency} (${carrier.isin ?? 'bez ISIN'}, ${carrier.date}) — vypadá jako korekce výplaty, která v tomhle výpisu není; nezaúčtováno${returnsToo(event)}, zkontroluj výpis.`,
         });
+        continue;
+      }
+      if (net.eq(0)) {
+        result.warnings.push({ line: carrier.line, message: cancelledNote(carrier) });
+        settleReturns(event.returns);
         continue;
       }
       result.warnings.push({
         line: carrier.line,
-        message: `Dividenda ${carrier.isin ?? ''} z ${carrier.date} má ve výpisu opravné zápisy — účtujeme výsledek jednou transakcí: ${net.toString()} ${carrier.currency}, sražená daň ${(withheld.lt(0) ? d(0) : withheld).toString()} ${carrier.currency}.`,
+        message: `Dividenda ${carrier.isin ?? ''} z ${carrier.date} má ve výpisu opravné zápisy — účtujeme výsledek jednou transakcí: ${net.toString()} ${carrier.currency}, sražená daň ${nonNegative(withheld)} ${carrier.currency}.`,
       });
-      pushDividend(carrier, net.toString(), (withheld.lt(0) ? d(0) : withheld).toString());
+      pushDividend(carrier, net.toString(), nonNegative(withheld));
+      settleReturns(event.returns);
       continue;
     }
 
@@ -1481,6 +1857,7 @@ export function parseDegiroAccountCsv(text: string): ImportResult {
     for (const dividend of event.dividends) {
       pushDividend(dividend, dividend.gross, dividend.withholding ?? '0');
     }
+    settleReturns(event.returns);
   }
 
   // párování korporátních akcí: odpis starého ISIN + připis nového, stejné datum

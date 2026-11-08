@@ -94,6 +94,12 @@ export interface DedupeOptions {
    * id s jinými čísly jen ohlásí (`restated`) a uložená verze zůstane.
    */
   newerThanStored?: boolean;
+  /**
+   * Id, která výpis sám označil za přeúčtovaná (`ImportResult.supersedes`):
+   * uložená verze pod týmž id se přepíše na místě bez ohledu na
+   * `newerThanStored` a brokera.
+   */
+  supersedingIds?: ReadonlySet<string>;
 }
 
 export interface DedupeOutcome {
@@ -186,6 +192,20 @@ const TRANSACTION_ID_BROKERS = new Set([
   'tastytrade',
   'xtb',
 ]);
+
+/**
+ * Degiro u řádků z Account.csv (peněžní pohyby: dividendy, poplatky, úroky,
+ * vklady a výběry) skládá id z otisku CELÉHO řádku — platí pro ně totéž co pro
+ * `TRANSACTION_ID_BROKERS`. Obchody a korporátní akce z Transactions.csv ne:
+ * tam je id číslo objednávky (viz výš). Potřeba to je kvůli přeúčtované
+ * výplatě REITu (R-07k): novější export ji přepíše pod id původní výplaty, a
+ * starší export nahraný až potom by původní čísla jinak uložil vedle.
+ */
+const hasRowFingerprintId = (broker: string, tx: Transaction): boolean =>
+  broker === 'degiro' &&
+  tx.type !== 'BUY' &&
+  tx.type !== 'SELL' &&
+  tx.type !== 'CORPORATE_ACTION';
 
 /**
  * Brokeři, u kterých shodné id s jinými čísly znamená OPRAVU, ne jiné
@@ -296,7 +316,10 @@ export function dedupeTransactions(
     }
     const sameEventStored = idCounts.get(tx.id) === 1 && storedIds.has(brokerIdKey(broker, tx));
     const corrects = SUPERSEDING_ID_BROKERS.has(broker);
-    if (sameEventStored && corrects && options.newerThanStored) {
+    if (
+      sameEventStored &&
+      ((corrects && options.newerThanStored) || options.supersedingIds?.has(tx.id) === true)
+    ) {
       // Broker událost opravil a tenhle výpis je novější: volající uložený
       // řádek přepíše. Schválně před čtvrtou sítí níž — ta by opravu jen
       // ohlásila a v databázi by zůstala stará čísla.
@@ -312,7 +335,11 @@ export function dedupeTransactions(
       tx.type === 'DIVIDEND' &&
       Boolean(tx.isin) &&
       storedBareFingerprints.has(contentFingerprint({ ...tx, isin: undefined }));
-    if (sameEventStored && !awaitsIsin && (corrects || TRANSACTION_ID_BROKERS.has(broker))) {
+    if (
+      sameEventStored &&
+      !awaitsIsin &&
+      (corrects || TRANSACTION_ID_BROKERS.has(broker) || hasRowFingerprintId(broker, tx))
+    ) {
       // tutéž událost už máme, jen s jinými čísly — uložit ji podruhé by
       // zdvojilo držbu i nabývací cenu, takže ji jen ohlásíme
       restated.push(tx);

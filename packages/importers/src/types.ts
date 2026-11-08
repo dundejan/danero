@@ -52,6 +52,21 @@ export interface ImportResult {
    * Smí sem jen id, které broker sám označil za zrušené.
    */
   retracted?: RetractedEvent[];
+  /**
+   * Id transakcí z tohoto výsledku, které broker sám později PŘEÚČTOVAL
+   * (Degiro: výplata REITu stornovaná a zaúčtovaná znovu s datem valuty
+   * původní výplaty). Je-li pod týmž id uložená starší verze, přepíše se na
+   * místě — i u ručně nahraného souboru, protože výpis bez přeúčtování
+   * přepsání nespustí. Smí sem jen id, u kterého výpis přeúčtování doložil.
+   *
+   * Vědomá mez: výplatu přeúčtovanou DVAKRÁT (třeba nejdřív srážka, o rok
+   * později přeřazení REITu) by export jen s prvním přeúčtováním, nahraný až
+   * po exportu s oběma, přepsal zpátky na starší čísla — dedupe neví, kterou
+   * verzi má uloženou. REIT přeřazuje jednou ročně, takže to vyžaduje dvě
+   * opravy téže výplaty a nahrání exportů pozpátku; rozdíl jsou jednotky
+   * dolarů a nápravou je nahrát nejnovější export znovu.
+   */
+  supersedes?: string[];
 }
 
 /**

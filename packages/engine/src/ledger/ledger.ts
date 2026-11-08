@@ -666,7 +666,7 @@ export function buildLedger(
           warnings.add(
             'MERGER_INTERPRETIVE',
             'WARNING',
-            `Fúze ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): předpokládám zachování časového testu. Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty (NSS 7 Afs 229/2022).`,
+            `Fúze ${tx.isin} → ${newIsin} (${czDateText(tx.date)}): předpokládám zachování časového testu. Ověř podmínky § 23b/§ 23c a zachování celkové jmenovité hodnoty — když se změnila, časový test se přerušuje.`,
             { txId: tx.id },
           );
         }

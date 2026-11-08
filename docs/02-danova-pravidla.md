@@ -500,6 +500,41 @@ Neúčtující FO volí pro celé zdaňovací období **jednu** soustavu (nelze 
   data, smaže dávku importu a nahraje výpis znovu. Deduplikační otisk příznak
   ZÁMĚRNĚ neobsahuje (je odvozený z popisu, ne z peněz), takže samotné opakované
   nahrání téhož souboru nic nezmění — musí se smazat dávka.
+- **R-07k Výplata amerického REITu a její zpětné přeúčtování.** REIT (v USA
+  „qualified investment entity“, QIE) část výplaty označuje jako *capital gain
+  distribution* — Degiro ji píše jako „QIE Distribution Capital Gain“ a USA z ní
+  srážejí 21 % (FIRPTA) místo 15 %. Pro českého rezidenta je to **pořád podíl
+  na zisku akciové společnosti** podle § 8 odst. 1 písm. a) ZDP: REIT je
+  americká korporace a výplata jde z jejího zisku, i když americké právo zisk
+  dál třídí. Smlouva s USA (č. 32/1994 Sb.) za dividendy v čl. 10 odst. 3
+  považuje příjmy z akcií a příjmy, které stát sídla společnosti daní jako
+  dividendy — americké právo capital gain dividend za dividendu má. Patří tedy
+  do dílčího základu § 8 brutto (R-07b) a srážka se započte jen do stropu
+  15 % podle čl. 10 (R-07c); co je sraženo navíc, se v Česku nezapočte.
+
+  Po skončení roku REIT výplaty **přeřadí** (formulář 1099-DIV) a Degiro to
+  zapíše jako storno původní výplaty a nové zápisy dividendy, vratky kapitálu
+  (R-07h) a capital gain — s pozdějším datem zaúčtování, ale s **datem valuty
+  původní výplaty**. Výsledek patří do roku, kdy peníze přišly (původní
+  výplata), ne do roku přeúčtování — rozhoduje připsání peněz, stejně jako
+  u prodeje podle R-05a; přeřazení nic nového nevyplácí, jen mění povahu
+  částky, která už přišla. Parser proto skládá zápisy podle titulu a data valuty a dřív uloženou
+  původní výplatu nahradí. Přiznání za už podaný rok se tím může změnit; rozdíl
+  bývá v jednotkách dolarů (celková částka se přeřazením nemění, mění se jen
+  podíl vratky kapitálu a sražená daň). **Jistota vysoká** pro zařazení do § 8,
+  **střední** pro datování k původní výplatě (výklad, judikatura není).
+- **R-07l Dividenda vyplacená v akciích** (Degiro: „Dividenda“ a hned
+  „Reinvestice dividendy“ téže částky, sražená daň v penězích). Je to příjem
+  podle § 8 v hodnotě, kterou uvádí broker: příjmem je i nepeněžní příjem
+  (§ 3 odst. 3 ZDP) a sraženou daň započítává R-07c. „Reinvestice“ je nákup
+  akcí za tu výplatu, ne její storno; připsané kusy se evidují z výpisu
+  transakcí. Výchozí výklad je tedy bezpečný (zdanit). Když broker připíše
+  kusy s nulovou cenou (akcie z odštěpení, které USA zdanily jako dividendu),
+  vyjde nabývací cena 0 podle R-04f a příjem se zdaní podruhé při prodeji —
+  přeplatek, ne nedoplatek. Mírnější varianta (nezdanit a kusy nechat za
+  nulu) nemá v zákoně oporu u skutečné dividendy, a proto přepínač není.
+  Do 8. 11. 2026 parser reinvestici četl jako zápornou dividendu a výplatu
+  tiše vynuloval. **Jistota střední.**
 
 ## R-08 Paušální daň (§ 2a, § 7a) — klíčová funkce Danero
 
@@ -1576,5 +1611,6 @@ o jednotky procent.
 - Novely: 349/2023 Sb. (40M + step-up), 32/2025 Sb. (krypto — § 4/1 zj, zk; účinnost 15. 2. 2025), 360/2025 Sb. (zrušení 40M pro CP od 2026; pro krypto trvá), 180/2026 Sb. (od ZO 2027 limity § 38g 100 000 / 40 000 Kč a přirážka 1 400 Kč k paušální záloze 1. pásma)
 - KOOV **625/30.04.25** (Nesrovnal, Nešleha) — osvobození příjmů z úplatného převodu kryptoaktiv, **souhlas GFŘ** se všemi závěry (MiCA vymezení; časové dopady účinnosti; limit 100k jen od 15. 2. 2025; 40M bez krácení; bez step-upu)
 - [GFŘ Informace č. j. 18809/22/7100-40050-205680](https://financnisprava.gov.cz/cs/dane/dane/dan-z-prijmu/informace-stanoviska-a-sdeleni/informace-k-danovemu-posouzeni-transakci-s-kryptomenami) — daňové posouzení transakcí s kryptoměnami (nehmotná movitá věc, § 10; směna krypto-krypto zdanitelná)
-- NSS 7 Afs 229/2022 (přerušení testu při výměně akcií se změnou jmenovité hodnoty)
+- NSS 7 Afs 229/2022 (obligatornost osvobození podle § 4 — R-01; k výměně akcií
+  ani jmenovité hodnotě nic neříká, viz poznámka u R-04c)
 - Odborné: danovky.cz (KPMG), dReport (Deloitte), rozbiteprasatko.cz/zdaneni-investic, danesestandou.cz

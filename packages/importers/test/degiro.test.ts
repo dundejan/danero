@@ -751,16 +751,15 @@ describe('Account.csv: popisy doložené veřejným vzorkem — FR, NL a DE (L2a
     expect(older.transactions.map((t) => t.type)).toEqual(['FEE']);
   });
 
-  it('„PRODUCTWIJZIGING : Koop/Verkoop N @ …“ s částkou 0 je pohyb kusů — chyba o kusech, ne „neznámý popis“', () => {
+  // Do listopadu 2026 končila změna produktu chybou o kusech. Skutečný český
+  // export obou souborů téhož účtu ale ukázal, že Degiro tutéž změnu zapisuje
+  // i do Transactions.csv jako dvojici účetních zápisů — a odtud se kusy berou.
+  it('„PRODUCTWIJZIGING : Koop/Verkoop N @ …“ se přeskočí — kusy jsou v Transactions.csv', () => {
     const result = parseDegiroAccountCsv(DEGIRO_ACCOUNT_NL_SHARE_MOVEMENTS);
-    const productChange = result.errors.filter((e) => e.message.includes('PRODUCTWIJZIGING'));
-    expect(productChange.map((e) => e.line)).toEqual([2, 3]);
-    for (const error of productChange) {
-      expect(error.message).toContain('kusy');
-      expect(error.message).not.toContain('Neznámý popis');
-    }
+    expect(result.errors.filter((e) => e.message.includes('PRODUCTWIJZIGING'))).toEqual([]);
+    expect(result.skipped.map((s) => s.line)).toEqual([2, 3]);
+    for (const skipped of result.skipped) expect(skipped.message).toContain('Transactions.csv');
     expect(result.transactions).toEqual([]);
-    expect(result.skipped).toEqual([]);
   });
 
   it('„STOCK DIVIDEND: Koop N @ 0 EUR“ s částkou 0,00 je pohyb kusů — chyba o kusech, ne „záporná dividenda“', () => {
@@ -771,7 +770,7 @@ describe('Account.csv: popisy doložené veřejným vzorkem — FR, NL a DE (L2a
     expect(stockDividend).toHaveLength(1);
     expect(stockDividend[0]!.line).toBe(4);
     expect(stockDividend[0]!.message).toContain('kusy');
-    expect(result.errors).toHaveLength(3);
+    expect(result.errors).toHaveLength(1);
   });
 
   it('kontrola opačným směrem: skutečná záporná dividenda (korekce) má dál varování, ne chybu o kusech', () => {
@@ -786,17 +785,18 @@ describe('Account.csv: popisy doložené veřejným vzorkem — FR, NL a DE (L2a
     expect(result.warnings[0]!.message).toContain('Záporná dividenda');
   });
 
-  it('kontrola opačným směrem: změna produktu, která NESE peníze, zůstává neznámým popisem k nahlášení', () => {
-    // hláška „nehýbe penězi, ale kusy“ by tu lhala — rozhoduje nulová nebo prázdná částka
+  it('změna produktu, která NESE peníze, se přeskočí taky — nohy se vyruší a kusy jsou v Transactions.csv', () => {
+    // skutečný český export: „Změna produktu: Nákup/Prodej N …@cena“ s částkou
+    // a protizápisem, táž dvojice v Transakcích
     const csv = [
       DEGIRO_ACCOUNT_HEADER_NL,
       '17-02-2026,04:10,17-02-2026,TALLOW LTD,AU0000000004,"PRODUCTWIJZIGING : Koop 300 @ 0,05 EUR",,EUR,"-15,00",EUR,"76,65",',
+      '17-02-2026,04:10,17-02-2026,TALLOW LTD,AU0000000004,"PRODUCTWIJZIGING : Verkoop 300 @ 0,05 EUR",,EUR,"15,00",EUR,"91,65",',
     ].join('\n');
     const result = parseDegiroAccountCsv(csv);
     expect(result.transactions).toEqual([]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.message).toContain('Neznámý popis');
-    expect(result.errors[0]!.message).toContain('nahlaš');
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(2);
   });
 });
 
