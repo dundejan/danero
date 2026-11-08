@@ -5,7 +5,8 @@ import type { Db } from '@/db';
 /**
  * Nastavení hlídacích e-mailů se ukládá každému — Danero je od 8. 10. 2026
  * celé zdarma. Do té doby tu stál test paywallu (`notification-prefs-paywall`)
- * a spolu s ním i jediná kontrola, že server action nastavení opravdu uloží;
+ * a spolu s ním i jediná kontrola, že se nastavení opravdu uloží
+ * (`autoSaveNotificationPrefs`, totéž, co volá `/api/settings/notifications`);
  * ta zůstává.
  *
  * Druhý případ hlídá přechod: účty založené před zrušením plateb dostaly
@@ -48,10 +49,11 @@ describe('nastavení hlídacích e-mailů', () => {
   }, 30_000);
 
   it('uloží se komukoli, bez jakéhokoli tarifu', { timeout: 30_000 }, async () => {
-    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
+    const { autoSaveNotificationPrefs } = await import('@/app/(app)/nastaveni/save');
 
     expect(
-      await autoSaveNotificationPrefsAction(
+      await autoSaveNotificationPrefs(
+        'u-notif',
         form({
           'emaily-zapnute': 'on',
           'upozorneni-casove-testy': 'on',
@@ -76,8 +78,8 @@ describe('nastavení hlídacích e-mailů', () => {
     const { getNotificationPrefs } = await import('@/lib/notifications');
     expect((await getNotificationPrefs(state.db, 'u-notif')).emailEnabled).toBe(false);
 
-    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
-    await autoSaveNotificationPrefsAction(form({ 'emaily-zapnute': 'on' }));
+    const { autoSaveNotificationPrefs } = await import('@/app/(app)/nastaveni/save');
+    await autoSaveNotificationPrefs('u-notif', form({ 'emaily-zapnute': 'on' }));
     expect((await getNotificationPrefs(state.db, 'u-notif')).emailEnabled).toBe(true);
   });
 });

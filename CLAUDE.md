@@ -428,10 +428,18 @@ Reálná anonymizovaná data Jana: `packages/importers/test/fixtures/real/*.csv`
   měl `key={crypto.randomUUID()}` z každého vykreslení (12. 10. 2026). Vzor:
   `lib/action-result.ts` + `nastaveni/ucet/account-forms.tsx`; `defaultOpen`,
   nikdy řízené `open`, a klíč, který se mění jen s novým výsledkem akce.
+- **Auto-save neukládá server action, ale `fetch` na `/api/settings/*`.**
+  S Next 16.4 se odpověď akce uložené rychle po předchozí v prohlížeči
+  nedočetla (server zapsal, spojení zůstalo viset) a fronta uložení na ni
+  čekala navždy — v dev režimu i v produkčním buildu (8. 11. 2026; kvůli tomu
+  produkce do té doby zůstávala na zranitelné 16.3.8). Akci pro auto-save
+  nevracej. A u `fetch` čti tělo odpovědi VŽDY, i u 401: nepřečtenou odpověď
+  prohlížeč nedokončí a spojení drží (`fetchSave` v `lib/leaving-request.ts`).
+  Ze stejné aktualizace: Next 16.4 nestihne krok Zpět/Vpřed za 100 ms, takže
+  `RefreshOnRestore` obnovuje až ve chvíli, kdy `usePathname()` dorovná adresu.
 - **Auto-save neposílá odeslání vždy za sebou.** Odchod ze stránky pošle
-  čekající změnu hned, souběžně s tou, která ještě běží, a jinou cestou
-  (`/api/settings/*` místo server action; na Vercelu jiná funkce) — na server
-  můžou dorazit obráceně. Odeslání proto nese pořadí (`SUBMISSION_FIELD`)
+  čekající změnu hned, souběžně s tou, která ještě běží (na Vercelu jiná
+  invokace funkce) — na server můžou dorazit obráceně. Odeslání proto nese pořadí (`SUBMISSION_FIELD`)
   a řádek nastavení si pamatuje poslední (`save_instance`, `save_sequence`,
   migrace 0047); podmínka je součást zápisu. Kdo přidá další formulář
   s `AutoSubmit`, musí jeho ukládání podmínit stejně (`notSuperseded`

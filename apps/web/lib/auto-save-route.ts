@@ -1,19 +1,16 @@
 import type { AutoSaveOutcome } from '@/lib/save-queue';
 
 /**
- * Uložení formuláře při odchodu ze stránky (`/api/settings/*`).
+ * Uložení formuláře s auto-save (`/api/settings/*`, `app/(app)/nastaveni/save.ts`).
  *
- * Auto-save běžně ukládá server action. Ta ale odchod ze stránky nepřežije:
- * požadavek spuštěný při zavírání panelu prohlížeč zahodí, pokud není označený
- * `keepalive`, a server action tak označit nejde. Rozepsaná částka, kterou
- * člověk nepotvrdil opuštěním pole, proto při odchodu jde sem — obyčejným
- * požadavkem, který zavření panelu přežije. Ukládá totéž a stejně jako akce
- * (`app/(app)/nastaveni/save.ts`).
+ * Obyčejný požadavek, ne server action, ze dvou důvodů: požadavek spuštěný při
+ * zavírání panelu prohlížeč zahodí, pokud není označený `keepalive`, a server
+ * action tak označit nejde; a od Next 16.4 se odpověď akce u uložení rychle po
+ * sobě nedočetla a fronta uložení se zasekla (`components/ui/auto-submit.tsx`).
  *
  * Kdo volá, zjišťuje každá cesta sama a předává sem (`userId`) — strážce
- * tenancy to chce vidět přímo v ní. Server action má navíc vestavěnou
- * kontrolu původu požadavku; tady ji děláme sami: formulář smí poslat jen
- * naše stránka.
+ * tenancy to chce vidět přímo v ní. Server action by měla vestavěnou kontrolu
+ * původu požadavku; tady ji děláme sami: formulář smí poslat jen naše stránka.
  */
 
 /**
@@ -73,8 +70,8 @@ const json = (outcome: AutoSaveOutcome, status: number): Response =>
   Response.json(outcome, { status, headers: { 'Cache-Control': 'no-store' } });
 
 /**
- * Odpověď na uložení při odchodu. `userId` je přihlášený uživatel, jak ho
- * cesta zjistila z relace (`null` = nikdo).
+ * Odpověď na uložení. `userId` je přihlášený uživatel, jak ho cesta zjistila
+ * z relace (`null` = nikdo).
  */
 export async function autoSaveResponse(
   request: Request,

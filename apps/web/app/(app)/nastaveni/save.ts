@@ -37,14 +37,14 @@ import { settingsErrorText, settingsOkText } from './settings-toast';
 /**
  * Uložení obou formulářů nastavení — jedno místo pro všechny cesty, kterými
  * formulář na server přijde: první uložení profilu tlačítkem (server action
- * s přesměrováním), auto-save (server action s výsledkem) a uložení při
- * odchodu ze stránky (`/api/settings/*`, požadavek, který přežije zavření
- * panelu). Všechny tři musí zapsat totéž a stejně: jen pole, která člověk
- * v tom formuláři změnil (`lib/form-baseline.ts`).
+ * s přesměrováním) a auto-save včetně uložení při odchodu ze stránky
+ * (`/api/settings/*`, `lib/auto-save-route.ts`). Obě musí zapsat totéž
+ * a stejně: jen pole, která člověk v tom formuláři změnil
+ * (`lib/form-baseline.ts`).
  *
  * Stránky tu nikdo neznehodnocuje (`revalidatePath`): auto-save si stránku
  * po uložení dotáhne ze serveru sám, jednou po posledním odeslání v řadě.
- * Akce, která by to dělala za něj, by stránku vykreslila po každém odeslání
+ * Uložení, které by to dělalo za něj, by stránku vykreslilo po každém odeslání
  * zvlášť — i uprostřed řady, se stavem, který další odeslání hned mění.
  */
 
@@ -133,13 +133,13 @@ const FOREIGN_FORM: AutoSaveOutcome = {
   foreign: true,
 };
 
-/** Auto-save daňového profilu — totéž pro server action i pro uložení při odchodu. */
+/** Auto-save daňového profilu (`/api/settings/profile`), běžné i při odchodu. */
 export async function autoSaveProfile(userId: string, formData: FormData): Promise<AutoSaveOutcome> {
   if (!(await isOwnSubmission(formData, userId))) return FOREIGN_FORM;
   return profileOutcome(await saveProfile(userId, formData));
 }
 
-/** Auto-save nastavení upozornění — totéž pro server action i pro uložení při odchodu. */
+/** Auto-save nastavení upozornění (`/api/settings/notifications`), běžné i při odchodu. */
 export async function autoSaveNotificationPrefs(
   userId: string,
   formData: FormData,
@@ -168,10 +168,9 @@ function omitUnchanged<Values extends Record<string, unknown>>(
  * Podmínka zápisu: řádek naposledy nezapsalo NOVĚJŠÍ odeslání téhož formuláře.
  *
  * Auto-save posílá odeslání za sebou — až na odchod ze stránky: co čeká, jde
- * hned, souběžně s tím, co ještě běží, a jinou cestou (`/api/settings/*`
- * místo server action; na Vercelu jiná funkce). Na server tak můžou dorazit
- * obráceně. Revize R7 (M3): párování přepnuté tam a zpět a zavřený panel
- * skončily na starší volbě.
+ * hned, souběžně s tím, co ještě běží (na Vercelu jiná invokace funkce).
+ * Na server tak můžou dorazit obráceně. Revize R7 (M3): párování přepnuté tam
+ * a zpět a zavřený panel skončily na starší volbě.
  *
  * Odeslání proto nese pořadí (`SUBMISSION_FIELD`) a řádek si pamatuje to
  * poslední. Podmínka je součást téhož příkazu jako zápis, takže ji dvě

@@ -31,7 +31,7 @@ import {
 } from './form-state';
 import { SettingsToolbar } from './settings-nav';
 import { SettingsToast } from './settings-toast';
-import { autoSaveProfileAction, saveProfileAction, unpinTaxYearAction } from './actions';
+import { saveProfileAction, unpinTaxYearAction } from './actions';
 
 export const metadata = { title: 'Daň a výpočet — Danero' };
 
@@ -488,7 +488,6 @@ export default async function SettingsPage({
               {calculation}
               {/* auto-save: každá změna se uloží sama */}
               <AutoSubmit
-                action={autoSaveProfileAction}
                 endpoint="/api/settings/profile"
                 owner={await ownerTag(user.id)}
               />

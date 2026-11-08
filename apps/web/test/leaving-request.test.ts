@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CHANGED_FIELD } from '@/lib/form-baseline';
-import { fetchLeaving, postLeaving, type LeavingTransport } from '@/lib/leaving-request';
+import { fetchSave, postLeaving, type LeavingTransport } from '@/lib/leaving-request';
 import { SignedOutError, type SaveJob } from '@/lib/save-queue';
 
 /**
@@ -81,14 +81,25 @@ describe('uložení při odchodu: fetch, nebo beacon', () => {
     }
   });
 
+  it('běžné uložení jde stejnou cestou, ale bez keepalive — ten patří jen odchodu', async () => {
+    const { transport: env, fetch, sendBeacon } = transport({ keepalive: true });
+    expect(await fetchSave(ENDPOINT, job(), env)).toMatchObject({ ok: true });
+    expect(sendBeacon).not.toHaveBeenCalled();
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe(ENDPOINT);
+    expect(init).toMatchObject({ method: 'POST', keepalive: false });
+    // visící odpověď nesmí frontu zablokovat navždy
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('vypršelé přihlášení a nesrozumitelnou odpověď hlásí výjimkou', async () => {
-    const signedOut: LeavingTransport = {
-      keepalive: true,
-      fetch: async () => response({ ok: false, message: 'Přihlášení vypršelo.' }, 401),
-    };
-    await expect(fetchLeaving(ENDPOINT, job(), signedOut)).rejects.toBeInstanceOf(SignedOutError);
+    const expired = response({ ok: false, message: 'Přihlášení vypršelo.' }, 401);
+    const signedOut: LeavingTransport = { keepalive: true, fetch: async () => expired };
+    await expect(fetchSave(ENDPOINT, job(), signedOut)).rejects.toBeInstanceOf(SignedOutError);
+    // nepřečtenou odpověď prohlížeč nedokončí a spojení drží
+    expect(expired.bodyUsed).toBe(true);
     const garbled: LeavingTransport = { keepalive: true, fetch: async () => response({ nic: 1 }) };
-    await expect(fetchLeaving(ENDPOINT, job(), garbled)).rejects.toThrow('neznámá odpověď');
+    await expect(fetchSave(ENDPOINT, job(), garbled)).rejects.toThrow('neznámá odpověď');
   });
 
   it('odmítnutou částku vrátí i se jménem pole', async () => {
@@ -97,7 +108,7 @@ describe('uložení při odchodu: fetch, nebo beacon', () => {
       fetch: async () =>
         response({ ok: false, message: 'Zadej částku.', field: 'ostatni-prijmy' }, 422),
     };
-    expect(await fetchLeaving(ENDPOINT, job(), rejected)).toEqual({
+    expect(await fetchSave(ENDPOINT, job(), rejected)).toEqual({
       ok: false,
       message: 'Zadej částku.',
       field: 'ostatni-prijmy',

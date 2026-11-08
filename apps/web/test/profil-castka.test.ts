@@ -152,13 +152,13 @@ describe('tvar částky pro prohlížeč odpovídá tomu, co přijme server', ()
     stav.db = await createPgliteDb();
     const { user } = await import('@/db/schema');
     await stav.db.insert(user).values({ id: 'u-castka', name: 'Jan', email: 'jan@danero.cz' });
-    const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
-    expect(await autoSaveProfileAction(form('12 000 Kč'))).toEqual({
+    const { autoSaveProfile } = await import('@/app/(app)/nastaveni/save');
+    expect(await autoSaveProfile('u-castka', form('12 000 Kč'))).toEqual({
       ok: false,
       message: expect.stringMatching(/Další zdanitelné příjmy zadej jako částku/),
       field: 'ostatni-prijmy',
     });
-    expect(await autoSaveProfileAction(form('12 000'))).toEqual({
+    expect(await autoSaveProfile('u-castka', form('12 000'))).toEqual({
       ok: true,
       message: 'Uloženo. Výpočty se přepočítají podle nového profilu.',
     });

@@ -226,23 +226,20 @@ Všechny jdou pustit lokálně stejným příkazem, jaký stojí ve workflow.
   v kořenovém `package.json`.
   Seznam výjimek (`pnpm.auditConfig.ignoreGhsas`) **má zůstat prázdný**: do
   10. 10. 2026 v něm byla tři hlášení k Vitestu 3, která zmizela povýšením na
-  Vitest 4.
-  ⚠️ **Dočasná výjimka od 22. 10. 2026 (rozhodl Jan): tři hlášení k Next.js
-  ≤ 16.4.0** — dvě vzdálená spuštění kódu (`GHSA-2464-fhr4-w9xw`
-  v optimalizaci obrázků jen se SVG; `GHSA-673q-mjm6-r5xr` jen ve funkcích
-  s `use cache`) a zahlcení přes server actions (`GHSA-p3m5-59mp-jv5r`).
-  SVG optimalizace (`dangerouslyAllowSVG`) ani `use cache` nepoužíváme;
-  zahlcení se nás týká a bereme ho jako vědomé riziko (výpadek, ne únik dat).
-  Opravené Next 16.4.1 i 16.4.2 má přepsaný klientský router a rozbíjí
-  auto-save nastavení: druhé rychlé uložení server přijme, ale klient spojení
-  zahodí po refreshi z prvního (3 testy v `e2e/nastaveni.spec.ts`; na 16.3.8
-  projdou). **Výjimky smaž hned, jak Next přejde na verzi, se kterou
-  `nastaveni.spec.ts` projde** — u každé verze Next to zkus znovu. Pozor na jednu past: audit počítá Vitest mezi
+  Vitest 4, a od 22. 10. do 8. 11. 2026 tři hlášení k Next.js ≤ 16.4.0 (dvě
+  vzdálená spuštění kódu a zahlcení přes server actions). Next 16.4 rozbíjel
+  auto-save nastavení — odpověď server action uložené rychle po předchozí se
+  v prohlížeči nedočetla a fronta uložení se zasekla — a krok Vpřed ukazoval
+  starou stránku. Vyřešilo se to na naší straně (auto-save ukládá obyčejným
+  požadavkem na `/api/settings/*`, obnovení po kroku v historii čeká na
+  směrovač) a přešlo se na 16.4.5. Kdyby nové hlášení výjimku přece jen
+  vyžadovalo, patří sem, s důvodem a podmínkou, kdy ji smazat. Pozor na jednu past: audit počítá Vitest mezi
   „produkční“ závislosti, protože si ho Better Auth deklaruje jako volitelnou
   partnerskou závislost — hlášení k testovacímu nástroji tak umí shodit job,
   i když se do nasazené aplikace nedostane. Řešením je povýšit, ne ignorovat.
-  Úplný `pnpm audit` (včetně vývojových závislostí) má jediný zbylý nález,
-  `braces` přes knip, ke kterému záplata neexistuje.
+  Úplný `pnpm audit` (včetně vývojových závislostí) je od 8. 11. 2026 čistý;
+  nepřímé závislosti Strykeru a typescript-eslint (`fast-uri`, `qs`,
+  `minimatch`) drží na opravených verzích přepisy v `pnpm.overrides`.
 
 ## Nastavení repozitáře na GitHubu
 

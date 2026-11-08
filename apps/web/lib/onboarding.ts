@@ -27,7 +27,7 @@ export async function hasAnyTransaction(db: Db, userId: string): Promise<boolean
  * - Uložení tlačítkem, když profil mezitím vznikl jinde (formulář prvního
  *   uložení otevřený ve dvou panelech), zůstává u formuláře s potvrzením.
  *   Běžné změny existujícího profilu sem nechodí — ukládají se samy a bez
- *   přesměrování (`autoSaveProfileAction`).
+ *   přesměrování (`/api/settings/profile`).
  * - První uložení bez dat pokračuje rovnou ke kroku 2. Dřív končilo na
  *   prázdném přehledu a k nahrání výpisu se šlo přes dvě mezistránky, které
  *   jen říkaly „pokračuj“ (R1B-05).

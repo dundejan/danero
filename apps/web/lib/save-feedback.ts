@@ -100,8 +100,8 @@ export function refreshSettled(): void {
 
 /**
  * Dotáhne stránku ze serveru; slib se splní, až je nový stav na obrazovce.
- * Uložení při odchodu jde mimo směrovač (musí přežít zavření panelu), takže
- * data na obrazovce po něm obnovit někdo musí.
+ * Uložení jde mimo směrovač (`lib/auto-save-route.ts`), takže data na
+ * obrazovce po něm obnovit někdo musí.
  */
 export function refreshFromServer(): Promise<void> {
   const refresh = refresher;

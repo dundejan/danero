@@ -174,22 +174,16 @@ describe('fronta ukládání', () => {
     queue.enqueue(job({ a: '1' }, 'a'));
     sent[2]!.fail(new SignedOutError());
     await settle();
-    // server action hlásí přesměrování na přihlášení výjimkou s otiskem
-    queue.enqueue(job({ a: '1' }, 'a'));
-    sent[3]!.fail(Object.assign(new Error('redirect'), { digest: 'NEXT_REDIRECT;replace;/prihlaseni;307;' }));
-    await settle();
     // formulář jiného účtu, než který je přihlášený, server nezapíše — stránka si stav vyžádá znovu
     queue.enqueue(job({ a: '1' }, 'a'));
-    sent[4]!.finish({ ok: false, message: '', foreign: true });
+    sent[3]!.finish({ ok: false, message: '', foreign: true });
     await settle();
 
     expect(reports.map((report) => report.result)).toEqual([
       { kind: 'rejected', message: 'Zadej částku.', field: 'castka' },
       { kind: 'failed' },
-      // `redirected`: na přihlášení posílá už server (akce); jinak si stránku dotahuje prohlížeč
-      { kind: 'signedOut', redirected: false },
-      { kind: 'signedOut', redirected: true },
-      { kind: 'signedOut', redirected: false },
+      { kind: 'signedOut' },
+      { kind: 'signedOut' },
     ]);
   });
 

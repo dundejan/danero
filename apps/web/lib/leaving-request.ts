@@ -7,11 +7,14 @@ import {
 } from '@/lib/save-queue';
 
 /**
- * Požadavek, kterým auto-save ukládá při odchodu ze stránky (`/api/settings/*`).
+ * Požadavky, kterými auto-save ukládá (`/api/settings/*`) — běžně i při
+ * odchodu ze stránky.
  *
- * Běžně je to `fetch` s `keepalive`: prohlížeč ho dokončí i po zavření panelu
- * a stránka, která žije dál (přechod uvnitř aplikace, skrytý panel), si přečte
- * odpověď. Firefox ale `keepalive` umí až od verze 133 — ve starším volbu
+ * Při odchodu je to `fetch` s `keepalive`: prohlížeč ho dokončí i po zavření
+ * panelu a stránka, která žije dál (přechod uvnitř aplikace, skrytý panel), si
+ * přečte odpověď. Běžné uložení `keepalive` nemá: nepotřebuje ho a prohlížeč
+ * takovým požadavkům dává společný strop velikosti, o který by se dělilo
+ * s uložením při odchodu. Firefox ale `keepalive` umí až od verze 133 — ve starším volbu
  * potichu ignoruje a požadavek se zánikem dokumentu zahodí, takže rozepsaná
  * částka se při zavření panelu neuložila.
  *
@@ -44,21 +47,38 @@ const browserTransport = (): LeavingTransport => ({
       : undefined,
 });
 
-/** Uložení požadavkem, na který přijde odpověď — stránka žije dál. */
-export async function fetchLeaving(
+/**
+ * Jak dlouho čekat na odpověď na uložení (ms). Uložení trvá zlomek vteřiny;
+ * odpověď, která visí déle, už nepřijde — a fronta by na ni čekala navždy
+ * (přesně tak se s Next 16.4 zasekly server actions). Po limitu je z toho
+ * nepotvrzené uložení a stav se dotáhne ze serveru (`resync`).
+ */
+export const SAVE_TIMEOUT_MS = 30_000;
+
+/**
+ * Uložení požadavkem, na který přijde odpověď — stránka žije dál. S `keepalive`
+ * jen při odchodu ze stránky (`postLeaving`).
+ */
+export async function fetchSave(
   endpoint: string,
   job: SaveJob,
   transport: LeavingTransport = browserTransport(),
+  { keepalive = false }: { keepalive?: boolean } = {},
 ): Promise<AutoSaveOutcome> {
   const response = await transport.fetch(endpoint, {
     method: 'POST',
     body: saveBody(job),
-    keepalive: true,
+    keepalive,
+    // limit platí i na čtení těla, ne jen na hlavičky
+    signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
     headers: { Accept: 'application/json' },
   });
+  // Tělo se čte vždycky, i u odpovědi, která výsledek nenese: nepřečtenou
+  // odpověď prohlížeč nedokončí a spojení drží, dokud ji neuklidí (E2E pak
+  // na takové uložení čekalo navždy).
+  const outcome = (await response.json().catch(() => null)) as Partial<AutoSaveOutcome> | null;
   if (response.status === 401) throw new SignedOutError();
-  const outcome = (await response.json()) as Partial<AutoSaveOutcome>;
-  if (typeof outcome.ok !== 'boolean' || typeof outcome.message !== 'string') {
+  if (typeof outcome?.ok !== 'boolean' || typeof outcome.message !== 'string') {
     throw new Error('neznámá odpověď na uložení');
   }
   return { ok: outcome.ok, message: outcome.message, field: outcome.field };
@@ -78,5 +98,5 @@ export async function postLeaving(
   if (unloading && !transport.keepalive && transport.sendBeacon?.(endpoint, saveBody(job))) {
     return null;
   }
-  return fetchLeaving(endpoint, job, transport);
+  return fetchSave(endpoint, job, transport, { keepalive: true });
 }

@@ -26,12 +26,10 @@ import {
   takeLeavingDraft,
   type LeavingDraft,
 } from '@/lib/leaving-draft';
-import { fetchLeaving, postLeaving } from '@/lib/leaving-request';
+import { fetchSave, postLeaving } from '@/lib/leaving-request';
 import { announce, refreshFromServer } from '@/lib/save-feedback';
 import {
   createSaveQueue,
-  saveBody,
-  type AutoSaveOutcome,
   type SaveJob,
   type SaveQueue,
   type SaveReportContext,
@@ -40,7 +38,6 @@ import {
 
 const subscribeToNothing = (): (() => void) => () => {};
 
-type AutoSaveAction = (data: FormData) => Promise<AutoSaveOutcome>;
 type TextField = HTMLInputElement | HTMLTextAreaElement;
 
 /**
@@ -144,9 +141,8 @@ const stalled = new WeakSet<Element>();
  * Všechny mapy níž mají klíč `Scope.key` — formulář (adresa uložení) a účet.
  */
 
-/** Fronty a akce: přežívají nové vykreslení i zánik formuláře. */
+/** Fronty: přežívají nové vykreslení i zánik formuláře. */
 const queues = new Map<string, SaveQueue>();
-const actions = new Map<string, AutoSaveAction>();
 /** Formuláře, které jsou právě na stránce (nástupce zanikajícího se pozná tady). */
 const liveForms = new Map<string, HTMLFormElement>();
 /** Jak formuláři na stránce říct, že jeho odeslání nedopadlo. */
@@ -198,7 +194,6 @@ onAutoSaveSessionEnd({
   reset: () => {
     for (const queue of queues.values()) queue.discard();
     queues.clear();
-    actions.clear();
     autoResent.clear();
     rejections.clear();
     hiddenDrafts.clear();
@@ -488,11 +483,7 @@ function queueFor(scope: Scope): SaveQueue {
   let unknownUpTo = 0;
   let savedUpTo = 0;
   const queue = createSaveQueue({
-    send: (job) => {
-      const action = actions.get(key);
-      // bez akce (formulář mezitím zanikl) jde i běžné odeslání obyčejným požadavkem
-      return action ? action(saveBody(job)) : fetchLeaving(endpoint, job);
-    },
+    send: (job) => fetchSave(endpoint, job),
     sendLeaving: (job, context) => postLeaving(endpoint, job, context),
     report: (result, context) => {
       const sequence = context.job.sequence ?? 0;
@@ -517,17 +508,17 @@ function queueFor(scope: Scope): SaveQueue {
         unsavedHandlers.get(key)?.(result, context);
       }
       // Stránku po uložení dotáhne ze serveru až poslední odeslání v řadě,
-      // jedním dotazem (akce sama stránku nepřekresluje — vykreslila by ji po
-      // každém odeslání zvlášť). Po vypršelém přihlášení tím odeslání při
-      // odchodu skončí na přihlášení; akci tam přesměruje server sám.
-      unrefreshed ||= result.kind === 'saved' || (result.kind === 'signedOut' && !result.redirected);
+      // jedním dotazem (uložení samo stránku nepřekresluje — vykreslila by se
+      // po každém odeslání zvlášť). Po vypršelém přihlášení tím stránka
+      // skončí na přihlášení.
+      unrefreshed ||= result.kind === 'saved' || result.kind === 'signedOut';
       // Zpracování odmítnutí výš mohlo zařadit další odeslání (zbytek změn bez
       // odmítnutého pole) — pak tohle poslední není a rozhodne se až po něm.
       if (!context.last || queue.hasWaiting()) return;
       if (unknown) {
         // Řada doběhla a o některém odeslání nevíme, jak dopadlo — ať bylo
         // poslední, nebo ne (odchod ze stránky, který se nevrátil, zatímco starší
-        // akce doběhla v pořádku). Stav dotahuje `resync`, až když server
+        // odeslání doběhlo v pořádku). Stav dotahuje `resync`, až když server
         // odpovídá; bez formuláře na stránce zbývá jen to říct.
         unknownUpTo = 0;
         unsavedHandlers.get(key)?.({ kind: 'failed' }, context);
@@ -579,10 +570,15 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * Odeslání řadí fronta (`lib/save-queue.ts`): jdou za sebou a změny, které
  * přijdou během ukládání, se slijí do jednoho dalšího. Jméno změněného pole
  * nese každé další odeslání, dokud server tu změnu nepotvrdí — jen tak smí
- * starší odeslání, které dorazí pozdě, zahodit. Ukládá server action
- * `action`; výsledek ukáže hláška v rozložení aplikace
- * (`lib/save-feedback.ts`) a po posledním odeslání v řadě se stránka dotáhne
- * ze serveru. Adresa stránky se nemění a stránka neroluje: dřív uložení
+ * starší odeslání, které dorazí pozdě, zahodit. Ukládá obyčejný požadavek
+ * na `endpoint` (`/api/settings/*`, `lib/auto-save-route.ts`), ne server
+ * action: od Next 16.4 se u uložení rychle po sobě odpověď akce nedočetla
+ * (server zapsal, prohlížeč spojení nedokončil), fronta na ni čekala navždy
+ * a další změny neodešly — v dev režimu i v produkčním buildu (tři testy
+ * v `e2e/nastaveni.spec.ts`, změřeno 8. 11. 2026). Požadavek mimo směrovač
+ * Nextu na jeho vnitřnostech nezávisí. Výsledek ukáže hláška v rozložení
+ * aplikace (`lib/save-feedback.ts`) a po posledním odeslání v řadě se stránka
+ * dotáhne ze serveru. Adresa stránky se nemění a stránka neroluje: dřív uložení
  * končilo přesměrováním s `?ok=` a každá změna přidala krok do historie
  * prohlížeče (změřeno 11. 10. 2026: po třech změnách čtyři stisky Zpět).
  * Formulář se prohlížečem neodesílá nikdy — ani Enterem v textovém poli,
@@ -596,8 +592,8 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  *   (text vrácený po předávce jako změnu neohlásí);
  * - uloží se při odchodu ze stránky — přechod odkazem nebo Zpět uvnitř
  *   aplikace (formulář zaniká), skrytí a zavření panelu, F5, odchod jinam
- *   (`pagehide`, `visibilitychange`). Odchod jde požadavkem, který zavření
- *   panelu přežije (`endpoint`), ne akcí.
+ *   (`pagehide`, `visibilitychange`) požadavkem, který zavření panelu
+ *   přežije (`keepalive`, `lib/leaving-request.ts`).
  * Ukládá se jen text, který prokazatelně psal člověk. Neplatný text server
  * odmítne a hláška to řekne i na stránce, kam člověk mezitím odešel; pole
  * zůstane označené a text v něm, aby šel opravit. Jen při zavírání panelu už
@@ -636,13 +632,10 @@ const READY_ATTRIBUTE = 'data-auto-submit';
  * ukáže jen sdělení, že ho potřebuje (`components/no-script-notice.tsx`).
  */
 export function AutoSubmit({
-  action,
   endpoint,
   owner,
 }: {
-  /** Server action, která formulář uloží a vrátí výsledek. */
-  action: AutoSaveAction;
-  /** Adresa, která uloží totéž obyčejným požadavkem — pro odchod ze stránky. */
+  /** Adresa, která formulář uloží a vrátí výsledek (`/api/settings/*`). */
   endpoint: string;
   /** Označení přihlášeného účtu (`lib/owner-tag.ts`): co si stránka odloží, patří jen jemu. */
   owner: string;
@@ -673,7 +666,6 @@ export function AutoSubmit({
     const scope = scopeOf(endpoint, owner);
     const { key } = scope;
     const queue = queueFor(scope);
-    actions.set(key, action);
     liveForms.set(key, form);
     // Formulář vznikl znovu uprostřed ukládání: server ho vykreslil se stavem
     // z doby před ním. Pole proto dostanou, co právě odchází — jinak by změna
@@ -1041,7 +1033,7 @@ export function AutoSubmit({
         }
       });
     };
-  }, [action, endpoint, owner]);
+  }, [endpoint, owner]);
 
   return <input ref={ref} type="hidden" name={CHANGED_FIELD} />;
 }

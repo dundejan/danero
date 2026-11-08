@@ -19,7 +19,17 @@ import { autoSaveForm, holdScripts, registerWithProfile, signOut } from './helpe
  * stránka hydratuje (skripty jsou pozdržené).
  */
 
-/** Požadavky, kterými stránka něco ukládá (server action = POST). */
+/**
+ * Adresa, na kterou auto-save ukládá (`/api/settings/*`) — běžné uložení
+ * i uložení při odchodu ze stránky jdou stejnou cestou.
+ */
+const SAVE_ROUTE = '**/api/settings/**';
+
+/** Je požadavek uložením formuláře s auto-save? */
+const isSave = (request: { method(): string; url(): string }): boolean =>
+  request.method() === 'POST' && new URL(request.url()).pathname.startsWith('/api/settings/');
+
+/** Požadavky, kterými stránka něco ukládá (POST). */
 function watchSaves(page: Page): string[] {
   const saves: string[] = [];
   page.on('request', (request) => {
@@ -499,7 +509,7 @@ async function holdFirstSave(page: Page): Promise<{ release: () => void; idle: (
   };
   page.on('requestfinished', done);
   page.on('requestfailed', done);
-  await page.route('**/nastaveni**', async (route) => {
+  await page.route(SAVE_ROUTE, async (route) => {
     if (route.request().method() === 'POST' && !held) {
       held = true;
       await released;
@@ -758,12 +768,12 @@ test('nastavení: neplatná částka se nezahodí potichu a nebrzdí ostatní zm
   await expect(income).toHaveValue('abc');
 });
 
-/** Zdrží každé uložení akcí o `ms` — pomalé připojení. Vrací funkci, která zdržování zruší. */
+/** Zdrží každé uložení o `ms` — pomalé připojení. Vrací funkci, která zdržování zruší. */
 async function slowSaves(page: Page, ms: number): Promise<() => Promise<void>> {
-  const pattern = '**/nastaveni**';
+  const pattern = SAVE_ROUTE;
   const handler = async (route: Route): Promise<void> => {
     const request = route.request();
-    if (request.method() === 'POST' && request.headers()['next-action']) {
+    if (request.method() === 'POST') {
       await new Promise((resolve) => setTimeout(resolve, ms));
     }
     await route.continue().catch(() => {});
@@ -997,11 +1007,9 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   // poli, kde byl — i když formulář mezitím vznikl znovu s jiným stavem.
   await matching.focus();
   let mode: 'lost-response' | 'never-sent' = 'lost-response';
-  await page.route('**/nastaveni**', async (route) => {
+  await page.route(SAVE_ROUTE, async (route) => {
     const request = route.request();
-    if (!(request.method() === 'POST' && request.headers()['next-action'])) {
-      return route.continue();
-    }
+    if (request.method() !== 'POST') return route.continue();
     // server změnu zapíše, odpověď se ztratí — nebo požadavek vůbec neodejde
     if (mode === 'lost-response') await route.fetch();
     return route.abort('connectionfailed');
@@ -1045,23 +1053,21 @@ test('nastavení: po ztracené odpovědi ukáže obrazovka, co je opravdu ulože
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
 
   // a další změna se uloží jako obvykle
-  await page.unroute('**/nastaveni**');
+  await page.unroute(SAVE_ROUTE);
   await matching.selectOption('FIFO');
   await expect(savedToast(page)).toBeVisible();
   await expect.poll(() => savedValue(page, MATCHING)).toBe('FIFO');
 });
 
-/** Počítá server actions stránky: kolik jich odešlo a kolik doběhlo. */
-function watchActions(page: Page): { sent: () => number; finished: () => number } {
+/** Počítá uložení stránky: kolik jich odešlo a kolik doběhlo. */
+function watchSaveRequests(page: Page): { sent: () => number; finished: () => number } {
   let sent = 0;
   let finished = 0;
-  const isAction = (request: { method(): string; headers(): Record<string, string> }): boolean =>
-    request.method() === 'POST' && Boolean(request.headers()['next-action']);
   page.on('request', (request) => {
-    if (isAction(request)) sent += 1;
+    if (isSave(request)) sent += 1;
   });
-  const done = (request: Parameters<typeof isAction>[0]): void => {
-    if (isAction(request)) finished += 1;
+  const done = (request: Parameters<typeof isSave>[0]): void => {
+    if (isSave(request)) finished += 1;
   };
   page.on('requestfinished', done);
   page.on('requestfailed', done);
@@ -1073,7 +1079,7 @@ function watchActions(page: Page): { sent: () => number; finished: () => number 
  * zapisuje jen pole jmenovaná a pole, která se liší od stavu při vykreslení;
  * změna vrácená na původní hodnotu je vidět jen podle jména, a to neslo jen
  * odeslání, které ji vracelo. Naměřeno 12. 10. 2026 v Chromiu i Firefoxu:
- * párování FIFO → LIFO (akce běží), zpět na FIFO (čeká), skrytí panelu pošle
+ * párování FIFO → LIFO (uložení běží), zpět na FIFO (čeká), skrytí panelu pošle
  * vrácení cestou odchodu a to se zdrží; po návratu změna kurzů dorazí dřív,
  * server opožděné vrácení zahodí jako starší a zůstane na LIFO — s hláškou
  * „Uloženo“. Každé odeslání proto nese jména všech změn, které server ještě
@@ -1087,42 +1093,33 @@ test('nastavení: vrácená změna se neztratí, když ji předběhne uložení 
   await autoSaveForm(page);
   const matching = page.locator(MATCHING);
   const rates = page.locator('select[name="kurzy"]');
-  const actions = watchActions(page);
+  const saves = watchSaveRequests(page);
 
-  // první akce chvíli běží; uložení při odchodu visí v síti, dokud ho test nepustí
+  // první uložení chvíli běží; druhé (při odchodu) visí v síti, dokud ho test nepustí
   let releaseFirst = (): void => {};
   const firstHeld = new Promise<void>((resolve) => (releaseFirst = resolve));
   let releaseLeaving = (): void => {};
   const leavingHeld = new Promise<void>((resolve) => (releaseLeaving = resolve));
-  let held = false;
-  await page.route('**/nastaveni**', async (route) => {
-    const request = route.request();
-    if (request.method() === 'POST' && request.headers()['next-action'] && !held) {
-      held = true;
-      await firstHeld;
-    }
+  let routed = 0;
+  await page.route(SAVE_ROUTE, async (route) => {
+    // pořadí si požadavek pamatuje sám — `routed` se během čekání posune
+    const order = ++routed;
+    if (order === 1) await firstHeld;
+    if (order === 2) await leavingHeld;
     await route.continue().catch(() => {});
-  });
-  let leavingDone = 0;
-  await page.route('**/api/settings/profile', async (route) => {
-    await leavingHeld;
-    await route.continue().catch(() => {});
-  });
-  page.on('requestfinished', (request) => {
-    if (request.url().includes('/api/settings/profile')) leavingDone += 1;
   });
 
-  await matching.selectOption('LIFO'); // 1: akce běží
+  await matching.selectOption('LIFO'); // 1: uložení běží
   await matching.selectOption('FIFO'); // 2: uživatel si to rozmyslel — čeká
-  await setVisibility(page, 'hidden'); // 2 odchází cestou odchodu a zdrží se
+  await setVisibility(page, 'hidden'); // 2 odchází při odchodu a zdrží se
   releaseFirst();
-  await expect.poll(actions.finished, { message: 'první akce má doběhnout' }).toBe(1);
+  await expect.poll(saves.finished, { message: 'první uložení má doběhnout' }).toBe(1);
   await setVisibility(page, 'visible');
   await expect(matching).toHaveValue('FIFO');
   await rates.selectOption('CNB_DAILY'); // 3: jiné pole, dorazí dřív než 2
-  await expect.poll(actions.finished, { message: 'změna kurzů má doběhnout' }).toBe(2);
+  await expect.poll(saves.finished, { message: 'změna kurzů má doběhnout' }).toBe(2);
   releaseLeaving();
-  await expect.poll(() => leavingDone, { message: 'opožděné vrácení má dorazit' }).toBe(1);
+  await expect.poll(saves.finished, { message: 'opožděné vrácení má dorazit' }).toBe(3);
 
   await autoSaveForm(page);
   await expect(matching).toHaveValue('FIFO');
@@ -1148,7 +1145,7 @@ test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí
   await page.goto('/nastaveni');
   await autoSaveForm(page);
   const matching = page.locator(MATCHING);
-  const actions = watchActions(page);
+  const saves = watchSaveRequests(page);
 
   // jinde (jiný panel téhož účtu) se mezitím změní párování
   const elsewhere = await browser.newContext({ storageState: await page.context().storageState() });
@@ -1167,8 +1164,6 @@ test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí
   let releaseLeaving = (): void => {};
   const leavingHeld = new Promise<void>((resolve) => (releaseLeaving = resolve));
   let refreshes = 0;
-  let leavingSent = 0;
-  let leavingDone = 0;
   await page.route('**/nastaveni**', async (route) => {
     const request = route.request();
     if (request.method() === 'GET' && request.headers()['rsc']) {
@@ -1177,20 +1172,18 @@ test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí
     }
     await route.continue().catch(() => {});
   });
-  await page.route('**/api/settings/profile', async (route) => {
-    leavingSent += 1;
-    await leavingHeld;
+  // druhé uložení je to při odchodu
+  let routed = 0;
+  await page.route(SAVE_ROUTE, async (route) => {
+    if (++routed === 2) await leavingHeld;
     await route.continue().catch(() => {});
-  });
-  page.on('requestfinished', (request) => {
-    if (request.url().includes('/api/settings/profile')) leavingDone += 1;
   });
 
   await page.locator('select[name="kurzy"]').selectOption('CNB_DAILY'); // 1: uloží se, stránka se dotahuje
   await expect.poll(() => refreshes, { message: 'stránka se má po uložení dotahovat' }).toBe(1);
   await typeIncome(page, '4321'); // 2: rozepsaná částka odejde se skrytím panelu
   await setVisibility(page, 'hidden');
-  await expect.poll(() => leavingSent).toBe(1);
+  await expect.poll(saves.sent, { message: 'uložení při odchodu má odejít' }).toBe(2);
   releaseRefresh();
 
   // formulář vznikl znovu se stavem serveru; odchodové uložení pořád běží
@@ -1201,9 +1194,9 @@ test('nastavení: starý panel nepřepíše cizí změnu, ani když se vykreslí
   // návrat do panelu a další změna dřív, než odchodové uložení doběhne
   await setVisibility(page, 'visible');
   await page.locator('select[name="zaklad-casoveho-testu"]').selectOption('trade');
-  await expect.poll(actions.finished, { message: 'mají doběhnout dvě akce' }).toBe(2);
+  await expect.poll(saves.finished, { message: 'mají doběhnout dvě běžná uložení' }).toBe(2);
   releaseLeaving();
-  await expect.poll(() => leavingDone).toBe(1);
+  await expect.poll(saves.finished, { message: 'uložení při odchodu má doběhnout' }).toBe(3);
   await autoSaveForm(page);
 
   expect(await savedValue(page, MATCHING), 'cizí změna párování má zůstat').toBe('LIFO');
@@ -1223,12 +1216,12 @@ test('nastavení: po chybě serveru se uložení částky neopakuje samo', async
   await registerWithProfile(page, { name: 'E2E Chyba serveru', email: 'chyba-serveru@danero.cz' });
   await page.goto('/nastaveni');
   await autoSaveForm(page);
-  const actions = watchActions(page);
+  const saves = watchSaveRequests(page);
   let failing = true;
   let healthChecks = 0;
-  await page.route('**/nastaveni**', async (route) => {
+  await page.route(SAVE_ROUTE, async (route) => {
     const request = route.request();
-    if (failing && request.method() === 'POST' && request.headers()['next-action']) {
+    if (failing && request.method() === 'POST') {
       return route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' });
     }
     return route.continue().catch(() => {});
@@ -1261,7 +1254,7 @@ test('nastavení: po chybě serveru se uložení částky neopakuje samo', async
   await autoSaveForm(page);
   // dost dlouho na to, aby se dřívější smyčka otočila desetkrát
   await page.waitForTimeout(3000);
-  expect(actions.sent(), 'uložení se má zkusit jednou').toBe(1);
+  expect(saves.sent(), 'uložení se má zkusit jednou').toBe(1);
   expect(healthChecks).toBe(1);
   expect(await alertsSeen()).toHaveLength(1);
   // text zůstal v poli, formulář jde ovládat a fokus je tam, kam uživatel přešel
@@ -1273,7 +1266,7 @@ test('nastavení: po chybě serveru se uložení částky neopakuje samo', async
   failing = false;
   await page.locator(MATCHING).selectOption('LIFO');
   await expect(savedToast(page)).toBeVisible();
-  expect(actions.sent()).toBe(2);
+  expect(saves.sent()).toBe(2);
   await expectIncomeSaved(page, '4321');
   expect(await savedValue(page, MATCHING)).toBe('LIFO');
 
@@ -1284,12 +1277,12 @@ test('nastavení: po chybě serveru se uložení částky neopakuje samo', async
   await page.keyboard.press('Tab');
   await expect(unsaved).toBeVisible();
   await autoSaveForm(page);
-  expect(actions.sent()).toBe(3);
+  expect(saves.sent()).toBe(3);
   failing = false;
   await income.focus();
   await page.keyboard.press('Tab');
   await expectIncomeSaved(page, '555');
-  expect(actions.sent()).toBe(4);
+  expect(saves.sent()).toBe(4);
 });
 
 /**
@@ -1313,11 +1306,11 @@ test('nastavení: rozdělané uložení jednoho účtu se nedostane k dalšímu 
     return value;
   });
   const saves = await holdFirstSave(page);
-  // těla odeslání formuláře nastavení (jiné akce na stránce sem nepatří)
+  // těla odeslání formuláře nastavení (jiné požadavky stránky sem nepatří)
   const bodies: string[] = [];
   page.on('request', (request) => {
-    const body = request.method() === 'POST' ? (request.postData() ?? '') : '';
-    if (request.headers()['next-action'] && body.includes('puvodni-stav')) bodies.push(body);
+    const body = isSave(request) ? (request.postData() ?? '') : '';
+    if (body.includes('puvodni-stav')) bodies.push(body);
   });
 
   // uložení účtu A visí v síti; A se odhlásí a přihlásí se B
@@ -1378,8 +1371,8 @@ test('nastavení: změny udělané těsně před odhlášením se ještě ulož�
 
 /**
  * Revize R8 (N1) — přihlášení vypršelo a formulář ukládá. Nesmí skončit
- * zamčený s hláškou o spojení: člověk má skončit na přihlášení, ať ukládá
- * akce, nebo požadavek při odchodu.
+ * zamčený s hláškou o spojení: člověk má skončit na přihlášení, ať jde
+ * o běžné uložení, nebo o uložení při odchodu.
  */
 test('nastavení: uložení po vypršelém přihlášení vede na přihlášení, ne k zámku', async ({
   page,
@@ -1395,7 +1388,7 @@ test('nastavení: uložení po vypršelém přihlášení vede na přihlášení
   };
   const lost = page.getByRole('alert').filter({ hasText: /Spojení vypadlo|Uložení se/ });
 
-  // ── běžné uložení (server action) ────────────────────────────────────────
+  // ── běžné uložení ────────────────────────────────────────────────────────
   await page.goto('/nastaveni');
   await autoSaveForm(page);
   await page.context().clearCookies();

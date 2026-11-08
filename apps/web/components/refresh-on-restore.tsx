@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { cameFromHistoryCache, type NavigationInfo } from '@/lib/restored-page';
 
 /**
@@ -30,9 +30,21 @@ const SKELETON_SELECTOR = '[data-app-skeleton]';
 
 /** Jak dlouho po kroku v historii počkat, než je jasné, co směrovač ukázal (ms). */
 const SETTLE_MS = 100;
+/**
+ * Kolikrát čekání zopakovat, když směrovač krok v historii ještě nedokončil
+ * (stojí na jiné cestě než adresa) — pak už obnovuje tak jako tak.
+ */
+const SETTLE_ATTEMPTS = 30;
 
 export function RefreshOnRestore() {
   const router = useRouter();
+  // Cesta, na které směrovač stojí — adresa se při `popstate` mění hned,
+  // směrovač stránku přepne až po svém kroku v historii.
+  const pathname = usePathname();
+  const routerPath = useRef(pathname);
+  useEffect(() => {
+    routerPath.current = pathname;
+  }, [pathname]);
   useEffect(() => {
     // dokument načtený z mezipaměti při Zpět/Vpřed — efekt běží jednou na
     // načtení dokumentu (rozložení přechody uvnitř aplikace přežívá)
@@ -55,11 +67,22 @@ export function RefreshOnRestore() {
     // krokem v historii (změřeno ve Firefoxu: ve dvou z 28 běhů skončil krok
     // Vpřed načtením celého dokumentu, po úpravě v žádném z 24). Krátké čekání nechá
     // směrovač vykreslit, co má, a další krok v historii čekání ruší.
+    // Čeká se, dokud směrovač nestojí na nové cestě: Next 16.4 krok v historii
+    // za 100 ms nestihl (v dev režimu pokaždé), obnovení pak dotáhlo stránku,
+    // ze které se odcházelo, a nová zůstala stará (8. 11. 2026, test Zpět
+    // a Vpřed v `e2e/nastaveni.spec.ts`).
     const onPopState = () => {
       clearTimeout(deferred);
-      deferred = setTimeout(() => {
+      let attempts = 0;
+      const settle = () => {
+        attempts += 1;
+        if (routerPath.current !== window.location.pathname && attempts < SETTLE_ATTEMPTS) {
+          deferred = setTimeout(settle, SETTLE_MS);
+          return;
+        }
         if (!document.querySelector(SKELETON_SELECTOR)) router.refresh();
-      }, SETTLE_MS);
+      };
+      deferred = setTimeout(settle, SETTLE_MS);
     };
     window.addEventListener('pageshow', onPageShow);
     window.addEventListener('popstate', onPopState);

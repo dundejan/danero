@@ -21,7 +21,6 @@ import { plural } from '@/lib/format';
 import { tidy } from '@/lib/typography';
 import { cn } from '@/lib/utils';
 import { SettingsToolbar } from '../settings-nav';
-import { autoSaveNotificationPrefsAction } from '../actions';
 import { NOTIFICATION_FIELDS, notificationFormEntries } from '../form-state';
 
 export const metadata = { title: 'Upozornění — Danero' };
@@ -373,7 +372,6 @@ export default async function NotificationSettingsPage() {
           </Section>
 
           <AutoSubmit
-            action={autoSaveNotificationPrefsAction}
             endpoint="/api/settings/notifications"
             owner={await ownerTag(user.id)}
           />

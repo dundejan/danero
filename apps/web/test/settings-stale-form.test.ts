@@ -68,8 +68,8 @@ describe('daňový profil: zastaralý panel', () => {
     return profileFormEntries(await profile());
   }
   async function save(form: FormData): Promise<boolean> {
-    const { autoSaveProfileAction } = await import('@/app/(app)/nastaveni/actions');
-    return (await autoSaveProfileAction(form)).ok;
+    const { autoSaveProfile } = await import('@/app/(app)/nastaveni/save');
+    return (await autoSaveProfile(state.userId, form)).ok;
   }
   /** První uložení tlačítkem — končí přesměrováním; vrací jeho cíl. */
   async function saveFirst(form: FormData): Promise<string> {
@@ -236,8 +236,8 @@ describe('upozornění: zastaralý panel', () => {
     return notificationFormEntries(await prefs());
   }
   async function save(form: FormData): Promise<boolean> {
-    const { autoSaveNotificationPrefsAction } = await import('@/app/(app)/nastaveni/actions');
-    return (await autoSaveNotificationPrefsAction(form)).ok;
+    const { autoSaveNotificationPrefs } = await import('@/app/(app)/nastaveni/save');
+    return (await autoSaveNotificationPrefs(state.userId, form)).ok;
   }
 
   it(

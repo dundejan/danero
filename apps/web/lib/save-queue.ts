@@ -70,17 +70,11 @@ export type SaveResult =
   | { kind: 'failed' }
   /**
    * Přihlášení, pod kterým formulář vznikl, už neplatí: vypršelo, nebo je
-   * v prohlížeči mezitím přihlášený někdo jiný. Uloženo není nic.
+   * v prohlížeči mezitím přihlášený někdo jiný. Uloženo není nic. Stránku si
+   * musí ze serveru vyžádat prohlížeč — server ho pošle na přihlášení, nebo
+   * ukáže stránku účtu, který je přihlášený teď.
    */
-  | {
-      kind: 'signedOut';
-      /**
-       * Na přihlášení už přesměrovává server (server action). Jinak si stránku
-       * musí ze serveru vyžádat prohlížeč sám — ten ho tam pošle, nebo ukáže
-       * stránku účtu, který je přihlášený teď.
-       */
-      redirected: boolean;
-    }
+  | { kind: 'signedOut' }
   /**
    * Odesláno cestou, která odpověď nevrací (`navigator.sendBeacon` při zániku
    * dokumentu) — jak dopadlo, se stránka nedozví, takže není co hlásit.
@@ -89,14 +83,6 @@ export type SaveResult =
 
 /** Uložení, které skončilo tím, že uživatel už není přihlášený. */
 export class SignedOutError extends Error {}
-
-/** Výjimka, kterou server action hlásí přesměrování (u auto-save jen na přihlášení). */
-const isActionRedirect = (error: unknown): boolean =>
-  typeof error === 'object' &&
-  error !== null &&
-  'digest' in error &&
-  typeof error.digest === 'string' &&
-  error.digest.startsWith('NEXT_REDIRECT');
 
 interface SaveQueueDeps {
   /** Běžné odeslání, dokud stránka žije. */
@@ -234,15 +220,12 @@ export function createSaveQueue(
     try {
       const outcome = await sending();
       if (outcome === null) return { kind: 'sent' };
-      if (outcome.foreign) return { kind: 'signedOut', redirected: false };
+      if (outcome.foreign) return { kind: 'signedOut' };
       return outcome.ok
         ? { kind: 'saved', message: outcome.message }
         : { kind: 'rejected', message: outcome.message, field: outcome.field };
     } catch (error) {
-      if (isActionRedirect(error)) return { kind: 'signedOut', redirected: true };
-      return error instanceof SignedOutError
-        ? { kind: 'signedOut', redirected: false }
-        : { kind: 'failed' };
+      return error instanceof SignedOutError ? { kind: 'signedOut' } : { kind: 'failed' };
     }
   };
 

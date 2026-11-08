@@ -12,14 +12,13 @@ import { afterProfileSaveUrl, hasAnyTransaction } from '@/lib/onboarding';
 import { isOwnSubmission } from '@/lib/owner-tag';
 import { isCommonPassword } from '@/lib/password-strength';
 import { unpinTaxYear } from '@/lib/portfolio';
-import type { AutoSaveOutcome } from '@/lib/save-queue';
 import { authApi, requireUser } from '@/lib/session';
-import { autoSaveNotificationPrefs, autoSaveProfile, saveProfile } from './save';
+import { saveProfile } from './save';
 
 /**
  * První uložení daňového profilu tlačítkem. Auto-save už existujícího profilu
- * jde přes `autoSaveProfileAction` — nikam nepřesměrovává, takže nemění
- * adresu ani historii prohlížeče.
+ * jde přes `/api/settings/profile` (`AutoSubmit`) — nikam nepřesměrovává,
+ * takže nemění adresu ani historii prohlížeče.
  */
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -41,17 +40,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
       hasData: result.firstSave && (await hasAnyTransaction(await getDb(), user.id)),
     }),
   );
-}
-
-/**
- * Auto-save daňového profilu: uloží a vrátí výsledek, který formulář ukáže
- * sám (`AutoSubmit`). Bez přesměrování — potvrzení v adrese přidávalo každou
- * změnou krok do historie prohlížeče a Zpět z Nastavení chtělo tolik stisků,
- * kolik bylo změn (změřeno 11. 10. 2026).
- */
-export async function autoSaveProfileAction(formData: FormData): Promise<AutoSaveOutcome> {
-  const user = await requireUser();
-  return autoSaveProfile(user.id, formData);
 }
 
 /**
@@ -311,12 +299,3 @@ export async function revokeOtherSessionsAction(): Promise<void> {
   redirect('/nastaveni/ucet?ok=odhlaseno');
 }
 
-/* ── G8d + H3: notifikační preference ────────────────────────────────────── */
-
-/** Auto-save nastavení upozornění — stejně jako u profilu bez přesměrování. */
-export async function autoSaveNotificationPrefsAction(
-  formData: FormData,
-): Promise<AutoSaveOutcome> {
-  const user = await requireUser();
-  return autoSaveNotificationPrefs(user.id, formData);
-}
