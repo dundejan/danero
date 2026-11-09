@@ -385,9 +385,14 @@ const UNPREFIXED_NAMESPACES = new Set([
 const OFFICE_RELATIONSHIPS_NAMESPACE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
-/** `xmlns:p="…"` i `xmlns:p='…'` — XML dovoluje oboje. */
-const NAMESPACE_DECLARATION = /\sxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])(.*?)\2/g;
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * `xmlns:p="…"` i `xmlns:p='…'` — XML dovoluje oboje. Délka hodnoty je
+ * omezená: neuzavřená uvozovka by jinak každé hledání protáhla až na konec
+ * části a tisíce takových deklarací by z jednoho průchodu udělaly kvadratický.
+ */
+const NAMESPACE_DECLARATION = /\sxmlns:([A-Za-z_][\w.-]*)\s*=\s*(?:"([^"]{0,512})"|'([^']{0,512})')/g;
+const PREFIXED_ELEMENT = /<(\/?)([A-Za-z_][\w.-]*):/g;
+const PREFIXED_ATTRIBUTE = /(\s)([A-Za-z_][\w.-]*):([\w.-]+\s*=)/g;
 
 /**
  * Část sešitu přepsaná do tvaru, který exceljs přečte: prvky ze jmenných
@@ -400,25 +405,40 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
  * undefined (reading 'sheets')“ (9. 11. 2026, výpis z eToro). Deklarace
  * `xmlns:x` se nechávají, jak jsou — exceljs jmenné prostory nevyhodnocuje.
  *
+ * Každý přepis je JEDEN průchod, ať je deklarací kolik chce: prefix se
+ * hledá v množině, ne regulárním výrazem na prefix (bezpečnostní revize
+ * 9. 11. 2026 — 40 MB list s tisíci deklarací by jinak pálil čas funkce).
+ *
  * Rozsah deklarací se nesleduje (prefix platí v celé části): přebindovat
  * týž prefix uvnitř dokumentu na jiný jmenný prostor žádný známý generátor
  * sešitů nedělá, a kdyby ano, skončí to jako dnes — sešit, který neumíme.
  */
 export function stripNamespacePrefixes(xml: string): string | null {
-  const declarations = [...xml.matchAll(NAMESPACE_DECLARATION)].map((m) => ({
-    prefix: m[1]!,
-    uri: m[3]!,
-  }));
+  const elementPrefixes = new Set<string>();
+  const relationshipPrefixes = new Set<string>();
   // prefix `r` obsazený jiným jmenným prostorem: přejmenování by atributy smíchalo
-  const rTaken = declarations.some((d) => d.prefix === 'r' && d.uri !== OFFICE_RELATIONSHIPS_NAMESPACE);
+  let rTaken = false;
+  for (const match of xml.matchAll(NAMESPACE_DECLARATION)) {
+    const prefix = match[1]!;
+    const uri = match[2] ?? match[3] ?? '';
+    if (UNPREFIXED_NAMESPACES.has(uri)) elementPrefixes.add(prefix);
+    else if (uri === OFFICE_RELATIONSHIPS_NAMESPACE) relationshipPrefixes.add(prefix);
+    else if (prefix === 'r') rTaken = true;
+  }
+  relationshipPrefixes.delete('r');
+  if (rTaken) relationshipPrefixes.clear();
+  if (elementPrefixes.size === 0 && relationshipPrefixes.size === 0) return null;
+
   let out = xml;
-  for (const { prefix, uri } of declarations) {
-    const p = escapeRegExp(prefix);
-    if (UNPREFIXED_NAMESPACES.has(uri)) {
-      out = out.replace(new RegExp(`<(/?)${p}:`, 'g'), '<$1');
-    } else if (uri === OFFICE_RELATIONSHIPS_NAMESPACE && prefix !== 'r' && !rTaken) {
-      out = out.replace(new RegExp(`(\\s)${p}:([\\w.-]+\\s*=)`, 'g'), '$1r:$2');
-    }
+  if (elementPrefixes.size > 0) {
+    out = out.replace(PREFIXED_ELEMENT, (whole, slash: string, prefix: string) =>
+      elementPrefixes.has(prefix) ? `<${slash}` : whole,
+    );
+  }
+  if (relationshipPrefixes.size > 0) {
+    out = out.replace(PREFIXED_ATTRIBUTE, (whole, space: string, prefix: string, rest: string) =>
+      relationshipPrefixes.has(prefix) ? `${space}r:${rest}` : whole,
+    );
   }
   return out === xml ? null : out;
 }

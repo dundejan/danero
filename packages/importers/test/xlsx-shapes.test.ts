@@ -74,6 +74,19 @@ describe('deklarace jmenných prostorů v různém zápisu', () => {
   });
 });
 
+describe('přepis je jeden průchod, ať je deklarací kolik chce (bezpečnostní revize)', () => {
+  it('tisíce deklarací a neuzavřených uvozovek nad velkou částí doběhnou rychle', () => {
+    const declarations = Array.from({ length: 20_000 }, (_, i) => ` xmlns:p${i}="${MAIN}"`).join('');
+    const unclosed = ' xmlns:z="'.repeat(20_000);
+    const body = '<x:c r="A1"><x:v>1</x:v></x:c>'.repeat(50_000);
+    const xml = `<x:worksheet xmlns:x="${MAIN}"${declarations}${unclosed}><x:sheetData>${body}</x:sheetData></x:worksheet>`;
+    const started = performance.now();
+    const out = stripNamespacePrefixes(xml);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(out).toContain('<sheetData><c r="A1"><v>1</v></c>');
+  });
+});
+
 describe('co je vada souboru a co naše', () => {
   it('sešit, který exceljs nepřečte, je XlsxWorkbookError — import si ho schová', async () => {
     const broken = await buildUnreadableWorkbook();
