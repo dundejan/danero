@@ -100,7 +100,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'file',
     color: '#6AAC0E',
     guide:
-      'Portfolio → History (ikona hodin) → ozubené kolo vpravo nahoře → Account Statement → období → Create → stáhni jako XLS. Platformu měj při stahování přepnutou do angličtiny — eToro výpis překládá a čteme jen anglickou verzi.',
+      'Portfolio → History (ikona hodin) → ozubené kolo vpravo nahoře → Account Statement → období → Create → stáhni jako XLS. Platformu měj při stahování v angličtině nebo češtině — eToro výpis překládá a jiné jazyky nečteme.',
   },
   {
     id: 'ibkr',

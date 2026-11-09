@@ -160,6 +160,71 @@ export const ETORO_HOLDINGS_HEADERS = [
   'ISIN',
 ];
 
+/**
+ * Česká verze výpisu (doloženo skutečným výpisem z 9. 11. 2026): přeložené
+ * listy, sloupce i typy řádků; „Type“ je strojově „Napište“. Listy Holdings
+ * a Glossary a sloupce „Long / Short“, „ISIN“, „NWA“ zůstávají anglicky.
+ */
+export const ETORO_SHEETS_CS = {
+  closed: 'Zavřené pozice',
+  activity: 'Aktivita na účtu',
+  dividends: 'Dividendy',
+};
+
+export const ETORO_CLOSED_HEADERS_CS = [
+  'ID pozice',
+  'Akce',
+  'Long / Short',
+  'Částka',
+  'Jednotky',
+  'Datum otevření',
+  'Datum uzavření',
+  'Pákový efekt',
+  'Poplatky za spread (USD)',
+  'Tržní spread (USD)',
+  'Zisk (USD)',
+  'Směnný kurz při otevření trhu (USD)',
+  'Směnný kurz při uzavření trhu (USD)',
+  'Otevírací kurz',
+  'Uzavírací kurz',
+  'Take Profit kurz',
+  'Stop Loss kurz',
+  'Jednodenní poplatky a dividendy',
+  'Zkopírováno z',
+  'Napište',
+  'ISIN',
+  'Poznámky',
+];
+
+export const ETORO_ACTIVITY_HEADERS_CS = [
+  'Datum',
+  'Napište',
+  'Podrobnosti',
+  'Částka',
+  'Jednotky',
+  'Změna realizovaného kapitálu',
+  'Realizovaný kapitál',
+  'Zůstatek',
+  'ID pozice',
+  'Typ aktiva',
+  'NWA',
+];
+
+export const ETORO_DIVIDEND_HEADERS_CS = [
+  'Datum platby',
+  'Název nástroje',
+  'Čistá přijatá dividenda (USD)',
+  'Net dividends',
+  'Currency',
+  'S daňovým kreditem/bez daňového krdeditu',
+  'Daňový kredit v (AUD)',
+  'Sazba srážkové daně (%)',
+  'Částka srážkové daně (USD)',
+  'ID pozice',
+  'Napište',
+  'ISIN',
+];
+
 /** Řádek podle názvů sloupců — nevyplněné buňky zůstanou prázdné (jako v reálu). */
 const rowFor = (headers: string[], values: Record<string, EtoroCellValue>): EtoroCellValue[] =>
   headers.map((header) => values[header] ?? '');
@@ -619,6 +684,8 @@ export interface EtoroWorkbookSpec {
   dividends?: EtoroSheetSpec | false;
   /** List Holdings (výpis z listopadu 2026) — bez zadání ve workbooku není. */
   holdings?: EtoroSheetSpec;
+  /** Názvy listů jiné jazykové verze (`ETORO_SHEETS_CS`); bez zadání anglicky. */
+  sheetNames?: { closed: string; activity: string; dividends: string };
   /** Doprovodné listy Account Summary / Financial Summary (default ano, jako v reálu). */
   summarySheets?: boolean;
 }
@@ -643,9 +710,9 @@ export async function buildEtoroXlsx(spec: EtoroWorkbookSpec = {}): Promise<Buff
     for (const row of def?.rows ?? []) sheet.addRow(row);
   };
   if (spec.holdings) addSheet(spec.holdings, 'Holdings', ETORO_HOLDINGS_HEADERS);
-  addSheet(spec.closed, 'Closed Positions', ETORO_CLOSED_HEADERS);
-  addSheet(spec.activity, 'Account Activity', ETORO_ACTIVITY_HEADERS);
-  addSheet(spec.dividends, 'Dividends', ETORO_DIVIDEND_HEADERS);
+  addSheet(spec.closed, spec.sheetNames?.closed ?? 'Closed Positions', ETORO_CLOSED_HEADERS);
+  addSheet(spec.activity, spec.sheetNames?.activity ?? 'Account Activity', ETORO_ACTIVITY_HEADERS);
+  addSheet(spec.dividends, spec.sheetNames?.dividends ?? 'Dividends', ETORO_DIVIDEND_HEADERS);
   if (spec.summarySheets !== false) {
     workbook.addWorksheet('Financial Summary').addRow(['Name', 'Amount', 'Tax rate']);
   }

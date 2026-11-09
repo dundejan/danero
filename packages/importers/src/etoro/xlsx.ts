@@ -75,23 +75,74 @@ function toIsoDate(value: string): string | null {
 /** Kanonický tvar hlavičky/hodnoty: trim, lowercase, bez diakritiky, sjednocené mezery. */
 const canon = (value: string): string => normalizeHeader(value).replace(/\s+/g, ' ');
 
-const findSheet = (workbook: ExcelJS.Workbook, name: string): ExcelJS.Worksheet | undefined =>
-  workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === name);
+/**
+ * Názvy listů v jazycích, které čteme (kanonický tvar, bez diakritiky).
+ * eToro překládá sešit do jazyka rozhraní — listy, sloupce i typy řádků;
+ * česká verze doložená skutečným výpisem z 9. 11. 2026 (list Holdings
+ * a Glossary nechává anglicky).
+ */
+const SHEET_NAMES = {
+  closed: ['closed positions', 'zavrene pozice'],
+  activity: ['account activity', 'aktivita na uctu'],
+  dividends: ['dividends', 'dividendy'],
+  holdings: ['holdings'],
+} as const;
+
+const findSheet = (
+  workbook: ExcelJS.Workbook,
+  kind: keyof typeof SHEET_NAMES,
+): ExcelJS.Worksheet | undefined =>
+  workbook.worksheets.find((sheet) =>
+    (SHEET_NAMES[kind] as readonly string[]).includes(canon(sheet.name)),
+  );
 
 /**
- * eToro překládá sešit do jazyka rozhraní — i názvy listů a sloupců („Posiciones
- * cerradas“, „Dividendos“). Čteme jen anglickou verzi, stejně jako ostatní
- * nástroje nad tímhle výpisem; uživatel se musí dozvědět, co s tím.
+ * Hodnoty české verze výpisu → anglický kanonický tvar, se kterým parser
+ * pracuje (typ řádku Account Activity, typ aktiva, typ uzavřené pozice).
+ * Jen znění doložená skutečným výpisem; neznámý český typ skončí chybou
+ * „Neznámý typ operace“ s doslovným zněním, a doplní se.
  */
-export const ETORO_ENGLISH_ONLY =
-  'eToro výpis překládá do jazyka, ve kterém máš platformu — čteme jen anglickou verzi. Přepni si eToro v nastavení do angličtiny a Account Statement stáhni znovu.';
+const CZECH_VALUES: Record<string, string> = {
+  'otevrena pozice': 'open position',
+  'zisk/ztrata z obchodu': 'position closed',
+  dividenda: 'dividend',
+  vklad: 'deposit',
+  'spread pri otevreni a uzavreni': 'opening and closing spread',
+  'zacit kopirovat': 'start copy',
+  'cenne papiry': 'stocks',
+  krypto: 'crypto',
+};
+
+/** Kanonický tvar hodnoty v angličtině, ať je výpis v kterémkoli čteném jazyce. */
+const english = (raw: string): string => {
+  const canonical = canon(raw);
+  return CZECH_VALUES[canonical] ?? canonical;
+};
+
+/**
+ * Typy instrumentu, které parser zná (anglický kanonický tvar). U české verze
+ * se neznámý typ hlásí chybou: nepřeložený „Komodity“ by jinak propadl jako
+ * akcie a derivát by sdílel klíč se spotovou pozicí (viz `derivativeIsin`).
+ * Anglický výpis se chová jako dřív.
+ */
+const KNOWN_TYPES = new Set(['', 'stocks', 'etf', 'crypto', 'cfd', 'currency', 'commodities']);
+
+/** ISIN z buňky: oříznutý, velkými písmeny; prázdno a výplň „-“ → ''. */
+const isinCell = (raw: string): string => {
+  const isin = raw.trim().toUpperCase();
+  return isin === '-' ? '' : isin;
+};
+
+/**
+ * Výpis v jazyce, který nečteme („Posiciones cerradas“, „Dividendos“) —
+ * uživatel se musí dozvědět, co s tím.
+ */
+export const ETORO_LANGUAGE_NOTE =
+  'eToro výpis překládá do jazyka, ve kterém máš platformu — čteme anglickou a českou verzi. Přepni si eToro v nastavení do angličtiny nebo češtiny a Account Statement stáhni znovu.';
 
 /** Sniff: eToro Account Statement poznáme podle listů Closed Positions + Account Activity. */
 export function sniffEtoroXlsx(workbook: ExcelJS.Workbook): boolean {
-  return (
-    findSheet(workbook, 'closed positions') !== undefined &&
-    findSheet(workbook, 'account activity') !== undefined
-  );
+  return findSheet(workbook, 'closed') !== undefined && findSheet(workbook, 'activity') !== undefined;
 }
 
 type HeaderMatcher = (header: string) => boolean;
@@ -100,9 +151,9 @@ const oneOf =
   (header) =>
     names.includes(header);
 const prefixed =
-  (prefix: string): HeaderMatcher =>
+  (...prefixes: string[]): HeaderMatcher =>
   (header) =>
-    header.startsWith(prefix);
+    prefixes.some((prefix) => header.startsWith(prefix));
 
 interface FoundHeader<F extends string> {
   index: number;
@@ -207,23 +258,29 @@ interface Ctx {
   fileIsins: Map<string, Set<string>>;
   /** ISIN pozic podle Position ID z listů Holdings a Dividends (`readPositionIsins`). */
   positionIsins: Map<string, string>;
+  /** Česká verze výpisu — neznámý typ instrumentu je chyba (`KNOWN_TYPES`). */
+  czech: boolean;
 }
 
+/**
+ * Sloupce v angličtině a v české verzi (kanonicky, bez diakritiky). Česká
+ * verze překládá „Type“ strojově jako „Napište“ — tak to ve výpisu opravdu je.
+ */
 const CLOSED_MATCHERS = {
-  positionId: oneOf('position id'),
-  action: oneOf('action'),
+  positionId: oneOf('position id', 'id pozice'),
+  action: oneOf('action', 'akce'),
   longShort: oneOf('long / short', 'long/short'),
-  units: oneOf('units / contracts', 'units/contracts', 'units'),
-  openDate: oneOf('open date'),
-  closeDate: oneOf('close date'),
-  leverage: oneOf('leverage'),
-  openRate: oneOf('open rate'),
-  closeRate: oneOf('close rate'),
-  type: oneOf('type'),
+  units: oneOf('units / contracts', 'units/contracts', 'units', 'jednotky'),
+  openDate: oneOf('open date', 'datum otevreni'),
+  closeDate: oneOf('close date', 'datum uzavreni'),
+  leverage: oneOf('leverage', 'pakovy efekt'),
+  openRate: oneOf('open rate', 'oteviraci kurz'),
+  closeRate: oneOf('close rate', 'uzaviraci kurz'),
+  type: oneOf('type', 'napiste'),
   isin: oneOf('isin'),
-  amount: oneOf('amount'),
+  amount: oneOf('amount', 'castka'),
   profit: (header: string) =>
-    header === 'profit' || header.startsWith('profit(usd') || header.startsWith('profit (usd'),
+    header === 'profit' || prefixed('profit(usd', 'profit (usd', 'zisk (usd', 'zisk(usd')(header),
 } as const;
 type ClosedField = keyof typeof CLOSED_MATCHERS;
 const CLOSED_REQUIRED = [
@@ -262,9 +319,10 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       return col === undefined ? '' : (cells[col] ?? '');
     };
     const parsed = parseAction(at('action'), at('longShort'));
-    const isin = at('isin');
+    const isin = isinCell(at('isin'));
     if (!parsed || isin === '') continue;
-    const typeNorm = canon(at('type'));
+    const typeNorm = english(at('type'));
+    if (ctx.czech && !KNOWN_TYPES.has(typeNorm)) continue;
     const short = canon(at('longShort')).startsWith('short') || parsed.short;
     const derivative =
       short || DERIVATIVE_TYPES.has(typeNorm) || parseLeverage(at('leverage')).gt(1);
@@ -333,7 +391,15 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       continue;
     }
 
-    const typeNorm = canon(cell('type'));
+    const typeNorm = english(cell('type'));
+    if (ctx.czech && !KNOWN_TYPES.has(typeNorm)) {
+      ctx.result.errors.push({
+        line,
+        message: `Uzavřená pozice ${pid} (${parsed.ticker}): neznámý typ instrumentu „${cell('type')}“ — nahlaš nám ho, doplníme podporu.`,
+        raw,
+      });
+      continue;
+    }
     // R-12f/g: CFD/měnové/komoditní pozice, páka i short = derivát vypořádaný
     // rozdílem (MARGIN) — short na spotu eToro nedělá, jen přes CFD
     const derivative = short || DERIVATIVE_TYPES.has(typeNorm) || parseLeverage(cell('leverage')).gt(1);
@@ -349,7 +415,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       isin = parsed.ticker; // krypto: isin = symbol (kanonický klíč napříč brokery)
     } else {
       assetClass = typeNorm === 'etf' ? 'ETF' : 'STOCK';
-      isin = cell('isin') !== '' ? cell('isin') : ctx.requireIsin(parsed.ticker, line);
+      isin = isinCell(cell('isin')) || (ctx.positionIsins.get(pid) ?? ctx.requireIsin(parsed.ticker, line));
     }
     if (isin === null) continue; // error per symbol už je nahlášený
 
@@ -422,8 +488,8 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 }
 
 const HOLDING_MATCHERS = {
-  positionId: oneOf('position id'),
-  type: oneOf('type'),
+  positionId: oneOf('position id', 'id pozice'),
+  type: oneOf('type', 'napiste'),
   isin: oneOf('isin'),
 } as const;
 
@@ -461,7 +527,7 @@ function collectPositionIsins(
       const col = header.columns[field];
       return col === undefined ? '' : (row.cells[col] ?? '').trim();
     };
-    const type = canon(at('type'));
+    const type = english(at('type'));
     if (type !== '' && type !== 'stocks' && type !== 'etf') continue;
     const pid = at('positionId');
     const isin = at('isin').toUpperCase();
@@ -473,13 +539,13 @@ function collectPositionIsins(
 }
 
 const ACTIVITY_MATCHERS = {
-  date: oneOf('date'),
-  type: oneOf('type'),
-  details: oneOf('details'),
-  amount: oneOf('amount'), // přesná shoda — nesmí chytit „Amount in EUR“
-  units: oneOf('units / contracts', 'units/contracts', 'units'),
-  positionId: oneOf('position id'),
-  assetType: oneOf('asset type'),
+  date: oneOf('date', 'datum'),
+  type: oneOf('type', 'napiste'),
+  details: oneOf('details', 'podrobnosti'),
+  amount: oneOf('amount', 'castka'), // přesná shoda — nesmí chytit „Amount in EUR“
+  units: oneOf('units / contracts', 'units/contracts', 'units', 'jednotky'),
+  positionId: oneOf('position id', 'id pozice'),
+  assetType: oneOf('asset type', 'typ aktiva'),
 } as const;
 type ActivityField = keyof typeof ACTIVITY_MATCHERS;
 const ACTIVITY_REQUIRED = ['date', 'type', 'amount', 'positionId'] as const satisfies readonly ActivityField[];
@@ -516,6 +582,35 @@ const ACTIVITY_SKIP_MESSAGES: Record<string, string> = {
 const ACTIVITY_FEE_TYPES = new Set(['commission', 'sdrt', 'overnight fee', 'opening and closing spread']);
 
 /**
+ * ISIN tickeru z otevřených pozic, u kterých ho list Holdings nebo Dividends
+ * uvádí podle Position ID. Pozice otevřená po posledním snímku Holdings v něm
+ * není, ale tentýž titul tam často má starší pozici (skutečný výpis
+ * 9. 11. 2026: 20 titulů by jinak čekalo na ruční ISIN). Běží před oběma
+ * listy, ať z něj má i uzavřená pozice bez ISIN. Dva různé ISIN u tickeru se
+ * nepoužijí — rozhodne `requireIsin`.
+ */
+function learnTickerIsins(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
+  const rows = readSheetRows(sheet);
+  const header = findHeaderRow(rows, ACTIVITY_MATCHERS, ACTIVITY_REQUIRED);
+  if (!header) return;
+  for (let i = header.index + 1; i < rows.length; i += 1) {
+    const cells = rows[i]!.cells;
+    const at = (field: ActivityField): string => {
+      const col = header.columns[field];
+      return col === undefined ? '' : (cells[col] ?? '');
+    };
+    if (english(at('type')) !== 'open position') continue;
+    const assetType = english(at('assetType'));
+    if (assetType !== 'stocks' && assetType !== 'etf') continue;
+    const isin = ctx.positionIsins.get(at('positionId'));
+    const ticker = at('details').split('/')[0]!.trim();
+    if (isin === undefined || ticker === '') continue;
+    const known = ctx.fileIsins.get(ticker) ?? new Set<string>();
+    ctx.fileIsins.set(ticker, known.add(isin));
+  }
+}
+
+/**
  * List Account Activity: bere se z něj jen to, co jinde není — otevřené pozice
  * (BUY bez prodeje, nutné pro časový test), úroky a poplatky. Obchody uzavřených
  * pozic a dividendy jsou pokryté vlastními listy (žádné dvojí počítání).
@@ -542,7 +637,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     };
 
     const typeRaw = cell('type');
-    const t = canon(typeRaw);
+    const t = english(typeRaw);
     if (t === '') {
       ctx.result.skipped.push({ line, message: 'Řádek bez typu operace — přeskočen.', raw });
       continue;
@@ -581,7 +676,15 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         ctx.result.errors.push({ line, message: `Otevřená pozice ${pid}: chybí instrument (Details).`, raw });
         continue;
       }
-      const assetType = canon(cell('assetType'));
+      const assetType = english(cell('assetType'));
+      if (ctx.czech && !KNOWN_TYPES.has(assetType)) {
+        ctx.result.errors.push({
+          line,
+          message: `Otevřená pozice ${pid} (${details}): neznámý typ aktiva „${cell('assetType')}“ — nahlaš nám ho, doplníme podporu.`,
+          raw,
+        });
+        continue;
+      }
       // „AMD/USD“ → AMD; měnové páry (EUR/USD) se nezkracují — pár JE instrument
       const ticker = assetType === 'currency' ? details.trim() : details.split('/')[0]!.trim();
       const amount = parseEtoroNumber(cell('amount'));
@@ -728,7 +831,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       continue;
     }
     if (t.startsWith('corp action')) {
-      if (t.includes('split') && DERIVATIVE_TYPES.has(canon(cell('assetType')))) {
+      if (t.includes('split') && DERIVATIVE_TYPES.has(english(cell('assetType')))) {
         // CFD se daní výsledkem pozice (Profit(USD) z Closed Positions) a kusy
         // do výpočtu nevstupují — štěpení podkladu na něm nic nemění.
         ctx.result.skipped.push({
@@ -784,14 +887,15 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 }
 
 const DIVIDEND_MATCHERS = {
-  date: oneOf('date of payment', 'date'),
-  instrument: oneOf('instrument name', 'instrument'),
-  net: prefixed('net dividend'), // „Net Dividend Received (USD)“ i „Net dividends (EUR)“
-  whtAmount: prefixed('withholding tax amount'),
-  positionId: oneOf('position id'),
+  date: oneOf('date of payment', 'date', 'datum platby'),
+  instrument: oneOf('instrument name', 'instrument', 'nazev nastroje'),
+  // „Net Dividend Received (USD)“, „Net dividends (EUR)“ i „Čistá přijatá dividenda (USD)“
+  net: prefixed('net dividend', 'cista prijata dividenda'),
+  whtAmount: prefixed('withholding tax amount', 'castka srazkove dane'),
+  positionId: oneOf('position id', 'id pozice'),
   isin: oneOf('isin'),
   currency: oneOf('currency'),
-  type: oneOf('type'),
+  type: oneOf('type', 'napiste'),
 } as const;
 type DividendField = keyof typeof DIVIDEND_MATCHERS;
 const DIVIDEND_REQUIRED = ['date', 'net'] as const satisfies readonly DividendField[];
@@ -850,7 +954,7 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     // eToro připisuje (u shortu strhává) držiteli kontraktu. Je to plnění
     // z derivátu — § 10, nikdy § 8 (R-12a) — a „sražená daň“ u něj není
     // zahraniční daň k zápočtu. Přebírá se čistá připsaná částka.
-    if (DERIVATIVE_TYPES.has(canon(cell('type')))) {
+    if (DERIVATIVE_TYPES.has(english(cell('type')))) {
       const symbol = instrument.split('/')[0]!.trim() || instrument;
       const idBase = ctx.contentId(['cfd-dividend', cell('date'), instrument, cell('net'), cell('positionId')]);
       const [open, close] = syntheticDerivativePair({
@@ -922,8 +1026,8 @@ export async function parseEtoroXlsx(
   }
   const { workbook } = opened;
 
-  const closedSheet = findSheet(workbook, 'closed positions');
-  const activitySheet = findSheet(workbook, 'account activity');
+  const closedSheet = findSheet(workbook, 'closed');
+  const activitySheet = findSheet(workbook, 'activity');
   if (!closedSheet || !activitySheet) {
     const missing = [
       ...(closedSheet ? [] : ['„Closed Positions“']),
@@ -931,7 +1035,7 @@ export async function parseEtoroXlsx(
     ].join(' a ');
     result.errors.push({
       line: 1,
-      message: `Soubor neobsahuje list ${missing} — nevypadá jako výpis z eToro (Account Statement). Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}. ${ETORO_ENGLISH_ONLY}`,
+      message: `Soubor neobsahuje list ${missing} — nevypadá jako výpis z eToro (Account Statement). Nalezené listy: ${workbook.worksheets.map((s) => s.name).join(', ') || '(žádné)'}. ${ETORO_LANGUAGE_NOTE}`,
     });
     return result;
   }
@@ -1001,8 +1105,11 @@ export async function parseEtoroXlsx(
     derivativeDividendRows: { count: 0 },
     fileIsins,
     positionIsins: readPositionIsins([findSheet(workbook, 'holdings'), findSheet(workbook, 'dividends')]),
+    czech: canon(closedSheet.name) !== 'closed positions',
   };
-  // pořadí je závazné: Closed Positions plní closedPositionIds, Activity je čte
+  // pořadí je závazné: ISIN tickerů napřed, Closed Positions plní
+  // closedPositionIds, Activity je čte
+  learnTickerIsins(ctx, activitySheet);
   parseClosedSheet(ctx, closedSheet);
   parseActivitySheet(ctx, activitySheet);
   const dividendsSheet = findSheet(workbook, 'dividends');

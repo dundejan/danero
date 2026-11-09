@@ -4,6 +4,14 @@ import { createPgliteDb, type Db } from '@/db';
 import { user } from '@/db/schema';
 import { PLATFORMS } from '@/lib/brokers-catalog';
 import { detectAndParse, importFileIsolated } from '@/lib/import-service';
+import {
+  buildEtoroXlsx,
+  ETORO_ACTIVITY_HEADERS_CS,
+  ETORO_CLOSED_HEADERS_CS,
+  ETORO_DIVIDEND_HEADERS_CS,
+  ETORO_SHEETS_CS,
+} from '../../../packages/importers/test/fixtures/etoro';
+import { withNamespacePrefixes } from '../../../packages/importers/test/fixtures/xlsx-shapes';
 
 /**
  * Degiro a eToro (audit 13. 10. 2026) — webová vrstva: autodetekce a návod
@@ -75,11 +83,60 @@ describe('eToro: výpis v jazyce rozhraní', () => {
    * eToro překládá sešit do jazyka rozhraní včetně názvů listů (španělský má
    * „Posiciones cerradas“ a „Dividendos“ — github.com/sebv593/etoro-taxdown-etl;
    * Koinly i Coinpanda v návodu radí přepnout před exportem do angličtiny).
-   * Parser umí jen anglické názvy, takže to musí říct návod i hláška.
+   * Parser umí anglickou a českou verzi, takže jiný jazyk musí poradit
+   * návod i hláška.
    */
-  it('návod v katalogu říká, že je před stažením potřeba přepnout eToro do angličtiny', () => {
+  it('návod v katalogu říká, že eToro má být v angličtině nebo češtině', () => {
     const etoro = PLATFORMS.find((platform) => platform.id === 'etoro');
-    expect(etoro?.guide).toMatch(/anglič/i);
+    expect(etoro?.guide).toMatch(/angličtině nebo češtině/i);
+  });
+
+  describe('nahrání české verze (výpis z 9. 11. 2026)', () => {
+    let db: Db;
+    beforeAll(async () => {
+      db = await createPgliteDb();
+      await db.insert(user).values({ id: 'u1', name: 'Test', email: 'audit-etoro-cs@example.com' });
+    }, 60_000);
+
+    it('se přečte jako eToro i v tvaru, jak ho eToro ukládá', { timeout: 30_000 }, async () => {
+      const row = (headers: string[], values: Record<string, string>) =>
+        headers.map((header) => values[header] ?? '');
+      const plain = await buildEtoroXlsx({
+        sheetNames: ETORO_SHEETS_CS,
+        closed: {
+          headers: ETORO_CLOSED_HEADERS_CS,
+          rows: [
+            row(ETORO_CLOSED_HEADERS_CS, {
+              'ID pozice': '2000000050',
+              Akce: 'Smyšlená Chemie (SMCH)',
+              'Long / Short': 'Long',
+              Částka: '50.00',
+              Jednotky: '2',
+              'Datum otevření': '04/02/2026 10:00:00',
+              'Datum uzavření': '18/03/2026 15:00:00',
+              'Pákový efekt': '1',
+              'Zisk (USD)': '6.00',
+              'Otevírací kurz': '25',
+              'Uzavírací kurz': '28',
+              Napište: 'Cenné papíry',
+              ISIN: 'US0000000271',
+            }),
+          ],
+        },
+        activity: { headers: ETORO_ACTIVITY_HEADERS_CS, rows: [] },
+        dividends: { headers: ETORO_DIVIDEND_HEADERS_CS, rows: [] },
+      });
+      const buffer = await withNamespacePrefixes(plain);
+      const data = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+
+      const summary = await importFileIsolated(db, 'u1', 'etoro-account-statement.xlsx', data);
+      expect(summary.broker).toBe('etoro');
+      expect(summary.errors).toEqual([]);
+      expect(summary.added).toBe(2);
+    });
   });
 
   describe('nahrání sešitu se španělskými listy', () => {

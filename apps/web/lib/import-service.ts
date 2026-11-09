@@ -1,5 +1,5 @@
 import {
-  ETORO_ENGLISH_ONLY,
+  ETORO_LANGUAGE_NOTE,
   readSheetRows,
   brokerCorrectsEvents,
   brokerIdKey,
@@ -772,7 +772,7 @@ async function importXlsxUpload(
  * jsou přeložené), takže skončí tady. Pozná se aspoň podle jména souboru —
  * eToro ho pojmenovává „etoro-account-statement-…“.
  */
-const ETORO_LANGUAGE_HINT = `Jestli je to výpis z eToro: ${ETORO_ENGLISH_ONLY}`;
+const ETORO_LANGUAGE_HINT = `Jestli je to výpis z eToro: ${ETORO_LANGUAGE_NOTE}`;
 
 /** Kolik názvů listů vypsat do hlášky, ať zůstane čitelná. */
 const MAX_LISTED_SHEETS = 8;

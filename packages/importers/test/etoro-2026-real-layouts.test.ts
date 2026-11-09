@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Transaction } from '@danero/shared';
-import { parseEtoroXlsx } from '../src/etoro/xlsx';
+import { parseEtoroXlsx, sniffEtoroXlsx } from '../src/etoro/xlsx';
+import { loadXlsxWorkbook } from '../src/xlsx';
 import {
   buildEtoroXlsx,
   ETORO_ACTIVITY_HEADERS_2026,
   ETORO_CLOSED_HEADERS_2026,
   ETORO_DIVIDEND_HEADERS_2026,
+  ETORO_ACTIVITY_HEADERS_CS,
+  ETORO_CLOSED_HEADERS_CS,
+  ETORO_DIVIDEND_HEADERS_CS,
   ETORO_HOLDINGS_HEADERS,
+  ETORO_SHEETS_CS,
   type EtoroCellValue,
 } from './fixtures/etoro';
 import { withNamespacePrefixes } from './fixtures/xlsx-shapes';
@@ -284,6 +289,68 @@ describe('eToro 2026: ISIN otevřené pozice z listů Holdings a Dividends', () 
     expect(result.unmappedSymbols).toEqual(['SMFC']);
   });
 
+  it('pozice otevřená po posledním snímku dostane ISIN tickeru z jeho starší pozice', async () => {
+    const later = activityRow({
+      Date: '20/09/2026 11:00:00',
+      Type: 'Open Position',
+      Details: 'SMFE/USD',
+      Amount: '45.00',
+      'Units / Contracts': '1.5',
+      'Position ID': '2000000025',
+      'Asset type': 'Stocks',
+    });
+    const result = await parseEtoroXlsx(
+      await build({
+        activity: [openPosition('2000000024', 'SMFE/USD'), later],
+        holdings: [holding('2000000024', 'US0000000263')],
+      }),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.transactions.map((tx) => (tx.type === 'BUY' ? tx.isin : tx.type))).toEqual([
+      'US0000000263',
+      'US0000000263',
+    ]);
+  });
+
+  it('ticker, kterému pozice dávají dva různé ISIN, se z výpisu nedoplní', async () => {
+    const later = activityRow({
+      Date: '20/09/2026 11:00:00',
+      Type: 'Open Position',
+      Details: 'SMFF/USD',
+      Amount: '45.00',
+      'Units / Contracts': '1.5',
+      'Position ID': '2000000028',
+      'Asset type': 'Stocks',
+    });
+    const result = await parseEtoroXlsx(
+      await build({
+        activity: [openPosition('2000000026', 'SMFF/USD'), openPosition('2000000027', 'SMFF/USD'), later],
+        holdings: [holding('2000000026', 'US0000000297'), holding('2000000027', 'US0000000305')],
+      }),
+    );
+    // pozice se známým ISIN se uloží, ta bez něj čeká na uživatele
+    expect(result.transactions.map((tx) => (tx.type === 'BUY' ? tx.isin : tx.type))).toEqual([
+      'US0000000297',
+      'US0000000305',
+    ]);
+    expect(result.unmappedSymbols).toEqual(['SMFF']);
+  });
+
+  it('uzavřená pozice bez ISIN ho vezme podle Position ID z listu Dividends', async () => {
+    const result = await parseEtoroXlsx(
+      await build({
+        closed: [closedStock('2000000029', { ISIN: '-', Type: 'Stocks' })],
+        dividends: [dividend('2000000029', 'GB0000000025')],
+        activity: [activity('Dividend', 'SMS.L/GBX', '0.40', '2000000029')],
+      }),
+    );
+    expect(result.errors).toEqual([]);
+    expect(legs(result.transactions, '2000000029')).toEqual([
+      expect.objectContaining({ type: 'BUY', isin: 'GB0000000025' }),
+      expect.objectContaining({ type: 'SELL', isin: 'GB0000000025' }),
+    ]);
+  });
+
   it('krypto ze snímku Holdings ISIN nedostane — klíčuje se tickerem', async () => {
     const result = await parseEtoroXlsx(
       await build({
@@ -314,5 +381,200 @@ describe('eToro 2026: celý sešit v tvaru, jak ho eToro opravdu ukládá', () =
     expect(actual.errors).toEqual([]);
     expect(expected.transactions).toHaveLength(4);
     expect(JSON.stringify(actual.transactions)).toBe(JSON.stringify(expected.transactions));
+  });
+});
+
+describe('eToro 2026: česká verze výpisu', () => {
+  /**
+   * eToro sešit překládá do jazyka platformy — listy, sloupce i typy řádků.
+   * Rozložení podle skutečného českého výpisu z 9. 11. 2026; data smyšlená.
+   */
+  const cs = (headers: string[]) => rowOf(headers);
+  const closedCs = cs(ETORO_CLOSED_HEADERS_CS);
+  const activityCs = cs(ETORO_ACTIVITY_HEADERS_CS);
+  const dividendCs = cs(ETORO_DIVIDEND_HEADERS_CS);
+
+  const czech = (): Promise<Buffer> =>
+    buildEtoroXlsx({
+      sheetNames: ETORO_SHEETS_CS,
+      closed: {
+        headers: ETORO_CLOSED_HEADERS_CS,
+        rows: [
+          closedCs({
+            'ID pozice': '2000000040',
+            Akce: 'Smyšlená Chemie (SMCH)',
+            'Long / Short': 'Long',
+            Částka: '50.00',
+            Jednotky: '2',
+            'Datum otevření': '04/02/2026 10:00:00',
+            'Datum uzavření': '18/03/2026 15:00:00',
+            'Pákový efekt': '1',
+            'Zisk (USD)': '6.00',
+            'Otevírací kurz': '25',
+            'Uzavírací kurz': '28',
+            'Zkopírováno z': '-',
+            Napište: 'Cenné papíry',
+            ISIN: 'US0000000271',
+          }),
+          closedCs({
+            'ID pozice': '2000000041',
+            Akce: 'Smyšlený Index Fond (SMIF)',
+            'Long / Short': 'Long',
+            Částka: '30.00',
+            Jednotky: '1',
+            'Datum otevření': '05/02/2026 10:00:00',
+            'Datum uzavření': '19/03/2026 15:00:00',
+            'Pákový efekt': '1',
+            'Zisk (USD)': '-2.40',
+            'Otevírací kurz': '30',
+            'Uzavírací kurz': '27.6',
+            Napište: 'CFD',
+            ISIN: 'US0000000289',
+          }),
+        ],
+      },
+      activity: {
+        headers: ETORO_ACTIVITY_HEADERS_CS,
+        rows: [
+          activityCs({
+            Datum: '06/05/2026 12:00:00',
+            Napište: 'Otevřená pozice',
+            Podrobnosti: 'SMKR/USD',
+            Částka: '20.00',
+            Jednotky: '0.5',
+            'ID pozice': '2000000042',
+            'Typ aktiva': 'Krypto',
+          }),
+          activityCs({
+            Datum: '07/05/2026 12:00:00',
+            Napište: 'Spread při otevření a uzavření',
+            Podrobnosti: 'Otevřít',
+            Částka: '-0.45',
+            Jednotky: '-',
+            'ID pozice': '2000000042',
+            'Typ aktiva': 'Krypto',
+          }),
+          activityCs({
+            Datum: '01/02/2026 09:00:00',
+            Napište: 'Vklad',
+            Podrobnosti: 'Smyšlená platba',
+            Částka: '500',
+            Jednotky: '-',
+            'ID pozice': '-',
+            'Typ aktiva': '-',
+          }),
+          activityCs({
+            Datum: '02/02/2026 09:00:00',
+            Napište: 'Začít kopírovat',
+            Podrobnosti: 'smysleny_obchodnik',
+            Částka: '-200',
+            Jednotky: '-',
+            'ID pozice': '30000002',
+            'Typ aktiva': '-',
+          }),
+          activityCs({
+            Datum: '10/06/2026 09:00:00',
+            Napište: 'Dividenda',
+            Podrobnosti: 'SMCH/USD',
+            Částka: '0.34',
+            Jednotky: '-',
+            'ID pozice': '2000000043',
+            'Typ aktiva': 'Cenné papíry',
+          }),
+        ],
+      },
+      dividends: {
+        headers: ETORO_DIVIDEND_HEADERS_CS,
+        rows: [
+          dividendCs({
+            'Datum platby': '10/06/2026',
+            'Název nástroje': 'Smyšlená Chemie',
+            'Čistá přijatá dividenda (USD)': '0.34',
+            'Net dividends': '0.34',
+            'Sazba srážkové daně (%)': '15 %',
+            'Částka srážkové daně (USD)': '0.06',
+            'ID pozice': '2000000043',
+            Napište: 'Stocks',
+            ISIN: 'US0000000271',
+          }),
+        ],
+      },
+    });
+
+  it('se pozná jako eToro a přečte se', async () => {
+    const buffer = await czech();
+    expect(sniffEtoroXlsx(await loadXlsxWorkbook(buffer))).toBe(true);
+    const result = await parseEtoroXlsx(buffer);
+    expect(result.errors).toEqual([]);
+
+    // akcie: pár nákup/prodej s ISIN z řádku, ceny z Částka a Zisk (USD)
+    const stock = legs(result.transactions, '2000000040');
+    expect(stock).toEqual([
+      expect.objectContaining({ type: 'BUY', isin: 'US0000000271', assetClass: 'STOCK' }),
+      expect.objectContaining({ type: 'SELL', isin: 'US0000000271', assetClass: 'STOCK' }),
+    ]);
+    // CFD (Napište „CFD“): derivát s vlastním klíčem
+    expect(legs(result.transactions, '2000000041')[0]).toMatchObject({ isin: 'CFD:SMIF#2000000041' });
+    // otevřená krypto pozice („Krypto“) s tickerem jako klíčem
+    expect(result.transactions).toContainEqual(
+      expect.objectContaining({ type: 'BUY', isin: 'SMKR', assetClass: 'CRYPTO' }),
+    );
+    // spread je poplatek, dividenda z listu Dividendy se srážkou
+    expect(result.transactions).toContainEqual(expect.objectContaining({ type: 'FEE' }));
+    const dividend = result.transactions.find((tx) => tx.type === 'DIVIDEND');
+    if (dividend?.type !== 'DIVIDEND') throw new Error('čekal jsem dividendu');
+    expect(dividend.gross.toString()).toBe('0.4');
+    expect(dividend.withholdingTax.toString()).toBe('0.06');
+    // vklad a začátek kopírování se přeskočí s vysvětlením
+    expect(result.skipped.map((item) => item.message)).toEqual([
+      expect.stringMatching(/Vklad na účet/),
+      expect.stringMatching(/Začátek kopírování/),
+    ]);
+  });
+
+  it('neznámý český typ instrumentu je chyba, ne akcie', async () => {
+    const result = await parseEtoroXlsx(
+      await buildEtoroXlsx({
+        sheetNames: ETORO_SHEETS_CS,
+        closed: {
+          headers: ETORO_CLOSED_HEADERS_CS,
+          rows: [
+            closedCs({
+              'ID pozice': '2000000044',
+              Akce: 'Smyšlená Komodita (SMKO)',
+              'Long / Short': 'Long',
+              Částka: '10',
+              Jednotky: '1',
+              'Datum otevření': '04/02/2026 10:00:00',
+              'Datum uzavření': '18/03/2026 15:00:00',
+              'Zisk (USD)': '1',
+              'Otevírací kurz': '10',
+              'Uzavírací kurz': '11',
+              Napište: 'Komodity',
+            }),
+          ],
+        },
+        activity: {
+          headers: ETORO_ACTIVITY_HEADERS_CS,
+          rows: [
+            activityCs({
+              Datum: '06/05/2026 12:00:00',
+              Napište: 'Otevřená pozice',
+              Podrobnosti: 'SMKO/USD',
+              Částka: '20.00',
+              Jednotky: '2',
+              'ID pozice': '2000000045',
+              'Typ aktiva': 'Komodity',
+            }),
+          ],
+        },
+        dividends: { headers: ETORO_DIVIDEND_HEADERS_CS, rows: [] },
+      }),
+    );
+    expect(result.transactions).toEqual([]);
+    expect(result.errors.map((error) => error.message)).toEqual([
+      expect.stringMatching(/neznámý typ instrumentu „Komodity“/),
+      expect.stringMatching(/neznámý typ aktiva „Komodity“/),
+    ]);
   });
 });
