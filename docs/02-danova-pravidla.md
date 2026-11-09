@@ -1099,7 +1099,12 @@ praxi (XTB informace pro klienty, Taxomat, Hedger, Taxero) — jistoty uvedeny.
   k úpravám u CFD neexistuje, jistota střední. Bezpečnost: do limitu
   50 000 Kč (R-12q) kladná úprava vstupuje stejně jako dividenda, rozdíl je
   jen v tom, že se k ní nepřičítá zápočet. Importy: eToro (list Dividends,
-  řádky typu CFD).
+  řádky typu CFD). Totéž platí pro **úpravu ceny indexového CFD** za
+  dividendy firem v indexu (eToro: řádek „Index price adjustment“ v Account
+  Activity, u CFD na akciový index): připisuje ji protistrana kontraktu držiteli CFD
+  na index, nikoli emitent — plnění z derivátu, § 10. V listu Dividends se
+  neopakuje, import ji bere z Account Activity (doplněno 9. 11. 2026 podle
+  prvního výpisu, který ji obsahoval).
 - **R-12u Měnové zajištění řízených portfolií (Portu)**: zajištěná portfolia
   Portu drží měnové swapy a forwardy (mimoburzovní deriváty, ISIN s prefixem
   `EZ` přiděluje ANNA DSB) a jejich vypořádání se klientovi připisuje do

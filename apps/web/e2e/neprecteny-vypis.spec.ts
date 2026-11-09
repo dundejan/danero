@@ -52,6 +52,11 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
   await expect(unread.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
   await expect(unread.getByText(/Dáme ti e-mailem vědět/)).toBeVisible();
 
+  // v historii je to TOTÉŽ nahrání, ne druhý rozbitý soubor („neznámý
+  // formát · 1 chyba“ vypadalo jako dvě nahrání, uživatel 9. 11. 2026)
+  await expect(batch).toContainText('Nepřečtený výpis výš — pracujeme na něm');
+  await expect(batch).not.toContainText('neznámý formát');
+
   // řádek historie se po nahrání otevřel sám a říká, co jsme v hlavičce našli
   await expect(batch.locator('details')).toHaveAttribute('open', '');
   await expect(batch).toContainText('Formát souboru nepoznáváme — v hlavičce jsme našli:');

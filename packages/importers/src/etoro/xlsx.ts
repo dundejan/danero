@@ -141,16 +141,28 @@ function parseLeverage(raw: string): Decimal {
   return value !== null && value.gt(0) ? value : d(1);
 }
 
-/** „Buy NVIDIA Corporation (NVDA)“ i starší „Buy NVDA“ → směr pozice + ticker. */
-function parseAction(action: string): { short: boolean; ticker: string } | null {
-  const match = /^(buy|sell)\s+(.+)$/i.exec(action.trim());
-  if (!match) return null;
-  const rest = match[2]!.trim();
-  const paren = /\(([^()]+)\)\s*$/.exec(rest);
-  return {
-    short: match[1]!.toLowerCase() === 'sell',
-    ticker: (paren ? paren[1]! : rest).trim(),
-  };
+/**
+ * Pole Action → směr pozice + ticker. Tvary: „Buy NVIDIA Corporation (NVDA)“,
+ * starší „Buy NVDA“ a výpis z listopadu 2026 bez slovesa „Smyšlená Strojírna (SMS.L)“ —
+ * u něj směr nese jen sloupec Long / Short (`longShort`), a když v něm není
+ * „Long“ ani „Short“, řádek nečteme (směr hádat nesmíme).
+ */
+function parseAction(action: string, longShort: string): { short: boolean; ticker: string } | null {
+  const trimmed = action.trim();
+  const match = /^(buy|sell)\s+(.+)$/i.exec(trimmed);
+  if (match) {
+    const rest = match[2]!.trim();
+    const paren = /\(([^()]+)\)\s*$/.exec(rest);
+    return {
+      short: match[1]!.toLowerCase() === 'sell',
+      ticker: (paren ? paren[1]! : rest).trim(),
+    };
+  }
+  const direction = canon(longShort);
+  const paren = /\S\s*\(([^()]+)\)\s*$/.exec(trimmed);
+  if (!paren || (direction !== 'long' && direction !== 'short')) return null;
+  const ticker = paren[1]!.trim();
+  return ticker === '' ? null : { short: direction === 'short', ticker };
 }
 
 /** Typy Closed Positions / Asset type, které jsou deriváty (R-12, vypořádání rozdílem). */
@@ -193,6 +205,8 @@ interface Ctx {
    * derivát) — otevřená pozice téhož tickeru v Account Activity ISIN nemá.
    */
   fileIsins: Map<string, Set<string>>;
+  /** ISIN pozic podle Position ID z listů Holdings a Dividends (`readPositionIsins`). */
+  positionIsins: Map<string, string>;
 }
 
 const CLOSED_MATCHERS = {
@@ -247,7 +261,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       const col = header.columns[field];
       return col === undefined ? '' : (cells[col] ?? '');
     };
-    const parsed = parseAction(at('action'));
+    const parsed = parseAction(at('action'), at('longShort'));
     const isin = at('isin');
     if (!parsed || isin === '') continue;
     const typeNorm = canon(at('type'));
@@ -278,7 +292,7 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     ctx.closedPositionIds.add(pid);
 
     const action = cell('action');
-    const parsed = parseAction(action);
+    const parsed = parseAction(action, cell('longShort'));
     if (!parsed) {
       ctx.result.errors.push({
         line,
@@ -373,9 +387,11 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     // byl kurz měny při otevření blízko jedné (EUR/USD na podzim 2022). Stejně
     // se počítá i otevřená pozice z listu Account Activity, takže se obě verze
     // téže nohy shodnou. Bez těch sloupců (starší výpisy) zbývají kurzy.
+    // Amount 0 (kusy získané bez investice) je nákup za nulu, ne důvod
+    // spadnout na kurzy — ty jsou v měně kotace a vydávaly by se za USD.
     let openPrice = openRate;
     let closePrice = closeRate;
-    if (amount !== null && amount.gt(0) && profit !== null) {
+    if (amount !== null && amount.gte(0) && profit !== null) {
       openPrice = amount.div(units);
       closePrice = Decimal.max(amount.plus(profit), 0).div(units);
     }
@@ -402,6 +418,57 @@ function parseClosedSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       pricePerShare: closePrice.toString(),
       tradeDate: closeDate,
     });
+  }
+}
+
+const HOLDING_MATCHERS = {
+  positionId: oneOf('position id'),
+  type: oneOf('type'),
+  isin: oneOf('isin'),
+} as const;
+
+/** Tvar ISIN: dvě písmena země, devět znaků, kontrolní číslice. */
+const ISIN_SHAPE = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
+
+/**
+ * ISIN pozic podle Position ID z listů, které ho u pozice uvádějí — Holdings
+ * (snímek držených pozic, výpis z listopadu 2026) a Dividends. Account
+ * Activity ho u otevřené pozice nenese, takže pozice pak nepotřebuje
+ * číselník. Jen akcie a ETF; krypto se klíčuje tickerem a deriváty mají
+ * vlastní klíč (viz `derivativeIsin`). Pozice, které listy přiřazují dva
+ * různé ISIN, se vynechá (rozhodne číselník nebo uživatel).
+ */
+function readPositionIsins(sheets: (ExcelJS.Worksheet | undefined)[]): Map<string, string> {
+  const isins = new Map<string, string>();
+  const conflicting = new Set<string>();
+  for (const sheet of sheets) {
+    if (sheet) collectPositionIsins(sheet, isins, conflicting);
+  }
+  for (const pid of conflicting) isins.delete(pid);
+  return isins;
+}
+
+function collectPositionIsins(
+  sheet: ExcelJS.Worksheet,
+  isins: Map<string, string>,
+  conflicting: Set<string>,
+): void {
+  const rows = readSheetRows(sheet);
+  const header = findHeaderRow(rows, HOLDING_MATCHERS, ['positionId', 'isin']);
+  if (!header) return;
+  for (const row of rows.slice(header.index + 1)) {
+    const at = (field: keyof typeof HOLDING_MATCHERS): string => {
+      const col = header.columns[field];
+      return col === undefined ? '' : (row.cells[col] ?? '').trim();
+    };
+    const type = canon(at('type'));
+    if (type !== '' && type !== 'stocks' && type !== 'etf') continue;
+    const pid = at('positionId');
+    const isin = at('isin').toUpperCase();
+    if (pid === '' || pid === '-' || !ISIN_SHAPE.test(isin)) continue;
+    const known = isins.get(pid);
+    if (known !== undefined && known !== isin) conflicting.add(pid);
+    else isins.set(pid, isin);
   }
 }
 
@@ -436,10 +503,17 @@ const ACTIVITY_SKIP_MESSAGES: Record<string, string> = {
   'stop copy': 'Konec kopírování obchodníka — přesun peněz uvnitř účtu, obchody kopie jsou ve výpisu samostatně.',
   'overnight refund':
     'Vratka overnight poplatku — záporný poplatek zatím neumíme zaúčtovat; případně si o ni sniž výdaje ručně.',
+  'account balance to mirror':
+    'Převod zůstatku do kopírovaného portfolia — přesun peněz uvnitř účtu, obchody kopie jsou ve výpisu samostatně.',
 };
 
-/** Řádky Account Activity → FEE (kladná částka = náklad). */
-const ACTIVITY_FEE_TYPES = new Set(['commission', 'sdrt', 'overnight fee']);
+/**
+ * Řádky Account Activity → FEE (kladná částka = náklad). „Opening and Closing
+ * Spread“ (výpis z listopadu 2026, Details „On Open“/„On Close“) je poplatek
+ * za otevření a uzavření pozice: ubírá ze zůstatku a v Profit(USD) uzavřené
+ * pozice ani v jejích kurzech započtený není — stejně jako Commission.
+ */
+const ACTIVITY_FEE_TYPES = new Set(['commission', 'sdrt', 'overnight fee', 'opening and closing spread']);
 
 /**
  * List Account Activity: bere se z něj jen to, co jinde není — otevřené pozice
@@ -539,7 +613,7 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
         isin = ticker;
       } else {
         assetClass = assetType === 'etf' ? 'ETF' : 'STOCK';
-        isin = ctx.requireIsin(ticker, line);
+        isin = ctx.positionIsins.get(pid) ?? ctx.requireIsin(ticker, line);
       }
       if (isin === null) continue;
       ctx.push(line, raw, {
@@ -583,6 +657,16 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
     if (ACTIVITY_FEE_TYPES.has(t)) {
       const date = toIsoDate(cell('date'));
       const amount = parseEtoroNumber(cell('amount'));
+      // kladný spread by byla vratka — jako náklad (abs) by výdaje nadsadila
+      if (t === 'opening and closing spread' && amount !== null && amount.gt(0)) {
+        ctx.result.skipped.push({
+          line,
+          message:
+            'Vratka poplatku za spread — kladný poplatek zatím neumíme zaúčtovat; případně si o ni sniž výdaje ručně.',
+          raw,
+        });
+        continue;
+      }
       if (!date) {
         ctx.result.errors.push({ line, message: `${typeRaw}: neplatné datum „${cell('date')}“.`, raw });
         continue;
@@ -603,6 +687,38 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       continue;
     }
 
+    // R-12t: úprava ceny indexového CFD za dividendy firem v indexu — totéž
+    // plnění od protistrany kontraktu jako dividendová úprava u CFD na akcii
+    // (§ 10, nikdy § 8). V listu Dividends se neopakuje, bere se odsud.
+    if (t === 'index price adjustment') {
+      const date = toIsoDate(cell('date'));
+      const amount = parseEtoroNumber(cell('amount'));
+      if (!date || amount === null) {
+        ctx.result.errors.push({
+          line,
+          message: `${typeRaw}: neplatné datum „${cell('date')}“ nebo chybí částka.`,
+          raw,
+        });
+        continue;
+      }
+      const details = cell('details');
+      const symbol = details.split('/')[0]!.trim() || details;
+      const idBase = ctx.contentId(['index-adjustment', cell('date'), details, cell('amount'), pid]);
+      const [open, close] = syntheticDerivativePair({
+        idBase,
+        isin: `${derivativeIsin(symbol)}#${idBase}`,
+        symbol,
+        openDate: date,
+        closeDate: date,
+        net: amount,
+        currency: LEDGER_CURRENCY,
+        note: 'Úprava ceny indexového CFD za dividendy (plnění z derivátu, R-12t)',
+      });
+      ctx.push(line, raw, open);
+      ctx.push(line, raw, close);
+      continue;
+    }
+
     if (t === 'staking') {
       ctx.result.warnings.push({
         line,
@@ -612,7 +728,15 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       continue;
     }
     if (t.startsWith('corp action')) {
-      if (t.includes('split')) {
+      if (t.includes('split') && DERIVATIVE_TYPES.has(canon(cell('assetType')))) {
+        // CFD se daní výsledkem pozice (Profit(USD) z Closed Positions) a kusy
+        // do výpočtu nevstupují — štěpení podkladu na něm nic nemění.
+        ctx.result.skipped.push({
+          line,
+          message: `Split ${cell('details')} u pozice CFD — výsledek CFD se bere ze zisku pozice, štěpení podkladu na něj vliv nemá.`,
+          raw,
+        });
+      } else if (t.includes('split')) {
         // Details nese poměr („NVDA/USD 10:1“); kusy otevřené pozice v tomhle
         // listu jsou z doby PŘED štěpením. Jestli jsou kusy v Closed Positions
         // po štěpení přepočtené, doložené není — proto akci neúčtujeme sami.
@@ -876,6 +1000,7 @@ export async function parseEtoroXlsx(
     activityDividendRows: { count: 0 },
     derivativeDividendRows: { count: 0 },
     fileIsins,
+    positionIsins: readPositionIsins([findSheet(workbook, 'holdings'), findSheet(workbook, 'dividends')]),
   };
   // pořadí je závazné: Closed Positions plní closedPositionIds, Activity je čte
   parseClosedSheet(ctx, closedSheet);

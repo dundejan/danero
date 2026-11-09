@@ -415,6 +415,9 @@ export default async function ImportPage({
                   issueViews={issueViews}
                   olderHref={olderHref}
                   highlightedBatchIds={uploadedBatchIds(params)}
+                  unreadBatchIds={
+                    new Set(unreadCases.filter((item) => item.status === 'open').map((item) => item.batchId))
+                  }
                 />
                 {aliasItems.length > 0 && (
                   <Section

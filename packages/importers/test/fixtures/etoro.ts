@@ -117,6 +117,49 @@ export const ETORO_DIVIDEND_HEADERS_EU = [
   'ISIN',
 ];
 
+/**
+ * Výpis z listopadu 2026 (generátor nad System.IO.Packaging: prefixy
+ * jmenných prostorů, absolutní cíle vztahů — viz `withNamespacePrefixes`).
+ * Closed Positions už nemá „Profit(EUR)“ a pole Action nese jen název
+ * titulu s tickerem, bez „Buy/Sell“; přibyl list Holdings se snímky
+ * držených pozic a ISIN. Opsané je jen rozložení, ne data.
+ */
+export const ETORO_CLOSED_HEADERS_2026 = ETORO_CLOSED_HEADERS.filter((header) => header !== 'Profit(EUR)');
+
+export const ETORO_ACTIVITY_HEADERS_2026 = ETORO_ACTIVITY_HEADERS.map((header) =>
+  header === 'Units' ? 'Units / Contracts' : header,
+);
+
+export const ETORO_DIVIDEND_HEADERS_2026 = [
+  'Date of Payment',
+  'Instrument Name',
+  'Net Dividend Received (USD)',
+  'Net dividends',
+  'Currency',
+  'Franked/Unfranked',
+  'Franking Credits (AUD)',
+  'Withholding Tax Rate (%)',
+  'Withholding Tax Amount (USD)',
+  'Position ID',
+  'Type',
+  'ISIN',
+];
+
+export const ETORO_HOLDINGS_HEADERS = [
+  'Snapshot Date',
+  'Asset',
+  'Position ID',
+  'Direction',
+  'Open Date',
+  'Leverage',
+  'Open Rate',
+  'Units',
+  'Current Rate',
+  'Value in USD',
+  'Type',
+  'ISIN',
+];
+
 /** Řádek podle názvů sloupců — nevyplněné buňky zůstanou prázdné (jako v reálu). */
 const rowFor = (headers: string[], values: Record<string, EtoroCellValue>): EtoroCellValue[] =>
   headers.map((header) => values[header] ?? '');
@@ -574,6 +617,8 @@ export interface EtoroWorkbookSpec {
   closed?: EtoroSheetSpec | false;
   activity?: EtoroSheetSpec | false;
   dividends?: EtoroSheetSpec | false;
+  /** List Holdings (výpis z listopadu 2026) — bez zadání ve workbooku není. */
+  holdings?: EtoroSheetSpec;
   /** Doprovodné listy Account Summary / Financial Summary (default ano, jako v reálu). */
   summarySheets?: boolean;
 }
@@ -597,6 +642,7 @@ export async function buildEtoroXlsx(spec: EtoroWorkbookSpec = {}): Promise<Buff
     if (def?.headers !== null) sheet.addRow(def?.headers ?? defaultHeaders);
     for (const row of def?.rows ?? []) sheet.addRow(row);
   };
+  if (spec.holdings) addSheet(spec.holdings, 'Holdings', ETORO_HOLDINGS_HEADERS);
   addSheet(spec.closed, 'Closed Positions', ETORO_CLOSED_HEADERS);
   addSheet(spec.activity, 'Account Activity', ETORO_ACTIVITY_HEADERS);
   addSheet(spec.dividends, 'Dividends', ETORO_DIVIDEND_HEADERS);

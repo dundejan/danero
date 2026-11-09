@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseEtoroXlsx, sniffEtoroXlsx } from '../src/etoro/xlsx';
 import {
   loadXlsxWorkbook,
+  relativeRelationshipTargets,
   stripNamespacePrefixes,
   XlsxUnreadableError,
   XlsxWorkbookError,
@@ -57,6 +58,68 @@ describe('sešit s prefixy jmenných prostorů (.NET OpenXML SDK)', () => {
         `<sheets><sheet name="A" sheetId="1" r:id="rId1"/></sheets>` +
         `<mc:AlternateContent/></workbook>`,
     );
+  });
+});
+
+describe('tvar skutečného výpisu eToro z 9. 11. 2026 (System.IO.Packaging)', () => {
+  /** Sešit s tabulkou v listu — skutečný výpis jich má osm. */
+  async function workbookWithTable(): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.company = 'Smyšlená s. r. o.';
+    const sheet = workbook.addWorksheet('Closed Positions');
+    sheet.addTable({
+      name: 'ClosedPositions',
+      ref: 'A1',
+      columns: [{ name: 'Position ID' }, { name: 'Action' }],
+      rows: [
+        ['1000000001', 'Smyšlená Firma (SMF)'],
+        ['1000000002', 'Jiná Firma (JNF)'],
+      ],
+    });
+    const raw = await workbook.xlsx.writeBuffer();
+    return Buffer.from(raw as ArrayBuffer);
+  }
+
+  it('vlastnosti dokumentu s prefixem `ap:` a tabulky s absolutním cílem se přečtou', async () => {
+    const prefixed = await withNamespacePrefixes(await workbookWithTable());
+    // bez přepisu exceljs padá — tím je test o něčem
+    await expect(
+      new ExcelJS.Workbook().xlsx.load(prefixed as unknown as ArrayBuffer),
+    ).rejects.toThrow();
+
+    const workbook = await loadXlsxWorkbook(prefixed);
+    expect(workbook.company).toBe('Smyšlená s. r. o.');
+    const sheet = workbook.getWorksheet('Closed Positions')!;
+    expect(sheet.getCell('B3').value).toBe('Jiná Firma (JNF)');
+  });
+
+  it('absolutní cíl vztahu se přepíše relativně k části, které vztahy patří', () => {
+    const rels =
+      `<Relationships xmlns="urn:r"><Relationship Id="rId1" Target="/xl/tables/table1.xml"/>` +
+      `<Relationship Id="rId2" Target='/xl/worksheets/sheet2.xml'/></Relationships>`;
+    expect(relativeRelationshipTargets(rels, 'xl/worksheets/_rels/sheet1.xml.rels')).toBe(
+      `<Relationships xmlns="urn:r"><Relationship Id="rId1" Target="../tables/table1.xml"/>` +
+        `<Relationship Id="rId2" Target='sheet2.xml'/></Relationships>`,
+    );
+    expect(
+      relativeRelationshipTargets('<R Target="/xl/workbook.xml"/>', '_rels/.rels'),
+    ).toBe('<R Target="xl/workbook.xml"/>');
+  });
+
+  it('cíl se počítá od kořene balíčku, ne od pracovního adresáře procesu', () => {
+    expect(relativeRelationshipTargets('<R Target="/"/>', 'xl/_rels/workbook.xml.rels')).toBe('<R Target=".."/>');
+    expect(
+      relativeRelationshipTargets('<R Target="/xl/../xl/styles.xml"/>', 'xl/_rels/workbook.xml.rels'),
+    ).toBe('<R Target="styles.xml"/>');
+  });
+
+  it('relativní cíle a odkazy ven (`//host`, URL) zůstávají', () => {
+    expect(
+      relativeRelationshipTargets(
+        '<R Target="worksheets/sheet1.xml"/><R Target="//host/a" TargetMode="External"/><R Target="https://x.test/"/>',
+        'xl/_rels/workbook.xml.rels',
+      ),
+    ).toBeNull();
   });
 });
 

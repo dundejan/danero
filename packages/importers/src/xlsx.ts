@@ -1,4 +1,5 @@
 import { constants as zlibConstants, inflateRawSync } from 'node:zlib';
+import path from 'node:path';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 
@@ -374,12 +375,16 @@ const workbookError = (error: unknown): XlsxWorkbookError =>
 /**
  * Jmenné prostory, ve kterých exceljs poznává prvky jen podle JMÉNA BEZ
  * PREFIXU: hlavní SpreadsheetML (sešit, listy, styly, sdílené texty),
- * vztahy balíčku a typy obsahu.
+ * vztahy balíčku, typy obsahu a rozšířené vlastnosti dokumentu
+ * (`docProps/app.xml` — skutečný výpis eToro 9. 11. 2026 má `<ap:Properties>`
+ * a exceljs na něm padá „reading 'company'“). Vlastnosti jádra (`cp:`)
+ * sem nepatří: exceljs je čte s prefixem `cp:` i bez něj.
  */
 const UNPREFIXED_NAMESPACES = new Set([
   'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
   'http://schemas.openxmlformats.org/package/2006/relationships',
   'http://schemas.openxmlformats.org/package/2006/content-types',
+  'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties',
 ]);
 /** Atributy z tohohle jmenného prostoru čte exceljs jen jako `r:id`. */
 const OFFICE_RELATIONSHIPS_NAMESPACE =
@@ -443,18 +448,44 @@ export function stripNamespacePrefixes(xml: string): string | null {
   return out === xml ? null : out;
 }
 
+/** `Target="/xl/…"` — absolutní cesta k části balíčku (ne `//host`, ne URL). */
+const ABSOLUTE_TARGET = /(\sTarget\s*=\s*)(["'])\/(?![/])([^"'<>]{0,1024})\2/g;
+
 /**
- * Sešit s prefixy jmenných prostorů přebalený do tvaru pro exceljs; `null`,
- * když žádná část prefixy nemá (pak přepis nepomůže). Volá se jen po selhání
- * `load()`, archiv je v tu chvíli ověřený a rozbalený nejvýš na
- * `MAX_UNCOMPRESSED_BYTES`. Ukládá se bez komprese — exceljs ho stejně hned
- * rozbalí, a komprese by jen pálila čas funkce.
+ * Absolutní cíle vztahů (`/xl/tables/table1.xml`) přepsané na relativní
+ * vůči části, které vztahy patří (`../tables/table1.xml`); `null`, když
+ * žádný absolutní cíl není. OPC dovoluje obojí, exceljs ale tabulky listu
+ * dohledává podle relativní cesty a na absolutní padá „reading 'name'“
+ * (skutečný výpis eToro 9. 11. 2026, generátor System.IO.Packaging).
+ * `relsPath` je cesta souboru vztahů v archivu (`xl/worksheets/_rels/sheet1.xml.rels`).
+ */
+export function relativeRelationshipTargets(rels: string, relsPath: string): string | null {
+  // vztahy části a/b/_rels/c.xml.rels patří části a/b/c.xml → základ a/b
+  const base = relsPath.replace(/(?:^|\/)_rels\/[^/]*$/, '');
+  const out = rels.replace(ABSOLUTE_TARGET, (_match, lead: string, quote: string, target: string) => {
+    // ukotvené v kořeni balíčku, ne v pracovním adresáři procesu
+    const relative = path.posix.relative(`/${base}`, `/${target}`) || '.';
+    return `${lead}${quote}${relative}${quote}`;
+  });
+  return out === rels ? null : out;
+}
+
+/**
+ * Sešit s prefixy jmenných prostorů (a absolutními cíli vztahů) přebalený
+ * do tvaru pro exceljs; `null`, když nebylo co přepsat (pak přepis
+ * nepomůže). Volá se jen po selhání `load()`, archiv je v tu chvíli ověřený
+ * a rozbalený nejvýš na `MAX_UNCOMPRESSED_BYTES`. Ukládá se bez komprese —
+ * exceljs ho stejně hned rozbalí, a komprese by jen pálila čas funkce.
  */
 async function withoutNamespacePrefixes(zip: JSZip): Promise<Buffer | null> {
   let changed = false;
   for (const part of zip.file(/\.(?:xml|rels)$/i)) {
-    const rewritten = stripNamespacePrefixes(await part.async('string'));
-    if (rewritten === null) continue;
+    const original = await part.async('string');
+    const stripped = stripNamespacePrefixes(original) ?? original;
+    const rewritten = /\.rels$/i.test(part.name)
+      ? (relativeRelationshipTargets(stripped, part.name) ?? stripped)
+      : stripped;
+    if (rewritten === original) continue;
     zip.file(part.name, rewritten);
     changed = true;
   }

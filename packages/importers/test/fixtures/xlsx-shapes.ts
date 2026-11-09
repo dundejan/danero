@@ -1,11 +1,14 @@
+import path from 'node:path';
 import JSZip from 'jszip';
 
 /**
- * Sešit přepsaný do tvaru, jaký píšou generátory nad .NET OpenXML SDK:
- * prvky s prefixem jmenného prostoru (`<x:workbook xmlns:x="…">`) místo
- * výchozího jmenného prostoru. Podle specifikace XML je to totéž, exceljs
- * ale na `xl/workbook.xml` v tomhle tvaru padá („Cannot read properties of
- * undefined (reading 'sheets')“) — tak skončil 9. 11. 2026 výpis z eToro.
+ * Sešit přepsaný do tvaru, jaký píšou generátory nad .NET (System.IO.Packaging,
+ * OpenXML SDK): prvky s prefixem jmenného prostoru (`<x:workbook xmlns:x="…">`,
+ * `<ap:Properties>`) místo výchozího jmenného prostoru a absolutní cíle
+ * vztahů (`Target="/xl/tables/table1.xml"`). Podle specifikace je to totéž,
+ * exceljs ale na tom padá — „reading 'sheets'“ u sešitu, „reading 'company'“
+ * u vlastností dokumentu a „reading 'name'“ u tabulky listu. Takhle 9. 11. 2026
+ * vypadal skutečný výpis z eToro.
  *
  * Obsah se nemění, jen zápis: z výstupu exceljs se dá postavit libovolný
  * sešit (eToro, XTB…) a porovnat s nepřepsaným.
@@ -15,6 +18,7 @@ export async function withNamespacePrefixes(xlsx: Buffer): Promise<Buffer> {
     'http://schemas.openxmlformats.org/spreadsheetml/2006/main': 'x',
     'http://schemas.openxmlformats.org/package/2006/relationships': 'pr',
     'http://schemas.openxmlformats.org/package/2006/content-types': 'ct',
+    'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties': 'ap',
   };
   const zip = await JSZip.loadAsync(xlsx);
   for (const part of zip.file(/\.(?:xml|rels)$/i)) {
@@ -29,6 +33,13 @@ export async function withNamespacePrefixes(xlsx: Buffer): Promise<Buffer> {
     }
     // atributy vztahů pod jiným prefixem než `r` (exceljs čte jen `r:id`)
     xml = xml.replace(/\sxmlns:r="/g, ' xmlns:rel="').replace(/(\s)r:(\w+=)/g, '$1rel:$2');
+    if (/\.rels$/i.test(part.name)) {
+      // cíle vztahů absolutně od kořene balíčku, jak je píše System.IO.Packaging
+      const base = part.name.replace(/(?:^|\/)_rels\/[^/]*$/, '');
+      xml = xml.replace(/(\sTarget=")(?!\/)(?![^"]*:)([^"]*)"/g, (_match, lead: string, target: string) =>
+        `${lead}/${path.posix.join(base, target)}"`,
+      );
+    }
     zip.file(part.name, xml);
   }
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });

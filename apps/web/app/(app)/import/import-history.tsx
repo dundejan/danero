@@ -40,7 +40,25 @@ const SHOWN_WARNINGS = 5;
  * varování a přeskočené řádky se píšou jen tehdy, když nějaké jsou — nula
  * chyb není zpráva.
  */
-function BatchSummary({ batch, view }: { batch: ImportBatchRow; view: BatchIssueView }) {
+function BatchSummary({
+  batch,
+  view,
+  unread,
+}: {
+  batch: ImportBatchRow;
+  view: BatchIssueView;
+  unread: boolean;
+}) {
+  // Nahrání, jehož výpis čeká mezi nepřečtenými, je TOTÉŽ nahrání — s
+  // „neznámý formát · 0 nových · 1 chyba“ vypadalo jako druhý, rozbitý
+  // soubor (uživatel 9. 11. 2026: „nahrál jsem jeden, vypadá to jako dva“).
+  if (unread) {
+    return (
+      <span className="type-footnote mt-0.5 block font-normal text-caution-text">
+        Nepřečtený výpis výš — pracujeme na něm
+      </span>
+    );
+  }
   // prázdný export (T212 vrací pro roky před založením účtu prázdný
   // soubor) není chyba uživatele — nezobrazovat červeně jako chyby.
   // POZOR: poznává se VÝHRADNĚ nulovými počty (parser od fixu vrací
@@ -251,6 +269,7 @@ export function ImportHistory({
   issueViews,
   olderHref,
   highlightedBatchIds,
+  unreadBatchIds = new Set(),
 }: {
   batches: ImportBatchRow[];
   /** Hlášky dávek bez těch, které uživatel vyřídil číselníkem (`lib/import-resolved.ts`). */
@@ -258,6 +277,8 @@ export function ImportHistory({
   /** Odkaz „Zobrazit starší“; chybí, když už starší importy nejsou. */
   olderHref?: string;
   highlightedBatchIds: ReadonlySet<string>;
+  /** Dávky, jejichž výpis čeká v sekci nepřečtených jako otevřený případ. */
+  unreadBatchIds?: ReadonlySet<string>;
 }) {
   if (batches.length === 0) {
     return (
@@ -285,7 +306,7 @@ export function ImportHistory({
           const title = (
             <>
               <Filename>{batch.filename}</Filename>
-              <BatchSummary batch={batch} view={view} />
+              <BatchSummary batch={batch} view={view} unread={unreadBatchIds.has(batch.id)} />
               {/* na telefonu by datum vedle souhrnu lámalo řádek na tři — jde pod něj */}
               <span className="type-caption mt-0.5 block font-normal tabular-nums text-ink-muted sm:hidden">
                 {date}
