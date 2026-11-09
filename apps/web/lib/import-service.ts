@@ -43,6 +43,7 @@ import {
   unsupportedFormatMessage,
   XlsxTooLargeError,
   XlsxUnreadableError,
+  XlsxWorkbookError,
   UNIVERSAL_TEMPLATE_CSV,
   parseUniversalCsv,
   parseXtbXlsx,
@@ -513,6 +514,12 @@ export async function importFile(
       // Konkrétní diagnózu XLSX (zip bomba, uříznutý archiv) jinak spolkne
       // importFileIsolated a uživatel dostane generické „soubor je poškozený“ —
       // rada „rozděl export na kratší období“ je přitom úplně jiná.
+      // Sešit v pořádku, který jen neumíme otevřít, je ale vada naše: soubor
+      // si schováme a provozovateli přijde upozornění. Do 9. 11. 2026 tudy
+      // bez stopy propadl výpis z eToro s prefixy jmenných prostorů v XML.
+      if (error instanceof XlsxWorkbookError) {
+        return save(unknownFormat(error.message), { unrecognized: true });
+      }
       if (error instanceof XlsxTooLargeError || error instanceof XlsxUnreadableError) {
         return save(unknownFormat(error.message), NOT_OURS);
       }

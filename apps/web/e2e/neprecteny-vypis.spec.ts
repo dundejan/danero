@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { buildEtoroHappyPath } from '../../../packages/importers/test/fixtures/etoro';
 import { T212_FIXTURE_2026 } from '../../../packages/importers/test/fixtures/t212';
+import {
+  buildUnreadableWorkbook,
+  withNamespacePrefixes,
+} from '../../../packages/importers/test/fixtures/xlsx-shapes';
 import { E2E_OPERATOR } from './operator';
 import {
   confirmInDialog,
@@ -25,6 +30,8 @@ const NEZNAMY_VYPIS = [
   'Obchodni den;Titul;Operace;Mnozstvi;Kurz;Mena',
   '2026-01-05;CEZ;Nakup;10;1050,50;CZK',
 ].join('\n');
+
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const csv = (name: string, content: string) => ({
   name,
@@ -240,4 +247,33 @@ test('výsledek nahrání zůstane, i když mezitím doběhne synchronizace', as
   await page.reload();
   await expect(importHistory(page).getByText('behem-synchronizace.csv')).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: /Nahráno: 1 soubor/ })).toHaveCount(0);
+});
+
+/**
+ * 9. 11. 2026: výpis z eToro, na kterém knihovna exceljs spadla, skončil jako
+ * „poškozený soubor“ — bez uschování a bez upozornění. Sešit s prefixy
+ * jmenných prostorů (.NET OpenXML SDK) teď přečteme, a sešit, který přesto
+ * neotevřeme, je vada naše: panel nepřečteného výpisu a e-mail provozovateli.
+ */
+test('sešit XLSX: prefixy jmenných prostorů přečteme, nečitelný si necháme', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Sešit XLSX', email: 'sesit-xlsx@danero.cz' });
+  await page.goto('/import');
+
+  const etoro = await uploadStatement(page, {
+    name: 'etoro-account-statement.xlsx',
+    mimeType: XLSX,
+    buffer: await withNamespacePrefixes(await buildEtoroHappyPath()),
+  });
+  await expect(etoro).toContainText(/eToro · \d+ nov/);
+  await expect(etoro).not.toContainText('nejde přečíst');
+
+  await uploadStatement(page, {
+    name: 'nectitelny-sesit.xlsx',
+    mimeType: XLSX,
+    buffer: await buildUnreadableWorkbook(),
+  });
+  const unread = page.getByRole('list', { name: 'Výpisy, které jsme nepřečetli' });
+  await expect(unread.getByText('nectitelny-sesit.xlsx')).toBeVisible();
+  await expect(unread.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
+  await waitForEmail(page, E2E_OPERATOR.email, (m) => m.text.includes('nectitelny-sesit.xlsx'));
 });

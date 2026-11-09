@@ -1,4 +1,4 @@
-import { deflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -6,6 +6,7 @@ import {
   loadXlsxWorkbook,
   XlsxTooLargeError,
   XlsxUnreadableError,
+  XlsxWorkbookError,
 } from '../src/xlsx';
 import { parseXtbXlsx } from '../src/xtb/xlsx';
 import { buildXtbNewReportXlsx, XTB_NEW_INSTRUMENT_MAP } from './fixtures/xtb';
@@ -58,6 +59,8 @@ function buildZip(entries: ZipEntrySpec[], options: ZipOptions = {}): ArrayBuffe
     localHeader.writeUInt32LE(0x04034b50, 0);
     localHeader.writeUInt16LE(20, 4); // verze
     localHeader.writeUInt16LE(8, 8); // metoda: deflate
+    // skutečné CRC: archiv „v pořádku“ musí projít i kontrolou celistvosti
+    localHeader.writeUInt32LE(crc32(entry.content), 14);
     localHeader.writeUInt32LE(deflated.length, 18);
     localHeader.writeUInt32LE(declaredSize, 22);
     localHeader.writeUInt16LE(nameBytes.length, 26);
@@ -66,6 +69,7 @@ function buildZip(entries: ZipEntrySpec[], options: ZipOptions = {}): ArrayBuffe
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(crc32(entry.content), 16);
     central.writeUInt32LE(deflated.length, 20);
     central.writeUInt32LE(declaredSize, 24);
     central.writeUInt16LE(nameBytes.length, 28);
@@ -176,7 +180,11 @@ describe('strop hlídá skutečně rozbalené bajty, ne to, co archiv tvrdí (L8
 
     // kontrola: pod stropem se k ExcelJS dojde (a ten na lži v hlavičce spadne),
     // takže nula volání výš není jen tím, že špión nic nevidí
-    await expect(loadXlsxWorkbook(liar, 4 * MB)).rejects.toThrow(XlsxUnreadableError);
+    const error = await loadXlsxWorkbook(liar, 4 * MB).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(XlsxUnreadableError);
+    // lež v hlavičce je poškozený soubor, ne sešit, který neumíme — neschovává se
+    expect(error).not.toBeInstanceOf(XlsxWorkbookError);
+    expect((error as Error).message).toMatch(/poškozený archiv/);
     expect(xlsxSpy).toHaveBeenCalledTimes(1);
   });
 

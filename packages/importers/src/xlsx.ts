@@ -1,5 +1,6 @@
 import { constants as zlibConstants, inflateRawSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 
 /**
  * Strop na součet NEKOMPRIMOVANÝCH velikostí položek archivu.
@@ -35,6 +36,12 @@ const CORRUPTED_ARCHIVE_MESSAGE =
 
 export class XlsxTooLargeError extends Error {}
 export class XlsxUnreadableError extends Error {}
+/**
+ * Archiv je v pořádku a sešit v něm je, ale nepřečteme ho my (exceljs).
+ * Na rozdíl od poškozeného souboru je to vada na naší straně, takže si import
+ * soubor schová k rozboru (`failed_imports`).
+ */
+export class XlsxWorkbookError extends XlsxUnreadableError {}
 
 /** Řádek listu: číslo řádku (pro chybové hlášky) a buňky jako text. */
 export interface SheetRow {
@@ -300,18 +307,138 @@ export async function loadXlsxWorkbook(
   maxUnpackedBytes = MAX_UNCOMPRESSED_BYTES,
 ): Promise<ExcelJS.Workbook> {
   assertXlsxUnpackedSize(data, maxUnpackedBytes);
-  const workbook = new ExcelJS.Workbook();
+  let zip: JSZip;
   try {
-    // JSZip pod exceljs bere ArrayBuffer i Buffer; typy exceljs znají jen jeden
-    await workbook.xlsx.load(data as ArrayBuffer);
+    // jen centrální adresář — položky se rozbalují až na vyžádání
+    zip = await JSZip.loadAsync(data);
+    if (!(await isSpreadsheetPackage(zip))) throw new XlsxUnreadableError(NOT_SPREADSHEET_MESSAGE);
   } catch (error) {
-    // exceljs padá na cizím obsahu anglickou TypeError („Cannot read properties
-    // of undefined (reading 'col')“) — uživateli patří česká věta, ne stack.
-    throw new XlsxUnreadableError(
-      `Soubor nejde přečíst jako tabulku XLSX — zkontroluj, že jde o export z platformy (a ne třeba o PDF nebo poškozený soubor). Detail: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    if (error instanceof XlsxUnreadableError) throw error;
+    throw new XlsxUnreadableError(CORRUPTED_ARCHIVE_MESSAGE);
   }
+  try {
+    return await loadWithExcelJs(data);
+  } catch (firstError) {
+    // Teprve tady, na cestě selhání, se archiv rozbaluje celý. Běžný sešit
+    // tak nic navíc nestojí a o tom, čí je vada, rozhoduje celistvost:
+    // poškozené stahování („uncompressed data size mismatch“, CRC) je vada
+    // souboru, ne naše — takový soubor se neschovává.
+    try {
+      await JSZip.loadAsync(data, { checkCRC32: true });
+    } catch {
+      throw new XlsxUnreadableError(CORRUPTED_ARCHIVE_MESSAGE);
+    }
+    const rewritten = await withoutNamespacePrefixes(zip).catch(() => null);
+    if (rewritten === null) throw workbookError(firstError);
+    try {
+      return await loadWithExcelJs(rewritten);
+    } catch (error) {
+      throw workbookError(error);
+    }
+  }
+}
+
+const NOT_SPREADSHEET_MESSAGE =
+  'Soubor není tabulka — v archivu chybí sešit (je to třeba dokument Wordu nebo PowerPointu). Nahraj export transakcí z platformy.';
+
+/**
+ * Je v balíčku OOXML sešit? Začátek `[Content_Types].xml`, podle kterého
+ * `sniffFileFormat` pozná XLSX, mají i dokumenty Wordu a PowerPointu — a ty
+ * nesmí skončit jako „sešit, který neumíme“ (naše vada, schovává se).
+ * Části sešitu leží v `xl/`; jinde jen tehdy, když to `[Content_Types].xml`
+ * hlásí typem obsahu SpreadsheetML.
+ */
+async function isSpreadsheetPackage(zip: JSZip): Promise<boolean> {
+  if (zip.file(/^xl\//).length > 0) return true;
+  const contentTypes = await zip.file('[Content_Types].xml')?.async('string');
+  return contentTypes?.includes('spreadsheetml') ?? false;
+}
+
+async function loadWithExcelJs(data: ArrayBuffer | Buffer): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  // JSZip pod exceljs bere ArrayBuffer i Buffer; typy exceljs znají jen jeden
+  await workbook.xlsx.load(data as ArrayBuffer);
   return workbook;
+}
+
+/**
+ * Archiv je v pořádku a sešit v něm je, jen ho exceljs nepřečte — vada na
+ * naší straně. Anglická TypeError („Cannot read properties of undefined
+ * (reading 'sheets')“) jde jen do detailu.
+ */
+const workbookError = (error: unknown): XlsxWorkbookError =>
+  new XlsxWorkbookError(
+    `Soubor nejde přečíst jako tabulku XLSX — sešit je uložený způsobem, který zatím neumíme. Detail: ${error instanceof Error ? error.message : String(error)}`,
+  );
+
+/**
+ * Jmenné prostory, ve kterých exceljs poznává prvky jen podle JMÉNA BEZ
+ * PREFIXU: hlavní SpreadsheetML (sešit, listy, styly, sdílené texty),
+ * vztahy balíčku a typy obsahu.
+ */
+const UNPREFIXED_NAMESPACES = new Set([
+  'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+  'http://schemas.openxmlformats.org/package/2006/relationships',
+  'http://schemas.openxmlformats.org/package/2006/content-types',
+]);
+/** Atributy z tohohle jmenného prostoru čte exceljs jen jako `r:id`. */
+const OFFICE_RELATIONSHIPS_NAMESPACE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** `xmlns:p="…"` i `xmlns:p='…'` — XML dovoluje oboje. */
+const NAMESPACE_DECLARATION = /\sxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])(.*?)\2/g;
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Část sešitu přepsaná do tvaru, který exceljs přečte: prvky ze jmenných
+ * prostorů `UNPREFIXED_NAMESPACES` bez prefixu (`<x:sheet>` → `<sheet>`)
+ * a atributy vztahů s prefixem `r`. `null`, když se nic měnit nemusí.
+ *
+ * Prefix je podle specifikace XML rovnocenný výchozímu jmennému prostoru
+ * a používají ho generátory nad .NET OpenXML SDK. exceljs ale porovnává jen
+ * jména prvků, takže na `<x:workbook>` spadl s „Cannot read properties of
+ * undefined (reading 'sheets')“ (9. 11. 2026, výpis z eToro). Deklarace
+ * `xmlns:x` se nechávají, jak jsou — exceljs jmenné prostory nevyhodnocuje.
+ *
+ * Rozsah deklarací se nesleduje (prefix platí v celé části): přebindovat
+ * týž prefix uvnitř dokumentu na jiný jmenný prostor žádný známý generátor
+ * sešitů nedělá, a kdyby ano, skončí to jako dnes — sešit, který neumíme.
+ */
+export function stripNamespacePrefixes(xml: string): string | null {
+  const declarations = [...xml.matchAll(NAMESPACE_DECLARATION)].map((m) => ({
+    prefix: m[1]!,
+    uri: m[3]!,
+  }));
+  // prefix `r` obsazený jiným jmenným prostorem: přejmenování by atributy smíchalo
+  const rTaken = declarations.some((d) => d.prefix === 'r' && d.uri !== OFFICE_RELATIONSHIPS_NAMESPACE);
+  let out = xml;
+  for (const { prefix, uri } of declarations) {
+    const p = escapeRegExp(prefix);
+    if (UNPREFIXED_NAMESPACES.has(uri)) {
+      out = out.replace(new RegExp(`<(/?)${p}:`, 'g'), '<$1');
+    } else if (uri === OFFICE_RELATIONSHIPS_NAMESPACE && prefix !== 'r' && !rTaken) {
+      out = out.replace(new RegExp(`(\\s)${p}:([\\w.-]+\\s*=)`, 'g'), '$1r:$2');
+    }
+  }
+  return out === xml ? null : out;
+}
+
+/**
+ * Sešit s prefixy jmenných prostorů přebalený do tvaru pro exceljs; `null`,
+ * když žádná část prefixy nemá (pak přepis nepomůže). Volá se jen po selhání
+ * `load()`, archiv je v tu chvíli ověřený a rozbalený nejvýš na
+ * `MAX_UNCOMPRESSED_BYTES`. Ukládá se bez komprese — exceljs ho stejně hned
+ * rozbalí, a komprese by jen pálila čas funkce.
+ */
+async function withoutNamespacePrefixes(zip: JSZip): Promise<Buffer | null> {
+  let changed = false;
+  for (const part of zip.file(/\.(?:xml|rels)$/i)) {
+    const rewritten = stripNamespacePrefixes(await part.async('string'));
+    if (rewritten === null) continue;
+    zip.file(part.name, rewritten);
+    changed = true;
+  }
+  return changed ? zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }) : null;
 }
 
 /**

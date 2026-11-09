@@ -15,6 +15,12 @@ import {
 } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 import { pruneFailedImports } from '@/lib/retention';
+import { buildEtoroHappyPath } from '../../../packages/importers/test/fixtures/etoro';
+import {
+  buildUnreadableWorkbook,
+  buildWordDocument,
+  withNamespacePrefixes,
+} from '../../../packages/importers/test/fixtures/xlsx-shapes';
 
 /**
  * Nepřečtený výpis si necháváme k rozboru — jinak se formát, který neumíme
@@ -27,6 +33,9 @@ import { pruneFailedImports } from '@/lib/retention';
 
 const bytes = (text: string): ArrayBuffer =>
   new TextEncoder().encode(text).buffer as ArrayBuffer;
+
+const toArrayBuffer = (buffer: Buffer): ArrayBuffer =>
+  buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
 /**
  * Výpis od vymyšlené platformy: sniffery ho nepoznají, „type“ v něm není.
@@ -194,6 +203,35 @@ describe('zachycení nepřečteného výpisu', () => {
     const alert = emails().at(-1)!;
     expect(alert.text).toContain('Obchodni den');
     expect(alert.text).not.toContain('1050,50');
+  });
+
+  it('sešit, který neumíme otevřít, si necháme a provozovatel dostane upozornění', { timeout: 30_000 }, async () => {
+    // 9. 11. 2026: výpis z eToro, na kterém exceljs spadl, skončil jako
+    // „poškozený soubor“ — bez uschování a bez e-mailu
+    const db = await freshDb();
+    const summary = await importFileIsolated(db, 'u1', 'vypis.xlsx', toArrayBuffer(await buildUnreadableWorkbook()));
+    expect(summary.unrecognized).toBe(true);
+    expect(summary.errors[0]?.message).toMatch(/neumíme/);
+    const cases = await listOpenCases(db);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.filename).toBe('vypis.xlsx');
+    expect(emails().at(-1)!.to).toBe('provoz@example.test');
+  });
+
+  it('dokument Wordu se neschovává — vada souboru, ne naše', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const summary = await importFileIsolated(db, 'u1', 'vypis.xlsx', toArrayBuffer(await buildWordDocument()));
+    expect(summary.errors[0]?.message).toMatch(/není tabulka/);
+    expect(await listOpenCases(db)).toHaveLength(0);
+  });
+
+  it('výpis z eToro s prefixy jmenných prostorů se přečte a nic se neschovává', { timeout: 30_000 }, async () => {
+    const db = await freshDb();
+    const prefixed = await withNamespacePrefixes(await buildEtoroHappyPath());
+    const summary = await importFileIsolated(db, 'u1', 'etoro.xlsx', toArrayBuffer(prefixed));
+    expect(summary.broker).toBe('etoro');
+    expect(summary.unrecognized).toBeUndefined();
+    expect(await listOpenCases(db)).toHaveLength(0);
   });
 
   it('úspěšný import nic neschovává', { timeout: 30_000 }, async () => {

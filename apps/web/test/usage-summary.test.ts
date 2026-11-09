@@ -43,9 +43,11 @@ async function seed(db: Db): Promise<void> {
     { id: 'b-stara', userId: 'stary', broker: 'trading212', filename: 'a.csv', added: 1, duplicates: 0, errorCount: 0, skippedCount: 0, warningCount: 0, issues: {}, createdAt: day('2026-10-01') },
     { id: 'b-tyden', userId: 'novy-import', broker: 'xtb', filename: 'b.xlsx', added: 1, duplicates: 0, errorCount: 0, skippedCount: 0, warningCount: 0, issues: {}, createdAt: day('2026-11-04') },
   ]);
+  // `createdAt` výslovně: výchozí `now()` by po konci měřeného týdne (od
+  // 9. 11. 2026) leželo za mezí `to` a účty by „data neměly“
   await db.insert(transactions).values([
-    { userId: 'stary', dedupeKey: 'trading212|a|1', batchId: 'b-stara', broker: 'trading212', type: 'BUY', txDate: '2026-01-02', payload: {} },
-    { userId: 'novy-import', dedupeKey: 'xtb|b|1', batchId: 'b-tyden', broker: 'xtb', type: 'BUY', txDate: '2026-02-03', payload: {} },
+    { userId: 'stary', dedupeKey: 'trading212|a|1', batchId: 'b-stara', broker: 'trading212', type: 'BUY', txDate: '2026-01-02', payload: {}, createdAt: day('2026-10-01') },
+    { userId: 'novy-import', dedupeKey: 'xtb|b|1', batchId: 'b-tyden', broker: 'xtb', type: 'BUY', txDate: '2026-02-03', payload: {}, createdAt: day('2026-11-04') },
   ]);
   await db.insert(brokerAccounts).values({
     id: 'ba1',
