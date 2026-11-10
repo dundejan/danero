@@ -5,17 +5,29 @@ import { useEffect } from 'react';
 import { ClearFeedbackUrl } from '@/components/clear-feedback-url';
 import { buttonVariants } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
+import type { Tone } from '@/components/ui/status';
 import { ALIAS_LIST_ANCHOR } from '@/lib/alias-feedback';
+import type { ImportFeedbackKind } from '@/lib/import-feedback';
 
 /** Výsledek nahrání nebo vrácení importu tak, jak ho stránka složila z adresy. */
 export interface UploadResult {
-  kind: 'ok' | 'chyba';
+  kind: ImportFeedbackKind;
   text: string;
   /** Po prvních datech účtu (a bez chyb) hláška nabídne přehled. */
   offerOverview: boolean;
   /** Věta o ISIN doplněných z vestavěného číselníku (`filledSentence`). */
   filled?: string;
 }
+
+/**
+ * Barva hlášky podle tónu. Upozornění je žluté (`caution`), ne oranžové:
+ * výpis, který čeká na zpracování, není nic, co by uživatel musel řešit.
+ */
+const TONE: Record<ImportFeedbackKind, Tone> = {
+  ok: 'success',
+  pozor: 'caution',
+  chyba: 'danger',
+};
 
 /**
  * Poslední ukázaný výsledek. Proměnná modulu, ne stav komponenty: obnovení
@@ -64,8 +76,9 @@ export function UploadResultNotice({
       {result && <ClearFeedbackUrl />}
       <Notice
         className="mb-8"
+        // `alert` jen pro chybu — upozornění čtečka přečte, ale nepřeruší
         role={shown.kind === 'chyba' ? 'alert' : 'status'}
-        tone={shown.kind === 'chyba' ? 'danger' : 'success'}
+        tone={TONE[shown.kind]}
         title={shown.text}
         action={
           shown.offerOverview && (

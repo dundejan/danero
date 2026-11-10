@@ -19,6 +19,10 @@ import {
  * synchronizaci, takže ruční výpis z doby před napojením z dosahu vypadl
  * během měsíců — a s ním i dokumentovaný postup „vrať import zpět a nahraj
  * znovu“.
+ *
+ * Od seskupení po platformách (`lib/import-overview.ts`) má ruční výpis jiné
+ * platformy vlastní řádek a synchronizace ho neodsunou vůbec; „Zobrazit
+ * starší“ má každá platforma zvlášť.
  */
 const state = vi.hoisted(() => ({ db: null as unknown as Db }));
 
@@ -51,7 +55,8 @@ async function seedHistory(db: Db): Promise<void> {
     userId: 'u1',
     broker: index === 0 ? 'universal' : 'trading212',
     filename: index === 0 ? OLDEST : 't212-api-2026.csv',
-    added: index === 0 ? 12 : 0,
+    // nejstarší synchronizace něco přidala: má rozbalení s kotvou `import-b1`
+    added: index === 0 ? 12 : index === 1 ? 3 : 0,
     duplicates: index === 0 ? 0 : 40,
     errorCount: 0,
     skippedCount: 0,
@@ -92,18 +97,29 @@ describe('historie importů: hloubka', () => {
     expect(historyQueryLimit(300)).toBe(301);
   });
 
-  it('na dvou stech odkaz „Zobrazit starší“ nekončí', { timeout: 30_000 }, async () => {
-    const html = await renderImportPage({ historie: String(HISTORY_LOOKBACK) });
+  it(
+    'ruční výpis za dvěma sty synchronizacemi je vidět hned, v řádku své platformy',
+    { timeout: 30_000 },
+    async () => {
+      const html = await renderImportPage();
 
-    expect(html).not.toContain(OLDEST);
-    expect(html).toContain(`/import?historie=${HISTORY_LOOKBACK + 100}#starsi`);
-  });
+      expect(html).toContain('Univerzální šablona');
+      expect(html).toContain(OLDEST);
+      expect(html).toContain('Vrátit import zpět');
+      // synchronizace mají vlastní „Zobrazit starší“ (v HTML s `&amp;`)
+      expect(html).toContain('/import?platforma=trading212&amp;historie=20#starsi-trading212');
+      expect(html).not.toContain('id="import-b1"');
+    },
+  );
 
-  it('nejstarší dávka jde dohledat a vrátit', { timeout: 30_000 }, async () => {
-    const html = await renderImportPage({ historie: String(HISTORY_LOOKBACK + 100) });
+  it('nejstarší synchronizace jde dohledat a vrátit', { timeout: 30_000 }, async () => {
+    const html = await renderImportPage({
+      platforma: 'trading212',
+      historie: String(HISTORY_LOOKBACK + 100),
+    });
 
+    expect(html).toContain('id="import-b1"');
     expect(html).toContain(OLDEST);
-    expect(html).toContain('Vrátit import zpět');
     // starší už nejsou — odkaz zmizí
     expect(html).not.toContain('Zobrazit starší');
   });

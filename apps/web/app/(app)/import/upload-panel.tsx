@@ -1,4 +1,3 @@
-import { Card } from '@/components/ui/card';
 import { Disclosure } from '@/components/ui/disclosure';
 import { FileField } from '@/components/ui/file-field';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -15,6 +14,7 @@ import { OPERATOR } from '@/lib/contact';
 import { tidy } from '@/lib/typography';
 import { uploadImportAction } from './actions';
 import { PlatformGuide, type GuideGroup } from './platform-guide';
+import { UploadDropZone } from './upload-drop-zone';
 
 /** Kotva pravidel univerzální šablony (odkazuje na ni návod platforem bez vlastní čtečky). */
 const TEMPLATE_ANCHOR = 'sablona';
@@ -36,7 +36,8 @@ const GUIDE_GROUPS: GuideGroup[] = PLATFORM_GROUPS.map((group) => ({
  * Nahrání výpisů — cesta, která funguje pro každou platformu, proto nese
  * jediné hlavní tlačítko stránky. Na obrazovce je jen výběr souborů, tlačítko
  * a jedna věta o tom, co nahrát; zbytek (jak poznáváme formát, proč se nic
- * nezdvojí, co s velkým souborem) je ve vysvětlivce.
+ * nezdvojí, co s velkým souborem) je ve vysvětlivce. Soubory jde do karty
+ * i přetáhnout (`UploadDropZone`).
  *
  * Zpětnou vazbu dává tlačítko hned při stisku („Nahrávám a počítám…“), po
  * dokončení plovoucí hláška a nový řádek v historii.
@@ -65,7 +66,7 @@ export function UploadPanel() {
         </InfoPopover>
       }
     >
-      <Card>
+      <UploadDropZone>
         <form
           action={uploadImportAction}
           className="flex flex-col gap-4 sm:flex-row sm:items-center"
@@ -76,10 +77,11 @@ export function UploadPanel() {
             accept=".csv,text/csv,.xml,text/xml,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.htm,.html,text/html"
             multiple
             required
+            dropHint="nebo je přetáhni sem"
           />
           <SubmitButton pendingLabel="Nahrávám a počítám…">Nahrát výpisy</SubmitButton>
         </form>
-      </Card>
+      </UploadDropZone>
       <p className="type-footnote mt-2 text-pretty text-ink-muted">
         Nahraj celou historii od prvního nákupu — CSV, XML, XLSX nebo HTML.
       </p>

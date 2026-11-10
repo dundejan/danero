@@ -8,6 +8,7 @@ import { typeset } from '@/components/typeset';
 import { PLATFORMS } from '@/lib/brokers-catalog';
 import { MAX_NOTE_CHARS, type FailedImportCase } from '@/lib/failed-imports';
 import { czDateTime } from '@/lib/format';
+import { PENDING_PROMISE_HOURS, pendingPromiseExpired } from '@/lib/import-feedback';
 import { reportFailedImportAction } from './actions';
 
 /**
@@ -44,18 +45,32 @@ function CaseBody({ item }: { item: FailedImportCase }) {
     );
   }
   // Výpis stažený z napojeného účtu: platformu známe, ptát se nemáme nač —
-  // a uživatel za to nemůže, žádný soubor nenahrával.
+  // a uživatel za to nemůže, žádný soubor nenahrával. Slib lhůty platí stejně:
+  // doimport dělá provozovatel v obou případech.
   const fromSync = item.source === 'sync';
+  // Lhůta běží od založení případu (opakované nahrání téhož souboru ji
+  // neposouvá, znovuotevření opraveného ano). Po ní by „do 48 hodin“ lhalo —
+  // přiznáme zpoždění, ale slib e-mailu platí dál.
+  const overdue = pendingPromiseExpired(item.createdAt);
   return (
     <>
-      {/* Krátce schválně: uživateli stačí vědět, že se to řeší a že se ozveme.
+      {/* Krátce schválně: uživateli stačí vědět, kdy to bude a že se ozveme.
           Že si soubor necháváme, říká /soukromi; jediné, co po něm chceme, je
-          platforma — a ta se ptá hned pod tím. */}
-      <StatusLabel tone="caution">Na zpracování tohohle výpisu pracujeme.</StatusLabel>
-      {/* „jakmile ho zpracujeme“, ne „jakmile půjde nahrát“ — druhé zní, jako by
-          měl uživatel po e-mailu ještě něco dělat. Nahrajeme ho za něj. */}
+          platforma — a ta se ptá hned pod tím. Stejný slib dává hláška po
+          nahrání (`lib/import-feedback.ts`). */}
+      <StatusLabel tone="caution">
+        {overdue
+          ? 'Zpracování trvá déle, než jsme slíbili.'
+          : typeset(`Výpis zpracujeme do ${PENDING_PROMISE_HOURS} hodin.`)}
+      </StatusLabel>
+      {/* „nahrajeme ho za tebe“, ne „až půjde nahrát“ — druhé zní, jako by
+          měl uživatel po e-mailu ještě něco dělat. */}
       <p className="type-footnote mt-1 text-pretty text-ink-muted">
-        {typeset('Dáme ti e-mailem vědět, jakmile ho zpracujeme.')}
+        {typeset(
+          overdue
+            ? 'Nahrajeme ho za tebe co nejdřív a dáme ti vědět e-mailem.'
+            : 'Nahrajeme ho za tebe a dáme ti vědět e-mailem.',
+        )}
         {!fromSync &&
           item.reportedAt &&
           ` Díky, máme to${item.reportedPlatform ? ` — platforma: ${item.reportedPlatform}` : ''}.`}

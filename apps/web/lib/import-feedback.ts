@@ -16,14 +16,32 @@ import { firstParam } from '@/lib/utils';
  * Čistá funkce bez I/O — importuje ji server (akce, stránka) i klient (toast).
  */
 
+/**
+ * Do kolika hodin slibujeme zpracovat výpis, který jsme nepřečetli a uschovali
+ * k rozboru. Provozovatel ho ve skutečnosti doimportuje do pár hodin; 48 je
+ * slib s rezervou na víkend. Mluví o něm hláška po nahrání i sekce
+ * „Výpisy, které jsme nepřečetli“ — měň obojí naráz.
+ */
+export const PENDING_PROMISE_HOURS = 48;
+
+/** Uplynula u případu založeného v `createdAt` slíbená lhůta? */
+export const pendingPromiseExpired = (createdAt: Date, now: number = Date.now()): boolean =>
+  now - createdAt.getTime() > PENDING_PROMISE_HOURS * 60 * 60 * 1000;
+
 /** Co akce k hlášce přibalí. */
 export interface ImportFeedbackDetails {
   /** Kolik souborů akce zpracovala. */
   files?: number;
   /** Kolik transakcí přibylo. */
   added?: number;
-  /** Kolik souborů má aspoň jednu chybu. */
+  /** Kolik souborů má aspoň jednu chybu (bez těch, které čekají na zpracování). */
   filesWithErrors?: number;
+  /**
+   * Kolik souborů jsme nepřečetli a USCHOVALI k rozboru (`keptForReview`) —
+   * provozovatel je za uživatele doimportuje. Do `filesWithErrors` se
+   * nepočítají: uživatel na nich nemá co opravit.
+   */
+  pending?: number;
   /** Kolik transakcí vrácení smazalo. */
   removed?: number;
   /**
@@ -51,6 +69,7 @@ const PARAM_NAMES: Record<keyof ImportFeedbackDetails, string> = {
   files: 'soubory',
   added: 'pridano',
   filesWithErrors: 'chyby',
+  pending: 'ceka',
   removed: 'smazano',
   batchId: 'davka',
   accountId: 'ucet',
@@ -139,8 +158,15 @@ export function importFeedbackUrl(
   return `/import?${query.toString()}${anchor ? `#${anchor}` : ''}`;
 }
 
+/**
+ * Tón hlášky: `ok` = hotovo, `pozor` = upozornění (něco zbývá, ale uživatel
+ * nemá co opravit, nebo prošla jen část), `chyba` = nic nového a je co
+ * opravit. Skutečná chyba má v tónu přednost před upozorněním.
+ */
+export type ImportFeedbackKind = 'ok' | 'pozor' | 'chyba';
+
 export interface ImportFeedback {
-  kind: 'ok' | 'chyba';
+  kind: ImportFeedbackKind;
   text: string;
 }
 
@@ -156,12 +182,30 @@ function count(value: string | string[] | undefined): number | undefined {
 }
 
 const transactionsWord = (n: number): string => plural(n, 'transakce', 'transakce', 'transakcí');
+const statementsWord = (n: number): string => plural(n, 'výpis', 'výpisy', 'výpisů');
+
+/**
+ * Věta o výpisech, které čekají na zpracování, když vedle nich je i jiný
+ * výsledek (část prošla nebo má chyby). Bez e-mailu — hláška už tak nese dvě
+ * zprávy; že se ozveme, říká sekce nepřečtených výpisů hned pod ní.
+ */
+function pendingSentence(pending: number): string {
+  return pending === 1
+    ? `Jeden výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do ${PENDING_PROMISE_HOURS} hodin.`
+    : `${pending} ${statementsWord(pending)} se nepodařilo zpracovat hned — nahrajeme je za tebe do ${PENDING_PROMISE_HOURS} hodin.`;
+}
 
 /**
  * Souhrn nahrání. Schválně jinými slovy než karta v historii („2 nové ·
  * 0 duplicit“): hláška říká, co se stalo, karta nese čísla. Stojí přímo nad
  * historií importů (`feedbackPlacement`), takže na ni větou neodkazuje — jen
  * u chyb říká, kde jsou vypsané.
+ *
+ * Výpis, který jsme nepřečetli a uschovali (`ceka`), chyba NENÍ: provozovatel
+ * ho do pár hodin doimportuje za uživatele a ten na něm nemá co opravit.
+ * Červená hláška vedle sekce „na zpracování pracujeme“ si protiřečila.
+ * Neuschovaný nepoznaný soubor (příliš velký, plný strop případů) do `ceka`
+ * nepatří — slib by byl lživý — a zůstává chybou.
  */
 function uploadFeedback(params: Params): ImportFeedback {
   const files = count(params[PARAM_NAMES.files]);
@@ -170,8 +214,22 @@ function uploadFeedback(params: Params): ImportFeedback {
     return { kind: 'ok', text: 'Nahráno.' };
   }
   const errors = Math.min(count(params[PARAM_NAMES.filesWithErrors]) ?? 0, files);
+  const pending = Math.min(count(params[PARAM_NAMES.pending]) ?? 0, files - errors);
+  // Nic jiného nepřišlo: všechny soubory čekají u nás. Jediná zpráva, takže
+  // unese i slib e-mailu.
+  if (pending === files) {
+    return {
+      kind: 'pozor',
+      text:
+        files === 1
+          ? `Výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do ${PENDING_PROMISE_HOURS} hodin a dáme ti vědět e-mailem.`
+          : `Výpisy (${files}) se nepodařilo zpracovat hned — nahrajeme je za tebe do ${PENDING_PROMISE_HOURS} hodin a dáme ti vědět e-mailem.`,
+    };
+  }
+  const later = pending > 0 ? ` ${pendingSentence(pending)}` : '';
   // Nic nepřibylo a soubory mají chyby: zelené „hotovo“ by lhalo — a věta
   // nesmí začínat slovem „Nahráno“, které říká opak červené tečky (R1B-28).
+  // Čekající výpis tón nezmírní: chyba je to, s čím má uživatel něco dělat.
   if (added === 0 && errors > 0) {
     const what =
       files === 1
@@ -179,22 +237,23 @@ function uploadFeedback(params: Params): ImportFeedback {
         : errors === files
           ? `Nahrané soubory (${files}) mají chyby a nic nového z nich nepřibylo`
           : `Nahrané soubory (${files}) nic nového nepřinesly. Chyby ${plural(errors, 'má', 'mají', 'má')} ${errors} z nich`;
-    return { kind: 'chyba', text: `${what} — jaké, je napsané v historii importů.` };
+    return { kind: 'chyba', text: `${what} — jaké, je napsané v historii importů.${later}` };
   }
   const head =
     `Nahráno: ${files} ${plural(files, 'soubor', 'soubory', 'souborů')}, ` +
     (added === 0
       ? 'žádná nová transakce nepřibyla.'
       : `${plural(added, 'přibyla', 'přibyly', 'přibylo')} ${added} ${transactionsWord(added)}.`);
-  if (errors === 0) return { kind: 'ok', text: head };
+  if (errors === 0) return { kind: pending > 0 ? 'pozor' : 'ok', text: `${head}${later}` };
   const who =
     files === 1
       ? 'Soubor má chyby'
       : errors === files
         ? 'Chyby mají všechny'
         : `Chyby ${plural(errors, 'má', 'mají', 'má')} ${errors} z nich`;
-  // část prošla: potvrzení, ale s upozorněním
-  return { kind: 'ok', text: `${head} ${who} — jaké, je napsané v historii importů.` };
+  // část prošla: potvrzení, ale v tónu upozornění — zelená tečka vedle věty
+  // „Soubor má chyby“ říkala „hotovo“, a přitom je co číst
+  return { kind: 'pozor', text: `${head} ${who} — jaké, je napsané v historii importů.${later}` };
 }
 
 /** Kolik dávek nejvýš se po nahrání samo otevře (a kolik id unese adresa). */
@@ -281,9 +340,19 @@ export function isFirstDataUpload(params: Params): boolean {
  * prvních datech účtu a jen když nahrání proběhlo BEZ chyb: „Hotovo“ vedle věty
  * „Soubor má chyby“ vedlo nového uživatele pryč od řádku, který si má přečíst
  * (nález revize R6). Přehled má po ruce v navigaci.
+ *
+ * Výpis, který čeká na zpracování, se tu chová jako chyba, i když jiné soubory
+ * data přinesly: hotovo NENÍ. Přehled by ukázal daně bez platformy, kterou
+ * teprve doimportujeme — nový uživatel by si odnesl neúplná čísla jako
+ * výsledek — a „Hotovo“ vedle věty „nahrajeme ho za tebe do 48 hodin“ si
+ * protiřečí.
  */
 export function offersOverviewAfterUpload(params: Params): boolean {
-  return isFirstDataUpload(params) && (count(params[PARAM_NAMES.filesWithErrors]) ?? 0) === 0;
+  return (
+    isFirstDataUpload(params) &&
+    (count(params[PARAM_NAMES.filesWithErrors]) ?? 0) === 0 &&
+    (count(params[PARAM_NAMES.pending]) ?? 0) === 0
+  );
 }
 
 /**

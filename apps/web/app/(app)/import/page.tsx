@@ -11,15 +11,21 @@ import { brokerAccounts, importBatches } from '@/db/schema';
 import { casesForBatches } from '@/lib/failed-imports';
 import {
   feedbackPlacement,
-  historyLimit,
-  historyQueryLimit,
+  HISTORY_LOOKBACK,
   IMPORT_HISTORY_ANCHOR,
   importFeedback,
   MAX_FILES_PER_UPLOAD,
-  nextHistoryLimit,
   offersOverviewAfterUpload,
+  pendingPromiseExpired,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
+import {
+  batchHistoryHref,
+  buildPlatformGroups,
+  loadPlatformBatches,
+  loadPlatformStats,
+  platformRequest,
+} from '@/lib/import-overview';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import {
   aliasFeedbackDetails,
@@ -113,29 +119,48 @@ export default async function ImportPage({
   const chyba = firstParam(params.chyba);
   const ulozeno = firstParam(params.ulozeno);
   const feedback = importFeedback(params);
-  // Jeden dotaz pro historii, číselník i nepřečtené výpisy. Historie z něj
-  // ukazuje prvních `limit` (20, odkazem „Zobrazit starší“ dál — bez stropu,
-  // starý import musí jít dohledat a vrátit); číselník a nepřečtené výpisy se
-  // dívají na všechno načtené — výzva nesmí zmizet jen proto, že uživatel
-  // mezitím importoval další soubory (R2-05).
-  const limit = historyLimit(params);
-  const [recentBatches, accounts, aliases, aliasRecords] = await Promise.all([
-    db
-      .select()
-      .from(importBatches)
-      .where(eq(importBatches.userId, user.id))
-      .orderBy(desc(importBatches.createdAt))
-      .limit(historyQueryLimit(limit)),
-    db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
-    loadAliases(db, user.id),
-    listAliases(db, user.id),
-  ]);
-  const batches = recentBatches.slice(0, limit);
-  // kotva, která na stránce není, nechá polohu být — seznam se jen prodlouží
-  const olderHref =
-    recentBatches.length > limit
-      ? `/import?historie=${nextHistoryLimit(limit)}#starsi`
-      : undefined;
+  // Posledních `HISTORY_LOOKBACK` dávek pro číselník a nepřečtené výpisy —
+  // výzva nesmí zmizet jen proto, že uživatel mezitím importoval další
+  // soubory (R2-05). Historie má vlastní dotazy po platformách: souhrny přes
+  // všechny dávky a nejnovější dávky každé platformy, u platformy z adresy
+  // („Zobrazit starší“) víc — bez stropu, starý import musí jít dohledat
+  // a vrátit (`lib/import-overview.ts`).
+  const historyRequest = platformRequest(params);
+  const [recentBatches, accounts, aliases, aliasRecords, platformStats, platformBatches] =
+    await Promise.all([
+      db
+        .select()
+        .from(importBatches)
+        .where(eq(importBatches.userId, user.id))
+        .orderBy(desc(importBatches.createdAt))
+        .limit(HISTORY_LOOKBACK),
+      db.select().from(brokerAccounts).where(eq(brokerAccounts.userId, user.id)),
+      loadAliases(db, user.id),
+      listAliases(db, user.id),
+      loadPlatformStats(db, user.id),
+      loadPlatformBatches(db, user.id, historyRequest),
+    ]);
+  const highlightedBatchIds = uploadedBatchIds(params);
+  const platformGroups = buildPlatformGroups({
+    stats: platformStats,
+    batches: platformBatches,
+    accounts,
+    request: historyRequest,
+    highlighted: highlightedBatchIds,
+  });
+  // dávky, které historie vypisuje (i v zavřených skupinách — jsou na stránce)
+  const shownBatchIds = new Set(
+    platformGroups.flatMap((group) => group.batches.map((batch) => batch.id)),
+  );
+  // Načtené dávky dohromady, od nejnovější: posledních dvě stě a k nim
+  // vypisované dávky starší než ony (platforma, kterou denní synchronizace
+  // jiné odsunuly za hranici). Hlášky, vyřízení číselníkem i nepřečtené
+  // výpisy musí sedět i u nich.
+  const recentIds = new Set(recentBatches.map((batch) => batch.id));
+  const loadedBatches = [
+    ...recentBatches,
+    ...platformBatches.filter((batch) => !recentIds.has(batch.id)),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   // Krok 2 cesty nového uživatele: profil má, data ještě ne. Stav se
   // neukládá, odvozuje se z účtu (stejně jako na /vitejte).
   const withoutSources = recentBatches.length === 0 && accounts.length === 0;
@@ -186,23 +211,26 @@ export default async function ImportPage({
 
   // Nepřečtené výpisy (originál si necháváme k rozboru). Otevřený případ po
   // uživateli něco chce, takže je vidět, i když jeho dávka z historie vypadla;
-  // vyřízený zůstává jen po dobu, co je jeho dávka na očích.
+  // vyřízený zůstává jen po dobu, co je jeho dávka na očích. Dívá se na
+  // posledních dvě stě dávek a na ty, které historie vypisuje — nepřečtená
+  // dávka v historii tak má výš vždy svůj případ.
   const failedCases = await casesForBatches(
     db,
     user.id,
-    recentBatches.map((batch) => batch.id),
+    loadedBatches.map((batch) => batch.id),
   );
-  const shownBatchIds = new Set(batches.map((batch) => batch.id));
   // v pořadí historie, tedy od nejnovějšího
-  const unreadCases = recentBatches.flatMap((batch) => {
+  const unreadCases = loadedBatches.flatMap((batch) => {
     const item = failedCases.get(batch.id);
     return item && (item.status === 'open' || shownBatchIds.has(batch.id)) ? [item] : [];
   });
 
   // Číselník: hlášky ke starým dávkám, které uživatel mezitím vyřídil
   // (`lib/import-resolved.ts`). Obchodům XTB nestačí ISIN, potřebují i měnu.
+  // Novější dávky téhož souboru, podle kterých se hláška schová, jsou
+  // načtené vždy: u platformy jde výpis souvisle od nejnovější dávky.
   const issueViews = batchIssueViews(
-    recentBatches,
+    loadedBatches,
     aliasCovers(aliases),
     await storedUnderAliases(db, user.id, aliases),
   );
@@ -248,12 +276,14 @@ export default async function ImportPage({
         ...(aliasFeedback.isin ? { isin: aliasFeedback.isin } : {}),
         ...(aliasFeedback.currency ? { currency: aliasFeedback.currency } : {}),
       },
-      imports: blocking.map((item) => ({
-        id: item.id,
-        filename: item.filename,
-        date: czDateTime(item.createdAt),
-        inHistory: shownBatchIds.has(item.id),
-      })),
+      imports: await Promise.all(
+        blocking.map(async (item) => ({
+          id: item.id,
+          filename: item.filename,
+          date: czDateTime(item.createdAt),
+          href: await batchHistoryHref(db, user.id, item.id, shownBatchIds),
+        })),
+      ),
     };
   }
   const aliasRowError = chyba !== undefined && isAliasRowError(chyba);
@@ -411,12 +441,18 @@ export default async function ImportPage({
               <div className="space-y-14">
                 <UnreadStatements cases={unreadCases} />
                 <ImportHistory
-                  batches={batches}
+                  groups={platformGroups}
                   issueViews={issueViews}
-                  olderHref={olderHref}
-                  highlightedBatchIds={uploadedBatchIds(params)}
-                  unreadBatchIds={
-                    new Set(unreadCases.filter((item) => item.status === 'open').map((item) => item.batchId))
+                  highlightedBatchIds={highlightedBatchIds}
+                  unreadBatches={
+                    new Map(
+                      unreadCases
+                        .filter((item) => item.status === 'open')
+                        .map((item) => [
+                          item.batchId,
+                          pendingPromiseExpired(item.createdAt) ? 'overdue' : 'pending',
+                        ] as const),
+                    )
                   }
                 />
                 {aliasItems.length > 0 && (

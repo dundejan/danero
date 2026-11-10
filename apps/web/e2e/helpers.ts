@@ -88,14 +88,33 @@ export async function registerWithProfile(
   await saveFirstProfile(page);
 }
 
-/** Seznam „Historie importů“ na stránce Zdroje dat — jediné místo, kde je název souboru záznamem. */
-export const importHistory = (page: Page): Locator =>
-  page.getByRole('list', { name: 'Historie importů' });
+/**
+ * Jméno seznamu dávek jedné platformy v historii importů („Importy: XTB“).
+ * Vnější seznam platforem („Historie importů podle platforem“) schválně
+ * nechytá — jeho řádek by filtr podle názvu souboru našel taky (obsahuje
+ * celou skupinu).
+ */
+const BATCH_LIST = /^Importy: /;
 
-/** Řádek historie importů patřící k souboru (název, platforma a počty). */
+/**
+ * Seznamy dávek v historii importů na stránce Zdroje dat — jediné místo, kde
+ * je název souboru záznamem. Jen ty v otevřených skupinách platforem: obsah
+ * zavřeného `<details>` `getByRole` nevidí.
+ */
+export const importHistory = (page: Page): Locator =>
+  page.getByRole('list', { name: BATCH_LIST });
+
+/** Řádek DÁVKY v historii importů patřící k souboru (název, platforma a počty). */
 export const importHistoryRow = (page: Page, filename: string): Locator =>
   importHistory(page)
     .getByRole('listitem')
+    .filter({ has: page.getByText(filename, { exact: true }) });
+
+/** Totéž včetně dávek v zavřených skupinách — na počítání, ne na klikání. */
+const importHistoryRowAny = (page: Page, filename: string): Locator =>
+  page
+    .getByRole('list', { name: BATCH_LIST, includeHidden: true })
+    .getByRole('listitem', { includeHidden: true })
     .filter({ has: page.getByText(filename, { exact: true }) });
 
 /**
@@ -111,7 +130,9 @@ export async function uploadStatement(
 ): Promise<Locator> {
   const filename = typeof file === 'string' ? file.split(/[\\/]/).at(-1)! : file.name;
   const rows = importHistoryRow(page, filename);
-  const before = await rows.count();
+  // Počítá se i v zavřené skupině platformy: po nahrání se skupina otevře,
+  // takže viditelných řádků může přibýt víc než jeden.
+  const before = await importHistoryRowAny(page, filename).count();
   await page.locator('input[name="soubory"]').setInputFiles(file);
   await page.getByRole('button', { name: 'Nahrát výpisy' }).click();
   await expect(rows).toHaveCount(before + 1, { timeout: 20_000 });

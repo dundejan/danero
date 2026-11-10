@@ -91,12 +91,21 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
   let failed = 0;
   let added = 0;
   let filesWithErrors = 0;
+  // Nepřečtený výpis, který se uschoval k rozboru: provozovatel ho
+  // doimportuje za uživatele, takže to pro hlášku není chyba, ale „čeká na
+  // zpracování“ (`ceka`). Neuschovaný nepoznaný soubor zůstává chybou —
+  // slib „nahrajeme ho za tebe“ by u něj lhal.
+  let pending = 0;
   const summaries: ImportSummary[] = [];
   for (const file of files) {
     try {
       const summary = await importFileIsolated(db, user.id, file.name, await file.arrayBuffer());
       added += summary.added;
-      if (summary.errors.length > 0) filesWithErrors += 1;
+      if (summary.keptForReview) {
+        pending += 1;
+      } else if (summary.errors.length > 0) {
+        filesWithErrors += 1;
+      }
       summaries.push(summary);
     } catch (error) {
       failed += 1;
@@ -123,6 +132,7 @@ export async function uploadImportAction(formData: FormData): Promise<void> {
         files: files.length,
         added,
         filesWithErrors,
+        ...(pending > 0 ? { pending } : {}),
         batchId: batchesToOpen(summaries),
         firstData: !hadData && added > 0,
       },

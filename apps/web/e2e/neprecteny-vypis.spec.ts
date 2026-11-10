@@ -46,21 +46,31 @@ test('nepřečtený výpis: panel, hlášení uživatele a upozornění provozov
 
   const batch = await uploadStatement(page, csv('vypis-neznamy.csv', NEZNAMY_VYPIS));
 
-  // uživatel se dozví, co se stalo a co bude dál — ne jen že to nešlo
+  // Hláška po nahrání je upozornění se slibem, ne chyba: výpis jsme si
+  // uschovali a nahrajeme ho za uživatele. Červené „Soubor má chyby“ vedle
+  // „pracujeme na tom“ si protiřečilo (10. 11. 2026).
+  await expect(
+    page.getByRole('status').filter({
+      hasText: 'Výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do 48 hodin',
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Soubor má chyby' })).toHaveCount(0);
+
+  // a sekce nepřečtených výpisů řekne totéž: kdy a že se ozveme
   const unread = page.getByRole('list', { name: 'Výpisy, které jsme nepřečetli' });
   await expect(unread.getByText('vypis-neznamy.csv')).toBeVisible();
-  await expect(unread.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
-  await expect(unread.getByText(/Dáme ti e-mailem vědět/)).toBeVisible();
+  await expect(unread.getByText('Výpis zpracujeme do 48 hodin.')).toBeVisible();
+  await expect(unread.getByText('Nahrajeme ho za tebe a dáme ti vědět e-mailem.')).toBeVisible();
 
   // v historii je to TOTÉŽ nahrání, ne druhý rozbitý soubor („neznámý
   // formát · 1 chyba“ vypadalo jako dvě nahrání, uživatel 9. 11. 2026)
-  await expect(batch).toContainText('Nepřečtený výpis výš — pracujeme na něm');
+  await expect(batch).toContainText(/Zpracujeme\sho\sdo\s48\shodin\s—\spodrobnosti\svýš/);
   await expect(batch).not.toContainText('neznámý formát');
 
-  // řádek historie se po nahrání otevřel sám a říká, co jsme v hlavičce našli
-  await expect(batch.locator('details')).toHaveAttribute('open', '');
-  await expect(batch).toContainText('Formát souboru nepoznáváme — v hlavičce jsme našli:');
-  await expect(batch).toContainText('Obchodni den');
+  // řádek historie se nerozbaluje a technickou hlášku (červenou chybu, na
+  // které uživatel nemá co opravit) neukazuje — výpis zpracujeme za něj
+  await expect(batch.locator('details')).toHaveCount(0);
+  await expect(batch).not.toContainText('Formát souboru nepoznáváme');
   // vrácení importu se u nepřečteného výpisu nenabízí (není co vracet)
   await expect(page.getByRole('button', { name: 'Vrátit import zpět' })).toHaveCount(0);
 
@@ -279,6 +289,6 @@ test('sešit XLSX: prefixy jmenných prostorů přečteme, nečitelný si nechá
   });
   const unread = page.getByRole('list', { name: 'Výpisy, které jsme nepřečetli' });
   await expect(unread.getByText('nectitelny-sesit.xlsx')).toBeVisible();
-  await expect(unread.getByText('Na zpracování tohohle výpisu pracujeme.')).toBeVisible();
+  await expect(unread.getByText('Výpis zpracujeme do 48 hodin.')).toBeVisible();
   await waitForEmail(page, E2E_OPERATOR.email, (m) => m.text.includes('nectitelny-sesit.xlsx'));
 });

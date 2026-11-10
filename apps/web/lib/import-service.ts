@@ -123,6 +123,14 @@ export interface ImportSummary {
    * (`lib/failed-imports.ts`).
    */
   unrecognized?: boolean;
+  /**
+   * Originál se opravdu uschoval k rozboru (`keepFailedUpload` vrátil id
+   * případu). Jen takový soubor provozovatel uvidí a doimportuje, takže jen
+   * u něj smí hláška po nahrání slíbit „nahrajeme ho za tebe“. Nepoznaný
+   * soubor, který se neuschoval (příliš velký, zamítnutý případ, plný strop
+   * případů), zůstává obyčejnou chybou. Nastavuje jen `importFileIsolated`.
+   */
+  keptForReview?: boolean;
 }
 
 /** Výsledek parsování + případné nenamapované symboly (brokeři bez ISIN). */
@@ -1498,13 +1506,14 @@ export async function importFileIsolated(
   const summary = await runIsolated(db, userId, filename, data);
   if (summary.unrecognized) {
     const { keepFailedUpload } = await import('@/lib/failed-imports');
-    await keepFailedUpload(db, {
+    const caseId = await keepFailedUpload(db, {
       userId,
       batchId: summary.batchId,
       filename,
       data,
       reason: summary.errors[0]?.message ?? 'Formát souboru nepoznáváme.',
     });
+    if (caseId !== null) return { ...summary, keptForReview: true };
   }
   return summary;
 }

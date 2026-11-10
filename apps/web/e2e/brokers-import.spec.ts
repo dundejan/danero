@@ -314,3 +314,70 @@ test('číselník: uložený ISIN jde opravit a smazat, stará chyba v historii 
   await expect(page.getByRole('status').filter({ hasText: 'Záznam smazán' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Doplněné údaje instrumentů' })).toHaveCount(0);
 });
+
+/**
+ * Přetažení souborů do karty „Nahrát výpisy“. Soubory skončí v poli formuláře
+ * (i když minou kartu — prohlížeč by je jinak otevřel místo stránky), nic se
+ * neodešle samo a nahrání pak jde stejnou cestou jako po výběru tlačítkem.
+ *
+ * Skutečné tažení ze systému Playwright neumí; `DataTransfer` se souborem
+ * a událostmi `dragenter`/`drop` je to, co prohlížeč stránce pošle.
+ */
+test('výpis jde do formuláře přetáhnout', async ({ page }) => {
+  await registerWithProfile(page, { name: 'E2E Přetažení', email: 'pretazeni@danero.cz' });
+  await page.goto('/import');
+
+  const submit = page.getByRole('button', { name: 'Nahrát výpisy' });
+  const form = page.locator('form').filter({ has: submit });
+  await expect(form.getByText('nebo je přetáhni sem')).toBeVisible();
+
+  const transfer = (files: Array<{ name: string; content: string }>, text?: string) =>
+    page.evaluateHandle(
+      ({ files, text }) => {
+        const data = new DataTransfer();
+        for (const file of files) {
+          data.items.add(new File([file.content], file.name, { type: 'text/csv' }));
+        }
+        if (text !== undefined) data.setData('text/plain', text);
+        return data;
+      },
+      { files, text },
+    );
+
+  // Soubor puštěný mimo kartu (na nadpis sekce) skončí v poli taky.
+  // Posluchače přidává až React po hydrataci, proto se puštění opakuje,
+  // dokud se název neukáže.
+  const outside = await transfer([{ name: 'mimo-kartu.csv', content: T212_FIXTURE_2026 }]);
+  await expect(async () => {
+    await page.getByRole('heading', { name: 'Nahrát výpisy' }).dispatchEvent('drop', {
+      dataTransfer: outside,
+    });
+    await expect(form.getByText('mimo-kartu.csv')).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+
+  // tažený text (ne soubor) kartu nezvýrazní
+  const text = await transfer([], 'jen text');
+  await form.dispatchEvent('dragenter', { dataTransfer: text });
+  await expect(page.getByText('Pusť soubory sem')).toHaveCount(0);
+
+  // soubory nad stránkou: karta ukáže, kam dopadnou
+  const files = await transfer([{ name: 't212-pretazeny.csv', content: T212_FIXTURE_2026 }]);
+  await form.dispatchEvent('dragenter', { dataTransfer: files });
+  await expect(page.getByText('Pusť soubory sem')).toBeVisible();
+
+  // puštění nahradí dřív vložený soubor, zvýraznění zmizí a fokus je na
+  // tlačítku — odeslat musí uživatel sám
+  await form.dispatchEvent('drop', { dataTransfer: files });
+  await expect(page.getByText('Pusť soubory sem')).toHaveCount(0);
+  await expect(form.getByText('t212-pretazeny.csv')).toBeVisible();
+  await expect(form.getByText('mimo-kartu.csv')).toHaveCount(0);
+  await expect(submit).toBeFocused();
+  await expect(importHistoryRow(page, 't212-pretazeny.csv')).toHaveCount(0);
+
+  await submit.click();
+  const row = importHistoryRow(page, 't212-pretazeny.csv');
+  await expect(row).toHaveCount(1, { timeout: 20_000 });
+  await expect(row).toContainText(recognizedAs('Trading 212'));
+  // formulář se po odeslání vyčistil, i když soubor přišel přetažením
+  await expect(form.getByText('nebo je přetáhni sem')).toBeVisible();
+});

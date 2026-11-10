@@ -107,6 +107,8 @@ describe('zachycení nepřečteného výpisu', () => {
     const summary = await importFileIsolated(db, 'u1', 'vypis.csv', bytes(NEZNAMY_VYPIS));
 
     expect(summary.unrecognized).toBe(true);
+    // jen uschovaný soubor smí hláška po nahrání slíbit doimportovat
+    expect(summary.keptForReview).toBe(true);
     const cases = await listOpenCases(db);
     expect(cases).toHaveLength(1);
     expect(cases[0]!.filename).toBe('vypis.csv');
@@ -126,9 +128,11 @@ describe('zachycení nepřečteného výpisu', () => {
 
   it('prázdný soubor ani PDF se neukládají — chyba není na naší straně', { timeout: 30_000 }, async () => {
     const db = await freshDb();
-    await importFileIsolated(db, 'u1', 'prazdny.csv', bytes(''));
-    await importFileIsolated(db, 'u1', 'vypis.pdf', bytes('%PDF-1.7\n%âã'));
+    const empty = await importFileIsolated(db, 'u1', 'prazdny.csv', bytes(''));
+    const pdf = await importFileIsolated(db, 'u1', 'vypis.pdf', bytes('%PDF-1.7\n%âã'));
     expect(await listOpenCases(db)).toHaveLength(0);
+    expect(empty.keptForReview).toBeUndefined();
+    expect(pdf.keptForReview).toBeUndefined();
   });
 
   it('poznaný formát, ze kterého parser nic nedostane, si taky necháme', { timeout: 30_000 }, async () => {
@@ -258,10 +262,14 @@ describe('zachycení nepřečteného výpisu', () => {
 
   it('víc než pět otevřených případů jeden uživatel nenasbírá', { timeout: 60_000 }, async () => {
     const db = await freshDb();
+    const kept: boolean[] = [];
     for (let i = 0; i < MAX_OPEN_CASES_PER_USER + 2; i += 1) {
-      await importFileIsolated(db, 'u1', `vypis-${i}.csv`, bytes(`${NEZNAMY_VYPIS}\n;;;${i};;`));
+      const summary = await importFileIsolated(db, 'u1', `vypis-${i}.csv`, bytes(`${NEZNAMY_VYPIS}\n;;;${i};;`));
+      kept.push(summary.keptForReview ?? false);
     }
     expect(await listOpenCases(db)).toHaveLength(MAX_OPEN_CASES_PER_USER);
+    // soubor nad strop se neuschoval — hláška po nahrání mu nesmí nic slibovat
+    expect(kept).toEqual([...Array<boolean>(MAX_OPEN_CASES_PER_USER).fill(true), false, false]);
   });
 
   it('plný strop nebrání přepnutí existujícího případu na novou dávku', { timeout: 60_000 }, async () => {

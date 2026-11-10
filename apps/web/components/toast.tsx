@@ -49,7 +49,8 @@ export function Toast({
   floating = false,
   onGone,
 }: {
-  kind: 'ok' | 'chyba';
+  /** `pozor` = upozornění: žlutá tečka a role `status`, drží jako chyba. */
+  kind: 'ok' | 'pozor' | 'chyba';
   text: string;
   /** Plovoucí varianta (pravý dolní roh) — vidět i po skoku na kotvu sekce. */
   floating?: boolean;
@@ -110,7 +111,7 @@ export function Toast({
         aria-hidden
         className={cn(
           'mt-[0.45em] size-2 shrink-0 rounded-full',
-          kind === 'ok' ? 'bg-success' : 'bg-danger',
+          kind === 'ok' ? 'bg-success' : kind === 'pozor' ? 'bg-caution' : 'bg-danger',
         )}
       />
       {/* Dlouhá hláška nesmí zakrýt telefon: nad 40 % výšky okna roluje text

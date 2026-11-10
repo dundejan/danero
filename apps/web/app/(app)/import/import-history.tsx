@@ -1,20 +1,36 @@
+import { Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DisclosureRow } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TextLink } from '@/components/ui/link';
 import { Group, Row } from '@/components/ui/list';
+import { OpenOnSignal } from '@/components/ui/open-on-signal';
 import { Section } from '@/components/ui/section';
-import type { importBatches } from '@/db/schema';
+import { StatusLabel } from '@/components/ui/status';
+import { typeset } from '@/components/typeset';
 import { czDateTime, plural } from '@/lib/format';
+import { PENDING_PROMISE_HOURS } from '@/lib/import-feedback';
 import { cn } from '@/lib/utils';
 import type { UnmappedSymbol } from '@/lib/import-service';
 import { ALIAS_LIST_ANCHOR, filledSentence, type StoredFilled } from '@/lib/alias-feedback';
+import {
+  platformAnchor,
+  UNKNOWN_FORMAT_BROKER,
+  type ImportBatchRow,
+  type PlatformGroup,
+} from '@/lib/import-overview';
 import type { BatchIssueView } from '@/lib/import-resolved';
 import { undoImportAction } from './actions';
 import { platformName } from '@/lib/brokers-catalog';
 
-export type ImportBatchRow = typeof importBatches.$inferSelect;
+export type { ImportBatchRow };
+
+/**
+ * Nepřečtený výpis s otevřeným případem: čeká ve slíbené lhůtě, nebo už po ní
+ * (pak by řádek „do 48 hodin“ protiřečil sekci výš, která zpoždění přiznává).
+ */
+export type UnreadState = 'pending' | 'overdue';
 
 export interface BatchIssues {
   errors?: Array<{ line: number; message: string }>;
@@ -47,15 +63,19 @@ function BatchSummary({
 }: {
   batch: ImportBatchRow;
   view: BatchIssueView;
-  unread: boolean;
+  unread: UnreadState | undefined;
 }) {
   // Nahrání, jehož výpis čeká mezi nepřečtenými, je TOTÉŽ nahrání — s
   // „neznámý formát · 0 nových · 1 chyba“ vypadalo jako druhý, rozbitý
   // soubor (uživatel 9. 11. 2026: „nahrál jsem jeden, vypadá to jako dva“).
   if (unread) {
     return (
-      <span className="type-footnote mt-0.5 block font-normal text-caution-text">
-        Nepřečtený výpis výš — pracujeme na něm
+      <span className="type-footnote mt-0.5 block font-normal text-ink-muted">
+        {typeset(
+          unread === 'overdue'
+            ? 'Zpracování trvá déle, než jsme slíbili — podrobnosti výš'
+            : `Zpracujeme ho do ${PENDING_PROMISE_HOURS} hodin — podrobnosti výš`,
+        )}
       </span>
     );
   }
@@ -105,12 +125,6 @@ function Filename({ children }: { children: string }) {
   return <span className="break-all">{children}</span>;
 }
 
-/**
- * Kód, kterým `lib/import-service.ts` označí dávku ze souboru, jehož formát
- * nepoznal. Jeho jediná hláška se týká celého souboru, ne řádku.
- */
-const UNKNOWN_FORMAT = 'neznámý formát';
-
 /** Hláška k řádku souboru: barvu stavu nese jen označení řádku, text zůstává čitelný inkoustem. */
 function IssueLine({
   line,
@@ -147,7 +161,8 @@ function BatchDetails({ batch, view }: { batch: ImportBatchRow; view: BatchIssue
   const warnings = view.warnings;
   const crossBroker = issues.crossBroker ?? [];
   const filled = filledSentence(issues.filled ?? [], platformName);
-  const wholeFile = batch.broker === UNKNOWN_FORMAT;
+  // nepoznaný soubor má jedinou hlášku, a ta se týká celého souboru, ne řádku
+  const wholeFile = batch.broker === UNKNOWN_FORMAT_BROKER;
   return (
     <div className="type-footnote space-y-3">
       {errors.length > 0 && (
@@ -253,34 +268,123 @@ function rawIssueView(batch: ImportBatchRow): BatchIssueView {
 }
 
 /**
- * Historie importů: co se kdy nahrálo a co z toho přibylo. Řádek říká výsledek
- * (počty), rozbalení ukáže hlášky k souboru a vrácení importu — to je vzácná
- * a nevratná akce, proto je o úroveň hlouběji a za potvrzením.
+ * Řádek dávky: název souboru, výsledek (počty) a datum. Rozbalení ukáže hlášky
+ * k souboru a vrácení importu — to je vzácná a nevratná akce, proto je o úroveň
+ * hlouběji a za potvrzením.
+ */
+function BatchRow({
+  batch,
+  view,
+  highlighted,
+  unread,
+}: {
+  batch: ImportBatchRow;
+  view: BatchIssueView;
+  /** Dávka je právě nahraná: má-li hlášky, otevře se sama. */
+  highlighted: boolean;
+  unread: UnreadState | undefined;
+}) {
+  const issues = batch.issues as BatchIssues;
+  const hasIssues =
+    view.errors.length > 0 ||
+    view.warnings.length > 0 ||
+    view.pendingTrades.length > 0 ||
+    view.pendingDividends.length > 0 ||
+    (issues.crossBroker?.length ?? 0) > 0 ||
+    (issues.filled?.length ?? 0) > 0;
+  const date = czDateTime(batch.createdAt);
+  const title = (
+    <>
+      <Filename>{batch.filename}</Filename>
+      <BatchSummary batch={batch} view={view} unread={unread} />
+      {/* na telefonu by datum vedle souhrnu lámalo řádek na tři — jde pod něj */}
+      <span className="type-caption mt-0.5 block font-normal tabular-nums text-ink-muted sm:hidden">
+        {date}
+      </span>
+    </>
+  );
+  const wideDate = <span className="hidden sm:inline">{date}</span>;
+  // Nepřečtený výpis se nerozbaluje: technická hláška o hlavičce („formát
+  // nepoznáváme…“) byla červená chyba vedle slibu, že ho zpracujeme za
+  // uživatele — a ten na ní nemá co opravit. Vše potřebné říká sekce výš.
+  if (unread || (!hasIssues && batch.added === 0)) {
+    // není co rozbalit: jen duplicity, prázdné období nebo nepřečtený výpis
+    return (
+      <Row label={<span className="type-callout font-medium">{title}</span>}>
+        {/* odsazení zprava drží datum ve sloupci s rozbalovacími řádky (šipka + mezera) */}
+        <span className="type-caption pr-5 text-ink-muted">{wideDate}</span>
+      </Row>
+    );
+  }
+  return (
+    <DisclosureRow
+      // kotva pro odkaz z hlášky číselníku („nejdřív vrať zpět import …“);
+      // `OpenOnHash` otevře i zavřenou skupinu platformy nad ním
+      id={`import-${batch.id}`}
+      title={title}
+      meta={wideDate}
+      defaultOpen={hasIssues && highlighted}
+    >
+      <BatchDetails batch={batch} view={view} />
+    </DisclosureRow>
+  );
+}
+
+/**
+ * Záhlaví platformy: jméno, stav s datem poslední dávky nebo synchronizace
+ * a jeden řádek s obdobím a počtem transakcí. Nic víc — podrobnosti jsou
+ * v dávkách a na kartě připojeného účtu.
+ */
+function PlatformTitle({ group }: { group: PlatformGroup }) {
+  return (
+    <>
+      {group.name}
+      {group.status && (
+        <span className="mt-0.5 block">
+          <StatusLabel tone={group.status.tone}>
+            {group.status.text}
+            {group.status.when && (
+              <span className="font-normal text-ink-muted"> · {group.status.when}</span>
+            )}
+          </StatusLabel>
+        </span>
+      )}
+      <span className="type-footnote mt-0.5 block font-normal tabular-nums text-ink-muted">
+        {group.summary}
+      </span>
+    </>
+  );
+}
+
+/**
+ * Historie importů po platformách: řádek na platformu (odkud data chodí, jak
+ * jsou čerstvá, jaké období pokrývají), po rozbalení její dávky od nejnovější.
+ * Napojený Trading 212 zapisuje dávku každý den — v plochém seznamu pod nimi
+ * ruční výpisy jiných platforem zapadaly. Seskupení a stav počítá
+ * `lib/import-overview.ts`.
  *
- * `highlightedBatchIds` jsou dávky, které uživatel právě nahrál: každá, která
- * má chyby nebo varování, se otevře sama, aby se o nich dozvěděl bez hledání
- * (při nahrání víc souborů naráz ne jen ta poslední — R5-05).
+ * `highlightedBatchIds` jsou dávky, které uživatel právě nahrál: jejich
+ * skupina se otevře a v ní každá dávka, která má chyby nebo varování, aby se
+ * o nich dozvěděl bez hledání (při nahrání víc souborů naráz ne jen ta
+ * poslední — R5-05).
  *
- * `olderHref` vede na delší seznam. Bez něj starší import nešel vrátit zpět
- * vůbec — tlačítko je jen v jeho řádku (R2-05).
+ * Každá skupina má vlastní „Zobrazit starší“. Bez něj starší import nešel
+ * vrátit zpět vůbec — tlačítko je jen v jeho řádku (R2-05).
  */
 export function ImportHistory({
-  batches,
+  groups,
   issueViews,
-  olderHref,
   highlightedBatchIds,
-  unreadBatchIds = new Set(),
+  unreadBatches = new Map(),
 }: {
-  batches: ImportBatchRow[];
+  groups: readonly PlatformGroup[];
   /** Hlášky dávek bez těch, které uživatel vyřídil číselníkem (`lib/import-resolved.ts`). */
   issueViews: ReadonlyMap<string, BatchIssueView>;
-  /** Odkaz „Zobrazit starší“; chybí, když už starší importy nejsou. */
-  olderHref?: string;
   highlightedBatchIds: ReadonlySet<string>;
-  /** Dávky, jejichž výpis čeká v sekci nepřečtených jako otevřený případ. */
-  unreadBatchIds?: ReadonlySet<string>;
+  /** Dávky, jejichž výpis čeká v sekci nepřečtených jako otevřený případ, a zda už po lhůtě. */
+  unreadBatches?: ReadonlyMap<string, UnreadState>;
 }) {
-  if (batches.length === 0) {
+  if (groups.length === 0) {
     return (
       <Section title="Historie importů">
         <EmptyState compact title="Zatím žádný import" headingAs="p">
@@ -291,57 +395,43 @@ export function ImportHistory({
   }
   return (
     <Section title="Historie importů">
-      <Group aria-label="Historie importů">
-        {batches.map((batch) => {
-          const issues = batch.issues as BatchIssues;
-          const view = issueViews.get(batch.id) ?? rawIssueView(batch);
-          const hasIssues =
-            view.errors.length > 0 ||
-            view.warnings.length > 0 ||
-            view.pendingTrades.length > 0 ||
-            view.pendingDividends.length > 0 ||
-            (issues.crossBroker?.length ?? 0) > 0 ||
-            (issues.filled?.length ?? 0) > 0;
-          const date = czDateTime(batch.createdAt);
-          const title = (
-            <>
-              <Filename>{batch.filename}</Filename>
-              <BatchSummary batch={batch} view={view} unread={unreadBatchIds.has(batch.id)} />
-              {/* na telefonu by datum vedle souhrnu lámalo řádek na tři — jde pod něj */}
-              <span className="type-caption mt-0.5 block font-normal tabular-nums text-ink-muted sm:hidden">
-                {date}
-              </span>
-            </>
-          );
-          const wideDate = <span className="hidden sm:inline">{date}</span>;
-          if (!hasIssues && batch.added === 0) {
-            // není co rozbalit: jen duplicity, nebo prázdné období
+      <Group aria-label="Historie importů podle platforem">
+        {groups.map((group) => {
+          const title = <PlatformTitle group={group} />;
+          if (group.batches.length === 0) {
+            // napojený účet, který ještě nic nestáhl — není co rozbalit
             return (
-              <Row key={batch.id} label={<span className="type-callout font-medium">{title}</span>}>
-                {/* odsazení zprava drží datum ve sloupci s rozbalovacími řádky (šipka + mezera) */}
-                <span className="type-caption pr-5 text-ink-muted">{wideDate}</span>
-              </Row>
+              <Row key={group.key} label={<span className="type-callout font-medium">{title}</span>} />
             );
           }
+          const anchor = platformAnchor(group.key);
           return (
-            <DisclosureRow
-              key={batch.id}
-              // kotva pro odkaz z hlášky číselníku („nejdřív vrať zpět import …“)
-              id={`import-${batch.id}`}
-              title={title}
-              meta={wideDate}
-              defaultOpen={hasIssues && highlightedBatchIds.has(batch.id)}
-            >
-              <BatchDetails batch={batch} view={view} />
-            </DisclosureRow>
+            <Fragment key={group.key}>
+              <DisclosureRow id={anchor} title={title} defaultOpen={group.open}>
+                {/* obsah rozbalení je tlumený; dávky jsou řádky jako všude jinde */}
+                <Group aria-label={`Importy: ${group.name}`} className="text-ink sm:pl-3">
+                  {group.batches.map((batch) => (
+                    <BatchRow
+                      key={batch.id}
+                      batch={batch}
+                      view={issueViews.get(batch.id) ?? rawIssueView(batch)}
+                      highlighted={highlightedBatchIds.has(batch.id)}
+                      unread={unreadBatches.get(batch.id)}
+                    />
+                  ))}
+                </Group>
+                {group.olderHref && (
+                  <TextLink href={group.olderHref} chevron className="type-footnote mt-2 sm:ml-3">
+                    Zobrazit starší
+                  </TextLink>
+                )}
+              </DisclosureRow>
+              <OpenOnSignal targetId={anchor} signal={group.openSignal} />
+            </Fragment>
           );
         })}
       </Group>
-      {olderHref && (
-        <TextLink href={olderHref} chevron className="type-footnote mt-2">
-          Zobrazit starší
-        </TextLink>
-      )}
     </Section>
   );
 }
+

@@ -43,8 +43,11 @@ export interface BlockingImport {
   id: string;
   filename: string;
   date: string;
-  /** Řádek importu je v historii na stránce — dá se na něj odkázat. */
-  inHistory: boolean;
+  /**
+   * Odkaz na řádek importu v historii (`batchHistoryHref`): kotva, když je na
+   * stránce, jinak adresa, která jeho platformu prodlouží až k němu.
+   */
+  href: string | null;
 }
 
 export interface AliasRowResult extends ActionResult {
@@ -75,8 +78,8 @@ function ImportNames({ imports }: { imports: BlockingImport[] }) {
       {listed.map((item, index) => (
         <span key={item.id}>
           {index > 0 && ', '}
-          {item.inHistory ? (
-            <a href={`#import-${item.id}`} className="underline underline-offset-2">
+          {item.href ? (
+            <a href={item.href} className="underline underline-offset-2">
               {item.filename}
             </a>
           ) : (

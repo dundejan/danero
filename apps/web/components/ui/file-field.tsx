@@ -7,6 +7,9 @@ import { plural } from '@/lib/format';
  * File input s českými texty — nativní „Choose Files / No file chosen“ nejde
  * přeložit, proto label stylovaný jako tlačítko + vizuálně skrytý input
  * (sr-only, ne display:none — validace `required` potřebuje fokusovatelný prvek).
+ *
+ * Soubory vložené zvenku (přetažení, `UploadDropZone`) se ukážou stejně jako
+ * vybrané: vkládající na poli vyvolá `change`.
  */
 export function FileField({
   name,
@@ -14,12 +17,19 @@ export function FileField({
   multiple,
   required,
   ariaLabel,
+  dropHint,
 }: {
   name: string;
   accept?: string;
   multiple?: boolean;
   required?: boolean;
   ariaLabel?: string;
+  /**
+   * Nápověda vedle tlačítka, dokud není nic vybráno („nebo je přetáhni
+   * sem“). Jen u myši — na dotykovém displeji se nic přetáhnout nedá, tam
+   * zůstává „Žádný soubor nevybrán“.
+   */
+  dropHint?: string;
 }) {
   const [fileNames, setFileNames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,11 +63,20 @@ export function FileField({
         />
       </label>
       <span className="min-w-0 truncate text-ink-muted">
-        {fileNames.length === 0
-          ? 'Žádný soubor nevybrán'
-          : fileNames.length <= 3
-            ? fileNames.join(', ')
-            : `${fileNames.length} ${plural(fileNames.length, 'soubor', 'soubory', 'souborů')}`}
+        {fileNames.length === 0 ? (
+          dropHint ? (
+            <>
+              <span className="pointer-coarse:hidden">{dropHint}</span>
+              <span className="hidden pointer-coarse:inline">Žádný soubor nevybrán</span>
+            </>
+          ) : (
+            'Žádný soubor nevybrán'
+          )
+        ) : fileNames.length <= 3 ? (
+          fileNames.join(', ')
+        ) : (
+          `${fileNames.length} ${plural(fileNames.length, 'soubor', 'soubory', 'souborů')}`
+        )}
       </span>
     </div>
   );

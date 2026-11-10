@@ -27,6 +27,12 @@ import { logAudit, pruneAuditLog } from '@/lib/audit';
 import { fetchCnbYear, loadCnbRateProvider } from '@/lib/cnb';
 import { importCsvText, importFileIsolated, loadImportState } from '@/lib/import-service';
 import {
+  loadPlatformBatches,
+  loadPlatformStats,
+  PLATFORM_PAGE,
+  platformRequest,
+} from '@/lib/import-overview';
+import {
   deleteAlias,
   importsUsingIsin,
   loadAliases,
@@ -400,6 +406,41 @@ popis('kompatibilita s produkčním Postgresem', () => {
     expect(stored('schwab', 'GOOG', 'trade', [summary.batchId])).toBe(true);
     expect(stored('schwab', 'GOOG', 'trade', ['jina-davka'])).toBe(false);
     expect(stored('schwab', 'GOOG', 'dividend', [summary.batchId])).toBe(false);
+  });
+
+  it('historie po platformách: count/min/max a row_number přes postgres.js', {
+    timeout: 30_000,
+  }, async () => {
+    const userId = await makeUser();
+    const t212 = [
+      T212_HEADER,
+      'Market buy,2024-01-10 14:30:02,US02079K1079,GOOG,Alphabet C,2,140.00,USD,0.0435,,,6500.00,CZK,,,,EOF9101,1.00,CZK',
+      'Market buy,2025-03-04 14:30:02,US02079K1079,GOOG,Alphabet C,1,170.00,USD,0.0435,,,4000.00,CZK,,,,EOF9102,1.00,CZK',
+    ].join('\n');
+    const encode = (text: string) => new TextEncoder().encode(text).buffer as ArrayBuffer;
+    await importFileIsolated(db, userId, 't212.csv', encode(t212));
+    for (let index = 0; index < PLATFORM_PAGE + 2; index += 1) await makeBatch(userId, 'trading212');
+
+    const [stats] = await loadPlatformStats(db, userId);
+    // count() je v Postgresu bigint — driver ho vrací jako text, mapovat se musí na číslo
+    expect(stats).toMatchObject({
+      broker: 'trading212',
+      batchCount: PLATFORM_PAGE + 3,
+      txCount: 2,
+      firstTxDate: '2024-01-10',
+      lastTxDate: '2025-03-04',
+    });
+    expect(stats!.lastImportAt).toBeInstanceOf(Date);
+
+    const firstPage = await loadPlatformBatches(db, userId, null);
+    expect(firstPage).toHaveLength(PLATFORM_PAGE);
+    expect(firstPage[0]!.createdAt).toBeInstanceOf(Date);
+    const all = await loadPlatformBatches(
+      db,
+      userId,
+      platformRequest({ platforma: 'trading212', historie: '50' }),
+    );
+    expect(all).toHaveLength(PLATFORM_PAGE + 3);
   });
 
   it('záchrana zaseknutých jobů projde bez chyby driveru', { timeout: 30_000 }, async () => {

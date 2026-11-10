@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { urlWithoutFeedback } from '@/components/toast';
@@ -16,6 +17,7 @@ import {
   offersOverviewAfterUpload,
   uploadedBatchIds,
 } from '@/lib/import-feedback';
+import { MAX_OPEN_CASES_PER_USER } from '@/lib/failed-imports';
 import { importFileIsolated } from '@/lib/import-service';
 
 /**
@@ -54,6 +56,12 @@ const T212_CSV = [
   'Action,Time,ISIN,Ticker,Name,No. of shares,Price / share,Currency (Price / share),Exchange rate,Result,Currency (Result),Total,Currency (Total),Withholding tax,Currency (Withholding tax),Notes,ID',
   'Market buy,2024-06-10 14:30:02,US0378331005,AAPL,Apple Inc,100,185.50,USD,,,,,,,,,FB1',
   'Market sell,2026-03-05 15:01:10,US0378331005,AAPL,Apple Inc,50,210.00,USD,,,,,,,,,FB2',
+].join('\n');
+
+/** Výpis od vymyšlené platformy: žádný sniffer ho nepozná (vzor z failed-imports.test.ts). */
+const UNKNOWN_CSV = [
+  'Obchodni den;Titul;Operace;Mnozstvi;Kurz;Mena',
+  '2026-01-05;CEZ;Nakup;10;1050,50;CZK',
 ].join('\n');
 
 const bytes = (text: string): ArrayBuffer =>
@@ -147,6 +155,9 @@ describe('hláška z parametrů adresy', () => {
     expect(importFeedback(withErrors)!.text).toContain('Soubor má chyby');
     // víc souborů, chybu má jen jeden z nich
     expect(offersOverviewAfterUpload({ ...clean, soubory: '3', chyby: '1' })).toBe(false);
+    // výpis, který čeká na zpracování: hotovo není, i když jiný soubor data
+    // přinesl — přehled by ukázal čísla bez platformy, kterou teprve nahrajeme
+    expect(offersOverviewAfterUpload({ ...clean, soubory: '2', ceka: '1' })).toBe(false);
     // bez prvních dat se nenabízí nikdy
     expect(offersOverviewAfterUpload({ ...clean, prvni: undefined })).toBe(false);
   });
@@ -190,11 +201,67 @@ describe('hláška z parametrů adresy', () => {
     for (const [soubory, chyby] of [['1', '1'], ['3', '3'], ['3', '1']] as const) {
       expect(failed(soubory, chyby).text).not.toMatch(/^Nahráno/);
     }
-    // část prošla: potvrzení, ale s upozorněním
+    // část prošla: potvrzení, ale v tónu upozornění — zelená tečka vedle
+    // „Chyby mají 2 z nich“ by říkala „hotovo“
     const partial = importFeedback({ ulozeno: 'nahrano', soubory: '3', pridano: '8', chyby: '2' })!;
-    expect(partial.kind).toBe('ok');
+    expect(partial.kind).toBe('pozor');
     expect(partial.text).toBe(
       'Nahráno: 3 soubory, přibylo 8 transakcí. Chyby mají 2 z nich — jaké, je napsané v historii importů.',
+    );
+  });
+
+  /**
+   * Nepřečtený výpis, který jsme si uschovali, provozovatel do pár hodin
+   * doimportuje za uživatele. Do 10. 11. 2026 po něm svítila červená chyba
+   * „Soubor má chyby“ — a hned pod ní sekce „Na zpracování pracujeme“.
+   */
+  it('uschovaný nepřečtený výpis je upozornění se slibem, ne chyba', () => {
+    const upload = (soubory: string, ceka: string) =>
+      importFeedback({ ulozeno: 'nahrano', soubory, pridano: '0', chyby: '0', ceka })!;
+    expect(upload('1', '1')).toEqual({
+      kind: 'pozor',
+      text: 'Výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do 48 hodin a dáme ti vědět e-mailem.',
+    });
+    expect(upload('2', '2')).toEqual({
+      kind: 'pozor',
+      text: 'Výpisy (2) se nepodařilo zpracovat hned — nahrajeme je za tebe do 48 hodin a dáme ti vědět e-mailem.',
+    });
+  });
+
+  it('smíšené nahrání: hláška řekne obojí a skutečná chyba má v tónu přednost', () => {
+    const upload = (fields: Record<string, string>) =>
+      importFeedback({ ulozeno: 'nahrano', ...fields })!;
+    // část přinesla data, jeden výpis čeká
+    expect(upload({ soubory: '3', pridano: '8', chyby: '0', ceka: '1' })).toEqual({
+      kind: 'pozor',
+      text: 'Nahráno: 3 soubory, přibylo 8 transakcí. Jeden výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do 48 hodin.',
+    });
+    // ostatní soubory byly duplicity, dva výpisy čekají
+    expect(upload({ soubory: '3', pridano: '0', chyby: '0', ceka: '2' })).toEqual({
+      kind: 'pozor',
+      text: 'Nahráno: 3 soubory, žádná nová transakce nepřibyla. 2 výpisy se nepodařilo zpracovat hned — nahrajeme je za tebe do 48 hodin.',
+    });
+    // data, chyba i čekající výpis naráz
+    expect(upload({ soubory: '3', pridano: '8', chyby: '1', ceka: '1' })).toEqual({
+      kind: 'pozor',
+      text: 'Nahráno: 3 soubory, přibylo 8 transakcí. Chyby má 1 z nich — jaké, je napsané v historii importů. Jeden výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do 48 hodin.',
+    });
+    // nic nepřibylo a jeden soubor má skutečnou chybu: červená, i když druhý čeká
+    expect(upload({ soubory: '2', pridano: '0', chyby: '1', ceka: '1' })).toEqual({
+      kind: 'chyba',
+      text: 'Nahrané soubory (2) nic nového nepřinesly. Chyby má 1 z nich — jaké, je napsané v historii importů. Jeden výpis se nepodařilo zpracovat hned — nahrajeme ho za tebe do 48 hodin.',
+    });
+  });
+
+  it('čekající a vadné soubory z adresy nepřesáhnou počet souborů', () => {
+    // podvržená adresa: chyb i čekajících víc, než kolik bylo souborů
+    const forged = importFeedback({ ulozeno: 'nahrano', soubory: '2', pridano: '0', chyby: '2', ceka: '5' })!;
+    expect(forged.kind).toBe('chyba');
+    expect(forged.text).not.toContain('48 hodin');
+    // a toast počet čekajících z adresy uklidí s ostatními údaji
+    expect(IMPORT_FEEDBACK_PARAMS).toContain('ceka');
+    expect(urlWithoutFeedback('http://danero.test/import?ulozeno=nahrano&ceka=1#historie')).toBe(
+      'http://danero.test/import#historie',
     );
   });
 
@@ -380,6 +447,65 @@ describe('akce na /import končí na adrese s hláškou, ne na té právě otev�
     expect(batches.map((batch) => batch.id)).toContain(url!.searchParams.get('davka'));
     expect(url!.hash).toBe('#historie');
   });
+
+  it(
+    'nahrání: uschovaný nepřečtený výpis čeká na zpracování, PDF zůstává chybou',
+    { timeout: 30_000 },
+    async () => {
+      process.env.DANERO_EMAIL_LOG = join(mkdtempSync(join(tmpdir(), 'danero-feedback-')), 'emails.log');
+      try {
+        await freshDb();
+        const { uploadImportAction } = await import('@/app/(app)/import/actions');
+        const data = new FormData();
+        data.append('soubory', new File([T212_CSV], 't212.csv', { type: 'text/csv' }));
+        data.append('soubory', new File([UNKNOWN_CSV], 'neznamy.csv', { type: 'text/csv' }));
+        data.append('soubory', new File(['%PDF-1.7 smyšlený obsah'], 'vypis.csv', { type: 'text/csv' }));
+
+        const url = await target(uploadImportAction, data);
+        expect(url!.searchParams.get('soubory')).toBe('3');
+        // PDF si nenecháváme (vada souboru, ne naše) — to je chyba
+        expect(url!.searchParams.get('chyby')).toBe('1');
+        // nepoznaný formát se uschoval a čeká, do chyb se nepočítá
+        expect(url!.searchParams.get('ceka')).toBe('1');
+        const feedback = importFeedback(Object.fromEntries(url!.searchParams))!;
+        expect(feedback.kind).toBe('pozor');
+        expect(feedback.text).toContain('Jeden výpis se nepodařilo zpracovat hned');
+      } finally {
+        delete process.env.DANERO_EMAIL_LOG;
+      }
+    },
+  );
+
+  it(
+    'nahrání: nepoznaný soubor, který se neuschoval (plný strop případů), zůstává chybou',
+    { timeout: 60_000 },
+    async () => {
+      process.env.DANERO_EMAIL_LOG = join(mkdtempSync(join(tmpdir(), 'danero-feedback-')), 'emails.log');
+      try {
+        const db = await freshDb();
+        for (let i = 0; i < MAX_OPEN_CASES_PER_USER; i += 1) {
+          await importFileIsolated(db, 'u1', `vypis-${i}.csv`, bytes(`${UNKNOWN_CSV}\n;;;${i};;`));
+        }
+        const { uploadImportAction } = await import('@/app/(app)/import/actions');
+        const data = new FormData();
+        data.append(
+          'soubory',
+          new File([`${UNKNOWN_CSV}\n;;;navic;;`], 'dalsi.csv', { type: 'text/csv' }),
+        );
+
+        const url = await target(uploadImportAction, data);
+        expect(url!.searchParams.get('chyby')).toBe('1');
+        expect(url!.searchParams.has('ceka')).toBe(false);
+        // slib „nahrajeme ho za tebe“ by tu lhal — provozovatel soubor nemá
+        expect(importFeedback(Object.fromEntries(url!.searchParams))).toEqual({
+          kind: 'chyba',
+          text: 'Soubor má chyby a nic nového z něj nepřibylo — jaké, je napsané v historii importů.',
+        });
+      } finally {
+        delete process.env.DANERO_EMAIL_LOG;
+      }
+    },
+  );
 
   it(
     'nahrání: jen první soubor, který přinesl data, nese příznak prvních dat',
