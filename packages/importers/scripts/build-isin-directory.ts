@@ -7,9 +7,14 @@
  *   pnpm --filter @danero/importers isin-directory --dry-run  # jen vypíše, co by se změnilo
  *
  * Zdroj: Wikidata (query.wikidata.org), data pod CC0 1.0 — položky s ISIN
- * (P946) a výpisem na NYSE nebo Nasdaqu (P414) s kvalifikátorem ticker (P249).
+ * (P946) a výpisem na burze (P414) s kvalifikátorem ticker (P249). Burzy
+ * jsou v `src/isin-directory/markets.ts`: NYSE a Nasdaq, a pro eToro
+ * Londýn, Xetra, Paříž, Tokio, Lisabon a Hongkong.
  *
- * Do souboru jde jen JEDNOZNAČNÁ dvojice ticker → ISIN. Vyřazuje se:
+ * Kandidáty jsou všechny dvojice (trh, ticker, ISIN) jedné položky —
+ * Wikidata u položky nepíšou, ke kterému tickeru který ISIN patří (Alphabet
+ * má GOOG i GOOGL a oba ISIN, TSMC ISIN tchajwanské akcie i amerického ADR). Které
+ * dvojici patří, rozhodne až ověření přes OpenFIGI (viz níž). Vyřazuje se:
  * - firma, která zanikla (P576), byla nahrazena (P1366), ukončena (P2669) nebo
  *   má mateřskou společnost (P749 — převzatá firma, VMware pod Broadcomem):
  *   její ticker burza časem přidělí jinému emitentovi. Wikidata převzetí
@@ -17,20 +22,24 @@
  *   import každou doplněnou dvojici ukládá do číselníku uživatele, kde ji vidí
  *   a může opravit,
  * - výpis nebo ISIN s koncem (P582) či zastaralým hodnocením (deprecated),
- * - ticker, který není jen 1–5 písmen (třídy BRK.B, preferované akcie),
- * - položka, která nemá PRÁVĚ JEDEN platný americký ISIN akcie (prefix US,
- *   číselné číslo emise — dluhopisy mají písmena — a sedící kontrolní číslice). Wikidata u položky nepíšou, ke kterému tickeru
- *   který ISIN patří — Alphabet má oba (GOOG i GOOGL) a přiřadit je nejde.
- *   Zahraniční ISIN (ADR vs. domácí akcie) se nebere vůbec: ticker TSM na NYSE
- *   je ADR s jiným ISIN než tchajwanská akcie, kterou má položka TSMC.
- * - položka s víc tickery na amerických burzách (zase třídy akcií),
- * - ticker, který napříč položkami vede na víc ISIN, a ISIN s víc tickery.
+ * - ticker, který tvaru trhu neodpovídá (v USA jen 1–5 písmen — třídy BRK.B),
+ * - ISIN s chybnou kontrolní číslicí a americký ISIN, který není akcie
+ *   (číslo emise s písmeny = dluhopis; Paramount Global měl `US124857AK99`),
+ * - položka s víc než `MAX_TICKERS` tickery nebo `MAX_ISINS` ISIN na trhu,
+ * - po ověření ticker, který na trhu vede na víc ověřených ISIN, a ISIN
+ *   s víc tickery.
+ *
+ * Zahraniční ISIN u amerického tickeru se bere, jen když ho OpenFIGI na
+ * amerických burzách vede pod TÍMŽ tickerem: ticker TSM na NYSE je ADR
+ * s jiným ISIN než tchajwanská akcie (ta je v USA jen mimoburzovně pod
+ * TSMWF), kdežto Alcon kotuje v New Yorku přímo akcii se švýcarským
+ * ISIN.
  *
  * Wikidata samy nestačí: revize 15. 10. 2026 v nich našla 20 % chyb — ISIN
  * jiného emitenta (TT → ISIN Ingersoll Rand, CB → stará Chubb Corp,
  * recyklované tickery LB, TEN…), zastaralý ISIN téže firmy (XOM) a tickery,
  * které emitent už nepoužívá. Každý kandidát proto projde OVĚŘENÍM PŘES
- * OpenFIGI (`verifyWithOpenFigi`): dotaz na ISIN na amerických burzách musí
+ * OpenFIGI (`verifyWithOpenFigi`): dotaz na ISIN na burze trhu musí
  * vrátit FIGI se STEJNÝM tickerem a druhem cenného papíru ze seznamu
  * `ALLOWED_SECURITY_TYPES`. Z odpovědi se bere jen ano/ne, nic se z ní
  * neukládá. Volá se jen při ručním běhu skriptu; bez klíče platí limit
@@ -48,6 +57,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isValidIsin } from '@danero/shared';
 import { ISIN_DIRECTORY, type IsinDirectoryRecord } from '../src/isin-directory/data';
+import {
+  MARKET_CODES,
+  MARKETS,
+  normalizeTicker,
+  type MarketCode,
+} from '../src/isin-directory/markets';
 
 const OUTPUT = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -69,10 +84,18 @@ const OPENFIGI_ENDPOINT = 'https://api.openfigi.com/v3/mapping';
  */
 export const ALLOWED_SECURITY_TYPES = new Set(['Common Stock', 'ADR', 'REIT', 'MLP']);
 
-/** NYSE (Q13677) a Nasdaq (Q82059). */
+/** Burza ve Wikidatech → trh číselníku. */
+const MARKET_BY_EXCHANGE = new Map<string, MarketCode>(
+  MARKET_CODES.flatMap((code) => MARKETS[code].wikidata.map((qid) => [qid, code] as const)),
+);
+
+/** Kolik tickerů a ISIN jedné položky na jednom trhu ještě zkoušíme spárovat. */
+const MAX_TICKERS = 3;
+const MAX_ISINS = 4;
+
 const QUERY = `
-SELECT ?item ?label ?ticker ?listingRank ?listingEnd ?isin ?isinRank ?isinEnd ?ended WHERE {
-  VALUES ?exchange { wd:Q13677 wd:Q82059 }
+SELECT ?item ?label ?exchange ?ticker ?listingRank ?listingEnd ?isin ?isinRank ?isinEnd ?ended WHERE {
+  VALUES ?exchange { ${[...MARKET_BY_EXCHANGE.keys()].map((qid) => `wd:${qid}`).join(' ')} }
   ?item p:P414 ?listing .
   ?listing ps:P414 ?exchange ; pq:P249 ?ticker ; wikibase:rank ?listingRank .
   OPTIONAL { ?listing pq:P582 ?listingEnd }
@@ -93,11 +116,16 @@ const DEPRECATED = 'http://wikiba.se/ontology#DeprecatedRank';
  */
 export const isUsEquityIsin = (isin: string): boolean =>
   /^US[A-Z0-9]{6}\d{2}[A-Z0-9]\d$/.test(isin) && isValidIsin(isin);
-const US_TICKER = /^[A-Z]{1,5}$/;
+
+/** ISIN, který do číselníku smí: platný, a když je americký, tak akcie. */
+export const isEquityIsin = (isin: string): boolean =>
+  isValidIsin(isin) && (!isin.startsWith('US') || isUsEquityIsin(isin));
 
 interface SparqlRow {
   item: { value: string };
   label?: { value: string };
+  /** Burza (P414) — URI položky ve Wikidatech. */
+  exchange: { value: string };
   ticker: { value: string };
   listingRank: { value: string };
   listingEnd?: { value: string };
@@ -111,7 +139,8 @@ interface SparqlRow {
 interface ItemFacts {
   qid: string;
   label: string | undefined;
-  tickers: Set<string>;
+  /** Tickery v jednotném tvaru po trzích. */
+  tickers: Map<MarketCode, Set<string>>;
   isins: Set<string>;
   ended: boolean;
 }
@@ -127,7 +156,11 @@ async function fetchRows(): Promise<SparqlRow[]> {
   return body.results.bindings;
 }
 
-/** Kandidáti z Wikidat po všech vyřazovacích pravidlech (viz hlavička souboru). */
+/**
+ * Kandidátní dvojice z Wikidat po vyřazovacích pravidlech (viz hlavička
+ * souboru). Jednoznačnost se tu NEhlídá — rozhoduje až ověření
+ * (`verifyWithOpenFigi`) a výběr (`selectUnambiguous`).
+ */
 export function candidatesFrom(rows: SparqlRow[]): {
   records: IsinDirectoryRecord[];
   excluded: Record<string, number>;
@@ -139,69 +172,97 @@ export function candidatesFrom(rows: SparqlRow[]): {
   };
   for (const row of rows) {
     const qid = row.item.value.replace('http://www.wikidata.org/entity/', '');
+    const market = MARKET_BY_EXCHANGE.get(row.exchange.value.replace('http://www.wikidata.org/entity/', ''));
     const facts = items.get(qid) ?? {
       qid,
       label: undefined,
-      tickers: new Set(),
+      tickers: new Map(),
       isins: new Set(),
       ended: false,
     };
     facts.label ??= row.label?.value;
     if (row.ended?.value === 'true') facts.ended = true;
-    if (row.listingRank.value !== DEPRECATED && !row.listingEnd)
-      facts.tickers.add(row.ticker.value);
+    if (market && row.listingRank.value !== DEPRECATED && !row.listingEnd) {
+      const ticker = normalizeTicker(market, row.ticker.value);
+      const known = facts.tickers.get(market) ?? new Set<string>();
+      if (ticker) facts.tickers.set(market, known.add(ticker));
+      else {
+        exclude('ticker neodpovídá tvaru trhu');
+        facts.tickers.set(market, known);
+      }
+    }
     if (row.isinRank.value !== DEPRECATED && !row.isinEnd) {
       facts.isins.add(row.isin.value.trim().toUpperCase());
     }
     items.set(qid, facts);
   }
 
-  const proposed: IsinDirectoryRecord[] = [];
+  const records: IsinDirectoryRecord[] = [];
   for (const facts of items.values()) {
-    const usIsins = [...facts.isins].filter(isUsEquityIsin);
-    const tickers = [...facts.tickers];
+    const isins = [...facts.isins].filter(isEquityIsin);
     // Zaniklá nebo převzatá firma: její ticker burza časem přidělí jinému
     // emitentovi a starý ISIN by se mu potichu přiřadil (VMW, FRC, SPLK…).
-    if (facts.ended) exclude('firma zanikla, byla nahrazena nebo převzata');
-    else if (tickers.length === 0) exclude('výpis ukončený nebo zastaralý');
-    else if (usIsins.length !== 1)
-      exclude(usIsins.length === 0 ? 'bez platného US ISIN' : 'víc US ISIN u jedné položky');
-    else if (tickers.length !== 1) exclude('víc tickerů u jedné položky');
-    else if (!US_TICKER.test(tickers[0]!)) exclude('ticker není jen písmena');
-    else if (!facts.label) exclude('bez anglického názvu');
-    else {
-      proposed.push({
-        market: 'US',
-        ticker: tickers[0]!,
-        isin: usIsins[0]!,
-        name: facts.label,
-        source: `wikidata:${facts.qid}`,
-      });
+    if (facts.ended) {
+      exclude('firma zanikla, byla nahrazena nebo převzata');
+      continue;
+    }
+    if (!facts.label) {
+      exclude('bez anglického názvu');
+      continue;
+    }
+    if (isins.length === 0) {
+      exclude('bez platného ISIN akcie');
+      continue;
+    }
+    if (isins.length > MAX_ISINS) {
+      exclude('příliš mnoho ISIN u jedné položky');
+      continue;
+    }
+    for (const [market, tickers] of facts.tickers) {
+      if (tickers.size === 0) exclude('výpis ukončený, zastaralý nebo bez platného tickeru');
+      else if (tickers.size > MAX_TICKERS) exclude('příliš mnoho tickerů u jedné položky');
+      else {
+        for (const ticker of tickers) {
+          for (const isin of isins) {
+            records.push({ market, ticker, isin, name: facts.label, source: `wikidata:${facts.qid}` });
+          }
+        }
+      }
     }
   }
+  return { records, excluded };
+}
 
-  // jednoznačnost napříč položkami: ticker → jeden ISIN, ISIN → jeden ticker
+/**
+ * Z ověřených dvojic jen ty jednoznačné: na trhu ticker → jeden ISIN a ISIN
+ * → jeden ticker. Tatáž dvojice z víc položek (duplicitní položky Wikidat)
+ * se vezme jednou.
+ */
+export function selectUnambiguous(verified: readonly IsinDirectoryRecord[]): {
+  records: IsinDirectoryRecord[];
+  excluded: Record<string, number>;
+} {
+  const excluded: Record<string, number> = {};
+  const exclude = (reason: string): void => {
+    excluded[reason] = (excluded[reason] ?? 0) + 1;
+  };
   const isinsByTicker = new Map<string, Set<string>>();
   const tickersByIsin = new Map<string, Set<string>>();
-  for (const record of proposed) {
-    isinsByTicker.set(
-      record.ticker,
-      (isinsByTicker.get(record.ticker) ?? new Set()).add(record.isin),
-    );
-    tickersByIsin.set(
-      record.isin,
-      (tickersByIsin.get(record.isin) ?? new Set()).add(record.ticker),
-    );
+  for (const record of verified) {
+    const ticker = `${record.market}|${record.ticker}`;
+    const isin = `${record.market}|${record.isin}`;
+    isinsByTicker.set(ticker, (isinsByTicker.get(ticker) ?? new Set()).add(record.isin));
+    tickersByIsin.set(isin, (tickersByIsin.get(isin) ?? new Set()).add(record.ticker));
   }
   const records: IsinDirectoryRecord[] = [];
   const seen = new Set<string>();
-  for (const record of proposed) {
-    if (isinsByTicker.get(record.ticker)!.size > 1) exclude('ticker vede na víc ISIN');
-    else if (tickersByIsin.get(record.isin)!.size > 1) exclude('ISIN má víc tickerů');
-    else if (!seen.has(record.ticker)) {
-      seen.add(record.ticker);
-      records.push(record);
-    }
+  for (const record of verified) {
+    const ticker = `${record.market}|${record.ticker}`;
+    if (seen.has(ticker)) continue;
+    seen.add(ticker);
+    if (isinsByTicker.get(ticker)!.size > 1) exclude('ticker vede na víc ISIN');
+    else if (tickersByIsin.get(`${record.market}|${record.isin}`)!.size > 1) exclude('ISIN má víc tickerů');
+    else records.push(record);
   }
   return { records, excluded };
 }
@@ -242,9 +303,10 @@ function openFigiFetch(apiKey: string | undefined): FigiFetch {
 }
 
 /**
- * Ověření kandidátů přes OpenFIGI: ISIN na amerických burzách (`exchCode: US`)
- * musí vést na FIGI se stejným tickerem a povoleným druhem cenného papíru.
- * Vrací ověřené záznamy a důvody vyřazení ostatních.
+ * Ověření kandidátů přes OpenFIGI: ISIN na burze trhu (`exchCode` z
+ * `markets.ts`, v USA `US`) musí vést na FIGI se stejným tickerem (v jednotném
+ * tvaru trhu — OpenFIGI píše londýnské `BA/` a hongkongské bez nul) a povoleným
+ * druhem cenného papíru. Vrací ověřené záznamy a důvody vyřazení ostatních.
  */
 export async function verifyWithOpenFigi(
   records: readonly IsinDirectoryRecord[],
@@ -259,13 +321,19 @@ export async function verifyWithOpenFigi(
   for (let start = 0; start < records.length; start += batchSize) {
     const chunk = records.slice(start, start + batchSize);
     const answers = await fetchBatch(
-      chunk.map((record) => ({ idType: 'ID_ISIN', idValue: record.isin, exchCode: 'US' })),
+      chunk.map((record) => ({
+        idType: 'ID_ISIN',
+        idValue: record.isin,
+        exchCode: MARKETS[record.market].openFigiExchCode,
+      })),
     );
     chunk.forEach((record, index) => {
       const entries = answers[index]?.data ?? [];
-      const sameTicker = entries.filter((entry) => entry.ticker === record.ticker);
+      const sameTicker = entries.filter(
+        (entry) => normalizeTicker(record.market, entry.ticker ?? '') === record.ticker,
+      );
       if (entries.length === 0)
-        rejected.push({ record, reason: 'OpenFIGI ISIN na US burzách nezná' });
+        rejected.push({ record, reason: 'OpenFIGI ISIN na burze trhu nezná' });
       else if (sameTicker.length === 0) {
         const tickers = [...new Set(entries.map((entry) => entry.ticker))].join(', ');
         rejected.push({ record, reason: `OpenFIGI vede ISIN na jiný ticker (${tickers})` });
@@ -309,11 +377,24 @@ export function diffRecords(
 export const sortRecords = (records: readonly IsinDirectoryRecord[]): IsinDirectoryRecord[] =>
   [...records].sort((a, b) => `${a.market}|${a.ticker}`.localeCompare(`${b.market}|${b.ticker}`));
 
+/**
+ * Obsah `data.ts`. Řádky jsou n-tice prostých řetězců seskupené po trzích
+ * a trh doplní až kód: dva tisíce objektů s trhem jako řetězcovým literálem
+ * TypeScript nezvládne („union type that is too complex“, TS2590).
+ */
 export function renderDataFile(records: readonly IsinDirectoryRecord[]): string {
-  const lines = records.map(
-    (record) =>
-      `  { market: 'US', ticker: '${record.ticker}', isin: '${record.isin}', name: ${JSON.stringify(record.name)}, source: '${record.source}' },`,
-  );
+  const groups = MARKET_CODES.flatMap((market) => {
+    const rows = records.filter((record) => record.market === market);
+    if (rows.length === 0) return [];
+    return [
+      `  ${market}: [`,
+      ...rows.map(
+        (record) =>
+          `    [${JSON.stringify(record.ticker)}, ${JSON.stringify(record.isin)}, ${JSON.stringify(record.name)}, ${JSON.stringify(record.source)}],`,
+      ),
+      '  ],',
+    ];
+  });
   return [
     '/**',
     ' * Vestavěný číselník ISIN — VYGENEROVÁNO skriptem',
@@ -324,8 +405,10 @@ export function renderDataFile(records: readonly IsinDirectoryRecord[]): string 
     ' * každá dvojice ověřená přes OpenFIGI (https://www.openfigi.com).',
     ' */',
     '',
+    "import type { MarketCode } from './markets';",
+    '',
     'export interface IsinDirectoryRecord {',
-    "  market: 'US';",
+    '  market: MarketCode;',
     '  ticker: string;',
     '  isin: string;',
     '  name: string;',
@@ -333,10 +416,19 @@ export function renderDataFile(records: readonly IsinDirectoryRecord[]): string 
     '  source: string;',
     '}',
     '',
+    '/** Ticker, ISIN, název, zdroj. */',
+    'type Row = readonly [ticker: string, isin: string, name: string, source: string];',
+    '',
     '// prettier-ignore',
-    'export const ISIN_DIRECTORY: readonly IsinDirectoryRecord[] = [',
-    ...lines,
-    '];',
+    'const ROWS: Partial<Record<MarketCode, readonly Row[]>> = {',
+    ...groups,
+    '};',
+    '',
+    'export const ISIN_DIRECTORY: readonly IsinDirectoryRecord[] = (',
+    '  Object.entries(ROWS) as Array<[MarketCode, readonly Row[]]>',
+    ').flatMap(([market, rows]) =>',
+    '  rows.map(([ticker, isin, name, source]) => ({ market, ticker, isin, name, source })),',
+    ');',
     '',
   ].join('\n');
 }
@@ -346,14 +438,14 @@ async function main(): Promise<void> {
   const apiKey = process.env.OPENFIGI_API_KEY || undefined;
   const rows = await fetchRows();
   const { records: candidates, excluded } = candidatesFrom(rows);
-  console.log(`Wikidata: ${rows.length} řádků, ${candidates.length} jednoznačných dvojic.`);
+  console.log(`Wikidata: ${rows.length} řádků, ${candidates.length} kandidátních dvojic.`);
   for (const [reason, count] of Object.entries(excluded))
     console.log(`  vyřazeno (${reason}): ${count}`);
 
   console.log(
     `OpenFIGI: ověřuji ${candidates.length} dvojic${apiKey ? ' (s klíčem)' : ' (bez klíče, potrvá to)'}…`,
   );
-  const { records: verified, rejected } = await verifyWithOpenFigi(
+  const { records: confirmed, rejected } = await verifyWithOpenFigi(
     candidates,
     openFigiFetch(apiKey),
     {
@@ -367,12 +459,23 @@ async function main(): Promise<void> {
     reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
   }
   for (const [reason, count] of reasons) console.log(`  vyřazeno (${reason}): ${count}`);
+  const { records: verified, excluded: ambiguous } = selectUnambiguous(confirmed);
+  for (const [reason, count] of Object.entries(ambiguous))
+    console.log(`  vyřazeno po ověření (${reason}): ${count}`);
 
-  // Výpadek nebo změna API by jinak tiše vyprázdnila soubor.
-  if (verified.length < candidates.length / 2) {
-    throw new Error(
-      `OpenFIGI ověřila jen ${verified.length} z ${candidates.length} dvojic — podezřelé, soubor nepřepisuji.`,
-    );
+  // Výpadek nebo změna API by jinak tiše vyprázdnila soubor. Kandidátů je
+  // víc než záznamů (každý ticker se zkouší se všemi ISIN položky), proto se
+  // porovnává se stávajícím souborem.
+  // Hlídá se každý trh zvlášť: rozbitý kód burzy v OpenFIGI by jinak potichu
+  // vymazal celou burzu, zatímco americká část by pojistkou prošla.
+  for (const market of MARKET_CODES) {
+    const before = ISIN_DIRECTORY.filter((record) => record.market === market).length;
+    const after = verified.filter((record) => record.market === market).length;
+    if (before >= 10 && after < before * 0.8) {
+      throw new Error(
+        `OpenFIGI ověřila na trhu ${market} jen ${after} dvojic (dřív ${before}) — podezřelé, soubor nepřepisuji.`,
+      );
+    }
   }
   const records = sortRecords(verified);
   const { added, removed, changed } = diffRecords(ISIN_DIRECTORY, records);

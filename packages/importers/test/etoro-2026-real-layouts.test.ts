@@ -351,6 +351,16 @@ describe('eToro 2026: ISIN otevřené pozice z listů Holdings a Dividends', () 
     ]);
   });
 
+  it('měna tickeru z Details jde importu — londýnský titul bez přípony se hledá v Londýně', async () => {
+    const result = await parseEtoroXlsx(
+      await build({ activity: [openPosition('2000000032', 'SMLN/GBX'), openPosition('2000000033', 'SMUS/USD')] }),
+    );
+    expect([...result.symbolCurrencies].map(([symbol, seen]) => `${symbol}:${[...seen.keys()].join(',')}`)).toEqual([
+      'SMLN:GBX',
+      'SMUS:USD',
+    ]);
+  });
+
   it('krypto ze snímku Holdings ISIN nedostane — klíčuje se tickerem', async () => {
     const result = await parseEtoroXlsx(
       await build({

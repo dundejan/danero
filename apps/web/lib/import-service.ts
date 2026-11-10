@@ -74,6 +74,7 @@ import {
   type SymbolCurrencies,
   type WorkbookOutline,
 } from '@danero/importers';
+import { builtinInstrument } from '@danero/importers/isin-directory';
 import { createHash } from 'node:crypto';
 import type { Transaction } from '@danero/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -658,6 +659,7 @@ function otherCurrencyWarnings(
   own: OwnTickerIsins,
 ): RowIssue[] {
   const broker = outcome.broker;
+  if (broker === 'etoro') return otherListingWarnings(outcome, aliases);
   if (broker !== 'revolut' && broker !== 'fio') return [];
   const currencies = (outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies;
   const warnings: RowIssue[] = [];
@@ -671,6 +673,35 @@ function otherCurrencyWarnings(
     warnings.push({
       line,
       message: `Symbol ${symbol}: obchody v ${currency} jsme přiřadili k titulu s ISIN ${stored} (americká akcie). Jde-li v ${currency} o jiný cenný papír, napiš nám — jeden symbol v různých měnách zatím rozlišit neumíme.`,
+    });
+  }
+  return warnings;
+}
+
+/**
+ * eToro: holý ticker může být americký i londýnský (`BA/USD` je Boeing,
+ * `BA/GBX` BAE Systems) a záznam v číselníku je per symbol, ne per
+ * burzu. Když uložený záznam nese ISIN, který import doplnil podle JINÉ měny
+ * (dřívější výpis), a tenhle výpis vede symbol v měně jiné burzy, řádky se
+ * uloží pod uloženým ISIN — a uživatel se to musí dozvědět. Ručně zadaný
+ * ISIN, který žádnému výkladu neodpovídá, je vědomé rozhodnutí a nehlásí se.
+ * Ze stejného důvodu jako u Revolutu nesmí hláška radit „oprav záznam“.
+ */
+function otherListingWarnings(outcome: ImportResult, aliases: AliasMaps): RowIssue[] {
+  const currencies = (outcome as { symbolCurrencies?: SymbolCurrencies }).symbolCurrencies;
+  const warnings: RowIssue[] = [];
+  for (const [symbol, seen] of currencies ?? []) {
+    const stored = aliasIsin(aliases, 'etoro', symbol);
+    const here = builtinInstrument('etoro', symbol, [...seen.keys()]);
+    if (!stored || !here || here.isin === stored) continue;
+    const elsewhere = [['USD'], ['GBX']].some(
+      (assumed) => builtinInstrument('etoro', symbol, assumed)?.isin === stored,
+    );
+    if (!elsewhere) continue;
+    const [currency, line] = [...seen][0]!;
+    warnings.push({
+      line,
+      message: `Symbol ${symbol}: výpis ho vede v ${currency}, ale tvůj záznam v číselníku má ISIN ${stored} z jiné burzy (v ${currency} by to byl ${here.isin}, ${here.name}). Řádky jsme uložili pod ISIN ze záznamu — jde-li o jiný cenný papír, napiš nám, jeden symbol na dvou burzách zatím rozlišit neumíme.`,
     });
   }
   return warnings;

@@ -88,8 +88,10 @@ export function originOf(
   own: OwnTickerIsins,
   record: { broker: string; symbol: string; isin: string },
 ): AliasOrigin | null {
-  const automatic = automaticInstrument(own, record.broker, record.symbol);
-  if (!automatic || automatic.isin !== record.isin) return null;
+  const automatic = automaticReadings(own, record.broker, record.symbol).find(
+    (reading) => reading.isin === record.isin,
+  );
+  if (!automatic) return null;
   return automatic.source === 'own'
     ? { source: 'own', broker: automatic.sourceBroker ?? '' }
     : { source: 'builtin' };
@@ -108,8 +110,25 @@ export async function returningAfterDelete(
 ): Promise<{ isin: string; differs: boolean } | null> {
   const record = await findAlias(db, userId, broker, symbol);
   if (!record) return null;
-  const automatic = automaticInstrument(await ownTickerIsins(db, userId), broker, symbol);
+  const readings = automaticReadings(await ownTickerIsins(db, userId), broker, symbol);
+  // u holého tickeru z eToro rozhodne měna příštího výpisu — když jeden
+  // z výkladů vrátí ISIN záznamu, nic se nemění
+  const automatic = readings.find((reading) => reading.isin === record.isin) ?? readings[0];
   return automatic ? { isin: automatic.isin, differs: automatic.isin !== record.isin } : null;
+}
+
+/**
+ * Co by import k symbolu doplnil sám, bez znalosti měny ve výpisu. Uložený
+ * záznam měnu nenese, takže holý ticker z eToro má dva výklady — americký
+ * a londýnský (`BA`: Boeing, nebo BAE Systems). Ostatní brokeři
+ * jeden, se stejnými pravidly jako dřív (USD).
+ */
+function automaticReadings(own: OwnTickerIsins, broker: string, symbol: string): FilledInstrument[] {
+  const assumed = broker === 'etoro' ? [['USD'], ['GBX']] : [['USD']];
+  return assumed.flatMap((currencies) => {
+    const reading = automaticInstrument(own, broker, symbol, currencies);
+    return reading ? [reading] : [];
+  });
 }
 
 /**
@@ -235,8 +254,8 @@ export type OwnTickerIsins = Map<string, { isin: string; broker: string }>;
  * u brokera, který ISIN uvádí (`OWN_DATA_BROKERS`), v USD a s americkým
  * ISIN — tedy americká kotace, stejně jako u vestavěného číselníku. Je to
  * přesně ten ISIN, se kterým se má pozice spojit, a pokryje i americká ETF
- * (VOO, SPY, QQQ) a třídy akcií (GOOG/GOOGL), které vestavěný číselník
- * nezná. Ticker, který vede na víc ISIN, se nebere.
+ * (VOO, SPY, QQQ), které vestavěný číselník nezná. Ticker, který vede na
+ * víc ISIN, se nebere.
  */
 export async function ownTickerIsins(db: Db, userId: string): Promise<OwnTickerIsins> {
   const ticker = sql<string | null>`${transactions.payload}->>'ticker'`;
@@ -283,9 +302,10 @@ export function automaticInstrument(
   symbol: string,
   currencies: readonly string[] = ['USD'],
 ): FilledInstrument | undefined {
+  // Vlastní obchody jsou jen americké kotace (`ownTickerIsins`); vestavěný
+  // číselník u eToro zná i evropské a asijské burzy (`BARC.L`, `SAP.DE`).
   const us = usTickerFor(broker, symbol, currencies);
-  if (!us) return undefined;
-  const mine = own.get(us.ticker);
+  const mine = us ? own.get(us.ticker) : undefined;
   const builtin = builtinInstrument(broker, symbol, currencies);
   // Dva zdroje, dvě odpovědi: nedoplnit nic a zeptat se (revize N1).
   if (mine && builtin && mine.isin !== builtin.isin) return undefined;
@@ -295,7 +315,7 @@ export function automaticInstrument(
       symbol,
       isin: mine.isin,
       name: '',
-      ...(us.currency ? { currency: us.currency } : {}),
+      ...(us?.currency ? { currency: us.currency } : {}),
       source: 'own',
       sourceBroker: mine.broker,
     };

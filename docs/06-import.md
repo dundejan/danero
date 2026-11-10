@@ -67,12 +67,24 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   znovu. Výsledek importu to řekne větou („Doplnili jsme ISIN: …“, „Doplnili
   jsme ISIN podle tvých obchodů u Trading 212: …“, „Doplnili jsme měnu: …“)
   s odkazem na seznam, kde jde dvojici opravit.
-- Kdy se symbol bere jako americký ticker (`usTickerFor`, platí pro oba
-  automatické zdroje): Schwab a Tastytrade vždy, eToro bez přípony burzy
-  (`BARC.L` ne), XTB jen s příponou `.US` (pak i měna USD), Revolut a Fio jen
-  u symbolu, který se ve výpisu obchodoval **výhradně v USD** (oba vedou
-  i evropské trhy pod podobnými symboly). Jinak se nedoplňuje nic — lepší se
-  zeptat než doplnit špatně.
+- Na jaké burze se symbol hledá (`listingFor`; vlastní obchody jen americké
+  kotace přes `usTickerFor`): Schwab a Tastytrade vždy USA, XTB jen
+  s příponou `.US` (pak i měna USD), Revolut a Fio jen u symbolu, který se ve
+  výpisu obchodoval **výhradně v USD** (oba vedou i evropské trhy pod
+  podobnými symboly). **eToro** (`etoroListing`): přípona určuje burzu —
+  `.L` Londýn, `.DE` Xetra, `.PA` Paříž, `.T` Tokio, `.LSB` Lisabon, `.HK`
+  Hongkong (jen přípony doložené skutečnými výpisy, jiné se nehádají); holý
+  ticker je americký, pokud ho výpis nevede v jiné měně — londýnské tituly
+  eToro píše i bez přípony (`TSCO/GBX`), ty se hledají v Londýně, a holý
+  ticker v EUR nikde. Měnu bere import z Details všech řádků akcií a ETF
+  v Account Activity (`symbolCurrencies`) — i u prodaného titulu, který
+  Closed Positions uvádí jen holým tickerem. Jinak se nedoplňuje nic — lepší
+  se zeptat než doplnit špatně.
+- eToro: záznam v číselníku je per symbol, ne per burzu, a holý ticker může
+  být americký i londýnský (`BA` = Boeing, nebo BAE Systems).
+  Když další výpis vede symbol v měně jiné burzy, než podle které se záznam
+  doplnil, řádky se uloží pod záznamem **s varováním** (`otherListingWarnings`)
+  — stejně jako u Revolutu a Fia a ze stejného důvodu bez rady „oprav záznam“.
 - Pojistka „jen USD“ platí v rámci jednoho souboru. Když pak jiný výpis
   Revolutu nebo Fia obchoduje týž symbol v jiné měně a záznam nese ISIN, který
   by import doplnil sám, řádek se **uloží s varováním** (obchod v EUR jsme
@@ -86,22 +98,34 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   číselník (pokud v souboru vede ticker na jediný ISIN).
 - **Vestavěný číselník** (`packages/importers/src/isin-directory/`, vstup
   balíčku `@danero/importers/isin-directory`, jen pro server; za běhu se nikam
-  nevolá): ticker na NYSE nebo Nasdaqu → ISIN, jen americké akcie.
+  nevolá): ticker na burze → ISIN. NYSE a Nasdaq, a pro eToro burzy
+  z `markets.ts` (Londýn, Xetra, Paříž, Tokio, Lisabon, Hongkong).
   - **Zdroj: Wikidata** (data pod CC0 1.0), **ověřené přes OpenFIGI.**
     Generátor `pnpm --filter @danero/importers isin-directory` (`--dry-run`
     jen vypíše změny; volitelně `OPENFIGI_API_KEY` v prostředí pro rychlejší
     běh) stáhne položky s ISIN (P946) a výpisem na burze (P414) s tickerem
-    (P249) a vybere jednoznačné dvojice: bez ukončeného výpisu, ticker jen
-    1–5 písmen, firma nezaniklá a nepřevzatá (P576, P1366, P2669, P749),
-    položka s právě jedním americkým ISIN **akcie** (číslo emise číselné —
-    Wikidata u firem vedou i ISIN dluhopisů), s jediným tickerem a bez kolize
-    napříč položkami. Alphabet má na položce oba ISIN (GOOG i GOOGL) bez vazby
-    na ticker, takže v souboru není ani jeden.
+    (P249). Kandidáty jsou **všechny dvojice ticker × ISIN** položky (bez
+    ukončeného výpisu, ticker v tvaru trhu — v USA 1–5 písmen, firma
+    nezaniklá a nepřevzatá: P576, P1366, P2669, P749; americký ISIN jen
+    **akcie**, protože Wikidata u firem vedou i ISIN dluhopisů). Wikidata
+    totiž nepíšou, ke kterému tickeru který ISIN patří: Alphabet má GOOG
+    i GOOGL a oba ISIN, TSMC ISIN tchajwanské akcie i amerického ADR. Rozhodne
+    ověření a do souboru jde jen dvojice jednoznačná i po něm (ticker → jeden
+    ISIN, ISIN → jeden ticker na trhu). Zahraniční ISIN u amerického tickeru
+    projde jen tehdy, když ho OpenFIGI v USA vede pod tímtéž tickerem
+    (Alcon kotuje v NY přímo švýcarskou akcii; tchajwanská TSMC je
+    v USA jen mimoburzovně jako TSMWF, ticker TSM je ADR s vlastním ISIN).
   - Wikidata samy nestačí: revize 15. 10. 2026 v nich našla 20 % chyb (ISIN
     jiného emitenta, zastaralý ISIN téže firmy, tickery, které emitent už
     nepoužívá). Každá dvojice proto musí projít dotazem na OpenFIGI: ISIN na
-    amerických burzách vede na FIGI se **stejným tickerem** a druhem kmenová
-    akcie, ADR, REIT nebo MLP. Z odpovědi se bere jen ano/ne.
+    burze trhu vede na FIGI se **stejným tickerem** (v jednotném tvaru —
+    OpenFIGI píše `BA/`, Hongkong bez úvodních nul) a druhem kmenová akcie,
+    ADR, REIT nebo MLP. Z odpovědi se bere jen ano/ne.
+  - **Pokrytí mimo USA je řídké** — jen co mají Wikidata s tickerem
+    (listopad 2026: Tokio asi 250 firem, Hongkong 185, Londýn přes sto,
+    Frankfurt a Paříž desítky, Lisabon pár). Oficiální seznamy burz
+    jsou úplnější, ale jejich data nejdou vložit do veřejného repozitáře pod
+    AGPL; Wikidata jsou CC0.
   - Soubor se **při každém běhu sestaví znovu** — co ověřením neprojde,
     vypadne, a skript změny vypíše. Je to bezpečné: doplněná dvojice se
     ukládá do uživatelova číselníku, takže změna souboru se už

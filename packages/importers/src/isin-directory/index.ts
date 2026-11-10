@@ -1,15 +1,18 @@
 import { ISIN_DIRECTORY, type IsinDirectoryRecord } from './data';
+import { etoroListing, MARKETS, type MarketCode } from './markets';
 
 /**
- * Vestavěný číselník ISIN: ticker na americké burze → ISIN, pro brokery,
- * kteří ISIN do výpisu nedávají (Schwab, Tastytrade, Revolut, Fio, eToro,
- * XTB). Import se uživatele ptá jen na to, co tady není.
+ * Vestavěný číselník ISIN: ticker na burze → ISIN, pro brokery, kteří ISIN
+ * do výpisu nedávají (Schwab, Tastytrade, Revolut, Fio, eToro, XTB). Burzy
+ * jsou americké a u eToro i ty evropské a asijské, jejichž příponu výpisy
+ * dokládají (`markets.ts`). Import se uživatele ptá jen na to, co tady není.
  *
  * Data jsou statická (`data.ts`), generuje je ručně spouštěný skript
  * `scripts/build-isin-directory.ts` z Wikidat (CC0) s ověřením každé dvojice
  * přes OpenFIGI; za běhu se nikam nevolá. Do souboru se dostane jen
- * JEDNOZNAČNÁ a ověřená dvojice: ticker, který vede na víc ISIN (třídy akcií
- * GOOG/GOOGL), v něm není vůbec.
+ * JEDNOZNAČNÁ a ověřená dvojice: OpenFIGI musí potvrdit, že ISIN na dané
+ * burze vede právě na tenhle ticker, a ticker, který vede na víc ISIN,
+ * v něm není vůbec.
  *
  * Soubor se při každém běhu generátoru sestaví znovu (záznamy, které ověření
  * neprojdou, z něj vypadnou). Import každou doplněnou dvojici uloží do
@@ -23,6 +26,7 @@ import { ISIN_DIRECTORY, type IsinDirectoryRecord } from './data';
  */
 
 export type { IsinDirectoryRecord };
+export type { MarketCode };
 
 /** Doplněný údaj pro jeden symbol z výpisu. */
 export interface BuiltinInstrument {
@@ -34,19 +38,57 @@ export interface BuiltinInstrument {
   currency?: string;
 }
 
-/** Ticker americké akcie: jen písmena. Třídy s tečkou či lomítkem (BRK.B) generátor vynechává. */
-const US_TICKER = /^[A-Z]{1,5}$/;
-
-let byUsTicker: Map<string, IsinDirectoryRecord> | undefined;
-const usRecord = (ticker: string): IsinDirectoryRecord | undefined => {
-  byUsTicker ??= new Map(
-    ISIN_DIRECTORY.filter((record) => record.market === 'US').map((record) => [
-      record.ticker,
-      record,
-    ]),
-  );
-  return byUsTicker.get(ticker);
+let byListing: Map<string, IsinDirectoryRecord> | undefined;
+const directoryRecord = (market: MarketCode, ticker: string): IsinDirectoryRecord | undefined => {
+  byListing ??= new Map(ISIN_DIRECTORY.map((record) => [`${record.market}|${record.ticker}`, record]));
+  return byListing.get(`${market}|${ticker}`);
 };
+
+/** Trh a ticker, pod kterým se symbol z výpisu hledá v číselnících ISIN. */
+export interface Listing {
+  market: MarketCode;
+  ticker: string;
+  /** Měna instrumentu — jen u XTB, kde ji výpis neuvádí. */
+  currency?: string;
+}
+
+/**
+ * Trh a ticker symbolu z výpisu brokera:
+ *
+ * - Schwab a Tastytrade jsou americké brokery — symbol JE americký ticker.
+ * - eToro dává tickerům mimo USA příponu burzy (`BARC.L`, `SAP.DE`), holý
+ *   ticker je americký — kromě titulu, který výpis vede v librách či pencích
+ *   (`TSCO/GBX`, Londýn). Viz `etoroListing`.
+ * - XTB má příponu trhu vždy; bereme jen `.US` (měna USD).
+ * - Revolut a Fio vedou i evropské trhy pod podobnými symboly. Americký
+ *   ticker v nich poznáme jen podle měny: symbol, který se ve výpisu
+ *   obchodoval VÝHRADNĚ v USD. Bez měny (nebo s jinou) se nedoplňuje.
+ */
+export function listingFor(
+  broker: string,
+  symbol: string,
+  /** Měny, ve kterých se symbol ve výpisu objevil (Revolut, Fio, eToro). */
+  currencies: readonly string[] = [],
+): Listing | undefined {
+  const us = MARKETS.US.pattern;
+  switch (broker) {
+    case 'schwab':
+    case 'tastytrade':
+      return us.test(symbol) ? { market: 'US', ticker: symbol } : undefined;
+    case 'etoro':
+      return etoroListing(symbol, currencies);
+    case 'revolut':
+    case 'fio':
+      if (currencies.length === 0 || currencies.some((code) => code !== 'USD')) return undefined;
+      return us.test(symbol) ? { market: 'US', ticker: symbol } : undefined;
+    case 'xtb': {
+      const match = /^([A-Z]{1,5})\.US$/.exec(symbol);
+      return match ? { market: 'US', ticker: match[1]!, currency: 'USD' } : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
 
 /** Americký ticker, pod kterým se symbol z výpisu hledá v číselnících ISIN. */
 export interface UsTicker {
@@ -56,55 +98,33 @@ export interface UsTicker {
 }
 
 /**
- * Brokeři, jejichž symbol jde spolehlivě převést na americký ticker. Platí
- * pro vestavěný číselník i pro ISIN odvozený z obchodů u jiného brokera:
- *
- * - Schwab a Tastytrade jsou americké brokery — symbol JE americký ticker.
- * - eToro dává tickerům mimo USA příponu burzy (`BARC.L`, `SAP.DE`), holý
- *   ticker je americký.
- * - XTB má příponu trhu vždy; bereme jen `.US` (měna USD).
- * - Revolut a Fio vedou i evropské trhy pod podobnými symboly. Americký
- *   ticker v nich poznáme jen podle měny: symbol, který se ve výpisu
- *   obchodoval VÝHRADNĚ v USD. Bez měny (nebo s jinou) se nedoplňuje.
+ * Americký ticker symbolu — pro ISIN odvozený z uživatelových obchodů
+ * u brokera, který ISIN uvádí (ty jsou jen americké, viz `ownTickerIsins`).
  */
 export function usTickerFor(
   broker: string,
   symbol: string,
-  /** Měny, ve kterých se symbol ve výpisu objevil (Revolut, Fio). */
   currencies: readonly string[] = [],
 ): UsTicker | undefined {
-  switch (broker) {
-    case 'schwab':
-    case 'tastytrade':
-    case 'etoro':
-      return US_TICKER.test(symbol) ? { ticker: symbol } : undefined;
-    case 'revolut':
-    case 'fio':
-      if (currencies.length === 0 || currencies.some((code) => code !== 'USD')) return undefined;
-      return US_TICKER.test(symbol) ? { ticker: symbol } : undefined;
-    case 'xtb': {
-      const match = /^([A-Z]{1,5})\.US$/.exec(symbol);
-      return match ? { ticker: match[1]!, currency: 'USD' } : undefined;
-    }
-    default:
-      return undefined;
-  }
+  const listing = listingFor(broker, symbol, currencies);
+  if (listing?.market !== 'US') return undefined;
+  return { ticker: listing.ticker, ...(listing.currency ? { currency: listing.currency } : {}) };
 }
 
-/** ISIN americké akcie z vestavěného číselníku pro symbol z výpisu brokera. */
+/** ISIN z vestavěného číselníku pro symbol z výpisu brokera. */
 export function builtinInstrument(
   broker: string,
   symbol: string,
   currencies: readonly string[] = [],
 ): BuiltinInstrument | undefined {
-  const us = usTickerFor(broker, symbol, currencies);
-  const record = us ? usRecord(us.ticker) : undefined;
-  if (!us || !record) return undefined;
+  const listing = listingFor(broker, symbol, currencies);
+  const record = listing ? directoryRecord(listing.market, listing.ticker) : undefined;
+  if (!listing || !record) return undefined;
   return {
     symbol,
     isin: record.isin,
     name: record.name,
-    ...(us.currency ? { currency: us.currency } : {}),
+    ...(listing.currency ? { currency: listing.currency } : {}),
   };
 }
 

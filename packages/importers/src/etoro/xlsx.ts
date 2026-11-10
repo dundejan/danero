@@ -4,7 +4,13 @@ import { isValidIsoDate, normalizeHeader } from '../csv';
 import { fnv1a64 } from '../dedupe';
 import { syntheticDerivativePair } from '../metatrader/common';
 import { openXlsxSource, readSheetRows, type SheetRow, type XlsxSource } from '../xlsx';
-import { emptyResult, type ImportResult, type IsinInstrumentMap } from '../types';
+import {
+  emptyResult,
+  noteSymbolCurrency,
+  type ImportResult,
+  type IsinInstrumentMap,
+  type SymbolCurrencies,
+} from '../types';
 
 export const ETORO_BROKER = 'etoro';
 
@@ -238,9 +244,19 @@ const DERIVATIVE_TYPES = new Set(['cfd', 'currency', 'commodities']);
  */
 const derivativeIsin = (ticker: string): string => `CFD:${ticker}`;
 
+/**
+ * Výsledek parseru. `symbolCurrencies` nese měnu tickeru z Details otevřené
+ * pozice (`TSCO/GBX`) — podle ní import hledá holý ticker ve vestavěném
+ * číselníku na správné burze (londýnský titul eToro píše bez přípony).
+ */
+export type EtoroResult = ImportResult & {
+  unmappedSymbols: string[];
+  symbolCurrencies: SymbolCurrencies;
+};
+
 /** Sdílený stav parsování napříč listy jednoho workbooku. */
 interface Ctx {
-  result: ImportResult & { unmappedSymbols: string[] };
+  result: EtoroResult;
   instrumentMap: EtoroInstrumentMap;
   /** Position ID z listu Closed Positions — Activity řádky s nimi jsou pokryté párem. */
   closedPositionIds: Set<string>;
@@ -642,6 +658,16 @@ function parseActivitySheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
       ctx.result.skipped.push({ line, message: 'Řádek bez typu operace — přeskočen.', raw });
       continue;
     }
+    // Měna tickeru z Details („TSCO/GBX“) ze VŠECH řádků akcií a ETF — i titul,
+    // který už je prodaný (v Closed Positions je jen holý ticker), se musí
+    // hledat na své burze (revize 10. 11. 2026)
+    const assetKind = english(cell('assetType'));
+    if (assetKind === 'stocks' || assetKind === 'etf') {
+      const [symbol, currency] = cell('details').split('/');
+      if (symbol && currency && /^[A-Za-z]{3}$/.test(currency.trim())) {
+        noteSymbolCurrency(ctx.result.symbolCurrencies, symbol.trim(), currency.trim().toUpperCase(), line);
+      }
+    }
     // dividendy duplikují list Dividends (tam je i srážková daň) — bez hlášky,
     // ale spočítat: bez listu Dividends by jinak tiše zmizely (§ 8 by chyběl)
     if (t === 'dividend') {
@@ -1016,8 +1042,12 @@ function parseDividendsSheet(ctx: Ctx, sheet: ExcelJS.Worksheet): void {
 export async function parseEtoroXlsx(
   data: XlsxSource,
   instrumentMap: EtoroInstrumentMap = {},
-): Promise<ImportResult & { unmappedSymbols: string[] }> {
-  const result = { ...emptyResult(ETORO_BROKER), unmappedSymbols: [] as string[] };
+): Promise<EtoroResult> {
+  const result: EtoroResult = {
+    ...emptyResult(ETORO_BROKER),
+    unmappedSymbols: [],
+    symbolCurrencies: new Map(),
+  };
 
   const opened = await openXlsxSource(data);
   if ('error' in opened) {

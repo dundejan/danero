@@ -5,9 +5,14 @@ import type { Db } from '@/db';
 import { importBatches, instrumentAliases, user } from '@/db/schema';
 import { batchesToOpen } from '@/lib/import-feedback';
 import { importFileIsolated, type ImportSummary } from '@/lib/import-service';
-import { saveAliases } from '@/lib/instrument-aliases';
+import { originOf, saveAliases } from '@/lib/instrument-aliases';
 import { loadTransactions } from '@/lib/portfolio';
-import { buildEtoroHappyPath } from '../../../packages/importers/test/fixtures/etoro';
+import {
+  buildEtoroHappyPath,
+  buildEtoroXlsx,
+  ETORO_ACTIVITY_HEADERS_2026,
+  ETORO_CLOSED_HEADERS_2026,
+} from '../../../packages/importers/test/fixtures/etoro';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
 import {
   REVOLUT_INVEST_HEADER,
@@ -157,6 +162,123 @@ describe('vestavěný číselník ISIN při importu', () => {
     expect((await aliasesOf())['schwab|KO']!.isin).toBe('US0378331005');
     const transactions = await loadTransactions(stav.db, 'u1');
     expect(transactions.every((tx) => 'isin' in tx && tx.isin === 'US0378331005')).toBe(true);
+  });
+
+  it('eToro: titul z evropské burzy se doplní podle přípony, londýnský bez přípony podle měny', { timeout: 30_000 }, async () => {
+    // BA je v Londýně BAE Systems, v USA Boeing: holý ticker
+    // vedený v pencích (eToro tak píše londýnské tituly) nesmí dostat ISIN
+    // americké firmy
+    const open = (pid: string, details: string) =>
+      ETORO_ACTIVITY_HEADERS_2026.map(
+        (header) =>
+          ({
+            Date: '12/05/2026 16:20:00',
+            Type: 'Open Position',
+            Details: details,
+            Amount: '90.00',
+            'Units / Contracts': '3',
+            'Position ID': pid,
+            'Asset type': 'Stocks',
+          })[header] ?? '',
+      );
+    const statement = await buildEtoroXlsx({
+      activity: {
+        headers: ETORO_ACTIVITY_HEADERS_2026,
+        rows: [open('2000000060', 'ADS.DE/EUR'), open('2000000061', 'BA/GBX'), open('2000000062', '1925.T/JPY')],
+      },
+    });
+
+    const summary = await upload('etoro-account-statement.xlsx', bufferOf(statement));
+
+    expect(summary.unmapped).toEqual([]);
+    expect(Object.fromEntries(summary.filled.map((item) => [item.symbol, item.isin]))).toEqual({
+      'ADS.DE': 'DE000A1EWWW0',
+      BA: 'GB0002634946',
+      '1925.T': 'JP3505000004',
+    });
+  });
+
+  const etoroRow = (headers: string[], values: Record<string, string>) =>
+    headers.map((header) => values[header] ?? '');
+  const etoroActivity = (type: string, pid: string, details: string) =>
+    etoroRow(ETORO_ACTIVITY_HEADERS_2026, {
+      Date: '12/05/2026 16:20:00',
+      Type: type,
+      Details: details,
+      Amount: '90.00',
+      'Units / Contracts': '3',
+      'Position ID': pid,
+      'Asset type': 'Stocks',
+    });
+
+  it('eToro: prodaný londýnský titul bez přípony dostane londýnský ISIN (měna z uzavření)', { timeout: 30_000 }, async () => {
+    // Closed Positions zná jen holý ticker; měnu nese řádek uzavření v Account Activity
+    const statement = await buildEtoroXlsx({
+      closed: {
+        headers: ETORO_CLOSED_HEADERS_2026,
+        rows: [
+          etoroRow(ETORO_CLOSED_HEADERS_2026, {
+            'Position ID': '2000000070',
+            Action: 'BAE Systems (BA)',
+            'Long / Short': 'Long',
+            Amount: '40.00',
+            'Units / Contracts': '2',
+            'Open Date': '03/02/2026 10:15:00',
+            'Close Date': '17/03/2026 14:40:00',
+            Leverage: '1',
+            'Profit(USD)': '5.00',
+            'Open Rate': '1200',
+            'Close Rate': '1350',
+            Type: 'Stocks',
+          }),
+        ],
+      },
+      activity: {
+        headers: ETORO_ACTIVITY_HEADERS_2026,
+        rows: [etoroActivity('Position closed', '2000000070', 'BA/GBX')],
+      },
+    });
+
+    const summary = await upload('etoro-account-statement.xlsx', bufferOf(statement));
+
+    expect(summary.unmapped).toEqual([]);
+    expect(summary.filled.map((item) => `${item.symbol}=${item.isin}`)).toEqual(['BA=GB0002634946']);
+  });
+
+  it('eToro: týž holý ticker v jiné měně dalšího výpisu se uloží pod záznamem, ale s varováním', { timeout: 30_000 }, async () => {
+    const london = await buildEtoroXlsx({
+      activity: { headers: ETORO_ACTIVITY_HEADERS_2026, rows: [etoroActivity('Open Position', '2000000071', 'BA/GBX')] },
+    });
+    const first = await upload('etoro-1.xlsx', bufferOf(london));
+    expect(first.filled.map((item) => item.isin)).toEqual(['GB0002634946']);
+    // štítek „doplněno z veřejných dat“ pozná londýnský výklad, i když záznam měnu nenese
+    expect(
+      originOf(new Map(), { broker: 'etoro', symbol: 'BA', isin: 'GB0002634946' }),
+    ).toEqual({ source: 'builtin' });
+
+    const newYork = await buildEtoroXlsx({
+      activity: {
+        headers: ETORO_ACTIVITY_HEADERS_2026,
+        // jiný den a částka — obsahový dedupe by jinak řádek vzal za tentýž
+        rows: [
+          etoroActivity('Open Position', '2000000072', 'BA/USD').map((cell, index) =>
+            ETORO_ACTIVITY_HEADERS_2026[index] === 'Date'
+              ? '14/07/2026 15:00:00'
+              : ETORO_ACTIVITY_HEADERS_2026[index] === 'Amount'
+                ? '12.00'
+                : cell,
+          ),
+        ],
+      },
+    });
+    const second = await upload('etoro-2.xlsx', bufferOf(newYork));
+
+    expect(second.added).toBe(1);
+    expect(second.warnings.map((item) => item.message)).toContainEqual(
+      expect.stringMatching(/^Symbol BA: výpis ho vede v USD, ale tvůj záznam v číselníku má ISIN GB0002634946/),
+    );
+    const transactions = await loadTransactions(stav.db, 'u1');
+    expect(transactions.every((tx) => 'isin' in tx && tx.isin === 'GB0002634946')).toBe(true);
   });
 
   it('Revolut: ticker obchodovaný i v eurech se nedoplní (může to být evropský trh)', { timeout: 30_000 }, async () => {
