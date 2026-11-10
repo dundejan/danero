@@ -8,8 +8,9 @@ import { etoroListing, MARKETS, type MarketCode } from './markets';
  * dokládají (`markets.ts`). Import se uživatele ptá jen na to, co tady není.
  *
  * Data jsou statická (`data.ts`), generuje je ručně spouštěný skript
- * `scripts/build-isin-directory.ts` z Wikidat (CC0) s ověřením každé dvojice
- * přes OpenFIGI; za běhu se nikam nevolá. Do souboru se dostane jen
+ * `scripts/build-isin-directory.ts` ze dvou zdrojů — Wikidat (CC0, každá
+ * dvojice ověřená přes OpenFIGI) a souboru ISIN–LEI od GLEIF s burzou
+ * a tickerem z OpenFIGI; za běhu se nikam nevolá. Do souboru se dostane jen
  * JEDNOZNAČNÁ a ověřená dvojice: OpenFIGI musí potvrdit, že ISIN na dané
  * burze vede právě na tenhle ticker, a ticker, který vede na víc ISIN,
  * v něm není vůbec.

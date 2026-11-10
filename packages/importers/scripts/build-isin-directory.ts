@@ -3,8 +3,16 @@
  *
  * Spouští se ručně, ne při buildu ani za běhu aplikace:
  *
- *   pnpm --filter @danero/importers isin-directory            # stáhne a zapíše
- *   pnpm --filter @danero/importers isin-directory --dry-run  # jen vypíše, co by se změnilo
+ *   OPENFIGI_API_KEY=… pnpm --filter @danero/importers isin-directory   # stáhne a zapíše
+ *   … isin-directory --dry-run              # jen vypíše, co by se změnilo
+ *   … isin-directory --gleif-csv <soubor>   # GLEIF z už staženého CSV
+ *   … isin-directory --no-gleif             # jen Wikidata
+ *
+ * Dva zdroje: Wikidata (níž) a GLEIF s kotacemi z OpenFIGI
+ * (`isin-directory-gleif.ts`) — ten bez bezplatného klíče OpenFIGI neběží
+ * (~500 000 ISIN, s klíčem asi půl hodiny). Klíč provozovatele leží
+ * v `~/.config/danero/openfigi.key` (mimo `~/.danero`, kam smí jen skripty
+ * pro produkci), do repozitáře nepatří.
  *
  * Zdroj: Wikidata (query.wikidata.org), data pod CC0 1.0 — položky s ISIN
  * (P946) a výpisem na burze (P414) s kvalifikátorem ticker (P249). Burzy
@@ -41,8 +49,10 @@
  * které emitent už nepoužívá. Každý kandidát proto projde OVĚŘENÍM PŘES
  * OpenFIGI (`verifyWithOpenFigi`): dotaz na ISIN na burze trhu musí
  * vrátit FIGI se STEJNÝM tickerem a druhem cenného papíru ze seznamu
- * `ALLOWED_SECURITY_TYPES`. Z odpovědi se bere jen ano/ne, nic se z ní
- * neukládá. Volá se jen při ručním běhu skriptu; bez klíče platí limit
+ * `ALLOWED_SECURITY_TYPES`. U Wikidat se z odpovědi bere jen ano/ne;
+ * u GLEIF z ní pochází ticker a burza (viz `isin-directory-gleif.ts`).
+ * Na trhu musí ticker vést na jediný ISIN; jeden ISIN pod víc tickery
+ * (ETF v librách i dolarech) nevadí. Volá se jen při ručním běhu skriptu; bez klíče platí limit
  * OpenFIGI (dávky po 10, 25 dotazů za minutu), s `OPENFIGI_API_KEY`
  * v prostředí jde běh rychleji.
  *
@@ -57,6 +67,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isValidIsin } from '@danero/shared';
 import { ISIN_DIRECTORY, type IsinDirectoryRecord } from '../src/isin-directory/data';
+import {
+  defaultCacheFile,
+  eligibleRecord,
+  fetchLatestGleifIsins,
+  gleifIsinsFromCsv,
+  listingsFromOpenFigi,
+  recordsFromListings,
+  uniqueTickers,
+  type FigiAnswer,
+  type FigiBatch,
+  type ListedRecord,
+} from './isin-directory-gleif';
 import {
   MARKET_CODES,
   MARKETS,
@@ -82,7 +104,17 @@ const OPENFIGI_ENDPOINT = 'https://api.openfigi.com/v3/mapping';
  * (CHSCP), warranty, dluhopisy ani fondy sem nepatří — ticker by vedl jinam
  * než na kmenovou akcii.
  */
-export const ALLOWED_SECURITY_TYPES = new Set(['Common Stock', 'ADR', 'REIT', 'MLP']);
+export const ALLOWED_SECURITY_TYPES = new Set([
+  'Common Stock',
+  'ADR',
+  'GDR',
+  'NY Reg Shrs',
+  'REIT',
+  'MLP',
+  // ETF: na eToro běžné (VUSA.L); s americkým fondem se nesplete, hledá se
+  // vždy na konkrétní burze
+  'ETP',
+]);
 
 /** Burza ve Wikidatech → trh číselníku. */
 const MARKET_BY_EXCHANGE = new Map<string, MarketCode>(
@@ -234,25 +266,21 @@ export function candidatesFrom(rows: SparqlRow[]): {
 }
 
 /**
- * Z ověřených dvojic jen ty jednoznačné: na trhu ticker → jeden ISIN a ISIN
- * → jeden ticker. Tatáž dvojice z víc položek (duplicitní položky Wikidat)
- * se vezme jednou.
+ * Z ověřených dvojic jen ty jednoznačné: na trhu ticker → jeden ISIN. Tatáž
+ * dvojice z víc zdrojů nebo položek se vezme jednou — první (záznamy
+ * z Wikidat jdou napřed, mají hezčí název). Jeden ISIN pod víc tickery na
+ * témže trhu nevadí: ETF se v Londýně kotuje v librách i dolarech (VUSA,
+ * VUSD) a hledá se vždy podle tickeru.
  */
 export function selectUnambiguous(verified: readonly IsinDirectoryRecord[]): {
   records: IsinDirectoryRecord[];
   excluded: Record<string, number>;
 } {
   const excluded: Record<string, number> = {};
-  const exclude = (reason: string): void => {
-    excluded[reason] = (excluded[reason] ?? 0) + 1;
-  };
   const isinsByTicker = new Map<string, Set<string>>();
-  const tickersByIsin = new Map<string, Set<string>>();
   for (const record of verified) {
     const ticker = `${record.market}|${record.ticker}`;
-    const isin = `${record.market}|${record.isin}`;
     isinsByTicker.set(ticker, (isinsByTicker.get(ticker) ?? new Set()).add(record.isin));
-    tickersByIsin.set(isin, (tickersByIsin.get(isin) ?? new Set()).add(record.ticker));
   }
   const records: IsinDirectoryRecord[] = [];
   const seen = new Set<string>();
@@ -260,45 +288,57 @@ export function selectUnambiguous(verified: readonly IsinDirectoryRecord[]): {
     const ticker = `${record.market}|${record.ticker}`;
     if (seen.has(ticker)) continue;
     seen.add(ticker);
-    if (isinsByTicker.get(ticker)!.size > 1) exclude('ticker vede na víc ISIN');
-    else if (tickersByIsin.get(`${record.market}|${record.isin}`)!.size > 1) exclude('ISIN má víc tickerů');
-    else records.push(record);
+    if (isinsByTicker.get(ticker)!.size > 1) {
+      excluded['ticker vede na víc ISIN'] = (excluded['ticker vede na víc ISIN'] ?? 0) + 1;
+    } else records.push(record);
   }
   return { records, excluded };
 }
 
-interface FigiEntry {
-  ticker?: string;
-  securityType?: string;
-}
-
-type FigiFetch = (jobs: Array<Record<string, string>>) => Promise<Array<{ data?: FigiEntry[] }>>;
+type FigiFetch = FigiBatch;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Dotaz na OpenFIGI s trpělivým opakováním při překročení limitu (HTTP 429). */
+/**
+ * Dotaz na OpenFIGI s trpělivým opakováním při překročení limitu (HTTP 429)
+ * a při chybě serveru (5xx) — jedna výpadková odpověď nesmí shodit
+ * půlhodinový běh.
+ */
 function openFigiFetch(apiKey: string | undefined): FigiFetch {
   return async (jobs) => {
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      const response = await fetch(OPENFIGI_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': USER_AGENT,
-          ...(apiKey ? { 'X-OPENFIGI-APIKEY': apiKey } : {}),
-        },
-        body: JSON.stringify(jobs),
-      });
+      let response: Response;
+      try {
+        response = await fetch(OPENFIGI_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': USER_AGENT,
+            ...(apiKey ? { 'X-OPENFIGI-APIKEY': apiKey } : {}),
+          },
+          body: JSON.stringify(jobs),
+        });
+      } catch (error) {
+        // výpadek sítě (10. 11. 2026: ENETUNREACH uprostřed běhu) — počkat a zkusit znovu
+        console.warn(`OpenFIGI: spojení selhalo (${error instanceof Error ? error.message : String(error)}), zkusím to znovu…`);
+        await sleep(15_000 * (attempt + 1));
+        continue;
+      }
       if (response.status === 429) {
         console.warn('OpenFIGI: limit dotazů, čekám minutu…');
         await sleep(61_000);
         continue;
       }
+      if (response.status >= 500) {
+        console.warn(`OpenFIGI: chyba serveru ${response.status}, zkusím to znovu…`);
+        await sleep(10_000 * (attempt + 1));
+        continue;
+      }
       if (!response.ok)
         throw new Error(`OpenFIGI odpověděla ${response.status} ${response.statusText}`);
-      return (await response.json()) as Array<{ data?: FigiEntry[] }>;
+      return (await response.json()) as FigiAnswer[];
     }
-    throw new Error('OpenFIGI: limit dotazů se nepodařilo přečkat');
+    throw new Error('OpenFIGI: odpověď se nepodařilo získat ani na šestý pokus');
   };
 }
 
@@ -313,10 +353,10 @@ export async function verifyWithOpenFigi(
   fetchBatch: FigiFetch,
   { batchSize = 10, pauseMs = 0 }: { batchSize?: number; pauseMs?: number } = {},
 ): Promise<{
-  records: IsinDirectoryRecord[];
+  records: ListedRecord[];
   rejected: Array<{ record: IsinDirectoryRecord; reason: string }>;
 }> {
-  const verified: IsinDirectoryRecord[] = [];
+  const verified: ListedRecord[] = [];
   const rejected: Array<{ record: IsinDirectoryRecord; reason: string }> = [];
   for (let start = 0; start < records.length; start += batchSize) {
     const chunk = records.slice(start, start + batchSize);
@@ -344,11 +384,39 @@ export async function verifyWithOpenFigi(
           record,
           reason: `druh cenného papíru ${sameTicker[0]!.securityType ?? '?'}`,
         });
-      } else verified.push(record);
+      } else verified.push({ ...record, figiTicker: sameTicker[0]!.ticker! });
     });
     if (pauseMs > 0 && start + batchSize < records.length) await sleep(pauseMs);
   }
   return { records: verified, rejected };
+}
+
+/** Zdroj záznamu pro pojistku: Wikidata, nebo GLEIF. */
+const sourceKind = (record: IsinDirectoryRecord): 'wikidata' | 'gleif' =>
+  record.source === 'gleif' ? 'gleif' : 'wikidata';
+
+/**
+ * Pojistka proti výpadku nebo změně API, které by tiše vyprázdnily soubor:
+ * na každém trhu a z každého zdroje, který tenhle běh opravdu prošel, musí
+ * zůstat aspoň 80 % stávajících záznamů. Zdroj, který se vynechal
+ * (`--no-gleif`, běh bez klíče), se nehlídá — jeho záznamy pak v souboru
+ * nebudou, což skript vypíše jako odebrané. Vrací popis problému, nebo null.
+ */
+export function sanityProblem(
+  before: readonly IsinDirectoryRecord[],
+  after: readonly IsinDirectoryRecord[],
+  sources: ReadonlySet<'wikidata' | 'gleif'>,
+): string | null {
+  for (const kind of sources) {
+    for (const market of MARKET_CODES) {
+      const was = before.filter((record) => record.market === market && sourceKind(record) === kind).length;
+      const now = after.filter((record) => record.market === market && sourceKind(record) === kind).length;
+      if (was >= 10 && now < was * 0.8) {
+        return `zdroj ${kind} na trhu ${market}: jen ${now} záznamů (dřív ${was}) — podezřelé, soubor nepřepisuji.`;
+      }
+    }
+  }
+  return null;
 }
 
 /** Změny proti stávajícímu souboru — jen pro výpis, soubor se sestavuje znovu. */
@@ -401,8 +469,10 @@ export function renderDataFile(records: readonly IsinDirectoryRecord[]): string 
     ' * `scripts/build-isin-directory.ts`, ručně neupravovat (soubor se při',
     ' * každém běhu sestaví znovu).',
     ' *',
-    ' * Zdroj: Wikidata (https://www.wikidata.org), data pod licencí CC0 1.0;',
-    ' * každá dvojice ověřená přes OpenFIGI (https://www.openfigi.com).',
+    ' * Zdroje: Wikidata (https://www.wikidata.org, CC0 1.0), každá dvojice',
+    ' * ověřená přes OpenFIGI; a ISIN ze souboru ISIN–LEI od GLEIF',
+    ' * (https://www.gleif.org) s burzou a tickerem z OpenFIGI',
+    ' * (https://www.openfigi.com) — `source: "gleif"`.',
     ' */',
     '',
     "import type { MarketCode } from './markets';",
@@ -459,24 +529,45 @@ async function main(): Promise<void> {
     reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
   }
   for (const [reason, count] of reasons) console.log(`  vyřazeno (${reason}): ${count}`);
-  const { records: verified, excluded: ambiguous } = selectUnambiguous(confirmed);
+  // Druhý zdroj: GLEIF + kotace z OpenFIGI (viz isin-directory-gleif.ts).
+  // Bez klíče by dotazy na ~500 000 ISIN trvaly dny — pak se přeskočí.
+  const fromGleif: ListedRecord[] = [];
+  const sources = new Set<'wikidata' | 'gleif'>(['wikidata']);
+  if (process.argv.includes('--no-gleif')) console.log('GLEIF: přeskočeno (--no-gleif).');
+  else if (!apiKey) console.log('GLEIF: přeskočeno — bez OPENFIGI_API_KEY by běh trval dny.');
+  else {
+    const csvArg = process.argv.indexOf('--gleif-csv');
+    const isins =
+      csvArg > 0 && process.argv[csvArg + 1]
+        ? await gleifIsinsFromCsv(process.argv[csvArg + 1]!)
+        : await fetchLatestGleifIsins(USER_AGENT);
+    console.log(`GLEIF: ${isins.length} ISIN po předvýběru.`);
+    const listings = await listingsFromOpenFigi(isins, openFigiFetch(apiKey), {
+      cacheFile: defaultCacheFile(),
+    });
+    for (const [isin, entries] of listings) {
+      fromGleif.push(...recordsFromListings(isin, entries, ALLOWED_SECURITY_TYPES));
+    }
+    console.log(`GLEIF: ${fromGleif.length} kotací na trzích číselníku.`);
+    sources.add('gleif');
+  }
+  let candidatesAll: ListedRecord[] = [...confirmed, ...fromGleif];
+  // Zpětná kontrola tickeru (viz `uniqueTickers`) — s klíčem je to pár desítek
+  // vteřin, bez něj by trvala dlouho, a pak zůstane jen kontrola mezi záznamy.
+  if (apiKey) {
+    const unique = await uniqueTickers(candidatesAll, openFigiFetch(apiKey));
+    const why = new Map<string, number>();
+    for (const { reason } of unique.rejected) why.set(reason, (why.get(reason) ?? 0) + 1);
+    for (const [reason, count] of why) console.log(`  vyřazeno zpětnou kontrolou (${reason}): ${count}`);
+    candidatesAll = unique.records;
+  }
+  const { records: verified, excluded: ambiguous } = selectUnambiguous(candidatesAll);
   for (const [reason, count] of Object.entries(ambiguous))
     console.log(`  vyřazeno po ověření (${reason}): ${count}`);
 
-  // Výpadek nebo změna API by jinak tiše vyprázdnila soubor. Kandidátů je
-  // víc než záznamů (každý ticker se zkouší se všemi ISIN položky), proto se
-  // porovnává se stávajícím souborem.
-  // Hlídá se každý trh zvlášť: rozbitý kód burzy v OpenFIGI by jinak potichu
-  // vymazal celou burzu, zatímco americká část by pojistkou prošla.
-  for (const market of MARKET_CODES) {
-    const before = ISIN_DIRECTORY.filter((record) => record.market === market).length;
-    const after = verified.filter((record) => record.market === market).length;
-    if (before >= 10 && after < before * 0.8) {
-      throw new Error(
-        `OpenFIGI ověřila na trhu ${market} jen ${after} dvojic (dřív ${before}) — podezřelé, soubor nepřepisuji.`,
-      );
-    }
-  }
+  // srovnává se jen s tím, co by do souboru smělo i podle dnešních pravidel
+  const problem = sanityProblem(ISIN_DIRECTORY.filter(eligibleRecord), verified, sources);
+  if (problem) throw new Error(problem);
   const records = sortRecords(verified);
   const { added, removed, changed } = diffRecords(ISIN_DIRECTORY, records);
   console.log(

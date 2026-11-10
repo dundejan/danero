@@ -1,6 +1,6 @@
 import { dedupeKey, parseSchwabCsv } from '@danero/importers';
 import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPgliteDb, type Db } from '@/db';
 import { auditLog, importBatches, instrumentAliases, transactions, user } from '@/db/schema';
 import { importFileIsolated, importParsed, loadImportState } from '@/lib/import-service';
@@ -18,6 +18,21 @@ import {
   REVOLUT_INVEST_CSV,
 } from '../../../packages/importers/test/fixtures/revolut';
 import { TASTY_V2 } from '../../../packages/importers/test/fixtures/tastytrade';
+
+// Scénář „číselník neznal symbol“ potřebuje vestavěný číselník vypnout:
+// skutečné tickery (SCHG, ICSH) si od listopadu 2026 doplní sám (GLEIF).
+const directory = vi.hoisted(() => ({ builtin: true }));
+vi.mock('@danero/importers/isin-directory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@danero/importers/isin-directory')>();
+  return {
+    ...actual,
+    builtinInstrument: (...args: Parameters<typeof actual.builtinInstrument>) =>
+      directory.builtin ? actual.builtinInstrument(...args) : undefined,
+  };
+});
+afterEach(() => {
+  directory.builtin = true;
+});
 
 /**
  * Táž událost ve dvou po sobě jdoucích výpisech.
@@ -622,6 +637,7 @@ describe('výpis → číselník → výpis znovu přes import-service (L23-01)'
       `${broker}: po doplnění číselníku přibudou jen čekající obchody, dividenda zůstane jedna a nese ISIN`,
       { timeout: 60_000 },
       async () => {
+        directory.builtin = false;
         const db = await withUser();
 
         const first = await uploadText(db, `${broker}.csv`, statement);

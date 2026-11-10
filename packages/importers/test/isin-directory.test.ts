@@ -1,12 +1,24 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isValidIsin } from '@danero/shared';
 import {
   candidatesFrom,
   diffRecords,
   isUsEquityIsin,
+  ALLOWED_SECURITY_TYPES,
+  sanityProblem,
   selectUnambiguous,
   verifyWithOpenFigi,
 } from '../scripts/build-isin-directory';
+import {
+  listingsFromOpenFigi,
+  MAX_ISINS_PER_ISSUER,
+  prefilterIsins,
+  recordsFromListings,
+  uniqueTickers,
+} from '../scripts/isin-directory-gleif';
 import { builtinInstrument, isinDirectoryRecords, usTickerFor } from '../src/isin-directory';
 import type { IsinDirectoryRecord } from '../src/isin-directory/data';
 import { etoroListing, MARKETS, normalizeTicker } from '../src/isin-directory/markets';
@@ -35,16 +47,18 @@ describe('vestavěný číselník ISIN: data', () => {
     expect(bad).toEqual([]);
   });
 
-  it('ticker i ISIN jsou na trhu nejvýš jednou a ticker má tvar trhu', () => {
+  it('ticker je na trhu nejvýš jednou a má tvar trhu', () => {
+    // jeden ISIN pod víc tickery nevadí (ETF v librách i dolarech: VUSA, VUSD)
     const tickers = records.map((record) => `${record.market}|${record.ticker}`);
-    const isins = records.map((record) => `${record.market}|${record.isin}`);
     expect(new Set(tickers).size).toBe(tickers.length);
-    expect(new Set(isins).size).toBe(isins.length);
     expect(
       records.filter((record) => !MARKETS[record.market].pattern.test(record.ticker)),
     ).toEqual([]);
     expect(
-      records.every((record) => record.name !== '' && record.source.startsWith('wikidata:Q')),
+      records.every(
+        (record) =>
+          record.name !== '' && (record.source.startsWith('wikidata:Q') || record.source === 'gleif'),
+      ),
     ).toBe(true);
   });
 
@@ -72,6 +86,11 @@ describe('vestavěný číselník ISIN: data', () => {
     expect(isinOf('US', 'ALC')).toBe('CH0432492467');
     // ticker TSM je ADR, ne tchajwanská akcie
     expect(isinOf('US', 'TSM')).toBe('US8740391003');
+    // z GLEIF: ETF a firmy, které Wikidata s tickerem nemají
+    expect(isinOf('LSE', 'VUSA')).toBe('IE00B3XXRP09');
+    expect(isinOf('US', 'QQQ')).toBe('US46090E1038');
+    // americký ticker jen z burzy — mimoburzovní (OTC) tickery v číselníku nejsou
+    expect(records.some((record) => record.market === 'US' && /^[A-Z]{4}[FY]$/.test(record.ticker) && record.source === 'gleif' && !record.isin.startsWith('US'))).toBe(false);
     // týž ticker na dvou trzích jsou dvě firmy
     expect(isinOf('US', 'BA')).toBe('US0970231058');
     expect(isinOf('LSE', 'BA')).not.toBe(isinOf('US', 'BA'));
@@ -280,20 +299,95 @@ describe('generátor číselníku', () => {
     source: 'wikidata:Q1',
   });
 
-  it('po ověření jen jednoznačné: ticker → jeden ISIN, ISIN → jeden ticker (na trhu)', () => {
+  it('po ověření jen jednoznačné: ticker → jeden ISIN (na trhu)', () => {
     const { records, excluded } = selectUnambiguous([
       record('AAPL', 'US0378331005'),
-      record('AAPL', 'US0378331005'), // táž dvojice ze dvou položek
+      { ...record('AAPL', 'US0378331005'), name: 'APPLE INC', source: 'gleif' }, // táž dvojice z GLEIF
       record('S', 'US8520611000'),
       record('S', 'US81730H1095'), // týž ticker u dvou firem
-      record('X', 'US9129091081'),
-      record('XX', 'US9129091081'), // jeden ISIN pod dvěma tickery
+      record('VUSA', 'IE00B3XXRP09', 'LSE'),
+      record('VUSD', 'IE00B3XXRP09', 'LSE'), // ETF v librách i dolarech: jeden ISIN, dva tickery
       record('RIO', 'GB0007188757', 'LSE'),
       record('RIO', 'US7672041008'), // týž ticker na jiném trhu nevadí
     ]);
-    expect(pairs(records)).toEqual(['US:AAPL=US0378331005', 'LSE:RIO=GB0007188757', 'US:RIO=US7672041008']);
+    expect(pairs(records)).toEqual([
+      'US:AAPL=US0378331005',
+      'LSE:VUSA=IE00B3XXRP09',
+      'LSE:VUSD=IE00B3XXRP09',
+      'LSE:RIO=GB0007188757',
+      'US:RIO=US7672041008',
+    ]);
+    // první vyhrává: záznam z Wikidat (hezčí název) jde napřed
+    expect(records[0]!.name).toBe('Firma AAPL');
     expect(excluded['ticker vede na víc ISIN']).toBe(1);
-    expect(excluded['ISIN má víc tickerů']).toBe(2);
+  });
+
+  it('GLEIF: předvýběr vynechá eurobondy, americké dluhopisy a emitenty strukturovaných produktů', () => {
+    const bank = Array.from({ length: MAX_ISINS_PER_ISSUER + 1 }, (_, i) => ['BANK', `DE000B${String(i).padStart(6, '0')}`] as const);
+    const isins = prefilterIsins([
+      ['APPLE', 'US0378331005'],
+      ['APPLE', 'US037833AK68'], // dluhopis (písmena v čísle emise)
+      ['APPLE', 'XS1234567890'], // eurobond
+      ['TESCO', 'GB00BLGZ9862'],
+      ...bank,
+      ['BANK', 'US0000000AB1'], // dluhopis i od banky pryč
+    ]);
+    expect(isins).toEqual(['US0378331005', 'GB00BLGZ9862']);
+  });
+
+  it('GLEIF: z kotací OpenFIGI jen trhy číselníku, americký ticker jen z burzy, ne z OTC', () => {
+    const records = recordsFromListings(
+      'GB00BLGZ9862',
+      [
+        { ticker: 'TSCO', exchCode: 'LN', securityType: 'Common Stock', name: 'TESCO PLC' },
+        { ticker: 'TSCDF', exchCode: 'US', securityType: 'Common Stock', name: 'TESCO PLC' },
+        { ticker: 'TSCDF', exchCode: 'UV', securityType: 'Common Stock', name: 'TESCO PLC' },
+        { ticker: 'TCO0', exchCode: 'GR', securityType: 'Common Stock', name: 'TESCO PLC' },
+      ],
+      ALLOWED_SECURITY_TYPES,
+    );
+    expect(pairs(records)).toEqual(['LSE:TSCO=GB00BLGZ9862']);
+
+    const listed = recordsFromListings(
+      'CH0432492467',
+      [
+        { ticker: 'ALC', exchCode: 'US', securityType: 'Common Stock', name: 'ALCON INC' },
+        { ticker: 'ALC', exchCode: 'UN', securityType: 'Common Stock', name: 'ALCON INC' },
+        { ticker: 'ALC', exchCode: 'LN', securityType: 'Common Stock', name: 'ALCON INC' },
+        { ticker: 'ALCP', exchCode: 'LN', securityType: 'Preference', name: 'ALCON INC' },
+      ],
+      ALLOWED_SECURITY_TYPES,
+    );
+    expect(pairs(listed)).toEqual(['US:ALC=CH0432492467', 'LSE:ALC=CH0432492467']);
+  });
+
+  it('GLEIF: dotazy na OpenFIGI po dávkách a s mezipamětí — přerušený běh naváže', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'isin-cache-'));
+    const cacheFile = join(dir, 'cache.jsonl');
+    const asked: string[] = [];
+    const fetchBatch = async (jobs: Array<Record<string, string>>) => {
+      asked.push(...jobs.map((job) => job.idValue!));
+      return jobs.map((job) => ({
+        data: [
+          { ticker: job.idValue!.slice(2, 6), exchCode: 'LN', securityType: 'Common Stock', name: 'X' },
+          { ticker: 'NOPE', exchCode: 'XX', securityType: 'Common Stock', name: 'X' }, // cizí burza se neukládá
+        ],
+      }));
+    };
+    const first = await listingsFromOpenFigi(['GB0000000001', 'GB0000000002', 'GB0000000003'], fetchBatch, {
+      cacheFile,
+      batchSize: 2,
+      perMinute: 60_000,
+      concurrency: 2,
+    });
+    expect(first.get('GB0000000002')).toEqual([{ ticker: '0000', exchCode: 'LN', securityType: 'Common Stock', name: 'X' }]);
+    expect(asked.sort()).toEqual(['GB0000000001', 'GB0000000002', 'GB0000000003']);
+
+    asked.length = 0;
+    const second = await listingsFromOpenFigi(['GB0000000001', 'GB0000000004'], fetchBatch, { cacheFile, perMinute: 60_000 });
+    expect(asked).toEqual(['GB0000000004']);
+    expect(second.size).toBe(4);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('OpenFIGI: projde jen ISIN, který na burze trhu vede na TENTÝŽ ticker kmenové akcie', async () => {
@@ -338,6 +432,111 @@ describe('generátor číselníku', () => {
       'TSM: OpenFIGI vede ISIN na jiný ticker (TSMWF)',
     ]);
     expect(batches).toEqual([3, 3, 1]);
+  });
+
+  it('GLEIF: londýnská mezinárodní kniha (0R0X…) do číselníku nejde', () => {
+    const records = recordsFromListings(
+      'US88160R1014',
+      [
+        { ticker: '0R0X', exchCode: 'LN', securityType: 'Common Stock', name: 'TESLA INC' },
+        { ticker: 'TSLA', exchCode: 'US', securityType: 'Common Stock', name: 'TESLA INC' },
+        { ticker: 'TSLA', exchCode: 'UW', securityType: 'Common Stock', name: 'TESLA INC' },
+      ],
+      ALLOWED_SECURITY_TYPES,
+    );
+    expect(pairs(records)).toEqual(['US:TSLA=US88160R1014']);
+  });
+
+  it('GLEIF: useknutý řádek mezipaměti se přeskočí a chyba OpenFIGI u ISIN se neuloží', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'isin-cache-'));
+    const cacheFile = join(dir, 'cache.jsonl');
+    // přerušený běh: poslední řádek bez konce
+    writeFileSync(cacheFile, `${JSON.stringify({ isin: 'GB0000000001', listings: [] })}\n{"isin":"GB00000`);
+    const asked: string[] = [];
+    const result = await listingsFromOpenFigi(
+      ['GB0000000001', 'GB0000000002', 'GB0000000003'],
+      async (jobs) => {
+        asked.push(...jobs.map((job) => job.idValue!));
+        return jobs.map((job) =>
+          job.idValue === 'GB0000000003' ? { error: 'Invalid idValue format' } : { warning: 'No identifier found.' },
+        );
+      },
+      { cacheFile, perMinute: 60_000 },
+    );
+    expect(asked).toEqual(['GB0000000002', 'GB0000000003']);
+    expect([...result.keys()].sort()).toEqual(['GB0000000001', 'GB0000000002']);
+    // nový zápis začal na novém řádku a mezipaměť jde přečíst celá
+    const lines = readFileSync(cacheFile, 'utf8').split('\n').filter(Boolean);
+    expect(lines.map((line) => { try { return (JSON.parse(line) as { isin: string }).isin; } catch { return 'useknutý'; } })).toEqual([
+      'GB0000000001',
+      'useknutý',
+      'GB0000000002',
+    ]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('GLEIF: selhání dávky zastaví i ostatní dotazy a chyba se předá dál', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'isin-cache-'));
+    let calls = 0;
+    const isins = Array.from({ length: 50 }, (_, i) => `GB${String(i).padStart(9, '0')}1`);
+    await expect(
+      listingsFromOpenFigi(
+        isins,
+        async (jobs) => {
+          calls += 1;
+          if (calls === 2) throw new Error('OpenFIGI odpověděla 400');
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return jobs.map(() => ({ data: [] }));
+        },
+        { cacheFile: join(dir, 'cache.jsonl'), batchSize: 2, perMinute: 60_000, concurrency: 3 },
+      ),
+    ).rejects.toThrow('OpenFIGI odpověděla 400');
+    // rozběhnuté dávky doběhnou, nové už nezačnou (25 dávek celkem)
+    expect(calls).toBeLessThan(6);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('zpětná kontrola: ticker na burze musí vést na jediný titul, pořadí zůstává', async () => {
+    const listed = (ticker: string, isin: string, market: IsinDirectoryRecord['market'], figiTicker = ticker) => ({
+      ...record(ticker, isin, market),
+      figiTicker,
+    });
+    const jobsSeen: string[] = [];
+    const { records, rejected } = await uniqueTickers(
+      [
+        listed('AAPL', 'US0378331005', 'US'),
+        listed('BA', 'GB0002634946', 'LSE', 'BA/'),
+        listed('XYZ', 'GB0000000001', 'LSE'),
+        listed('DUP', 'GB0000000002', 'LSE'),
+      ],
+      async (jobs) => {
+        jobsSeen.push(...jobs.map((job) => `${job.idType}:${job.exchCode}:${job.idValue}`));
+        return jobs.map((job) => {
+          if (job.idValue === 'XYZ') return { warning: 'No identifier found.' };
+          if (job.idValue === 'DUP') return { data: [{ shareClassFIGI: 'BBG1' }, { shareClassFIGI: 'BBG2' }] };
+          return { data: [{ shareClassFIGI: `BBG-${job.idValue}` }, { shareClassFIGI: `BBG-${job.idValue}` }] };
+        });
+      },
+      { perMinute: 60_000 },
+    );
+    expect(jobsSeen).toEqual(['TICKER:US:AAPL', 'TICKER:LN:BA/', 'TICKER:LN:XYZ', 'TICKER:LN:DUP']);
+    expect(pairs(records)).toEqual(['US:AAPL=US0378331005', 'LSE:BA=GB0002634946']);
+    expect(rejected.map((item) => `${item.record.ticker}: ${item.reason}`)).toEqual([
+      'XYZ: OpenFIGI ticker na burze nezná',
+      'DUP: ticker vede na víc titulů',
+    ]);
+  });
+
+  it('pojistka: hlídá každý trh a zdroj, který běh prošel; vynechaný zdroj ne', () => {
+    const many = (market: IsinDirectoryRecord['market'], source: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({ ...record(`T${i}`, `GB${String(i).padStart(9, '0')}1`, market), source }));
+    const before = [...many('US', 'wikidata:Q1', 20), ...many('LSE', 'gleif', 100)];
+    // běh jen s Wikidaty (bez klíče): londýnské záznamy z GLEIF zmizí, to je v pořádku
+    expect(sanityProblem(before, many('US', 'wikidata:Q1', 20), new Set(['wikidata']))).toBeNull();
+    // běh s GLEIF, ve kterém Londýn skoro zmizel: podezřelé
+    expect(
+      sanityProblem(before, [...many('US', 'wikidata:Q1', 20), ...many('LSE', 'gleif', 10)], new Set(['wikidata', 'gleif'])),
+    ).toMatch(/zdroj gleif na trhu LSE/);
   });
 
   it('ticker v jednotném tvaru trhu', () => {

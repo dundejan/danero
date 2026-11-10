@@ -160,7 +160,7 @@ describe('Tastytrade: příjmy, které dnes končí chybou nebo tiše mizí', ()
       TASTY_V2_HEADER,
       '2025-12-17T20:00:00+0100,Money Movement,Special Dividend,,SCHG,Equity,Cash special dividend,41.00,0,,--,0.00,,,,,,,,USD',
     ].join('\n');
-    const result = parseTastytradeCsv(csv, { SCHG: { isin: 'US8085247976' } });
+    const result = parseTastytradeCsv(csv, { SCHG: { isin: 'US8085243009' } });
 
     expect(result.errors.filter((issue) => /Neznámý typ/.test(issue.message))).toEqual([]);
     const dividend = result.transactions.find((tx) => tx.type === 'DIVIDEND');

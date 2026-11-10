@@ -96,7 +96,7 @@ describe('parseTastytradeCsv — nový formát (20 sloupců)', () => {
   });
 
   it('akciová noha assignmentu (Receive Deliver + BUY_TO_OPEN) → normální BUY akcie', () => {
-    const buy = result.transactions.find((t) => t.type === 'BUY' && t.isin === 'US8085247976');
+    const buy = result.transactions.find((t) => t.type === 'BUY' && t.isin === 'US8085243009');
     if (!buy || buy.type !== 'BUY') throw new Error('unreachable');
     expect(buy.ticker).toBe('SCHG');
     expect(buy.quantity.toString()).toBe('100');
@@ -506,8 +506,9 @@ describe('L26-03: den transakce z okamžiku, ne z číslic místního času', ()
   });
 
   it('exportům staženým v Česku se den ani dedupe klíč nemění (uložená data zůstávají platná)', () => {
-    // hodnoty změřené PŘED opravou — kdyby se pohnuly, už nahrané řádky by se
-    // při dalším importu téhož výpisu uložily podruhé
+    // hodnoty změřené PŘED opravou časových pásem — kdyby se pohnuly, už
+    // nahrané řádky by se při dalším importu téhož výpisu uložily podruhé
+    // (jen řádek SCHG je přepsaný kvůli opravě testovacích dat, viz níž)
     expect(describeRows(TASTY_V2)).toEqual(
       [
         'SELL 2021-05-20 tastytrade|6d21106d2de8942c|1',
@@ -515,7 +516,9 @@ describe('L26-03: den transakce z okamžiku, ne z číslic místního času', ()
         'INTEREST 2023-11-01 tastytrade|fd510dc32b44d43d|1',
         'FEE 2023-12-01 tastytrade|9aa9ae77982370d3|1',
         'SELL 2024-07-19 tastytrade|8b149aedf0f5e6a6|1',
-        'BUY 2024-08-05 tastytrade|708c40cccfd736cf|1',
+        // SCHG: fixtura měla do 10. 11. 2026 omylem ISIN fondu SCHD — otisk
+        // se změnil s opravou testovacích dat, ne s výpočtem
+        'BUY 2024-08-05 tastytrade|452cab606efee044|1',
         'BUY 2024-08-05 tastytrade|7d0a29063cda928f|1',
         'SELL 2024-08-16 tastytrade|8845775d2f1ef622|1',
         'DIVIDEND 2023-10-04 tastytrade|7bfb0aade1ab523b|1',

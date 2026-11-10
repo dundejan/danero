@@ -102,16 +102,17 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
   z `markets.ts` (Londýn, Xetra, Paříž, Tokio, Lisabon, Hongkong).
   - **Zdroj: Wikidata** (data pod CC0 1.0), **ověřené přes OpenFIGI.**
     Generátor `pnpm --filter @danero/importers isin-directory` (`--dry-run`
-    jen vypíše změny; volitelně `OPENFIGI_API_KEY` v prostředí pro rychlejší
-    běh) stáhne položky s ISIN (P946) a výpisem na burze (P414) s tickerem
+    jen vypíše změny; `OPENFIGI_API_KEY` v prostředí — bez něj běží jen
+    Wikidata, pomalu) stáhne položky s ISIN (P946) a výpisem na burze (P414) s tickerem
     (P249). Kandidáty jsou **všechny dvojice ticker × ISIN** položky (bez
     ukončeného výpisu, ticker v tvaru trhu — v USA 1–5 písmen, firma
     nezaniklá a nepřevzatá: P576, P1366, P2669, P749; americký ISIN jen
     **akcie**, protože Wikidata u firem vedou i ISIN dluhopisů). Wikidata
     totiž nepíšou, ke kterému tickeru který ISIN patří: Alphabet má GOOG
     i GOOGL a oba ISIN, TSMC ISIN tchajwanské akcie i amerického ADR. Rozhodne
-    ověření a do souboru jde jen dvojice jednoznačná i po něm (ticker → jeden
-    ISIN, ISIN → jeden ticker na trhu). Zahraniční ISIN u amerického tickeru
+    ověření a do souboru jde jen dvojice jednoznačná i po něm (na trhu ticker
+    → jeden ISIN; jeden ISIN pod víc tickery nevadí — ETF v librách
+    i dolarech). Zahraniční ISIN u amerického tickeru
     projde jen tehdy, když ho OpenFIGI v USA vede pod tímtéž tickerem
     (Alcon kotuje v NY přímo švýcarskou akcii; tchajwanská TSMC je
     v USA jen mimoburzovně jako TSMWF, ticker TSM je ADR s vlastním ISIN).
@@ -119,24 +120,46 @@ se neuloží, dividenda ano (bez ISIN) a symbol se nabídne k doplnění.
     jiného emitenta, zastaralý ISIN téže firmy, tickery, které emitent už
     nepoužívá). Každá dvojice proto musí projít dotazem na OpenFIGI: ISIN na
     burze trhu vede na FIGI se **stejným tickerem** (v jednotném tvaru —
-    OpenFIGI píše `BA/`, Hongkong bez úvodních nul) a druhem kmenová akcie,
-    ADR, REIT nebo MLP. Z odpovědi se bere jen ano/ne.
-  - **Pokrytí mimo USA je řídké** — jen co mají Wikidata s tickerem
-    (listopad 2026: Tokio asi 250 firem, Hongkong 185, Londýn přes sto,
-    Frankfurt a Paříž desítky, Lisabon pár). Oficiální seznamy burz
-    jsou úplnější, ale jejich data nejdou vložit do veřejného repozitáře pod
-    AGPL; Wikidata jsou CC0.
+    OpenFIGI píše `BA/`, Hongkong bez úvodních nul) a povoleným druhem
+    (`ALLOWED_SECURITY_TYPES`). Z odpovědi se bere jen ano/ne.
+  - **Druhý zdroj: GLEIF + OpenFIGI.** Wikidata znají ISIN jen u ~10 000
+    firem. GLEIF denně zveřejňuje soubor ISIN ↔ LEI (9,5 milionu ISIN od
+    ~100 000 firem, open source, data GLEIF pod CC0). Generátor z něj
+    předvybere ~500 000 ISIN (bez eurobondů `XS`/`EU`, z amerických jen tvar
+    akcie, bez emitentů s víc než 5 000 ISIN — strukturované produkty bank)
+    a OpenFIGI mu ke každému řekne, na které burze a pod jakým tickerem se
+    obchoduje. Do číselníku jdou kotace na trzích z `markets.ts`, druhy
+    kmenová akcie, ADR, GDR, NY Reg Shrs, REIT, MLP a ETF; v USA jen ticker
+    kotovaný na burze (NYSE, Nasdaq, NYSE American, Arca, Cboe), ne
+    mimoburzovní (zahraniční akcie tam mají tickery jako `TSCDF`); z Londýna
+    bez mezinárodní knihy (`0R0X` a spol. — eToro je nepoužívá). Nakonec
+    **zpětná kontrola**: dotaz na ticker na burze musí vrátit jediný titul —
+    tak se chytí i kolize s titulem, který předvýběr vyřadil nebo který
+    v GLEIF ani Wikidatech není. U Wikidat dokládá kotaci na NYSE či
+    Nasdaqu samotná položka (P414), mimoburzovní kontrola je jen u GLEIF.
+    Potřebuje bezplatný klíč OpenFIGI (`OPENFIGI_API_KEY`, provozovatel ho
+    má v `~/.config/danero/openfigi.key`); odpovědi si ukládá do mezipaměti
+    v `~/.cache/danero-isin-directory` (ne v `/tmp`, ten bere pád WSL
+    s sebou), takže přerušený běh naváže
+    (`--gleif-csv` vezme už stažený soubor, `--no-gleif` zdroj vypne).
+  - Mezery zůstávají: země, jejichž agentury do mapování GLEIF
+    nepřispívají (Japonsko, Austrálie, část Kajmanských ostrovů), kryjí jen
+    Wikidata; nové emise a přejmenování se propíší až dalším během.
+    Oficiální seznamy burz by byly úplnější, ale jejich data nejdou vložit
+    do veřejného repozitáře pod AGPL.
   - Soubor se **při každém běhu sestaví znovu** — co ověřením neprojde,
     vypadne, a skript změny vypíše. Je to bezpečné: doplněná dvojice se
     ukládá do uživatelova číselníku, takže změna souboru se už
     naimportovaných dat (a ISIN v jejich dedupe otisku) netkne. **Generátor
     pouštěj čtvrtletně**, ať se propíší přejmenování, zániky a recyklované
     tickery.
-  - ETF nepokrývá: Wikidata je u fondů skoro nemají (QQQ bez ISIN, VOO, SPY
-    ani UCITS fondy vůbec) a k seznamu obchodovatelných instrumentů Deutsche
-    Börse (Xetra) nejsou zveřejněné podmínky, které by šíření výtahu výslovně
-    dovolovaly. Americká ETF (VOO, SPY, QQQ) pokryjí uživatelovy vlastní
-    obchody (bod 2), UCITS fondy ne — na ty se import ptá.
+  - ETF pokrývá jen zčásti: Wikidata je u fondů skoro nemají, GLEIF jen
+    u fondů, jejichž správce má LEI a jeho národní agentura do mapování
+    přispívá (listopad 2026: VUSA, QQQ ano, VOO ne). Seznam obchodovatelných
+    instrumentů Deutsche Börse (Xetra) by byl úplnější, ale nejsou k němu
+    zveřejněné podmínky, které by šíření výtahu výslovně dovolovaly.
+    Americká ETF pokryjí i uživatelovy vlastní obchody (bod 2); co zbude,
+    na to se import ptá.
 - Historie importů: hlášky „doplň ISIN“ nesou symbol strukturovaně
   (`RowIssue.unmappedSymbol`) a dávka si ukládá jejich počty per symbol
   z celého seznamu (`issues.unmappedCounts`, uložené hlášky se ořezávají).

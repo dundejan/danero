@@ -16,7 +16,7 @@ export const TASTY_LEGACY_HEADER =
 
 /** Mapování symbolů na ISIN (Tastytrade ISIN neexportuje); ICSH záměrně chybí. */
 export const TASTY_INSTRUMENT_MAP = {
-  SCHG: { isin: 'US8085247976' },
+  SCHG: { isin: 'US8085243009' },
   AAPL: { isin: 'US0378331005' },
 };
 
