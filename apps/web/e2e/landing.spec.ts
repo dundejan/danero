@@ -4,7 +4,7 @@ import { hydrated } from './helpers';
 
 /**
  * Úvodní stránka: jediný h1 se dvěma sliby („bezpečně a zdarma“) doloženými
- * hned v perexu, živé komponenty počítané demo enginem (přehled s limity,
+ * hned v perexu, živé komponenty počítané demo enginem (výřez s limity,
  * horizont, porovnání variant), pás „Proč je zdarma“ a CTA vedoucí rovnou do
  * dema bez registrace. FAQ a „Kdo za tím stojí“ mají vlastní podstránky.
  * Texty odpovídají deterministickému demo datasetu.
@@ -31,27 +31,32 @@ test('landing: hero, živé komponenty a proč je zdarma', async ({ page }) => {
 
   // živé odměrky limitů z demo enginu (50k prolomený, 100k těsně pod limitem):
   // řádek nese jméno limitu, čerpání a slovní stav
+  const limits = page.getByRole('region', { name: 'Hlídání limitů' });
   await expect(
-    hero.getByRole('button', { name: /^Limit paušální daně \d+\s% .* přes limit$/ }),
+    limits.getByRole('button', { name: /^Limit paušální daně \d+\s% .* přes limit$/ }),
   ).toBeVisible();
   await expect(
-    hero.getByRole('button', {
+    limits.getByRole('button', {
       name: /^Osvobození prodejů cenných papírů \d+\s% .* těsně pod limitem$/,
     }),
   ).toBeVisible();
   // detail vybraného limitu (celé znění s částkou) je živý kus aplikace —
   // výběr jiného řádku ho přepne
   await expect(
-    hero.getByRole('region', { name: 'Limit paušální daně — 50 000 Kč' }).getByRole('heading'),
+    limits.getByRole('region', { name: 'Limit paušální daně — 50 000 Kč' }).getByRole('heading'),
   ).toBeVisible();
-  const securitiesRow = hero.getByRole('button', { name: /^Osvobození prodejů cenných papírů/ });
+  const securitiesRow = limits.getByRole('button', { name: /^Osvobození prodejů cenných papírů/ });
   await (await hydrated(securitiesRow)).click();
   await expect(
-    hero
+    limits
       .getByRole('region', { name: 'Osvobození prodejů cenných papírů — 100 000 Kč' })
       .getByRole('heading'),
   ).toBeVisible();
 
+  // výřez nikam nevede: klik na limit přepnul detail na místě a v pásu není
+  // jediný odkaz do dema — tam vede jen tlačítko v úvodu a v závěru stránky
+  await expect(page).toHaveURL(/\/$/);
+  await expect(limits.locator('a[href^="/demo"]')).toHaveCount(0);
   // živý horizont osvobození (SVG pás s tečkami)
   await expect(page.locator('svg[aria-label="Horizont osvobození"]')).toBeVisible();
 

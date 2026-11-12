@@ -44,8 +44,8 @@ export function AppToolbar({
   /** Hlavní akce stránky (vpravo). */
   actions?: React.ReactNode;
   /**
-   * `false` = lišta stojí na místě a hranu má stále (náhled aplikace na úvodní
-   * stránce: tam roluje web, ne okno, a lišta se nemá lepit k oknu prohlížeče).
+   * `false` = lišta stojí na místě a hranu má stále (ukázka lišty uvnitř jiné
+   * stránky, dnes `/dev/primitiva`: nemá se lepit k oknu prohlížeče).
    */
   pinned?: boolean;
   className?: string;
@@ -82,7 +82,7 @@ export function AppToolbar({
           smrštit (`flex-initial`); s `flex-none` neměl `truncate` proti čemu
           zabrat a dlouhý název pozice vyjel ze stránky. */}
       <div className="min-w-24 flex-1 md:min-w-0 md:flex-initial">
-        {/* v náhledu na úvodní stránce nesmí vzniknout druhý nadpis první úrovně */}
+        {/* v ukázce uvnitř jiné stránky nesmí vzniknout druhý nadpis první úrovně */}
         {pinned ? (
           // `title`: zkrácený titulek jde přečíst celý aspoň najetím myší
           <h1 className="type-title-3 truncate" title={title}>

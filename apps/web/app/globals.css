@@ -97,9 +97,6 @@
   --elevation-floating:
     0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.18),
     0 2px 6px rgba(0, 0, 0, 0.06);
-  --elevation-window:
-    0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 36px 64px -36px rgba(0, 0, 0, 0.3),
-    0 8px 20px -8px rgba(0, 0, 0, 0.1);
   --elevation-thumb: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.14);
 
   /* Pohyb. Pružiny (motion) jsou v lib/motion.ts — ty délku nemají, jen odezvu
@@ -185,7 +182,6 @@
   --highlight-pressed: rgba(255, 255, 255, 0.14);
   --scrim: rgba(0, 0, 0, 0.56);
   --elevation-floating: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
-  --elevation-window: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 40px 80px -24px rgba(0, 0, 0, 0.8);
   --elevation-thumb: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
@@ -239,7 +235,6 @@
   --radius-xl: 16px;
 
   --shadow-floating: var(--elevation-floating);
-  --shadow-window: var(--elevation-window);
   --shadow-thumb: var(--elevation-thumb);
 }
 

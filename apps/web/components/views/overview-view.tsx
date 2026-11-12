@@ -206,8 +206,9 @@ function NoExemptionDetail({ label, explanation }: { label: string; explanation:
  * 3. horizont osvobození,
  * 4. vedle sebe: z čeho se daň počítá | upozornění a kontroly výpočtu.
  *
- * `preview` vykreslí jen lištu, verdikt a limity — tak přehled stojí v okně
- * na úvodní stránce (skutečná komponenta nad ukázkovými daty, ne obrázek).
+ * `preview` vykreslí jen limity — výřez pro úvodní stránku (skutečná
+ * komponenta nad ukázkovými daty, ne obrázek). Nic v něm nevede jinam:
+ * výběr limitu se přepíná na místě.
  */
 export function OverviewView({
   txs,
@@ -489,15 +490,11 @@ export function OverviewView({
     <AppToolbar
       title="Přehled"
       titleContext={String(year)}
-      pinned={!preview}
       actions={
         exceeded && (
           <Link
             href={`${basePath}/report`}
-            // V náhledu na úvodní stránce je hlavní akcí stránky „Vyzkoušet
-            // demo“ — třetí plné modré tlačítko v prvním okně by s ní soupeřilo
-            // (R1A-26).
-            className={buttonVariants({ variant: preview ? 'secondary' : 'primary', size: 'sm' })}
+            className={buttonVariants({ variant: 'primary', size: 'sm' })}
           >
             Otevřít report
           </Link>
@@ -515,17 +512,7 @@ export function OverviewView({
     </section>
   );
 
-  if (preview) {
-    return (
-      <>
-        {toolbar}
-        <div className="space-y-12">
-          {verdict}
-          {limits}
-        </div>
-      </>
-    );
-  }
+  if (preview) return <LimitsInspector entries={limitEntries} />;
 
   // CLAUDE.md, pravidlo 2: počítáme bezpečným výkladem, ale ukážeme,
   // co by znamenal ten výhodnější — a poctivě řekneme, že je sporný.

@@ -193,7 +193,7 @@ describe('„zdarma“ jednou v úvodu a jednou v pásu (R1A-06)', () => {
    */
   it('úvodní obrazovka dokládá „bezpečně“ faktem a odkazem na /bezpecnost', { timeout: 60_000 }, async () => {
     const html = await landingHtml();
-    const hero = html.slice(0, html.indexOf('aria-label="Časové testy"'));
+    const hero = html.slice(0, html.indexOf('aria-label="Hlídání limitů"'));
     const lede = /<p class="type-lede[^>]*>([\s\S]*?)<\/p>/.exec(hero)?.[1] ?? '';
     expect(lede).toMatch(/<a[^>]*href="\/bezpecnost"[^>]*>jen pro čtení<\/a>/);
     expect(textOf(lede)).toContain('data nikomu neprodává');
@@ -205,7 +205,7 @@ describe('„zdarma“ jednou v úvodu a jednou v pásu (R1A-06)', () => {
   it('úvod, patička, sdílený odkaz ani titulek nemluví jazykem vývojářů', { timeout: 60_000 }, async () => {
     const DEVELOPER_WORDS = /otevřen\S* kód|open[ -]?source|zdrojov\S* kód|osobní\S* projekt/i;
     const html = await landingHtml();
-    const hero = textOf(html.slice(0, html.indexOf('aria-label="Časové testy"')));
+    const hero = textOf(html.slice(0, html.indexOf('aria-label="Hlídání limitů"')));
     const site = await import('@/lib/site');
     const landing = await (await import('@/app/page')).generateMetadata();
     const texts = {
@@ -240,7 +240,7 @@ describe('„zdarma“ jednou v úvodu a jednou v pásu (R1A-06)', () => {
 
   it('kalkulačka je v první obrazovce, ne až pod čarou', { timeout: 60_000 }, async () => {
     const html = await landingHtml();
-    const hero = html.slice(0, html.indexOf('aria-label="Časové testy"'));
+    const hero = html.slice(0, html.indexOf('aria-label="Hlídání limitů"'));
     expect(hero.length).toBeGreaterThan(200);
     expect(hero).toContain('href="/kalkulacka"');
     expect(hero).toContain('href="/demo/prehled"');

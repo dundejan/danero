@@ -4,11 +4,8 @@ import { connection } from 'next/server';
 import { compareVariants, type VariantComparison } from '@danero/engine';
 import { HorizonStrip } from '@/components/horizon-strip';
 import { JsonLd } from '@/components/json-ld';
-import { Logo } from '@/components/logo';
 import { SpecList, SpecRow, Split } from '@/components/marketing-blocks';
 import { Band, BandHeading, MarketingPage, PageClosing } from '@/components/marketing-page';
-import { DEMO_NAV_ITEMS } from '@/components/nav-items';
-import { SidebarNav } from '@/components/nav-rail';
 import { buttonVariants } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TextLink } from '@/components/ui/link';
@@ -22,7 +19,7 @@ import { demoDataset, demoToday, DEMO_USER_ID } from '@/lib/demo-data';
 import { analyzeForUserCached } from '@/lib/engine-cache';
 import { czk, FX_LABEL, METHOD_LABEL } from '@/lib/format';
 import { organizationJsonLd, websiteJsonLd } from '@/lib/json-ld';
-import { availableYears, engineInputForUser } from '@/lib/portfolio';
+import { engineInputForUser } from '@/lib/portfolio';
 import { currentUser } from '@/lib/session';
 import { typeset } from '@/components/typeset';
 import { SITE_TAGLINE, SITE_TAGLINE_HOW, siteVerification } from '@/lib/site';
@@ -50,34 +47,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /* ── stavební prvky ───────────────────────────────────────────────────────── */
-
-/**
- * Okno aplikace na úvodní stránce. Uvnitř není obrázek, ale tytéž komponenty,
- * které vykreslují přehled v aplikaci — postranní panel se skutečnými odkazy
- * do dema a pracovní plocha nad ukázkovými daty.
- * Stín má jen tohle okno: je to jediná věc na stránce, která se vznáší.
- * Falešné ovládání okna (tři tečky) tu není — je to rekvizita šablonových
- * úvodních stránek, ne část rozhraní.
- */
-function AppWindow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-xl bg-surface text-left shadow-window">
-      <div className="flex">
-        <div className="material-sidebar hidden w-52 shrink-0 flex-col border-r border-(--material-edge) px-3 pb-5 pt-5 lg:flex">
-          <div className="mb-5 px-2">
-            <Logo className="text-[1.0625rem]" />
-          </div>
-          <SidebarNav
-            items={DEMO_NAV_ITEMS}
-            activeHref="/demo/prehled"
-            ariaLabel="Sekce dema"
-          />
-        </div>
-        <div className="min-w-0 flex-1 px-(--page-gutter) pb-8 pt-(--page-top)">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 /** Varianty párování pro úvodní stránku — živý engine nad demo datasetem za
     poslední uzavřený rok (tam se metody skutečně liší). Memo per „dnešek“ dema:
@@ -260,7 +229,7 @@ export default async function LandingPage({
         </Notice>
       )}
 
-      {/* ── úvod: co to je, bezpečně a zdarma, a pod tím samotná aplikace ────
+      {/* ── úvod: co to je, bezpečně a zdarma ─────────────────────────────────
           Čtenář je kdokoli, kdo investuje, ne vývojář: titulek slibuje dvě věci
           obyčejnými slovy a perex obě hned doloží faktem („jen pro čtení“
           s odkazem na /bezpecnost, „placenou verzi nemá“). Výrazy jako
@@ -272,8 +241,6 @@ export default async function LandingPage({
           ne informace (nález R1A-06). */}
       <section
         aria-labelledby="hero-nadpis"
-        // spodní odsazení nese stín okna: pás pod úvodem má vlastní plochu
-        // a stín by jinak uřízl rovnou hranou
         className="pb-(--band-y) pt-14 text-center md:pt-24"
       >
         {/* dvě věty, dva řádky (na telefonu dva a dva): druhá je tišší. Tytéž
@@ -315,30 +282,35 @@ export default async function LandingPage({
           Nevíš, jestli se tě přiznání vůbec týká?{' '}
           <TextLink href="/kalkulacka">Kalkulačka to řekne za minutu</TextLink>.
         </p>
-
-        {/* skutečný přehled nad ukázkovými daty — žádný snímek obrazovky */}
-        <div className="mt-12 md:mt-16">
-          <AppWindow>
-            <OverviewView
-              txs={txs}
-              analysis={analysis}
-              prices={prices}
-              years={availableYears(txs, year)}
-              year={year}
-              today={today}
-              notifications={[]}
-              basePath="/demo"
-              preview
-            />
-          </AppWindow>
-          <p className="type-footnote mx-auto mt-6 text-balance text-ink-muted">
-            {tidy('Přehled z dema nad ukázkovým portfoliem.')}
-          </p>
-        </div>
       </section>
 
+      {/* ── limity: živý výřez z přehledu ───────────────────────────────────────
+          Do 12. 11. 2026 tu stálo celé okno aplikace s postranním panelem
+          a přepínačem roku: vypadalo jako aplikace, ale každý klik odnesl
+          návštěvníka do dema. Výřez se přepíná na místě a nikam nevede —
+          do dema vede jen tlačítko v úvodu a v závěru stránky. */}
+      <Band tone="canvas" aria-label="Hlídání limitů">
+        <BandHeading
+          title="Jak blízko jsi limitům"
+          lede="Kolik z ročního limitu už je vyčerpáno a co se stane, když ho překročíš. Čísla jsou z ukázkového portfolia."
+        />
+        <div className="mt-10">
+          <OverviewView
+            txs={txs}
+            analysis={analysis}
+            prices={prices}
+            years={[year]}
+            year={year}
+            today={today}
+            notifications={[]}
+            basePath="/demo"
+            preview
+          />
+        </div>
+      </Band>
+
       {/* ── časové testy: živý horizont ─────────────────────────────────────── */}
-      <Band aria-label="Časové testy" className="pt-0">
+      <Band aria-label="Časové testy">
         <BandHeading
           title="Kdy bude prodej bez daně"
           lede="Po třech letech držení se z prodeje daň neplatí. Tečka je den, kdy ta lhůta doběhne dalším kusům z ukázkového portfolia."
