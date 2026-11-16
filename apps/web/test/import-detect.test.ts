@@ -3,6 +3,7 @@ import { UNIVERSAL_TEMPLATE_CSV } from '@danero/importers';
 import { ANYCOIN_BASIC } from '../../../packages/importers/test/fixtures/anycoin';
 import { COINBASE_V1_EUR, COINBASE_V4 } from '../../../packages/importers/test/fixtures/coinbase';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
+import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
 import {
   DEGIRO_ACCOUNT_CZ,
   DEGIRO_TRANSACTIONS_2026_EN,
@@ -84,6 +85,7 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Degiro Transactions EN se zabalenými řádky', DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS, 'degiro'],
   // L23-04: druhý soubor Degira (hotovostní pohyby) má v autodetekci vlastní větev
   ['Degiro Account.csv CZ', DEGIRO_ACCOUNT_CZ, 'degiro'],
+  ['IBKR / Lynx Activity Statement (CSV se sekcemi)', ACTIVITY_STATEMENT_CSV, 'ibkr'],
   ['Trading212 (sloupec „Time“)', T212_FIXTURE, 'trading212'],
   // regrese ze srpna 2026: přejmenovaný sloupec poslal celý export do
   // univerzální šablony a import se rozbil naostro, přestože testy svítily

@@ -110,7 +110,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#D81222',
     guide:
-      'Živě přes Flex Web Service: Client Portal → Performance & Reports → Flex Queries (token se zapíná tamtéž ve Flex Web Service Configuration). Nebo si stejnou Flex Query stáhni jako XML — jeden běh pokrývá max. rok, starší historii stahuj po letech (IBKR vydá letošek a čtyři předchozí roky).',
+      'Živě přes Flex Web Service: Client Portal → Performance & Reports → Flex Queries (token se zapíná tamtéž ve Flex Web Service Configuration). Nebo si stejnou Flex Query stáhni jako XML — jeden běh pokrývá max. rok, starší historii stahuj po letech (IBKR vydá letošek a čtyři předchozí roky). Místo napojení jde nahrát i roční výpis: Performance & Reports → Statements → Activity → období → formát CSV, za každý rok od prvního nákupu. Vyber si jednu cestu — výpis nahraný k napojenému účtu může obchody uložit podruhé.',
     connectAnchor: '#ibkr',
   },
   {
@@ -144,7 +144,7 @@ export const PLATFORMS: PlatformInfo[] = [
     method: 'api',
     color: '#0FA396',
     guide:
-      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně, jen se přihlašuješ přes web Lynxu: Performance & Reports → Flex Queries.',
+      'Účet Lynx běží na infrastruktuře Interactive Brokers — Flex API i výpisy fungují stejně, jen se přihlašuješ přes web Lynxu: Performance & Reports → Flex Queries. Místo napojení jde nahrát i roční výpis: Performance & Reports → Statements → Activity → období → formát CSV, za každý rok od prvního nákupu. Vyber si jednu cestu — výpis nahraný k napojenému účtu může obchody uložit podruhé.',
     connectAnchor: '#ibkr',
   },
   {

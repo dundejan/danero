@@ -5,6 +5,7 @@ import {
 } from '../../../packages/importers/test/fixtures/degiro';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
+import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
 import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kraken';
 import { MT4_HTML } from '../../../packages/importers/test/fixtures/metatrader';
 import { PORTU_REAL_LAYOUT_FIXTURE } from '../../../packages/importers/test/fixtures/portu';
@@ -187,6 +188,17 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote,
     buffer: Buffer.from(MT4_HTML, 'utf8'),
   });
   await expect(mt4).toContainText(recognizedAs('MetaTrader 4'));
+
+  // IBKR / Lynx: CSV výpis „Activity Statement“ (nepřečtený výpis 16. 11. 2026
+  // — do té doby jsme od IBKR četli jen Flex Query XML)
+  const activity = await uploadStatement(page, {
+    name: 'U7000001_2024_2024.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(ACTIVITY_STATEMENT_CSV, 'utf8'),
+  });
+  await expect(activity).toContainText(recognizedAs('Interactive Brokers'));
+  await expect(activity).toContainText(/· 13 nov\S+ · 0 duplicit/);
+  await expect(activity).not.toContainText(/chyb/);
 
   // Swissquote (středníkové CSV, EN 13 sloupců)
   const swissquote = await uploadStatement(page, {

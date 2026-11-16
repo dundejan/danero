@@ -7,6 +7,7 @@ import * as degiro from './fixtures/degiro';
 import * as etoro from './fixtures/etoro';
 import * as fio from './fixtures/fio';
 import * as ibkr from './fixtures/ibkr';
+import * as ibkrActivity from './fixtures/ibkr-activity';
 import * as kraken from './fixtures/kraken';
 import * as metatrader from './fixtures/metatrader';
 import * as portu from './fixtures/portu';
@@ -95,6 +96,7 @@ const FIXTURE_MODULES: Record<string, Record<string, unknown>> = {
   etoro,
   fio,
   ibkr,
+  ibkrActivity,
   kraken,
   metatrader,
   portu,
@@ -756,6 +758,7 @@ const textParsers = (withMaps: boolean): TextTarget[] => [
   ],
   ['parseUniversalCsv', importers.parseUniversalCsv],
   ['parseIbkrFlexXml', importers.parseIbkrFlexXml],
+  ['parseIbkrActivityCsv', importers.parseIbkrActivityCsv],
   ['parseMt4Html', importers.parseMt4Html],
   ['parseMt5Html', importers.parseMt5Html],
   [

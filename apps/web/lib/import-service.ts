@@ -20,6 +20,7 @@ import {
   parseDegiroTransactionsCsv,
   parseEtoroXlsx,
   parseFioCsv,
+  parseIbkrActivityCsv,
   parseIbkrFlexXml,
   parseKrakenCsv,
   parseMt4Html,
@@ -38,6 +39,7 @@ import {
   parseTrading212Csv,
   printableSample,
   sniffFileFormat,
+  sniffIbkrActivityCsv,
   sniffTrading212Csv,
   TRADING212_BROKER,
   unsupportedFormatMessage,
@@ -238,6 +240,10 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
     }
     return noUnmapped(parseIbkrFlexXml(text));
   }
+
+  // Activity Statement z IBKR/Lynxu: sekce pod sebou, první řádek je vždy
+  // hlavička sekce Statement — s ničím jiným se nesplete
+  if (sniffIbkrActivityCsv(text)) return noUnmapped(parseIbkrActivityCsv(text));
 
   // hlavičku posuzuje sniffer v parseru (jedna definice pro detekci i parsování)
   if (sniffTrading212Csv(text)) {
