@@ -4,6 +4,10 @@ import {
   DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS,
 } from '../../../packages/importers/test/fixtures/degiro';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
+import {
+  AMUNDI_FILENAME,
+  buildAmundiXlsx,
+} from '../../../packages/importers/test/fixtures/amundi';
 import { EIC_FIXTURE } from '../../../packages/importers/test/fixtures/eic';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
 import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
@@ -229,6 +233,16 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote,
   });
   await expect(eic).toContainText('EIC · 3 nové · 0 duplicit');
   await expect(eic).not.toContainText(/chyb/);
+
+  // Moje Amundi: sešit se dvěma listy (nepřečtený výpis 20. 11. 2026) — čtou
+  // se tři nákupy z listu obchodů, list pokynů se přeskočí bez chyby.
+  const amundi = await uploadStatement(page, {
+    name: AMUNDI_FILENAME,
+    mimeType: XLSX,
+    buffer: await buildAmundiXlsx(),
+  });
+  await expect(amundi).toContainText('Amundi (KB) · 3 nové · 0 duplicit');
+  await expect(amundi).not.toContainText(/chyb/);
 });
 
 /**

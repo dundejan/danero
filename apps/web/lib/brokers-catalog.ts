@@ -223,10 +223,10 @@ export const PLATFORMS: PlatformInfo[] = [
     logo: { src: '/loga/amundi.svg', kind: 'wordmark' },
     name: 'Amundi (KB)',
     group: 'banky',
-    method: 'template',
+    method: 'file',
     color: '#003C71',
     guide:
-      'Portál Moje Amundi → Můj přehled → Transakce → Export (vpravo nahoře). Import zatím přes univerzální šablonu.',
+      'Portál Moje Amundi → Můj přehled → Transakce → Export (vpravo nahoře) za celé období od první investice — přijde sešit XLSX se dvěma listy. Čteme nákupy fondů z listu Detail transakce; vstupní poplatek do nabývací ceny nezapočítáváme. Odkup fondu zatím číst neumíme — zapiš ho univerzální šablonou.',
   },
   {
     id: 'fio',

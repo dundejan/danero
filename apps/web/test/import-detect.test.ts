@@ -3,6 +3,12 @@ import { UNIVERSAL_TEMPLATE_CSV } from '@danero/importers';
 import { ANYCOIN_BASIC } from '../../../packages/importers/test/fixtures/anycoin';
 import { COINBASE_V1_EUR, COINBASE_V4 } from '../../../packages/importers/test/fixtures/coinbase';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
+import {
+  AMUNDI_FILENAME,
+  buildAmundiXlsx,
+  buildPositionsStatementXlsx,
+  POSITIONS_FILENAME,
+} from '../../../packages/importers/test/fixtures/amundi';
 import { EIC_FIXTURE } from '../../../packages/importers/test/fixtures/eic';
 import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
 import {
@@ -159,6 +165,7 @@ describe('routing ručního nahrání (importFileIsolated)', () => {
     ['MetaTrader 5 XLSX', 'ReportHistory.xlsx', () => buildMt5Xlsx(), 'mt5'],
     ['XTB XLSX (starý report)', 'xtb.xlsx', () => buildXtbXlsx({ rows: XTB_ROWS_EN }), 'xtb'],
     ['XTB XLSX (nový report)', XTB_NEW_FILENAME, () => buildXtbNewReportXlsx(), 'xtb'],
+    ['Moje Amundi XLSX', AMUNDI_FILENAME, () => buildAmundiXlsx(), 'amundi'],
     ['Degiro Account.csv CZ', 'Account.csv', () => Buffer.from(DEGIRO_ACCOUNT_CZ, 'utf8'), 'degiro'],
   ];
 
@@ -203,6 +210,26 @@ describe('routing ručního nahrání (importFileIsolated)', () => {
     expect(summary.errors[0]!.message).toContain('Export (new)');
     expect(summary.errors[0]!.message).not.toContain('nepoznáváme');
     // náprava je na uživateli — soubor se neschovává a provozovatel nedostane e-mail
+    expect(summary.unrecognized).toBeFalsy();
+    expect(await db.select().from(failedImports)).toHaveLength(0);
+  });
+
+  /**
+   * Přehled aktuálních pozic (dnešní cena a tržní hodnota, žádné datum ani
+   * nákupní cena) poznáme, ale neimportujeme. První přišel 20. 11. 2026
+   * a skončil u obecného „XLSX nepoznáváme“ s upozorněním provozovateli.
+   */
+  it('přehled pozic → rada nahrát přehled transakcí, a nic k rozboru', { timeout: 30_000 }, async () => {
+    const summary = await importFileIsolated(
+      db,
+      'u1',
+      POSITIONS_FILENAME,
+      toArrayBuffer(await buildPositionsStatementXlsx()),
+    );
+    expect(summary.added).toBe(0);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]!.message).toContain('přehled transakcí');
+    expect(summary.errors[0]!.message).not.toContain('nepoznáváme');
     expect(summary.unrecognized).toBeFalsy();
     expect(await db.select().from(failedImports)).toHaveLength(0);
   });

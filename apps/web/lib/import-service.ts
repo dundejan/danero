@@ -26,7 +26,9 @@ import {
   parseMt4Html,
   parseMt5Html,
   parseMt5Xlsx,
+  parseAmundiXlsx,
   parseEicCsv,
+  POSITIONS_STATEMENT_MESSAGE,
   parsePortuCsv,
   parseRevolutCryptoCsv,
   parseRevolutXlsx,
@@ -59,7 +61,9 @@ import {
   sniffMt4Html,
   sniffMt5Html,
   sniffMt5Xlsx,
+  sniffAmundiXlsx,
   sniffEicCsv,
+  sniffPositionsStatementXlsx,
   sniffPortuCsv,
   sniffRevolutCryptoCsv,
   sniffRevolutInvestCsv,
@@ -782,6 +786,9 @@ async function importXlsxUpload(
   if (sniffMt5Xlsx(workbook)) {
     return save(await parseMt5Xlsx(workbook));
   }
+  if (sniffAmundiXlsx(workbook)) {
+    return save(await parseAmundiXlsx(workbook));
+  }
   // Revolut nabízí „Account statement“ jako Excel a podle účtu z něj chodí
   // jednou CSV a jindy opravdový sešit — obojí vede na tentýž parser
   if (sniffRevolutXlsx(workbook)) {
@@ -796,6 +803,15 @@ async function importXlsxUpload(
   // SEM, za všechny ostatní — jinak by jim sešit ukradl.
   if (sniffSaxoXlsxShape(workbook)) {
     return save(await parseSaxoXlsx(workbook), NOT_OURS);
+  }
+  // Přehled aktuálních pozic (dnešní cena a tržní hodnota, žádné datum ani
+  // nákupní cena) poznáme, ale transakce z něj složit nejde — uživatel dostane
+  // radu nahrát přehled transakcí. Náprava je na něm, soubor se neschovává.
+  // Až SEM, za všechny parsery: sešit, který umíme přečíst, jim nesmí ukrást.
+  if (sniffPositionsStatementXlsx(workbook)) {
+    const positions = unknownFormat(POSITIONS_STATEMENT_MESSAGE);
+    positions.errors[0]!.knownUnsupported = true;
+    return save(positions, NOT_OURS);
   }
   const outline = outlineWorkbook(workbook);
   // Univerzální šablona uložená z Excelu jako sešit. Do 13. 10. 2026 dostala
@@ -846,7 +862,7 @@ function unknownXlsxMessage({ sheetNames, firstRow }: WorkbookOutline, filename 
   ].filter(Boolean);
   return (
     `XLSX nepoznáváme${found.length > 0 ? ` — v sešitu jsme našli ${found.join('; ')}` : ''}. ` +
-    'Podporujeme reporty XTB, eToro, Saxo, Revolut a MetaTrader 5. V nápovědě „Kde výpis ' +
+    'Podporujeme reporty XTB, eToro, Saxo, Revolut, Amundi a MetaTrader 5. V nápovědě „Kde výpis ' +
     'stáhnout“ najdeš, který export potřebuješ — nebo použij univerzální šablonu.' +
     (/etoro/i.test(filename) ? ` ${ETORO_LANGUAGE_HINT}` : '')
   );

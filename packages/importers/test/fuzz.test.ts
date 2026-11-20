@@ -801,6 +801,8 @@ const XLSX_SNIFFERS: Array<[string, (workbook: Workbook) => unknown]> = [
   ['sniffSaxoXlsx', importers.sniffSaxoXlsx],
   ['sniffMt5Xlsx', importers.sniffMt5Xlsx],
   ['sniffRevolutXlsx', importers.sniffRevolutXlsx],
+  ['sniffAmundiXlsx', importers.sniffAmundiXlsx],
+  ['sniffPositionsStatementXlsx', importers.sniffPositionsStatementXlsx],
 ];
 
 const xlsxParsers = (
@@ -819,6 +821,7 @@ const xlsxParsers = (
   ],
   ['parseSaxoXlsx', (data) => importers.parseSaxoXlsx(data)],
   ['parseMt5Xlsx', (data) => importers.parseMt5Xlsx(data)],
+  ['parseAmundiXlsx', (data) => importers.parseAmundiXlsx(data)],
   [
     'parseRevolutXlsx',
     (data) =>
