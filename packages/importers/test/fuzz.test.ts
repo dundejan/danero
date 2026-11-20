@@ -4,6 +4,7 @@ import * as anycoin from './fixtures/anycoin';
 import * as coinbase from './fixtures/coinbase';
 import * as coinmate from './fixtures/coinmate';
 import * as degiro from './fixtures/degiro';
+import * as eic from './fixtures/eic';
 import * as etoro from './fixtures/etoro';
 import * as fio from './fixtures/fio';
 import * as ibkr from './fixtures/ibkr';
@@ -100,6 +101,7 @@ const FIXTURE_MODULES: Record<string, Record<string, unknown>> = {
   kraken,
   metatrader,
   portu,
+  eic,
   revolut,
   saxo,
   schwab,
@@ -715,6 +717,7 @@ const TEXT_SNIFFERS: TextTarget[] = [
   ['isTruncatedTrading212Export', importers.isTruncatedTrading212Export],
   ['isDegiroCsv', importers.isDegiroCsv],
   ['sniffPortuCsv', importers.sniffPortuCsv],
+  ['sniffEicCsv', importers.sniffEicCsv],
   ['sniffCoinmateCsv', importers.sniffCoinmateCsv],
   ['sniffSwissquoteCsv', importers.sniffSwissquoteCsv],
   ['sniffKrakenCsv', importers.sniffKrakenCsv],
@@ -736,6 +739,7 @@ const textParsers = (withMaps: boolean): TextTarget[] => [
   ['parseDegiroTransactionsCsv', importers.parseDegiroTransactionsCsv],
   ['parseDegiroAccountCsv', importers.parseDegiroAccountCsv],
   ['parsePortuCsv', importers.parsePortuCsv],
+  ['parseEicCsv', importers.parseEicCsv],
   ['parseCoinmateCsv', importers.parseCoinmateCsv],
   ['parseSwissquoteCsv', importers.parseSwissquoteCsv],
   ['parseKrakenCsv', importers.parseKrakenCsv],

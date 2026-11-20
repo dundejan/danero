@@ -3,6 +3,7 @@ import { UNIVERSAL_TEMPLATE_CSV } from '@danero/importers';
 import { ANYCOIN_BASIC } from '../../../packages/importers/test/fixtures/anycoin';
 import { COINBASE_V1_EUR, COINBASE_V4 } from '../../../packages/importers/test/fixtures/coinbase';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
+import { EIC_FIXTURE } from '../../../packages/importers/test/fixtures/eic';
 import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
 import {
   DEGIRO_ACCOUNT_CZ,
@@ -74,6 +75,8 @@ const CASES: Array<[label: string, text: string, broker: string]> = [
   ['Swissquote EN s přejmenovaným sloupcem objednávky', SWISSQUOTE_EN_ORDER_RENAMED, 'swissquote'],
   ['Portu', PORTU_FIXTURE, 'portu'],
   ['Portu (úrok, přesuny mezi portfolii, měnové zajištění)', PORTU_REAL_LAYOUT_FIXTURE, 'portu'],
+  // nepřečtený výpis 20. 11. 2026: export pokynů se zdvojeným sloupcem „Druh pokynu“
+  ['EIC (export pokynů)', EIC_FIXTURE, 'eic'],
   ['Anycoin orders.csv', ANYCOIN_BASIC, 'anycoin'],
   ['Coinbase V4', COINBASE_V4, 'coinbase'],
   ['Coinbase V1 (EUR prefix)', COINBASE_V1_EUR, 'coinbase'],

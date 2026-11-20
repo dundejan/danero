@@ -26,6 +26,7 @@ import {
   parseMt4Html,
   parseMt5Html,
   parseMt5Xlsx,
+  parseEicCsv,
   parsePortuCsv,
   parseRevolutCryptoCsv,
   parseRevolutXlsx,
@@ -58,6 +59,7 @@ import {
   sniffMt4Html,
   sniffMt5Html,
   sniffMt5Xlsx,
+  sniffEicCsv,
   sniffPortuCsv,
   sniffRevolutCryptoCsv,
   sniffRevolutInvestCsv,
@@ -269,6 +271,7 @@ function detectAndParseText(text: string, aliases?: AliasMaps): ParsedFile {
   if (degiroKind === 'transactions') return noUnmapped(parseDegiroTransactionsCsv(text));
   if (degiroKind === 'account') return noUnmapped(parseDegiroAccountCsv(text));
   if (sniffPortuCsv(text)) return noUnmapped(parsePortuCsv(text));
+  if (sniffEicCsv(text)) return noUnmapped(parseEicCsv(text));
   if (sniffCoinmateCsv(text)) return noUnmapped(parseCoinmateCsv(text));
   if (sniffSwissquoteCsv(text)) return noUnmapped(parseSwissquoteCsv(text));
   if (sniffKrakenCsv(text)) return noUnmapped(parseKrakenCsv(text));

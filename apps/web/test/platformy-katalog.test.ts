@@ -36,6 +36,7 @@ const SNIFFERS: Record<string, keyof typeof importers | 'sdílený parser'> = {
   tastytrade: 'sniffTastytradeCsv',
   schwab: 'sniffSchwabCsv',
   fio: 'sniffFioCsv',
+  eic: 'sniffEicCsv',
   revolut: 'sniffRevolutInvestCsv',
   anycoin: 'sniffAnycoinCsv',
   coinmate: 'sniffCoinmateCsv',

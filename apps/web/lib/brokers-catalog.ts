@@ -275,10 +275,10 @@ export const PLATFORMS: PlatformInfo[] = [
     logo: { src: '/loga/eic.png', kind: 'wordmark' },
     name: 'EIC',
     group: 'banky',
-    method: 'template',
+    method: 'file',
     color: '#1D4F91',
     guide:
-      'Online aplikace EIC (online.eic.eu) → pohled Transakce → Export; dividendy z pohledu Transfery a dividendy. Import zatím přes univerzální šablonu.',
+      'Online aplikace EIC (online.eic.eu) → pohled Transakce → Export (CSV) za celé období od založení účtu. Čteme nákupy fondů; měnové konverze před nákupem přeskakujeme. Prodej fondu a pohled Transfery a dividendy zatím číst neumíme — zapiš je univerzální šablonou.',
   },
   {
     id: 'juliusbaer',

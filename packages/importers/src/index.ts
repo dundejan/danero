@@ -22,6 +22,7 @@ export * from './coinbase/csv';
 export * from './coinmate/csv';
 export * from './anycoin/csv';
 export * from './portu/csv';
+export * from './eic/csv';
 export * from './metatrader/mt4-html';
 export * from './metatrader/mt5';
 export * from './saxo/xlsx';

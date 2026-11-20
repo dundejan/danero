@@ -4,6 +4,7 @@ import {
   DEGIRO_TRANSACTIONS_EN_QUOTED_ROWS,
 } from '../../../packages/importers/test/fixtures/degiro';
 import { COINMATE_CZ } from '../../../packages/importers/test/fixtures/coinmate';
+import { EIC_FIXTURE } from '../../../packages/importers/test/fixtures/eic';
 import { encodeCp1250, FIO_FIXTURE } from '../../../packages/importers/test/fixtures/fio';
 import { ACTIVITY_STATEMENT_CSV } from '../../../packages/importers/test/fixtures/ibkr-activity';
 import { KRAKEN_LEDGERS_NEW } from '../../../packages/importers/test/fixtures/kraken';
@@ -218,6 +219,16 @@ test('autodetekce nových formátů: Revolut, Coinmate, Kraken, MT4, Swissquote,
   });
   await expect(portu).toContainText('Portu · 2 nové · 0 duplicit');
   await expect(portu).not.toContainText(/chyb/);
+
+  // EIC: export pokynů ve windows-1250 (nepřečtený výpis 20. 11. 2026) — načtou
+  // se tři nákupy, konverze koruny před nimi se přeskočí bez chyby.
+  const eic = await uploadStatement(page, {
+    name: 'securityOrderTransactionViewService.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(encodeCp1250(EIC_FIXTURE)),
+  });
+  await expect(eic).toContainText('EIC · 3 nové · 0 duplicit');
+  await expect(eic).not.toContainText(/chyb/);
 });
 
 /**
